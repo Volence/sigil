@@ -192,8 +192,10 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         m!("engine.sound_api", "sound_api", pins::SOUND_API),
         m!("engine.debug.error_handler", "error_handler", pins::ERROR_HANDLER),
         // ── Game player ──
-        // player_common (kill row 93): always-emitted header stays AS-side (camera.emp
-        // PL_STATE_ADDR, entity_data ObjDef refs); the body places here.
+        // player_common fully flipped (conv-d #49): player_common.asm deleted. The
+        // module owns the PlayerV overlay + PPHYS_*/macro templates (state files
+        // import by `use`); camera.emp late-binds the one _pl_state offset it
+        // link-exports as an `equ`.
         m!("games.sonic4.player_common", "player_common", pins::PLAYER_COMMON),
         m!("games.sonic4.player_sensors", "player_sensors", pins::PLAYER_SENSORS),
         m!("games.sonic4.player_ground", "player_ground", pins::PLAYER_GROUND),
