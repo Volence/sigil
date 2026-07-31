@@ -65,8 +65,11 @@ fn compile_emp(doctor: Option<i64>) -> Vec<u8> {
         "z80_init.emp lower errors: {:?}",
         ldiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect::<Vec<_>>()
     );
-    // The single section is phased at vma $0; pin it at LMA 0.
-    let map = "fill = 0x00\n\n[[region]]\nname = \"z80_idle\"\nlma_base = 0x0\nsize = 0x100\nkind = \"rom\"\n";
+    // z80_idle is phased at vma $0 (pin at LMA 0); the module-level OQ-D size ensure
+    // lowers a (byte-empty) default `text` section that also needs a home. This test
+    // does not evaluate link-asserts, so the ensure's `extern` is never folded here —
+    // only the empty section needs a region.
+    let map = "fill = 0x00\n\n[[region]]\nname = \"z80_idle\"\nlma_base = 0x0\nsize = 0x100\nkind = \"rom\"\n\n[[region]]\nname = \"text\"\nlma_base = 0x2000\nsize = 0x100\nkind = \"rom\"\n";
     let map = sigil_link::load_map(map).expect("map loads");
     let mut sections = module.sections;
     let pdiags = place_sections(&mut sections, &map);
