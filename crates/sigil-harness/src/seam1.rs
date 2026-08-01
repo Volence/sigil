@@ -716,12 +716,36 @@ pub(crate) fn sound_authority_consts(aeon: &Path) -> std::sync::Arc<BTreeMap<Str
     arc
 }
 
+/// The SFX-bank id contract (`SFX_ID_BASE` / `SFX_COUNT` / `SFX_TABLE_LEN`),
+/// resolved once and memoized per aeon root. Its AUTHORITY is `sfx_bank.emp` — the
+/// module that owns the bank they count, where they are DERIVED from the `SfxTable`
+/// rows (`SfxTable.min_key` / `.count` / `.len`), zero-byte and drift-proof from the
+/// SFX set. Parcel F2 dissolved the hand-owned `config/sound_ids.asm` mirror + the
+/// seam hardcodes into this single derived source (the sfx_bank sibling of
+/// `sound_authority_consts`; a focused module-eval reuse). SHAPE-INVARIANT (the SFX
+/// block content is identical plain/debug), so one eval serves both shapes.
+pub(crate) fn sfx_bank_authority_consts(aeon: &Path) -> std::sync::Arc<BTreeMap<String, i64>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<BTreeMap<String, i64>>>>> =
+        std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    if let Some(m) = cache.lock().unwrap().get(aeon) {
+        return m.clone();
+    }
+    let map: BTreeMap<String, i64> =
+        eval_pub_consts(&aeon.join("games/sonic4/data/sound/sfx/sfx_bank.emp"), aeon, &[])
+            .into_iter()
+            .collect();
+    let arc = std::sync::Arc::new(map);
+    cache.lock().unwrap().insert(aeon.to_path_buf(), arc.clone());
+    arc
+}
+
 /// The seam const values NOT owned by `sound_constants.emp` — genuinely external
 /// game / data config the resident-blob emit supplies, exactly as `main.asm` /
-/// `config/sound_ids.asm` / the generated vol-env data supply them in the mixed AS
-/// build. Each carries its provenance. (Contrast the 384 contract values, which
-/// flow from the authority.) `DacSampleTable` is DERIVED from seam-2's single DAC
-/// head placement, not hand-pinned.
+/// the generated vol-env data supply them in the mixed AS build. Each carries its
+/// provenance. (Contrast the 384 contract values, which flow from the authority,
+/// and the SFX-bank counts, which flow from `sfx_bank_authority_consts`.)
+/// `DacSampleTable` is DERIVED from seam-2's single DAC head placement, not hand-pinned.
 fn seam_emit_config() -> BTreeMap<&'static str, i64> {
     // The DAC descriptor head's $8000-window VMA (sound_bank.inc's driver
     // `-D DacSampleTable`), tied to seam-2's one DAC_SAMPLE_TAB placement so the
@@ -735,9 +759,9 @@ fn seam_emit_config() -> BTreeMap<&'static str, i64> {
         // gets these from main.asm. Not engine sound contract, so not in the authority.
         ("SND_ENGINE_TABLE_BANK", 0x0B), // main.asm: MovingTrucks_Bank_Start >> 15
         ("SFX_BLOB_BANK", 0x0B),         // main.asm: = SND_ENGINE_TABLE_BANK
-        ("SFX_ID_BASE", 0x33),           // config/sound_ids.asm (SfxTable.min_key)
-        ("SFX_TABLE_LEN", 0x87),         // config/sound_ids.asm (135 entries)
-        ("SFXID_REV_LOOP", 0xAB),        // config/game.asm (= SFXID_SPINDASH)
+        // SFX_ID_BASE / SFX_TABLE_LEN are NOT here (Parcel F2) — their authority is
+        // sfx_bank.emp (SfxTable-derived), resolved via `sfx_bank_authority_consts`.
+        ("SFXID_REV_LOOP", 0xAB),        // config/sound_ids.emp (= SFXID_SPINDASH)
         // Vol-env data config (engine/sound/sound_tables_z80.emp, GENERATED). The two
         // COUNTs have NO other definition in the tree (resident-blob-only). The six
         // control bytes mirror the generated data module — the residual 6-value seam
@@ -759,6 +783,7 @@ fn seam_emit_config() -> BTreeMap<&'static str, i64> {
 /// home is a build error, never a silent wrong byte).
 fn resolve_consts(aeon: &Path, names: &[&'static str]) -> Vec<(&'static str, i64)> {
     let auth = sound_authority_consts(aeon);
+    let sfx = sfx_bank_authority_consts(aeon);
     let cfg = seam_emit_config();
     names
         .iter()
@@ -766,11 +791,12 @@ fn resolve_consts(aeon: &Path, names: &[&'static str]) -> Vec<(&'static str, i64
             let v = auth
                 .get(n)
                 .copied()
+                .or_else(|| sfx.get(n).copied())
                 .or_else(|| cfg.get(n).copied())
                 .unwrap_or_else(|| {
                     panic!(
-                        "seam-1 const `{n}` is in neither the sound_constants.emp authority \
-                         nor the emit-config list"
+                        "seam-1 const `{n}` is in none of the sound_constants.emp authority, \
+                         the sfx_bank.emp authority, nor the emit-config list"
                     )
                 });
             (n, v)
