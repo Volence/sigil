@@ -316,6 +316,11 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         // Art_Sonic), was the flat BINCLUDE island at the tail of main.asm's
         // gameDataIncludes. Native `embed()` section; boundary key HeightMaps.
         m!("games.sonic4.collision_data", "collision_data", pins::COLLISION_DATA),
+        // Parcel K4 inc-5 Stage 2 (P2 DAC probe): the DAC sample banks are native —
+        // dac_banks.emp embeds the seam-2 dac_blip_bank.bin @ $48000 + dac_shared_bank.bin
+        // @ $50000 (the .bin ensure_generated emits). Sound-ON ONLY: filtered out of the
+        // sound-off config_b (demo_registry already excludes it via the engine.* filter).
+        m!("games.sonic4.dac_banks", "dac_banks", pins::DAC_BANKS),
         // ── Game test states ──
         m!("games.sonic4.object_test_state", "object_test_state", pins::OBJECT_TEST_STATE),
         m!("games.sonic4.ojz_scroll_test", "ojz_scroll_test", pins::OJZ_SCROLL_TEST),
@@ -541,8 +546,12 @@ const DUMMY_REGION: Region =
 /// takes the numeric-size path and `z80_init.emp`'s `z80_idle` section places at the
 /// frozen `Z80_IdleProgram` base (0x3d8). Sizes from `config_b.txt`.
 pub fn config_b_profile() -> GameProfile {
-    let mut registry: Vec<ModuleSpec> =
-        registry(false).into_iter().filter(|m| m.module_id != "engine.sound_api").collect();
+    // Config-B is SOUND-OFF: drop the sound caller AND the sound-on-only DAC banks
+    // (dac_banks.emp; its .bin are emitted only in sound-on builds — ensure_generated).
+    let mut registry: Vec<ModuleSpec> = registry(false)
+        .into_iter()
+        .filter(|m| m.module_id != "engine.sound_api" && m.module_id != "games.sonic4.dac_banks")
+        .collect();
     registry.push(ModuleSpec {
         module_id: "engine.z80_init",
         section: "z80_idle",

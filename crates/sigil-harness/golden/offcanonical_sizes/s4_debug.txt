@@ -28,6 +28,7 @@ Collected_Init 0x3bde
 Collision_GetType 0x5e40
 Collision_ProbeDown 0x5eb0
 CompressionSelfTest 0x7176
+Dac_Temp_Blip 0x48000
 DeformTable_Zero 0x1131c
 EndOfRom 0x5f5f2
 EntryPoint 0x200

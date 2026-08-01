@@ -432,3 +432,63 @@ the ruled discipline is countersign-first there. (c) The bare-`SIGIL_EMP_DAC`-vs
 `_BODY_STUB` gate choice + whether to fully delete vs keep-dead the BINCLUDE arm are
 real calls the exclusivity-mechanism ruling should own. Stages 3/4 (phased MT/SFX +
 soundBankHead) are held behind this — they inherit whatever mechanism Stage 2 sets.
+
+### Stage 2 — P2 DAC probe — DONE under the ruling (six-target byte-identical)
+
+The coordinator ruled the reframe accepted in full (structural exclusivity; delete the
+dead `_BODY_STUB` arms; re-key to the bare `SIGIL_EMP_DAC` gate; `dac_banks.emp` embeds
+the artifacts). Implemented on the same k4-inc5 branches:
+
+- **`games/sonic4/data/sound/dac_banks.emp`** (`module games.sonic4.dac_banks in
+  dac_banks`) — ONE section embedding the seam-2 `dac_blip_bank.bin` @ $48000 +
+  `dac_shared_bank.bin` @ $50000, with an intra-section `align $8000` for the inter-bank
+  pad (the AS twin's structure exactly; the pad bytes are $00, matching the reference).
+  Head label `Dac_Temp_Blip` (section head + map-order + frozen boundary key);
+  `Dac_SharedBank_Start` / `Dac_Kick` are mid-section labels (coincident at $50000). The
+  SND_* triples stay folded in the DacSampleTable head at emit — the main build's Dac_*
+  labels are placement heads with no runtime consumer.
+- **STRUCTURAL EXCLUSIVITY (the ruled mechanism):** the AS BINCLUDE arm is DELETED
+  (can't-both — nothing else places the DAC), the native section is unconditional in
+  the sound-on registry (can't-neither), and `main.asm`'s `ifdef SIGIL_EMP_DAC` skip
+  (`org $58000`) moves the AS cursor past the native region so the MT bank lands at
+  $58000. Loud enforcement = the map anchor validation (`dac_banks` @ $48000,
+  `when="sound_on"`) + the whole-ROM byte gate + the emit-first `dac_bank_port` gate.
+  The dead `SIGIL_EMP_DAC_BODY_STUB` arm (a never-set gate on a dead org-skip) is gone.
+- **Wiring:** registry `games.sonic4.dac_banks`/`dac_banks` (sound-ON only —
+  filtered out of config_b, and demo excludes it via the `engine.*` filter); pin
+  `DAC_BANKS` (repin.toml `start=Dac_Temp_Blip len=0xF8BC`; pins.rs base $48000 both
+  shapes, len $F8BC = blip 0xB40 + pad to 0x8000 + shared 0x78BC); the bare
+  `SIGIL_EMP_DAC` gate holes out the AS skip; map anchor renamed `dac_blip_bank`→
+  `dac_banks` (matched by address, transparent). **Frozen-key seed** (the K3-run-B
+  pattern — s4 uses the Frozen chainer, so a keyless section sorts to base 0 and
+  collides): `Dac_Temp_Blip 0x48000` added to the THREE sound-on tables (s4.txt /
+  s4_debug.txt / config_a.txt; shape-invariant; config_b/demo are sound-off, no DAC).
+- **Emit-first golden gate** `dac_bank_port` (spec §6): runs `ensure_generated` (the
+  .bin are gitignored artifacts) then diffs the linked `dac_banks` section against the
+  reference [$48000, $578BC) both shapes. 2/2.
+
+**Identity: SIX-TARGET FULL-CRC byte-identical — NO golden re-freeze.** The DAC bytes
+land at the same LMAs and the same three labels persist at the same addresses, so the
+deb2 appendix is unchanged. Only the frozen TABLES gained one boundary key (Dac_Temp_Blip,
+seeded ×3) — the goldens themselves are byte-identical.
+
+| target | full_crc / len | vs chain-14 |
+|---|---|---|
+| s4 | `4d28dc6b` / 412151 | identical |
+| s4_debug | `0d3cd198` / 421982 | identical |
+| demo | `55b70266` / 90576 | identical (sound-off, no DAC) |
+| demo_debug | `6487a47c` / 93073 | identical |
+| config_a | `0b384578` / 422321 | identical |
+| config_b | `947e4c57` / 303555 | identical (sound-off, no DAC) |
+
+Gates: strict **2897 / 0 / 4** (baseline 2895 + 2 dac_bank_port). `refreeze --check` OK
+(tip `k4-collision`, chain 14). `repin` 0 pins changed (68→69 regions). K1 order green
+(Dac_Temp_Blip already in the map order). No assembled-anchor move — the DAC LMAs are
+byte-exact.
+
+Step-3/step-5: pure placement move (no behavior). The reframe simplified the ruling's
+"reconcile two live placements" to structural exclusivity — the byte gate + anchor
+validation are the loud guards. The pattern (native embed of the emitted .bin, delete
+the BINCLUDE arm, re-key the bare gate, frozen-key seed, emit-first golden gate) is the
+template Stages 3/4 (MT / SFX) inherit — with the added phase-bank-anchor rule (a labeled
+$8000-window head NEVER repacks; the mt-gate catch class).

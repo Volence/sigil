@@ -26,6 +26,7 @@ Checksum 0x18e
 Collected_Init 0x347e
 Collision_GetType 0x50a0
 Collision_ProbeDown 0x5110
+Dac_Temp_Blip 0x48000
 DeformTable_Zero 0x11294
 EndOfRom 0x5db00
 EntryPoint 0x200

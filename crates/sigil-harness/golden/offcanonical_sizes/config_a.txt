@@ -30,6 +30,7 @@ Collected_Init 0x3bf8
 Collision_GetType 0x5e60
 Collision_ProbeDown 0x5ec8
 CompressionSelfTest 0x724e
+Dac_Temp_Blip 0x48000
 Debug_MusicToggle 0x63d0
 DeformTable_Zero 0x11310
 EndOfRom 0x5f5f2
