@@ -630,3 +630,35 @@ k4-soundbankhead` (no `--ab`) → chain **#17**.
 Gates: strict **2903 / 0 / 4** (2901 + 2 soundbankhead_port); `refreeze --check` OK
 (chain 17); `repin --check` clean; K1 order green. **The entire sound bank is now native —
 DAC + MT + SFX bodies + the soundBankHead head; sound_bank.inc DELETED.**
+
+## Increment 6 — the skeleton dissolution (in progress, k4-inc6 off the merged masters)
+
+Deletes `games/sonic4/main.asm` + `games/demo/main.asm` + `engine/engine.inc` (the AS
+root + ROM-layout owner) under the ruled A1 (a minimal `game_root.asm` stub per game).
+Committed incrementally; the true first step is re-homing the last byte-bearing AS
+residual native (nothing can drop the orgs until these go native).
+
+### Inc-6 A — the last byte-bearing AS residual → native (byte-neutral)
+
+engine.inc's two remaining hand-written byte emitters are native:
+- **`ObjCodeBase` (rts @ $10000)** → `engine/objects/objcodebase.emp` (`pub proc
+  ObjCodeBase () { rts }`), the object-bank base + the offset-0 safety net. Consumed
+  cross-module by every player/test `.emp`'s `label - ObjCodeBase` code_addr. Placed
+  at $10000 by the map `object_bank` anchor + the frozen key ObjCodeBase — **the
+  `org $10000` retires**. player_common abuts it at $10002 (len 2, exact).
+- **`NullInterrupt` (rte)** → `engine/system/null_interrupt.emp` (`pub proc
+  NullInterrupt () { rte }`), the no-op IRQ handler vectors.emp points IRQ1/2/3/5/7 at
+  (`dc.l NullInterrupt`, cross-seam). Placed at its frozen key ($5CA42/$5E540).
+- `__BUDGET_OBJBANK` / `__BUDGET_ENGINE` (no consumers) retire with the org block.
+  `__BUDGET_DATA` (the object-bank budget cursor) stays for now — inc-6 B adapts it.
+
+Both gated out of engine.inc behind `ifndef SIGIL_EMP_{OBJCODEBASE,NULL_INTERRUPT}`.
+Registry + pins (`OBJCODEBASE`; `NULLINT` — the region const, renamed off the existing
+`NULL_INTERRUPT` test-carrier SYMBOL pin vectors_port injects) + gates (sonic4 + demo).
+**SIX-TARGET FULL byte-identical (= chain-17), no re-freeze; strict 2903/0/4; repin 0
+changed; refreeze --check OK.** The last hand-written AS bytes have left the tree — the
+AS residual now emits ZERO bytes (game.asm + debugger.asm are defines/externs only).
+
+**Remaining (inc-6 B):** the A1 stubs (`game_root.asm` ×2), the budget-cursor adaptation
+(compute from object_bank sections, retiring `__BUDGET_DATA`), the game_root_rel flip,
+and DELETE main.asm ×2 + engine.inc. Then the §0 end-state final annotation.

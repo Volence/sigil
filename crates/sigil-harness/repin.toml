@@ -625,6 +625,20 @@ tests = ["test_t1_harness_states_port"]
 # deriving off the numeric `ErrorHandler` equ the gate-ON arm defines (numeric-org
 # derivation — an external-base equ does not resolve, ledgered demand-1). The 12
 # vector labels flip to .emp ownership (vectors.asm dc.l).
+# Parcel K4 inc-6 — the no-op IRQ handler (null_interrupt.emp: NullInterrupt: rte).
+# Was engine.inc's "temporary stub" (the last hand-written AS bytes). Literal len 2
+# (the rte; error_handler's BusError follows after a fill gap). Placed at its frozen
+# key NullInterrupt.
+[[region]]
+name = "null_interrupt"
+# const_name override: NULL_INTERRUPT is already a test-carrier SYMBOL pin
+# (vectors_port injects NullInterrupt's address); this REGION takes NULLINT.
+const_name = "NULLINT"
+start = "NullInterrupt"
+len = 0x2
+gate = "SIGIL_EMP_NULL_INTERRUPT"
+tests = ["m1d_rom", "m1d_debug_rom"]
+
 [[region]]
 name = "error_handler"
 start = "BusError"
@@ -1979,6 +1993,17 @@ name = "RAM_Start"
 tests = ["boot_port"]
 
 # ── P1 (t34): the player keystone ───────────────────────────────────────────
+# Parcel K4 inc-6 — the object-code-bank base (objcodebase.emp: ObjCodeBase + the
+# offset-0 safety rts). Was `org $10000 / ObjCodeBase: rts` in engine.inc; native now
+# so the org retires. Literal len 2 (the rts; the player modules pack after a fill
+# gap). Placed at $10000 by the map object_bank anchor + the frozen key ObjCodeBase.
+[[region]]
+name = "objcodebase"
+start = "ObjCodeBase"
+len = 0x2
+gate = "SIGIL_EMP_OBJCODEBASE"
+tests = ["m1d_rom", "m1d_debug_rom"]
+
 # player_common is the object-bank FIRST code region (base = Player_Init, just
 # past ObjCodeBase's safety rts + __BUDGET_OBJBANK); its end anchor is
 # player_ground.asm's first emitted label PState_Ground (the surviving state
