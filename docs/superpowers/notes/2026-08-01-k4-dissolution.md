@@ -62,6 +62,32 @@ guard); (2) the derive_offcanon guard rejects dropping a committed boundary labe
 Checksum had to stay a real section LABEL (a `pub equ` alias does NOT satisfy it),
 which is why the header splits at $18E rather than being one struct.
 
+## Increment 3a — the collision/character island → `.emp` (+ the DAC anchor)
+
+The flat BINCLUDE island at the tail of sonic4/main.asm's gameDataIncludes
+(HeightMaps / HeightMapsRot / AngleTable / SolidityTable / Map_Sonic / DPLC_Sonic /
+Art_Sonic) is now `games.sonic4.collision_data` — 7 `embed()`s via the `const embed
+→ ensure(.len) → pub data = const` pattern; the two Map_Sonic/DPLC_Sonic word-offset
+walls became comptime `ensure`s. Boundary key HeightMaps (existed); pin
+COLLISION_DATA (literal len 0x1C480 — the blobs are fixed-size, no end label at the
+$8000-pad-to-DAC gap); golden-gate `collision_data_port`.
+
+**The coupling finding (the reason this island isn't isolated):** the collision
+island used to FILL the AS stream up to $41BDA, so the DAC bank's `align $8000`
+landed at $48000. With collision native, the AS cursor before that align is at
+$25752, so the relative align would land the DAC early — the label-less DAC section
+provisioned at $25752 with a 76 KB image and overran particle_anims (proven with a
+packer trace). Fix: the DAC blip `align $8000` → **absolute `org $48000`** (the
+bank's fixed Z80-SetBank LMA), which makes it an explicit ANCHOR — declared as
+`[[anchor]] dac_blip_bank at=0x48000 when="sound_on"` in the map (dac_shared packs
+contiguously after it, needs none). Its head `Dac_Temp_Blip` joins the map order.
+
+**Identity: appendix-only re-freeze — anchors identical ×6.** `refreeze --freeze
+k4-collision` (no `--ab`), chain entry **#14**; demo/demo_debug/config_b full CRCs
+UNCHANGED (demo has no collision; config_b's appendix coincides), s4/s4_debug/
+config_a re-frozen (collision labels re-home AS→`.emp`). Strict **2895/0/4** (+2
+collision_data_port); refreeze/repin --check clean; K1 order green.
+
 ## §3 — Remaining work (the skeleton dissolution proper) — INVENTORY
 
 engine.inc + the two main.asm files still carry these, counted against the CURRENT

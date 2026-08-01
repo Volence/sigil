@@ -307,6 +307,10 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         m!("games.sonic4.ojz_sec_block_blobs_act1", "sec_block_blobs", pins::SEC_BLOCK_BLOBS),
         m!("games.sonic4.ojz_act_assets_act1", "ojz_act_assets", pins::OJZ_ACT_ASSETS),
         m!("games.sonic4.ojz_bg_anim_act1", "ojz_bg_anim", pins::OJZ_BG_ANIM),
+        // Parcel K4: the global collision + Sonic character data (HeightMaps ..
+        // Art_Sonic), was the flat BINCLUDE island at the tail of main.asm's
+        // gameDataIncludes. Native `embed()` section; boundary key HeightMaps.
+        m!("games.sonic4.collision_data", "collision_data", pins::COLLISION_DATA),
         // ── Game test states ──
         m!("games.sonic4.object_test_state", "object_test_state", pins::OBJECT_TEST_STATE),
         m!("games.sonic4.ojz_scroll_test", "ojz_scroll_test", pins::OJZ_SCROLL_TEST),
