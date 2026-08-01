@@ -724,6 +724,14 @@ pub struct DataDecl {
     /// Optional `(max_size: expr)` capacity bound (D5.4): the checked buffer's
     /// byte length must not exceed it. Always-on; overflow is an error.
     pub max_size: Option<Expr>,
+    /// Optional `(align: N)` per-item alignment (L3): pin THIS item's own base to
+    /// the next `N`-byte boundary, independent of what precedes it — the pad is a
+    /// self-adjusting `$00` fill before the item's label, plus a link-time
+    /// congruence assert on the final address. Unlike a top-level `align N` item
+    /// this survives size-relaxable code earlier in the section for a
+    /// relaxation-INVARIANT `N` (word alignment on the even-length m68k ISA): the
+    /// pad's parity cannot shift when every relaxation delta is a multiple of 2.
+    pub align: Option<Expr>,
     /// The data item's value expression.
     pub value: Expr,
     /// Span of the whole declaration.

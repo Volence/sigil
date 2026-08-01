@@ -279,6 +279,146 @@ fn pub_align_is_rejected() {
     );
 }
 
+// ---- 6. per-DATA-item `(align: N)` (L3) --------------------------------------
+// The relaxation-aware alignment form: pins THIS item's base independent of what
+// precedes it, and — unlike a bare `align` — a relaxation-INVARIANT `N` (word
+// alignment, since every m68k relaxation delta is even) survives size-relaxable
+// code earlier in the section, so the eager pad stays exact.
+
+#[test]
+fn data_item_align_pads_before_the_item() {
+    let src = "\
+module m
+data D1: [u8; 1] = [1]
+data D2 (align: 2): [u8; 1] = [9]
+";
+    let (m, msgs) = lower(src);
+    assert!(msgs.is_empty(), "clean lower: {msgs:?}");
+    // D1 at 0 (odd next base) → one pad byte → D2 word-aligned.
+    assert_eq!(linked_bytes(&m), vec![1, 0, 9]);
+}
+
+#[test]
+fn data_item_align_is_zero_when_already_aligned() {
+    let src = "\
+module m
+data D1: [u8; 2] = [1, 2]
+data D2 (align: 2): [u8; 1] = [9]
+";
+    let (m, msgs) = lower(src);
+    assert!(msgs.is_empty(), "clean lower: {msgs:?}");
+    assert_eq!(linked_bytes(&m), vec![1, 2, 9], "even base ⇒ zero pad ⇒ byte-neutral");
+}
+
+#[test]
+fn data_item_align_survives_a_word_relaxable_with_a_real_pad() {
+    // The crux: a size-relaxable `bra` sits earlier in the section, so a bare
+    // `align` would be `[align.provisional]`. Word alignment is
+    // relaxation-invariant (every 68k delta is even), so `(align: 2)` is EXEMPT
+    // and lays a genuine pad byte before an odd-based item.
+    let src = "\
+module m
+proc p () {
+    bra .done
+    nop
+.done:
+    rts
+}
+data Odd: [u8; 1] = [7]
+data D (align: 2): [u8; 1] = [9]
+";
+    let (m, msgs) = lower(src);
+    assert!(
+        !msgs.iter().any(|s| s.contains("[align.provisional]")),
+        "word alignment past a relaxable must NOT refuse: {msgs:?}"
+    );
+    assert!(msgs.is_empty(), "clean lower: {msgs:?}");
+    let bytes = linked_bytes(&m);
+    // proc p is even-length at baseline (bra.s 2 + nop 2 + rts 2 = 6), Odd makes
+    // the next base odd, so `(align: 2)` inserts exactly one $00 pad before D.
+    assert!(bytes.ends_with(&[7, 0, 9]), "expected a real pad byte before D: {bytes:?}");
+}
+
+#[test]
+fn data_item_align_coarser_than_granularity_still_refuses_past_a_relaxable() {
+    // `(align: 4)` is NOT relaxation-invariant (a +2 relaxation delta can change
+    // an address mod 4), so the provisional wall still stands — the general
+    // relaxation-aware-`align` fixpoint is the ledgered option, not this one.
+    let src = "\
+module m
+proc p () {
+    bra .done
+    nop
+.done:
+    rts
+}
+data D (align: 4): [u8; 1] = [9]
+";
+    let (_, msgs) = lower(src);
+    assert!(
+        msgs.iter().any(|s| s.contains("[align.provisional]")),
+        "align 4 past a relaxable is still provisional: {msgs:?}"
+    );
+}
+
+#[test]
+fn data_item_align_without_a_relaxable_pads_like_a_bare_align() {
+    let src = "\
+module m
+data D1: [u8; 1] = [1]
+data D2 (align: 4): [u8; 1] = [9]
+";
+    let (m, msgs) = lower(src);
+    assert!(msgs.is_empty(), "clean lower: {msgs:?}");
+    assert_eq!(linked_bytes(&m), vec![1, 0, 0, 0, 9]);
+}
+
+#[test]
+fn data_item_align_records_a_structural_congruence_assert() {
+    let src = "\
+module m
+data D1: [u8; 1] = [1]
+data D2 (align: 2): [u8; 1] = [9]
+";
+    let (m, msgs) = lower(src);
+    assert!(msgs.is_empty(), "clean lower: {msgs:?}");
+    // Tagged `[layout.align]` (structural) → excluded from the twin-guard count,
+    // like a `table item_align:` pad, not a user drift guard.
+    let structural = m.link_asserts.iter().any(|a| {
+        a.message.iter().any(|p| {
+            matches!(p, sigil_ir::assert::MsgPart::Text(t) if t.contains("[layout.align]"))
+        })
+    });
+    assert!(structural, "per-item align assert must carry the [layout.align] tag");
+    // The aligned layout passes its own assert.
+    let resolved =
+        sigil_link::resolve_layout(&m.sections, &SymbolTable::new(), true).expect("resolve_layout");
+    let ds = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &m.link_asserts);
+    assert!(ds.is_empty(), "aligned layout passes: {ds:?}");
+}
+
+#[test]
+fn data_item_align_congruence_fails_on_placement_drift() {
+    let src = "\
+module m
+data D1: [u8; 1] = [1]
+data D2 (align: 2): [u8; 1] = [9]
+";
+    let (mut m, msgs) = lower(src);
+    assert!(msgs.is_empty(), "clean lower: {msgs:?}");
+    for s in &mut m.sections {
+        s.lma = 0x101; // an odd base a map region could route to
+    }
+    let resolved =
+        sigil_link::resolve_layout(&m.sections, &SymbolTable::new(), true).expect("resolve_layout");
+    let ds = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &m.link_asserts);
+    assert!(
+        ds.iter().any(|d| d.message.contains("final placement broke")
+            && matches!(d.level, sigil_span::Level::Error)),
+        "placement drift must fail the per-item align congruence assert: {ds:?}"
+    );
+}
+
 // ---- 5. AS parity ------------------------------------------------------------
 // The AS-vs-emp byte-parity vector lives in `crates/sigil-cli/tests/
 // align_as_parity.rs` — the crate-graph contamination safeguard (crate_graph.rs

@@ -993,6 +993,13 @@ impl<'a> Evaluator<'a> {
     /// Z80-side layouts are legitimately unaligned) for every word/long
     /// (2- or 4-byte) field that lands at an odd byte offset.
     fn check_struct_odd_fields(&mut self, name: &str, decl: &ast::StructDecl, layout: &Layout) {
+        // L4: a module that declares `@allow("layout.odd-field")` silences this
+        // lint — a Z80 record whose words are intentionally byte-wise-read at odd
+        // offsets (aeon's 5 sound structs) declares that intent once, at MODULE
+        // scope, mirroring the DATA-side `[layout.odd-item]` allow.
+        if self.module_allows_lint("layout.odd-field") {
+            return;
+        }
         // A cycle closed during an earlier check (via a `(size:)`/`@offset` expr)
         // already poisoned our memo entry — don't warn on a struct we're about
         // to return as poison.

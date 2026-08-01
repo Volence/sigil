@@ -609,6 +609,12 @@ impl Parser {
                         list.push(self.expect_ident("imported name"));
                         self.skip_newlines();
                         if !self.eat(&Tok::Comma) { break; }
+                        // A comma may be TRAILING: newlines then `}` closes the
+                        // list (L12 — `use path.{ A, B, C, }` across lines). Empty
+                        // braces stay an error: the loop still demands a name on
+                        // the FIRST pass before any `}` can close it.
+                        self.skip_newlines();
+                        if self.at(&Tok::RBrace) { break; }
                     }
                     self.skip_newlines();
                     self.expect(&Tok::RBrace, "`}`");
@@ -1467,19 +1473,37 @@ impl Parser {
         let start = self.span();
         self.bump(); // `data`
         let name = self.expect_ident("data item name");
-        // Optional `(max_size: expr)` capacity attribute (D5.4). Mirrors
-        // `struct Name (size: expr)`; sits BEFORE the `: Ty` annotation so the
-        // grammar is `data Name (max_size: E) [: Ty] = value`.
-        let max_size = if self.eat(&Tok::LParen) {
-            if !self.eat_kw("max_size") {
+        // Optional `(max_size: E)` / `(align: N)` attribute list (D5.4, L3).
+        // Mirrors `struct Name (size: expr)`; sits BEFORE the `: Ty` annotation
+        // so the grammar is `data Name (max_size: E, align: N) [: Ty] = value`.
+        // Keys may appear in either order; a trailing comma is tolerated.
+        let mut max_size = None;
+        let mut align = None;
+        if self.eat(&Tok::LParen) {
+            loop {
                 let sp = self.span();
-                self.diag_at(sp, "expected `max_size:` in data attribute list");
+                if self.eat_kw("max_size") {
+                    self.expect(&Tok::Colon, "`:`");
+                    max_size = Some(self.expr());
+                } else if self.eat_kw("align") {
+                    self.expect(&Tok::Colon, "`:`");
+                    align = Some(self.expr());
+                } else {
+                    self.diag_at(sp, "expected `max_size:` or `align:` in data attribute list");
+                    // Recover by consuming one `key: expr` so a typo does not
+                    // desync the rest of the item.
+                    self.expect(&Tok::Colon, "`:`");
+                    let _ = self.expr();
+                }
+                if !self.eat(&Tok::Comma) {
+                    break;
+                }
+                if self.at(&Tok::RParen) {
+                    break; // trailing comma
+                }
             }
-            self.expect(&Tok::Colon, "`:`");
-            let e = self.expr();
             self.expect(&Tok::RParen, "`)`");
-            Some(e)
-        } else { None };
+        }
         let ty = if self.eat(&Tok::Colon) { Some(self.ty()) } else { None };
         self.expect(&Tok::Eq, "`=`");
         let value = self.expr();
@@ -1487,7 +1511,7 @@ impl Parser {
         self.expect_line_end();
         // `type_only` is a resolver-set cross-module injection flag (D-PP.5),
         // never a source construct — the parser always emits a real data item.
-        DataDecl { public, name, ty, max_size, value, span, type_only: false }
+        DataDecl { public, name, ty, max_size, align, value, span, type_only: false }
     }
 
     /// Parse a parenthesized `(name: Ty, ...)` typed-register parameter list

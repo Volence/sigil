@@ -50,6 +50,44 @@ fn use_decls() {
     assert_eq!(u.base.segments, vec!["player", "Player_1"]);
 }
 
+// ---- braced `use` — multi-line / trailing comma (L12) --------------------
+
+#[test]
+fn use_list_accepts_a_trailing_comma() {
+    let f = ok("module m\nuse engine.objects.{Sst, Draw_Sprite,}\n");
+    let Item::Use(u) = &f.items[0] else { panic!() };
+    assert_eq!(u.names, UseNames::List(vec!["Sst".into(), "Draw_Sprite".into()]));
+}
+
+#[test]
+fn use_list_accepts_a_multi_line_form_with_trailing_comma() {
+    let f = ok("module m\nuse engine.objects.{\n    Sst,\n    Draw_Sprite,\n    Map_Piece,\n}\n");
+    let Item::Use(u) = &f.items[0] else { panic!() };
+    assert_eq!(
+        u.names,
+        UseNames::List(vec!["Sst".into(), "Draw_Sprite".into(), "Map_Piece".into()])
+    );
+}
+
+#[test]
+fn use_list_multi_line_without_a_trailing_comma_also_parses() {
+    let f = ok("module m\nuse engine.objects.{\n    Sst,\n    Draw_Sprite\n}\n");
+    let Item::Use(u) = &f.items[0] else { panic!() };
+    assert_eq!(u.names, UseNames::List(vec!["Sst".into(), "Draw_Sprite".into()]));
+}
+
+#[test]
+fn use_list_empty_braces_stays_an_error() {
+    // The trailing-comma relaxation must NOT accept an empty import list — a
+    // `use path.{}` still demands at least one name.
+    let (_, diags) = parse_str("module m\nuse engine.objects.{}\n");
+    assert!(!diags.is_empty(), "empty braced use must still error");
+    assert!(
+        diags.iter().any(|d| d.message.contains("imported name")),
+        "the diagnostic still names the missing import: {diags:?}"
+    );
+}
+
 #[test]
 fn module_level_attributes() {
     let f = ok("module m\n@as_compat\n@allow(naming.pascal)\nuse engine.gfx.*\n");
@@ -411,6 +449,52 @@ fn data_decls() {
     let Item::Data(d) = &f.items[1] else { panic!() };
     assert!(matches!(d.ty, Some(Type::Array(_, _))));
     assert!(matches!(d.value, Expr::Call { .. }));
+}
+
+// ---- per-item `(align: N)` (L3) -----------------------------------------
+
+#[test]
+fn data_align_attribute_parses() {
+    let f = ok("module m\npub data D (align: 2): [u8; 1] = [9]\n");
+    let Item::Data(d) = &f.items[0] else { panic!() };
+    assert!(d.align.is_some(), "the (align: N) attribute is captured");
+    assert!(d.max_size.is_none());
+}
+
+#[test]
+fn data_align_without_a_type_annotation() {
+    // The embed-into-existing-module shape: no `: Ty`, alignment still parses.
+    let f = ok("module m\npub data D (align: 2) = embed(\"x.bin\")\n");
+    let Item::Data(d) = &f.items[0] else { panic!() };
+    assert!(d.align.is_some() && d.ty.is_none());
+}
+
+#[test]
+fn data_max_size_and_align_compose_in_either_order() {
+    let a = ok("module m\ndata A (max_size: 4, align: 2): [u8; 4] = [1,2,3,4]\n");
+    let Item::Data(d) = &a.items[0] else { panic!() };
+    assert!(d.max_size.is_some() && d.align.is_some());
+    let b = ok("module m\ndata B (align: 2, max_size: 4): [u8; 4] = [1,2,3,4]\n");
+    let Item::Data(d) = &b.items[0] else { panic!() };
+    assert!(d.max_size.is_some() && d.align.is_some());
+}
+
+#[test]
+fn data_attribute_list_tolerates_a_trailing_comma() {
+    let f = ok("module m\ndata D (align: 2,): [u8; 1] = [9]\n");
+    let Item::Data(d) = &f.items[0] else { panic!() };
+    assert!(d.align.is_some());
+}
+
+#[test]
+fn data_unknown_attribute_key_is_a_finite_error() {
+    let (_, diags) = parse_str("module m\ndata D (bogus: 2): [u8; 1] = [9]\n");
+    assert!(!diags.is_empty(), "an unknown attribute key errors");
+    assert!(
+        diags.iter().any(|d| d.message.contains("max_size:") || d.message.contains("align:")),
+        "the diagnostic names the valid keys: {diags:?}"
+    );
+    assert!(diags.len() < 10, "recovery is finite (no spin): {}", diags.len());
 }
 
 // ---- item-position guards (D5.1) ----------------------------------------

@@ -248,6 +248,14 @@ pub struct Evaluator<'a> {
     /// otherwise mint colliding `$init$loop` / `$asm{k}$wait` symbols. Set from
     /// the file in [`with_file`](Self::with_file).
     module_id: String,
+    /// The module's `@allow("<id>")` opt-outs (L4), collected from `file.attrs`
+    /// in [`with_file_and_ambient`](Self::with_file_and_ambient). The struct
+    /// [`check_struct_odd_fields`](Self::check_struct_odd_fields) lint consults
+    /// this so a Z80 record whose words are intentionally unaligned silences
+    /// `[layout.odd-field]` at MODULE scope — the SAME scope the DATA-side
+    /// `[layout.odd-item]` allow uses (`lower::allows_lint`), one rule for both.
+    /// Empty in the no-file [`new`](Self::new) mode.
+    allowed_lints: Vec<String>,
     /// Count of instructions DROPPED from the emitted buffer because an
     /// operand/mnemonic/size failed to resolve (the [`lower_instr_to_item`]
     /// `None` path at the `AsmStmt::Instr` site). A dropped instruction silently
@@ -441,6 +449,7 @@ impl<'a> Evaluator<'a> {
             refine_check_in_progress: Vec::new(),
             asm_counter: 0,
             module_id: String::new(),
+            allowed_lints: Vec::new(),
             dropped_instrs: 0,
             here_base: None,
             here_anchor: None,
@@ -594,9 +603,31 @@ impl<'a> Evaluator<'a> {
         // The module id qualifies hidden label-hygiene locals so they are unique
         // across the whole multi-module program (Plan 7 #4).
         ev.module_id = file.module.path.segments.join(".");
+        // Module-scope `@allow("<id>")` opt-outs (L4): a string-literal lint id
+        // per arg. Non-string args are the `[attr.allow-form]` warning's job (in
+        // lowering); here they simply don't register an opt-out.
+        ev.allowed_lints = file
+            .attrs
+            .iter()
+            .filter(|a| a.name == "allow")
+            .flat_map(|a| a.args.iter())
+            .filter_map(|arg| match arg {
+                ast::Expr::Str(s, _) => Some(s.clone()),
+                _ => None,
+            })
+            .collect();
         ev.index_items(ambient);
         ev.index_items(&file.items);
         ev
+    }
+
+    /// True when the module opted out of lint `id` via `@allow("<id>")` (L4) —
+    /// MODULE scope, matching the DATA-side `[layout.odd-item]` allow
+    /// (`crate::lower::allows_lint`), so one `@allow` at the top of a file governs
+    /// both the struct-field and data-item odd-address lints. `pub(crate)` for the
+    /// [`layout`](crate::layout) module's struct checks.
+    pub(crate) fn module_allows_lint(&self, id: &str) -> bool {
+        self.allowed_lints.iter().any(|l| l == id)
     }
 
     /// Register a list of items into the name indexes, recursing into
