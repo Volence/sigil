@@ -3,8 +3,7 @@
 //! byte-exact vs the first 256 bytes of the reference ROM `aeon/s4.bin`.
 //!
 //! This is the first bounded integration of the front-end against real source:
-//! it drives constants.asm, sound_constants.asm, structs.asm, macros.asm,
-//! engine/parallax_macros.inc, ram.asm and engine/debug/debugger.asm through the
+//! it drives sound_bank.inc, header.inc and engine/debug/debugger.asm through the
 //! parser, then resolves a `dc.l` vector table whose ~16 external CODE labels are
 //! seeded as stubs from the `s4.lst` symbol table (SYSTEM_STACK is a real equate
 //! in constants.asm and is NOT stubbed).
