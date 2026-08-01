@@ -252,7 +252,13 @@ impl<'a> Evaluator<'a> {
         let bytes = match std::fs::read(&resolved) {
             Ok(b) => b,
             Err(_) => {
-                self.error(span, format!("[embed.read] cannot read {path}"));
+                // A missing OR unreadable file is one diagnostic naming the
+                // RESOLVED ABSOLUTE path (embed spec §2), so the author sees
+                // exactly where the sandbox looked, not the relative spelling.
+                self.error(
+                    span,
+                    format!("[embed.not-found] cannot read {}", resolved.display()),
+                );
                 return Value::Poison;
             }
         };

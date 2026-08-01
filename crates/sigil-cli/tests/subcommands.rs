@@ -67,7 +67,7 @@ fn sigil_emp_error_exits_nonzero() {
         .expect("run sigil emp");
     assert!(!out.status.success(), "expected non-zero exit");
     assert!(
-        String::from_utf8_lossy(&out.stderr).contains("[embed.read]"),
+        String::from_utf8_lossy(&out.stderr).contains("[embed.not-found]"),
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
