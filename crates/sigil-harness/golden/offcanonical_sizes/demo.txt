@@ -7,10 +7,10 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=demo
 # reproduces_golden=demo.bin
-# golden_crc32=9bb8c993
+# golden_crc32=4e446a64
 # assembled_anchor=e2dc9207
 # assembled_end=0x11224
-# labels=38
+# labels=41
 AnimateSprite 0x16e6
 Art_Decompress 0x43ba
 BG_Init 0x441e
@@ -21,9 +21,11 @@ Camera_Init 0x3ca0
 Checksum 0x18e
 Collected_Init 0x1c20
 Collision_GetType 0x3850
+DemoBox_Main 0x10002
 EndOfRom 0x11224
 EntryPoint 0x200
 GameLoop 0xb48
+GameState_Demo_Init 0x10100
 GetSineCosine 0xca6
 HBlank_Install 0xa8a
 InitObjectRAM 0xfe2
@@ -33,6 +35,7 @@ Init_SpriteTable 0x758
 Load_Object 0x27e0
 NullInterrupt 0x10172
 ObjCodeBase 0x10000
+ObjDef_DemoBox 0x10006
 Parallax_Init 0x3df0
 Perform_DPLC 0xf3e
 Plane_Buffer_Reset 0x2864
