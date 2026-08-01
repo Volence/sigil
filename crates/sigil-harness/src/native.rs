@@ -436,7 +436,7 @@ pub fn sonic4_profile(debug: bool) -> GameProfile {
 pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile {
     GameProfile {
         name: if debug { "sonic4_debug" } else { "sonic4" },
-        game_root_rel: "games/sonic4/main.asm",
+        game_root_rel: "games/sonic4/game_root.asm",
         game_ram_module: "games.sonic4.ram",
         game_constants_rel: Some("games/sonic4/config/constants.emp"),
         game_sound_ids_rel: Some("games/sonic4/config/sound_ids.emp"),
@@ -518,7 +518,7 @@ pub fn derive_canonical_bootstrap_table(
 pub fn demo_profile(debug: bool) -> GameProfile {
     GameProfile {
         name: if debug { "demo_debug" } else { "demo" },
-        game_root_rel: "games/demo/main.asm",
+        game_root_rel: "games/demo/game_root.asm",
         game_ram_module: "games.demo.ram",
         // Conversion Parcel H-demo (#14): the demo's game config is `.emp`-authored
         // (`games.demo.constants` = games/demo/config/constants.emp), harvested into
@@ -589,7 +589,7 @@ pub fn config_b_profile() -> GameProfile {
     code_gates.push("SIGIL_EMP_Z80_INIT");
     GameProfile {
         name: "config_b",
-        game_root_rel: "games/sonic4/main.asm",
+        game_root_rel: "games/sonic4/game_root.asm",
         game_ram_module: "games.sonic4.ram",
         game_constants_rel: Some("games/sonic4/config/constants.emp"),
         game_sound_ids_rel: Some("games/sonic4/config/sound_ids.emp"),
@@ -647,7 +647,7 @@ pub fn config_a_profile() -> GameProfile {
     code_gates.push("SIGIL_EMP_SOUND_DEBUG");
     GameProfile {
         name: "config_a",
-        game_root_rel: "games/sonic4/main.asm",
+        game_root_rel: "games/sonic4/game_root.asm",
         game_ram_module: "games.sonic4.ram",
         game_constants_rel: Some("games/sonic4/config/constants.emp"),
         game_sound_ids_rel: Some("games/sonic4/config/sound_ids.emp"),
