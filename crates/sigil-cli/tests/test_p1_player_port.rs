@@ -524,16 +524,18 @@ fn p1_player_common_debug_region_matches_reference() {
 
 // ── guard gate + t24 positive control / negative probe ───────────────────────
 
-/// The remaining drift guards resolve and PASS against the AS-side equ seam.
-/// sst.emp's 30 SST_* ambient guards retired at the conv-a structs flip; the
-/// PSTATE_*/ANIM_*/VRAM_TEST_MARKER mirror guards retired at conv-f (config
-/// constants flipped to `.emp`, `use`d by player_common now), leaving only the
-/// SFXID_SKID sound mirror (config/sound_ids.asm, retiring at conv-f #24) — so at
-/// least one guard is still captured, and it must PASS.
+/// player_common's mirror drift guards are FULLY RETIRED. sst.emp's 30 SST_*
+/// ambient guards retired at the conv-a structs flip; the PSTATE_*/ANIM_*/
+/// VRAM_TEST_MARKER mirror guards retired at conv-f (config constants flipped to
+/// `.emp`, `use`d now); and the last one — the SFXID_SKID sound mirror — retired at
+/// conv-f #24/F2 (SFXID_SKID `use`d from games.sonic4.sound_ids, its authority). So
+/// ZERO local mirror guards remain: the byte-region gates (p1_*_region_matches_
+/// reference) + the engine-side authority guards are the surviving drift net. Any
+/// link asserts that DO survive (none today) must still pass.
 #[test]
 fn p1_drift_guards_all_pass() {
     let (_linked, resolved, asserts, guards) = compile_player_common(&PC_PLAIN);
-    assert!(guards >= 1, "player_common must capture its remaining mirror drift guard(s) (got {guards})");
+    assert_eq!(guards, 0, "player_common's mirror drift guards are fully retired (F2); got {guards}");
     let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
