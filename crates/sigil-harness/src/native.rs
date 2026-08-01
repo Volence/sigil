@@ -1538,16 +1538,18 @@ fn image_lens_pinned(sections: &[Section], pin_lma: &[Option<u32>]) -> Result<Ve
     Ok(img)
 }
 
-/// The TRUE per-section ROM base (the declared-order authority), keyed by stable index;
-/// `None` for RAM/phase-only sections. For `PinnedBaked` (canonical sonic4) the baked
-/// lma IS asl-correct so the true base is the baked lma. For `Frozen` (demo/Config) the
-/// baked resume orgs are WRONG sonic4 values, so each section's true base is
-/// `frozen[L] − offset[L]` for a contained frozen label `L`; a label-less DATA blob
-/// derives by CONTIGUITY from its frozen neighbour (the phased Z80 idle, HeightMaps),
-/// and a hard-org PHASE BANK (vma ≥ 0x8000 — the sound banks) keeps its baked (=asl) org.
+/// The TRUE per-section ROM base, keyed by stable index; `None` for RAM/phase-only
+/// sections. For `PinnedBaked` (canonical bootstrap) the baked lma IS asl-correct so the
+/// true base is the baked lma. For `Frozen` (the shipped path) the baked resume orgs are
+/// WRONG sonic4 values, so each section's provisional base is `frozen[L] − offset[L]` for
+/// a contained frozen label `L` (a label-less DATA blob derives by CONTIGUITY from its
+/// frozen neighbour; a hard-org PHASE BANK keeps its baked =asl org) — and `packed_true_
+/// bases` walks those provisional bases in the MAP's declared `order` (K5: the map drives
+/// the sequence; the frozen provisional bases give only anchors + alignment + measurement).
 fn true_bases_by_index(
     sections: &[Section],
     src: &SizeSource,
+    map_order: &[String],
 ) -> Result<Vec<Option<u32>>, String> {
     let n = sections.len();
     match src {
@@ -1578,16 +1580,17 @@ fn true_bases_by_index(
                     None => prov[i] = Some(s.lma as i64), // baked fallback (order only)
                 }
             }
-            packed_true_bases(sections, &prov, &labeled)
+            packed_true_bases(sections, &prov, &labeled, map_order)
         }
     }
 }
 
-/// The §17 Wave-B B-0 packing walk (the rows-6/58 partial realization): provisional
-/// bases give ORDER and the org-island ANCHORS; every other ROM section's base is
-/// PACKED from live-measured image lengths, so a size-changing parcel shifts its
-/// contiguous run downstream instead of colliding with stale pins. Rules per section
-/// (walked in provisional order):
+/// The §17 Wave-B B-0 packing walk (the rows-6/58 partial realization): the MAP's
+/// declared `order` gives the section sequence (K5 — the map DRIVES; see the sort below);
+/// the provisional bases give the org-island ANCHORS and per-section ALIGNMENT; every
+/// other ROM section's base is PACKED from live-measured image lengths, so a size-changing
+/// parcel shifts its contiguous run downstream instead of colliding with stale pins. Rules
+/// per section (walked in the map-driven order):
 ///   - ISLAND (prov > running + ANCHOR_GAP, or the run head): absolute at prov; a
 ///     packed run that overflows past an island's prov base fails loud.
 ///   - PHASE BANK (vma ≥ 0x8000, vma ≠ lma) head, and label-less blobs inside its
@@ -1602,14 +1605,64 @@ fn true_bases_by_index(
 /// walk iterates measure → pack to a fixpoint (≤ 8 rounds; round 0 measures at
 /// disjoint scratch pins). Island classification must be IDENTICAL across rounds —
 /// a growth big enough to eat an org hole is a hand-ruling, not a silent repack.
+///
+/// K5 — WHAT THE FROZEN TABLE STILL CARRIES (the demoted measurement-cache role): the
+/// `order` AUTHORITY is now `map_order`, not the frozen provisional bases. The frozen
+/// table survives ONLY as: (1) each section's provisional BASE — the org-island anchor
+/// positions, the packed-section alignment, and the round-0 measurement pins; (2) the
+/// boundary keys the size derivation (`derive_frozen_table`) reads back. It no longer
+/// AUTHORS the sequence — reordering the map reorders the layout; a byte-emitting section
+/// the map omits fails loud at the post-resolve `validate_placement`.
 fn packed_true_bases(
     sections: &[Section],
     prov: &[Option<i64>],
     labeled: &[bool],
+    map_order: &[String],
 ) -> Result<Vec<Option<u32>>, String> {
     let n = sections.len();
     let mut order: Vec<usize> = (0..n).filter(|&i| prov[i].is_some()).collect();
-    order.sort_by_key(|&i| prov[i].unwrap());
+    // ── K5: THE MAP DRIVES ORDER ──
+    // The declared `order` list is the AUTHORITY for the byte-emitting section sequence.
+    // Each ROM section carrying a map-declared head-label sorts by its MAP RANK (no longer
+    // by its frozen provisional base); a zero-byte boundary section the map does not name
+    // (the label-less boot blobs, the `EndOfRom` terminus) rides the rank of the nearest
+    // preceding named section by prov, then prov, then its stable index — a pure
+    // measurement-cache role (it emits no bytes, so its slot never moves a byte). With
+    // `map_order` empty (the PinnedBaked bootstrap / a region-only fixture) every section
+    // is unranked and this degenerates to the provisional-base sort (the pre-K5 order).
+    //
+    // WHY THIS IS FOLD-IDENTICAL: for every shipped shape the byte-emitting sections'
+    // frozen provisional bases already ascend in exactly the declared order (K1 proved the
+    // subsequence; K5's probe confirmed the map ranks strictly increase along the prov
+    // walk on all six targets), so ranking by the map reproduces the prov order byte-for-
+    // byte — while making the DECLARATION, not the frozen table, the thing that authored it.
+    let rank: HashMap<&str, usize> =
+        map_order.iter().enumerate().map(|(r, s)| (s.as_str(), r)).collect();
+    let own_rank: Vec<Option<usize>> = (0..n)
+        .map(|i| {
+            sections[i]
+                .labels
+                .iter()
+                .min_by_key(|l| l.offset)
+                .and_then(|l| rank.get(l.name.as_str()).copied())
+        })
+        .collect();
+    // (prov, rank) of every NAMED section, prov-sorted — the ladder an unnamed boundary
+    // section reads its inherited rank off (the nearest declared run it sits within).
+    let mut named_ladder: Vec<(i64, usize)> =
+        order.iter().filter_map(|&i| own_rank[i].map(|r| (prov[i].unwrap(), r))).collect();
+    named_ladder.sort_by_key(|&(p, _)| p);
+    let eff_rank = |i: usize| -> i64 {
+        if let Some(r) = own_rank[i] {
+            return r as i64;
+        }
+        let p = prov[i].unwrap();
+        match named_ladder.partition_point(|&(np, _)| np <= p) {
+            0 => -1,
+            k => named_ladder[k - 1].1 as i64,
+        }
+    };
+    order.sort_by_key(|&i| (eff_rank(i), prov[i].unwrap(), i));
     const ANCHOR_GAP: i64 = 0x400;
     let align_of = |p: i64| -> i64 {
         for a in [16i64, 8, 4, 2] {
@@ -2041,20 +2094,27 @@ pub fn build_rom_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, 
     Ok(build_rom_chained_with_listing(aeon, profile)?.0)
 }
 
-/// Parcel-K1 · the map VALIDATION pass (R2). Checks the chainer's RESOLVED layout
-/// against the game's declared placement map — fold-identical by construction (adds
-/// checks, changes no placement), and any derivation change fails loud:
+/// Parcel-K5 · the post-resolve DRIVE-CONFIRMATION pass. K1 landed this as a VALIDATION of
+/// a frozen-derived order (`derived ⊆ declared`); K5 flipped the packer so the map's `order`
+/// DRIVES the walk, and this pass now CONFIRMS the drive against the resolved layout — the
+/// direction inverted (the declaration is the input; this checks the build honoured it and
+/// is complete). Each class fails loud:
 ///   - `[map.undeclared-island]`: an ANCHOR_GAP-inferred island (a resolved ROM section
 ///     whose base opens a > `ANCHOR_GAP` gap past the running end, or a phase bank, or
 ///     the run head) whose base is not a declared `anchor` fails loud; and every
 ///     shape-applicable declared anchor must appear.
-///   - order VALIDATION: the derived byte-emitting section order (min-offset label, image
-///     bytes > 0) must be a SUBSEQUENCE of the declared `order` — a present id out of the
-///     declared order, or a byte-emitting id absent from it, fails loud. Zero-byte markers
-///     (e.g. `__BUDGET_DATA`) are excluded (byte-neutral, shape-varying tie position).
+///   - `[map.order-undeclared]` (COMPLETENESS — the K5 inversion's teeth): the map DRIVES,
+///     so every byte-emitting section (min-offset label, image bytes > 0) MUST be declared
+///     in `order`; a byte-emitting section the map omits fails loud (it could not be driven,
+///     so it fell to its frozen provisional slot — never silently placed). Zero-byte markers
+///     (`__BUDGET_DATA`, the `EndOfRom` terminus) are excluded (they emit nothing, so the
+///     map need not sequence them).
+///   - `[map.order-diverged]`: the resolved byte-emitting sequence must follow the declared
+///     `order` (strictly increasing declared position). Post-drive this can only fire on a
+///     packer BUG (the walk did not honour the declaration) — it is the drive's own guard.
 ///   - HOLE (data; K2 enforces): a shape-applicable hole's `after` label must resolve.
-/// The frozen tables stay the per-label provisional-base MEASUREMENT cache the order
-/// derivation sorts; the map is the reviewed AUTHORITY the derivation must agree with.
+/// The frozen tables are DEMOTED to the per-label provisional-base measurement cache
+/// (anchors + alignment + boundary keys); the map is the sole ORDER + anchor AUTHORITY.
 pub fn validate_placement(
     resolved: &[Section],
     pmap: &crate::map_placement::PlacementMap,
@@ -2100,7 +2160,9 @@ pub fn validate_placement(
         }
     }
 
-    // ── Order: the derived byte-emitting id sequence must be a subsequence of `order` ──
+    // ── Order (K5 DRIVE-CONFIRMATION): every byte-emitting section must be DECLARED in
+    //    `order` (completeness — the map drives, so it must name every emitter), and the
+    //    resolved byte-emitting sequence must follow the declared positions strictly. ──
     if !pmap.order.is_empty() {
         let pos: std::collections::HashMap<&str, usize> =
             pmap.order.iter().enumerate().map(|(i, s)| (s.as_str(), i)).collect();
@@ -2111,13 +2173,13 @@ pub fn validate_placement(
             }
             let Some(&p) = pos.get(id.as_str()) else {
                 return Err(format!(
-                    "[map.order-undeclared] byte-emitting section `{id}` is absent from the declared `order` list — add it in its layout position"
+                    "[map.order-undeclared] byte-emitting section `{id}` is not in the declared `order` — the map DRIVES placement now, so every emitter must be declared; add it in its layout position"
                 ));
             };
             if let Some((lp, lid)) = last {
                 if p <= lp {
                     return Err(format!(
-                        "[map.order-diverged] derived order places `{id}` after `{lid}`, but the declared `order` has `{id}` before it — the packer's order no longer matches the map"
+                        "[map.order-diverged] the resolved layout places `{id}` after `{lid}`, but the declared `order` has `{id}` before it — the packer did not honour the driving order (packer bug)"
                     ));
                 }
             }
@@ -2155,8 +2217,20 @@ pub fn build_rom_chained_with_listing(
     let mut sections: Vec<Section> = as_side.sections;
     sections.extend(emp);
 
-    // The declared-order authority: each ROM section's TRUE base, then its exact span.
-    let true_bases = true_bases_by_index(&sections, &profile.size_source)?;
+    // Parcel K5: the per-game placement map (`games/<g>/map.toml`) is loaded UP FRONT — its
+    // declared `order` DRIVES the packing walk (the frozen provisional bases no longer
+    // author the sequence), and the same file's regions/anchors/budget drive emit_rom and
+    // the post-resolve `validate_placement`.
+    let map_path = profile.map_path(aeon);
+    let map_src = std::fs::read_to_string(&map_path)
+        .map_err(|e| format!("read {}: {e}", map_path.display()))?;
+    let map = sigil_link::load_map(&map_src)
+        .map_err(|e| format!("load {}: {e}", map_path.display()))?;
+    let pmap = crate::map_placement::load_placement_map(&map_src)
+        .map_err(|e| format!("placement {}: {e}", map_path.display()))?;
+
+    // The declared order DRIVES the walk; each ROM section's TRUE base, then its exact span.
+    let true_bases = true_bases_by_index(&sections, &profile.size_source, &pmap.order)?;
     let spans = declared_spans_by_index(&sections, &true_bases)?;
 
     let all = apply_declared_chain(sections, &true_bases, &spans);
@@ -2200,16 +2274,10 @@ pub fn build_rom_chained_with_listing(
 
     let linked = sigil_link::link(&resolved, &stubs)
         .map_err(|d| format!("declared-chain: link: {} diag(s); first {:?}", d.len(), d.first()))?;
-    // Parcel K1: the per-game placement map (`games/<g>/map.toml`) is the reviewed
-    // authority — its regions (mirroring sigil.map.toml) drive emit_rom + the budget, and
-    // its anchors/order/hole VALIDATE the resolved layout (fold-identical; drift fails loud).
-    let map_path = profile.map_path(aeon);
-    let map_src = std::fs::read_to_string(&map_path)
-        .map_err(|e| format!("read {}: {e}", map_path.display()))?;
-    let map = sigil_link::load_map(&map_src)
-        .map_err(|e| format!("load {}: {e}", map_path.display()))?;
-    let pmap = crate::map_placement::load_placement_map(&map_src)
-        .map_err(|e| format!("placement {}: {e}", map_path.display()))?;
+    // Parcel K5: the map DROVE the order above; this post-resolve pass CONFIRMS the drive —
+    // every byte-emitting section is declared (completeness) and the resolved layout honours
+    // the declared sequence + island anchors + hole (a bug in the drive, or a section the map
+    // omits, fails loud). Its regions drive emit_rom + the object-bank budget.
     validate_placement(&resolved, &pmap, profile.sound_on)?;
     check_object_bank_budget(&resolved, &map, &pmap)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))?;
@@ -2230,6 +2298,19 @@ pub fn build_full_file_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec
     append_deb2_appendix(aeon, &rom, &listing, profile.debug, floor)
 }
 
+/// Parcel K5: the profile's declared placement-map `order` (`games/<g>/map.toml`) — the
+/// AUTHORITY the packing walk consumes to sequence the byte-emitting sections. A helper so
+/// the emit path (which already parses the whole map) and the size-derivation path
+/// (`resolve_frozen_sections`) drive from the same declaration.
+fn placement_map_order(aeon: &Path, profile: &GameProfile) -> Result<Vec<String>, String> {
+    let map_path = profile.map_path(aeon);
+    let map_src = std::fs::read_to_string(&map_path)
+        .map_err(|e| format!("read {}: {e}", map_path.display()))?;
+    Ok(crate::map_placement::load_placement_map(&map_src)
+        .map_err(|e| format!("placement {}: {e}", map_path.display()))?
+        .order)
+}
+
 /// Resolve `profile`'s frozen-table chained layout into its final ROM sections (the
 /// SAME placement `build_rom_chained_with_listing` emits, minus the drift check / link /
 /// emit). The shared substrate for the placement gate and the P4a LMA-correct
@@ -2245,7 +2326,9 @@ fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Sec
     let (emp, _) = build_emp(aeon, profile)?;
     let mut sections: Vec<Section> = as_side.sections;
     sections.extend(emp);
-    let true_bases = true_bases_by_index(&sections, &profile.size_source)?;
+    // K5: the declared map order drives the walk (identical to the emit path's placement).
+    let map_order = placement_map_order(aeon, profile)?;
+    let true_bases = true_bases_by_index(&sections, &profile.size_source, &map_order)?;
     let spans = declared_spans_by_index(&sections, &true_bases)?;
     let all = apply_declared_chain(sections, &true_bases, &spans);
     let stubs = SymbolTable::new();
@@ -2960,11 +3043,16 @@ mod align_recompute_tests {
 
 #[cfg(test)]
 mod placement_validation_tests {
-    //! Parcel K1 — negative probes proving the map VALIDATION has teeth: each lint
+    //! Parcel K5 — negative probes proving the map DRIVE-CONFIRMATION has teeth: each lint
     //! (undeclared-island, anchor-absent, order-diverged, order-undeclared) fires on a
     //! doctored map, and the correct map passes. Synthetic resolved layout:
     //! boot head (label-less) @0x0, GameLoop @0x100, ObjCodeBase @0x10000 (ANCHOR_GAP island).
-    use super::validate_placement;
+    //! The SEMANTICS inverted at K5 (the map now DRIVES): `order-undeclared` is the
+    //! completeness guard (the map must name every emitter), and `order-diverged` is the
+    //! drive's own guard (the resolved layout must follow the declared sequence). The
+    //! `drives_order_by_map_rank` probe below proves the packer consumes the DECLARATION,
+    //! not the frozen provisional bases.
+    use super::{packed_true_bases, validate_placement};
     use crate::map_placement::{load_placement_map, PlacementMap};
     use sigil_ir::{Cpu, DataFragment, Fragment, Label, Section, SectionPlacement};
     use sigil_span::Span;
@@ -3030,7 +3118,9 @@ mod placement_validation_tests {
 
     #[test]
     fn order_diverged_fires() {
-        // Declare ObjCodeBase before GameLoop — the derived order disagrees.
+        // K5 drive-confirmation: the resolved layout (GameLoop@0x100 before ObjCodeBase)
+        // must contradict a map declaring ObjCodeBase before GameLoop — the packer did not
+        // honour the driving order (a packer bug the confirmation catches).
         let m = load_placement_map(
             "order = [\"ObjCodeBase\", \"GameLoop\"]\n\
              [[anchor]]\nname=\"boot_head\"\nat=0x0\n\
@@ -3042,7 +3132,8 @@ mod placement_validation_tests {
 
     #[test]
     fn order_undeclared_fires() {
-        // Omit GameLoop from the order list.
+        // K5 completeness: omit GameLoop from the order — since the map DRIVES, a
+        // byte-emitting section it fails to declare is rejected loud.
         let m = load_placement_map(
             "order = [\"ObjCodeBase\"]\n\
              [[anchor]]\nname=\"boot_head\"\nat=0x0\n\
@@ -3050,6 +3141,31 @@ mod placement_validation_tests {
         ).unwrap();
         let e = validate_placement(&layout(), &m, false).unwrap_err();
         assert!(e.contains("map.order-undeclared") && e.contains("GameLoop"), "{e}");
+    }
+
+    /// K5 DRIVE PROOF: the packing walk sequences byte-emitting sections by their MAP RANK,
+    /// not by their frozen provisional base. Two labeled sections whose provisional bases
+    /// would sort `Low` (prov 0x100) before `High` (prov 0x200) are declared in the OPPOSITE
+    /// order (`High` then `Low`); the walk must place `High` first (as the run head, at its
+    /// prov 0x200) and pack `Low` immediately after it — proving the declaration drove the
+    /// sequence. Under the pre-K5 prov sort the bases would have been Low@0x100, High@0x200.
+    #[test]
+    fn drives_order_by_map_rank() {
+        let secs = vec![sec("Low", 0x100, 0x10), sec("High", 0x200, 0x10)];
+        let prov = vec![Some(0x100i64), Some(0x200i64)];
+        let labeled = vec![true, true];
+        let order = vec!["High".to_string(), "Low".to_string()];
+        let bases = packed_true_bases(&secs, &prov, &labeled, &order).unwrap();
+        // High is the run head (declared first) → its provisional base 0x200; Low packs
+        // right after it at 0x210 — the layout follows the MAP, inverting the prov order.
+        assert_eq!(bases[1], Some(0x200), "High (declared first) anchors at its prov");
+        assert_eq!(bases[0], Some(0x210), "Low (declared second) packs after High");
+        // Control: with the map order empty (no drive) the walk falls back to the prov
+        // sort — Low@0x100 first, High packs after at 0x110.
+        let none: Vec<String> = vec![];
+        let baked = packed_true_bases(&secs, &prov, &labeled, &none).unwrap();
+        assert_eq!(baked[0], Some(0x100), "prov fallback: Low at its prov");
+        assert_eq!(baked[1], Some(0x110), "prov fallback: High packs after Low");
     }
 
     #[test]
