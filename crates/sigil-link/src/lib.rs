@@ -746,6 +746,15 @@ pub fn flatten_checked(image: &LinkedImage, fill: u8) -> Result<Vec<u8>, String>
 /// power-of-two padding.
 pub fn emit_rom(image: &LinkedImage, map: &MemoryMap) -> Result<Vec<u8>, String> {
     for s in &image.sections {
+        // EMPTY sections place no bytes and so are excluded from the flattened
+        // image (see `flatten`): a reserve-only RAM section (a region-form `vars`
+        // block phased to `$FFFF0000`+) carries labels + a high VMA/LMA but zero
+        // image bytes, and must NEVER be range-checked against a ROM region — it
+        // occupies none. Skip it here for the same reason `flatten` does; a
+        // non-empty section outside every ROM region is still the hard error.
+        if s.bytes.is_empty() {
+            continue;
+        }
         map.validate_section(&s.name, s.lma, s.bytes.len() as u32)?;
     }
     let mut rom = flatten_checked(image, map.fill)?;

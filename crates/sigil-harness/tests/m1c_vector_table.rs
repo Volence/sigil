@@ -95,10 +95,12 @@ fn vector_table_matches_reference_rom_first_256_bytes() {
         sigil_harness::native::harvest_engine_struct_offsets(&aeon)
             .expect("harvest struct offsets"),
     );
-    // Item #7b: engine/ram.asm is retired — the engine RAM labels the front-matter
-    // needs (HBlank_Vector_Slot; Engine_RAM_End for the game-RAM `phase`) come from
-    // the ram.emp address harvest seeded as PLAIN -D defines, exactly as the real
-    // build's assemble_as_side does (non-debug shape here).
+    // Item #7b + #7c: engine/ram.asm AND games/sonic4/config/ram.asm are retired —
+    // the RAM labels the front-matter needs (HBlank_Vector_Slot and any game RAM
+    // label) come from the engine+game ram.emp address harvest seeded as PLAIN -D
+    // defines, exactly as the real build's assemble_as_side does. `sonic4_profile`
+    // carries `game_ram_module = "games.sonic4.ram"`, so the harvest reaches the
+    // game RAM region too (non-debug shape here).
     defines.extend(
         sigil_harness::native::harvest_engine_ram_addresses(
             &aeon,

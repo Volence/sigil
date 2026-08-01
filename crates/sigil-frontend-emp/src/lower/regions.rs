@@ -11,10 +11,16 @@
 //! (`[region.overflow]`, `w_addressable`, `[layout.odd-field]`) run against the
 //! real region-absolute VMA.
 //!
-//! v1 scope (recorded in the item #7a note): resolution is per lowered file.
-//! Intra-file `after(<region>)` chaining is fully realized; cross-module
-//! chaining and the cross-module `[region.multiple-owners]` check are the
-//! whole-program hooks (see [`check_single_owner`]) wired for #7b/#7c.
+//! Cross-module `after(<region>)` chaining (item #7c): a region may chain onto a
+//! region declared in ANOTHER module (the game's `game_ram @ after(upper_ram)`
+//! onto the engine's `upper_ram`). The authoritative cross-module ends are
+//! resolved WHOLE-PROGRAM once by [`resolve_program_region_ends`] (a fixpoint over
+//! the `after`-DAG spanning modules, so a parent always resolves before its
+//! dependents regardless of module lowering order — principled, not incidental),
+//! and threaded back into each module's per-file [`lower_regions`] as
+//! `external_ends`. A local region resolves intra-file exactly as before; only an
+//! `after(<region>)` whose parent is NOT local consults `external_ends`. The
+//! cross-module `[region.multiple-owners]` check stays in [`check_single_owner`].
 
 use crate::ast;
 use crate::eval::{run_on_eval_stack, Env, Evaluator};
@@ -51,20 +57,17 @@ struct ResolvedRegion {
 pub(super) fn lower_regions(
     file: &ast::File,
     defines: &[(String, i128)],
+    external_ends: &HashMap<String, u32>,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
     // Quick out: nothing to do unless the file declares a region or a region-
     // form `vars` block. Keeps every region-free module's lowering untouched.
-    let has_region = file.items.iter().any(|it| {
-        matches!(it, ast::Item::Region(_))
-            || matches!(it, ast::Item::Vars(v) if v.name.is_none())
-    });
-    if !has_region {
+    if !file_declares_region(file) {
         return;
     }
 
-    let (resolved, mut rdiags) = resolve_regions(file, defines);
+    let (resolved, mut rdiags, _memo) = resolve_regions(file, defines, external_ends);
     diags.append(&mut rdiags);
 
     // Emit each resolved region as a reserve-only section. RAM sections emit no
@@ -103,7 +106,8 @@ pub(super) fn lower_regions(
 fn resolve_regions(
     file: &ast::File,
     defines: &[(String, i128)],
-) -> (Vec<ResolvedRegion>, Vec<Diagnostic>) {
+    external_ends: &HashMap<String, u32>,
+) -> (Vec<ResolvedRegion>, Vec<Diagnostic>, HashMap<String, (u32, u32)>) {
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.seed_defines(defines);
@@ -173,6 +177,7 @@ fn resolve_regions(
                 name,
                 &region_by_name,
                 &blocks_by_region,
+                external_ends,
                 &mut ev,
                 &mut memo,
                 &mut resolved,
@@ -182,8 +187,86 @@ fn resolve_regions(
         }
 
         diags.append(&mut ev.diags);
-        (resolved, diags)
+        (resolved, diags, memo)
     })
+}
+
+/// Does `file` declare a `region` item or a region-form `vars` block? Used to
+/// skip region resolution entirely for the (overwhelming) majority of modules
+/// that use no RAM regions — keeping their lowering byte-identical.
+pub fn file_declares_region(file: &ast::File) -> bool {
+    file.items.iter().any(|it| {
+        matches!(it, ast::Item::Region(_))
+            || matches!(it, ast::Item::Vars(v) if v.name.is_none())
+    })
+}
+
+/// Whole-program region-END resolution (item #7c): resolve EVERY region's running
+/// end address across all region-owning `modules` (each an ambient-prepended
+/// synthetic file, so its `use`d comptime sizes resolve), following `after(..)`
+/// chains that may cross module boundaries. Returns `region name -> end address`.
+///
+/// A fixpoint over the cross-module `after`-DAG: each pass re-resolves every
+/// region module against the ends known so far, until no end changes. A parent
+/// therefore resolves before its dependents regardless of the `modules` order
+/// (the ordering is principled, not incidental). An acyclic DAG of N region
+/// modules converges within N passes; if the (N+1)-th pass still moves an end, an
+/// `after(..)` cycle spans modules — reported as `[region.chain-cycle]` (the
+/// whole-program analog of the intra-file cycle [`resolve_one`] already catches).
+///
+/// Diagnostics OTHER than the cross-module cycle (overflow, unknown parent,
+/// odd-field, …) are the per-file [`lower_regions`] pass's job — it runs
+/// afterward with this map, so they are reported exactly once there. Returns an
+/// empty map (no passes) for a program with no region modules.
+pub fn resolve_program_region_ends(
+    modules: &[(&str, ast::File)],
+    defines: &[(String, i128)],
+) -> (HashMap<String, u32>, Vec<Diagnostic>) {
+    let region_modules: Vec<&(&str, ast::File)> =
+        modules.iter().filter(|(_, f)| file_declares_region(f)).collect();
+    if region_modules.is_empty() {
+        return (HashMap::new(), Vec::new());
+    }
+
+    let mut ends: HashMap<String, u32> = HashMap::new();
+    // N region modules → an acyclic chain settles within N passes; one extra pass
+    // both confirms the fixpoint and detects a cross-module cycle (still moving).
+    let cap = region_modules.len() + 1;
+    for pass in 0..=cap {
+        let mut progress = false;
+        for (_id, file) in &region_modules {
+            // Per-module resolution against the ends known so far; per-region
+            // diagnostics are discarded here (the per-file pass owns them).
+            let (_resolved, _diags, memo) = resolve_regions(file, defines, &ends);
+            for (name, (base, size)) in memo {
+                let end = base.wrapping_add(size);
+                if ends.get(&name) != Some(&end) {
+                    ends.insert(name, end);
+                    progress = true;
+                }
+            }
+        }
+        if !progress {
+            return (ends, Vec::new());
+        }
+        if pass == cap {
+            // Still moving after N+1 passes over N modules ⇒ a cross-module
+            // `after(..)` cycle. Name the regions still unsettled.
+            let mut names: Vec<&str> = ends.keys().map(String::as_str).collect();
+            names.sort_unstable();
+            let diag = Diagnostic {
+                level: Level::Error,
+                message: format!(
+                    "[region.chain-cycle] a cross-module `after(..)` chain does not converge \
+                     (regions: {}) — an `after(..)` cycle spans modules",
+                    names.join(", ")
+                ),
+                primary: region_modules[0].1.module.span,
+            };
+            return (ends, vec![diag]);
+        }
+    }
+    (ends, Vec::new())
 }
 
 /// Resolve region `name` (base + size + emission ops), memoized. Follows
@@ -193,6 +276,7 @@ fn resolve_one(
     name: &str,
     region_by_name: &HashMap<&str, &ast::RegionDecl>,
     blocks_by_region: &HashMap<&str, Vec<&ast::VarsDecl>>,
+    external_ends: &HashMap<String, u32>,
     ev: &mut Evaluator,
     memo: &mut HashMap<String, (u32, u32)>,
     resolved: &mut Vec<ResolvedRegion>,
@@ -223,20 +307,27 @@ fn resolve_one(
     let base = match &decl.base {
         ast::RegionBase::Addr(expr) => eval_u32(ev, expr, diags),
         ast::RegionBase::After { region, span } => {
-            if !region_by_name.contains_key(region.as_str()) {
+            if region_by_name.contains_key(region.as_str()) {
+                // Local parent — resolve it intra-file (recurses into the DAG).
+                let (pbase, psize) = resolve_one(
+                    region, region_by_name, blocks_by_region, external_ends, ev, memo, resolved,
+                    visiting, diags,
+                );
+                pbase.wrapping_add(psize)
+            } else if let Some(&pend) = external_ends.get(region.as_str()) {
+                // Cross-module parent (item #7c) — its running end was resolved
+                // whole-program by `resolve_program_region_ends` and threaded in.
+                pend
+            } else {
                 diags.push(Diagnostic {
                     level: Level::Error,
                     message: format!(
-                        "[region.unknown] `after({region})` names region `{region}`, which is not declared"
+                        "[region.unknown] `after({region})` names region `{region}`, which is not \
+                         declared (in this module or any module it chains onto)"
                     ),
                     primary: *span,
                 });
                 0
-            } else {
-                let (pbase, psize) = resolve_one(
-                    region, region_by_name, blocks_by_region, ev, memo, resolved, visiting, diags,
-                );
-                pbase.wrapping_add(psize)
             }
         }
     };
@@ -356,16 +447,25 @@ impl Layout {
         }
     }
 
-    /// Advance the cursor to the next multiple of `align` (reserve semantics).
-    /// Aligns the region-ABSOLUTE address, matching AS's `align`.
+    /// Advance the cursor for a field `@align(n)` (reserve semantics), matching
+    /// AS's `align` INSIDE A PHASE (`sigil-frontend-as` `directive_align`). A `vars`
+    /// region is the `.emp` analog of an AS `phase`d RAM section (VMA `$FFFF….`,
+    /// `disp != 0`), and asl's in-phase align is NOT a plain round-up: it advances
+    /// by `round_up(cursor + n, n)` — ALWAYS at least one full `n` beyond the
+    /// cursor, even when the cursor is already `n`-aligned (asl 1.42, live-probed).
+    /// This is what places `Player_Pos_Ring` at `$FFFFB500` (not `$FFFFB400`) when
+    /// game RAM chains from the non-256-aligned `Engine_RAM_End` — the byte-identity
+    /// requirement. (Spec §2.2's "next multiple of N" wording is refined here to the
+    /// corpus reality; regions are RAM-only, so the phased regime always applies.)
     fn align_to(&mut self, align: u32) {
         if align <= 1 {
             return;
         }
-        let rem = self.cursor % align;
-        if rem != 0 {
-            self.reserve(align - rem);
-        }
+        // Mirror `directive_align` exactly (`round_up(pos + n, n)`), valid for any
+        // `n` (not only powers of two). Aeon RAM sits far below the `u32` ceiling,
+        // so `cursor + align` never overflows (the same domain the AS side folds).
+        let target = (self.cursor + align).next_multiple_of(align);
+        self.reserve(target - self.cursor);
     }
 
     fn label(&mut self, name: &str) {

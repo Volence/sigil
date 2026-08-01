@@ -1,6 +1,16 @@
 # Item #7 — RAM regions: the `vars` region form (design)
 
-**Status: RATIFIED design, ready for implementation.** Volence ruling 2026-07-31
+**Status: ✅ SHIPPED (2026-08-01).** All three parcels done: #7a (the feature),
+#7b (`engine/ram.emp`), #7c (`games/{sonic4,demo}/config/ram.emp` + cross-module
+`after(..)` + the per-game RAM harvest). All six targets byte-identical to
+chain-9; repin RAM-cell zero-diff both shapes. One spec refinement landed en
+route: region `@align(N)` uses AS's IN-PHASE align semantics `round_up(cursor +
+n, n)` (§2.3's "next multiple of N" is imprecise for the corpus — regions are
+RAM-only, so the asl 1.42 phased-align quirk always applies; it is what places
+`Player_Pos_Ring` at `$FFFFB500`). Notes: `2026-08-01-item7b-engine-ram-port.md`,
+`2026-08-01-item7c-game-ram-ports.md`.
+
+**Original status: RATIFIED design, ready for implementation.** Volence ruling 2026-07-31
 on the conv-C blocked finding: *"Let's do it properly, there's no rush right now
 (as much as I'd like to start features, let's do it right)."* Path 1 of the
 conv-C §10 decision — build the feature as its own spec + plan + parcels, then
@@ -92,9 +102,13 @@ region base:
   existing cross-seam link path — same mechanism as every ported label today).
 - **`pad(N)`** — anonymous reserve of N bytes (the `ds.b 1` even-pad idiom,
   intent-named, no label pollution).
-- **`@align(N)`** — on a field: advance the counter to the next multiple of
-  N before placing it (RESERVE semantics — no bytes emitted anywhere; this is
-  RAM). Distinct from the shipped ROM item `align N` (which emits fill).
+- **`@align(N)`** — on a field: advance the counter per AS's IN-PHASE align
+  semantics, `cursor = round_up(cursor + N, N)` (the asl 1.42 regime the whole
+  corpus was authored under — byte-identity with the retired ram.asm REQUIRES
+  it; AMENDED at the #7c countersign, was imprecisely "next multiple of N").
+  RESERVE semantics — no bytes emitted anywhere; this is RAM. Distinct from the
+  shipped ROM item `align N` (which emits fill). A true next-multiple variant
+  is gap-ledgered for green-field demand; one spelling until then.
 - **`mark Name`** — a zero-size label at the current counter (`DMA_Queue`,
   `Object_RAM`, `Parallax_State_End`, `Engine_RAM_End`, `RAM_Start`,
   `Lower_RAM_End` — ram.asm's marker-label idiom, ported verbatim).
@@ -259,3 +273,17 @@ defer absolute-EA operands) was rejected: it touches the hot conversion path
 every residual line rides, and cannot fix `phase` eagerness anyway. Gap-3 (the
 four game-config size constants missing from `emp_defines`) is mechanical and
 in #7b scope.
+
+## §10 — #7c countersign addenda (arc close)
+
+1. **`@align` semantics AMENDED** (§2.3 above): the AS in-phase regime is the
+   shipped meaning — the corpus is the contract. True-multiple variant
+   gap-ledgered, not built (no demand).
+2. `w_addressable` on `game_ram` KEPT — a strictly-stronger invariant than the
+   retired guard set; it holds and hardens.
+3. The `emit_rom` reserve-section skip (a latent contract violation in
+   sigil-link's flatten path) ACCEPTED — byte-neutral, six-golden-proven.
+4. **ITEM #7 IS SHIPPED WHOLE**: feature (#7a) + engine port (#7b) + game ports
+   and cross-module chaining (#7c). All RAM in the aeon tree is .emp-authored;
+   conv-C census rows 5/23/16 DONE; the Plan-7 item-6 OUT-list fence is fully
+   retired for this item.

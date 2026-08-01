@@ -126,8 +126,11 @@ fn mark_alias_pad_align() {
     assert_eq!(addr(&m, "Buf"), 0xFFFF0000);
     assert_eq!(addr(&m, "Buf_End"), 0xFFFF0064); // mark at Buf + 100, no advance
     assert_eq!(equ(&m, "Staging"), 0xFFFF0000i64); // alias == Buf's address
-    // after Buf(100) + pad(4) = $FFFF0068, then @align(256) → $FFFF0100.
-    assert_eq!(addr(&m, "Ring"), 0xFFFF0100);
+    // after Buf(100) + pad(4) = $FFFF0068, then @align(256). Region align uses AS's
+    // in-phase semantics (round_up(cursor + n, n) — always a full extra `n`), so
+    // $FFFF0068 → round_up($FFFF0168, 256) = $FFFF0200 (NOT the plain-round-up
+    // $FFFF0100). This is the asl behavior the RAM byte-identity depends on.
+    assert_eq!(addr(&m, "Ring"), 0xFFFF0200);
 }
 
 #[test]
@@ -220,10 +223,12 @@ fn chained_engine_game_fixture() {
     assert_eq!(addr(&m, "Engine_RAM_End"), 0xFFFF8030);
     // game_ram base = after(upper_ram) = Engine_RAM_End = $FFFF8030.
     assert_eq!(addr(&m, "Player_Phys"), 0xFFFF8030);
-    // Player_Phys = 8*2 = 16 → $FFFF8040, already 256-... no: $8040 → align 256
-    // → $FFFF8100.
-    assert_eq!(addr(&m, "Ring"), 0xFFFF8100);
-    assert_eq!(addr(&m, "Game_RAM_End"), 0xFFFF8100 + 256);
+    // Player_Phys = 8*2 = 16 → $FFFF8040. @align(256) uses AS in-phase semantics
+    // (round_up(cursor + n, n)): $FFFF8040 → round_up($FFFF8140, 256) = $FFFF8200
+    // (a full extra 256 beyond the plain-round-up $FFFF8100). This mirrors AS's
+    // `align` inside a `phase`, which the real game-RAM Player_Pos_Ring depends on.
+    assert_eq!(addr(&m, "Ring"), 0xFFFF8200);
+    assert_eq!(addr(&m, "Game_RAM_End"), 0xFFFF8200 + 256);
 
     // --- debug shape: the @shape_divergent block shifts everything after it ---
     let d = lower_ok(src, vec![("__DEBUG__".into(), 1)]);
@@ -481,4 +486,53 @@ fn multiple_owners_check() {
     let (fc, _) = parse_str("module a\nvars shared { A: u8 }\nvars shared { B: u8 }\n");
     let diags2 = check_single_owner(&[("a", &fc)]);
     assert!(!has_error(&diags2, "[region.multiple-owners]"), "diags: {diags2:?}");
+}
+
+// ---------------------------------------------------------------------------
+// Cross-module `after(..)` (item #7c) — the game's `game_ram` chains onto the
+// engine's `upper_ram` declared in ANOTHER module. `resolve_program_region_ends`
+// resolves the whole-program ends; a parent resolves before its dependents
+// regardless of module order (principled, not incidental).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cross_module_after_chains_across_modules() {
+    use sigil_frontend_emp::lower::resolve_program_region_ends;
+    let (engine, _) = parse_str(
+        "module engine.ram\n\
+         region upper_ram @ $FFFF8000 .. $FFFFFF00\n\
+         vars upper_ram { A: [u8; 100], mark Engine_RAM_End }\n",
+    );
+    let (game, _) = parse_str(
+        "module game.ram\n\
+         region game_ram @ after(upper_ram) .. $FFFFFF00\n\
+         vars game_ram { B: u16, mark Game_RAM_End }\n",
+    );
+    // Deliberately list the GAME (dependent) BEFORE the ENGINE (parent) — the
+    // fixpoint still converges to the parent-first topological answer.
+    let (ends, diags) =
+        resolve_program_region_ends(&[("game.ram", game), ("engine.ram", engine)], &[]);
+    assert!(diags.is_empty(), "unexpected diags: {diags:?}");
+    // upper_ram end = $FFFF8000 + 100 = $FFFF8064 (== Engine_RAM_End).
+    assert_eq!(ends["upper_ram"], 0xFFFF_8064);
+    // game_ram base = upper_ram end = $FFFF8064; + B(2) = $FFFF8066.
+    assert_eq!(ends["game_ram"], 0xFFFF_8066);
+}
+
+#[test]
+fn cross_module_after_cycle_reported() {
+    use sigil_frontend_emp::lower::resolve_program_region_ends;
+    // Two modules whose regions `after(..)` each other — a cross-module cycle.
+    let (a, _) = parse_str(
+        "module a\n\
+         region ra @ after(rb) .. $FFFFFF00\n\
+         vars ra { X: u8 }\n",
+    );
+    let (b, _) = parse_str(
+        "module b\n\
+         region rb @ after(ra) .. $FFFFFF00\n\
+         vars rb { Y: u8 }\n",
+    );
+    let (_ends, diags) = resolve_program_region_ends(&[("a", a), ("b", b)], &[]);
+    assert!(has_error(&diags, "[region.chain-cycle]"), "diags: {diags:?}");
 }
