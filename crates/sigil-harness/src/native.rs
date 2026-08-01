@@ -123,6 +123,14 @@ impl GameProfile {
     pub fn game_root(&self, aeon: &Path) -> std::path::PathBuf {
         aeon.join(self.game_root_rel)
     }
+
+    /// The per-game placement map (`games/<g>/map.toml`), a sibling of `main.asm`
+    /// (`game_root_rel`). config_a/config_b reuse sonic4's (their root is sonic4's).
+    pub fn map_path(&self, aeon: &Path) -> std::path::PathBuf {
+        let root = std::path::Path::new(self.game_root_rel);
+        let dir = root.parent().unwrap_or(std::path::Path::new(""));
+        aeon.join(dir).join("map.toml")
+    }
 }
 
 /// Load a frozen off-canonical size table (`golden/offcanonical_sizes/<name>.txt`):
@@ -1947,6 +1955,103 @@ pub fn build_rom_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, 
     Ok(build_rom_chained_with_listing(aeon, profile)?.0)
 }
 
+/// Parcel-K1 · the map VALIDATION pass (R2). Checks the chainer's RESOLVED layout
+/// against the game's declared placement map — fold-identical by construction (adds
+/// checks, changes no placement), and any derivation change fails loud:
+///   - `[map.undeclared-island]`: an ANCHOR_GAP-inferred island (a resolved ROM section
+///     whose base opens a > `ANCHOR_GAP` gap past the running end, or a phase bank, or
+///     the run head) whose base is not a declared `anchor` fails loud; and every
+///     shape-applicable declared anchor must appear.
+///   - order VALIDATION: the derived byte-emitting section order (min-offset label, image
+///     bytes > 0) must be a SUBSEQUENCE of the declared `order` — a present id out of the
+///     declared order, or a byte-emitting id absent from it, fails loud. Zero-byte markers
+///     (e.g. `__BUDGET_DATA`) are excluded (byte-neutral, shape-varying tie position).
+///   - HOLE (data; K2 enforces): a shape-applicable hole's `after` label must resolve.
+/// The frozen tables stay the per-label provisional-base MEASUREMENT cache the order
+/// derivation sorts; the map is the reviewed AUTHORITY the derivation must agree with.
+pub fn validate_placement(
+    resolved: &[Section],
+    pmap: &crate::map_placement::PlacementMap,
+    sound_on: bool,
+) -> Result<(), String> {
+    const ANCHOR_GAP: u32 = 0x400;
+    // ROM sections, lma-sorted, with (stable_id, lma, byte_len, is_phase_bank).
+    let mut rows: Vec<(String, u32, usize, bool)> = resolved
+        .iter()
+        .filter(|s| is_rom_section(s))
+        .map(|s| {
+            let id =
+                s.labels.iter().min_by_key(|l| l.offset).map(|l| l.name.clone()).unwrap_or_default();
+            let pb = s.vma_base.map(|v| v != s.lma && v >= 0x8000).unwrap_or(false);
+            (id, s.lma, s.image_bytes().len(), pb)
+        })
+        .collect();
+    rows.sort_by_key(|r| r.1);
+
+    // ── Anchors: recover the inferred island set from the resolved layout ──
+    let declared: std::collections::HashMap<u32, &str> =
+        pmap.anchors_for(sound_on).map(|a| (a.at, a.name.as_str())).collect();
+    let mut inferred: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut prev_end: Option<u32> = None;
+    for (_, lma, len, pb) in &rows {
+        let is_anchor = prev_end.is_none() || *pb || *lma > prev_end.unwrap() + ANCHOR_GAP;
+        if is_anchor {
+            inferred.insert(*lma);
+            if !declared.contains_key(lma) {
+                return Err(format!(
+                    "[map.undeclared-island] ROM section at {lma:#X} is an ANCHOR_GAP-inferred island but no `[[anchor]] at = {lma:#X}` is declared — add it to the placement map"
+                ));
+            }
+        }
+        prev_end = Some(lma.saturating_add(*len as u32));
+    }
+    for a in pmap.anchors_for(sound_on) {
+        if !inferred.contains(&a.at) {
+            return Err(format!(
+                "[map.anchor-absent] declared anchor `{}` at {:#X} is not an inferred island in this build — the layout no longer anchors it (stale map or shape gate)",
+                a.name, a.at
+            ));
+        }
+    }
+
+    // ── Order: the derived byte-emitting id sequence must be a subsequence of `order` ──
+    if !pmap.order.is_empty() {
+        let pos: std::collections::HashMap<&str, usize> =
+            pmap.order.iter().enumerate().map(|(i, s)| (s.as_str(), i)).collect();
+        let mut last: Option<(usize, &str)> = None;
+        for (id, _, len, _) in &rows {
+            if id.is_empty() || *len == 0 {
+                continue;
+            }
+            let Some(&p) = pos.get(id.as_str()) else {
+                return Err(format!(
+                    "[map.order-undeclared] byte-emitting section `{id}` is absent from the declared `order` list — add it in its layout position"
+                ));
+            };
+            if let Some((lp, lid)) = last {
+                if p <= lp {
+                    return Err(format!(
+                        "[map.order-diverged] derived order places `{id}` after `{lid}`, but the declared `order` has `{id}` before it — the packer's order no longer matches the map"
+                    ));
+                }
+            }
+            last = Some((p, id.as_str()));
+        }
+    }
+
+    // ── Holes (data; K2 enforces): the `after` anchor label must resolve ──
+    for h in pmap.holes_for(sound_on) {
+        let present = resolved.iter().any(|s| s.labels.iter().any(|l| l.name == h.after));
+        if !present {
+            return Err(format!(
+                "[map.hole-anchor-missing] declared hole after `{}` (at {:#X}) — its `after` label is not in the resolved layout",
+                h.after, h.at
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// The chained whole-ROM build AND its sigil-canonical listing (the deb2-appendix
 /// source for the off-canonical full-file layer). One `C` row per resolved section
 /// label at its final VMA, de-duplicated and address-deterministic — mirrors
@@ -2009,9 +2114,17 @@ pub fn build_rom_chained_with_listing(
 
     let linked = sigil_link::link(&resolved, &stubs)
         .map_err(|d| format!("declared-chain: link: {} diag(s); first {:?}", d.len(), d.first()))?;
-    let map_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
-    let map = sigil_link::load_map(&std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?)
-        .map_err(|e| format!("load sigil.map.toml: {e}"))?;
+    // Parcel K1: the per-game placement map (`games/<g>/map.toml`) is the reviewed
+    // authority — its regions (mirroring sigil.map.toml) drive emit_rom + the budget, and
+    // its anchors/order/hole VALIDATE the resolved layout (fold-identical; drift fails loud).
+    let map_path = profile.map_path(aeon);
+    let map_src = std::fs::read_to_string(&map_path)
+        .map_err(|e| format!("read {}: {e}", map_path.display()))?;
+    let map = sigil_link::load_map(&map_src)
+        .map_err(|e| format!("load {}: {e}", map_path.display()))?;
+    let pmap = crate::map_placement::load_placement_map(&map_src)
+        .map_err(|e| format!("placement {}: {e}", map_path.display()))?;
+    validate_placement(&resolved, &pmap, profile.sound_on)?;
     check_object_bank_budget(&resolved, &map)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))?;
     Ok((rom, listing))
@@ -2737,5 +2850,122 @@ mod align_recompute_tests {
         };
         trim_trailing_align_overshoot(&mut s, 0x134);
         assert_eq!(s.image_len(), 0x140, "real data is never trimmed");
+    }
+}
+
+#[cfg(test)]
+mod placement_validation_tests {
+    //! Parcel K1 — negative probes proving the map VALIDATION has teeth: each lint
+    //! (undeclared-island, anchor-absent, order-diverged, order-undeclared) fires on a
+    //! doctored map, and the correct map passes. Synthetic resolved layout:
+    //! boot head (label-less) @0x0, GameLoop @0x100, ObjCodeBase @0x10000 (ANCHOR_GAP island).
+    use super::validate_placement;
+    use crate::map_placement::{load_placement_map, PlacementMap};
+    use sigil_ir::{Cpu, DataFragment, Fragment, Label, Section, SectionPlacement};
+    use sigil_span::Span;
+
+    fn span0() -> Span { Span { source: sigil_span::SourceId(0), start: 0, end: 0 } }
+
+    fn sec(label: &str, lma: u32, len: usize) -> Section {
+        Section {
+            name: format!("sec{lma}"),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma,
+            labels: if label.is_empty() { vec![] } else { vec![Label { name: label.into(), offset: 0 }] },
+            fragments: vec![Fragment::Data(DataFragment { bytes: vec![0u8; len], fixups: vec![], span: span0() })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: len as u32,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        }
+    }
+
+    fn layout() -> Vec<Section> {
+        vec![sec("", 0x0, 0x100), sec("GameLoop", 0x100, 0x50), sec("ObjCodeBase", 0x10000, 0x10)]
+    }
+
+    fn good_map() -> PlacementMap {
+        load_placement_map(
+            "order = [\"GameLoop\", \"ObjCodeBase\"]\n\
+             [[anchor]]\nname=\"boot_head\"\nat=0x0\n\
+             [[anchor]]\nname=\"object_bank\"\nat=0x10000\n",
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn correct_map_passes() {
+        assert!(validate_placement(&layout(), &good_map(), false).is_ok());
+    }
+
+    #[test]
+    fn undeclared_island_fires() {
+        // Drop the 0x10000 anchor — the inferred island is now undeclared.
+        let m = load_placement_map(
+            "order = [\"GameLoop\", \"ObjCodeBase\"]\n[[anchor]]\nname=\"boot_head\"\nat=0x0\n",
+        ).unwrap();
+        let e = validate_placement(&layout(), &m, false).unwrap_err();
+        assert!(e.contains("map.undeclared-island") && e.contains("0x10000"), "{e}");
+    }
+
+    #[test]
+    fn anchor_absent_fires() {
+        // Declare an anchor the layout has no island for.
+        let m = load_placement_map(
+            "order = [\"GameLoop\", \"ObjCodeBase\"]\n\
+             [[anchor]]\nname=\"boot_head\"\nat=0x0\n\
+             [[anchor]]\nname=\"object_bank\"\nat=0x10000\n\
+             [[anchor]]\nname=\"ghost\"\nat=0x99999\n",
+        ).unwrap();
+        let e = validate_placement(&layout(), &m, false).unwrap_err();
+        assert!(e.contains("map.anchor-absent") && e.contains("0x99999"), "{e}");
+    }
+
+    #[test]
+    fn order_diverged_fires() {
+        // Declare ObjCodeBase before GameLoop — the derived order disagrees.
+        let m = load_placement_map(
+            "order = [\"ObjCodeBase\", \"GameLoop\"]\n\
+             [[anchor]]\nname=\"boot_head\"\nat=0x0\n\
+             [[anchor]]\nname=\"object_bank\"\nat=0x10000\n",
+        ).unwrap();
+        let e = validate_placement(&layout(), &m, false).unwrap_err();
+        assert!(e.contains("map.order-diverged"), "{e}");
+    }
+
+    #[test]
+    fn order_undeclared_fires() {
+        // Omit GameLoop from the order list.
+        let m = load_placement_map(
+            "order = [\"ObjCodeBase\"]\n\
+             [[anchor]]\nname=\"boot_head\"\nat=0x0\n\
+             [[anchor]]\nname=\"object_bank\"\nat=0x10000\n",
+        ).unwrap();
+        let e = validate_placement(&layout(), &m, false).unwrap_err();
+        assert!(e.contains("map.order-undeclared") && e.contains("GameLoop"), "{e}");
+    }
+
+    #[test]
+    fn shape_gated_sound_bank_anchor() {
+        // A sound_on-gated anchor must be absent-checked only in sound_on shapes.
+        let mut secs = layout();
+        secs.push({
+            let mut s = sec("SoundTablesZ80_Head", 0x58000, 0x20);
+            s.vma_base = Some(0x8000); // phase bank
+            s
+        });
+        let m = load_placement_map(
+            "order = [\"GameLoop\", \"ObjCodeBase\", \"SoundTablesZ80_Head\"]\n\
+             [[anchor]]\nname=\"boot_head\"\nat=0x0\n\
+             [[anchor]]\nname=\"object_bank\"\nat=0x10000\n\
+             [[anchor]]\nname=\"sound_bank\"\nat=0x58000\nvma=0x8000\nwhen=\"sound_on\"\n",
+        ).unwrap();
+        // sound_on: the phase-bank island is declared → ok.
+        assert!(validate_placement(&secs, &m, true).is_ok());
+        // sound_off with the phase bank still present → it's an undeclared island (gate excludes it).
+        let e = validate_placement(&secs, &m, false).unwrap_err();
+        assert!(e.contains("map.undeclared-island") && e.contains("0x58000"), "{e}");
     }
 }

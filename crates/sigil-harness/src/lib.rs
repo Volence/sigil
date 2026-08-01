@@ -42,6 +42,10 @@ pub mod provenance;
 /// gates. Consumed by the `native_rom` gate.
 pub mod native;
 
+/// Parcel-K1 placement map reader (`games/<g>/map.toml`) — the declared anchors /
+/// hole / budget / order-validation facts the chainer checks its layout against.
+pub mod map_placement;
+
 use sigil_link::LinkedImage;
 
 /// Region A base LMA in the assembled ROM: the resident phase-0 Z80 driver.
