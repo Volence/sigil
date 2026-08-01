@@ -630,10 +630,10 @@ tests = ["test_t1_harness_states_port"]
 # (the rte; error_handler's BusError follows after a fill gap). Placed at its frozen
 # key NullInterrupt.
 [[region]]
-name = "null_interrupt"
-# const_name override: NULL_INTERRUPT is already a test-carrier SYMBOL pin
-# (vectors_port injects NullInterrupt's address); this REGION takes NULLINT.
-const_name = "NULLINT"
+# Region named `nullint` (not null_interrupt): the derived const is the
+# uppercased region name, and NULL_INTERRUPT is already a test-carrier SYMBOL
+# pin (vectors_port injects NullInterrupt's address) — this REGION takes NULLINT.
+name = "nullint"
 start = "NullInterrupt"
 len = 0x2
 gate = "SIGIL_EMP_NULL_INTERRUPT"
