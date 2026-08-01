@@ -1513,13 +1513,11 @@ tests = ["act_descriptor_port"]
 name = "OJZ_Sec8_TypeTable"
 tests = ["act_descriptor_port"]
 
-# …and the 16 equ-like values its seam supplies (shape-invariant in the
-# listings today, but the dict lens shift whenever the act art re-exports —
-# exactly the class the tool exists for).
-
-[[symbol]]
-name = "OJZ_ACT_POOL_PAGES"
-tests = ["act_descriptor_port"]
+# …and the equ-like values its seam supplies. The pool page count + the per-
+# section block-dict lengths retired from this seam at Parcel K3: they are now
+# generated `.emp` const modules (ojz_act_pool_manifest.emp / sec_block_dicts.emp)
+# act_descriptor.emp `use`s at comptime, so they no longer cross the link as AS
+# equates and are not pin-resolvable here.
 
 [[symbol]]
 name = "BLOCK_INDEX_SIZE"
@@ -1543,42 +1541,6 @@ tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "Sec_len"
-tests = ["act_descriptor_port"]
-
-[[symbol]]
-name = "OJZ_SEC0_BLOCK_DICT_LEN"
-tests = ["act_descriptor_port"]
-
-[[symbol]]
-name = "OJZ_SEC1_BLOCK_DICT_LEN"
-tests = ["act_descriptor_port"]
-
-[[symbol]]
-name = "OJZ_SEC2_BLOCK_DICT_LEN"
-tests = ["act_descriptor_port"]
-
-[[symbol]]
-name = "OJZ_SEC3_BLOCK_DICT_LEN"
-tests = ["act_descriptor_port"]
-
-[[symbol]]
-name = "OJZ_SEC4_BLOCK_DICT_LEN"
-tests = ["act_descriptor_port"]
-
-[[symbol]]
-name = "OJZ_SEC5_BLOCK_DICT_LEN"
-tests = ["act_descriptor_port"]
-
-[[symbol]]
-name = "OJZ_SEC6_BLOCK_DICT_LEN"
-tests = ["act_descriptor_port"]
-
-[[symbol]]
-name = "OJZ_SEC7_BLOCK_DICT_LEN"
-tests = ["act_descriptor_port"]
-
-[[symbol]]
-name = "OJZ_SEC8_BLOCK_DICT_LEN"
 tests = ["act_descriptor_port"]
 
 # entity_window (tranche 12) cross-seam INBOUND symbols: RAM cells it reads +

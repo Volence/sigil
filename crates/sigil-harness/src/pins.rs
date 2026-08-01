@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 60 regions, 309 symbols, 7 offsets
+//! [provenance] 60 regions, 299 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -842,9 +842,6 @@ pub const OJZ_SEC8_RINGS: Pin = Pin { plain: 0x11EE2, debug: 0x11F6A };
 /// `OJZ_Sec8_TypeTable`. tests: act_descriptor_port
 pub const OJZ_SEC8_TYPE_TABLE: Pin = Pin { plain: 0x11EDE, debug: 0x11F66 };
 
-/// `OJZ_ACT_POOL_PAGES`. tests: act_descriptor_port
-pub const OJZ_ACT_POOL_PAGES: Pin = Pin { plain: 0x3, debug: 0x3 };
-
 /// `BLOCK_INDEX_SIZE`. tests: act_descriptor_port
 pub const BLOCK_INDEX_SIZE: Pin = Pin { plain: 0x400, debug: 0x400 };
 
@@ -862,33 +859,6 @@ pub const ACT_LEN: Pin = Pin { plain: 0x22, debug: 0x22 };
 
 /// `Sec_len`. tests: act_descriptor_port
 pub const SEC_LEN: Pin = Pin { plain: 0x42, debug: 0x42 };
-
-/// `OJZ_SEC0_BLOCK_DICT_LEN`. tests: act_descriptor_port
-pub const OJZ_SEC0_BLOCK_DICT_LEN: Pin = Pin { plain: 0x0, debug: 0x0 };
-
-/// `OJZ_SEC1_BLOCK_DICT_LEN`. tests: act_descriptor_port
-pub const OJZ_SEC1_BLOCK_DICT_LEN: Pin = Pin { plain: 0x300, debug: 0x300 };
-
-/// `OJZ_SEC2_BLOCK_DICT_LEN`. tests: act_descriptor_port
-pub const OJZ_SEC2_BLOCK_DICT_LEN: Pin = Pin { plain: 0x300, debug: 0x300 };
-
-/// `OJZ_SEC3_BLOCK_DICT_LEN`. tests: act_descriptor_port
-pub const OJZ_SEC3_BLOCK_DICT_LEN: Pin = Pin { plain: 0x300, debug: 0x300 };
-
-/// `OJZ_SEC4_BLOCK_DICT_LEN`. tests: act_descriptor_port
-pub const OJZ_SEC4_BLOCK_DICT_LEN: Pin = Pin { plain: 0x300, debug: 0x300 };
-
-/// `OJZ_SEC5_BLOCK_DICT_LEN`. tests: act_descriptor_port
-pub const OJZ_SEC5_BLOCK_DICT_LEN: Pin = Pin { plain: 0x300, debug: 0x300 };
-
-/// `OJZ_SEC6_BLOCK_DICT_LEN`. tests: act_descriptor_port
-pub const OJZ_SEC6_BLOCK_DICT_LEN: Pin = Pin { plain: 0x300, debug: 0x300 };
-
-/// `OJZ_SEC7_BLOCK_DICT_LEN`. tests: act_descriptor_port
-pub const OJZ_SEC7_BLOCK_DICT_LEN: Pin = Pin { plain: 0x300, debug: 0x300 };
-
-/// `OJZ_SEC8_BLOCK_DICT_LEN`. tests: act_descriptor_port
-pub const OJZ_SEC8_BLOCK_DICT_LEN: Pin = Pin { plain: 0x300, debug: 0x300 };
 
 /// `Camera_Y_Coarse_Prev`. tests: entity_window_port
 pub const CAMERA_Y_COARSE_PREV: Pin = Pin { plain: 0xFFFFAD90, debug: 0xFFFFADB4 };

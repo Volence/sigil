@@ -22,11 +22,14 @@
 //! ## The cross-seam surface
 //!
 //! INBOUND: 41 AS-side labels (palette/BG/parallax/pool table + the 36
-//! per-section list labels) and 16 equs (pool pages, dict sizes, engine
-//! limits, struct lens) — supplied as synthetic link EQUS at each shape's
+//! per-section list labels) supplied as synthetic link EQUS at each shape's
 //! TRUE address (Abs32 fixups bake addresses, so the positions are
-//! load-bearing). OUTBOUND: `OJZ_Act1_Descriptor` (the act loader's
-//! entry), proven by a `dc.l` consumer.
+//! load-bearing) + a few engine-limit / struct-len value equs. The pool page
+//! count and the per-section block-dict lengths retired from the seam at Parcel
+//! K3: they are generated `.emp` const modules (ojz_act_pool_manifest.emp /
+//! sec_block_dicts.emp) prepended as ambient and consumed at COMPTIME.
+//! OUTBOUND: `OJZ_Act1_Descriptor` (the act loader's entry), proven by a `dc.l`
+//! consumer.
 //!
 //! ## Reference windows
 //!
@@ -158,25 +161,21 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
         ("OJZ_Sec8_TypeTable", pins::OJZ_SEC8_TYPE_TABLE.plain, pins::OJZ_SEC8_TYPE_TABLE.debug),
     ];
     const VALUES: &[(&str, u32)] = &[
-        ("OJZ_ACT_POOL_PAGES", pins::OJZ_ACT_POOL_PAGES.plain),
+        // OJZ_ACT_POOL_PAGES + the 9 OJZ_SEC*_BLOCK_DICT_LEN retired from this seam
+        // at Parcel K3 — they are generated `.emp` const modules
+        // (ojz_act_pool_manifest.emp / sec_block_dicts.emp) act_descriptor.emp `use`s
+        // at comptime, prepended as ambient in `compile_real_file` (not injected here).
         ("BLOCK_INDEX_SIZE", pins::BLOCK_INDEX_SIZE.plain),
         ("EDGE_CLAMP", pins::EDGE_CLAMP.plain),
         ("MAX_ACT_SECTIONS", pins::MAX_ACT_SECTIONS.plain),
         ("SECTION_SIZE_SHIFT", pins::SECTION_SIZE_SHIFT.plain),
+        // POOL_TILE_CEILING is the comptime ceiling the K3 `ensure` reads — supplied
+        // by the prepended engine.constants ambient (not an AS extern).
         // The prepended engine.constants ambient carries its one surviving guard
         // (VDP_Shadow_len, the struct twin); supply its extern target so it PASSES.
         ("VDP_Shadow_len", 19),
         // Act_len/Sec_len + the Act_*/Sec_* field equs now come from
         // `act_sec_field_equs()` (the shared engine.structs drift wall reads them).
-        ("OJZ_SEC0_BLOCK_DICT_LEN", pins::OJZ_SEC0_BLOCK_DICT_LEN.plain),
-        ("OJZ_SEC1_BLOCK_DICT_LEN", pins::OJZ_SEC1_BLOCK_DICT_LEN.plain),
-        ("OJZ_SEC2_BLOCK_DICT_LEN", pins::OJZ_SEC2_BLOCK_DICT_LEN.plain),
-        ("OJZ_SEC3_BLOCK_DICT_LEN", pins::OJZ_SEC3_BLOCK_DICT_LEN.plain),
-        ("OJZ_SEC4_BLOCK_DICT_LEN", pins::OJZ_SEC4_BLOCK_DICT_LEN.plain),
-        ("OJZ_SEC5_BLOCK_DICT_LEN", pins::OJZ_SEC5_BLOCK_DICT_LEN.plain),
-        ("OJZ_SEC6_BLOCK_DICT_LEN", pins::OJZ_SEC6_BLOCK_DICT_LEN.plain),
-        ("OJZ_SEC7_BLOCK_DICT_LEN", pins::OJZ_SEC7_BLOCK_DICT_LEN.plain),
-        ("OJZ_SEC8_BLOCK_DICT_LEN", pins::OJZ_SEC8_BLOCK_DICT_LEN.plain),
     ];
     let mut asm = String::from("cpu 68000\n");
     for (name, plain, dbg) in LABELS {
@@ -215,8 +214,18 @@ fn compile_real_file(
     // constants module (now the sole author of the two engine limits act reads).
     let structs = parse_file(&aeon_root().join("engine/structs.emp"));
     let constants = parse_file(&aeon_root().join("engine/system/constants.emp"));
-    let file =
-        with_ambient(vec![structs, constants], parse_file(&dir.join("act_descriptor.emp")));
+    // Parcel K3: the pool-page-count manifest + the per-section block-dict lengths
+    // are generated `.emp` const modules act_descriptor.emp `use`s at comptime;
+    // prepend them as ambient (the single-file lower path does not auto-resolve
+    // `use`) so OJZ_ACT_POOL_PAGES / OJZ_ACT_POOL_TILES / OJZ_SEC*_BLOCK_DICT_LEN
+    // resolve locally instead of as injected AS equs.
+    let gen = aeon_root().join("games/sonic4/data/generated/ojz/act1");
+    let pool_manifest = parse_file(&gen.join("ojz_act_pool_manifest.emp"));
+    let block_dicts = parse_file(&gen.join("sec_block_dicts.emp"));
+    let file = with_ambient(
+        vec![structs, constants, pool_manifest, block_dicts],
+        parse_file(&dir.join("act_descriptor.emp")),
+    );
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
