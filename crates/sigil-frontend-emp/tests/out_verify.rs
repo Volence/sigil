@@ -28,7 +28,7 @@ fn eval_all(src: &str) -> BTreeMap<String, Vec<CodeItem>> {
     for item in &file.items {
         if let Item::Proc(p) = item {
             let (buf, _d, next) =
-                eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, counter, Cpu::M68000, &[]);
+                eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, counter, Cpu::M68000, &[], &sigil_frontend_emp::contract::InterfaceEnv::empty());
             counter = next;
             if let Some(buf) = buf {
                 out.insert(p.name.clone(), buf.items);

@@ -124,6 +124,7 @@ fn every_stack_movem_restore_has_a_matching_save() {
             let Item::Proc(p) = item else { continue };
             let (buf, _d, next) = eval_proc_body(
                 &file, &p.name, &p.params, &p.body, p.span, counter, Cpu::M68000, &[],
+                &sigil_frontend_emp::contract::InterfaceEnv::empty(),
             );
             counter = next;
             let Some(buf) = buf else { continue };

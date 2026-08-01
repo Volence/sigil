@@ -33,7 +33,7 @@ fn eval_first(src: &str) -> (String, BTreeSet<String>, Vec<sigil_frontend_emp::v
         })
         .expect("a proc");
     let (buf, _d, _n) =
-        eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[]);
+        eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[], &sigil_frontend_emp::contract::InterfaceEnv::empty());
     let buf = buf.expect("codebuf");
     let params: BTreeSet<String> = p
         .params

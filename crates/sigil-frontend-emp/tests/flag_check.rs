@@ -30,7 +30,7 @@ fn run(src: &str, callee: &str, discarded: &[Span]) -> Vec<FlagFiring> {
         })
         .expect("a proc");
     let (buf, _d, _n) =
-        eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[]);
+        eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[], &sigil_frontend_emp::contract::InterfaceEnv::empty());
     let buf = buf.expect("codebuf");
     let mut fc: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     fc.insert(callee.to_string(), BTreeSet::from(["carry".to_string()]));
@@ -244,7 +244,7 @@ fn run_invalid(
         })
         .expect("a proc");
     let (buf, _d, _n) =
-        eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[]);
+        eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[], &sigil_frontend_emp::contract::InterfaceEnv::empty());
     let buf = buf.expect("codebuf");
     let mut cc_callees: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     for (callee, reg, cc) in cond {
@@ -472,7 +472,7 @@ fn run_z80(src: &str, callee: &str) -> Vec<FlagFiring> {
         })
         .expect("a proc");
     let (buf, _d, _n) =
-        eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::Z80, &[]);
+        eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::Z80, &[], &sigil_frontend_emp::contract::InterfaceEnv::empty());
     let buf = buf.expect("codebuf");
     let mut fc: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     fc.insert(callee.to_string(), BTreeSet::from(["carry".to_string()]));

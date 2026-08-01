@@ -50,7 +50,7 @@ fn run(src: &str, effective: &BTreeMap<String, RegEffect>) -> Vec<(Reg, Vec<Stri
         })
         .expect("a proc");
     let (buf, _d, _n) =
-        eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[]);
+        eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[], &sigil_frontend_emp::contract::InterfaceEnv::empty());
     let buf = buf.expect("codebuf");
     let mut out: Vec<(Reg, Vec<String>)> = find_dead_saves(&p.name, &buf.items, effective)
         .into_iter()
