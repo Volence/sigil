@@ -233,14 +233,16 @@ fn compile_real_files(shape: &Shape) -> Compiled {
     let sst = || parse_file(&aeon.join("engine/objects/sst.emp"));
     let constants = || parse_file(&aeon.join("engine/system/constants.emp"));
     let objdef = || parse_file(&aeon.join("engine/objects/objdef.emp"));
+    // VRAM_TEST_SONIC / VRAM_TEST_OBJ authority (Parcel F: config/constants.asm → `.emp`).
+    let game_consts = || parse_file(&aeon.join("games/sonic4/config/constants.emp"));
 
     let player = parse_file(&aeon.join("games/sonic4/objects/test_player.emp"));
     let enemy = parse_file(&aeon.join("games/sonic4/objects/test_enemy.emp"));
     let swap = parse_file(&aeon.join("games/sonic4/objects/path_swap.emp"));
 
-    let player_file = with_ambient(vec![types(), sst(), constants(), objdef()], player);
+    let player_file = with_ambient(vec![types(), sst(), constants(), objdef(), game_consts()], player);
     let enemy_file = with_ambient(vec![types(), sst(), constants()], enemy);
-    let swap_file = with_ambient(vec![types(), sst(), constants(), objdef()], swap);
+    let swap_file = with_ambient(vec![types(), sst(), constants(), objdef(), game_consts()], swap);
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -375,13 +377,13 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     let c = compile_real_files(shape);
 
     // sst.emp's SST_* wall retired at the conv-a structs flip; the constants
-    // twin's guards remain. test_player adds 1 (VRAM_TEST_SONIC — its
-    // _dplc_ptr/_art_base/_debug_flag overlay guards retired at conv-d #48 when
-    // test_player.asm was deleted), path_swap adds 1 (VRAM_TEST_OBJ),
-    // test_enemy adds 0 (unguarded overlay).
-    assert_eq!(c.player_guards, twin_guards() + 1, "test_player own 1 guard (VRAM_TEST_SONIC)");
+    // twin's guards remain. test_player's own VRAM_TEST_SONIC and path_swap's own
+    // VRAM_TEST_OBJ mirror guards retired at conv-f (config constants flipped to
+    // `.emp`, `use`d now); test_player's _dplc_ptr/_art_base overlay guards had
+    // already retired at conv-d #48. test_enemy carries an unguarded overlay.
+    assert_eq!(c.player_guards, twin_guards(), "test_player constants twin guards (own VRAM_TEST_SONIC guard retired at conv-f)");
     assert_eq!(c.enemy_guards, twin_guards(), "test_enemy guards (unguarded overlay)");
-    assert_eq!(c.swap_guards, twin_guards() + 1, "path_swap + own VRAM_TEST_OBJ guard");
+    assert_eq!(c.swap_guards, twin_guards(), "path_swap constants twin guards (own VRAM_TEST_OBJ guard retired at conv-f)");
     let diags = sigil_link::check_link_asserts(&c.resolved, &SymbolTable::new(), &c.link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

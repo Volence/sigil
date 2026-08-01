@@ -181,6 +181,8 @@ fn compile_real_file(shape: &Shape) -> Compiled {
     let constants = || parse_file(&aeon.join("engine/system/constants.emp")).items;
     let objdef = || parse_file(&aeon.join("engine/objects/objdef.emp")).items;
     let spawn_desc = || spawn_desc_items(&aeon);
+    // VRAM_TEST_OBJ's authority (Parcel F: config/constants.asm → `.emp`).
+    let game_consts = || parse_file(&aeon.join("games/sonic4/config/constants.emp")).items;
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -191,7 +193,7 @@ fn compile_real_file(shape: &Shape) -> Compiled {
 
     let main = parse_file(&aeon.join("games/sonic4/objects/test_parent.emp"));
     let file = with_ambient(
-        vec![types(), sst(), constants(), objdef(), spawn_desc()],
+        vec![types(), sst(), constants(), objdef(), spawn_desc(), game_consts()],
         main,
     );
     let (module, ldiags) = lower_module(&file, &opts);
@@ -291,10 +293,11 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
 
     let c = compile_real_file(shape);
 
-    // sst.emp's SST_* wall retired at the conv-a structs flip; the constants
-    // twin's guards + its own one (VRAM_TEST_OBJ).
-    let want = twin_guards() + 1;
-    assert_eq!(c.guards, want, "test_parent's ambient sst + constants guards + its own VRAM_TEST_OBJ captured");
+    // sst.emp's SST_* wall retired at the conv-a structs flip; test_parent's own
+    // VRAM_TEST_OBJ mirror guard retired at conv-f (config constants flipped to
+    // `.emp`, `use`d now), leaving the constants twin's guards.
+    let want = twin_guards();
+    assert_eq!(c.guards, want, "test_parent's ambient sst + constants twin guards captured (own VRAM_TEST_OBJ guard retired at conv-f)");
 
     let diags = sigil_link::check_link_asserts(&c.resolved, &SymbolTable::new(), &c.link_asserts);
     assert!(

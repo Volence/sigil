@@ -22,7 +22,9 @@ PAD_TO_POWER_OF_TWO     = 1
     include "engine/macros.asm"
     include "engine/parallax_macros.inc"
     include "engine/sound/sound_bank.inc"
-    include "games/sonic4/config/constants.asm"
+    ; games/sonic4/config/constants.asm is retired (conv-f): game constants are
+    ; authored in games/sonic4/config/constants.emp and seeded here as harvested
+    ; GUARDED -D defines (see m1c_vector_table.rs), mirroring the real build.
     include "games/sonic4/config/sound_ids.asm"
     include "games/sonic4/config/game.asm"
     ; engine/ram.asm (item #7b) AND games/sonic4/config/ram.asm (item #7c) are both

@@ -200,11 +200,13 @@ fn compile_real_files(shape: &Shape) -> Compiled {
     let sst = || parse_file(&aeon.join("engine/objects/sst.emp"));
     let constants = parse_file(&aeon.join("engine/system/constants.emp"));
     let objdef = parse_file(&aeon.join("engine/objects/objdef.emp"));
+    // VRAM_TEST_SONIC's authority (Parcel F: config/constants.asm → `.emp`).
+    let game_consts = parse_file(&aeon.join("games/sonic4/config/constants.emp"));
     let stat = parse_file(&aeon.join("games/sonic4/objects/test_static.emp"));
     let anim = parse_file(&aeon.join("games/sonic4/objects/test_animated.emp"));
 
     let static_file = with_ambient(vec![types(), sst()], stat);
-    let animated_file = with_ambient(vec![types(), sst(), constants, objdef], anim);
+    let animated_file = with_ambient(vec![types(), sst(), constants, objdef, game_consts], anim);
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -325,15 +327,15 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     let c = compile_real_files(shape);
 
     // Drift guards: sst.emp's SST_* wall retired at the conv-a structs flip, so
-    // test_static now rides zero; test_animated keeps the constants twin's guards
-    // + its own one (VRAM_TEST_SONIC — its _dplc_ptr/_art_base overlay guards
-    // retired at conv-d #48 when test_player.asm was deleted). All must be
-    // captured AND pass.
+    // test_static now rides zero; test_animated keeps the constants twin's guards.
+    // Its own VRAM_TEST_SONIC mirror guard retired at conv-f (config constants
+    // flipped to `.emp`, `use`d now) — as did its _dplc_ptr/_art_base overlay guards
+    // at conv-d #48. The remaining guards must be captured AND pass.
     assert_eq!(c.static_guards, 0, "test_static's sst ambient wall retired");
     assert_eq!(
         c.animated_guards,
-        twin_guards() + 1,
-        "test_animated's constants guards + its own VRAM_TEST_SONIC captured"
+        twin_guards(),
+        "test_animated's constants twin guards captured (own VRAM_TEST_SONIC guard retired at conv-f)"
     );
     let diags = sigil_link::check_link_asserts(&c.resolved, &SymbolTable::new(), &c.link_asserts);
     assert!(

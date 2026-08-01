@@ -236,6 +236,8 @@ fn compile_sonic(shape: &SonicShape) -> (sigil_link::LinkedImage, usize) {
     let sst = || parse_file(&aeon.join("engine/objects/sst.emp")).items;
     let constants = || parse_file(&aeon.join("engine/system/constants.emp")).items;
     let objdef = || parse_file(&aeon.join("engine/objects/objdef.emp")).items;
+    // VRAM_TEST_SONIC's authority (Parcel F: config/constants.asm → `.emp`).
+    let game_consts = || parse_file(&aeon.join("games/sonic4/config/constants.emp")).items;
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -245,7 +247,7 @@ fn compile_sonic(shape: &SonicShape) -> (sigil_link::LinkedImage, usize) {
     };
 
     let main = parse_file(&aeon.join("games/sonic4/player/sonic.emp"));
-    let file = with_ambient(vec![types(), sst(), constants(), objdef()], main);
+    let file = with_ambient(vec![types(), sst(), constants(), objdef(), game_consts()], main);
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -422,6 +424,8 @@ fn compile_player_common(shape: &PcShape) -> (sigil_link::LinkedImage, Vec<Secti
     let objdef = || parse_file(&aeon.join("engine/objects/objdef.emp")).items;
     let coords = || parse_file(&aeon.join("engine/coords.emp")).items;
     let act = || act_struct_items(&aeon);
+    // PSTATE_*/ANIM_*/VRAM_TEST_MARKER authority (Parcel F: config/constants.asm → `.emp`).
+    let game_consts = || parse_file(&aeon.join("games/sonic4/config/constants.emp")).items;
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -432,7 +436,7 @@ fn compile_player_common(shape: &PcShape) -> (sigil_link::LinkedImage, Vec<Secti
 
     let main = parse_file(&aeon.join("games/sonic4/player/player_common.emp"));
     let file = with_ambient(
-        vec![types(), sst(), constants(), objdef(), coords(), act()],
+        vec![types(), sst(), constants(), objdef(), coords(), act(), game_consts()],
         main,
     );
     let (module, ldiags) = lower_module(&file, &opts);
@@ -520,13 +524,16 @@ fn p1_player_common_debug_region_matches_reference() {
 
 // ── guard gate + t24 positive control / negative probe ───────────────────────
 
-/// The drift guards (PlayerV overlay + constant mirrors) all resolve and PASS
-/// against the AS-side equ seam. sst.emp's 30 SST_* ambient guards retired at the
-/// conv-a structs flip, so the captured count dropped (27 now).
+/// The remaining drift guards resolve and PASS against the AS-side equ seam.
+/// sst.emp's 30 SST_* ambient guards retired at the conv-a structs flip; the
+/// PSTATE_*/ANIM_*/VRAM_TEST_MARKER mirror guards retired at conv-f (config
+/// constants flipped to `.emp`, `use`d by player_common now), leaving only the
+/// SFXID_SKID sound mirror (config/sound_ids.asm, retiring at conv-f #24) — so at
+/// least one guard is still captured, and it must PASS.
 #[test]
 fn p1_drift_guards_all_pass() {
     let (_linked, resolved, asserts, guards) = compile_player_common(&PC_PLAIN);
-    assert!(guards > 20, "player_common must capture its overlay + mirror drift guards (got {guards})");
+    assert!(guards >= 1, "player_common must capture its remaining mirror drift guard(s) (got {guards})");
     let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
