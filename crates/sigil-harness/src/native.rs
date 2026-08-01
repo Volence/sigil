@@ -2542,11 +2542,15 @@ pub fn build_native_rom_with_listing(
     let linked: LinkedImage = sigil_link::link(&resolved, &stubs)
         .map_err(|d| format!("link: {} diag(s); first: {:?}", d.len(), d.first()))?;
 
-    let map_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
-    let map_src = std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?;
-    let map = sigil_link::load_map(&map_src).map_err(|e| format!("load sigil.map.toml: {e}"))?;
+    // K5: the region geometry + budget are the per-game map's (`games/sonic4/map.toml`);
+    // sigil.map.toml retired. This PinnedBaked path is the canonical bootstrap only (the
+    // shipped Frozen builds route through `build_rom_chained_with_listing` above).
+    let map_path = sonic4_profile(debug).map_path(aeon);
+    let map_src = std::fs::read_to_string(&map_path)
+        .map_err(|e| format!("read {}: {e}", map_path.display()))?;
+    let map = sigil_link::load_map(&map_src).map_err(|e| format!("load {}: {e}", map_path.display()))?;
     let pmap = crate::map_placement::load_placement_map(&map_src)
-        .map_err(|e| format!("placement sigil.map.toml: {e}"))?;
+        .map_err(|e| format!("placement {}: {e}", map_path.display()))?;
     check_object_bank_budget(&resolved, &map, &pmap)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("emit_rom: {e}"))?;
     Ok((rom, listing))
@@ -2612,11 +2616,13 @@ pub fn sigil_native_symbol_listing(
     Ok((map, end_addr))
 }
 
-/// Load the project memory map (`sigil.map.toml`) — the same file `emit_rom` reads.
-pub fn project_memory_map() -> Result<sigil_ir::map::MemoryMap, String> {
-    let map_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+/// Load the project region memory map — K5: the per-game `games/sonic4/map.toml` (the
+/// sole owner of the region geometry + object-bank budget now that sigil.map.toml retired),
+/// the same file the sonic4 emit path reads.
+pub fn project_memory_map(aeon: &Path) -> Result<sigil_ir::map::MemoryMap, String> {
+    let map_path = sonic4_profile(false).map_path(aeon);
     sigil_link::load_map(&std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?)
-        .map_err(|e| format!("load sigil.map.toml: {e}"))
+        .map_err(|e| format!("load {}: {e}", map_path.display()))
 }
 
 /// Resolve the SHIPPED canonical layout (the packed chained placement) into its final

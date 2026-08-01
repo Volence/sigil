@@ -1,7 +1,8 @@
 //! Stage-3 P4b — THE OBJECT-BANK BUDGET AS A MAP-REGION CHECK.
 //!
-//! `sigil.map.toml`'s `object_bank` region ($10000, size $10000) is the map-owned
-//! successor to `engine.inc`'s deleted `if * > $20000 / error`. Every native build runs
+//! `games/sonic4/map.toml`'s `object_bank` region ($10000, size $10000) is the map-owned
+//! successor to `engine.inc`'s deleted `if * > $20000 / error` (K5: the per-game map is
+//! the sole region owner; sigil.map.toml retired). Every native build runs
 //! `native::check_object_bank_budget` (the declared budget cursor — the data-region head
 //! `DeformTable_Zero`, K4 inc-6B's successor to the retired `__BUDGET_DATA` marker — vs the
 //! region cap) before `emit_rom`. This gate proves the check is (a) SATISFIED on the real
@@ -15,9 +16,10 @@
 use sigil_harness::{map_placement, native};
 use std::path::PathBuf;
 
-/// The sigil crate's `sigil.map.toml` placement facts (the object-bank budget cursor).
+/// The sonic4 `games/sonic4/map.toml` placement facts (the object-bank budget cursor) —
+/// K5: the per-game map is the sole region owner (sigil.map.toml retired).
 fn placement_map() -> map_placement::PlacementMap {
-    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    let p = aeon_dir().join("games/sonic4/map.toml");
     map_placement::load_placement_map(&std::fs::read_to_string(&p).unwrap())
         .unwrap_or_else(|e| panic!("load placement {}: {e}", p.display()))
 }
@@ -53,7 +55,7 @@ fn canonical_object_bank_within_budget() {
     }
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let resolved = native::resolve_canonical_sections(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
-    let map = native::project_memory_map().unwrap_or_else(|e| panic!("{e}"));
+    let map = native::project_memory_map(&aeon).unwrap_or_else(|e| panic!("{e}"));
     let pmap = placement_map();
     let used =
         native::check_object_bank_budget(&resolved, &map, &pmap).unwrap_or_else(|e| panic!("{e}"));
@@ -76,7 +78,7 @@ fn doctored_tiny_budget_fails_the_check() {
     let pmap = placement_map();
 
     // Baseline: the real map passes.
-    let real = native::project_memory_map().unwrap_or_else(|e| panic!("{e}"));
+    let real = native::project_memory_map(&aeon).unwrap_or_else(|e| panic!("{e}"));
     native::check_object_bank_budget(&resolved, &real, &pmap)
         .unwrap_or_else(|e| panic!("control: real map must pass, got {e}"));
 
