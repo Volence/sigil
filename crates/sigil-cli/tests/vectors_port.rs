@@ -301,15 +301,11 @@ fn vector_labels_resolve_to_error_handler_emp() {
     place_sections(&mut sections, &map);
 
     // error_handler.emp's raise_exception jsr/jmp targets + blob dc.l pointers
-    // (the MDDBG__ handler entry points) — fed as synthetic pinned labels so the
-    // error_handler region links; plus the vectors' NON-error targets (EntryPoint,
-    // VBlank_Handler, NullInterrupt, HBlank_Vector_Slot, SYSTEM_STACK).
-    let eh = eh_base + 0x15A; // ErrorHandler = base + stub-table len (error_handler_port)
+    // (the MDDBG__ handler entry points) are now the module's OWN `pub equ`s (off
+    // ErrorHandlerBlob, conv-i #7) — it self-resolves them, no injection. Only the
+    // vectors' NON-error targets are fed here (EntryPoint, VBlank_Handler,
+    // NullInterrupt, HBlank_Vector_Slot, SYSTEM_STACK).
     let mut extra: Vec<(&str, u32)> = vec![
-        ("MDDBG__ErrorHandler", eh),
-        ("MDDBG__ErrorHandler_PagesController", eh + 0xDC6),
-        ("MDDBG__Debugger_AddressRegisters", eh + 0xE6C),
-        ("MDDBG__Debugger_Backtrace", eh + 0xEB8),
         ("SYSTEM_STACK", 0xFFFFFF00),
         ("EntryPoint", pins::ENTRY_POINT.plain),
         ("VBlank_Handler", pins::V_BLANK_HANDLER.plain),

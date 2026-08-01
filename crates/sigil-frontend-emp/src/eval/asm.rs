@@ -940,6 +940,24 @@ impl Evaluator<'_> {
                     );
                     return None;
                 }
+                // A link-time expression value: a `dc` element naming an equ whose
+                // value is a residual link tree (e.g. `extern("L") + off`). A bare
+                // symbol keeps the `Cell::SymRef` address lowering; an arithmetic
+                // tree emits a general link-expr VALUE cell (`Cell::Expr`) — the
+                // same machinery the typed-data emit path (`lower_link_expr`) and
+                // the `offsets`/`dispatch` constructs use. The linker folds it
+                // post-placement (equ-off-link-external-base on the `.emp` side).
+                Value::LinkExpr(e) => {
+                    match e {
+                        sigil_ir::expr::Expr::Sym(name) => {
+                            cells.push(Cell::SymRef { name, width: width_bytes as u8, windowed: false });
+                        }
+                        other => {
+                            cells.push(Cell::Expr { expr: other, width: width_bytes as u8, le: false });
+                        }
+                    }
+                    total += width_bytes;
+                }
                 Value::Poison => return None,
                 other => {
                     self.error(
