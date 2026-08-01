@@ -207,3 +207,96 @@ touch nothing the extractors read — the combo matrices stay green by construct
 The only kill-row risk in inc-4 is if the mechanism alters game.asm's define
 environment (the -D set passed when it assembles); A1 preserves it exactly (the same
 harvested defines the current build passes to the AS root).
+
+## §5 — Inc-4 STOP finding: the sound-bank native placement is a seam-2 undertaking
+
+**STOP (not a hack, not a fatigued gamble on the "ANY anchor move = STOP" surface).**
+Grounded investigation of the sound-bank islands (the coordinator's inc-4 item 1):
+
+### The reality (why this is not a run-A/B-shaped embed)
+The collision island (inc-3) was tractable because its `.bin` are COMMITTED and it is
+flat, non-phased data — a plain `embed()` section. The sound banks are NOTHING like
+that:
+
+1. **The `.bin` are gitignored BUILD ARTIFACTS.** `dac_blip_bank.bin` /
+   `dac_shared_bank.bin` / `mt_bank.bin` / `sfx_bank.bin` / `sound_tables_z80.bin`
+   (+ the pitchtable/seq/dac-sample-tab/sfx-win-tab heads) are all
+   `git check-ignore`-confirmed, regenerated every build by `ensure_generated()`
+   (seam1 `emit_sound_blob` + seam2 `emit_{dac,mt,sfx,seq_opcode,sound_tables}_artifacts`).
+2. **The composing `.emp` modules are NOT in the main `registry()`.** `dac_samples.emp`
+   / `mt_bank.emp` / `sfx_bank.emp` / `sound_tables_z80.emp` are lowered by a SEPARATE
+   pipeline (`seam2.rs`) into their own one-region maps (`dac_blip_bank` @ 0x48000,
+   `dac_shared_bank` @ 0x50000, …) and WRITTEN to `.bin`. The main native build then
+   AS-BINCLUDEs those `.bin`. This is the shipped "emit-tool architecture" (MEMORY:
+   the entire sound stack is sigil-native via emit-to-`.bin`, ~10k `.asm` deleted).
+3. **Phase banks + Z80 pointers.** SoundTablesZ80_Head/MovingTrucks_PitchTable/
+   SfxBlobWinTab/SeqOpcodeTable/DacSampleTable sit at FIXED VMAs ($8000/$8357/$845F/
+   $856D/$85AD, LMA $58000+) inside the `phase 08000h` bracket; the resident Z80
+   driver holds banked carriers at those exact addresses. The map already anchors
+   `sound_bank` @ 0x58000 vma 0x8000. The B-0 bank-anchor rule is ARMED: a labeled
+   phase-bank head must NEVER repack (the mt-gate catch class).
+4. **DSM-harness STUB arms.** `SIGIL_EMP_{DAC,MT,SFX}_BODY_STUB` compose the banks
+   IN-MEMORY for the mixed harness (`mixed_dac_rom` / `dac_port`/`mt_port`/`sfx_port`);
+   the real build takes the BINCLUDE arm. A native bank section would double-place
+   against the STUB composition — the harness path must be reconciled, not just the
+   BINCLUDE removed.
+
+### The two native-placement paths (both real, both risky)
+- **P1 — move the seam-2 `.emp` modules into the main `registry()`** (native-placed
+  phase-bank sections with vma_base 0x8000, replacing emit-to-`.bin`+BINCLUDE). The
+  cleanest END-STATE (true native), but it REWORKS the emit-tool architecture: the
+  seam-2 `emit_*_artifacts` pipeline, the STUB arms, the `mixed_*_rom` harness tests,
+  and `ensure_generated` all change. Largest blast radius on the most fragile stack.
+- **P2 — native sections that `embed()` the seam-2-emitted `.bin`** (circular but
+  smaller): keep `ensure_generated` emitting the `.bin`, add native `embed()` sections
+  placing them at the bank anchors, delete the BINCLUDE arms. Less invasive, but (a)
+  the golden gate can't rely on committed `.bin` (they're emitted, so the port test
+  must run emit first or gate at build level), and (b) the STUB arms still need
+  reconciling (the native section vs. the harness in-memory composition).
+
+### Recommendation + the dependency it creates
+**Recommend P2 first for the DAC** (non-phased, an inc-3 anchor already exists) as the
+lowest-risk probe, THEN the phased MT/SFX/soundBankHead — but ALL of it wants a
+DEDICATED, fresh pass with the seam-2 harness in full view, not the tail of this
+session. **This BLOCKS the skeleton deletion (inc-4 item 2):** deleting
+`games/sonic4/main.asm` requires its `gameSoundDataIncludes` BINCLUDEs to leave AS,
+which requires the sound banks native (P1/P2). The A1 root stub + B1 epilogue land
+game.asm/debugger/EndOfRom, but the sound BINCLUDEs have no home until the banks are
+native — so the skeleton cannot delete until the sound-bank pass completes.
+
+**Independently landable NOW (does NOT touch the sound banks):** the **B1
+engine.epilogue** (EndOfRom + the 3 walls → a native `.emp`; EndOfRom is already a
+frozen boundary key and header.emp already externs it). If a partial inc-4 is wanted
+before the sound-bank pass, B1 is the clean piece; the A1 stub + the main.asm/
+engine.inc deletion stay blocked on the banks.
+
+**Decision for this session: STOP on the sound-bank ports** (the ruled discipline —
+the fragile phase-bank surface is not for a fatigued session), deliver this finding as
+the map for the dedicated sound-bank pass, and hold the skeleton deletion behind it.
+
+## §6 — K spec §0 end-state checklist — what is now TRUE (after K4 inc 1–3 + this)
+
+- **Placement authority = the declared map (not bootstrapped tables):** TRUE since K1;
+  the K4 islands (header, collision, DAC anchor) all declare map order/anchors.
+- **`engine/macros.asm` DELETED:** ✅ TRUE (K4 inc-1).
+- **`games/sonic4/main.asm` + `games/demo/main.asm` + `engine/engine.inc` DELETED:**
+  ❌ NOT YET — blocked on the sound-bank native placement (§5): main.asm's
+  `gameSoundDataIncludes` BINCLUDEs (DAC/MT/SFX) have no `.emp` home until the seam-2
+  banks are natively placed. engine.inc still owns EndOfRom (B1 pending) + the org
+  ladder + the `sound_bank.inc`/`debugger.asm` includes.
+- **`engine/system/header.inc` ported:** ✅ TRUE (K4 inc-2 → games/*/config/header.emp).
+- **`engine/sound/sound_bank.inc` ported:** ❌ NOT YET (§5, the phase-bank head).
+- **The 106 inert orgs die with their files:** PARTIAL — the OJZ orgs (K3), the header
+  org, and the collision org are retired/inert; the sound + engine-ladder orgs remain
+  until the skeleton deletion.
+- **Named survivors — game.asm ×2 + the vendored debugger tree:** on track; the ruled
+  A1 root stub (game_root.asm) is their loader-to-be, the B1 epilogue owns EndOfRom.
+- **Every other included module/data island is manifest-placed `.emp`:** the DATA
+  islands are done EXCEPT the sound banks (§5); the CODE is long done.
+
+**Net K4 state:** macros.asm gone; header + collision native; the DAC anchor explicit;
+the two skeleton-deletion design points RULED (A1+B1). The one remaining wall is the
+sound-bank seam-2 native-placement pass (§5), which gates the main.asm/engine.inc
+deletion. Recommended inc-5 shape: (1) the dedicated sound-bank pass (P2 DAC probe →
+phased MT/SFX/soundBankHead, seam-2 harness in view), then (2) B1 epilogue + A1 stubs
++ the skeleton deletion.
