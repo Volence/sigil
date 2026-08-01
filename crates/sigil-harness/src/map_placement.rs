@@ -36,11 +36,16 @@ pub struct Hole {
     pub when: Option<String>,
 }
 
-/// One declared per-region byte ceiling (checked at pack time).
+/// One declared per-region byte ceiling (checked at pack time). `cursor` names the
+/// head-label of the first section PAST the budget region's content (the object bank's
+/// data-region head, e.g. `DeformTable_Zero`); its resolved LMA is the used-cursor the
+/// ceiling is checked against — the map-owned successor to engine.inc's `__BUDGET_DATA`
+/// marker (K4 inc-6B). `None` ⇒ no cursor declared (the check is a no-op for that region).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Budget {
     pub region: String,
     pub ceiling: u32,
+    pub cursor: Option<String>,
 }
 
 /// The placement facts of a `games/<g>/map.toml` (regions live in the `MemoryMap`
@@ -107,6 +112,8 @@ struct HoleDoc {
 struct BudgetDoc {
     region: String,
     ceiling: u32,
+    #[serde(default)]
+    cursor: Option<String>,
 }
 
 /// Parse a `games/<g>/map.toml` string's PLACEMENT facts (anchors/holes/budgets/order).
@@ -129,7 +136,7 @@ pub fn load_placement_map(toml_src: &str) -> Result<PlacementMap, String> {
         budgets: doc
             .budget
             .into_iter()
-            .map(|b| Budget { region: b.region, ceiling: b.ceiling })
+            .map(|b| Budget { region: b.region, ceiling: b.ceiling, cursor: b.cursor })
             .collect(),
         order: doc.order,
     })

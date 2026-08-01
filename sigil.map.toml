@@ -22,7 +22,7 @@ kind = "rom"
 [[region]]
 name = "object_bank"
 lma_base = 0x10000     # ObjCodeBase — all object routines live in this 64KB block
-size = 0x10000         # budget: the __BUDGET_DATA cursor must stay <= $20000
+size = 0x10000         # budget: the object-bank cursor must stay <= $20000
 kind = "object_bank"
 
 [[region]]
@@ -31,3 +31,11 @@ lma_base = 0x60000     # cross-checked against golden/windows.toml region_b.lma 
 size = 0x8000
 kind = "z80_bank"
 vma_base = 0x8000
+
+# The object-bank budget's used-cursor is the head-label of the first section past the
+# bank (the sonic4-canonical data-region head): object code ends where the data region
+# begins. Map-owned successor to engine.inc's retired `__BUDGET_DATA` marker (K4 inc-6B).
+[[budget]]
+region = "object_bank"
+ceiling = 0x20000
+cursor = "DeformTable_Zero"

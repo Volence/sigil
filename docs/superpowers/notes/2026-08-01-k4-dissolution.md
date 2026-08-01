@@ -662,3 +662,113 @@ AS residual now emits ZERO bytes (game.asm + debugger.asm are defines/externs on
 **Remaining (inc-6 B):** the A1 stubs (`game_root.asm` ×2), the budget-cursor adaptation
 (compute from object_bank sections, retiring `__BUDGET_DATA`), the game_root_rel flip,
 and DELETE main.asm ×2 + engine.inc. Then the §0 end-state final annotation.
+
+### Inc-6 B — the skeleton deletion (DONE; main.asm ×2 + engine.inc gone)
+
+**Porter: Opus (k4-inc6b branch, aeon + sigil worktree). Overseer/spec owner: Fable.**
+The six ruled steps landed, each its own commit; anchors held ×6 throughout.
+
+1. **Budget-cursor adaptation (byte-neutral).** The object bank and the data region pack
+   CONTIGUOUSLY in `[$10000,$20000)` and the data extends BEYOND the window (collision_data
+   ends at $41BDA), so an LMA-window scan cannot separate object code from data — only a
+   declared boundary can. `native::object_bank_cursor` now takes the map-declared cursor
+   label and resolves its LMA (the object-code terminus = where data begins). The
+   `[[budget]]` table gains `cursor` (`map_placement::Budget`): sonic4/sigil.map.toml
+   `= "DeformTable_Zero"`, demo `= "ObjDef_DemoBox"`. Reports used = 0x1294 (the true
+   object-code size; a naive window scan mis-reported the data-inclusive 0xFE30). The AS
+   `__BUDGET_DATA` marker the cursor used to key off retires with engine.inc.
+2. **The A1 stubs `games/<g>/game_root.asm`.** `cpu 68000 / padding off / supmode on`,
+   `include game.asm`, `include debugger.asm`, `END` — no orgs. sonic4's stub also re-homes
+   the ONE cross-seam artifact include the deleted `gameSoundDataIncludes` carried: the
+   SIGIL_EMP_MT-gated `mt_syms{,_debug}.asm` (SongTable/SongPatchTable absolute equs,
+   externed by `sound_api.emp`). demo is sound-OFF → no sound include.
+3. **`game_root_rel` flipped** (native.rs, all 4 sonic4-rooted profiles + demo →
+   `games/<g>/game_root.asm`). `map_path` still resolves (parent `games/<g>/` unchanged);
+   the `/demo/` appendix-floor discriminator still matches. Proven byte-identical BEFORE
+   deleting the skeleton (game_root.asm is a byte-perfect replacement).
+4. **DELETED** `games/sonic4/main.asm` + `games/demo/main.asm` + `engine/engine.inc`.
+   build.sh `MAIN_ASM` → game_root.asm; `__BUDGET_DATA` removed from s4/s4_debug frozen
+   tables (regenerated clean by the re-freeze); stale comments swept (player_air/ground.emp,
+   build.sh, repin.rs). The 7 game*Includes macros die with the files.
+
+**The residual re-homing inventory (nothing died silently).** The AS residual emitted 4
+zero-length sections; each accounted for:
+- `__BUDGET_ENGINE` @ $100 — no consumer (inc-6A finding); dies.
+- `__BUDGET_DATA` @ ~$11294 — the object-bank cursor (re-keyed to the map, step 1);
+  removed from s4/s4_debug frozen tables; dies.
+- `MovingTrucks_Bank_Start` @ $58000 — its `>>15` fed `SND_ENGINE_TABLE_BANK`/`SFX_BLOB_BANK`
+  (consumed ONLY by seam-1 Z80 modules, which the seam provides independently —
+  `seam1.rs:760` hardcodes the bank ids, `seam2.rs` synthesizes its own head). No whole-ROM
+  `.emp` externs it; dies harmlessly.
+- the label-less epilogue-resume tail @ EndOfRom — dies.
+- `SongTable`/`SongPatchTable` (via `mt_syms`) — the ONE genuine whole-ROM cross-seam dep
+  (`sound_api.emp` `movea.l #SONG_TABLE`); RE-HOMED to `game_root.asm` (gated). Zero bytes.
+
+**Kill-rows 9/45 (STOP-critical) — GREEN by construction.** They re-extract game.asm's
+macro bodies, which are byte-UNTOUCHED (only the include SITE moved, main.asm→game_root.asm):
+- kill row 9 — `game_loop_port` (gameDebugTick H2 mirror): **2 passed / 0 failed**.
+- kill row 45 — `boot_port` (gameBootHook): **4 passed / 0 failed**.
+
+**Identity: ANCHORS IDENTICAL ×6 — appendix-only re-freeze (chain #18 `k4-skeleton`, ab="").**
+The predicted label-set shift materialized: the dissolved AS-residual labels left the deb2
+symbol dump, shrinking the sound-on appendix by the one appendix-resident label
+(`MovingTrucks_Bank_Start`, −20 B). The assembled `[0,EndOfRom)` prefix is byte-identical
+(header-neutral anchor CRC unchanged ×6); the sigil-patched header checksum ($18E) + rom_end
+($1A4) move because the total file SHRANK. NO assembled-anchor move → no STOP → the sanctioned
+appendix-only re-freeze (`refreeze --freeze k4-skeleton`, no `--ab`, the tool's anchor
+discipline pre-check passed).
+
+| target | full_crc (was → now) | anchor_crc (UNCHANGED) / anchor_end |
+|---|---|---|
+| s4 | `94708cfb` → **`5f72b9c3`** / 412134 | `658c623b` / 0x5DB00 |
+| s4_debug | `6f0a1948` → **`e6171a80`** / 421970 | `b137c411` / 0x5F5F2 |
+| config_a | `b3ce9e67` → **`f92f0333`** / 422305 | `19b793ec` / 0x5F5F2 |
+| demo / demo_debug / config_b | UNCHANGED (residual labels not in their appendix) | e2dc9207 / b7d81931 / 8b490cfb |
+
+Gates: strict **2903 / 0 / 4** (baseline; no new test binary — pure deletion + re-key);
+`repin --check` clean (0 pins changed); K1 order-validation green (the order lists never
+named the dissolved zero-byte markers). Bookkeeping same-branch: census #50/#19/#50b(engine.inc)
+→ DELETED; kill-list AS-org-arm closure note (rows 5/6/58/60/64/67/72/73/79/84/85/86/88/89/
+90/91); gap-ledger K4 inc-6B section (mt_syms re-home, vestigial repin paste blocks, vestigial
+code_gates).
+
+## §0 — THE K END-STATE, CERTIFIED (what is now TRUE)
+
+- **Placement authority = the DECLARED map, not bootstrapped tables.** Every section's
+  order/anchor/hole/budget is a reviewed `games/<g>/map.toml` fact; the frozen tables are
+  now pure per-freeze MEASUREMENT caches (they record what the pack produced — the last
+  authoring role, the object-bank `__BUDGET_DATA` cursor, moved to the map this increment).
+- **`games/sonic4/main.asm` + `games/demo/main.asm` + `engine/engine.inc` DELETED.** ✅
+- **`engine/macros.asm` DELETED** (K4 inc-1). ✅
+- **Every included module / data island is manifest-placed `.emp`.** ✅ — header (inc-2),
+  collision + Sonic art (inc-3), the whole sound bank (inc-5: DAC + MT + SFX bodies + the
+  phase-bank head, `sound_bank.inc` deleted), the epilogue/EndOfRom (B1), ObjCodeBase +
+  NullInterrupt (inc-6A). The OJZ level tree + all engine code went `.emp` in K1–K3.
+- **The 106 inert `org` lines are GONE** — they died with the files that carried them; the
+  proof is made visible (the ROM is byte-identical without them).
+
+### The named survivors — the honest 100%
+Everything else is `.emp`. What remains on the AS side, and WHY each is a sanctioned survivor
+(spec §0), not an unfinished port:
+
+1. **`games/sonic4/config/game.asm` + `games/demo/config/game.asm`** — the game CONTRACT:
+   `GAME_CAMERA_JUMP_LOCK`, `Game_Entry`/`GAME_ENTRY_ID`, and the `gameBootHook`/`gameDebugTick`
+   macro bodies. Their retirement is the **game-contract-hook language construct**, an
+   explicitly-deferred language-round item (spec §4). The kill-row-9/45 combo matrices are
+   their standing guard (they byte-diff these exact macro bodies' AS expansion every run).
+2. **The vendored MD Debugger tree — `engine/debug/debugger.asm`** — Volence's ruling (an own
+   debugger is planned). Definitions + macros only; the error-handler blob itself is native
+   (`error_handler.emp`), and debugger.asm resolves `MDDBG__*` as link externs off that base.
+3. **`engine/sound/generated/mt_syms{,_debug}.asm`** — an EMITTED ARTIFACT (like the sound
+   `.bin`), not hand-authored source: the seam-2 emit writes SongTable/SongPatchTable as
+   absolute equs because they sit at mid-blob offsets a single `embed()` can't label. A
+   future emit that emits them as separate tiny artifacts drops it (gap-ledgered).
+4. **The two A1 stubs `games/<g>/game_root.asm`** — the ~5-line AS entry that loads survivors
+   1–3 into the residual symbol environment. Ruled A1: the minimal loader for the named
+   survivors, documented against the game-contract-hook ledger row. Emits ZERO bytes,
+   declares NO orgs.
+
+**The honest-100% statement:** the from-scratch ROM layout is now 100% the declared sigil
+map + registry; the AS side is FOUR files (2 game contracts + 1 vendored debugger + 1 emitted
+syms artifact) loaded by 2 five-line stubs, every one a spec-§0-named survivor with a ruled
+reason to remain. No `.asm` file emits a ROM byte or declares an `org`. Parcel K is complete.

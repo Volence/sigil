@@ -17,6 +17,19 @@ packet reviews the list; the campaign-end sweep closes whatever survives.
 
 ## Live mirrors
 
+> **✅ K4 inc-6B (2026-08-01) — the AS-org-arm half of every gate row RETIRED.**
+> `games/sonic4/main.asm` + `games/demo/main.asm` + `engine/engine.inc` are DELETED.
+> The `.asm` gate-off body twins were already gone (conv-d/the G-tranches); this deletes
+> the files that carried their `else org` resume arms + the whole inert org ladder. So the
+> **AS-side scaffolding named by rows 5/6/58/60/64/67/72/73/79/84/85/86/88/89/90/91 is gone**
+> — the "collapses to the `.emp` include when the `.asm` twin retires / Spec 5" kill
+> condition has FIRED for the org-arm half of each. What SURVIVES: the `pins.rs`/`repin.toml`
+> region pins (row 6's second half) — they are now the `.emp` placement authority the sigil
+> map + registry consult, NOT a mirror of any AS org. Row 91 (`SIGIL_EMP_*_BODY_STUB`) fully
+> closed at K4 inc-5 (the dead stub arms deleted with the sound-bank ports). The AS root is
+> now the two A1 stubs `games/<g>/game_root.asm` (game.asm + debugger.asm survivors + the
+> sonic4 `mt_syms` cross-seam re-home); nothing on the AS side declares an `org` any longer.
+
 | # | Mirror | Where | Guards | Kill condition |
 |---|--------|-------|--------|----------------|
 | 1 | **✅ CLOSED (Stage-3 P5, 2026-07-30): the constants ownership flip.** `engine.constants` is the SOLE author of the 114 emp-owned constants; `engine/constants.asm` deleted their `=` lines; the build harvests `constants.emp`'s `pub const` values (`harvest_engine_constants` → `eval_all_pub_consts`) and injects them as GUARDED AS defines (`AsOptions.guarded_defines`) so residual AS reads them at comptime + link-exports them (`attach_guarded_equ_exports`) for bare-link-symbol `.emp` consumers. The 114 drift `ensure`s deleted; `VDP_Shadow_len`'s KEPT (struct-generated — the bridge that retires with the structs flip). Byte-neutral. Closes rows 1/2/12/14/17/19/20. — `engine.constants` twin — `HW_PORT_1_DATA`, `HW_PORT_2_DATA`, `BUTTON_UP/DOWN/LEFT/RIGHT`, `CTYPE_AIR`, `VDP_Shadow_len` | `engine/system/constants.emp` (was: mirroring `engine/constants.asm`) | ~~8 ensures~~ (retired; VDP_Shadow_len's kept) | ~~`constants.asm` ports → ownership flip~~ DONE. |
