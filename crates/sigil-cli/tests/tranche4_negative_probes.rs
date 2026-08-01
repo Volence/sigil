@@ -362,10 +362,25 @@ fn parse_act_with_structs(act_src: &str, structs_src: &str) -> sigil_frontend_em
         .expect("engine/system/constants.emp must exist (set AEON_DIR)");
     let (constants, cd) = parse_str(&csrc);
     assert!(cd.iter().all(|d| d.level != Level::Error), "constants.emp parse errors: {cd:?}");
+    // Parcel K3: act_descriptor.emp also `use`s the generated pool-manifest +
+    // block-dict const modules (OJZ_ACT_POOL_PAGES/TILES + OJZ_SEC*_BLOCK_DICT_LEN,
+    // comptime ints). The single-file lower resolves no cross-module `use`, so
+    // ride their items ambient too.
+    let gen = aeon_dir().join("games/sonic4/data/generated/ojz/act1");
+    let msrc = std::fs::read_to_string(gen.join("ojz_act_pool_manifest.emp"))
+        .expect("ojz_act_pool_manifest.emp must exist (set AEON_DIR)");
+    let (manifest, md) = parse_str(&msrc);
+    assert!(md.iter().all(|d| d.level != Level::Error), "manifest.emp parse errors: {md:?}");
+    let dsrc = std::fs::read_to_string(gen.join("sec_block_dicts.emp"))
+        .expect("sec_block_dicts.emp must exist (set AEON_DIR)");
+    let (dicts, dd) = parse_str(&dsrc);
+    assert!(dd.iter().all(|d| d.level != Level::Error), "sec_block_dicts.emp parse errors: {dd:?}");
     let (act, ad) = parse_str(act_src);
     assert!(ad.iter().all(|d| d.level != Level::Error), "act parse errors: {ad:?}");
     let mut items = structs.items;
     items.extend(constants.items);
+    items.extend(manifest.items);
+    items.extend(dicts.items);
     items.extend(act.items);
     sigil_frontend_emp::ast::File { module: act.module, attrs: act.attrs, items, docs: act.docs }
 }
