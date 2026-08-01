@@ -127,3 +127,27 @@ anchors/holes/budgets, the order VALIDATION (not drive), the
 `[map.undeclared-island]` lint, and the fixture migration — all together,
 fold-identity ×6. The order-DRIVE flip is K5 (post-K4), a small parcel once
 names are stable.
+
+## §6 — The sound-bank pass ruling (K4 inc-4 stop, ruled)
+
+**P2, staged DAC-probe-first** (per the inc-4 finding's recommendation): native
+sections `embed()` the seam-2-emitted `.bin` at the declared bank anchors; the
+BINCLUDE arms delete; `ensure_generated` keeps emitting. The emit-tool
+architecture is a deliberate shipped design (build.sh REQUIRES SIGIL_EMIT) and
+P2 leaves it untouched — the boot_data port already embeds a sigil-emitted
+artifact identically. **P1 (seam-2 registry unification) is LEDGERED** as a
+post-K consolidation; its demand moment is when the emit-tool architecture
+itself needs changing.
+
+The two P2 caveats are design requirements, not afterthoughts:
+- **Golden gates run emit-first**: the port tests invoke `ensure_generated`
+  (the build's own contract) before comparing — gate at build level, the
+  boot_data pattern.
+- **STUB-arm reconciliation is the core**: the DSM `SIGIL_EMP_*_BODY_STUB`
+  arms and the native bank sections must be mutually exclusive per
+  configuration, enforced loudly — never both placed, never silently neither.
+
+Sequencing: B1 epilogue (bank-independent warm-up) → P2 DAC probe (non-phased,
+anchor exists) → phased MT / SFX / soundBankHead one at a time → then the A1
+stubs + skeleton deletion (inc-6) → K5. The bank-anchor rule stays armed
+throughout; ANY assembled-anchor move is a STOP.
