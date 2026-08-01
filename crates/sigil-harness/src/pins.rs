@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 69 regions, 299 symbols, 7 offsets
+//! [provenance] 70 regions, 299 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,6 +230,9 @@ pub const ERROR_HANDLER: Region = Region { plain_base: 0x5CA50, debug_base: 0x5E
 
 /// `Dac_Temp_Blip` .. start + 0xF8BC plain / 0xF8BC debug (literal — no end symbol) — gate `SIGIL_EMP_DAC`. tests: dac_bank_port
 pub const DAC_BANKS: Region = Region { plain_base: 0x48000, debug_base: 0x48000, plain_len: 0xF8BC, debug_len: 0xF8BC };
+
+/// `Song_MovingTrucks` .. start + 0x34E1 plain / 0x4F33 debug (literal — no end symbol) — gate `SIGIL_EMP_MT`. tests: mt_bank_port
+pub const MT_BANK_BLOB: Region = Region { plain_base: 0x58607, debug_base: 0x58607, plain_len: 0x34E1, debug_len: 0x4F33 };
 
 /// `EndOfRom` .. start + 0x0 plain / 0x0 debug (literal — no end symbol) — gate `SIGIL_EMP_EPILOGUE`. tests: m1d_rom, m1d_debug_rom
 pub const EPILOGUE: Region = Region { plain_base: 0x5DB00, debug_base: 0x5F5F2, plain_len: 0x0, debug_len: 0x0 };

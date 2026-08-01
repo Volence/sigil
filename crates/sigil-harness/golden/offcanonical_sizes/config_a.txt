@@ -7,10 +7,10 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=config_a
 # reproduces_golden=config_a.bin
-# golden_crc32=0b384578
+# golden_crc32=cfbd235b
 # assembled_anchor=19b793ec
 # assembled_end=0x5f5f2
-# labels=75
+# labels=77
 Ani_Particle 0x257ce
 Ani_Particle_End 0x257d6
 Ani_Sonic 0x25760
@@ -68,6 +68,7 @@ Read_Controllers 0x23c8
 RingBuffer_Add 0x39e4
 S4LZ_DecompressDict 0x2454
 Section_Init 0x6490
+Song_MovingTrucks 0x58607
 Sonic_InitAssets 0x10c10
 Sound_DebugMirror 0x8290
 Sound_PostByte 0x7ed8

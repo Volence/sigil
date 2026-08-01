@@ -492,3 +492,59 @@ validation are the loud guards. The pattern (native embed of the emitted .bin, d
 the BINCLUDE arm, re-key the bare gate, frozen-key seed, emit-first golden gate) is the
 template Stages 3/4 (MT / SFX) inherit — with the added phase-bank-anchor rule (a labeled
 $8000-window head NEVER repacks; the mt-gate catch class).
+
+### Stage 3 — P2 MT bank probe — DONE (anchors-proven flagged re-freeze)
+
+The Moving-Trucks streaming bank BODY (the BINCLUDE at $58607, inside the sound bank
+after the phased soundBankHead) is native — `games/sonic4/data/sound/mt_bank_blob.emp`
+embeds the seam-2 `mt_bank{,_debug}.bin`. Inherits the Stage-2 template + adds the
+shape-dependent + cross-seam-label wrinkles:
+
+- **Non-phased LMA embed** at $58607 (the MT body is emitted AFTER `dephase/restore`,
+  so its labels are plain LMA — like the DAC, NOT a `bank: $8000` phase section). The
+  start $58607 is shape-INVARIANT (soundBankHead is $607 both shapes); only the body
+  SIZE differs (plain 0x34E1 → $5BAE8, debug 0x4F33 → $5D53A, debug adds DrumTest +
+  HCZ2). The embed selects on DEBUG.
+- **`SongTable`/`SongPatchTable` stay AS-provided** by the emitted `mt_syms{,_debug}.asm`
+  (kept `include`d): they sit at mid-blob offsets (len − SONG_COUNT*8/4, SONG_COUNT 1
+  plain / 3 debug) a single `embed()` cannot label, and sound_api.emp externs them. This
+  is the pragmatic P2 — mt_syms.asm IS an emitted artifact (like the .bin). The native
+  section owns the BYTES + the head label `Song_MovingTrucks` (placement head; no runtime
+  consumer).
+- **Structural exclusivity** (inherited): the AS BINCLUDE deleted (can't-both), the native
+  section unconditional in sound-on (can't-neither); main.asm's `ifdef SIGIL_EMP_MT`
+  per-shape skip org ($5BAE8 plain / $5D53A debug) moves the AS cursor past the native
+  body so the SFX block lands correctly. The dead `SIGIL_EMP_MT_BODY_STUB` arm deleted.
+- **Wiring:** registry `games.sonic4.mt_bank_blob`/`mt_bank_blob` (sound-ON only — config_b
+  filtered); pin `MT_BANK_BLOB` (start=Song_MovingTrucks, len 0x34E1 plain / debug_len
+  0x4F33 — the shape-dependent literal-len form; the repin region name drives the CONST
+  name, K3-run-A); gate `SIGIL_EMP_MT`; map order + anchor (Song_MovingTrucks — not an
+  island, abuts soundBankHead at gap 0, so no new anchor); frozen-key seed
+  `Song_MovingTrucks 0x58607` ×3 sound-on tables (shape-invariant head); emit-first
+  `mt_bank_port` golden gate (2/2).
+
+**Identity: ANCHORS IDENTICAL ×6 — appendix-only flagged re-freeze (the inc-2 header
+precedent).** The MT body is byte-exact at $58607, `EndOfRom` is unchanged ($5DB00), and
+the assembled region `[0, EndOfRom)` is byte-identical EXCEPT the sigil-patched header
+checksum ($18E) + rom_end ($1A4) — the derived cells that MUST move when the image grows.
+The +18 bytes (plain) is the new `Song_MovingTrucks` label entering the deb2 symbol
+appendix (the AS twin had no head label — just BINCLUDE bytes — so this label is genuinely
+new; it cannot be avoided, the listing is pub-agnostic over all section labels). Proven by
+diff: the only `[0,EndOfRom)` diffs are $18E (checksum) + $1A4 (rom_end).
+
+| target | full_crc (was → now) | anchor_crc (UNCHANGED) / anchor_end |
+|---|---|---|
+| s4 | `4d28dc6b` → **`95428d52`** / 412169 | `658c623b` / 0x5DB00 |
+| s4_debug | `0d3cd198` → **`74e16b34`** / 422000 | `b137c411` / 0x5F5F2 |
+| config_a | `0b384578` → **`cfbd235b`** / 422337 | (anchor unchanged) |
+| demo / demo_debug / config_b | UNCHANGED (sound-off, no MT) | — |
+
+`refreeze --freeze k4-mt-bank` (no `--ab` — anchors did not move) appended provenance
+chain entry **#15**; the 3 sound-on goldens re-frozen; frozen tables re-derived (gained
+Song_MovingTrucks). Gates: strict **2899 / 0 / 4** (2897 + 2 mt_bank_port); `refreeze
+--check` OK (tip k4-mt-bank, chain 15); `repin --check` clean; K1 order green.
+
+Step-5: the `mt_syms.asm` retention is the one non-full-native residue (the mid-blob
+cross-seam labels). A future emit that emits `SongTable`/`SongPatchTable` as separate
+tiny artifacts, OR a split-embed with the emitted offset, would let the .emp own them —
+ledgered, not built (P2 keeps the emit pipeline untouched by design).

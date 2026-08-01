@@ -321,6 +321,10 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         // @ $50000 (the .bin ensure_generated emits). Sound-ON ONLY: filtered out of the
         // sound-off config_b (demo_registry already excludes it via the engine.* filter).
         m!("games.sonic4.dac_banks", "dac_banks", pins::DAC_BANKS),
+        // Parcel K4 inc-5 Stage 3 (P2 MT probe): the Moving-Trucks streaming bank body
+        // is native — mt_bank_blob.emp embeds the seam-2 mt_bank{,_debug}.bin @ $58607
+        // (after the phased soundBankHead; non-phased LMA labels). Sound-ON only.
+        m!("games.sonic4.mt_bank_blob", "mt_bank_blob", pins::MT_BANK_BLOB),
         // ── Game test states ──
         m!("games.sonic4.object_test_state", "object_test_state", pins::OBJECT_TEST_STATE),
         m!("games.sonic4.ojz_scroll_test", "ojz_scroll_test", pins::OJZ_SCROLL_TEST),
@@ -550,7 +554,11 @@ pub fn config_b_profile() -> GameProfile {
     // (dac_banks.emp; its .bin are emitted only in sound-on builds — ensure_generated).
     let mut registry: Vec<ModuleSpec> = registry(false)
         .into_iter()
-        .filter(|m| m.module_id != "engine.sound_api" && m.module_id != "games.sonic4.dac_banks")
+        .filter(|m| {
+            m.module_id != "engine.sound_api"
+                && m.module_id != "games.sonic4.dac_banks"
+                && m.module_id != "games.sonic4.mt_bank_blob"
+        })
         .collect();
     registry.push(ModuleSpec {
         module_id: "engine.z80_init",
