@@ -331,6 +331,8 @@ fn objdef_reference_gate(shape: &ObjShape) {
         parse_file("engine/objects/sst.emp"),
         parse_file("engine/system/constants.emp"),
         parse_file("engine/objects/objdef.emp"),
+        // VRAM_TEST_OBJ's authority (Parcel F: config/constants.asm → `.emp`).
+        parse_file("games/sonic4/config/constants.emp"),
     ];
     let consumer = parse_file("games/sonic4/data/objdefs/test_objects.emp");
     let (module_hdr, attrs, docs) = (consumer.module.clone(), consumer.attrs.clone(), consumer.docs.clone());

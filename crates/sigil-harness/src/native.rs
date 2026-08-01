@@ -69,6 +69,14 @@ pub struct GameProfile {
     /// from the synthetic entry (so its `pub vars` labels export to the joint
     /// link) and harvested (so eager AS reads of game RAM labels resolve).
     pub game_ram_module: &'static str,
+    /// The game's `.emp` constants module, relative to the aeon tree (conversion
+    /// Parcel F). `Some` when the game's config constants are `.emp`-authored
+    /// (`games.sonic4.constants`): `harvest_game_constants` reads its `pub const`s
+    /// and injects them as GUARDED AS `-D` defines + link EquSyms, so the residual
+    /// AS and the game-agnostic engine `.emp` (rings/entity_window/camera drift
+    /// guards) resolve them. `None` for a game whose config is still AS-authored
+    /// (demo — `games/demo/config/constants.asm`, Parcel H).
+    pub game_constants_rel: Option<&'static str>,
     pub debug: bool,
     /// Sound ON: pass `-D SOUND_DRIVER_ENABLED`, the DAC/MT/SFX BINCLUDE gates, and
     /// run `ensure_generated`. OFF (demo/Config-B): no sound define at all (AS `ifdef`
@@ -309,6 +317,7 @@ pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile 
         name: if debug { "sonic4_debug" } else { "sonic4" },
         game_root_rel: "games/sonic4/main.asm",
         game_ram_module: "games.sonic4.ram",
+        game_constants_rel: Some("games/sonic4/config/constants.emp"),
         debug,
         sound_on: true,
         extra_as_defines: vec![],
@@ -388,6 +397,7 @@ pub fn demo_profile(debug: bool) -> GameProfile {
         name: if debug { "demo_debug" } else { "demo" },
         game_root_rel: "games/demo/main.asm",
         game_ram_module: "games.demo.ram",
+        game_constants_rel: None,
         debug,
         sound_on: false,
         extra_as_defines: vec![],
@@ -442,6 +452,7 @@ pub fn config_b_profile() -> GameProfile {
         name: "config_b",
         game_root_rel: "games/sonic4/main.asm",
         game_ram_module: "games.sonic4.ram",
+        game_constants_rel: Some("games/sonic4/config/constants.emp"),
         debug: false,
         sound_on: false,
         extra_as_defines: vec![],
@@ -497,6 +508,7 @@ pub fn config_a_profile() -> GameProfile {
         name: "config_a",
         game_root_rel: "games/sonic4/main.asm",
         game_ram_module: "games.sonic4.ram",
+        game_constants_rel: Some("games/sonic4/config/constants.emp"),
         debug: true,
         sound_on: true,
         extra_as_defines: vec![("SOUND_DEBUG_HOTKEYS", 1), ("SOUND_DBG_MIRROR", 1)],
@@ -673,6 +685,43 @@ pub fn harvest_engine_constants(aeon: &Path) -> Result<Vec<(String, i64)>, Strin
     // exactly one injector — the same reason it was excluded when structs.asm
     // owned it, re-homed to the struct twin.
     Ok(vals.into_iter().filter(|(n, _)| n != "VDP_Shadow_len").collect())
+}
+
+/// Conversion Parcel F: harvest the game's `.emp` constants module (row 21,
+/// `games.sonic4.constants` = `games/sonic4/config/constants.emp`). Its `pub
+/// const`s are the SOLE authority for the Sonic 4 game constants (player-state /
+/// animation ids, ring-buffer + collected-window sizing, test-scaffold VRAM);
+/// this reads their resolved values so `assemble_as_side` injects them as GUARDED
+/// AS `-D` defines + link EquSyms, exactly as [`harvest_engine_constants`] does
+/// for the engine.
+///
+/// Unlike the engine constants module, the game module is NOT self-contained: its
+/// `COLLECTED_PARK_ENTRY_SIZE = 1 + 2 * COLLECTED_MASK_BYTES` reads the engine
+/// constant `COLLECTED_MASK_BYTES` (via `use engine.constants`), and its VRAM
+/// consts are typed `VramTile` (via `use engine.system.types`). `eval_all_pub_consts`
+/// resolves each `pub const`'s VALUE from the file's own items only (it does not
+/// load `use`-d modules) and IGNORES the type annotation — so the one cross-module
+/// value dependency is served by seeding the engine constants FIRST as defines
+/// (`eval_path` falls back to defines after consts/equs), the same pattern the
+/// `-D` seam already uses.
+pub fn harvest_game_constants(aeon: &Path, rel: &str) -> Result<Vec<(String, i64)>, String> {
+    // Seed the engine constants as defines so the game module's lone cross-module
+    // reference (`COLLECTED_MASK_BYTES`) folds inside the standalone eval.
+    let engine = harvest_engine_constants(aeon)?;
+    let seed: Vec<(String, i128)> = engine.iter().map(|(n, v)| (n.clone(), *v as i128)).collect();
+
+    let path = aeon.join(rel);
+    let src = std::fs::read_to_string(&path)
+        .map_err(|e| format!("harvest_game_constants: read {}: {e}", path.display()))?;
+    let (file, pdiags) = sigil_frontend_emp::parse_str(&src);
+    if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("harvest_game_constants: parse: {:?}", pdiags.first()));
+    }
+    let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(aeon), &seed);
+    if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        return Err(format!("harvest_game_constants: resolve: {:?}", diags.first()));
+    }
+    Ok(vals)
 }
 
 /// The `.emp` struct twins whose field offsets + total size the residual AS
@@ -873,6 +922,14 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
     // of the object/section/DMA/parallax/VDP-shadow layouts (structs.asm deleted),
     // so their field offsets + sizes inject the same way the constants do.
     guarded_defines.extend(harvest_engine_struct_offsets(aeon)?);
+    // Conversion Parcel F: the game's `.emp` constants module (row 21) is the sole
+    // authority for the game constants; harvest it the same way (guarded defines +
+    // link EquSyms), so the residual AS reads them and the game-agnostic engine
+    // `.emp`'s `ensure(extern("X") == X)` drift guards resolve against this
+    // authority. `None` for AS-authored game config (demo, Parcel H).
+    if let Some(rel) = profile.game_constants_rel {
+        guarded_defines.extend(harvest_game_constants(aeon, rel)?);
+    }
     // Item #7b (Option B bridge, spec §9): seed engine RAM label ADDRESSES as
     // PLAIN value defines — the AS side folds its eager absolute-EA operands +
     // `phase Engine_RAM_End`; the `.emp` `pub vars` labels stay the sole link

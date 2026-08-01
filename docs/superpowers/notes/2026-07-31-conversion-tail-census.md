@@ -80,7 +80,7 @@ zero-byte equate/offset); "A/B" = needs oracle A/B + re-freeze.
 
 | # | path | lines | what | class | eff | deps / blockers | notes |
 |---|---|---|---|---|---|---|---|
-| 21 | `games/sonic4/config/constants.asm` | 86 | game tuning, PSTATE_* ids, test scaffold consts | PORT (P6, rows 54/62/65) | M | reverse-seam; typed ids to language round | BN. Close-packet §4 P6: "these fold mostly into IMMEDIATES / dc data (link-position), which the PROVEN reverse-seam already serves — may NOT need the guarded-define channel." |
+| 21 | `games/sonic4/config/constants.asm` | 86 | game tuning, PSTATE_* ids, test scaffold consts | PORT (P6, rows 54/62/65) | M | reverse-seam; typed ids to language round | ✅ **DONE (conv-f #21, 2026-08-01, `2026-08-01-conv-f-game-config.md`).** `constants.asm` DELETED → `games/sonic4/config/constants.emp` (`games.sonic4.constants`), the sole authority. Census "no guarded-define channel" premise CORRECTED: the game-SIDE `.emp` (player_*, sonic_anims, test_*) folds through `use` (reverse-seam holds), but the game-AGNOSTIC engine `.emp` (rings/entity_window/ram drift guards) DID need the per-game harvest (`harvest_game_constants`, the #7c precedent) to link-export the pub consts. 3 game-VARYING `-D` interface consts (MAX_RING_BUFFER / VRAM_RING_PLACEHOLDER / COLLECTED_WINDOW_SLOTS) stay native.rs `emp_defines` (codebase forbids declaring a `-D` name in `.emp`). Six-target byte-identical; strict 2868→2867 (−1 retired probe). |
 | 22 | `games/sonic4/config/game.asm` | 83 | game contract (header strings, sound contract, hooks) | PORT (game contract) | M | Game_Entry already `.emp`-resolved; header contract | BN. |
 | 23 | `games/sonic4/config/ram.asm` | 60 | game RAM continuation (`phase Engine_RAM_End`) | PORT (`vars`) | M | **pairs with #5 ram.asm + B-0b** | ✅ **DONE (item #7c, `games/sonic4/config/ram.emp`)** — the cross-module chain `region game_ram @ after(upper_ram)` onto engine `upper_ram`; player/phys/history-ring fields; the `ifdef __DEBUG__` counters → `if DEBUG == 1 @shape_divergent`; `align 256` → `@align(256)` (AS in-phase align semantics). `.asm` deleted. Six-target byte-identical; repin zero-diff. |
 | 24 | `games/sonic4/config/sound_ids.asm` | 94 | SONG_*/SFXID_* numeric ids + SFX priority ladder | PORT (P6, rows 62/65) | M | typed `SFXID_RING_*` STAY DEFERRED to language round (typed-extern grammar) | BN for the untyped half. |
@@ -263,6 +263,40 @@ The untyped half folds through the reverse-seam (link-position) — likely no
 guarded-define channel needed (close-packet §4). Port sonic4 config constants,
 game contract, sound ids (untyped half). Typed `SFXID_RING_*` STAY DEFERRED to
 the language round. **BN.** Effort M. → files: **21, 22, 24**.
+
+> **PARCEL F #21 DONE; #22/#24 SCOPED (2026-08-01, `2026-08-01-conv-f-game-config.md`).**
+> **#21 constants.asm — FLIPPED + verified** (see the row-21 note above): six-target
+> byte-identical, strict 2867/0/4. Premise correction: the census "no guarded-define
+> channel needed" is HALF-right — game-side consumers `use` the new
+> `games.sonic4.constants` (reverse-seam holds), but the game-agnostic engine's extern
+> drift guards needed the per-game harvest (`harvest_game_constants`), and 3
+> game-VARYING `-D` interface constants stay native.rs `emp_defines` (a `-D` name
+> can never be declared in `.emp`). Effort was **L, not M** (new `.emp` module + harvest
+> fn + ~18 aeon consumer edits + heavy sigil test ripple: 7 port tests + m1c root).
+>
+> **#24 sound_ids.asm — SCOPED, NOT YET FLIPPED.** SPLIT verdict: `SFXID_*` (untyped) /
+> `SONG_*` (`if DEBUG`) / `SFXPRI_*` flip cleanly to a `games.sonic4.sound_ids` `.emp`
+> the SAME way #21 did (consumers: sound_api/sound_sfx/player_ground/player_spindash/
+> game_debug/mt_bank — most via drift-guard mirrors + the harvest). **REMAINDERS:** (a)
+> typed `SFXID_RING_*` PRE-RULED deferred (SfxId newtype, language round) — sound_api.emp
+> keeps its typed mirror; (b) `SFX_ID_BASE`/`SFX_COUNT`/`SFX_TABLE_LEN` are read at
+> AS-time by `engine/sound/sound_bank.inc` (`if …<> SFX_TABLE_LEN*2 fatal`) AND are
+> UNCHECKED MIRRORS of `sfx_bank.emp` + hardcoded in `seam1.rs`/`seam2.rs` — a
+> triple-mirror entangled with the sound seam (Parcel-E-adjacent); flip only after
+> deciding the sfx_bank.emp/seam authority, else park with a reason. The clean subset
+> (SFXID_*/SONG_*/SFXPRI_*) is a direct #21 clone.
+>
+> **#22 game.asm — SCOPED, mostly a documented REMAINDER.** Empirically: gameBootHook /
+> gameDebugTick macros are DEFINED-but-never-INVOKED in the residual (boot.emp /
+> game_loop.emp expand the `.emp` mirrors) — so they force no AS reads, but their bodies
+> are the game_loop combo-matrix LOCKSTEP reference (kill row 9) → PARK (AS). Header
+> strings (GAME_CONSOLE…) are read by the invoked `gameHeader` (header.inc) → PARK (AS
+> ROM-header data). `Game_Entry = GameState_OJZScroll_Init` is a cross-seam label
+> equalate (main.asm `move.l #Game_Entry`) → PARK. `GAME_CAMERA_JUMP_LOCK` is a `-D`
+> (emp_defines) → cannot move to `.emp`. `GAME_ENTRY_ID = GS_OJZ_SCROLL_TEST` reads a
+> now-`.emp` game const via the harvest → stays AS. Only flip candidate: `SFXID_REV_LOOP
+> = SFXID_SPINDASH` (a sound const → belongs with #24). So game.asm ships as a named
+> remainder (header/macros/Game_Entry/-D gates), NOT a flip.
 
 ### Parcel G — the parallax config DSL · #36–45 (+ the macro layer)  [Wave-C SYNERGY]
 Sequence AFTER Wave C (row-35 parallax hardening, ledger 1825) so the port lands

@@ -327,12 +327,16 @@ fn compile_real_file_with(
 }
 
 /// All prepended drift guards must be captured and PASS: the engine constants
-/// twin (derived via the shared truth list) + rings.emp's own 4 game-owned
-/// mirrors. sst.emp's SST_* wall retired at the conv-a structs flip.
+/// twin (derived via the shared truth list) + rings.emp's own 2 engine-invariant
+/// game-owned mirrors (RING_BUFFER_ENTRY_SIZE / RING_WIDTH). sst.emp's SST_* wall
+/// retired at the conv-a structs flip; the game-VARYING MAX_RING_BUFFER /
+/// VRAM_RING_PLACEHOLDER guards retired at conv-f (they are native.rs `-D`
+/// interface values with no `.emp`/AS authority to cross-check — byte-identity is
+/// their drift net).
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    let want = sigil_harness::test_support::engine_constant_equs().len() + 4;
-    assert_eq!(guards, want, "the constants twin's {} + rings.emp's 4 drift guards must be captured", sigil_harness::test_support::engine_constant_equs().len());
+    let want = sigil_harness::test_support::engine_constant_equs().len() + 2;
+    assert_eq!(guards, want, "the constants twin's {} + rings.emp's 2 drift guards must be captured", sigil_harness::test_support::engine_constant_equs().len());
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -523,33 +527,14 @@ fn zero_disp_collapse_probe() {
     );
 }
 
-// ── The game-mirror drift probe (kill-list row 18's guard) ──────────────────
-
-/// A DOCTORED game-owned mirror truth (`MAX_RING_BUFFER` = 64 AS-side while
-/// rings.emp says 128) must fire rings.emp's own `ensure(extern(…))` guard
-/// NAMING the constant — paired with the undoctored control that passes
-/// through the same plumbing (the reference gates above).
-#[test]
-fn doctored_game_mirror_fires_its_guard() {
-    let aeon = aeon_dir();
-    if !aeon.join("engine/objects/rings.emp").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon sources missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
-    let defines: Vec<(&str, i128)> = vec![("DEBUG", 0), ("SOUND_DRIVER_ENABLED", 1)];
-    let (resolved, _, link_asserts) =
-        compile_real_file_with(&PLAIN, &defines, Some(("MAX_RING_BUFFER", "64")));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    let fired: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
-    assert!(
-        !fired.is_empty(),
-        "the doctored MAX_RING_BUFFER truth must fire rings.emp's drift guard"
-    );
-    assert!(
-        fired.iter().any(|d| d.message.contains("MAX_RING_BUFFER")),
-        "the fired guard must NAME the drifted constant: {fired:?}"
-    );
-}
+// ── The game-mirror drift probe (kill-list row 18's guard) — RETIRED at conv-f ─
+//
+// The `doctored_game_mirror_fires_its_guard` negative probe doctored MAX_RING_BUFFER
+// and asserted rings.emp's `ensure(extern("MAX_RING_BUFFER") == …)` fired. Parcel F
+// flipped sonic4's config constants to `.emp`, which cannot declare a `-D` name, so
+// MAX_RING_BUFFER / VRAM_RING_PLACEHOLDER stay native.rs `-D` interface values with
+// no `.emp`/AS authority — the extern guards were retired. A wrong `-D` MOVES ROM
+// bytes, so the undoctored region-match gates above (`rings_region_matches_reference`
+// / `_debug`) are the surviving proof (six-target byte-identity is the drift net).
+// RING_BUFFER_ENTRY_SIZE / RING_WIDTH keep their guards + could carry a doctored
+// probe; MAX_RING_BUFFER's probe has no guard left to fire.

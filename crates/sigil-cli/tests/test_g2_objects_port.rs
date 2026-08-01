@@ -220,6 +220,8 @@ fn compile_real_files(shape: &Shape) -> Compiled {
     let sst = || parse_file(&aeon.join("engine/objects/sst.emp"));
     let constants = || parse_file(&aeon.join("engine/system/constants.emp"));
     let objdef = || parse_file(&aeon.join("engine/objects/objdef.emp"));
+    // VRAM_TEST_OBJ's authority (Parcel F: config/constants.asm → `.emp`).
+    let game_consts = || parse_file(&aeon.join("games/sonic4/config/constants.emp"));
 
     let files = [
         ("test_emitter", "games/sonic4/objects/test_emitter.emp"),
@@ -238,8 +240,10 @@ fn compile_real_files(shape: &Shape) -> Compiled {
     let mut guards = Vec::new();
     for (region, rel) in files {
         let main = parse_file(&aeon.join(rel));
-        let file =
-            with_ambient(vec![types(), sst(), constants(), objdef(), spawn_desc_file(&aeon)], main);
+        let file = with_ambient(
+            vec![types(), sst(), constants(), objdef(), spawn_desc_file(&aeon), game_consts()],
+            main,
+        );
         let (module, ldiags) = lower_module(&file, &opts);
         assert!(
             ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -344,11 +348,12 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
 
     let c = compile_real_files(shape);
 
-    // sst.emp's SST_* wall retired at the conv-a structs flip; each file keeps
-    // the constants twin's guards + its own one (VRAM_TEST_OBJ).
-    let want = twin_guards() + 1;
+    // sst.emp's SST_* wall retired at the conv-a structs flip; each file's own
+    // VRAM_TEST_OBJ mirror guard retired at conv-f (config constants flipped to
+    // `.emp`, `use`d now), leaving the constants twin's guards.
+    let want = twin_guards();
     for (region, g) in &c.guards {
-        assert_eq!(*g, want, "{region}'s ambient sst + constants guards + its own VRAM_TEST_OBJ captured");
+        assert_eq!(*g, want, "{region}'s ambient sst + constants twin guards captured (own VRAM_TEST_OBJ guard retired at conv-f)");
     }
     let diags = sigil_link::check_link_asserts(&c.resolved, &SymbolTable::new(), &c.link_asserts);
     assert!(
