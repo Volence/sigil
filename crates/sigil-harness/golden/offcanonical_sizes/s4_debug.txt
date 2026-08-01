@@ -7,10 +7,10 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=s4_debug
 # reproduces_golden=s4.debug.bin
-# golden_crc32=16615e46
+# golden_crc32=06680f0b
 # assembled_anchor=b137c411
 # assembled_end=0x5f5f2
-# labels=67
+# labels=69
 Ani_Particle 0x257da
 Ani_Sonic 0x2576c
 AnimateSprite 0x351a
@@ -26,6 +26,7 @@ Collected_Init 0x3bde
 Collision_GetType 0x5e40
 Collision_ProbeDown 0x5eb0
 CompressionSelfTest 0x7176
+DeformTable_Zero 0x1131c
 EndOfRom 0x5f5f2
 EntryPoint 0x200
 GameLoop 0x2428
@@ -39,13 +40,13 @@ InitSpriteSystem 0x30fa
 Init_DMA_Queue 0x1cd4
 Init_SpriteTable 0x1fda
 Load_Object 0x4d20
+Map_TestObj 0x2573c
 NullInterrupt 0x5e540
 OJZ_Act1_Descriptor 0x14bba
 OJZ_Sec0_Blocks 0x14e2e
 OJZ_Sec0_TypeTable 0x11e0e
 ObjCodeBase 0x10000
 ObjDef_PathSwap 0x11222
-DeformTable_Zero 0x1131c
 ObjDef_Static 0x11da6
 PState_Air 0x108a8
 PState_Ground 0x10450

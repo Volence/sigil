@@ -257,6 +257,10 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         // The OJZ parallax block (conv-g): 6 deform tables + 20 parallax_config
         // records, authored via games.sonic4.parallax_configs (+ engine.level.parallax_dsl).
         m!("games.sonic4.parallax_configs", "parallax_configs", pins::PARALLAX_CONFIGS),
+        // test_mappings (conv-h #35): the test-object sprite mapping index
+        // (Map_TestObj word-offset table + 3 frame records), authored via the
+        // `offsets` construct in games.sonic4.data.mappings.test_mappings.
+        m!("games.sonic4.test_mappings", "test_mappings", pins::TEST_MAPPINGS),
         m!("games.sonic4.sonic_anims", "sonic_anims", pins::SONIC_ANIMS),
         m!("games.sonic4.particle_anims", "particle_anims", pins::PARTICLE_ANIMS),
         // act_descriptor (kill row 93): the OJZ act1 descriptor table; header stays
@@ -1043,7 +1047,8 @@ fn code_gate_defines() -> Vec<&'static str> {
         "SIGIL_EMP_SONIC", "SIGIL_EMP_TEST_STATIC", "SIGIL_EMP_TEST_ANIMATED",
         "SIGIL_EMP_TEST_OBJECTS", "SIGIL_EMP_TEST_EMITTER", "SIGIL_EMP_TEST_PARENT",
         "SIGIL_EMP_TEST_STRESS_EMITTER", "SIGIL_EMP_TEST_CHURN", "SIGIL_EMP_PATH_SWAP",
-        "SIGIL_EMP_OBJDEFS", "SIGIL_EMP_PARALLAX_CONFIGS", "SIGIL_EMP_SONIC_ANIMS", "SIGIL_EMP_PARTICLE_ANIMS",
+        "SIGIL_EMP_OBJDEFS", "SIGIL_EMP_PARALLAX_CONFIGS", "SIGIL_EMP_TEST_MAPPINGS",
+        "SIGIL_EMP_SONIC_ANIMS", "SIGIL_EMP_PARTICLE_ANIMS",
         "SIGIL_EMP_OBJECT_TEST_STATE", "SIGIL_EMP_OJZ_SCROLL_TEST",
         // Stage-3 keystone flip (kill row 93): the last AS-owned code twins gate
         // off (bodies → `.emp`, always-emitted headers stay AS-side).

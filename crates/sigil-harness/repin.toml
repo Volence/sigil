@@ -475,6 +475,17 @@ end = "ObjDef_Static"
 gate = "SIGIL_EMP_PARALLAX_CONFIGS"
 tests = ["parallax_configs_port"]
 
+# conv-h #35 — the test-object sprite mapping index (Map_TestObj word-offset
+# table + 3 frame records). END = the next section head (Ani_Sonic, the native
+# sonic_anims region base) — the end-is-next-placement precedent. The Map_TestObj
+# LABEL pin (below) still serves objdef_port's cross-seam map pointer.
+[[region]]
+name = "test_mappings"
+start = "Map_TestObj"
+end = "Ani_Sonic"
+gate = "SIGIL_EMP_TEST_MAPPINGS"
+tests = ["test_mappings_port"]
+
 [[region]]
 name = "sonic_anims"
 start = "Ani_Sonic"

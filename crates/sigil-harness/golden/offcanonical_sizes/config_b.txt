@@ -7,10 +7,10 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=config_b
 # reproduces_golden=config_b.bin
-# golden_crc32=f38f609b
+# golden_crc32=d6d23298
 # assembled_anchor=8b490cfb
 # assembled_end=0x43480
-# labels=67
+# labels=68
 Ani_Particle 0x25728
 Ani_Particle_End 0x25730
 Ani_Sonic 0x256ba
@@ -40,6 +40,7 @@ InitSpriteSystem 0x12c6
 Init_DMA_Queue 0x456
 Init_SpriteTable 0x758
 Load_Object 0x27e0
+Map_TestObj 0x2568a
 NullInterrupt 0x423c2
 OJZ_Act1_Descriptor 0x14b08
 OJZ_Sec0_Blocks 0x14d7c
