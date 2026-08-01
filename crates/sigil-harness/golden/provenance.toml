@@ -454,3 +454,50 @@ full_crc = "16615e46"
 full_size = 421958
 anchor_crc = "b137c411"
 anchor_end = 0x5f5f2
+
+[[entry]]
+name = "conv-h-test-mappings"
+ab = "docs/superpowers/notes/2026-08-01-conv-h-game-data.md"
+note = "test_mappings.asm -> .emp offsets construct: assembled body byte-identical (anchors unchanged), appendix-only re-freeze (frame labels -> __offsets$ hygienic names)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "2485eab3"
+full_size = 422297
+anchor_crc = "19b793ec"
+anchor_end = 0x5f5f2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "d6d23298"
+full_size = 303501
+anchor_crc = "8b490cfb"
+anchor_end = 0x43480
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "9bb8c993"
+full_size = 90506
+anchor_crc = "e2dc9207"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "bc7678d0"
+full_size = 93006
+anchor_crc = "b7d81931"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "ff9037f2"
+full_size = 412127
+anchor_crc = "658c623b"
+anchor_end = 0x5db00
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "06680f0b"
+full_size = 421958
+anchor_crc = "b137c411"
+anchor_end = 0x5f5f2

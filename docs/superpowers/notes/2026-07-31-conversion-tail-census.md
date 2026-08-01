@@ -61,20 +61,20 @@ zero-byte equate/offset); "A/B" = needs oracle A/B + re-freeze.
 
 | # | path | lines | what | class | eff | deps / blockers | notes |
 |---|---|---|---|---|---|---|---|
-| 12 | `engine/system/boot_data.asm` | 149 | `BootData` (a5)+ cursor table (movem preload, VDP reg bytes, DMA fill, PSG silence, post-DMA cmds) + z80_init include + layout-assert wall | PORT (data table) | M | `boot.emp` already reads BootData; the assert wall → `.emp` ensures; the z80_init include is #13 | BN. Data-DSL demand (ledger 1526, row-46 "boot's cursor protocol"). No `boot_data.emp` yet. |
+| 12 | `engine/system/boot_data.asm` | 149 | `BootData` (a5)+ cursor table (movem preload, VDP reg bytes, DMA fill, PSG silence, post-DMA cmds) + z80_init include + layout-assert wall | PORT (data table) | M | `boot.emp` already reads BootData; the assert wall → `.emp` ensures; the z80_init include is #13 | BN. **NAMED REMAINDER (conv-h): `.emp` has NO binary-embed** — BootData splices the resident Z80 blob mid-table via `BINCLUDE` (AS-frontend-only), so a straight `.emp` data section can't express it. Needs a new `embed`/`incbin` surface, or AS-authored exception. |
 | 13 | `engine/system/z80_init.asm` | 38 | Z80 idle program (no-sound builds) | OWNERSHIP-FLIP | S | twin `z80_init.emp` EXISTS, gated `SIGIL_EMP_Z80_INIT` | BN (both shipped shapes have sound → dead in canonical). Flip = make `.emp` unconditional, delete `.asm`. Oracle `z80_init_port` is its region proof. |
 
 ### games/demo (the "start here" template — a separate ROM target with its own goldens)
 
 | # | path | lines | what | class | eff | deps / blockers | notes |
 |---|---|---|---|---|---|---|---|
-| 14 | `games/demo/config/constants.asm` | 14 | demo game constants + capacity contracts | PORT | S | reverse-seam (link-position) | BN vs demo/demod goldens. |
-| 15 | `games/demo/config/game.asm` | 30 | demo game contract (header strings, hooks) | PORT | S | header string contract | BN. |
+| 14 | `games/demo/config/constants.asm` | 14 | demo game constants + capacity contracts | PORT | S | reverse-seam (link-position) | BN. **NAMED REMAINDER (conv-h): needs a demo `harvest_game_constants` (conv-f #21 shape).** |
+| 15 | `games/demo/config/game.asm` | 30 | demo game contract (header strings, hooks) | PORT | S | header string contract | BN. **NAMED REMAINDER (conv-h): mostly a remainder like sonic4 #22** (header ROM data + defined-not-invoked hooks + Game_Entry + `-D`). |
 | 16 | `games/demo/config/ram.asm` | 9 | demo game RAM (empty stub) | PORT (`vars`) | S | `vars` construct | ✅ **DONE (item #7c, `games/demo/config/ram.emp`)** — `region game_ram @ after(upper_ram) .. SYSTEM_STACK, w_addressable` + an empty `pub vars` producing `Game_RAM_End`. `.asm` deleted; `gameRamIncludes` emptied. Six-target byte-identical. |
-| 17 | `games/demo/data/demo_data.asm` | 39 | objdef/mapping/art/palette | PORT (data) | S | vram_art/sprSize helpers; `objdef` construct | BN. |
-| 18 | `games/demo/demo_state.asm` | 36 | `GameState_Demo_Init` code | PORT (code) | S | DMA/object API externs | BN. |
+| 17 | `games/demo/data/demo_data.asm` | 39 | objdef/mapping/art/palette | PORT (data) | S | vram_art/sprSize helpers; `objdef` construct | BN. **NAMED REMAINDER (conv-h): BLOCKED on the demo native game-module placement path** (demo_registry is engine-only; no demo game pins/gates/frozen anchors). |
+| 18 | `games/demo/demo_state.asm` | 36 | `GameState_Demo_Init` code | PORT (code) | S | DMA/object API externs | BN. **NAMED REMAINDER (conv-h): same demo-infra block as #17** (code port, needs demo registry/pins/gate). |
 | 19 | `games/demo/main.asm` | 43 | demo game manifest (include-order macros) | RESIDUAL-SKELETON | S | collapses when 14–20 are all `.emp` | The thin manifest; may survive as the minimal template or die with residual-split. |
-| 20 | `games/demo/objects/demo_box.asm` | 3 | `DemoBox_Main: jmp Draw_Sprite` | PORT (code) | S | — | BN. Trivial. |
+| 20 | `games/demo/objects/demo_box.asm` | 3 | `DemoBox_Main: jmp Draw_Sprite` | PORT (code) | S | — | BN. Trivial CODE, but **NAMED REMAINDER (conv-h): same demo-infra block** — even 3 lines need a demo native ROM region. |
 
 ### games/sonic4/config
 
@@ -108,13 +108,13 @@ zero-byte equate/offset); "A/B" = needs oracle A/B + re-freeze.
 
 | # | path | lines | what | class | eff | deps / blockers | notes |
 |---|---|---|---|---|---|---|---|
-| 34 | `data/levels/ojz/act1/act_descriptor.asm` | 268 | level descriptor + section grid tables (uses `Act`/`Sec` struct; `include`s the generated pool/dict/blob files) | PORT / DATA-DSL | M | **structs flip (#3)** for the struct twins; `[Act;N]`/`[Sec;N]` struct-array DSL; the generated includes (#30–33) | BN. `act_descriptor.emp` already exists partially (P5 consumer of SECTION_SIZE_SHIFT/EDGE_CLAMP). The struct-array form is the DATA-DSL end-state (ledger 1621 panel B1). |
+| 34 | `data/levels/ojz/act1/act_descriptor.asm` | 268 | level descriptor + section grid tables (uses `Act`/`Sec` struct; `include`s the generated pool/dict/blob files) | PORT / DATA-DSL | M | **structs flip (#3)** for the struct twins; `[Act;N]`/`[Sec;N]` struct-array DSL; the generated includes (#30–33) | BN. **✅ DONE (conv-h #34):** the descriptor+sections were already the canonical typed `Act`/`[Sec;9]` literal in `act_descriptor.emp` (gate on every sonic4 build); the dead `ifndef` AS twin + duplicated grid/axis asserts DELETED. Generated includes/BINCLUDEs + org resume stay AS-side. Six targets byte-identical (kill row 93). |
 
 ### games/sonic4/data/mappings
 
 | # | path | lines | what | class | eff | deps / blockers | notes |
 |---|---|---|---|---|---|---|---|
-| 35 | `data/mappings/test_mappings.asm` | 40 | test sprite mappings (frame header + piece records, word offset table) | DATA-DSL | S | offset-table + piece-record DSL; sprSize helper | BN. Offset-table roadmap #1 candidate (memory `emp-data-table-dsl-candidates`). |
+| 35 | `data/mappings/test_mappings.asm` | 40 | test sprite mappings (frame header + piece records, word offset table) | DATA-DSL | S | offset-table + piece-record DSL; sprSize helper | BN. **✅ DONE (conv-h #35):** ported to `test_mappings.emp` — `Map_TestObj` = §4.7 `offsets` table over 3 struct-typed `MapFrame1` inline bodies + `spr_size` comptime fn. Native `TEST_MAPPINGS` region. Assembled ROM byte-identical (anchors unchanged); appendix-only re-freeze (frame labels -> `__offsets$`). test_mappings_port gate. |
 
 ### games/sonic4/data/parallax (config DSL — depends on parallax_macros.inc macro layer)
 
@@ -135,7 +135,7 @@ zero-byte equate/offset); "A/B" = needs oracle A/B + re-freeze.
 
 | # | path | lines | what | class | eff | deps / blockers | notes |
 |---|---|---|---|---|---|---|---|
-| 46 | `data/sprites/pitcher_plant/anims.asm` | 6 | `Ani_PitcherPlant` table | DATA-DSL (anim table) | S | **PARKED** — pitcher_plant object never wired in (ledger line ~459) | Convert with the anim-table DSL, or delete if the object stays unwired. Confirm intent. |
+| 46 | `data/sprites/pitcher_plant/anims.asm` | 6 | `Ani_PitcherPlant` table | DATA-DSL (anim table) | S | **PARKED** — pitcher_plant object never wired in (ledger line ~459) | **✅ DONE (conv-h #46): DELETED** (Volence pre-ruled). Verified unwired — no build file includes it; only `sprite.json` editor metadata references `Ani_PitcherPlant`. |
 
 ### games/sonic4/objects + player (gated code twins — `.emp` twin exists)
 

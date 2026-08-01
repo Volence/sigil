@@ -177,6 +177,9 @@ pub const PATH_SWAP: Region = Region { plain_base: 0x11202, debug_base: 0x11222,
 /// `DeformTable_Zero` .. `ObjDef_Static` — gate `SIGIL_EMP_PARALLAX_CONFIGS`. tests: parallax_configs_port
 pub const PARALLAX_CONFIGS: Region = Region { plain_base: 0x11294, debug_base: 0x1131C, plain_len: 0xA8A, debug_len: 0xA8A };
 
+/// `Map_TestObj` .. `Ani_Sonic` — gate `SIGIL_EMP_TEST_MAPPINGS`. tests: test_mappings_port
+pub const TEST_MAPPINGS: Region = Region { plain_base: 0x256B4, debug_base: 0x2573C, plain_len: 0x30, debug_len: 0x30 };
+
 /// `Ani_Sonic` .. `Ani_Sonic_End` — gate `SIGIL_EMP_SONIC_ANIMS`. tests: sonic_anims_port
 pub const SONIC_ANIMS: Region = Region { plain_base: 0x256E4, debug_base: 0x2576C, plain_len: 0x6E, debug_len: 0x6E };
 
