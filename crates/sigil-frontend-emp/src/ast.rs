@@ -107,6 +107,12 @@ pub enum Item {
     /// `extern proc ...` boundary declaration (contract-grammar v2 §3): the
     /// contract of an `.asm`-defined callee; emits nothing, closure leaf.
     ExternProc(ExternProcDecl),
+    /// `extern NAME: Type` boundary declaration (L8): a typed link reference to
+    /// a value symbol defined outside this module (a harvested game constant, an
+    /// AS/emp equ). Emits nothing; referencing the name yields a link-deferred
+    /// value carrying the declared newtype, so an engine module can name a
+    /// game-side id WITH its type without mirroring the value.
+    ExternConst(ExternConstDecl),
     /// `type X = proc (...) ...` contract-type declaration (contract-grammar v2
     /// §4): the bound every installable dispatch target must satisfy.
     ContractType(ContractTypeDecl),
@@ -176,6 +182,7 @@ pub fn item_span(item: &Item) -> Span {
         Item::Data(d) => d.span,
         Item::Proc(d) => d.span,
         Item::ExternProc(d) => d.span,
+        Item::ExternConst(d) => d.span,
         Item::ContractType(d) => d.span,
         Item::Script(d) => d.span,
         Item::ComptimeFn(d) => d.span,
@@ -862,6 +869,24 @@ pub struct ExternProcDecl {
     pub name: String,
     /// The declared signature (params + contract clauses).
     pub sig: ProcSig,
+    /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// An `extern NAME: Type` declaration (L8): a typed reference to a value symbol
+/// defined outside this module and resolved at link (a harvested game constant's
+/// EquSym, an AS/emp equ). Referencing `NAME` yields a link-deferred value tagged
+/// with `ty`'s newtype, so an engine module names a game-side id WITH its type —
+/// no local mirror const, no drift guard. Emits nothing; it is name-resolution
+/// only, exactly like `const`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternConstDecl {
+    /// Whether this extern is re-exported (`pub extern NAME: Type`).
+    pub public: bool,
+    /// The external value's link symbol.
+    pub name: String,
+    /// The declared type — the newtype the reference carries at use sites.
+    pub ty: Type,
     /// Span of the whole declaration.
     pub span: Span,
 }

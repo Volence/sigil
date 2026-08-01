@@ -362,6 +362,21 @@ impl<'a> Evaluator<'a> {
                     if let Some(v) = self.defines.get(name) {
                         return Value::Int(*v);
                     }
+                    // An `extern NAME: Type` (L8): a typed reference to a value
+                    // symbol defined outside this module (a harvested game
+                    // constant's EquSym, an AS/emp equ), resolved at link. Yields a
+                    // link-deferred `Value::Label` — the SAME residual a bare
+                    // undeclared symbol takes in immediate position (D-PP.3),
+                    // byte-identical — WRAPPED in the declared newtype so the value
+                    // carries its type at use sites. Unlike a plain const there is
+                    // no comptime int to fold; arithmetic on it stays a link expr.
+                    if let Some(decl) = self.extern_consts.get(name).copied() {
+                        let ty = self.resolve_type(&decl.ty);
+                        return Value::Typed {
+                            ty: Box::new(ty),
+                            val: Box::new(Value::Label(name.to_string())),
+                        };
+                    }
                     if self.fns.contains_key(name) {
                         return Value::FnRef(name.to_string());
                     }
