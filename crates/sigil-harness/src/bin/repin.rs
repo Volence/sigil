@@ -139,7 +139,7 @@ fn main() -> ExitCode {
         .collect();
     if !blocks.is_empty() {
         println!();
-        println!("engine.inc / main.asm gate resume orgs (paste into the else-arms):");
+        println!("gated-region resume orgs (reference; the AS else-arms they were pasted into retired with engine.inc / main.asm in K4 inc-6B):");
         println!();
         for b in blocks {
             println!("{b}");
