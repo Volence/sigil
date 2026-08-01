@@ -1,6 +1,19 @@
 # L1 — the game contract (interface / implement) — design
 
-**Status: DRAFT — for Volence's review.** The language round's headliner
+**Status: RATIFIED (Volence, 2026-08-01) — all seven §7 decisions ruled as
+recommended.** D1 `interface`/`implement` · D2 explicit manifest ("declarative
+is better — I hate having things less explicit") · D3 bound-proc `jsr`
+("if code's not called how can we potentially not include it") · D4 entry IN
+the interface, with the ruling's clarification recorded: the manifest is a
+GAME-SIDE `.emp` module (`games/<game>/config/game.emp`) — game work never
+touches engine files; Volence's TOML question resolved as the suite rule
+"TOML for placement/build data, `.emp` for anything that names a symbol"
+(the bindings are checked symbol references + a comptime conditional, which
+TOML would demote to strings resolved by tooling) · D5 qualified `Game.`
+refs · D6 as proposed, parcel-verified · D7 Config-A re-freeze accepted.
+Parcels P1/P2 (§8) are GO.
+
+**Original status: DRAFT — for Volence's review.** The language round's headliner
 (agenda `2026-08-02-language-round-agenda.md` Tier 1, ratified BUILD with the
 direction blessed: *the ENGINE declares the hook SIGNATURES as a typed
 interface; a GAME provides the implementations as ordinary `.emp` procs bound
