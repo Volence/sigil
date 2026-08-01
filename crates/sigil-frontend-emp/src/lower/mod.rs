@@ -131,6 +131,28 @@ pub fn lower_module_with_region_ends(
     opts: &LowerOptions,
     external_region_ends: &std::collections::HashMap<String, u32>,
 ) -> (Module, Vec<Diagnostic>) {
+    lower_module_inner(file, opts, external_region_ends, &crate::contract::InterfaceEnv::empty())
+}
+
+/// [`lower_module`] with the resolved game-contract environment (L1). The engine
+/// modules that name `Iface.MEMBER` / `invoke Iface.hook` lower against the
+/// `contracts` the bind pass ([`crate::resolve::contract`]) produced from the
+/// module set. `lower_module`/`lower_module_with_region_ends` pass the EMPTY env,
+/// so every contract-free build (and the whole existing corpus) is unchanged.
+pub fn lower_module_with_contracts(
+    file: &ast::File,
+    opts: &LowerOptions,
+    contracts: &crate::contract::InterfaceEnv,
+) -> (Module, Vec<Diagnostic>) {
+    lower_module_inner(file, opts, &std::collections::HashMap::new(), contracts)
+}
+
+fn lower_module_inner(
+    file: &ast::File,
+    opts: &LowerOptions,
+    external_region_ends: &std::collections::HashMap<String, u32>,
+    contracts: &crate::contract::InterfaceEnv,
+) -> (Module, Vec<Diagnostic>) {
     let mut builder = IrBuilder::new();
     let mut diags = Vec::new();
 
@@ -260,7 +282,7 @@ pub fn lower_module_with_region_ends(
                     file,
                     decl,
                     proc::Siblings { index, items: &file.items },
-                    proc::ProcCtx { cpu: initial_cpu, as_compat, defines: &opts.defines, invariant_regs: &invariant_regs, callee_preserves: &callee_preserves },
+                    proc::ProcCtx { cpu: initial_cpu, as_compat, defines: &opts.defines, invariant_regs: &invariant_regs, callee_preserves: &callee_preserves, contracts },
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
@@ -403,6 +425,7 @@ pub fn lower_module_with_region_ends(
                     &mut diags,
                     &mut asm_counter,
                     &mut overlay_pass_diags,
+                    contracts,
                 );
                 // Leave the named section open; the next item (or `finish`)
                 // folds its length.
@@ -561,6 +584,7 @@ fn lower_section_items(
     diags: &mut Vec<Diagnostic>,
     asm_counter: &mut u32,
     overlay_pass_diags: &mut Vec<Diagnostic>,
+    contracts: &crate::contract::InterfaceEnv,
 ) -> bool {
     for (index, item) in sec.items.iter().enumerate() {
         match item {
@@ -584,7 +608,7 @@ fn lower_section_items(
                     file,
                     decl,
                     proc::Siblings { index, items: &sec.items },
-                    proc::ProcCtx { cpu: placement.cpu, as_compat, defines: placement.defines, invariant_regs, callee_preserves },
+                    proc::ProcCtx { cpu: placement.cpu, as_compat, defines: placement.defines, invariant_regs, callee_preserves, contracts },
                     builder,
                     diags,
                     asm_counter,
@@ -1381,6 +1405,7 @@ fn lower_dispatch_item(
             *asm_counter,
             placement.cpu,
             placement.defines,
+        &crate::contract::InterfaceEnv::empty(),
         );
         *asm_counter = next_counter;
         diags.append(&mut ds);

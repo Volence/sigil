@@ -797,7 +797,7 @@ fn collect_z80_flag_procs(
                     z80_flag_callees.insert(p.name.clone(), flags);
                 }
                 let (buf, _diags, next, _dropped) = crate::eval::eval_proc_body_env(
-                    file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::Z80, defines, env,
+                    file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::Z80, defines, env, &crate::contract::InterfaceEnv::empty(),
                 );
                 *counter = next;
                 if let Some(buf) = buf {
@@ -840,7 +840,7 @@ fn proc_node(
     env: &[Item],
 ) -> (ProcNode, Option<CodeBuf>, usize) {
     let (buf, _diags, next, dropped) = crate::eval::eval_proc_body_env(
-        file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::M68000, defines, env,
+        file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::M68000, defines, env, &crate::contract::InterfaceEnv::empty(),
     );
     *counter = next;
 

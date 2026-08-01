@@ -422,6 +422,67 @@ impl Evaluator<'_> {
             AsmStmt::RaiseException { fstring, opts, span } => {
                 self.lower_raise_error(fstring, *opts, /*from_exception=*/ true, *span, scope, buf, env);
             }
+            AsmStmt::Invoke { iface, member, span } => {
+                self.lower_invoke(iface, member, *span, scope, buf, env);
+            }
+        }
+    }
+
+    /// Lower `invoke Iface.hook` (L1). Resolves the hook binding from the seeded
+    /// interface environment: a BOUND hook lowers to an absolute `jsr (sym).l`
+    /// (placement-independent by rule — an engine→game call), synthesized and
+    /// routed through the same statement path a hand-written `jsr` takes; an
+    /// `empty`/unbound hook emits NOTHING. A member that is not a hook is a
+    /// member-kind error; an unknown interface/member is `[contract.unknown-member]`
+    /// (the bind pass is the sole site for unimplemented/missing/signature errors).
+    fn lower_invoke(
+        &mut self,
+        iface: &str,
+        member: &str,
+        span: Span,
+        scope: &LabelScope,
+        buf: &mut CodeBuf,
+        env: &mut Env,
+    ) {
+        match self.interfaces.get(iface).and_then(|i| i.members.get(member)) {
+            Some(crate::contract::ResolvedMember::Hook(Some(sym))) => {
+                // `jsr (sym).l` — an absolute-long indirect naming the bound proc
+                // (the `abs_l` operand shape). Synthesized and lowered recursively
+                // through `lower_asm_stmt`, exactly as the diagnostics desugars do.
+                let sym = sym.clone();
+                let jsr = AsmStmt::Instr(InstrLine {
+                    mnemonic: vec![TextOrSplice::Text("jsr".into())],
+                    size: None,
+                    operands: vec![Operand::Ind {
+                        parts: vec![(
+                            ast::Expr::Path(ast::Path { segments: vec![sym], span }),
+                            None,
+                        )],
+                        size: Some(TextOrSplice::Text("l".into())),
+                        span,
+                    }],
+                    span,
+                    dispatch_bound: None,
+                    discards: None,
+                });
+                self.lower_asm_stmt(&jsr, scope, buf, env);
+            }
+            // `empty`/unbound hook: zero bytes, by rule (the load-bearing case).
+            Some(crate::contract::ResolvedMember::Hook(None)) => {}
+            Some(_) => self.error(
+                span,
+                format!(
+                    "[contract.member-kind] `{iface}.{member}` is not a hook — only a \
+                     `hook` member may be `invoke`d"
+                ),
+            ),
+            None => self.error(
+                span,
+                format!(
+                    "[contract.unknown-member] `{iface}` has no hook member `{member}` \
+                     (or the interface is unimplemented in this build)"
+                ),
+            ),
         }
     }
 

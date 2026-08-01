@@ -163,6 +163,7 @@ pub(super) fn lower_script_item(
         *asm_counter,
         placement.cpu,
         placement.defines,
+        &crate::contract::InterfaceEnv::empty(),
     );
     *asm_counter = next_counter;
     diags.append(&mut ds);
