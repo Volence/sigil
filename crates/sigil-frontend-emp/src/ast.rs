@@ -116,6 +116,16 @@ pub enum Item {
     /// `type X = proc (...) ...` contract-type declaration (contract-grammar v2
     /// §4): the bound every installable dispatch target must satisfy.
     ContractType(ContractTypeDecl),
+    /// `interface Name { members }` (L1): an engine-declared game contract — the
+    /// typed surface a game IMPLEMENTS. Emits nothing; the bind pass
+    /// ([`crate::resolve::contract`]) resolves each declared member against the
+    /// one `implement` block for the interface, and consuming engine modules
+    /// name members qualified (`Name.MEMBER`) or `invoke Name.hook`.
+    Interface(InterfaceDecl),
+    /// `implement Name { bindings }` (L1): a game's manifest — the one binding of
+    /// each interface member (a const value, a proc symbol, or a hook symbol),
+    /// optionally under a comptime `if` group. Emits nothing.
+    Implement(ImplementDecl),
     /// `script ...` declaration (Plan 7 #9b).
     Script(ScriptDecl),
     /// `comptime fn ...` declaration.
@@ -184,6 +194,8 @@ pub fn item_span(item: &Item) -> Span {
         Item::ExternProc(d) => d.span,
         Item::ExternConst(d) => d.span,
         Item::ContractType(d) => d.span,
+        Item::Interface(d) => d.span,
+        Item::Implement(d) => d.span,
         Item::Script(d) => d.span,
         Item::ComptimeFn(d) => d.span,
         Item::Section(d) => d.span,
@@ -909,6 +921,116 @@ pub struct ContractTypeDecl {
     pub span: Span,
 }
 
+/// An `interface Name { members }` declaration (L1): the engine-declared game
+/// contract. Members come in three kinds ([`InterfaceMember`]): a typed `const`,
+/// a `proc` reference bound by a declared proc contract type, and a `hook` the
+/// engine INVOKES (a full proc signature, with an optional `= empty` default
+/// whose unbound call site emits nothing). Emits nothing itself.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InterfaceDecl {
+    /// Whether this interface is exported (`pub interface`).
+    pub public: bool,
+    /// The interface's name (the qualifier at consumer sites: `Name.MEMBER`).
+    pub name: String,
+    /// The declared members, in declaration order.
+    pub members: Vec<InterfaceMember>,
+    /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// One member of an [`InterfaceDecl`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct InterfaceMember {
+    /// The member's name (`Name.member`).
+    pub name: String,
+    /// The member's kind + typing.
+    pub kind: InterfaceMemberKind,
+    /// Span of the whole member.
+    pub span: Span,
+}
+
+/// The kind of an [`InterfaceMember`] (v1, deliberately minimal — §2).
+#[derive(Debug, Clone, PartialEq)]
+pub enum InterfaceMemberKind {
+    /// `const NAME: Type` — a typed comptime value the engine's lowering
+    /// consumes (a bound `implement` supplies it; the consumer reads
+    /// `Name.NAME` as a comptime constant).
+    Const(Type),
+    /// `proc name: ProcType` — a reference to a game proc the engine takes the
+    /// ADDRESS of (`#Name.name`), typed by a declared `type ProcType = proc`.
+    Proc(Type),
+    /// `hook name (params) clobbers(...) [preserves(...)] [= empty]` — a proc
+    /// signature the ENGINE calls (`invoke Name.name`). `default_empty` marks
+    /// the `= empty` form: an unbound hook's call site emits nothing; a hook
+    /// WITHOUT it is required (a missing binding is `[contract.missing-member]`).
+    Hook {
+        /// The declared signature the impl must satisfy.
+        sig: ProcSig,
+        /// `= empty` present — the hook defaults to unbound (zero-byte call).
+        default_empty: bool,
+    },
+}
+
+/// An `implement Name { bindings }` declaration (L1): the one binding of each
+/// interface member, optionally under a comptime `if` group. Emits nothing.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImplementDecl {
+    /// Whether this implement is exported (`pub implement`).
+    pub public: bool,
+    /// The interface this block implements (`implement Name`).
+    pub name: String,
+    /// The member bindings, in declaration order (comptime `if` groups nest).
+    pub bindings: Vec<ImplBinding>,
+    /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// One binding inside an [`ImplementDecl`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImplBinding {
+    /// `const NAME = expr` — bind a const member to a comptime value.
+    Const {
+        /// The bound member's name.
+        name: String,
+        /// The value expression (evaluated in the impl module's scope).
+        value: Expr,
+        /// Span of the whole binding.
+        span: Span,
+    },
+    /// `proc name = Symbol` — bind a proc member to a game proc symbol.
+    Proc {
+        /// The bound member's name.
+        name: String,
+        /// The bound symbol reference (a bare or dotted link name).
+        symbol: Path,
+        /// Span of the whole binding.
+        span: Span,
+    },
+    /// `hook name = Symbol` — bind a hook member to a game proc that satisfies
+    /// the declared hook signature.
+    Hook {
+        /// The bound member's name.
+        name: String,
+        /// The bound proc symbol.
+        symbol: Path,
+        /// Span of the whole binding.
+        span: Span,
+    },
+    /// `if cond { bindings } [else { bindings }]` — a comptime conditional
+    /// binding group (the item-7a `if DEBUG == 1 { }` precedent), driven by the
+    /// build-shape define environment.
+    Group {
+        /// The comptime condition (nonzero = the `then` arm).
+        cond: Expr,
+        /// Bindings applied when `cond` is nonzero.
+        then_body: Vec<ImplBinding>,
+        /// Bindings applied when `cond` is zero (empty when there is no `else`).
+        else_body: Vec<ImplBinding>,
+        /// Span of the whole group.
+        span: Span,
+    },
+}
+
 /// A `script name(params) (encoding: E) [shows label] { body }` declaration
 /// (Plan 7 #9b — D9.2/D9.6). A script is a coroutine: `yield` saves a typed
 /// resume point (the object's next-frame state) and exits through the
@@ -1559,6 +1681,19 @@ pub enum AsmStmt {
         fstring: String,
         /// The error-handler flag bits from the options form (0 if none given).
         opts: u8,
+        /// Span of the whole statement.
+        span: Span,
+    },
+    /// `invoke Iface.hook` (L1) — an engine-side call of a game-implemented hook.
+    /// Lowers to an absolute `jsr <bound-proc>` (abs.l, placement-independent by
+    /// rule) when the hook is bound, and to ZERO bytes when it is `empty`/unbound.
+    /// The binding is resolved at lowering from the interface environment the
+    /// bind pass produced ([`crate::resolve::contract`]).
+    Invoke {
+        /// The interface name (`Iface`).
+        iface: String,
+        /// The hook member name (`hook`).
+        member: String,
         /// Span of the whole statement.
         span: Span,
     },

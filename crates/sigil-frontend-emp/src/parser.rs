@@ -440,6 +440,17 @@ impl Parser {
         // `type Name = proc (...) ...` (§4) — a contract type. `type` is not a
         // token elsewhere in the grammar, so this opener is unambiguous.
         if self.at_kw("type") { return Some(Item::ContractType(self.contract_type_decl(public))); }
+        // `interface Name { .. }` / `implement Name { .. }` (L1). Contextual
+        // openers (the D2.36 rule): only an `interface`/`implement` immediately
+        // followed by an identifier (the interface name) is the item; both stay
+        // ordinary names in every other position (there is no `interface`/
+        // `implement` operand or expression form in the grammar).
+        if self.at_kw("interface") && matches!(self.peek2(), Tok::Ident(_)) {
+            return Some(Item::Interface(self.interface_decl(public)));
+        }
+        if self.at_kw("implement") && matches!(self.peek2(), Tok::Ident(_)) {
+            return Some(Item::Implement(self.implement_decl(public)));
+        }
         if self.at_kw("script") { return Some(Item::Script(self.script_decl(public))); }
         if self.at_kw("newtype") { return Some(Item::Newtype(self.newtype_decl(public))); }
         // `align N` (D2.29, §4.8) — contextual item opener per the `equ`
@@ -514,10 +525,10 @@ impl Parser {
     /// a stray `}` is just garbage to skip past (the old behavior),
     /// otherwise recovery would loop forever re-diagnosing the same token.
     fn recover_to_next_decl(&mut self, in_block: bool) {
-        const OPENERS: [&str; 22] = ["use", "const", "equ", "enum", "bitfield", "struct",
+        const OPENERS: [&str; 24] = ["use", "const", "equ", "enum", "bitfield", "struct",
                                      "vars", "data", "proc", "script", "comptime", "section", "pub",
                                      "newtype", "offsets", "table", "dispatch", "ensure", "ensure_fatal",
-                                     "align", "extern", "type"];
+                                     "align", "extern", "type", "interface", "implement"];
         let mut depth = 0i32;
         loop {
             match self.peek() {
@@ -552,9 +563,16 @@ impl Parser {
                     // identically. Skip past a non-`proc` occurrence.
                     let extern_non_item = s == "extern"
                         && !matches!(self.peek_at(1), Tok::Ident(k) if k == "proc");
+                    // `interface`/`implement` are CONTEXTUAL: only an
+                    // occurrence followed by the interface-name identifier is an
+                    // item. A bare occurrence (not followed by an Ident) is not,
+                    // so recovery must skip past it rather than spin.
+                    let contract_non_item = (s == "interface" || s == "implement")
+                        && !matches!(self.peek_at(1), Tok::Ident(_));
                     if (guard_kw && !matches!(self.peek_at(1), Tok::LParen))
                         || align_non_item
                         || extern_non_item
+                        || contract_non_item
                     {
                         self.bump();
                     } else {
@@ -1757,6 +1775,161 @@ impl Parser {
         ContractTypeDecl { public, name, sig, span }
     }
 
+    /// Parse an `interface Name { members }` declaration (L1, §2). Members are
+    /// `const NAME: Type`, `proc name: ProcType`, and
+    /// `hook name (params) clobbers(...) [preserves(...)] [= empty]`, one per
+    /// line. The leading `interface` + name is already confirmed by
+    /// [`Parser::item`]'s two-token peek.
+    fn interface_decl(&mut self, public: bool) -> InterfaceDecl {
+        let start = self.span();
+        self.bump(); // `interface`
+        let name = self.expect_ident("interface name");
+        self.expect(&Tok::LBrace, "`{`");
+        let mut members = Vec::new();
+        while !self.at(&Tok::RBrace) && !self.at(&Tok::Eof) {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) || self.at(&Tok::Eof) {
+                break;
+            }
+            if let Some(m) = self.interface_member() {
+                members.push(m);
+            } else {
+                // Unrecognized member opener: diagnose, skip the line, keep going.
+                let sp = self.span();
+                self.diag_at(sp, "expected an interface member (`const`/`proc`/`hook`)");
+                while !self.at(&Tok::Newline) && !self.at(&Tok::Eof) { self.bump(); }
+            }
+        }
+        self.expect(&Tok::RBrace, "`}`");
+        InterfaceDecl { public, name, members, span: start.merge(self.prev_span()) }
+    }
+
+    /// Parse one `interface` member. Returns `None` on an unrecognized opener.
+    fn interface_member(&mut self) -> Option<InterfaceMember> {
+        let start = self.span();
+        if self.eat_kw("const") {
+            let name = self.expect_ident("const member name");
+            self.expect(&Tok::Colon, "`:` (a `const` member needs a type)");
+            let ty = self.ty();
+            let span = start.merge(self.prev_span());
+            self.expect_line_end();
+            return Some(InterfaceMember { name, kind: InterfaceMemberKind::Const(ty), span });
+        }
+        if self.eat_kw("proc") {
+            let name = self.expect_ident("proc member name");
+            self.expect(&Tok::Colon, "`:` (a `proc` member needs a contract type)");
+            let ty = self.ty();
+            let span = start.merge(self.prev_span());
+            self.expect_line_end();
+            return Some(InterfaceMember { name, kind: InterfaceMemberKind::Proc(ty), span });
+        }
+        if self.eat_kw("hook") {
+            let name = self.expect_ident("hook member name");
+            let sig = self.proc_sig();
+            // Optional `= empty` default marker: an unbound hook's call site
+            // emits nothing. `empty` is a keyword ONLY here (RHS of a hook `=`).
+            let default_empty = if self.eat(&Tok::Eq) {
+                if !self.eat_kw("empty") {
+                    let sp = self.span();
+                    self.diag_at(sp, "a hook default must be `= empty` (v1 has no other default)");
+                }
+                true
+            } else {
+                false
+            };
+            let span = start.merge(self.prev_span());
+            self.expect_line_end();
+            return Some(InterfaceMember {
+                name,
+                kind: InterfaceMemberKind::Hook { sig, default_empty },
+                span,
+            });
+        }
+        None
+    }
+
+    /// Parse an `implement Name { bindings }` declaration (L1, §2/§3). Bindings
+    /// are `const NAME = expr`, `proc name = Symbol`, `hook name = Symbol`, and
+    /// comptime `if cond { .. } [else { .. }]` groups over bindings. The leading
+    /// `implement` + name is already confirmed by [`Parser::item`].
+    fn implement_decl(&mut self, public: bool) -> ImplementDecl {
+        let start = self.span();
+        self.bump(); // `implement`
+        let name = self.expect_ident("implemented interface name");
+        self.expect(&Tok::LBrace, "`{`");
+        let bindings = self.impl_bindings();
+        self.expect(&Tok::RBrace, "`}`");
+        ImplementDecl { public, name, bindings, span: start.merge(self.prev_span()) }
+    }
+
+    /// Parse the binding list of an `implement` block (or a comptime-`if`
+    /// group's arm) up to the closing `}`.
+    fn impl_bindings(&mut self) -> Vec<ImplBinding> {
+        let mut bindings = Vec::new();
+        while !self.at(&Tok::RBrace) && !self.at(&Tok::Eof) {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) || self.at(&Tok::Eof) {
+                break;
+            }
+            if let Some(b) = self.impl_binding() {
+                bindings.push(b);
+            } else {
+                let sp = self.span();
+                self.diag_at(sp, "expected an `implement` binding (`const`/`proc`/`hook`/`if`)");
+                while !self.at(&Tok::Newline) && !self.at(&Tok::Eof) { self.bump(); }
+            }
+        }
+        bindings
+    }
+
+    /// Parse one `implement` binding. Returns `None` on an unrecognized opener.
+    fn impl_binding(&mut self) -> Option<ImplBinding> {
+        let start = self.span();
+        // Comptime `if cond { .. } [else { .. }]` group (item-7a precedent).
+        if self.at_kw("if") {
+            self.bump(); // `if`
+            let cond = self.expr();
+            self.expect(&Tok::LBrace, "`{`");
+            let then_body = self.impl_bindings();
+            self.expect(&Tok::RBrace, "`}`");
+            let else_body = if self.eat_kw("else") {
+                self.expect(&Tok::LBrace, "`{`");
+                let b = self.impl_bindings();
+                self.expect(&Tok::RBrace, "`}`");
+                b
+            } else {
+                Vec::new()
+            };
+            let span = start.merge(self.prev_span());
+            return Some(ImplBinding::Group { cond, then_body, else_body, span });
+        }
+        if self.eat_kw("const") {
+            let name = self.expect_ident("const binding name");
+            self.expect(&Tok::Eq, "`=`");
+            let value = self.expr();
+            let span = start.merge(self.prev_span());
+            self.expect_line_end();
+            return Some(ImplBinding::Const { name, value, span });
+        }
+        if self.eat_kw("proc") {
+            let name = self.expect_ident("proc binding name");
+            self.expect(&Tok::Eq, "`=`");
+            let symbol = self.path();
+            let span = start.merge(self.prev_span());
+            self.expect_line_end();
+            return Some(ImplBinding::Proc { name, symbol, span });
+        }
+        if self.eat_kw("hook") {
+            let name = self.expect_ident("hook binding name");
+            self.expect(&Tok::Eq, "`=`");
+            let symbol = self.path();
+            let span = start.merge(self.prev_span());
+            self.expect_line_end();
+            return Some(ImplBinding::Hook { name, symbol, span });
+        }
+        None
+    }
+
     /// Parse a `script name(params) (encoding: E) [shows label] { body }`
     /// declaration (Plan 7 #9b — R9b.1). Params parse exactly as `proc`
     /// params; the `(encoding: E)` attribute is REQUIRED (dispatch's rule —
@@ -2012,6 +2185,20 @@ impl Parser {
         // lowering concern); the keyword is what distinguishes the two AST nodes.
         if self.at_kw("raise_exception") {
             return Some(self.asm_raise_error(true));
+        }
+        // `invoke Iface.hook` (L1): an engine-side hook call. Contextual
+        // statement opener — only fires on `invoke` followed by an identifier
+        // (the interface name); no 68k/Z80 mnemonic is named `invoke`, so this
+        // never shadows an instruction line. The reference is `Iface.member`.
+        if self.at_kw("invoke") && matches!(self.peek2(), Tok::Ident(_)) {
+            let start = self.span();
+            self.bump(); // `invoke`
+            let iface = self.expect_ident("interface name");
+            self.expect(&Tok::Dot, "`.` (an `invoke` names `Iface.hook`)");
+            let member = self.expect_ident("hook member name");
+            let span = start.merge(self.prev_span());
+            self.expect_line_end_or_rbrace();
+            return Some(AsmStmt::Invoke { iface, member, span });
         }
         // statement-position `{expr}` Code-splice (2026-07-11 mini-spec): a
         // hole whose expr yields Code, inlined at eval. `{` at statement
