@@ -465,6 +465,16 @@ tests = ["test_g4_final_objects_port"]
 
 # ── Game data (main.asm gates) ──────────────────────────────────────────────
 
+# The OJZ parallax block (conv-g): 6 deform tables + 20 parallax_config records,
+# emitted by games/sonic4/data/parallax/configs.emp. Start = the block head
+# DeformTable_Zero (= path_swap's end anchor); end = objdefs' start ObjDef_Static.
+[[region]]
+name = "parallax_configs"
+start = "DeformTable_Zero"
+end = "ObjDef_Static"
+gate = "SIGIL_EMP_PARALLAX_CONFIGS"
+tests = ["parallax_configs_port"]
+
 [[region]]
 name = "sonic_anims"
 start = "Ani_Sonic"

@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 56 regions, 314 symbols, 7 offsets
+//! [provenance] 57 regions, 314 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -173,6 +173,9 @@ pub const TEST_ENEMY: Region = Region { plain_base: 0x10F0A, debug_base: 0x10F2A
 
 /// `ObjDef_PathSwap` .. `DeformTable_Zero` — gate `SIGIL_EMP_PATH_SWAP`. tests: test_g4_final_objects_port
 pub const PATH_SWAP: Region = Region { plain_base: 0x11202, debug_base: 0x11222, plain_len: 0x92, debug_len: 0xFA };
+
+/// `DeformTable_Zero` .. `ObjDef_Static` — gate `SIGIL_EMP_PARALLAX_CONFIGS`. tests: parallax_configs_port
+pub const PARALLAX_CONFIGS: Region = Region { plain_base: 0x11294, debug_base: 0x1131C, plain_len: 0xA8A, debug_len: 0xA8A };
 
 /// `Ani_Sonic` .. `Ani_Sonic_End` — gate `SIGIL_EMP_SONIC_ANIMS`. tests: sonic_anims_port
 pub const SONIC_ANIMS: Region = Region { plain_base: 0x256E4, debug_base: 0x2576C, plain_len: 0x6E, debug_len: 0x6E };

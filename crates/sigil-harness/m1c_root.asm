@@ -20,7 +20,8 @@ PAD_TO_POWER_OF_TWO     = 1
     ; Sound constants are authored in engine/sound/sound_constants.emp now; the
     ; residual AS reads none of its symbols (mirrors main.asm's front-matter).
     include "engine/macros.asm"
-    include "engine/parallax_macros.inc"
+    ; parallax_macros.inc is retired (conv-g): the §4.6 authoring vocabulary is
+    ; engine/level/parallax_dsl.emp; the config data is native.
     include "engine/sound/sound_bank.inc"
     ; games/sonic4/config/constants.asm (conv-f) and config/sound_ids.asm (F2) are
     ; retired: game constants live in constants.emp, the song/SFX ids in sound_ids.emp,
