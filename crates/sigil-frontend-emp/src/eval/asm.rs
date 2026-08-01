@@ -1164,6 +1164,25 @@ impl Evaluator<'_> {
                     self.reject_if_provisional(&v, expr_span(e));
                     return None;
                 }
+                // An `extern NAME: Type` (L8) reference is a link-deferred value
+                // WRAPPED in its newtype — `Typed { val: Label | LinkExpr, .. }`.
+                // The type is carried for enforcement in typed positions; in an
+                // immediate it erases to the SAME link fixup a bare `Label` /
+                // `extern(..)` takes, so `#SFXID_RING_RIGHT` encodes byte-identically
+                // to the untyped link name it replaces.
+                if let Value::Typed { val, .. } = &v {
+                    match val.as_ref() {
+                        Value::Label(n) => {
+                            return Some(CodeOperand::ImmLink {
+                                target: sigil_ir::expr::Expr::Sym(n.clone()),
+                            });
+                        }
+                        Value::LinkExpr(expr) if !crate::eval::expr::expr_carries_bank_mask(expr) => {
+                            return Some(CodeOperand::ImmLink { target: expr.clone() });
+                        }
+                        _ => {}
+                    }
+                }
                 match v.as_stored_int() {
                     Some(n) => Some(CodeOperand::Imm(n)),
                     None => {

@@ -228,12 +228,20 @@ fn lower_sound_api(
         .expect("sound_constants.emp must exist beside sound_api.emp");
     let (snd_file, sdiags) = parse_str(&snd_src);
     assert!(sdiags.iter().all(|d| d.level != Level::Error), "sound_constants parse: {sdiags:?}");
+    // + engine.types (sound_api `use`s SongId/SfxId — the `extern SFXID_RING_*:
+    // SfxId` typed references resolve their newtype here; a pure-types module,
+    // zero bytes, so prepending it is region-neutral).
+    let types_src = std::fs::read_to_string(aeon_dir().join("engine/system/types.emp"))
+        .expect("types.emp must exist under engine/system");
+    let (types_file, tdiags) = parse_str(&types_src);
+    assert!(tdiags.iter().all(|d| d.level != Level::Error), "types parse: {tdiags:?}");
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
-        items: snd_file
+        items: types_file
             .items
             .into_iter()
+            .chain(snd_file.items)
             .chain(z80_file.items)
             .chain(irq_file.items)
             .chain(main.items)
@@ -313,25 +321,23 @@ fn sound_api_truth_sections() -> Vec<sigil_ir::Section> {
     truth
 }
 
-/// (d) drift-guard genuineness — a doctored `SFXID_RING_RIGHT` typed mirror
-/// makes its `ensure` FAIL against the AS-side truth (supplied synthetically),
-/// so a drifted immediate can never link silently. (The 5 untyped mirrors were
-/// retired to bare `#extern(...)` link names — row 10 — so the two surviving
-/// TYPED SfxId mirrors are what a drift guard still protects.)
+/// (d) single-authority genuineness — the two collect-ring SFX ids are TYPED
+/// EXTERNs (`extern SFXID_RING_*: SfxId`), so engine.sound_api holds NO local copy
+/// of the value: the id crosses the seam once, from the game authority's harvested
+/// EquSym. Value desync is therefore impossible BY CONSTRUCTION — there is nothing
+/// to doctor. The property that replaces the retired drift guard: with no mirror to
+/// silently satisfy the reference, a MISSING authority symbol is LOUD (an
+/// unresolved link), never a stale fallback. The AS-side truth here OMITS
+/// SFXID_RING_RIGHT/LEFT, so the link must fail naming them.
 #[test]
-fn doctored_immediate_mirror_fails_its_drift_guard() {
+fn typed_extern_has_no_mirror_so_a_missing_authority_is_loud() {
     let Some(src) = sound_api_src() else { return };
-    let doctored = src.replace(
-        "const SFXID_RING_RIGHT: SfxId = $33",
-        "const SFXID_RING_RIGHT: SfxId = $35",
-    );
-    assert_ne!(src, doctored, "the probe must actually doctor the source");
-    let (module, asserts, diags) = lower_sound_api(&doctored);
+    let (module, _asserts, diags) = lower_sound_api(&src);
     assert!(diags.iter().all(|d| d.level != Level::Error), "lower: {diags:?}");
 
-    // Supply the full AS-side truth (equs + the cross-seam labels) so the
-    // composition RESOLVES — the doctored mirror must then fail its guard,
-    // not the link.
+    // Full AS-side truth EXCEPT the two collect-ring SFX ids — the game authority
+    // the typed externs bind against. With no local mirror, resolution must fail
+    // on them (a genuine desync, surfaced loud).
     use sigil_frontend_as::{assemble, Options as AsOptions};
     let asm = "cpu 68000\n\
                Z80_BUS_REQUEST = $A11100\n\
@@ -352,8 +358,6 @@ fn doctored_immediate_mirror_fails_its_drift_guard() {
                SND_FADE_CMD_OUT = 1\n\
                SND_FADE_CMD_IN = 2\n\
                SFX_RING_MASK = $07\n\
-               SFXID_RING_RIGHT = $33\n\
-               SFXID_RING_LEFT = $34\n\
                phase $FFFFAF30\n\
                Ring_Sfx_Speaker:\n\
                \tdc.b 0\n\
@@ -372,7 +376,6 @@ fn doctored_immediate_mirror_fails_its_drift_guard() {
                \tdc.l 0\n";
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
     let mut sections = module.sections;
-    // Give the emp section a placement so the union resolves.
     let map_toml = "fill = 0x00\n\
                     \n\
                     [[region]]\n\
@@ -395,13 +398,21 @@ fn doctored_immediate_mirror_fails_its_drift_guard() {
     }
     sections.extend(truth);
 
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .unwrap_or_else(|d| panic!("resolve_layout must succeed (only the GUARD drifts): {d:?}"));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
+    // Resolution must FAIL on the absent authority symbols — no local mirror
+    // silently stands in. Whether the miss surfaces at layout resolve or link, it
+    // must name SFXID_RING_RIGHT/LEFT.
+    let failure = match sigil_link::resolve_layout(&sections, &SymbolTable::new(), true) {
+        Err(diags) => diags,
+        Ok(resolved) => match sigil_link::link(&resolved, &SymbolTable::new()) {
+            Err(diags) => diags,
+            Ok(_) => Vec::new(),
+        },
+    };
     assert!(
-        diags.iter().any(|d| d.level == Level::Error
-            && d.message.contains("SFXID_RING_RIGHT drifted")),
-        "the doctored mirror must fail its drift guard, got: {diags:?}"
+        failure
+            .iter()
+            .any(|d| d.message.contains("SFXID_RING_RIGHT") || d.message.contains("SFXID_RING_LEFT")),
+        "a missing authority must be loud (unresolved), got: {failure:?}"
     );
 }
 

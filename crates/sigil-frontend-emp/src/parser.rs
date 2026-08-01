@@ -429,6 +429,13 @@ impl Parser {
         if self.at_kw("extern") && matches!(self.peek2(), Tok::Ident(s) if s == "proc") {
             return Some(Item::ExternProc(self.extern_proc_decl(public)));
         }
+        // `extern NAME: Type` (L8) — a typed link reference to an external value
+        // symbol. Fires on `extern` followed by an ordinary identifier (NOT `proc`,
+        // handled above; NOT `(`, which is the `extern("Sym")` comptime read in
+        // expression position — `peek2` is an `Ident` only for the declaration).
+        if self.at_kw("extern") && matches!(self.peek2(), Tok::Ident(s) if s != "proc") {
+            return Some(Item::ExternConst(self.extern_const_decl(public)));
+        }
         if self.at_kw("proc") { return Some(Item::Proc(self.proc_decl(public))); }
         // `type Name = proc (...) ...` (§4) — a contract type. `type` is not a
         // token elsewhere in the grammar, so this opener is unambiguous.
@@ -1706,6 +1713,22 @@ impl Parser {
         let span = start.merge(self.prev_span());
         self.expect_line_end();
         ExternProcDecl { public, name, sig, span }
+    }
+
+    /// Parse an `extern NAME: Type` declaration (L8): a typed reference to an
+    /// external value symbol (a harvested game constant's EquSym, an AS/emp equ),
+    /// resolved at link. No value — the external definition is the source of truth.
+    /// The leading `extern` is already confirmed by [`Parser::item`]'s two-token
+    /// peek. The type annotation is mandatory (the whole point is to carry it).
+    fn extern_const_decl(&mut self, public: bool) -> ExternConstDecl {
+        let start = self.span();
+        self.bump(); // `extern`
+        let name = self.expect_ident("extern value name");
+        self.expect(&Tok::Colon, "`:` (an `extern NAME` needs a type)");
+        let ty = self.ty();
+        let span = start.merge(self.prev_span());
+        self.expect_line_end();
+        ExternConstDecl { public, name, ty, span }
     }
 
     /// Parse a `type Name = proc (params) [clobbers(...)] [preserves(...)]

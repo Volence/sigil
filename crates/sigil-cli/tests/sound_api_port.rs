@@ -180,12 +180,23 @@ fn compile_real_file(
         sdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "sound_constants.emp parse errors: {sdiags:?}"
     );
+    // + engine.types (sound_api `use`s SongId/SfxId — the `extern SFXID_RING_*:
+    // SfxId` typed references resolve their newtype here; a pure-types module,
+    // zero bytes, so prepending it is region-neutral).
+    let types_src = std::fs::read_to_string(aeon_dir().join("engine/system/types.emp"))
+        .unwrap_or_else(|e| panic!("cannot read types.emp: {e}"));
+    let (types_file, tdiags) = parse_str(&types_src);
+    assert!(
+        tdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "types.emp parse errors: {tdiags:?}"
+    );
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
-        items: snd_file
+        items: types_file
             .items
             .into_iter()
+            .chain(snd_file.items)
             .chain(z80_file.items)
             .chain(irq_file.items)
             .chain(main.items)
@@ -306,18 +317,23 @@ fn compile_real_file(
     (resolved, linked, link_asserts)
 }
 
-/// The 2 typed-mirror drift guards must be captured and PASS against
-/// `as_constant_equs`' truths. (The 5 untyped immediate mirrors were RETIRED to
-/// bare `#extern(...)` link names at the flip Stage-0 sound_api touch — kill-list
-/// row 10 — so they no longer carry a local const or a drift guard; the two typed
-/// SfxId mirrors stay, blocked on the typed-extern grammar.)
+/// sound_api carries NO immediate-mirror drift guards. The 5 untyped mirrors were
+/// retired to bare `#extern(...)` link names at the flip Stage-0 touch (kill-list
+/// row 10); the last two — the typed `SfxId` collect-ring ids — became `extern
+/// SFXID_RING_*: SfxId` typed externs at L8, so the value crosses the seam once
+/// from the game authority with no local copy to drift. A drift guard is a
+/// cross-check between two copies; with one authority there is nothing to guard,
+/// so the capture count is zero. (The single-authority property that replaces the
+/// runtime guard — a missing authority is loud, not a stale fallback — is proven by
+/// `typed_extern_has_no_mirror_so_a_missing_authority_is_loud` in
+/// tranche5_negative_probes.)
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    assert_eq!(guards, 2, "sound_api's two typed drift guards must be captured");
+    assert_eq!(guards, 0, "sound_api holds no immediate-mirror drift guards (all values are single-authority)");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "sound_api's drift guards must all PASS: {diags:?}"
+        "sound_api's surviving link asserts must all PASS: {diags:?}"
     );
 }
 

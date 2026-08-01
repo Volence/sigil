@@ -90,6 +90,10 @@ pub struct Evaluator<'a> {
     /// the only semantic difference is what a later lowering task does with
     /// the result).
     equs: HashMap<&'a str, &'a ast::EquDecl>,
+    /// File-level `extern NAME: Type` decls, indexed by name (L8). A reference to
+    /// the name resolves to a link-deferred [`Value::Label`] tagged with the
+    /// declared newtype — a typed foreign value symbol, no local mirror.
+    extern_consts: HashMap<&'a str, &'a ast::ExternConstDecl>,
     /// File-level `enum` decls, indexed by name (empty in the no-file mode).
     /// `pub(crate)` so the [`layout`](crate::layout) module can size enum reprs.
     pub(crate) enums: HashMap<&'a str, &'a ast::EnumDecl>,
@@ -403,6 +407,7 @@ impl<'a> Evaluator<'a> {
             call_stack: Vec::new(),
             consts: HashMap::new(),
             equs: HashMap::new(),
+            extern_consts: HashMap::new(),
             enums: HashMap::new(),
             fns: HashMap::new(),
             structs: HashMap::new(),
@@ -599,6 +604,9 @@ impl<'a> Evaluator<'a> {
                 }
                 ast::Item::Equ(e) => {
                     self.equs.insert(e.name.as_str(), e);
+                }
+                ast::Item::ExternConst(e) => {
+                    self.extern_consts.insert(e.name.as_str(), e);
                 }
                 ast::Item::Enum(e) => {
                     self.enums.insert(e.name.as_str(), e);
