@@ -79,7 +79,11 @@ struct FileSpec {
     section: &'static str,
     vma_plain: u32,
     vma_debug: u32,
-    consts: fn() -> Vec<(&'static str, i64)>,
+    /// The NAMES of the sound constants this resident module folds — the `-D` env
+    /// the emit seeds. The VALUES are resolved from the `sound_constants.emp`
+    /// authority (or the small `seam_emit_config` list for the genuinely-external
+    /// game/data config) by [`resolve_consts`]. No value is hand-maintained here.
+    const_names: fn() -> &'static [&'static str],
 }
 
 fn file_specs() -> Vec<FileSpec> {
@@ -89,35 +93,35 @@ fn file_specs() -> Vec<FileSpec> {
             section: "z80_sound_driver",
             vma_plain: 0x0000,
             vma_debug: 0x0000,
-            consts: driver_consts,
+            const_names: driver_const_names,
         },
         FileSpec {
             rel_path: "engine/sound/sound_sequencer.emp",
             section: "sound_sequencer",
             vma_plain: 0x0565,
             vma_debug: 0x0565,
-            consts: sequencer_consts,
+            const_names: sequencer_const_names,
         },
         FileSpec {
             rel_path: "engine/sound/sound_sfx.emp",
             section: "sound_sfx",
             vma_plain: 0x0CD7,
             vma_debug: 0x0D55,
-            consts: sfx_consts,
+            const_names: sfx_const_names,
         },
         FileSpec {
             rel_path: "engine/sound/sound_fm.emp",
             section: "sound_fm",
             vma_plain: 0x12C3,
             vma_debug: 0x1341,
-            consts: fm_consts,
+            const_names: fm_const_names,
         },
         FileSpec {
             rel_path: "engine/sound/sound_psg.emp",
             section: "sound_psg",
             vma_plain: 0x1660,
             vma_debug: 0x16DE,
-            consts: psg_consts,
+            const_names: psg_const_names,
         },
     ]
 }
@@ -313,7 +317,7 @@ fn lower_one(
             docs: file.docs.clone(),
         }
     };
-    let mut defines: Vec<(String, i128)> = (spec.consts)()
+    let mut defines: Vec<(String, i128)> = resolve_consts(aeon, (spec.const_names)())
         .into_iter()
         .map(|(n, v)| {
             let v = match doctor {
@@ -629,7 +633,7 @@ pub fn z80_clobbers_report_doctored(
     for spec in &file_specs() {
         let (file, _dir) = parse_one(aeon, spec);
         let inv_units = expand(&module_invariant_reglist(&file));
-        let mut defines: Vec<(String, i128)> = (spec.consts)()
+        let mut defines: Vec<(String, i128)> = resolve_consts(aeon, (spec.const_names)())
             .into_iter()
             .map(|(n, v)| (n.to_string(), v as i128))
             .collect();
@@ -648,171 +652,260 @@ pub fn z80_clobbers_report_doctored(
     Z80ClobbersReport { firings, unresolved_callees: closure.unresolved_callees, dropped }
 }
 
-// ---------------------------------------------------------------------------
-// The five per-file const seams (the sound_constants.asm equs each file folds).
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// The per-module const seams — NAMES here, VALUES from the authority.
+//
+// E2: the 399 hand-maintained `(name, value)` entries are gone. Each module's
+// `-D` env is the same set of NAMES it always folded; every value is resolved
+// from `engine/sound/sound_constants.emp` (the sole authority) through the shared
+// `eval_all_pub_consts` path — so a contract edit propagates to the resident blob
+// with nothing to drift. The handful of names the authority does not own (game /
+// data config) resolve from `seam_emit_config`, each carrying its provenance.
+// ===========================================================================
 
-fn driver_consts() -> Vec<(&'static str, i64)> {
-    vec![
-        ("CHROUTE_COUNT", 0xb), ("CHROUTE_DAC", 0xa), ("CHROUTE_FM6", 0x5),
-        ("CHROUTE_PSG1", 0x6), ("DAC_SAMPLE_COUNT", 0xa), ("DacSampleTable", 0x85ad),
-        ("DacSample_ds_length", 0x5), ("DacSample_ds_ptr", 0x3), ("SCF_ACTIVE", 0x1),
-        ("SCF_IS_DAC", 0x10), ("SCF_IS_FM", 0x4), ("SCF_IS_PSG", 0x8), ("SCF_KEYED_B", 0x1),
-        ("SHC_CMD_HI", 0x1), ("SHC_CMD_LO", 0x2), ("SHC_LEN", 0x5), ("SHC_MOD_HI", 0x3),
-        ("SHC_MOD_LO", 0x4), ("SHC_ROUTE", 0x0), ("SH_CHANNELS", 0x6), ("SH_CHCOUNT", 0x3),
-        ("SH_F_FM6_ADAPTIVE", 0x4), ("SH_PITCHTAB_HI", 0x4), ("SH_PITCHTAB_LO", 0x5),
-        ("SH_TEMPO", 0x1), ("SH_TEMPO_MOD", 0x2), ("SND_ALIVE_MARKER", 0x5a),
-        ("SND_CTRL_DMA_ACTIVE", 0x1f04), ("SND_CUR_BANK", 0x18f3), ("SND_DAC_PHASE", 0x18f0),
-        ("SND_ENGINE_TABLE_BANK", 0xb), ("SND_FADE_CMD_IN", 0x2), ("SND_FADE_DELAY", 0x1),
-        ("SND_FADE_DELAY_CTR", 0x1cce), ("SND_FADE_DIRTY", 0x1ccf), ("SND_FADE_SILENCE", 0x7f),
-        ("SND_FADE_TARGET", 0x1ccd), ("SND_FM6_ADAPTIVE", 0x18fc),
-        ("SND_FM6_CHAN_PTR", 0x18fa), ("SND_FM_KEYON_OPMASK", 0xf0),
-        ("SND_MASTER_FADE", 0x1ccc), ("SND_MUSIC_PARAM_BANK", 0x1ca6),
-        ("SND_MUSIC_PARAM_FLAGS", 0x1ca9), ("SND_MUSIC_PARAM_PATCHPTR", 0x1caa),
-        ("SND_MUSIC_PARAM_PTR", 0x1ca7), ("SND_MUSIC_STOP", 0xff), ("SND_REG_DAC_DATA", 0x2a),
-        ("SND_REG_DAC_ENABLE", 0x2b), ("SND_REG_KEY_ONOFF", 0x28), ("SND_REG_LFO", 0x22),
-        ("SND_REG_LR_AMS_FMS", 0xb4), ("SND_REG_TIMER_A_HI", 0x24),
-        ("SND_REG_TIMER_A_LO", 0x25), ("SND_REG_TIMER_CTRL", 0x27), ("SND_REQ_FADE", 0x1f05),
-        ("SND_REQ_MUSIC", 0x1f02), ("SND_REQ_PING", 0x1f00), ("SND_REQ_SAMPLE", 0x1f01),
-        ("SND_REQ_SFX", 0x1f03), ("SND_REQ_TEMPO", 0x1f06), ("SND_RING_BASE", 0x1900),
-        ("SND_RING_LEAD_PRIME", 0x80), ("SND_RING_LEAD_TARGET", 0xc8), ("SND_RING_PAGE", 0x19),
-        ("SND_RING_RD", 0x18f4), ("SND_RING_WR", 0x18f5), ("SND_ROM_BANK", 0x18f2),
-        ("SND_ROM_LEN", 0x18f8), ("SND_ROM_PTR", 0x18f6), ("SND_SEQ_ACTIVE", 0x1a04),
-        ("SND_SEQ_BADOP", 0x1a05), ("SND_SEQ_BASE", 0x1a00), ("SND_SEQ_CHANNELS", 0x1a08),
-        ("SND_SEQ_CHCOUNT", 0x1a01), ("SND_SEQ_END", 0x1c9c), ("SND_SEQ_PATCHTAB", 0x1a02),
-        ("SND_SEQ_TEMPO", 0x1a00), ("SND_SEQ_TEMPO_MOD", 0x1a07), ("SND_SEQ_TRACE_WR", 0x1a06),
-        ("SND_SFX_QUEUE_CNT", 0x1ee4), ("SND_SONG_BANK", 0x18f1), ("SND_STACK_TOP", 0x1ffe),
-        ("SND_STAT_ACK_COUNT", 0x1f12), ("SND_STAT_ALIVE", 0x1f10),
-        ("SND_STAT_DAC_ACTIVE", 0x1f14), ("SND_STAT_PING_ECHO", 0x1f11),
-        ("SND_STAT_TICK", 0x1f13), ("SND_TEMPO_BASE", 0x1cd2), ("SND_TEMPO_CUR", 0x1cd0),
-        ("SND_TEMPO_RESTORE", 0xff), ("SND_TEMPO_TARGET", 0x1cd1),
-        ("SND_TIMERA_CTRL_PROGRAM", 0x5), ("SND_TIMERA_CTRL_REARM", 0x15),
-        ("SND_TIMERA_N", 0x89), ("SND_TIMERA_OVF_MASK", 0x1), ("SND_Z80_BANKREG", 0x6000),
-        ("SND_Z80_YM_A0", 0x4000), ("SND_Z80_YM_A1", 0x4001), ("SND_Z80_YM_A2", 0x4002),
-        ("SND_Z80_YM_A3", 0x4003), ("SeqChannel_len", 0x3c), ("Snd_PitchTabPtr", 0x1ca3),
-        ("Snd_SongBase", 0x1ca1), ("Snd_SpindashRev", 0x1ca5), ("sc_detune", 0x3a),
-        ("sc_dur_count", 0x4), ("sc_dur_default", 0x5), ("sc_flags", 0xa),
-        ("sc_last_patch", 0x7), ("sc_macro_active", 0x3b), ("sc_mod_ctrl", 0x2a),
-        ("sc_mod_ptr", 0x2), ("sc_noise_mode", 0x39), ("sc_note", 0x9),
-        ("sc_porta_accum", 0x20), ("sc_porta_incr", 0x22), ("sc_psgenv", 0x27),
-        ("sc_psgenv_cur", 0x28), ("sc_psgenv_out", 0x29), ("sc_pt_count", 0x13),
-        ("sc_route", 0xb), ("sc_stream_ptr", 0x0), ("sc_tempo_accum", 0x12),
-        ("sc_tempo_mod", 0x11), ("sc_volume", 0x8),
+/// Evaluate a module's `pub const`s to `(name, value)`, panicking on any parse or
+/// resolve error (the blob is a hard build dependency). Drives the full evaluator,
+/// so `offsetof`/`sizeof`/derivation RHSs fold exactly as in the real build.
+fn eval_pub_consts(path: &Path, aeon: &Path, defines: &[(String, i128)]) -> Vec<(String, i64)> {
+    let src = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let (file, pdiags) = parse_str(&src);
+    assert!(
+        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{} parse errors: {pdiags:?}",
+        path.display()
+    );
+    let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(aeon), defines);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{} pub-const resolve errors: {:?}",
+        path.display(),
+        diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect::<Vec<_>>()
+    );
+    vals
+}
+
+/// The sound-constants authority: every `pub const` of `sound_constants.emp`,
+/// resolved once and memoized per aeon root. This is the SINGLE source the five
+/// resident-module seams read their contract values from (spec §9 one-authority
+/// rule — a focused module-eval reuse, drift structurally impossible). `Z80_RAM`
+/// (the one external base, feeding `SND_Z80_BASE`) is itself sourced from
+/// `engine/system/constants.emp` — its own sole authority — and seeded, since the
+/// standalone eval does not follow the `use engine.constants` from disk.
+pub(crate) fn sound_authority_consts(aeon: &Path) -> std::sync::Arc<BTreeMap<String, i64>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<BTreeMap<String, i64>>>>> =
+        std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    if let Some(m) = cache.lock().unwrap().get(aeon) {
+        return m.clone();
+    }
+    let z80_ram = eval_pub_consts(&aeon.join("engine/system/constants.emp"), aeon, &[])
+        .into_iter()
+        .find(|(n, _)| n == "Z80_RAM")
+        .map(|(_, v)| v)
+        .expect("engine.constants must define Z80_RAM (the SND_Z80_BASE base)");
+    let map: BTreeMap<String, i64> = eval_pub_consts(
+        &aeon.join("engine/sound/sound_constants.emp"),
+        aeon,
+        &[("Z80_RAM".to_string(), z80_ram as i128)],
+    )
+    .into_iter()
+    .collect();
+    let arc = std::sync::Arc::new(map);
+    cache.lock().unwrap().insert(aeon.to_path_buf(), arc.clone());
+    arc
+}
+
+/// The seam const values NOT owned by `sound_constants.emp` — genuinely external
+/// game / data config the resident-blob emit supplies, exactly as `main.asm` /
+/// `config/sound_ids.asm` / the generated vol-env data supply them in the mixed AS
+/// build. Each carries its provenance. (Contrast the 384 contract values, which
+/// flow from the authority.) `DacSampleTable` is DERIVED from seam-2's single DAC
+/// head placement, not hand-pinned.
+fn seam_emit_config() -> BTreeMap<&'static str, i64> {
+    // The DAC descriptor head's $8000-window VMA (sound_bank.inc's driver
+    // `-D DacSampleTable`), tied to seam-2's one DAC_SAMPLE_TAB placement so the
+    // window address cannot drift from the bank it points at.
+    let dac_sample_table = 0x8000
+        + (crate::seam2::DAC_SAMPLE_TAB_LMA as i64 - crate::seam2::SOUND_TABLES_Z80_LMA as i64);
+    BTreeMap::from([
+        ("DacSampleTable", dac_sample_table),
+        // Game config (games/sonic4/main.asm + config/sound_ids.asm + config/game.asm)
+        // — the resident blob needs the game's bank/id layout to build; the AS side
+        // gets these from main.asm. Not engine sound contract, so not in the authority.
+        ("SND_ENGINE_TABLE_BANK", 0x0B), // main.asm: MovingTrucks_Bank_Start >> 15
+        ("SFX_BLOB_BANK", 0x0B),         // main.asm: = SND_ENGINE_TABLE_BANK
+        ("SFX_ID_BASE", 0x33),           // config/sound_ids.asm (SfxTable.min_key)
+        ("SFX_TABLE_LEN", 0x87),         // config/sound_ids.asm (135 entries)
+        ("SFXID_REV_LOOP", 0xAB),        // config/game.asm (= SFXID_SPINDASH)
+        // Vol-env data config (engine/sound/sound_tables_z80.emp, GENERATED). The two
+        // COUNTs have NO other definition in the tree (resident-blob-only). The six
+        // control bytes mirror the generated data module — the residual 6-value seam
+        // is gap-ledgered for a future harvest (make them pub there, or promote to the
+        // authority and have the generator import — both touch the generator).
+        ("FMVOLENV_COUNT", 3),
+        ("PSGVOLENV_COUNT", 0x0B),
+        ("FmVolEnvCtl_Loop", 0x80),
+        ("FmVolEnvCtl_Sustain", 0x81),
+        ("FmVolEnvCtl_Rest", 0x83),
+        ("PsgVolEnvCtl_Loop", 0x80),
+        ("PsgVolEnvCtl_Sustain", 0x81),
+        ("PsgVolEnvCtl_Rest", 0x83),
+    ])
+}
+
+/// Resolve a module's const NAMES to `(name, value)` — authority first, then the
+/// emit-config fallback. A name in neither is a loud panic (a seam name with no
+/// home is a build error, never a silent wrong byte).
+fn resolve_consts(aeon: &Path, names: &[&'static str]) -> Vec<(&'static str, i64)> {
+    let auth = sound_authority_consts(aeon);
+    let cfg = seam_emit_config();
+    names
+        .iter()
+        .map(|&n| {
+            let v = auth
+                .get(n)
+                .copied()
+                .or_else(|| cfg.get(n).copied())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "seam-1 const `{n}` is in neither the sound_constants.emp authority \
+                         nor the emit-config list"
+                    )
+                });
+            (n, v)
+        })
+        .collect()
+}
+
+/// The `z80_sound_driver.emp` const-name seam (values from the authority via `resolve_consts`).
+fn driver_const_names() -> &'static [&'static str] {
+    &[
+        "CHROUTE_COUNT", "CHROUTE_DAC", "CHROUTE_FM6", "CHROUTE_PSG1",
+        "DAC_SAMPLE_COUNT", "DacSampleTable", "DacSample_ds_length", "DacSample_ds_ptr",
+        "SCF_ACTIVE", "SCF_IS_DAC", "SCF_IS_FM", "SCF_IS_PSG",
+        "SCF_KEYED_B", "SHC_CMD_HI", "SHC_CMD_LO", "SHC_LEN",
+        "SHC_MOD_HI", "SHC_MOD_LO", "SHC_ROUTE", "SH_CHANNELS",
+        "SH_CHCOUNT", "SH_F_FM6_ADAPTIVE", "SH_PITCHTAB_HI", "SH_PITCHTAB_LO",
+        "SH_TEMPO", "SH_TEMPO_MOD", "SND_ALIVE_MARKER", "SND_CTRL_DMA_ACTIVE",
+        "SND_CUR_BANK", "SND_DAC_PHASE", "SND_ENGINE_TABLE_BANK", "SND_FADE_CMD_IN",
+        "SND_FADE_DELAY", "SND_FADE_DELAY_CTR", "SND_FADE_DIRTY", "SND_FADE_SILENCE",
+        "SND_FADE_TARGET", "SND_FM6_ADAPTIVE", "SND_FM6_CHAN_PTR", "SND_FM_KEYON_OPMASK",
+        "SND_MASTER_FADE", "SND_MUSIC_PARAM_BANK", "SND_MUSIC_PARAM_FLAGS", "SND_MUSIC_PARAM_PATCHPTR",
+        "SND_MUSIC_PARAM_PTR", "SND_MUSIC_STOP", "SND_REG_DAC_DATA", "SND_REG_DAC_ENABLE",
+        "SND_REG_KEY_ONOFF", "SND_REG_LFO", "SND_REG_LR_AMS_FMS", "SND_REG_TIMER_A_HI",
+        "SND_REG_TIMER_A_LO", "SND_REG_TIMER_CTRL", "SND_REQ_FADE", "SND_REQ_MUSIC",
+        "SND_REQ_PING", "SND_REQ_SAMPLE", "SND_REQ_SFX", "SND_REQ_TEMPO",
+        "SND_RING_BASE", "SND_RING_LEAD_PRIME", "SND_RING_LEAD_TARGET", "SND_RING_PAGE",
+        "SND_RING_RD", "SND_RING_WR", "SND_ROM_BANK", "SND_ROM_LEN",
+        "SND_ROM_PTR", "SND_SEQ_ACTIVE", "SND_SEQ_BADOP", "SND_SEQ_BASE",
+        "SND_SEQ_CHANNELS", "SND_SEQ_CHCOUNT", "SND_SEQ_END", "SND_SEQ_PATCHTAB",
+        "SND_SEQ_TEMPO", "SND_SEQ_TEMPO_MOD", "SND_SEQ_TRACE_WR", "SND_SFX_QUEUE_CNT",
+        "SND_SONG_BANK", "SND_STACK_TOP", "SND_STAT_ACK_COUNT", "SND_STAT_ALIVE",
+        "SND_STAT_DAC_ACTIVE", "SND_STAT_PING_ECHO", "SND_STAT_TICK", "SND_TEMPO_BASE",
+        "SND_TEMPO_CUR", "SND_TEMPO_RESTORE", "SND_TEMPO_TARGET", "SND_TIMERA_CTRL_PROGRAM",
+        "SND_TIMERA_CTRL_REARM", "SND_TIMERA_N", "SND_TIMERA_OVF_MASK", "SND_Z80_BANKREG",
+        "SND_Z80_YM_A0", "SND_Z80_YM_A1", "SND_Z80_YM_A2", "SND_Z80_YM_A3",
+        "SeqChannel_len", "Snd_PitchTabPtr", "Snd_SongBase", "Snd_SpindashRev",
+        "sc_detune", "sc_dur_count", "sc_dur_default", "sc_flags",
+        "sc_last_patch", "sc_macro_active", "sc_mod_ctrl", "sc_mod_ptr",
+        "sc_noise_mode", "sc_note", "sc_porta_accum", "sc_porta_incr",
+        "sc_psgenv", "sc_psgenv_cur", "sc_psgenv_out", "sc_pt_count",
+        "sc_route", "sc_stream_ptr", "sc_tempo_accum", "sc_tempo_mod",
+        "sc_volume",
     ]
 }
 
-fn sequencer_consts() -> Vec<(&'static str, i64)> {
-    vec![
-        ("sc_stream_ptr", 0x00), ("sc_mod_ptr", 0x02), ("sc_dur_count", 0x04),
-        ("sc_dur_default", 0x05), ("sc_patch", 0x06), ("sc_volume", 0x08),
-        ("sc_note", 0x09), ("sc_flags", 0x0A), ("sc_route", 0x0B),
-        ("sc_loop_ptr", 0x0C), ("sc_repeat_ptr", 0x0E), ("sc_repeat_count", 0x10),
-        ("sc_tempo_mod", 0x11), ("sc_tempo_accum", 0x12), ("sc_pt_count", 0x13),
-        ("sc_pt_cursor", 0x14), ("sc_points", 0x15), ("sc_transpose", 0x1A),
-        ("sc_pan", 0x1B), ("sc_opbias", 0x1C), ("sc_porta_accum", 0x20),
-        ("sc_porta_incr", 0x22), ("sc_last_pan", 0x24), ("sc_fill_master", 0x25),
-        ("sc_fill_count", 0x26), ("sc_psgenv", 0x27), ("sc_psgenv_cur", 0x28),
-        ("sc_psgenv_out", 0x29), ("sc_env", 0x27), ("sc_env_cur", 0x28),
-        ("sc_env_out", 0x29), ("sc_mod_ctrl", 0x2A), ("sc_mod_wait", 0x2B),
-        ("sc_mod_speed", 0x2C), ("sc_mod_delta", 0x2D), ("sc_mod_steps", 0x2E),
-        ("sc_mod_speed_raw", 0x2F), ("sc_mod_step_raw", 0x30), ("sc_mod_wait_raw", 0x31),
-        ("sc_mod_delta_raw", 0x32), ("sc_mod_accum", 0x33), ("sc_base_freq", 0x35),
-        ("sc_last_freq", 0x37), ("sc_noise_mode", 0x39), ("sc_detune", 0x3A),
-        ("sc_macro_active", 0x3B), ("sx_gain", 0x40), ("sx_extend", 0x42),
-        ("SeqChannel_len", 0x3C),
-        ("SCF_ACTIVE_B", 0), ("SCF_KEYED_B", 1), ("SCF_IS_FM_B", 2), ("SCF_IS_PSG_B", 3),
-        ("SCF_REKEY_B", 5), ("SCF_SFX_OVERRIDE_B", 6), ("SCF_PITCH_CHROMATIC_B", 7),
-        ("MEV_VOL", 0xE0), ("MEV_REST", 0x80), ("MEV_NOTE_BASE", 0x81),
-        ("PsgVolEnvCtl_Loop", 0x80), ("PsgVolEnvCtl_Sustain", 0x81), ("PsgVolEnvCtl_Rest", 0x83),
-        ("FmVolEnvCtl_Loop", 0x80), ("FmVolEnvCtl_Sustain", 0x81), ("FmVolEnvCtl_Rest", 0x83),
-        ("TAG_MAC_NEXT", 0xE0), ("TAG_MAC_REG", 0xE1), ("TAG_MAC_LOOP", 0xE2), ("TAG_MAC_END", 0xE3),
-        ("FNUM_LO", 0x284), ("FNUM_HI", 0x508),
-        ("SEQEV_NOTEON", 1), ("SEQEV_NOTEOFF", 2), ("SEQEV_VOL", 3), ("SEQEV_PATCH", 4),
-        ("SEQEV_DAC", 5), ("SEQEV_LOOP", 6), ("SEQEV_JUMP", 7), ("SEQEV_END", 8),
-        ("SEQEV_RPT_START", 9), ("SEQEV_RPT_END", 10),
-        ("SND_FM_TL_MAX", 0x7F), ("SND_PSG_SILENCE_T3", 0xDF), ("CHROUTE_PSGN", 9),
-        ("SND_REG_LFO", 0x22), ("SND_REG_TIMER_A_HI", 0x24), ("SND_REG_TIMER_CTRL", 0x27),
-        ("SND_REG_KEY_ONOFF", 0x28), ("SND_REG_DAC_DATA", 0x2A), ("SND_REG_DAC_ENABLE", 0x2B),
-        ("SND_FADE_DELAY", 1), ("SND_FADE_STEP", 2), ("SND_SEQ_TRACE_LEN", 0x20),
-        ("SND_Z80_PSG", 0x7F11), ("SND_Z80_YM_A0", 0x4000), ("SND_Z80_YM_A1", 0x4001),
-        ("SND_STAT_TICK", 0x1F13), ("SND_SEQ_ACTIVE", 0x1A04), ("SND_SEQ_CHCOUNT", 0x1A01),
-        ("SND_SEQ_CHANNELS", 0x1A08), ("SND_SEQ_BADOP", 0x1A05), ("SND_SEQ_TRACE", 0x1CAC),
-        ("SND_SEQ_TRACE_WR", 0x1A06), ("SND_TEMPO_CUR", 0x1CD0), ("SND_TEMPO_TARGET", 0x1CD1),
-        ("SND_TEMPO_BASE", 0x1CD2), ("SND_MASTER_FADE", 0x1CCC), ("SND_FADE_TARGET", 0x1CCD),
-        ("SND_FADE_DELAY_CTR", 0x1CCE), ("SND_FADE_DIRTY", 0x1CCF),
-        ("Snd_SongBase", 0x1CA1), ("Snd_SpindashRev", 0x1CA5),
+/// The `sound_sequencer.emp` const-name seam (values from the authority via `resolve_consts`).
+fn sequencer_const_names() -> &'static [&'static str] {
+    &[
+        "sc_stream_ptr", "sc_mod_ptr", "sc_dur_count", "sc_dur_default",
+        "sc_patch", "sc_volume", "sc_note", "sc_flags",
+        "sc_route", "sc_loop_ptr", "sc_repeat_ptr", "sc_repeat_count",
+        "sc_tempo_mod", "sc_tempo_accum", "sc_pt_count", "sc_pt_cursor",
+        "sc_points", "sc_transpose", "sc_pan", "sc_opbias",
+        "sc_porta_accum", "sc_porta_incr", "sc_last_pan", "sc_fill_master",
+        "sc_fill_count", "sc_psgenv", "sc_psgenv_cur", "sc_psgenv_out",
+        "sc_env", "sc_env_cur", "sc_env_out", "sc_mod_ctrl",
+        "sc_mod_wait", "sc_mod_speed", "sc_mod_delta", "sc_mod_steps",
+        "sc_mod_speed_raw", "sc_mod_step_raw", "sc_mod_wait_raw", "sc_mod_delta_raw",
+        "sc_mod_accum", "sc_base_freq", "sc_last_freq", "sc_noise_mode",
+        "sc_detune", "sc_macro_active", "sx_gain", "sx_extend",
+        "SeqChannel_len", "SCF_ACTIVE_B", "SCF_KEYED_B", "SCF_IS_FM_B",
+        "SCF_IS_PSG_B", "SCF_REKEY_B", "SCF_SFX_OVERRIDE_B", "SCF_PITCH_CHROMATIC_B",
+        "MEV_VOL", "MEV_REST", "MEV_NOTE_BASE", "PsgVolEnvCtl_Loop",
+        "PsgVolEnvCtl_Sustain", "PsgVolEnvCtl_Rest", "FmVolEnvCtl_Loop", "FmVolEnvCtl_Sustain",
+        "FmVolEnvCtl_Rest", "TAG_MAC_NEXT", "TAG_MAC_REG", "TAG_MAC_LOOP",
+        "TAG_MAC_END", "FNUM_LO", "FNUM_HI", "SEQEV_NOTEON",
+        "SEQEV_NOTEOFF", "SEQEV_VOL", "SEQEV_PATCH", "SEQEV_DAC",
+        "SEQEV_LOOP", "SEQEV_JUMP", "SEQEV_END", "SEQEV_RPT_START",
+        "SEQEV_RPT_END", "SND_FM_TL_MAX", "SND_PSG_SILENCE_T3", "CHROUTE_PSGN",
+        "SND_REG_LFO", "SND_REG_TIMER_A_HI", "SND_REG_TIMER_CTRL", "SND_REG_KEY_ONOFF",
+        "SND_REG_DAC_DATA", "SND_REG_DAC_ENABLE", "SND_FADE_DELAY", "SND_FADE_STEP",
+        "SND_SEQ_TRACE_LEN", "SND_Z80_PSG", "SND_Z80_YM_A0", "SND_Z80_YM_A1",
+        "SND_STAT_TICK", "SND_SEQ_ACTIVE", "SND_SEQ_CHCOUNT", "SND_SEQ_CHANNELS",
+        "SND_SEQ_BADOP", "SND_SEQ_TRACE", "SND_SEQ_TRACE_WR", "SND_TEMPO_CUR",
+        "SND_TEMPO_TARGET", "SND_TEMPO_BASE", "SND_MASTER_FADE", "SND_FADE_TARGET",
+        "SND_FADE_DELAY_CTR", "SND_FADE_DIRTY", "Snd_SongBase", "Snd_SpindashRev",
     ]
 }
 
-fn sfx_consts() -> Vec<(&'static str, i64)> {
-    vec![
-        ("sc_stream_ptr", 0x00), ("sc_dur_count", 0x04), ("sc_dur_default", 0x05),
-        ("sc_volume", 0x08), ("sc_note", 0x09), ("sc_flags", 0x0A), ("sc_route", 0x0B),
-        ("sc_tempo_mod", 0x11), ("sc_tempo_accum", 0x12), ("sc_pt_count", 0x13),
-        ("sc_last_pan", 0x24), ("sc_base_freq", 0x35), ("sc_noise_mode", 0x39),
-        ("sx_priority", 0x39), ("sx_patch_base", 0x3B), ("sx_saved_route", 0x3D),
-        ("sx_kind", 0x3F), ("sx_gain", 0x40), ("sx_duck", 0x41), ("sx_extend", 0x42),
-        ("SeqChannel_len", 0x3C), ("SfxChannel_len", 0x44),
-        ("SCF_ACTIVE_B", 0), ("SCF_KEYED_B", 1), ("SCF_IS_FM_B", 2), ("SCF_IS_PSG_B", 3),
-        ("SCF_SFX_OVERRIDE_B", 6), ("SCF_PITCH_CHROMATIC", 0x80),
-        ("SFXEL_NONE", 0), ("SFXEL_FM", 1), ("SFXEL_PSG", 2), ("SFXEL_NOISE", 3),
-        ("SFXH_PRIORITY", 0), ("SFXH_FLAGS", 1), ("SFXH_CHCOUNT", 2), ("SFXH_GAIN", 3),
-        ("SFXH_DUCK", 4), ("SFXH_CAP", 5), ("SFXH_CHANNELS", 8),
-        ("SFXHC_ROUTE", 0), ("SFXHC_CMD_HI", 2), ("SFXHC_CMD_LO", 3),
-        ("SFXHC_VOICE_HI", 4), ("SFXHC_VOICE_LO", 5), ("SFXHC_LEN", 6),
-        ("SHF_CONTINUOUS_B", 0), ("SHF_CONTINUOUS", 1),
-        ("CHROUTE_FM3", 2), ("CHROUTE_FM4", 3), ("CHROUTE_FM5", 4), ("CHROUTE_PSG1", 6),
-        ("CHROUTE_PSG2", 7), ("CHROUTE_PSG3", 8), ("CHROUTE_PSGN", 9), ("CHROUTE_COUNT", 0x0B),
-        ("SFX_VOICE_COUNT", 7), ("SFX_DUCK_RAMP_STEP", 4), ("SFX_EXTEND_FRAMES", 0x0A),
-        ("SFX_QUEUE_DEPTH", 3), ("SFX_ID_BASE", 0x33), ("SFX_TABLE_LEN", 0x87),
-        ("SFX_BLOB_BANK", 0x0B), ("SFXID_REV_LOOP", 0xAB),
-        ("SND_SFX_CHANNELS", 0x1D00), ("SND_SFX_QUEUE", 0x1EDC), ("SND_SFX_QUEUE_CNT", 0x1EE4),
-        ("SND_SFX_DUCK_LEVEL", 0x1EE5), ("SND_SFX_DUCK_TARGET", 0x1EE6), ("SND_REQ_BASE", 0x1F00),
-        ("SND_SEQ_CHCOUNT", 0x1A01), ("SND_SEQ_ACTIVE", 0x1A04), ("SND_SEQ_CHANNELS", 0x1A08),
-        ("Snd_SpindashRev", 0x1CA5), ("SND_Z80_PSG", 0x7F11), ("SND_PSG_SILENCE_T3", 0xDF),
+/// The `sound_sfx.emp` const-name seam (values from the authority via `resolve_consts`).
+fn sfx_const_names() -> &'static [&'static str] {
+    &[
+        "sc_stream_ptr", "sc_dur_count", "sc_dur_default", "sc_volume",
+        "sc_note", "sc_flags", "sc_route", "sc_tempo_mod",
+        "sc_tempo_accum", "sc_pt_count", "sc_last_pan", "sc_base_freq",
+        "sc_noise_mode", "sx_priority", "sx_patch_base", "sx_saved_route",
+        "sx_kind", "sx_gain", "sx_duck", "sx_extend",
+        "SeqChannel_len", "SfxChannel_len", "SCF_ACTIVE_B", "SCF_KEYED_B",
+        "SCF_IS_FM_B", "SCF_IS_PSG_B", "SCF_SFX_OVERRIDE_B", "SCF_PITCH_CHROMATIC",
+        "SFXEL_NONE", "SFXEL_FM", "SFXEL_PSG", "SFXEL_NOISE",
+        "SFXH_PRIORITY", "SFXH_FLAGS", "SFXH_CHCOUNT", "SFXH_GAIN",
+        "SFXH_DUCK", "SFXH_CAP", "SFXH_CHANNELS", "SFXHC_ROUTE",
+        "SFXHC_CMD_HI", "SFXHC_CMD_LO", "SFXHC_VOICE_HI", "SFXHC_VOICE_LO",
+        "SFXHC_LEN", "SHF_CONTINUOUS_B", "SHF_CONTINUOUS", "CHROUTE_FM3",
+        "CHROUTE_FM4", "CHROUTE_FM5", "CHROUTE_PSG1", "CHROUTE_PSG2",
+        "CHROUTE_PSG3", "CHROUTE_PSGN", "CHROUTE_COUNT", "SFX_VOICE_COUNT",
+        "SFX_DUCK_RAMP_STEP", "SFX_EXTEND_FRAMES", "SFX_QUEUE_DEPTH", "SFX_ID_BASE",
+        "SFX_TABLE_LEN", "SFX_BLOB_BANK", "SFXID_REV_LOOP", "SND_SFX_CHANNELS",
+        "SND_SFX_QUEUE", "SND_SFX_QUEUE_CNT", "SND_SFX_DUCK_LEVEL", "SND_SFX_DUCK_TARGET",
+        "SND_REQ_BASE", "SND_SEQ_CHCOUNT", "SND_SEQ_ACTIVE", "SND_SEQ_CHANNELS",
+        "Snd_SpindashRev", "SND_Z80_PSG", "SND_PSG_SILENCE_T3",
     ]
 }
 
-fn fm_consts() -> Vec<(&'static str, i64)> {
-    vec![
-        ("sc_route", 0x0B), ("sc_patch", 0x06), ("sc_pan", 0x1B), ("sc_transpose", 0x1A),
-        ("sc_detune", 0x3A), ("sc_base_freq", 0x35), ("sc_last_freq", 0x37),
-        ("sc_porta_accum", 0x20), ("sc_porta_incr", 0x22), ("sc_opbias", 0x1C),
-        ("sc_flags", 0x0A), ("sc_fill_master", 0x25), ("sc_fill_count", 0x26),
-        ("sc_env_cur", 0x28), ("sc_env_out", 0x29), ("sx_gain", 0x40), ("sx_patch_base", 0x3B),
-        ("SND_REG_DAC_DATA", 0x2A), ("SND_REG_ALG_FB", 0xB0), ("SND_REG_LR_AMS_FMS", 0xB4),
-        ("SND_REG_OP_DT_MUL", 0x30), ("SND_REG_OP_TL", 0x40), ("SND_REG_OP_RS_AR", 0x50),
-        ("SND_REG_OP_AM_D1R", 0x60), ("SND_REG_OP_D2R", 0x70), ("SND_REG_OP_D1L_RR", 0x80),
-        ("SND_REG_OP_SSG_EG", 0x90), ("SND_REG_FNUM_HI", 0xA4), ("SND_REG_FNUM_LO", 0xA0),
-        ("SND_REG_KEY_ONOFF", 0x28),
-        ("SND_Z80_YM_A0", 0x4000), ("SND_Z80_YM_A1", 0x4001),
-        ("SND_Z80_YM_A2", 0x4002), ("SND_Z80_YM_A3", 0x4003),
-        ("SND_SFX_BASE", 0x1D00), ("SND_FM_TL_MAX", 0x7F), ("SND_FM_KEYON_OPMASK", 0xF0),
-        ("CHROUTE_FM6", 5), ("FmPatch_len", 0x20), ("FmPatch_fp_tl", 6),
-        ("SCF_KEYED_B", 1),
-        ("REGDELTA_OP_MASK", 3), ("REGDELTA_GROUP_MASK", 0x0F),
-        ("REGDELTA_GROUP_COUNT", 6), ("REGDELTA_GROUP_SHIFT", 2),
-        ("PITCHTAB_MAX_IDX", 0x83), ("PITCHTAB_COUNT", 0x84), ("FMPITCH_MAX_IDX", 0x5E),
-        ("FNUM_HI", 0x508), ("FNUM_LO", 0x284),
-        ("SND_STAT_DAC_ACTIVE", 0x1F14), ("SND_MASTER_FADE", 0x1CCC),
-        ("SND_SFX_DUCK_LEVEL", 0x1EE5), ("SND_SEQ_PATCHTAB", 0x1A02),
-        ("Snd_PitchTabPtr", 0x1CA3),
-        ("SND_FM_SCRATCH", 0x1C9C), ("SND_FM_SCRATCH_LEN", 5),
+/// The `sound_fm.emp` const-name seam (values from the authority via `resolve_consts`).
+fn fm_const_names() -> &'static [&'static str] {
+    &[
+        "sc_route", "sc_patch", "sc_pan", "sc_transpose",
+        "sc_detune", "sc_base_freq", "sc_last_freq", "sc_porta_accum",
+        "sc_porta_incr", "sc_opbias", "sc_flags", "sc_fill_master",
+        "sc_fill_count", "sc_env_cur", "sc_env_out", "sx_gain",
+        "sx_patch_base", "SND_REG_DAC_DATA", "SND_REG_ALG_FB", "SND_REG_LR_AMS_FMS",
+        "SND_REG_OP_DT_MUL", "SND_REG_OP_TL", "SND_REG_OP_RS_AR", "SND_REG_OP_AM_D1R",
+        "SND_REG_OP_D2R", "SND_REG_OP_D1L_RR", "SND_REG_OP_SSG_EG", "SND_REG_FNUM_HI",
+        "SND_REG_FNUM_LO", "SND_REG_KEY_ONOFF", "SND_Z80_YM_A0", "SND_Z80_YM_A1",
+        "SND_Z80_YM_A2", "SND_Z80_YM_A3", "SND_SFX_BASE", "SND_FM_TL_MAX",
+        "SND_FM_KEYON_OPMASK", "CHROUTE_FM6", "FmPatch_len", "FmPatch_fp_tl",
+        "SCF_KEYED_B", "REGDELTA_OP_MASK", "REGDELTA_GROUP_MASK", "REGDELTA_GROUP_COUNT",
+        "REGDELTA_GROUP_SHIFT", "PITCHTAB_MAX_IDX", "PITCHTAB_COUNT", "FMPITCH_MAX_IDX",
+        "FNUM_HI", "FNUM_LO", "SND_STAT_DAC_ACTIVE", "SND_MASTER_FADE",
+        "SND_SFX_DUCK_LEVEL", "SND_SEQ_PATCHTAB", "Snd_PitchTabPtr", "SND_FM_SCRATCH",
+        "SND_FM_SCRATCH_LEN",
     ]
 }
 
-fn psg_consts() -> Vec<(&'static str, i64)> {
-    vec![
-        ("sc_route", 0x0B), ("sc_flags", 0x0A), ("sc_volume", 0x08),
-        ("sc_psgenv_cur", 0x28), ("sc_psgenv_out", 0x29), ("sc_porta_accum", 0x20),
-        ("sc_porta_incr", 0x22), ("sc_base_freq", 0x35), ("sc_last_freq", 0x37),
-        ("sc_noise_mode", 0x39), ("sc_detune", 0x3A), ("sx_gain", 0x40),
-        ("CHROUTE_PSG1", 6), ("CHROUTE_PSGN", 9), ("SCF_KEYED_B", 1),
-        ("SND_FM_TL_MAX", 0x7F), ("SND_PSG_ATTEN_SILENT", 0x0F), ("SND_Z80_PSG", 0x7F11),
-        ("SND_PSG_VOL_LATCH", 0x90), ("SND_PSG_TONE_LATCH", 0x80), ("SND_PSG_SILENCE_N", 0xFF),
-        ("SND_PSG_SILENCE_T1", 0x9F), ("SND_PSG_SILENCE_T2", 0xBF), ("SND_PSG_SILENCE_T3", 0xDF),
-        ("SND_PSG_NOISE_VOL", 0xF0), ("SND_PSG_NOISE_CTRL", 0xE0),
-        ("SND_MASTER_FADE", 0x1CCC), ("SND_SFX_DUCK_LEVEL", 0x1EE5),
-        ("PSGVOLENV_COUNT", 0x0B), ("FMVOLENV_COUNT", 3),
+/// The `sound_psg.emp` const-name seam (values from the authority via `resolve_consts`).
+fn psg_const_names() -> &'static [&'static str] {
+    &[
+        "sc_route", "sc_flags", "sc_volume", "sc_psgenv_cur",
+        "sc_psgenv_out", "sc_porta_accum", "sc_porta_incr", "sc_base_freq",
+        "sc_last_freq", "sc_noise_mode", "sc_detune", "sx_gain",
+        "CHROUTE_PSG1", "CHROUTE_PSGN", "SCF_KEYED_B", "SND_FM_TL_MAX",
+        "SND_PSG_ATTEN_SILENT", "SND_Z80_PSG", "SND_PSG_VOL_LATCH", "SND_PSG_TONE_LATCH",
+        "SND_PSG_SILENCE_N", "SND_PSG_SILENCE_T1", "SND_PSG_SILENCE_T2", "SND_PSG_SILENCE_T3",
+        "SND_PSG_NOISE_VOL", "SND_PSG_NOISE_CTRL", "SND_MASTER_FADE", "SND_SFX_DUCK_LEVEL",
+        "PSGVOLENV_COUNT", "FMVOLENV_COUNT",
     ]
 }

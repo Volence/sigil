@@ -1,8 +1,16 @@
 # The sound-constants flip (census row-59, reclassed CAPSTONE) — design
 
-**Status: RATIFIED (overseer, path-1 ruling under Volence's standing "do it
+**Status: ✅ SHIPPED (both parcels, 2026-08-01; branches unmerged for the
+overseer's countersign).** E1 — the ownership flip (`sound_constants.asm` deleted,
+`sound_constants.emp` sole author): `notes/2026-08-01-sound-e1-flip.md`. E2 — the
+mirror dissolution (seam1's 399 hardcoded values + seam2's DAC carriers gone; all
+values flow from the authority): `notes/2026-08-01-sound-e2-mirror.md`. All 15
+Z80 blobs + 6 ROM targets byte-identical; strict 2868/0/4. No hand-maintained copy
+of any engine sound constant survives.
+
+Originally: RATIFIED (overseer, path-1 ruling under Volence's standing "do it
 properly" precedent — conv-C/item-7 shape, applied here without a re-ask since
-no language feature is missing; composition scale only).** Spec owner: Fable.
+no language feature is missing; composition scale only). Spec owner: Fable.
 Basis: the Parcel-E inspection stop
 (notes/2026-08-01-conv-e-sound-constants.md) — read it first; its numbers are
 the premise of record.

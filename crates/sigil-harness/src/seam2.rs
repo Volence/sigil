@@ -141,6 +141,7 @@ fn lower_emp_file(
     path: &Path,
     dir: &Path,
     initial_cpu: Cpu,
+    defines: Vec<(String, i128)>,
 ) -> Result<sigil_ir::Module, String> {
     let src = std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let (file, pdiags) = parse_str(&src);
@@ -151,7 +152,7 @@ fn lower_emp_file(
         initial_cpu,
         include_root: Some(dir.to_path_buf()),
         embed_base: None,
-        defines: vec![],
+        defines,
     };
     let (module, ldiags) = lower_module(&file, &opts);
     if ldiags.iter().any(|d| d.level == sigil_span::Level::Error) {
@@ -189,10 +190,26 @@ pub fn emit_dac_body_and_head_doctored(
     let eng_dir = aeon.join("engine/sound");
 
     // dac_samples.emp is m68000 (the banks + the SND_* equ carrier).
-    let samples = lower_emp_file(&dac_dir.join("dac_samples.emp"), &dac_dir, Cpu::M68000)?;
+    let samples = lower_emp_file(&dac_dir.join("dac_samples.emp"), &dac_dir, Cpu::M68000, vec![])?;
     // dac_sample_tab.emp declares `module ... (cpu: z80)`; its head cells reference
-    // the SND_* equs cross-module and its ensure defers to a link assert.
-    let tab = lower_emp_file(&eng_dir.join("dac_sample_tab.emp"), &eng_dir, Cpu::M68000)?;
+    // the SND_* equs cross-module (link-resolved against dac_samples.emp). Its size
+    // guard `use`s DAC_SAMPLE_COUNT / DacSample_len from the sound-constants
+    // authority — seeded here as comptime `-D` (the E2 dissolution: the old pinned
+    // "10"/"9" equ carriers are gone; the values flow from sound_constants.emp
+    // through the same one-authority eval the resident blob uses), so the guard
+    // folds at COMPTIME with nothing to drift.
+    let auth = crate::seam1::sound_authority_consts(aeon);
+    let dac_defines: Vec<(String, i128)> = ["DAC_SAMPLE_COUNT", "DacSample_len"]
+        .iter()
+        .map(|&n| {
+            let v = auth
+                .get(n)
+                .copied()
+                .unwrap_or_else(|| panic!("sound_constants.emp must define `{n}` (DAC head size guard)"));
+            (n.to_string(), v as i128)
+        })
+        .collect();
+    let tab = lower_emp_file(&eng_dir.join("dac_sample_tab.emp"), &eng_dir, Cpu::M68000, dac_defines)?;
     let link_asserts = tab.link_asserts.clone();
 
     // The `.emp` sections (banks + both equ carriers + the head) are map-placed;
@@ -216,22 +233,12 @@ pub fn emit_dac_body_and_head_doctored(
         return Err(format!("place_sections errors: {pd:?}"));
     }
 
-    // The size-guard externs (DAC_SAMPLE_COUNT / DacSample_len) as equ carriers at
-    // harness-private PINNED LMAs — the co-link's stand-in for `sound_constants.asm`.
-    // Added AFTER place_sections (a pinned carrier bypasses the map).
-    let pairs: Vec<(&str, &str)> = vec![("DAC_SAMPLE_COUNT", "10"), ("DacSample_len", "9")];
-    let mut carriers = crate::test_support::assemble_equ_pairs(&pairs);
-    for (i, sec) in carriers.iter_mut().enumerate() {
-        sec.lma = 0x0100_0000 + (i as u32) * 0x1000;
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-    }
-    sections.extend(carriers);
-
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .map_err(|d| format!("resolve_layout (bank straddle / ensure?): {d:?}"))?;
-    // The deferred size-guard: fire the head's `ensure(...)` against the resolved
-    // DAC_SAMPLE_COUNT / DacSample_len (a link-time drift guard).
+    // The head's size guard now folds at COMPTIME (its `use`d DAC_SAMPLE_COUNT /
+    // DacSample_len are seeded above), so no link assert is generated for it. The
+    // check is threaded regardless — a future deferred guard must not be silently
+    // ignored (matching the other co-link emitters).
     let assert_diags =
         sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
     if assert_diags.iter().any(|d| d.level == sigil_span::Level::Error) {
@@ -326,10 +333,10 @@ pub fn emit_sfx_body_and_head_doctored(
 
     // sfx_bank.emp is m68000 (the blob table + the SFX_WIN_* equ layer); it lives
     // in sound/sfx/ so its 18 embed("sfx_*.bin") fixtures resolve there.
-    let body = lower_emp_file(&sfx_dir.join("sfx_bank.emp"), &sfx_dir, Cpu::M68000)?;
+    let body = lower_emp_file(&sfx_dir.join("sfx_bank.emp"), &sfx_dir, Cpu::M68000, vec![])?;
     // sfx_blob_win_tab.emp declares (cpu: z80); its cells reference the SFX_WIN_*
     // equs cross-module and its span guard defers to a link assert.
-    let head = lower_emp_file(&snd_dir.join("sfx_blob_win_tab.emp"), &snd_dir, Cpu::M68000)?;
+    let head = lower_emp_file(&snd_dir.join("sfx_blob_win_tab.emp"), &snd_dir, Cpu::M68000, vec![])?;
     let mut link_asserts = body.link_asserts.clone();
     link_asserts.extend(head.link_asserts.clone());
 
@@ -417,7 +424,7 @@ pub fn emit_seq_opcode_tab_doctored(
     doctor: Option<(&str, i64)>,
 ) -> Result<Vec<u8>, String> {
     let dir = aeon.join("engine/sound");
-    let module = lower_emp_file(&dir.join("seq_opcode_tab.emp"), &dir, Cpu::M68000)?;
+    let module = lower_emp_file(&dir.join("seq_opcode_tab.emp"), &dir, Cpu::M68000, vec![])?;
     let link_asserts = module.link_asserts.clone();
 
     // The table places at VMA $8000; its cell VALUES (resident Seq_Op_* addresses)
@@ -497,7 +504,7 @@ pub fn emit_sound_tables_z80_doctored(
     doctor_vma: Option<u32>,
 ) -> Result<Vec<u8>, String> {
     let dir = aeon.join("engine/sound");
-    let module = lower_emp_file(&dir.join("sound_tables_z80.emp"), &dir, Cpu::M68000)?;
+    let module = lower_emp_file(&dir.join("sound_tables_z80.emp"), &dir, Cpu::M68000, vec![])?;
     let link_asserts = module.link_asserts.clone();
 
     // Place at the head LMA with the section's own `vma: $8000` window — the
