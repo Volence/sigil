@@ -61,7 +61,7 @@ zero-byte equate/offset); "A/B" = needs oracle A/B + re-freeze.
 
 | # | path | lines | what | class | eff | deps / blockers | notes |
 |---|---|---|---|---|---|---|---|
-| 12 | `engine/system/boot_data.asm` | 149 | `BootData` (a5)+ cursor table (movem preload, VDP reg bytes, DMA fill, PSG silence, post-DMA cmds) + z80_init include + layout-assert wall | PORT (data table) | M | `boot.emp` already reads BootData; the assert wall → `.emp` ensures; the z80_init include is #13 | BN. **NAMED REMAINDER (conv-h): `.emp` has NO binary-embed** — BootData splices the resident Z80 blob mid-table via `BINCLUDE` (AS-frontend-only), so a straight `.emp` data section can't express it. Needs a new `embed`/`incbin` surface, or AS-authored exception. |
+| 12 | `engine/system/boot_data.asm` | 131 | `BootData` (a5)+ cursor table (movem preload, VDP reg bytes, DMA fill, PSG silence, post-DMA cmds) + z80_init hole + layout-assert wall | PORT (data table) — **BLOCKED, STOP (conv-h2)** | M | `boot.emp` already reads BootData; the assert wall → `.emp` ensures; the z80_init include is #13 | BN. **UPDATE (conv-h2, 2026-08-01): the binary-embed half is UNBLOCKED** — the `embed(...)` `.emp` data expression SHIPPED (spec 2026-08-01, `eval_embed`), so the resident-Z80-blob `BINCLUDE` now has an `.emp` spelling. **The org-$3FE HOLE half does NOT express** — `.emp` has `align`/byte-count `pad` but NO absolute-`org`/hole surface, and the hole is filled by a SEPARATELY chained module (`z80_init.emp`, the 38-byte idle program), which is LIVE for the demo/demo.debug targets (SOUND_DRIVER_ENABLED=0 → the no-sound `else` arm; 2 of the 6 identity targets). Reproducing it in native placement needs a conditional TWO-module split (pre-hole / post-hole with the chainer overlaying z80_init between them) — a large per-shape native-registry restructure, exactly the shape the embed spec §3 STOP rule reserves. **STOPPED with finding per §3; boot_data.asm stays AS-residual.** See `2026-08-01-conv-h2-embed.md`. |
 | 13 | `engine/system/z80_init.asm` | 38 | Z80 idle program (no-sound builds) | OWNERSHIP-FLIP | S | twin `z80_init.emp` EXISTS, gated `SIGIL_EMP_Z80_INIT` | BN (both shipped shapes have sound → dead in canonical). Flip = make `.emp` unconditional, delete `.asm`. Oracle `z80_init_port` is its region proof. |
 
 ### games/demo (the "start here" template — a separate ROM target with its own goldens)
@@ -89,9 +89,9 @@ zero-byte equate/offset); "A/B" = needs oracle A/B + re-freeze.
 
 | # | path | lines | what | class | eff | deps / blockers | notes |
 |---|---|---|---|---|---|---|---|
-| 25 | `data/editor/ojz/act1/export/act_descriptor.asm` | 217 | editor export (act descriptor) | GENERATED (editor) | M | **PARKED** — main.asm includes the `data/levels/` + `data/generated/` copies, NOT these | Ledger: "parked editor export whose object was never wired in (plantbadmaps class)." Conversion target = editor emits `.emp`. Confirm still wanted before spending effort; possible delete-candidate. |
-| 26 | `data/editor/ojz/act1/export/entity_data.asm` | 159 | editor export (entity data) | GENERATED (editor) | S | PARKED | same |
-| 27 | `data/editor/ojz/act1/export/vram_bases.asm` | 8 | editor export (VRAM base equates) | GENERATED (editor) | S | PARKED | same |
+| 25 | `data/editor/ojz/act1/export/act_descriptor.asm` | 217 | editor export (act descriptor) | GENERATED (editor) | M | **PARKED** — main.asm includes the `data/levels/` + `data/generated/` copies, NOT these | **✅ DONE (conv-h2 Parcel J): DELETED** (Volence pre-ruled). Unwired-proof: main.asm:156-157 includes the `data/generated/` + `data/levels/` copies; all 47 `ojz_*` labels these three files define are referenced ONLY within the export dir (whole-tree `.asm`/`.emp`/`.inc` symbol sweep, zero external hits); no build file / sigil test / tool includes the export path. Six-CRC identity held. |
+| 26 | `data/editor/ojz/act1/export/entity_data.asm` | 159 | editor export (entity data) | GENERATED (editor) | S | PARKED | **✅ DONE (conv-h2 Parcel J): DELETED** — same unwired-proof as #25. |
+| 27 | `data/editor/ojz/act1/export/vram_bases.asm` | 8 | editor export (VRAM base equates, `ojz_SEC{N}_VRAM`) | GENERATED (editor) | S | PARKED | **✅ DONE (conv-h2 Parcel J): DELETED** — same unwired-proof as #25. |
 
 ### games/sonic4/data/generated (auto-generated; mostly gitignored, some committed)
 

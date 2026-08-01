@@ -1,5 +1,39 @@
 # The `embed` data expression (binary include) — design
 
+**Status: SHIPPED (conv-h2, 2026-08-01).** The construct is live in the `.emp`
+frontend as the `embed(...)` comptime data expression (`eval_embed` in
+`crates/sigil-frontend-emp/src/eval/sandbox.rs`), proven byte-exact against a
+golden fixture (`tests/sandbox_embed.rs`, 9 tests). Shipped surface vs this
+design — deviations, all deliberate and ledgered in
+`docs/superpowers/notes/2026-08-01-conv-h2-embed.md`:
+- **Slice form is NAMED, not positional.** Shipped: `embed("p", skip: N,
+  len: M)`. Spec §1 floated positional `embed("p", offset, len)` "only if a
+  consumer needs it" — no consumer does (boot_data embeds the whole blob), and
+  the named form was already shipped + tested at T1. KEPT named.
+- **`[u8; _]` inference is NOT the spelling; omitting the annotation IS.**
+  `_` in array-length position parses as an ordinary path and is not an
+  inference hole (confirmed in `layout.rs::resolve_type`). The inferred-length
+  intent is served by omitting the type entirely (`pub data BootBlob =
+  embed(...)`), which the `Value::Data` lowering already length-infers. The
+  spec's own §1 contingency ("if `_` is not [supported] … the explicit-length
+  form is the v1 whole") governs: v1 = omit-to-infer, or `[u8; N]` to assert.
+- **Length assertion is `[emit.size-mismatch]`, not `[embed.length-mismatch]`.**
+  An explicit `[u8; N]` over an embed routes through the SAME general
+  data-item size check every initializer uses (`emit.rs::lower_data_value`),
+  which already reports actual-vs-declared. A bespoke `[embed.length-mismatch]`
+  would be strictly narrower for no gain (port-loop "better not same"). KEPT
+  the general diagnostic.
+- **`[embed.not-found]`** now names the RESOLVED ABSOLUTE path (spec §2), fixed
+  from the T1 `[embed.read] <relative>`. `[embed.range]`, `[sandbox.no-root]`,
+  `[sandbox.path-escape]` unchanged. Freshness: the capture ledger records each
+  embed's SHA-256 + length (`record_capture`), so a changed binary is tracked.
+- **Consumer status (§3): the #12 boot_data blob half is now expressible; the
+  org-$3FE hole half is NOT** — `.emp` has no absolute-`org`/hole surface, and
+  the hole is filled by a SEPARATELY-chained module (`z80_init.emp`), live for
+  the demo/demo.debug (sound-OFF) targets. Per the §3 STOP rule the full
+  boot_data → `.emp` port STOPS with that finding (numbers in the parcel note);
+  boot_data.asm stays AS-residual. Parcel J (#25/#26/#27) shipped as deletes.
+
 **Status: RATIFIED (overseer).** Authorized at the Parcel-H countersign: #12
 boot_data is blocked on the absence of a binary-embed surface in `.emp` —
 `BINCLUDE` exists only in the AS frontend (`eval.rs::directive_binclude`).
