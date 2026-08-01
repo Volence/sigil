@@ -6,7 +6,7 @@ pub mod manifest;
 pub mod rename;
 
 use crate::ast;
-use crate::lower::{lower_module_with_region_ends, LowerOptions};
+use crate::lower::{lower_module_with_region_ends_and_contracts, LowerOptions};
 use imports::{ExportIndex, ResolveEnv};
 use manifest::{Manifest, ParsedModule};
 use sigil_ir::map::MemoryMap;
@@ -174,6 +174,18 @@ fn fold_const_literal(
 /// without emitting any bytes (lower_module skips these item kinds). Recurses one level
 /// into `section {}` bodies (see `collect_pub_comptime`) so a section-nested `pub const`/
 /// `pub struct`/etc. is injected too, not just exported.
+/// Whether a file declares an `implement` block (top-level or one section deep,
+/// the bind pass's own recursion depth). These are the only bind modules that
+/// need ambient-prepend: their binding VALUES / comptime-`if` conditions may read
+/// `use`d game consts, which the plain file's scope lacks.
+fn file_declares_implement(file: &ast::File) -> bool {
+    file.items.iter().any(|it| match it {
+        ast::Item::Implement(_) => true,
+        ast::Item::Section(s) => s.items.iter().any(|i| matches!(i, ast::Item::Implement(_))),
+        _ => false,
+    })
+}
+
 fn ambient_items(
     module: &ParsedModule,
     prelude: Option<&ParsedModule>,
@@ -423,6 +435,56 @@ fn build_program_with(
         crate::lower::resolve_program_region_ends(&region_modules, &opts.defines);
     diags.append(&mut region_diags);
 
+    // L1 (P2): the game-contract bind pass over the reachable module set. Collect
+    // every `interface`/`implement` and resolve each interface against its one
+    // `implement`, producing the [`InterfaceEnv`](crate::contract::InterfaceEnv)
+    // the per-module lowering threads so `Game.MEMBER` folds and `invoke
+    // Game.hook` lowers (a bound `jsr`, or nothing when `= empty`). A build with
+    // NO contract declarations yields the empty env — no diagnostics, byte-
+    // identical to the whole pre-L1 corpus. An `implement` module is ambient-
+    // prepended (its binding VALUES may read `use`d game consts, e.g.
+    // `ENTRY_ID = GS_OJZ_SCROLL_TEST`); every other reachable module contributes
+    // its plain items — the proc / `extern proc` contracts the hook-signature
+    // check reads, and the `type = proc` contract types — at no ambient cost.
+    let contract_ambient: Vec<(usize, ast::File)> = reachable
+        .iter()
+        .filter_map(|&i| {
+            let pm = &manifest.modules[i];
+            if !file_declares_implement(&pm.file) {
+                return None;
+            }
+            let ambient = ambient_items(
+                pm,
+                prelude_pm,
+                manifest,
+                &opts.defines,
+                opts.include_root.as_deref(),
+            );
+            if ambient.is_empty() {
+                return None;
+            }
+            let file = ast::File {
+                module: pm.file.module.clone(),
+                attrs: pm.file.attrs.clone(),
+                items: ambient.into_iter().chain(pm.file.items.iter().cloned()).collect(),
+                docs: pm.file.docs.clone(),
+            };
+            Some((i, file))
+        })
+        .collect();
+    let contract_ambient_by_idx: HashMap<usize, &ast::File> =
+        contract_ambient.iter().map(|(i, f)| (*i, f)).collect();
+    let contract_mods: Vec<contract::ContractModule> = reachable
+        .iter()
+        .map(|&i| {
+            let pm = &manifest.modules[i];
+            let file = contract_ambient_by_idx.get(&i).copied().unwrap_or(&pm.file);
+            contract::ContractModule { id: pm.id.as_str(), file }
+        })
+        .collect();
+    let (iface_env, mut contract_diags) = contract::bind(&contract_mods, &opts.defines);
+    diags.append(&mut contract_diags);
+
     // 4. Per-module: resolve names, lower, report unresolved, rename, concat.
     for &i in &reachable {
         let pm = &manifest.modules[i];
@@ -471,7 +533,7 @@ fn build_program_with(
             ambient_items(pm, prelude_pm, manifest, &opts.defines, opts.include_root.as_deref());
         let (mut module, ldiags) = if ambient.is_empty() {
             // zero-clone common path; `region_ends` is empty for region-free builds.
-            lower_module_with_region_ends(&pm.file, opts, &region_ends)
+            lower_module_with_region_ends_and_contracts(&pm.file, opts, &region_ends, &iface_env)
         } else {
             // The own-items clone here could later be avoided by having the
             // evaluator index a separate ambient slice (deferred — preludes are
@@ -490,7 +552,7 @@ fn build_program_with(
                 // attach only).
                 docs: pm.file.docs.clone(),
             };
-            lower_module_with_region_ends(&synthetic, opts, &region_ends)
+            lower_module_with_region_ends_and_contracts(&synthetic, opts, &region_ends, &iface_env)
         };
         // Drop only what an EARLIER module already contributed (`seen_across_modules`
         // is empty on this module's first appearance in the loop, so a module's

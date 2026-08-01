@@ -69,6 +69,14 @@ pub struct GameProfile {
     /// from the synthetic entry (so its `pub vars` labels export to the joint
     /// link) and harvested (so eager AS reads of game RAM labels resolve).
     pub game_ram_module: &'static str,
+    /// The game's contract manifest module id (L1 P2), the one `implement Game`
+    /// (`games.sonic4.game` / `games.demo.game` = `games/<g>/config/game.emp`). It
+    /// rides the synthetic entry's `use` edges (alongside `engine.game_contract`,
+    /// the interface) so both are reachable — the whole-program bind pass then
+    /// resolves the interface against this manifest and the engine's `Game.MEMBER`
+    /// / `invoke Game.hook` sites fold/lower. Both emit zero bytes; neither is a
+    /// placed registry module.
+    pub manifest_module: &'static str,
     /// The game's `.emp` constants module, relative to the aeon tree (conversion
     /// Parcel F). `Some` when the game's config constants are `.emp`-authored
     /// (`games.sonic4.constants`): `harvest_game_constants` reads its `pub const`s
@@ -438,6 +446,7 @@ pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile 
         name: if debug { "sonic4_debug" } else { "sonic4" },
         game_root_rel: "games/sonic4/game_root.asm",
         game_ram_module: "games.sonic4.ram",
+        manifest_module: "games.sonic4.game",
         game_constants_rel: Some("games/sonic4/config/constants.emp"),
         game_sound_ids_rel: Some("games/sonic4/config/sound_ids.emp"),
         game_sfx_bank_rel: Some("games/sonic4/data/sound/sfx/sfx_bank.emp"),
@@ -451,7 +460,6 @@ pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile 
             ("DEBUG", if debug { 1 } else { 0 }),
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
-            ("GAME_CAMERA_JUMP_LOCK", 1),
             // sonic4 game-config (games/sonic4/config/constants.asm); the engine
             // `.emp` reads these as -D (rings.emp / entity_window.emp), the
             // `ensure(extern(..)==..)` cross-checks them against the AS config.
@@ -520,6 +528,7 @@ pub fn demo_profile(debug: bool) -> GameProfile {
         name: if debug { "demo_debug" } else { "demo" },
         game_root_rel: "games/demo/game_root.asm",
         game_ram_module: "games.demo.ram",
+        manifest_module: "games.demo.game",
         // Conversion Parcel H-demo (#14): the demo's game config is `.emp`-authored
         // (`games.demo.constants` = games/demo/config/constants.emp), harvested into
         // guarded AS `-D` + link EquSyms exactly like the sonic4 side.
@@ -536,7 +545,6 @@ pub fn demo_profile(debug: bool) -> GameProfile {
             ("DEBUG", if debug { 1 } else { 0 }),
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
-            ("GAME_CAMERA_JUMP_LOCK", 0),
             // demo game-config (games/demo/config/constants.emp) engine-VARYING
             // interface values — homed here (not the `.emp`) per the `-D`-not-in-
             // `.emp` rule; the values that DIFFER from sonic4.
@@ -591,6 +599,7 @@ pub fn config_b_profile() -> GameProfile {
         name: "config_b",
         game_root_rel: "games/sonic4/game_root.asm",
         game_ram_module: "games.sonic4.ram",
+        manifest_module: "games.sonic4.game",
         game_constants_rel: Some("games/sonic4/config/constants.emp"),
         game_sound_ids_rel: Some("games/sonic4/config/sound_ids.emp"),
         game_sfx_bank_rel: Some("games/sonic4/data/sound/sfx/sfx_bank.emp"),
@@ -604,7 +613,6 @@ pub fn config_b_profile() -> GameProfile {
             ("DEBUG", 0),
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
-            ("GAME_CAMERA_JUMP_LOCK", 1),
             // Config-B is the sonic4 game (sound off), so sonic4's game-config.
             ("MAX_RING_BUFFER", 128),
             ("VRAM_RING_PLACEHOLDER", 0x3E8),
@@ -649,6 +657,7 @@ pub fn config_a_profile() -> GameProfile {
         name: "config_a",
         game_root_rel: "games/sonic4/game_root.asm",
         game_ram_module: "games.sonic4.ram",
+        manifest_module: "games.sonic4.game",
         game_constants_rel: Some("games/sonic4/config/constants.emp"),
         game_sound_ids_rel: Some("games/sonic4/config/sound_ids.emp"),
         game_sfx_bank_rel: Some("games/sonic4/data/sound/sfx/sfx_bank.emp"),
@@ -662,7 +671,6 @@ pub fn config_a_profile() -> GameProfile {
             ("DEBUG", 1),
             ("SOUND_DEBUG_HOTKEYS", 1),
             ("SOUND_DBG_MIRROR", 1),
-            ("GAME_CAMERA_JUMP_LOCK", 1),
             // Config-A is the sonic4 game (debug + sound), so sonic4's game-config.
             ("MAX_RING_BUFFER", 128),
             ("VRAM_RING_PLACEHOLDER", 0x3E8),
@@ -1213,8 +1221,16 @@ fn emp_map_frozen(sections: &[Section]) -> String {
 
 /// A synthetic entry `.emp` source whose `use` edges reach every registry module,
 /// so `build_program`'s reachability BFS pulls them all (and their comptime deps).
-fn synthetic_entry_src(specs: &[ModuleSpec], game_ram_module: &str) -> String {
+fn synthetic_entry_src(specs: &[ModuleSpec], game_ram_module: &str, manifest_module: &str) -> String {
     let mut src = String::from("module native_flip_entry\n\n");
+    // L1 P2: the engine's Game contract (the interface — pure declaration) and
+    // the game's one manifest (the `implement`). Both emit zero bytes and neither
+    // is a placed registry module, but both MUST be reachable so the whole-program
+    // bind pass collects the interface + its implement (an unreachable interface
+    // would leave the implement unmatched; an unreachable implement would leave
+    // the interface `[contract.unimplemented]`).
+    src.push_str("use engine.game_contract\n");
+    src.push_str(&format!("use {manifest_module}\n"));
     // Item #7b: the engine RAM module owns no ROM section (its region-form `vars`
     // lower to reserve-only RAM sections, skipped by `place_sections`), so it has
     // no registry `ModuleSpec` — but it MUST be reachable so its `pub vars` labels
@@ -1280,7 +1296,7 @@ pub fn build_emp(
 
     // Inject the synthetic entry as a fresh module in the manifest.
     let entry_id = "native_flip_entry".to_string();
-    let src = synthetic_entry_src(specs, profile.game_ram_module);
+    let src = synthetic_entry_src(specs, profile.game_ram_module, profile.manifest_module);
     let source = sigil_span::SourceId(manifest.modules.len() as u32);
     let (file, pdiags) = sigil_frontend_emp::parse_file(&src, source);
     let perr: Vec<_> = pdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();

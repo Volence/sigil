@@ -28,7 +28,9 @@ PAD_TO_POWER_OF_TWO     = 1
     ; retired: game constants live in constants.emp, the song/SFX ids in sound_ids.emp,
     ; the SFX-bank counts in sfx_bank.emp — all seeded here as harvested GUARDED -D
     ; defines (see m1c_vector_table.rs), mirroring the real build.
-    include "games/sonic4/config/game.asm"
+    ; games/sonic4/config/game.asm (L1 P2) is retired: the game contract is `.emp`-
+    ; native (engine.game_contract + games.sonic4.game). game_root.asm drops the
+    ; include in lockstep; the vector table references no game-contract symbol.
     ; engine/ram.asm (item #7b) AND games/sonic4/config/ram.asm (item #7c) are both
     ; retired: engine RAM is authored in engine/ram.emp, game RAM in
     ; games/sonic4/config/ram.emp (region-form `vars`). The vector table's one RAM

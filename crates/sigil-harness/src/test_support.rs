@@ -241,6 +241,40 @@ pub fn assemble_owned_equ_pairs(pairs: &[(&str, String)]) -> Vec<Section> {
     assemble_equ_pairs(&borrowed)
 }
 
+// ── 1b. The game-contract env for isolated port oracles (L1 P2) ──────────────
+
+/// Build a resolved game-contract [`InterfaceEnv`](sigil_frontend_emp::contract::InterfaceEnv)
+/// for a single-module port oracle. The whole-program build runs the bind pass
+/// over its reachable module set; an oracle that lowers ONE engine module naming
+/// `Game.MEMBER` / `invoke Game.hook` must synthesize the same env. `iface_src`
+/// and `impl_src` are `.emp` sources for the interface and its one `implement`;
+/// `defines` feeds any comptime-`if` binding group (the hotkeys shape). Asserts a
+/// clean parse + bind — a malformed contract stub is a test bug, not a silent
+/// empty env.
+pub fn game_contract_env(
+    iface_src: &str,
+    impl_src: &str,
+    defines: &[(String, i128)],
+) -> sigil_frontend_emp::contract::InterfaceEnv {
+    use sigil_frontend_emp::resolve::contract::{bind, ContractModule};
+    let (ef, ed) = sigil_frontend_emp::parse_str(iface_src);
+    let (gf, gd) = sigil_frontend_emp::parse_str(impl_src);
+    assert!(
+        ed.iter().chain(&gd).all(|d| d.level != sigil_span::Level::Error),
+        "game_contract_env parse diags: iface={ed:?} impl={gd:?}"
+    );
+    let eid = ef.module.path.segments.join(".");
+    let gid = gf.module.path.segments.join(".");
+    let mods =
+        [ContractModule { id: &eid, file: &ef }, ContractModule { id: &gid, file: &gf }];
+    let (env, diags) = bind(&mods, defines);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "game_contract_env bind diags: {diags:?}"
+    );
+    env
+}
+
 // ── 2. The drift-guard filter ────────────────────────────────────────────────
 
 /// `true` iff `a` is a twin DRIFT GUARD (not a D2.29 `[layout.odd-item]` parity

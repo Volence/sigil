@@ -64,7 +64,22 @@
 //! ```
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
-use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_frontend_emp::lower::{lower_module_with_contracts, LowerOptions};
+
+/// The game-contract env for the isolated game_loop oracle (L1 P2): game_loop.emp
+/// names `invoke Game.debug_tick`. The whole build binds it against
+/// games.sonic4.game (hotkeys OFF → unbound → the `invoke` emits nothing); here a
+/// synthetic interface + empty implement reproduces that unbound shape.
+fn game_loop_contract_env() -> sigil_frontend_emp::contract::InterfaceEnv {
+    sigil_harness::test_support::game_contract_env(
+        "module engine.game_contract\n\
+         pub interface Game {\n\
+         \x20   hook debug_tick () clobbers(d0-d7/a0-a6) = empty\n\
+         }\n",
+        "module games.g.game\npub implement Game {\n}\n",
+        &[],
+    )
+}
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
@@ -129,7 +144,8 @@ fn compile_emp(
         embed_base: None,
         defines: defines.iter().map(|(n, v)| (n.to_string(), *v)).collect(),
     };
-    let (module, ldiags) = lower_module(&file, &opts);
+    let (module, ldiags) =
+        lower_module_with_contracts(&file, &opts, &game_loop_contract_env());
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "lower errors: {ldiags:?}"
@@ -365,7 +381,8 @@ fn flip_lower(
         embed_base: None,
         defines,
     };
-    let (module, ldiags) = lower_module(&file, &opts);
+    let (module, ldiags) =
+        lower_module_with_contracts(&file, &opts, &game_loop_contract_env());
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "flip lower errors ({region}): {ldiags:?}"

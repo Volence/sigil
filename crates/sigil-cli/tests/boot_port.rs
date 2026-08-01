@@ -34,7 +34,7 @@
 //! `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
-use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_frontend_emp::lower::{lower_module_with_contracts, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
@@ -91,15 +91,17 @@ fn golden(name: &str) -> Option<Vec<u8>> {
 /// `golden/s4.debug.bin`), matching the asl-canonical `s4.lst`/`s4.debug.lst`
 /// at the freeze commit:
 ///   Z80_SOUND_SIZE  plain $181C   debug $189A   (the resident Z80 driver span)
-///   GAME_ENTRY_ID   $3 both shapes             (sonic4 game-config entry id)
-///   Game_Entry      plain $5C7EC debug $5E2DA  (the game-entry link target)
+///   GameState_OJZScroll_Init  plain $5C7EC debug $5E2DA  (the Game.entry link target)
+///
+/// L1 P2: `#Game.ENTRY_ID` is now a comptime const (3), folded from the game
+/// contract env — no link symbol; and `#Game.entry`'s link target is
+/// `GameState_OJZScroll_Init` (the game proc), not the retired `Game_Entry` equ.
 fn frozen_symbol(debug: bool, name: &str) -> u64 {
     match (name, debug) {
         ("Z80_SOUND_SIZE", false) => 0x181C,
         ("Z80_SOUND_SIZE", true) => 0x189A,
-        ("GAME_ENTRY_ID", _) => 0x3,
-        ("Game_Entry", false) => 0x5C7EC,
-        ("Game_Entry", true) => 0x5E2DA,
+        ("GameState_OJZScroll_Init", false) => 0x5C7EC,
+        ("GameState_OJZScroll_Init", true) => 0x5E2DA,
         _ => panic!("no frozen value pinned for symbol `{name}` (debug={debug})"),
     }
 }
@@ -162,11 +164,12 @@ fn value_equs(debug: bool, doctor: Option<(&str, &str)>) -> Vec<Section> {
         "Z80_SOUND_SIZE",
         format!("${:X}", frozen_symbol(debug, "Z80_SOUND_SIZE")),
     ));
+    // The `Game.entry` link target (the game-side proc). `Game.ENTRY_ID` is no
+    // longer a link symbol — it folds from the contract env as a comptime const.
     owned.push((
-        "GAME_ENTRY_ID",
-        format!("${:X}", frozen_symbol(debug, "GAME_ENTRY_ID")),
+        "GameState_OJZScroll_Init",
+        format!("${:X}", frozen_symbol(debug, "GameState_OJZScroll_Init")),
     ));
-    owned.push(("Game_Entry", format!("${:X}", frozen_symbol(debug, "Game_Entry"))));
     sigil_harness::test_support::assemble_owned_equ_pairs(&owned)
 }
 
@@ -273,7 +276,28 @@ fn lower_boot(
             ("SOUND_DEBUG_HOTKEYS".to_string(), 0),
         ],
     };
-    let (module, ldiags) = lower_module(&file, &opts);
+    // The game-contract env (L1 P2): boot.emp names `#Game.entry`,
+    // `#Game.ENTRY_ID`, and `invoke Game.boot_hook`. In the whole build the bind
+    // pass resolves these against games.sonic4.game; here a synthetic manifest
+    // supplies the same bindings — ENTRY_ID = 3 (GS_OJZ_SCROLL_TEST, both shapes),
+    // entry = GameState_OJZScroll_Init (the link target the value seam pins), and
+    // an unbound boot_hook (hotkeys OFF → the `invoke` emits nothing).
+    let env = sigil_harness::test_support::game_contract_env(
+        "module engine.game_contract\n\
+         type GameState = proc () clobbers(d0-d7/a0-a6)\n\
+         pub interface Game {\n\
+         \x20   const ENTRY_ID: u8\n\
+         \x20   proc entry: GameState\n\
+         \x20   hook boot_hook () clobbers(d0-d4/a0-a1) = empty\n\
+         }\n",
+        "module games.g.game\n\
+         pub implement Game {\n\
+         \x20   const ENTRY_ID = 3\n\
+         \x20   proc entry = GameState_OJZScroll_Init\n\
+         }\n",
+        &[],
+    );
+    let (module, ldiags) = lower_module_with_contracts(&file, &opts, &env);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "boot.emp lower errors: {ldiags:?}"

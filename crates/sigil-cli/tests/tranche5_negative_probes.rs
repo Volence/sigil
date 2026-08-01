@@ -15,7 +15,7 @@
 //!     bytes than the reference window (the comptime `if` is load-bearing;
 //!     the byte-diff gate is non-vacuous).
 
-use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_frontend_emp::lower::{lower_module, lower_module_with_contracts, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_ir::backend::Cpu;
@@ -54,14 +54,36 @@ fn lower_and_place(
 ) -> (Vec<sigil_ir::Section>, Vec<sigil_span::Diagnostic>) {
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse: {pdiags:?}");
-    let (module, mut diags) = lower_module(
+    // The game-contract env (L1 P2). game_loop.emp names `invoke Game.debug_tick`;
+    // whether it emits a `jsr Debug_MusicToggle` or nothing is decided by the
+    // MANIFEST binding, not game_loop's `-D`. Reproduce the real manifest's
+    // conditional bind against THESE defines, so the hotkeys-on combo binds the
+    // hook (the jsr fires) and every other combo leaves it `= empty` — exactly
+    // the byte behavior these probes exercise.
+    let owned_defines: Vec<(String, i128)> =
+        defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
+    let env = sigil_harness::test_support::game_contract_env(
+        "module engine.game_contract\n\
+         pub interface Game {\n\
+         \x20   hook debug_tick () clobbers(d0-d7/a0-a6) = empty\n\
+         }\n",
+        "module games.g.game\n\
+         pub implement Game {\n\
+         \x20   if SOUND_DEBUG_HOTKEYS == 1 && SOUND_DRIVER_ENABLED == 1 {\n\
+         \x20       hook debug_tick = Debug_MusicToggle\n\
+         \x20   }\n\
+         }\n",
+        &owned_defines,
+    );
+    let (module, mut diags) = lower_module_with_contracts(
         &file,
         &LowerOptions {
             initial_cpu: Cpu::M68000,
             include_root: None,
             embed_base: None,
-            defines: defines.iter().map(|(n, v)| (n.to_string(), *v)).collect(),
+            defines: owned_defines.clone(),
         },
+        &env,
     );
     let map_toml = format!(
         "fill = 0x00\n\

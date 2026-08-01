@@ -1221,12 +1221,34 @@ pub fn eval_const_with_root(
     include_root: Option<&std::path::Path>,
     defines: &[(String, i128)],
 ) -> (Option<Value>, Vec<Diagnostic>) {
+    eval_const_with_root_and_contracts(
+        file,
+        name,
+        include_root,
+        defines,
+        &crate::contract::InterfaceEnv::empty(),
+    )
+}
+
+/// [`eval_const_with_root`] with the resolved game-contract environment seeded, so
+/// a const/equ value expression that reads an interface member (`Game.MEMBER`)
+/// folds at comptime — the whole-program equ path (camera.emp's `PL_STATE_ADDR`,
+/// gated on `Game.CAMERA_JUMP_LOCK`). The empty env behaves exactly like
+/// [`eval_const_with_root`], so every contract-free caller is unchanged (L1 P2).
+pub fn eval_const_with_root_and_contracts(
+    file: &crate::ast::File,
+    name: &str,
+    include_root: Option<&std::path::Path>,
+    defines: &[(String, i128)],
+    contracts: &crate::contract::InterfaceEnv,
+) -> (Option<Value>, Vec<Diagnostic>) {
     // Run on a dedicated thread with a large stack so the native call stack has
     // headroom for [`MAX_CALL_DEPTH`] comptime frames (D-P2.16): the depth bound,
     // not a native stack overflow, is what stops runaway recursion.
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.seed_defines(defines);
+        ev.seed_interfaces(contracts);
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
         }

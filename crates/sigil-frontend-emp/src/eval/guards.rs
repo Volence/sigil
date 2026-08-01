@@ -36,6 +36,7 @@ pub(crate) fn eval_item_guard(
     here: crate::layout::HerePos,
     include_root: Option<&std::path::Path>,
     defines: &[(String, i128)],
+    contracts: &crate::contract::InterfaceEnv,
 ) -> ItemGuardOutcome {
     // `decl.fatal` records which keyword the parser saw; dispatch itself keys
     // off the stored call's CALLEE name (`eval/call.rs`). Assert the two agree
@@ -50,6 +51,7 @@ pub(crate) fn eval_item_guard(
     crate::eval::run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.seed_defines(defines);
+        ev.seed_interfaces(contracts);
         ev.apply_here_pos(Some(here));
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
