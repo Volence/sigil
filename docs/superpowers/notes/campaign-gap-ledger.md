@@ -139,6 +139,15 @@ end-of-campaign sweep of anything still OPEN here is a wrap-up, not the decision
 
 ## vars / RAM regions (ram.asm pre-port audit, 2026-07-09)
 
+> **REALIZED — item #7 shipped (2026-08-01).** The region-form `vars` feature was
+> built (item #7a) and all three `ram.asm` files ported (`engine/ram.emp` #7b;
+> `games/{sonic4,demo}/config/ram.emp` #7c). Every gap in this section is CLOSED
+> below; the whole "inert by design" era is over — the three inert-lowering-site
+> comments are gone, the §4.6 "compiler checks" (overflow / `w_addressable` /
+> `[layout.odd-field]`) are shipped behavior. Six-target byte-identical, repin
+> zero-diff. Only the **RAM map report** row (pure tooling, no language surface)
+> stays open. See `2026-08-01-item7c-game-ram-ports.md`.
+
 > **IMPLEMENTATION-STATUS CORRECTION (2026-08-01, conv-C Parcel C,
 > `2026-08-01-conv-c-ram-ports.md`):** the 2026-07-09 verdict below was a
 > **spec-surface** audit — it read §4.6 and concluded "the surface already covers
@@ -173,18 +182,27 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   different downstream addresses; two-shape address-exactness needs comptime-`if`-over-fields
   in `vars`, driven by the existing `-D` defines (D2.27). Non-breaking growth internal to the
   block, but needs a recorded decision. The port BLOCKS on this (or on first moving the debug
-  block to the region tail as a deliberate pre-port .asm change). — OPEN (build with the ram
-  tranche).
+  block to the region tail as a deliberate pre-port .asm change). — ✅ **CLOSED (item #7a; ram
+  ports #7b/#7c).** `if DEBUG == 1 { … }` region-field groups shipped; both the engine
+  `ifdef __DEBUG__` (prof block) and the game `Dbg_Music_On`/`Dbg_Sfx_Sel` block ported with
+  `@shape_divergent`. Two-shape address-exactness proven by repin zero-diff on both columns.
 - [ram.asm audit, 2026-07-09] **Checked buffer-reuse overlay** — `Art_Staging_Buffer =
   Tile_Cache_Nametable` + hand size `if` + lifetime comment ("INIT-ONLY"). Expressible today
   as `pub equ` alias + `ensure(size fits)`, so NOT a port blocker; the nicety is a declared
   region-level overlap (SST overlays exist, D2.21, but only over struct `[u8;N]` windows) that
-  checks size at the declaration and states the lifetime. — OPEN (jotted).
+  checks size at the declaration and states the lifetime. — ✅ **CLOSED (item #7a/#7b).** The
+  `name: alias(Other)` field kind shipped; `Art_Staging_Buffer: alias(Tile_Cache_Nametable)`
+  + `ensure(ART_STAGING_BUFFER_SIZE <= TILE_CACHE_NT_SIZE, …)` is the audit-accepted faithful
+  form. (Declared region-level *overlap* stays a v2 candidate — the alias+ensure form is the
+  shipped answer; see spec §7 decision 4.)
 - [ram.asm audit, 2026-07-09] **Debug-layout-stability lint** — the `Sound_Dbg_Mirror`
   precedent (declared unconditionally, comment explains why) shows the hazard class:
   conditional fields silently shifting the other shape's addresses. Once conditional `vars`
   fields exist, a lint ("conditional field not at region tail" or "shapes diverge here") makes
-  the hazard visible. — OPEN (jotted; design with the conditional-fields decision).
+  the hazard visible. — ✅ **CLOSED (item #7a).** Made STRONGER than a lint: a size-varying
+  conditional group MUST carry `@shape_divergent` or it is the `[vars.shape-divergent]` ERROR
+  (opt-in declaration, not a warning — accidents impossible, intent visible at the divergence
+  point). Size-EQUAL groups are proven shape-invariant by the compiler (no annotation).
 - [ram.asm audit, 2026-07-09] **RAM map report** — "never know what their real number is":
   nothing on the page shows where a field lands. A `sigil`-emitted per-region address map
   (name, address, size, padding, headroom vs budget) is pure tooling, no language surface;

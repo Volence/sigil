@@ -1,6 +1,16 @@
 # Item #7 — RAM regions: the `vars` region form (design)
 
-**Status: RATIFIED design, ready for implementation.** Volence ruling 2026-07-31
+**Status: ✅ SHIPPED (2026-08-01).** All three parcels done: #7a (the feature),
+#7b (`engine/ram.emp`), #7c (`games/{sonic4,demo}/config/ram.emp` + cross-module
+`after(..)` + the per-game RAM harvest). All six targets byte-identical to
+chain-9; repin RAM-cell zero-diff both shapes. One spec refinement landed en
+route: region `@align(N)` uses AS's IN-PHASE align semantics `round_up(cursor +
+n, n)` (§2.3's "next multiple of N" is imprecise for the corpus — regions are
+RAM-only, so the asl 1.42 phased-align quirk always applies; it is what places
+`Player_Pos_Ring` at `$FFFFB500`). Notes: `2026-08-01-item7b-engine-ram-port.md`,
+`2026-08-01-item7c-game-ram-ports.md`.
+
+**Original status: RATIFIED design, ready for implementation.** Volence ruling 2026-07-31
 on the conv-C blocked finding: *"Let's do it properly, there's no rush right now
 (as much as I'd like to start features, let's do it right)."* Path 1 of the
 conv-C §10 decision — build the feature as its own spec + plan + parcels, then

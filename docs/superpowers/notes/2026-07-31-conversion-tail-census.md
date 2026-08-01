@@ -44,7 +44,7 @@ zero-byte equate/offset); "A/B" = needs oracle A/B + re-freeze.
 | 2 | `engine/sound_constants.asm` | 1480 (321 defs) | shared 68k/Z80 sound equates (SND_* slots, banks, ids) | PORT (constants flip) | L | P5 mechanism; read by 5 sound `.emp` modules | BN. Ledger close-packet §4 "row-59 sound-domain constants parcel — its own flip using the proven mechanism (harvest a `sound_constants.emp` + inject)". The SND_* comptime-source circularity (ledger 1619) dissolves here. |
 | 3 | `engine/structs.asm` | 258 | `struct…endstruct` generating SST/Act/Sec/DMAEntry/parallax_config/EntityScanState field-offset equs + VDP_Shadow_len | OWNERSHIP-FLIP | M | needs a STRUCT-OFFSET harvester (sibling of `eval_all_pub_consts`) | BN. Close-packet §4 "the structs flip (rows 7/8/11/15/25)". Retires the VDP_Shadow_len bridge. Its `.emp` overlays (sst.emp, engine.structs, act_descriptor.emp) already mirror with drift guards. |
 | 4 | `engine/macros.asm` | 367 | AS `function`/`macro` comptime helpers (vdpComm, vdpReg, vram_art, vram_bytes, sprSize, clearRAM, DMA macros) | RESIDUAL-SKELETON (comptime-helper carrier) | M | its `.emp` twins (engine.vdp comptime fns) largely exist; dies when its last residual-AS consumer moves | BN. Still needed while residual AS data emits (boot_data's vdpComm, demo_data's vram_art, mappings' sprSize). Port the helpers into a shared `.emp` comptime module opportunistically; delete the `.asm` with the residual-split capstone. |
-| 5 | `engine/ram.asm` | 524 (1 `=`, 201 `ds`) | engine RAM LAYOUT (`Name: ds.b N` runs, conditional debug fields, buffer-reuse overlays) | PORT (`vars` layout) | L | **B-0b RAM packing** (pins→computed); the `vars` construct; comptime reads served by injected defines | BN if placement stays pinned; the growth path is B-0b. Ledger `ram.asm audit` block (line 140+): conditional fields inside `vars`, checked buffer-reuse overlay, RAM-map report. **THE HIGHLIGHTED PAIR with §17 Wave-B inc 2.** |
+| 5 | `engine/ram.asm` | 524 (1 `=`, 201 `ds`) | engine RAM LAYOUT (`Name: ds.b N` runs, conditional debug fields, buffer-reuse overlays) | PORT (`vars` layout) | L | **B-0b RAM packing** (pins→computed); the `vars` construct; comptime reads served by injected defines | ✅ **DONE (item #7b, `engine/ram.emp`)** — the region form: two `region`s + two `pub vars`; the three `if/error` guards → region `limit`s + `w_addressable`; buffer-reuse → `alias()`+`ensure`; the two `ifdef __DEBUG__` → `if DEBUG == 1` groups. `.asm` deleted. Six-target byte-identical; repin zero-diff. |
 | 6 | `engine/debug/debugger.asm` | 806 | vendored MD Debugger v2.6 (Vladikcomper) — assert/RaiseError/KDebug MACRO + definitions layer (no ROM output) | PORT (vendored macro layer) | L | `.emp` equivalents of the assert/KDebug macro semantics; the error_handler BLOB is already `error_handler.emp` | BN (definitions, zero bytes). **OPEN QUESTION: vendored third-party — port or keep-as-is?** Low priority; consumed by both `.asm` and `.emp` assert expansions. |
 
 ### Engine generated / derived carriers
@@ -70,7 +70,7 @@ zero-byte equate/offset); "A/B" = needs oracle A/B + re-freeze.
 |---|---|---|---|---|---|---|---|
 | 14 | `games/demo/config/constants.asm` | 14 | demo game constants + capacity contracts | PORT | S | reverse-seam (link-position) | BN vs demo/demod goldens. |
 | 15 | `games/demo/config/game.asm` | 30 | demo game contract (header strings, hooks) | PORT | S | header string contract | BN. |
-| 16 | `games/demo/config/ram.asm` | 9 | demo game RAM (empty stub) | PORT (`vars`) | S | `vars` construct | BN. |
+| 16 | `games/demo/config/ram.asm` | 9 | demo game RAM (empty stub) | PORT (`vars`) | S | `vars` construct | ✅ **DONE (item #7c, `games/demo/config/ram.emp`)** — `region game_ram @ after(upper_ram) .. SYSTEM_STACK, w_addressable` + an empty `pub vars` producing `Game_RAM_End`. `.asm` deleted; `gameRamIncludes` emptied. Six-target byte-identical. |
 | 17 | `games/demo/data/demo_data.asm` | 39 | objdef/mapping/art/palette | PORT (data) | S | vram_art/sprSize helpers; `objdef` construct | BN. |
 | 18 | `games/demo/demo_state.asm` | 36 | `GameState_Demo_Init` code | PORT (code) | S | DMA/object API externs | BN. |
 | 19 | `games/demo/main.asm` | 43 | demo game manifest (include-order macros) | RESIDUAL-SKELETON | S | collapses when 14–20 are all `.emp` | The thin manifest; may survive as the minimal template or die with residual-split. |
@@ -82,7 +82,7 @@ zero-byte equate/offset); "A/B" = needs oracle A/B + re-freeze.
 |---|---|---|---|---|---|---|---|
 | 21 | `games/sonic4/config/constants.asm` | 86 | game tuning, PSTATE_* ids, test scaffold consts | PORT (P6, rows 54/62/65) | M | reverse-seam; typed ids to language round | BN. Close-packet §4 P6: "these fold mostly into IMMEDIATES / dc data (link-position), which the PROVEN reverse-seam already serves — may NOT need the guarded-define channel." |
 | 22 | `games/sonic4/config/game.asm` | 83 | game contract (header strings, sound contract, hooks) | PORT (game contract) | M | Game_Entry already `.emp`-resolved; header contract | BN. |
-| 23 | `games/sonic4/config/ram.asm` | 60 | game RAM continuation (`phase Engine_RAM_End`) | PORT (`vars`) | M | **pairs with #5 ram.asm + B-0b** | BN if pinned. RAM-packing synergy. |
+| 23 | `games/sonic4/config/ram.asm` | 60 | game RAM continuation (`phase Engine_RAM_End`) | PORT (`vars`) | M | **pairs with #5 ram.asm + B-0b** | ✅ **DONE (item #7c, `games/sonic4/config/ram.emp`)** — the cross-module chain `region game_ram @ after(upper_ram)` onto engine `upper_ram`; player/phys/history-ring fields; the `ifdef __DEBUG__` counters → `if DEBUG == 1 @shape_divergent`; `align 256` → `@align(256)` (AS in-phase align semantics). `.asm` deleted. Six-target byte-identical; repin zero-diff. |
 | 24 | `games/sonic4/config/sound_ids.asm` | 94 | SONG_*/SFXID_* numeric ids + SFX priority ladder | PORT (P6, rows 62/65) | M | typed `SFXID_RING_*` STAY DEFERRED to language round (typed-extern grammar) | BN for the untyped half. |
 
 ### games/sonic4/data/editor (PARKED exports — NOT in the build)
@@ -204,6 +204,20 @@ before entity_window/tile_cache need it.*
 > honest "100% .emp" exception, like the vendored debugger), or (3) byte-neutral
 > pre-port hygiene (move both `ifdef __DEBUG__` blocks to region tails) now,
 > feature later.
+
+> **PARCEL C RESOLVED — path (1) taken, ALL THREE ports DONE (2026-08-01, item #7).**
+> The overseer/Volence ruled path (1): build the region-`vars` feature as its own
+> spec (`specs/2026-08-01-item7-ram-regions-design.md`) + three parcels, then port.
+> **#7a** built the region form (allocation lowering, `@align`, conditional groups,
+> the diagnostics); **#7b** ported `engine/ram.asm` → `engine/ram.emp`
+> (`2026-08-01-item7b-engine-ram-port.md`); **#7c** ported both game RAM files
+> (`2026-08-01-item7c-game-ram-ports.md`), adding cross-module `after(..)` resolution
+> + the game-RAM harvest extension. **Rows 5/23/16 all ✅ DONE.** All six targets
+> byte-identical to chain-9; repin RAM-cell zero-diff both shapes. The "capstone
+> LANGUAGE FEATURE" is shipped. (A spec-vs-reality catch closed en route: region
+> `@align` had to adopt AS's IN-PHASE align semantics `round_up(cursor + n, n)` — the
+> asl 1.42 quirk that places `Player_Pos_Ring` at `$FFFFB500`, not `$FFFFB400` — for
+> byte-identity; regions are RAM-only so the phased regime always applies.)
 
 ### Parcel D — the gated code twins (make `.emp` canonical, delete `.asm`) · #13, #47, #48, #49
 Needs Parcel A (their struct headers move with the structs flip). Flip
