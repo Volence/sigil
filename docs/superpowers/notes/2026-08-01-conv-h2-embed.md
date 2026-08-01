@@ -61,6 +61,17 @@ Byte-exact emission proof: `embed_full_file` / `embed_with_skip_and_len` assert
 
 ## 2 — #12 boot_data → `.emp`: STOPPED (embed spec §3)
 
+> **RESOLVED (K2, 2026-08-01).** This STOP is closed. The "conditional two-module
+> split" reasoned about below IS what K2 landed (`boot_head` + `boot_tail`), but
+> the key realization is that NO `.emp` absolute-org/reserved-hole surface (and no
+> chainer inter-module-hole mechanism) was needed: the $3FE "hole" is not an empty
+> gap — it is where the separately-chained `z80_init` idle physically LANDS, so the
+> existing CONTIGUOUS declared-order packer places `boot_head < Z80_IdleProgram <
+> boot_tail` with no gaps (the same mechanism z80_init's own port used). The only
+> requirement was a `BootData_End` frozen boundary key (an `.emp` section carries no
+> baked lma). Six-target byte-clean (header-neutral anchor identical ×6). See
+> `2026-08-01-k2-boot-data.md`. The analysis below is preserved as the STOP record.
+
 ### The port map (what boot_data.asm is)
 
 `engine/system/boot_data.asm` (131 lines) is the `BootData` table walked by ONE

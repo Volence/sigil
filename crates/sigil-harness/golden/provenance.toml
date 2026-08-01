@@ -548,3 +548,50 @@ full_crc = "06680f0b"
 full_size = 421958
 anchor_crc = "b137c411"
 anchor_end = 0x5f5f2
+
+[[entry]]
+name = "k2-boot-data"
+ab = ""
+note = "K2: boot_data.asm ported to engine/system/boot_data.emp (two sections, boot_head + boot_tail) and the $3FE map hole enforced — the engine.z80_init idle packs the no-sound $3d8..$3fe hole by declared order (BootData < Z80_IdleProgram < BootData_PostBlob), boot_tail resumes at $3fe. Appendix-only re-freeze: every anchor_crc UNCHANGED (header-neutral assembled prefix byte-identical x6 — no assembled byte moved); full CRCs move with the new .emp symbol set (BootData_PostBlob replaces the AS tail, boot_data locals demangle in)."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "76ade14c"
+full_size = 422297
+anchor_crc = "19b793ec"
+anchor_end = 0x5f5f2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "38215ead"
+full_size = 303533
+anchor_crc = "8b490cfb"
+anchor_end = 0x43480
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "fc072efe"
+full_size = 90552
+anchor_crc = "e2dc9207"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "9f735dc3"
+full_size = 93051
+anchor_crc = "b7d81931"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "48049c03"
+full_size = 412129
+anchor_crc = "658c623b"
+anchor_end = 0x5db00
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "4b0fc1bc"
+full_size = 421960
+anchor_crc = "b137c411"
+anchor_end = 0x5f5f2

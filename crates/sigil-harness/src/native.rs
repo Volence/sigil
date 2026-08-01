@@ -197,6 +197,14 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         // ── Engine system ──
         m!("engine.system.vectors", "vectors", pins::VECTORS),
         m!("engine.boot", "boot", pins::BOOT),
+        // Parcel K2 — boot_data ports to `.emp` as TWO sections (the $3FE map
+        // hole: the engine.z80_init idle packs between them in the no-sound
+        // shapes; the resident driver blob rides `boot_head` in sound-on). Two
+        // ModuleSpecs, one per section — the pinned bootstrap's emp_map_toml maps
+        // one region per spec; the Frozen (shipped) path packs both from the
+        // frozen BootData/BootData_End pins.
+        m!("engine.boot_data", "boot_head", pins::BOOT_HEAD),
+        m!("engine.boot_data", "boot_tail", pins::BOOT_TAIL),
         m!("engine.vdp_init", "vdp_init", pins::VDP_INIT),
         m!("engine.dma_queue", "dma_queue", pins::DMA_QUEUE),
         m!("engine.buffers", "buffers", pins::BUFFERS),

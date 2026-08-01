@@ -7,15 +7,16 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=demo_debug
 # reproduces_golden=demo.debug.bin
-# golden_crc32=949e9215
+# golden_crc32=9f735dc3
 # assembled_anchor=b7d81931
 # assembled_end=0x11224
-# labels=43
+# labels=44
 AnimateSprite 0x1c46
 Art_Decompress 0x50c0
 BG_Init 0x516e
 BgAnim_Init 0x5220
 BootData 0x3a6
+BootData_End 0x410
 BusError 0x10174
 CSelf_S4LZ_Plain 0x5598
 Camera_Init 0x49b0
