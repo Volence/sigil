@@ -74,8 +74,9 @@ pub struct GameProfile {
     /// (`games.sonic4.constants`): `harvest_game_constants` reads its `pub const`s
     /// and injects them as GUARDED AS `-D` defines + link EquSyms, so the residual
     /// AS and the game-agnostic engine `.emp` (rings/entity_window/camera drift
-    /// guards) resolve them. `None` for a game whose config is still AS-authored
-    /// (demo — `games/demo/config/constants.asm`, Parcel H).
+    /// guards) resolve them. `None` for a game whose config is still AS-authored.
+    /// Both shipped games are `.emp`-config now (sonic4 Parcel F, demo Parcel
+    /// H-demo = `games.demo.constants`).
     pub game_constants_rel: Option<&'static str>,
     /// The game's `.emp` sound-id module, relative to the aeon tree (conversion
     /// Parcel F2, `games.sonic4.sound_ids` = `games/sonic4/config/sound_ids.emp`).
@@ -424,7 +425,10 @@ pub fn demo_profile(debug: bool) -> GameProfile {
         name: if debug { "demo_debug" } else { "demo" },
         game_root_rel: "games/demo/main.asm",
         game_ram_module: "games.demo.ram",
-        game_constants_rel: None,
+        // Conversion Parcel H-demo (#14): the demo's game config is `.emp`-authored
+        // (`games.demo.constants` = games/demo/config/constants.emp), harvested into
+        // guarded AS `-D` + link EquSyms exactly like the sonic4 side.
+        game_constants_rel: Some("games/demo/config/constants.emp"),
         game_sound_ids_rel: None,
         game_sfx_bank_rel: None,
         debug,
@@ -440,6 +444,9 @@ pub fn demo_profile(debug: bool) -> GameProfile {
             ("GAME_CAMERA_JUMP_LOCK", 0),
             // demo game-config (games/demo/config/constants.asm) — the values
             // that DIFFER from sonic4 (the reason the engine takes them as -D).
+            // demo game-config (games/demo/config/constants.emp) engine-VARYING
+            // interface values — homed here (not the `.emp`) per the `-D`-not-in-
+            // `.emp` rule; the values that DIFFER from sonic4.
             ("MAX_RING_BUFFER", 16),
             ("VRAM_RING_PLACEHOLDER", 0x3E4),
             ("COLLECTED_WINDOW_SLOTS", 4),
