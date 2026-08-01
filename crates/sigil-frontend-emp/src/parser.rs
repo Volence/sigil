@@ -609,6 +609,12 @@ impl Parser {
                         list.push(self.expect_ident("imported name"));
                         self.skip_newlines();
                         if !self.eat(&Tok::Comma) { break; }
+                        // A comma may be TRAILING: newlines then `}` closes the
+                        // list (L12 — `use path.{ A, B, C, }` across lines). Empty
+                        // braces stay an error: the loop still demands a name on
+                        // the FIRST pass before any `}` can close it.
+                        self.skip_newlines();
+                        if self.at(&Tok::RBrace) { break; }
                     }
                     self.skip_newlines();
                     self.expect(&Tok::RBrace, "`}`");
