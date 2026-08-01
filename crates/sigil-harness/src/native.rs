@@ -196,6 +196,10 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
     let mut specs = vec![
         // ── Engine system ──
         m!("engine.system.vectors", "vectors", pins::VECTORS),
+        // Parcel K4: the $100-$1FF ROM header is native (was header.inc's gameHeader
+        // macro). Game-specific (games.sonic4.header / games.demo.header); the
+        // strings are typed `[u8; N]` (the width guard). Boundary key Checksum ($18E).
+        m!("games.sonic4.header", "header", pins::HEADER),
         m!("engine.boot", "boot", pins::BOOT),
         // Parcel K2 — boot_data ports to `.emp` as TWO sections (the $3FE map
         // hole: the engine.z80_init idle packs between them in the no-sound
@@ -372,6 +376,10 @@ fn demo_registry(debug: bool) -> Vec<ModuleSpec> {
     r.push(ModuleSpec { module_id: "games.demo.demo_box", section: "demo_box", region: DUMMY_REGION });
     r.push(ModuleSpec { module_id: "games.demo.data.demo_data", section: "demo_data", region: DUMMY_REGION });
     r.push(ModuleSpec { module_id: "games.demo.demo_state", section: "demo_state", region: DUMMY_REGION });
+    // Parcel K4: the demo's $100-$1FF ROM header is native too (games.demo.header;
+    // the shared engine.inc no longer invokes the gameHeader macro). Boundary key
+    // Checksum→GameHeader, base $100 (cosmetic pin under Frozen).
+    r.push(ModuleSpec { module_id: "games.demo.header", section: "header", region: pins::HEADER });
     r
 }
 
