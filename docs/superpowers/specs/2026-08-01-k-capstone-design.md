@@ -30,14 +30,25 @@ config, boring, diffable; `region` items (item #7) stay in-source for RAM; the
 ROM map is the build's placement contract. Owned facts, each replacing an
 implicit authority:
 
-1. **Ordered section list** (the §3.3 ordering manifest): the declared order
-   the packer walks. Replaces the frozen tables' bootstrapped order. Named
-   ordering constraints from the survey §9 ("sfx blobs before sfx_table" class)
-   become comments-with-teeth: the order IS the list.
+1. **Ordered section list** (the §3.3 ordering manifest) — TWO-STAGE (amended
+   at the K1 stop, ruled R2+R1): AS-residual section names are synthetic and
+   LMA-derived (`sec{vma_base}`, documented non-stable, non-unique), so a
+   name-keyed declared order is unrealizable while the residual exists — and
+   the residual is exactly what K2–K4 delete. STAGE 1 (K1): the map VALIDATES
+   the derived order, keyed by stable head-labels/module-ids where they exist
+   — fold-identical by construction, and any derivation change fails loud
+   against the declaration. STAGE 2 (post-K4, the flip's completion): with
+   every section a stable-named .emp module, the map DRIVES order and the
+   frozen tables fully demote. R3 (AS-frontend name surgery) rejected per the
+   item-7 §9 hot-path precedent.
 2. **Island anchors**: sections genuinely anchored (`anchor = 0x10000` object
    bank, the sound banks, boot/vector head). Replaces ANCHOR_GAP inference
    for the declared ones; the >0x400 inference stays as a lint that flags an
    undeclared island (`[map.undeclared-island]` — loud, then declare it).
+   NOTE (K1 finding): the DAC banks (0x48000/0x50000) are LABEL-LESS islands —
+   the complete anchor set is measurement-derived, so the map, reader, and
+   lint must land TOGETHER (the lint enumerates what the map must declare; a
+   complete map.toml cannot be authored ahead of the reader).
 3. **Holes**: `[[hole]] after = "<section>" at = <addr> filled_by = "<module>"`
    — the boot_data $3FE/z80_init-idle relationship, declared (§3 below).
 4. **Budgets**: per-region byte ceilings (the spec §7 line 722 promise —
@@ -106,3 +117,13 @@ The game-contract-hook construct (frees game.asm) · the objdef/objentry
 human-authoring DSL · relaxation-aware `align` · struct-scope `@allow` ·
 typed-const-refs-typed-const · `[u8;_]` sugar · the mapping-DSL candidate.
 These are the language-ask round's agenda, scheduled after K.
+
+## §5 — K1 stop addendum (ruled R2+R1)
+
+The K1 porter's finding and this ruling are the §1-fact-1 amendment above.
+K1's landed scope is therefore: the map file (anchors + holes + budgets +
+order-validation entries), the reader, the consumption flip for
+anchors/holes/budgets, the order VALIDATION (not drive), the
+`[map.undeclared-island]` lint, and the fixture migration — all together,
+fold-identity ×6. The order-DRIVE flip is K5 (post-K4), a small parcel once
+names are stable.
