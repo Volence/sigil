@@ -221,6 +221,10 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         m!("engine.zx0", "zx0", pins::ZX0),
         m!("engine.math", "math", pins::MATH),
         // ── Engine objects ──
+        // Parcel K4 inc-6: the object-code-bank base (ObjCodeBase + the offset-0 safety
+        // rts) — was engine.inc's `org $10000 / ObjCodeBase: rts`. Native so the org
+        // retires. Placed at $10000 by the object_bank anchor. Engine-agnostic (demo too).
+        m!("engine.objects.objcodebase", "objcodebase", pins::OBJCODEBASE),
         m!("engine.objects.dplc", "dplc", pins::DPLC),
         m!("engine.objects.core", "core", pins::CORE),
         m!("engine.objects.sprites", "sprites", pins::SPRITES),
@@ -242,6 +246,10 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         m!("engine.bg_anim", "bg_anim", pins::BG_ANIM),
         // ── Engine debug / sound caller ──
         m!("engine.sound_api", "sound_api", pins::SOUND_API),
+        // Parcel K4 inc-6: the no-op IRQ handler (NullInterrupt: rte) — was engine.inc's
+        // "temporary stub". Native so the last hand-written AS bytes leave the tree.
+        // vectors.emp's IRQ1/2/3/5/7 dc.l NullInterrupt resolve cross-seam to it.
+        m!("engine.system.null_interrupt", "null_interrupt", pins::NULLINT),
         m!("engine.debug.error_handler", "error_handler", pins::ERROR_HANDLER),
         // Parcel K4 B1: the ROM terminus (EndOfRom + the 3 walls), was engine.inc's
         // `EndOfRom:` label + the `if … error` guards. Zero-length section placed
@@ -367,7 +375,7 @@ fn demo_code_gates(debug: bool) -> Vec<&'static str> {
         "SIGIL_EMP_LOAD_OBJECT", "SIGIL_EMP_PLANE_BUFFER", "SIGIL_EMP_TILE_CACHE",
         "SIGIL_EMP_COLLISION_LOOKUP", "SIGIL_EMP_SECTION", "SIGIL_EMP_CAMERA", "SIGIL_EMP_PARALLAX",
         "SIGIL_EMP_LOAD_ART", "SIGIL_EMP_BG", "SIGIL_EMP_BG_ANIM", "SIGIL_EMP_ERROR_HANDLER",
-        "SIGIL_EMP_EPILOGUE",
+        "SIGIL_EMP_EPILOGUE", "SIGIL_EMP_OBJCODEBASE", "SIGIL_EMP_NULL_INTERRUPT",
     ];
     if debug {
         g.push("SIGIL_EMP_COMPRESSION_SELFTEST");
@@ -1141,12 +1149,14 @@ fn code_gate_defines() -> Vec<&'static str> {
         "SIGIL_EMP_VECTORS", "SIGIL_EMP_BOOT", "SIGIL_EMP_VDP_INIT", "SIGIL_EMP_DMA_QUEUE",
         "SIGIL_EMP_BUFFERS", "SIGIL_EMP_VBLANK", "SIGIL_EMP_HBLANK", "SIGIL_EMP_CONTROLLERS",
         "SIGIL_EMP_GAME_LOOP", "SIGIL_EMP_S4LZ", "SIGIL_EMP_ZX0", "SIGIL_EMP_MATH",
+        "SIGIL_EMP_OBJCODEBASE",
         "SIGIL_EMP_DPLC", "SIGIL_EMP_CORE", "SIGIL_EMP_SPRITES", "SIGIL_EMP_ANIMATE",
         "SIGIL_EMP_COLLISION", "SIGIL_EMP_RINGS", "SIGIL_EMP_ENTITY_WINDOW", "SIGIL_EMP_CHILDREN",
         "SIGIL_EMP_LOAD_OBJECT", "SIGIL_EMP_PLANE_BUFFER", "SIGIL_EMP_TILE_CACHE",
         "SIGIL_EMP_COLLISION_LOOKUP", "SIGIL_EMP_SECTION", "SIGIL_EMP_CAMERA", "SIGIL_EMP_PARALLAX",
         "SIGIL_EMP_LOAD_ART", "SIGIL_EMP_BG", "SIGIL_EMP_BG_ANIM", "SIGIL_EMP_COMPRESSION_SELFTEST",
         "SIGIL_EMP_SOUND_API", "SIGIL_EMP_ERROR_HANDLER", "SIGIL_EMP_EPILOGUE",
+        "SIGIL_EMP_NULL_INTERRUPT",
         "SIGIL_EMP_PLAYER_SENSORS",
         "SIGIL_EMP_PLAYER_GROUND", "SIGIL_EMP_PLAYER_AIR", "SIGIL_EMP_PLAYER_SPINDASH",
         "SIGIL_EMP_SONIC", "SIGIL_EMP_TEST_STATIC", "SIGIL_EMP_TEST_ANIMATED",
