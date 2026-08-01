@@ -64,6 +64,11 @@ pub struct GameProfile {
     pub name: &'static str,
     /// The AS residual root, relative to the aeon tree (`games/<g>/main.asm`).
     pub game_root_rel: &'static str,
+    /// The game's RAM module id (item #7c). Its region-form `vars` block chains
+    /// `game_ram @ after(upper_ram)` onto the engine RAM, so it must be reachable
+    /// from the synthetic entry (so its `pub vars` labels export to the joint
+    /// link) and harvested (so eager AS reads of game RAM labels resolve).
+    pub game_ram_module: &'static str,
     pub debug: bool,
     /// Sound ON: pass `-D SOUND_DRIVER_ENABLED`, the DAC/MT/SFX BINCLUDE gates, and
     /// run `ensure_generated`. OFF (demo/Config-B): no sound define at all (AS `ifdef`
@@ -303,6 +308,7 @@ pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile 
     GameProfile {
         name: if debug { "sonic4_debug" } else { "sonic4" },
         game_root_rel: "games/sonic4/main.asm",
+        game_ram_module: "games.sonic4.ram",
         debug,
         sound_on: true,
         extra_as_defines: vec![],
@@ -381,6 +387,7 @@ pub fn demo_profile(debug: bool) -> GameProfile {
     GameProfile {
         name: if debug { "demo_debug" } else { "demo" },
         game_root_rel: "games/demo/main.asm",
+        game_ram_module: "games.demo.ram",
         debug,
         sound_on: false,
         extra_as_defines: vec![],
@@ -434,6 +441,7 @@ pub fn config_b_profile() -> GameProfile {
     GameProfile {
         name: "config_b",
         game_root_rel: "games/sonic4/main.asm",
+        game_ram_module: "games.sonic4.ram",
         debug: false,
         sound_on: false,
         extra_as_defines: vec![],
@@ -488,6 +496,7 @@ pub fn config_a_profile() -> GameProfile {
     GameProfile {
         name: "config_a",
         game_root_rel: "games/sonic4/main.asm",
+        game_ram_module: "games.sonic4.ram",
         debug: true,
         sound_on: true,
         extra_as_defines: vec![("SOUND_DEBUG_HOTKEYS", 1), ("SOUND_DBG_MIRROR", 1)],
@@ -736,16 +745,19 @@ pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, 
     Ok(out)
 }
 
-/// Item #7b (Option B bridge, spec §9): engine RAM is authored in
-/// `engine/ram.emp` now, and its `pub vars` labels are the SOLE link authority.
-/// But three residual-AS seams reference those labels EAGERLY — positions the AS
-/// frontend cannot defer to the linker:
+/// Item #7b/#7c (Option B bridge, spec §9): engine AND game RAM are authored in
+/// `engine/ram.emp` + `games/<game>/config/ram.emp` now, and their `pub vars`
+/// labels are the SOLE link authority. But residual-AS seams reference those
+/// labels EAGERLY — positions the AS frontend cannot defer to the linker:
 ///   1. `games/demo/demo_state.asm`'s `move.x #imm, (RamLabel).w` absolute-EA
-///      writes + the `setVDPReg` macro (`move.b`/`ori.l` to an abs dest),
-///   2. `phase Engine_RAM_End` in each game's `config/ram.asm` (phase folds its
-///      argument at assemble time — a displacement must be known eagerly).
-/// So harvest every engine RAM label's ADDRESS from `ram.emp` and seed them as
-/// PLAIN value defines (NOT `guarded_defines` → NOT re-exported as EquSyms), so
+///      writes + the `setVDPReg` macro (`move.b`/`ori.l` to an abs dest) — engine
+///      RAM (Camera_X, Palette_Dirty, Game_State, VDP_Shadow_Table, …),
+///   2. `games/sonic4/config/game.asm`'s `move.b #1,(Dbg_Music_On).w` — GAME RAM.
+/// (The `phase Engine_RAM_End` in the old game `config/ram.asm` is gone — game RAM
+/// is now the `.emp` region `game_ram @ after(upper_ram)`, so it no longer needs
+/// harvesting for its own base.) So harvest every engine+game RAM label's ADDRESS
+/// (item #7c: `profile.game_ram_module` reaches the game region too) and seed them
+/// as PLAIN value defines (NOT `guarded_defines` → NOT re-exported as EquSyms), so
 /// the AS side folds them at comptime with no duplicate-symbol collision against
 /// the `.emp` `pub` labels.
 ///
@@ -781,9 +793,17 @@ pub fn harvest_engine_ram_addresses(
     ];
     publicize_helper_comptime(&mut manifest, RAM_HELPERS);
 
-    // Synthetic entry: `use engine.ram` only — the focused reachable set.
+    // Synthetic entry: `use engine.ram` + the game's RAM module (item #7c) — the
+    // focused reachable set. The game RAM chains `game_ram @ after(upper_ram)` onto
+    // the engine RAM, so both are lowered through the SAME whole-program region
+    // resolution the real build uses; the harvest then reads BOTH regions' labels
+    // (so eager AS reads of engine RAM — demo_state writes — AND game RAM —
+    // game.asm's `move.b #1,(Dbg_Music_On).w` — fold at comptime).
     let entry_id = "__ram_harvest_entry__".to_string();
-    let src = "module __ram_harvest_entry__\n\nuse engine.ram\n".to_string();
+    let src = format!(
+        "module __ram_harvest_entry__\n\nuse engine.ram\nuse {}\n",
+        profile.game_ram_module
+    );
     let source = sigil_span::SourceId(manifest.modules.len() as u32);
     let (file, pdiags) = sigil_frontend_emp::parse_file(&src, source);
     let perr: Vec<_> = pdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
@@ -971,7 +991,7 @@ fn emp_map_frozen(sections: &[Section]) -> String {
 
 /// A synthetic entry `.emp` source whose `use` edges reach every registry module,
 /// so `build_program`'s reachability BFS pulls them all (and their comptime deps).
-fn synthetic_entry_src(specs: &[ModuleSpec]) -> String {
+fn synthetic_entry_src(specs: &[ModuleSpec], game_ram_module: &str) -> String {
     let mut src = String::from("module native_flip_entry\n\n");
     // Item #7b: the engine RAM module owns no ROM section (its region-form `vars`
     // lower to reserve-only RAM sections, skipped by `place_sections`), so it has
@@ -979,6 +999,12 @@ fn synthetic_entry_src(specs: &[ModuleSpec]) -> String {
     // are built and exported as the joint-link RAM authority. Both sonic4 + demo
     // need engine RAM, so it rides the shared entry.
     src.push_str("use engine.ram\n");
+    // Item #7c: the game RAM module likewise owns no ROM section — its region-form
+    // `vars` block chains `game_ram @ after(upper_ram)` onto the engine RAM and
+    // lowers to a reserve-only RAM section. It must be reachable so its `pub vars`
+    // labels (Player_Phys, the rings, Game_RAM_End, the debug counters) export as
+    // the joint-link authority the game `.emp` consumers resolve against.
+    src.push_str(&format!("use {game_ram_module}\n"));
     for s in specs {
         src.push_str(&format!("use {}\n", s.module_id));
     }
@@ -1031,7 +1057,7 @@ pub fn build_emp(
 
     // Inject the synthetic entry as a fresh module in the manifest.
     let entry_id = "native_flip_entry".to_string();
-    let src = synthetic_entry_src(specs);
+    let src = synthetic_entry_src(specs, profile.game_ram_module);
     let source = sigil_span::SourceId(manifest.modules.len() as u32);
     let (file, pdiags) = sigil_frontend_emp::parse_file(&src, source);
     let perr: Vec<_> = pdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();

@@ -5,7 +5,7 @@ pub mod manifest;
 pub mod rename;
 
 use crate::ast;
-use crate::lower::{lower_module, LowerOptions};
+use crate::lower::{lower_module_with_region_ends, LowerOptions};
 use imports::{ExportIndex, ResolveEnv};
 use manifest::{Manifest, ParsedModule};
 use sigil_ir::map::MemoryMap;
@@ -329,6 +329,41 @@ fn build_program_with(
     // the first module id that declared it.
     let mut pub_equ_owner: HashMap<String, String> = HashMap::new();
 
+    // Item #7c: whole-program region-END resolution for cross-module `after(..)`
+    // chains. A region-form `vars` block may chain `@ after(<region>)` onto a
+    // region declared in another module (the game's `game_ram @ after(upper_ram)`
+    // onto the engine's `upper_ram`). Resolve every region's running end ONCE,
+    // here, so each module's per-file region lowering (below) can look up a
+    // cross-module parent's end. Each region module is passed as its
+    // ambient-prepended synthetic file so a region's `use`d comptime sizes resolve
+    // — identical to what the per-module loop lowers. A no-op (empty map, zero
+    // passes) for a program with no region modules, so a region-free build is
+    // untouched. `[region.chain-cycle]` for a cross-module `after(..)` cycle.
+    let region_modules: Vec<(&str, ast::File)> = reachable
+        .iter()
+        .filter_map(|&i| {
+            let pm = &manifest.modules[i];
+            if !crate::lower::file_declares_region(&pm.file) {
+                return None;
+            }
+            let ambient = ambient_items(pm, prelude_pm, manifest);
+            let file = if ambient.is_empty() {
+                pm.file.clone()
+            } else {
+                ast::File {
+                    module: pm.file.module.clone(),
+                    attrs: pm.file.attrs.clone(),
+                    items: ambient.into_iter().chain(pm.file.items.iter().cloned()).collect(),
+                    docs: pm.file.docs.clone(),
+                }
+            };
+            Some((pm.id.as_str(), file))
+        })
+        .collect();
+    let (region_ends, mut region_diags) =
+        crate::lower::resolve_program_region_ends(&region_modules, &opts.defines);
+    diags.append(&mut region_diags);
+
     // 4. Per-module: resolve names, lower, report unresolved, rename, concat.
     for &i in &reachable {
         let pm = &manifest.modules[i];
@@ -375,7 +410,8 @@ fn build_program_with(
 
         let ambient = ambient_items(pm, prelude_pm, manifest);
         let (mut module, ldiags) = if ambient.is_empty() {
-            lower_module(&pm.file, opts) // zero-clone common path.
+            // zero-clone common path; `region_ends` is empty for region-free builds.
+            lower_module_with_region_ends(&pm.file, opts, &region_ends)
         } else {
             // The own-items clone here could later be avoided by having the
             // evaluator index a separate ambient slice (deferred — preludes are
@@ -394,7 +430,7 @@ fn build_program_with(
                 // attach only).
                 docs: pm.file.docs.clone(),
             };
-            lower_module(&synthetic, opts)
+            lower_module_with_region_ends(&synthetic, opts, &region_ends)
         };
         // Drop only what an EARLIER module already contributed (`seen_across_modules`
         // is empty on this module's first appearance in the loop, so a module's

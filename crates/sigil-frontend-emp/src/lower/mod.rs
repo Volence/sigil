@@ -16,7 +16,7 @@ mod proc;
 mod regions;
 mod script;
 
-pub use regions::check_single_owner;
+pub use regions::{check_single_owner, file_declares_region, resolve_program_region_ends};
 
 pub use code::lower_code_buf;
 pub use proc::{
@@ -115,6 +115,22 @@ struct Placement<'a> {
 /// the FIRST match). This is fine because those sections carry disjoint labels
 /// and non-overlapping LMAs; it is only a naming concern.
 pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagnostic>) {
+    // The common (single-file / test) entry: no cross-module `after(..)` context,
+    // so intra-file region chaining resolves exactly as before (item #7a).
+    lower_module_with_region_ends(file, opts, &std::collections::HashMap::new())
+}
+
+/// [`lower_module`] with a whole-program cross-module region-end map (item #7c).
+/// `external_region_ends` (`region name -> running-end address`, produced once by
+/// [`resolve_program_region_ends`]) lets a region-form `vars` block chain
+/// `@ after(<region>)` onto a region declared in ANOTHER module. Empty for the
+/// single-file path — only the whole-program `build_program` loop threads a
+/// populated map. Every non-region module is unaffected either way.
+pub fn lower_module_with_region_ends(
+    file: &ast::File,
+    opts: &LowerOptions,
+    external_region_ends: &std::collections::HashMap<String, u32>,
+) -> (Module, Vec<Diagnostic>) {
     let mut builder = IrBuilder::new();
     let mut diags = Vec::new();
 
@@ -470,7 +486,7 @@ pub fn lower_module(file: &ast::File, opts: &LowerOptions) -> (Module, Vec<Diagn
     // Item #7a: resolve the file's `region` items + region-form `vars` blocks
     // into reserve-only RAM sections (VMA-placed, zero image bytes). A no-op for
     // a file with no regions, so every region-free module is byte-identical.
-    regions::lower_regions(file, &opts.defines, &mut builder, &mut diags);
+    regions::lower_regions(file, &opts.defines, external_region_ends, &mut builder, &mut diags);
 
     let (module, mut build_diags) = builder.finish();
     diags.append(&mut build_diags);
