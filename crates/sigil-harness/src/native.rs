@@ -305,6 +305,11 @@ fn demo_code_gates(debug: bool) -> Vec<&'static str> {
     }
     // The Z80 idle flips native in the no-sound demo too (kill row 55).
     g.push("SIGIL_EMP_Z80_INIT");
+    // The demo GAME modules place natively (Parcel H-demo): each gate holes out its
+    // `.asm` twin's include in games/demo/main.asm (org-resumed).
+    g.push("SIGIL_EMP_DEMO_BOX");
+    g.push("SIGIL_EMP_DEMO_DATA");
+    g.push("SIGIL_EMP_DEMO_STATE");
     g
 }
 
@@ -322,6 +327,15 @@ fn demo_registry(debug: bool) -> Vec<ModuleSpec> {
     // is not in the shared `registry()` (sound-on shapes must not place it), so add
     // it here explicitly.
     r.push(ModuleSpec { module_id: "engine.z80_init", section: "z80_idle", region: DUMMY_REGION });
+    // The demo GAME modules (Parcel H-demo): the object-code-bank island the demo
+    // main.asm holes out. `demo_data` lands its `pub data` in the named `demo_data`
+    // section (not the default `text`), so the require_one_text guard stays off.
+    // The regions are DUMMY_REGION — cosmetic under Frozen (the chainer packs from
+    // the frozen demo tables' DemoBox_Main/ObjDef_DemoBox/GameState_Demo_Init
+    // anchors); only the module id + section name are load-bearing.
+    r.push(ModuleSpec { module_id: "games.demo.demo_box", section: "demo_box", region: DUMMY_REGION });
+    r.push(ModuleSpec { module_id: "games.demo.data.demo_data", section: "demo_data", region: DUMMY_REGION });
+    r.push(ModuleSpec { module_id: "games.demo.demo_state", section: "demo_state", region: DUMMY_REGION });
     r
 }
 
@@ -442,8 +456,6 @@ pub fn demo_profile(debug: bool) -> GameProfile {
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
             ("GAME_CAMERA_JUMP_LOCK", 0),
-            // demo game-config (games/demo/config/constants.asm) — the values
-            // that DIFFER from sonic4 (the reason the engine takes them as -D).
             // demo game-config (games/demo/config/constants.emp) engine-VARYING
             // interface values — homed here (not the `.emp`) per the `-D`-not-in-
             // `.emp` rule; the values that DIFFER from sonic4.
@@ -768,9 +780,9 @@ pub fn harvest_game_constants(aeon: &Path, rel: &str, debug: bool) -> Result<Vec
 }
 
 /// The `.emp` struct twins whose field offsets + total size the residual AS
-/// consumes at comptime (`ram.asm`'s `ds` slot sizes, `demo_state.asm`'s
-/// `setVDPReg`, `player_common.asm`'s overlay-budget `if`, `act_descriptor.asm`'s
-/// `Sec`/`Act` field access). Each entry is `(emp file, struct name, AS symbol
+/// consumes at comptime (`ram.asm`'s `ds` slot sizes, residual-AS `setVDPReg`
+/// expansions over the VdpShadow offsets, `act_descriptor.asm`'s `Sec`/`Act`
+/// field access). Each entry is `(emp file, struct name, AS symbol
 /// prefix)`: the harvest emits `<prefix>_<field>` = offsetof and `<prefix>_len` =
 /// sizeof, exactly the equs `engine/structs.asm`'s `struct … endstruct` generated.
 /// The prefix is VERBATIM the AS spelling — `Sst` (the `.emp` type) carried the
@@ -841,9 +853,11 @@ pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, 
 /// `engine/ram.emp` + `games/<game>/config/ram.emp` now, and their `pub vars`
 /// labels are the SOLE link authority. But residual-AS seams reference those
 /// labels EAGERLY — positions the AS frontend cannot defer to the linker:
-///   1. `games/demo/demo_state.asm`'s `move.x #imm, (RamLabel).w` absolute-EA
-///      writes + the `setVDPReg` macro (`move.b`/`ori.l` to an abs dest) — engine
-///      RAM (Camera_X, Palette_Dirty, Game_State, VDP_Shadow_Table, …),
+///   1. Residual-AS `move.x #imm, (RamLabel).w` absolute-EA writes + `setVDPReg`
+///      (`move.b`/`ori.l` to an abs dest) referencing engine RAM (Camera_X,
+///      Palette_Dirty, Game_State, VDP_Shadow_Table, …). (The demo's demo_state
+///      was the canonical example; it is native `.emp` now — Parcel H-demo — so
+///      the surviving eager consumers are the engine-side AS residual + sonic4.)
 ///   2. `games/sonic4/config/game.asm`'s `move.b #1,(Dbg_Music_On).w` — GAME RAM.
 /// (The `phase Engine_RAM_End` in the old game `config/ram.asm` is gone — game RAM
 /// is now the `.emp` region `game_ram @ after(upper_ram)`, so it no longer needs
