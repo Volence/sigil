@@ -280,8 +280,18 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         m!("games.sonic4.test_mappings", "test_mappings", pins::TEST_MAPPINGS),
         m!("games.sonic4.sonic_anims", "sonic_anims", pins::SONIC_ANIMS),
         m!("games.sonic4.particle_anims", "particle_anims", pins::PARTICLE_ANIMS),
-        // act_descriptor (kill row 93): the OJZ act1 descriptor table; header stays
-        // AS-side, the body/section table places here.
+        // Parcel K3 run A: the OJZ act1 interior island HEAD — the contiguous run
+        // BEFORE the descriptor. Two native `.emp` sections (both generator-emitted):
+        //   entity_data  — the 9-section type tables / object placements / ring lists
+        //                  (objentry/objend replaced by packed 3-word records; the
+        //                  last 2 macros.asm consumers gone)
+        //   ojz_act_pool — 3 ZX0 page embeds + the OJZ_Act_Pool_PageTable
+        // With these + the descriptor + the run-B tail native, act_descriptor.asm is
+        // DELETED (the OJZ block is fully `.emp`).
+        m!("games.sonic4.ojz_entity_data_act1", "entity_data", pins::ENTITY_DATA),
+        m!("games.sonic4.ojz_act_pool_act1", "ojz_act_pool", pins::OJZ_ACT_POOL),
+        // act_descriptor (kill row 93): the OJZ act1 descriptor table; the body/
+        // section table places here.
         m!("games.sonic4.act_descriptor_ojz_act1", "act_descriptor", pins::ACT_DESCRIPTOR),
         // Parcel K3 run B: the OJZ act1 interior island TAIL — the contiguous run
         // after the descriptor. Three native `.emp` sections (the generators emit

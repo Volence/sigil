@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 63 regions, 299 symbols, 7 offsets
+//! [provenance] 65 regions, 299 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -191,6 +191,12 @@ pub const SONIC_ANIMS: Region = Region { plain_base: 0x256E4, debug_base: 0x2576
 
 /// `Ani_Particle` .. `Ani_Particle_End` — gate `SIGIL_EMP_PARTICLE_ANIMS`. tests: particle_anims_port, test_objects_port
 pub const PARTICLE_ANIMS: Region = Region { plain_base: 0x25752, debug_base: 0x257DA, plain_len: 0x8, debug_len: 0x8 };
+
+/// `OJZ_Sec0_TypeTable` .. `OJZ_Act_Pool_Page0`. tests: ojz_run_a_port
+pub const ENTITY_DATA: Region = Region { plain_base: 0x11D86, debug_base: 0x11E0E, plain_len: 0x170, debug_len: 0x170 };
+
+/// `OJZ_Act_Pool_Page0` .. `OJZ_Act1_Descriptor`. tests: ojz_run_a_port
+pub const OJZ_ACT_POOL: Region = Region { plain_base: 0x11EF6, debug_base: 0x11F7E, plain_len: 0x2C3C, debug_len: 0x2C3C };
 
 /// `OJZ_Act1_Descriptor` .. `OJZ_Sec0_Blocks` — gate `SIGIL_EMP_ACT_DESCRIPTOR`. tests: act_descriptor_port
 pub const ACT_DESCRIPTOR: Region = Region { plain_base: 0x14B32, debug_base: 0x14BBA, plain_len: 0x274, debug_len: 0x274 };
