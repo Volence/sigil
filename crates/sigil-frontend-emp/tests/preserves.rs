@@ -37,7 +37,7 @@ fn status_with(src: &str, reg: Reg, policy: CallPolicy) -> PreserveStatus {
         })
         .expect("a proc");
     let (buf, _d, _n) =
-        eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[]);
+        eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[], &sigil_frontend_emp::contract::InterfaceEnv::empty());
     let buf = buf.expect("codebuf");
     let mut r = verify_preserved(&buf.items, &[reg], policy);
     r.remove(&reg).expect("status for the checked reg")

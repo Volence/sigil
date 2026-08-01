@@ -575,6 +575,7 @@ pub fn z80_clobbers_report_doctored(
                     let (buf, _diags, next, dropped) = eval_proc_body_env(
                         file, &p.name, &p.params, &p.body, p.span, *counter,
                         sigil_ir::backend::Cpu::Z80, defines, &[],
+                        &sigil_frontend_emp::contract::InterfaceEnv::empty(),
                     );
                     *counter = next;
                     *dropped_total += dropped;

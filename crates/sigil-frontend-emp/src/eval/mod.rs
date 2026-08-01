@@ -193,6 +193,13 @@ pub struct Evaluator<'a> {
     /// backing `ast::ConstDecl` to index into [`consts`](Self::consts), so it
     /// never routes through `resolve_const`/`const_memo` at all.
     defines: HashMap<String, i128>,
+    /// The resolved game-contract interfaces (L1), keyed by interface name.
+    /// Populated once, up front, by [`seed_interfaces`](Self::seed_interfaces).
+    /// `eval_path` resolves `Iface.MEMBER` against it (a const member's value,
+    /// or a proc member's link symbol); `invoke Iface.hook` reads the hook
+    /// binding here. Empty by default — a contract-free module resolves nothing
+    /// against it, so its output is unchanged.
+    interfaces: HashMap<String, crate::contract::ResolvedInterface>,
     /// The names of consts whose value expressions are currently being
     /// evaluated, in reference order — the in-progress stack used to detect and
     /// name cyclic const definitions.
@@ -427,6 +434,7 @@ impl<'a> Evaluator<'a> {
             comptime_ctx: 0,
             const_memo: HashMap::new(),
             defines: HashMap::new(),
+            interfaces: HashMap::new(),
             in_progress: Vec::new(),
             data_memo: HashMap::new(),
             struct_construct_in_progress: Vec::new(),
@@ -1070,6 +1078,17 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    /// Inject the resolved game-contract interfaces (L1) into this evaluator, so
+    /// `eval_path` resolves `Iface.MEMBER` and `lower_asm_stmt` lowers
+    /// `invoke Iface.hook`. Called once per evaluator, right after
+    /// [`seed_defines`](Self::seed_defines). A no-op for the empty env (a
+    /// contract-free build), so a module lowered without contracts is unchanged.
+    pub(crate) fn seed_interfaces(&mut self, env: &crate::contract::InterfaceEnv) {
+        for (name, iface) in &env.interfaces {
+            self.interfaces.insert(name.clone(), iface.clone());
+        }
+    }
+
     /// Select one of the three DISTINCT cycle-guard stacks for
     /// [`with_cycle_guard`](Self::with_cycle_guard). The stacks stay separate
     /// fields for correctness (see their doc comments); this only picks among
@@ -1176,6 +1195,26 @@ pub fn eval_const(file: &crate::ast::File, name: &str) -> (Option<Value>, Vec<Di
 /// imported [`Value`] directly (no `data` item / byte layout needed) — the
 /// production compile path does not yet supply a real root for consts either
 /// (same deferred wiring note as `eval_data_with_root`).
+/// Evaluate an ARBITRARY comptime expression against `file`'s scope (its consts,
+/// enums, and the seeded `defines`), returning the value plus any diagnostics.
+/// Used by the L1 bind pass ([`crate::resolve::contract`]) to fold `implement`
+/// binding values and comptime-`if` group conditions — neither of which is a
+/// named const the const-entry points can address. The expression is a pure
+/// comptime read (no label context), matching a const initializer's scope.
+pub fn eval_expr_in_file(
+    file: &crate::ast::File,
+    expr: &crate::ast::Expr,
+    defines: &[(String, i128)],
+) -> (Value, Vec<Diagnostic>) {
+    run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        ev.seed_defines(defines);
+        let mut env = Env::new();
+        let v = ev.eval_expr(expr, &mut env);
+        (v, ev.diags)
+    })
+}
+
 pub fn eval_const_with_root(
     file: &crate::ast::File,
     name: &str,
@@ -1421,9 +1460,11 @@ pub fn eval_proc_body(
     asm_counter_start: u32,
     cpu: sigil_ir::backend::Cpu,
     defines: &[(String, i128)],
+    contracts: &crate::contract::InterfaceEnv,
 ) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32) {
-    let (buf, diags, counter, _dropped) =
-        eval_proc_body_env(file, name, params, body, span, asm_counter_start, cpu, defines, &[]);
+    let (buf, diags, counter, _dropped) = eval_proc_body_env(
+        file, name, params, body, span, asm_counter_start, cpu, defines, &[], contracts,
+    );
     (buf, diags, counter)
 }
 
@@ -1446,10 +1487,12 @@ pub fn eval_proc_body_env(
     cpu: sigil_ir::backend::Cpu,
     defines: &[(String, i128)],
     ambient: &[ast::Item],
+    contracts: &crate::contract::InterfaceEnv,
 ) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32, usize) {
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file_and_ambient(file, ambient);
         ev.seed_defines(defines);
+        ev.seed_interfaces(contracts);
         ev.asm_counter = asm_counter_start;
         // The proc's section CPU is known here (unlike a raw `asm {}` template):
         // record it so a bare statement call in the body can consult the

@@ -429,6 +429,29 @@ impl<'a> Evaluator<'a> {
             if let Some(v) = a_val {
                 return self.field_or_len(v, b, path.span);
             }
+            // Step 1b: an `Iface.MEMBER` game-contract reference (L1). A resolved
+            // `const` member folds to its comptime value; a `proc` member yields
+            // the same link-deferred `Value::Label` a bare symbol takes in
+            // immediate position (`#Iface.entry`). A `hook` member is INVOKED
+            // (`invoke Iface.hook`), never referenced as a value — naming one here
+            // is a member-kind error. This resolves AFTER a genuine value receiver
+            // (local/const/data named `a`), so an interface never shadows one.
+            if let Some(member) = self.interfaces.get(a).and_then(|i| i.members.get(b)) {
+                return match member {
+                    crate::contract::ResolvedMember::Const(v) => v.clone(),
+                    crate::contract::ResolvedMember::Proc(sym) => Value::Label(sym.clone()),
+                    crate::contract::ResolvedMember::Hook(_) => {
+                        self.error(
+                            path.span,
+                            format!(
+                                "[contract.member-kind] `{a}.{b}` is a hook — invoke it \
+                                 (`invoke {a}.{b}`), it is not a value to reference"
+                            ),
+                        );
+                        Value::Poison
+                    }
+                };
+            }
             // Step 2: a nullary `Enum.Variant` value. A variant that DOES
             // declare a payload (T6) cannot be referenced bare — it must be
             // called (`Enum.Variant(...)`, parsed as an `Expr::Call` and

@@ -78,8 +78,10 @@ fn report(p: &ProcDecl, file: &ast::File, path: &str, map: &SourceMap, counter: 
 
     // Evaluate the body (single-file, 68000, no defines) → resolved CodeBuf →
     // the lint's own write set. `None` = the body did not resolve to Code.
-    let (buf, _ds, next) =
-        eval::eval_proc_body(file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::M68000, &[]);
+    let (buf, _ds, next) = eval::eval_proc_body(
+        file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::M68000, &[],
+        &sigil_frontend_emp::contract::InterfaceEnv::empty(),
+    );
     *counter = next;
     let computed = match &buf {
         Some(b) => {

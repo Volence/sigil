@@ -68,6 +68,10 @@ pub(super) struct ProcCtx<'a> {
     /// `preserves` proof credits a `call`/tail-transfer to a preserving callee.
     /// Empty for every 68k module (the map is only consulted by the Z80 proof).
     pub callee_preserves: &'a crate::z80_preserves::CalleePreserves,
+    /// The resolved game-contract interfaces (L1), seeded into this proc's
+    /// evaluator so its body resolves `Iface.MEMBER` and lowers
+    /// `invoke Iface.hook`. Empty for a contract-free build.
+    pub contracts: &'a crate::contract::InterfaceEnv,
 }
 
 /// Lower one proc: define its label, evaluate + lower its body, then run the
@@ -111,6 +115,7 @@ pub(super) fn lower_proc(
         *asm_counter,
         ctx.cpu,
         ctx.defines,
+        ctx.contracts,
     );
     *asm_counter = next_counter;
     diags.append(&mut ds);
