@@ -39,8 +39,16 @@ implicit authority:
    — fold-identical by construction, and any derivation change fails loud
    against the declaration. STAGE 2 (post-K4, the flip's completion): with
    every section a stable-named .emp module, the map DRIVES order and the
-   frozen tables fully demote. R3 (AS-frontend name surgery) rejected per the
-   item-7 §9 hot-path precedent.
+   frozen tables fully demote. **✅ STAGE 2 DONE (K5, 2026-08-01):** the packer
+   (`packed_true_bases`) walks the sections in the map's declared `order` keyed
+   by head-label; the frozen tables are DEMOTED to the provisional-base
+   measurement cache (island anchors + packed-section alignment + round-0
+   measurement pins) + boundary keys — they no longer author the sequence.
+   `validate_placement` inverted to a post-resolve DRIVE-CONFIRMATION (every
+   emitter must be declared; the resolved layout must honour the sequence).
+   sigil.map.toml retired (the per-game maps own the region geometry). Fold-
+   identical ×6, no re-freeze. R3 (AS-frontend name surgery) rejected per the
+   item-7 §9 hot-path precedent. **The K capstone (K0–K5) is COMPLETE.**
 2. **Island anchors**: sections genuinely anchored (`anchor = 0x10000` object
    bank, the sound banks, boot/vector head). Replaces ANCHOR_GAP inference
    for the declared ones; the >0x400 inference stays as a lint that flags an

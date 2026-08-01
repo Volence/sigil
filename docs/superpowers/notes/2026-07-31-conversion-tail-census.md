@@ -22,7 +22,13 @@ campaign ledger, not guesses.
    line 1852, the Stage-2 companion; line 1859 lists "engine.inc org deletion" as
    remaining rows-6/58 work). This means the *skeleton* files (main.asm ×2,
    engine.inc) are not ported — they collapse when the last residual AS data island
-   in them moves to `.emp`.
+   in them moves to `.emp`. **✅ K5 UPDATE (2026-08-01):** the skeleton files were
+   DELETED at K4 inc-6B, and K5 flipped the placement AUTHORITY — the chainer now
+   derives ORDER from the per-game map's declared `order`, not the frozen table
+   (`packed_true_bases`). The frozen tables survive ONLY as the provisional-base
+   measurement cache (anchors + alignment + measurement pins) + boundary keys;
+   sigil.map.toml retired (the per-game maps own the region geometry; demo's
+   sound-off z80 bank region slimmed away, byte-neutral). **The K capstone is done.**
 
 3. **RAM packing (B-0b) is the next §17 unblock** and `ram.asm` is its natural
    pair — RAM sections are still hand-pinned `Pin`s (`pins.rs`), the RAM analog of

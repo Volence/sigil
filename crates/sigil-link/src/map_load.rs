@@ -1,5 +1,6 @@
-//! TOML → `MemoryMap`. The external-config seam (`sigil.map.toml`). The pure
-//! `MemoryMap` type stays in sigil-ir; deserialization lives here.
+//! TOML → `MemoryMap`. The external-config seam (the per-game `games/<g>/map.toml`
+//! region geometry; K5 retired the project-wide `sigil.map.toml`). The pure `MemoryMap`
+//! type stays in sigil-ir; deserialization lives here.
 
 use serde::Deserialize;
 use sigil_ir::map::{MemoryMap, Region, RegionKind};

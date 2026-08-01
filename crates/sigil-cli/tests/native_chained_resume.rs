@@ -118,7 +118,8 @@ fn build_chained(aeon: &PathBuf, debug: bool) -> Vec<u8> {
     assert!(real.is_empty(), "real drift guard fired: {:?}", real.first());
 
     let linked = sigil_link::link(&resolved, &stubs).unwrap_or_else(|d| panic!("link: {:?}", d.first()));
-    let map_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
+    // K5: the region geometry is the per-game map's (sigil.map.toml retired).
+    let map_path = aeon.join("games/sonic4/map.toml");
     let map = sigil_link::load_map(&std::fs::read_to_string(&map_path).unwrap()).unwrap();
     sigil_link::emit_rom(&linked, &map).unwrap_or_else(|e| panic!("emit_rom: {e}"))
 }
