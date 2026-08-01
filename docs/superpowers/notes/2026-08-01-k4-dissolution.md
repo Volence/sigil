@@ -365,3 +365,70 @@ over-count fires the comptime ensure) would harden the walls beyond the implicit
 build-path coverage; ledgered as a gap candidate, not built this stage (the walls are
 not easily forced without doctoring the terminus). engine.inc's `EndOfRom` orgs +
 label are the row-6-class scaffolding the skeleton deletion (inc-6) removes.
+
+### Stage 2 — P2 DAC probe — STOP (seam-2 model surprise; overseer countersign wanted)
+
+**STOP per the absolute seam-2 discipline** ("any surprise in the seam-2 pipeline is a
+STOP with a finding"). Grounded investigation of the DAC bank machinery found the
+ruling's core premise inaccurate — the `_BODY_STUB` "mixed harness" the exclusivity
+mechanism was to reconcile is VESTIGIAL. Nothing byte-corrupted; the STOP is at the
+design-premise level, before touching the fragile main.asm sound block.
+
+**The surprise (the corrected seam-2 model):**
+- `SIGIL_EMP_DAC_BODY_STUB` / `SIGIL_EMP_MT_BODY_STUB` / `SIGIL_EMP_SFX_BODY_STUB` are
+  referenced ONLY in `games/sonic4/main.asm`'s `ifdef` arms and are **set by NOTHING**
+  in sigil (grep-proof across `crates/`). Every whole-ROM build takes the `else`
+  (BINCLUDE) arm. The `_BODY_STUB` arms are dead code.
+- `native.rs` (assemble_as_side, sound-on) sets the BARE gates `SIGIL_EMP_DAC` /
+  `SIGIL_EMP_MT` / `SIGIL_EMP_SFX` = 1 — but main.asm consumes NONE of them (it checks
+  the `_BODY_STUB` variants). So the bare gates are set-but-unconsumed.
+- The note §5's description of the STUB arms as a live "mixed harness (mixed_dac_rom /
+  dac_port) in-memory composition" is inaccurate: `mixed_dac_rom.rs` does NOT exist;
+  `dac_port.rs` compiles `dac_samples.emp` in ISOLATION (its own two-region map), NOT
+  through main.asm's STUB arm in a whole-ROM build. So there is NO live in-memory
+  whole-ROM DAC composition to double-place against.
+- What the `_BODY_STUB` arm's CODE actually is: just `org $58000` — the AS-SKIP half
+  (position the cursor past the two-bank hole so the MT bank's `align $8000` lands at
+  $58000). It is exactly the "AS skips, native fills" path P2 needs, but gated by a
+  never-set symbol and MISSING its other half (the native section that fills $48000/
+  $50000). P2's real job is: add the native fill + activate the skip, NOT reconcile a
+  live in-memory composition.
+
+**Read-only viability PROVEN (so the recommended path is de-risked for countersign):**
+- `ensure_generated` emits `dac_blip_bank.bin` (2880 B) + `dac_shared_bank.bin`
+  (30908 B) (gitignored build artifacts, present at build time). Both are
+  BYTE-IDENTICAL to the reference ROM at $48000 / $50000; the inter/post-bank gaps
+  ($48B40..$50000, $578BC..$58000) are all-zero (map `fill = 0x00` reproduces them).
+- `build_emp`'s `include_root` + `embed_base` are the aeon root, so a native section
+  `embed("engine/sound/generated/dac_blip_bank.bin")` resolves; `ensure_generated`
+  runs before `build_emp` (build_rom_chained_with_listing:2105), so the .bin exists at
+  lower time — no cycle (dac_samples.emp → emit → .bin; dac_banks.emp → embed .bin).
+
+**Recommended P2 DAC wiring (for the overseer to countersign):**
+1. New module `games/sonic4/data/sound/dac_banks.emp` — two sections
+   `dac_blip_bank` (`pub data Dac_Temp_Blip = embed("…/dac_blip_bank.bin")`) and
+   `dac_shared_bank` (`Dac_SharedBank_Start` / `Dac_Kick = embed("…/dac_shared_bank.bin")`),
+   placed at the existing map anchors ($48000 / $50000, `when="sound_on"`).
+2. Registry + pins (DAC_BLIP_BANK / DAC_SHARED_BANK, anchored) + a gate + map order
+   heads (Dac_Temp_Blip already in the order list).
+3. main.asm DAC block: the `org $58000` skip becomes the ACTIVE native path; the
+   BINCLUDE arm DELETES (spec §6). The vestigial `_BODY_STUB` gate is retired.
+4. **The exclusivity mechanism (reframed):** with the BINCLUDE arm deleted and the
+   native section unconditional in sound-on, exclusivity is STRUCTURAL — can't-both
+   (no BINCLUDE to double-place), can't-neither (native section always present in
+   sound-on). The LOUD enforcement is the map anchor validation (`dac_blip_bank`
+   anchor @ $48000 already declared) + the whole-ROM byte gate + an emit-first
+   `dac_bank_port` golden gate (runs `ensure_generated`, then diffs [$48000,$58000)).
+   This is simpler than the ruling's "reconcile two live placements" because there is
+   only ONE live placement path.
+
+**Why STOP and not proceed:** (a) the ruling named "STUB-arm reconciliation" THE CORE
+Stage-2 deliverable and made the exclusivity mechanism a design requirement — but the
+reconciliation target is vestigial, so the mechanism's shape changes (structural, not
+a live-vs-live guard); this reframing should be blessed before it is baked into main.asm
+AND inherited by Stages 3/4 (MT/SFX, which share the pattern). (b) The change edits the
+most fragile surface (main.asm's `phase 08000h` sound block, the Z80-pointer banks);
+the ruled discipline is countersign-first there. (c) The bare-`SIGIL_EMP_DAC`-vs-
+`_BODY_STUB` gate choice + whether to fully delete vs keep-dead the BINCLUDE arm are
+real calls the exclusivity-mechanism ruling should own. Stages 3/4 (phased MT/SFX +
+soundBankHead) are held behind this — they inherit whatever mechanism Stage 2 sets.
