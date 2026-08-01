@@ -43,6 +43,7 @@ OJZ_Sec0_Blocks 0x14da6
 OJZ_Sec0_TypeTable 0x11d86
 ObjCodeBase 0x10000
 ObjDef_PathSwap 0x11202
+DeformTable_Zero 0x11294
 ObjDef_Static 0x11d1e
 PState_Air 0x10898
 PState_Ground 0x10448

@@ -254,6 +254,9 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         // reachable non-empty `"text"` producer — the sound data modules are
         // unreachable from this set).
         m!("games.sonic4.data.objdefs.test_objects", "text", pins::OBJDEFS),
+        // The OJZ parallax block (conv-g): 6 deform tables + 20 parallax_config
+        // records, authored via games.sonic4.parallax_configs (+ engine.level.parallax_dsl).
+        m!("games.sonic4.parallax_configs", "parallax_configs", pins::PARALLAX_CONFIGS),
         m!("games.sonic4.sonic_anims", "sonic_anims", pins::SONIC_ANIMS),
         m!("games.sonic4.particle_anims", "particle_anims", pins::PARTICLE_ANIMS),
         // act_descriptor (kill row 93): the OJZ act1 descriptor table; header stays
@@ -1040,7 +1043,7 @@ fn code_gate_defines() -> Vec<&'static str> {
         "SIGIL_EMP_SONIC", "SIGIL_EMP_TEST_STATIC", "SIGIL_EMP_TEST_ANIMATED",
         "SIGIL_EMP_TEST_OBJECTS", "SIGIL_EMP_TEST_EMITTER", "SIGIL_EMP_TEST_PARENT",
         "SIGIL_EMP_TEST_STRESS_EMITTER", "SIGIL_EMP_TEST_CHURN", "SIGIL_EMP_PATH_SWAP",
-        "SIGIL_EMP_OBJDEFS", "SIGIL_EMP_SONIC_ANIMS", "SIGIL_EMP_PARTICLE_ANIMS",
+        "SIGIL_EMP_OBJDEFS", "SIGIL_EMP_PARALLAX_CONFIGS", "SIGIL_EMP_SONIC_ANIMS", "SIGIL_EMP_PARTICLE_ANIMS",
         "SIGIL_EMP_OBJECT_TEST_STATE", "SIGIL_EMP_OJZ_SCROLL_TEST",
         // Stage-3 keystone flip (kill row 93): the last AS-owned code twins gate
         // off (bodies → `.emp`, always-emitted headers stay AS-side).
@@ -1150,6 +1153,7 @@ pub fn build_emp(
         "engine.vdp",
         "engine.irq",
         "engine.z80_bus",
+        "engine.level.parallax_dsl",
     ];
     publicize_helper_comptime(&mut manifest, COMPTIME_HELPERS);
     normalize_helper_imports(&mut manifest, COMPTIME_HELPERS, &[]);

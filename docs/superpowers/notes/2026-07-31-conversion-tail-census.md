@@ -309,7 +309,15 @@ the language round. **BN.** Effort M. → files: **21, 22, 24**.
 > = SFXID_SPINDASH` (a sound const → belongs with #24). So game.asm ships as a named
 > remainder (header/macros/Game_Entry/-D gates), NOT a flip.
 
-### Parcel G — the parallax config DSL · #36–45 (+ the macro layer)  [Wave-C SYNERGY]
+### Parcel G — the parallax config DSL · #36–45 (+ the macro layer)  [DONE 2026-08-01, conv-g branch — see notes/2026-08-01-conv-g-parallax.md]
+> **DONE (unmerged).** `parallax_macros.inc` → `engine/level/parallax_dsl.emp`
+> (comptime helper: FACTOR encoding + deform generators); the 10 config files →
+> `games/sonic4/data/parallax/configs.emp` (native, `PARALLAX_CONFIGS` pin). Six
+> targets byte-identical; strict 2868/0/4. Design gate: existing surfaces sufficed
+> (Appendix A ratified), NO new grammar — nested `ParallaxCfgN` wrapper struct is the
+> lowering-reality shape (relocations flow through the data-item type, so the spec's
+> `Struct ++ Array` sketch became a typed nested struct). #36–45 + macro layer all retired.
+
 Sequence AFTER Wave C (row-35 parallax hardening, ledger 1825) so the port lands
 on the hardened engine, not the harness-force-write shape. Express
 `parallax_macros.inc` (deform_table_sine, parallax_config, band macros) as `.emp`
