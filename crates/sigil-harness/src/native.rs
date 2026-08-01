@@ -2211,7 +2211,7 @@ pub fn build_rom_chained_with_listing(
     let pmap = crate::map_placement::load_placement_map(&map_src)
         .map_err(|e| format!("placement {}: {e}", map_path.display()))?;
     validate_placement(&resolved, &pmap, profile.sound_on)?;
-    check_object_bank_budget(&resolved, &map)?;
+    check_object_bank_budget(&resolved, &map, &pmap)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))?;
     Ok((rom, listing))
 }
@@ -2460,9 +2460,11 @@ pub fn build_native_rom_with_listing(
         .map_err(|d| format!("link: {} diag(s); first: {:?}", d.len(), d.first()))?;
 
     let map_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sigil.map.toml");
-    let map = sigil_link::load_map(&std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?)
-        .map_err(|e| format!("load sigil.map.toml: {e}"))?;
-    check_object_bank_budget(&resolved, &map)?;
+    let map_src = std::fs::read_to_string(&map_path).map_err(|e| e.to_string())?;
+    let map = sigil_link::load_map(&map_src).map_err(|e| format!("load sigil.map.toml: {e}"))?;
+    let pmap = crate::map_placement::load_placement_map(&map_src)
+        .map_err(|e| format!("placement sigil.map.toml: {e}"))?;
+    check_object_bank_budget(&resolved, &map, &pmap)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("emit_rom: {e}"))?;
     Ok((rom, listing))
 }
@@ -2557,14 +2559,18 @@ pub fn resolve_pinned_sections(aeon: &Path, debug: bool) -> Result<Vec<Section>,
     })
 }
 
-/// The object code bank's used cursor = the resolved LMA of `__BUDGET_DATA`, the engine
-/// marker (`engine.inc`) at the object bank's end / data region start. `None` if absent
-/// (a game without the marker). `ObjCodeBase`/`__BUDGET_OBJBANK` sit at the bank BASE;
-/// this cursor is the bank TERMINUS the `if * > $20000` guard checked.
-pub fn object_bank_cursor(resolved: &[Section]) -> Option<u32> {
+/// The object code bank's used cursor = the resolved LMA of the map-declared budget
+/// cursor label (`cursor_head`, e.g. `DeformTable_Zero`) — the head of the first section
+/// PAST the object bank, whose start IS the bank terminus (object code ends where the data
+/// region begins; they pack contiguously). This is the map-owned successor to the retired
+/// `engine.inc` `__BUDGET_DATA` marker (K4 inc-6B): the object bank and the data region
+/// share the `[$10000,$20000)` window and the data region extends BEYOND it, so an LMA
+/// window scan cannot separate them — only the declared boundary label can. `None` if the
+/// label is absent from the resolved layout (a game that declares no cursor).
+pub fn object_bank_cursor(resolved: &[Section], cursor_head: &str) -> Option<u32> {
     for s in resolved {
         for l in &s.labels {
-            if l.name == "__BUDGET_DATA" {
+            if l.name == cursor_head {
                 return Some(s.lma.wrapping_add(l.offset));
             }
         }
@@ -2572,17 +2578,30 @@ pub fn object_bank_cursor(resolved: &[Section]) -> Option<u32> {
     None
 }
 
-/// Enforce the object-code-bank budget the map's `object_bank` region declares: the
-/// `__BUDGET_DATA` cursor must not exceed `lma_base + size` (`$20000`). Returns the used
-/// byte count. A missing region or marker is a no-op (`Ok(0)`) — additive, so this is
+/// The `object_bank` budget's declared cursor head-label from a placement map, if any.
+fn object_bank_cursor_head(pmap: &crate::map_placement::PlacementMap) -> Option<&str> {
+    pmap.budgets
+        .iter()
+        .find(|b| b.region == "object_bank")
+        .and_then(|b| b.cursor.as_deref())
+}
+
+/// Enforce the object-code-bank budget the map's `object_bank` region declares: the used
+/// cursor (the resolved LMA of the placement map's declared budget cursor label) must not
+/// exceed `lma_base + size` (`$20000`). Returns the used byte count. A missing region,
+/// undeclared cursor, or absent cursor label is a no-op (`Ok(0)`) — additive, so this is
 /// the map-owned successor to `engine.inc`'s `if * > $20000 / error`, not a new gate that
 /// can spuriously fail a game that declares neither. Runs on every native build (both the
 /// pinned canonical driver and the off-canonical chainer feed it their resolved sections).
 pub fn check_object_bank_budget(
     resolved: &[Section],
     map: &sigil_ir::map::MemoryMap,
+    pmap: &crate::map_placement::PlacementMap,
 ) -> Result<u32, String> {
-    match object_bank_cursor(resolved) {
+    let Some(head) = object_bank_cursor_head(pmap) else {
+        return Ok(0);
+    };
+    match object_bank_cursor(resolved, head) {
         Some(cursor) => map.check_budget("object_bank", cursor),
         None => Ok(0),
     }
