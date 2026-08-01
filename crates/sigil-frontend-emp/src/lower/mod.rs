@@ -286,6 +286,8 @@ fn lower_module_inner(
                         defines: &opts.defines,
                     },
                     as_compat,
+                    &module_id,
+                    &mut here_anchor_counter,
                     &mut builder,
                     &mut diags,
                 );
@@ -605,7 +607,9 @@ fn lower_section_items(
     for (index, item) in sec.items.iter().enumerate() {
         match item {
             ast::Item::Data(decl) => {
-                lower_data_item(file, decl, placement, as_compat, builder, diags);
+                lower_data_item(
+                    file, decl, placement, as_compat, module_id, here_anchor_counter, builder, diags,
+                );
             }
             ast::Item::Offsets(decl) => {
                 lower_offsets_item(file, decl, placement, as_compat, builder, diags);
@@ -834,24 +838,52 @@ fn lower_align_item(
         },
     };
 
-    // An EXPLICIT `align N` item: a counted, reviewable structural guard.
-    emit_align_pad(origin, module_id, anchor_counter, n, decl.span, false, builder, diags);
+    // An EXPLICIT `align N` item: a counted, reviewable structural guard. A bare
+    // `align` NEVER opts into the relaxation-invariant path — its provisional
+    // wall stands (L3: the per-DATA-item `(align: N)` is the relaxation-aware
+    // form; the top-level directive keeps v1 semantics).
+    emit_align_pad(origin, module_id, anchor_counter, n, decl.span, false, false, builder, diags);
+}
+
+/// The guaranteed relaxation granularity of a CPU's instruction stream — the GCD
+/// of every size-relaxable fragment's rung-to-rung byte delta (L3). Every m68k
+/// encoding is even-length (`bra.s`→`bra.w`, `abs.w`→`abs.l`, the `jbra` ladder
+/// all grow by 2), so a 68k section's positions can only shift by MULTIPLES OF 2
+/// under relaxation — their parity is invariant. A Z80 stream can grow by 1
+/// (`jr`→`jp`), so nothing finer than a whole byte is guaranteed. An alignment
+/// `N` is relaxation-INVARIANT iff `N` divides this granularity: the baseline pad
+/// then equals the final pad no matter how earlier relaxables settle.
+fn relax_granularity(cpu: Cpu) -> u32 {
+    match cpu {
+        Cpu::M68000 => 2,
+        Cpu::Z80 => 1,
+    }
 }
 
 /// Emit one alignment pad (D2.29): refuse a provisional position, `$00`-fill the
 /// lowering-baseline position up to the next multiple of `n`, then define a
 /// hidden congruence anchor and record the link-time `anchor % n == 0` assert
 /// (so a final placement that breaks the alignment fails loudly). Shared by
-/// [`lower_align_item`] (`align N`) and [`lower_table_item`] (`item_align: N`,
-/// the self-adjusting pad after every emitted part) so the two use the identical
-/// machinery — the design's byte-neutral guarantee.
+/// [`lower_align_item`] (`align N`), [`lower_table_item`] (`item_align: N`, the
+/// self-adjusting pad after every emitted part), and [`lower_data_item`]
+/// (per-item `(align: N)`) so all three use the identical machinery — the
+/// design's byte-neutral guarantee.
 ///
 /// `structural` tags the congruence assert `[layout.align]` when the pad is an
-/// IMPLICIT one — a `table item_align:` pad, of which there is one per part
-/// (many): those are layout invariants, not user drift guards, so the harness
-/// excludes them from `guard_assert_count` (parity with `[layout.odd-item]`). An
-/// EXPLICIT `align N` item stays an untagged, counted structural guard (one,
-/// reviewable), preserving the established twin-guard accounting.
+/// IMPLICIT/layout one — a `table item_align:` pad (one per part, many) or a
+/// per-DATA-item `(align: N)`: those are layout invariants, not user twin-drift
+/// guards, so the harness excludes them from `guard_assert_count` (parity with
+/// `[layout.odd-item]`). An EXPLICIT top-level `align N` item stays an untagged,
+/// counted structural guard (one, reviewable), preserving the established
+/// twin-guard accounting.
+///
+/// `relax_invariant` lets a caller assert that a size-relaxable fragment earlier
+/// in the section CANNOT move this pad — true only when the alignment divides the
+/// section's relaxation granularity ([`relax_granularity`]), so the parity/
+/// congruence computed at the lowering baseline survives relaxation exactly. When
+/// true the provisional refusal is skipped and the eager pad is emitted; the
+/// link-time congruence assert still backstops the final address. Bare `align`
+/// passes `false` (its wall is unchanged).
 #[allow(clippy::too_many_arguments)]
 fn emit_align_pad(
     origin: u32,
@@ -860,6 +892,7 @@ fn emit_align_pad(
     n: u32,
     span: Span,
     structural: bool,
+    relax_invariant: bool,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -868,14 +901,17 @@ fn emit_align_pad(
 
     // A size-relaxable fragment earlier in the section makes this position
     // provisional — v1 refuses (D2.29; the link-time gap-fill fragment is the
-    // recorded S2-D16(c) extension if code ports demand it).
-    if builder.section_has_relaxable() {
+    // recorded S2-D16(c) extension if code ports demand it). A per-item
+    // `(align: N)` whose `N` divides the relaxation granularity is EXEMPT: its pad
+    // parity cannot shift under relaxation, so the eager pad is exact.
+    if builder.section_has_relaxable() && !relax_invariant {
         err(
             diags,
             span,
             "[align.provisional] alignment pad at a provisional position (a size-relaxable \
              instruction sits earlier in this section) — pin the earlier branch sizes \
-             (`bra.w`/`bra.s`) or move the item"
+             (`bra.w`/`bra.s`), move the item, or use a per-item `(align: N)` whose N is \
+             relaxation-invariant (word alignment on 68k)"
                 .to_string(),
         );
         return;
@@ -1072,7 +1108,6 @@ fn buf_carries_words(buf: &crate::value::DataBuf) -> bool {
 /// drained onto the builder (the linker decides them post-relaxation). A deferred
 /// guard NEVER stops lowering (D-H.7: lowering already finished) — only a
 /// comptime-exact fatal guard does. Returns `false` only for that comptime abort.
-#[allow(clippy::too_many_arguments)] // internal driver; mirrors lower_module's state set
 #[allow(clippy::too_many_arguments)] // `contracts` joins the threaded state (L1 P2)
 fn lower_item_guard(
     file: &ast::File,
@@ -1115,11 +1150,14 @@ fn lower_item_guard(
 /// the item's start VMA = `origin + current_offset`, and `embed`/`import` paths
 /// resolving against `placement.include_root`), serialize it in `placement.cpu`'s
 /// byte order, then define its label and emit the bytes.
+#[allow(clippy::too_many_arguments)] // internal driver; mirrors lower_module's state set
 fn lower_data_item(
     file: &ast::File,
     decl: &ast::DataDecl,
     placement: &Placement,
     as_compat: bool,
+    module_id: &str,
+    anchor_counter: &mut u32,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -1129,6 +1167,16 @@ fn lower_data_item(
     // real item's bytes are emitted once, by its defining module.
     if decl.type_only {
         return;
+    }
+    // Per-item `(align: N)` (L3): pin THIS item's base to an N-byte boundary
+    // BEFORE `here`/the label are taken, so a `here()` inside the initializer and
+    // the item's own label both read the aligned address. The pad self-adjusts to
+    // whatever precedes the item (independent alignment); a relaxation-invariant N
+    // (word alignment on the even-length m68k ISA) survives earlier relaxable code.
+    if let Some(align_expr) = &decl.align {
+        lower_data_align(
+            file, decl, align_expr, placement, module_id, anchor_counter, builder, diags,
+        );
     }
     let here = here_pos(builder, placement.origin, &decl.name);
     let (buf, asserts, mut ds) = eval_data_with_root_and_base(
@@ -1164,6 +1212,64 @@ fn lower_data_item(
     for a in asserts {
         builder.push_link_assert(a);
     }
+}
+
+/// Emit a per-DATA-item `(align: N)` pad (L3): evaluate `N` (a positive comptime
+/// int) and pad the cursor to the next `N`-byte boundary via [`emit_align_pad`]
+/// with the STRUCTURAL tag (a layout invariant, excluded from `guard_assert_count`
+/// like a `table item_align:` pad). The pad is RELAXATION-INVARIANT when `N`
+/// divides the section's [`relax_granularity`] — the only case that survives a
+/// size-relaxable fragment earlier in the section (word alignment on the
+/// even-length m68k ISA is the corpus demand: the pad's parity cannot shift when
+/// every relaxation delta is a multiple of 2). A coarser `N` past relaxable code
+/// still hits the provisional wall (the general relaxation-aware-`align` fixpoint
+/// is ledgered separately). The link-time congruence assert `emit_align_pad`
+/// records backstops the FINAL address in every case.
+#[allow(clippy::too_many_arguments)]
+fn lower_data_align(
+    file: &ast::File,
+    decl: &ast::DataDecl,
+    align_expr: &ast::Expr,
+    placement: &Placement,
+    module_id: &str,
+    anchor_counter: &mut u32,
+    builder: &mut IrBuilder,
+    diags: &mut Vec<Diagnostic>,
+) {
+    use crate::value::Value;
+    let value = crate::eval::run_on_eval_stack(|| {
+        let mut ev = crate::eval::Evaluator::with_file(file);
+        ev.seed_defines(placement.defines);
+        if let Some(root) = placement.include_root {
+            ev.set_include_root(root.to_path_buf());
+        }
+        let mut env = crate::eval::Env::new();
+        let v = ev.eval_expr(align_expr, &mut env);
+        diags.append(&mut ev.diags);
+        v
+    });
+    let n: u32 = match value {
+        Value::Poison => return, // already reported upstream
+        v => match v.as_stored_int() {
+            Some(n) if n > 0 && n <= u32::MAX as i128 => n as u32,
+            _ => {
+                err(diags, decl.span, "`align` needs a positive comptime int".to_string());
+                return;
+            }
+        },
+    };
+    let relax_invariant = relax_granularity(placement.cpu).is_multiple_of(n);
+    emit_align_pad(
+        placement.origin,
+        module_id,
+        anchor_counter,
+        n,
+        decl.span,
+        true,
+        relax_invariant,
+        builder,
+        diags,
+    );
 }
 
 /// Lower one `offsets` block (Spec 2, Plan 7 backlog #3 — Task 6, the FORWARD
@@ -1278,8 +1384,11 @@ fn emit_table_part(
     emit_table_buf(file, &part.buf, part.label.as_deref(), placement, as_compat, part.span, builder, diags);
     if let Some(n) = item_align {
         // Implicit per-part pads: STRUCTURAL (tagged `[layout.align]`, not a
-        // counted user drift guard).
-        emit_align_pad(placement.origin, module_id, anchor_counter, n, part.span, true, builder, diags);
+        // counted user drift guard). Table bodies carry no relaxables, so the
+        // provisional wall is unchanged here (`relax_invariant = false`).
+        emit_align_pad(
+            placement.origin, module_id, anchor_counter, n, part.span, true, false, builder, diags,
+        );
     }
 }
 
