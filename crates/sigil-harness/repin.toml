@@ -49,6 +49,16 @@ start = "GameHeader"
 end = "EntryPoint"
 tests = ["header_port"]
 
+# Parcel K4 — the collision/character data island (HeightMaps .. Art_Sonic end).
+# No gate: no AS twin (the BINCLUDEs were deleted from main.asm). Literal len (the
+# blobs are fixed-size, shape-invariant); the next placement is $8000-aligned pad
+# to the DAC bank, so no end label sits at the island's true end.
+[[region]]
+name = "collision_data"
+start = "HeightMaps"
+len = 0x1C480
+tests = ["collision_data_port"]
+
 [[region]]
 # Tranche 23 — the boot sequence (EntryPoint/Warm/Cold fall-through chain).
 # End is the data tail's head: boot_data.asm's BootData table (the .emp
