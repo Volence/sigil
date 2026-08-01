@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 58 regions, 314 symbols, 7 offsets
+//! [provenance] 60 regions, 309 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +50,12 @@ pub const VECTORS: Region = Region { plain_base: 0x0, debug_base: 0x0, plain_len
 
 /// `EntryPoint` .. `BootData` — gate `SIGIL_EMP_BOOT`. tests: boot_port
 pub const BOOT: Region = Region { plain_base: 0x200, debug_base: 0x200, plain_len: 0x1A8, debug_len: 0x1AC };
+
+/// `BootData` .. `BootData_PostBlob`. tests: boot_data_port
+pub const BOOT_HEAD: Region = Region { plain_base: 0x3A8, debug_base: 0x3AC, plain_len: 0x1852, debug_len: 0x18D0 };
+
+/// `BootData_PostBlob` .. `BootData_End`. tests: boot_data_port
+pub const BOOT_TAIL: Region = Region { plain_base: 0x1BFA, debug_base: 0x1C7C, plain_len: 0xE, debug_len: 0xE };
 
 /// `VDP_Shadow_Init` .. `Init_DMA_Queue` — gate `SIGIL_EMP_VDP_INIT`. tests: vdp_init_port
 pub const VDP_INIT: Region = Region { plain_base: 0x1C08, debug_base: 0x1C8A, plain_len: 0x4A, debug_len: 0x4A };

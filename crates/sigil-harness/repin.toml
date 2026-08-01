@@ -54,6 +54,27 @@ gate = "SIGIL_EMP_BOOT"
 tests = ["boot_port"]
 
 [[region]]
+# Parcel K2 — the BootData table head (engine/system/boot_data.emp). Ungated
+# (boot_data has no `.asm` twin — it is unconditionally native). Sound-on: head
+# (54 B) + the resident driver blob; sound-off: the 54-byte head alone, then the
+# engine.z80_init idle packs the $3d8..$3fe hole before boot_tail. end is the
+# tail's head (BootData_PostBlob).
+name = "boot_head"
+start = "BootData"
+end = "BootData_PostBlob"
+tests = ["boot_data_port"]
+
+[[region]]
+# Parcel K2 — the BootData table tail (PSG silence + post-DMA commands). Resumes
+# at $3fe in the no-sound shapes (the $3FE map hole's post-fill address), directly
+# after the blob in sound-on. end = BootData_End (the table's one-past terminus,
+# == VDP_Shadow_Init's base — boot_tail abuts it).
+name = "boot_tail"
+start = "BootData_PostBlob"
+end = "BootData_End"
+tests = ["boot_data_port"]
+
+[[region]]
 name = "vdp_init"
 start = "VDP_Shadow_Init"
 end = "Init_DMA_Queue"
