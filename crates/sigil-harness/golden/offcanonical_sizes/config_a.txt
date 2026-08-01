@@ -7,10 +7,10 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=config_a
 # reproduces_golden=config_a.bin
-# golden_crc32=0b384578
+# golden_crc32=b3ce9e67
 # assembled_anchor=19b793ec
 # assembled_end=0x5f5f2
-# labels=75
+# labels=79
 Ani_Particle 0x257ce
 Ani_Particle_End 0x257d6
 Ani_Sonic 0x25760
@@ -30,6 +30,7 @@ Collected_Init 0x3bf8
 Collision_GetType 0x5e60
 Collision_ProbeDown 0x5ec8
 CompressionSelfTest 0x724e
+Dac_Temp_Blip 0x48000
 Debug_MusicToggle 0x63d0
 DeformTable_Zero 0x11310
 EndOfRom 0x5f5f2
@@ -67,7 +68,10 @@ Read_Controllers 0x23c8
 RingBuffer_Add 0x39e4
 S4LZ_DecompressDict 0x2454
 Section_Init 0x6490
+Sfx_33 0x5d53a
+Song_MovingTrucks 0x58607
 Sonic_InitAssets 0x10c10
+SoundTablesZ80_Head 0x58000
 Sound_DebugMirror 0x8290
 Sound_PostByte 0x7ed8
 TestAnimated 0x10c54

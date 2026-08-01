@@ -243,6 +243,11 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         // ── Engine debug / sound caller ──
         m!("engine.sound_api", "sound_api", pins::SOUND_API),
         m!("engine.debug.error_handler", "error_handler", pins::ERROR_HANDLER),
+        // Parcel K4 B1: the ROM terminus (EndOfRom + the 3 walls), was engine.inc's
+        // `EndOfRom:` label + the `if … error` guards. Zero-length section placed
+        // LAST (boundary key EndOfRom, already frozen in all six tables). The plane
+        // wall is a comptime ensure; EndOfRom evenness/4MB are link-time asserts.
+        m!("engine.epilogue", "epilogue", pins::EPILOGUE),
         // ── Game player ──
         // player_common fully flipped (conv-d #49): player_common.asm deleted. The
         // module owns the PlayerV overlay + PPHYS_*/macro templates (state files
@@ -311,6 +316,25 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         // Art_Sonic), was the flat BINCLUDE island at the tail of main.asm's
         // gameDataIncludes. Native `embed()` section; boundary key HeightMaps.
         m!("games.sonic4.collision_data", "collision_data", pins::COLLISION_DATA),
+        // Parcel K4 inc-5 Stage 2 (P2 DAC probe): the DAC sample banks are native —
+        // dac_banks.emp embeds the seam-2 dac_blip_bank.bin @ $48000 + dac_shared_bank.bin
+        // @ $50000 (the .bin ensure_generated emits). Sound-ON ONLY: filtered out of the
+        // sound-off config_b (demo_registry already excludes it via the engine.* filter).
+        m!("games.sonic4.dac_banks", "dac_banks", pins::DAC_BANKS),
+        // Parcel K4 inc-5 Stage 3 (P2 MT probe): the Moving-Trucks streaming bank body
+        // is native — mt_bank_blob.emp embeds the seam-2 mt_bank{,_debug}.bin @ $58607
+        // (after the phased soundBankHead; non-phased LMA labels). Sound-ON only.
+        m!("games.sonic4.mt_bank_blob", "mt_bank_blob", pins::MT_BANK_BLOB),
+        // Parcel K4 inc-5 Stage 4 (P2 SFX probe): the SFX block is native —
+        // sfx_bank_blob.emp embeds the seam-2 sfx_bank{,_debug}.bin after the MT body
+        // (non-phased LMA; no cross-seam labels). Sound-ON only.
+        m!("games.sonic4.sfx_bank_blob", "sfx_bank_blob", pins::SFX_BANK_BLOB),
+        // Parcel K4 inc-5 Stage 4b (P2 soundBankHead probe): the engine-table bank HEAD
+        // is native — soundbankhead.emp places the 5 heads as a PHASE-BANK section (vma
+        // $8000, lma $58000). Was the soundBankHead macro (sound_bank.inc, deleted). The
+        // FIRST native phase-bank section (the bank-anchor rule: labeled $8000-window
+        // head, hard org, never repacks). Sound-ON only.
+        m!("games.sonic4.soundbankhead", "soundbankhead", pins::SOUNDBANKHEAD),
         // ── Game test states ──
         m!("games.sonic4.object_test_state", "object_test_state", pins::OBJECT_TEST_STATE),
         m!("games.sonic4.ojz_scroll_test", "ojz_scroll_test", pins::OJZ_SCROLL_TEST),
@@ -343,6 +367,7 @@ fn demo_code_gates(debug: bool) -> Vec<&'static str> {
         "SIGIL_EMP_LOAD_OBJECT", "SIGIL_EMP_PLANE_BUFFER", "SIGIL_EMP_TILE_CACHE",
         "SIGIL_EMP_COLLISION_LOOKUP", "SIGIL_EMP_SECTION", "SIGIL_EMP_CAMERA", "SIGIL_EMP_PARALLAX",
         "SIGIL_EMP_LOAD_ART", "SIGIL_EMP_BG", "SIGIL_EMP_BG_ANIM", "SIGIL_EMP_ERROR_HANDLER",
+        "SIGIL_EMP_EPILOGUE",
     ];
     if debug {
         g.push("SIGIL_EMP_COMPRESSION_SELFTEST");
@@ -535,8 +560,18 @@ const DUMMY_REGION: Region =
 /// takes the numeric-size path and `z80_init.emp`'s `z80_idle` section places at the
 /// frozen `Z80_IdleProgram` base (0x3d8). Sizes from `config_b.txt`.
 pub fn config_b_profile() -> GameProfile {
-    let mut registry: Vec<ModuleSpec> =
-        registry(false).into_iter().filter(|m| m.module_id != "engine.sound_api").collect();
+    // Config-B is SOUND-OFF: drop the sound caller AND the sound-on-only DAC banks
+    // (dac_banks.emp; its .bin are emitted only in sound-on builds — ensure_generated).
+    let mut registry: Vec<ModuleSpec> = registry(false)
+        .into_iter()
+        .filter(|m| {
+            m.module_id != "engine.sound_api"
+                && m.module_id != "games.sonic4.dac_banks"
+                && m.module_id != "games.sonic4.mt_bank_blob"
+                && m.module_id != "games.sonic4.sfx_bank_blob"
+                && m.module_id != "games.sonic4.soundbankhead"
+        })
+        .collect();
     registry.push(ModuleSpec {
         module_id: "engine.z80_init",
         section: "z80_idle",
@@ -1055,7 +1090,7 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
     let mut defines: Vec<(String, i64)> = harvest_engine_ram_addresses(aeon, profile)?;
     if profile.sound_on {
         defines.push(("SOUND_DRIVER_ENABLED".to_string(), 1));
-        for g in ["SIGIL_EMP_DAC", "SIGIL_EMP_MT", "SIGIL_EMP_SFX"] {
+        for g in ["SIGIL_EMP_DAC", "SIGIL_EMP_MT", "SIGIL_EMP_SFX", "SIGIL_EMP_SOUNDBANKHEAD"] {
             defines.push((g.to_string(), 1));
         }
     }
@@ -1111,7 +1146,8 @@ fn code_gate_defines() -> Vec<&'static str> {
         "SIGIL_EMP_LOAD_OBJECT", "SIGIL_EMP_PLANE_BUFFER", "SIGIL_EMP_TILE_CACHE",
         "SIGIL_EMP_COLLISION_LOOKUP", "SIGIL_EMP_SECTION", "SIGIL_EMP_CAMERA", "SIGIL_EMP_PARALLAX",
         "SIGIL_EMP_LOAD_ART", "SIGIL_EMP_BG", "SIGIL_EMP_BG_ANIM", "SIGIL_EMP_COMPRESSION_SELFTEST",
-        "SIGIL_EMP_SOUND_API", "SIGIL_EMP_ERROR_HANDLER", "SIGIL_EMP_PLAYER_SENSORS",
+        "SIGIL_EMP_SOUND_API", "SIGIL_EMP_ERROR_HANDLER", "SIGIL_EMP_EPILOGUE",
+        "SIGIL_EMP_PLAYER_SENSORS",
         "SIGIL_EMP_PLAYER_GROUND", "SIGIL_EMP_PLAYER_AIR", "SIGIL_EMP_PLAYER_SPINDASH",
         "SIGIL_EMP_SONIC", "SIGIL_EMP_TEST_STATIC", "SIGIL_EMP_TEST_ANIMATED",
         "SIGIL_EMP_TEST_OBJECTS", "SIGIL_EMP_TEST_EMITTER", "SIGIL_EMP_TEST_PARENT",

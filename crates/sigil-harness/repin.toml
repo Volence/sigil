@@ -632,6 +632,68 @@ end = "EndOfRom"
 gate = "SIGIL_EMP_ERROR_HANDLER"
 tests = ["error_handler_port"]
 
+# Parcel K4 inc-5 Stage 2 — the DAC sample banks, native (dac_banks.emp embeds the
+# seam-2 dac_blip_bank.bin @ $48000 + dac_shared_bank.bin @ $50000). Literal len
+# (the .bin are fixed-size, shape-invariant; the span includes the inter-bank $8000
+# pad, and the next placement is the $58000 MT bank across a gap — no end label at
+# the island's true end). gate SIGIL_EMP_DAC holes out the AS residual's org-skip.
+[[region]]
+name = "dac_banks"
+start = "Dac_Temp_Blip"
+len = 0xF8BC
+gate = "SIGIL_EMP_DAC"
+tests = ["dac_bank_port"]
+
+# Parcel K4 inc-5 Stage 3 — the Moving-Trucks streaming bank BODY, native
+# (mt_bank_blob.emp embeds the seam-2 mt_bank{,_debug}.bin @ $58607, after the phased
+# soundBankHead). Shape-INVARIANT start ($58607), shape-DEPENDENT size (debug adds
+# DrumTest + HCZ2): literal len 0x34E1 plain, debug_len 0x4F33. No end label (the SFX
+# block follows at a per-shape address). gate SIGIL_EMP_MT holes out the AS org-skip.
+[[region]]
+name = "mt_bank_blob"
+start = "Song_MovingTrucks"
+len = 0x34E1
+debug_len = 0x4F33
+gate = "SIGIL_EMP_MT"
+tests = ["mt_bank_port"]
+
+# Parcel K4 inc-5 Stage 4 — the SFX block, native (sfx_bank_blob.emp embeds the seam-2
+# sfx_bank{,_debug}.bin, after the native MT body). Shape-INVARIANT size (0x748 both),
+# shape-DEPENDENT start ($5BAE8 plain / $5D53A debug — the MT body before it differs).
+# Literal len (no end label; nothing byte-emitting follows in the sound macro). gate
+# SIGIL_EMP_SFX holes out the AS org-skip.
+[[region]]
+name = "sfx_bank_blob"
+start = "Sfx_33"
+len = 0x748
+gate = "SIGIL_EMP_SFX"
+tests = ["sfx_bank_port"]
+
+# Parcel K4 inc-5 Stage 4b — the engine-table bank HEAD, native (soundbankhead.emp
+# places the 5 heads as a PHASE-BANK section, LMA $58000 / VMA $8000). Was the
+# soundBankHead macro (sound_bank.inc, DELETED). Literal len 0x607 (the head is
+# $8000..$8607 contiguous; shape-invariant size, shape-dependent content). gate
+# SIGIL_EMP_SOUNDBANKHEAD holes out the AS phase block + org-skip. start
+# SoundTablesZ80_Head (already a frozen key + the `sound_bank` map anchor).
+[[region]]
+name = "soundbankhead"
+start = "SoundTablesZ80_Head"
+len = 0x607
+gate = "SIGIL_EMP_SOUNDBANKHEAD"
+tests = ["soundbankhead_port"]
+
+# Parcel K4 B1 — the ROM terminus (engine.epilogue). A zero-length section whose
+# head label EndOfRom is the ROM one-past-the-end. `len = 0` literal (nothing
+# follows it — it IS the end). gate SIGIL_EMP_EPILOGUE holes out engine.inc's
+# AS-side EndOfRom label + the two address walls (the plane wall + EndOfRom
+# evenness/4MB are the module's ensures now).
+[[region]]
+name = "epilogue"
+start = "EndOfRom"
+len = 0x0
+gate = "SIGIL_EMP_EPILOGUE"
+tests = ["m1d_rom", "m1d_debug_rom"]
+
 # objdef byte gate cross-seam symbols: the four routine labels (code_addr =
 # label − ObjCodeBase) + the mappings pointer, resolved to their true VMAs so
 # the .emp records match the reference ROM windows.

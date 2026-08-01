@@ -282,10 +282,13 @@ the map for the dedicated sound-bank pass, and hold the skeleton deletion behind
 - **`games/sonic4/main.asm` + `games/demo/main.asm` + `engine/engine.inc` DELETED:**
   ❌ NOT YET — blocked on the sound-bank native placement (§5): main.asm's
   `gameSoundDataIncludes` BINCLUDEs (DAC/MT/SFX) have no `.emp` home until the seam-2
-  banks are natively placed. engine.inc still owns EndOfRom (B1 pending) + the org
-  ladder + the `sound_bank.inc`/`debugger.asm` includes.
+  banks are natively placed. engine.inc no longer owns EndOfRom (B1 DONE, inc-5
+  Stage 1 — `engine.epilogue` native) but still carries the org ladder + the
+  `sound_bank.inc`/`debugger.asm` includes.
 - **`engine/system/header.inc` ported:** ✅ TRUE (K4 inc-2 → games/*/config/header.emp).
-- **`engine/sound/sound_bank.inc` ported:** ❌ NOT YET (§5, the phase-bank head).
+- **`engine/sound/sound_bank.inc` ported:** ✅ TRUE (K4 inc-5 Stage 4b →
+  games/sonic4/data/sound/soundbankhead.emp, the first native phase-bank section;
+  sound_bank.inc DELETED). The whole sound bank is native (DAC+MT+SFX bodies + head).
 - **The 106 inert orgs die with their files:** PARTIAL — the OJZ orgs (K3), the header
   org, and the collision org are retired/inert; the sound + engine-ladder orgs remain
   until the skeleton deletion.
@@ -300,3 +303,330 @@ sound-bank seam-2 native-placement pass (§5), which gates the main.asm/engine.i
 deletion. Recommended inc-5 shape: (1) the dedicated sound-bank pass (P2 DAC probe →
 phased MT/SFX/soundBankHead, seam-2 harness in view), then (2) B1 epilogue + A1 stubs
 + the skeleton deletion.
+
+## Increment 5 — the sound-bank pass + B1 epilogue (in progress)
+
+**Porter: Opus (k4-inc5 branch, aeon + sigil worktree). Overseer/spec owner: Fable.**
+Spec §6 (the ruled P2 staged path). Sequenced: Stage 1 B1 epilogue (bank-independent
+warm-up) → Stage 2 P2 DAC probe → Stage 3 MT bank → Stage 4 SFX bank + soundBankHead.
+Each its own commit; STOP anywhere the fragile phase-bank surface fights.
+
+### Stage 1 — B1 epilogue (`engine.epilogue`) — DONE, six-target byte-identical
+
+`EndOfRom` + the three ROM-tail walls left `engine.inc` for a native `.emp` module,
+`engine/system/epilogue.emp` (`module engine.epilogue in epilogue`):
+
+- **`pub data EndOfRom = Data.empty`** — the zero-length terminus label, placed LAST.
+  Its boundary key `EndOfRom` is already frozen in all six tables, so the chainer keys
+  the terminus off it; it packs a zero-length section abutting `error_handler`'s tail
+  (`error_handler` still ends exactly at `EndOfRom`). `header.emp`'s `rom_end =
+  extern("EndOfRom") - 1` resolves cross-seam to the native label unchanged.
+- **The walls split by their nature (the B1 ruling: link-time, not comptime):**
+  - `PLANE_H_CELLS * PLANE_V_CELLS <= 4096` is a COMPTIME fact (pure constants) → a
+    comptime `ensure` (`use engine.constants.{PLANE_H_CELLS, PLANE_V_CELLS}`).
+  - `EndOfRom` evenness and the 4 MB ceiling depend on the PLACED address → LINK-time
+    asserts: `ensure((extern("EndOfRom") & 1) == 0, …)` and `ensure(extern("EndOfRom")
+    <= $3FFFFF, …)` defer to `LinkAssert`s (D-H.4), checked by the chainer against the
+    resolved layout (`check_link_asserts`, the vdp/parallax/sound_api ensure-over-extern
+    precedent). They evaluate true in every whole-ROM build (implicit non-vacuity: a
+    malformed assert fails the build).
+- **engine.inc:** the `EndOfRom:` label + the three `if … error` guards + the inert
+  `org $5DB60/$5F65A` resume are holed out behind `ifndef SIGIL_EMP_EPILOGUE` (the
+  gate is set in every native build; the block is the asl-less fallback, never taken).
+- **Registry/pins:** `engine.epilogue`/`epilogue` in `registry()` (rides into
+  demo_registry via the `engine.*` filter; config_a/b via `registry()`); code gate
+  `SIGIL_EMP_EPILOGUE` (sonic4 + demo gate lists); pin `EPILOGUE` (repin.toml region
+  `start = EndOfRom`, `len = 0`; pins.rs `plain_base 0x5DB00 / debug_base 0x5F5F2 /
+  len 0`). No map.toml change — `EndOfRom` is a zero-byte marker, excluded from the
+  order-validation subsequence (its tie position is byte-neutral), so the K1 order
+  list is untouched and stays green.
+
+**Identity: SIX-TARGET FULL-CRC byte-identical — NO re-freeze (cleaner than the note's
+predicted appendix re-freeze).** The label set shifted (EndOfRom AS→native + the new
+`epilogue` section head) but the deb2 appendix orders by address and EndOfRom's address
+is unchanged (0x5DB00 plain), so every full CRC held:
+
+| target | full_crc / len (UNCHANGED, = chain-14) |
+|---|---|
+| s4 | `4d28dc6b` / 412151 |
+| s4_debug | `0d3cd198` / 421982 |
+| demo | `55b70266` / 90576 |
+| demo_debug | `6487a47c` / 93073 |
+| config_a | `0b384578` / 422321 |
+| config_b | `947e4c57` / 303555 |
+
+Gates: strict **2895/0/4** (unchanged — no new test binary; epilogue emits zero bytes,
+so there is no region-window golden to gate, and the walls are build-path link asserts).
+`refreeze --check` OK (tip `k4-collision`, chain len 14 — untouched). `repin` **0 pins
+changed** (67→68 regions; the hand-authored EPILOGUE pin matched the tool's derivation
+exactly). K1 order-validation green (exercised by the chained strict gates).
+
+Step-3/step-5: the epilogue is a pure authority move (no behavior). Step-5 note — a
+dedicated NEGATIVE probe (an odd/over-4MB EndOfRom fires the link asserts; a plane-cell
+over-count fires the comptime ensure) would harden the walls beyond the implicit
+build-path coverage; ledgered as a gap candidate, not built this stage (the walls are
+not easily forced without doctoring the terminus). engine.inc's `EndOfRom` orgs +
+label are the row-6-class scaffolding the skeleton deletion (inc-6) removes.
+
+### Stage 2 — P2 DAC probe — STOP (seam-2 model surprise; overseer countersign wanted)
+
+**STOP per the absolute seam-2 discipline** ("any surprise in the seam-2 pipeline is a
+STOP with a finding"). Grounded investigation of the DAC bank machinery found the
+ruling's core premise inaccurate — the `_BODY_STUB` "mixed harness" the exclusivity
+mechanism was to reconcile is VESTIGIAL. Nothing byte-corrupted; the STOP is at the
+design-premise level, before touching the fragile main.asm sound block.
+
+**The surprise (the corrected seam-2 model):**
+- `SIGIL_EMP_DAC_BODY_STUB` / `SIGIL_EMP_MT_BODY_STUB` / `SIGIL_EMP_SFX_BODY_STUB` are
+  referenced ONLY in `games/sonic4/main.asm`'s `ifdef` arms and are **set by NOTHING**
+  in sigil (grep-proof across `crates/`). Every whole-ROM build takes the `else`
+  (BINCLUDE) arm. The `_BODY_STUB` arms are dead code.
+- `native.rs` (assemble_as_side, sound-on) sets the BARE gates `SIGIL_EMP_DAC` /
+  `SIGIL_EMP_MT` / `SIGIL_EMP_SFX` = 1 — but main.asm consumes NONE of them (it checks
+  the `_BODY_STUB` variants). So the bare gates are set-but-unconsumed.
+- The note §5's description of the STUB arms as a live "mixed harness (mixed_dac_rom /
+  dac_port) in-memory composition" is inaccurate: `mixed_dac_rom.rs` does NOT exist;
+  `dac_port.rs` compiles `dac_samples.emp` in ISOLATION (its own two-region map), NOT
+  through main.asm's STUB arm in a whole-ROM build. So there is NO live in-memory
+  whole-ROM DAC composition to double-place against.
+- What the `_BODY_STUB` arm's CODE actually is: just `org $58000` — the AS-SKIP half
+  (position the cursor past the two-bank hole so the MT bank's `align $8000` lands at
+  $58000). It is exactly the "AS skips, native fills" path P2 needs, but gated by a
+  never-set symbol and MISSING its other half (the native section that fills $48000/
+  $50000). P2's real job is: add the native fill + activate the skip, NOT reconcile a
+  live in-memory composition.
+
+**Read-only viability PROVEN (so the recommended path is de-risked for countersign):**
+- `ensure_generated` emits `dac_blip_bank.bin` (2880 B) + `dac_shared_bank.bin`
+  (30908 B) (gitignored build artifacts, present at build time). Both are
+  BYTE-IDENTICAL to the reference ROM at $48000 / $50000; the inter/post-bank gaps
+  ($48B40..$50000, $578BC..$58000) are all-zero (map `fill = 0x00` reproduces them).
+- `build_emp`'s `include_root` + `embed_base` are the aeon root, so a native section
+  `embed("engine/sound/generated/dac_blip_bank.bin")` resolves; `ensure_generated`
+  runs before `build_emp` (build_rom_chained_with_listing:2105), so the .bin exists at
+  lower time — no cycle (dac_samples.emp → emit → .bin; dac_banks.emp → embed .bin).
+
+**Recommended P2 DAC wiring (for the overseer to countersign):**
+1. New module `games/sonic4/data/sound/dac_banks.emp` — two sections
+   `dac_blip_bank` (`pub data Dac_Temp_Blip = embed("…/dac_blip_bank.bin")`) and
+   `dac_shared_bank` (`Dac_SharedBank_Start` / `Dac_Kick = embed("…/dac_shared_bank.bin")`),
+   placed at the existing map anchors ($48000 / $50000, `when="sound_on"`).
+2. Registry + pins (DAC_BLIP_BANK / DAC_SHARED_BANK, anchored) + a gate + map order
+   heads (Dac_Temp_Blip already in the order list).
+3. main.asm DAC block: the `org $58000` skip becomes the ACTIVE native path; the
+   BINCLUDE arm DELETES (spec §6). The vestigial `_BODY_STUB` gate is retired.
+4. **The exclusivity mechanism (reframed):** with the BINCLUDE arm deleted and the
+   native section unconditional in sound-on, exclusivity is STRUCTURAL — can't-both
+   (no BINCLUDE to double-place), can't-neither (native section always present in
+   sound-on). The LOUD enforcement is the map anchor validation (`dac_blip_bank`
+   anchor @ $48000 already declared) + the whole-ROM byte gate + an emit-first
+   `dac_bank_port` golden gate (runs `ensure_generated`, then diffs [$48000,$58000)).
+   This is simpler than the ruling's "reconcile two live placements" because there is
+   only ONE live placement path.
+
+**Why STOP and not proceed:** (a) the ruling named "STUB-arm reconciliation" THE CORE
+Stage-2 deliverable and made the exclusivity mechanism a design requirement — but the
+reconciliation target is vestigial, so the mechanism's shape changes (structural, not
+a live-vs-live guard); this reframing should be blessed before it is baked into main.asm
+AND inherited by Stages 3/4 (MT/SFX, which share the pattern). (b) The change edits the
+most fragile surface (main.asm's `phase 08000h` sound block, the Z80-pointer banks);
+the ruled discipline is countersign-first there. (c) The bare-`SIGIL_EMP_DAC`-vs-
+`_BODY_STUB` gate choice + whether to fully delete vs keep-dead the BINCLUDE arm are
+real calls the exclusivity-mechanism ruling should own. Stages 3/4 (phased MT/SFX +
+soundBankHead) are held behind this — they inherit whatever mechanism Stage 2 sets.
+
+### Stage 2 — P2 DAC probe — DONE under the ruling (six-target byte-identical)
+
+The coordinator ruled the reframe accepted in full (structural exclusivity; delete the
+dead `_BODY_STUB` arms; re-key to the bare `SIGIL_EMP_DAC` gate; `dac_banks.emp` embeds
+the artifacts). Implemented on the same k4-inc5 branches:
+
+- **`games/sonic4/data/sound/dac_banks.emp`** (`module games.sonic4.dac_banks in
+  dac_banks`) — ONE section embedding the seam-2 `dac_blip_bank.bin` @ $48000 +
+  `dac_shared_bank.bin` @ $50000, with an intra-section `align $8000` for the inter-bank
+  pad (the AS twin's structure exactly; the pad bytes are $00, matching the reference).
+  Head label `Dac_Temp_Blip` (section head + map-order + frozen boundary key);
+  `Dac_SharedBank_Start` / `Dac_Kick` are mid-section labels (coincident at $50000). The
+  SND_* triples stay folded in the DacSampleTable head at emit — the main build's Dac_*
+  labels are placement heads with no runtime consumer.
+- **STRUCTURAL EXCLUSIVITY (the ruled mechanism):** the AS BINCLUDE arm is DELETED
+  (can't-both — nothing else places the DAC), the native section is unconditional in
+  the sound-on registry (can't-neither), and `main.asm`'s `ifdef SIGIL_EMP_DAC` skip
+  (`org $58000`) moves the AS cursor past the native region so the MT bank lands at
+  $58000. Loud enforcement = the map anchor validation (`dac_banks` @ $48000,
+  `when="sound_on"`) + the whole-ROM byte gate + the emit-first `dac_bank_port` gate.
+  The dead `SIGIL_EMP_DAC_BODY_STUB` arm (a never-set gate on a dead org-skip) is gone.
+- **Wiring:** registry `games.sonic4.dac_banks`/`dac_banks` (sound-ON only —
+  filtered out of config_b, and demo excludes it via the `engine.*` filter); pin
+  `DAC_BANKS` (repin.toml `start=Dac_Temp_Blip len=0xF8BC`; pins.rs base $48000 both
+  shapes, len $F8BC = blip 0xB40 + pad to 0x8000 + shared 0x78BC); the bare
+  `SIGIL_EMP_DAC` gate holes out the AS skip; map anchor renamed `dac_blip_bank`→
+  `dac_banks` (matched by address, transparent). **Frozen-key seed** (the K3-run-B
+  pattern — s4 uses the Frozen chainer, so a keyless section sorts to base 0 and
+  collides): `Dac_Temp_Blip 0x48000` added to the THREE sound-on tables (s4.txt /
+  s4_debug.txt / config_a.txt; shape-invariant; config_b/demo are sound-off, no DAC).
+- **Emit-first golden gate** `dac_bank_port` (spec §6): runs `ensure_generated` (the
+  .bin are gitignored artifacts) then diffs the linked `dac_banks` section against the
+  reference [$48000, $578BC) both shapes. 2/2.
+
+**Identity: SIX-TARGET FULL-CRC byte-identical — NO golden re-freeze.** The DAC bytes
+land at the same LMAs and the same three labels persist at the same addresses, so the
+deb2 appendix is unchanged. Only the frozen TABLES gained one boundary key (Dac_Temp_Blip,
+seeded ×3) — the goldens themselves are byte-identical.
+
+| target | full_crc / len | vs chain-14 |
+|---|---|---|
+| s4 | `4d28dc6b` / 412151 | identical |
+| s4_debug | `0d3cd198` / 421982 | identical |
+| demo | `55b70266` / 90576 | identical (sound-off, no DAC) |
+| demo_debug | `6487a47c` / 93073 | identical |
+| config_a | `0b384578` / 422321 | identical |
+| config_b | `947e4c57` / 303555 | identical (sound-off, no DAC) |
+
+Gates: strict **2897 / 0 / 4** (baseline 2895 + 2 dac_bank_port). `refreeze --check` OK
+(tip `k4-collision`, chain 14). `repin` 0 pins changed (68→69 regions). K1 order green
+(Dac_Temp_Blip already in the map order). No assembled-anchor move — the DAC LMAs are
+byte-exact.
+
+Step-3/step-5: pure placement move (no behavior). The reframe simplified the ruling's
+"reconcile two live placements" to structural exclusivity — the byte gate + anchor
+validation are the loud guards. The pattern (native embed of the emitted .bin, delete
+the BINCLUDE arm, re-key the bare gate, frozen-key seed, emit-first golden gate) is the
+template Stages 3/4 (MT / SFX) inherit — with the added phase-bank-anchor rule (a labeled
+$8000-window head NEVER repacks; the mt-gate catch class).
+
+### Stage 3 — P2 MT bank probe — DONE (anchors-proven flagged re-freeze)
+
+The Moving-Trucks streaming bank BODY (the BINCLUDE at $58607, inside the sound bank
+after the phased soundBankHead) is native — `games/sonic4/data/sound/mt_bank_blob.emp`
+embeds the seam-2 `mt_bank{,_debug}.bin`. Inherits the Stage-2 template + adds the
+shape-dependent + cross-seam-label wrinkles:
+
+- **Non-phased LMA embed** at $58607 (the MT body is emitted AFTER `dephase/restore`,
+  so its labels are plain LMA — like the DAC, NOT a `bank: $8000` phase section). The
+  start $58607 is shape-INVARIANT (soundBankHead is $607 both shapes); only the body
+  SIZE differs (plain 0x34E1 → $5BAE8, debug 0x4F33 → $5D53A, debug adds DrumTest +
+  HCZ2). The embed selects on DEBUG.
+- **`SongTable`/`SongPatchTable` stay AS-provided** by the emitted `mt_syms{,_debug}.asm`
+  (kept `include`d): they sit at mid-blob offsets (len − SONG_COUNT*8/4, SONG_COUNT 1
+  plain / 3 debug) a single `embed()` cannot label, and sound_api.emp externs them. This
+  is the pragmatic P2 — mt_syms.asm IS an emitted artifact (like the .bin). The native
+  section owns the BYTES + the head label `Song_MovingTrucks` (placement head; no runtime
+  consumer).
+- **Structural exclusivity** (inherited): the AS BINCLUDE deleted (can't-both), the native
+  section unconditional in sound-on (can't-neither); main.asm's `ifdef SIGIL_EMP_MT`
+  per-shape skip org ($5BAE8 plain / $5D53A debug) moves the AS cursor past the native
+  body so the SFX block lands correctly. The dead `SIGIL_EMP_MT_BODY_STUB` arm deleted.
+- **Wiring:** registry `games.sonic4.mt_bank_blob`/`mt_bank_blob` (sound-ON only — config_b
+  filtered); pin `MT_BANK_BLOB` (start=Song_MovingTrucks, len 0x34E1 plain / debug_len
+  0x4F33 — the shape-dependent literal-len form; the repin region name drives the CONST
+  name, K3-run-A); gate `SIGIL_EMP_MT`; map order + anchor (Song_MovingTrucks — not an
+  island, abuts soundBankHead at gap 0, so no new anchor); frozen-key seed
+  `Song_MovingTrucks 0x58607` ×3 sound-on tables (shape-invariant head); emit-first
+  `mt_bank_port` golden gate (2/2).
+
+**Identity: ANCHORS IDENTICAL ×6 — appendix-only flagged re-freeze (the inc-2 header
+precedent).** The MT body is byte-exact at $58607, `EndOfRom` is unchanged ($5DB00), and
+the assembled region `[0, EndOfRom)` is byte-identical EXCEPT the sigil-patched header
+checksum ($18E) + rom_end ($1A4) — the derived cells that MUST move when the image grows.
+The +18 bytes (plain) is the new `Song_MovingTrucks` label entering the deb2 symbol
+appendix (the AS twin had no head label — just BINCLUDE bytes — so this label is genuinely
+new; it cannot be avoided, the listing is pub-agnostic over all section labels). Proven by
+diff: the only `[0,EndOfRom)` diffs are $18E (checksum) + $1A4 (rom_end).
+
+| target | full_crc (was → now) | anchor_crc (UNCHANGED) / anchor_end |
+|---|---|---|
+| s4 | `4d28dc6b` → **`95428d52`** / 412169 | `658c623b` / 0x5DB00 |
+| s4_debug | `0d3cd198` → **`74e16b34`** / 422000 | `b137c411` / 0x5F5F2 |
+| config_a | `0b384578` → **`cfbd235b`** / 422337 | (anchor unchanged) |
+| demo / demo_debug / config_b | UNCHANGED (sound-off, no MT) | — |
+
+`refreeze --freeze k4-mt-bank` (no `--ab` — anchors did not move) appended provenance
+chain entry **#15**; the 3 sound-on goldens re-frozen; frozen tables re-derived (gained
+Song_MovingTrucks). Gates: strict **2899 / 0 / 4** (2897 + 2 mt_bank_port); `refreeze
+--check` OK (tip k4-mt-bank, chain 15); `repin --check` clean; K1 order green.
+
+Step-5: the `mt_syms.asm` retention is the one non-full-native residue (the mid-blob
+cross-seam labels). A future emit that emits `SongTable`/`SongPatchTable` as separate
+tiny artifacts, OR a split-embed with the emitted offset, would let the .emp own them —
+ledgered, not built (P2 keeps the emit pipeline untouched by design).
+
+### Stage 4a — P2 SFX block probe — DONE (anchors-proven flagged re-freeze)
+
+The SFX block (the BINCLUDE at $5BAE8/$5D53A, after the native MT body) is native —
+`games/sonic4/data/sound/sfx_bank_blob.emp` embeds the seam-2 `sfx_bank{,_debug}.bin`.
+The CLEANEST of the three bodies: non-phased LMA embed, **NO cross-seam labels** (no
+surviving AS/emp reads SfxTable — sound_sfx.emp's SfxBlobWinTab reads are native, in the
+head), so no syms file. Shape-INVARIANT size (0x748 both), shape-DEPENDENT start ($5BAE8
+plain / $5D53A debug — the MT body before it differs) + content (the SfxTable pointer
+cells). Head label Sfx_33 (placement head only).
+
+- **Wiring:** registry `games.sonic4.sfx_bank_blob` (sound-ON only, config_b filtered);
+  pin `SFX_BANK_BLOB` (base $5BAE8 plain / $5D53A debug, len 0x748); gate `SIGIL_EMP_SFX`;
+  map order + Sfx_33 (abuts the MT body at gap 0 — not an island); frozen-key seed
+  `Sfx_33` per-shape ($5BAE8 / $5D53A) ×3 sound-on tables; emit-first `sfx_bank_port`
+  golden gate (2/2). The AS BINCLUDE deleted; per-shape skip org; dead
+  `SIGIL_EMP_SFX_BODY_STUB` arm deleted.
+
+**Identity: ANCHORS IDENTICAL ×6 — appendix-only flagged re-freeze.** SFX body byte-exact,
+`EndOfRom` unchanged ($5DB00); the only `[0,EndOfRom)` diffs are the derived header
+checksum ($18E) + rom_end ($1A4); the +8/+10 bytes is the new Sfx_33 head label in the
+deb2 appendix. `refreeze --freeze k4-sfx-bank` (no `--ab`) → chain **#16**.
+
+| target | full_crc (was → now) | anchor_crc (UNCHANGED) |
+|---|---|---|
+| s4 | `95428d52` → **`f788dae7`** / 412177 | `658c623b` |
+| s4_debug | `74e16b34` → **`d7af41e5`** / 422010 | `b137c411` |
+| config_a | `cfbd235b` → **`58c570a0`** / 422349 | (unchanged) |
+| demo / demo_debug / config_b | UNCHANGED (sound-off) | — |
+
+Gates: strict **2901 / 0 / 4** (2899 + 2 sfx_bank_port); `refreeze --check` OK (chain 16);
+`repin --check` clean; K1 order green. The MT + SFX bank BODIES are now native; the
+remaining sound-bank piece is the `soundBankHead` phase-08000h head (sound_bank.inc) —
+Stage 4b, the phase-bank surface.
+
+### Stage 4b — P2 soundBankHead probe — DONE (the phase bank; sound_bank.inc DELETED)
+
+The engine-table bank HEAD (the `soundBankHead` macro, sound_bank.inc — the 5 heads
+inside the `phase 08000h` bracket) is native — `games/sonic4/data/sound/soundbankhead.emp`
+places them as the **FIRST native PHASE-BANK section** (vma $8000 / lma $58000) embedding
+the seam-2 head artifacts. sound_bank.inc + its macro are DELETED (the last sound-bank
+piece; the `phase 08000h` bracket goes with them — the section's `vma: $8000` carries the
+window addressing).
+
+- **The phase-bank-anchor rule (armed, first exercise):** a labeled $8000-window head is
+  a HARD org (`is_phase_bank`), never repacks. The 5 heads are byte-exact + contiguous
+  ($8000..$8607 = $607); a size drift would slide a downstream head off its fixed carrier
+  VMA and desync the resident Z80 blob — the AS `fatal` walls are now the module's comptime
+  `ensure`s ($357/$108/$10E/$40/$5A). NO whole-ROM-link consumer (the resident Z80 code
+  that reads these labels is the seam-1 BLOB, resolved separately via banked_carriers +
+  the DacSampleTable -D — this module re-homes the same labels the AS soundBankHead defined).
+- **Wiring:** registry `games.sonic4.soundbankhead` (sound-ON only, config_b filtered); gate
+  `SIGIL_EMP_SOUNDBANKHEAD` (added to the sound-on bare-gate set); main.asm replaces the
+  `save/cpu z80/phase/soundBankHead/dephase/restore` block with an `ifdef SIGIL_EMP_SOUNDBANKHEAD`
+  skip org $58607 (keeping MovingTrucks_Bank_Start + the SND_ENGINE_TABLE_BANK/SFX_BLOB_BANK
+  equs, which read its LMA>>15); m1c_root.asm drops the sound_bank.inc include; emit-first
+  `soundbankhead_port` golden gate (2/2). **Two phase-bank firsts recorded:**
+  (1) `SoundTablesZ80_Head` was already in s4.txt/s4_debug.txt but NOT config_a.txt — seeded
+  it there (config_a placed the keyless phase section at base 0 and collided with `vectors`
+  until seeded). (2) **repin derives the pin `SOUNDBANKHEAD` as the phase VMA ($8000), not
+  the LMA** (it resolves the phased label's value); the golden gate therefore reads the LMA
+  = VMA + $50000 = $58000 explicitly, and placement is driven by the frozen key (LMA $58000,
+  Frozen path) — the VMA pin is cosmetic for the shipped (Frozen) builds.
+
+**Identity: ANCHORS IDENTICAL ×6 — appendix flagged re-freeze.** Head byte-exact at the
+phase VMAs, `EndOfRom` unchanged ($5DB00); the only `[0,EndOfRom)` diffs are the derived
+header checksum ($18E) + rom_end ($1A4). The appendix RE-HOMES labels (the AS soundBankHead's
+`_End` span labels retire; the 6 head labels re-home AS→native). `refreeze --freeze
+k4-soundbankhead` (no `--ab`) → chain **#17**.
+
+| target | full_crc (was → now) | anchor_crc (UNCHANGED) |
+|---|---|---|
+| s4 | `f788dae7` → **`94708cfb`** / 412154 | `658c623b` |
+| s4_debug | `d7af41e5` → **`6f0a1948`** / 421990 | `b137c411` |
+| config_a | `58c570a0` → **`b3ce9e67`** / 422325 | (unchanged) |
+| demo / demo_debug / config_b | UNCHANGED (sound-off) | — |
+
+Gates: strict **2903 / 0 / 4** (2901 + 2 soundbankhead_port); `refreeze --check` OK
+(chain 17); `repin --check` clean; K1 order green. **The entire sound bank is now native —
+DAC + MT + SFX bodies + the soundBankHead head; sound_bank.inc DELETED.**

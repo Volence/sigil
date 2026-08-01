@@ -22,7 +22,8 @@ PAD_TO_POWER_OF_TWO     = 1
     ; engine/macros.asm is DELETED (Parcel K4 — zero live consumers).
     ; parallax_macros.inc is retired (conv-g): the §4.6 authoring vocabulary is
     ; engine/level/parallax_dsl.emp; the config data is native.
-    include "engine/sound/sound_bank.inc"
+    ; engine/sound/sound_bank.inc is DELETED (K4 inc-5 Stage 4b): the soundBankHead
+    ; macro (the engine-table bank head) is native (games.sonic4.soundbankhead).
     ; games/sonic4/config/constants.asm (conv-f) and config/sound_ids.asm (F2) are
     ; retired: game constants live in constants.emp, the song/SFX ids in sound_ids.emp,
     ; the SFX-bank counts in sfx_bank.emp — all seeded here as harvested GUARDED -D

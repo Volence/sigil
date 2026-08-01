@@ -689,3 +689,144 @@ full_crc = "0d3cd198"
 full_size = 421982
 anchor_crc = "b137c411"
 anchor_end = 0x5f5f2
+
+[[entry]]
+name = "k4-mt-bank"
+ab = ""
+note = "MT streaming bank body native (mt_bank_blob.emp); anchors identical (EndOfRom + all placement unchanged), appendix +Song_MovingTrucks on 3 sound-on targets"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "cfbd235b"
+full_size = 422337
+anchor_crc = "19b793ec"
+anchor_end = 0x5f5f2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "947e4c57"
+full_size = 303555
+anchor_crc = "8b490cfb"
+anchor_end = 0x43480
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "55b70266"
+full_size = 90576
+anchor_crc = "e2dc9207"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "6487a47c"
+full_size = 93073
+anchor_crc = "b7d81931"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "95428d52"
+full_size = 412169
+anchor_crc = "658c623b"
+anchor_end = 0x5db00
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "74e16b34"
+full_size = 422000
+anchor_crc = "b137c411"
+anchor_end = 0x5f5f2
+
+[[entry]]
+name = "k4-sfx-bank"
+ab = ""
+note = "SFX block native (sfx_bank_blob.emp); anchors identical (EndOfRom + placement unchanged), appendix +Sfx_33 on 3 sound-on targets"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "58c570a0"
+full_size = 422349
+anchor_crc = "19b793ec"
+anchor_end = 0x5f5f2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "947e4c57"
+full_size = 303555
+anchor_crc = "8b490cfb"
+anchor_end = 0x43480
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "55b70266"
+full_size = 90576
+anchor_crc = "e2dc9207"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "6487a47c"
+full_size = 93073
+anchor_crc = "b7d81931"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "f788dae7"
+full_size = 412177
+anchor_crc = "658c623b"
+anchor_end = 0x5db00
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "d7af41e5"
+full_size = 422010
+anchor_crc = "b137c411"
+anchor_end = 0x5f5f2
+
+[[entry]]
+name = "k4-soundbankhead"
+ab = ""
+note = "soundBankHead phase-bank head native (soundbankhead.emp, vma 8000); sound_bank.inc deleted; anchors identical, appendix label re-home on 3 sound-on targets"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "b3ce9e67"
+full_size = 422325
+anchor_crc = "19b793ec"
+anchor_end = 0x5f5f2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "947e4c57"
+full_size = 303555
+anchor_crc = "8b490cfb"
+anchor_end = 0x43480
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "55b70266"
+full_size = 90576
+anchor_crc = "e2dc9207"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "6487a47c"
+full_size = 93073
+anchor_crc = "b7d81931"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "94708cfb"
+full_size = 412154
+anchor_crc = "658c623b"
+anchor_end = 0x5db00
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "6f0a1948"
+full_size = 421990
+anchor_crc = "b137c411"
+anchor_end = 0x5f5f2
