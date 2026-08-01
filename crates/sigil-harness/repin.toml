@@ -632,6 +632,18 @@ end = "EndOfRom"
 gate = "SIGIL_EMP_ERROR_HANDLER"
 tests = ["error_handler_port"]
 
+# Parcel K4 B1 — the ROM terminus (engine.epilogue). A zero-length section whose
+# head label EndOfRom is the ROM one-past-the-end. `len = 0` literal (nothing
+# follows it — it IS the end). gate SIGIL_EMP_EPILOGUE holes out engine.inc's
+# AS-side EndOfRom label + the two address walls (the plane wall + EndOfRom
+# evenness/4MB are the module's ensures now).
+[[region]]
+name = "epilogue"
+start = "EndOfRom"
+len = 0x0
+gate = "SIGIL_EMP_EPILOGUE"
+tests = ["m1d_rom", "m1d_debug_rom"]
+
 # objdef byte gate cross-seam symbols: the four routine labels (code_addr =
 # label − ObjCodeBase) + the mappings pointer, resolved to their true VMAs so
 # the .emp records match the reference ROM windows.

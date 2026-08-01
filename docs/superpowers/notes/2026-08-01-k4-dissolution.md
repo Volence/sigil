@@ -282,8 +282,9 @@ the map for the dedicated sound-bank pass, and hold the skeleton deletion behind
 - **`games/sonic4/main.asm` + `games/demo/main.asm` + `engine/engine.inc` DELETED:**
   ❌ NOT YET — blocked on the sound-bank native placement (§5): main.asm's
   `gameSoundDataIncludes` BINCLUDEs (DAC/MT/SFX) have no `.emp` home until the seam-2
-  banks are natively placed. engine.inc still owns EndOfRom (B1 pending) + the org
-  ladder + the `sound_bank.inc`/`debugger.asm` includes.
+  banks are natively placed. engine.inc no longer owns EndOfRom (B1 DONE, inc-5
+  Stage 1 — `engine.epilogue` native) but still carries the org ladder + the
+  `sound_bank.inc`/`debugger.asm` includes.
 - **`engine/system/header.inc` ported:** ✅ TRUE (K4 inc-2 → games/*/config/header.emp).
 - **`engine/sound/sound_bank.inc` ported:** ❌ NOT YET (§5, the phase-bank head).
 - **The 106 inert orgs die with their files:** PARTIAL — the OJZ orgs (K3), the header
@@ -300,3 +301,67 @@ sound-bank seam-2 native-placement pass (§5), which gates the main.asm/engine.i
 deletion. Recommended inc-5 shape: (1) the dedicated sound-bank pass (P2 DAC probe →
 phased MT/SFX/soundBankHead, seam-2 harness in view), then (2) B1 epilogue + A1 stubs
 + the skeleton deletion.
+
+## Increment 5 — the sound-bank pass + B1 epilogue (in progress)
+
+**Porter: Opus (k4-inc5 branch, aeon + sigil worktree). Overseer/spec owner: Fable.**
+Spec §6 (the ruled P2 staged path). Sequenced: Stage 1 B1 epilogue (bank-independent
+warm-up) → Stage 2 P2 DAC probe → Stage 3 MT bank → Stage 4 SFX bank + soundBankHead.
+Each its own commit; STOP anywhere the fragile phase-bank surface fights.
+
+### Stage 1 — B1 epilogue (`engine.epilogue`) — DONE, six-target byte-identical
+
+`EndOfRom` + the three ROM-tail walls left `engine.inc` for a native `.emp` module,
+`engine/system/epilogue.emp` (`module engine.epilogue in epilogue`):
+
+- **`pub data EndOfRom = Data.empty`** — the zero-length terminus label, placed LAST.
+  Its boundary key `EndOfRom` is already frozen in all six tables, so the chainer keys
+  the terminus off it; it packs a zero-length section abutting `error_handler`'s tail
+  (`error_handler` still ends exactly at `EndOfRom`). `header.emp`'s `rom_end =
+  extern("EndOfRom") - 1` resolves cross-seam to the native label unchanged.
+- **The walls split by their nature (the B1 ruling: link-time, not comptime):**
+  - `PLANE_H_CELLS * PLANE_V_CELLS <= 4096` is a COMPTIME fact (pure constants) → a
+    comptime `ensure` (`use engine.constants.{PLANE_H_CELLS, PLANE_V_CELLS}`).
+  - `EndOfRom` evenness and the 4 MB ceiling depend on the PLACED address → LINK-time
+    asserts: `ensure((extern("EndOfRom") & 1) == 0, …)` and `ensure(extern("EndOfRom")
+    <= $3FFFFF, …)` defer to `LinkAssert`s (D-H.4), checked by the chainer against the
+    resolved layout (`check_link_asserts`, the vdp/parallax/sound_api ensure-over-extern
+    precedent). They evaluate true in every whole-ROM build (implicit non-vacuity: a
+    malformed assert fails the build).
+- **engine.inc:** the `EndOfRom:` label + the three `if … error` guards + the inert
+  `org $5DB60/$5F65A` resume are holed out behind `ifndef SIGIL_EMP_EPILOGUE` (the
+  gate is set in every native build; the block is the asl-less fallback, never taken).
+- **Registry/pins:** `engine.epilogue`/`epilogue` in `registry()` (rides into
+  demo_registry via the `engine.*` filter; config_a/b via `registry()`); code gate
+  `SIGIL_EMP_EPILOGUE` (sonic4 + demo gate lists); pin `EPILOGUE` (repin.toml region
+  `start = EndOfRom`, `len = 0`; pins.rs `plain_base 0x5DB00 / debug_base 0x5F5F2 /
+  len 0`). No map.toml change — `EndOfRom` is a zero-byte marker, excluded from the
+  order-validation subsequence (its tie position is byte-neutral), so the K1 order
+  list is untouched and stays green.
+
+**Identity: SIX-TARGET FULL-CRC byte-identical — NO re-freeze (cleaner than the note's
+predicted appendix re-freeze).** The label set shifted (EndOfRom AS→native + the new
+`epilogue` section head) but the deb2 appendix orders by address and EndOfRom's address
+is unchanged (0x5DB00 plain), so every full CRC held:
+
+| target | full_crc / len (UNCHANGED, = chain-14) |
+|---|---|
+| s4 | `4d28dc6b` / 412151 |
+| s4_debug | `0d3cd198` / 421982 |
+| demo | `55b70266` / 90576 |
+| demo_debug | `6487a47c` / 93073 |
+| config_a | `0b384578` / 422321 |
+| config_b | `947e4c57` / 303555 |
+
+Gates: strict **2895/0/4** (unchanged — no new test binary; epilogue emits zero bytes,
+so there is no region-window golden to gate, and the walls are build-path link asserts).
+`refreeze --check` OK (tip `k4-collision`, chain len 14 — untouched). `repin` **0 pins
+changed** (67→68 regions; the hand-authored EPILOGUE pin matched the tool's derivation
+exactly). K1 order-validation green (exercised by the chained strict gates).
+
+Step-3/step-5: the epilogue is a pure authority move (no behavior). Step-5 note — a
+dedicated NEGATIVE probe (an odd/over-4MB EndOfRom fires the link asserts; a plane-cell
+over-count fires the comptime ensure) would harden the walls beyond the implicit
+build-path coverage; ledgered as a gap candidate, not built this stage (the walls are
+not easily forced without doctoring the terminus). engine.inc's `EndOfRom` orgs +
+label are the row-6-class scaffolding the skeleton deletion (inc-6) removes.

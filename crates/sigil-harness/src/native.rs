@@ -243,6 +243,11 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         // ── Engine debug / sound caller ──
         m!("engine.sound_api", "sound_api", pins::SOUND_API),
         m!("engine.debug.error_handler", "error_handler", pins::ERROR_HANDLER),
+        // Parcel K4 B1: the ROM terminus (EndOfRom + the 3 walls), was engine.inc's
+        // `EndOfRom:` label + the `if … error` guards. Zero-length section placed
+        // LAST (boundary key EndOfRom, already frozen in all six tables). The plane
+        // wall is a comptime ensure; EndOfRom evenness/4MB are link-time asserts.
+        m!("engine.epilogue", "epilogue", pins::EPILOGUE),
         // ── Game player ──
         // player_common fully flipped (conv-d #49): player_common.asm deleted. The
         // module owns the PlayerV overlay + PPHYS_*/macro templates (state files
@@ -343,6 +348,7 @@ fn demo_code_gates(debug: bool) -> Vec<&'static str> {
         "SIGIL_EMP_LOAD_OBJECT", "SIGIL_EMP_PLANE_BUFFER", "SIGIL_EMP_TILE_CACHE",
         "SIGIL_EMP_COLLISION_LOOKUP", "SIGIL_EMP_SECTION", "SIGIL_EMP_CAMERA", "SIGIL_EMP_PARALLAX",
         "SIGIL_EMP_LOAD_ART", "SIGIL_EMP_BG", "SIGIL_EMP_BG_ANIM", "SIGIL_EMP_ERROR_HANDLER",
+        "SIGIL_EMP_EPILOGUE",
     ];
     if debug {
         g.push("SIGIL_EMP_COMPRESSION_SELFTEST");
@@ -1111,7 +1117,8 @@ fn code_gate_defines() -> Vec<&'static str> {
         "SIGIL_EMP_LOAD_OBJECT", "SIGIL_EMP_PLANE_BUFFER", "SIGIL_EMP_TILE_CACHE",
         "SIGIL_EMP_COLLISION_LOOKUP", "SIGIL_EMP_SECTION", "SIGIL_EMP_CAMERA", "SIGIL_EMP_PARALLAX",
         "SIGIL_EMP_LOAD_ART", "SIGIL_EMP_BG", "SIGIL_EMP_BG_ANIM", "SIGIL_EMP_COMPRESSION_SELFTEST",
-        "SIGIL_EMP_SOUND_API", "SIGIL_EMP_ERROR_HANDLER", "SIGIL_EMP_PLAYER_SENSORS",
+        "SIGIL_EMP_SOUND_API", "SIGIL_EMP_ERROR_HANDLER", "SIGIL_EMP_EPILOGUE",
+        "SIGIL_EMP_PLAYER_SENSORS",
         "SIGIL_EMP_PLAYER_GROUND", "SIGIL_EMP_PLAYER_AIR", "SIGIL_EMP_PLAYER_SPINDASH",
         "SIGIL_EMP_SONIC", "SIGIL_EMP_TEST_STATIC", "SIGIL_EMP_TEST_ANIMATED",
         "SIGIL_EMP_TEST_OBJECTS", "SIGIL_EMP_TEST_EMITTER", "SIGIL_EMP_TEST_PARENT",
