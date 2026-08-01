@@ -1,210 +1,136 @@
-# Parcel K0 + K1 — pre-K deletes done; K1 map-authority swap STOPPED at the
-# spec-vs-reality collision on the "ordered section list" fact
+# Parcel K0 + K1 — close-packet: the pre-K deletes + the declared placement map
+# (authority swap, VALIDATE stage, ruled R2+R1)
 
 **Porter: Opus (k1-map branch, aeon + sigil worktree). Overseer/spec owner: Fable.**
-Evidence base: `specs/2026-08-01-k-capstone-design.md` (§1/§2/§3),
-`notes/2026-08-01-k-capstone-survey.md` (§6/§9/§10-§12),
-`notes/2026-07-31-waveb-b0-computed-placement.md` (the mechanism). This note records
-K0 (DONE, byte-neutral ×6) and a **STOP finding on K1's central mechanism** — the
-"ordered section list drives the packer / frozen tables fully demoted" fact collides
-with a concrete, precedented reality obstacle. K1's *declarable* facts (anchors, hole,
-budget) are transcribed below as the seed the reader+lint must land TOGETHER, post-ruling.
+K0 (pre-K deletes) and K1 (the map authority swap, R2 validate stage) are landed and
+proven fold-identical ×6. The K1 order-DRIVE flip + frozen-table full demotion is K5
+(post-K4), per Fable's ruling. Spec: `specs/2026-08-01-k-capstone-design.md` (§1 fact-1
+two-staged at `6e685f13`; §5 addendum). Evidence base: `notes/2026-08-01-k-capstone-survey.md`,
+`notes/2026-07-31-waveb-b0-computed-placement.md`.
 
 ---
 
-## §0 — K0: the pre-K deletes (COMPLETE, byte-neutral ×6)
+## §0 — K0: the pre-K deletes (byte-neutral ×6)
 
 ### aabb.inc — DELETED (aeon `9ae3323`, tracked → `git rm`)
-- `engine/objects/aabb.inc` (50 ln). Grep-proof of zero consumers:
-  `grep -rn aabb.inc` across `.asm/.inc/.emp/.sh/.rs/.toml` → the only two hits are
-  COMMENT lines in `aabb.emp`. `collision.emp:6` / `rings.emp:13` `use engine.objects.aabb`
-  = the `.emp` twin `aabb.emp`, NOT the `.inc`. Its documented AS consumers
-  (`collision.asm` + `rings.asm`, the gate-off twins) are already deleted
-  (`find engine -name collision.asm -o -name rings.asm` → empty). Kill-list rows 5+13
-  condition fired ahead of Spec 5.
+`engine/objects/aabb.inc` (50 ln). Grep-proof zero consumers: the only `aabb.inc`
+hits are COMMENT lines in `aabb.emp`; `collision.emp:6`/`rings.emp:13`
+`use engine.objects.aabb` = the `.emp` twin, not the `.inc`. Its AS consumers
+(`collision.asm`+`rings.asm`) are already deleted. Kill-list rows 5+13 fired ahead of Spec 5.
 
-### z80_sound_syms.asm — REMOVED FROM DISK (untracked; nothing to commit)
-- **Premise correction:** the parcel brief located it at `engine/debug/z80_sound_syms.asm`;
-  it is actually `engine/sound/generated/z80_sound_syms.asm` (survey §10.2).
-- It was **untracked** (`git ls-files` → no match; gitignored via `engine/sound/generated/`).
-  A leftover from a pre-`flip-stage0` build: seam1's `emit_sound_blob` stopped writing it
-  at flip-stage0 (kill row 92; `render_syms_asm` removed) and nothing includes it
-  (`grep -rn z80_sound_syms` → zero non-comment hits). `rm`'d from disk; nothing to commit.
+### z80_sound_syms.asm — removed from disk (untracked; nothing to commit)
+**Premise correction:** the parcel brief said `engine/debug/z80_sound_syms.asm`; it is
+`engine/sound/generated/z80_sound_syms.asm` (survey §10.2). **Untracked** (gitignored via
+`engine/sound/generated/`), a leftover from a pre-`flip-stage0` build — seam1's
+`emit_sound_blob` stopped writing it at flip-stage0 (kill row 92) and nothing includes it.
+`rm`'d from disk.
 
-### K0 proof — fold identity ×6, exit 0
-`SIGIL_STRICT_GATE=1 cargo test --release -p sigil-cli --test native_rom --test
-native_offcanonical_rom --test native_full_rom --test native_offcanonical_full --test
-native_declared_chain --test native_offcanonical_placement` → **all green, exit 0**
-(native_rom 2/0, native_offcanonical_rom 4/0, native_offcanonical_full 7/0,
-native_offcanonical_placement 8/0, + native_full_rom / native_declared_chain above the
-tail cutoff; cargo's exit 0 ⇒ every binary green). The deleted files are included by
-nothing, so byte-neutrality is guaranteed by construction and proven by the suite.
-- Commits: aeon `9ae3323` (delete). sigil `fb4287aa` (kill-list rows 5/13/92 +
-  census row 11 → DELETED/stale).
+Commits: aeon `9ae3323`. sigil `fb4287aa` (kill-list rows 5/13/92 + census row 11 → DELETED/stale).
 
 ---
 
-## §1 — K1 STOP: the "ordered section list" fact collides with reality
+## §1 — K1: the declared placement map (what landed)
 
-### What K1 asks (spec §1)
-Four map-owned facts replace implicit authorities: (1) **ordered section list** — "the
-declared order the packer walks. Replaces the frozen tables' bootstrapped order";
-(2) **island anchors**; (3) **holes**; (4) **budgets**. Mechanics: "the frozen tables
-REMAIN as derived per-freeze MEASUREMENT caches (they record what the pack produced;
-**they no longer author anything**)." The parcel brief: "flip `packed_true_bases`/the
-profile layer to consume the map for ORDER + ANCHORS (+ budgets), with the frozen tables
-demoted to derived measurement caches **exactly as the spec says**." And the hazard clause:
-"If the frozen-table demotion **fights** the refreeze driver's regeneration flow, that's a
-**stop**, not a workaround."
+Two committed maps — `games/sonic4/map.toml`, `games/demo/map.toml` (aeon `a737568`) — carry
+the reviewed placement contract; the sigil reader + consumption flip (sigil `e4bdb73a`)
+make them the authority the chainer's resolved layout must agree with.
 
-### How ORDER is actually authored today (native.rs, read-only)
-`true_bases_by_index` (Frozen arm): each ROM section's **provisional base** =
-`min over its labels found in the frozen table (addr − label.offset)`; label-less →
-`s.lma` (order-only fallback). `packed_true_bases` then:
-- **ORDER** = `order.sort_by_key(|&i| prov[i])` — a **stable sort over the frozen-table-
-  derived prov bases**. (Stable ⇒ equal-prov ties resolve by section INSERTION order:
-  AS-side sections, then `.emp` sections.)
-- **ISLANDS (anchors)** = a section is an island iff it is the run head, OR
-  `prov > running_end + ANCHOR_GAP(0x400)`, OR a phase bank (`vma != lma && vma ≥ 0x8000`).
+### The four map facts (each replacing an implicit authority)
+| fact | as-landed | replaced |
+|---|---|---|
+| **anchors** | `[[anchor]] at=` — `0x0` boot/vector head + `0x10000` object bank [all six] + `0x58000` (vma `0x8000`) MT/SFX phase bank [`when=sound_on`] | the `packed_true_bases` ANCHOR_GAP / phase-bank / run-head inference, now VALIDATED against the declaration (the `[map.undeclared-island]` lint) |
+| **hole** | `[[hole]] after="Z80_IdleProgram" at=0x3FE filled_by="engine.z80_init" when="sound_off"` — data | boot_data's `org $3FE` no-sound arm (enforcement rides K2; K1 = data + a presence check) |
+| **budget** | `[[budget]] region="object_bank" ceiling=0x20000` | the AS `if * > $20000 / error` object-bank guard (was already `sigil.map.toml`'s `object_bank` region — now per-game) |
+| **order** | `order=[…]` — 70 (sonic4) / 41 (demo) byte-emitting section head-labels/module-ids, canonical UNION order | (STAGE 1 / R2) the map VALIDATES the frozen-derived order; the frozen tables remain the per-label provisional-base MEASUREMENT cache the derivation sorts. STAGE 2 (K5): map DRIVES. |
 
-So ORDER is *inextricably* a function of the frozen table's per-label addresses. To make
-the frozen table "no longer author" the order, the **map must supply the order** — which
-requires stable per-section identifiers.
+### The consumption flip (`native.rs::validate_placement`, called post-resolve)
+Recovers the inferred island set from the RESOLVED layout (lma-sorted; anchor = run head OR
+`lma > prev_end + 0x400` OR phase bank `vma!=lma && vma>=0x8000`) and checks it against the
+shape-applicable declared anchors both ways (`[map.undeclared-island]` / `[map.anchor-absent]`);
+validates the derived byte-emitting id order (min-offset LABEL, image bytes > 0) is a
+subsequence of the declared `order` (`[map.order-diverged]` / `[map.order-undeclared]`);
+checks each applicable hole's `after` label resolves. **Fold-identical by construction** —
+it ADDS checks, changes no placement. The per-game map's regions (mirroring `sigil.map.toml`)
+drive `emit_rom` + the budget; `GameProfile::map_path` derives `games/<g>/map.toml`.
 
-### The obstacle: AS-residual section names are synthetic and NOT stable
-`sigil-frontend-as/src/eval.rs:2036` names every auto-opened AS section
-`format!("sec{vma_base}")` — an **LMA-derived** name. `sigil-harness/src/lib.rs:56-64`
-(`region_at_lma`) documents it verbatim: *"the front-end's auto-section names (`sec{vma}`)
-are disambiguated on collision and so are **not stable identifiers**."* Empirically, the
-resolved section names for the AS residual are `text` (the default, appearing **5+ times**
-in a single target — not name-unique) and `sec256 / sec936 / sec1022 / sec65536 / sec65542
-/ sec65906 / sec383840 / sec361991 / …` (each keyed on the very LMA the map is meant to
-REPLACE). A declared "ordered section list" keyed by section name is therefore:
-- **not realizable** — the names are non-unique (`text`) and LMA-synthetic; and
-- **self-defeating** — it would encode the addresses the map exists to stop authoring, and
-  would go stale the instant anything moves (which is the whole point of packed placement).
+### The keying that makes R2 work (the §2 finding's resolution)
+Order is keyed by the **min-offset LABEL** (BootData, ObjCodeBase, GameLoop, …) — stable and
+in the frozen table — NOT the synthetic `sec{vma}` section name. Two robustness facts, both
+empirically established and load-bearing:
+1. **Byte-emitting order is shape-invariant.** With zero-byte sections excluded, s4 / s4_debug
+   / config_a / config_b share one relative order (and demo / demo_debug another) — so a single
+   per-game UNION list validates all its targets via the subsequence check. (The naive
+   full-order check failed only on `__BUDGET_DATA`, a zero-byte marker whose tie-position flips
+   between sound-on/off — byte-neutral; excluded.)
+2. **The island set is small + shape-invariant + label-free-safe.** Exactly `{0x0, 0x10000}`
+   (all six) + `{0x58000}` (sound-on). The survey-flagged DAC banks (`0x48000/0x50000`) are NOT
+   inferred islands (label-less BINCLUDE blobs that pack by contiguity) — the lint enumerates
+   the true set, and it needs no label-less anchor declaration.
 
-`.emp` module sections DO have stable names (boot, vdp_init, …). The AS-residual *labeled*
-sections have stable HEAD LABELS in the frozen table (BootData, ObjCodeBase, Checksum,
-NullInterrupt, HeightMaps, SoundTablesZ80_Head, …). So a declared order keyed by
-**module-id | head-label** (with label-less blobs slotting by contiguity) IS stable and
-reviewable — but that is a **different keying than section-name**, and adopting it is a
-design decision on a RATIFIED spec, i.e. the spec owner's call.
+### Proof — the bar, met
+- **Full fold identity ×6** (byte-for-byte, appendix included, NO re-freeze): all native gates
+  green (`native_rom` 2/0, `native_offcanonical_rom` 4/0, `native_full_rom` 3/0,
+  `native_offcanonical_full` 7/0, `native_declared_chain` 2/0, `native_offcanonical_placement`
+  8/0 — the B-0 fold-identity suite). **Six CRCs = CHAIN-11 tips exactly:** s4 `ff9037f2/412127`,
+  s4.debug `06680f0b/421958`, demo `4e446a64/90524`, demo.debug `949e9215/93022`,
+  config_a `2485eab3/422297`, config_b `d6d23298/303501`.
+- **`refreeze --check`: OK (tip `conv-hdemo`, chain len 11).**
+- **`repin` → `pins.rs unchanged`** (diff empty).
+- **strict 2885 / 0 / 4** (baseline 2877 + 8 new: 2 reader unit tests + 6 `validate_placement`
+  negative probes proving undeclared-island / anchor-absent / order-diverged / order-undeclared
+  / shape-gating each FIRE on a doctored map, and the correct map passes).
 
-### Precedent — this exact class was already ruled once
-The item-7 RAM-regions design names the same end-state "the §3.3 **ordering manifest**"
-and **defers it**: §7.2 "cross-module contribution deferred to the map-file ordering
-manifest"; and §9 records a porter who "**empirically confirmed §3.3's export claim false
-for eager AS references and stopped per brief**" — RULED **Option B** (harvest values),
-rejecting **Option A** (teaching the AS frontend to defer absolute-EA operands) because it
-"touches the **hot conversion path every residual line rides**." Teaching the AS frontend
-to emit *stable section names* is the same class of change against the same hot path, and
-was implicitly disfavored by that ruling.
+### Fixture migration census (deliverable 5)
+**Zero fixtures migrated — none needed it.** The ~68 `map_toml` port-test fixtures build
+region-only maps through `sigil_link::load_map`, which is UNCHANGED. The K1 placement facts are
+ADDITIVE and game-map-only (a region-only source parses to an empty `PlacementMap` — unit-tested
+`region_only_map_parses_to_empty_placement`), so the anticipated "pins→map ripples every fixture"
+(survey §12.6) did not materialize: the region format is stable and the placement layer is
+orthogonal. Per Fable's leave ("thin test-only constructor acceptable if unification resists —
+say so"): no constructor was needed; `load_map` serves both, and `load_placement_map` is the
+thin additional parse for the game maps only.
 
-### Why this is a STOP, not a hack-around
-Per the parcel's own hazard clause, the frozen-table **demotion fights reality**: the order
-is a stable-sort over frozen-derived prov bases, and the AS residual it orders has no stable
-declarable section identity while those `.asm` files still exist (they are deleted only in
-K2–K4). Any "ordered section list" I ship now would be a brittle LMA-snapshot masquerading
-as a declaration — exactly the "hack around" the brief forbids. **The anchors/holes/budgets
-facts do NOT have this problem** (they are addresses, not names) and are transcribed below.
-
----
-
-## §2 — The declarable K1 facts, transcribed (the map seed)
-
-Derived by instrumenting `packed_true_bases` (a throwaway `K1_DUMP` eprintln, since
-reverted; branch is clean) and dumping the converged round for all six targets.
-
-### Island anchors (the genuinely-anchored heads)
-| anchor | addr | present in | classification today |
-|---|---|---|---|
-| boot/vector head (run head) | `0x0` | all 6 | run-head island |
-| object bank (`ObjCodeBase`) | `0x10000` | all 6 | ANCHOR_GAP island (also `object_bank` region in sigil.map.toml) |
-| MT/SFX sound bank (`SoundTablesZ80_Head`) | `0x58000` (vma `0x8000`) | sound-ON only (s4, s4_debug, config_a) | **phase-bank** island (`vma != lma && vma ≥ 0x8000`) |
-
-**Open question the reader's lint must answer (why the map+lint land together):** the
-survey §7 asserts the DAC banks (`0x48000` / `0x50000`) are also phase-bracket anchors, but
-they carry **no frozen-table label** (the only table label in `0x40000–0x59000` is
-`SoundTablesZ80_Head`) — they are label-less BINCLUDE blobs, classified by contiguity /
-ANCHOR_GAP at runtime, not hand-declarable from the table. The **complete** anchor set
-(which label-less blobs cross the ANCHOR_GAP into island status) is measurement-derived; the
-spec's `[map.undeclared-island]` lint is precisely the mechanism that ENUMERATES them (an
-ANCHOR_GAP-inferred island absent from the map fails loud → you declare it). Hence a correct,
-complete `map.toml` cannot be authored *ahead of* the lint — they are one unit of work.
-
-### Hole (spec §1 fact #3, declared-as-data now; K2 consumes)
-`boot_data.asm`'s no-sound arm: `[[hole]] after = "Z80_IdleProgram" at = 0x3FE
-filled_by = "engine.z80_init"` — the 38-byte idle occupies `0x3d8..0x3fe`; the post-hole AS
-data resumes at `0x3fe`. LIVE for sound-OFF (demo, demo_debug, config_b); in sound-ON the
-Z80 sound blob fills the region (no hole). Enforcement/consumption is K2 (survey §5/§7).
-
-### Budget (spec §1 fact #4)
-`object_bank`: base `0x10000`, size `0x10000` (the `__BUDGET_DATA` cursor must stay
-`≤ 0x20000`) — already the `object_bank` region + `check_object_bank_budget` in
-`sigil.map.toml`. No other ROM ceiling is asserted in the residual today beyond this and the
-`EndOfRom > 0x3FFFFF` / geometry walls (survey §9); the brief says "do not invent new ceilings."
-
-### Proposed schema (for Fable's review — R2, see §3)
-Per-game `games/<g>/map.toml` extending today's `sigil.map.toml` region format
-(backward-compatible so the ~68 `map_toml` region-only fixtures keep parsing through the
-same `load_map`):
-```toml
-# regions: unchanged from sigil.map.toml (rom / object_bank / z80_moving_trucks_bank)
-[[anchor]] name = "boot_head"    at = 0x0
-[[anchor]] name = "object_bank"  at = 0x10000
-[[anchor]] name = "sound_bank"   at = 0x58000  vma = 0x8000  when = "sound_on"
-# ...plus every label-less ANCHOR_GAP island the lint enumerates (DAC banks, tails)
-[[hole]]   after = "Z80_IdleProgram" at = 0x3FE filled_by = "engine.z80_init" when = "sound_off"
-[[budget]] region = "object_bank" ceiling = 0x20000
-[[order]]  by = "module_id | head_label"  list = [ /* R2: stable ids, contiguity for blobs */ ]
-```
+### repin.toml (deliverable 4) — retire nothing (conservative)
+repin.toml's 58 `[[region]]` rows are per-section pin sources (start/end SYMBOLS → `pins.rs`
+test snapshots). They are NOT redundant with the map's placement facts: they reference some of
+the same symbols (e.g. `ObjCodeBase`) but drive a different mechanism (the cosmetic per-shape
+region bases the `ModuleSpec`s carry, IGNORED under Frozen) — retiring any would break `pins.rs`
+generation, which Fable ruled untouched. The map's 3 geometry regions live in each `map.toml`
+(mirroring `sigil.map.toml`, which retires in K5). So: no repin row derived or retired this
+parcel; `pins.rs` role intact, `repin → pins.rs unchanged` confirmed.
 
 ---
 
-## §3 — Recommended resolution (for the spec owner)
+## §2 — Decision record: the K1 stop that produced the R2+R1 ruling (evidence)
 
-Three options; recommend **R2 now + R1 for the full drive**:
+The "ordered section list drives the packer / frozen fully demoted" fact (spec §1 fact-1)
+collided with reality: ORDER today = a stable sort over frozen-table-derived provisional bases
+(`true_bases_by_index`/`packed_true_bases`); to stop the frozen table authoring order the map
+must supply it via stable per-section identifiers, but AS-residual section names are synthetic +
+LMA-derived + non-stable (`sigil-frontend-as/src/eval.rs:2036` `format!("sec{vma_base}")`;
+`sigil-harness/src/lib.rs:56-64` "not stable identifiers"; `text` non-unique) — and that residual
+is exactly what K2–K4 delete. Precedent: item-7 design §7.2 defers the "§3.3 ordering manifest";
+§9 rejected AS-frontend surgery for this class (hot-path blast radius). **RULED R2+R1** (spec
+`6e685f13`): STAGE 1 (K1, this packet) the map VALIDATES the derived order keyed by stable
+head-labels; STAGE 2 (K5, post-K4) the map DRIVES and the frozen tables fully demote; R3
+(frontend name surgery) rejected. The DAC-bank label-less finding is why map+reader+lint landed
+together (the lint enumerates the true island set).
 
-- **R1 (sequence):** the "ordered section list DRIVES the packer / frozen fully demoted"
-  becomes cleanly realizable only once the synthetic-named AS residual is ported/deleted
-  (K2–K4). Do K1's **anchors + hole + budget** now (address-keyed, no name dependency);
-  defer full order-drive to after the residual shrinks. Matches the item-7 §7.2 deferral.
-- **R2 (validate, keyed by stable id):** land the map NOW owning anchors+hole+budget, plus a
-  declared order keyed by **module-id / head-label** (label-less blobs by contiguity), and
-  make the map AUTHORITATIVE by **gate**: the derived (measurement-cache) order/anchor set is
-  VALIDATED against the declared map and **fails loud on divergence** (`[map.undeclared-island]`
-  + an order-mismatch lint). This is fold-identical by construction (derivation unchanged; a
-  check is ADDED), is how repin/pins already work (generate + assert-matches), and makes the
-  map the reviewed authority without the unrealizable section-name drive. Upgrade to "map
-  drives" under R1 when names stabilize.
-- **R3 (frontend surgery):** teach the AS relocating frontend to name sections by head label.
-  **Disfavored** — same hot-path blast radius the item-7 §9 ruling rejected.
+## §3 — step-3 / step-5 / ledgers
 
-Under R2/R1, K1 lands its declarable facts fold-identically this session's successor;
-the `[map.undeclared-island]` lint enumerates the complete anchor set (resolving the DAC-bank
-open question); the ~68 region-only `map_toml` fixtures need no migration (backward-compatible
-`load_map`); repin.toml's region rows stay (they mirror the same object_bank/z80 geometry the
-map already owns) — "derive-or-retire" becomes a same-work follow-on, not a blocker.
+- **step-3 (retrospect):** the "ordered section list" fact assumed stable section identifiers;
+  keying by min-offset LABEL + excluding zero-byte markers is the realization that makes it
+  fold-identical today. Recorded as the §1 keying note + the spec amendment.
+- **step-5 (optimize):** none — K1 is a pure authority swap by contract; no behavior/byte change
+  in scope, none made.
+- **Gap-ledger:** the order-DRIVE flip (frozen tables fully demoted) is K5 (post-K4), tracked in
+  the spec §1-fact-1 / §5. `sigil.map.toml` retirement (its 3 geometry regions now duplicated in
+  the per-game maps) is a K5 cleanup. Both are conscious, ledgered deferrals, not gaps.
+- **Kill-list:** K0 rows 5/13 (aabb.inc) + 92 (z80_sound_syms.asm) closed; census row 11 stale.
+  No new kill rows (the map reader is permanent, not scaffolding).
 
----
-
-## §4 — Ledger / kill-list / gap-ledger
-
-- **Kill-list:** row 13 (aabb.inc) → DELETED (K0); row 5 aabb token struck; row 92
-  (z80_sound_syms.asm on-disk leftover) → fully closed. Census row 11 → DELETED/stale.
-- **Gap-ledger:** the K1 order-drive is deferred pending Fable's R1/R2/R3 ruling (this note).
-  The DAC-bank label-less-island enumeration is a reader/lint deliverable, not a hand-declared
-  map fact.
-- **Step-3 (retrospect):** the spec's "ordered section list" fact silently assumed
-  stable section identifiers; reality (eval.rs:2036 / lib.rs:56-64) + the item-7 §9 precedent
-  say otherwise while the AS residual lives. Surface this in the spec.
-- **Step-5 (optimize):** none taken — K1 is a pure authority swap by contract; no
-  behavior/byte change is in scope, and none was made.
-
-## §5 — Status
-- **K0: DONE**, byte-neutral ×6, committed (aeon `9ae3323`, sigil `fb4287aa`).
-- **K1: STOPPED** at the spec-vs-reality collision above; awaiting the spec owner's ruling on
-  R1/R2/R3 before the reader + consumption flip + map files land (they must land together so
-  the map is provably complete + correct). Branch clean; strict baseline intact (no sigil code
-  changed beyond the reverted instrumentation; K0 doc rows only).
+## §4 — Status
+- **K0 + K1 (VALIDATE stage): DONE**, fold-identity ×6, strict green, refreeze/repin discipline intact.
+- Commits (branches unmerged for Fable's countersign): aeon `9ae3323` (K0), `a737568` (map files);
+  sigil `fb4287aa` (K0 rows), `e4bdb73a` (reader + flip), + this note.
+- Next in the K arc: K2 (boot_data + the $3FE hole enforcement), then K3/K4, then K5 (order-DRIVE).
