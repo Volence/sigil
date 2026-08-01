@@ -10,9 +10,8 @@
 //! The `raise_exception` construct emits `jsr (MDDBG__ErrorHandler).l` / `jmp
 //! (MDDBG__ErrorHandler_PagesController).l`, and the blob's extension-button
 //! pointers are `dc.l MDDBG__Debugger_AddressRegisters/Backtrace`. All four are
-//! ErrorHandler-relative equs (ErrorHandler = base+0x15A) fed here as synthetic
-//! pinned labels; in the full ROM they come from the AS-side mddbg_symbols.asm
-//! table (mixed_dac_rom's mixed gate).
+//! now `pub equ`s OWNED BY error_handler.emp (`extern("ErrorHandlerBlob") + off`),
+//! so the module self-resolves them at link — no synthetic injection (conv-i #7).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`). Absent, the
 //! gates SKIP green unless `SIGIL_STRICT_GATE=1`.
@@ -23,7 +22,7 @@ use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
-use sigil_ir::{Section, SectionPlacement, SymbolTable};
+use sigil_ir::{SectionPlacement, SymbolTable};
 use std::path::PathBuf;
 
 fn aeon_dir() -> PathBuf {
@@ -36,11 +35,6 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-const STUB_TABLE_LEN: u32 = 0x15A; // BusError..ErrorHandler
-const PAGES_OFFSET: u32 = 0xDC6; // ErrorHandler..PagesController
-const BTN_A_OFFSET: u32 = 0xE6C; // ErrorHandler..Debugger_AddressRegisters (mddbg_symbols.asm)
-const BTN_B_OFFSET: u32 = 0xEB8; // ErrorHandler..Debugger_Backtrace (mddbg_symbols.asm)
-
 struct Shape {
     base: u32,
     len: usize,
@@ -52,40 +46,6 @@ const PLAIN: Shape =
     Shape { base: pins::ERROR_HANDLER.plain_base, len: pins::ERROR_HANDLER.plain_len, rom: "s4.bin", debug: 0 };
 const DEBUG: Shape =
     Shape { base: pins::ERROR_HANDLER.debug_base, len: pins::ERROR_HANDLER.debug_len, rom: "s4.debug.bin", debug: 1 };
-
-/// The four `MDDBG__*` handler entry points the stubs' `raise_exception`
-/// jsr/jmp and the blob's dc.l pointers resolve against — all ErrorHandler-
-/// relative equs (ErrorHandler = base + STUB_TABLE_LEN), fed as synthetic pinned
-/// labels starting at `start_lma`. Shared by the region gate and the flip test.
-fn synthetic_handlers(base: u32, start_lma: u32) -> Vec<Section> {
-    let eh = base + STUB_TABLE_LEN;
-    let mut groups = vec![
-        as_label_at("MDDBG__ErrorHandler", eh),
-        as_label_at("MDDBG__ErrorHandler_PagesController", eh + PAGES_OFFSET),
-        as_label_at("MDDBG__Debugger_AddressRegisters", eh + BTN_A_OFFSET),
-        as_label_at("MDDBG__Debugger_Backtrace", eh + BTN_B_OFFSET),
-    ];
-    let mut out = Vec::new();
-    let mut lma = start_lma;
-    for group in &mut groups {
-        for sec in group.iter_mut() {
-            sec.lma = lma;
-            sec.placement = SectionPlacement::Pinned;
-            sec.group = None;
-        }
-        out.append(group);
-        lma += 0x10_0000;
-    }
-    out
-}
-
-fn as_label_at(name: &str, vma: u32) -> Vec<Section> {
-    let asm = format!("cpu 68000\nphase ${vma:X}\n{name}:\n\tdc.b 0\n");
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(&asm, &opts)
-        .unwrap_or_else(|d| panic!("AS assemble (synthetic {name}): {d:?}"))
-        .sections
-}
 
 fn map_toml(base: u32, len: usize) -> String {
     format!(
@@ -135,10 +95,9 @@ fn compile(shape: &Shape) -> sigil_link::LinkedImage {
         "place_sections errors: {pdiags:?}"
     );
 
-    // Synthetic handler entry points (the raise_exception jsr/jmp targets + the
-    // blob's dc.l extension-button pointers).
-    sections.extend(synthetic_handlers(shape.base, 0x0100_0000));
-
+    // The four MDDBG__* handler entry points (the raise_exception jsr/jmp targets
+    // + the blob's dc.l extension-button pointers) are error_handler.emp's own
+    // `pub equ`s off ErrorHandlerBlob — the module self-resolves them, no injection.
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
     sigil_link::link(&resolved, &SymbolTable::new()).unwrap_or_else(|d| panic!("link failed: {d:?}"))
@@ -250,9 +209,8 @@ fn vector_labels_resolve_to_emp_ownership() {
     let vec_name = vec_secs[0].name.clone();
     sections.append(&mut vec_secs);
 
-    // The synthetic handler entry points the stubs' raise_exception jsr/jmp need.
-    sections.extend(synthetic_handlers(PLAIN.base, 0x0300_0000));
-
+    // The stubs' raise_exception jsr/jmp targets are error_handler.emp's own
+    // MDDBG__* pub equs (off ErrorHandlerBlob) — self-resolved, no injection.
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("flip resolve failed: {d:?}"));
     // The .emp stub label VMAs (the expected resolutions).
