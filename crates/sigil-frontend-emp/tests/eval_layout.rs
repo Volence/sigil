@@ -196,6 +196,32 @@ fn aligned_fields_have_no_odd_field_warning() {
     assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
 }
 
+// ---- L4: `@allow("layout.odd-field")` at module scope --------------------
+
+#[test]
+fn module_allow_silences_odd_field() {
+    // The intentionally-unaligned Z80-record case: the module declares the intent
+    // once, at module scope, and the lint goes quiet.
+    let src = "module m\n@allow(\"layout.odd-field\")\nstruct S { a: u8, b: u16 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    let odd: Vec<&Diagnostic> = diags.iter().filter(|d| d.message.contains("odd-field")).collect();
+    assert!(odd.is_empty(), "@allow(\"layout.odd-field\") must silence the lint: {diags:?}");
+}
+
+#[test]
+fn allow_of_a_different_lint_does_not_silence_odd_field() {
+    // The allow is lint-specific: naming a DIFFERENT id leaves odd-field firing.
+    let src = "module m\n@allow(\"layout.odd-item\")\nstruct S { a: u8, b: u16 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    let odd: Vec<&Diagnostic> = diags.iter().filter(|d| d.message.contains("odd-field")).collect();
+    assert_eq!(odd.len(), 1, "a different lint's allow must NOT silence odd-field: {diags:?}");
+    assert_eq!(odd[0].level, Level::Warning);
+}
+
 #[test]
 fn repeated_query_on_shared_evaluator_does_not_re_emit_odd_field_warning() {
     // The odd-field (and size/@offset) checks run once, on the raw layout,
