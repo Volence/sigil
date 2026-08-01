@@ -10,13 +10,14 @@
 # golden_crc32=4b0fc1bc
 # assembled_anchor=b137c411
 # assembled_end=0x5f5f2
-# labels=70
+# labels=72
 Ani_Particle 0x257da
 Ani_Sonic 0x2576c
 AnimateSprite 0x351a
 Art_Decompress 0x6eb6
 BG_Init 0x6f70
 BgAnim_Init 0x701e
+BgAnim_Table 0x2573a
 BootData 0x3ac
 BootData_End 0x1c8a
 BusError 0x5e542
@@ -44,6 +45,7 @@ Load_Object 0x4d20
 Map_TestObj 0x2573c
 NullInterrupt 0x5e540
 OJZ_Act1_Descriptor 0x14bba
+OJZ_Palette 0x1feb8
 OJZ_Sec0_Blocks 0x14e2e
 OJZ_Sec0_TypeTable 0x11e0e
 ObjCodeBase 0x10000

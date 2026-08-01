@@ -529,6 +529,28 @@ end = "OJZ_Sec0_Blocks"
 gate = "SIGIL_EMP_ACT_DESCRIPTOR"
 tests = ["act_descriptor_port"]
 
+# Parcel K3 run B — the OJZ act1 interior-island TAIL, three native `.emp`
+# sections placed by contiguity after the descriptor. No gate: they have no AS
+# twin (act_descriptor.asm's block/palette/BG/bg_anim includes were deleted, not
+# holed out). end-is-next-placement per section (the load_object precedent).
+[[region]]
+name = "sec_block_blobs"
+start = "OJZ_Sec0_Blocks"
+end = "OJZ_Palette"
+tests = ["ojz_run_b_port"]
+
+[[region]]
+name = "ojz_act_assets"
+start = "OJZ_Palette"
+end = "BgAnim_Table"
+tests = ["ojz_run_b_port"]
+
+[[region]]
+name = "ojz_bg_anim"
+start = "BgAnim_Table"
+end = "Map_TestObj"
+tests = ["ojz_run_b_port"]
+
 # The objdef DATA region (t14): the four ObjDef_* archetype templates emitted
 # by games/sonic4/data/objdefs/test_objects.{asm,emp}. End = the first symbol
 # of the next include (entity_data.asm). Distinct gate from the object-CODE

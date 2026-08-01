@@ -283,6 +283,16 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         // act_descriptor (kill row 93): the OJZ act1 descriptor table; header stays
         // AS-side, the body/section table places here.
         m!("games.sonic4.act_descriptor_ojz_act1", "act_descriptor", pins::ACT_DESCRIPTOR),
+        // Parcel K3 run B: the OJZ act1 interior island TAIL — the contiguous run
+        // after the descriptor. Three native `.emp` sections (the generators emit
+        // #32/#28; the palette/BG BINCLUDEs dissolved into act_assets.emp), placed
+        // by contiguity after the descriptor:
+        //   sec_block_blobs — OJZ_Sec{0..8}_Blocks (Sec4=Sec2 dedup equ), 8 embeds
+        //   ojz_act_assets  — OJZ_Palette / BGND_Palette / OJZ_Act1_BG_{Layout,Tiles}
+        //   ojz_bg_anim     — BgAnim_Table (disabled stub) + BgAnim_Banks
+        m!("games.sonic4.ojz_sec_block_blobs_act1", "sec_block_blobs", pins::SEC_BLOCK_BLOBS),
+        m!("games.sonic4.ojz_act_assets_act1", "ojz_act_assets", pins::OJZ_ACT_ASSETS),
+        m!("games.sonic4.ojz_bg_anim_act1", "ojz_bg_anim", pins::OJZ_BG_ANIM),
         // ── Game test states ──
         m!("games.sonic4.object_test_state", "object_test_state", pins::OBJECT_TEST_STATE),
         m!("games.sonic4.ojz_scroll_test", "ojz_scroll_test", pins::OJZ_SCROLL_TEST),
