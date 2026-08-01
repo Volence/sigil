@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 71 regions, 299 symbols, 7 offsets
+//! [provenance] 72 regions, 299 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -236,6 +236,9 @@ pub const MT_BANK_BLOB: Region = Region { plain_base: 0x58607, debug_base: 0x586
 
 /// `Sfx_33` .. start + 0x748 plain / 0x748 debug (literal — no end symbol) — gate `SIGIL_EMP_SFX`. tests: sfx_bank_port
 pub const SFX_BANK_BLOB: Region = Region { plain_base: 0x5BAE8, debug_base: 0x5D53A, plain_len: 0x748, debug_len: 0x748 };
+
+/// `SoundTablesZ80_Head` .. start + 0x607 plain / 0x607 debug (literal — no end symbol) — gate `SIGIL_EMP_SOUNDBANKHEAD`. tests: soundbankhead_port
+pub const SOUNDBANKHEAD: Region = Region { plain_base: 0x8000, debug_base: 0x8000, plain_len: 0x607, debug_len: 0x607 };
 
 /// `EndOfRom` .. start + 0x0 plain / 0x0 debug (literal — no end symbol) — gate `SIGIL_EMP_EPILOGUE`. tests: m1d_rom, m1d_debug_rom
 pub const EPILOGUE: Region = Region { plain_base: 0x5DB00, debug_base: 0x5F5F2, plain_len: 0x0, debug_len: 0x0 };

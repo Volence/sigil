@@ -329,6 +329,12 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         // sfx_bank_blob.emp embeds the seam-2 sfx_bank{,_debug}.bin after the MT body
         // (non-phased LMA; no cross-seam labels). Sound-ON only.
         m!("games.sonic4.sfx_bank_blob", "sfx_bank_blob", pins::SFX_BANK_BLOB),
+        // Parcel K4 inc-5 Stage 4b (P2 soundBankHead probe): the engine-table bank HEAD
+        // is native — soundbankhead.emp places the 5 heads as a PHASE-BANK section (vma
+        // $8000, lma $58000). Was the soundBankHead macro (sound_bank.inc, deleted). The
+        // FIRST native phase-bank section (the bank-anchor rule: labeled $8000-window
+        // head, hard org, never repacks). Sound-ON only.
+        m!("games.sonic4.soundbankhead", "soundbankhead", pins::SOUNDBANKHEAD),
         // ── Game test states ──
         m!("games.sonic4.object_test_state", "object_test_state", pins::OBJECT_TEST_STATE),
         m!("games.sonic4.ojz_scroll_test", "ojz_scroll_test", pins::OJZ_SCROLL_TEST),
@@ -563,6 +569,7 @@ pub fn config_b_profile() -> GameProfile {
                 && m.module_id != "games.sonic4.dac_banks"
                 && m.module_id != "games.sonic4.mt_bank_blob"
                 && m.module_id != "games.sonic4.sfx_bank_blob"
+                && m.module_id != "games.sonic4.soundbankhead"
         })
         .collect();
     registry.push(ModuleSpec {
@@ -1083,7 +1090,7 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
     let mut defines: Vec<(String, i64)> = harvest_engine_ram_addresses(aeon, profile)?;
     if profile.sound_on {
         defines.push(("SOUND_DRIVER_ENABLED".to_string(), 1));
-        for g in ["SIGIL_EMP_DAC", "SIGIL_EMP_MT", "SIGIL_EMP_SFX"] {
+        for g in ["SIGIL_EMP_DAC", "SIGIL_EMP_MT", "SIGIL_EMP_SFX", "SIGIL_EMP_SOUNDBANKHEAD"] {
             defines.push((g.to_string(), 1));
         }
     }

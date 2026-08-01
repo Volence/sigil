@@ -669,6 +669,19 @@ len = 0x748
 gate = "SIGIL_EMP_SFX"
 tests = ["sfx_bank_port"]
 
+# Parcel K4 inc-5 Stage 4b — the engine-table bank HEAD, native (soundbankhead.emp
+# places the 5 heads as a PHASE-BANK section, LMA $58000 / VMA $8000). Was the
+# soundBankHead macro (sound_bank.inc, DELETED). Literal len 0x607 (the head is
+# $8000..$8607 contiguous; shape-invariant size, shape-dependent content). gate
+# SIGIL_EMP_SOUNDBANKHEAD holes out the AS phase block + org-skip. start
+# SoundTablesZ80_Head (already a frozen key + the `sound_bank` map anchor).
+[[region]]
+name = "soundbankhead"
+start = "SoundTablesZ80_Head"
+len = 0x607
+gate = "SIGIL_EMP_SOUNDBANKHEAD"
+tests = ["soundbankhead_port"]
+
 # Parcel K4 B1 — the ROM terminus (engine.epilogue). A zero-length section whose
 # head label EndOfRom is the ROM one-past-the-end. `len = 0` literal (nothing
 # follows it — it IS the end). gate SIGIL_EMP_EPILOGUE holes out engine.inc's

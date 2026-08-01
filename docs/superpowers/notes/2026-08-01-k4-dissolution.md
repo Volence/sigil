@@ -286,7 +286,9 @@ the map for the dedicated sound-bank pass, and hold the skeleton deletion behind
   Stage 1 — `engine.epilogue` native) but still carries the org ladder + the
   `sound_bank.inc`/`debugger.asm` includes.
 - **`engine/system/header.inc` ported:** ✅ TRUE (K4 inc-2 → games/*/config/header.emp).
-- **`engine/sound/sound_bank.inc` ported:** ❌ NOT YET (§5, the phase-bank head).
+- **`engine/sound/sound_bank.inc` ported:** ✅ TRUE (K4 inc-5 Stage 4b →
+  games/sonic4/data/sound/soundbankhead.emp, the first native phase-bank section;
+  sound_bank.inc DELETED). The whole sound bank is native (DAC+MT+SFX bodies + head).
 - **The 106 inert orgs die with their files:** PARTIAL — the OJZ orgs (K3), the header
   org, and the collision org are retired/inert; the sound + engine-ladder orgs remain
   until the skeleton deletion.
@@ -582,3 +584,49 @@ Gates: strict **2901 / 0 / 4** (2899 + 2 sfx_bank_port); `refreeze --check` OK (
 `repin --check` clean; K1 order green. The MT + SFX bank BODIES are now native; the
 remaining sound-bank piece is the `soundBankHead` phase-08000h head (sound_bank.inc) —
 Stage 4b, the phase-bank surface.
+
+### Stage 4b — P2 soundBankHead probe — DONE (the phase bank; sound_bank.inc DELETED)
+
+The engine-table bank HEAD (the `soundBankHead` macro, sound_bank.inc — the 5 heads
+inside the `phase 08000h` bracket) is native — `games/sonic4/data/sound/soundbankhead.emp`
+places them as the **FIRST native PHASE-BANK section** (vma $8000 / lma $58000) embedding
+the seam-2 head artifacts. sound_bank.inc + its macro are DELETED (the last sound-bank
+piece; the `phase 08000h` bracket goes with them — the section's `vma: $8000` carries the
+window addressing).
+
+- **The phase-bank-anchor rule (armed, first exercise):** a labeled $8000-window head is
+  a HARD org (`is_phase_bank`), never repacks. The 5 heads are byte-exact + contiguous
+  ($8000..$8607 = $607); a size drift would slide a downstream head off its fixed carrier
+  VMA and desync the resident Z80 blob — the AS `fatal` walls are now the module's comptime
+  `ensure`s ($357/$108/$10E/$40/$5A). NO whole-ROM-link consumer (the resident Z80 code
+  that reads these labels is the seam-1 BLOB, resolved separately via banked_carriers +
+  the DacSampleTable -D — this module re-homes the same labels the AS soundBankHead defined).
+- **Wiring:** registry `games.sonic4.soundbankhead` (sound-ON only, config_b filtered); gate
+  `SIGIL_EMP_SOUNDBANKHEAD` (added to the sound-on bare-gate set); main.asm replaces the
+  `save/cpu z80/phase/soundBankHead/dephase/restore` block with an `ifdef SIGIL_EMP_SOUNDBANKHEAD`
+  skip org $58607 (keeping MovingTrucks_Bank_Start + the SND_ENGINE_TABLE_BANK/SFX_BLOB_BANK
+  equs, which read its LMA>>15); m1c_root.asm drops the sound_bank.inc include; emit-first
+  `soundbankhead_port` golden gate (2/2). **Two phase-bank firsts recorded:**
+  (1) `SoundTablesZ80_Head` was already in s4.txt/s4_debug.txt but NOT config_a.txt — seeded
+  it there (config_a placed the keyless phase section at base 0 and collided with `vectors`
+  until seeded). (2) **repin derives the pin `SOUNDBANKHEAD` as the phase VMA ($8000), not
+  the LMA** (it resolves the phased label's value); the golden gate therefore reads the LMA
+  = VMA + $50000 = $58000 explicitly, and placement is driven by the frozen key (LMA $58000,
+  Frozen path) — the VMA pin is cosmetic for the shipped (Frozen) builds.
+
+**Identity: ANCHORS IDENTICAL ×6 — appendix flagged re-freeze.** Head byte-exact at the
+phase VMAs, `EndOfRom` unchanged ($5DB00); the only `[0,EndOfRom)` diffs are the derived
+header checksum ($18E) + rom_end ($1A4). The appendix RE-HOMES labels (the AS soundBankHead's
+`_End` span labels retire; the 6 head labels re-home AS→native). `refreeze --freeze
+k4-soundbankhead` (no `--ab`) → chain **#17**.
+
+| target | full_crc (was → now) | anchor_crc (UNCHANGED) |
+|---|---|---|
+| s4 | `f788dae7` → **`94708cfb`** / 412154 | `658c623b` |
+| s4_debug | `d7af41e5` → **`6f0a1948`** / 421990 | `b137c411` |
+| config_a | `58c570a0` → **`b3ce9e67`** / 422325 | (unchanged) |
+| demo / demo_debug / config_b | UNCHANGED (sound-off) | — |
+
+Gates: strict **2903 / 0 / 4** (2901 + 2 soundbankhead_port); `refreeze --check` OK
+(chain 17); `repin --check` clean; K1 order green. **The entire sound bank is now native —
+DAC + MT + SFX bodies + the soundBankHead head; sound_bank.inc DELETED.**
