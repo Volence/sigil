@@ -69,6 +69,8 @@ fn collect_pub_comptime(
     def_file: &ast::File,
     items: &[ast::Item],
     pred: &impl Fn(&str) -> bool,
+    defines: &[(String, i128)],
+    include_root: Option<&Path>,
     out: &mut Vec<ast::Item>,
 ) {
     for item in items {
@@ -102,10 +104,28 @@ fn collect_pub_comptime(
             // overlay counts are small today, like the own-items clone note in
             // `build_program`).
             stamp_overlay_window(def_file, &mut cloned);
+            // A `const NAME: T = EXPR`'s initializer resolves in its DEFINING
+            // module's scope, where its sibling consts are visible. A `use`d
+            // consumer sees only the named import, not those siblings, so a
+            // derived initializer (`= OTHER_CONST + n`) would fail `unknown name`
+            // when the injected clone's expression re-evaluates in the consumer.
+            // Fold the value HERE, at the definition site (the const-value analogue
+            // of `stamp_overlay_window`): resolve it against `def_file` and replace
+            // the injected clone's expression with the resolved literal, so the
+            // consumer reads a self-contained value and no sibling name leaks into
+            // its scope. Best-effort — a value that does not resolve cleanly to an
+            // `i64` (a cross-module reference `def_file` alone cannot see, a
+            // non-int, an out-of-range magnitude) keeps its original expression, so
+            // behavior is unchanged for every const the consumer already resolved.
+            if let ast::Item::Const(c) = &mut cloned {
+                if let Some(lit) = fold_const_literal(def_file, &c.name, defines, include_root) {
+                    c.value = ast::Expr::Int(lit, c.span);
+                }
+            }
             out.push(cloned);
         }
         if let ast::Item::Section(sec) = item {
-            collect_pub_comptime(def_file, &sec.items, pred, out);
+            collect_pub_comptime(def_file, &sec.items, pred, defines, include_root, out);
         }
     }
 }
@@ -123,6 +143,30 @@ fn stamp_overlay_window(def_file: &ast::File, item: &mut ast::Item) {
     }
 }
 
+/// Resolve the `pub const` named `name` to an `i64` literal in its DEFINING file's
+/// scope (siblings + `defines` visible), for the injected-clone value fold in
+/// [`collect_pub_comptime`]. Returns `Some(n)` ONLY on a clean resolution: no
+/// Error-level diagnostic, an integer value, and a magnitude that fits `i64` (the
+/// [`ast::Expr::Int`] payload). Any other outcome — an unresolved cross-module
+/// reference `def_file` cannot see, a non-int value, an out-of-range magnitude, a
+/// cyclic definition — yields `None` so the caller keeps the const's original
+/// expression (the consumer then resolves it exactly as before). All diagnostics
+/// the probe provokes are discarded: it is a best-effort fold, never a report
+/// site (a real error surfaces at the const's own decl site during lowering).
+fn fold_const_literal(
+    def_file: &ast::File,
+    name: &str,
+    defines: &[(String, i128)],
+    include_root: Option<&Path>,
+) -> Option<i64> {
+    let (value, diags) = crate::eval::eval_const_with_root(def_file, name, include_root, defines);
+    if diags.iter().any(|d| d.level == Level::Error) {
+        return None;
+    }
+    let n = value?.as_stored_int()?;
+    i64::try_from(n).ok()
+}
+
 /// Collect the pub comptime-only items (const/struct/enum/bitfield/newtype/comptime fn)
 /// that `module` should see from the prelude and from the modules it `use`s. These are
 /// PREPENDED to the module's items so the evaluator resolves cross-module types/consts,
@@ -133,13 +177,15 @@ fn ambient_items(
     module: &ParsedModule,
     prelude: Option<&ParsedModule>,
     manifest: &Manifest,
+    defines: &[(String, i128)],
+    include_root: Option<&Path>,
 ) -> Vec<ast::Item> {
     let mut out = Vec::new();
 
     // Prelude first (own items, added in Part B, shadow these via last-wins).
     if let Some(p) = prelude {
         if p.id != module.id {
-            collect_pub_comptime(&p.file, &p.file.items, &|_| true, &mut out);
+            collect_pub_comptime(&p.file, &p.file.items, &|_| true, defines, include_root, &mut out);
         }
     }
 
@@ -147,7 +193,7 @@ fn ambient_items(
     // the prelude<use precedence; own items shadow both via Part B ordering).
     // Recurses one level into `section {}` bodies so a section-nested `use` is
     // honored too, not just top-level ones.
-    ambient_from_uses(&module.file.items, module, manifest, &mut out);
+    ambient_from_uses(&module.file.items, module, manifest, defines, include_root, &mut out);
 
     out
 }
@@ -156,6 +202,8 @@ fn ambient_from_uses(
     items: &[ast::Item],
     module: &ParsedModule,
     manifest: &Manifest,
+    defines: &[(String, i128)],
+    include_root: Option<&Path>,
     out: &mut Vec<ast::Item>,
 ) {
     for item in items {
@@ -171,18 +219,27 @@ fn ambient_from_uses(
                 }
                 match &u.names {
                     ast::UseNames::Whole => {} // whole-path label import — handled by rename/link.
-                    ast::UseNames::Glob => {
-                        collect_pub_comptime(&base_mod.file, &base_mod.file.items, &|_| true, out)
-                    }
+                    ast::UseNames::Glob => collect_pub_comptime(
+                        &base_mod.file,
+                        &base_mod.file.items,
+                        &|_| true,
+                        defines,
+                        include_root,
+                        out,
+                    ),
                     ast::UseNames::List(names) => collect_pub_comptime(
                         &base_mod.file,
                         &base_mod.file.items,
                         &|n| names.iter().any(|w| w == n),
+                        defines,
+                        include_root,
                         out,
                     ),
                 }
             }
-            ast::Item::Section(sec) => ambient_from_uses(&sec.items, module, manifest, out),
+            ast::Item::Section(sec) => {
+                ambient_from_uses(&sec.items, module, manifest, defines, include_root, out)
+            }
             _ => {}
         }
     }
@@ -346,7 +403,8 @@ fn build_program_with(
             if !crate::lower::file_declares_region(&pm.file) {
                 return None;
             }
-            let ambient = ambient_items(pm, prelude_pm, manifest);
+            let ambient =
+                ambient_items(pm, prelude_pm, manifest, &opts.defines, opts.include_root.as_deref());
             let file = if ambient.is_empty() {
                 pm.file.clone()
             } else {
@@ -408,7 +466,8 @@ fn build_program_with(
             &per_module_opts
         };
 
-        let ambient = ambient_items(pm, prelude_pm, manifest);
+        let ambient =
+            ambient_items(pm, prelude_pm, manifest, &opts.defines, opts.include_root.as_deref());
         let (mut module, ldiags) = if ambient.is_empty() {
             // zero-clone common path; `region_ends` is empty for region-free builds.
             lower_module_with_region_ends(&pm.file, opts, &region_ends)
