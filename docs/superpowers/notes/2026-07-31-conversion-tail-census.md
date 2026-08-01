@@ -41,7 +41,7 @@ zero-byte equate/offset); "A/B" = needs oracle A/B + re-freeze.
 | # | path | lines | what | class | eff | deps / blockers | notes |
 |---|---|---|---|---|---|---|---|
 | 1 | `engine/constants.asm` | 386 (147 `=`) | residual hardware addrs, VDP access, VRAM layout, art sizes — the half NOT flipped at P5 | OWNERSHIP-FLIP | M | the P5 harvest→inject mechanism (already built) | BN. `constants.emp` already owns 114; this extends the SAME flip to the residual `=`. Some entries (`SYSTEM_STACK`) are integer equs the harvest handles. |
-| 2 | `engine/sound_constants.asm` | 1480 (321 defs) | shared 68k/Z80 sound equates (SND_* slots, banks, ids) | PORT (constants flip) | L | P5 mechanism; read by 5 sound `.emp` modules | BN. Ledger close-packet §4 "row-59 sound-domain constants parcel — its own flip using the proven mechanism (harvest a `sound_constants.emp` + inject)". The SND_* comptime-source circularity (ledger 1619) dissolves here. |
+| 2 | `engine/sound_constants.asm` | 1480 (321 defs) | shared 68k/Z80 sound equates (SND_* slots, banks, ids) — **+ 5 Z80 structs + derived Z80 RAM layout + ~40 assert walls** | ~~PORT (constants flip)~~ **CAPSTONE (structs + derived-RAM + flat fused)** | ~~L~~ **CAPSTONE** | P5 + struct-offset harvest exist; but resident-blob mirror = seam1's 399 hardcoded entries + seam2 carriers + 33 68k externs | **STOP 2026-08-01** (`2026-08-01-conv-e-sound-constants.md`). Not a flat-equate flip. Ledger-1619 citation stale (SETTLED @1877, different file). Build as own spec + 2–3 parcels (item-#7 shape) OR accept AS-authored as the "100% .emp" exception. |
 | 3 | `engine/structs.asm` | 258 | `struct…endstruct` generating SST/Act/Sec/DMAEntry/parallax_config/EntityScanState field-offset equs + VDP_Shadow_len | OWNERSHIP-FLIP | M | needs a STRUCT-OFFSET harvester (sibling of `eval_all_pub_consts`) | BN. Close-packet §4 "the structs flip (rows 7/8/11/15/25)". Retires the VDP_Shadow_len bridge. Its `.emp` overlays (sst.emp, engine.structs, act_descriptor.emp) already mirror with drift guards. |
 | 4 | `engine/macros.asm` | 367 | AS `function`/`macro` comptime helpers (vdpComm, vdpReg, vram_art, vram_bytes, sprSize, clearRAM, DMA macros) | RESIDUAL-SKELETON (comptime-helper carrier) | M | its `.emp` twins (engine.vdp comptime fns) largely exist; dies when its last residual-AS consumer moves | BN. Still needed while residual AS data emits (boot_data's vdpComm, demo_data's vram_art, mappings' sprSize). Port the helpers into a shared `.emp` comptime module opportunistically; delete the `.asm` with the residual-split capstone. |
 | 5 | `engine/ram.asm` | 524 (1 `=`, 201 `ds`) | engine RAM LAYOUT (`Name: ds.b N` runs, conditional debug fields, buffer-reuse overlays) | PORT (`vars` layout) | L | **B-0b RAM packing** (pins→computed); the `vars` construct; comptime reads served by injected defines | ✅ **DONE (item #7b, `engine/ram.emp`)** — the region form: two `region`s + two `pub vars`; the three `if/error` guards → region `limit`s + `w_addressable`; buffer-reuse → `alias()`+`ensure`; the two `ifdef __DEBUG__` → `if DEBUG == 1` groups. `.asm` deleted. Six-target byte-identical; repin zero-diff. |
@@ -232,6 +232,31 @@ the DSL adoption. **BN.** Effort M. → files: **13, 47, 48, 49**.
 Independent of A–D; the P5 mechanism serves it. Harvest `sound_constants.emp`,
 inject, retire the 5-consumer mirrors. Dissolves the SND_* comptime-source
 circularity (ledger 1619). **BN.** Effort L. → files: **2**.
+
+> **PARCEL E OUTCOME (2026-08-01, `2026-08-01-conv-e-sound-constants.md`):
+> INSPECTION STOP — reclass L → CAPSTONE.** Three premise corrections, numbers-
+> grounded: (1) the file is NOT a flat-equate holder — 1481 ln = 321 `=` (many
+> struct-derived aliases) + **5 Z80 structs** (DacSample/FmPatch/SfxHeader/SfxChannel/
+> SeqChannel, with a 13-field SeqChannel↔SfxChannel shared-prefix invariant) + a
+> **derived Z80 RAM layout** (~40 addrs mixing flat bases × `sizeof(struct)`) + ~40
+> `error`/`fatal` walls + 5 comptime fns; it is the structs-flip + derived-RAM +
+> flat-equate classes FUSED, not "constants flip" (Parcel A deliberately left the 5
+> SOUND structs here). (2) "5-consumer mirrors" understates a TRIPLE unguarded mirror:
+> `seam1.rs` **399 hardcoded `(name,value)` entries** across `driver/sequencer/sfx/fm/
+> psg_consts` (fed to the resident Z80 blob build) + seam2 pinned DAC-head carriers +
+> 33 68k-`.emp` link-externs (sound_api 24 / sound_debug 7 / dac_sample_tab 2); the AS
+> residual 68k `.asm` reads it ~0×. (3) the cited circularity **ledger 1619 is already
+> SETTLED** (ledger line 1877, 2026-07-30) — a different file (`sound_tables_z80`); the
+> still-live hazard is the seam1 399-entry mirror. The mechanism EXISTS (harvest +
+> struct-offset + `sizeof`-in-eval all proven — NOT a missing-feature blocker), but the
+> WORK is the **item-#7 (RAM-regions) shape**: new `sound_constants.emp` with the first
+> Z80 struct-offset + derived-RAM-from-`sizeof` composition, a `harvest_sound_constants`
+> extension feeding BOTH the AS residual AND the resident Z80 blob (retiring all 5 seam1
+> tables + seam2 carriers), the 33 externs → `use`, `.asm` deleted, six-ROM **+ Z80-blob**
+> byte-identity. No clean sub-seam (derived RAM mixes flat + sizeof; seam1 tables
+> interleave all classes). RULE NEEDED: build as its own spec + 2–3 parcels (path 1),
+> or accept AS-authored `sound_constants.asm` as the standing "100% .emp" exception
+> (path 2, like #6 vendored debugger). No code changed; branches clean.
 
 ### Parcel F — the game-config / P6 module · #21, #22, #24
 The untyped half folds through the reverse-seam (link-position) — likely no
