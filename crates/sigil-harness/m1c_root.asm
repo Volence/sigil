@@ -19,7 +19,7 @@ PAD_TO_POWER_OF_TWO     = 1
 
     ; Sound constants are authored in engine/sound/sound_constants.emp now; the
     ; residual AS reads none of its symbols (mirrors main.asm's front-matter).
-    include "engine/macros.asm"
+    ; engine/macros.asm is DELETED (Parcel K4 — zero live consumers).
     ; parallax_macros.inc is retired (conv-g): the §4.6 authoring vocabulary is
     ; engine/level/parallax_dsl.emp; the config data is native.
     include "engine/sound/sound_bank.inc"

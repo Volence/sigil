@@ -595,3 +595,50 @@ full_crc = "4b0fc1bc"
 full_size = 421960
 anchor_crc = "b137c411"
 anchor_end = 0x5f5f2
+
+[[entry]]
+name = "k4-header"
+ab = ""
+note = "header.inc -> games/*/config/header.emp; type-guarded strings; appendix-only (anchors identical x6)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "0c08425d"
+full_size = 422321
+anchor_crc = "19b793ec"
+anchor_end = 0x5f5f2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "947e4c57"
+full_size = 303555
+anchor_crc = "8b490cfb"
+anchor_end = 0x43480
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "55b70266"
+full_size = 90576
+anchor_crc = "e2dc9207"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "6487a47c"
+full_size = 93073
+anchor_crc = "b7d81931"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "f1b78974"
+full_size = 412151
+anchor_crc = "658c623b"
+anchor_end = 0x5db00
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "cbeeec69"
+full_size = 421982
+anchor_crc = "b137c411"
+anchor_end = 0x5f5f2

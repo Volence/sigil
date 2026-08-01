@@ -40,6 +40,15 @@ len = 0x100
 gate = "SIGIL_EMP_VECTORS"
 tests = ["vectors_port"]
 
+# Parcel K4 — the $100-$1FF ROM header, native (was header.inc's gameHeader macro).
+# No gate: no AS twin (header.inc deleted, the gameHeader invocation removed from
+# engine.inc). Head label GameHeader ($100); end = EntryPoint ($200).
+[[region]]
+name = "header"
+start = "GameHeader"
+end = "EntryPoint"
+tests = ["header_port"]
+
 [[region]]
 # Tranche 23 — the boot sequence (EntryPoint/Warm/Cold fall-through chain).
 # End is the data tail's head: boot_data.asm's BootData table (the .emp
