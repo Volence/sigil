@@ -417,6 +417,9 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     sections.extend(flip_lower(
         flip_parse(&aeon.join("engine/system/vblank.emp")),
         vec![
+            // vblank.emp `use engine.sound_constants.*` for the DMA-window flag —
+            // prepend the authority so the SND_* consts fold in this lower.
+            flip_parse(&aeon.join("engine/sound/sound_constants.emp")),
             flip_parse(&aeon.join("engine/z80_bus.emp")),
             flip_parse(&aeon.join("engine/irq.emp")),
         ],
@@ -428,13 +431,15 @@ fn two_module_flip(debug: bool, rom_name: &str) {
             ("DEBUG".to_string(), dbg),
             ("SOUND_DRIVER_ENABLED".to_string(), 1),
             ("SOUND_DBG_MIRROR".to_string(), 0),
+            // Z80_RAM (engine.constants) is the base of SND_Z80_BASE.
+            ("Z80_RAM".to_string(), 0xA0_0000),
         ],
     ));
 
     // Value seam (ONE equ blob — a second assemble would redefine `Stub:`).
+    // SND_Z80_BASE / SND_CTRL_DMA_ACTIVE are authored in sound_constants.emp now
+    // (prepended above), so only the z80_bus register stays a link extern.
     let pairs: Vec<(&str, &str)> = vec![
-        ("SND_Z80_BASE", "$A00000"),
-        ("SND_CTRL_DMA_ACTIVE", "$1F04"),
         ("Z80_BUS_REQUEST", "$A11100"),
     ];
     sections.extend(sigil_harness::test_support::assemble_equ_pairs(&pairs));

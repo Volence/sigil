@@ -17,7 +17,8 @@
 
 PAD_TO_POWER_OF_TWO     = 1
 
-    include "engine/sound_constants.asm"
+    ; Sound constants are authored in engine/sound/sound_constants.emp now; the
+    ; residual AS reads none of its symbols (mirrors main.asm's front-matter).
     include "engine/macros.asm"
     include "engine/parallax_macros.inc"
     include "engine/sound/sound_bank.inc"

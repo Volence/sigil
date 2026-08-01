@@ -55,14 +55,12 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-/// The VALUE seam: the extern-sum equ inputs + the z80_bus template's bus
-/// register (truths: engine/sound_constants.asm + engine/constants.asm).
+/// The VALUE seam: the z80_bus template's bus register (truth:
+/// engine/constants.asm). The SND_Z80_BASE / SND_CTRL_DMA_ACTIVE inputs are now
+/// authored in engine/sound/sound_constants.emp (prepended in lower_vblank), so
+/// they are comptime consts, not link externs.
 fn value_equs() -> Vec<Section> {
-    let pairs: Vec<(&str, &str)> = vec![
-        ("SND_Z80_BASE", "$A00000"),
-        ("SND_CTRL_DMA_ACTIVE", "$1F04"),
-        ("Z80_BUS_REQUEST", "$A11100"),
-    ];
+    let pairs: Vec<(&str, &str)> = vec![("Z80_BUS_REQUEST", "$A11100")];
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
@@ -139,10 +137,19 @@ fn lower_vblank(
     let main = parse_file(&dir.join("vblank.emp"));
     let z80_file = parse_file(&aeon.join("engine/z80_bus.emp"));
     let irq_file = parse_file(&aeon.join("engine/irq.emp"));
+    // vblank.emp `use engine.sound_constants.*` for the DMA-window flag; prepend
+    // the authority's items so the SND_* consts fold in this standalone lower.
+    let snd_file = parse_file(&aeon.join("engine/sound/sound_constants.emp"));
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
-        items: z80_file.items.into_iter().chain(irq_file.items).chain(main.items).collect(),
+        items: snd_file
+            .items
+            .into_iter()
+            .chain(z80_file.items)
+            .chain(irq_file.items)
+            .chain(main.items)
+            .collect(),
         docs: main.docs.clone(),
     };
     let opts = LowerOptions {
@@ -153,6 +160,9 @@ fn lower_vblank(
             ("DEBUG".to_string(), i128::from(debug)),
             ("SOUND_DRIVER_ENABLED".to_string(), i128::from(sound)),
             ("SOUND_DBG_MIRROR".to_string(), i128::from(mirror)),
+            // Z80_RAM (engine.constants) is the base of SND_Z80_BASE; the auto-glob
+            // provides it in the real build, seeded here for the curated lower.
+            ("Z80_RAM".to_string(), 0xA0_0000),
         ],
     };
     let (module, ldiags) = lower_module(&file, &opts);
