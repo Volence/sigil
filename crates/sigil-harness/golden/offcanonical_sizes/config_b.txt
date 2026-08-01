@@ -10,7 +10,7 @@
 # golden_crc32=38215ead
 # assembled_anchor=8b490cfb
 # assembled_end=0x43480
-# labels=71
+# labels=72
 Ani_Particle 0x25728
 Ani_Particle_End 0x25730
 Ani_Sonic 0x256ba
@@ -45,6 +45,7 @@ Load_Object 0x27e0
 Map_TestObj 0x2568a
 NullInterrupt 0x423c2
 OJZ_Act1_Descriptor 0x14b08
+OJZ_Act_Pool_Page0 0x11ecc
 OJZ_Palette 0x1fe06
 OJZ_Sec0_Blocks 0x14d7c
 OJZ_Sec0_TypeTable 0x11d5c

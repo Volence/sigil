@@ -522,6 +522,21 @@ gate = "SIGIL_EMP_PARTICLE_ANIMS"
 # test_objects_port pins Ani_Particle (= this region's base) as an anim table.
 tests = ["particle_anims_port", "test_objects_port"]
 
+# Parcel K3 run A — the OJZ act1 interior-island HEAD, two native `.emp` sections
+# BEFORE the descriptor. No gate: no AS twin (entity_data.asm + the pool include +
+# act_descriptor.asm were DELETED, not holed out). end-is-next-placement.
+[[region]]
+name = "entity_data"
+start = "OJZ_Sec0_TypeTable"
+end = "OJZ_Act_Pool_Page0"
+tests = ["ojz_run_a_port"]
+
+[[region]]
+name = "ojz_act_pool"
+start = "OJZ_Act_Pool_Page0"
+end = "OJZ_Act1_Descriptor"
+tests = ["ojz_run_a_port"]
+
 [[region]]
 name = "act_descriptor"
 start = "OJZ_Act1_Descriptor"
