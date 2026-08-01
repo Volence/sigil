@@ -382,6 +382,8 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     let (vb_sections, vb_asserts) = flip_lower(
         parse_file(&aeon.join("engine/system/vblank.emp")),
         vec![
+            // vblank.emp `use engine.sound_constants.*` — prepend the authority.
+            parse_file(&aeon.join("engine/sound/sound_constants.emp")),
             parse_file(&aeon.join("engine/z80_bus.emp")),
             parse_file(&aeon.join("engine/irq.emp")),
         ],
@@ -393,6 +395,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
             ("DEBUG".to_string(), dbg),
             ("SOUND_DRIVER_ENABLED".to_string(), 1),
             ("SOUND_DBG_MIRROR".to_string(), 0),
+            ("Z80_RAM".to_string(), 0xA0_0000),
         ],
     );
     sections.extend(vb_sections);
@@ -428,9 +431,10 @@ fn two_module_flip(debug: bool, rom_name: &str) {
 
     // Value seam: ONE combined equ blob (a second assemble_equ_pairs call
     // would redefine its `Stub:` carrier label).
+    // SND_Z80_BASE / SND_CTRL_DMA_ACTIVE are authored in sound_constants.emp now
+    // (prepended into the vblank leg above), so only the z80_bus register + the
+    // TILE_SIZE constants stay link externs.
     let mut pairs: Vec<(&str, &str)> = vec![
-        ("SND_Z80_BASE", "$A00000"),
-        ("SND_CTRL_DMA_ACTIVE", "$1F04"),
         ("Z80_BUS_REQUEST", "$A11100"),
         ("TILE_SIZE", "32"),
     ];

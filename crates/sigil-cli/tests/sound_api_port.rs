@@ -110,32 +110,16 @@ const DEBUG: Shape = Shape {
     song_patch_table: pins::SONG_PATCH_TABLE.debug,
 };
 
-/// The AS-side constants the .emp reads through the link: the EA-position
-/// equs (slot addresses — deliberately NOT mirrored), the 5 untyped
-/// immediate-position values now read as bare `#extern(...)` link names
-/// (row 10 retirement), and the 2 typed-mirror drift-guard truths. A trailing
-/// label+`dc.w` opens a section so the equs flush via `pending_equ_syms` (the
-/// collision_lookup pattern).
+/// The AS-side constants the .emp still reads through the link: the z80_bus
+/// template's bus register, the 2 typed-mirror SfxId drift-guard truths
+/// (config/sound_ids.asm), and #SONG_COUNT. The SND_* sound contract (slot
+/// addresses, immediate values, the MUSIC_PARAM RAM block) is authored in
+/// engine/sound/sound_constants.emp now (prepended in compile_real_file), so it
+/// folds at comptime — no AS equ seam. A trailing label+`dc.w` opens a section so
+/// the equs flush via `pending_equ_syms` (the collision_lookup pattern).
 fn as_constant_equs() -> Vec<Section> {
     let asm = "cpu 68000\n\
                Z80_BUS_REQUEST = $A11100\n\
-               SND_Z80_BASE = $A00000\n\
-               SND_STAT_ALIVE = $1F10\n\
-               SND_REQ_PING = $1F00\n\
-               SND_REQ_SAMPLE = $1F01\n\
-               SND_REQ_MUSIC = $1F02\n\
-               SND_REQ_SFX = $1F03\n\
-               SND_REQ_FADE = $1F05\n\
-               SND_REQ_TEMPO = $1F06\n\
-               SND_MUSIC_PARAM_BANK = $1CA6\n\
-               SND_MUSIC_PARAM_PTR = $1CA7\n\
-               SND_MUSIC_PARAM_FLAGS = $1CA9\n\
-               SND_MUSIC_PARAM_PATCHPTR = $1CAA\n\
-               SND_ALIVE_MARKER = $5A\n\
-               SND_MUSIC_STOP = $FF\n\
-               SND_FADE_CMD_OUT = 1\n\
-               SND_FADE_CMD_IN = 2\n\
-               SFX_RING_MASK = $07\n\
                SFXID_RING_RIGHT = $33\n\
                SFXID_RING_LEFT = $34\n\
                SONG_COUNT = 3\n\
@@ -185,22 +169,43 @@ fn compile_real_file(
         idiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "irq.emp parse errors: {idiags:?}"
     );
+    // sound_api.emp `use engine.sound_constants.*` for the slot addresses +
+    // immediate command values; prepend the authority so they fold in this
+    // standalone lower (its MUSIC_PARAM RAM block derives from the Z80-driver
+    // layout — the same derivation the reference ROM baked).
+    let snd_src = std::fs::read_to_string(dir.join("sound_constants.emp"))
+        .unwrap_or_else(|e| panic!("cannot read sound_constants.emp: {e}"));
+    let (snd_file, sdiags) = parse_str(&snd_src);
+    assert!(
+        sdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "sound_constants.emp parse errors: {sdiags:?}"
+    );
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
-        items: z80_file.items.into_iter().chain(irq_file.items).chain(main.items).collect(),
+        items: snd_file
+            .items
+            .into_iter()
+            .chain(z80_file.items)
+            .chain(irq_file.items)
+            .chain(main.items)
+            .collect(),
         docs: main.docs.clone(),
     };
 
     // findings 1/2's asserts are DEBUG-shape-only: DEBUG must always be DEFINED
     // (house convention — the debug shape is explicit), 0 in plain (elides the
     // asserts) / 1 in debug (expands them). #SONG_COUNT resolves through the
-    // synthetic AS equ seam (as_constant_equs).
+    // synthetic AS equ seam (as_constant_equs). Z80_RAM (engine.constants) is the
+    // base of SND_Z80_BASE — the auto-glob provides it in the real build.
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![("DEBUG".to_string(), i128::from(shape.debug))],
+        defines: vec![
+            ("DEBUG".to_string(), i128::from(shape.debug)),
+            ("Z80_RAM".to_string(), 0xA0_0000),
+        ],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(

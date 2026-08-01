@@ -222,10 +222,22 @@ fn lower_sound_api(
         .expect("irq.emp must exist at the engine root");
     let (irq_file, idiags) = parse_str(&irq_src);
     assert!(idiags.iter().all(|d| d.level != Level::Error), "irq parse: {idiags:?}");
+    // + engine.sound_constants (sound_api `use`s it for the slot addresses +
+    // command values; the authority folds them in this standalone lower).
+    let snd_src = std::fs::read_to_string(aeon_dir().join("engine/sound/sound_constants.emp"))
+        .expect("sound_constants.emp must exist beside sound_api.emp");
+    let (snd_file, sdiags) = parse_str(&snd_src);
+    assert!(sdiags.iter().all(|d| d.level != Level::Error), "sound_constants parse: {sdiags:?}");
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
-        items: z80_file.items.into_iter().chain(irq_file.items).chain(main.items).collect(),
+        items: snd_file
+            .items
+            .into_iter()
+            .chain(z80_file.items)
+            .chain(irq_file.items)
+            .chain(main.items)
+            .collect(),
         docs: main.docs.clone(),
     };
     let (module, diags) = lower_module(
@@ -237,7 +249,8 @@ fn lower_sound_api(
             // DEBUG must be DEFINED (house convention) — 0 elides sound_api's
             // song-id/ring-full asserts (retro-fix batch 2), so #SONG_COUNT is
             // never referenced and needs no synthetic symbol on this probe path.
-            defines: vec![("DEBUG".to_string(), 0)],
+            // Z80_RAM (engine.constants) is the base of SND_Z80_BASE.
+            defines: vec![("DEBUG".to_string(), 0), ("Z80_RAM".to_string(), 0xA0_0000)],
         },
     );
     let mut m = module;
@@ -392,10 +405,12 @@ fn doctored_immediate_mirror_fails_its_drift_guard() {
     );
 }
 
-/// (e) a misspelled extern in a slot equ dangles at resolve/link — never a
-/// silent wrong address. Non-vacuity: the SAME truth composition first
-/// resolves the UNDOCTORED source cleanly, so the failure is provably the
-/// one misspelled name, not a generally-dangling link.
+/// (e) a misspelled sound-constant in a slot equ is LOUD — never a silent wrong
+/// address. The slot addresses read the authority (engine.sound_constants) by
+/// bare name now, so a misspelling is an unknown-name LOWER error (caught by
+/// `resolves()` via the lower diagnostics), not a dangling link. Non-vacuity: the
+/// SAME composition first resolves the UNDOCTORED source cleanly, so the failure
+/// is provably the one misspelled name.
 #[test]
 fn misspelled_extern_slot_is_loud() {
     let Some(src) = sound_api_src() else { return };
@@ -426,10 +441,10 @@ fn misspelled_extern_slot_is_loud() {
     }
 
     assert!(resolves(&src), "control: the undoctored source must resolve against the truth");
-    let doctored = src.replace("extern(\"SND_REQ_MUSIC\")", "extern(\"SND_REQ_MUSICC\")");
+    let doctored = src.replace("SND_Z80_BASE + SND_REQ_MUSIC", "SND_Z80_BASE + SND_REQ_MUSICC");
     assert_ne!(src, doctored, "the probe must actually doctor the source");
     assert!(
         !resolves(&doctored),
-        "the misspelled extern must dangle loudly while every correct name resolves"
+        "the misspelled sound constant must fail loudly while every correct name resolves"
     );
 }
