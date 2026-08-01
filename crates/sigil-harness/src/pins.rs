@@ -135,8 +135,8 @@ pub const BG: Region = Region { plain_base: 0x6182, debug_base: 0x6F70, plain_le
 /// `BgAnim_Init` .. start + 0x9E plain / 0x158 debug (literal — no end symbol) — gate `SIGIL_EMP_BG_ANIM`. tests: bg_anim_port
 pub const BG_ANIM: Region = Region { plain_base: 0x6230, debug_base: 0x701E, plain_len: 0x9E, debug_len: 0x158 };
 
-/// `CompressionSelfTest` .. `CSelf_S4LZ_Plain` (debug-only region; plain empty at `Sound_PostByte`) — gate `SIGIL_EMP_COMPRESSION_SELFTEST`. tests: compression_selftest_port
-pub const COMPRESSION_SELFTEST: Region = Region { plain_base: 0x62CE, debug_base: 0x7176, plain_len: 0x0, debug_len: 0x218 };
+/// `CompressionSelfTest` .. `Sound_PostByte` (debug-only region; plain empty at `Sound_PostByte`) — gate `SIGIL_EMP_COMPRESSION_SELFTEST`. tests: compression_selftest_port
+pub const COMPRESSION_SELFTEST: Region = Region { plain_base: 0x62CE, debug_base: 0x7176, plain_len: 0x0, debug_len: 0xC8A };
 
 /// `Sound_PostByte` .. start + 0x20A plain / 0x3B4 debug (literal — no end symbol) — gate `SIGIL_EMP_SOUND_API`. tests: sound_api_port
 pub const SOUND_API: Region = Region { plain_base: 0x62CE, debug_base: 0x7E00, plain_len: 0x20A, debug_len: 0x3B4 };
@@ -538,21 +538,6 @@ pub const ENTITY_LOADED_CLEAR: Pin = Pin { plain: 0x3708, debug: 0x412E };
 
 /// `Sound_PlayRing`. tests: rings_port
 pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x648A, debug: 0x8166 };
-
-/// `CSelf_S4LZ_Plain` — debug-shape consumer only (`debug_only`). tests: compression_selftest_port
-pub const C_SELF_S4_LZ_PLAIN: u32 = 0x738E;
-
-/// `CSelf_S4LZ_Dict` — debug-shape consumer only (`debug_only`). tests: compression_selftest_port
-pub const C_SELF_S4_LZ_DICT: u32 = 0x7610;
-
-/// `CSelf_Dict_Blob` — debug-shape consumer only (`debug_only`). tests: compression_selftest_port
-pub const C_SELF_DICT_BLOB: u32 = 0x77F6;
-
-/// `CSelf_ZX0` — debug-shape consumer only (`debug_only`). tests: compression_selftest_port
-pub const C_SELF_ZX0: u32 = 0x78F6;
-
-/// `CSelf_Expected` — debug-shape consumer only (`debug_only`). tests: compression_selftest_port
-pub const C_SELF_EXPECTED: u32 = 0x7B18;
 
 /// `MDDBG__ErrorHandler` — debug-shape consumer only (`debug_only`). tests: rings_port
 pub const MDDBG_ERROR_HANDLER: u32 = 0x5E69C;

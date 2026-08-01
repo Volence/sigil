@@ -336,16 +336,16 @@ tests = ["bg_anim_port"]
 
 [[region]]
 # Tranche 22 — the DEBUG-only compression self-test (the twin is whole-file
-# `ifdef __DEBUG__`): the region exists ONLY in the debug shape. The .emp
-# covers the CODE ([CompressionSelfTest, CSelf_S4LZ_Plain)); the generated
-# golden-vector data (CSelf_*/CSELF_*, tools/gen_compression_vectors.py)
-# stays AS-side — the gate's else arm orgs past the code and includes
-# engine/debug/generated/vectors.asm. plain_anchor = Sound_PostByte (the next
-# placement — sound_api's region start; plain_base only — zero plain bytes,
-# no plain org arm).
+# `ifdef __DEBUG__`): the region exists ONLY in the debug shape. The .emp now
+# covers CODE + DATA ([CompressionSelfTest, Sound_PostByte)): the five golden
+# vectors are `embed()`d into this module and the CSELF_* constants `use`d from
+# the generated engine.compression_vectors module (conv-i8) — no AS include
+# remains. end = Sound_PostByte (the next placement — sound_api's region start).
+# plain_anchor = Sound_PostByte (plain_base only — zero plain bytes, no plain
+# org arm).
 name = "compression_selftest"
 start = "CompressionSelfTest"
-end = "CSelf_S4LZ_Plain"
+end = "Sound_PostByte"
 debug_only = true
 plain_anchor = "Sound_PostByte"
 gate = "SIGIL_EMP_COMPRESSION_SELFTEST"
@@ -1047,33 +1047,10 @@ tests = ["rings_port"]
 # the DEBUG shape's assert transliteration (the plain listing also carries
 # these names, but no test reads the plain values).
 
-# t22 compression_selftest: the generated golden-vector data labels (AS-side,
-# debug shape only — the .emp consumes them cross-seam; the port test feeds
-# them as carriers).
-[[symbol]]
-name = "CSelf_S4LZ_Plain"
-debug_only = true
-tests = ["compression_selftest_port"]
-
-[[symbol]]
-name = "CSelf_S4LZ_Dict"
-debug_only = true
-tests = ["compression_selftest_port"]
-
-[[symbol]]
-name = "CSelf_Dict_Blob"
-debug_only = true
-tests = ["compression_selftest_port"]
-
-[[symbol]]
-name = "CSelf_ZX0"
-debug_only = true
-tests = ["compression_selftest_port"]
-
-[[symbol]]
-name = "CSelf_Expected"
-debug_only = true
-tests = ["compression_selftest_port"]
+# t22 compression_selftest: the five CSelf_* golden-vector labels are now the
+# .emp module's OWN `pub data` (conv-i8 #8 — embed sites), so the port test
+# self-resolves them (no injected carriers). Their pins are retired with the
+# AS-residual vectors.asm they used to anchor.
 
 [[symbol]]
 name = "MDDBG__ErrorHandler"
