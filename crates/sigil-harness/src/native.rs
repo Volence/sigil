@@ -325,6 +325,10 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         // is native — mt_bank_blob.emp embeds the seam-2 mt_bank{,_debug}.bin @ $58607
         // (after the phased soundBankHead; non-phased LMA labels). Sound-ON only.
         m!("games.sonic4.mt_bank_blob", "mt_bank_blob", pins::MT_BANK_BLOB),
+        // Parcel K4 inc-5 Stage 4 (P2 SFX probe): the SFX block is native —
+        // sfx_bank_blob.emp embeds the seam-2 sfx_bank{,_debug}.bin after the MT body
+        // (non-phased LMA; no cross-seam labels). Sound-ON only.
+        m!("games.sonic4.sfx_bank_blob", "sfx_bank_blob", pins::SFX_BANK_BLOB),
         // ── Game test states ──
         m!("games.sonic4.object_test_state", "object_test_state", pins::OBJECT_TEST_STATE),
         m!("games.sonic4.ojz_scroll_test", "ojz_scroll_test", pins::OJZ_SCROLL_TEST),
@@ -558,6 +562,7 @@ pub fn config_b_profile() -> GameProfile {
             m.module_id != "engine.sound_api"
                 && m.module_id != "games.sonic4.dac_banks"
                 && m.module_id != "games.sonic4.mt_bank_blob"
+                && m.module_id != "games.sonic4.sfx_bank_blob"
         })
         .collect();
     registry.push(ModuleSpec {

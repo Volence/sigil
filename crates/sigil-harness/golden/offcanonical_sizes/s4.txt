@@ -7,10 +7,10 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=s4
 # reproduces_golden=s4.bin
-# golden_crc32=95428d52
+# golden_crc32=f788dae7
 # assembled_anchor=658c623b
 # assembled_end=0x5db00
-# labels=73
+# labels=74
 Ani_Particle 0x25752
 Ani_Sonic 0x256e4
 AnimateSprite 0x2f3c
@@ -63,6 +63,7 @@ Read_Controllers 0x2324
 RingBuffer_Add 0x32c6
 S4LZ_DecompressDict 0x23ac
 Section_Init 0x560c
+Sfx_33 0x5bae8
 Song_MovingTrucks 0x58607
 Sonic_InitAssets 0x10bfc
 SoundTablesZ80_Head 0x58000

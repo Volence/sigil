@@ -657,6 +657,18 @@ debug_len = 0x4F33
 gate = "SIGIL_EMP_MT"
 tests = ["mt_bank_port"]
 
+# Parcel K4 inc-5 Stage 4 — the SFX block, native (sfx_bank_blob.emp embeds the seam-2
+# sfx_bank{,_debug}.bin, after the native MT body). Shape-INVARIANT size (0x748 both),
+# shape-DEPENDENT start ($5BAE8 plain / $5D53A debug — the MT body before it differs).
+# Literal len (no end label; nothing byte-emitting follows in the sound macro). gate
+# SIGIL_EMP_SFX holes out the AS org-skip.
+[[region]]
+name = "sfx_bank_blob"
+start = "Sfx_33"
+len = 0x748
+gate = "SIGIL_EMP_SFX"
+tests = ["sfx_bank_port"]
+
 # Parcel K4 B1 — the ROM terminus (engine.epilogue). A zero-length section whose
 # head label EndOfRom is the ROM one-past-the-end. `len = 0` literal (nothing
 # follows it — it IS the end). gate SIGIL_EMP_EPILOGUE holes out engine.inc's

@@ -548,3 +548,37 @@ Step-5: the `mt_syms.asm` retention is the one non-full-native residue (the mid-
 cross-seam labels). A future emit that emits `SongTable`/`SongPatchTable` as separate
 tiny artifacts, OR a split-embed with the emitted offset, would let the .emp own them —
 ledgered, not built (P2 keeps the emit pipeline untouched by design).
+
+### Stage 4a — P2 SFX block probe — DONE (anchors-proven flagged re-freeze)
+
+The SFX block (the BINCLUDE at $5BAE8/$5D53A, after the native MT body) is native —
+`games/sonic4/data/sound/sfx_bank_blob.emp` embeds the seam-2 `sfx_bank{,_debug}.bin`.
+The CLEANEST of the three bodies: non-phased LMA embed, **NO cross-seam labels** (no
+surviving AS/emp reads SfxTable — sound_sfx.emp's SfxBlobWinTab reads are native, in the
+head), so no syms file. Shape-INVARIANT size (0x748 both), shape-DEPENDENT start ($5BAE8
+plain / $5D53A debug — the MT body before it differs) + content (the SfxTable pointer
+cells). Head label Sfx_33 (placement head only).
+
+- **Wiring:** registry `games.sonic4.sfx_bank_blob` (sound-ON only, config_b filtered);
+  pin `SFX_BANK_BLOB` (base $5BAE8 plain / $5D53A debug, len 0x748); gate `SIGIL_EMP_SFX`;
+  map order + Sfx_33 (abuts the MT body at gap 0 — not an island); frozen-key seed
+  `Sfx_33` per-shape ($5BAE8 / $5D53A) ×3 sound-on tables; emit-first `sfx_bank_port`
+  golden gate (2/2). The AS BINCLUDE deleted; per-shape skip org; dead
+  `SIGIL_EMP_SFX_BODY_STUB` arm deleted.
+
+**Identity: ANCHORS IDENTICAL ×6 — appendix-only flagged re-freeze.** SFX body byte-exact,
+`EndOfRom` unchanged ($5DB00); the only `[0,EndOfRom)` diffs are the derived header
+checksum ($18E) + rom_end ($1A4); the +8/+10 bytes is the new Sfx_33 head label in the
+deb2 appendix. `refreeze --freeze k4-sfx-bank` (no `--ab`) → chain **#16**.
+
+| target | full_crc (was → now) | anchor_crc (UNCHANGED) |
+|---|---|---|
+| s4 | `95428d52` → **`f788dae7`** / 412177 | `658c623b` |
+| s4_debug | `74e16b34` → **`d7af41e5`** / 422010 | `b137c411` |
+| config_a | `cfbd235b` → **`58c570a0`** / 422349 | (unchanged) |
+| demo / demo_debug / config_b | UNCHANGED (sound-off) | — |
+
+Gates: strict **2901 / 0 / 4** (2899 + 2 sfx_bank_port); `refreeze --check` OK (chain 16);
+`repin --check` clean; K1 order green. The MT + SFX bank BODIES are now native; the
+remaining sound-bank piece is the `soundBankHead` phase-08000h head (sound_bank.inc) —
+Stage 4b, the phase-bank surface.
