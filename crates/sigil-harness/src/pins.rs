@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 60 regions, 299 symbols, 7 offsets
+//! [provenance] 63 regions, 299 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -194,6 +194,15 @@ pub const PARTICLE_ANIMS: Region = Region { plain_base: 0x25752, debug_base: 0x2
 
 /// `OJZ_Act1_Descriptor` .. `OJZ_Sec0_Blocks` — gate `SIGIL_EMP_ACT_DESCRIPTOR`. tests: act_descriptor_port
 pub const ACT_DESCRIPTOR: Region = Region { plain_base: 0x14B32, debug_base: 0x14BBA, plain_len: 0x274, debug_len: 0x274 };
+
+/// `OJZ_Sec0_Blocks` .. `OJZ_Palette`. tests: ojz_run_b_port
+pub const SEC_BLOCK_BLOBS: Region = Region { plain_base: 0x14DA6, debug_base: 0x14E2E, plain_len: 0xB08A, debug_len: 0xB08A };
+
+/// `OJZ_Palette` .. `BgAnim_Table`. tests: ojz_run_b_port
+pub const OJZ_ACT_ASSETS: Region = Region { plain_base: 0x1FE30, debug_base: 0x1FEB8, plain_len: 0x5882, debug_len: 0x5882 };
+
+/// `BgAnim_Table` .. `Map_TestObj`. tests: ojz_run_b_port
+pub const OJZ_BG_ANIM: Region = Region { plain_base: 0x256B2, debug_base: 0x2573A, plain_len: 0x2, debug_len: 0x2 };
 
 /// `ObjDef_Static` .. `OJZ_Sec0_TypeTable` — gate `SIGIL_EMP_OBJDEFS`. tests: objdef_port
 pub const OBJDEFS: Region = Region { plain_base: 0x11D1E, debug_base: 0x11DA6, plain_len: 0x68, debug_len: 0x68 };
