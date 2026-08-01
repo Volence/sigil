@@ -21,7 +21,7 @@
 //! ```
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
-use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_frontend_emp::lower::{lower_module, lower_module_with_contracts, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
@@ -53,6 +53,8 @@ fn addr_seam() -> Vec<(&'static str, u32)> {
         ("Sound_PlaySFX", 0x2010),
         ("Sound_PlayRing", 0x2020),
         ("Sound_StopMusic", 0x2030),
+        // SoundTest_BootPing (the Game.boot_hook impl, L1 P2) pings the driver.
+        ("Sound_Ping", 0x2040),
     ]
 }
 
@@ -243,7 +245,21 @@ fn two_module_flip_resolves_debug_music_toggle() {
     let gl_src = std::fs::read_to_string(aeon.join("engine/system/game_loop.emp"))
         .unwrap_or_else(|e| panic!("read game_loop.emp: {e}"));
     let (gl_file, _) = parse_str(&gl_src);
-    let (gl_mod, gld) = lower_module(
+    // The Config-A hotkeys shape: the game binds `Game.debug_tick` to
+    // Debug_MusicToggle, so game_loop's `invoke Game.debug_tick` lowers to a
+    // `jsr Debug_MusicToggle` — exactly what this test resolves across the seam.
+    let gl_env = sigil_harness::test_support::game_contract_env(
+        "module engine.game_contract\n\
+         pub interface Game {\n\
+         \x20   hook debug_tick () clobbers(d0-d7/a0-a6) = empty\n\
+         }\n",
+        "module games.g.game\n\
+         pub implement Game {\n\
+         \x20   hook debug_tick = Debug_MusicToggle\n\
+         }\n",
+        &[],
+    );
+    let (gl_mod, gld) = lower_module_with_contracts(
         &gl_file,
         &LowerOptions {
             initial_cpu: Cpu::M68000,
@@ -251,6 +267,7 @@ fn two_module_flip_resolves_debug_music_toggle() {
             embed_base: None,
             defines: defines.clone(),
         },
+        &gl_env,
     );
     assert!(gld.iter().all(|d| d.level != sigil_span::Level::Error), "game_loop lower: {gld:?}");
     let gd_src = std::fs::read_to_string(aeon.join("games/sonic4/debug/game_debug.emp"))

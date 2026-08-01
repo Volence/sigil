@@ -146,7 +146,12 @@ fn config_a() -> Target {
             ("GameLoop", 0x243e),
             ("BusError", 0x5e542),
             ("HeightMaps", 0x257d6),
-            ("AnimateSprite", 0x3534),
+            // L1 P2 re-layout: AnimateSprite slid +8 (0x3534 -> 0x353C) with the
+            // config_a re-freeze (boot's inline sound-test body became a jsr to the
+            // game-side SoundTest_BootPing). The whole-anchor byte compare
+            // (native_offcanonical_rom::config_a_anchor_matches_golden) proves the
+            // new golden; this spot-check tracks the moved label.
+            ("AnimateSprite", 0x353C),
             ("EndOfRom", 0x5f5f2),
         ],
     }

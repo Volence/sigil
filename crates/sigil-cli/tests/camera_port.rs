@@ -35,13 +35,26 @@
 //! ```
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
-use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_frontend_emp::lower::{lower_module_with_contracts, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
+
+/// The resolved game-contract env for the isolated camera oracle (L1 P2):
+/// camera.emp reads `Game.CAMERA_JUMP_LOCK`, which the whole-program bind pass
+/// resolves; here a synthetic interface+implement supplies the same bool. Maps the
+/// legacy 0|1 `jump_lock` selector to the bound bool.
+fn camera_contract_env(jump_lock: i128) -> sigil_frontend_emp::contract::InterfaceEnv {
+    let b = if jump_lock != 0 { "true" } else { "false" };
+    sigil_harness::test_support::game_contract_env(
+        "module engine.game_contract\npub interface Game {\n    const CAMERA_JUMP_LOCK: bool\n}\n",
+        &format!("module games.g.game\npub implement Game {{\n    const CAMERA_JUMP_LOCK = {b}\n}}\n"),
+        &[],
+    )
+}
 
 fn region_base(debug: bool) -> u32 {
     if debug { pins::CAMERA.debug_base } else { pins::CAMERA.plain_base }
@@ -190,12 +203,10 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![
-            ("DEBUG".to_string(), i128::from(debug)),
-            ("GAME_CAMERA_JUMP_LOCK".to_string(), jump_lock),
-        ],
+        defines: vec![("DEBUG".to_string(), i128::from(debug))],
     };
-    let (module, ldiags) = lower_module(&file, &opts);
+    let (module, ldiags) =
+        lower_module_with_contracts(&file, &opts, &camera_contract_env(jump_lock));
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "camera.emp lower errors: {ldiags:?}"
@@ -364,12 +375,9 @@ fn jump_lock_off_compiles_without_game_symbols() {
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![
-            ("DEBUG".to_string(), 0),
-            ("GAME_CAMERA_JUMP_LOCK".to_string(), 0),
-        ],
+        defines: vec![("DEBUG".to_string(), 0)],
     };
-    let (module, ldiags) = lower_module(&file, &opts);
+    let (module, ldiags) = lower_module_with_contracts(&file, &opts, &camera_contract_env(0));
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "camera.emp (JUMP_LOCK=0) lower errors: {ldiags:?}"

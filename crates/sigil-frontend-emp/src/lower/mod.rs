@@ -147,6 +147,20 @@ pub fn lower_module_with_contracts(
     lower_module_inner(file, opts, &std::collections::HashMap::new(), contracts)
 }
 
+/// [`lower_module_with_region_ends`] AND the resolved game-contract environment —
+/// the whole-program entry the `build_program` loop uses (L1 P2). A module may
+/// both chain a cross-module region (`@ after(..)`) and name an interface member
+/// (`Game.MEMBER` / `invoke Game.hook`), so the two seams thread together. Passing
+/// the empty env + empty map recovers [`lower_module`] exactly.
+pub fn lower_module_with_region_ends_and_contracts(
+    file: &ast::File,
+    opts: &LowerOptions,
+    external_region_ends: &std::collections::HashMap<String, u32>,
+    contracts: &crate::contract::InterfaceEnv,
+) -> (Module, Vec<Diagnostic>) {
+    lower_module_inner(file, opts, external_region_ends, contracts)
+}
+
 fn lower_module_inner(
     file: &ast::File,
     opts: &LowerOptions,
@@ -358,6 +372,7 @@ fn lower_module_inner(
                     &mut here_anchor_counter,
                     opts.include_root.as_deref(),
                     &opts.defines,
+                    contracts,
                     &mut builder,
                     &mut diags,
                 );
@@ -480,6 +495,7 @@ fn lower_module_inner(
                     decl,
                     opts.include_root.as_deref(),
                     &opts.defines,
+                    contracts,
                     &mut builder,
                     &mut diags,
                 );
@@ -623,6 +639,7 @@ fn lower_section_items(
                     here_anchor_counter,
                     placement.include_root,
                     placement.defines,
+                    contracts,
                     builder,
                     diags,
                 );
@@ -651,7 +668,9 @@ fn lower_section_items(
             // section is already open (we are inside it), so `add_equ_sym`
             // targets it directly.
             ast::Item::Equ(decl) => {
-                lower_equ_item(file, decl, placement.include_root, placement.defines, builder, diags);
+                lower_equ_item(
+                    file, decl, placement.include_root, placement.defines, contracts, builder, diags,
+                );
             }
             // `align N` (D2.29): pad THIS section's current position, aligned
             // against the section's own origin (a `vma:` pin or its
@@ -688,19 +707,25 @@ fn lower_section_items(
 /// - anything else (a string, a struct, a `Data` blob, …) is the `[equ.value]`
 ///   diagnostic — an equ becomes a single link-level integer symbol, so a
 ///   multi-byte or non-numeric value has no representation.
+#[allow(clippy::too_many_arguments)] // `contracts` joins the threaded state (L1 P2)
 fn lower_equ_item(
     file: &ast::File,
     decl: &ast::EquDecl,
     include_root: Option<&Path>,
     defines: &[(String, i128)],
+    contracts: &crate::contract::InterfaceEnv,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
     use crate::value::Value;
     // Evaluate the equate's value through the shared const/equ path (its `equs`
     // index is private, so we go through the public `eval_const_with_root` entry
-    // point, which resolves consts OR equs identically).
-    let (value, mut ds) = crate::eval::eval_const_with_root(file, &decl.name, include_root, defines);
+    // point, which resolves consts OR equs identically). `contracts` lets an equ
+    // whose value reads an interface member (`Game.MEMBER`, e.g. camera.emp's
+    // `PL_STATE_ADDR = pl_state_addr()` gated on `Game.CAMERA_JUMP_LOCK`) fold at
+    // comptime; the empty env recovers the contract-free path (L1 P2).
+    let (value, mut ds) =
+        crate::eval::eval_const_with_root_and_contracts(file, &decl.name, include_root, defines, contracts);
     diags.append(&mut ds);
     let Some(value) = value else { return };
     let expr = match value {
@@ -1048,6 +1073,7 @@ fn buf_carries_words(buf: &crate::value::DataBuf) -> bool {
 /// guard NEVER stops lowering (D-H.7: lowering already finished) — only a
 /// comptime-exact fatal guard does. Returns `false` only for that comptime abort.
 #[allow(clippy::too_many_arguments)] // internal driver; mirrors lower_module's state set
+#[allow(clippy::too_many_arguments)] // `contracts` joins the threaded state (L1 P2)
 fn lower_item_guard(
     file: &ast::File,
     decl: &ast::EnsureDecl,
@@ -1056,6 +1082,7 @@ fn lower_item_guard(
     here_anchor_counter: &mut u32,
     include_root: Option<&Path>,
     defines: &[(String, i128)],
+    contracts: &crate::contract::InterfaceEnv,
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) -> bool {
@@ -1068,7 +1095,8 @@ fn lower_item_guard(
         base,
         anchor: provisional.then(|| anchor_name.clone()),
     };
-    let mut outcome = crate::eval::guards::eval_item_guard(file, decl, here, include_root, defines);
+    let mut outcome =
+        crate::eval::guards::eval_item_guard(file, decl, here, include_root, defines, contracts);
     diags.append(&mut outcome.diags);
     if provisional && outcome.anchor_used {
         // Define the anchor at the guard's cursor (its `here()` VMA), advance the
