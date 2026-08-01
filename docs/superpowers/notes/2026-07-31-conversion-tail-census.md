@@ -81,9 +81,9 @@ zero-byte equate/offset); "A/B" = needs oracle A/B + re-freeze.
 | # | path | lines | what | class | eff | deps / blockers | notes |
 |---|---|---|---|---|---|---|---|
 | 21 | `games/sonic4/config/constants.asm` | 86 | game tuning, PSTATE_* ids, test scaffold consts | PORT (P6, rows 54/62/65) | M | reverse-seam; typed ids to language round | ✅ **DONE (conv-f #21, 2026-08-01, `2026-08-01-conv-f-game-config.md`).** `constants.asm` DELETED → `games/sonic4/config/constants.emp` (`games.sonic4.constants`), the sole authority. Census "no guarded-define channel" premise CORRECTED: the game-SIDE `.emp` (player_*, sonic_anims, test_*) folds through `use` (reverse-seam holds), but the game-AGNOSTIC engine `.emp` (rings/entity_window/ram drift guards) DID need the per-game harvest (`harvest_game_constants`, the #7c precedent) to link-export the pub consts. 3 game-VARYING `-D` interface consts (MAX_RING_BUFFER / VRAM_RING_PLACEHOLDER / COLLECTED_WINDOW_SLOTS) stay native.rs `emp_defines` (codebase forbids declaring a `-D` name in `.emp`). Six-target byte-identical; strict 2868→2867 (−1 retired probe). |
-| 22 | `games/sonic4/config/game.asm` | 83 | game contract (header strings, sound contract, hooks) | PORT (game contract) | M | Game_Entry already `.emp`-resolved; header contract | BN. |
+| 22 | `games/sonic4/config/game.asm` | 83 | game contract (header strings, sound contract, hooks) | PORT (game contract) | M | Game_Entry already `.emp`-resolved; header contract | **NAMED REMAINDER (conv-f #22 scoped, conv-f2 shipped its one flip).** `SFXID_REV_LOOP = SFXID_SPINDASH` flipped to `config/sound_ids.emp` at F2. The rest PARKS (AS): gameBootHook/gameDebugTick (defined-not-invoked, game_loop lockstep row 9), header strings (`gameHeader` `dc.b` data), `Game_Entry`/`GAME_ENTRY_ID` (cross-seam label equalate; GAME_ENTRY_ID reads a `.emp` game const via harvest), `GAME_CAMERA_JUMP_LOCK` (a `-D`). BN. |
 | 23 | `games/sonic4/config/ram.asm` | 60 | game RAM continuation (`phase Engine_RAM_End`) | PORT (`vars`) | M | **pairs with #5 ram.asm + B-0b** | ✅ **DONE (item #7c, `games/sonic4/config/ram.emp`)** — the cross-module chain `region game_ram @ after(upper_ram)` onto engine `upper_ram`; player/phys/history-ring fields; the `ifdef __DEBUG__` counters → `if DEBUG == 1 @shape_divergent`; `align 256` → `@align(256)` (AS in-phase align semantics). `.asm` deleted. Six-target byte-identical; repin zero-diff. |
-| 24 | `games/sonic4/config/sound_ids.asm` | 94 | SONG_*/SFXID_* numeric ids + SFX priority ladder | PORT (P6, rows 62/65) | M | typed `SFXID_RING_*` STAY DEFERRED to language round (typed-extern grammar) | BN for the untyped half. |
+| 24 | `games/sonic4/config/sound_ids.asm` | 94 | SONG_*/SFXID_* numeric ids + SFX priority ladder | PORT (P6, rows 62/65) | M | typed `SFXID_RING_*` STAY DEFERRED to language round (typed-extern grammar) | ✅ **DONE (conv-f2 #24, 2026-08-01, `2026-08-01-conv-f2-sound-ids.md`).** `sound_ids.asm` DELETED. Clean subset (SONG_*/SFXID_*/SFXPRI_* + SFXID_REV_LOOP from game.asm) → `config/sound_ids.emp` (`games.sonic4.sound_ids`), the #21 clone. SFX-bank counts (SFX_ID_BASE/COUNT/TABLE_LEN) DISSOLVED into `sfx_bank.emp` (their derived authority; the ruling's mechanical path — eval-on-a-data-module proven, quadruple mirror → one derivation). Typed `SFXID_RING_*`/`SONG_*: SfxId/SongId` mirrors STAY (pre-ruled newtype deferral). Six-target byte-identical + 15 blobs identical; strict 2867→2866 (−1 retired probe). |
 
 ### games/sonic4/data/editor (PARKED exports — NOT in the build)
 
@@ -264,6 +264,17 @@ guarded-define channel needed (close-packet §4). Port sonic4 config constants,
 game contract, sound ids (untyped half). Typed `SFXID_RING_*` STAY DEFERRED to
 the language round. **BN.** Effort M. → files: **21, 22, 24**.
 
+> **✅ PARCEL F COMPLETE — #21 (conv-f), #24 + #22's one flip (conv-f2, `2026-08-01-conv-f2-sound-ids.md`).**
+> **#24 sound_ids.asm — FLIPPED + DELETED (conv-f2).** The clean subset (SFXID_*/SONG_*/
+> SFXPRI_* + SFXID_REV_LOOP from game.asm) → `config/sound_ids.emp` (`games.sonic4.sound_ids`),
+> the #21 clone. Premise correction on remainder (b): the SFX_ID_BASE family is NOT entangled
+> beyond the mechanical shape — a probe proved `eval_all_pub_consts(sfx_bank.emp)` resolves
+> `SfxTable.min_key/.count/.len` standalone (0 errors), so per the overseer's ruling the family
+> DISSOLVED into `sfx_bank.emp` (their derived authority): the quadruple mirror (sound_ids.asm +
+> seam1 + seam2 + sfx_bank derivation) → the one derivation. Remainder (a) typed `SFXID_RING_*`
+> stayed deferred as ruled. `#22 game.asm`'s one flip (`SFXID_REV_LOOP`) shipped with #24; the
+> rest is the named remainder below. Six-target byte-identical + 15 blobs; strict 2867→2866.
+>
 > **PARCEL F #21 DONE; #22/#24 SCOPED (2026-08-01, `2026-08-01-conv-f-game-config.md`).**
 > **#21 constants.asm — FLIPPED + verified** (see the row-21 note above): six-target
 > byte-identical, strict 2867/0/4. Premise correction: the census "no guarded-define

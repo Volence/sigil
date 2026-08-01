@@ -99,8 +99,32 @@ fn vector_table_matches_reference_rom_first_256_bytes() {
     // constants (GS_OJZ_SCROLL_TEST feeding game.asm's GAME_ENTRY_ID, etc.) are
     // authored in games/sonic4/config/constants.emp and harvested the same way.
     guarded_defines.extend(
-        sigil_harness::native::harvest_game_constants(&aeon, "games/sonic4/config/constants.emp")
-            .expect("harvest game constants"),
+        sigil_harness::native::harvest_game_constants(
+            &aeon,
+            "games/sonic4/config/constants.emp",
+            false,
+        )
+        .expect("harvest game constants"),
+    );
+    // Parcel F2: the game's sound ids (song/SFX ids + priority ladder) are authored
+    // in games/sonic4/config/sound_ids.emp and harvested the same way (plain shape).
+    guarded_defines.extend(
+        sigil_harness::native::harvest_game_constants(
+            &aeon,
+            "games/sonic4/config/sound_ids.emp",
+            false,
+        )
+        .expect("harvest game sound ids"),
+    );
+    // Parcel F2: the SFX-bank id counts (SFX_TABLE_LEN, read by sound_bank.inc's
+    // span guard) are DERIVED in sfx_bank.emp and harvested the same way.
+    guarded_defines.extend(
+        sigil_harness::native::harvest_game_constants(
+            &aeon,
+            "games/sonic4/data/sound/sfx/sfx_bank.emp",
+            false,
+        )
+        .expect("harvest sfx bank counts"),
     );
     // Item #7b + #7c: engine/ram.asm AND games/sonic4/config/ram.asm are retired —
     // the RAM labels the front-matter needs (HBlank_Vector_Slot and any game RAM

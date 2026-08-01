@@ -77,6 +77,24 @@ pub struct GameProfile {
     /// guards) resolve them. `None` for a game whose config is still AS-authored
     /// (demo — `games/demo/config/constants.asm`, Parcel H).
     pub game_constants_rel: Option<&'static str>,
+    /// The game's `.emp` sound-id module, relative to the aeon tree (conversion
+    /// Parcel F2, `games.sonic4.sound_ids` = `games/sonic4/config/sound_ids.emp`).
+    /// `Some` when the game's song / SFX ids + priority ladder are `.emp`-authored;
+    /// harvested exactly like `game_constants_rel` (guarded `-D` + link EquSyms), so
+    /// the residual AS + the game-agnostic engine `.emp` (sound_api's typed SFXID/
+    /// SONG mirrors, boot's `moveq #SONG_MOVINGTRUCKS`) resolve them. Its `SONG_COUNT`
+    /// is `if DEBUG == 1`, so the harvest seeds `DEBUG` from `debug`. `None` for a
+    /// game whose sound ids are still AS-authored (demo has no sound stack).
+    pub game_sound_ids_rel: Option<&'static str>,
+    /// The game's SFX-bank data module, relative to the aeon tree (conversion
+    /// Parcel F2, `data.sfx_bank` = `games/sonic4/data/sound/sfx/sfx_bank.emp`).
+    /// `Some` when the SFX-bank id counts (`SFX_ID_BASE`/`SFX_COUNT`/`SFX_TABLE_LEN`,
+    /// DERIVED from the `SfxTable` rows) are `.emp`-authored: the harvest injects them
+    /// as guarded `-D` + link EquSyms so the residual AS `soundBankHead` (sound_bank.inc)
+    /// reads `SFX_TABLE_LEN` in the `SfxBlobWinTab` span guard. `None` for a game with
+    /// no SFX bank (demo). The seam Z80 emit sources the same values via
+    /// `sfx_bank_authority_consts`.
+    pub game_sfx_bank_rel: Option<&'static str>,
     pub debug: bool,
     /// Sound ON: pass `-D SOUND_DRIVER_ENABLED`, the DAC/MT/SFX BINCLUDE gates, and
     /// run `ensure_generated`. OFF (demo/Config-B): no sound define at all (AS `ifdef`
@@ -318,6 +336,8 @@ pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile 
         game_root_rel: "games/sonic4/main.asm",
         game_ram_module: "games.sonic4.ram",
         game_constants_rel: Some("games/sonic4/config/constants.emp"),
+        game_sound_ids_rel: Some("games/sonic4/config/sound_ids.emp"),
+        game_sfx_bank_rel: Some("games/sonic4/data/sound/sfx/sfx_bank.emp"),
         debug,
         sound_on: true,
         extra_as_defines: vec![],
@@ -398,6 +418,8 @@ pub fn demo_profile(debug: bool) -> GameProfile {
         game_root_rel: "games/demo/main.asm",
         game_ram_module: "games.demo.ram",
         game_constants_rel: None,
+        game_sound_ids_rel: None,
+        game_sfx_bank_rel: None,
         debug,
         sound_on: false,
         extra_as_defines: vec![],
@@ -453,6 +475,8 @@ pub fn config_b_profile() -> GameProfile {
         game_root_rel: "games/sonic4/main.asm",
         game_ram_module: "games.sonic4.ram",
         game_constants_rel: Some("games/sonic4/config/constants.emp"),
+        game_sound_ids_rel: Some("games/sonic4/config/sound_ids.emp"),
+        game_sfx_bank_rel: Some("games/sonic4/data/sound/sfx/sfx_bank.emp"),
         debug: false,
         sound_on: false,
         extra_as_defines: vec![],
@@ -509,6 +533,8 @@ pub fn config_a_profile() -> GameProfile {
         game_root_rel: "games/sonic4/main.asm",
         game_ram_module: "games.sonic4.ram",
         game_constants_rel: Some("games/sonic4/config/constants.emp"),
+        game_sound_ids_rel: Some("games/sonic4/config/sound_ids.emp"),
+        game_sfx_bank_rel: Some("games/sonic4/data/sound/sfx/sfx_bank.emp"),
         debug: true,
         sound_on: true,
         extra_as_defines: vec![("SOUND_DEBUG_HOTKEYS", 1), ("SOUND_DBG_MIRROR", 1)],
@@ -704,11 +730,14 @@ pub fn harvest_engine_constants(aeon: &Path) -> Result<Vec<(String, i64)>, Strin
 /// value dependency is served by seeding the engine constants FIRST as defines
 /// (`eval_path` falls back to defines after consts/equs), the same pattern the
 /// `-D` seam already uses.
-pub fn harvest_game_constants(aeon: &Path, rel: &str) -> Result<Vec<(String, i64)>, String> {
+pub fn harvest_game_constants(aeon: &Path, rel: &str, debug: bool) -> Result<Vec<(String, i64)>, String> {
     // Seed the engine constants as defines so the game module's lone cross-module
-    // reference (`COLLECTED_MASK_BYTES`) folds inside the standalone eval.
+    // reference (`COLLECTED_MASK_BYTES`) folds inside the standalone eval. Also seed
+    // `DEBUG` (the build shape) — `sound_ids.emp`'s `SONG_COUNT = if DEBUG == 1 {..}`
+    // is shape-dependent; the constants module ignores it (harmless).
     let engine = harvest_engine_constants(aeon)?;
-    let seed: Vec<(String, i128)> = engine.iter().map(|(n, v)| (n.clone(), *v as i128)).collect();
+    let mut seed: Vec<(String, i128)> = engine.iter().map(|(n, v)| (n.clone(), *v as i128)).collect();
+    seed.push(("DEBUG".to_string(), if debug { 1 } else { 0 }));
 
     let path = aeon.join(rel);
     let src = std::fs::read_to_string(&path)
@@ -928,7 +957,20 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
     // `.emp`'s `ensure(extern("X") == X)` drift guards resolve against this
     // authority. `None` for AS-authored game config (demo, Parcel H).
     if let Some(rel) = profile.game_constants_rel {
-        guarded_defines.extend(harvest_game_constants(aeon, rel)?);
+        guarded_defines.extend(harvest_game_constants(aeon, rel, profile.debug)?);
+    }
+    // Parcel F2: the game's `.emp` sound-id module (song / SFX ids + priority
+    // ladder + SFXID_REV_LOOP) harvested the same way. Its `SONG_COUNT` is
+    // shape-dependent, so the harvest seeds `DEBUG` from `profile.debug`.
+    if let Some(rel) = profile.game_sound_ids_rel {
+        guarded_defines.extend(harvest_game_constants(aeon, rel, profile.debug)?);
+    }
+    // Parcel F2: the game's SFX-bank id counts (SFX_ID_BASE/SFX_COUNT/SFX_TABLE_LEN),
+    // DERIVED in sfx_bank.emp from the SfxTable rows, harvested so the residual AS
+    // soundBankHead reads SFX_TABLE_LEN. `eval_all_pub_consts` resolves the SfxTable
+    // metadata standalone (shape-invariant), so the seed shape is immaterial.
+    if let Some(rel) = profile.game_sfx_bank_rel {
+        guarded_defines.extend(harvest_game_constants(aeon, rel, profile.debug)?);
     }
     // Item #7b (Option B bridge, spec §9): seed engine RAM label ADDRESSES as
     // PLAIN value defines — the AS side folds its eager absolute-EA operands +

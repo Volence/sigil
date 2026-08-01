@@ -56,17 +56,31 @@ fn addr_seam() -> Vec<(&'static str, u32)> {
     ]
 }
 
-/// Cross-seam VALUE symbols: the game consts the .emp mirrors (its drift guards
-/// read them via `extern(...)`) and the AS twin bakes as immediates. `doctor`
-/// overrides ONE pair (the negative probe).
-fn value_seam(doctor: Option<(&str, i64)>) -> Vec<(&'static str, String)> {
-    let mut v: Vec<(&'static str, i64)> = vec![
+/// Cross-seam VALUE symbols the standalone game_debug lower defers to the link:
+/// the controller BUTTON_* masks, used as instruction immediates (link externs,
+/// filled by these equ carriers). The song / SFX ids are NOT here — post-Parcel-F2
+/// they are comptime `use`d from games.sonic4.sound_ids (the test provides them as
+/// comptime defines, `id_defines`), so no equ carrier + no drift guard is involved.
+fn value_seam() -> Vec<(&'static str, String)> {
+    let v: Vec<(&'static str, i64)> = vec![
         ("BUTTON_UP", 0x01),
         ("BUTTON_B", 0x10),
         ("BUTTON_C", 0x20),
         ("BUTTON_A", 0x40),
         ("BUTTON_START", 0x80),
-        ("SONG_MOVINGTRUCKS", 1),
+    ];
+    v.into_iter().map(|(n, x)| (n, format!("${x:X}"))).collect()
+}
+
+/// The song / SFX id VALUES game_debug reads at COMPTIME (its DEBUG song selector
+/// + the SfxIdRemap data table). Post-Parcel-F2 game_debug `use`s these from its
+/// authority (games.sonic4.sound_ids); the standalone single-module lower resolves
+/// them as comptime defines — the test analog of that `use` (the real build folds
+/// the same values from the authority module). No local mirror + no drift guard
+/// survives in game_debug, so these are plain comptime values, not extern carriers.
+fn id_defines() -> Vec<(String, i128)> {
+    [
+        ("SONG_MOVINGTRUCKS", 1i128),
         ("SONG_DRUMTEST", 2),
         ("SONG_HCZ2", 3),
         ("SFXID_RING_RIGHT", 0x33),
@@ -77,18 +91,10 @@ fn value_seam(doctor: Option<(&str, i64)>) -> Vec<(&'static str, String)> {
         ("SFXID_SPINDASH", 0xAB),
         ("SFXID_DASH", 0xB6),
         ("SFXID_RINGLOSS", 0xB9),
-    ];
-    if let Some((name, val)) = doctor {
-        let mut hit = false;
-        for p in v.iter_mut() {
-            if p.0 == name {
-                p.1 = val;
-                hit = true;
-            }
-        }
-        assert!(hit, "doctor target `{name}` not in the value seam");
-    }
-    v.into_iter().map(|(n, x)| (n, format!("${x:X}"))).collect()
+    ]
+    .into_iter()
+    .map(|(n, v)| (n.to_string(), v))
+    .collect()
 }
 
 /// Phased one-byte carriers for the address seam (the compression_selftest
@@ -113,9 +119,9 @@ fn addr_carriers(start_lma: u32) -> Vec<Section> {
     out
 }
 
-/// Value-seam equ carriers (the drift-guard `extern(...)` reads).
-fn value_carriers(doctor: Option<(&str, i64)>) -> Vec<Section> {
-    let owned = value_seam(doctor);
+/// Value-seam equ carriers (the BUTTON_* link externs game_debug defers).
+fn value_carriers() -> Vec<Section> {
+    let owned = value_seam();
     let pairs: Vec<(&str, &str)> = owned.iter().map(|(n, v)| (*n, v.as_str())).collect();
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
@@ -123,9 +129,7 @@ fn value_carriers(doctor: Option<(&str, i64)>) -> Vec<Section> {
 /// Compile game_debug.emp at the hotkeys shape, placed at BASE; return the
 /// resolved sections + linked image + the module's link asserts (the drift
 /// guards).
-fn compile_emp(
-    doctor: Option<(&str, i64)>,
-) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
+fn compile_emp() -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
     let aeon = aeon_dir();
     let dir = aeon.join("games/sonic4/debug");
     let src = std::fs::read_to_string(dir.join("game_debug.emp"))
@@ -135,15 +139,17 @@ fn compile_emp(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "game_debug.emp parse errors: {pdiags:?}"
     );
+    let mut defines = vec![
+        ("SOUND_DEBUG_HOTKEYS".to_string(), 1i128),
+        ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ("DEBUG".to_string(), 1),
+    ];
+    defines.extend(id_defines());
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![
-            ("SOUND_DEBUG_HOTKEYS".to_string(), 1),
-            ("SOUND_DRIVER_ENABLED".to_string(), 1),
-            ("DEBUG".to_string(), 1),
-        ],
+        defines,
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -163,7 +169,7 @@ fn compile_emp(
         "place_sections errors: {pdiags:?}"
     );
     sections.extend(addr_carriers(0x0100_0000));
-    sections.extend(value_carriers(doctor));
+    sections.extend(value_carriers());
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
@@ -186,29 +192,25 @@ fn game_debug_emp_compiles_and_guards_pass_at_hotkeys() {
         eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
         return;
     }
-    let (resolved, linked, link_asserts) = compile_emp(None);
+    let (resolved, linked, link_asserts) = compile_emp();
     let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "the game-const drift guards must PASS at the true values: {diags:?}"
+        "game_debug.emp's surviving link asserts must PASS at the true values: {diags:?}"
     );
     let emp = linked.section("game_debug").expect("linked image carries game_debug").bytes.clone();
     assert!(!emp.is_empty(), "game_debug.emp must emit code at the hotkeys shape");
 }
 
-/// Drift-guard liveness: doctoring a mirrored const's `extern(...)` truth must
-/// FIRE the game_debug.emp `ensure` — the guards are not vacuous.
-#[test]
-fn doctored_extern_fires_drift_guard() {
-    let (resolved, _, link_asserts) = compile_emp(Some(("SFXID_JUMP", 0x11)));
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    let fired: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
-    assert!(!fired.is_empty(), "a doctored extern must fire a drift guard");
-    assert!(
-        fired.iter().any(|d| d.message.contains("SFXID_JUMP")),
-        "the fired guard must name the drifted const: {fired:?}"
-    );
-}
+// RETIRED (Parcel F2): `doctored_extern_fires_drift_guard`. game_debug.emp's song /
+// SFX id mirror consts + their `ensure(extern(...))` drift guards are GONE — the ids
+// are now `use`d from their sole authority (games.sonic4.sound_ids), so there is no
+// local mirror to drift and no game_debug guard to doctor. Drift-guard liveness for
+// this contract re-homes to (a) the config_a whole-ROM native byte-identity golden,
+// and (b) the SURVIVING authority guards on the engine side that CANNOT `use` a game
+// module — sound_api.emp's `ensure(extern("SFXID_RING_*") == …)` and mt_bank.emp's
+// `ensure(extern("SONG_MOVINGTRUCKS"/"SONG_COUNT") == …)`, resolved through the
+// harvest EquSym (sfx_negative_probes / sound_migration cover their liveness).
 
 /// The extern-vs-import split (kill-list row 33), gate-ON state: compile
 /// game_loop.emp + game_debug.emp TOGETHER at the hotkeys shape. game_loop's
@@ -226,11 +228,14 @@ fn two_module_flip_resolves_debug_music_toggle() {
         eprintln!("skip: aeon sources missing");
         return;
     }
-    let defines = vec![
+    let mut defines = vec![
         ("SOUND_DEBUG_HOTKEYS".to_string(), 1i128),
         ("SOUND_DRIVER_ENABLED".to_string(), 1),
         ("DEBUG".to_string(), 1),
     ];
+    // game_debug reads the song / SFX ids at comptime (Parcel F2 `use` authority);
+    // provide them as defines for this standalone two-module lower.
+    defines.extend(id_defines());
     // game_loop.emp at a base within jsr abs.w reach isn't needed — jsr
     // Debug_MusicToggle is abs.w/.l by the width rule; we assert the emitted
     // operand equals game_debug's placed VMA. Place game_loop at $800, game_debug
@@ -270,7 +275,7 @@ fn two_module_flip_resolves_debug_music_toggle() {
     sections.extend(gd_mod.sections);
     place_sections(&mut sections, &map);
     sections.extend(addr_carriers(0x0100_0000));
-    sections.extend(value_carriers(None));
+    sections.extend(value_carriers());
     // game_loop's other cross-seam callees (VSync_Wait/Sound_DrainSfxRing/
     // Game_State) — synthetic carriers so the game_loop region links.
     for (i, (name, vma)) in

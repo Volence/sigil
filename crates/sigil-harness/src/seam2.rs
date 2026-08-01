@@ -363,11 +363,21 @@ pub fn emit_sfx_body_and_head_doctored(
     }
 
     // The cross-seam carriers: the bank-start label (@ $58000, for the body's
-    // bankid co-residency ensure) + the three config/sound_ids.asm equs the drift
-    // guards + the head span guard read (SFX_ID_BASE/SFX_COUNT/SFX_TABLE_LEN).
-    let carrier_asm = "cpu 68000\nphase $58000\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSFX_ID_BASE = $33\nSFX_COUNT = 9\nSFX_TABLE_LEN = 135\n";
+    // bankid co-residency ensure) + the SFX_TABLE_LEN equ the head span guard
+    // reads (sfx_blob_win_tab.emp's `ensure(135 == extern("SFX_TABLE_LEN"))`).
+    // Parcel F2: SFX_TABLE_LEN is SOURCED FROM sfx_bank.emp itself (SfxTable.len,
+    // via the authority-eval) — no hardcoded mirror; the body's own SFX_ID_BASE/
+    // SFX_COUNT/SFX_TABLE_LEN drift guards retired (the derivation IS the authority,
+    // nothing external to cross-check), so only the head's span guard needs a carrier.
+    let sfx_table_len = crate::seam1::sfx_bank_authority_consts(aeon)
+        .get("SFX_TABLE_LEN")
+        .copied()
+        .ok_or("sfx_bank.emp authority missing SFX_TABLE_LEN")?;
+    let carrier_asm = format!(
+        "cpu 68000\nphase $58000\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSFX_TABLE_LEN = {sfx_table_len}\n"
+    );
     let mut carriers = assemble(
-        carrier_asm,
+        &carrier_asm,
         &AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() },
     )
     .map_err(|d| format!("carrier assemble: {d:?}"))?
