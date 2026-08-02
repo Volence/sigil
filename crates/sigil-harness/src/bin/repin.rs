@@ -62,15 +62,20 @@ fn main() -> ExitCode {
 
     // The sigil-native symbol source: resolve both shapes, read every symbol's address.
     // Path-independent stamp (the aeon worktree path must not leak into committed pins.rs).
+    // Phase-bank label LMAs (T4): a `phase_bank` region resolves its base to the
+    // section's LMA (the placement address), not the phase VMA the symbol listing
+    // carries. Empty unless the layout holds a `vma:`-windowed bank (soundbankhead).
     let (plain, debug) = match (
         native::sigil_native_symbol_listing(&aeon, false),
         native::sigil_native_symbol_listing(&aeon, true),
+        native::phase_bank_lmas(&aeon, false),
+        native::phase_bank_lmas(&aeon, true),
     ) {
-        (Ok((pm, pe)), Ok((dm, de))) => (
-            Listing::from_symbols(pm, pe, "plain".into()),
-            Listing::from_symbols(dm, de, "debug".into()),
+        (Ok((pm, pe)), Ok((dm, de)), Ok(pl), Ok(dl)) => (
+            Listing::from_symbols(pm, pe, "plain".into()).with_phase_lma(pl),
+            Listing::from_symbols(dm, de, "debug".into()).with_phase_lma(dl),
         ),
-        (Err(e), _) | (_, Err(e)) => return fail(&e),
+        (Err(e), ..) | (_, Err(e), ..) | (.., Err(e), _) | (.., Err(e)) => return fail(&e),
     };
 
     let manifest_src = match std::fs::read_to_string(MANIFEST_PATH) {

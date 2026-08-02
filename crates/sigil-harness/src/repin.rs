@@ -32,6 +32,12 @@ use serde::Deserialize;
 #[derive(Debug)]
 pub struct Listing {
     symbols: HashMap<String, u32>,
+    /// PHASE-BANK label LOAD addresses (T4): for a `vma:`-windowed bank section
+    /// whose labels resolve at a VMA distinct from their LMA, `name → lma`. A
+    /// `phase_bank` region resolves its base HERE, not in `symbols` (which holds the
+    /// phase VMA). Empty unless the layout carries a phase-bank section
+    /// (`soundbankhead`); populated via [`Listing::with_phase_lma`].
+    phase_lma: HashMap<String, u32>,
     /// The ROM end address (`EndOfRom`) — the assembled ROM length.
     pub end_addr: u32,
     /// Provenance text (a build description), carried into the generated file's
@@ -42,9 +48,19 @@ pub struct Listing {
 impl Listing {
     /// Build a `Listing` directly from a resolved `name → address` map (the
     /// sigil-native source, Stage-3 P4c) instead of parsing an asl `.lst`. The
-    /// `stamp` is provenance text (a build date, not an asl page-header).
+    /// `stamp` is provenance text (a build date, not an asl page-header). The
+    /// phase-bank LMA map is empty — attach it with [`Listing::with_phase_lma`]
+    /// when the layout carries a `vma:`-windowed bank.
     pub fn from_symbols(symbols: HashMap<String, u32>, end_addr: u32, stamp: String) -> Listing {
-        Listing { symbols, end_addr, stamp }
+        Listing { symbols, phase_lma: HashMap::new(), end_addr, stamp }
+    }
+
+    /// Attach the phase-bank label LMA map (T4, `native::phase_bank_lmas`). A
+    /// `phase_bank` region's base resolves against this map (the LMA) instead of the
+    /// VMA `symbols` carries.
+    pub fn with_phase_lma(mut self, phase_lma: HashMap<String, u32>) -> Listing {
+        self.phase_lma = phase_lma;
+        self
     }
 
     /// Exact-match lookup. Unknown symbol = HARD ERROR naming it (D-T10.2 —
@@ -55,6 +71,27 @@ impl Listing {
             .get(name)
             .copied()
             .ok_or_else(|| format!("symbol `{name}` not found in the listing symbol table"))
+    }
+
+    /// The PLACEMENT address of a REGION boundary symbol `name` — the address the
+    /// region's base/end pins to (T4). A region's base must be the section's LOAD
+    /// address, so a PinnedBaked re-bootstrap (which feeds it straight in as
+    /// `lma_base`) places the bytes where they belong.
+    ///
+    /// PHASE-BANK AUTO-DETECTION: if `name` is a phase-bank section label (present in
+    /// [`with_phase_lma`], populated ONLY for `vma:`-windowed banks whose labels
+    /// resolve at a VMA distinct from their LMA), return its LMA; otherwise the plain
+    /// VMA (which equals the LMA for every non-phase section). The distinction is
+    /// driven by the RESOLVED layout, not a hand-maintained manifest flag — so it can
+    /// neither be forgotten nor go stale, and `repin.toml` stays frozen. Only region
+    /// boundaries route through here; bare symbol pins keep their VMA via [`get`]
+    /// (`SongTable`/`SongPatchTable` live in the phase window and are referenced at
+    /// their $8000-window VMA, so they must NOT be rebased).
+    pub fn placement(&self, name: &str) -> Result<u32, String> {
+        if let Some(&lma) = self.phase_lma.get(name) {
+            return Ok(lma);
+        }
+        self.get(name)
     }
 
     /// Number of parsed (numeric) symbols — provenance/debug aid.
@@ -436,12 +473,15 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
             });
             continue;
         }
-        let plain_base = plain.get(&r.start).map_err(|e| format!("region `{}` start: {e}", r.name))?;
-        let debug_base = debug.get(&r.start).map_err(|e| format!("region `{}` start (debug): {e}", r.name))?;
+        let plain_base =
+            plain.placement(&r.start).map_err(|e| format!("region `{}` start: {e}", r.name))?;
+        let debug_base = debug
+            .placement(&r.start)
+            .map_err(|e| format!("region `{}` start (debug): {e}", r.name))?;
         let (plain_len, debug_len, end_desc) = match (&r.end, r.len) {
             (Some(end), None) => {
-                let pe = plain.get(end).map_err(|e| format!("region `{}` end: {e}", r.name))?;
-                let de = debug.get(end).map_err(|e| format!("region `{}` end (debug): {e}", r.name))?;
+                let pe = plain.placement(end).map_err(|e| format!("region `{}` end: {e}", r.name))?;
+                let de = debug.placement(end).map_err(|e| format!("region `{}` end (debug): {e}", r.name))?;
                 if pe < plain_base || de < debug_base {
                     return Err(format!(
                         "region `{}`: end `{end}` precedes start `{}` ({pe:#X} < {plain_base:#X} \
@@ -1018,6 +1058,65 @@ per_shape = true
         assert_eq!(changes[0].new.as_deref(), Some("0x24"));
         assert!(changes[1].old.is_none());
         assert!(changes[2].new.is_none());
+    }
+
+    /// T4 — a phase-bank region pins its base to the section's LMA (the placement
+    /// address), NOT the phase VMA the symbol listing carries. Auto-detected: the
+    /// region's start being a phase-bank label (present in the phase-LMA map) IS the
+    /// signal — no manifest flag, so `repin.toml` stays frozen and the rule can't go
+    /// stale. The soundness catch: a PinnedBaked re-bootstrap feeds `Region::plain_base`
+    /// into `emp_map_toml` as the bank's `lma_base`, so a base holding the phase VMA
+    /// ($8000) would place the bank there instead of its true LMA ($58000).
+    #[test]
+    fn phase_bank_region_pins_the_lma_not_the_vma() {
+        // The listing resolves the phase-bank head label at its VMA ($8000 window),
+        // exactly as `resolved_symbols` does for a `vma:`-windowed section. A second,
+        // ordinary region (Foo) shares the manifest to prove non-phase starts keep the
+        // VMA — only the phase-bank label rebases.
+        let base_syms = &[("SoundTablesZ80_Head", 0x8000u32), ("Foo", 0x1234u32)];
+        // The phase-bank LMA map carries the LOAD address ($58000) for the phase label
+        // ONLY (native::phase_bank_lmas populates only vma!=lma bank sections).
+        let phase: HashMap<String, u32> =
+            [("SoundTablesZ80_Head".to_string(), 0x58000u32)].into_iter().collect();
+        let plain = test_listing(base_syms, 0x60000).with_phase_lma(phase.clone());
+        let debug = test_listing(base_syms, 0x62000).with_phase_lma(phase);
+
+        let manifest = load_manifest(
+            r#"
+[rom]
+end_symbol = "__END__"
+
+[[region]]
+name = "soundbankhead"
+start = "SoundTablesZ80_Head"
+len = 0x607
+gate = "SIGIL_EMP_SOUNDBANKHEAD"
+tests = ["soundbankhead_port"]
+
+[[region]]
+name = "foo"
+start = "Foo"
+len = 0x10
+"#,
+        )
+        .unwrap();
+        let resolved = resolve(&manifest, &plain, &debug).unwrap();
+        let bank = &resolved.regions[0];
+        // The phase-bank base pins the LMA in BOTH shapes — never the $8000 phase VMA.
+        assert_eq!(bank.plain_base, 0x58000, "phase-bank base must pin the LMA, not the VMA");
+        assert_eq!(bank.debug_base, 0x58000, "phase-bank base must pin the LMA, not the VMA");
+        assert_eq!((bank.plain_len, bank.debug_len), (0x607, 0x607));
+        // An ordinary region keeps its VMA base (auto-detection does not over-reach).
+        let foo = &resolved.regions[1];
+        assert_eq!((foo.plain_base, foo.debug_base), (0x1234, 0x1234));
+
+        // Without the phase-LMA map (a listing that carries no phase-bank section),
+        // the same manifest resolves the region at its VMA — no crash, no rebase. This
+        // is the byte-identity path for any layout with no `vma:`-windowed bank.
+        let plain_no_phase = test_listing(base_syms, 0x60000);
+        let debug_no_phase = test_listing(base_syms, 0x62000);
+        let resolved = resolve(&manifest, &plain_no_phase, &debug_no_phase).unwrap();
+        assert_eq!(resolved.regions[0].plain_base, 0x8000, "no phase map ⇒ base is the plain VMA");
     }
 
     #[test]

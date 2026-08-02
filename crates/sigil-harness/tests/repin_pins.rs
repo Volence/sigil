@@ -55,8 +55,11 @@ fn pins_rs_is_current() {
         .unwrap_or_else(|e| panic!("plain resolve: {e}"));
     let (dm, de) = native::sigil_native_symbol_listing(&aeon, true)
         .unwrap_or_else(|e| panic!("debug resolve: {e}"));
-    let plain = Listing::from_symbols(pm, pe, "plain".into());
-    let debug = Listing::from_symbols(dm, de, "debug".into());
+    // Phase-bank label LMAs (T4): a `phase_bank` region pins its base to the LMA.
+    let pl = native::phase_bank_lmas(&aeon, false).unwrap_or_else(|e| panic!("plain phase lma: {e}"));
+    let dl = native::phase_bank_lmas(&aeon, true).unwrap_or_else(|e| panic!("debug phase lma: {e}"));
+    let plain = Listing::from_symbols(pm, pe, "plain".into()).with_phase_lma(pl);
+    let debug = Listing::from_symbols(dm, de, "debug".into()).with_phase_lma(dl);
     let manifest = load_manifest(include_str!("../repin.toml")).expect("repin.toml must load");
     let resolved = resolve(&manifest, &plain, &debug).unwrap_or_else(|e| panic!("resolve: {e}"));
     let prov = Provenance {

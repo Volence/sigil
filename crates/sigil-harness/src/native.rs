@@ -2632,6 +2632,41 @@ pub fn sigil_native_symbol_listing(
     Ok((map, end_addr))
 }
 
+/// Phase-bank label LOAD addresses (T4). For every PHASE-BANK ROM section — a
+/// `vma:`-windowed bank whose labels resolve at a VMA distinct from where its bytes
+/// physically land (`vma_base != lma && vma_base >= $8000`, the `soundbankhead`
+/// precedent) — map each label to its LMA (`lma + offset`), NOT the VMA that
+/// `sigil_native_symbol_listing` returns.
+///
+/// repin pins a `phase_bank` region's base to this LMA, so the emitted `Region` base
+/// is uniformly the PLACEMENT address in every shape — the same meaning a non-phase
+/// region's base already has (there `vma == lma`). This makes the PinnedBaked
+/// misplacement UNREPRESENTABLE: `emp_map_toml` feeds `Region::plain_base` straight in
+/// as a region's `lma_base`, so a base that held the phase VMA ($8000) would place the
+/// bank at $8000 instead of its true $58000 LMA. With the base holding the LMA there is
+/// no VMA in the pin to be mistaken for a load address. The phase VMA stays the SOLE
+/// property of the section's own `vma:` declaration in the `.emp`.
+///
+/// Non-phase sections contribute nothing (their `vma == lma`, so the plain VMA listing
+/// already IS the LMA). Empty for a program with no phase-bank section.
+pub fn phase_bank_lmas(aeon: &Path, debug: bool) -> Result<HashMap<String, u32>, String> {
+    let resolved = resolve_canonical_sections(aeon, debug)?;
+    let mut out = HashMap::new();
+    for s in &resolved {
+        if !is_rom_section(s) {
+            continue;
+        }
+        let is_phase = s.vma_base.map(|v| v != s.lma && v >= 0x8000).unwrap_or(false);
+        if !is_phase {
+            continue;
+        }
+        for l in &s.labels {
+            out.insert(l.name.clone(), s.lma.wrapping_add(l.offset));
+        }
+    }
+    Ok(out)
+}
+
 /// Load the project region memory map — K5: the per-game `games/sonic4/map.toml` (the
 /// sole owner of the region geometry + object-bank budget now that sigil.map.toml retired),
 /// the same file the sonic4 emit path reads.
