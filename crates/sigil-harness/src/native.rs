@@ -1680,7 +1680,13 @@ fn packed_true_bases(
                         p
                     }
                     Some(r) => {
-                        let a = align_of(p);
+                        // A ZERO-BYTE marker section (the EndOfRom terminus class) must not
+                        // inherit a spurious wide alignment from its cached provisional base:
+                        // its address is DEFINED by the end of the emitted image, and an
+                        // inferred align-16 (i4: the enclosed replay fixture) opens a fill
+                        // gap the assembled-bar completeness guard rightly rejects. Cap
+                        // markers at the 68k minimum (2); emitters keep the inference.
+                        let a = if img[i] == 0 { 2 } else { align_of(p) };
                         let packed = (r + a - 1) / a * a;
                         if packed > p + ANCHOR_GAP {
                             return Err(format!(

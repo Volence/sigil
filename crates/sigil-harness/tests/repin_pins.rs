@@ -232,8 +232,8 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
     // object_test_state growth), then +0xC debug only from the OJZ scene-pin
     // hook's two `ifdef __DEBUG__` guards (Debug_Scene_Freeze).
-    assert_eq!(pins::ASSEMBLED_LEN, 0x5DB00);       // −0x60 wave-c: ojz row-35 force-write deleted (net of PARALLAX growth)
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F5F2); // −0x68 wave-c (debug ojz shrink)
+    assert_eq!(pins::ASSEMBLED_LEN, 0x5DBD0);       // +0xD0 i4: EndOfRom encloses the replay fixture (194 B + align)
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F6B4); // +0xC2 i4: EndOfRom encloses the replay fixture
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the
@@ -414,8 +414,8 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // loops (byte-neutral, −20 cycles/child), and PopulateSpawnedPieceCount's
     // one-register park moved to move.l/movea.l (−12 cycles/child, −4 bytes,
     // which also restored the plain-shape branch margin the wave had consumed).
-    assert_eq!(pins::SOUND_API.plain_base, 0x63FE);  // +0x34 net, t24
-    assert_eq!(pins::SOUND_API.debug_base, 0x7F40);  // +0x8C net, t24
+    assert_eq!(pins::SOUND_API.plain_base, 0x64FE);  // +0x34 net, t24
+    assert_eq!(pins::SOUND_API.debug_base, 0x80F0);  // +0x8C net, t24
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A
