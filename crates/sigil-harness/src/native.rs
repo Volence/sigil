@@ -109,12 +109,9 @@ pub struct GameProfile {
     /// run `ensure_generated`. OFF (demo/Config-B): no sound define at all (AS `ifdef`
     /// checks DEFINEDNESS — a `=0` would still take the sound arm), no BINCLUDE, no gen.
     pub sound_on: bool,
-    /// Extra AS `-D`s beyond the sound + code gates (Config-A: SOUND_DEBUG_HOTKEYS /
-    /// SOUND_DBG_MIRROR + the GAME_DEBUG / SOUND_DEBUG code gates).
+    /// Extra AS `-D`s beyond the sound defines (Config-A: SOUND_DEBUG_HOTKEYS /
+    /// SOUND_DBG_MIRROR).
     pub extra_as_defines: Vec<(&'static str, i64)>,
-    /// The `SIGIL_EMP_*` code gates the AS side turns ON (each gate holes out an `.asm`
-    /// twin the registry places natively).
-    pub code_gates: Vec<&'static str>,
     pub registry: Vec<ModuleSpec>,
     /// The build-shape comptime defines the `.emp` modules read.
     pub emp_defines: Vec<(&'static str, i128)>,
@@ -365,39 +362,6 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
     specs
 }
 
-/// The sonic4 code gates (the registry's gates, de-duplicated: TEST_OBJECTS is one
-/// gate serving test_solid + test_particle). Shared by canonical sonic4 + Config-A/B.
-fn sonic4_code_gates() -> Vec<&'static str> {
-    code_gate_defines()
-}
-
-/// The 30 ENGINE code gates the demo turns on (engine-only registry; no game modules,
-/// no sound). COMPRESSION_SELFTEST is added per-shape (debug-only).
-fn demo_code_gates(debug: bool) -> Vec<&'static str> {
-    let mut g = vec![
-        "SIGIL_EMP_VECTORS", "SIGIL_EMP_BOOT", "SIGIL_EMP_VDP_INIT", "SIGIL_EMP_DMA_QUEUE",
-        "SIGIL_EMP_BUFFERS", "SIGIL_EMP_VBLANK", "SIGIL_EMP_HBLANK", "SIGIL_EMP_CONTROLLERS",
-        "SIGIL_EMP_GAME_LOOP", "SIGIL_EMP_S4LZ", "SIGIL_EMP_ZX0", "SIGIL_EMP_MATH",
-        "SIGIL_EMP_DPLC", "SIGIL_EMP_CORE", "SIGIL_EMP_SPRITES", "SIGIL_EMP_ANIMATE",
-        "SIGIL_EMP_COLLISION", "SIGIL_EMP_RINGS", "SIGIL_EMP_ENTITY_WINDOW", "SIGIL_EMP_CHILDREN",
-        "SIGIL_EMP_LOAD_OBJECT", "SIGIL_EMP_PLANE_BUFFER", "SIGIL_EMP_TILE_CACHE",
-        "SIGIL_EMP_COLLISION_LOOKUP", "SIGIL_EMP_SECTION", "SIGIL_EMP_CAMERA", "SIGIL_EMP_PARALLAX",
-        "SIGIL_EMP_LOAD_ART", "SIGIL_EMP_BG", "SIGIL_EMP_BG_ANIM", "SIGIL_EMP_ERROR_HANDLER",
-        "SIGIL_EMP_EPILOGUE", "SIGIL_EMP_OBJCODEBASE", "SIGIL_EMP_NULL_INTERRUPT",
-    ];
-    if debug {
-        g.push("SIGIL_EMP_COMPRESSION_SELFTEST");
-    }
-    // The Z80 idle flips native in the no-sound demo too (kill row 55).
-    g.push("SIGIL_EMP_Z80_INIT");
-    // The demo GAME modules place natively (Parcel H-demo): each gate holes out its
-    // `.asm` twin's include in games/demo/main.asm (org-resumed).
-    g.push("SIGIL_EMP_DEMO_BOX");
-    g.push("SIGIL_EMP_DEMO_DATA");
-    g.push("SIGIL_EMP_DEMO_STATE");
-    g
-}
-
 /// The engine-only registry (demo): the `engine.*` modules of the sonic4 registry,
 /// minus `engine.sound_api` (demo is sound-OFF → the sound-caller `.asm`/`.emp` is
 /// not in the demo layout at all). The region bases/lens are sonic4-shape and are
@@ -453,7 +417,6 @@ pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile 
         debug,
         sound_on: true,
         extra_as_defines: vec![],
-        code_gates: sonic4_code_gates(),
         registry: registry(debug),
         emp_defines: vec![
             ("SOUND_DRIVER_ENABLED", 1),
@@ -538,7 +501,6 @@ pub fn demo_profile(debug: bool) -> GameProfile {
         debug,
         sound_on: false,
         extra_as_defines: vec![],
-        code_gates: demo_code_gates(debug),
         registry: demo_registry(debug),
         emp_defines: vec![
             ("SOUND_DRIVER_ENABLED", 0),
@@ -593,8 +555,6 @@ pub fn config_b_profile() -> GameProfile {
         section: "z80_idle",
         region: DUMMY_REGION,
     });
-    let mut code_gates = sonic4_code_gates();
-    code_gates.push("SIGIL_EMP_Z80_INIT");
     GameProfile {
         name: "config_b",
         game_root_rel: "games/sonic4/game_root.asm",
@@ -606,7 +566,6 @@ pub fn config_b_profile() -> GameProfile {
         debug: false,
         sound_on: false,
         extra_as_defines: vec![],
-        code_gates,
         registry,
         emp_defines: vec![
             ("SOUND_DRIVER_ENABLED", 0),
@@ -650,9 +609,6 @@ pub fn config_a_profile() -> GameProfile {
         section: "sound_debug",
         region: DUMMY_REGION,
     });
-    let mut code_gates = sonic4_code_gates();
-    code_gates.push("SIGIL_EMP_GAME_DEBUG");
-    code_gates.push("SIGIL_EMP_SOUND_DEBUG");
     GameProfile {
         name: "config_a",
         game_root_rel: "games/sonic4/game_root.asm",
@@ -664,7 +620,6 @@ pub fn config_a_profile() -> GameProfile {
         debug: true,
         sound_on: true,
         extra_as_defines: vec![("SOUND_DEBUG_HOTKEYS", 1), ("SOUND_DBG_MIRROR", 1)],
-        code_gates,
         registry,
         emp_defines: vec![
             ("SOUND_DRIVER_ENABLED", 1),
@@ -1110,9 +1065,6 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
             defines.push((g.to_string(), 1));
         }
     }
-    for g in &profile.code_gates {
-        defines.push((g.to_string(), 1));
-    }
     for (k, v) in &profile.extra_as_defines {
         defines.push((k.to_string(), *v));
     }
@@ -1148,36 +1100,6 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
 /// `build_rom_chained_with_listing(sonic4_profile(..))` (Frozen, packed).
 pub fn assemble_native_all_gates_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
     assemble_as_side(aeon, &sonic4_pinned_profile(debug))
-}
-
-/// The `SIGIL_EMP_*` code-gate names Stage 1 turns ON (the registry's gates,
-/// de-duplicated: TEST_OBJECTS is one gate serving test_solid + test_particle).
-fn code_gate_defines() -> Vec<&'static str> {
-    vec![
-        "SIGIL_EMP_VECTORS", "SIGIL_EMP_BOOT", "SIGIL_EMP_VDP_INIT", "SIGIL_EMP_DMA_QUEUE",
-        "SIGIL_EMP_BUFFERS", "SIGIL_EMP_VBLANK", "SIGIL_EMP_HBLANK", "SIGIL_EMP_CONTROLLERS",
-        "SIGIL_EMP_GAME_LOOP", "SIGIL_EMP_S4LZ", "SIGIL_EMP_ZX0", "SIGIL_EMP_MATH",
-        "SIGIL_EMP_OBJCODEBASE",
-        "SIGIL_EMP_DPLC", "SIGIL_EMP_CORE", "SIGIL_EMP_SPRITES", "SIGIL_EMP_ANIMATE",
-        "SIGIL_EMP_COLLISION", "SIGIL_EMP_RINGS", "SIGIL_EMP_ENTITY_WINDOW", "SIGIL_EMP_CHILDREN",
-        "SIGIL_EMP_LOAD_OBJECT", "SIGIL_EMP_PLANE_BUFFER", "SIGIL_EMP_TILE_CACHE",
-        "SIGIL_EMP_COLLISION_LOOKUP", "SIGIL_EMP_SECTION", "SIGIL_EMP_CAMERA", "SIGIL_EMP_PARALLAX",
-        "SIGIL_EMP_LOAD_ART", "SIGIL_EMP_BG", "SIGIL_EMP_BG_ANIM", "SIGIL_EMP_COMPRESSION_SELFTEST",
-        "SIGIL_EMP_SOUND_API", "SIGIL_EMP_ERROR_HANDLER", "SIGIL_EMP_EPILOGUE",
-        "SIGIL_EMP_NULL_INTERRUPT",
-        "SIGIL_EMP_PLAYER_SENSORS",
-        "SIGIL_EMP_PLAYER_GROUND", "SIGIL_EMP_PLAYER_AIR", "SIGIL_EMP_PLAYER_SPINDASH",
-        "SIGIL_EMP_SONIC", "SIGIL_EMP_TEST_STATIC", "SIGIL_EMP_TEST_ANIMATED",
-        "SIGIL_EMP_TEST_OBJECTS", "SIGIL_EMP_TEST_EMITTER", "SIGIL_EMP_TEST_PARENT",
-        "SIGIL_EMP_TEST_STRESS_EMITTER", "SIGIL_EMP_TEST_CHURN", "SIGIL_EMP_PATH_SWAP",
-        "SIGIL_EMP_OBJDEFS", "SIGIL_EMP_PARALLAX_CONFIGS", "SIGIL_EMP_TEST_MAPPINGS",
-        "SIGIL_EMP_SONIC_ANIMS", "SIGIL_EMP_PARTICLE_ANIMS",
-        "SIGIL_EMP_OBJECT_TEST_STATE", "SIGIL_EMP_OJZ_SCROLL_TEST",
-        // Stage-3 keystone flip (kill row 93): the last AS-owned code twins gate
-        // off (bodies → `.emp`, always-emitted headers stay AS-side).
-        "SIGIL_EMP_PLAYER_COMMON", "SIGIL_EMP_TEST_PLAYER", "SIGIL_EMP_TEST_ENEMY",
-        "SIGIL_EMP_ACT_DESCRIPTOR",
-    ]
 }
 
 /// Build the placement map (one region per registry section) for `place_sections`.
