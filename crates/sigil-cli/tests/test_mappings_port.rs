@@ -36,10 +36,26 @@ fn region_base(debug: bool) -> u32 {
     if debug { pins::TEST_MAPPINGS.debug_base } else { pins::TEST_MAPPINGS.plain_base }
 }
 
+fn aeon_root() -> PathBuf {
+    PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    )
+}
+
 fn mappings_dir() -> PathBuf {
-    let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
-    Path::new(&aeon).join("games/sonic4/data/mappings")
+    aeon_root().join("games/sonic4/data/mappings")
+}
+
+fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
+    let src = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let (file, diags) = parse_str(&src);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "{} parse errors: {diags:?}",
+        path.display()
+    );
+    file
 }
 
 fn strict_gate() -> bool {
@@ -61,13 +77,21 @@ fn map_toml(debug: bool) -> String {
 
 fn compile_real_file(debug: bool) -> sigil_link::LinkedImage {
     let dir = mappings_dir();
-    let src = std::fs::read_to_string(dir.join("test_mappings.emp"))
-        .unwrap_or_else(|e| panic!("cannot read test_mappings.emp: {e}"));
-    let (file, pdiags) = parse_str(&src);
-    assert!(
-        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "test_mappings.emp parse errors: {pdiags:?}"
-    );
+    let main = parse_file(&dir.join("test_mappings.emp"));
+
+    // The port now `use`s the shared mapping-DSL module (MapPiece/MapFrame1/
+    // centered). It is a self-contained types + comptime-fn module (no imports of
+    // its own), so its items inline whole ahead of the port's — the standalone
+    // lower then resolves the `use` locally (the g2 with_ambient pattern).
+    let dsl = parse_file(&aeon_root().join("engine/objects/mapping_dsl.emp"));
+    let mut items = dsl.items;
+    items.extend(main.items);
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items,
+        docs: main.docs.clone(),
+    };
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
