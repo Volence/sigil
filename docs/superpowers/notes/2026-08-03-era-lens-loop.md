@@ -30,6 +30,19 @@ with reason) and countersigns.
   canonical example), invariant safety: does every new table/layout carry its
   ensure/span/drift guards, and does every new gate have a negative probe?
 
+## The era baseline (what the lenses diff against)
+
+The campaign-close state, verified clean and pushed (local == origin):
+
+- **aeon `e03aad86e93d91051113a2cac07ace93dcb3c43d`** (a3-span merge — the
+  campaign's final byte-relevant commit; goldens ×6 = chain 22)
+- **sigil `d1115227`** (this ruling; last byte-relevant: `ea686380` a3-span)
+- strict 2990/0/4 · chain 22 tip `a2-mtsyms` · AS survivors 3
+
+Every new-era parcel branches from (a descendant of) this baseline; its lens
+panel reviews the PARCEL DIFF (`git diff master...<branch>`) plus surroundings,
+and the first content parcel's diff-from-`e03aad8` is the era's opening move.
+
 ## Calibration
 
 - Engine/compiler/seam work: full campaign bars UNCHANGED (byte or behavioral
