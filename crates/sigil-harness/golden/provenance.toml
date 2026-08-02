@@ -1158,3 +1158,50 @@ full_crc = "8cdcaae5"
 full_size = 422038
 anchor_crc = "4b3a8795"
 anchor_end = 0x5f5f2
+
+[[entry]]
+name = "input-6button"
+ab = "oracle: PAD_6BTN detect + XYZ/Mode->BUTTON_EXT_* exact + 600f scroll A/B identical (5824px, lag 0); cadence bug caught live on MDControl6"
+note = "parcel I1: full 6-button layer, low-first SGDK cadence; +0xB8 net engine shift, RAM +8; jsr-pin rider byte-identical"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "d7344509"
+full_size = 422544
+anchor_crc = "a82977e7"
+anchor_end = 0x5f5f2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "e6af6135"
+full_size = 303749
+anchor_crc = "0888145f"
+anchor_end = 0x43480
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "7b9d7c23"
+full_size = 90776
+anchor_crc = "75f32f2c"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "44e49a32"
+full_size = 93265
+anchor_crc = "1f873c23"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "baf41851"
+full_size = 412355
+anchor_crc = "72caf74e"
+anchor_end = 0x5db00
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "b63c4c35"
+full_size = 422193
+anchor_crc = "4e101ecb"
+anchor_end = 0x5f5f2

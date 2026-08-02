@@ -46,7 +46,11 @@ fn is_header_field(i: usize) -> bool {
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 const EOR: usize = 0x5f5f2; // config_a assembled_end (== config_a_profile; −0x68 wave-c)
-const DEFORM_PTR_OFF: usize = 0x11420; // ParallaxConfig_OJZ_Default header +0x10: dc.l DeformTable_Zero (g9 bank-head +2 -> +0x10 align cascade)
+// ParallaxConfig_OJZ_Default header +0x10 = the dc.l DeformTable_Zero slot.
+// LISTING-DERIVED at runtime (input-6button: the second hand-shift of the old
+// 0x11420 literal killed it — the t24 rot rule; the header offset is the
+// parallax-config layout this test pins down anyway).
+const DEFORM_PTR_HDR_OFF: usize = 0x10;
 const DEFORM_DIVERGENT_BYTE: usize = 0x11412; // the byte that went stale (0x12 vs 0x13) — the row-94 site
 
 /// POSITIVE: the keystones-flipped config_a assembled anchor is byte-identical to the
@@ -117,11 +121,17 @@ fn deform_pointer_equals_placed_label_vma() {
         .find(|s| s.name == "DeformTable_Zero")
         .map(|s| s.value)
         .expect("DeformTable_Zero in listing");
+    let cfg = listing
+        .iter()
+        .find(|s| s.name == "ParallaxConfig_OJZ_Default")
+        .map(|s| s.value as usize)
+        .expect("ParallaxConfig_OJZ_Default in listing");
+    let deform_ptr_off = cfg + DEFORM_PTR_HDR_OFF;
     let emitted = u32::from_be_bytes([
-        rom[DEFORM_PTR_OFF],
-        rom[DEFORM_PTR_OFF + 1],
-        rom[DEFORM_PTR_OFF + 2],
-        rom[DEFORM_PTR_OFF + 3],
+        rom[deform_ptr_off],
+        rom[deform_ptr_off + 1],
+        rom[deform_ptr_off + 2],
+        rom[deform_ptr_off + 3],
     ]);
     // Sanity: labeled placement itself is correct (the blind spot — this was already
     // true through the bug), so this check is strictly stronger.
@@ -132,6 +142,6 @@ fn deform_pointer_equals_placed_label_vma() {
     assert_eq!(
         emitted, placed,
         "fold-vs-placement divergence: dc.l @{:#x} emitted {:#x} but DeformTable_Zero is placed at {:#x} (a baked-stale reference)",
-        DEFORM_PTR_OFF, emitted, placed
+        deform_ptr_off, emitted, placed
     );
 }

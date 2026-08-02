@@ -59,12 +59,34 @@ fn expected(key: &str) -> (usize, u32, usize) {
     (t.anchor_end, crc, t.full_size)
 }
 
-/// A target's full-file proof: profile plus a load-bearing (name, addr) spot set.
-/// `name` doubles as the provenance-chain target key.
+/// A target's full-file proof: profile plus a load-bearing label spot set.
+/// `name` doubles as the provenance-chain target key AND the frozen size-table
+/// stem (`golden/offcanonical_sizes/<name>.txt`). Expected addresses are read
+/// from that table — it regenerates at every refreeze, so the old hand-typed
+/// literals (which rode two waves in two parcels) cannot rot again
+/// (input-6button, the t24 rule).
 struct Target {
     name: &'static str,
     profile: native::GameProfile,
-    load_bearing: &'static [(&'static str, u32)],
+    load_bearing: &'static [&'static str],
+}
+
+/// Parse the target's frozen size table into name -> address.
+fn size_table(name: &str) -> std::collections::HashMap<String, u32> {
+    let stem = if name == "demo" { "demo" } else { name };
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../sigil-harness/golden/offcanonical_sizes/{stem}.txt"));
+    let src = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read size table {}: {e}", path.display()));
+    src.lines()
+        .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+        .filter_map(|l| {
+            let mut it = l.split_whitespace();
+            let n = it.next()?;
+            let a = it.next()?;
+            Some((n.to_string(), u32::from_str_radix(a.trim_start_matches("0x"), 16).ok()?))
+        })
+        .collect()
 }
 
 fn run(t: &Target) {
@@ -92,11 +114,15 @@ fn run(t: &Target) {
     let (_rom, listing) =
         native::build_rom_chained_with_listing(&aeon, &t.profile).unwrap_or_else(|e| panic!("{e}"));
     let resolved = native::convsym_resolve(&aeon, &listing).unwrap_or_else(|e| panic!("{e}"));
-    for (name, want) in t.load_bearing {
+    let table = size_table(t.name);
+    for name in t.load_bearing {
+        let want = table
+            .get(*name)
+            .unwrap_or_else(|| panic!("{}: `{name}` absent from the frozen size table", t.name));
         let got = resolved
             .get(*name)
             .unwrap_or_else(|| panic!("{}: load-bearing `{name}` absent from convsym output", t.name));
-        assert_eq!(got, want, "{}: `{name}` resolved to {got:#X}, expected {want:#X}", t.name);
+        assert_eq!(got, want, "{}: `{name}` resolved to {got:#X}, size table says {want:#X}", t.name);
     }
 
     // FULL-FILE golden (sigil-canonical, CRC-pinned via the provenance tip).
@@ -120,7 +146,8 @@ fn doctored_control(t: &Target) {
     let aeon = aeon_dir();
     let (_rom, mut listing) =
         native::build_rom_chained_with_listing(&aeon, &t.profile).unwrap_or_else(|e| panic!("{e}"));
-    let (probe, real) = t.load_bearing[0];
+    let probe = t.load_bearing[0];
+    let real = *size_table(t.name).get(probe).expect("probe in size table");
     let base = native::convsym_resolve(&aeon, &listing).unwrap();
     assert_eq!(base.get(probe), Some(&real), "{}: control undoctored `{probe}`", t.name);
     for s in listing.iter_mut() {
@@ -142,17 +169,12 @@ fn config_a() -> Target {
         name: "config_a",
         profile: native::config_a_profile(),
         load_bearing: &[
-            ("EntryPoint", 0x200),
-            ("GameLoop", 0x246e),        // -0x10 pal-ntsc-only boot shrink
-            ("BusError", 0x5e542),
-            ("HeightMaps", 0x257d6),
-            // L1 P2 re-layout: AnimateSprite slid +8 (0x3534 -> 0x353C) with the
-            // config_a re-freeze (boot's inline sound-test body became a jsr to the
-            // game-side SoundTest_BootPing). The whole-anchor byte compare
-            // (native_offcanonical_rom::config_a_anchor_matches_golden) proves the
-            // new golden; this spot-check tracks the moved label.
-            ("AnimateSprite", 0x356C),   // -0x10 pal-ntsc-only
-            ("EndOfRom", 0x5f5f2),
+            "EntryPoint",
+            "GameLoop",
+            "BusError",
+            "HeightMaps",
+            "AnimateSprite",
+            "EndOfRom",
         ],
     }
 }
@@ -161,12 +183,12 @@ fn config_b() -> Target {
         name: "config_b",
         profile: native::config_b_profile(),
         load_bearing: &[
-            ("EntryPoint", 0x200),
-            ("GameLoop", 0xb80),         // -0x10 pal-ntsc-only boot shrink
-            ("BusError", 0x423d0),
-            ("HeightMaps", 0x25730),
-            ("AnimateSprite", 0x171E),   // -0x10 pal-ntsc-only
-            ("EndOfRom", 0x43480),
+            "EntryPoint",
+            "GameLoop",
+            "BusError",
+            "HeightMaps",
+            "AnimateSprite",
+            "EndOfRom",
         ],
     }
 }
@@ -175,11 +197,11 @@ fn demo_plain() -> Target {
         name: "demo",
         profile: native::demo_profile(false),
         load_bearing: &[
-            ("EntryPoint", 0x200),
-            ("GameLoop", 0xb80),         // -0x10 pal-ntsc-only boot shrink
-            ("BusError", 0x10174),
-            ("AnimateSprite", 0x171E),   // -0x10 pal-ntsc-only
-            ("EndOfRom", 0x11224),
+            "EntryPoint",
+            "GameLoop",
+            "BusError",
+            "AnimateSprite",
+            "EndOfRom",
         ],
     }
 }
@@ -188,11 +210,11 @@ fn demo_debug() -> Target {
         name: "demo_debug",
         profile: native::demo_profile(true),
         load_bearing: &[
-            ("EntryPoint", 0x200),
-            ("GameLoop", 0xb90),         // -0x10 pal-ntsc-only boot shrink
-            ("BusError", 0x10174),
-            ("AnimateSprite", 0x1C7E),   // -0x10 pal-ntsc-only
-            ("EndOfRom", 0x11224),
+            "EntryPoint",
+            "GameLoop",
+            "BusError",
+            "AnimateSprite",
+            "EndOfRom",
         ],
     }
 }
