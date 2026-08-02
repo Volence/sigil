@@ -88,6 +88,10 @@ impl<'a> Evaluator<'a> {
                 // position is threaded in via `here_base` (set per data item by
                 // the lowering pass); it is not user-shadowable.
                 "here" => return self.eval_here(args, span),
+                // `span(ProcName)` (A1/A2 arc §3) — the EMITTED byte length of a
+                // pure-data proc body, measured by lowering it. A comptime query
+                // like `here()`/`cycles()`; non-shadowable.
+                "span" => return self.eval_span(args, span, env),
                 // `embed(path, skip, len)` (Spec 2, Plan 5 — Task 1): a comptime
                 // file read within the capability sandbox, also a
                 // non-shadowable `Data` constructor.

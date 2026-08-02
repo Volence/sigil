@@ -751,6 +751,32 @@ pub(crate) fn sfx_bank_authority_consts(aeon: &Path) -> std::sync::Arc<BTreeMap<
     arc
 }
 
+/// The vol-env scan counts (`FMVOLENV_COUNT` / `PSGVOLENV_COUNT`), resolved once
+/// and memoized per aeon root. Their AUTHORITY is `sound_tables_z80.emp` — the
+/// GENERATED module that owns the vol-env tables they count, where they are pub
+/// consts DERIVED from the id-list emitted spans (`span(FmVolEnv_Ids)` /
+/// `span(PsgVolEnv_Ids)` — one byte per env). The A3 parcel dissolved the two
+/// hand `seam_emit_config` literals into this single derived source (the
+/// sound-tables sibling of `sound_authority_consts`/`sfx_bank_authority_consts`;
+/// a focused module-eval reuse), so the resident scan count can no longer drift
+/// from the emitted table. SHAPE-INVARIANT (the vol-env tables are identical
+/// plain/debug), so one eval serves both shapes.
+pub(crate) fn sound_tables_authority_consts(aeon: &Path) -> std::sync::Arc<BTreeMap<String, i64>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<BTreeMap<String, i64>>>>> =
+        std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    if let Some(m) = cache.lock().unwrap().get(aeon) {
+        return m.clone();
+    }
+    let map: BTreeMap<String, i64> =
+        eval_pub_consts(&aeon.join("engine/sound/sound_tables_z80.emp"), aeon, &[])
+            .into_iter()
+            .collect();
+    let arc = std::sync::Arc::new(map);
+    cache.lock().unwrap().insert(aeon.to_path_buf(), arc.clone());
+    arc
+}
+
 /// The seam const values NOT owned by `sound_constants.emp` — genuinely external
 /// game / data config the resident-blob emit supplies, exactly as `main.asm` /
 /// the generated vol-env data supply them in the mixed AS build. Each carries its
@@ -769,13 +795,13 @@ fn seam_emit_config() -> BTreeMap<&'static str, i64> {
         // SFX_ID_BASE / SFX_TABLE_LEN are NOT here (Parcel F2) — their authority is
         // sfx_bank.emp (SfxTable-derived), resolved via `sfx_bank_authority_consts`.
         ("SFXID_REV_LOOP", 0xAB),        // config/sound_ids.emp (= SFXID_SPINDASH)
-        // Vol-env data config (engine/sound/sound_tables_z80.emp, GENERATED). The two
-        // COUNTs have NO other definition in the tree (resident-blob-only). The six
-        // control bytes mirror the generated data module — the residual 6-value seam
-        // is gap-ledgered for a future harvest (make them pub there, or promote to the
-        // authority and have the generator import — both touch the generator).
-        ("FMVOLENV_COUNT", 3),
-        ("PSGVOLENV_COUNT", 0x0B),
+        // Vol-env data config (engine/sound/sound_tables_z80.emp, GENERATED).
+        // FMVOLENV_COUNT / PSGVOLENV_COUNT are NOT here (A3) — their authority is
+        // sound_tables_z80.emp (pub consts derived from the id-list emitted spans),
+        // resolved via `sound_tables_authority_consts`. The six control bytes mirror
+        // the generated data module — the residual 6-value seam is gap-ledgered for a
+        // future harvest (make them pub there, or promote to the authority and have
+        // the generator import — both touch the generator).
         ("FmVolEnvCtl_Loop", 0x80),
         ("FmVolEnvCtl_Sustain", 0x81),
         ("FmVolEnvCtl_Rest", 0x83),
@@ -785,10 +811,11 @@ fn seam_emit_config() -> BTreeMap<&'static str, i64> {
     ])
 }
 
-/// Resolve a module's const NAMES to `(name, value)` — authority first, then the
-/// emit-config fallback, then the lazily-derived `DacSampleTable` window VMA. A name
-/// in none is a loud panic (a seam name with no home is a build error, never a
-/// silent wrong byte).
+/// Resolve a module's const NAMES to `(name, value)` — authority first (sound
+/// constants, then the sfx-bank derivation, then the sound-tables vol-env count
+/// derivation), then the emit-config fallback, then the lazily-derived
+/// `DacSampleTable` window VMA. A name in none is a loud panic (a seam name with
+/// no home is a build error, never a silent wrong byte).
 ///
 /// `DacSampleTable` is resolved LAST and only when a file actually requests it (the
 /// resident driver): its value comes from `seam2::sound_layout`, which lowers the
@@ -797,6 +824,7 @@ fn seam_emit_config() -> BTreeMap<&'static str, i64> {
 fn resolve_consts(aeon: &Path, names: &[&'static str]) -> Vec<(&'static str, i64)> {
     let auth = sound_authority_consts(aeon);
     let sfx = sfx_bank_authority_consts(aeon);
+    let tables = sound_tables_authority_consts(aeon);
     let cfg = seam_emit_config();
     names
         .iter()
@@ -805,6 +833,7 @@ fn resolve_consts(aeon: &Path, names: &[&'static str]) -> Vec<(&'static str, i64
                 .get(n)
                 .copied()
                 .or_else(|| sfx.get(n).copied())
+                .or_else(|| tables.get(n).copied())
                 .or_else(|| cfg.get(n).copied())
                 .or_else(|| {
                     (n == "DacSampleTable").then(|| {
@@ -816,8 +845,8 @@ fn resolve_consts(aeon: &Path, names: &[&'static str]) -> Vec<(&'static str, i64
                 .unwrap_or_else(|| {
                     panic!(
                         "seam-1 const `{n}` is in none of the sound_constants.emp authority, \
-                         the sfx_bank.emp authority, the emit-config list, nor the DacSampleTable \
-                         map-derivation"
+                         the sfx_bank.emp authority, the sound_tables_z80.emp vol-env-count \
+                         authority, the emit-config list, nor the DacSampleTable map-derivation"
                     )
                 });
             (n, v)

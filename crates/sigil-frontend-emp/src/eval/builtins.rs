@@ -654,6 +654,96 @@ impl<'a> Evaluator<'a> {
         Value::Code(CodeBuf { items })
     }
 
+    /// `span(ProcName)` (A1/A2 arc §3, gap-ledger row 1654) — the EMITTED byte
+    /// length of a PURE-DATA proc body, folded at comptime. The comptime
+    /// section-length primitive the two AS `End - Start` span guards asked for: a
+    /// `.emp` data table can now assert its own emitted size instead of pinning a
+    /// hand literal (`10 * 9` → `span(DacSampleTable)`; the vol-env `COUNT`s
+    /// derive from `span(*VolEnv_Ids)`).
+    ///
+    /// The argument is a bare proc NAME, taken SYNTACTICALLY (like `sizeof(T)`) —
+    /// evaluating it would deref to a link symbol, not a proc handle. Measurement
+    /// LOWERS the body through the same [`eval_asm_owned`](Self::eval_asm_owned)
+    /// the real emission runs (`lower::proc::eval_proc_body`), then sums the
+    /// resulting [`CodeBuf`]: a `CodeItem::Inline` contributes its
+    /// [`DataBuf::size`](crate::value::DataBuf) (the per-cell byte sum
+    /// `stream_data` serializes — 2 for a `dc.w Label` `Cell::SymRef` even while
+    /// the label is link-deferred), a label contributes 0. So the returned
+    /// [`Value::Int`] IS the emitted span by construction, not a re-derivation.
+    ///
+    /// SCOPE WALL: pure-data bodies only. An instruction in the measured body is
+    /// `[span.not-data]` (a code proc's length is a relaxation/link-time fact,
+    /// out of the demand). The measurement is a PURE query — `diags` and
+    /// `dropped_instrs` are snapshotted and restored so a malformed body is
+    /// reported ONCE by the actual emission, never doubled here.
+    pub(super) fn eval_span(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        if args.len() != 1 {
+            self.error(span, format!("`span` expects 1 proc-name argument, got {}", args.len()));
+            return Value::Poison;
+        }
+        if args[0].name.is_some() {
+            self.error(args[0].span, "`span` takes a positional proc name, not a named argument");
+        }
+        let name = match &args[0].value {
+            ast::Expr::Path(p) if p.segments.len() == 1 => p.segments[0].clone(),
+            _ => {
+                self.error(
+                    args[0].span,
+                    "`span` argument must be a bare proc name (a single-segment identifier)",
+                );
+                return Value::Poison;
+            }
+        };
+        let Some(decl) = self.procs.get(name.as_str()).copied() else {
+            self.error(
+                args[0].span,
+                format!("`span({name})`: no proc named `{name}` is defined in this module"),
+            );
+            return Value::Poison;
+        };
+        // Measure as a pure query: snapshot the diagnostic + dropped-instruction
+        // state so the throwaway lowering leaves neither behind.
+        let diags_len = self.diags.len();
+        let dropped_before = self.dropped_instrs;
+        let code = self.eval_asm_owned(&decl.body, decl.span, env, Some(&name));
+        let measured_dropped = self.dropped_instrs > dropped_before;
+        self.diags.truncate(diags_len);
+        self.dropped_instrs = dropped_before;
+        let Value::Code(buf) = code else {
+            // eval_asm_owned yields Code unless the evaluation aborted (budget);
+            // propagate the abort silently.
+            return Value::Poison;
+        };
+        if measured_dropped {
+            self.error(
+                args[0].span,
+                format!(
+                    "`span({name})`: a body element did not lower (a missing import or type in \
+                     scope?) — cannot measure its span"
+                ),
+            );
+            return Value::Poison;
+        }
+        let mut total: usize = 0;
+        for item in &buf.items {
+            match item {
+                CodeItem::Inline(data, _) => total += data.size,
+                CodeItem::Label { .. } => {}
+                CodeItem::Instr { span: isp, .. } => {
+                    self.error(
+                        *isp,
+                        format!(
+                            "[span.not-data] `span({name})` measures a pure-data proc body — \
+                             `{name}` emits an instruction, whose length is a link-time fact"
+                        ),
+                    );
+                    return Value::Poison;
+                }
+            }
+        }
+        Value::Int(total as i128)
+    }
+
     /// `extern(name)` (Task B2, seam re-eval): RAW passthrough of a link
     /// symbol as a [`Value::LinkExpr`] residual tree — no mask, no shift
     /// (unlike `bankid`/`winptr`, which both wrap their symbol in Genesis
