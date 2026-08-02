@@ -1111,3 +1111,50 @@ full_crc = "764d4e87"
 full_size = 422066
 anchor_crc = "99adb046"
 anchor_end = 0x5f5f2
+
+[[entry]]
+name = "pal-ntsc-only"
+ab = "aeon oracle B-side: DMA budget seeded $1800 NTSC post-shift; 600f max-scroll Lag_Frame_Count=0 clean render"
+note = "NTSC-only ruling B: dead PAL timestep deleted; code -0x10/shape, RAM -4 upper-RAM shift"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "e9691c34"
+full_size = 422389
+anchor_crc = "c4c4b63b"
+anchor_end = 0x5f5f2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "17422675"
+full_size = 303599
+anchor_crc = "31b0f8f1"
+anchor_end = 0x43480
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "9b7f184d"
+full_size = 90621
+anchor_crc = "7b6c876e"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "ccb179b8"
+full_size = 93117
+anchor_crc = "dedf1b76"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "fea114b5"
+full_size = 412204
+anchor_crc = "7da6cf10"
+anchor_end = 0x5db00
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "8cdcaae5"
+full_size = 422038
+anchor_crc = "4b3a8795"
+anchor_end = 0x5f5f2

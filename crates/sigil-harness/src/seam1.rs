@@ -29,14 +29,12 @@ pub const BLOB_LEN_PLAIN: usize = 0x181C;
 pub const BLOB_LEN_DEBUG: usize = 0x181C + 0x7E;
 
 /// The blob's LMA base = `Z80_Sound_Start` = `BootData + 54`. SHAPE-DEPENDENT: the
-/// debug shape grows +4 UPSTREAM of BootData (boot `__DEBUG__` content), so the
-/// whole blob slides to `$3E2` in debug — VERIFIED from s4.lst / s4.debug.lst.
+/// debug shape grows +4 UPSTREAM of BootData (boot `__DEBUG__` content). Pin-sourced
+/// (BOOT_HEAD base = BootData) so boot-size shifts can't rot it — the pal-ntsc-only
+/// -0x10 shrink caught the old literals ($3DE/$3E2, now $3CE/$3D2 via the pins).
 pub fn blob_lma(debug: bool) -> u32 {
-    if debug {
-        0x3E2
-    } else {
-        0x3DE
-    }
+    let base = if debug { crate::pins::BOOT_HEAD.debug_base } else { crate::pins::BOOT_HEAD.plain_base };
+    base + 54
 }
 
 /// The exported-symbol CONTRACT: the sequencer opcode handlers the banked

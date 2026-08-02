@@ -57,14 +57,14 @@ static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// `(name, plain, debug)`.
 const LOAD_BEARING: &[(&str, u32, u32)] = &[
     ("EntryPoint", 0x200, 0x200),        // Game_Entry-class
-    ("GameLoop", 0x23D2, 0x2460),        // the main loop (+0x38 m1-budget-fix vblank growth)
+    ("GameLoop", pins::GAME_LOOP.plain_base, pins::GAME_LOOP.debug_base), // the main loop (pin-sourced)
     ("BusError", 0x5CA50, 0x5E542),      // ErrorHandler-class (error-handler region; −0x60/−0x68 wave-c ojz shrink)
     ("Ground_Move_Cap", 0x10724, 0x10730), // a player proc (object bank — anchored, stable)
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
-    ("AnimateSprite", 0x2F74, 0x3552),   // an objects keystone
-    ("TouchResponse", 0x30FE, 0x37FA),   // a collision keystone
-    ("Z80_Sound_Start", 0x3DE, 0x3E2),   // Z80-adjacent (shape-varying)
+    ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)
+    ("TouchResponse", pins::COLLISION.plain_base, pins::COLLISION.debug_base), // a collision keystone (pin-sourced)
+    ("Z80_Sound_Start", pins::BOOT_HEAD.plain_base + 0x36, pins::BOOT_HEAD.debug_base + 0x36), // Z80-adjacent = BootData+54 (pin-sourced)
 ];
 
 /// The golden directory (holds the frozen blobs + `provenance.toml`, the single source

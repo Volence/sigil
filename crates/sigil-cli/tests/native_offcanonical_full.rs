@@ -143,7 +143,7 @@ fn config_a() -> Target {
         profile: native::config_a_profile(),
         load_bearing: &[
             ("EntryPoint", 0x200),
-            ("GameLoop", 0x247e),
+            ("GameLoop", 0x246e),        // -0x10 pal-ntsc-only boot shrink
             ("BusError", 0x5e542),
             ("HeightMaps", 0x257d6),
             // L1 P2 re-layout: AnimateSprite slid +8 (0x3534 -> 0x353C) with the
@@ -151,7 +151,7 @@ fn config_a() -> Target {
             // game-side SoundTest_BootPing). The whole-anchor byte compare
             // (native_offcanonical_rom::config_a_anchor_matches_golden) proves the
             // new golden; this spot-check tracks the moved label.
-            ("AnimateSprite", 0x357C),
+            ("AnimateSprite", 0x356C),   // -0x10 pal-ntsc-only
             ("EndOfRom", 0x5f5f2),
         ],
     }
@@ -162,10 +162,10 @@ fn config_b() -> Target {
         profile: native::config_b_profile(),
         load_bearing: &[
             ("EntryPoint", 0x200),
-            ("GameLoop", 0xb90),
+            ("GameLoop", 0xb80),         // -0x10 pal-ntsc-only boot shrink
             ("BusError", 0x423d0),
             ("HeightMaps", 0x25730),
-            ("AnimateSprite", 0x172E),
+            ("AnimateSprite", 0x171E),   // -0x10 pal-ntsc-only
             ("EndOfRom", 0x43480),
         ],
     }
@@ -176,9 +176,9 @@ fn demo_plain() -> Target {
         profile: native::demo_profile(false),
         load_bearing: &[
             ("EntryPoint", 0x200),
-            ("GameLoop", 0xb90),
+            ("GameLoop", 0xb80),         // -0x10 pal-ntsc-only boot shrink
             ("BusError", 0x10174),
-            ("AnimateSprite", 0x172E),
+            ("AnimateSprite", 0x171E),   // -0x10 pal-ntsc-only
             ("EndOfRom", 0x11224),
         ],
     }
@@ -189,9 +189,9 @@ fn demo_debug() -> Target {
         profile: native::demo_profile(true),
         load_bearing: &[
             ("EntryPoint", 0x200),
-            ("GameLoop", 0xba0),
+            ("GameLoop", 0xb90),         // -0x10 pal-ntsc-only boot shrink
             ("BusError", 0x10174),
-            ("AnimateSprite", 0x1C8E),
+            ("AnimateSprite", 0x1C7E),   // -0x10 pal-ntsc-only
             ("EndOfRom", 0x11224),
         ],
     }
