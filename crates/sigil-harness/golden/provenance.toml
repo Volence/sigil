@@ -1346,3 +1346,50 @@ full_crc = "912628af"
 full_size = 422892
 anchor_crc = "2fb46344"
 anchor_end = 0x5f5f2
+
+[[entry]]
+name = "i4-endofrom-encloses"
+ab = "same I4 proofs; EndOfRom terminus now encloses the fixture (guard-compatible); fixture base + gameplay addresses byte-stable"
+note = "map: EndOfRom named last; assembled bar extends over the fixture"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "db4fa117"
+full_size = 423259
+anchor_crc = "e5c1a1a5"
+anchor_end = 0x5f6b4
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "07c3568d"
+full_size = 304325
+anchor_crc = "875ae080"
+anchor_end = 0x43550
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "ed9a71bb"
+full_size = 91128
+anchor_crc = "dc294f05"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "4bab2df2"
+full_size = 93765
+anchor_crc = "b9ab4e25"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "4d4f1453"
+full_size = 412933
+anchor_crc = "5648c4de"
+anchor_end = 0x5dbd0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "4a7715ae"
+full_size = 422910
+anchor_crc = "82043c7b"
+anchor_end = 0x5f6b4
