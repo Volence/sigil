@@ -178,12 +178,10 @@ fn as_hw_port_equs() -> Vec<Section> {
 }
 
 /// The synthetic AS-side cross-seam unit supplying the four `Ctrl_*` RAM
-/// labels — `engine/ram.asm`, phased at their exact VMAs (verified by
-/// counting forward from port #1's pinned `HBlank_Handler_Ptr` = `$FFFF8022`
-/// through the intervening `ds.b`/`ds.w` fields: `Hardware_Region` +4,
-/// `Region_Flags` +1, `Timing_Step` +1 (`ds.w`), `Frame_Accumulator` +2
-/// (`ds.w`), `Ctrl_1_Held` +2, `Ctrl_1_Press` +1, `Ctrl_2_Held` +1,
-/// `Ctrl_2_Press` +1, `Ctrl_1_Press_Accum` +1, `Ctrl_2_Press_Accum` +1) —
+/// labels — `engine/ram.emp`, phased at their exact VMAs. The base is the
+/// repin-derived `pins::CTRL_1_HELD` (now `$FFFF8028`, shifted −4 by the PAL
+/// NTSC-only deletion, ruling B 2026-08-02: the `Timing_Step`/`Frame_Accumulator`
+/// u16 pair that used to sit between `Region_Flags` and `Ctrl_1_Held` is gone) —
 /// `hblank_port.rs::as_handler_ptr_label`'s technique, one `phase`d section
 /// carrying all four labels at their real relative offsets.
 fn as_ctrl_ram_labels() -> Vec<Section> {
