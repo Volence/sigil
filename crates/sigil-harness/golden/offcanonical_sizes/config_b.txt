@@ -7,8 +7,8 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=config_b
 # reproduces_golden=config_b.bin
-# golden_crc32=947e4c57
-# assembled_anchor=8b490cfb
+# golden_crc32=0c411ade
+# assembled_anchor=52514bc8
 # assembled_end=0x43480
 # labels=72
 Ani_Particle 0x25728
@@ -16,9 +16,9 @@ Ani_Particle_End 0x25730
 Ani_Sonic 0x256ba
 Ani_Sonic_End 0x25728
 AnimateSprite 0x16e6
-Art_Decompress 0x48d0
-BG_Init 0x4940
-BgAnim_Init 0x49ee
+Art_Decompress 0x48f0
+BG_Init 0x4960
+BgAnim_Init 0x4a0e
 BgAnim_Table 0x25688
 BootData 0x3a2
 BootData_End 0x40c
@@ -55,7 +55,7 @@ ObjDef_Static 0x11cf4
 PState_Air 0x10880
 PState_Ground 0x10442
 PState_Spindash 0x10b42
-Parallax_Init 0x4300
+Parallax_Init 0x4310
 Perform_DPLC 0xf3e
 Plane_Buffer_Reset 0x2864
 Player_Init 0x10002

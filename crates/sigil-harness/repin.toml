@@ -1160,6 +1160,15 @@ tests = ["camera_port"]
 name = "Camera_Hold_Frames"
 tests = ["camera_port"]
 
+# Per-act camera clamp ceilings, hoisted out of clamp_camera_axis (F-2 sweep-fix).
+[[symbol]]
+name = "Camera_X_Max"
+tests = ["camera_port"]
+
+[[symbol]]
+name = "Camera_Y_Max"
+tests = ["camera_port"]
+
 # BG tile-band animation state + table (tranche 19 — bg_anim_port carriers).
 # BgAnim_Table is GAME DATA (gameDataIncludes) — it shifts with the data
 # region, so it must ride the pin table, never a hand-typed VMA.

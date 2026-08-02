@@ -163,7 +163,9 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
         ("Parallax_Shadow_Scroll_B", 0xFFFF_8974, 0xFFFF_8974),
         ("Camera_X", 0xFFFF_A11C, 0xFFFF_A140),
         ("Camera_Y", 0xFFFF_A120, 0xFFFF_A144),
-        ("Current_Act_Ptr", 0xFFFF_AF4C, 0xFFFF_AF70),
+        // Sourced from pins — this RAM cell rides the tail of the shifting RAM map
+        // (the F-2 camera-ceiling insert pushed it +4), so a hand-typed VMA goes stale.
+        ("Current_Act_Ptr", pins::CURRENT_ACT_PTR.plain, pins::CURRENT_ACT_PTR.debug),
         ("Vscroll_Factor", 0xFFFF_888C, 0xFFFF_888C),
         ("Hscroll_Buffer", 0xFFFF_850A, 0xFFFF_850A),
         ("VDP_Shadow_Table", 0xFFFF_800A, 0xFFFF_800A),
@@ -216,6 +218,7 @@ fn compile_real_file(
     let structs_file = parse_file(&dir.parent().unwrap().join("structs.emp"));
     let vdp_file = parse_file(&dir.parent().unwrap().join("vdp.emp"));
     let z80_bus_file = parse_file(&dir.parent().unwrap().join("z80_bus.emp"));
+    let irq_file = parse_file(&dir.parent().unwrap().join("irq.emp"));
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
@@ -225,6 +228,7 @@ fn compile_real_file(
             .chain(structs_file.items)
             .chain(vdp_file.items)
             .chain(z80_bus_file.items)
+            .chain(irq_file.items)
             .chain(main.items)
             .collect(),
         docs: main.docs.clone(),

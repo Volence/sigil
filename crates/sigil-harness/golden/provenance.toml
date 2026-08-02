@@ -924,3 +924,49 @@ full_crc = "e6171a80"
 full_size = 421970
 anchor_crc = "b137c411"
 anchor_end = 0x5f5f2
+
+[[entry]]
+name = "sweep-fixes"
+ab = "scratchpad ab_runner scroll_ab.json: OLD s4 5f72b9c3/412134 vs NEW e1ffdf8b/412141 — state_hash + camera_pos + camera_params + parallax_scroll + plane_buf_ptr + section-tracker block ALL EQUAL; selfcheck OK"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "921eb27b"
+full_size = 422329
+anchor_crc = "71f8f439"
+anchor_end = 0x5f5f2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "0c411ade"
+full_size = 303563
+anchor_crc = "52514bc8"
+anchor_end = 0x43480
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "e362bd1d"
+full_size = 90585
+anchor_crc = "a06b2620"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7e897965"
+full_size = 93081
+anchor_crc = "b32851a2"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "e1ffdf8b"
+full_size = 412141
+anchor_crc = "d7a08f64"
+anchor_end = 0x5db00
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "365c64e8"
+full_size = 421978
+anchor_crc = "7eef9972"
+anchor_end = 0x5f5f2

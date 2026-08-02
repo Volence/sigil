@@ -131,12 +131,14 @@ fn camera_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
 /// `Current_Act_Ptr` — each a `phase`d one-byte carrier at its pinned
 /// per-shape VMA (label position selects abs.w width and the low-word bytes).
 fn camera_addr_labels(debug: bool) -> Vec<Section> {
-    let table: [(&str, pins::Pin); 7] = [
+    let table: [(&str, pins::Pin); 9] = [
         ("Camera_X", pins::CAMERA_X),
         ("Camera_Y", pins::CAMERA_Y),
         ("Camera_Deadzone_Base", pins::CAMERA_DEADZONE_BASE),
         ("Camera_Pan_Offset", pins::CAMERA_PAN_OFFSET),
         ("Camera_Hold_Frames", pins::CAMERA_HOLD_FRAMES),
+        ("Camera_X_Max", pins::CAMERA_X_MAX),
+        ("Camera_Y_Max", pins::CAMERA_Y_MAX),
         ("Player_1", pins::PLAYER_1),
         ("Current_Act_Ptr", pins::CURRENT_ACT_PTR),
     ];
@@ -185,6 +187,7 @@ fn compile_real_file(
     let constants_file = parse_file(&dir.parent().unwrap().join("system/constants.emp"));
     let structs_file = parse_file(&dir.parent().unwrap().join("structs.emp"));
     let sst_file = parse_file(&dir.parent().unwrap().join("objects/sst.emp"));
+    let coords_file = parse_file(&dir.parent().unwrap().join("coords.emp"));
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
@@ -194,6 +197,7 @@ fn compile_real_file(
             .chain(constants_file.items)
             .chain(structs_file.items)
             .chain(sst_file.items)
+            .chain(coords_file.items)
             .chain(main.items)
             .collect(),
         docs: main.docs.clone(),
@@ -358,6 +362,7 @@ fn jump_lock_off_compiles_without_game_symbols() {
     let constants_file = parse_file(&dir.parent().unwrap().join("system/constants.emp"));
     let structs_file = parse_file(&dir.parent().unwrap().join("structs.emp"));
     let sst_file = parse_file(&dir.parent().unwrap().join("objects/sst.emp"));
+    let coords_file = parse_file(&dir.parent().unwrap().join("coords.emp"));
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
@@ -367,6 +372,7 @@ fn jump_lock_off_compiles_without_game_symbols() {
             .chain(constants_file.items)
             .chain(structs_file.items)
             .chain(sst_file.items)
+            .chain(coords_file.items)
             .chain(main.items)
             .collect(),
         docs: main.docs.clone(),
