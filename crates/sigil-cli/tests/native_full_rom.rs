@@ -60,8 +60,8 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     ("GameLoop", 0x23D2, 0x2460),        // the main loop (+0x38 m1-budget-fix vblank growth)
     ("BusError", 0x5CA50, 0x5E542),      // ErrorHandler-class (error-handler region; −0x60/−0x68 wave-c ojz shrink)
     ("Ground_Move_Cap", 0x10724, 0x10730), // a player proc (object bank — anchored, stable)
-    ("Section_Init", 0x564C, 0x63DC),    // a level proc (rides the m1-budget-fix vblank growth)
-    ("BG_Init", 0x620E, 0x6FF0),         // a level proc (after PARALLAX + SECTION, so it rides their growth)
+    ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
+    ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", 0x2F74, 0x3552),   // an objects keystone
     ("TouchResponse", 0x30FE, 0x37FA),   // a collision keystone
     ("Z80_Sound_Start", 0x3DE, 0x3E2),   // Z80-adjacent (shape-varying)

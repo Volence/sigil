@@ -75,6 +75,7 @@ const PLAIN: Shape = Shape {
         ("Section_FlatIDXY", pins::SECTION_FLAT_IDXY.plain),
         ("Load_Object", pins::LOAD_OBJECT.plain_base),
         ("DeleteObject", pins::DELETE_OBJECT.plain),
+        ("DeleteChildren", pins::DELETE_CHILDREN.plain),
     ],
 };
 
@@ -111,6 +112,7 @@ const DEBUG: Shape = Shape {
         ("Section_FlatIDXY", pins::SECTION_FLAT_IDXY.debug),
         ("Load_Object", pins::LOAD_OBJECT.debug_base),
         ("DeleteObject", pins::DELETE_OBJECT.debug),
+        ("DeleteChildren", pins::DELETE_CHILDREN.debug),
         // Debug shape only: the assert construct's error-handler entries.
         ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
         ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
