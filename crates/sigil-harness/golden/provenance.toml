@@ -1393,3 +1393,50 @@ full_crc = "4a7715ae"
 full_size = 422910
 anchor_crc = "82043c7b"
 anchor_end = 0x5f6b4
+
+[[entry]]
+name = "i4-terminus-flush"
+ab = "EndOfRom flush both shapes (listing-verified); fixture base byte-stable so the I4 proofs stand"
+note = "terminus align-2 cap + packer 16-pad"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "74abb202"
+full_size = 423273
+anchor_crc = "48eeac6d"
+anchor_end = 0x5f6c2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "9377e61a"
+full_size = 304339
+anchor_crc = "b70ae707"
+anchor_end = 0x43550
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "ed9a71bb"
+full_size = 91128
+anchor_crc = "dc294f05"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "4bab2df2"
+full_size = 93765
+anchor_crc = "b9ab4e25"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "4836870c"
+full_size = 412947
+anchor_crc = "187e8e42"
+anchor_end = 0x5dbd0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "e4357d5b"
+full_size = 422924
+anchor_crc = "c5a4129a"
+anchor_end = 0x5f6c2

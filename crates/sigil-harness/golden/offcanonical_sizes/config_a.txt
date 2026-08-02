@@ -7,9 +7,9 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=config_a
 # reproduces_golden=config_a.bin
-# golden_crc32=db4fa117
-# assembled_anchor=e5c1a1a5
-# assembled_end=0x5f6b4
+# golden_crc32=74abb202
+# assembled_anchor=48eeac6d
+# assembled_end=0x5f6c2
 # labels=79
 Ani_Particle 0x257de
 Ani_Particle_End 0x257e6
@@ -33,7 +33,7 @@ CompressionSelfTest 0x7556
 Dac_Temp_Blip 0x48000
 Debug_MusicToggle 0x6670
 DeformTable_Zero 0x11320
-EndOfRom 0x5f6b4
+EndOfRom 0x5f6c2
 EntryPoint 0x200
 GameLoop 0x2516
 GameState_OJZScroll_Init 0x5e2da
