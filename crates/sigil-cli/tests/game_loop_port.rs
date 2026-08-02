@@ -107,6 +107,9 @@ struct Shape {
     len: usize,
     vsync_wait: u32,
     drain: u32,
+    // Parcel I3: game_loop's `jbsr Input_Tick` (bsr.w pc-relative) target — the
+    // replay seam, a shape-specific code VMA (unlike the shape-invariant RAM cells).
+    input_tick: u32,
 }
 
 const PLAIN: Shape = Shape {
@@ -114,6 +117,7 @@ const PLAIN: Shape = Shape {
     len: pins::GAME_LOOP.plain_len,
     vsync_wait: pins::V_SYNC_WAIT.plain,
     drain: pins::SOUND_DRAIN_SFX_RING.plain,
+    input_tick: pins::INPUT_TICK.plain,
 };
 const DEBUG: Shape = Shape {
     base: pins::GAME_LOOP.debug_base,
@@ -124,6 +128,7 @@ const DEBUG: Shape = Shape {
     len: pins::GAME_LOOP.debug_len,
     vsync_wait: pins::V_SYNC_WAIT.debug,
     drain: pins::SOUND_DRAIN_SFX_RING.debug,
+    input_tick: pins::INPUT_TICK.debug,
 };
 
 /// Compile the real `engine/system/game_loop.emp` with the given defines,
@@ -134,6 +139,7 @@ fn compile_emp(
     base: u32,
     vsync_wait: u32,
     drain: u32,
+    input_tick: u32,
     dbg_toggle: u32,
     with_consumer: bool,
 ) -> (Vec<Section>, sigil_link::LinkedImage) {
@@ -191,6 +197,7 @@ fn compile_emp(
     for (name, vma) in [
         ("VSync_Wait", vsync_wait),
         ("Sound_DrainSfxRing", drain),
+        ("Input_Tick", input_tick),              // I3: jbsr Input_Tick (replay seam)
         ("Debug_MusicToggle", dbg_toggle),
         ("Logic_Tick", pins::LOGIC_TICK.plain),  // I2: addq.l #1, Logic_Tick (shape-invariant RAM)
         ("Game_State", pins::GAME_STATE.plain),
@@ -305,7 +312,7 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     // Debug_MusicToggle is unreferenced in the (1,0) combo; any synthetic
     // position satisfies the link without touching the bytes.
     let (_, linked) =
-        compile_emp(&defines, shape.base, shape.vsync_wait, shape.drain, 0x3000, true);
+        compile_emp(&defines, shape.base, shape.vsync_wait, shape.drain, shape.input_tick, 0x3000, true);
 
     let lo = shape.base as usize;
     let expected = &refrom[lo..lo + shape.len];
@@ -478,6 +485,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     // proc; a stale carrier here would be the §11 Q4 collision.
     let mut table: Vec<(&str, u32)> = vec![
         ("Sound_DrainSfxRing", pick(pins::SOUND_DRAIN_SFX_RING)),
+        ("Input_Tick", pick(pins::INPUT_TICK)),  // I3: game_loop's replay-seam jbsr target
         ("Logic_Tick", pick(pins::LOGIC_TICK)),  // I2: game_loop's addq target
         ("Game_State", pick(pins::GAME_STATE)),
         ("VBlank_Ready", pick(pins::V_BLANK_READY)),

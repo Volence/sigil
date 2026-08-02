@@ -191,34 +191,42 @@ fn generated_pins_match_the_hand_typed_baseline() {
     assert_eq!(pins::BOOT.debug_len, 0x19C);  // −0x10 PAL NTSC-only wave
     assert_eq!(pins::BOOT_DATA, pins::Pin { plain: 0x398, debug: 0x39C });  // −0x10 PAL NTSC-only wave
 
-    assert_eq!(pins::ANIMATE.plain_base, 0x3024);  // +0x10 I2 Logic_Tick (plain align ripple)
-    assert_eq!(pins::ANIMATE.debug_base, 0x3606);  // +0x4 I2 Logic_Tick (debug addq)
+    // Then the I3 replay parcel (input/replay plan, 2026-08-02): engine.replay
+    // (Input_Tick + Replay_Hash) inserts between game_loop and s4lz, so every
+    // engine-bank region BELOW it slides +0xF0 plain / +0x1A8 debug (the replay
+    // region's per-shape span; the debug shape carries the record/checkpoint path).
+    // LENs unchanged (content untouched); ASSEMBLED_LEN below is re-absorbed by the
+    // pre-$10000 padding, so it stays put. The replay live cells (+0xA after the
+    // controller block) slide every RAM symbol after them; the DEBUG @shape_divergent
+    // record ring (+0x2800) slides the game-RAM tail in the debug shape only.
+    assert_eq!(pins::ANIMATE.plain_base, 0x3114);  // +0xF0 I3 replay (was 0x3024)
+    assert_eq!(pins::ANIMATE.debug_base, 0x37AE);  // +0x1A8 I3 replay (was 0x3606)
     assert_eq!(pins::ANIMATE.plain_len, 0x18A);  // −8: item 5 (drop both Sound_PlaySFX saves)
     assert_eq!(pins::ANIMATE.debug_len, 0x2A8);
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x33AE);  // +0x10 I2 Logic_Tick (plain align ripple)
-    assert_eq!(pins::RINGS.debug_base, 0x3AB6);  // +0x4 I2 Logic_Tick (debug addq)
+    assert_eq!(pins::RINGS.plain_base, 0x349E);  // +0xF0 I3 replay (was 0x33AE)
+    assert_eq!(pins::RINGS.debug_base, 0x3C5E);  // +0x1A8 I3 replay (was 0x3AB6)
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
     // core LEN shrank −0xA in c4 (Spawn_Count: InitObjectRAM store −4 + RunObjects
     // moveq+store −6). Bases −0xA in c5 (the boot.asm CROSS_RESET store removal is
     // upstream of dplc/core, so core's base slides with everything downstream of boot).
-    assert_eq!(pins::CORE.plain_base, 0x2920);  // +0x10 I2 Logic_Tick (plain align ripple)
+    assert_eq!(pins::CORE.plain_base, 0x2A10);  // +0xF0 I3 replay (was 0x2920)
     assert_eq!(pins::CORE.plain_len, 0x2E4);    // −0xA c4 Spawn_Count store removals
-    assert_eq!(pins::CORE.debug_base, 0x2ABA);  // +0x4 I2 Logic_Tick (debug addq)
+    assert_eq!(pins::CORE.debug_base, 0x2C62);  // +0x1A8 I3 replay (was 0x2ABA)
     assert_eq!(pins::CORE.debug_len, 0x72C);    // −0xA c4 Spawn_Count store removals
-    assert_eq!(pins::DPLC.plain_base, 0x2878);  // +0x10 I2 Logic_Tick (plain align ripple)
-    assert_eq!(pins::DPLC.debug_base, 0x2A16);  // +0x4 I2 Logic_Tick (debug addq)
+    assert_eq!(pins::DPLC.plain_base, 0x2968);  // +0xF0 I3 replay (was 0x2878)
+    assert_eq!(pins::DPLC.debug_base, 0x2BBE);  // +0x1A8 I3 replay (was 0x2A16)
     assert_eq!(pins::DPLC.plain_len, 0xA8);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xA4);   // item 6 REMOVED (soak disproved single-entry) — debug == plain
 
     // animate_port.rs: the DeleteObject inbound label. Shifted by the upstream
     // wave (dma_queue + dplc item-11); DeleteObject's offset within core stable.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x29F0, debug: 0x2B8A });  // +0x10/+0x4 I2 Logic_Tick
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2AE0, debug: 0x2D32 });  // +0xF0/+0x1A8 I3 replay
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +

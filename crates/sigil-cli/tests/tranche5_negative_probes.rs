@@ -19,6 +19,7 @@
 use sigil_frontend_emp::lower::{lower_module, lower_module_with_contracts, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{SectionPlacement, SymbolTable};
 use sigil_span::Level;
@@ -141,6 +142,7 @@ fn misspelled_cross_seam_symbol_is_loud() {
     sections.extend(synthetic_labels(&[
         "VSync_Wait",
         "Sound_DrainSfxRing",
+        "Input_Tick",           // I3 replay seam
         "Logic_Tick",
         "Game_State",
     ]));
@@ -168,6 +170,7 @@ fn oversize_combo_overlapping_resume_bytes_is_loud() {
     sections.extend(synthetic_labels(&[
         "VSync_Wait",
         "Sound_DrainSfxRing",
+        "Input_Tick",           // I3 replay seam
         "Logic_Tick",
         "Game_State",
         "Debug_MusicToggle",
@@ -197,20 +200,26 @@ fn oversize_combo_overlapping_resume_bytes_is_loud() {
 #[test]
 fn drain_define_is_load_bearing() {
     let Some(src) = real_src() else { return };
-    let (mut sections, diags) = lower_and_place(
-        &src,
-        &[("SOUND_DRIVER_ENABLED", 0), ("SOUND_DEBUG_HOTKEYS", 0)],
-        0x16,  // (1,0) reference window +4 (I2 addq)
-    );
-    assert!(diags.iter().all(|d| d.level != Level::Error), "lower/place: {diags:?}");
-    sections.extend(synthetic_labels(&["VSync_Wait", "Sound_DrainSfxRing", "Logic_Tick", "Game_State"]));
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
-        .expect("resolve_layout");
-    let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
-    let section = linked.section("game_loop").expect("game_loop section");
+    // Emit the real GameLoop region for a given SOUND_DRIVER_ENABLED value and
+    // return its byte length. Comparing on-vs-off directly is robust against the
+    // GAME_LOOP region pin's trailing align pad (0x1C = 0x1A emitted + a 2-byte pad
+    // post-I3; the padded pin would make a literal `- 4` wrong).
+    let emitted = |sound_on: i128| -> usize {
+        let (mut sections, diags) = lower_and_place(
+            &src,
+            &[("SOUND_DRIVER_ENABLED", sound_on), ("SOUND_DEBUG_HOTKEYS", 0)],
+            pins::GAME_LOOP.plain_len as u32,
+        );
+        assert!(diags.iter().all(|d| d.level != Level::Error), "lower/place: {diags:?}");
+        sections.extend(synthetic_labels(&["VSync_Wait", "Sound_DrainSfxRing", "Input_Tick", "Logic_Tick", "Game_State"]));
+        let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+            .expect("resolve_layout");
+        let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
+        linked.section("game_loop").expect("game_loop section").bytes.len()
+    };
     assert_eq!(
-        section.bytes.len(),
-        0x16 - 4,  // (1,0) window 0x16 post-I2 (Logic_Tick addq); sound-off drops the 4-byte drain
+        emitted(1) - emitted(0),
+        4,
         "the sound-off combo must drop exactly the 4-byte bsr.w drain line"
     );
 }
