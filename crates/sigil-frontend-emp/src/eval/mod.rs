@@ -133,6 +133,13 @@ pub struct Evaluator<'a> {
     /// facts `Name.count` (row count), `Name.len` (key-span), `Name.min_key`,
     /// `Name.max_key` — plain comptime ints, mirroring [`offsets`](Self::offsets).
     pub(crate) tables: HashMap<&'a str, &'a ast::TableDecl>,
+    /// File-level `proc` decls (including section-nested ones), indexed by name.
+    /// The `span(ProcName)` comptime builtin ([`eval::builtins::eval_span`])
+    /// looks a proc up here and measures its emitted byte length by lowering its
+    /// pure-data body — the comptime emitted-span primitive (A1/A2 arc §3,
+    /// gap-ledger row 1654). Every per-item evaluator re-indexes the whole file,
+    /// mirroring the `offsets`/`table` arms.
+    pub(crate) procs: HashMap<&'a str, &'a ast::ProcDecl>,
     /// Named SST overlay decls (`vars Name: window { .. }`), indexed by name
     /// (Spec 2, Plan 7 #6, Part A). Only the *named* overlay form is indexed;
     /// the region form (`vars region { .. }`, `name: None`) stays inert.
@@ -432,6 +439,7 @@ impl<'a> Evaluator<'a> {
             offsets: HashMap::new(),
             dispatches: HashMap::new(),
             tables: HashMap::new(),
+            procs: HashMap::new(),
             overlays: HashMap::new(),
             struct_layout_memo: HashMap::new(),
             overlay_layout_memo: HashMap::new(),
@@ -704,6 +712,13 @@ impl<'a> Evaluator<'a> {
                     // (this re-indexes on every per-item evaluator, mirroring
                     // the `Offsets`/`Dispatch` arms).
                     self.tables.insert(t.name.as_str(), t.as_ref());
+                }
+                ast::Item::Proc(p) => {
+                    // Index for `span(ProcName)` emitted-span measurement in
+                    // `eval::builtins::eval_span`. Procs nest inside sections, so
+                    // this arm is reached through the `Section` recursion below —
+                    // the flat name namespace the AS model uses.
+                    self.procs.insert(p.name.as_str(), p);
                 }
                 ast::Item::Vars(v) => {
                     // Only the NAMED overlay form (`vars Name: window { .. }`) is

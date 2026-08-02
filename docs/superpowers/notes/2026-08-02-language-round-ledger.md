@@ -364,7 +364,20 @@ M = a spec-able parcel; L = its own spec + multiple parcels / Spec-5-era).
 - **Scale.** M (touches the emit pipeline — "P2 keeps it untouched by design", so
   this is deliberately post-P2 / A1-adjacent). **Deps.** A1 (emit architecture).
 
-### A3 · comptime section-length primitive
+### A3 · comptime section-length primitive — ✅ CLOSED (A3, 2026-08-02)
+- **✅ CLOSED (Parcel A3, arc spec §3).** Shipped as the `span(ProcName)` comptime
+  builtin — the emitted BYTE span of a pure-data proc body, folded by re-using the
+  real body lowering (`eval_asm_owned` → the same `lower_dc`; sum the `CodeBuf`'s
+  `DataBuf::size`, error on any instruction). Both targets adopted, byte-identical
+  ×6: `dac_sample_tab.emp`'s `10*9` → `span(DacSampleTable)` (measures the emitted
+  90 B, catches a wrong descriptor COUNT the literal could not); `FMVOLENV_COUNT` /
+  `PSGVOLENV_COUNT` are now pub consts of `sound_tables_z80.emp` derived
+  `span(*VolEnv_Ids)`, resolved authority-first by `sound_tables_authority_consts`,
+  the two `seam_emit_config` literals deleted; the deleted AS id/ptr count guard
+  (row 1879) is revived as an in-section `ensure(span(Ptrs) == span(Ids)*2)`. Rows
+  1654 / 1805 / 1911 closed; 1910 vol-env CONTROL-byte harvest still open (declined
+  — out of the demand). Negative tests: doctored descriptor count + doctored ptr
+  table fire their ensures; a code body is `[span.not-data]`. — DONE.
 - **What.** A comptime primitive that reads a data section's / table body's emitted
   LENGTH, so counts/spans derive from the data instead of hand literals. Gap-ledger
   row 1805.
