@@ -459,6 +459,12 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("Ctrl_1_Press_Accum", pick(pins::CTRL_1_PRESS_ACCUM)),
         ("Ctrl_2_Press", pick(pins::CTRL_2_PRESS)),
         ("Ctrl_2_Press_Accum", pick(pins::CTRL_2_PRESS_ACCUM)),
+        // input-6button (2026-08-02): VInt_Level's ext latch references the
+        // 6-button ext press cells.
+        ("Ctrl_1_Ext_Press", pick(pins::CTRL_1_EXT_PRESS)),
+        ("Ctrl_1_Ext_Press_Accum", pick(pins::CTRL_1_EXT_PRESS_ACCUM)),
+        ("Ctrl_2_Ext_Press", pick(pins::CTRL_2_EXT_PRESS)),
+        ("Ctrl_2_Ext_Press_Accum", pick(pins::CTRL_2_EXT_PRESS_ACCUM)),
         ("DMA_Budget_Default", pick(pins::DMA_BUDGET_DEFAULT)),
         ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
         // m1-budget-fix: VInt_Level now charges the plane drain + Critical DMA.
