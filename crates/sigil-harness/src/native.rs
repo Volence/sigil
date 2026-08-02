@@ -221,6 +221,10 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         m!("engine.hblank", "hblank", pins::HBLANK),
         m!("engine.controllers", "controllers", pins::CONTROLLERS),
         m!("engine.game_loop", "game_loop", pins::GAME_LOOP),
+        // Parcel I3 (2026-08-02) — the demo record/replay module (engine.replay:
+        // Input_Tick + Replay_Hash), placed between game_loop and s4lz per the
+        // map.toml order. Engine-agnostic (demo gets it via the engine.* filter).
+        m!("engine.replay", "replay", pins::REPLAY),
         // ── Engine compression ──
         m!("engine.s4lz", "s4lz", pins::S4LZ),
         m!("engine.zx0", "zx0", pins::ZX0),

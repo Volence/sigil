@@ -150,9 +150,20 @@ tests = ["controllers_port"]
 [[region]]
 name = "game_loop"
 start = "GameLoop"
-end = "S4LZ_DecompressDict"
+end = "Input_Tick"
 gate = "SIGIL_EMP_GAME_LOOP"
 tests = ["game_loop_port", "load_art_port"]
+
+[[region]]
+# Parcel I3 (2026-08-02 input-replay) — the demo record/replay module
+# (engine/system/replay.emp: Input_Tick + Replay_Hash). Ungated (native-only, no
+# AS twin — like boot_data). Inserted between game_loop and s4lz (map.toml order
+# `… "GameLoop", "Input_Tick", "S4LZ_DecompressDict" …`); every downstream engine
+# section slides by its span. end = the next placement, S4LZ_DecompressDict.
+name = "replay"
+start = "Input_Tick"
+end = "S4LZ_DecompressDict"
+tests = ["game_loop_port"]
 
 [[region]]
 # Tranche 22 — the S4LZ v3 blocking decompressor (S4LZ_DecompressDict +
