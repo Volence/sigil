@@ -653,9 +653,16 @@ tests = ["m1d_rom", "m1d_debug_rom"]
 [[region]]
 name = "error_handler"
 start = "BusError"
-end = "EndOfRom"
+end = "Replay_OJZ_Fixture"
 gate = "SIGIL_EMP_ERROR_HANDLER"
 tests = ["error_handler_port"]
+
+# I4 - the OJZ replay fixture (chain tail; content re-records freely).
+[[region]]
+name = "replay_fixture"
+start = "Replay_OJZ_Fixture"
+end = "EndOfRom"
+tests = []
 
 # Parcel K4 inc-5 Stage 2 — the DAC sample banks, native (dac_banks.emp embeds the
 # seam-2 dac_blip_bank.bin @ $48000 + dac_shared_bank.bin @ $50000). Literal len

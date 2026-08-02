@@ -1299,3 +1299,50 @@ full_crc = "5a4a83a8"
 full_size = 422698
 anchor_crc = "2fb46344"
 anchor_end = 0x5f5f2
+
+[[entry]]
+name = "i4-replay-fixture"
+ab = "oracle I4 proofs: 21/21 checkpoints x2 replays (one poisoned-RAM); doctored-hash traps REPLAY DESYNC at tick 130; gravity-perturb crashes loudly; emulator-freeze adjudicated as pause artifact"
+note = "parcel I4: the OJZ replay fixture (chain-tail, anchor-invisible re-records) + the proven regression net"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "73806dc1"
+full_size = 423241
+anchor_crc = "7249487e"
+anchor_end = 0x5f5f2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "f626c009"
+full_size = 304307
+anchor_crc = "632a1756"
+anchor_end = 0x43480
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "ed9a71bb"
+full_size = 91128
+anchor_crc = "dc294f05"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "4bab2df2"
+full_size = 93765
+anchor_crc = "b9ab4e25"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "f13af7f7"
+full_size = 412915
+anchor_crc = "1757775b"
+anchor_end = 0x5db00
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "912628af"
+full_size = 422892
+anchor_crc = "2fb46344"
+anchor_end = 0x5f5f2

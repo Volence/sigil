@@ -363,6 +363,10 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
             pins::COMPRESSION_SELFTEST
         ));
     }
+    // I4: the OJZ replay fixture — pushed LAST so it chains after everything
+    // (past the anchored error-handler island): re-recording (content+size
+    // change) shifts zero gameplay addresses; only EndOfRom/appendix move.
+    specs.push(m!("games.sonic4.replay_fixture", "replay_fixture", pins::REPLAY_FIXTURE));
     specs
 }
 
