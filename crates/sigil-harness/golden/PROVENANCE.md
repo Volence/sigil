@@ -312,8 +312,8 @@ stay AS-owned as extern-equ sums (`equ *_SLOT = extern("SND_Z80_BASE") +
 extern("SND_REQ_*")` — the MUSIC_PARAM block derives from a Z80-driver
 RAM label and floats with driver resizes, so no comptime mirror); only
 the 7 immediate-position values are mirrored, drift-guarded (kill-list
-row 10). `SongTable`/`SongPatchTable` read as imm-link equs — .emp-side
-under `SIGIL_EMP_MT`, so the mixed build exercises .emp-defines/
+row 10). `SongTable`/`SongPatchTable` read as imm-link equs — native
+labels in `games.sonic4.mt_bank_blob`, so the build exercises .emp-defines/
 .emp-consumes. Cross-seam positions (listing symbol tables): RAM
 `Ring_Sfx_Speaker`/`Sfx_Ring_Buf`/`Wr`/`Rd` plain `$FFFFAF30/32/3A/3B`,
 debug `$FFFFAF52/54/5C/5D`; ROM `SongTable` plain `$63AE0` / debug

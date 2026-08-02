@@ -1017,3 +1017,50 @@ full_crc = "d9171761"
 full_size = 422042
 anchor_crc = "8ec9e0e5"
 anchor_end = 0x5f5f2
+
+[[entry]]
+name = "a2-mtsyms"
+ab = ""
+note = "A2 mt_syms three-way split: SongTable/SongPatchTable native labels; deb2 appendix-only shift (anchors identical x6)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "ed26188e"
+full_size = 422417
+anchor_crc = "0736b442"
+anchor_end = 0x5f5f2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "8bf0a773"
+full_size = 303627
+anchor_crc = "9b551077"
+anchor_end = 0x43480
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "c6954bd4"
+full_size = 90649
+anchor_crc = "a6741944"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "9c1e1b64"
+full_size = 93145
+anchor_crc = "72edef39"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "0bb6ee97"
+full_size = 412232
+anchor_crc = "5b92952f"
+anchor_end = 0x5db00
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "76d06e43"
+full_size = 422066
+anchor_crc = "8ec9e0e5"
+anchor_end = 0x5f5f2
