@@ -18,8 +18,8 @@
 //! ```
 
 use sigil_harness::seam2::{
-    emit_pitchtable, emit_pitchtable_artifacts, emit_pitchtable_doctored, PITCHTABLE_LEN,
-    PITCHTABLE_LMA,
+    emit_pitchtable, emit_pitchtable_artifacts, emit_pitchtable_doctored, sound_layout,
+    PITCHTABLE_LEN,
 };
 use std::path::PathBuf;
 
@@ -51,9 +51,10 @@ fn pitchtable_matches_the_reference_rom_slice_both_shapes() {
     let aeon = aeon_dir();
     let out = emit_pitchtable(&aeon).expect("emit_pitchtable");
     assert_eq!(out.len(), PITCHTABLE_LEN, "movingtrucks_pitchtable is 264 bytes (2*132)");
+    let lma = sound_layout(&aeon).expect("sound_layout derives pitchtable_lma").pitchtable_lma;
     for rom_name in ["s4.bin", "s4.debug.bin"] {
         let rom = golden(rom_name);
-        let lo = PITCHTABLE_LMA as usize;
+        let lo = lma as usize;
         let refslice = &rom[lo..lo + PITCHTABLE_LEN];
         if let Some(i) = (0..out.len()).find(|&i| out[i] != refslice[i]) {
             panic!(
@@ -82,7 +83,7 @@ fn pitchtable_diverges_when_source_cell_doctored() {
     let aeon = aeon_dir();
     let doctored = emit_pitchtable_doctored(&aeon, true).expect("doctored recompose");
     let rom = golden("s4.bin");
-    let lo = PITCHTABLE_LMA as usize;
+    let lo = sound_layout(&aeon).expect("sound_layout").pitchtable_lma as usize;
     let refslice = &rom[lo..lo + PITCHTABLE_LEN];
     assert_ne!(
         doctored, refslice,
