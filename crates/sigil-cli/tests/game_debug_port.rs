@@ -296,7 +296,7 @@ fn two_module_flip_resolves_debug_music_toggle() {
     // game_loop's other cross-seam callees (VSync_Wait/Sound_DrainSfxRing/
     // Game_State) — synthetic carriers so the game_loop region links.
     for (i, (name, vma)) in
-        [("VSync_Wait", 0x900u32), ("Sound_DrainSfxRing", 0x920), ("Game_State", 0xFFFF8004)]
+        [("VSync_Wait", 0x900u32), ("Sound_DrainSfxRing", 0x920), ("Logic_Tick", 0xFFFF8004), ("Game_State", 0xFFFF8008)]
             .iter()
             .enumerate()
     {

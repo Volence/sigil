@@ -5,8 +5,9 @@
 //!     `Sound_DrainSfxRing` fails to resolve/link rather than emitting
 //!     silently-wrong displacement bytes.
 //! (b) oversize-combo overlap is LOUD — the gate's engine.inc resume org
-//!     sits 0x12 bytes past the region base (the (1,0) combo both reference
-//!     shapes carry); the hotkeys-on combo emits 0x16 bytes, so a build that
+//!     sits 0x16 bytes past the region base (the (1,0) combo both reference
+//!     shapes carry — 0x12 pre-I2, +4 for I2's unconditional `addq.l #1,
+//!     Logic_Tick`); the hotkeys-on combo emits 0x1A bytes, so a build that
 //!     flips `SOUND_DEBUG_HOTKEYS=1` against the pinned layout runs the
 //!     section INTO the AS-side resume bytes — refused at resolve/link
 //!     (placement itself doesn't police region budgets; overlap detection
@@ -134,12 +135,13 @@ fn misspelled_cross_seam_symbol_is_loud() {
     let doctored = src.replace("Sound_DrainSfxRing", "Sound_DrainSfxRungg");
     assert_ne!(src, doctored, "the probe must actually doctor the source");
 
-    let (mut sections, diags) = lower_and_place(&doctored, &ON_DEFINES, 0x12);
+    let (mut sections, diags) = lower_and_place(&doctored, &ON_DEFINES, 0x16);  // (1,0) window +4 (I2 addq)
     assert!(diags.iter().all(|d| d.level != Level::Error), "lower/place: {diags:?}");
     // Supply the CORRECT names only — the doctored reference dangles.
     sections.extend(synthetic_labels(&[
         "VSync_Wait",
         "Sound_DrainSfxRing",
+        "Logic_Tick",
         "Game_State",
     ]));
 
@@ -151,8 +153,8 @@ fn misspelled_cross_seam_symbol_is_loud() {
     assert!(loud, "a misspelled cross-seam symbol must fail resolve or link, not emit");
 }
 
-/// (b) The hotkeys-on combo (0x16 bytes) collides with the AS-side bytes at
-/// the engine.inc resume org (base + 0x12) — refused at resolve/link, never
+/// (b) The hotkeys-on combo (0x1A bytes post-I2) collides with the AS-side bytes
+/// at the engine.inc resume org (base + 0x16) — refused at resolve/link, never
 /// truncated or silently shifted.
 #[test]
 fn oversize_combo_overlapping_resume_bytes_is_loud() {
@@ -160,20 +162,22 @@ fn oversize_combo_overlapping_resume_bytes_is_loud() {
     let (mut sections, diags) = lower_and_place(
         &src,
         &[("SOUND_DRIVER_ENABLED", 1), ("SOUND_DEBUG_HOTKEYS", 1)],
-        0x12,
+        0x16,  // (1,0) window +4 (I2 addq)
     );
     assert!(diags.iter().all(|d| d.level != Level::Error), "lower/place: {diags:?}");
     sections.extend(synthetic_labels(&[
         "VSync_Wait",
         "Sound_DrainSfxRing",
+        "Logic_Tick",
         "Game_State",
         "Debug_MusicToggle",
     ]));
-    // The AS side resumes at $2310 (engine.inc's gate-else org) — simulate
-    // its first bytes with a pinned carrier there.
+    // The AS side resumes at $2314 (engine.inc's gate-else org = base 0x22FE +
+    // the 0x16 (1,0) window) — simulate its first bytes with a pinned carrier
+    // there. (Was $2310 pre-I2; +4 for the Logic_Tick addq.)
     let mut resume = synthetic_labels(&["S4lz_Decompress"]);
     for sec in &mut resume {
-        sec.lma = 0x2310;
+        sec.lma = 0x2314;
     }
     sections.extend(resume);
 
@@ -183,7 +187,7 @@ fn oversize_combo_overlapping_resume_bytes_is_loud() {
     };
     assert!(
         loud,
-        "the 0x16-byte hotkeys-on body must collide loudly with the resume bytes at $2310"
+        "the 0x1A-byte hotkeys-on body must collide loudly with the resume bytes at $2314"
     );
 }
 
@@ -196,17 +200,17 @@ fn drain_define_is_load_bearing() {
     let (mut sections, diags) = lower_and_place(
         &src,
         &[("SOUND_DRIVER_ENABLED", 0), ("SOUND_DEBUG_HOTKEYS", 0)],
-        0x12,
+        0x16,  // (1,0) reference window +4 (I2 addq)
     );
     assert!(diags.iter().all(|d| d.level != Level::Error), "lower/place: {diags:?}");
-    sections.extend(synthetic_labels(&["VSync_Wait", "Sound_DrainSfxRing", "Game_State"]));
+    sections.extend(synthetic_labels(&["VSync_Wait", "Sound_DrainSfxRing", "Logic_Tick", "Game_State"]));
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .expect("resolve_layout");
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
     let section = linked.section("game_loop").expect("game_loop section");
     assert_eq!(
         section.bytes.len(),
-        0x12 - 4,
+        0x16 - 4,  // (1,0) window 0x16 post-I2 (Logic_Tick addq); sound-off drops the 4-byte drain
         "the sound-off combo must drop exactly the 4-byte bsr.w drain line"
     );
 }

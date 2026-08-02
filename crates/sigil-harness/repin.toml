@@ -978,6 +978,14 @@ tests = ["tile_cache_port", "collision_lookup_port"]
 name = "Frame_Counter"
 tests = ["tile_cache_port"]
 
+# Logic_Tick (u32, I2 input/replay parcel 2026-08-02): the lag-immune tick
+# timebase, inserted directly after Frame_Counter. GameLoop increments it and
+# bg_anim's driver-2 reads its low word — both fixtures compose it as a
+# cross-seam RAM label, so pin-source it (t24 rule: never hand-shift a RAM VMA).
+[[symbol]]
+name = "Logic_Tick"
+tests = ["game_loop_port", "bg_anim_port"]
+
 [[symbol]]
 name = "Block_Stage_Keys"
 tests = ["tile_cache_port"]

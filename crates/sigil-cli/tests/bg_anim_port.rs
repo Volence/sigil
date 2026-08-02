@@ -12,7 +12,8 @@
 //! code, no asserts); only the base shifts.
 //!
 //! ## Cross-seam symbols
-//! - RAM (abs.w operands): `BgAnim_LastStep`, `Frame_Counter`, `Camera_X`,
+//! - RAM (abs.w operands): `BgAnim_LastStep`, `Logic_Tick` (driver-2, low word;
+//!   was `Frame_Counter` pre-I2), `Camera_X`,
 //!   `Camera_Y` — `phase`d one-byte carriers at their pinned per-shape VMAs.
 //! - ROM: `BgAnim_Table` (GAME data — gameDataIncludes emits it; the header
 //!   law "nothing here may conditionally assemble on its symbols" holds: the
@@ -85,7 +86,7 @@ fn map_toml(debug: bool) -> String {
 fn bg_anim_addr_labels(debug: bool) -> Vec<Section> {
     let mut table: Vec<(&str, u32)> = vec![
         ("BgAnim_LastStep", if debug { pins::BG_ANIM_LAST_STEP.debug } else { pins::BG_ANIM_LAST_STEP.plain }),
-        ("Frame_Counter", if debug { pins::FRAME_COUNTER.debug } else { pins::FRAME_COUNTER.plain }),
+        ("Logic_Tick", if debug { pins::LOGIC_TICK.debug } else { pins::LOGIC_TICK.plain }),
         ("Camera_X", if debug { pins::CAMERA_X.debug } else { pins::CAMERA_X.plain }),
         ("Camera_Y", if debug { pins::CAMERA_Y.debug } else { pins::CAMERA_Y.plain }),
         ("BgAnim_Table", if debug { pins::BG_ANIM_TABLE.debug } else { pins::BG_ANIM_TABLE.plain }),
@@ -366,7 +367,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
     let mut labels: Vec<(&str, u32)> = vec![
         ("BgAnim_LastStep", pick(pins::BG_ANIM_LAST_STEP)),
-        ("Frame_Counter", pick(pins::FRAME_COUNTER)),
+        ("Logic_Tick", pick(pins::LOGIC_TICK)),
         ("Camera_X", pick(pins::CAMERA_X)),
         ("Camera_Y", pick(pins::CAMERA_Y)),
         ("BgAnim_Table", pick(pins::BG_ANIM_TABLE)),
