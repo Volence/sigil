@@ -752,13 +752,103 @@ fn run_build(args: &[String]) {
             eprintln!("error: {msg}");
             eprintln!(
                 "usage: sigil build --aeon <dir> [-o <out.bin>] [--emit-lst <lst>] \
-                 [--game sonic4|demo] [--debug] [--config-a|--config-b]"
+                 [--game sonic4|demo] [--debug] [--config-a|--config-b] [--ram-report]"
             );
             process::exit(2);
         }
     };
     let aeon_path = std::path::Path::new(&opts.aeon);
+    if opts.ram_report {
+        run_ram_report(aeon_path, &opts.target);
+        return;
+    }
     run_build_native(aeon_path, &opts);
+}
+
+/// `--ram-report` (T1): print the RAM map for the selected target — one row per
+/// `region`, with its base/end address, allocated size, alignment/pad padding, budget
+/// limit, and headroom. The numbers come from the SAME region resolver the build runs
+/// (`resolve::build_ram_report` over the frontend's region layout), against the
+/// target's shipping `-D` define set (so the DEBUG shape's `game_ram` +4 shows).
+///
+/// The RAM modules are not `use`-reachable (their `pub vars` are cross-seam link
+/// labels no module imports), so the region-module set is passed EXPLICITLY: the
+/// engine RAM plus the selected game's RAM module (from the native profile). The
+/// [`RamRegionRow`](sigil_frontend_emp::lower::RamRegionRow) data shape is deliberately
+/// render-free so a future Spec-3 editor inlay-hint surface can reuse it directly.
+fn run_ram_report(aeon: &std::path::Path, target: &BuildTarget) {
+    use sigil_frontend_emp::resolve;
+    use sigil_harness::native;
+
+    // The target's shipping profile supplies the game RAM module + the exact `-D`
+    // define set the `.emp` RAM modules read (SYSTEM_STACK, DEBUG, the game sizing
+    // consts engine.ram consumes: MAX_RING_BUFFER / COLLECTED_WINDOW_SLOTS / …).
+    let (label, profile) = match target {
+        BuildTarget::Sonic4 { debug } => (
+            if *debug { "sonic4 debug".to_string() } else { "sonic4 plain".to_string() },
+            native::sonic4_profile(*debug),
+        ),
+        BuildTarget::Demo { debug } => (
+            if *debug { "demo debug".to_string() } else { "demo plain".to_string() },
+            native::demo_profile(*debug),
+        ),
+        BuildTarget::ConfigA => ("config_a".to_string(), native::config_a_profile()),
+        BuildTarget::ConfigB => ("config_b".to_string(), native::config_b_profile()),
+    };
+
+    let (manifest, mdiags) = resolve::manifest::Manifest::scan(aeon);
+    if mdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        render_program_diags(&manifest, &mdiags);
+        process::exit(1);
+    }
+
+    let defines: Vec<(String, i128)> =
+        profile.emp_defines.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+    let opts = sigil_frontend_emp::lower::LowerOptions {
+        initial_cpu: sigil_ir::Cpu::M68000,
+        include_root: std::fs::canonicalize(aeon).ok(),
+        embed_base: None,
+        defines,
+    };
+
+    // Engine RAM + the game's RAM module (the two region-owning modules for this game).
+    let region_ids: [&str; 2] = ["engine.ram", profile.game_ram_module];
+    let (rows, diags) = resolve::build_ram_report(&manifest, &region_ids, &opts);
+    if !diags.is_empty() {
+        render_program_diags(&manifest, &diags);
+    }
+    if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+        process::exit(1);
+    }
+
+    print_ram_report(&label, &rows);
+}
+
+/// Render the RAM map as a plain, aligned text table (T1). Sizes are byte counts (the
+/// "real number"); addresses are `$XXXXXXXX`; `USE%` is used size over region capacity.
+fn print_ram_report(label: &str, rows: &[sigil_frontend_emp::lower::RamRegionRow]) {
+    println!("RAM map — {label}");
+    println!();
+    println!(
+        "{:<12} {:<11} {:<11} {:<11} {:>7} {:>6} {:>9} {:>6}",
+        "REGION", "BASE", "END", "LIMIT", "SIZE", "PAD", "HEADROOM", "USE%"
+    );
+    for r in rows {
+        let cap = r.capacity();
+        let pct = if cap > 0 { (r.size as f64) * 100.0 / (cap as f64) } else { 0.0 };
+        let name = if r.public { r.name.clone() } else { format!("{} (priv)", r.name) };
+        println!(
+            "{:<12} ${:08X}  ${:08X}  ${:08X}  {:>7} {:>6} {:>9} {:>5.1}%",
+            name,
+            r.base,
+            r.end(),
+            r.limit,
+            r.size,
+            r.padding,
+            r.headroom(),
+            pct,
+        );
+    }
 }
 
 /// Which native target `sigil build --native` produces.
@@ -776,6 +866,9 @@ struct BuildOpts {
     output: Option<String>,
     emit_lst: Option<String>,
     target: BuildTarget,
+    /// `--ram-report`: print the RAM map (per-region address/size/padding/headroom)
+    /// for the selected target and exit, without building the ROM (T1).
+    ram_report: bool,
 }
 
 /// Parse `sigil build`'s argument slice. `--aeon <dir>` is required; `-o <path>`,
@@ -790,6 +883,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut game: Option<String> = None;
     let mut debug = false;
     let mut config: Option<char> = None;
+    let mut ram_report = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -802,6 +896,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             "--debug" => debug = true,
             "--config-a" => config = Some('a'),
             "--config-b" => config = Some('b'),
+            "--ram-report" => ram_report = true,
             other => return Err(format!("unexpected argument '{other}'")),
         }
         i += 1;
@@ -822,7 +917,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             Some(g) => return Err(format!("unknown --game '{g}' (want sonic4 or demo)")),
         },
     };
-    Ok(BuildOpts { aeon, output, emit_lst, target })
+    Ok(BuildOpts { aeon, output, emit_lst, target, ram_report })
 }
 
 /// Consume the value after a value-taking flag at `args[*i]`, advancing `i`. A

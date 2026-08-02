@@ -258,6 +258,83 @@ fn ambient_from_uses(
     }
 }
 
+/// The RAM map report (T1): resolve the named RAM `region` modules into per-region
+/// geometry rows (name, base/end, size, padding, budget headroom). Pure analysis — no
+/// lowering, no link, no ROM. It reuses the SAME region resolver the byte-emitting build
+/// runs ([`crate::lower::collect_region_report`], over
+/// [`crate::lower::resolve_program_region_ends`] for cross-module `after(..)` chains),
+/// so the numbers ARE the shipping layout.
+///
+/// `region_module_ids` is EXPLICIT (e.g. `["engine.ram", "games.sonic4.ram"]`) because
+/// the RAM modules are not `use`-reachable — their `pub vars` are cross-seam link labels
+/// no module imports, so a `use`-graph BFS never finds them. Passing the set explicitly
+/// also scopes the report to ONE game (sonic4's `game_ram` vs demo's, both declared
+/// `game_ram` in sibling modules). Order is preserved; a `game_ram @ after(upper_ram)`
+/// resolves regardless of listing order (the whole-program end pass is a fixpoint).
+///
+/// Each module is ambient-prepended (its `use`d comptime sizes — `SYSTEM_STACK`, the
+/// `DEBUG` flag, `sizeof(VdpShadow)`, the game `-D` sizing consts — resolve), exactly as
+/// `build_program`'s region pass does. An unknown id yields a diagnostic and is skipped.
+/// Rows come back in `region_module_ids` order; diagnostics are the resolver's own
+/// (overflow, odd-field, unknown parent, chain cycle).
+pub fn build_ram_report(
+    manifest: &Manifest,
+    region_module_ids: &[&str],
+    opts: &LowerOptions,
+) -> (Vec<crate::lower::RamRegionRow>, Vec<Diagnostic>) {
+    let seed_span = Span { source: sigil_span::SourceId(0), start: 0, end: 0 };
+    let mut diags: Vec<Diagnostic> = Vec::new();
+
+    // Gather each named module, ambient-prepended so its `use`d comptime sizes resolve.
+    let mut region_modules: Vec<(&str, ast::File)> = Vec::new();
+    for id in region_module_ids {
+        let Some(&i) = manifest.by_id.get(*id) else {
+            diags.push(Diagnostic {
+                level: Level::Error,
+                message: format!("ram-report: no module `{id}` under the scan root"),
+                primary: seed_span,
+            });
+            continue;
+        };
+        let pm = &manifest.modules[i];
+        if !crate::lower::file_declares_region(&pm.file) {
+            diags.push(Diagnostic {
+                level: Level::Warning,
+                message: format!("ram-report: module `{id}` declares no `region` — skipped"),
+                primary: seed_span,
+            });
+            continue;
+        }
+        let ambient =
+            ambient_items(pm, None, manifest, &opts.defines, opts.include_root.as_deref());
+        let file = if ambient.is_empty() {
+            pm.file.clone()
+        } else {
+            ast::File {
+                module: pm.file.module.clone(),
+                attrs: pm.file.attrs.clone(),
+                items: ambient.into_iter().chain(pm.file.items.iter().cloned()).collect(),
+                docs: pm.file.docs.clone(),
+            }
+        };
+        region_modules.push((pm.id.as_str(), file));
+    }
+
+    // Cross-module `after(..)` ends first (game_ram chains onto the engine's upper_ram),
+    // then each region module's rows against those ends.
+    let (region_ends, mut end_diags) =
+        crate::lower::resolve_program_region_ends(&region_modules, &opts.defines);
+    diags.append(&mut end_diags);
+
+    let mut rows = Vec::new();
+    for (_id, file) in &region_modules {
+        let (mut r, mut d) = crate::lower::collect_region_report(file, &opts.defines, &region_ends);
+        rows.append(&mut r);
+        diags.append(&mut d);
+    }
+    (rows, diags)
+}
+
 /// Compile the whole reachable module program rooted at `entry_id` into one flat
 /// list of linkable [`Section`]s. BFS over `use` edges (plus the optional prelude
 /// id) discovers the reachable modules; each is resolved (short names → canonical

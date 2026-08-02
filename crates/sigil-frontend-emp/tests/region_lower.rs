@@ -536,3 +536,63 @@ fn cross_module_after_cycle_reported() {
     let (_ends, diags) = resolve_program_region_ends(&[("a", a), ("b", b)], &[]);
     assert!(has_error(&diags, "[region.chain-cycle]"), "diags: {diags:?}");
 }
+
+/// T1 — the RAM map report (`collect_region_report`): the per-region row carries the
+/// base, running end, allocated size, alignment/`pad` padding, and the budget limit,
+/// with `end`/`capacity`/`headroom` derived. Chains cross-module `after(..)` via the
+/// whole-program end map, exactly as the shipping build resolves it.
+#[test]
+fn ram_report_rows_carry_geometry_and_padding() {
+    use sigil_frontend_emp::lower::{collect_region_report, resolve_program_region_ends};
+    use std::collections::HashMap;
+
+    // Engine RAM: one region with an @align gap + a pad(1) — the padding column.
+    let (engine, _) = parse_str(
+        "module engine.ram\n\
+         region upper_ram @ $FFFF8000 .. $FFFFFF00\n\
+         vars upper_ram {\n\
+             A: u8,\n\
+             pad(1),\n\
+             B: [u8; 4] @align(256),\n\
+         }\n",
+    );
+    // Game RAM chained onto the engine region (base = upper_ram's running end).
+    let (game, _) = parse_str(
+        "module games.g.ram\n\
+         region game_ram @ after(upper_ram) .. $FFFFFF00\n\
+         vars game_ram { C: u16 }\n",
+    );
+
+    // Whole-program ends first, then per-module rows against them.
+    let (ends, ediags) =
+        resolve_program_region_ends(&[("engine.ram", engine.clone()), ("games.g.ram", game.clone())], &[]);
+    assert!(ediags.is_empty(), "end diags: {ediags:?}");
+
+    let (erows, ed) = collect_region_report(&engine, &[], &ends);
+    assert!(ed.iter().all(|d| d.level != sigil_span::Level::Error), "{ed:?}");
+    let up = &erows[0];
+    assert_eq!(up.name, "upper_ram");
+    assert_eq!(up.base, 0xFFFF_8000);
+    assert_eq!(up.limit, 0xFFFF_FF00);
+    // A(1) + pad(1) → cursor $FFFF8002; @align(256) is the AS-phase align (round_up
+    // of cursor+256 — always at least a full 256 beyond, even when aligned), landing
+    // $FFFF8200, i.e. +510 pad; then B(4). size = 2 + 510 + 4 = 516; padding = 1 + 510.
+    assert_eq!(up.size, 516);
+    assert_eq!(up.padding, 1 + 510);
+    assert_eq!(up.end(), 0xFFFF_8204);
+    assert_eq!(up.capacity(), 0x7F00);
+    assert_eq!(up.headroom(), 0xFFFF_FF00 - 0xFFFF_8204);
+
+    let (grows, gd) = collect_region_report(&game, &[], &ends);
+    assert!(gd.iter().all(|d| d.level != sigil_span::Level::Error), "{gd:?}");
+    let gr = &grows[0];
+    assert_eq!(gr.name, "game_ram");
+    assert_eq!(gr.base, up.end(), "game_ram chains onto upper_ram's running end");
+    assert_eq!(gr.size, 2);
+    assert_eq!(gr.padding, 0);
+
+    // A region-free module yields no rows and no diagnostics.
+    let (plain, _) = parse_str("module m\nconst K = 1\n");
+    let (rows, diags) = collect_region_report(&plain, &[], &HashMap::new());
+    assert!(rows.is_empty() && diags.is_empty());
+}

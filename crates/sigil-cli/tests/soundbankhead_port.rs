@@ -80,10 +80,11 @@ fn gate(debug: bool, rom_name: &str) {
         eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());
         return;
     };
-    // pins::SOUNDBANKHEAD is the phase-bank VMA ($8000, what repin derives from the
-    // resolved phased label); the head's LMA (where the bytes physically sit + the
-    // reference ROM window) is VMA + $50000 = $58000.
-    let lma = if debug { pins::SOUNDBANKHEAD.debug_base } else { pins::SOUNDBANKHEAD.plain_base } + 0x50000;
+    // pins::SOUNDBANKHEAD.{plain,debug}_base IS the head's LMA (T4: repin auto-detects
+    // the phase-bank section and pins the LMA — the placement address — not the phase
+    // VMA). No manual fixup: the pin is where the bytes physically sit + the reference
+    // ROM window. The phase VMA ($8000) is the section's own `vma:` declaration in the .emp.
+    let lma = if debug { pins::SOUNDBANKHEAD.debug_base } else { pins::SOUNDBANKHEAD.plain_base };
     let len = pins::SOUNDBANKHEAD.plain_len;
     assert_eq!(pins::SOUNDBANKHEAD.debug_len, len, "soundBankHead len must be shape-invariant");
 
@@ -111,4 +112,42 @@ fn soundbankhead_matches_reference() {
 #[test]
 fn soundbankhead_debug_matches_reference() {
     gate(true, "s4.debug.bin");
+}
+
+/// T4 soundness catch — the previously-latent PinnedBaked misplacement (ledger 1966).
+/// A PinnedBaked re-bootstrap places every native section via `emp_map_toml`, which
+/// feeds each region's pinned base straight in as its `lma_base`. When the pin held the
+/// phase VMA ($8000), the soundbankhead bank placed AT $8000 instead of its true $58000
+/// LMA — cosmetic under the shipped `Frozen` key (which packs from the frozen table),
+/// but a genuine misplacement on this path. With the pin now holding the LMA (repin's
+/// `phase_bank` derivation), the pinned bootstrap lands the bank at its load address in
+/// both shapes; the phase VMA survives only as the section's own `vma: $8000`.
+#[test]
+fn soundbankhead_pinned_bootstrap_lands_at_lma_not_vma() {
+    let _guard = LOCK.lock().unwrap();
+    let aeon = aeon_root();
+    if !aeon.join("s4.bin").exists() {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but aeon tree missing at {}", aeon.display());
+        }
+        eprintln!("skip: aeon tree not present (set AEON_DIR)");
+        return;
+    }
+    for debug in [false, true] {
+        let resolved = native::resolve_pinned_sections(&aeon, debug)
+            .unwrap_or_else(|e| panic!("resolve_pinned_sections(debug={debug}): {e}"));
+        let sec = resolved
+            .iter()
+            .find(|s| s.name == "soundbankhead")
+            .expect("the pinned layout must carry the soundbankhead section");
+        assert_eq!(
+            sec.lma, 0x58000,
+            "phase-bank bank must LOAD at its $58000 LMA on the PinnedBaked path (not the $8000 phase VMA)"
+        );
+        assert_eq!(
+            sec.vma_base,
+            Some(0x8000),
+            "the phase VMA is the section's own `vma: $8000` (labels resolve there); it is not the load address"
+        );
+    }
 }

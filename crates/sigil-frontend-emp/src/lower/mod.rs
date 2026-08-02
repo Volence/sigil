@@ -16,7 +16,10 @@ mod proc;
 mod regions;
 mod script;
 
-pub use regions::{check_single_owner, file_declares_region, resolve_program_region_ends};
+pub use regions::{
+    check_single_owner, collect_region_report, file_declares_region, resolve_program_region_ends,
+    RamRegionRow,
+};
 
 pub use code::lower_code_buf;
 pub use proc::{

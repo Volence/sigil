@@ -241,7 +241,7 @@ pub const MT_BANK_BLOB: Region = Region { plain_base: 0x58607, debug_base: 0x586
 pub const SFX_BANK_BLOB: Region = Region { plain_base: 0x5BAE8, debug_base: 0x5D53A, plain_len: 0x748, debug_len: 0x748 };
 
 /// `SoundTablesZ80_Head` .. start + 0x607 plain / 0x607 debug (literal — no end symbol) — gate `SIGIL_EMP_SOUNDBANKHEAD`. tests: soundbankhead_port
-pub const SOUNDBANKHEAD: Region = Region { plain_base: 0x8000, debug_base: 0x8000, plain_len: 0x607, debug_len: 0x607 };
+pub const SOUNDBANKHEAD: Region = Region { plain_base: 0x58000, debug_base: 0x58000, plain_len: 0x607, debug_len: 0x607 };
 
 /// `EndOfRom` .. start + 0x0 plain / 0x0 debug (literal — no end symbol) — gate `SIGIL_EMP_EPILOGUE`. tests: m1d_rom, m1d_debug_rom
 pub const EPILOGUE: Region = Region { plain_base: 0x5DB00, debug_base: 0x5F5F2, plain_len: 0x0, debug_len: 0x0 };

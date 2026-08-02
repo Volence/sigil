@@ -48,6 +48,12 @@ struct ResolvedRegion {
     ops: Vec<EmitOp>,
     /// `name: alias(Other)` equates — `(alias_name, target_absolute_address)`.
     aliases: Vec<(String, u32)>,
+    /// The region's exclusive limit VMA (the `.. limit` budget ceiling) — for the
+    /// RAM map report (T1); does not affect emission.
+    limit: u32,
+    /// Bytes this region spends on alignment/`pad(N)` padding rather than fields —
+    /// for the RAM map report (T1); does not affect emission.
+    padding: u32,
 }
 
 /// Resolve and EMIT every region declared in `file` into `builder` as
@@ -199,6 +205,87 @@ pub fn file_declares_region(file: &ast::File) -> bool {
         matches!(it, ast::Item::Region(_))
             || matches!(it, ast::Item::Vars(v) if v.name.is_none())
     })
+}
+
+/// One RAM region's resolved geometry for the map report (T1). A plain data row —
+/// name, base/end address, used size, padding bytes, and the budget limit — so the
+/// CLI (and, later, Spec-3 editor inlay hints — the data shape is deliberately kept
+/// free of any render/format concern) can present "what is each region's real number".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RamRegionRow {
+    /// The region name (`lower_ram`, `upper_ram`, `game_ram`, …).
+    pub name: String,
+    /// `pub region` (exported) vs a module-private region.
+    pub public: bool,
+    /// The region base VMA (`@ base ..`).
+    pub base: u32,
+    /// The exclusive limit VMA (`.. limit`) — the budget ceiling.
+    pub limit: u32,
+    /// Bytes actually allocated (`end - base`).
+    pub size: u32,
+    /// Bytes within `size` spent on `@align`/`pad(N)` padding (not fields).
+    pub padding: u32,
+}
+
+impl RamRegionRow {
+    /// The running end address (`base + size`) — the next free VMA / where a chained
+    /// region continues.
+    pub fn end(&self) -> u32 {
+        self.base.wrapping_add(self.size)
+    }
+    /// The region's total capacity (`limit - base`); `0` if the limit precedes the
+    /// base (a malformed region — reported elsewhere).
+    pub fn capacity(&self) -> u32 {
+        self.limit.saturating_sub(self.base)
+    }
+    /// Bytes free between the running end and the limit (the budget headroom); `0` if
+    /// the region overflows its limit ([`region.overflow`] catches that as an error).
+    pub fn headroom(&self) -> u32 {
+        self.limit.saturating_sub(self.end())
+    }
+}
+
+/// Resolve every region in `file` into report rows (T1) — the RAM map's per-region
+/// geometry (name, base, limit, used size, padding). Reuses the exact resolver the
+/// byte-emitting [`lower_regions`] uses, so the numbers are the SHIPPING layout, not a
+/// re-derivation. `external_ends` threads cross-module `after(..)` parents (from
+/// [`resolve_program_region_ends`]) exactly as the per-file lowering does. Rows come
+/// back in region declaration order; diagnostics are the resolver's (overflow,
+/// odd-field, unknown parent) — the caller renders them.
+pub fn collect_region_report(
+    file: &ast::File,
+    defines: &[(String, i128)],
+    external_ends: &HashMap<String, u32>,
+) -> (Vec<RamRegionRow>, Vec<Diagnostic>) {
+    if !file_declares_region(file) {
+        return (Vec::new(), Vec::new());
+    }
+    // Index each region's `public` flag (the ResolvedRegion doesn't carry it).
+    let mut public_by_name: HashMap<&str, bool> = HashMap::new();
+    for it in &file.items {
+        if let ast::Item::Region(r) = it {
+            public_by_name.entry(r.name.as_str()).or_insert(r.public);
+        }
+    }
+    let (resolved, diags, _memo) = resolve_regions(file, defines, external_ends);
+    let rows = resolved
+        .into_iter()
+        .map(|r| {
+            let size = r.ops.iter().fold(0u32, |acc, op| match op {
+                EmitOp::Reserve(n) => acc.wrapping_add(*n),
+                EmitOp::Label(_) => acc,
+            });
+            RamRegionRow {
+                public: public_by_name.get(r.name.as_str()).copied().unwrap_or(false),
+                name: r.name,
+                base: r.base,
+                limit: r.limit,
+                size,
+                padding: r.padding,
+            }
+        })
+        .collect();
+    (rows, diags)
 }
 
 /// Whole-program region-END resolution (item #7c): resolve EVERY region's running
@@ -405,6 +492,8 @@ fn resolve_one(
         base,
         ops: lay.ops,
         aliases,
+        limit,
+        padding: lay.padding,
     });
     visiting.pop();
     (base, size)
@@ -419,6 +508,9 @@ struct Layout {
     alias_reqs: Vec<(String, String, Span)>,
     first_overflow_field: Option<String>,
     limit_seen: Option<u32>,
+    /// Bytes reserved for alignment (`@align`) or explicit `pad(N)` — the RAM map
+    /// report's "padding" column (T1). Pure accounting; never read by emission.
+    padding: u32,
 }
 
 impl Layout {
@@ -430,6 +522,7 @@ impl Layout {
             alias_reqs: Vec::new(),
             first_overflow_field: None,
             limit_seen: None,
+            padding: 0,
         }
     }
 
@@ -465,7 +558,9 @@ impl Layout {
         // `n` (not only powers of two). Aeon RAM sits far below the `u32` ceiling,
         // so `cursor + align` never overflows (the same domain the AS side folds).
         let target = (self.cursor + align).next_multiple_of(align);
-        self.reserve(target - self.cursor);
+        let pad = target - self.cursor;
+        self.padding = self.padding.wrapping_add(pad); // T1 report accounting only.
+        self.reserve(pad);
     }
 
     fn label(&mut self, name: &str) {
@@ -510,6 +605,7 @@ impl Layout {
             ast::RegionField::Pad { count, span } => {
                 let n = eval_u32(ev, count, diags);
                 self.note_overflow("<pad>", self.cursor.wrapping_add(n));
+                self.padding = self.padding.wrapping_add(n); // T1 report accounting only.
                 self.reserve(n);
                 let _ = span;
             }
