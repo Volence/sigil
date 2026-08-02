@@ -1621,7 +1621,10 @@ fn packed_true_bases(
     // fixpoint, so widening it never moves an unchanged section. Widened 0x40->0x80
     // for collision_lookup #1 (the fused GetType+GetCollision grows the region by
     // 0x44, just past the old 0x40 spread — the demo game's tight layout overran it
-    // by 4 bytes). A growth beyond this is a hand ruling.
+    // by 4 bytes). Widened 0x80->0x100 for input-6button (2026-08-02): the full
+    // 6-button burst rewrite (two-pad ext accumulate + per-frame type detect +
+    // unconditional Z80 bracket) grows the controllers region by 0xB0, past the old
+    // 0x80 spread. A growth beyond this is a hand ruling.
     let prov_pins: Vec<Option<u32>> = (0..n)
         .map(|i| if labeled[i] { prov[i].map(|v| v as u32) } else { None })
         .collect();
@@ -1631,7 +1634,7 @@ fn packed_true_bases(
             let mut spread_pins = prov_pins.clone();
             for (rank, &i) in order.iter().enumerate() {
                 if let Some(Some(p)) = spread_pins.get_mut(i).map(|s| s.as_mut()) {
-                    *p += 0x80 * rank as u32;
+                    *p += 0x100 * rank as u32;
                 }
             }
             image_lens_pinned(sections, &spread_pins)
