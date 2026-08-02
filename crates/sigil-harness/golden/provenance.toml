@@ -1205,3 +1205,50 @@ full_crc = "b63c4c35"
 full_size = 422193
 anchor_crc = "4e101ecb"
 anchor_end = 0x5f5f2
+
+[[entry]]
+name = "logic-tick"
+ab = "oracle: 600f scroll A/B identical (5824px, lag 0); Logic_Tick 1/tick w/ constant boot offset"
+note = "parcel I2: Logic_Tick timebase + bg_anim lag-immune driver swap"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "568ad949"
+full_size = 422556
+anchor_crc = "3ea55185"
+anchor_end = 0x5f5f2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "63d53dbf"
+full_size = 303761
+anchor_crc = "12f2354c"
+anchor_end = 0x43480
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "25571f21"
+full_size = 90788
+anchor_crc = "f54befd6"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "5f0e6810"
+full_size = 93277
+anchor_crc = "0f592056"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "d2f3382b"
+full_size = 412367
+anchor_crc = "6212e4f1"
+anchor_end = 0x5db00
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "27959168"
+full_size = 422205
+anchor_crc = "338f9772"
+anchor_end = 0x5f5f2
