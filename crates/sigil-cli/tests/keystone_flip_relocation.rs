@@ -45,7 +45,7 @@ fn is_header_field(i: usize) -> bool {
 // The chained build touches the shared engine/sound/generated dir — serialize.
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-const EOR: usize = 0x5f5f2; // config_a assembled_end (== config_a_profile; −0x68 wave-c)
+const EOR: usize = 0x5F6C2; // debug-shape EndOfRom — i4: the terminus now ENCLOSES the chain-tail replay fixture (+0xD0)
 // ParallaxConfig_OJZ_Default header +0x10 = the dc.l DeformTable_Zero slot.
 // LISTING-DERIVED at runtime (input-6button: the second hand-shift of the old
 // 0x11420 literal killed it — the t24 rot rule; the header offset is the

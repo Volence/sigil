@@ -233,7 +233,7 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // object_test_state growth), then +0xC debug only from the OJZ scene-pin
     // hook's two `ifdef __DEBUG__` guards (Debug_Scene_Freeze).
     assert_eq!(pins::ASSEMBLED_LEN, 0x5DBD0);       // +0xD0 i4: EndOfRom encloses the replay fixture (194 B + align)
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F6B4); // +0xC2 i4: EndOfRom encloses the replay fixture
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F6C2); // +0xD0 i4: EndOfRom encloses the 16-padded replay fixture (terminus align-2 cap)
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the
