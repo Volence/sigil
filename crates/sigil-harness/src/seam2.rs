@@ -695,16 +695,19 @@ pub fn emit_sfx_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
 /// HCZ2 and ends `$5D53A`).
 pub const MT_BANK_LMA: u32 = 0x58607;
 
-/// The Moving-Trucks bank body + the labels AS-side 68k code consumes cross-seam
-/// (`SongTable`/`SongPatchTable`, read by `sound_api.asm`'s two `movea.l #…`).
+/// The Moving-Trucks bank body + the byte offsets at which its two pointer tables
+/// begin (`SongTable`/`SongPatchTable`, read cross-seam by `sound_api.emp`). The
+/// offsets partition `bytes` into the three artifacts the split emits.
 pub struct MtBank {
-    /// `mt_bank` @ `$58607` — song + pitch table + patch bank + song_table,
-    /// shape-dependent length.
+    /// `mt_bank` @ `$58607` — song streams + pitch table + patch bank + the two
+    /// pointer tables, shape-dependent length.
     pub bytes: Vec<u8>,
-    /// The AS-consumed cross-seam labels: `(name, absolute VMA)`. Emitted as an
-    /// `mt_syms{,_debug}.asm` equ file the BINCLUDE build includes so
-    /// `sound_api.asm`'s `movea.l #SongTable`/`#SongPatchTable` resolve.
-    pub syms: Vec<(String, u32)>,
+    /// Byte offset within `bytes` where `SongTable` begins (a `SONG_COUNT`*4-byte
+    /// table). Everything before it is the body.
+    pub song_table_off: usize,
+    /// Byte offset within `bytes` where `SongPatchTable` begins (the parallel
+    /// `SONG_COUNT`*4-byte table, contiguous after `SongTable`, ending the blob).
+    pub song_patch_table_off: usize,
 }
 
 /// Lower + co-link `mt_bank.emp` at the current-baseline bank pin (`$58607`) and
@@ -778,46 +781,64 @@ pub fn emit_mt_bank(aeon: &Path, debug: bool) -> Result<MtBank, String> {
     let linked = sigil_link::link(&resolved, &SymbolTable::new()).map_err(|d| format!("link: {d:?}"))?;
 
     let bytes = linked.section("mt_bank").ok_or("missing mt_bank in linked image")?.bytes.clone();
-    // Read SongTable/SongPatchTable from the PLACED section's labels (offset +
-    // the section's final LMA). mt_bank is pure data — resolve_layout does not
-    // move byte offsets — so the lowered offsets are final.
+    // Read SongTable/SongPatchTable offsets from the PLACED section's labels.
+    // mt_bank is pure data — resolve_layout does not move byte offsets — so a
+    // label's `offset` (relative to the section head) is its final index into
+    // `bytes` (the section head is byte 0 of the linked image slice).
     let placed = sections.iter().find(|s| s.name == "mt_bank").ok_or("missing placed mt_bank")?;
-    let base = placed.lma;
-    let mut syms = Vec::new();
-    for want in ["SongTable", "SongPatchTable"] {
+    let off = |want: &str| -> Result<usize, String> {
         let label = placed
             .labels
             .iter()
             .find(|l| l.name == want)
-            .ok_or_else(|| format!("mt_bank must export `{want}` (sound_api.asm consumes it)"))?;
-        syms.push((want.to_string(), base + label.offset));
-    }
-    Ok(MtBank { bytes, syms })
+            .ok_or_else(|| format!("mt_bank must export `{want}` (sound_api.emp consumes it)"))?;
+        Ok(label.offset as usize)
+    };
+    let song_table_off = off("SongTable")?;
+    let song_patch_table_off = off("SongPatchTable")?;
+    Ok(MtBank { bytes, song_table_off, song_patch_table_off })
 }
 
-/// Emit the Moving-Trucks bank build inputs to `out_dir`: `mt_bank.bin` (plain) +
-/// `mt_bank_debug.bin` (debug) + the matching `mt_syms{,_debug}.asm` equ files
-/// (`SongTable`/`SongPatchTable` at their emitted addresses, so the BINCLUDE build's
-/// `sound_api.asm` cross-seam `movea.l`s resolve). SHAPE-DEPENDENT (the two songs
-/// the debug build adds), so — like the resident blob — there IS a `_debug` variant.
+/// Emit the Moving-Trucks bank build inputs to `out_dir` as a THREE-WAY SPLIT per
+/// shape: `mt_bank_body{,_debug}.bin` (the song streams + heads, bytes
+/// `[0, SongTable)`), `mt_songtable{,_debug}.bin` (the `SONG_COUNT`*4-byte song
+/// pointer table), and `mt_songpatchtable{,_debug}.bin` (the parallel patch-pointer
+/// table that ends the blob). `mt_bank_blob.emp` embeds the three as contiguous
+/// labeled members, so `SongTable`/`SongPatchTable` are native section labels the
+/// whole-ROM link resolves — no emitted equ artifact. SHAPE-DEPENDENT (the two songs
+/// the debug build adds), so each artifact has a `_debug` variant.
 pub fn emit_mt_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
-    for (debug, bin_name, syms_name) in [
-        (false, "mt_bank.bin", "mt_syms.asm"),
-        (true, "mt_bank_debug.bin", "mt_syms_debug.asm"),
+    for (debug, body_name, st_name, spt_name) in [
+        (false, "mt_bank_body.bin", "mt_songtable.bin", "mt_songpatchtable.bin"),
+        (true, "mt_bank_body_debug.bin", "mt_songtable_debug.bin", "mt_songpatchtable_debug.bin"),
     ] {
         let mt = emit_mt_bank(aeon, debug)?;
-        let bin_path = out_dir.join(bin_name);
-        std::fs::write(&bin_path, &mt.bytes).map_err(|e| format!("write {}: {e}", bin_path.display()))?;
-        let mut syms_src = String::from(
-            "; GENERATED by sigil emit_sound_blob (seam-2 mt_bank) — do not hand-edit.\n\
-             ; The Moving-Trucks bank labels sound_api.asm consumes cross-seam.\n",
-        );
-        for (name, addr) in &mt.syms {
-            syms_src.push_str(&format!("{name} = ${addr:X}\n"));
+        let st = mt.song_table_off;
+        let spt = mt.song_patch_table_off;
+        // The two tables are contiguous and end the blob: body | SongTable | SongPatchTable.
+        if !(st <= spt && spt <= mt.bytes.len()) {
+            return Err(format!(
+                "mt_bank table offsets out of order (body|SongTable|SongPatchTable): \
+                 SongTable={st:#x}, SongPatchTable={spt:#x}, len={:#x}",
+                mt.bytes.len()
+            ));
         }
-        let syms_path = out_dir.join(syms_name);
-        std::fs::write(&syms_path, syms_src).map_err(|e| format!("write {}: {e}", syms_path.display()))?;
+        let body = &mt.bytes[..st];
+        let songtable = &mt.bytes[st..spt];
+        let songpatchtable = &mt.bytes[spt..];
+        // Identity: the concatenation of the three artifacts is the un-split blob.
+        debug_assert_eq!(
+            body.len() + songtable.len() + songpatchtable.len(),
+            mt.bytes.len(),
+            "mt_bank split must partition the blob exactly"
+        );
+        for (name, data) in
+            [(body_name, body), (st_name, songtable), (spt_name, songpatchtable)]
+        {
+            let path = out_dir.join(name);
+            std::fs::write(&path, data).map_err(|e| format!("write {}: {e}", path.display()))?;
+        }
     }
     Ok(())
 }
