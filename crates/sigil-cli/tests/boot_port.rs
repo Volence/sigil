@@ -142,9 +142,9 @@ fn value_equs(debug: bool, doctor: Option<(&str, &str)>) -> Vec<Section> {
         ("HW_PORT_2_DATA", "$A10005"),
         ("HW_PORT_EXP_DATA", "$A10007"),
         ("YM2612_A0", "$A04000"),
-        // region timing/budget truths (engine/constants.asm)
-        ("NTSC_TIMING_STEP", "$0100"),
-        ("PAL_TIMING_STEP", "$0133"),
+        // region budget truths (engine/system/constants.emp). The PAL fixed-timestep
+        // consts (NTSC_TIMING_STEP/PAL_TIMING_STEP) were deleted 2026-08-02 (NTSC-only
+        // ruling B); only the region-adaptive DMA budget survives the region branch.
         ("DMA_BUDGET_NTSC", "7200"),
         ("DMA_BUDGET_PAL", "15000"),
     ];
@@ -196,8 +196,7 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         ("Game_State_Init", pick(pins::GAME_STATE_INIT)),
         ("Hardware_Region", pick(pins::HARDWARE_REGION)),
         ("Region_Flags", pick(pins::REGION_FLAGS)),
-        ("Timing_Step", pick(pins::TIMING_STEP)),
-        ("Frame_Accumulator", pick(pins::FRAME_ACCUMULATOR)),
+        // Timing_Step/Frame_Accumulator deleted 2026-08-02 (NTSC-only ruling B).
         ("DMA_Budget_Default", pick(pins::DMA_BUDGET_DEFAULT)),
         ("HBlank_Vector_Slot", pick(pins::H_BLANK_VECTOR_SLOT)),
         ("RAM_Start", pick(pins::RAM_START)),

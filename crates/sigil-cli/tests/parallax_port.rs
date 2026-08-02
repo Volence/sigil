@@ -142,32 +142,37 @@ fn parallax_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
 fn parallax_addr_labels(debug: bool) -> Vec<Section> {
     // (name, plain VMA, debug VMA) — RAM mostly shape-invariant; Camera_*/
     // Current_Act_Ptr live in a debug-shifted RAM region; Section_GetSecPtrXY is ROM.
+    // PAL NTSC-only (ruling B, 2026-08-02): the Timing_Step/Frame_Accumulator u16
+    // pair at $FFFF8028 was deleted, so every RAM symbol at/after $FFFF802C slid
+    // −4 (the Parallax_* block, Camera_*, Vscroll_Factor, Hscroll_Buffer). The two
+    // VDP_* cells below live at $800A/$801E — BEFORE the deleted pair — so they hold.
+    // Camera_X/Y now pin-sourced (they carry the −4 too; matches Current_Act_Ptr style).
     let table: [(&str, u32, u32); 26] = [
-        ("Parallax_State", 0xFFFF_8890, 0xFFFF_8890),
-        ("Parallax_State_End", 0xFFFF_8984, 0xFFFF_8984),
-        ("Parallax_Current_Config", 0xFFFF_88B8, 0xFFFF_88B8),
-        ("Parallax_Target_Config", 0xFFFF_88BC, 0xFFFF_88BC),
-        ("Parallax_Transition_Frames", 0xFFFF_88C0, 0xFFFF_88C0),
-        ("Parallax_Snap_Pending", 0xFFFF_88C1, 0xFFFF_88C1),
-        ("Parallax_Prev_Sec_X", 0xFFFF_88C2, 0xFFFF_88C2),
-        ("Parallax_Prev_Sec_Y", 0xFFFF_88C3, 0xFFFF_88C3),
-        ("Parallax_Current_Scroll_A", 0xFFFF_8896, 0xFFFF_8896),
-        ("Parallax_Current_Scroll_B", 0xFFFF_88A6, 0xFFFF_88A6),
-        ("Parallax_Current_Vscroll_BG", 0xFFFF_88B6, 0xFFFF_88B6),
-        ("Parallax_Deform_Phase_FG", 0xFFFF_8890, 0xFFFF_8890),
-        ("Parallax_Deform_Phase_BG", 0xFFFF_8892, 0xFFFF_8892),
-        ("Parallax_V_Deform_Phase_BG", 0xFFFF_8894, 0xFFFF_8894),
-        ("Parallax_Vscroll_Column_Buf", 0xFFFF_88C4, 0xFFFF_88C4),
-        ("Parallax_Shadow_Bands", 0xFFFF_8914, 0xFFFF_8914),
-        ("Parallax_Shadow_Scroll_A", 0xFFFF_8964, 0xFFFF_8964),
-        ("Parallax_Shadow_Scroll_B", 0xFFFF_8974, 0xFFFF_8974),
-        ("Camera_X", 0xFFFF_A11C, 0xFFFF_A140),
-        ("Camera_Y", 0xFFFF_A120, 0xFFFF_A144),
+        ("Parallax_State", 0xFFFF_888C, 0xFFFF_888C),
+        ("Parallax_State_End", 0xFFFF_8980, 0xFFFF_8980),
+        ("Parallax_Current_Config", 0xFFFF_88B4, 0xFFFF_88B4),
+        ("Parallax_Target_Config", 0xFFFF_88B8, 0xFFFF_88B8),
+        ("Parallax_Transition_Frames", 0xFFFF_88BC, 0xFFFF_88BC),
+        ("Parallax_Snap_Pending", 0xFFFF_88BD, 0xFFFF_88BD),
+        ("Parallax_Prev_Sec_X", 0xFFFF_88BE, 0xFFFF_88BE),
+        ("Parallax_Prev_Sec_Y", 0xFFFF_88BF, 0xFFFF_88BF),
+        ("Parallax_Current_Scroll_A", 0xFFFF_8892, 0xFFFF_8892),
+        ("Parallax_Current_Scroll_B", 0xFFFF_88A2, 0xFFFF_88A2),
+        ("Parallax_Current_Vscroll_BG", 0xFFFF_88B2, 0xFFFF_88B2),
+        ("Parallax_Deform_Phase_FG", 0xFFFF_888C, 0xFFFF_888C),
+        ("Parallax_Deform_Phase_BG", 0xFFFF_888E, 0xFFFF_888E),
+        ("Parallax_V_Deform_Phase_BG", 0xFFFF_8890, 0xFFFF_8890),
+        ("Parallax_Vscroll_Column_Buf", 0xFFFF_88C0, 0xFFFF_88C0),
+        ("Parallax_Shadow_Bands", 0xFFFF_8910, 0xFFFF_8910),
+        ("Parallax_Shadow_Scroll_A", 0xFFFF_8960, 0xFFFF_8960),
+        ("Parallax_Shadow_Scroll_B", 0xFFFF_8970, 0xFFFF_8970),
+        ("Camera_X", pins::CAMERA_X.plain, pins::CAMERA_X.debug),
+        ("Camera_Y", pins::CAMERA_Y.plain, pins::CAMERA_Y.debug),
         // Sourced from pins — this RAM cell rides the tail of the shifting RAM map
         // (the F-2 camera-ceiling insert pushed it +4), so a hand-typed VMA goes stale.
         ("Current_Act_Ptr", pins::CURRENT_ACT_PTR.plain, pins::CURRENT_ACT_PTR.debug),
-        ("Vscroll_Factor", 0xFFFF_888C, 0xFFFF_888C),
-        ("Hscroll_Buffer", 0xFFFF_850A, 0xFFFF_850A),
+        ("Vscroll_Factor", 0xFFFF_8888, 0xFFFF_8888),
+        ("Hscroll_Buffer", 0xFFFF_8506, 0xFFFF_8506),
         ("VDP_Shadow_Table", 0xFFFF_800A, 0xFFFF_800A),
         ("VDP_Dirty_Mask", 0xFFFF_801E, 0xFFFF_801E),
         // ROM transfer target — sourced from pins (shifts with the engine bank;

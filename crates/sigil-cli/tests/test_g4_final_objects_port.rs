@@ -159,8 +159,11 @@ fn as_constant_equs(shape: &Shape) -> Vec<Section> {
     pairs.push(("VRAM_TEST_OBJ", "$03E0"));
     // (test_player's _dplc_ptr/_art_base/_debug_flag overlay guards retired at
     // conv-d #48 — test_player.emp owns the TPlayerV overlay, no extern mirror.)
-    pairs.push(("Ctrl_1_Held", "$FFFF802C"));
-    pairs.push(("Ctrl_1_Press", "$FFFF802D"));
+    // Ctrl_1_Held/Press shifted −4 (PAL NTSC-only, ruling B 2026-08-02): the
+    // Timing_Step/Frame_Accumulator u16 pair at $FFFF8028 was deleted, pulling every
+    // RAM symbol at/after $FFFF802C down 4 bytes (matches pins::CTRL_1_HELD).
+    pairs.push(("Ctrl_1_Held", "$FFFF8028"));
+    pairs.push(("Ctrl_1_Press", "$FFFF8029"));
     let player_1 = format!("${:X}", shape.player_1);
     pairs.push(("Player_1", player_1.as_str()));
     sigil_harness::test_support::assemble_equ_pairs(&pairs)

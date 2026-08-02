@@ -1981,13 +1981,9 @@ tests = ["boot_port"]
 name = "Region_Flags"
 tests = ["boot_port"]
 
-[[symbol]]
-name = "Timing_Step"
-tests = ["boot_port"]
-
-[[symbol]]
-name = "Frame_Accumulator"
-tests = ["boot_port"]
+# Timing_Step / Frame_Accumulator retired 2026-08-02 (NTSC-only ruling B):
+# the PAL fixed-timestep RAM fields were deleted in aeon, so these pins no
+# longer resolve. The region-adaptive DMA budget pin (DMA_Budget_Default) stays.
 
 [[symbol]]
 name = "Game_State_ID"

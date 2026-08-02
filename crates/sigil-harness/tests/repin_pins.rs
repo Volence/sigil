@@ -156,40 +156,48 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // [EntryPoint $200, BootData). Debug len +4 = the `__DEBUG__`
     // bsr.w CompressionSelfTest. BOOT_DATA is the data-tail head (the .emp's
     // forward `lea BootData(pc)` target), NOT inside the region.
+    // Then −0x10 BOTH shapes (PAL NTSC-only, ruling B, 2026-08-02): boot.emp's
+    // region-detection block deletes the two `move.w #TIMING_STEP,(Timing_Step).w`
+    // stores (6 B each, one per NTSC/PAL branch) and the `clr.w Frame_Accumulator`
+    // (4 B) = −16 B code; boot is the FIRST engine region, so its own LEN shrinks
+    // −0x10 and EVERY engine base below slides −0x10 both shapes (LENs unchanged).
+    // The matched RAM deletion (Timing_Step/Frame_Accumulator u16 pair) shifts every
+    // RAM symbol after 0xFFFF8028 by −0x4 (see the symbol-Pin asserts below).
+    // ASSEMBLED_LEN unchanged (the engine-block shrink is absorbed by `org $10000`).
     assert_eq!(pins::BOOT.plain_base, 0x200);
     assert_eq!(pins::BOOT.debug_base, 0x200);
-    assert_eq!(pins::BOOT.plain_len, 0x1A8);  // −2 t23 clr.w wave
-    assert_eq!(pins::BOOT.debug_len, 0x1AC);  // −2 t23 clr.w wave
-    assert_eq!(pins::BOOT_DATA, pins::Pin { plain: 0x3A8, debug: 0x3AC });  // −2 t23 clr.w wave
+    assert_eq!(pins::BOOT.plain_len, 0x198);  // −0x10 PAL NTSC-only wave
+    assert_eq!(pins::BOOT.debug_len, 0x19C);  // −0x10 PAL NTSC-only wave
+    assert_eq!(pins::BOOT_DATA, pins::Pin { plain: 0x398, debug: 0x39C });  // −0x10 PAL NTSC-only wave
 
-    assert_eq!(pins::ANIMATE.plain_base, 0x2F74);  // −2 t23 boot wave
-    assert_eq!(pins::ANIMATE.debug_base, 0x3552);  // −2 t23 boot wave
+    assert_eq!(pins::ANIMATE.plain_base, 0x2F64);  // −0x10 PAL NTSC-only wave
+    assert_eq!(pins::ANIMATE.debug_base, 0x3542);  // −0x10 PAL NTSC-only wave
     assert_eq!(pins::ANIMATE.plain_len, 0x18A);  // −8: item 5 (drop both Sound_PlaySFX saves)
     assert_eq!(pins::ANIMATE.debug_len, 0x2A8);
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x32FE);  // −2 t23 boot wave
-    assert_eq!(pins::RINGS.debug_base, 0x3A02);  // −2 t23 boot wave
+    assert_eq!(pins::RINGS.plain_base, 0x32EE);  // −0x10 PAL NTSC-only wave
+    assert_eq!(pins::RINGS.debug_base, 0x39F2);  // −0x10 PAL NTSC-only wave
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
     // core LEN shrank −0xA in c4 (Spawn_Count: InitObjectRAM store −4 + RunObjects
     // moveq+store −6). Bases −0xA in c5 (the boot.asm CROSS_RESET store removal is
     // upstream of dplc/core, so core's base slides with everything downstream of boot).
-    assert_eq!(pins::CORE.plain_base, 0x2870);  // −2 t23 boot wave
+    assert_eq!(pins::CORE.plain_base, 0x2860);  // −0x10 PAL NTSC-only wave
     assert_eq!(pins::CORE.plain_len, 0x2E4);    // −0xA c4 Spawn_Count store removals
-    assert_eq!(pins::CORE.debug_base, 0x2A06);  // −2 t23 boot wave
+    assert_eq!(pins::CORE.debug_base, 0x29F6);  // −0x10 PAL NTSC-only wave
     assert_eq!(pins::CORE.debug_len, 0x72C);    // −0xA c4 Spawn_Count store removals
-    assert_eq!(pins::DPLC.plain_base, 0x27CC);  // −2 t23 boot wave
-    assert_eq!(pins::DPLC.debug_base, 0x2962);  // −2 t23 boot wave
+    assert_eq!(pins::DPLC.plain_base, 0x27BC);  // −0x10 PAL NTSC-only wave
+    assert_eq!(pins::DPLC.debug_base, 0x2952);  // −0x10 PAL NTSC-only wave
     assert_eq!(pins::DPLC.plain_len, 0xA4);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xA4);   // item 6 REMOVED (soak disproved single-entry) — debug == plain
 
     // animate_port.rs: the DeleteObject inbound label. Shifted by the upstream
     // wave (dma_queue + dplc item-11); DeleteObject's offset within core stable.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2940, debug: 0x2AD6 });  // −2 t23 boot wave
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2930, debug: 0x2AC6 });  // −0x10 PAL NTSC-only wave
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
