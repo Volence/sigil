@@ -100,7 +100,7 @@ fn pins_rs_is_current() {
 /// the migration), symbol Pins, dotted-local offsets, and the ROM end pins.
 #[test]
 fn generated_pins_match_the_hand_typed_baseline() {
-    // input-6button wave (2026-08-02): the full 6-button burst rewrite grows the
+    // input-6button wave (2026-08-02, incl. the LOW-FIRST cadence fix +8): the full 6-button burst rewrite grows the
     // controllers region +0xB0 (both shapes), sliding EVERY engine base after it
     // +0xB0; the 8 new controller-block RAM cells slide every RAM symbol after
     // 0xFFFF8035 by +0x8. GAME_LOOP plain LEN 0x12->0x14 (the shift landed
@@ -178,7 +178,7 @@ fn generated_pins_match_the_hand_typed_baseline() {
     assert_eq!(pins::BOOT_DATA, pins::Pin { plain: 0x398, debug: 0x39C });  // −0x10 PAL NTSC-only wave
 
     assert_eq!(pins::ANIMATE.plain_base, 0x3014);  // −0x10 PAL NTSC-only wave
-    assert_eq!(pins::ANIMATE.debug_base, 0x35F2);  // −0x10 PAL NTSC-only wave
+    assert_eq!(pins::ANIMATE.debug_base, 0x3602);  // −0x10 PAL NTSC-only wave
     assert_eq!(pins::ANIMATE.plain_len, 0x18A);  // −8: item 5 (drop both Sound_PlaySFX saves)
     assert_eq!(pins::ANIMATE.debug_len, 0x2A8);
 
@@ -186,7 +186,7 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
     assert_eq!(pins::RINGS.plain_base, 0x339E);  // −0x10 PAL NTSC-only wave
-    assert_eq!(pins::RINGS.debug_base, 0x3AA2);  // −0x10 PAL NTSC-only wave
+    assert_eq!(pins::RINGS.debug_base, 0x3AB2);  // −0x10 PAL NTSC-only wave
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
@@ -195,16 +195,16 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // upstream of dplc/core, so core's base slides with everything downstream of boot).
     assert_eq!(pins::CORE.plain_base, 0x2910);  // −0x10 PAL NTSC-only wave
     assert_eq!(pins::CORE.plain_len, 0x2E4);    // −0xA c4 Spawn_Count store removals
-    assert_eq!(pins::CORE.debug_base, 0x2AA6);  // −0x10 PAL NTSC-only wave
+    assert_eq!(pins::CORE.debug_base, 0x2AB6);  // −0x10 PAL NTSC-only wave
     assert_eq!(pins::CORE.debug_len, 0x72C);    // −0xA c4 Spawn_Count store removals
-    assert_eq!(pins::DPLC.plain_base, 0x2860);  // −0x10 PAL NTSC-only wave
-    assert_eq!(pins::DPLC.debug_base, 0x2A02);  // −0x10 PAL NTSC-only wave
-    assert_eq!(pins::DPLC.plain_len, 0xB0);     // +0xC: item-11 bcs + post-loop commit (both procs)
+    assert_eq!(pins::DPLC.plain_base, 0x2868);  // −0x10 PAL NTSC-only wave
+    assert_eq!(pins::DPLC.debug_base, 0x2A12);  // −0x10 PAL NTSC-only wave
+    assert_eq!(pins::DPLC.plain_len, 0xA8);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xA4);   // item 6 REMOVED (soak disproved single-entry) — debug == plain
 
     // animate_port.rs: the DeleteObject inbound label. Shifted by the upstream
     // wave (dma_queue + dplc item-11); DeleteObject's offset within core stable.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x29E0, debug: 0x2B76 });  // −0x10 PAL NTSC-only wave
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x29E0, debug: 0x2B86 });  // −0x10 PAL NTSC-only wave
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
@@ -393,7 +393,7 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // one-register park moved to move.l/movea.l (−12 cycles/child, −4 bytes,
     // which also restored the plain-shape branch margin the wave had consumed).
     assert_eq!(pins::SOUND_API.plain_base, 0x63FE);  // +0x34 net, t24
-    assert_eq!(pins::SOUND_API.debug_base, 0x7F30);  // +0x8C net, t24
+    assert_eq!(pins::SOUND_API.debug_base, 0x7F40);  // +0x8C net, t24
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A
