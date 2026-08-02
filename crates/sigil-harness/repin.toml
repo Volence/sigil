@@ -892,6 +892,13 @@ tests = ["game_loop_port", "load_art_port"]
 name = "Game_State"
 tests = ["game_loop_port", "load_art_port"]
 
+# Parcel I3 (2026-08-02) — game_loop's `jbsr Input_Tick` (bsr.w pc-relative) target,
+# the replay seam. The game_loop / two-module-flip / game_debug composition fixtures
+# supply it as a synthetic cross-seam label at this VMA (= the replay region head).
+[[symbol]]
+name = "Input_Tick"
+tests = ["game_loop_port", "game_debug_port"]
+
 # collision_lookup (tranche 3; Cache_Head_Col/Top/Bottom derive +2/+4/+6)
 
 [[symbol]]

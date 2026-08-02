@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 75 regions, 306 symbols, 7 offsets
+//! [provenance] 75 regions, 307 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -376,6 +376,9 @@ pub const SOUND_DRAIN_SFX_RING: Pin = Pin { plain: 0x666A, debug: 0x8406 };
 
 /// `Game_State`. tests: game_loop_port, load_art_port
 pub const GAME_STATE: Pin = Pin { plain: 0xFFFF8008, debug: 0xFFFF8008 };
+
+/// `Input_Tick`. tests: game_loop_port, game_debug_port
+pub const INPUT_TICK: Pin = Pin { plain: 0x248A, debug: 0x252C };
 
 /// `Cache_Left_Col`. tests: collision_lookup_port, section_port
 pub const CACHE_LEFT_COL: Pin = Pin { plain: 0xFFFFA84C, debug: 0xFFFFA870 };
