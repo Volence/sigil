@@ -386,6 +386,8 @@ fn two_module_flip(debug: bool, rom_name: &str) {
             parse_file(&aeon.join("engine/sound/sound_constants.emp")),
             parse_file(&aeon.join("engine/z80_bus.emp")),
             parse_file(&aeon.join("engine/irq.emp")),
+            // m1-budget-fix: VInt_Level's Critical-charge walk uses DMAEntry.
+            parse_file(&aeon.join("engine/structs.emp")),
         ],
         aeon.join("engine/system"),
         "vblank",
@@ -459,6 +461,10 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("Ctrl_2_Press_Accum", pick(pins::CTRL_2_PRESS_ACCUM)),
         ("DMA_Budget_Default", pick(pins::DMA_BUDGET_DEFAULT)),
         ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
+        // m1-budget-fix: VInt_Level now charges the plane drain + Critical DMA.
+        ("Plane_Buffer_Ptr", pick(pins::PLANE_BUFFER_PTR)),
+        ("DMA_Critical", pick(pins::DMA_CRITICAL)),
+        ("DMA_Critical_Slot", pick(pins::DMA_CRITICAL_SLOT)),
         ("Flush_VDP_Shadow", pick(pins::FLUSH_VDP_SHADOW)),
         ("Enqueue_Dirty_Buffers", pick(pins::ENQUEUE_DIRTY_BUFFERS)),
         ("VInt_DrawLevel", pick(pins::V_INT_DRAW_LEVEL)),
