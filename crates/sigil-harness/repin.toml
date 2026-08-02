@@ -1907,6 +1907,22 @@ name = "Ctrl_2_Press_Accum"
 tests = ["vblank_port"]
 
 [[symbol]]
+name = "Ctrl_1_Ext_Press"
+tests = ["vblank_port", "game_loop_port"]
+
+[[symbol]]
+name = "Ctrl_1_Ext_Press_Accum"
+tests = ["vblank_port", "game_loop_port"]
+
+[[symbol]]
+name = "Ctrl_2_Ext_Press"
+tests = ["vblank_port", "game_loop_port"]
+
+[[symbol]]
+name = "Ctrl_2_Ext_Press_Accum"
+tests = ["vblank_port", "game_loop_port"]
+
+[[symbol]]
 name = "DMA_Budget_Default"
 tests = ["vblank_port"]
 

@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 74 regions, 299 symbols, 7 offsets
+//! [provenance] 74 regions, 303 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1018,6 +1018,18 @@ pub const CTRL_2_PRESS: Pin = Pin { plain: 0xFFFF802B, debug: 0xFFFF802B };
 
 /// `Ctrl_2_Press_Accum`. tests: vblank_port
 pub const CTRL_2_PRESS_ACCUM: Pin = Pin { plain: 0xFFFF802D, debug: 0xFFFF802D };
+
+/// `Ctrl_1_Ext_Press`. tests: vblank_port, game_loop_port
+pub const CTRL_1_EXT_PRESS: Pin = Pin { plain: 0xFFFF802F, debug: 0xFFFF802F };
+
+/// `Ctrl_1_Ext_Press_Accum`. tests: vblank_port, game_loop_port
+pub const CTRL_1_EXT_PRESS_ACCUM: Pin = Pin { plain: 0xFFFF8032, debug: 0xFFFF8032 };
+
+/// `Ctrl_2_Ext_Press`. tests: vblank_port, game_loop_port
+pub const CTRL_2_EXT_PRESS: Pin = Pin { plain: 0xFFFF8031, debug: 0xFFFF8031 };
+
+/// `Ctrl_2_Ext_Press_Accum`. tests: vblank_port, game_loop_port
+pub const CTRL_2_EXT_PRESS_ACCUM: Pin = Pin { plain: 0xFFFF8033, debug: 0xFFFF8033 };
 
 /// `DMA_Budget_Default`. tests: vblank_port
 pub const DMA_BUDGET_DEFAULT: Pin = Pin { plain: 0xFFFF8206, debug: 0xFFFF8206 };

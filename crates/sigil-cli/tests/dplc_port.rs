@@ -413,7 +413,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         aeon.join("engine/objects"),
         "dplc",
         dplc_base,
-        pins::DPLC.plain_len,
+        if debug { pins::DPLC.debug_len } else { pins::DPLC.plain_len },
         debug,
     );
 
@@ -484,10 +484,10 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     );
 
     let shape = if debug { "debug" } else { "plain" };
-    let dr = &refrom[dplc_base as usize..dplc_base as usize + pins::DPLC.plain_len];
+    let dplc_len = if debug { pins::DPLC.debug_len } else { pins::DPLC.plain_len };
+    let dr = &refrom[dplc_base as usize..dplc_base as usize + dplc_len];
     let dsec = linked.section("dplc").expect("dplc region").bytes.clone();
-    assert_eq!(dsec.len(), dr.len(), "dplc ({shape} flip): length");
-    assert_eq!(dsec, dr, "dplc ({shape} flip): bytes must match the reference");
+    assert_region_matches(&dsec, dr, &format!("dplc ({shape} flip)"));
     let qr = &refrom[dq_base as usize..dq_base as usize + dq_len];
     let qsec = linked.section("dma_queue").expect("dma_queue region").bytes.clone();
     // m1-budget-fix grew Drain_Budgeted_Queue: dma_queue's content ends 2 bytes

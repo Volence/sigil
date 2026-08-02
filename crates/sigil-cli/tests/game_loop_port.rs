@@ -102,21 +102,27 @@ fn strict_gate() -> bool {
 /// via repin).
 struct Shape {
     base: u32,
+    len: usize,
     vsync_wait: u32,
     drain: u32,
 }
 
 const PLAIN: Shape = Shape {
     base: pins::GAME_LOOP.plain_base,
+    len: pins::GAME_LOOP.plain_len,
     vsync_wait: pins::V_SYNC_WAIT.plain,
     drain: pins::SOUND_DRAIN_SFX_RING.plain,
 };
 const DEBUG: Shape = Shape {
     base: pins::GAME_LOOP.debug_base,
+    // input-6button: the +0xB0 shift landed S4LZ_DecompressDict misaligned in
+    // PLAIN only, so the two lens now differ (plain carries a 2-byte align
+    // pad the tolerant compare zero-verifies) — the region len must be
+    // per-shape, not the old shared plain_len const.
+    len: pins::GAME_LOOP.debug_len,
     vsync_wait: pins::V_SYNC_WAIT.debug,
     drain: pins::SOUND_DRAIN_SFX_RING.debug,
 };
-const REGION_LEN: usize = pins::GAME_LOOP.plain_len;
 
 /// Compile the real `engine/system/game_loop.emp` with the given defines,
 /// pinned at `base`, with the synthetic cross-seam labels at the given VMAs.
@@ -299,12 +305,12 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         compile_emp(&defines, shape.base, shape.vsync_wait, shape.drain, 0x3000, true);
 
     let lo = shape.base as usize;
-    let expected = &refrom[lo..lo + REGION_LEN];
+    let expected = &refrom[lo..lo + shape.len];
     let section = linked.section("game_loop").expect("linked image must carry game_loop");
     assert_region_matches(
         &section.bytes,
         expected,
-        &format!("game_loop vs {rom_name}[{lo:#x}..{:#x}]", lo + REGION_LEN),
+        &format!("game_loop vs {rom_name}[{lo:#x}..{:#x}]", lo + shape.len),
     );
 
     // Outbound proof: boot.asm's `bra.w GameLoop` resolves to the region base.
@@ -478,6 +484,12 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("Ctrl_1_Press_Accum", pick(pins::CTRL_1_PRESS_ACCUM)),
         ("Ctrl_2_Press", pick(pins::CTRL_2_PRESS)),
         ("Ctrl_2_Press_Accum", pick(pins::CTRL_2_PRESS_ACCUM)),
+        // input-6button (2026-08-02): the ext latch in VInt_Level references the
+        // 6-button ext press cells.
+        ("Ctrl_1_Ext_Press", pick(pins::CTRL_1_EXT_PRESS)),
+        ("Ctrl_1_Ext_Press_Accum", pick(pins::CTRL_1_EXT_PRESS_ACCUM)),
+        ("Ctrl_2_Ext_Press", pick(pins::CTRL_2_EXT_PRESS)),
+        ("Ctrl_2_Ext_Press_Accum", pick(pins::CTRL_2_EXT_PRESS_ACCUM)),
         ("DMA_Budget_Default", pick(pins::DMA_BUDGET_DEFAULT)),
         ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
         // m1-budget-fix: VInt_Level now charges the plane drain + Critical DMA.
@@ -518,14 +530,14 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         .unwrap_or_else(|d| panic!("flip link failed: {d:?}"));
 
     let shape = if debug { "debug" } else { "plain" };
+    // Tolerant compares (the dma_queue-flip precedent): the plain game_loop
+    // window now ends in a 2-byte align pad (input-6button +0xB0 shift).
     let gl = linked.section("game_loop").expect("game_loop region");
     let gr = &refrom[gl_base as usize..gl_base as usize + gl_len];
-    assert_eq!(gl.bytes.len(), gr.len(), "game_loop ({shape} flip): length");
-    assert_eq!(gl.bytes, gr, "game_loop ({shape} flip): bytes must match the reference");
+    assert_region_matches(&gl.bytes, gr, &format!("game_loop ({shape} flip)"));
     let vb = linked.section("vblank").expect("vblank region");
     let vr = &refrom[vb_base as usize..vb_base as usize + vb_len];
-    assert_eq!(vb.bytes.len(), vr.len(), "vblank ({shape} flip): length");
-    assert_eq!(vb.bytes, vr, "vblank ({shape} flip): bytes must match the reference");
+    assert_region_matches(&vb.bytes, vr, &format!("vblank ({shape} flip)"));
 }
 
 #[test]
