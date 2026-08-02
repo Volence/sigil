@@ -159,11 +159,14 @@ fn as_constant_equs(shape: &Shape) -> Vec<Section> {
     pairs.push(("VRAM_TEST_OBJ", "$03E0"));
     // (test_player's _dplc_ptr/_art_base/_debug_flag overlay guards retired at
     // conv-d #48 — test_player.emp owns the TPlayerV overlay, no extern mirror.)
-    // Ctrl_1_Held/Press shifted −4 (PAL NTSC-only, ruling B 2026-08-02): the
-    // Timing_Step/Frame_Accumulator u16 pair at $FFFF8028 was deleted, pulling every
-    // RAM symbol at/after $FFFF802C down 4 bytes (matches pins::CTRL_1_HELD).
-    pairs.push(("Ctrl_1_Held", "$FFFF8028"));
-    pairs.push(("Ctrl_1_Press", "$FFFF8029"));
+    // Ctrl_1_Held/Press are PIN-SOURCED (t24 rule — never hand-shift a RAM VMA):
+    // they ride every RAM-layout parcel automatically. Shape-invariant engine RAM,
+    // so `.plain` serves both shapes. I2 (input/replay, 2026-08-02) slid them +4
+    // ($8028/$8029 → $802C/$802D) via the Logic_Tick u32 inserted after Frame_Counter.
+    let ctrl_1_held = format!("${:X}", pins::CTRL_1_HELD.plain);
+    let ctrl_1_press = format!("${:X}", pins::CTRL_1_PRESS.plain);
+    pairs.push(("Ctrl_1_Held", ctrl_1_held.as_str()));
+    pairs.push(("Ctrl_1_Press", ctrl_1_press.as_str()));
     let player_1 = format!("${:X}", shape.player_1);
     pairs.push(("Player_1", player_1.as_str()));
     sigil_harness::test_support::assemble_equ_pairs(&pairs)

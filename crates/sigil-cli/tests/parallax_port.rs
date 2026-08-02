@@ -176,8 +176,11 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
         ("Current_Act_Ptr", pins::CURRENT_ACT_PTR.plain, pins::CURRENT_ACT_PTR.debug),
         ("Vscroll_Factor", pins::VSCROLL_FACTOR.plain, pins::VSCROLL_FACTOR.debug),
         ("Hscroll_Buffer", pins::HSCROLL_BUFFER.plain, pins::HSCROLL_BUFFER.debug),
-        ("VDP_Shadow_Table", 0xFFFF_800A, 0xFFFF_800A),
-        ("VDP_Dirty_Mask", 0xFFFF_801E, 0xFFFF_801E),
+        // Pin-sourced (t24 rule — never hand-shift a RAM VMA): both slid +4 in I2
+        // (input/replay, 2026-08-02) via the Logic_Tick u32 after Frame_Counter
+        // ($800A/$801E → $800E/$8022). Shape-invariant engine RAM.
+        ("VDP_Shadow_Table", pins::VDP_SHADOW_TABLE.plain, pins::VDP_SHADOW_TABLE.debug),
+        ("VDP_Dirty_Mask", pins::VDP_DIRTY_MASK.plain, pins::VDP_DIRTY_MASK.debug),
         // ROM transfer target — sourced from pins (shifts with the engine bank;
         // t18 trampoline moved it +0x36). RAM symbols above are tail/pad-stable.
         ("Section_GetSecPtrXY", pins::SECTION_GET_SEC_PTR_XY.plain, pins::SECTION_GET_SEC_PTR_XY.debug),

@@ -40,7 +40,9 @@
 //!   the positions are load-bearing. (The drain target flips .emp-side when
 //!   sound_api ports later this tranche — the port order is deliberate: this
 //!   gate exercises the .emp->AS direction first.)
-//! - `Game_State` (`$FFFF8004`, ENGINE RAM — shape-invariant) — abs.w EA.
+//! - `Logic_Tick` (`$FFFF8004`, ENGINE RAM — shape-invariant) — the I2 addq.l
+//!   target (input/replay parcel); pushed `Game_State` +4.
+//! - `Game_State` (`$FFFF8008`, ENGINE RAM — shape-invariant) — abs.w EA.
 //! - `Debug_MusicToggle` — hotkeys combos only (module matrix; synthetic
 //!   position, there is no pinned hotkeys-on reference).
 //!
@@ -190,6 +192,7 @@ fn compile_emp(
         ("VSync_Wait", vsync_wait),
         ("Sound_DrainSfxRing", drain),
         ("Debug_MusicToggle", dbg_toggle),
+        ("Logic_Tick", pins::LOGIC_TICK.plain),  // I2: addq.l #1, Logic_Tick (shape-invariant RAM)
         ("Game_State", pins::GAME_STATE.plain),
     ] {
         let asm = format!(
@@ -475,6 +478,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     // proc; a stale carrier here would be the §11 Q4 collision.
     let mut table: Vec<(&str, u32)> = vec![
         ("Sound_DrainSfxRing", pick(pins::SOUND_DRAIN_SFX_RING)),
+        ("Logic_Tick", pick(pins::LOGIC_TICK)),  // I2: game_loop's addq target
         ("Game_State", pick(pins::GAME_STATE)),
         ("VBlank_Ready", pick(pins::V_BLANK_READY)),
         ("VBlank_Flag", pick(pins::V_BLANK_FLAG)),

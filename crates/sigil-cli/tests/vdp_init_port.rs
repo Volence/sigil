@@ -138,20 +138,25 @@ fn as_twin_equs() -> Vec<Section> {
 }
 
 /// The synthetic AS-side cross-seam unit supplying the two VDP RAM labels —
-/// `engine/ram.asm`, phased at their exact VMAs (`VDP_Shadow_Table` =
-/// `$FFFF800A`, then 19 shadow bytes + the odd-length pad byte =
-/// `VDP_Dirty_Mask` at `$FFFF801E`; engine RAM, shape-invariant — verified
-/// against both shapes' symbol tables).
+/// `engine/ram.emp`. `VDP_Shadow_Table`'s base is PIN-SOURCED (t24 rule — never
+/// hand-shift a RAM VMA; it rides every RAM-layout parcel automatically); the 19
+/// shadow bytes + odd-length pad byte then derive `VDP_Dirty_Mask` (base + 20).
+/// Engine RAM, shape-invariant, so `.plain` serves both shapes. I2 (input/replay,
+/// 2026-08-02) slid the pair +4 ($800A/$801E → $800E/$8022) via the Logic_Tick
+/// u32 inserted after Frame_Counter.
 fn as_vdp_ram_labels() -> Vec<Section> {
-    let asm = "cpu 68000\n\
-               phase $FFFF800A\n\
-               VDP_Shadow_Table:\n\
-               \tdc.b 0\n\
-               \tds.b 19\n\
-               VDP_Dirty_Mask:\n\
-               \tdc.l 0\n";
+    let asm = format!(
+        "cpu 68000\n\
+         phase ${:X}\n\
+         VDP_Shadow_Table:\n\
+         \tdc.b 0\n\
+         \tds.b 19\n\
+         VDP_Dirty_Mask:\n\
+         \tdc.l 0\n",
+        pins::VDP_SHADOW_TABLE.plain
+    );
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (vdp ram labels): {d:?}")).sections
+    assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (vdp ram labels): {d:?}")).sections
 }
 
 /// The synthetic AS-side cross-seam unit supplying `BootData_VDPRegs` at its
