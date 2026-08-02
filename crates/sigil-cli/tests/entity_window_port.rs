@@ -399,6 +399,9 @@ fn section_value_pairs() -> Vec<(&'static str, &'static str)> {
         ("READ", "%001100"), ("WRITE", "%000111"), ("DMA", "%100111"),
         // VDP_Shadow offset twins (engine.vdp shadow-offset block)
         ("VDP_Shadow_vdp_mode1", "$00"), ("VDP_Shadow_vdp_mode2", "$01"), ("VDP_Shadow_vdp_mode3", "$0B"), ("VDP_Shadow_vdp_hint_rate", "$0A"),
+        // Section_RedrawPlanes' poke-storm sound bracket: the DMA-window flag slot
+        // (SND_Z80_BASE + SND_CTRL_DMA_ACTIVE) + the Z80 bus-request register.
+        ("SND_DMA_ACTIVE_SLOT", "$A01F04"), ("Z80_BUS_REQUEST", "$A11100"),
         // Act_*/Sec_* now come from act_sec_field_equs() in the union (section
         // reads them through the prepended engine.structs drift wall).
     ]
@@ -452,6 +455,8 @@ fn lower_and_place(
             ("COLLECTED_WINDOW_SLOTS".to_string(), 9),
             ("MAX_RING_BUFFER".to_string(), 128),
             ("VRAM_RING_PLACEHOLDER".to_string(), 0x3E8),
+            // section.emp (flipped in) gates its RedrawPlanes sound bracket on this.
+            ("SOUND_DRIVER_ENABLED".to_string(), 1),
         ],
     };
     let (module, ldiags) = lower_module(&file, &opts);
@@ -489,6 +494,7 @@ fn two_module_flip(shape: &Shape, debug: bool, rom_name: &str) {
             parse_file(&aeon.join("engine/system/constants.emp")),
             parse_file(&aeon.join("engine/structs.emp")),
             parse_file(&aeon.join("engine/vdp.emp")),
+            parse_file(&aeon.join("engine/z80_bus.emp")),
         ],
         aeon.join("engine/level"),
         "section",

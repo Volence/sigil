@@ -358,7 +358,12 @@ fn lower_and_place(
         initial_cpu: Cpu::M68000,
         include_root: Some(include_root),
         embed_base: None,
-        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+        // section.emp (flipped in alongside plane_buffer) gates its RedrawPlanes
+        // sound bracket on SOUND_DRIVER_ENABLED; harmless for plane_buffer.emp.
+        defines: vec![
+            ("DEBUG".to_string(), i128::from(debug)),
+            ("SOUND_DRIVER_ENABLED".to_string(), 1),
+        ],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -403,6 +408,10 @@ fn section_value_pairs() -> Vec<(&'static str, &'static str)> {
         ("VDP_Shadow_vdp_mode2", "$01"),
         ("VDP_Shadow_vdp_mode3", "$0B"),
         ("VDP_Shadow_vdp_hint_rate", "$0A"),
+        // Section_RedrawPlanes' poke-storm sound bracket: the DMA-window flag slot
+        // (SND_Z80_BASE + SND_CTRL_DMA_ACTIVE) + the Z80 bus-request register.
+        ("SND_DMA_ACTIVE_SLOT", "$A01F04"),
+        ("Z80_BUS_REQUEST", "$A11100"),
     ]
 }
 
@@ -481,6 +490,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
             parse_file(&aeon.join("engine/structs.emp")),
             parse_file(&aeon.join("engine/system/constants.emp")),
             parse_file(&aeon.join("engine/vdp.emp")),
+            parse_file(&aeon.join("engine/z80_bus.emp")),
         ],
         aeon.join("engine/level"),
         "section",

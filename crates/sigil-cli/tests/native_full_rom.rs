@@ -61,7 +61,7 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     ("BusError", 0x5CA50, 0x5E542),      // ErrorHandler-class (error-handler region; −0x60/−0x68 wave-c ojz shrink)
     ("Ground_Move_Cap", 0x10724, 0x10730), // a player proc (object bank — anchored, stable)
     ("Section_Init", 0x560C, 0x63AC),    // a level proc (before parallax — stable)
-    ("BG_Init", 0x6182, 0x6F70),         // a level proc (after PARALLAX; +0x54/+0x60 wave-c parallax growth)
+    ("BG_Init", 0x61CE, 0x6FC0),         // a level proc (after PARALLAX + SECTION, so it rides their growth)
     ("AnimateSprite", 0x2F3C, 0x351A),   // an objects keystone
     ("TouchResponse", 0x30C6, 0x37C2),   // a collision keystone
     ("Z80_Sound_Start", 0x3DE, 0x3E2),   // Z80-adjacent (shape-varying)

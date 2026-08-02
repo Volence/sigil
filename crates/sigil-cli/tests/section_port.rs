@@ -102,6 +102,12 @@ fn section_value_equs() -> Vec<Section> {
         ("VDP_Shadow_vdp_mode2", "$01"),
         ("VDP_Shadow_vdp_mode3", "$0B"),
         ("VDP_Shadow_vdp_hint_rate", "$0A"),
+        // The 68k-side DMA-window flag slot (SND_Z80_BASE + SND_CTRL_DMA_ACTIVE =
+        // $A00000 + $1F04). Owned by engine.vblank as a global equ; supplied here
+        // as a value equ for Section_RedrawPlanes' poke-storm sound bracket.
+        ("SND_DMA_ACTIVE_SLOT", "$A01F04"),
+        // Z80 bus-request hardware register — the stop_z80/start_z80 splice target.
+        ("Z80_BUS_REQUEST", "$A11100"),
     ];
     pairs.extend(sigil_harness::test_support::engine_constant_equs());
     // The Act_*/Sec_* field equs + Act_len/Sec_len feed the prepended
@@ -197,6 +203,16 @@ fn compile_real_file(
         vdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "vdp.emp parse errors: {vdiags:?}"
     );
+    // section.emp `use`s engine.z80_bus.{stop_z80, start_z80} for the
+    // Section_RedrawPlanes poke-storm sound bracket — prepend the shared module.
+    let z80_bus_path = dir.parent().unwrap().join("z80_bus.emp");
+    let z80_bus_src = std::fs::read_to_string(&z80_bus_path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", z80_bus_path.display()));
+    let (z80_bus_file, zdiags) = parse_str(&z80_bus_src);
+    assert!(
+        zdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "z80_bus.emp parse errors: {zdiags:?}"
+    );
     let file = sigil_frontend_emp::ast::File {
         module: file.module.clone(),
         attrs: file.attrs.clone(),
@@ -205,6 +221,7 @@ fn compile_real_file(
             .into_iter()
             .chain(structs_file.items)
             .chain(vdp_file.items)
+            .chain(z80_bus_file.items)
             .chain(file.items)
             .collect(),
         docs: file.docs.clone(),
@@ -214,7 +231,9 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![],
+        // The sonic4 reference is sound-on, so the Section_RedrawPlanes poke-storm
+        // sound bracket (gated on SOUND_DRIVER_ENABLED) is present in the reference.
+        defines: vec![("SOUND_DRIVER_ENABLED".to_string(), i128::from(1))],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
