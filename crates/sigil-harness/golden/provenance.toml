@@ -1064,3 +1064,50 @@ full_crc = "76d06e43"
 full_size = 422066
 anchor_crc = "8ec9e0e5"
 anchor_end = 0x5f5f2
+
+[[entry]]
+name = "despawn-cascade"
+ab = "aeon dbc21fc evidence note (pre-fix 33-with-orphans vs post-fix 30-clean oracle A/B)"
+note = "row-1599 children-leak fix: EntityWindow_DespawnObjects cascades DeleteChildren; plain +content-only, debug +0x10 downstream"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "abf23780"
+full_size = 422417
+anchor_crc = "a340c656"
+anchor_end = 0x5f5f2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c0e05d8b"
+full_size = 303627
+anchor_crc = "6175de2f"
+anchor_end = 0x43480
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "69eae42b"
+full_size = 90649
+anchor_crc = "3db75e1f"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "e096a2e5"
+full_size = 93145
+anchor_crc = "972360fe"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "5e678ddd"
+full_size = 412232
+anchor_crc = "15b7a09d"
+anchor_end = 0x5db00
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "764d4e87"
+full_size = 422066
+anchor_crc = "99adb046"
+anchor_end = 0x5f5f2
