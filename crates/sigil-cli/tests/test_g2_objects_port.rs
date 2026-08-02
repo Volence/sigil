@@ -123,6 +123,16 @@ fn spawn_desc_file(aeon: &std::path::Path) -> sigil_frontend_emp::ast::File {
     file
 }
 
+/// test_helpers.emp with its `use` imports stripped (the ambient set already
+/// supplies sst/objdef/constants/game_consts) — keeps the shared EmitterV overlay
+/// and the test_obj_prolog builder the three objects now `use`.
+fn test_helpers_file(aeon: &std::path::Path) -> sigil_frontend_emp::ast::File {
+    use sigil_frontend_emp::ast::Item;
+    let mut file = parse_file(&aeon.join("games/sonic4/objects/test_helpers.emp"));
+    file.items.retain(|it| !matches!(it, Item::Use(_)));
+    file
+}
+
 fn with_ambient(
     deps: Vec<sigil_frontend_emp::ast::File>,
     main: sigil_frontend_emp::ast::File,
@@ -241,7 +251,7 @@ fn compile_real_files(shape: &Shape) -> Compiled {
     for (region, rel) in files {
         let main = parse_file(&aeon.join(rel));
         let file = with_ambient(
-            vec![types(), sst(), constants(), objdef(), spawn_desc_file(&aeon), game_consts()],
+            vec![types(), sst(), constants(), objdef(), spawn_desc_file(&aeon), game_consts(), test_helpers_file(&aeon)],
             main,
         );
         let (module, ldiags) = lower_module(&file, &opts);
