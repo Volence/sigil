@@ -129,6 +129,13 @@ pub struct ContractReport {
     /// running — the sigil-native absorption of s4lint E006/E007/E008/E011.
     /// Sorted (proc, span). Byte-neutral (corpus-only).
     pub bus_firings: Vec<BusFiring>,
+    /// The S2-D6 U4 `@allow("clobbers.unanalyzable", "<reason>")` annotations in
+    /// force: `(proc, reason)`, sorted by proc. Every proc that opted a
+    /// genuinely-unanalyzable computed-dispatch site OUT of the `unbounded`
+    /// firing appears here — so the escape-hatch surface stays audited (never
+    /// silent). Expected census: single digits (raw computed jumps outside the
+    /// typed-dispatch idiom); today's corpus is EMPTY.
+    pub unanalyzable_allows: Vec<(String, String)>,
 }
 
 /// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
@@ -508,6 +515,15 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     }
     bus_firings.sort_by(|a, b| (&a.proc, a.span.start).cmp(&(&b.proc, b.span.start)));
 
+    // S2-D6 U4 — every `@allow("clobbers.unanalyzable", "<reason>")` in force,
+    // listed so the escape-hatch surface stays audited (never silent).
+    let mut unanalyzable_allows: Vec<(String, String)> = Vec::new();
+    for file in files {
+        collect_unanalyzable_allows(file, &file.items, &mut unanalyzable_allows);
+    }
+    unanalyzable_allows.sort();
+    unanalyzable_allows.dedup();
+
     ContractReport {
         closure,
         firings,
@@ -528,6 +544,25 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         slot_firings,
         branch_const_firings,
         bus_firings,
+        unanalyzable_allows,
+    }
+}
+
+/// Recurse the item list (into `section {}` blocks) collecting every proc for
+/// which an `@allow("clobbers.unanalyzable", "<reason>")` is IN FORCE — whether
+/// declared on the proc itself or on its module — as `(name, reason)` (U4).
+/// Mirrors the corpus walk's section recursion.
+fn collect_unanalyzable_allows(file: &ast::File, items: &[Item], out: &mut Vec<(String, String)>) {
+    for item in items {
+        match item {
+            Item::Proc(p) => {
+                if let Some(reason) = unanalyzable_reason_in_force(file, p) {
+                    out.push((p.name.clone(), reason));
+                }
+            }
+            Item::Section(s) => collect_unanalyzable_allows(file, &s.items, out),
+            _ => {}
+        }
     }
 }
 
@@ -876,8 +911,38 @@ fn proc_node(
         out: expand_reglist_regs(p.out.as_deref().unwrap_or(&[])),
         has_clobber_contract: p.clobbers.is_some(),
         verified_preserves,
+        unanalyzable_allowed: unanalyzable_reason_in_force(file, p).is_some(),
     };
     (node, buf, dropped)
+}
+
+/// The S2-D6 U4 escape hatch: the reason string of an
+/// `@allow("clobbers.unanalyzable", "<reason>")` in force for proc `p`, or `None`
+/// if none is. Mirrors the module-scope `@allow` machinery ("one rule") but
+/// honors the annotation in EITHER scope: a MODULE-level `@allow` (`file.attrs`,
+/// where the parser routes a leading attr, exactly like `layout.odd-field`) OR a
+/// PROC-level `@allow` (`p.attrs`, where a non-leading attr lands). A reason
+/// string is mandatory and parse-enforced (`[clobbers.unanalyzable-reason-required]`),
+/// so a malformed form still counts as "in force" for suppression, listed with
+/// an empty reason. Suppresses ONLY the ⊤/unbounded firing.
+fn unanalyzable_reason_in_force(file: &ast::File, p: &ProcDecl) -> Option<String> {
+    attrs_unanalyzable_reason(&p.attrs).or_else(|| attrs_unanalyzable_reason(&file.attrs))
+}
+
+/// The reason from an `@allow("clobbers.unanalyzable", "<reason>")` in an attr
+/// list (module- or item-level share the [`Attr`] shape), or `None`.
+fn attrs_unanalyzable_reason(attrs: &[ast::Attr]) -> Option<String> {
+    for a in attrs.iter().filter(|a| a.name == "allow") {
+        let first_is_unanalyzable =
+            matches!(a.args.first(), Some(ast::Expr::Str(s, _)) if s == "clobbers.unanalyzable");
+        if first_is_unanalyzable {
+            return match a.args.get(1) {
+                Some(ast::Expr::Str(reason, _)) => Some(reason.clone()),
+                _ => Some(String::new()),
+            };
+        }
+    }
+    None
 }
 
 /// Build a leaf [`ProcNode`] from an `extern proc` decl (§3). The leaf's
@@ -943,6 +1008,19 @@ fn reg_name(name: &str) -> Option<String> {
 /// `jbra` to a local label (`.loop`) is intra-proc control flow, never a callee
 /// — the `$` marks it so it is dropped from both the edge set and the
 /// hole/unresolved report (a real proc/extern name never contains `$`).
+///
+/// **S2-D6 U2 — the "contract invoke" edge (scope note).** `invoke Iface.hook`
+/// lowers to an absolute-long `jsr (sym).l` (`CodeOperand::AbsSym`), so charging
+/// its target's clobbers means recognizing that shape here. It is NOT recognized:
+/// (a) the corpus contract walk analyzes with the EMPTY interface env, under
+/// which an `invoke` emits nothing at all, so there is no edge to charge in the
+/// gate today; and (b) the corpus's only abs-long calls are the vendored debugger
+/// entries (`jsr (MDDBG__ErrorHandler).l`), which carry no `extern proc` contract
+/// — treating them as direct callees turns them into unresolved holes. Wiring the
+/// invoke edge (env-threaded closure + resolvable-vs-⊤ abs-long handling) is L1
+/// game-contract-seam work, deliberately deferred. The lowering `invoke` →
+/// `jsr (sym).l` is proven in the game_contract tests; the direct-call
+/// propagation it composes with is proven by `direct_jsr_and_bsr_call_edges`.
 fn call_target_sym(ops: &[CodeOperand]) -> Option<String> {
     match ops {
         [CodeOperand::Sym(name)] if !name.contains('$') => Some(name.clone()),

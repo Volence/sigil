@@ -79,6 +79,15 @@ pub struct ProcNode {
     /// contributes NOTHING here (it stays a D2.32 error); `sr` is out of the
     /// register-file closure's scope.
     pub verified_preserves: BTreeSet<String>,
+    /// The S2-D6 U4 escape hatch: the proc declares
+    /// `@allow("clobbers.unanalyzable", "<reason>")`. A genuinely-unanalyzable
+    /// site — a raw computed dispatch outside the typed-dispatch idiom whose ⊤
+    /// effect cannot be narrowed — opts OUT of the `unbounded` firing (the reason
+    /// is mandatory; the analysis lists every annotation so the surface stays
+    /// audited). Suppresses ONLY the ⊤/unbounded firing, never a concrete
+    /// register under-declaration (a named register in the effective set still
+    /// fires).
+    pub unanalyzable_allowed: bool,
 }
 
 /// The result of the closure fixpoint.
@@ -322,8 +331,19 @@ pub fn check_firings(procs: &BTreeMap<String, ProcNode>, closure: &Closure) -> V
             node.declared_clobbers.iter().chain(node.out.iter()).collect();
         if effective.top {
             // ⊤ against a bounded contract: one unbounded firing (no single
-            // register names the violation).
-            firings.push(Firing { proc: name.clone(), reg: None, transitive: true, unbounded: true });
+            // register names the violation) — UNLESS the proc opted out via the
+            // U4 escape hatch `@allow("clobbers.unanalyzable", "<reason>")`. The
+            // hatch suppresses ONLY this ⊤/unbounded case (a genuinely
+            // unanalyzable computed dispatch); a concrete register leak is never
+            // ⊤, so it is never silenced here.
+            if !node.unanalyzable_allowed {
+                firings.push(Firing {
+                    proc: name.clone(),
+                    reg: None,
+                    transitive: true,
+                    unbounded: true,
+                });
+            }
             continue;
         }
         for r in &effective.regs {

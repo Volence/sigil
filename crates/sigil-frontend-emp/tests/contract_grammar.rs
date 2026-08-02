@@ -305,6 +305,61 @@ fn scaffolding_requires_reason() {
     );
 }
 
+/// S2-D6 U4 — `@allow("clobbers.unanalyzable", "<reason>")` parses with both
+/// args. A LEADING attr routes to MODULE scope (`file.attrs`, exactly like
+/// `layout.odd-field` — the parser's greedy module-attr loop), which the closure
+/// honors for every proc in the module.
+#[test]
+fn unanalyzable_allow_parses_at_module_scope() {
+    let f = ok("module engine.dispatch\n\
+                @allow(\"clobbers.unanalyzable\", \"raw trampoline, open target set\")\n\
+                pub proc Trampoline () clobbers(d0) { jsr (a1) }\n");
+    assert_eq!(f.attrs.len(), 1, "leading @allow attaches at module scope: {:?}", f.attrs);
+    assert_eq!(f.attrs[0].name, "allow");
+    assert_eq!(f.attrs[0].args.len(), 2);
+}
+
+/// S2-D6 U4 — a NON-leading `@allow` (after another item) attaches at PROC scope
+/// (`p.attrs`); the closure honors the annotation in either scope.
+#[test]
+fn unanalyzable_allow_parses_at_proc_scope() {
+    let f = ok("module engine.dispatch\n\
+                pub proc First () clobbers() { rts }\n\
+                @allow(\"clobbers.unanalyzable\", \"open target set\")\n\
+                pub proc Trampoline () clobbers(d0) { jsr (a1) }\n");
+    let tramp = f
+        .items
+        .iter()
+        .find_map(|i| match i {
+            Item::Proc(p) if p.name == "Trampoline" => Some(p),
+            _ => None,
+        })
+        .expect("Trampoline proc");
+    assert_eq!(tramp.attrs.len(), 1, "non-leading @allow attaches at proc scope: {:?}", tramp.attrs);
+    assert_eq!(tramp.attrs[0].name, "allow");
+}
+
+/// S2-D6 U4 — `@allow("clobbers.unanalyzable")` WITHOUT a reason is
+/// `[clobbers.unanalyzable-reason-required]` (the reason is mandatory, mirroring
+/// `@scaffolding`). An empty reason string is equally rejected.
+#[test]
+fn unanalyzable_allow_requires_reason() {
+    let (_f, diags) = parse_str(
+        "module engine.dispatch\n@allow(\"clobbers.unanalyzable\")\npub proc P () clobbers(d0) { jsr (a1) }\n",
+    );
+    assert!(
+        diags.iter().any(|d| d.message.contains("[clobbers.unanalyzable-reason-required]")),
+        "missing reason must be rejected: {diags:?}"
+    );
+    let (_f2, diags2) = parse_str(
+        "module engine.dispatch\n@allow(\"clobbers.unanalyzable\", \"\")\npub proc P () clobbers(d0) { jsr (a1) }\n",
+    );
+    assert!(
+        diags2.iter().any(|d| d.message.contains("[clobbers.unanalyzable-reason-required]")),
+        "empty reason must be rejected: {diags2:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Byte-neutrality: extern proc / contract types / @scaffolding emit NOTHING and
 // never change a real proc's bytes (the G1 invariant — contract text is inert).

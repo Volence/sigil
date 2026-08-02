@@ -257,17 +257,41 @@ impl Parser {
         let mut attrs = Vec::new();
         while self.at(&Tok::At) {
             let attr = self.parse_one_attr();
-            if attr.name == "scaffolding" && attr.args.len() != 1 {
-                self.diag_at(
-                    attr.span,
-                    "[scaffolding.reason-required] `@scaffolding` needs exactly one reason \
-                     string: `@scaffolding(\"why this zero-caller decl is kept\")`",
-                );
-            }
+            self.validate_attr_form(&attr);
             attrs.push(attr);
             self.skip_newlines();
         }
         attrs
+    }
+
+    /// Shared attribute-form validation, run wherever an attr is parsed (item-level
+    /// via [`item_attrs`] and module-level in [`file`]). `@scaffolding` needs its
+    /// one reason string; `@allow("clobbers.unanalyzable", …)` needs a non-empty
+    /// reason string (S2-D6 U4 — an unanalyzable computed-dispatch site opts out of
+    /// the unbounded clobber firing only WITH a documented justification, never
+    /// silently; mirrors `@scaffolding`'s mandatory reason).
+    fn validate_attr_form(&mut self, attr: &Attr) {
+        if attr.name == "scaffolding" && attr.args.len() != 1 {
+            self.diag_at(
+                attr.span,
+                "[scaffolding.reason-required] `@scaffolding` needs exactly one reason \
+                 string: `@scaffolding(\"why this zero-caller decl is kept\")`",
+            );
+        }
+        let is_unanalyzable_allow = attr.name == "allow"
+            && matches!(attr.args.first(), Some(Expr::Str(s, _)) if s == "clobbers.unanalyzable");
+        if is_unanalyzable_allow {
+            let has_reason = matches!(attr.args.get(1), Some(Expr::Str(s, _)) if !s.is_empty());
+            if attr.args.len() != 2 || !has_reason {
+                self.diag_at(
+                    attr.span,
+                    "[clobbers.unanalyzable-reason-required] \
+                     `@allow(\"clobbers.unanalyzable\", ...)` needs a non-empty reason \
+                     string: `@allow(\"clobbers.unanalyzable\", \"why this computed \
+                     dispatch cannot be bounded\")`",
+                );
+            }
+        }
     }
 
     // ---- file ----
@@ -300,7 +324,9 @@ impl Parser {
             if !matches!(self.peek2(), Tok::Ident(s) if s == "as_compat" || s == "allow") {
                 break;
             }
-            attrs.push(self.parse_one_attr());
+            let attr = self.parse_one_attr();
+            self.validate_attr_form(&attr);
+            attrs.push(attr);
         }
         let mut items = Vec::new();
         loop {

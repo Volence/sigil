@@ -616,6 +616,7 @@ pub fn z80_clobbers_report_doctored(
                             out: expand(p.out.as_deref().unwrap_or(&[])),
                             has_clobber_contract: p.clobbers.is_some() || doctored.is_some(),
                             verified_preserves,
+                            unanalyzable_allowed: false,
                         },
                     );
                 }
