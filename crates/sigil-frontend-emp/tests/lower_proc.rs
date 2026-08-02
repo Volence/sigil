@@ -262,6 +262,50 @@ fn memory_destination_does_not_warn() {
 }
 
 #[test]
+fn movep_load_undeclared_warns() {
+    // S2-D6 U1: `movep.w 4(a1), d0` (LOAD) writes d0 — the ISA model now
+    // classifies movep as a write-form (the old string list missed it). Under
+    // `clobbers(a1)`, d0 is undeclared → `[proc.clobber-undeclared]` naming d0.
+    let src = "module m\nproc p() clobbers(a1) {\n    movep.w 4(a1), d0\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let w = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.clobber-undeclared]"))
+        .expect("expected a clobber-undeclared diagnostic for the movep load");
+    assert_eq!(w.level, Level::Warning);
+    assert!(w.message.contains("d0"), "names the movep load destination: {}", w.message);
+}
+
+#[test]
+fn movep_store_does_not_warn() {
+    // Companion: `movep.l d1, 4(a1)` (STORE) writes MEMORY, not a register — the
+    // last-operand-register test correctly finds nothing (d1 is the source). This
+    // is the ONLY movep direction in the aeon corpus, which is why the U1 census
+    // delta is empty. Under `clobbers()` (touches nothing), no register fires.
+    let src = "module m\nproc p() clobbers() {\n    movep.l d1, 4(a1)\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.clobber-undeclared]"),
+        "a movep STORE writes memory, not a register: {diags:?}"
+    );
+}
+
+#[test]
+fn addx_undeclared_warns() {
+    // S2-D6 U1: `addx.l d1, d0` writes d0 (Dy,Dx form). Under `clobbers(d1)`, d0
+    // is undeclared → `[proc.clobber-undeclared]` naming d0. addx was in the old
+    // string list too; this pins the ISA model preserves that classification.
+    let src = "module m\nproc p() clobbers(d1) {\n    addx.l d1, d0\n    rts\n}\n";
+    let (_module, diags) = lower(src);
+    let w = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.clobber-undeclared]"))
+        .expect("expected a clobber-undeclared diagnostic for the addx write");
+    assert_eq!(w.level, Level::Warning);
+    assert!(w.message.contains("d0"), "names the addx destination: {}", w.message);
+}
+
+#[test]
 fn dbcc_counter_undeclared_warns() {
     // S2-D6 effect (3): `dbf d7, .loop` DECREMENTS d7 (its first operand). Under
     // `clobbers(d0)`, d7 is undeclared → `[proc.clobber-undeclared]` naming d7.
