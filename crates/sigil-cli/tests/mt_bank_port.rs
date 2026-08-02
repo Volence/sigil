@@ -3,11 +3,12 @@
 //!
 //! The BINCLUDE at $58607 in `games/sonic4/main.asm` (the MT body, after the phased
 //! soundBankHead) is now a native `.emp` `embed()` section (`games.sonic4.mt_bank_blob`)
-//! — the P2 path: it embeds the seam-2-emitted mt_bank{,_debug}.bin (untouched
-//! emit-tool architecture) at its fixed LMA $58607 (non-phased; the soundBankHead
-//! above it is $607 both shapes). Head label Song_MovingTrucks; SHAPE-DEPENDENT size
-//! (debug adds DrumTest + HCZ2): 0x34E1 plain / 0x4F33 debug. SongTable/SongPatchTable
-//! stay AS-provided by the emitted mt_syms.asm (mid-blob offsets an embed can't label).
+//! — the P2 path: it embeds the seam-2-emitted three-way split (mt_bank_body +
+//! mt_songtable + mt_songpatchtable, per shape; untouched emit-tool architecture) at
+//! its fixed LMA $58607 (non-phased; the soundBankHead above it is $607 both shapes).
+//! Head label Song_MovingTrucks; SHAPE-DEPENDENT size (debug adds DrumTest + HCZ2):
+//! 0x34E1 plain / 0x4F33 debug. SongTable/SongPatchTable are the last two contiguous
+//! members — native section labels the whole-ROM link resolves for sound_api.emp.
 //!
 //! EMIT-FIRST: the embedded `.bin` are gitignored build artifacts, so the gate runs
 //! `ensure_generated` FIRST, then compares.
@@ -101,4 +102,40 @@ fn mt_bank_matches_reference() {
 #[test]
 fn mt_bank_debug_matches_reference() {
     gate(true, "s4.debug.bin");
+}
+
+/// The split IDENTITY bar: the three emitted artifacts (body + SongTable +
+/// SongPatchTable) concatenated are byte-identical to the un-split lowering of
+/// `mt_bank.emp`, both shapes. Ties the on-disk split back to its source of truth
+/// (`emit_mt_bank`), so a split-boundary bug (wrong offset) fails here loudly.
+fn split_reassembles(debug: bool) {
+    let _guard = LOCK.lock().unwrap();
+    let aeon = aeon_root();
+    native::ensure_generated(&aeon);
+    let gen = aeon.join("engine/sound/generated");
+    let mt = sigil_harness::seam2::emit_mt_bank(&aeon, debug)
+        .unwrap_or_else(|e| panic!("emit_mt_bank({debug}): {e}"));
+    let (body, st, spt) = if debug {
+        ("mt_bank_body_debug.bin", "mt_songtable_debug.bin", "mt_songpatchtable_debug.bin")
+    } else {
+        ("mt_bank_body.bin", "mt_songtable.bin", "mt_songpatchtable.bin")
+    };
+    let mut reassembled = std::fs::read(gen.join(body)).expect("read body");
+    reassembled.extend(std::fs::read(gen.join(st)).expect("read songtable"));
+    reassembled.extend(std::fs::read(gen.join(spt)).expect("read songpatchtable"));
+    assert_eq!(
+        reassembled, mt.bytes,
+        "body+SongTable+SongPatchTable ({}) must reassemble to the un-split lowering",
+        if debug { "debug" } else { "plain" }
+    );
+}
+
+#[test]
+fn split_artifacts_reassemble_to_unsplit_blob_plain() {
+    split_reassembles(false);
+}
+
+#[test]
+fn split_artifacts_reassemble_to_unsplit_blob_debug() {
+    split_reassembles(true);
 }

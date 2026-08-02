@@ -41,6 +41,19 @@ packet reviews the list; the campaign-end sweep closes whatever survives.
 > region pins SURVIVE (the pins ruling — repin-generated test snapshots), as do the frozen tables
 > (now pure measurement caches). **The K arc (K0–K5) is closed.**
 
+> **✅ A2 (2026-08-02) — THE mt_syms KILL (three-way split). The last non-native sound residue is gone.**
+> The seam-2 MT emit was split from `mt_bank{,_debug}.bin` + `mt_syms{,_debug}.asm` into THREE
+> per-shape artifacts — `mt_bank_body` + `mt_songtable` + `mt_songpatchtable` — so
+> `games.sonic4.mt_bank_blob` embeds them as three contiguous labeled members and `SongTable` /
+> `SongPatchTable` are NATIVE section labels the whole-ROM link resolves. `mt_syms{,_debug}.asm` +
+> the `SIGIL_EMP_MT`-gated include block in `games/sonic4/game_root.asm` are DELETED (sonic4's stub
+> is now just the vendored debugger include). `sound_api.emp`'s two externs are unchanged. The
+> **K "honest 100%" AS survivor set drops 4 → 3** (2 game contracts + 1 vendored debugger; the
+> emitted-syms artifact is gone). Anchors IDENTICAL ×6; the deb2 appendix shifted (equ→section-label
+> form) → sanctioned appendix-only re-freeze, chain #22. `SIGIL_EMP_MT` STILL LIVES: it gates the
+> AS org-skip for the `mt_bank_blob` region (`repin.toml`) + the sound-on placement defines
+> (`native.rs`) — that is placement, not the dead include, so it stays.
+
 | # | Mirror | Where | Guards | Kill condition |
 |---|--------|-------|--------|----------------|
 | 1 | **✅ CLOSED (Stage-3 P5, 2026-07-30): the constants ownership flip.** `engine.constants` is the SOLE author of the 114 emp-owned constants; `engine/constants.asm` deleted their `=` lines; the build harvests `constants.emp`'s `pub const` values (`harvest_engine_constants` → `eval_all_pub_consts`) and injects them as GUARDED AS defines (`AsOptions.guarded_defines`) so residual AS reads them at comptime + link-exports them (`attach_guarded_equ_exports`) for bare-link-symbol `.emp` consumers. The 114 drift `ensure`s deleted; `VDP_Shadow_len`'s KEPT (struct-generated — the bridge that retires with the structs flip). Byte-neutral. Closes rows 1/2/12/14/17/19/20. — `engine.constants` twin — `HW_PORT_1_DATA`, `HW_PORT_2_DATA`, `BUTTON_UP/DOWN/LEFT/RIGHT`, `CTYPE_AIR`, `VDP_Shadow_len` | `engine/system/constants.emp` (was: mirroring `engine/constants.asm`) | ~~8 ensures~~ (retired; VDP_Shadow_len's kept) | ~~`constants.asm` ports → ownership flip~~ DONE. |

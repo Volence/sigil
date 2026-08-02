@@ -20,7 +20,7 @@
 //!   keeps the four names from colliding).
 //! - **The R3 imm32 deferral flipping direction** — `movea.l #SongTable`/
 //!   `#SongPatchTable` were the deferral's original motivating sites (their
-//!   symbols are .emp-side under `SIGIL_EMP_MT` in the mixed build); here the
+//!   symbols are native labels in `games.sonic4.mt_bank_blob`); here the
 //!   REFERENCING side goes .emp too, so the mixed gate exercises
 //!   .emp-defines/.emp-consumes through the shared link. (This isolated test
 //!   supplies them as synthetic AS labels — the mixed gates prove the
