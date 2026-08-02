@@ -301,16 +301,18 @@ M = a spec-able parcel; L = its own spec + multiple parcels / Spec-5-era).
 - **Retires.** The `.lst`-parse dependency (pins.rs/repin.toml survive as
   snapshots). **Scale.** M. **Deps.** The pins ruling (they stay as snapshots).
 
-### T6 · vestigial repin `gate_blocks()` cleanup
+### T6 · vestigial repin `gate_blocks()` cleanup — ✅ ALREADY CLOSED (A1 rider)
 - **What.** Drop `bin/repin.rs`'s `gate_blocks()` rendering + its two print sites +
   two unit tests.
 - **Demanded by.** K4 inc-6B (ledger 1971). Those `org`-snippet paste blocks
   existed to be pasted into `SIGIL_EMP_*` `else`-arms in engine.inc / main.asm —
   all deleted at K4, so the blocks have no destination.
-- **Workaround + cost.** The message was updated to say so, not removed. Cost:
-  dead tooling output.
-- **Retires.** The dead render path. **Scale.** S. **Deps.** "Once someone
-  confirms no other consumer wants the rendered orgs."
+- **✅ CLOSED (A1, 2026-08-02 — the rider confirmation).** The A1 porter grepped
+  the whole workspace (`grep -rn 'gate_blocks' . --include='*.rs'` → zero matches):
+  `gate_blocks()`, its print sites, and its unit tests are ALREADY GONE from
+  `bin/repin.rs` / `repin.rs` (removed by a prior cleanup, not this parcel). The
+  rider had nothing to drop — confirmed no other consumer reads the rendered orgs.
+  Ledger 1971's "Kill:" clause is consummated.
 
 ### T7 · SIGIL_EMP_* pure-identifier gate cull
 - **What.** A sweep to distinguish gates that still gate something (the sound-on
@@ -327,7 +329,7 @@ M = a spec-able parcel; L = its own spec + multiple parcels / Spec-5-era).
 
 ## SECTION 3 — ARCHITECTURE items
 
-### A1 · P1 — seam-2 registry unification
+### A1 · P1 — seam-2 registry unification — ✅ CLOSED (A1, 2026-08-02)
 - **What.** Unify the seam-2 registry (the emit-tool architecture's ROM-data
   placement registry). LEDGERED as a post-K consolidation.
 - **Demanded by.** K-capstone spec §6. The K4 sound-bank pass ran as **P2** (native
@@ -335,11 +337,18 @@ M = a spec-able parcel; L = its own spec + multiple parcels / Spec-5-era).
   architecture left untouched by design — `build.sh` REQUIRES `SIGIL_EMIT`). "P1
   (seam-2 registry unification) is LEDGERED … its demand moment is when the
   emit-tool architecture itself needs changing."
-- **Workaround + cost.** P2 leaves the emit architecture as-is; no cost until the
-  emit pipeline needs to change.
-- **Retires.** Consolidates the seam-2 registry (the DAC/MT/SFX/head native
-  placement + the emit registry). **Scale.** L. **Deps.** Waits for a demand moment
-  (emit-architecture change).
+- **✅ CLOSED (Parcel A1, arc spec §2).** The demand moment arrived: A2 changed the
+  emit tool (the mt_syms split), and A1 rode the same arc. `seam2.rs` no longer
+  hard-codes the ~10 LMA consts (registry 2) — `sound_layout()` DERIVES every
+  banked LMA from `games/sonic4/map.toml`'s two declared anchors (`dac_banks` /
+  `sound_bank`) + the emit's own measured artifact lengths, validated against the
+  map's declared `order`. The consts are DELETED (consumers now read
+  `SoundLayout`); `seam1`'s `DacSampleTable` window VMA flows from the same
+  derivation. `pins.rs` / `tests/repin_pins.rs` stay LITERAL as the independent
+  drift detectors (the emit no longer self-certifies). A doctored map anchor moves
+  the derivation; a reordered `order` fails loud. Provenance-only: byte-identical
+  ×6, no re-freeze (chain 22), `repin --check` clean.
+- **Retires.** The dual placement registry (map + seam2 hardcodes). **Scale.** L.
 
 ### A2 · mt_syms emit split (the one non-full-native sound residue)
 - **What.** Emit `SongTable` / `SongPatchTable` as separate tiny artifacts (or a
