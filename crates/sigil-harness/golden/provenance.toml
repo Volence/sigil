@@ -1252,3 +1252,50 @@ full_crc = "27959168"
 full_size = 422205
 anchor_crc = "338f9772"
 anchor_end = 0x5f5f2
+
+[[entry]]
+name = "replay-harness"
+ab = "packer --selftest PASS; strict green ex-refreeze; live record/replay proof = the I4 overseer session (next)"
+note = "parcel I3: replay module + packer; I4 fixture session follows"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "23c91cfc"
+full_size = 423047
+anchor_crc = "7249487e"
+anchor_end = 0x5f5f2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c5c4ff05"
+full_size = 304113
+anchor_crc = "632a1756"
+anchor_end = 0x43480
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "ed9a71bb"
+full_size = 91128
+anchor_crc = "dc294f05"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "4bab2df2"
+full_size = 93765
+anchor_crc = "b9ab4e25"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "fc802197"
+full_size = 412721
+anchor_crc = "1757775b"
+anchor_end = 0x5db00
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "5a4a83a8"
+full_size = 422698
+anchor_crc = "2fb46344"
+anchor_end = 0x5f5f2
