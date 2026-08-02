@@ -79,6 +79,11 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         ("Ctrl_2_Press_Accum", pick(pins::CTRL_2_PRESS_ACCUM)),
         ("DMA_Budget_Default", pick(pins::DMA_BUDGET_DEFAULT)),
         ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
+        // m1-budget-fix: VInt_Level charges the plane drain + Critical DMA against
+        // the window budget, so it now references these RAM cells directly.
+        ("Plane_Buffer_Ptr", pick(pins::PLANE_BUFFER_PTR)),
+        ("DMA_Critical", pick(pins::DMA_CRITICAL)),
+        ("DMA_Critical_Slot", pick(pins::DMA_CRITICAL_SLOT)),
         ("Flush_VDP_Shadow", pick(pins::FLUSH_VDP_SHADOW)),
         ("Enqueue_Dirty_Buffers", pick(pins::ENQUEUE_DIRTY_BUFFERS)),
         ("VInt_DrawLevel", pick(pins::V_INT_DRAW_LEVEL)),
@@ -140,12 +145,16 @@ fn lower_vblank(
     // vblank.emp `use engine.sound_constants.*` for the DMA-window flag; prepend
     // the authority's items so the SND_* consts fold in this standalone lower.
     let snd_file = parse_file(&aeon.join("engine/sound/sound_constants.emp"));
+    // m1-budget-fix: VInt_Level's Critical-charge walk uses sizeof(DMAEntry) +
+    // DMAEntry.SizeH, so the struct decl must be in scope for this standalone lower.
+    let structs_file = parse_file(&aeon.join("engine/structs.emp"));
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
         items: snd_file
             .items
             .into_iter()
+            .chain(structs_file.items.into_iter().filter(|it| !matches!(it, sigil_frontend_emp::ast::Item::Use(_))))
             .chain(z80_file.items)
             .chain(irq_file.items)
             .chain(main.items)

@@ -109,6 +109,19 @@ fn spawn_desc_items(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::Item
         .collect()
 }
 
+/// test_helpers.emp with its `use` imports stripped (the ambient set already
+/// supplies sst/objdef/constants/game_consts) — provides the `test_obj_prolog`
+/// builder that TestParent now `use`s (the R2-panel frame fold). The module
+/// emits no bytes of its own, so this adds nothing to the gated region.
+fn test_helpers_items(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    use sigil_frontend_emp::ast::Item;
+    let file = parse_file(&aeon.join("games/sonic4/objects/test_helpers.emp"));
+    file.items
+        .into_iter()
+        .filter(|it| !matches!(it, Item::Use(_)))
+        .collect()
+}
+
 fn with_ambient(
     deps: Vec<Vec<sigil_frontend_emp::ast::Item>>,
     main: sigil_frontend_emp::ast::File,
@@ -181,6 +194,7 @@ fn compile_real_file(shape: &Shape) -> Compiled {
     let constants = || parse_file(&aeon.join("engine/system/constants.emp")).items;
     let objdef = || parse_file(&aeon.join("engine/objects/objdef.emp")).items;
     let spawn_desc = || spawn_desc_items(&aeon);
+    let test_helpers = || test_helpers_items(&aeon);
     // VRAM_TEST_OBJ's authority (Parcel F: config/constants.asm → `.emp`).
     let game_consts = || parse_file(&aeon.join("games/sonic4/config/constants.emp")).items;
 
@@ -193,7 +207,7 @@ fn compile_real_file(shape: &Shape) -> Compiled {
 
     let main = parse_file(&aeon.join("games/sonic4/objects/test_parent.emp"));
     let file = with_ambient(
-        vec![types(), sst(), constants(), objdef(), spawn_desc(), game_consts()],
+        vec![types(), sst(), constants(), objdef(), spawn_desc(), test_helpers(), game_consts()],
         main,
     );
     let (module, ldiags) = lower_module(&file, &opts);

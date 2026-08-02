@@ -970,3 +970,50 @@ full_crc = "365c64e8"
 full_size = 421978
 anchor_crc = "7eef9972"
 anchor_end = 0x5f5f2
+
+[[entry]]
+name = "m1-budget-fix"
+ab = "M-1 window-aware VBlank DMA budget + overshoot clamp; calm A/B ALL-EQUAL (state_hash 0xA83E0CCD1E2BE2C9) + overload OLD budget floor -992 / NEW +784 (scratchpad/evidence)"
+note = "M-1: window-aware budget seed + Drain_Budgeted_Queue overshoot clamp + TestParent fold + generator comment present-tensing"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "91ab1b06"
+full_size = 422393
+anchor_crc = "0736b442"
+anchor_end = 0x5f5f2
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "8bf0a773"
+full_size = 303627
+anchor_crc = "9b551077"
+anchor_end = 0x43480
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "c6954bd4"
+full_size = 90649
+anchor_crc = "a6741944"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "9c1e1b64"
+full_size = 93145
+anchor_crc = "72edef39"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "1de3ce79"
+full_size = 412206
+anchor_crc = "5b92952f"
+anchor_end = 0x5db00
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "d9171761"
+full_size = 422042
+anchor_crc = "8ec9e0e5"
+anchor_end = 0x5f5f2

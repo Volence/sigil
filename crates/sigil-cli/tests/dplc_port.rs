@@ -490,8 +490,11 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     assert_eq!(dsec, dr, "dplc ({shape} flip): bytes must match the reference");
     let qr = &refrom[dq_base as usize..dq_base as usize + dq_len];
     let qsec = linked.section("dma_queue").expect("dma_queue region").bytes.clone();
-    assert_eq!(qsec.len(), qr.len(), "dma_queue ({shape} flip): length");
-    assert_eq!(qsec, qr, "dma_queue ({shape} flip): bytes must match the reference");
+    // m1-budget-fix grew Drain_Budgeted_Queue: dma_queue's content ends 2 bytes
+    // before the 4-aligned next module (Init_SpriteTable), so the pinned region
+    // window carries a short trailing alignment fill. Compare through the
+    // fill-tolerant helper (the dma_queue CONTENT still matches byte-for-byte).
+    assert_region_matches(&qsec, qr, &format!("dma_queue ({shape} flip)"));
 }
 
 #[test]

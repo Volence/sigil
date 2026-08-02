@@ -143,7 +143,7 @@ fn config_a() -> Target {
         profile: native::config_a_profile(),
         load_bearing: &[
             ("EntryPoint", 0x200),
-            ("GameLoop", 0x243e),
+            ("GameLoop", 0x247e),
             ("BusError", 0x5e542),
             ("HeightMaps", 0x257d6),
             // L1 P2 re-layout: AnimateSprite slid +8 (0x3534 -> 0x353C) with the
@@ -151,7 +151,7 @@ fn config_a() -> Target {
             // game-side SoundTest_BootPing). The whole-anchor byte compare
             // (native_offcanonical_rom::config_a_anchor_matches_golden) proves the
             // new golden; this spot-check tracks the moved label.
-            ("AnimateSprite", 0x353C),
+            ("AnimateSprite", 0x357C),
             ("EndOfRom", 0x5f5f2),
         ],
     }
@@ -162,10 +162,10 @@ fn config_b() -> Target {
         profile: native::config_b_profile(),
         load_bearing: &[
             ("EntryPoint", 0x200),
-            ("GameLoop", 0xb48),
+            ("GameLoop", 0xb90),
             ("BusError", 0x423d0),
             ("HeightMaps", 0x25730),
-            ("AnimateSprite", 0x16e6),
+            ("AnimateSprite", 0x172E),
             ("EndOfRom", 0x43480),
         ],
     }
@@ -176,9 +176,9 @@ fn demo_plain() -> Target {
         profile: native::demo_profile(false),
         load_bearing: &[
             ("EntryPoint", 0x200),
-            ("GameLoop", 0xb48),
+            ("GameLoop", 0xb90),
             ("BusError", 0x10174),
-            ("AnimateSprite", 0x16e6),
+            ("AnimateSprite", 0x172E),
             ("EndOfRom", 0x11224),
         ],
     }
@@ -189,9 +189,9 @@ fn demo_debug() -> Target {
         profile: native::demo_profile(true),
         load_bearing: &[
             ("EntryPoint", 0x200),
-            ("GameLoop", 0xb58),
+            ("GameLoop", 0xba0),
             ("BusError", 0x10174),
-            ("AnimateSprite", 0x1c46),
+            ("AnimateSprite", 0x1C8E),
             ("EndOfRom", 0x11224),
         ],
     }
