@@ -327,65 +327,6 @@ impl Resolved {
         }
         map
     }
-
-    /// The gated regions' ready-to-paste `org` blocks (D-T10.7). The org
-    /// value is the region END — the else-arm RESUME address.
-    pub fn gate_blocks(&self) -> Vec<GateBlock> {
-        self.regions
-            .iter()
-            .filter_map(|r| {
-                r.gate.as_ref().map(|g| GateBlock {
-                    gate: g.clone(),
-                    region: r.name.clone(),
-                    const_name: r.const_name.clone(),
-                    debug_only: r.debug_only,
-                    plain_end: r.plain_base + r.plain_len,
-                    debug_end: r.debug_base + r.debug_len,
-                })
-            })
-            .collect()
-    }
-}
-
-/// One gated region's paste block inputs.
-#[derive(Debug)]
-pub struct GateBlock {
-    pub gate: String,
-    pub region: String,
-    pub const_name: String,
-    /// Debug-only region: only the `ifdef __DEBUG__` resume arm exists.
-    pub debug_only: bool,
-    pub plain_end: u32,
-    pub debug_end: u32,
-}
-
-impl GateBlock {
-    /// The ready-to-paste else-arm block. Shape-invariant windows (the
-    /// object-bank regions) collapse to a single `org`.
-    pub fn render(&self) -> String {
-        if self.debug_only {
-            return format!(
-                "; {} — gate {} resume org (debug-only region; the plain shape emits nothing and needs no org)
-    ifdef __DEBUG__
-        org     ${:X}
-    endif
-",
-                self.region, self.gate, self.debug_end
-            );
-        }
-        if self.plain_end == self.debug_end {
-            format!(
-                "; {} — gate {} resume org (shape-invariant window)\n        org     ${:X}\n",
-                self.region, self.gate, self.plain_end
-            )
-        } else {
-            format!(
-                "; {} — gate {} resume org\n    ifdef __DEBUG__\n        org     ${:X}\n    \
-                 else\n        org     ${:X}\n    endif\n",
-                self.region, self.gate, self.debug_end, self.plain_end
-            )
-        }
-    }
 }
 
 /// `CamelCase`/`Mixed_Snake` → `UPPER_SNAKE` const name. Deterministic:
@@ -893,20 +834,12 @@ tests = ["animate_port"]
         assert!(text.contains("pub const CC_DELETE_OFF: usize = 0x104;"));
         // Deterministic: same inputs, same bytes.
         assert_eq!(text, render(&resolved, &prov));
-        // Gate block prints the per-shape RESUME orgs (the region ENDS).
-        let blocks = resolved.gate_blocks();
-        assert_eq!(blocks.len(), 1);
-        let block = blocks[0].render();
-        assert!(block.contains("SIGIL_EMP_ANIMATE"));
-        assert!(block.contains("org     $2E7C"), "{block}");
-        assert!(block.contains("org     $2E8C"), "{block}");
     }
 
     /// A region that exists ONLY in the debug shape (the twin is whole-file
     /// `ifdef __DEBUG__` — compression_selftest): `debug_only = true` resolves
     /// start/end against the DEBUG listing only; plain_len = 0; plain_base =
-    /// `plain_anchor`'s plain address (the next placement); the gate block
-    /// prints ONLY the debug resume org.
+    /// `plain_anchor`'s plain address (the next placement).
     #[test]
     fn debug_only_region_resolves_debug_listing_only() {
         let plain = test_listing(&[("AnimateSprite", 0x2D78)], 0x658B4);
@@ -933,10 +866,6 @@ tests = ["selftest_port"]
         let reg = &resolved.regions[0];
         assert_eq!((reg.plain_base, reg.debug_base), (0x2D78, 0x6FDC));
         assert_eq!((reg.plain_len, reg.debug_len), (0, 0x228));
-        let block = resolved.gate_blocks()[0].render();
-        assert!(block.contains("debug-only"), "block names the class: {block}");
-        assert!(block.contains("org     $7204"), "{block}");
-        assert!(!block.contains("$2D78"), "no plain arm for a debug-only region: {block}");
 
         // A debug_only region WITHOUT plain_anchor is a manifest error.
         let err = load_manifest(

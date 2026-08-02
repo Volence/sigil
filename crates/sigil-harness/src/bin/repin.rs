@@ -11,7 +11,6 @@
 //! folded equates incl. `MDDBG__*`, `.emp` locals demangled, section-END markers
 //! synthesized), resolves `repin.toml` against both, and rewrites `pins.rs` when any pin
 //! moved. `--check` diffs and exits nonzero on drift WITHOUT writing (CI/staleness).
-//! `--verbose` also prints every gated region's engine.inc paste block.
 //!
 //! The pins are DERIVED from sigil's resolve — the placement `native_full_rom` /
 //! `native_offcanonical_*` gates prove against the six goldens every build — so a
@@ -38,7 +37,6 @@ fn fail(msg: &str) -> ExitCode {
 fn main() -> ExitCode {
     let mut aeon: Option<PathBuf> = None;
     let mut check = false;
-    let mut verbose = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -47,8 +45,7 @@ fn main() -> ExitCode {
                 None => return fail("--aeon needs a directory argument"),
             },
             "--check" => check = true,
-            "--verbose" => verbose = true,
-            other => return fail(&format!("unknown argument `{other}` (try --aeon/--check/--verbose)")),
+            other => return fail(&format!("unknown argument `{other}` (try --aeon/--check)")),
         }
     }
     let aeon = aeon.unwrap_or_else(|| {
@@ -101,12 +98,6 @@ fn main() -> ExitCode {
     let committed = std::fs::read_to_string(PINS_PATH).unwrap_or_default();
     if strip_provenance(&committed) == strip_provenance(&generated) {
         println!("pins.rs unchanged");
-        if verbose {
-            println!();
-            for block in resolved.gate_blocks() {
-                println!("{}", block.render());
-            }
-        }
         return ExitCode::SUCCESS;
     }
 
@@ -114,13 +105,11 @@ fn main() -> ExitCode {
     let changes = diff_pins(&committed, &generated);
     let tests_by_const = resolved.tests_by_const();
     let mut rerun: Vec<&str> = Vec::new();
-    let mut changed_consts: Vec<&str> = Vec::new();
     println!("{} pin(s) changed:", changes.len());
     for c in &changes {
         let old = c.old.as_deref().unwrap_or("(new)");
         let new = c.new.as_deref().unwrap_or("(removed)");
         println!("  {}: {old} → {new}{}", c.name, delta_suffix(c.old.as_deref(), c.new.as_deref()));
-        changed_consts.push(&c.name);
         if let Some(tests) = tests_by_const.get(&c.name) {
             for t in tests {
                 if !rerun.contains(&t.as_str()) {
@@ -133,22 +122,6 @@ fn main() -> ExitCode {
         println!();
         println!("rerun hint (affected binaries first, full workspace once at the end):");
         println!("  {}", rerun.join(" "));
-    }
-    // The engine.inc paste blocks for the gated regions among the changes
-    // (every gated region when --verbose).
-    let blocks: Vec<String> = resolved
-        .gate_blocks()
-        .iter()
-        .filter(|b| verbose || changed_consts.contains(&b.const_name.as_str()))
-        .map(|b| b.render())
-        .collect();
-    if !blocks.is_empty() {
-        println!();
-        println!("gated-region resume orgs (reference; the AS else-arms they were pasted into retired with engine.inc / main.asm in K4 inc-6B):");
-        println!();
-        for b in blocks {
-            println!("{b}");
-        }
     }
 
     if check {
