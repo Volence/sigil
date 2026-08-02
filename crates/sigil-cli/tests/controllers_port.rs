@@ -174,6 +174,9 @@ fn as_hw_port_equs() -> Vec<Section> {
     let mut pairs = sigil_harness::test_support::engine_constant_equs();
     pairs.push(("HW_PORT_1_DATA", "$A10003"));
     pairs.push(("HW_PORT_2_DATA", "$A10005"));
+    // input-6button (2026-08-02): the burst's Z80 fence references the bare
+    // link-resolved bus register (the vblank_port VALUE-seam precedent).
+    pairs.push(("Z80_BUS_REQUEST", "$A11100"));
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
@@ -197,6 +200,20 @@ fn as_ctrl_ram_labels() -> Vec<Section> {
                Ctrl_1_Press_Accum:\n\
                \tdc.b 0\n\
                Ctrl_2_Press_Accum:\n\
+               \tdc.b 0\n\
+               Ctrl_1_Ext_Held:\n\
+               \tdc.b 0\n\
+               \tds.b 1\n\
+               Ctrl_2_Ext_Held:\n\
+               \tdc.b 0\n\
+               \tds.b 1\n\
+               Ctrl_1_Ext_Press_Accum:\n\
+               \tdc.b 0\n\
+               Ctrl_2_Ext_Press_Accum:\n\
+               \tdc.b 0\n\
+               Pad_1_Type:\n\
+               \tdc.b 0\n\
+               Pad_2_Type:\n\
                \tdc.b 0\n",
         pins::CTRL_1_HELD.plain
     );
@@ -244,12 +261,25 @@ fn controllers_with_ambient_constants() -> sigil_frontend_emp::ast::File {
         "controllers.emp parse errors: {pdiags:?}"
     );
 
+    // input-6button (2026-08-02): controllers.emp now splices stop_z80()/
+    // start_z80() around the burst — chain engine/z80_bus.emp's items so the
+    // comptime fns are in scope for this standalone lower (vblank_port's
+    // technique).
+    let z80_src = std::fs::read_to_string(controllers_dir().join("../z80_bus.emp"))
+        .unwrap_or_else(|e| panic!("cannot read z80_bus.emp: {e}"));
+    let (z80_file, zdiags) = parse_str(&z80_src);
+    assert!(
+        zdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "z80_bus.emp parse errors: {zdiags:?}"
+    );
+
     sigil_frontend_emp::ast::File {
         module: controllers_file.module.clone(),
         attrs: controllers_file.attrs.clone(),
         items: constants_file
             .items
             .into_iter()
+            .chain(z80_file.items)
             .chain(controllers_file.items)
             .collect(),
         docs: controllers_file.docs.clone(),

@@ -5,7 +5,7 @@
 //!
 //! (a) genuineness — a doctored COPY of the emp source produces DIFFERENT
 //!     linked bytes than the reference, proving the byte-diff gate is
-//!     non-vacuous. `controllers.emp`: `eor.b d0, d1` -> `eor.b d1, d0` (the
+//!     non-vacuous. `controllers.emp`: `eor.b d0, d3` -> `eor.b d3, d0` (the
 //!     FIRST occurrence — the second, the P2 pad, is left alone so the probe
 //!     stays a single-bit-field change). `math.emp`: `add.w d0, d0` dropped
 //!     entirely (mirrors hblank's dropped-instruction doctor shape).
@@ -105,6 +105,9 @@ fn as_hw_port_equs() -> Vec<Section> {
     let mut pairs = sigil_harness::test_support::engine_constant_equs();
     pairs.push(("HW_PORT_1_DATA", "$A10003"));
     pairs.push(("HW_PORT_2_DATA", "$A10005"));
+    // input-6button (2026-08-02): the burst's Z80 fence references the bare
+    // link-resolved bus register (the vblank_port VALUE-seam precedent).
+    pairs.push(("Z80_BUS_REQUEST", "$A11100"));
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
@@ -120,6 +123,20 @@ fn as_ctrl_ram_labels() -> Vec<Section> {
                Ctrl_1_Press_Accum:\n\
                \tdc.b 0\n\
                Ctrl_2_Press_Accum:\n\
+               \tdc.b 0\n\
+               Ctrl_1_Ext_Held:\n\
+               \tdc.b 0\n\
+               \tds.b 1\n\
+               Ctrl_2_Ext_Held:\n\
+               \tdc.b 0\n\
+               \tds.b 1\n\
+               Ctrl_1_Ext_Press_Accum:\n\
+               \tdc.b 0\n\
+               Ctrl_2_Ext_Press_Accum:\n\
+               \tdc.b 0\n\
+               Pad_1_Type:\n\
+               \tdc.b 0\n\
+               Pad_2_Type:\n\
                \tdc.b 0\n";
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
     assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (ctrl ram labels): {d:?}")).sections
@@ -141,6 +158,17 @@ fn constants_ambient_items() -> Vec<sigil_frontend_emp::ast::Item> {
     file.items
 }
 
+/// input-6button (2026-08-02): `controllers.emp` splices `stop_z80()`/`start_z80()`
+/// around the burst — `engine/z80_bus.emp`'s items must be ambient for the
+/// standalone lower (same rationale as `constants_ambient_items`).
+fn z80_bus_ambient_items() -> Vec<sigil_frontend_emp::ast::Item> {
+    let src = std::fs::read_to_string(engine_system_dir().join("../z80_bus.emp"))
+        .unwrap_or_else(|e| panic!("cannot read z80_bus.emp: {e}"));
+    let (file, zdiags) = parse_str(&src);
+    assert!(zdiags.iter().all(|d| d.level != Level::Error), "z80_bus.emp parse errors: {zdiags:?}");
+    file.items
+}
+
 /// Parse `src` (a possibly-doctored copy of `controllers.emp`) -> prepend
 /// `engine.constants`'s items so the `use`d `BUTTON_*`/`HW_PORT_*_DATA`
 /// consts resolve -> lower (module-dir include_root, NO defines) -> place at
@@ -154,7 +182,11 @@ fn place_controllers_with_asserts(src: &str, base: &str) -> (Vec<Section>, Vec<s
     let merged = sigil_frontend_emp::ast::File {
         module: file.module.clone(),
         attrs: file.attrs.clone(),
-        items: constants_ambient_items().into_iter().chain(file.items).collect(),
+        items: constants_ambient_items()
+            .into_iter()
+            .chain(z80_bus_ambient_items())
+            .chain(file.items)
+            .collect(),
         docs: file.docs.clone(),
     };
     let opts = LowerOptions {
@@ -260,7 +292,7 @@ fn link_math_placed(sections: Vec<Section>) -> sigil_link::LinkedImage {
 // Probe (a) — GENUINENESS
 // ===========================================================================
 
-/// Doctor ONE instruction (`eor.b d0, d1` -> `eor.b d1, d0`, a register-field
+/// Doctor ONE instruction (`eor.b d0, d3` -> `eor.b d3, d0`, a register-field
 /// swap: opcode `B301` -> the operand order in the source flips) in a COPY
 /// of `controllers.emp` and prove the linked `controllers` section's bytes
 /// DIFFER from the genuine reference-shaped compile.
@@ -272,8 +304,8 @@ fn link_math_placed(sections: Vec<Section>) -> sigil_link::LinkedImage {
 #[test]
 fn controllers_doctored_eor_operand_order_produces_different_bytes_than_genuine() {
     let Some(src) = real_src("controllers.emp") else { return };
-    assert!(src.contains("eor.b   d0, d1"), "precondition: the real file spells `eor.b   d0, d1`");
-    let doctored = src.replacen("eor.b   d0, d1", "eor.b   d1, d0", 1);
+    assert!(src.contains("eor.b   d0, d3"), "precondition: the real file spells `eor.b   d0, d3` (input-6button edge merge)");
+    let doctored = src.replacen("eor.b   d0, d3", "eor.b   d3, d0", 1);
     assert_ne!(src, doctored, "doctoring must actually change the source");
 
     let genuine_linked = link_controllers_placed(place_controllers(&src, "0x228C"));
@@ -283,7 +315,7 @@ fn controllers_doctored_eor_operand_order_produces_different_bytes_than_genuine(
     let doctored_bytes = &doctored_linked.section("controllers").expect("controllers section").bytes;
     assert_ne!(
         genuine_bytes, doctored_bytes,
-        "a doctored `eor.b d1, d0` must emit different bytes than the genuine `eor.b d0, d1` — \
+        "a doctored `eor.b d3, d0` must emit different bytes than the genuine `eor.b d0, d3` — \
          else the byte gate could never catch this transcription class"
     );
 }
@@ -354,7 +386,9 @@ fn controllers_standalone_compile_without_cross_seam_sections_is_a_loud_missing_
     // The FIRST missing symbol the fixpoint reports must be one of the six
     // genuinely-undefined names (not some unrelated garbage) — pins that the
     // diagnostic names A REAL symbol from this module's cross-seam surface.
-    let names = ["HW_PORT_1_DATA", "HW_PORT_2_DATA", "Ctrl_1_Held", "Ctrl_2_Held", "Ctrl_1_Press_Accum", "Ctrl_2_Press_Accum"];
+    // input-6button: the cross-seam surface grew (Z80 fence register + the ext/
+    // type RAM cells) — any of these names proves the diagnostic is real.
+    let names = ["HW_PORT_1_DATA", "HW_PORT_2_DATA", "Z80_BUS_REQUEST", "Ctrl_1_Held", "Ctrl_2_Held", "Ctrl_1_Press_Accum", "Ctrl_2_Press_Accum", "Ctrl_1_Ext_Held", "Ctrl_2_Ext_Held", "Pad_1_Type", "Pad_2_Type"];
     assert!(
         err.iter().any(|d| names.iter().any(|n| d.message.contains(n))),
         "expected the diagnostic to name one of controllers.emp's six cross-seam symbols, \
