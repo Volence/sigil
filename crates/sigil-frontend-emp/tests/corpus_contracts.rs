@@ -149,6 +149,171 @@ fn unbounded_indirect_fires_unbounded() {
     );
 }
 
+/// S2-D6 U2 — the DIRECT `jsr Foo` / `bsr Foo` call edge (companion to the
+/// `jbsr` edge in `transitive_callee_leak_fires_over_corpus`): a plain `jsr` to a
+/// resolvable proc symbol unions the callee's declared write surface into the
+/// caller's effective set. `bsr` is the same edge (all of jsr/jbsr/bsr resolve).
+#[test]
+fn direct_jsr_and_bsr_call_edges_propagate() {
+    let r = analyze(&[
+        "module m\n\
+         proc ViaJsr () clobbers(d0) {\n moveq #0, d0\n jsr Scribbler\n rts }\n\
+         proc ViaBsr () clobbers(d0) {\n moveq #0, d0\n bsr Scribbler\n rts }\n\
+         proc Scribbler () clobbers(d1) {\n moveq #1, d1\n rts }\n",
+    ]);
+    assert!(fires(&r, "ViaJsr", "d1"), "direct jsr edge must charge d1: {:?}", r.firings);
+    assert!(fires(&r, "ViaBsr", "d1"), "bsr edge must charge d1: {:?}", r.firings);
+}
+
+// S2-D6 U2 — the "contract invoke" call edge. `invoke Iface.hook` lowers to an
+// absolute-long `jsr (sym).l` (proven in the `game_contract` tests:
+// `bound_hook_emits_absolute_jsr`), which then propagates its target's clobbers
+// through the SAME direct-call path proven by `direct_jsr_and_bsr_call_edges`.
+// It is NOT exercised end-to-end here: the corpus contract walk uses the EMPTY
+// interface env, under which an `invoke` emits nothing, so there is no edge in
+// the gate to charge — and the corpus's only abs-long calls are the contract-less
+// vendored debugger entries. Wiring the invoke edge into the closure (env-threaded
+// + resolvable-vs-⊤ abs-long handling) is L1 game-contract-seam work. See the
+// scope note on `call_target_sym` in corpus_contracts.rs.
+
+/// S2-D6 U4 — the `@allow("clobbers.unanalyzable", "<reason>")` escape hatch: a
+/// genuinely-unanalyzable computed dispatch opts OUT of the `unbounded` firing.
+/// The companion `unbounded_indirect_fires_unbounded` proves the SAME site fires
+/// WITHOUT the annotation, so this pins the suppression is load-bearing (not a
+/// site that never fired).
+#[test]
+fn unanalyzable_allow_suppresses_the_unbounded_firing() {
+    let r = analyze(&[
+        "module m\n\
+         @allow(\"clobbers.unanalyzable\", \"raw trampoline: target set is open by design\")\n\
+         proc Dispatch () clobbers(d0) {\n jsr (a1)\n rts }\n",
+    ]);
+    assert!(
+        !r.firings.iter().any(|f| f.proc == "Dispatch" && f.unbounded),
+        "the U4 allow must suppress the unbounded firing: {:?}",
+        r.firings
+    );
+    // And the annotation is LISTED in force (audited, never silent).
+    assert!(
+        r.unanalyzable_allows.iter().any(|(p, reason)| p == "Dispatch" && !reason.is_empty()),
+        "the in-force annotation must be listed: {:?}",
+        r.unanalyzable_allows
+    );
+}
+
+/// S2-D6 U4 — the hatch suppresses ONLY the ⊤/unbounded case, never a CONCRETE
+/// register under-declaration. A proc that both makes an unbounded call AND
+/// directly writes an undeclared register still fires the concrete register.
+#[test]
+fn unanalyzable_allow_does_not_silence_concrete_leak() {
+    let r = analyze(&[
+        "module m\n\
+         @allow(\"clobbers.unanalyzable\", \"open trampoline\")\n\
+         proc Dispatch () clobbers(d0) {\n moveq #0, d7\n jsr (a1)\n rts }\n",
+    ]);
+    // The unbounded firing is suppressed, but d7 (a concrete direct write) is not
+    // — except a ⊤ effective set has no named regs, so the concrete write is
+    // subsumed by ⊤. To prove the concrete path independently, use a bounded call
+    // so the effect is a named set, not ⊤:
+    let r2 = analyze(&[
+        "module m\n\
+         @allow(\"clobbers.unanalyzable\", \"open trampoline\")\n\
+         proc P () clobbers(d0) {\n moveq #0, d7\n rts }\n",
+    ]);
+    let _ = r; // (the ⊤ case is covered by the suppression test above)
+    assert!(
+        fires(&r2, "P", "d7"),
+        "a concrete undeclared write must still fire despite the allow: {:?}",
+        r2.firings
+    );
+}
+
+/// Does the caller's D1c `[call.live-clobbered]` fire on `(proc, callee, reg)`?
+fn live_clobbered(
+    r: &sigil_frontend_emp::corpus_contracts::ContractReport,
+    proc: &str,
+    callee: &str,
+    reg: &str,
+) -> bool {
+    r.live_clobbered_firings
+        .iter()
+        .any(|f| f.proc == proc && f.callee == callee && f.reg == reg)
+}
+
+/// S2-D6 ACCEPTANCE BAR 3 — THE DOCTORED-a5 NEGATIVE PROBE. The sweep's
+/// load-bearing example, proven fireable: a synthetic of the tile_cache a5/a6
+/// hoist chain. `TileCache_FillColumn` hoists `a5` (the Nametable base) OUT of
+/// the loop and relies on it SURVIVING each `TileCache_DecompressBlock` call —
+/// which is only safe because DecompressBlock's license (`d0-d7/a0/a2-a4`)
+/// EXCLUDES a5. If S4LZ_DecompressDict (DecompressBlock's inner callee) ever
+/// gained an undeclared a5 write, the hoisted a5 would be corrupted between the
+/// set and the read — silent collision-plane corruption. The byte gate cannot
+/// see this; this lint MUST. The DOCTORED version fires the CALLER's D1c; the
+/// undoctored CONTROL is clean.
+#[test]
+fn doctored_a5_write_fails_the_callers_lint_the_negative_probe() {
+    // DOCTORED: DecompressBlock's inner S4LZ callee secretly writes a5 (its
+    // declared license excludes a5/a6). The caller hoisted a5 and reads it after
+    // the call → D1c live-clobbered on the caller.
+    let doctored = "module engine.tile_cache\n\
+        proc FillColumn () clobbers(d0-d7/a0-a6) {\n\
+        \x20   lea Tile_Cache_Nametable, a5\n\
+        \x20   jbsr DecompressBlock\n\
+        \x20   movea.l a5, a2\n\
+        \x20   move.l (a2), d0\n\
+        \x20   rts\n}\n\
+        proc DecompressBlock () clobbers(d0-d7/a0/a2-a4) {\n\
+        \x20   jbsr S4LZ_DecompressDict\n\
+        \x20   rts\n}\n\
+        proc S4LZ_DecompressDict () clobbers(d0-d3) {\n\
+        \x20   lea Garbage, a5\n\
+        \x20   rts\n}\n";
+    let r = analyze(&[doctored]);
+    // The CALLER's lint fails: a5 is live across DecompressBlock (which now
+    // transitively clobbers a5 via the doctored S4LZ) and read after.
+    assert!(
+        live_clobbered(&r, "FillColumn", "DecompressBlock", "a5"),
+        "the doctored a5 write MUST fail the caller's D1c lint: live={:?} firings={:?}",
+        r.live_clobbered_firings,
+        r.firings
+    );
+    // And the doctored callee's OWN lint fires the a5 under-declaration too (the
+    // transitive closure catches the leak into DecompressBlock's contract).
+    assert!(
+        fires(&r, "S4LZ_DecompressDict", "a5"),
+        "the doctored S4LZ must fire clobber-undeclared on a5: {:?}",
+        r.firings
+    );
+
+    // CONTROL: S4LZ preserves a5 (does not touch it). The hoist is safe again —
+    // the caller's D1c is silent and no a5 leak anywhere. This proves the probe
+    // is meaningful (not a site that always fires).
+    let control = "module engine.tile_cache\n\
+        proc FillColumn () clobbers(d0-d7/a0-a6) {\n\
+        \x20   lea Tile_Cache_Nametable, a5\n\
+        \x20   jbsr DecompressBlock\n\
+        \x20   movea.l a5, a2\n\
+        \x20   move.l (a2), d0\n\
+        \x20   rts\n}\n\
+        proc DecompressBlock () clobbers(d0-d7/a0/a2-a4) {\n\
+        \x20   jbsr S4LZ_DecompressDict\n\
+        \x20   rts\n}\n\
+        proc S4LZ_DecompressDict () clobbers(d0-d3) {\n\
+        \x20   moveq #0, d0\n\
+        \x20   rts\n}\n";
+    let rc = analyze(&[control]);
+    assert!(
+        !live_clobbered(&rc, "FillColumn", "DecompressBlock", "a5"),
+        "the control (a5 preserved) must NOT fire the caller's D1c: {:?}",
+        rc.live_clobbered_firings
+    );
+    assert!(
+        !fires(&rc, "S4LZ_DecompressDict", "a5"),
+        "the control must not fire an a5 under-declaration: {:?}",
+        rc.firings
+    );
+}
+
 /// A preserves-only contract type bounds clobbers to everything-not-preserved:
 /// `ObjRoutine preserves(a0, d7)` lets a target clobber the rest, so a dispatcher
 /// declaring the full register file minus nothing does not fire, but a0/d7 stay

@@ -558,62 +558,27 @@ fn check_clobbers(
     }
 }
 
-/// The standard 68k write-form mnemonics whose LAST operand is the written
-/// destination, plus the `s<cc>` family (`seq`/`sne`/`spl`/…, all `Scc` — they
-/// set a byte in their sole operand). Read-only / control forms (`cmp`, `tst`,
-/// `btst`, `bra`, `bsr`, `jmp`, `jsr`, `pea`, `nop`, `rts`…) are absent by
-/// design so they never trip the lint.
+/// True for a 68k write-form mnemonic whose LAST operand is the written
+/// destination (`move`/`add`/`lea`/`clr`/…, plus the `s<cc>` family and
+/// `movep`/`addx`). Read-only / control forms (`cmp`, `tst`, `btst`, `bra`,
+/// `bsr`, `jmp`, `jsr`, `pea`, `nop`, `rts`…) return `false` so they never trip
+/// the lint.
 ///
-/// `dbcc`/`dbra`/`dbf` decrement their FIRST operand, not the last, so the
-/// "destination is the last operand" model does not hold for them — they are
-/// covered by [`instr_written_regs`] effect (3) directly, NOT via this
-/// last-operand list (S2-D6, closing the tranche-4 dbcc blind spot).
+/// `dbcc`/`dbra`/`dbf` decrement their FIRST operand, not the last, and `movem`
+/// writes a register-LIST destination; both are covered by [`instr_written_regs`]
+/// effects (3)/(4) directly, NOT this last-operand predicate — so they return
+/// `false` here.
 ///
-/// This is a PARALLEL string list the compiler cannot keep honest against the
-/// ISA `Mnemonic` set: a newly-supported write-form (`bchg`, `roxl`, …) will
-/// silently escape the lint until it is added HERE. Keep this in sync as the
-/// backend's mnemonic table grows. Heuristic (see [`check_clobbers`]).
+/// **ISA-DERIVED (S2-D6 U1).** This is no longer a parallel string list the
+/// compiler cannot keep honest: it parses the mnemonic to the backend
+/// [`sigil_isa::m68k::Mnemonic`] and defers to the EXHAUSTIVE
+/// [`sigil_isa::m68k::writes_last_operand`] classifier. Adding a mnemonic to the
+/// ISA enum fails that classifier's match to compile — so a newly-supported
+/// write-form can no longer silently escape the lint. A string that does not
+/// parse to a 68k mnemonic (a Z80 mnemonic, a pseudo-op) is not a 68k write-form
+/// → `false` (the lint is 68k-only; see [`check_clobbers`]).
 fn writes_dest_register(m: &str) -> bool {
-    matches!(
-        m,
-        "move"
-            | "movea"
-            | "moveq"
-            | "add"
-            | "adda"
-            | "addi"
-            | "addq"
-            | "addx"
-            | "sub"
-            | "suba"
-            | "subi"
-            | "subq"
-            | "and"
-            | "andi"
-            | "or"
-            | "ori"
-            | "eor"
-            | "eori"
-            | "lea"
-            | "clr"
-            | "neg"
-            | "not"
-            | "swap"
-            | "ext"
-            | "muls"
-            | "mulu"
-            | "divs"
-            | "divu"
-            | "asl"
-            | "asr"
-            | "lsl"
-            | "lsr"
-            | "rol"
-            | "ror"
-            | "bset"
-            | "bclr"
-            | "tas"
-    ) || is_scc(m)
+    crate::lower::m68k_mnemonic(m).map(sigil_backend_m68k::m68k::writes_last_operand).unwrap_or(false)
 }
 
 /// Every REGISTER this instruction modifies, per the clobber/out write
@@ -720,40 +685,6 @@ pub fn proc_written_registers(buf: &crate::value::CodeBuf) -> BTreeSet<String> {
         }
     }
     written
-}
-
-/// True for the `s<cc>` (set-on-condition) spelling: an `s` prefix followed by a
-/// known 68k condition code. `Scc` writes a byte to its sole (last) operand, so
-/// it belongs in the write-form set. A prefix check is used rather than listing
-/// all 16 spellings, and it does not collide with the `s`-initial arithmetic
-/// mnemonics (`sub*`/`swap`) — none of their tails is a condition code.
-fn is_scc(m: &str) -> bool {
-    m.strip_prefix('s').is_some_and(is_condition_code)
-}
-
-/// The 68k condition-code suffixes (mirrors the backend's `m68k_cond`, incl. the
-/// `hs`/`lo` unsigned aliases). Used only to recognize the `s<cc>` write-form.
-fn is_condition_code(cc: &str) -> bool {
-    matches!(
-        cc,
-        "t" | "f"
-            | "hi"
-            | "ls"
-            | "cc"
-            | "cs"
-            | "hs"
-            | "lo"
-            | "ne"
-            | "eq"
-            | "vc"
-            | "vs"
-            | "pl"
-            | "mi"
-            | "ge"
-            | "lt"
-            | "gt"
-            | "le"
-    )
 }
 
 /// Verify the declared `preserves(...)` set against the literal movem

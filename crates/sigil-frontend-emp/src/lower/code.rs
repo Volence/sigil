@@ -1514,7 +1514,7 @@ fn width_to_size(w: Width) -> M68kSize {
 /// A 68k mnemonic string (already lowercased, size-stripped) to its
 /// [`M68kMnemonic`], including the `b<cc>`/`db<cc>`/`s<cc>` conditional families.
 /// Mirrors the AS front-end's `m68k_mnemonic`/`m68k_cond`.
-fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
+pub(crate) fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
     use M68kMnemonic::*;
     Some(match base {
         "move" => Move,

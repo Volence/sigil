@@ -44,6 +44,64 @@ pub enum Mnemonic {
     AndiCcr, OriCcr,      // andi.b #imm,ccr / ori.b #imm,ccr
 }
 
+/// Does this mnemonic WRITE its last operand when that operand is a register —
+/// the "destination is the last operand, `dN`/`aN`" form the front-end's
+/// clobber/out lints (`[proc.clobber-undeclared]` / `[proc.out-unwritten]`) key
+/// off? This is the ISA-DERIVED write model (S2-D6 U1): it replaces the
+/// front-end's hand-maintained mnemonic string list with an EXHAUSTIVE match
+/// over [`Mnemonic`]. Because there is no `_` arm, ADDING a variant to
+/// `Mnemonic` fails THIS match to compile — so a newly-supported write-form can
+/// no longer silently escape the lint (the load-bearing hole the string list
+/// left; see the front-end `writes_dest_register` doc).
+///
+/// # Scope — the last-operand-register effect only
+///
+/// `true` marks the effect the front-end's `instr_written_regs` applies as "the
+/// last operand, if it is a register, is written". The OTHER register-write
+/// effects are operand-shape-driven and stay in the front-end (they need no
+/// per-mnemonic table): auto-increment / -decrement base advance (`(An)+` /
+/// `-(An)`, any mnemonic), the `dbcc` first-operand counter, and the `movem`
+/// register-list destination. So `Movem`/`Dbcc` return `false` HERE (their
+/// writes are not "the last operand as a register") yet are still fully modeled.
+///
+/// # The named escapees (U1)
+///
+/// - `Movep` → `true`: `movep.w (d16,An),Dn` (LOAD) writes `Dn`; `movep.w
+///   Dn,(d16,An)` (STORE) writes memory, so the last-operand-register test
+///   correctly finds no register there. (Both directions handled by construction.)
+/// - `Addx` → `true`: `addx Dy,Dx` writes `Dx`; the `-(Ay),-(Ax)` form's writes
+///   are the auto-dec bases, caught by the operand-shape effect.
+/// - `Movem` → `false`: reglist-destination effect (see scope above).
+///
+/// Mnemonics NOT YET in this enum but named by the spec — `exg` (writes BOTH
+/// register operands), `link`/`unlk` (write `An` + `sp`), `bchg`, `roxl`/`roxr`,
+/// `negx`, `abcd`/`sbcd`/`nbcd` — are "covered by construction": when one is
+/// added to `Mnemonic`, this match stops compiling and forces its classification
+/// HERE. The bit/rotate/decimal forms (`bchg`/`roxl`/`roxr`/`negx`/`abcd`/…) are
+/// last-operand-register writes (`true`); `exg` and `link`/`unlk` write registers
+/// NOT expressible as "the last operand" and additionally need an operand-shape
+/// arm in the front-end's `instr_written_regs` (the doc there records this).
+pub fn writes_last_operand(m: Mnemonic) -> bool {
+    use Mnemonic::*;
+    match m {
+        // Data movement / arithmetic / logic / shift-rotate / bit-set-clear /
+        // set-cc — the destination is the last operand.
+        Move | Movea | Moveq | Add | Adda | Sub | Suba | And | Or | Eor | Muls
+        | Mulu | Divs | Divu | Addi | Subi | Andi | Ori | Eori | Addq | Subq
+        | Asl | Asr | Lsl | Lsr | Rol | Ror | Bset | Bclr | Clr | Neg | Not
+        | Tas | Scc(_) | Lea | Swap | Ext | Movep | Addx | MoveFromSr => true,
+        // Read-only / control / flags-or-SR-only / operand-shape-modeled forms.
+        // `Cmp`/`Cmpa`/`Cmpi`/`Cmpm`/`Btst`/`Tst` compare or test (no write);
+        // `Jmp`/`Jsr`/`Pea`/`Nop`/`Rts`/`Rte`/`Trap`/`Illegal`/`Bra`/`Bsr`/`Bcc`
+        // are control; `Dbcc`/`Movem` are operand-shape-modeled (see scope);
+        // `MoveToSr`/`AndiCcr`/`OriCcr` write SR/CCR (not a GP register — the
+        // dedicated `[proc.sr-undeclared]` branch handles the SR case).
+        Cmp | Cmpa | Cmpi | Cmpm | Btst | Tst | Jmp | Jsr | Pea | Nop | Rts
+        | Rte | Trap | Illegal | Bra | Bsr | Bcc(_) | Dbcc(_) | Movem
+        | MoveToSr | AndiCcr | OriCcr => false,
+    }
+}
+
 /// 68000 condition codes; discriminant is the 4-bit cc field (bits 11–8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Cond {
@@ -1255,5 +1313,45 @@ mod vocab_tests {
         // Move still works.
         let mv = Instruction { mnemonic: Mnemonic::Move, size: Size::W, ops: vec![Operand::Dn(1), Operand::Dn(0)] };
         assert_eq!(encode(&mv).unwrap(), vec![0x30, 0x01]);
+    }
+
+    /// S2-D6 U1 — the ISA-derived write model. Every write-form mnemonic the
+    /// front-end clobber/out lints depend on is classified `true`; every
+    /// read-only / control / operand-shape-modeled form is `false`. The match is
+    /// exhaustive over `Mnemonic`, so this also proves the classifier covers the
+    /// whole enum (a new variant would fail to compile, not silently escape).
+    #[test]
+    fn writes_last_operand_classifies_the_whole_mnemonic_set() {
+        use Mnemonic::*;
+        // Write-forms (destination is the last operand).
+        for m in [
+            Move, Movea, Moveq, Add, Adda, Sub, Suba, And, Or, Eor, Muls, Mulu,
+            Divs, Divu, Addi, Subi, Andi, Ori, Eori, Addq, Subq, Asl, Asr, Lsl,
+            Lsr, Rol, Ror, Bset, Bclr, Clr, Neg, Not, Tas, Lea, Swap, Ext,
+            MoveFromSr,
+        ] {
+            assert!(writes_last_operand(m), "{m:?} should be a write-form");
+        }
+        // The named U1 escapees now covered by the ISA model.
+        assert!(writes_last_operand(Movep), "movep (load form writes Dn)");
+        assert!(writes_last_operand(Addx), "addx (Dy,Dx writes Dx)");
+        // The set-cc family (every condition).
+        for c in [Cond::T, Cond::Eq, Cond::Ne, Cond::Cs, Cond::Vc, Cond::Le] {
+            assert!(writes_last_operand(Scc(c)), "s{c:?} should be a write-form");
+        }
+        // Read-only / control / operand-shape-modeled / SR-CCR forms.
+        for m in [
+            Cmp, Cmpa, Cmpi, Cmpm, Btst, Tst, Jmp, Jsr, Pea, Nop, Rts, Rte,
+            Trap, Illegal, Bra, Bsr, MoveToSr, AndiCcr, OriCcr,
+            // Movem/Dbcc are modeled by the front-end's operand-shape effects,
+            // not the last-operand predicate.
+            Movem,
+        ] {
+            assert!(!writes_last_operand(m), "{m:?} must not be a last-operand write-form");
+        }
+        for c in [Cond::Eq, Cond::Ne] {
+            assert!(!writes_last_operand(Bcc(c)), "branch is not a write-form");
+            assert!(!writes_last_operand(Dbcc(c)), "dbcc is operand-shape-modeled");
+        }
     }
 }
