@@ -365,6 +365,15 @@ pub fn native_sound_blob(aeon: &Path, debug: bool) -> NativeSoundBlob {
     NativeSoundBlob { bytes: native_blob_doctored(aeon, debug, None), symbols: handler_symbols(aeon, debug) }
 }
 
+/// The resident sequencer handler VMAs (the seq-opcode table's `dc.w Seq_Op_*` link
+/// targets) WITHOUT building the full blob bytes. seam-2's seq emitter uses this
+/// symbols-only path so its `sound_layout`-driven derivation does not lower the
+/// resident DRIVER: the driver requests `DacSampleTable`, whose value flows back
+/// through `seam2::sound_layout`, and lowering it here would re-enter that chain.
+pub(crate) fn native_sound_symbols(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
+    handler_symbols(aeon, debug)
+}
+
 /// The 26 handler VMAs read off `sound_sequencer`'s labels (`vma_base + offset`),
 /// per shape. `sound_sequencer` starts at `$0565` in BOTH shapes; its internal
 /// `if DEBUG==1` growth re-bases the handlers AFTER a debug block, so the values are
@@ -747,15 +756,11 @@ pub(crate) fn sfx_bank_authority_consts(aeon: &Path) -> std::sync::Arc<BTreeMap<
 /// the generated vol-env data supply them in the mixed AS build. Each carries its
 /// provenance. (Contrast the 384 contract values, which flow from the authority,
 /// and the SFX-bank counts, which flow from `sfx_bank_authority_consts`.)
-/// `DacSampleTable` is DERIVED from seam-2's single DAC head placement, not hand-pinned.
+/// `DacSampleTable` is NOT here — it is DERIVED from seam-2's map-driven DAC head
+/// placement and resolved LAZILY in [`resolve_consts`] (only the resident driver
+/// requests it), so building this map never re-enters `seam2::sound_layout`.
 fn seam_emit_config() -> BTreeMap<&'static str, i64> {
-    // The DAC descriptor head's $8000-window VMA (sound_bank.inc's driver
-    // `-D DacSampleTable`), tied to seam-2's one DAC_SAMPLE_TAB placement so the
-    // window address cannot drift from the bank it points at.
-    let dac_sample_table = 0x8000
-        + (crate::seam2::DAC_SAMPLE_TAB_LMA as i64 - crate::seam2::SOUND_TABLES_Z80_LMA as i64);
     BTreeMap::from([
-        ("DacSampleTable", dac_sample_table),
         // Game config (games/sonic4/main.asm + config/sound_ids.asm + config/game.asm)
         // — the resident blob needs the game's bank/id layout to build; the AS side
         // gets these from main.asm. Not engine sound contract, so not in the authority.
@@ -781,8 +786,14 @@ fn seam_emit_config() -> BTreeMap<&'static str, i64> {
 }
 
 /// Resolve a module's const NAMES to `(name, value)` — authority first, then the
-/// emit-config fallback. A name in neither is a loud panic (a seam name with no
-/// home is a build error, never a silent wrong byte).
+/// emit-config fallback, then the lazily-derived `DacSampleTable` window VMA. A name
+/// in none is a loud panic (a seam name with no home is a build error, never a
+/// silent wrong byte).
+///
+/// `DacSampleTable` is resolved LAST and only when a file actually requests it (the
+/// resident driver): its value comes from `seam2::sound_layout`, which lowers the
+/// seq-opcode table via the symbols-only path — so no non-driver file's resolution
+/// (e.g. the sequencer's, reached inside that derivation) triggers the derivation.
 fn resolve_consts(aeon: &Path, names: &[&'static str]) -> Vec<(&'static str, i64)> {
     let auth = sound_authority_consts(aeon);
     let sfx = sfx_bank_authority_consts(aeon);
@@ -795,10 +806,18 @@ fn resolve_consts(aeon: &Path, names: &[&'static str]) -> Vec<(&'static str, i64
                 .copied()
                 .or_else(|| sfx.get(n).copied())
                 .or_else(|| cfg.get(n).copied())
+                .or_else(|| {
+                    (n == "DacSampleTable").then(|| {
+                        crate::seam2::dac_sample_table_vma(aeon).unwrap_or_else(|e| {
+                            panic!("DacSampleTable window derivation (seam2::sound_layout): {e}")
+                        }) as i64
+                    })
+                })
                 .unwrap_or_else(|| {
                     panic!(
                         "seam-1 const `{n}` is in none of the sound_constants.emp authority, \
-                         the sfx_bank.emp authority, nor the emit-config list"
+                         the sfx_bank.emp authority, the emit-config list, nor the DacSampleTable \
+                         map-derivation"
                     )
                 });
             (n, v)

@@ -18,8 +18,8 @@
 //! ```
 
 use sigil_harness::seam2::{
-    emit_sound_tables_artifacts, emit_sound_tables_z80, emit_sound_tables_z80_doctored,
-    SOUND_TABLES_Z80_LEN, SOUND_TABLES_Z80_LMA,
+    emit_sound_tables_artifacts, emit_sound_tables_z80, emit_sound_tables_z80_doctored, sound_layout,
+    SOUND_TABLES_Z80_LEN,
 };
 use std::path::PathBuf;
 
@@ -50,9 +50,10 @@ fn sound_tables_z80_matches_the_reference_rom_slice_both_shapes() {
     let aeon = aeon_dir();
     let out = emit_sound_tables_z80(&aeon).expect("emit_sound_tables_z80");
     assert_eq!(out.len(), SOUND_TABLES_Z80_LEN, "sound_tables_z80 is 855 bytes ($357)");
+    let lma = sound_layout(&aeon).expect("sound_layout derives sound_tables_z80_lma").sound_tables_z80_lma;
     for rom_name in ["s4.bin", "s4.debug.bin"] {
         let rom = golden(rom_name);
-        let lo = SOUND_TABLES_Z80_LMA as usize;
+        let lo = lma as usize;
         let refslice = &rom[lo..lo + SOUND_TABLES_Z80_LEN];
         if let Some(i) = (0..out.len()).find(|&i| out[i] != refslice[i]) {
             panic!(
@@ -81,7 +82,7 @@ fn sound_tables_diverge_when_window_moved() {
     let aeon = aeon_dir();
     let doctored = emit_sound_tables_z80_doctored(&aeon, Some(0x9000)).expect("doctored emit");
     let rom = golden("s4.bin");
-    let lo = SOUND_TABLES_Z80_LMA as usize;
+    let lo = sound_layout(&aeon).expect("sound_layout").sound_tables_z80_lma as usize;
     let refslice = &rom[lo..lo + SOUND_TABLES_Z80_LEN];
     assert_ne!(
         doctored, refslice,

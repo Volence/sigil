@@ -19,8 +19,8 @@
 //! ```
 
 use sigil_harness::seam2::{
-    emit_seq_opcode_artifacts, emit_seq_opcode_tab, emit_seq_opcode_tab_doctored,
-    SEQ_OPCODE_TAB_LEN, SEQ_OPCODE_TAB_LMA,
+    emit_seq_opcode_artifacts, emit_seq_opcode_tab, emit_seq_opcode_tab_doctored, sound_layout,
+    SEQ_OPCODE_TAB_LEN,
 };
 use std::path::PathBuf;
 
@@ -49,11 +49,12 @@ fn colinked_seq_opcode_tab_matches_the_reference_rom_slice_both_shapes() {
         return;
     }
     let aeon = aeon_dir();
+    let lma = sound_layout(&aeon).expect("sound_layout derives seq_opcode_tab_lma").seq_opcode_tab_lma;
     for (debug, shape) in [(false, "plain"), (true, "debug")] {
         let head = emit_seq_opcode_tab(&aeon, debug).expect("emit_seq_opcode_tab co-links");
         assert_eq!(head.len(), SEQ_OPCODE_TAB_LEN, "SeqOpcodeTable is 32 × 2 = 64 bytes");
         let rom = golden(if debug { "s4.debug.bin" } else { "s4.bin" });
-        let lo = SEQ_OPCODE_TAB_LMA as usize;
+        let lo = lma as usize;
         let head_ref = &rom[lo..lo + SEQ_OPCODE_TAB_LEN];
         if let Some(i) = (0..head.len()).find(|&i| head[i] != head_ref[i]) {
             let slot = i / 2;
@@ -95,7 +96,7 @@ fn seq_tab_diverges_when_handler_moved() {
     let doctored = emit_seq_opcode_tab_doctored(&aeon, false, Some(("Seq_Op_Dac", 0x0ABC)))
         .expect("doctored co-link");
     let rom = golden("s4.bin");
-    let lo = SEQ_OPCODE_TAB_LMA as usize;
+    let lo = sound_layout(&aeon).expect("sound_layout").seq_opcode_tab_lma as usize;
     let head_ref = &rom[lo..lo + SEQ_OPCODE_TAB_LEN];
     assert_ne!(
         doctored, head_ref,

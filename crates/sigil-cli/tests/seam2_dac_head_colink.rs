@@ -27,8 +27,8 @@
 //! ```
 
 use sigil_harness::seam2::{
-    emit_dac_artifacts, emit_dac_body_and_head, emit_dac_body_and_head_doctored,
-    DAC_SAMPLE_TAB_LEN, DAC_SAMPLE_TAB_LMA,
+    emit_dac_artifacts, emit_dac_body_and_head, emit_dac_body_and_head_doctored, sound_layout,
+    DAC_SAMPLE_TAB_LEN,
 };
 use std::path::PathBuf;
 
@@ -64,9 +64,10 @@ fn colinked_dac_head_matches_the_reference_rom_slice_both_shapes() {
     assert_eq!(out.head.len(), DAC_SAMPLE_TAB_LEN, "DacSampleTable is 10 × 9 = 90 bytes");
 
     // The head is shape-invariant: gate against BOTH frozen goldens at the same LMA.
+    let lma = sound_layout(&aeon).expect("sound_layout derives dac_sample_tab_lma").dac_sample_tab_lma;
     for (rom_name, shape) in [("s4.bin", "plain"), ("s4.debug.bin", "debug")] {
         let rom = golden(rom_name);
-        let lo = DAC_SAMPLE_TAB_LMA as usize;
+        let lo = lma as usize;
         let head_ref = &rom[lo..lo + DAC_SAMPLE_TAB_LEN];
         if let Some(i) = (0..out.head.len()).find(|&i| out.head[i] != head_ref[i]) {
             let d = i / 9; // descriptor index
@@ -111,7 +112,7 @@ fn dac_head_diverges_when_blip_bank_moved() {
     let doctored =
         emit_dac_body_and_head_doctored(&aeon, Some(0x40000)).expect("doctored co-link");
     let rom = golden("s4.bin");
-    let lo = DAC_SAMPLE_TAB_LMA as usize;
+    let lo = sound_layout(&aeon).expect("sound_layout").dac_sample_tab_lma as usize;
     let head_ref = &rom[lo..lo + DAC_SAMPLE_TAB_LEN];
     assert_ne!(
         doctored.head, head_ref,

@@ -24,8 +24,7 @@
 //! ```
 
 use sigil_harness::seam2::{
-    emit_sfx_artifacts, emit_sfx_body_and_head, emit_sfx_body_and_head_doctored,
-    SFX_BANK_LMA_PLAIN, SFX_WIN_TAB_LMA,
+    emit_sfx_artifacts, emit_sfx_body_and_head, emit_sfx_body_and_head_doctored, sound_layout,
 };
 use std::path::PathBuf;
 
@@ -68,13 +67,14 @@ fn colinked_sfx_head_matches_the_reference_rom_slice_both_shapes() {
         return;
     }
     let aeon = aeon_dir();
+    let win_lma = sound_layout(&aeon).expect("sound_layout derives sfx_win_tab_lma").sfx_win_tab_lma;
     for (debug, shape) in [(false, "plain"), (true, "debug")] {
         let out = emit_sfx_body_and_head(&aeon, debug).expect("emit_sfx_body_and_head co-links");
         assert_eq!(out.head.len(), SFX_WIN_TAB_LEN, "SfxBlobWinTab is 135 × 2 = 270 bytes");
         assert_eq!(out.body.len(), SFX_BODY_LEN, "sfx_bank body is 1864 bytes");
 
         let rom = golden(if debug { "s4.debug.bin" } else { "s4.bin" });
-        let lo = SFX_WIN_TAB_LMA as usize;
+        let lo = win_lma as usize;
         let head_ref = &rom[lo..lo + SFX_WIN_TAB_LEN];
         if let Some(i) = (0..out.head.len()).find(|&i| out.head[i] != head_ref[i]) {
             let e = i & !1; // word-aligned context
@@ -107,12 +107,14 @@ fn sfx_head_diverges_when_block_moved() {
         return;
     }
     let aeon = aeon_dir();
+    let layout = sound_layout(&aeon).expect("sound_layout");
     // +$100 keeps the block in bank $B ($58000..$5FFFF): bankid unchanged, so only
     // the window pointers shift — the body's co-residency guards do not fire.
-    let doctored = emit_sfx_body_and_head_doctored(&aeon, false, Some(SFX_BANK_LMA_PLAIN + 0x100))
-        .expect("doctored co-link (still bank $B)");
+    let doctored =
+        emit_sfx_body_and_head_doctored(&aeon, false, Some(layout.sfx_bank_lma_plain + 0x100))
+            .expect("doctored co-link (still bank $B)");
     let rom = golden("s4.bin");
-    let lo = SFX_WIN_TAB_LMA as usize;
+    let lo = layout.sfx_win_tab_lma as usize;
     let head_ref = &rom[lo..lo + SFX_WIN_TAB_LEN];
     assert_ne!(
         doctored.head, head_ref,
