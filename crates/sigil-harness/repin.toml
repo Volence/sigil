@@ -1923,6 +1923,14 @@ name = "Ctrl_2_Ext_Press_Accum"
 tests = ["vblank_port", "game_loop_port"]
 
 [[symbol]]
+name = "Parallax_State"
+tests = ["parallax_port"]
+
+[[symbol]]
+name = "Vscroll_Factor"
+tests = ["parallax_port"]
+
+[[symbol]]
 name = "DMA_Budget_Default"
 tests = ["vblank_port"]
 
