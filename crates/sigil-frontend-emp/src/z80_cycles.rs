@@ -122,6 +122,14 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
         ("jp", [t]) if is_sym(t) => Cost::Fixed(10),
         ("jp", [cc, t]) if is_cc(cc) && is_sym(t) => Cost::Fixed(10),
 
+        // --- UNCONDITIONAL `jr e` (12 T, 2 bytes) — the DENSE pad primitive.
+        // Unambiguous (there is no not-taken outcome), unlike `jr cc` below. It is
+        // the 3x-denser pad unit: 12 T in 2 bytes vs a `nop`'s 4 T in 1 byte, which
+        // is what `pad_to_cycles(..., dense: true)` emits. It is NOT admissible on
+        // the hot streaming path for its own sake — the jp-not-jr discipline is
+        // about the CONDITIONAL forms, whose taken/not-taken costs differ.
+        ("jr", [t]) if is_sym(t) => Cost::Fixed(12),
+
         // --- the AMBIGUOUS conditionals: taken/not-taken DIFFER -> hard bail ---
         // jr cc,e = 12/7 ; djnz = 13/8 ; ret cc = 11/5 ; call cc = 17/10.
         ("jr", [cc, _]) if is_cc(cc) => Cost::Ambiguous,

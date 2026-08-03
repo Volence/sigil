@@ -3,7 +3,7 @@
 //! expression's callee/receiver into one of them.
 use super::{Env, Evaluator};
 use crate::ast;
-use crate::value::{Cell, CodeBuf, CodeItem, DataBuf, Value};
+use crate::value::{Cell, CodeBuf, CodeItem, CodeOperand, DataBuf, Value};
 use sigil_span::Span;
 
 /// The inclusive value range accepted by `byte`/`bytes` — an 8-bit cell may be
@@ -581,22 +581,47 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    /// `pad_to_cycles(target, measured)` (rung 4, t40 step-2): emit exactly the
-    /// `nop`s needed to bring a timed path's cost up to `target` T-states, given the
-    /// `measured` non-pad cost of that path. `measured` is itself DERIVED from
+    /// `pad_to_cycles(target, measured[, dense])` (rung 4, t40 step-2): emit exactly
+    /// the padding needed to bring a timed path's cost up to `target` T-states, given
+    /// the `measured` non-pad cost of that path. `measured` is itself DERIVED from
     /// `cycles(...)` spans (+ the fixed pre-pad/trailing constant), so a future edit
     /// to the measured prefix RE-DERIVES the pad instead of silently unbalancing the
     /// DAC clock — the modernized form of the literal `rept N / nop` timing pad.
-    /// Returns a [`Value::Code`] run of `(target - measured) / 4` `nop`s (each nop =
-    /// 4 T-states, the only pad unit). `target - measured` must be >= 0 and a
-    /// multiple of 4; anything else is a loud error (the target is unreachable with
-    /// nop padding). Emitted as real `nop` instructions so the enclosing body's
-    /// `cycles()` span counts them at 4 each.
+    /// `target - measured` must be >= 0 and a multiple of 4; anything else is a loud
+    /// error (the target is unreachable with either pad granularity). The pad is
+    /// emitted as real instructions, so the enclosing body's `cycles()` span counts
+    /// them at their table cost and the balance stays build-proven.
+    ///
+    /// **Two pad shapes, opt-in:**
+    ///
+    /// * DEFAULT (`dense` absent or `false`) — `(target - measured) / 4` `nop`s. One
+    ///   byte per 4 T-states. The straight-line, instruction-mix-neutral shape.
+    /// * DENSE (`dense: true`) — `rem / 12` UNCONDITIONAL `jr` to the immediately
+    ///   following instruction (12 T in 2 bytes) plus `(rem % 12) / 4` trailing
+    ///   `nop`s for the sub-12 remainder. **3x denser in ROM** (6 T-states per byte
+    ///   vs 2), which is the whole point: on the Z80 sound blob a pad is pure dead
+    ///   weight against a hard resident ceiling. `rem` is validated as a multiple of
+    ///   4 and 12 is a multiple of 4, so the same validation covers both shapes and
+    ///   the `jr`/`nop` split always sums to exactly `rem`.
+    ///
+    /// Dense is OPT-IN, not the default: it changes the emitted instruction mix (an
+    /// unconditional `jr` is a real taken branch, and it refreshes `R` 7 M1-cycles
+    /// per pad step instead of 21), so a caller that specifically wants nop-only
+    /// padding — a mix-sensitive timed region, a pad that must be safely re-entrant
+    /// at any byte offset — keeps it by writing nothing.
+    ///
+    /// Each dense `jr`'s target is a freshly minted hidden label placed immediately
+    /// after it (see [`Self::mint_pad_label`]); the frontend's `jr` → `jp` relax
+    /// ladder always keeps the 2-byte rung for a zero displacement, so the byte cost
+    /// is fixed at 2.
     pub(super) fn eval_pad_to_cycles(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
-        if args.len() != 2 {
+        if args.len() != 2 && args.len() != 3 {
             self.error(
                 span,
-                format!("`pad_to_cycles` expects 2 arguments (target, measured), got {}", args.len()),
+                format!(
+                    "`pad_to_cycles` expects 2 or 3 arguments (target, measured[, dense]), got {}",
+                    args.len()
+                ),
             );
             return Value::Poison;
         }
@@ -620,6 +645,38 @@ impl<'a> Evaluator<'a> {
         let (Some(target), Some(measured)) = (int_arg(self, 0), int_arg(self, 1)) else {
             return Value::Poison;
         };
+        // The optional third argument selects the DENSE shape. Accepted positionally
+        // or by the keyword `dense:` (a wrong keyword is a loud error — a silently
+        // ignored `sense: true` would emit the sparse pad the caller did not ask for).
+        let dense = if args.len() == 3 {
+            if let Some(kw) = args[2].name.as_deref() {
+                if kw != "dense" {
+                    self.error(
+                        args[2].span,
+                        format!(
+                            "`pad_to_cycles`: the third argument is `dense`, got keyword `{kw}`"
+                        ),
+                    );
+                    return Value::Poison;
+                }
+            }
+            match self.eval_expr(&args[2].value, env) {
+                Value::Bool(b) => b,
+                Value::Poison => return Value::Poison,
+                other => {
+                    self.error(
+                        args[2].span,
+                        format!(
+                            "`pad_to_cycles` argument 3 (`dense`) must be a bool, got {}",
+                            other.type_name()
+                        ),
+                    );
+                    return Value::Poison;
+                }
+            }
+        } else {
+            false
+        };
         let rem = target - measured;
         if rem < 0 {
             self.error(
@@ -641,17 +698,61 @@ impl<'a> Evaluator<'a> {
             );
             return Value::Poison;
         }
-        let n = (rem / 4) as usize;
-        let items = (0..n)
-            .map(|_| CodeItem::Instr {
+        // DENSE: as many 12 T / 2 B unconditional `jr`s as fit, then 4 T / 1 B `nop`s
+        // for the sub-12 remainder. 12 is a multiple of 4, so `rem % 12` is too and
+        // the split is exact: 12*jrs + 4*nops == rem, always.
+        // SPARSE (default): all `nop`s — `jrs` is 0 and the nop count is the old
+        // `rem / 4`, so the emitted stream is byte-identical to before.
+        let (jrs, nops) = if dense {
+            ((rem / 12) as usize, ((rem % 12) / 4) as usize)
+        } else {
+            (0usize, (rem / 4) as usize)
+        };
+        let mut items: Vec<CodeItem> = Vec::with_capacity(jrs * 2 + nops);
+        for _ in 0..jrs {
+            // `jr <next instruction>`: a fresh hidden label placed immediately after
+            // the branch, so the displacement is 0 and the relax ladder keeps the
+            // 2-byte `jr` rung. The label is emitted AFTER the instruction that
+            // targets it — a forward reference the ladder resolves at link.
+            let target_label = self.mint_pad_label();
+            items.push(CodeItem::Instr {
+                mnemonic: "jr".to_string(),
+                size: None,
+                ops: vec![CodeOperand::Sym(target_label.clone())],
+                span,
+                as_type: None,
+            });
+            items.push(CodeItem::Label { name: target_label, export: false, span });
+        }
+        for _ in 0..nops {
+            items.push(CodeItem::Instr {
                 mnemonic: "nop".to_string(),
                 size: None,
                 ops: Vec::new(),
                 span,
                 as_type: None,
-            })
-            .collect();
+            });
+        }
         Value::Code(CodeBuf { items })
+    }
+
+    /// Mint the next hidden branch-target label for a DENSE
+    /// [`pad_to_cycles`](Self::eval_pad_to_cycles) `jr`. Runs the SAME owner-scoped
+    /// mangling a source-written non-`export` local label gets
+    /// ([`Owner::local_symbol`](crate::lower::hygiene::Owner::local_symbol)) so the
+    /// symbol is unique across modules and procs, with a monotonic sequence number
+    /// for uniqueness WITHIN one body. The bare name embeds a `$`, which no source
+    /// identifier may contain — so a hand-written `.pad0:` can never collide with a
+    /// minted `$pad0`. Outside any proc/asm body (no enclosing owner) the module id
+    /// carries the scoping instead.
+    fn mint_pad_label(&mut self) -> String {
+        let k = self.pad_label_seq;
+        self.pad_label_seq += 1;
+        let bare = format!("$pad{k}");
+        match &self.enclosing_owner {
+            Some(owner) => owner.local_symbol(&bare),
+            None => format!("${}$padcycles{}", self.module_id, bare),
+        }
     }
 
     /// `span(ProcName)` (A1/A2 arc §3, gap-ledger row 1654) — the EMITTED byte

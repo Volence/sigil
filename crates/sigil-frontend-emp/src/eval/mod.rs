@@ -416,6 +416,16 @@ pub struct Evaluator<'a> {
     /// typo'd `.labell`) is a LOUD diagnostic naming the label rather than a
     /// silent undefined link symbol. Reset per body (save/restore around nesting).
     minted_local_labels: Vec<(String, Span)>,
+    /// A monotonic id for the hidden branch-target labels a DENSE
+    /// [`pad_to_cycles`](Self::eval_pad_to_cycles) mints (one per emitted `jr`).
+    /// Those labels are synthesized directly as `CodeItem::Label`s — they never
+    /// pass through a [`LabelScope`](crate::lower::hygiene::LabelScope), which is
+    /// built from the body's SOURCE label statements — so uniqueness has to come
+    /// from here. Monotonic per evaluator and folded into the owner-scoped
+    /// mangling, so the symbol is unique whether or not lowering rebuilds an
+    /// evaluator per proc. The minted name embeds a `$` (unspellable in source),
+    /// so it can never collide with a user's `.pad0:`.
+    pad_label_seq: u32,
 }
 
 impl<'a> Evaluator<'a> {
@@ -476,6 +486,7 @@ impl<'a> Evaluator<'a> {
             data_value_in_progress: Vec::new(),
             enclosing_owner: None,
             minted_local_labels: Vec::new(),
+            pad_label_seq: 0,
         }
     }
 

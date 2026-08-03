@@ -87,3 +87,86 @@ fn pad_to_cycles_over_budget_errors() {
     let e = errs("    .a:\n    pad_to_cycles(4, 20)\n    ret");
     assert!(e.iter().any(|m| m.contains("exceeds the target")), "got {e:?}");
 }
+
+// --- pad_to_cycles DENSE mode (wave-4 Z80 reclaim) ---
+
+// An unconditional `jr Label` is 12 T-states — the dense pad's unit, and the arm
+// that was MISSING from the table (it used to fall through to `[cycles.unknown-op]`).
+#[test]
+fn cycles_unconditional_jr_is_twelve() {
+    let e = errs("    .a:\n    jr .b\n    .b:\n    ensure(cycles(.a, .b) == 12, \"jr\")");
+    assert!(e.is_empty(), "expected clean (jr = 12 T), got {e:?}");
+}
+
+// The doctored control for the arm above: 12 is the real cost, so 10 must fire.
+#[test]
+fn cycles_unconditional_jr_doctored_fires() {
+    let e = errs("    .a:\n    jr .b\n    .b:\n    ensure(cycles(.a, .b) == 10, \"jrdrift\")");
+    assert!(e.iter().any(|m| m.contains("jrdrift")), "expected the ensure to fire, got {e:?}");
+}
+
+// DENSE with an exact multiple of 12: 84 T = 7 `jr`, no nop remainder. The
+// following cycles() span re-measures the emitted pad, so a wrong split fails here.
+#[test]
+fn pad_to_cycles_dense_exact_multiple_of_twelve() {
+    let e = errs(
+        "    .a:\n    pad_to_cycles(84, 0, dense: true)\n    .b:\n    ensure(cycles(.a, .b) == 84, \"pad\")",
+    );
+    assert!(e.is_empty(), "expected clean (7 jr = 84 T), got {e:?}");
+}
+
+// DENSE with a sub-12 remainder: 76 T = 6 `jr` (72) + 1 `nop` (4).
+#[test]
+fn pad_to_cycles_dense_with_nop_remainder() {
+    let e = errs(
+        "    .a:\n    pad_to_cycles(76, 0, dense: true)\n    .b:\n    ensure(cycles(.a, .b) == 76, \"pad\")",
+    );
+    assert!(e.is_empty(), "expected clean (6 jr + 1 nop = 76 T), got {e:?}");
+}
+
+// `dense: false` and the positional form are both accepted, and `false` is the
+// unchanged nop-only shape (20 T = 5 nops, NOT 1 jr + 2 nops).
+#[test]
+fn pad_to_cycles_dense_false_is_the_sparse_shape() {
+    let e = errs(
+        "    .a:\n    pad_to_cycles(20, 0, dense: false)\n    .b:\n    ensure(cycles(.a, .b) == 20, \"pad\")",
+    );
+    assert!(e.is_empty(), "expected clean, got {e:?}");
+    let e = errs(
+        "    .a:\n    pad_to_cycles(20, 0, true)\n    .b:\n    ensure(cycles(.a, .b) == 20, \"pad\")",
+    );
+    assert!(e.is_empty(), "positional dense should work, got {e:?}");
+}
+
+// The multiple-of-4 validation still governs DENSE (12 is a multiple of 4, so the
+// jr/nop split can only be exact when `rem` already is).
+#[test]
+fn pad_to_cycles_dense_still_requires_multiple_of_four() {
+    let e = errs("    .a:\n    pad_to_cycles(10, 0, dense: true)\n    ret");
+    assert!(e.iter().any(|m| m.contains("multiple of 4")), "got {e:?}");
+}
+
+// A misspelled keyword is LOUD — silently ignoring it would emit the sparse pad the
+// caller did not ask for.
+#[test]
+fn pad_to_cycles_wrong_keyword_errors() {
+    let e = errs("    .a:\n    pad_to_cycles(20, 0, sense: true)\n    ret");
+    assert!(e.iter().any(|m| m.contains("the third argument is `dense`")), "got {e:?}");
+}
+
+// A non-bool `dense` is loud too.
+#[test]
+fn pad_to_cycles_non_bool_dense_errors() {
+    let e = errs("    .a:\n    pad_to_cycles(20, 0, dense: 1)\n    ret");
+    assert!(e.iter().any(|m| m.contains("must be a bool")), "got {e:?}");
+}
+
+// Two dense pads in ONE body mint DISTINCT hidden labels — a collision would be a
+// duplicate-symbol link failure, not a silent miscount.
+#[test]
+fn pad_to_cycles_dense_labels_do_not_collide() {
+    let e = errs(
+        "    .a:\n    pad_to_cycles(24, 0, dense: true)\n    .b:\n    pad_to_cycles(24, 0, dense: true)\n    .c:\n    ensure(cycles(.a, .c) == 48, \"pad\")",
+    );
+    assert!(e.is_empty(), "expected clean, got {e:?}");
+}
