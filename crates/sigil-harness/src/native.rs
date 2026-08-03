@@ -1449,6 +1449,41 @@ fn enforce_inapplicable_allowlist_against(
 // from its asl listing (sonic4: the pinned-resolve spans below; demo/Config: their
 // `.lst` spans). Bases stay COMPUTED — the soundness condition is met.
 
+/// Measure image lengths at `pins`, falling back to an ORDER-PRESERVING cumulative
+/// spread (+0x100 per ROM section — round 0's policy, mirrored) when the pinned resolve
+/// COLLIDES. Returns the lengths plus whether the fallback fired.
+///
+/// WHY THE CALLER MUST CARE ABOUT `distorted` (the config_a replay-hash-addrfree catch):
+/// a spread measurement is not the layout's truth. Section lengths are relaxation-
+/// dependent, and the spread moves every section by a rank-proportional amount, so a
+/// section sitting on a relaxation knife-edge measures a DIFFERENT length under the
+/// spread than at its real base (config_a's `boot`: 0x1A2 at the frozen provisional
+/// bases, 0x1A4 at its packed base, 0x1A6 under the 0x100 spread — three answers for
+/// one section). The spread exists to keep a measuring resolve overlap-free, and it
+/// distorts the very quantity it is measuring. So a spread-measured `img` may be used
+/// to make PROGRESS, but must never be accepted as the walk's fixpoint witness.
+fn measure_or_spread(
+    sections: &[Section],
+    pins: &[Option<u32>],
+    order: &[usize],
+    what: &str,
+) -> Result<(Vec<u32>, bool), String> {
+    match image_lens_pinned(sections, pins) {
+        Ok(v) => Ok((v, false)),
+        Err(_collision) => {
+            let mut spread = pins.to_vec();
+            for (rank, &i) in order.iter().enumerate() {
+                if let Some(Some(p)) = spread.get_mut(i).map(|s| s.as_mut()) {
+                    *p += 0x100 * rank as u32;
+                }
+            }
+            let v = image_lens_pinned(sections, &spread)
+                .map_err(|e| format!("span pass ({what}, post-growth): {e}"))?;
+            Ok((v, true))
+        }
+    }
+}
+
 /// Per-section image length (exact, relaxables lowered to `Data`) from a resolve where
 /// each ROM section is pinned at `pin_lma[idx]` (falling back to its baked lma). Keyed
 /// by the section's stable index. The unique-name tag makes the read unambiguous (the
@@ -1648,19 +1683,8 @@ fn packed_true_bases(
     let prov_pins: Vec<Option<u32>> = (0..n)
         .map(|i| if labeled[i] { prov[i].map(|v| v as u32) } else { None })
         .collect();
-    let mut img = match image_lens_pinned(sections, &prov_pins) {
-        Ok(v) => v,
-        Err(_collision) => {
-            let mut spread_pins = prov_pins.clone();
-            for (rank, &i) in order.iter().enumerate() {
-                if let Some(Some(p)) = spread_pins.get_mut(i).map(|s| s.as_mut()) {
-                    *p += 0x100 * rank as u32;
-                }
-            }
-            image_lens_pinned(sections, &spread_pins)
-                .map_err(|e| format!("span pass (spread round, post-growth): {e}"))?
-        }
-    };
+    let (mut img, mut img_distorted) =
+        measure_or_spread(sections, &prov_pins, &order, "spread round")?;
     let mut prev_islands: Option<Vec<bool>> = None;
     for _round in 0..8 {
         let mut out: Vec<Option<u32>> = vec![None; n];
@@ -1752,12 +1776,30 @@ fn packed_true_bases(
         let remeasure: Vec<Option<u32>> = (0..n)
             .map(|i| if labeled[i] && !bankish[i] { out[i] } else { None })
             .collect();
-        let img2 = image_lens_pinned(sections, &remeasure)
-            .map_err(|e| format!("span pass (packed round): {e}"))?;
-        if img2 == img {
+        // The remeasure gets round 0's spread fallback too. Without it a TRANSIENT
+        // overlap is fatal: the walk placed section N+1 from the PREVIOUS round's
+        // length for N, so the moment N measures longer at its packed base it overruns
+        // N+1's pin and `resolve_layout` rejects the whole measuring layout — even
+        // though the very next pack round would have absorbed the growth. Round 0 has
+        // always had this fallback; the remeasure never did, so a length that only
+        // grows once the layout is packed had nowhere to go. config_a is the first
+        // shape to hit it (replay-hash-addrfree, 2026-08-03): its `boot` measures 0x1A2
+        // at the stale frozen bases and 0x1A4 once the packed walk moves the sections
+        // downstream of it by the parcel's +0x40 — a relaxation knife-edge that only
+        // trips after packing.
+        //
+        // A spread-measured result is DISTORTED (see `measure_or_spread`), so it never
+        // counts as the fixpoint: it feeds the next pack round, which re-measures at
+        // real bases. If the walk cannot reach an UNDISTORTED fixpoint it exhausts the
+        // round budget and fails loud below — never silently returns spread-derived
+        // bases.
+        let (img2, distorted) =
+            measure_or_spread(sections, &remeasure, &order, "packed round")?;
+        if img2 == img && !img_distorted && !distorted {
             return Ok(out);
         }
         img = img2;
+        img_distorted = distorted;
     }
     Err("packed_true_bases did not converge in 8 rounds (relaxation oscillation) — hand ruling needed".to_string())
 }
@@ -2102,6 +2144,20 @@ pub fn validate_placement(
     rows.sort_by_key(|r| r.1);
 
     // ── Anchors: recover the inferred island set from the resolved layout ──
+    //
+    // LEDGER (2026-08-03, found while diagnosing the config_a packed-remeasure abort):
+    // anchor NAMES are decorative here — the map is keyed by `a.at` (ADDRESS), which is
+    // what makes a section rename transparent (see the dac_banks note in
+    // games/sonic4/map.toml). That is load-bearing, because one declared name is
+    // already a FALSE FRIEND: sonic4's `[[anchor]] name = "boot_head" / at = 0x0` is
+    // commented "the run head (vectors + header), label-less" — it means the ROM's
+    // first island at 0x0, NOT the actual emitted section called `boot_head`
+    // (engine.boot_data, head label `BootData`, which lands at 0x39C/0x3A2 depending on
+    // shape). Two different things share the string "boot_head". Harmless today
+    // precisely because nothing matches anchors by name — but any future change that
+    // starts keying anchors by name would silently bind the 0x0 anchor to the
+    // boot_data section. Left as-is deliberately (aeon is not ours to edit from the
+    // sigil gate); recorded so the next reader does not have to rediscover it.
     let declared: std::collections::HashMap<u32, &str> =
         pmap.anchors_for(sound_on).map(|a| (a.at, a.name.as_str())).collect();
     let mut inferred: std::collections::HashSet<u32> = std::collections::HashSet::new();
