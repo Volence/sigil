@@ -216,41 +216,66 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // +0x84 both shapes (SPRITE_*/CAMERA_*/CACHE_* pins et al., not asserted
     // here); the game-side PlayerV jump_headroom+pad + Player_Bound_Right/Bottom
     // cells shift the player RAM tail (+0x100 plain ring realign).
-    assert_eq!(pins::ANIMATE.plain_base, 0x3100);  // −0x14 bug005: core +4, sprites −0x18 upstream
-    assert_eq!(pins::ANIMATE.debug_base, 0x386A);  // +0xBC bug005: core +2, sprites +0xBA upstream
+    //
+    // Then the replay-hash-addrfree parcel (2026-08-03, aeon master 3191140) —
+    // a SINGLE-REGION upstream slide, the simplest shape yet. Only three files
+    // changed: engine/system/replay.emp (Replay_Hash rewritten ADDRESS-FREE —
+    // the one `dc.l Player_1, PLAYER_HASH_LONGS` hash-table row became five
+    // narrower long rows + three word folds that skip the SST's pointer fields,
+    // plus six excluded-offset pins / base-evenness / per-span long-divisibility
+    // / total-byte accounting `ensure`s), games/sonic4/data/replays/
+    // ojz_fixture.bin (re-recorded 208 → 320 B), and docs. So:
+    //   • the REPLAY region GREW +0x40 plain / +0x3E debug (its BASE holds —
+    //     game_loop is upstream and untouched);
+    //   • every engine-bank region BELOW replay slides by that span. In DEBUG the
+    //     +0x3E is ≡2 (mod 4), so the first downstream section boundary that was
+    //     already aligned re-pads: core's tail picks up a 2-byte `00 00` filler
+    //     after ObjectMoveY (proven in the bytes — both shapes now read
+    //     `… 4e 75 00 00 41 f8` into InitSpriteSystem, where the chain-31 debug
+    //     build needed no pad). Hence CORE.debug_len +2 and a uniform +0x40 for
+    //     everything from SPRITES down, in BOTH shapes. core.emp is untouched by
+    //     this parcel — the +2 is placement, not content;
+    //   • the slide is fully REABSORBED by the pre-error-handler padding: BusError
+    //     is anchored and does not move, so no gameplay/object-bank address shifts
+    //     (Ground_Move_Cap et al. hold at their bug005 values);
+    //   • the fixture sits at the CHAIN TAIL past that anchor, so its BASE holds
+    //     too and only its LEN grows +0x70 (0xD0 → 0x140) — which is the ONLY
+    //     contribution to the +0x70 on both ASSEMBLED_LEN pins.
+    assert_eq!(pins::ANIMATE.plain_base, 0x3140);  // +0x40 addrfree: replay-span slide
+    assert_eq!(pins::ANIMATE.debug_base, 0x38AA);  // +0x40 addrfree: +0x3E replay span + core's 2-byte re-pad
     assert_eq!(pins::ANIMATE.plain_len, 0x194);  // +0xA bug005: AF_SET_FIELD rail + refresh idiom
     assert_eq!(pins::ANIMATE.debug_len, 0x2B8);  // +0x10 bug005: same + the debug-fenced rail
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x3494);  // −0xA bug005: −0x14 animate slide + animate's own +0xA
-    assert_eq!(pins::RINGS.debug_base, 0x3D2A);  // +0xCC bug005: +0xBC animate slide + animate's own +0x10
+    assert_eq!(pins::RINGS.plain_base, 0x34D4);  // +0x40 addrfree: replay-span slide (animate LEN unchanged)
+    assert_eq!(pins::RINGS.debug_base, 0x3D6A);  // +0x40 addrfree: same slide
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
     // core LEN shrank −0xA in c4 (Spawn_Count: InitObjectRAM store −4 + RunObjects
     // moveq+store −6). Bases −0xA in c5 (the boot.asm CROSS_RESET store removal is
     // upstream of dplc/core, so core's base slides with everything downstream of boot).
-    assert_eq!(pins::CORE.plain_base, 0x2A10);  // +0xF0 I3 replay (was 0x2920); bug005-invariant (upstream of the wave)
-    assert_eq!(pins::CORE.plain_len, 0x2E8);    // +4 bug005: +2 DeleteObject frame_off tail clear + 2-byte align pad
-    assert_eq!(pins::CORE.debug_base, 0x2C62);  // +0x1A8 I3 replay (was 0x2ABA); bug005-invariant
-    assert_eq!(pins::CORE.debug_len, 0x72E);    // +2 bug005: DeleteObject frame_off tail clear (no pad needed)
-    assert_eq!(pins::DPLC.plain_base, 0x2968);  // +0xF0 I3 replay (was 0x2878); bug005-invariant (upstream of core's growth)
-    assert_eq!(pins::DPLC.debug_base, 0x2BBE);  // +0x1A8 I3 replay (was 0x2A16); bug005-invariant
+    assert_eq!(pins::CORE.plain_base, 0x2A50);  // +0x40 addrfree: replay-span slide
+    assert_eq!(pins::CORE.plain_len, 0x2E8);    // addrfree-invariant: plain's +0x40 span is ≡0 (mod 4), tail pad unchanged
+    assert_eq!(pins::CORE.debug_base, 0x2CA0);  // +0x3E addrfree: the debug replay span, PRE-re-pad
+    assert_eq!(pins::CORE.debug_len, 0x730);    // +2 addrfree: the tail align pad that absorbs debug's ≡2 (mod 4) span — placement, core.emp untouched
+    assert_eq!(pins::DPLC.plain_base, 0x29A8);  // +0x40 addrfree: replay-span slide
+    assert_eq!(pins::DPLC.debug_base, 0x2BFC);  // +0x3E addrfree: upstream of core's re-pad
     assert_eq!(pins::DPLC.plain_len, 0xA8);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xA4);   // item 6 REMOVED (soak disproved single-entry) — debug == plain
 
     // animate_port.rs: the DeleteObject inbound label. bug005-invariant: the +2
     // tail clear lands INSIDE DeleteObject after its label, so the label holds.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2AE0, debug: 0x2D32 });  // +0xF0/+0x1A8 I3 replay
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2B20, debug: 0x2D70 });  // +0x40/+0x3E addrfree: inside core, upstream of its tail re-pad
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
     // object_test_state growth), then +0xC debug only from the OJZ scene-pin
     // hook's two `ifdef __DEBUG__` guards (Debug_Scene_Freeze).
-    assert_eq!(pins::ASSEMBLED_LEN, 0x5DBD0);       // +0xD0 i4: EndOfRom encloses the replay fixture (194 B + align); bug005-invariant (plain object-bank growth reabsorbed)
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F6D2); // +0x10 bug005: the debug tail (ojz_scroll_test +0x10, error-handler block +0x10 downstream) pushes __END__; plain reabsorbed
+    assert_eq!(pins::ASSEMBLED_LEN, 0x5DC40);       // +0x70 addrfree: the re-recorded chain-tail fixture (208 → 320 B); the replay-region slide is reabsorbed before the anchored error handler
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F742); // +0x70 addrfree: same single cause, both shapes (the fixture is shape-invariant)
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the
