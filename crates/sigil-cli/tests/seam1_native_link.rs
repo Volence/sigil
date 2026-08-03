@@ -95,13 +95,21 @@ fn native_blob_matches_reference_debug() {
     assert_blob_matches(&blob, expected, true, "native blob (debug) vs s4.debug.bin[$3E2..$1C7C]");
 }
 
-/// The debug blob is exactly $7E longer than plain; both are the canonical
-/// `Z80_SOUND_SIZE`. These constants are a size TRIPWIRE, not a placement input —
-/// the module bases are derived (see `module_bases_are_a_gapless_cursor`).
+/// The debug blob is exactly $7E longer than plain. These constants are a size
+/// TRIPWIRE, not a placement input — the module bases are derived (see
+/// `module_bases_are_a_gapless_cursor`).
+///
+/// NOTE these are the BLOB lengths, which since aeon `5526113` are no longer
+/// necessarily equal to `Z80_SOUND_SIZE`: aeon aligns the blob to an even length
+/// inside the `Z80_Sound_Start`/`_End` brackets, so `Z80_SOUND_SIZE` is the blob
+/// length rounded UP to even (it is `boot_port.rs` that pins that value). The pad
+/// is load-bearing — boot walks `a5` through the blob into word-wide VDP reads in
+/// `boot_tail`, so an odd blob address-errors the 68k before the first frame.
+/// Both current lengths are odd, hence a 1-byte pad in each shape.
 #[test]
 fn blob_lengths_are_canonical() {
     assert_eq!(BLOB_LEN_DEBUG - BLOB_LEN_PLAIN, 0x7E, "debug grows +$7E over plain");
-    assert_eq!(BLOB_LEN_PLAIN, 0x181C, "plain blob is Z80_SOUND_SIZE = $181C");
+    assert_eq!(BLOB_LEN_PLAIN, 0x1735, "plain blob length (wave-4 sound reclaim: was $181C)");
 }
 
 /// The PLACEMENT contract, stated structurally instead of by re-pinned addresses:

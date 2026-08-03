@@ -1534,3 +1534,49 @@ full_crc = "af882b6c"
 full_size = 423377
 anchor_crc = "7fc5b62d"
 anchor_end = 0x5f742
+
+[[entry]]
+name = "wave4-z80-sound-reclaim"
+ab = "docs/superpowers/notes/2026-08-03-wave4-sound-ab.md"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "5ef9cf17"
+full_size = 423757
+anchor_crc = "3ebbdd93"
+anchor_end = 0x5f742
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c7421397"
+full_size = 304744
+anchor_crc = "d399e161"
+anchor_end = 0x43640
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "4dc9f108"
+full_size = 91164
+anchor_crc = "c50a7076"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "c555ae75"
+full_size = 93905
+anchor_crc = "db314c92"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "e4e55c84"
+full_size = 413238
+anchor_crc = "e5c67ca7"
+anchor_end = 0x5dc40
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "6ee92ea7"
+full_size = 423391
+anchor_crc = "f25d1e18"
+anchor_end = 0x5f742
