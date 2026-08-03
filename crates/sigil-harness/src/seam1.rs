@@ -24,8 +24,16 @@ use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 
 /// The plain-shape blob length (`Z80_SOUND_SIZE`, s4.lst) — 6172 B.
+///
+/// TRIPWIRE, NOT AN INPUT. Module bases are DERIVED from a running cursor
+/// ([`place_resident_sections`]), so nothing here participates in placement;
+/// this is purely the "the reclaim moved the number I expected" check that
+/// [`emit_sound_blob`] asserts the emitted blob against. When a module
+/// legitimately grows or shrinks, re-pin this to the new measured length
+/// (and re-pin the `Z80_SOUND_SIZE` mirrors in the boot/tranche gates).
 pub const BLOB_LEN_PLAIN: usize = 0x181C;
 /// The debug blob length = plain + $7E (the sequencer's 16 `if DEBUG==1` bodies).
+/// Same TRIPWIRE-not-input status as [`BLOB_LEN_PLAIN`].
 pub const BLOB_LEN_DEBUG: usize = 0x181C + 0x7E;
 
 /// The blob's LMA base = `Z80_Sound_Start` = `BootData + 54`. SHAPE-DEPENDENT: the
@@ -75,8 +83,6 @@ pub const HANDLER_SYMBOLS: &[&str] = &[
 struct FileSpec {
     rel_path: &'static str,
     section: &'static str,
-    vma_plain: u32,
-    vma_debug: u32,
     /// The NAMES of the sound constants this resident module folds — the `-D` env
     /// the emit seeds. The VALUES are resolved from the `sound_constants.emp`
     /// authority (or the small `seam_emit_config` list for the genuinely-external
@@ -84,41 +90,36 @@ struct FileSpec {
     const_names: fn() -> &'static [&'static str],
 }
 
+/// The blob's module ORDER (driver→sequencer→sfx→fm→psg). Each module's base is
+/// DERIVED — it starts where its predecessor ended (see [`place_resident_sections`]);
+/// there is no hand-pinned address in this table any more, so a module that grows
+/// or shrinks re-bases its successors automatically instead of silently dropping
+/// (or overlapping into) the gap the old hand-pinned VMAs encoded.
 fn file_specs() -> Vec<FileSpec> {
     vec![
         FileSpec {
             rel_path: "engine/sound/z80_sound_driver.emp",
             section: "z80_sound_driver",
-            vma_plain: 0x0000,
-            vma_debug: 0x0000,
             const_names: driver_const_names,
         },
         FileSpec {
             rel_path: "engine/sound/sound_sequencer.emp",
             section: "sound_sequencer",
-            vma_plain: 0x0565,
-            vma_debug: 0x0565,
             const_names: sequencer_const_names,
         },
         FileSpec {
             rel_path: "engine/sound/sound_sfx.emp",
             section: "sound_sfx",
-            vma_plain: 0x0CD7,
-            vma_debug: 0x0D55,
             const_names: sfx_const_names,
         },
         FileSpec {
             rel_path: "engine/sound/sound_fm.emp",
             section: "sound_fm",
-            vma_plain: 0x12C3,
-            vma_debug: 0x1341,
             const_names: fm_const_names,
         },
         FileSpec {
             rel_path: "engine/sound/sound_psg.emp",
             section: "sound_psg",
-            vma_plain: 0x1660,
-            vma_debug: 0x16DE,
             const_names: psg_const_names,
         },
     ]
@@ -295,12 +296,18 @@ fn use_import_stubs(
 /// `use` imports are resolved to derived contract stubs (`table`) and prepended, so
 /// the cross-module `call`s' callee-preserves credit exactly as the retired
 /// hand-written `extern proc` decls provided (byte-neutral — decls emit nothing).
+///
+/// `presets` short-circuits the const seam for the named symbols BEFORE
+/// [`resolve_consts`] would derive them — the size-only driver lowering
+/// (see [`DAC_SAMPLE_TABLE_SIZE_PROBE`]) uses it to keep the seam-2 derivation
+/// out of the chain. Empty for every real emit.
 fn lower_one(
     aeon: &Path,
     spec: &FileSpec,
     debug: bool,
     doctor: Option<(&str, i64)>,
     table: &BTreeMap<String, ast::ExternProcDecl>,
+    presets: &[(&'static str, i64)],
 ) -> Section {
     let (file, dir) = parse_one(aeon, spec);
     let mut imported: Vec<ast::Item> = Vec::new();
@@ -315,7 +322,7 @@ fn lower_one(
             docs: file.docs.clone(),
         }
     };
-    let mut defines: Vec<(String, i128)> = resolve_consts(aeon, (spec.const_names)())
+    let mut defines: Vec<(String, i128)> = resolve_consts(aeon, (spec.const_names)(), presets)
         .into_iter()
         .map(|(n, v)| {
             let v = match doctor {
@@ -366,22 +373,44 @@ pub fn native_sound_blob(aeon: &Path, debug: bool) -> NativeSoundBlob {
 /// The resident sequencer handler VMAs (the seq-opcode table's `dc.w Seq_Op_*` link
 /// targets) WITHOUT building the full blob bytes. seam-2's seq emitter uses this
 /// symbols-only path so its `sound_layout`-driven derivation does not lower the
-/// resident DRIVER: the driver requests `DacSampleTable`, whose value flows back
-/// through `seam2::sound_layout`, and lowering it here would re-enter that chain.
+/// resident DRIVER *with its real `DacSampleTable`*: the driver requests
+/// `DacSampleTable`, whose value flows back through `seam2::sound_layout`, and
+/// resolving it here would re-enter that chain.
 pub(crate) fn native_sound_symbols(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
     handler_symbols(aeon, debug)
 }
 
+/// The placeholder `DacSampleTable` the SIZE-ONLY driver lowering folds.
+///
+/// WHY THIS IS SOUND: `DacSampleTable` reaches the driver only as a Z80 16-bit
+/// immediate / absolute operand (`ld hl,nn`, `ld (nn),a`-class), whose instruction
+/// length is VALUE-INDEPENDENT — the Z80 has no width-selected absolute form, and
+/// the only length-variable Z80 fragment sigil emits is the intra-section
+/// `jr e → jp nn` ladder, whose rung is chosen from a RELATIVE distance inside its
+/// own section. So the driver's emitted SPAN is identical under any 16-bit
+/// placeholder, and the sequencer base derived from that span is exact. The
+/// placeholder never reaches emitted bytes: [`native_blob_doctored`] lowers the
+/// driver with the REAL derived value. `$8000` is chosen to sit in the banked
+/// window like the real value, so nothing folds differently by sign or range.
+const DAC_SAMPLE_TABLE_SIZE_PROBE: i64 = 0x8000;
+
 /// The 26 handler VMAs read off `sound_sequencer`'s labels (`vma_base + offset`),
-/// per shape. `sound_sequencer` starts at `$0565` in BOTH shapes; its internal
-/// `if DEBUG==1` growth re-bases the handlers AFTER a debug block, so the values are
-/// shape-DEPENDENT and read from the lowered section directly.
+/// per shape. The sequencer's base is DERIVED (the driver's emitted span), and its
+/// internal `if DEBUG==1` growth re-bases the handlers AFTER a debug block, so the
+/// values are shape-DEPENDENT and read from the lowered section directly.
 fn handler_symbols(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
     let specs = file_specs();
-    let seq = specs.iter().find(|s| s.section == "sound_sequencer").expect("sequencer spec");
+    let seq_idx = specs
+        .iter()
+        .position(|s| s.section == "sound_sequencer")
+        .expect("sequencer spec");
     let table = import_stub_table(aeon);
-    let sec = lower_one(aeon, seq, debug, None, &table);
-    let base = if debug { seq.vma_debug } else { seq.vma_plain };
+    // The driver is lowered here for its SIZE ONLY, with `DacSampleTable` supplied
+    // as a placeholder so seam-2's `sound_layout` derivation is not re-entered
+    // (see DAC_SAMPLE_TABLE_SIZE_PROBE for why the size is exact regardless).
+    let bases = module_base_vmas(aeon, debug, &[("DacSampleTable", DAC_SAMPLE_TABLE_SIZE_PROBE)]);
+    let sec = lower_one(aeon, &specs[seq_idx], debug, None, &table, &[]);
+    let base = bases[seq_idx];
     let mut out = Vec::new();
     for want in HANDLER_SYMBOLS {
         let label = sec
@@ -394,23 +423,9 @@ fn handler_symbols(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
     out
 }
 
-/// The flattened standalone blob bytes with an optional single-symbol doctor
-/// (const seam `-D` OR a banked carrier). Used by the byte gate + its t24 controls.
-pub fn native_blob_doctored(aeon: &Path, debug: bool, doctor: Option<(&str, i64)>) -> Vec<u8> {
-    let specs = file_specs();
-    let table = import_stub_table(aeon);
-    let mut sections: Vec<Section> = Vec::new();
-    for spec in &specs {
-        let mut sec = lower_one(aeon, spec, debug, doctor, &table);
-        let vma = if debug { spec.vma_debug } else { spec.vma_plain };
-        sec.vma_base = Some(vma);
-        sec.lma = blob_lma(debug) + vma;
-        sec.placement = SectionPlacement::Pinned;
-        sec.group = None;
-        sections.push(sec);
-    }
-
-    // The banked $8000-window symbols as equ carriers at harness-private LMAs.
+/// The banked `$8000`-window symbols as equ-carrier sections at harness-private
+/// LMAs, with the optional single-symbol doctor applied.
+fn carrier_sections(doctor: Option<(&str, i64)>) -> Vec<Section> {
     let carrier_pairs: Vec<(String, String)> = banked_carriers()
         .into_iter()
         .map(|(n, v)| {
@@ -429,7 +444,97 @@ pub fn native_blob_doctored(aeon: &Path, debug: bool, doctor: Option<(&str, i64)
         sec.placement = SectionPlacement::Pinned;
         sec.group = None;
     }
-    sections.extend(carriers);
+    carriers
+}
+
+/// Stamp `modules` (blob order) at bases taken from a RUNNING CURSOR: module N
+/// starts where module N-1 ended. `spans[i]` is the span module `i` occupies;
+/// returns the derived base VMAs. Every module is `Pinned` in the anonymous
+/// group, so `relax.rs`'s placement pass keeps the base verbatim.
+fn stamp_cursor_bases(modules: &mut [Section], spans: &[u32], debug: bool) -> Vec<u32> {
+    let mut cursor = 0u32;
+    let mut bases = Vec::with_capacity(modules.len());
+    for (i, sec) in modules.iter_mut().enumerate() {
+        sec.vma_base = Some(cursor);
+        sec.lma = blob_lma(debug) + cursor;
+        sec.placement = SectionPlacement::Pinned;
+        sec.group = None;
+        bases.push(cursor);
+        cursor += spans[i];
+    }
+    bases
+}
+
+/// The five resident modules, LOWERED and PLACED at DERIVED bases (a running
+/// cursor — module N starts where module N-1 ended), plus the banked carriers.
+/// Returns `(sections, base VMAs, emitted spans)`, the latter two in blob order.
+///
+/// TWO PASSES, AND ONE SIZING PASS IS ENOUGH. Z80 section sizes are
+/// BASE-INDEPENDENT: the only length-variable Z80 fragment sigil emits is the
+/// intra-section `jr e → jp nn` ladder, whose rung is chosen from a RELATIVE
+/// distance inside its own section, and every cross-module reference is a
+/// fixed-width 3-byte absolute `call nn`/`jp nn` (`Value16Le`, always reaches).
+/// So the sizing pass — run at PLACEHOLDER bases (a `placement_span` upper-bound
+/// cursor, enough to keep the LMAs disjoint) — measures exactly the spans the
+/// real bases produce. No fixpoint iteration is required.
+fn place_resident_sections(
+    aeon: &Path,
+    debug: bool,
+    doctor: Option<(&str, i64)>,
+    presets: &[(&'static str, i64)],
+) -> (Vec<Section>, Vec<u32>, Vec<u32>) {
+    let specs = file_specs();
+    let table = import_stub_table(aeon);
+    let lowered: Vec<Section> =
+        specs.iter().map(|spec| lower_one(aeon, spec, debug, doctor, &table, presets)).collect();
+
+    // --- sizing pass: placeholder bases, measured spans ---------------------
+    let upper: Vec<u32> = lowered.iter().map(|s| s.placement_span()).collect();
+    let mut probe = lowered.clone();
+    stamp_cursor_bases(&mut probe, &upper, debug);
+    probe.extend(carrier_sections(doctor));
+    let sized = sigil_link::resolve_layout(&probe, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout (sizing pass) failed: {d:?}"));
+    // `resolve_layout` lowers every relaxable fragment to concrete Data and shifts
+    // the labels, so `vma_len` here is the module's FINAL emitted span.
+    let spans: Vec<u32> = specs
+        .iter()
+        .map(|spec| {
+            sized
+                .iter()
+                .find(|s| s.name == spec.section)
+                .unwrap_or_else(|| panic!("sizing pass lost section {}", spec.section))
+                .vma_len()
+        })
+        .collect();
+
+    // --- real pass: derived bases -------------------------------------------
+    let mut sections = lowered;
+    let bases = stamp_cursor_bases(&mut sections, &spans, debug);
+    sections.extend(carrier_sections(doctor));
+    (sections, bases, spans)
+}
+
+/// The DERIVED base VMA of each resident module, in blob order
+/// (driver→sequencer→sfx→fm→psg).
+fn module_base_vmas(aeon: &Path, debug: bool, presets: &[(&'static str, i64)]) -> Vec<u32> {
+    place_resident_sections(aeon, debug, None, presets).1
+}
+
+/// The DERIVED base VMA of each resident module, in blob order, as
+/// `(section name, base)` — the placement contract the gates assert against
+/// instead of re-pinning the addresses by hand.
+pub fn resident_module_bases(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
+    let specs = file_specs();
+    let bases = module_base_vmas(aeon, debug, &[]);
+    specs.iter().zip(bases).map(|(s, b)| (s.section.to_string(), b)).collect()
+}
+
+/// The flattened standalone blob bytes with an optional single-symbol doctor
+/// (const seam `-D` OR a banked carrier). Used by the byte gate + its t24 controls.
+pub fn native_blob_doctored(aeon: &Path, debug: bool, doctor: Option<(&str, i64)>) -> Vec<u8> {
+    let specs = file_specs();
+    let (sections, _bases, spans) = place_resident_sections(aeon, debug, doctor, &[]);
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));
@@ -437,12 +542,27 @@ pub fn native_blob_doctored(aeon: &Path, debug: bool, doctor: Option<(&str, i64)
         .unwrap_or_else(|d| panic!("link failed: {d:?}"));
 
     let mut out = Vec::new();
-    for spec in &specs {
+    for (i, spec) in specs.iter().enumerate() {
         let bytes = linked
             .section(spec.section)
             .unwrap_or_else(|| panic!("linked image missing section {}", spec.section))
             .bytes
             .clone();
+        // The blob is assembled by CONCATENATION, so a module's image bytes must
+        // fill exactly the address span its successor's base was derived from. An
+        // address-only `Reserve` (`ds`) inside a resident code module would break
+        // that (image shorter than span) and silently shift every later module —
+        // exactly the failure mode the derived cursor exists to retire, so it is a
+        // loud assert rather than a dropped gap.
+        assert_eq!(
+            bytes.len() as u32,
+            spans[i],
+            "section {} emits {} image bytes but spans {} bytes of address space \
+             (an address-only `ds` in a resident module would desync the concatenated blob)",
+            spec.section,
+            bytes.len(),
+            spans[i]
+        );
         out.extend(bytes);
     }
     out
@@ -459,11 +579,25 @@ pub fn emit_sound_blob(aeon: &Path, out_dir: &Path) -> Result<(), String> {
 
     let plain = native_sound_blob(aeon, false);
     let debug = native_sound_blob(aeon, true);
+    // TRIPWIRE (not an input — the module bases are derived): the emitted length
+    // must still be the pinned `Z80_SOUND_SIZE`. A deliberate size change re-pins
+    // BLOB_LEN_{PLAIN,DEBUG} here, in lockstep with the `Z80_SOUND_SIZE` mirrors
+    // in the boot/tranche gates.
     if plain.bytes.len() != BLOB_LEN_PLAIN {
-        return Err(format!("plain blob is {} bytes, expected {BLOB_LEN_PLAIN}", plain.bytes.len()));
+        return Err(format!(
+            "plain blob is {} bytes, expected {BLOB_LEN_PLAIN} (${BLOB_LEN_PLAIN:X}) — the \
+             module bases are DERIVED, so this is the size tripwire, not a placement input: \
+             if the size change is intended, re-pin BLOB_LEN_PLAIN and the Z80_SOUND_SIZE mirrors",
+            plain.bytes.len()
+        ));
     }
     if debug.bytes.len() != BLOB_LEN_DEBUG {
-        return Err(format!("debug blob is {} bytes, expected {BLOB_LEN_DEBUG}", debug.bytes.len()));
+        return Err(format!(
+            "debug blob is {} bytes, expected {BLOB_LEN_DEBUG} (${BLOB_LEN_DEBUG:X}) — the \
+             module bases are DERIVED, so this is the size tripwire, not a placement input: \
+             if the size change is intended, re-pin BLOB_LEN_DEBUG and the Z80_SOUND_SIZE mirrors",
+            debug.bytes.len()
+        ));
     }
 
     let write = |name: &str, bytes: &[u8]| -> Result<(), String> {
@@ -642,7 +776,7 @@ pub fn z80_clobbers_report_doctored(
     for spec in &file_specs() {
         let (file, _dir) = parse_one(aeon, spec);
         let inv_units = expand(&module_invariant_reglist(&file));
-        let mut defines: Vec<(String, i128)> = resolve_consts(aeon, (spec.const_names)())
+        let mut defines: Vec<(String, i128)> = resolve_consts(aeon, (spec.const_names)(), &[])
             .into_iter()
             .map(|(n, v)| (n.to_string(), v as i128))
             .collect();
@@ -819,7 +953,15 @@ fn seam_emit_config() -> BTreeMap<&'static str, i64> {
 /// resident driver): its value comes from `seam2::sound_layout`, which lowers the
 /// seq-opcode table via the symbols-only path — so no non-driver file's resolution
 /// (e.g. the sequencer's, reached inside that derivation) triggers the derivation.
-fn resolve_consts(aeon: &Path, names: &[&'static str]) -> Vec<(&'static str, i64)> {
+///
+/// `presets` wins over every source and is consulted FIRST — the size-only
+/// lowering path uses it to supply a placeholder `DacSampleTable` so the
+/// seam-2 derivation is never entered (see [`DAC_SAMPLE_TABLE_SIZE_PROBE`]).
+fn resolve_consts(
+    aeon: &Path,
+    names: &[&'static str],
+    presets: &[(&'static str, i64)],
+) -> Vec<(&'static str, i64)> {
     let auth = sound_authority_consts(aeon);
     let sfx = sfx_bank_authority_consts(aeon);
     let tables = sound_tables_authority_consts(aeon);
@@ -827,6 +969,9 @@ fn resolve_consts(aeon: &Path, names: &[&'static str]) -> Vec<(&'static str, i64
     names
         .iter()
         .map(|&n| {
+            if let Some(&(_, v)) = presets.iter().find(|(pn, _)| *pn == n) {
+                return (n, v);
+            }
             let v = auth
                 .get(n)
                 .copied()

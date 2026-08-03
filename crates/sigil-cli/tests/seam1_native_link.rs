@@ -16,7 +16,8 @@
 //! ```
 
 use sigil_harness::seam1::{
-    self, blob_lma, native_blob_doctored, native_sound_blob, BLOB_LEN_DEBUG, BLOB_LEN_PLAIN,
+    self, blob_lma, native_blob_doctored, native_sound_blob, resident_module_bases,
+    BLOB_LEN_DEBUG, BLOB_LEN_PLAIN,
 };
 use std::path::PathBuf;
 
@@ -95,11 +96,47 @@ fn native_blob_matches_reference_debug() {
 }
 
 /// The debug blob is exactly $7E longer than plain; both are the canonical
-/// `Z80_SOUND_SIZE`.
+/// `Z80_SOUND_SIZE`. These constants are a size TRIPWIRE, not a placement input —
+/// the module bases are derived (see `module_bases_are_a_gapless_cursor`).
 #[test]
 fn blob_lengths_are_canonical() {
     assert_eq!(BLOB_LEN_DEBUG - BLOB_LEN_PLAIN, 0x7E, "debug grows +$7E over plain");
     assert_eq!(BLOB_LEN_PLAIN, 0x181C, "plain blob is Z80_SOUND_SIZE = $181C");
+}
+
+/// The PLACEMENT contract, stated structurally instead of by re-pinned addresses:
+/// the five resident modules' bases are a strictly-increasing, GAPLESS cursor that
+/// starts at `$0000` and whose final module ends exactly at the blob length. This
+/// is what makes a module's size change safe — its successors re-base with it —
+/// and it fails loudly if a base is ever computed from anything but the running
+/// cursor. (The old hand-pinned VMA table could under-state a base, whereupon the
+/// gap was silently dropped from the concatenated blob and every cross-module
+/// `call` missed.)
+#[test]
+fn module_bases_are_a_gapless_cursor() {
+    let Some(_) = read_ref("s4.bin") else { return };
+    for (debug, len) in [(false, BLOB_LEN_PLAIN), (true, BLOB_LEN_DEBUG)] {
+        let bases = resident_module_bases(&aeon_dir(), debug);
+        assert_eq!(bases.len(), 5, "five resident modules");
+        assert_eq!(bases[0].1, 0, "the driver anchors the blob at VMA $0000 (debug={debug})");
+        for w in bases.windows(2) {
+            assert!(
+                w[0].1 < w[1].1,
+                "module bases must strictly increase: {} at {:#06x} then {} at {:#06x}",
+                w[0].0,
+                w[0].1,
+                w[1].0,
+                w[1].1
+            );
+        }
+        // The blob is a CONCATENATION, so the last base + its span == the total.
+        let blob = native_sound_blob(&aeon_dir(), debug).bytes;
+        assert_eq!(blob.len(), len, "blob length tripwire (debug={debug})");
+        assert!(
+            (bases[4].1 as usize) < len,
+            "the last module must start inside the blob (debug={debug})"
+        );
+    }
 }
 
 /// t24 positive control (BANKED-CARRIER axis): a doctored `SeqOpcodeTable` must make
@@ -127,10 +164,15 @@ fn blob_diverges_when_const_doctored() {
 /// The exported-symbol contract is present: `sound_sequencer.emp` exports all 26
 /// handler labels the banked `seq_opcode_tab.asm` references (a missing one panics
 /// in `native_sound_blob`, so reaching here means the contract is complete), and
-/// each lies in the sequencer window.
+/// each lies in the sequencer window. The window is DERIVED from the module bases
+/// (`[sequencer, sfx)`), not re-pinned — a legitimate size change re-bases it
+/// instead of false-failing here.
 #[test]
 fn handler_symbol_contract_complete() {
     let Some(_) = read_ref("s4.bin") else { return };
+    let bases = resident_module_bases(&aeon_dir(), false);
+    let lo = bases.iter().find(|(n, _)| n == "sound_sequencer").expect("sequencer base").1;
+    let hi = bases.iter().find(|(n, _)| n == "sound_sfx").expect("sfx base").1;
     let syms = native_sound_blob(&aeon_dir(), false).symbols;
     assert_eq!(
         syms.len(),
@@ -139,8 +181,8 @@ fn handler_symbol_contract_complete() {
     );
     for (name, addr) in &syms {
         assert!(
-            (0x0565..0x0CD7).contains(addr),
-            "handler {name} at {addr:#x} must lie in the sequencer window $0565..$0CD7"
+            (lo..hi).contains(addr),
+            "handler {name} at {addr:#x} must lie in the sequencer window {lo:#06x}..{hi:#06x}"
         );
     }
 }
