@@ -98,8 +98,8 @@ fn golden(name: &str) -> Option<Vec<u8>> {
 /// `GameState_OJZScroll_Init` (the game proc), not the retired `Game_Entry` equ.
 fn frozen_symbol(debug: bool, name: &str) -> u64 {
     match (name, debug) {
-        ("Z80_SOUND_SIZE", false) => 0x181C,
-        ("Z80_SOUND_SIZE", true) => 0x189A,
+        ("Z80_SOUND_SIZE", false) => 0x1736,
+        ("Z80_SOUND_SIZE", true) => 0x17B4,
         ("GameState_OJZScroll_Init", false) => 0x5C7EC,
         ("GameState_OJZScroll_Init", true) => 0x5E2DA,
         _ => panic!("no frozen value pinned for symbol `{name}` (debug={debug})"),
