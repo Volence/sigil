@@ -601,22 +601,32 @@ pub fn emit_sound_blob(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     // must still be the pinned `Z80_SOUND_SIZE`. A deliberate size change re-pins
     // BLOB_LEN_{PLAIN,DEBUG} here, in lockstep with the `Z80_SOUND_SIZE` mirrors
     // in the boot/tranche gates.
-    if plain.bytes.len() != BLOB_LEN_PLAIN {
-        return Err(format!(
-            "plain blob is {} bytes, expected {BLOB_LEN_PLAIN} (${BLOB_LEN_PLAIN:X}) — the \
-             module bases are DERIVED, so this is the size tripwire, not a placement input: \
-             if the size change is intended, re-pin BLOB_LEN_PLAIN and the Z80_SOUND_SIZE mirrors",
-            plain.bytes.len()
-        ));
-    }
-    if debug.bytes.len() != BLOB_LEN_DEBUG {
-        return Err(format!(
-            "debug blob is {} bytes, expected {BLOB_LEN_DEBUG} (${BLOB_LEN_DEBUG:X}) — the \
-             module bases are DERIVED, so this is the size tripwire, not a placement input: \
-             if the size change is intended, re-pin BLOB_LEN_DEBUG and the Z80_SOUND_SIZE mirrors",
-            debug.bytes.len()
-        ));
-    }
+    // `SIGIL_BLOB_LEN_DRIFT=warn` downgrades both checks to stderr warnings. This
+    // exists for deliberate multi-commit SIZE CAMPAIGNS (aeon's wave-4 Z80 sound
+    // reclaim moves ~250 B across ~15 commits): there, every build changes the
+    // length on purpose, so the tripwire carries zero signal and costs a two-
+    // constant edit plus a full Rust rebuild per aeon build. It is a development
+    // affordance ONLY — the strict suite and `refreeze --check` do not read the
+    // variable, so a campaign still has to land on re-pinned constants to freeze.
+    let drift_warn = std::env::var("SIGIL_BLOB_LEN_DRIFT").as_deref() == Ok("warn");
+    let check_len = |shape: &str, got: usize, want: usize, konst: &str| -> Result<(), String> {
+        if got == want {
+            return Ok(());
+        }
+        let msg = format!(
+            "{shape} blob is {got} bytes, expected {want} (${want:X}) — the module bases are \
+             DERIVED, so this is the size tripwire, not a placement input: if the size change \
+             is intended, re-pin {konst} and the Z80_SOUND_SIZE mirrors"
+        );
+        if drift_warn {
+            eprintln!("warning: {msg} [SIGIL_BLOB_LEN_DRIFT=warn]");
+            Ok(())
+        } else {
+            Err(msg)
+        }
+    };
+    check_len("plain", plain.bytes.len(), BLOB_LEN_PLAIN, "BLOB_LEN_PLAIN")?;
+    check_len("debug", debug.bytes.len(), BLOB_LEN_DEBUG, "BLOB_LEN_DEBUG")?;
 
     let write = |name: &str, bytes: &[u8]| -> Result<(), String> {
         let p = out_dir.join(name);
