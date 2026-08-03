@@ -394,22 +394,40 @@ pub(crate) fn native_sound_symbols(aeon: &Path, debug: bool) -> Vec<(String, u32
 /// window like the real value, so nothing folds differently by sign or range.
 const DAC_SAMPLE_TABLE_SIZE_PROBE: i64 = 0x8000;
 
-/// The 26 handler VMAs read off `sound_sequencer`'s labels (`vma_base + offset`),
-/// per shape. The sequencer's base is DERIVED (the driver's emitted span), and its
-/// internal `if DEBUG==1` growth re-bases the handlers AFTER a debug block, so the
-/// values are shape-DEPENDENT and read from the lowered section directly.
+/// The 26 handler VMAs (`vma_base + offset`), per shape. The sequencer's base is
+/// DERIVED (the driver's emitted span), and its internal `if DEBUG==1` growth
+/// re-bases the handlers AFTER a debug block, so the values are shape-DEPENDENT.
+///
+/// The offsets are read off the RESOLVED sequencer section — the `resolve_layout`
+/// output, whose relaxable fragments are lowered to concrete `Data` and whose
+/// labels have been SHIFTED to their final offsets. Reading them off the raw
+/// `lower_one` section instead would be correct only while no `jr` in
+/// `sound_sequencer.emp` grows to `jp` (a `jr e → jp nn` rung climb moves every
+/// label after it by +1); that is a silent-staleness hazard of exactly the class
+/// the derived-cursor placement retired, so the value is taken post-relaxation and
+/// is correct BY CONSTRUCTION rather than by coincidence.
+///
+/// The whole five-module set is placed and resolved here (not the sequencer alone)
+/// because relaxation needs every cross-module `call` target resolvable. The driver
+/// rides the `DacSampleTable` placeholder so seam-2's `sound_layout` derivation is
+/// not re-entered; the sequencer does not fold that const at all, so its bytes and
+/// label offsets are placeholder-INVARIANT (see [`DAC_SAMPLE_TABLE_SIZE_PROBE`]).
 fn handler_symbols(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
     let specs = file_specs();
-    let seq_idx = specs
+    let seq_idx =
+        specs.iter().position(|s| s.section == "sound_sequencer").expect("sequencer spec");
+    let (sections, bases, _spans) = place_resident_sections(
+        aeon,
+        debug,
+        None,
+        &[("DacSampleTable", DAC_SAMPLE_TABLE_SIZE_PROBE)],
+    );
+    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
+        .unwrap_or_else(|d| panic!("resolve_layout (handler symbols) failed: {d:?}"));
+    let sec = resolved
         .iter()
-        .position(|s| s.section == "sound_sequencer")
-        .expect("sequencer spec");
-    let table = import_stub_table(aeon);
-    // The driver is lowered here for its SIZE ONLY, with `DacSampleTable` supplied
-    // as a placeholder so seam-2's `sound_layout` derivation is not re-entered
-    // (see DAC_SAMPLE_TABLE_SIZE_PROBE for why the size is exact regardless).
-    let bases = module_base_vmas(aeon, debug, &[("DacSampleTable", DAC_SAMPLE_TABLE_SIZE_PROBE)]);
-    let sec = lower_one(aeon, &specs[seq_idx], debug, None, &table, &[]);
+        .find(|s| s.name == specs[seq_idx].section)
+        .unwrap_or_else(|| panic!("resolved image missing section {}", specs[seq_idx].section));
     let base = bases[seq_idx];
     let mut out = Vec::new();
     for want in HANDLER_SYMBOLS {
