@@ -192,7 +192,8 @@ fn compression_selftest_debug_region_matches_reference() {
     let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "the abs.w fit-lock must PASS at the real addresses: {diags:?}"
+        "the module's link asserts must PASS at the real addresses (the abs.w \
+         fit-lock retired at cd8cd15 — any surviving assert is not it): {diags:?}"
     );
     let expected = &refrom[base as usize..base as usize + len];
     let section =
@@ -243,23 +244,49 @@ fn doctored_cself_sum_diverges_from_reference() {
     );
 }
 
-/// Negative probe for the abs.w FIT-LOCK: placing the module high enough that
-/// `CSelf_Expected` crosses $8000 must FIRE the ensure NAMING the failure —
-/// the loud arbitration the file header promises for generated-data growth.
+/// The abs.w FIT-LOCK is RETIRED (aeon cd8cd15, 2026-08-03): the
+/// bug005-sprites-player parcel's DEBUG growth pushed Config-A's CSelf_*
+/// labels past $8000 — the exact crossing the ensure existed to make
+/// conscious — and the ruling ACCEPTED the per-shape abs.l widening
+/// (boot-time cold path; the width rule handles either side). This probe's
+/// old form asserted the ensure fires past $8000; its successor asserts the
+/// NEW contract: the module lowers and links CLEANLY with vectors past the
+/// window, and the bare CSelf_* operands genuinely width-select — a
+/// below-window placement emits the shorter abs.w encodings, an
+/// above-window placement the longer abs.l ones.
 #[test]
-fn fit_lock_fires_when_vectors_cross_abs_w() {
+fn retired_fit_lock_stays_silent_and_operands_width_select_past_abs_w() {
     if !strict_gate() && !aeon_dir().join("s4.debug.bin").exists() {
         eprintln!("skip: reference ROM missing");
         return;
     }
-    // Base chosen so CSelf_Expected (deep in the data) lands past $8000 while
-    // the region still resolves.
-    let (resolved, _, link_asserts) = compile_at(0x7800, pins::COMPRESSION_SELFTEST.debug_len, None);
-    let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
-    let fired: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
-    assert!(!fired.is_empty(), "the fit-lock must fire past $8000");
+    // Below the window: every CSelf_* label sits under $8000 → abs.w.
+    let low_len = {
+        let (resolved, linked, link_asserts) =
+            compile_at(0x4000, pins::COMPRESSION_SELFTEST.debug_len, None);
+        let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
+        assert!(
+            diags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "below-window placement must link cleanly: {diags:?}"
+        );
+        linked.section("compression_selftest").expect("region").bytes.len()
+    };
+    // Past the window (the old probe's base): CSelf_Expected lands beyond
+    // $8000. The retired ensure must stay SILENT and the link must succeed —
+    // with the operands widened to abs.l.
+    let high_len = {
+        let (resolved, linked, link_asserts) =
+            compile_at(0x7800, pins::COMPRESSION_SELFTEST.debug_len + 0x40, None);
+        let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
+        assert!(
+            diags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "the retired fit-lock must stay silent past $8000 (cd8cd15): {diags:?}"
+        );
+        linked.section("compression_selftest").expect("region").bytes.len()
+    };
     assert!(
-        fired.iter().any(|d| d.message.contains("abs.w")),
-        "the guard must NAME the window: {fired:?}"
+        high_len > low_len,
+        "the bare CSelf_* operands must width-select abs.l past $8000 \
+         (high placement {high_len:#x} must out-size low placement {low_len:#x})"
     );
 }

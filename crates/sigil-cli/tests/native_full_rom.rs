@@ -58,8 +58,13 @@ static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const LOAD_BEARING: &[(&str, u32, u32)] = &[
     ("EntryPoint", 0x200, 0x200),        // Game_Entry-class
     ("GameLoop", pins::GAME_LOOP.plain_base, pins::GAME_LOOP.debug_base), // the main loop (pin-sourced)
-    ("BusError", 0x5CA50, 0x5E542),      // ErrorHandler-class (error-handler region; −0x60/−0x68 wave-c ojz shrink)
-    ("Ground_Move_Cap", 0x10724, 0x10730), // a player proc (object bank — anchored, stable)
+    ("BusError", pins::BUS_ERROR.plain, pins::BUS_ERROR.debug), // ErrorHandler-class (pin-sourced since bug005 — the debug tail slid +0x10 with ojz_scroll_test's growth)
+    // A player proc. Re-derived at the bug005 refreeze (aeon master ec8a1cc,
+    // listings s4.lst/s4.debug.lst): +0x22 plain / +0x7A debug — player_common's
+    // parcel growth (+0x18/+0x70) slid player_ground's base, and the G1
+    // jump-headroom carry (277f384) grew the ground code ahead of the cap proc
+    // (+0xA both shapes). No pin exists for an intra-region player label.
+    ("Ground_Move_Cap", 0x10746, 0x107AA),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)
@@ -181,9 +186,9 @@ fn deb2_appendix_negative_controls() {
     let (_rom, mut listing) =
         native::build_native_rom_with_listing(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
 
-    // Undoctored: BusError resolves to its known address.
+    // Undoctored: BusError resolves to its known address (pin-sourced).
     let base = native::convsym_resolve(&aeon, &listing).unwrap();
-    assert_eq!(base.get("BusError"), Some(&0x5CA50), "control: undoctored BusError");
+    assert_eq!(base.get("BusError"), Some(&pins::BUS_ERROR.plain), "control: undoctored BusError");
 
     // DOCTOR: move BusError to a bogus in-range address.
     for s in listing.iter_mut() {

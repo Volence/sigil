@@ -45,7 +45,11 @@ fn is_header_field(i: usize) -> bool {
 // The chained build touches the shared engine/sound/generated dir — serialize.
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-const EOR: usize = 0x5F6C2; // debug-shape EndOfRom — i4: the terminus now ENCLOSES the chain-tail replay fixture (+0xD0)
+// Debug-shape EndOfRom == the flipped config_a anchor end (chain-31
+// `anchor_end` 0x5F6D2). PIN-SOURCED since bug005: the old literal rotted at
+// its second hand-shift too (the input-6button lesson above) — the +0x10
+// debug-tail growth (ojz_scroll_test) made it three.
+const EOR: usize = sigil_harness::pins::DEBUG_ASSEMBLED_LEN;
 // ParallaxConfig_OJZ_Default header +0x10 = the dc.l DeformTable_Zero slot.
 // LISTING-DERIVED at runtime (input-6button: the second hand-shift of the old
 // 0x11420 literal killed it — the t24 rot rule; the header offset is the
