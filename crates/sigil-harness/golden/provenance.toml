@@ -1487,3 +1487,50 @@ full_crc = "c0300a81"
 full_size = 423265
 anchor_crc = "4d260683"
 anchor_end = 0x5f6d2
+
+[[entry]]
+name = "replay-hash-addrfree"
+ab = "fixture replayed end-to-end in oracle: Replay_Done=$FF, 33/33 checkpoints matched, zero desyncs; sigil remeasure-fallback fix byte-neutral (cmp) on all five previously-converging targets"
+note = "Replay_Hash address-free + OJZ fixture re-record (2059 ticks/33 cps); includes the sigil packed_true_bases remeasure-fallback fix that config_a's relaxation knife-edge exposed"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "0fb6a256"
+full_size = 423743
+anchor_crc = "7568ab90"
+anchor_end = 0x5f742
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c7421397"
+full_size = 304744
+anchor_crc = "d399e161"
+anchor_end = 0x43640
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "4dc9f108"
+full_size = 91164
+anchor_crc = "c50a7076"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "c555ae75"
+full_size = 93905
+anchor_crc = "db314c92"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "3add2a69"
+full_size = 413224
+anchor_crc = "d1f4e398"
+anchor_end = 0x5dc40
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "af882b6c"
+full_size = 423377
+anchor_crc = "7fc5b62d"
+anchor_end = 0x5f742
