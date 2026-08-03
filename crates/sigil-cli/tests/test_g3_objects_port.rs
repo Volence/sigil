@@ -60,6 +60,9 @@ struct Shape {
     delete_object: u32,
     get_sine_cosine: u32,
     map_test_obj: u32,
+    /// bug005: the spawn-descriptor helper (ambient test_helpers) calls the
+    /// animator-owned RefreshSpritePieceCount (animate base + REFRESH_OFF).
+    refresh_spc: u32,
     parent_base: u32,
     parent_len: usize,
 }
@@ -71,6 +74,7 @@ const PLAIN: Shape = Shape {
     delete_object: pins::DELETE_OBJECT.plain,
     get_sine_cosine: pins::GET_SINE_COSINE.plain,
     map_test_obj: pins::MAP_TEST_OBJ.plain,
+    refresh_spc: pins::ANIMATE.plain_base + pins::REFRESH_OFF.plain as u32,
     parent_base: pins::TEST_PARENT.plain_base,
     parent_len: pins::TEST_PARENT.plain_len,
 };
@@ -81,6 +85,7 @@ const DEBUG: Shape = Shape {
     delete_object: pins::DELETE_OBJECT.debug,
     get_sine_cosine: pins::GET_SINE_COSINE.debug,
     map_test_obj: pins::MAP_TEST_OBJ.debug,
+    refresh_spc: pins::ANIMATE.debug_base + pins::REFRESH_OFF.debug as u32,
     parent_base: pins::TEST_PARENT.debug_base,
     parent_len: pins::TEST_PARENT.debug_len,
 };
@@ -235,6 +240,7 @@ fn compile_real_file(shape: &Shape) -> Compiled {
         &mut as_label_at("DeleteObject", shape.delete_object),
         &mut as_label_at("GetSineCosine", shape.get_sine_cosine),
         &mut as_label_at("Map_TestObj", shape.map_test_obj),
+        &mut as_label_at("RefreshSpritePieceCount", shape.refresh_spc),
     ] {
         for sec in group.iter_mut() {
             sec.lma = lma;
@@ -348,7 +354,18 @@ fn g3_undoctored_compile_equals_the_reference_window() {
     };
     let c = compile_real_file(shape);
     let sec = c.linked.section("test_parent").expect("linked test_parent");
-    assert_eq!(sec.bytes, parent_ref, "undoctored test_parent must match");
+    // Packed placement: the pin LEN spans to the next section's aligned base,
+    // so the window may end in a short all-zero align pad beyond the lowered
+    // image (same tolerance as assert_region_matches).
+    let want = if parent_ref.len() > sec.bytes.len()
+        && parent_ref.len() - sec.bytes.len() < 16
+        && parent_ref[sec.bytes.len()..].iter().all(|&b| b == 0)
+    {
+        &parent_ref[..sec.bytes.len()]
+    } else {
+        &parent_ref[..]
+    };
+    assert_eq!(sec.bytes, want, "undoctored test_parent must match");
 }
 
 /// A doctored reference window must NOT match the compiled bytes (the gate can

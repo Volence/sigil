@@ -127,10 +127,25 @@ fn gate(debug: bool, rom_name: &str) {
         let sec = linked
             .section(section)
             .unwrap_or_else(|| panic!("linked image must carry `{section}`"));
+        // Packed placement (Wave-B B-0): the pin LEN spans to the NEXT section's
+        // aligned base, so the window may end in a short all-zero align pad
+        // beyond the lowered image (bug005: sec_block_blobs 0xB08A emitted vs a
+        // 0xB08E pin — 4 pad bytes before ojz_act_assets' aligned base). Same
+        // tolerance as the region gates' assert_region_matches.
+        let len = if len > sec.bytes.len()
+            && len - sec.bytes.len() < 16
+            && refrom[base as usize + sec.bytes.len()..base as usize + len]
+                .iter()
+                .all(|&b| b == 0)
+        {
+            sec.bytes.len()
+        } else {
+            len
+        };
         assert_eq!(
             sec.bytes.len(),
             len,
-            "`{section}` must emit exactly {len:#x} bytes"
+            "`{section}` must emit exactly {len:#x} bytes (modulo a short align pad)"
         );
         let expected = &refrom[base as usize..base as usize + len];
         if let Some(i) = (0..len).find(|&i| sec.bytes[i] != expected[i]) {

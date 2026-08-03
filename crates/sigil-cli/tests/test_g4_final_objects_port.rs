@@ -56,6 +56,9 @@ struct Shape {
     object_move: u32,
     object_move_x: u32,
     animate_sprite: u32,
+    /// bug005: the spawn-descriptor helper (ambient test_helpers) calls the
+    /// animator-owned RefreshSpritePieceCount (animate base + REFRESH_OFF).
+    refresh_spc: u32,
     perform_dplc: u32,
     player_sensor_floor: u32,
     map_sonic: u32,
@@ -78,6 +81,7 @@ const PLAIN: Shape = Shape {
     object_move: pins::OBJECT_MOVE.plain,
     object_move_x: pins::OBJECT_MOVE_X.plain,
     animate_sprite: pins::ANIMATE.plain_base,
+    refresh_spc: pins::ANIMATE.plain_base + pins::REFRESH_OFF.plain as u32,
     perform_dplc: pins::DPLC.plain_base,
     player_sensor_floor: pins::PLAYER_SENSOR_FLOOR.plain,
     map_sonic: pins::MAP_SONIC.plain,
@@ -99,6 +103,7 @@ const DEBUG: Shape = Shape {
     object_move: pins::OBJECT_MOVE.debug,
     object_move_x: pins::OBJECT_MOVE_X.debug,
     animate_sprite: pins::ANIMATE.debug_base,
+    refresh_spc: pins::ANIMATE.debug_base + pins::REFRESH_OFF.debug as u32,
     perform_dplc: pins::DPLC.debug_base,
     player_sensor_floor: pins::PLAYER_SENSOR_FLOOR.debug,
     map_sonic: pins::MAP_SONIC.debug,
@@ -292,6 +297,7 @@ fn compile_real_files(shape: &Shape) -> Compiled {
         as_label_at("ObjectMove", shape.object_move),
         as_label_at("ObjectMoveX", shape.object_move_x),
         as_label_at("AnimateSprite", shape.animate_sprite),
+        as_label_at("RefreshSpritePieceCount", shape.refresh_spc),
         as_label_at("Perform_DPLC", shape.perform_dplc),
         as_label_at("Player_SensorFloor", shape.player_sensor_floor),
         as_label_at("Map_Sonic", shape.map_sonic),
@@ -409,7 +415,7 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         .linked
         .sections
         .iter()
-        .find(|s| s.lma == 0x0100_0000 + 12 * 0x10_0000)
+        .find(|s| s.lma == 0x0100_0000 + 13 * 0x10_0000)
         .expect("outbound consumer at its harness-private LMA");
     let enemy_word = u16::from_be_bytes([consumer.bytes[0], consumer.bytes[1]]);
     assert_eq!(

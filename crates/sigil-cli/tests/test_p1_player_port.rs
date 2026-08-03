@@ -353,6 +353,17 @@ struct PcShape {
     ctrl_1_press: u32,
     ctrl_1_held: u32,
     current_act_ptr: u32,
+    // bug005 M3: the act-invariant clamp-edge cache (Player_BoundsInit writes,
+    // the per-frame clamps read back) — game ram.emp cells, abs.w EAs.
+    player_bound_right: u32,
+    player_bound_bottom: u32,
+    /// bug005 H1 follow-ups: animate.emp's RefreshSpritePieceCount, now called
+    /// cross-module by player_common (animate base + REFRESH_OFF per shape).
+    refresh_spc: u32,
+    /// bug005: player_common gained `if DEBUG == 1 { assert.w … }` (the
+    /// BoundsInit never-ran net), so the module now takes the DEBUG define and
+    /// the debug shape carries the MDDBG__* error-handler seams.
+    debug: bool,
     base: u32,
     len: usize,
 }
@@ -383,6 +394,10 @@ const PC_PLAIN: PcShape = PcShape {
     ctrl_1_press: pins::CTRL_1_PRESS.plain,
     ctrl_1_held: pins::CTRL_1_HELD.plain,
     current_act_ptr: pins::CURRENT_ACT_PTR.plain,
+    player_bound_right: pins::PLAYER_BOUND_RIGHT.plain,
+    player_bound_bottom: pins::PLAYER_BOUND_BOTTOM.plain,
+    refresh_spc: pins::ANIMATE.plain_base + pins::REFRESH_OFF.plain as u32,
+    debug: false,
     base: pins::PLAYER_COMMON.plain_base,
     len: pins::PLAYER_COMMON.plain_len,
 };
@@ -412,6 +427,10 @@ const PC_DEBUG: PcShape = PcShape {
     ctrl_1_press: pins::CTRL_1_PRESS.debug,
     ctrl_1_held: pins::CTRL_1_HELD.debug,
     current_act_ptr: pins::CURRENT_ACT_PTR.debug,
+    player_bound_right: pins::PLAYER_BOUND_RIGHT.debug,
+    player_bound_bottom: pins::PLAYER_BOUND_BOTTOM.debug,
+    refresh_spc: pins::ANIMATE.debug_base + pins::REFRESH_OFF.debug as u32,
+    debug: true,
     base: pins::PLAYER_COMMON.debug_base,
     len: pins::PLAYER_COMMON.debug_len,
 };
@@ -431,7 +450,11 @@ fn compile_player_common(shape: &PcShape) -> (sigil_link::LinkedImage, Vec<Secti
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("games/sonic4/player")),
         embed_base: None,
-        defines: vec![("SOUND_DRIVER_ENABLED".to_string(), 1)],
+        defines: vec![
+            ("SOUND_DRIVER_ENABLED".to_string(), 1),
+            // bug005: the BoundsInit never-ran assert rides `if DEBUG == 1 {}`.
+            ("DEBUG".to_string(), i128::from(shape.debug)),
+        ],
     };
 
     let main = parse_file(&aeon.join("games/sonic4/player/player_common.emp"));
@@ -456,34 +479,51 @@ fn compile_player_common(shape: &PcShape) -> (sigil_link::LinkedImage, Vec<Secti
     );
 
     let mut lma = 0x0100_0000u32;
-    for group in [
-        &mut as_constant_equs(),
-        &mut as_label_at("Sonic_InitAssets", shape.sonic_init_assets),
-        &mut as_label_at("Sonic_LoadArt", shape.sonic_load_art),
-        &mut as_label_at("PhysTable_Sonic", shape.phys_table_sonic),
-        &mut as_label_at("AnimateSprite", shape.animate_sprite),
-        &mut as_label_at("Draw_Sprite", shape.draw_sprite),
-        &mut as_label_at("Sound_PlaySFX", shape.sound_play_sfx),
-        &mut as_label_at("Player_AtLedgeEdge", shape.at_ledge_edge),
-        &mut as_label_at("Map_TestObj", shape.map_test_obj),
-        &mut as_label_at("PState_Ground", shape.pstate_ground),
-        &mut as_label_at("PState_Roll", shape.pstate_roll),
-        &mut as_label_at("PState_Spindash", shape.pstate_spindash),
-        &mut as_label_at("PState_Air", shape.pstate_air),
-        &mut as_label_at("PState_Jump", shape.pstate_jump),
-        &mut as_label_at("PState_RollJump", shape.pstate_rolljump),
-        &mut as_label_at("PState_AirBall", shape.pstate_airball),
-        &mut as_label_at("Player_Phys", shape.player_phys),
-        &mut as_label_at("Player_Quadrant", shape.player_quadrant),
-        &mut as_label_at("Player_JumpBuffer", shape.player_jump_buffer),
-        &mut as_label_at("Player_Ring_Index", shape.player_ring_index),
-        &mut as_label_at("Player_Pos_Ring", shape.player_pos_ring),
-        &mut as_label_at("Player_Stat_Ring", shape.player_stat_ring),
-        &mut as_label_at("Player_Death_Pending", shape.player_death_pending),
-        &mut as_label_at("Ctrl_1_Press", shape.ctrl_1_press),
-        &mut as_label_at("Ctrl_1_Held", shape.ctrl_1_held),
-        &mut as_label_at("Current_Act_Ptr", shape.current_act_ptr),
-    ] {
+    let mut groups: Vec<Vec<Section>> = vec![
+        as_constant_equs(),
+        as_label_at("Sonic_InitAssets", shape.sonic_init_assets),
+        as_label_at("Sonic_LoadArt", shape.sonic_load_art),
+        as_label_at("PhysTable_Sonic", shape.phys_table_sonic),
+        as_label_at("AnimateSprite", shape.animate_sprite),
+        as_label_at("Draw_Sprite", shape.draw_sprite),
+        as_label_at("Sound_PlaySFX", shape.sound_play_sfx),
+        as_label_at("Player_AtLedgeEdge", shape.at_ledge_edge),
+        as_label_at("Map_TestObj", shape.map_test_obj),
+        as_label_at("PState_Ground", shape.pstate_ground),
+        as_label_at("PState_Roll", shape.pstate_roll),
+        as_label_at("PState_Spindash", shape.pstate_spindash),
+        as_label_at("PState_Air", shape.pstate_air),
+        as_label_at("PState_Jump", shape.pstate_jump),
+        as_label_at("PState_RollJump", shape.pstate_rolljump),
+        as_label_at("PState_AirBall", shape.pstate_airball),
+        as_label_at("Player_Phys", shape.player_phys),
+        as_label_at("Player_Quadrant", shape.player_quadrant),
+        as_label_at("Player_JumpBuffer", shape.player_jump_buffer),
+        as_label_at("Player_Ring_Index", shape.player_ring_index),
+        as_label_at("Player_Pos_Ring", shape.player_pos_ring),
+        as_label_at("Player_Stat_Ring", shape.player_stat_ring),
+        as_label_at("Player_Death_Pending", shape.player_death_pending),
+        as_label_at("Ctrl_1_Press", shape.ctrl_1_press),
+        as_label_at("Ctrl_1_Held", shape.ctrl_1_held),
+        as_label_at("Current_Act_Ptr", shape.current_act_ptr),
+        // bug005 M3: the clamp-edge cache cells (abs.w reads + BoundsInit writes).
+        as_label_at("Player_Bound_Right", shape.player_bound_right),
+        as_label_at("Player_Bound_Bottom", shape.player_bound_bottom),
+        // bug005 H1 follow-ups: the animator-owned refresh idiom made
+        // player_common call animate.emp's RefreshSpritePieceCount cross-module
+        // (was intra-module in animate only). VMA = animate base + REFRESH_OFF.
+        as_label_at("RefreshSpritePieceCount", shape.refresh_spc),
+    ];
+    if shape.debug {
+        // DEBUG-only: the BoundsInit never-ran assert.w expansion jsr/jmps these
+        // (core_port/sprites_port precedent).
+        groups.push(as_label_at("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
+        groups.push(as_label_at(
+            "MDDBG__ErrorHandler_PagesController",
+            pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
+        ));
+    }
+    for group in &mut groups {
         for sec in group.iter_mut() {
             sec.lma = lma;
             sec.placement = SectionPlacement::Pinned;
@@ -550,7 +590,18 @@ fn p1_undoctored_compile_equals_the_reference_window() {
     let (linked, _r, _a, _g) = compile_player_common(&PC_PLAIN);
     let got = pc_region_bytes(&linked);
     if let Some(want) = ref_window("s4.bin", PC_PLAIN.base, PC_PLAIN.len) {
-        assert_eq!(got, want, "undoctored player_common must match the reference window");
+        // Packed placement: the pin LEN spans to the next section's aligned
+        // base, so the window may end in a short all-zero align pad beyond the
+        // lowered image (same tolerance as assert_region_matches).
+        let want_trimmed = if want.len() > got.len()
+            && want.len() - got.len() < 16
+            && want[got.len()..].iter().all(|&b| b == 0)
+        {
+            &want[..got.len()]
+        } else {
+            &want[..]
+        };
+        assert_eq!(got, want_trimmed, "undoctored player_common must match the reference window");
     }
 }
 

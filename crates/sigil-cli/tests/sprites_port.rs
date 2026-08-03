@@ -43,13 +43,19 @@
 //! state's bare `jsr InitSpriteSystem` and must land on the abs.w encoding at
 //! the region base (`4EB8 base`) for mixed-build parity.
 //!
-//! ## Reference windows (2026-07-11 pins, from the master listings)
+//! ## Reference windows
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$2954`): `s4.bin[0x2954..0x2D74]` (0x420 bytes).
-//! Debug (map base `$2C0E`): `s4.debug.bin[0x2C0E..0x302E]` (0x420 bytes).
-//! Length is shape-INVARIANT (no `__DEBUG__` code in this file); the RAM-EA
-//! operand bytes are not.
+//! Plain (map base `$2CF8`): `s4.bin[0x2CF8..0x3100]` (0x408 bytes).
+//! Debug (map base `$3390`): `s4.debug.bin[0x3390..0x386A]` (0x4DA bytes).
+//! Length went shape-DEPENDENT at the bug005-sprites parcel: the H1 staleness
+//! net + the BUG-005 chain-walk are `if DEBUG == 1 {}` blocks with `assert.w`
+//! expansions (rings/core precedent), so the module now takes the `DEBUG`
+//! build-shape define and the debug shape carries the two MDDBG__* error-handler
+//! seams. The same parcel's H3 (partial SAT DMA length) patches the
+//! `Static_Sprite_DMA` queue entry via `movep.w d0, DMAEntry.SizeH(a0)` — the
+//! DMAEntry struct rides ambient `engine/structs.emp` (buffers_port precedent)
+//! and Static_Sprite_DMA is a new inbound RAM label.
 //!
 //! ```text
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test sprites_port
@@ -102,6 +108,8 @@ const PLAIN: Shape = Shape {
         ("Camera_Y", pins::CAMERA_Y.plain),
         ("Camera_X_Biased", pins::CAMERA_X_BIASED.plain),
         ("Camera_Y_Biased", pins::CAMERA_Y_BIASED.plain),
+        // bug005 H3: the partial-SAT DMA length patch writes the queue entry.
+        ("Static_Sprite_DMA", pins::STATIC_SPRITE_DMA.plain),
     ],
 };
 
@@ -124,6 +132,12 @@ const DEBUG: Shape = Shape {
         ("Camera_Y", pins::CAMERA_Y.debug),
         ("Camera_X_Biased", pins::CAMERA_X_BIASED.debug),
         ("Camera_Y_Biased", pins::CAMERA_Y_BIASED.debug),
+        // bug005 H3: the partial-SAT DMA length patch writes the queue entry.
+        ("Static_Sprite_DMA", pins::STATIC_SPRITE_DMA.debug),
+        // DEBUG-only: the H1-staleness + BUG-005 chain-walk assert.w
+        // expansions jsr/jmp these (core_port precedent).
+        ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
+        ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
     ],
 };
 
@@ -217,33 +231,39 @@ fn map_toml(base: u32, len: usize) -> String {
     )
 }
 
-/// Compile the real `sprites.emp` with its ambient dependencies (types + sst +
-/// constants), place it at the per-shape base, append the synthetic cross-seam
-/// sections, and link. sprites has NO build-shape define dimension.
+/// Compile the real `sprites.emp` with its ambient dependencies (types +
+/// structs + sst + constants) and the given build-shape defines, place it at
+/// the per-shape base, append the synthetic cross-seam sections, and link.
+/// The `DEBUG` define dimension arrived with the bug005-sprites parcel (the
+/// H1-staleness + BUG-005 chain-walk `if DEBUG == 1 {}` blocks); the structs
+/// dep carries `DMAEntry` for the H3 `movep.w d0, DMAEntry.SizeH(a0)` patch.
 fn compile_real_file(
     shape: &Shape,
+    defines: &[(&str, i128)],
 ) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
-    compile_real_file_with(shape, None)
+    compile_real_file_with(shape, defines, None)
 }
 
 /// `compile_real_file` with the drift-probe equ-override seam exposed.
 fn compile_real_file_with(
     shape: &Shape,
+    defines: &[(&str, i128)],
     override_pair: Option<(&str, &str)>,
 ) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
     let aeon = aeon_dir();
     let types = parse_file(&aeon.join("engine/system/types.emp"));
+    let structs = parse_file(&aeon.join("engine/structs.emp"));
     let sst = parse_file(&aeon.join("engine/objects/sst.emp"));
     let constants = parse_file(&aeon.join("engine/system/constants.emp"));
     let sprites = parse_file(&aeon.join("engine/objects/sprites.emp"));
 
-    let file = with_ambient(vec![types, sst, constants], sprites);
+    let file = with_ambient(vec![types, structs, sst, constants], sprites);
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("engine/objects")),
         embed_base: None,
-        defines: Vec::new(),
+        defines: defines.iter().map(|(n, v)| (n.to_string(), *v)).collect(),
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -289,11 +309,13 @@ fn compile_real_file_with(
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
     // sst.emp's SST_* drift wall retired at the conv-a structs flip; sprites.emp
-    // carries no module-local mirrors.
+    // carries no module-local mirrors. constants.emp's bug005
+    // PHYS_JUMP_SKIP_CLEARANCE ensure is comptime-folded (no extern), so it
+    // contributes no captured guard — the count stays the twin list's.
     let want = sigil_harness::test_support::engine_constant_equs().len();
     assert_eq!(
         guards, want,
-        "sst.emp's 30 + constants.emp's {} drift guards must be captured",
+        "constants.emp's {} drift guards must be captured",
         sigil_harness::test_support::engine_constant_equs().len()
     );
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
@@ -336,7 +358,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
 
 /// The region reference gate + the outbound bare-name proof + the drift
 /// guards, shared body.
-fn reference_gate(shape: &Shape, rom_name: &str) {
+fn reference_gate(shape: &Shape, rom_name: &str, debug_on: bool) {
     let rom_path = aeon_dir().join(rom_name);
     let Ok(refrom) = std::fs::read(&rom_path) else {
         if strict_gate() {
@@ -346,7 +368,8 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         return;
     };
 
-    let (resolved, linked, link_asserts) = compile_real_file(shape);
+    let defines: Vec<(&str, i128)> = vec![("DEBUG", i128::from(debug_on))];
+    let (resolved, linked, link_asserts) = compile_real_file(shape, &defines);
     assert_drift_guards(&resolved, &link_asserts);
 
     let base = shape.base as usize;
@@ -374,16 +397,16 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     );
 }
 
-/// (plain) the `sprites` region == `s4.bin[0x2954..0x2D74]`.
+/// (plain) the `sprites` region == `s4.bin` at the pinned window.
 #[test]
 fn sprites_region_matches_reference() {
-    reference_gate(&PLAIN, "s4.bin");
+    reference_gate(&PLAIN, "s4.bin", false);
 }
 
-/// (debug) the `sprites` region == `s4.debug.bin[0x2C0E..0x302E]`.
+/// (debug) the `sprites` region == `s4.debug.bin` at the pinned window.
 #[test]
 fn sprites_debug_region_matches_reference() {
-    reference_gate(&DEBUG, "s4.debug.bin");
+    reference_gate(&DEBUG, "s4.debug.bin", true);
 }
 
 // The AS-twin lockstep oracle RETIRED (flip Stage-2): sprites.asm is deleted —

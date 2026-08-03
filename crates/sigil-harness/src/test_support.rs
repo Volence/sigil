@@ -81,7 +81,10 @@ pub fn sst_field_equs() -> Vec<(&'static str, &'static str)> {
         ("SST_entity_list_index", "$2C"),
         ("SST_layer", "$2D"),
         ("SST_sst_custom", "$2E"),
-        ("SST_len", "$50"),
+        // bug005 parcel: the record grew $50 → $52 (engine-owned frame_off cache
+        // word appended at $50 — sprites H1). The custom window still ends at $4F.
+        ("SST_frame_off", "$50"),
+        ("SST_len", "$52"),
         // The engine-owned player-slot tail word (structs.asm: SST_sst_custom +
         // SST_CUSTOM_SIZE - 2 = $4E). Not one of sst.emp's 30 field guards —
         // supplied here so `collision.emp`'s `interact_off()` SST_interact guard
@@ -326,9 +329,10 @@ mod tests {
         let _ = as_engine_constants_and_sst_equs();
         assert_eq!(
             sst_field_equs().len(),
-            31,
-            "the SUPPLY-ONLY SST_* blob carries 30 field offsets + SST_interact for a \
-             standalone gate's legitimate field-address externs (ojz_scroll_test)"
+            32,
+            "the SUPPLY-ONLY SST_* blob carries 31 field offsets (bug005 added the \
+             frame_off tail word) + SST_interact for a standalone gate's legitimate \
+             field-address externs (ojz_scroll_test)"
         );
     }
 

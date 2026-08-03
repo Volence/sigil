@@ -42,10 +42,14 @@ fn strict_gate() -> bool {
 
 /// The `ObjDef_*` seam entity_data's type-table pointers resolve against — their
 /// per-shape ROM addresses (re-pin on re-baseline; the Abs32 pointer cells bake them).
+// bug005-sprites-player re-baseline (2026-08-03): the object bank's own growth
+// (test objects + player files upstream) slides the tail +0x8C plain / +0xDC
+// debug. ObjDef_Static == pins::OBJDEFS base; ObjDef_Solid = base + 0x1A (one
+// ObjDef); ObjDef_PathSwap == pins::PATH_SWAP base.
 const OBJDEF_SEAM: &[(&str, u32, u32)] = &[
-    ("ObjDef_Solid", 0x11D38, 0x11DC0),
-    ("ObjDef_Static", 0x11D1E, 0x11DA6),
-    ("ObjDef_PathSwap", 0x11202, 0x11222),
+    ("ObjDef_Solid", 0x11DC4, 0x11E9C),
+    ("ObjDef_Static", 0x11DAA, 0x11E82),
+    ("ObjDef_PathSwap", 0x1128E, 0x112FE),
 ];
 
 fn seam_sections(debug: bool) -> Vec<Section> {

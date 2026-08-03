@@ -104,6 +104,9 @@ struct Shape {
     draw_sprite: u32,
     object_move: u32,
     animate_sprite: u32,
+    /// bug005: the spawn-descriptor helper calls the animator-owned
+    /// RefreshSpritePieceCount cross-module (animate base + REFRESH_OFF).
+    refresh_spc: u32,
     ani_particle: u32,
     // The object-bank windows are SHAPE-DEPENDENT: a debug-only engine growth
     // that pushes an engine symbol across $8000 widens the player code's
@@ -120,6 +123,7 @@ const PLAIN: Shape = Shape {
     draw_sprite: pins::DRAW_SPRITE.plain,
     object_move: pins::OBJECT_MOVE.plain,
     animate_sprite: pins::ANIMATE.plain_base,
+    refresh_spc: pins::ANIMATE.plain_base + pins::REFRESH_OFF.plain as u32,
     ani_particle: pins::PARTICLE_ANIMS.plain_base,
     solid_base: pins::TEST_SOLID.plain_base,
     solid_len: pins::TEST_SOLID.plain_len,
@@ -130,6 +134,7 @@ const DEBUG: Shape = Shape {
     draw_sprite: pins::DRAW_SPRITE.debug,
     object_move: pins::OBJECT_MOVE.debug,
     animate_sprite: pins::ANIMATE.debug_base,
+    refresh_spc: pins::ANIMATE.debug_base + pins::REFRESH_OFF.debug as u32,
     ani_particle: pins::PARTICLE_ANIMS.debug_base,
     solid_base: pins::TEST_SOLID.debug_base,
     solid_len: pins::TEST_SOLID.debug_len,
@@ -298,6 +303,7 @@ fn compile_real_files(
         &mut as_label_at("Draw_Sprite", shape.draw_sprite),
         &mut as_label_at("ObjectMove", shape.object_move),
         &mut as_label_at("AnimateSprite", shape.animate_sprite),
+        &mut as_label_at("RefreshSpritePieceCount", shape.refresh_spc),
         &mut as_label_at("Ani_Particle", shape.ani_particle),
         &mut as_outbound_consumer(),
     ] {
@@ -397,11 +403,12 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
 
     // Outbound proof: the AS-side objroutine words resolve to the bank
     // offsets of the `.emp`-owned pub labels.
-    // The consumer is the SIXTH synthetic group: 0x0100_0000 + 5 × 0x10_0000.
+    // The consumer is the SEVENTH synthetic group (the bug005
+    // RefreshSpritePieceCount seam slotted in ahead): 0x0100_0000 + 6 × 0x10_0000.
     let consumer = linked
         .sections
         .iter()
-        .find(|s| s.lma == 0x0150_0000)
+        .find(|s| s.lma == 0x0160_0000)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let solid_word = u16::from_be_bytes([consumer.bytes[0], consumer.bytes[1]]);
     let particle_word = u16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);

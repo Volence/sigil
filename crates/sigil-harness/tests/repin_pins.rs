@@ -199,41 +199,58 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // pre-$10000 padding, so it stays put. The replay live cells (+0xA after the
     // controller block) slide every RAM symbol after them; the DEBUG @shape_divergent
     // record ring (+0x2800) slides the game-RAM tail in the debug shape only.
-    assert_eq!(pins::ANIMATE.plain_base, 0x3114);  // +0xF0 I3 replay (was 0x3024)
-    assert_eq!(pins::ANIMATE.debug_base, 0x37AE);  // +0x1A8 I3 replay (was 0x3606)
-    assert_eq!(pins::ANIMATE.plain_len, 0x18A);  // −8: item 5 (drop both Sound_PlaySFX saves)
-    assert_eq!(pins::ANIMATE.debug_len, 0x2A8);
+    // Then the bug005-sprites-player parcel (2026-08-03) — a MULTI-REGION content
+    // wave, not a single upstream slide. Per-region OWN deltas in the engine bank:
+    // core +2 code both shapes (DeleteObject's explicit frame_off tail-word clear —
+    // sizeof(Sst) $52 is not long-divisible; plain pin +4 = +2 code + a 2-byte align
+    // pad to sprites' even base, debug pin +2); sprites −0x18 plain (H2 emit-loop
+    // stream-order restructure + size/link word merge) but +0xBA debug (H1 staleness
+    // net + the BUG-005 chain-walk, both `if DEBUG == 1 {}` assert blocks — sprites'
+    // LEN goes shape-DEPENDENT for the first time); animate +0xA plain / +0x10 debug
+    // (AF_SET_FIELD rail fence + refresh-idiom follow-ups); camera +0x48 (H2
+    // single-pass + Camera_Init seed clamp, clamp macro split); children +0x10;
+    // load_object +6 (frame_off seeding at spawn); sensors −8 (H3 AtLedgeEdge
+    // direct probe). Bases below compose those deltas in ladder order — hence
+    // plain slides differ from debug slides region by region. The SST $50→$52
+    // growth (+2/slot × 66 slots) shifts every RAM symbol after Object_RAM by
+    // +0x84 both shapes (SPRITE_*/CAMERA_*/CACHE_* pins et al., not asserted
+    // here); the game-side PlayerV jump_headroom+pad + Player_Bound_Right/Bottom
+    // cells shift the player RAM tail (+0x100 plain ring realign).
+    assert_eq!(pins::ANIMATE.plain_base, 0x3100);  // −0x14 bug005: core +4, sprites −0x18 upstream
+    assert_eq!(pins::ANIMATE.debug_base, 0x386A);  // +0xBC bug005: core +2, sprites +0xBA upstream
+    assert_eq!(pins::ANIMATE.plain_len, 0x194);  // +0xA bug005: AF_SET_FIELD rail + refresh idiom
+    assert_eq!(pins::ANIMATE.debug_len, 0x2B8);  // +0x10 bug005: same + the debug-fenced rail
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x349E);  // +0xF0 I3 replay (was 0x33AE)
-    assert_eq!(pins::RINGS.debug_base, 0x3C5E);  // +0x1A8 I3 replay (was 0x3AB6)
+    assert_eq!(pins::RINGS.plain_base, 0x3494);  // −0xA bug005: −0x14 animate slide + animate's own +0xA
+    assert_eq!(pins::RINGS.debug_base, 0x3D2A);  // +0xCC bug005: +0xBC animate slide + animate's own +0x10
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
     // core LEN shrank −0xA in c4 (Spawn_Count: InitObjectRAM store −4 + RunObjects
     // moveq+store −6). Bases −0xA in c5 (the boot.asm CROSS_RESET store removal is
     // upstream of dplc/core, so core's base slides with everything downstream of boot).
-    assert_eq!(pins::CORE.plain_base, 0x2A10);  // +0xF0 I3 replay (was 0x2920)
-    assert_eq!(pins::CORE.plain_len, 0x2E4);    // −0xA c4 Spawn_Count store removals
-    assert_eq!(pins::CORE.debug_base, 0x2C62);  // +0x1A8 I3 replay (was 0x2ABA)
-    assert_eq!(pins::CORE.debug_len, 0x72C);    // −0xA c4 Spawn_Count store removals
-    assert_eq!(pins::DPLC.plain_base, 0x2968);  // +0xF0 I3 replay (was 0x2878)
-    assert_eq!(pins::DPLC.debug_base, 0x2BBE);  // +0x1A8 I3 replay (was 0x2A16)
+    assert_eq!(pins::CORE.plain_base, 0x2A10);  // +0xF0 I3 replay (was 0x2920); bug005-invariant (upstream of the wave)
+    assert_eq!(pins::CORE.plain_len, 0x2E8);    // +4 bug005: +2 DeleteObject frame_off tail clear + 2-byte align pad
+    assert_eq!(pins::CORE.debug_base, 0x2C62);  // +0x1A8 I3 replay (was 0x2ABA); bug005-invariant
+    assert_eq!(pins::CORE.debug_len, 0x72E);    // +2 bug005: DeleteObject frame_off tail clear (no pad needed)
+    assert_eq!(pins::DPLC.plain_base, 0x2968);  // +0xF0 I3 replay (was 0x2878); bug005-invariant (upstream of core's growth)
+    assert_eq!(pins::DPLC.debug_base, 0x2BBE);  // +0x1A8 I3 replay (was 0x2A16); bug005-invariant
     assert_eq!(pins::DPLC.plain_len, 0xA8);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xA4);   // item 6 REMOVED (soak disproved single-entry) — debug == plain
 
-    // animate_port.rs: the DeleteObject inbound label. Shifted by the upstream
-    // wave (dma_queue + dplc item-11); DeleteObject's offset within core stable.
+    // animate_port.rs: the DeleteObject inbound label. bug005-invariant: the +2
+    // tail clear lands INSIDE DeleteObject after its label, so the label holds.
     assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2AE0, debug: 0x2D32 });  // +0xF0/+0x1A8 I3 replay
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
     // object_test_state growth), then +0xC debug only from the OJZ scene-pin
     // hook's two `ifdef __DEBUG__` guards (Debug_Scene_Freeze).
-    assert_eq!(pins::ASSEMBLED_LEN, 0x5DBD0);       // +0xD0 i4: EndOfRom encloses the replay fixture (194 B + align)
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F6C2); // +0xD0 i4: EndOfRom encloses the 16-padded replay fixture (terminus align-2 cap)
+    assert_eq!(pins::ASSEMBLED_LEN, 0x5DBD0);       // +0xD0 i4: EndOfRom encloses the replay fixture (194 B + align); bug005-invariant (plain object-bank growth reabsorbed)
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F6D2); // +0x10 bug005: the debug tail (ojz_scroll_test +0x10, error-handler block +0x10 downstream) pushes __END__; plain reabsorbed
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the

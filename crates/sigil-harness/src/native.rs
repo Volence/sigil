@@ -871,9 +871,10 @@ const STRUCT_OFFSET_TWINS: &[(&str, &str, &str)] = &[
 /// ENVIRONMENT: `Sst`'s fields are `Coord`/`Velocity`/… (erasing to raw widths);
 /// the other seven structs are all-primitive and ignore it. The lone DERIVED
 /// equate `structs.asm` carried outside a `struct` block — `SST_interact`
-/// (`SST_sst_custom + SST_CUSTOM_SIZE - 2` = the object record's tail word) — is
-/// emitted as `sizeof(Sst) - 2`, matching `collision.emp` / `player_sensors.emp`'s
-/// `interact_off()`.
+/// (the custom window's tail word) — mirrors sst.emp's `interact_off()`:
+/// `offsetof(Sst, frame_off) - 2` since the bug005 parcel appended the
+/// engine-owned frame_off cache at $50 (it was `sizeof(Sst) - 2` while the
+/// record ended at the custom window).
 pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, String> {
     use sigil_frontend_emp::layout::layout_struct_ambient;
 
@@ -903,9 +904,20 @@ pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, 
         }
         out.push((format!("{prefix}_len"), layout.size as i64));
         // SST_interact: the engine-owned player-slot tail word (structs.asm's one
-        // derived `=` outside a struct block). = sizeof(Sst) - 2.
+        // derived `=` outside a struct block). Mirrors sst.emp's `interact_off()`
+        // = offsetof(Sst, frame_off) - 2 (bug005: frame_off is the record tail
+        // now, so the custom window's tail word sits immediately below it).
         if *sname == "Sst" {
-            out.push(("SST_interact".to_string(), layout.size as i64 - 2));
+            let frame_off = layout
+                .fields
+                .iter()
+                .find(|f| f.name == "frame_off")
+                .map(|f| f.offset as i64)
+                .unwrap_or_else(|| panic!(
+                    "harvest_engine_struct_offsets: Sst lost its frame_off tail — \
+                     re-derive SST_interact against sst.emp's interact_off()"
+                ));
+            out.push(("SST_interact".to_string(), frame_off - 2));
         }
     }
     Ok(out)

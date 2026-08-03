@@ -200,7 +200,13 @@ fn solid_outcome(sst_src: &str, solid_src: &str, extra: Vec<Vec<Section>>) -> Li
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "unexpected lower errors: {ldiags:?}"
     );
-    let mut all = vec![as_truth_equs(), as_label_at("Draw_Sprite", 0x2970)];
+    // bug005: test_solid's spawn-descriptor helper now calls the animator-owned
+    // RefreshSpritePieceCount (synthetic address, like Draw_Sprite's).
+    let mut all = vec![
+        as_truth_equs(),
+        as_label_at("Draw_Sprite", 0x2970),
+        as_label_at("RefreshSpritePieceCount", 0x2A00),
+    ];
     all.extend(extra);
     link_with_truths(sections, &asserts, all)
 }

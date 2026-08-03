@@ -32,8 +32,10 @@
 //! ## Reference windows
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$2794`): `s4.bin[0x2794..0x2958]` (0x1C4 bytes).
-//! Debug (map base `$2926`): `s4.debug.bin[0x2926..0x2C12]` (0x2EC bytes).
+//! Plain (map base `$2A10`): `s4.bin[0x2A10..0x2CF8]` (0x2E8 bytes incl. a
+//! 2-byte align pad). Debug (map base `$2C62`): `s4.debug.bin[0x2C62..0x3390]`
+//! (0x72E bytes). bug005 grew both: DeleteObject's explicit frame_off
+//! tail-word clear (+2 code; sizeof(Sst) $52 is not long-divisible).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, the gates SKIP green — unless
@@ -300,15 +302,17 @@ fn compile_real_file_with(
 }
 
 /// All prepended drift guards must be captured and PASS: constants.emp's twin
-/// guards + core.emp's OWN 1 (the retro-fix item-9 System/Effect_Slots RAM-
-/// adjacency ensure — extern-in-ensure over RAM labels). sst.emp's SST_* wall
-/// retired at the conv-a structs flip (the struct is the sole author now).
+/// guards + core.emp's OWN 2 — the retro-fix item-9 System/Effect_Slots RAM-
+/// adjacency ensure, and the bug005-parcel Object_RAM long-divisibility ensure
+/// (SST $52 made the init-clear's long-loop parity SST-size-dependent; both
+/// are extern-in-ensure over RAM labels). sst.emp's SST_* wall retired at the
+/// conv-a structs flip (the struct is the sole author now).
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    let want = twin_guards() + 1;
+    let want = twin_guards() + 2;
     assert_eq!(
         guards, want,
-        "constants.emp's {} + core.emp's 1 (item-9 adjacency ensure) drift guards must be captured",
+        "constants.emp's {} + core.emp's 2 (item-9 adjacency + bug005 init-clear divisibility ensures) drift guards must be captured",
         twin_guards()
     );
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
@@ -419,13 +423,13 @@ fn reference_gate(shape: &Shape, rom_name: &str, debug_on: bool) {
     );
 }
 
-/// (plain) the `core` region == `s4.bin[0x2794..0x2958]` (0x1C4 bytes).
+/// (plain) the `core` region == `s4.bin` at the pinned window.
 #[test]
 fn core_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin", false);
 }
 
-/// (debug) the `core` region == `s4.debug.bin[0x2926..0x2C12]` (0x2EC bytes).
+/// (debug) the `core` region == `s4.debug.bin` at the pinned window.
 #[test]
 fn core_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin", true);
@@ -467,8 +471,22 @@ fn debug_shape_length_diverges() {
         let (_, linked, _) = compile_real_file(&DEBUG, &[("DEBUG", 1)]);
         linked.section("core").expect("core").bytes.len()
     };
-    assert_eq!(plain, pins::CORE.plain_len, "plain shape emits 0x1C4 bytes");
-    assert_eq!(debug, pins::CORE.debug_len, "debug shape emits 0x2EC bytes");
+    // Packed placement (Wave-B B-0): a pin LEN spans to the NEXT section's
+    // aligned base, so it may exceed the lowered image by a short align pad —
+    // the same tolerance `assert_region_matches` applies to the byte windows.
+    // (bug005 parcel: plain emits 0x2E6 against the 0x2E8 pin — a 2-byte pad
+    // before sprites' aligned base.)
+    let pad_ok = |emitted: usize, pin: usize| emitted <= pin && pin - emitted < 16;
+    assert!(
+        pad_ok(plain, pins::CORE.plain_len),
+        "plain shape must emit the pinned span modulo a short align pad (emitted {plain:#x}, pin {:#x})",
+        pins::CORE.plain_len
+    );
+    assert!(
+        pad_ok(debug, pins::CORE.debug_len),
+        "debug shape must emit the pinned span modulo a short align pad (emitted {debug:#x}, pin {:#x})",
+        pins::CORE.debug_len
+    );
     assert!(
         debug > plain,
         "the DEBUG shape must be longer — the Debug_AssertObjLoop proc + its two \

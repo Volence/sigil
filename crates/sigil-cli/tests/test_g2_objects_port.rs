@@ -61,6 +61,9 @@ struct Shape {
     delete_object: u32,
     test_particle: u32,
     map_test_obj: u32,
+    /// bug005: the spawn-descriptor helper (ambient test_helpers) calls the
+    /// animator-owned RefreshSpritePieceCount (animate base + REFRESH_OFF).
+    refresh_spc: u32,
     emitter_base: u32,
     emitter_len: usize,
     stress_base: u32,
@@ -77,6 +80,7 @@ const PLAIN: Shape = Shape {
     delete_object: pins::DELETE_OBJECT.plain,
     test_particle: pins::TEST_PARTICLE.plain_base,
     map_test_obj: pins::MAP_TEST_OBJ.plain,
+    refresh_spc: pins::ANIMATE.plain_base + pins::REFRESH_OFF.plain as u32,
     emitter_base: pins::TEST_EMITTER.plain_base,
     emitter_len: pins::TEST_EMITTER.plain_len,
     stress_base: pins::TEST_STRESS_EMITTER.plain_base,
@@ -92,6 +96,7 @@ const DEBUG: Shape = Shape {
     delete_object: pins::DELETE_OBJECT.debug,
     test_particle: pins::TEST_PARTICLE.debug_base,
     map_test_obj: pins::MAP_TEST_OBJ.debug,
+    refresh_spc: pins::ANIMATE.debug_base + pins::REFRESH_OFF.debug as u32,
     emitter_base: pins::TEST_EMITTER.debug_base,
     emitter_len: pins::TEST_EMITTER.debug_len,
     stress_base: pins::TEST_STRESS_EMITTER.debug_base,
@@ -282,6 +287,7 @@ fn compile_real_files(shape: &Shape) -> Compiled {
         &mut as_label_at("DeleteObject", shape.delete_object),
         &mut as_label_at("TestParticle", shape.test_particle),
         &mut as_label_at("Map_TestObj", shape.map_test_obj),
+        &mut as_label_at("RefreshSpritePieceCount", shape.refresh_spc),
         &mut as_outbound_consumer(),
     ] {
         for sec in group.iter_mut() {
@@ -381,12 +387,13 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     }
 
     // Outbound proof: the AS-side objroutine words resolve to the bank offsets
-    // of the `.emp`-owned pub labels (9th synthetic group).
+    // of the `.emp`-owned pub labels (10th synthetic group — the bug005
+    // RefreshSpritePieceCount seam slotted in ahead of the consumer).
     let consumer = c
         .linked
         .sections
         .iter()
-        .find(|s| s.lma == 0x0100_0000 + 8 * 0x10_0000)
+        .find(|s| s.lma == 0x0100_0000 + 9 * 0x10_0000)
         .expect("outbound consumer at its harness-private LMA");
     let stress_word = u16::from_be_bytes([consumer.bytes[0], consumer.bytes[1]]);
     let churn_word = u16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);

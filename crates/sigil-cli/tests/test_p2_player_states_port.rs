@@ -504,7 +504,18 @@ fn p2_ground_debug_region_matches_reference() {
 fn p2_ground_undoctored_compile_equals_the_reference_window() {
     let got = ground_bytes(&PLAIN);
     if let Some(want) = ref_window("s4.bin", pins::PLAYER_GROUND.plain_base, pins::PLAYER_GROUND.plain_len) {
-        assert_eq!(got, want, "undoctored player_ground must match the reference window");
+        // Packed placement: the pin LEN spans to the next section's aligned
+        // base, so the window may end in a short all-zero align pad beyond the
+        // lowered image (same tolerance as assert_region_matches).
+        let want_trimmed = if want.len() > got.len()
+            && want.len() - got.len() < 16
+            && want[got.len()..].iter().all(|&b| b == 0)
+        {
+            &want[..got.len()]
+        } else {
+            &want[..]
+        };
+        assert_eq!(got, want_trimmed, "undoctored player_ground must match the reference window");
     }
 }
 
