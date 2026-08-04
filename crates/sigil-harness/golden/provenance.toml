@@ -1580,3 +1580,50 @@ full_crc = "6ee92ea7"
 full_size = 423391
 anchor_crc = "f25d1e18"
 anchor_end = 0x5f742
+
+[[entry]]
+name = "item26-game-shell"
+ab = "aeon/docs/superpowers/notes/2026-08-04-item26-game-shell-ab.md"
+note = "Game-shell ordering (review item 26): Section_RedrawPlanes owns its Z80 posture in both build shapes (removes the OJZ init-site false lock; adds the sound-off whole-storm bus hold), sprite cull margin 32px, $8B reg-0B write gated on actual mode change. Camera_Init clamp was already present at HEAD."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "db13551e"
+full_size = 423749
+anchor_crc = "d4b9b341"
+anchor_end = 0x5f722
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "327d7e31"
+full_size = 304752
+anchor_crc = "5fc32529"
+anchor_end = 0x43630
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "ee5f6002"
+full_size = 91188
+anchor_crc = "a7a0a8d1"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d4c00097"
+full_size = 93929
+anchor_crc = "f6b6dceb"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "d585979e"
+full_size = 413246
+anchor_crc = "4c7b7053"
+anchor_end = 0x5dc30
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "2b9aa464"
+full_size = 423383
+anchor_crc = "d9d2a18b"
+anchor_end = 0x5f722
