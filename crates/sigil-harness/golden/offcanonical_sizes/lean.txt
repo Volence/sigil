@@ -5,11 +5,11 @@
 # geometry (lma + image_len); the phased z80 idle reports its ROM LMA. The declared
 # per-region sizes (addr[end]-addr[start]) reproduce the golden below. On any ruled
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
-# target=s4
-# reproduces_golden=s4.bin
-# golden_crc32=36e875f1
-# assembled_anchor=5fd8dfee
-# assembled_end=0x5dc30
+# target=lean
+# reproduces_golden=lean.bin
+# golden_crc32=a46a39f6
+# assembled_anchor=6e135074
+# assembled_end=0x5cbae
 # labels=72
 Ani_Particle 0x257e2
 Ani_Sonic 0x25774
@@ -20,7 +20,6 @@ BgAnim_Init 0x6490
 BgAnim_Table 0x25742
 BootData 0x3a0
 BootData_End 0x1b12
-BusError 0x5cb80
 Camera_Init 0x5bc0
 Checksum 0x18e
 Collected_Init 0x35cc
@@ -28,7 +27,7 @@ Collision_GetType 0x5210
 Collision_ProbeDown 0x5280
 Dac_Temp_Blip 0x48000
 DeformTable_Zero 0x11320
-EndOfRom 0x5dc30
+EndOfRom 0x5cbae
 EntryPoint 0x200
 GameLoop 0x239e
 GameState_OJZScroll_Init 0x5c7ec
@@ -59,6 +58,7 @@ Plane_Buffer_Reset 0x4228
 Player_Init 0x10002
 PopulateSpawnedPieceCount 0x3ec0
 Read_Controllers 0x2290
+ReleaseFault 0x5cb80
 RingBuffer_Add 0x3414
 S4LZ_DecompressDict 0x24f0
 Section_Init 0x5774

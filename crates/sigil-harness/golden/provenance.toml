@@ -1956,3 +1956,57 @@ full_crc = "ca450ce0"
 full_size = 423388
 anchor_crc = "1dfea23a"
 anchor_end = 0x5f71e
+
+[[entry]]
+name = "crash-report"
+ab = "aeon/docs/superpowers/notes/2026-08-05-crash-report-ab.md"
+note = "Part B: release ships the MD Debugger + deb2 symbols (CRASH_REPORT=1 default); ReleaseFault survives as the lean shape"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "fa15ffa1"
+full_size = 423765
+anchor_crc = "f791b53f"
+anchor_end = 0x5f71e
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "ed2ad40e"
+full_size = 304788
+anchor_crc = "c8374607"
+anchor_end = 0x43630
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "12289484"
+full_size = 91224
+anchor_crc = "6f77ae93"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "18e5ec7f"
+full_size = 93963
+anchor_crc = "7c498876"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "a46a39f6"
+full_size = 379822
+anchor_crc = "6e135074"
+anchor_end = 0x5cbae
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "36e875f1"
+full_size = 413268
+anchor_crc = "5fd8dfee"
+anchor_end = 0x5dc30
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "ca450ce0"
+full_size = 423388
+anchor_crc = "1dfea23a"
+anchor_end = 0x5f71e
