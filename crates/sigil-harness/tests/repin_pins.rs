@@ -474,7 +474,7 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // one-register park moved to move.l/movea.l (−12 cycles/child, −4 bytes,
     // which also restored the plain-shape branch margin the wave had consumed).
     assert_eq!(pins::SOUND_API.plain_base, 0x64DE);  // +0x10 item27: boot-growth slide
-    assert_eq!(pins::SOUND_API.debug_base, 0x8190);  // +0x10 item27: boot-growth slide
+    assert_eq!(pins::SOUND_API.debug_base, 0x81A0);  // +0x10 item28: the bg tile-blit guard grew bg 174->176 B; the +2 rounds to +0x10 across the section alignment ahead of sound_api
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A

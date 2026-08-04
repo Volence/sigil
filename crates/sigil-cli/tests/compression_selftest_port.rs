@@ -198,7 +198,23 @@ fn compression_selftest_debug_region_matches_reference() {
     let expected = &refrom[base as usize..base as usize + len];
     let section =
         linked.section("compression_selftest").expect("linked image must carry the region");
-    assert_eq!(section.bytes.len(), expected.len(), "compression_selftest (debug): length");
+    // Packed placement: the pins span runs to the NEXT section's aligned base, so the
+    // window can end in ALIGNMENT FILL that the standalone compile does not emit. Same
+    // tolerance the other region gates carry. (Item 28's +2 in `bg` shifted this region
+    // and grew its tail from 0 to 14 bytes, which is what surfaced this.)
+    assert!(
+        section.bytes.len() <= expected.len(),
+        "compression_selftest (debug): candidate {} bytes OVERRUNS the pinned window {}",
+        section.bytes.len(),
+        expected.len()
+    );
+    let fill = expected.len() - section.bytes.len();
+    assert!(
+        fill < 16 && expected[section.bytes.len()..].iter().all(|&b| b == 0),
+        "compression_selftest (debug): {fill}-byte window tail is not short all-zero \
+         alignment fill — that is a real length mismatch, not packing"
+    );
+    let expected = &expected[..section.bytes.len()];
     if let Some(i) = (0..expected.len()).find(|&i| section.bytes[i] != expected[i]) {
         let lo = i.saturating_sub(8);
         let hi = (i + 16).min(expected.len());
