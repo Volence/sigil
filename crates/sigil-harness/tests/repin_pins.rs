@@ -187,9 +187,9 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // CC_DELETE_OFF is an intra-animate offset → unchanged.
     assert_eq!(pins::BOOT.plain_base, 0x200);
     assert_eq!(pins::BOOT.debug_base, 0x200);
-    assert_eq!(pins::BOOT.plain_len, 0x198);  // −0x10 PAL NTSC-only wave
-    assert_eq!(pins::BOOT.debug_len, 0x19C);  // −0x10 PAL NTSC-only wave
-    assert_eq!(pins::BOOT_DATA, pins::Pin { plain: 0x398, debug: 0x39C });  // −0x10 PAL NTSC-only wave
+    assert_eq!(pins::BOOT.plain_len, 0x1A0);  // +0x8 item27: EntryPoint's `lea (SYSTEM_STACK).w, sp` (4 B) + a 4 B align pad the new plain length needs
+    assert_eq!(pins::BOOT.debug_len, 0x1A0);  // +0x4 item27: the same lea; debug was already 4-aligned so it takes no pad — the two shapes converge
+    assert_eq!(pins::BOOT_DATA, pins::Pin { plain: 0x3A0, debug: 0x3A0 });  // +0x8/+0x4 item27: rides BOOT's growth; both shapes now start boot_data at the same address
 
     // Then the I3 replay parcel (input/replay plan, 2026-08-02): engine.replay
     // (Input_Tick + Replay_Hash) inserts between game_loop and s4lz, so every
@@ -258,34 +258,34 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // The blob's evenness is now enforced by an `ensure` in aeon boot_data.emp —
     // an odd blob address-errors the 68k at boot, which is how this parcel found
     // out (see the A/B note referenced by chain entry `wave4-z80-sound-reclaim`).
-    assert_eq!(pins::ANIMATE.plain_base, 0x3070);  // +0x10/+0x8 item26: SPRITES grew by the cull-margin cmpi.w pair; everything downstream slides
-    assert_eq!(pins::ANIMATE.debug_base, 0x37C2);  // +0x8 item26: same cause, debug's smaller tail pad
+    assert_eq!(pins::ANIMATE.plain_base, 0x3080);  // +0x10 item27: the boot-growth slide (aligned), which every region downstream of boot inherits
+    assert_eq!(pins::ANIMATE.debug_base, 0x37D2);  // +0x10 item27: same boot-growth slide
     assert_eq!(pins::ANIMATE.plain_len, 0x194);  // +0xA bug005: AF_SET_FIELD rail + refresh idiom
     assert_eq!(pins::ANIMATE.debug_len, 0x2B8);  // +0x10 bug005: same + the debug-fenced rail
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x3404);  // +0x10 item26: same SPRITES cull-margin slide (animate LEN unchanged)
-    assert_eq!(pins::RINGS.debug_base, 0x3C82);  // +0x8 item26: same slide
+    assert_eq!(pins::RINGS.plain_base, 0x3414);  // +0x10 item27: boot-growth slide
+    assert_eq!(pins::RINGS.debug_base, 0x3C92);  // +0x10 item27: boot-growth slide
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
     // core LEN shrank −0xA in c4 (Spawn_Count: InitObjectRAM store −4 + RunObjects
     // moveq+store −6). Bases −0xA in c5 (the boot.asm CROSS_RESET store removal is
     // upstream of dplc/core, so core's base slides with everything downstream of boot).
-    assert_eq!(pins::CORE.plain_base, 0x2970);  // +0x40 addrfree: replay-span slide
+    assert_eq!(pins::CORE.plain_base, 0x2980);  // +0x10 item27: boot-growth slide
     assert_eq!(pins::CORE.plain_len, 0x2E8);    // addrfree-invariant: plain's +0x40 span is ≡0 (mod 4), tail pad unchanged
-    assert_eq!(pins::CORE.debug_base, 0x2BB0);  // +0x3E addrfree: the debug replay span, PRE-re-pad
+    assert_eq!(pins::CORE.debug_base, 0x2BC0);  // +0x10 item27: boot-growth slide
     assert_eq!(pins::CORE.debug_len, 0x730);    // +2 addrfree: the tail align pad that absorbs debug's ≡2 (mod 4) span — placement, core.emp untouched
-    assert_eq!(pins::DPLC.plain_base, 0x28C8);  // +0x40 addrfree: replay-span slide
-    assert_eq!(pins::DPLC.debug_base, 0x2B0C);  // +0x3E addrfree: upstream of core's re-pad
+    assert_eq!(pins::DPLC.plain_base, 0x28D8);  // +0x10 item27: boot-growth slide
+    assert_eq!(pins::DPLC.debug_base, 0x2B1C);  // +0x10 item27: boot-growth slide
     assert_eq!(pins::DPLC.plain_len, 0xA8);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xA4);   // item 6 REMOVED (soak disproved single-entry) — debug == plain
 
     // animate_port.rs: the DeleteObject inbound label. bug005-invariant: the +2
     // tail clear lands INSIDE DeleteObject after its label, so the label holds.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2A40, debug: 0x2C80 });  // -0xE0/-0xF0 wave4-sound: slides with core
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2A50, debug: 0x2C90 });  // +0x10 item27: slides with core on the boot growth
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
@@ -473,8 +473,8 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // loops (byte-neutral, −20 cycles/child), and PopulateSpawnedPieceCount's
     // one-register park moved to move.l/movea.l (−12 cycles/child, −4 bytes,
     // which also restored the plain-shape branch margin the wave had consumed).
-    assert_eq!(pins::SOUND_API.plain_base, 0x64CE);  // +0x10 item26: SPRITES cull-margin slide
-    assert_eq!(pins::SOUND_API.debug_base, 0x8180);  // +0x20 item26: SPRITES slide + PARALLAX's $8B mode-change gate (+0x8 each)
+    assert_eq!(pins::SOUND_API.plain_base, 0x64DE);  // +0x10 item27: boot-growth slide
+    assert_eq!(pins::SOUND_API.debug_base, 0x8190);  // +0x10 item27: boot-growth slide
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A

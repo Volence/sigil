@@ -128,6 +128,12 @@ fn value_equs(debug: bool, doctor: Option<(&str, &str)>) -> Vec<Section> {
         ("VDP_Shadow_vdp_hint_rate", "$0A"),
         // boot.emp's own mirror (engine/constants.asm)
         ("PSG_PORT", "$C00011"),
+        // The initial supervisor stack (engine/system/constants.emp). EntryPoint
+        // reloads sp from it (`lea (SYSTEM_STACK).w, sp`) so a software
+        // `jmp EntryPoint` soft-reset does not run the RAM clear on a stale
+        // stack — review item 27, finding 7 (2026-08-04). The source pins the
+        // `.w` width, so this equ cannot change the encoding.
+        ("SYSTEM_STACK", "$FFFFFF00"),
         // z80_bus template's bus register
         ("Z80_BUS_REQUEST", "$A11100"),
         // bare link-resolved hardware ports (engine/constants.asm)
