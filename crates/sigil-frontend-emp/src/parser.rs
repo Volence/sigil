@@ -477,6 +477,12 @@ impl Parser {
         if self.at_kw("implement") && matches!(self.peek2(), Tok::Ident(_)) {
             return Some(Item::Implement(self.implement_decl(public)));
         }
+        // `context Name { … }` (§3.1). Contextual opener (the D2.36 rule): only a
+        // `context` immediately followed by an identifier is the item, so
+        // `context` stays an ordinary name in every other position.
+        if self.at_kw("context") && matches!(self.peek2(), Tok::Ident(_)) {
+            return Some(Item::Context(self.context_decl(public)));
+        }
         if self.at_kw("script") { return Some(Item::Script(self.script_decl(public))); }
         if self.at_kw("newtype") { return Some(Item::Newtype(self.newtype_decl(public))); }
         // `align N` (D2.29, §4.8) — contextual item opener per the `equ`
@@ -551,10 +557,10 @@ impl Parser {
     /// a stray `}` is just garbage to skip past (the old behavior),
     /// otherwise recovery would loop forever re-diagnosing the same token.
     fn recover_to_next_decl(&mut self, in_block: bool) {
-        const OPENERS: [&str; 24] = ["use", "const", "equ", "enum", "bitfield", "struct",
+        const OPENERS: [&str; 25] = ["use", "const", "equ", "enum", "bitfield", "struct",
                                      "vars", "data", "proc", "script", "comptime", "section", "pub",
                                      "newtype", "offsets", "table", "dispatch", "ensure", "ensure_fatal",
-                                     "align", "extern", "type", "interface", "implement"];
+                                     "align", "extern", "type", "interface", "implement", "context"];
         let mut depth = 0i32;
         loop {
             match self.peek() {
@@ -1677,9 +1683,15 @@ impl Parser {
         let mut out_flags = Vec::new();
         let mut out_cond = Vec::new();
         let mut out_types = Vec::new();
+        let mut requires = Vec::new();
+        let mut grants = Vec::new();
         let mut falls_into = None;
         loop {
-            if self.eat_kw("clobbers") {
+            if self.eat_kw("requires") {
+                requires = self.ctx_list("requires");
+            } else if self.eat_kw("grants") {
+                grants = self.ctx_list("grants");
+            } else if self.eat_kw("clobbers") {
                 self.expect(&Tok::LParen, "`(`");
                 // `clobbers()` — the empty form is the explicit "touches
                 // nothing" contract (distinct from no declaration at all). C1
@@ -1711,7 +1723,98 @@ impl Parser {
         self.expect(&Tok::LBrace, "`{`");
         let body = self.asm_body(/* splices_allowed = */ false);
         self.expect(&Tok::RBrace, "`}`");
-        ProcDecl { public, name, params, clobbers, preserves, out, out_flags, out_cond, out_types, falls_into, attrs: Vec::new(), body, span: start.merge(self.prev_span()) }
+        ProcDecl { public, name, params, clobbers, preserves, out, out_flags, out_cond, out_types, requires, grants, falls_into, attrs: Vec::new(), body, span: start.merge(self.prev_span()) }
+    }
+
+    /// Parse a context-name list clause — `requires(a, b)` / `grants(a)` (§3.3).
+    /// The opening keyword is already eaten. Context names are plain identifiers
+    /// (contexts are comptime-only items, never link symbols), so this is the
+    /// simplest of the contract clauses; the EMPTY form is rejected because it
+    /// would state nothing that omitting the clause does not.
+    fn ctx_list(&mut self, what: &str) -> Vec<(String, Span)> {
+        self.expect(&Tok::LParen, "`(`");
+        let mut out = Vec::new();
+        if self.at(&Tok::RParen) {
+            let sp = self.span();
+            self.diag_at(sp, format!("`{what}()` is empty — name at least one context, or drop the clause"));
+        } else {
+            loop {
+                let sp = self.span();
+                let name = self.expect_ident("context name");
+                out.push((name, sp));
+                if !self.eat(&Tok::Comma) { break; }
+                if self.at(&Tok::RParen) { break; } // trailing comma
+            }
+        }
+        self.expect(&Tok::RParen, "`)`");
+        out
+    }
+
+    /// Parse a `context Name { … }` declaration (§3.1). Two bodies:
+    ///
+    /// ```text
+    /// context z80_stopped { acquire = asm { move.w #$0100, Z80_BUS_REQUEST }
+    ///                       release = asm { move.w #$0000, Z80_BUS_REQUEST } }
+    /// context vblank { granted }
+    /// ```
+    ///
+    /// The two flavors are distinguished by the body's first word, so neither
+    /// needs a keyword before the name. A body naming `granted` alongside
+    /// acquire/release, or one missing either half of the acquired pair, is a
+    /// steering error here (the decl site is where the author can see both).
+    fn context_decl(&mut self, public: bool) -> ContextDecl {
+        let start = self.span();
+        self.bump(); // `context`
+        let name = self.expect_decl_name("context name");
+        self.expect(&Tok::LBrace, "`{`");
+        let mut acquire: Option<Expr> = None;
+        let mut release: Option<Expr> = None;
+        let mut granted = false;
+        loop {
+            self.skip_newlines();
+            if self.at(&Tok::RBrace) || self.at(&Tok::Eof) { break; }
+            if self.eat_kw("granted") {
+                granted = true;
+                self.expect_line_end_or_rbrace();
+                continue;
+            }
+            let field_span = self.span();
+            let field = self.expect_ident("`acquire`, `release`, or `granted`");
+            match field.as_str() {
+                "acquire" | "release" => {
+                    self.expect(&Tok::Eq, "`=`");
+                    let e = self.expr();
+                    if field == "acquire" { acquire = Some(e) } else { release = Some(e) }
+                }
+                other => {
+                    self.diag_at(
+                        field_span,
+                        format!("unknown `context` field `{other}` — a context body is `acquire = …` + `release = …`, or `granted`"),
+                    );
+                    // Consume a `= expr` if one follows so recovery stays in step.
+                    if self.eat(&Tok::Eq) { let _ = self.expr(); }
+                }
+            }
+            self.expect_line_end_or_rbrace();
+        }
+        self.expect(&Tok::RBrace, "`}` to close the `context` body");
+        let span = start.merge(self.prev_span());
+        let kind = match (granted, acquire, release) {
+            (false, Some(acquire), Some(release)) => ContextKind::Acquired { acquire, release },
+            (true, None, None) => ContextKind::Granted,
+            (true, _, _) => {
+                self.diag_at(span, format!("`context {name}` is `granted` AND names acquire/release — a granted context has no compiler-owned bracket"));
+                ContextKind::Granted
+            }
+            (false, a, _) => {
+                let missing = if a.is_none() { "acquire" } else { "release" };
+                self.diag_at(span, format!("`context {name}` is missing `{missing} = …` — an acquired context needs both halves (or spell it `granted`)"));
+                // Recover as granted: the name still resolves, so downstream
+                // reports name it rather than an avalanche of "unknown context".
+                ContextKind::Granted
+            }
+        };
+        ContextDecl { public, name, kind, span }
     }
 
     /// Parse a proc SIGNATURE — `(params) [clobbers(...)] [out(...)]
@@ -1726,6 +1829,7 @@ impl Parser {
         let mut out_flags = Vec::new();
         let mut out_cond = Vec::new();
         let mut out_types = Vec::new();
+        let mut requires = Vec::new();
         loop {
             if self.eat_kw("clobbers") {
                 self.expect(&Tok::LParen, "`(`");
@@ -1740,11 +1844,13 @@ impl Parser {
             } else if self.eat_kw("preserves") {
                 self.expect(&Tok::LParen, "`(`");
                 preserves = self.reg_list();
+            } else if self.eat_kw("requires") {
+                requires = self.ctx_list("requires");
             } else {
                 break;
             }
         }
-        ProcSig { params, clobbers, preserves, out, out_flags, out_cond, out_types }
+        ProcSig { params, clobbers, preserves, out, out_flags, out_cond, out_types, requires }
     }
 
     /// Parse a contract-signature param list — like [`Parser::param_list`] but
@@ -2206,6 +2312,13 @@ impl Parser {
         if self.at_kw("if") {
             return Some(self.asm_if(splices_allowed));
         }
+        // statement-position context bracket (§3.2): `with <ctx> [if <cond>] { }`.
+        // Contextual opener like `invoke` — only fires on `with` followed by an
+        // identifier (the context name); no 68k/Z80 mnemonic is named `with`, so
+        // this never shadows an instruction line.
+        if self.at_kw("with") && matches!(self.peek2(), Tok::Ident(_)) {
+            return Some(self.asm_with(splices_allowed));
+        }
         // statement-position local typed-register binding (Spec 2, C2):
         // `let <reg>: <Type>` (NO `=`). `let` is reserved statement-leading
         // (S2-D1) and no 68k/Z80 mnemonic is named `let`, so this can never
@@ -2557,6 +2670,32 @@ impl Parser {
         };
         self.block_depth -= 1;
         AsmStmt::If { cond, then, els, span: start.merge(self.prev_span()) }
+    }
+
+    /// `with <ctx> [if <cond>] { asm... }` — a context bracket (§3.2). The body
+    /// parses with the SAME statement grammar as the enclosing block, so labels,
+    /// nested `if`s, and nested brackets all work inside. The optional gate
+    /// parses with struct literals disabled, exactly as [`Parser::asm_if`]'s
+    /// condition does, and is bounded by the same `block_depth` ceiling.
+    fn asm_with(&mut self, splices_allowed: bool) -> AsmStmt {
+        let start = self.span();
+        self.bump(); // `with`
+        let ctx = self.expect_ident("context name");
+        let cond = if self.eat_kw("if") { Some(self.expr_no_struct_lit()) } else { None };
+        let span = start.merge(self.prev_span());
+        if self.block_depth >= MAX_EXPR_DEPTH {
+            let sp = self.span();
+            self.diag_at(sp, "block nesting too deep (max 128)");
+            self.skip_unparsed_block();
+            return AsmStmt::With { ctx, cond, body: Vec::new(), span };
+        }
+        self.block_depth += 1;
+        self.expect(&Tok::LBrace, "`{`");
+        let body = self.asm_body(splices_allowed);
+        self.expect(&Tok::RBrace, "`}` to close the `with` bracket");
+        self.trailing_junk_after_brace();
+        self.block_depth -= 1;
+        AsmStmt::With { ctx, cond, body, span }
     }
 
     /// Diagnose a statement continuing on the same line after a closing `}`

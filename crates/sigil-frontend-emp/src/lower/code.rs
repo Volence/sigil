@@ -61,6 +61,8 @@ pub fn lower_code_buf(
     for item in &code.items {
         match item {
             CodeItem::Label { name, .. } => builder.define_label(name),
+            // A `with` region boundary (§3.2) — declared-tier metadata, zero bytes.
+            CodeItem::ContextMark { .. } => {}
             CodeItem::Inline(buf, span) => {
                 // A `Data` value spliced into the code stream (§6.2) — today a
                 // `dc.b`/`dc.w`/`dc.l` statement's cells (tranche 8). Scalars

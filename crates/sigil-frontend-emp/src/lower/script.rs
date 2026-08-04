@@ -735,6 +735,16 @@ fn collect_body_labels(
                         );
                     }
                 }
+                // A `with` bracket's body holds ordinary statements of the
+                // enclosing body, so its labels are this script's labels — they
+                // must enter the duplicate set like any other.
+                ScriptStmt::Asm(AsmStmt::With { body, .. }) => {
+                    let mut nested = Vec::new();
+                    collect_if_labels(body, &mut nested);
+                    for name in nested {
+                        out.insert(name);
+                    }
+                }
                 ScriptStmt::Asm(AsmStmt::If { then, els, span, .. }) => {
                     // Comptime-`if` branches (tranche 5) hold `AsmStmt` only —
                     // a `yield` is a `ScriptStmt` and cannot nest inside one —
@@ -775,6 +785,7 @@ fn collect_if_labels(stmts: &[AsmStmt], out: &mut Vec<String>) {
     for st in stmts {
         match st {
             AsmStmt::Label { name, .. } => out.push(name.clone()),
+            AsmStmt::With { body, .. } => collect_if_labels(body, out),
             AsmStmt::If { then, els, .. } => {
                 collect_if_labels(then, out);
                 if let Some(els) = els {

@@ -140,6 +140,11 @@ pub struct Evaluator<'a> {
     /// gap-ledger row 1654). Every per-item evaluator re-indexes the whole file,
     /// mirroring the `offsets`/`table` arms.
     pub(crate) procs: HashMap<&'a str, &'a ast::ProcDecl>,
+    /// Declared machine-state contexts (`context Name { … }`, §3.1), indexed by
+    /// name — what a `with <ctx> { }` bracket resolves against. Imported
+    /// contexts arrive through the same ambient-injection path a `pub comptime
+    /// fn` does, so a consumer's `use m.{ctx}` makes the DECL visible here.
+    pub(crate) contexts: HashMap<&'a str, &'a ast::ContextDecl>,
     /// Named SST overlay decls (`vars Name: window { .. }`), indexed by name
     /// (Spec 2, Plan 7 #6, Part A). Only the *named* overlay form is indexed;
     /// the region form (`vars region { .. }`, `name: None`) stays inert.
@@ -476,6 +481,7 @@ impl<'a> Evaluator<'a> {
             dispatches: HashMap::new(),
             tables: HashMap::new(),
             procs: HashMap::new(),
+            contexts: HashMap::new(),
             overlays: HashMap::new(),
             struct_layout_memo: HashMap::new(),
             overlay_layout_memo: HashMap::new(),
@@ -765,6 +771,9 @@ impl<'a> Evaluator<'a> {
                     // this arm is reached through the `Section` recursion below —
                     // the flat name namespace the AS model uses.
                     self.procs.insert(p.name.as_str(), p);
+                }
+                ast::Item::Context(c) => {
+                    self.contexts.insert(c.name.as_str(), c);
                 }
                 ast::Item::Vars(v) => {
                     // Only the NAMED overlay form (`vars Name: window { .. }`) is

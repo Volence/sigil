@@ -257,6 +257,7 @@ fn collect_pub_proc_stubs(
                     out_flags: p.out_flags.clone(),
                     out_cond: p.out_cond.clone(),
                     out_types: p.out_types.clone(),
+                    requires: p.requires.clone(),
                 };
                 out.insert(
                     p.name.clone(),
@@ -790,6 +791,8 @@ pub fn z80_clobbers_report_doctored(
                             out: expand(p.out.as_deref().unwrap_or(&[])),
                             has_clobber_contract: p.clobbers.is_some() || doctored.is_some(),
                             verified_preserves,
+                            requires: p.requires.iter().map(|(n, _)| n.clone()).collect(),
+                            grants: p.grants.iter().map(|(n, _)| n.clone()).collect(),
                             unanalyzable_allowed: false,
                         },
                     );

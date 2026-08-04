@@ -79,6 +79,18 @@ pub struct ProcNode {
     /// contributes NOTHING here (it stays a D2.32 error); `sr` is out of the
     /// register-file closure's scope.
     pub verified_preserves: BTreeSet<String>,
+    /// Contexts every call site of this proc must have active (§3.3,
+    /// `requires(...)`). Part of the ONE contract record, alongside the register
+    /// facets — but NOT a fixpoint input: unlike a clobber set, a context
+    /// requirement is DECLARED at every level (§2's signatures-on-exports
+    /// discipline), so the propagation rule "a caller inherits its callees'
+    /// requirements minus what its own brackets discharge, and the residue must
+    /// appear in its own `requires`" is discharged by the per-call-site check in
+    /// [`crate::corpus_contracts`], with nothing left to converge.
+    pub requires: BTreeSet<String>,
+    /// Contexts this proc asserts are active for its whole body (`grants(...)`)
+    /// — a TRUST ROOT, never inferred and never verified, only recorded.
+    pub grants: BTreeSet<String>,
     /// The S2-D6 U4 escape hatch: the proc declares
     /// `@allow("clobbers.unanalyzable", "<reason>")`. A genuinely-unanalyzable
     /// site — a raw computed dispatch outside the typed-dispatch idiom whose ⊤

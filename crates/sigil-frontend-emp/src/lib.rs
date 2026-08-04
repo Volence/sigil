@@ -6,6 +6,7 @@ pub mod ast;
 pub mod branch_const;
 pub mod calls;
 pub mod closure;
+pub mod context;
 pub mod contract;
 pub mod corpus_contracts;
 pub mod eval;

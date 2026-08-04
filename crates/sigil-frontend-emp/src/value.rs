@@ -362,6 +362,47 @@ pub enum CodeItem {
     /// format-string bytes between a `jsr` and its resume label). Carries the
     /// producing statement's span so emission diagnostics anchor at the source.
     Inline(DataBuf, Span),
+    /// A `with <ctx> { }` region boundary (contract unification §3.2). Emits
+    /// ZERO bytes — it is the DECLARED-tier annotation the context checker reads
+    /// to know where a region's acquire, body, and release begin and end.
+    ///
+    /// It rides the CodeBuf rather than a side table for two reasons: a Code
+    /// value is spliced by CONCATENATION (`buf.items.extend(inner.items)`), so a
+    /// bracket inside a comptime template survives the splice with no offset
+    /// bookkeeping; and the shared CFG ([`crate::flag_check::Cfg`]) indexes
+    /// INSTRUCTIONS, stepping over non-instruction items exactly as it already
+    /// does for labels — so the marks cost the analyses nothing.
+    ContextMark {
+        /// The context's name.
+        ctx: String,
+        /// Which boundary this is.
+        kind: ContextMarkKind,
+        /// The `with` header's span (every mark of one region shares it).
+        span: Span,
+    },
+}
+
+/// The four boundaries a `with` bracket plants (§3.2). Each split is load-bearing
+/// for one proof:
+///
+/// - `AcquireEnd` fences the ACQUIRE off from the body. Without it, "does this
+///   context take the Z80 bus" would read a toggle anywhere in the body (which
+///   misreads an outer bracket nesting a bus bracket), and a branch that jumps
+///   BACK into the acquire — re-running it with no matching release — would be
+///   indistinguishable from an ordinary intra-region branch.
+/// - `BodyEnd` fences the RELEASE off from the body, so the escape proof ranges
+///   over exactly acquire+body: the release's own fall-through out of the region
+///   is the LEGITIMATE exit, and without the split it reads as an escape.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContextMarkKind {
+    /// Immediately before the spliced `acquire`.
+    Enter,
+    /// Immediately after the spliced `acquire`, before the bracketed body.
+    AcquireEnd,
+    /// After the bracketed body, immediately before the spliced `release`.
+    BodyEnd,
+    /// Immediately after the spliced `release`.
+    Exit,
 }
 
 /// A resolved splice operand value (T1): the CPU-neutral surface forms an

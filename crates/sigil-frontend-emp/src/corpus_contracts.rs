@@ -32,7 +32,8 @@ use crate::out_verify::{
 };
 use crate::preserves::{find_dead_saves, DeadSave};
 use crate::branch_const::{check_branch_const, BranchConstFiring};
-use crate::z80_bus::{check_bus_state, BusFiring};
+use crate::context::{bracketed_at, check_regions, regions_of, ContextFiring, Region};
+use crate::z80_bus::{check_bus_state, BusEntry, BusFiring};
 use crate::type_slice::{check_slot_types, SlotTypeMismatch};
 use crate::value::{CodeBuf, CodeItem, CodeOperand, Reg};
 use sigil_ir::backend::Cpu;
@@ -145,6 +146,45 @@ pub struct ContractReport {
     /// running — the sigil-native absorption of s4lint E006/E007/E008/E011.
     /// Sorted (proc, span). Byte-neutral (corpus-only).
     pub bus_firings: Vec<BusFiring>,
+    /// The §3.2 `with`-bracket firings — escape / entry-skip / reacquire.
+    /// 68k only: the walk's `proc_bufs` excludes `(cpu: z80)` modules, so a
+    /// bracket in a Z80 module is proven by the per-file gate alone. The
+    /// per-file gate ([`crate::lower::proc`]) is what FAILS THE BUILD on these;
+    /// this is the same computation over the same bodies, surfaced so the corpus
+    /// gate can assert the class stays empty (the `check_survives_claims` /
+    /// `check_cond_out_survives` precedent). Sorted (proc, ctx, span).
+    pub context_firings: Vec<ContextFiring>,
+    /// The §3.3 `[context.unsatisfied]` firings: a call site that does not have
+    /// every context its callee `requires(...)` active. Sorted (proc, callee,
+    /// ctx, span). ERROR-tier — a declared context is never `@as_compat`-softened.
+    pub context_unsatisfied: Vec<ContextUnsatisfied>,
+    /// Every call site where a callee's `requires(...)` WAS discharged:
+    /// `(proc, callee, ctx)`, sorted. The companion an assert-empty over
+    /// `context_unsatisfied` needs — that gate is only meaningful if call sites
+    /// were EXAMINED, and `call_target_sym` resolves a direct call only, so a
+    /// refactor to indirect dispatch would empty the examined set while the
+    /// firing set stayed (correctly) empty.
+    pub context_discharged: Vec<(String, String, String)>,
+    /// `requires(...)` / `grants(...)` clauses naming a context no module
+    /// declares: `(proc, ctx, span)`, sorted. A silently-ignored requirement
+    /// would be worse than none — it would read as a checked claim.
+    pub unknown_context_refs: Vec<(String, String, Span)>,
+    /// Every proc that DECLARES a context obligation — `(proc, "requires"|"grants",
+    /// ctx)`, sorted. Exposed for the same reason `survives_claim_sites` is: an
+    /// assert-empty gate over `context_unsatisfied` is only as meaningful as the
+    /// set of claims it ranged over, and a contract edit that deleted every
+    /// `requires` would make the gate quietly vacuous.
+    pub context_claim_sites: Vec<(String, String, String)>,
+    /// Each `with`-bracketed region the corpus lowers: `(proc, ctx)`, sorted with
+    /// duplicates kept (one row per region). The bracket census — the adoption
+    /// measurement, and the tripwire against a silent un-adoption.
+    pub context_regions: Vec<(String, String)>,
+    /// The contexts a bracket PROVES hold the Z80 bus — identified from the
+    /// RESOLVED operand of the acquire each region splices (the same
+    /// resolved-operand-not-macro-name discipline `[bus.*]` itself uses), never
+    /// from a context's spelling. A proc requiring one of these is analyzed by
+    /// `[bus.*]` from a DECLARED entry state.
+    pub bus_contexts: BTreeSet<String>,
     /// The S2-D6 U4 `@allow("clobbers.unanalyzable", "<reason>")` annotations in
     /// force: `(proc, reason)`, sorted by proc. Every proc that opted a
     /// genuinely-unanalyzable computed-dispatch site OUT of the `unbounded`
@@ -569,10 +609,105 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     }
     branch_const_firings.sort_by(|a, b| (&a.proc, a.span.start).cmp(&(&b.proc, b.span.start)));
 
-    // [bus.*] — the item-4 core Z80-bus machine-state lint (byte-neutral).
+    // §3 the DECLARED machine-state tier. Regions are recovered per proc from the
+    // marks a `with` bracket plants; the per-region escape / entry-skip /
+    // reacquire proofs are the per-file gate's (they need only one body), so what
+    // runs HERE is the inherently cross-proc half: `[context.unsatisfied]`, the
+    // claim census, and the bracket census.
+    let declared_contexts = collect_context_names(files);
+    let mut proc_regions: BTreeMap<String, Vec<Region>> = BTreeMap::new();
+    let mut context_regions: Vec<(String, String)> = Vec::new();
+    let mut bus_contexts: BTreeSet<String> = BTreeSet::new();
+    let mut context_firings: Vec<ContextFiring> = Vec::new();
+    for pb in &proc_bufs {
+        // ONE mark scan per proc feeds the census, the bus-context
+        // identification, and the bracket proofs.
+        let (regions, mark_firings) = regions_of(&pb.name, &pb.buf.items);
+        for r in &regions {
+            context_regions.push((pb.name.clone(), r.ctx.clone()));
+            if crate::z80_bus::region_acquires_bus(&pb.buf.items, r) {
+                bus_contexts.insert(r.ctx.clone());
+            }
+        }
+        // Cpu::M68000 is exact, not a default: `proc_bufs` excludes `(cpu: z80)`
+        // modules (they collect into `z80_proc_bufs`), so every buf here is 68k.
+        // A `with` in a Z80 module is therefore proven by the PER-FILE gate only,
+        // which threads the module's real CPU — recorded in the census's doc.
+        context_firings.extend(check_regions(
+            &pb.name, &pb.buf.items, Cpu::M68000, &regions, mark_firings,
+        ));
+        proc_regions.insert(pb.name.clone(), regions);
+    }
+    context_regions.sort();
+    context_firings.sort_by(|a, b| {
+        (&a.proc, &a.ctx, a.span.start).cmp(&(&b.proc, &b.ctx, b.span.start))
+    });
+
+    let mut context_unsatisfied: Vec<ContextUnsatisfied> = Vec::new();
+    let mut context_discharged: Vec<(String, String, String)> = Vec::new();
+    let mut unknown_context_refs: Vec<(String, String, Span)> = Vec::new();
+    let mut context_claim_sites: Vec<(String, String, String)> = Vec::new();
+    for file in files {
+        collect_context_claims(&file.items, &declared_contexts, &mut context_claim_sites, &mut unknown_context_refs);
+    }
+    context_claim_sites.sort();
+    unknown_context_refs.sort_by(|a, b| (&a.0, &a.1, a.2.start).cmp(&(&b.0, &b.1, b.2.start)));
+    for pb in &proc_bufs {
+        let Some(node) = nodes.get(&pb.name) else { continue };
+        // The contexts active for the WHOLE body: the caller's own declared
+        // requirement (its callers guarantee it) plus its grants (the trust root).
+        let always: BTreeSet<String> = node.requires.union(&node.grants).cloned().collect();
+        let regions = proc_regions.get(&pb.name).map(|r| r.as_slice()).unwrap_or(&[]);
+        for (idx, it) in pb.buf.items.iter().enumerate() {
+            let CodeItem::Instr { mnemonic, ops, span, .. } = it else { continue };
+            if !CALL_MNEMONICS.contains(&mnemonic.as_str())
+                && !TAIL_MNEMONICS.contains(&mnemonic.as_str())
+            {
+                continue;
+            }
+            let Some(target) = call_target_sym(ops) else { continue };
+            let Some(callee) = nodes.get(&target) else { continue };
+            if callee.requires.is_empty() {
+                continue;
+            }
+            let mut active = always.clone();
+            active.extend(bracketed_at(regions, idx));
+            for ctx in &callee.requires {
+                if active.contains(ctx) {
+                    context_discharged.push((pb.name.clone(), target.clone(), ctx.clone()));
+                } else {
+                    context_unsatisfied.push(ContextUnsatisfied {
+                        proc: pb.name.clone(),
+                        callee: target.clone(),
+                        ctx: ctx.clone(),
+                        span: *span,
+                    });
+                }
+            }
+        }
+    }
+    context_unsatisfied.sort_by(|a, b| {
+        (&a.proc, &a.callee, &a.ctx, a.span.start).cmp(&(&b.proc, &b.callee, &b.ctx, b.span.start))
+    });
+    context_discharged.sort();
+
+    // [bus.*] — the item-4 core Z80-bus machine-state lint (byte-neutral). The
+    // entry seed comes from the DECLARED tier: a proc that requires/grants a
+    // bus-holding context runs with the bus held at entry, a fact the inference
+    // tier cannot derive and `[context.unsatisfied]` checks at every call site.
     let mut bus_firings: Vec<BusFiring> = Vec::new();
     for pb in &proc_bufs {
-        bus_firings.extend(check_bus_state(&pb.name, &pb.buf.items));
+        // Seeded from `requires` ONLY. `grants` is an explicitly UNVERIFIED trust
+        // root (§3.2 — the assembler cannot check hardware dispatch), and this
+        // seed gates a crash-class check: `[bus.vdp-write-unstopped]` fires only
+        // on a definite Running, so a wrong `Held` silences it for a whole proc.
+        // A requirement at least has `[context.unsatisfied]` behind it at every
+        // call site.
+        let entry = match nodes.get(&pb.name) {
+            Some(n) if n.requires.iter().any(|c| bus_contexts.contains(c)) => BusEntry::Held,
+            _ => BusEntry::Unknown,
+        };
+        bus_firings.extend(check_bus_state(&pb.name, &pb.buf.items, entry));
     }
     bus_firings.sort_by(|a, b| (&a.proc, a.span.start).cmp(&(&b.proc, b.span.start)));
 
@@ -607,7 +742,85 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         slot_firings,
         branch_const_firings,
         bus_firings,
+        context_firings,
+        context_unsatisfied,
+        context_discharged,
+        unknown_context_refs,
+        context_claim_sites,
+        context_regions,
+        bus_contexts,
         unanalyzable_allows,
+    }
+}
+
+/// One `[context.unsatisfied]` firing (§3.3): at `span` in `proc`, the call to
+/// `callee` is not dominated by an active `ctx`, which `callee` requires.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextUnsatisfied {
+    /// The calling proc.
+    pub proc: String,
+    /// The callee whose requirement went undischarged.
+    pub callee: String,
+    /// The context the callee requires.
+    pub ctx: String,
+    /// The call site.
+    pub span: Span,
+}
+
+/// Every `context` NAME the corpus declares (§3.1) — recursing `section {}`
+/// bodies like every other collector here. The set a `requires`/`grants` clause
+/// is validated against; the FLAVOR check (`grants` of an acquired context) is
+/// the per-file gate's, which has the decl in hand.
+fn collect_context_names(files: &[ast::File]) -> BTreeSet<String> {
+    fn walk(items: &[Item], out: &mut BTreeSet<String>) {
+        for item in items {
+            match item {
+                Item::Context(c) => {
+                    out.insert(c.name.clone());
+                }
+                Item::Section(s) => walk(&s.items, out),
+                _ => {}
+            }
+        }
+    }
+    let mut out = BTreeSet::new();
+    for file in files {
+        walk(&file.items, &mut out);
+    }
+    out
+}
+
+/// Collect every proc's `requires`/`grants` clause into the claim census, and
+/// any clause naming an undeclared context into `unknown`.
+fn collect_context_claims(
+    items: &[Item],
+    declared: &BTreeSet<String>,
+    claims: &mut Vec<(String, String, String)>,
+    unknown: &mut Vec<(String, String, Span)>,
+) {
+    for item in items {
+        match item {
+            Item::Proc(p) => {
+                for (kind, list) in [("requires", &p.requires), ("grants", &p.grants)] {
+                    for (ctx, span) in list.iter() {
+                        claims.push((p.name.clone(), kind.to_string(), ctx.clone()));
+                        if !declared.contains(ctx) {
+                            unknown.push((p.name.clone(), ctx.clone(), *span));
+                        }
+                    }
+                }
+            }
+            Item::ExternProc(e) => {
+                for (ctx, span) in e.sig.requires.iter() {
+                    claims.push((e.name.clone(), "requires".to_string(), ctx.clone()));
+                    if !declared.contains(ctx) {
+                        unknown.push((e.name.clone(), ctx.clone(), *span));
+                    }
+                }
+            }
+            Item::Section(s) => collect_context_claims(&s.items, declared, claims, unknown),
+            _ => {}
+        }
     }
 }
 
@@ -742,7 +955,13 @@ fn collect_env(items: &[Item], out: &mut Vec<Item>) {
             | Item::Vars(_)
             | Item::Data(_)
             | Item::ComptimeFn(_)
-            | Item::Newtype(_) => out.push(item.clone()),
+            | Item::Newtype(_)
+            // A `context` decl is what a `with` bracket resolves against. Without
+            // it here the walk's CodeBufs would silently LACK every bracket's
+            // acquire/release — a body missing its bus toggles, invisible to the
+            // `dropped_instrs` pin (nothing is dropped; the statement simply
+            // lowers bare). Every downstream net would then under-approximate.
+            | Item::Context(_) => out.push(item.clone()),
             Item::Section(s) => collect_env(&s.items, out),
             _ => {}
         }
@@ -814,6 +1033,7 @@ fn collect_discarded(body: &[AsmStmt], out: &mut Vec<Span>) {
                     collect_discarded(e, out);
                 }
             }
+            AsmStmt::With { body, .. } => collect_discarded(body, out),
             _ => {}
         }
     }
@@ -1003,6 +1223,8 @@ fn proc_node(
         out: expand_reglist_regs(p.out.as_deref().unwrap_or(&[])),
         has_clobber_contract: p.clobbers.is_some(),
         verified_preserves,
+        requires: p.requires.iter().map(|(n, _)| n.clone()).collect(),
+        grants: p.grants.iter().map(|(n, _)| n.clone()).collect(),
         unanalyzable_allowed: unanalyzable_reason_in_force(file, p).is_some(),
     };
     (node, buf, dropped)
@@ -1057,6 +1279,7 @@ fn extern_node(e: &ExternProcDecl) -> ProcNode {
         params: sig_param_regs(&e.sig),
         out,
         has_clobber_contract: e.sig.clobbers.is_some(),
+        requires: e.sig.requires.iter().map(|(n, _)| n.clone()).collect(),
         ..Default::default()
     }
 }
@@ -1162,6 +1385,7 @@ fn walk_body_for_indirect(body: &[AsmStmt], sites: &mut Vec<Option<String>>) {
                     walk_body_for_indirect(e, sites);
                 }
             }
+            AsmStmt::With { body, .. } => walk_body_for_indirect(body, sites),
             _ => {}
         }
     }

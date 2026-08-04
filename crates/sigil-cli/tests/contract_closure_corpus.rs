@@ -289,3 +289,114 @@ fn corpus_out_residue_is_the_verified_complement() {
         r.out_firings.iter().map(|f| (f.proc.as_str(), f.reg.as_str())).collect::<Vec<_>>()
     );
 }
+
+/// §3.2 THE BRACKET GATE. Every `with` region in the corpus must prove its
+/// pairing: no path leaves the body without the release, no branch enters it past
+/// the acquire, no acquired context is taken twice. The per-file gate already
+/// FAILS THE BUILD on these; this is the corpus-wide statement of the same fact,
+/// so the class cannot regress behind a shape nobody builds.
+#[test]
+fn corpus_context_brackets_prove_the_error_gate() {
+    let Some(r) = corpus_report() else { return };
+    assert!(
+        r.context_firings.is_empty(),
+        "[context.escape]/[context.entry-skip]/[context.reacquire]: {:?}",
+        r.context_firings
+            .iter()
+            .map(|f| (f.proc.as_str(), f.ctx.as_str(), f.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// §3.3 THE REQUIREMENT GATE, with its own anti-vacuity pins. An assert-empty over
+/// `context_unsatisfied` is only as meaningful as the claims it ranged over and
+/// the brackets that could discharge them, so both censuses are pinned here:
+/// deleting a `requires`, or un-adopting the brackets, fails this test rather than
+/// quietly emptying the gate.
+#[test]
+fn corpus_context_requirements_are_satisfied_the_error_gate() {
+    let Some(r) = corpus_report() else { return };
+    assert!(
+        r.context_unsatisfied.is_empty(),
+        "[context.unsatisfied]: a call site lacks a context its callee requires: {:?}",
+        r.context_unsatisfied
+            .iter()
+            .map(|f| (f.proc.as_str(), f.callee.as_str(), f.ctx.as_str()))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        r.unknown_context_refs.is_empty(),
+        "[context.unknown]: a requires/grants names a context no module declares: {:?}",
+        r.unknown_context_refs
+            .iter()
+            .map(|(p, c, _)| (p.as_str(), c.as_str()))
+            .collect::<Vec<_>>()
+    );
+
+    // Anti-vacuity 1 — the CLAIM census. A `requires`/`grants` clause is a
+    // DECLARATION, not code, so this list is exact and shape-independent.
+    assert_eq!(
+        r.context_claim_sites.len(),
+        10,
+        "the vblank claim census moved — 1 grant root (VBlank_Handler) + 9 requiring \
+         procs. Update deliberately: {:?}",
+        r.context_claim_sites
+    );
+    assert!(
+        r.context_claim_sites
+            .contains(&("VBlank_Handler".into(), "grants".into(), "vblank".into())),
+        "the vblank grant ROOT is gone — every requirement below it would then be \
+         discharged by nothing and the gate would still read empty: {:?}",
+        r.context_claim_sites
+    );
+
+    // Anti-vacuity 2 — the BRACKET census. The bus contexts must still be adopted;
+    // an un-adoption would empty `context_firings` above without anyone noticing.
+    //
+    // SHAPE NOTE: this is the no-`-D` walk, in which `SOUND_DRIVER_ENABLED` does
+    // not resolve — so both comptime-gated arms are inert and the three WIDE
+    // sound-OFF fences (VInt_Level / VInt_Lag / Section_RedrawPlanes) lower their
+    // bodies bare, contributing no region. Those three are proven by the PER-FILE
+    // gate in every shape the ×7 byte bar builds, where the flag has a value.
+    assert_eq!(
+        r.context_regions.len(),
+        17,
+        "the `with` bracket census moved — corpus adoption changed. Update deliberately: {:?}",
+        r.context_regions
+    );
+    // …with a NAMED witness, so an un-adoption that coincidentally preserves the
+    // count still fails (the house pattern: pin content, not only cardinality).
+    for witness in [("Read_Controllers", "z80_stopped"), ("Sound_PostByte", "ints_off")] {
+        assert!(
+            r.context_regions
+                .iter()
+                .any(|(p, c)| p == witness.0 && c == witness.1),
+            "the `with {}` bracket in `{}` is gone: {:?}",
+            witness.1,
+            witness.0,
+            r.context_regions
+        );
+    }
+    // Anti-vacuity 3 — the DISCHARGED census. `context_unsatisfied` being empty
+    // means nothing unless call sites were EXAMINED, and `call_target_sym`
+    // resolves a DIRECT call only: a refactor to indirect dispatch would empty
+    // the examined set while the firing set stayed (correctly) empty.
+    assert!(
+        !r.context_discharged.is_empty(),
+        "no call site's `requires` was DISCHARGED — the satisfaction gate examined \
+         nothing, so its emptiness proves nothing"
+    );
+
+    // Bus-context identification, pinned by EQUALITY. A `contains` would pass
+    // with a wrong SET, and a wrongly-identified context hands the first proc
+    // requiring it a bogus held entry — which silences `[bus.vdp-write-unstopped]`
+    // (the crash class) for that whole proc. `ints_off` brackets a bus bracket
+    // in four corpus sites and is the concrete near-miss.
+    let bus: Vec<&str> = r.bus_contexts.iter().map(|s| s.as_str()).collect();
+    assert_eq!(
+        bus,
+        vec!["z80_stopped"],
+        "the bus-context set moved — it is read off what each bracket's ACQUIRE \
+         splices, so this changes only when a context's acquire does"
+    );
+}

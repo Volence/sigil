@@ -168,7 +168,44 @@ fn main() {
             StartWithoutStop => "[bus.start-without-stop] (E008)",
             StoppedAtReturn => "[bus.stopped-at-return]  (E007)",
             VdpWriteUnstopped => "[bus.vdp-write-unstopped](E006)",
+            ReleasedAtReturn => "[bus.released-at-return]     ",
         };
         println!("  {:<28} {code} @ {}..{}", f.proc, f.span.start, f.span.end);
+    }
+
+    println!(
+        "\n-- [context.*] declared machine-state tier: {} region(s), {} claim(s), \
+         {} discharged call site(s), {} bracket firing(s), {} unsatisfied requirement(s), \
+         {} unknown context reference(s) --",
+        report.context_regions.len(),
+        report.context_claim_sites.len(),
+        report.context_discharged.len(),
+        report.context_firings.len(),
+        report.context_unsatisfied.len(),
+        report.unknown_context_refs.len(),
+    );
+    for (proc, ctx) in &report.context_regions {
+        println!("  {proc:<28} with {ctx}");
+    }
+    for (proc, kind, ctx) in &report.context_claim_sites {
+        println!("  {proc:<28} {kind}({ctx})");
+    }
+    for f in &report.context_firings {
+        use sigil_frontend_emp::context::ContextFiringKind::*;
+        let id = match f.kind {
+            Escape => "[context.escape]",
+            EntrySkip => "[context.entry-skip]",
+            Reacquire => "[context.reacquire]",
+        };
+        println!("  {:<28} {id} `{}` @ {}..{}", f.proc, f.ctx, f.span.start, f.span.end);
+    }
+    for f in &report.context_unsatisfied {
+        println!(
+            "  {:<28} [context.unsatisfied] `{}` at call to {} @ {}..{}",
+            f.proc, f.ctx, f.callee, f.span.start, f.span.end
+        );
+    }
+    for (proc, ctx, span) in &report.unknown_context_refs {
+        println!("  {proc:<28} [context.unknown] `{ctx}` @ {}..{}", span.start, span.end);
     }
 }

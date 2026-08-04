@@ -175,7 +175,7 @@ fn writes_ccr_operand(ops: &[CodeOperand]) -> bool {
 /// sole/first operand; for the `dbcc dN, label` counting-loop form it is the
 /// SECOND (the register comes first), so scanning from the end catches both.
 /// `None` for a register-indirect form (`jsr (a1)`) with no symbolic target.
-fn branch_target(ops: &[CodeOperand]) -> Option<&str> {
+pub(crate) fn branch_target(ops: &[CodeOperand]) -> Option<&str> {
     ops.iter().rev().find_map(|o| match o {
         CodeOperand::Sym(name) => Some(name.as_str()),
         _ => None,
