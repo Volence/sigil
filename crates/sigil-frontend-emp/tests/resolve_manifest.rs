@@ -12,24 +12,35 @@ fn indexes_modules_by_header_and_lints_path_mismatch() {
     let root = tmp.path();
     write(root, "badniks/pitcher_plant.emp", "module badniks.pitcher_plant\n");
     write(root, "engine/helpers.emp", "module engine.helpers\n");
-    // Header says one thing, directory says another → LINT, not error.
+    // The FILE STEM disagrees with the id's last segment (`here` vs `sst`) →
+    // LINT, not error.
     write(root, "misplaced/here.emp", "module engine.objects.sst\n");
+    // The corpus shape: the id is deliberately FLATTER than the directory chain
+    // (`config/` is a layout detail, `games.sonic4` is the namespace) while the
+    // last segment still names the file. Silent — the namespace is free, only
+    // the stem is pinned. This is the case the whole-path rule reported on 93 of
+    // 122 real modules.
+    write(root, "games/sonic4/config/constants.emp", "module games.sonic4.constants\n");
 
     let (manifest, diags) = Manifest::scan(root);
     assert!(manifest.by_id.contains_key("badniks.pitcher_plant"));
     assert!(manifest.by_id.contains_key("engine.helpers"));
     assert!(manifest.by_id.contains_key("engine.objects.sst"));
+    assert!(manifest.by_id.contains_key("games.sonic4.constants"));
     // The mismatch is a warning, and NOTHING is an error.
     assert!(diags.iter().all(|d| d.level != sigil_span::Level::Error));
     assert!(diags.iter().any(|d| d.level == sigil_span::Level::Warning
         && d.message.contains("engine.objects.sst")));
-    // The lint must NOT over-fire: the two well-placed modules trigger no
-    // warning, so exactly one Warning is emitted in total.
+    // The lint must NOT over-fire: the two well-placed modules AND the
+    // flat-id/deep-directory module trigger nothing, so exactly one Warning is
+    // emitted in total. The count is what makes the flat-id case load-bearing —
+    // under the whole-path rule this asserted 2.
     let warnings: Vec<_> =
         diags.iter().filter(|d| d.level == sigil_span::Level::Warning).collect();
     assert_eq!(warnings.len(), 1, "expected exactly one warning, got {warnings:?}");
     assert!(warnings.iter().all(|d| !d.message.contains("badniks.pitcher_plant")
-        && !d.message.contains("engine.helpers")));
+        && !d.message.contains("engine.helpers")
+        && !d.message.contains("games.sonic4.constants")));
 
     // Per-file SourceId attribution: each module's header span points at a
     // distinct source, and `sources` resolves that id back to the file path.
