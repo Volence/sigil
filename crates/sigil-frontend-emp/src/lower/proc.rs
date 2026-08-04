@@ -190,12 +190,111 @@ pub(super) fn lower_proc(
     // need only ONE body, so they belong here rather than in the corpus walk (the
     // cross-proc half — `[context.unsatisfied]` — lives there). Error-tier and
     // NEVER `@as_compat`-silenced: a context is always declared surface (§6).
-    check_context_regions(&proc.name, &buf, ctx.cpu, diags);
+    check_context_brackets(&proc.name, &buf, ctx.cpu, diags);
+
+    // 10. The `requires(...)` / `grants(...)` clauses' own validity. The
+    // per-call-site satisfaction check is inherently cross-proc and lives in the
+    // corpus walk; these two are decidable HERE, from the file's item list (which
+    // carries every imported context, injected by the resolver), and they must
+    // fail the build for the same reason `with` on an unknown context does — a
+    // silently-ignored context clause reads as a checked claim and is not one.
+    check_context_clauses(file, proc, diags);
+}
+
+/// Validate a proc's `requires`/`grants` names against the contexts in scope.
+///
+/// - a name no `context` item declares is `[context.unknown]`;
+/// - `grants` of an ACQUIRED context is `[context.not-grantable]` — the mirror of
+///   `with` on a granted one. A grant asserts "this already holds when my body
+///   runs", which for a context the compiler itself brackets is both unverifiable
+///   and wrong at the obvious site (a proc that ESTABLISHES the context with a
+///   `with` would then be analyzed as already holding it at entry, so its own
+///   acquire reads as a double-take).
+fn check_context_clauses(
+    file: &ast::File,
+    proc: &ast::ProcDecl,
+    diags: &mut Vec<Diagnostic>,
+) {
+    if proc.requires.is_empty() && proc.grants.is_empty() {
+        return;
+    }
+    let mut declared: std::collections::BTreeMap<&str, &ast::ContextKind> = Default::default();
+    collect_context_decls(&file.items, &mut declared);
+    // A name a `use m.{name}` brings in counts as in scope even when the DECL is
+    // not present in this item list. The resolver normally injects the decl, but
+    // a single module lowered standalone (the port harnesses' shape) has only its
+    // own `use` lines — and an import the author wrote is not the typo this check
+    // exists to catch.
+    let mut imported: std::collections::BTreeSet<&str> = Default::default();
+    collect_use_names(&file.items, &mut imported);
+    for (ctx, span) in proc.requires.iter().chain(proc.grants.iter()) {
+        if !declared.contains_key(ctx.as_str()) && !imported.contains(ctx.as_str()) {
+            push(
+                diags,
+                Level::Error,
+                *span,
+                format!(
+                    "[context.unknown] `{}` requires/grants `{ctx}`, which names no context \
+                     in scope — declare `context {ctx} {{ … }}` or import it",
+                    proc.name
+                ),
+            );
+        }
+    }
+    for (ctx, span) in &proc.grants {
+        if matches!(declared.get(ctx.as_str()), Some(ast::ContextKind::Acquired { .. })) {
+            push(
+                diags,
+                Level::Error,
+                *span,
+                format!(
+                    "[context.not-grantable] `{ctx}` is an ACQUIRED context — it is entered by \
+                     a `with {ctx} {{ … }}` bracket, not asserted. Only a `granted` context is \
+                     a trust root"
+                ),
+            );
+        }
+    }
+}
+
+/// Every name a `use m.{a, b}` list brings into this file, recursing `section {}`
+/// bodies like every other item walk. A glob or whole-module `use` brings no
+/// checkable name here, so a context behind one is accepted by the corpus gate
+/// rather than this one.
+fn collect_use_names<'a>(items: &'a [ast::Item], out: &mut std::collections::BTreeSet<&'a str>) {
+    for item in items {
+        match item {
+            ast::Item::Use(u) => {
+                if let ast::UseNames::List(names) = &u.names {
+                    out.extend(names.iter().map(|n| n.as_str()));
+                }
+            }
+            ast::Item::Section(s) => collect_use_names(&s.items, out),
+            _ => {}
+        }
+    }
+}
+
+/// Every `context` name in scope for this file (its own + the resolver-injected
+/// imports), recursing `section {}` bodies like every other item walk.
+fn collect_context_decls<'a>(
+    items: &'a [ast::Item],
+    out: &mut std::collections::BTreeMap<&'a str, &'a ast::ContextKind>,
+) {
+    for item in items {
+        match item {
+            ast::Item::Context(c) => {
+                out.insert(c.name.as_str(), &c.kind);
+            }
+            ast::Item::Section(s) => collect_context_decls(&s.items, out),
+            _ => {}
+        }
+    }
 }
 
 /// Report the `[context.*]` bracket firings for one proc body. A no-bracket body
 /// costs one `is_empty` on the mark scan.
-fn check_context_regions(
+fn check_context_brackets(
     name: &str,
     buf: &crate::value::CodeBuf,
     cpu: Cpu,

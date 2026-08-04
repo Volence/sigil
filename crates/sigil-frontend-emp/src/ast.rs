@@ -153,8 +153,13 @@ pub enum Item {
 ///
 /// ```text
 /// context z80_stopped {           // ACQUIRED: compiler-owned bracket
-///     acquire = stop_z80()
-///     release = start_z80()
+///     acquire = asm {
+///         move.w  #$0100, Z80_BUS_REQUEST
+///     .wait_z80:
+///         btst    #0, Z80_BUS_REQUEST
+///         bne     .wait_z80
+///     }
+///     release = asm { move.w #$0000, Z80_BUS_REQUEST }
 /// }
 ///
 /// context vblank { granted }      // GRANTED: entered by hardware / a dispatcher
@@ -180,7 +185,9 @@ pub struct ContextDecl {
 pub enum ContextKind {
     /// An ACQUIRED context: `with <ctx> { }` splices `acquire` before the body
     /// and `release` after it, and proves the pairing. Both exprs must evaluate
-    /// to `Code` (typically a call of an existing comptime fn).
+    /// to `Code`, and they are evaluated AT THE USE SITE in the consumer's scope
+    /// — so a `pub` context spells its bracket inline rather than calling a
+    /// module-private template (see `resolve::pub_comptime_name`).
     Acquired {
         /// The `acquire = <expr>` Code expression.
         acquire: Expr,
@@ -933,7 +940,9 @@ pub struct ProcSig {
     pub out_types: Vec<(String, Type, Span)>,
     /// `requires(ctx, …)` (§3.3) — see the same field on [`ProcDecl`]. An
     /// `extern proc` carries it so an `.asm`-defined callee can demand a context
-    /// exactly as a `.emp` one does.
+    /// exactly as a `.emp` one does. There is deliberately no `grants` here: a
+    /// grant is a trust root asserted where the BODY lives, and a signature has
+    /// no body.
     pub requires: Vec<(String, Span)>,
 }
 

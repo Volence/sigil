@@ -463,19 +463,29 @@ impl Evaluator<'_> {
         // The comptime gate, if any — the same bool/int contract `AsmStmt::If`'s
         // condition has, and the same diagnostic class.
         if let Some(cond) = cond {
+            // An UNEVALUABLE gate lowers the body BARE rather than dropping it.
+            // Unlike an `if`'s branch, a bracket's body is real code in EVERY
+            // shape — only the acquire/release are conditional — so dropping it
+            // would silently shrink the analysis buffer of whatever proc holds
+            // it (the whole VBlank pipeline sits inside one of these). The
+            // diagnostic is already reported; this is the conservative recovery.
             let gated_on = match self.eval_expr(cond, env) {
                 Value::Bool(b) => b,
                 Value::Int(i) => i != 0,
-                Value::Poison => return,
+                Value::Poison => {
+                    self.lower_with_body(body, scope, buf, env);
+                    return;
+                }
                 other => {
                     self.error(
                         expr_span(cond),
                         format!(
-                            "[asm.if-not-comptime] a `with … if` gate must be a comptime bool \
-                             or int, got {}",
+                            "[context.gate-not-comptime] a `with … if` gate must be a comptime \
+                             bool or int, got {}",
                             other.type_name()
                         ),
                     );
+                    self.lower_with_body(body, scope, buf, env);
                     return;
                 }
             };
@@ -515,6 +525,11 @@ impl Evaluator<'_> {
             span,
         });
         self.splice_context_code(&acquire, ctx, "acquire", span, buf, env);
+        buf.push(CodeItem::ContextMark {
+            ctx: ctx.to_string(),
+            kind: crate::value::ContextMarkKind::AcquireEnd,
+            span,
+        });
         self.lower_with_body(body, scope, buf, env);
         buf.push(CodeItem::ContextMark {
             ctx: ctx.to_string(),

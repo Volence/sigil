@@ -1753,8 +1753,8 @@ impl Parser {
     /// Parse a `context Name { … }` declaration (§3.1). Two bodies:
     ///
     /// ```text
-    /// context z80_stopped { acquire = stop_z80()
-    ///                       release = start_z80() }
+    /// context z80_stopped { acquire = asm { move.w #$0100, Z80_BUS_REQUEST }
+    ///                       release = asm { move.w #$0000, Z80_BUS_REQUEST } }
     /// context vblank { granted }
     /// ```
     ///

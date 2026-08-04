@@ -3,7 +3,7 @@
 //! `requires(...)` propagation.
 //!
 //! The bracket layer sits ABOVE the inferred `[bus.*]` net, and the pair of
-//! tests these gates turn on is the reason it exists:
+//! tests below is the reason it exists:
 //! [`the_inference_tier_cannot_see_a_branch_out_of_a_hand_written_pair`] pins
 //! the blind spot (a MUST lattice joins to `Unknown` at the merge and fires
 //! nothing) and [`escape_fires_on_a_branch_out_of_the_region`] pins the same
@@ -173,6 +173,9 @@ fn a_call_out_of_the_region_is_not_an_escape() {
          }}\n"
     ));
     assert_eq!(ctx_count(&r, "P", ContextFiringKind::Escape), 0, "{:?}", r.context_firings);
+    // The region must EXIST to have been checked — an assert-absence over a
+    // checker that saw nothing proves nothing.
+    assert_eq!(r.context_regions.len(), 1, "{:?}", r.context_regions);
 }
 
 // ---------------------------------------------------------------------------
@@ -216,7 +219,7 @@ fn reacquire_fires_on_the_same_context_nested() {
     assert_eq!(ctx_count(&r, "P", ContextFiringKind::Reacquire), 1, "{:?}", r.context_firings);
 }
 
-/// Nesting DIFFERENT contexts is legal (§3.2) — the corpus's `sr_masked` +
+/// Nesting DIFFERENT contexts is legal (§3.2) — the corpus's `ints_off` +
 /// bus-hold shape. Neither the reacquire rule nor the escape proof may fire.
 #[test]
 fn nesting_different_contexts_is_legal() {
@@ -409,6 +412,9 @@ fn a_requiring_proc_that_returns_still_held_is_silent() {
     ));
     assert!(r.bus_contexts.contains("z80_stopped"), "bus contexts: {:?}", r.bus_contexts);
     assert_eq!(r.bus_firings.iter().filter(|f| f.proc == "Good").count(), 0, "{:?}", r.bus_firings);
+    // …and the seed was actually applied: `Holder`'s bracket identified the
+    // context, and `Good` declares it. Without this the silence is unearned.
+    assert_eq!(r.context_claim_sites.len(), 1, "{:?}", r.context_claim_sites);
 }
 
 /// A GRANTED context never identifies as bus-holding (it splices no acquire), so
@@ -636,4 +642,219 @@ fn linked(src: &str) -> Vec<u8> {
         .iter()
         .find_map(|s| linked.section(&s.name).map(|ls| ls.bytes.clone()))
         .unwrap_or_default()
+}
+
+/// A loop label written immediately BEFORE a bracket resolves to the region's
+/// FIRST instruction (a label targets the first instruction at or after it), and
+/// branching back to it re-takes the whole acquire — not a skip. This is the
+/// corpus's spin-probe idiom (`.await_slot:` + `with z80_stopped { … }` +
+/// `bne .await_slot`); the rule is narrowed to targets PAST the acquire so that
+/// idiom does not fire.
+#[test]
+fn a_loop_label_at_the_region_head_is_not_an_entry_skip() {
+    let r = analyze(&format!(
+        "module m\n{Z80_CTX}\
+         pub proc P () clobbers(d0-d1) {{\n\
+         .probe:\n\
+             with z80_stopped {{\n\
+                 move.b  d0, d1\n\
+             }}\n\
+             tst.b   d1\n\
+             bne     .probe\n\
+             rts\n\
+         }}\n"
+    ));
+    assert!(r.context_firings.is_empty(), "{:?}", r.context_firings);
+    assert_eq!(r.context_regions.len(), 1, "{:?}", r.context_regions);
+}
+
+// ---------------------------------------------------------------------------
+// Panel regressions — each pins a hazard a lens constructed
+// ---------------------------------------------------------------------------
+
+/// A back-edge from the BODY into the acquire re-runs it with no matching
+/// release. For `ints_off` that is an unbounded `move.w sr,-(sp)` stack leak;
+/// for a bus context it is a re-request while held. The distinguishing fact
+/// against the legitimate spin-probe above is where the edge STARTS: inside the
+/// region, not after it.
+#[test]
+fn a_back_edge_into_the_acquire_is_a_reacquire() {
+    let r = analyze(&format!(
+        "module m\n{Z80_CTX}\
+         pub proc P () clobbers(d0) {{\n\
+         .spin:\n\
+             with z80_stopped {{\n\
+                 tst.b   d0\n\
+                 bne     .spin\n\
+             }}\n\
+             rts\n\
+         }}\n"
+    ));
+    assert_eq!(
+        ctx_count(&r, "P", ContextFiringKind::Reacquire),
+        1,
+        "{:?}",
+        r.context_firings
+    );
+}
+
+/// The acquire's OWN internal spin (`bne .wait_z80`) branches into the acquire
+/// range and must NOT read as a reacquire — otherwise every bracket of the
+/// engine's bus context fires on itself.
+#[test]
+fn the_acquires_own_spin_is_not_a_reacquire() {
+    let r = analyze(&format!(
+        "module m\n{Z80_CTX}\
+         pub proc P () clobbers() {{\n\
+             with z80_stopped {{ nop }}\n\
+             rts\n\
+         }}\n"
+    ));
+    assert!(r.context_firings.is_empty(), "{:?}", r.context_firings);
+    assert_eq!(r.context_regions.len(), 1, "{:?}", r.context_regions);
+}
+
+/// `bsr` is a CALL — control returns — so it is not a path out of the region.
+/// The shared CFG classifies it as a conditional branch on mnemonic shape
+/// (`b` + 3 chars), which would otherwise read an ordinary call as an escape.
+#[test]
+fn a_bsr_out_of_the_region_is_not_an_escape() {
+    let r = analyze(&format!(
+        "module m\n{Z80_CTX}\
+         pub proc P () clobbers() {{\n\
+             with z80_stopped {{\n\
+                 bsr     Elsewhere\n\
+             }}\n\
+             rts\n\
+         }}\n"
+    ));
+    assert_eq!(ctx_count(&r, "P", ContextFiringKind::Escape), 0, "{:?}", r.context_firings);
+    assert_eq!(r.context_regions.len(), 1, "{:?}", r.context_regions);
+}
+
+/// An instruction that merely NAMES a local label in a data position is not a
+/// branch into the region. The entry-skip scan reads "the last `Sym` operand",
+/// so without a mnemonic gate a `lea .inner(pc), a0` would fire with a message
+/// about a branch that does not exist.
+#[test]
+fn naming_an_in_region_label_in_a_data_operand_is_not_an_entry_skip() {
+    let r = analyze(&format!(
+        "module m\n{Z80_CTX}\
+         pub proc P () clobbers(a0) {{\n\
+             lea     .inner, a0\n\
+             with z80_stopped {{\n\
+                 nop\n\
+             .inner:\n\
+                 nop\n\
+             }}\n\
+             rts\n\
+         }}\n"
+    ));
+    assert_eq!(ctx_count(&r, "P", ContextFiringKind::EntrySkip), 0, "{:?}", r.context_firings);
+    assert_eq!(r.context_regions.len(), 1, "{:?}", r.context_regions);
+}
+
+/// An EXPORTED label inside a region is an entry point this proc's item list
+/// cannot see — it takes the stable `Owner.name` symbol, so any other proc can
+/// branch straight past the acquire.
+#[test]
+fn an_exported_label_inside_the_region_is_an_entry_skip() {
+    let r = analyze(&format!(
+        "module m\n{Z80_CTX}\
+         pub proc P () clobbers() {{\n\
+             with z80_stopped {{\n\
+                 nop\n\
+             export .mid:\n\
+                 nop\n\
+             }}\n\
+             rts\n\
+         }}\n"
+    ));
+    assert_eq!(ctx_count(&r, "P", ContextFiringKind::EntrySkip), 1, "{:?}", r.context_firings);
+}
+
+/// `grants` of an ACQUIRED context is rejected — the mirror of `with` on a
+/// granted one. Without this, the obvious spelling of "this proc establishes the
+/// context" seeds the bus net from an unverifiable claim and makes the proc's own
+/// compiler-generated acquire read as a double-take.
+#[test]
+fn granting_an_acquired_context_is_an_error() {
+    let diags = lower_diags(&format!(
+        "module m\n{Z80_CTX}\
+         section s {{\n\
+         pub proc P () clobbers() grants(z80_stopped) {{\n\
+             with z80_stopped {{ nop }}\n\
+             rts\n\
+         }}\n\
+         }}\n"
+    ));
+    assert!(
+        diags.iter().any(|d| d.level == sigil_span::Level::Error
+            && d.message.contains("[context.not-grantable]")),
+        "{diags:?}"
+    );
+}
+
+/// A `requires`/`grants` naming no declared context FAILS THE BUILD, not merely
+/// the report: a silently-ignored requirement reads as a checked claim.
+#[test]
+fn an_undeclared_context_clause_fails_the_per_file_gate() {
+    let diags = lower_diags(
+        "module m\n\
+         section s {\n\
+         pub proc P () clobbers() requires(no_such_ctx) { rts }\n\
+         }\n",
+    );
+    assert!(
+        diags.iter().any(|d| d.level == sigil_span::Level::Error
+            && d.message.contains("[context.unknown]")),
+        "{diags:?}"
+    );
+}
+
+/// A context is identified as bus-holding by what its ACQUIRE splices, not by
+/// what its body happens to contain. The corpus nests `with ints_off { with
+/// z80_stopped { … } }`, so reading the body would make `ints_off` a bus context
+/// and hand the first `requires(ints_off)` a bogus held entry — silencing
+/// `[bus.vdp-write-unstopped]`, the crash class, for that whole proc.
+#[test]
+fn an_outer_bracket_nesting_a_bus_bracket_is_not_a_bus_context() {
+    let r = analyze(&format!(
+        "module m\n{Z80_CTX}\
+         context ints_off {{\n\
+             acquire = asm {{ move.w sr, -(sp)\n move.w #$2700, sr }}\n\
+             release = asm {{ move.w (sp)+, sr }}\n\
+         }}\n\
+         pub proc P () clobbers() preserves(sr) {{\n\
+             with ints_off {{\n\
+                 with z80_stopped {{ nop }}\n\
+             }}\n\
+             rts\n\
+         }}\n"
+    ));
+    assert_eq!(r.context_regions.len(), 2, "{:?}", r.context_regions);
+    assert!(r.bus_contexts.contains("z80_stopped"), "{:?}", r.bus_contexts);
+    assert!(
+        !r.bus_contexts.contains("ints_off"),
+        "the OUTER bracket must not inherit the inner acquire: {:?}",
+        r.bus_contexts
+    );
+}
+
+/// The requirement gate's companion census: a discharged call site is RECORDED,
+/// so an assert-empty over `context_unsatisfied` can be told apart from a walk
+/// that examined no call site at all.
+#[test]
+fn a_discharged_requirement_is_censused() {
+    let r = analyze(
+        "module m\n\
+         context vblank { granted }\n\
+         proc Callee () clobbers() requires(vblank) { rts }\n\
+         pub proc Root () clobbers() grants(vblank) { jbsr Callee\n rts }\n",
+    );
+    assert!(r.context_unsatisfied.is_empty(), "{:?}", r.context_unsatisfied);
+    assert_eq!(
+        r.context_discharged,
+        vec![("Root".to_string(), "Callee".to_string(), "vblank".to_string())]
+    );
 }

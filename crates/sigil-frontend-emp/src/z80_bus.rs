@@ -31,9 +31,8 @@
 //! unchanged.
 //!
 //! **Recognition (the item-4b modeling ruling).** By the time the corpus lint
-//! sees an evaluated `CodeBuf`, `stop_z80()`/`start_z80()` are already expanded to
-//! their instruction bodies, so the net keys off the RESOLVED operand, not a macro
-//! name: a `move` whose destination is `Z80_BUS_REQUEST` ($A11100) is a bus toggle
+//! sees an evaluated `CodeBuf`, a context bracket's acquire/release are already
+//! instruction bodies, so the net keys off the RESOLVED operand, not a name: a `move` whose destination is `Z80_BUS_REQUEST` ($A11100) is a bus toggle
 //! (`#$0100` ⇒ Stopped, `#$0000` ⇒ Running); a `move`/`clr` whose destination is a
 //! VDP port (`VDP_CTRL`/`VDP_DATA`, $C00000–$C00007) is a fenced access. The
 //! `btst #0, Z80_BUS_REQUEST` READ inside the stop spin is not a `move`, so it is
@@ -58,11 +57,11 @@ use std::collections::BTreeMap;
 /// E006/E007/E008/E011).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BusFiringKind {
-    /// `[bus.double-stop]` (s4lint E011): a `stop_z80` reached with the bus
-    /// provably already Stopped.
+    /// `[bus.double-stop]` (s4lint E011): a bus-REQUEST write reached with the
+    /// bus provably already Stopped.
     DoubleStop,
-    /// `[bus.start-without-stop]` (s4lint E008): a `start_z80` reached with the
-    /// bus provably Running (an unpaired / doubled release).
+    /// `[bus.start-without-stop]` (s4lint E008): a bus-RELEASE write reached with
+    /// the bus provably Running (an unpaired / doubled release).
     StartWithoutStop,
     /// `[bus.stopped-at-return]` (s4lint E007): a return reached with the bus
     /// provably Stopped — the Z80 is left dead after the proc exits.
@@ -75,7 +74,8 @@ pub enum BusFiringKind {
     /// ([`BusEntry::Held`]) returns with it provably released — it freed its
     /// CALLER's hold. The mirror of [`Self::StoppedAtReturn`], and reachable only
     /// under a declaration: with the inferred `Unknown` entry there is no contract
-    /// to break, which is why s4lint and the pre-context net have no such class.
+    /// to break, which is why s4lint — which has no declared tier — has no such
+    /// class.
     ReleasedAtReturn,
 }
 
@@ -89,8 +89,8 @@ pub struct BusFiring {
 }
 
 /// The bus-ownership lattice value at a program point — the shared three-point
-/// [`Tri`] read in this net's vocabulary: `Held` = the 68k owns the bus (a
-/// `stop_z80` dominates on every path), `NotHeld` = provably released, `Unknown`
+/// [`Tri`] read in this net's vocabulary: `Held` = the 68k owns the bus (a bus
+/// request dominates on every path), `NotHeld` = provably released, `Unknown`
 /// = caller-dependent or a join of disagreeing states.
 type BusState = Tri;
 const STOPPED: BusState = Tri::Held;
@@ -98,15 +98,15 @@ const RUNNING: BusState = Tri::NotHeld;
 
 /// The bus state a proc's ENTRY is known to be in — the seam where the DECLARED
 /// tier feeds the inferred one.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum BusEntry {
     /// Caller-dependent: the zero-false-positive default (nothing fires purely
     /// off entry).
-    #[default]
     Unknown,
-    /// The proc declares `requires`/`grants` of the bus context, so every call
-    /// site holds the bus — a definite entry state, checked at each call site by
-    /// `[context.unsatisfied]`.
+    /// The proc declares `requires(<bus ctx>)`, so every call site holds the bus
+    /// — a definite entry state, CHECKED at each call site by
+    /// `[context.unsatisfied]`. Deliberately not fed by `grants`, which is an
+    /// unverified trust root: this seed gates a crash-class check.
     Held,
 }
 
@@ -179,15 +179,22 @@ fn step(st: BusState, mnem: &str, ops: &[CodeOperand]) -> BusState {
 }
 
 /// Does this `with` region's spliced ACQUIRE take the Z80 bus? Read off the
-/// RESOLVED operand of the instructions between the region's `Enter` and
-/// `BodyEnd` marks — the same "key off the resolved operand, never the macro
-/// name" discipline the net's own recognition uses, so a context is identified
-/// as bus-holding by what its bracket EMITS, not by what it is called.
+/// RESOLVED operand of the instructions the acquire splices — the same "key off
+/// the resolved operand, never the macro name" discipline the net's own
+/// recognition uses, so a context is identified as bus-holding by what its
+/// bracket EMITS, not by what it is called.
+///
+/// The range is `Enter..AcquireEnd`, NOT `Enter..BodyEnd`: the corpus nests
+/// `with ints_off { with z80_stopped { … } }`, so the outer region's BODY
+/// contains the inner acquire's bus request. Reading the body would identify
+/// `ints_off` as a bus context, and the first `requires(ints_off)` written would
+/// then be analyzed from a bogus held entry — blinding the `[bus.*]` crash-class
+/// check for that whole proc.
 ///
 /// This is how the DECLARED tier tells [`check_bus_state`] which contexts a
 /// `requires(...)` makes [`BusEntry::Held`] for.
 pub fn region_acquires_bus(items: &[CodeItem], region: &crate::context::Region) -> bool {
-    items[region.enter..region.body_end].iter().any(|it| {
+    items[region.enter..region.acquire_end].iter().any(|it| {
         matches!(it, CodeItem::Instr { mnemonic, ops, .. }
             if bus_toggle(mnemonic.as_str(), ops) == Some(STOPPED))
     })
