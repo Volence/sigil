@@ -1674,3 +1674,50 @@ full_crc = "abf1d304"
 full_size = 423383
 anchor_crc = "1ebd6388"
 anchor_end = 0x5f722
+
+[[entry]]
+name = "item29-build-hygiene"
+ab = "aeon/docs/superpowers/notes/2026-08-04-item29-build-hygiene-ab.md"
+note = "Build hygiene (review item 29, parts 1-3): the deb2 symbol appendix is now DEBUG-only, taking 29198 B (7.1%) off the release ROM with the assembled prefix byte-identical; SOUND_DEBUG_HOTKEYS requires DEBUG via a comptime ensure; CODING_CONVENTIONS §1.7 rewritten to describe the idioms that exist. Part 4 (error-handler/MDDBG strip) BLOCKED on an owner ruling, see DEFERRED_WORK."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "e7ed9d66"
+full_size = 423749
+anchor_crc = "0cf2e381"
+anchor_end = 0x5f722
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "19584e3e"
+full_size = 276016
+anchor_crc = "5fc32529"
+anchor_end = 0x43630
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "9513b3c0"
+full_size = 70180
+anchor_crc = "a7a0a8d1"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d4c00097"
+full_size = 93929
+anchor_crc = "f6b6dceb"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "b06fc575"
+full_size = 384048
+anchor_crc = "ce7217c9"
+anchor_end = 0x5dc30
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "abf1d304"
+full_size = 423383
+anchor_crc = "1ebd6388"
+anchor_end = 0x5f722
