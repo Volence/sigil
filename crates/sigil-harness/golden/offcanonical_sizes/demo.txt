@@ -17,13 +17,13 @@ BG_Init 0x46ee
 BgAnim_Init 0x47a0
 BootData 0x396
 BootData_End 0x406
-BusError 0x10174
+ReleaseFault 0x10174
 Camera_Init 0x3f20
 Checksum 0x18e
 Collected_Init 0x1e70
 Collision_GetType 0x3ac0
 DemoBox_Main 0x10002
-EndOfRom 0x11224
+EndOfRom 0x101a0
 EntryPoint 0x200
 GameLoop 0xc50
 GameState_Demo_Init 0x10100
@@ -34,7 +34,6 @@ InitSpriteSystem 0x150c
 Init_DMA_Queue 0x452
 Init_SpriteTable 0x760
 Load_Object 0x2a50
-NullInterrupt 0x10172
 ObjCodeBase 0x10000
 ObjDef_DemoBox 0x10006
 Parallax_Init 0x40b0

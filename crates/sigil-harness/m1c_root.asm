@@ -38,49 +38,62 @@ PAD_TO_POWER_OF_TWO     = 1
     ; harvested engine+game RAM addresses seeded as -D defines (see
     ; m1c_vector_table.rs), mirroring the real build's Option-B bridge. The game RAM
     ; include is dropped exactly as main.asm's gameRamIncludes is now empty.
+    ;
+    ; Review item 29 part 4 (the MDDBG strip): this harness targets the RELEASE
+    ; (plain) vector table, and debugger.asm is now __DEBUG__-gated in the real
+    ; game_root.asm (its MDDBG__* externs are unresolvable when error_handler is
+    ; stripped). Mirror that gate — m1c_vector_table.rs assembles this root WITHOUT
+    ; __DEBUG__, so the include is skipped (the Vectors label below is the guarded-
+    ; EquSym carrier section the harvest needs).
+    ifdef __DEBUG__
     include "engine/debug/debugger.asm"
+    endif
 
     org 0
 
 __BUDGET_VECTORS:
 Vectors:
+    ; RELEASE (plain) fault routing: every fault vector points at ReleaseFault
+    ; (release_fault.emp — mask, red backdrop, freeze). The error_handler per-class
+    ; stubs (BusError/…/ErrorExcept/ErrorTrap) exist only in the DEBUG shape now, so
+    ; the plain s4.bin[0:256] this harness matches spells ReleaseFault throughout.
     dc.l    SYSTEM_STACK                    ; $00: Initial SSP
     dc.l    EntryPoint                      ; $04: Reset PC
-    dc.l    BusError                        ; $08: Bus error
-    dc.l    AddressError                    ; $0C: Address error
-    dc.l    IllegalInstr                    ; $10: Illegal instruction
-    dc.l    ZeroDivide                      ; $14: Division by zero
-    dc.l    ChkInstr                        ; $18: CHK exception
-    dc.l    TrapvInstr                      ; $1C: TRAPV
-    dc.l    PrivilegeViol                   ; $20: Privilege violation
-    dc.l    Trace                           ; $24: Trace
-    dc.l    Line1010Emu                     ; $28: Line 1010
-    dc.l    Line1111Emu                     ; $2C: Line 1111
-    dc.l    ErrorExcept                     ; $30: Reserved
-    dc.l    ErrorExcept                     ; $34: Reserved
-    dc.l    ErrorExcept                     ; $38: Reserved
-    dc.l    ErrorExcept                     ; $3C: Reserved
-    dc.l    ErrorExcept                     ; $40: Reserved
-    dc.l    ErrorExcept                     ; $44: Reserved
-    dc.l    ErrorExcept                     ; $48: Reserved
-    dc.l    ErrorExcept                     ; $4C: Reserved
-    dc.l    ErrorExcept                     ; $50: Reserved
-    dc.l    ErrorExcept                     ; $54: Reserved
-    dc.l    ErrorExcept                     ; $58: Reserved
-    dc.l    ErrorExcept                     ; $5C: Reserved
-    dc.l    ErrorExcept                     ; $60: Spurious interrupt
-    dc.l    ErrorExcept                     ; $64: IRQ1 (unused level — halts loudly)
-    dc.l    ErrorExcept                     ; $68: IRQ2 (external, controller TH — halts loudly)
-    dc.l    ErrorExcept                     ; $6C: IRQ3 (unused level — halts loudly)
+    dc.l    ReleaseFault                    ; $08: Bus error
+    dc.l    ReleaseFault                    ; $0C: Address error
+    dc.l    ReleaseFault                    ; $10: Illegal instruction
+    dc.l    ReleaseFault                    ; $14: Division by zero
+    dc.l    ReleaseFault                    ; $18: CHK exception
+    dc.l    ReleaseFault                    ; $1C: TRAPV
+    dc.l    ReleaseFault                    ; $20: Privilege violation
+    dc.l    ReleaseFault                    ; $24: Trace
+    dc.l    ReleaseFault                    ; $28: Line 1010
+    dc.l    ReleaseFault                    ; $2C: Line 1111
+    dc.l    ReleaseFault                    ; $30: Reserved
+    dc.l    ReleaseFault                    ; $34: Reserved
+    dc.l    ReleaseFault                    ; $38: Reserved
+    dc.l    ReleaseFault                    ; $3C: Reserved
+    dc.l    ReleaseFault                    ; $40: Reserved
+    dc.l    ReleaseFault                    ; $44: Reserved
+    dc.l    ReleaseFault                    ; $48: Reserved
+    dc.l    ReleaseFault                    ; $4C: Reserved
+    dc.l    ReleaseFault                    ; $50: Reserved
+    dc.l    ReleaseFault                    ; $54: Reserved
+    dc.l    ReleaseFault                    ; $58: Reserved
+    dc.l    ReleaseFault                    ; $5C: Reserved
+    dc.l    ReleaseFault                    ; $60: Spurious interrupt
+    dc.l    ReleaseFault                    ; $64: IRQ1 (unused level — halts loudly)
+    dc.l    ReleaseFault                    ; $68: IRQ2 (external, controller TH — halts loudly)
+    dc.l    ReleaseFault                    ; $6C: IRQ3 (unused level — halts loudly)
     dc.l    HBlank_Vector_Slot              ; $70: IRQ4 (HBlank) — RAM jmp-slot trampoline
-    dc.l    ErrorExcept                     ; $74: IRQ5 (unused level — halts loudly)
+    dc.l    ReleaseFault                    ; $74: IRQ5 (unused level — halts loudly)
     dc.l    VBlank_Handler                  ; $78: IRQ6 (VBlank)
-    dc.l    ErrorExcept                     ; $7C: IRQ7/NMI (unused level — halts loudly)
-    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $80-$8C: TRAP 0-3
-    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $90-$9C: TRAP 4-7
-    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $A0-$AC: TRAP 8-11
-    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $B0-$BC: TRAP 12-15
-    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $C0-$CC: Reserved
-    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $D0-$DC: Reserved
-    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $E0-$EC: Reserved
-    dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $F0-$FC: Reserved
+    dc.l    ReleaseFault                    ; $7C: IRQ7/NMI (unused level — halts loudly)
+    dc.l    ReleaseFault, ReleaseFault, ReleaseFault, ReleaseFault   ; $80-$8C: TRAP 0-3
+    dc.l    ReleaseFault, ReleaseFault, ReleaseFault, ReleaseFault   ; $90-$9C: TRAP 4-7
+    dc.l    ReleaseFault, ReleaseFault, ReleaseFault, ReleaseFault   ; $A0-$AC: TRAP 8-11
+    dc.l    ReleaseFault, ReleaseFault, ReleaseFault, ReleaseFault   ; $B0-$BC: TRAP 12-15
+    dc.l    ReleaseFault, ReleaseFault, ReleaseFault, ReleaseFault   ; $C0-$CC: Reserved
+    dc.l    ReleaseFault, ReleaseFault, ReleaseFault, ReleaseFault   ; $D0-$DC: Reserved
+    dc.l    ReleaseFault, ReleaseFault, ReleaseFault, ReleaseFault   ; $E0-$EC: Reserved
+    dc.l    ReleaseFault, ReleaseFault, ReleaseFault, ReleaseFault   ; $F0-$FC: Reserved

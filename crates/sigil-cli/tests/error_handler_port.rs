@@ -42,8 +42,10 @@ struct Shape {
     debug: i128,
 }
 
-const PLAIN: Shape =
-    Shape { base: pins::ERROR_HANDLER.plain_base, len: pins::ERROR_HANDLER.plain_len, rom: "s4.bin", debug: 0 };
+// Review item 29 part 4 (the MDDBG strip): error_handler is DEBUG-ONLY now — the
+// RELEASE (plain) shape ships zero debug equipment, so there is no plain arm to
+// gate (ERROR_HANDLER.plain_len is 0, its plain_base is the zero-byte anchor at
+// Replay_OJZ_Fixture). Only the DEBUG shape carries the island.
 const DEBUG: Shape =
     Shape { base: pins::ERROR_HANDLER.debug_base, len: pins::ERROR_HANDLER.debug_len, rom: "s4.debug.bin", debug: 1 };
 
@@ -146,10 +148,9 @@ fn reference_gate(shape: &Shape) {
     );
 }
 
-#[test]
-fn error_handler_region_matches_reference() {
-    reference_gate(&PLAIN);
-}
+// The PLAIN arm (error_handler_region_matches_reference) is DROPPED — review item
+// 29 part 4 strips the error_handler island from every RELEASE shape, so there is
+// no plain region to match (s4.bin[plain_base..] is Replay's bytes, plain_len 0).
 
 #[test]
 fn error_handler_debug_region_matches_reference() {
@@ -174,8 +175,9 @@ fn vector_labels_resolve_to_emp_ownership() {
         "BusError", "AddressError", "IllegalInstr", "ZeroDivide", "ChkInstr", "TrapvInstr",
         "PrivilegeViol", "Trace", "Line1010Emu", "Line1111Emu", "ErrorExcept", "ErrorTrap",
     ];
-    // Lower + place error_handler.emp at the plain base (the flip is shape-
-    // independent — vectors.asm spells the same symbols in both shapes).
+    // Lower + place error_handler.emp at the DEBUG base (it is a DEBUG-only module
+    // now — review item 29 part 4; its content carries no internal DEBUG conditional,
+    // so the ownership flip this test checks is shape-independent).
     let src = std::fs::read_to_string(aeon.join("engine/debug/error_handler.emp"))
         .unwrap_or_else(|e| panic!("read error_handler.emp: {e}"));
     let (file, _) = parse_str(&src);
@@ -185,10 +187,10 @@ fn vector_labels_resolve_to_emp_ownership() {
             initial_cpu: Cpu::M68000,
             include_root: Some(aeon.join("engine/debug")),
             embed_base: None,
-            defines: vec![("DEBUG".to_string(), 0), ("SOUND_DRIVER_ENABLED".to_string(), 1)],
+            defines: vec![("DEBUG".to_string(), 1), ("SOUND_DRIVER_ENABLED".to_string(), 1)],
         },
     );
-    let map = sigil_link::load_map(&map_toml(PLAIN.base, PLAIN.len)).expect("map loads");
+    let map = sigil_link::load_map(&map_toml(DEBUG.base, DEBUG.len)).expect("map loads");
     let mut sections = module.sections;
     place_sections(&mut sections, &map);
 

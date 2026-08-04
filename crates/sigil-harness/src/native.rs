@@ -255,11 +255,11 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         m!("engine.bg_anim", "bg_anim", pins::BG_ANIM),
         // ── Engine debug / sound caller ──
         m!("engine.sound_api", "sound_api", pins::SOUND_API),
-        // Parcel K4 inc-6: the no-op IRQ handler (NullInterrupt: rte) — was engine.inc's
-        // "temporary stub". Native so the last hand-written AS bytes leave the tree.
-        // vectors.emp's IRQ1/2/3/5/7 dc.l NullInterrupt resolve cross-seam to it.
-        m!("engine.system.null_interrupt", "null_interrupt", pins::NULLINT),
-        m!("engine.debug.error_handler", "error_handler", pins::ERROR_HANDLER),
+        // Review item 29 part 4 (the MDDBG strip): null_interrupt.emp is DELETED
+        // (its tolerant `rte` had had no vector referencer since item 27's ruling);
+        // error_handler is now DEBUG-ONLY (pushed below under `if debug`); the
+        // RELEASE loud-failure handler engine.system.release_fault takes the tail
+        // placement slot null_interrupt used to hold (pushed below under `if !debug`).
         // Parcel K4 B1: the ROM terminus (EndOfRom + the 3 walls), was engine.inc's
         // `EndOfRom:` label + the `if … error` guards. Zero-length section placed
         // LAST (boundary key EndOfRom, already frozen in all six tables). The plane
@@ -362,6 +362,19 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
             "compression_selftest",
             pins::COMPRESSION_SELFTEST
         ));
+        // Review item 29 part 4 — the error_handler island (the 12 per-class CPU
+        // exception stubs + the vendored MD Debugger v2.6 blob, ~4.2 KB) is now
+        // DEBUG-ONLY: release ships zero debug equipment. Same DEBUG-only idiom as
+        // compression_selftest above. Placed at its map-order slot (BusError).
+        specs.push(m!("engine.debug.error_handler", "error_handler", pins::ERROR_HANDLER));
+    } else {
+        // Review item 29 part 4 — the RELEASE loud-failure handler (~42 B: mask,
+        // red backdrop, freeze). It replaces the stripped error_handler island as
+        // every fault vector's target in the release shape, and takes the tail
+        // placement slot the deleted null_interrupt.emp used to hold. RELEASE-ONLY.
+        // Region is cosmetic under Frozen (DUMMY_REGION, like the demo modules) —
+        // the chainer sizes it live; map.toml `order` places it at ReleaseFault.
+        specs.push(m!("engine.system.release_fault", "release_fault", DUMMY_REGION));
     }
     // I4: the OJZ replay fixture — pushed LAST so it chains after everything
     // (past the anchored error-handler island): re-recording (content+size

@@ -291,8 +291,8 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
     // object_test_state growth), then +0xC debug only from the OJZ scene-pin
     // hook's two `ifdef __DEBUG__` guards (Debug_Scene_Freeze).
-    assert_eq!(pins::ASSEMBLED_LEN, 0x5DC30);       // −0x10 item26: OJZ_SCROLL_TEST shrank 0x1A (the init-site stop_z80/start_z80 false lock, deleted) and re-pads to −0x10 at the anchored error handler; net of the +0x18 upstream growth
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F722); // −0x20 item26: same cause, debug's OJZ shrink is a clean 0x20 with no re-pad
+    assert_eq!(pins::ASSEMBLED_LEN, 0x5CBAE);       // −0x1082 item29p4: the MDDBG strip — error_handler (0x10B0) + NullInterrupt (2) leave the plain ROM; ReleaseFault (0x2E, incl. the oracle-driven display-off write) replaces them
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F71E); // −0x4 item29p4: debug keeps MDDBG; only NullInterrupt (2 B) leaves, −4 with the align re-pad
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the

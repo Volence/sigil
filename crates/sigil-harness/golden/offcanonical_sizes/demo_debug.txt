@@ -36,7 +36,6 @@ InitSpriteSystem 0x1b1c
 Init_DMA_Queue 0x45a
 Init_SpriteTable 0x770
 Load_Object 0x3814
-NullInterrupt 0x10172
 ObjCodeBase 0x10000
 ObjDef_DemoBox 0x10006
 Parallax_Init 0x4f2e

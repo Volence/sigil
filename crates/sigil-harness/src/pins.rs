@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 76 regions, 309 symbols, 7 offsets
+//! [provenance] 76 regions, 308 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,9 +39,9 @@ pub struct ShapeOffset {
 // ── ROM end (the listing `END` line address, per shape) ──
 
 /// Assembled (pre-convsym) ROM length, plain shape. tests: m1d_rom, m1d_debug_rom, mixed_dac_rom
-pub const ASSEMBLED_LEN: usize = 0x5DC30;
+pub const ASSEMBLED_LEN: usize = 0x5CBAE;
 /// Assembled (pre-convsym) ROM length, `__DEBUG__` shape. tests: m1d_rom, m1d_debug_rom, mixed_dac_rom
-pub const DEBUG_ASSEMBLED_LEN: usize = 0x5F722;
+pub const DEBUG_ASSEMBLED_LEN: usize = 0x5F71E;
 
 // ── Regions (manifest order) ──
 
@@ -225,17 +225,17 @@ pub const OBJDEFS: Region = Region { plain_base: 0x11DAA, debug_base: 0x11E82, p
 /// `GameState_ObjectTest_Init` .. `GameState_OJZScroll_Init` — gate `SIGIL_EMP_OBJECT_TEST_STATE`. tests: test_t1_harness_states_port
 pub const OBJECT_TEST_STATE: Region = Region { plain_base: 0x5C230, debug_base: 0x5DC82, plain_len: 0x5BC, debug_len: 0x658 };
 
-/// `GameState_OJZScroll_Init` .. `NullInterrupt` — gate `SIGIL_EMP_OJZ_SCROLL_TEST`. tests: test_t1_harness_states_port
-pub const OJZ_SCROLL_TEST: Region = Region { plain_base: 0x5C7EC, debug_base: 0x5E2DA, plain_len: 0x248, debug_len: 0x256 };
+/// `GameState_OJZScroll_Init` .. `ReleaseFault` plain / `BusError` debug — gate `SIGIL_EMP_OJZ_SCROLL_TEST`. tests: test_t1_harness_states_port
+pub const OJZ_SCROLL_TEST: Region = Region { plain_base: 0x5C7EC, debug_base: 0x5E2DA, plain_len: 0x254, debug_len: 0x254 };
 
-/// `NullInterrupt` .. start + 0x2 plain / 0x2 debug (literal — no end symbol) — gate `SIGIL_EMP_NULL_INTERRUPT`. tests: m1d_rom, m1d_debug_rom
-pub const NULLINT: Region = Region { plain_base: 0x5CA34, debug_base: 0x5E530, plain_len: 0x2, debug_len: 0x2 };
+/// `ReleaseFault` .. `Replay_OJZ_Fixture` (plain-only region; debug empty at `Replay_OJZ_Fixture`) — gate `SIGIL_EMP_RELEASE_FAULT`. tests: vectors_port, m1c_vector_table
+pub const RELEASE_FAULT: Region = Region { plain_base: 0x5CA40, debug_base: 0x5F5DE, plain_len: 0x2E, debug_len: 0x0 };
 
-/// `BusError` .. `Replay_OJZ_Fixture` — gate `SIGIL_EMP_ERROR_HANDLER`. tests: error_handler_port
-pub const ERROR_HANDLER: Region = Region { plain_base: 0x5CA40, debug_base: 0x5E532, plain_len: 0x10B0, debug_len: 0x10B0 };
+/// `BusError` .. `Replay_OJZ_Fixture` (debug-only region; plain empty at `Replay_OJZ_Fixture`) — gate `SIGIL_EMP_ERROR_HANDLER`. tests: error_handler_port
+pub const ERROR_HANDLER: Region = Region { plain_base: 0x5CA6E, debug_base: 0x5E52E, plain_len: 0x0, debug_len: 0x10B0 };
 
 /// `Replay_OJZ_Fixture` .. `EndOfRom`.
-pub const REPLAY_FIXTURE: Region = Region { plain_base: 0x5DAF0, debug_base: 0x5F5E2, plain_len: 0x140, debug_len: 0x140 };
+pub const REPLAY_FIXTURE: Region = Region { plain_base: 0x5CA6E, debug_base: 0x5F5DE, plain_len: 0x140, debug_len: 0x140 };
 
 /// `Dac_Temp_Blip` .. start + 0xF8BC plain / 0xF8BC debug (literal — no end symbol) — gate `SIGIL_EMP_DAC`. tests: dac_bank_port
 pub const DAC_BANKS: Region = Region { plain_base: 0x48000, debug_base: 0x48000, plain_len: 0xF8BC, debug_len: 0xF8BC };
@@ -250,7 +250,7 @@ pub const SFX_BANK_BLOB: Region = Region { plain_base: 0x5BAE8, debug_base: 0x5D
 pub const SOUNDBANKHEAD: Region = Region { plain_base: 0x58000, debug_base: 0x58000, plain_len: 0x607, debug_len: 0x607 };
 
 /// `EndOfRom` .. start + 0x0 plain / 0x0 debug (literal — no end symbol) — gate `SIGIL_EMP_EPILOGUE`. tests: m1d_rom, m1d_debug_rom
-pub const EPILOGUE: Region = Region { plain_base: 0x5DC30, debug_base: 0x5F722, plain_len: 0x0, debug_len: 0x0 };
+pub const EPILOGUE: Region = Region { plain_base: 0x5CBAE, debug_base: 0x5F71E, plain_len: 0x0, debug_len: 0x0 };
 
 /// `ObjCodeBase` .. start + 0x2 plain / 0x2 debug (literal — no end symbol) — gate `SIGIL_EMP_OBJCODEBASE`. tests: m1d_rom, m1d_debug_rom
 pub const OBJCODEBASE: Region = Region { plain_base: 0x10000, debug_base: 0x10000, plain_len: 0x2, debug_len: 0x2 };
@@ -314,44 +314,41 @@ pub const GET_SINE_COSINE: Pin = Pin { plain: 0x2640, debug: 0x2884 };
 /// `EntryPoint`. tests: m1c_vector_table
 pub const ENTRY_POINT: Pin = Pin { plain: 0x200, debug: 0x200 };
 
-/// `NullInterrupt`. tests: m1c_vector_table
-pub const NULL_INTERRUPT: Pin = Pin { plain: 0x5CA34, debug: 0x5E530 };
+/// `BusError` — debug-shape consumer only (`debug_only`). tests: vectors_port
+pub const BUS_ERROR: u32 = 0x5E52E;
 
-/// `BusError`. tests: m1c_vector_table
-pub const BUS_ERROR: Pin = Pin { plain: 0x5CA40, debug: 0x5E532 };
+/// `AddressError` — debug-shape consumer only (`debug_only`). tests: vectors_port
+pub const ADDRESS_ERROR: u32 = 0x5E546;
 
-/// `AddressError`. tests: m1c_vector_table
-pub const ADDRESS_ERROR: Pin = Pin { plain: 0x5CA58, debug: 0x5E54A };
+/// `IllegalInstr` — debug-shape consumer only (`debug_only`). tests: vectors_port
+pub const ILLEGAL_INSTR: u32 = 0x5E562;
 
-/// `IllegalInstr`. tests: m1c_vector_table
-pub const ILLEGAL_INSTR: Pin = Pin { plain: 0x5CA74, debug: 0x5E566 };
+/// `ZeroDivide` — debug-shape consumer only (`debug_only`). tests: vectors_port
+pub const ZERO_DIVIDE: u32 = 0x5E584;
 
-/// `ZeroDivide`. tests: m1c_vector_table
-pub const ZERO_DIVIDE: Pin = Pin { plain: 0x5CA96, debug: 0x5E588 };
+/// `ChkInstr` — debug-shape consumer only (`debug_only`). tests: vectors_port
+pub const CHK_INSTR: u32 = 0x5E59E;
 
-/// `ChkInstr`. tests: m1c_vector_table
-pub const CHK_INSTR: Pin = Pin { plain: 0x5CAB0, debug: 0x5E5A2 };
+/// `TrapvInstr` — debug-shape consumer only (`debug_only`). tests: vectors_port
+pub const TRAPV_INSTR: u32 = 0x5E5BC;
 
-/// `TrapvInstr`. tests: m1c_vector_table
-pub const TRAPV_INSTR: Pin = Pin { plain: 0x5CACE, debug: 0x5E5C0 };
+/// `PrivilegeViol` — debug-shape consumer only (`debug_only`). tests: vectors_port
+pub const PRIVILEGE_VIOL: u32 = 0x5E5DC;
 
-/// `PrivilegeViol`. tests: m1c_vector_table
-pub const PRIVILEGE_VIOL: Pin = Pin { plain: 0x5CAEE, debug: 0x5E5E0 };
+/// `Trace` — debug-shape consumer only (`debug_only`). tests: vectors_port
+pub const TRACE: u32 = 0x5E5FE;
 
-/// `Trace`. tests: m1c_vector_table
-pub const TRACE: Pin = Pin { plain: 0x5CB10, debug: 0x5E602 };
+/// `Line1010Emu` — debug-shape consumer only (`debug_only`). tests: vectors_port
+pub const LINE1010_EMU: u32 = 0x5E612;
 
-/// `Line1010Emu`. tests: m1c_vector_table
-pub const LINE1010_EMU: Pin = Pin { plain: 0x5CB24, debug: 0x5E616 };
+/// `Line1111Emu` — debug-shape consumer only (`debug_only`). tests: vectors_port
+pub const LINE1111_EMU: u32 = 0x5E632;
 
-/// `Line1111Emu`. tests: m1c_vector_table
-pub const LINE1111_EMU: Pin = Pin { plain: 0x5CB44, debug: 0x5E636 };
+/// `ErrorExcept` — debug-shape consumer only (`debug_only`). tests: vectors_port
+pub const ERROR_EXCEPT: u32 = 0x5E652;
 
-/// `ErrorExcept`. tests: m1c_vector_table
-pub const ERROR_EXCEPT: Pin = Pin { plain: 0x5CB64, debug: 0x5E656 };
-
-/// `ErrorTrap`. tests: m1c_vector_table
-pub const ERROR_TRAP: Pin = Pin { plain: 0x5CB82, debug: 0x5E674 };
+/// `ErrorTrap` — debug-shape consumer only (`debug_only`). tests: vectors_port
+pub const ERROR_TRAP: u32 = 0x5E670;
 
 /// `VBlank_Handler`. tests: m1c_vector_table
 pub const V_BLANK_HANDLER: Pin = Pin { plain: 0x20D0, debug: 0x2150 };
@@ -606,10 +603,10 @@ pub const ENTITY_LOADED_CLEAR: Pin = Pin { plain: 0x3856, debug: 0x43F6 };
 pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x669A, debug: 0x8506 };
 
 /// `MDDBG__ErrorHandler` — debug-shape consumer only (`debug_only`). tests: rings_port
-pub const MDDBG_ERROR_HANDLER: u32 = 0x5E68C;
+pub const MDDBG_ERROR_HANDLER: u32 = 0x5E688;
 
 /// `MDDBG__ErrorHandler_PagesController` — debug-shape consumer only (`debug_only`). tests: rings_port
-pub const MDDBG_ERROR_HANDLER_PAGES_CONTROLLER: u32 = 0x5F452;
+pub const MDDBG_ERROR_HANDLER_PAGES_CONTROLLER: u32 = 0x5F44E;
 
 /// `DMA_Critical`. tests: dma_queue_port
 pub const DMA_CRITICAL: Pin = Pin { plain: 0xFFFF804E, debug: 0xFFFF804E };

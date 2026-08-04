@@ -20,7 +20,7 @@ BgAnim_Init 0x6440
 BgAnim_Table 0x25742
 BootData 0x3a0
 BootData_End 0x1b12
-BusError 0x5ca40
+ReleaseFault 0x5ca40
 Camera_Init 0x5ba0
 Checksum 0x18e
 Collected_Init 0x35cc
@@ -28,7 +28,7 @@ Collision_GetType 0x5210
 Collision_ProbeDown 0x5280
 Dac_Temp_Blip 0x48000
 DeformTable_Zero 0x11320
-EndOfRom 0x5dc30
+EndOfRom 0x5cb9a
 EntryPoint 0x200
 GameLoop 0x239e
 GameState_OJZScroll_Init 0x5c7ec
@@ -42,7 +42,6 @@ Init_DMA_Queue 0x1b6a
 Init_SpriteTable 0x1e70
 Load_Object 0x41a0
 Map_TestObj 0x25744
-NullInterrupt 0x5ca34
 OJZ_Act1_Descriptor 0x14bbe
 OJZ_Act_Pool_Page0 0x11f82
 OJZ_Palette 0x1fec0

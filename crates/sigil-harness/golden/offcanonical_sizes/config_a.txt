@@ -47,7 +47,6 @@ Init_DMA_Queue 0x1bea
 Init_SpriteTable 0x1f00
 Load_Object 0x5024
 Map_TestObj 0x25800
-NullInterrupt 0x5e530
 OJZ_Act1_Descriptor 0x14c7e
 OJZ_Act_Pool_Page0 0x12042
 OJZ_Palette 0x1ff7c

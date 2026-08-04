@@ -141,6 +141,13 @@ pub struct RegionSpec {
     pub start: String,
     #[serde(default)]
     pub end: Option<String>,
+    /// Per-shape DEBUG end symbol: when the region's END is a DIFFERENT listing
+    /// symbol in the debug shape than in plain (the fault-handler shape split of
+    /// review item 29 part 4 — `ojz_scroll_test` ends at `ReleaseFault` in the
+    /// RELEASE shape but at `BusError` in DEBUG, and neither symbol exists in the
+    /// other shape). Only valid alongside `end`; when absent, debug end = `end`.
+    #[serde(default)]
+    pub debug_end: Option<String>,
     #[serde(default)]
     pub len: Option<u32>,
     /// Per-shape DEBUG length override for a literal-`len` region whose debug
@@ -168,6 +175,19 @@ pub struct RegionSpec {
     /// plain_base (the next placement). Only valid with `debug_only`.
     #[serde(default)]
     pub plain_anchor: Option<String>,
+    /// Region that exists ONLY in the RELEASE (plain) shape — the mirror of
+    /// `debug_only`, for `release_fault` (review item 29 part 4: the DEBUG shape
+    /// strips it, exactly as the RELEASE shape strips the `debug_only`
+    /// error_handler island). `start`/`end` resolve against the PLAIN listing
+    /// only; debug_len = 0; debug_base = the debug address of `debug_anchor` (the
+    /// next placement — keeps the emitted `Region` shape unchanged for every
+    /// consumer). Requires `debug_anchor`.
+    #[serde(default)]
+    pub plain_only: bool,
+    /// The debug-listing symbol whose address becomes a `plain_only` region's
+    /// debug_base (the next placement). Only valid with `plain_only`.
+    #[serde(default)]
+    pub debug_anchor: Option<String>,
 }
 
 /// `[[symbol]]` — a bare cross-seam name (RAM cell, call target, equ-like
@@ -240,6 +260,36 @@ pub fn load_manifest(src: &str) -> Result<Manifest, String> {
         if r.plain_anchor.is_some() && !r.debug_only {
             return Err(format!(
                 "region `{}`: `plain_anchor` is only meaningful with `debug_only = true`",
+                r.name
+            ));
+        }
+        if r.plain_only && r.debug_anchor.is_none() {
+            return Err(format!(
+                "region `{}`: `plain_only` needs `debug_anchor` (the debug-listing symbol of the next placement — a plain-only region's start never appears in the debug listing)",
+                r.name
+            ));
+        }
+        if r.debug_anchor.is_some() && !r.plain_only {
+            return Err(format!(
+                "region `{}`: `debug_anchor` is only meaningful with `plain_only = true`",
+                r.name
+            ));
+        }
+        if r.debug_only && r.plain_only {
+            return Err(format!(
+                "region `{}`: `debug_only` and `plain_only` are mutually exclusive",
+                r.name
+            ));
+        }
+        if r.debug_end.is_some() && r.end.is_none() {
+            return Err(format!(
+                "region `{}`: `debug_end` is a per-shape end SYMBOL override — set `end` too (it is the plain-shape end)",
+                r.name
+            ));
+        }
+        if r.debug_end.is_some() && (r.debug_only || r.plain_only) {
+            return Err(format!(
+                "region `{}`: `debug_end` is for a both-shapes region with a shape-split end; a `debug_only`/`plain_only` region resolves against ONE listing",
                 r.name
             ));
         }
@@ -417,6 +467,48 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
             });
             continue;
         }
+        if r.plain_only {
+            // Plain-only region (the mirror of debug_only — review item 29 part 4's
+            // release_fault): the PLAIN listing carries start/end; the debug shape
+            // has ZERO bytes at debug_anchor's address.
+            let anchor = r.debug_anchor.as_ref().expect("load_manifest validated debug_anchor");
+            let debug_base = debug
+                .get(anchor)
+                .map_err(|e| format!("region `{}` debug_anchor: {e}", r.name))?;
+            let plain_base =
+                plain.get(&r.start).map_err(|e| format!("region `{}` start: {e}", r.name))?;
+            let (plain_len, end_desc) = match (&r.end, r.len) {
+                (Some(end), None) => {
+                    let pe =
+                        plain.get(end).map_err(|e| format!("region `{}` end: {e}", r.name))?;
+                    if pe < plain_base {
+                        return Err(format!(
+                            "region `{}`: end `{end}` precedes start `{}` ({pe:#X} < {plain_base:#X})",
+                            r.name, r.start
+                        ));
+                    }
+                    (pe - plain_base, format!("`{end}` (plain-only region; debug empty at `{anchor}`)"))
+                }
+                (None, Some(len)) => {
+                    (len, format!("start + {len:#X} (plain-only literal; debug empty at `{anchor}`)"))
+                }
+                _ => unreachable!("load_manifest validates end/len exclusivity"),
+            };
+            regions.push(RegionPin {
+                name: r.name.clone(),
+                const_name: upper_snake(&r.name),
+                debug_only: false,
+                start: r.start.clone(),
+                end_desc,
+                gate: r.gate.clone(),
+                tests: r.tests.clone(),
+                plain_base,
+                debug_base,
+                plain_len,
+                debug_len: 0,
+            });
+            continue;
+        }
         let plain_base =
             plain.placement(&r.start).map_err(|e| format!("region `{}` start: {e}", r.name))?;
         let debug_base = debug
@@ -424,16 +516,27 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
             .map_err(|e| format!("region `{}` start (debug): {e}", r.name))?;
         let (plain_len, debug_len, end_desc) = match (&r.end, r.len) {
             (Some(end), None) => {
+                // `debug_end` overrides the END SYMBOL for the debug shape (the
+                // fault-handler shape split: ojz_scroll_test ends at ReleaseFault in
+                // plain, BusError in debug — neither exists in the other listing).
+                let debug_end = r.debug_end.as_deref().unwrap_or(end);
                 let pe = plain.placement(end).map_err(|e| format!("region `{}` end: {e}", r.name))?;
-                let de = debug.placement(end).map_err(|e| format!("region `{}` end (debug): {e}", r.name))?;
+                let de = debug
+                    .placement(debug_end)
+                    .map_err(|e| format!("region `{}` end (debug): {e}", r.name))?;
                 if pe < plain_base || de < debug_base {
                     return Err(format!(
-                        "region `{}`: end `{end}` precedes start `{}` ({pe:#X} < {plain_base:#X} \
+                        "region `{}`: end (`{end}` plain / `{debug_end}` debug) precedes start `{}` ({pe:#X} < {plain_base:#X} \
                          or {de:#X} < {debug_base:#X})",
                         r.name, r.start
                     ));
                 }
-                (pe - plain_base, de - debug_base, format!("`{end}`"))
+                let desc = if r.debug_end.is_some() {
+                    format!("`{end}` plain / `{debug_end}` debug")
+                } else {
+                    format!("`{end}`")
+                };
+                (pe - plain_base, de - debug_base, desc)
             }
             (None, Some(len)) => {
                 let dl = r.debug_len.unwrap_or(len);

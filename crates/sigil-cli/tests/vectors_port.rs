@@ -7,13 +7,14 @@
 //! `[0, 0x100)` in BOTH shapes. The region is FIXED SIZE and PRECEDES EVERYTHING
 //! — a byte delta is impossible by construction — but the gate states the bar.
 //!
-//! The 64 entries are raw `dc.l` link pointers. SYSTEM_STACK is a constants.asm
-//! equ; the other 63 are labels resolved at link — EntryPoint (boot.emp), the 12
-//! exception stubs (error_handler.emp), VBlank_Handler (vblank.emp) are .emp-
-//! owned; NullInterrupt (engine.inc inline) and HBlank_Vector_Slot (RAM
-//! trampoline) stay AS-side. All 17 distinct targets are fed here as synthetic
-//! pinned carriers at their per-shape listing VMAs (sourced from
-//! `sigil_harness::pins`).
+//! The 64 entries are raw `dc.l` link pointers. SYSTEM_STACK is a constants.emp
+//! equ; the rest are labels resolved at link — EntryPoint (boot.emp) and
+//! VBlank_Handler (vblank.emp) are shape-invariant; the fault cells are SHAPE-SPLIT
+//! since review item 29 part 4 (the MDDBG strip): the DEBUG arm points at the 12
+//! error_handler.emp exception stubs, the RELEASE arm at ReleaseFault
+//! (release_fault.emp). HBlank_Vector_Slot is the RAM trampoline. The distinct
+//! targets are fed here as synthetic pinned carriers at their per-shape listing
+//! VMAs (sourced from `sigil_harness::pins`).
 //!
 //! P-A1 (step-0 blocking probe): `dc.l` accepts comma-lists of LABELS (the four
 //! `dc.l ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap` lines, vectors.asm:40-47).
@@ -48,30 +49,43 @@ fn strict_gate() -> bool {
 
 const REGION_LEN: usize = pins::VECTORS.plain_len; // 0x100, shape-invariant (fixed region)
 
-/// The 17 distinct cross-seam vector targets at their per-shape VMAs.
-/// SYSTEM_STACK is a constants.asm equ ($FFFFFF00 both shapes) — fed as a phased
-/// carrier so `dc.l SYSTEM_STACK` resolves to that value just like a label.
+/// The distinct cross-seam vector targets at their per-shape VMAs. SYSTEM_STACK is
+/// a constants.emp equ ($FFFFFF00 both shapes) — fed as a phased carrier so `dc.l
+/// SYSTEM_STACK` resolves to that value just like a label.
+///
+/// Review item 29 part 4 (the MDDBG strip): the fault targets are SHAPE-SPLIT now.
+/// RELEASE (plain) routes every fault at ReleaseFault (release_fault.emp — a plain-
+/// only REGION pin); DEBUG routes them at the error_handler per-class stubs
+/// (BusError/… — debug-only symbol pins, bare `u32`). NullInterrupt is deleted.
 fn vector_targets(debug: bool) -> Vec<(&'static str, u32)> {
     let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
-    vec![
+    let mut v = vec![
         ("SYSTEM_STACK", 0xFFFFFF00),
         ("EntryPoint", pick(pins::ENTRY_POINT)),
-        ("BusError", pick(pins::BUS_ERROR)),
-        ("AddressError", pick(pins::ADDRESS_ERROR)),
-        ("IllegalInstr", pick(pins::ILLEGAL_INSTR)),
-        ("ZeroDivide", pick(pins::ZERO_DIVIDE)),
-        ("ChkInstr", pick(pins::CHK_INSTR)),
-        ("TrapvInstr", pick(pins::TRAPV_INSTR)),
-        ("PrivilegeViol", pick(pins::PRIVILEGE_VIOL)),
-        ("Trace", pick(pins::TRACE)),
-        ("Line1010Emu", pick(pins::LINE1010_EMU)),
-        ("Line1111Emu", pick(pins::LINE1111_EMU)),
-        ("ErrorExcept", pick(pins::ERROR_EXCEPT)),
-        ("ErrorTrap", pick(pins::ERROR_TRAP)),
         ("VBlank_Handler", pick(pins::V_BLANK_HANDLER)),
-        ("NullInterrupt", pick(pins::NULL_INTERRUPT)),
         ("HBlank_Vector_Slot", pick(pins::H_BLANK_VECTOR_SLOT)),
-    ]
+    ];
+    if debug {
+        // DEBUG arm — the 12 error_handler per-class stubs (debug-only pins).
+        v.extend([
+            ("BusError", pins::BUS_ERROR),
+            ("AddressError", pins::ADDRESS_ERROR),
+            ("IllegalInstr", pins::ILLEGAL_INSTR),
+            ("ZeroDivide", pins::ZERO_DIVIDE),
+            ("ChkInstr", pins::CHK_INSTR),
+            ("TrapvInstr", pins::TRAPV_INSTR),
+            ("PrivilegeViol", pins::PRIVILEGE_VIOL),
+            ("Trace", pins::TRACE),
+            ("Line1010Emu", pins::LINE1010_EMU),
+            ("Line1111Emu", pins::LINE1111_EMU),
+            ("ErrorExcept", pins::ERROR_EXCEPT),
+            ("ErrorTrap", pins::ERROR_TRAP),
+        ]);
+    } else {
+        // RELEASE arm — every fault routes at ReleaseFault (plain-only region pin).
+        v.push(("ReleaseFault", pins::RELEASE_FAULT.plain_base));
+    }
+    v
 }
 
 /// One phased one-byte carrier per (name, vma), each on its own harness-private
@@ -244,13 +258,12 @@ fn dc_l_label_comma_list_doctored_diverges() {
 }
 
 // ---------------------------------------------------------------------------
-// The FIRST .emp→.emp VECTOR reference (both gate states): vectors.emp's 12
-// exception entries resolve to error_handler.emp's .emp-owned stub labels when
-// the two modules are compiled TOGETHER (gate-ON, module-to-module). The
-// reverse of t25's `vector_labels_resolve_to_emp_ownership` (which drove a
-// SYNTHETIC vectors table); here the REAL vectors.emp is the consumer.
-// Gate-OFF (error_handler AS-side) is the region gate above (synthetic carriers
-// → reference addresses).
+// The .emp→.emp VECTOR reference: vectors.emp's 12 exception entries resolve to
+// error_handler.emp's .emp-owned stub labels when the two modules are compiled
+// TOGETHER. Since review item 29 part 4 (the MDDBG strip) error_handler is
+// DEBUG-ONLY, so this relationship holds in the DEBUG shape ONLY — the vectors
+// table only spells BusError/… in its `if DEBUG == 1` arm; the RELEASE arm spells
+// ReleaseFault. This test therefore drives BOTH modules with DEBUG=1.
 // ---------------------------------------------------------------------------
 #[test]
 fn vector_labels_resolve_to_error_handler_emp() {
@@ -263,7 +276,7 @@ fn vector_labels_resolve_to_error_handler_emp() {
         "BusError", "AddressError", "IllegalInstr", "ZeroDivide", "ChkInstr", "TrapvInstr",
         "PrivilegeViol", "Trace", "Line1010Emu", "Line1111Emu", "ErrorExcept", "ErrorTrap",
     ];
-    // vectors.emp placed at [0, 0x100).
+    // vectors.emp placed at [0, 0x100). DEBUG=1: the error_handler arm.
     let v_src = std::fs::read_to_string(aeon.join("engine/system/vectors.emp"))
         .unwrap_or_else(|e| panic!("read vectors.emp: {e}"));
     let (v_file, _) = parse_str(&v_src);
@@ -273,11 +286,11 @@ fn vector_labels_resolve_to_error_handler_emp() {
             initial_cpu: Cpu::M68000,
             include_root: Some(aeon.join("engine/system")),
             embed_base: None,
-            defines: vec![("DEBUG".to_string(), 0)],
+            defines: vec![("DEBUG".to_string(), 1)],
         },
     );
-    // error_handler.emp placed at the plain error_handler base (the flip is
-    // shape-independent — vectors.emp spells the same labels in both shapes).
+    // error_handler.emp placed at the DEBUG error_handler base (it is a DEBUG-only
+    // module now).
     let eh_src = std::fs::read_to_string(aeon.join("engine/debug/error_handler.emp"))
         .unwrap_or_else(|e| panic!("read error_handler.emp: {e}"));
     let (eh_file, _) = parse_str(&eh_src);
@@ -287,13 +300,13 @@ fn vector_labels_resolve_to_error_handler_emp() {
             initial_cpu: Cpu::M68000,
             include_root: Some(aeon.join("engine/debug")),
             embed_base: None,
-            defines: vec![("DEBUG".to_string(), 0), ("SOUND_DRIVER_ENABLED".to_string(), 1)],
+            defines: vec![("DEBUG".to_string(), 1), ("SOUND_DRIVER_ENABLED".to_string(), 1)],
         },
     );
-    let eh_base = pins::ERROR_HANDLER.plain_base;
+    let eh_base = pins::ERROR_HANDLER.debug_base;
     let map = format!(
         "fill = 0x00\n\n[[region]]\nname = \"vectors\"\nlma_base = 0x0\nsize = 0x100\nkind = \"rom\"\n\n[[region]]\nname = \"error_handler\"\nlma_base = {eh_base:#x}\nsize = {:#x}\nkind = \"rom\"\n",
-        pins::ERROR_HANDLER.plain_len
+        pins::ERROR_HANDLER.debug_len
     );
     let map = sigil_link::load_map(&map).expect("map loads");
     let mut sections = v_mod.sections;
@@ -301,16 +314,15 @@ fn vector_labels_resolve_to_error_handler_emp() {
     place_sections(&mut sections, &map);
 
     // error_handler.emp's raise_exception jsr/jmp targets + blob dc.l pointers
-    // (the MDDBG__ handler entry points) are now the module's OWN `pub equ`s (off
-    // ErrorHandlerBlob, conv-i #7) — it self-resolves them, no injection. Only the
-    // vectors' NON-error targets are fed here (EntryPoint, VBlank_Handler,
-    // NullInterrupt, HBlank_Vector_Slot, SYSTEM_STACK).
+    // (the MDDBG__ handler entry points) are the module's OWN `pub equ`s (off
+    // ErrorHandlerBlob) — it self-resolves them, no injection. Only the vectors'
+    // NON-error targets are fed here (EntryPoint, VBlank_Handler, HBlank_Vector_Slot,
+    // SYSTEM_STACK) at their DEBUG VMAs. NullInterrupt is deleted by the strip.
     let mut extra: Vec<(&str, u32)> = vec![
         ("SYSTEM_STACK", 0xFFFFFF00),
-        ("EntryPoint", pins::ENTRY_POINT.plain),
-        ("VBlank_Handler", pins::V_BLANK_HANDLER.plain),
-        ("NullInterrupt", pins::NULL_INTERRUPT.plain),
-        ("HBlank_Vector_Slot", pins::H_BLANK_VECTOR_SLOT.plain),
+        ("EntryPoint", pins::ENTRY_POINT.debug),
+        ("VBlank_Handler", pins::V_BLANK_HANDLER.debug),
+        ("HBlank_Vector_Slot", pins::H_BLANK_VECTOR_SLOT.debug),
     ];
     // Do NOT carry the 12 stub names — they must resolve to error_handler.emp.
     extra.retain(|(n, _)| !STUBS.contains(n));

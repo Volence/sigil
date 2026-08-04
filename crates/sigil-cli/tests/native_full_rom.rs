@@ -58,7 +58,9 @@ static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const LOAD_BEARING: &[(&str, u32, u32)] = &[
     ("EntryPoint", 0x200, 0x200),        // Game_Entry-class
     ("GameLoop", pins::GAME_LOOP.plain_base, pins::GAME_LOOP.debug_base), // the main loop (pin-sourced)
-    ("BusError", pins::BUS_ERROR.plain, pins::BUS_ERROR.debug), // ErrorHandler-class (pin-sourced since bug005 — the debug tail slid +0x10 with ojz_scroll_test's growth)
+    // ErrorHandler-class spot-check is SHAPE-SPLIT since review item 29 part 4 (the
+    // MDDBG strip) — BusError exists only in debug, ReleaseFault only in release —
+    // so it moves out of this both-shapes list into a shape-conditional check below.
     // A player proc. Re-derived at the bug005 refreeze (aeon master ec8a1cc,
     // listings s4.lst/s4.debug.lst): +0x22 plain / +0x7A debug — player_common's
     // parcel growth (+0x18/+0x70) slid player_ground's base, and the G1
@@ -160,6 +162,16 @@ fn run_shape(debug: bool, refname: &str, key: &str) {
         assert_eq!(*got, want, "{shape}: `{name}` resolved to {got:#X}, expected {want:#X}");
     }
 
+    // ErrorHandler-class spot-check, SHAPE-SPLIT (review item 29 part 4): the RELEASE
+    // shape's tail fault handler is ReleaseFault (release_fault.emp — plain-only
+    // region pin); DEBUG's is the BusError error_handler stub (debug-only symbol).
+    let (fault_name, fault_want): (&str, u32) =
+        if debug { ("BusError", pins::BUS_ERROR) } else { ("ReleaseFault", pins::RELEASE_FAULT.plain_base) };
+    let fault_got = resolved
+        .get(fault_name)
+        .unwrap_or_else(|| panic!("{shape}: fault-handler symbol `{fault_name}` absent from convsym output"));
+    assert_eq!(*fault_got, fault_want, "{shape}: `{fault_name}` resolved to {fault_got:#X}, expected {fault_want:#X}");
+
     // FULL-FILE golden (sigil-canonical, CRC-pinned).
     let crc = native::crc32(&full);
     let (want_crc, want_len) = expect;
@@ -198,19 +210,25 @@ fn deb2_appendix_negative_controls() {
     let (_rom, mut listing) =
         native::build_native_rom_with_listing(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
 
-    // Undoctored: BusError resolves to its known address (pin-sourced).
+    // Undoctored: ReleaseFault resolves to its known address (pin-sourced). (Was
+    // BusError; review item 29 part 4 strips error_handler from this plain build, so
+    // the plain-shape tail symbol is now ReleaseFault — the release_fault region pin.)
     let base = native::convsym_resolve(&aeon, &listing).unwrap();
-    assert_eq!(base.get("BusError"), Some(&pins::BUS_ERROR.plain), "control: undoctored BusError");
+    assert_eq!(
+        base.get("ReleaseFault"),
+        Some(&pins::RELEASE_FAULT.plain_base),
+        "control: undoctored ReleaseFault"
+    );
 
-    // DOCTOR: move BusError to a bogus in-range address.
+    // DOCTOR: move ReleaseFault to a bogus in-range address.
     for s in listing.iter_mut() {
-        if s.name == "BusError" {
+        if s.name == "ReleaseFault" {
             s.value = 0x00BEEF;
         }
     }
     let doctored = native::convsym_resolve(&aeon, &listing).unwrap();
     assert_eq!(
-        doctored.get("BusError"),
+        doctored.get("ReleaseFault"),
         Some(&0x00BEEF),
         "t24: convsym must reflect the doctored address (else the spot-check is vacuous)"
     );

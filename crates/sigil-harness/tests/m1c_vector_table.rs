@@ -42,23 +42,18 @@ fn strict_gate() -> bool {
 // `repin`); the IRQ4 $70 entry now targets HBlank_Vector_Slot (the RAM
 // trampoline slot at the RAM tail), not a ROM proc.
 use sigil_harness::pins;
+// Review item 29 part 4 (the MDDBG strip): the RELEASE (plain) vector table routes
+// every fault at ReleaseFault (release_fault.emp), not the error_handler per-class
+// stubs (which are DEBUG-only now). So the plain replica (m1c_root.asm) references
+// only EntryPoint, ReleaseFault, HBlank_Vector_Slot, VBlank_Handler — the four
+// non-SYSTEM_STACK targets that exist in the plain shape. ReleaseFault's address is
+// the plain-only `release_fault` REGION pin's base. SYSTEM_STACK stays unstubbed
+// (a genuine constants.emp equate).
 const STUBS: &[(&str, i64)] = &[
     ("EntryPoint", pins::ENTRY_POINT.plain as i64),
-    ("BusError", pins::BUS_ERROR.plain as i64),
-    ("AddressError", pins::ADDRESS_ERROR.plain as i64),
-    ("IllegalInstr", pins::ILLEGAL_INSTR.plain as i64),
-    ("ZeroDivide", pins::ZERO_DIVIDE.plain as i64),
-    ("ChkInstr", pins::CHK_INSTR.plain as i64),
-    ("TrapvInstr", pins::TRAPV_INSTR.plain as i64),
-    ("PrivilegeViol", pins::PRIVILEGE_VIOL.plain as i64),
-    ("Trace", pins::TRACE.plain as i64),
-    ("Line1010Emu", pins::LINE1010_EMU.plain as i64),
-    ("Line1111Emu", pins::LINE1111_EMU.plain as i64),
-    ("ErrorExcept", pins::ERROR_EXCEPT.plain as i64),
-    ("NullInterrupt", pins::NULL_INTERRUPT.plain as i64),
+    ("ReleaseFault", pins::RELEASE_FAULT.plain_base as i64),
     ("HBlank_Vector_Slot", pins::H_BLANK_VECTOR_SLOT.plain as i64),
     ("VBlank_Handler", pins::V_BLANK_HANDLER.plain as i64),
-    ("ErrorTrap", pins::ERROR_TRAP.plain as i64),
 ];
 
 #[test]
