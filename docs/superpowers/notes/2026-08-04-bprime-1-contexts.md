@@ -455,7 +455,7 @@ as good as the set it ranged over:
    set silently (the panel's catch);
 4. `bus_contexts` by EQUALITY, not `contains` — a `contains` passes with a wrong
    SET, which is exactly the bug §9 B1 was.
-## §7 — Byte identity (own-run, chain 43, SEVEN targets)
+## §7 — Byte identity (own-run, SEVEN targets; re-proven at chain 44 for the merge)
 
 The bar is SEVEN, derived from `crates/sigil-harness/golden/` in this worktree,
 not from a remembered count: `s4.bin`, `s4.debug.bin`, `demo.bin`,
@@ -468,12 +468,26 @@ Build order per `golden/capture_goldens.sh` — the four canonical via
 `sigil build`; config_b and lean both clobber `s4.bin`, so canonical is rebuilt
 after. Compared with `cmp` against the frozen golden blobs.
 
-| run | result |
-|---|---|
-| BASELINE (before any edit, both worktrees) | all seven IDENTICAL |
-| after commit 1 (construct only, no `.emp` touched) | all seven IDENTICAL |
-| after corpus adoption | all seven IDENTICAL |
-| after the lens-panel fixes (final) | **all seven IDENTICAL** |
+| run | chain | result |
+|---|---|---|
+| BASELINE (before any edit, both worktrees) | 43 | all seven IDENTICAL |
+| after commit 1 (construct only, no `.emp` touched) | 43 | all seven IDENTICAL |
+| after corpus adoption | 43 | all seven IDENTICAL |
+| after the lens-panel fixes | 43 | all seven IDENTICAL |
+| **MERGE REBASE onto chain-44 masters (overseer countersign)** | **44** | **all seven IDENTICAL** |
+
+The merge rebase moved both repos to sigil `a846426a` / aeon `8bfe0ba` (the
+engine session's `b-jumps` parcel, refreeze chain 44) and every one of the seven
+was re-derived and re-compared there. Five of the seven CRCs moved between
+chain 43 and 44 — which is the whole reason the table records a chain per row and
+quotes no CRC literal.
+
+The warn-tier tally was re-measured at chain 44 and is unchanged from master:
+`30 warnings — module.path-mismatch 12, proc.sr-undeclared 8,
+proc.undeclared-fallthrough 6, proc.out-unwritten 3, proc.clobber-undeclared 1`.
+Deleting `sr_masked` and moving its `sr` push/pop into `ints_off`'s
+acquire/release does not move `proc.sr-undeclared`, so the frozen lint-id set
+needed no edit.
 
 No CRC literal is quoted here: the goldens ARE the bar and `cmp` is the
 comparison. `repin --check` → `pins.rs unchanged`. `refreeze --check` → OK, tip
@@ -491,15 +505,24 @@ config_b 30 / lean 30). `warn_tier_corpus.rs`'s frozen baseline is therefore
 `AEON_DIR=<own worktree> SIGIL_EMIT=… SIGIL_BUILD=… cargo test --workspace --release`,
 full capture to file, failures-first.
 
-| | passed | failed | ignored | result lines |
-|---|---|---|---|---|
-| master `6d332f5b` baseline (own run) | 3095 | 0 | 4 | 308 |
-| branch `bprime-1` | **3130** | **0** | 4 | 309 |
+| | chain | passed | failed | ignored | result lines |
+|---|---|---|---|---|---|
+| master `6d332f5b` baseline (own run) | 43 | 3095 | 0 | 4 | 308 |
+| branch `bprime-1` | 43 | **3130** | **0** | 4 | 309 |
+| **branch, MERGE REBASE onto `a846426a` (overseer countersign)** | **44** | **3130** | **0** | **4** | 307 |
 
 Delta **+35**, accounted for exactly: 33 in the new
 `sigil-frontend-emp/tests/context_brackets.rs` + 2 new gates in
-`sigil-cli/tests/contract_closure_corpus.rs`. One new result line = one new test
-binary.
+`sigil-cli/tests/contract_closure_corpus.rs`.
+
+The countersign's RESULT-LINE count is 307, two below the chain-43 run, while
+passed/failed/ignored are identical. That is master's own binary packaging moving
+between chain 43 and 44, not a skipped binary here — the arithmetic below is the
+check that settles it, and it balances on the chain-44 numbers exactly
+(3130 + 4 = 3134 = the branch's own `#[test]` total). Recorded rather than
+smoothed over: a result-line count that drops while the test count holds is
+exactly the shape a silently-unbuilt test binary would also have, so it is worth
+saying which of the two it was and how that was determined.
 
 Cross-check that nothing is silently skipped:
 
