@@ -291,6 +291,11 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
     // object_test_state growth), then +0xC debug only from the OJZ scene-pin
     // hook's two `ifdef __DEBUG__` guards (Debug_Scene_Freeze).
+    // UNCHANGED by `mddbg-symbols`: that parcel is a pure PERMUTATION of the tail
+    // (Replay_OJZ_Fixture moved ahead of the fault-handler island so the vendored
+    // MDDBG blob's baked `lea` locator — which points at blob end — lands on the
+    // deb2 appendix instead of the fixture's `ARP0` magic). Both totals hold; only
+    // the tail regions' bases moved, +0x140 for the island.
     assert_eq!(pins::ASSEMBLED_LEN, 0x5CBAE);       // −0x1082 item29p4: the MDDBG strip — error_handler (0x10B0) + NullInterrupt (2) leave the plain ROM; ReleaseFault (0x2E, incl. the oracle-driven display-off write) replaces them
     assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F71E); // −0x4 item29p4: debug keeps MDDBG; only NullInterrupt (2 B) leaves, −4 with the align re-pad
 

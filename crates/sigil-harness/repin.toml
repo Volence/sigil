@@ -610,10 +610,11 @@ tests = ["objdef_port"]
 # t41 — the T1 harness states (the LAST game-side code before main/config). Both
 # gameStatesIncludes files, SHAPE-DEPENDENT (distinct plain/debug lengths — the
 # DEBUG profiling block / the two Debug_Scene_Freeze skips). object_test_state ends
-# where ojz begins; ojz ends at the next placement — which is now SHAPE-SPLIT
-# (review item 29 part 4): ReleaseFault in the RELEASE shape, BusError (the
-# error_handler island) in DEBUG. NullInterrupt (the old 2-byte rte stub that used
-# to sit here) is deleted by the strip.
+# where ojz begins; ojz ends at the next placement, which is `Replay_OJZ_Fixture`
+# in BOTH shapes since the `mddbg-symbols` parcel moved the replay fixture ahead of
+# the fault-handler island (see the tail regions below — the island must be the
+# FINAL emission or MDDBG symbol lookup breaks). NullInterrupt (the old 2-byte rte
+# stub that used to sit here) is deleted by item 29 part 4's strip.
 [[region]]
 name = "object_test_state"
 start = "GameState_ObjectTest_Init"
@@ -624,55 +625,65 @@ tests = ["test_t1_harness_states_port"]
 [[region]]
 name = "ojz_scroll_test"
 start = "GameState_OJZScroll_Init"
-end = "ReleaseFault"
-debug_end = "BusError"
+end = "Replay_OJZ_Fixture"
 gate = "SIGIL_EMP_OJZ_SCROLL_TEST"
 tests = ["test_t1_harness_states_port"]
 
-# Review item 29 part 4 (the MDDBG strip): the tail is now a SHAPE-SPLIT fault
+# I4 — the OJZ replay fixture. It USED to be the chain tail; the `mddbg-symbols`
+# parcel moved it AHEAD of the fault-handler island, because the vendored MD
+# Debugger blob locates its deb2 symbol appendix through two PC-relative `lea`
+# displacements baked into its own bytes, both pointing at `ErrorHandlerBlob +
+# $F56` = one past the blob's last byte. convsym appends the table at EndOfRom, so
+# the island MUST be the final emission or every crash-screen line prints
+# `<unknown>`. Its end is therefore the SHAPE-SPLIT fault handler: ReleaseFault in
+# RELEASE, BusError (the error_handler island head) in DEBUG. Content still
+# re-records freely — it shifts zero gameplay addresses, only the island after it.
+[[region]]
+name = "replay_fixture"
+start = "Replay_OJZ_Fixture"
+end = "ReleaseFault"
+debug_end = "BusError"
+tests = []
+
+# Review item 29 part 4 (the MDDBG strip): the tail is a SHAPE-SPLIT fault
 # handler. The old 2-byte NullInterrupt:rte stub (`nullint` region) is DELETED —
 # it had had no vector referencer since item 27's ruling, and the strip answered
 # its open "does release still need a tolerant handler?" with ReleaseFault.
 #
-# RELEASE (plain) shape — the loud-failure handler. ~0x26 B: mask, red backdrop,
-# freeze (engine/system/release_fault.emp). PLAIN-ONLY: the DEBUG shape strips it
-# (exactly as RELEASE strips the debug_only error_handler below). `debug_anchor =
-# Replay_OJZ_Fixture` — its zero-byte debug slot sits at Replay's debug address.
-# gate SIGIL_EMP_RELEASE_FAULT (new module; no AS twin to hole out, but the gate
-# name follows the SIGIL_EMP_* pattern for the manifest's consistency).
+# RELEASE (plain) shape — the loud-failure handler. ~0x2E B: mask, display off, red
+# backdrop, freeze (engine/system/release_fault.emp). PLAIN-ONLY: the DEBUG shape
+# strips it (exactly as RELEASE strips the debug_only error_handler below).
+# `debug_anchor = BusError` — its zero-byte debug slot sits at the island head, the
+# DEBUG occupant of the same tail position. gate SIGIL_EMP_RELEASE_FAULT (new
+# module; no AS twin to hole out, but the gate name follows the SIGIL_EMP_* pattern
+# for the manifest's consistency).
 [[region]]
 name = "release_fault"
 start = "ReleaseFault"
-end = "Replay_OJZ_Fixture"
+end = "EndOfRom"
 plain_only = true
-debug_anchor = "Replay_OJZ_Fixture"
+debug_anchor = "BusError"
 gate = "SIGIL_EMP_RELEASE_FAULT"
 tests = ["vectors_port", "m1c_vector_table"]
 
-# Tranche 25 — the error_handler region (the ROM TAIL): the 12 CPU exception-vector
-# stubs (raise_exception) + the vendored MD Debugger blob. Length 0x10B0 (stub table
+# Tranche 25 — the error_handler region, the TRUE ROM TAIL (see the replay_fixture
+# note above: it must stay last): the 12 CPU exception-vector stubs
+# (raise_exception) + the vendored MD Debugger blob. Length 0x10B0 (stub table
 # 0x15A + blob 0xF56). DEBUG-ONLY as of review item 29 part 4 (the strip): release
 # ships zero debug equipment, so the island is absent from every RELEASE shape. Same
-# `debug_only` idiom as compression_selftest. `end = "Replay_OJZ_Fixture"` is the
-# debug next-placement; `plain_anchor = "Replay_OJZ_Fixture"` gives the zero-byte
-# plain slot its base (Replay's plain address). The MDDBG__ equ table (debugger.asm)
-# is now ALSO gated behind __DEBUG__ (games/*/game_root.asm) — in release it is not
-# included at all, so its MDDBG__* externs never need resolving.
+# `debug_only` idiom as compression_selftest. `end = "EndOfRom"` — nothing is placed
+# after it in DEBUG, by contract; `plain_anchor = "EndOfRom"` gives the zero-byte
+# plain slot its base (the tail position it would occupy). The MDDBG__ equ table
+# (debugger.asm) is now ALSO gated behind __DEBUG__ (games/*/game_root.asm) — in
+# release it is not included at all, so its MDDBG__* externs never need resolving.
 [[region]]
 name = "error_handler"
 start = "BusError"
-end = "Replay_OJZ_Fixture"
+end = "EndOfRom"
 debug_only = true
-plain_anchor = "Replay_OJZ_Fixture"
+plain_anchor = "EndOfRom"
 gate = "SIGIL_EMP_ERROR_HANDLER"
 tests = ["error_handler_port"]
-
-# I4 - the OJZ replay fixture (chain tail; content re-records freely).
-[[region]]
-name = "replay_fixture"
-start = "Replay_OJZ_Fixture"
-end = "EndOfRom"
-tests = []
 
 # Parcel K4 inc-5 Stage 2 — the DAC sample banks, native (dac_banks.emp embeds the
 # seam-2 dac_blip_bank.bin @ $48000 + dac_shared_bank.bin @ $50000). Literal len

@@ -379,9 +379,11 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         // the chainer sizes it live via map.toml `order`, same as everything.
         specs.push(m!("engine.system.release_fault", "release_fault", pins::RELEASE_FAULT));
     }
-    // I4: the OJZ replay fixture — pushed LAST so it chains after everything
-    // (past the anchored error-handler island): re-recording (content+size
-    // change) shifts zero gameplay addresses; only EndOfRom/appendix move.
+    // I4: the OJZ replay fixture — pushed last in the REGISTRY, but map.toml's `order`
+    // places it after all gameplay content and BEFORE the fault-handler island, which
+    // the MDDBG blob-end contract requires to be the final byte-emitting section (see
+    // `check_error_handler_is_last`). Re-recording (content+size change) therefore still
+    // shifts zero gameplay addresses; it moves only the fault handler + EndOfRom/appendix.
     specs.push(m!("games.sonic4.replay_fixture", "replay_fixture", pins::REPLAY_FIXTURE));
     specs
 }
@@ -2851,6 +2853,71 @@ pub const SONIC4_APPENDIX_FLOOR: usize = 0x2000;
 /// The demo appendix floor (demo's engine-only set packs to ~0x1a0f B).
 pub const DEMO_APPENDIX_FLOOR: usize = 0x1000;
 
+/// The label the vendored MD Debugger v2.6 blob is emitted under
+/// (`engine/debug/error_handler.emp`). Absent from release shapes — item 29 strips
+/// the whole debug island — so the blob-end guard below is inert there.
+const ERROR_HANDLER_BLOB_LABEL: &str = "ErrorHandlerBlob";
+
+/// The length, in bytes, of the vendored MD Debugger v2.6 blob — the opaque
+/// `dc.l` transliteration in `engine/debug/error_handler.emp`, NOT the whole island
+/// (that is the 0x15A of exception stubs + this 0xF56 blob = 0x10B0).
+///
+/// Load-bearing because the blob HARDCODES it: two PC-relative `lea`s baked into the
+/// vendored bytes (`dc.l $43FA090A` at blob+0x64A and `dc.l $47FA0872` at blob+0x6E2)
+/// both resolve to `ErrorHandlerBlob + 0xF56`, one byte past the blob's last byte, and
+/// each follows with `cmpi.w #$DEB2,(a1)+`. Upstream's contract is "convsym appends the
+/// symbol table immediately after me"; convsym appends at `EndOfRom`. So a shape that
+/// carries the blob must satisfy `EndOfRom == ErrorHandlerBlob + 0xF56`.
+const ERROR_HANDLER_BLOB_LEN: u32 = 0xF56;
+
+/// HARD placement guard: if the built listing carries the MD Debugger blob, the deb2
+/// appendix MUST start at exactly `ErrorHandlerBlob + ERROR_HANDLER_BLOB_LEN`, i.e. the
+/// error_handler island must be the LAST byte-emitting section. `appendix_start` is
+/// `EndOfRom` (the assembled image length; the ROM region is based at 0, the same
+/// identity the positive control below already relies on).
+///
+/// Inert when the blob is absent — release shapes ship no debug island, and nothing in
+/// them consults a symbol table.
+///
+/// This fails the BUILD rather than warning: the failure it prevents is silent at
+/// runtime (the ROM assembles, boots and crashes correctly — it just prints `<unknown>`
+/// for every Offset/Caller), so a warning would be read past. It is the enforcement
+/// arm of the INVARIANT declared in `games/<g>/map.toml` and documented in
+/// `engine/debug/error_handler.emp`.
+fn check_error_handler_is_last(
+    listing: &[sigil_link::ListingSymbol],
+    appendix_start: usize,
+) -> Result<(), String> {
+    // Same lookup idiom the layout walk uses for `EndOfRom` — match by name.
+    let Some(blob) = listing.iter().find(|l| l.name == ERROR_HANDLER_BLOB_LABEL) else {
+        return Ok(()); // no MD Debugger blob in this shape — invariant is vacuous
+    };
+    let expect = blob.value.wrapping_add(ERROR_HANDLER_BLOB_LEN) as usize;
+    if appendix_start == expect {
+        return Ok(());
+    }
+    let drift = appendix_start as i64 - expect as i64;
+    Err(format!(
+        "MDDBG blob-end contract VIOLATED: the deb2 appendix starts at EndOfRom \
+         {appendix_start:#x}, but `{ERROR_HANDLER_BLOB_LABEL}` ({:#x}) + blob length \
+         {ERROR_HANDLER_BLOB_LEN:#x} = {expect:#x} — a drift of {drift:+} byte(s). \
+         The MD Debugger locates its symbol table with two `lea` displacements BAKED \
+         into the vendored blob bytes, both pointing at blob end, so the appendix must \
+         start exactly there. {} Fix the `order` list in games/<game>/map.toml so the \
+         error_handler island (BusError../ErrorHandlerBlob) is the FINAL byte-emitting \
+         section, immediately before EndOfRom — do not touch the blob bytes.",
+        blob.value,
+        if drift > 0 {
+            "Some section is placed AFTER the blob; the blob's `cmpi.w #$DEB2,(a1)+` will \
+             read those bytes instead of the table, fail, and every crash-screen \
+             Offset/Caller line will silently print `<unknown>`."
+        } else {
+            "The appendix starts BEFORE blob end — the blob is truncated or \
+             ERROR_HANDLER_BLOB_LEN no longer matches the vendored binary."
+        }
+    ))
+}
+
 /// Given the assembled ROM + listing, write both to a temp dir, run
 /// `convsym … -output deb2 -a` then `fixheader`, and return the full appended file.
 /// Split out so the t24 doctored-listing negative control can feed a mutated set.
@@ -2861,6 +2928,10 @@ pub fn append_deb2_appendix(
     debug: bool,
     min_appendix: usize,
 ) -> Result<Vec<u8>, String> {
+    // PLACEMENT PRECONDITION (checked BEFORE shelling convsym — the contract is about
+    // where the appendix will land, so a violation is knowable from the layout alone).
+    check_error_handler_is_last(listing, rom.len())?;
+
     let tools = aeon.join("tools");
     let convsym = tools.join("convsym");
     if !convsym.exists() {
@@ -3282,5 +3353,56 @@ mod placement_validation_tests {
         // sound_off with the phase bank still present → it's an undeclared island (gate excludes it).
         let e = validate_placement(&secs, &m, false).unwrap_err();
         assert!(e.contains("map.undeclared-island") && e.contains("0x58000"), "{e}");
+    }
+}
+
+#[cfg(test)]
+mod error_handler_placement_tests {
+    //! The MDDBG blob-end contract guard (`check_error_handler_is_last`): the deb2
+    //! appendix must start at `ErrorHandlerBlob + 0xF56`, because the vendored blob's
+    //! two baked `lea` displacements point there. Negative probe = the historical bug
+    //! (`Replay_OJZ_Fixture`, 0x140 B, placed between the blob and `EndOfRom`), which
+    //! made every crash-screen line print `<unknown>` with no build-time signal.
+    use super::{check_error_handler_is_last, ERROR_HANDLER_BLOB_LEN};
+
+    fn sym(name: &str, value: u32) -> sigil_link::ListingSymbol {
+        sigil_link::ListingSymbol { name: name.into(), value, is_equate: false, unused: false }
+    }
+
+    /// The real debug-shape geometry: blob @0x5E688, so EndOfRom must be 0x5F5DE.
+    fn listing() -> Vec<sigil_link::ListingSymbol> {
+        vec![sym("BusError", 0x5E52E), sym("ErrorHandlerBlob", 0x5E688)]
+    }
+
+    #[test]
+    fn blob_last_passes() {
+        let end = (0x5E688 + ERROR_HANDLER_BLOB_LEN) as usize;
+        assert!(check_error_handler_is_last(&listing(), end).is_ok());
+    }
+
+    #[test]
+    fn section_after_blob_fires() {
+        // The shipped bug: the 0x140-byte replay fixture between blob end and EndOfRom.
+        let end = (0x5E688 + ERROR_HANDLER_BLOB_LEN) as usize + 0x140;
+        let e = check_error_handler_is_last(&listing(), end).unwrap_err();
+        assert!(e.contains("MDDBG blob-end contract VIOLATED"), "{e}");
+        assert!(e.contains("+320"), "drift must be reported in bytes: {e}");
+        assert!(e.contains("<unknown>"), "must name the silent runtime symptom: {e}");
+        assert!(e.contains("map.toml"), "must name the fix site: {e}");
+    }
+
+    #[test]
+    fn appendix_short_of_blob_end_fires() {
+        let end = (0x5E688 + ERROR_HANDLER_BLOB_LEN) as usize - 2;
+        let e = check_error_handler_is_last(&listing(), end).unwrap_err();
+        assert!(e.contains("MDDBG blob-end contract VIOLATED") && e.contains("-2"), "{e}");
+    }
+
+    #[test]
+    fn inert_without_the_blob() {
+        // Release shapes strip the whole debug island — the invariant is vacuous, and
+        // the guard must not fire on an arbitrary EndOfRom.
+        let release = vec![sym("ReleaseFault", 0x5CA40)];
+        assert!(check_error_handler_is_last(&release, 0x5CBAE).is_ok());
     }
 }
