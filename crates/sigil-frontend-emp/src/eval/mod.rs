@@ -263,6 +263,32 @@ pub struct Evaluator<'a> {
     /// `[layout.odd-item]` allow uses (`lower::allows_lint`), one rule for both.
     /// Empty in the no-file [`new`](Self::new) mode.
     allowed_lints: Vec<String>,
+    /// The `const`/`equ` names VISIBLE IN THIS FILE — the
+    /// `[operand.const-as-address]` candidate set (S2-D12(e), the forgotten-`#`
+    /// bug). Built from `file.items`, which after the resolve pass means the
+    /// module's OWN declarations plus every `use`-imported `pub const`/`equ`
+    /// (`resolve::collect_pub_comptime` clones each one into the consumer, value
+    /// pre-folded). That reach is the useful one: `VDP_CTRL` is an import in 14
+    /// files and the mistake is equally real in all of them.
+    ///
+    /// Deliberately NOT the [`consts`](Self::consts)/[`equs`](Self::equs)
+    /// indexes, which ALSO carry the whole-corpus AMBIENT slice the contract
+    /// walk injects — a bare symbol that merely shares a name with an unrelated,
+    /// un-imported file's const is not this file's mistake. Empty in the no-file
+    /// [`new`](Self::new) mode, so the lint cannot fire there.
+    local_value_names: std::collections::HashSet<String>,
+    /// The module carries `@as_compat` (Plan 6). Ported AS code names a plain
+    /// constant in address position deliberately in known idioms, so
+    /// `[operand.const-as-address]` is inert here.
+    ///
+    /// Honest scope note: `@as_compat` is the ONLY new-style-vs-ported marker
+    /// the language has, and no aeon `.emp` file carries it — the conversion
+    /// campaign modernized rather than marked. So on today's corpus this
+    /// exemption exempts NOTHING, and the spec's "new-style files only" framing
+    /// for this lint is not actually enforceable until port markers exist. It is
+    /// wired because the mechanism is right, not because it is load-bearing.
+    /// Set from `file.attrs`; `false` in the no-file mode.
+    as_compat: bool,
     /// Count of instructions DROPPED from the emitted buffer because an
     /// operand/mnemonic/size failed to resolve (the [`lower_instr_to_item`]
     /// `None` path at the `AsmStmt::Instr` site). A dropped instruction silently
@@ -468,6 +494,8 @@ impl<'a> Evaluator<'a> {
             asm_counter: 0,
             module_id: String::new(),
             allowed_lints: Vec::new(),
+            local_value_names: std::collections::HashSet::new(),
+            as_compat: false,
             dropped_instrs: 0,
             here_base: None,
             here_anchor: None,
@@ -635,8 +663,15 @@ impl<'a> Evaluator<'a> {
                 _ => None,
             })
             .collect();
+        // `@as_compat` (Plan 6) makes `[operand.const-as-address]` inert: ported
+        // AS code names a plain constant in address position deliberately.
+        ev.as_compat = file.attrs.iter().any(|a| a.name == "as_compat");
         ev.index_items(ambient);
         ev.index_items(&file.items);
+        // AFTER indexing: the const/equ names VISIBLE IN THIS FILE (own +
+        // `use`-imported), a subset of the ambient-polluted `consts`/`equs`
+        // indexes — see the field doc.
+        collect_local_value_names(&file.items, &mut ev.local_value_names);
         ev
     }
 
@@ -1196,6 +1231,141 @@ impl<'a> Evaluator<'a> {
         let result = body(self);
         self.cycle_stack_mut(stack).pop();
         Some(result)
+    }
+
+    /// `[operand.const-as-address]` (S2-D12(e)) — the forgotten-`#` bug.
+    ///
+    /// A BARE path in operand position is always a SYMBOL (`map_plain`'s rule),
+    /// so `move.w RINGS_MAX, d0` reads MEMORY at whatever address the name
+    /// resolves to. When that name is a plain-valued `const` or `equ` in scope,
+    /// the author almost certainly meant the immediate `#RINGS_MAX`: an `equ`
+    /// DOES become a link symbol equal to its value, so the mistake is silently
+    /// well-formed and loads a word from address 999. Warn.
+    ///
+    /// Exemptions, in order:
+    /// - `@as_compat` modules and an explicit
+    ///   `@allow("operand.const-as-address")`;
+    /// - a name that is not a const/equ visible in this file
+    ///   (see [`local_value_names`](Self::local_value_names));
+    /// - an ADDRESS-TYPED const: a `*T` pointer annotation, or a value that
+    ///   resolves to a link-time expression / label (`equ BASE = SomeLabel`,
+    ///   `winptr(Blob)`) — naming those in address position is the point;
+    /// - an ADDRESS-VALUED const: a comptime value inside
+    ///   [`HW_ADDRESS_RANGE`] — see that constant for why the corpus forced
+    ///   this exemption and what would retire it.
+    ///
+    /// The value probe MUST NOT report: a bad const is diagnosed at its own
+    /// declaration site, so the probe truncates the diag list back. Truncating
+    /// alone would be a SILENCER, though — [`resolve_const`](Self::resolve_const)
+    /// memoizes unconditionally, including a `Poison`, so a swallowed failure
+    /// would never be reported at the real use site either. A probe that both
+    /// created the memo entry AND provoked diagnostics therefore drops the entry
+    /// as well, leaving the next reference to resolve (and report) for real.
+    pub(crate) fn check_const_as_address(&mut self, name: &str, span: Span) {
+        if self.as_compat
+            || !self.local_value_names.contains(name)
+            || self.module_allows_lint("operand.const-as-address")
+        {
+            return;
+        }
+        // An explicit pointer annotation IS the address type — no probe needed.
+        if let Some(decl) = self.consts.get(name).copied() {
+            if matches!(decl.ty, Some(ast::Type::Ptr(_))) {
+                return;
+            }
+        }
+        let before = self.diags.len();
+        let fresh = !self.const_memo.contains_key(name);
+        let v = self.resolve_const(name, span);
+        if self.diags.len() > before {
+            self.diags.truncate(before);
+            // This probe is the only reason the entry exists, and it is a
+            // suppressed failure — un-memoize so the real use site resolves it
+            // again and reports. (A pre-existing entry belongs to whoever made
+            // it; leave it and its already-reported diagnostics alone.)
+            if fresh {
+                self.const_memo.remove(name);
+            }
+        }
+        match v {
+            // Address-derived: the whole point of the declaration.
+            Value::Label(_) | Value::LinkExpr(_) | Value::Poison => {}
+            // An address-VALUED constant — the MMIO/Z80/RAM idiom, deliberate.
+            ref other
+                if other
+                    .as_stored_int()
+                    .is_some_and(|n| HW_ADDRESS_RANGE.contains(&n)) => {}
+            // A plain comptime number in address position — the bug.
+            other if other.as_stored_int().is_some() => {
+                let kind =
+                    if self.consts.contains_key(name) { "a `const`" } else { "an `equ`" };
+                self.warn(
+                    span,
+                    format!(
+                        "[operand.const-as-address] `{name}` is {kind}, so this reads memory at \
+                         its VALUE — write `#{name}` for the constant itself"
+                    ),
+                );
+            }
+            // Non-numeric (a string, struct, array…): not an address mistake,
+            // and its own declaration/use site diagnoses it.
+            _ => {}
+        }
+    }
+}
+
+/// The window of `i128` values a bare `const`/`equ` operand may hold and still
+/// be an ADDRESS rather than the forgotten-`#` bug.
+///
+/// LOW BOUND `$A00000` — the address at which the Mega Drive map stops being
+/// cartridge space and starts being hardware: `$A0xxxx` Z80/YM, `$A1xxxx` I/O +
+/// bus control, `$C0xxxx` VDP, `$FFxxxx` work RAM. A cartridge addresses its own
+/// ROM ( `$000000`–`$3FFFFF`) by LABEL, never by a numeric constant, and the
+/// `$400000`–`$9FFFFF` band is extended-cart / SRAM / reserved space this engine
+/// never names as a literal — so `VDP_CTRL = $C00004` and `SND_Z80_BASE + slot`
+/// are addresses by construction and must not be flagged.
+///
+/// HIGH BOUND `$FFFFFF` — the 68000 address bus is 24 bits wide. Nothing above
+/// it can be an address at all, so a 32-bit constant is always a QUANTITY: a
+/// `vdp_comm()` command long (`VRAM_FILL_CMD` `$4xxxxxxx`, `CRAM_WRITE_CMD`
+/// `$C0000000`), a `$FFFF0000`-class mask. `move.l VRAM_FILL_CMD, VDP_CTRL`
+/// meaning `#VRAM_FILL_CMD` is the classic form of exactly the bug this lint
+/// exists to catch, so the exemption must be a RANGE and not a floor.
+///
+/// Measured, not guessed: the sweep over the whole aeon corpus produced 67
+/// firings from 29 distinct names, every one a hardware address between
+/// `$A00000` and `$C00008` — zero forgotten-`#` bugs. The spec's enumerated
+/// exemptions (`*T` / section label / `equ`-of-label) covered none of them,
+/// because the corpus spells an MMIO address as a plain untyped `const`.
+///
+/// The cost is stated: a forgotten `#` on a quantity that happens to land in
+/// `$A00000..=$FFFFFF` does not fire. That is the safe direction for a warn-tier
+/// lint. It retires when a const AND an equ can both carry an address type —
+/// `ast::EquDecl` has no `ty` field today (its grammar is `ConstDecl` minus the
+/// annotation), and 21 of the 67 are equs, so annotating the corpus `*T` cannot
+/// retire this range on its own.
+const HW_ADDRESS_RANGE: std::ops::RangeInclusive<i128> = 0x00A0_0000..=0x00FF_FFFF;
+
+/// Collect the `const`/`equ` names declared in `items` into `out`, recursing
+/// into `section {}` blocks exactly as [`Evaluator::index_items`] does (§7.1's
+/// flat namespace). Called on `file.items`, so it sees the module's own
+/// declarations plus the resolve pass's imported clones.
+///
+/// Kept separate from `index_items` because that method ALSO runs over the
+/// whole-corpus ambient slice, and `[operand.const-as-address]` judges only
+/// what is actually in scope for this file.
+fn collect_local_value_names(items: &[ast::Item], out: &mut std::collections::HashSet<String>) {
+    for item in items {
+        match item {
+            ast::Item::Const(c) => {
+                out.insert(c.name.clone());
+            }
+            ast::Item::Equ(e) => {
+                out.insert(e.name.clone());
+            }
+            ast::Item::Section(s) => collect_local_value_names(&s.items, out),
+            _ => {}
+        }
     }
 }
 
