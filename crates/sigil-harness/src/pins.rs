@@ -133,28 +133,28 @@ pub const TILE_CACHE: Region = Region { plain_base: 0x4530, debug_base: 0x5390, 
 pub const COLLISION_LOOKUP: Region = Region { plain_base: 0x5210, debug_base: 0x6130, plain_len: 0x70, debug_len: 0x70 };
 
 /// `Section_Init` .. `Camera_Init` — gate `SIGIL_EMP_SECTION`. tests: section_port
-pub const SECTION: Region = Region { plain_base: 0x5774, debug_base: 0x6694, plain_len: 0x42C, debug_len: 0x42C };
+pub const SECTION: Region = Region { plain_base: 0x5774, debug_base: 0x6694, plain_len: 0x44C, debug_len: 0x44C };
 
 /// `Camera_Init` .. `Parallax_Init` — gate `SIGIL_EMP_CAMERA`. tests: camera_port
-pub const CAMERA: Region = Region { plain_base: 0x5BA0, debug_base: 0x6AC0, plain_len: 0x1B0, debug_len: 0x1B0 };
+pub const CAMERA: Region = Region { plain_base: 0x5BC0, debug_base: 0x6AE0, plain_len: 0x1B0, debug_len: 0x1B0 };
 
 /// `Parallax_Init` .. `Art_Decompress` — gate `SIGIL_EMP_PARALLAX`. tests: parallax_port
-pub const PARALLAX: Region = Region { plain_base: 0x5D50, debug_base: 0x6C70, plain_len: 0x5DA, debug_len: 0x5DA };
+pub const PARALLAX: Region = Region { plain_base: 0x5D70, debug_base: 0x6C90, plain_len: 0x5DA, debug_len: 0x5DA };
 
 /// `Art_Decompress` .. `BG_Init` — gate `SIGIL_EMP_LOAD_ART`. tests: load_art_port
-pub const LOAD_ART: Region = Region { plain_base: 0x632A, debug_base: 0x724A, plain_len: 0x64, debug_len: 0xB6 };
+pub const LOAD_ART: Region = Region { plain_base: 0x634A, debug_base: 0x726A, plain_len: 0x64, debug_len: 0xB6 };
 
 /// `BG_Init` .. `BgAnim_Init` — gate `SIGIL_EMP_BG`. tests: bg_port
-pub const BG: Region = Region { plain_base: 0x638E, debug_base: 0x7300, plain_len: 0xB2, debug_len: 0xB0 };
+pub const BG: Region = Region { plain_base: 0x63AE, debug_base: 0x7320, plain_len: 0xE2, debug_len: 0xE0 };
 
 /// `BgAnim_Init` .. start + 0x9E plain / 0x158 debug (literal — no end symbol) — gate `SIGIL_EMP_BG_ANIM`. tests: bg_anim_port
-pub const BG_ANIM: Region = Region { plain_base: 0x6440, debug_base: 0x73B0, plain_len: 0x9E, debug_len: 0x158 };
+pub const BG_ANIM: Region = Region { plain_base: 0x6490, debug_base: 0x7400, plain_len: 0x9E, debug_len: 0x158 };
 
 /// `CompressionSelfTest` .. `Sound_PostByte` (debug-only region; plain empty at `Sound_PostByte`) — gate `SIGIL_EMP_COMPRESSION_SELFTEST`. tests: compression_selftest_port
-pub const COMPRESSION_SELFTEST: Region = Region { plain_base: 0x64DE, debug_base: 0x7508, plain_len: 0x0, debug_len: 0xC98 };
+pub const COMPRESSION_SELFTEST: Region = Region { plain_base: 0x652E, debug_base: 0x7558, plain_len: 0x0, debug_len: 0xC98 };
 
 /// `Sound_PostByte` .. start + 0x20A plain / 0x3B4 debug (literal — no end symbol) — gate `SIGIL_EMP_SOUND_API`. tests: sound_api_port
-pub const SOUND_API: Region = Region { plain_base: 0x64DE, debug_base: 0x81A0, plain_len: 0x20A, debug_len: 0x3B4 };
+pub const SOUND_API: Region = Region { plain_base: 0x652E, debug_base: 0x81F0, plain_len: 0x20A, debug_len: 0x3B4 };
 
 /// `TestSolid_Init` .. `TestParticle` — gate `SIGIL_EMP_TEST_OBJECTS`. tests: test_objects_port
 pub const TEST_SOLID: Region = Region { plain_base: 0x10FCA, debug_base: 0x1103A, plain_len: 0x16, debug_len: 0x16 };
@@ -372,7 +372,7 @@ pub const CTRL_1_HELD: Pin = Pin { plain: 0xFFFF802C, debug: 0xFFFF802C };
 pub const V_SYNC_WAIT: Pin = Pin { plain: 0x2228, debug: 0x22AC };
 
 /// `Sound_DrainSfxRing`. tests: game_loop_port, load_art_port
-pub const SOUND_DRAIN_SFX_RING: Pin = Pin { plain: 0x664A, debug: 0x84B6 };
+pub const SOUND_DRAIN_SFX_RING: Pin = Pin { plain: 0x669A, debug: 0x8506 };
 
 /// `Game_State`. tests: game_loop_port, load_art_port
 pub const GAME_STATE: Pin = Pin { plain: 0xFFFF8008, debug: 0xFFFF8008 };
@@ -600,7 +600,7 @@ pub const ENTITY_WINDOW_ENTRY_FOR_SECTION: Pin = Pin { plain: 0x386A, debug: 0x4
 pub const ENTITY_LOADED_CLEAR: Pin = Pin { plain: 0x3856, debug: 0x43F6 };
 
 /// `Sound_PlayRing`. tests: rings_port
-pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x669A, debug: 0x8506 };
+pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x66EA, debug: 0x8556 };
 
 /// `MDDBG__ErrorHandler` — debug-shape consumer only (`debug_only`). tests: rings_port
 pub const MDDBG_ERROR_HANDLER: u32 = 0x5E688;
@@ -654,7 +654,7 @@ pub const ZX0_DECOMPRESS: Pin = Pin { plain: 0x25E8, debug: 0x282C };
 pub const QUEUE_DMA_CRITICAL: Pin = Pin { plain: 0x1C88, debug: 0x1D0E };
 
 /// `BG_Init`. tests: load_art_port
-pub const BG_INIT: Pin = Pin { plain: 0x638E, debug: 0x7300 };
+pub const BG_INIT: Pin = Pin { plain: 0x63AE, debug: 0x7320 };
 
 /// `QueueDMA_Important`. tests: dplc_port
 pub const QUEUE_DMA_IMPORTANT: Pin = Pin { plain: 0x1C92, debug: 0x1D18 };
@@ -744,7 +744,7 @@ pub const SPRITE_MASK_AFTER_BAND: Pin = Pin { plain: 0xFFFFA1A8, debug: 0xFFFFA1
 pub const SCANLINE_BAND_SPRITES: Pin = Pin { plain: 0xFFFFA1AA, debug: 0xFFFFA1CE };
 
 /// `Sound_PlaySFX`. tests: animate_port
-pub const SOUND_PLAY_SFX: Pin = Pin { plain: 0x6604, debug: 0x842A };
+pub const SOUND_PLAY_SFX: Pin = Pin { plain: 0x6654, debug: 0x847A };
 
 /// `ObjectMoveX`. tests: test_g4_final_objects_port
 pub const OBJECT_MOVE_X: Pin = Pin { plain: 0x2C4A, debug: 0x32D2 };
@@ -1005,7 +1005,7 @@ pub const STATIC_HSCROLL_LINE: Pin = Pin { plain: 0xFFFF89F2, debug: 0xFFFF89F2 
 pub const PALETTE_DIRTY: Pin = Pin { plain: 0xFFFF8298, debug: 0xFFFF8298 };
 
 /// `Parallax_Active_Config`. tests: buffers_port
-pub const PARALLAX_ACTIVE_CONFIG: Pin = Pin { plain: 0x5E40, debug: 0x6D60 };
+pub const PARALLAX_ACTIVE_CONFIG: Pin = Pin { plain: 0x5E60, debug: 0x6D80 };
 
 /// `VBlank_Ready`. tests: vblank_port
 pub const V_BLANK_READY: Pin = Pin { plain: 0xFFFF804C, debug: 0xFFFF804C };
@@ -1059,10 +1059,10 @@ pub const DMA_BYTES_THIS_FRAME: u32 = 0xFFFF8A00;
 pub const FLUSH_VDP_SHADOW: Pin = Pin { plain: 0x1B36, debug: 0x1BB4 };
 
 /// `VInt_DrawLevel`. tests: vblank_port
-pub const V_INT_DRAW_LEVEL: Pin = Pin { plain: 0x44BA, debug: 0x531A };
+pub const V_INT_DRAW_LEVEL: Pin = Pin { plain: 0x44B6, debug: 0x5316 };
 
 /// `Vscroll_Write`. tests: vblank_port
-pub const VSCROLL_WRITE: Pin = Pin { plain: 0x5E52, debug: 0x6D72 };
+pub const VSCROLL_WRITE: Pin = Pin { plain: 0x5E72, debug: 0x6D92 };
 
 /// `Read_Controllers`. tests: vblank_port
 pub const READ_CONTROLLERS: Pin = Pin { plain: 0x2290, debug: 0x2318 };
@@ -1089,7 +1089,7 @@ pub const V_INT_LEVEL: Pin = Pin { plain: 0x20F2, debug: 0x2172 };
 pub const BUILD_STATIC_DMA: Pin = Pin { plain: 0x1E92, debug: 0x1F1A };
 
 /// `Sound_Init`. tests: boot_port
-pub const SOUND_INIT: Pin = Pin { plain: 0x6504, debug: 0x81C6 };
+pub const SOUND_INIT: Pin = Pin { plain: 0x6554, debug: 0x8216 };
 
 /// `Hardware_Region`. tests: boot_port
 pub const HARDWARE_REGION: Pin = Pin { plain: 0xFFFF802A, debug: 0xFFFF802A };
