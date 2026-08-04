@@ -75,7 +75,14 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // `cheat-flag` (2026-08-05): +0x10 BOTH shapes. player_common gained the three
     // debug-fly gate sites (0x8 in Player_Main, 0x6 in Player_Init) ahead of
     // player_ground; 16-byte region alignment rounds that to a uniform 0x10.
-    ("Ground_Move_Cap", 0x10756, 0x107BA),
+    // `b-jumps` (2026-08-05): +0x10 PLAIN ONLY. Player_Main's jump latch grew by
+    // 0xE (B joined BUTTON_JUMP_MASK, gated on CHEAT_DEBUG_FLY) ahead of
+    // player_ground, and 16-byte region alignment rounds that to 0x10. The DEBUG
+    // value is unchanged because player_common's debug region carried enough pad
+    // slack to absorb 0xE without crossing an alignment boundary — the shapes
+    // legitimately move by different amounts, which is why this row is a
+    // per-shape pair and not a single delta.
+    ("Ground_Move_Cap", 0x10766, 0x107BA),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)

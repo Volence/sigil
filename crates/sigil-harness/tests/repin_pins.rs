@@ -312,6 +312,11 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // the flag nowhere (boot already zeroes Work RAM, so default-off costs zero
     // bytes). DEBUG grows +6 for the one `move.b #CHEAT_DEBUG_FLY, Cheat_Flags` that
     // arms the bit, so the debug shape behaves exactly as it did before the parcel.
+    // `b-jumps` (2026-08-05): B joins the jump mask whenever CHEAT_DEBUG_FLY is
+    // clear (classic three-button jump), and is stripped back out while the cheat
+    // owns B. +0xE at each of the two raw-button readers (the press latch in
+    // player_common, the release-cap held check in player_air). BOTH totals stay
+    // put — the object bank absorbs it, same as the cheat-flag parcel.
     assert_eq!(pins::ASSEMBLED_LEN, 0x5DC30);
     assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F724); // +6 cheat-flag: the DEBUG-only arm write
 

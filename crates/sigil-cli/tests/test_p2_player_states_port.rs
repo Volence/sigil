@@ -61,10 +61,19 @@ fn with_ambient(
     }
 }
 
-/// The keystone items the state files import: the PlayerV overlay + the shared
-/// comptime-fn macros (mask_opposing_lr / dist_to_fix / set_*_size). Filtered
-/// from player_common.emp — the rest of the keystone would drag in its own
-/// externs. The state files `use ...player_common.{PlayerV, mask_opposing_lr, ...}`.
+/// The keystone items the state files import: the PlayerV overlay, the shared
+/// comptime-fn macros (mask_opposing_lr / dist_to_fix / set_*_size), and the two
+/// jump-button masks. Filtered from player_common.emp — the rest of the keystone
+/// would drag in its own externs. The state files
+/// `use ...player_common.{PlayerV, mask_opposing_lr, BUTTON_JUMP_MASK, ...}`.
+///
+/// `BUTTON_JUMP_MASK` / `BUTTON_JUMP_MASK_NO_B` are spliced from the REAL source
+/// rather than hand-mirrored as AS equs (parcel `b-jumps`, 2026-08-05). The two
+/// masks moved into player_common precisely so the press latch and the air
+/// release-cap check cannot disagree; re-typing their values here would rebuild
+/// the drift seam the move was made to close. Splicing the `Item::Const`s makes
+/// them fold from the authority, so a change to either mask reaches this gate as
+/// a byte diff, never as a silently-stale mirror.
 fn player_common_imports(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::Item> {
     use sigil_frontend_emp::ast::Item;
     let file = parse_file(&aeon.join("games/sonic4/player/player_common.emp"));
@@ -76,6 +85,9 @@ fn player_common_imports(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast:
                 d.name.as_str(),
                 "mask_opposing_lr" | "dist_to_fix" | "set_standing_size" | "set_ball_size" | "abs_w"
             ),
+            Item::Const(d) => {
+                matches!(d.name.as_str(), "BUTTON_JUMP_MASK" | "BUTTON_JUMP_MASK_NO_B")
+            }
             _ => false,
         })
         .collect()
@@ -98,6 +110,12 @@ fn as_constant_equs(shape: &Shape) -> Vec<Section> {
     let player_quadrant = format!("${:X}", shape.player_quadrant);
     let camera_hold_frames = format!("${:X}", shape.camera_hold_frames);
     let player_phys = format!("${:X}", shape.player_phys);
+    // Cheat_Flags: the runtime debug-fly gate. player_air's release-cap check reads
+    // it to decide whether B still sustains a jump (parcel `b-jumps`), the same way
+    // Player_Main's latch does. PIN-SOURCED, shape-dependent (game RAM) — the
+    // test_p1 precedent.
+    let cheat_flags = format!("${:X}", shape.cheat_flags);
+    pairs.push(("Cheat_Flags", cheat_flags.as_str()));
     pairs.push(("Ctrl_1_Held", ctrl_1_held.as_str()));
     pairs.push(("Player_JumpBuffer", player_jump_buffer.as_str()));
     pairs.push(("Player_Quadrant", player_quadrant.as_str()));
@@ -111,6 +129,7 @@ fn as_constant_equs(shape: &Shape) -> Vec<Section> {
     pairs.push(("PSTATE_JUMP", "8"));
     pairs.push(("PSTATE_ROLLJUMP", "10"));
     pairs.push(("PSTATE_AIRBALL", "12"));
+    pairs.push(("CHEAT_DEBUG_FLY", "1"));
     pairs.push(("SPINDASH_BASE", "$800"));
     pairs.push(("SPINDASH_CHARGE_STEP", "$200"));
     pairs.push(("SPINDASH_CHARGE_MAX", "$800"));
@@ -118,11 +137,13 @@ fn as_constant_equs(shape: &Shape) -> Vec<Section> {
     pairs.push(("SFXID_DASH", "$B6"));
     pairs.push(("SFXID_ROLL", "$3C"));
     pairs.push(("SFXID_JUMP", "$62"));
-    // The engine-truth ST_* / radii / PHYS_* / BUTTON_A/C block is supplied by the
-    // `engine_constant_equs()` extend above. The state files' BUTTON_JUMP_MASK /
-    // PPHYS_* / _pl_* drift guards all retired at conv-d #49 (player_common.asm
-    // deleted — the state files own their file-local BUTTON_JUMP_MASK/PPHYS_*
-    // consts, verified by the region byte gate; no extern mirror to supply).
+    // The engine-truth ST_* / radii / PHYS_* / BUTTON_A/B/C block is supplied by the
+    // `engine_constant_equs()` extend above. The state files' PPHYS_* / _pl_* drift
+    // guards all retired at conv-d #49 (player_common.asm deleted — the state files
+    // own their file-local PPHYS_* consts, verified by the region byte gate; no
+    // extern mirror to supply). BUTTON_JUMP_MASK / BUTTON_JUMP_MASK_NO_B went the
+    // other way at parcel `b-jumps` — back to ONE authority in player_common, and
+    // spliced from it by `player_common_imports` rather than mirrored here.
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
@@ -228,6 +249,7 @@ struct Shape {
     player_jump_buffer: u32,
     player_quadrant: u32,
     camera_hold_frames: u32,
+    cheat_flags: u32,
     player_phys: u32,
 }
 
@@ -254,6 +276,7 @@ const PLAIN: Shape = Shape {
     player_jump_buffer: pins::PLAYER_JUMP_BUFFER.plain,
     player_quadrant: pins::PLAYER_QUADRANT.plain,
     camera_hold_frames: pins::CAMERA_HOLD_FRAMES.plain,
+    cheat_flags: pins::CHEAT_FLAGS.plain,
     player_phys: pins::PLAYER_PHYS.plain,
 };
 
@@ -280,6 +303,7 @@ const DEBUG: Shape = Shape {
     player_jump_buffer: pins::PLAYER_JUMP_BUFFER.debug,
     player_quadrant: pins::PLAYER_QUADRANT.debug,
     camera_hold_frames: pins::CAMERA_HOLD_FRAMES.debug,
+    cheat_flags: pins::CHEAT_FLAGS.debug,
     player_phys: pins::PLAYER_PHYS.debug,
 }
 ;
