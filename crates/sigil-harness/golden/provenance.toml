@@ -1721,3 +1721,50 @@ full_crc = "abf1d304"
 full_size = 423383
 anchor_crc = "1ebd6388"
 anchor_end = 0x5f722
+
+[[entry]]
+name = "item27-boot-hardening"
+ab = "aeon/docs/superpowers/notes/2026-08-04-item27-boot-hardening-ab.md"
+note = "Boot hardening (review item 27), owner ruling-4 provably-safe subset: PSG silence writes moved below .wait_fill (off the DMA-fill race, byte-neutral); EntryPoint reloads SP so a jmp-EntryPoint soft reset does not run on a stale stack; z80_init's SP is $1FFE instead of 0 (idle blob 38->40 B, sound-off shapes only); the five unmodelled IRQ vectors halt loudly instead of rte. YM key-off race DELIBERATELY untouched, specced in docs/specs/boot-ym-keyoff-race.md. Cross-reset RAM found not to exist; documented, not changed."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "161f47c3"
+full_size = 423749
+anchor_crc = "e29b75a2"
+anchor_end = 0x5f722
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "234e24dd"
+full_size = 276016
+anchor_crc = "9fb0507b"
+anchor_end = 0x43630
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "b976d86d"
+full_size = 70180
+anchor_crc = "0e4c8988"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "cdb58b5a"
+full_size = 93943
+anchor_crc = "5a178c45"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "056aa103"
+full_size = 384048
+anchor_crc = "a6bb6283"
+anchor_end = 0x5dc30
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "b5c1a039"
+full_size = 423383
+anchor_crc = "10d88914"
+anchor_end = 0x5f722
