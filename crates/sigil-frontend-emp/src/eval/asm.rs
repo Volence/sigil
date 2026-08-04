@@ -2301,6 +2301,11 @@ impl Evaluator<'_> {
                 if seg == "ccr" {
                     return Some(CodeOperand::Ccr);
                 }
+                // S2-D12(e) — the forgotten-`#`: this bare name is about to
+                // become an ABSOLUTE ADDRESS. If it is a plain-valued
+                // `const`/`equ` in scope, say so
+                // (`[operand.const-as-address]`).
+                self.check_const_as_address(seg, expr_span(expr));
                 return Some(CodeOperand::Sym(scope.resolve_ref(seg)));
             }
             // D-PP.5 — `Item.field` field-ADDRESS operand: a two-segment path

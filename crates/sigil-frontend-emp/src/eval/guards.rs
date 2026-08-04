@@ -202,9 +202,9 @@ impl<'a> Evaluator<'a> {
     /// disappear), while a placeholder whose value is itself a provisional
     /// `here()` [`LinkExpr`](Value::LinkExpr) becomes an
     /// [`Expr`](sigil_ir::MsgPart::Expr) folded and rendered at link on failure.
-    /// Adjacent `Text` runs are coalesced. Mirrors [`interpolate`](Self::interpolate)'s
-    /// lexing of `{{`/`}}`/`{…}`; the ONLY difference is the per-placeholder
-    /// eager-vs-lazy split.
+    /// Adjacent `Text` runs are coalesced. Shares [`scan_message`] with the eager
+    /// [`interpolate`](Self::interpolate); the ONLY difference between the two is
+    /// the per-placeholder eager-vs-lazy split below.
     fn interpolate_parts(&mut self, s: &str, env: &mut Env, span: Span) -> Vec<sigil_ir::MsgPart> {
         use sigil_ir::MsgPart;
         let mut parts: Vec<MsgPart> = Vec::new();
@@ -219,46 +219,26 @@ impl<'a> Evaluator<'a> {
                 lit.clear();
             }
         };
-        let mut chars = s.chars().peekable();
-        while let Some(c) = chars.next() {
-            match c {
-                '{' if chars.peek() == Some(&'{') => {
-                    chars.next();
-                    lit.push('{');
-                }
-                '}' if chars.peek() == Some(&'}') => {
-                    chars.next();
-                    lit.push('}');
-                }
-                '{' => {
-                    let mut inner = String::new();
-                    let mut closed = false;
-                    for nc in chars.by_ref() {
-                        if nc == '}' {
-                            closed = true;
-                            break;
-                        }
-                        inner.push(nc);
+        let scan = scan_message(s);
+        for seg in &scan.segments {
+            match seg {
+                MsgSeg::Text(t) => lit.push_str(t),
+                MsgSeg::Placeholder(inner) => match self.interp_one_part(inner, env, span) {
+                    // A link-time placeholder becomes an Expr part (folded at
+                    // link); flush the pending literal first to preserve order.
+                    MsgPart::Expr(e) => {
+                        flush(&mut lit, &mut parts);
+                        parts.push(MsgPart::Expr(e));
                     }
-                    if !closed {
-                        self.error(span, "unterminated `{` in guard message");
-                        lit.push('{');
-                        lit.push_str(&inner);
-                        break;
-                    }
-                    match self.interp_one_part(&inner, env, span) {
-                        // A link-time placeholder becomes an Expr part (folded at
-                        // link); flush the pending literal first to preserve order.
-                        MsgPart::Expr(e) => {
-                            flush(&mut lit, &mut parts);
-                            parts.push(MsgPart::Expr(e));
-                        }
-                        // A comptime placeholder is already rendered text.
-                        MsgPart::Text(t) => lit.push_str(&t),
-                    }
-                }
-                _ => lit.push(c),
+                    // A comptime placeholder is already rendered text.
+                    MsgPart::Text(t) => lit.push_str(&t),
+                },
             }
+        }
+        if let Some(tail) = &scan.unterminated {
+            self.error(span, "unterminated `{` in guard message");
+            lit.push('{');
+            lit.push_str(tail);
         }
         flush(&mut lit, &mut parts);
         parts
@@ -300,7 +280,9 @@ impl<'a> Evaluator<'a> {
     /// ONLY place `.emp` strings are interpolated — a plain string elsewhere keeps
     /// its `{...}` text literally.
     ///
-    /// `{{` and `}}` are literal `{`/`}`. A `{ ... }` placeholder lexes+parses its
+    /// Template lexing is [`scan_message`]'s (shared with the deferred
+    /// [`interpolate_parts`](Self::interpolate_parts)): `{{` and `}}` are literal
+    /// `{`/`}`. A `{ ... }` placeholder lexes+parses its
     /// inner text as a single expression, evaluates it in `env`, and appends the
     /// resulting [`Value`]'s `Display`. Best-effort: a lex/parse failure or a
     /// `Poison` result appends `<?>` and pushes one diagnostic, then interpolation
@@ -308,37 +290,19 @@ impl<'a> Evaluator<'a> {
     /// the remaining text — including the `{` — is appended literally.
     fn interpolate(&mut self, s: &str, env: &mut Env, span: Span) -> String {
         let mut out = String::new();
-        let mut chars = s.chars().peekable();
-        while let Some(c) = chars.next() {
-            match c {
-                '{' if chars.peek() == Some(&'{') => {
-                    chars.next();
-                    out.push('{');
+        let scan = scan_message(s);
+        for seg in &scan.segments {
+            match seg {
+                MsgSeg::Text(t) => out.push_str(t),
+                MsgSeg::Placeholder(inner) => {
+                    out.push_str(&self.interp_one(inner, env, span));
                 }
-                '}' if chars.peek() == Some(&'}') => {
-                    chars.next();
-                    out.push('}');
-                }
-                '{' => {
-                    let mut inner = String::new();
-                    let mut closed = false;
-                    for nc in chars.by_ref() {
-                        if nc == '}' {
-                            closed = true;
-                            break;
-                        }
-                        inner.push(nc);
-                    }
-                    if !closed {
-                        self.error(span, "unterminated `{` in guard message");
-                        out.push('{');
-                        out.push_str(&inner);
-                        break;
-                    }
-                    out.push_str(&self.interp_one(&inner, env, span));
-                }
-                _ => out.push(c),
             }
+        }
+        if let Some(tail) = &scan.unterminated {
+            self.error(span, "unterminated `{` in guard message");
+            out.push('{');
+            out.push_str(tail);
         }
         out
     }
@@ -375,5 +339,125 @@ impl<'a> Evaluator<'a> {
             Value::Str(s) => s,
             other => other.to_string(),
         }
+    }
+}
+
+/// One lexed piece of a guard-message template (S2-D13(r)).
+#[derive(Debug, PartialEq)]
+pub(crate) enum MsgSeg {
+    /// Literal text, with `{{`/`}}` already unescaped to `{`/`}`.
+    Text(String),
+    /// A `{…}` placeholder's INNER text, braces stripped, not yet parsed.
+    Placeholder(String),
+}
+
+/// The result of scanning a guard-message template.
+pub(crate) struct MsgScan {
+    /// The segments, in source order, up to (not including) an unterminated `{`.
+    pub segments: Vec<MsgSeg>,
+    /// `Some(tail)` when a `{` was never closed: the text after it, which the
+    /// caller appends literally behind a `{` after reporting once. `None` when
+    /// the template is well-formed.
+    pub unterminated: Option<String>,
+}
+
+/// Lex a guard-message template into literal and `{expr}` placeholder segments —
+/// the ONE brace scanner behind both interpolators (S2-D13(r)).
+///
+/// The eager [`interpolate`](Evaluator::interpolate) and the deferred
+/// [`interpolate_parts`](Evaluator::interpolate_parts) differ ONLY in what they
+/// do with a placeholder (render it now vs. decide text-or-`Expr` per
+/// placeholder). Template lexing is common to both and lives here, so `{{`
+/// handling has exactly one definition.
+///
+/// Rules: `{{` and `}}` are literal `{`/`}`; `{ … }` is a
+/// placeholder whose inner text runs to the first `}` (no nesting); everything
+/// else is literal. A `{` with no closing `}` ends the scan and reports its tail
+/// through [`MsgScan::unterminated`] — the caller owns that diagnostic, because
+/// it is the one holding the guard's span.
+pub(crate) fn scan_message(s: &str) -> MsgScan {
+    let mut segments: Vec<MsgSeg> = Vec::new();
+    let mut lit = String::new();
+    // Push the pending literal run as one segment (never an empty one).
+    let flush = |lit: &mut String, segments: &mut Vec<MsgSeg>| {
+        if !lit.is_empty() {
+            segments.push(MsgSeg::Text(std::mem::take(lit)));
+        }
+    };
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '{' if chars.peek() == Some(&'{') => {
+                chars.next();
+                lit.push('{');
+            }
+            '}' if chars.peek() == Some(&'}') => {
+                chars.next();
+                lit.push('}');
+            }
+            '{' => {
+                let mut inner = String::new();
+                let mut closed = false;
+                for nc in chars.by_ref() {
+                    if nc == '}' {
+                        closed = true;
+                        break;
+                    }
+                    inner.push(nc);
+                }
+                if !closed {
+                    flush(&mut lit, &mut segments);
+                    return MsgScan { segments, unterminated: Some(inner) };
+                }
+                flush(&mut lit, &mut segments);
+                segments.push(MsgSeg::Placeholder(inner));
+            }
+            _ => lit.push(c),
+        }
+    }
+    flush(&mut lit, &mut segments);
+    MsgScan { segments, unterminated: None }
+}
+
+#[cfg(test)]
+mod scan_tests {
+    use super::{scan_message, MsgSeg};
+
+    /// The escapes, a placeholder, and the literal tail — one pass, in order.
+    #[test]
+    fn scans_escapes_and_placeholders_in_order() {
+        let scan = scan_message("a{{b}}c{x + 1}d");
+        assert_eq!(
+            scan.segments,
+            vec![
+                MsgSeg::Text("a{b}c".to_string()),
+                MsgSeg::Placeholder("x + 1".to_string()),
+                MsgSeg::Text("d".to_string()),
+            ]
+        );
+        assert!(scan.unterminated.is_none());
+    }
+
+    /// A `{` with no `}` stops the scan and hands the tail back; the literal
+    /// text BEFORE it still arrives as a segment.
+    #[test]
+    fn unterminated_brace_returns_its_tail() {
+        let scan = scan_message("head {oops");
+        assert_eq!(scan.segments, vec![MsgSeg::Text("head ".to_string())]);
+        assert_eq!(scan.unterminated.as_deref(), Some("oops"));
+    }
+
+    /// A template with no braces is one literal segment; an empty one is none.
+    #[test]
+    fn plain_text_is_one_segment_and_empty_is_none() {
+        assert_eq!(scan_message("plain").segments, vec![MsgSeg::Text("plain".to_string())]);
+        assert!(scan_message("").segments.is_empty());
+    }
+
+    /// An empty placeholder (`{}`) is a placeholder with empty inner text, not a
+    /// literal — the interpolators' "cannot interpolate" path owns that case.
+    #[test]
+    fn empty_placeholder_is_a_placeholder() {
+        assert_eq!(scan_message("{}").segments, vec![MsgSeg::Placeholder(String::new())]);
     }
 }
