@@ -58,19 +58,19 @@ pub const COLLISION_DATA: Region = Region { plain_base: 0x257EA, debug_base: 0x2
 pub const BOOT: Region = Region { plain_base: 0x200, debug_base: 0x200, plain_len: 0x198, debug_len: 0x19C };
 
 /// `BootData` .. `BootData_PostBlob`. tests: boot_data_port
-pub const BOOT_HEAD: Region = Region { plain_base: 0x398, debug_base: 0x39C, plain_len: 0x176C, debug_len: 0x17EC };
+pub const BOOT_HEAD: Region = Region { plain_base: 0x398, debug_base: 0x39C, plain_len: 0x1764, debug_len: 0x17E4 };
 
 /// `BootData_PostBlob` .. `BootData_End`. tests: boot_data_port
-pub const BOOT_TAIL: Region = Region { plain_base: 0x1B04, debug_base: 0x1B88, plain_len: 0xE, debug_len: 0xE };
+pub const BOOT_TAIL: Region = Region { plain_base: 0x1AFC, debug_base: 0x1B80, plain_len: 0xE, debug_len: 0xE };
 
 /// `VDP_Shadow_Init` .. `Init_DMA_Queue` — gate `SIGIL_EMP_VDP_INIT`. tests: vdp_init_port
-pub const VDP_INIT: Region = Region { plain_base: 0x1B18, debug_base: 0x1B96, plain_len: 0x4A, debug_len: 0x4A };
+pub const VDP_INIT: Region = Region { plain_base: 0x1B10, debug_base: 0x1B8E, plain_len: 0x4A, debug_len: 0x52 };
 
 /// `Init_DMA_Queue` .. `Init_SpriteTable` — gate `SIGIL_EMP_DMA_QUEUE`. tests: dma_queue_port
-pub const DMA_QUEUE: Region = Region { plain_base: 0x1B62, debug_base: 0x1BE0, plain_len: 0x306, debug_len: 0x308 };
+pub const DMA_QUEUE: Region = Region { plain_base: 0x1B5A, debug_base: 0x1BE0, plain_len: 0x306, debug_len: 0x308 };
 
 /// `Init_SpriteTable` .. `VBlank_Handler` — gate `SIGIL_EMP_BUFFERS`. tests: buffers_port
-pub const BUFFERS: Region = Region { plain_base: 0x1E68, debug_base: 0x1EE8, plain_len: 0x258, debug_len: 0x258 };
+pub const BUFFERS: Region = Region { plain_base: 0x1E60, debug_base: 0x1EE8, plain_len: 0x260, debug_len: 0x258 };
 
 /// `VBlank_Handler` .. `HBlank_Install` — gate `SIGIL_EMP_VBLANK`. tests: vblank_port
 pub const VBLANK: Region = Region { plain_base: 0x20C0, debug_base: 0x2140, plain_len: 0x178, debug_len: 0x180 };
@@ -654,16 +654,16 @@ pub const S4_LZ_DECOMPRESS: Pin = Pin { plain: 0x24E4, debug: 0x2674 };
 pub const ZX0_DECOMPRESS: Pin = Pin { plain: 0x25D8, debug: 0x281C };
 
 /// `QueueDMA_Critical`. tests: load_art_port
-pub const QUEUE_DMA_CRITICAL: Pin = Pin { plain: 0x1C80, debug: 0x1CFE };
+pub const QUEUE_DMA_CRITICAL: Pin = Pin { plain: 0x1C78, debug: 0x1CFE };
 
 /// `BG_Init`. tests: load_art_port
 pub const BG_INIT: Pin = Pin { plain: 0x637E, debug: 0x72F0 };
 
 /// `QueueDMA_Important`. tests: dplc_port
-pub const QUEUE_DMA_IMPORTANT: Pin = Pin { plain: 0x1C8A, debug: 0x1D08 };
+pub const QUEUE_DMA_IMPORTANT: Pin = Pin { plain: 0x1C82, debug: 0x1D08 };
 
 /// `QueueDMA_Deferrable`. tests: dplc_port
-pub const QUEUE_DMA_DEFERRABLE: Pin = Pin { plain: 0x1C94, debug: 0x1D12 };
+pub const QUEUE_DMA_DEFERRABLE: Pin = Pin { plain: 0x1C8C, debug: 0x1D12 };
 
 /// `Object_RAM`. tests: core_port
 pub const OBJECT_RAM: Pin = Pin { plain: 0xFFFF8A00, debug: 0xFFFF8A24 };
@@ -1059,7 +1059,7 @@ pub const LAG_FRAME_COUNT: u32 = 0xFFFF8A0A;
 pub const DMA_BYTES_THIS_FRAME: u32 = 0xFFFF8A00;
 
 /// `Flush_VDP_Shadow`. tests: vblank_port
-pub const FLUSH_VDP_SHADOW: Pin = Pin { plain: 0x1B2E, debug: 0x1BAC };
+pub const FLUSH_VDP_SHADOW: Pin = Pin { plain: 0x1B26, debug: 0x1BA4 };
 
 /// `VInt_DrawLevel`. tests: vblank_port
 pub const V_INT_DRAW_LEVEL: Pin = Pin { plain: 0x44AA, debug: 0x530A };
@@ -1071,16 +1071,16 @@ pub const VSCROLL_WRITE: Pin = Pin { plain: 0x5E42, debug: 0x6D62 };
 pub const READ_CONTROLLERS: Pin = Pin { plain: 0x2280, debug: 0x2308 };
 
 /// `Process_DMA_Critical`. tests: vblank_port
-pub const PROCESS_DMA_CRITICAL: Pin = Pin { plain: 0x1D32, debug: 0x1DB4 };
+pub const PROCESS_DMA_CRITICAL: Pin = Pin { plain: 0x1D2A, debug: 0x1DB4 };
 
 /// `Process_DMA_Important`. tests: vblank_port
-pub const PROCESS_DMA_IMPORTANT: Pin = Pin { plain: 0x1E00, debug: 0x1E82 };
+pub const PROCESS_DMA_IMPORTANT: Pin = Pin { plain: 0x1DF8, debug: 0x1E82 };
 
 /// `Process_DMA_Deferrable`. tests: vblank_port
-pub const PROCESS_DMA_DEFERRABLE: Pin = Pin { plain: 0x1E14, debug: 0x1E96 };
+pub const PROCESS_DMA_DEFERRABLE: Pin = Pin { plain: 0x1E0C, debug: 0x1E96 };
 
 /// `Enqueue_Dirty_Buffers`. tests: vblank_port
-pub const ENQUEUE_DIRTY_BUFFERS: Pin = Pin { plain: 0x1F62, debug: 0x1FE2 };
+pub const ENQUEUE_DIRTY_BUFFERS: Pin = Pin { plain: 0x1F5A, debug: 0x1FE2 };
 
 /// `BootData`. tests: boot_port
 pub const BOOT_DATA: Pin = Pin { plain: 0x398, debug: 0x39C };
@@ -1089,7 +1089,7 @@ pub const BOOT_DATA: Pin = Pin { plain: 0x398, debug: 0x39C };
 pub const V_INT_LEVEL: Pin = Pin { plain: 0x20E2, debug: 0x2162 };
 
 /// `BuildStaticDMA`. tests: boot_port
-pub const BUILD_STATIC_DMA: Pin = Pin { plain: 0x1E8A, debug: 0x1F0A };
+pub const BUILD_STATIC_DMA: Pin = Pin { plain: 0x1E82, debug: 0x1F0A };
 
 /// `Sound_Init`. tests: boot_port
 pub const SOUND_INIT: Pin = Pin { plain: 0x64F4, debug: 0x81A6 };
