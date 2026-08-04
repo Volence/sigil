@@ -104,10 +104,22 @@ fn run(t: &Target) {
     let full2 = native::build_full_file_chained(&aeon, &t.profile).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(full, full2, "{}: full file non-deterministic", t.name);
 
-    // (b) PRESENCE — deb2 magic at EndOfRom, non-trivial appendix.
-    assert_eq!(&full[eor..eor + 2], &native::DEB2_MAGIC, "{}: deb2 magic at EndOfRom", t.name);
+    // (b) PRESENCE / ABSENCE — shape-dependent since aeon review item 29. A DEBUG
+    // profile keeps the deb2 appendix; a RELEASE profile (config_b silent, demo plain)
+    // ships the assembled image ALONE. Asserted both ways rather than skipped, so an
+    // appendix creeping back into a release profile fails here with a named message.
     let appendix = full.len() - eor;
-    assert!(appendix >= 0x1000, "{}: appendix {appendix:#x} too small", t.name);
+    if t.profile.debug {
+        assert_eq!(&full[eor..eor + 2], &native::DEB2_MAGIC, "{}: deb2 magic at EndOfRom", t.name);
+        assert!(appendix >= 0x1000, "{}: appendix {appendix:#x} too small", t.name);
+    } else {
+        assert_eq!(
+            appendix, 0,
+            "{}: release profile must ship NOTHING past EndOfRom, found {appendix:#x} bytes \
+             (has the deb2 symbol appendix leaked back into release?)",
+            t.name
+        );
+    }
 
     // (c) FUNCTIONAL RESOLVE — load-bearing symbols → exact addresses via the REAL
     // convsym consumer over the chained listing.

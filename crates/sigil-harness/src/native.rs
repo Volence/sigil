@@ -2310,8 +2310,13 @@ pub fn build_rom_chained_with_listing(
 /// The off-canonical full-file build: the chained assembled ROM + the sigil-canonical
 /// deb2 appendix (the same Option-A post-pipeline as `build_native_full_file`, over the
 /// Frozen-placed profile). `debug` selects the convsym range/fixheader shape.
+/// SHAPE SPLIT (aeon review item 29): same rule as `build_native_full_file` — this
+/// models the shipped artifact, and a release profile ships the assembled image alone.
 pub fn build_full_file_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, String> {
     let (rom, listing) = build_rom_chained_with_listing(aeon, profile)?;
+    if !profile.debug {
+        return Ok(rom);
+    }
     // Demo (engine-only) packs a smaller appendix than sonic4/config; floor per game.
     let floor = if profile.game_root_rel.contains("/demo/") {
         DEMO_APPENDIX_FLOOR
@@ -2808,8 +2813,17 @@ pub const DEB2_MAGIC: [u8; 2] = [0xDE, 0xB2];
 ///
 /// Only `<aeon>/tools/convsym` is shelled now (fixheader retired); writes the ROM +
 /// `.lst` to a fresh temp dir so parallel shapes never collide.
+/// SHAPE SPLIT (aeon review item 29): this models the SHIPPED artifact, and since
+/// item 29 a release build ships the assembled image with nothing appended. So the
+/// appendix step runs in DEBUG shapes only, mirroring `run_build_native`. Keeping it
+/// unconditional here would pin the plain full-file golden to a file `build.sh` no
+/// longer produces. The appendix MECHANISM is still covered — by the debug arm and by
+/// the two t24 negative controls, which call `append_deb2_appendix` directly.
 pub fn build_native_full_file(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
     let (rom, listing) = build_native_rom_with_listing(aeon, debug)?;
+    if !debug {
+        return Ok(rom);
+    }
     append_deb2_appendix(aeon, &rom, &listing, debug, SONIC4_APPENDIX_FLOOR)
 }
 

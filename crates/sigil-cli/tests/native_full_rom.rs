@@ -112,10 +112,22 @@ fn run_shape(debug: bool, refname: &str, key: &str) {
     let full2 = native::build_native_full_file(&aeon, debug).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(full, full2, "{shape}: full file non-deterministic");
 
-    // (b) PRESENCE — `de b2` magic at EndOfRom, non-trivial appendix.
-    assert_eq!(&full[eor..eor + 2], &native::DEB2_MAGIC, "{shape}: deb2 magic at EndOfRom");
+    // (b) PRESENCE / ABSENCE — shape-dependent since aeon review item 29. DEBUG keeps
+    // the deb2 appendix (magic at EndOfRom, non-trivial size). RELEASE ships the
+    // assembled image ALONE, so the bar inverts: nothing past EndOfRom at all. Stating
+    // it as an assertion rather than skipping it keeps the leak detectable — an
+    // appendix creeping back into release fails here with a named message.
     let appendix = full.len() - eor;
-    assert!(appendix >= 0x2000, "{shape}: appendix {appendix:#x} too small");
+    if debug {
+        assert_eq!(&full[eor..eor + 2], &native::DEB2_MAGIC, "{shape}: deb2 magic at EndOfRom");
+        assert!(appendix >= 0x2000, "{shape}: appendix {appendix:#x} too small");
+    } else {
+        assert_eq!(
+            appendix, 0,
+            "{shape}: release must ship NOTHING past EndOfRom, found {appendix:#x} bytes \
+             (has the deb2 symbol appendix leaked back into release?)"
+        );
+    }
 
     // ASSEMBLED PREFIX == asl (header-neutral): the full file's `[0, EndOfRom)`
     // matches the asl reference modulo the checksum ($18E) and ROM-end ($1A4) fields
