@@ -258,16 +258,16 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // The blob's evenness is now enforced by an `ensure` in aeon boot_data.emp —
     // an odd blob address-errors the 68k at boot, which is how this parcel found
     // out (see the A/B note referenced by chain entry `wave4-z80-sound-reclaim`).
-    assert_eq!(pins::ANIMATE.plain_base, 0x3060);  // -0xE0 wave4-sound: boot-head shrink slide
-    assert_eq!(pins::ANIMATE.debug_base, 0x37BA);  // +0x40 addrfree: +0x3E replay span + core's 2-byte re-pad
+    assert_eq!(pins::ANIMATE.plain_base, 0x3070);  // +0x10/+0x8 item26: SPRITES grew by the cull-margin cmpi.w pair; everything downstream slides
+    assert_eq!(pins::ANIMATE.debug_base, 0x37C2);  // +0x8 item26: same cause, debug's smaller tail pad
     assert_eq!(pins::ANIMATE.plain_len, 0x194);  // +0xA bug005: AF_SET_FIELD rail + refresh idiom
     assert_eq!(pins::ANIMATE.debug_len, 0x2B8);  // +0x10 bug005: same + the debug-fenced rail
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x33F4);  // +0x40 addrfree: replay-span slide (animate LEN unchanged)
-    assert_eq!(pins::RINGS.debug_base, 0x3C7A);  // +0x40 addrfree: same slide
+    assert_eq!(pins::RINGS.plain_base, 0x3404);  // +0x10 item26: same SPRITES cull-margin slide (animate LEN unchanged)
+    assert_eq!(pins::RINGS.debug_base, 0x3C82);  // +0x8 item26: same slide
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
@@ -291,8 +291,8 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
     // object_test_state growth), then +0xC debug only from the OJZ scene-pin
     // hook's two `ifdef __DEBUG__` guards (Debug_Scene_Freeze).
-    assert_eq!(pins::ASSEMBLED_LEN, 0x5DC40);       // +0x70 addrfree: the re-recorded chain-tail fixture (208 → 320 B); the replay-region slide is reabsorbed before the anchored error handler
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F742); // +0x70 addrfree: same single cause, both shapes (the fixture is shape-invariant)
+    assert_eq!(pins::ASSEMBLED_LEN, 0x5DC30);       // −0x10 item26: OJZ_SCROLL_TEST shrank 0x1A (the init-site stop_z80/start_z80 false lock, deleted) and re-pads to −0x10 at the anchored error handler; net of the +0x18 upstream growth
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F722); // −0x20 item26: same cause, debug's OJZ shrink is a clean 0x20 with no re-pad
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the
@@ -473,8 +473,8 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // loops (byte-neutral, −20 cycles/child), and PopulateSpawnedPieceCount's
     // one-register park moved to move.l/movea.l (−12 cycles/child, −4 bytes,
     // which also restored the plain-shape branch margin the wave had consumed).
-    assert_eq!(pins::SOUND_API.plain_base, 0x64BE);  // +0x34 net, t24
-    assert_eq!(pins::SOUND_API.debug_base, 0x8160);  // +0x8C net, t24
+    assert_eq!(pins::SOUND_API.plain_base, 0x64CE);  // +0x10 item26: SPRITES cull-margin slide
+    assert_eq!(pins::SOUND_API.debug_base, 0x8180);  // +0x20 item26: SPRITES slide + PARALLAX's $8B mode-change gate (+0x8 each)
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A
