@@ -429,3 +429,94 @@ proc BootPing() clobbers(d0-d1/a0-a1) {
     let diags = bind_srcs(&[engine, game], &[]);
     assert!(errors(&diags).is_empty(), "expected a clean bind, got {:?}", errors(&diags));
 }
+
+/// §4 — a CONDITIONAL producer does not satisfy an UNCONDITIONAL `out` promise.
+/// The hook promises callers `out(a1)` on every return; the bound proc produces
+/// a1 only on its `eq` edge. Callers of the hook read a1 with no cc test.
+#[test]
+fn probe_hook_conditional_out_does_not_satisfy_unconditional_promise() {
+    let engine = "\
+module engine.c
+pub interface Game {
+    hook alloc () clobbers(d0) out(a1) = empty
+}
+";
+    let game = "\
+module games.a.m
+pub implement Game {
+    hook alloc = CondAlloc
+}
+proc CondAlloc() clobbers(d0) out(a1 if eq) {
+    rts
+}
+";
+    let diags = bind_srcs(&[engine, game], &[]);
+    assert!(has_tag(&diags, "[contract.hook-signature]"), "{:?}", errors(&diags));
+    assert!(
+        errors(&diags).iter().any(|m| m.contains("does not produce output `a1`")),
+        "must name the unproduced unconditional result: {:?}",
+        errors(&diags)
+    );
+}
+
+/// The matching pair conforms: a hook declaring the AllocDynamic shape
+/// (`clobbers(d0/a1) out(a1 if eq)` — a1 is a result on the eq edge and
+/// indeterminate scratch elsewhere) is satisfied by a proc declaring exactly
+/// that. The clobber license comes from the hook's own `clobbers`, and the
+/// conditional promise is met by a conditional producer.
+#[test]
+fn hook_conditional_out_bound_to_the_honest_alloc_shape_conforms() {
+    let engine = "\
+module engine.c
+pub interface Game {
+    hook alloc () clobbers(d0/a1) out(a1 if eq) = empty
+}
+";
+    let game = "\
+module games.a.m
+pub implement Game {
+    hook alloc = AllocDynamic
+}
+proc AllocDynamic() clobbers(d0/a1) out(a1 if eq) {
+    rts
+}
+";
+    let diags = bind_srcs(&[engine, game], &[]);
+    assert!(
+        !has_tag(&diags, "[contract.hook-signature]"),
+        "the honest conditional-out shape must conform: {:?}",
+        errors(&diags)
+    );
+}
+
+/// THE WALL: a hook declaring the AllocEffect shape (`clobbers(d0) out(a1 if
+/// eq)`) claims a1 SURVIVES the ne edge — its callers may hold a1 across the
+/// call and re-read it there. A target that also clobbers a1 leaves it
+/// indeterminate on that edge and must be rejected. The claim is encoded purely
+/// by a1's ABSENCE from the hook's `clobbers`, so the clobber license must not be
+/// widened by a conditional out.
+#[test]
+fn probe_hook_survives_claim_rejects_a_target_that_clobbers_the_register() {
+    let engine = "\
+module engine.c
+pub interface Game {
+    hook alloc () clobbers(d0) out(a1 if eq) = empty
+}
+";
+    let game = "\
+module games.a.m
+pub implement Game {
+    hook alloc = AllocDynamic
+}
+proc AllocDynamic() clobbers(d0/a1) out(a1 if eq) {
+    rts
+}
+";
+    let diags = bind_srcs(&[engine, game], &[]);
+    assert!(has_tag(&diags, "[contract.hook-signature]"), "{:?}", errors(&diags));
+    assert!(
+        errors(&diags).iter().any(|m| m.contains("clobbers `a1`")),
+        "must name the register whose survives-claim the target breaks: {:?}",
+        errors(&diags)
+    );
+}

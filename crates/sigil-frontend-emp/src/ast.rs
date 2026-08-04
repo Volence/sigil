@@ -1,4 +1,7 @@
-//! Spanned AST for .emp (Spec 2 §10 surface). Pure data — no semantics.
+//! Spanned AST for .emp (Spec 2 §10 surface). Pure data, plus the derived
+//! canonical register views of a proc signature ([`ProcDecl::unconditional_outs`]
+//! and friends) — a projection of the declared reglists through the register
+//! file, not semantics of its own.
 use sigil_span::Span;
 
 /// The `assert.<w>` / FSTRING-argument display width, re-exported from the
@@ -869,6 +872,111 @@ pub struct ProcSig {
     /// Typed data-register results (`out(dN: Type)`, G5 §7 tier 5) — see the
     /// same field on [`ProcDecl`]. `(reg, ty, span)`; empty = none.
     pub out_types: Vec<(String, Type, Span)>,
+}
+
+/// The canonical register SET a contract reglist denotes under register file
+/// `rf`. 68k routes through the frozen production expander (`sp`→`a7`, `sr`
+/// dropped, movem ranges expanded); Z80 through the register-file seam (pair
+/// sugar splits to halves, no range form). Errors are discarded — the
+/// `[proc.*-invalid]` / `[contract.unknown-register]` diagnostics are owned by
+/// the primary validation sites, and a nonsense name simply contributes nothing.
+fn expand_contract_reglist(
+    segs: &[(String, Option<String>)],
+    rf: crate::regfile::RegFile,
+) -> std::collections::BTreeSet<String> {
+    match rf {
+        crate::regfile::RegFile::M68k => crate::lower::expand_reglist_regs(segs),
+        crate::regfile::RegFile::Z80 => crate::regfile::expand_reglist(segs, rf, |_| {}),
+    }
+}
+
+/// The registers carrying an `out(rN if cc)` guard, CANONICALIZED under `rf`.
+fn cond_out_regs_of(
+    out_cond: &[CondResult],
+    rf: crate::regfile::RegFile,
+) -> std::collections::BTreeSet<String> {
+    let segs: Vec<(String, Option<String>)> =
+        out_cond.iter().map(|c| (c.reg.clone(), None)).collect();
+    expand_contract_reglist(&segs, rf)
+}
+
+/// The UNCONDITIONAL out registers: the expanded `out` reglist MINUS every
+/// register that also carries an `if cc` guard. See [`ProcDecl::unconditional_outs`].
+fn unconditional_outs_of(
+    out: Option<&[(String, Option<String>)]>,
+    out_cond: &[CondResult],
+    rf: crate::regfile::RegFile,
+) -> std::collections::BTreeSet<String> {
+    let mut set = expand_contract_reglist(out.unwrap_or(&[]), rf);
+    for r in cond_out_regs_of(out_cond, rf) {
+        set.remove(&r);
+    }
+    set
+}
+
+/// The two canonical views of a proc's declared `out()` clause.
+///
+/// **Why an accessor exists.** [`crate::parser`]'s `out_list` pushes an
+/// `out(rN if cc)` register into BOTH [`ProcDecl::out_cond`] AND the plain
+/// [`ProcDecl::out`] reglist — out-verify must see the register in `out` to check
+/// it is written at all. Every consumer that needs the UNCONDITIONAL set must
+/// therefore subtract the guarded registers itself, and every such subtraction
+/// must expand both sides through the SAME register file (a raw-text subtraction
+/// misses `sp` vs `a7` on 68k and every Z80 pair spelling). These two methods are
+/// the single place that fact lives.
+///
+/// **Which view a consumer wants.** A gate that treats an out as a DEFINITION on
+/// every return edge (D1b must-def credit, §6 taint-kill, D1c's held-value
+/// excuse, an unconditional-`out` bound) takes [`Self::unconditional_outs`] —
+/// crediting a conditional out there is a false negative. A gate asking "does the
+/// callee WRITE this register" (the closure's effective set, a clobber license,
+/// a derived preserves complement) takes the FULL `out` reglist: a conditional
+/// result is written on the cc edge, so it is destroyed from the caller's view on
+/// every edge.
+impl ProcDecl {
+    /// The registers carrying an `out(rN if cc)` guard, canonical under `rf`.
+    pub fn cond_out_regs(
+        &self,
+        rf: crate::regfile::RegFile,
+    ) -> std::collections::BTreeSet<String> {
+        cond_out_regs_of(&self.out_cond, rf)
+    }
+
+    /// The declared outs that are produced on EVERY return path — the expanded
+    /// `out` reglist minus [`Self::cond_out_regs`].
+    pub fn unconditional_outs(
+        &self,
+        rf: crate::regfile::RegFile,
+    ) -> std::collections::BTreeSet<String> {
+        unconditional_outs_of(self.out.as_deref(), &self.out_cond, rf)
+    }
+}
+
+impl ProcSig {
+    /// The registers carrying an `out(rN if cc)` guard, canonical under `rf`.
+    pub fn cond_out_regs(
+        &self,
+        rf: crate::regfile::RegFile,
+    ) -> std::collections::BTreeSet<String> {
+        cond_out_regs_of(&self.out_cond, rf)
+    }
+
+    /// The declared outs that are produced on EVERY return path — the expanded
+    /// `out` reglist minus [`Self::cond_out_regs`].
+    pub fn unconditional_outs(
+        &self,
+        rf: crate::regfile::RegFile,
+    ) -> std::collections::BTreeSet<String> {
+        unconditional_outs_of(self.out.as_deref(), &self.out_cond, rf)
+    }
+}
+
+/// A canonical single register spelling under `rf`, or `None` when the name is
+/// outside that CPU's contract vocabulary. `sp` canonicalizes to `a7` on 68k; a
+/// Z80 pair name has no single canonical unit and returns `None`.
+pub fn canonical_contract_reg(name: &str, rf: crate::regfile::RegFile) -> Option<String> {
+    let set = expand_contract_reglist(&[(name.to_string(), None)], rf);
+    (set.len() == 1).then(|| set.into_iter().next().unwrap())
 }
 
 /// An `extern proc Name (params) [clobbers(...)] [preserves(...)] [out(...)]`

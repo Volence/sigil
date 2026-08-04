@@ -288,7 +288,9 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     // unconditionally would be a FALSE NEGATIVE on a shipping ERROR gate — §6
     // (invalid-path taint-kill) and D1b (must-def credit) both consume this via
     // the shared `call_unconditional_outs` primitive. D1c/closure keep the full
-    // `callee_out` (a conditional out IS a produced result there).
+    // `callee_out` (a conditional out IS a produced result there). This is the
+    // map-level form of [`ast::ProcDecl::unconditional_outs`] — the callee names
+    // here are already canonical on both sides (`conds_of` canonicalizes).
     let callee_uncond_out: BTreeMap<String, BTreeSet<String>> = callee_out
         .iter()
         .map(|(n, outs)| {
@@ -708,8 +710,27 @@ fn flags_of(out_flags: &[ast::FlagResult]) -> BTreeSet<String> {
 }
 
 /// The `(reg, cc)` pairs a decl's `out(rN if cc)` clauses name.
+/// The register is CANONICALIZED through the 68k register file (`sp` → `a7`) —
+/// this pass is 68k-only (a `(cpu: z80)` module is skipped above).
+///
+/// ONE consumer needs it: the `callee_uncond_out` subtraction compares these
+/// names against a set expanded by that file, so a raw `sp` filters nothing and
+/// credits a conditional out as an unconditional one on a shipping ERROR gate.
+/// The other two consumers — `conditional_out_edge_credits` and `check_out`'s
+/// cond list — read these names through `Reg::from_name`, which is already alias
+/// tolerant. Canonicalizing at COLLECTION makes the invariant a property of the
+/// map rather than a duty each consumer must remember. An unrecognizable name
+/// keeps its raw spelling (it matches nothing downstream, which is the same
+/// outcome as dropping it, minus the silent loss).
 fn conds_of(out_cond: &[ast::CondResult]) -> Vec<(String, String)> {
-    out_cond.iter().map(|c| (c.reg.clone(), c.cc.clone())).collect()
+    out_cond
+        .iter()
+        .map(|c| {
+            let reg = ast::canonical_contract_reg(&c.reg, crate::regfile::RegFile::M68k)
+                .unwrap_or_else(|| c.reg.clone());
+            (reg, c.cc.clone())
+        })
+        .collect()
 }
 
 /// The spans of a proc body's call instructions carrying `@discards` (recursing
@@ -951,6 +972,11 @@ fn attrs_unanalyzable_reason(attrs: &[ast::Attr]) -> Option<String> {
 /// on it across the call is wrong and must be charged it — exactly as a
 /// body-bearing proc's `local_writes` already includes its out-register writes.
 fn extern_node(e: &ExternProcDecl) -> ProcNode {
+    // The FULL `out` reglist (conditional results included, per
+    // [`ast::ProcSig::unconditional_outs`]' dividing line): `effective` answers
+    // "does the callee WRITE this", and a conditional result is written on its
+    // cc edge. The UNCONDITIONAL subtraction happens once, downstream, where a
+    // gate needs an out to be a DEFINITION on every edge.
     let out = expand_reglist_regs(e.sig.out.as_deref().unwrap_or(&[]));
     let mut effective = sig_clobbers(&e.sig);
     effective.extend(out.iter().cloned());
@@ -964,19 +990,32 @@ fn extern_node(e: &ExternProcDecl) -> ProcNode {
     }
 }
 
-/// The clobber BOUND a contract type imposes on its dispatch targets (§4): the
-/// registers a conforming target MAY clobber. An explicit `clobbers(...)` IS the
-/// bound; a preserves-only type (e.g. `ObjRoutine preserves(a0, d7)`) bounds the
-/// clobbers to everything-not-preserved (the whole register file minus its
+/// The register EFFECT a contract type imposes on its dispatch targets (§4): the
+/// registers a conforming target may WRITE. An explicit `clobbers(...)` is the
+/// clobber bound; a preserves-only type (e.g. `ObjRoutine preserves(a0, d7)`)
+/// bounds it to everything-not-preserved (the whole register file minus its
 /// preserves).
+///
+/// The bound's `out` is UNIONED in, matching [`extern_node`]: an `out` register
+/// is WRITTEN by the callee, so a caller holding a value in it across the
+/// dispatch is wrong and must be charged the write. Omitting it would make the
+/// effect at a `jsr (aN) as T` site narrower than the truth, and the consequence
+/// is DESTRUCTIVE rather than merely permissive — `preserves::find_dead_saves`
+/// reads the closure's effective set, so a save that is load-bearing exactly
+/// because the dispatch target writes an `out` register would be reported as
+/// `[proc.dead-save]` and deleted. Conditional outs (`out(rN if cc)`) are
+/// included: the register is written on the cc edge, so it is destroyed from the
+/// caller's view on every edge — the FULL `out` reglist is the conservative
+/// read here, not [`ast::ProcSig::unconditional_outs`].
 fn contract_type_bound(t: &ContractTypeDecl) -> RegEffect {
-    let regs = match &t.sig.clobbers {
+    let mut regs = match &t.sig.clobbers {
         Some(c) => expand_reglist_regs(c),
         None => {
             let preserved = expand_reglist_regs(&t.sig.preserves);
             universe().difference(&preserved).cloned().collect()
         }
     };
+    regs.extend(expand_reglist_regs(t.sig.out.as_deref().unwrap_or(&[])));
     RegEffect { top: false, regs }
 }
 

@@ -441,3 +441,66 @@ fn dispatch_bound_is_byte_neutral() {
     let bound = flatten("module m\nproc P () clobbers(d0-d7/a0-a6) { jsr (a1) as ObjRoutine\n rts }\n");
     assert_eq!(bound, plain, "`as` dispatch bound must not change emitted bytes");
 }
+
+// ---------------------------------------------------------------------------
+// The derived canonical out views (`ProcDecl::unconditional_outs` /
+// `cond_out_regs`) — the ONE place the conditional/unconditional split lives.
+// ---------------------------------------------------------------------------
+
+use sigil_frontend_emp::regfile::RegFile;
+use std::collections::BTreeSet;
+
+fn set(names: &[&str]) -> BTreeSet<String> {
+    names.iter().map(|s| s.to_string()).collect()
+}
+
+/// The parser folds an `out(rN if cc)` register into BOTH `out_cond` and the
+/// plain `out` reglist; `unconditional_outs` is the view with the guarded ones
+/// subtracted, and `cond_out_regs` is the guarded set itself.
+#[test]
+fn unconditional_outs_subtracts_the_guarded_registers() {
+    let f = ok("module m\nproc P () clobbers(d1) out(d0, a1 if eq) { rts }\n");
+    let p = first_proc(&f);
+    assert_eq!(p.unconditional_outs(RegFile::M68k), set(&["d0"]));
+    assert_eq!(p.cond_out_regs(RegFile::M68k), set(&["a1"]));
+}
+
+/// Ranges expand before the subtraction: `out(d0-d2, d1 if eq)` leaves d0+d2.
+#[test]
+fn unconditional_outs_expands_ranges_before_subtracting() {
+    let f = ok("module m\nproc P () clobbers(a0) out(d0-d2, d1 if eq) { rts }\n");
+    let p = first_proc(&f);
+    assert_eq!(p.unconditional_outs(RegFile::M68k), set(&["d0", "d2"]));
+}
+
+/// The subtraction is CANONICAL, not textual: `sp` and `a7` are one register, so
+/// `out(sp if eq)` leaves nothing unconditional. A raw-text subtraction compares
+/// `{"a7"}` against `{"sp"}` and credits the conditional result as unconditional.
+#[test]
+fn unconditional_outs_is_canonical_not_textual() {
+    let f = ok("module m\nproc P () clobbers(d0) out(sp if eq) { rts }\n");
+    let p = first_proc(&f);
+    assert_eq!(p.cond_out_regs(RegFile::M68k), set(&["a7"]));
+    assert!(p.unconditional_outs(RegFile::M68k).is_empty());
+}
+
+/// A proc with no `out(...)` at all has empty views (no `Option` ceremony at the
+/// call sites).
+#[test]
+fn unconditional_outs_of_a_proc_with_no_out_is_empty() {
+    let f = ok("module m\nproc P () clobbers(d0) { rts }\n");
+    let p = first_proc(&f);
+    assert!(p.unconditional_outs(RegFile::M68k).is_empty());
+    assert!(p.cond_out_regs(RegFile::M68k).is_empty());
+}
+
+/// The same views on a Z80 signature expand PAIR sugar to halves — `out(hl if z)`
+/// guards `h` and `l`, so neither survives into the unconditional set.
+#[test]
+fn unconditional_outs_expands_z80_pairs() {
+    let f = ok("module m (cpu: z80)\n\
+                extern proc P () out(bc, hl if z)\n");
+    let sig = &externs(&f)[0].sig;
+    assert_eq!(sig.cond_out_regs(RegFile::Z80), set(&["h", "l"]));
+    assert_eq!(sig.unconditional_outs(RegFile::Z80), set(&["b", "c"]));
+}

@@ -405,17 +405,36 @@ fn report_subcontract(
 }
 
 /// Build a register-partition [`Contract`] from a proc signature's reglists (68k).
+///
+/// The `out` reglist SPLITS: the parser folds an `out(rN if cc)` register into
+/// both `out_cond` and the plain reglist (out-verify needs it there), so the
+/// conditional registers ride `Contract::out_cond` and `Contract::out` carries
+/// only the unconditional remainder. Collapsing the two lets a target producing
+/// `rN` only on its cc edge satisfy a bound promising `out(rN)` on every return —
+/// and such a target may simultaneously and legally declare `clobbers(rN)`, i.e.
+/// state outright that it destroys the register the bound promises callers.
+///
+/// Both halves of that split come from [`ast::ProcSig::unconditional_outs`] /
+/// [`ast::ProcSig::cond_out_regs`], which expand through ONE register file. The
+/// `expand_reglist` call below runs for its DIAGNOSTICS only: a minuend and a
+/// subtrahend produced by two different expanders is the raw-vs-canonical bug
+/// class in miniature — these two disagree on `sp`, which the seam drops as
+/// `[contract.unknown-register]` while the production expander canonicalizes it
+/// to `a7`.
 fn contract_of_sig(sig: &ast::ProcSig, diags: &mut Vec<Diagnostic>, span: Span) -> Contract {
     let mut on_err = |m: String| diags.push(err(span, m));
     let clobbers = expand_reglist(sig.clobbers.as_deref().unwrap_or(&[]), RegFile::M68k, &mut on_err);
     let preserves = expand_reglist(&sig.preserves, RegFile::M68k, &mut on_err);
-    let out = expand_reglist(sig.out.as_deref().unwrap_or(&[]), RegFile::M68k, &mut on_err);
+    // Validity reporting only — the SET comes from the accessor below.
+    expand_reglist(sig.out.as_deref().unwrap_or(&[]), RegFile::M68k, &mut on_err);
+    let out = sig.unconditional_outs(RegFile::M68k);
+    let out_cond = sig.cond_out_regs(RegFile::M68k);
     let params: std::collections::BTreeSet<String> = sig
         .params
         .iter()
         .filter_map(|(name, _, _)| crate::value::Reg::from_name(name).map(|_| name.clone()))
         .collect();
-    Contract { clobbers, preserves, params, out }
+    Contract { clobbers, preserves, params, out, out_cond }
 }
 
 /// Build a [`Contract`] from a body `proc` or an `extern proc` found by link name

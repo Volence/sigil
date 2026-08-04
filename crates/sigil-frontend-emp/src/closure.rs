@@ -272,23 +272,53 @@ pub struct Contract {
     pub preserves: BTreeSet<String>,
     /// Input registers read.
     pub params: BTreeSet<String>,
-    /// Result registers written for the caller.
+    /// Result registers produced on EVERY return path — the UNCONDITIONAL outs
+    /// only (see [`crate::ast::ProcDecl::unconditional_outs`]). A conditional
+    /// `out(rN if cc)` lands in [`Self::out_cond`], never here: a caller of the
+    /// bound may read an unconditional out with no cc test, so a conditional
+    /// producer does not satisfy that promise.
     pub out: BTreeSet<String>,
+    /// Result registers produced only on their `if cc` edge. Written by the
+    /// callee (so they license a clobber like [`Self::out`] does) but not
+    /// promised on every return path.
+    pub out_cond: BTreeSet<String>,
 }
 
 /// The §4 subcontract relation `target ⊑ bound` — what makes a dispatch target
 /// installable. Returns a human list of violations (empty ⇒ conforming), for
 /// `[dispatch.target-exceeds-bound]`:
 ///
-/// - `target.clobbers ⊆ bound.clobbers` — a target may clobber no MORE than the
-///   dispatch site's callers already tolerate;
+/// - `target.clobbers ⊆ bound.clobbers ∪ bound.out` — a target may destroy no
+///   MORE than the dispatch site's callers already tolerate, and a register the
+///   bound declares an UNCONDITIONAL result is one those callers already know is
+///   written. Without the `out` term the relation is asymmetric with the
+///   production test below and rejects the honest declaration: a target spelling
+///   `clobbers(d0/a1) out(a1 if eq)` against a bound spelling the same
+///   `clobbers(d0/a1)` fires a false `[contract.hook-signature]`.
+///
+///   `out_cond` is deliberately NOT a term here. Under the normative reading of
+///   `out(rN if cc)`, a cond-out register ABSENT from `clobbers` is a claim that
+///   rN is PRESERVED on every ¬cc return path — and `Contract` encodes that claim
+///   purely by absence from `clobbers`. Licensing a clobber off `out_cond` would
+///   erase it: a bound spelling `clobbers(d0) out(a1 if eq)` entitles its callers
+///   to hold a1 across the call and re-read it on the ne edge, and a target
+///   spelling `clobbers(d0/a1) out(a1 if eq)` leaves a1 indeterminate there. That
+///   pair must violate;
 /// - `target.preserves ⊇ bound.preserves` — it must preserve everything the
 ///   bound promises callers;
 /// - `target.params ⊆ bound.params` — it may READ fewer inputs, never more;
-/// - `target.out ⊇ bound.out` — it must PRODUCE everything the caller may read.
+/// - `bound.out ⊆ target.out` — it must produce UNCONDITIONALLY everything the
+///   bound promises unconditionally. A conditional producer does NOT satisfy an
+///   unconditional promise: the bound's callers may read the register with no cc
+///   test at all;
+/// - `bound.out_cond ⊆ target.out ∪ target.out_cond` — a conditional promise is
+///   satisfied by a conditional OR an unconditional producer (producing on every
+///   path is strictly stronger). The condition CODES are not compared; a target
+///   guarding on a different cc than the bound is a hole recorded in the ledger.
 pub fn subcontract_violations(target: &Contract, bound: &Contract) -> Vec<String> {
     let mut v = Vec::new();
-    for r in target.clobbers.difference(&bound.clobbers) {
+    let writable: BTreeSet<&String> = bound.clobbers.iter().chain(&bound.out).collect();
+    for r in target.clobbers.iter().filter(|r| !writable.contains(r)) {
         v.push(format!("clobbers `{r}`, which the bound does not permit"));
     }
     for r in bound.preserves.difference(&target.preserves) {
@@ -299,6 +329,12 @@ pub fn subcontract_violations(target: &Contract, bound: &Contract) -> Vec<String
     }
     for r in bound.out.difference(&target.out) {
         v.push(format!("does not produce output `{r}`, which the bound promises callers"));
+    }
+    let produced: BTreeSet<&String> = target.out.iter().chain(&target.out_cond).collect();
+    for r in bound.out_cond.iter().filter(|r| !produced.contains(r)) {
+        v.push(format!(
+            "does not produce conditional output `{r}`, which the bound promises callers"
+        ));
     }
     v.sort();
     v

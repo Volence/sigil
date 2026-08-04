@@ -598,3 +598,79 @@ fn z80_flag_result_dropped_over_corpus_fires() {
     ]);
     assert_eq!(flag_fires(&r, "Caller", "Resolve"), 1, "flag firings: {:?}", r.flag_firings);
 }
+
+/// A bounded indirect dispatch charges the bound's `out` registers as well as its
+/// `clobbers` — an `out` register is WRITTEN by whatever target is installed, so
+/// a caller holding a live value in it across the dispatch is wrong. The live
+/// corpus shape is `player_sensors.emp`'s `SensorProbe … clobbers(d3-d5/a1)
+/// out(d0, d1, d2)` reached through `jsr (a2) as SensorProbe`.
+///
+/// This matters beyond permissiveness: the same `effective` set feeds
+/// `preserves::find_dead_saves`, so a bound narrower than the truth makes a
+/// load-bearing save look dead.
+#[test]
+fn bounded_indirect_charges_the_bounds_out() {
+    let r = analyze(&[
+        "module m\n\
+         type SensorProbe = proc () clobbers(d3) out(d0)\n\
+         proc Dispatch () clobbers(d3) {\n jsr (a2) as SensorProbe\n rts }\n",
+    ]);
+    assert!(fires(&r, "Dispatch", "d0"), "the bound's out must be charged: {:?}", r.firings);
+}
+
+/// A CONDITIONAL bound out is charged too — the register is written on the cc
+/// edge, so from the caller's side it is destroyed on every edge (the same
+/// conservative reading `extern_node` takes).
+#[test]
+fn bounded_indirect_charges_a_conditional_bound_out() {
+    let r = analyze(&[
+        "module m\n\
+         type Alloc = proc () clobbers(d0) out(a1 if eq)\n\
+         proc Dispatch () clobbers(d0) {\n jsr (a2) as Alloc\n rts }\n",
+    ]);
+    assert!(fires(&r, "Dispatch", "a1"), "the bound's conditional out must be charged: {:?}", r.firings);
+}
+
+/// Declaring the charged out keeps the dispatch clean — the fix widens the bound,
+/// it does not make bounded dispatch unusable.
+#[test]
+fn bounded_indirect_with_the_out_declared_is_clean() {
+    let r = analyze(&[
+        "module m\n\
+         type SensorProbe = proc () clobbers(d3) out(d0)\n\
+         proc Dispatch () clobbers(d3, d0) {\n jsr (a2) as SensorProbe\n rts }\n",
+    ]);
+    assert!(r.firings.is_empty(), "declared bound out must not fire: {:?}", r.firings);
+}
+
+/// The conditional/unconditional out split is keyed on CANONICAL register names.
+/// `out(sp if eq)` expands to `a7` in the out reglist, so a RAW-text subtraction
+/// leaves `a7` in the UNCONDITIONAL set — crediting a conditional result as a
+/// definition on every return path, the false-negative polarity D1b must-def and
+/// the §6 taint-kill run on.
+#[test]
+fn conditional_out_spelled_sp_is_not_credited_unconditionally() {
+    let r = analyze(&[
+        "module m\n\
+         extern proc Probe () out(sp if eq)\n\
+         proc Caller () clobbers(d0) {\n jbsr Probe\n rts }\n",
+    ]);
+    let verified = r.verified_uncond_out.get("Probe").cloned().unwrap_or_default();
+    assert!(
+        !verified.contains("a7"),
+        "`out(sp if eq)` must not be credited as an unconditional out: {verified:?}"
+    );
+}
+
+/// The wall: an UNCONDITIONAL `out(sp)` IS credited (the canonicalization must
+/// not swallow a genuine unconditional result).
+#[test]
+fn unconditional_out_spelled_sp_is_still_credited() {
+    let r = analyze(&[
+        "module m\n\
+         extern proc Probe () out(sp)\n\
+         proc Caller () clobbers(d0) {\n jbsr Probe\n rts }\n",
+    ]);
+    let verified = r.verified_uncond_out.get("Probe").cloned().unwrap_or_default();
+    assert!(verified.contains("a7"), "`out(sp)` must stay an unconditional out: {verified:?}");
+}
