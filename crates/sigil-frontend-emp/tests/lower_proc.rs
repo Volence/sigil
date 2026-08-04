@@ -1175,6 +1175,354 @@ fn cond_out_exemption_is_canonical_not_textual() {
     );
 }
 
+/// The exemption is keyed on (register, EXCLUSIVELY conditional). A register
+/// mentioned unconditionally AS WELL keeps the unconditional reading — `out(a1,
+/// a1 if eq) clobbers(a1)` states outright that a1 is a result and that it is
+/// scratch, so it must still error. Non-vacuous against
+/// `cond_out_may_overlap_clobbers` above, which is the same declaration minus the
+/// unconditional mention and must stay clean.
+#[test]
+fn an_unconditional_mention_defeats_the_cond_out_exemption() {
+    let src = "module m\n\
+               proc f() clobbers(d0/a1) out(a1, a1 if eq) {\n\
+               \x20   movea.w #0, a1\n\
+               \x20   moveq #0, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.out-clobbers-overlap]"))
+        .unwrap_or_else(|| panic!("expected [proc.out-clobbers-overlap], got: {diags:?}"));
+    assert_eq!(hit.level, Level::Error);
+    assert!(hit.message.contains("a1"), "must name the overlapping register: {}", hit.message);
+}
+
+/// A RANGE covering the register is an unconditional mention too — `out(a0-a2,
+/// a1 if eq)` says a1 is produced on every edge, so `clobbers(a1)` still
+/// contradicts it. A key built by subtracting the guarded set would remove a1
+/// wholesale; the counting key does not.
+#[test]
+fn a_range_mention_defeats_the_cond_out_exemption() {
+    let src = "module m\n\
+               proc f() clobbers(a1) out(a0-a2, a1 if eq) {\n\
+               \x20   lea Slot, a0\n\
+               \x20   lea Slot, a1\n\
+               \x20   lea Slot, a2\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.out-clobbers-overlap]"))
+        .unwrap_or_else(|| panic!("expected [proc.out-clobbers-overlap], got: {diags:?}"));
+    assert_eq!(hit.level, Level::Error);
+    assert!(hit.message.contains("a1"), "must name the overlapping register: {}", hit.message);
+}
+
+// === the SURVIVES half of a conditional out (delta spec §7.1) ==============
+
+/// The `AllocEffect` shape — the spec's required PASSING witness. The pool test
+/// runs BEFORE the pop, so a1 is untouched on the `!eq` (failure) return and
+/// `clobbers(d0)` honestly omits it.
+#[test]
+fn cond_out_survives_claim_proves_when_the_test_precedes_the_write() {
+    let src = "module m\n\
+               proc f() clobbers(d0) out(a1 if eq) {\n\
+               \x20   cmpi.w #0, Flag\n\
+               \x20   beq .full\n\
+               \x20   lea Slot, a1\n\
+               \x20   moveq #0, d0\n\
+               \x20   rts\n\
+               .full:\n\
+               \x20   moveq #1, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.out-cond-survives-unverifiable]"),
+        "a1 is never written on the !eq path — the survives claim holds: {diags:?}"
+    );
+}
+
+/// Hoist the pop above the test and a1 becomes trash on the failure edge while
+/// the contract still omits it from `clobbers`. Same terminals as the passing
+/// witness above; only the write moves, so the firing is about the write's
+/// position and not the shape.
+#[test]
+fn cond_out_survives_claim_fires_when_the_write_precedes_the_test() {
+    let src = "module m\n\
+               proc f() clobbers(d0) out(a1 if eq) {\n\
+               \x20   lea Slot, a1\n\
+               \x20   cmpi.w #0, Flag\n\
+               \x20   beq .full\n\
+               \x20   moveq #0, d0\n\
+               \x20   rts\n\
+               .full:\n\
+               \x20   moveq #1, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.out-cond-survives-unverifiable]"))
+        .unwrap_or_else(|| panic!("expected the survives firing, got: {diags:?}"));
+    assert_eq!(hit.level, Level::Error);
+    assert!(hit.message.contains("a1"), "must name the register: {}", hit.message);
+    assert!(hit.message.contains("clobbers"), "must state the remedy: {}", hit.message);
+}
+
+/// The `AllocDynamic` shape: the same hoisted-pop body makes NO claim once a1 is
+/// declared clobbered, so nothing fires. This is the honest downgrade the
+/// error tier depends on being free.
+#[test]
+fn a_clobbered_cond_out_makes_no_survives_claim() {
+    let src = "module m\n\
+               proc f() clobbers(d0/a1) out(a1 if eq) {\n\
+               \x20   lea Slot, a1\n\
+               \x20   cmpi.w #0, Flag\n\
+               \x20   beq .full\n\
+               \x20   moveq #0, d0\n\
+               \x20   rts\n\
+               .full:\n\
+               \x20   moveq #1, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.out-cond-survives-unverifiable]"),
+        "a1 in clobbers means no survives claim to break: {diags:?}"
+    );
+}
+
+/// ⊤ DOES NOT OBLIGATE. The success path here sets its Z result with `move.w
+/// #0, d0` instead of `moveq` and then stores through the pointer — flags the cc
+/// lattice reads as ⊤ — but a1 is still untouched on the `!eq` path, so the
+/// contract is TRUE and must compile clean. Charging ⊤ would reject it at error
+/// tier and the only escape (`clobbers(a1)`) would be a false declaration.
+///
+/// Non-vacuous: the `.full` exit IS classified (`moveq #1, d0`), so the checker
+/// is live on this body — `cond_out_survives_claim_still_fires_past_an_unclassifiable_exit`
+/// below fires on the same shape once a1 is genuinely destroyed there.
+#[test]
+fn an_unclassifiable_exit_is_not_charged_the_survives_claim() {
+    let src = "module m\n\
+               proc f() clobbers(d0) out(a1 if eq) {\n\
+               \x20   cmpi.w #0, Flag\n\
+               \x20   beq .full\n\
+               \x20   lea Slot, a1\n\
+               \x20   move.w #0, d0\n\
+               \x20   move.l d0, (a1)\n\
+               \x20   rts\n\
+               .full:\n\
+               \x20   moveq #1, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.out-cond-survives-unverifiable]"),
+        "an unclassifiable cc-success exit must not be charged the ¬cc obligation: {diags:?}"
+    );
+}
+
+/// The control for the test above: the same ⊤-on-the-success-path body, with the
+/// pop hoisted so a1 IS destroyed on the classified `!eq` exit. Skipping ⊤ costs
+/// nothing here — the obligation lands on the exit that can be judged.
+#[test]
+fn cond_out_survives_claim_still_fires_past_an_unclassifiable_exit() {
+    let src = "module m\n\
+               proc f() clobbers(d0) out(a1 if eq) {\n\
+               \x20   lea Slot, a1\n\
+               \x20   cmpi.w #0, Flag\n\
+               \x20   beq .full\n\
+               \x20   move.w #0, d0\n\
+               \x20   move.l d0, (a1)\n\
+               \x20   rts\n\
+               .full:\n\
+               \x20   moveq #1, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.out-cond-survives-unverifiable]"),
+        "a classified !eq exit still carries the obligation: {diags:?}"
+    );
+}
+
+/// THE COST OF THE ⊤ RULING, pinned so it stays visible. When EVERY exit is
+/// unclassifiable the claim goes unchecked — a false negative, deliberately
+/// chosen over rejecting honest code. a1 is destroyed on the only exit and
+/// nothing fires.
+///
+/// This test is expected to FLIP the day [`Flags::after`] learns `clr` /
+/// `move #imm` (which `branch_const::const_flag_writer` already folds). That is
+/// the intended direction: widening the lattice can only add checking here.
+#[test]
+fn an_all_unclassifiable_body_leaves_the_survives_claim_unchecked() {
+    let src = "module m\n\
+               proc f() clobbers(d0) out(a1 if eq) {\n\
+               \x20   lea Slot, a1\n\
+               \x20   tst.w Flag\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.out-cond-survives-unverifiable]"),
+        "the documented incompleteness: no provably-!eq exit means no obligation: {diags:?}"
+    );
+}
+
+/// The proof is `preserves`', not merely "never written": a save/restore
+/// round-trip across the ¬cc path carries the claim even though a1 IS written
+/// there. Non-vacuous against the hoisted-pop firing above — same write, plus a
+/// restore.
+#[test]
+fn a_save_restore_round_trip_carries_the_survives_claim() {
+    let src = "module m\n\
+               proc f() clobbers(d0) out(a1 if eq) {\n\
+               \x20   move.l a1, -(sp)\n\
+               \x20   lea Slot, a1\n\
+               \x20   cmpi.w #0, Flag\n\
+               \x20   beq .full\n\
+               \x20   addq.l #4, sp\n\
+               \x20   moveq #0, d0\n\
+               \x20   rts\n\
+               .full:\n\
+               \x20   movea.l (sp)+, a1\n\
+               \x20   moveq #1, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.out-cond-survives-unverifiable]"),
+        "a1 is restored on the !eq path — the round-trip proof carries: {diags:?}"
+    );
+}
+
+/// A proc with NO `clobbers(...)` clause declares no clobber contract at all, so
+/// §7.1's membership rule has no input and there is no survives claim to check.
+/// Same hoisted-pop body as the firing case; only the clause is gone.
+#[test]
+fn no_clobber_contract_means_no_survives_claim() {
+    let src = "module m\n\
+               proc f() out(a1 if eq) {\n\
+               \x20   lea Slot, a1\n\
+               \x20   cmpi.w #0, Flag\n\
+               \x20   beq .full\n\
+               \x20   rts\n\
+               .full:\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.out-cond-survives-unverifiable]"),
+        "absent a clobbers clause there is no membership to read: {diags:?}"
+    );
+}
+
+/// Like every declared contract, the survives claim is NOT silenced by
+/// `@as_compat` (only the heuristic modernization lints are).
+#[test]
+fn as_compat_does_not_silence_the_survives_claim() {
+    // The undeclared `d5` write is the CONTROL: `[proc.clobber-undeclared]` is a
+    // modernization lint, so its absence proves `@as_compat` is genuinely in
+    // force and the survives firing below is not passing by default.
+    let src = "module m\n\
+               @as_compat\n\
+               proc f() clobbers(d0) out(a1 if eq) {\n\
+               \x20   lea Slot, a1\n\
+               \x20   moveq #0, d5\n\
+               \x20   cmpi.w #0, Flag\n\
+               \x20   beq .full\n\
+               \x20   moveq #0, d0\n\
+               \x20   rts\n\
+               .full:\n\
+               \x20   moveq #1, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.clobber-undeclared]"),
+        "control: @as_compat must be in force for this test to mean anything: {diags:?}"
+    );
+    assert!(
+        has_tag(&diags, "[proc.out-cond-survives-unverifiable]"),
+        "@as_compat silences modernization lints, not declared contracts: {diags:?}"
+    );
+}
+
+/// The clobbers-membership skip reads the EXPANDED reglist: `clobbers(d0-d1)`
+/// contains d1, so `out(d1 if eq)` makes no claim. Non-vacuous against the
+/// control below, which is the same body with d1 outside the declared range.
+#[test]
+fn the_survives_skip_expands_the_clobbers_reglist() {
+    let src = "module m\n\
+               proc f() clobbers(d0-d1) out(d1 if eq) {\n\
+               \x20   moveq #7, d1\n\
+               \x20   cmpi.w #0, Flag\n\
+               \x20   beq .full\n\
+               \x20   moveq #0, d0\n\
+               \x20   rts\n\
+               .full:\n\
+               \x20   moveq #1, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.out-cond-survives-unverifiable]"),
+        "a range mention puts d1 in clobbers — no claim to check: {diags:?}"
+    );
+}
+
+/// The control for the range skip: the same body with d1 OUTSIDE `clobbers`
+/// makes the claim, and d1 is destroyed before the test, so it fires. Without
+/// this pair the test above would pass with the check deleted.
+#[test]
+fn a_cond_out_outside_the_clobbers_range_still_claims() {
+    let src = "module m\n\
+               proc f() clobbers(d0) out(d1 if eq) {\n\
+               \x20   moveq #7, d1\n\
+               \x20   cmpi.w #0, Flag\n\
+               \x20   beq .full\n\
+               \x20   moveq #0, d0\n\
+               \x20   rts\n\
+               .full:\n\
+               \x20   moveq #1, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.out-cond-survives-unverifiable]"),
+        "d1 outside clobbers claims survival and does not survive: {diags:?}"
+    );
+}
+
+/// A register named BOTH unconditionally and conditionally makes no survives
+/// claim. It cannot: `[proc.out-clobbers-overlap]` (re-keyed above) rejects
+/// `clobbers(a1)` for it, so charging the claim would leave a contract with no
+/// legal spelling — the remedy the diagnostic names would itself be an error.
+/// Non-vacuous against `cond_out_survives_claim_fires_when_the_write_precedes_the_test`,
+/// which is this body with the plain `a1` mention removed and DOES fire.
+#[test]
+fn a_register_named_unconditionally_too_makes_no_survives_claim() {
+    let src = "module m\n\
+               proc f() clobbers(d0) out(a1, a1 if eq) {\n\
+               \x20   lea Slot, a1\n\
+               \x20   cmpi.w #0, Flag\n\
+               \x20   beq .full\n\
+               \x20   moveq #0, d0\n\
+               \x20   rts\n\
+               .full:\n\
+               \x20   moveq #1, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.out-cond-survives-unverifiable]"),
+        "an unconditional mention makes this an unconditional result, not a claim: {diags:?}"
+    );
+}
+
 #[test]
 fn cond_out_may_not_overlap_preserves() {
     // The preserves half is NOT relaxed for a conditional result: a register

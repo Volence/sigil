@@ -117,6 +117,17 @@ fn main() {
         println!("  {:<28} calls {:<24} holds {} across clobber", f.proc, f.callee, f.reg);
     }
 
+    println!(
+        "\n-- [proc.out-cond-survives-unverifiable] firings ({}): --",
+        report.survives_firings.len()
+    );
+    for f in &report.survives_firings {
+        println!(
+            "  {:<28} out({} if {}) claims survival, but {}",
+            f.proc, f.reg, f.cc, f.reason
+        );
+    }
+
     println!("\n-- dead-saves (D1d worklist, {}): --", report.dead_saves.len());
     for d in &report.dead_saves {
         println!("  {:<28} {:<4} bracketing {}", d.proc, d.reg, d.callees.join(","));

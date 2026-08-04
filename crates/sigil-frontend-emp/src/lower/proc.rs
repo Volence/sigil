@@ -174,6 +174,79 @@ pub(super) fn lower_proc(
     if !proc.out_flags.is_empty() || !proc.out_cond.is_empty() {
         check_out_flags_cond(&proc.name, &proc.out_flags, &proc.out_cond, diags);
     }
+
+    // 8. The SURVIVES half of a conditional result (delta spec §7.1): a cond-out
+    // register ABSENT from `clobbers` claims it still holds its entry value on
+    // every `!cc` return path. Error-tier and not `@as_compat`-silenced, like
+    // every declared contract. 68k only — `VALID_CCS` is the 68k set and is
+    // applied to both CPUs, so a Z80 `out(a if z)` is rejected before this point.
+    if ctx.cpu != Cpu::Z80 && !proc.out_cond.is_empty() && proc.clobbers.is_some() {
+        check_survives_claims(proc, &buf, diags);
+    }
+}
+
+/// Verify each conditional result's SURVIVES claim (delta spec §7.1): `out(rN if
+/// cc)` with rN absent from `clobbers(...)` says rN is untouched on every `!cc`
+/// return path, and [`crate::out_verify::check_cond_out_survives`] proves it by
+/// the same machinery `preserves` uses, scoped to those returns.
+///
+/// **The caller gates this on a DECLARED `clobbers(...)` clause** (mirroring
+/// `check_clobbers`): §7.1's rule reads clobbers MEMBERSHIP, so a proc with no
+/// clobber contract states nothing about its failure edges and there is no claim
+/// to check.
+///
+/// The DEFER pattern is `check_preserves`': prove under the conservative
+/// `ClobberAll` (per-file lowering has no cross-file callee knowledge — a callee
+/// here may be a synthetic, contract-less stub), and re-probe anything that fails
+/// under the optimistic `PreserveAll`. A register that verifies only under the
+/// probe is blocked SOLELY by calls, a fact only the whole-corpus closure can
+/// settle — stay silent and let `corpus_contracts`' oracle run, which is the
+/// final authority and gated by the strict suite.
+fn check_survives_claims(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    diags: &mut Vec<Diagnostic>,
+) {
+    use crate::preserves::CallPolicy;
+    // `cond_out_pairs` drops a register that is ALSO named unconditionally: its
+    // out is unconditional, and forcing it into `clobbers` to discharge a claim
+    // would trip `[proc.out-clobbers-overlap]` — a contract with no legal
+    // spelling. It also owns the canonicalisation, so no consumer re-derives it.
+    let cond: Vec<(Reg, String)> = proc
+        .cond_out_pairs(crate::regfile::RegFile::M68k)
+        .into_iter()
+        .filter_map(|(reg, cc)| Reg::from_name(&reg).map(|r| (r, cc)))
+        .collect();
+    if cond.is_empty() {
+        return;
+    }
+    let clobbers = expand_reglist_regs(proc.clobbers.as_deref().unwrap_or(&[]));
+    let strict = crate::out_verify::check_cond_out_survives(
+        &proc.name,
+        &buf.items,
+        &cond,
+        &clobbers,
+        CallPolicy::ClobberAll,
+        proc.span,
+    );
+    if strict.is_empty() {
+        return;
+    }
+    let still_failing: Vec<(Reg, String)> = cond
+        .iter()
+        .filter(|(r, _)| strict.iter().any(|f| f.reg == r.to_string()))
+        .cloned()
+        .collect();
+    for f in crate::out_verify::check_cond_out_survives(
+        &proc.name,
+        &buf.items,
+        &still_failing,
+        &clobbers,
+        CallPolicy::PreserveAll,
+        proc.span,
+    ) {
+        push(diags, Level::Error, f.span, crate::out_verify::survives_message(&f));
+    }
 }
 
 /// Verify a `(cpu: z80)` proc's `preserves` contract (rung-2 §4.2/§3.2) via the
@@ -911,10 +984,12 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
 ///   register in BOTH `out` and (`clobbers` | `preserves`) is a contradiction
 ///   (returned-and-scratch / returned-and-untouched). Preserves segments are
 ///   expanded to their register set for the membership test. A register whose
-///   out is CONDITIONAL (`out(rN if cc)`) is exempt from the clobbers half —
-///   result on the cc edge, scratch on the others is a coherent contract, not a
-///   contradiction. The preserves half has no such exemption (written on any
-///   path still contradicts untouched on all paths).
+///   out is EXCLUSIVELY conditional (every mention carries an `if cc`) is exempt
+///   from the clobbers half — result on the cc edge, scratch on the others is a
+///   coherent contract, not a contradiction. `out(rN, rN if cc) clobbers(rN)`
+///   keeps its unconditional mention and still errors. The preserves half has no
+///   such exemption (written on any path still contradicts untouched on all
+///   paths).
 /// - `[proc.out-unwritten]` (WARN) — an `out`-declared register never written
 ///   on any path in the body is a false output claim (a stale `out()` after a
 ///   refactor). The dual of `[proc.clobber-undeclared]`; reuses the SAME
@@ -950,13 +1025,15 @@ fn check_out(
     // the overlap check subtracts it here. `out ∩ preserves` is NOT relaxed:
     // written on ANY path contradicts untouched on ALL paths.
     //
-    // The guard set is expanded through the SAME register file as the sets it is
-    // tested against — a raw-text set would miss `sp`/`a7` on 68k and every Z80
-    // pair spelling (`hl` expands to `h`+`l`). [`ast::ProcDecl::cond_out_regs`]
-    // owns that expansion for every consumer.
+    // The exemption is keyed on (register, EXCLUSIVELY conditional): a register
+    // ALSO mentioned unconditionally (`out(rN, rN if cc)`) keeps the
+    // unconditional reading and still errors against `clobbers(rN)`.
+    // [`ast::ProcDecl::cond_only_out_regs`] owns that keying — and the register
+    // file expansion behind it, without which a raw-text set would miss `sp`/`a7`
+    // on 68k and every Z80 pair spelling (`hl` expands to `h`+`l`).
     if cpu == Cpu::Z80 {
         let rf = crate::regfile::RegFile::Z80;
-        let cond_guarded = proc.cond_out_regs(rf);
+        let cond_guarded = proc.cond_only_out_regs(rf);
         let out_set = crate::regfile::expand_reglist(
             proc.out.as_deref().unwrap_or(&[]),
             rf,
@@ -1021,7 +1098,7 @@ fn check_out(
     // out ∩ clobbers — returned AND scratch is contradictory. Expand the
     // clobbers reglist quietly (`check_clobbers` owns its diagnostics).
     let clobbers = reglist_set_quiet(proc.clobbers.as_deref().unwrap_or(&[]));
-    let cond_guarded = proc.cond_out_regs(crate::regfile::RegFile::M68k);
+    let cond_guarded = proc.cond_only_out_regs(crate::regfile::RegFile::M68k);
     for name in &valid {
         if clobbers.regs.contains(name) && !cond_guarded.contains(name) {
             push(

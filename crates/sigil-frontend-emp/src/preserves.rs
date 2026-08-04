@@ -26,6 +26,13 @@
 //! is `[proc.preserves-unverifiable]` (error — a wrong contract is worse than
 //! none, the D2.32 principle kept). The movem entry/exit pair is the trivial fast
 //! path of this same analysis — D2.32 subsumed.
+//!
+//! **Scoped exits** ([`ReturnScope`]): the same proof serves the ¬cc half of a
+//! conditional out (delta spec §7.1). `out(rN if cc)` with rN absent from
+//! `clobbers` claims rN survives the ¬cc return paths — a preservation proof
+//! obligated on SOME exits, not all (rN is deliberately written on the cc edge).
+//! Only the choice of exits differs; the round-trip, never-written and
+//! callee-preserves proofs are the ones below, unchanged.
 
 use crate::closure::RegEffect;
 use crate::flag_check::{Cfg, Edge};
@@ -91,9 +98,10 @@ fn call_preserves(policy: &CallPolicy, callee: Option<&str>, r: Reg) -> bool {
 /// The proof outcome for one checked register.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PreserveStatus {
-    /// Proven preserved: on every return path the register holds its entry value.
+    /// Proven preserved: on every exit in scope ([`ReturnScope`]) the register
+    /// holds its entry value.
     Verified,
-    /// Proven NOT preserved: some return path leaves it clobbered (a declared
+    /// Proven NOT preserved: some in-scope exit leaves it clobbered (a declared
     /// `preserves` here is a false contract).
     NotPreserved,
     /// A soundness bailout was hit (computed sp / sp escape / aliasing store) and
@@ -174,12 +182,51 @@ fn reglist_mask(ops: &[CodeOperand]) -> Option<u16> {
     })
 }
 
+/// Which exits the entry-value proof is obligated on.
+#[derive(Clone, Copy)]
+pub enum ReturnScope<'a> {
+    /// Every `rts` / fall-off-end; a transfer OUT of the proc is ignored — the
+    /// `preserves(rN)` contract (see the `Edge::Defer` arm for why).
+    AllReturns,
+    /// Exactly these instruction indices, counting ANY edge that leaves the proc
+    /// — a return or a transfer out. The ¬cc exits of an `out(rN if cc)`
+    /// survives-claim
+    /// ([`out_verify::check_cond_out_survives`](crate::out_verify::check_cond_out_survives)),
+    /// which must hold wherever control leaves, not only where it `rts`.
+    Sites(&'a BTreeSet<usize>),
+}
+
+impl ReturnScope<'_> {
+    /// Is leaving instruction `idx` by an edge that ends the proc a checkpoint
+    /// for this proof? `is_return` distinguishes an `Edge::Abandon` (a real
+    /// return) from an `Edge::Defer` (a transfer out), which `AllReturns`
+    /// ignores and `Sites` treats like any other exit.
+    fn checks(&self, idx: usize, is_return: bool) -> bool {
+        match self {
+            ReturnScope::AllReturns => is_return,
+            ReturnScope::Sites(s) => s.contains(&idx),
+        }
+    }
+}
+
 /// Verify `preserves(rN)` for each register in `check` over a proc's evaluated
 /// CodeBuf `items`. One forward dataflow serves all checked registers.
 pub fn verify_preserved(
     items: &[CodeItem],
     check: &[Reg],
     policy: CallPolicy,
+) -> BTreeMap<Reg, PreserveStatus> {
+    verify_preserved_on(items, check, policy, ReturnScope::AllReturns)
+}
+
+/// [`verify_preserved`] with the obligated exits chosen by `scope` — the entry
+/// point the ¬cc survives-claim uses. Everything about the proof is identical;
+/// only WHICH exits must show the entry value differs.
+pub fn verify_preserved_on(
+    items: &[CodeItem],
+    check: &[Reg],
+    policy: CallPolicy,
+    scope: ReturnScope<'_>,
 ) -> BTreeMap<Reg, PreserveStatus> {
     let cfg = Cfg::build(items);
 
@@ -238,23 +285,24 @@ pub fn verify_preserved(
     );
     let mut work: VecDeque<usize> = VecDeque::from([entry_idx]);
     // A bailout is PATH-LOCAL: it taints the state (`State::bailed`) and rides the
-    // CFG. Only a bail that REACHES a return (`rts`/fall-off) makes a written
-    // register unverifiable — a bail on a noreturn/`Defer` path (the DEBUG
-    // `raise_error` `subq #2,sp`→`jmp handler` shape) never constrains a return.
+    // CFG. Only a bail that REACHES an IN-SCOPE exit makes a written register
+    // unverifiable — under `AllReturns` a bail on a noreturn/`Defer` path (the
+    // DEBUG `raise_error` `subq #2,sp`→`jmp handler` shape) constrains nothing,
+    // because no `Defer` is in scope there.
     let mut bail_reason: Option<String> = None;
-    let mut bailed_reached_return = false;
+    let mut bailed_reached_exit = false;
 
-    // For each checked register: does EVERY return path see it at its entry
-    // value? Starts true; a return with a clobbered value flips it false.
-    let mut all_returns_preserve: BTreeMap<Reg, bool> =
+    // For each checked register: does EVERY in-scope exit see it at its entry
+    // value? Starts true; an exit with a clobbered value flips it false.
+    let mut all_exits_preserve: BTreeMap<Reg, bool> =
         check.iter().map(|r| (*r, true)).collect();
-    // Per checked register: is its linear delta `Some(0)` at EVERY return? An
-    // independent POSITIVE proof (the register-arithmetic round-trip), valid even
-    // past a stack bailout (a computed-sp hazard does not touch a register whose
-    // value is a proven static offset of entry). Starts true; flipped false by
-    // any return where delta != Some(0).
+    // Per checked register: is its linear delta `Some(0)` at EVERY in-scope exit?
+    // An independent POSITIVE proof (the register-arithmetic round-trip), valid
+    // even past a stack bailout (a computed-sp hazard does not touch a register
+    // whose value is a proven static offset of entry). Starts true; flipped false
+    // by any exit where delta != Some(0).
     let mut delta_ok: BTreeMap<Reg, bool> = check.iter().map(|r| (*r, true)).collect();
-    let mut saw_return = false;
+    let mut saw_exit = false;
 
     while let Some(idx) = work.pop_front() {
         let mut st = in_state[&idx].clone();
@@ -291,25 +339,17 @@ pub fn verify_preserved(
                     }
                 }
                 Edge::Abandon => {
-                    // A return / fall-off-end: checkpoint every checked register.
-                    saw_return = true;
-                    for r in check {
-                        // The linear-delta proof holds on this return iff Δ==0 AND
-                        // the path did NOT bail: a bail FREEZES the transfer, so
-                        // `delta` after it is STALE — it cannot prove anything.
-                        // (A bail on a noreturn path exits via Defer, never here.)
-                        if st.bailed || st.delta[reg_idx(*r)] != Some(0) {
-                            *delta_ok.get_mut(r).unwrap() = false;
-                        }
-                    }
-                    if st.bailed {
-                        bailed_reached_return = true;
-                    } else {
-                        for r in check {
-                            if !st.entry[reg_idx(*r)] {
-                                *all_returns_preserve.get_mut(r).unwrap() = false;
-                            }
-                        }
+                    // A return / fall-off-end: checkpoint every checked register,
+                    // if this exit is in scope.
+                    if scope.checks(idx, true) {
+                        checkpoint(
+                            &st,
+                            check,
+                            &mut saw_exit,
+                            &mut delta_ok,
+                            &mut all_exits_preserve,
+                            &mut bailed_reached_exit,
+                        );
                     }
                 }
                 Edge::Defer => {
@@ -320,9 +360,30 @@ pub fn verify_preserved(
                     // handler — no return obligation at all) or is a real tail
                     // call whose preservation is a TRANSITIVE property the closure
                     // accounts for via its tail edge (corpus `TAIL_MNEMONICS`).
-                    // Either way it is not a local counterexample — ignore it,
-                    // bailed or not. (This mirrors D2.32, which verified the movem
-                    // pair ignoring control flow.)
+                    // Either way it is not a local counterexample under
+                    // `AllReturns` — ignore it, bailed or not. (This mirrors
+                    // D2.32, which verified the movem pair ignoring control flow.)
+                    //
+                    // A `Sites` scope names its own exits, and control leaving
+                    // the proc IS one: a register already destroyed HERE is
+                    // destroyed from the caller's view whatever the target does.
+                    // What the TARGET does is deliberately not charged — the
+                    // transfer may diverge (a noreturn error handler, which owes
+                    // the caller nothing) and nothing in the language marks that
+                    // yet, so charging it would reject an honest failure rail.
+                    // The transitive half stays where `preserves` leaves it: the
+                    // closure folds an unconditional tail's effect into
+                    // `effective` via its own tail edge.
+                    if scope.checks(idx, false) {
+                        checkpoint(
+                            &st,
+                            check,
+                            &mut saw_exit,
+                            &mut delta_ok,
+                            &mut all_exits_preserve,
+                            &mut bailed_reached_exit,
+                        );
+                    }
                 }
             }
         }
@@ -333,20 +394,20 @@ pub fn verify_preserved(
         .iter()
         .map(|r| {
             let clobbered = ever_clobbered[reg_idx(*r)];
-            let status = if !saw_return || delta_ok[r] {
-                // No returns (vacuous), OR the linear-delta round-trip proves the
-                // register holds its entry value at EVERY return — a positive proof
+            let status = if !saw_exit || delta_ok[r] {
+                // No in-scope exit (vacuous), OR the linear-delta round-trip proves
+                // the register holds its entry value at EVERY one — a positive proof
                 // that overrides a stack bailout (the hazard is about sp, not this
                 // register's static offset). This is the register-arithmetic
                 // extension: DeleteObject's `(a0)+`…`lea -N(a0), a0` verifies here.
                 PreserveStatus::Verified
-            } else if bailed_reached_return && clobbered {
+            } else if bailed_reached_exit && clobbered {
                 // A bail reached a return and this register is written somewhere,
                 // with no delta proof — the stack model can't prove the round-trip.
                 PreserveStatus::Unverifiable(
                     bail_reason.clone().unwrap_or_else(|| "unverifiable stack".to_string()),
                 )
-            } else if all_returns_preserve[r] {
+            } else if all_exits_preserve[r] {
                 PreserveStatus::Verified
             } else {
                 PreserveStatus::NotPreserved
@@ -354,6 +415,54 @@ pub fn verify_preserved(
             (*r, status)
         })
         .collect()
+}
+
+/// Apply a transfer of control to `callee` (`None` = indirect / unresolved) to
+/// the entry-value bits: a register the callee does not provably PRESERVE under
+/// `policy` no longer holds its entry value. Linear-delta tracking ends for every
+/// register either way — the callee may recompute them past what the delta model
+/// follows, conservative regardless of policy. Shared by the CALL transfer and
+/// the scoped TAIL-exit charge, which owe the register file the same debt: both
+/// hand control to code this proof does not read.
+fn apply_callee_effect(st: &mut State, policy: &CallPolicy, callee: Option<&str>) {
+    for (i, r) in REG_BY_IDX.iter().enumerate() {
+        if !call_preserves(policy, callee, *r) {
+            st.entry[i] = false;
+        }
+    }
+    st.delta = [None; 16];
+}
+
+/// Charge one in-scope exit against every checked register: the linear-delta
+/// proof needs Δ==0 on an unbailed path, and the stack/entry-bit model needs the
+/// entry bit still set. Called from BOTH exit arms so a scoped tail-transfer
+/// checkpoint and a return checkpoint are judged by identical rules.
+fn checkpoint(
+    st: &State,
+    check: &[Reg],
+    saw_exit: &mut bool,
+    delta_ok: &mut BTreeMap<Reg, bool>,
+    all_exits_preserve: &mut BTreeMap<Reg, bool>,
+    bailed_reached_exit: &mut bool,
+) {
+    *saw_exit = true;
+    for r in check {
+        // The linear-delta proof holds here iff Δ==0 AND the path did NOT bail: a
+        // bail FREEZES the transfer, so `delta` after it is STALE — it cannot
+        // prove anything.
+        if st.bailed || st.delta[reg_idx(*r)] != Some(0) {
+            *delta_ok.get_mut(r).unwrap() = false;
+        }
+    }
+    if st.bailed {
+        *bailed_reached_exit = true;
+    } else {
+        for r in check {
+            if !st.entry[reg_idx(*r)] {
+                *all_exits_preserve.get_mut(r).unwrap() = false;
+            }
+        }
+    }
 }
 
 fn is_call(mnem: &str) -> bool {
@@ -483,13 +592,7 @@ fn transfer(
     // ([`CallPolicy`]): a register the callee provably preserves keeps its entry
     // bit; every other is clobbered.
     if is_call(mnem) {
-        let callee = call_target(ops);
-        for i in 0..16 {
-            if !call_preserves(policy, callee, REG_BY_IDX[i]) {
-                st.entry[i] = false;
-            }
-        }
-        st.delta = [None; 16];
+        apply_callee_effect(st, policy, call_target(ops));
         return None;
     }
 
