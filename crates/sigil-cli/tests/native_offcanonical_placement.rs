@@ -220,7 +220,10 @@ fn config_b_doctored_size_table_breaks_the_build() {
             .join("../sigil-harness/golden/config_b.bin"),
     )
     .unwrap_or_else(|e| panic!("read golden: {e}"));
-    let eor = 0x43470usize;
+    // Release ships NOTHING past EndOfRom since item 29, so the golden's own length
+    // IS the anchor end — a literal here rotted once already (it held the pre-strip
+    // 0x43470 and indexed past the 4.2 KB-smaller post-strip ROM).
+    let eor = golden.len();
     let base_profile = native::config_b_profile();
     let base = native::build_rom_chained(&aeon, &base_profile).unwrap_or_else(|e| panic!("{e}"));
     let header = |i: usize| {

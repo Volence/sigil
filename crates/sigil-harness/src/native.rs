@@ -368,13 +368,16 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         // compression_selftest above. Placed at its map-order slot (BusError).
         specs.push(m!("engine.debug.error_handler", "error_handler", pins::ERROR_HANDLER));
     } else {
-        // Review item 29 part 4 — the RELEASE loud-failure handler (~42 B: mask,
-        // red backdrop, freeze). It replaces the stripped error_handler island as
-        // every fault vector's target in the release shape, and takes the tail
-        // placement slot the deleted null_interrupt.emp used to hold. RELEASE-ONLY.
-        // Region is cosmetic under Frozen (DUMMY_REGION, like the demo modules) —
-        // the chainer sizes it live; map.toml `order` places it at ReleaseFault.
-        specs.push(m!("engine.system.release_fault", "release_fault", DUMMY_REGION));
+        // Review item 29 part 4 — the RELEASE loud-failure handler (46 B: mask,
+        // display off, red backdrop, freeze). It replaces the stripped
+        // error_handler island as every fault vector's target in the release
+        // shape, and takes the tail placement slot the deleted null_interrupt.emp
+        // used to hold. RELEASE-ONLY. Region pin is REQUIRED (not DUMMY_REGION):
+        // the PinnedBaked bootstrap path bakes bases from it — a dummy left this
+        // section at base 0, colliding with `vectors` in the pinned resolve
+        // (caught by soundbankhead_port). Under Frozen the pin is cosmetic and
+        // the chainer sizes it live via map.toml `order`, same as everything.
+        specs.push(m!("engine.system.release_fault", "release_fault", pins::RELEASE_FAULT));
     }
     // I4: the OJZ replay fixture — pushed LAST so it chains after everything
     // (past the anchored error-handler island): re-recording (content+size

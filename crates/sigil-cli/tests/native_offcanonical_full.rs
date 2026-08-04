@@ -197,7 +197,7 @@ fn config_b() -> Target {
         load_bearing: &[
             "EntryPoint",
             "GameLoop",
-            "BusError",
+            "ReleaseFault", // release shape: the ErrorHandler-class spot-check is ReleaseFault since item 29 part 4
             "HeightMaps",
             "AnimateSprite",
             "EndOfRom",
@@ -211,7 +211,7 @@ fn demo_plain() -> Target {
         load_bearing: &[
             "EntryPoint",
             "GameLoop",
-            "BusError",
+            "ReleaseFault", // release shape: item 29 part 4
             "AnimateSprite",
             "EndOfRom",
         ],
