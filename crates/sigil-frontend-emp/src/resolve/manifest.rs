@@ -78,12 +78,15 @@ impl Manifest {
             let (file, mut pdiags) = crate::parse_file(&src, source);
             diags.append(&mut pdiags);
             let id = file.module.path.segments.join(".");
-            if let Some(expected) = expected_id_from_path(root, path) {
-                if expected != id {
+            // The id's LAST segment must name the file; the segments above it are
+            // a free semantic namespace (see `file_stem_of`).
+            if let Some(stem) = file_stem_of(root, path) {
+                let last = id.rsplit('.').next().unwrap_or(&id);
+                if last != stem {
                     diags.push(Diagnostic {
                         level: Level::Warning,
                         message: format!(
-                            "[module.path-mismatch] module `{id}` is at `{}`, which suggests id `{expected}` (rename the file/dir or the header to agree)",
+                            "[module.path-mismatch] module `{id}` ends in `{last}` but its file is `{}` — the last id segment and the file stem must agree (rename the file or the header)",
                             path.strip_prefix(root).unwrap_or(path).display()
                         ),
                         primary: file.module.span,
@@ -214,17 +217,22 @@ fn is_nested_checkout_dir(dir: &Path) -> bool {
     dir.join(".git").exists()
 }
 
-/// Compute the module id implied by a file's location relative to `root`:
-/// the directory segments below `root` plus the file stem, joined with `.`.
-fn expected_id_from_path(root: &Path, path: &Path) -> Option<String> {
+/// The file stem of `path`, which is the only part of a module's location the
+/// id is required to agree with.
+///
+/// A module id is a SEMANTIC name, not a path transcription: an id is free to be
+/// flatter than the tree it lives in (`engine.level.parallax_dsl` under
+/// `engine/level/`, but equally `games.sonic4.constants` under
+/// `games/sonic4/config/`). Requiring the whole dotted id to reproduce the
+/// directory chain would make the layout and the namespace the same decision,
+/// which this codebase deliberately separates — 93 of 122 modules disagree with
+/// their directory chain on purpose, and pinning that would report the
+/// convention itself as an error.
+///
+/// What DOES have to hold is the last segment: the file a reader opens must be
+/// named after the module they looked up. That is the half a stale rename
+/// actually breaks, and the half that is cheap to keep true.
+fn file_stem_of(root: &Path, path: &Path) -> Option<String> {
     let rel = path.strip_prefix(root).ok()?;
-    let stem = rel.file_stem()?.to_str()?;
-    let mut segs: Vec<String> = rel
-        .parent()
-        .into_iter()
-        .flat_map(|p| p.components())
-        .filter_map(|c| c.as_os_str().to_str().map(String::from))
-        .collect();
-    segs.push(stem.to_string());
-    Some(segs.join("."))
+    Some(rel.file_stem()?.to_str()?.to_string())
 }
