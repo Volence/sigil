@@ -7,8 +7,10 @@
 //! linked section by LMA) and the convsym allowlist ([`derive_convsym_rewritten`]
 //! / [`assert_rom_matches_convsym`] / [`assert_rom_matches`]) that confines the
 //! two semantic header fields the out-of-scope `convsym`/`fixheader` post-steps
-//! rewrite — in the DEBUG shapes, the only ones that carry a deb2 appendix since
-//! item 29. The release shapes compare with [`assert_rom_matches_release`].
+//! rewrite — in every shape that carries a deb2 appendix, which since the
+//! crash-report ruling (owner-ruled 2026-08-04) is BOTH canonical shapes, release
+//! included. Only the opt-in `lean` profile ships no appendix; its exact-identity
+//! bar is [`assert_rom_matches_release`].
 
 /// Shared test-support: the AS-truth equ blob for the `engine.constants` twin
 /// and the drift-guard filter, consolidated out of ~9 hand-copied port/probe
@@ -99,14 +101,21 @@ pub fn derive_convsym_rewritten(rom: &[u8], refrom: &[u8]) -> Vec<usize> {
         .collect()
 }
 
-/// The RELEASE-shape whole-ROM bar (item 29): a non-DEBUG build ships NO deb2
-/// appendix, so the reference file IS the assembled image — same length, and
-/// identical in every byte INCLUDING the two header fields the appendix used to
-/// perturb (`emit_rom` folds the checksum over exactly these bytes and nothing
-/// re-fixes it afterwards). The length check is the standing regression guard
-/// against the appendix leaking back into a release artifact; the empty
-/// allowlist is the point, not an omission — the convsym/fixheader post-steps
-/// do not run in this shape, so there is nothing to allow.
+/// The NO-APPENDIX whole-ROM bar: a build that ships no deb2 appendix, so the
+/// reference file IS the assembled image — same length, and identical in every byte
+/// INCLUDING the two header fields the appendix would otherwise perturb (`emit_rom`
+/// folds the checksum over exactly these bytes and nothing re-fixes it afterwards).
+/// The length check is the standing regression guard against the appendix leaking
+/// into such an artifact; the empty allowlist is the point, not an omission — the
+/// convsym/fixheader post-steps do not run in this shape, so there is nothing to allow.
+///
+/// SCOPE (owner-ruled 2026-08-04): this WAS the release-shape bar under review item
+/// 29. The crash-report ruling put the deb2 symbol table back into release, so the
+/// only shape it describes now is the opt-in `lean` profile. The release shapes moved
+/// to [`assert_rom_matches_convsym`]. Retained as the canonical statement of the bar
+/// (and reusable by any future no-appendix shape); `lean`'s own gate today is the
+/// anchor comparison in `native_offcanonical_rom`, plus the appendix-length assertion
+/// in `native_offcanonical_full`.
 pub fn assert_rom_matches_release(rom: &[u8], refrom: &[u8], expected_len: usize, label: &str) {
     assert_eq!(
         refrom.len(),

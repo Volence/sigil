@@ -42,19 +42,41 @@ fn strict_gate() -> bool {
 // `repin`); the IRQ4 $70 entry now targets HBlank_Vector_Slot (the RAM
 // trampoline slot at the RAM tail), not a ROM proc.
 use sigil_harness::pins;
-// Review item 29 part 4 (the MDDBG strip): the RELEASE (plain) vector table routes
-// every fault at ReleaseFault (release_fault.emp), not the error_handler per-class
-// stubs (which are DEBUG-only now). So the plain replica (m1c_root.asm) references
-// only EntryPoint, ReleaseFault, HBlank_Vector_Slot, VBlank_Handler — the four
-// non-SYSTEM_STACK targets that exist in the plain shape. ReleaseFault's address is
-// the plain-only `release_fault` REGION pin's base. SYSTEM_STACK stays unstubbed
-// (a genuine constants.emp equate).
-const STUBS: &[(&str, i64)] = &[
-    ("EntryPoint", pins::ENTRY_POINT.plain as i64),
-    ("ReleaseFault", pins::RELEASE_FAULT.plain_base as i64),
-    ("HBlank_Vector_Slot", pins::H_BLANK_VECTOR_SLOT.plain as i64),
-    ("VBlank_Handler", pins::V_BLANK_HANDLER.plain as i64),
-];
+// The RELEASE (plain) vector table routes every fault at the 12 error_handler
+// per-class stubs since the crash-report ruling (owner-ruled 2026-08-04): the island
+// SHIPS in release, so the plain table names the same targets the debug one does and
+// `ReleaseFault` is gone from every canonical listing (it is the LEAN shape's handler,
+// and has no pin). The plain replica (m1c_root.asm) therefore references
+// EntryPoint, the 12 stubs, HBlank_Vector_Slot and VBlank_Handler. SYSTEM_STACK stays
+// unstubbed (a genuine constants.emp equate).
+//
+// PLAIN STUB ADDRESSES: the 12 stub pins are `debug_only` in repin.toml (bare `u32`,
+// the debug value) — the per-shape island BASE is carried once by the `error_handler`
+// REGION pin instead of being duplicated across 24 numbers. error_handler.emp has no
+// `if DEBUG` in it at all, so the island's internal layout is shape-invariant and a
+// stub's plain address is `ERROR_HANDLER.plain_base + (pin - BUS_ERROR)`; `BUS_ERROR`
+// IS the island head, so the expression is the identity in the debug shape.
+fn stubs() -> Vec<(&'static str, i64)> {
+    let rebase =
+        |pin: u32| -> i64 { (pins::ERROR_HANDLER.plain_base + (pin - pins::BUS_ERROR)) as i64 };
+    vec![
+        ("EntryPoint", pins::ENTRY_POINT.plain as i64),
+        ("HBlank_Vector_Slot", pins::H_BLANK_VECTOR_SLOT.plain as i64),
+        ("VBlank_Handler", pins::V_BLANK_HANDLER.plain as i64),
+        ("BusError", rebase(pins::BUS_ERROR)),
+        ("AddressError", rebase(pins::ADDRESS_ERROR)),
+        ("IllegalInstr", rebase(pins::ILLEGAL_INSTR)),
+        ("ZeroDivide", rebase(pins::ZERO_DIVIDE)),
+        ("ChkInstr", rebase(pins::CHK_INSTR)),
+        ("TrapvInstr", rebase(pins::TRAPV_INSTR)),
+        ("PrivilegeViol", rebase(pins::PRIVILEGE_VIOL)),
+        ("Trace", rebase(pins::TRACE)),
+        ("Line1010Emu", rebase(pins::LINE1010_EMU)),
+        ("Line1111Emu", rebase(pins::LINE1111_EMU)),
+        ("ErrorExcept", rebase(pins::ERROR_EXCEPT)),
+        ("ErrorTrap", rebase(pins::ERROR_TRAP)),
+    ]
+}
 
 #[test]
 fn vector_table_matches_reference_rom_first_256_bytes() {
@@ -72,8 +94,9 @@ fn vector_table_matches_reference_rom_first_256_bytes() {
 
     // Front-end defines: mirror the real non-debug ASFLAGS from build.sh —
     // SOUND_DRIVER_ENABLED on, __DEBUG__ OFF — plus the external CODE-label stubs.
+    let stubs = stubs();
     let mut defines: Vec<(String, i64)> = vec![("SOUND_DRIVER_ENABLED".to_string(), 1)];
-    defines.extend(STUBS.iter().map(|(n, v)| (n.to_string(), *v)));
+    defines.extend(stubs.iter().map(|(n, v)| (n.to_string(), *v)));
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("m1c_root.asm");
     // Post the Stage-3 P5 ownership flip, `constants.asm` no longer defines the
@@ -148,7 +171,7 @@ fn vector_table_matches_reference_rom_first_256_bytes() {
     // Seed the link symbol table with the same stubs (fallback for any surviving
     // fixup targets not resolved intra-module).
     let mut stub_table = SymbolTable::new();
-    for (name, value) in STUBS {
+    for (name, value) in &stubs {
         stub_table.define(name, SymbolValue::Int(*value));
     }
 

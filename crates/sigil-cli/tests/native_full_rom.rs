@@ -58,9 +58,12 @@ static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const LOAD_BEARING: &[(&str, u32, u32)] = &[
     ("EntryPoint", 0x200, 0x200),        // Game_Entry-class
     ("GameLoop", pins::GAME_LOOP.plain_base, pins::GAME_LOOP.debug_base), // the main loop (pin-sourced)
-    // ErrorHandler-class spot-check is SHAPE-SPLIT since review item 29 part 4 (the
-    // MDDBG strip) — BusError exists only in debug, ReleaseFault only in release —
-    // so it moves out of this both-shapes list into a shape-conditional check below.
+    // ErrorHandler-class spot-check, back in this both-shapes list: since the
+    // crash-report ruling (owner-ruled 2026-08-04) the error_handler island ships in
+    // BOTH canonical shapes, so `BusError` (the island head) has a real per-shape
+    // address again and the region pin carries both. It replaces the shape-split
+    // BusError/ReleaseFault pair that item 29 part 4 forced.
+    ("BusError", pins::ERROR_HANDLER.plain_base, pins::ERROR_HANDLER.debug_base),
     // A player proc. Re-derived at the bug005 refreeze (aeon master ec8a1cc,
     // listings s4.lst/s4.debug.lst): +0x22 plain / +0x7A debug — player_common's
     // parcel growth (+0x18/+0x70) slid player_ground's base, and the G1
@@ -114,22 +117,23 @@ fn run_shape(debug: bool, refname: &str, key: &str) {
     let full2 = native::build_native_full_file(&aeon, debug).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(full, full2, "{shape}: full file non-deterministic");
 
-    // (b) PRESENCE / ABSENCE — shape-dependent since aeon review item 29. DEBUG keeps
-    // the deb2 appendix (magic at EndOfRom, non-trivial size). RELEASE ships the
-    // assembled image ALONE, so the bar inverts: nothing past EndOfRom at all. Stating
-    // it as an assertion rather than skipping it keeps the leak detectable — an
-    // appendix creeping back into release fails here with a named message.
+    // (b) PRESENCE — asserted in BOTH canonical shapes now. This assertion INVERTED
+    // at the crash-report ruling (owner-ruled 2026-08-04): item 29 had release
+    // shipping nothing past EndOfRom, and this arm proved that absence. The ruling
+    // reclassified the MD Debugger symbol table as a DIAGNOSTIC that ships, so what
+    // the release arm must now prove is the opposite — the appendix is THERE, with
+    // the deb2 magic exactly at EndOfRom and a non-trivial size. That is the real
+    // regression risk today: a release build that silently drops the symbol table
+    // still boots and still crashes correctly, it just prints `<unknown>` for every
+    // line of the crash screen a player would report. The no-appendix bar this
+    // replaces now belongs to the `lean` shape (native_offcanonical_full).
     let appendix = full.len() - eor;
-    if debug {
-        assert_eq!(&full[eor..eor + 2], &native::DEB2_MAGIC, "{shape}: deb2 magic at EndOfRom");
-        assert!(appendix >= 0x2000, "{shape}: appendix {appendix:#x} too small");
-    } else {
-        assert_eq!(
-            appendix, 0,
-            "{shape}: release must ship NOTHING past EndOfRom, found {appendix:#x} bytes \
-             (has the deb2 symbol appendix leaked back into release?)"
-        );
-    }
+    assert_eq!(&full[eor..eor + 2], &native::DEB2_MAGIC, "{shape}: deb2 magic at EndOfRom");
+    assert!(
+        appendix >= 0x2000,
+        "{shape}: appendix {appendix:#x} too small — has the deb2 symbol table been \
+         dropped or collapsed? Both canonical shapes must ship it."
+    );
 
     // ASSEMBLED PREFIX == asl (header-neutral): the full file's `[0, EndOfRom)`
     // matches the asl reference modulo the checksum ($18E) and ROM-end ($1A4) fields
@@ -161,16 +165,6 @@ fn run_shape(debug: bool, refname: &str, key: &str) {
             .unwrap_or_else(|| panic!("{shape}: load-bearing symbol `{name}` absent from convsym output"));
         assert_eq!(*got, want, "{shape}: `{name}` resolved to {got:#X}, expected {want:#X}");
     }
-
-    // ErrorHandler-class spot-check, SHAPE-SPLIT (review item 29 part 4): the RELEASE
-    // shape's tail fault handler is ReleaseFault (release_fault.emp — plain-only
-    // region pin); DEBUG's is the BusError error_handler stub (debug-only symbol).
-    let (fault_name, fault_want): (&str, u32) =
-        if debug { ("BusError", pins::BUS_ERROR) } else { ("ReleaseFault", pins::RELEASE_FAULT.plain_base) };
-    let fault_got = resolved
-        .get(fault_name)
-        .unwrap_or_else(|| panic!("{shape}: fault-handler symbol `{fault_name}` absent from convsym output"));
-    assert_eq!(*fault_got, fault_want, "{shape}: `{fault_name}` resolved to {fault_got:#X}, expected {fault_want:#X}");
 
     // FULL-FILE golden (sigil-canonical, CRC-pinned).
     let crc = native::crc32(&full);
@@ -210,25 +204,26 @@ fn deb2_appendix_negative_controls() {
     let (_rom, mut listing) =
         native::build_native_rom_with_listing(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
 
-    // Undoctored: ReleaseFault resolves to its known address (pin-sourced). (Was
-    // BusError; review item 29 part 4 strips error_handler from this plain build, so
-    // the plain-shape tail symbol is now ReleaseFault — the release_fault region pin.)
+    // Undoctored: BusError (the error_handler island head) resolves to its known
+    // plain-shape address, pin-sourced. The probe is BusError again, not ReleaseFault:
+    // since the crash-report ruling this PLAIN build carries the island, and
+    // ReleaseFault is absent from it entirely (it is the lean shape's handler).
     let base = native::convsym_resolve(&aeon, &listing).unwrap();
     assert_eq!(
-        base.get("ReleaseFault"),
-        Some(&pins::RELEASE_FAULT.plain_base),
-        "control: undoctored ReleaseFault"
+        base.get("BusError"),
+        Some(&pins::ERROR_HANDLER.plain_base),
+        "control: undoctored BusError"
     );
 
-    // DOCTOR: move ReleaseFault to a bogus in-range address.
+    // DOCTOR: move BusError to a bogus in-range address.
     for s in listing.iter_mut() {
-        if s.name == "ReleaseFault" {
+        if s.name == "BusError" {
             s.value = 0x00BEEF;
         }
     }
     let doctored = native::convsym_resolve(&aeon, &listing).unwrap();
     assert_eq!(
-        doctored.get("ReleaseFault"),
+        doctored.get("BusError"),
         Some(&0x00BEEF),
         "t24: convsym must reflect the doctored address (else the spot-check is vacuous)"
     );

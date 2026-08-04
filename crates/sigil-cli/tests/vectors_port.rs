@@ -9,12 +9,14 @@
 //!
 //! The 64 entries are raw `dc.l` link pointers. SYSTEM_STACK is a constants.emp
 //! equ; the rest are labels resolved at link — EntryPoint (boot.emp) and
-//! VBlank_Handler (vblank.emp) are shape-invariant; the fault cells are SHAPE-SPLIT
-//! since review item 29 part 4 (the MDDBG strip): the DEBUG arm points at the 12
-//! error_handler.emp exception stubs, the RELEASE arm at ReleaseFault
-//! (release_fault.emp). HBlank_Vector_Slot is the RAM trampoline. The distinct
-//! targets are fed here as synthetic pinned carriers at their per-shape listing
-//! VMAs (sourced from `sigil_harness::pins`).
+//! VBlank_Handler (vblank.emp) are shape-invariant; the fault cells point at the 12
+//! error_handler.emp exception stubs in BOTH canonical shapes since the crash-report
+//! ruling (owner-ruled 2026-08-04 — release ships the MD Debugger island, so its vector
+//! table names the same stubs debug's does; only the island base differs).
+//! `ReleaseFault` is the `lean` profile's handler and appears in neither shape gated
+//! here. HBlank_Vector_Slot is the RAM trampoline. The distinct targets are fed here as
+//! synthetic pinned carriers at their per-shape listing VMAs (sourced from
+//! `sigil_harness::pins`).
 //!
 //! P-A1 (step-0 blocking probe): `dc.l` accepts comma-lists of LABELS (the four
 //! `dc.l ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap` lines, vectors.asm:40-47).
@@ -53,39 +55,44 @@ const REGION_LEN: usize = pins::VECTORS.plain_len; // 0x100, shape-invariant (fi
 /// a constants.emp equ ($FFFFFF00 both shapes) — fed as a phased carrier so `dc.l
 /// SYSTEM_STACK` resolves to that value just like a label.
 ///
-/// Review item 29 part 4 (the MDDBG strip): the fault targets are SHAPE-SPLIT now.
-/// RELEASE (plain) routes every fault at ReleaseFault (release_fault.emp — a plain-
-/// only REGION pin); DEBUG routes them at the error_handler per-class stubs
-/// (BusError/… — debug-only symbol pins, bare `u32`). NullInterrupt is deleted.
+/// The fault targets are the SAME 12 error_handler per-class stubs in BOTH canonical
+/// shapes since the crash-report ruling (owner-ruled 2026-08-04): release carries the
+/// island, so its vector table names BusError/…/ErrorTrap exactly as debug's does. Only
+/// the island BASE moves. `ReleaseFault` no longer appears in either canonical shape —
+/// it is the `lean` profile's handler, and has no pin at all.
+///
+/// PER-SHAPE ADDRESSES: the 12 stub pins stay `debug_only` in `repin.toml` (a bare
+/// `u32`, the debug value) on purpose — the per-shape island base is carried once, by
+/// the `error_handler` REGION pin, rather than duplicated across 24 numbers that could
+/// rot apart. The island's INTERNAL layout is shape-invariant (error_handler.emp
+/// contains no `if DEBUG` at all: same stubs, same opaque vendored blob, same order), so
+/// a stub's offset from the island head is identical in both shapes and the plain
+/// address is `ERROR_HANDLER.plain_base + (pin - BUS_ERROR)`. `BUS_ERROR` IS the island
+/// head, so that expression is the identity in the debug shape.
 fn vector_targets(debug: bool) -> Vec<(&'static str, u32)> {
     let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
-    let mut v = vec![
+    let island =
+        if debug { pins::ERROR_HANDLER.debug_base } else { pins::ERROR_HANDLER.plain_base };
+    // A debug-shape stub pin rebased onto this shape's island (see the note above).
+    let stub = |pin: u32| -> u32 { island + (pin - pins::BUS_ERROR) };
+    vec![
         ("SYSTEM_STACK", 0xFFFFFF00),
         ("EntryPoint", pick(pins::ENTRY_POINT)),
         ("VBlank_Handler", pick(pins::V_BLANK_HANDLER)),
         ("HBlank_Vector_Slot", pick(pins::H_BLANK_VECTOR_SLOT)),
-    ];
-    if debug {
-        // DEBUG arm — the 12 error_handler per-class stubs (debug-only pins).
-        v.extend([
-            ("BusError", pins::BUS_ERROR),
-            ("AddressError", pins::ADDRESS_ERROR),
-            ("IllegalInstr", pins::ILLEGAL_INSTR),
-            ("ZeroDivide", pins::ZERO_DIVIDE),
-            ("ChkInstr", pins::CHK_INSTR),
-            ("TrapvInstr", pins::TRAPV_INSTR),
-            ("PrivilegeViol", pins::PRIVILEGE_VIOL),
-            ("Trace", pins::TRACE),
-            ("Line1010Emu", pins::LINE1010_EMU),
-            ("Line1111Emu", pins::LINE1111_EMU),
-            ("ErrorExcept", pins::ERROR_EXCEPT),
-            ("ErrorTrap", pins::ERROR_TRAP),
-        ]);
-    } else {
-        // RELEASE arm — every fault routes at ReleaseFault (plain-only region pin).
-        v.push(("ReleaseFault", pins::RELEASE_FAULT.plain_base));
-    }
-    v
+        ("BusError", stub(pins::BUS_ERROR)),
+        ("AddressError", stub(pins::ADDRESS_ERROR)),
+        ("IllegalInstr", stub(pins::ILLEGAL_INSTR)),
+        ("ZeroDivide", stub(pins::ZERO_DIVIDE)),
+        ("ChkInstr", stub(pins::CHK_INSTR)),
+        ("TrapvInstr", stub(pins::TRAPV_INSTR)),
+        ("PrivilegeViol", stub(pins::PRIVILEGE_VIOL)),
+        ("Trace", stub(pins::TRACE)),
+        ("Line1010Emu", stub(pins::LINE1010_EMU)),
+        ("Line1111Emu", stub(pins::LINE1111_EMU)),
+        ("ErrorExcept", stub(pins::ERROR_EXCEPT)),
+        ("ErrorTrap", stub(pins::ERROR_TRAP)),
+    ]
 }
 
 /// One phased one-byte carrier per (name, vma), each on its own harness-private
@@ -137,7 +144,14 @@ fn compile(debug: bool) -> sigil_link::LinkedImage {
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("engine/system")),
         embed_base: None,
-        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+        // vectors.emp's fault cells are gated on `DEBUG == 1 || CRASH_REPORT == 1`
+        // since the crash-report ruling, so BOTH defines must be supplied. Both
+        // canonical shapes are CRASH_REPORT=1 (only `lean` is 0) — which is why this
+        // gate's PLAIN arm now expects the error_handler stubs, not ReleaseFault.
+        defines: vec![
+            ("DEBUG".to_string(), i128::from(debug)),
+            ("CRASH_REPORT".to_string(), 1),
+        ],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -286,11 +300,11 @@ fn vector_labels_resolve_to_error_handler_emp() {
             initial_cpu: Cpu::M68000,
             include_root: Some(aeon.join("engine/system")),
             embed_base: None,
-            defines: vec![("DEBUG".to_string(), 1)],
+            defines: vec![("DEBUG".to_string(), 1), ("CRASH_REPORT".to_string(), 1)],
         },
     );
-    // error_handler.emp placed at the DEBUG error_handler base (it is a DEBUG-only
-    // module now).
+    // error_handler.emp placed at the DEBUG error_handler base (it ships in both
+    // canonical shapes now; this arm exercises the DEBUG one).
     let eh_src = std::fs::read_to_string(aeon.join("engine/debug/error_handler.emp"))
         .unwrap_or_else(|e| panic!("read error_handler.emp: {e}"));
     let (eh_file, _) = parse_str(&eh_src);

@@ -5,7 +5,8 @@
 //! production parse → lower → place → resolve → link pipeline and asserts the
 //! `error_handler` region's flattened bytes equal the reference ROM window at
 //! `[BusError, EndOfRom)` in BOTH shapes. Length 0x10B0 both shapes (stub table
-//! 0x15A + blob 0xF56) — same size, different base.
+//! 0x15A + blob 0xF56) — same size, different base. Both arms are live again since
+//! the crash-report ruling (owner-ruled 2026-08-04) put the island back in release.
 //!
 //! The `raise_exception` construct emits `jsr (MDDBG__ErrorHandler).l` / `jmp
 //! (MDDBG__ErrorHandler_PagesController).l`, and the blob's extension-button
@@ -42,10 +43,17 @@ struct Shape {
     debug: i128,
 }
 
-// Review item 29 part 4 (the MDDBG strip): error_handler is DEBUG-ONLY now — the
-// RELEASE (plain) shape ships zero debug equipment, so there is no plain arm to
-// gate (ERROR_HANDLER.plain_len is 0, its plain_base is the zero-byte anchor at
-// Replay_OJZ_Fixture). Only the DEBUG shape carries the island.
+// BOTH canonical shapes carry the island since the crash-report ruling (owner-ruled
+// 2026-08-04): the MD Debugger + its deb2 symbol table are DIAGNOSTICS and they ship,
+// so `s4.bin` has a real 0x10B0 error_handler region again and the PLAIN arm is back.
+// (It was dropped by review item 29 part 4, when plain_len was 0.) The module has no
+// internal `if DEBUG`, so the two arms compile identical CONTENT at different bases —
+// which is exactly what makes the plain arm worth running: it proves the island
+// RELOCATES correctly, and that the MDDBG__* equs (all `extern("ErrorHandlerBlob") +
+// off`) re-fold against the release base rather than carrying debug addresses into a
+// shipped ROM.
+const PLAIN: Shape =
+    Shape { base: pins::ERROR_HANDLER.plain_base, len: pins::ERROR_HANDLER.plain_len, rom: "s4.bin", debug: 0 };
 const DEBUG: Shape =
     Shape { base: pins::ERROR_HANDLER.debug_base, len: pins::ERROR_HANDLER.debug_len, rom: "s4.debug.bin", debug: 1 };
 
@@ -148,9 +156,10 @@ fn reference_gate(shape: &Shape) {
     );
 }
 
-// The PLAIN arm (error_handler_region_matches_reference) is DROPPED — review item
-// 29 part 4 strips the error_handler island from every RELEASE shape, so there is
-// no plain region to match (s4.bin[plain_base..] is Replay's bytes, plain_len 0).
+#[test]
+fn error_handler_region_matches_reference() {
+    reference_gate(&PLAIN);
+}
 
 #[test]
 fn error_handler_debug_region_matches_reference() {
@@ -175,9 +184,9 @@ fn vector_labels_resolve_to_emp_ownership() {
         "BusError", "AddressError", "IllegalInstr", "ZeroDivide", "ChkInstr", "TrapvInstr",
         "PrivilegeViol", "Trace", "Line1010Emu", "Line1111Emu", "ErrorExcept", "ErrorTrap",
     ];
-    // Lower + place error_handler.emp at the DEBUG base (it is a DEBUG-only module
-    // now — review item 29 part 4; its content carries no internal DEBUG conditional,
-    // so the ownership flip this test checks is shape-independent).
+    // Lower + place error_handler.emp at the DEBUG base. Its content carries no
+    // internal DEBUG conditional, so the ownership flip this test checks is
+    // shape-independent — one arm suffices (the byte gates above cover both bases).
     let src = std::fs::read_to_string(aeon.join("engine/debug/error_handler.emp"))
         .unwrap_or_else(|e| panic!("read error_handler.emp: {e}"));
     let (file, _) = parse_str(&src);

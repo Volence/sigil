@@ -294,9 +294,18 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // UNCHANGED by `mddbg-symbols`: that parcel is a pure PERMUTATION of the tail
     // (Replay_OJZ_Fixture moved ahead of the fault-handler island so the vendored
     // MDDBG blob's baked `lea` locator — which points at blob end — lands on the
-    // deb2 appendix instead of the fixture's `ARP0` magic). Both totals hold; only
+    // deb2 appendix instead of the fixture's `ARP0` magic). Both totals held; only
     // the tail regions' bases moved, +0x140 for the island.
-    assert_eq!(pins::ASSEMBLED_LEN, 0x5CBAE);       // −0x1082 item29p4: the MDDBG strip — error_handler (0x10B0) + NullInterrupt (2) leave the plain ROM; ReleaseFault (0x2E, incl. the oracle-driven display-off write) replaces them
+    //
+    // +0x1082 `crash-report`: the owner ruling that a shipped crash must be
+    // REPORTABLE. RELEASE now carries the MD Debugger island (+0x10B0) instead of
+    // ReleaseFault (−0x2E), plus the deb2 symbol appendix past EndOfRom. This
+    // EXACTLY reverses item29p4's plain-shape delta — that parcel converted
+    // unconditional behaviour into a flag, and this is choosing the other setting.
+    // ReleaseFault survives as the lean shape's arm (CRASH_REPORT=0), which is
+    // off-canonical and therefore has no pin at all. The DEBUG total does not move:
+    // debug always carried the island.
+    assert_eq!(pins::ASSEMBLED_LEN, 0x5DC30);
     assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F71E); // −0x4 item29p4: debug keeps MDDBG; only NullInterrupt (2 B) leaves, −4 with the align re-pad
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-

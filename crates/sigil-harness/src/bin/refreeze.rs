@@ -44,6 +44,9 @@ fn target_sources() -> Vec<(&'static str, &'static str, &'static str)> {
         ("demo_debug", "demo.debug.bin", "demo_debug.txt"),
         ("config_a", "config_a.bin", "config_a.txt"),
         ("config_b", "config_b.bin", "config_b.txt"),
+        // The 7th target: the crash-report-OFF (lean) shape — no MD Debugger island,
+        // no deb2 appendix, faults route at ReleaseFault.
+        ("lean", "lean.bin", "lean.txt"),
     ]
 }
 

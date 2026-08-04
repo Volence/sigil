@@ -13,7 +13,7 @@
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test native_rom
 //! ```
 
-use sigil_harness::{assert_rom_matches_convsym, assert_rom_matches_release, native, pins};
+use sigil_harness::{assert_rom_matches_convsym, native, pins};
 use std::path::PathBuf;
 
 fn aeon_dir() -> PathBuf {
@@ -44,18 +44,27 @@ fn read_ref(name: &str) -> Option<Vec<u8>> {
 static GEN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// (PLAIN) the all-gates-ON native ROM == the canonical assembled `s4.bin`.
-/// Since item 29 the release shape ships NOTHING past `EndOfRom`, so the bar is
-/// exact identity (headers included) plus the no-appendix length guard.
+///
+/// The bar is the CONVSYM variant, not the exact-identity release variant, because
+/// the crash-report ruling (owner-ruled 2026-08-04) put the deb2 symbol appendix back
+/// into the shipped release ROM: `s4.bin` is now assembled-image + appendix, so the
+/// two semantic header fields convsym rewrites (`$18E` checksum, `$1A4` ROM-end
+/// pointer) legitimately differ from the pre-append image this test builds. What is
+/// asserted is unchanged in strength — `assert_rom_matches_convsym` DERIVES that
+/// allowlist from the actual diff and then requires the FULL diff set to be confined
+/// to those two fields, and additionally requires each of them to genuinely differ
+/// (so a reference silently rebuilt without the appendix fails here). The
+/// no-appendix-past-EndOfRom bar it replaces now belongs to the `lean` shape alone.
 #[test]
 fn native_rom_plain() {
     let Some(refrom) = read_ref("s4.bin") else { return };
     let _guard = GEN_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let rom = native::build_native_rom(&aeon_dir(), false).unwrap_or_else(|e| panic!("{e}"));
-    assert_rom_matches_release(
+    assert_rom_matches_convsym(
         &rom,
         &refrom,
         pins::ASSEMBLED_LEN,
-        "native all-gates (plain) vs s4.bin (release whole-ROM bar)",
+        "native all-gates (plain) vs s4.bin (assembled-ROM bar)",
     );
 }
 

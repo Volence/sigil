@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 76 regions, 308 symbols, 7 offsets
+//! [provenance] 75 regions, 308 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,7 +39,7 @@ pub struct ShapeOffset {
 // ── ROM end (the listing `END` line address, per shape) ──
 
 /// Assembled (pre-convsym) ROM length, plain shape. tests: m1d_rom, m1d_debug_rom, mixed_dac_rom
-pub const ASSEMBLED_LEN: usize = 0x5CBAE;
+pub const ASSEMBLED_LEN: usize = 0x5DC30;
 /// Assembled (pre-convsym) ROM length, `__DEBUG__` shape. tests: m1d_rom, m1d_debug_rom, mixed_dac_rom
 pub const DEBUG_ASSEMBLED_LEN: usize = 0x5F71E;
 
@@ -228,14 +228,11 @@ pub const OBJECT_TEST_STATE: Region = Region { plain_base: 0x5C230, debug_base: 
 /// `GameState_OJZScroll_Init` .. `Replay_OJZ_Fixture` — gate `SIGIL_EMP_OJZ_SCROLL_TEST`. tests: test_t1_harness_states_port
 pub const OJZ_SCROLL_TEST: Region = Region { plain_base: 0x5C7EC, debug_base: 0x5E2DA, plain_len: 0x248, debug_len: 0x254 };
 
-/// `Replay_OJZ_Fixture` .. `ReleaseFault` plain / `BusError` debug.
+/// `Replay_OJZ_Fixture` .. `BusError`.
 pub const REPLAY_FIXTURE: Region = Region { plain_base: 0x5CA34, debug_base: 0x5E52E, plain_len: 0x14C, debug_len: 0x140 };
 
-/// `ReleaseFault` .. `EndOfRom` (plain-only region; debug empty at `BusError`) — gate `SIGIL_EMP_RELEASE_FAULT`. tests: vectors_port, m1c_vector_table
-pub const RELEASE_FAULT: Region = Region { plain_base: 0x5CB80, debug_base: 0x5E66E, plain_len: 0x2E, debug_len: 0x0 };
-
-/// `BusError` .. `EndOfRom` (debug-only region; plain empty at `EndOfRom`) — gate `SIGIL_EMP_ERROR_HANDLER`. tests: error_handler_port
-pub const ERROR_HANDLER: Region = Region { plain_base: 0x5CBAE, debug_base: 0x5E66E, plain_len: 0x0, debug_len: 0x10B0 };
+/// `BusError` .. `EndOfRom` — gate `SIGIL_EMP_ERROR_HANDLER`. tests: error_handler_port
+pub const ERROR_HANDLER: Region = Region { plain_base: 0x5CB80, debug_base: 0x5E66E, plain_len: 0x10B0, debug_len: 0x10B0 };
 
 /// `Dac_Temp_Blip` .. start + 0xF8BC plain / 0xF8BC debug (literal — no end symbol) — gate `SIGIL_EMP_DAC`. tests: dac_bank_port
 pub const DAC_BANKS: Region = Region { plain_base: 0x48000, debug_base: 0x48000, plain_len: 0xF8BC, debug_len: 0xF8BC };
@@ -250,7 +247,7 @@ pub const SFX_BANK_BLOB: Region = Region { plain_base: 0x5BAE8, debug_base: 0x5D
 pub const SOUNDBANKHEAD: Region = Region { plain_base: 0x58000, debug_base: 0x58000, plain_len: 0x607, debug_len: 0x607 };
 
 /// `EndOfRom` .. start + 0x0 plain / 0x0 debug (literal — no end symbol) — gate `SIGIL_EMP_EPILOGUE`. tests: m1d_rom, m1d_debug_rom
-pub const EPILOGUE: Region = Region { plain_base: 0x5CBAE, debug_base: 0x5F71E, plain_len: 0x0, debug_len: 0x0 };
+pub const EPILOGUE: Region = Region { plain_base: 0x5DC30, debug_base: 0x5F71E, plain_len: 0x0, debug_len: 0x0 };
 
 /// `ObjCodeBase` .. start + 0x2 plain / 0x2 debug (literal — no end symbol) — gate `SIGIL_EMP_OBJCODEBASE`. tests: m1d_rom, m1d_debug_rom
 pub const OBJCODEBASE: Region = Region { plain_base: 0x10000, debug_base: 0x10000, plain_len: 0x2, debug_len: 0x2 };

@@ -1,7 +1,8 @@
 #!/bin/bash
 # capture_goldens.sh — the ONE-STEP fresh-build golden capture (Flip Stage 1 · S1.6).
 #
-# Captures ALL SIX Stage-2 comparand ROMs asl-derived WHILE ASL IS LIVE — the only
+# Captures ALL SEVEN Stage-2 comparand ROMs (six canonical/config + the crash-report-OFF
+# `lean` shape) asl-derived WHILE ASL IS LIVE — the only
 # moment the off-canonical Config-A/B are reproducible (they have no shipped file and
 # their NATIVE reproduction is Stage-2-coupled; see PROVENANCE.md + the
 # 2026-07-30-flip-stage1-demo-config-native-blocked.md fork note). For each target it
@@ -18,11 +19,13 @@
 # "golden" was a pre-existing demo.bin CRC'd WITHOUT a rebuild (compounded by the
 # ignored `GAME=` env var); the TRUE plain demo bar is `18c64002/90776`.
 #
-# Config-A (DEBUG+hotkeys+mirror) writes to s4.debug.bin and Config-B (sound-off)
-# writes to s4.bin — so they CLOBBER the canonical references. This script captures
-# the four canonical/demo goldens FIRST, then Config-A/B into distinct golden blobs
-# (config_a.bin / config_b.bin), then REBUILDS canonical s4.bin + s4.debug.bin so the
-# aeon tree is left in its canonical state for every other gate that reads them.
+# Config-A (DEBUG+hotkeys+mirror) writes to s4.debug.bin, and Config-B (sound-off) and
+# lean (crash-report off) both write to s4.bin — so they CLOBBER the canonical
+# references. This script captures the four canonical/demo goldens FIRST, then
+# Config-A/B and lean into distinct golden blobs (config_a.bin / config_b.bin /
+# lean.bin), then REBUILDS canonical s4.bin + s4.debug.bin so the aeon tree is left in
+# its canonical state for every other gate that reads them. ORDER IS LOAD-BEARING:
+# every s4.bin-clobbering capture must precede that restore.
 #
 # Usage:
 #   SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \
@@ -108,7 +111,7 @@ capture_config() {
     if [[ "$WRITE" == "1" ]]; then cp "$path" "$HERE/$golden"; echo "   frozen -> golden/$golden"; fi
 }
 
-echo "== Flip Stage 1 golden capture — all six, fresh-build, asl-derived =="
+echo "== Flip Stage 1 golden capture — all seven, fresh-build =="
 echo "   aeon: $AEON  ($(cd "$AEON" && git rev-parse --short HEAD 2>/dev/null || echo '?'))"
 
 # 1-4: the canonical + demo goldens (each writes its own filename; no clobber).
@@ -123,7 +126,12 @@ capture demo.debug.bin demo  demo.debug.bin demo.debug.lst DEBUG=1
 capture_config config_a.bin  --config-a  s4.debug.bin  s4.debug.lst
 capture_config config_b.bin  --config-b  s4.bin        s4.lst
 
-# RESTORE the canonical aeon references clobbered by Config-A/B.
+# 7: the LEAN shape (crash-report OFF: no MD Debugger island, no deb2 appendix, faults
+# route at ReleaseFault). Also CLOBBERS s4.bin — so it MUST come before the restore
+# below, not after it.
+capture_config lean.bin      --lean      s4.bin        s4.lst
+
+# RESTORE the canonical aeon references clobbered by Config-A/B/lean.
 echo ">> restoring canonical aeon s4.bin + s4.debug.bin ..."
 ( cd "$AEON" && SIGIL_EMIT="$SIGIL_EMIT" ./build.sh sonic4 >/dev/null && DEBUG=1 SIGIL_EMIT="$SIGIL_EMIT" ./build.sh sonic4 >/dev/null )
 echo "   restored: $(cd "$AEON" && python3 -c "import zlib;print('s4.bin',f'{zlib.crc32(open(\"s4.bin\",\"rb\").read())&0xffffffff:08x}','/','s4.debug.bin',f'{zlib.crc32(open(\"s4.debug.bin\",\"rb\").read())&0xffffffff:08x}')")"

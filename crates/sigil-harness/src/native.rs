@@ -105,6 +105,19 @@ pub struct GameProfile {
     /// `sfx_bank_authority_consts`.
     pub game_sfx_bank_rel: Option<&'static str>,
     pub debug: bool,
+    /// CRASH-REPORT SHAPE (owner-ruled 2026-08-04): does this target ship the MD
+    /// Debugger / `error_handler` island + the deb2 symbol appendix? TRUE for every
+    /// profile except the opt-in `lean_profile` — the island and its symbol table are
+    /// DIAGNOSTICS (a player's crash must be reportable), not debug EQUIPMENT, and the
+    /// release ROM is ~9% of a 4 MB cart. Equipment (asserts / SOUND_DEBUG_HOTKEYS /
+    /// SOUND_DBG_MIRROR / boot autoplay / CompressionSelfTest) rides `debug` alone.
+    ///
+    /// It drives three things in lockstep: the `CRASH_REPORT` comptime define in
+    /// `emp_defines` (vectors.emp's fault cells), the `__MDDBG__` AS definedness define
+    /// (the `debugger.asm` include in each game_root.asm), and the registry's
+    /// `error_handler` / `release_fault` split. Read as `debug || crash_report`
+    /// everywhere — `debug` alone never means "carries the debugger".
+    pub crash_report: bool,
     /// Sound ON: pass `-D SOUND_DRIVER_ENABLED`, the DAC/MT/SFX BINCLUDE gates, and
     /// run `ensure_generated`. OFF (demo/Config-B): no sound define at all (AS `ifdef`
     /// checks DEFINEDNESS — a `=0` would still take the sound arm), no BINCLUDE, no gen.
@@ -192,7 +205,11 @@ impl ModuleSpec {
 /// `debug` selects the shape: COMPRESSION_SELFTEST is a DEBUG-ONLY module (it emits
 /// the `CompressionSelfTest` proc unconditionally and is included only when DEBUG=1;
 /// plain carries zero bytes), so it is placed only in the debug shape.
-pub fn registry(debug: bool) -> Vec<ModuleSpec> {
+///
+/// `crash_report` selects the FAULT-HANDLER shape, independently of `debug`: the
+/// `error_handler` island rides `debug || crash_report`, `release_fault` rides the
+/// `else`. Both canonical shapes set `crash_report`, so both carry the island.
+pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
     macro_rules! m {
         ($id:literal, $sec:literal, $region:expr) => {
             ModuleSpec { module_id: $id, section: $sec, region: $region }
@@ -256,10 +273,10 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
         // ── Engine debug / sound caller ──
         m!("engine.sound_api", "sound_api", pins::SOUND_API),
         // Review item 29 part 4 (the MDDBG strip): null_interrupt.emp is DELETED
-        // (its tolerant `rte` had had no vector referencer since item 27's ruling);
-        // error_handler is now DEBUG-ONLY (pushed below under `if debug`); the
-        // RELEASE loud-failure handler engine.system.release_fault takes the tail
-        // placement slot null_interrupt used to hold (pushed below under `if !debug`).
+        // (its tolerant `rte` had had no vector referencer since item 27's ruling).
+        // The tail placement slot it used to hold is now the FAULT-HANDLER slot,
+        // filled per shape below: `error_handler` under `debug || crash_report`,
+        // `release_fault` under the `else` (the lean shape only).
         // Parcel K4 B1: the ROM terminus (EndOfRom + the 3 walls), was engine.inc's
         // `EndOfRom:` label + the `if … error` guards. Zero-length section placed
         // LAST (boundary key EndOfRom, already frozen in all six tables). The plane
@@ -362,22 +379,25 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
             "compression_selftest",
             pins::COMPRESSION_SELFTEST
         ));
-        // Review item 29 part 4 — the error_handler island (the 12 per-class CPU
-        // exception stubs + the vendored MD Debugger v2.6 blob, ~4.2 KB) is now
-        // DEBUG-ONLY: release ships zero debug equipment. Same DEBUG-only idiom as
-        // compression_selftest above. Placed at its map-order slot (BusError).
+    }
+    if debug || crash_report {
+        // The error_handler island (the 12 per-class CPU exception stubs + the
+        // vendored MD Debugger v2.6 blob, ~4.2 KB). Owner-ruled 2026-08-04: this is
+        // a DIAGNOSTIC, so it ships in BOTH canonical shapes — a player's crash has
+        // to be reportable. Only the opt-in `lean` profile (crash_report = false)
+        // omits it. Placed at its map-order slot (BusError), which must remain the
+        // FINAL byte-emitting section (see `append_deb2_appendix`'s blob-end guard).
         specs.push(m!("engine.debug.error_handler", "error_handler", pins::ERROR_HANDLER));
     } else {
-        // Review item 29 part 4 — the RELEASE loud-failure handler (46 B: mask,
-        // display off, red backdrop, freeze). It replaces the stripped
-        // error_handler island as every fault vector's target in the release
-        // shape, and takes the tail placement slot the deleted null_interrupt.emp
-        // used to hold. RELEASE-ONLY. Region pin is REQUIRED (not DUMMY_REGION):
-        // the PinnedBaked bootstrap path bakes bases from it — a dummy left this
-        // section at base 0, colliding with `vectors` in the pinned resolve
-        // (caught by soundbankhead_port). Under Frozen the pin is cosmetic and
-        // the chainer sizes it live via map.toml `order`, same as everything.
-        specs.push(m!("engine.system.release_fault", "release_fault", pins::RELEASE_FAULT));
+        // The LEAN loud-failure handler (46 B: mask, display off, red backdrop,
+        // freeze). It replaces the absent error_handler island as every fault
+        // vector's target in the lean shape, at the same tail placement slot.
+        // LEAN-ONLY — so it appears in NEITHER canonical listing, which is why its
+        // `repin` region is gone (repin can only resolve the canonical plain+debug
+        // listings). DUMMY_REGION: lean is a `SizeSource::Frozen` target, so the
+        // chainer sizes and places it live from `lean.txt` + map.toml `order`, and
+        // the region base/len are never read.
+        specs.push(m!("engine.system.release_fault", "release_fault", DUMMY_REGION));
     }
     // I4: the OJZ replay fixture — pushed last in the REGISTRY, but map.toml's `order`
     // places it after all gameplay content and BEFORE the fault-handler island, which
@@ -393,8 +413,12 @@ pub fn registry(debug: bool) -> Vec<ModuleSpec> {
 /// not in the demo layout at all). The region bases/lens are sonic4-shape and are
 /// IGNORED under `SizeSource::Frozen` (the chainer sources demo sizes from the frozen
 /// listing table); only the module id + section name are load-bearing.
-fn demo_registry(debug: bool) -> Vec<ModuleSpec> {
-    let mut r: Vec<ModuleSpec> = registry(debug)
+///
+/// OWNER-RULED 2026-08-04: the demo's RELEASE shape CARRIES the debugger — no new
+/// exclusion. `engine.debug.error_handler` is an `engine.*` module, so it rides the
+/// existing prefix filter exactly like every other engine module.
+fn demo_registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
+    let mut r: Vec<ModuleSpec> = registry(debug, crash_report)
         .into_iter()
         .filter(|m| m.module_id.starts_with("engine.") && m.module_id != "engine.sound_api")
         .collect();
@@ -441,12 +465,14 @@ pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile 
         game_sound_ids_rel: Some("games/sonic4/config/sound_ids.emp"),
         game_sfx_bank_rel: Some("games/sonic4/data/sound/sfx/sfx_bank.emp"),
         debug,
+        crash_report: true,
         sound_on: true,
         extra_as_defines: vec![],
-        registry: registry(debug),
+        registry: registry(debug, true),
         emp_defines: vec![
             ("SOUND_DRIVER_ENABLED", 1),
             ("DEBUG", if debug { 1 } else { 0 }),
+            ("CRASH_REPORT", 1),
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
             // sonic4 game-config (games/sonic4/config/constants.asm); the engine
@@ -525,12 +551,14 @@ pub fn demo_profile(debug: bool) -> GameProfile {
         game_sound_ids_rel: None,
         game_sfx_bank_rel: None,
         debug,
+        crash_report: true,
         sound_on: false,
         extra_as_defines: vec![],
-        registry: demo_registry(debug),
+        registry: demo_registry(debug, true),
         emp_defines: vec![
             ("SOUND_DRIVER_ENABLED", 0),
             ("DEBUG", if debug { 1 } else { 0 }),
+            ("CRASH_REPORT", 1),
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
             // demo game-config (games/demo/config/constants.emp) engine-VARYING
@@ -566,7 +594,7 @@ const DUMMY_REGION: Region =
 pub fn config_b_profile() -> GameProfile {
     // Config-B is SOUND-OFF: drop the sound caller AND the sound-on-only DAC banks
     // (dac_banks.emp; its .bin are emitted only in sound-on builds — ensure_generated).
-    let mut registry: Vec<ModuleSpec> = registry(false)
+    let mut registry: Vec<ModuleSpec> = registry(false, true)
         .into_iter()
         .filter(|m| {
             m.module_id != "engine.sound_api"
@@ -590,12 +618,15 @@ pub fn config_b_profile() -> GameProfile {
         game_sound_ids_rel: Some("games/sonic4/config/sound_ids.emp"),
         game_sfx_bank_rel: Some("games/sonic4/data/sound/sfx/sfx_bank.emp"),
         debug: false,
+        // Config-B follows the RELEASE default (owner-ruled): it carries the debugger.
+        crash_report: true,
         sound_on: false,
         extra_as_defines: vec![],
         registry,
         emp_defines: vec![
             ("SOUND_DRIVER_ENABLED", 0),
             ("DEBUG", 0),
+            ("CRASH_REPORT", 1),
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
             // Config-B is the sonic4 game (sound off), so sonic4's game-config.
@@ -624,7 +655,7 @@ pub fn config_a_keystones_flipped_profile() -> GameProfile {
 /// `sound_debug` (canonically empty) become NON-empty placed modules. Registry = the
 /// sonic4 DEBUG set PLUS those two. Sizes from `config_a.txt`.
 pub fn config_a_profile() -> GameProfile {
-    let mut registry = registry(true);
+    let mut registry = registry(true, true);
     registry.push(ModuleSpec {
         module_id: "games.sonic4.game_debug",
         section: "game_debug",
@@ -644,12 +675,14 @@ pub fn config_a_profile() -> GameProfile {
         game_sound_ids_rel: Some("games/sonic4/config/sound_ids.emp"),
         game_sfx_bank_rel: Some("games/sonic4/data/sound/sfx/sfx_bank.emp"),
         debug: true,
+        crash_report: true,
         sound_on: true,
         extra_as_defines: vec![("SOUND_DEBUG_HOTKEYS", 1), ("SOUND_DBG_MIRROR", 1)],
         registry,
         emp_defines: vec![
             ("SOUND_DRIVER_ENABLED", 1),
             ("DEBUG", 1),
+            ("CRASH_REPORT", 1),
             ("SOUND_DEBUG_HOTKEYS", 1),
             ("SOUND_DBG_MIRROR", 1),
             // Config-A is the sonic4 game (debug + sound), so sonic4's game-config.
@@ -661,6 +694,55 @@ pub fn config_a_profile() -> GameProfile {
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
         size_source: SizeSource::Frozen(load_frozen_table("config_a.txt")),
         assembled_len: 0x5f65a,
+    }
+}
+
+/// LEAN (off-canonical, the 7th profile): the sonic4 release shape with the crash-report
+/// axis OFF. `debug: false, crash_report: false, sound_on: true` — everything the shipped
+/// release ROM has, MINUS the MD Debugger / `error_handler` island and its deb2 symbol
+/// appendix; every fault vector routes at `ReleaseFault` instead (release_fault.emp, the
+/// only profile that places it).
+///
+/// It exists because "no debugger at all" is a real shape someone will want, and the
+/// engine-debts rule is that an unbuilt shape is an untested shape: making lean a full
+/// gated profile with its own golden + frozen size table keeps `CRASH_REPORT == 0`
+/// honest. It is NOT reachable from `build.sh` (which refuses `CRASH_REPORT=0` and points
+/// here) — `sigil build --aeon . --native --lean`.
+///
+/// It starts byte-identical to the pre-ruling release ROM, since that ROM was exactly
+/// this shape; the crash-report plumbing must be inert at `CRASH_REPORT=0` or the
+/// `lean.bin` golden moves.
+pub fn lean_profile() -> GameProfile {
+    GameProfile {
+        name: "lean",
+        game_root_rel: "games/sonic4/game_root.asm",
+        game_ram_module: "games.sonic4.ram",
+        manifest_module: "games.sonic4.game",
+        game_constants_rel: Some("games/sonic4/config/constants.emp"),
+        game_sound_ids_rel: Some("games/sonic4/config/sound_ids.emp"),
+        game_sfx_bank_rel: Some("games/sonic4/data/sound/sfx/sfx_bank.emp"),
+        debug: false,
+        crash_report: false,
+        sound_on: true,
+        extra_as_defines: vec![],
+        registry: registry(false, false),
+        emp_defines: vec![
+            ("SOUND_DRIVER_ENABLED", 1),
+            ("DEBUG", 0),
+            // THE one profile with CRASH_REPORT off — vectors.emp's fault cells take the
+            // ReleaseFault arm, and no `__MDDBG__` is pushed to the AS side.
+            ("CRASH_REPORT", 0),
+            ("SOUND_DEBUG_HOTKEYS", 0),
+            ("SOUND_DBG_MIRROR", 0),
+            // Lean is the sonic4 game, so sonic4's game-config.
+            ("MAX_RING_BUFFER", 128),
+            ("VRAM_RING_PLACEHOLDER", 0x3E8),
+            ("COLLECTED_WINDOW_SLOTS", 9),
+        ],
+        require_one_text: true,
+        inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
+        size_source: SizeSource::Frozen(load_frozen_table("lean.txt")),
+        assembled_len: pins::ASSEMBLED_LEN,
     }
 }
 
@@ -1108,6 +1190,16 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
     }
     if profile.debug {
         defines.push(("__DEBUG__".to_string(), 1));
+    }
+    // The CRASH-REPORT axis on the AS side (owner-ruled 2026-08-04). `__DEBUG__` keeps
+    // meaning exactly "debug shape"; `__MDDBG__` means "this target places the
+    // error_handler island", which is `debug || crash_report` — i.e. both canonical
+    // shapes, and not `lean`. Each game_root.asm gates its `include
+    // engine/debug/debugger.asm` on it: that include's MDDBG__* equ table derives off
+    // error_handler.emp's `pub equ`s, so including it without the island is a hard link
+    // error. PUSH-OR-OMIT, never `=0`: AS `ifdef` tests DEFINEDNESS, not value.
+    if profile.debug || profile.crash_report {
+        defines.push(("__MDDBG__".to_string(), 1));
     }
     let opts = AsOptions {
         initial_cpu: Cpu::M68000,
@@ -2328,11 +2420,13 @@ pub fn build_rom_chained_with_listing(
 /// The off-canonical full-file build: the chained assembled ROM + the sigil-canonical
 /// deb2 appendix (the same Option-A post-pipeline as `build_native_full_file`, over the
 /// Frozen-placed profile). `debug` selects the convsym range/fixheader shape.
-/// SHAPE SPLIT (aeon review item 29): same rule as `build_native_full_file` — this
-/// models the shipped artifact, and a release profile ships the assembled image alone.
+/// SHAPE SPLIT (the crash-report axis, owner-ruled 2026-08-04): same rule as
+/// `build_native_full_file` — this models the shipped artifact, and the appendix follows
+/// the MD Debugger island, i.e. `debug || crash_report`. Only the `lean` profile ships
+/// the assembled image alone.
 pub fn build_full_file_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, String> {
     let (rom, listing) = build_rom_chained_with_listing(aeon, profile)?;
-    if !profile.debug {
+    if !(profile.debug || profile.crash_report) {
         return Ok(rom);
     }
     // Demo (engine-only) packs a smaller appendix than sonic4/config; floor per game.
@@ -2831,15 +2925,18 @@ pub const DEB2_MAGIC: [u8; 2] = [0xDE, 0xB2];
 ///
 /// Only `<aeon>/tools/convsym` is shelled now (fixheader retired); writes the ROM +
 /// `.lst` to a fresh temp dir so parallel shapes never collide.
-/// SHAPE SPLIT (aeon review item 29): this models the SHIPPED artifact, and since
-/// item 29 a release build ships the assembled image with nothing appended. So the
-/// appendix step runs in DEBUG shapes only, mirroring `run_build_native`. Keeping it
-/// unconditional here would pin the plain full-file golden to a file `build.sh` no
-/// longer produces. The appendix MECHANISM is still covered — by the debug arm and by
-/// the two t24 negative controls, which call `append_deb2_appendix` directly.
+/// SHAPE SPLIT (the crash-report axis, owner-ruled 2026-08-04 — this SUPERSEDES the
+/// review-item-29 release strip): this models the SHIPPED artifact, and the appendix
+/// follows the MD Debugger island, i.e. `debug || crash_report`, mirroring
+/// `run_build_native`. This function drives the CANONICAL sonic4 shapes, and both of
+/// those set `crash_report` — so the condition is live-but-always-true here, and the
+/// `lean` profile is the shape that actually takes the no-appendix arm (through
+/// `build_full_file_chained`). Reading the flag off the profile rather than hardcoding
+/// `true` keeps this call site honest if the canonical shapes ever change.
 pub fn build_native_full_file(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
     let (rom, listing) = build_native_rom_with_listing(aeon, debug)?;
-    if !debug {
+    let crash_report = sonic4_profile(debug).crash_report;
+    if !(debug || crash_report) {
         return Ok(rom);
     }
     append_deb2_appendix(aeon, &rom, &listing, debug, SONIC4_APPENDIX_FLOOR)
@@ -2854,8 +2951,10 @@ pub const SONIC4_APPENDIX_FLOOR: usize = 0x2000;
 pub const DEMO_APPENDIX_FLOOR: usize = 0x1000;
 
 /// The label the vendored MD Debugger v2.6 blob is emitted under
-/// (`engine/debug/error_handler.emp`). Absent from release shapes — item 29 strips
-/// the whole debug island — so the blob-end guard below is inert there.
+/// (`engine/debug/error_handler.emp`). Present in BOTH canonical shapes since the
+/// crash-report ruling (owner-ruled 2026-08-04), so the blob-end guard below now binds
+/// the SHIPPED release ROM too — it is more load-bearing than it was, not less. Absent
+/// only from the opt-in `lean` profile, where the guard is vacuous.
 const ERROR_HANDLER_BLOB_LABEL: &str = "ErrorHandlerBlob";
 
 /// The length, in bytes, of the vendored MD Debugger v2.6 blob — the opaque
@@ -2876,8 +2975,8 @@ const ERROR_HANDLER_BLOB_LEN: u32 = 0xF56;
 /// `EndOfRom` (the assembled image length; the ROM region is based at 0, the same
 /// identity the positive control below already relies on).
 ///
-/// Inert when the blob is absent — release shapes ship no debug island, and nothing in
-/// them consults a symbol table.
+/// Inert when the blob is absent — the `lean` shape ships no island, and nothing in it
+/// consults a symbol table.
 ///
 /// This fails the BUILD rather than warning: the failure it prevents is silent at
 /// runtime (the ROM assembles, boots and crashes correctly — it just prints `<unknown>`

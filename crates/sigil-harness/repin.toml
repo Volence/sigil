@@ -635,53 +635,50 @@ tests = ["test_t1_harness_states_port"]
 # displacements baked into its own bytes, both pointing at `ErrorHandlerBlob +
 # $F56` = one past the blob's last byte. convsym appends the table at EndOfRom, so
 # the island MUST be the final emission or every crash-screen line prints
-# `<unknown>`. Its end is therefore the SHAPE-SPLIT fault handler: ReleaseFault in
-# RELEASE, BusError (the error_handler island head) in DEBUG. Content still
-# re-records freely — it shifts zero gameplay addresses, only the island after it.
+# `<unknown>`. Since the crash-report ruling (2026-08-04) BOTH canonical shapes
+# carry that island, so both end this region at the island head — the shape split
+# (`debug_end = BusError`) is gone. Content still re-records freely — it shifts zero
+# gameplay addresses, only the island after it.
 [[region]]
 name = "replay_fixture"
 start = "Replay_OJZ_Fixture"
-end = "ReleaseFault"
-debug_end = "BusError"
+end = "BusError"
 tests = []
 
-# Review item 29 part 4 (the MDDBG strip): the tail is a SHAPE-SPLIT fault
-# handler. The old 2-byte NullInterrupt:rte stub (`nullint` region) is DELETED —
-# it had had no vector referencer since item 27's ruling, and the strip answered
-# its open "does release still need a tolerant handler?" with ReleaseFault.
-#
-# RELEASE (plain) shape — the loud-failure handler. ~0x2E B: mask, display off, red
-# backdrop, freeze (engine/system/release_fault.emp). PLAIN-ONLY: the DEBUG shape
-# strips it (exactly as RELEASE strips the debug_only error_handler below).
-# `debug_anchor = BusError` — its zero-byte debug slot sits at the island head, the
-# DEBUG occupant of the same tail position. gate SIGIL_EMP_RELEASE_FAULT (new
-# module; no AS twin to hole out, but the gate name follows the SIGIL_EMP_* pattern
-# for the manifest's consistency).
-[[region]]
-name = "release_fault"
-start = "ReleaseFault"
-end = "EndOfRom"
-plain_only = true
-debug_anchor = "BusError"
-gate = "SIGIL_EMP_RELEASE_FAULT"
-tests = ["vectors_port", "m1c_vector_table"]
+# `release_fault` HAS NO REGION HERE, deliberately. The old 2-byte NullInterrupt:rte
+# stub it replaced is deleted (no vector referencer since item 27's ruling), and
+# since the crash-report ruling `ReleaseFault` exists in NEITHER canonical shape —
+# it is the LEAN profile's fault handler only (registry: the `else` of
+# `debug || crash_report`). `repin` resolves labels against the canonical plain +
+# debug listings alone, so there is no address here to pin: lean places the section
+# from its frozen size table (`golden/offcanonical_sizes/lean.txt`) + map.toml
+# `order`, exactly like every other off-canonical section, and its ModuleSpec
+# carries DUMMY_REGION.
 
 # Tranche 25 — the error_handler region, the TRUE ROM TAIL (see the replay_fixture
 # note above: it must stay last): the 12 CPU exception-vector stubs
 # (raise_exception) + the vendored MD Debugger blob. Length 0x10B0 (stub table
-# 0x15A + blob 0xF56). DEBUG-ONLY as of review item 29 part 4 (the strip): release
-# ships zero debug equipment, so the island is absent from every RELEASE shape. Same
-# `debug_only` idiom as compression_selftest. `end = "EndOfRom"` — nothing is placed
-# after it in DEBUG, by contract; `plain_anchor = "EndOfRom"` gives the zero-byte
-# plain slot its base (the tail position it would occupy). The MDDBG__ equ table
-# (debugger.asm) is now ALSO gated behind __DEBUG__ (games/*/game_root.asm) — in
-# release it is not included at all, so its MDDBG__* externs never need resolving.
+# 0x15A + blob 0xF56).
+#
+# IN BOTH CANONICAL SHAPES as of the crash-report ruling (owner-ruled 2026-08-04,
+# superseding review item 29 part 4's release strip): the island + its deb2 symbol
+# appendix are DIAGNOSTICS, not debug EQUIPMENT, and diagnostics ship — a player's
+# crash has to be reportable. So `debug_only` / `plain_anchor` are GONE: both
+# listings define `BusError`, and the region pins per shape like any ordinary one.
+# The MDDBG__ equ table (debugger.asm) rides the same axis — its include in
+# games/*/game_root.asm is gated on `__MDDBG__` (pushed when debug || crash_report),
+# not `__DEBUG__`.
+#
+# `end = "EndOfRom"` — nothing is placed after it in EITHER canonical shape, by
+# contract. THAT INVARIANT IS NOW MORE LOAD-BEARING, NOT LESS: it binds the SHIPPED
+# release ROM, so a section placed after the island silently breaks the crash screen
+# on a player's cartridge, not just in a dev build. It is enforced as a hard build
+# error by `check_error_handler_is_last` (src/native.rs) and declared in each game's
+# map.toml `order`.
 [[region]]
 name = "error_handler"
 start = "BusError"
 end = "EndOfRom"
-debug_only = true
-plain_anchor = "EndOfRom"
 gate = "SIGIL_EMP_ERROR_HANDLER"
 tests = ["error_handler_port"]
 
@@ -820,14 +817,20 @@ name = "EntryPoint"
 tests = ["m1c_vector_table"]
 
 # NullInterrupt symbol pin DELETED (review item 29 part 4): the module is gone, so
-# there is no address to pin. The plain m1c/vectors carriers now inject ReleaseFault
-# (via the plain-only `release_fault` REGION pin's base) instead.
+# there is no address to pin. ReleaseFault has no pin either since the crash-report
+# ruling — it exists in neither canonical listing (see the `release_fault` note in
+# the region section above).
 #
-# The 12 per-class exception-stub VMAs (BusError .. ErrorTrap) are now DEBUG-ONLY:
-# error_handler is stripped from every RELEASE shape, so these symbols exist only in
-# the debug listing. `debug_only = true` → each emits a bare `u32` (debug value). The
-# RELEASE vector table points every fault at ReleaseFault, not these. Consumed by the
-# DEBUG arm of vectors_port (the debug vector table still routes to these stubs).
+# The 12 per-class exception-stub VMAs (BusError .. ErrorTrap) exist in BOTH shapes
+# again (the island ships in release), but they stay `debug_only = true` — a bare
+# `u32` carrying the DEBUG value — on purpose: their per-shape bases are already
+# carried, exactly once, by the `error_handler` REGION pin, and duplicating 12
+# addresses across two shapes is 24 numbers that can rot independently of the one
+# that matters. The island's INTERNAL layout is shape-invariant (error_handler.emp
+# has no `if DEBUG` anywhere), so a consumer needing the plain-shape address of any
+# stub derives it as `ERROR_HANDLER.plain_base + (PIN - BUS_ERROR)` — which is what
+# vectors_port and m1c_vector_table do for their release arms. `BUS_ERROR` is by
+# construction the island head, i.e. `ERROR_HANDLER.debug_base`.
 [[symbol]]
 name = "BusError"
 debug_only = true

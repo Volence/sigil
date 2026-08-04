@@ -32,10 +32,11 @@ fn provenance_chain_holds() {
     );
 }
 
-/// The tip must name all six golden targets (the 6-ROM matrix) — a truncated tip would
-/// silently drop a target from the discipline.
+/// The tip must name all seven golden targets (the 7-ROM matrix — the six canonical/
+/// config shapes plus `lean`, the crash-report-OFF profile added 2026-08-04) — a
+/// truncated tip would silently drop a target from the discipline.
 #[test]
-fn tip_covers_all_six_targets() {
+fn tip_covers_all_seven_targets() {
     let dir = golden_dir();
     let src = std::fs::read_to_string(dir.join("provenance.toml")).unwrap();
     let chain = provenance::parse(&src).unwrap();
@@ -44,7 +45,7 @@ fn tip_covers_all_six_targets() {
     keys.sort_unstable();
     assert_eq!(
         keys,
-        ["config_a", "config_b", "demo", "demo_debug", "s4", "s4_debug"],
-        "tip must cover all six golden targets"
+        ["config_a", "config_b", "demo", "demo_debug", "lean", "s4", "s4_debug"],
+        "tip must cover all seven golden targets"
     );
 }

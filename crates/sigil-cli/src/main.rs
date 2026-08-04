@@ -741,7 +741,7 @@ fn render_program_diags(
 /// lowered + AS residual) → declared-order chained link → `emit_rom` (checksum
 /// folded) → sigil-canonical `.lst` → `convsym` deb2 appendix → `fixheader` — and
 /// writes the full ROM+appendix. Target selected by `--game <sonic4|demo>` +
-/// `--debug` (or `--config-a`/`--config-b` for the off-canonical proof shapes).
+/// `--debug` (or `--config-a`/`--config-b`/`--lean` for the off-canonical proof shapes).
 /// This is what `build.sh` invokes. The legacy no-appendix all-AS `assemble_full_rom`
 /// mode retired with the flip (the AS-reassembly harness is gone); `--native` is
 /// accepted as a no-op for build.sh compatibility.
@@ -752,7 +752,7 @@ fn run_build(args: &[String]) {
             eprintln!("error: {msg}");
             eprintln!(
                 "usage: sigil build --aeon <dir> [-o <out.bin>] [--emit-lst <lst>] \
-                 [--game sonic4|demo] [--debug] [--config-a|--config-b] [--ram-report]"
+                 [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean] [--ram-report]"
             );
             process::exit(2);
         }
@@ -794,6 +794,7 @@ fn run_ram_report(aeon: &std::path::Path, target: &BuildTarget) {
         ),
         BuildTarget::ConfigA => ("config_a".to_string(), native::config_a_profile()),
         BuildTarget::ConfigB => ("config_b".to_string(), native::config_b_profile()),
+        BuildTarget::Lean => ("lean".to_string(), native::lean_profile()),
     };
 
     let (manifest, mdiags) = resolve::manifest::Manifest::scan(aeon);
@@ -859,6 +860,11 @@ enum BuildTarget {
     Demo { debug: bool },
     ConfigA,
     ConfigB,
+    /// The 7th (crash-report-OFF) profile: the sonic4 release shape with no MD
+    /// Debugger island and no deb2 symbol appendix — every fault vector routes at
+    /// `ReleaseFault`. Owner-ruled 2026-08-04; `build.sh` refuses `CRASH_REPORT=0`
+    /// and points here.
+    Lean,
 }
 
 struct BuildOpts {
@@ -872,9 +878,9 @@ struct BuildOpts {
 }
 
 /// Parse `sigil build`'s argument slice. `--aeon <dir>` is required; `-o <path>`,
-/// `--emit-lst <path>`, `--game <name>`, `--debug`, `--config-a`, `--config-b` are
-/// optional. `--config-a`/`--config-b` fix the whole shape (sonic4 game), so they
-/// conflict with `--game`/`--debug`. `--native` is accepted as a no-op (post-flip
+/// `--emit-lst <path>`, `--game <name>`, `--debug`, `--config-a`, `--config-b`,
+/// `--lean` are optional. `--config-a`/`--config-b`/`--lean` fix the whole shape
+/// (sonic4 game), so they conflict with `--game`/`--debug`. `--native` is accepted as a no-op (post-flip
 /// the native build is the only build).
 fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut aeon: Option<String> = None;
@@ -896,6 +902,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             "--debug" => debug = true,
             "--config-a" => config = Some('a'),
             "--config-b" => config = Some('b'),
+            "--lean" => config = Some('l'),
             "--ram-report" => ram_report = true,
             other => return Err(format!("unexpected argument '{other}'")),
         }
@@ -907,9 +914,13 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let target = match config {
         Some(c) => {
             if game.is_some() || debug {
-                return Err("--config-a/--config-b fix the shape; do not combine with --game/--debug".into());
+                return Err("--config-a/--config-b/--lean fix the shape; do not combine with --game/--debug".into());
             }
-            if c == 'a' { BuildTarget::ConfigA } else { BuildTarget::ConfigB }
+            match c {
+                'a' => BuildTarget::ConfigA,
+                'b' => BuildTarget::ConfigB,
+                _ => BuildTarget::Lean,
+            }
         }
         None => match game.as_deref() {
             None | Some("sonic4") => BuildTarget::Sonic4 { debug },
@@ -936,12 +947,11 @@ fn next_value(args: &[String], i: &mut usize, flag: &str) -> Result<String, Stri
 /// sigil-canonical `.lst` (the `.lst`-consumer drop-in). Prints `crc=<crc32>
 /// len=<bytes>` for the build log / provenance check.
 ///
-/// SHAPE SPLIT (item 29): the appendix step runs in DEBUG shapes only — a release
-/// build writes the assembled ROM verbatim. `build_native_full_file` /
-/// `build_full_file_chained` remain the DEBUG-shape model (they always append, so
-/// their plain-shape output is the appendix MECHANISM under test, not a shipped
-/// artifact); the release bar is `assert_rom_matches_release`, which pins the
-/// shipped plain ROM byte-for-byte to the assembled image.
+/// SHAPE SPLIT (the crash-report axis, owner-ruled 2026-08-04 — SUPERSEDES the
+/// review-item-29 release strip): the appendix follows the MD Debugger island, so it
+/// runs whenever `debug || crash_report` — i.e. in every shape except the opt-in
+/// `--lean`, which writes the assembled ROM verbatim. `build_native_full_file` /
+/// `build_full_file_chained` model the same rule off `GameProfile::crash_report`.
 fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     use sigil_harness::native;
 
@@ -973,6 +983,12 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             native::SONIC4_APPENDIX_FLOOR,
             native::build_rom_chained_with_listing(aeon, &native::config_b_profile()),
         ),
+        BuildTarget::Lean => (
+            "lean",
+            false,
+            native::SONIC4_APPENDIX_FLOOR,
+            native::build_rom_chained_with_listing(aeon, &native::lean_profile()),
+        ),
     };
     let (rom, listing) = match built {
         Ok(pair) => pair,
@@ -993,15 +1009,17 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     // The deb2 symbol appendix over the SAME (rom, listing) — byte-identical to the
     // full-file gate function (which folds the checksum in `emit_rom` then appends).
     //
-    // DEBUG SHAPES ONLY (review item 29, owner ruling "strip everything from
-    // release"): the appendix is MD-Debugger symbol data parked past `EndOfRom`,
-    // useless to a shipped cartridge and ~29.7 KB (7.2%) of the sonic4 release
-    // image. A non-DEBUG build therefore ships the assembled ROM verbatim — same
-    // length, same header (`emit_rom` already folded the checksum over exactly
-    // these bytes, so no re-fix is needed). `append_deb2_appendix` keeps its
-    // meaning (it always appends); the SHAPE POLICY lives here, at the one call
-    // site that writes a shipped artifact.
-    let full = if debug {
+    // THE CRASH-REPORT AXIS (owner-ruled 2026-08-04): the appendix is the MD
+    // Debugger's symbol table, and the debugger is a DIAGNOSTIC — a player's crash
+    // has to name the code it died in. So it ships in DEBUG and in RELEASE; the
+    // ~29.7 KB is 7.2% of a ROM that is itself 9% of a 4 MB cart. Only the opt-in
+    // LEAN shape (no island, faults route at ReleaseFault) writes the assembled ROM
+    // verbatim — same length, same header (`emit_rom` already folded the checksum
+    // over exactly these bytes, so no re-fix is needed). `append_deb2_appendix` keeps
+    // its meaning (it always appends); the SHAPE POLICY lives here, at the one call
+    // site that writes a shipped artifact, and mirrors `GameProfile::crash_report`.
+    let crash_report = !matches!(opts.target, BuildTarget::Lean);
+    let full = if debug || crash_report {
         match native::append_deb2_appendix(aeon, &rom, &listing, debug, floor) {
             Ok(bytes) => bytes,
             Err(err) => {
@@ -1083,7 +1101,7 @@ mod tests {
         assert_eq!(o.output.as_deref(), Some("r.bin"));
         assert_eq!(o.emit_lst.as_deref(), Some("r.lst"));
 
-        // --config-a / --config-b select those shapes.
+        // --config-a / --config-b / --lean select those shapes.
         assert!(matches!(
             crate::parse_build_args(&s(&["--aeon", "x", "--native", "--config-a"])).unwrap().target,
             BuildTarget::ConfigA
@@ -1092,11 +1110,18 @@ mod tests {
             crate::parse_build_args(&s(&["--aeon", "x", "--native", "--config-b"])).unwrap().target,
             BuildTarget::ConfigB
         ));
+        assert!(matches!(
+            crate::parse_build_args(&s(&["--aeon", "x", "--native", "--lean"])).unwrap().target,
+            BuildTarget::Lean
+        ));
 
         // Refusals: missing --aeon, config+game conflict, config+debug conflict, unknown game.
+        // `--lean` fixes the whole shape exactly as --config-a/-b do, so it conflicts the same way.
         assert!(crate::parse_build_args(&s(&["--native"])).is_err());
         assert!(crate::parse_build_args(&s(&["--aeon", "x", "--config-a", "--game", "demo"])).is_err());
         assert!(crate::parse_build_args(&s(&["--aeon", "x", "--config-b", "--debug"])).is_err());
+        assert!(crate::parse_build_args(&s(&["--aeon", "x", "--lean", "--debug"])).is_err());
+        assert!(crate::parse_build_args(&s(&["--aeon", "x", "--lean", "--game", "demo"])).is_err());
         assert!(crate::parse_build_args(&s(&["--aeon", "x", "--game", "genesis"])).is_err());
     }
 

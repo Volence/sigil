@@ -119,6 +119,14 @@ fn config_a_size_table_rederives_native() {
 fn config_b_size_table_rederives_native() {
     rederives_native(native::config_b_profile());
 }
+/// LEAN (crash-report OFF) — the 7th frozen table. It is the only committed table that
+/// carries a `ReleaseFault` row and no `BusError`, so this is where a regression that
+/// quietly re-attached the error_handler island to a CRASH_REPORT=0 build would surface
+/// as a label-set divergence rather than a byte diff.
+#[test]
+fn lean_size_table_rederives_native() {
+    rederives_native(native::lean_profile());
+}
 
 /// Wave-B B-0b — the RAM-packing invariant guard. RAM is placed by AS `phase`/
 /// `dephase` (`engine/ram.asm` at `$FFFF0000`/`$FFFF8000`) plus `phase Engine_RAM_End`
@@ -220,10 +228,26 @@ fn config_b_doctored_size_table_breaks_the_build() {
             .join("../sigil-harness/golden/config_b.bin"),
     )
     .unwrap_or_else(|e| panic!("read golden: {e}"));
-    // Release ships NOTHING past EndOfRom since item 29, so the golden's own length
-    // IS the anchor end — a literal here rotted once already (it held the pre-strip
-    // 0x43470 and indexed past the 4.2 KB-smaller post-strip ROM).
-    let eor = golden.len();
+    // The anchor end comes from the PROVENANCE TIP, never from a literal and never
+    // from the golden's own length. Both cheaper sources have now rotted once each:
+    // a hand-typed `0x43470` survived the item-29 strip and indexed past the 4.2 KB
+    // -smaller ROM, and its replacement `golden.len()` rested on "release ships
+    // nothing past EndOfRom", which the crash-report ruling repealed — config_b is a
+    // release shape and now carries a ~28 KB deb2 symbol appendix, so the golden is
+    // far longer than the assembled image `build_rom_chained` returns. `tip_target`
+    // is the same source `native_offcanonical_rom::anchor_end` uses, and
+    // `provenance_chain` proves it against the committed blob.
+    let eor = sigil_harness::provenance::tip_target(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sigil-harness/golden"),
+        "config_b",
+    )
+    .unwrap_or_else(|e| panic!("provenance tip: {e}"))
+    .anchor_end;
+    assert!(
+        golden.len() >= eor,
+        "golden config_b.bin ({}) is shorter than its anchor end ({eor:#x})",
+        golden.len()
+    );
     let base_profile = native::config_b_profile();
     let base = native::build_rom_chained(&aeon, &base_profile).unwrap_or_else(|e| panic!("{e}"));
     let header = |i: usize| {

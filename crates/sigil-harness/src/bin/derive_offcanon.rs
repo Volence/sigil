@@ -95,6 +95,10 @@ fn main() -> std::process::ExitCode {
         ("demo_debug", "demo.debug.bin", native::demo_profile(true)),
         ("config_a", "config_a.bin", native::config_a_profile()),
         ("config_b", "config_b.bin", native::config_b_profile()),
+        // The 7th target (crash-report OFF): the release shape with no MD Debugger
+        // island and no deb2 appendix. `ReleaseFault` lives in NO canonical listing,
+        // so `repin` cannot pin it — lean's frozen table is where its address lives.
+        ("lean", "lean.bin", native::lean_profile()),
     ];
 
     for (stem, golden_name, profile) in &targets {

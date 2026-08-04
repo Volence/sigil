@@ -122,3 +122,12 @@ fn demo_plain_anchor_matches_golden() {
 fn demo_debug_anchor_matches_golden() {
     anchor_matches(&native::demo_profile(true), "demo.debug.bin", "demo_debug");
 }
+
+/// LEAN (crash-report OFF) — the 7th target. Its whole content delta from the release
+/// shape is the fault-handler swap (the 0x10B0 error_handler island out, the 0x2E
+/// `ReleaseFault` in, and the 60 vector cells repointed), so this anchor comparison is
+/// what proves `CRASH_REPORT=0` is a real, complete shape rather than a partial strip.
+#[test]
+fn lean_anchor_matches_golden() {
+    anchor_matches(&native::lean_profile(), "lean.bin", "lean");
+}

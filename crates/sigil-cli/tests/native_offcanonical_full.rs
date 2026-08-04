@@ -1,5 +1,5 @@
 //! Flip Stage 2 · the OFF-CANONICAL FULL-FILE gates (the S1.4 split-golden pattern,
-//! productionized for demo/config_a/config_b).
+//! productionized for demo/config_a/config_b/lean).
 //!
 //! For each off-canonical target the full native file = the chained assembled image
 //! (checksum-folded by `emit_rom`) + the SIGIL-CANONICAL deb2 appendix (the same
@@ -104,19 +104,23 @@ fn run(t: &Target) {
     let full2 = native::build_full_file_chained(&aeon, &t.profile).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(full, full2, "{}: full file non-deterministic", t.name);
 
-    // (b) PRESENCE / ABSENCE — shape-dependent since aeon review item 29. A DEBUG
-    // profile keeps the deb2 appendix; a RELEASE profile (config_b silent, demo plain)
-    // ships the assembled image ALONE. Asserted both ways rather than skipped, so an
-    // appendix creeping back into a release profile fails here with a named message.
+    // (b) PRESENCE / ABSENCE — split on the CRASH-REPORT axis, not on `debug`
+    // (owner-ruled 2026-08-04). Any profile carrying the MD Debugger island ships its
+    // deb2 symbol table: that is debug AND release (config_a, config_b, demo plain,
+    // demo debug). The `lean` profile is the one that ships the assembled image ALONE.
+    // Both directions are asserted, so either failure mode is caught by name: a symbol
+    // table silently DROPPED from a shipped release (the crash screen degrades to
+    // `<unknown>` on a player's cartridge), or one leaking into lean, whose entire
+    // point is not to have it.
     let appendix = full.len() - eor;
-    if t.profile.debug {
+    if t.profile.debug || t.profile.crash_report {
         assert_eq!(&full[eor..eor + 2], &native::DEB2_MAGIC, "{}: deb2 magic at EndOfRom", t.name);
         assert!(appendix >= 0x1000, "{}: appendix {appendix:#x} too small", t.name);
     } else {
         assert_eq!(
             appendix, 0,
-            "{}: release profile must ship NOTHING past EndOfRom, found {appendix:#x} bytes \
-             (has the deb2 symbol appendix leaked back into release?)",
+            "{}: a CRASH_REPORT=0 profile must ship NOTHING past EndOfRom, found \
+             {appendix:#x} bytes (has the deb2 symbol appendix leaked into lean?)",
             t.name
         );
     }
@@ -197,7 +201,7 @@ fn config_b() -> Target {
         load_bearing: &[
             "EntryPoint",
             "GameLoop",
-            "ReleaseFault", // release shape: the ErrorHandler-class spot-check is ReleaseFault since item 29 part 4
+            "BusError", // release carries the error_handler island (crash-report ruling)
             "HeightMaps",
             "AnimateSprite",
             "EndOfRom",
@@ -211,7 +215,7 @@ fn demo_plain() -> Target {
         load_bearing: &[
             "EntryPoint",
             "GameLoop",
-            "ReleaseFault", // release shape: item 29 part 4
+            "BusError", // demo's release shape carries the debugger too (owner-ruled: no exclusion)
             "AnimateSprite",
             "EndOfRom",
         ],
@@ -225,6 +229,26 @@ fn demo_debug() -> Target {
             "EntryPoint",
             "GameLoop",
             "BusError",
+            "AnimateSprite",
+            "EndOfRom",
+        ],
+    }
+}
+
+/// LEAN — the 7th target and the ONLY one whose full file is the assembled image
+/// alone: CRASH_REPORT=0 means no error_handler island and no deb2 appendix, and every
+/// fault vector routes at `ReleaseFault`. So its load-bearing set probes `ReleaseFault`
+/// where every other target probes `BusError` — that pair of spot-checks is what proves
+/// the axis actually swaps the fault handler rather than just eliding bytes.
+fn lean() -> Target {
+    Target {
+        name: "lean",
+        profile: native::lean_profile(),
+        load_bearing: &[
+            "EntryPoint",
+            "GameLoop",
+            "ReleaseFault", // the lean fault handler — absent from every other target
+            "HeightMaps",
             "AnimateSprite",
             "EndOfRom",
         ],
@@ -249,6 +273,11 @@ fn demo_debug_full_file() {
 }
 
 #[test]
+fn lean_full_file() {
+    run(&lean());
+}
+
+#[test]
 fn config_a_doctored_control() {
     doctored_control(&config_a());
 }
@@ -259,4 +288,8 @@ fn config_b_doctored_control() {
 #[test]
 fn demo_doctored_control() {
     doctored_control(&demo_plain());
+}
+#[test]
+fn lean_doctored_control() {
+    doctored_control(&lean());
 }
