@@ -7,8 +7,8 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=s4
 # reproduces_golden=s4.bin
-# golden_crc32=d585979e
-# assembled_anchor=4c7b7053
+# golden_crc32=56f1b3ba
+# assembled_anchor=ce7217c9
 # assembled_end=0x5dc30
 # labels=73
 Ani_Particle 0x257e2
@@ -19,7 +19,7 @@ BG_Init 0x637e
 BgAnim_Init 0x6430
 BgAnim_Table 0x25742
 BootData 0x398
-BootData_End 0x1b12
+BootData_End 0x1b0a
 BusError 0x5ca40
 Camera_Init 0x5b90
 Checksum 0x18e
@@ -38,8 +38,8 @@ HBlank_Install 0x2238
 HeightMaps 0x257ea
 InitObjectRAM 0x2970
 InitSpriteSystem 0x2c58
-Init_DMA_Queue 0x1b62
-Init_SpriteTable 0x1e68
+Init_DMA_Queue 0x1b5a
+Init_SpriteTable 0x1e60
 Load_Object 0x4190
 Map_TestObj 0x25744
 NullInterrupt 0x5ca34
@@ -81,6 +81,6 @@ TestStressEmitter 0x111c0
 Tile_Cache_GetTile 0x4520
 TouchResponse 0x3204
 VBlank_Handler 0x20c0
-VDP_Shadow_Init 0x1b18
+VDP_Shadow_Init 0x1b10
 Vectors 0x0
 ZX0_Decompress 0x25d8

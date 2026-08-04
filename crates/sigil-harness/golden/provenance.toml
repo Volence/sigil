@@ -1627,3 +1627,50 @@ full_crc = "2b9aa464"
 full_size = 423383
 anchor_crc = "d9d2a18b"
 anchor_end = 0x5f722
+
+[[entry]]
+name = "item25-sequencer-reclaim"
+ab = "aeon/docs/superpowers/notes/2026-08-04-item25-sequencer-ab.md"
+note = "Sequencer reclaim (review item 25), scoped subset: H3 retargets 18 jp sites past the Seq_ContinueFetch trampoline (zero bytes, -10 T/zero-tick op); M1 drops the provably-zero sc_porta_incr high-byte test at 4 gates (or (ix+d) -> or a, -8 B). H1/H2/M3 dropped with reasons. Chip-stream 100% identical over 1431 onsets."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "e7ed9d66"
+full_size = 423749
+anchor_crc = "0cf2e381"
+anchor_end = 0x5f722
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "327d7e31"
+full_size = 304752
+anchor_crc = "5fc32529"
+anchor_end = 0x43630
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "ee5f6002"
+full_size = 91188
+anchor_crc = "a7a0a8d1"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d4c00097"
+full_size = 93929
+anchor_crc = "f6b6dceb"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "56f1b3ba"
+full_size = 413246
+anchor_crc = "ce7217c9"
+anchor_end = 0x5dc30
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "abf1d304"
+full_size = 423383
+anchor_crc = "1ebd6388"
+anchor_end = 0x5f722
