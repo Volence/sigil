@@ -1117,6 +1117,82 @@ fn out_clobbers_overlap_errors() {
 }
 
 #[test]
+fn cond_out_may_overlap_clobbers() {
+    // A register can be a RESULT on one condition edge and destroyed scratch on
+    // every other — not the result-or-scratch contradiction
+    // `[proc.out-clobbers-overlap]` names, so the honest declaration compiles
+    // clean. The check ranges over the whole out set (the parser lands a
+    // conditional result there too) and subtracts the conditionally-guarded
+    // registers.
+    let src = "module m\n\
+               proc f() clobbers(d0/a1) out(a1 if eq) {\n\
+               \x20   movea.w #0, a1\n\
+               \x20   moveq #0, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !diags.iter().any(|d| d.message.contains("[proc.out-clobbers-overlap]")),
+        "a CONDITIONAL out may overlap clobbers (result on the cc edge, scratch \
+         otherwise); got: {diags:?}"
+    );
+}
+
+#[test]
+fn uncond_out_still_may_not_overlap_clobbers() {
+    // An UNCONDITIONAL out that is also declared clobbered is the
+    // result-or-scratch contradiction and must still error.
+    let src = "module m\n\
+               proc f() clobbers(d0/a1) out(a1) {\n\
+               \x20   movea.w #0, a1\n\
+               \x20   moveq #0, d0\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.out-clobbers-overlap]"))
+        .unwrap_or_else(|| panic!("expected [proc.out-clobbers-overlap], got: {diags:?}"));
+    assert_eq!(hit.level, Level::Error);
+    assert!(hit.message.contains("a1"), "must name the overlapping register: {}", hit.message);
+}
+
+#[test]
+fn cond_out_exemption_is_canonical_not_textual() {
+    // `sp` and `a7` name the same register. The exemption is expanded through the
+    // same register file as the sets it is tested against, so the spelling the
+    // author used cannot decide whether the overlap fires. (A textual guard set
+    // would hold "sp", the out set "a7", and this would error.) The incidental
+    // out-unwritten warning is not this test's subject.
+    let src = "module m\n\
+               proc f() clobbers(a7) out(sp if eq) {\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !diags.iter().any(|d| d.message.contains("[proc.out-clobbers-overlap]")),
+        "the cc-guard exemption must survive an sp/a7 spelling difference; got: {diags:?}"
+    );
+}
+
+#[test]
+fn cond_out_may_not_overlap_preserves() {
+    // The preserves half is NOT relaxed for a conditional result: a register
+    // written on ANY path contradicts one left untouched on ALL paths, so the
+    // cc guard buys nothing here.
+    let src = "module m\n\
+               proc f() preserves(a1) out(a1 if eq) {\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.out-preserves-overlap]"))
+        .unwrap_or_else(|| panic!("expected [proc.out-preserves-overlap], got: {diags:?}"));
+    assert_eq!(hit.level, Level::Error);
+}
+
+#[test]
 fn out_preserves_overlap_errors() {
     // A register cannot be both a returned result and left untouched.
     let src = "module m\n\
