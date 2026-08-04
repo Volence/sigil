@@ -2010,3 +2010,57 @@ full_crc = "ca450ce0"
 full_size = 423388
 anchor_crc = "1dfea23a"
 anchor_end = 0x5f71e
+
+[[entry]]
+name = "cheat-flag"
+ab = "aeon/docs/superpowers/notes/2026-08-05-cheat-flag-ab.md"
+note = "Debug-fly moves behind a runtime Cheat_Flags bit: shipped cheat payload, unreachable until a code sets it; DEBUG arms it so dev workflow is unchanged"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "a55d8335"
+full_size = 423781
+anchor_crc = "d4a70b3f"
+anchor_end = 0x5f724
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c639b01a"
+full_size = 304812
+anchor_crc = "67e5b0f7"
+anchor_end = 0x43640
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "12289484"
+full_size = 91224
+anchor_crc = "6f77ae93"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "18e5ec7f"
+full_size = 93963
+anchor_crc = "7c498876"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "5a6ef417"
+full_size = 379822
+anchor_crc = "f25a890b"
+anchor_end = 0x5cbae
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "a4db281b"
+full_size = 413276
+anchor_crc = "c04a85b4"
+anchor_end = 0x5dc30
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "f05f5b86"
+full_size = 423404
+anchor_crc = "6cfbc5ff"
+anchor_end = 0x5f724
