@@ -1404,13 +1404,22 @@ fn a_save_restore_round_trip_carries_the_survives_claim() {
 /// Same hoisted-pop body as the firing case; only the clause is gone.
 #[test]
 fn no_clobber_contract_means_no_survives_claim() {
+    // Non-vacuity: this is byte-for-byte the FIRING body above with its
+    // `clobbers` clause removed and nothing else weakened. `.full`'s `moveq #1`
+    // leaves Z clear, so that `rts` is a PROVABLY ¬cc exit (not ⊤ — the skip-⊤
+    // rule is not what is being exercised here), and `lea Slot, a1` writes a1
+    // before the branch, so a1 is demonstrably trash when control reaches it.
+    // A register is therefore destroyed on a classified ¬cc return and the gate
+    // is still silent, which is attributable to the absent clause alone.
     let src = "module m\n\
                proc f() out(a1 if eq) {\n\
                \x20   lea Slot, a1\n\
                \x20   cmpi.w #0, Flag\n\
                \x20   beq .full\n\
+               \x20   moveq #0, d0\n\
                \x20   rts\n\
                .full:\n\
+               \x20   moveq #1, d0\n\
                \x20   rts\n\
                }\n";
     let (_module, diags) = lower(src);

@@ -1,13 +1,29 @@
 # 2026-08-04 — B′-0b: the survives-claim verifier (close packet)
 
-Status: **Checkpoint for the overseer's countersign + merge. NOT merged.** Branch
-pair `bprime-0b`: one commit per repo, sigil on master `2287eabc`, aeon `33aed57` on master
-`c424dfd`. Chain 40, tip `item28-bg-transpose`.
+Status: **countersigned and MERGED.** Branch pair `bprime-0b`, one code commit
+per repo, rebased onto chain-42 masters (sigil `d0af6de7` / aeon `43265d6`) and
+re-proven there — see §7/§8. The parcel was built and first gate-greened against
+chain 40; it waited one engine parcel, during which the CRASH_REPORT axis landed
+a seventh golden target.
 
 Spec: `specs/2026-08-04-contract-delta-spec.md` §7.1 (normative semantics) and
 §7.2 (scope). Ledger rows closed: the B′-0 lens-C silent-lie surface (~:2025),
 the `tile_cache.emp:130` dishonest shape (~:2032), the register-keyed exemption
 nit (~:2034). The Z80 must-test row (~:2031) stands, untouched.
+
+**Both open questions this packet raised were RULED by Fable (2026-08-04) and
+both rulings are folded in here, with the spec amended in the same pass:**
+
+1. **The no-`clobbers` escape STANDS, ratified** — it now rests on a ruling
+   rather than inherited convention, and delta spec §7.1 carries the normative
+   sentence. Rationale and the pinning test: §3.3.
+2. **The two-stage enforcement is CORRECT as built** — "error tier" means cannot
+   merge, plus cannot build wherever one file contains the proof. The doctrine
+   generalises to every future gate and is stated at §3.3 so the next porter does
+   not re-ask.
+
+Also endorsed on re-verification: the ⊤ reversal (§4), the §7.2 rider correction
+and the B′-0c allowlist retention (§0).
 
 ## §0 — THE HEADLINE
 
@@ -119,6 +135,18 @@ callee, and `jmp (a0)` on the ¬cc edge. Aeon is genuinely backstopped — the s
 suite always runs the corpus gate — but "error tier" describes the per-file half
 only. This is exactly `check_preserves`' shape, not a new hole.
 
+**RULED CORRECT AS BUILT (Fable, 2026-08-04), and the doctrine generalises to
+every future gate:** a fact PROVABLE FROM ONE FILE must be a hard BUILD failure,
+and this one is — the per-file half emits `Level::Error`, and `build_emp` errs on
+any `Level::Error`, so it is untouched by the invisible-warning-tier problem. A
+fact provable ONLY from the whole corpus (here the `ClobberAll`-fails /
+`PreserveAll`-passes deferrals) is enforced at the MERGE gate by the strict-suite
+assertion, which nothing merges without. So **"error tier" means cannot merge,
+plus cannot build wherever the file alone contains the proof.** The corpus
+closure is deliberately NOT moved into `build_emp`: that would duplicate the
+oracle in the build path and re-prove a merge-gate property on every single
+build. Recorded here so the next porter does not re-ask.
+
 This is `check_preserves`' three-way split copied faithfully, including its
 rationale: a register that fails under `ClobberAll` but verifies under
 `PreserveAll` is blocked SOLELY by a call, a fact only the whole-corpus closure
@@ -132,6 +160,21 @@ corpus `node.has_clobber_contract`), mirroring `check_clobbers`. §7.1's rule re
 clobbers MEMBERSHIP; a proc with no clobber contract states nothing about its
 failure edges, so there is no claim to check. Imposing one would be inventing a
 contract the author did not write.
+
+**RATIFIED (Fable, 2026-08-04) — this escape now rests on a ruling, not on
+inherited convention**, and delta spec §7.1 carries the normative sentence.
+Beyond the reasoning above: mandating `clobbers` whenever `out(… if cc)` appears
+would be the language's first annotation-mandates-annotation coupling, and it
+would push authors toward hastily written wrong clobbers lists — worse than none
+(D2.32). The abuse path (drop the clause to buy silence) is trapped by the pinned
+`survives_claim_sites` assertion in `out_verify_corpus`, so a corpus proc cannot
+take the escape quietly. Pinned by
+`no_clobber_contract_means_no_survives_claim`, whose body is byte-for-byte the
+FIRING test's with only the `clobbers` clause removed: `.full`'s `moveq #1`
+leaves Z clear so that exit is a PROVABLY ¬cc return (not ⊤), and `lea Slot, a1`
+writes a1 before the branch — a register demonstrably destroyed on a classified
+¬cc return, with the gate still silent. The silence is therefore attributable to
+the absent clause alone.
 
 68k only. The Z80 arm stays dead: `VALID_CCS` is the 68k set applied to both
 CPUs, so a genuine Z80 `out(a if z)` is rejected as `[proc.out-cond-invalid]`
@@ -328,46 +371,76 @@ oracle, plus the `survives_claim_sites` pin. The obvious mutation (reverting the
 it was run by hand and the gate failed as designed, and the test's doc says so
 rather than implying a mutation the suite could run.
 
-## §7 — Byte identity (own-run, chain 40)
+## §7 — Byte identity (own-run, chain 42, SEVEN targets)
 
-All four canonical shapes rebuilt one-per-invocation from this worktree pair at
-the FINAL state, CRC compared against `crates/sigil-harness/golden/` in my own
-worktree — goldens re-derived from the blobs, never quoted:
+Re-proven at the MERGE rebase onto chain-42 masters (sigil `d0af6de7` / aeon
+`43265d6`). **The bar is SEVEN targets, not four** — the engine session's
+CRASH_REPORT axis landed a `lean` profile between this parcel's first gate-green
+and its merge, and `golden/` now holds `lean.bin` alongside the six that were
+already there. This packet's original ×4 table was under-specified by three.
+Every shape rebuilt from this worktree pair and compared **byte-for-byte** (`cmp`)
+against `crates/sigil-harness/golden/` in my own worktree — goldens re-derived
+from the blobs, never quoted:
 
-| target | built | golden (chain 40) | verdict |
+| target | built | size | verdict |
 |---|---|---|---|
-| `s4.bin` | `730a9f99` / 379822 | `730a9f99` / 379822 | identical |
-| `s4.debug.bin` | `b3aaa1df` / 423388 | `b3aaa1df` / 423388 | identical |
-| `demo.bin` | `ea6213bc` / 65954 | `ea6213bc` / 65954 | identical |
-| `demo.debug.bin` | `18e5ec7f` / 93963 | `18e5ec7f` / 93963 | identical |
+| `s4.bin` | `36e875f1` | 413268 | IDENTICAL |
+| `s4.debug.bin` | `ca450ce0` | 423388 | IDENTICAL |
+| `demo.bin` | `12289484` | 91224 | IDENTICAL |
+| `demo.debug.bin` | `18e5ec7f` | 93963 | IDENTICAL |
+| `config_a.bin` | `fa15ffa1` | 423765 | IDENTICAL |
+| `config_b.bin` | `ed2ad40e` | 304788 | IDENTICAL |
+| `lean.bin` | `a46a39f6` | 379822 | IDENTICAL |
+
+Built in `capture_goldens.sh`'s order and by its two mechanisms: the four
+canonical shapes one-per-invocation through `build.sh`, then the three
+off-canonical shapes through `sigil build --config-a/--config-b/--lean`. The
+ordering is load-bearing, not incidental — `config_a` writes to `s4.debug.bin`
+while `config_b` and `lean` BOTH write to `s4.bin`, so each would clobber the
+canonical reference if taken out of turn. Canonical `s4`/`s4.debug` rebuilt
+afterwards to leave the tree honest.
+
+At chain 40 the same bar read `730a9f99`/379822 · `b3aaa1df`/423388 ·
+`ea6213bc`/65954 · `18e5ec7f`/93963 — also all identical. Every canonical CRC
+moved between chain 40 and 42 and three changed size, which is exactly why a
+quoted CRC is never the bar. (`lean` is crash-report OFF, so it lands at 379822 —
+the size canonical `s4` had at chain 40, before the CRASH_REPORT axis.)
 
 Structurally expected: both aeon edits are contract declarations, and declared
-clobbers/preserves reach only diagnostic producers. `config_a` / `config_b` ride
-the strict off-canonical gates.
+clobbers/preserves reach only diagnostic producers.
 
 `repin --check`: **pins.rs unchanged.** `refreeze --check`: **OK (tip
-`item28-bg-transpose`, chain len 40).** No re-freeze taken.
+`crash-report`, chain len 42).** No re-freeze taken.
 
 ## §8 — Strict suite
 
 `AEON_DIR=<aeon-wt> SIGIL_BUILD=… SIGIL_EMIT=… cargo test --workspace --release`,
 full output captured to a file (no `tail`/`head` in the pipeline), `CARGO_EXIT=0`.
 
-**3071 passed · 0 failed · 4 ignored**, across **305** result lines.
-Failure scan (`FAILED` / `^failures:` / `panicked at` / `^error[` / `^error:`):
-**empty**.
+At the merge rebase onto chain-42 master `d0af6de7`: **3080 passed · 0 failed ·
+4 ignored**, across **305** result lines, `CARGO_EXIT=0`. Failure scan (`FAILED` /
+`^failures:` / `panicked at` / `^error[` / `^error:`): **empty**.
 
 | file | added | running |
 |---|---|---|
-| master baseline | — | 3053 |
-| `tests/lower_proc.rs` | +14 | 3067 |
-| `tests/out_verify.rs` | +3 | 3070 |
-| `sigil-cli/tests/out_verify_corpus.rs` | +1 | 3071 |
+| master `d0af6de7` baseline | — | 3062 |
+| `tests/lower_proc.rs` | +14 | 3076 |
+| `tests/out_verify.rs` | +3 | 3079 |
+| `sigil-cli/tests/out_verify_corpus.rs` | +1 | 3080 |
 
 +18, exactly the tests in §6 (the deleted vacuous test is netted out: +15 at the
 first gate-green, then +4 panel-driven additions −1 deletion). Result-line count
 is unchanged at 305 — every test landed in an existing binary. The 4 ignored are
 the standing set, none new.
+
+**Delta re-verified independently at the merge, against a master two chains
+further on than the one this parcel was written against.** Tree-wide `#[test]`
+count: master `d0af6de7` = 3066, branch = 3084, difference **+18** — unchanged,
+so the engine session's chain-41/42 work and this parcel's tests are disjoint.
+3080 passed + 4 ignored = 3084 = the branch's own `#[test]` total, so nothing is
+silently skipped. For the record the same measurement at the first gate-green
+read master `2287eabc` = 3057 / branch 3075, also +18; the engine session added
+the intervening 9 (3057 → 3066).
 
 `cargo clippy -D warnings` fails on master already (`sigil-ir/src/symbols.rs:55`;
 the workspace run also never reaches past it to `sigil-frontend-as/src/eval.rs`

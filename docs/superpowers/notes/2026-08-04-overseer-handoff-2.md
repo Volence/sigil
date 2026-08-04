@@ -1,5 +1,16 @@
 # 2026-08-04 — OVERSEER HANDOFF #2 (read after `2026-08-04-session-handoff.md`)
 
+> **RESOLVED SAME SESSION — read this box before §5.** The window reopened, Fable
+> ruled both open questions, and **B′-0b MERGED** at chain 42 (sigil `d0af6de7` /
+> aeon `43265d6` as its base). §5's merge recipe was followed and is kept below as
+> the record. Two things it predicted came true: the aeon worktree did need the
+> fast-forward first, and **the shape count DID change — it is now SEVEN, not four
+> or five** (`lean` landed with the CRASH_REPORT axis). Re-proven at chain 42:
+> byte-identical ×7, strict 3080/0/4, repin unchanged, refreeze chain 42.
+> Both §6 rulings are folded into the B′-0b packet and delta spec §7.1.
+> **Still open from §6: the invisible warning tier — now the blessed next lane,
+> ahead of B′-1.**
+
 Written at the end of the follow-on overseer run. Everything below was verified
 at the time of writing and **all of it re-goes-stale the moment the engine
 session commits** — which it did twice during this run. Re-derive before acting.
