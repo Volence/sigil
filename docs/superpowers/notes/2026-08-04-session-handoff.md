@@ -7,33 +7,33 @@ Everything below is verified state, not recollection.
 
 ## §1 — Repo state RIGHT NOW
 
-| | commit | note |
+**⚠ THIS SECTION WENT STALE WITHIN MINUTES OF BEING WRITTEN — that is the
+lesson, not a footnote.** It first recorded chain 38 with both checkouts dirty;
+the engine session then committed and moved to chain 40 while this note was
+being committed. Re-derive everything below before acting on it.
+
+| | commit at handoff | note |
 |---|---|---|
-| sigil master | `438147c4` | B′-0 + B′-0c merged, ledger commits on top |
-| aeon master | `b96051a` | B′-0 merge; no aeon work since |
-| refreeze chain | entry 38 (`item28-bg-guard`) | moved 32→38 during the session |
+| sigil master | `6c66b1c5` | B′-0 + B′-0c merged; engine's chain-40 work on top |
+| aeon master | `c424dfd` | engine's item-28 BG transpose parcel, EXECUTED |
+| refreeze chain | entry **40** (`item28-bg-transpose`) | moved 32→40 during one session |
 
-**Goldens at chain 38** (the CURRENT byte bar — re-derive anyway, never trust a
-quoted CRC; these moved twice in one night and `demo.debug` changed SIZE):
-s4 `3879b953`/384048 · s4.debug `2623ee7f`/423383 · demo `f7a93a04`/70180 ·
-demo.debug `e3243cbb`/93943.
+**Goldens at chain 40** — ALL FOUR CHANGED from chain 38, and three changed SIZE:
+s4 `730a9f99`/**379822** · s4.debug `b3aaa1df`/**423388** · demo `ea6213bc`/**65954** ·
+demo.debug `18e5ec7f`/**93963**. (At chain 38 these were `3879b953`/384048,
+`2623ee7f`/423383, `f7a93a04`/70180, `e3243cbb`/93943.) **Never trust a quoted
+CRC — including these.** Re-derive from `crates/sigil-harness/golden/` in your
+own worktree.
 
-**⚠ BOTH MAIN CHECKOUTS ARE DIRTY** — the concurrent engine session holds
-uncommitted WIP:
-- sigil: `native.rs`, `repin.rs`, `repin.toml`, `m1c_root.asm`,
-  `error_handler_port.rs`, `native_full_rom.rs`, `vectors_port.rs`,
-  `m1c_vector_table.rs`
-- aeon: `vectors.emp`, `null_interrupt.emp` (deleted), `docs/DEFERRED_WORK.md`,
-  `games/demo/{game_root.asm,map.toml}`
+**Both main checkouts are CLEAN as of this writing and no builds are running** —
+the window looks open. It was also "open" earlier tonight and closed silently
+mid-run, so re-check immediately before merging (§6 rule 1).
 
-`repin.toml` + `native.rs` together mark it a BYTE-CHANGING parcel in flight.
-Nothing may merge until both trees are clean. Local masters are AHEAD of
-`origin/master` and deliberately UNPUSHED (they carry the engine session's work;
-pushing it is not a porter/overseer call).
+Local masters are AHEAD of `origin/master` and deliberately UNPUSHED (they carry
+the engine session's work; pushing it is not a porter/overseer call).
 
-Neither repo has any leftover worktree from this session except the D-batch pair
-(§3). A stray detached worktree `scratchpad/master-baseline` may still exist —
-safe to remove.
+A stray detached worktree `scratchpad/master-baseline` may still exist — safe to
+remove.
 
 ## §2 — Merged this session
 
@@ -54,7 +54,12 @@ Countersigned by overseer own-run: **strict 3054/0/4 across 307 binaries, exit
 0**; **byte-identical ×4** at chain 38; range fix verified present at
 `eval/mod.rs:1347`.
 
-Held ONLY because the engine session resumed and dirtied both checkouts.
+Held because the engine session resumed and dirtied both checkouts mid-run.
+**As of this writing the trees are clean again and master has moved to chain
+40**, so this is the immediate first action for the next session — but the byte
+bar must be re-proven against the chain-40 goldens (all four changed; three
+changed size), NOT the chain-38 figures the packet currently carries. Update the
+packet's §5 table as part of the merge, exactly as B′-0 did on its own rebase.
 
 **To resume (do exactly this):**
 1. Confirm BOTH main checkouts are clean (`git status --short` — empty) AND no
