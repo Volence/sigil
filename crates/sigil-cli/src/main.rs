@@ -935,6 +935,13 @@ fn next_value(args: &[String], i: &mut usize, flag: &str) -> Result<String, Stri
 /// and a green gate vouches for the bytes `build.sh` ships. `--emit-lst` drops the
 /// sigil-canonical `.lst` (the `.lst`-consumer drop-in). Prints `crc=<crc32>
 /// len=<bytes>` for the build log / provenance check.
+///
+/// SHAPE SPLIT (item 29): the appendix step runs in DEBUG shapes only — a release
+/// build writes the assembled ROM verbatim. `build_native_full_file` /
+/// `build_full_file_chained` remain the DEBUG-shape model (they always append, so
+/// their plain-shape output is the appendix MECHANISM under test, not a shipped
+/// artifact); the release bar is `assert_rom_matches_release`, which pins the
+/// shipped plain ROM byte-for-byte to the assembled image.
 fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     use sigil_harness::native;
 
@@ -985,12 +992,25 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
 
     // The deb2 symbol appendix over the SAME (rom, listing) — byte-identical to the
     // full-file gate function (which folds the checksum in `emit_rom` then appends).
-    let full = match native::append_deb2_appendix(aeon, &rom, &listing, debug, floor) {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            eprintln!("error: native build ({label}) appendix: {err}");
-            process::exit(1);
+    //
+    // DEBUG SHAPES ONLY (review item 29, owner ruling "strip everything from
+    // release"): the appendix is MD-Debugger symbol data parked past `EndOfRom`,
+    // useless to a shipped cartridge and ~29.7 KB (7.2%) of the sonic4 release
+    // image. A non-DEBUG build therefore ships the assembled ROM verbatim — same
+    // length, same header (`emit_rom` already folded the checksum over exactly
+    // these bytes, so no re-fix is needed). `append_deb2_appendix` keeps its
+    // meaning (it always appends); the SHAPE POLICY lives here, at the one call
+    // site that writes a shipped artifact.
+    let full = if debug {
+        match native::append_deb2_appendix(aeon, &rom, &listing, debug, floor) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                eprintln!("error: native build ({label}) appendix: {err}");
+                process::exit(1);
+            }
         }
+    } else {
+        rom
     };
     if let Some(out_path) = &opts.output {
         if let Err(err) = std::fs::write(out_path, &full) {

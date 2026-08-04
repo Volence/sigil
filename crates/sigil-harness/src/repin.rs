@@ -145,8 +145,11 @@ pub struct RegionSpec {
     pub len: Option<u32>,
     /// Per-shape DEBUG length override for a literal-`len` region whose debug
     /// extent differs from plain but whose end carries no listing symbol
-    /// (sound_api: DEBUG asserts grow it, but a real end-symbol would ship in
-    /// the release convsym appendix and perturb the byte-identical plain ROM).
+    /// (sound_api: DEBUG asserts grow it, but a real end-symbol would enter the
+    /// convsym appendix and perturb the frozen full-file goldens — pre-item-29
+    /// that hit the plain ROM too; the appendix is DEBUG-only now, so the blast
+    /// radius is the debug full file, and the override stays the honest way to
+    /// state a per-shape extent without inventing a symbol).
     /// Only valid alongside `len`; when absent, debug_len = len.
     #[serde(default)]
     pub debug_len: Option<u32>,

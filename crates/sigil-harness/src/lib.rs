@@ -7,7 +7,8 @@
 //! linked section by LMA) and the convsym allowlist ([`derive_convsym_rewritten`]
 //! / [`assert_rom_matches_convsym`] / [`assert_rom_matches`]) that confines the
 //! two semantic header fields the out-of-scope `convsym`/`fixheader` post-steps
-//! rewrite.
+//! rewrite — in the DEBUG shapes, the only ones that carry a deb2 appendix since
+//! item 29. The release shapes compare with [`assert_rom_matches_release`].
 
 /// Shared test-support: the AS-truth equ blob for the `engine.constants` twin
 /// and the drift-guard filter, consolidated out of ~9 hand-copied port/probe
@@ -98,14 +99,38 @@ pub fn derive_convsym_rewritten(rom: &[u8], refrom: &[u8]) -> Vec<usize> {
         .collect()
 }
 
-/// [`assert_rom_matches`] with the convsym allowlist DERIVED-and-CONFINED
-/// (D-T10.6): the allowlist is computed from the actual header diff instead
-/// of pinned, killing that re-pin row; confinement to the two semantic
-/// fields is enforced by the unexpected-offset check (any diff outside them
-/// is unlisted and fails with full evidence). Each field must genuinely
-/// differ somewhere — a reference rebuilt WITHOUT the convsym append would
-/// otherwise silently change shape under us (the guard the pinned arrays'
+/// The RELEASE-shape whole-ROM bar (item 29): a non-DEBUG build ships NO deb2
+/// appendix, so the reference file IS the assembled image — same length, and
+/// identical in every byte INCLUDING the two header fields the appendix used to
+/// perturb (`emit_rom` folds the checksum over exactly these bytes and nothing
+/// re-fixes it afterwards). The length check is the standing regression guard
+/// against the appendix leaking back into a release artifact; the empty
+/// allowlist is the point, not an omission — the convsym/fixheader post-steps
+/// do not run in this shape, so there is nothing to allow.
+pub fn assert_rom_matches_release(rom: &[u8], refrom: &[u8], expected_len: usize, label: &str) {
+    assert_eq!(
+        refrom.len(),
+        expected_len,
+        "{label}: the release reference is {} bytes but EndOfRom is {expected_len:#x} — a \
+         non-DEBUG build must ship the assembled image with NOTHING appended (has the deb2 \
+         symbol appendix leaked back into release?)",
+        refrom.len()
+    );
+    assert_rom_matches(rom, refrom, expected_len, &[], label);
+}
+
+/// The DEBUG-shape whole-ROM bar: [`assert_rom_matches`] with the convsym
+/// allowlist DERIVED-and-CONFINED (D-T10.6): the allowlist is computed from the
+/// actual header diff instead of pinned, killing that re-pin row; confinement to
+/// the two semantic fields is enforced by the unexpected-offset check (any diff
+/// outside them is unlisted and fails with full evidence). Each field must
+/// genuinely differ somewhere — a reference rebuilt WITHOUT the convsym append
+/// would otherwise silently change shape under us (the guard the pinned arrays'
 /// "allowlisted bytes must differ" assert used to provide).
+///
+/// DEBUG SHAPES ONLY since item 29 gated the appendix: a release reference has
+/// no appendix and therefore no rewritten header fields at all — that shape's
+/// bar is [`assert_rom_matches_release`] (exact identity).
 pub fn assert_rom_matches_convsym(rom: &[u8], refrom: &[u8], expected_len: usize, label: &str) {
     let allow = derive_convsym_rewritten(rom, refrom);
     for (field, range) in
