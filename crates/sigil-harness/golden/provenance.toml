@@ -2064,3 +2064,57 @@ full_crc = "f05f5b86"
 full_size = 423404
 anchor_crc = "6cfbc5ff"
 anchor_end = 0x5f724
+
+[[entry]]
+name = "b-jumps"
+ab = "aeon/docs/superpowers/notes/2026-08-05-b-jumps-ab.md"
+note = "B joins the jump mask while CHEAT_DEBUG_FLY is clear (classic three-button jump); stripped back out while the cheat owns B"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "436b4d7c"
+full_size = 423815
+anchor_crc = "bf7c2c8f"
+anchor_end = 0x5f724
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "5ff4ee74"
+full_size = 304878
+anchor_crc = "82749a0a"
+anchor_end = 0x43660
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "12289484"
+full_size = 91224
+anchor_crc = "6f77ae93"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "18e5ec7f"
+full_size = 93963
+anchor_crc = "7c498876"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "9cc8c41c"
+full_size = 379822
+anchor_crc = "839bd7da"
+anchor_end = 0x5cbae
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "5765985a"
+full_size = 413310
+anchor_crc = "1d4b2619"
+anchor_end = 0x5dc30
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "ba9bbfe5"
+full_size = 423451
+anchor_crc = "786deada"
+anchor_end = 0x5f724
