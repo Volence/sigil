@@ -1862,3 +1862,50 @@ full_crc = "b45a553a"
 full_size = 423354
 anchor_crc = "012d339f"
 anchor_end = 0x5f71e
+
+[[entry]]
+name = "item28-bg-transpose"
+ab = "aeon/docs/superpowers/notes/2026-08-05-item28-bg-transpose-ab.md"
+note = "BG transpose (item 28 deferred half, owner-ruled): layout blob column-major (pure permutation, 4096/4096 cells exact), Draw_BG_TileColumn sequential move.l, per-column autoinc-$80 blits in RedrawPlanes/BG_Init, Tier-1 move.l tile blit with re-derived guard. NO DMA. Framebuffers byte-identical over 900 frames incl. max diagonal; zero scroll lag both sides; +1 one-time init lag frame (64 command setups), priced by the review as init-only noise."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "bea7e57b"
+full_size = 423765
+anchor_crc = "9e971dcc"
+anchor_end = 0x5f71e
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "12ff0a4f"
+full_size = 271790
+anchor_crc = "a578afe4"
+anchor_end = 0x425ae
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "ea6213bc"
+full_size = 65954
+anchor_crc = "8c2e8e4e"
+anchor_end = 0x101a2
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "18e5ec7f"
+full_size = 93963
+anchor_crc = "7c498876"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "730a9f99"
+full_size = 379822
+anchor_crc = "b973f61b"
+anchor_end = 0x5cbae
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "b3aaa1df"
+full_size = 423388
+anchor_crc = "4ff14aca"
+anchor_end = 0x5f71e

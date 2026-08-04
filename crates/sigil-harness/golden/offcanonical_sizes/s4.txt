@@ -7,20 +7,20 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=s4
 # reproduces_golden=s4.bin
-# golden_crc32=40ac3e52
-# assembled_anchor=1209e250
+# golden_crc32=730a9f99
+# assembled_anchor=b973f61b
 # assembled_end=0x5cbae
 # labels=72
 Ani_Particle 0x257e2
 Ani_Sonic 0x25774
 AnimateSprite 0x3080
-Art_Decompress 0x632a
-BG_Init 0x638e
-BgAnim_Init 0x6440
+Art_Decompress 0x634a
+BG_Init 0x63ae
+BgAnim_Init 0x6490
 BgAnim_Table 0x25742
 BootData 0x3a0
 BootData_End 0x1b12
-Camera_Init 0x5ba0
+Camera_Init 0x5bc0
 Checksum 0x18e
 Collected_Init 0x35cc
 Collision_GetType 0x5210
@@ -52,7 +52,7 @@ ObjDef_Static 0x11daa
 PState_Air 0x108d0
 PState_Ground 0x10460
 PState_Spindash 0x10bd0
-Parallax_Init 0x5d50
+Parallax_Init 0x5d70
 Perform_DPLC 0x28d8
 Plane_Buffer_Reset 0x4228
 Player_Init 0x10002
@@ -66,7 +66,7 @@ Sfx_33 0x5bae8
 Song_MovingTrucks 0x58607
 Sonic_InitAssets 0x10c6c
 SoundTablesZ80_Head 0x58000
-Sound_PostByte 0x64de
+Sound_PostByte 0x652e
 TestAnimated 0x10cb0
 TestChildPart 0x1108a
 TestChurnObj 0x11218
