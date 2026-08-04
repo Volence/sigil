@@ -19,3 +19,7 @@ toml = "0.8"
 
 [dev-dependencies]
 # (sigil-frontend-emp is now a regular dependency — see [dependencies].)
+# The warn-tier collection tests need a real on-disk source file: `SourceIndex`
+# resolves `path:line:col` by READING the file, so a fixture that does not exist
+# would only exercise the degraded (`None`) arm.
+tempfile = "3"

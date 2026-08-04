@@ -67,10 +67,11 @@ static GEN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn build_chained(aeon: &PathBuf, debug: bool) -> Vec<u8> {
     native::ensure_generated(aeon);
     let as_side = native::assemble_native_all_gates_as_side(aeon, debug).unwrap();
-    let (emp, link_asserts) = native::build_native_emp(aeon, debug).unwrap();
+    let native::EmpProgram { sections: emp_sections, link_asserts, .. } =
+        native::build_native_emp(aeon, debug).unwrap();
 
     let mut sections: Vec<Section> = as_side.sections;
-    sections.extend(emp);
+    sections.extend(emp_sections);
 
     // Only ROM sections chain; RAM/phase sections pass through untouched.
     let (mut rom, ram): (Vec<Section>, Vec<Section>) = sections.into_iter().partition(is_rom);

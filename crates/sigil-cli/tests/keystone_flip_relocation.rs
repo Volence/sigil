@@ -120,7 +120,7 @@ fn deform_pointer_equals_placed_label_vma() {
     }
     let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let p = native::config_a_keystones_flipped_profile();
-    let (rom, listing) =
+    let native::RomBuild { rom, listing, .. } =
         native::build_rom_chained_with_listing(&aeon, &p).unwrap_or_else(|e| panic!("{e}"));
     let placed = listing
         .iter()

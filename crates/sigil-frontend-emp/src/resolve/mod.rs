@@ -300,7 +300,9 @@ pub fn build_ram_report(
         if !crate::lower::file_declares_region(&pm.file) {
             diags.push(Diagnostic {
                 level: Level::Warning,
-                message: format!("ram-report: module `{id}` declares no `region` — skipped"),
+                message: format!(
+                    "[ram.no-region] ram-report: module `{id}` declares no `region` — skipped"
+                ),
                 primary: seed_span,
             });
             continue;

@@ -7,7 +7,9 @@ use std::fmt;
 pub struct SourceId(pub u32);
 
 /// Half-open byte range `[start, end)` within a source file.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+///
+/// Hashable so a span can identify a diagnostic's site in a deduplication key.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Span {
     /// The source file that contains this span.
     pub source: SourceId,
@@ -71,7 +73,9 @@ impl SourceMap {
 }
 
 /// Severity level of a [`Diagnostic`].
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+///
+/// Hashable so a level can take part in a diagnostic's deduplication key.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Level {
     /// A hard error that prevents assembly.
     Error,

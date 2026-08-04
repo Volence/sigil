@@ -42,7 +42,7 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
     };
 
     let profile = native::sonic4_profile(debug);
-    let (sections, _asserts) =
+    let native::EmpProgram { sections, .. } =
         build_emp(aeon, &profile).unwrap_or_else(|e| panic!("build_emp: {e}"));
 
     // The parallax_configs section is self-contained (deform-table pointers are

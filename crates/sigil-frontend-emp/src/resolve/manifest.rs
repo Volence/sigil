@@ -83,7 +83,7 @@ impl Manifest {
                     diags.push(Diagnostic {
                         level: Level::Warning,
                         message: format!(
-                            "module `{id}` is at `{}`, which suggests id `{expected}` (rename the file/dir or the header to agree)",
+                            "[module.path-mismatch] module `{id}` is at `{}`, which suggests id `{expected}` (rename the file/dir or the header to agree)",
                             path.strip_prefix(root).unwrap_or(path).display()
                         ),
                         primary: file.module.span,
@@ -102,6 +102,60 @@ impl Manifest {
             modules.push(ParsedModule { id, file, path: path.clone() });
         }
         (Manifest { modules, by_id, sources }, diags)
+    }
+}
+
+/// The source texts behind a [`Manifest`], indexed so a [`Span`] resolves to
+/// `path:line:col`.
+///
+/// [`Manifest::scan`] parses each file under a sequential [`SourceId`], so a
+/// [`SourceMap`](sigil_span::SourceMap) rebuilt in that same order has
+/// `index == SourceId` and [`SourceMap::location`](sigil_span::SourceMap::location)
+/// is correct. Any gap in the id space, or a file that no longer reads, indexes as
+/// empty text with no path — [`locate`](SourceIndex::locate) answers `None` for it
+/// rather than over-indexing.
+///
+/// This is the single location authority for every diagnostic tier: errors and
+/// warnings both render through it, so the two look like one system.
+pub struct SourceIndex {
+    map: sigil_span::SourceMap,
+    paths: Vec<Option<PathBuf>>,
+}
+
+impl SourceIndex {
+    /// Read every source file `manifest` recorded and index it by its [`SourceId`].
+    pub fn new(manifest: &Manifest) -> SourceIndex {
+        let max_id = manifest.sources.keys().map(|id| id.0).max().unwrap_or(0);
+        let mut map = sigil_span::SourceMap::new();
+        let mut paths = Vec::new();
+        for k in 0..=max_id {
+            // A source whose text does not read has no usable line/col, so it keeps
+            // no path either — `locate` degrades to `None` instead of reporting a
+            // position computed against empty text.
+            let entry = manifest
+                .sources
+                .get(&SourceId(k))
+                .and_then(|p| std::fs::read_to_string(p).ok().map(|t| (p.clone(), t)));
+            match entry {
+                Some((path, text)) => {
+                    map.add(text);
+                    paths.push(Some(path));
+                }
+                None => {
+                    map.add(String::new());
+                    paths.push(None);
+                }
+            }
+        }
+        SourceIndex { map, paths }
+    }
+
+    /// `path:line:col` of `span`'s start, or `None` when `span`'s source is not a
+    /// file this index knows (a synthetic module, or an unattributed diagnostic).
+    pub fn locate(&self, span: Span) -> Option<String> {
+        let path = self.paths.get(span.source.0 as usize)?.as_ref()?;
+        let (line, col) = self.map.location(span);
+        Some(format!("{}:{line}:{col}", path.display()))
     }
 }
 

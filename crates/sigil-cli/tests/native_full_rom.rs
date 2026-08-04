@@ -104,7 +104,7 @@ fn run_shape(debug: bool, refname: &str, key: &str) {
     let shape = if debug { "debug" } else { "plain" };
 
     // The assembled prefix stays the asl-witnessed correctness anchor.
-    let (assembled, listing) =
+    let native::RomBuild { rom: assembled, listing, .. } =
         native::build_native_rom_with_listing(&aeon, debug).unwrap_or_else(|e| panic!("{e}"));
     let eor = if debug { pins::DEBUG_ASSEMBLED_LEN } else { pins::ASSEMBLED_LEN };
     assert_eq!(assembled.len(), eor, "{shape}: assembled length");
@@ -201,7 +201,7 @@ fn deb2_appendix_negative_controls() {
     }
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let aeon = aeon_dir();
-    let (_rom, mut listing) =
+    let native::RomBuild { mut listing, .. } =
         native::build_native_rom_with_listing(&aeon, false).unwrap_or_else(|e| panic!("{e}"));
 
     // Undoctored: BusError (the error_handler island head) resolves to its known

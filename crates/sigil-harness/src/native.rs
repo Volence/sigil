@@ -509,9 +509,8 @@ pub fn derive_canonical_bootstrap_table(
     let profile = sonic4_pinned_profile(debug);
     ensure_generated(aeon);
     let as_side = assemble_as_side(aeon, &profile)?;
-    let (emp, _asserts) = build_emp(aeon, &profile)?;
     let mut sections: Vec<Section> = as_side.sections;
-    sections.extend(emp);
+    sections.extend(build_emp(aeon, &profile)?.sections);
     let stubs = SymbolTable::new();
     let resolved = sigil_link::resolve_layout(&sections, &stubs, true)
         .map_err(|d| format!("bootstrap resolve_layout: {} diag(s); first {:?}", d.len(), d.first()))?;
@@ -1085,6 +1084,10 @@ pub fn harvest_engine_ram_addresses(
         profile.game_ram_module
     );
     let source = sigil_span::SourceId(manifest.modules.len() as u32);
+    assert!(
+        !manifest.sources.contains_key(&source),
+        "ram-harvest entry {source:?} collides with a scanned module"
+    );
     let (file, pdiags) = sigil_frontend_emp::parse_file(&src, source);
     let perr: Vec<_> = pdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     if !perr.is_empty() {
@@ -1301,23 +1304,94 @@ fn synthetic_entry_src(specs: &[ModuleSpec], game_ram_module: &str, manifest_mod
     src
 }
 
+/// A non-error diagnostic the `.emp` build produced, with its source location
+/// already resolved.
+///
+/// The [`Manifest`](sigil_frontend_emp::resolve::manifest::Manifest) that owns the
+/// source texts lives and dies inside [`build_emp`], so the `path:line:col` is
+/// rendered where it is knowable and travels with the diagnostic. `Warning` and
+/// `Note` both ride this channel — errors abort the build instead.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BuildWarning {
+    /// Severity: [`Level::Warning`](sigil_span::Level::Warning) or
+    /// [`Level::Note`](sigil_span::Level::Note).
+    pub level: sigil_span::Level,
+    /// The bracketed lint id (`proc.sr-undeclared`), or the empty string for a
+    /// diagnostic whose message carries no `[id]` prefix.
+    pub id: String,
+    /// `path:line:col` of the primary span, or `None` for a span with no source file.
+    pub location: Option<String>,
+    /// The full message, `[id]` prefix included.
+    pub message: String,
+    /// The primary span, kept so a consumer that needs more than the rendered
+    /// location (a caret, an editor jump, a `-Werror` promotion) has it.
+    pub primary: sigil_span::Span,
+}
+
+impl BuildWarning {
+    /// Pair `d` with its location. The lint id is the leading `[...]` group, which
+    /// is the corpus convention for every classified diagnostic.
+    fn new(
+        d: &sigil_span::Diagnostic,
+        index: &sigil_frontend_emp::resolve::manifest::SourceIndex,
+    ) -> BuildWarning {
+        let id = d
+            .message
+            .strip_prefix('[')
+            .and_then(|rest| rest.split_once(']'))
+            .map(|(id, _)| id.to_string())
+            .unwrap_or_default();
+        BuildWarning {
+            level: d.level,
+            id,
+            location: index.locate(d.primary),
+            message: d.message.clone(),
+            primary: d.primary,
+        }
+    }
+}
+
+impl std::fmt::Display for BuildWarning {
+    /// `path:line:col: <level>: <message>` — the shape
+    /// `render_program_diags` gives errors, so both tiers read as one system.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.location {
+            Some(loc) => write!(f, "{loc}: {}: {}", self.level, self.message),
+            None => write!(f, "{}: {}", self.level, self.message),
+        }
+    }
+}
+
+/// The placed `.emp` program: its sections, its deferred link asserts (drift
+/// guards), and every non-error diagnostic the lowering produced.
+pub struct EmpProgram {
+    /// Every placed `.emp` section.
+    pub sections: Vec<Section>,
+    /// The whole program's deferred link asserts (drift guards).
+    pub link_asserts: Vec<sigil_ir::LinkAssert>,
+    /// Warnings and notes from all four lowering diagnostic sources (manifest scan,
+    /// entry parse, program build, placement), deduplicated and location-resolved.
+    pub warnings: Vec<BuildWarning>,
+    /// The location authority these warnings resolved through. Handed out because
+    /// the LINK tier produces warn-tier diagnostics of its own — a `Level::Warning`
+    /// [`LinkAssert`](sigil_ir::LinkAssert) such as `[layout.odd-item]` fails at
+    /// link time, long after the manifest that owns the source texts is gone — and
+    /// they must render through the same index rather than a second one.
+    pub sources: sigil_frontend_emp::resolve::manifest::SourceIndex,
+}
+
 /// Back-compat wrapper: build the canonical sonic4 emp set (the Stage-1 shape).
-pub fn build_native_emp(
-    aeon: &Path,
-    debug: bool,
-) -> Result<(Vec<Section>, Vec<sigil_ir::LinkAssert>), String> {
+pub fn build_native_emp(aeon: &Path, debug: bool) -> Result<EmpProgram, String> {
     // The Stage-1 PINNED shape (see assemble_native_all_gates_as_side).
     build_emp(aeon, &sonic4_pinned_profile(debug))
 }
 
 /// Natively lower + place every registry `.emp` module for `profile`. Returns the
-/// placed sections + the whole program's deferred link asserts (drift guards). Under
+/// placed sections, the whole program's deferred link asserts (drift guards), and
+/// every reportable non-error diagnostic the lowering produced. Under
 /// `SizeSource::Frozen` the placement map bases are COSMETIC (the chainer recomputes
 /// every base from the frozen table), so a nominal one-region-per-section map suffices.
-pub fn build_emp(
-    aeon: &Path,
-    profile: &GameProfile,
-) -> Result<(Vec<Section>, Vec<sigil_ir::LinkAssert>), String> {
+pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, String> {
     let debug = profile.debug;
     let specs = &profile.registry;
 
@@ -1349,7 +1423,16 @@ pub fn build_emp(
     // Inject the synthetic entry as a fresh module in the manifest.
     let entry_id = "native_flip_entry".to_string();
     let src = synthetic_entry_src(specs, profile.game_ram_module, profile.manifest_module);
+    // `Manifest::scan` registers one `sources` entry per scanned FILE and pushes a
+    // `modules` entry per file that parsed, so `modules.len()` is the next free id
+    // only because an unreadable file is a hard error the caller already bailed on.
+    // Assert it rather than rely on it: a collision would silently rebind a real
+    // module's path to this nonexistent one and then filter its warnings away.
     let source = sigil_span::SourceId(manifest.modules.len() as u32);
+    assert!(
+        !manifest.sources.contains_key(&source),
+        "synthetic entry {source:?} collides with a scanned module"
+    );
     let (file, pdiags) = sigil_frontend_emp::parse_file(&src, source);
     let perr: Vec<_> = pdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     if !perr.is_empty() {
@@ -1434,7 +1517,47 @@ pub fn build_emp(
         ));
     }
 
-    Ok((sections, link_asserts))
+    // Every non-error diagnostic from ALL FOUR lowering sources — each is filtered
+    // for errors above, and its warnings survive only through here. The index is
+    // built here, not lazily, because the LINK tier needs it after the manifest is
+    // gone (see `EmpProgram::sources`).
+    let index = resolve::manifest::SourceIndex::new(&manifest);
+    let warnings =
+        collect_warnings(&index, &[&mdiags, &pdiags, &bdiags, &place_diags], Some(source));
+
+    Ok(EmpProgram { sections, link_asserts, warnings, sources: index })
+}
+
+/// Location-resolve and deduplicate every non-error diagnostic in `sources`,
+/// dropping those attributed to `generated`.
+///
+/// `generated` names a module the TOOL wrote — [`build_emp`]'s synthetic entry,
+/// whose bare `use` lines drive the reachability BFS. A build report is for code
+/// its reader can edit; that module has no on-disk file, so a diagnostic against it
+/// is unactionable by construction and would only teach the reader to distrust the
+/// channel. The exclusion is by exact [`SourceId`](sigil_span::SourceId) — the
+/// tool/user boundary, not an exemption over corpus content, and it cannot widen.
+/// `None` excludes nothing, for a caller that generates no module.
+///
+/// Deduplication is by `(level, message, span)` — the key
+/// [`build_program_with`](sigil_frontend_emp::resolve) already uses for its own
+/// cross-module merge. It collapses an exact repeat of one diagnostic at one site,
+/// so the reported count is a count of DISTINCT problems. Order is stable — source
+/// order, then first-seen within a source — so the rendered list is reproducible
+/// build to build and a diff of two builds is meaningful.
+pub fn collect_warnings(
+    index: &resolve::manifest::SourceIndex,
+    sources: &[&[sigil_span::Diagnostic]],
+    generated: Option<sigil_span::SourceId>,
+) -> Vec<BuildWarning> {
+    let mut seen = std::collections::HashSet::new();
+    sources
+        .iter()
+        .flat_map(|ds| ds.iter())
+        .filter(|d| d.level != sigil_span::Level::Error && Some(d.primary.source) != generated)
+        .filter(|d| seen.insert((d.level, d.message.clone(), d.primary)))
+        .map(|d| BuildWarning::new(d, index))
+        .collect()
 }
 
 /// THE Stage-1 INAPPLICABLE-drift-guard ALLOWLIST (t24 both-directions discipline).
@@ -2210,7 +2333,7 @@ pub fn build_native_rom_chained(aeon: &Path, debug: bool) -> Result<Vec<u8>, Str
 /// Genuine org anchors (object bank, phase-address sound banks) keep their declared
 /// base; every other section is `Chained` with its lma zeroed (base computed).
 pub fn build_rom_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, String> {
-    Ok(build_rom_chained_with_listing(aeon, profile)?.0)
+    Ok(build_rom_chained_with_listing(aeon, profile)?.rom)
 }
 
 /// Parcel-K5 · the post-resolve DRIVE-CONFIRMATION pass. K1 landed this as a VALIDATION of
@@ -2333,6 +2456,18 @@ pub fn validate_placement(
     Ok(())
 }
 
+/// An assembled ROM image with the artefacts derived from the same build: the
+/// sigil-canonical symbol listing (the deb2-appendix source) and the `.emp`
+/// lowering's [`BuildWarning`]s, carried out to whichever caller renders them.
+pub struct RomBuild {
+    /// The assembled ROM image (checksum already folded by `emit_rom`).
+    pub rom: Vec<u8>,
+    /// One `C` row per resolved section label at its final VMA.
+    pub listing: Vec<sigil_link::ListingSymbol>,
+    /// Every non-error diagnostic the `.emp` lowering produced.
+    pub warnings: Vec<BuildWarning>,
+}
+
 /// The chained whole-ROM build AND its sigil-canonical listing (the deb2-appendix
 /// source for the off-canonical full-file layer). One `C` row per resolved section
 /// label at its final VMA, de-duplicated and address-deterministic — mirrors
@@ -2341,14 +2476,15 @@ pub fn validate_placement(
 pub fn build_rom_chained_with_listing(
     aeon: &Path,
     profile: &GameProfile,
-) -> Result<(Vec<u8>, Vec<sigil_link::ListingSymbol>), String> {
+) -> Result<RomBuild, String> {
     if profile.sound_on {
         ensure_generated(aeon);
     }
     let as_side = assemble_as_side(aeon, profile)?;
-    let (emp, link_asserts) = build_emp(aeon, profile)?;
+    let EmpProgram { sections: emp_sections, link_asserts, mut warnings, sources } =
+        build_emp(aeon, profile)?;
     let mut sections: Vec<Section> = as_side.sections;
-    sections.extend(emp);
+    sections.extend(emp_sections);
 
     // Parcel K5: the per-game placement map (`games/<g>/map.toml`) is loaded UP FRONT — its
     // declared `order` DRIVES the packing walk (the frozen provisional bases no longer
@@ -2374,6 +2510,10 @@ pub fn build_rom_chained_with_listing(
     // Same drift partition as the pinned driver: real Value(0) drift is a hard fail;
     // gated-off-twin (unresolvable-extern) guards are inapplicable here.
     let adiags = sigil_link::check_link_asserts(&resolved, &stubs, &link_asserts);
+    // A `LinkAssert` carries its own severity: `[layout.odd-item]`'s data-item check
+    // is `Level::Warning` and fails at LINK time, so the warn tier is only complete
+    // once these join it.
+    warnings.extend(collect_warnings(&sources, &[&adiags], None));
     let (inapplicable, real): (Vec<_>, Vec<_>) = adiags
         .iter()
         .filter(|d| d.level == sigil_span::Level::Error)
@@ -2414,7 +2554,7 @@ pub fn build_rom_chained_with_listing(
     validate_placement(&resolved, &pmap, profile.sound_on)?;
     check_object_bank_budget(&resolved, &map, &pmap)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))?;
-    Ok((rom, listing))
+    Ok(RomBuild { rom, listing, warnings })
 }
 
 /// The off-canonical full-file build: the chained assembled ROM + the sigil-canonical
@@ -2425,7 +2565,7 @@ pub fn build_rom_chained_with_listing(
 /// the MD Debugger island, i.e. `debug || crash_report`. Only the `lean` profile ships
 /// the assembled image alone.
 pub fn build_full_file_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, String> {
-    let (rom, listing) = build_rom_chained_with_listing(aeon, profile)?;
+    let RomBuild { rom, listing, .. } = build_rom_chained_with_listing(aeon, profile)?;
     if !(profile.debug || profile.crash_report) {
         return Ok(rom);
     }
@@ -2463,9 +2603,8 @@ fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Sec
         ensure_generated(aeon);
     }
     let as_side = assemble_as_side(aeon, profile)?;
-    let (emp, _) = build_emp(aeon, profile)?;
     let mut sections: Vec<Section> = as_side.sections;
-    sections.extend(emp);
+    sections.extend(build_emp(aeon, profile)?.sections);
     // K5: the declared map order drives the walk (identical to the emit path's placement).
     let map_order = placement_map_order(aeon, profile)?;
     let true_bases = true_bases_by_index(&sections, &profile.size_source, &map_order)?;
@@ -2602,7 +2741,7 @@ pub fn derive_frozen_table(
 /// THE native whole-ROM build: AS residual (all gates ON, sound BINCLUDE) + every
 /// placed `.emp` module → ONE resolve_layout + link + emit_rom.
 pub fn build_native_rom(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
-    Ok(build_native_rom_with_listing(aeon, debug)?.0)
+    Ok(build_native_rom_with_listing(aeon, debug)?.rom)
 }
 
 /// The native whole-ROM build AND its symbol listing — the S1.4 source. The
@@ -2612,10 +2751,7 @@ pub fn build_native_rom(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
 /// omitted (convsym's `as_lst` reader takes only `C` symbols, §S1.4 note), so the
 /// listing is the sigil-canonical debug symbol set — NOT a byte-imitation of asl's
 /// name set (Option A: the `.emp` names are the source names going forward).
-pub fn build_native_rom_with_listing(
-    aeon: &Path,
-    debug: bool,
-) -> Result<(Vec<u8>, Vec<sigil_link::ListingSymbol>), String> {
+pub fn build_native_rom_with_listing(aeon: &Path, debug: bool) -> Result<RomBuild, String> {
     // §17 Wave-B B-0: canonical placement is COMPUTED (packed from live sizes over the
     // pins-derived order/anchors), so the canonical build routes through the chained
     // driver — one placement authority for all six targets. The pinned body below it
@@ -2626,7 +2762,8 @@ pub fn build_native_rom_with_listing(
     ensure_generated(aeon);
 
     let as_side = assemble_native_all_gates_as_side(aeon, debug)?;
-    let (emp_sections, link_asserts) = build_native_emp(aeon, debug)?;
+    let EmpProgram { sections: emp_sections, link_asserts, mut warnings, sources } =
+        build_native_emp(aeon, debug)?;
 
     let mut sections = as_side.sections;
     sections.extend(emp_sections);
@@ -2666,6 +2803,9 @@ pub fn build_native_rom_with_listing(
     // oracle for every USED constant. A genuine drift FAILURE folds to a Value(0)
     // and carries the guard's OWN message — those stay HARD failures.
     let adiags = sigil_link::check_link_asserts(&resolved, &stubs, &link_asserts);
+    // The link tier's own warn-tier diagnostics (`[layout.odd-item]`) join the
+    // build's warnings — same rule as the chained driver.
+    warnings.extend(collect_warnings(&sources, &[&adiags], None));
     let (inapplicable, real): (Vec<_>, Vec<_>) = adiags
         .iter()
         .filter(|d| d.level == sigil_span::Level::Error)
@@ -2693,7 +2833,7 @@ pub fn build_native_rom_with_listing(
         .map_err(|e| format!("placement {}: {e}", map_path.display()))?;
     check_object_bank_budget(&resolved, &map, &pmap)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("emit_rom: {e}"))?;
-    Ok((rom, listing))
+    Ok(RomBuild { rom, listing, warnings })
 }
 
 /// Build the sigil-native SYMBOL LISTING for one shape (Stage-3 P4c: the `pins.rs`
@@ -2814,9 +2954,8 @@ pub fn resolve_canonical_sections(aeon: &Path, debug: bool) -> Result<Vec<Sectio
 pub fn resolve_pinned_sections(aeon: &Path, debug: bool) -> Result<Vec<Section>, String> {
     ensure_generated(aeon);
     let as_side = assemble_native_all_gates_as_side(aeon, debug)?;
-    let (emp_sections, _) = build_native_emp(aeon, debug)?;
     let mut sections = as_side.sections;
-    sections.extend(emp_sections);
+    sections.extend(build_native_emp(aeon, debug)?.sections);
     let stubs = SymbolTable::new();
     sigil_link::resolve_layout(&sections, &stubs, true).map_err(|d| {
         format!("resolve_pinned_sections: resolve_layout: {} diag(s); first: {:?}", d.len(), d.first())
@@ -2934,7 +3073,7 @@ pub const DEB2_MAGIC: [u8; 2] = [0xDE, 0xB2];
 /// `build_full_file_chained`). Reading the flag off the profile rather than hardcoding
 /// `true` keeps this call site honest if the canonical shapes ever change.
 pub fn build_native_full_file(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
-    let (rom, listing) = build_native_rom_with_listing(aeon, debug)?;
+    let RomBuild { rom, listing, .. } = build_native_rom_with_listing(aeon, debug)?;
     let crash_report = sonic4_profile(debug).crash_report;
     if !(debug || crash_report) {
         return Ok(rom);
@@ -3503,5 +3642,180 @@ mod error_handler_placement_tests {
         // the guard must not fire on an arbitrary EndOfRom.
         let release = vec![sym("ReleaseFault", 0x5CA40)];
         assert!(check_error_handler_is_last(&release, 0x5CBAE).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod warn_tier_tests {
+    //! THE WARN TIER's collection contract. Every non-error diagnostic the `.emp`
+    //! build produces reaches [`EmpProgram::warnings`] located and deduplicated,
+    //! and nothing else does: errors abort the build through `Err`, and the
+    //! synthetic entry module the harness writes itself is not the reader's code.
+    use super::{collect_warnings, BuildWarning};
+    use sigil_frontend_emp::resolve::manifest::{Manifest, SourceIndex};
+    use sigil_span::{Diagnostic, Level, SourceId, Span};
+
+    /// SourceId(0) is a real fixture on disk whose third line starts at offset 10;
+    /// SourceId(1) is the generated entry — a path that does not exist, as
+    /// `build_emp` records its synthetic module.
+    const REAL: SourceId = SourceId(0);
+    const GENERATED: SourceId = SourceId(1);
+
+    /// The index over a manifest whose SourceId(0) is a real file and whose
+    /// SourceId(1) is a generated module with no file on disk.
+    fn index_over(dir: &std::path::Path) -> SourceIndex {
+        SourceIndex::new(&manifest_over(dir))
+    }
+
+    fn manifest_over(dir: &std::path::Path) -> Manifest {
+        let real = dir.join("real.emp");
+        std::fs::write(&real, "module m\n\nproc P () {\n").unwrap();
+        let mut sources = std::collections::HashMap::new();
+        sources.insert(REAL, real);
+        sources.insert(GENERATED, dir.join("__native_flip_entry__.emp"));
+        Manifest { modules: Vec::new(), by_id: std::collections::HashMap::new(), sources }
+    }
+
+    fn diag(level: Level, source: SourceId, at: u32, message: &str) -> Diagnostic {
+        Diagnostic {
+            level,
+            message: message.to_string(),
+            primary: Span { source, start: at, end: at },
+        }
+    }
+
+    /// The four-source collection: errors are excluded (the build already failed on
+    /// them), the generated entry is excluded, and a real warning survives with its
+    /// `path:line:col` and its bracketed id parsed out.
+    #[test]
+    fn collects_only_reportable_non_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let m = index_over(dir.path());
+        // Offset 10 is on line 3 ("module m\n" = 9 bytes, "\n" = 1).
+        let mdiags = vec![diag(Level::Warning, REAL, 10, "[module.path-mismatch] renamed")];
+        let pdiags = vec![diag(Level::Error, REAL, 0, "[parse.bad] boom")];
+        let bdiags = vec![diag(Level::Warning, GENERATED, 0, "[import.no-names] whole-module")];
+        let place = vec![diag(Level::Note, REAL, 0, "[place.fyi] noted")];
+
+        let got = collect_warnings(&m, &[&mdiags, &pdiags, &bdiags, &place], Some(GENERATED));
+
+        let shown: Vec<&str> = got.iter().map(|w| w.id.as_str()).collect();
+        assert_eq!(
+            shown,
+            ["module.path-mismatch", "place.fyi"],
+            "errors and generated-entry diagnostics must not be reported: {got:?}"
+        );
+        assert_eq!(got[0].level, Level::Warning);
+        assert_eq!(got[1].level, Level::Note, "the Note tier rides the same channel");
+        assert!(
+            got[0].location.as_deref().is_some_and(|l| l.ends_with("real.emp:3:1")),
+            "a real source must locate to path:line:col, got {:?}",
+            got[0].location
+        );
+    }
+
+    /// One lint firing at one site is ONE warning however many sources replay it —
+    /// the reported count is a count of distinct problems. Two firings of the same
+    /// lint at DIFFERENT offsets stay two.
+    #[test]
+    fn deduplicates_a_replayed_diagnostic_but_not_distinct_sites() {
+        let dir = tempfile::tempdir().unwrap();
+        let m = index_over(dir.path());
+        let a = diag(Level::Warning, REAL, 0, "[proc.sr-undeclared] `P` writes `sr`");
+        let b = diag(Level::Warning, REAL, 10, "[proc.sr-undeclared] `P` writes `sr`");
+
+        let one = std::slice::from_ref(&a);
+        let got = collect_warnings(&m, &[one, one, one, std::slice::from_ref(&b)], Some(GENERATED));
+
+        assert_eq!(got.len(), 2, "replays collapse, distinct sites do not: {got:?}");
+        assert_ne!(got[0].location, got[1].location);
+    }
+
+    /// Errors alone produce an EMPTY tier: the build fails on them through `Err`,
+    /// so reporting them a second time as warnings would double-count.
+    #[test]
+    fn errors_alone_produce_an_empty_tier() {
+        let dir = tempfile::tempdir().unwrap();
+        let m = index_over(dir.path());
+        let errs = vec![diag(Level::Error, REAL, 0, "[x.y] boom")];
+        assert!(collect_warnings(&m, &[&errs], Some(GENERATED)).is_empty());
+    }
+
+    /// A FAILING warn-level `LinkAssert` reaches the warn tier.
+    ///
+    /// `[layout.odd-item]`'s data-item check is `Level::Warning`
+    /// (`sigil_ir::LinkAssert::level`) and is evaluated at LINK time, past every
+    /// lowering diagnostic source — so the ROM drivers must feed
+    /// `check_link_asserts`' output through the collector, or the whole class is
+    /// reported nowhere.
+    ///
+    /// NOT VACUOUS, and it is the only proof available: the aeon corpus records 75
+    /// warn-level asserts per sonic4 build and every one of them PASSES, so a
+    /// corpus measurement of this path reads identically whether or not the wiring
+    /// exists. This drives the failure directly.
+    #[test]
+    fn a_failing_warn_level_link_assert_survives_the_error_filter() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = index_over(dir.path());
+        let assert_at_odd = sigil_ir::LinkAssert {
+            // Folds to 0 — a failure.
+            cond: sigil_ir::Expr::Int(0),
+            message: vec![sigil_ir::MsgPart::Text(
+                "[layout.odd-item] `T` lands at odd address".to_string(),
+            )],
+            fatal: false,
+            level: Level::Warning,
+            span: Span { source: REAL, start: 10, end: 10 },
+        };
+        let adiags = sigil_link::check_link_asserts(
+            &[],
+            &sigil_ir::SymbolTable::new(),
+            std::slice::from_ref(&assert_at_odd),
+        );
+        assert_eq!(adiags.len(), 1, "a false cond must produce one diagnostic: {adiags:?}");
+        assert_eq!(adiags[0].level, Level::Warning, "the assert's own level must ride through");
+
+        let got = collect_warnings(&index, &[&adiags], None);
+        assert_eq!(got.len(), 1, "the warn-tier assert must survive the error filter: {got:?}");
+        assert_eq!(got[0].id, "layout.odd-item");
+        assert!(got[0].location.as_deref().is_some_and(|l| l.ends_with("real.emp:3:1")));
+
+        // The ERROR tier still aborts instead of being reported: the drivers' own
+        // `filter(… == Level::Error)` partition must still see it.
+        let fatal = sigil_ir::LinkAssert { level: Level::Error, ..assert_at_odd };
+        let ediags = sigil_link::check_link_asserts(
+            &[],
+            &sigil_ir::SymbolTable::new(),
+            std::slice::from_ref(&fatal),
+        );
+        assert!(collect_warnings(&index, &[&ediags], None).is_empty());
+    }
+
+    /// The id is the leading bracketed group; a message without one classifies as
+    /// the empty id, which the summary shows as `unclassified` and the corpus gate
+    /// refuses. Rendering names the level and reads like the error tier.
+    #[test]
+    fn an_unbracketed_message_has_no_id_and_an_unlocatable_span_renders_bare() {
+        let dir = tempfile::tempdir().unwrap();
+        let m = index_over(dir.path());
+        let idless = vec![diag(Level::Warning, REAL, 0, "no bracket here")];
+        let got = collect_warnings(&m, &[&idless], Some(GENERATED));
+        assert_eq!(got[0].id, "");
+        assert!(
+            got[0].to_string().ends_with("real.emp:1:1: warning: no bracket here"),
+            "rendered: {}",
+            got[0]
+        );
+
+        // An unlocatable span degrades to `<level>: <message>`, never to a
+        // fabricated position.
+        let unlocatable = BuildWarning {
+            level: Level::Note,
+            id: "a.b".into(),
+            location: None,
+            message: "[a.b] hello".into(),
+            primary: Span { source: GENERATED, start: 0, end: 0 },
+        };
+        assert_eq!(unlocatable.to_string(), "note: [a.b] hello");
     }
 }
