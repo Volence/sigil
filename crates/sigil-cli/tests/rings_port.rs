@@ -31,10 +31,12 @@
 //! ## Cross-seam symbols
 //!
 //! INBOUND equs (values): the SST_* struct-equ seam + the engine constants
-//! twin (24 after this tranche's rings/sprites growth) + the FOUR game-owned
-//! ring mirrors `rings.emp` guards locally (`MAX_RING_BUFFER`,
-//! `RING_BUFFER_ENTRY_SIZE`, `RING_WIDTH`, `VRAM_RING_PLACEHOLDER` — truth:
-//! `games/sonic4/config/constants.asm`, kill-list row 18). INBOUND labels at
+//! twin (24 after this tranche's rings/sprites growth) + the game-owned ring
+//! mirrors `rings.emp` guards locally (`MAX_RING_BUFFER`, `RING_WIDTH`,
+//! `VRAM_RING_PLACEHOLDER` — truth: `games/sonic4/config/constants.asm`,
+//! kill-list row 18). `RING_BUFFER_ENTRY_SIZE` LEFT this set at aeon review item
+//! 30: it is an engine-owned FORMAT, not a game knob, so it moved to
+//! engine.constants and its local guard retired with the duplication. INBOUND labels at
 //! true per-shape VMAs: seven `Ring_*` RAM cells, `Camera_X`/`Camera_Y`,
 //! `Player_1` (GAME RAM, moves with `__DEBUG__`), plus the ROM code targets
 //! `Collected_MarkRing`, `EntityWindow_EntryForSection`, `EntityLoaded_Clear`,
@@ -327,16 +329,19 @@ fn compile_real_file_with(
 }
 
 /// All prepended drift guards must be captured and PASS: the engine constants
-/// twin (derived via the shared truth list) + rings.emp's own 2 engine-invariant
-/// game-owned mirrors (RING_BUFFER_ENTRY_SIZE / RING_WIDTH). sst.emp's SST_* wall
+/// twin (derived via the shared truth list) + rings.emp's own 1 engine-invariant
+/// game-owned mirror (RING_WIDTH). RING_BUFFER_ENTRY_SIZE's guard retired at aeon
+/// review item 30: it is an engine-owned FORMAT, so it moved to engine.constants and
+/// the game configs stopped restating it — one authority, nothing left to cross-check
+/// (RING_WIDTH stays a genuine game knob and keeps its guard). sst.emp's SST_* wall
 /// retired at the conv-a structs flip; the game-VARYING MAX_RING_BUFFER /
 /// VRAM_RING_PLACEHOLDER guards retired at conv-f (they are native.rs `-D`
 /// interface values with no `.emp`/AS authority to cross-check — byte-identity is
 /// their drift net).
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = sigil_harness::test_support::guard_assert_count(link_asserts);
-    let want = sigil_harness::test_support::engine_constant_equs().len() + 2;
-    assert_eq!(guards, want, "the constants twin's {} + rings.emp's 2 drift guards must be captured", sigil_harness::test_support::engine_constant_equs().len());
+    let want = sigil_harness::test_support::engine_constant_equs().len() + 1;
+    assert_eq!(guards, want, "the constants twin's {} + rings.emp's 1 drift guard must be captured", sigil_harness::test_support::engine_constant_equs().len());
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
