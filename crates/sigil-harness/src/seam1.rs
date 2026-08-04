@@ -31,10 +31,10 @@ use sigil_ir::{Section, SectionPlacement, SymbolTable};
 /// [`emit_sound_blob`] asserts the emitted blob against. When a module
 /// legitimately grows or shrinks, re-pin this to the new measured length
 /// (and re-pin the `Z80_SOUND_SIZE` mirrors in the boot/tranche gates).
-pub const BLOB_LEN_PLAIN: usize = 0x1735;
+pub const BLOB_LEN_PLAIN: usize = 0x172D;
 /// The debug blob length = plain + $7E (the sequencer's 16 `if DEBUG==1` bodies).
 /// Same TRIPWIRE-not-input status as [`BLOB_LEN_PLAIN`].
-pub const BLOB_LEN_DEBUG: usize = 0x1735 + 0x7E;
+pub const BLOB_LEN_DEBUG: usize = 0x172D + 0x7E;
 
 /// The blob's LMA base = `Z80_Sound_Start` = `BootData + 54`. SHAPE-DEPENDENT: the
 /// debug shape grows +4 UPSTREAM of BootData (boot `__DEBUG__` content). Pin-sourced

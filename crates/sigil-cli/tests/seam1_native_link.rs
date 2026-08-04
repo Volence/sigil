@@ -109,7 +109,7 @@ fn native_blob_matches_reference_debug() {
 #[test]
 fn blob_lengths_are_canonical() {
     assert_eq!(BLOB_LEN_DEBUG - BLOB_LEN_PLAIN, 0x7E, "debug grows +$7E over plain");
-    assert_eq!(BLOB_LEN_PLAIN, 0x1735, "plain blob length (wave-4 sound reclaim: was $181C)");
+    assert_eq!(BLOB_LEN_PLAIN, 0x172D, "plain blob length (item-25 sequencer M1: -8 B, was $1735)");
 }
 
 /// The PLACEMENT contract, stated structurally instead of by re-pinned addresses:
