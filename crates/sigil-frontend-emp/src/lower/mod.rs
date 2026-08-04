@@ -185,6 +185,8 @@ fn lower_module_inner(
     validate_defines(&file.items, &opts.defines, &mut diags);
     validate_allow_attrs(file, &mut diags);
     validate_comptime_tests(&file.items, &mut diags);
+    validate_shadowed_mnemonics(&file.items, &mut diags);
+    validate_shadowed_imports(&file.items, &mut diags);
 
     // Spec 2 · Plan 6 (D-P6.3): a module-level `@as_compat` attribute marks this
     // file as a faithful port of AS-assembled source, opting it into the
@@ -2027,6 +2029,95 @@ fn collect_table_names<'a>(items: &'a [ast::Item], out: &mut Vec<(&'a str, &'sta
             ast::Item::Dispatch(d) => out.push((d.name.as_str(), "dispatch", d.span)),
             ast::Item::Table(d) => out.push((d.name.as_str(), "table", d.span)),
             ast::Item::Section(sec) => collect_table_names(&sec.items, out),
+            _ => {}
+        }
+    }
+}
+
+/// Once-per-compile `[name.shadows-mnemonic]` (S2-D13(i)): a `comptime fn` whose
+/// name is a machine mnemonic can never be called in the BARE statement form.
+///
+/// D-PP.1 resolves a leading bareword against the CPU's mnemonic table FIRST and
+/// mnemonics win unconditionally (tenet 3), so `comptime fn moveq(…)` is callable
+/// only as `moveq(…)` — the bare `moveq #0, d0` spelling silently assembles the
+/// instruction instead. Warn at the DECLARATION, where the fix (rename) lives.
+///
+/// Checked against BOTH CPUs' tables plus the CPU-neutral `jbra`/`jbsr`/`dc`
+/// words, because a `comptime fn` is CPU-agnostic: the same fn is in scope for a
+/// 68k proc and a Z80 one, and the shadow bites in whichever section matches.
+fn validate_shadowed_mnemonics(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
+    use crate::lower::code::is_recognized_mnemonic;
+    for item in items {
+        match item {
+            ast::Item::ComptimeFn(f) => {
+                let cpu = if is_recognized_mnemonic(&f.name, Cpu::M68000) {
+                    "68000"
+                } else if is_recognized_mnemonic(&f.name, Cpu::Z80) {
+                    "Z80"
+                } else {
+                    continue;
+                };
+                diags.push(Diagnostic {
+                    level: Level::Warning,
+                    message: format!(
+                        "[name.shadows-mnemonic] comptime fn `{}` is spelled like a {cpu} \
+                         mnemonic — the mnemonic wins in statement position, so the bare \
+                         `{} …` call form is unreachable",
+                        f.name, f.name
+                    ),
+                    primary: f.span,
+                });
+            }
+            ast::Item::Section(sec) => validate_shadowed_mnemonics(&sec.items, diags),
+            _ => {}
+        }
+    }
+}
+
+/// Once-per-compile `[name.shadows-import]` (S2-D13(n)): a module-local `data`
+/// item whose name also arrives as an IMPORTED item.
+///
+/// The resolve pass injects a `pub data` of struct type into each consumer as a
+/// TYPE-ONLY stub (`type_only = true`, no bytes) so `Item.field` operands
+/// resolve cross-module. When the consumer declares its own `data` under that
+/// name, the LOCAL item wins — deliberately and coherently, for both the base
+/// symbol and the field offsets (`data_item_struct_name`'s ISSUE-1 rule). This
+/// makes that win VISIBLE: a reader of `Player_1.x_pos` would otherwise have no
+/// signal that the imported `Player_1` is not the one being addressed.
+/// Warn-tier, at the local declaration; the resolution itself is untouched.
+fn validate_shadowed_imports(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
+    let mut imported: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let mut local: Vec<(&str, Span)> = Vec::new();
+    collect_data_items(items, &mut imported, &mut local);
+    for (name, span) in local {
+        if imported.contains(name) {
+            diags.push(Diagnostic {
+                level: Level::Warning,
+                message: format!(
+                    "[name.shadows-import] `{name}` is also imported from another module — \
+                     this local `data` item shadows it for every reference in this file"
+                ),
+                primary: span,
+            });
+        }
+    }
+}
+
+/// Split a module's `data` items into the resolver-injected IMPORTED stubs
+/// (`type_only`) and the module's own declarations, recursing into `section {}`
+/// bodies. Shared shape with the sibling collectors.
+fn collect_data_items<'a>(
+    items: &'a [ast::Item],
+    imported: &mut std::collections::HashSet<&'a str>,
+    local: &mut Vec<(&'a str, Span)>,
+) {
+    for item in items {
+        match item {
+            ast::Item::Data(d) if d.type_only => {
+                imported.insert(d.name.as_str());
+            }
+            ast::Item::Data(d) => local.push((d.name.as_str(), d.span)),
+            ast::Item::Section(sec) => collect_data_items(&sec.items, imported, local),
             _ => {}
         }
     }
