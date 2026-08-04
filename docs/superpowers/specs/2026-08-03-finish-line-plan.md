@@ -30,14 +30,21 @@ L5+L8 → L9 → the one-sitting batch (L3/L4/L12 items). All close packets exis
 `notes/`; each is gate-green on its branch pair. This precedes Track B (the
 contract spec's P1 touches lowering; merging under it is asking for conflicts).
 
-## §2 — Track B: the contract unification (THE mountain)
+## §2 — Track B: the contract unification — RE-SCOPED 2026-08-04 to B′
 
-Full spec: `2026-08-03-contract-unification-spec.md` — expanded to porter grade,
-all six open questions resolved (my calls, flagged for your gate). Five parcels
-P1–P5 + a follow-on batch F (S2-D6(c) reg aliases, S2-D6(d) scratch splices).
-Absorbs S2-D6 and S2-D7 whole; closes the D2.35 auto-inc/dec ledger row inside
-P1. Sequencing: P1 strict-first; then P2 ∥ P3; then P4; then P5; F last, gated
-on demonstrated splice demand (may park at close — recorded either way).
+**The 2026-08-03 spec's parcel list is DEAD — see the overseer state audit
+(`notes/2026-08-04-finish-line-state-audit.md`) and the delta spec that
+supersedes it: `2026-08-04-contract-delta-spec.md`.** Contract-grammar v2
+already ships P1, P2, and P4's CCR/conditional-out (verified own-run by both
+the Opus audit and Fable 2026-08-04: the closure engine, `[call.live-clobbered]`
+/ `[call.input-undefined]`, dataflow preserves with never-written-as-proof and
+the callee-preserves oracle — the t30 STOP is CLOSED — plus `flag_check`,
+`out_verify` CondOutMap, and the `[bus.*]` hazard lattice). The old spec stays
+as design rationale ("U-spec"); the work order is now: **B′-0** AllocDynamic
+pinning test → **B′-1** generalized contexts (`context`/`with`/`requires` as an
+EXTENSION of z80_bus.rs + closure.rs; closes the shipped net's zero-FP
+entry-gap) → **B′-2** stack-delta ∥ **B′-3** cycle budgets → **B′-4** report
+consolidation. F disposition unchanged.
 
 ## §3 — Track C + D: the small buildable set
 
