@@ -1815,3 +1815,50 @@ full_crc = "2623ee7f"
 full_size = 423383
 anchor_crc = "68a80bba"
 anchor_end = 0x5f722
+
+[[entry]]
+name = "item29-mddbg-strip"
+ab = "aeon/docs/superpowers/notes/2026-08-05-item29-mddbg-strip-ab.md"
+note = "Release MDDBG strip (item 29 part 4, owner-ruled): error_handler (4,272 B) is DEBUG-only; release faults route to the new 46 B ReleaseFault (mask, display off, red backdrop, freeze — display-off added after the oracle proved a covered backdrop hides the red). NullInterrupt deleted. Release ROMs -4,226 B. Induced-fault verified both shapes: red freeze in release, full MDDBG screen in debug."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "1b5ba987"
+full_size = 423731
+anchor_crc = "a85f481f"
+anchor_end = 0x5f71e
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "83950034"
+full_size = 271790
+anchor_crc = "f8dd835c"
+anchor_end = 0x425ae
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3bf54b74"
+full_size = 65954
+anchor_crc = "44fcbb86"
+anchor_end = 0x101a2
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "3e28584b"
+full_size = 93929
+anchor_crc = "cabf3306"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "40ac3e52"
+full_size = 379822
+anchor_crc = "1209e250"
+anchor_end = 0x5cbae
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "b45a553a"
+full_size = 423354
+anchor_crc = "012d339f"
+anchor_end = 0x5f71e
