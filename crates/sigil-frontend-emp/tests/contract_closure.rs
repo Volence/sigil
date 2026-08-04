@@ -401,7 +401,24 @@ fn verified_preserves_not_inherited_by_callers() {
 use sigil_frontend_emp::closure::{subcontract_violations, Contract};
 
 fn contract(clob: &[&str], pres: &[&str], params: &[&str], out: &[&str]) -> Contract {
-    Contract { clobbers: regs(clob), preserves: regs(pres), params: regs(params), out: regs(out) }
+    Contract {
+        clobbers: regs(clob),
+        preserves: regs(pres),
+        params: regs(params),
+        out: regs(out),
+        out_cond: Default::default(),
+    }
+}
+
+/// [`contract`] plus a set of CONDITIONAL outs (`out(rN if cc)`).
+fn contract_cond(
+    clob: &[&str],
+    pres: &[&str],
+    params: &[&str],
+    out: &[&str],
+    out_cond: &[&str],
+) -> Contract {
+    Contract { out_cond: regs(out_cond), ..contract(clob, pres, params, out) }
 }
 
 /// A target that clobbers MORE than the bound allows violates it (the register
@@ -431,4 +448,99 @@ fn target_missing_required_preserve_violates() {
     let target = contract(&["d0"], &["a0"], &[], &[]); // preserves a0 but not d7
     let v = subcontract_violations(&target, &bound);
     assert!(v.iter().any(|s| s.contains("d7")), "must name the un-preserved reg: {v:?}");
+}
+
+/// A BOUND'S OWN UNCONDITIONAL `out` licenses the target to clobber that
+/// register. The clobber test is `target.clobbers ⊆ bound.clobbers ∪ bound.out`:
+/// every caller of the bound already knows an unconditional result register is
+/// written, so charging the target for writing it is asymmetric with the
+/// production test.
+#[test]
+fn a_bounds_out_licenses_the_target_to_clobber_it() {
+    let bound = contract(&["d0"], &[], &[], &["a1"]);
+    let target = contract(&["d0", "a1"], &[], &[], &["a1"]);
+    assert!(
+        subcontract_violations(&target, &bound).is_empty(),
+        "a1 is the bound's own declared result: {:?}",
+        subcontract_violations(&target, &bound)
+    );
+}
+
+/// The honest AllocDynamic shape — `clobbers(d0/a1) out(a1 if eq)` bound to a
+/// hook spelling the same `clobbers(d0/a1) out(a1 if eq)` — conforms. The license
+/// comes from the bound's own `clobbers`, which is where "a1 is indeterminate on
+/// the ne edge" is written down.
+#[test]
+fn the_honest_alloc_dynamic_shape_conforms_to_a_matching_bound() {
+    let bound = contract_cond(&["d0", "a1"], &[], &[], &[], &["a1"]);
+    let target = contract_cond(&["d0", "a1"], &[], &[], &[], &["a1"]);
+    assert!(
+        subcontract_violations(&target, &bound).is_empty(),
+        "the AllocDynamic-shaped target must conform: {:?}",
+        subcontract_violations(&target, &bound)
+    );
+}
+
+/// THE WALL: a CONDITIONAL out does NOT license a clobber. A cond-out register
+/// absent from the bound's `clobbers` is a survives-claim — the bound's callers
+/// are entitled to hold it across the call and re-read it on the ¬cc edge. The
+/// AllocEffect-shaped bound (`clobbers(d0) out(a1 if eq)`) must therefore REJECT
+/// an AllocDynamic-shaped target (`clobbers(d0/a1) out(a1 if eq)`), which leaves
+/// a1 indeterminate there.
+#[test]
+fn a_conditional_out_does_not_license_the_target_to_clobber_it() {
+    let bound = contract_cond(&["d0"], &[], &[], &[], &["a1"]);
+    let target = contract_cond(&["d0", "a1"], &[], &[], &[], &["a1"]);
+    let v = subcontract_violations(&target, &bound);
+    assert!(
+        v.iter().any(|s| s.contains("clobbers `a1`")),
+        "the bound's survives-claim on a1 must reject a target that destroys it: {v:?}"
+    );
+}
+
+/// The license is exactly the bound's OWN result registers — a target clobbering
+/// something the bound neither permits nor returns still violates.
+#[test]
+fn the_out_license_does_not_widen_to_arbitrary_registers() {
+    let bound = contract(&["d0"], &[], &[], &["a1"]);
+    let target = contract(&["d0", "a1", "d5"], &[], &[], &["a1"]);
+    let v = subcontract_violations(&target, &bound);
+    assert!(v.iter().any(|s| s.contains("d5")), "d5 is unlicensed: {v:?}");
+    assert!(!v.iter().any(|s| s.contains("a1")), "a1 is the bound's own out: {v:?}");
+}
+
+/// A CONDITIONAL producer does NOT satisfy an UNCONDITIONAL `out` promise: the
+/// bound's callers may read the register with no cc test at all, while the target
+/// may legally declare `clobbers(rN)` alongside its conditional result — stating
+/// outright that it destroys the register the bound promises.
+#[test]
+fn conditional_out_does_not_satisfy_an_unconditional_bound_out() {
+    let bound = contract(&["d0"], &[], &[], &["a1"]);
+    let target = contract_cond(&["d0", "a1"], &[], &[], &[], &["a1"]);
+    let v = subcontract_violations(&target, &bound);
+    assert!(
+        v.iter().any(|s| s.contains("does not produce output `a1`")),
+        "a conditional producer must not satisfy out(a1): {v:?}"
+    );
+}
+
+/// The converse direction: an UNCONDITIONAL producer satisfies a CONDITIONAL
+/// promise (producing on every path is strictly stronger).
+#[test]
+fn unconditional_out_satisfies_a_conditional_bound_out() {
+    let bound = contract_cond(&["d0"], &[], &[], &[], &["a1"]);
+    let target = contract(&["d0"], &[], &[], &["a1"]);
+    assert!(subcontract_violations(&target, &bound).is_empty());
+}
+
+/// A bound's conditional promise with NO producer at all still violates.
+#[test]
+fn missing_conditional_out_violates() {
+    let bound = contract_cond(&["d0"], &[], &[], &[], &["a1"]);
+    let target = contract(&["d0"], &[], &[], &[]);
+    let v = subcontract_violations(&target, &bound);
+    assert!(
+        v.iter().any(|s| s.contains("conditional output `a1`")),
+        "must name the unproduced conditional result: {v:?}"
+    );
 }

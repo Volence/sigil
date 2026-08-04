@@ -952,12 +952,11 @@ fn check_out(
     //
     // The guard set is expanded through the SAME register file as the sets it is
     // tested against — a raw-text set would miss `sp`/`a7` on 68k and every Z80
-    // pair spelling (`hl` expands to `h`+`l`).
-    let cond_segs: Vec<(String, Option<String>)> =
-        proc.out_cond.iter().map(|c| (c.reg.clone(), None)).collect();
+    // pair spelling (`hl` expands to `h`+`l`). [`ast::ProcDecl::cond_out_regs`]
+    // owns that expansion for every consumer.
     if cpu == Cpu::Z80 {
         let rf = crate::regfile::RegFile::Z80;
-        let cond_guarded = crate::regfile::expand_reglist(&cond_segs, rf, |_| {});
+        let cond_guarded = proc.cond_out_regs(rf);
         let out_set = crate::regfile::expand_reglist(
             proc.out.as_deref().unwrap_or(&[]),
             rf,
@@ -1022,7 +1021,7 @@ fn check_out(
     // out ∩ clobbers — returned AND scratch is contradictory. Expand the
     // clobbers reglist quietly (`check_clobbers` owns its diagnostics).
     let clobbers = reglist_set_quiet(proc.clobbers.as_deref().unwrap_or(&[]));
-    let cond_guarded = reglist_set_quiet(&cond_segs).regs;
+    let cond_guarded = proc.cond_out_regs(crate::regfile::RegFile::M68k);
     for name in &valid {
         if clobbers.regs.contains(name) && !cond_guarded.contains(name) {
             push(

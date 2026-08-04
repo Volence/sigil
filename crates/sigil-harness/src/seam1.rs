@@ -224,6 +224,11 @@ fn collect_pub_proc_stubs(
                 let mut units: std::collections::BTreeSet<String> = match &p.clobbers {
                     Some(clob) => {
                         let clobbered = expand(clob);
+                        // The FULL `out` reglist, conditional results included —
+                        // NOT `unconditional_outs`. This set is SUBTRACTED from
+                        // the universe to derive preserves, so a register left
+                        // out of it is CLAIMED preserved; a conditional result is
+                        // written on its cc edge and would make that claim false.
                         let produced = p.out.as_deref().map(expand).unwrap_or_default();
                         RegFile::Z80
                             .universe()
