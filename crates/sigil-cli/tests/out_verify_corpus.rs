@@ -7,7 +7,8 @@
 //! a contract edit that makes D1c miss a real held-value clobber — or invent one
 //! — fails the suite rather than scrolling past in a dump.
 
-use sigil_frontend_emp::corpus_contracts::analyze_corpus;
+use sigil_frontend_emp::corpus_contracts::{analyze_corpus, ContractReport};
+use sigil_frontend_emp::out_verify::survives_message;
 use sigil_frontend_emp::parse_str;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -27,11 +28,13 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-#[test]
-fn dump_out_unverified_residue() {
-    // House reference-gate pattern (repin_pins/mt_port, c5505f8): default the
-    // sibling aeon tree; under SIGIL_STRICT_GATE a missing reference hard-fails so
-    // the residue dump actually runs under the standard strict invocation.
+/// The whole-corpus contract report over the reference aeon tree, or `None` when
+/// that tree is absent and the run is not strict.
+///
+/// House reference-gate pattern (repin_pins/mt_port, c5505f8): default the
+/// sibling aeon tree; under `SIGIL_STRICT_GATE` a missing reference hard-fails so
+/// these gates actually run under the standard strict invocation.
+fn corpus_report() -> Option<ContractReport> {
     let aeon = PathBuf::from(
         std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
     );
@@ -40,17 +43,21 @@ fn dump_out_unverified_residue() {
             panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
         }
         eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
-        return;
+        return None;
     }
     let mut paths = Vec::new();
     emp_files(&aeon.join("engine"), &mut paths);
     emp_files(&aeon.join("games"), &mut paths);
     paths.sort();
     assert!(!paths.is_empty(), "no .emp files under {}", aeon.display());
-
     let files: Vec<_> =
         paths.iter().map(|p| parse_str(&std::fs::read_to_string(p).unwrap()).0).collect();
-    let r = analyze_corpus(&files);
+    Some(analyze_corpus(&files))
+}
+
+#[test]
+fn dump_out_unverified_residue() {
+    let Some(r) = corpus_report() else { return };
 
     eprintln!("=== [proc.out-unverified] residue: {} firing(s) ===", r.out_firings.len());
     for f in &r.out_firings {
@@ -60,7 +67,53 @@ fn dump_out_unverified_residue() {
     for f in &r.live_clobbered_firings {
         eprintln!("  {} @ {} :: {}", f.proc, f.callee, f.reg);
     }
+    eprintln!(
+        "=== [proc.out-cond-survives-unverifiable]: {} firing(s) ===",
+        r.survives_firings.len()
+    );
+    for f in &r.survives_firings {
+        eprintln!("  {} :: out({} if {}) — {}", f.proc, f.reg, f.cc, f.reason);
+    }
 }
+
+/// The §7.1 SURVIVES claim over the real corpus, under the closure's
+/// callee-preserves oracle — the FINAL authority behind the per-file gate's
+/// call-blocked deferrals, so it is an assert-EMPTY gate, not a dump.
+///
+/// Non-vacuity is asserted, not asserted-about: [`SURVIVES_CLAIM_SITES`] names
+/// the procs that must still be MAKING a claim, so the empty assert cannot go
+/// quietly true by a contract edit that deletes the claim instead of proving it.
+/// (The obvious mutation — reverting `TileCache_FindStagedBlock` to
+/// `clobbers(d3-d4)` — lives in the aeon tree, so no sigil-side test can perform
+/// it; it was run by hand and the gate failed as designed.)
+#[test]
+fn cond_out_survives_claims_all_prove() {
+    let Some(r) = corpus_report() else { return };
+
+    let rows: Vec<String> = r.survives_firings.iter().map(survives_message).collect();
+    assert!(
+        rows.is_empty(),
+        "[proc.out-cond-survives-unverifiable] over the aeon corpus — a conditional out \
+         claims its register survives the failure edges and the proof does not carry:\n  {}",
+        rows.join("\n  ")
+    );
+    // The gate must have subjects. A cond-out register ABSENT from the proc's
+    // declared clobbers is what makes the claim, and `survives_claim_sites` is
+    // exactly that set — NOT `verified_cond_out`, which is the PRODUCTION half's
+    // output and stays true even if every claim were downgraded away.
+    let claim_sites: Vec<&str> = r.survives_claim_sites.iter().map(String::as_str).collect();
+    assert_eq!(
+        claim_sites, SURVIVES_CLAIM_SITES,
+        "the set of procs MAKING a survives claim moved. The assert above proves nothing \
+         about a proc that stopped claiming; adjudicate and update SURVIVES_CLAIM_SITES"
+    );
+}
+
+/// Every proc that declares `out(rN if cc)` with rN ABSENT from its `clobbers` —
+/// i.e. every proc whose survives claim the gate above actually proves.
+/// `AllocDynamic` is deliberately not here: it names a1 in `clobbers` and makes
+/// no claim.
+const SURVIVES_CLAIM_SITES: &[&str] = &["AllocEffect"];
 
 /// The exact `[call.live-clobbered]` (D1c) firing set over the aeon corpus,
 /// `(caller, callee, register)`, sorted as the analysis sorts it.
@@ -125,25 +178,7 @@ fn tally(rows: &[(String, String, String)]) -> BTreeMap<&(String, String, String
 /// feeds `find_dead_saves` — drops a row here and fails.
 #[test]
 fn d1c_firings_match_the_frozen_baseline() {
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
-    if !aeon.exists() {
-        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
-            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
-        }
-        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
-    let mut paths = Vec::new();
-    emp_files(&aeon.join("engine"), &mut paths);
-    emp_files(&aeon.join("games"), &mut paths);
-    paths.sort();
-    assert!(!paths.is_empty(), "no .emp files under {}", aeon.display());
-
-    let files: Vec<_> =
-        paths.iter().map(|p| parse_str(&std::fs::read_to_string(p).unwrap()).0).collect();
-    let r = analyze_corpus(&files);
+    let Some(r) = corpus_report() else { return };
 
     let got: Vec<(String, String, String)> = r
         .live_clobbered_firings

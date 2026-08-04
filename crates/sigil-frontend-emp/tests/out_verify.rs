@@ -13,10 +13,15 @@
 
 use sigil_frontend_emp::ast::Item;
 use sigil_frontend_emp::eval::eval_proc_body;
-use sigil_frontend_emp::out_verify::{compute_verified_outs, verify_out, OutStatus};
+use sigil_frontend_emp::closure::RegEffect;
+use sigil_frontend_emp::out_verify::{
+    check_cond_out_survives, compute_verified_outs, verify_out, OutStatus,
+};
+use sigil_frontend_emp::preserves::CallPolicy;
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::value::{CodeItem, Reg};
 use sigil_ir::backend::Cpu;
+use sigil_span::{SourceId, Span};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Eval every proc in `src`, returning name → evaluated CodeItems.
@@ -700,4 +705,146 @@ fn dbf_counter_does_not_satisfy_out() {
         &map(&[]),
     );
     assert!(is_unverified(&s), "a dbf .w counter must NOT produce out(d7), got {s:?}");
+}
+
+// === the SURVIVES half of `out(rN if cc)` (delta spec §7.1) ================
+//
+// The per-file gate is exercised end-to-end in `lower_proc.rs`. These pin the
+// three behaviours the per-file gate deliberately cannot show, because it has no
+// callee knowledge: the call POLICY, the deferral it produces, and the tail-exit
+// charge.
+
+/// Run the survives check on `proc` under `policy`, returning the firing reasons.
+fn survives(
+    src: &str,
+    proc: &str,
+    cond: &[(Reg, &str)],
+    clobbers: &[&str],
+    policy: CallPolicy,
+) -> Vec<String> {
+    let all = eval_all(src);
+    let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
+    let cond: Vec<(Reg, String)> = cond.iter().map(|(r, c)| (*r, c.to_string())).collect();
+    let clob: BTreeSet<String> = clobbers.iter().map(|s| s.to_string()).collect();
+    let span = Span { source: SourceId(0), start: 0, end: 0 };
+    check_cond_out_survives(proc, items, &cond, &clob, policy, span)
+        .into_iter()
+        .map(|f| f.reason)
+        .collect()
+}
+
+/// A `jsr` on the ¬cc path kills the entry-value proof under the conservative
+/// `ClobberAll` model (the per-file gate's), but NOT under `PreserveAll` (its
+/// deferral probe). A register in exactly that gap is call-blocked, so the
+/// per-file gate stays silent and the corpus oracle decides — the same three-way
+/// split `check_preserves` uses. Both directions asserted, or the "defers" claim
+/// would be unfalsifiable.
+#[test]
+fn a_call_on_the_not_cc_path_defers_rather_than_fires_per_file() {
+    let src = "module m\n\
+               proc P () clobbers(d0) out(a1 if eq) {\n\
+                   cmpi.w  #0, Flag\n\
+                   beq     .full\n\
+                   lea     Slot, a1\n\
+                   moveq   #0, d0\n\
+                   rts\n\
+               .full:\n\
+                   jbsr    Helper\n\
+                   moveq   #1, d0\n\
+                   rts\n\
+               }\n";
+    assert_eq!(
+        survives(src, "P", &[(Reg::A1, "eq")], &["d0"], CallPolicy::ClobberAll).len(),
+        1,
+        "the conservative model cannot see past the call"
+    );
+    assert!(
+        survives(src, "P", &[(Reg::A1, "eq")], &["d0"], CallPolicy::PreserveAll).is_empty(),
+        "blocked SOLELY by the call ⇒ the per-file gate defers to the corpus"
+    );
+}
+
+/// The corpus authority: the SAME body proves under the closure oracle when the
+/// callee provably preserves the register, and fires when it does not. This is
+/// the "a preserving call does not kill the proof" clause of the ruling.
+#[test]
+fn the_oracle_settles_a_call_blocked_survives_claim_both_ways() {
+    let src = "module m\n\
+               proc P () clobbers(d0) out(a1 if eq) {\n\
+                   cmpi.w  #0, Flag\n\
+                   beq     .full\n\
+                   lea     Slot, a1\n\
+                   moveq   #0, d0\n\
+                   rts\n\
+               .full:\n\
+                   jbsr    Helper\n\
+                   moveq   #1, d0\n\
+                   rts\n\
+               }\n";
+    let preserving: BTreeMap<String, RegEffect> = BTreeMap::from([(
+        "Helper".to_string(),
+        RegEffect { top: false, regs: BTreeSet::from(["d3".to_string()]) },
+    )]);
+    assert!(
+        survives(src, "P", &[(Reg::A1, "eq")], &["d0"], CallPolicy::Oracle(&preserving)).is_empty(),
+        "Helper does not clobber a1 — the claim survives the call"
+    );
+    let clobbering: BTreeMap<String, RegEffect> = BTreeMap::from([(
+        "Helper".to_string(),
+        RegEffect { top: false, regs: BTreeSet::from(["a1".to_string()]) },
+    )]);
+    assert_eq!(
+        survives(src, "P", &[(Reg::A1, "eq")], &["d0"], CallPolicy::Oracle(&clobbering)).len(),
+        1,
+        "Helper clobbers a1 — the claim is false on the !eq edge"
+    );
+}
+
+/// Control LEAVING the proc on a ¬cc edge is an exit, not just an `rts`. A
+/// `jbra` out of the failure edge with a1 already destroyed FIRES — under
+/// `preserves(rN)`'s `AllReturns` the same `Defer` is ignored entirely, so this
+/// is the one place the scoped proof is deliberately stricter.
+///
+/// The TARGET is not charged, and the second half pins that: the identical tail
+/// with a1 untouched is clean even when the target is unknown. A transfer out may
+/// DIVERGE — a noreturn error rail owes the caller nothing — and nothing in the
+/// language marks that yet, so charging the target would reject an honest failure
+/// path at error tier. The transitive half stays with the closure, which folds an
+/// unconditional tail's effect into `effective` through its own tail edge.
+#[test]
+fn a_tail_exit_on_the_not_cc_path_is_an_exit_but_its_target_is_not_charged() {
+    let destroyed = "module m\n\
+               proc P () clobbers(d0) out(a1 if eq) {\n\
+                   lea     Slot, a1\n\
+                   cmpi.w  #0, Flag\n\
+                   beq     .ok\n\
+                   moveq   #1, d0\n\
+                   jbra    Elsewhere\n\
+               .ok:\n\
+                   moveq   #0, d0\n\
+                   rts\n\
+               }\n";
+    let unknown: BTreeMap<String, RegEffect> = BTreeMap::new();
+    assert_eq!(
+        survives(destroyed, "P", &[(Reg::A1, "eq")], &["d0"], CallPolicy::Oracle(&unknown)).len(),
+        1,
+        "a1 is destroyed before control leaves on the !eq edge — the claim is false there"
+    );
+
+    let untouched = "module m\n\
+               proc P () clobbers(d0) out(a1 if eq) {\n\
+                   cmpi.w  #0, Flag\n\
+                   beq     .fail\n\
+                   lea     Slot, a1\n\
+                   moveq   #0, d0\n\
+                   rts\n\
+               .fail:\n\
+                   moveq   #1, d0\n\
+                   jbra    Elsewhere\n\
+               }\n";
+    assert!(
+        survives(untouched, "P", &[(Reg::A1, "eq")], &["d0"], CallPolicy::Oracle(&unknown))
+            .is_empty(),
+        "an unknown tail target must NOT be charged — it may be a noreturn error rail"
+    );
 }

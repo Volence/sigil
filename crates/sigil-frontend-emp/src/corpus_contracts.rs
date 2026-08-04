@@ -26,7 +26,10 @@ use crate::flag_check::{check_flag_unused, check_result_invalid_path, FlagFiring
 use crate::lower::{
     expand_reglist_regs, preserve_oracle_inputs, proc_written_registers, verified_preserves_regs,
 };
-use crate::out_verify::{check_out, compute_verified_outs, CondOutMap, OutFiring, UncondOutMap};
+use crate::out_verify::{
+    check_cond_out_survives, check_out, compute_verified_outs, CondOutMap, CondOutSurvivesFiring,
+    OutFiring, UncondOutMap,
+};
 use crate::preserves::{find_dead_saves, DeadSave};
 use crate::branch_const::{check_branch_const, BranchConstFiring};
 use crate::z80_bus::{check_bus_state, BusFiring};
@@ -96,6 +99,19 @@ pub struct ContractReport {
     /// out-honesty check). Sorted (proc, reg). NOT yet joined to the error gate —
     /// the checkpoint-B residue is adjudicated before the flip.
     pub out_firings: Vec<OutFiring>,
+    /// The §7.1 `[proc.out-cond-survives-unverifiable]` firings: a proc declares
+    /// `out(rN if cc)` with rN ABSENT from `clobbers` — the survives-claim — but
+    /// rN's entry value is not provably intact on every ¬cc return path. Proved
+    /// under the closure's callee-preserves ORACLE, so a preserving call does not
+    /// kill the proof; this is the FINAL AUTHORITY over the per-file gate's
+    /// call-blocked deferrals. Sorted (proc, reg).
+    pub survives_firings: Vec<CondOutSurvivesFiring>,
+    /// Every proc that MAKES a §7.1 survives claim — declares `out(rN if cc)`
+    /// with rN absent from its `clobbers`. Sorted. Exposed because an
+    /// assert-empty gate over `survives_firings` is only as meaningful as the set
+    /// of claims it ranged over: a contract edit that DELETES a claim would make
+    /// the gate quietly vacuous, and this is what a test pins to notice.
+    pub survives_claim_sites: Vec<String>,
     /// The verified-out FIXPOINT result — each proc's UNCONDITIONAL outs PROVEN
     /// produced (extern outs seeded verified). The DEFINITION credit source for D1b
     /// must-def and the `out_firings` residue surface; exposed so the consistency
@@ -462,6 +478,49 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     }
     out_firings.sort_by(|a, b| (&a.proc, &a.reg, a.span.start).cmp(&(&b.proc, &b.reg, b.span.start)));
 
+    // §7.1 the SURVIVES half: a cond-out register absent from `clobbers` must be
+    // provably PRESERVED on every ¬cc return path. The per-file gate proves what a
+    // single file can (`ClobberAll`, deferring anything blocked solely by a call);
+    // THIS is the final authority — the closure's verified `effective` map lets a
+    // preserving callee keep the proof alive, exactly as the §5 preserves oracle
+    // does. Checked registers come from the DECLARED cond list and the DECLARED
+    // clobbers, because that pair is precisely what the contract's reader sees.
+    // 68k only, twice over and deliberately: `proc_bufs` excludes `(cpu: z80)`
+    // modules (they collect into `z80_proc_bufs`), and `Reg::from_name` rejects
+    // every Z80 spelling below. The per-file gate carries the matching guard with
+    // the `VALID_CCS` rationale. When ccs go CPU-parametric, BOTH need revisiting.
+    let mut survives_firings: Vec<CondOutSurvivesFiring> = Vec::new();
+    let mut survives_claim_sites: Vec<String> = Vec::new();
+    for pb in &proc_bufs {
+        let Some(node) = nodes.get(&pb.name) else { continue };
+        if !node.has_clobber_contract {
+            continue; // no clobber contract ⇒ no membership to read ⇒ no claim
+        }
+        let cond: Vec<(Reg, String)> = pb
+            .cond_out_pairs
+            .iter()
+            .filter_map(|(reg, cc)| Reg::from_name(reg).map(|r| (r, cc.clone())))
+            .collect();
+        if cond.is_empty() {
+            continue;
+        }
+        if cond.iter().any(|(r, _)| !node.declared_clobbers.contains(&r.to_string())) {
+            survives_claim_sites.push(pb.name.clone());
+        }
+        survives_firings.extend(check_cond_out_survives(
+            &pb.name,
+            &pb.buf.items,
+            &cond,
+            &node.declared_clobbers,
+            crate::preserves::CallPolicy::Oracle(&closure.effective),
+            pb.span,
+        ));
+    }
+    survives_claim_sites.sort();
+    survives_firings.sort_by(|a, b| {
+        (&a.proc, &a.reg, &a.cc, a.span.start).cmp(&(&b.proc, &b.reg, &b.cc, b.span.start))
+    });
+
     // G5 §7 tier 5 — the caller-side domain-newtype slot check. The corpus's
     // newtype names gate which param/out slots are DOMAIN-typed (a plain `u8`/`*Act`
     // param is not a slot the check engages — §7 no-ceremony); `typed_params` /
@@ -539,6 +598,8 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         input_firings,
         live_clobbered_firings,
         out_firings,
+        survives_firings,
+        survives_claim_sites,
         verified_uncond_out,
         verified_cond_out,
         dropped_instrs,
@@ -702,6 +763,12 @@ struct ProcBuf {
     /// declares no `preserves` (or a malformed one).
     preserve_check: Vec<Reg>,
     preserve_names: BTreeSet<String>,
+    /// The `(register, cc)` pairs that can carry a §7.1 survives claim
+    /// ([`ast::ProcDecl::cond_out_pairs`]) — canonical, and already excluding a
+    /// register ALSO named unconditionally (whose out is unconditional, and for
+    /// which the claim would have no legal remedy). The raw `out_cond` list
+    /// cannot tell the difference.
+    cond_out_pairs: Vec<(String, String)>,
 }
 
 /// The set of status flags a decl's `out(carry: name)` clauses name.
@@ -801,6 +868,7 @@ fn collect_items(
                         span: p.span,
                         preserve_check,
                         preserve_names,
+                        cond_out_pairs: p.cond_out_pairs(crate::regfile::RegFile::M68k),
                     });
                 }
             }
@@ -869,6 +937,9 @@ fn collect_z80_flag_procs(
                         // the oracle round skip this buf (preserve_check empty).
                         preserve_check: Vec::new(),
                         preserve_names: std::collections::BTreeSet::new(),
+                        // The §7.1 survives walk is 68k-only; a Z80 buf never
+                        // reaches it (these live in their own vector).
+                        cond_out_pairs: Vec::new(),
                     });
                 }
             }

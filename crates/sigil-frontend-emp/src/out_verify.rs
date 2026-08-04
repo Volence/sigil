@@ -38,9 +38,36 @@
 //! produced on this pass, NOT that the value is semantically correct — a proc that
 //! produces rN then stomps it before `rts` still verifies (the stomp is itself a
 //! production). Value-provenance is out of scope.
+//!
+//! # The other half of `out(rN if cc)` — the SURVIVES claim
+//!
+//! A conditional out is a TWO-part contract (delta spec §7.1). Production on the
+//! cc edges is the half above. The ¬cc edges are governed by `clobbers`
+//! membership:
+//!
+//! - rN **∈ `clobbers`** — no claim; rN is indeterminate on the ¬cc edges and
+//!   callers save on every path (the `AllocDynamic` shape).
+//! - rN **∉ `clobbers`** — rN is PRESERVED (entry value intact) on every ¬cc
+//!   return path (the `AllocEffect` shape). [`check_cond_out_survives`] proves
+//!   that claim, and `[proc.out-cond-survives-unverifiable]` is the failure.
+//!
+//! Both halves read ONE cc classification ([`flags_after`]), so they can never
+//! disagree about which edge a return sits on. They are NOT complements at ⊤, and
+//! deliberately so: production is obligated on `Some(true)` **and ⊤**, survival
+//! only on `Some(false)`. An unclassifiable return is charged the obligation whose
+//! escape is honest (produce the register) and spared the one whose escape would
+//! force a false declaration — see [`not_cc_exit_sites`] for the measurement
+//! behind that asymmetry.
+//!
+//! The proof itself is
+//! [`preserves::verify_preserved_on`](crate::preserves::verify_preserved_on)
+//! SCOPED to the ¬cc exits — the same save/restore round-trip, never-written and
+//! callee-preserves-oracle proofs `preserves(rN)` accepts, with no second
+//! dataflow.
 
 use crate::flag_check::{conditional_out_edge_credits, Cfg, Edge};
 use crate::lower::instr_written_regs;
+use crate::preserves::{verify_preserved_on, CallPolicy, PreserveStatus, ReturnScope};
 use crate::value::{CodeItem, CodeOperand, Reg, Width};
 use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -158,13 +185,9 @@ fn produced_regs(mnem: &str, ops: &[CodeOperand], size: Option<Width>) -> Vec<Re
 }
 
 /// The abstract state at a program point: which registers are MUST-produced on
-/// every path here, and the abstract condition-code state (for conditional-out
-/// success-edge classification — inert until the cc layer).
-#[derive(Clone, PartialEq, Eq)]
-struct State {
-    produced: [bool; 16],
-    flags: Flags,
-}
+/// every path here. The cc classification lives in its own dataflow
+/// ([`flags_after`]), which both halves of `out(rN if cc)` read.
+type State = [bool; 16];
 
 /// The bare `Sym` target of a direct call/tail (`jbsr Foo` / `jbra Foo`), or
 /// `None` for an indirect / local-label (`$`-mangled) target.
@@ -175,8 +198,8 @@ fn direct_target(ops: &[CodeOperand]) -> Option<&str> {
     }
 }
 
-/// Apply instruction `idx`'s effect to `st`: gen full-width productions, credit a
-/// call's callee unconditional outs, and update the abstract flags.
+/// Apply instruction `idx`'s effect to `st`: gen full-width productions and
+/// credit a call's callee unconditional outs.
 fn transfer(
     cfg: &Cfg,
     idx: usize,
@@ -192,27 +215,24 @@ fn transfer(
 
     if is_call(mnem) {
         // A returning call: credit its UNCONDITIONAL out registers as produced
-        // (the shared map). It also clobbers the condition codes.
+        // (the shared map).
         if let Some(target) = direct_target(ops) {
             if let Some(outs) = callee_uncond_out.get(target) {
                 for name in outs {
                     if let Some(r) = Reg::from_name(name) {
-                        st.produced[reg_idx(r)] = true;
+                        st[reg_idx(r)] = true;
                     }
                 }
             }
         }
-        st.flags = Flags::TOP;
         return;
     }
 
     // Production is gen-only (a value produced upstream stays produced —
     // Finding 5; a later partial write does not un-produce).
     for r in produced_regs(mnem, ops, size) {
-        st.produced[reg_idx(r)] = true;
+        st[reg_idx(r)] = true;
     }
-
-    st.flags = st.flags.after(mnem, ops);
 }
 
 /// Verify each declared output register of a proc over its evaluated CodeBuf.
@@ -236,6 +256,10 @@ pub fn verify_out(
     // fall-through (the eq-success edge). Applied as a per-edge transfer that
     // re-joins by intersection at merges — NOT a global post-call fact (§3).
     let edge_credit = conditional_out_edge_credits(&cfg, items, cond_callees);
+    // The cc classification at every return — the SHARED map the ¬cc survives
+    // obligation reads too, so the two halves of `out(rN if cc)` partition the
+    // return paths by one predicate.
+    let flags = flags_after(&cfg, items);
 
     // The condition guarding each checked register: `None` = unconditional
     // (obligated on every return), `Some(cc)` = conditional (obligated only where
@@ -254,7 +278,7 @@ pub fn verify_out(
     };
 
     let mut in_state: BTreeMap<usize, State> = BTreeMap::new();
-    in_state.insert(entry_idx, State { produced: [false; 16], flags: Flags::TOP });
+    in_state.insert(entry_idx, [false; 16]);
     let mut work: VecDeque<usize> = VecDeque::from([entry_idx]);
 
     // Per checked register: produced on EVERY required return path so far, and
@@ -263,23 +287,20 @@ pub fn verify_out(
     let mut fail_reason: BTreeMap<Reg, String> = BTreeMap::new();
 
     while let Some(idx) = work.pop_front() {
-        let mut st = in_state[&idx].clone();
+        let mut st = in_state[&idx];
         transfer(&cfg, idx, &mut st, items, callee_uncond_out);
+        let here = flags.get(&idx).copied().unwrap_or(Flags::TOP);
 
         for edge in cfg.edges(idx) {
             match edge {
                 Edge::Follow(succ) => {
-                    // Branch-split (guardrail 1): along a conditional branch's
-                    // taken / fall-through edges the tested cc is provably TRUE /
-                    // FALSE respectively — refine the propagated flags so a `!cc`
-                    // return reached directly off the branch is classified.
-                    let mut edge_st = split_flags(&cfg, idx, succ, &st);
+                    let mut edge_st = st;
                     // Item #2: credit a callee's conditional out on THIS success
                     // edge only (per-edge transfer; the join below re-intersects).
                     if let Some(regs) = edge_credit.get(&(idx, succ)) {
                         for name in regs {
                             if let Some(r) = Reg::from_name(name) {
-                                edge_st.produced[reg_idx(r)] = true;
+                                edge_st[reg_idx(r)] = true;
                             }
                         }
                     }
@@ -289,8 +310,7 @@ pub fn verify_out(
                             true
                         }
                         Some(existing) => {
-                            let mut merged = existing.clone();
-                            join(&mut merged, &edge_st);
+                            let merged = join(existing, &edge_st);
                             if merged != *existing {
                                 in_state.insert(succ, merged);
                                 true
@@ -305,7 +325,7 @@ pub fn verify_out(
                 }
                 Edge::Abandon => {
                     // A return / fall-off-end: no extra credit.
-                    check_return(&st.produced, &st.flags, &guard, &mut ok, &mut fail_reason);
+                    check_return(&st, &here, &guard, &mut ok, &mut fail_reason);
                 }
                 Edge::Defer => {
                     // An UNCONDITIONAL tail transfer is a required return path
@@ -319,7 +339,7 @@ pub fn verify_out(
                     // Credit the tail target's UNCONDITIONAL out (a known proc
                     // producing rN); an external / unresolved target credits
                     // nothing ⇒ any un-produced out fails here.
-                    let mut credit = st.produced;
+                    let mut credit = st;
                     if let Some(target) = direct_target(ops) {
                         if let Some(outs) = callee_uncond_out.get(target) {
                             for name in outs {
@@ -329,7 +349,7 @@ pub fn verify_out(
                             }
                         }
                     }
-                    check_return(&credit, &st.flags, &guard, &mut ok, &mut fail_reason);
+                    check_return(&credit, &here, &guard, &mut ok, &mut fail_reason);
                 }
             }
         }
@@ -466,6 +486,154 @@ pub fn compute_verified_outs(
     (v_uncond, v_cond)
 }
 
+// ===========================================================================
+// The ¬cc half of `out(rN if cc)` — the SURVIVES claim (delta spec §7.1/§7.2).
+// ===========================================================================
+
+/// One `[proc.out-cond-survives-unverifiable]` firing: `proc` declares
+/// `out(reg if cc)` with `reg` ABSENT from its `clobbers` set — which claims
+/// `reg` still holds its ENTRY value on every ¬cc return path — but the proof
+/// does not carry.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CondOutSurvivesFiring {
+    pub proc: String,
+    pub reg: String,
+    pub cc: String,
+    pub reason: String,
+    pub span: Span,
+}
+
+/// The instruction indices that END a ¬cc return path of this body: an `rts` /
+/// fall-off-end, or an UNCONDITIONAL tail transfer (a return of P from the
+/// caller's view — [`verify_out`]'s Finding 3, applied to the dual), at which the
+/// shared cc classification does NOT prove `cc`.
+///
+/// **⊤ DOES NOT OBLIGATE, and that asymmetry against [`verify_out`] is
+/// deliberate.** A return the cc lattice cannot classify is EXCLUDED.
+///
+/// The two halves look like mirror images, so the mirror ruling — fire at ⊤, as
+/// `[proc.preserves-unverifiable]` fires on a proof bailout — is the tempting
+/// one. It is wrong here, because the two ⊤s are not the same thing. A
+/// `preserves` bailout means "your claim was checked and the machinery gave up";
+/// a ⊤ cc means "I cannot tell whether you made a claim at this return at all".
+/// Charging the second is charging an obligation the author never incurred — and
+/// specifically, a ⊤ return may BE the cc-success return, where writing `reg` is
+/// the contract. Measured on honest bodies: an ordinary `clr.w d0` or
+/// `move.w #0, d0` result convention, a store, or any call on the success path
+/// sends the flags to ⊤ and would reject a contract that is true. The escape (add
+/// `reg` to `clobbers`) is no escape there — it forces the author to publish a
+/// WEAKER, FALSE claim, the exact polarity delta spec §7.2 rejects in the other
+/// direction ("the house never forces a weaker claim to be sharpened").
+///
+/// [`verify_out`] keeps ITS obligation at ⊤ because its escape genuinely is free
+/// and honest: produce the register. Same lattice, opposite correct answer.
+///
+/// **The cost is a false NEGATIVE**, bounded and named: a survives claim whose
+/// ¬cc returns are all unclassifiable goes unchecked rather than misjudged. Every
+/// return that ends in the corpus's `moveq #0`/`moveq #1` Z-result convention IS
+/// classified, which is why both claim sites are fully checked today. Widening
+/// [`Flags::after`] (`clr`, `move #imm` — `branch_const::const_flag_writer`
+/// already folds them) shrinks this set monotonically and can only add checking.
+///
+/// An EXIT is any edge that ends the proc — an `Abandon` (`rts` / fall-off-end)
+/// or a `Defer` (a transfer out, conditional or not). The survives claim is a
+/// promise to the CALLER, so it must hold wherever control leaves, not only where
+/// it returns; a `bne ErrorPath` out of the ¬cc edge would otherwise be a hole.
+/// What the transfer's TARGET does is not charged here — see the `Edge::Defer`
+/// arm in [`crate::preserves`].
+///
+/// Absence from `flags` (an unreachable index) contributes no site, which agrees
+/// with the ⊤ rule above: unclassified means unobligated.
+fn not_cc_exit_sites(cfg: &Cfg, flags: &BTreeMap<usize, Flags>, cc: &str) -> BTreeSet<usize> {
+    let mut sites = BTreeSet::new();
+    for (&idx, f) in flags {
+        if f.eval(cc) != Some(false) {
+            continue; // not a PROVABLY-¬cc exit — no survives obligation here
+        }
+        let leaves = cfg
+            .edges(idx)
+            .iter()
+            .any(|e| matches!(e, Edge::Abandon | Edge::Defer));
+        if leaves {
+            sites.insert(idx);
+        }
+    }
+    sites
+}
+
+/// Verify the SURVIVES half of every conditional out this proc declares without
+/// also declaring the register clobbered (delta spec §7.1). `cond` are the
+/// `(reg, cc)` pairs; `clobbers` is the proc's CANONICAL declared clobber set —
+/// a register in it makes no claim and is skipped entirely (the `AllocDynamic`
+/// shape). `policy` is the call model: the per-file gate has no callee knowledge
+/// (`ClobberAll` + a `PreserveAll` deferral probe), the corpus walk supplies the
+/// closure's verified `Oracle` so a preserving call does not kill the proof.
+///
+/// The proof is [`verify_preserved_on`] SCOPED to [`not_cc_exit_sites`] — the
+/// same save/restore round-trip, never-written and callee-preserves proofs
+/// `preserves(rN)` accepts, obligated on the ¬cc exits only. Scoping is what
+/// separates this from a plain `preserves(rN)`: `reg` IS deliberately written on
+/// the cc edge, so an all-paths proof would reject every honest survives-claim.
+pub fn check_cond_out_survives(
+    proc_name: &str,
+    items: &[CodeItem],
+    cond: &[(Reg, String)],
+    clobbers: &BTreeSet<String>,
+    policy: CallPolicy,
+    span: Span,
+) -> Vec<CondOutSurvivesFiring> {
+    let cfg = Cfg::build(items);
+    // One classification for every checked register — the cc a claim names varies,
+    // the abstract flag state at each return does not.
+    let flags = flags_after(&cfg, items);
+    let mut firings = Vec::new();
+    for (reg, cc) in cond {
+        if clobbers.contains(&reg.to_string()) {
+            continue; // declared destroyed on every edge — no claim to check
+        }
+        let sites = not_cc_exit_sites(&cfg, &flags, cc);
+        if sites.is_empty() {
+            continue; // no PROVABLY-¬cc exit — nothing this analysis can judge
+        }
+        let status = verify_preserved_on(items, &[*reg], policy, ReturnScope::Sites(&sites));
+        // Only a PROVEN entry-value round-trip clears the claim; every other
+        // outcome fires. The polarity is `check_preserves`': absence of a positive
+        // proof is the failure, never a pass.
+        let reason = match status.get(reg) {
+            Some(PreserveStatus::Verified) => continue,
+            Some(PreserveStatus::NotPreserved) => format!(
+                "`{reg}` does not provably hold its entry value on a `!{cc}` exit \
+                 (written and not restored, or destroyed by a call / tail transfer there)"
+            ),
+            Some(PreserveStatus::Unverifiable(why)) => {
+                format!("the entry-value proof bailed: {why}")
+            }
+            None => format!("no entry-value proof was produced for `{reg}`"),
+        };
+        firings.push(CondOutSurvivesFiring {
+            proc: proc_name.to_string(),
+            reg: reg.to_string(),
+            cc: cc.clone(),
+            reason,
+            span,
+        });
+    }
+    firings
+}
+
+/// The `[proc.out-cond-survives-unverifiable]` message for one firing — the ONE
+/// text the per-file gate and the whole-corpus gate both report, so an author
+/// meets the same diagnosis and the same remedy from either.
+pub fn survives_message(f: &CondOutSurvivesFiring) -> String {
+    format!(
+        "[proc.out-cond-survives-unverifiable] `{}` declares `out({} if {})` with `{}` absent \
+         from `clobbers(...)`, which claims `{}` still holds its entry value on every `!{}` \
+         return path — but {}. Add `{}` to `clobbers(...)` if it is destroyed on the failure \
+         edges (the conditional result stands either way), or save/restore it across them",
+        f.proc, f.reg, f.cc, f.reg, f.reg, f.cc, f.reason, f.reg,
+    )
+}
+
 /// At one return, charge every checked register whose obligation applies here but
 /// whose value is not in `produced`.
 fn check_return(
@@ -492,14 +660,14 @@ fn check_return(
     }
 }
 
-/// The propagated state along the `idx → succ` edge, branch-split refined: if
+/// The abstract flags along the `idx → succ` edge, branch-split refined: if
 /// `idx` is a SIMPLE conditional branch (`bXX`), the tested cc is provably TRUE
 /// on the taken edge and FALSE on the fall-through. A `dbcc`, an unconditional
 /// tail, or a composite/unknown cc refines nothing (sound). The degenerate
 /// branch-to-fall-through case cannot be split and stays ⊤-safe.
-fn split_flags(cfg: &Cfg, idx: usize, succ: usize, st: &State) -> State {
-    let Some((mnem, ops)) = cfg.instr(idx) else { return st.clone() };
-    let Some(cc) = simple_branch_cond(mnem) else { return st.clone() };
+fn split_cc(cfg: &Cfg, idx: usize, succ: usize, flags: Flags) -> Flags {
+    let Some((mnem, ops)) = cfg.instr(idx) else { return flags };
+    let Some(cc) = simple_branch_cond(mnem) else { return flags };
     let fallthrough = cfg.next_instr(idx);
     let taken = ops
         .iter()
@@ -512,12 +680,68 @@ fn split_flags(cfg: &Cfg, idx: usize, succ: usize, st: &State) -> State {
     // Branch to the fall-through instruction — the two edges coincide, can't
     // split.
     if Some(succ) == fallthrough && taken == fallthrough {
-        return st.clone();
+        return flags;
     }
     let holds = Some(succ) != fallthrough; // the taken edge iff not the fall-through
-    let mut out = st.clone();
-    out.flags = out.flags.refine(cc, holds);
-    out
+    flags.refine(cc, holds)
+}
+
+/// The abstract condition-code state AFTER each reachable instruction — the ONE
+/// cc classification both halves of `out(rN if cc)` read (delta spec §7.1).
+/// [`verify_out`] consults it to skip the PRODUCTION obligation on a provably-¬cc
+/// return; [`not_cc_exit_sites`] consults it to select the exits the SURVIVES
+/// obligation applies to. Sharing the map is what stops the two obligations from
+/// becoming drifting approximations of "which edge is this" — they disagree only
+/// where they are MEANT to, at ⊤ (see [`not_cc_exit_sites`]).
+///
+/// A forward fixpoint over the shared CFG, joining by [`Flags::meet`]: a call
+/// clobbers to ⊤, [`Flags::after`] handles straight-line instructions, and
+/// [`split_cc`] refines a simple conditional branch's two edges. It stands apart
+/// from [`verify_out`]'s production fixpoint because the two never read each
+/// other — no flag transfer consults a production bit and no production
+/// transfer consults a flag — so the pair is a product of independent
+/// lattices and solving them separately gives the identical answer.
+fn flags_after(cfg: &Cfg, items: &[CodeItem]) -> BTreeMap<usize, Flags> {
+    let mut after: BTreeMap<usize, Flags> = BTreeMap::new();
+    let Some(entry_idx) = items.iter().position(|it| matches!(it, CodeItem::Instr { .. })) else {
+        return after;
+    };
+    let mut in_flags: BTreeMap<usize, Flags> = BTreeMap::from([(entry_idx, Flags::TOP)]);
+    let mut work: VecDeque<usize> = VecDeque::from([entry_idx]);
+    while let Some(idx) = work.pop_front() {
+        let incoming = in_flags[&idx];
+        let here = match cfg.instr(idx) {
+            // A call clobbers the condition codes (its callee's last instruction
+            // is unknown); everything else takes the straight-line transfer.
+            Some((mnem, _)) if is_call(mnem) => Flags::TOP,
+            Some((mnem, ops)) => incoming.after(mnem, ops),
+            None => incoming,
+        };
+        after.insert(idx, here);
+        for edge in cfg.edges(idx) {
+            let Edge::Follow(succ) = edge else { continue };
+            let edge_flags = split_cc(cfg, idx, succ, here);
+            let changed = match in_flags.get(&succ) {
+                None => {
+                    in_flags.insert(succ, edge_flags);
+                    true
+                }
+                Some(existing) => {
+                    let merged = existing.meet(&edge_flags);
+                    if merged != *existing {
+                        in_flags.insert(succ, merged);
+                        true
+                    } else {
+                        false
+                    }
+                }
+            };
+            if changed {
+                work.push_back(succ);
+            }
+        }
+    }
+    after
 }
 
 /// The condition tested by a SIMPLE conditional branch (`bcc`→`cc`, `bhs`→`cc`,
@@ -548,19 +772,20 @@ fn simple_branch_cond(mnem: &str) -> Option<&'static str> {
     })
 }
 
-/// Join `other` into `acc` (both on entry to the same node). `produced` meets by
-/// INTERSECTION (MUST — produced only if BOTH paths produce it); `flags` meet
-/// pointwise.
-fn join(acc: &mut State, other: &State) {
+/// Join two produced-sets on entry to the same node: INTERSECTION (MUST —
+/// produced only if BOTH paths produce it).
+fn join(a: &State, b: &State) -> State {
+    let mut out = *a;
     for i in 0..16 {
-        acc.produced[i] = acc.produced[i] && other.produced[i];
+        out[i] = a[i] && b[i];
     }
-    acc.flags = acc.flags.meet(&other.flags);
+    out
 }
 
 // ===========================================================================
 // The cc-abstract lattice (moveq-fold / branch-split transfer). Inert for the
-// unconditional-out check; consumed by the conditional-out obligation. Guardrail
+// unconditional-out check; consumed by BOTH conditional-out obligations —
+// production on the cc edges and survival on the ¬cc ones. Guardrail
 // 1: only a KNOWN-cc source (a moveq-class immediate fold, or a branch-split)
 // establishes a classified flag; EVERY other cc-writing instruction → ⊤; joins
 // meet to ⊤ on disagreement. Never infer a known cc not proven.

@@ -128,6 +128,19 @@ verified. These rulings close that, plus the panel's ledgered holes.
      return path — the exhaustive-license reading, now a CHECKED claim, not
      prose. (The AllocEffect shape.)
 
+**A proc with NO `clobbers` clause at all makes no survives claim, and the gate
+is silent** (RULED, Fable 2026-08-04 — previously inherited convention rather
+than a ruling). Part 2 is `clobbers` MEMBERSHIP, and membership is only readable
+against a set the author actually wrote; an absent clause states nothing about
+the failure edges. Firing there would charge an obligation the author never
+incurred — the same error polarity that rules out firing at an unclassifiable
+cc (§7.2). It would also make `out(… if cc)` the language's first construct
+whose presence MANDATES another annotation, pushing authors toward hastily
+written wrong `clobbers` lists, which D2.32 holds to be worse than none. The
+abuse path — dropping the clause to buy silence — is trapped instead by the
+pinned `survives_claim_sites` assertion in the corpus test, so the escape cannot
+be taken quietly. Pinned by `no_clobber_contract_means_no_survives_claim`.
+
 ### §7.2 — B′-0b: the survives-claim verifier (RULED: build the DUAL — lens C's option (b))
 
 **Option (a) is REJECTED on polarity grounds:** requiring a cond-out register

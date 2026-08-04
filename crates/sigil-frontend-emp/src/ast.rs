@@ -900,6 +900,67 @@ fn cond_out_regs_of(
     expand_contract_reglist(&segs, rf)
 }
 
+/// The registers whose `out()` mention is EXCLUSIVELY conditional — every
+/// appearance in the reglist carries an `if cc` guard.
+///
+/// [`cond_out_regs_of`] answers "does this register carry SOME guard", which is
+/// too coarse for the `[proc.out-clobbers-overlap]` exemption: `out(a1, a1 if
+/// eq) clobbers(a1)` states unconditionally that a1 is a result AND that it is
+/// scratch, the exact contradiction that diagnostic names, and one guarded
+/// mention must not license it. The parser pushes each `rN if cc` clause into the
+/// reglist as its own single segment, so a register is exclusively conditional
+/// iff the number of reglist segments COVERING it does not exceed the number of
+/// `if cc` clauses NAMING it. Counting (rather than set subtraction) is what
+/// catches a range mention too: `out(a0-a2, a1 if eq)` covers a1 twice against
+/// one guard, so a1 is not exclusively conditional.
+fn cond_only_out_regs_of(
+    out: Option<&[(String, Option<String>)]>,
+    out_cond: &[CondResult],
+    rf: crate::regfile::RegFile,
+) -> std::collections::BTreeSet<String> {
+    let mut mentions: std::collections::BTreeMap<String, usize> = Default::default();
+    for seg in out.unwrap_or(&[]) {
+        for r in expand_contract_reglist(std::slice::from_ref(seg), rf) {
+            *mentions.entry(r).or_default() += 1;
+        }
+    }
+    let mut guards: std::collections::BTreeMap<String, usize> = Default::default();
+    for c in out_cond {
+        for r in expand_contract_reglist(&[(c.reg.clone(), None)], rf) {
+            *guards.entry(r).or_default() += 1;
+        }
+    }
+    guards
+        .into_iter()
+        .filter(|(r, n)| mentions.get(r).copied().unwrap_or(0) <= *n)
+        .map(|(r, _)| r)
+        .collect()
+}
+
+/// The `(register, cc)` pairs of every EXCLUSIVELY-conditional out, canonical
+/// under `rf` and in declaration order.
+///
+/// The set-returning accessors answer "which registers are guarded"; a consumer
+/// that must know WHICH guard — the survives check, the edge-sensitive callee
+/// credit, the corpus `cond_callees` map — needs the pair, and each one otherwise
+/// rebuilds `out_cond.iter().filter_map(Reg::from_name …)` with its own
+/// canonicalisation. Registers with an unconditional mention are dropped: their
+/// out is unconditional, whatever a second guarded mention says.
+fn cond_out_pairs_of(
+    out: Option<&[(String, Option<String>)]>,
+    out_cond: &[CondResult],
+    rf: crate::regfile::RegFile,
+) -> Vec<(String, String)> {
+    let only = cond_only_out_regs_of(out, out_cond, rf);
+    out_cond
+        .iter()
+        .filter_map(|c| {
+            let reg = canonical_contract_reg(&c.reg, rf)?;
+            only.contains(&reg).then(|| (reg, c.cc.clone()))
+        })
+        .collect()
+}
+
 /// The UNCONDITIONAL out registers: the expanded `out` reglist MINUS every
 /// register that also carries an `if cc` guard. See [`ProcDecl::unconditional_outs`].
 fn unconditional_outs_of(
@@ -914,7 +975,7 @@ fn unconditional_outs_of(
     set
 }
 
-/// The two canonical views of a proc's declared `out()` clause.
+/// The canonical views of a proc's declared `out()` clause.
 ///
 /// **Why an accessor exists.** [`crate::parser`]'s `out_list` pushes an
 /// `out(rN if cc)` register into BOTH [`ProcDecl::out_cond`] AND the plain
@@ -932,7 +993,9 @@ fn unconditional_outs_of(
 /// callee WRITE this register" (the closure's effective set, a clobber license,
 /// a derived preserves complement) takes the FULL `out` reglist: a conditional
 /// result is written on the cc edge, so it is destroyed from the caller's view on
-/// every edge.
+/// every edge. A gate RELAXING itself because the out is conditional takes
+/// [`Self::cond_only_out_regs`] — a register mentioned unconditionally as well
+/// keeps the unconditional reading, and the relax must not reach it.
 impl ProcDecl {
     /// The registers carrying an `out(rN if cc)` guard, canonical under `rf`.
     pub fn cond_out_regs(
@@ -940,6 +1003,22 @@ impl ProcDecl {
         rf: crate::regfile::RegFile,
     ) -> std::collections::BTreeSet<String> {
         cond_out_regs_of(&self.out_cond, rf)
+    }
+
+    /// The registers whose every `out()` mention carries an `if cc` guard — the
+    /// set the `[proc.out-clobbers-overlap]` exemption is keyed on. See
+    /// [`cond_only_out_regs_of`].
+    pub fn cond_only_out_regs(
+        &self,
+        rf: crate::regfile::RegFile,
+    ) -> std::collections::BTreeSet<String> {
+        cond_only_out_regs_of(self.out.as_deref(), &self.out_cond, rf)
+    }
+
+    /// The `(register, cc)` pairs of every exclusively-conditional out, canonical
+    /// under `rf`. See [`cond_out_pairs_of`].
+    pub fn cond_out_pairs(&self, rf: crate::regfile::RegFile) -> Vec<(String, String)> {
+        cond_out_pairs_of(self.out.as_deref(), &self.out_cond, rf)
     }
 
     /// The declared outs that are produced on EVERY return path — the expanded
