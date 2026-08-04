@@ -686,17 +686,19 @@ fn link_rom(
         vec![sigil_span::Diagnostic {
             level: sigil_span::Level::Error,
             message: msg,
-            primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+            // A region/placement failure belongs to no source line. An id past
+            // every scanned file makes the renderer degrade to a bare
+            // `error: <msg>` rather than attribute it to whichever module happens
+            // to hold `SourceId(0)`.
+            primary: sigil_span::Span { source: sigil_span::SourceId(u32::MAX), start: 0, end: 0 },
         }]
     })
 }
 
-/// Render multi-module diagnostics as `path:line:col: message`. The manifest
-/// parsed each file under a sequential [`SourceId`](sigil_span::SourceId) (sorted
-/// order); we rebuild a [`SourceMap`](sigil_span::SourceMap) in that same order so
-/// `map.location` is correct, and prefix with the file recorded in
-/// `manifest.sources`. Diagnostics with an unmapped source id fall back to the
-/// bare message.
+/// Render multi-module diagnostics as `path:line:col: <level>: message`, through
+/// the same [`SourceIndex`](sigil_frontend_emp::resolve::manifest::SourceIndex) the
+/// warn tier renders with, so both tiers read as one system. A diagnostic whose
+/// source the index cannot locate falls back to `<level>: message`.
 fn render_program_diags(
     manifest: &sigil_frontend_emp::resolve::manifest::Manifest,
     diags: &[sigil_span::Diagnostic],
@@ -704,32 +706,11 @@ fn render_program_diags(
     if diags.is_empty() {
         return;
     }
-    // Rebuild the SourceMap so its internal index equals the SourceId for EVERY
-    // id in `0..=max_id`, including any gap (a file that failed to read has a
-    // `sources` entry — dense by construction in `Manifest::scan` — but a gap
-    // could still arise defensively; fill it with empty text so `map.location`
-    // never over-indexes). `SourceMap::add` assigns ids sequentially from 0, so
-    // adding one text per k in order aligns index ↔ SourceId.
-    let max_id = manifest.sources.keys().map(|id| id.0).max().unwrap_or(0);
-    let mut map = sigil_span::SourceMap::new();
-    for k in 0..=max_id {
-        let text = manifest
-            .sources
-            .get(&sigil_span::SourceId(k))
-            .map(|p| std::fs::read_to_string(p).unwrap_or_default())
-            .unwrap_or_default();
-        map.add(text);
-    }
+    let index = sigil_frontend_emp::resolve::manifest::SourceIndex::new(manifest);
     for d in diags {
-        // Only render a location when the id is both known to `sources` AND within
-        // the rebuilt map's bounds — otherwise fall back to the bare message so a
-        // stray/out-of-range source id can never panic mid-error-report.
-        match manifest.sources.get(&d.primary.source) {
-            Some(path) if d.primary.source.0 <= max_id => {
-                let (line, col) = map.location(d.primary);
-                eprintln!("{}:{line}:{col}: {}", path.display(), d.message);
-            }
-            _ => eprintln!("error: {}", d.message),
+        match index.locate(d.primary) {
+            Some(loc) => eprintln!("{loc}: {}: {}", d.level, d.message),
+            None => eprintln!("{}: {}", d.level, d.message),
         }
     }
 }
@@ -752,7 +733,8 @@ fn run_build(args: &[String]) {
             eprintln!("error: {msg}");
             eprintln!(
                 "usage: sigil build --aeon <dir> [-o <out.bin>] [--emit-lst <lst>] \
-                 [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean] [--ram-report]"
+                 [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean] [--ram-report]\n\
+                 env:   SIGIL_WARNINGS=off|summary|full  (warn-tier detail; default summary)"
             );
             process::exit(2);
         }
@@ -814,11 +796,15 @@ fn run_ram_report(aeon: &std::path::Path, target: &BuildTarget) {
 
     // Engine RAM + the game's RAM module (the two region-owning modules for this game).
     let region_ids: [&str; 2] = ["engine.ram", profile.game_ram_module];
+    // Errors always render in full; the warn tier obeys `SIGIL_WARNINGS` here for
+    // the same reason it does in the build — one policy, one channel.
     let (rows, diags) = resolve::build_ram_report(&manifest, &region_ids, &opts);
-    if !diags.is_empty() {
-        render_program_diags(&manifest, &diags);
-    }
-    if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
+    let errors: Vec<_> =
+        diags.iter().filter(|d| d.level == sigil_span::Level::Error).cloned().collect();
+    render_program_diags(&manifest, &errors);
+    let index = sigil_frontend_emp::resolve::manifest::SourceIndex::new(&manifest);
+    report_warnings(&sigil_harness::native::collect_warnings(&index, &[&diags], None));
+    if !errors.is_empty() {
         process::exit(1);
     }
 
@@ -938,6 +924,112 @@ fn next_value(args: &[String], i: &mut usize, flag: &str) -> Result<String, Stri
     args.get(*i).cloned().ok_or_else(|| format!("{flag} requires a value argument"))
 }
 
+/// How much of the warn tier a build prints, from `SIGIL_WARNINGS`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum WarningView {
+    /// Print nothing at all.
+    Off,
+    /// One tally line naming every firing lint id and its count (the default).
+    Summary,
+    /// The tally line plus one `path:line:col` row per warning.
+    Full,
+}
+
+impl WarningView {
+    /// Read the view from `SIGIL_WARNINGS`.
+    fn from_env() -> WarningView {
+        WarningView::parse(std::env::var("SIGIL_WARNINGS").ok().as_deref())
+    }
+
+    /// Unset or unrecognised reads as [`Summary`](Self::Summary): the tally is
+    /// cheap, and a typo'd value must not silently restore the invisibility this
+    /// surface exists to end.
+    fn parse(value: Option<&str>) -> WarningView {
+        match value {
+            Some("off") => WarningView::Off,
+            Some("full") => WarningView::Full,
+            _ => WarningView::Summary,
+        }
+    }
+}
+
+/// The one-line warn-tier tally: how many diagnostics of each severity, then every
+/// firing lint id with its count, most-frequent first and ties broken by id so the
+/// line is stable build to build (a changed tally means the corpus changed, never
+/// the map's iteration order). Returns `None` for an empty tier.
+///
+/// A diagnostic with no `[id]` prefix tallies as `unclassified`; that bucket is a
+/// defect in the lint that emitted it, not a category, and the corpus gate refuses
+/// it.
+fn warning_summary(warnings: &[sigil_harness::native::BuildWarning]) -> Option<String> {
+    if warnings.is_empty() {
+        return None;
+    }
+    let notes = warnings.iter().filter(|w| w.level == sigil_span::Level::Note).count();
+    let plural = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
+    let head = match (warnings.len() - notes, notes) {
+        (w, 0) => plural(w, "warning"),
+        (0, n) => plural(n, "note"),
+        (w, n) => format!("{}, {}", plural(w, "warning"), plural(n, "note")),
+    };
+    let mut counts: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    for w in warnings {
+        *counts.entry(if w.id.is_empty() { "unclassified" } else { w.id.as_str() }).or_default() +=
+            1;
+    }
+    let mut rows: Vec<(&str, usize)> = counts.into_iter().collect();
+    rows.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+    let breakdown = rows.iter().map(|(id, n)| format!("{id} {n}")).collect::<Vec<_>>().join(", ");
+    Some(format!("{head} — {breakdown}"))
+}
+
+/// The exact stderr lines `report_warnings` emits for `warnings` under `view`.
+///
+/// Split out from the printing so the surface itself is testable: [`Off`] and an
+/// empty tier both yield no lines, [`Summary`] yields the tally plus the pointer to
+/// the full view, and [`Full`] yields one located row per warning with the tally
+/// LAST, where it survives a scroll.
+///
+/// [`Off`]: WarningView::Off
+/// [`Summary`]: WarningView::Summary
+/// [`Full`]: WarningView::Full
+fn warning_report_lines(
+    view: WarningView,
+    warnings: &[sigil_harness::native::BuildWarning],
+) -> Vec<String> {
+    if view == WarningView::Off {
+        return Vec::new();
+    }
+    let Some(summary) = warning_summary(warnings) else { return Vec::new() };
+    let mut lines: Vec<String> = Vec::new();
+    if view == WarningView::Full {
+        lines.extend(warnings.iter().map(ToString::to_string));
+        lines.push(format!("warning: {summary}"));
+    } else {
+        lines.push(format!("warning: {summary}; SIGIL_WARNINGS=full to list"));
+    }
+    lines
+}
+
+/// Report the warn tier on stderr under the [`WarningView`] the environment
+/// selects. Every warn-tier surface of `sigil build` goes through here — the ROM
+/// build and `--ram-report` alike — so one setting governs both. (`sigil emp` /
+/// `check` / `test` are single-file report commands that print every diagnostic
+/// unconditionally; their job IS the report.)
+///
+/// The default is a SUMMARY because both extremes fail the same way: a tier that
+/// prints nothing is a tier nobody acts on, and a hundred rendered warnings per
+/// build is a wall people learn to scroll past. The tally line is bounded by the
+/// number of distinct lint ids rather than the number of firings, so a new lint's
+/// arrival is legible even when the counts are large.
+///
+/// A clean build prints nothing: silence means zero, and only zero.
+fn report_warnings(warnings: &[sigil_harness::native::BuildWarning]) {
+    for line in warning_report_lines(WarningView::from_env(), warnings) {
+        eprintln!("{line}");
+    }
+}
+
 /// The `--native` build. Reproduces the exact steps the native gates bank: get the
 /// assembled ROM + sigil-canonical listing from the target's driver (pinned for
 /// canonical sonic4, the declared-order chainer for the off-canonical shapes), then
@@ -990,13 +1082,14 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             native::build_rom_chained_with_listing(aeon, &native::lean_profile()),
         ),
     };
-    let (rom, listing) = match built {
-        Ok(pair) => pair,
+    let native::RomBuild { rom, listing, warnings } = match built {
+        Ok(build) => build,
         Err(err) => {
             eprintln!("error: native build ({label}): {err}");
             process::exit(1);
         }
     };
+    report_warnings(&warnings);
 
     // The sigil-canonical listing (the `.lst`-consumer drop-in), if requested.
     if let Some(lst_path) = &opts.emit_lst {
@@ -1137,5 +1230,117 @@ mod tests {
         assert_eq!(crate::parse_define_int(""), None);
         assert_eq!(crate::parse_define_int("$"), None);
         assert_eq!(crate::parse_define_int("0x"), None);
+    }
+
+    /// The warn-tier tally line: severity head, then every firing id with its
+    /// count, most-frequent first and ties by id. An empty tier yields `None`, so
+    /// a clean build says nothing at all.
+    #[test]
+    fn warning_summary_tallies_by_id_most_frequent_first() {
+        use sigil_harness::native::BuildWarning;
+        let w = |level, id: &str| BuildWarning {
+            level,
+            id: id.to_string(),
+            location: None,
+            message: format!("[{id}] whatever"),
+            primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+        };
+        let warn = sigil_span::Level::Warning;
+
+        assert_eq!(crate::warning_summary(&[]), None, "a clean build says nothing");
+
+        // `b.b` twice, `a.a` and `c.c` once: count DESCENDING, then id ascending.
+        let ws = [w(warn, "c.c"), w(warn, "b.b"), w(warn, "a.a"), w(warn, "b.b")];
+        assert_eq!(crate::warning_summary(&ws).unwrap(), "4 warnings — b.b 2, a.a 1, c.c 1");
+
+        // A message with no `[id]` prefix is not a category — it shows as the
+        // defect it is.
+        let bare = BuildWarning {
+            level: warn,
+            id: String::new(),
+            location: None,
+            message: "no bracket".into(),
+            primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+        };
+        assert_eq!(crate::warning_summary(&[bare]).unwrap(), "1 warning — unclassified 1");
+    }
+
+    /// The Note tier counts and renders SEPARATELY from warnings. The corpus fires
+    /// no notes, so only a unit test can hold this arm: the next `Level::Note`
+    /// anyone adds is visible the first time it fires.
+    #[test]
+    fn warning_summary_counts_notes_apart_from_warnings() {
+        use sigil_harness::native::BuildWarning;
+        let d = |level, id: &str| BuildWarning {
+            level,
+            id: id.to_string(),
+            location: None,
+            message: format!("[{id}] whatever"),
+            primary: sigil_span::Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
+        };
+        let (warn, note) = (sigil_span::Level::Warning, sigil_span::Level::Note);
+
+        assert_eq!(
+            crate::warning_summary(&[d(warn, "a.a"), d(note, "b.b")]).unwrap(),
+            "1 warning, 1 note — a.a 1, b.b 1"
+        );
+        assert_eq!(crate::warning_summary(&[d(note, "b.b")]).unwrap(), "1 note — b.b 1");
+    }
+
+    /// The rendered surface, per view. [`WarningView::Full`] emits one located row
+    /// per warning and puts the tally LAST; [`WarningView::Summary`] emits the
+    /// tally alone plus the pointer to the full view; [`WarningView::Off`] and an
+    /// empty tier emit nothing.
+    ///
+    /// NOT VACUOUS: this is the only assertion over what the build actually PRINTS.
+    /// `warning_summary` alone would still pass with the printer unwired.
+    #[test]
+    fn warning_report_lines_render_each_view() {
+        use crate::{warning_report_lines as lines, WarningView};
+        use sigil_harness::native::BuildWarning;
+        let w = |id: &str, loc: Option<&str>| BuildWarning {
+            level: sigil_span::Level::Warning,
+            id: id.to_string(),
+            location: loc.map(str::to_string),
+            message: format!("[{id}] whatever"),
+            primary: sigil_span::Span {
+                source: sigil_span::SourceId(0),
+                start: 0,
+                end: 0,
+            },
+        };
+        let ws = [w("a.a", Some("x.emp:1:2")), w("a.a", None)];
+
+        assert_eq!(lines(WarningView::Off, &ws), Vec::<String>::new());
+        assert_eq!(lines(WarningView::Summary, &[]), Vec::<String>::new());
+        assert_eq!(lines(WarningView::Full, &[]), Vec::<String>::new());
+
+        assert_eq!(
+            lines(WarningView::Summary, &ws),
+            ["warning: 2 warnings — a.a 2; SIGIL_WARNINGS=full to list"]
+        );
+        assert_eq!(
+            lines(WarningView::Full, &ws),
+            [
+                "x.emp:1:2: warning: [a.a] whatever",
+                "warning: [a.a] whatever",
+                "warning: 2 warnings — a.a 2",
+            ]
+        );
+    }
+
+    /// `SIGIL_WARNINGS` selects the view. An unset or MISSPELLED value reads as
+    /// `summary`, never as `off`: a typo must not silently restore the invisibility
+    /// this surface exists to end.
+    #[test]
+    fn warning_view_defaults_to_summary_on_anything_unrecognised() {
+        use crate::WarningView;
+        assert_eq!(WarningView::parse(Some("off")), WarningView::Off);
+        assert_eq!(WarningView::parse(Some("full")), WarningView::Full);
+        assert_eq!(WarningView::parse(Some("summary")), WarningView::Summary);
+        assert_eq!(WarningView::parse(Some("ful")), WarningView::Summary);
+        assert_eq!(WarningView::parse(Some("OFF")), WarningView::Summary);
+        assert_eq!(WarningView::parse(Some("")), WarningView::Summary);
+        assert_eq!(WarningView::parse(None), WarningView::Summary);
     }
 }

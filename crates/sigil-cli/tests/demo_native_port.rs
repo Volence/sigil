@@ -71,8 +71,10 @@ fn gate(debug: bool, golden_name: &str) {
     // Build the demo ROM through the real frozen chain (native placement of the
     // demo game modules), then byte-compare each module window vs the golden.
     let profile = native::demo_profile(debug);
-    let (rom, listing) = native::build_rom_chained_with_listing(&aeon, &profile)
-        .unwrap_or_else(|e| panic!("demo{} chained build: {e}", if debug { "_debug" } else { "" }));
+    let native::RomBuild { rom, listing, .. } =
+        native::build_rom_chained_with_listing(&aeon, &profile).unwrap_or_else(|e| {
+            panic!("demo{} chained build: {e}", if debug { "_debug" } else { "" })
+        });
 
     for (name, base, len) in WINDOWS {
         let got = &rom[*base..*base + *len];

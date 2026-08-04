@@ -127,7 +127,7 @@ fn run(t: &Target) {
 
     // (c) FUNCTIONAL RESOLVE — load-bearing symbols → exact addresses via the REAL
     // convsym consumer over the chained listing.
-    let (_rom, listing) =
+    let native::RomBuild { listing, .. } =
         native::build_rom_chained_with_listing(&aeon, &t.profile).unwrap_or_else(|e| panic!("{e}"));
     let resolved = native::convsym_resolve(&aeon, &listing).unwrap_or_else(|e| panic!("{e}"));
     let table = size_table(t.name);
@@ -160,7 +160,7 @@ fn doctored_control(t: &Target) {
     }
     let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let aeon = aeon_dir();
-    let (_rom, mut listing) =
+    let native::RomBuild { mut listing, .. } =
         native::build_rom_chained_with_listing(&aeon, &t.profile).unwrap_or_else(|e| panic!("{e}"));
     let probe = t.load_bearing[0];
     let real = *size_table(t.name).get(probe).expect("probe in size table");

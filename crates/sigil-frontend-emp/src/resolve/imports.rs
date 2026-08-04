@@ -406,7 +406,7 @@ fn resolve_use(
             diags.push(Diagnostic {
                 level: Level::Warning,
                 message: format!(
-                    "whole-module `use {base}` imports no names — use `use {base}.{{…}}` or `use {base}.*` to bring names into scope"
+                    "[import.no-names] whole-module `use {base}` imports no names — use `use {base}.{{…}}` or `use {base}.*` to bring names into scope"
                 ),
                 primary: u.span,
             });

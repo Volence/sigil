@@ -104,3 +104,51 @@ fn scan_ignores_nested_checkouts() {
         diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect::<Vec<_>>()
     );
 }
+
+/// `SourceIndex` is the ONE location authority both diagnostic tiers render
+/// through, so it must turn a real span into `path:line:col` and must answer
+/// `None` — never a fabricated position — for a source it cannot read.
+#[test]
+fn source_index_locates_real_spans_and_declines_unreadable_ones() {
+    use sigil_frontend_emp::resolve::manifest::SourceIndex;
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "engine/thing.emp", "module engine.thing\n\nproc P () {\n}\n");
+
+    let (mut manifest, _) = Manifest::scan(root);
+    let real = manifest.modules[0].file.module.span.source;
+
+    // A synthetic module registered at a path that does not exist — exactly the
+    // shape the native driver's generated entry takes.
+    let ghost = sigil_span::SourceId(manifest.modules.len() as u32);
+    manifest.sources.insert(ghost, root.join("__generated__.emp"));
+
+    let index = SourceIndex::new(&manifest);
+    let at = |source, start| sigil_span::Span { source, start, end: start };
+
+    // Offset 21 is the first byte of line 3 ("module engine.thing\n" = 20, "\n" = 1).
+    let loc = index.locate(at(real, 21)).expect("a readable source must locate");
+    assert!(loc.ends_with("engine/thing.emp:3:1"), "got {loc}");
+    assert_eq!(index.locate(at(real, 0)).unwrap().split(':').next_back(), Some("1"));
+
+    assert_eq!(index.locate(at(ghost, 0)), None, "an unreadable source has no position");
+    assert_eq!(
+        index.locate(at(sigil_span::SourceId(99), 0)),
+        None,
+        "an out-of-range source id must decline, not panic"
+    );
+}
+
+/// The path lint carries the corpus's `[area.name]` id convention, so it tallies
+/// as a named class in the build's warn-tier summary instead of `unclassified`.
+#[test]
+fn path_mismatch_lint_carries_its_id() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "misplaced/here.emp", "module engine.objects.sst\n");
+    let (_, diags) = Manifest::scan(root);
+    assert!(
+        diags.iter().any(|d| d.message.starts_with("[module.path-mismatch]")),
+        "got {diags:?}"
+    );
+}
