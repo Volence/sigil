@@ -829,7 +829,7 @@ impl<'a> Evaluator<'a> {
         for item in &buf.items {
             match item {
                 CodeItem::Inline(data, _) => total += data.size,
-                CodeItem::Label { .. } => {}
+                CodeItem::Label { .. } | CodeItem::ContextMark { .. } => {}
                 CodeItem::Instr { span: isp, .. } => {
                     self.error(
                         *isp,

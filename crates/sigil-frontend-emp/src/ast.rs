@@ -144,6 +144,53 @@ pub enum Item {
     /// A `comptime test "name" { … }` block (S2-D11(a)): colocated comptime
     /// tests, stripped from emission, run by `sigil test`.
     ComptimeTest(ComptimeTestDecl),
+    /// `context Name { … }` (contract unification §3.1): a declared machine-state
+    /// context — the DECLARED tier above the inferred `[bus.*]` net.
+    Context(ContextDecl),
+}
+
+/// A `context Name { … }` declaration (contract unification §3.1). Two flavors:
+///
+/// ```text
+/// context z80_stopped {           // ACQUIRED: compiler-owned bracket
+///     acquire = stop_z80()
+///     release = start_z80()
+/// }
+///
+/// context vblank { granted }      // GRANTED: entered by hardware / a dispatcher
+/// ```
+///
+/// Contexts are module-scoped, `pub`-able, `use`-importable comptime-only items:
+/// they emit ZERO bytes of their own — an ACQUIRED context's bytes appear only
+/// where a `with` bracket splices its `acquire`/`release`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContextDecl {
+    /// Whether the context is exported (`pub context`).
+    pub public: bool,
+    /// The context's name (the spelling `with`/`requires`/`grants` use).
+    pub name: String,
+    /// Acquired (with acquire/release Code exprs) or granted (a trust root).
+    pub kind: ContextKind,
+    /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// Which flavor a [`ContextDecl`] is (§3.1).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContextKind {
+    /// An ACQUIRED context: `with <ctx> { }` splices `acquire` before the body
+    /// and `release` after it, and proves the pairing. Both exprs must evaluate
+    /// to `Code` (typically a call of an existing comptime fn).
+    Acquired {
+        /// The `acquire = <expr>` Code expression.
+        acquire: Expr,
+        /// The `release = <expr>` Code expression.
+        release: Expr,
+    },
+    /// A GRANTED context: no acquire/release. Asserted at a root proc via
+    /// `grants(...)`; the assembler cannot verify hardware dispatch, so the
+    /// grant is a TRUST ROOT — greppable and auditable, never inferred.
+    Granted,
 }
 
 /// A `comptime test "name" [(expect_error: "[diag.id]")] { … }` block
@@ -206,6 +253,7 @@ pub fn item_span(item: &Item) -> Span {
         Item::Ensure(d) => d.span,
         Item::Align(d) => d.span,
         Item::ComptimeTest(d) => d.span,
+        Item::Context(d) => d.span,
     }
 }
 
@@ -833,6 +881,17 @@ pub struct ProcDecl {
     /// type is metadata the caller-side slot-type slice checks. `(reg, ty, span)`.
     /// Empty for a proc with no typed output.
     pub out_types: Vec<(String, Type, Span)>,
+    /// Contexts every call site of this proc must have active (§3.3):
+    /// `requires(z80_stopped, vblank)`. `(name, span)` in source order; empty
+    /// for a proc with no context requirement. CHECKED at every call site by
+    /// `[context.unsatisfied]` — which is what makes the entry state of a
+    /// requiring proc a DECLARED fact the machine-state nets may seed from.
+    pub requires: Vec<(String, Span)>,
+    /// Contexts this proc asserts are active for its whole body (§3.2):
+    /// `grants(vblank)`. A TRUST ROOT — the assembler cannot verify hardware
+    /// dispatch, so a grant is never inferred and never checked, only recorded
+    /// and audited. `(name, span)` in source order; empty for an ordinary proc.
+    pub grants: Vec<(String, Span)>,
     /// The proc this one falls into, if any.
     pub falls_into: Option<String>,
     /// Item-level `@`-attributes preceding the decl — currently only
@@ -872,6 +931,10 @@ pub struct ProcSig {
     /// Typed data-register results (`out(dN: Type)`, G5 §7 tier 5) — see the
     /// same field on [`ProcDecl`]. `(reg, ty, span)`; empty = none.
     pub out_types: Vec<(String, Type, Span)>,
+    /// `requires(ctx, …)` (§3.3) — see the same field on [`ProcDecl`]. An
+    /// `extern proc` carries it so an `.asm`-defined callee can demand a context
+    /// exactly as a `.emp` one does.
+    pub requires: Vec<(String, Span)>,
 }
 
 /// The canonical register SET a contract reglist denotes under register file
@@ -1877,6 +1940,29 @@ pub enum AsmStmt {
         /// The error-handler flag bits from the options form (0 if none given).
         opts: u8,
         /// Span of the whole statement.
+        span: Span,
+    },
+    /// `with <ctx> [if <comptime cond>] { … }` (contract unification §3.2): an
+    /// ACQUIRED context bracket. The context's `acquire` Code splices before the
+    /// body and its `release` after it — the SAME bytes the manual pair emits —
+    /// and the region is proven: every path through the body reaches the release
+    /// (`[context.escape]`), no branch enters it mid-region
+    /// (`[context.entry-skip]`), and it is not already active
+    /// (`[context.reacquire]`).
+    ///
+    /// `cond` is the comptime gate the ported corpus needs (the OFF-build-only
+    /// bus fence in `vblank.emp` / `section.emp` brackets code the ON build runs
+    /// unbracketed): when it evaluates FALSE the body lowers verbatim with no
+    /// acquire, no release, and no region — so one body serves both shapes
+    /// without duplication. `None` is the unconditional bracket.
+    With {
+        /// The context's name.
+        ctx: String,
+        /// The comptime gate, if the bracket is conditional.
+        cond: Option<Expr>,
+        /// The bracketed statements.
+        body: Vec<AsmStmt>,
+        /// Span of the `with <ctx>` header (the diagnostics' anchor).
         span: Span,
     },
     /// `invoke Iface.hook` (L1) — an engine-side call of a game-implemented hook.

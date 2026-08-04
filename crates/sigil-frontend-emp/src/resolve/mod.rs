@@ -28,6 +28,15 @@ fn pub_comptime_name(item: &ast::Item) -> Option<&str> {
         ast::Item::Bitfield(d) if d.public => Some(&d.name),
         ast::Item::Newtype(d) if d.public => Some(&d.name),
         ast::Item::ComptimeFn(d) if d.public => Some(&d.name),
+        // A `pub context` (§3.1) is comptime-only — it emits nothing itself, and
+        // a `with` bracket's bytes come from evaluating its acquire/release AT
+        // THE USE SITE. Injecting the DECL is what makes an imported context
+        // resolvable there. Consequence, and the rule a cross-module context must
+        // obey: those exprs evaluate in the CONSUMER's scope, so they may name
+        // only link-resolved symbols and names the consumer itself has — which is
+        // why the engine's contexts spell their brackets inline rather than
+        // calling a module-private template.
+        ast::Item::Context(d) if d.public => Some(&d.name),
         // `pub vars` OVERLAY form (`vars Name: window { .. }`, D6.A8): overlays
         // are ordinary module items shared by `use`, so a consumer that imports
         // the overlay (and its base struct) gets qualified/bare field access. The

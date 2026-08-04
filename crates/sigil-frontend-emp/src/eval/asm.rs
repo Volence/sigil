@@ -47,6 +47,11 @@ fn collect_labels<'a>(body: &'a [AsmStmt], out: &mut Vec<(&'a str, bool, Span)>)
                     collect_labels(els, out);
                 }
             }
+            // A `with` body's labels are ordinary labels of the ENCLOSING body
+            // (the bracket is not a hygiene domain — it splices inline), so they
+            // must join the same scope. Missing this arm would leave a label
+            // inside a bracket unmapped and its references unresolved.
+            AsmStmt::With { body, .. } => collect_labels(body, out),
             _ => {}
         }
     }
@@ -425,6 +430,148 @@ impl Evaluator<'_> {
             AsmStmt::Invoke { iface, member, span } => {
                 self.lower_invoke(iface, member, *span, scope, buf, env);
             }
+            AsmStmt::With { ctx, cond, body, span } => {
+                self.lower_with(ctx, cond.as_ref(), body, *span, scope, buf, env);
+            }
+        }
+    }
+
+    /// Lower a `with <ctx> [if cond] { … }` context bracket (§3.2): plant the
+    /// `Enter` mark, splice the context's `acquire` Code, lower the body inline,
+    /// plant `BodyEnd`, splice `release`, plant `Exit`.
+    ///
+    /// The bracket emits EXACTLY the bytes the manual `acquire ++ body ++
+    /// release` spelling does — the marks are zero-byte
+    /// ([`CodeItem::ContextMark`]) and the acquire/release exprs are evaluated
+    /// here, at the use site, precisely as a hand-written call of the same
+    /// comptime fn would be. That is what makes corpus adoption byte-neutral.
+    ///
+    /// A FALSE comptime gate lowers the body verbatim and plants nothing: the
+    /// context is genuinely not held in that shape, so a region there would be a
+    /// lie the checker would then "prove".
+    #[allow(clippy::too_many_arguments)]
+    fn lower_with(
+        &mut self,
+        ctx: &str,
+        cond: Option<&ast::Expr>,
+        body: &[AsmStmt],
+        span: Span,
+        scope: &LabelScope,
+        buf: &mut CodeBuf,
+        env: &mut Env,
+    ) {
+        // The comptime gate, if any — the same bool/int contract `AsmStmt::If`'s
+        // condition has, and the same diagnostic class.
+        if let Some(cond) = cond {
+            let gated_on = match self.eval_expr(cond, env) {
+                Value::Bool(b) => b,
+                Value::Int(i) => i != 0,
+                Value::Poison => return,
+                other => {
+                    self.error(
+                        expr_span(cond),
+                        format!(
+                            "[asm.if-not-comptime] a `with … if` gate must be a comptime bool \
+                             or int, got {}",
+                            other.type_name()
+                        ),
+                    );
+                    return;
+                }
+            };
+            if !gated_on {
+                self.lower_with_body(body, scope, buf, env);
+                return;
+            }
+        }
+        let Some(decl) = self.contexts.get(ctx).copied() else {
+            self.error(
+                span,
+                format!(
+                    "[context.unknown] no context named `{ctx}` is in scope — declare \
+                     `context {ctx} {{ … }}` or import it"
+                ),
+            );
+            self.lower_with_body(body, scope, buf, env);
+            return;
+        };
+        let ast::ContextKind::Acquired { acquire, release } = &decl.kind else {
+            self.error(
+                span,
+                format!(
+                    "[context.not-acquirable] `{ctx}` is a GRANTED context — it has no \
+                     acquire/release pair to bracket with. A granted context is asserted at a \
+                     root proc with `grants({ctx})`"
+                ),
+            );
+            self.lower_with_body(body, scope, buf, env);
+            return;
+        };
+        // Clone out of the borrow: evaluating the exprs needs `&mut self`.
+        let (acquire, release) = (acquire.clone(), release.clone());
+        buf.push(CodeItem::ContextMark {
+            ctx: ctx.to_string(),
+            kind: crate::value::ContextMarkKind::Enter,
+            span,
+        });
+        self.splice_context_code(&acquire, ctx, "acquire", span, buf, env);
+        self.lower_with_body(body, scope, buf, env);
+        buf.push(CodeItem::ContextMark {
+            ctx: ctx.to_string(),
+            kind: crate::value::ContextMarkKind::BodyEnd,
+            span,
+        });
+        self.splice_context_code(&release, ctx, "release", span, buf, env);
+        buf.push(CodeItem::ContextMark {
+            ctx: ctx.to_string(),
+            kind: crate::value::ContextMarkKind::Exit,
+            span,
+        });
+    }
+
+    /// Lower a bracket's statements inline against the enclosing scope + buffer,
+    /// with the C2 register-type map snapshotted exactly as an `if` branch does
+    /// (the bracket is a nested BLOCK, so a `let` inside it does not leak past).
+    fn lower_with_body(
+        &mut self,
+        body: &[AsmStmt],
+        scope: &LabelScope,
+        buf: &mut CodeBuf,
+        env: &mut Env,
+    ) {
+        let saved_reg_types = self.reg_pointee_struct.clone();
+        for stmt in body {
+            self.lower_asm_stmt(stmt, scope, buf, env);
+        }
+        self.reg_pointee_struct = saved_reg_types;
+    }
+
+    /// Evaluate one half of a context's bracket (`acquire`/`release`) and splice
+    /// its items. It MUST be Code — the same contract a statement-position call
+    /// carries — and an empty Code splices nothing (a legal, if pointless,
+    /// context).
+    fn splice_context_code(
+        &mut self,
+        expr: &ast::Expr,
+        ctx: &str,
+        half: &str,
+        span: Span,
+        buf: &mut CodeBuf,
+        env: &mut Env,
+    ) {
+        let watermark = self.diags.len();
+        let v = self.eval_expr(expr, env);
+        self.note_if_comptime_error(watermark, span);
+        match v {
+            Value::Code(inner) => buf.items.extend(inner.items),
+            Value::Poison => {}
+            other => self.error(
+                expr_span(expr),
+                format!(
+                    "[context.not-code] `context {ctx}`'s `{half}` must evaluate to Code, got {}",
+                    other.type_name()
+                ),
+            ),
         }
     }
 

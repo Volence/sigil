@@ -143,6 +143,9 @@ fn item_pub_name(item: &ast::Item) -> Option<String> {
         // in resolve/mod.rs already covers ComptimeFn) makes the DECL visible so
         // the call evaluates. A non-`pub` comptime fn stays module-private.
         ast::Item::ComptimeFn(f) if f.public => Some(f.name.clone()),
+        // A `pub context` exports its NAME so a consumer's `use m.{ctx}` resolves;
+        // the DECL travels via the ambient-injection path (`pub_comptime_name`).
+        ast::Item::Context(c) if c.public => Some(c.name.clone()),
         ast::Item::Struct(s) if s.public => Some(s.name.clone()),
         ast::Item::Enum(e) if e.public => Some(e.name.clone()),
         ast::Item::Bitfield(b) if b.public => Some(b.name.clone()),

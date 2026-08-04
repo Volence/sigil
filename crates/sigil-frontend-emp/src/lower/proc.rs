@@ -183,6 +183,54 @@ pub(super) fn lower_proc(
     if ctx.cpu != Cpu::Z80 && !proc.out_cond.is_empty() && proc.clobbers.is_some() {
         check_survives_claims(proc, &buf, diags);
     }
+
+    // 9. The `with <ctx> { }` bracket proofs (contract unification §3.2): every
+    // path through a bracketed body reaches the release, no branch enters the
+    // region past the acquire, and no acquired context is entered twice. These
+    // need only ONE body, so they belong here rather than in the corpus walk (the
+    // cross-proc half — `[context.unsatisfied]` — lives there). Error-tier and
+    // NEVER `@as_compat`-silenced: a context is always declared surface (§6).
+    check_context_regions(&proc.name, &buf, ctx.cpu, diags);
+}
+
+/// Report the `[context.*]` bracket firings for one proc body. A no-bracket body
+/// costs one `is_empty` on the mark scan.
+fn check_context_regions(
+    name: &str,
+    buf: &crate::value::CodeBuf,
+    cpu: Cpu,
+    diags: &mut Vec<Diagnostic>,
+) {
+    use crate::context::ContextFiringKind as K;
+    for f in crate::context::check_contexts(name, &buf.items, cpu) {
+        let (id, what) = match f.kind {
+            K::Escape => (
+                "context.escape",
+                format!(
+                    "this path leaves the `with {}` region without reaching its release — \
+                     the context stays held past the bracket",
+                    f.ctx
+                ),
+            ),
+            K::EntrySkip => (
+                "context.entry-skip",
+                format!(
+                    "this branch enters the `with {}` region past its acquire — the context \
+                     would be released without ever being taken",
+                    f.ctx
+                ),
+            ),
+            K::Reacquire => (
+                "context.reacquire",
+                format!(
+                    "`{}` is already active here — an acquired context is not reentrant, so \
+                     the inner release would free the outer hold",
+                    f.ctx
+                ),
+            ),
+        };
+        push(diags, Level::Error, f.span, format!("[{id}] in `{name}`: {what}"));
+    }
 }
 
 /// Verify each conditional result's SURVIVES claim (delta spec §7.1): `out(rN if
