@@ -1768,3 +1768,50 @@ full_crc = "b5c1a039"
 full_size = 423383
 anchor_crc = "10d88914"
 anchor_end = 0x5f722
+
+[[entry]]
+name = "item28-bg-guard"
+ab = "aeon/docs/superpowers/notes/2026-08-04-item28-bg-blit-ab.md"
+note = "BG blit guard (review item 28, safe subset): closes the length-1 tile-blob hole that made BG_Init spray 65536 words (128 KB) across all of VRAM; guard hoisted above the stop_z80 bracket so it cannot strand the bus. Art dispatch inverted to favour ZX0 (the production case, byte-neutral); load_art clobber contract corrected (d5 was declared but never written); bg VRAM-region header and the runtime 32-row limit documented. The blit posture and column-major transpose are STOPPED at a coupled design fork, written up in DEFERRED_WORK."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "14175fbc"
+full_size = 423749
+anchor_crc = "00ce104a"
+anchor_end = 0x5f722
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c681e6c4"
+full_size = 276016
+anchor_crc = "2cc328be"
+anchor_end = 0x43630
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "f7a93a04"
+full_size = 70180
+anchor_crc = "552f1729"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "e3243cbb"
+full_size = 93943
+anchor_crc = "67dde81d"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "3879b953"
+full_size = 384048
+anchor_crc = "a0232162"
+anchor_end = 0x5dc30
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "2623ee7f"
+full_size = 423383
+anchor_crc = "68a80bba"
+anchor_end = 0x5f722

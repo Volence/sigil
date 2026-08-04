@@ -7,8 +7,8 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=demo_debug
 # reproduces_golden=demo.debug.bin
-# golden_crc32=cdb58b5a
-# assembled_anchor=5a178c45
+# golden_crc32=e3243cbb
+# assembled_anchor=67dde81d
 # assembled_end=0x11224
 # labels=44
 AnimateSprite 0x1ffe
