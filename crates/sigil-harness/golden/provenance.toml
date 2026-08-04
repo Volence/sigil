@@ -1909,3 +1909,50 @@ full_crc = "b3aaa1df"
 full_size = 423388
 anchor_crc = "4ff14aca"
 anchor_end = 0x5f71e
+
+[[entry]]
+name = "mddbg-symbols"
+ab = "aeon/docs/superpowers/notes/2026-08-05-mddbg-symbols-ab.md"
+note = "Part A: the fault-handler island is the final emission again, so the MDDBG blob's baked lea locator lands on the deb2 table"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "fa15ffa1"
+full_size = 423765
+anchor_crc = "f791b53f"
+anchor_end = 0x5f71e
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "b991af6c"
+full_size = 271790
+anchor_crc = "0e160ac7"
+anchor_end = 0x425ae
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "ea6213bc"
+full_size = 65954
+anchor_crc = "8c2e8e4e"
+anchor_end = 0x101a2
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "18e5ec7f"
+full_size = 93963
+anchor_crc = "7c498876"
+anchor_end = 0x11224
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "a46a39f6"
+full_size = 379822
+anchor_crc = "6e135074"
+anchor_end = 0x5cbae
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "ca450ce0"
+full_size = 423388
+anchor_crc = "1dfea23a"
+anchor_end = 0x5f71e

@@ -7,8 +7,8 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=s4
 # reproduces_golden=s4.bin
-# golden_crc32=730a9f99
-# assembled_anchor=b973f61b
+# golden_crc32=a46a39f6
+# assembled_anchor=6e135074
 # assembled_end=0x5cbae
 # labels=72
 Ani_Particle 0x257e2
@@ -58,7 +58,7 @@ Plane_Buffer_Reset 0x4228
 Player_Init 0x10002
 PopulateSpawnedPieceCount 0x3ec0
 Read_Controllers 0x2290
-ReleaseFault 0x5ca40
+ReleaseFault 0x5cb80
 RingBuffer_Add 0x3414
 S4LZ_DecompressDict 0x24f0
 Section_Init 0x5774

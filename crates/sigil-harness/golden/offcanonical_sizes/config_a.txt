@@ -7,8 +7,8 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=config_a
 # reproduces_golden=config_a.bin
-# golden_crc32=bea7e57b
-# assembled_anchor=9e971dcc
+# golden_crc32=fa15ffa1
+# assembled_anchor=f791b53f
 # assembled_end=0x5f71e
 # labels=78
 Ani_Particle 0x2589e
@@ -22,7 +22,7 @@ BgAnim_Init 0x74e0
 BgAnim_Table 0x257fe
 BootData 0x3a8
 BootData_End 0x1b9e
-BusError 0x5e52e
+BusError 0x5e66e
 CSelf_S4LZ_Plain 0x7850
 Camera_Init 0x6bc0
 Checksum 0x18e
