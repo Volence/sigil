@@ -71,15 +71,20 @@ fn config_b_boot_data_hole_filled() {
     let rom = native::build_rom_chained(&aeon, &native::config_b_profile())
         .unwrap_or_else(|e| panic!("build config_b: {e}"));
     let gold = golden("config_b.bin");
-    // BootData ($392) .. BootData_End ($3fc): head + idle-in-hole + tail, byte-exact.
-    assert_window("config_b", &rom, &gold, 0x392, 0x3fc);
-    // The idle program fills the $3c8..$3ee hole (not zero-fill — a real 38-byte
+    // BootData ($39a) .. BootData_End ($406): head + idle-in-hole + tail, byte-exact.
+    // All four addresses below moved at aeon review item 27: +8 because EntryPoint's
+    // new `lea (SYSTEM_STACK).w, sp` grew the plain boot region (4 B lea + a 4 B align
+    // pad), and the hole itself widened 38 -> 40 B because z80_init's `ld sp,hl`
+    // (SP = 0, so a first push wraps into the 68k bank window) became
+    // `ld sp, Z80_RAM_SIZE-2` — no 1-byte Z80 instruction loads SP with a constant.
+    assert_window("config_b", &rom, &gold, 0x39a, 0x406);
+    // The idle program fills the $3d0..$3f8 hole (not zero-fill — a real 40-byte
     // Z80 program; its first opcode is `xor a` = $AF).
-    assert_eq!(rom[0x3c8], 0xAF, "config_b: z80 idle head opcode at the $3c8 hole start");
-    let idle_nonzero = (0x3c8..0x3ee).any(|i| rom[i] != 0);
-    assert!(idle_nonzero, "config_b: the $3c8..$3ee hole is empty — z80_init did not fill it");
-    // The tail resumes at $3ee with the first PSG-silence byte ($9F).
-    assert_eq!(rom[0x3ee], 0x9F, "config_b: boot_tail did not resume at $3ee (post-hole PSG byte)");
+    assert_eq!(rom[0x3d0], 0xAF, "config_b: z80 idle head opcode at the $3d0 hole start");
+    let idle_nonzero = (0x3d0..0x3f8).any(|i| rom[i] != 0);
+    assert!(idle_nonzero, "config_b: the $3d0..$3f8 hole is empty — z80_init did not fill it");
+    // The tail resumes at $3f8 with the first PSG-silence byte ($9F).
+    assert_eq!(rom[0x3f8], 0x9F, "config_b: boot_tail did not resume at $3f8 (post-hole PSG byte)");
 }
 
 /// SOUND-ON (s4): no hole — the resident driver blob rides boot_head. BootData =

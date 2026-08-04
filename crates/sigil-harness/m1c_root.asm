@@ -69,13 +69,13 @@ Vectors:
     dc.l    ErrorExcept                     ; $58: Reserved
     dc.l    ErrorExcept                     ; $5C: Reserved
     dc.l    ErrorExcept                     ; $60: Spurious interrupt
-    dc.l    NullInterrupt                   ; $64: IRQ1 (external)
-    dc.l    NullInterrupt                   ; $68: IRQ2 (external)
-    dc.l    NullInterrupt                   ; $6C: IRQ3
+    dc.l    ErrorExcept                     ; $64: IRQ1 (unused level — halts loudly)
+    dc.l    ErrorExcept                     ; $68: IRQ2 (external, controller TH — halts loudly)
+    dc.l    ErrorExcept                     ; $6C: IRQ3 (unused level — halts loudly)
     dc.l    HBlank_Vector_Slot              ; $70: IRQ4 (HBlank) — RAM jmp-slot trampoline
-    dc.l    NullInterrupt                   ; $74: IRQ5
+    dc.l    ErrorExcept                     ; $74: IRQ5 (unused level — halts loudly)
     dc.l    VBlank_Handler                  ; $78: IRQ6 (VBlank)
-    dc.l    NullInterrupt                   ; $7C: IRQ7 (NMI)
+    dc.l    ErrorExcept                     ; $7C: IRQ7/NMI (unused level — halts loudly)
     dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $80-$8C: TRAP 0-3
     dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $90-$9C: TRAP 4-7
     dc.l    ErrorTrap, ErrorTrap, ErrorTrap, ErrorTrap   ; $A0-$AC: TRAP 8-11
