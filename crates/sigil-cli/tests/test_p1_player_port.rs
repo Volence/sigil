@@ -356,6 +356,7 @@ struct PcShape {
     // bug005 M3: the act-invariant clamp-edge cache (Player_BoundsInit writes,
     // the per-frame clamps read back) — game ram.emp cells, abs.w EAs.
     player_bound_right: u32,
+    cheat_flags: u32,
     player_bound_bottom: u32,
     /// bug005 H1 follow-ups: animate.emp's RefreshSpritePieceCount, now called
     /// cross-module by player_common (animate base + REFRESH_OFF per shape).
@@ -395,6 +396,7 @@ const PC_PLAIN: PcShape = PcShape {
     ctrl_1_held: pins::CTRL_1_HELD.plain,
     current_act_ptr: pins::CURRENT_ACT_PTR.plain,
     player_bound_right: pins::PLAYER_BOUND_RIGHT.plain,
+    cheat_flags: pins::CHEAT_FLAGS.plain,
     player_bound_bottom: pins::PLAYER_BOUND_BOTTOM.plain,
     refresh_spc: pins::ANIMATE.plain_base + pins::REFRESH_OFF.plain as u32,
     debug: false,
@@ -428,6 +430,7 @@ const PC_DEBUG: PcShape = PcShape {
     ctrl_1_held: pins::CTRL_1_HELD.debug,
     current_act_ptr: pins::CURRENT_ACT_PTR.debug,
     player_bound_right: pins::PLAYER_BOUND_RIGHT.debug,
+    cheat_flags: pins::CHEAT_FLAGS.debug,
     player_bound_bottom: pins::PLAYER_BOUND_BOTTOM.debug,
     refresh_spc: pins::ANIMATE.debug_base + pins::REFRESH_OFF.debug as u32,
     debug: true,
@@ -508,6 +511,9 @@ fn compile_player_common(shape: &PcShape) -> (sigil_link::LinkedImage, Vec<Secti
         as_label_at("Current_Act_Ptr", shape.current_act_ptr),
         // bug005 M3: the clamp-edge cache cells (abs.w reads + BoundsInit writes).
         as_label_at("Player_Bound_Right", shape.player_bound_right),
+        // Cheat_Flags: the runtime debug-fly gate read by Player_Main and
+        // Player_Init. PIN-SOURCED, shape-dependent (game RAM).
+        as_label_at("Cheat_Flags", shape.cheat_flags),
         as_label_at("Player_Bound_Bottom", shape.player_bound_bottom),
         // bug005 H1 follow-ups: the animator-owned refresh idiom made
         // player_common call animate.emp's RefreshSpritePieceCount cross-module

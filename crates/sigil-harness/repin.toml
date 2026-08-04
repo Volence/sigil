@@ -1179,6 +1179,16 @@ tests = ["tile_cache_port"]
 name = "Player_1"
 tests = ["collision_port", "rings_port"]
 
+# Game-side cheat bitfield (games/sonic4/config/ram.emp), bit 0 = CHEAT_DEBUG_FLY.
+# Read by three sites the port tests compile STANDALONE — player_common's
+# Player_Main toggle and Player_Init boot-entry gate, and test_player's toggle — so
+# those links need the VMA supplied. PIN-SOURCED per the t24 rule (never hand-shift
+# a RAM VMA into a test): it rides every RAM-layout parcel automatically. SHAPE-
+# DEPENDENT, so consumers must pick the arm, not assume `.plain` serves both.
+[[symbol]]
+name = "Cheat_Flags"
+tests = ["test_g4_final_objects_port", "test_p1_player_port"]
+
 [[symbol]]
 name = "Dynamic_Slots"
 tests = ["collision_port"]

@@ -305,8 +305,15 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // ReleaseFault survives as the lean shape's arm (CRASH_REPORT=0), which is
     // off-canonical and therefore has no pin at all. The DEBUG total does not move:
     // debug always carried the island.
+    // `cheat-flag`: debug-fly moves behind a runtime `Cheat_Flags` bit (owner-ruled a
+    // CHEAT, not equipment — the payload ships, gated at runtime, awaiting a cheat
+    // code). Release is UNCHANGED at 0x5DC30: the two gate sites live in the fixed
+    // 0x10000-byte object bank, whose growth is absorbed by fill, and release writes
+    // the flag nowhere (boot already zeroes Work RAM, so default-off costs zero
+    // bytes). DEBUG grows +6 for the one `move.b #CHEAT_DEBUG_FLY, Cheat_Flags` that
+    // arms the bit, so the debug shape behaves exactly as it did before the parcel.
     assert_eq!(pins::ASSEMBLED_LEN, 0x5DC30);
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F71E); // −0x4 item29p4: debug keeps MDDBG; only NullInterrupt (2 B) leaves, −4 with the align re-pad
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F724); // +6 cheat-flag: the DEBUG-only arm write
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the

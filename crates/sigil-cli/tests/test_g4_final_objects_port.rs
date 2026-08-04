@@ -67,6 +67,7 @@ struct Shape {
     art_sonic: u32,
     map_test_obj: u32,
     player_1: u32,
+    cheat_flags: u32,
     player_base: u32,
     player_len: usize,
     enemy_base: u32,
@@ -90,6 +91,7 @@ const PLAIN: Shape = Shape {
     art_sonic: pins::ART_SONIC.plain,
     map_test_obj: pins::MAP_TEST_OBJ.plain,
     player_1: pins::PLAYER_1.plain,
+    cheat_flags: pins::CHEAT_FLAGS.plain,
     player_base: pins::TEST_PLAYER.plain_base,
     player_len: pins::TEST_PLAYER.plain_len,
     enemy_base: pins::TEST_ENEMY.plain_base,
@@ -112,6 +114,7 @@ const DEBUG: Shape = Shape {
     art_sonic: pins::ART_SONIC.debug,
     map_test_obj: pins::MAP_TEST_OBJ.debug,
     player_1: pins::PLAYER_1.debug,
+    cheat_flags: pins::CHEAT_FLAGS.debug,
     player_base: pins::TEST_PLAYER.debug_base,
     player_len: pins::TEST_PLAYER.debug_len,
     enemy_base: pins::TEST_ENEMY.debug_base,
@@ -174,6 +177,10 @@ fn as_constant_equs(shape: &Shape) -> Vec<Section> {
     pairs.push(("Ctrl_1_Press", ctrl_1_press.as_str()));
     let player_1 = format!("${:X}", shape.player_1);
     pairs.push(("Player_1", player_1.as_str()));
+    // Cheat_Flags: game-side cheat bitfield read by test_player's debug-fly gate.
+    // PIN-SOURCED and SHAPE-DEPENDENT, same rule as Player_1 above.
+    let cheat_flags = format!("${:X}", shape.cheat_flags);
+    pairs.push(("Cheat_Flags", cheat_flags.as_str()));
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 

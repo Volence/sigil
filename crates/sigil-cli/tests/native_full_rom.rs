@@ -68,8 +68,14 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // listings s4.lst/s4.debug.lst): +0x22 plain / +0x7A debug — player_common's
     // parcel growth (+0x18/+0x70) slid player_ground's base, and the G1
     // jump-headroom carry (277f384) grew the ground code ahead of the cap proc
-    // (+0xA both shapes). No pin exists for an intra-region player label.
-    ("Ground_Move_Cap", 0x10746, 0x107AA),
+    // (+0xA both shapes). No pin exists for an intra-region player label, and it
+    // must STAY unpinned: the whole point of this row is to be an INDEPENDENT
+    // expectation checking the convsym resolve path, so deriving it from a pin
+    // would make the assertion circular. Hand-update it, with the reason.
+    // `cheat-flag` (2026-08-05): +0x10 BOTH shapes. player_common gained the three
+    // debug-fly gate sites (0x8 in Player_Main, 0x6 in Player_Init) ahead of
+    // player_ground; 16-byte region alignment rounds that to a uniform 0x10.
+    ("Ground_Move_Cap", 0x10756, 0x107BA),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)

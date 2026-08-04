@@ -40,22 +40,40 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-/// The `ObjDef_*` seam entity_data's type-table pointers resolve against — their
-/// per-shape ROM addresses (re-pin on re-baseline; the Abs32 pointer cells bake them).
-// bug005-sprites-player re-baseline (2026-08-03): the object bank's own growth
-// (test objects + player files upstream) slides the tail +0x8C plain / +0xDC
-// debug. ObjDef_Static == pins::OBJDEFS base; ObjDef_Solid = base + 0x1A (one
-// ObjDef); ObjDef_PathSwap == pins::PATH_SWAP base.
-const OBJDEF_SEAM: &[(&str, u32, u32)] = &[
-    ("ObjDef_Solid", 0x11DC4, 0x11E9C),
-    ("ObjDef_Static", 0x11DAA, 0x11E82),
-    ("ObjDef_PathSwap", 0x1128E, 0x112FE),
-];
+/// One `ObjDef` record — the stride between `ObjDef_Static` and `ObjDef_Solid`.
+const OBJDEF_LEN: u32 = 0x1A;
+
+/// The `ObjDef_*` seam entity_data's type-table pointers resolve against — the
+/// per-shape ROM addresses the Abs32 pointer cells bake in.
+///
+/// PIN-DERIVED as of `cheat-flag` (2026-08-05). These were three hand-typed literal
+/// pairs that had to be re-shifted by hand on every re-baseline, and they silently
+/// rotted whenever someone forgot — this parcel moved the object bank +0x20 and the
+/// gate failed with a one-byte diff deep inside a data blob, which is an expensive
+/// way to learn that a constant is stale. The old comment already recorded the exact
+/// relations (`ObjDef_Static == OBJDEFS base`, `ObjDef_Solid == base + one ObjDef`,
+/// `ObjDef_PathSwap == PATH_SWAP base`), so they are now simply computed.
+///
+/// This is NOT circular: the seam is an INPUT to the standalone compile, and the
+/// assertion compares that compile's bytes against the real built ROM. Deriving the
+/// input from pins removes hand-maintenance without weakening the check.
+fn objdef_seam(debug: bool) -> Vec<(&'static str, u32)> {
+    let (objdefs, path_swap) = if debug {
+        (pins::OBJDEFS.debug_base, pins::PATH_SWAP.debug_base)
+    } else {
+        (pins::OBJDEFS.plain_base, pins::PATH_SWAP.plain_base)
+    };
+    vec![
+        ("ObjDef_Solid", objdefs + OBJDEF_LEN),
+        ("ObjDef_Static", objdefs),
+        ("ObjDef_PathSwap", path_swap),
+    ]
+}
 
 fn seam_sections(debug: bool) -> Vec<Section> {
     let mut asm = String::from("cpu 68000\n");
-    for (name, plain, dbg) in OBJDEF_SEAM {
-        asm.push_str(&format!("{name} = ${:X}\n", if debug { *dbg } else { *plain }));
+    for (name, addr) in objdef_seam(debug) {
+        asm.push_str(&format!("{name} = ${addr:X}\n"));
     }
     asm.push_str("Stub:\n\tdc.w 0\n");
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
