@@ -181,6 +181,7 @@ fn lower_module_inner(
     // diagnostic; this driver runs once.
     validate_offsets(&file.items, &mut diags);
     validate_dispatch(&file.items, &mut diags);
+    validate_table_names(&file.items, &mut diags);
     validate_defines(&file.items, &opts.defines, &mut diags);
     validate_allow_attrs(file, &mut diags);
     validate_comptime_tests(&file.items, &mut diags);
@@ -1920,6 +1921,112 @@ fn validate_dispatch(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
                 }
             }
             ast::Item::Section(sec) => validate_dispatch(&sec.items, diags),
+            _ => {}
+        }
+    }
+}
+
+/// Once-per-compile validation that no two ORDINAL-TABLE declarations in a
+/// module share a name (S2-D12(d) — `[table.name-collision]`).
+///
+/// `enum`, `offsets`, `dispatch` and `table` all answer `Name.Member`, and
+/// [`eval_path`](crate::eval::Evaluator::eval_path) tries them in exactly that
+/// order. Two of them under ONE name is therefore not an ambiguity the reader
+/// can see: the earlier kind wins every lookup and the later one becomes
+/// unreachable — `dispatch T`'s members report as "offsets `T` has no member
+/// `X`", naming the wrong table. (`offsets`/`dispatch`/`table` additionally
+/// emit a base LABEL under the shared name, so the pair ALSO collides in the
+/// link's whole-program duplicate-label check — a late, whole-program error for
+/// what is a one-module declaration mistake.) The same name twice under the
+/// SAME kind is the identical hazard: [`index_items`](crate::eval::Evaluator)
+/// is a map insert, so the last declaration silently wins.
+///
+/// TIER (per the D-batch lens panel): `enum` emits NO base label, so an
+/// `enum`+`offsets` pair links and runs today — turning it into a hard error
+/// would refuse a legal program. Any pair INVOLVING an enum is therefore
+/// warn-tier. Every other pair (`offsets`/`dispatch`/`table`, in any
+/// combination, including a repeat of one kind) already fails the link's
+/// duplicate-label check, so error tier only moves an existing failure earlier
+/// and names it properly — a silent wrong answer, the totality tenet.
+///
+/// Reported at the LATER declaration, naming both kinds and the WINNER, which
+/// is decided by [`ordinal_ladder_rank`] and NOT by declaration order: writing
+/// the `dispatch` first does not make it win.
+///
+/// Recurses into `section {}` blocks like every sibling validator — the
+/// namespace is flat (§7.1).
+fn validate_table_names(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
+    let mut seen: Vec<(&str, &str, Span)> = Vec::new();
+    collect_table_names(items, &mut seen);
+    let mut first: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+    for (name, kind, span) in seen {
+        match first.get(name) {
+            None => {
+                first.insert(name, kind);
+            }
+            Some(prev) => {
+                let prev = *prev;
+                let both = if prev == kind {
+                    format!("declared twice as `{kind}`")
+                } else {
+                    format!("declared as both `{prev}` and `{kind}`")
+                };
+                // The winner is the EARLIER LADDER RANK, not the earlier
+                // declaration: `dispatch T` before `offsets T` still resolves
+                // `T.MEMBER` against the offsets table. A same-kind repeat has
+                // one rank, and there the LAST declaration wins (a map insert).
+                let winner = if prev == kind {
+                    "last-declared".to_string()
+                } else if ordinal_ladder_rank(prev) <= ordinal_ladder_rank(kind) {
+                    format!("`{prev}`")
+                } else {
+                    format!("`{kind}`")
+                };
+                let d = Diagnostic {
+                    // An enum carries no base label, so an enum-bearing pair is
+                    // a program that links today: warn, never refuse it.
+                    level: if prev == "enum" || kind == "enum" {
+                        Level::Warning
+                    } else {
+                        Level::Error
+                    },
+                    message: format!(
+                        "[table.name-collision] `{name}` is {both} in this module — \
+                         `{name}.MEMBER` silently resolves against the {winner} table"
+                    ),
+                    primary: span,
+                };
+                diags.push(d);
+            }
+        }
+    }
+}
+
+/// Where a kind sits on the `Name.Member` resolution ladder
+/// [`eval_path`](crate::eval::Evaluator) walks — LOWER wins. The order is that
+/// function's arm order and must be edited in lockstep with it; it is the whole
+/// reason [`validate_table_names`] cannot name the winner by declaration order.
+fn ordinal_ladder_rank(kind: &str) -> u8 {
+    match kind {
+        "enum" => 0,
+        "offsets" => 1,
+        "dispatch" => 2,
+        "table" => 3,
+        _ => u8::MAX,
+    }
+}
+
+/// Gather every ordinal-table declaration as `(name, kind, span)` in source
+/// order, recursing into `section {}` bodies. The `kind` strings are the source
+/// keywords, so [`validate_table_names`]'s message quotes what the author wrote.
+fn collect_table_names<'a>(items: &'a [ast::Item], out: &mut Vec<(&'a str, &'static str, Span)>) {
+    for item in items {
+        match item {
+            ast::Item::Enum(d) => out.push((d.name.as_str(), "enum", d.span)),
+            ast::Item::Offsets(d) => out.push((d.name.as_str(), "offsets", d.span)),
+            ast::Item::Dispatch(d) => out.push((d.name.as_str(), "dispatch", d.span)),
+            ast::Item::Table(d) => out.push((d.name.as_str(), "table", d.span)),
+            ast::Item::Section(sec) => collect_table_names(&sec.items, out),
             _ => {}
         }
     }
