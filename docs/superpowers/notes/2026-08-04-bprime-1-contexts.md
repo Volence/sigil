@@ -1,9 +1,11 @@
 # 2026-08-04 — B′-1: generalized contexts (close packet)
 
-Status: **BUILT, gate-green, UNMERGED.** Branch pair `bprime-1`; sigil off master
-`6d332f5b`, aeon off master `b54f44d`. Two commits per repo (the construct, then
-corpus adoption), sequenced so an adoption problem could never entangle the
-construct.
+Status: **countersigned and MERGED** — sigil `f1de60df`, aeon `0e1f32c`. Built as
+branch pair `bprime-1` off sigil `6d332f5b` / aeon `b54f44d`, in two commits per
+repo (the construct, then corpus adoption), sequenced so an adoption problem
+could never entangle the construct. Both masters moved to the `b-jumps` parcel
+(refreeze chain 44) before the merge, so the pair was rebased there and every bar
+re-proven — §7 and §8 carry the chain-44 numbers alongside the chain-43 ones.
 
 Spec: `specs/2026-08-04-contract-delta-spec.md` §2 (the re-scope — B′-1 is an
 EXTENSION of shipped machinery, not a new engine) over

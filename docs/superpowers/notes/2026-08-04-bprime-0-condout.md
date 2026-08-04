@@ -1,9 +1,11 @@
 # 2026-08-04 — B′-0: the conditional-out overlap relax (close packet)
 
-Status: **Checkpoint for the overseer's countersign + merge. NOT merged** — the
-concurrent engine session is actively merging into both masters (chain 33 → 36
-during this session alone), so the merge waits for a quiet window and a rebase
-onto whatever master is then. Branch pair `bprime-0-condout` (sigil + aeon),
+Status: **countersigned and MERGED** — sigil `4a21063a`, aeon `b96051a`. The
+merge waited for a quiet window and a rebase, exactly as this line originally
+predicted it would need to: the concurrent engine session moved both masters
+(chain 33 → 36 during the build session alone, and 36 → 38 while the parcel
+waited, with `demo.debug` changing SIZE in between). Branch pair
+`bprime-0-condout` (sigil + aeon),
 **Rebased 2026-08-04 onto the post-overnight-run masters** — sigil `b36932e0`
 (refreeze chain entry 38 `item28-bg-guard` + the §7 rulings), aeon `f67cc4f`
 (review items 25-30 executed). Originally cut at chain 36 (sigil `df7eaccf` /

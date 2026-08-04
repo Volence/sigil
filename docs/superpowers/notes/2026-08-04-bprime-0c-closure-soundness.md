@@ -1,7 +1,7 @@
 # 2026-08-04 — B′-0c: the closure-soundness batch (close packet)
 
-Status: **Checkpoint for the overseer's countersign + merge. NOT merged.** Branch
-pair `bprime-0c`, cut from the post-B′-0-merge masters — sigil `4a21063a` /
+Status: **countersigned and MERGED** — sigil `6632a8d3`. Built as branch pair
+`bprime-0c`, cut from the post-B′-0-merge masters — sigil `4a21063a` /
 aeon `b96051a`. (Commit ids are not quoted here: this packet lives INSIDE the
 commit it would name, so any id written down is stale by construction — read
 `git log` on the branch pair.) The aeon commit is an EMPTY pair marker recording

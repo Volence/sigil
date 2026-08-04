@@ -1,8 +1,15 @@
 # 2026-08-04 — THE WARNING TIER: make the invisible visible (close packet)
 
-Status: **Checkpoint for the overseer's countersign + merge. NOT merged.** Branch
-`warn-tier` in the sigil repo only, cut from master `4993825e`. **No aeon commit** —
-the parcel retires no corpus warning, and the seven ROM targets are byte-identical.
+Status: **countersigned and MERGED** — sigil `1a62f4b6`, sigil-only. Built as
+branch `warn-tier` off master `4993825e`. **No aeon commit** — the parcel retires
+no corpus warning, and the seven ROM targets are byte-identical.
+
+**Superseded in one place by a same-day follow-up:** §0's headline finding that
+`module.path-mismatch` is 84% of the default tally line (93 of 111) was ruled on
+by Volence immediately — the lint's rule narrowed to "last id segment == file
+stem", taking it 93 → 12 and the whole line 111 → 30. See
+`notes/2026-08-04-path-mismatch-narrowing.md`. The measurement below stands as
+recorded; only the corpus it describes has moved.
 
 ## §0 — THE HEADLINE
 
