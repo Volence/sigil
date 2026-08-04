@@ -137,34 +137,6 @@ contract the author did not write.
 CPUs, so a genuine Z80 `out(a if z)` is rejected as `[proc.out-cond-invalid]`
 before this check is reached. The ledger's must-test-it-then instruction stands.
 
-### §3.4 — Tail exits are charged their target
-
-An unconditional tail transfer out of a ¬cc edge is a return of P from the
-caller's view (out-verify's Finding 3, applied to the dual), so `Sites` treats it
-as an exit — and charges the target's clobbers under the same `policy` a call
-gets. `preserves(rN)` ignores a tail transfer because the closure accounts for it
-via its tail edge; a scoped claim has no such backstop, and an unresolved target
-preserves nothing. Zero corpus sites today; pinned both directions by test.
-
-### §3.5 — The register-keyed nit
-
-`ProcDecl::cond_only_out_regs(rf)` (and the `ProcSig` twin) is the new key for
-the `[proc.out-clobbers-overlap]` exemption: a register is exempt only when
-EVERY `out()` mention of it carries an `if cc`. It COUNTS reglist segments
-covering the register against `if cc` clauses naming it, rather than subtracting
-sets — which also catches a RANGE mention (`out(a0-a2, a1 if eq)` covers a1 twice
-against one guard, so `clobbers(a1)` still errors there; the set-subtraction form
-would have dropped a1 wholesale). So `out(a1, a1 if eq) clobbers(a1)` errors
-again, and `out(a1 if eq) clobbers(a1)` still does not.
-
-### §3.6 — The corpus edit (aeon)
-
-`engine/level/tile_cache.emp` — `TileCache_FindStagedBlock` declares
-`clobbers(d3-d4/a1) out(a1 if eq)`, matching the `Clobbers: d3-d4, a1` its own
-header has always carried, plus a present-tense `CONTRACT` statement of the fact
-(a1 is a result on the eq edge and scratch on the others; the probe walks it
-before the hit/miss is known). Contract metadata; no codegen.
-
 ### §3.4 — What counts as an EXIT
 
 Any edge that leaves the proc: an `Abandon` (`rts` / fall-off-end) or a `Defer`
