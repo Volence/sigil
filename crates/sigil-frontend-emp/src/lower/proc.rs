@@ -303,6 +303,29 @@ fn check_cycle_budget(
     ctx: &ProcCtx,
     diags: &mut Vec<Diagnostic>,
 ) {
+    let declared: Vec<&ast::Attr> = proc
+        .attrs
+        .iter()
+        .filter(|a| a.name == "budget" || a.name == "cycles_exact")
+        .collect();
+    let Some(&first) = declared.first() else {
+        return;
+    };
+    // Each attribute states a whole contract for the proc, so a repeat is two
+    // claims where the reader sees one. Reporting the extras keeps the surface
+    // honest instead of picking one and discarding the rest.
+    for dup in duplicate_attrs(&declared) {
+        push(
+            diags,
+            Level::Error,
+            dup.span,
+            format!(
+                "[cycles.form] in `{}`: `@{}` is declared more than once — one declaration \
+                 states the whole contract",
+                proc.name, dup.name
+            ),
+        );
+    }
     let budget = match budget_cycles(file, proc, ctx, diags) {
         Ok(b) => b,
         // The declared ceiling did not fold to an integer; the form error is
@@ -310,15 +333,45 @@ fn check_cycle_budget(
         // the same broken declaration.
         Err(()) => return,
     };
-    let exact = proc.attrs.iter().any(|a| a.name == "cycles_exact");
-    for f in crate::cycle_budget::check_cycle_budget(&buf.items, ctx.cpu, budget, exact) {
+    let exact = declared.iter().any(|a| a.name == "cycles_exact");
+    // The DECLARATION is what a verdict is about, and it is always in this file —
+    // a spliced body's instructions may carry another module's spans.
+    let decl_span = first.span;
+    for f in crate::cycle_budget::check_cycle_budget(&buf.items, ctx.cpu, decl_span, budget, exact)
+    {
+        let what = match (&f.kind, &proc.falls_into) {
+            // A declared fallthrough is not an unknown escape — the successor is
+            // named and checked. Its COST still leaves this proc, so the refusal
+            // stands, but the reason the reader gets should be the true one.
+            (crate::cycle_budget::BudgetFindingKind::UnboundedTransfer { .. }, Some(next)) => {
+                format!(
+                    "control falls through into `{next}`, so this proc's paths do not end \
+                     here — a cycle budget needs every path to end at a return"
+                )
+            }
+            _ => f.kind.message(),
+        };
         push(
             diags,
             Level::Error,
             f.span,
-            format!("[{}] in `{}`: {}", f.kind.lint_id(), proc.name, f.kind.message()),
+            format!("[{}] in `{}`: {}", f.kind.lint_id(), proc.name, what),
         );
     }
+}
+
+/// The attributes after the FIRST of each name — the repeats.
+fn duplicate_attrs<'a>(attrs: &[&'a ast::Attr]) -> Vec<&'a ast::Attr> {
+    let mut seen: Vec<&str> = Vec::new();
+    let mut dups = Vec::new();
+    for a in attrs {
+        if seen.contains(&a.name.as_str()) {
+            dups.push(*a);
+        } else {
+            seen.push(a.name.as_str());
+        }
+    }
+    dups
 }
 
 /// The `@budget(cycles: N)` ceiling on `proc`, folded to an integer. `Ok(None)`
@@ -347,7 +400,7 @@ fn budget_cycles(
                 Level::Error,
                 attr.span,
                 format!(
-                    "[budget.form] in `{}`: `@budget(cycles: N)` needs a non-negative \
+                    "[cycles.form] in `{}`: `@budget(cycles: N)` needs a non-negative \
                      comptime integer",
                     proc.name
                 ),

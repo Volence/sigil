@@ -1676,6 +1676,16 @@ pub struct Arg {
     pub span: Span,
 }
 
+impl Arg {
+    /// The argument's value as a string literal, or `None` for any other shape.
+    pub fn str_value(&self) -> Option<&str> {
+        match &self.value {
+            Expr::Str(s, _) => Some(s.as_str()),
+            _ => None,
+        }
+    }
+}
+
 /// A unary operator.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum UnOp {

@@ -29,31 +29,33 @@
 //! | a tail transfer out, or control off the end of the body | `[cycles.unbounded-transfer]` | the path continues into code this walk cannot see |
 //! | an op outside the T-state table | `[cycles.unknown-op]` | no cost is assignable |
 //! | an outcome-split conditional whose two edges cannot be told apart | `[cycles.ambiguous-branch]` | the two costs cannot be routed to their edges |
+//! | inline data in the code stream | `[cycles.inline-data]` | those bytes DECODE if control reaches them, and the CFG does not model them as instructions |
 //! | a 68000 body | `[cycles.unmodeled-cpu]` | no 68000 timing model exists yet |
 //!
-//! Only a RETURN instruction ends a charged path. That single rule is what makes
-//! the bound sound in the one direction that matters: every other way out of the
-//! body leaves cost unaccounted, so it is refused rather than silently treated as
-//! zero.
+//! Only a RETURN instruction ends a charged path, and only on the EDGE that
+//! actually returns. That single rule is what makes the bound sound in the one
+//! direction that matters: every other way out of the body leaves cost
+//! unaccounted, so it is refused rather than silently treated as zero.
 //!
-//! Nominal 68000/Z80 clocks are the unit. Bus contention (the Z80 losing the bus
-//! to a 68000 DMA, VDP-port wait states) is NOT modeled and cannot be — it is a
-//! whole-machine fact, not a proc-local one. A budget is therefore a bound on
-//! ISSUED cycles, which is what the sound driver's own balance proof means by
-//! T-states.
+//! ## Three things a budget does NOT say
+//!
+//!   * **Nominal T-states, not elapsed time.** Bus contention (the Z80 losing the
+//!     bus to a 68000 DMA, VDP-port wait states) is a whole-machine fact, not a
+//!     proc-local one, and is not modeled. A budget bounds ISSUED cycles — the
+//!     same unit the sound driver's own balance proof uses, so the two agree.
+//!   * **Interrupts are not counted.** A Z80 proc interrupted at `$0038` spends
+//!     the handler's time on top of its budget. The bound is over the proc's own
+//!     instruction stream; masking is the caller's business.
+//!   * **Entry-point zero only.** The walk roots at the body's first instruction,
+//!     so a path reachable only from an `export`ed mid-body label is outside the
+//!     claim.
 
-use crate::flag_check::{instr_span, Cfg, Edge};
+use crate::flag_check::{entry_instr_idx, instr_span, is_return_mnemonic, Cfg, Edge};
 use crate::value::CodeItem;
 use crate::z80_cycles::{instr_cost, Cost};
 use sigil_ir::backend::Cpu;
 use sigil_span::Span;
 use std::collections::BTreeMap;
-
-/// Z80 mnemonics that RETURN from a proc — the only charged path ends.
-const Z80_RETURN_MNEMONICS: [&str; 3] = ["ret", "reti", "retn"];
-
-/// Z80 mnemonics that CALL and come back, whose callee cost is not local.
-const Z80_CALL_MNEMONICS: [&str; 2] = ["call", "rst"];
 
 /// What a cycle-budget walk concluded.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,6 +99,8 @@ pub enum BudgetFindingKind {
         /// The unmodeled mnemonic.
         mnemonic: String,
     },
+    /// `[cycles.inline-data]` — a `DataBuf` spliced into the code stream.
+    InlineData,
     /// `[cycles.unmodeled-cpu]` — no timing model exists for this CPU.
     UnmodeledCpu,
 }
@@ -112,6 +116,7 @@ impl BudgetFindingKind {
             Self::UnboundedTransfer { .. } => "cycles.unbounded-transfer",
             Self::AmbiguousBranch { .. } => "cycles.ambiguous-branch",
             Self::UnknownOp { .. } => "cycles.unknown-op",
+            Self::InlineData => "cycles.inline-data",
             Self::UnmodeledCpu => "cycles.unmodeled-cpu",
         }
     }
@@ -145,6 +150,10 @@ impl BudgetFindingKind {
                 "`{mnemonic}` is not in the T-state table — add it to `z80_cycles` if a \
                  budgeted proc legitimately needs it"
             ),
+            Self::InlineData => "this body splices data into the code stream, and those \
+                 bytes DECODE as instructions if control reaches them — the control-flow \
+                 model steps over them, so no path through this proc can be costed"
+                .to_string(),
             Self::UnmodeledCpu => "cycle budgets model the Z80 only; there is no 68000 \
                  timing model yet"
                 .to_string(),
@@ -174,16 +183,24 @@ pub struct PathCosts {
 ///
 /// `items` is the proc's evaluated `CodeBuf`; `cpu` selects the timing model and
 /// the edge model. A body with no instructions costs zero on its one empty path.
-pub fn path_costs(items: &[CodeItem], cpu: Cpu) -> Result<PathCosts, BudgetFinding> {
+pub fn path_costs(items: &[CodeItem], cpu: Cpu, decl_span: Span) -> Result<PathCosts, BudgetFinding> {
+    let at = |idx: Option<usize>| idx.and_then(|i| instr_span(items, i)).unwrap_or(decl_span);
     if cpu != Cpu::Z80 {
-        let span = items
-            .iter()
-            .find_map(|it| match it {
-                CodeItem::Instr { span, .. } => Some(*span),
-                _ => None,
-            })
-            .unwrap_or(Span { source: sigil_span::SourceId(0), start: 0, end: 0 });
-        return Err(BudgetFinding { kind: BudgetFindingKind::UnmodeledCpu, span });
+        return Err(BudgetFinding {
+            kind: BudgetFindingKind::UnmodeledCpu,
+            span: at(entry_instr_idx(items)),
+        });
+    }
+    // Inline data is not an `Instr`, so the CFG links straight across it and would
+    // charge it nothing — while on hardware those bytes decode and execute if
+    // control reaches them. Only a reachability proof could tell the two apart,
+    // and a budget does not get to assume the author put the table somewhere safe.
+    if let Some(i) = items.iter().position(|it| matches!(it, CodeItem::Inline(..))) {
+        let span = match &items[i] {
+            CodeItem::Inline(_, sp) => *sp,
+            _ => decl_span,
+        };
+        return Err(BudgetFinding { kind: BudgetFindingKind::InlineData, span });
     }
     let Some(entry) = entry_instr_idx(items) else {
         return Ok(PathCosts { min: 0, max: 0 });
@@ -192,9 +209,9 @@ pub fn path_costs(items: &[CodeItem], cpu: Cpu) -> Result<PathCosts, BudgetFindi
     // A DFS that (a) proves the reachable subgraph is acyclic and (b) leaves a
     // post-order, whose reverse is a topological order. The two jobs share one
     // walk because a back edge is exactly what makes the second impossible.
-    let order = topo_order(&cfg, items, entry)?;
-    // Reverse post-order gives every successor a cost before its predecessor,
-    // so one backward pass over `order` fills the whole table.
+    let order = postorder(&cfg, items, entry)?;
+    // POST-order visits every successor before its predecessor, so a single
+    // forward pass over `order` fills the whole table with no revisits.
     let mut best: BTreeMap<usize, (u64, u64)> = BTreeMap::new();
     for &idx in &order {
         let (mnem, ops) = cfg.instr(idx).expect("topo order holds instruction indices only");
@@ -203,14 +220,14 @@ pub fn path_costs(items: &[CodeItem], cpu: Cpu) -> Result<PathCosts, BudgetFindi
         let charged = charged_edges(&cfg, idx, mnem, cost, span)?;
         let mut lo = u64::MAX;
         let mut hi = 0u64;
-        for (edge_cost, succ) in charged {
-            let (smin, smax) = match succ {
+        for e in charged {
+            let (smin, smax) = match e.succ {
                 // The path ends here: a return contributes only its own cost.
                 None => (0, 0),
                 Some(s) => *best.get(&s).expect("successors are ordered before predecessors"),
             };
-            lo = lo.min(edge_cost + smin);
-            hi = hi.max(edge_cost + smax);
+            lo = lo.min(e.cost + smin);
+            hi = hi.max(e.cost + smax);
         }
         best.insert(idx, (lo, hi));
     }
@@ -224,26 +241,23 @@ pub fn path_costs(items: &[CodeItem], cpu: Cpu) -> Result<PathCosts, BudgetFindi
 pub fn check_cycle_budget(
     items: &[CodeItem],
     cpu: Cpu,
+    decl_span: Span,
     budget: Option<u64>,
     exact: bool,
 ) -> Vec<BudgetFinding> {
     if budget.is_none() && !exact {
         return Vec::new();
     }
-    let costs = match path_costs(items, cpu) {
+    let costs = match path_costs(items, cpu, decl_span) {
         Ok(c) => c,
         Err(f) => return vec![f],
     };
     let mut out = Vec::new();
-    // The declaration itself is what is violated, so both findings point at the
-    // proc's first instruction rather than at an arbitrary interior site.
-    let span = items
-        .iter()
-        .find_map(|it| match it {
-            CodeItem::Instr { span, .. } => Some(*span),
-            _ => None,
-        })
-        .unwrap_or(Span { source: sigil_span::SourceId(0), start: 0, end: 0 });
+    // Both verdicts point at the DECLARATION. The body may be spliced from a
+    // comptime template or a `with <ctx> { }` bracket, whose instructions carry
+    // their own file's spans — so an interior site can land in a file that does
+    // not contain the attribute being violated.
+    let span = decl_span;
     if let Some(n) = budget {
         if costs.max > n {
             out.push(BudgetFinding {
@@ -261,63 +275,65 @@ pub fn check_cycle_budget(
     out
 }
 
-/// The item index of a body's FIRST instruction — the walk's entry point.
-fn entry_instr_idx(items: &[CodeItem]) -> Option<usize> {
-    items.iter().position(|it| matches!(it, CodeItem::Instr { .. }))
+/// One charged successor of an instruction.
+struct ChargedEdge {
+    /// T-states charged for taking THIS edge out of the instruction.
+    cost: u64,
+    /// The next instruction, or `None` when the path ENDS here (a return).
+    succ: Option<usize>,
 }
 
-/// The charged successors of `idx`: `(edge cost, successor)`, where `None` means
-/// the path ENDS here (a return). Every other way out of the body is refused.
+/// The charged successors of `idx`. Every way out of the body except a RETURN is
+/// refused, so a path can never be closed with cost left unaccounted.
 ///
-/// An outcome-split conditional's two costs are routed by the edge model's
-/// TAKEN-FIRST ordering: every conditional arm of `Cfg::z80_edges` pushes the
-/// branch edge before the fall-through. A form that does not present exactly two
-/// edges cannot be routed and is refused rather than charged the wrong number.
-#[allow(clippy::type_complexity)]
+/// Two edge-model facts do the routing, and both are read POSITIONALLY because
+/// `Edge` records neither:
+///
+///   * **Taken-first.** Every conditional arm of [`Cfg::z80_edges`] pushes the
+///     branch edge before the fall-through, so an outcome-split conditional's
+///     `taken` cost belongs to edge 0.
+///   * **Only edge 0 of a `ret cc` returns.** `ret cc` at the very end of a body
+///     yields `[Abandon, Abandon]` — the first is the taken return, the second is
+///     control running off the end. The mnemonic is the same for both, so the
+///     return test is per-EDGE; keying it on the mnemonic alone would close an
+///     escaping path at zero cost and report a bound that is too low.
+///
+/// A form presenting anything but exactly two edges satisfies neither reading, so
+/// it is refused rather than charged a number one of these rules picked blind.
 fn charged_edges(
     cfg: &Cfg,
     idx: usize,
     mnem: &str,
     cost: Cost,
     span: Span,
-) -> Result<Vec<(u64, Option<usize>)>, BudgetFinding> {
+) -> Result<Vec<ChargedEdge>, BudgetFinding> {
     let bail = |kind| Err(BudgetFinding { kind, span });
-    if Z80_CALL_MNEMONICS.contains(&mnem) {
+    if crate::context::is_call_mnemonic(mnem, Cpu::Z80) {
         return bail(BudgetFindingKind::OpaqueCall { mnemonic: mnem.to_string() });
     }
-    let base = match cost {
-        Cost::Fixed(n) => Some(u64::from(n)),
-        Cost::Split { .. } => None,
-        Cost::Unknown => {
-            return bail(BudgetFindingKind::UnknownOp { mnemonic: mnem.to_string() })
-        }
-    };
-    let is_return = Z80_RETURN_MNEMONICS.contains(&mnem);
+    if matches!(cost, Cost::Unknown) {
+        return bail(BudgetFindingKind::UnknownOp { mnemonic: mnem.to_string() });
+    }
+    let returns = is_return_mnemonic(mnem, Cpu::Z80);
     let edges = cfg.z80_edges(idx);
-    if base.is_none() && edges.len() != 2 {
+    let two_way = edges.len() == 2;
+    if matches!(cost, Cost::Split { .. }) && !two_way {
         return bail(BudgetFindingKind::AmbiguousBranch { mnemonic: mnem.to_string() });
     }
     let mut out = Vec::new();
     for (i, e) in edges.iter().enumerate() {
-        let c = match (base, cost) {
-            (Some(n), _) => n,
-            // Edge 0 is the branch edge, edge 1 the fall-through.
-            (None, Cost::Split { taken, not_taken }) => {
-                u64::from(if i == 0 { taken } else { not_taken })
-            }
-            (None, _) => unreachable!("only Cost::Split leaves the base cost open"),
+        let cost = match cost {
+            Cost::Fixed(n) => u64::from(n),
+            Cost::Split { taken, not_taken } => u64::from(if i == 0 { taken } else { not_taken }),
+            Cost::Unknown => unreachable!("refused above"),
         };
+        // A CONDITIONAL return returns on its taken edge only; its other edge is
+        // the fall-through, which off the end of a body is an unaccounted escape.
+        let this_edge_returns = returns && (!two_way || i == 0);
         match e {
-            Edge::Follow(s) => out.push((c, Some(*s))),
-            // A return ENDS the path; control running off the end of the body
-            // continues into whatever the section places next.
-            Edge::Abandon if is_return => out.push((c, None)),
-            Edge::Abandon => {
-                return bail(BudgetFindingKind::UnboundedTransfer {
-                    mnemonic: mnem.to_string(),
-                })
-            }
-            Edge::Defer => {
+            Edge::Follow(s) => out.push(ChargedEdge { cost, succ: Some(*s) }),
+            Edge::Abandon if this_edge_returns => out.push(ChargedEdge { cost, succ: None }),
+            Edge::Abandon | Edge::Defer => {
                 return bail(BudgetFindingKind::UnboundedTransfer {
                     mnemonic: mnem.to_string(),
                 })
@@ -333,11 +349,12 @@ fn charged_edges(
     Ok(out)
 }
 
-/// A post-order over the instructions reachable from `entry`, proving on the way
-/// that the reachable subgraph is ACYCLIC. A back edge (an edge to an instruction
-/// still open on the DFS stack) is `[cycles.unbounded-loop]`, reported at the
-/// instruction the loop re-enters.
-fn topo_order(cfg: &Cfg, items: &[CodeItem], entry: usize) -> Result<Vec<usize>, BudgetFinding> {
+/// A POST-ORDER over the instructions reachable from `entry`, proving on the way
+/// that the reachable subgraph is ACYCLIC. On a DAG a post-order lists every
+/// successor before its predecessor, which is exactly the order the cost pass
+/// needs. A back edge (an edge to an instruction still open on the DFS stack) is
+/// `[cycles.unbounded-loop]`, reported at the instruction the loop re-enters.
+fn postorder(cfg: &Cfg, items: &[CodeItem], entry: usize) -> Result<Vec<usize>, BudgetFinding> {
     #[derive(Clone, Copy, PartialEq)]
     enum Mark {
         Open,
@@ -430,7 +447,7 @@ mod tests {
             instr("nop", vec![]),
             instr("ret", vec![]),
         ];
-        let c = path_costs(&items, Cpu::Z80).unwrap();
+        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
         assert_eq!((c.min, c.max), (26, 26));
     }
 
@@ -444,7 +461,7 @@ mod tests {
             label("skip"),
             instr("ret", vec![]),
         ];
-        let c = path_costs(&items, Cpu::Z80).unwrap();
+        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
         assert_eq!((c.min, c.max), (21, 22));
     }
 
@@ -457,7 +474,7 @@ mod tests {
             label("skip"),
             instr("ret", vec![]),
         ];
-        let c = path_costs(&items, Cpu::Z80).unwrap();
+        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
         assert_eq!((c.min, c.max), (20, 24));
     }
 
@@ -469,7 +486,7 @@ mod tests {
             instr("nop", vec![]),
             instr("ret", vec![]),
         ];
-        let c = path_costs(&items, Cpu::Z80).unwrap();
+        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
         assert_eq!((c.min, c.max), (11, 19)); // 11 ; 5 + 4 + 10
     }
 
@@ -481,7 +498,7 @@ mod tests {
             instr("nop", vec![]),
             instr("jp", vec![sym("loop")]),
         ];
-        let e = path_costs(&items, Cpu::Z80).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::UnboundedLoop);
     }
 
@@ -498,7 +515,7 @@ mod tests {
             label("join"),
             instr("ret", vec![]),
         ];
-        let c = path_costs(&items, Cpu::Z80).unwrap();
+        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
         // left: 10 + 4 + 10 + 10 = 34 ; right: 10 + 4 + 4 + 10 = 28
         assert_eq!((c.min, c.max), (28, 34));
     }
@@ -507,7 +524,7 @@ mod tests {
     #[test]
     fn a_call_is_opaque() {
         let items = vec![instr("call", vec![sym("Helper")]), instr("ret", vec![])];
-        let e = path_costs(&items, Cpu::Z80).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::OpaqueCall { mnemonic: "call".into() });
     }
 
@@ -515,7 +532,7 @@ mod tests {
     #[test]
     fn a_tail_transfer_out_is_unbounded() {
         let items = vec![instr("nop", vec![]), instr("jp", vec![sym("Elsewhere")])];
-        let e = path_costs(&items, Cpu::Z80).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
         assert_eq!(
             e.kind,
             BudgetFindingKind::UnboundedTransfer { mnemonic: "jp".into() }
@@ -526,7 +543,7 @@ mod tests {
     #[test]
     fn a_fall_off_the_end_is_unbounded() {
         let items = vec![instr("nop", vec![]), instr("nop", vec![])];
-        let e = path_costs(&items, Cpu::Z80).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
         assert_eq!(
             e.kind,
             BudgetFindingKind::UnboundedTransfer { mnemonic: "nop".into() }
@@ -537,7 +554,7 @@ mod tests {
     #[test]
     fn an_off_table_op_is_unknown() {
         let items = vec![instr("rlca", vec![]), instr("ret", vec![])];
-        let e = path_costs(&items, Cpu::Z80).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::UnknownOp { mnemonic: "rlca".into() });
     }
 
@@ -546,7 +563,7 @@ mod tests {
     #[test]
     fn a_68k_body_is_unmodeled() {
         let items = vec![instr("nop", vec![]), instr("rts", vec![])];
-        let e = path_costs(&items, Cpu::M68000).unwrap_err();
+        let e = path_costs(&items, Cpu::M68000, sp()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::UnmodeledCpu);
     }
 
@@ -554,7 +571,7 @@ mod tests {
     #[test]
     fn an_empty_body_costs_nothing() {
         let items = vec![label("only")];
-        let c = path_costs(&items, Cpu::Z80).unwrap();
+        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
         assert_eq!((c.min, c.max), (0, 0));
     }
 
@@ -567,8 +584,8 @@ mod tests {
             label("skip"),
             instr("ret", vec![]),
         ];
-        assert!(check_cycle_budget(&items, Cpu::Z80, Some(24), false).is_empty());
-        let f = check_cycle_budget(&items, Cpu::Z80, Some(23), false);
+        assert!(check_cycle_budget(&items, Cpu::Z80, sp(), Some(24), false).is_empty());
+        let f = check_cycle_budget(&items, Cpu::Z80, sp(), Some(23), false);
         assert_eq!(f.len(), 1);
         assert_eq!(
             f[0].kind,
@@ -585,11 +602,12 @@ mod tests {
             label("skip"),
             instr("ret", vec![]),
         ];
-        let f = check_cycle_budget(&uneven, Cpu::Z80, None, true);
+        let f = check_cycle_budget(&uneven, Cpu::Z80, sp(), None, true);
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].kind, BudgetFindingKind::PathMismatch { min: 20, max: 24 });
-        // Pad the short arm with one `nop` (4 T) — now both arms cost 24.
-        let even = vec![
+        // Rejoining the arms costs the fall-through a `jp .join` (10 T), so the
+        // arms are 34 and 36 — closer, still unequal.
+        let rejoined = vec![
             instr("jp", vec![cc(Z80Cond::Z), sym("skip")]),
             instr("nop", vec![]),
             instr("jp", vec![sym("join")]),
@@ -603,15 +621,15 @@ mod tests {
         ];
         // taken: 10 + 4*4 + 10 = 36 ; not-taken: 10 + 4 + 10 + 10 = 34.
         assert_eq!(
-            check_cycle_budget(&even, Cpu::Z80, None, true)[0].kind,
+            check_cycle_budget(&rejoined, Cpu::Z80, sp(), None, true)[0].kind,
             BudgetFindingKind::PathMismatch { min: 34, max: 36 }
         );
         // Spelling the short arm's join as `jr` (12 T) rather than `jp` (10 T)
         // buys the missing 2 T-states — the same substitution `pad_to_cycles`'s
         // dense mode makes, and here it is machine-checked instead of counted.
-        let mut balanced = even.clone();
+        let mut balanced = rejoined.clone();
         balanced[2] = instr("jr", vec![sym("join")]);
-        assert!(check_cycle_budget(&balanced, Cpu::Z80, None, true).is_empty());
+        assert!(check_cycle_budget(&balanced, Cpu::Z80, sp(), None, true).is_empty());
     }
 
     // A proc declaring neither attribute is not walked at all, so an unbounded
@@ -619,7 +637,7 @@ mod tests {
     #[test]
     fn an_undeclared_proc_is_not_walked() {
         let items = vec![label("loop"), instr("jp", vec![sym("loop")])];
-        assert!(check_cycle_budget(&items, Cpu::Z80, None, false).is_empty());
+        assert!(check_cycle_budget(&items, Cpu::Z80, sp(), None, false).is_empty());
     }
 
     // Both conclusions come off ONE walk, so a proc carrying both attributes
@@ -632,7 +650,7 @@ mod tests {
             label("skip"),
             instr("ret", vec![]),
         ];
-        let f = check_cycle_budget(&items, Cpu::Z80, Some(20), true);
+        let f = check_cycle_budget(&items, Cpu::Z80, sp(), Some(20), true);
         assert_eq!(f.len(), 2);
         assert_eq!(f[0].kind.lint_id(), "cycles.over-budget");
         assert_eq!(f[1].kind.lint_id(), "cycles.path-mismatch");
@@ -643,7 +661,7 @@ mod tests {
     #[test]
     fn a_bail_replaces_the_conclusions() {
         let items = vec![instr("call", vec![sym("Helper")]), instr("ret", vec![])];
-        let f = check_cycle_budget(&items, Cpu::Z80, Some(1), true);
+        let f = check_cycle_budget(&items, Cpu::Z80, sp(), Some(1), true);
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].kind.lint_id(), "cycles.opaque-call");
     }
@@ -664,7 +682,7 @@ mod tests {
             items.push(label(&format!("j{i}")));
         }
         items.push(instr("ret", vec![]));
-        let c = path_costs(&items, Cpu::Z80).unwrap();
+        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
         // per diamond: left 10+4+10 = 24, right 10+4+4 = 18; + ret 10.
         assert_eq!((c.min, c.max), (18 * 10 + 10, 24 * 10 + 10));
     }
@@ -679,8 +697,46 @@ mod tests {
             instr("djnz", vec![sym("loop")]),
             instr("ret", vec![]),
         ];
-        let e = path_costs(&items, Cpu::Z80).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::UnboundedLoop);
+    }
+
+    // A CONDITIONAL return at the very end of a body presents [Abandon, Abandon]:
+    // the taken edge returns, the other runs off the end. Only the first is a path
+    // end — charging both would close an escaping path at zero cost and report a
+    // bound that is TOO LOW, which is the one error direction a budget must not
+    // make.
+    #[test]
+    fn a_tail_conditional_return_refuses_its_fall_through() {
+        let items = vec![instr("nop", vec![]), instr("ret", vec![cc(Z80Cond::Z)])];
+        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
+        assert_eq!(
+            e.kind,
+            BudgetFindingKind::UnboundedTransfer { mnemonic: "ret".into() }
+        );
+        // The twin: give the fall-through somewhere to go and the same shape
+        // measures — 4 + 11 = 15 taken, 4 + 5 + 10 = 19 through.
+        let closed = vec![
+            instr("nop", vec![]),
+            instr("ret", vec![cc(Z80Cond::Z)]),
+            instr("ret", vec![]),
+        ];
+        let c = path_costs(&closed, Cpu::Z80, sp()).unwrap();
+        assert_eq!((c.min, c.max), (15, 19));
+    }
+
+    // Inline data in a code stream emits BYTES that decode as instructions if
+    // control reaches them, and the CFG links straight across it — so a body
+    // carrying any is refused rather than costed as if the bytes were free.
+    #[test]
+    fn inline_data_is_refused() {
+        let items = vec![
+            instr("nop", vec![]),
+            CodeItem::Inline(crate::value::DataBuf { cells: Vec::new(), size: 4 }, sp()),
+            instr("ret", vec![]),
+        ];
+        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
+        assert_eq!(e.kind, BudgetFindingKind::InlineData);
     }
 
     // The T-state table is shared with `cycles(L1, L2)`: the same span costs the
@@ -695,7 +751,7 @@ mod tests {
         assert_eq!(crate::z80_cycles::span_cost(&body).unwrap(), 18);
         let mut items = body;
         items.push(instr("ret", vec![])); // 10
-        let c = path_costs(&items, Cpu::Z80).unwrap();
+        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
         assert_eq!((c.min, c.max), (28, 28));
     }
 }

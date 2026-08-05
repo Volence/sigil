@@ -264,6 +264,28 @@ impl Parser {
         attrs
     }
 
+    /// Attach the collected item-level `@`-attributes to `item`. Only a `proc`
+    /// carries them; anywhere else the attribute has no consumer, which for a
+    /// declared contract is worse than a parse error. Shared by BOTH item loops —
+    /// the top-level one and the section body — because a proc inside a `section`
+    /// is still a proc and its contract is still its contract.
+    fn attach_item_attrs(&mut self, item: &mut Item, attrs: Vec<Attr>) {
+        if attrs.is_empty() {
+            return;
+        }
+        match item {
+            Item::Proc(p) => p.attrs = attrs,
+            other => {
+                let sp = item_span(other);
+                self.diag_at(
+                    sp,
+                    "an `@`-attribute here is only supported on a `proc` \
+                     declaration (contract-grammar v2 §8: `@scaffolding`)",
+                );
+            }
+        }
+    }
+
     /// Shared attribute-form validation, run wherever an attr is parsed (item-level
     /// via [`item_attrs`] and module-level in [`file`]). `@scaffolding` needs its
     /// one reason string; `@allow("clobbers.unanalyzable", …)` needs a non-empty
@@ -272,6 +294,38 @@ impl Parser {
     /// silently; mirrors `@scaffolding`'s mandatory reason); `@budget` names its
     /// unit and `@cycles_exact` takes nothing.
     fn validate_attr_form(&mut self, attr: &Attr) {
+        // A closed set. An attribute nobody consumes is silently inert, which for a
+        // DECLARED CONTRACT is worse than a parse error: `@cycles_exakt` reads as a
+        // proof and buys none. (`@align` / `@shape_divergent` are not in this
+        // family — they are consumed at their own syntactic positions and never
+        // reach here.)
+        const KNOWN: [&str; 5] = ["as_compat", "allow", "scaffolding", "budget", "cycles_exact"];
+        if !KNOWN.contains(&attr.name.as_str()) {
+            self.diag_at(
+                attr.span,
+                format!(
+                    "[attr.unknown] `@{}` is not a known attribute (expected one of: {})",
+                    attr.name,
+                    KNOWN.join(", ")
+                ),
+            );
+            return;
+        }
+        // Only `@budget` reads an argument NAME. Everywhere else a keyword would be
+        // discarded in silence, which is how a caller ends up believing they asked
+        // for something they did not.
+        if attr.name != "budget" {
+            for a in attr.args.iter().filter(|a| a.name.is_some()) {
+                self.diag_at(
+                    a.span,
+                    format!(
+                        "[attr.form] `@{}` takes positional arguments — a `name:` here is \
+                         read by nothing",
+                        attr.name
+                    ),
+                );
+            }
+        }
         // `@budget(cycles: N)` (contract unification §4-cycles). The unit is
         // spelled by the keyword, not implied by position, so a later budget over
         // a different resource reads unambiguously beside this one.
@@ -281,7 +335,7 @@ impl Parser {
             if attr.args.len() != 1 || !names_cycles {
                 self.diag_at(
                     attr.span,
-                    "[budget.form] `@budget` takes exactly one named resource budget: \
+                    "[cycles.form] `@budget` takes exactly one named resource budget: \
                      `@budget(cycles: N)`",
                 );
             }
@@ -289,7 +343,7 @@ impl Parser {
         if attr.name == "cycles_exact" && !attr.args.is_empty() {
             self.diag_at(
                 attr.span,
-                "[budget.form] `@cycles_exact` takes no arguments — it proves every \
+                "[cycles.form] `@cycles_exact` takes no arguments — it proves every \
                  path through the proc costs the same, whatever that cost is",
             );
         }
@@ -301,10 +355,10 @@ impl Parser {
             );
         }
         let is_unanalyzable_allow = attr.name == "allow"
-            && matches!(attr.args.first(), Some(a) if matches!(&a.value, Expr::Str(s, _) if s == "clobbers.unanalyzable"));
+            && attr.args.first().and_then(Arg::str_value) == Some("clobbers.unanalyzable");
         if is_unanalyzable_allow {
             let has_reason =
-                matches!(attr.args.get(1), Some(a) if matches!(&a.value, Expr::Str(s, _) if !s.is_empty()));
+                attr.args.get(1).and_then(Arg::str_value).is_some_and(|s| !s.is_empty());
             if attr.args.len() != 2 || !has_reason {
                 self.diag_at(
                     attr.span,
@@ -372,19 +426,7 @@ impl Parser {
             let attrs = self.item_attrs();
             match self.item() {
                 Some(mut item) => {
-                    if !attrs.is_empty() {
-                        match &mut item {
-                            Item::Proc(p) => p.attrs = attrs,
-                            other => {
-                                let sp = item_span(other);
-                                self.diag_at(
-                                    sp,
-                                    "an `@`-attribute here is only supported on a `proc` \
-                                     declaration (contract-grammar v2 §8: `@scaffolding`)",
-                                );
-                            }
-                        }
-                    }
+                    self.attach_item_attrs(&mut item, attrs);
                     if let Some((text, _)) = docs {
                         self.docs.push(DocEntry { item_span: item_span(&item), text });
                     }
@@ -3420,7 +3462,11 @@ impl Parser {
                     }
                     break;
                 }
-                let parsed = self.item();
+                let attrs = self.item_attrs();
+                let mut parsed = self.item();
+                if let Some(item) = parsed.as_mut() {
+                    self.attach_item_attrs(item, attrs);
+                }
                 if let (Some(item), Some((text, _))) = (&parsed, &docs) {
                     // A doc on the REJECTED nested-section item below would be
                     // a phantom entry (its item never survives) — skip the

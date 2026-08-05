@@ -48,9 +48,10 @@
 //! place that decides.
 
 use crate::closure::RegEffect;
-use crate::flag_check::{instr_span, is_return_mnemonic, Cfg, Edge};
+use crate::flag_check::{entry_instr_idx, instr_span, is_return_mnemonic, Cfg, Edge};
 use crate::lower::instr_written_regs;
 use crate::value::{CodeItem, CodeOperand, Reg, Width};
+use sigil_ir::backend::Cpu;
 use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -196,12 +197,6 @@ impl State {
 
 fn reg_idx(r: Reg) -> usize {
     r as usize
-}
-
-/// The item index of a body's FIRST instruction — its dataflow entry point.
-/// `None` for a body with no instructions at all (labels and inline data only).
-fn entry_instr_idx(items: &[CodeItem]) -> Option<usize> {
-    items.iter().position(|it| matches!(it, CodeItem::Instr { .. }))
 }
 
 /// The resolved operand size of instruction item `idx`, if any.
@@ -1077,7 +1072,7 @@ impl BalanceObserver<'_> {
     fn charges(&self, idx: usize) -> bool {
         match self.items.get(idx) {
             Some(CodeItem::Instr { mnemonic, .. }) => {
-                is_return_mnemonic(mnemonic) || self.charge_fall_off_end
+                is_return_mnemonic(mnemonic, Cpu::M68000) || self.charge_fall_off_end
             }
             _ => false,
         }

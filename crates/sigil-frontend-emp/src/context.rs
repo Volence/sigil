@@ -416,7 +416,7 @@ fn span_at(items: &[CodeItem], idx: usize, region: &Region) -> Span {
 }
 
 /// Does `mnem` name a subroutine CALL — a transfer whose control returns?
-fn is_call_mnemonic(mnem: &str, cpu: Cpu) -> bool {
+pub(crate) fn is_call_mnemonic(mnem: &str, cpu: Cpu) -> bool {
     match cpu {
         Cpu::Z80 => mnem == "call" || mnem == "rst",
         _ => matches!(mnem, "jsr" | "bsr" | "jbsr"),

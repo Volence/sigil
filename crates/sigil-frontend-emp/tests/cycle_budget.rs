@@ -24,11 +24,11 @@ fn lower_cpu(src: &str, cpu: Cpu) -> Vec<Diagnostic> {
     diags
 }
 
-/// Every `[cycles.*]` / `[budget.*]` diagnostic, whatever the id or level.
+/// Every `[cycles.*]` diagnostic, whatever the id or level.
 fn cycle_diags(diags: &[Diagnostic]) -> Vec<&Diagnostic> {
     diags
         .iter()
-        .filter(|d| d.message.contains("[cycles.") || d.message.contains("[budget."))
+        .filter(|d| d.message.contains("[cycles."))
         .collect()
 }
 
@@ -106,11 +106,10 @@ fn cycles_exact_fires_on_unequal_paths() {
     assert!(f.message.contains("24"), "names the dear path: {}", f.message);
 }
 
-/// Padding the short arm to match is what the proof is FOR: the same body, with
-/// the branch arm padded, proves.
+/// Padding the short arm until the two match is what the proof is FOR. The pair
+/// that still differs fires; the pair that has been balanced proves.
 #[test]
 fn cycles_exact_proves_a_padded_pair() {
-    // taken: jp cc 10 + nop 4 + ret 10 = 24 ; not-taken: 10 + nop 4 + ret 10 = 24.
     let padded = "    jp z, .skip\n\
                   \x20   nop\n\
                   \x20   jp .join\n\
@@ -138,10 +137,15 @@ fn cycles_exact_proves_a_padded_pair() {
     assert_silent(&z80("@cycles_exact", balanced));
 }
 
-/// A single-path body is trivially exact.
+/// A single-path body is trivially exact — and the twin proves the checker is
+/// awake on the same shape the moment a second path appears.
 #[test]
 fn a_straight_line_is_trivially_exact() {
     assert_silent(&z80("@cycles_exact", "    nop\n    nop\n    ret\n"));
+    assert_one(
+        &z80("@cycles_exact", "    jp z, .skip\n    nop\n.skip:\n    nop\n    ret\n"),
+        "cycles.path-mismatch",
+    );
 }
 
 /// Both attributes on one proc report independently off the same walk.
@@ -184,6 +188,76 @@ fn an_unroutable_split_is_refused() {
     assert_one(
         &z80("@budget(cycles: 100)", "    djnz Elsewhere\n    ret\n"),
         "cycles.ambiguous-branch",
+    );
+}
+
+/// A CONDITIONAL return at the end of a body returns on its taken edge and runs
+/// off the end on the other. Only the first ends a path; charging both would
+/// close an escaping path at zero cost and report a bound that is TOO LOW.
+#[test]
+fn a_tail_conditional_return_is_refused() {
+    assert_one(
+        &z80("@budget(cycles: 100)", "    ld a, 1\n    ret z\n"),
+        "cycles.unbounded-transfer",
+    );
+    // The twin: give the fall-through a return of its own and it measures.
+    assert_silent(&z80("@budget(cycles: 22)", "    ld a, 1\n    ret z\n    ret\n"));
+}
+
+/// Data spliced into the code stream emits bytes that DECODE if control reaches
+/// them, and the control-flow model steps over them. A body carrying any is
+/// refused rather than costed as if the bytes were free.
+#[test]
+fn inline_data_is_refused() {
+    assert_silent(&z80("@budget(cycles: 100)", "    nop\n    ret\n"));
+    assert_one(
+        &z80("@budget(cycles: 100)", "    nop\n    dc.b $00, $00\n    ret\n"),
+        "cycles.inline-data",
+    );
+}
+
+/// A proc inside a `section` is still a proc, and its contract is still checked —
+/// which is where every Z80 proc in the engine lives.
+#[test]
+fn a_section_scoped_proc_carries_its_budget() {
+    let src = "module m\n\
+               section s (cpu: z80, vma: $0000) {\n\
+               @budget(cycles: 13)\n\
+               proc f() {\n    nop\n    ret\n}\n\
+               }\n";
+    assert_silent(&lower_cpu(&src.replace("cycles: 13", "cycles: 14"), Cpu::Z80));
+    let d = lower_cpu(src, Cpu::Z80);
+    assert_eq!(with_id(&d, "cycles.over-budget").len(), 1, "{d:?}");
+}
+
+/// A declared `falls_into` names its successor, so the refusal says THAT rather
+/// than describing it as an unknown escape.
+#[test]
+fn a_declared_fallthrough_is_refused_by_its_own_name() {
+    let src = "module m\nproc g() {\n    ret\n}\n\
+               @budget(cycles: 100)\n\
+               proc f() falls_into g {\n    nop\n}\n";
+    let d = lower_cpu(src, Cpu::Z80);
+    let f = with_id(&d, "cycles.unbounded-transfer");
+    assert_eq!(f.len(), 1, "{d:?}");
+    assert!(f[0].message.contains("`g`"), "names the successor: {}", f[0].message);
+}
+
+/// Two declarations of one contract are two claims where the reader sees one.
+#[test]
+fn a_repeated_declaration_is_reported() {
+    let d = z80("@budget(cycles: 100)\n@budget(cycles: 1)", "    nop\n    ret\n");
+    assert_eq!(with_id(&d, "cycles.form").len(), 1, "the repeat is named: {d:?}");
+}
+
+/// A misspelled attribute is a proof that silently disappears, so the name is a
+/// closed set.
+#[test]
+fn a_misspelled_attribute_is_loud() {
+    let (_f, errs) = parse_str("module m\n@cycles_exakt\nproc f() {\n    ret\n}\n");
+    assert!(
+        errs.iter().any(|d| d.message.contains("[attr.unknown]")),
+        "a typo does not silently drop the proof: {errs:?}"
     );
 }
 
@@ -282,7 +356,7 @@ fn allow_does_not_suppress_a_budget() {
 fn budget_requires_its_resource_keyword() {
     let (_f, errs) = parse_str("module m\n@budget(100)\nproc f() {\n    ret\n}\n");
     assert!(
-        errs.iter().any(|d| d.message.contains("[budget.form]")),
+        errs.iter().any(|d| d.message.contains("[cycles.form]")),
         "a positional budget is rejected: {errs:?}"
     );
 }
@@ -292,7 +366,7 @@ fn budget_requires_its_resource_keyword() {
 fn cycles_exact_takes_no_arguments() {
     let (_f, errs) = parse_str("module m\n@cycles_exact(195)\nproc f() {\n    ret\n}\n");
     assert!(
-        errs.iter().any(|d| d.message.contains("[budget.form]")),
+        errs.iter().any(|d| d.message.contains("[cycles.form]")),
         "an argument to `@cycles_exact` is rejected: {errs:?}"
     );
 }
@@ -309,15 +383,16 @@ fn the_budget_may_be_a_comptime_expression() {
     assert!(f.message.contains("23"), "the folded ceiling is reported: {}", f.message);
 }
 
-/// A ceiling that does not fold reports the form error once, and the walk does
-/// not then also complain about the body.
+/// A ceiling that does not fold reports the form error, and the walk does NOT
+/// then also complain about a body it was never able to judge.
 #[test]
-fn an_unfoldable_budget_reports_once() {
+fn an_unfoldable_budget_reports_the_form_and_stops() {
     let d = lower_cpu(
         "module m\n@budget(cycles: NotAConst)\nproc f() {\n    call Helper\n    ret\n}\n",
         Cpu::Z80,
     );
-    assert!(with_id(&d, "cycles.opaque-call").is_empty(), "no second complaint: {d:?}");
+    assert_eq!(with_id(&d, "cycles.form").len(), 1, "the broken ceiling is named: {d:?}");
+    assert!(with_id(&d, "cycles.opaque-call").is_empty(), "and the body is not judged: {d:?}");
 }
 
 // ===========================================================================

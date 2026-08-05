@@ -571,6 +571,17 @@ impl<'a> Evaluator<'a> {
                 );
                 Value::Poison
             }
+            Err(crate::z80_cycles::CycleBail::PathEnd { mnemonic, span: isp }) => {
+                self.error(
+                    isp,
+                    format!(
+                        "[cycles.path-end] `{mnemonic}` ends the path — a `cycles(L1, L2)` span \
+                         is a straight-line sum and cannot reach past a return; cut the span \
+                         before it, or use `@budget(cycles: N)` for a whole-proc bound"
+                    ),
+                );
+                Value::Poison
+            }
             Err(crate::z80_cycles::CycleBail::UnknownOp { mnemonic, span: isp }) => {
                 self.error(
                     isp,
@@ -688,25 +699,30 @@ impl<'a> Evaluator<'a> {
             );
             return Value::Poison;
         }
-        if rem % 4 != 0 {
+        // The two pad primitives cost what `z80_cycles` says they cost — the pad
+        // arithmetic reads the SAME table the `cycles()` measurement it is closing
+        // came from, so a correction to one can never leave the other emitting a
+        // stale count.
+        let nop_t = i128::from(pad_unit_cost("nop", &[]));
+        let jr_t = i128::from(pad_unit_cost("jr", &[CodeOperand::Sym(String::new())]));
+        if rem % nop_t != 0 {
             self.error(
                 span,
                 format!(
                     "`pad_to_cycles`: the pad {rem} T-states ({target} - {measured}) is not a \
-                     multiple of 4 (a `nop` is 4 T-states) — the target is unreachable with nop padding"
+                     multiple of {nop_t} (a `nop` is {nop_t} T-states) — the target is unreachable with nop padding"
                 ),
             );
             return Value::Poison;
         }
-        // DENSE: as many 12 T / 2 B unconditional `jr`s as fit, then 4 T / 1 B `nop`s
-        // for the sub-12 remainder. 12 is a multiple of 4, so `rem % 12` is too and
-        // the split is exact: 12*jrs + 4*nops == rem, always.
-        // SPARSE (default): all `nop`s — `jrs` is 0 and the nop count is the old
-        // `rem / 4`, so the emitted stream is byte-identical to before.
+        // DENSE: as many 2-byte unconditional `jr`s as fit, then 1-byte `nop`s for
+        // the sub-`jr` remainder. A `jr`'s cost is a multiple of a `nop`'s, so the
+        // split is exact: jr_t*jrs + nop_t*nops == rem, always.
+        // SPARSE (default): all `nop`s.
         let (jrs, nops) = if dense {
-            ((rem / 12) as usize, ((rem % 12) / 4) as usize)
+            ((rem / jr_t) as usize, ((rem % jr_t) / nop_t) as usize)
         } else {
-            (0usize, (rem / 4) as usize)
+            (0usize, (rem / nop_t) as usize)
         };
         let mut items: Vec<CodeItem> = Vec::with_capacity(jrs * 2 + nops);
         for _ in 0..jrs {
@@ -1007,4 +1023,15 @@ fn parse_emp_int(s: &str) -> Option<i128> {
     }
     let mag = i128::from_str_radix(digits, radix).ok()?;
     Some(if neg { -mag } else { mag })
+}
+
+/// The T-state cost of a pad PRIMITIVE, read from the shared Z80 table
+/// ([`crate::z80_cycles::instr_cost`]). A pad unit is a fixed-cost form by
+/// construction — `pad_to_cycles` would have nothing to emit otherwise — so an
+/// unexpected answer is a broken table rather than a user error.
+fn pad_unit_cost(mnemonic: &str, ops: &[CodeOperand]) -> u16 {
+    match crate::z80_cycles::instr_cost(mnemonic, ops) {
+        crate::z80_cycles::Cost::Fixed(n) => n,
+        other => unreachable!("`{mnemonic}` is a pad primitive and must be fixed-cost, got {other:?}"),
+    }
 }

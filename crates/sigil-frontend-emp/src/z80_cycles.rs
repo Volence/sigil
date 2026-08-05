@@ -27,6 +27,9 @@
 //!   * `[cycles.unknown-op]` — any op/form outside the driver-demand table. The table
 //!     is the timed-region subset ONLY; a future timed region adds its ops
 //!     explicitly, never a silent default cost.
+//!   * `[cycles.path-end]` — a RETURN inside a span. A straight-line sum cannot
+//!     represent a path ending, so it would go on costing instructions the
+//!     machine never reaches.
 //!
 //! Table values are the asl/Zilog T-states, cross-checked against the driver's own
 //! CYCLE-BALANCE PROOF arithmetic (`z80_sound_driver.asm:48-110`): FILL = 195,
@@ -62,6 +65,9 @@ pub enum CycleBail {
     AmbiguousBranch { mnemonic: String, span: Span },
     /// An op/form outside the table sits inside the span.
     UnknownOp { mnemonic: String, span: Span },
+    /// A RETURN sits inside the span. A straight-line sum has no notion of a path
+    /// ending, so it would keep costing instructions the machine never reaches.
+    PathEnd { mnemonic: String, span: Span },
 }
 
 /// `ix`/`iy` (a 16-bit inc/dec on an index reg costs 10, a plain pair 6)?
@@ -173,6 +179,12 @@ pub fn span_cost(items: &[CodeItem]) -> Result<u16, CycleBail> {
     let mut total: u16 = 0;
     for it in items {
         let CodeItem::Instr { mnemonic, ops, span, .. } = it else { continue };
+        // A return has a cost (the budget walk charges it), but inside a
+        // straight-line span it is a path END: everything after it in the slice is
+        // unreachable, so summing on would answer a question nobody asked.
+        if crate::flag_check::is_return_mnemonic(mnemonic, sigil_ir::backend::Cpu::Z80) {
+            return Err(CycleBail::PathEnd { mnemonic: mnemonic.clone(), span: *span });
+        }
         match instr_cost(mnemonic, ops) {
             Cost::Fixed(n) => total = total.saturating_add(n),
             Cost::Split { .. } => {

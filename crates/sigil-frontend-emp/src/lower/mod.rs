@@ -1086,7 +1086,7 @@ fn validate_allow_attrs(file: &ast::File, diags: &mut Vec<Diagnostic>) {
 fn allows_lint(file: &ast::File, id: &str) -> bool {
     file.attrs.iter().any(|a| {
         a.name == "allow"
-            && a.args.iter().any(|arg| matches!(&arg.value, ast::Expr::Str(s, _) if s == id))
+            && a.args.iter().any(|arg| arg.str_value() == Some(id))
     })
 }
 
