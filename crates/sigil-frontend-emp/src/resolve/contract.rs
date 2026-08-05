@@ -28,7 +28,23 @@ pub struct ContractModule<'a> {
 /// Bind every `interface` in `modules` against its one `implement`, returning the
 /// resolved environment plus every diagnostic. `defines` is the build-shape `-D`
 /// environment consulted by comptime-`if` binding groups and const values.
+///
+/// Binding values evaluate against each impl FILE alone — the production resolve
+/// pass hands this ambient-injected module clones, so imported consts resolve.
+/// A caller without that injection (the corpus walk) supplies the imports as an
+/// explicit ambient via [`bind_with_ambient`].
 pub fn bind(modules: &[ContractModule<'_>], defines: &[(String, i128)]) -> (InterfaceEnv, Vec<Diagnostic>) {
+    bind_with_ambient(modules, defines, &[])
+}
+
+/// [`bind`] with a cross-file `ambient` declaration slice consulted by every
+/// binding-value / group-condition evaluation (the corpus walk's PASS-1
+/// environment — see [`crate::corpus_contracts::bind_corpus_interfaces`]).
+pub fn bind_with_ambient(
+    modules: &[ContractModule<'_>],
+    defines: &[(String, i128)],
+    ambient: &[ast::Item],
+) -> (InterfaceEnv, Vec<Diagnostic>) {
     let mut diags = Vec::new();
 
     // Collect every interface declaration (name -> decl + owner), and every
@@ -58,8 +74,9 @@ pub fn bind(modules: &[ContractModule<'_>], defines: &[(String, i128)]) -> (Inte
             }
             1 => {
                 let (impl_decl, impl_file, _impl_owner) = impls[0];
-                let resolved =
-                    resolve_one(idecl, impl_decl, impl_file, &all_items, defines, &mut diags);
+                let resolved = resolve_one(
+                    idecl, impl_decl, impl_file, &all_items, defines, ambient, &mut diags,
+                );
                 env.interfaces.insert(iname.clone(), resolved);
             }
             _ => {
@@ -92,17 +109,19 @@ pub fn bind(modules: &[ContractModule<'_>], defines: &[(String, i128)]) -> (Inte
 }
 
 /// Resolve one `implement` block against its interface declaration.
+#[allow(clippy::too_many_arguments)] // internal driver; mirrors bind's state set
 fn resolve_one(
     idecl: &ast::InterfaceDecl,
     impl_decl: &ast::ImplementDecl,
     impl_file: &ast::File,
     all_items: &[&ast::Item],
     defines: &[(String, i128)],
+    ambient: &[ast::Item],
     diags: &mut Vec<Diagnostic>,
 ) -> ResolvedInterface {
     // Flatten the binding list, honoring comptime-`if` groups (item-7a precedent).
     let mut flat: Vec<&ast::ImplBinding> = Vec::new();
-    flatten_bindings(&impl_decl.bindings, impl_file, defines, diags, &mut flat);
+    flatten_bindings(&impl_decl.bindings, impl_file, defines, ambient, diags, &mut flat);
 
     // Index the chosen bindings by member name (checking each against the
     // interface's declared members: unknown member, kind mismatch).
@@ -142,7 +161,8 @@ fn resolve_one(
             ast::InterfaceMemberKind::Const(ty) => {
                 match bound.get(&member.name) {
                     Some(ast::ImplBinding::Const { value, .. }) => {
-                        let (v, mut ds) = crate::eval::eval_expr_in_file(impl_file, value, defines);
+                        let (v, mut ds) =
+                            crate::eval::eval_expr_in_file_ambient(impl_file, ambient, value, defines);
                         diags.append(&mut ds);
                         check_const_type(&idecl.name, &member.name, ty, &v, member.span, diags);
                         members.insert(member.name.clone(), ResolvedMember::Const(v));
@@ -186,13 +206,15 @@ fn flatten_bindings<'a>(
     bindings: &'a [ast::ImplBinding],
     impl_file: &ast::File,
     defines: &[(String, i128)],
+    ambient: &[ast::Item],
     diags: &mut Vec<Diagnostic>,
     out: &mut Vec<&'a ast::ImplBinding>,
 ) {
     for b in bindings {
         match b {
             ast::ImplBinding::Group { cond, then_body, else_body, span } => {
-                let (v, mut ds) = crate::eval::eval_expr_in_file(impl_file, cond, defines);
+                let (v, mut ds) =
+                    crate::eval::eval_expr_in_file_ambient(impl_file, ambient, cond, defines);
                 diags.append(&mut ds);
                 let truthy = match v {
                     crate::value::Value::Bool(x) => x,
@@ -211,7 +233,7 @@ fn flatten_bindings<'a>(
                     }
                 };
                 let arm = if truthy { then_body } else { else_body };
-                flatten_bindings(arm, impl_file, defines, diags, out);
+                flatten_bindings(arm, impl_file, defines, ambient, diags, out);
             }
             other => out.push(other),
         }

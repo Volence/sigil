@@ -131,6 +131,21 @@ pub struct ContractReport {
     /// Per-proc drop counts (only procs with `> 0`), sorted by proc name — the
     /// "per-file reported event": names exactly which proc lost instructions.
     pub dropped_by_proc: Vec<(String, usize)>,
+    /// The `[comptime.unresolved]` surface: `(proc, name, span)` rows, one per
+    /// comptime-condition reference — an `if` condition, a `while` condition, or
+    /// a `for` iterable — the walk's define/const environment failed to resolve.
+    /// Sorted (proc, name, span), exact duplicates deduped.
+    /// This is the toggle complement of [`dropped_instrs`]: a missing VALUE
+    /// define drops the instruction that needed it, but a statement-`if` whose
+    /// condition is `Value::Poison` discards BOTH arms whole — zero drops, zero
+    /// firings, the guarded code simply invisible. A profile that lost or
+    /// misspelled `DEBUG` or `SOUND_DRIVER_ENABLED` reproduces exactly that, so
+    /// the corpus gates pin this EMPTY per shipped shape. Collected AT the two
+    /// `if`-condition eval sites (statement and expression), never by a second
+    /// walk, so it cannot drift from what the analysis actually evaluated.
+    ///
+    /// [`dropped_instrs`]: Self::dropped_instrs
+    pub comptime_unresolved: Vec<(String, String, Span)>,
     /// The G5 §7 `[call.slot-type-mismatch]` firings: a domain-newtype-typed
     /// callee param slot (`Section_FlatIDXY (d2: GridX, …)`) reached at a call
     /// site by an untyped or wrong-newtype value. Sorted (proc, callee, reg,
@@ -199,6 +214,53 @@ pub fn analyze_corpus(files: &[ast::File]) -> ContractReport {
     analyze_corpus_with(files, &[])
 }
 
+/// Build the L1 interface environment for a corpus walk: bind every `interface`
+/// against ONE game's `implement` blocks — modules under `games.` are excluded
+/// from the bind set unless their id is `game_module_prefix` or sits under it
+/// (`games.sonic4` keeps `games.sonic4.game`, drops `games.demo.game`). The
+/// ANALYSIS module set is unchanged; only binding is game-selected, because
+/// [`crate::resolve::contract::bind`] requires exactly one `implement` per
+/// interface and the corpus holds one per game.
+///
+/// Binding values evaluate with the PASS-1 corpus environment as ambient
+/// (`const ENTRY_ID = GS_OJZ_SCROLL_TEST` reads an imported const, which the
+/// impl file alone cannot resolve — the production bind pass sees it through
+/// resolve's ambient injection, and this is the corpus equivalent). Returned
+/// diagnostics are the bind pass's own; a caller pinning the walk should assert
+/// no ERRORS among them, since a half-bound env silently poisons every
+/// `Iface.MEMBER` condition it failed to fill.
+pub fn bind_corpus_interfaces(
+    files: &[ast::File],
+    defines: &[(String, i128)],
+    game_module_prefix: &str,
+) -> (crate::contract::InterfaceEnv, Vec<sigil_span::Diagnostic>) {
+    let keep = |id: &str| {
+        !id.starts_with("games.")
+            || id == game_module_prefix
+            || id.strip_prefix(game_module_prefix).is_some_and(|rest| rest.starts_with('.'))
+    };
+    let with_ids: Vec<(String, &ast::File)> = files
+        .iter()
+        .map(|f| (f.module.path.segments.join("."), f))
+        .filter(|(id, _)| keep(id))
+        .collect();
+    // The bind AMBIENT is game-filtered exactly like the bind MODULE set: the
+    // bind only evaluates the selected game's implement, and an env carrying the
+    // OTHER game's declarations would let a cross-game name collision resolve
+    // last-indexed-wins — selecting bindings the shipped ROM does not. (The
+    // analysis walk's own PASS-1 env stays whole-corpus; it analyzes both games
+    // in one pass.)
+    let mut env: Vec<Item> = Vec::new();
+    for (_, file) in &with_ids {
+        collect_env(&file.items, &mut env);
+    }
+    let mods: Vec<crate::resolve::contract::ContractModule> = with_ids
+        .iter()
+        .map(|(id, f)| crate::resolve::contract::ContractModule { id, file: f })
+        .collect();
+    crate::resolve::contract::bind_with_ambient(&mods, defines, &env)
+}
+
 /// Whether a module declares `(cpu: z80)` — its procs are OUTSIDE the 68k
 /// register-contract closure (a mirror of `attr_cpu` in `lower/mod.rs`, kept
 /// local so `corpus_contracts` needs no lowering import).
@@ -215,7 +277,30 @@ fn module_is_z80(module: &ast::ModuleDecl) -> bool {
 /// collisions. Comptime-`if` gating is config-sensitive, so the defines choose
 /// which code paths lower (the plain canonical build is `SOUND_DRIVER_ENABLED=1`;
 /// the census — and `analyze_corpus` — use no defines).
+///
+/// Runs with an EMPTY interface environment: an L1 `Iface.MEMBER` reference in a
+/// comptime condition does not resolve here, and a statement-`if` gated on one
+/// discards both arms — visible on [`ContractReport::comptime_unresolved`], never
+/// silent. A shape-accurate walk supplies the env via
+/// [`analyze_corpus_with_contracts`].
 pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> ContractReport {
+    analyze_corpus_with_contracts(files, defines, &crate::contract::InterfaceEnv::empty())
+}
+
+/// [`analyze_corpus_with`] with a bound L1 interface environment — the walk the
+/// per-shape corpus gates run. The env decides comptime conditions gated on
+/// game-contract members (`if Game.CAMERA_JUMP_LOCK { }` in `Camera_Update`):
+/// with it, the member resolves to the SHAPE'S game's binding and the guarded arm
+/// enters the analysis exactly when it enters the shipped ROM; without it the
+/// reference lands on `comptime_unresolved` and the arm is invisible. The env is
+/// built by [`crate::resolve::contract::bind`] over the engine + ONE game's
+/// modules (`bind` requires exactly one `implement` per interface, and the corpus
+/// holds one per game).
+pub fn analyze_corpus_with_contracts(
+    files: &[ast::File],
+    defines: &[(String, i128)],
+    contracts: &crate::contract::InterfaceEnv,
+) -> ContractReport {
     let mut nodes: BTreeMap<String, ProcNode> = BTreeMap::new();
     let mut types: BTreeMap<String, RegEffect> = BTreeMap::new();
     let mut extern_names: BTreeSet<String> = BTreeSet::new();
@@ -230,6 +315,7 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     let mut cond_callees: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     let mut proc_bufs: Vec<ProcBuf> = Vec::new();
     let mut dropped_by_proc: Vec<(String, usize)> = Vec::new();
+    let mut comptime_unresolved: Vec<(String, String, Span)> = Vec::new();
 
     // PASS 1 — the cross-file TYPE ENVIRONMENT: every declaration item across the
     // whole corpus (structs / consts / newtypes / …), so PASS 2's per-file eval
@@ -267,6 +353,8 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
             defines,
             &env,
             &mut dropped_by_proc,
+            &mut comptime_unresolved,
+            contracts,
         );
     }
     dropped_by_proc.sort();
@@ -419,7 +507,7 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         if module_is_z80(&file.module) {
             collect_z80_flag_procs(
                 &file.items, file, &mut counter, defines, &env, &mut z80_flag_callees,
-                &mut z80_proc_bufs,
+                &mut z80_proc_bufs, &mut comptime_unresolved, contracts,
             );
         }
     }
@@ -720,6 +808,15 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
     unanalyzable_allows.sort();
     unanalyzable_allows.dedup();
 
+    // Both body-eval passes (68k PASS 2 + the Z80 flag pass) have contributed by
+    // here. Exact-duplicate rows collapse (a template instantiated twice evaluates
+    // the same condition twice); distinct sites stay distinct.
+    comptime_unresolved.sort_by(|a, b| {
+        (&a.0, &a.1, a.2.source.0, a.2.start, a.2.end)
+            .cmp(&(&b.0, &b.1, b.2.source.0, b.2.start, b.2.end))
+    });
+    comptime_unresolved.dedup();
+
     ContractReport {
         closure,
         firings,
@@ -739,6 +836,7 @@ pub fn analyze_corpus_with(files: &[ast::File], defines: &[(String, i128)]) -> C
         verified_cond_out,
         dropped_instrs,
         dropped_by_proc,
+        comptime_unresolved,
         slot_firings,
         branch_const_firings,
         bus_firings,
@@ -1057,15 +1155,20 @@ fn collect_items(
     defines: &[(String, i128)],
     env: &[Item],
     dropped_by_proc: &mut Vec<(String, usize)>,
+    comptime_unresolved: &mut Vec<(String, String, Span)>,
+    contracts: &crate::contract::InterfaceEnv,
 ) {
     for item in items {
         match item {
             Item::Proc(p) => {
                 proc_names.insert(p.name.clone());
-                let (node, buf, dropped) = proc_node(p, file, counter, defines, env);
+                let (node, buf, dropped, unresolved) =
+                    proc_node(p, file, counter, defines, env, contracts);
                 if dropped > 0 {
                     dropped_by_proc.push((p.name.clone(), dropped));
                 }
+                comptime_unresolved
+                    .extend(unresolved.into_iter().map(|(n, s)| (p.name.clone(), n, s)));
                 nodes.insert(p.name.clone(), node);
                 // §6 flag / conditional contracts this proc exposes to callers.
                 let flags = flags_of(&p.out_flags);
@@ -1111,6 +1214,7 @@ fn collect_items(
             Item::Section(s) => collect_items(
                 &s.items, file, nodes, types, extern_names, proc_names, extern_spans, counter,
                 flag_callees, cond_callees, proc_bufs, defines, env, dropped_by_proc,
+                comptime_unresolved, contracts,
             ),
             _ => {}
         }
@@ -1124,6 +1228,7 @@ fn collect_items(
 /// must-use check needs both sides (callee contract + caller body); this pass
 /// supplies them WITHOUT feeding the 68k closure — keeping the register-contract
 /// half of the PASS-2 Z80 skip intact.
+#[allow(clippy::too_many_arguments)] // mirrors collect_items' collector-state set
 fn collect_z80_flag_procs(
     items: &[Item],
     file: &ast::File,
@@ -1132,6 +1237,8 @@ fn collect_z80_flag_procs(
     env: &[Item],
     z80_flag_callees: &mut BTreeMap<String, BTreeSet<String>>,
     z80_proc_bufs: &mut Vec<ProcBuf>,
+    comptime_unresolved: &mut Vec<(String, String, Span)>,
+    contracts: &crate::contract::InterfaceEnv,
 ) {
     for item in items {
         match item {
@@ -1140,10 +1247,14 @@ fn collect_z80_flag_procs(
                 if !flags.is_empty() {
                     z80_flag_callees.insert(p.name.clone(), flags);
                 }
-                let (buf, _diags, next, _dropped) = crate::eval::eval_proc_body_env(
-                    file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::Z80, defines, env, &crate::contract::InterfaceEnv::empty(),
+                let (buf, _diags, next, _dropped, unresolved) = crate::eval::eval_proc_body_env(
+                    file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::Z80, defines, env, contracts,
                 );
                 *counter = next;
+                // A Z80 module's comptime conditions read the SAME define set —
+                // a lost toggle must be as loud here as in a 68k module.
+                comptime_unresolved
+                    .extend(unresolved.into_iter().map(|(n, s)| (p.name.clone(), n, s)));
                 if let Some(buf) = buf {
                     let mut discarded = Vec::new();
                     collect_discarded(&p.body, &mut discarded);
@@ -1171,6 +1282,7 @@ fn collect_z80_flag_procs(
             }
             Item::Section(s) => collect_z80_flag_procs(
                 &s.items, file, counter, defines, env, z80_flag_callees, z80_proc_bufs,
+                comptime_unresolved, contracts,
             ),
             _ => {}
         }
@@ -1185,9 +1297,10 @@ fn proc_node(
     counter: &mut u32,
     defines: &[(String, i128)],
     env: &[Item],
-) -> (ProcNode, Option<CodeBuf>, usize) {
-    let (buf, _diags, next, dropped) = crate::eval::eval_proc_body_env(
-        file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::M68000, defines, env, &crate::contract::InterfaceEnv::empty(),
+    contracts: &crate::contract::InterfaceEnv,
+) -> (ProcNode, Option<CodeBuf>, usize, Vec<(String, Span)>) {
+    let (buf, _diags, next, dropped, unresolved) = crate::eval::eval_proc_body_env(
+        file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::M68000, defines, env, contracts,
     );
     *counter = next;
 
@@ -1227,7 +1340,7 @@ fn proc_node(
         grants: p.grants.iter().map(|(n, _)| n.clone()).collect(),
         unanalyzable_allowed: unanalyzable_reason_in_force(file, p).is_some(),
     };
-    (node, buf, dropped)
+    (node, buf, dropped, unresolved)
 }
 
 /// The S2-D6 U4 escape hatch: the reason string of an

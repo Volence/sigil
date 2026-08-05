@@ -352,7 +352,19 @@ impl<'a> Evaluator<'a> {
                         return v.clone();
                     }
                     if self.consts.contains_key(name) || self.equs.contains_key(name) {
-                        return self.resolve_const(name, path.span);
+                        let v = self.resolve_const(name, path.span);
+                        // A POISONED const read is logged under the const's own
+                        // name: the memo returns Poison WITHOUT re-entering the
+                        // initializer, so a first failure outside any condition
+                        // would otherwise leave a later `if FOO == 1` with
+                        // nothing to harvest — the arm-invisibility hole through
+                        // the memo's side door. Over-reporting (the initializer's
+                        // own miss may log too, on first resolution) is the safe
+                        // polarity for a surface pinned empty.
+                        if matches!(v, Value::Poison) {
+                            self.note_unresolved_name(name.to_string(), path.span);
+                        }
+                        return v;
                     }
                     // A `-D NAME=INT` comptime define (sound-migration T2
                     // Task 1): an already-resolved int seeded by
@@ -392,6 +404,7 @@ impl<'a> Evaluator<'a> {
                     if self.label_ctx_active() {
                         return Value::Label(name.to_string());
                     }
+                    self.note_unresolved_name(name.to_string(), path.span);
                     self.error(path.span, format!("unknown name `{name}`"));
                     Value::Poison
                 }
@@ -562,6 +575,7 @@ impl<'a> Evaluator<'a> {
         if self.label_ctx_active() {
             return Value::Label(full);
         }
+        self.note_unresolved_name(full.clone(), path.span);
         self.error(path.span, format!("unknown name `{full}`"));
         Value::Poison
     }

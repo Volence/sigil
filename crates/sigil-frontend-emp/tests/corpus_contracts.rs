@@ -674,3 +674,208 @@ fn unconditional_out_spelled_sp_is_still_credited() {
     let verified = r.verified_uncond_out.get("Probe").cloned().unwrap_or_default();
     assert!(verified.contains("a7"), "`out(sp)` must stay an unconditional out: {verified:?}");
 }
+
+/// THE `[comptime.unresolved]` LEDGER REPRO (gap-ledger `[bprime-4-gates lens B]`
+/// row, executable). A statement-`if` whose condition references a name the
+/// define set does not resolve evaluates to `Poison` and discards BOTH arms:
+/// the guarded `moveq #1, d2` write is invisible to the closure (no firing),
+/// and nothing reaches `dropped_instrs` (arms are discarded whole, not
+/// dropped). The ONLY thing that sees the failure is the unresolved surface,
+/// which names the exact proc and name. Supplying the define — the SAME source
+/// — empties the surface and reveals the hidden write as a real closure firing:
+/// the two halves together are the class this surface catches and the drop
+/// count structurally cannot.
+#[test]
+fn a_poisoned_statement_if_is_invisible_at_zero_drops_and_the_surface_names_it() {
+    let src = "module m\n\
+         proc Foo () clobbers(d0) {\n\
+             moveq #0, d0\n\
+             if NOPE_UNDEFINED == 0 {\n\
+                 moveq #1, d2\n\
+             }\n\
+             rts\n\
+         }\n";
+
+    // Without the define: zero drops, zero firings, one surface row.
+    let r = analyze(&[src]);
+    assert!(!fires(&r, "Foo", "d2"), "the discarded arm's d2 write must be invisible: {:?}", r.firings);
+    assert_eq!(r.dropped_instrs, 0, "a poisoned condition drops nothing: {:?}", r.dropped_by_proc);
+    let rows: Vec<(&str, &str)> =
+        r.comptime_unresolved.iter().map(|(p, n, _)| (p.as_str(), n.as_str())).collect();
+    assert_eq!(
+        rows,
+        vec![("Foo", "NOPE_UNDEFINED")],
+        "the surface must name exactly the proc and the unresolved name"
+    );
+
+    // With the define: the surface empties and the hidden write becomes a real
+    // undeclared-clobber firing (`NOPE_UNDEFINED == 0` is true, the arm lowers).
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let r = sigil_frontend_emp::corpus_contracts::analyze_corpus_with(
+        &[file],
+        &[("NOPE_UNDEFINED".to_string(), 0)],
+    );
+    assert!(r.comptime_unresolved.is_empty(), "resolved: {:?}", r.comptime_unresolved);
+    assert!(fires(&r, "Foo", "d2"), "the revealed arm's d2 write must now fire: {:?}", r.firings);
+}
+
+/// The EXPRESSION-`if` sibling of the statement repro, in the shape where it
+/// really bites: a comptime CODE-EMITTING fn (the emit-tool idiom) whose gate
+/// condition fails to resolve. The `if` statement is silently skipped (`Poison`
+/// selects no branch), the fn FALLS THROUGH to `return Code.empty()`, the call
+/// splices nothing — the guarded `moveq #1, d2` never exists, at zero drops.
+/// The surface names the reference through the same eval-site harvest,
+/// attributed to the proc whose body evaluation reached it.
+///
+/// Honest boundary, pinned by construction here: the harvest records a
+/// RESOLUTION MISS, and label-value positions (an instruction immediate, a data
+/// initializer, a call argument) resolve an unknown bareword as a deferred link
+/// Label instead — so a condition evaluated UNDER one of those contexts is
+/// outside this surface's reach (the build rejects it as a type error, one-file
+/// and loud; the corpus statement-`if` sites all evaluate outside label ctx).
+#[test]
+fn a_poisoned_expression_if_inside_a_comptime_fn_lands_on_the_surface() {
+    let src = "module m\n\
+         comptime fn emit_thing() -> Code {\n\
+             if WHO_KNOWS == 1 {\n\
+                 return asm {\n\
+                     moveq #1, d2\n\
+                 }\n\
+             }\n\
+             return Code.empty()\n\
+         }\n\
+         proc Bar () clobbers(d0) {\n\
+             moveq #0, d0\n\
+             emit_thing()\n\
+             rts\n\
+         }\n";
+    let r = analyze(&[src]);
+    assert!(!fires(&r, "Bar", "d2"), "the ungated Code never spliced: {:?}", r.firings);
+    assert_eq!(r.dropped_instrs, 0, "nothing drops — the arm never existed: {:?}", r.dropped_by_proc);
+    let rows: Vec<(&str, &str)> =
+        r.comptime_unresolved.iter().map(|(p, n, _)| (p.as_str(), n.as_str())).collect();
+    assert_eq!(
+        rows,
+        vec![("Bar", "WHO_KNOWS")],
+        "the expression-if condition's unresolved name must surface"
+    );
+}
+
+/// THE BUILD-TIER HALF of the two-stage doctrine, pinned: an unresolved name in a
+/// comptime condition is a ONE-FILE fact, and the build path makes it a HARD
+/// ERROR (`unknown name`) — the evaluator reports at the resolution miss and
+/// lowering surfaces every eval diagnostic. The corpus surface exists for the
+/// fact a single build can never check: that every OTHER shipped shape's define
+/// set also reaches the analysis. So the build path is the first tier and the
+/// per-shape corpus gate the second; if this test ever fails, the corpus gate
+/// has become the ONLY line of defence and the tiering needs re-adjudication.
+#[test]
+fn an_unresolved_condition_name_is_a_hard_error_in_the_build_path() {
+    use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+    let src = "module m\n\
+         proc Foo () clobbers(d0) {\n\
+             moveq #0, d0\n\
+             if NOPE_UNDEFINED == 0 {\n\
+                 moveq #1, d2\n\
+             }\n\
+             rts\n\
+         }\n";
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "parse: {perrs:?}");
+    let (_module, diags) = lower_module(
+        &file,
+        &LowerOptions {
+            initial_cpu: sigil_ir::backend::Cpu::M68000,
+            include_root: None,
+            embed_base: None,
+            defines: vec![],
+        },
+    );
+    let errors: Vec<&str> = diags
+        .iter()
+        .filter(|d| d.level == sigil_span::Level::Error)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert!(
+        errors.iter().any(|m| m.contains("unknown name `NOPE_UNDEFINED`")),
+        "the build must hard-fail naming the unresolved condition name: {errors:?}"
+    );
+}
+
+/// The MEMO SIDE DOOR is closed: a const/equ whose initializer failed resolves
+/// to a MEMOIZED `Poison`, returned without re-entering the initializer — so a
+/// later `if FOO == 1` would find nothing newly logged to harvest, resurrecting
+/// the arm-invisibility hole through the memo. The const READ site therefore
+/// logs the const's own name whenever the resolved value is `Poison`. Two
+/// conditions on the same poisoned equ: the first surfaces both the
+/// initializer's miss and the read; the second — served purely from the memo —
+/// must still surface the read.
+#[test]
+fn a_memoized_poison_const_read_in_a_condition_still_lands_on_the_surface() {
+    let src = "module m\n\
+         equ FOO = MISSING_NAME\n\
+         proc Baz () clobbers(d0) {\n\
+             moveq #0, d0\n\
+             if FOO == 1 {\n\
+                 moveq #1, d3\n\
+             }\n\
+             if FOO == 1 {\n\
+                 moveq #1, d4\n\
+             }\n\
+             rts\n\
+         }\n";
+    let r = analyze(&[src]);
+    assert!(!fires(&r, "Baz", "d3") && !fires(&r, "Baz", "d4"), "arms discarded: {:?}", r.firings);
+    assert_eq!(r.dropped_instrs, 0, "nothing drops: {:?}", r.dropped_by_proc);
+    let foo_reads =
+        r.comptime_unresolved.iter().filter(|(p, n, _)| p == "Baz" && n == "FOO").count();
+    assert_eq!(
+        foo_reads, 2,
+        "BOTH poisoned reads must surface — one row per condition, the second \
+         served from the memo: {:?}",
+        r.comptime_unresolved.iter().map(|(p, n, _)| (p.as_str(), n.as_str())).collect::<Vec<_>>()
+    );
+    assert!(
+        r.comptime_unresolved.iter().any(|(p, n, _)| p == "Baz" && n == "MISSING_NAME"),
+        "the initializer's own miss surfaces on first resolution: {:?}",
+        r.comptime_unresolved
+    );
+}
+
+/// LOOPS join the surface: a `while` whose condition poisons stops silently
+/// (zero iterations), and a `for` whose iterable poisons skips its whole body —
+/// the same arm-invisibility a poisoned `if` has, at zero drops. Both loop
+/// heads harvest their resolution misses exactly as the `if` sites do.
+#[test]
+fn a_poisoned_loop_head_lands_on_the_surface() {
+    let src = "module m\n\
+         comptime fn spin() -> Code {\n\
+             while WHILE_GATE == 1 {\n\
+                 return asm {\n\
+                     moveq #1, d5\n\
+                 }\n\
+             }\n\
+             for i in 0..FOR_BOUND {\n\
+                 return asm {\n\
+                     moveq #1, d6\n\
+                 }\n\
+             }\n\
+             return Code.empty()\n\
+         }\n\
+         proc Qux () clobbers(d0) {\n\
+             moveq #0, d0\n\
+             spin()\n\
+             rts\n\
+         }\n";
+    let r = analyze(&[src]);
+    assert!(!fires(&r, "Qux", "d5") && !fires(&r, "Qux", "d6"), "no arm spliced: {:?}", r.firings);
+    assert_eq!(r.dropped_instrs, 0, "nothing drops: {:?}", r.dropped_by_proc);
+    let rows: Vec<(&str, &str)> =
+        r.comptime_unresolved.iter().map(|(p, n, _)| (p.as_str(), n.as_str())).collect();
+    assert_eq!(
+        rows,
+        vec![("Qux", "FOR_BOUND"), ("Qux", "WHILE_GATE")],
+        "both loop heads' unresolved names must surface"
+    );
+}

@@ -343,7 +343,18 @@ impl Evaluator<'_> {
                 // bool/int (mt_bank's define pattern — `if DEFINE == 1`).
                 // The chosen branch lowers inline against the SAME scope
                 // and buffer; the unchosen branch is never lowered.
-                let truthy = match self.eval_expr(cond, env) {
+                //
+                // A `Poison` condition discards BOTH arms — every instruction
+                // in them is invisible to `dropped_instrs` and to every
+                // downstream analysis. The watermark/harvest pair records the
+                // names the condition failed to resolve onto the
+                // `[comptime.unresolved]` surface at the SAME eval this arm
+                // decision reads, so a lost/misspelled toggle define is loud
+                // where the drop count is structurally silent.
+                let mark = self.unresolved_mark();
+                let cond_val = self.eval_expr(cond, env);
+                self.harvest_comptime_unresolved(mark);
+                let truthy = match cond_val {
                     Value::Bool(b) => b,
                     Value::Int(i) => i != 0,
                     Value::Poison => return,

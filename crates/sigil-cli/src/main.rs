@@ -875,7 +875,26 @@ fn run_contract_report(aeon: &std::path::Path, target: &BuildTarget) {
     let manifest = scan_or_exit(aeon);
 
     let files: Vec<_> = manifest.modules.iter().map(|m| m.file.clone()).collect();
-    let report = corpus_contracts::analyze_corpus_with(&files, &defines);
+    // The L1 interface env, bound against THIS shape's game (the game RAM module's
+    // parent id names it) — so a comptime condition on an `Iface.MEMBER`
+    // (`if Game.CAMERA_JUMP_LOCK { }`) selects the arm the shipped ROM assembles
+    // instead of landing on `[comptime.unresolved]`. Bind errors are as fatal as
+    // scan errors: a half-bound env silently poisons every condition it missed.
+    let (iface_env, bind_diags) = corpus_contracts::bind_corpus_interfaces(
+        &files,
+        &defines,
+        profile.game_module_prefix(),
+    );
+    let bind_errors: Vec<_> = bind_diags
+        .iter()
+        .filter(|d| d.level == sigil_span::Level::Error)
+        .cloned()
+        .collect();
+    render_program_diags(&manifest, &bind_errors);
+    if !bind_errors.is_empty() {
+        process::exit(1);
+    }
+    let report = corpus_contracts::analyze_corpus_with_contracts(&files, &defines, &iface_env);
     print_report_header("contract closure", &label, &defines);
     print_contract_report(&report);
 }
@@ -895,6 +914,20 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
     println!("\n-- dropped instructions (must be 0): {} --", report.dropped_instrs);
     for (proc, n) in &report.dropped_by_proc {
         println!("  DROPPED {n:>3}  {proc}");
+    }
+
+    // The toggle complement of the drop count: a comptime `if` whose condition
+    // fails to resolve discards BOTH arms at zero drops, so a lost/misspelled
+    // define shows ONLY here.
+    println!(
+        "\n-- [comptime.unresolved] condition names (must be 0): {} --",
+        report.comptime_unresolved.len()
+    );
+    for (proc, name, _span) in &report.comptime_unresolved {
+        println!(
+            "  UNRESOLVED  {proc:<28} comptime condition references `{name}`, \
+             which the define set does not resolve"
+        );
     }
 
     println!("\n-- extern/proc collisions (§11 Q4): {} --", report.extern_collisions.len());

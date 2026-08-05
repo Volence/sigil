@@ -42,7 +42,7 @@ fn cross_file_field_drops_and_is_counted_without_ambient() {
         Item::Proc(p) => Some(p),
         _ => None,
     }).unwrap();
-    let (buf, _diags, _n, dropped) =
+    let (buf, _diags, _n, dropped, _unresolved) =
         eval_proc_body_env(&f, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[], &[], &sigil_frontend_emp::contract::InterfaceEnv::empty());
     assert_eq!(dropped, 1, "the unresolved field instruction must be COUNTED as dropped");
     assert_eq!(count_moves(&buf), 0, "the dropped move must be absent from the buffer");
@@ -59,7 +59,7 @@ fn cross_file_field_resolves_with_ambient() {
         Item::Proc(p) => Some(p),
         _ => None,
     }).unwrap();
-    let (buf, diags, _n, dropped) =
+    let (buf, diags, _n, dropped, _unresolved) =
         eval_proc_body_env(&f, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[], &ambient, &sigil_frontend_emp::contract::InterfaceEnv::empty());
     assert_eq!(dropped, 0, "S resolved via ambient → nothing drops: {diags:?}");
     assert_eq!(count_moves(&buf), 1, "the field instruction is present in the buffer");
@@ -82,7 +82,7 @@ fn file_local_struct_shadows_ambient() {
         Item::Proc(p) => Some(p),
         _ => None,
     }).unwrap();
-    let (buf, diags, _n, dropped) =
+    let (buf, diags, _n, dropped, _unresolved) =
         eval_proc_body_env(&f, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[], &ambient, &sigil_frontend_emp::contract::InterfaceEnv::empty());
     assert_eq!(dropped, 0, "resolves with either S: {diags:?}");
     // The local S puts `b` at offset 4; assert the emitted displacement is 4.

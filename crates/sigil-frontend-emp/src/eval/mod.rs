@@ -305,6 +305,28 @@ pub struct Evaluator<'a> {
     ///
     /// [`lower_instr_to_item`]: Self::lower_instr_to_item
     dropped_instrs: usize,
+    /// Running log of every name that failed to resolve to a usable value during
+    /// evaluation — appended at [`eval_path`](Self::eval_path)'s two `unknown
+    /// name` fallthroughs (the exact points where a lookup miss becomes
+    /// `Value::Poison`) and at its const/equ read when the resolved value IS
+    /// `Poison` (the memo path returns a first failure without re-entering the
+    /// initializer, so the read site is the only loggable point). The log is the
+    /// raw feed the comptime-`if` sites watermark; it is never read anywhere
+    /// else.
+    unresolved_names: Vec<(String, Span)>,
+    /// The `[comptime.unresolved]` surface: names a comptime CONDITION
+    /// referenced that the active define/const environment failed to resolve.
+    /// Harvested from [`unresolved_names`](Self::unresolved_names) by every
+    /// condition site — the statement-position `AsmStmt::If` (whose `Poison`
+    /// condition discards both arms, contributing nothing to `dropped_instrs`),
+    /// the expression [`eval_if`](Self::eval_if), and both loop heads
+    /// ([`eval_while`](Self::eval_while)'s condition, [`eval_for`]
+    /// (Self::eval_for)'s iterable — a `Poison` head skips the body silently) —
+    /// immediately after each condition evaluates, so collection IS the
+    /// evaluation and cannot drift from it. A
+    /// profile that lost or misspelled a toggle define shows up here at zero
+    /// drops and zero firings; the corpus gates pin this EMPTY per shipped shape.
+    pub(crate) comptime_unresolved: Vec<(String, Span)>,
     /// The VMA the `here()` comptime builtin resolves to (§7.1), or `None` when
     /// no position is known (outside lowering). Set per data-item by the lowering
     /// pass to `vma_origin + current_offset` — the VMA at the START of the item
@@ -503,6 +525,8 @@ impl<'a> Evaluator<'a> {
             local_value_names: std::collections::HashSet::new(),
             as_compat: false,
             dropped_instrs: 0,
+            unresolved_names: Vec::new(),
+            comptime_unresolved: Vec::new(),
             here_base: None,
             here_anchor: None,
             here_used: false,
@@ -554,6 +578,34 @@ impl<'a> Evaluator<'a> {
     /// label where a symbol reference is meaningful.
     pub(super) fn label_ctx_active(&self) -> bool {
         self.label_ctx > 0
+    }
+
+    /// Record a name that failed to resolve to a usable value: a lookup miss
+    /// (the `unknown name` → `Poison` fallthroughs) or a const/equ read whose
+    /// resolved value is `Poison`. Called only from [`eval_path`]
+    /// (Self::eval_path), and never for a deferred link symbol — the label-ctx
+    /// fallback returns before every recording site.
+    pub(super) fn note_unresolved_name(&mut self, name: String, span: Span) {
+        self.unresolved_names.push((name, span));
+    }
+
+    /// Watermark for [`harvest_comptime_unresolved`](Self::harvest_comptime_unresolved):
+    /// the unresolved-name log length BEFORE a comptime `if` condition evaluates.
+    pub(super) fn unresolved_mark(&self) -> usize {
+        self.unresolved_names.len()
+    }
+
+    /// Move every name the just-evaluated comptime `if` condition failed to
+    /// resolve — everything logged past `mark` — onto the
+    /// [`comptime_unresolved`](Self::comptime_unresolved) surface. DRAINING
+    /// (not copying) means an `if` nested inside another condition consumes its
+    /// own entries, so no name is attributed to two conditions. Harvesting is
+    /// unconditional on the condition's value: a short-circuit can rescue the
+    /// truth value after a lookup miss, and the miss is still a name the define
+    /// set failed to resolve.
+    pub(super) fn harvest_comptime_unresolved(&mut self, mark: usize) {
+        let harvested: Vec<(String, Span)> = self.unresolved_names.drain(mark..).collect();
+        self.comptime_unresolved.extend(harvested);
     }
 
     /// Run `body` inside an IMMEDIATE-OPERAND context (C1 item 1): label-value
@@ -1442,8 +1494,24 @@ pub fn eval_expr_in_file(
     expr: &crate::ast::Expr,
     defines: &[(String, i128)],
 ) -> (Value, Vec<Diagnostic>) {
+    eval_expr_in_file_ambient(file, &[], expr, defines)
+}
+
+/// [`eval_expr_in_file`] with a cross-file `ambient` declaration slice — the
+/// same seam [`eval_proc_body_env`] gives PASS-2 body eval. The corpus-side
+/// interface binding ([`crate::corpus_contracts::bind_corpus_interfaces`]) needs
+/// it: an `implement` const value may reference an IMPORTED const
+/// (`const ENTRY_ID = GS_OJZ_SCROLL_TEST`), which the impl file alone cannot
+/// resolve — the production bind pass sees it via resolve's ambient injection,
+/// and this is the corpus walk's equivalent.
+pub fn eval_expr_in_file_ambient(
+    file: &crate::ast::File,
+    ambient: &[crate::ast::Item],
+    expr: &crate::ast::Expr,
+    defines: &[(String, i128)],
+) -> (Value, Vec<Diagnostic>) {
     run_on_eval_stack(|| {
-        let mut ev = Evaluator::with_file(file);
+        let mut ev = Evaluator::with_file_and_ambient(file, ambient);
         ev.seed_defines(defines);
         let mut env = Env::new();
         let v = ev.eval_expr(expr, &mut env);
@@ -1720,20 +1788,26 @@ pub fn eval_proc_body(
     defines: &[(String, i128)],
     contracts: &crate::contract::InterfaceEnv,
 ) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32) {
-    let (buf, diags, counter, _dropped) = eval_proc_body_env(
+    let (buf, diags, counter, _dropped, _unresolved) = eval_proc_body_env(
         file, name, params, body, span, asm_counter_start, cpu, defines, &[], contracts,
     );
     (buf, diags, counter)
 }
 
 /// [`eval_proc_body`] with a cross-file `ambient` declaration slice (the corpus
-/// TYPE ENVIRONMENT) and a fourth return element: the count of instructions
-/// DROPPED because a mnemonic/size/operand failed to resolve. The whole-corpus
-/// contract walk uses this so field operands on IMPORTED structs resolve rather
-/// than silently vanishing, and so it can PIN `dropped == 0`. `eval_proc_body`
-/// is exactly this with an empty ambient (real lowering supplies imports via the
-/// resolve pass, so it needs no corpus env and ignores the count — which is
-/// always 0 there).
+/// TYPE ENVIRONMENT) and two extra return elements: the count of instructions
+/// DROPPED because a mnemonic/size/operand failed to resolve, and the
+/// `[comptime.unresolved]` names — each name a comptime `if` condition in the
+/// body referenced that the define set failed to resolve, with the reference
+/// span. The whole-corpus contract walk uses this so field operands on IMPORTED
+/// structs resolve rather than silently vanishing, and so it can PIN both
+/// `dropped == 0` AND the unresolved set empty — the two are complementary: a
+/// missing VALUE define shows as a drop, while a missing TOGGLE define discards
+/// a statement-`if`'s arms whole at zero drops and shows ONLY here.
+/// `eval_proc_body` is exactly this with an empty ambient (real lowering
+/// supplies imports via the resolve pass and surfaces the `unknown name` error
+/// itself, so it ignores both counts — always 0/empty in a build that lowers
+/// clean, and redundant with the loud diagnostics in one that does not).
 #[allow(clippy::too_many_arguments)]
 pub fn eval_proc_body_env(
     file: &crate::ast::File,
@@ -1746,7 +1820,7 @@ pub fn eval_proc_body_env(
     defines: &[(String, i128)],
     ambient: &[ast::Item],
     contracts: &crate::contract::InterfaceEnv,
-) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32, usize) {
+) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32, usize, Vec<(String, Span)>) {
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file_and_ambient(file, ambient);
         ev.seed_defines(defines);
@@ -1794,7 +1868,7 @@ pub fn eval_proc_body_env(
             Value::Code(buf) => Some(buf),
             _ => None,
         };
-        (buf, ev.diags, ev.asm_counter, ev.dropped_instrs)
+        (buf, ev.diags, ev.asm_counter, ev.dropped_instrs, ev.comptime_unresolved)
     })
 }
 
