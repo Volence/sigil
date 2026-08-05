@@ -489,6 +489,66 @@ proc AllocDynamic() clobbers(d0/a1) out(a1 if eq) {
     );
 }
 
+/// A hook's conditional promise names an EDGE, not just a register: a hook
+/// declaring `out(a1 if eq)` is not satisfied by a target that fills a1 only on
+/// `ne`, because the hook's callers test `eq` and read a1 there. Comparing
+/// register names alone accepts this pair silently.
+#[test]
+fn probe_hook_conditional_out_rejects_a_target_guarding_a_different_cc() {
+    let engine = "\
+module engine.c
+pub interface Game {
+    hook alloc () clobbers(d0/a1) out(a1 if eq) = empty
+}
+";
+    let game = "\
+module games.a.m
+pub implement Game {
+    hook alloc = AllocDynamic
+}
+proc AllocDynamic() clobbers(d0/a1) out(a1 if ne) {
+    rts
+}
+";
+    let diags = bind_srcs(&[engine, game], &[]);
+    assert!(has_tag(&diags, "[contract.hook-signature]"), "{:?}", errors(&diags));
+    assert!(
+        errors(&diags).iter().any(|m| m.contains("conditional output `a1`") && m.contains("`eq`")),
+        "must name the register and the edge the target fails to produce on: {:?}",
+        errors(&diags)
+    );
+}
+
+/// The condition compares CANONICALLY: `hs` and `lo` are the documented aliases of
+/// `cc` and `cs`, so a target guarding `hs` satisfies a hook promising the same
+/// guard spelled `cc`. A raw-text comparison rejects two spellings of one
+/// condition, and this is the only test that drives the fold through the real
+/// declaration path rather than a hand-built `Contract`.
+#[test]
+fn hook_conditional_out_folds_the_cc_aliases() {
+    let engine = "\
+module engine.c
+pub interface Game {
+    hook alloc () clobbers(d0/a1) out(a1 if cc) = empty
+}
+";
+    let game = "\
+module games.a.m
+pub implement Game {
+    hook alloc = AllocDynamic
+}
+proc AllocDynamic() clobbers(d0/a1) out(a1 if hs) {
+    rts
+}
+";
+    let diags = bind_srcs(&[engine, game], &[]);
+    assert!(
+        !has_tag(&diags, "[contract.hook-signature]"),
+        "`hs` and `cc` are one condition: {:?}",
+        errors(&diags)
+    );
+}
+
 /// THE WALL: a hook declaring the AllocEffect shape (`clobbers(d0) out(a1 if
 /// eq)`) claims a1 SURVIVES the ne edge — its callers may hold a1 across the
 /// call and re-read it there. A target that also clobbers a1 leaves it

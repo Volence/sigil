@@ -477,6 +477,11 @@ fn a_bounds_out_licenses_the_target_to_clobber_it() {
 /// hook spelling the same `clobbers(d0/a1) out(a1 if eq)` — conforms. The license
 /// comes from the bound's own `clobbers`, which is where "a1 is indeterminate on
 /// the ne edge" is written down.
+///
+/// Doubles as the MATCHING-CONDITION control for
+/// `a_conditional_bound_rejects_a_target_guarding_a_different_cc` below: the same
+/// pair with the same guard on both sides, so the rejection there is attributable
+/// to the code and to nothing else.
 #[test]
 fn the_honest_alloc_dynamic_shape_conforms_to_a_matching_bound() {
     let bound = contract_cond(&["d0", "a1"], &[], &[], &[], &[("a1", "eq")]);
@@ -531,19 +536,6 @@ fn conditional_out_does_not_satisfy_an_unconditional_bound_out() {
     );
 }
 
-/// A conditional promise is satisfied by a target guarding on the SAME condition
-/// — the ordinary conforming shape, and the control for the mismatch case below.
-#[test]
-fn a_conditional_bound_is_satisfied_by_a_target_guarding_the_same_cc() {
-    let bound = contract_cond(&["d0", "a1"], &[], &[], &[], &[("a1", "eq")]);
-    let target = contract_cond(&["d0", "a1"], &[], &[], &[], &[("a1", "eq")]);
-    assert!(
-        subcontract_violations(&target, &bound).is_empty(),
-        "a matching guard conforms: {:?}",
-        subcontract_violations(&target, &bound)
-    );
-}
-
 /// THE CONDITION IS PART OF THE PROMISE. A bound promising `out(a1 if eq)` is NOT
 /// satisfied by a target producing a1 only on `ne`: the bound's callers test `eq`
 /// and read a1 there, which is exactly the edge the target leaves indeterminate.
@@ -560,8 +552,14 @@ fn a_conditional_bound_rejects_a_target_guarding_a_different_cc() {
 }
 
 /// A target guarding on MORE conditions than the bound demands satisfies it: the
-/// bound's edge is covered, and the extra edge is production the callers may
-/// ignore. This is why the relation is code-set COVERAGE rather than equality.
+/// bound's edge is covered. This is why the relation is code-set COVERAGE rather
+/// than equality.
+///
+/// a1 is in BOTH contracts' `clobbers` here, which is what makes the extra `ne`
+/// edge a write the bound's callers already tolerate. With a1 absent from the
+/// bound's `clobbers` that extra edge would break a §7.1 survives-claim, and this
+/// relation would still accept it — the unlicensed-`out` term recorded in the gap
+/// ledger.
 #[test]
 fn a_target_guarding_more_ccs_than_the_bound_demands_satisfies_it() {
     let bound = contract_cond(&["d0", "a1"], &[], &[], &[], &[("a1", "eq")]);

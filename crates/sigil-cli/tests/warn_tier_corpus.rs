@@ -277,7 +277,7 @@ fn the_generated_entry_module_is_not_reported() {
 ///
 /// One `--report ram` invocation per view rather than a full ROM build: it runs the
 /// same `report_warnings` under the same `WarningView`, and costs seconds instead of
-/// minutes.
+/// minutes. Both report kinds share one prologue, so this covers `contracts` too.
 #[test]
 fn the_build_binary_prints_the_tally_and_off_silences_it() {
     let Some(aeon) = aeon_dir() else { return };
@@ -294,15 +294,19 @@ fn the_build_binary_prints_the_tally_and_off_silences_it() {
         String::from_utf8_lossy(&out.stderr).into_owned()
     };
 
-    // `--report ram` fires no warn-tier diagnostic today, so the DEFAULT view must
-    // print nothing at all — the "silence means zero, and only zero" contract, on
-    // the real binary.
+    // A report shows the SAME warn tier the build shows over the same tree — the
+    // manifest scan's `[module.path-mismatch]` family included, which no later stage
+    // re-reports. A report that renders a cleaner tree than the build is a report
+    // nobody can trust, so the DEFAULT view carries the tally here too.
     let default = run(None);
     assert!(
-        !default.contains("warning:"),
-        "a warning-free report must print no warn-tier line, got: {default:?}"
+        default.contains("warning: ") && default.contains("module.path-mismatch"),
+        "a report must show the manifest scan's own warn tier, got: {default:?}"
     );
-    assert_eq!(run(Some("off")), default, "`off` and a clean tier agree");
+    assert!(
+        !run(Some("off")).contains("warning: "),
+        "`SIGIL_WARNINGS=off` must silence the tier on the real corpus too"
+    );
 
     // And the printer IS reachable from this path: a `--report ram` over a tree with
     // no RAM-region module warns, and the tally names the class.

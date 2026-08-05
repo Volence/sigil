@@ -407,9 +407,10 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
 
 /// THE SURFACE IS WIRED, AND IT IS SHAPE-PARAMETERIZED.
 ///
-/// Every gate above calls `analyze_corpus_with` directly and hands it a hand-written
-/// define list, so all of them stay green if `run_contract_report` is deleted or stops
-/// reading the target's profile. This drives the real binary and reads its real stdout.
+/// Every gate above calls the analysis directly — seven of them with NO defines at
+/// all, one with a hand-written list — so all of them stay green if
+/// `run_contract_report` is deleted or stops reading the target's profile. This drives
+/// the real binary and reads its real stdout.
 ///
 /// The load-bearing assertion is the LAST one. A census run against the wrong define
 /// set analyzes arms the shipped ROM never assembles: with `MAX_RING_BUFFER` absent
@@ -429,6 +430,10 @@ fn the_contracts_report_is_wired_and_carries_the_targets_defines() {
         eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
         return;
     }
+    // The `.emp` corpus embeds the seam-emitted sound blobs, so they must exist
+    // before any shape lowers — a missing embed target drops instructions, which is
+    // precisely this gate's load-bearing assertion.
+    sigil_harness::native::ensure_generated(&aeon);
 
     let run = |extra: &[&str]| -> String {
         let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_sigil"));

@@ -766,20 +766,14 @@ fn run_ram_report(aeon: &std::path::Path, target: &BuildTarget) {
     // define set the `.emp` RAM modules read (SYSTEM_STACK, DEBUG, the game sizing
     // consts engine.ram consumes: MAX_RING_BUFFER / COLLECTED_WINDOW_SLOTS / …).
     let (label, profile) = target.label_and_profile();
+    let defines = profile_defines(&profile);
+    let manifest = scan_or_exit(aeon);
 
-    let (manifest, mdiags) = resolve::manifest::Manifest::scan(aeon);
-    if mdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
-        render_program_diags(&manifest, &mdiags);
-        process::exit(1);
-    }
-
-    let defines: Vec<(String, i128)> =
-        profile.emp_defines.iter().map(|(k, v)| (k.to_string(), *v)).collect();
     let opts = sigil_frontend_emp::lower::LowerOptions {
         initial_cpu: sigil_ir::Cpu::M68000,
         include_root: std::fs::canonicalize(aeon).ok(),
         embed_base: None,
-        defines,
+        defines: defines.clone(),
     };
 
     // Engine RAM + the game's RAM module (the two region-owning modules for this game).
@@ -796,14 +790,49 @@ fn run_ram_report(aeon: &std::path::Path, target: &BuildTarget) {
         process::exit(1);
     }
 
-    print_ram_report(&label, &rows);
+    print_report_header("RAM map", &label, &defines);
+    print_ram_report(&rows);
+}
+
+/// Scan `aeon` for `.emp` modules, or render the reason and exit. Every report
+/// starts here: errors render in full and stop the run, and the scan's OWN warn
+/// tier — the `[module.path-mismatch]` family, which no later stage re-reports —
+/// goes through the one `SIGIL_WARNINGS` channel. A report that swallows the
+/// manifest's warnings shows a cleaner tree than the build does.
+fn scan_or_exit(aeon: &std::path::Path) -> sigil_frontend_emp::resolve::manifest::Manifest {
+    use sigil_frontend_emp::resolve::manifest::{Manifest, SourceIndex};
+    let (manifest, mdiags) = Manifest::scan(aeon);
+    let errors: Vec<_> =
+        mdiags.iter().filter(|d| d.level == sigil_span::Level::Error).cloned().collect();
+    render_program_diags(&manifest, &errors);
+    let index = SourceIndex::new(&manifest);
+    report_warnings(&sigil_harness::native::collect_warnings(&index, &[&mdiags], None));
+    if !errors.is_empty() {
+        process::exit(1);
+    }
+    manifest
+}
+
+/// The comptime `-D` set a target's `.emp` sources are read under, owned by its
+/// shipping profile so a report can never describe a shape the build does not make.
+fn profile_defines(profile: &sigil_harness::native::GameProfile) -> Vec<(String, i128)> {
+    profile.emp_defines.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+}
+
+/// The header every report shares: what it is, which target it describes, and the
+/// define set the target's sources were read under. The defines belong on BOTH
+/// reports — `MAX_RING_BUFFER` sizes the RAM regions as surely as it gates the
+/// contract walk — so a pasted report always carries its own provenance.
+fn print_report_header(kind: &str, label: &str, defines: &[(String, i128)]) {
+    println!("{kind} — {label}");
+    let ds: Vec<String> = defines.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    println!("defines: {}", if ds.is_empty() { "(none)".to_string() } else { ds.join(" ") });
+    println!();
 }
 
 /// Render the RAM map as a plain, aligned text table (T1). Sizes are byte counts (the
 /// "real number"); addresses are `$XXXXXXXX`; `USE%` is used size over region capacity.
-fn print_ram_report(label: &str, rows: &[sigil_frontend_emp::lower::RamRegionRow]) {
-    println!("RAM map — {label}");
-    println!();
+fn print_ram_report(rows: &[sigil_frontend_emp::lower::RamRegionRow]) {
     println!(
         "{:<12} {:<11} {:<11} {:<11} {:>7} {:>6} {:>9} {:>6}",
         "REGION", "BASE", "END", "LIMIT", "SIZE", "PAD", "HEADROOM", "USE%"
@@ -834,51 +863,36 @@ fn print_ram_report(label: &str, rows: &[sigil_frontend_emp::lower::RamRegionRow
 ///
 /// The report is a VIEW, not a second analysis: every number below is a field of the
 /// one `ContractReport` the frontend builds. What the report surface adds over a
-/// hand-driven walk is the INPUTS — the module set comes from the manifest scan and
-/// the comptime defines come from the target's shipping profile, so a shape's real
-/// `-D` set (DEBUG, CRASH_REPORT, the game sizing consts) is what the closure sees.
-/// A census run against the wrong define set silently analyzes arms the shipped ROM
-/// never assembles.
+/// hand-driven walk is the DEFINES — they come from the target's shipping profile, so
+/// a shape's real `-D` set (DEBUG, CRASH_REPORT, the game sizing consts) is what the
+/// closure sees. A census run against the wrong define set silently analyzes arms the
+/// shipped ROM never assembles.
+///
+/// SCOPE, precisely: the DEFINES are target-accurate, the MODULE SET is not. The walk
+/// takes every `.emp` the manifest scan finds, so both games' modules enter one
+/// closure under one game's defines. That is the census shape every corpus gate
+/// already walks, and narrowing it to `profile.registry` would make this surface
+/// disagree with all of them — recorded in the gap ledger rather than changed here.
 fn run_contract_report(aeon: &std::path::Path, target: &BuildTarget) {
     use sigil_frontend_emp::corpus_contracts;
-    use sigil_frontend_emp::resolve;
 
     let (label, profile) = target.label_and_profile();
+    let defines = profile_defines(&profile);
+    let manifest = scan_or_exit(aeon);
 
-    let (manifest, mdiags) = resolve::manifest::Manifest::scan(aeon);
-    // A parse error means the closure would walk a broken tree and report numbers
-    // nobody can act on, so it fails here exactly as a build would. Warn-tier
-    // diagnostics (the module path lint) route through the same policy channel.
-    let errors: Vec<_> =
-        mdiags.iter().filter(|d| d.level == sigil_span::Level::Error).cloned().collect();
-    render_program_diags(&manifest, &errors);
-    let index = sigil_frontend_emp::resolve::manifest::SourceIndex::new(&manifest);
-    report_warnings(&sigil_harness::native::collect_warnings(&index, &[&mdiags], None));
-    if !errors.is_empty() {
-        process::exit(1);
-    }
-
-    let defines: Vec<(String, i128)> =
-        profile.emp_defines.iter().map(|(k, v)| (k.to_string(), *v)).collect();
     let files: Vec<_> = manifest.modules.iter().map(|m| m.file.clone()).collect();
     let report = corpus_contracts::analyze_corpus_with(&files, &defines);
-    print_contract_report(&label, &defines, &report);
+    print_report_header("contract closure", &label, &defines);
+    print_contract_report(&report);
 }
 
 /// Render a [`ContractReport`](sigil_frontend_emp::corpus_contracts::ContractReport) as
-/// plain text: a header (module/proc counts + the define set the walk ran under), then
-/// one section per firing family, each headed by its count so an empty family still
-/// shows its zero. Counts are the report's own vector lengths — nothing is recomputed
-/// here.
-fn print_contract_report(
-    label: &str,
-    defines: &[(String, i128)],
-    report: &sigil_frontend_emp::corpus_contracts::ContractReport,
-) {
-    println!("contract closure — {label}");
-    let ds: Vec<String> = defines.iter().map(|(k, v)| format!("{k}={v}")).collect();
-    println!("defines: {}", if ds.is_empty() { "(none)".to_string() } else { ds.join(" ") });
-    println!();
+/// plain text: a proc/extern/contract-type count line, then one section per DIAGNOSTIC
+/// FAMILY, each headed by its own count so an empty family still shows its zero. The
+/// `[context.*]` tail is one header over several lists (regions, claim sites, then each
+/// firing kind), because its counts are one tier's census rather than one lint's.
+/// Counts are the report's own vector lengths — nothing is recomputed here.
+fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::ContractReport) {
     println!(
         "procs (incl externs): {}   externs: {}   contract-types: {}",
         report.proc_count, report.extern_count, report.contract_type_count
@@ -900,7 +914,7 @@ fn print_contract_report(
         println!("  HOLE  {h}");
     }
 
-    println!("\n-- firings ({}): --", report.firings.len());
+    println!("\n-- [proc.clobber-undeclared] closure firings (§1, {}): --", report.firings.len());
     for f in &report.firings {
         let kind = if f.unbounded {
             "UNBOUNDED".to_string()
@@ -960,7 +974,7 @@ fn print_contract_report(
     }
 
     println!(
-        "\n-- [branch.condition-constant] firings (item-4 rider, {}): --",
+        "\n-- [branch.condition-constant] firings ({}): --",
         report.branch_const_firings.len()
     );
     for f in &report.branch_const_firings {
@@ -972,7 +986,7 @@ fn print_contract_report(
     }
 
     println!(
-        "\n-- [bus.*] Z80-bus machine-state firings (item-4 core, {}): --",
+        "\n-- [bus.*] Z80-bus machine-state firings (inference tier, {}): --",
         report.bus_firings.len()
     );
     for f in &report.bus_firings {
@@ -998,11 +1012,20 @@ fn print_contract_report(
         report.context_unsatisfied.len(),
         report.unknown_context_refs.len(),
     );
+    if !report.context_regions.is_empty() {
+        println!("   regions:");
+    }
     for (proc, ctx) in &report.context_regions {
         println!("  {proc:<28} with {ctx}");
     }
+    if !report.context_claim_sites.is_empty() {
+        println!("   claims:");
+    }
     for (proc, kind, ctx) in &report.context_claim_sites {
         println!("  {proc:<28} {kind}({ctx})");
+    }
+    if !report.context_firings.is_empty() || !report.context_unsatisfied.is_empty() {
+        println!("   firings:");
     }
     for f in &report.context_firings {
         use sigil_frontend_emp::context::ContextFiringKind::*;
@@ -1105,9 +1128,9 @@ struct BuildOpts {
 /// the native build is the only build).
 ///
 /// `--report <kind>` replaces the build with a report over the same target. The
-/// kinds share ONE flag rather than one flag each (`--ram-report`, `--contracts-report`,
-/// …): a report is a view of the build's own data, the set of views grows, and a
-/// closed vocabulary behind one flag is the surface that stays legible as it does.
+/// kinds share ONE flag rather than one flag per kind: a report is a view of the
+/// build's own data, the set of views grows, and a closed vocabulary behind one flag
+/// is the surface that stays legible as it does.
 fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut aeon: Option<String> = None;
     let mut output: Option<String> = None;
@@ -1129,7 +1152,13 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             "--config-a" => config = Some('a'),
             "--config-b" => config = Some('b'),
             "--lean" => config = Some('l'),
-            "--report" => report = Some(ReportKind::parse(&next_value(args, &mut i, "--report")?)?),
+            "--report" => {
+                let kind = ReportKind::parse(&next_value(args, &mut i, "--report")?)?;
+                if report.is_some_and(|prev| prev != kind) {
+                    return Err("--report takes one kind; naming two prints only the last".into());
+                }
+                report = Some(kind);
+            }
             other => return Err(format!("unexpected argument '{other}'")),
         }
         i += 1;
@@ -1154,6 +1183,11 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             Some(g) => return Err(format!("unknown --game '{g}' (want sonic4 or demo)")),
         },
     };
+    // A report prints and exits, so a ROM destination given alongside one would be
+    // silently ignored — the caller asked for two different things and gets one.
+    if report.is_some() && (output.is_some() || emit_lst.is_some()) {
+        return Err("--report prints instead of building; drop -o / --emit-lst".into());
+    }
     Ok(BuildOpts { aeon, output, emit_lst, target, report })
 }
 
@@ -1253,7 +1287,7 @@ fn warning_report_lines(
 
 /// Report the warn tier on stderr under the [`WarningView`] the environment
 /// selects. Every warn-tier surface of `sigil build` goes through here — the ROM
-/// build and `--ram-report` alike — so one setting governs both. (`sigil emp` /
+/// build and every `--report` alike — so one setting governs both. (`sigil emp` /
 /// `check` / `test` are single-file report commands that print every diagnostic
 /// unconditionally; their job IS the report.)
 ///
@@ -1287,36 +1321,34 @@ fn report_warnings(warnings: &[sigil_harness::native::BuildWarning]) {
 fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     use sigil_harness::native;
 
+    // The LABEL comes from the same place the reports read it, so a build and a
+    // report over one target can never name it differently.
+    let label = opts.target.label_and_profile().0;
     // (rom, listing) from the target's driver + the target's appendix floor + shape.
-    let (label, debug, floor, built) = match &opts.target {
+    let (debug, floor, built) = match &opts.target {
         // Canonical sonic4 → the PINNED driver (the `native_full_rom` gate path).
         BuildTarget::Sonic4 { debug } => (
-            if *debug { "sonic4 debug" } else { "sonic4 plain" },
             *debug,
             native::SONIC4_APPENDIX_FLOOR,
             native::build_native_rom_with_listing(aeon, *debug),
         ),
         // Off-canonical → the declared-order CHAINER (the `native_offcanonical_full` path).
         BuildTarget::Demo { debug } => (
-            if *debug { "demo debug" } else { "demo plain" },
             *debug,
             native::DEMO_APPENDIX_FLOOR,
             native::build_rom_chained_with_listing(aeon, &native::demo_profile(*debug)),
         ),
         BuildTarget::ConfigA => (
-            "config_a",
             true,
             native::SONIC4_APPENDIX_FLOOR,
             native::build_rom_chained_with_listing(aeon, &native::config_a_profile()),
         ),
         BuildTarget::ConfigB => (
-            "config_b",
             false,
             native::SONIC4_APPENDIX_FLOOR,
             native::build_rom_chained_with_listing(aeon, &native::config_b_profile()),
         ),
         BuildTarget::Lean => (
-            "lean",
             false,
             native::SONIC4_APPENDIX_FLOOR,
             native::build_rom_chained_with_listing(aeon, &native::lean_profile()),

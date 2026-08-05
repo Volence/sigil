@@ -501,19 +501,21 @@ fn unconditional_outs_expands_z80_pairs() {
     let f = ok("module m (cpu: z80)\n\
                 extern proc P () out(bc, hl if z)\n");
     let sig = &externs(&f)[0].sig;
-    assert_eq!(sig.cond_out_regs(RegFile::Z80), set(&["h", "l"]));
+    let guarded: BTreeSet<String> = sig.cond_out_guards(RegFile::Z80).into_keys().collect();
+    assert_eq!(guarded, set(&["h", "l"]));
     assert_eq!(sig.unconditional_outs(RegFile::Z80), set(&["b", "c"]));
 }
 
-/// `cond_out_guards` keys the guarded registers exactly as `cond_out_regs` does,
-/// and carries the CONDITION each one is guarded by — the fact the §4 subcontract
-/// relation compares. Two guard clauses on one register contribute both codes.
+/// `cond_out_guards` keys EVERY guarded register — a mixed mention keeps its key,
+/// the axis it differs from `cond_out_pairs` on — and carries the CONDITION each
+/// one is guarded by, the fact the §4 subcontract relation compares. Two guard
+/// clauses on one register contribute both codes.
 #[test]
 fn cond_out_guards_carry_each_registers_condition_codes() {
     let f = ok("module m\nextern proc P () clobbers(d1) out(d0, a1 if eq, a2 if mi, a2 if pl)\n");
     let sig = &externs(&f)[0].sig;
     let guards = sig.cond_out_guards(RegFile::M68k);
-    assert_eq!(guards.keys().cloned().collect::<BTreeSet<_>>(), sig.cond_out_regs(RegFile::M68k));
+    assert_eq!(guards.keys().cloned().collect::<BTreeSet<_>>(), set(&["a1", "a2"]));
     assert_eq!(guards["a1"], set(&["eq"]));
     assert_eq!(guards["a2"], set(&["mi", "pl"]));
     assert_eq!(sig.unconditional_outs(RegFile::M68k), set(&["d0"]));

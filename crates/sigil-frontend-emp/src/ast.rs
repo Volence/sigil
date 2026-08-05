@@ -1011,7 +1011,7 @@ fn cond_only_out_regs_of(
 }
 
 /// The `(register, cc)` pairs of every EXCLUSIVELY-conditional out, canonical
-/// under `rf` and in declaration order.
+/// under `rf` and [`canonical_cc`], in declaration order.
 ///
 /// The set-returning accessors answer "which registers are guarded"; a consumer
 /// that must know WHICH guard — the survives check, the edge-sensitive callee
@@ -1029,7 +1029,7 @@ fn cond_out_pairs_of(
         .iter()
         .filter_map(|c| {
             let reg = canonical_contract_reg(&c.reg, rf)?;
-            only.contains(&reg).then(|| (reg, c.cc.clone()))
+            only.contains(&reg).then(|| (reg, canonical_cc(&c.cc).to_string()))
         })
         .collect()
 }
@@ -1105,23 +1105,22 @@ impl ProcDecl {
 }
 
 impl ProcSig {
-    /// The registers carrying an `out(rN if cc)` guard, canonical under `rf`.
-    pub fn cond_out_regs(
-        &self,
-        rf: crate::regfile::RegFile,
-    ) -> std::collections::BTreeSet<String> {
-        cond_out_regs_of(&self.out_cond, rf)
-    }
-
     /// Every guarded out register mapped to the condition codes guarding it — the
     /// view the §4 subcontract relation partitions a [`crate::closure::Contract`]
-    /// with. See [`cond_out_guards_of`].
+    /// with. See [`cond_out_guards_of`]. `cond_out_guards(rf).keys()` is the
+    /// guarded-register set, so no separate accessor for it exists here.
     ///
-    /// Distinct from [`ProcDecl::cond_out_pairs`], which drops a register carrying
-    /// an unconditional mention: that view serves gates that RELAX on
-    /// conditionality, where an unconditional mention must win. This one keeps the
-    /// register, because the relation reads `Contract::out` and `Contract::out_cond`
-    /// as a partition and a register absent from both is a promise nothing checks.
+    /// Distinct from [`ProcDecl::cond_out_pairs`] on ONE axis: that view drops a
+    /// register carrying an unconditional mention, because it serves gates that
+    /// RELAX on conditionality, where an unconditional mention must win. This one
+    /// keeps the register, because the relation reads `Contract::out` and
+    /// `Contract::out_cond` as a partition and a register in neither is a promise
+    /// nothing checks.
+    ///
+    /// Keeping it here is PROVISIONAL and disagrees with the delta spec §7.2, which
+    /// reads a mixed mention as unconditional (see the `out(a1, a1 if eq)` row in
+    /// `notes/campaign-gap-ledger.md`). Correcting it moves the register between two
+    /// live relation terms, so it waits for a corpus instance to prove against.
     pub fn cond_out_guards(
         &self,
         rf: crate::regfile::RegFile,

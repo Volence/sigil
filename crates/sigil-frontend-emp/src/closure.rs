@@ -331,11 +331,19 @@ pub struct Contract {
 ///   unconditional promise: the bound's callers may read the register with no cc
 ///   test at all;
 /// - each `(rN, ccs)` the bound promises conditionally is satisfied by an
-///   UNCONDITIONAL `rN` in the target (producing on every path is strictly
-///   stronger, whatever the codes) or by a conditional `rN` whose own code set
+///   UNCONDITIONAL `rN` in the target, or by a conditional `rN` whose own code set
 ///   COVERS `ccs` — every edge the bound promises must be an edge the target
 ///   produces on. A target guarding a different code produces a register the
 ///   bound's callers will read on the wrong edge, so it violates.
+///
+///   Both escapes are stronger only for PRODUCTION. An unconditional target, and a
+///   target carrying an extra guard, both write rN on edges the bound left
+///   unwritten — which under §7.1 is a survives-claim the bound made whenever rN
+///   is absent from its `clobbers`. This relation does not check that, because it
+///   licenses only `target.clobbers`: `target.out` and `target.out_cond` are
+///   unlicensed write channels on both sides of the escape. Recorded in the gap
+///   ledger, unreachable on the corpus (no bound declares a conditional out), and
+///   NOT a regression — the missing term predates the code comparison;
 ///
 ///   Codes compare by canonical EQUALITY, not by implication: `eq` implies `le`
 ///   on 68k, so a target guarding `le` does in fact satisfy a bound promising
