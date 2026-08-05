@@ -699,3 +699,367 @@ fn z80_trampoline_locally_written_invariant_still_fires() {
         "ix written locally (pop ix) must fail the invariant even past a bail, got: {diags:?}"
     );
 }
+
+// ======================================================================
+// The `falls_into` tail blind spot (the 4th mnemonic-table defect instance).
+// A proc with a declared `falls_into` successor ends in FallOff, which used to
+// checkpoint the tail as a plain exit WITHOUT consulting the successor's
+// contract — so `preserves(rN)` passed even when the tail clobbers rN. The
+// FallOff arm of a `falls_into` proc now applies the same logic the explicit
+// `jr` tail (`Edge::Defer`) takes: rN survives iff it holds its entry value AND
+// the successor itself preserves it.
+// ======================================================================
+
+/// THE CATCH (synthetic `Psg_EmitDivisor`/`Psg_EmitDivisorTo` shape): `P`
+/// preserves(b), never touches b in its own body, but FALLS INTO `S` whose tail
+/// writes b (`ld b, a`). The successor's contract must be consulted —
+/// `preserves(b)` is false. Before the fix this false-passed (the tail was never
+/// looked at).
+#[test]
+fn z80_falls_into_tail_clobbering_successor_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(b) falls_into S {\n\
+                 ld a, 1\n\
+               }\n\
+               proc S() clobbers(b) {\n\
+                 ld b, a\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]") && d.contains("preserves(b)")),
+        "preserves(b) falling into a b-clobbering successor must fire, got: {diags:?}"
+    );
+}
+
+/// THE POSITIVE TWIN: `P` preserves(b), never touches b, falls into `S` which
+/// ALSO preserves(b) (and proves it — pure-`ld` body). The successor's contract
+/// credits b, so `P` verifies. Mirrors the live `PsgVolEnv_Resolve →
+/// VolEnv_ResolveScan` (c) seam that this fix makes genuinely prove.
+#[test]
+fn z80_falls_into_tail_preserving_successor_holds() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(b) falls_into S {\n\
+                 ld a, 1\n\
+               }\n\
+               proc S() preserves(b) {\n\
+                 ld a, 2\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "preserves(b) falling into a b-preserving successor must hold, got: {diags:?}"
+    );
+}
+
+// ======================================================================
+// Z80 `out(carry:) ∩ preserves(f/af)` overlap (a latent hole the Z80 branch of
+// `check_out` skipped). A flag result lives in `f`, so a contract also
+// PRESERVING the flags contradicts it. RULING: `clobbers(f)` + `out(carry:)`
+// stays LEGAL (Z80 has no finer-than-`f` token — the only honest scratch
+// spelling), diverging from the 68k sr.ccr rule.
+// ======================================================================
+
+/// `out(carry: ok) preserves(f)` — the flag result and the preserved flags
+/// collide. Fires `[proc.out-preserves-overlap]`.
+#[test]
+fn z80_out_carry_preserves_f_overlap_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() out(carry: ok) preserves(f) {\n\
+                 scf\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.out-preserves-overlap]")),
+        "out(carry:) + preserves(f) must fire out-preserves-overlap, got: {diags:?}"
+    );
+}
+
+/// `out(carry: ok) preserves(af)` — `af` expands to {a, f}, so the `f` half
+/// collides with the flag result exactly as bare `f` does.
+#[test]
+fn z80_out_carry_preserves_af_overlap_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() out(carry: ok) preserves(af) {\n\
+                 scf\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.out-preserves-overlap]")),
+        "out(carry:) + preserves(af) must fire (af covers f), got: {diags:?}"
+    );
+}
+
+/// NEGATIVE control: `out(carry: ok) preserves(a)` touches the accumulator, NOT
+/// the flags — no overlap. (`scf` writes `f`, leaving `a` untouched, so
+/// `preserves(a)` genuinely holds too.)
+#[test]
+fn z80_out_carry_preserves_a_no_overlap() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() out(carry: ok) preserves(a) {\n\
+                 scf\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.out-preserves-overlap]")),
+        "out(carry:) + preserves(a) is disjoint — no overlap, got: {diags:?}"
+    );
+}
+
+/// THE RULING (negative control): `out(carry: ok) clobbers(f)` stays LEGAL — the
+/// only honest Z80 spelling of "flags are scratch except the carry result". No
+/// overlap of EITHER polarity fires.
+#[test]
+fn z80_out_carry_clobbers_f_stays_legal() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() out(carry: ok) clobbers(f) {\n\
+                 scf\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.out-preserves-overlap]")
+            || d.contains("[proc.out-clobbers-overlap]")),
+        "out(carry:) + clobbers(f) must stay legal on Z80, got: {diags:?}"
+    );
+}
+
+// ======================================================================
+// The Z80 F-write model (`preserves(f)` false-pass hole). `z80_writes` modeled
+// NO instruction as writing `f`, so `preserves(f) { scf; ret }` verified. `f` is
+// now the complement of a flag-neutral allowlist: an instruction writes `f`
+// unless provably flag-neutral (conservative — a forgotten neutral over-fires
+// visibly rather than false-passing).
+// ======================================================================
+
+/// THE HOLE, closed: `scf` writes the flags, so `preserves(f)` is false. Before
+/// the F-model this false-passed (no instruction wrote `f`).
+#[test]
+fn z80_preserves_f_scf_body_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(f) {\n\
+                 scf\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]") && d.contains("preserves(f)")),
+        "preserves(f) across scf must fire, got: {diags:?}"
+    );
+}
+
+/// POSITIVE control (`Psg_EnvCursorReset` shape): a memory-destination `ld`
+/// (`ld (ix+0), 0`) writes NO register and never touches the flags, so
+/// `preserves(af)` stays Verified. The F-model must not false-fire on the
+/// flag-neutral allowlist.
+#[test]
+fn z80_preserves_af_pure_ld_body_holds() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(af) {\n\
+                 ld (ix+0), 0\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "preserves(af) with a memory-dest ld body must hold, got: {diags:?}"
+    );
+}
+
+/// POSITIVE control (`SndDrv_ISR` shape): a flag-writing body bracketed by
+/// `push af`/`pop af` restores the entry flags, so `preserves(af)` holds — the
+/// slot machinery models `pop af`'s `f` restore, not the F-write allowlist.
+#[test]
+fn z80_preserves_af_push_pop_bracket_holds() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(af) {\n\
+                 push af\n\
+                 scf\n\
+                 pop af\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "preserves(af) with a push af/pop af bracket must hold, got: {diags:?}"
+    );
+}
+
+/// The operand-sensitive `inc`/`dec` split, POSITIVE half: 16-bit `inc hl` (a
+/// PAIR operand) touches no flags, so `preserves(f)` survives it.
+#[test]
+fn z80_preserves_f_16bit_inc_holds() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(f) {\n\
+                 inc hl\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "16-bit inc hl leaves the flags — preserves(f) must hold, got: {diags:?}"
+    );
+}
+
+/// The operand-sensitive `inc`/`dec` split, NEGATIVE half: 8-bit `inc b` WRITES
+/// the flags, so `preserves(f)` is false across it.
+#[test]
+fn z80_preserves_f_8bit_inc_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(f) {\n\
+                 inc b\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]") && d.contains("preserves(f)")),
+        "8-bit inc b writes the flags — preserves(f) must fire, got: {diags:?}"
+    );
+}
+
+// ======================================================================
+// Panel fix-up round (2026-08-05): the empty-body falls_into bypass, the djnz/
+// ldir register-write gaps, the out_cond flag-rule bypass, and the exit-with-a-
+// live-slot conservative bail.
+// ======================================================================
+
+/// M1 — empty-body `falls_into` bypass: `P` has NO instructions, so control flows
+/// straight into `S`. `S` clobbers b, so `preserves(b)` is false. The instruction-
+/// less early return must consult the successor oracle, not verify vacuously.
+#[test]
+fn z80_empty_body_falls_into_clobbering_successor_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(b) falls_into S {}\n\
+               proc S() clobbers(b) {\n\
+                 ld b, a\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]") && d.contains("preserves(b)")),
+        "an empty body falling into a b-clobbering successor must fire, got: {diags:?}"
+    );
+}
+
+/// M1 POSITIVE twin: an empty body falling into a b-PRESERVING successor verifies —
+/// the entry value flows straight through and the successor keeps it.
+#[test]
+fn z80_empty_body_falls_into_preserving_successor_holds() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(b) falls_into S {}\n\
+               proc S() preserves(b) {\n\
+                 ld a, 2\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "an empty body falling into a b-preserving successor must hold, got: {diags:?}"
+    );
+}
+
+/// M2 — `djnz` writes its counter `b`. A `preserves(bc)` proc whose only b-writer is
+/// the djnz loop must fire (before the arm, djnz wrote no register → false pass).
+#[test]
+fn z80_djnz_writes_counter_b_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(bc) {\n\
+               .loop:\n\
+                 djnz .loop\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]") && d.contains("preserves(b)")),
+        "djnz writes b — preserves(bc) must fire, got: {diags:?}"
+    );
+}
+
+/// M3 — `ldir` writes the pointer/counter pairs bc, de, hl. A `preserves(hl)` proc
+/// whose only hl-writer is a bare ldir must fire (before the arm, ldir wrote no
+/// register → false pass). Isolates ldir: no other instruction touches hl.
+#[test]
+fn z80_ldir_writes_hl_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(hl) {\n\
+                 ldir\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]") && d.contains("preserves(h)")),
+        "ldir writes hl — preserves(hl) must fire, got: {diags:?}"
+    );
+}
+
+/// S1 — a conditional register result (`out(rN if cc)`) reads its guard from the
+/// flags, so `preserves(f)` contradicts it exactly as a flag result does. The Z80
+/// out-flag rule must gate on `out_cond`, not only `out_flags`.
+#[test]
+fn z80_out_cond_preserves_f_overlap_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() out(a if eq) preserves(f) {\n\
+                 scf\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.out-preserves-overlap]")),
+        "out(a if eq) + preserves(f) must fire out-preserves-overlap, got: {diags:?}"
+    );
+}
+
+/// S1 NEGATIVE probe: `out(a if eq) preserves(b)` — the conditional guard reads the
+/// flags but `preserves(b)` claims a data register, not the flags. No overlap.
+#[test]
+fn z80_out_cond_preserves_b_no_overlap() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() out(a if eq) preserves(b) {\n\
+                 scf\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.out-preserves-overlap]")),
+        "out(a if eq) + preserves(b) is disjoint from the flags — no overlap, got: {diags:?}"
+    );
+}
+
+/// S3 — an exit reached with a live push slot (a cross-seam `push` here / `pop` in
+/// the successor) is conservatively UNVERIFIABLE: the local stack model cannot pair
+/// the push. `push bc` then `ret` leaves bc on the stack at the exit, so a
+/// locally-untouched `preserves(de)` is refused (it would false-pass without the bail).
+#[test]
+fn z80_exit_with_live_slot_bails() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(de) {\n\
+                 push bc\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "an exit with a live push slot must bail (Unverifiable), got: {diags:?}"
+    );
+}
+
+/// S3 POSITIVE control: a BALANCED `push bc`/`pop bc` leaves the stack empty at the
+/// exit, so the bail does NOT fire and `preserves(de)` (de untouched) verifies.
+#[test]
+fn z80_exit_with_balanced_stack_holds() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(de) {\n\
+                 push bc\n\
+                 pop bc\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "a balanced push/pop leaves the stack empty — preserves(de) must hold, got: {diags:?}"
+    );
+}
