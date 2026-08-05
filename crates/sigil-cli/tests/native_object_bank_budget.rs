@@ -14,7 +14,7 @@
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test native_object_bank_budget
 //! ```
 use sigil_harness::{map_placement, native};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The sonic4 `games/sonic4/map.toml` placement facts (the object-bank budget cursor) —
 /// K5: the per-game map is the sole region owner (sigil.map.toml retired).
@@ -32,7 +32,7 @@ fn aeon_dir() -> PathBuf {
 fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
-fn have_aeon(aeon: &PathBuf) -> bool {
+fn have_aeon(aeon: &Path) -> bool {
     if aeon.join("s4.bin").exists() {
         return true;
     }

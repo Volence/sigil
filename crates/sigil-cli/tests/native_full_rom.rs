@@ -1,8 +1,8 @@
 //! Flip Stage 1 · S1.4 — THE SPLIT-GOLDEN FULL-FILE GATES (Option A).
 //!
 //! The full native ROM = the assembled image (checksum-folded by `emit_rom`) + the
-//! SIGIL-CANONICAL deb2 symbol appendix, produced by driving the REAL `tools/convsym`
-//! + `tools/fixheader` over sigil's OWN listing (`build.sh:169-175`, fed sigil's
+//! SIGIL-CANONICAL deb2 symbol appendix, produced by driving the REAL
+//! `tools/convsym` + `tools/fixheader` over sigil's OWN listing (`build.sh:169-175`, fed sigil's
 //! `.lst` instead of asl's). Under Volence/overseer Option A the appendix is NOT a
 //! byte-imitation of asl's name set — the `.emp` names are the source names going
 //! forward. So the bar SPLITS (2026-07-30-flip-stage1-S1.4-appendix-fork.md):

@@ -661,7 +661,7 @@ fn check_z80_preserves(
     for (reg, status) in statuses {
         // Whether `reg` is an INHERITED invariant (vs an explicit preserve) — for
         // a message that names WHY the proc must preserve it.
-        let inherited = invariant_regs.iter().any(|r| *r == reg);
+        let inherited = invariant_regs.contains(&reg);
         match status {
             PreserveStatus::Verified => {}
             PreserveStatus::NotPreserved => push(
@@ -1997,11 +1997,6 @@ impl SrCover {
             }
         }
         cover
-    }
-
-    /// Any SR-family token present at all.
-    fn any(self) -> bool {
-        self.mask || self.ccr
     }
 
     /// Fold one declared token into the cover. `true` iff `name` is an

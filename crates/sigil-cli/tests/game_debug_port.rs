@@ -74,8 +74,8 @@ fn value_seam() -> Vec<(&'static str, String)> {
     v.into_iter().map(|(n, x)| (n, format!("${x:X}"))).collect()
 }
 
-/// The song / SFX id VALUES game_debug reads at COMPTIME (its DEBUG song selector
-/// + the SfxIdRemap data table). Post-Parcel-F2 game_debug `use`s these from its
+/// The song / SFX id VALUES game_debug reads at COMPTIME (its DEBUG song
+/// selector + the SfxIdRemap data table). Post-Parcel-F2 game_debug `use`s these from its
 /// authority (games.sonic4.sound_ids); the standalone single-module lower resolves
 /// them as comptime defines — the test analog of that `use` (the real build folds
 /// the same values from the authority module). No local mirror + no drift guard

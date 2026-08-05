@@ -25,25 +25,16 @@
 //! unwind is clean.
 //!
 //! LANGUAGE ASK (ledgered, NOT built here — step-4 verb (c), ask not stopgap):
-//! `.field` access should compose inside displacement arithmetic (`Struct.field
-//! + N(An)`) the way `offsetof(Struct, field) + N(An)` already does. When that
-//! lands, `natural_field_plus_n_does_not_compose_today` flips red — the signal to
-//! respell the two sites and delete this note.
+//! `.field` access should compose inside displacement arithmetic
+//! (`Struct.field + N(An)`) the way `offsetof(Struct, field) + N(An)` already
+//! does. When that lands, `natural_field_plus_n_does_not_compose_today` flips
+//! red — the signal to respell the two sites and delete this note.
 
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SymbolTable};
 use sigil_span::{Diagnostic, Level};
-
-fn lower(src: &str) -> (sigil_ir::Module, Vec<Diagnostic>) {
-    let (file, perrs) = parse_str(src);
-    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
-    lower_module(
-        &file,
-        &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] },
-    )
-}
 
 fn section<'a>(module: &'a sigil_ir::Module, name: &str) -> &'a Section {
     module.sections.iter().find(|s| s.name == name).unwrap_or_else(|| panic!("no section `{name}`"))

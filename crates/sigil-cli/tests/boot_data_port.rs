@@ -104,7 +104,7 @@ fn s4_boot_data_blob_present() {
     // BootData .. BootData_End: head + blob + tail, byte-exact (pin-sourced).
     let boot_data = pins::BOOT_HEAD.plain_base as usize;
     let tail = pins::BOOT_TAIL.plain_base as usize;
-    let boot_data_end = tail + pins::BOOT_TAIL.plain_len as usize;
+    let boot_data_end = tail + pins::BOOT_TAIL.plain_len;
     assert_window("s4", &rom, &gold, boot_data, boot_data_end);
     // The resident blob begins at BootData+54 and is non-empty Z80 code.
     let blob_nonzero = (boot_data + 54..tail).any(|i| rom[i] != 0);

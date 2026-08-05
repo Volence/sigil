@@ -329,7 +329,7 @@ fn qsd_link(mut code_sections: Vec<Section>) -> Vec<u8> {
 fn global_symbol_arg_splice_with_ccr_consumer_matches_as() {
     let candidate = qsd_link(emp_sections(EMP_QSD, &[]));
     let reference = as_reference(ASM_QSD);
-    assert_byte_identical(&reference[..candidate.len()].to_vec(), &candidate, "queue_static_dma");
+    assert_byte_identical(&reference[..candidate.len()], &candidate, "queue_static_dma");
 }
 
 // ---------------------------------------------------------------------------
@@ -469,7 +469,7 @@ fn linkexpr_shift_mask_over_extern_matches_as() {
     let linked = sigil_link::link(&resolved, &empty)
         .unwrap_or_else(|d| panic!("linkexpr link failed: {d:?}"));
     let bytes = sigil_link::flatten(&linked, 0x00);
-    assert_byte_identical(&reference, &bytes[..reference.len()].to_vec(), "dmaSource link expr");
+    assert_byte_identical(&reference, &bytes[..reference.len()], "dmaSource link expr");
 }
 
 // ---------------------------------------------------------------------------

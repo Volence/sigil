@@ -698,13 +698,16 @@ pub fn in_scope_firings(report: &Z80ClobbersReport) -> Vec<&sigil_frontend_emp::
     report.firings.iter().filter(|f| !is_opcode_dispatch_proc(&f.proc)).collect()
 }
 
+/// A parsed reglist: `(name, optional range end)` segments — `expand_reglist` input.
+type RegSegs = Vec<(String, Option<String>)>;
+
 /// [`z80_clobbers_report`] with per-proc `clobbers` OVERRIDES (name → reglist
 /// segments) — the RED fixture / t24 non-vacuity injection: doctoring a proc's
 /// declared clobbers to UNDER-claim a register a callee destroys must fire.
 pub fn z80_clobbers_report_doctored(
     aeon: &Path,
     debug: bool,
-    doctor_clobbers: &[(&str, Vec<(String, Option<String>)>)],
+    doctor_clobbers: &[(&str, RegSegs)],
 ) -> Z80ClobbersReport {
     use sigil_frontend_emp::closure::{check_firings, compute_closure, ProcNode};
     use sigil_frontend_emp::eval::eval_proc_body_env;
@@ -733,13 +736,16 @@ pub fn z80_clobbers_report_doctored(
         })
     }
 
+    // The parameters are the recursion-threaded accumulators of the item walk —
+    // one per carried table, by design.
+    #[allow(clippy::too_many_arguments)]
     fn collect_nodes(
         file: &ast::File,
         items: &[ast::Item],
         defines: &[(String, i128)],
         inv_units: &BTreeSet<String>,
         expand: &impl Fn(&[(String, Option<String>)]) -> BTreeSet<String>,
-        doctor: &[(&str, Vec<(String, Option<String>)>)],
+        doctor: &[(&str, RegSegs)],
         counter: &mut u32,
         dropped_total: &mut usize,
         nodes: &mut BTreeMap<String, ProcNode>,
@@ -864,6 +870,12 @@ fn eval_pub_consts(path: &Path, aeon: &Path, defines: &[(String, i128)]) -> Vec<
     vals
 }
 
+/// A per-aeon-root memo of an authority-const map — the cache shape shared by
+/// the three `*_authority_consts` resolvers below.
+type AuthorityConstCache = std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<BTreeMap<String, i64>>>>,
+>;
+
 /// The sound-constants authority: every `pub const` of `sound_constants.emp`,
 /// resolved once and memoized per aeon root. This is the SINGLE source the five
 /// resident-module seams read their contract values from (spec §9 one-authority
@@ -872,8 +884,7 @@ fn eval_pub_consts(path: &Path, aeon: &Path, defines: &[(String, i128)]) -> Vec<
 /// `engine/system/constants.emp` — its own sole authority — and seeded, since the
 /// standalone eval does not follow the `use engine.constants` from disk.
 pub(crate) fn sound_authority_consts(aeon: &Path) -> std::sync::Arc<BTreeMap<String, i64>> {
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<BTreeMap<String, i64>>>>> =
-        std::sync::OnceLock::new();
+    static CACHE: AuthorityConstCache = std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
     if let Some(m) = cache.lock().unwrap().get(aeon) {
         return m.clone();
@@ -904,8 +915,7 @@ pub(crate) fn sound_authority_consts(aeon: &Path) -> std::sync::Arc<BTreeMap<Str
 /// `sound_authority_consts`; a focused module-eval reuse). SHAPE-INVARIANT (the SFX
 /// block content is identical plain/debug), so one eval serves both shapes.
 pub(crate) fn sfx_bank_authority_consts(aeon: &Path) -> std::sync::Arc<BTreeMap<String, i64>> {
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<BTreeMap<String, i64>>>>> =
-        std::sync::OnceLock::new();
+    static CACHE: AuthorityConstCache = std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
     if let Some(m) = cache.lock().unwrap().get(aeon) {
         return m.clone();
@@ -930,8 +940,7 @@ pub(crate) fn sfx_bank_authority_consts(aeon: &Path) -> std::sync::Arc<BTreeMap<
 /// from the emitted table. SHAPE-INVARIANT (the vol-env tables are identical
 /// plain/debug), so one eval serves both shapes.
 pub(crate) fn sound_tables_authority_consts(aeon: &Path) -> std::sync::Arc<BTreeMap<String, i64>> {
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<BTreeMap<String, i64>>>>> =
-        std::sync::OnceLock::new();
+    static CACHE: AuthorityConstCache = std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
     if let Some(m) = cache.lock().unwrap().get(aeon) {
         return m.clone();

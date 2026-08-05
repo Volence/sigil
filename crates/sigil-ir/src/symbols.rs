@@ -52,10 +52,8 @@ impl SymbolTable {
     /// - `foo`   → looked up verbatim (global).
     pub fn resolve(&self, name: &str, scope: Option<&str>) -> Option<i64> {
         let key = if let Some(local) = name.strip_prefix('.') {
-            match scope {
-                Some(s) => format!("{s}.{local}"),
-                None => return None,
-            }
+            let s = scope?;
+            format!("{s}.{local}")
         } else {
             name.to_string()
         };

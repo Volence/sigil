@@ -1,7 +1,7 @@
 //! A1/A2 arc §3: the comptime emitted-span primitive `span(ProcName)`.
-//! Covers both adoption shapes — the DacSampleTable emitted-span guard (target
-//! 1) and the vol-env id-list-derived counts + revived id/ptr guard (target 2)
-//! — plus the pure-data scope wall and the missing-proc error.
+//! Covers both adoption shapes — the DacSampleTable emitted-span guard
+//! (target 1) and the vol-env id-list-derived counts + revived id/ptr guard
+//! (target 2) — plus the pure-data scope wall and the missing-proc error.
 use sigil_frontend_emp::eval::eval_all_pub_consts;
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;

@@ -10,8 +10,8 @@
 //!   per shape (the effect-seam callee operands). test_parent.asm sits BETWEEN
 //!   test_emitter and test_stress_emitter (not ported), so test_emitter's end
 //!   anchor is `TestParent`.
-//! - **The game→children.emp/core.emp EFFECT SEAM at scale**: CreateEffect_Normal
-//!   + PopulateSpawnedPieceCount (children.emp), AllocDynamic + DeleteObject
+//! - **The game→children.emp/core.emp EFFECT SEAM at scale**: CreateEffect_Normal +
+//!   PopulateSpawnedPieceCount (children.emp), AllocDynamic + DeleteObject
 //!   (core.emp), Draw_Sprite (sprites.emp) — all bare link symbols, ZERO externs.
 //! - **Three self-contained `vars` SST overlays** (TEmitterV/TStressEmitterV/
 //!   TChurnV) whose window-overflow check replaces the AS `objvarsCheck`. Unlike

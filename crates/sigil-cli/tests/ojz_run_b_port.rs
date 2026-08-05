@@ -27,7 +27,7 @@ use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins::{self, Region};
 use sigil_ir::backend::Cpu;
 use sigil_ir::SymbolTable;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 fn aeon_root() -> PathBuf {
     PathBuf::from(

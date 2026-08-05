@@ -236,7 +236,7 @@ fn self_rel_overflow_diagnoses() {
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .expect("resolve_layout");
     let link_res = sigil_link::link(&resolved, &SymbolTable::new());
-    let err = link_res.err().expect("a >i16 self-rel offset must be a link Error, not a truncated fold");
+    let err = link_res.expect_err("a >i16 self-rel offset must be a link Error, not a truncated fold");
     assert!(
         err.iter().any(|d| d.message.contains("out of") && d.message.contains("word")),
         "the overflow error must name the signed-word range: {err:?}"

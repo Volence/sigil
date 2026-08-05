@@ -114,34 +114,6 @@ fn touchers_in_file(src: &str, sym: &str) -> Vec<Option<String>> {
     out
 }
 
-/// Attribute every whole-token occurrence of `sym` in one `.asm`/`.inc` file to
-/// its enclosing top-level label — a symbol that begins in column 0 with an
-/// identifier char. Local labels (`.probe`), indented instructions, and comment
-/// lines do not change the enclosing label. The symbol's own definition line
-/// (`Block_Stage_Keys:  ds.l …`) attributes to `sym` itself; the caller treats
-/// that as the allowlisted RAM declaration site.
-fn asm_touchers_in_file(src: &str, sym: &str) -> Vec<Option<String>> {
-    let is_ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
-    let mut out = Vec::new();
-    let mut current: Option<String> = None;
-    for raw in src.lines() {
-        let code = strip_marker(raw, ";");
-        // A top-level label or symbol assignment starts in column 0 with a
-        // letter or `_` (a leading `.` is a local label; whitespace is a
-        // continuation/instruction line) — either updates the enclosing scope.
-        if code.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
-            let name: String = code.chars().take_while(|c| is_ident(*c)).collect();
-            if !name.is_empty() {
-                current = Some(name);
-            }
-        }
-        if has_token(code, sym) {
-            out.push(current.clone());
-        }
-    }
-    out
-}
-
 #[test]
 fn block_stage_keys_has_exactly_three_touchers() {
     let aeon = PathBuf::from(
