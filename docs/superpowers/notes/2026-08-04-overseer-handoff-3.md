@@ -72,7 +72,7 @@ Recommended pairing, lowest conflict risk first:
 
 | lane | repo footprint | conflicts with |
 |---|---|---|
-| **9 `sr` true positives** | aeon only: `irq.emp`, `dma_queue.emp`, `release_fault.emp`, `ojz_scroll_test.emp` | nothing |
+| **`sr` lane** (see §7) | sigil `lower/proc.rs` sr-lint + `warn_tier_corpus.rs` baseline; aeon `dma_queue.emp` | nothing |
 | **B′-2 stack-delta** | sigil `preserves.rs` + new checker; aeon adoption LATER | B′-4 lightly (`corpus_contracts.rs`) |
 | **B′-4 report consolidation** | sigil `emp_contracts.rs`, `corpus_contracts.rs` | B′-2 lightly |
 | clippy drift | SIX crates | **everything — run solo, last** |
@@ -88,13 +88,10 @@ to hold that until the `sr` lane merges, or the two collide in `irq.emp`.
 (T1, T2, D6, most of Track B, B′-0b's spec rider). Verify before dispatching —
 it has paid off every single time.
 
-1. **The 9 `sr` true positives** — the warning tier's first real customers. Four
-   procs hand-write `move.w sr,-(sp)` … `move.w (sp)+,sr` and want
-   `preserves(sr)`; `release_fault`'s terminal mask wants `clobbers(sr)`. The
-   diagnostic already names the right answer. **Re-measure first:** B′-1 deleted
-   `sr_masked` and moved its push/pop into `ints_off`'s acquire/release, so the
-   set may have shifted (chain-44 `sonic4` plain shows `proc.sr-undeclared 8`,
-   against 9 measured across all seven shapes at chain 43). Small, aeon-only.
+1. **The `sr` lane — SEE §7, which supersedes this row.** It was re-measured at
+   chain 44 and is NOT the warning-tier packet's "nine true positives wanting
+   `preserves(sr)`". It is two classes wanting opposite treatment, it needs BOTH
+   repos, and the lint half should land before the corpus half.
 2. **B′-2 — stack-delta** (delta spec §3). Verified genuinely absent (no
    `stack_delta` / `[stack.*]` anywhere). Reuses `preserves.rs`' delta tracking —
    the extend-don't-replace pattern that has now worked three times. **My pick for
