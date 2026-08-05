@@ -63,12 +63,12 @@ const UNCOND_MNEMONICS: [&str; 4] = ["bra", "jbra", "jmp", "jra"];
 const RETURN_MNEMONICS: [&str; 4] = ["rts", "rte", "rtr", "rtd"];
 const Z80_RETURN_MNEMONICS: [&str; 3] = ["ret", "reti", "retn"];
 
-/// Does `mnem` RETURN from the proc? **The edge builders' own classifier**, and
-/// after that only for consumers with no CFG to ask: a walk over a straight-line
-/// item slice ([`crate::z80_cycles::span_cost`]) has no edges, so it tests the
-/// mnemonic directly and must name the CPU whose terminator set it means. Anyone
-/// holding an [`Edge`] reads [`Edge::Return`] instead — the builder already
-/// decided, with the CPU in hand.
+/// Does `mnem` RETURN from the proc? **An edge BUILDER's classifier**, plus one
+/// caller with no CFG to ask: a walk over a straight-line item slice
+/// ([`crate::z80_cycles::span_cost`]) has no edges, so it tests the mnemonic
+/// directly and must name the CPU whose terminator set it means. Anyone holding
+/// an [`Edge`] reads [`Edge::Return`] instead — a builder already decided, with
+/// the CPU in hand.
 pub(crate) fn is_return_mnemonic(mnem: &str, cpu: Cpu) -> bool {
     match cpu {
         Cpu::Z80 => Z80_RETURN_MNEMONICS.contains(&mnem),
@@ -288,8 +288,8 @@ impl<'a> Cfg<'a> {
     /// instruction, and [`Edge::Defer`] is a transfer to an EXTERNAL target (not
     /// a local label), which local analysis cannot judge.
     ///
-    /// The `Return`/`FallOff` choice is made HERE and nowhere else — every
-    /// consumer reads it off the edge.
+    /// The `Return`/`FallOff` choice is made in an edge BUILDER and nowhere
+    /// else — every consumer reads it off the edge.
     pub(crate) fn edges(&self, idx: usize) -> Vec<Edge> {
         let Some((mnem, ops)) = self.instr(idx) else { return vec![] };
         if RETURN_MNEMONICS.contains(&mnem) {
@@ -340,11 +340,13 @@ impl<'a> Cfg<'a> {
     /// terminators (`rts`/`bra`/…); Z80 has its own (`ret`/`reti`/`retn`,
     /// `jp`/`jr`, conditional `jr cc`/`jp cc`/`ret cc`, `djnz`), so the
     /// carry-tracking walk consults THIS when the proc is a Z80 module — leaving
-    /// the 68k `edges` byte-untouched. A conditional form (a leading `Z80Cc`)
-    /// contributes BOTH its taken and fall-through edges (a carry-CONSUMING
-    /// conditional is pruned by the caller before `z80_edges` is reached, so
-    /// only Z/parity-testing conditionals arrive here, each a genuine two-way
-    /// split). An external `jp`/`jr` target `Defer`s (the flag flows out).
+    /// the 68k `edges` byte-untouched. A conditional BRANCH (a leading `Z80Cc`
+    /// on a `jp`/`jr`) contributes BOTH its taken and fall-through edges (a
+    /// carry-CONSUMING conditional is pruned by the caller before `z80_edges` is
+    /// reached, so only Z/parity-testing conditionals arrive here, each a genuine
+    /// two-way split). `call cc` is NOT such a form — it calls and comes back, so
+    /// its only successor is the fall-through. An external `jp`/`jr` target
+    /// `Defer`s (the flag flows out).
     pub(crate) fn z80_edges(&self, idx: usize) -> Vec<Edge> {
         let Some((mnem, ops)) = self.instr(idx) else { return vec![] };
         let leads_cc = matches!(ops.first(), Some(CodeOperand::Z80Cc(_)));
@@ -355,9 +357,8 @@ impl<'a> Cfg<'a> {
         }
         // Conditional `ret cc`: the TAKEN edge returns; the fall-through stays in
         // the proc, or runs off the end when the `ret cc` closes the body. The two
-        // ends of that pair are different facts and the pair names them
-        // separately — a single variant for both let one mnemonic-keyed test close
-        // the escaping path at zero cost.
+        // ends of that pair are different facts, and the pair names them
+        // separately so no rule keyed on the shared mnemonic can close both.
         if is_return_mnemonic(mnem, Cpu::Z80) && leads_cc {
             return match fallthrough {
                 Some(f) => vec![Edge::Return, Edge::Follow(f)],
@@ -372,8 +373,7 @@ impl<'a> Cfg<'a> {
                 None => vec![Edge::Defer],
             };
         }
-        // Conditional `jr cc`/`jp cc`: the taken edge (local → follow, external →
-        // defer) PLUS the fall-through.
+        // Conditional `jr cc`/`jp cc`: the taken edge PLUS the fall-through.
         //
         // `call cc` is NOT one of these. It CALLS and comes back, so its only
         // successor is the fall-through — the same fact that keeps 68k `bsr` out
@@ -563,17 +563,17 @@ pub(crate) fn conditional_out_edge_credits(
     credits
 }
 
-/// A control-flow edge out of one instruction (see [`Cfg::edges`],
-/// [`Cfg::z80_edges`]).
+/// A control-flow edge out of one instruction. Built by [`Cfg::edges`] (68k),
+/// [`Cfg::z80_edges`], and [`crate::z80_preserves`]'s own Z80 builder.
 ///
 /// **The builder decides, once.** Which variant an edge carries is settled where
 /// the edge is CONSTRUCTED — the only place that holds the mnemonic, the CPU's
 /// terminator set, and whether a conditional terminator's taken or fall-through
 /// side is being emitted. A consumer that reads the mnemonic back off the
 /// instruction to tell a return from a fall-off is re-deriving a fact the edge
-/// already states, and re-derivation needs the CPU it no longer has: that is how
-/// a Z80 `ret` came to be read through the 68k return table, and how one
-/// mnemonic-keyed test closed both edges of an end-of-body `ret cc` as returns.
+/// already states, and it must re-supply the CPU to do it: read through the wrong
+/// CPU's table a Z80 `ret` is a fall-off-end, and keyed on the shared mnemonic
+/// both edges of an end-of-body `ret cc` are returns.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Edge {
     /// Control stays in this proc, arriving at item index `.0`.
@@ -589,13 +589,13 @@ pub(crate) enum Edge {
     FallOff,
     /// Control leaves this proc for a symbol local analysis cannot read — a tail
     /// transfer, or a conditional branch whose target is external. It neither
-    /// follows nor abandons: the flag, the register, the stack all flow out.
+    /// follows nor ends here: the flag, the register, the stack all flow out.
     Defer,
 }
 
 /// Whether a mnemonic names a DIRECT subroutine call — the site whose flag
 /// result must be consumed. 68k `jsr`/`bsr`/`jbsr`; Z80 `call` (rung-2 §13.3
-/// sub-part 2). A NEW Z80 arm; the 68k `CALL_MNEMONICS` membership is unchanged.
+/// sub-part 2).
 fn is_call_site(mnem: &str, cpu: Cpu) -> bool {
     match cpu {
         Cpu::Z80 => mnem == "call",
@@ -870,11 +870,9 @@ fn abandons_flag(cfg: &Cfg, call_idx: usize, cpu: Cpu) -> bool {
 
 #[cfg(test)]
 mod edge_model_tests {
-    //! The three regression probes for the `Edge::Return` / `Edge::FallOff`
-    //! split. Each one pins a defect that reached the corpus gates in a
-    //! consecutive parcel, and each is stated over the EDGES rather than over a
-    //! consumer's output — the point of the split is that the wrong answer stops
-    //! being expressible, not that one more consumer was taught to compensate.
+    //! The edge model, stated over the EDGES rather than over any consumer's
+    //! output: a builder decides `Return` vs `FallOff` vs `Follow`, and no
+    //! consumer is in a position to express a different answer.
 
     use super::*;
     use crate::value::Z80Cond;
@@ -902,15 +900,11 @@ mod edge_model_tests {
         CodeOperand::Z80Cc(c)
     }
 
-    /// PROBE 1 (B′-3a). A `ret cc` that CLOSES a body has two successors that are
-    /// opposite facts: the taken edge returns to the caller, the other runs off
-    /// the end with the path still live. While both were one variant they were
-    /// literally equal, and the only way to tell them apart was a positional rule
-    /// plus a mnemonic test — which read `ret` and closed BOTH, reporting a cycle
-    /// bound that was too low on an unsuppressible ERROR contract.
-    ///
-    /// The assertion is that the two edges DIFFER. It is unsatisfiable against a
-    /// single `Abandon`: the pair was `[Abandon, Abandon]`.
+    /// A `ret cc` that CLOSES a body has two successors carrying opposite facts:
+    /// the taken edge returns to the caller, the other runs off the end with the
+    /// path still live. They must be DIFFERENT values — a rule that cannot tell
+    /// them apart closes the escaping side as a return at zero cost, and reports
+    /// a cycle bound that is too low on an unsuppressible ERROR contract.
     #[test]
     fn a_tail_conditional_return_names_its_two_ends_apart() {
         let items = vec![instr("nop", vec![]), instr("ret", vec![cc(Z80Cond::Z)])];
@@ -921,12 +915,11 @@ mod edge_model_tests {
         assert_eq!(edges, vec![Edge::Return, Edge::FallOff]);
     }
 
-    /// PROBE 2 (B′-2). A CALL comes back, so its only successor is the
-    /// fall-through. Giving it a branch's taken edge splices the callee's body
-    /// into the caller's flow AT THE CALLER'S STATE — which charged a local
-    /// helper's `rts` the caller's stack depth. 68k `bsr` is the spelling that
-    /// shipped the defect: three letters, leading `b`, so the conditional-branch
-    /// test matched it.
+    /// A CALL comes back, so its only successor is the fall-through. Giving it a
+    /// branch's taken edge splices the callee's body into the caller's flow AT
+    /// THE CALLER'S STATE, charging a local helper's `rts` the caller's stack
+    /// depth. `bsr` is spelled like a conditional branch — three letters, leading
+    /// `b` — so the shape test must except it by name.
     #[test]
     fn a_bsr_calls_it_does_not_branch() {
         let items = vec![
@@ -940,15 +933,14 @@ mod edge_model_tests {
         assert_eq!(cfg.edges(0), vec![Edge::Follow(1)], "`bsr` calls; it does not branch");
     }
 
-    /// PROBE 2's live Z80 twin. `call cc` is spelled like a conditional branch
-    /// and is not one, exactly as `bsr` is spelled like one and is not one — but
-    /// the Z80 builder was still listing it beside `jp cc`/`jr cc`. A local
-    /// target got spliced into the caller's flow; an external one got a `Defer`
-    /// claiming control left the proc.
+    /// The Z80 twin: `call cc` is spelled like a conditional branch and is not
+    /// one, for the same reason `bsr` is not one. Listed beside `jp cc`/`jr cc`
+    /// it splices a local target into the caller's flow, and hands an external
+    /// target a `Defer` claiming control left the proc.
     ///
-    /// The second half is the invariant that lets `context.rs` drop its
-    /// `Defer if is_call` arm: NO call mnemonic yields a transfer-out edge under
-    /// either builder, so nothing has to compensate for one.
+    /// The external and tail cases pin the invariant `context.rs` relies on: NO
+    /// call mnemonic yields a transfer-out edge, so no consumer needs a call
+    /// exception in its escape check.
     #[test]
     fn a_conditional_z80_call_calls_it_does_not_branch() {
         let local = vec![
@@ -979,15 +971,46 @@ mod edge_model_tests {
         assert_eq!(cfg.z80_edges(0), vec![Edge::FallOff]);
     }
 
-    /// PROBE 3 (B′-3a). The CPU whose return table applies is settled by WHICH
-    /// BUILDER produced the edge, so a consumer cannot pick the wrong one — there
-    /// is no table left for it to pick. `ret` is a return to the Z80 builder and
-    /// an ordinary instruction to the 68k builder, and the edges say so.
-    ///
-    /// Against a single `Abandon` both builders answered `[Abandon]` for this
-    /// body and the assertion could not be written; the consumer that had to tell
-    /// them apart asked `is_return_mnemonic` with a CPU it guessed, and guessed
-    /// 68k for a Z80 proc.
+    /// The rest of the call vocabulary, held to the same invariant. Each is safe
+    /// today because no arm of its builder matches it — but what keeps them out is
+    /// a mnemonic-SHAPE predicate, which has already had to except one spelling by
+    /// name, so the property is pinned rather than inferred.
+    #[test]
+    fn no_call_mnemonic_yields_a_transfer_out_edge() {
+        for m in ["jsr", "jbsr", "bsr"] {
+            let items = vec![instr(m, vec![sym("Elsewhere")]), instr("rts", vec![])];
+            let cfg = Cfg::build(&items);
+            assert_eq!(cfg.edges(0), vec![Edge::Follow(1)], "68k `{m}` comes back");
+        }
+        for m in ["call", "rst"] {
+            let items = vec![instr(m, vec![sym("Elsewhere")]), instr("ret", vec![])];
+            let cfg = Cfg::build(&items);
+            assert_eq!(cfg.z80_edges(0), vec![Edge::Follow(1)], "z80 `{m}` comes back");
+        }
+    }
+
+    /// Every mnemonic in a CPU's return table is classified by that CPU's return
+    /// arms, conditional forms included — the classification is TOTAL over the
+    /// table. A form that escaped to a later arm would be read as whatever that
+    /// arm makes of it, which for an end-of-body instruction is a `FallOff`.
+    #[test]
+    fn the_z80_return_table_is_classified_whole() {
+        for m in ["ret", "reti", "retn"] {
+            let bare = vec![instr(m, vec![])];
+            assert_eq!(Cfg::build(&bare).z80_edges(0), vec![Edge::Return], "`{m}`");
+            let guarded = vec![instr(m, vec![cc(Z80Cond::Z)])];
+            assert_eq!(
+                Cfg::build(&guarded).z80_edges(0),
+                vec![Edge::Return, Edge::FallOff],
+                "`{m} cc`"
+            );
+        }
+    }
+
+    /// The CPU whose return table applies is settled by WHICH BUILDER produced
+    /// the edge, so a consumer cannot pick the wrong one — there is no table left
+    /// for it to pick. `ret` is a return to the Z80 builder and an ordinary
+    /// instruction to the 68k builder, and the edges say so in both directions.
     #[test]
     fn the_builder_owns_the_return_table_not_its_consumers() {
         let items = vec![instr("ret", vec![])];

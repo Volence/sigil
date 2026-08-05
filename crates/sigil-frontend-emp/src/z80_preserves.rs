@@ -20,8 +20,8 @@
 //!   zero on our slot stack.
 //! - **join meets entry bits by AND; a depth mismatch bails** — mirrors
 //!   `preserves.rs:506` (`join`).
-//! - **a bail is path-local and only matters if it reaches a return** — mirrors
-//!   `preserves.rs:165` (`bailed_reached_return`).
+//! - **a bail is path-local and only matters if it reaches an exit** — mirrors
+//!   `preserves.rs` (`bailed_reached_exit`).
 //!
 //! Z80 divergences from the 68k proof, by design (§4.2):
 //! - every save is a `push rr` / `pop rr` PAIR (no movem, no single-register push);
@@ -302,8 +302,8 @@ pub fn verify_z80_preserved(
     in_state.insert(entry_idx, State { stack: Vec::new(), entry: [true; NU], bailed: false });
     let mut work: VecDeque<usize> = VecDeque::from([entry_idx]);
     let mut bail_reason: Option<String> = None;
-    let mut bailed_reached_return = false;
-    let mut saw_return = false;
+    let mut bailed_reached_exit = false;
+    let mut saw_exit = false;
     let mut all_returns_preserve: BTreeMap<usize, bool> =
         checked.iter().map(|(_, i)| (*i, true)).collect();
 
@@ -341,9 +341,9 @@ pub fn verify_z80_preserved(
                 // A `ret`, or control running off the end: either way the caller
                 // reads the register file from here — checkpoint it.
                 Edge::Return | Edge::FallOff => {
-                    saw_return = true;
+                    saw_exit = true;
                     if st.bailed {
-                        bailed_reached_return = true;
+                        bailed_reached_exit = true;
                     } else {
                         for (_, i) in &checked {
                             if !st.entry[*i] {
@@ -354,7 +354,7 @@ pub fn verify_z80_preserved(
                 }
                 // An external tail transfer (`jp`/`jr` to a non-local target) is an
                 // EXIT: this proc's real return happens inside the tail-callee.
-                // Closing the §13.4 vacuous `!saw_return` hole (gap 3) — a proc that
+                // Closing the §13.4 vacuous `!saw_exit` hole (gap 3) — a proc that
                 // ONLY tail-transfers used to pass `preserves` vacuously, silently
                 // verifying a contract its body breaks. The proc preserves rN across
                 // the transfer iff rN holds its entry value AT the jp AND the
@@ -362,9 +362,9 @@ pub fn verify_z80_preserved(
                 // conservative clobber, via the oracle). Mirrors the
                 // `Return`/`FallOff` arm plus the callee oracle.
                 Edge::Defer => {
-                    saw_return = true;
+                    saw_exit = true;
                     if st.bailed {
-                        bailed_reached_return = true;
+                        bailed_reached_exit = true;
                     } else {
                         let tail_callee = cfg.instr(idx).and_then(|(_, ops)| branch_sym(ops));
                         for (name, i) in &checked {
@@ -381,9 +381,9 @@ pub fn verify_z80_preserved(
     checked
         .iter()
         .map(|(name, i)| {
-            let status = if !saw_return {
+            let status = if !saw_exit {
                 PreserveStatus::Verified
-            } else if bailed_reached_return {
+            } else if bailed_reached_exit {
                 // TIGHTENED (t36 ruling iii): once ANY bailed path reaches a return,
                 // the `ret` continues execution INSIDE the caller-observed extent (the
                 // trampoline dispatches into handler procs; an `ld sp` recomputes the
@@ -480,12 +480,12 @@ fn transfer(cfg: &Cfg, idx: usize, st: &mut State, callee_map: &CalleePreserves)
 /// needs `ret`/`jp`/`jr`/`djnz`/`call` semantics, so it computes edges itself from
 /// the shared `Cfg`'s `instr`/`next_instr`/`label_index` primitives.
 ///
-/// A CONDITIONAL form (a leading `Z80Cc`) is a genuine two-way split — it
-/// contributes BOTH its taken edge and its fall-through. A `preserves` proof
-/// that dropped the fall-through of a `jr cc`/`jp cc`/`ret cc` would MISS a
+/// A conditional BRANCH or RETURN (a leading `Z80Cc` on a `jr`/`jp`/`ret`) is a
+/// genuine two-way split — it contributes BOTH its taken edge and its
+/// fall-through. A `preserves` proof that dropped the fall-through would MISS a
 /// register clobbered only on that path and wrongly verify the preserve (the
-/// §13.4-E soundness gap). This mirrors the flag check's `Cfg::z80_edges`
-/// (`flag_check.rs`) — the same conditional split, one edge model.
+/// §13.4-E soundness gap). `call cc` is not such a form: it calls and comes back,
+/// so its only successor is the fall-through.
 fn z80_edges(cfg: &Cfg, idx: usize) -> Vec<Edge> {
     let Some((mnem, ops)) = cfg.instr(idx) else { return vec![] };
     let leads_cc = matches!(ops.first(), Some(CodeOperand::Z80Cc(_)));

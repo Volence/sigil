@@ -285,9 +285,9 @@ struct ChargedEdge {
 
 /// The charged successors of `idx`. Every way out of the body except an
 /// [`Edge::Return`] is refused, so a path can never be closed with cost left
-/// unaccounted. An end-of-body `ret cc` presents `[Return, FallOff]`, so its
-/// escaping side is refused and its returning side charged from the SAME list,
-/// with no positional or mnemonic rule deciding which is which.
+/// unaccounted. An end-of-body `ret cc` presents `[Return, FallOff]`, so the
+/// escaping side refuses the whole bound from the SAME list that names the
+/// returning side — no positional or mnemonic rule decides which is which.
 ///
 /// One edge-model fact is still read POSITIONALLY, because `Edge` does not record
 /// it: **taken-first**. Every conditional arm of [`Cfg::z80_edges`] pushes the
@@ -356,12 +356,16 @@ fn postorder(cfg: &Cfg, items: &[CodeItem], entry: usize) -> Result<Vec<usize>, 
     }
     let mut mark: BTreeMap<usize, Mark> = BTreeMap::new();
     let mut order = Vec::new();
+    // Exhaustive rather than a catch-all: every way of LEAVING the body is
+    // named, so an edge kind that stays inside one cannot be dropped here by
+    // default. A dropped in-proc successor loses a path, and a lost path makes
+    // the bound too LOW — the one direction a budget must not err in.
     let succs = |i: usize| -> Vec<usize> {
         cfg.z80_edges(i)
             .into_iter()
             .filter_map(|e| match e {
                 Edge::Follow(s) => Some(s),
-                _ => None,
+                Edge::Return | Edge::FallOff | Edge::Defer => None,
             })
             .collect()
     };

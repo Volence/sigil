@@ -365,7 +365,7 @@ pub fn verify_preserved_on(
 /// the CFG builder. Each consumer states its own POLICY as a match over these —
 /// the two that differ (whether a fall-off-end is a return) differ in the arm,
 /// not in a re-reading of the exit instruction's mnemonic.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy)]
 enum ExitKind {
     /// [`Edge::Return`] — an `rts`/`rte`/`rtr`/`rtd`.
     Return,
@@ -1465,6 +1465,26 @@ mod frame_tests {
 
     fn rts(idx: u32) -> CodeItem {
         instr(idx, "rts", vec![])
+    }
+
+    /// The one thing the exit KIND does not settle: whether running off the end
+    /// of a body is a return. That is a per-proc DECLARATION — `falls_into`
+    /// continues into a successor that shares the frame — so the edge states the
+    /// machine fact and `charge_fall_off_end` states the policy. A body that ends
+    /// with an unmatched push and no `rts` is imbalanced under one and silent
+    /// under the other, from the identical edge.
+    #[test]
+    fn a_fall_off_end_is_charged_only_when_the_proc_declares_no_fallthrough() {
+        let push = instr(0, "move", vec![CodeOperand::Reg(Reg::D0), CodeOperand::PreDec(Reg::A7)]);
+        let items = [push, instr(1, "nop", vec![])];
+        assert_eq!(
+            check_stack_balance(&items, false),
+            Vec::new(),
+            "a declared `falls_into` end continues into its successor's frame"
+        );
+        let found = check_stack_balance(&items, true);
+        assert_eq!(found.len(), 1, "without the declaration the end IS a return");
+        assert_eq!(found[0].kind, StackFindingKind::Unbalanced { depth: 4 });
     }
 
     /// A paired frame nets zero: the `unlk` drops the locals and pops the saved

@@ -363,9 +363,10 @@ pub fn check_regions(
                     Edge::Follow(succ) if !region.contains(succ) => {
                         fire(ContextFiringKind::Escape, span_at(items, idx, region));
                     }
-                    // A call is never one of these: both builders give every call
-                    // mnemonic its fall-through and nothing else, because a call
-                    // comes back. So a `Defer` here is a genuine transfer out.
+                    // A `Defer` here is a genuine transfer out. No call reaches
+                    // it: both builders give every call mnemonic its fall-through
+                    // and nothing else — or, at the end of a body, only the
+                    // fall-off, which IS an escape and fires as one.
                     Edge::Return | Edge::FallOff | Edge::Defer => {
                         fire(ContextFiringKind::Escape, span_at(items, idx, region));
                     }

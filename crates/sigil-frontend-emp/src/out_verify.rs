@@ -555,7 +555,7 @@ fn not_cc_exit_sites(cfg: &Cfg, flags: &BTreeMap<usize, Flags>, cc: &str) -> BTr
         let leaves = cfg
             .edges(idx)
             .iter()
-            .any(|e| matches!(e, Edge::Return | Edge::FallOff | Edge::Defer));
+            .any(|e| !matches!(e, Edge::Follow(_)));
         if leaves {
             sites.insert(idx);
         }
