@@ -219,7 +219,7 @@ pub(super) fn lower_proc(
     // are the 68k pair (`z80_preserves` is the Z80 sibling and has no stack-delta
     // arm yet).
     if ctx.cpu != Cpu::Z80 {
-        check_stack_balance(file, &proc.name, &buf, ctx.as_compat, diags);
+        check_stack_balance(file, proc, &buf, ctx.as_compat, diags);
     }
 }
 
@@ -237,7 +237,7 @@ pub(super) fn lower_proc(
 /// exactly.
 fn check_stack_balance(
     file: &ast::File,
-    name: &str,
+    proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,
     as_compat: bool,
     diags: &mut Vec<Diagnostic>,
@@ -246,7 +246,11 @@ fn check_stack_balance(
     let level = if as_compat { Level::Warning } else { Level::Error };
     let allow_unbalanced = super::allows_lint(file, "stack.unbalanced");
     let allow_mismatch = super::allows_lint(file, "stack.merge-mismatch");
-    for f in crate::preserves::check_stack_balance(&buf.items) {
+    // A declared `falls_into` continues into its successor rather than returning,
+    // so control running off the end of THIS body is not a return and the pair may
+    // legitimately share one frame across the boundary.
+    let charge_fall_off_end = proc.falls_into.is_none();
+    for f in crate::preserves::check_stack_balance(&buf.items, charge_fall_off_end) {
         if match f.kind {
             K::Unbalanced { .. } => allow_unbalanced,
             K::MergeMismatch { .. } => allow_mismatch,
@@ -254,25 +258,23 @@ fn check_stack_balance(
             continue;
         }
         let (id, what) = match f.kind {
-            K::Unbalanced { delta } => (
+            K::Unbalanced { depth } => (
                 "stack.unbalanced",
                 format!(
-                    "this path returns with sp {} bytes {} its entry value — the `rts` reads its \
-                     return address from the wrong word",
-                    delta.abs(),
-                    if delta < 0 { "below" } else { "above" }
+                    "this path returns with {depth} bytes still on the stack — sp is below its \
+                     entry value, so the return reads its address from the wrong word"
                 ),
             ),
             K::MergeMismatch { existing, incoming } => (
                 "stack.merge-mismatch",
                 format!(
-                    "paths reach this point with sp at different offsets ({existing} and \
-                     {incoming} bytes from entry) — the code past the merge runs at an sp that \
-                     depends on the branch taken"
+                    "paths reach this point holding different amounts of stack ({existing} and \
+                     {incoming} bytes) — the code past the merge runs at an sp that depends on \
+                     the branch taken"
                 ),
             ),
         };
-        push(diags, level, f.span, format!("[{id}] in `{name}`: {what}"));
+        push(diags, level, f.span, format!("[{id}] in `{}`: {what}", proc.name));
     }
 }
 

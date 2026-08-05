@@ -78,7 +78,7 @@ fn push_without_pop_is_unbalanced() {
     assert_eq!(firings.len(), 1, "expected exactly one firing, got: {diags:?}");
     assert_eq!(firings[0].level, Level::Error, "the tier is error by default (U-spec §6)");
     assert!(
-        firings[0].message.contains("4 bytes below"),
+        firings[0].message.contains("4 bytes still on the stack"),
         "the message names the delta: {}",
         firings[0].message
     );
@@ -92,6 +92,31 @@ fn one_sided_push_is_a_merge_mismatch() {
     let firings = with_id(&diags, "stack.merge-mismatch");
     assert_eq!(firings.len(), 1, "expected exactly one firing, got: {diags:?}");
     assert_eq!(firings[0].level, Level::Error, "the tier is error by default (U-spec §6)");
+    // Past the merge the model is BAILED, so the `rts` beneath it reports nothing:
+    // the depth there is whichever branch arrived first, which is not a fact.
+    assert!(
+        with_id(&diags, "stack.unbalanced").is_empty(),
+        "a mismatched merge must not also charge the return below it: {diags:?}"
+    );
+}
+
+/// A finding is a fact about the path that produced it, not about the merged
+/// view. Here both branches reach the `rts` holding 6 bytes — a real imbalance on
+/// each — while their slot GEOMETRY differs (long-then-word against the reverse),
+/// which taints the merge. The imbalance is still reported, because it was true of
+/// a path the model tracked exactly before any merge erased it.
+#[test]
+fn a_real_per_path_imbalance_survives_a_tainted_merge() {
+    let diags = lower(&proc_src(
+        "    tst.w d0\n         \x20   beq.s .other\n         \x20   move.l d0, -(sp)\n         \x20   move.w d1, -(sp)\n         \x20   bra.s .join\n         .other:\n         \x20   move.w d1, -(sp)\n         \x20   move.l d0, -(sp)\n         .join:\n         \x20   rts\n",
+    ));
+    let firings = with_id(&diags, "stack.unbalanced");
+    assert_eq!(firings.len(), 1, "expected the per-path imbalance, got: {diags:?}");
+    assert!(
+        firings[0].message.contains("6 bytes still on the stack"),
+        "the depth is the path's own, not a merged guess: {}",
+        firings[0].message
+    );
 }
 
 /// A loop body that pushes without popping arrives at its own head with a deeper
@@ -240,6 +265,100 @@ fn a_pop_underflow_silences_the_checker() {
         stack_diags(&diags).is_empty(),
         "an underflowing pop leaves nothing to measure against: {diags:?}"
     );
+}
+
+/// `bsr` is spelled like a conditional branch and is a CALL. Reading it as a
+/// branch splices the local target's body into this proc's flow at the CALLER's
+/// state, so an internal subroutine's own `rts` gets charged the caller's stack.
+#[test]
+fn a_local_bsr_does_not_charge_its_helper_with_the_callers_stack() {
+    let diags = lower(&proc_src(
+        "    move.l d0, -(sp)\n         \x20   bsr.s .helper\n         \x20   move.l (sp)+, d0\n         \x20   rts\n         .helper:\n         \x20   addq.w #1, d1\n         \x20   rts\n",
+    ));
+    assert!(
+        stack_diags(&diags).is_empty(),
+        "the helper returns at ITS entry depth, not the caller's: {diags:?}"
+    );
+}
+
+/// A declared `falls_into` continues into its successor rather than returning, so
+/// the pair may legitimately share one frame across the boundary. Charging the
+/// fall-off-end would reject the idiom with a message about an `rts` the body does
+/// not contain.
+#[test]
+fn a_declared_fallthrough_end_is_not_a_return() {
+    let diags = lower(
+        "module m\n         proc a() falls_into b {\n    move.l d0, -(sp)\n}\n         proc b() {\n    move.l (sp)+, d0\n    rts\n}\n",
+    );
+    assert!(
+        stack_diags(&diags).is_empty(),
+        "a shared frame across a declared fallthrough is legitimate: {diags:?}"
+    );
+}
+
+/// The wall for the test above: an UNDECLARED fall-off-end IS charged. Its
+/// successor is whatever follows in the section, which nothing checked — so
+/// leaving the stack dirty there is a real defect and stays reported.
+#[test]
+fn an_undeclared_fall_off_end_is_still_charged() {
+    let diags = lower("module m\nproc a() {\n    move.l d0, -(sp)\n}\n");
+    assert!(
+        !with_id(&diags, "stack.unbalanced").is_empty(),
+        "an undeclared fallthrough keeps its stack obligation: {diags:?}"
+    );
+}
+
+/// A pop whose width disagrees with the slots beneath it leaves sp somewhere the
+/// slot map cannot name. Counting SLOTS rather than bytes would report 2 bytes
+/// still held here — a false positive on balanced code.
+#[test]
+fn a_width_mismatched_pop_silences_the_checker() {
+    let diags = lower(&proc_src(
+        "    move.w d0, -(sp)\n    move.w d1, -(sp)\n    move.l (sp)+, d2\n    rts\n",
+    ));
+    assert!(
+        stack_diags(&diags).is_empty(),
+        "a `.l` pop over two `.w` pushes is balanced on the machine: {diags:?}"
+    );
+}
+
+/// A plain `(sp)` STORE overwrites the top slot's contents, so the entry-value
+/// model no longer knows what is there.
+#[test]
+fn a_top_of_stack_store_silences_the_checker() {
+    assert_bailout_silences("a plain (sp) store", "move.l d1, (sp)");
+}
+
+/// The wall for the probe above: a `(sp)` READ is NOT a hazard whatever the
+/// mnemonic. A load cannot alter a slot, and the corpus reads the top of stack
+/// through `adda.w (sp), a2` (`sprites.emp:257`) — hazarding that would bail
+/// `Render_Sprites` for doing something entirely safe.
+#[test]
+fn a_top_of_stack_read_is_not_a_hazard() {
+    let diags = lower(&proc_src(
+        "    move.w d0, -(sp)\n         \x20   adda.w (sp), a2\n         \x20   move.w (sp)+, d0\n         \x20   rts\n",
+    ));
+    assert!(stack_diags(&diags).is_empty(), "a top-of-stack read is balanced: {diags:?}");
+}
+
+/// An sp used as the INDEX register of another base is still sp escaping into
+/// address math — the `IndIdx { xn: A7 }` arm of the hazard.
+#[test]
+fn sp_as_an_index_register_silences_the_checker() {
+    assert_bailout_silences("sp as an index register", "move.l d1, 2(a0, sp.w)");
+}
+
+/// An sp cleanup that drains more than was pushed reaches into the caller's frame.
+#[test]
+fn an_over_draining_cleanup_silences_the_checker() {
+    assert_bailout_silences("an over-draining sp cleanup", "addq.l #8, sp");
+}
+
+/// An sp cleanup landing MID-SLOT cannot be represented — the model would have to
+/// split a tracked slot in half.
+#[test]
+fn a_mid_slot_cleanup_silences_the_checker() {
+    assert_bailout_silences("a mid-slot sp cleanup", "addq.l #2, sp");
 }
 
 // ===========================================================================

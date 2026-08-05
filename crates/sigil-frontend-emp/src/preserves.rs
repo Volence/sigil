@@ -48,7 +48,7 @@
 //! place that decides.
 
 use crate::closure::RegEffect;
-use crate::flag_check::{Cfg, Edge};
+use crate::flag_check::{instr_span, is_return_mnemonic, Cfg, Edge};
 use crate::lower::instr_written_regs;
 use crate::value::{CodeItem, CodeOperand, Reg, Width};
 use sigil_span::Span;
@@ -391,9 +391,11 @@ trait StackObserver {
 /// every merge, reporting exits and merges to `obs`. Returns the FIRST bailout
 /// reason encountered, or `None` if the model held everywhere.
 ///
-/// A bailout is PATH-LOCAL: it taints the state ([`State::bailed`]) and rides the
-/// CFG rather than stopping the walk, so a path must still reach its terminator
-/// and consumers can tell a returning bail from a diverging one. Under
+/// A bailout RIDES THE CFG rather than stopping the walk: it taints the state
+/// ([`State::bailed`]), so a path must still reach its terminator and consumers
+/// can tell a returning bail from a diverging one. It reaches only what the
+/// tainted path reaches — a bail on a diverging branch never touches a returning
+/// one, though [`join`] does propagate it into any merge it participates in. Under
 /// [`ReturnScope::AllReturns`] a bail on a noreturn `Defer` path (the DEBUG
 /// `raise_error` `subq #2,sp` → `jmp handler` shape) constrains nothing.
 fn run_stack_dataflow<O: StackObserver>(
@@ -556,16 +558,31 @@ fn is_safe_sp_disp_read(mnem: &str, ops: &[CodeOperand]) -> bool {
         && matches!(ops.last(), Some(CodeOperand::Reg(r)) if *r != Reg::A7)
 }
 
+/// A plain `(sp)` READ: the top slot is the SOURCE and the destination is
+/// something else. A load cannot alter a slot's contents, so it is not an alias
+/// hazard whatever the mnemonic — `adda.w (sp), a2` reads the top word exactly as
+/// `movea.l (sp), a1` does. The STORE direction (`(sp)` as the destination, e.g.
+/// `add.l d0, (sp)`) is the hazard, and so is a read-modify-write naming `(sp)`
+/// on both ends. [`is_peek`] stays the NARROWER question of which loads also
+/// RESTORE a register's entry value.
+fn is_sp_top_read(ops: &[CodeOperand]) -> bool {
+    matches!(ops.first(), Some(CodeOperand::Ind(Reg::A7)))
+        && !matches!(ops.last(), Some(CodeOperand::Ind(Reg::A7)))
+}
+
 /// An unmodeled sp hazard → bail: a bare `a7` operand (sp's value used directly —
-/// escapes into address math or a computed `adda #n,sp`), or a displaced/indexed
-/// sp access (`d(sp)` / `(sp,Xn)` — could alias a tracked slot). The clean stack
-/// forms use `PreDec`/`PostInc`/`Ind` of a7, never these; a displaced-sp READ into
-/// a register is exempted by [`is_safe_sp_disp_read`] at the call site.
+/// escapes into address math or a computed `adda #n,sp`), or an sp access that
+/// could ALIAS a tracked slot — displaced (`d(sp)`), indexed (`(sp,Xn)`), or the
+/// exact top-of-stack (`(sp)`). The clean stack forms use `PreDec`/`PostInc` of
+/// a7, never these. Two READ forms are exempted at the call site, since a load
+/// cannot alter a slot's contents: the `(sp)` peek ([`is_peek`]) and the
+/// displaced-frame read ([`is_safe_sp_disp_read`]).
 fn sp_hazard(ops: &[CodeOperand]) -> bool {
     ops.iter().any(|o| {
         matches!(
             o,
             CodeOperand::Reg(Reg::A7)
+                | CodeOperand::Ind(Reg::A7)
                 | CodeOperand::DispInd { reg: Reg::A7, .. }
                 | CodeOperand::IndIdx { reg: Reg::A7, .. }
                 | CodeOperand::IndIdx { xn: Reg::A7, .. }
@@ -675,7 +692,7 @@ fn transfer(
     // the `(sp)` peek: a load cannot alias a tracked slot (only a store could), so
     // it is safe and takes the normal register-write handling below (§5 grow —
     // sp_hazard's own "could alias" rationale is write-only).
-    if sp_hazard(ops) && !is_safe_sp_disp_read(mnem, ops) {
+    if sp_hazard(ops) && !is_sp_top_read(ops) && !is_safe_sp_disp_read(mnem, ops) {
         return Some(sp_hazard_reason(ops));
     }
 
@@ -700,31 +717,50 @@ fn transfer(
         return None;
     }
 
-    // POP — `(sp)+`. Popping more slots than are tracked underflows into the
-    // caller's frame / return address — the model is inconsistent → bail.
+    // POP — `(sp)+`. The transfer's byte width is the truth: an `n`-register pop
+    // of size `sz` consumes `n * sz` BYTES, and the slots it drains must total
+    // exactly that. A pop whose width disagrees with the slots beneath it (a `.l`
+    // pop over two `.w` pushes) leaves sp somewhere the slot map cannot name, and
+    // a pop that drains more than is tracked reaches into the caller's frame —
+    // both make the model inconsistent → bail. (Counting SLOTS instead of bytes
+    // would let the mismatched case report a depth the machine does not have,
+    // which at ERROR tier is a false positive.)
     if is_pop(ops) {
         let regs: Vec<Reg> = match reglist_mask(ops) {
             Some(mask) => expand_mask(mask),
             None => match ops.last() {
                 Some(CodeOperand::Reg(dst)) => vec![*dst],
-                _ => {
-                    st.stack.pop();
-                    return None;
-                }
+                // A non-register destination (`move.w (sp)+, sr`) restores no
+                // tracked register but still drains one transfer's worth.
+                _ => Vec::new(),
             },
         };
-        if st.stack.len() < regs.len() {
-            return Some("stack underflow — pop drains more than was pushed".to_string());
-        }
+        let per = slot_bytes(instr_size(items, idx)) as i64;
+        let want = per * regs.len().max(1) as i64;
+        let mut got = 0i64;
         // movem restores in canonical ascending order; a single pop is one reg.
-        for r in regs {
-            let slot = st.stack.pop().and_then(|s| s.reg);
+        // Drain first so a width disagreement is caught before any entry bit is
+        // set from a slot the pop did not actually consume.
+        let mut popped: Vec<Option<Reg>> = Vec::with_capacity(regs.len());
+        while got < want {
+            let Some(slot) = st.stack.pop() else {
+                return Some("stack underflow — pop drains more than was pushed".to_string());
+            };
+            got += slot.bytes as i64;
+            popped.push(slot.reg);
+        }
+        if got != want {
+            return Some(
+                "pop width disagrees with the slots beneath it — sp lands mid-slot".to_string(),
+            );
+        }
+        for (r, slot) in regs.iter().zip(popped) {
             // A `.w`/`.b` restore does not round-trip the full register.
-            st.entry[reg_idx(r)] = is_long && slot == Some(r);
+            st.entry[reg_idx(*r)] = is_long && slot == Some(*r);
             // A pop LOADS the register from the stack — a fresh value, not a
             // static offset of entry. The stack/entry-bit model judges it; the
             // delta tracker gives up on it.
-            st.delta[reg_idx(r)] = None;
+            st.delta[reg_idx(*r)] = None;
         }
         return None;
     }
@@ -879,15 +915,19 @@ fn sp_hazard_reason(ops: &[CodeOperand]) -> String {
     if ops.iter().any(|o| matches!(o, CodeOperand::Reg(Reg::A7))) {
         "sp used as a value (computed sp / escape into address math)".to_string()
     } else {
-        "displaced/indexed sp access could alias a saved slot".to_string()
+        "sp-relative store could alias a saved slot".to_string()
     }
 }
 
 /// Join `other` into `acc` (both on entry to the same node). Entry bits meet by
 /// AND (a register is entry-valued only if BOTH paths agree). Slots meet
-/// pointwise (`Some(r)` iff both agree). `bailed` propagates (OR). Differing stack
-/// DEPTHS mean an ambiguous sp at the merge → taint the merged path `bailed`
-/// (path-local, so a diverging bailed path never poisons a returning one).
+/// pointwise (`Some(r)` iff both agree). Differing stack DEPTHS mean an ambiguous
+/// sp at the merge → taint the merged path `bailed`.
+///
+/// `bailed` propagates by OR, so a bailed path DOES taint every path it merges
+/// with — the safe direction (more silence), and the reason "path-local" means
+/// only that a bail rides the CFG instead of aborting the walk: a bail on a
+/// diverging path that never merges leaves returning paths untouched.
 fn join(acc: &mut State, other: &State) {
     acc.bailed |= other.bailed;
     if acc.stack.len() != other.stack.len() {
@@ -934,19 +974,24 @@ fn join(acc: &mut State, other: &State) {
 /// What a [`StackFinding`] reports.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StackFindingKind {
-    /// Control reaches a return with sp displaced from its entry value by `delta`
-    /// bytes (negative = data pushed and never popped). The caller's return
-    /// address is not where the `rts` will look for it.
+    /// Control reaches a return with sp `depth` bytes BELOW its entry value —
+    /// data pushed and never popped, so the caller's return address is not where
+    /// the `rts` will look for it.
+    ///
+    /// Only that direction is representable: the slot map has no negative depth,
+    /// so an sp RAISED past entry drains the tracked slots and hits the underflow
+    /// bail instead. The opposite defect (popping more than was pushed) is
+    /// therefore a blind spot, not a covered case — see the gap ledger.
     Unbalanced {
-        /// sp's displacement from its entry value, in bytes.
-        delta: i64,
+        /// Bytes of stack still held at the return.
+        depth: i64,
     },
     /// Two paths meet with different sp deltas, so the code past the merge runs at
     /// an sp that depends on which branch was taken.
     MergeMismatch {
-        /// The delta the already-recorded path arrives with.
+        /// The depth the already-recorded path arrives with.
         existing: i64,
-        /// The delta the joining path arrives with.
+        /// The depth the joining path arrives with.
         incoming: i64,
     },
 }
@@ -997,12 +1042,12 @@ pub struct StackFinding {
 /// policy-independent (it nets zero — the return address it pushes is popped by
 /// its own `rts`); only the entry-value bits, which this consumer never reads,
 /// vary with the oracle.
-pub fn check_stack_balance(items: &[CodeItem]) -> Vec<StackFinding> {
+pub fn check_stack_balance(items: &[CodeItem], charge_fall_off_end: bool) -> Vec<StackFinding> {
     let cfg = Cfg::build(items);
     let Some(entry_idx) = entry_instr_idx(items) else {
         return Vec::new(); // no instructions: nothing to balance
     };
-    let mut obs = BalanceObserver { items, found: BTreeMap::new() };
+    let mut obs = BalanceObserver { items, charge_fall_off_end, found: BTreeMap::new() };
     run_stack_dataflow(&cfg, entry_idx, items, &CallPolicy::ClobberAll, &mut obs);
     obs.found.into_values().collect()
 }
@@ -1012,33 +1057,58 @@ pub fn check_stack_balance(items: &[CodeItem]) -> Vec<StackFinding> {
 /// once, in source order.
 struct BalanceObserver<'a> {
     items: &'a [CodeItem],
-    found: BTreeMap<(u32, u8), StackFinding>,
+    /// Charge control running off the END of the body as a return. False for a
+    /// declared `falls_into`, whose end is a continuation, not a return.
+    charge_fall_off_end: bool,
+    /// Keyed `(source, span start, class)`. The SOURCE is load-bearing: a
+    /// `with <ctx> { }` bracket splices the context module's instructions into
+    /// this body carrying THEIR file's spans, so two findings in one proc can sit
+    /// at the same byte offset in different files.
+    found: BTreeMap<(u32, u32, u8), StackFinding>,
 }
 
 impl BalanceObserver<'_> {
-    /// The span of instruction item `idx`.
-    fn span_of(&self, idx: usize) -> Option<Span> {
+    /// Is the exit at instruction `idx` one this checker charges? A RETURN
+    /// instruction always is. Control running off the END of the body is a return
+    /// only when the proc did not declare a fallthrough — a declared `falls_into`
+    /// continues into its successor, whose own check covers the shared frame, and
+    /// charging it would reject the idiom with a message about an `rts` the body
+    /// does not contain.
+    fn charges(&self, idx: usize) -> bool {
         match self.items.get(idx) {
-            Some(CodeItem::Instr { span, .. }) => Some(*span),
-            _ => None,
+            Some(CodeItem::Instr { mnemonic, .. }) => {
+                is_return_mnemonic(mnemonic) || self.charge_fall_off_end
+            }
+            _ => false,
         }
     }
 
+    /// Record `kind` at instruction `idx`, keeping the FIRST finding per
+    /// (site, class).
+    ///
+    /// The walk reports during iteration rather than at the fixpoint, and that is
+    /// deliberate: the state at a given visit is either ONE path's exactly (the
+    /// first arrival) or a merge whose members AGREED on depth, so every recorded
+    /// depth is a true fact about a real path. The fixpoint's converged state is
+    /// strictly less informative — a later merge answers a disagreement with a
+    /// bail, which would erase a genuine imbalance the model had already proven.
     fn record(&mut self, idx: usize, kind: StackFindingKind) {
-        if let Some(span) = self.span_of(idx) {
-            self.found.entry((span.start, kind.class())).or_insert(StackFinding { kind, span });
+        if let Some(span) = instr_span(self.items, idx) {
+            self.found
+                .entry((span.source.0, span.start, kind.class()))
+                .or_insert(StackFinding { kind, span });
         }
     }
 }
 
 impl StackObserver for BalanceObserver<'_> {
     fn exit(&mut self, idx: usize, st: &State, is_return: bool) {
-        if !is_return || st.bailed {
+        if !is_return || st.bailed || !self.charges(idx) {
             return;
         }
-        let delta = -st.depth_bytes();
-        if delta != 0 {
-            self.record(idx, StackFindingKind::Unbalanced { delta });
+        let depth = st.depth_bytes();
+        if depth != 0 {
+            self.record(idx, StackFindingKind::Unbalanced { depth });
         }
     }
 
@@ -1046,7 +1116,7 @@ impl StackObserver for BalanceObserver<'_> {
         if existing.bailed || incoming.bailed {
             return;
         }
-        let (a, b) = (-existing.depth_bytes(), -incoming.depth_bytes());
+        let (a, b) = (existing.depth_bytes(), incoming.depth_bytes());
         if a != b {
             self.record(succ, StackFindingKind::MergeMismatch { existing: a, incoming: b });
         }
@@ -1221,7 +1291,15 @@ fn ds_transfer(
         return false;
     }
 
-    if sp_hazard(ops) {
+    // `link`/`unlk` move sp without naming it. This walk does not model frames, so
+    // it must BAIL rather than carry a depth the machine does not have — otherwise
+    // a later restore pairs a slot to the wrong register and the worklist tells a
+    // porter to delete a load-bearing save.
+    if mnem == "link" || mnem == "unlk" {
+        return true;
+    }
+
+    if sp_hazard(ops) && !is_sp_top_read(ops) {
         return true;
     }
 
@@ -1292,10 +1370,7 @@ fn record_restore(
     if slot.reg != Some(r) {
         return;
     }
-    let span = match &items[slot.push_idx] {
-        CodeItem::Instr { span, .. } => *span,
-        _ => return,
-    };
+    let Some(span) = instr_span(items, slot.push_idx) else { return };
     let rec = recs.entry((r, slot.push_idx)).or_insert(DeadRec {
         callees: BTreeSet::new(),
         any_clobbered: false,
@@ -1377,7 +1452,7 @@ mod frame_tests {
     #[test]
     fn a_paired_frame_is_balanced() {
         let items = [link(0, Reg::A6, -8), unlk(1, Reg::A6), rts(2)];
-        assert_eq!(check_stack_balance(&items), Vec::new(), "a closed frame nets zero");
+        assert_eq!(check_stack_balance(&items, true), Vec::new(), "a closed frame nets zero");
     }
 
     /// The pairing rule's PROVABLE direction: a `link` whose frame is still on the
@@ -1385,9 +1460,9 @@ mod frame_tests {
     #[test]
     fn a_link_with_no_unlk_is_unbalanced() {
         let items = [link(0, Reg::A6, -8), rts(1)];
-        let found = check_stack_balance(&items);
+        let found = check_stack_balance(&items, true);
         assert_eq!(found.len(), 1, "expected one finding, got {found:?}");
-        assert_eq!(found[0].kind, StackFindingKind::Unbalanced { delta: -12 });
+        assert_eq!(found[0].kind, StackFindingKind::Unbalanced { depth: 12 });
     }
 
     /// An `unlk` with no open frame sets sp from a register this model never
@@ -1397,7 +1472,7 @@ mod frame_tests {
     fn an_unlk_with_no_link_bails_rather_than_guessing() {
         let items = [unlk(0, Reg::A6), rts(1)];
         assert_eq!(
-            check_stack_balance(&items),
+            check_stack_balance(&items, true),
             Vec::new(),
             "an unmatched unlk leaves sp unmodeled — reporting a delta would be a guess"
         );
@@ -1409,7 +1484,7 @@ mod frame_tests {
     fn an_unlk_of_the_wrong_register_bails() {
         let items = [link(0, Reg::A6, -8), unlk(1, Reg::A5), rts(2)];
         assert_eq!(
-            check_stack_balance(&items),
+            check_stack_balance(&items, true),
             Vec::new(),
             "a disagreeing frame chain leaves sp unmodeled"
         );
@@ -1439,15 +1514,15 @@ mod frame_tests {
     #[test]
     fn a_closed_zero_size_frame_is_balanced() {
         let items = [link(0, Reg::A6, 0), unlk(1, Reg::A6), rts(2)];
-        assert_eq!(check_stack_balance(&items), Vec::new(), "a closed frame nets zero");
+        assert_eq!(check_stack_balance(&items, true), Vec::new(), "a closed frame nets zero");
     }
 
     /// An unclosed zero-size frame still leaves its saved frame pointer behind.
     #[test]
     fn an_unclosed_zero_size_frame_still_carries_its_saved_pointer() {
-        let found = check_stack_balance(&[link(0, Reg::A6, 0), rts(1)]);
+        let found = check_stack_balance(&[link(0, Reg::A6, 0), rts(1)], true);
         assert_eq!(found.len(), 1, "expected one finding, got {found:?}");
-        assert_eq!(found[0].kind, StackFindingKind::Unbalanced { delta: -4 });
+        assert_eq!(found[0].kind, StackFindingKind::Unbalanced { depth: 4 });
     }
 
     /// A POSITIVE displacement would raise sp into the caller's frame rather than
@@ -1456,7 +1531,7 @@ mod frame_tests {
     fn a_positive_link_displacement_bails() {
         let items = [link(0, Reg::A6, 8), rts(1)];
         assert_eq!(
-            check_stack_balance(&items),
+            check_stack_balance(&items, true),
             Vec::new(),
             "a positive displacement is not the allocate idiom, so it is not modeled"
         );
@@ -1469,7 +1544,7 @@ mod frame_tests {
     fn an_unrepresentable_frame_size_bails() {
         for size in [-(u32::MAX as i128) - 1, i128::MIN] {
             assert_eq!(
-                check_stack_balance(&[link(0, Reg::A6, size), rts(1)]),
+                check_stack_balance(&[link(0, Reg::A6, size), rts(1)], true),
                 Vec::new(),
                 "frame size {size} must bail"
             );
