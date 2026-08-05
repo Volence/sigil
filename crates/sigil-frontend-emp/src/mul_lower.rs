@@ -59,7 +59,7 @@
 //! of the contract and changes with `n`.
 
 use crate::m68k_cycles::instr_cost;
-use crate::value::{CodeBuf, CodeItem, CodeOperand, Reg, Width};
+use crate::value::{CodeBuf, CodeItem, CodeOperand, ItemAuthor, Reg, Width};
 use sigil_backend_m68k::m68k_cycles::CycleCost;
 use sigil_ir::backend::Cpu;
 use sigil_span::{Diagnostic, Level, Span};
@@ -98,7 +98,7 @@ pub(crate) fn expand_buf(
     let items = std::mem::take(&mut buf.items);
     for item in items {
         match item {
-            CodeItem::Instr { ref mnemonic, size, ref ops, span, ref as_type }
+            CodeItem::Instr { ref mnemonic, size, ref ops, span, ref as_type, ref author }
                 if is_mul_mnemonic(mnemonic) =>
             {
                 if cpu == Cpu::Z80 {
@@ -115,7 +115,7 @@ pub(crate) fn expand_buf(
                     ));
                     continue;
                 }
-                match expand_item(mnemonic, size, ops, span, module, counter) {
+                match expand_item(mnemonic, size, ops, span, module, counter, author) {
                     Ok(expanded) => buf.items.extend(expanded),
                     Err(d) => diags.push(d),
                 }
@@ -143,6 +143,17 @@ pub(crate) fn non_68k_err(span: Span, mnemonic: &str) -> Diagnostic {
 /// function (also the `lower_code_buf` safety net for item-position streams no
 /// evaluator completed). Deterministic: same mnemonic/operands, same items —
 /// up to the minted loop-label names, which carry `module` + `counter`.
+///
+/// `author` is the CONSTRUCT ITEM's authorship, propagated onto every emitted
+/// instruction (via [`crate::value::reauthor_user_items`], the splice-boundary
+/// helper). The §2 invariant — authorship never exempts, it REDIRECTS — rules
+/// out a compiler author here: the operand registers are the AUTHOR's choice,
+/// so the expansion's writes are that author's obligations exactly as the
+/// construct line's were (a `User` line's scratch clobber stays charged to the
+/// proc — the clobber-lint pins depend on it; a `Splice`-carried line keeps
+/// its template for the `-> Code` contract parcel). The compiler chose only
+/// the SPELLING, and the spelling carries no obligation the containing proc's
+/// contracts do not already own.
 pub(crate) fn expand_item(
     mnemonic: &str,
     size: Option<Width>,
@@ -150,6 +161,7 @@ pub(crate) fn expand_item(
     span: Span,
     module: &str,
     counter: &mut u32,
+    author: &ItemAuthor,
 ) -> Result<Vec<CodeItem>, Diagnostic> {
     if size.is_some() {
         return Err(err(
@@ -161,11 +173,15 @@ pub(crate) fn expand_item(
             ),
         ));
     }
-    match mnemonic {
-        "mul_const" => expand_mul_const(ops, span),
-        "mul_bounded" => expand_mul_bounded(ops, span, module, counter),
+    let mut items = match mnemonic {
+        "mul_const" => expand_mul_const(ops, span)?,
+        "mul_bounded" => expand_mul_bounded(ops, span, module, counter)?,
         _ => unreachable!("guarded by is_mul_mnemonic"),
-    }
+    };
+    // Generators stamp `User`; the splice-boundary helper lifts that to the
+    // construct item's own authorship (a no-op when it IS `User`).
+    crate::value::reauthor_user_items(&mut items, author);
+    Ok(items)
 }
 
 // ---- mul_const ----------------------------------------------------------
@@ -491,7 +507,16 @@ fn shift_run(mut k: u32, d: Reg, span: Span) -> Vec<CodeItem> {
 // ---- small constructors -------------------------------------------------
 
 fn instr(mnemonic: &str, size: Option<Width>, ops: Vec<CodeOperand>, span: Span) -> CodeItem {
-    CodeItem::Instr { mnemonic: mnemonic.to_string(), size, ops, span, as_type: None }
+    CodeItem::Instr {
+        mnemonic: mnemonic.to_string(),
+        size,
+        ops,
+        span,
+        as_type: None,
+        // The placeholder the expansion's final `reauthor_user_items` pass
+        // lifts to the construct item's own authorship.
+        author: ItemAuthor::User,
+    }
 }
 
 fn imm(v: u32) -> CodeOperand {
@@ -543,12 +568,12 @@ mod tests {
 
     fn expand_const(ops: Vec<CodeOperand>) -> Result<Vec<CodeItem>, Diagnostic> {
         let mut c = 0;
-        expand_item("mul_const", None, &ops, sp(), "m", &mut c)
+        expand_item("mul_const", None, &ops, sp(), "m", &mut c, &ItemAuthor::User)
     }
 
     fn expand_bounded(ops: Vec<CodeOperand>) -> Result<Vec<CodeItem>, Diagnostic> {
         let mut c = 0;
-        expand_item("mul_bounded", None, &ops, sp(), "m", &mut c)
+        expand_item("mul_bounded", None, &ops, sp(), "m", &mut c, &ItemAuthor::User)
     }
 
     /// Render an item list as compact `mnemonic.size ops` strings for pins.
@@ -872,9 +897,9 @@ mod tests {
     fn loop_labels_embed_the_module_id() {
         let ops = vec![reg(Reg::D0), reg(Reg::D1), imm(2), reg(Reg::D2)];
         let mut c = 0;
-        let a = expand_item("mul_bounded", None, &ops, sp(), "alpha", &mut c).unwrap();
+        let a = expand_item("mul_bounded", None, &ops, sp(), "alpha", &mut c, &ItemAuthor::User).unwrap();
         let mut c = 0;
-        let b = expand_item("mul_bounded", None, &ops, sp(), "beta", &mut c).unwrap();
+        let b = expand_item("mul_bounded", None, &ops, sp(), "beta", &mut c, &ItemAuthor::User).unwrap();
         let labels = |items: &[CodeItem]| -> Vec<String> {
             items
                 .iter()
@@ -951,6 +976,7 @@ mod tests {
             sp(),
             "m",
             &mut c,
+            &ItemAuthor::User,
         );
         assert!(sized.unwrap_err().message.contains("[mul.size]"));
         // mul_bounded: the bound is mandatory; scratch may alias neither reg.
@@ -980,6 +1006,7 @@ mod tests {
                 ops: vec![reg(Reg::D0), imm(66)],
                 span: sp(),
                 as_type: None,
+                author: ItemAuthor::User,
             }],
         };
         let mut c = 0;

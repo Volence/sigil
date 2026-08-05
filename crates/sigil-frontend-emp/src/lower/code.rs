@@ -71,8 +71,10 @@ pub fn lower_code_buf(
                 diags.append(&mut ds);
                 builder.emit_data(&bytes, fixups, *span);
             }
-            // `as_type` and `author` are analysis-tier facts — neither emits.
-            CodeItem::Instr { mnemonic, size, ops, span, .. } => {
+            // `as_type` and `author` are analysis-tier facts — neither emits
+            // (the mul safety net binds `author` only to PROPAGATE it through
+            // its expansion, per the §2 redirect rule).
+            CodeItem::Instr { mnemonic, size, ops, span, author, .. } => {
                 // `jbra`/`jbsr` are emp-ONLY mnemonic-position words (D2.18): they
                 // must NOT enter sigil-isa's shared mnemonic table (the AS
                 // front-end keeps rejecting them). Recognize them HERE, before the
@@ -110,7 +112,7 @@ pub fn lower_code_buf(
                     let mut counter = span.start;
                     let net_ns = format!("item{}", span.source.0);
                     match crate::mul_lower::expand_item(
-                        mnemonic, *size, ops, *span, &net_ns, &mut counter,
+                        mnemonic, *size, ops, *span, &net_ns, &mut counter, author,
                     ) {
                         Ok(expanded) => {
                             let buf = CodeBuf { items: expanded };
