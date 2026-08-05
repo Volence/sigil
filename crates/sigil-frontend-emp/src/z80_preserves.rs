@@ -73,6 +73,12 @@ fn callee_preserves(map: &CalleePreserves, callee: Option<&str>, unit: &str) -> 
 const UNITS: [&str; 10] = ["a", "f", "b", "c", "d", "e", "h", "l", "ix", "iy"];
 const NU: usize = 10;
 
+/// The bail reason when an exit edge (`ret`/fall-off/tail-transfer) is reached with a
+/// tracked push slot still live — a cross-seam `push` here / `pop` in the successor
+/// the local stack model cannot pair. Conservatively unprovable (honest), so nothing
+/// but a never-written module-invariant unit is creditable past it.
+const STACK_AT_EXIT_BAIL: &str = "exit reached with a non-empty push stack (a cross-seam push/pop the local model cannot pair)";
+
 /// The unit index of a register spelling, or `None` for a non-tracked name.
 fn unit_idx(name: &str) -> Option<usize> {
     UNITS.iter().position(|u| *u == name)
@@ -122,8 +128,8 @@ fn z80_writes(mnem: &str, ops: &[CodeOperand]) -> Vec<usize> {
     // The flag unit `f`, modeled as the COMPLEMENT of a flag-neutral allowlist
     // ([`z80_flag_neutral`]): an instruction WRITES `f` unless it is provably
     // flag-neutral. The conservative polarity is sound for `preserves(f)` — a
-    // forgotten neutral mnemonic over-fires visibly, where the old "no instruction
-    // writes f" false-passed a `preserves(f) { scf; ret }`.
+    // forgotten neutral mnemonic over-fires visibly rather than letting a
+    // `preserves(f)` whose body writes the flags pass.
     if !z80_flag_neutral(mnem, ops) {
         w.push(idx("f"));
     }
@@ -175,6 +181,18 @@ fn z80_writes_regs(mnem: &str, ops: &[CodeOperand]) -> Vec<usize> {
         // view the main bank reads clobbered (a lone `exx`; a balanced pair is
         // rung-4's shadow model, §4.3). Conservatively clobber bc/de/hl.
         "exx" => vec![idx("b"), idx("c"), idx("d"), idx("e"), idx("h"), idx("l")],
+        // `djnz` decrements its counter `b` (dest-implicit) and branches — it writes
+        // `b`. (Its flag-neutrality is handled in `z80_flag_neutral`; `djnz` leaves
+        // the flags.)
+        "djnz" => vec![idx("b")],
+        // `ldir` — the block transfer `(hl++)→(de++), bc--` until bc=0: it writes the
+        // pointer/counter pairs bc, de, hl. It is the ONLY assemblable block op in the
+        // ISA enum (sigil-isa/z80.rs `Mnemonic`); the day the LD-block siblings
+        // (`ldi`/`ldd`/`lddr`, same {bc,de,hl} writes-set) or the CP-block family
+        // (`cpi`/`cpd`/`cpir`/`cpdr`, which write bc + hl but NOT de) become
+        // assemblable, they join here. `ldir` is NOT flag-neutral (it clears P/V), so
+        // its `f` write comes through the [`z80_flag_neutral`] complement above.
+        "ldir" => vec![idx("b"), idx("c"), idx("d"), idx("e"), idx("h"), idx("l")],
         _ => vec![],
     }
 }
@@ -188,9 +206,12 @@ fn z80_writes_regs(mnem: &str, ops: &[CodeOperand]) -> Vec<usize> {
 /// single carry table would miss the flag-ONLY writers (`inc`/`dec`/`bit`),
 /// reopening the hole.
 ///
-/// Flag-neutral: `ld` (moves never touch flags — the `ld a,i`/`ld a,r`
-/// interrupt-flag forms excepted, absent from the corpus, which is why
-/// `Psg_EnvCursorReset () preserves(af)` with a `ld (ix+d), 0` body stays green);
+/// Flag-neutral: `ld` (moves never touch flags — the ISA's `ld i,a`/`ld r,a`
+/// (`LdIA`/`LdRA`) write `i`/`r`, not the flags. The flag-writing `ld a,i`/`ld a,r`
+/// READ forms — which load `a` and set S/Z + copy IFF2 into P/V — are unassemblable
+/// today (no `LdAI`/`LdAR` variant in the ISA `Mnemonic` enum) and MUST enter the
+/// F-writer set the day those forms land; see the gap ledger's kill condition. This
+/// is why `Psg_EnvCursorReset () preserves(af)` with a `ld (ix+d), 0` body stays green);
 /// `push`/`pop` (the preserve idiom — `pop af`'s `f` load is modeled through the
 /// slot machinery, not here, so `SndDrv_ISR preserves(af)` stays green via its
 /// `push af`/`pop af` bracket); `ex`/`exx` (data moves); the control transfers
@@ -293,8 +314,23 @@ pub fn verify_z80_preserved(
 
     let cfg = Cfg::build(items);
     let Some(entry_idx) = items.iter().position(|it| matches!(it, CodeItem::Instr { .. })) else {
-        // No instructions — everything preserved vacuously.
-        return check.iter().map(|n| (n.clone(), PreserveStatus::Verified)).collect();
+        // No instructions: the body touches nothing, so control flows straight to the
+        // exit. A declared `falls_into` makes that exit continue into the successor's
+        // frame — rN survives iff the successor preserves it (the same charge the
+        // FallOff arm applies; an absent/unknown successor preserves nothing). Without
+        // a `falls_into`, an empty body preserves everything.
+        return check
+            .iter()
+            .map(|n| {
+                let status = match falls_into {
+                    Some(succ) if !callee_preserves(callee_map, Some(succ), n) => {
+                        PreserveStatus::NotPreserved
+                    }
+                    _ => PreserveStatus::Verified,
+                };
+                (n.clone(), status)
+            })
+            .collect();
     };
 
     // Which units are EVER written — a plain write, a pop, or a call/tail-transfer
@@ -398,8 +434,11 @@ pub fn verify_z80_preserved(
                 // checkpoints as an exit (its return happens here, not in the tail).
                 Edge::Return => {
                     saw_exit = true;
-                    if st.bailed {
+                    if st.bailed || !st.stack.is_empty() {
                         bailed_reached_exit = true;
+                        if !st.bailed {
+                            bail_reason.get_or_insert_with(|| STACK_AT_EXIT_BAIL.to_string());
+                        }
                     } else {
                         for (_, i) in &checked {
                             if !st.entry[*i] {
@@ -411,16 +450,16 @@ pub fn verify_z80_preserved(
                 // Control running off the end of the body. In a proc with a declared
                 // `falls_into` successor, the closing `}` continues into that
                 // successor's frame — semantically identical to an explicit `jr`
-                // tail (`Edge::Defer`): rN survives iff it holds its entry value
-                // here AND the successor itself preserves it. Closing the falls_into
-                // tail blind spot — a `falls_into` proc's successor contract was
-                // never consulted, so `preserves(rN)` passed even when the tail
-                // clobbers rN. Without a `falls_into`, running off the end is a plain
-                // exit (checkpoint the entry bits).
+                // tail (`Edge::Defer`): rN survives iff it holds its entry value here
+                // AND the successor itself preserves it. Without a `falls_into`,
+                // running off the end is a plain exit (checkpoint the entry bits).
                 Edge::FallOff => {
                     saw_exit = true;
-                    if st.bailed {
+                    if st.bailed || !st.stack.is_empty() {
                         bailed_reached_exit = true;
+                        if !st.bailed {
+                            bail_reason.get_or_insert_with(|| STACK_AT_EXIT_BAIL.to_string());
+                        }
                     } else if let Some(succ) = falls_into {
                         for (name, i) in &checked {
                             if !(st.entry[*i] && callee_preserves(callee_map, Some(succ), name)) {
@@ -446,8 +485,11 @@ pub fn verify_z80_preserved(
                 // `Return`/`FallOff` arm plus the callee oracle.
                 Edge::Defer => {
                     saw_exit = true;
-                    if st.bailed {
+                    if st.bailed || !st.stack.is_empty() {
                         bailed_reached_exit = true;
+                        if !st.bailed {
+                            bail_reason.get_or_insert_with(|| STACK_AT_EXIT_BAIL.to_string());
+                        }
                     } else {
                         let tail_callee = cfg.instr(idx).and_then(|(_, ops)| branch_sym(ops));
                         for (name, i) in &checked {

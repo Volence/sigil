@@ -50,11 +50,17 @@ comment rewritten to a present-tense contract fact (no change-history narration)
 callers already declare clobbers covering bc → no downstream ripple (confirmed: the
 harness closure stays quiet, all 5 `z80_clobbers_incomplete` tests green).
 
-**Post-fix confirmation.** The corpus lowers clean, so the previously masked
-`falls_into` seams now GENUINELY prove through the successor contract:
-PsgVolEnv_Resolve→VolEnv_ResolveScan (c), Snd_AckSlot→Snd_AckBump,
-Fm_NoteOn→Fm_NoteOnFreq, Sequencer_Channel's chain, SndDrv_Init's chain. The
-`preserves(ix)` module invariant needs no change (proven per-proc incl. successors).
+**Post-fix confirmation (corrected — see fix-up round I2).** The corpus lowers clean.
+The `falls_into` seams the fix GENUINELY exercises (non-empty checked set) prove
+through the successor contract: `PsgVolEnv_Resolve→VolEnv_ResolveScan` (checked {c, ix}
+— psg's module invariant), `Fm_NoteOn→Fm_NoteOnFreq` (checked {ix} — fm's invariant),
+`Snd_AckSlot→Snd_AckBump` (checked {bc, de, hl, ix, iy} — explicit preserves). Two
+seams are **checked by nothing** and are NOT a proof of the fix: `SndDrv_Init→SndDrv_Idle`
+and `Sequencer_Channel→Sequencer_NextOpcode` — their modules (`engine.z80_sound_driver`,
+`engine.sound_sequencer`) carry NO `invariant`, and the procs declare no `preserves`, so
+the checked set is empty and `check_z80_preserves` returns before the proof runs. The
+synthetic pins are the mechanism's proof; the three invariant/preserves-bearing seams are
+its live witnesses.
 
 ---
 
@@ -143,7 +149,8 @@ operand-sensitive inc/dec split).
   `4e34a38a/423871` · config_b `b8cce891/301132` · lean `b92cb485/379110`.
 - **refreeze --check:** OK (tip `sst-fold`, chain len 47). **repin --check:** pins.rs
   unchanged.
-- **Strict suite:** 3357 passed / 0 failed / 4 ignored = 3361 (= 3350 base + 11 new).
+- **Strict suite (final, post-fix-up):** 3365 passed / 0 failed / 4 ignored = **3369**
+  (= 3350 base + 19 new: 11 round-1 pins + 8 fix-up pins, all named below).
 - **Warn tiers (no delta):** plain 19 (path-mismatch 9, undeclared-fallthrough 6,
   out-unwritten 3, clobber-undeclared 1) · s4-DEBUG 18 (fallthrough 5, else same). No
   touched proc appears in any warning; the Z80 write heuristic is 68k-only, so the Z80
@@ -170,16 +177,100 @@ aeon. Land aeon, then sigil.
   proof + closure (no second flag table); the falls_into successor is now folded into
   both the proof's exit arm and `ever_clobbered`, matching explicit-jr-tail semantics
   exactly.
-- **Neither-bucket headline:** two latent under-declarations sit outside this parcel's
-  named scope, closure-exempt today but honest-clobbers candidates for a future sweep —
-  `Snd_RouteClassFlags` (out(a), no clobbers, writes flags) and the `Snd_StartSample`
-  stale-comment twin at `z80_sound_driver.emp:788-789` (same "INBOUND TRUST CONVERSION:
-  sound_sequencer.emp:100" pattern the Snd_DacLookup comment had). Flagged, not touched.
+- **Neither-bucket headline:** the panel round turned this parcel's own neither-bucket
+  findings into taken work — `Snd_RouteClassFlags` gained `clobbers(f)`, `Psg_EnvCursorReset`
+  gained explicit `clobbers()` (closure-exemption → machine-checked proof), and every
+  stale "INBOUND TRUST CONVERSION" twin the round-1 sweep left (`Snd_StartSample`,
+  `Snd_RouteClassFlags`, the `Psg_EmitDivisor/Mod_ReArm de` comment) is now a present-tense
+  contract fact. The recurring shape — a `use`-imported proc whose body-site comment still
+  cites a conservative `extern` that the `use` migration deleted — is itself the headline.
+
+## Fix-up round (three-lens panel, 2026-08-05)
+
+A second commit on each b5 branch. Byte-neutral held (seven CRCs unchanged), strict
+grew from 3361 → 3369 (8 pins), corpus new-firings for M2/M3/S3/A1 enumerated **zero**.
+
+**MUST-FIX (Lens B):**
+- **M1** — the empty-body `falls_into` bypass: `verify_z80_preserved`'s instruction-less
+  early return returned Verified for every unit before the successor was consulted
+  (`proc P() preserves(b) falls_into S {}` false-passed). Now it applies the successor
+  oracle. Pins: `z80_empty_body_falls_into_clobbering_successor_fires` /
+  `..._preserving_successor_holds`.
+- **M2** — `djnz` writes its counter `b`; no `z80_writes_regs` arm modeled it. One-line
+  arm. Pin `z80_djnz_writes_counter_b_fires`. Flag-neutrality of `djnz` left intact.
+- **M3** — block transfers write their pointer/counter pairs; `ldir` (live: Snd_LoadSong,
+  Snd_StartSample) writes bc, de, hl. `ldir` is the ONLY assemblable block op in the ISA
+  `Mnemonic` enum (checked: no ldi/ldd/lddr/cpi/cpd/cpir/cpdr) — modeled exactly, with the
+  LD-block/CP-block siblings' write-sets noted for the day they become assemblable
+  (CP-family writes bc+hl, not de). Pin `z80_ldir_writes_hl_fires`.
+- Post-M2/M3 corpus enumeration: **zero** new firings. `Sfx_SlotPtr` is the witness —
+  its `djnz` writes b INSIDE a `push bc`/`pop bc` bracket (preserves(bc) still holds), and
+  both its exits (early `ret z` before the push; final `ret` after the balanced pop) see an
+  empty stack, so S3 does not bail.
+
+**SHOULD-FIX (Lens B):**
+- **S1** — the Z80 out-flag rule gated only on `out_flags`; a conditional register result
+  `out(rN if cc)` reads its guard from the flags too. Added `|| !proc.out_cond.is_empty()`
+  (68k precedent). Pins `z80_out_cond_preserves_f_overlap_fires` (+ negative
+  `z80_out_cond_preserves_b_no_overlap`). Ledger row added: Z80 has no cc vocabulary —
+  `VALID_CCS` accepts 68k spellings regardless of CPU (deferred).
+- **S2** — three round-1 assertions used `d.contains("b")`/`contains("f")`, which the word
+  "unverifia**b**le"/"unveri**f**iable" satisfies vacuously. Retargeted to the delimited
+  `"preserves(b)"`/`"preserves(f)"`/`"preserves(h)"` text. (Pre-existing `contains("h")` at
+  :242 is NOT vacuous — "unverifiable" has no `h` — left untouched.)
+- **S3** — an exit reached with a live tracked push slot (cross-seam push-here/pop-in-
+  successor) is now a conservative BAIL (Unverifiable — the local model cannot pair the
+  push). Corpus enumeration first: **zero** procs fire (verified — every corpus proc
+  balances its stack before every exit; Sfx_SlotPtr above is the closest shape and is
+  clean). Pins `z80_exit_with_live_slot_bails` (+ positive `z80_exit_with_balanced_stack_holds`).
+
+**Lens A + C (all taken):**
+- **A1** (aeon micro-fixes, byte-neutral): `Snd_RouteClassFlags` gained `clobbers(f)` (its
+  two `cp`s write flags); `Psg_EnvCursorReset` gained explicit `clobbers()` (closure
+  exemption → machine-checked "touches nothing"); three stale/false comments rewritten —
+  `Snd_StartSample`'s "INBOUND TRUST CONVERSION" twin, `Snd_RouteClassFlags`'s (citing a
+  `sound_sfx.emp:85` extern that is actually a `const` line, contradicting the file header),
+  and `sound_psg.emp:330` ("Psg_EmitDivisor/Mod_ReArm clobbered de" — both PRESERVE de).
+- **A2** (sigil comment narration): dropped the "old/was never consulted" history voice at
+  `z80_writes`'s `f` comment and the FallOff-arm comment; dropped the "(adjudicated)"
+  process tag at the check_out divergence comment (kept the design fact). The pre-existing
+  Defer/gap-3 comment left untouched.
+- **A3** — reworded the `ld a,i`/`ld a,r` comment: the ISA enum has only `LdIA`/`LdRA`
+  (write i/r, neutral); the flag-writing READ forms are unassemblable today and MUST join
+  the F-writer set the day `LdAI`/`LdAR` land. Ledger row carries that kill condition.
+
+## Lens findings and dispositions
+
+| Lens | Finding | Disposition |
+|---|---|---|
+| B | M1 empty-body falls_into bypass | FIXED (early-return successor oracle) + 2 pins |
+| B | M2 djnz unmodeled b-write | FIXED (arm) + pin; corpus zero-firing |
+| B | M3 block-transfer unmodeled writes | FIXED (ldir, the sole assemblable) + pin; corpus zero-firing |
+| B | S1 out_cond bypasses flag rule | FIXED + 2 pins + ledger row |
+| B | S2 vacuous register-specificity asserts | FIXED (delimited text) |
+| B | S3 exit with live slot | FIXED (conservative bail) + 2 pins; corpus zero-firing |
+| B | I2 round-1 "genuinely proven" overclaim | CORRECTED (checked-by-nothing list; see Fix 1 confirmation) |
+| A | A1 corpus clobbers/comment micro-fixes | FIXED (byte-neutral) |
+| A | A2 comment history-voice | FIXED |
+| A | A3 ld a,i/ld a,r comment/code mismatch | FIXED + ledger kill-condition |
+| C | (no separate C-only finding beyond A/B above) | — |
+
+## Base note
+
+The aeon `z80-parity` branch is based on aeon master `9a5df9e` (which includes the
+`docs: §9.7 deferred-work research corpus` rider on top of the `5b736a5` mul-lowering
+merge). The sigil `z80-parity` branch is based on sigil master `e50146bf`.
 
 ## Commits (merge queue — AEON FIRST, then sigil)
 
-- aeon (branch `z80-parity`): `18c1d35` sound contracts: Psg_EmitDivisor charges b to
-  its tail, Snd_DacLookup names its scratch.
-- sigil (branch `z80-parity`): `7c6723ec` z80 parity: the falls_into tail is charged,
-  F-writes modeled, out(carry:) refuses preserved flags. (This hash refreshes when the
-  packet's commit-list edit is amended in.)
+- aeon (branch `z80-parity`, base `9a5df9e`):
+  - `18c1d35` sound contracts: Psg_EmitDivisor charges b to its tail, Snd_DacLookup
+    names its scratch.
+  - `768940b` sound contracts fix-up: Snd_RouteClassFlags names its flag scratch,
+    Psg_EnvCursorReset proves it touches nothing.
+- sigil (branch `z80-parity`, base `e50146bf`):
+  - `fe935e12` z80 parity: the falls_into tail is charged, F-writes modeled,
+    out(carry:) refuses preserved flags.
+  - `c7109635` z80 parity fix-up: the empty-body tail is charged, djnz/ldir write
+    their registers, out_cond demands the flags, a live slot at exit bails. (This hash
+    refreshes when this commit-list edit is amended in.)

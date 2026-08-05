@@ -1495,22 +1495,26 @@ fn check_out(
                 );
             }
         }
-        // A Z80 flag result (`out(carry: …)`) lives in `f`, so a contract that also
-        // PRESERVES the flags contradicts it: `f` either carries the result to the
-        // caller or is restored to entry, not both. `af` expands to {a, f}, so
-        // testing for the `f` unit in the expanded preserves set covers both the
-        // `preserves(f)` and `preserves(af)` spellings.
+        // A Z80 flag result (`out(carry: …)`) or a conditional register result
+        // (`out(rN if cc)`, whose `if cc` guard is read from the flags) lives in / is
+        // read from `f`, so a contract that also PRESERVES the flags contradicts it:
+        // `f` either carries the result to the caller or is restored to entry, not
+        // both. `af` expands to {a, f}, so testing for the `f` unit in the expanded
+        // preserves set covers both the `preserves(f)` and `preserves(af)` spellings.
         //
-        // DIVERGENCE FROM 68k (adjudicated): `clobbers(f)` + `out(carry:)` REMAINS
-        // LEGAL on Z80, unlike the 68k `out(carry:)` + `clobbers(sr.ccr)` error.
-        // Z80 has no finer-than-`f` flag token, so clobbers-covering-`f` is the only
-        // honest spelling of "flags are scratch except the carry result" — the shape
-        // 9 of the corpus's 10 carry-returning procs take.
-        if !proc.out_flags.is_empty() && pres.contains("f") {
+        // DIVERGENCE FROM 68k: `clobbers(f)` + `out(carry:)` REMAINS LEGAL on Z80,
+        // unlike the 68k `out(carry:)` + `clobbers(sr.ccr)` error. Z80 has no
+        // finer-than-`f` flag token, so clobbers-covering-`f` is the only honest
+        // spelling of "flags are scratch except the carry result" — the shape 9 of the
+        // corpus's 10 carry-returning procs take.
+        if (!proc.out_flags.is_empty() || !proc.out_cond.is_empty()) && pres.contains("f") {
             let flag_result = proc
                 .out_flags
                 .first()
                 .map(|fl| format!("`out({}: {})`", fl.flag, fl.name))
+                .or_else(|| {
+                    proc.out_cond.first().map(|c| format!("`out({} if {})`", c.reg, c.cc))
+                })
                 .unwrap_or_else(|| "a flag result".to_string());
             // Which preserves token covers the flags (`f` or `af`) — the one whose
             // Z80 expansion contains the `f` unit.
