@@ -663,7 +663,7 @@ impl<'a> Evaluator<'a> {
             .attrs
             .iter()
             .filter(|a| a.name == "allow")
-            .flat_map(|a| a.args.iter())
+            .flat_map(|a| a.args.iter().map(|arg| &arg.value))
             .filter_map(|arg| match arg {
                 ast::Expr::Str(s, _) => Some(s.clone()),
                 _ => None,

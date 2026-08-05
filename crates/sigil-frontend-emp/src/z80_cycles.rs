@@ -1,9 +1,20 @@
 //! Z80 T-state accounting — rung 4 (`2026-07-29-t40-step0-design.md` §3).
 //!
-//! The `cycles(L1, L2)` capability's ALGORITHMIC CORE: sum the Zilog T-states of a
-//! STRAIGHT-LINE instruction span (label `L1` up to label `L2`) in one proc's
-//! evaluated `CodeBuf`. The ruled scope (recon §4.3 ruling 2) is straight-line /
-//! single-path accounting ONLY — no branch min/max, no whole-CFG bounds.
+//! The single Zilog T-state cost model, and the SOLE authority on what a Z80
+//! instruction costs. [`instr_cost`] is the model; the two consumers differ only
+//! in what they conclude from it:
+//!
+//!   * [`span_cost`] — the `cycles(L1, L2)` comptime builtin. Sums a
+//!     STRAIGHT-LINE instruction span (label `L1` up to label `L2`) in one proc's
+//!     evaluated `CodeBuf`. Its ruled scope (recon §4.3 ruling 2) is
+//!     single-path accounting ONLY, so an outcome-split conditional is a bail.
+//!   * [`crate::cycle_budget`] — the `@budget(cycles: N)` / `@cycles_exact`
+//!     whole-proc path walk. It CAN tell a branch edge from a fall-through, so it
+//!     charges [`Cost::Split`]'s two numbers to their two edges.
+//!
+//! A second table would be free to drift from this one, so there is not one:
+//! both consumers key on [`instr_cost`], and a form it does not enumerate is
+//! loud in both.
 //!
 //! The DAC loop makes this scope EXACT rather than approximate: every hot-loop
 //! conditional is `jp cc` (10 T-states taken OR not-taken), so a span's cost is a
@@ -29,9 +40,17 @@ use sigil_span::Span;
 pub enum Cost {
     /// A single, outcome-independent T-state count.
     Fixed(u16),
-    /// A conditional whose taken/not-taken costs DIFFER (`jr cc`, `djnz`,
-    /// `ret cc`, `call cc`). A `cycles()` span cannot assign it one cost.
-    Ambiguous,
+    /// A conditional whose taken and not-taken costs DIFFER (`jr cc`, `djnz`,
+    /// `ret cc`, `call cc`). The two costs are OUTCOME-KEYED, not unknown: a
+    /// consumer that can tell the branch edge from the fall-through edge charges
+    /// each its own number. Straight-line accounting cannot, so [`span_cost`]
+    /// treats this as the `[cycles.ambiguous-branch]` bail.
+    Split {
+        /// T-states when the branch is taken.
+        taken: u16,
+        /// T-states when it falls through.
+        not_taken: u16,
+    },
     /// An op/form outside the driver-demand timed-region table.
     Unknown,
 }
@@ -118,6 +137,10 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
         // --- no-op (the pad primitive) ---
         ("nop", []) => Cost::Fixed(4),
 
+        // --- unconditional return: ret 10 ; reti/retn 14 (both ED-prefixed) ---
+        ("ret", []) => Cost::Fixed(10),
+        ("reti" | "retn", []) => Cost::Fixed(14),
+
         // --- unconditional jump (10) vs CONDITIONAL jp cc (10 either outcome) ---
         ("jp", [t]) if is_sym(t) => Cost::Fixed(10),
         ("jp", [cc, t]) if is_cc(cc) && is_sym(t) => Cost::Fixed(10),
@@ -130,12 +153,14 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
         // about the CONDITIONAL forms, whose taken/not-taken costs differ.
         ("jr", [t]) if is_sym(t) => Cost::Fixed(12),
 
-        // --- the AMBIGUOUS conditionals: taken/not-taken DIFFER -> hard bail ---
-        // jr cc,e = 12/7 ; djnz = 13/8 ; ret cc = 11/5 ; call cc = 17/10.
-        ("jr", [cc, _]) if is_cc(cc) => Cost::Ambiguous,
-        ("djnz", _) => Cost::Ambiguous,
-        ("ret", [cc]) if is_cc(cc) => Cost::Ambiguous,
-        ("call", [cc, _]) if is_cc(cc) => Cost::Ambiguous,
+        // --- the OUTCOME-SPLIT conditionals: taken/not-taken DIFFER ---
+        // A straight-line span cannot assign these one cost (hence the
+        // `[cycles.ambiguous-branch]` bail in `span_cost`); a path walk charges
+        // `taken` on the branch edge and `not_taken` on the fall-through.
+        ("jr", [cc, _]) if is_cc(cc) => Cost::Split { taken: 12, not_taken: 7 },
+        ("djnz", _) => Cost::Split { taken: 13, not_taken: 8 },
+        ("ret", [cc]) if is_cc(cc) => Cost::Split { taken: 11, not_taken: 5 },
+        ("call", [cc, _]) if is_cc(cc) => Cost::Split { taken: 17, not_taken: 10 },
 
         // Everything else in a timed span is a loud bail.
         _ => Cost::Unknown,
@@ -150,7 +175,7 @@ pub fn span_cost(items: &[CodeItem]) -> Result<u16, CycleBail> {
         let CodeItem::Instr { mnemonic, ops, span, .. } = it else { continue };
         match instr_cost(mnemonic, ops) {
             Cost::Fixed(n) => total = total.saturating_add(n),
-            Cost::Ambiguous => {
+            Cost::Split { .. } => {
                 return Err(CycleBail::AmbiguousBranch {
                     mnemonic: mnemonic.clone(),
                     span: *span,

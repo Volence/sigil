@@ -1248,9 +1248,9 @@ fn unanalyzable_reason_in_force(file: &ast::File, p: &ProcDecl) -> Option<String
 fn attrs_unanalyzable_reason(attrs: &[ast::Attr]) -> Option<String> {
     for a in attrs.iter().filter(|a| a.name == "allow") {
         let first_is_unanalyzable =
-            matches!(a.args.first(), Some(ast::Expr::Str(s, _)) if s == "clobbers.unanalyzable");
+            matches!(a.args.first(), Some(x) if matches!(&x.value, ast::Expr::Str(s, _) if s == "clobbers.unanalyzable"));
         if first_is_unanalyzable {
-            return match a.args.get(1) {
+            return match a.args.get(1).map(|x| &x.value) {
                 Some(ast::Expr::Str(reason, _)) => Some(reason.clone()),
                 _ => Some(String::new()),
             };

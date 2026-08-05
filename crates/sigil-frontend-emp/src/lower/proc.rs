@@ -221,6 +221,11 @@ pub(super) fn lower_proc(
     if ctx.cpu != Cpu::Z80 {
         check_stack_balance(file, proc, &buf, ctx.as_compat, diags);
     }
+
+    // 12. Cycle budgets (delta spec §4 / U-spec §4-cycles): the declared
+    // `@budget(cycles: N)` ceiling and the `@cycles_exact` equal-cost proof.
+    // Purely declaration-driven — a proc carrying neither attribute is not walked.
+    check_cycle_budget(file, proc, &buf, &ctx, diags);
 }
 
 /// Report the `[stack.*]` findings for one proc body.
@@ -275,6 +280,80 @@ fn check_stack_balance(
             ),
         };
         push(diags, level, f.span, format!("[{id}] in `{}`: {what}", proc.name));
+    }
+}
+
+/// Report the `[cycles.*]` findings for one proc body.
+///
+/// Tier (U-spec §6, "Budget overrun: error · `@as_compat` n/a · `@allow` no"):
+/// ERROR, unsoftened and unsuppressible. Both halves of that follow from the
+/// attribute being the opt-in: a budget is a claim its author wrote down, so it
+/// never softens (a wrong contract is worse than none), and `@allow` would be a
+/// contradiction — asking for the proof and then discarding it. Deleting the
+/// attribute is the free, honest downgrade, and it is visible in the source.
+///
+/// The finding is a fact about ONE FILE — a proc's own instructions and its own
+/// control flow — which is what licenses a hard build failure here (the
+/// one-file/whole-corpus tier rule, delta spec §7.2). Anything needing knowledge
+/// past the proc boundary is refused by the walk instead of guessed.
+fn check_cycle_budget(
+    file: &ast::File,
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    ctx: &ProcCtx,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let budget = match budget_cycles(file, proc, ctx, diags) {
+        Ok(b) => b,
+        // The declared ceiling did not fold to an integer; the form error is
+        // already reported and walking would only add a second complaint about
+        // the same broken declaration.
+        Err(()) => return,
+    };
+    let exact = proc.attrs.iter().any(|a| a.name == "cycles_exact");
+    for f in crate::cycle_budget::check_cycle_budget(&buf.items, ctx.cpu, budget, exact) {
+        push(
+            diags,
+            Level::Error,
+            f.span,
+            format!("[{}] in `{}`: {}", f.kind.lint_id(), proc.name, f.kind.message()),
+        );
+    }
+}
+
+/// The `@budget(cycles: N)` ceiling on `proc`, folded to an integer. `Ok(None)`
+/// means the proc declares no budget; `Err(())` means it declares one that is not
+/// a non-negative comptime integer (already reported).
+fn budget_cycles(
+    file: &ast::File,
+    proc: &ast::ProcDecl,
+    ctx: &ProcCtx,
+    diags: &mut Vec<Diagnostic>,
+) -> Result<Option<u64>, ()> {
+    let Some(attr) = proc.attrs.iter().find(|a| a.name == "budget") else {
+        return Ok(None);
+    };
+    // The parser has already rejected any shape but a single `cycles:` argument.
+    let Some(arg) = attr.args.first().filter(|a| a.name.as_deref() == Some("cycles")) else {
+        return Err(());
+    };
+    let (val, mut ds) = crate::layout::eval_attr_int(file, &arg.value, ctx.defines);
+    diags.append(&mut ds);
+    match val {
+        Some(n) if n >= 0 => Ok(Some(n as u64)),
+        _ => {
+            push(
+                diags,
+                Level::Error,
+                attr.span,
+                format!(
+                    "[budget.form] in `{}`: `@budget(cycles: N)` needs a non-negative \
+                     comptime integer",
+                    proc.name
+                ),
+            );
+            Err(())
+        }
     }
 }
 

@@ -238,7 +238,7 @@ impl Parser {
             // `@attr()` is legal: empty parens mean zero args.
             if !self.at(&Tok::RParen) {
                 loop {
-                    args.push(self.expr());
+                    args.push(self.arg());
                     if !self.eat(&Tok::Comma) { break; }
                 }
             }
@@ -269,8 +269,30 @@ impl Parser {
     /// one reason string; `@allow("clobbers.unanalyzable", …)` needs a non-empty
     /// reason string (S2-D6 U4 — an unanalyzable computed-dispatch site opts out of
     /// the unbounded clobber firing only WITH a documented justification, never
-    /// silently; mirrors `@scaffolding`'s mandatory reason).
+    /// silently; mirrors `@scaffolding`'s mandatory reason); `@budget` names its
+    /// unit and `@cycles_exact` takes nothing.
     fn validate_attr_form(&mut self, attr: &Attr) {
+        // `@budget(cycles: N)` (contract unification §4-cycles). The unit is
+        // spelled by the keyword, not implied by position, so a later budget over
+        // a different resource reads unambiguously beside this one.
+        if attr.name == "budget" {
+            let names_cycles =
+                matches!(attr.args.first(), Some(a) if a.name.as_deref() == Some("cycles"));
+            if attr.args.len() != 1 || !names_cycles {
+                self.diag_at(
+                    attr.span,
+                    "[budget.form] `@budget` takes exactly one named resource budget: \
+                     `@budget(cycles: N)`",
+                );
+            }
+        }
+        if attr.name == "cycles_exact" && !attr.args.is_empty() {
+            self.diag_at(
+                attr.span,
+                "[budget.form] `@cycles_exact` takes no arguments — it proves every \
+                 path through the proc costs the same, whatever that cost is",
+            );
+        }
         if attr.name == "scaffolding" && attr.args.len() != 1 {
             self.diag_at(
                 attr.span,
@@ -279,9 +301,10 @@ impl Parser {
             );
         }
         let is_unanalyzable_allow = attr.name == "allow"
-            && matches!(attr.args.first(), Some(Expr::Str(s, _)) if s == "clobbers.unanalyzable");
+            && matches!(attr.args.first(), Some(a) if matches!(&a.value, Expr::Str(s, _) if s == "clobbers.unanalyzable"));
         if is_unanalyzable_allow {
-            let has_reason = matches!(attr.args.get(1), Some(Expr::Str(s, _)) if !s.is_empty());
+            let has_reason =
+                matches!(attr.args.get(1), Some(a) if matches!(&a.value, Expr::Str(s, _) if !s.is_empty()));
             if attr.args.len() != 2 || !has_reason {
                 self.diag_at(
                     attr.span,
