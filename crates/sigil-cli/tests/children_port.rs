@@ -299,6 +299,9 @@ fn children_debug_region_matches_reference() {
 /// same bytes) — in BOTH shapes. A repin that resolved either shared symbol
 /// differently for the two regions would fail here.
 #[test]
+// The asserted operands are repin-generated pin constants — live contracts on
+// the generated table, not tautologies.
+#[allow(clippy::assertions_on_constants)]
 fn children_region_pins_share_both_anchors() {
     assert_eq!(
         pins::ENTITY_WINDOW.plain_base + pins::ENTITY_WINDOW.plain_len as u32,

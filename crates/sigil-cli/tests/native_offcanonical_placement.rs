@@ -21,7 +21,7 @@
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test native_offcanonical_placement
 //! ```
 use sigil_harness::native;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn aeon_dir() -> PathBuf {
     PathBuf::from(
@@ -31,7 +31,7 @@ fn aeon_dir() -> PathBuf {
 fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
-fn have_aeon(aeon: &PathBuf) -> bool {
+fn have_aeon(aeon: &Path) -> bool {
     if aeon.join("s4.bin").exists() {
         return true;
     }

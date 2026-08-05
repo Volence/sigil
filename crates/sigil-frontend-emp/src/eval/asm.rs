@@ -1769,10 +1769,9 @@ impl Evaluator<'_> {
             v.clone()
         } else if self.consts.contains_key(name) || self.equs.contains_key(name) {
             self.resolve_const(name, span)
-        } else if let Some(d) = self.defines.get(name) {
-            Value::Int(*d)
         } else {
-            return None;
+            let d = self.defines.get(name)?;
+            Value::Int(*d)
         };
         v.as_stored_int()
     }

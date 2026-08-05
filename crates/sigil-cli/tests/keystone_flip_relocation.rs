@@ -16,7 +16,7 @@
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test keystone_flip_relocation
 //! ```
 use sigil_harness::native;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn aeon_dir() -> PathBuf {
     PathBuf::from(std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".into()))
@@ -24,7 +24,7 @@ fn aeon_dir() -> PathBuf {
 fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
-fn have_aeon(aeon: &PathBuf) -> bool {
+fn have_aeon(aeon: &Path) -> bool {
     if aeon.join("s4.bin").exists() {
         return true;
     }

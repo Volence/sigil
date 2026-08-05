@@ -33,7 +33,7 @@ use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
-use sigil_ir::{Section, SymbolTable};
+use sigil_ir::SymbolTable;
 use std::path::{Path, PathBuf};
 
 fn region_base(debug: bool) -> u32 {

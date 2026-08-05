@@ -106,6 +106,10 @@ pub(super) fn lower_regions(
     }
 }
 
+/// [`resolve_regions`]'s result: `(resolved regions, diagnostics,
+/// name → (base, end) span map)`.
+type ResolvedRegions = (Vec<ResolvedRegion>, Vec<Diagnostic>, HashMap<String, (u32, u32)>);
+
 /// Resolve every region in `file` to concrete addresses (no emission). Runs on
 /// the large comptime-eval stack (deep struct layouts). Pure computation —
 /// returns plain data + diagnostics.
@@ -113,7 +117,7 @@ fn resolve_regions(
     file: &ast::File,
     defines: &[(String, i128)],
     external_ends: &HashMap<String, u32>,
-) -> (Vec<ResolvedRegion>, Vec<Diagnostic>, HashMap<String, (u32, u32)>) {
+) -> ResolvedRegions {
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
         ev.seed_defines(defines);

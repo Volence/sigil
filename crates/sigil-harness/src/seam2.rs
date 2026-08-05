@@ -20,6 +20,7 @@
 //! baseline the DAC banks are:
 //!   * `dac_blip_bank`   @ `$48000` — `temp_blip.bin` (2880 B), bank id `$9`.
 //!   * `dac_shared_bank` @ `$50000` — the 9 drum `.pcm` (30908 B), bank id `$A`.
+//!
 //! The `$8000`-align gaps (`$48B40..$50000`, `$578BC..$58000`) are zero pad.
 
 use std::path::Path;
@@ -473,8 +474,8 @@ fn emit_dac_body_and_head_at(
 /// Emit the seam-2 DAC build inputs to `out_dir` (the wire's artifacts, mirroring
 /// seam-1's `emit_sound_blob`): `dac_blip_bank.bin` (the $48000 payload),
 /// `dac_shared_bank.bin` (the $50000 payload), and `dac_sample_tab.bin` (the
-/// co-linked 90-byte descriptor head). Byte-DETERMINISTIC from the tracked `.emp`
-/// + `.pcm` + toolchain; the assembled-ROM CRC is the provenance bar. The DAC side
+/// co-linked 90-byte descriptor head). Byte-DETERMINISTIC from the tracked
+/// `.emp` + `.pcm` + toolchain; the assembled-ROM CRC is the provenance bar. The DAC side
 /// is shape-INVARIANT (one blip + one shared + one head, no `-D`/`__DEBUG__`), so —
 /// unlike the resident blob — there is NO `_debug` variant.
 pub fn emit_dac_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {

@@ -19,7 +19,7 @@
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test native_declared_chain
 //! ```
 use sigil_harness::{native, pins};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn aeon_dir() -> PathBuf {
     PathBuf::from(
@@ -29,7 +29,7 @@ fn aeon_dir() -> PathBuf {
 fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
-fn read_ref(aeon: &PathBuf, name: &str) -> Option<Vec<u8>> {
+fn read_ref(aeon: &Path, name: &str) -> Option<Vec<u8>> {
     match std::fs::read(aeon.join(name)) {
         Ok(b) => Some(b),
         Err(_) => {
@@ -51,12 +51,8 @@ fn header_neutral_diffs(a: &[u8], b: &[u8], n: usize) -> usize {
     let mut a = a[..n].to_vec();
     let mut b = b[..n].to_vec();
     for buf in [&mut a, &mut b] {
-        for i in 0x18e..0x190 {
-            buf[i] = 0;
-        }
-        for i in 0x1a4..0x1a8 {
-            buf[i] = 0;
-        }
+        buf[0x18e..0x190].fill(0);
+        buf[0x1a4..0x1a8].fill(0);
     }
     (0..n).filter(|&i| a[i] != b[i]).count()
 }

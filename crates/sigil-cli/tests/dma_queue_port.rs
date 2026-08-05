@@ -165,9 +165,10 @@ fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
     file
 }
 
-/// Lower the real `dma_queue.emp` (prepend the engine.structs + engine.constants
-/// + engine.vdp twins its `use` lines read), place into the per-shape map,
-/// append the value equs + address labels, one `resolve_layout` -> `link`.
+/// Lower the real `dma_queue.emp` (prepend the engine.structs +
+/// engine.constants + engine.vdp twins its `use` lines read), place into the
+/// per-shape map, append the value equs + address labels, one
+/// `resolve_layout` -> `link`.
 fn compile_real_file(
     debug: bool,
     doctor: Option<(&str, &str)>,

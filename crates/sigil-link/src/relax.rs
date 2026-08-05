@@ -2178,7 +2178,7 @@ mod tests {
             "frag0 should be bra.w");
         // frag2 CASCADED to bra.w because frag0's +2 tipped its backward disp over -128.
         assert!(matches!(&out[0].fragments[2], Fragment::Data(d) if d.bytes.len() == 4),
-            "frag2 should have cascaded to bra.w, got {:?}", &out[0].fragments[2]);
+            "frag2 should have cascaded to bra.w, got {:?}", out[0].fragments[2]);
         // Labels shifted consistently: frag0 +2 and frag2 +2 = +4 total before Far.
         assert_eq!(out[0].labels.iter().find(|l| l.name == "Far").unwrap().offset, 0x104);
         // And the whole thing links (both backward/forward disps in range).

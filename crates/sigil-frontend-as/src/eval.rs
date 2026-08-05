@@ -293,6 +293,8 @@ fn one_pass(
 /// Like [`one_pass`], but also threads [`Asm::defer_unresolved_jsr_jmp`] —
 /// `run`'s bonus final pass sets this `true` so a still-Poison `jsr`/`jmp`
 /// bare-symbol target defers instead of joining `poison_refs`.
+// The parameters are the pass-to-pass seed tables — one per carried table, by design.
+#[allow(clippy::too_many_arguments)]
 fn one_pass_with_defer(
     src: &str,
     opts: &Options,
@@ -2325,7 +2327,7 @@ impl Asm {
             if let Some(e) = crate::expr::parse_expr(&self.expand_calls(rest, 0))
                 .and_then(|(e, tail)| tail.is_empty().then_some(e))
                 .map(|e| self.resolve_dollar(&self.qualify_expr(&e)))
-                .filter(|e| expr_has_sym(e))
+                .filter(expr_has_sym)
             {
                 self.label_ref_equs.insert(q.clone());
                 let equ_expr = self.relax_safe_fold(&e);

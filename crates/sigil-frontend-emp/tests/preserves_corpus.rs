@@ -19,11 +19,11 @@ use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::preserves::{verify_preserved, CallPolicy, PreserveStatus};
 use sigil_frontend_emp::value::Reg;
 use sigil_ir::backend::Cpu;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Evaluate one named proc from `file_rel` and return its residue register's
 /// preserve status.
-fn residue_status(aeon: &PathBuf, file_rel: &str, proc: &str, reg: Reg) -> PreserveStatus {
+fn residue_status(aeon: &Path, file_rel: &str, proc: &str, reg: Reg) -> PreserveStatus {
     let src = std::fs::read_to_string(aeon.join(file_rel))
         .unwrap_or_else(|e| panic!("read {file_rel}: {e}"));
     let (file, _diags) = parse_str(&src);

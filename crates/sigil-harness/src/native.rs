@@ -1088,6 +1088,7 @@ pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, 
 ///      was the canonical example; it is native `.emp` now — Parcel H-demo — so
 ///      the surviving eager consumers are the engine-side AS residual + sonic4.)
 ///   2. `games/sonic4/config/game.asm`'s `move.b #1,(Dbg_Music_On).w` — GAME RAM.
+///
 /// (The `phase Engine_RAM_End` in the old game `config/ram.asm` is gone — game RAM
 /// is now the `.emp` region `game_ram @ after(upper_ram)`, so it no longer needs
 /// harvesting for its own base.) So harvest every engine+game RAM label's ADDRESS
@@ -1883,6 +1884,7 @@ fn true_bases_by_index(
 ///     ≤ 16 dividing prov — at unchanged sizes this reproduces prov exactly (the
 ///     fold-identity the six golden gates prove), and under growth it re-derives the
 ///     alignment pad the provisional layout implies.
+///
 /// Image lengths are relaxation-dependent (branch widths move with distance), so the
 /// walk iterates measure → pack to a fixpoint (≤ 8 rounds; round 0 measures at
 /// disjoint scratch pins). Island classification must be IDENTICAL across rounds —
@@ -2411,6 +2413,7 @@ pub fn build_rom_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, 
 ///     `order` (strictly increasing declared position). Post-drive this can only fire on a
 ///     packer BUG (the walk did not honour the declaration) — it is the drive's own guard.
 ///   - HOLE (data; K2 enforces): a shape-applicable hole's `after` label must resolve.
+///
 /// The frozen tables are DEMOTED to the per-label provisional-base measurement cache
 /// (anchors + alignment + boundary keys); the map is the sole ORDER + anchor AUTHORITY.
 pub fn validate_placement(

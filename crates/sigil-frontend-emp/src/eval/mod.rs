@@ -898,13 +898,12 @@ impl<'a> Evaluator<'a> {
                     _ => return None,
                 },
             }
-        } else if let Some(sname) = self.imported_item_types.get(name) {
+        } else {
+            let sname = self.imported_item_types.get(name)?;
             ast::Type::Named(ast::Path {
                 segments: vec![sname.clone()],
                 span: Span { source: sigil_span::SourceId(0), start: 0, end: 0 },
             })
-        } else {
-            return None;
         };
         // Resolve + peel to a struct through the SAME ladder `offsetof(T, f)`
         // uses. Resolution MUST NOT report (see doc): snapshot the diag length
@@ -1794,6 +1793,11 @@ pub fn eval_proc_body(
     (buf, diags, counter)
 }
 
+/// [`eval_proc_body_env`]'s result: `(code buffer, diagnostics, next asm
+/// counter, dropped-instruction count, unresolved comptime-`if` (name, span)s)`.
+pub type ProcBodyEnvResult =
+    (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32, usize, Vec<(String, Span)>);
+
 /// [`eval_proc_body`] with a cross-file `ambient` declaration slice (the corpus
 /// TYPE ENVIRONMENT) and two extra return elements: the count of instructions
 /// DROPPED because a mnemonic/size/operand failed to resolve, and the
@@ -1820,7 +1824,7 @@ pub fn eval_proc_body_env(
     defines: &[(String, i128)],
     ambient: &[ast::Item],
     contracts: &crate::contract::InterfaceEnv,
-) -> (Option<crate::value::CodeBuf>, Vec<Diagnostic>, u32, usize, Vec<(String, Span)>) {
+) -> ProcBodyEnvResult {
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file_and_ambient(file, ambient);
         ev.seed_defines(defines);
