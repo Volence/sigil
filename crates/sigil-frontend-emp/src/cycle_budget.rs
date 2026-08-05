@@ -50,7 +50,7 @@
 //!     so a path reachable only from an `export`ed mid-body label is outside the
 //!     claim.
 
-use crate::flag_check::{entry_instr_idx, instr_span, is_return_mnemonic, Cfg, Edge};
+use crate::flag_check::{entry_instr_idx, instr_span, Cfg, Edge};
 use crate::value::CodeItem;
 use crate::z80_cycles::{instr_cost, Cost};
 use sigil_ir::backend::Cpu;
@@ -283,23 +283,18 @@ struct ChargedEdge {
     succ: Option<usize>,
 }
 
-/// The charged successors of `idx`. Every way out of the body except a RETURN is
-/// refused, so a path can never be closed with cost left unaccounted.
+/// The charged successors of `idx`. Every way out of the body except an
+/// [`Edge::Return`] is refused, so a path can never be closed with cost left
+/// unaccounted. An end-of-body `ret cc` presents `[Return, FallOff]`, so its
+/// escaping side is refused and its returning side charged from the SAME list,
+/// with no positional or mnemonic rule deciding which is which.
 ///
-/// Two edge-model facts do the routing, and both are read POSITIONALLY because
-/// `Edge` records neither:
-///
-///   * **Taken-first.** Every conditional arm of [`Cfg::z80_edges`] pushes the
-///     branch edge before the fall-through, so an outcome-split conditional's
-///     `taken` cost belongs to edge 0.
-///   * **Only edge 0 of a `ret cc` returns.** `ret cc` at the very end of a body
-///     yields `[Abandon, Abandon]` — the first is the taken return, the second is
-///     control running off the end. The mnemonic is the same for both, so the
-///     return test is per-EDGE; keying it on the mnemonic alone would close an
-///     escaping path at zero cost and report a bound that is too low.
-///
-/// A form presenting anything but exactly two edges satisfies neither reading, so
-/// it is refused rather than charged a number one of these rules picked blind.
+/// One edge-model fact is still read POSITIONALLY, because `Edge` does not record
+/// it: **taken-first**. Every conditional arm of [`Cfg::z80_edges`] pushes the
+/// branch edge before the fall-through, so an outcome-split conditional's `taken`
+/// cost belongs to edge 0. A form presenting anything but exactly two edges does
+/// not satisfy that reading, so a [`Cost::Split`] over it is refused rather than
+/// charged a number the rule picked blind.
 fn charged_edges(
     cfg: &Cfg,
     idx: usize,
@@ -314,7 +309,6 @@ fn charged_edges(
     if matches!(cost, Cost::Unknown) {
         return bail(BudgetFindingKind::UnknownOp { mnemonic: mnem.to_string() });
     }
-    let returns = is_return_mnemonic(mnem, Cpu::Z80);
     let edges = cfg.z80_edges(idx);
     let two_way = edges.len() == 2;
     if matches!(cost, Cost::Split { .. }) && !two_way {
@@ -327,13 +321,13 @@ fn charged_edges(
             Cost::Split { taken, not_taken } => u64::from(if i == 0 { taken } else { not_taken }),
             Cost::Unknown => unreachable!("refused above"),
         };
-        // A CONDITIONAL return returns on its taken edge only; its other edge is
-        // the fall-through, which off the end of a body is an unaccounted escape.
-        let this_edge_returns = returns && (!two_way || i == 0);
         match e {
             Edge::Follow(s) => out.push(ChargedEdge { cost, succ: Some(*s) }),
-            Edge::Abandon if this_edge_returns => out.push(ChargedEdge { cost, succ: None }),
-            Edge::Abandon | Edge::Defer => {
+            // A return CLOSES the path: the caller owns everything after it.
+            Edge::Return => out.push(ChargedEdge { cost, succ: None }),
+            // Running off the end, or transferring out, leaves cost this bound
+            // cannot see. Refuse rather than report a ceiling that is too low.
+            Edge::FallOff | Edge::Defer => {
                 return bail(BudgetFindingKind::UnboundedTransfer {
                     mnemonic: mnem.to_string(),
                 })
@@ -701,7 +695,7 @@ mod tests {
         assert_eq!(e.kind, BudgetFindingKind::UnboundedLoop);
     }
 
-    // A CONDITIONAL return at the very end of a body presents [Abandon, Abandon]:
+    // A CONDITIONAL return at the very end of a body presents [Return, FallOff]:
     // the taken edge returns, the other runs off the end. Only the first is a path
     // end — charging both would close an escaping path at zero cost and report a
     // bound that is TOO LOW, which is the one error direction a budget must not

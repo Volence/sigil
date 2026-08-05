@@ -338,8 +338,9 @@ pub fn verify_z80_preserved(
                         work.push_back(succ);
                     }
                 }
-                Edge::Abandon => {
-                    // A `ret` / fall-off-end: checkpoint every checked register.
+                // A `ret`, or control running off the end: either way the caller
+                // reads the register file from here — checkpoint it.
+                Edge::Return | Edge::FallOff => {
                     saw_return = true;
                     if st.bailed {
                         bailed_reached_return = true;
@@ -358,8 +359,8 @@ pub fn verify_z80_preserved(
                 // verifying a contract its body breaks. The proc preserves rN across
                 // the transfer iff rN holds its entry value AT the jp AND the
                 // tail-callee itself preserves rN (unknown/indirect target →
-                // conservative clobber, via the oracle). Mirrors `Edge::Abandon`
-                // plus the callee oracle.
+                // conservative clobber, via the oracle). Mirrors the
+                // `Return`/`FallOff` arm plus the callee oracle.
                 Edge::Defer => {
                     saw_return = true;
                     if st.bailed {
@@ -490,18 +491,19 @@ fn z80_edges(cfg: &Cfg, idx: usize) -> Vec<Edge> {
     let leads_cc = matches!(ops.first(), Some(CodeOperand::Z80Cc(_)));
     // Unconditional return.
     if is_return(mnem) && !leads_cc {
-        return vec![Edge::Abandon];
+        return vec![Edge::Return];
     }
-    // Conditional `ret cc`: the taken edge returns (abandon); the fall-through
-    // stays in the proc.
+    // Conditional `ret cc`: the TAKEN edge returns; the fall-through stays in the
+    // proc, or runs off the end when the `ret cc` closes the body. The pair names
+    // its two ends separately — they are different facts about the machine.
     if is_return(mnem) && leads_cc {
         return match cfg.next_instr(idx) {
-            Some(f) => vec![Edge::Abandon, Edge::Follow(f)],
-            None => vec![Edge::Abandon, Edge::Abandon],
+            Some(f) => vec![Edge::Return, Edge::Follow(f)],
+            None => vec![Edge::Return, Edge::FallOff],
         };
     }
     // Unconditional tail transfer: `jp`/`jr` follows a LOCAL label; a jump to a
-    // local END-label (no following instruction) is a fall-off exit (Abandon); a
+    // local END-label (no following instruction) is a fall-off exit; a
     // transfer to an EXTERNAL symbol (or a computed `jp (hl)`) defers out of the
     // proc as a tail call.
     if matches!(mnem, "jp" | "jr") && !leads_cc {
@@ -512,7 +514,7 @@ fn z80_edges(cfg: &Cfg, idx: usize) -> Vec<Edge> {
         let mut v = vec![branch_edge(cfg, ops)];
         match cfg.next_instr(idx) {
             Some(f) => v.push(Edge::Follow(f)),
-            None => v.push(Edge::Abandon),
+            None => v.push(Edge::FallOff),
         }
         return v;
     }
@@ -524,27 +526,27 @@ fn z80_edges(cfg: &Cfg, idx: usize) -> Vec<Edge> {
         }
         match cfg.next_instr(idx) {
             Some(f) => v.push(Edge::Follow(f)),
-            None => v.push(Edge::Abandon),
+            None => v.push(Edge::FallOff),
         }
         return v;
     }
     // Everything else (incl. `call`, which returns) falls through; the end of the
-    // body abandons (fall-off).
+    // body runs off it.
     match cfg.next_instr(idx) {
         Some(f) => vec![Edge::Follow(f)],
-        None => vec![Edge::Abandon],
+        None => vec![Edge::FallOff],
     }
 }
 
 /// The taken-edge of a `jp`/`jr` from its target: a LOCAL label with an
 /// instruction after it is followed; a LOCAL end-label (no following instruction —
-/// a jump to the proc's fall-off point) is an Abandon; an EXTERNAL symbol or a
-/// computed `jp (hl)` (no symbol) is a Defer tail transfer.
+/// a jump to the proc's fall-off point) is a [`Edge::FallOff`]; an EXTERNAL symbol
+/// or a computed `jp (hl)` (no symbol) is a [`Edge::Defer`] tail transfer.
 fn branch_edge(cfg: &Cfg, ops: &[CodeOperand]) -> Edge {
     match branch_sym(ops) {
         Some(t) => match cfg.label_index(t) {
             Some(tgt) => Edge::Follow(tgt),
-            None if cfg.is_local_label(t) => Edge::Abandon,
+            None if cfg.is_local_label(t) => Edge::FallOff,
             None => Edge::Defer,
         },
         None => Edge::Defer,

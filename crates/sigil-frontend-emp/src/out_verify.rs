@@ -323,8 +323,10 @@ pub fn verify_out(
                         work.push_back(succ);
                     }
                 }
-                Edge::Abandon => {
-                    // A return / fall-off-end: no extra credit.
+                // A return, or control running off the end: either way the caller
+                // reads the register file from here, so the claim is due — and
+                // neither gets extra credit on the way out.
+                Edge::Return | Edge::FallOff => {
                     check_return(&st, &here, &guard, &mut ok, &mut fail_reason);
                 }
                 Edge::Defer => {
@@ -535,8 +537,8 @@ pub struct CondOutSurvivesFiring {
 /// [`Flags::after`] (`clr`, `move #imm` — `branch_const::const_flag_writer`
 /// already folds them) shrinks this set monotonically and can only add checking.
 ///
-/// An EXIT is any edge that ends the proc — an `Abandon` (`rts` / fall-off-end)
-/// or a `Defer` (a transfer out, conditional or not). The survives claim is a
+/// An EXIT is any edge that ends the proc — a `Return`, a `FallOff`, or a
+/// `Defer` (a transfer out, conditional or not). The survives claim is a
 /// promise to the CALLER, so it must hold wherever control leaves, not only where
 /// it returns; a `bne ErrorPath` out of the ¬cc edge would otherwise be a hole.
 /// What the transfer's TARGET does is not charged here — see the `Edge::Defer`
@@ -553,7 +555,7 @@ fn not_cc_exit_sites(cfg: &Cfg, flags: &BTreeMap<usize, Flags>, cc: &str) -> BTr
         let leaves = cfg
             .edges(idx)
             .iter()
-            .any(|e| matches!(e, Edge::Abandon | Edge::Defer));
+            .any(|e| matches!(e, Edge::Return | Edge::FallOff | Edge::Defer));
         if leaves {
             sites.insert(idx);
         }

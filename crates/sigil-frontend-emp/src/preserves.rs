@@ -48,10 +48,9 @@
 //! place that decides.
 
 use crate::closure::RegEffect;
-use crate::flag_check::{entry_instr_idx, instr_span, is_return_mnemonic, Cfg, Edge};
+use crate::flag_check::{entry_instr_idx, instr_span, Cfg, Edge};
 use crate::lower::instr_written_regs;
 use crate::value::{CodeItem, CodeOperand, Reg, Width};
-use sigil_ir::backend::Cpu;
 use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -237,13 +236,14 @@ pub enum ReturnScope<'a> {
 }
 
 impl ReturnScope<'_> {
-    /// Is leaving instruction `idx` by an edge that ends the proc a checkpoint
-    /// for this proof? `is_return` distinguishes an `Edge::Abandon` (a real
-    /// return) from an `Edge::Defer` (a transfer out), which `AllReturns`
-    /// ignores and `Sites` treats like any other exit.
-    fn checks(&self, idx: usize, is_return: bool) -> bool {
+    /// Is leaving instruction `idx` by an `exit` a checkpoint for this proof?
+    /// `AllReturns` obligates the exits that END THIS BODY — a return and a
+    /// fall-off-end alike, since either hands the register file back to the
+    /// caller — and ignores a transfer out, whose callee owns what happens next.
+    /// `Sites` names its own exits and treats every kind alike.
+    fn checks(&self, idx: usize, exit: ExitKind) -> bool {
         match self {
-            ReturnScope::AllReturns => is_return,
+            ReturnScope::AllReturns => exit.ends_this_body(),
             ReturnScope::Sites(s) => s.contains(&idx),
         }
     }
@@ -359,6 +359,31 @@ pub fn verify_preserved_on(
         .collect()
 }
 
+/// How control left the proc at an exit the shared walk reports.
+///
+/// One variant per [`Edge`] that leaves the body, carried straight through from
+/// the CFG builder. Each consumer states its own POLICY as a match over these —
+/// the two that differ (whether a fall-off-end is a return) differ in the arm,
+/// not in a re-reading of the exit instruction's mnemonic.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ExitKind {
+    /// [`Edge::Return`] — an `rts`/`rte`/`rtr`/`rtd`.
+    Return,
+    /// [`Edge::FallOff`] — control ran past the last instruction of the body.
+    FallOff,
+    /// [`Edge::Defer`] — a transfer to a non-local symbol.
+    Defer,
+}
+
+impl ExitKind {
+    /// Does control leave THIS proc's body here for good, rather than being
+    /// handed to a symbol whose own return this proof cannot read? True for a
+    /// return and for a fall-off-end; false for a transfer out.
+    fn ends_this_body(self) -> bool {
+        matches!(self, ExitKind::Return | ExitKind::FallOff)
+    }
+}
+
 /// What a consumer of the symbolic-stack dataflow observes as it walks a proc.
 ///
 /// **The anti-drift seam.** Both consumers of [`State`] — the entry-value proof
@@ -370,10 +395,9 @@ pub fn verify_preserved_on(
 /// `DsState`, with a strictly more conservative bailout set — safe for a
 /// code-cutting worklist, and outside this seam.)
 trait StackObserver {
-    /// Control leaves the proc at instruction `idx` carrying state `st`.
-    /// `is_return` distinguishes an [`Edge::Abandon`] (an `rts`/`rte`, or a
-    /// fall-off-end) from an [`Edge::Defer`] (a transfer to a non-local symbol).
-    fn exit(&mut self, idx: usize, st: &State, is_return: bool);
+    /// Control leaves the proc at instruction `idx` carrying state `st`, by an
+    /// exit of kind `exit`.
+    fn exit(&mut self, idx: usize, st: &State, exit: ExitKind);
 
     /// Two paths meet on entry to instruction `succ`. Called with BOTH incoming
     /// states before [`join`] folds them, so a consumer can read a disagreement
@@ -437,15 +461,15 @@ fn run_stack_dataflow<O: StackObserver>(
                         work.push_back(succ);
                     }
                 }
-                // A return / fall-off-end.
-                Edge::Abandon => obs.exit(idx, &st, true),
+                Edge::Return => obs.exit(idx, &st, ExitKind::Return),
+                Edge::FallOff => obs.exit(idx, &st, ExitKind::FallOff),
                 // An external tail transfer (`jmp`/`bra` to a non-local symbol) is
                 // NOT an `rts` of THIS proc: it either diverges (a noreturn
                 // `raise_error` / error handler, which owes the caller nothing) or
                 // is a real tail call whose effect is a TRANSITIVE property the
                 // closure accounts for via its own tail edge (corpus
                 // `TAIL_MNEMONICS`). Consumers decide whether to charge it.
-                Edge::Defer => obs.exit(idx, &st, false),
+                Edge::Defer => obs.exit(idx, &st, ExitKind::Defer),
             }
         }
     }
@@ -464,12 +488,12 @@ struct PreserveObserver<'a> {
 }
 
 impl StackObserver for PreserveObserver<'_> {
-    fn exit(&mut self, idx: usize, st: &State, is_return: bool) {
+    fn exit(&mut self, idx: usize, st: &State, exit: ExitKind) {
         // `AllReturns` ignores a `Defer` entirely (see [`run_stack_dataflow`]);
         // a `Sites` scope names its own exits, and control leaving the proc IS
         // one — a register already destroyed HERE is destroyed from the caller's
         // view whatever the target does.
-        if self.scope.checks(idx, is_return) {
+        if self.scope.checks(idx, exit) {
             self.checkpoint(st);
         }
     }
@@ -1028,7 +1052,8 @@ pub struct StackFinding {
 /// therefore reports NOTHING in either direction, and only the paths the model
 /// tracked exactly can fire.
 ///
-/// Scope: RETURNS only ([`Edge::Abandon`]). A tail transfer out of the proc is
+/// Scope: exits that END THIS BODY ([`Edge::Return`], and [`Edge::FallOff`] when
+/// `charge_fall_off_end`). A tail transfer out of the proc ([`Edge::Defer`]) is
 /// deliberately not charged, for the reason the entry-value proof gives — it may
 /// diverge (a noreturn error rail owes its caller nothing), and nothing in the
 /// language marks that yet.
@@ -1063,18 +1088,18 @@ struct BalanceObserver<'a> {
 }
 
 impl BalanceObserver<'_> {
-    /// Is the exit at instruction `idx` one this checker charges? A RETURN
-    /// instruction always is. Control running off the END of the body is a return
-    /// only when the proc did not declare a fallthrough — a declared `falls_into`
-    /// continues into its successor, whose own check covers the shared frame, and
-    /// charging it would reject the idiom with a message about an `rts` the body
-    /// does not contain.
-    fn charges(&self, idx: usize) -> bool {
-        match self.items.get(idx) {
-            Some(CodeItem::Instr { mnemonic, .. }) => {
-                is_return_mnemonic(mnemonic, Cpu::M68000) || self.charge_fall_off_end
-            }
-            _ => false,
+    /// Is an exit of kind `exit` one this checker charges? A RETURN always is —
+    /// an imbalanced `rts` returns to whatever word is on top of the stack.
+    /// Control running off the END of the body is a return only when the proc did
+    /// not declare a fallthrough: a declared `falls_into` continues into its
+    /// successor, whose own check covers the shared frame, and charging it would
+    /// reject the idiom with a message about an `rts` the body does not contain.
+    /// A transfer OUT is the tail-callee's frame to answer for, not this proc's.
+    fn charges(&self, exit: ExitKind) -> bool {
+        match exit {
+            ExitKind::Return => true,
+            ExitKind::FallOff => self.charge_fall_off_end,
+            ExitKind::Defer => false,
         }
     }
 
@@ -1097,8 +1122,8 @@ impl BalanceObserver<'_> {
 }
 
 impl StackObserver for BalanceObserver<'_> {
-    fn exit(&mut self, idx: usize, st: &State, is_return: bool) {
-        if !is_return || st.bailed || !self.charges(idx) {
+    fn exit(&mut self, idx: usize, st: &State, exit: ExitKind) {
+        if st.bailed || !self.charges(exit) {
             return;
         }
         let depth = st.depth_bytes();
@@ -1223,8 +1248,8 @@ pub fn find_dead_saves(
                     work.push_back(succ);
                 }
             }
-            // Abandon / Defer: a return / external transfer — the save's fate is
-            // decided at its pop, not here.
+            // Return / FallOff / Defer: control leaves the body — the save's fate
+            // is decided at its pop, not here.
         }
         if bailed {
             break;
