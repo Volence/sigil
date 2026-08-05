@@ -1,5 +1,5 @@
 //! Contract-grammar v2 — THE ERROR GATE (§9 tier-timing flip, G3's closing act).
-//! Runs the transitive clobber closure ([`analyze_corpus`]) over the REAL aeon
+//! Runs the transitive clobber closure ([`analyze_corpus_with`]) over the REAL aeon
 //! `.emp` corpus and pins zero extern holes, zero §11 Q4 collisions, and — now
 //! that the §5 verified-preserves retrofit has landed and the row-1030/G3-FP
 //! residue reached ZERO — an EMPTY firing set. This pin shipped WARN-tier through
@@ -8,26 +8,28 @@
 //! transitive under-declaration is a BUILD ERROR. An undeclared register effect
 //! in `.emp` can no longer ship.
 //!
+//! THE SHAPE AXIS. The three gates below that own a firing set — drops, closure
+//! residue, §6 flag results — walk EVERY SHIPPED SHAPE under its own profile
+//! defines ([`native::shipped_shapes`]). They previously walked one define-free
+//! corpus, in which every `if DEBUG == 1 { }` and `if SOUND_DRIVER_ENABLED == 1 { }`
+//! block comptime-vanishes, and the closure gate consequently reported an empty
+//! residue while five real transitive under-declarations shipped in the DEBUG
+//! shape (`Collected_ParkSlot` d2, `EntityWindow_{TrySpawnRing,RescanRings,
+//! ScanRingsRight,PopulateSectionRings}` d5). A gate cannot stop what it never
+//! reads. [`a_clobber_undeclared_inside_a_comptime_gate_fires_in_exactly_the_debug_shapes`]
+//! is the standing proof that the shape axis is real and not seven labels on one walk.
+//!
+//! The [`corpus_report`] family below is still define-FREE — a separate blind spot
+//! with its own pinned censuses, tracked on kill-list row 103.
+//!
 //! Reference tree: defaults to the sibling aeon checkout (override with `AEON_DIR`).
 //! Under `SIGIL_STRICT_GATE` a missing tree HARD-FAILS — these are shipping ERROR
 //! gates and must run in the standard strict invocation, not silently skip.
 
-use sigil_frontend_emp::corpus_contracts::{analyze_corpus, analyze_corpus_with};
+use sigil_frontend_emp::corpus_contracts::{analyze_corpus, analyze_corpus_with, ContractReport};
 use sigil_frontend_emp::parse_str;
+use sigil_harness::native;
 use std::path::{Path, PathBuf};
-
-/// The GAME-config comptime defines the engine `.emp` now takes as required inputs
-/// (rings.emp / entity_window.emp — MAX_RING_BUFFER / VRAM_RING_PLACEHOLDER /
-/// COLLECTED_WINDOW_SLOTS, the engine/game split). Unlike `-D` toggles these are not
-/// optional: without a value, `RING_ART_ATTR = vram_art(VRAM_RING_PLACEHOLDER, …)`
-/// cannot lower and its instruction drops. The values are register-effect-neutral
-/// (an immediate never changes a clobber set), so the sonic4 canonical values suffice
-/// to give the drop-count gate a fully-lowerable corpus.
-const GAME_CONFIG_DEFINES: &[(&str, i128)] = &[
-    ("MAX_RING_BUFFER", 128),
-    ("VRAM_RING_PLACEHOLDER", 0x3E8),
-    ("COLLECTED_WINDOW_SLOTS", 9),
-];
 
 /// Recursively collect `*.emp` files under `dir`, skipping `.worktrees`.
 fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -45,6 +47,60 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// The reference tree, or `None` when it is absent and strict mode is off.
+///
+/// House reference-gate pattern (repin_pins/mt_port, c5505f8): default the sibling
+/// aeon tree, and under `SIGIL_STRICT_GATE` a missing reference is a HARD failure.
+/// A shipping ERROR gate that silently skips whenever `AEON_DIR` is unset — as the
+/// standard strict invocation (`SIGIL_STRICT_GATE=1 cargo test --workspace`, no
+/// `AEON_DIR`) leaves it — never actually runs in the gate it exists for.
+fn aeon_dir() -> Option<PathBuf> {
+    let aeon = PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    );
+    if !aeon.exists() {
+        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
+        }
+        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
+        return None;
+    }
+    Some(aeon)
+}
+
+/// The whole corpus as `(path, source text)`, so a negative probe can doctor a
+/// source before it is parsed.
+fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
+    let aeon = aeon_dir()?;
+    let mut paths = Vec::new();
+    emp_files(&aeon.join("engine"), &mut paths);
+    emp_files(&aeon.join("games"), &mut paths);
+    paths.sort();
+    assert!(!paths.is_empty(), "no .emp files under {}", aeon.display());
+    Some(
+        paths
+            .into_iter()
+            .map(|p| {
+                let s = std::fs::read_to_string(&p)
+                    .unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+                (p, s)
+            })
+            .collect(),
+    )
+}
+
+/// `(shape label, report)` for every shipped shape — ONE parse, seven analyses,
+/// each under the shape's own profile defines.
+fn analyze_every_shape(srcs: &[(PathBuf, String)]) -> Vec<(&'static str, ContractReport)> {
+    let files: Vec<_> = srcs.iter().map(|(_, s)| parse_str(s).0).collect();
+    native::shipped_shapes()
+        .into_iter()
+        .map(|(label, profile)| {
+            (label, analyze_corpus_with(&files, &native::shape_defines(&profile)))
+        })
+        .collect()
+}
+
 /// The substrate gate — DROPS ARE LOUD. The contract analysis evaluates each
 /// `.emp` against the whole-corpus TYPE ENVIRONMENT (every struct/const/type
 /// declaration in scope), so no field operand on an imported struct silently
@@ -56,96 +112,103 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
 /// dropping, hiding real register effects beneath the closure/dead-save gates.
 #[test]
 fn corpus_has_zero_dropped_instructions() {
-    // House reference-gate pattern (repin_pins/mt_port, c5505f8): default the
-    // sibling aeon tree, and under SIGIL_STRICT_GATE a missing reference is a HARD
-    // failure. A shipping ERROR gate that silently skips whenever AEON_DIR is unset
-    // — as the standard strict invocation (`SIGIL_STRICT_GATE=1 cargo test
-    // --workspace`, no AEON_DIR) leaves it — never actually runs in the gate it
-    // exists for.
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
-    if !aeon.exists() {
-        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
-            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
-        }
-        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
-        return;
+    let Some(srcs) = corpus_sources() else { return };
+    for (label, r) in analyze_every_shape(&srcs) {
+        assert_eq!(
+            r.dropped_instrs, 0,
+            "shape `{label}`: instructions dropped from analysis buffers (missing \
+             import/type in scope, or a define the shape's profile does not carry?): {:?}",
+            r.dropped_by_proc
+        );
     }
-    let mut paths = Vec::new();
-    emp_files(&aeon.join("engine"), &mut paths);
-    emp_files(&aeon.join("games"), &mut paths);
-    paths.sort();
-    assert!(!paths.is_empty(), "no .emp files under {}", aeon.display());
-    let files: Vec<_> = paths
-        .iter()
-        .map(|p| parse_str(&std::fs::read_to_string(p).unwrap()).0)
-        .collect();
-    let defines: Vec<(String, i128)> =
-        GAME_CONFIG_DEFINES.iter().map(|(k, v)| (k.to_string(), *v)).collect();
-    let r = analyze_corpus_with(&files, &defines);
-    assert_eq!(
-        r.dropped_instrs, 0,
-        "instructions dropped from analysis buffers (missing import/type in scope?): {:?}",
-        r.dropped_by_proc
-    );
 }
 
 #[test]
 fn corpus_closure_residue_is_empty_the_error_gate() {
-    // House reference-gate pattern (repin_pins/mt_port, c5505f8): default the
-    // sibling aeon tree, and under SIGIL_STRICT_GATE a missing reference is a HARD
-    // failure. A shipping ERROR gate that silently skips whenever AEON_DIR is unset
-    // — as the standard strict invocation (`SIGIL_STRICT_GATE=1 cargo test
-    // --workspace`, no AEON_DIR) leaves it — never actually runs in the gate it
-    // exists for.
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
-    if !aeon.exists() {
-        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
-            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
-        }
-        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
-        return;
+    let Some(srcs) = corpus_sources() else { return };
+    for (label, r) in analyze_every_shape(&srcs) {
+        // Boundary decls resolve every extern call — no holes.
+        assert!(
+            r.closure.unresolved_callees.is_empty(),
+            "shape `{label}`: unexpected extern holes (missing extern proc?): {:?}",
+            r.closure.unresolved_callees
+        );
+        // No name declared both extern proc and proc (§11 Q4).
+        assert!(
+            r.extern_collisions.is_empty(),
+            "shape `{label}`: extern/proc collisions: {:?}",
+            r.extern_collisions
+        );
+
+        // THE ERROR GATE (WARN→ERROR flip, §9): the residue is ZERO in every shipped
+        // shape. ANY firing here — an undeclared transitive register effect, or an
+        // unbounded indirect — is a build error under the strict gate. This is the
+        // permanent gate: an undeclared register effect in `.emp` can no longer ship,
+        // and no longer ship behind a comptime arm one define set happens to elide.
+        let residue: Vec<(String, String)> = r
+            .firings
+            .iter()
+            .map(|f| (f.proc.clone(), f.reg.clone().unwrap_or_else(|| "<unbounded>".into())))
+            .collect();
+        assert!(
+            r.firings.is_empty(),
+            "shape `{label}`: closure firing(s) — an undeclared register effect must be \
+             declared or verified-preserved before it can ship: {residue:?}"
+        );
     }
-    let mut paths = Vec::new();
-    emp_files(&aeon.join("engine"), &mut paths);
-    emp_files(&aeon.join("games"), &mut paths);
-    paths.sort();
-    assert!(!paths.is_empty(), "no .emp files under {}", aeon.display());
+}
 
-    let files: Vec<_> = paths
-        .iter()
-        .map(|p| parse_str(&std::fs::read_to_string(p).unwrap()).0)
-        .collect();
-    let r = analyze_corpus(&files);
+/// SHAPE-SENSITIVITY — the anti-vacuity pin for the closure gate, and the reason it
+/// walks seven shapes instead of one.
+///
+/// Drops `d2` from `Collected_ParkSlot`'s `clobbers`, which the DEBUG duplicate-id
+/// scan writes. The doctored corpus must fire in exactly the three `DEBUG == 1`
+/// shapes and in none of the four plain ones. Both halves are load-bearing: the
+/// fires-here half proves the ERROR gate has teeth on comptime-gated code (five real
+/// under-declarations shipped past the define-free walk in exactly this arm), and the
+/// silent-there half proves the defines genuinely reach the analysis rather than
+/// every shape being one walk under seven labels.
+#[test]
+fn a_clobber_undeclared_inside_a_comptime_gate_fires_in_exactly_the_debug_shapes() {
+    let Some(mut srcs) = corpus_sources() else { return };
 
-    // Boundary decls resolve every extern call — no holes.
-    assert!(
-        r.closure.unresolved_callees.is_empty(),
-        "unexpected extern holes (missing extern proc?): {:?}",
-        r.closure.unresolved_callees
-    );
-    // No name declared both extern proc and proc (§11 Q4).
-    assert!(r.extern_collisions.is_empty(), "extern/proc collisions: {:?}", r.extern_collisions);
+    let mut doctored = false;
+    for (p, s) in &mut srcs {
+        if p.file_name().is_some_and(|n| n == "entity_window.emp") {
+            let needle = "proc Collected_ParkSlot () clobbers(d0-d2, a1) preserves(a0) {";
+            let weaken = "proc Collected_ParkSlot () clobbers(d0-d1, a1) preserves(a0) {";
+            assert!(s.contains(needle), "negative probe anchor not found in {}", p.display());
+            *s = s.replacen(needle, weaken, 1);
+            doctored = true;
+        }
+    }
+    assert!(doctored, "entity_window.emp not found in the corpus");
 
-    // THE ERROR GATE (WARN→ERROR flip, §9): the residue is now ZERO. Every real
-    // under-declaration is fixed; the 6-row G3-FP handoff cleared via §5 verified
-    // preserves (5 declared, Load_Object transitively). ANY firing here — an
-    // undeclared transitive register effect, or an unbounded indirect — is a build
-    // error under the strict gate. This is the permanent gate: an undeclared
-    // register effect in `.emp` can no longer ship.
-    let residue: Vec<(String, String)> = r
-        .firings
-        .iter()
-        .map(|f| (f.proc.clone(), f.reg.clone().unwrap_or_else(|| "<unbounded>".into())))
-        .collect();
-    assert!(
-        r.firings.is_empty(),
-        "closure firing(s) — an undeclared register effect must be declared or \
-         verified-preserved before it can ship: {residue:?}"
-    );
+    // The shapes whose profile sets `DEBUG = 1`; the other four compile the
+    // duplicate-id scan away entirely.
+    const DEBUG_SHAPES: [&str; 3] = ["sonic4 debug", "demo debug", "config_a"];
+
+    for (label, r) in analyze_every_shape(&srcs) {
+        let hit = r.firings.iter().find(|f| {
+            f.proc == "Collected_ParkSlot" && f.reg.as_deref() == Some("d2")
+        });
+        if DEBUG_SHAPES.contains(&label) {
+            assert!(
+                hit.is_some(),
+                "shape `{label}` assembles the `DEBUG == 1` block that writes d2, so the \
+                 dropped declaration MUST fire — an empty residue here means the walk is \
+                 not reading the shape's defines. firings: {:?}",
+                r.firings.iter().map(|f| (f.proc.as_str(), f.reg.as_deref())).collect::<Vec<_>>()
+            );
+        } else {
+            assert!(
+                hit.is_none(),
+                "shape `{label}` is DEBUG=0, so the doctored arm compiles away and must NOT \
+                 fire — a firing here means every shape is walking one define set: {:?}",
+                r.firings.iter().map(|f| (f.proc.as_str(), f.reg.as_deref())).collect::<Vec<_>>()
+            );
+        }
+    }
 }
 
 /// Contract-grammar v2 G2 — the §6 flag-result must-use pin: every `.emp` caller
@@ -157,55 +220,30 @@ fn corpus_closure_residue_is_empty_the_error_gate() {
 /// caller that drops a flag result breaks it.
 #[test]
 fn corpus_flag_results_are_all_consumed() {
-    // House reference-gate pattern (repin_pins/mt_port, c5505f8): default the
-    // sibling aeon tree, and under SIGIL_STRICT_GATE a missing reference is a HARD
-    // failure. A shipping ERROR gate that silently skips whenever AEON_DIR is unset
-    // — as the standard strict invocation (`SIGIL_STRICT_GATE=1 cargo test
-    // --workspace`, no AEON_DIR) leaves it — never actually runs in the gate it
-    // exists for.
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
-    if !aeon.exists() {
-        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
-            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
-        }
-        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
-        return;
+    let Some(srcs) = corpus_sources() else { return };
+    for (label, r) in analyze_every_shape(&srcs) {
+        assert!(
+            r.flag_firings.is_empty(),
+            "shape `{label}`: unexpected flag-result firings (a dropped carry?): {:?}",
+            r.flag_firings
+        );
     }
-    let mut paths = Vec::new();
-    emp_files(&aeon.join("engine"), &mut paths);
-    emp_files(&aeon.join("games"), &mut paths);
-    paths.sort();
-    assert!(!paths.is_empty(), "no .emp files under {}", aeon.display());
-
-    let files: Vec<_> = paths
-        .iter()
-        .map(|p| parse_str(&std::fs::read_to_string(p).unwrap()).0)
-        .collect();
-    let r = analyze_corpus(&files);
-
-    assert!(
-        r.flag_firings.is_empty(),
-        "unexpected flag-result firings (a dropped carry?): {:?}",
-        r.flag_firings
-    );
 }
 
 /// Load the aeon corpus + run the contract analysis, or `None` (skip) when the
 /// reference tree is absent — hard-failing under `SIGIL_STRICT_GATE` (the house
-/// reference-gate pattern). Shared by the D1b-flip gates below.
-fn corpus_report() -> Option<sigil_frontend_emp::corpus_contracts::ContractReport> {
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
-    if !aeon.exists() {
-        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
-            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
-        }
-        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
-        return None;
-    }
+/// reference-gate pattern). Shared by the D1b/§3.2/§3.3 gates below.
+///
+/// DEFINE-FREE, and knowingly so: this walk resolves NO comptime define, so every
+/// `if DEBUG == 1 { }` and `if SOUND_DRIVER_ENABLED == 1 { }` arm is absent from
+/// the five gates it feeds — two of them ERROR gates. Its pinned censuses are
+/// calibrated to that walk (`context_regions.len() == 17`; the same measurement
+/// under the shipped profiles is 23 for the sonic4-family shapes and 20 for the
+/// demo/config_b ones), so flipping it to [`analyze_every_shape`] is a per-shape
+/// re-baselining, not a one-line change. Tracked as the highest-leverage remaining
+/// row on kill-list row 103.
+fn corpus_report() -> Option<ContractReport> {
+    let aeon = aeon_dir()?;
     let mut paths = Vec::new();
     emp_files(&aeon.join("engine"), &mut paths);
     emp_files(&aeon.join("games"), &mut paths);
@@ -407,10 +445,10 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
 
 /// THE SURFACE IS WIRED, AND IT IS SHAPE-PARAMETERIZED.
 ///
-/// Every gate above calls the analysis directly — seven of them with NO defines at
-/// all, one with a hand-written list — so all of them stay green if
-/// `run_contract_report` is deleted or stops reading the target's profile. This drives
-/// the real binary and reads its real stdout.
+/// Every gate above calls the analysis in-process — the shape-walking ones through
+/// [`analyze_every_shape`], the [`corpus_report`] family with no defines at all — so
+/// all of them stay green if `run_contract_report` is deleted or stops reading the
+/// target's profile. This drives the real binary and reads its real stdout.
 ///
 /// The load-bearing assertion is the LAST one. A census run against the wrong define
 /// set analyzes arms the shipped ROM never assembles: with `MAX_RING_BUFFER` absent

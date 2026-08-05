@@ -745,6 +745,37 @@ pub fn lean_profile() -> GameProfile {
     }
 }
 
+/// EVERY SHIPPED SHAPE, in `capture_goldens.sh` order — the ONE place the seven-row
+/// target table is spelled, so a gate that means "all shipped shapes" cannot drift
+/// from the shapes the byte bar actually builds.
+///
+/// The labels are the ones the golden capture and the `--report` header already use.
+/// The set is exhaustive over both polarities of every comptime toggle the profiles
+/// carry — `SOUND_DRIVER_ENABLED` (1 in sonic4/config_a/lean, 0 in demo/config_b),
+/// `DEBUG` (1 in the three debug shapes), `CRASH_REPORT` (0 only in lean),
+/// `SOUND_DEBUG_HOTKEYS`/`SOUND_DBG_MIRROR` (1 only in config_a) — which is what
+/// makes "empty under every shape" a statement about the whole corpus rather than
+/// about whichever arms one define set happens to keep.
+pub fn shipped_shapes() -> Vec<(&'static str, GameProfile)> {
+    vec![
+        ("sonic4 plain", sonic4_profile(false)),
+        ("sonic4 debug", sonic4_profile(true)),
+        ("demo plain", demo_profile(false)),
+        ("demo debug", demo_profile(true)),
+        ("config_a", config_a_profile()),
+        ("config_b", config_b_profile()),
+        ("lean", lean_profile()),
+    ]
+}
+
+/// The comptime `-D` set a shape's `.emp` sources are read under, owned by its
+/// shipping profile so an analysis can never describe a shape the build does not
+/// make. This is the same conversion `--report contracts` applies; sharing it is
+/// what keeps a gate's walk and the report's walk the same walk.
+pub fn shape_defines(profile: &GameProfile) -> Vec<(String, i128)> {
+    profile.emp_defines.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+}
+
 /// Give EVERY reachable module a glob (`.*`) import of ALL pure-comptime helper
 /// modules, so each module's ambient set is the FULL transitively-closed helper
 /// closure. This is required because ambient injection is SHALLOW (one `use` level):

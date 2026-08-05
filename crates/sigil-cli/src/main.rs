@@ -815,8 +815,10 @@ fn scan_or_exit(aeon: &std::path::Path) -> sigil_frontend_emp::resolve::manifest
 
 /// The comptime `-D` set a target's `.emp` sources are read under, owned by its
 /// shipping profile so a report can never describe a shape the build does not make.
+/// The conversion lives in `native` so the corpus GATES read the reports' define
+/// set, not a second spelling of it.
 fn profile_defines(profile: &sigil_harness::native::GameProfile) -> Vec<(String, i128)> {
-    profile.emp_defines.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+    sigil_harness::native::shape_defines(profile)
 }
 
 /// The header every report shares: what it is, which target it describes, and the

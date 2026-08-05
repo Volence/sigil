@@ -107,15 +107,7 @@ fn corpus_warnings() -> Option<&'static [ShapeWarnings]> {
             // exist before any shape lowers.
             native::ensure_generated(&aeon);
             Some(
-                [
-                    ("sonic4 plain", native::sonic4_profile(false)),
-                    ("sonic4 debug", native::sonic4_profile(true)),
-                    ("demo plain", native::demo_profile(false)),
-                    ("demo debug", native::demo_profile(true)),
-                    ("config_a", native::config_a_profile()),
-                    ("config_b", native::config_b_profile()),
-                    ("lean", native::lean_profile()),
-                ]
+                native::shipped_shapes()
                 .into_iter()
                 .map(|(label, profile)| {
                     let built = native::build_emp(&aeon, &profile)
