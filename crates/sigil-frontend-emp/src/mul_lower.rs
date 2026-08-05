@@ -98,16 +98,20 @@ pub(crate) fn expand_buf(
     let items = std::mem::take(&mut buf.items);
     for item in items {
         match item {
-            CodeItem::Instr { ref mnemonic, size, ref ops, span, .. }
+            CodeItem::Instr { ref mnemonic, size, ref ops, span, ref as_type }
                 if is_mul_mnemonic(mnemonic) =>
             {
                 if cpu == Cpu::Z80 {
+                    diags.push(non_68k_err(span, mnemonic));
+                    continue;
+                }
+                // `as T` is dispatch-bound sugar for typed transfers; on a
+                // multiply construct it means nothing — refuse rather than
+                // silently discard a spelled annotation.
+                if as_type.is_some() {
                     diags.push(err(
                         span,
-                        format!(
-                            "[mul.non-68k] `{mnemonic}` is 68000-only in v1 (the Z80 variant \
-                             is a recorded ledger row awaiting a consumer)"
-                        ),
+                        format!("[mul.operands] `{mnemonic}` takes no `as` dispatch bound"),
                     ));
                     continue;
                 }
@@ -122,9 +126,23 @@ pub(crate) fn expand_buf(
     diags
 }
 
+/// The one spelling of the Z80 refusal — both expansion sites (the choke point
+/// and the `lower_code_buf` safety net) emit THIS diagnostic, so the text
+/// cannot drift by path.
+pub(crate) fn non_68k_err(span: Span, mnemonic: &str) -> Diagnostic {
+    err(
+        span,
+        format!(
+            "[mul.non-68k] `{mnemonic}` is 68000-only in v1 (the Z80 variant is a \
+             recorded ledger row awaiting a consumer)"
+        ),
+    )
+}
+
 /// Expand ONE construct item into its chosen lowering — the pure decision
 /// function (also the `lower_code_buf` safety net for item-position streams no
-/// evaluator completed). Deterministic: same mnemonic/operands, same items.
+/// evaluator completed). Deterministic: same mnemonic/operands, same items —
+/// up to the minted loop-label names, which carry `module` + `counter`.
 pub(crate) fn expand_item(
     mnemonic: &str,
     size: Option<Width>,
@@ -453,22 +471,21 @@ fn seed_pair(dst: Reg, s: Reg, span: Span) -> Vec<CodeItem> {
     ]
 }
 
-/// ×2^k on a long register: nothing for k = 0, `add.l d,d` for k = 1 (8 cycles
-/// vs `lsl.l #1`'s 10), `lsl.l` in chunks of ≤ 8 otherwise.
-fn shift_run(k: u32, d: Reg, span: Span) -> Vec<CodeItem> {
-    match k {
-        0 => Vec::new(),
-        1 => vec![instr("add", Some(Width::L), vec![reg(d), reg(d)], span)],
-        mut k => {
-            let mut items = Vec::new();
-            while k > 0 {
-                let step = k.min(8);
-                items.push(instr("lsl", Some(Width::L), vec![imm(step), reg(d)], span));
-                k -= step;
-            }
-            items
+/// ×2^k on a long register: nothing for k = 0; any REMAINING single double —
+/// a run of 1, or the 1-bit remainder after `lsl.l` chunks of 8 (k = 9) — is
+/// `add.l d,d` (8 cycles, vs `lsl.l #1`'s 10).
+fn shift_run(mut k: u32, d: Reg, span: Span) -> Vec<CodeItem> {
+    let mut items = Vec::new();
+    while k > 0 {
+        if k == 1 {
+            items.push(instr("add", Some(Width::L), vec![reg(d), reg(d)], span));
+            break;
         }
+        let step = k.min(8);
+        items.push(instr("lsl", Some(Width::L), vec![imm(step), reg(d)], span));
+        k -= step;
     }
+    items
 }
 
 // ---- small constructors -------------------------------------------------

@@ -171,6 +171,11 @@ impl Evaluator<'_> {
         let module = self.module_id.clone();
         let mds =
             crate::mul_lower::expand_buf(&mut buf, self.cpu, &module, &mut self.asm_counter);
+        // Every diagnostic here is one refused-and-dropped construct item
+        // (expand_buf emits exactly one per drop), so the drop accounting the
+        // corpus walk pins (`dropped == 0`) stays honest: a refused `mul_*`
+        // shrinks the analysis view COUNTED, never silently.
+        self.dropped_instrs += mds.len();
         self.diags.extend(mds);
 
         Value::Code(buf)

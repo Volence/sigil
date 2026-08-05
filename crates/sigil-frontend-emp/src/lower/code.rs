@@ -90,9 +90,11 @@ pub fn lower_code_buf(
                 // evaluator completed for a known CPU (an item-position `asm {}`
                 // template) — expand with the SAME pure decision so the bytes
                 // cannot differ by path. Loop-label uniqueness rides the item's
-                // span start here (no evaluator counter exists on this path); a
-                // template spliced twice at item position would collide its
-                // labels and fail LOUDLY at link, never silently.
+                // span (source id + start offset; no evaluator counter exists
+                // on this path) under an `item<source>` name in the module
+                // slot — a real module named e.g. `item0` would share that
+                // namespace, and any overlap collides as a duplicate label at
+                // link, LOUDLY, never as silent bytes.
                 if crate::mul_lower::is_mul_mnemonic(mnemonic) {
                     if cpu == Cpu::Z80 {
                         push_err(
@@ -106,8 +108,9 @@ pub fn lower_code_buf(
                         continue;
                     }
                     let mut counter = span.start;
+                    let net_ns = format!("item{}", span.source.0);
                     match crate::mul_lower::expand_item(
-                        mnemonic, *size, ops, *span, "item", &mut counter,
+                        mnemonic, *size, ops, *span, &net_ns, &mut counter,
                     ) {
                         Ok(expanded) => {
                             let buf = CodeBuf { items: expanded };
