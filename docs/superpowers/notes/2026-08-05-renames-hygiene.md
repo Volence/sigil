@@ -2,16 +2,19 @@
 
 Status: Merge state lives in the campaign log, not here. Branch pair
 `renames-hygiene` — worktrees `sigil/.worktrees/b3` + `aeon/.worktrees/b3`,
-built off sigil `22e7274f` (chain 46) / aeon `77f80c6`.
+built off sigil `22e7274f` (chain 46) / aeon `77f80c6`, REBASED at merge prep
+onto sigil `7eab683f` (post-B′-3b) / aeon `f3fc6a8` (docs-only), every bar
+re-proven at the new base (§3).
 
-Commits:
-- **aeon `3ff49bf`** — the three renames + generator + living docs. **A merge-order
+Commits (rebased ids):
+- **aeon `e8264fa`** — the three renames + generator + living docs. **A merge-order
   constraint: the sigil test commit below reads the renamed aeon paths, so the
-  pair merges together (aeon-first is fine; sigil-first breaks the corpus gates
-  against an un-renamed aeon).**
-- sigil `2299a8df` — test-side path ripple.
-- sigil `f48cb0bb` — the packet-header sweep + both ledger rows.
-- sigil (this packet's commit).
+  pair merges together (aeon-first, sigil immediately after; sigil-first breaks
+  the corpus gates against an un-renamed aeon).**
+- sigil `7599afdc` — test-side path ripple.
+- sigil `e86c47dd` — the packet-header sweep + both ledger rows.
+- sigil `2f9c5f31` + `64704de6` — this packet, and the sweep's rebase-time
+  extension to the B′-3b packet.
 
 ## §1 — Part 1: the three file renames
 
@@ -118,20 +121,25 @@ CLOSED entries.
 
 ## §3 — Gates
 
-- **Byte bar (seven targets, `capture_goldens.sh` order, `cmp`):** s4 ·
-  s4.debug · demo · demo.debug · config_a · config_b · lean — **all seven
-  IDENTICAL** to `crates/sigil-harness/golden/`, canonical s4.bin/s4.debug.bin
-  rebuilt afterwards and re-`cmp`'d identical (nine comparisons). Also proven
-  on the untouched baseline before the first edit (cheap re-confirm of the
-  previous lane's proof).
-- **`refreeze --check`:** OK, tip `objtest-gate`, chain len 46.
-- **`repin --check`:** pins.rs unchanged.
+Run twice in full: at the original base (`22e7274f`/`77f80c6`) and again after
+the merge-prep rebase (`7eab683f`/`f3fc6a8`, binaries rebuilt at the new base).
+
+- **Byte bar (seven targets, derived from `golden/*.bin`, `capture_goldens.sh`
+  order, `cmp`):** s4 · s4.debug · demo · demo.debug · config_a · config_b ·
+  lean — **all seven IDENTICAL** to `crates/sigil-harness/golden/`, canonical
+  s4.bin/s4.debug.bin rebuilt afterwards and re-`cmp`'d identical (nine
+  comparisons), at BOTH bases. Also proven on the untouched baseline before the
+  first edit (cheap re-confirm of the previous lane's proof).
+- **`refreeze --check`:** OK, tip `objtest-gate`, chain len 46 — both bases.
+- **`repin --check`:** pins.rs unchanged — both bases.
 - **Strict suite** (`SIGIL_STRICT_GATE=1`, `AEON_DIR` = own worktree, full log,
-  failures-first): **3261 passed / 0 failed / 4 ignored**, exit 0, 311 result
-  lines — identical to the `22e7274f` baseline.
-- **Test delta: exactly 0.** `#[test]` total 3265 at both `22e7274f` and branch
-  HEAD (this lane adds no tests and retires none), and passed + ignored
-  (3261 + 4) equals that 3265 — nothing silently skipped.
+  failures-first): original base **3261 passed / 0 failed / 4 ignored**, exit 0;
+  rebased **3294 passed / 0 failed / 4 ignored**, exit 0 — the +33 is B′-3b's
+  own tests arriving with the new master, not this lane's.
+- **Test delta: exactly 0 at each base.** `#[test]` totals: 3265 at both
+  `22e7274f` and the pre-rebase HEAD; 3298 at both `7eab683f` and the rebased
+  HEAD. passed + ignored equals the total in both runs — nothing silently
+  skipped.
 
 ## §4 — Lens panel (B, corpus-pattern, read-only)
 
