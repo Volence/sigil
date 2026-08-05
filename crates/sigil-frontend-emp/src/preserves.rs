@@ -198,6 +198,12 @@ fn reg_idx(r: Reg) -> usize {
     r as usize
 }
 
+/// The item index of a body's FIRST instruction — its dataflow entry point.
+/// `None` for a body with no instructions at all (labels and inline data only).
+fn entry_instr_idx(items: &[CodeItem]) -> Option<usize> {
+    items.iter().position(|it| matches!(it, CodeItem::Instr { .. }))
+}
+
 /// The resolved operand size of instruction item `idx`, if any.
 fn instr_size(items: &[CodeItem], idx: usize) -> Option<Width> {
     match items.get(idx) {
@@ -271,10 +277,7 @@ pub fn verify_preserved_on(
 
     // The first instruction is the entry point; a body with no instructions
     // preserves everything vacuously.
-    let Some(entry_idx) = items
-        .iter()
-        .position(|it| matches!(it, CodeItem::Instr { .. }))
-    else {
+    let Some(entry_idx) = entry_instr_idx(items) else {
         return check.iter().map(|r| (*r, PreserveStatus::Verified)).collect();
     };
 
@@ -363,12 +366,14 @@ pub fn verify_preserved_on(
 
 /// What a consumer of the symbolic-stack dataflow observes as it walks a proc.
 ///
-/// **The anti-drift seam.** Every analysis built on this model runs through
-/// [`run_stack_dataflow`], so there is exactly ONE worklist, ONE [`transfer`] and
-/// ONE [`join`] — and therefore ONE bailout set. A consumer chooses what to
-/// CONCLUDE from a state; it never gets to decide whether the state is
-/// trustworthy. That is why the entry-value proof and the stack-balance checker
-/// cannot drift apart on `State::bailed`.
+/// **The anti-drift seam.** Both consumers of [`State`] — the entry-value proof
+/// and the stack-balance checker — run through [`run_stack_dataflow`], so there is
+/// exactly ONE worklist, ONE [`transfer`] and ONE [`join`], therefore ONE bailout
+/// set. A consumer chooses what to CONCLUDE from a state; it never gets to decide
+/// whether the state is trustworthy. That is why the two cannot drift apart on
+/// `State::bailed`. ([`find_dead_saves`] models the stack SEPARATELY, over its own
+/// `DsState`, with a strictly more conservative bailout set — safe for a
+/// code-cutting worklist, and outside this seam.)
 trait StackObserver {
     /// Control leaves the proc at instruction `idx` carrying state `st`.
     /// `is_return` distinguishes an [`Edge::Abandon`] (an `rts`/`rte`, or a
@@ -451,7 +456,7 @@ fn run_stack_dataflow<O: StackObserver>(
 }
 
 /// The entry-value proof's view of the shared walk: charge every IN-SCOPE exit
-/// against the checked registers ([`checkpoint`]), ignore merges.
+/// against the checked registers, ignore merges.
 struct PreserveObserver<'a> {
     check: &'a [Reg],
     scope: ReturnScope<'a>,
@@ -468,14 +473,7 @@ impl StackObserver for PreserveObserver<'_> {
         // one — a register already destroyed HERE is destroyed from the caller's
         // view whatever the target does.
         if self.scope.checks(idx, is_return) {
-            checkpoint(
-                st,
-                self.check,
-                &mut self.saw_exit,
-                &mut self.delta_ok,
-                &mut self.all_exits_preserve,
-                &mut self.bailed_reached_exit,
-            );
+            self.checkpoint(st);
         }
     }
 }
@@ -496,33 +494,27 @@ fn apply_callee_effect(st: &mut State, policy: &CallPolicy, callee: Option<&str>
     st.delta = [None; 16];
 }
 
-/// Charge one in-scope exit against every checked register: the linear-delta
-/// proof needs Δ==0 on an unbailed path, and the stack/entry-bit model needs the
-/// entry bit still set. Called from BOTH exit arms so a scoped tail-transfer
-/// checkpoint and a return checkpoint are judged by identical rules.
-fn checkpoint(
-    st: &State,
-    check: &[Reg],
-    saw_exit: &mut bool,
-    delta_ok: &mut BTreeMap<Reg, bool>,
-    all_exits_preserve: &mut BTreeMap<Reg, bool>,
-    bailed_reached_exit: &mut bool,
-) {
-    *saw_exit = true;
-    for r in check {
-        // The linear-delta proof holds here iff Δ==0 AND the path did NOT bail: a
-        // bail FREEZES the transfer, so `delta` after it is STALE — it cannot
-        // prove anything.
-        if st.bailed || st.delta[reg_idx(*r)] != Some(0) {
-            *delta_ok.get_mut(r).unwrap() = false;
+impl PreserveObserver<'_> {
+    /// Charge one in-scope exit against every checked register: the linear-delta
+    /// proof needs Δ==0 on an unbailed path, and the stack/entry-bit model needs
+    /// the entry bit still set.
+    fn checkpoint(&mut self, st: &State) {
+        self.saw_exit = true;
+        for r in self.check {
+            // The linear-delta proof holds here iff Δ==0 AND the path did NOT
+            // bail: a bail FREEZES the transfer, so `delta` after it is STALE —
+            // it cannot prove anything.
+            if st.bailed || st.delta[reg_idx(*r)] != Some(0) {
+                *self.delta_ok.get_mut(r).unwrap() = false;
+            }
         }
-    }
-    if st.bailed {
-        *bailed_reached_exit = true;
-    } else {
-        for r in check {
-            if !st.entry[reg_idx(*r)] {
-                *all_exits_preserve.get_mut(r).unwrap() = false;
+        if st.bailed {
+            self.bailed_reached_exit = true;
+        } else {
+            for r in self.check {
+                if !st.entry[reg_idx(*r)] {
+                    *self.all_exits_preserve.get_mut(r).unwrap() = false;
+                }
             }
         }
     }
@@ -785,7 +777,9 @@ fn apply_link(st: &mut State, ops: &[CodeOperand]) -> Option<String> {
         return Some("`link` with a non-immediate frame size".to_string());
     };
     if *disp > 0 {
-        return Some("`link` with a positive displacement raises sp into the caller frame".to_string());
+        return Some(
+            "`link` with a positive displacement raises sp into the caller frame".to_string(),
+        );
     }
     // The allocation must fit the slot's byte width to be tracked at all. This
     // rejects both a nonsense frame size and `i128::MIN`, whose negation does not
@@ -951,10 +945,22 @@ pub enum StackFindingKind {
     /// an sp that depends on which branch was taken.
     MergeMismatch {
         /// The delta the already-recorded path arrives with.
-        a: i64,
+        existing: i64,
         /// The delta the joining path arrives with.
-        b: i64,
+        incoming: i64,
     },
+}
+
+impl StackFindingKind {
+    /// The finding's CLASS, the dedup key's second half: one report per
+    /// (site, class), so the fixpoint's repeated visits collapse while a site
+    /// that is genuinely both an imbalance and a mismatch reports both.
+    fn class(&self) -> u8 {
+        match self {
+            StackFindingKind::Unbalanced { .. } => 0,
+            StackFindingKind::MergeMismatch { .. } => 1,
+        }
+    }
 }
 
 /// One stack-discipline finding at `span` — the return, or the merge point.
@@ -993,7 +999,7 @@ pub struct StackFinding {
 /// vary with the oracle.
 pub fn check_stack_balance(items: &[CodeItem]) -> Vec<StackFinding> {
     let cfg = Cfg::build(items);
-    let Some(entry_idx) = items.iter().position(|it| matches!(it, CodeItem::Instr { .. })) else {
+    let Some(entry_idx) = entry_instr_idx(items) else {
         return Vec::new(); // no instructions: nothing to balance
     };
     let mut obs = BalanceObserver { items, found: BTreeMap::new() };
@@ -1018,9 +1024,9 @@ impl BalanceObserver<'_> {
         }
     }
 
-    fn record(&mut self, idx: usize, key: u8, kind: StackFindingKind) {
+    fn record(&mut self, idx: usize, kind: StackFindingKind) {
         if let Some(span) = self.span_of(idx) {
-            self.found.entry((span.start, key)).or_insert(StackFinding { kind, span });
+            self.found.entry((span.start, kind.class())).or_insert(StackFinding { kind, span });
         }
     }
 }
@@ -1032,7 +1038,7 @@ impl StackObserver for BalanceObserver<'_> {
         }
         let delta = -st.depth_bytes();
         if delta != 0 {
-            self.record(idx, 0, StackFindingKind::Unbalanced { delta });
+            self.record(idx, StackFindingKind::Unbalanced { delta });
         }
     }
 
@@ -1042,7 +1048,7 @@ impl StackObserver for BalanceObserver<'_> {
         }
         let (a, b) = (-existing.depth_bytes(), -incoming.depth_bytes());
         if a != b {
-            self.record(succ, 1, StackFindingKind::MergeMismatch { a, b });
+            self.record(succ, StackFindingKind::MergeMismatch { existing: a, incoming: b });
         }
     }
 }
@@ -1111,10 +1117,7 @@ pub fn find_dead_saves(
     effective: &BTreeMap<String, RegEffect>,
 ) -> Vec<DeadSave> {
     let cfg = Cfg::build(items);
-    let Some(entry_idx) = items
-        .iter()
-        .position(|it| matches!(it, CodeItem::Instr { .. }))
-    else {
+    let Some(entry_idx) = entry_instr_idx(items) else {
         return Vec::new();
     };
 
@@ -1355,8 +1358,10 @@ mod frame_tests {
         }
     }
 
-    fn link(idx: u32, fp: Reg, frame: i128) -> CodeItem {
-        instr(idx, "link", vec![CodeOperand::Reg(fp), CodeOperand::Imm(frame)])
+    /// `link fp, #disp` — `disp` is the frame DISPLACEMENT, negative to allocate,
+    /// the ISA's own sign convention.
+    fn link(idx: u32, fp: Reg, disp: i128) -> CodeItem {
+        instr(idx, "link", vec![CodeOperand::Reg(fp), CodeOperand::Imm(disp)])
     }
 
     fn unlk(idx: u32, fp: Reg) -> CodeItem {
@@ -1372,7 +1377,7 @@ mod frame_tests {
     #[test]
     fn a_paired_frame_is_balanced() {
         let items = [link(0, Reg::A6, -8), unlk(1, Reg::A6), rts(2)];
-        assert_eq!(check_stack_balance(&items), Vec::new());
+        assert_eq!(check_stack_balance(&items), Vec::new(), "a closed frame nets zero");
     }
 
     /// The pairing rule's PROVABLE direction: a `link` whose frame is still on the
@@ -1391,7 +1396,11 @@ mod frame_tests {
     #[test]
     fn an_unlk_with_no_link_bails_rather_than_guessing() {
         let items = [unlk(0, Reg::A6), rts(1)];
-        assert_eq!(check_stack_balance(&items), Vec::new());
+        assert_eq!(
+            check_stack_balance(&items),
+            Vec::new(),
+            "an unmatched unlk leaves sp unmodeled — reporting a delta would be a guess"
+        );
     }
 
     /// Likewise an `unlk` naming a register no open `link` opened — the frame
@@ -1399,7 +1408,11 @@ mod frame_tests {
     #[test]
     fn an_unlk_of_the_wrong_register_bails() {
         let items = [link(0, Reg::A6, -8), unlk(1, Reg::A5), rts(2)];
-        assert_eq!(check_stack_balance(&items), Vec::new());
+        assert_eq!(
+            check_stack_balance(&items),
+            Vec::new(),
+            "a disagreeing frame chain leaves sp unmodeled"
+        );
     }
 
     /// The frame arm serves the ENTRY-VALUE proof too, which is the point of
@@ -1421,13 +1434,19 @@ mod frame_tests {
         assert_eq!(got[&Reg::A6], PreserveStatus::NotPreserved);
     }
 
-    /// A zero-size frame (`link aN, #0` — a frame pointer with no locals) still
-    /// pushes the saved fp, so it is balanced only when closed.
+    /// A closed zero-size frame (`link aN, #0` — a frame pointer with no locals)
+    /// is balanced.
     #[test]
-    fn a_zero_size_frame_still_carries_its_saved_pointer() {
-        assert_eq!(check_stack_balance(&[link(0, Reg::A6, 0), unlk(1, Reg::A6), rts(2)]), Vec::new());
+    fn a_closed_zero_size_frame_is_balanced() {
+        let items = [link(0, Reg::A6, 0), unlk(1, Reg::A6), rts(2)];
+        assert_eq!(check_stack_balance(&items), Vec::new(), "a closed frame nets zero");
+    }
+
+    /// An unclosed zero-size frame still leaves its saved frame pointer behind.
+    #[test]
+    fn an_unclosed_zero_size_frame_still_carries_its_saved_pointer() {
         let found = check_stack_balance(&[link(0, Reg::A6, 0), rts(1)]);
-        assert_eq!(found.len(), 1);
+        assert_eq!(found.len(), 1, "expected one finding, got {found:?}");
         assert_eq!(found[0].kind, StackFindingKind::Unbalanced { delta: -4 });
     }
 
@@ -1436,7 +1455,11 @@ mod frame_tests {
     #[test]
     fn a_positive_link_displacement_bails() {
         let items = [link(0, Reg::A6, 8), rts(1)];
-        assert_eq!(check_stack_balance(&items), Vec::new());
+        assert_eq!(
+            check_stack_balance(&items),
+            Vec::new(),
+            "a positive displacement is not the allocate idiom, so it is not modeled"
+        );
     }
 
     /// A frame size the slot's byte width cannot hold is untracked, so it bails

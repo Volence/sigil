@@ -44,12 +44,26 @@ fn with_id<'a>(diags: &'a [Diagnostic], id: &str) -> Vec<&'a Diagnostic> {
     diags.iter().filter(|d| d.message.contains(&tag)).collect()
 }
 
-/// A body whose only defect is one unpopped long — the shape every probe below
-/// builds on.
+/// A body whose only defect is one unpopped long — the shape every unbalanced
+/// probe below builds on.
 const IMBALANCED: &str = "    move.l d0, -(sp)\n    rts\n";
 
+/// A body whose two paths rejoin at different sp offsets: the `beq` edge skips a
+/// push the fall-through takes, so `.skip` is reached at depth 0 and depth 4.
+const MERGE_MISMATCH: &str = "    tst.w d0\n\
+                              \x20   beq.s .skip\n\
+                              \x20   move.l d0, -(sp)\n\
+                              .skip:\n\
+                              \x20   rts\n";
+
+/// `body` wrapped in a module with one proc, under the module-level `attrs` lines
+/// (empty for the default tier).
+fn proc_src_with(attrs: &str, body: &str) -> String {
+    format!("module m\n{attrs}proc f() {{\n{body}}}\n")
+}
+
 fn proc_src(body: &str) -> String {
-    format!("module m\nproc f() {{\n{body}}}\n")
+    proc_src_with("", body)
 }
 
 // ===========================================================================
@@ -74,16 +88,10 @@ fn push_without_pop_is_unbalanced() {
 /// offsets where they rejoin.
 #[test]
 fn one_sided_push_is_a_merge_mismatch() {
-    let diags = lower(&proc_src(
-        "    tst.w d0\n\
-         \x20   beq.s .skip\n\
-         \x20   move.l d0, -(sp)\n\
-         .skip:\n\
-         \x20   rts\n",
-    ));
+    let diags = lower(&proc_src(MERGE_MISMATCH));
     let firings = with_id(&diags, "stack.merge-mismatch");
     assert_eq!(firings.len(), 1, "expected exactly one firing, got: {diags:?}");
-    assert_eq!(firings[0].level, Level::Error);
+    assert_eq!(firings[0].level, Level::Error, "the tier is error by default (U-spec §6)");
 }
 
 /// A loop body that pushes without popping arrives at its own head with a deeper
@@ -244,7 +252,7 @@ fn a_pop_underflow_silences_the_checker() {
 /// failing its build.
 #[test]
 fn as_compat_softens_the_finding_to_a_warning() {
-    let diags = lower(&format!("module m\n@as_compat\nproc f() {{\n{IMBALANCED}}}\n"));
+    let diags = lower(&proc_src_with("@as_compat\n", IMBALANCED));
     let firings = with_id(&diags, "stack.unbalanced");
     assert_eq!(firings.len(), 1, "the finding is still reported: {diags:?}");
     assert_eq!(
@@ -259,25 +267,21 @@ fn as_compat_softens_the_finding_to_a_warning() {
 /// whole `[stack.*]` family, so a port cannot be half-softened.
 #[test]
 fn as_compat_softens_the_merge_mismatch_too() {
-    let diags = lower(&format!(
-        "module m\n@as_compat\nproc f() {{\n\
-         \x20   tst.w d0\n\
-         \x20   beq.s .skip\n\
-         \x20   move.l d0, -(sp)\n\
-         .skip:\n\
-         \x20   rts\n}}\n"
-    ));
+    let diags = lower(&proc_src_with("@as_compat\n", MERGE_MISMATCH));
     let firings = with_id(&diags, "stack.merge-mismatch");
     assert_eq!(firings.len(), 1, "expected the merge finding: {diags:?}");
-    assert_eq!(firings[0].level, Level::Warning);
+    assert_eq!(
+        firings[0].level,
+        Level::Warning,
+        "one attribute governs the whole family: {}",
+        firings[0].message
+    );
 }
 
 /// U-spec §6 gives `[stack.*]` an `@allow` escape, for the module that means it.
 #[test]
 fn allow_suppresses_the_finding() {
-    let diags = lower(&format!(
-        "module m\n@allow(\"stack.unbalanced\")\nproc f() {{\n{IMBALANCED}}}\n"
-    ));
+    let diags = lower(&proc_src_with("@allow(\"stack.unbalanced\")\n", IMBALANCED));
     assert!(with_id(&diags, "stack.unbalanced").is_empty(), "@allow opts out: {diags:?}");
 }
 
@@ -285,14 +289,7 @@ fn allow_suppresses_the_finding() {
 /// merge arm reporting.
 #[test]
 fn allow_is_keyed_per_lint_id() {
-    let diags = lower(&format!(
-        "module m\n@allow(\"stack.unbalanced\")\nproc f() {{\n\
-         \x20   tst.w d0\n\
-         \x20   beq.s .skip\n\
-         \x20   move.l d0, -(sp)\n\
-         .skip:\n\
-         \x20   rts\n}}\n"
-    ));
+    let diags = lower(&proc_src_with("@allow(\"stack.unbalanced\")\n", MERGE_MISMATCH));
     assert!(
         !with_id(&diags, "stack.merge-mismatch").is_empty(),
         "the merge arm keeps its own id: {diags:?}"

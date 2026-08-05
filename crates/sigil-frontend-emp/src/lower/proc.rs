@@ -6,7 +6,10 @@
 //! streamed by [`lower_code_buf`](super::lower_code_buf) (reusing T3's backend
 //! dispatch). No instruction lowering is re-implemented here (D-P4.1).
 //!
-//! T4 also runs three §5.1 proc-contract checks over the resolved body:
+//! T4 also runs the §5.1 proc-contract checks over the resolved body — the three
+//! below plus the contract-grammar v2 additions ([`check_preserves`],
+//! [`check_out`], the context brackets, the survives claims, and stack balance),
+//! numbered in [`lower_proc`] in the order they run:
 //!
 //! - **Declared fallthrough** (`falls_into next`): `next` must be the item
 //!   IMMEDIATELY following this proc in the section (declaration order) — any
@@ -216,7 +219,7 @@ pub(super) fn lower_proc(
     // are the 68k pair (`z80_preserves` is the Z80 sibling and has no stack-delta
     // arm yet).
     if ctx.cpu != Cpu::Z80 {
-        report_stack_balance(file, proc, &buf, ctx.as_compat, diags);
+        check_stack_balance(file, &proc.name, &buf, ctx.as_compat, diags);
     }
 }
 
@@ -232,16 +235,24 @@ pub(super) fn lower_proc(
 /// ([`crate::preserves::check_stack_balance`]): wherever the stack model bails,
 /// nothing fires, so an ERROR here always names a delta the analysis followed
 /// exactly.
-fn report_stack_balance(
+fn check_stack_balance(
     file: &ast::File,
-    proc: &ast::ProcDecl,
+    name: &str,
     buf: &crate::value::CodeBuf,
     as_compat: bool,
     diags: &mut Vec<Diagnostic>,
 ) {
     use crate::preserves::StackFindingKind as K;
     let level = if as_compat { Level::Warning } else { Level::Error };
+    let allow_unbalanced = super::allows_lint(file, "stack.unbalanced");
+    let allow_mismatch = super::allows_lint(file, "stack.merge-mismatch");
     for f in crate::preserves::check_stack_balance(&buf.items) {
+        if match f.kind {
+            K::Unbalanced { .. } => allow_unbalanced,
+            K::MergeMismatch { .. } => allow_mismatch,
+        } {
+            continue;
+        }
         let (id, what) = match f.kind {
             K::Unbalanced { delta } => (
                 "stack.unbalanced",
@@ -252,19 +263,16 @@ fn report_stack_balance(
                     if delta < 0 { "below" } else { "above" }
                 ),
             ),
-            K::MergeMismatch { a, b } => (
+            K::MergeMismatch { existing, incoming } => (
                 "stack.merge-mismatch",
                 format!(
-                    "paths reach this point with sp at different offsets ({a} and {b} bytes from \
-                     entry) — the code past the merge runs at an sp that depends on the branch \
-                     taken"
+                    "paths reach this point with sp at different offsets ({existing} and \
+                     {incoming} bytes from entry) — the code past the merge runs at an sp that \
+                     depends on the branch taken"
                 ),
             ),
         };
-        if super::allows_lint(file, id) {
-            continue;
-        }
-        push(diags, level, f.span, format!("[{id}] in `{}`: {what}", proc.name));
+        push(diags, level, f.span, format!("[{id}] in `{name}`: {what}"));
     }
 }
 
