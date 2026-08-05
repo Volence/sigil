@@ -297,16 +297,11 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // test_player + test_enemy fully flipped (conv-d #48/#47): both .asm deleted.
         // test_player.emp owns TPlayerV; test_animated.emp owns DplcV; STUB_FLOOR_Y
         // is object_test_state.emp's; ENEMY_PATROL_SPEED is test_objects.emp's.
-        m!("games.sonic4.test_player", "test_player", pins::TEST_PLAYER),
-        m!("games.sonic4.test_enemy", "test_enemy", pins::TEST_ENEMY),
+        // objtest-gate (2026-08-05): the eight scene-only test objects moved to
+        // the DEBUG-only block below. test_static + test_solid STAY — the shipped
+        // OJZ entity data places both (Sec0/1/2), so they are live PLAIN content.
         m!("games.sonic4.test_static", "test_static", pins::TEST_STATIC),
-        m!("games.sonic4.test_animated", "test_animated", pins::TEST_ANIMATED),
         m!("games.sonic4.test_solid", "test_solid", pins::TEST_SOLID),
-        m!("games.sonic4.test_particle", "test_particle", pins::TEST_PARTICLE),
-        m!("games.sonic4.test_emitter", "test_emitter", pins::TEST_EMITTER),
-        m!("games.sonic4.test_parent", "test_parent", pins::TEST_PARENT),
-        m!("games.sonic4.test_stress_emitter", "test_stress_emitter", pins::TEST_STRESS_EMITTER),
-        m!("games.sonic4.test_churn", "test_churn", pins::TEST_CHURN),
         m!("games.sonic4.path_swap", "path_swap", pins::PATH_SWAP),
         // ── Game data ──
         // OBJDEFS: `module … .test_objects` has NO `in <section>`, so its
@@ -322,7 +317,7 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // `offsets` construct in games.sonic4.data.mappings.test_mappings.
         m!("games.sonic4.test_mappings", "test_mappings", pins::TEST_MAPPINGS),
         m!("games.sonic4.sonic_anims", "sonic_anims", pins::SONIC_ANIMS),
-        m!("games.sonic4.particle_anims", "particle_anims", pins::PARTICLE_ANIMS),
+        // particle_anims: DEBUG-only below (sole consumer test_particle is).
         // Parcel K3 run A: the OJZ act1 interior island HEAD — the contiguous run
         // BEFORE the descriptor. Two native `.emp` sections (both generator-emitted):
         //   entity_data  — the 9-section type tables / object placements / ring lists
@@ -370,7 +365,8 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // head, hard org, never repacks). Sound-ON only.
         m!("games.sonic4.soundbankhead", "soundbankhead", pins::SOUNDBANKHEAD),
         // ── Game test states ──
-        m!("games.sonic4.object_test_state", "object_test_state", pins::OBJECT_TEST_STATE),
+        // object_test_state: DEBUG-only below (owner ruling 2026-08-05 — a
+        // harness you drive is equipment, and equipment does not ship).
         m!("games.sonic4.ojz_scroll_test", "ojz_scroll_test", pins::OJZ_SCROLL_TEST),
     ];
     if debug {
@@ -379,6 +375,23 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
             "compression_selftest",
             pins::COMPRESSION_SELFTEST
         ));
+        // objtest-gate (owner ruling 2026-08-05): the object-test scene and its
+        // eight scene-only objects are DEBUG equipment (same idiom as
+        // COMPRESSION_SELFTEST — no in-file gate, registry-only inclusion; each
+        // module still emits its procs unconditionally, plain simply never links
+        // them). TestStatic/TestSolid/Map_TestObj/objdefs(Static,Solid)/TestArt
+        // remain unconditional above: shipped OJZ entity data and the release
+        // debug-fly marker consume them.
+        specs.push(m!("games.sonic4.test_player", "test_player", pins::TEST_PLAYER));
+        specs.push(m!("games.sonic4.test_enemy", "test_enemy", pins::TEST_ENEMY));
+        specs.push(m!("games.sonic4.test_animated", "test_animated", pins::TEST_ANIMATED));
+        specs.push(m!("games.sonic4.test_particle", "test_particle", pins::TEST_PARTICLE));
+        specs.push(m!("games.sonic4.test_emitter", "test_emitter", pins::TEST_EMITTER));
+        specs.push(m!("games.sonic4.test_parent", "test_parent", pins::TEST_PARENT));
+        specs.push(m!("games.sonic4.test_stress_emitter", "test_stress_emitter", pins::TEST_STRESS_EMITTER));
+        specs.push(m!("games.sonic4.test_churn", "test_churn", pins::TEST_CHURN));
+        specs.push(m!("games.sonic4.particle_anims", "particle_anims", pins::PARTICLE_ANIMS));
+        specs.push(m!("games.sonic4.object_test_state", "object_test_state", pins::OBJECT_TEST_STATE));
     }
     if debug || crash_report {
         // The error_handler island (the 12 per-class CPU exception stubs + the

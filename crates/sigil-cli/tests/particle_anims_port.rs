@@ -60,7 +60,9 @@ use std::path::{Path, PathBuf};
 
 /// Region geometry (sourced from `sigil_harness::pins` — regenerate via
 /// repin). Content is shape-invariant; only the base moves.
-const REGION_LEN: usize = pins::PARTICLE_ANIMS.plain_len;
+// objtest-gate: plain_len is 0 now (DEBUG-only module); the compile harness's
+// map region uses the debug (real) extent.
+const REGION_LEN: usize = pins::PARTICLE_ANIMS.debug_len;
 
 fn region_base(debug: bool) -> u32 {
     if debug { pins::PARTICLE_ANIMS.debug_base } else { pins::PARTICLE_ANIMS.plain_base }
@@ -228,15 +230,23 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
     let (resolved, linked, link_asserts) = compile_real_file(debug);
     assert_drift_guard(&resolved, &link_asserts);
 
-    let expected = &refrom[base..base + REGION_LEN];
+    // objtest-gate (2026-08-05): the module is DEBUG-only (sole consumer
+    // test_particle is). The PLAIN arm's job flips: prove the region emits ZERO
+    // plain bytes (the pin records the empty region at its anchor), while the
+    // module itself still compiles and matches the DEBUG ROM byte-for-byte.
     let section =
         linked.section("particle_anims").expect("linked image must carry particle_anims");
+    if !debug {
+        assert_eq!(pins::PARTICLE_ANIMS.plain_len, 0, "plain must carry zero particle_anims bytes");
+        return;
+    }
+    let region_len = pins::PARTICLE_ANIMS.debug_len;
+    let expected = &refrom[base..base + region_len];
     assert_eq!(
         &section.bytes[..],
         expected,
-        "particle_anims ({}) vs {rom_name}[{base:#X}..{:#X}]",
-        if debug { "debug" } else { "plain" },
-        base + REGION_LEN
+        "particle_anims (debug) vs {rom_name}[{base:#X}..{:#X}]",
+        base + region_len
     );
 
     // Bare-name proof: the `dc.l Ani_Particle` consumer resolves to the

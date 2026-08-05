@@ -22,13 +22,15 @@ use sigil_harness::pins;
 use sigil_ir::{SectionPlacement, SymbolTable};
 use std::path::Path;
 
-const REGION_LEN: usize = pins::PARALLAX_CONFIGS.plain_len;
+// Per-shape span (objtest-gate: the PLAIN successor changed, so the plain span
+// carries 2 more align-pad bytes than debug).
 
 fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
 fn gate(debug: bool, rom_name: &str, base: usize) {
+    let region_len: usize = if debug { pins::PARALLAX_CONFIGS.debug_len } else { pins::PARALLAX_CONFIGS.plain_len };
     let aeon_dir =
         std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
     let aeon = Path::new(&aeon_dir);
@@ -63,14 +65,22 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
     let section =
         linked.section("parallax_configs").expect("linked image carries parallax_configs");
 
-    let expected = &refrom[base..base + REGION_LEN];
-    assert_eq!(section.bytes.len(), REGION_LEN, "parallax block must emit {REGION_LEN:#x} bytes");
-    if let Some(i) = (0..REGION_LEN).find(|&i| section.bytes[i] != expected[i]) {
+    let expected = &refrom[base..base + region_len];
+    // The pin span runs to the next section's aligned base; the emitted image may
+    // stop a short all-zero align pad earlier (objtest-gate: the plain successor
+    // changed and left 2 pad bytes). Same tolerance as the region gates.
+    let emitted = section.bytes.len();
+    assert!(
+        emitted <= region_len && region_len - emitted < 16
+            && expected[emitted..].iter().all(|&b| b == 0),
+        "parallax block emitted {emitted:#x} bytes vs pin span {region_len:#x} — beyond align-pad tolerance"
+    );
+    if let Some(i) = (0..emitted).find(|&i| section.bytes[i] != expected[i]) {
         panic!(
             "parallax_configs ({}) first diff at region offset {i:#x}: got {:02x?}, expected {:02x?}",
             if debug { "debug" } else { "plain" },
-            &section.bytes[i.saturating_sub(4)..(i + 8).min(REGION_LEN)],
-            &expected[i.saturating_sub(4)..(i + 8).min(REGION_LEN)]
+            &section.bytes[i.saturating_sub(4)..(i + 8).min(region_len)],
+            &expected[i.saturating_sub(4)..(i + 8).min(region_len)]
         );
     }
 }

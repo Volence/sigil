@@ -2172,3 +2172,57 @@ full_crc = "b0befdd6"
 full_size = 423428
 anchor_crc = "5f0be608"
 anchor_end = 0x5f724
+
+[[entry]]
+name = "objtest-gate"
+ab = "docs/superpowers/notes/2026-08-05-objtest-gate-ab.md"
+note = "object-test scene DEBUG-only: plain -2248 B, ownership moves, replay net PASS"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "be8a7425"
+full_size = 423871
+anchor_crc = "cb7b2ecc"
+anchor_end = 0x5f758
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "0c62ab5a"
+full_size = 301138
+anchor_crc = "674488e0"
+anchor_end = 0x42d96
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "f63b6603"
+full_size = 91258
+anchor_crc = "a1dfd7fb"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "09754767"
+full_size = 93955
+anchor_crc = "12cc51de"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "b6e22f6e"
+full_size = 379110
+anchor_crc = "072fd0fa"
+anchor_end = 0x5c8e6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "84a1eb30"
+full_size = 411096
+anchor_crc = "6bd8ddce"
+anchor_end = 0x5d968
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "f44eaaf7"
+full_size = 423480
+anchor_crc = "65bf29dd"
+anchor_end = 0x5f758

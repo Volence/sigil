@@ -306,6 +306,13 @@ fn ref_window(rom_name: &str, base: usize, len: usize) -> Option<Vec<u8>> {
 
 /// The region's reference gate + the drift guards.
 fn reference_gate(shape: &Shape, rom_name: &str) {
+    // objtest-gate (2026-08-05): test_parent is DEBUG-only — the plain arm proves
+    // the region carries ZERO plain bytes and that the module still compiles (at
+    // the DEBUG base; the plain pin is the collapsed plain_anchor).
+    if shape.parent_len == 0 {
+        let _ = compile_real_file(&DEBUG);
+        return;
+    }
     let Some(parent_ref) = ref_window(rom_name, shape.parent_base as usize, shape.parent_len)
     else {
         return;
@@ -347,8 +354,9 @@ fn g3_objects_debug_regions_match_reference() {
 /// this ever fails, the negative probe below proves nothing.
 #[test]
 fn g3_undoctored_compile_equals_the_reference_window() {
-    let shape = &PLAIN;
-    let Some(parent_ref) = ref_window("s4.bin", shape.parent_base as usize, shape.parent_len)
+    // objtest-gate: DEBUG-only module — the probe pair runs on the debug shape.
+    let shape = &DEBUG;
+    let Some(parent_ref) = ref_window("s4.debug.bin", shape.parent_base as usize, shape.parent_len)
     else {
         return;
     };
@@ -372,8 +380,8 @@ fn g3_undoctored_compile_equals_the_reference_window() {
 /// actually fail). Pins-derived (a re-pin cannot re-stale it).
 #[test]
 fn g3_doctored_reference_diverges() {
-    let shape = &PLAIN;
-    let Some(mut parent_ref) = ref_window("s4.bin", shape.parent_base as usize, shape.parent_len)
+    let shape = &DEBUG;
+    let Some(mut parent_ref) = ref_window("s4.debug.bin", shape.parent_base as usize, shape.parent_len)
     else {
         return;
     };

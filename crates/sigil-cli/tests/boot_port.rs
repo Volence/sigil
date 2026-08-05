@@ -91,7 +91,7 @@ fn golden(name: &str) -> Option<Vec<u8>> {
 /// `golden/s4.debug.bin`), matching the asl-canonical `s4.lst`/`s4.debug.lst`
 /// at the freeze commit:
 ///   Z80_SOUND_SIZE  plain $181C   debug $189A   (the resident Z80 driver span)
-///   GameState_OJZScroll_Init  plain $5C7EC debug $5E2DA  (the Game.entry link target)
+///   GameState_OJZScroll_Init  plain $5C230 debug $5E00E  (the Game.entry link target; objtest-gate values)
 ///
 /// L1 P2: `#Game.ENTRY_ID` is now a comptime const (3), folded from the game
 /// contract env — no link symbol; and `#Game.entry`'s link target is
@@ -100,8 +100,8 @@ fn frozen_symbol(debug: bool, name: &str) -> u64 {
     match (name, debug) {
         ("Z80_SOUND_SIZE", false) => 0x172E,
         ("Z80_SOUND_SIZE", true) => 0x17AC,
-        ("GameState_OJZScroll_Init", false) => 0x5C7EC,
-        ("GameState_OJZScroll_Init", true) => 0x5E2DA,
+        ("GameState_OJZScroll_Init", false) => 0x5C230,  // objtest-gate: the DEBUG-only scene left the plain tail
+        ("GameState_OJZScroll_Init", true) => 0x5E00E,   // objtest-gate: ownership moves shifted the debug tail
         _ => panic!("no frozen value pinned for symbol `{name}` (debug={debug})"),
     }
 }

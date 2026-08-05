@@ -123,6 +123,21 @@ const DEBUG: Shape = Shape {
     swap_len: pins::PATH_SWAP.debug_len,
 };
 
+// objtest-gate (2026-08-05): the PLAIN compile shape. test_player/test_enemy are
+// DEBUG-only — their plain pins collapse onto the plain_anchor (overlapping) — so
+// the plain-arm COMPILE pins them at harness-private scratch bases while every
+// carrier + path_swap keeps its true plain address. Only path_swap's bytes are
+// compared against s4.bin; the gated pair just has to keep compiling.
+const PLAIN_COMPILE: Shape = Shape {
+    // Scratch bases INSIDE the 64KB object bank window (objroutine link words are
+    // `X - ObjCodeBase` and must fit 16 bits) but past all real plain content.
+    player_base: 0x1E000,
+    player_len: pins::TEST_PLAYER.debug_len,
+    enemy_base: 0x1F800,
+    enemy_len: pins::TEST_ENEMY.debug_len,
+    ..PLAIN
+};
+
 fn parse_file(path: &std::path::Path) -> sigil_frontend_emp::ast::File {
     let src = std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
@@ -386,14 +401,25 @@ fn ref_window(rom_name: &str, base: usize, len: usize) -> Option<Vec<u8>> {
 }
 
 fn reference_gate(shape: &Shape, rom_name: &str) {
-    let Some(player_ref) = ref_window(rom_name, shape.player_base as usize, shape.player_len)
-    else {
+    // objtest-gate: in PLAIN, test_player/test_enemy carry zero bytes — compile
+    // via the hybrid shape and byte-gate ONLY path_swap (which still ships).
+    let plain_gated = !shape.debug;
+    let compile_shape = if plain_gated { &PLAIN_COMPILE } else { shape };
+    let (player_ref, enemy_ref) = if plain_gated {
+        assert_eq!(pins::TEST_PLAYER.plain_len, 0, "test_player must be plain-empty");
+        assert_eq!(pins::TEST_ENEMY.plain_len, 0, "test_enemy must be plain-empty");
+        (Vec::new(), Vec::new())
+    } else {
+        let Some(p) = ref_window(rom_name, shape.player_base as usize, shape.player_len) else {
+            return;
+        };
+        (p, ref_window(rom_name, shape.enemy_base as usize, shape.enemy_len).unwrap())
+    };
+    let Some(swap_ref) = ref_window(rom_name, shape.swap_base as usize, shape.swap_len) else {
         return;
     };
-    let enemy_ref = ref_window(rom_name, shape.enemy_base as usize, shape.enemy_len).unwrap();
-    let swap_ref = ref_window(rom_name, shape.swap_base as usize, shape.swap_len).unwrap();
 
-    let c = compile_real_files(shape);
+    let c = compile_real_files(compile_shape);
 
     // sst.emp's SST_* wall retired at the conv-a structs flip; the constants
     // twin's guards remain. test_player's own VRAM_TEST_SONIC and path_swap's own
@@ -409,10 +435,12 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         "the drift guards must all PASS: {diags:?}"
     );
 
-    let player_sec = c.linked.section("test_player").expect("linked test_player");
-    assert_region_matches(&player_sec.bytes, &player_ref, &format!("test_player vs {rom_name}"));
-    let enemy_sec = c.linked.section("test_enemy").expect("linked test_enemy");
-    assert_region_matches(&enemy_sec.bytes, &enemy_ref, &format!("test_enemy vs {rom_name}"));
+    if !plain_gated {
+        let player_sec = c.linked.section("test_player").expect("linked test_player");
+        assert_region_matches(&player_sec.bytes, &player_ref, &format!("test_player vs {rom_name}"));
+        let enemy_sec = c.linked.section("test_enemy").expect("linked test_enemy");
+        assert_region_matches(&enemy_sec.bytes, &enemy_ref, &format!("test_enemy vs {rom_name}"));
+    }
     let swap_sec = c.linked.section("path_swap").expect("linked path_swap");
     assert_region_matches(&swap_sec.bytes, &swap_ref, &format!("path_swap vs {rom_name}"));
 
@@ -427,7 +455,7 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     let enemy_word = u16::from_be_bytes([consumer.bytes[0], consumer.bytes[1]]);
     assert_eq!(
         enemy_word,
-        (shape.enemy_base - OBJ_CODE_BASE) as u16,
+        (compile_shape.enemy_base - OBJ_CODE_BASE) as u16,
         "objdef objroutine(TestEnemy_Init) must resolve to the bank offset"
     );
     let path_swap_addr = u32::from_be_bytes([
@@ -465,7 +493,7 @@ fn g4_undoctored_compile_equals_the_reference_window() {
     let Some(swap_ref) = ref_window("s4.bin", shape.swap_base as usize, shape.swap_len) else {
         return;
     };
-    let c = compile_real_files(shape);
+    let c = compile_real_files(&PLAIN_COMPILE);
     let swap_sec = c.linked.section("path_swap").expect("linked path_swap");
     // Same align-fill tolerance as the reference gate (defect-batch-8: the parcel's
     // shift left 2 pad bytes inside the pin span, which a raw assert_eq! read as a
@@ -482,7 +510,7 @@ fn g4_doctored_reference_diverges() {
     let Some(mut swap_ref) = ref_window("s4.bin", shape.swap_base as usize, shape.swap_len) else {
         return;
     };
-    let c = compile_real_files(shape);
+    let c = compile_real_files(&PLAIN_COMPILE);
     let swap_sec = c.linked.section("path_swap").expect("linked path_swap");
     swap_ref[0] ^= 0xFF;
     assert_ne!(swap_sec.bytes, swap_ref, "a doctored reference must diverge from the compiled bytes");

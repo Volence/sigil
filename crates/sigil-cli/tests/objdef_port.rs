@@ -307,8 +307,8 @@ struct ObjShape {
     // while the two banks happened to coincide (they diverged at t24).
     test_static_main: u32,
     test_solid_init: u32,
-    test_enemy_init: u32,
-    test_parent: u32,
+    // objtest-gate (2026-08-05): ObjDef_Enemy/ObjDef_Parent moved to the
+    // DEBUG-only object_test_state module — no enemy/parent carriers here.
     rom: &'static str,
 }
 
@@ -382,7 +382,9 @@ fn objdef_reference_gate(shape: &ObjShape) {
     // UNDEFINED in-unit — it must resolve to the .emp's `pub data` export.
     let obj_code_base = format!("${:X}", pins::OBJ_CODE_BASE.plain);
     let mut synth = sigil_harness::test_support::assemble_equ_pairs(&[("ObjCodeBase", obj_code_base.as_str())]);
-    let outbound_asm = "cpu 68000\nObjDefConsumer:\n\tdc.l ObjDef_Enemy\n";
+    // objtest-gate: the outbound seam consumer follows the surviving records —
+    // ObjDef_Solid is the second (and last) record in the shipped module.
+    let outbound_asm = "cpu 68000\nObjDefConsumer:\n\tdc.l ObjDef_Solid\n";
     let mut outbound = assemble(outbound_asm, &AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() })
         .unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}"))
         .sections;
@@ -391,8 +393,6 @@ fn objdef_reference_gate(shape: &ObjShape) {
         &mut synth,
         &mut as_label_at("TestStatic_Main", shape.test_static_main),
         &mut as_label_at("TestSolid_Init", shape.test_solid_init),
-        &mut as_label_at("TestEnemy_Init", shape.test_enemy_init),
-        &mut as_label_at("TestParent", shape.test_parent),
         &mut as_label_at("Map_TestObj", shape.map_test_obj),
         &mut outbound,
     ] {
@@ -418,18 +418,18 @@ fn objdef_reference_gate(shape: &ObjShape) {
     let expected = &refrom[shape.region_base as usize..shape.region_base as usize + shape.region_len];
     assert_region_matches(&data.bytes, expected, &format!("objdefs vs {}", shape.rom));
 
-    // Outbound seam: the AS `dc.l ObjDef_Enemy` must resolve to the .emp
-    // export's VMA = region base + 2 records (ObjDef_Enemy is the third).
+    // Outbound seam: the AS `dc.l ObjDef_Solid` must resolve to the .emp
+    // export's VMA = region base + 1 record (ObjDef_Solid is the second).
     let consumer = linked
         .sections
         .iter()
-        .find(|s| s.lma == 0x0160_0000)
+        .find(|s| s.lma == 0x0140_0000)  // synth + 3 carrier groups precede it (objtest-gate: was 5)
         .expect("linked image must carry the outbound consumer");
     let resolved_enemy = u32::from_be_bytes([consumer.bytes[0], consumer.bytes[1], consumer.bytes[2], consumer.bytes[3]]);
     assert_eq!(
         resolved_enemy,
-        shape.region_base + 2 * 26,
-        "AS-side `dc.l ObjDef_Enemy` must resolve to the .emp export ({}=+52)",
+        shape.region_base + 26,
+        "AS-side `dc.l ObjDef_Solid` must resolve to the .emp export ({}=+26)",
         shape.rom
     );
 }
@@ -471,8 +471,6 @@ fn objdefs_match_reference_plain() {
         map_test_obj: pins::MAP_TEST_OBJ.plain,
         test_static_main: pins::TEST_STATIC_MAIN.plain,
         test_solid_init: pins::TEST_SOLID_INIT.plain,
-        test_enemy_init: pins::TEST_ENEMY_INIT.plain,
-        test_parent: pins::TEST_PARENT_LABEL.plain,
         rom: "s4.bin",
     });
 }
@@ -486,8 +484,6 @@ fn objdefs_match_reference_debug() {
         map_test_obj: pins::MAP_TEST_OBJ.debug,
         test_static_main: pins::TEST_STATIC_MAIN.debug,
         test_solid_init: pins::TEST_SOLID_INIT.debug,
-        test_enemy_init: pins::TEST_ENEMY_INIT.debug,
-        test_parent: pins::TEST_PARENT_LABEL.debug,
         rom: "s4.debug.bin",
     });
 }

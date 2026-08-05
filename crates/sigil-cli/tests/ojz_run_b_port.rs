@@ -120,8 +120,13 @@ fn gate(debug: bool, rom_name: &str) {
 
     for (emp_rel, section, region) in SECTIONS {
         let base = if debug { region.debug_base } else { region.plain_base };
-        let len = region.plain_len; // shape-invariant
-        assert_eq!(region.debug_len, region.plain_len, "{section} len must be shape-invariant");
+        // Content is shape-invariant; the pin LEN may differ per shape by a short
+        // align pad only (objtest-gate: ojz_act_assets' PLAIN successor changed,
+        // so its plain span carries 4 more pad bytes than debug — the emitted
+        // bytes are identical and the pad tolerance below covers the tail).
+        let len = if debug { region.debug_len } else { region.plain_len };
+        let (lo, hi) = (region.plain_len.min(region.debug_len), region.plain_len.max(region.debug_len));
+        assert!(hi - lo < 16, "{section} len diverges by more than align pad: plain {:#x} debug {:#x}", region.plain_len, region.debug_len);
 
         let linked = compile_section(emp_rel, section, base, len);
         let sec = linked

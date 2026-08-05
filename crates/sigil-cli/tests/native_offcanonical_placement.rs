@@ -289,7 +289,10 @@ fn config_b_doctored_size_table_breaks_the_build() {
     // precondition assert makes that rot mode loud instead of a byte-dump: if it
     // fires, the layout shifted — pick a head label that abuts again.
     let mut inert_profile = native::config_b_profile();
-    let inert = "Ani_Particle";
+    // objtest-gate (2026-08-05): Ani_Particle left the table (particle_anims is
+    // DEBUG-only) — and with it gone, HeightMaps abuts Ani_Sonic_End again, so
+    // the original probe entry is valid once more, now precondition-guarded.
+    let inert = "HeightMaps";
     let inert_pred_end = "Ani_Sonic_End";
     if let native::SizeSource::Frozen(t) = &inert_profile.size_source {
         let head = *t.get(inert).unwrap_or_else(|| panic!("{inert} not in table"));
@@ -301,14 +304,27 @@ fn config_b_doctored_size_table_breaks_the_build() {
              contiguous probe entry"
         );
     }
+    // The doctoring delta must PRESERVE the entry's inferred alignment class:
+    // the packer derives a contiguous section's alignment as the largest power
+    // of two <= 16 dividing its table value, so a naive +2 on a 2-aligned value
+    // can UPGRADE it (0x...E+2 = 0x...0 -> align 16) and legitimately insert
+    // pad. delta = 2*align keeps the 2-adic valuation (align*odd + 2*align =
+    // align*odd'), so the only thing the doctoring can change is the base the
+    // packing must anyway ignore. (Found at objtest-gate: the re-abutted
+    // HeightMaps sits 2-aligned now, where the pre-defect-batch value was
+    // 16-aligned and +2 happened to DOWNGRADE — inert by accident.)
+    let mut delta = 0u32;
     if let native::SizeSource::Frozen(t) = &mut inert_profile.size_source {
-        *t.get_mut(inert).unwrap_or_else(|| panic!("{inert} not in table")) += 2;
+        let e = t.get_mut(inert).unwrap_or_else(|| panic!("{inert} not in table"));
+        let align = (1u32..=16).filter(|a| a.is_power_of_two() && *e % a == 0).max().unwrap();
+        delta = 2 * align;
+        *e += delta;
     }
     let repacked = native::build_rom_chained(&aeon, &inert_profile)
         .unwrap_or_else(|e| panic!("t24(b): contiguous doctoring must still build: {e}"));
     assert_eq!(
         repacked, base,
-        "t24(b): doctoring the contiguous `{inert}`+2 changed the ROM — packing is supposed \
-         to derive contiguous bases from live sizes, not the table"
+        "t24(b): doctoring the contiguous `{inert}`+{delta} changed the ROM — packing is \
+         supposed to derive contiguous bases from live sizes, not the table"
     );
 }

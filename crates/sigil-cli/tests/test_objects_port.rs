@@ -394,6 +394,12 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         let section = linked
             .section(name)
             .unwrap_or_else(|| panic!("linked image must carry {name}"));
+        // objtest-gate (2026-08-05): test_particle is DEBUG-only — its plain
+        // window is EMPTY (len 0); the module still compiles and the debug arm
+        // byte-gates it. test_solid ships in both shapes and gates in both.
+        if len == 0 {
+            continue;
+        }
         assert_region_matches(
             &section.bytes,
             &refrom[base..base + len],

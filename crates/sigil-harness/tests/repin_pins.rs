@@ -336,8 +336,15 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // owns B. +0xE at each of the two raw-button readers (the press latch in
     // player_common, the release-cap held check in player_air). BOTH totals stay
     // put — the object bank absorbs it, same as the cheat-flag parcel.
-    assert_eq!(pins::ASSEMBLED_LEN, 0x5DC30);
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F724); // +6 cheat-flag: the DEBUG-only arm write
+    // `objtest-gate` (2026-08-05): the object-test scene + eight scene-only
+    // objects + particle_anims left the PLAIN shape (registry if-debug; owner
+    // ruling — a harness you drive is equipment, and equipment does not ship).
+    // The object bank absorbs its own removals as fill, but the post-sound-bank
+    // tail loses object_test_state's span: ASSEMBLED_LEN −0x2C8 (re-quantised).
+    // DEBUG grows +0x34 net from the ownership moves (TestArt -> ojz_scroll_test,
+    // the enemy/parent objdefs -> object_test_state).
+    assert_eq!(pins::ASSEMBLED_LEN, 0x5D968);
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F758); // +6 cheat-flag arm write; +0x34 objtest-gate moves
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the

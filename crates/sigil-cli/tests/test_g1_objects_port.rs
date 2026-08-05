@@ -349,12 +349,19 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         &static_ref,
         &format!("test_static vs {rom_name}"),
     );
+    // objtest-gate (2026-08-05): test_animated is DEBUG-only — the plain arm
+    // proves the region is EMPTY instead of comparing bytes.
     let animated_sec = c.linked.section("test_animated").expect("linked test_animated");
-    assert_region_matches(
-        &animated_sec.bytes,
-        &animated_ref,
-        &format!("test_animated vs {rom_name}"),
-    );
+    if shape.animated_len == 0 {
+        assert!(animated_ref.is_empty(), "plain animated window must be empty");
+    } else {
+        assert_region_matches(
+            &animated_sec.bytes,
+            &animated_ref,
+            &format!("test_animated vs {rom_name}"),
+        );
+    }
+
 
     // Outbound proof: the AS-side objroutine words resolve to the bank offsets
     // of the `.emp`-owned pub labels (9th synthetic group).
@@ -396,9 +403,11 @@ fn g1_objects_debug_regions_match_reference() {
 /// this ever fails, the negative probe below proves nothing.
 #[test]
 fn g1_undoctored_compile_equals_the_reference_window() {
-    let shape = &PLAIN;
+    // objtest-gate: the plain animated window is empty now — the probe pair runs
+    // against the DEBUG shape, where the region still carries bytes.
+    let shape = &DEBUG;
     let Some(animated_ref) =
-        ref_window("s4.bin", shape.animated_base as usize, shape.animated_len)
+        ref_window("s4.debug.bin", shape.animated_base as usize, shape.animated_len)
     else {
         return;
     };
@@ -411,9 +420,9 @@ fn g1_undoctored_compile_equals_the_reference_window() {
 /// actually fail). Pins-derived (a re-pin cannot re-stale it).
 #[test]
 fn g1_doctored_reference_diverges() {
-    let shape = &PLAIN;
+    let shape = &DEBUG;
     let Some(mut animated_ref) =
-        ref_window("s4.bin", shape.animated_base as usize, shape.animated_len)
+        ref_window("s4.debug.bin", shape.animated_base as usize, shape.animated_len)
     else {
         return;
     };

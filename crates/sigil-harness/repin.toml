@@ -423,7 +423,9 @@ tests = ["sound_api_port"]
 [[region]]
 name = "test_solid"
 start = "TestSolid_Init"
-end = "TestParticle"
+end = "ObjDef_PathSwap"
+# objtest-gate (2026-08-05): plain end = next surviving placement; debug keeps the old neighbour
+debug_end = "TestParticle"
 gate = "SIGIL_EMP_TEST_OBJECTS"
 tests = ["test_objects_port"]
 
@@ -431,6 +433,9 @@ tests = ["test_objects_port"]
 name = "test_particle"
 start = "TestParticle"
 end = "TestEmitter"
+# objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
+debug_only = true
+plain_anchor = "ObjDef_PathSwap"
 gate = "SIGIL_EMP_TEST_OBJECTS"
 tests = ["test_objects_port"]
 
@@ -439,7 +444,9 @@ tests = ["test_objects_port"]
 [[region]]
 name = "test_static"
 start = "TestStatic_Main"
-end = "TestAnimated"
+end = "TestSolid_Init"
+# objtest-gate (2026-08-05): plain end = next surviving placement; debug keeps the old neighbour
+debug_end = "TestAnimated"
 gate = "SIGIL_EMP_TEST_STATIC"
 tests = ["test_g1_objects_port"]
 
@@ -447,6 +454,9 @@ tests = ["test_g1_objects_port"]
 name = "test_animated"
 start = "TestAnimated"
 end = "TestPlayer"
+# objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
+debug_only = true
+plain_anchor = "TestSolid_Init"
 gate = "SIGIL_EMP_TEST_ANIMATED"
 tests = ["test_g1_objects_port"]
 
@@ -458,6 +468,9 @@ tests = ["test_g1_objects_port"]
 name = "test_emitter"
 start = "TestEmitter"
 end = "TestChildPart"
+# objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
+debug_only = true
+plain_anchor = "ObjDef_PathSwap"
 gate = "SIGIL_EMP_TEST_EMITTER"
 tests = ["test_g2_objects_port"]
 
@@ -465,6 +478,9 @@ tests = ["test_g2_objects_port"]
 name = "test_stress_emitter"
 start = "TestStressEmitter"
 end = "TestChurnObj"
+# objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
+debug_only = true
+plain_anchor = "ObjDef_PathSwap"
 gate = "SIGIL_EMP_TEST_STRESS_EMITTER"
 tests = ["test_g2_objects_port"]
 
@@ -472,6 +488,9 @@ tests = ["test_g2_objects_port"]
 name = "test_churn"
 start = "TestChurnObj"
 end = "ObjDef_PathSwap"
+# objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
+debug_only = true
+plain_anchor = "ObjDef_PathSwap"
 gate = "SIGIL_EMP_TEST_CHURN"
 tests = ["test_g2_objects_port"]
 
@@ -484,6 +503,9 @@ tests = ["test_g2_objects_port"]
 name = "test_parent"
 start = "TestChildPart"
 end = "TestStressEmitter"
+# objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
+debug_only = true
+plain_anchor = "ObjDef_PathSwap"
 gate = "SIGIL_EMP_TEST_PARENT"
 tests = ["test_g3_objects_port"]
 
@@ -497,6 +519,9 @@ tests = ["test_g3_objects_port"]
 name = "test_player"
 start = "TestPlayer"
 end = "TestEnemy_Init"
+# objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
+debug_only = true
+plain_anchor = "TestSolid_Init"
 gate = "SIGIL_EMP_TEST_PLAYER"
 tests = ["test_g4_final_objects_port"]
 
@@ -504,6 +529,9 @@ tests = ["test_g4_final_objects_port"]
 name = "test_enemy"
 start = "TestEnemy_Init"
 end = "TestSolid_Init"
+# objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
+debug_only = true
+plain_anchor = "TestSolid_Init"
 gate = "SIGIL_EMP_TEST_ENEMY"
 tests = ["test_g4_final_objects_port"]
 
@@ -548,6 +576,9 @@ tests = ["sonic_anims_port"]
 name = "particle_anims"
 start = "Ani_Particle"
 end = "Ani_Particle_End"
+# objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
+debug_only = true
+plain_anchor = "HeightMaps"
 gate = "SIGIL_EMP_PARTICLE_ANIMS"
 # test_objects_port pins Ani_Particle (= this region's base) as an anim table.
 tests = ["particle_anims_port", "test_objects_port"]
@@ -619,6 +650,9 @@ tests = ["objdef_port"]
 name = "object_test_state"
 start = "GameState_ObjectTest_Init"
 end = "GameState_OJZScroll_Init"
+# objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
+debug_only = true
+plain_anchor = "GameState_OJZScroll_Init"
 gate = "SIGIL_EMP_OBJECT_TEST_STATE"
 tests = ["test_t1_harness_states_port"]
 
@@ -757,10 +791,12 @@ tests = ["objdef_port"]
 
 [[symbol]]
 name = "TestEnemy_Init"
+debug_only = true  # objtest-gate: module is DEBUG-only
 tests = ["objdef_port"]
 
 [[symbol]]
 name = "TestParent"
+debug_only = true  # objtest-gate: module is DEBUG-only
 # const_name override: `test_parent` is a t31 region (-> TEST_PARENT), so this
 # LABEL pin takes the _LABEL suffix (the Plane_Buffer -> PLANE_BUFFER_BASE precedent).
 const_name = "TEST_PARENT_LABEL"

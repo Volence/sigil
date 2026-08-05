@@ -354,6 +354,17 @@ fn ref_window(rom_name: &str, base: usize, len: usize) -> Option<Vec<u8>> {
 
 /// All three regions' reference gate + the drift guards + the outbound proof.
 fn reference_gate(shape: &Shape, rom_name: &str) {
+    // objtest-gate (2026-08-05): all three G2 modules are DEBUG-only — the plain
+    // arm's job flips to proving their regions carry ZERO plain bytes (the
+    // modules still compile; the byte gates run on the debug arm).
+    if shape.emitter_len == 0 {
+        assert_eq!(shape.stress_len, 0, "gated trio must be all-empty in plain");
+        assert_eq!(shape.churn_len, 0, "gated trio must be all-empty in plain");
+        // The trio must still COMPILE standalone — at the DEBUG bases (the plain
+        // pins all collapse onto the plain_anchor and would overlap).
+        let _ = compile_real_files(&DEBUG);
+        return;
+    }
     let Some(emitter_ref) = ref_window(rom_name, shape.emitter_base as usize, shape.emitter_len)
     else {
         return;
@@ -427,8 +438,9 @@ fn g2_objects_debug_regions_match_reference() {
 /// this ever fails, the negative probe below proves nothing.
 #[test]
 fn g2_undoctored_compile_equals_the_reference_window() {
-    let shape = &PLAIN;
-    let Some(churn_ref) = ref_window("s4.bin", shape.churn_base as usize, shape.churn_len) else {
+    // objtest-gate: the trio is DEBUG-only — the probe pair runs on the debug shape.
+    let shape = &DEBUG;
+    let Some(churn_ref) = ref_window("s4.debug.bin", shape.churn_base as usize, shape.churn_len) else {
         return;
     };
     let c = compile_real_files(shape);
@@ -440,8 +452,8 @@ fn g2_undoctored_compile_equals_the_reference_window() {
 /// actually fail). Pins-derived (a re-pin cannot re-stale it).
 #[test]
 fn g2_doctored_reference_diverges() {
-    let shape = &PLAIN;
-    let Some(mut churn_ref) = ref_window("s4.bin", shape.churn_base as usize, shape.churn_len)
+    let shape = &DEBUG;
+    let Some(mut churn_ref) = ref_window("s4.debug.bin", shape.churn_base as usize, shape.churn_len)
     else {
         return;
     };
