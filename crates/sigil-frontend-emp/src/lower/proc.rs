@@ -657,6 +657,7 @@ fn check_z80_preserves(
             &checklist,
             invariant_regs,
             callee_preserves,
+            proc.falls_into.as_deref(),
         );
     for (reg, status) in statuses {
         // Whether `reg` is an INHERITED invariant (vs an explicit preserve) — for
@@ -1493,6 +1494,46 @@ fn check_out(
                     ),
                 );
             }
+        }
+        // A Z80 flag result (`out(carry: …)`) lives in `f`, so a contract that also
+        // PRESERVES the flags contradicts it: `f` either carries the result to the
+        // caller or is restored to entry, not both. `af` expands to {a, f}, so
+        // testing for the `f` unit in the expanded preserves set covers both the
+        // `preserves(f)` and `preserves(af)` spellings.
+        //
+        // DIVERGENCE FROM 68k (adjudicated): `clobbers(f)` + `out(carry:)` REMAINS
+        // LEGAL on Z80, unlike the 68k `out(carry:)` + `clobbers(sr.ccr)` error.
+        // Z80 has no finer-than-`f` flag token, so clobbers-covering-`f` is the only
+        // honest spelling of "flags are scratch except the carry result" — the shape
+        // 9 of the corpus's 10 carry-returning procs take.
+        if !proc.out_flags.is_empty() && pres.contains("f") {
+            let flag_result = proc
+                .out_flags
+                .first()
+                .map(|fl| format!("`out({}: {})`", fl.flag, fl.name))
+                .unwrap_or_else(|| "a flag result".to_string());
+            // Which preserves token covers the flags (`f` or `af`) — the one whose
+            // Z80 expansion contains the `f` unit.
+            let pres_token = proc
+                .preserves
+                .iter()
+                .find(|seg| {
+                    crate::regfile::expand_reglist(std::slice::from_ref(*seg), rf, |_| {})
+                        .contains("f")
+                })
+                .map(|(lo, _)| lo.clone())
+                .unwrap_or_else(|| "f".to_string());
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!(
+                    "[proc.out-preserves-overlap] `{}` declares {flag_result} and preserves the \
+                     flags (`preserves({pres_token})` covers `f`) — a flag result lives in `f`, \
+                     so `f` either carries the result or is restored to entry, not both",
+                    proc.name
+                ),
+            );
         }
         return;
     }

@@ -118,6 +118,21 @@ fn reg8_unit(r: Z80Reg8) -> usize {
 /// form (`ld (hl),a`, `set n,(ix+d)`) writes NO register. `sp`/`i`/`r` and shadow
 /// units are not in the tracked universe.
 fn z80_writes(mnem: &str, ops: &[CodeOperand]) -> Vec<usize> {
+    let mut w = z80_writes_regs(mnem, ops);
+    // The flag unit `f`, modeled as the COMPLEMENT of a flag-neutral allowlist
+    // ([`z80_flag_neutral`]): an instruction WRITES `f` unless it is provably
+    // flag-neutral. The conservative polarity is sound for `preserves(f)` — a
+    // forgotten neutral mnemonic over-fires visibly, where the old "no instruction
+    // writes f" false-passed a `preserves(f) { scf; ret }`.
+    if !z80_flag_neutral(mnem, ops) {
+        w.push(idx("f"));
+    }
+    w
+}
+
+/// The REGISTER units (excluding `f`) a plain Z80 instruction writes — the curated,
+/// false-negative-leaning allowlist. [`z80_writes`] layers the `f` model on top.
+fn z80_writes_regs(mnem: &str, ops: &[CodeOperand]) -> Vec<usize> {
     let dst_units = |op: Option<&CodeOperand>| -> Vec<usize> {
         match op {
             Some(CodeOperand::Z80Reg8(r)) => vec![reg8_unit(*r)],
@@ -161,6 +176,37 @@ fn z80_writes(mnem: &str, ops: &[CodeOperand]) -> Vec<usize> {
         // rung-4's shadow model, §4.3). Conservatively clobber bc/de/hl.
         "exx" => vec![idx("b"), idx("c"), idx("d"), idx("e"), idx("h"), idx("l")],
         _ => vec![],
+    }
+}
+
+/// Does this Z80 mnemonic leave the flag register `f` UNTOUCHED? The complement of
+/// the F-writer classification [`z80_writes`] layers on. The polarity is
+/// conservative: an unmodeled mnemonic is treated as a flag WRITER (returns
+/// `false`), so a forgotten neutral instruction over-fires visibly rather than
+/// silently false-passing a `preserves(f)`. It shares nothing with
+/// `flag_check.rs`'s CARRY model on purpose — carry is a strict subset of `f`, so a
+/// single carry table would miss the flag-ONLY writers (`inc`/`dec`/`bit`),
+/// reopening the hole.
+///
+/// Flag-neutral: `ld` (moves never touch flags — the `ld a,i`/`ld a,r`
+/// interrupt-flag forms excepted, absent from the corpus, which is why
+/// `Psg_EnvCursorReset () preserves(af)` with a `ld (ix+d), 0` body stays green);
+/// `push`/`pop` (the preserve idiom — `pop af`'s `f` load is modeled through the
+/// slot machinery, not here, so `SndDrv_ISR preserves(af)` stays green via its
+/// `push af`/`pop af` bracket); `ex`/`exx` (data moves); the control transfers
+/// `jp`/`jr`/`djnz`/`call`/`rst`/`ret`/`reti`/`retn` (flags flow through their
+/// edges/the callee oracle, not this local write); `set`/`res`/`out`/`nop`/
+/// `di`/`ei`/`halt`/`im`. NOT neutral — `bit` (writes Z/H/N), every ALU/shift/
+/// rotate, `scf`/`ccf`, `ldir`&block ops. 16-bit `inc`/`dec` of a PAIR is
+/// flag-neutral; the 8-bit and memory forms write flags.
+fn z80_flag_neutral(mnem: &str, ops: &[CodeOperand]) -> bool {
+    match mnem {
+        "ld" | "push" | "pop" | "ex" | "exx" | "jp" | "jr" | "djnz" | "call" | "rst" | "ret"
+        | "reti" | "retn" | "set" | "res" | "out" | "nop" | "di" | "ei" | "halt" | "im" => true,
+        // 16-bit inc/dec (a pair operand) leaves the flags; the 8-bit register and
+        // memory forms write them.
+        "inc" | "dec" => matches!(ops.first(), Some(CodeOperand::Z80Pair(_))),
+        _ => false,
     }
 }
 
@@ -236,6 +282,7 @@ pub fn verify_z80_preserved(
     check: &[String],
     invariant_regs: &[String],
     callee_map: &CalleePreserves,
+    falls_into: Option<&str>,
 ) -> BTreeMap<String, PreserveStatus> {
     let checked: Vec<(String, usize)> =
         check.iter().filter_map(|n| unit_idx(n).map(|i| (n.clone(), i))).collect();
@@ -294,6 +341,17 @@ pub fn verify_z80_preserved(
             }
         }
     }
+    // A declared `falls_into` successor is a tail transfer exactly like an external
+    // `jr`: the body's closing `}` continues into it, so it clobbers every unit it
+    // does not preserve (mirrors the `jp`/`jr` external-transfer marking above). An
+    // absent/unknown successor preserves nothing, via the oracle.
+    if let Some(succ) = falls_into {
+        for (u, name) in UNITS.iter().enumerate() {
+            if !callee_preserves(callee_map, Some(succ), name) {
+                ever_clobbered[u] = true;
+            }
+        }
+    }
 
     let mut in_state: BTreeMap<usize, State> = BTreeMap::new();
     in_state.insert(entry_idx, State { stack: Vec::new(), entry: [true; NU], bailed: false });
@@ -335,12 +393,40 @@ pub fn verify_z80_preserved(
                         work.push_back(succ);
                     }
                 }
-                // A `ret`, or control running off the end: either way the caller
-                // reads the register file from here — checkpoint it.
-                Edge::Return | Edge::FallOff => {
+                // A `ret`: the caller reads the register file from here —
+                // checkpoint it. An early `ret` in a `falls_into` proc still
+                // checkpoints as an exit (its return happens here, not in the tail).
+                Edge::Return => {
                     saw_exit = true;
                     if st.bailed {
                         bailed_reached_exit = true;
+                    } else {
+                        for (_, i) in &checked {
+                            if !st.entry[*i] {
+                                *all_returns_preserve.get_mut(i).unwrap() = false;
+                            }
+                        }
+                    }
+                }
+                // Control running off the end of the body. In a proc with a declared
+                // `falls_into` successor, the closing `}` continues into that
+                // successor's frame — semantically identical to an explicit `jr`
+                // tail (`Edge::Defer`): rN survives iff it holds its entry value
+                // here AND the successor itself preserves it. Closing the falls_into
+                // tail blind spot — a `falls_into` proc's successor contract was
+                // never consulted, so `preserves(rN)` passed even when the tail
+                // clobbers rN. Without a `falls_into`, running off the end is a plain
+                // exit (checkpoint the entry bits).
+                Edge::FallOff => {
+                    saw_exit = true;
+                    if st.bailed {
+                        bailed_reached_exit = true;
+                    } else if let Some(succ) = falls_into {
+                        for (name, i) in &checked {
+                            if !(st.entry[*i] && callee_preserves(callee_map, Some(succ), name)) {
+                                *all_returns_preserve.get_mut(i).unwrap() = false;
+                            }
+                        }
                     } else {
                         for (_, i) in &checked {
                             if !st.entry[*i] {

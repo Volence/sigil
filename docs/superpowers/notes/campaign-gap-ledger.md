@@ -870,8 +870,10 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   and emits a `Cell::SymRef` of the element width for a `Value::Label` (the
   `lower_ptr` precedent); register-class words (d0-d7/a0-a7/sp/pc/sr/ccr) stay the
   loud `unknown name` error. Unit-tested (`lower_data::dc_l_label_emits_abs32_symref_fixup`)
-  + exercised byte-identically by error_handler_port. Z80 `dc`-label still unprobed
-  (no Z80 code port yet) — that half stays OPEN.
+  + exercised byte-identically by error_handler_port. **CLOSED (Z80) 2026-08-05
+  (z80-parity):** `PsgVolEnv_Ptrs` (`engine/sound/sound_tables_z80.emp:79`) is a
+  live `dc.w <label>` pointer table in the shipped sound blob — a `dc`-label in a
+  Z80 section, byte-covered by the seven-target golden bar. Both halves now CLOSED.
 - [tranche 8, 2026-07-10] **`*` (current location) port-translation rule** — AS's
   `pea *(pc)` self-address idiom has no `.emp` spelling; the translation is a label
   on the instruction + `.label(pc)` (byte-identical d16=-2 encoding). Local-label
