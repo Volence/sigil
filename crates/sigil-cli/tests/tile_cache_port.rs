@@ -483,7 +483,7 @@ fn tile_cache_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
         ("Frame_Counter", pick(pins::FRAME_COUNTER)),
         ("Section_Plane_Dirty", pick(pins::SECTION_PLANE_DIRTY)),
         // NO S4LZ_DecompressDict carrier — the t22 flip (kill row 30): the
-        // name resolves to s4lz_decompress.emp's proc compiled into this same
+        // name resolves to s4lz.emp's proc compiled into this same
         // link; a stale carrier would be the §11 Q4 collision.
     ];
     if debug {
@@ -535,7 +535,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     let s4_base = if debug { pins::S4LZ.debug_base } else { pins::S4LZ.plain_base };
     let s4_len = if debug { pins::S4LZ.debug_len } else { pins::S4LZ.plain_len };
     let (mut s4_sections, s4_asserts) = lower_and_place(
-        &aeon.join("engine/compression/s4lz_decompress.emp"),
+        &aeon.join("engine/compression/s4lz.emp"),
         vec![],
         aeon.join("engine/compression"),
         "s4lz",

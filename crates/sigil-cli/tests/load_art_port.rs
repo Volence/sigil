@@ -278,11 +278,11 @@ fn load_art_debug_region_matches_reference() {
 // Ownership flips (kill-list rows 29 + 38): `VSync_Wait` (t21, engine.vblank)
 // and `S4LZ_Decompress` (t22, engine.s4lz) both moved from extern decls to
 // .emp-owned procs. This persisted link test compiles load_art.emp +
-// vblank.emp + s4lz_decompress.emp TOGETHER — both extern decls are GONE from
+// vblank.emp + s4lz.emp TOGETHER — both extern decls are GONE from
 // load_art.emp (its register-discipline block relies on the carried
 // `clobbers(d0)` / `clobbers(d0-d3/a2-a3)` licenses), the calls resolve
 // module-to-module, and ALL FOUR regions byte-match the shipped reference
-// ROM. `ZX0_Decompress` (row 39, t22) rides the same world: zx0_decompress.emp
+// ROM. `ZX0_Decompress` (row 39, t22) rides the same world: zx0.emp
 // compiles in too, and load_art.emp carries ZERO extern decls.
 // ---------------------------------------------------------------------------
 
@@ -406,7 +406,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     let s4_base = if debug { pins::S4LZ.debug_base } else { pins::S4LZ.plain_base };
     let s4_len = if debug { pins::S4LZ.debug_len } else { pins::S4LZ.plain_len };
     let (s4_sections, s4_asserts) = flip_lower(
-        parse_file(&aeon.join("engine/compression/s4lz_decompress.emp")),
+        parse_file(&aeon.join("engine/compression/s4lz.emp")),
         vec![],
         aeon.join("engine/compression"),
         "s4lz",
@@ -420,7 +420,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     let zx_base = if debug { pins::ZX0.debug_base } else { pins::ZX0.plain_base };
     let zx_len = if debug { pins::ZX0.debug_len } else { pins::ZX0.plain_len };
     let (zx_sections, zx_asserts) = flip_lower(
-        parse_file(&aeon.join("engine/compression/zx0_decompress.emp")),
+        parse_file(&aeon.join("engine/compression/zx0.emp")),
         vec![],
         aeon.join("engine/compression"),
         "zx0",

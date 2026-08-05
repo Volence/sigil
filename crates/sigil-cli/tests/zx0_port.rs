@@ -1,7 +1,7 @@
-//! Tranche 22 (file 2) — the REAL `zx0_decompress.emp` port, region-level
+//! Tranche 22 (file 2) — the REAL `zx0.emp` port, region-level
 //! byte gate.
 //!
-//! Compiles the actual ported file — `engine/compression/zx0_decompress.emp`
+//! Compiles the actual ported file — `engine/compression/zx0.emp`
 //! — through the production parse -> lower -> place -> resolve -> link
 //! pipeline and asserts the `zx0` region's flattened bytes equal the
 //! reference ROM window at the pinned base, in BOTH build shapes. The ZX0
@@ -21,7 +21,7 @@
 //!
 //! The ownership-flip link test for row 39 lives with the caller
 //! (`load_art_port::two_module_ownership_flip_*` — gained
-//! zx0_decompress.emp as a compiled module and DROPPED the ZX0_Decompress
+//! zx0.emp as a compiled module and DROPPED the ZX0_Decompress
 //! carrier the same commit the extern decl died).
 //!
 //! ```text
@@ -87,12 +87,12 @@ fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
     file
 }
 
-/// Lower the real `zx0_decompress.emp`, place into the per-shape map, one
+/// Lower the real `zx0.emp`, place into the per-shape map, one
 /// `resolve_layout` -> `link`.
 fn compile_real_file(debug: bool) -> sigil_link::LinkedImage {
     let aeon = aeon_dir();
     let dir = aeon.join("engine/compression");
-    let file = parse_file(&dir.join("zx0_decompress.emp"));
+    let file = parse_file(&dir.join("zx0.emp"));
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -103,7 +103,7 @@ fn compile_real_file(debug: bool) -> sigil_link::LinkedImage {
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "zx0_decompress.emp lower errors: {ldiags:?}"
+        "zx0.emp lower errors: {ldiags:?}"
     );
 
     let map = sigil_link::load_map(&map_toml(debug)).expect("map must load");
