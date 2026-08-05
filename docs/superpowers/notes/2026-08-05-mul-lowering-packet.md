@@ -199,11 +199,12 @@ ruling.
   `capture_goldens.sh` order (the four canonical/demo shapes via `./build.sh`,
   config-a/config-b/lean via `sigil build --config-*`, canonical restore
   after — driven by an uncommitted lane script; the procedure, not the
-  script, is the bar), WITH the two aeon adoption edits in the tree — baseline
-  BYTEBAR_RC=0 proven pre-change at chain 47 (binaries rebuilt at HEAD first),
-  and again at convergence with binaries rebuilt at the new HEAD:
-  BYTEBAR_RC=0, s4/s4.debug/demo/demo.debug/config_a/config_b/lean all OK,
-  canonical restore OK. No target moved.
+  script, is the bar), WITH the two aeon adoption edits in the tree — run
+  THREE times: baseline RC=0 pre-change at chain 47 (binaries rebuilt at HEAD
+  first), convergence RC=0 at `d0067ce6` + `f52d247`, and final-state RC=0
+  with binaries rebuilt at the branch tips (`e4b04e6c` + `322748b`) —
+  s4/s4.debug/demo/demo.debug/config_a/config_b/lean all OK, canonical
+  restore OK, every time. No target moved.
 - **refreeze --check:** OK (tip `sst-fold`, chain len 47). **repin --check
   (against the b4 aeon):** `pins.rs unchanged`.
 - **Warn-tier id sets:** plain 19 (module.path-mismatch 9,
@@ -216,7 +217,13 @@ ruling.
   corpus contains no construct item, the choke-point pass is a no-op scan
   there, and demo.debug.bin is byte-identical — stated, not assumed.
 - **Full strict `SIGIL_STRICT_GATE=1`:** branch point — proven with a caveat
-  owned below; convergence — <FILL-CONV>. Failures first: <FILL>.
+  owned below; convergence (at `d0067ce6` + adopted corpus) — **3340 passed /
+  0 failed / 4 ignored over 312 suites**. Failures first: ZERO `FAILED`
+  lines in the full capture. The panel fix-up commit (`e4b04e6c`, message-
+  spelling/accounting/generator changes with a hand-proof that no chosen
+  sequence moves) is delta-proven on its consumers at final HEAD:
+  `sigil-frontend-emp` 2148 / 0 / 0 and `sigil-cli` 565 / 0 / 3, both strict,
+  both against the b4 aeon — plus the final-state byte bar below.
 - **An owned process fault (reported, not hidden):** the branch-point strict
   started clean (no cargo running, per the brief), but this porter then ran
   TARGETED cargo tests in the same target dir mid-capture AND landed the aeon
@@ -247,7 +254,9 @@ ruling.
   `bounded_loop_labels_link_and_are_unique`,
   `bounded_above_boundary_is_byte_identical_to_mulu`,
   `lowering_is_deterministic_end_to_end`, `z80_bodies_refuse_the_construct`,
-  `refusals_surface_through_the_pipeline`. Expected 3344: <FILL-VERIFY>.
+  `refusals_surface_through_the_pipeline`. Verified: `#[test]` count at HEAD
+  is 3344, and the convergence run's 3340 passed + 4 ignored = 3344 — the
+  arithmetic closes exactly.
 
 ## 8 · Equivalence proof (design §3's bar)
 
@@ -330,12 +339,13 @@ the next unfreeze, as the design specifies.
 ## 11 · Commits (merge-order constraint: sigil BEFORE aeon)
 
 - sigil `mul-lowering`: `d3079680` (construct + cost row + tests + docs),
-  `d0067ce6` (label namespace fix), <FILL packet commit>.
-- aeon `mul-lowering`: <FILL> (the two byte-identical adoptions in
-  object_test_state.emp). **The aeon commit builds only against a sigil binary
-  containing the construct — the sigil merge must land first, and per the
-  standing trap, merging this two-repo parcel stales every other in-flight
-  lane's aeon worktree.**
+  `d0067ce6` (label namespace fix), `e4b04e6c` (panel fix-ups + this packet),
+  plus the final-numbers packet commit at the branch tip.
+- aeon `mul-lowering`: `f52d247` (the two byte-identical adoptions in
+  object_test_state.emp), `322748b` (comment trim, panel round). **The aeon
+  commits build only against a sigil binary containing the construct — the
+  sigil merge must land first, and per the standing trap, merging this
+  two-repo parcel stales every other in-flight lane's aeon worktree.**
 
 ## 12 · Step-3 vs step-5 findings
 
