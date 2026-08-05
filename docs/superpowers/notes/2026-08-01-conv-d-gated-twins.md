@@ -1,11 +1,10 @@
 # 2026-08-01 — CONV-D PARCEL D: the gated code twins (close packet)
 
-Status: **Checkpoint for the overseer's countersign + merge.** Branch pair
+Status: Merge state lives in the campaign log, not here. Branch pair
 `conv-d-twins` (aeon + sigil). All FOUR gated code twins (#13 z80_init, #47
 test_enemy, #48 test_player, #49 player_common) are flipped: the `.emp` is the
 sole source, the `.asm` twins are DELETED, and every cross-seam header consumer
 is re-pointed at the `.emp`. Every target byte-identical to the chain-9 goldens.
-NOT merged — the merge is the overseer's.
 
 ## §0 — THE HEADLINE
 

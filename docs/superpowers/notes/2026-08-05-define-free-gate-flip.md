@@ -1,7 +1,7 @@
 # 2026-08-05 — the define-free gate flip
 
 Branch pair: sigil `define-gates` (from master `ea7b1c36`) / aeon `define-gates`
-(from master `77d5317`). Unmerged, unpushed.
+(from master `77d5317`). Merge state lives in the campaign log, not here.
 
 One parcel because it has to be one: the corpus fix is aeon-side, the gate flip is
 sigil-side, and either alone turns a gate red.

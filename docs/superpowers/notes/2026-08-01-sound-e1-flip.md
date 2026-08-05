@@ -1,11 +1,11 @@
 # 2026-08-01 — SOUND-E1: the sound-constants ownership flip (close packet)
 
-Status: **DONE — branches unmerged for the overseer's countersign.** Branch pair
+Status: DONE. Merge state lives in the campaign log, not here. Branch pair
 `sound-e1-flip` (aeon `b005b36` + sigil). `engine/sound_constants.asm` (1481 ln,
 the last AS-authored definition carrier in the engine) is **DELETED**;
 `engine/sound/sound_constants.emp` is the sole author of the sound contract. **All
 six ROM targets + every generated Z80 blob byte-identical to the chain tips;
-strict 2868/0/4.** NOT merged. Spec: §2 E1 of
+strict 2868/0/4.** Spec: §2 E1 of
 `docs/superpowers/specs/2026-08-01-sound-constants-flip-design.md`. seam1/seam2
 untouched (their retirement is E2).
 

@@ -14,7 +14,7 @@
 //! `embed()`s each blob (`CSelf_S4LZ_Plain` … `CSelf_Expected` are its own
 //! `pub data` labels), and the three generated VALUES (`CSELF_PAYLOAD_SIZE` /
 //! `CSELF_PAYLOAD_SUM` / `CSELF_DICT_LEN`) are `use`d from the generated
-//! `engine.compression_vectors` module (`engine/debug/generated/vectors.emp` —
+//! `engine.compression_vectors` module (`engine/debug/generated/compression_vectors.emp` —
 //! its sole author, per tools/gen_compression_vectors.py). So the module
 //! SELF-RESOLVES its data + constants: this gate builds it through the real
 //! manifest (`use` resolution + `embed` reads), no synthetic label/value
@@ -92,7 +92,7 @@ fn scanned_manifest(aeon: &Path, doctor_sum: Option<&str>) -> (Manifest, String)
         let idx = *manifest
             .by_id
             .get("engine.compression_vectors")
-            .expect("engine.compression_vectors must be scanned (the generated vectors.emp)");
+            .expect("engine.compression_vectors must be scanned (the generated compression_vectors.emp)");
         let src = format!(
             "module engine.compression_vectors\n\npub const CSELF_PAYLOAD_SIZE = 744\npub const CSELF_PAYLOAD_SUM = {sum}\npub const CSELF_DICT_LEN = 256\n"
         );

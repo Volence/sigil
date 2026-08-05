@@ -1,9 +1,9 @@
 # 2026-08-02 — L9: the `offsets` construct's cross-module target adoption (close packet)
 
-Status: **Checkpoint for the overseer's countersign + merge.** Branch pair
+Status: Merge state lives in the campaign log, not here. Branch pair
 `lang-l9-offsets` (aeon + sigil). The three player-state jump tables adopt the
 §4.7 `offsets` construct with bare cross-module targets; byte-identical across
-all six targets. NOT merged — the merge is the overseer's.
+all six targets.
 
 ## §0 — THE HEADLINE
 

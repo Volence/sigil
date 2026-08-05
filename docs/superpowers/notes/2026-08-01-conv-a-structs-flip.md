@@ -1,10 +1,9 @@
 # 2026-08-01 — CONV-A PARCEL A: the structs flip (close packet)
 
-Status: **Checkpoint for the overseer's countersign + merge.** Branch pair
+Status: Merge state lives in the campaign log, not here. Branch pair
 `conv-a-structs` (aeon `c745d75` structs flip → sigil `9b7fcf7` harvester →
 sigil test-ripple commit). The struct-offset sibling of the P5 constants flip is
-DONE, byte-neutral across all six targets, strict green. NOT merged — the merge is
-the overseer's.
+DONE, byte-neutral across all six targets, strict green.
 
 ## §0 — THE HEADLINE
 

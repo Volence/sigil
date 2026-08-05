@@ -1,10 +1,9 @@
 # 2026-08-01 — CONV-B PARCEL B: the engine residual-constants tail (close packet)
 
-Status: **Checkpoint for the overseer's countersign + merge.** Branch pair
+Status: Merge state lives in the campaign log, not here. Branch pair
 `conv-b-constants` (aeon + sigil). The P5 constants ownership flip is EXTENDED to
 the last residual `=` in `engine/constants.asm`; the file is **DELETED**. Every
-target byte-identical to the chain-9 goldens. NOT merged — the merge is the
-overseer's.
+target byte-identical to the chain-9 goldens.
 
 ## §0 — THE HEADLINE
 

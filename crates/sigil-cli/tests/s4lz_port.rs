@@ -1,7 +1,7 @@
-//! Tranche 22 (file 1) — the REAL `s4lz_decompress.emp` port, region-level
+//! Tranche 22 (file 1) — the REAL `s4lz.emp` port, region-level
 //! byte gate.
 //!
-//! Compiles the actual ported file — `engine/compression/s4lz_decompress.emp`
+//! Compiles the actual ported file — `engine/compression/s4lz.emp`
 //! — through the production parse -> lower -> place -> resolve -> link
 //! pipeline and asserts the `s4lz` region's flattened bytes equal the
 //! reference ROM window at the pinned base, in BOTH build shapes. The S4LZ v3
@@ -22,7 +22,7 @@
 //! The ownership-flip link tests for rows 38/30 live with the CALLERS
 //! (`load_art_port::two_module_ownership_flip_*`,
 //! `tile_cache_port::two_module_tail_call_flip_*` — each gained
-//! s4lz_decompress.emp as a compiled module and DROPPED its address carrier
+//! s4lz.emp as a compiled module and DROPPED its address carrier
 //! the same commit the extern decl died).
 //!
 //! ```text
@@ -125,7 +125,7 @@ fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
     file
 }
 
-/// Lower the real `s4lz_decompress.emp`, place into the per-shape map, append
+/// Lower the real `s4lz.emp`, place into the per-shape map, append
 /// the value equ + (debug) address labels, one `resolve_layout` -> `link`.
 fn compile_real_file(
     debug: bool,
@@ -133,7 +133,7 @@ fn compile_real_file(
 ) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
     let aeon = aeon_dir();
     let dir = aeon.join("engine/compression");
-    let file = parse_file(&dir.join("s4lz_decompress.emp"));
+    let file = parse_file(&dir.join("s4lz.emp"));
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -144,7 +144,7 @@ fn compile_real_file(
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "s4lz_decompress.emp lower errors: {ldiags:?}"
+        "s4lz.emp lower errors: {ldiags:?}"
     );
     let link_asserts = module.link_asserts;
 
@@ -212,7 +212,7 @@ fn run(debug: bool) {
     let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "s4lz_decompress.emp drift guards must all PASS: {diags:?}"
+        "s4lz.emp drift guards must all PASS: {diags:?}"
     );
 
     let base = region_base(debug) as usize;
@@ -233,6 +233,6 @@ fn s4lz_debug_region_matches_reference() {
 }
 
 // `doctored_tile_size_fires_its_guard` RETIRED at the conv-b constants-tail
-// flip: TILE_SIZE flipped from s4lz_decompress.emp's local mirror to `use engine.constants`,
+// flip: TILE_SIZE flipped from s4lz.emp's local mirror to `use engine.constants`,
 // so no `ensure(extern("TILE_SIZE") == …)` wall survives for the doctored probe to
 // fire. Its protection re-homes to the six-target byte-identity gate.

@@ -1,6 +1,6 @@
 # 2026-08-04 — B′-0b: the survives-claim verifier (close packet)
 
-Status: **countersigned and MERGED.** Branch pair `bprime-0b`, one code commit
+Status: Merge state lives in the campaign log, not here. Branch pair `bprime-0b`, one code commit
 per repo, rebased onto chain-42 masters (sigil `d0af6de7` / aeon `43265d6`) and
 re-proven there — see §7/§8. The parcel was built and first gate-greened against
 chain 40; it waited one engine parcel, during which the CRASH_REPORT axis landed

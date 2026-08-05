@@ -1,7 +1,7 @@
 # 2026-08-04 — THE `sr` LANE: whose SR write is it? (close packet)
 
 Two repos, branch `sr-contracts`, branched from sigil `21f5aef7` / aeon `0e1f32c`.
-Checkpoint for the overseer's countersign + merge.
+Merge state lives in the campaign log, not here.
 
 - sigil `b1dbc19a` — the lint fix + its probes + the frozen-baseline split.
 - sigil `5a7eb9ab` — the panel round.

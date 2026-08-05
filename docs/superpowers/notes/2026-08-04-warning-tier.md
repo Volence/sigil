@@ -1,6 +1,6 @@
 # 2026-08-04 — THE WARNING TIER: make the invisible visible (close packet)
 
-Status: **countersigned and MERGED** — sigil `1a62f4b6`, sigil-only. Built as
+Status: Merge state lives in the campaign log, not here. Sigil-only; built as
 branch `warn-tier` off master `4993825e`. **No aeon commit** — the parcel retires
 no corpus warning, and the seven ROM targets are byte-identical.
 

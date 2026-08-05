@@ -1,6 +1,6 @@
 # 2026-08-01 — ITEM #7c: the game RAM ports + the item-7 arc close (CLOSE PACKET)
 
-Status: **DONE — branches unmerged for the overseer's countersign.** Branches
+Status: DONE. Merge state lives in the campaign log, not here. Branches
 `item7c-game-ram` (sigil + aeon). Both game RAM files are authored in the `.emp`
 region form (`games/{sonic4,demo}/config/ram.emp`), chained cross-module onto the
 engine RAM (`game_ram @ after(upper_ram)`); the `.asm` files are deleted; the

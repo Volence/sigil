@@ -1,6 +1,6 @@
 # 2026-08-01 — ITEM #7b: engine/ram.asm → the `vars` region form (CLOSE PACKET)
 
-Status: **DONE — branches unmerged for the overseer's countersign.** Branches
+Status: DONE. Merge state lives in the campaign log, not here. Branches
 `item7b-engine-ram` (sigil + aeon). The engine RAM layout is authored in
 `engine/ram.emp` (the region form); `engine/ram.asm` is deleted; the residual AS
 reads the addresses it needs eagerly via the Option-B harvest bridge. **All six

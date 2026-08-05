@@ -1,9 +1,9 @@
 # 2026-08-01 — CONV-H-DEMO: the demo tree native flip + the demo native-placement path
 
-Status: **Checkpoint for the overseer's countersign + merge.** Branch pair
+Status: Merge state lives in the campaign log, not here. Branch pair
 `conv-hdemo` (aeon + sigil). The demo game tree (#14/#17/#18/#20) flipped to
 native `.emp`; the demo native game-module placement PATH built (the conv-h §5
-blocker retired); #15 confirmed a documented AS remainder. NOT merged.
+blocker retired); #15 confirmed a documented AS remainder.
 
 ## §0 — THE HEADLINE
 

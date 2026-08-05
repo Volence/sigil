@@ -1,6 +1,6 @@
 # conv-i — the generators emit `.emp` (Parcel I)
 
-**Parcel:** I (Opus porter; overseer countersigns/merges — NOT merged/pushed).
+**Parcel:** I (Opus porter). Merge state lives in the campaign log, not here.
 **Repos:** aeon `conv-i-generators` · sigil `conv-i-generators` (worktree `.worktrees/opt-sweep`).
 **Date:** 2026-08-01.
 

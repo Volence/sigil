@@ -1,6 +1,6 @@
 # conv-i8 — the #8 compression-vectors generator port
 
-**Parcel:** I8 (Opus porter; overseer countersigns/merges — NOT merged/pushed).
+**Parcel:** I8 (Opus porter). Merge state lives in the campaign log, not here.
 **Repos:** aeon `conv-i8-vectors` · sigil `conv-i8-vectors` (worktree `.worktrees/opt-sweep`).
 **Date:** 2026-08-01.
 

@@ -63,7 +63,7 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
 ///
 /// COVERAGE IS PINNED, because a gate whose whole content is "this set is empty"
 /// proves nothing about a corpus it did not read. Two things can silently shrink the
-/// walk: `engine/debug/generated/vectors.emp` is a GENERATED module — gitignored,
+/// walk: `engine/debug/generated/compression_vectors.emp` is a GENERATED module — gitignored,
 /// written by `tools/gen_compression_vectors.py`, absent on a cold checkout — and
 /// `engine/debug/compression_selftest.emp` `use`s it at six instruction sites, so
 /// without it the walk is 121 files where a warm tree is 122 and nothing else
@@ -97,8 +97,8 @@ fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
         aeon.display()
     );
     assert!(
-        paths.iter().any(|p| p.ends_with("engine/debug/generated/vectors.emp")),
-        "engine/debug/generated/vectors.emp is absent, so `engine.compression_vectors` \
+        paths.iter().any(|p| p.ends_with("engine/debug/generated/compression_vectors.emp")),
+        "engine/debug/generated/compression_vectors.emp is absent, so `engine.compression_vectors` \
          is not in the walk and compression_selftest.emp's uses of it vanish silently. \
          It is gitignored — run tools/gen_compression_vectors.py in {}",
         aeon.display()

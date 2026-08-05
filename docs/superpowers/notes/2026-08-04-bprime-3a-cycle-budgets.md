@@ -1,7 +1,6 @@
 # 2026-08-04 — B′-3a: cycle budgets, the Z80 half (close packet)
 
-Status: **checkpoint for the overseer's countersign + merge. NOT merged, NOT
-pushed.** Branch `bprime-3` off sigil `50382ddc`, **zero commits in aeon** — a
+Status: Merge state lives in the campaign log, not here. Branch `bprime-3` off sigil `50382ddc`, **zero commits in aeon** — a
 sigil-only parcel (§9). Two commits: `ce64b6d1` (the parcel) + `1506d070` (the panel round).
 
 **§11 first if you are short of time.** The lens panel found THREE blockers in

@@ -153,7 +153,7 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // own LEN shrinks $1AA→$1A8 / $1AE→$1AC; all other LENs unchanged).
     // ASSEMBLED_LEN unchanged (absorbed by `org $10000`).
     // Then −4 PLAIN ONLY (t22 s4lz step-2 branch modernization, 2026-07-24):
-    // s4lz_decompress.emp goes bare-Bcc/jbra-jbsr and TWO branches relax to `.s`
+    // s4lz.emp goes bare-Bcc/jbra-jbsr and TWO branches relax to `.s`
     // in the plain shape only (`beq .lit_extended` + `jbra .no_literals` — both
     // spans cross the debug dict-hit assert blob, so debug keeps `.w`; the twin
     // rides ifdef widths, the t19 bg_anim precedent). s4lz shrinks $FC→$F8 plain

@@ -1,7 +1,7 @@
 # 2026-08-01 — ITEM #7a: the `vars` region-form feature (implementation)
 
-Status: **Checkpoint for the overseer's countersign.** Branch `item7a-regions`
-(sigil only; aeon untouched — the feature is UNUSED until #7b). Not merged.
+Status: Merge state lives in the campaign log, not here. Branch `item7a-regions`
+(sigil only; aeon untouched — the feature is UNUSED until #7b).
 
 Builds the ratified spec `docs/superpowers/specs/2026-08-01-item7-ram-regions-design.md`
 (§2 surface, §2.2–§2.4 lowering, §5 diagnostics, §6 the #7a parcel). The region
