@@ -59,7 +59,7 @@
 //! every call site by `[context.unsatisfied]`), which
 //! [`crate::z80_bus::check_bus_state`] takes as its seed in place of `Unknown`.
 
-use crate::flag_check::{branch_target, Cfg, Edge};
+use crate::flag_check::{branch_target, instr_span, Cfg, Edge};
 use crate::value::{CodeItem, CodeOperand, ContextMarkKind};
 use sigil_ir::backend::Cpu;
 use sigil_span::Span;
@@ -438,14 +438,6 @@ fn is_transfer_mnemonic(mnem: &str, cpu: Cpu) -> bool {
                 || (mnem.starts_with('b') && mnem.len() == 3)
                 || mnem.starts_with("db")
         }
-    }
-}
-
-/// The span of the instruction at item index `idx`.
-fn instr_span(items: &[CodeItem], idx: usize) -> Option<Span> {
-    match items.get(idx) {
-        Some(CodeItem::Instr { span, .. }) => Some(*span),
-        _ => None,
     }
 }
 

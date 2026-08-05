@@ -62,6 +62,23 @@ const CALL_MNEMONICS: [&str; 3] = ["jsr", "jbsr", "bsr"];
 const UNCOND_MNEMONICS: [&str; 4] = ["bra", "jbra", "jmp", "jra"];
 const RETURN_MNEMONICS: [&str; 4] = ["rts", "rte", "rtr", "rtd"];
 
+/// Does `mnem` RETURN from the proc? The `Edge::Abandon` an analysis sees covers
+/// two shapes — a return instruction, and control running off the end of the body
+/// — and a consumer that must tell them apart (a declared `falls_into` end is not
+/// a return) asks here rather than restating the table.
+pub(crate) fn is_return_mnemonic(mnem: &str) -> bool {
+    RETURN_MNEMONICS.contains(&mnem)
+}
+
+/// The span of the instruction at item index `idx`, or `None` when that item is
+/// not an instruction.
+pub(crate) fn instr_span(items: &[CodeItem], idx: usize) -> Option<Span> {
+    match items.get(idx) {
+        Some(CodeItem::Instr { span, .. }) => Some(*span),
+        _ => None,
+    }
+}
+
 /// Does this resolved mnemonic CONSUME the carry flag — a reader whose presence
 /// discharges the must-use obligation? ONLY the carry-testing conditional
 /// branches and their set/dbcc forms (`bcs`/`bcc`/`bhi`/`bls` + the `hs`/`lo`
@@ -276,7 +293,13 @@ impl<'a> Cfg<'a> {
         // fall-through PLUS the taken edge. (Carry consumers are handled by the
         // caller before edges() is consulted.) `dbf`/`dbra` (Cond::F) and
         // Z/N/V-testing branches land here.
-        let is_cond_branch = (mnem.starts_with('b') && mnem.len() == 3)
+        //
+        // `bsr` is spelled like one (three letters, leading `b`) and is NOT one:
+        // it CALLS and comes back, so its only successor is the fall-through.
+        // Giving it the branch's taken edge would splice the callee's body into
+        // this proc's flow at the caller's state — for a LOCAL `bsr .helper` that
+        // analyzes the helper with the caller's stack still on it.
+        let is_cond_branch = (mnem.starts_with('b') && mnem.len() == 3 && mnem != "bsr")
             || mnem.starts_with("db");
         if is_cond_branch {
             let mut v = Vec::new();

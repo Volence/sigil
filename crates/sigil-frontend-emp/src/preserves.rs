@@ -18,14 +18,19 @@
 //! pushes is popped by its own `rts`). Any generic write to rN clears its
 //! entry-value bit; a restore re-sets it iff the slot holds rN's own value.
 //!
+//! `link aN,#-d` opens a frame — the saved fp is an ordinary tagged slot and the
+//! locals one opaque slot — and `unlk aN` truncates back to the matching mark and
+//! pops the fp.
+//!
 //! **Soundness bailouts** (assembly is assembly, §5): a bare `a7` operand (sp's
 //! VALUE used as a number / escaping into address math, or a computed
-//! `adda #n,sp`), or a displaced/indexed sp access (`d(sp)` / `(sp,Xn)` — a store
-//! that could alias a tracked slot) makes the stack model untrustworthy → the
-//! analysis BAILS. A declared `preserves` on a written register whose proof bailed
-//! is `[proc.preserves-unverifiable]` (error — a wrong contract is worse than
-//! none, the D2.32 principle kept). The movem entry/exit pair is the trivial fast
-//! path of this same analysis — D2.32 subsumed.
+//! `adda #n,sp`), a displaced/indexed sp access (`d(sp)` / `(sp,Xn)` — a store
+//! that could alias a tracked slot), or an `unlk` with no matching open `link`
+//! (sp is set from a register this model never computed) makes the stack model
+//! untrustworthy → the analysis BAILS. A declared `preserves` on a written
+//! register whose proof bailed is `[proc.preserves-unverifiable]` (error — a wrong
+//! contract is worse than none, the D2.32 principle kept). The movem entry/exit
+//! pair is the trivial fast path of this same analysis — D2.32 subsumed.
 //!
 //! **Scoped exits** ([`ReturnScope`]): the same proof serves the ¬cc half of a
 //! conditional out (delta spec §7.1). `out(rN if cc)` with rN absent from
@@ -33,9 +38,17 @@
 //! obligated on SOME exits, not all (rN is deliberately written on the cc edge).
 //! Only the choice of exits differs; the round-trip, never-written and
 //! callee-preserves proofs are the ones below, unchanged.
+//!
+//! **Stack balance** ([`check_stack_balance`], delta spec §3 / U-spec §4-stack):
+//! the symbolic stack's own DEPTH is the sp delta, so `[stack.unbalanced]` and
+//! `[stack.merge-mismatch]` read the SAME model rather than running a second one.
+//! Both consumers walk through [`run_stack_dataflow`] — one worklist, one
+//! [`transfer`], one [`join`], therefore one bailout set. Two analyses cannot
+//! disagree about whether the stack model is trustworthy when there is only one
+//! place that decides.
 
 use crate::closure::RegEffect;
-use crate::flag_check::{Cfg, Edge};
+use crate::flag_check::{instr_span, is_return_mnemonic, Cfg, Edge};
 use crate::lower::instr_written_regs;
 use crate::value::{CodeItem, CodeOperand, Reg, Width};
 use sigil_span::Span;
@@ -111,20 +124,21 @@ pub enum PreserveStatus {
 
 /// A stack slot. `reg = Some(r)` holds register `r`'s entry value; `None` is
 /// opaque. `bytes` is the TRUE pushed width (`.l`=4, `.w`=2, byte-on-a7=2, each
-/// `movem` member its own size) — the prerequisite for the immediate-sp-cleanup
-/// idiom: an `addq/adda #N,sp` drops whole slots totaling exactly N bytes, and a
-/// drop that lands mid-slot bails. A bare `Option<Reg>` carries no byte size, so
-/// it could not tell a 2-byte word scratch from a 4-byte long save.
+/// `movem` member its own size, a `link` frame its whole allocation) — the
+/// prerequisite for the immediate-sp-cleanup idiom: an `addq/adda #N,sp` drops
+/// whole slots totaling exactly N bytes, and a drop that lands mid-slot bails. A
+/// bare `Option<Reg>` carries no byte size, so it could not tell a 2-byte word
+/// scratch from a 4-byte long save.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Slot {
     reg: Option<Reg>,
-    bytes: u8,
+    bytes: u32,
 }
 
 /// The stack byte width a push of size `size` consumes on a7. Long=4, word=2; a
 /// BYTE push to `-(a7)` decrements sp by 2 (the 68000 keeps a7 word-aligned), so
 /// byte=2. An unsized push (defaults to a long-shaped transfer) is 4.
-fn slot_bytes(size: Option<Width>) -> u8 {
+fn slot_bytes(size: Option<Width>) -> u32 {
     match size {
         Some(Width::L) => 4,
         Some(Width::W) => 2,
@@ -149,14 +163,45 @@ struct State {
     /// `(a0)+` then restored by `lea -N(a0), a0` — DeleteObject's `.clear_slot`).
     /// `a7` (index 15) is not meaningful here (stack discipline).
     delta: [Option<i64>; 16],
+    /// The open `link` frames, innermost last: `(frame pointer, stack depth just
+    /// above its saved-fp slot)`. A `unlk aN` truncates back to the innermost
+    /// mark and pops the saved fp; an `unlk` that names a different register, or
+    /// one with no open frame, leaves sp at an unmodeled value → bail.
+    frames: Vec<(Reg, usize)>,
     /// This path hit a soundness bailout (computed sp / escape / aliasing store /
     /// underflow / unbalanced-depth join). Rides the CFG; only matters if it
     /// reaches a return.
     bailed: bool,
 }
 
+impl State {
+    /// The state on entry to a proc: nothing pushed, no open frame, every register
+    /// holding its entry value at delta 0.
+    fn at_entry() -> State {
+        State {
+            stack: Vec::new(),
+            entry: [true; 16],
+            delta: [Some(0); 16],
+            frames: Vec::new(),
+            bailed: false,
+        }
+    }
+
+    /// Bytes of tracked save area — the magnitude of sp's displacement from its
+    /// entry value at this program point.
+    fn depth_bytes(&self) -> i64 {
+        self.stack.iter().map(|s| s.bytes as i64).sum()
+    }
+}
+
 fn reg_idx(r: Reg) -> usize {
     r as usize
+}
+
+/// The item index of a body's FIRST instruction — its dataflow entry point.
+/// `None` for a body with no instructions at all (labels and inline data only).
+fn entry_instr_idx(items: &[CodeItem]) -> Option<usize> {
+    items.iter().position(|it| matches!(it, CodeItem::Instr { .. }))
 }
 
 /// The resolved operand size of instruction item `idx`, if any.
@@ -232,10 +277,7 @@ pub fn verify_preserved_on(
 
     // The first instruction is the entry point; a body with no instructions
     // preserves everything vacuously.
-    let Some(entry_idx) = items
-        .iter()
-        .position(|it| matches!(it, CodeItem::Instr { .. }))
-    else {
+    let Some(entry_idx) = entry_instr_idx(items) else {
         return check.iter().map(|r| (*r, PreserveStatus::Verified)).collect();
     };
 
@@ -277,117 +319,22 @@ pub fn verify_preserved_on(
         ever_clobbered = [true; 16];
     }
 
-    // Forward dataflow with joins. `in_state[idx]` = state on entry to instr idx.
-    let mut in_state: BTreeMap<usize, State> = BTreeMap::new();
-    in_state.insert(
-        entry_idx,
-        State { stack: Vec::new(), entry: [true; 16], delta: [Some(0); 16], bailed: false },
-    );
-    let mut work: VecDeque<usize> = VecDeque::from([entry_idx]);
-    // A bailout is PATH-LOCAL: it taints the state (`State::bailed`) and rides the
-    // CFG. Only a bail that REACHES an IN-SCOPE exit makes a written register
-    // unverifiable — under `AllReturns` a bail on a noreturn/`Defer` path (the
-    // DEBUG `raise_error` `subq #2,sp`→`jmp handler` shape) constrains nothing,
-    // because no `Defer` is in scope there.
-    let mut bail_reason: Option<String> = None;
-    let mut bailed_reached_exit = false;
-
     // For each checked register: does EVERY in-scope exit see it at its entry
-    // value? Starts true; an exit with a clobbered value flips it false.
-    let mut all_exits_preserve: BTreeMap<Reg, bool> =
-        check.iter().map(|r| (*r, true)).collect();
-    // Per checked register: is its linear delta `Some(0)` at EVERY in-scope exit?
-    // An independent POSITIVE proof (the register-arithmetic round-trip), valid
-    // even past a stack bailout (a computed-sp hazard does not touch a register
-    // whose value is a proven static offset of entry). Starts true; flipped false
-    // by any exit where delta != Some(0).
-    let mut delta_ok: BTreeMap<Reg, bool> = check.iter().map(|r| (*r, true)).collect();
-    let mut saw_exit = false;
-
-    while let Some(idx) = work.pop_front() {
-        let mut st = in_state[&idx].clone();
-        // Apply the instruction's effect. A hazard taints this path (bailed) but
-        // does NOT stop the dataflow — the path must still reach its terminator so
-        // we can tell a returning bail from a diverging one.
-        if !st.bailed {
-            if let Some(reason) = transfer(&cfg, idx, &mut st, items, &policy) {
-                st.bailed = true;
-                bail_reason.get_or_insert(reason);
-            }
-        }
-        for edge in cfg.edges(idx) {
-            match edge {
-                Edge::Follow(succ) => {
-                    let changed = match in_state.get(&succ) {
-                        None => {
-                            in_state.insert(succ, st.clone());
-                            true
-                        }
-                        Some(existing) => {
-                            let mut merged = existing.clone();
-                            join(&mut merged, &st); // depth mismatch → merged.bailed
-                            if merged != *existing {
-                                in_state.insert(succ, merged);
-                                true
-                            } else {
-                                false
-                            }
-                        }
-                    };
-                    if changed {
-                        work.push_back(succ);
-                    }
-                }
-                Edge::Abandon => {
-                    // A return / fall-off-end: checkpoint every checked register,
-                    // if this exit is in scope.
-                    if scope.checks(idx, true) {
-                        checkpoint(
-                            &st,
-                            check,
-                            &mut saw_exit,
-                            &mut delta_ok,
-                            &mut all_exits_preserve,
-                            &mut bailed_reached_exit,
-                        );
-                    }
-                }
-                Edge::Defer => {
-                    // An external tail transfer (`jmp`/`bra` to a non-local
-                    // symbol) is NOT an `rts` of THIS proc. `preserves(rN)`
-                    // constrains the proc's own return (`rts`/`rte`) paths; a tail
-                    // transfer either diverges (a noreturn `raise_error`/error
-                    // handler — no return obligation at all) or is a real tail
-                    // call whose preservation is a TRANSITIVE property the closure
-                    // accounts for via its tail edge (corpus `TAIL_MNEMONICS`).
-                    // Either way it is not a local counterexample under
-                    // `AllReturns` — ignore it, bailed or not. (This mirrors
-                    // D2.32, which verified the movem pair ignoring control flow.)
-                    //
-                    // A `Sites` scope names its own exits, and control leaving
-                    // the proc IS one: a register already destroyed HERE is
-                    // destroyed from the caller's view whatever the target does.
-                    // What the TARGET does is deliberately not charged — the
-                    // transfer may diverge (a noreturn error handler, which owes
-                    // the caller nothing) and nothing in the language marks that
-                    // yet, so charging it would reject an honest failure rail.
-                    // The transitive half stays where `preserves` leaves it: the
-                    // closure folds an unconditional tail's effect into
-                    // `effective` via its own tail edge.
-                    if scope.checks(idx, false) {
-                        checkpoint(
-                            &st,
-                            check,
-                            &mut saw_exit,
-                            &mut delta_ok,
-                            &mut all_exits_preserve,
-                            &mut bailed_reached_exit,
-                        );
-                    }
-                }
-            }
-        }
-    }
+    // value? Starts true; an exit with a clobbered value flips it false. Plus, per
+    // checked register, whether its linear delta is `Some(0)` at EVERY in-scope
+    // exit — an independent POSITIVE proof (the register-arithmetic round-trip),
+    // valid even past a stack bailout (a computed-sp hazard does not touch a
+    // register whose value is a proven static offset of entry).
+    let mut obs = PreserveObserver {
+        check,
+        scope,
+        all_exits_preserve: check.iter().map(|r| (*r, true)).collect(),
+        delta_ok: check.iter().map(|r| (*r, true)).collect(),
+        saw_exit: false,
+        bailed_reached_exit: false,
+    };
+    let bail_reason = run_stack_dataflow(&cfg, entry_idx, items, &policy, &mut obs);
+    let PreserveObserver { all_exits_preserve, delta_ok, saw_exit, bailed_reached_exit, .. } = obs;
 
     // Resolve each checked register's status.
     check
@@ -417,6 +364,122 @@ pub fn verify_preserved_on(
         .collect()
 }
 
+/// What a consumer of the symbolic-stack dataflow observes as it walks a proc.
+///
+/// **The anti-drift seam.** Both consumers of [`State`] — the entry-value proof
+/// and the stack-balance checker — run through [`run_stack_dataflow`], so there is
+/// exactly ONE worklist, ONE [`transfer`] and ONE [`join`], therefore ONE bailout
+/// set. A consumer chooses what to CONCLUDE from a state; it never gets to decide
+/// whether the state is trustworthy. That is why the two cannot drift apart on
+/// `State::bailed`. ([`find_dead_saves`] models the stack SEPARATELY, over its own
+/// `DsState`, with a strictly more conservative bailout set — safe for a
+/// code-cutting worklist, and outside this seam.)
+trait StackObserver {
+    /// Control leaves the proc at instruction `idx` carrying state `st`.
+    /// `is_return` distinguishes an [`Edge::Abandon`] (an `rts`/`rte`, or a
+    /// fall-off-end) from an [`Edge::Defer`] (a transfer to a non-local symbol).
+    fn exit(&mut self, idx: usize, st: &State, is_return: bool);
+
+    /// Two paths meet on entry to instruction `succ`. Called with BOTH incoming
+    /// states before [`join`] folds them, so a consumer can read a disagreement
+    /// the join deliberately erases (it answers a mismatch with a bail).
+    fn merge(&mut self, _succ: usize, _existing: &State, _incoming: &State) {}
+}
+
+/// The shared forward dataflow over the symbolic stack: walk `items` from
+/// `entry_idx` to fixpoint, applying [`transfer`] per instruction and [`join`] at
+/// every merge, reporting exits and merges to `obs`. Returns the FIRST bailout
+/// reason encountered, or `None` if the model held everywhere.
+///
+/// A bailout RIDES THE CFG rather than stopping the walk: it taints the state
+/// ([`State::bailed`]), so a path must still reach its terminator and consumers
+/// can tell a returning bail from a diverging one. It reaches only what the
+/// tainted path reaches — a bail on a diverging branch never touches a returning
+/// one, though [`join`] does propagate it into any merge it participates in. Under
+/// [`ReturnScope::AllReturns`] a bail on a noreturn `Defer` path (the DEBUG
+/// `raise_error` `subq #2,sp` → `jmp handler` shape) constrains nothing.
+fn run_stack_dataflow<O: StackObserver>(
+    cfg: &Cfg,
+    entry_idx: usize,
+    items: &[CodeItem],
+    policy: &CallPolicy,
+    obs: &mut O,
+) -> Option<String> {
+    let mut in_state: BTreeMap<usize, State> = BTreeMap::new();
+    in_state.insert(entry_idx, State::at_entry());
+    let mut work: VecDeque<usize> = VecDeque::from([entry_idx]);
+    let mut bail_reason: Option<String> = None;
+
+    while let Some(idx) = work.pop_front() {
+        let mut st = in_state[&idx].clone();
+        if !st.bailed {
+            if let Some(reason) = transfer(cfg, idx, &mut st, items, policy) {
+                st.bailed = true;
+                bail_reason.get_or_insert(reason);
+            }
+        }
+        for edge in cfg.edges(idx) {
+            match edge {
+                Edge::Follow(succ) => {
+                    let changed = match in_state.get(&succ) {
+                        None => {
+                            in_state.insert(succ, st.clone());
+                            true
+                        }
+                        Some(existing) => {
+                            obs.merge(succ, existing, &st);
+                            let mut merged = existing.clone();
+                            join(&mut merged, &st); // depth mismatch → merged.bailed
+                            if merged != *existing {
+                                in_state.insert(succ, merged);
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                    };
+                    if changed {
+                        work.push_back(succ);
+                    }
+                }
+                // A return / fall-off-end.
+                Edge::Abandon => obs.exit(idx, &st, true),
+                // An external tail transfer (`jmp`/`bra` to a non-local symbol) is
+                // NOT an `rts` of THIS proc: it either diverges (a noreturn
+                // `raise_error` / error handler, which owes the caller nothing) or
+                // is a real tail call whose effect is a TRANSITIVE property the
+                // closure accounts for via its own tail edge (corpus
+                // `TAIL_MNEMONICS`). Consumers decide whether to charge it.
+                Edge::Defer => obs.exit(idx, &st, false),
+            }
+        }
+    }
+    bail_reason
+}
+
+/// The entry-value proof's view of the shared walk: charge every IN-SCOPE exit
+/// against the checked registers, ignore merges.
+struct PreserveObserver<'a> {
+    check: &'a [Reg],
+    scope: ReturnScope<'a>,
+    all_exits_preserve: BTreeMap<Reg, bool>,
+    delta_ok: BTreeMap<Reg, bool>,
+    saw_exit: bool,
+    bailed_reached_exit: bool,
+}
+
+impl StackObserver for PreserveObserver<'_> {
+    fn exit(&mut self, idx: usize, st: &State, is_return: bool) {
+        // `AllReturns` ignores a `Defer` entirely (see [`run_stack_dataflow`]);
+        // a `Sites` scope names its own exits, and control leaving the proc IS
+        // one — a register already destroyed HERE is destroyed from the caller's
+        // view whatever the target does.
+        if self.scope.checks(idx, is_return) {
+            self.checkpoint(st);
+        }
+    }
+}
+
 /// Apply a transfer of control to `callee` (`None` = indirect / unresolved) to
 /// the entry-value bits: a register the callee does not provably PRESERVE under
 /// `policy` no longer holds its entry value. Linear-delta tracking ends for every
@@ -433,33 +496,27 @@ fn apply_callee_effect(st: &mut State, policy: &CallPolicy, callee: Option<&str>
     st.delta = [None; 16];
 }
 
-/// Charge one in-scope exit against every checked register: the linear-delta
-/// proof needs Δ==0 on an unbailed path, and the stack/entry-bit model needs the
-/// entry bit still set. Called from BOTH exit arms so a scoped tail-transfer
-/// checkpoint and a return checkpoint are judged by identical rules.
-fn checkpoint(
-    st: &State,
-    check: &[Reg],
-    saw_exit: &mut bool,
-    delta_ok: &mut BTreeMap<Reg, bool>,
-    all_exits_preserve: &mut BTreeMap<Reg, bool>,
-    bailed_reached_exit: &mut bool,
-) {
-    *saw_exit = true;
-    for r in check {
-        // The linear-delta proof holds here iff Δ==0 AND the path did NOT bail: a
-        // bail FREEZES the transfer, so `delta` after it is STALE — it cannot
-        // prove anything.
-        if st.bailed || st.delta[reg_idx(*r)] != Some(0) {
-            *delta_ok.get_mut(r).unwrap() = false;
+impl PreserveObserver<'_> {
+    /// Charge one in-scope exit against every checked register: the linear-delta
+    /// proof needs Δ==0 on an unbailed path, and the stack/entry-bit model needs
+    /// the entry bit still set.
+    fn checkpoint(&mut self, st: &State) {
+        self.saw_exit = true;
+        for r in self.check {
+            // The linear-delta proof holds here iff Δ==0 AND the path did NOT
+            // bail: a bail FREEZES the transfer, so `delta` after it is STALE —
+            // it cannot prove anything.
+            if st.bailed || st.delta[reg_idx(*r)] != Some(0) {
+                *self.delta_ok.get_mut(r).unwrap() = false;
+            }
         }
-    }
-    if st.bailed {
-        *bailed_reached_exit = true;
-    } else {
-        for r in check {
-            if !st.entry[reg_idx(*r)] {
-                *all_exits_preserve.get_mut(r).unwrap() = false;
+        if st.bailed {
+            self.bailed_reached_exit = true;
+        } else {
+            for r in self.check {
+                if !st.entry[reg_idx(*r)] {
+                    *self.all_exits_preserve.get_mut(r).unwrap() = false;
+                }
             }
         }
     }
@@ -501,16 +558,31 @@ fn is_safe_sp_disp_read(mnem: &str, ops: &[CodeOperand]) -> bool {
         && matches!(ops.last(), Some(CodeOperand::Reg(r)) if *r != Reg::A7)
 }
 
+/// A plain `(sp)` READ: the top slot is the SOURCE and the destination is
+/// something else. A load cannot alter a slot's contents, so it is not an alias
+/// hazard whatever the mnemonic — `adda.w (sp), a2` reads the top word exactly as
+/// `movea.l (sp), a1` does. The STORE direction (`(sp)` as the destination, e.g.
+/// `add.l d0, (sp)`) is the hazard, and so is a read-modify-write naming `(sp)`
+/// on both ends. [`is_peek`] stays the NARROWER question of which loads also
+/// RESTORE a register's entry value.
+fn is_sp_top_read(ops: &[CodeOperand]) -> bool {
+    matches!(ops.first(), Some(CodeOperand::Ind(Reg::A7)))
+        && !matches!(ops.last(), Some(CodeOperand::Ind(Reg::A7)))
+}
+
 /// An unmodeled sp hazard → bail: a bare `a7` operand (sp's value used directly —
-/// escapes into address math or a computed `adda #n,sp`), or a displaced/indexed
-/// sp access (`d(sp)` / `(sp,Xn)` — could alias a tracked slot). The clean stack
-/// forms use `PreDec`/`PostInc`/`Ind` of a7, never these; a displaced-sp READ into
-/// a register is exempted by [`is_safe_sp_disp_read`] at the call site.
+/// escapes into address math or a computed `adda #n,sp`), or an sp access that
+/// could ALIAS a tracked slot — displaced (`d(sp)`), indexed (`(sp,Xn)`), or the
+/// exact top-of-stack (`(sp)`). The clean stack forms use `PreDec`/`PostInc` of
+/// a7, never these. Two READ forms are exempted at the call site, since a load
+/// cannot alter a slot's contents: the `(sp)` peek ([`is_peek`]) and the
+/// displaced-frame read ([`is_safe_sp_disp_read`]).
 fn sp_hazard(ops: &[CodeOperand]) -> bool {
     ops.iter().any(|o| {
         matches!(
             o,
             CodeOperand::Reg(Reg::A7)
+                | CodeOperand::Ind(Reg::A7)
                 | CodeOperand::DispInd { reg: Reg::A7, .. }
                 | CodeOperand::IndIdx { reg: Reg::A7, .. }
                 | CodeOperand::IndIdx { xn: Reg::A7, .. }
@@ -596,6 +668,16 @@ fn transfer(
         return None;
     }
 
+    // FRAME OPEN / CLOSE — `link aN, #-d` / `unlk aN`. Modeled BEFORE the
+    // sp_hazard bail: `link` moves sp without naming it, so an unmodeled `link`
+    // would leave the slot map claiming a depth the machine does not have.
+    if mnem == "link" {
+        return apply_link(st, ops);
+    }
+    if mnem == "unlk" {
+        return apply_unlk(st, ops);
+    }
+
     // IMMEDIATE sp-INCREASE cleanup (`addq/adda #N,sp`): deallocate a save area by
     // dropping exactly N BYTES of tracked slots off the top. Modeled BEFORE the
     // sp_hazard bail (its `sp` operand would otherwise read as an escape). A
@@ -610,7 +692,7 @@ fn transfer(
     // the `(sp)` peek: a load cannot alias a tracked slot (only a store could), so
     // it is safe and takes the normal register-write handling below (§5 grow —
     // sp_hazard's own "could alias" rationale is write-only).
-    if sp_hazard(ops) && !is_safe_sp_disp_read(mnem, ops) {
+    if sp_hazard(ops) && !is_sp_top_read(ops) && !is_safe_sp_disp_read(mnem, ops) {
         return Some(sp_hazard_reason(ops));
     }
 
@@ -635,31 +717,50 @@ fn transfer(
         return None;
     }
 
-    // POP — `(sp)+`. Popping more slots than are tracked underflows into the
-    // caller's frame / return address — the model is inconsistent → bail.
+    // POP — `(sp)+`. The transfer's byte width is the truth: an `n`-register pop
+    // of size `sz` consumes `n * sz` BYTES, and the slots it drains must total
+    // exactly that. A pop whose width disagrees with the slots beneath it (a `.l`
+    // pop over two `.w` pushes) leaves sp somewhere the slot map cannot name, and
+    // a pop that drains more than is tracked reaches into the caller's frame —
+    // both make the model inconsistent → bail. (Counting SLOTS instead of bytes
+    // would let the mismatched case report a depth the machine does not have,
+    // which at ERROR tier is a false positive.)
     if is_pop(ops) {
         let regs: Vec<Reg> = match reglist_mask(ops) {
             Some(mask) => expand_mask(mask),
             None => match ops.last() {
                 Some(CodeOperand::Reg(dst)) => vec![*dst],
-                _ => {
-                    st.stack.pop();
-                    return None;
-                }
+                // A non-register destination (`move.w (sp)+, sr`) restores no
+                // tracked register but still drains one transfer's worth.
+                _ => Vec::new(),
             },
         };
-        if st.stack.len() < regs.len() {
-            return Some("stack underflow — pop drains more than was pushed".to_string());
-        }
+        let per = slot_bytes(instr_size(items, idx)) as i64;
+        let want = per * regs.len().max(1) as i64;
+        let mut got = 0i64;
         // movem restores in canonical ascending order; a single pop is one reg.
-        for r in regs {
-            let slot = st.stack.pop().and_then(|s| s.reg);
+        // Drain first so a width disagreement is caught before any entry bit is
+        // set from a slot the pop did not actually consume.
+        let mut popped: Vec<Option<Reg>> = Vec::with_capacity(regs.len());
+        while got < want {
+            let Some(slot) = st.stack.pop() else {
+                return Some("stack underflow — pop drains more than was pushed".to_string());
+            };
+            got += slot.bytes as i64;
+            popped.push(slot.reg);
+        }
+        if got != want {
+            return Some(
+                "pop width disagrees with the slots beneath it — sp lands mid-slot".to_string(),
+            );
+        }
+        for (r, slot) in regs.iter().zip(popped) {
             // A `.w`/`.b` restore does not round-trip the full register.
-            st.entry[reg_idx(r)] = is_long && slot == Some(r);
+            st.entry[reg_idx(*r)] = is_long && slot == Some(*r);
             // A pop LOADS the register from the stack — a fresh value, not a
             // static offset of entry. The stack/entry-bit model judges it; the
             // delta tracker gives up on it.
-            st.delta[reg_idx(r)] = None;
+            st.delta[reg_idx(*r)] = None;
         }
         return None;
     }
@@ -690,6 +791,75 @@ fn transfer(
         }
     }
     None
+}
+
+/// Open a stack frame: `link aN, #-d` pushes aN (4 bytes), sets aN to the new sp,
+/// then allocates `d` bytes of locals. The saved-fp push is an ordinary tagged
+/// slot, so a frame is visible to the depth model like any other save; the
+/// allocation is one opaque slot of the true byte size, and the `(aN, depth)`
+/// mark lets the matching `unlk` truncate back.
+///
+/// Bails on the forms the model cannot represent: a non-register or `a7` frame
+/// pointer, a non-immediate displacement, or a POSITIVE displacement (an sp
+/// INCREASE, which would reach into the caller's frame rather than allocate).
+fn apply_link(st: &mut State, ops: &[CodeOperand]) -> Option<String> {
+    let Some(CodeOperand::Reg(fp)) = ops.first() else {
+        return Some("`link` with a non-register frame pointer".to_string());
+    };
+    if *fp == Reg::A7 {
+        return Some("`link a7` — the frame pointer is sp itself".to_string());
+    }
+    let Some(CodeOperand::Imm(disp)) = ops.last() else {
+        return Some("`link` with a non-immediate frame size".to_string());
+    };
+    if *disp > 0 {
+        return Some(
+            "`link` with a positive displacement raises sp into the caller frame".to_string(),
+        );
+    }
+    // The allocation must fit the slot's byte width to be tracked at all. This
+    // rejects both a nonsense frame size and `i128::MIN`, whose negation does not
+    // exist — `checked_neg` answers the second before the width test sees it.
+    let Some(alloc) = disp.checked_neg().and_then(|n| u32::try_from(n).ok()) else {
+        return Some("`link` frame size does not fit the tracked slot width".to_string());
+    };
+    let slot = tag(st, *fp, 4);
+    st.stack.push(slot);
+    st.frames.push((*fp, st.stack.len()));
+    if alloc > 0 {
+        st.stack.push(Slot { reg: None, bytes: alloc });
+    }
+    // aN now holds sp, not its entry value, and is no longer a static offset of it.
+    st.entry[reg_idx(*fp)] = false;
+    st.delta[reg_idx(*fp)] = None;
+    None
+}
+
+/// Close a stack frame: `unlk aN` sets sp back to aN (discarding the locals and
+/// anything else pushed inside the frame), then pops the saved frame pointer.
+///
+/// The PAIRING RULE's provable direction. An `unlk` whose innermost open frame
+/// names a different register — or which has no open frame at all — leaves sp at a
+/// value this model never computed, so it BAILS rather than guessing; the
+/// mispairing that IS decidable is a `link` whose frame is still on the stack when
+/// control reaches a return, which the depth check reports on its own.
+fn apply_unlk(st: &mut State, ops: &[CodeOperand]) -> Option<String> {
+    let Some(CodeOperand::Reg(fp)) = ops.first() else {
+        return Some("`unlk` with a non-register frame pointer".to_string());
+    };
+    match st.frames.pop() {
+        Some((open, depth)) if open == *fp && depth <= st.stack.len() => {
+            st.stack.truncate(depth);
+            let saved = st.stack.pop().and_then(|s| s.reg);
+            st.entry[reg_idx(*fp)] = saved == Some(*fp);
+            st.delta[reg_idx(*fp)] = None;
+            None
+        }
+        _ => Some(
+            "`unlk` with no matching `link` on this path — sp becomes an unmodeled value"
+                .to_string(),
+        ),
+    }
 }
 
 /// If instruction `(mnem, ops)` writes register `r` via a TRACKABLE linear
@@ -737,7 +907,7 @@ fn linear_write_amount(mnem: &str, ops: &[CodeOperand], size: Option<Width>, r: 
 
 /// The slot tag for a `bytes`-wide push of register `r` at the current state:
 /// `reg = Some(r)` iff `r` still holds its entry value.
-fn tag(st: &State, r: Reg, bytes: u8) -> Slot {
+fn tag(st: &State, r: Reg, bytes: u32) -> Slot {
     Slot { reg: if st.entry[reg_idx(r)] { Some(r) } else { None }, bytes }
 }
 
@@ -745,18 +915,29 @@ fn sp_hazard_reason(ops: &[CodeOperand]) -> String {
     if ops.iter().any(|o| matches!(o, CodeOperand::Reg(Reg::A7))) {
         "sp used as a value (computed sp / escape into address math)".to_string()
     } else {
-        "displaced/indexed sp access could alias a saved slot".to_string()
+        "sp-relative store could alias a saved slot".to_string()
     }
 }
 
 /// Join `other` into `acc` (both on entry to the same node). Entry bits meet by
 /// AND (a register is entry-valued only if BOTH paths agree). Slots meet
-/// pointwise (`Some(r)` iff both agree). `bailed` propagates (OR). Differing stack
-/// DEPTHS mean an ambiguous sp at the merge → taint the merged path `bailed`
-/// (path-local, so a diverging bailed path never poisons a returning one).
+/// pointwise (`Some(r)` iff both agree). Differing stack DEPTHS mean an ambiguous
+/// sp at the merge → taint the merged path `bailed`.
+///
+/// `bailed` propagates by OR, so a bailed path DOES taint every path it merges
+/// with — the safe direction (more silence), and the reason "path-local" means
+/// only that a bail rides the CFG instead of aborting the walk: a bail on a
+/// diverging path that never merges leaves returning paths untouched.
 fn join(acc: &mut State, other: &State) {
     acc.bailed |= other.bailed;
     if acc.stack.len() != other.stack.len() {
+        acc.bailed = true;
+        return;
+    }
+    // Differing OPEN FRAMES mean the two paths disagree about which `link` an
+    // `unlk` past this point would close — the frame chain's analogue of the
+    // depth mismatch → taint the merge.
+    if acc.frames != other.frames {
         acc.bailed = true;
         return;
     }
@@ -781,6 +962,163 @@ fn join(acc: &mut State, other: &State) {
         // known → untrackable. Two `None`s stay `None`; equal `Some`s survive.
         if acc.delta[i] != other.delta[i] {
             acc.delta[i] = None;
+        }
+    }
+}
+
+// ===========================================================================
+// §4-stack / S2-D7(b) — [stack.unbalanced] and [stack.merge-mismatch]: sp is at
+// its entry value on every path to `rts`, and merging paths agree on the delta.
+// ===========================================================================
+
+/// What a [`StackFinding`] reports.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StackFindingKind {
+    /// Control reaches a return with sp `depth` bytes BELOW its entry value —
+    /// data pushed and never popped, so the caller's return address is not where
+    /// the `rts` will look for it.
+    ///
+    /// Only that direction is representable: the slot map has no negative depth,
+    /// so an sp RAISED past entry drains the tracked slots and hits the underflow
+    /// bail instead. The opposite defect (popping more than was pushed) is
+    /// therefore a blind spot, not a covered case — see the gap ledger.
+    Unbalanced {
+        /// Bytes of stack still held at the return.
+        depth: i64,
+    },
+    /// Two paths meet with different sp deltas, so the code past the merge runs at
+    /// an sp that depends on which branch was taken.
+    MergeMismatch {
+        /// The depth the already-recorded path arrives with.
+        existing: i64,
+        /// The depth the joining path arrives with.
+        incoming: i64,
+    },
+}
+
+impl StackFindingKind {
+    /// The finding's CLASS, the dedup key's second half: one report per
+    /// (site, class), so the fixpoint's repeated visits collapse while a site
+    /// that is genuinely both an imbalance and a mismatch reports both.
+    fn class(&self) -> u8 {
+        match self {
+            StackFindingKind::Unbalanced { .. } => 0,
+            StackFindingKind::MergeMismatch { .. } => 1,
+        }
+    }
+}
+
+/// One stack-discipline finding at `span` — the return, or the merge point.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StackFinding {
+    pub kind: StackFindingKind,
+    pub span: Span,
+}
+
+/// Every stack-discipline finding in a proc's evaluated CodeBuf: sp must be back
+/// at its entry value on every path to a return, and paths that merge must agree
+/// on where sp is.
+///
+/// **This is the SAME analysis as the entry-value proof**, reading a different
+/// conclusion off the same states: the symbolic stack's byte depth IS sp's
+/// displacement from entry, so the slot map that proves `preserves(rN)` already
+/// carries the delta. It walks through [`run_stack_dataflow`], which owns the one
+/// [`transfer`] and the one [`join`] — so it inherits, rather than restates, the
+/// bailout set (a bare `a7` operand, a computed `adda #n,sp`, a displaced or
+/// indexed sp access, a pop that underflows, an sp cleanup landing mid-slot, a
+/// depth-ambiguous merge, an unmatched `unlk`).
+///
+/// **Silence where the model bails is the whole soundness story.** These are
+/// ERROR-tier, so a false positive breaks the build on correct code; a bailed path
+/// therefore reports NOTHING in either direction, and only the paths the model
+/// tracked exactly can fire.
+///
+/// Scope: RETURNS only ([`Edge::Abandon`]). A tail transfer out of the proc is
+/// deliberately not charged, for the reason the entry-value proof gives — it may
+/// diverge (a noreturn error rail owes its caller nothing), and nothing in the
+/// language marks that yet.
+///
+/// The policy is [`CallPolicy::ClobberAll`] because a call's STACK effect is
+/// policy-independent (it nets zero — the return address it pushes is popped by
+/// its own `rts`); only the entry-value bits, which this consumer never reads,
+/// vary with the oracle.
+pub fn check_stack_balance(items: &[CodeItem], charge_fall_off_end: bool) -> Vec<StackFinding> {
+    let cfg = Cfg::build(items);
+    let Some(entry_idx) = entry_instr_idx(items) else {
+        return Vec::new(); // no instructions: nothing to balance
+    };
+    let mut obs = BalanceObserver { items, charge_fall_off_end, found: BTreeMap::new() };
+    run_stack_dataflow(&cfg, entry_idx, items, &CallPolicy::ClobberAll, &mut obs);
+    obs.found.into_values().collect()
+}
+
+/// The stack-balance checker's view of the shared walk. Findings are keyed by
+/// `(span start, kind)` so the fixpoint's repeated visits to one site report it
+/// once, in source order.
+struct BalanceObserver<'a> {
+    items: &'a [CodeItem],
+    /// Charge control running off the END of the body as a return. False for a
+    /// declared `falls_into`, whose end is a continuation, not a return.
+    charge_fall_off_end: bool,
+    /// Keyed `(source, span start, class)`. The SOURCE is load-bearing: a
+    /// `with <ctx> { }` bracket splices the context module's instructions into
+    /// this body carrying THEIR file's spans, so two findings in one proc can sit
+    /// at the same byte offset in different files.
+    found: BTreeMap<(u32, u32, u8), StackFinding>,
+}
+
+impl BalanceObserver<'_> {
+    /// Is the exit at instruction `idx` one this checker charges? A RETURN
+    /// instruction always is. Control running off the END of the body is a return
+    /// only when the proc did not declare a fallthrough — a declared `falls_into`
+    /// continues into its successor, whose own check covers the shared frame, and
+    /// charging it would reject the idiom with a message about an `rts` the body
+    /// does not contain.
+    fn charges(&self, idx: usize) -> bool {
+        match self.items.get(idx) {
+            Some(CodeItem::Instr { mnemonic, .. }) => {
+                is_return_mnemonic(mnemonic) || self.charge_fall_off_end
+            }
+            _ => false,
+        }
+    }
+
+    /// Record `kind` at instruction `idx`, keeping the FIRST finding per
+    /// (site, class).
+    ///
+    /// The walk reports during iteration rather than at the fixpoint, and that is
+    /// deliberate: the state at a given visit is either ONE path's exactly (the
+    /// first arrival) or a merge whose members AGREED on depth, so every recorded
+    /// depth is a true fact about a real path. The fixpoint's converged state is
+    /// strictly less informative — a later merge answers a disagreement with a
+    /// bail, which would erase a genuine imbalance the model had already proven.
+    fn record(&mut self, idx: usize, kind: StackFindingKind) {
+        if let Some(span) = instr_span(self.items, idx) {
+            self.found
+                .entry((span.source.0, span.start, kind.class()))
+                .or_insert(StackFinding { kind, span });
+        }
+    }
+}
+
+impl StackObserver for BalanceObserver<'_> {
+    fn exit(&mut self, idx: usize, st: &State, is_return: bool) {
+        if !is_return || st.bailed || !self.charges(idx) {
+            return;
+        }
+        let depth = st.depth_bytes();
+        if depth != 0 {
+            self.record(idx, StackFindingKind::Unbalanced { depth });
+        }
+    }
+
+    fn merge(&mut self, succ: usize, existing: &State, incoming: &State) {
+        if existing.bailed || incoming.bailed {
+            return;
+        }
+        let (a, b) = (existing.depth_bytes(), incoming.depth_bytes());
+        if a != b {
+            self.record(succ, StackFindingKind::MergeMismatch { existing: a, incoming: b });
         }
     }
 }
@@ -849,10 +1187,7 @@ pub fn find_dead_saves(
     effective: &BTreeMap<String, RegEffect>,
 ) -> Vec<DeadSave> {
     let cfg = Cfg::build(items);
-    let Some(entry_idx) = items
-        .iter()
-        .position(|it| matches!(it, CodeItem::Instr { .. }))
-    else {
+    let Some(entry_idx) = entry_instr_idx(items) else {
         return Vec::new();
     };
 
@@ -956,7 +1291,15 @@ fn ds_transfer(
         return false;
     }
 
-    if sp_hazard(ops) {
+    // `link`/`unlk` move sp without naming it. This walk does not model frames, so
+    // it must BAIL rather than carry a depth the machine does not have — otherwise
+    // a later restore pairs a slot to the wrong register and the worklist tells a
+    // porter to delete a load-bearing save.
+    if mnem == "link" || mnem == "unlk" {
+        return true;
+    }
+
+    if sp_hazard(ops) && !is_sp_top_read(ops) {
         return true;
     }
 
@@ -1027,10 +1370,7 @@ fn record_restore(
     if slot.reg != Some(r) {
         return;
     }
-    let span = match &items[slot.push_idx] {
-        CodeItem::Instr { span, .. } => *span,
-        _ => return,
-    };
+    let Some(span) = instr_span(items, slot.push_idx) else { return };
     let rec = recs.entry((r, slot.push_idx)).or_insert(DeadRec {
         callees: BTreeSet::new(),
         any_clobbered: false,
@@ -1065,4 +1405,149 @@ fn ds_join(acc: &mut DsState, other: &DsState) -> Result<(), ()> {
         a.callees.extend(b.callees.iter().cloned());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod frame_tests {
+    //! `link` / `unlk` — the frame arm of the stack model.
+    //!
+    //! These are UNIT tests because the 68k backend has no encoder for either
+    //! mnemonic, so no `.emp` source can reach the analysis through lowering. That
+    //! is also the honest state of the corpus: it contains ZERO `link`/`unlk`
+    //! sites. The rule is implemented for soundness — an unmodeled `link` would
+    //! leave the slot map claiming a depth the machine does not have — and proven
+    //! here, at the only level where it can be exercised.
+
+    use super::*;
+    use sigil_span::SourceId;
+
+    /// One instruction item. Spans are distinct per index so the balance
+    /// checker's per-site dedup key does not collapse two findings into one.
+    fn instr(idx: u32, mnemonic: &str, ops: Vec<CodeOperand>) -> CodeItem {
+        CodeItem::Instr {
+            mnemonic: mnemonic.to_string(),
+            size: Some(Width::L),
+            ops,
+            span: Span { source: SourceId(0), start: idx, end: idx + 1 },
+            as_type: None,
+        }
+    }
+
+    /// `link fp, #disp` — `disp` is the frame DISPLACEMENT, negative to allocate,
+    /// the ISA's own sign convention.
+    fn link(idx: u32, fp: Reg, disp: i128) -> CodeItem {
+        instr(idx, "link", vec![CodeOperand::Reg(fp), CodeOperand::Imm(disp)])
+    }
+
+    fn unlk(idx: u32, fp: Reg) -> CodeItem {
+        instr(idx, "unlk", vec![CodeOperand::Reg(fp)])
+    }
+
+    fn rts(idx: u32) -> CodeItem {
+        instr(idx, "rts", vec![])
+    }
+
+    /// A paired frame nets zero: the `unlk` drops the locals and pops the saved
+    /// frame pointer.
+    #[test]
+    fn a_paired_frame_is_balanced() {
+        let items = [link(0, Reg::A6, -8), unlk(1, Reg::A6), rts(2)];
+        assert_eq!(check_stack_balance(&items, true), Vec::new(), "a closed frame nets zero");
+    }
+
+    /// The pairing rule's PROVABLE direction: a `link` whose frame is still on the
+    /// stack at a return leaves sp 12 bytes low (4 saved fp + 8 locals).
+    #[test]
+    fn a_link_with_no_unlk_is_unbalanced() {
+        let items = [link(0, Reg::A6, -8), rts(1)];
+        let found = check_stack_balance(&items, true);
+        assert_eq!(found.len(), 1, "expected one finding, got {found:?}");
+        assert_eq!(found[0].kind, StackFindingKind::Unbalanced { depth: 12 });
+    }
+
+    /// An `unlk` with no open frame sets sp from a register this model never
+    /// computed. That is a BAILOUT, not a finding: reporting a delta here would be
+    /// a guess, and the tier does not allow guesses.
+    #[test]
+    fn an_unlk_with_no_link_bails_rather_than_guessing() {
+        let items = [unlk(0, Reg::A6), rts(1)];
+        assert_eq!(
+            check_stack_balance(&items, true),
+            Vec::new(),
+            "an unmatched unlk leaves sp unmodeled — reporting a delta would be a guess"
+        );
+    }
+
+    /// Likewise an `unlk` naming a register no open `link` opened — the frame
+    /// chain disagrees, so sp is unmodeled from there.
+    #[test]
+    fn an_unlk_of_the_wrong_register_bails() {
+        let items = [link(0, Reg::A6, -8), unlk(1, Reg::A5), rts(2)];
+        assert_eq!(
+            check_stack_balance(&items, true),
+            Vec::new(),
+            "a disagreeing frame chain leaves sp unmodeled"
+        );
+    }
+
+    /// The frame arm serves the ENTRY-VALUE proof too, which is the point of
+    /// putting it in the shared transfer: `unlk` restores the frame pointer from
+    /// its own saved slot, so `preserves(a6)` verifies.
+    #[test]
+    fn a_paired_frame_preserves_its_frame_pointer() {
+        let items = [link(0, Reg::A6, -8), unlk(1, Reg::A6), rts(2)];
+        let got = verify_preserved(&items, &[Reg::A6], CallPolicy::ClobberAll);
+        assert_eq!(got[&Reg::A6], PreserveStatus::Verified);
+    }
+
+    /// And refutes the claim when the frame is never closed: `link` writes the
+    /// frame pointer, and nothing restores it.
+    #[test]
+    fn an_unclosed_frame_does_not_preserve_its_frame_pointer() {
+        let items = [link(0, Reg::A6, -8), rts(1)];
+        let got = verify_preserved(&items, &[Reg::A6], CallPolicy::ClobberAll);
+        assert_eq!(got[&Reg::A6], PreserveStatus::NotPreserved);
+    }
+
+    /// A closed zero-size frame (`link aN, #0` — a frame pointer with no locals)
+    /// is balanced.
+    #[test]
+    fn a_closed_zero_size_frame_is_balanced() {
+        let items = [link(0, Reg::A6, 0), unlk(1, Reg::A6), rts(2)];
+        assert_eq!(check_stack_balance(&items, true), Vec::new(), "a closed frame nets zero");
+    }
+
+    /// An unclosed zero-size frame still leaves its saved frame pointer behind.
+    #[test]
+    fn an_unclosed_zero_size_frame_still_carries_its_saved_pointer() {
+        let found = check_stack_balance(&[link(0, Reg::A6, 0), rts(1)], true);
+        assert_eq!(found.len(), 1, "expected one finding, got {found:?}");
+        assert_eq!(found[0].kind, StackFindingKind::Unbalanced { depth: 4 });
+    }
+
+    /// A POSITIVE displacement would raise sp into the caller's frame rather than
+    /// allocate — not the idiom, and not modeled, so it bails.
+    #[test]
+    fn a_positive_link_displacement_bails() {
+        let items = [link(0, Reg::A6, 8), rts(1)];
+        assert_eq!(
+            check_stack_balance(&items, true),
+            Vec::new(),
+            "a positive displacement is not the allocate idiom, so it is not modeled"
+        );
+    }
+
+    /// A frame size the slot's byte width cannot hold is untracked, so it bails
+    /// rather than silently truncating to a depth the machine does not have.
+    /// `i128::MIN` rides the same arm — its negation does not exist.
+    #[test]
+    fn an_unrepresentable_frame_size_bails() {
+        for size in [-(u32::MAX as i128) - 1, i128::MIN] {
+            assert_eq!(
+                check_stack_balance(&[link(0, Reg::A6, size), rts(1)], true),
+                Vec::new(),
+                "frame size {size} must bail"
+            );
+        }
+    }
 }

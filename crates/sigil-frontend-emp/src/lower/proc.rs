@@ -6,7 +6,10 @@
 //! streamed by [`lower_code_buf`](super::lower_code_buf) (reusing T3's backend
 //! dispatch). No instruction lowering is re-implemented here (D-P4.1).
 //!
-//! T4 also runs three §5.1 proc-contract checks over the resolved body:
+//! T4 also runs the §5.1 proc-contract checks over the resolved body — the three
+//! below plus the contract-grammar v2 additions ([`check_preserves`],
+//! [`check_out`], the context brackets, the survives claims, and stack balance),
+//! numbered in [`lower_proc`] in the order they run:
 //!
 //! - **Declared fallthrough** (`falls_into next`): `next` must be the item
 //!   IMMEDIATELY following this proc in the section (declaration order) — any
@@ -207,6 +210,72 @@ pub(super) fn lower_proc(
     // fail the build for the same reason `with` on an unknown context does — a
     // silently-ignored context clause reads as a checked claim and is not one.
     check_context_clauses(file, proc, diags);
+
+    // 11. Stack discipline (delta spec §3 / U-spec §4-stack): sp is back at its
+    // entry value on every path to a return, and paths that merge agree on where
+    // sp is. This needs NO declaration — an imbalanced `rts` returns to whatever
+    // word is on top of the stack, which is a defect in any proc — so it runs on
+    // every 68k body. 68k only: `preserves.rs` and the `Cfg` edge model it walks
+    // are the 68k pair (`z80_preserves` is the Z80 sibling and has no stack-delta
+    // arm yet).
+    if ctx.cpu != Cpu::Z80 {
+        check_stack_balance(file, proc, &buf, ctx.as_compat, diags);
+    }
+}
+
+/// Report the `[stack.*]` findings for one proc body.
+///
+/// Tier (U-spec §6): ERROR, softening to a WARNING under `@as_compat` and
+/// suppressible per-module with `@allow("stack.unbalanced")`. Unlike a declared
+/// contract — which the author opted into and which therefore never softens — this
+/// gate reads raw ported assembly that no one annotated, so a faithful port keeps
+/// the finding visible without failing the build.
+///
+/// The checker's own silence discipline does the soundness work
+/// ([`crate::preserves::check_stack_balance`]): wherever the stack model bails,
+/// nothing fires, so an ERROR here always names a delta the analysis followed
+/// exactly.
+fn check_stack_balance(
+    file: &ast::File,
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    as_compat: bool,
+    diags: &mut Vec<Diagnostic>,
+) {
+    use crate::preserves::StackFindingKind as K;
+    let level = if as_compat { Level::Warning } else { Level::Error };
+    let allow_unbalanced = super::allows_lint(file, "stack.unbalanced");
+    let allow_mismatch = super::allows_lint(file, "stack.merge-mismatch");
+    // A declared `falls_into` continues into its successor rather than returning,
+    // so control running off the end of THIS body is not a return and the pair may
+    // legitimately share one frame across the boundary.
+    let charge_fall_off_end = proc.falls_into.is_none();
+    for f in crate::preserves::check_stack_balance(&buf.items, charge_fall_off_end) {
+        if match f.kind {
+            K::Unbalanced { .. } => allow_unbalanced,
+            K::MergeMismatch { .. } => allow_mismatch,
+        } {
+            continue;
+        }
+        let (id, what) = match f.kind {
+            K::Unbalanced { depth } => (
+                "stack.unbalanced",
+                format!(
+                    "this path returns with {depth} bytes still on the stack — sp is below its \
+                     entry value, so the return reads its address from the wrong word"
+                ),
+            ),
+            K::MergeMismatch { existing, incoming } => (
+                "stack.merge-mismatch",
+                format!(
+                    "paths reach this point holding different amounts of stack ({existing} and \
+                     {incoming} bytes) — the code past the merge runs at an sp that depends on \
+                     the branch taken"
+                ),
+            ),
+        };
+        push(diags, level, f.span, format!("[{id}] in `{}`: {what}", proc.name));
+    }
 }
 
 /// Validate a proc's `requires`/`grants` names against the contexts in scope.
