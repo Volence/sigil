@@ -132,8 +132,9 @@ pub struct ContractReport {
     /// "per-file reported event": names exactly which proc lost instructions.
     pub dropped_by_proc: Vec<(String, usize)>,
     /// The `[comptime.unresolved]` surface: `(proc, name, span)` rows, one per
-    /// comptime-`if` condition reference the walk's define/const environment
-    /// failed to resolve. Sorted (proc, name, span), exact duplicates deduped.
+    /// comptime-condition reference — an `if` condition, a `while` condition, or
+    /// a `for` iterable — the walk's define/const environment failed to resolve.
+    /// Sorted (proc, name, span), exact duplicates deduped.
     /// This is the toggle complement of [`dropped_instrs`]: a missing VALUE
     /// define drops the instruction that needed it, but a statement-`if` whose
     /// condition is `Value::Poison` discards BOTH arms whole — zero drops, zero
@@ -233,10 +234,6 @@ pub fn bind_corpus_interfaces(
     defines: &[(String, i128)],
     game_module_prefix: &str,
 ) -> (crate::contract::InterfaceEnv, Vec<sigil_span::Diagnostic>) {
-    let mut env: Vec<Item> = Vec::new();
-    for file in files {
-        collect_env(&file.items, &mut env);
-    }
     let keep = |id: &str| {
         !id.starts_with("games.")
             || id == game_module_prefix
@@ -247,6 +244,16 @@ pub fn bind_corpus_interfaces(
         .map(|f| (f.module.path.segments.join("."), f))
         .filter(|(id, _)| keep(id))
         .collect();
+    // The bind AMBIENT is game-filtered exactly like the bind MODULE set: the
+    // bind only evaluates the selected game's implement, and an env carrying the
+    // OTHER game's declarations would let a cross-game name collision resolve
+    // last-indexed-wins — selecting bindings the shipped ROM does not. (The
+    // analysis walk's own PASS-1 env stays whole-corpus; it analyzes both games
+    // in one pass.)
+    let mut env: Vec<Item> = Vec::new();
+    for (_, file) in &with_ids {
+        collect_env(&file.items, &mut env);
+    }
     let mods: Vec<crate::resolve::contract::ContractModule> = with_ids
         .iter()
         .map(|(id, f)| crate::resolve::contract::ContractModule { id, file: f })
@@ -804,8 +811,10 @@ pub fn analyze_corpus_with_contracts(
     // Both body-eval passes (68k PASS 2 + the Z80 flag pass) have contributed by
     // here. Exact-duplicate rows collapse (a template instantiated twice evaluates
     // the same condition twice); distinct sites stay distinct.
-    comptime_unresolved
-        .sort_by(|a, b| (&a.0, &a.1, a.2.start, a.2.end).cmp(&(&b.0, &b.1, b.2.start, b.2.end)));
+    comptime_unresolved.sort_by(|a, b| {
+        (&a.0, &a.1, a.2.source.0, a.2.start, a.2.end)
+            .cmp(&(&b.0, &b.1, b.2.source.0, b.2.start, b.2.end))
+    });
     comptime_unresolved.dedup();
 
     ContractReport {

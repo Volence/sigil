@@ -763,14 +763,13 @@ fn a_poisoned_expression_if_inside_a_comptime_fn_lands_on_the_surface() {
 }
 
 /// THE BUILD-TIER HALF of the two-stage doctrine, pinned: an unresolved name in a
-/// comptime condition is a ONE-FILE fact, and the real build path already makes
-/// it a HARD ERROR (`unknown name`) — the evaluator reports at the resolution
-/// miss and lowering surfaces every eval diagnostic. The corpus surface exists
-/// for the fact a single build can never check: that every OTHER shipped shape's
-/// define set also reaches the analysis. No new build diagnostic is needed, and
-/// this test is what keeps that ruling honest — if the build path ever stops
-/// failing here, the merge-gate surface becomes the only line of defence and the
-/// ruling must be revisited.
+/// comptime condition is a ONE-FILE fact, and the build path makes it a HARD
+/// ERROR (`unknown name`) — the evaluator reports at the resolution miss and
+/// lowering surfaces every eval diagnostic. The corpus surface exists for the
+/// fact a single build can never check: that every OTHER shipped shape's define
+/// set also reaches the analysis. So the build path is the first tier and the
+/// per-shape corpus gate the second; if this test ever fails, the corpus gate
+/// has become the ONLY line of defence and the tiering needs re-adjudication.
 #[test]
 fn an_unresolved_condition_name_is_a_hard_error_in_the_build_path() {
     use sigil_frontend_emp::lower::{lower_module, LowerOptions};
@@ -801,5 +800,82 @@ fn an_unresolved_condition_name_is_a_hard_error_in_the_build_path() {
     assert!(
         errors.iter().any(|m| m.contains("unknown name `NOPE_UNDEFINED`")),
         "the build must hard-fail naming the unresolved condition name: {errors:?}"
+    );
+}
+
+/// The MEMO SIDE DOOR is closed: a const/equ whose initializer failed resolves
+/// to a MEMOIZED `Poison`, returned without re-entering the initializer — so a
+/// later `if FOO == 1` would find nothing newly logged to harvest, resurrecting
+/// the arm-invisibility hole through the memo. The const READ site therefore
+/// logs the const's own name whenever the resolved value is `Poison`. Two
+/// conditions on the same poisoned equ: the first surfaces both the
+/// initializer's miss and the read; the second — served purely from the memo —
+/// must still surface the read.
+#[test]
+fn a_memoized_poison_const_read_in_a_condition_still_lands_on_the_surface() {
+    let src = "module m\n\
+         equ FOO = MISSING_NAME\n\
+         proc Baz () clobbers(d0) {\n\
+             moveq #0, d0\n\
+             if FOO == 1 {\n\
+                 moveq #1, d3\n\
+             }\n\
+             if FOO == 1 {\n\
+                 moveq #1, d4\n\
+             }\n\
+             rts\n\
+         }\n";
+    let r = analyze(&[src]);
+    assert!(!fires(&r, "Baz", "d3") && !fires(&r, "Baz", "d4"), "arms discarded: {:?}", r.firings);
+    assert_eq!(r.dropped_instrs, 0, "nothing drops: {:?}", r.dropped_by_proc);
+    let foo_reads =
+        r.comptime_unresolved.iter().filter(|(p, n, _)| p == "Baz" && n == "FOO").count();
+    assert_eq!(
+        foo_reads, 2,
+        "BOTH poisoned reads must surface — one row per condition, the second \
+         served from the memo: {:?}",
+        r.comptime_unresolved.iter().map(|(p, n, _)| (p.as_str(), n.as_str())).collect::<Vec<_>>()
+    );
+    assert!(
+        r.comptime_unresolved.iter().any(|(p, n, _)| p == "Baz" && n == "MISSING_NAME"),
+        "the initializer's own miss surfaces on first resolution: {:?}",
+        r.comptime_unresolved
+    );
+}
+
+/// LOOPS join the surface: a `while` whose condition poisons stops silently
+/// (zero iterations), and a `for` whose iterable poisons skips its whole body —
+/// the same arm-invisibility a poisoned `if` has, at zero drops. Both loop
+/// heads harvest their resolution misses exactly as the `if` sites do.
+#[test]
+fn a_poisoned_loop_head_lands_on_the_surface() {
+    let src = "module m\n\
+         comptime fn spin() -> Code {\n\
+             while WHILE_GATE == 1 {\n\
+                 return asm {\n\
+                     moveq #1, d5\n\
+                 }\n\
+             }\n\
+             for i in 0..FOR_BOUND {\n\
+                 return asm {\n\
+                     moveq #1, d6\n\
+                 }\n\
+             }\n\
+             return Code.empty()\n\
+         }\n\
+         proc Qux () clobbers(d0) {\n\
+             moveq #0, d0\n\
+             spin()\n\
+             rts\n\
+         }\n";
+    let r = analyze(&[src]);
+    assert!(!fires(&r, "Qux", "d5") && !fires(&r, "Qux", "d6"), "no arm spliced: {:?}", r.firings);
+    assert_eq!(r.dropped_instrs, 0, "nothing drops: {:?}", r.dropped_by_proc);
+    let rows: Vec<(&str, &str)> =
+        r.comptime_unresolved.iter().map(|(p, n, _)| (p.as_str(), n.as_str())).collect();
+    assert_eq!(
+        rows,
+        vec![("Qux", "FOR_BOUND"), ("Qux", "WHILE_GATE")],
+        "both loop heads' unresolved names must surface"
     );
 }

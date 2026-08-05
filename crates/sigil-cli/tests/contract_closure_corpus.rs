@@ -126,9 +126,10 @@ fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
 }
 
 /// The `games.<game>` module-id prefix a shape binds its L1 interfaces under —
-/// derived from the profile's own game RAM module id, never a hand-kept list.
+/// [`native::GameProfile::game_module_prefix`], the one spelling of the
+/// derivation, aliased for the probes' call sites.
 fn game_module_prefix(profile: &native::GameProfile) -> &'static str {
-    profile.game_ram_module.rsplit_once('.').map_or(profile.game_ram_module, |(p, _)| p)
+    profile.game_module_prefix()
 }
 
 /// `(shape label, profile, report)` for every shipped shape — ONE parse, seven
@@ -234,9 +235,8 @@ fn corpus_comptime_conditions_all_resolve_the_error_gate() {
 /// EVERY shape: (1) the surface names the exact proc and name — the misspelling
 /// resolves in no shape, so this is also the gate's liveness probe (no shape's
 /// silence can mean "saw nothing"); (2) `dropped_instrs` stays ZERO — the drop
-/// gate is structurally blind to a poisoned condition, which is why this surface
-/// exists and why the pre-existing "zero drops proves the defines reached the
-/// analysis" claim was false.
+/// gate is structurally blind to a poisoned condition; zero drops never proves
+/// the defines reached the analysis, and this surface is what does.
 #[test]
 fn a_misspelled_toggle_in_a_condition_is_named_at_zero_drops_in_every_shape() {
     let Some(mut srcs) = corpus_sources() else { return };
@@ -289,13 +289,40 @@ fn a_profile_that_loses_a_toggle_is_named_by_the_surface_in_every_shape() {
     for (label, profile) in native::shipped_shapes() {
         let mut defines = native::shape_defines(&profile);
         defines.retain(|(k, _)| k != "DEBUG");
-        let (iface_env, _bind_diags) =
+        let (iface_env, bind_diags) =
             bind_corpus_interfaces(&files, &defines, game_module_prefix(&profile));
+        // The stripped toggle is not one the implement groups reference
+        // (sonic4's group reads SOUND_DEBUG_HOTKEYS/SOUND_DRIVER_ENABLED), so the
+        // bind must stay clean — a bind error here would hand the walk a
+        // half-bound env and turn this probe's failure into a downstream riddle.
+        assert!(
+            bind_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "shape `{label}`: unexpected L1 bind errors under the stripped define set: {:?}",
+            bind_diags
+                .iter()
+                .filter(|d| d.level == sigil_span::Level::Error)
+                .collect::<Vec<_>>()
+        );
         let r = analyze_corpus_with_contracts(&files, &defines, &iface_env);
         assert!(
             r.comptime_unresolved.iter().any(|(_, n, _)| n == "DEBUG"),
             "shape `{label}` stripped of DEBUG: the surface must name the lost toggle \
              — this is the profile-lost-a-define blind spot. got: {:?}",
+            r.comptime_unresolved
+                .iter()
+                .map(|(p, n, _)| (p.as_str(), n.as_str()))
+                .collect::<Vec<_>>()
+        );
+        // The Z80 LANE's liveness witness: `Sequencer_NextOpcode` is a
+        // `(cpu: z80)` proc with an in-body `if DEBUG == 1` — its row proves the
+        // Z80 flag pass's collection reaches the report, not only the 68k
+        // PASS 2's (a 68k-only surface would satisfy the assert above).
+        assert!(
+            r.comptime_unresolved
+                .iter()
+                .any(|(p, n, _)| p == "Sequencer_NextOpcode" && n == "DEBUG"),
+            "shape `{label}` stripped of DEBUG: a Z80 module's comptime conditions \
+             read the same defines, and its lane must surface them too. got: {:?}",
             r.comptime_unresolved
                 .iter()
                 .map(|(p, n, _)| (p.as_str(), n.as_str()))
@@ -308,6 +335,38 @@ fn a_profile_that_loses_a_toggle_is_named_by_the_surface_in_every_shape() {
             r.dropped_by_proc
         );
     }
+}
+
+/// The interface axis's own failure shape, held as an executable record: a walk
+/// WITHOUT an interface env cannot resolve `Game.CAMERA_JUMP_LOCK`, so
+/// `Camera_Update`'s landing-lock condition poisons and the surface names it —
+/// through the MULTI-SEGMENT miss site (`eval_path`'s dotted fallthrough),
+/// which no synthetic test reaches. This is the exact blind spot the per-shape
+/// binding closes (the arm ships in five of the seven ROMs and an env-free
+/// analysis never reads it), and it doubles as the tripwire for a half-bound
+/// env: an interface whose member goes missing falls through the same dotted
+/// fallthrough to this same surface.
+#[test]
+fn an_env_free_walk_names_the_interface_member_it_cannot_resolve() {
+    let Some(srcs) = corpus_sources() else { return };
+    let files: Vec<_> = srcs.iter().map(|(_, s)| parse_str(s).0).collect();
+    let (label, profile) = native::shipped_shapes().remove(0);
+    let r = sigil_frontend_emp::corpus_contracts::analyze_corpus_with(
+        &files,
+        &native::shape_defines(&profile),
+    );
+    assert!(
+        r.comptime_unresolved
+            .iter()
+            .any(|(p, n, _)| p == "Camera_Update" && n == "Game.CAMERA_JUMP_LOCK"),
+        "shape `{label}`, empty interface env: the interface-gated condition must \
+         land on the surface — silence here means an env-free walk can silently \
+         discard `Iface.MEMBER`-gated arms again. got: {:?}",
+        r.comptime_unresolved
+            .iter()
+            .map(|(p, n, _)| (p.as_str(), n.as_str()))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -451,10 +510,10 @@ fn a_clobber_undeclared_inside_a_comptime_gate_fires_in_exactly_the_debug_shapes
 /// GAME-AXIS SHAPE-SENSITIVITY — the L1 interface binding is real, per shape.
 ///
 /// `Camera_Update`'s landing-lock arm is gated on `Game.CAMERA_JUMP_LOCK`, an L1
-/// interface member — sonic4 binds it `true`, demo binds it `false`. Before the
-/// walk carried an interface env this condition poisoned and BOTH arms were
-/// invisible in every shape (the arm ships in the sonic4 ROM; the analysis never
-/// read it). This probe plants an undeclared `d5` write INSIDE the arm and
+/// interface member — sonic4 binds it `true`, demo binds it `false`. Without an
+/// interface env this condition poisons and BOTH arms are invisible in every
+/// shape, while the arm ships in the sonic4 ROM — the invisibility this walk's
+/// binding closes. This probe plants an undeclared `d5` write INSIDE the arm and
 /// demands the partition: fires in exactly the five sonic4-family shapes (whose
 /// game binds the lock on), silent in the two demo shapes (whose game compiles
 /// the arm away). Both halves are load-bearing — the fires-here half proves the
@@ -527,8 +586,20 @@ fn a_lost_crash_report_define_is_named_in_exactly_the_plain_shapes() {
     for (label, profile) in native::shipped_shapes() {
         let mut defines = native::shape_defines(&profile);
         defines.retain(|(k, _)| k != "CRASH_REPORT");
-        let (iface_env, _bind_diags) =
+        let (iface_env, bind_diags) =
             bind_corpus_interfaces(&files, &defines, game_module_prefix(&profile));
+        // The stripped toggle is not one the implement groups reference
+        // (sonic4's group reads SOUND_DEBUG_HOTKEYS/SOUND_DRIVER_ENABLED), so the
+        // bind must stay clean — a bind error here would hand the walk a
+        // half-bound env and turn this probe's failure into a downstream riddle.
+        assert!(
+            bind_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "shape `{label}`: unexpected L1 bind errors under the stripped define set: {:?}",
+            bind_diags
+                .iter()
+                .filter(|d| d.level == sigil_span::Level::Error)
+                .collect::<Vec<_>>()
+        );
         let r = analyze_corpus_with_contracts(&files, &defines, &iface_env);
         let hit = r
             .comptime_unresolved
@@ -581,8 +652,20 @@ fn a_lost_mirror_define_is_named_in_exactly_the_debug_sound_on_shapes() {
     for (label, profile) in native::shipped_shapes() {
         let mut defines = native::shape_defines(&profile);
         defines.retain(|(k, _)| k != "SOUND_DBG_MIRROR");
-        let (iface_env, _bind_diags) =
+        let (iface_env, bind_diags) =
             bind_corpus_interfaces(&files, &defines, game_module_prefix(&profile));
+        // The stripped toggle is not one the implement groups reference
+        // (sonic4's group reads SOUND_DEBUG_HOTKEYS/SOUND_DRIVER_ENABLED), so the
+        // bind must stay clean — a bind error here would hand the walk a
+        // half-bound env and turn this probe's failure into a downstream riddle.
+        assert!(
+            bind_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "shape `{label}`: unexpected L1 bind errors under the stripped define set: {:?}",
+            bind_diags
+                .iter()
+                .filter(|d| d.level == sigil_span::Level::Error)
+                .collect::<Vec<_>>()
+        );
         let r = analyze_corpus_with_contracts(&files, &defines, &iface_env);
         let hit = r.comptime_unresolved.iter().any(|(_, n, _)| n == "SOUND_DBG_MIRROR");
         if profile.debug && profile.sound_on {

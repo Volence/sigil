@@ -880,12 +880,11 @@ fn run_contract_report(aeon: &std::path::Path, target: &BuildTarget) {
     // (`if Game.CAMERA_JUMP_LOCK { }`) selects the arm the shipped ROM assembles
     // instead of landing on `[comptime.unresolved]`. Bind errors are as fatal as
     // scan errors: a half-bound env silently poisons every condition it missed.
-    let game_prefix = profile
-        .game_ram_module
-        .rsplit_once('.')
-        .map_or(profile.game_ram_module, |(parent, _)| parent);
-    let (iface_env, bind_diags) =
-        corpus_contracts::bind_corpus_interfaces(&files, &defines, game_prefix);
+    let (iface_env, bind_diags) = corpus_contracts::bind_corpus_interfaces(
+        &files,
+        &defines,
+        profile.game_module_prefix(),
+    );
     let bind_errors: Vec<_> = bind_diags
         .iter()
         .filter(|d| d.level == sigil_span::Level::Error)
@@ -925,7 +924,10 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
         report.comptime_unresolved.len()
     );
     for (proc, name, _span) in &report.comptime_unresolved {
-        println!("  {proc:<28} comptime condition references `{name}`, which the define set does not resolve");
+        println!(
+            "  UNRESOLVED  {proc:<28} comptime condition references `{name}`, \
+             which the define set does not resolve"
+        );
     }
 
     println!("\n-- extern/proc collisions (§11 Q4): {} --", report.extern_collisions.len());

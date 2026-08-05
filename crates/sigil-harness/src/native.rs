@@ -142,6 +142,15 @@ impl GameProfile {
         aeon.join(self.game_root_rel)
     }
 
+    /// The `games.<game>` module-id prefix this shape's modules live under — the
+    /// game RAM module's parent id names the game. The ONE spelling of that
+    /// derivation: the L1 interface binding (each shape binds its own game's
+    /// `implement`) and every game-partitioning corpus probe read this, never a
+    /// hand-kept list.
+    pub fn game_module_prefix(&self) -> &'static str {
+        self.game_ram_module.rsplit_once('.').map_or(self.game_ram_module, |(p, _)| p)
+    }
+
     /// The per-game placement map (`games/<g>/map.toml`), a sibling of `main.asm`
     /// (`game_root_rel`). config_a/config_b reuse sonic4's (their root is sonic4's).
     pub fn map_path(&self, aeon: &Path) -> std::path::PathBuf {

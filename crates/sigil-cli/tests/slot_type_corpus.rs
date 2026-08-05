@@ -139,12 +139,8 @@ fn analyze_every_shape(
         .into_iter()
         .map(|(label, profile)| {
             let defines = native::shape_defines(&profile);
-            let game_prefix = profile
-                .game_ram_module
-                .rsplit_once('.')
-                .map_or(profile.game_ram_module, |(p, _)| p);
             let (iface_env, bind_diags) =
-                bind_corpus_interfaces(&files, &defines, game_prefix);
+                bind_corpus_interfaces(&files, &defines, profile.game_module_prefix());
             let bind_errors: Vec<_> = bind_diags
                 .iter()
                 .filter(|d| d.level == sigil_span::Level::Error)

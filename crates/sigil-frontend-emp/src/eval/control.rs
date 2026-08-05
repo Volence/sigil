@@ -272,7 +272,12 @@ impl<'a> Evaluator<'a> {
     ) -> Value {
         // `eval_expr`'s top guard guarantees no pending return on entry; a
         // return fired *while evaluating `iter`* leaves one set, so bail.
+        // The iterable is a comptime condition in the surface's sense: a Poison
+        // bound silently skips the WHOLE loop body (zero iterations, zero
+        // drops), so its resolution misses harvest exactly as an `if`'s do.
+        let mark = self.unresolved_mark();
         let iter_v = self.eval_expr(iter, env);
+        self.harvest_comptime_unresolved(mark);
         if self.aborted || self.pending_return.is_some() {
             return Value::Poison;
         }
@@ -360,10 +365,18 @@ impl<'a> Evaluator<'a> {
                 self.abort(span, "step budget exceeded");
                 return Flow::Normal(Value::Poison);
             }
+            // The `[comptime.unresolved]` harvest, per evaluation of the
+            // condition: a Poison condition stops the loop silently (the arm
+            // below), which is the same arm-invisibility an `if` has.
+            let mark = self.unresolved_mark();
             let c = match self.eval_operand(cond, env) {
                 Ok(v) => v,
-                Err(f) => return f,
+                Err(f) => {
+                    self.harvest_comptime_unresolved(mark);
+                    return f;
+                }
             };
+            self.harvest_comptime_unresolved(mark);
             // A provisional `here()` cannot steer a comptime loop (D-H.2).
             if let Some(v) = self.reject_if_provisional(&c, crate::parser::expr_span(cond)) {
                 return Flow::Normal(v);

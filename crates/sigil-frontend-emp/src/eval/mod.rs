@@ -305,19 +305,25 @@ pub struct Evaluator<'a> {
     ///
     /// [`lower_instr_to_item`]: Self::lower_instr_to_item
     dropped_instrs: usize,
-    /// Running log of every name that failed ALL resolution during evaluation —
-    /// appended at the two `unknown name` sites in [`eval_path`](Self::eval_path)
-    /// (the single-segment bareword and the multi-segment fallthrough), the exact
-    /// points where a lookup miss becomes `Value::Poison`. The log is the raw
-    /// feed the comptime-`if` sites watermark; it is never read anywhere else.
+    /// Running log of every name that failed to resolve to a usable value during
+    /// evaluation — appended at [`eval_path`](Self::eval_path)'s two `unknown
+    /// name` fallthroughs (the exact points where a lookup miss becomes
+    /// `Value::Poison`) and at its const/equ read when the resolved value IS
+    /// `Poison` (the memo path returns a first failure without re-entering the
+    /// initializer, so the read site is the only loggable point). The log is the
+    /// raw feed the comptime-`if` sites watermark; it is never read anywhere
+    /// else.
     unresolved_names: Vec<(String, Span)>,
-    /// The `[comptime.unresolved]` surface: names a comptime `if` CONDITION
+    /// The `[comptime.unresolved]` surface: names a comptime CONDITION
     /// referenced that the active define/const environment failed to resolve.
-    /// Harvested from [`unresolved_names`](Self::unresolved_names) by BOTH `if`
-    /// sites — the statement-position `AsmStmt::If` (whose `Poison` condition
-    /// discards both arms, contributing nothing to `dropped_instrs`) and the
-    /// expression [`eval_if`](Self::eval_if) — immediately after each condition
-    /// evaluates, so collection IS the evaluation and cannot drift from it. A
+    /// Harvested from [`unresolved_names`](Self::unresolved_names) by every
+    /// condition site — the statement-position `AsmStmt::If` (whose `Poison`
+    /// condition discards both arms, contributing nothing to `dropped_instrs`),
+    /// the expression [`eval_if`](Self::eval_if), and both loop heads
+    /// ([`eval_while`](Self::eval_while)'s condition, [`eval_for`]
+    /// (Self::eval_for)'s iterable — a `Poison` head skips the body silently) —
+    /// immediately after each condition evaluates, so collection IS the
+    /// evaluation and cannot drift from it. A
     /// profile that lost or misspelled a toggle define shows up here at zero
     /// drops and zero firings; the corpus gates pin this EMPTY per shipped shape.
     pub(crate) comptime_unresolved: Vec<(String, Span)>,
@@ -574,11 +580,11 @@ impl<'a> Evaluator<'a> {
         self.label_ctx > 0
     }
 
-    /// Record a name that failed ALL resolution (the `unknown name` → `Poison`
-    /// path). Called only by [`eval_path`](Self::eval_path)'s two fallthrough
-    /// sites, so an entry here is always a genuine lookup miss — never a
-    /// deferred link symbol (the label-ctx fallback returns before reaching
-    /// either site).
+    /// Record a name that failed to resolve to a usable value: a lookup miss
+    /// (the `unknown name` → `Poison` fallthroughs) or a const/equ read whose
+    /// resolved value is `Poison`. Called only from [`eval_path`]
+    /// (Self::eval_path), and never for a deferred link symbol — the label-ctx
+    /// fallback returns before every recording site.
     pub(super) fn note_unresolved_name(&mut self, name: String, span: Span) {
         self.unresolved_names.push((name, span));
     }
@@ -1800,7 +1806,8 @@ pub fn eval_proc_body(
 /// a statement-`if`'s arms whole at zero drops and shows ONLY here.
 /// `eval_proc_body` is exactly this with an empty ambient (real lowering
 /// supplies imports via the resolve pass and surfaces the `unknown name` error
-/// itself, so it ignores both counts — which are always 0/empty there).
+/// itself, so it ignores both counts — always 0/empty in a build that lowers
+/// clean, and redundant with the loud diagnostics in one that does not).
 #[allow(clippy::too_many_arguments)]
 pub fn eval_proc_body_env(
     file: &crate::ast::File,
