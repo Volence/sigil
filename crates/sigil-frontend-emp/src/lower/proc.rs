@@ -141,7 +141,7 @@ pub(super) fn lower_proc(
     // bracket proofs (step 9); `check_regions` is `pub` precisely so
     // `corpus_contracts.rs` — the other consumer of the same seam — does not
     // re-scan the mark stream. A no-bracket body yields an empty vector from
-    // one linear pass. (The clobbers lint no longer reads regions: its context
+    // one linear pass. (The clobbers lint does not read regions; its context
     // exemption is the typed `ItemAuthor::Context` check.)
     let (regions, mark_firings) = crate::context::regions_of(&proc.name, &buf.items);
 
@@ -1720,8 +1720,8 @@ fn check_preserves_sr(
 /// Static order only, like [`check_preserves_sr`], and with the same known
 /// blindness: a conditional branch AROUND the restore is invisible (S2-D7's
 /// dataflow half is the real answer), and the round trip assumes a balanced
-/// stack at the restore (S2-D7(b), the same deferral `region_round_trips_sr`
-/// states).
+/// stack at the restore (S2-D7(b), the same deferral the context
+/// definition-site round-trip check rests on).
 fn check_preserves_sr_ccr(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,

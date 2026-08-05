@@ -1182,9 +1182,11 @@ fn a_release_that_re_masks_after_restoring_fires_at_the_definition() {
 /// with exactly ONE bracket, so a mutant that folds the proofs into a single
 /// "do they all round-trip" bool passes all of them. Here two contexts disagree,
 /// and only the sound one is silent — `ints_off`'s mask and restore stay exempt
-/// while `mask_only` fires at its definition. The proof is also CHECKED ONCE:
-/// a second `mask_only` bracket adds no second firing (one declaration, one
-/// obligation, one report).
+/// while `mask_only` fires at its definition. The CHECK runs at every bracket
+/// (each site's spliced stream earns its own exemption — see
+/// [`a_context_whose_halves_diverge_per_site_is_checked_at_every_site`]); the
+/// REPORT is deduped, so a second `mask_only` bracket adds no second firing
+/// (one declaration, one report).
 #[test]
 fn each_context_is_judged_once_on_its_own_round_trip() {
     let src = format!(
@@ -1207,6 +1209,87 @@ fn each_context_is_judged_once_on_its_own_round_trip() {
         sr_firings(&diags),
         1,
         "only the context that fails the round trip fires, once: {diags:?}"
+    );
+}
+
+/// The round-trip check runs on EVERY bracket's actually-spliced stream, not
+/// once per context name — the Lens C counterexample made a regression pin.
+///
+/// A context's halves evaluate per site in the consumer's env, so a comptime
+/// fn's param can gate them: `gate(1)` splices a round-tripping stream,
+/// `gate(0)` splices a mask with no save and no restore — same context name,
+/// same proc, one evaluator. A checked-once-per-name scheme proves site 1 and
+/// then EXEMPTS site 2 unproven (`Context`-authored, zero firings) — the
+/// authored-but-unchecked path §2 forbids. The check-every-site rule fires at
+/// the definition regardless of call order; the report is deduped to one.
+#[test]
+fn a_context_whose_halves_diverge_per_site_is_checked_at_every_site() {
+    let ctx_and_fn = "context masked {\n\
+         \tacquire = asm {\n\
+         \t\tif n == 1 {\n\
+         \t\t\tmove.w sr, -(sp)\n\
+         \t\t}\n\
+         \t\tmove.w #$2700, sr\n\
+         \t}\n\
+         \trelease = asm {\n\
+         \t\tif n == 1 {\n\
+         \t\t\tmove.w (sp)+, sr\n\
+         \t\t} else {\n\
+         \t\t\tnop\n\
+         \t\t}\n\
+         \t}\n\
+         }\n\
+         comptime fn gate(n: int) -> Code {\n\
+         \treturn asm {\n\
+         \t\twith masked {\n\
+         \t\t\tnop\n\
+         \t\t}\n\
+         \t}\n\
+         }\n";
+    // The attack order: the round-tripping evaluation first. Site 2's stream
+    // must still be checked and fire (once, at the definition).
+    let src = format!(
+        "module m\n{ctx_and_fn}\
+         proc f() clobbers() {{\n\
+         \tgate(1)\n\
+         \tgate(0)\n\
+         \trts\n\
+         }}\n"
+    );
+    let (_module, diags) = lower(&src);
+    assert_eq!(
+        sr_firings(&diags),
+        1,
+        "the non-round-tripping site must be checked despite an earlier clean one: {diags:?}"
+    );
+    assert!(
+        diags.iter().any(|d| d.message.contains("context `masked`")),
+        "the firing lands at the context definition: {diags:?}"
+    );
+}
+
+/// A spliced TEMPLATE's SR write is `Splice`-authored, which is NOT exempt:
+/// the lint charges the consumer exactly as if the line were written inline.
+/// The `Splice` author is carried for the future `-> Code` fn-contract check
+/// (ledgered); until that exists, the consumer's contract is the only honest
+/// address — an exemption here would be an obligation landing nowhere.
+#[test]
+fn a_spliced_templates_sr_write_is_charged_to_the_consumer() {
+    let src = "module m\n\
+               comptime fn mask_ints() -> Code {\n\
+               \treturn asm {\n\
+               \t\tmove.w #$2700, sr\n\
+               \t}\n\
+               }\n\
+               proc f() clobbers() {\n\
+               \tmask_ints()\n\
+               \trts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert_eq!(
+        sr_firings(&diags),
+        1,
+        "a template's undeclared SR write stays the consumer's to declare: {diags:?}"
     );
 }
 

@@ -265,7 +265,7 @@ impl Evaluator<'_> {
                 self.note_if_comptime_error(watermark, expr_span(expr));
                 match v {
                     Value::Code(mut inner) => {
-                        crate::value::author_user_items(
+                        crate::value::reauthor_user_items(
                             &mut inner.items,
                             &crate::value::ItemAuthor::Splice {
                                 template: splice_template_name(expr),
@@ -420,7 +420,7 @@ impl Evaluator<'_> {
                 self.note_if_comptime_error(watermark, expr_span(expr));
                 match v {
                     Value::Code(mut inner) => {
-                        crate::value::author_user_items(
+                        crate::value::reauthor_user_items(
                             &mut inner.items,
                             &crate::value::ItemAuthor::Splice {
                                 template: splice_template_name(expr),
@@ -565,7 +565,7 @@ impl Evaluator<'_> {
             span,
         });
         let acq_start = buf.items.len();
-        self.splice_context_code(&acquire, ctx, ContextPhase::Acquire, span, buf, env);
+        let acq_ok = self.splice_context_code(&acquire, ctx, ContextPhase::Acquire, span, buf, env);
         let acq_end = buf.items.len();
         buf.push(CodeItem::ContextMark {
             ctx: ctx.to_string(),
@@ -579,7 +579,7 @@ impl Evaluator<'_> {
             span,
         });
         let rel_start = buf.items.len();
-        self.splice_context_code(&release, ctx, ContextPhase::Release, span, buf, env);
+        let rel_ok = self.splice_context_code(&release, ctx, ContextPhase::Release, span, buf, env);
         let rel_end = buf.items.len();
         buf.push(CodeItem::ContextMark {
             ctx: ctx.to_string(),
@@ -589,10 +589,18 @@ impl Evaluator<'_> {
         // THE CONTEXT'S OWN SR OBLIGATION, checked where the code lives. The
         // bracket's spliced SR traffic is `Context`-authored, so the consumer's
         // `[proc.sr-undeclared]` never charges it — which is sound only because
-        // the round-trip proof runs HERE, against the definition: a context
-        // that masks and never restores fires at its own declaration, once per
-        // context (not per adopter; the cross-module duplicate collapses on the
-        // (level, message, span) key every warn collector dedups by).
+        // the round-trip proof runs HERE, against what was ACTUALLY SPLICED: a
+        // context that masks and never restores fires at its own declaration.
+        //
+        // The check runs at EVERY bracket — never deduped — because the halves
+        // evaluate per site in the consumer's env, so one context can splice a
+        // round-tripping stream at one site and a non-round-tripping one at
+        // another (a comptime fn whose param gates the halves); a checked-once
+        // scheme would exempt the second site unproven. Only the REPORT is
+        // deduped (`sr_reported_contexts`, one firing per context per
+        // evaluator; cross-proc duplicates collapse at the collectors on the
+        // (level, message, span) key — every adopter anchors the same message
+        // at the same declaration span).
         //
         // SCOPE — why SR-only: a round-tripped SR is unobservable to the
         // consumer, so the bracket alone discharges it; a register the acquire
@@ -603,10 +611,17 @@ impl Evaluator<'_> {
         // caller-visible guarantee only if the body leaves the stack balanced
         // at the release, since the restore pops whatever is on top —
         // balanced-stack verification is S2-D7(b)'s dataflow job.
-        if self.sr_checked_contexts.insert(ctx.to_string())
+        //
+        // A half that failed to splice as Code (Poison / wrong type) leaves a
+        // truncated range: the check would stack a spurious "does not
+        // round-trip" on the already-reported error, so that bracket is
+        // skipped; a later bracket with clean halves is still checked.
+        if acq_ok
+            && rel_ok
             && !crate::lower::sr_writes_round_trip(
                 buf.items[acq_start..acq_end].iter().chain(&buf.items[rel_start..rel_end]),
             )
+            && self.sr_reported_contexts.insert(ctx.to_string())
         {
             self.warn(
                 decl_span,
@@ -642,7 +657,10 @@ impl Evaluator<'_> {
     /// — the bracket is the consumer's declaration, so the spliced lines are the
     /// context's to answer for). It MUST be Code — the same contract a
     /// statement-position call carries — and an empty Code splices nothing (a
-    /// legal, if pointless, context).
+    /// legal, if pointless, context). Returns `false` when the half did NOT
+    /// splice as Code (Poison / wrong type): the caller's definition-site
+    /// round-trip check reads truncated ranges in that case and would stack a
+    /// spurious "does not round-trip" on the already-reported error.
     fn splice_context_code(
         &mut self,
         expr: &ast::Expr,
@@ -651,7 +669,7 @@ impl Evaluator<'_> {
         span: Span,
         buf: &mut CodeBuf,
         env: &mut Env,
-    ) {
+    ) -> bool {
         let half = match phase {
             ContextPhase::Acquire => "acquire",
             ContextPhase::Release => "release",
@@ -661,11 +679,12 @@ impl Evaluator<'_> {
         self.note_if_comptime_error(watermark, span);
         match v {
             Value::Code(mut inner) => {
-                crate::value::author_user_items(
+                crate::value::reauthor_user_items(
                     &mut inner.items,
                     &crate::value::ItemAuthor::Context { name: ctx.to_string(), phase },
                 );
-                buf.items.extend(inner.items)
+                buf.items.extend(inner.items);
+                return true;
             }
             Value::Poison => {}
             other => self.error(
@@ -676,6 +695,7 @@ impl Evaluator<'_> {
                 ),
             ),
         }
+        false
     }
 
     /// Lower `invoke Iface.hook` (L1). Resolves the hook binding from the seeded
@@ -1004,7 +1024,7 @@ impl Evaluator<'_> {
                     // The splice boundary claims the template's own lines
                     // ([`crate::value::ItemAuthor::Splice`]); a finer
                     // compiler-authored fact inside the template survives.
-                    crate::value::author_user_items(
+                    crate::value::reauthor_user_items(
                         &mut inner.items,
                         &crate::value::ItemAuthor::Splice { template: name.clone() },
                     );

@@ -385,7 +385,7 @@ pub enum ContextPhase {
 /// Re-author every `User`-authored instruction in `items` as `author` — the
 /// splice-boundary rule ([`ItemAuthor`]): the nearest construct claims the
 /// items it splices, while a finer compiler-authored fact survives the splice.
-pub fn author_user_items(items: &mut [CodeItem], author: &ItemAuthor) {
+pub fn reauthor_user_items(items: &mut [CodeItem], author: &ItemAuthor) {
     for item in items {
         if let CodeItem::Instr { author: a, .. } = item {
             if *a == ItemAuthor::User {

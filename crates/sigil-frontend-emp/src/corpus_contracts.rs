@@ -212,8 +212,9 @@ pub struct ContractReport {
     /// warn tier's authorship gate: `[proc.sr-undeclared]` exempts
     /// `Context`/`AssertDesugar`-authored writes (each proven at its author's
     /// own surface), so the gate reads THIS to assert the exemption never
-    /// covers an author whose obligation lands nowhere — and that the exempted
-    /// classes are actually populated (non-vacuity).
+    /// covers an author whose obligation lands nowhere — and that the desugar
+    /// class is actually populated (non-vacuity; the `Context` count is
+    /// reported, not pinned — adoption moves it).
     pub sr_writes: Vec<(String, crate::value::ItemAuthor, Span)>,
 }
 

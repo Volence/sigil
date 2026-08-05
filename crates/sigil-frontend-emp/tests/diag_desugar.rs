@@ -538,11 +538,11 @@ section s (cpu: m68000) {
 }
 
 /// The consumer-side effect of the emission-site obligation: an `assert` in a
-/// `clobbers()` proc no longer fires `[proc.sr-undeclared]` — the desugar's
+/// `clobbers()` proc does not fire `[proc.sr-undeclared]` — the desugar's
 /// restore is `AssertDesugar`-authored and its balance is proven above, so the
 /// lint has nothing to charge the containing proc with.
 #[test]
-fn an_assert_no_longer_fires_sr_undeclared_on_its_proc() {
+fn an_assert_does_not_fire_sr_undeclared_on_its_proc() {
     let src = "\
 module m
 section s (cpu: m68000) {

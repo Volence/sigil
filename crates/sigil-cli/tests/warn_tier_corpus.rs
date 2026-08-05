@@ -49,17 +49,16 @@ const CORPUS_LINTS: &[&str] = &[
 /// ids live in ONE list, retiring a class corpus-wide stays the one-line diff it
 /// should be while a shape-only class is visible as its own entry.
 ///
-/// NO shape adds anything today. The retired shape-only class:
-/// `proc.sr-undeclared` fired in the three `DEBUG == 1` rows because the
-/// `assert` desugar's own `move.w (sp)+,sr` restore was charged to the
-/// asserting proc. Those items are `AssertDesugar`-authored now and the lint
-/// exempts them — the desugar's balance is pinned at the emission site
-/// (`diag_desugar.rs`), and [`debug_shape_sr_writes_are_author_checked`] holds
-/// the exemption's ground here. The retirement has TEETH in this gate's
-/// favorite direction: a DEBUG row is empty, so the FIRST hand-written
-/// undeclared SR write in any debug-gated proc makes `proc.sr-undeclared`
-/// appear in that row and fails the id-set gate loudly — the crowd it used to
-/// hide in is gone.
+/// NO shape adds anything today. `proc.sr-undeclared` in particular: the
+/// `assert` desugar's SR restore is `AssertDesugar`-authored and exempt (its
+/// balance is pinned at the emission site, `diag_desugar.rs`;
+/// [`debug_shape_sr_writes_are_author_checked`] holds the exemption's ground
+/// here), so a `DEBUG == 1` row is empty — which gives this gate teeth in its
+/// favorite direction: the FIRST hand-written undeclared SR write in any
+/// debug-gated proc makes `proc.sr-undeclared` APPEAR in that row and fails
+/// the id-set gate loudly, with no compiler-emitted crowd to hide in.
+/// (History and the measured retirement numbers: campaign-gap-ledger.md and
+/// notes/2026-08-04-warning-tier.md.)
 const WARN_ID_BASELINE: &[(&str, &[&str])] = &[
     ("sonic4 plain", &[]),
     ("sonic4 debug", &[]),
@@ -94,12 +93,12 @@ type ShapeWarnings = (&'static str, Vec<native::BuildWarning>);
 ///
 /// All seven are watched, not a canonical subset: the shapes differ by comptime
 /// defines that DO gate lint-bearing code, and the divergence can reach the ID
-/// SET this gate pins — `[proc.sr-undeclared]` fired in exactly the three
-/// `DEBUG == 1` shapes until the assert desugar's items carried their author,
-/// so a shape-only lint is a real escape route. (Shapes also diverge below the
-/// id set, which this gate deliberately does not watch: `lean` fires one fewer
-/// `[proc.undeclared-fallthrough]` than the canonical shapes because it drops
-/// `ErrorHandlerBlob`, and the class stays in its row.)
+/// SET this gate pins — a lint whose triggers live only in `DEBUG == 1` code
+/// fires in exactly three shapes, so a shape-only lint is a real escape route.
+/// (Shapes also diverge below the id set, which this gate deliberately does
+/// not watch: `lean` fires one fewer `[proc.undeclared-fallthrough]` than the
+/// canonical shapes because it drops `ErrorHandlerBlob`, and the class stays
+/// in its row.)
 fn corpus_warnings() -> Option<&'static [ShapeWarnings]> {
     static CACHE: OnceLock<Option<Vec<ShapeWarnings>>> = OnceLock::new();
     CACHE
@@ -149,10 +148,9 @@ fn warn_tier_lint_ids_match_the_frozen_baseline() {
 }
 
 /// Every SR write in a `DEBUG == 1` shape's item streams carries an author with
-/// a RECEIVING obligation — the typed replacement of the retired
-/// source-line-reading property test (`every_surviving_sr_firing_is_the_assert_desugar`,
-/// which proved "every firing is the desugar" by re-reading source text the
-/// compiler had already classified and thrown away).
+/// a RECEIVING obligation — asserted TYPED, off the compiler's own
+/// classification (`ContractReport::sr_writes`), never by re-reading source
+/// text behind a diagnostic's location.
 ///
 /// The exemption ledger this asserts, author by author:
 ///   - `AssertDesugar` — exempt from `[proc.sr-undeclared]`; the balance proof

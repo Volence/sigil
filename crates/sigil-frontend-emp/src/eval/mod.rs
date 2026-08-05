@@ -255,14 +255,16 @@ pub struct Evaluator<'a> {
     /// RIGHT NOW is stamped with — `User` except while a compiler construct is
     /// emitting on the containing author's behalf (the `assert` desugar sets
     /// `AssertDesugar` around its expansion; splice boundaries re-author their
-    /// spliced items separately, see [`crate::value::author_user_items`]).
+    /// spliced items separately, see [`crate::value::reauthor_user_items`]).
     item_author: crate::value::ItemAuthor,
-    /// The contexts whose acquire/release SR round-trip has already been proven
-    /// (or fired) by THIS evaluator — the `[proc.sr-undeclared]`
-    /// definition-site check runs once per context, not once per adopter.
-    /// Cross-module dedup of the firing is by (level, message, span): every
-    /// consumer module anchors the same message at the same declaration span.
-    sr_checked_contexts: std::collections::HashSet<String>,
+    /// The contexts whose failed SR round-trip THIS evaluator has already
+    /// REPORTED. The `[proc.sr-undeclared]` definition-site check itself runs
+    /// at EVERY `with` bracket (the halves evaluate per site, so each site's
+    /// spliced stream must earn its own exemption); this set dedups only the
+    /// FIRING — one per context per evaluator, collapsing to one per context
+    /// at the collectors, whose dedup key is (level, message, span) — every
+    /// adopter anchors the same message at the same declaration span.
+    sr_reported_contexts: std::collections::HashSet<String>,
     /// The enclosing module's dotted id (`a.b.c`, the `module` header path),
     /// empty in the no-file [`new`](Self::new) mode. Threaded into every label
     /// hygiene [`Owner`](crate::lower::hygiene::Owner) so a hidden local symbol is
@@ -533,7 +535,7 @@ impl<'a> Evaluator<'a> {
             refine_check_in_progress: Vec::new(),
             asm_counter: 0,
             item_author: crate::value::ItemAuthor::User,
-            sr_checked_contexts: std::collections::HashSet::new(),
+            sr_reported_contexts: std::collections::HashSet::new(),
             module_id: String::new(),
             allowed_lints: Vec::new(),
             local_value_names: std::collections::HashSet::new(),
