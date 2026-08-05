@@ -365,13 +365,9 @@ impl<'a> Cfg<'a> {
                 None => vec![Edge::Return, Edge::FallOff],
             };
         }
-        // Unconditional `jp`/`jr`: a LOCAL label follows; an external symbol (or a
-        // computed `jp (hl)` with no bare Sym) defers out of the proc.
+        // Unconditional `jp`/`jr`: the taken edge, classified by its target.
         if matches!(mnem, "jp" | "jr") && !leads_cc {
-            return match branch_target(ops).and_then(|t| self.label_target.get(t)) {
-                Some(&tgt) => vec![Edge::Follow(tgt)],
-                None => vec![Edge::Defer],
-            };
+            return vec![self.z80_branch_edge(ops)];
         }
         // Conditional `jr cc`/`jp cc`: the taken edge PLUS the fall-through.
         //
@@ -382,11 +378,7 @@ impl<'a> Cfg<'a> {
         // the caller's state; giving `call nz, External` a `Defer` claims the flag
         // and the register file leave the proc, which they do not.
         if matches!(mnem, "jp" | "jr") && leads_cc {
-            let mut v = Vec::new();
-            match branch_target(ops).and_then(|t| self.label_target.get(t)) {
-                Some(&tgt) => v.push(Edge::Follow(tgt)),
-                None => v.push(Edge::Defer),
-            }
+            let mut v = vec![self.z80_branch_edge(ops)];
             match fallthrough {
                 Some(f) => v.push(Edge::Follow(f)),
                 None => v.push(Edge::FallOff),
@@ -410,6 +402,22 @@ impl<'a> Cfg<'a> {
         match fallthrough {
             Some(f) => vec![Edge::Follow(f)],
             None => vec![Edge::FallOff],
+        }
+    }
+
+    /// The taken edge of a Z80 `jp`/`jr`, classified by its TARGET: a local label
+    /// with an instruction after it is followed; a local label that CLOSES the
+    /// proc is a fall-off exit, not a transfer out (the `jr z, .div_ok` that ends
+    /// a body before its `falls_into` successor); an external symbol, or a
+    /// computed `jp (hl)` naming no symbol, is a transfer out of the proc.
+    fn z80_branch_edge(&self, ops: &[CodeOperand]) -> Edge {
+        match branch_target(ops) {
+            Some(t) => match self.label_target.get(t) {
+                Some(&tgt) => Edge::Follow(tgt),
+                None if self.is_local_label(t) => Edge::FallOff,
+                None => Edge::Defer,
+            },
+            None => Edge::Defer,
         }
     }
 
@@ -987,6 +995,46 @@ mod edge_model_tests {
             let cfg = Cfg::build(&items);
             assert_eq!(cfg.z80_edges(0), vec![Edge::Follow(1)], "z80 `{m}` comes back");
         }
+    }
+
+    /// A Z80 `jp`/`jr` to a LOCAL label that CLOSES the proc leaves the body
+    /// without leaving the program's knowledge: control arrives at the fall-off
+    /// point, where this proc's own analysis still applies. Reading it as a
+    /// transfer OUT hands the path to a callee that does not exist, and every
+    /// obligation the path carried — an unconsumed flag, a clobbered register —
+    /// is discharged against nothing.
+    ///
+    /// `Cfg::build` maps a label to the first instruction at or after it, so a
+    /// closing label has no mapping at all and is indistinguishable from an
+    /// external symbol by that map alone. `Cfg::is_local_label` is what tells
+    /// them apart.
+    #[test]
+    fn a_jump_to_a_closing_label_falls_off_it_does_not_transfer_out() {
+        let items = vec![
+            instr("call", vec![sym("FlagCallee")]),
+            instr("jr", vec![sym(".done")]),
+            label(".done"),
+        ];
+        let cfg = Cfg::build(&items);
+        assert_eq!(cfg.z80_edges(1), vec![Edge::FallOff], "`.done` closes this proc");
+
+        let guarded = vec![
+            instr("call", vec![sym("FlagCallee")]),
+            instr("jr", vec![cc(Z80Cond::Z), sym(".done")]),
+            instr("ret", vec![]),
+            label(".done"),
+        ];
+        let cfg = Cfg::build(&guarded);
+        assert_eq!(cfg.z80_edges(1), vec![Edge::FallOff, Edge::Follow(2)]);
+
+        // The contrast that gives the rule its content: a label this body does
+        // NOT define really is a transfer out.
+        let external = vec![
+            instr("call", vec![sym("FlagCallee")]),
+            instr("jr", vec![sym("Elsewhere")]),
+        ];
+        let cfg = Cfg::build(&external);
+        assert_eq!(cfg.z80_edges(1), vec![Edge::Defer]);
     }
 
     /// Every mnemonic in a CPU's return table is classified by that CPU's return

@@ -5,8 +5,10 @@
 //! original "don't duplicate" rationale protected are predominantly 68k-specific
 //! (movem masks, linear-delta address arithmetic, sp-displacement hazards), while
 //! the genuinely shared part — the CPU-agnostic CFG ([`crate::flag_check::Cfg`]) —
-//! is ALREADY shared. So this sibling REUSES that CFG and duplicates nothing that
-//! matters; `preserves.rs` stays byte-untouched.
+//! is ALREADY shared. So this sibling REUSES that CFG — including its Z80
+//! successor model, [`Cfg::z80_edges`], which is the ONE place a Z80 edge is
+//! classified — and duplicates nothing that matters; `preserves.rs` stays
+//! byte-untouched.
 //!
 //! The proof mirrors `preserves.rs`'s dataflow SKELETON: a forward dataflow over
 //! the shared CFG tracking a symbolic stack of slots (each tagged with which
@@ -185,11 +187,6 @@ fn is_call(mnem: &str) -> bool {
     matches!(mnem, "call" | "rst")
 }
 
-/// True for a Z80 RETURN terminator (an `rts`-analog return edge).
-fn is_return(mnem: &str) -> bool {
-    matches!(mnem, "ret" | "reti" | "retn")
-}
-
 /// An unmodeled sp hazard → bail: `ex (sp),hl`/`ex (sp),ix` (the rung-3
 /// trampoline alias), or a direct sp write that is not a push/pop
 /// (`ld sp,…` / `inc sp` / `dec sp` / `add hl,sp`-into-sp — replaces or
@@ -315,7 +312,7 @@ pub fn verify_z80_preserved(
                 bail_reason.get_or_insert(reason);
             }
         }
-        for edge in z80_edges(&cfg, idx) {
+        for edge in cfg.z80_edges(idx) {
             match edge {
                 Edge::Follow(succ) => {
                     let changed = match in_state.get(&succ) {
@@ -473,84 +470,6 @@ fn transfer(cfg: &Cfg, idx: usize, st: &mut State, callee_map: &CalleePreserves)
         st.entry[u] = false;
     }
     None
-}
-
-/// The successor edges of instruction `idx` under Z80 terminator semantics. The
-/// shared `Cfg::edges` is 68k-terminator-aware (`rts`/`bra`/…); the Z80 proof
-/// needs `ret`/`jp`/`jr`/`djnz`/`call` semantics, so it computes edges itself from
-/// the shared `Cfg`'s `instr`/`next_instr`/`label_index` primitives.
-///
-/// A conditional BRANCH or RETURN (a leading `Z80Cc` on a `jr`/`jp`/`ret`) is a
-/// genuine two-way split — it contributes BOTH its taken edge and its
-/// fall-through. A `preserves` proof that dropped the fall-through would MISS a
-/// register clobbered only on that path and wrongly verify the preserve (the
-/// §13.4-E soundness gap). `call cc` is not such a form: it calls and comes back,
-/// so its only successor is the fall-through.
-fn z80_edges(cfg: &Cfg, idx: usize) -> Vec<Edge> {
-    let Some((mnem, ops)) = cfg.instr(idx) else { return vec![] };
-    let leads_cc = matches!(ops.first(), Some(CodeOperand::Z80Cc(_)));
-    // Unconditional return.
-    if is_return(mnem) && !leads_cc {
-        return vec![Edge::Return];
-    }
-    // Conditional `ret cc`: the TAKEN edge returns; the fall-through stays in the
-    // proc, or runs off the end when the `ret cc` closes the body. The pair names
-    // its two ends separately — they are different facts about the machine.
-    if is_return(mnem) && leads_cc {
-        return match cfg.next_instr(idx) {
-            Some(f) => vec![Edge::Return, Edge::Follow(f)],
-            None => vec![Edge::Return, Edge::FallOff],
-        };
-    }
-    // Unconditional tail transfer: `jp`/`jr` follows a LOCAL label; a jump to a
-    // local END-label (no following instruction) is a fall-off exit; a
-    // transfer to an EXTERNAL symbol (or a computed `jp (hl)`) defers out of the
-    // proc as a tail call.
-    if matches!(mnem, "jp" | "jr") && !leads_cc {
-        return vec![branch_edge(cfg, ops)];
-    }
-    // Conditional `jr cc`/`jp cc`: the taken edge (as above) PLUS the fall-through.
-    if matches!(mnem, "jp" | "jr") && leads_cc {
-        let mut v = vec![branch_edge(cfg, ops)];
-        match cfg.next_instr(idx) {
-            Some(f) => v.push(Edge::Follow(f)),
-            None => v.push(Edge::FallOff),
-        }
-        return v;
-    }
-    // `djnz` branches AND falls through.
-    if mnem == "djnz" {
-        let mut v = Vec::new();
-        if let Some(tgt) = branch_sym(ops).and_then(|t| cfg.label_index(t)) {
-            v.push(Edge::Follow(tgt));
-        }
-        match cfg.next_instr(idx) {
-            Some(f) => v.push(Edge::Follow(f)),
-            None => v.push(Edge::FallOff),
-        }
-        return v;
-    }
-    // Everything else (incl. `call`, which returns) falls through; the end of the
-    // body runs off it.
-    match cfg.next_instr(idx) {
-        Some(f) => vec![Edge::Follow(f)],
-        None => vec![Edge::FallOff],
-    }
-}
-
-/// The taken-edge of a `jp`/`jr` from its target: a LOCAL label with an
-/// instruction after it is followed; a LOCAL end-label (no following instruction —
-/// a jump to the proc's fall-off point) is a [`Edge::FallOff`]; an EXTERNAL symbol
-/// or a computed `jp (hl)` (no symbol) is a [`Edge::Defer`] tail transfer.
-fn branch_edge(cfg: &Cfg, ops: &[CodeOperand]) -> Edge {
-    match branch_sym(ops) {
-        Some(t) => match cfg.label_index(t) {
-            Some(tgt) => Edge::Follow(tgt),
-            None if cfg.is_local_label(t) => Edge::FallOff,
-            None => Edge::Defer,
-        },
-        None => Edge::Defer,
-    }
 }
 
 /// The last bare-`Sym` operand of a branch/tail instruction (its target label).
