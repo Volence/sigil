@@ -5,13 +5,20 @@
 use std::process::Command;
 
 fn unique_temp_dir() -> std::path::PathBuf {
+    // pid + clock is NOT unique across the harness's parallel test threads: two
+    // tests calling inside one clock tick get the SAME dir, both write `m.emp`,
+    // and one runs the other's fixture. The counter is what actually
+    // discriminates; the timestamp keeps names unique across test processes
+    // reusing a pid.
+    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
-        "sigil_test_runner_{}_{}",
+        "sigil_test_runner_{}_{}_{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_nanos()
+            .as_nanos(),
+        SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&dir).unwrap();
     dir
