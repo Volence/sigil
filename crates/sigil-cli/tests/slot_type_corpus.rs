@@ -59,10 +59,19 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
 /// Collect the whole corpus source, honoring `AEON_DIR`. Returns `None` (with the
 /// strict-gate hard-fail already applied) when the tree is absent.
 ///
-/// `engine/sound/generated/` is a gitignored build product the `.emp` corpus
-/// `embed`s; emitting the blobs first is what makes this gate measure the same
-/// corpus on a fresh checkout as on a warm one. `engine/debug/generated/` is a
-/// SEPARATE generator (`tools/gen_compression_vectors.py`) nothing here runs.
+/// COVERAGE IS PINNED, because a gate whose whole content is "this set is empty"
+/// proves nothing about a corpus it did not read. Two things can silently shrink the
+/// walk: `engine/debug/generated/vectors.emp` is a GENERATED module — gitignored,
+/// written by `tools/gen_compression_vectors.py`, absent on a cold checkout — and
+/// `engine/debug/compression_selftest.emp` `use`s it at six instruction sites, so
+/// without it the walk is 121 files where a warm tree is 122 and nothing else
+/// notices. The floor and the named witness below turn both into a loud failure.
+///
+/// Deliberately NOT done here: emitting build products. `embed(...)` is a
+/// `data` item the contract walk never resolves — `Embed` appears nowhere in
+/// `sigil-frontend-emp` — so a missing `engine/sound/generated/` blob changes no
+/// number this file asserts, and generating one would be a WRITE into `AEON_DIR`
+/// from a read-only analysis gate, racing any concurrent build.
 fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
     let aeon = aeon_dir();
     if !aeon.exists() {
@@ -72,12 +81,26 @@ fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
         eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
         return None;
     }
-    native::ensure_generated(&aeon);
     let mut paths = Vec::new();
     emp_files(&aeon.join("engine"), &mut paths);
     emp_files(&aeon.join("games"), &mut paths);
     paths.sort();
-    assert!(!paths.is_empty(), "no .emp files under {}", aeon.display());
+    // A FLOOR, not an equality: ordinary corpus growth must not churn this, but a
+    // walk that lost a directory — or a generated module — must fail loudly.
+    assert!(
+        paths.len() >= 120,
+        "the corpus walk found only {} .emp files under {} — too few to be the whole \
+         corpus, so every assert-empty gate below would pass vacuously",
+        paths.len(),
+        aeon.display()
+    );
+    assert!(
+        paths.iter().any(|p| p.ends_with("engine/debug/generated/vectors.emp")),
+        "engine/debug/generated/vectors.emp is absent, so `engine.compression_vectors` \
+         is not in the walk and compression_selftest.emp's uses of it vanish silently. \
+         It is gitignored — run tools/gen_compression_vectors.py in {}",
+        aeon.display()
+    );
     Some(paths.into_iter().map(|p| {
         let s = std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
         (p, s)

@@ -66,13 +66,42 @@ fn aeon_dir() -> Option<PathBuf> {
 
 /// The whole corpus as `(path, source text)`, so a negative probe can doctor a
 /// source before it is parsed.
+///
+/// COVERAGE IS PINNED, because a gate whose whole content is "this set is empty"
+/// proves nothing about a corpus it did not read. Two things can silently shrink the
+/// walk: `engine/debug/generated/vectors.emp` is a GENERATED module — gitignored,
+/// written by `tools/gen_compression_vectors.py`, absent on a cold checkout — and
+/// `engine/debug/compression_selftest.emp` `use`s it at six instruction sites, so
+/// without it the walk is 121 files where a warm tree is 122 and nothing else
+/// notices. The floor and the named witness below turn both into a loud failure.
+///
+/// Deliberately NOT done here: emitting build products. `embed(...)` is a
+/// `data` item the contract walk never resolves — `Embed` appears nowhere in
+/// `sigil-frontend-emp` — so a missing `engine/sound/generated/` blob changes no
+/// number this file asserts, and generating one would be a WRITE into `AEON_DIR`
+/// from a read-only analysis gate, racing any concurrent build.
 fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
     let aeon = aeon_dir()?;
     let mut paths = Vec::new();
     emp_files(&aeon.join("engine"), &mut paths);
     emp_files(&aeon.join("games"), &mut paths);
     paths.sort();
-    assert!(!paths.is_empty(), "no .emp files under {}", aeon.display());
+    // A FLOOR, not an equality: ordinary corpus growth must not churn this, but a
+    // walk that lost a directory — or a generated module — must fail loudly.
+    assert!(
+        paths.len() >= 120,
+        "the corpus walk found only {} .emp files under {} — too few to be the whole \
+         corpus, so every assert-empty gate below would pass vacuously",
+        paths.len(),
+        aeon.display()
+    );
+    assert!(
+        paths.iter().any(|p| p.ends_with("engine/debug/generated/vectors.emp")),
+        "engine/debug/generated/vectors.emp is absent, so `engine.compression_vectors` \
+         is not in the walk and compression_selftest.emp's uses of it vanish silently. \
+         It is gitignored — run tools/gen_compression_vectors.py in {}",
+        aeon.display()
+    );
     Some(
         paths
             .into_iter()
@@ -170,6 +199,48 @@ fn corpus_closure_residue_is_empty_the_error_gate() {
             r.firings.is_empty(),
             "shape `{label}`: closure firing(s) — an undeclared register effect must be \
              declared or verified-preserved before it can ship: {residue:?}"
+        );
+    }
+}
+
+/// LIVENESS — the closure analysis is a live analysis WITH REAL SUBJECTS in every
+/// shape, not only in the three that assemble the shape-sensitivity probe's arm.
+///
+/// The shape-sensitivity probe below partitions: it demands a firing in the `DEBUG`
+/// shapes and SILENCE in the plain ones. Silence is also what a walk that analyzed
+/// nothing at all produces, so on its own it leaves the four plain shapes' halves of
+/// `corpus_closure_residue_is_empty_the_error_gate` unproven — an empty residue there
+/// would mean "clean" and "saw nothing" equally well.
+///
+/// So this drops `d1` from `Collected_UnparkSlot`'s `clobbers`, in code no comptime
+/// condition guards. The firing is shape-invariant by construction, so EVERY shape
+/// must show it, and any shape that stopped producing firings fails here instead of
+/// passing the ERROR gate for the wrong reason.
+#[test]
+fn an_undeclared_clobber_in_ungated_code_fires_in_every_shape() {
+    let Some(mut srcs) = corpus_sources() else { return };
+
+    let mut doctored = false;
+    for (p, s) in &mut srcs {
+        if p.file_name().is_some_and(|n| n == "entity_window.emp") {
+            let needle = "proc Collected_UnparkSlot () clobbers(d1, a1) preserves(a0) {";
+            let weaken = "proc Collected_UnparkSlot () clobbers(a1) preserves(a0) {";
+            assert!(s.contains(needle), "negative probe anchor not found in {}", p.display());
+            *s = s.replacen(needle, weaken, 1);
+            doctored = true;
+        }
+    }
+    assert!(doctored, "entity_window.emp not found in the corpus");
+
+    for (label, _profile, r) in analyze_every_shape(&srcs) {
+        assert!(
+            r.firings.iter().any(|f| {
+                f.proc == "Collected_UnparkSlot" && f.reg.as_deref() == Some("d1")
+            }),
+            "shape `{label}`: an undeclared clobber in UNGATED code must fire in every \
+             shape. It did not, so this shape's walk produced no firings and its half of \
+             the residue gate proves nothing: {:?}",
+            r.firings.iter().map(|f| (f.proc.as_str(), f.reg.as_deref())).collect::<Vec<_>>()
         );
     }
 }
@@ -474,12 +545,18 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
 /// all of them stay green if `run_contract_report` is deleted or stops reading the
 /// target's profile. This drives the real binary and reads its real stdout.
 ///
-/// The load-bearing assertion is the LAST one. A census run against the wrong define
-/// set analyzes arms the shipped ROM never assembles: with `MAX_RING_BUFFER` absent
-/// `DrawRings` cannot lower its `vram_art(...)` operand and the instruction DROPS, and
-/// with `SOUND_DRIVER_ENABLED` absent every game-side sound call site comptime-vanishes
-/// from the walk. Pinning zero drops through the binary pins that the profile reaches
-/// the analysis, which is what this surface exists to guarantee.
+/// The last assertion pins zero drops through the binary, and its reach is narrower
+/// than it looks. It catches a missing VALUE define — without `MAX_RING_BUFFER`,
+/// `DrawRings` cannot lower its `vram_art(...)` operand and the instruction DROPS. It
+/// does NOT catch a missing TOGGLE: an `if` whose condition does not resolve has both
+/// arms discarded whole, contributing nothing to `dropped_instrs`, so a profile that
+/// lost `SOUND_DRIVER_ENABLED` or `DEBUG` entirely would still report zero drops while
+/// reproducing the exact blind spot the shape walk exists to close. What covers the
+/// toggles is the pair of shape-sensitivity probes above, and only for the two they
+/// name; `CRASH_REPORT`, `SOUND_DEBUG_HOTKEYS` and `SOUND_DBG_MIRROR` have no such
+/// proof. A `[comptime.unresolved]` surface — the set of names a comptime condition
+/// referenced that the define set failed to resolve, pinned empty per shape — is what
+/// would make this structural; it is gap-ledgered.
 #[test]
 fn the_contracts_report_is_wired_and_carries_the_targets_defines() {
     let aeon = PathBuf::from(
