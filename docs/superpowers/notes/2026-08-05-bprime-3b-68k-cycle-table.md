@@ -1,7 +1,6 @@
 # 2026-08-05 — B′-3b: the 68000 cycle table (close packet)
 
-Status: **checkpoint for the overseer's countersign + merge. NOT merged, NOT
-pushed.** Branch `bprime-3b`, built off sigil `de9d4ca2` and REBASED onto
+Status: Merge state lives in the campaign log, not here. Branch `bprime-3b`, built off sigil `de9d4ca2` and REBASED onto
 master `22e7274f` (chain 46) at the overseer's direction — every bar in §8 was
 then re-proven at the new base (§8.4). Worktree `.worktrees/b4` (the directory
 name deliberately does not match the branch). **ZERO aeon commits, zero aeon

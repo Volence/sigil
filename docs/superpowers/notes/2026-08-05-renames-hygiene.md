@@ -78,7 +78,7 @@ awaiting merge) now reads `Merge state lives in the campaign log, not here.`
 Branch provenance ("built off X"), gate numbers, and time-scoped records
 ("masters at close were X" in the a1a2 arc-close and the campaign
 retrospective) were left standing — facts about the work, not claims about
-master. 32 files touched, all in `docs/superpowers/notes/`:
+master. 33 files touched, all in `docs/superpowers/notes/`:
 
 The ruled 2026-08-01/02 stale set (21):
 `2026-08-01-conv-a-structs-flip.md` · `2026-08-01-conv-b-constants-tail.md` ·
@@ -94,7 +94,7 @@ The ruled 2026-08-01/02 stale set (21):
 `2026-08-02-onesit-batch.md`
 
 Later packets carrying claims — swept under the same ruling, an extension
-beyond the brief's ~15 the overseer should eyeball (11): the four corrected in
+beyond the brief's ~15 the overseer should eyeball (12): the four corrected in
 place on 08-04, whose "countersigned and MERGED" lines were TRUE claims that
 rot the same way (`2026-08-04-bprime-0-condout.md` ·
 `2026-08-04-bprime-0b-survives-verifier.md` ·
@@ -104,7 +104,11 @@ rot the same way (`2026-08-04-bprime-0-condout.md` ·
 `2026-08-05-bprime-4-report-and-cc-precision.md` ·
 `2026-08-05-define-free-gate-flip.md` · `2026-08-05-edge-return-falloff-split.md`
 (several of these "NOT merged / unmerged" lines were ALREADY stale — the
-class reproduced itself while the fix was in flight).
+class reproduced itself while the fix was in flight). At merge-prep rebase onto
+`7eab683f` the sweep gained a 12th late file the same way:
+`2026-08-05-bprime-3b-68k-cycle-table.md` landed on master mid-lane with a
+"NOT merged, NOT pushed" header that was stale the moment its merge commit
+existed — 33 files total.
 
 Deliberately untouched: session handoffs and audits (narratives, not packet
 status headers), `2026-08-02-a1a2-arc-close-packet.md` /
