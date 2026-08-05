@@ -25,6 +25,7 @@ pub use code::lower_code_buf;
 pub use proc::{
     expand_reglist_regs, preserve_oracle_inputs, proc_written_registers, verified_preserves_regs,
 };
+pub(crate) use code::encoded_len_m68k;
 pub(crate) use code::is_recognized_mnemonic;
 pub(crate) use code::m68k_mnemonic;
 pub(crate) use code::{m68k_default_size, reg_kind};

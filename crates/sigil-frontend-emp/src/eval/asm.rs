@@ -159,6 +159,25 @@ impl Evaluator<'_> {
         }
         self.enclosing_owner = prev_owner;
 
+        // `mul_const`/`mul_bounded` expand HERE, at buffer completion — before
+        // any contract analysis walks the items — so the clobber/preserves/out/
+        // flag machinery sees the chosen lowering's ordinary instructions (the
+        // scratch write included), never a write-invisible raw construct item.
+        // Spliced statement-call items are already in `buf`, so one pass covers
+        // them; a cpu-less template stays raw (`expand_buf` is a no-op) and
+        // expands when a CPU-resolved buffer finally carries it. All decision
+        // logic lives in `mul_lower` (the porter-owned module); this call is
+        // the choke point only.
+        let module = self.module_id.clone();
+        let mds =
+            crate::mul_lower::expand_buf(&mut buf, self.cpu, &module, &mut self.asm_counter);
+        // Every diagnostic here is one refused-and-dropped construct item
+        // (expand_buf emits exactly one per drop), so the drop accounting the
+        // corpus walk pins (`dropped == 0`) stays honest: a refused `mul_*`
+        // shrinks the analysis view COUNTED, never silently.
+        self.dropped_instrs += mds.len();
+        self.diags.extend(mds);
+
         Value::Code(buf)
     }
 

@@ -129,7 +129,14 @@ strips) · HBlank raster contract (no armed consumer; doc note rides N-1).
 - **R-A · the `dispatch` construct has ZERO corpus consumers** (every site uses
   offsets + typed jsr cast, arguably cleaner): retrofit the sites onto it, or
   retire the construct? (Construct-health; no lean — taste.)
-- **R-B · mulu-vs-repeated-add** (above — lean keep as-written).
+- **R-B · mulu-vs-repeated-add** (above — lean keep as-written). — CLOSED
+  2026-08-05, mul-lowering parcel: resolved STRUCTURALLY per Volence's own
+  proposal (the 2026-08-03 design). `mul_bounded` makes the choice the cost
+  model's; at the site's bound the worst-vs-worst verdict is mulu (ceiling 70
+  vs loop 28 + 18·M — the loop wins only through M = 2), so the code-review
+  argument is now a computed fact. The section.emp site itself stays
+  as-written until a byte-changing parcel adopts (word-width contract gap —
+  see the mul-lowering ledger rows).
 - **R-C · scheduling**: sweep parcels (Sections 1+3) → S-1 lint → A1/A2 arc, or
   S-1 first? (Lean: parcels first — small, evidence-fresh; lint spec in parallel.)
 

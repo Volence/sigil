@@ -16,6 +16,7 @@ pub mod layout;
 pub mod lexer;
 pub mod lower;
 pub mod m68k_cycles;
+pub mod mul_lower;
 pub mod out_verify;
 pub mod parser;
 pub mod preserves;

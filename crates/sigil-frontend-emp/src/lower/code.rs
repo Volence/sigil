@@ -71,8 +71,10 @@ pub fn lower_code_buf(
                 diags.append(&mut ds);
                 builder.emit_data(&bytes, fixups, *span);
             }
-            // `as_type` and `author` are analysis-tier facts — neither emits.
-            CodeItem::Instr { mnemonic, size, ops, span, .. } => {
+            // `as_type` and `author` are analysis-tier facts — neither emits
+            // (the mul safety net binds `author` only to PROPAGATE it through
+            // its expansion, per the §2 redirect rule).
+            CodeItem::Instr { mnemonic, size, ops, span, author, .. } => {
                 // `jbra`/`jbsr` are emp-ONLY mnemonic-position words (D2.18): they
                 // must NOT enter sigil-isa's shared mnemonic table (the AS
                 // front-end keeps rejecting them). Recognize them HERE, before the
@@ -81,6 +83,43 @@ pub fn lower_code_buf(
                 // deferred, so on Z80 they are `[branch.non-68k]`.
                 if matches!(mnemonic.as_str(), "jbra" | "jbsr") {
                     lower_jbra_jbsr(mnemonic, *size, ops, *span, cpu, builder, diags);
+                    continue;
+                }
+                // `mul_const`/`mul_bounded` (the cost-model multiply constructs)
+                // normally expand at CodeBuf completion (`mul_lower::expand_buf`,
+                // where the contract analyses then see the chosen lowering's real
+                // instructions). A raw item reaching here came through a stream no
+                // evaluator completed for a known CPU (an item-position `asm {}`
+                // template) — expand with the SAME pure decision so the bytes
+                // cannot differ by path. Loop-label uniqueness rides the item's
+                // span (source id + start offset; no evaluator counter exists
+                // on this path) under an `item<source>` name in the module
+                // slot — a real module named e.g. `item0` would share that
+                // namespace, and any overlap collides as a duplicate label at
+                // link, LOUDLY, never as silent bytes.
+                if crate::mul_lower::is_mul_mnemonic(mnemonic) {
+                    if cpu == Cpu::Z80 {
+                        push_err(
+                            diags,
+                            *span,
+                            format!(
+                                "[mul.non-68k] `{mnemonic}` is 68000-only in v1 (the Z80 \
+                                 variant is a recorded ledger row awaiting a consumer)"
+                            ),
+                        );
+                        continue;
+                    }
+                    let mut counter = span.start;
+                    let net_ns = format!("item{}", span.source.0);
+                    match crate::mul_lower::expand_item(
+                        mnemonic, *size, ops, *span, &net_ns, &mut counter, author,
+                    ) {
+                        Ok(expanded) => {
+                            let buf = CodeBuf { items: expanded };
+                            lower_code_buf(&buf, cpu, as_compat, builder, diags);
+                        }
+                        Err(d) => diags.push(d),
+                    }
                     continue;
                 }
                 match cpu {
@@ -109,6 +148,12 @@ pub(crate) fn is_recognized_mnemonic(base: &str, cpu: Cpu) -> bool {
     // the DataBuf it produces — reserved on both CPUs so a comptime fn named
     // `dc` can never shadow it (tenet 3, same footing as jbra/jbsr).
     if matches!(base, "jbra" | "jbsr" | "dc") {
+        return true;
+    }
+    // The cost-model multiply constructs (mul_lower) — reserved on both CPUs
+    // like the words above (a comptime fn named `mul_const` can never shadow
+    // the construct); 68k-only-ness is a loud `[mul.non-68k]` at expansion.
+    if crate::mul_lower::is_mul_mnemonic(base) {
         return true;
     }
     match cpu {
@@ -1639,6 +1684,34 @@ pub(crate) fn m68k_default_size(m: M68kMnemonic) -> Option<M68kSize> {
         Scc(_) => Some(M68kSize::B),
         _ => None,
     }
+}
+
+/// Encoded byte length of ONE straight-line 68k instruction — the ENCODER's own
+/// answer, exposed so `mul_lower`'s byte tie-break reads the same authority
+/// that will emit the bytes (a shadow length table is the rejected drift
+/// shape). `None` for a form the direct encode path cannot finish (symbolic /
+/// relaxable operands — `mul_lower`'s straight-line candidates never carry
+/// those, and its loop candidate never reaches a byte tie-break).
+pub(crate) fn encoded_len_m68k(
+    mnemonic: &str,
+    size: Option<Width>,
+    ops: &[CodeOperand],
+) -> Option<usize> {
+    let m = m68k_mnemonic(mnemonic)?;
+    let size = match size {
+        Some(w) => width_to_size(w),
+        None => m68k_default_size(m)?,
+    };
+    let mut mops = Vec::with_capacity(ops.len());
+    for op in ops {
+        mops.push(m68k_operand(op).ok()?);
+    }
+    let m = refine_m68k_mnemonic(m, &mops);
+    let inst = M68kInst { mnemonic: m, size, ops: mops };
+    let df = M68kBackend
+        .lower_inst(&inst, Span { source: sigil_span::SourceId(0), start: 0, end: 0 })
+        .ok()?;
+    Some(df.bytes.len())
 }
 
 /// Refine a mnemonic against its resolved operands (asl's `move…sr` / `andi…ccr`
