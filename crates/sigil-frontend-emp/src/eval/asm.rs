@@ -168,7 +168,9 @@ impl Evaluator<'_> {
         // expands when a CPU-resolved buffer finally carries it. All decision
         // logic lives in `mul_lower` (the porter-owned module); this call is
         // the choke point only.
-        let mds = crate::mul_lower::expand_buf(&mut buf, self.cpu, &mut self.asm_counter);
+        let module = self.module_id.clone();
+        let mds =
+            crate::mul_lower::expand_buf(&mut buf, self.cpu, &module, &mut self.asm_counter);
         self.diags.extend(mds);
 
         Value::Code(buf)

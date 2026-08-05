@@ -77,10 +77,17 @@ pub(crate) fn is_mul_mnemonic(base: &str) -> bool {
 /// expands the items then. On Z80 each construct item is a `[mul.non-68k]`
 /// error and is dropped (the error fails the build; no silent bytes).
 ///
-/// `counter` mints the loop candidate's label names (`$mul{c}$loop`) — the
-/// caller threads the evaluator's monotonic instantiation counter so labels
-/// are unique program-wide.
-pub(crate) fn expand_buf(buf: &mut CodeBuf, cpu: Option<Cpu>, counter: &mut u32) -> Vec<Diagnostic> {
+/// `module` + `counter` mint the loop candidate's label names
+/// (`$mul${module}${c}$loop`): the module id spans files (the hygiene model's
+/// own convention — `$m$asm0$wait` embeds it for the same reason) and the
+/// caller threads the evaluator's monotonic instantiation counter within one,
+/// so labels are unique program-wide.
+pub(crate) fn expand_buf(
+    buf: &mut CodeBuf,
+    cpu: Option<Cpu>,
+    module: &str,
+    counter: &mut u32,
+) -> Vec<Diagnostic> {
     let Some(cpu) = cpu else { return Vec::new() };
     if !buf.items.iter().any(
         |i| matches!(i, CodeItem::Instr { mnemonic, .. } if is_mul_mnemonic(mnemonic)),
@@ -104,7 +111,7 @@ pub(crate) fn expand_buf(buf: &mut CodeBuf, cpu: Option<Cpu>, counter: &mut u32)
                     ));
                     continue;
                 }
-                match expand_item(mnemonic, size, ops, span, counter) {
+                match expand_item(mnemonic, size, ops, span, module, counter) {
                     Ok(expanded) => buf.items.extend(expanded),
                     Err(d) => diags.push(d),
                 }
@@ -123,6 +130,7 @@ pub(crate) fn expand_item(
     size: Option<Width>,
     ops: &[CodeOperand],
     span: Span,
+    module: &str,
     counter: &mut u32,
 ) -> Result<Vec<CodeItem>, Diagnostic> {
     if size.is_some() {
@@ -137,7 +145,7 @@ pub(crate) fn expand_item(
     }
     match mnemonic {
         "mul_const" => expand_mul_const(ops, span),
-        "mul_bounded" => expand_mul_bounded(ops, span, counter),
+        "mul_bounded" => expand_mul_bounded(ops, span, module, counter),
         _ => unreachable!("guarded by is_mul_mnemonic"),
     }
 }
@@ -247,6 +255,7 @@ fn mul_const_candidates(dst: Reg, n: u32, scratch: Option<Reg>, span: Span) -> V
 fn expand_mul_bounded(
     ops: &[CodeOperand],
     span: Span,
+    module: &str,
     counter: &mut u32,
 ) -> Result<Vec<CodeItem>, Diagnostic> {
     let (dst, src, bound, scratch) = match ops {
@@ -301,8 +310,8 @@ fn expand_mul_bounded(
         let s = scratch.expect("gated on scratch");
         let c = *counter;
         *counter += 1;
-        let l_loop = format!("$mul{c}$loop");
-        let l_done = format!("$mul{c}$done");
+        let l_loop = format!("$mul${module}${c}$loop");
+        let l_done = format!("$mul${module}${c}$done");
         let setup = vec![
             instr("moveq", None, vec![imm(0), reg(s)], span),
             instr("move", Some(Width::W), vec![reg(dst), reg(s)], span),
@@ -517,12 +526,12 @@ mod tests {
 
     fn expand_const(ops: Vec<CodeOperand>) -> Result<Vec<CodeItem>, Diagnostic> {
         let mut c = 0;
-        expand_item("mul_const", None, &ops, sp(), &mut c)
+        expand_item("mul_const", None, &ops, sp(), "m", &mut c)
     }
 
     fn expand_bounded(ops: Vec<CodeOperand>) -> Result<Vec<CodeItem>, Diagnostic> {
         let mut c = 0;
-        expand_item("mul_bounded", None, &ops, sp(), &mut c)
+        expand_item("mul_bounded", None, &ops, sp(), "m", &mut c)
     }
 
     /// Render an item list as compact `mnemonic.size ops` strings for pins.
@@ -820,11 +829,11 @@ mod tests {
                 "move.w d0,d2",
                 "moveq #0,d0",
                 "subq.w #1,d1",
-                "bcs.s $mul0$done",
-                "$mul0$loop:",
+                "bcs.s $mul$m$0$done",
+                "$mul$m$0$loop:",
                 "add.l d2,d0",
-                "dbf d1,$mul0$loop",
-                "$mul0$done:"
+                "dbf d1,$mul$m$0$loop",
+                "$mul$m$0$done:"
             ]
         );
         let m3 = expand_bounded(vec![reg(Reg::D0), reg(Reg::D1), imm(3), reg(Reg::D2)])
@@ -837,6 +846,29 @@ mod tests {
         let sq = expand_bounded(vec![reg(Reg::D0), reg(Reg::D0), imm(2), reg(Reg::D2)])
             .unwrap();
         assert_eq!(shape(&sq), ["mulu.w d0,d0"]);
+    }
+
+    // Loop labels embed the module id (the hygiene convention): two modules at
+    // the same counter value mint disjoint names, so cross-module use of the
+    // loop lowering cannot collide at link.
+    #[test]
+    fn loop_labels_embed_the_module_id() {
+        let ops = vec![reg(Reg::D0), reg(Reg::D1), imm(2), reg(Reg::D2)];
+        let mut c = 0;
+        let a = expand_item("mul_bounded", None, &ops, sp(), "alpha", &mut c).unwrap();
+        let mut c = 0;
+        let b = expand_item("mul_bounded", None, &ops, sp(), "beta", &mut c).unwrap();
+        let labels = |items: &[CodeItem]| -> Vec<String> {
+            items
+                .iter()
+                .filter_map(|i| match i {
+                    CodeItem::Label { name, .. } => Some(name.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(labels(&a), ["$mul$alpha$0$loop", "$mul$alpha$0$done"]);
+        assert_eq!(labels(&b), ["$mul$beta$0$loop", "$mul$beta$0$done"]);
     }
 
     // Determinism: the same operands expand to the same items, every time.
@@ -900,6 +932,7 @@ mod tests {
             Some(Width::W),
             &[reg(Reg::D0), imm(66)],
             sp(),
+            "m",
             &mut c,
         );
         assert!(sized.unwrap_err().message.contains("[mul.size]"));
@@ -934,18 +967,18 @@ mod tests {
         };
         let mut c = 0;
         let mut z = mk();
-        let ds = expand_buf(&mut z, Some(Cpu::Z80), &mut c);
+        let ds = expand_buf(&mut z, Some(Cpu::Z80), "m", &mut c);
         assert_eq!(ds.len(), 1);
         assert!(ds[0].message.contains("[mul.non-68k]"));
         assert!(z.items.is_empty(), "the refused item is dropped, never silent bytes");
 
         let mut raw = mk();
-        let ds = expand_buf(&mut raw, None, &mut c);
+        let ds = expand_buf(&mut raw, None, "m", &mut c);
         assert!(ds.is_empty());
         assert_eq!(raw.items.len(), 1, "cpu-less template stays raw");
 
         let mut m68k = mk();
-        let ds = expand_buf(&mut m68k, Some(Cpu::M68000), &mut c);
+        let ds = expand_buf(&mut m68k, Some(Cpu::M68000), "m", &mut c);
         assert!(ds.is_empty());
         assert_eq!(shape(&m68k.items), ["mulu.w #66,d0"]);
     }

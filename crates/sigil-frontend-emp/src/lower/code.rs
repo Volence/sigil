@@ -106,8 +106,9 @@ pub fn lower_code_buf(
                         continue;
                     }
                     let mut counter = span.start;
-                    match crate::mul_lower::expand_item(mnemonic, *size, ops, *span, &mut counter)
-                    {
+                    match crate::mul_lower::expand_item(
+                        mnemonic, *size, ops, *span, "item", &mut counter,
+                    ) {
                         Ok(expanded) => {
                             let buf = CodeBuf { items: expanded };
                             lower_code_buf(&buf, cpu, as_compat, builder, diags);
