@@ -207,6 +207,15 @@ impl Region {
         i > self.enter && i < self.acquire_end
     }
 
+    /// Is item index `i` inside the spliced RELEASE? Together with
+    /// [`Region::in_acquire`] this names the two halves the CONTEXT authored, as
+    /// against the body between them, which is the consumer's own code — the
+    /// split a per-proc lint needs to charge a machine-state write to the party
+    /// that declared it.
+    pub fn in_release(&self, i: usize) -> bool {
+        i > self.body_end && i < self.exit
+    }
+
     /// Is item index `i` inside the acquire+BODY half — the range the escape
     /// proof ranges over? The release is excluded: its own fall-through out of
     /// the region is the legitimate exit, and inside the checked range it would

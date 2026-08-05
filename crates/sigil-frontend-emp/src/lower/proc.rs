@@ -719,18 +719,25 @@ fn check_clobbers(
     // declared-but-UNVERIFIABLE preserves subtracts nothing and the register still
     // fires — the lint keeps its teeth against a lying `preserves`.
     allowed.extend(verified_preserves_regs(proc, buf));
+    // The SR traffic a `with <ctx> { }` bracket splices in belongs to the
+    // CONTEXT, not to this proc — see [`sr_neutral_regions`].
+    let ctx_regions = sr_neutral_regions(&proc.name, &buf.items);
 
-    for item in &buf.items {
+    for (idx, item) in buf.items.iter().enumerate() {
         let CodeItem::Instr { mnemonic, ops, span, .. } = item else { continue };
         // An SR destination is a machine-state clobber (tranche 5): undeclared
         // unless the contract carries `clobbers(sr)`/`out(sr)` or `preserves(sr)`
-        // (the latter's balance is checked separately). Only a write-form
-        // mnemonic can target SR.
+        // (the latter's balance is checked separately), or the write sits in a
+        // context's spliced acquire/release, where the BRACKET is the
+        // declaration. The bracketed BODY is this proc's own code, so a
+        // hand-written SR write there still fires. Only a write-form mnemonic
+        // can target SR.
         if writes_dest_register(mnemonic)
             && matches!(ops.last(), Some(CodeOperand::Sr))
             && !clob.has_sr
             && !outs.has_sr
             && !proc.preserves.iter().any(|(lo, hi)| lo == "sr" && hi.is_none())
+            && !ctx_regions.iter().any(|r| r.in_acquire(idx) || r.in_release(idx))
         {
             push(
                 diags,
@@ -1329,30 +1336,7 @@ fn check_preserves_sr(
     buf: &crate::value::CodeBuf,
     diags: &mut Vec<Diagnostic>,
 ) {
-    use crate::value::{CodeOperand, Reg};
-    let mut first_save: Option<usize> = None;
-    let mut sr_writes: Vec<(usize, bool)> = Vec::new(); // (index, is_restore)
-    for (i, item) in buf.items.iter().enumerate() {
-        let CodeItem::Instr { ops, .. } = item else { continue };
-        // Save: `move.w sr, -(sp)` (reads SR — not an SR write).
-        if matches!(ops.as_slice(), [CodeOperand::Sr, CodeOperand::PreDec(Reg::A7)]) {
-            first_save.get_or_insert(i);
-            continue;
-        }
-        // Any SR-destination form is an SR write; the restore is the
-        // `move.w (sp)+, sr` spelling specifically.
-        if matches!(ops.last(), Some(CodeOperand::Sr)) {
-            let is_restore =
-                matches!(ops.as_slice(), [CodeOperand::PostInc(Reg::A7), CodeOperand::Sr]);
-            sr_writes.push((i, is_restore));
-        }
-    }
-    let Some(&(first_write, _)) = sr_writes.first() else {
-        return; // no SR writes — vacuously preserved
-    };
-    let saved_before = first_save.is_some_and(|s| s < first_write);
-    let restored_last = sr_writes.last().is_some_and(|&(_, r)| r);
-    if !(saved_before && restored_last) {
+    if !sr_writes_round_trip(buf.items.iter()) {
         push(
             diags,
             Level::Error,
@@ -1366,6 +1350,64 @@ fn check_preserves_sr(
             ),
         );
     }
+}
+
+/// Do the SR writes in `items` ROUND-TRIP — a `move.w sr, -(sp)` save before the
+/// first write, and the `move.w (sp)+, sr` restore as the last? A stream with no
+/// SR write round-trips vacuously. Static order only, no path analysis (a
+/// save/restore split across branches is S2-D7's dataflow half).
+///
+/// Two callers share this one recognizer so the two cannot drift: the declared
+/// [`check_preserves_sr`] contract reads a whole proc body, and
+/// [`check_clobbers`]' context exemption reads one `with` region's acquire and
+/// release together.
+fn sr_writes_round_trip<'a>(items: impl Iterator<Item = &'a CodeItem>) -> bool {
+    use crate::value::{CodeOperand, Reg};
+    let mut saved = false;
+    let mut saved_before_first_write: Option<bool> = None;
+    let mut last_write_is_restore = false;
+    for item in items {
+        let CodeItem::Instr { ops, .. } = item else { continue };
+        // Save: `move.w sr, -(sp)` (reads SR — not an SR write).
+        if matches!(ops.as_slice(), [CodeOperand::Sr, CodeOperand::PreDec(Reg::A7)]) {
+            saved = true;
+            continue;
+        }
+        // Any SR-destination form is an SR write; the restore is the
+        // `move.w (sp)+, sr` spelling specifically.
+        if matches!(ops.last(), Some(CodeOperand::Sr)) {
+            saved_before_first_write.get_or_insert(saved);
+            last_write_is_restore =
+                matches!(ops.as_slice(), [CodeOperand::PostInc(Reg::A7), CodeOperand::Sr]);
+        }
+    }
+    match saved_before_first_write {
+        None => true,
+        Some(saved_first) => saved_first && last_write_is_restore,
+    }
+}
+
+/// The `with <ctx> { }` regions whose acquire and release together ROUND-TRIP SR
+/// — the regions whose SR traffic is the CONTEXT's declaration rather than the
+/// consuming proc's ([`check_clobbers`]' exemption, below).
+///
+/// A bracket splices the context's acquire and release INTO the consumer's item
+/// stream, so `[proc.sr-undeclared]` would otherwise charge the consumer for a
+/// write it does not make and cannot name: the consumer's declaration IS the
+/// bracket, and no contract clause on it would be honest. The exemption is gated
+/// on the round trip rather than granted to every region, so a context whose
+/// release does not restore what its acquire masked leaves the consumer's SR
+/// genuinely changed — and that still has to be charged to somebody.
+fn sr_neutral_regions(proc: &str, items: &[CodeItem]) -> Vec<crate::context::Region> {
+    let (regions, _) = crate::context::regions_of(proc, items);
+    regions
+        .into_iter()
+        .filter(|r| {
+            sr_writes_round_trip(
+                items[r.enter + 1..r.acquire_end].iter().chain(&items[r.body_end + 1..r.exit]),
+            )
+        })
+        .collect()
 }
 
 /// True when an a7 write is stack DISCIPLINE (exempt from the clobber lint)

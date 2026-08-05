@@ -41,20 +41,33 @@ const CORPUS_LINTS: &[&str] = &[
     "module.path-mismatch",
     "proc.clobber-undeclared",
     "proc.out-unwritten",
+    "proc.undeclared-fallthrough",
+];
+
+/// [`CORPUS_LINTS`] plus `proc.sr-undeclared`, which fires only where `DEBUG == 1`
+/// compiles `assert`: the desugar emits its own `move.w sr,-(sp)` …
+/// `move.w (sp)+,sr` pair and the lint charges the compiler's code to the
+/// asserting proc. Every hand-written SR write in the corpus is declared, so with
+/// the asserts elided the class does not fire at all — which is why the four
+/// `DEBUG == 0` rows below take [`CORPUS_LINTS`] and these three do not.
+const ASSERT_SHAPE_LINTS: &[&str] = &[
+    "module.path-mismatch",
+    "proc.clobber-undeclared",
+    "proc.out-unwritten",
     "proc.sr-undeclared",
     "proc.undeclared-fallthrough",
 ];
 
 /// The firing set per build shape. Every SHIPPED shape has its own row, so a lint
-/// that fires in one shape only cannot hide behind a shape nobody watches. The rows
-/// share [`CORPUS_LINTS`] while their sets agree; a shape that diverges spells its
-/// own set out, and that divergence is then visible in the diff.
+/// that fires in one shape only cannot hide behind a shape nobody watches. Rows
+/// share a named set while their sets agree; a shape that diverges spells its own
+/// set out, and that divergence is then visible in the diff.
 const WARN_ID_BASELINE: &[(&str, &[&str])] = &[
     ("sonic4 plain", CORPUS_LINTS),
-    ("sonic4 debug", CORPUS_LINTS),
+    ("sonic4 debug", ASSERT_SHAPE_LINTS),
     ("demo plain", CORPUS_LINTS),
-    ("demo debug", CORPUS_LINTS),
-    ("config_a", CORPUS_LINTS),
+    ("demo debug", ASSERT_SHAPE_LINTS),
+    ("config_a", ASSERT_SHAPE_LINTS),
     ("config_b", CORPUS_LINTS),
     ("lean", CORPUS_LINTS),
 ];
@@ -81,10 +94,11 @@ type ShapeWarnings = (&'static str, Vec<native::BuildWarning>);
 /// binary — the gates below share one measurement rather than each paying for its
 /// own lowering.
 ///
-/// All seven are watched, not a canonical subset: the off-canonical shapes differ by
-/// comptime defines that DO gate lint-bearing code (`lean` drops
-/// `ErrorHandlerBlob`'s `[proc.undeclared-fallthrough]` and gains `ReleaseFault`'s
-/// `[proc.sr-undeclared]`), so a shape-only lint is a real escape route.
+/// All seven are watched, not a canonical subset: the shapes differ by comptime
+/// defines that DO gate lint-bearing code — `lean` drops `ErrorHandlerBlob`'s
+/// `[proc.undeclared-fallthrough]`, and the three `DEBUG == 1` shapes are the only
+/// ones where `[proc.sr-undeclared]` fires at all — so a shape-only lint is a real
+/// escape route.
 fn corpus_warnings() -> Option<&'static [ShapeWarnings]> {
     static CACHE: OnceLock<Option<Vec<ShapeWarnings>>> = OnceLock::new();
     CACHE

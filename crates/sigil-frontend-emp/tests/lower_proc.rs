@@ -1050,6 +1050,119 @@ fn preserves_sr_composes_with_reglist() {
     assert!(diags.iter().all(|d| d.level != Level::Error), "composed contract: {diags:?}");
 }
 
+// ---- `with <ctx> { }` — whose SR write is it? ------------------------------
+
+/// The engine's real interrupt-mask bracket, inline (a context's acquire and
+/// release evaluate in the CONSUMER's scope, so a test spells them out rather
+/// than importing them).
+const INTS_OFF_CTX: &str = "context ints_off {\n\
+     \x20   acquire = asm { move.w sr, -(sp)\n\
+     \x20                   move.w #$2700, sr }\n\
+     \x20   release = asm { move.w (sp)+, sr }\n\
+     }\n";
+
+/// How many `[proc.sr-undeclared]` firings did this lowering produce?
+fn sr_firings(diags: &[Diagnostic]) -> usize {
+    diags.iter().filter(|d| d.message.contains("[proc.sr-undeclared]")).count()
+}
+
+/// A `with ints_off { }` bracket splices SR traffic into its consumer, and that
+/// traffic is the CONTEXT's — the bracket is the declaration, and the consuming
+/// proc has no honest contract clause that could name a write it does not make.
+///
+/// NOT VACUOUS: the spliced acquire masks SR and the spliced release restores it,
+/// so two write-form instructions with an SR destination reach the lint; before
+/// the region exemption both fired, against a source line in the context's module
+/// rather than in the consumer.
+#[test]
+fn bracketed_sr_traffic_is_the_contexts_declaration_not_the_consumers() {
+    let src = format!(
+        "module m\n{INTS_OFF_CTX}\
+         proc f() clobbers(d0) {{\n\
+         \twith ints_off {{\n\
+         \t\tmoveq #0, d0\n\
+         \t}}\n\
+         \trts\n\
+         }}\n"
+    );
+    let (_module, diags) = lower(&src);
+    assert_eq!(sr_firings(&diags), 0, "the context's own SR traffic must not be charged: {diags:?}");
+    assert!(diags.iter().all(|d| d.level != Level::Error), "the bracket must lower clean: {diags:?}");
+}
+
+/// The exemption is the ACQUIRE and the RELEASE, never the body between them: a
+/// hand-written SR write inside the bracket is the consumer's own code, and
+/// defeating the mask the bracket just installed is exactly what the lint is for.
+///
+/// The sharpest form of the negative probe — one proc, three SR-writing
+/// instructions, and exactly ONE firing, so a blanket region exemption fails here
+/// while the acquire/release halves stay silent.
+#[test]
+fn a_hand_written_sr_write_inside_the_bracketed_body_still_fires() {
+    let src = format!(
+        "module m\n{INTS_OFF_CTX}\
+         proc f() clobbers(d0) {{\n\
+         \twith ints_off {{\n\
+         \t\tmove.w #$2000, sr\n\
+         \t\tmoveq #0, d0\n\
+         \t}}\n\
+         \trts\n\
+         }}\n"
+    );
+    let (_module, diags) = lower(&src);
+    assert_eq!(sr_firings(&diags), 1, "the body's own SR write must still be charged: {diags:?}");
+}
+
+/// The exemption is gated on the acquire and release ROUND-TRIPPING SR, not
+/// granted to every region: a context that masks and never restores leaves the
+/// consumer's SR genuinely changed, so the write is still charged to somebody.
+///
+/// NOT VACUOUS: the only difference from
+/// [`bracketed_sr_traffic_is_the_contexts_declaration_not_the_consumers`] is the
+/// missing `move.w (sp)+, sr` in the release.
+#[test]
+fn a_context_that_never_restores_sr_still_charges_its_consumer() {
+    let src = "module m\n\
+               context mask_only {\n\
+               \tacquire = asm { move.w #$2700, sr }\n\
+               \trelease = asm { nop }\n\
+               }\n\
+               proc f() clobbers(d0) {\n\
+               \twith mask_only {\n\
+               \t\tmoveq #0, d0\n\
+               \t}\n\
+               \trts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert_eq!(
+        sr_firings(&diags),
+        1,
+        "an unrestored mask must stay charged: {diags:?}"
+    );
+}
+
+/// `clobbers(sr)` / `preserves(sr)` keep their meaning alongside a bracket — the
+/// exemption adds a fourth way for an SR write to be declared, it does not
+/// replace the three contract clauses.
+#[test]
+fn a_bracket_does_not_disturb_the_declared_sr_clauses() {
+    let src = format!(
+        "module m\n{INTS_OFF_CTX}\
+         proc f() clobbers(d0) preserves(sr) {{\n\
+         \twith ints_off {{\n\
+         \t\tmoveq #0, d0\n\
+         \t}}\n\
+         \trts\n\
+         }}\n"
+    );
+    let (_module, diags) = lower(&src);
+    assert_eq!(sr_firings(&diags), 0, "a declared preserves(sr) stays silent: {diags:?}");
+    assert!(
+        !has_tag(&diags, "[proc.preserves-sr-unbalanced]"),
+        "the spliced pair satisfies the balance check: {diags:?}"
+    );
+}
+
 // ---- `out(...)` — the S2-D6(e) register-output partition member ------------
 //
 // A proc does one of three things to each register: preserves it (untouched),
