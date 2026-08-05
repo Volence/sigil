@@ -410,15 +410,22 @@ fn contract(clob: &[&str], pres: &[&str], params: &[&str], out: &[&str]) -> Cont
     }
 }
 
-/// [`contract`] plus a set of CONDITIONAL outs (`out(rN if cc)`).
+/// [`contract`] plus CONDITIONAL outs (`out(rN if cc)`), spelled as `(reg, cc)`
+/// pairs. Repeating a register names it under several guards, exactly as two
+/// `out(rN if cc)` clauses would.
 fn contract_cond(
     clob: &[&str],
     pres: &[&str],
     params: &[&str],
     out: &[&str],
-    out_cond: &[&str],
+    out_cond: &[(&str, &str)],
 ) -> Contract {
-    Contract { out_cond: regs(out_cond), ..contract(clob, pres, params, out) }
+    let mut map: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> =
+        Default::default();
+    for (r, cc) in out_cond {
+        map.entry((*r).to_string()).or_default().insert((*cc).to_string());
+    }
+    Contract { out_cond: map, ..contract(clob, pres, params, out) }
 }
 
 /// A target that clobbers MORE than the bound allows violates it (the register
@@ -470,10 +477,15 @@ fn a_bounds_out_licenses_the_target_to_clobber_it() {
 /// hook spelling the same `clobbers(d0/a1) out(a1 if eq)` — conforms. The license
 /// comes from the bound's own `clobbers`, which is where "a1 is indeterminate on
 /// the ne edge" is written down.
+///
+/// Doubles as the MATCHING-CONDITION control for
+/// `a_conditional_bound_rejects_a_target_guarding_a_different_cc` below: the same
+/// pair with the same guard on both sides, so the rejection there is attributable
+/// to the code and to nothing else.
 #[test]
 fn the_honest_alloc_dynamic_shape_conforms_to_a_matching_bound() {
-    let bound = contract_cond(&["d0", "a1"], &[], &[], &[], &["a1"]);
-    let target = contract_cond(&["d0", "a1"], &[], &[], &[], &["a1"]);
+    let bound = contract_cond(&["d0", "a1"], &[], &[], &[], &[("a1", "eq")]);
+    let target = contract_cond(&["d0", "a1"], &[], &[], &[], &[("a1", "eq")]);
     assert!(
         subcontract_violations(&target, &bound).is_empty(),
         "the AllocDynamic-shaped target must conform: {:?}",
@@ -489,8 +501,8 @@ fn the_honest_alloc_dynamic_shape_conforms_to_a_matching_bound() {
 /// a1 indeterminate there.
 #[test]
 fn a_conditional_out_does_not_license_the_target_to_clobber_it() {
-    let bound = contract_cond(&["d0"], &[], &[], &[], &["a1"]);
-    let target = contract_cond(&["d0", "a1"], &[], &[], &[], &["a1"]);
+    let bound = contract_cond(&["d0"], &[], &[], &[], &[("a1", "eq")]);
+    let target = contract_cond(&["d0", "a1"], &[], &[], &[], &[("a1", "eq")]);
     let v = subcontract_violations(&target, &bound);
     assert!(
         v.iter().any(|s| s.contains("clobbers `a1`")),
@@ -516,7 +528,7 @@ fn the_out_license_does_not_widen_to_arbitrary_registers() {
 #[test]
 fn conditional_out_does_not_satisfy_an_unconditional_bound_out() {
     let bound = contract(&["d0"], &[], &[], &["a1"]);
-    let target = contract_cond(&["d0", "a1"], &[], &[], &[], &["a1"]);
+    let target = contract_cond(&["d0", "a1"], &[], &[], &[], &[("a1", "eq")]);
     let v = subcontract_violations(&target, &bound);
     assert!(
         v.iter().any(|s| s.contains("does not produce output `a1`")),
@@ -524,11 +536,47 @@ fn conditional_out_does_not_satisfy_an_unconditional_bound_out() {
     );
 }
 
-/// The converse direction: an UNCONDITIONAL producer satisfies a CONDITIONAL
-/// promise (producing on every path is strictly stronger).
+/// THE CONDITION IS PART OF THE PROMISE. A bound promising `out(a1 if eq)` is NOT
+/// satisfied by a target producing a1 only on `ne`: the bound's callers test `eq`
+/// and read a1 there, which is exactly the edge the target leaves indeterminate.
+/// Comparing register NAMES alone silently accepts this pair.
+#[test]
+fn a_conditional_bound_rejects_a_target_guarding_a_different_cc() {
+    let bound = contract_cond(&["d0", "a1"], &[], &[], &[], &[("a1", "eq")]);
+    let target = contract_cond(&["d0", "a1"], &[], &[], &[], &[("a1", "ne")]);
+    let v = subcontract_violations(&target, &bound);
+    assert!(
+        v.iter().any(|s| s.contains("conditional output `a1`") && s.contains("`eq`")),
+        "the target produces a1 on the wrong edge and must be named: {v:?}"
+    );
+}
+
+/// A target guarding on MORE conditions than the bound demands satisfies it: the
+/// bound's edge is covered. This is why the relation is code-set COVERAGE rather
+/// than equality.
+///
+/// a1 is in BOTH contracts' `clobbers` here, which is what makes the extra `ne`
+/// edge a write the bound's callers already tolerate. With a1 absent from the
+/// bound's `clobbers` that extra edge would break a §7.1 survives-claim, and this
+/// relation would still accept it — the unlicensed-`out` term recorded in the gap
+/// ledger.
+#[test]
+fn a_target_guarding_more_ccs_than_the_bound_demands_satisfies_it() {
+    let bound = contract_cond(&["d0", "a1"], &[], &[], &[], &[("a1", "eq")]);
+    let target = contract_cond(&["d0", "a1"], &[], &[], &[], &[("a1", "eq"), ("a1", "ne")]);
+    assert!(
+        subcontract_violations(&target, &bound).is_empty(),
+        "covering the demanded edge conforms: {:?}",
+        subcontract_violations(&target, &bound)
+    );
+}
+
+/// THE STRENGTHENING ESCAPE: an UNCONDITIONAL producer satisfies a CONDITIONAL
+/// promise whatever condition the bound names — producing on every return path
+/// covers every edge, so the code comparison must not reach it.
 #[test]
 fn unconditional_out_satisfies_a_conditional_bound_out() {
-    let bound = contract_cond(&["d0"], &[], &[], &[], &["a1"]);
+    let bound = contract_cond(&["d0"], &[], &[], &[], &[("a1", "eq")]);
     let target = contract(&["d0"], &[], &[], &["a1"]);
     assert!(subcontract_violations(&target, &bound).is_empty());
 }
@@ -536,7 +584,7 @@ fn unconditional_out_satisfies_a_conditional_bound_out() {
 /// A bound's conditional promise with NO producer at all still violates.
 #[test]
 fn missing_conditional_out_violates() {
-    let bound = contract_cond(&["d0"], &[], &[], &[], &["a1"]);
+    let bound = contract_cond(&["d0"], &[], &[], &[], &[("a1", "eq")]);
     let target = contract(&["d0"], &[], &[], &[]);
     let v = subcontract_violations(&target, &bound);
     assert!(

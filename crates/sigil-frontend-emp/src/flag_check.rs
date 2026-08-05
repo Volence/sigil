@@ -407,6 +407,12 @@ impl<'a> Cfg<'a> {
     /// is redefined first, the path returns, or an unrelated branch is reached —
     /// forward machinery bails rather than guess.
     fn invalid_edge(&self, call_idx: usize, cc: &str) -> Option<usize> {
+        // `branch_cond` yields the CANONICAL code, so the declared guard must be
+        // canonicalized before it can be compared with one. Raw, a `bhs` guard
+        // matches neither `cc` (`"cc" != "hs"`) nor `neg` (`"cc" != "cs"`) and the
+        // walk bails, so `[call.result-invalid-path]` never fires for the `hs`/`lo`
+        // spellings of a guard it fires for as `cc`/`cs`.
+        let cc = crate::ast::canonical_cc(cc);
         let neg = negate_cc(cc)?;
         let mut idx = *self.next_instr.get(&call_idx)?;
         loop {
@@ -468,8 +474,8 @@ impl<'a> Cfg<'a> {
     /// §6's [`Self::invalid_edge`] keeps the label-skip deliberately — its
     /// over-fire polarity makes a join harmless there; do not "unify" them.
     pub(crate) fn valid_edge(&self, call_idx: usize, cc: &str) -> Option<(usize, usize)> {
-        let neg = negate_cc(cc)?; // canonical negation
-        let cc = negate_cc(neg)?; // canonical cc (double-negate folds hs/lo aliases)
+        let cc = crate::ast::canonical_cc(cc); // `branch_cond` yields canonical codes
+        let neg = negate_cc(cc)?;
         let mut prev = call_idx;
         let mut idx = *self.next_instr.get(&call_idx)?;
         loop {

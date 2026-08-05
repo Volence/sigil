@@ -300,7 +300,7 @@ pub fn build_ram_report(
         let Some(&i) = manifest.by_id.get(*id) else {
             diags.push(Diagnostic {
                 level: Level::Error,
-                message: format!("ram-report: no module `{id}` under the scan root"),
+                message: format!("--report ram: no module `{id}` under the scan root"),
                 primary: seed_span,
             });
             continue;
@@ -310,7 +310,7 @@ pub fn build_ram_report(
             diags.push(Diagnostic {
                 level: Level::Warning,
                 message: format!(
-                    "[ram.no-region] ram-report: module `{id}` declares no `region` — skipped"
+                    "[ram.no-region] --report ram: module `{id}` declares no `region` — skipped"
                 ),
                 primary: seed_span,
             });

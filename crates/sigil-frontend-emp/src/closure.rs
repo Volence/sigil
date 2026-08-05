@@ -290,10 +290,17 @@ pub struct Contract {
     /// bound may read an unconditional out with no cc test, so a conditional
     /// producer does not satisfy that promise.
     pub out: BTreeSet<String>,
-    /// Result registers produced only on their `if cc` edge. Written by the
-    /// callee (so they license a clobber like [`Self::out`] does) but not
-    /// promised on every return path.
-    pub out_cond: BTreeSet<String>,
+    /// Result registers produced only on their `if cc` edge, each mapped to the
+    /// condition codes it is guarded by (canonical — `hs`/`lo` fold onto `cc`/`cs`).
+    /// Written by the callee (so they license a clobber like [`Self::out`] does)
+    /// but not promised on every return path.
+    ///
+    /// The condition is part of the promise, not decoration: a register alone
+    /// cannot distinguish `out(a1 if eq)` from `out(a1 if ne)`, and a caller that
+    /// tests `eq` and reads a1 must not be served by a target that fills a1 only
+    /// on `ne`. Multiple codes for one register mean it is produced on any of
+    /// those edges.
+    pub out_cond: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// The §4 subcontract relation `target ⊑ bound` — what makes a dispatch target
@@ -323,10 +330,27 @@ pub struct Contract {
 ///   bound promises unconditionally. A conditional producer does NOT satisfy an
 ///   unconditional promise: the bound's callers may read the register with no cc
 ///   test at all;
-/// - `bound.out_cond ⊆ target.out ∪ target.out_cond` — a conditional promise is
-///   satisfied by a conditional OR an unconditional producer (producing on every
-///   path is strictly stronger). The condition CODES are not compared; a target
-///   guarding on a different cc than the bound is a hole recorded in the ledger.
+/// - each `(rN, ccs)` the bound promises conditionally is satisfied by an
+///   UNCONDITIONAL `rN` in the target, or by a conditional `rN` whose own code set
+///   COVERS `ccs` — every edge the bound promises must be an edge the target
+///   produces on. A target guarding a different code produces a register the
+///   bound's callers will read on the wrong edge, so it violates.
+///
+///   Both escapes are stronger only for PRODUCTION. An unconditional target, and a
+///   target carrying an extra guard, both write rN on edges the bound left
+///   unwritten — which under §7.1 is a survives-claim the bound made whenever rN
+///   is absent from its `clobbers`. This relation does not check that, because it
+///   licenses only `target.clobbers`: `target.out` and `target.out_cond` are
+///   unlicensed write channels on both sides of the escape. Recorded in the gap
+///   ledger, unreachable on the corpus (no bound declares a conditional out), and
+///   NOT a regression — the missing term predates the code comparison;
+///
+///   Codes compare by canonical EQUALITY, not by implication: `eq` implies `le`
+///   on 68k, so a target guarding `le` does in fact satisfy a bound promising
+///   `eq`, and this relation rejects that pair. The rejection is the SAFE
+///   polarity — the author's remedy is to spell the bound's own code, the same
+///   escape the survives verifier relies on — and an implication lattice is a
+///   per-CPU flag-semantics table with no corpus demand behind it.
 pub fn subcontract_violations(target: &Contract, bound: &Contract) -> Vec<String> {
     let mut v = Vec::new();
     let writable: BTreeSet<&String> = bound.clobbers.iter().chain(&bound.out).collect();
@@ -342,11 +366,27 @@ pub fn subcontract_violations(target: &Contract, bound: &Contract) -> Vec<String
     for r in bound.out.difference(&target.out) {
         v.push(format!("does not produce output `{r}`, which the bound promises callers"));
     }
-    let produced: BTreeSet<&String> = target.out.iter().chain(&target.out_cond).collect();
-    for r in bound.out_cond.iter().filter(|r| !produced.contains(r)) {
-        v.push(format!(
-            "does not produce conditional output `{r}`, which the bound promises callers"
-        ));
+    for (r, want) in &bound.out_cond {
+        // An unconditional producer satisfies any conditional promise — it fills
+        // the register on every return edge, so it covers the bound's edge too.
+        if target.out.contains(r) {
+            continue;
+        }
+        let Some(have) = target.out_cond.get(r) else {
+            v.push(format!(
+                "does not produce conditional output `{r}`, which the bound promises callers"
+            ));
+            continue;
+        };
+        let missing: Vec<&str> = want.difference(have).map(String::as_str).collect();
+        if !missing.is_empty() {
+            v.push(format!(
+                "produces conditional output `{r}` on `{}`, not on `{}`, which the bound \
+                 promises callers",
+                have.iter().map(String::as_str).collect::<Vec<_>>().join("/"),
+                missing.join("/"),
+            ));
+        }
     }
     v.sort();
     v

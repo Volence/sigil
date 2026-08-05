@@ -1011,7 +1011,7 @@ fn cond_only_out_regs_of(
 }
 
 /// The `(register, cc)` pairs of every EXCLUSIVELY-conditional out, canonical
-/// under `rf` and in declaration order.
+/// under `rf` and [`canonical_cc`], in declaration order.
 ///
 /// The set-returning accessors answer "which registers are guarded"; a consumer
 /// that must know WHICH guard — the survives check, the edge-sensitive callee
@@ -1029,7 +1029,7 @@ fn cond_out_pairs_of(
         .iter()
         .filter_map(|c| {
             let reg = canonical_contract_reg(&c.reg, rf)?;
-            only.contains(&reg).then(|| (reg, c.cc.clone()))
+            only.contains(&reg).then(|| (reg, canonical_cc(&c.cc).to_string()))
         })
         .collect()
 }
@@ -1105,12 +1105,27 @@ impl ProcDecl {
 }
 
 impl ProcSig {
-    /// The registers carrying an `out(rN if cc)` guard, canonical under `rf`.
-    pub fn cond_out_regs(
+    /// Every guarded out register mapped to the condition codes guarding it — the
+    /// view the §4 subcontract relation partitions a [`crate::closure::Contract`]
+    /// with. See [`cond_out_guards_of`]. `cond_out_guards(rf).keys()` is the
+    /// guarded-register set, so no separate accessor for it exists here.
+    ///
+    /// Distinct from [`ProcDecl::cond_out_pairs`] on ONE axis: that view drops a
+    /// register carrying an unconditional mention, because it serves gates that
+    /// RELAX on conditionality, where an unconditional mention must win. This one
+    /// keeps the register, because the relation reads `Contract::out` and
+    /// `Contract::out_cond` as a partition and a register in neither is a promise
+    /// nothing checks.
+    ///
+    /// Keeping it here is PROVISIONAL and disagrees with the delta spec §7.2, which
+    /// reads a mixed mention as unconditional (see the `out(a1, a1 if eq)` row in
+    /// `notes/campaign-gap-ledger.md`). Correcting it moves the register between two
+    /// live relation terms, so it waits for a corpus instance to prove against.
+    pub fn cond_out_guards(
         &self,
         rf: crate::regfile::RegFile,
-    ) -> std::collections::BTreeSet<String> {
-        cond_out_regs_of(&self.out_cond, rf)
+    ) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+        cond_out_guards_of(&self.out_cond, rf)
     }
 
     /// The declared outs that are produced on EVERY return path — the expanded
@@ -1121,6 +1136,54 @@ impl ProcSig {
     ) -> std::collections::BTreeSet<String> {
         unconditional_outs_of(self.out.as_deref(), &self.out_cond, rf)
     }
+}
+
+/// The canonical spelling of a 68000 condition code: `hs` and `lo` are the
+/// documented aliases of `cc` and `cs` (unsigned higher-or-same / lower), naming
+/// the SAME flag test. Every other code is its own canonical form and passes
+/// through unchanged, including a code outside the contract vocabulary — validity
+/// is `[proc.out-cond-invalid]`'s job, not this function's.
+///
+/// Any comparison of two `out(rN if cc)` guards runs through here for the reason
+/// [`canonical_contract_reg`] exists on the register side: two spellings of one
+/// condition must not read as two conditions. A raw-text compare would reject a
+/// target guarding on `hs` against a bound spelling the same guard `cc`.
+pub fn canonical_cc(cc: &str) -> &str {
+    match cc {
+        "hs" => "cc",
+        "lo" => "cs",
+        other => other,
+    }
+}
+
+/// Every guarded out register with the SET of condition codes guarding it,
+/// canonical under `rf` and [`canonical_cc`].
+///
+/// The KEYS are exactly [`cond_out_regs_of`]'s set: a register also carrying an
+/// unconditional mention stays here, because [`unconditional_outs_of`] subtracts
+/// it from the unconditional side, and dropping it from both views would leave it
+/// unmodelled by any contract term.
+///
+/// The VALUES are what the set-returning views discard. The §4 subcontract
+/// relation must compare a bound's demanded condition against the target's — a
+/// register-only view lets a target declaring `out(a1 if ne)` satisfy a bound
+/// promising `out(a1 if eq)`, so a caller testing `eq` reads a register the
+/// target produces only on the opposite edge.
+///
+/// A register named by two guard clauses carries BOTH codes, which the relation
+/// reads as "produced on either edge" — the declaration's plain meaning.
+fn cond_out_guards_of(
+    out_cond: &[CondResult],
+    rf: crate::regfile::RegFile,
+) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+    let mut map: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> =
+        Default::default();
+    for c in out_cond {
+        for r in expand_contract_reglist(&[(c.reg.clone(), None)], rf) {
+            map.entry(r).or_default().insert(canonical_cc(&c.cc).to_string());
+        }
+    }
+    map
 }
 
 /// A canonical single register spelling under `rf`, or `None` when the name is

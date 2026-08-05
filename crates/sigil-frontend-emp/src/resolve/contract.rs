@@ -414,8 +414,13 @@ fn report_subcontract(
 /// and such a target may simultaneously and legally declare `clobbers(rN)`, i.e.
 /// state outright that it destroys the register the bound promises callers.
 ///
+/// The conditional half carries its CONDITION CODES
+/// ([`ast::ProcSig::cond_out_guards`]), not just the register names: the relation
+/// compares a bound's demanded edge against the target's, and a register-only view
+/// lets `out(a1 if ne)` satisfy `out(a1 if eq)`.
+///
 /// Both halves of that split come from [`ast::ProcSig::unconditional_outs`] /
-/// [`ast::ProcSig::cond_out_regs`], which expand through ONE register file. The
+/// [`ast::ProcSig::cond_out_guards`], which expand through ONE register file. The
 /// `expand_reglist` call below runs for its DIAGNOSTICS only: a minuend and a
 /// subtrahend produced by two different expanders is the raw-vs-canonical bug
 /// class in miniature — these two disagree on `sp`, which the seam drops as
@@ -428,7 +433,7 @@ fn contract_of_sig(sig: &ast::ProcSig, diags: &mut Vec<Diagnostic>, span: Span) 
     // Validity reporting only — the SET comes from the accessor below.
     expand_reglist(sig.out.as_deref().unwrap_or(&[]), RegFile::M68k, &mut on_err);
     let out = sig.unconditional_outs(RegFile::M68k);
-    let out_cond = sig.cond_out_regs(RegFile::M68k);
+    let out_cond = sig.cond_out_guards(RegFile::M68k);
     let params: std::collections::BTreeSet<String> = sig
         .params
         .iter()
