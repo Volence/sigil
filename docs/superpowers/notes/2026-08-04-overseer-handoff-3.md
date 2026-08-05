@@ -174,3 +174,57 @@ chain measures 2 deep, not 3 — `VInt_Level` is reached only through an indirec
 dispatch that cannot carry a context bound. The corpus walk's no-`-D` shape does
 not cover the three widest brackets. Four other worklists remain in-tree (the
 "one worklist" claim was corrected by the panel).
+
+---
+
+## §7 — THE `sr` LANE WAS RE-MEASURED AT CHAIN 44 AND IT IS NOT WHAT THE PACKET SAID
+
+Measured own-run, `SIGIL_WARNINGS=full`, chain 44, AFTER B′-1 merged. The
+warning-tier packet's "nine true positives in four procs, all wanting
+`preserves(sr)`" is **superseded**. The `sonic4` plain shape now fires 8, in two
+CLASSES that want opposite treatment:
+
+**(a) `QueueDMA_Deferrable` — 4 firings, `dma_queue.emp:106,137,145,181`.**
+Genuine hand-written `sr` save/mask/restore that B′-1 did NOT convert. The right
+fix is probably NOT `preserves(sr)` — it is to adopt `with ints_off { }`, which
+is what B′-1 built. Confirm the bracket fits the control flow first (there are
+four sites in one proc, which may be why it was skipped).
+
+**(b) `Parallax_Update` and `GameState_OJZScroll_Init` — 4 firings, all pointing
+at `irq.emp:37` and `irq.emp:40`. This is a NEW FALSE-POSITIVE CLASS THAT B′-1
+CREATED.** Those two lines are the `ints_off` CONTEXT's own acquire/release asm.
+The bracket inlines them into each consumer, and `proc.sr-undeclared` charges the
+write to the CONSUMING proc — which has no way to declare it, because the `sr`
+traffic belongs to the context, not to the proc. Every future `with ints_off`
+adopter will inherit this. **The fix is in the lint, not the corpus:** a write
+originating inside a context's acquire/release region is declared BY THE CONTEXT
+and must not be charged to the consumer. The `ContextMark` items B′-1 already
+plants (`Enter` / `AcquireEnd` / `BodyEnd` / `Exit`) give the exact ranges needed
+to identify it.
+
+That is the good kind of finding — B′-1's own adoption produced it, the warning
+tier made it visible, and it was caught by re-measuring rather than by trusting a
+four-hour-old packet. **It also means this lane is no longer trivial**: it is one
+lint fix plus one corpus adoption, and the lint half should land first so the
+corpus half can be measured honestly.
+
+The DEBUG shape fires **52** `proc.sr-undeclared` (vs 8 plain) — the debug-only
+procs are a much larger surface and have never been looked at. Scope the lane to
+the plain shape's two classes first and report the debug number separately.
+
+## §8 — READY TO GO: worktrees built, seeded, and baseline-proven
+
+Both pairs live in the `.worktrees/` convention on the root disk (NOT `/tmp`):
+
+| lane | sigil | aeon | branch |
+|---|---|---|---|
+| `sr` | `sigil/.worktrees/sr` | `aeon/.worktrees/sr` | `sr-contracts` |
+| B′-2 | `sigil/.worktrees/b2` | `aeon/.worktrees/b2` | `bprime-2` |
+
+Each has: release binaries built, both gitignored aeon seeds rsync'd, and a
+**measured byte-identical baseline across all seven targets before any edit**.
+Both branch from sigil `21f5aef7` / aeon `0e1f32c`.
+
+Note the `sr` lane needs BOTH repos, not just aeon: retiring `sr` firings changes
+the firing lint-id set, so `crates/sigil-cli/tests/warn_tier_corpus.rs`'s frozen
+baseline must be updated deliberately in the same parcel.
