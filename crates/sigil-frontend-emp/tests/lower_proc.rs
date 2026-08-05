@@ -1056,9 +1056,9 @@ fn preserves_sr_composes_with_reglist() {
 /// release evaluate in the CONSUMER's scope, so a test spells them out rather
 /// than importing them).
 const INTS_OFF_CTX: &str = "context ints_off {\n\
-     \x20   acquire = asm { move.w sr, -(sp)\n\
-     \x20                   move.w #$2700, sr }\n\
-     \x20   release = asm { move.w (sp)+, sr }\n\
+     \tacquire = asm { move.w sr, -(sp)\n\
+     \t                move.w #$2700, sr }\n\
+     \trelease = asm { move.w (sp)+, sr }\n\
      }\n";
 
 /// How many `[proc.sr-undeclared]` firings did this lowering produce?
@@ -1071,9 +1071,9 @@ fn sr_firings(diags: &[Diagnostic]) -> usize {
 /// proc has no honest contract clause that could name a write it does not make.
 ///
 /// NOT VACUOUS: the spliced acquire masks SR and the spliced release restores it,
-/// so two write-form instructions with an SR destination reach the lint; before
-/// the region exemption both fired, against a source line in the context's module
-/// rather than in the consumer.
+/// so two write-form SR-destination instructions reach the lint. Without the
+/// exemption each is charged to the consumer, at a source line in the context's
+/// module rather than in the consumer's.
 #[test]
 fn bracketed_sr_traffic_is_the_contexts_declaration_not_the_consumers() {
     let src = format!(
@@ -1086,7 +1086,7 @@ fn bracketed_sr_traffic_is_the_contexts_declaration_not_the_consumers() {
          }}\n"
     );
     let (_module, diags) = lower(&src);
-    assert_eq!(sr_firings(&diags), 0, "the context's own SR traffic must not be charged: {diags:?}");
+    assert_eq!(sr_firings(&diags), 0, "the context's SR traffic must not be charged: {diags:?}");
     assert!(diags.iter().all(|d| d.level != Level::Error), "the bracket must lower clean: {diags:?}");
 }
 
@@ -1113,6 +1113,12 @@ fn a_hand_written_sr_write_inside_the_bracketed_body_still_fires() {
     assert_eq!(sr_firings(&diags), 1, "the body's own SR write must still be charged: {diags:?}");
 }
 
+/// A context that masks and never restores — the round-trip gate's counterexample.
+const MASK_ONLY_CTX: &str = "context mask_only {\n\
+     \tacquire = asm { move.w #$2700, sr }\n\
+     \trelease = asm { nop }\n\
+     }\n";
+
 /// The exemption is gated on the acquire and release ROUND-TRIPPING SR, not
 /// granted to every region: a context that masks and never restores leaves the
 /// consumer's SR genuinely changed, so the write is still charged to somebody.
@@ -1122,44 +1128,136 @@ fn a_hand_written_sr_write_inside_the_bracketed_body_still_fires() {
 /// missing `move.w (sp)+, sr` in the release.
 #[test]
 fn a_context_that_never_restores_sr_still_charges_its_consumer() {
-    let src = "module m\n\
-               context mask_only {\n\
-               \tacquire = asm { move.w #$2700, sr }\n\
-               \trelease = asm { nop }\n\
-               }\n\
-               proc f() clobbers(d0) {\n\
-               \twith mask_only {\n\
-               \t\tmoveq #0, d0\n\
-               \t}\n\
-               \trts\n\
-               }\n";
-    let (_module, diags) = lower(src);
-    assert_eq!(
-        sr_firings(&diags),
-        1,
-        "an unrestored mask must stay charged: {diags:?}"
-    );
-}
-
-/// `clobbers(sr)` / `preserves(sr)` keep their meaning alongside a bracket — the
-/// exemption adds a fourth way for an SR write to be declared, it does not
-/// replace the three contract clauses.
-#[test]
-fn a_bracket_does_not_disturb_the_declared_sr_clauses() {
     let src = format!(
-        "module m\n{INTS_OFF_CTX}\
-         proc f() clobbers(d0) preserves(sr) {{\n\
-         \twith ints_off {{\n\
+        "module m\n{MASK_ONLY_CTX}\
+         proc f() clobbers(d0) {{\n\
+         \twith mask_only {{\n\
          \t\tmoveq #0, d0\n\
          \t}}\n\
          \trts\n\
          }}\n"
     );
     let (_module, diags) = lower(&src);
+    assert_eq!(sr_firings(&diags), 1, "an unrestored mask must stay charged: {diags:?}");
+}
+
+/// A release whose LAST SR write is not the restore does not round-trip either —
+/// the trailing-write limb of the balance rule, reached from the release half.
+#[test]
+fn a_release_that_re_masks_after_restoring_still_charges_its_consumer() {
+    let src = "module m\n\
+               context restore_then_mask {\n\
+               \tacquire = asm { move.w sr, -(sp)\n\
+               \t                move.w #$2700, sr }\n\
+               \trelease = asm { move.w (sp)+, sr\n\
+               \t                move.w #$2000, sr }\n\
+               }\n\
+               proc f() clobbers(d0) {\n\
+               \twith restore_then_mask {\n\
+               \t\tmoveq #0, d0\n\
+               \t}\n\
+               \trts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert_eq!(sr_firings(&diags), 3, "a release that re-masks leaves SR changed: {diags:?}");
+}
+
+/// The round trip is decided PER REGION, not once for the proc.
+///
+/// NOT VACUOUS, and nothing else covers it: every other gate here builds a proc
+/// with exactly ONE bracket, so a mutant that folds the regions into a single
+/// "do they all round-trip" bool passes all of them. Here two brackets disagree,
+/// and only the sound one is exempt — `ints_off`'s mask and restore stay silent
+/// while `mask_only`'s mask is charged.
+#[test]
+fn each_region_is_judged_on_its_own_round_trip() {
+    let src = format!(
+        "module m\n{INTS_OFF_CTX}{MASK_ONLY_CTX}\
+         proc f() clobbers(d0) {{\n\
+         \twith ints_off {{\n\
+         \t\tmoveq #0, d0\n\
+         \t}}\n\
+         \twith mask_only {{\n\
+         \t\tmoveq #1, d0\n\
+         \t}}\n\
+         \trts\n\
+         }}\n"
+    );
+    let (_module, diags) = lower(&src);
+    assert_eq!(
+        sr_firings(&diags),
+        1,
+        "only the region that fails the round trip is charged: {diags:?}"
+    );
+}
+
+/// NESTED brackets — the corpus's real shape at every `ints_off` site, which wraps
+/// a `z80_stopped` region. The outer region's acquire and release ranges must not
+/// swallow the inner region's body, and the inner region (which touches no SR)
+/// must not shadow the outer one's exemption.
+///
+/// NOT VACUOUS: a hand-written SR write in the INNER body is the consumer's own
+/// code at a doubly-bracketed position, and it is still charged — so the ranges
+/// are exact rather than merely generous.
+#[test]
+fn nested_brackets_keep_their_own_acquire_and_release_ranges() {
+    let bus = "context z80_stopped {\n\
+               \tacquire = asm { move.w #$0100, Z80_BUS_REQUEST }\n\
+               \trelease = asm { move.w #$0000, Z80_BUS_REQUEST }\n\
+               }\n";
+    let nested = |body: &str| {
+        format!(
+            "module m\n{INTS_OFF_CTX}{bus}\
+             proc f() clobbers(d0) {{\n\
+             \twith ints_off {{\n\
+             \t\twith z80_stopped {{\n\
+             \t\t\t{body}\n\
+             \t\t}}\n\
+             \t}}\n\
+             \trts\n\
+             }}\n\
+             data Z80_BUS_REQUEST: [u8;2] = [$00, $00]\n"
+        )
+    };
+
+    let (_module, diags) = lower(&nested("moveq #0, d0"));
+    assert_eq!(sr_firings(&diags), 0, "the outer bracket's SR traffic is its own: {diags:?}");
+
+    let (_module, diags) = lower(&nested("move.w #$2000, sr"));
+    assert_eq!(sr_firings(&diags), 1, "the inner body is still the consumer's: {diags:?}");
+}
+
+/// The declared SR clauses keep their meaning alongside a bracket — the exemption
+/// adds a fourth way for an SR write to be declared, it does not replace them.
+/// Both clauses a bracketing proc can carry are exercised: `preserves(sr)`, which
+/// the spliced save/restore pair must also SATISFY (`[proc.preserves-sr-unbalanced]`
+/// stays silent), and `clobbers(sr)`, which is a bare silencer.
+#[test]
+fn a_bracket_does_not_disturb_the_declared_sr_clauses() {
+    let bracketing = |contract: &str| {
+        format!(
+            "module m\n{INTS_OFF_CTX}\
+             proc f() {contract} {{\n\
+             \twith ints_off {{\n\
+             \t\tmoveq #0, d0\n\
+             \t}}\n\
+             \trts\n\
+             }}\n"
+        )
+    };
+
+    let (_module, diags) = lower(&bracketing("clobbers(d0) preserves(sr)"));
     assert_eq!(sr_firings(&diags), 0, "a declared preserves(sr) stays silent: {diags:?}");
     assert!(
         !has_tag(&diags, "[proc.preserves-sr-unbalanced]"),
         "the spliced pair satisfies the balance check: {diags:?}"
+    );
+
+    let (_module, diags) = lower(&bracketing("clobbers(d0/sr)"));
+    assert_eq!(sr_firings(&diags), 0, "a declared clobbers(sr) stays silent: {diags:?}");
+    assert!(
+        diags.iter().all(|d| d.level != Level::Error),
+        "clobbers(sr) must not collide with the bracket: {diags:?}"
     );
 }
 

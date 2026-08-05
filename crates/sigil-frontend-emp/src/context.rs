@@ -209,9 +209,7 @@ impl Region {
 
     /// Is item index `i` inside the spliced RELEASE? Together with
     /// [`Region::in_acquire`] this names the two halves the CONTEXT authored, as
-    /// against the body between them, which is the consumer's own code — the
-    /// split a per-proc lint needs to charge a machine-state write to the party
-    /// that declared it.
+    /// against the body between them, which is the consumer's own code.
     pub fn in_release(&self, i: usize) -> bool {
         i > self.body_end && i < self.exit
     }
