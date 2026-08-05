@@ -68,9 +68,9 @@ fn harvest_emits_the_as_field_offsets_and_sizes() {
         // appended at $50; sprites H1) + the derived tail word
         ("SST_code_addr", 0x00),
         ("SST_x_pos", 0x02),
-        ("SST_sst_custom", 0x2E),
-        ("SST_frame_off", 0x50),
-        ("SST_len", 0x52),
+        ("SST_sst_custom", 0x30),  // sst-fold
+        ("SST_frame_off", 0x2E),   // sst-fold
+        ("SST_len", 0x50),         // sst-fold
         ("SST_interact", 0x4E),
         // EntityScanState ($1A)
         ("EntityScanState_ess_ring_right_idx", 0x00),
@@ -105,12 +105,12 @@ fn sst_interact_is_the_record_tail_word() {
     }
     let h = harvested();
     // The one derived equate structs.asm carried outside a struct block.
-    // bug005: the record's tail is now the engine's frame_off cache ($50-$51),
-    // so the custom window's tail word sits immediately BELOW frame_off —
-    // interact_off() = offsetof(Sst, frame_off) - 2, no longer sizeof - 2.
+    // sst-fold (2026-08-05): frame_off moved into the engine block at $2E, so
+    // the custom window is the record tail again and
+    // interact_off() = sizeof(Sst) - 2 (bug005 briefly had it frame_off - 2).
     assert_eq!(
         h["SST_interact"],
-        h["SST_frame_off"] - 2,
-        "SST_interact = SST_frame_off - 2 (the word below the H1 cache)"
+        h["SST_len"] - 2,
+        "SST_interact = SST_len - 2 (the custom window's tail word)"
     );
 }

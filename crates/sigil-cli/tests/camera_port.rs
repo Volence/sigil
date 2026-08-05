@@ -110,7 +110,7 @@ fn camera_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
         // camera.emp local mirror (truth: engine/constants.asm:392)
         ("CAM_MAX_Y_STEP", "16"),
         // game-contract values (truth: games/sonic4 player_common.asm + config)
-        ("_pl_state", "$30"),
+        ("_pl_state", "$32"),  // sst-fold: the PlayerV overlay window moved $2E -> $30
         ("PSTATE_JUMP", "8"),
         ("PSTATE_ROLLJUMP", "10"),
     ];

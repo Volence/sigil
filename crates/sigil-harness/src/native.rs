@@ -1027,9 +1027,10 @@ const STRUCT_OFFSET_TWINS: &[(&str, &str, &str)] = &[
 /// the other seven structs are all-primitive and ignore it. The lone DERIVED
 /// equate `structs.asm` carried outside a `struct` block — `SST_interact`
 /// (the custom window's tail word) — mirrors sst.emp's `interact_off()`:
-/// `offsetof(Sst, frame_off) - 2` since the bug005 parcel appended the
-/// engine-owned frame_off cache at $50 (it was `sizeof(Sst) - 2` while the
-/// record ended at the custom window).
+/// back to `sizeof(Sst) - 2` since the sst-fold parcel (2026-08-05) moved
+/// frame_off into the engine block at $2E, making the custom window the
+/// record's tail again (bug005 had it at `frame_off - 2` while the cache
+/// was the tail).
 pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, String> {
     use sigil_frontend_emp::layout::layout_struct_ambient;
 
@@ -1063,16 +1064,15 @@ pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, 
         // = offsetof(Sst, frame_off) - 2 (bug005: frame_off is the record tail
         // now, so the custom window's tail word sits immediately below it).
         if *sname == "Sst" {
-            let frame_off = layout
-                .fields
-                .iter()
-                .find(|f| f.name == "frame_off")
-                .map(|f| f.offset as i64)
-                .unwrap_or_else(|| panic!(
-                    "harvest_engine_struct_offsets: Sst lost its frame_off tail — \
-                     re-derive SST_interact against sst.emp's interact_off()"
-                ));
-            out.push(("SST_interact".to_string(), frame_off - 2));
+            // sst-fold: interact = the record's tail word. Keep the frame_off
+            // presence check — a struct that lost the cache entirely is a
+            // different (loud) problem than one that moved it.
+            assert!(
+                layout.fields.iter().any(|f| f.name == "frame_off"),
+                "harvest_engine_struct_offsets: Sst lost frame_off — \
+                 re-derive SST_interact against sst.emp's interact_off()"
+            );
+            out.push(("SST_interact".to_string(), layout.size as i64 - 2));
         }
     }
     Ok(out)

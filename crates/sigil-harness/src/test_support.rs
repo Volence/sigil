@@ -80,11 +80,12 @@ pub fn sst_field_equs() -> Vec<(&'static str, &'static str)> {
         ("SST_entity_section_id", "$2B"),
         ("SST_entity_list_index", "$2C"),
         ("SST_layer", "$2D"),
-        ("SST_sst_custom", "$2E"),
-        // bug005 parcel: the record grew $50 → $52 (engine-owned frame_off cache
-        // word appended at $50 — sprites H1). The custom window still ends at $4F.
-        ("SST_frame_off", "$50"),
-        ("SST_len", "$52"),
+        // sst-fold (2026-08-05): frame_off moved into the engine block at $2E
+        // (its bug005 bolt-on position was $50), the custom window is the record
+        // tail at $30-$4F, and the record is back to $50.
+        ("SST_frame_off", "$2E"),
+        ("SST_sst_custom", "$30"),
+        ("SST_len", "$50"),
         // The engine-owned player-slot tail word (structs.asm: SST_sst_custom +
         // SST_CUSTOM_SIZE - 2 = $4E). Not one of sst.emp's 30 field guards —
         // supplied here so `collision.emp`'s `interact_off()` SST_interact guard
