@@ -2,7 +2,7 @@
 
 Status: **checkpoint for the overseer's countersign + merge. NOT merged, NOT
 pushed.** Branch `bprime-3` off sigil `50382ddc`, **zero commits in aeon** — a
-sigil-only parcel (§9). Two commits: `ce64b6d1` (the parcel) + the panel round.
+sigil-only parcel (§9). Two commits: `ce64b6d1` (the parcel) + `1506d070` (the panel round).
 
 **§11 first if you are short of time.** The lens panel found THREE blockers in
 work that was gate-green, byte-neutral and strict-clean — one of them the exact
@@ -253,7 +253,10 @@ for every proc it lowered:
 | 68000 | 275 | 0 | 275 (`unmodeled-cpu`) |
 
 Of the 35 measurable Z80 procs, 26 are data items lowered with no instructions
-(cost 0). **Nine are real:**
+(cost 0 — after the panel's inline-data fix these report `[cycles.inline-data]`
+instead, which is the more honest answer for a blob with no paths). **Nine are
+real, and the numbers below are unaffected by the panel round** — none of the
+nine ends in a `ret cc` or carries inline data:
 
 | proc | min | max |
 |---|---|---|
@@ -410,6 +413,12 @@ scope it without reading the diff.
   680x0 suite, is the second opinion.
 - **Sizing:** 235 of 419 corpus procs are structurally boundable (no call, no
   back edge — measured); ~45 instruction families cover the corpus histogram.
+- **THE DEMAND SITE, named:** `dma_queue.emp:250-254`, `Process_DMA_Critical` —
+  *"~670 whole-proc worst case with dispatch, slot-var reset, and rts (68000
+  table timing)"*, hand-derived in prose, in a proc already carrying two
+  `ensure(...)` guards written to protect that derivation. `@budget(cycles: 670)`
+  is what that comment wants to be. B′-3b is not a speculative table; it has a
+  customer (§5).
 - **Two hazards it must answer** (neither exists on the Z80 side):
   (a) `mulu`/`muls`/`divu`/`divs` and register-count shifts are DATA-dependent,
   so each needs a worst case or a refusal, never a nominal number;
@@ -424,13 +433,26 @@ scope it without reading the diff.
 
 ## §9 — LANE DISCIPLINE: aeon adoption HELD, and nothing wanted it
 
-Zero aeon commits, zero aeon edits. The parcel touches no `.emp` file. Nothing
-in it WANTS one either — §5 measured that no corpus proc has a whole-proc timing
-obligation, so there is no adoption being held over for later. The concurrent
-B′-4 lane is in `emp_contracts.rs` / `corpus_contracts.rs` / `closure.rs`; this
-parcel touches `corpus_contracts.rs` in **one place** — the mechanical
-`Attr.args` migration at `:1249-1256` — which is the only conflict surface
-between the two lanes and is a two-line textual change.
+Zero aeon commits, zero aeon edits. The parcel touches no `.emp` file. **Nothing
+in it wants one, and after the panel that is a measured statement rather than an
+assumption:** the one corpus proc with a stated whole-proc cycle ceiling is
+`Process_DMA_Critical`, which is 68k and therefore B′-3b's adopter, not this
+parcel's (§5). No Z80 proc is asking.
+
+**Conflict surface with the concurrent B′-4 lane** (which is in
+`emp_contracts.rs` / `corpus_contracts.rs` / `closure.rs`), stated fully because
+the panel round widened it past the first draft:
+
+| file | what this parcel does to it | risk |
+|---|---|---|
+| `corpus_contracts.rs` | the `Attr.args` migration, at `:1247-1256` only | the only real overlap; a four-line textual change in one helper |
+| `closure.rs` | **untouched** | none |
+| `emp_contracts.rs` | **untouched** | none |
+| `flag_check.rs`, `preserves.rs`, `context.rs` | `is_return_mnemonic` gains a `cpu`; `entry_instr_idx` moves; `is_call_mnemonic` goes `pub(crate)` | B′-4 is a report parcel and should not be in these |
+| `parser.rs`, `ast.rs`, `eval/builtins.rs`, `eval/mod.rs`, `lower/mod.rs`, `lower/proc.rs` | attribute grammar + the pad-unit derivation | not B′-4's files |
+
+Whichever merges second rebases; if that is this one, the `corpus_contracts.rs`
+hunk is the only place to look.
 
 ## §10 — BARS
 
@@ -493,32 +515,35 @@ AEON_DIR=<b3 aeon worktree> SIGIL_EMIT=… SIGIL_BUILD=… SIGIL_STRICT_GATE=1 \
 **Failures first: NONE.** No `failures:` block, no `FAILED` line, no `error[` /
 `error:` anywhere in the log.
 
-| | baseline `50382ddc` | branch `ce64b6d1` |
+| | baseline `50382ddc` | branch `1506d070` |
 |---|---|---|
 | result lines | 308 | 309 |
-| **passed** | 3176 | **3220** |
+| **passed** | 3176 | **3228** |
 | **failed** | 0 | **0** |
 | **ignored** | 4 | **4** |
 | filtered out | 0 | 0 |
 
-`3220 + 4 = 3224`, which is EXACTLY the branch's own `#[test]` total (§10.3), so
+`3228 + 4 = 3232`, which is EXACTLY the branch's own `#[test]` total (§10.3), so
 nothing is silently skipped. The baseline row is a REAL RUN at the branch point,
 not a derivation — it was taken before any edit, together with the seven-target
-byte bar, per the standing rule. `3176 + 44 = 3220` closes on the nose. The one
+byte bar, per the standing rule. `3176 + 52 = 3228` closes on the nose. The one
 extra result line is the new `cycle_budget` integration binary.
+
+Run TWICE: `3220 / 0 / 4` on the first cut (identity held at 3224) and again
+after the panel round. The second run is the one reported.
 
 ### §10.3 Test-delta arithmetic — every added function NAMED
 
 `git grep -c '^\s*#\[test\]' <commit> -- 'crates/**/*.rs'`, diffed per file:
 
-| | master `50382ddc` | branch `ce64b6d1` | delta |
+| | master `50382ddc` | branch `1506d070` | delta |
 |---|---|---|---|
-| `#[test]` total | 3180 | **3224** | **+44** |
+| `#[test]` total | 3180 | **3232** | **+52** |
 
 The per-file diff shows exactly TWO changed files, both NEW — no existing file
 gained or lost a test:
 
-**`crates/sigil-frontend-emp/src/cycle_budget.rs` +20** (unit, over hand-built
+**`crates/sigil-frontend-emp/src/cycle_budget.rs` +22** (unit, over hand-built
 `CodeItem`s): `a_straight_line_has_one_cost`,
 `a_split_conditional_charges_each_edge_its_own_cost`,
 `a_fixed_conditional_charges_both_edges_the_same`,
@@ -530,9 +555,10 @@ gained or lost a test:
 `cycles_exact_proves_equal_paths`, `an_undeclared_proc_is_not_walked`,
 `both_attributes_report_together`, `a_bail_replaces_the_conclusions`,
 `a_reconverging_chain_does_not_blow_up`, `a_djnz_loop_is_reported_as_a_loop`,
+`a_tail_conditional_return_refuses_its_fall_through`, `inline_data_is_refused`,
 `the_walk_and_the_span_builtin_agree`.
 
-**`crates/sigil-frontend-emp/tests/cycle_budget.rs` +24** (through the real
+**`crates/sigil-frontend-emp/tests/cycle_budget.rs` +30** (through the real
 `.emp` surface): `the_budget_bounds_the_worst_path`,
 `a_budget_met_exactly_is_silent`, `an_undeclared_proc_is_never_walked`,
 `cycles_exact_fires_on_unequal_paths`, `cycles_exact_proves_a_padded_pair`,
@@ -543,20 +569,33 @@ gained or lost a test:
 `a_68k_body_is_refused_by_name`, `a_refusal_replaces_the_conclusions`,
 `as_compat_does_not_soften_a_budget`, `allow_does_not_suppress_a_budget`,
 `budget_requires_its_resource_keyword`, `cycles_exact_takes_no_arguments`,
-`the_budget_may_be_a_comptime_expression`, `an_unfoldable_budget_reports_once`,
+`the_budget_may_be_a_comptime_expression`,
+`an_unfoldable_budget_reports_the_form_and_stops`,
 `the_walk_agrees_with_the_cycles_builtin`,
-`a_split_conditional_charges_each_edge_separately`.
+`a_split_conditional_charges_each_edge_separately`,
+`a_tail_conditional_return_is_refused`, `inline_data_is_refused`,
+`a_section_scoped_proc_carries_its_budget`,
+`a_declared_fallthrough_is_refused_by_its_own_name`,
+`a_repeated_declaration_is_reported`, `a_misspelled_attribute_is_loud`.
 
-20 + 24 = **44**. No test was removed, renamed away, or silently skipped.
+22 + 30 = **52**. The per-file diff shows exactly TWO changed files, both NEW —
+no existing file gained or lost a test, so every one of the 52 is named above.
+No test was removed, renamed away, or silently skipped.
 
 ### §10.4 Clippy
 
 CI runs `clippy --workspace --all-targets -- -D warnings`. **The parcel adds
 ZERO clippy findings** — verified by running clippy on the crate at the branch
-and then again with the working tree stashed to master: the same two warnings
-appear in both runs, at shifted line numbers (`eval/mod.rs:849`, and
-`lower/proc.rs`'s `invariant_regs.iter().any(...)`, which my step 12 moved from
-`:526` to `:605`). Neither is in code this parcel wrote.
+and then again with the working tree stashed to master: the same warnings appear
+in both runs, at shifted line numbers (`eval/mod.rs:849`, and `lower/proc.rs`'s
+`invariant_regs.iter().any(...)`, which my step 12 moved from `:526` to `:658`).
+Lens A re-verified both by `git blame` — neither traces to this branch.
+
+**But clippy is not GREEN, and it is not green on master either.** Lens A
+measured 10 workspace-crate warnings against `-D warnings`, so CI clippy is red
+independently of this parcel. It neither causes nor fixes any of them; recorded
+as §6 gap 10 because "clippy clean" has been claimed in past `PROVENANCE.md`
+entries and cannot be claimed at this merge.
 
 ## §11 — LENS PANEL
 
