@@ -108,13 +108,13 @@ fn corpus_warnings() -> Option<&'static [ShapeWarnings]> {
             native::ensure_generated(&aeon);
             Some(
                 native::shipped_shapes()
-                .into_iter()
-                .map(|(label, profile)| {
-                    let built = native::build_emp(&aeon, &profile)
-                        .unwrap_or_else(|e| panic!("build_emp({label}): {e}"));
-                    (label, built.warnings)
-                })
-                .collect(),
+                    .into_iter()
+                    .map(|(label, profile)| {
+                        let built = native::build_emp(&aeon, &profile)
+                            .unwrap_or_else(|e| panic!("build_emp({label}): {e}"));
+                        (label, built.warnings)
+                    })
+                    .collect(),
             )
         })
         .as_deref()

@@ -13,13 +13,12 @@
 //!    `if SOUND_DRIVER_ENABLED == 1 { }` fires in exactly the four sound-ON shapes
 //!    and in none of the three sound-OFF ones.
 //!
-//! WHY ALL SEVEN. The walk's define set decides which code the walk can SEE.
-//! Analyzed with no defines, every `if SOUND_DRIVER_ENABLED == 1 { }` block
-//! comptime-vanishes, and this gate reported an empty firing set over a corpus in
-//! which six real mismatches shipped — `PState_Ground` ×2, `PState_Spindash` ×2,
-//! `Player_Animate`, `Player_Jump`, each a `move.b #SFXID_*, d0` handed to
-//! `Sound_PlaySFX`'s `SfxId` slot. Pin 3 is what keeps that from returning: it is
-//! false the moment the walk stops reading the shape's defines, because a stripped
+//! WHY ALL SEVEN. The walk's define set decides which code the walk can SEE. A walk
+//! with no defines cannot see inside `if SOUND_DRIVER_ENABLED == 1 { }` at all: the
+//! block comptime-vanishes, so an unblessed `move.b #SFXID_*, d0` handed to
+//! `Sound_PlaySFX`'s `SfxId` slot fires nowhere and the firing set reads empty over
+//! code the analysis never reached. Pin 3 is what holds the axis honest — it is
+//! false the moment the walk stops reading each shape's defines, because a stripped
 //! bless inside a vanished block fires nowhere.
 //!
 //! REFERENCE-DEPENDENT: needs the sibling aeon tree (`AEON_DIR`). Under
@@ -59,6 +58,11 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
 
 /// Collect the whole corpus source, honoring `AEON_DIR`. Returns `None` (with the
 /// strict-gate hard-fail already applied) when the tree is absent.
+///
+/// `engine/sound/generated/` is a gitignored build product the `.emp` corpus
+/// `embed`s; emitting the blobs first is what makes this gate measure the same
+/// corpus on a fresh checkout as on a warm one. `engine/debug/generated/` is a
+/// SEPARATE generator (`tools/gen_compression_vectors.py`) nothing here runs.
 fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
     let aeon = aeon_dir();
     if !aeon.exists() {
@@ -68,6 +72,7 @@ fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
         eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
         return None;
     }
+    native::ensure_generated(&aeon);
     let mut paths = Vec::new();
     emp_files(&aeon.join("engine"), &mut paths);
     emp_files(&aeon.join("games"), &mut paths);
@@ -93,16 +98,20 @@ fn parse_all(srcs: &[(PathBuf, String)]) -> Vec<sigil_frontend_emp::ast::File> {
         .collect()
 }
 
-/// `(shape label, report)` for every shipped shape — ONE parse, seven analyses.
-/// The define set is the shape's own [`native::shape_defines`], the exact set
-/// `--report contracts` and the build read, so this gate and the ROM see the same
-/// code.
-fn analyze_every_shape(srcs: &[(PathBuf, String)]) -> Vec<(&'static str, ContractReport)> {
+/// `(shape label, profile, report)` for every shipped shape — ONE parse, seven
+/// analyses. The define set is the shape's own [`native::shape_defines`], the exact
+/// set `--report contracts` and the build read, so this gate and the ROM see the
+/// same code. The profile rides along so a shape-partitioning probe reads
+/// `profile.sound_on` rather than a second, hand-kept list of labels.
+fn analyze_every_shape(
+    srcs: &[(PathBuf, String)],
+) -> Vec<(&'static str, native::GameProfile, ContractReport)> {
     let files = parse_all(srcs);
     native::shipped_shapes()
         .into_iter()
         .map(|(label, profile)| {
-            (label, analyze_corpus_with(&files, &native::shape_defines(&profile)))
+            let r = analyze_corpus_with(&files, &native::shape_defines(&profile));
+            (label, profile, r)
         })
         .collect()
 }
@@ -112,7 +121,7 @@ fn analyze_every_shape(srcs: &[(PathBuf, String)]) -> Vec<(&'static str, Contrac
 #[test]
 fn retrofitted_corpus_has_zero_slot_mismatches() {
     let Some(srcs) = corpus_sources() else { return };
-    for (label, r) in analyze_every_shape(&srcs) {
+    for (label, _profile, r) in analyze_every_shape(&srcs) {
         assert!(
             r.slot_firings.is_empty(),
             "[call.slot-type-mismatch] firings on the retrofitted corpus in shape \
@@ -127,11 +136,11 @@ fn retrofitted_corpus_has_zero_slot_mismatches() {
 ///
 /// Strips the `as SfxId` bless from `Player_Jump`'s `moveq #SFXID_JUMP, d0`, which
 /// sits inside `if SOUND_DRIVER_ENABLED == 1 { }`. The doctored corpus must fire in
-/// exactly the four shapes that assemble that block and in none of the three that
-/// do not. Both halves are load-bearing: the fires-here half proves the gate has
-/// teeth on comptime-gated code (the class that shipped six real mismatches past a
-/// define-free walk), and the silent-there half proves the defines genuinely reach
-/// the analysis rather than every shape being one walk under seven labels.
+/// exactly the shapes that assemble that block and in none of the shapes that do
+/// not. Both halves are load-bearing: the fires-here half proves the gate has teeth
+/// on comptime-gated code — the code a define-free walk cannot reach at all — and
+/// the silent-there half proves the defines genuinely reach the analysis rather
+/// than every shape being one walk under seven labels.
 #[test]
 fn a_bless_stripped_inside_a_comptime_gate_fires_in_exactly_the_sound_on_shapes() {
     let Some(mut srcs) = corpus_sources() else { return };
@@ -148,15 +157,17 @@ fn a_bless_stripped_inside_a_comptime_gate_fires_in_exactly_the_sound_on_shapes(
     }
     assert!(doctored, "player_ground.emp not found in the corpus");
 
-    // The shapes whose profile sets `SOUND_DRIVER_ENABLED = 1`; the other three
-    // compile the block away entirely.
-    const SOUND_ON: [&str; 4] = ["sonic4 plain", "sonic4 debug", "config_a", "lean"];
+    // `profile.sound_on` IS the `SOUND_DRIVER_ENABLED` value the shape lowers
+    // under, so the partition cannot drift from the profile it is testing.
+    let mut sound_on_shapes = 0;
+    let mut sound_off_shapes = 0;
 
-    for (label, r) in analyze_every_shape(&srcs) {
+    for (label, profile, r) in analyze_every_shape(&srcs) {
         let hit = r.slot_firings.iter().find(|f| {
             f.proc == "Player_Jump" && f.callee == "Sound_PlaySFX" && f.reg == "d0"
         });
-        if SOUND_ON.contains(&label) {
+        if profile.sound_on {
+            sound_on_shapes += 1;
             assert!(
                 hit.is_some(),
                 "shape `{label}` assembles the `SOUND_DRIVER_ENABLED == 1` block, so the \
@@ -164,9 +175,11 @@ fn a_bless_stripped_inside_a_comptime_gate_fires_in_exactly_the_sound_on_shapes(
                  not reading the shape's defines. firings: {:#?}",
                 r.slot_firings
             );
-            assert_eq!(hit.unwrap().expected, "SfxId");
-            assert_eq!(hit.unwrap().found, None, "the bless was stripped, not swapped");
+            let f = hit.unwrap();
+            assert_eq!(f.expected, "SfxId", "shape `{label}`");
+            assert_eq!(f.found, None, "shape `{label}`: the bless was stripped, not swapped");
         } else {
+            sound_off_shapes += 1;
             assert!(
                 hit.is_none(),
                 "shape `{label}` is sound-OFF, so the doctored site compiles away and must \
@@ -175,6 +188,12 @@ fn a_bless_stripped_inside_a_comptime_gate_fires_in_exactly_the_sound_on_shapes(
             );
         }
     }
+
+    // Both halves must have RUN. A partition that lands every shape on one side
+    // asserts nothing on the other, and the silent-there half is the load-bearing one.
+    assert!(sound_on_shapes > 0 && sound_off_shapes > 0,
+        "the shipped shapes no longer straddle SOUND_DRIVER_ENABLED \
+         ({sound_on_shapes} on / {sound_off_shapes} off) — this probe proves nothing");
 }
 
 /// NEGATIVE: swap the axis bless at ONE call site → the build fails naming that
@@ -182,8 +201,8 @@ fn a_bless_stripped_inside_a_comptime_gate_fires_in_exactly_the_sound_on_shapes(
 /// pass by there being no typed slots.
 ///
 /// The doctored site is UNGATED code, so the firing is shape-invariant and every
-/// shape must show it — asserted per shape rather than once, so a shape whose
-/// walk silently stopped analyzing this module could not hide behind the others.
+/// shape must show it. Asserting per shape is what stops a shape whose walk
+/// silently dropped this module from hiding behind the others.
 #[test]
 fn swapped_axis_bless_fires_naming_the_site() {
     let Some(mut srcs) = corpus_sources() else { return };
@@ -203,7 +222,7 @@ fn swapped_axis_bless_fires_naming_the_site() {
     }
     assert!(doctored, "entity_window.emp not found in the corpus");
 
-    for (label, r) in analyze_every_shape(&srcs) {
+    for (label, _profile, r) in analyze_every_shape(&srcs) {
         let hit = r
             .slot_firings
             .iter()
@@ -241,7 +260,7 @@ fn sound_id_swap_fires_naming_the_site() {
     }
     assert!(doctored, "sound_api.emp not found in the corpus");
 
-    for (label, r) in analyze_every_shape(&srcs) {
+    for (label, _profile, r) in analyze_every_shape(&srcs) {
         let hit = r
             .slot_firings
             .iter()

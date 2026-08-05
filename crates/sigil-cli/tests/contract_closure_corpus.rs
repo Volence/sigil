@@ -1,26 +1,22 @@
-//! Contract-grammar v2 — THE ERROR GATE (§9 tier-timing flip, G3's closing act).
-//! Runs the transitive clobber closure ([`analyze_corpus_with`]) over the REAL aeon
-//! `.emp` corpus and pins zero extern holes, zero §11 Q4 collisions, and — now
-//! that the §5 verified-preserves retrofit has landed and the row-1030/G3-FP
-//! residue reached ZERO — an EMPTY firing set. This pin shipped WARN-tier through
-//! G1/G2 (surfacing the 6-row G3 handoff as documented debt); at G3, with the
-//! residue provably 0, it flips to the ERROR gate: under `SIGIL_STRICT_GATE`, ANY
-//! transitive under-declaration is a BUILD ERROR. An undeclared register effect
-//! in `.emp` can no longer ship.
+//! Contract-grammar v2 — THE ERROR GATE (§9 tier-timing flip). Runs the transitive
+//! clobber closure ([`analyze_corpus_with`]) over the REAL aeon `.emp` corpus and
+//! pins zero extern holes, zero §11 Q4 collisions, and an EMPTY firing set. Under
+//! `SIGIL_STRICT_GATE` any transitive under-declaration is a BUILD ERROR: an
+//! undeclared register effect in `.emp` cannot ship.
 //!
 //! THE SHAPE AXIS. The three gates below that own a firing set — drops, closure
 //! residue, §6 flag results — walk EVERY SHIPPED SHAPE under its own profile
-//! defines ([`native::shipped_shapes`]). They previously walked one define-free
-//! corpus, in which every `if DEBUG == 1 { }` and `if SOUND_DRIVER_ENABLED == 1 { }`
-//! block comptime-vanishes, and the closure gate consequently reported an empty
-//! residue while five real transitive under-declarations shipped in the DEBUG
-//! shape (`Collected_ParkSlot` d2, `EntityWindow_{TrySpawnRing,RescanRings,
-//! ScanRingsRight,PopulateSectionRings}` d5). A gate cannot stop what it never
-//! reads. [`a_clobber_undeclared_inside_a_comptime_gate_fires_in_exactly_the_debug_shapes`]
-//! is the standing proof that the shape axis is real and not seven labels on one walk.
+//! defines ([`native::shipped_shapes`]). A define-free walk cannot see inside
+//! `if DEBUG == 1 { }` or `if SOUND_DRIVER_ENABLED == 1 { }`: those arms
+//! comptime-vanish, so every register effect in them is invisible to the closure
+//! and the residue reads empty over code the analysis never reached. Walking each
+//! shape under its own defines is what makes the residue a statement about shipped
+//! code, and
+//! [`a_clobber_undeclared_inside_a_comptime_gate_fires_in_exactly_the_debug_shapes`]
+//! is the standing proof that the axis is real and not seven labels on one walk.
 //!
-//! The [`corpus_report`] family below is still define-FREE — a separate blind spot
-//! with its own pinned censuses, tracked on kill-list row 103.
+//! The [`corpus_report`] family below is define-FREE — a separate blind spot with
+//! its own pinned censuses, tracked on kill-list row 103.
 //!
 //! Reference tree: defaults to the sibling aeon checkout (override with `AEON_DIR`).
 //! Under `SIGIL_STRICT_GATE` a missing tree HARD-FAILS — these are shipping ERROR
@@ -89,14 +85,34 @@ fn corpus_sources() -> Option<Vec<(PathBuf, String)>> {
     )
 }
 
-/// `(shape label, report)` for every shipped shape — ONE parse, seven analyses,
-/// each under the shape's own profile defines.
-fn analyze_every_shape(srcs: &[(PathBuf, String)]) -> Vec<(&'static str, ContractReport)> {
-    let files: Vec<_> = srcs.iter().map(|(_, s)| parse_str(s).0).collect();
+/// `(shape label, profile, report)` for every shipped shape — ONE parse, seven
+/// analyses, each under the shape's own profile defines. The profile rides along so
+/// a shape-partitioning probe reads `profile.debug` rather than a second,
+/// hand-kept list of labels.
+///
+/// A parse ERROR is fatal here: the closure charges only the instructions it
+/// recovered, so a file that half-parses under-reports its register effects and
+/// every gate below reads a smaller corpus than the one on disk.
+fn analyze_every_shape(
+    srcs: &[(PathBuf, String)],
+) -> Vec<(&'static str, native::GameProfile, ContractReport)> {
+    let files: Vec<_> = srcs
+        .iter()
+        .map(|(p, s)| {
+            let (f, d) = parse_str(s);
+            assert!(
+                d.iter().all(|x| x.level != sigil_span::Level::Error),
+                "{} parse errors: {d:?}",
+                p.display()
+            );
+            f
+        })
+        .collect();
     native::shipped_shapes()
         .into_iter()
         .map(|(label, profile)| {
-            (label, analyze_corpus_with(&files, &native::shape_defines(&profile)))
+            let r = analyze_corpus_with(&files, &native::shape_defines(&profile));
+            (label, profile, r)
         })
         .collect()
 }
@@ -113,7 +129,7 @@ fn analyze_every_shape(srcs: &[(PathBuf, String)]) -> Vec<(&'static str, Contrac
 #[test]
 fn corpus_has_zero_dropped_instructions() {
     let Some(srcs) = corpus_sources() else { return };
-    for (label, r) in analyze_every_shape(&srcs) {
+    for (label, _profile, r) in analyze_every_shape(&srcs) {
         assert_eq!(
             r.dropped_instrs, 0,
             "shape `{label}`: instructions dropped from analysis buffers (missing \
@@ -126,7 +142,7 @@ fn corpus_has_zero_dropped_instructions() {
 #[test]
 fn corpus_closure_residue_is_empty_the_error_gate() {
     let Some(srcs) = corpus_sources() else { return };
-    for (label, r) in analyze_every_shape(&srcs) {
+    for (label, _profile, r) in analyze_every_shape(&srcs) {
         // Boundary decls resolve every extern call — no holes.
         assert!(
             r.closure.unresolved_callees.is_empty(),
@@ -162,12 +178,11 @@ fn corpus_closure_residue_is_empty_the_error_gate() {
 /// walks seven shapes instead of one.
 ///
 /// Drops `d2` from `Collected_ParkSlot`'s `clobbers`, which the DEBUG duplicate-id
-/// scan writes. The doctored corpus must fire in exactly the three `DEBUG == 1`
-/// shapes and in none of the four plain ones. Both halves are load-bearing: the
-/// fires-here half proves the ERROR gate has teeth on comptime-gated code (five real
-/// under-declarations shipped past the define-free walk in exactly this arm), and the
-/// silent-there half proves the defines genuinely reach the analysis rather than
-/// every shape being one walk under seven labels.
+/// scan writes. The doctored corpus must fire in exactly the `DEBUG == 1` shapes and
+/// in none of the plain ones. Both halves are load-bearing: the fires-here half
+/// proves the ERROR gate has teeth on comptime-gated code — the code a define-free
+/// walk cannot reach at all — and the silent-there half proves the defines genuinely
+/// reach the analysis rather than every shape being one walk under seven labels.
 #[test]
 fn a_clobber_undeclared_inside_a_comptime_gate_fires_in_exactly_the_debug_shapes() {
     let Some(mut srcs) = corpus_sources() else { return };
@@ -184,15 +199,17 @@ fn a_clobber_undeclared_inside_a_comptime_gate_fires_in_exactly_the_debug_shapes
     }
     assert!(doctored, "entity_window.emp not found in the corpus");
 
-    // The shapes whose profile sets `DEBUG = 1`; the other four compile the
-    // duplicate-id scan away entirely.
-    const DEBUG_SHAPES: [&str; 3] = ["sonic4 debug", "demo debug", "config_a"];
+    // `profile.debug` IS the `DEBUG` value the shape lowers under, so the partition
+    // cannot drift from the profile it is testing.
+    let mut debug_shapes = 0;
+    let mut plain_shapes = 0;
 
-    for (label, r) in analyze_every_shape(&srcs) {
+    for (label, profile, r) in analyze_every_shape(&srcs) {
         let hit = r.firings.iter().find(|f| {
             f.proc == "Collected_ParkSlot" && f.reg.as_deref() == Some("d2")
         });
-        if DEBUG_SHAPES.contains(&label) {
+        if profile.debug {
+            debug_shapes += 1;
             assert!(
                 hit.is_some(),
                 "shape `{label}` assembles the `DEBUG == 1` block that writes d2, so the \
@@ -201,6 +218,7 @@ fn a_clobber_undeclared_inside_a_comptime_gate_fires_in_exactly_the_debug_shapes
                 r.firings.iter().map(|f| (f.proc.as_str(), f.reg.as_deref())).collect::<Vec<_>>()
             );
         } else {
+            plain_shapes += 1;
             assert!(
                 hit.is_none(),
                 "shape `{label}` is DEBUG=0, so the doctored arm compiles away and must NOT \
@@ -209,6 +227,12 @@ fn a_clobber_undeclared_inside_a_comptime_gate_fires_in_exactly_the_debug_shapes
             );
         }
     }
+
+    // Both halves must have RUN. A partition that lands every shape on one side
+    // asserts nothing on the other, and the silent-there half is the load-bearing one.
+    assert!(debug_shapes > 0 && plain_shapes > 0,
+        "the shipped shapes no longer straddle DEBUG ({debug_shapes} debug / \
+         {plain_shapes} plain) — this probe proves nothing");
 }
 
 /// Contract-grammar v2 G2 — the §6 flag-result must-use pin: every `.emp` caller
@@ -221,7 +245,7 @@ fn a_clobber_undeclared_inside_a_comptime_gate_fires_in_exactly_the_debug_shapes
 #[test]
 fn corpus_flag_results_are_all_consumed() {
     let Some(srcs) = corpus_sources() else { return };
-    for (label, r) in analyze_every_shape(&srcs) {
+    for (label, _profile, r) in analyze_every_shape(&srcs) {
         assert!(
             r.flag_firings.is_empty(),
             "shape `{label}`: unexpected flag-result firings (a dropped carry?): {:?}",
