@@ -43,6 +43,11 @@ fn z80(attrs: &str, body: &str) -> Vec<Diagnostic> {
     lower_cpu(&format!("module m\n{attrs}\nproc f() {{\n{body}}}\n"), Cpu::Z80)
 }
 
+/// The 68000 twin of [`z80`].
+fn m68k(attrs: &str, body: &str) -> Vec<Diagnostic> {
+    lower_cpu(&format!("module m\n{attrs}\nproc f() {{\n{body}}}\n"), Cpu::M68000)
+}
+
 /// Assert `src` lowers with no cycle finding at all.
 fn assert_silent(diags: &[Diagnostic]) {
     let d = cycle_diags(diags);
@@ -291,16 +296,79 @@ fn an_off_table_op_is_refused() {
     assert_one(&z80("@budget(cycles: 100)", "    rlca\n    ret\n"), "cycles.unknown-op");
 }
 
-/// There is no 68000 timing model, and a 68k proc carrying a budget is told that
-/// rather than measured against the Z80 table.
+/// A 68k `@budget` measures through the M68000UM table: the ceiling that admits
+/// the worst path holds, one cycle under it fires naming both numbers.
 #[test]
-fn a_68k_body_is_refused_by_name() {
-    let d = lower_cpu(
-        "module m\n@budget(cycles: 100)\nproc f() {\n    nop\n    rts\n}\n",
-        Cpu::M68000,
+fn a_68k_budget_bounds_the_worst_path() {
+    // moveq 4 + rts 16 = 20, through the M68000UM table.
+    assert_silent(&m68k("@budget(cycles: 20)", "    moveq #1, d0\n    rts\n"));
+    let d = m68k("@budget(cycles: 19)", "    moveq #1, d0\n    rts\n");
+    let f = assert_one(&d, "cycles.over-budget");
+    assert!(f.message.contains("20"), "names the measured cost: {}", f.message);
+    assert!(f.message.contains("19"), "and the declared budget: {}", f.message);
+}
+
+/// An UNSIZED 68k conditional relaxes `.s`/`.w` at link time, so its
+/// fall-through is charged the `.w` ceiling: the budget that admits the ceiling
+/// holds, one cycle less fires.
+#[test]
+fn an_unsized_68k_conditional_is_charged_its_word_fall_through() {
+    // taken: 10 + 16 = 26; fall-through ceiling: 12 + 4 + 16 = 32.
+    let body = "    beq .skip\n    moveq #1, d0\n.skip:\n    rts\n";
+    assert_silent(&m68k("@budget(cycles: 32)", body));
+    let d = m68k("@budget(cycles: 31)", body);
+    let f = assert_one(&d, "cycles.over-budget");
+    assert!(f.message.contains("32"), "{}", f.message);
+}
+
+/// A ceiling charge holds a budget but cannot prove an equality: `@cycles_exact`
+/// over a linker-relaxed `jbra` refuses by the offender's name, while the budget
+/// declared beside it still concludes.
+#[test]
+fn a_ceiling_refuses_an_exactness_proof_but_holds_a_budget() {
+    // jbra charged its dearest rung (jmp abs.l, 12) + rts 16 = 28.
+    let body = "    jbra .join\n.join:\n    rts\n";
+    assert_silent(&m68k("@budget(cycles: 28)", body));
+    let d = m68k("@cycles_exact", body);
+    let f = assert_one(&d, "cycles.inexact-cost");
+    assert!(f.message.contains("jbra"), "names the offender: {}", f.message);
+    let both = m68k("@budget(cycles: 28)\n@cycles_exact", body);
+    assert_eq!(cycle_diags(&both).len(), 1, "the budget half still holds: {both:?}");
+    assert_eq!(with_id(&both, "cycles.inexact-cost").len(), 1);
+}
+
+/// A computed dispatch — `jmp .table(a1)`, the DMA-queue drain shape — is
+/// refused by its own name: the destination set is data, and the walk does not
+/// enumerate what the program text does not name.
+#[test]
+fn a_68k_computed_dispatch_is_refused_by_its_own_name() {
+    let d = m68k("@budget(cycles: 670)", "    jmp .table(a1)\n.table:\n    rts\n");
+    let f = assert_one(&d, "cycles.computed-transfer");
+    assert!(f.message.contains("jmp"), "{}", f.message);
+    assert!(f.message.contains("COMPUTED"), "says what it refused: {}", f.message);
+}
+
+/// Every 68000 call spelling is opaque, the auto-reaching `jbsr` included.
+#[test]
+fn a_68k_call_is_refused() {
+    let d = m68k(
+        "@budget(cycles: 100)",
+        "    jbsr .helper\n    rts\n.helper:\n    rts\n",
     );
-    let f = assert_one(&d, "cycles.unmodeled-cpu");
-    assert!(f.message.contains("68000"), "the refusal names the CPU: {}", f.message);
+    assert_eq!(with_id(&d, "cycles.opaque-call").len(), 1, "{d:?}");
+}
+
+/// A 68k back edge is refused like a Z80 one — `dbf`, the counting idiom, is a
+/// loop before it is anything else.
+#[test]
+fn a_68k_loop_is_refused() {
+    let d = m68k("@budget(cycles: 100)", ".loop:\n    nop\n    bra .loop\n");
+    assert_eq!(with_id(&d, "cycles.unbounded-loop").len(), 1, "{d:?}");
+    let d = m68k(
+        "@budget(cycles: 100)",
+        ".loop:\n    nop\n    dbf d0, .loop\n    rts\n",
+    );
+    assert_eq!(with_id(&d, "cycles.unbounded-loop").len(), 1, "{d:?}");
 }
 
 /// A refusal REPLACES the conclusions: an unmeasurable proc never also reports a
