@@ -39,8 +39,9 @@ impl File {
 pub struct Attr {
     /// The attribute name, e.g. `as_compat`, `allow`.
     pub name: String,
-    /// Attribute arguments, e.g. the `naming.pascal` in `@allow(naming.pascal)`.
-    pub args: Vec<Expr>,
+    /// Attribute arguments, positional or keyword: the `"naming.pascal"` in
+    /// `@allow("naming.pascal")`, the `cycles: 195` in `@budget(cycles: 195)`.
+    pub args: Vec<Arg>,
     /// Full span of the attribute, `@` through the closing `)` (or the name).
     pub span: Span,
 }
@@ -1673,6 +1674,16 @@ pub struct Arg {
     pub value: Expr,
     /// Span of the whole argument.
     pub span: Span,
+}
+
+impl Arg {
+    /// The argument's value as a string literal, or `None` for any other shape.
+    pub fn str_value(&self) -> Option<&str> {
+        match &self.value {
+            Expr::Str(s, _) => Some(s.as_str()),
+            _ => None,
+        }
+    }
 }
 
 /// A unary operator.

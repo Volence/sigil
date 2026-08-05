@@ -1061,7 +1061,7 @@ fn validate_comptime_tests(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
 /// matches nothing — the most natural typo must be loud, not inert.
 fn validate_allow_attrs(file: &ast::File, diags: &mut Vec<Diagnostic>) {
     for a in file.attrs.iter().filter(|a| a.name == "allow") {
-        for arg in &a.args {
+        for arg in a.args.iter().map(|x| &x.value) {
             if !matches!(arg, ast::Expr::Str(..)) {
                 diags.push(Diagnostic {
                     level: Level::Warning,
@@ -1086,7 +1086,7 @@ fn validate_allow_attrs(file: &ast::File, diags: &mut Vec<Diagnostic>) {
 fn allows_lint(file: &ast::File, id: &str) -> bool {
     file.attrs.iter().any(|a| {
         a.name == "allow"
-            && a.args.iter().any(|arg| matches!(arg, ast::Expr::Str(s, _) if s == id))
+            && a.args.iter().any(|arg| arg.str_value() == Some(id))
     })
 }
 

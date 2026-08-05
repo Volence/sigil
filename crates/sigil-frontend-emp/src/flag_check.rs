@@ -61,13 +61,27 @@ pub struct FlagFiring {
 const CALL_MNEMONICS: [&str; 3] = ["jsr", "jbsr", "bsr"];
 const UNCOND_MNEMONICS: [&str; 4] = ["bra", "jbra", "jmp", "jra"];
 const RETURN_MNEMONICS: [&str; 4] = ["rts", "rte", "rtr", "rtd"];
+const Z80_RETURN_MNEMONICS: [&str; 3] = ["ret", "reti", "retn"];
 
 /// Does `mnem` RETURN from the proc? The `Edge::Abandon` an analysis sees covers
 /// two shapes — a return instruction, and control running off the end of the body
 /// — and a consumer that must tell them apart (a declared `falls_into` end is not
-/// a return) asks here rather than restating the table.
-pub(crate) fn is_return_mnemonic(mnem: &str) -> bool {
-    RETURN_MNEMONICS.contains(&mnem)
+/// a return) asks here rather than restating the table. CPU-parametric because
+/// the two edge models ([`Cfg::edges`] and [`Cfg::z80_edges`]) have different
+/// terminators, and a consumer keying on the wrong set reads a return as a
+/// fall-off-end or the reverse.
+pub(crate) fn is_return_mnemonic(mnem: &str, cpu: Cpu) -> bool {
+    match cpu {
+        Cpu::Z80 => Z80_RETURN_MNEMONICS.contains(&mnem),
+        _ => RETURN_MNEMONICS.contains(&mnem),
+    }
+}
+
+/// The item index of a body's FIRST instruction — the entry point every per-proc
+/// walk over a `CodeBuf` starts from. `None` for a body with no instructions at
+/// all (labels and inline data only).
+pub(crate) fn entry_instr_idx(items: &[CodeItem]) -> Option<usize> {
+    items.iter().position(|it| matches!(it, CodeItem::Instr { .. }))
 }
 
 /// The span of the instruction at item index `idx`, or `None` when that item is
@@ -335,7 +349,7 @@ impl<'a> Cfg<'a> {
         let leads_cc = matches!(ops.first(), Some(CodeOperand::Z80Cc(_)));
         let fallthrough = self.next_instr.get(&idx).copied();
         // Unconditional return.
-        if matches!(mnem, "ret" | "reti" | "retn") && !leads_cc {
+        if is_return_mnemonic(mnem, Cpu::Z80) && !leads_cc {
             return vec![Edge::Abandon];
         }
         // Conditional `ret cc`: taken edge returns (abandon); fall-through stays.
