@@ -225,3 +225,36 @@ Both branch from sigil `21f5aef7` / aeon `0e1f32c`.
 Note the `sr` lane needs BOTH repos, not just aeon: retiring `sr` firings changes
 the firing lint-id set, so `crates/sigil-cli/tests/warn_tier_corpus.rs`'s frozen
 baseline must be updated deliberately in the same parcel.
+
+---
+
+## §9 — MERGING A TWO-REPO PARCEL INVALIDATES EVERY OTHER LANE'S AEON WORKTREE
+
+Added 2026-08-05, paid for by the overseer, not a porter.
+
+`define-gates` merged into aeon master. The `edge-split` lane's aeon worktree
+stayed at the pre-merge commit, and its re-prove ran against a corpus missing
+the five clobber declarations that parcel had just added. Two ERROR-tier gates
+failed, naming all five sites and a missing probe anchor — **failures that look
+exactly like a real code defect in the lane under test**, which is precisely
+what §4 rule 2 warns about. The lane's own code was never implicated.
+
+**THE STEP, and it belongs to whoever runs the merge:** after ANY aeon merge,
+refresh the aeon worktree of EVERY lane still in flight before its next gate
+run. Nothing enforces this — `git worktree list` shows the path, not whether
+the tree is current, and a lane that committed nothing to aeon looks identical
+to one that is simply stale.
+
+```
+for w in .worktrees/*; do git -C "$w" rev-parse --short HEAD; done   # vs master
+git -C .worktrees/<lane> reset --hard master    # safe iff that lane has 0 own aeon commits
+```
+
+Rule 2 said "YOUR worktree at the RIGHT COMMIT" and the right commit was
+already understood to move when the ENGINE session pushed. **It also moves when
+YOUR OWN OTHER LANE MERGES** — which is new with parallel parcels, and is the
+form that actually caught me, one merge after I quoted rule 2 into four briefs.
+
+The good half: the gate `define-gates` had just built is what caught it. Its
+first real outing was against the overseer, on an unfixed corpus, and it named
+every site rather than failing vaguely. Nobody staged that probe.
