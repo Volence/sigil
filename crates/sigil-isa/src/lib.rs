@@ -48,3 +48,14 @@ pub mod z80;
 /// are the linker's job (sub-project B); the encoder takes explicit, already-resolved
 /// EA forms and displacements.
 pub mod m68k;
+
+/// # 68000 instruction timing (B′-3b)
+///
+/// `m68k_cycles::instr_cycles` prices one resolved instruction form in clock
+/// periods — the M68000UM Section 8 tables as data, cross-checked against the
+/// Exodus core and oracle-next's SingleStepTests-validated core. Data-dependent
+/// forms carry their documented MAXIMA, marked inexact; anything else is a loud
+/// `Unmodeled`. Linker relaxation (a bare symbolic operand's width, `jbra`'s
+/// rung ladder) is the front-end's ruling — this table prices resolved
+/// categories only.
+pub mod m68k_cycles;

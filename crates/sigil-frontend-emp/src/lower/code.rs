@@ -1482,7 +1482,7 @@ fn ind_reg_err(r: Reg) -> String {
 }
 
 /// `(is_address_register, low-3-bit number)` for a [`Reg`].
-pub(super) fn reg_kind(r: Reg) -> (bool, u8) {
+pub(crate) fn reg_kind(r: Reg) -> (bool, u8) {
     match r {
         Reg::D0 => (false, 0),
         Reg::D1 => (false, 1),
@@ -1626,7 +1626,7 @@ fn m68k_cond(w: &str) -> Option<M68kCond> {
 /// The implicit size for mnemonics that real 68k syntax never suffixes. Mirrors
 /// the AS front-end's `m68k_default_size`; branches deliberately have NO default
 /// (Aeon pins them explicitly).
-fn m68k_default_size(m: M68kMnemonic) -> Option<M68kSize> {
+pub(crate) fn m68k_default_size(m: M68kMnemonic) -> Option<M68kSize> {
     use M68kMnemonic::*;
     match m {
         Moveq => Some(M68kSize::L),

@@ -16,6 +16,7 @@ use sigil_span::Span;
 /// Re-export the m68k vocabulary so downstream crates (the AS front-end) can
 /// construct instructions without a *direct* `sigil-isa` dependency.
 pub use sigil_isa::m68k;
+pub use sigil_isa::m68k_cycles;
 
 /// The 68000 backend. Stateless.
 pub struct M68kBackend;

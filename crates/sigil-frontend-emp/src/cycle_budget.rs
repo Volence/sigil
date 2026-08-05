@@ -11,26 +11,37 @@
 //!
 //! ## The model, and what it refuses
 //!
-//! Per-instruction cost comes from [`crate::z80_cycles::instr_cost`] — the one
-//! Z80 T-state table, shared with the `cycles(L1, L2)` builtin. Control flow
-//! comes from the shared [`Cfg`], so this walk sees the same edges every other
-//! per-proc analysis does.
+//! Per-instruction cost comes from the CPU's one cost table —
+//! [`crate::z80_cycles::instr_cost`] (shared with the `cycles(L1, L2)` builtin)
+//! for the Z80, [`crate::m68k_cycles::instr_cost`] over the
+//! `sigil_isa::m68k_cycles` tables for the 68000. Control flow comes from the
+//! shared [`Cfg`], so this walk sees the same edges every other per-proc
+//! analysis does.
 //!
 //! An exact worst-case cost is only definable over a FINITE, LOCAL, TOTALLY
 //! MODELED path set, so everything outside that is a loud refusal rather than a
-//! guess — the same stance the T-state table itself takes toward an op it does
+//! guess — the same stance the cost tables themselves take toward an op they do
 //! not enumerate. A budget is a claim its author opted into, and the honest
 //! downgrade for a proc that cannot carry one is free: delete the attribute.
 //!
 //! | shape | diagnostic | why it cannot be bounded |
 //! |---|---|---|
 //! | a back edge (any loop) | `[cycles.unbounded-loop]` | the longest path through a cycle is unbounded; no trip count is declared |
-//! | `call` / `rst` | `[cycles.opaque-call]` | the callee's cost is not a local fact |
+//! | a call (`call`/`rst`; `jsr`/`bsr`/`jbsr`) | `[cycles.opaque-call]` | the callee's cost is not a local fact |
 //! | a tail transfer out, or control off the end of the body | `[cycles.unbounded-transfer]` | the path continues into code this walk cannot see |
-//! | an op outside the T-state table | `[cycles.unknown-op]` | no cost is assignable |
+//! | a transfer to a COMPUTED target (`jp (hl)`, `jmp .table(a1)`) | `[cycles.computed-transfer]` | the destination set is data, not structure |
+//! | an op outside the CPU's cost table | `[cycles.unknown-op]` | no cost is assignable |
 //! | an outcome-split conditional whose two edges cannot be told apart | `[cycles.ambiguous-branch]` | the two costs cannot be routed to their edges |
 //! | inline data in the code stream | `[cycles.inline-data]` | those bytes DECODE if control reaches them, and the CFG does not model them as instructions |
-//! | a 68000 body | `[cycles.unmodeled-cpu]` | no 68000 timing model exists yet |
+//! | `@cycles_exact` over an instruction whose cost is a CEILING | `[cycles.inexact-cost]` | a maximum can bound a budget but cannot prove an equality |
+//!
+//! On the 68000 some charged costs are MAXIMA rather than exact counts — a
+//! data-dependent form (`mulu`, a register-count shift) or a linker-relaxed
+//! width (a bare symbolic operand, `jbra`'s rung ladder — see the
+//! [`crate::m68k_cycles`] ruling). A ceiling keeps `@budget` sound: the walk's
+//! worst path is at or above the machine's. It cannot carry `@cycles_exact`,
+//! which is why the last refusal in the table exists and fires only for that
+//! attribute.
 //!
 //! Only a RETURN instruction ends a charged path, and only on the EDGE that
 //! actually returns. That single rule is what makes the bound sound in the one
@@ -39,20 +50,22 @@
 //!
 //! ## Three things a budget does NOT say
 //!
-//!   * **Nominal T-states, not elapsed time.** Bus contention (the Z80 losing the
-//!     bus to a 68000 DMA, VDP-port wait states) is a whole-machine fact, not a
-//!     proc-local one, and is not modeled. A budget bounds ISSUED cycles — the
-//!     same unit the sound driver's own balance proof uses, so the two agree.
-//!   * **Interrupts are not counted.** A Z80 proc interrupted at `$0038` spends
-//!     the handler's time on top of its budget. The bound is over the proc's own
+//!   * **Nominal cycles, not elapsed time.** Bus contention (the Z80 losing the
+//!     bus to a 68000 DMA, either CPU stalling on a VDP-port FIFO) is a
+//!     whole-machine fact, not a proc-local one, and is not modeled. A budget
+//!     bounds ISSUED cycles — the same unit the sound driver's own balance proof
+//!     uses, so the two agree.
+//!   * **Interrupts are not counted.** A proc interrupted mid-body spends the
+//!     handler's time on top of its budget. The bound is over the proc's own
 //!     instruction stream; masking is the caller's business.
 //!   * **Entry-point zero only.** The walk roots at the body's first instruction,
 //!     so a path reachable only from an `export`ed mid-body label is outside the
 //!     claim.
 
-use crate::flag_check::{entry_instr_idx, instr_span, Cfg, Edge};
-use crate::value::CodeItem;
-use crate::z80_cycles::{instr_cost, Cost};
+use crate::flag_check::{branch_target, entry_instr_idx, instr_span, Cfg, Edge};
+use crate::value::{CodeItem, CodeOperand, Width};
+use crate::z80_cycles::Cost;
+use sigil_backend_m68k::m68k_cycles::CycleCost;
 use sigil_ir::backend::Cpu;
 use sigil_span::Span;
 use std::collections::BTreeMap;
@@ -88,6 +101,13 @@ pub enum BudgetFindingKind {
         /// The transferring mnemonic.
         mnemonic: String,
     },
+    /// `[cycles.computed-transfer]` — a transfer whose target is computed
+    /// (`jp (hl)`, `jmp .table(a1)`): the destination set is data, and the walk
+    /// refuses to enumerate what the program text does not.
+    ComputedTransfer {
+        /// The transferring mnemonic.
+        mnemonic: String,
+    },
     /// `[cycles.ambiguous-branch]` — an outcome-split conditional whose taken and
     /// fall-through edges cannot be told apart.
     AmbiguousBranch {
@@ -101,8 +121,13 @@ pub enum BudgetFindingKind {
     },
     /// `[cycles.inline-data]` — a `DataBuf` spliced into the code stream.
     InlineData,
-    /// `[cycles.unmodeled-cpu]` — no timing model exists for this CPU.
-    UnmodeledCpu,
+    /// `[cycles.inexact-cost]` — `@cycles_exact` over a body containing an
+    /// instruction whose charged cost is a CEILING (data-dependent, or
+    /// linker-relaxed): a maximum bounds a budget but cannot prove an equality.
+    InexactCost {
+        /// The first ceiling-charged mnemonic, in item order.
+        mnemonic: String,
+    },
 }
 
 impl BudgetFindingKind {
@@ -114,10 +139,11 @@ impl BudgetFindingKind {
             Self::UnboundedLoop => "cycles.unbounded-loop",
             Self::OpaqueCall { .. } => "cycles.opaque-call",
             Self::UnboundedTransfer { .. } => "cycles.unbounded-transfer",
+            Self::ComputedTransfer { .. } => "cycles.computed-transfer",
             Self::AmbiguousBranch { .. } => "cycles.ambiguous-branch",
             Self::UnknownOp { .. } => "cycles.unknown-op",
             Self::InlineData => "cycles.inline-data",
-            Self::UnmodeledCpu => "cycles.unmodeled-cpu",
+            Self::InexactCost { .. } => "cycles.inexact-cost",
         }
     }
 
@@ -142,21 +168,28 @@ impl BudgetFindingKind {
                 "`{mnemonic}` continues into code outside this proc, so the path's cost is \
                  not accounted here — a cycle budget needs every path to end at a return"
             ),
+            Self::ComputedTransfer { mnemonic } => format!(
+                "`{mnemonic}` transfers to a COMPUTED target, so where this path goes is \
+                 data, not structure — the walk cannot enumerate destinations the program \
+                 text does not name"
+            ),
             Self::AmbiguousBranch { mnemonic } => format!(
                 "`{mnemonic}` costs differently taken and not-taken, and its two edges are \
                  not distinguishable here"
             ),
             Self::UnknownOp { mnemonic } => format!(
-                "`{mnemonic}` is not in the T-state table — add it to `z80_cycles` if a \
-                 budgeted proc legitimately needs it"
+                "`{mnemonic}` is not in this CPU's cycle table — add it to `z80_cycles` / \
+                 `m68k_cycles` if a budgeted proc legitimately needs it"
             ),
             Self::InlineData => "this body splices data into the code stream, and those \
                  bytes DECODE as instructions if control reaches them — the control-flow \
                  model steps over them, so no path through this proc can be costed"
                 .to_string(),
-            Self::UnmodeledCpu => "cycle budgets model the Z80 only; there is no 68000 \
-                 timing model yet"
-                .to_string(),
+            Self::InexactCost { mnemonic } => format!(
+                "`@cycles_exact` needs every instruction to cost one exact number, but \
+                 `{mnemonic}`'s charge is a ceiling (data-dependent, or decided by the \
+                 linker's width choice) — a maximum can hold a budget, not an equality"
+            ),
         }
     }
 }
@@ -171,12 +204,65 @@ pub struct BudgetFinding {
 }
 
 /// The cost extremes of a proc's path set.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PathCosts {
     /// The cheapest path from entry to a return.
     pub min: u64,
     /// The dearest path from entry to a return.
     pub max: u64,
+    /// The first (lowest item index) reachable instruction whose charged cost is
+    /// a CEILING rather than an exact count — `None` when every charge is exact.
+    /// `max` is then an upper bound on the machine's worst path (sound for
+    /// `@budget`); an equality proof over it is not a proof (`@cycles_exact`
+    /// refuses through [`BudgetFindingKind::InexactCost`]).
+    pub inexact: Option<String>,
+}
+
+/// One instruction's charge, normalized across the two CPU tables.
+enum WalkCost {
+    /// One cost for every way out. `exact: false` marks a ceiling.
+    Fixed { t: u64, exact: bool },
+    /// An outcome-split conditional: edge 0 (taken) and edge 1 (fall-through)
+    /// charge differently.
+    Split { taken: u64, not_taken: u64, exact: bool },
+    /// No entry in the CPU's table.
+    Unknown,
+}
+
+/// The CPU's per-instruction charge. The Z80 table is exact everywhere it is
+/// defined; the 68000 table marks its data-dependent and linker-relaxed maxima.
+fn walk_cost(cpu: Cpu, mnem: &str, size: Option<Width>, ops: &[CodeOperand]) -> WalkCost {
+    match cpu {
+        Cpu::Z80 => match crate::z80_cycles::instr_cost(mnem, ops) {
+            Cost::Fixed(n) => WalkCost::Fixed { t: u64::from(n), exact: true },
+            Cost::Split { taken, not_taken } => WalkCost::Split {
+                taken: u64::from(taken),
+                not_taken: u64::from(not_taken),
+                exact: true,
+            },
+            Cost::Unknown => WalkCost::Unknown,
+        },
+        Cpu::M68000 => match crate::m68k_cycles::instr_cost(mnem, size, ops) {
+            CycleCost::Fixed { cycles, exact } => {
+                WalkCost::Fixed { t: u64::from(cycles), exact }
+            }
+            CycleCost::Branch { taken, not_taken, exact } => WalkCost::Split {
+                taken: u64::from(taken),
+                not_taken: u64::from(not_taken),
+                exact,
+            },
+            CycleCost::Unmodeled => WalkCost::Unknown,
+        },
+    }
+}
+
+/// The CPU's successor edges — the same per-CPU builders every other consumer of
+/// the shared [`Cfg`] reads.
+fn cpu_edges(cfg: &Cfg, cpu: Cpu, idx: usize) -> Vec<Edge> {
+    match cpu {
+        Cpu::Z80 => cfg.z80_edges(idx),
+        Cpu::M68000 => cfg.edges(idx),
+    }
 }
 
 /// Measure a proc body's path costs, or say why it cannot be measured.
@@ -184,13 +270,6 @@ pub struct PathCosts {
 /// `items` is the proc's evaluated `CodeBuf`; `cpu` selects the timing model and
 /// the edge model. A body with no instructions costs zero on its one empty path.
 pub fn path_costs(items: &[CodeItem], cpu: Cpu, decl_span: Span) -> Result<PathCosts, BudgetFinding> {
-    let at = |idx: Option<usize>| idx.and_then(|i| instr_span(items, i)).unwrap_or(decl_span);
-    if cpu != Cpu::Z80 {
-        return Err(BudgetFinding {
-            kind: BudgetFindingKind::UnmodeledCpu,
-            span: at(entry_instr_idx(items)),
-        });
-    }
     // Inline data is not an `Instr`, so the CFG links straight across it and would
     // charge it nothing — while on hardware those bytes decode and execute if
     // control reaches them. Only a reachability proof could tell the two apart,
@@ -203,21 +282,32 @@ pub fn path_costs(items: &[CodeItem], cpu: Cpu, decl_span: Span) -> Result<PathC
         return Err(BudgetFinding { kind: BudgetFindingKind::InlineData, span });
     }
     let Some(entry) = entry_instr_idx(items) else {
-        return Ok(PathCosts { min: 0, max: 0 });
+        return Ok(PathCosts { min: 0, max: 0, inexact: None });
     };
     let cfg = Cfg::build(items);
     // A DFS that (a) proves the reachable subgraph is acyclic and (b) leaves a
     // post-order, whose reverse is a topological order. The two jobs share one
     // walk because a back edge is exactly what makes the second impossible.
-    let order = postorder(&cfg, items, entry)?;
+    let order = postorder(&cfg, items, entry, cpu)?;
     // POST-order visits every successor before its predecessor, so a single
     // forward pass over `order` fills the whole table with no revisits.
     let mut best: BTreeMap<usize, (u64, u64)> = BTreeMap::new();
+    // The inexact witness: the LOWEST-indexed reachable ceiling charge, so the
+    // diagnostic is deterministic and names the first offender in reading order.
+    let mut inexact: Option<(usize, String)> = None;
     for &idx in &order {
-        let (mnem, ops) = cfg.instr(idx).expect("topo order holds instruction indices only");
-        let cost = instr_cost(mnem, ops);
-        let span = instr_span(items, idx).expect("an instruction carries a span");
-        let charged = charged_edges(&cfg, idx, mnem, cost, span)?;
+        let CodeItem::Instr { mnemonic, size, ops, span, .. } = &items[idx] else {
+            unreachable!("postorder holds instruction indices only");
+        };
+        let cost = walk_cost(cpu, mnemonic, *size, ops);
+        let ceiling = matches!(
+            cost,
+            WalkCost::Fixed { exact: false, .. } | WalkCost::Split { exact: false, .. }
+        );
+        if ceiling && inexact.as_ref().is_none_or(|(i, _)| idx < *i) {
+            inexact = Some((idx, mnemonic.clone()));
+        }
+        let charged = charged_edges(&cfg, cpu, idx, mnemonic, ops, &cost, *span)?;
         let mut lo = u64::MAX;
         let mut hi = 0u64;
         for e in charged {
@@ -232,7 +322,7 @@ pub fn path_costs(items: &[CodeItem], cpu: Cpu, decl_span: Span) -> Result<PathC
         best.insert(idx, (lo, hi));
     }
     let (min, max) = best[&entry];
-    Ok(PathCosts { min, max })
+    Ok(PathCosts { min, max, inexact: inexact.map(|(_, m)| m) })
 }
 
 /// Check a proc's declared cycle contract. `budget` is the `@budget(cycles: N)`
@@ -266,11 +356,21 @@ pub fn check_cycle_budget(
             });
         }
     }
-    if exact && costs.min != costs.max {
-        out.push(BudgetFinding {
-            kind: BudgetFindingKind::PathMismatch { min: costs.min, max: costs.max },
-            span,
-        });
+    if exact {
+        match &costs.inexact {
+            // A ceiling charge can hold a budget but cannot prove an equality:
+            // the exactness half refuses (naming the first offender) while the
+            // budget half, if also declared, still concludes above.
+            Some(mnemonic) => out.push(BudgetFinding {
+                kind: BudgetFindingKind::InexactCost { mnemonic: mnemonic.clone() },
+                span,
+            }),
+            None if costs.min != costs.max => out.push(BudgetFinding {
+                kind: BudgetFindingKind::PathMismatch { min: costs.min, max: costs.max },
+                span,
+            }),
+            None => {}
+        }
     }
     out
 }
@@ -290,41 +390,42 @@ struct ChargedEdge {
 /// returning side — no positional or mnemonic rule decides which is which.
 ///
 /// One edge-model fact is still read POSITIONALLY, because `Edge` does not record
-/// it: **taken-first**. Every conditional arm of [`Cfg::z80_edges`] pushes the
-/// branch edge before the fall-through, so an outcome-split conditional's `taken`
-/// cost belongs to edge 0. A form presenting anything but exactly two edges does
-/// not satisfy that reading, so a [`Cost::Split`] over it is refused rather than
-/// charged a number the rule picked blind.
+/// it: **taken-first**. Every conditional arm of both edge builders
+/// ([`Cfg::z80_edges`] and the 68k [`Cfg::edges`]) pushes the branch edge before
+/// the fall-through, so an outcome-split conditional's `taken` cost belongs to
+/// edge 0. A form presenting anything but exactly two edges does not satisfy
+/// that reading, so a split cost over it is refused rather than charged a number
+/// the rule picked blind.
 fn charged_edges(
     cfg: &Cfg,
+    cpu: Cpu,
     idx: usize,
     mnem: &str,
-    cost: Cost,
+    ops: &[CodeOperand],
+    cost: &WalkCost,
     span: Span,
 ) -> Result<Vec<ChargedEdge>, BudgetFinding> {
     let bail = |kind| Err(BudgetFinding { kind, span });
-    if crate::context::is_call_mnemonic(mnem, Cpu::Z80) {
+    if crate::context::is_call_mnemonic(mnem, cpu) {
         return bail(BudgetFindingKind::OpaqueCall { mnemonic: mnem.to_string() });
     }
-    if matches!(cost, Cost::Unknown) {
-        return bail(BudgetFindingKind::UnknownOp { mnemonic: mnem.to_string() });
-    }
-    let edges = cfg.z80_edges(idx);
-    let two_way = edges.len() == 2;
-    if matches!(cost, Cost::Split { .. }) && !two_way {
-        return bail(BudgetFindingKind::AmbiguousBranch { mnemonic: mnem.to_string() });
-    }
-    let mut out = Vec::new();
-    for (i, e) in edges.iter().enumerate() {
-        let cost = match cost {
-            Cost::Fixed(n) => u64::from(n),
-            Cost::Split { taken, not_taken } => u64::from(if i == 0 { taken } else { not_taken }),
-            Cost::Unknown => unreachable!("refused above"),
-        };
+    let edges = cpu_edges(cfg, cpu, idx);
+    // The STRUCTURAL refusals come before the cost-table one: a path that
+    // escapes the body is unboundable whatever the instruction costs, and for a
+    // computed transfer (`jp (hl)`) an "add it to the table" refusal would be a
+    // misleading invitation — a table entry would not make it boundable.
+    for e in &edges {
         match e {
-            Edge::Follow(s) => out.push(ChargedEdge { cost, succ: Some(*s) }),
-            // A return CLOSES the path: the caller owns everything after it.
-            Edge::Return => out.push(ChargedEdge { cost, succ: None }),
+            // Transferring out with no symbolic target is a COMPUTED transfer
+            // (`jp (hl)`, `jmp .table(a1)`): the honest refusal names the shape,
+            // because "code outside this proc" may be false — a jump-table
+            // dispatch lands inside its own body, through addresses the walk
+            // cannot enumerate.
+            Edge::Defer if branch_target(ops).is_none() => {
+                return bail(BudgetFindingKind::ComputedTransfer {
+                    mnemonic: mnem.to_string(),
+                })
+            }
             // Running off the end, or transferring out, leaves cost this bound
             // cannot see. Refuse rather than report a ceiling that is too low.
             Edge::FallOff | Edge::Defer => {
@@ -332,6 +433,34 @@ fn charged_edges(
                     mnemonic: mnem.to_string(),
                 })
             }
+            Edge::Follow(_) | Edge::Return => {}
+        }
+    }
+    if matches!(cost, WalkCost::Unknown) {
+        return bail(BudgetFindingKind::UnknownOp { mnemonic: mnem.to_string() });
+    }
+    let two_way = edges.len() == 2;
+    if matches!(cost, WalkCost::Split { .. }) && !two_way {
+        return bail(BudgetFindingKind::AmbiguousBranch { mnemonic: mnem.to_string() });
+    }
+    let mut out = Vec::new();
+    for (i, e) in edges.iter().enumerate() {
+        let cost = match cost {
+            WalkCost::Fixed { t, .. } => *t,
+            WalkCost::Split { taken, not_taken, .. } => {
+                if i == 0 {
+                    *taken
+                } else {
+                    *not_taken
+                }
+            }
+            WalkCost::Unknown => unreachable!("refused above"),
+        };
+        match e {
+            Edge::Follow(s) => out.push(ChargedEdge { cost, succ: Some(*s) }),
+            // A return CLOSES the path: the caller owns everything after it.
+            Edge::Return => out.push(ChargedEdge { cost, succ: None }),
+            Edge::FallOff | Edge::Defer => unreachable!("refused above"),
         }
     }
     // An instruction with no successors at all cannot happen for a modeled op
@@ -348,7 +477,12 @@ fn charged_edges(
 /// successor before its predecessor, which is exactly the order the cost pass
 /// needs. A back edge (an edge to an instruction still open on the DFS stack) is
 /// `[cycles.unbounded-loop]`, reported at the instruction the loop re-enters.
-fn postorder(cfg: &Cfg, items: &[CodeItem], entry: usize) -> Result<Vec<usize>, BudgetFinding> {
+fn postorder(
+    cfg: &Cfg,
+    items: &[CodeItem],
+    entry: usize,
+    cpu: Cpu,
+) -> Result<Vec<usize>, BudgetFinding> {
     #[derive(Clone, Copy, PartialEq)]
     enum Mark {
         Open,
@@ -361,7 +495,7 @@ fn postorder(cfg: &Cfg, items: &[CodeItem], entry: usize) -> Result<Vec<usize>, 
     // default. A dropped in-proc successor loses a path, and a lost path makes
     // the bound too LOW — the one direction a budget must not err in.
     let succs = |i: usize| -> Vec<usize> {
-        cfg.z80_edges(i)
+        cpu_edges(cfg, cpu, i)
             .into_iter()
             .filter_map(|e| match e {
                 Edge::Follow(s) => Some(s),
@@ -556,13 +690,164 @@ mod tests {
         assert_eq!(e.kind, BudgetFindingKind::UnknownOp { mnemonic: "rlca".into() });
     }
 
-    // There is no 68000 timing model, and the refusal says so rather than
-    // producing a number from the Z80 table.
+    // A 68000 straight line measures through the M68000UM table: nop 4 + rts 16.
     #[test]
-    fn a_68k_body_is_unmodeled() {
+    fn a_68k_straight_line_measures() {
         let items = vec![instr("nop", vec![]), instr("rts", vec![])];
+        let c = path_costs(&items, Cpu::M68000, sp()).unwrap();
+        assert_eq!((c.min, c.max), (20, 20));
+        assert_eq!(c.inexact, None);
+    }
+
+    // A sized 68k conditional charges its own edges: beq.s taken 10 + rts 16 =
+    // 26; not-taken 8 + moveq 4 + rts 16 = 28. Exact at a pinned width.
+    #[test]
+    fn a_68k_sized_conditional_charges_each_edge() {
+        let items = vec![
+            CodeItem::Instr {
+                mnemonic: "beq".into(),
+                size: Some(crate::value::Width::S),
+                ops: vec![sym("skip")],
+                span: sp(),
+                as_type: None,
+            },
+            instr("moveq", vec![CodeOperand::Imm(1), CodeOperand::Reg(crate::value::Reg::D0)]),
+            label("skip"),
+            instr("rts", vec![]),
+        ];
+        let c = path_costs(&items, Cpu::M68000, sp()).unwrap();
+        assert_eq!((c.min, c.max), (26, 28));
+        assert_eq!(c.inexact, None);
+    }
+
+    // An UNSIZED 68k conditional relaxes at link time (.s/.w): the fall-through
+    // is charged its `.w` ceiling and the walk records the inexact witness.
+    #[test]
+    fn an_unsized_68k_conditional_is_a_ceiling() {
+        let items = vec![
+            instr("beq", vec![sym("skip")]),
+            instr("moveq", vec![CodeOperand::Imm(1), CodeOperand::Reg(crate::value::Reg::D0)]),
+            label("skip"),
+            instr("rts", vec![]),
+        ];
+        let c = path_costs(&items, Cpu::M68000, sp()).unwrap();
+        // taken 10 + 16 = 26; not-taken ceiling 12 + 4 + 16 = 32.
+        assert_eq!((c.min, c.max), (26, 32));
+        assert_eq!(c.inexact.as_deref(), Some("beq"));
+    }
+
+    // Every 68000 call form is opaque, `jbsr` included.
+    #[test]
+    fn a_68k_call_is_opaque() {
+        for m in ["jsr", "bsr", "jbsr"] {
+            let items = vec![instr(m, vec![sym("Helper")]), instr("rts", vec![])];
+            let e = path_costs(&items, Cpu::M68000, sp()).unwrap_err();
+            assert_eq!(e.kind, BudgetFindingKind::OpaqueCall { mnemonic: m.into() });
+        }
+    }
+
+    // A 68k back edge is refused like a Z80 one; `dbf` is a loop first.
+    #[test]
+    fn a_68k_loop_is_unbounded() {
+        let items = vec![label("loop"), instr("nop", vec![]), instr("bra", vec![sym("loop")])];
         let e = path_costs(&items, Cpu::M68000, sp()).unwrap_err();
-        assert_eq!(e.kind, BudgetFindingKind::UnmodeledCpu);
+        assert_eq!(e.kind, BudgetFindingKind::UnboundedLoop);
+        let items = vec![
+            label("loop"),
+            instr("nop", vec![]),
+            instr("dbf", vec![CodeOperand::Reg(crate::value::Reg::D0), sym("loop")]),
+            instr("rts", vec![]),
+        ];
+        let e = path_costs(&items, Cpu::M68000, sp()).unwrap_err();
+        assert_eq!(e.kind, BudgetFindingKind::UnboundedLoop);
+    }
+
+    // A computed dispatch (`jmp .table(a1)` — the DMA-queue drain shape) is
+    // refused BY NAME: its destination set is data, and calling it a transfer to
+    // "code outside this proc" would be false — the jump table is right here.
+    #[test]
+    fn a_computed_transfer_is_refused_by_its_own_name() {
+        let items = vec![
+            instr(
+                "jmp",
+                vec![CodeOperand::DispSymInd {
+                    target: "table".into(),
+                    reg: crate::value::Reg::A1,
+                }],
+            ),
+            label("table"),
+            instr("rts", vec![]),
+        ];
+        let e = path_costs(&items, Cpu::M68000, sp()).unwrap_err();
+        assert_eq!(e.kind, BudgetFindingKind::ComputedTransfer { mnemonic: "jmp".into() });
+        // The Z80 twin: `jp (hl)` names no symbol either.
+        let items = vec![instr("jp", vec![CodeOperand::Z80IndHl])];
+        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
+        assert_eq!(e.kind, BudgetFindingKind::ComputedTransfer { mnemonic: "jp".into() });
+    }
+
+    // A ceiling charge holds a budget and refuses an exactness proof — from the
+    // SAME walk, each attribute concluding for itself.
+    #[test]
+    fn a_ceiling_holds_a_budget_but_not_an_exactness_proof() {
+        // jbra to a local join: charged its dearest rung (12), then rts 16.
+        let items = vec![
+            instr("jbra", vec![sym("join")]),
+            label("join"),
+            instr("rts", vec![]),
+        ];
+        assert!(check_cycle_budget(&items, Cpu::M68000, sp(), Some(28), false).is_empty());
+        let f = check_cycle_budget(&items, Cpu::M68000, sp(), Some(27), true);
+        assert_eq!(f.len(), 2);
+        assert_eq!(f[0].kind, BudgetFindingKind::OverBudget { worst: 28, budget: 27 });
+        assert_eq!(f[1].kind, BudgetFindingKind::InexactCost { mnemonic: "jbra".into() });
+    }
+
+    // The 68000 fall-off refusal matches the Z80 one: the body ends without a
+    // return, and closing that path at zero cost would under-report.
+    #[test]
+    fn a_68k_fall_off_the_end_is_unbounded() {
+        let items = vec![instr("nop", vec![]), instr("nop", vec![])];
+        let e = path_costs(&items, Cpu::M68000, sp()).unwrap_err();
+        assert_eq!(
+            e.kind,
+            BudgetFindingKind::UnboundedTransfer { mnemonic: "nop".into() }
+        );
+    }
+
+    // An op the 68000 table does not price is refused by name (`link` is real
+    // 68000 but absent from the corpus and the table).
+    #[test]
+    fn an_off_table_68k_op_is_unknown() {
+        let items = vec![instr("link", vec![]), instr("rts", vec![])];
+        let e = path_costs(&items, Cpu::M68000, sp()).unwrap_err();
+        assert_eq!(e.kind, BudgetFindingKind::UnknownOp { mnemonic: "link".into() });
+    }
+
+    // The DMA drain group's own arithmetic, through the walk: 3× move.l
+    // (a1)+,(a5) at 20 + move.w at 12 = 72 per entry — the dma_queue comment's
+    // "72 cycles/entry" — plus rts 16.
+    #[test]
+    fn the_dma_drain_group_measures_72_per_entry() {
+        let a1 = crate::value::Reg::A1;
+        let a5 = crate::value::Reg::A5;
+        let entry = |w: crate::value::Width| CodeItem::Instr {
+            mnemonic: "move".into(),
+            size: Some(w),
+            ops: vec![CodeOperand::PostInc(a1), CodeOperand::Ind(a5)],
+            span: sp(),
+            as_type: None,
+        };
+        let items = vec![
+            entry(crate::value::Width::L),
+            entry(crate::value::Width::L),
+            entry(crate::value::Width::L),
+            entry(crate::value::Width::W),
+            instr("rts", vec![]),
+        ];
+        let c = path_costs(&items, Cpu::M68000, sp()).unwrap();
+        assert_eq!((c.min, c.max), (88, 88)); // 72 + 16, exact
+        assert_eq!(c.inexact, None);
     }
 
     // A body with no instructions costs nothing on its one empty path.

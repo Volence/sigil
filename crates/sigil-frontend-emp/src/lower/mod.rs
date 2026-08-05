@@ -27,6 +27,7 @@ pub use proc::{
 };
 pub(crate) use code::is_recognized_mnemonic;
 pub(crate) use code::m68k_mnemonic;
+pub(crate) use code::{m68k_default_size, reg_kind};
 pub(crate) use proc::instr_written_regs;
 
 use crate::ast;
