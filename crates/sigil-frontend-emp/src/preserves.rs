@@ -787,10 +787,15 @@ fn apply_link(st: &mut State, ops: &[CodeOperand]) -> Option<String> {
     if *disp > 0 {
         return Some("`link` with a positive displacement raises sp into the caller frame".to_string());
     }
+    // The allocation must fit the slot's byte width to be tracked at all. This
+    // rejects both a nonsense frame size and `i128::MIN`, whose negation does not
+    // exist — `checked_neg` answers the second before the width test sees it.
+    let Some(alloc) = disp.checked_neg().and_then(|n| u32::try_from(n).ok()) else {
+        return Some("`link` frame size does not fit the tracked slot width".to_string());
+    };
     let slot = tag(st, *fp, 4);
     st.stack.push(slot);
     st.frames.push((*fp, st.stack.len()));
-    let alloc = (-*disp) as u32;
     if alloc > 0 {
         st.stack.push(Slot { reg: None, bytes: alloc });
     }
@@ -1432,5 +1437,19 @@ mod frame_tests {
     fn a_positive_link_displacement_bails() {
         let items = [link(0, Reg::A6, 8), rts(1)];
         assert_eq!(check_stack_balance(&items), Vec::new());
+    }
+
+    /// A frame size the slot's byte width cannot hold is untracked, so it bails
+    /// rather than silently truncating to a depth the machine does not have.
+    /// `i128::MIN` rides the same arm — its negation does not exist.
+    #[test]
+    fn an_unrepresentable_frame_size_bails() {
+        for size in [-(u32::MAX as i128) - 1, i128::MIN] {
+            assert_eq!(
+                check_stack_balance(&[link(0, Reg::A6, size), rts(1)]),
+                Vec::new(),
+                "frame size {size} must bail"
+            );
+        }
     }
 }
