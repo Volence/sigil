@@ -205,6 +205,25 @@ pub fn instr_cycles(m: Mnemonic, size: Size, ops: &[CatOp]) -> CycleCost {
         },
 
         // --- integer arithmetic / logic ------------------------------------
+        // The base spellings the encoder REFINES to their immediate/address
+        // forms (`#imm, <mem>` to `addi`-class; `cmp` to an address register to
+        // `cmpa` — the front-end's `refine_m68k_mnemonic`) price AS the refined
+        // form, by recursing into its arm: the numbers keep one owner.
+        (Add | Sub | And | Or | Eor | Cmp, [CatOp::ImmVal(_) | CatOp::Ea(EaCat::Imm), CatOp::Ea(d)])
+            if is_mem(*d) =>
+        {
+            let refined = match m {
+                Add => Addi,
+                Sub => Subi,
+                And => Andi,
+                Or => Ori,
+                Eor => Eori,
+                Cmp => Cmpi,
+                _ => unreachable!("the pattern names these six"),
+            };
+            instr_cycles(refined, size, ops)
+        }
+        (Cmp, [_, CatOp::Ea(EaCat::An)]) => instr_cycles(Cmpa, size, ops),
         // Table 8-4 (standard two-operand). `<ea>, Dn`: byte/word 4 + ea; long
         // 6 + ea, +2 when the source is a register or immediate (the UM's `**`
         // footnote). `Dn, <ea>` (memory destination): byte/word 8 + ea; long
@@ -267,9 +286,10 @@ pub fn instr_cycles(m: Mnemonic, size: Size, ops: &[CatOp]) -> CycleCost {
         // MAXIMUM plus the source fetch. MULU/MULS: 38 + 2n ≤ 70 (n ≤ 16 bit
         // positions). DIVU ≤ 140; DIVS ≤ 158. oracle-next's SingleStepTests-
         // validated exact drivers stay at or below these (DIVS normal path
-        // ≤ 152 + a 4-cycle trailing refill = 156). Exodus charges DIVS a flat
+        // ≤ 152, trailing refill included). Exodus charges DIVS a flat
         // 168 — ABOVE the UM maximum; recorded as a source disagreement, not
-        // adopted: two independent sources agree 158 bounds the hardware.
+        // adopted: two independent sources agree 158 bounds the hardware
+        // (oracle-next's returned range already INCLUDES its trailing refill).
         (Mulu | Muls, [src, CatOp::Ea(EaCat::Dn)]) => match src.cat() {
             Some(s) => at_most(70 + ea_time(s, false)),
             None => CycleCost::Unmodeled,
@@ -404,6 +424,13 @@ pub fn instr_cycles(m: Mnemonic, size: Size, ops: &[CatOp]) -> CycleCost {
         // the corpus. All refuse.
         _ => CycleCost::Unmodeled,
     }
+}
+
+/// A memory effective-address DESTINATION — the categories the `#imm, <mem>`
+/// refinement applies to. Mirrors the front-end encoder's `is_mem_dest`.
+fn is_mem(d: EaCat) -> bool {
+    use EaCat::*;
+    matches!(d, Ind | PostInc | PreDec | Disp16An | Disp8AnXn | AbsW | AbsL)
 }
 
 /// Table 8-4's `<ea>, Dn` row: byte/word 4 + ea; long 6 + ea, plus 2 when the
@@ -726,6 +753,23 @@ mod tests {
         assert_eq!(exact(Scc(Cond::T), Size::B, &[ea(Dn)]), 6);
         assert_eq!(exact(Scc(Cond::F), Size::B, &[ea(Dn)]), 4);
         assert_eq!(exact(Scc(Cond::Eq), Size::B, &[ea(Ind)]), 12); // 8 + 4
+    }
+
+    // The base spellings of the refined forms price as the refined form: the
+    // encoder rewrites `#imm, <mem>` to the `addi` class and `cmp …, An` to
+    // `cmpa`, so the table answers for the instruction that actually encodes.
+    #[test]
+    fn base_spellings_price_as_their_refined_forms() {
+        use EaCat::*;
+        assert_eq!(
+            instr_cycles(Cmp, Size::W, &[CatOp::ImmVal(1), ea(Ind)]),
+            instr_cycles(Cmpi, Size::W, &[CatOp::ImmVal(1), ea(Ind)])
+        );
+        assert_eq!(exact(Cmp, Size::W, &[CatOp::ImmVal(1), ea(Ind)]), 12); // 8 + 4
+        assert_eq!(exact(Add, Size::L, &[CatOp::ImmVal(1), ea(Ind)]), 28); // 20 + 8
+        assert_eq!(exact(And, Size::W, &[CatOp::ImmVal(1), ea(AbsW)]), 20); // 12 + 8
+        assert_eq!(exact(Cmp, Size::W, &[ea(Dn), ea(An)]), 6); // cmpa row
+        assert_eq!(exact(Cmp, Size::L, &[ea(Ind), ea(An)]), 14); // 6 + 8
     }
 
     // Off-table forms refuse: no default cost exists.

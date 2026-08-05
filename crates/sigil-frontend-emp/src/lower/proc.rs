@@ -342,8 +342,14 @@ fn check_cycle_budget(
         let what = match (&f.kind, &proc.falls_into) {
             // A declared fallthrough is not an unknown escape — the successor is
             // named and checked. Its COST still leaves this proc, so the refusal
-            // stands, but the reason the reader gets should be the true one.
-            (crate::cycle_budget::BudgetFindingKind::UnboundedTransfer { .. }, Some(next)) => {
+            // stands, but the reason the reader gets should be the true one. An
+            // EMPTY body with a declared successor is the same fact at zero
+            // instructions.
+            (
+                crate::cycle_budget::BudgetFindingKind::UnboundedTransfer { .. }
+                | crate::cycle_budget::BudgetFindingKind::EmptyBody,
+                Some(next),
+            ) => {
                 format!(
                     "control falls through into `{next}`, so this proc's paths do not end \
                      here — a cycle budget needs every path to end at a return"

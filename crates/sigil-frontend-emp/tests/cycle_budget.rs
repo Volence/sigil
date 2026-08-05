@@ -296,8 +296,8 @@ fn an_off_table_op_is_refused() {
     assert_one(&z80("@budget(cycles: 100)", "    rlca\n    ret\n"), "cycles.unknown-op");
 }
 
-/// There is no 68000 timing model, and a 68k proc carrying a budget is told that
-/// rather than measured against the Z80 table.
+/// A 68k `@budget` measures through the M68000UM table: the ceiling that admits
+/// the worst path holds, one cycle under it fires naming both numbers.
 #[test]
 fn a_68k_budget_bounds_the_worst_path() {
     // moveq 4 + rts 16 = 20, through the M68000UM table.

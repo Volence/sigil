@@ -33,6 +33,7 @@
 //! | an op outside the CPU's cost table | `[cycles.unknown-op]` | no cost is assignable |
 //! | an outcome-split conditional whose two edges cannot be told apart | `[cycles.ambiguous-branch]` | the two costs cannot be routed to their edges |
 //! | inline data in the code stream | `[cycles.inline-data]` | those bytes DECODE if control reaches them, and the CFG does not model them as instructions |
+//! | a body with no instructions | `[cycles.empty-body]` | its one path never returns, so there is no path cost to bound |
 //! | `@cycles_exact` over an instruction whose cost is a CEILING | `[cycles.inexact-cost]` | a maximum can bound a budget but cannot prove an equality |
 //!
 //! On the 68000 some charged costs are MAXIMA rather than exact counts — a
@@ -62,7 +63,7 @@
 //!     so a path reachable only from an `export`ed mid-body label is outside the
 //!     claim.
 
-use crate::flag_check::{branch_target, entry_instr_idx, instr_span, Cfg, Edge};
+use crate::flag_check::{entry_instr_idx, instr_span, Cfg, Edge};
 use crate::value::{CodeItem, CodeOperand, Width};
 use crate::z80_cycles::Cost;
 use sigil_backend_m68k::m68k_cycles::CycleCost;
@@ -121,6 +122,10 @@ pub enum BudgetFindingKind {
     },
     /// `[cycles.inline-data]` — a `DataBuf` spliced into the code stream.
     InlineData,
+    /// `[cycles.empty-body]` — a body with no instructions at all. Its one path
+    /// never executes a return, so there is no path cost to bound: control
+    /// entering it continues into whatever follows.
+    EmptyBody,
     /// `[cycles.inexact-cost]` — `@cycles_exact` over a body containing an
     /// instruction whose charged cost is a CEILING (data-dependent, or
     /// linker-relaxed): a maximum bounds a budget but cannot prove an equality.
@@ -143,6 +148,7 @@ impl BudgetFindingKind {
             Self::AmbiguousBranch { .. } => "cycles.ambiguous-branch",
             Self::UnknownOp { .. } => "cycles.unknown-op",
             Self::InlineData => "cycles.inline-data",
+            Self::EmptyBody => "cycles.empty-body",
             Self::InexactCost { .. } => "cycles.inexact-cost",
         }
     }
@@ -185,6 +191,10 @@ impl BudgetFindingKind {
                  bytes DECODE as instructions if control reaches them — the control-flow \
                  model steps over them, so no path through this proc can be costed"
                 .to_string(),
+            Self::EmptyBody => "this body has no instructions, so its one path never \
+                 executes a return and there is no path cost to bound — control entering \
+                 it continues into whatever follows"
+                .to_string(),
             Self::InexactCost { mnemonic } => format!(
                 "`@cycles_exact` needs every instruction to cost one exact number, but \
                  `{mnemonic}`'s charge is a ceiling (data-dependent, or decided by the \
@@ -210,8 +220,9 @@ pub struct PathCosts {
     pub min: u64,
     /// The dearest path from entry to a return.
     pub max: u64,
-    /// The first (lowest item index) reachable instruction whose charged cost is
-    /// a CEILING rather than an exact count — `None` when every charge is exact.
+    /// The MNEMONIC of the first (lowest item index) reachable instruction whose
+    /// charged cost is a CEILING rather than an exact count — `None` when every
+    /// charge is exact.
     /// `max` is then an upper bound on the machine's worst path (sound for
     /// `@budget`); an equality proof over it is not a proof (`@cycles_exact`
     /// refuses through [`BudgetFindingKind::InexactCost`]).
@@ -268,7 +279,8 @@ fn cpu_edges(cfg: &Cfg, cpu: Cpu, idx: usize) -> Vec<Edge> {
 /// Measure a proc body's path costs, or say why it cannot be measured.
 ///
 /// `items` is the proc's evaluated `CodeBuf`; `cpu` selects the timing model and
-/// the edge model. A body with no instructions costs zero on its one empty path.
+/// the edge model. A body with no instructions is refused ([`BudgetFindingKind::
+/// EmptyBody`]): only a return ends a charged path, and an empty body has none.
 pub fn path_costs(items: &[CodeItem], cpu: Cpu, decl_span: Span) -> Result<PathCosts, BudgetFinding> {
     // Inline data is not an `Instr`, so the CFG links straight across it and would
     // charge it nothing — while on hardware those bytes decode and execute if
@@ -282,7 +294,7 @@ pub fn path_costs(items: &[CodeItem], cpu: Cpu, decl_span: Span) -> Result<PathC
         return Err(BudgetFinding { kind: BudgetFindingKind::InlineData, span });
     }
     let Some(entry) = entry_instr_idx(items) else {
-        return Ok(PathCosts { min: 0, max: 0, inexact: None });
+        return Err(BudgetFinding { kind: BudgetFindingKind::EmptyBody, span: decl_span });
     };
     let cfg = Cfg::build(items);
     // A DFS that (a) proves the reachable subgraph is acyclic and (b) leaves a
@@ -414,6 +426,16 @@ fn charged_edges(
     // escapes the body is unboundable whatever the instruction costs, and for a
     // computed transfer (`jp (hl)`) an "add it to the table" refusal would be a
     // misleading invitation — a table entry would not make it boundable.
+    // A transfer NAMES its target when any operand carries a symbol — the bare
+    // `Sym` a branch takes, or the pinned/offset absolutes (`jmp (Sym).w`,
+    // `jmp Item.field`) the abs seam lowers. Only a target the program text
+    // does not name at all (`jp (hl)`, `jmp .table(a1)`) is computed.
+    let names_a_target = ops.iter().any(|o| {
+        matches!(
+            o,
+            CodeOperand::Sym(_) | CodeOperand::SymOff { .. } | CodeOperand::AbsSym { .. }
+        )
+    });
     for e in &edges {
         match e {
             // Transferring out with no symbolic target is a COMPUTED transfer
@@ -421,7 +443,7 @@ fn charged_edges(
             // because "code outside this proc" may be false — a jump-table
             // dispatch lands inside its own body, through addresses the walk
             // cannot enumerate.
-            Edge::Defer if branch_target(ops).is_none() => {
+            Edge::Defer if !names_a_target => {
                 return bail(BudgetFindingKind::ComputedTransfer {
                     mnemonic: mnem.to_string(),
                 })
@@ -850,12 +872,17 @@ mod tests {
         assert_eq!(c.inexact, None);
     }
 
-    // A body with no instructions costs nothing on its one empty path.
+    // A body with no instructions cannot hold a budget: its one path never
+    // returns, and a zero-cost vacuous pass would certify paths that escape.
     #[test]
-    fn an_empty_body_costs_nothing() {
+    fn an_empty_body_cannot_hold_a_budget() {
         let items = vec![label("only")];
-        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
-        assert_eq!((c.min, c.max), (0, 0));
+        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
+        assert_eq!(e.kind, BudgetFindingKind::EmptyBody);
+        assert_eq!(
+            path_costs(&[], Cpu::M68000, sp()).unwrap_err().kind,
+            BudgetFindingKind::EmptyBody
+        );
     }
 
     // The budget compares against the WORST path, not the best.

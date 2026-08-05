@@ -54,33 +54,40 @@ pub fn instr_cost(mnemonic: &str, size: Option<Width>, ops: &[CodeOperand]) -> C
         return CycleCost::Unmodeled;
     };
     // The branch families price on width, and an ABSENT width is the relax
-    // ladder, not a default.
+    // ladder, not a default. Their symbolic target is a DISPLACEMENT, not an
+    // effective address, so it must not classify (a bare-`Sym` EA would wrongly
+    // clear `exact`) — each arm asks the ISA table with no operands.
     match m {
-        Mnemonic::Bra => return CycleCost::Fixed { cycles: 10, exact: true },
-        Mnemonic::Bsr => return CycleCost::Fixed { cycles: 18, exact: true },
+        Mnemonic::Bra | Mnemonic::Bsr => return instr_cycles(m, Size::S, &[]),
         Mnemonic::Bcc(_) => {
             return match size {
-                Some(Width::S) => CycleCost::Branch { taken: 10, not_taken: 8, exact: true },
-                Some(Width::W) => CycleCost::Branch { taken: 10, not_taken: 12, exact: true },
-                // Unsized: the linker picks `.s` or `.w`; the taken side costs 10
-                // on both rungs, the not-taken side is charged its `.w` maximum.
-                None => CycleCost::Branch { taken: 10, not_taken: 12, exact: false },
-                Some(_) => CycleCost::Unmodeled,
+                Some(w) => instr_cycles(m, isa_size(w), &[]),
+                // Unsized: the linker picks `.s` or `.w`. The ceiling is derived
+                // from the table's own two rungs — taken agrees on both, the
+                // not-taken side is charged the dearer.
+                None => {
+                    match (instr_cycles(m, Size::S, &[]), instr_cycles(m, Size::W, &[])) {
+                        (
+                            CycleCost::Branch { taken, not_taken: nt_s, .. },
+                            CycleCost::Branch { not_taken: nt_w, .. },
+                        ) => CycleCost::Branch {
+                            taken,
+                            not_taken: nt_s.max(nt_w),
+                            exact: false,
+                        },
+                        _ => CycleCost::Unmodeled,
+                    }
+                }
             };
         }
-        // DBcc is non-relaxable (one d16 form), so its symbolic target is not a
-        // width choice and must not price as one — it is a displacement, not an
-        // effective address.
+        // DBcc is non-relaxable (one d16 form): one rung, one row.
         Mnemonic::Dbcc(_) => {
             return instr_cycles(m, Size::W, &[]);
         }
         _ => {}
     }
     let isa_size = match size {
-        Some(Width::B) => Size::B,
-        Some(Width::W) => Size::W,
-        Some(Width::L) => Size::L,
-        Some(Width::S) => Size::S,
+        Some(w) => isa_size(w),
         None => match m68k_default_size(m) {
             Some(s) => s,
             None => return CycleCost::Unmodeled,
@@ -100,6 +107,16 @@ pub fn instr_cost(mnemonic: &str, size: Option<Width>, ops: &[CodeOperand]) -> C
             CycleCost::Branch { taken, not_taken, exact: e && exact }
         }
         CycleCost::Unmodeled => CycleCost::Unmodeled,
+    }
+}
+
+/// The ISA-side size for a surface width suffix.
+fn isa_size(w: Width) -> Size {
+    match w {
+        Width::B => Size::B,
+        Width::W => Size::W,
+        Width::L => Size::L,
+        Width::S => Size::S,
     }
 }
 
