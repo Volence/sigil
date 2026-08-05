@@ -8,8 +8,8 @@
 //! WHY IDS AND NOT COUNTS. The house baseline shape (`out_verify_corpus`'s
 //! `D1C_BASELINE`) pins identified rows, and the natural analogue here would be a
 //! per-`(shape, id)` count. It is deliberately NOT pinned, for two reasons:
-//!   - The counts are SHAPE-DEPENDENT and move on ordinary engine work — most
-//!     `[proc.sr-undeclared]` firings are the `assert` desugar's own
+//!   - The counts are SHAPE-DEPENDENT and move on ordinary engine work — every
+//!     `[proc.sr-undeclared]` firing is the `assert` desugar's own
 //!     `move.w sr,-(sp)` / `move.w (sp)+,sr` pair, so adding one debug assert to one
 //!     proc moves the number. A baseline that churns on unrelated work gets
 //!     rubber-stamped, and a rubber-stamped gate asserts nothing.
@@ -41,22 +41,31 @@ const CORPUS_LINTS: &[&str] = &[
     "module.path-mismatch",
     "proc.clobber-undeclared",
     "proc.out-unwritten",
-    "proc.sr-undeclared",
     "proc.undeclared-fallthrough",
 ];
 
-/// The firing set per build shape. Every SHIPPED shape has its own row, so a lint
-/// that fires in one shape only cannot hide behind a shape nobody watches. The rows
-/// share [`CORPUS_LINTS`] while their sets agree; a shape that diverges spells its
-/// own set out, and that divergence is then visible in the diff.
+/// What a `DEBUG == 1` shape fires ON TOP of [`CORPUS_LINTS`].
+///
+/// `proc.sr-undeclared` is a shape-only class because `assert` is: the desugar
+/// emits its own `move.w sr,-(sp)` … `move.w (sp)+,sr` pair and the lint charges
+/// the compiler's code to the asserting proc, so the class appears exactly where
+/// asserts compile. Every hand-written SR write in the corpus is declared, so with
+/// the asserts elided it does not fire at all.
+const DEBUG_ONLY_LINTS: &[&str] = &["proc.sr-undeclared"];
+
+/// The firing set per build shape, spelled as [`CORPUS_LINTS`] plus whatever that
+/// shape adds. Every SHIPPED shape has its own row, so a lint that fires in one
+/// shape only cannot hide behind a shape nobody watches — and because the shared
+/// ids live in ONE list, retiring a class corpus-wide stays the one-line diff it
+/// should be while a shape-only class is visible as its own entry.
 const WARN_ID_BASELINE: &[(&str, &[&str])] = &[
-    ("sonic4 plain", CORPUS_LINTS),
-    ("sonic4 debug", CORPUS_LINTS),
-    ("demo plain", CORPUS_LINTS),
-    ("demo debug", CORPUS_LINTS),
-    ("config_a", CORPUS_LINTS),
-    ("config_b", CORPUS_LINTS),
-    ("lean", CORPUS_LINTS),
+    ("sonic4 plain", &[]),
+    ("sonic4 debug", DEBUG_ONLY_LINTS),
+    ("demo plain", &[]),
+    ("demo debug", DEBUG_ONLY_LINTS),
+    ("config_a", DEBUG_ONLY_LINTS),
+    ("config_b", &[]),
+    ("lean", &[]),
 ];
 
 /// The reference tree, or `None` when it is absent and strict mode is off.
@@ -81,10 +90,14 @@ type ShapeWarnings = (&'static str, Vec<native::BuildWarning>);
 /// binary — the gates below share one measurement rather than each paying for its
 /// own lowering.
 ///
-/// All seven are watched, not a canonical subset: the off-canonical shapes differ by
-/// comptime defines that DO gate lint-bearing code (`lean` drops
-/// `ErrorHandlerBlob`'s `[proc.undeclared-fallthrough]` and gains `ReleaseFault`'s
-/// `[proc.sr-undeclared]`), so a shape-only lint is a real escape route.
+/// All seven are watched, not a canonical subset: the shapes differ by comptime
+/// defines that DO gate lint-bearing code, and the divergence reaches the ID SET
+/// this gate pins — the three `DEBUG == 1` shapes are the only ones where
+/// `[proc.sr-undeclared]` fires at all, so a shape-only lint is a real escape
+/// route. (Shapes also diverge below the id set, which this gate deliberately does
+/// not watch: `lean` fires one fewer `[proc.undeclared-fallthrough]` than the
+/// canonical shapes because it drops `ErrorHandlerBlob`, and the class stays in
+/// its row.)
 fn corpus_warnings() -> Option<&'static [ShapeWarnings]> {
     static CACHE: OnceLock<Option<Vec<ShapeWarnings>>> = OnceLock::new();
     CACHE
@@ -122,14 +135,12 @@ fn warn_tier_lint_ids_match_the_frozen_baseline() {
 
     for (label, warnings) in shapes {
         let got: BTreeSet<&str> = warnings.iter().map(|w| w.id.as_str()).collect();
-        let want: BTreeSet<&str> = WARN_ID_BASELINE
+        let extra = WARN_ID_BASELINE
             .iter()
             .find(|(l, _)| l == label)
             .unwrap_or_else(|| panic!("no baseline row for shape `{label}`"))
-            .1
-            .iter()
-            .copied()
-            .collect();
+            .1;
+        let want: BTreeSet<&str> = CORPUS_LINTS.iter().chain(extra).copied().collect();
 
         let appeared: Vec<_> = got.difference(&want).collect();
         let vanished: Vec<_> = want.difference(&got).collect();
@@ -141,6 +152,58 @@ fn warn_tier_lint_ids_match_the_frozen_baseline() {
              Adjudicate each id and update WARN_ID_BASELINE in the same commit."
         );
     }
+}
+
+/// EVERY surviving `[proc.sr-undeclared]` firing is the `assert` desugar's own
+/// save/restore pair — the property [`DEBUG_ONLY_LINTS`] asserts in prose, made
+/// executable.
+///
+/// This is the gate that keeps the id set honest for a class that is now 100%
+/// compiler-generated. Listing `proc.sr-undeclared` in the `DEBUG == 1` rows
+/// admits the class, and an id SET cannot tell 43 firings from 44 — so without
+/// this, a NEW hand-written undeclared SR write in any debug-gated proc would
+/// join the crowd and never be seen again.
+///
+/// A COUNT would also catch it, and was rejected for this id on measured grounds
+/// (see the header): adding one debug assert to one proc moves the number, so the
+/// baseline would churn on work that has nothing to do with it and get
+/// rubber-stamped. This asserts the property instead, which is what the project
+/// actually controls — a new assert is still an assert and changes nothing here,
+/// while the first hand-written SR write to go undeclared fails immediately with
+/// the site named. Its kill condition is the desugar's own: when sigil stops
+/// linting its own emitted code this whole class goes to zero and the gate below
+/// starts asserting emptiness on its own.
+#[test]
+fn every_surviving_sr_firing_is_the_assert_desugar() {
+    let Some(shapes) = corpus_warnings() else { return };
+    let Some(aeon) = aeon_dir() else { return };
+
+    let mut seen = 0usize;
+    for (label, warnings) in shapes {
+        for w in warnings.iter().filter(|w| w.id == "proc.sr-undeclared") {
+            let loc = w.location.as_deref().unwrap_or_else(|| {
+                panic!("`{label}`: an sr-undeclared firing with no source location: {}", w.message)
+            });
+            // `path:line:col`, the path relative to the scanned aeon root.
+            let (path, rest) = loc.rsplit_once(':').and_then(|(p, _col)| p.rsplit_once(':')).unwrap_or_else(
+                || panic!("`{label}`: unparseable location `{loc}`"),
+            );
+            let line: usize = rest.parse().unwrap_or_else(|_| panic!("`{label}`: `{loc}`"));
+            let text = std::fs::read_to_string(aeon.join(path))
+                .unwrap_or_else(|e| panic!("`{label}`: cannot read `{path}`: {e}"));
+            let src = text.lines().nth(line - 1).unwrap_or_else(|| panic!("`{label}`: `{loc}`"));
+            assert!(
+                src.contains("assert."),
+                "`{label}`: a HAND-WRITTEN SR write is undeclared at {loc}:\n  {}\n\
+                 Declare `clobbers(sr)`, or `preserves(sr)` if the body save/restores it — \
+                 every other firing in this class is the `assert` desugar's own pair.",
+                src.trim()
+            );
+            seen += 1;
+        }
+    }
+    // Cannot pass by measuring nothing: the DEBUG shapes fire this class today.
+    assert!(seen > 0, "no sr-undeclared firing was examined — measure before trusting");
 }
 
 /// Every warn-tier diagnostic the corpus fires carries a `[area.name]` id.
