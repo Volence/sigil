@@ -1637,8 +1637,9 @@ impl Parser {
     /// already have been eaten. As of C1 item 2 all three share ONE grammar: a
     /// list of segments, each a single register or an inclusive `lo-hi` range
     /// (`d0-d3/a1`, the movem-reglist form), separated by `/` OR `,` (comma
-    /// singles stay legal for `clobbers`/`out` back-compat; `sr` composes as a
-    /// single). The empty form (`()`) yields an empty vec — the explicit
+    /// singles stay legal for `clobbers`/`out` back-compat; `sr` and its half
+    /// tokens `sr.mask`/`sr.ccr` compose as singles). The empty form (`()`)
+    /// yields an empty vec — the explicit
     /// "touches nothing" / "returns nothing" contract, distinct from no
     /// declaration at all. Register-name VALIDITY + range expansion is a
     /// lowering-time check (`[proc.clobber-invalid]` / `[proc.out-invalid]` /
@@ -1648,9 +1649,9 @@ impl Parser {
         let mut list = Vec::new();
         if !self.at(&Tok::RParen) {
             loop {
-                let lo = self.expect_ident("register");
+                let lo = self.reg_segment_name("register");
                 let hi = if self.eat(&Tok::Minus) {
-                    Some(self.expect_ident("range-end register"))
+                    Some(self.reg_segment_name("range-end register"))
                 } else {
                     None
                 };
@@ -1664,6 +1665,20 @@ impl Parser {
         }
         self.expect(&Tok::RParen, "`)`");
         list
+    }
+
+    /// Parse one reglist segment ENDPOINT: an identifier, optionally carrying one
+    /// dotted suffix — the spelling the SR half tokens use (`sr.mask` / `sr.ccr`).
+    /// The dotted name flows through as a single string; its validity is a
+    /// lowering check (`[proc.*-invalid]`) like every other endpoint spelling, per
+    /// the clause grammar's defer-validity rule.
+    fn reg_segment_name(&mut self, what: &str) -> String {
+        let mut name = self.expect_ident(what);
+        if self.eat(&Tok::Dot) {
+            name.push('.');
+            name.push_str(&self.expect_ident("register-half name"));
+        }
+        name
     }
 
     /// Parse the `out(...)` clause body — the register reglist PLUS the §6 flag
@@ -1686,7 +1701,7 @@ impl Parser {
         if !self.at(&Tok::RParen) {
             loop {
                 let seg_start = self.span();
-                let lo = self.expect_ident("register or flag");
+                let lo = self.reg_segment_name("register or flag");
                 if self.eat(&Tok::Colon) {
                     if is_register_name(&lo) {
                         // `dN: Type` — a typed data-register result (G5 §7 tier
@@ -1708,7 +1723,7 @@ impl Parser {
                     }
                 } else {
                     let hi = if self.eat(&Tok::Minus) {
-                        Some(self.expect_ident("range-end register"))
+                        Some(self.reg_segment_name("range-end register"))
                     } else {
                         None
                     };

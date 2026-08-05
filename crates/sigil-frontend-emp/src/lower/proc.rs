@@ -942,21 +942,27 @@ fn check_clobbers(
     // CONTEXT, not to this proc — see [`region_round_trips_sr`].
     let sr_by_context: Vec<&crate::context::Region> =
         regions.iter().filter(|r| region_round_trips_sr(&buf.items, r)).collect();
+    // Whether `preserves` covers any SR half — computed once, read per item.
+    let pres_sr_any = reglist_set_quiet(&proc.preserves).sr.any();
 
     for (idx, item) in buf.items.iter().enumerate() {
         let CodeItem::Instr { mnemonic, ops, span, .. } = item else { continue };
         // An SR destination is a machine-state clobber (tranche 5): undeclared
-        // unless the contract carries `clobbers(sr)`/`out(sr)` or `preserves(sr)`
-        // (the latter's balance is checked separately), or the write sits in a
-        // context's spliced acquire/release, where the BRACKET is the
-        // declaration. The bracketed BODY is this proc's own code, so a
-        // hand-written SR write there still fires. Only a write-form mnemonic
-        // can target SR.
+        // unless the contract addresses SR at all — any SR-family token
+        // (`sr`/`sr.mask`/`sr.ccr`) in `clobbers`/`out`/`preserves` counts
+        // (the preserves balance is checked separately), or the write sits in
+        // a context's spliced acquire/release, where the BRACKET is the
+        // declaration. A HALF token satisfies this heuristic lint even for a
+        // whole-SR write: the proc that declares `preserves(sr.mask)` has
+        // named its SR traffic, and what each half's claim MEANS is the
+        // contract checks' job, not this warn tier's. The bracketed BODY is
+        // this proc's own code, so a hand-written SR write there still fires.
+        // Only a write-form mnemonic can target SR.
         if writes_dest_register(mnemonic)
             && matches!(ops.last(), Some(CodeOperand::Sr))
-            && !clob.has_sr
-            && !outs.has_sr
-            && !proc.preserves.iter().any(|(lo, hi)| lo == "sr" && hi.is_none())
+            && !clob.sr.any()
+            && !outs.sr.any()
+            && !pres_sr_any
             && !sr_by_context.iter().any(|r| r.in_acquire(idx) || r.in_release(idx))
         {
             push(
@@ -1157,28 +1163,35 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
     // convention).
     let mut declared: u16 = 0;
     let mut bad = false;
-    let mut preserves_sr = false;
+    // The SR family is contract vocabulary (tranche 5 / the sr split): not
+    // movem registers, so each token rides its OWN verification below instead
+    // of the mask fold. `sr` means both halves; `sr.mask`/`sr.ccr` name one.
+    // The bare token is tracked apart from its halves because verification
+    // dispatches on the SPELLING: bare `sr` keeps the historical round-trip
+    // slice only (its CCR half stays unverified — ledgered, S2-D7), while an
+    // explicit `sr.ccr` claim must prove its half or refuse. Alone only — an
+    // SR token in a range falls through to the invalid-register error.
+    let mut pres_sr = SrCover::default();
+    let mut explicit_bare_sr = false;
+    let mut explicit_sr_ccr = false;
     for (lo, hi) in &proc.preserves {
-        // `sr` is contract vocabulary since tranche 5 (S2-D7's first slice):
-        // not a movem register, so it rides its OWN save/restore-balance
-        // check below instead of the mask fold. Alone only — `sr` in a
-        // range falls through to the invalid-register error.
-        if lo == "sr" && hi.is_none() {
-            preserves_sr = true;
+        if hi.is_none() && pres_sr.fold_token(lo) {
+            explicit_bare_sr |= lo == "sr";
+            explicit_sr_ccr |= lo == "sr.ccr";
             continue;
         }
-        // `ccr` contracts are flag-LIVENESS territory (nearly every
-        // instruction writes CCR) — that is S2-D7's dataflow half, not this
-        // syntactic slice. Steer rather than pretend.
+        // Bare `ccr` is not a contract token — the CCR half of SR is spelled
+        // `sr.ccr` (one spelling for the partition). Steer rather than accept a
+        // synonym.
         if lo == "ccr" && hi.is_none() {
             push(
                 diags,
                 Level::Error,
                 proc.span,
                 format!(
-                    "[proc.preserves-invalid] `{}` declares `preserves(ccr)` — CCR contracts \
-                     need flag-liveness dataflow (S2-D7), not the syntactic slice; only `sr` \
-                     is declarable today",
+                    "[proc.preserves-invalid] `{}` declares `preserves(ccr)` — the \
+                     condition-code half of SR is spelled `preserves(sr.ccr)` (bare `sr` \
+                     covers both halves)",
                     proc.name
                 ),
             );
@@ -1244,21 +1257,28 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
 
     // A register cannot be both preserved and clobbered — a contradictory
     // contract is diagnosed, not resolved. Expand the clobbers reglist quietly
-    // (C1 item 2 — `check_clobbers` owns its diagnostics). (`sr` first: it has
-    // no mask bit.)
+    // (C1 item 2 — `check_clobbers` owns its diagnostics). (The SR family
+    // first: it has no mask bits.) The test is per HALF, so the honest
+    // partition `preserves(sr.mask) clobbers(sr.ccr)` is legal while bare `sr`
+    // against either half still contradicts (bare `sr` covers both).
     let clob = reglist_set_quiet(proc.clobbers.as_deref().unwrap_or(&[]));
-    if preserves_sr && clob.has_sr {
-        push(
-            diags,
-            Level::Error,
-            proc.span,
-            format!(
-                "[proc.preserves-clobbers-overlap] `{}` declares `sr` both preserved and \
-                 clobbered — a register cannot be in both sets",
-                proc.name
-            ),
-        );
-        return;
+    for (covered, half) in
+        [(pres_sr.mask && clob.sr.mask, "sr.mask"), (pres_sr.ccr && clob.sr.ccr, "sr.ccr")]
+    {
+        if covered {
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!(
+                    "[proc.preserves-clobbers-overlap] `{}` declares the `{half}` half of SR \
+                     both preserved and clobbered (bare `sr` covers both halves) — a machine \
+                     state cannot be in both sets",
+                    proc.name
+                ),
+            );
+            return;
+        }
     }
     for c in &clob.regs {
         if let Some(bit) = preserves_reg_bit(c) {
@@ -1278,11 +1298,22 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
         }
     }
 
-    if preserves_sr {
-        check_preserves_sr(proc, buf, diags);
+    // Verification dispatches on the declared SPELLING. A mask claim (bare `sr`
+    // or `sr.mask`) runs the whole-SR round-trip slice — the save/restore pair
+    // restores both halves, so the proof covers the mask wherever it covered
+    // bare `sr`. An EXPLICIT `sr.ccr` additionally runs the CCR slice, which
+    // demands every flag effect sit inside the bracket; bare `sr` deliberately
+    // does NOT run it — its CCR half stays verified only by the round-trip's
+    // restore (the historical bar, kept so no adopter is invalidated; the gap
+    // is ledgered against S2-D7's dataflow half).
+    if pres_sr.mask {
+        check_preserves_sr(proc, buf, if explicit_bare_sr { "sr" } else { "sr.mask" }, diags);
+    }
+    if explicit_sr_ccr {
+        check_preserves_sr_ccr(proc, buf, diags);
     }
     if declared == 0 {
-        return; // sr-only contract: no movem pair to demand
+        return; // SR-family-only contract: no movem pair to demand
     }
 
     // §5 verified preserves (the dataflow upgrade — subsumes the D2.32 movem-pair
@@ -1529,6 +1560,82 @@ fn check_out(
         }
     }
 
+    // The SR-half partition (the sr split). A flag result (`out(carry: …)`)
+    // lives in CCR and a conditional result's `if cc` guard is read from CCR,
+    // so either DEMANDS the condition codes carry this proc's exit state to
+    // the caller — which contradicts a contract restoring them to entry
+    // (`preserves` covering `sr.ccr`, including bare `sr`) or licensing their
+    // destruction (`clobbers` covering `sr.ccr`). The mask half is disjoint
+    // from every flag, so `preserves(sr.mask)` co-declares cleanly — that pair
+    // of facts is what the split exists to surface. SR tokens in the out
+    // reglist itself partition the same way, per half.
+    let out_sr = SrCover {
+        mask: out_set.sr.mask,
+        ccr: out_set.sr.ccr || !proc.out_flags.is_empty() || !proc.out_cond.is_empty(),
+    };
+    let pres_sr = reglist_set_quiet(&proc.preserves).sr;
+    // What the CCR demand should be NAMED as in a message: the flag result if
+    // one exists, else the cond guard, else the declared `out` SR token.
+    let ccr_result = proc
+        .out_flags
+        .first()
+        .map(|f| format!("out({}: {})", f.flag, f.name))
+        .or_else(|| proc.out_cond.first().map(|c| format!("out({} if {})", c.reg, c.cc)))
+        .unwrap_or_else(|| "out(sr.ccr)".to_string());
+    if out_sr.ccr && pres_sr.ccr {
+        push(
+            diags,
+            Level::Error,
+            proc.span,
+            format!(
+                "[proc.out-preserves-overlap] `{}` declares `{ccr_result}` and preserves the \
+                 condition codes (bare `sr` covers both halves) — a flag result lives in CCR, \
+                 so CCR either carries the result or is restored to entry, not both (declare \
+                 `preserves(sr.mask)` if only the interrupt mask round-trips)",
+                proc.name
+            ),
+        );
+    }
+    if out_sr.ccr && clobbers.sr.ccr {
+        push(
+            diags,
+            Level::Error,
+            proc.span,
+            format!(
+                "[proc.out-clobbers-overlap] `{}` declares `{ccr_result}` and clobbers the \
+                 condition codes (bare `sr` covers both halves) — a flag result lives in CCR, \
+                 so CCR either carries the result or is destroyed scratch, not both",
+                proc.name
+            ),
+        );
+    }
+    if out_sr.mask && pres_sr.mask {
+        push(
+            diags,
+            Level::Error,
+            proc.span,
+            format!(
+                "[proc.out-preserves-overlap] `{}` declares the `sr.mask` half of SR both \
+                 output and preserved (bare `sr` covers both halves) — a machine state is \
+                 either a returned result or left untouched, not both",
+                proc.name
+            ),
+        );
+    }
+    if out_sr.mask && clobbers.sr.mask {
+        push(
+            diags,
+            Level::Error,
+            proc.span,
+            format!(
+                "[proc.out-clobbers-overlap] `{}` declares the `sr.mask` half of SR both \
+                 output and clobbered (bare `sr` covers both halves) — a machine state is \
+                 either a returned result or destroyed scratch, not both",
+                proc.name
+            ),
+        );
+    }
+
     // out-unwritten — a declared output never written on any path is a false
     // claim. Same write detection as check_clobbers (the shared
     // [`instr_written_regs`] detector via [`proc_written_registers`]).
@@ -1550,15 +1657,19 @@ fn check_out(
     }
 }
 
-/// The `preserves(sr)` save/restore-balance check (tranche 5 — S2-D7's first
-/// syntactic slice; Sound_PostByte is the exhibit): if the body writes SR at
-/// all, a `move.w sr, -(sp)` save must precede the FIRST SR write and the
-/// LAST SR write must be the `move.w (sp)+, sr` restore. Static order only —
-/// no path analysis (a save/restore split across branches is S2-D7's
-/// dataflow half); a body with NO SR writes preserves vacuously.
+/// The mask-claim save/restore-balance check (tranche 5 — S2-D7's first
+/// syntactic slice; Sound_PostByte is the exhibit), run for `preserves(sr)`
+/// AND `preserves(sr.mask)` (`token` names the declared spelling for the
+/// message): if the body writes SR at all, a `move.w sr, -(sp)` save must
+/// precede the FIRST SR write and the LAST SR write must be the
+/// `move.w (sp)+, sr` restore. The full-SR round trip restores both halves,
+/// so one proof serves either claim. Static order only — no path analysis (a
+/// save/restore split across branches is S2-D7's dataflow half); a body with
+/// NO SR writes preserves vacuously.
 fn check_preserves_sr(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,
+    token: &str,
     diags: &mut Vec<Diagnostic>,
 ) {
     if !sr_writes_round_trip(buf.items.iter()) {
@@ -1567,13 +1678,145 @@ fn check_preserves_sr(
             Level::Error,
             proc.span,
             format!(
-                "[proc.preserves-sr-unbalanced] `{}` declares `preserves(sr)` but its body's \
-                 SR writes are not bracketed by the `move.w sr, -(sp)` … `move.w (sp)+, sr` \
-                 pair (the syntactic slice checks static order; path-sensitive save/restore \
-                 is S2-D7)",
+                "[proc.preserves-sr-unbalanced] `{}` declares `preserves({token})` but its \
+                 body's SR writes are not bracketed by the `move.w sr, -(sp)` … \
+                 `move.w (sp)+, sr` pair (the syntactic slice checks static order; \
+                 path-sensitive save/restore is S2-D7)",
                 proc.name
             ),
         );
+    }
+}
+
+/// The `preserves(sr.ccr)` slice: the condition codes at every return must be
+/// the caller's own. Provable today in exactly one static shape — every
+/// CCR-affecting instruction sits inside a `move.w sr, -(sp)` …
+/// `move.w (sp)+, sr` bracket (the restore puts back the entry CCR the save
+/// captured), and only CC-transparent instructions run outside it. Anything
+/// this slice cannot see REFUSES with `[proc.preserves-unverifiable]` — a
+/// wrong contract is worse than none (the D2.32 principle) — mirroring
+/// `[proc.out-cond-survives-unverifiable]`'s stance of never trusting a flag
+/// claim the analysis cannot discharge.
+///
+/// Refusal set, each named in the message: a flag effect outside the bracket
+/// (including any call — the callee's flags are unknown), an unconditional
+/// tail transfer anywhere (the flags the caller finally sees are the
+/// target's), a return between save and restore (that path skips the
+/// restore), nested saves, an unmatched save, and the CCR-popping returns
+/// (`rtr`/`rte`). Sequential brackets are legal — between them only
+/// transparent instructions can run, so each save recaptures the entry CCR.
+///
+/// Static order only, like [`check_preserves_sr`], and with the same known
+/// blindness: a conditional branch AROUND the restore is invisible (S2-D7's
+/// dataflow half is the real answer), and the round trip assumes a balanced
+/// stack at the restore (S2-D7(b), the same deferral `region_round_trips_sr`
+/// states).
+fn check_preserves_sr_ccr(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    diags: &mut Vec<Diagnostic>,
+) {
+    if let Some(why) = ccr_bracket_refusal(&buf.items) {
+        push(
+            diags,
+            Level::Error,
+            proc.span,
+            format!(
+                "[proc.preserves-unverifiable] `{}` declares `preserves(sr.ccr)` but the \
+                 condition codes are not provably the caller's at return: {why} (the slice \
+                 accepts only flag effects bracketed by the `move.w sr, -(sp)` … \
+                 `move.w (sp)+, sr` pair; path-sensitive flag liveness is S2-D7)",
+                proc.name
+            ),
+        );
+    }
+}
+
+/// The [`check_preserves_sr_ccr`] walk: `None` iff every CCR effect in `items`
+/// is bracketed by the SR save/restore pair, else the first refusal reason.
+fn ccr_bracket_refusal(items: &[CodeItem]) -> Option<String> {
+    use crate::value::{CodeOperand, Reg};
+    let mut saved = false;
+    for item in items {
+        let CodeItem::Instr { mnemonic, ops, .. } = item else { continue };
+        // The bracket's own halves.
+        if matches!(ops.as_slice(), [CodeOperand::Sr, CodeOperand::PreDec(Reg::A7)]) {
+            if saved {
+                return Some("a nested `move.w sr, -(sp)` save (the slice pairs one at a time)".into());
+            }
+            saved = true;
+            continue;
+        }
+        if matches!(ops.as_slice(), [CodeOperand::PostInc(Reg::A7), CodeOperand::Sr]) {
+            if !saved {
+                return Some("a `move.w (sp)+, sr` restore with no prior save".into());
+            }
+            saved = false;
+            continue;
+        }
+        match ccr_effect(mnemonic) {
+            CcrEffect::Transparent => {}
+            CcrEffect::Returns => {
+                if saved {
+                    return Some(format!(
+                        "`{mnemonic}` returns between the save and the restore, skipping it"
+                    ));
+                }
+            }
+            CcrEffect::Leaves => {
+                return Some(format!(
+                    "control leaves through `{mnemonic}` — the flags the caller sees are the \
+                     target's"
+                ));
+            }
+            CcrEffect::Writes => {
+                if !saved {
+                    return Some(format!(
+                        "`{mnemonic}` affects the condition codes outside the bracket"
+                    ));
+                }
+            }
+        }
+    }
+    if saved {
+        return Some("the `move.w sr, -(sp)` save is never restored".into());
+    }
+    None
+}
+
+/// How one mnemonic bears on the CCR slice's bracket walk.
+enum CcrEffect {
+    /// Provably does not write CCR and stays in the proc (address arithmetic,
+    /// conditional branches, `dbcc`).
+    Transparent,
+    /// A plain return (`rts`/`rtd`) — legal outside the bracket, a refusal
+    /// inside it (that path would skip the restore).
+    Returns,
+    /// An unconditional tail transfer — the proc's final flags are the
+    /// target's, which the slice cannot see.
+    Leaves,
+    /// Writes (or may write) CCR: every data operation, any call (the
+    /// callee's flags are unknown), and the CCR-popping returns `rtr`/`rte`.
+    Writes,
+}
+
+/// Classify `mnemonic` for [`ccr_bracket_refusal`]. Deliberately conservative,
+/// like [`crate::out_verify::cc_transparent`] (whose base allowlist this
+/// reuses): an unmodeled mnemonic WRITES rather than silently preserving a
+/// stale flag. Divergences from that predicate, each because this slice asks
+/// "is the ENTRY CCR intact" rather than "is a computed flag intact": calls
+/// return with the callee's flags (writes), `rtr`/`rte` pop a stacked CCR
+/// (writes), and tails/returns get their own arms so the walk can reason about
+/// control leaving.
+fn ccr_effect(mnemonic: &str) -> CcrEffect {
+    match mnemonic {
+        "jsr" | "jbsr" | "bsr" | "rtr" | "rte" => CcrEffect::Writes,
+        "rts" | "rtd" => CcrEffect::Returns,
+        "bra" | "jbra" | "jmp" | "jra" => CcrEffect::Leaves,
+        m if crate::out_verify::cc_inert_data_op(m) => CcrEffect::Transparent,
+        m if m.starts_with("db") => CcrEffect::Transparent,
+        m if m.starts_with('b') && m.len() == 3 => CcrEffect::Transparent,
+        _ => CcrEffect::Writes,
     }
 }
 
@@ -1703,13 +1946,50 @@ fn reg_bit_name(bit: u8) -> String {
     if bit < 8 { format!("d{bit}") } else { format!("a{}", bit - 8) }
 }
 
+/// Which halves of SR a contract clause covers. SR partitions into the system
+/// byte (`sr.mask` — the interrupt mask, with the trace/supervisor bits it
+/// shares the byte with) and the condition codes (`sr.ccr`); the bare `sr`
+/// token means BOTH halves, so the split does not move any existing adopter.
+#[derive(Default, Clone, Copy)]
+struct SrCover {
+    mask: bool,
+    ccr: bool,
+}
+
+impl SrCover {
+    /// Any SR-family token present at all — the bar `[proc.sr-undeclared]`
+    /// asks (its whole-SR write heuristic treats any half declaration as "SR
+    /// traffic is contract-addressed").
+    fn any(self) -> bool {
+        self.mask || self.ccr
+    }
+
+    /// Fold one declared token into the cover. `true` iff `name` is an
+    /// SR-family token (the caller then skips register handling).
+    fn fold_token(&mut self, name: &str) -> bool {
+        match name {
+            "sr" => {
+                self.mask = true;
+                self.ccr = true;
+            }
+            "sr.mask" => self.mask = true,
+            "sr.ccr" => self.ccr = true,
+            _ => return false,
+        }
+        true
+    }
+}
+
 /// The expansion of a `clobbers`/`out` reglist (C1 items 2 + 6): the canonical
-/// register-name SET plus whether `sr` was declared (`sr` is machine state, not
-/// a movem register, so it rides its own set rather than a mask bit).
+/// register-name SET plus which SR halves were declared (the SR family is
+/// machine state, not movem registers, so it rides its own cover rather than
+/// mask bits). Overlapping segments FOLD — `preserves(sr, sr.ccr)` covers the
+/// same halves as `preserves(sr)`, exactly as `d0, d0-d3` folds — because a
+/// reglist denotes a set union everywhere in the grammar.
 #[derive(Default)]
 struct RegSet {
     regs: std::collections::HashSet<String>,
-    has_sr: bool,
+    sr: SrCover,
 }
 
 /// Expand + validate a `clobbers`/`out` reglist (C1 item 2 = ranges, item 6 =
@@ -1722,17 +2002,28 @@ fn reglist_expand(segs: &[(String, Option<String>)], mut on_error: impl FnMut(St
     let mut set = RegSet::default();
     for (lo, hi) in segs {
         match hi {
-            // A single register or `sr`.
+            // A single register or an SR-family token.
             None => {
-                if lo == "sr" {
-                    set.has_sr = true;
+                if set.sr.fold_token(lo) {
+                    continue;
+                }
+                if lo == "ccr" {
+                    on_error(
+                        "`ccr` is not a contract token — the condition-code half of SR is \
+                         spelled `sr.ccr` (bare `sr` covers both halves)"
+                            .to_string(),
+                    );
                 } else if let Some(bit) = preserves_reg_bit(lo) {
                     set.regs.insert(reg_bit_name(bit));
                 } else {
-                    on_error(format!("`{lo}` is not a register (d0-d7/a0-a7/sp) or `sr`"));
+                    on_error(format!(
+                        "`{lo}` is not a register (d0-d7/a0-a7/sp) or an SR token \
+                         (sr/sr.mask/sr.ccr)"
+                    ));
                 }
             }
-            // An inclusive `lo-hi` movem range (`sr` cannot appear in a range).
+            // An inclusive `lo-hi` movem range (the SR family cannot appear in a
+            // range).
             Some(h) => {
                 let (Some(lo_bit), Some(hi_bit)) = (preserves_reg_bit(lo), preserves_reg_bit(h))
                 else {
@@ -1781,8 +2072,9 @@ fn reglist_set_quiet(segs: &[(String, Option<String>)]) -> RegSet {
 }
 
 /// Expand a `clobbers`/`out`/`preserves` reglist to its canonical register-name
-/// SET (`d0`..`a7`), silently DROPPING `sr` (the transitive closure is
-/// register-file only — `sr` stays the local `[proc.sr-undeclared]` check).
+/// SET (`d0`..`a7`), silently DROPPING the SR family (`sr`/`sr.mask`/`sr.ccr` —
+/// the transitive closure is register-file only; SR stays the local
+/// `[proc.sr-undeclared]` check).
 /// Reused by the corpus contract walk ([`crate::corpus_contracts`]) so its
 /// declared-register sets match `check_clobbers`' exactly.
 pub fn expand_reglist_regs(segs: &[(String, Option<String>)]) -> BTreeSet<String> {

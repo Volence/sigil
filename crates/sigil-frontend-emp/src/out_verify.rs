@@ -922,10 +922,18 @@ impl Flags {
 /// Z-clobber between a conditional-out call and its `beq` guard MUST bail; reusing
 /// `writes_carry` there would credit on a stale-Z edge = a must-def false negative.
 pub(crate) fn cc_transparent(mnem: &str) -> bool {
-    matches!(
-        mnem,
-        "movea" | "lea" | "pea" | "movem" | "exg" | "nop" | "adda" | "suba"
-    ) || is_branch_or_return(mnem)
+    cc_inert_data_op(mnem) || is_branch_or_return(mnem)
+}
+
+/// The NON-CONTROL mnemonics that provably do not write the condition codes —
+/// [`cc_transparent`]'s data-op half, exported on its own so the
+/// `preserves(sr.ccr)` slice (`lower/proc.rs`) shares one allowlist with the
+/// flag machinery instead of growing a drifting copy. Control transfers are
+/// deliberately NOT here: the two consumers disagree about them (a returning
+/// call preserves a COMPUTED flag's transparency question differently from an
+/// ENTRY-CCR question), so each classifies control flow itself.
+pub(crate) fn cc_inert_data_op(mnem: &str) -> bool {
+    matches!(mnem, "movea" | "lea" | "pea" | "movem" | "exg" | "nop" | "adda" | "suba")
 }
 
 /// A control-transfer mnemonic — a conditional/unconditional branch, a `dbcc`
