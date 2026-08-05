@@ -275,7 +275,7 @@ fn the_generated_entry_module_is_not_reported() {
 /// real binary and reads its real stderr, which is the only thing that can tell the
 /// difference between a collected warn tier and a REPORTED one.
 ///
-/// One `--ram-report` invocation per view rather than a full ROM build: it runs the
+/// One `--report ram` invocation per view rather than a full ROM build: it runs the
 /// same `report_warnings` under the same `WarningView`, and costs seconds instead of
 /// minutes.
 #[test]
@@ -284,17 +284,17 @@ fn the_build_binary_prints_the_tally_and_off_silences_it() {
 
     let run = |view: Option<&str>| -> String {
         let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_sigil"));
-        cmd.args(["build", "--aeon", aeon.to_str().unwrap(), "--native", "--ram-report"]);
+        cmd.args(["build", "--aeon", aeon.to_str().unwrap(), "--native", "--report", "ram"]);
         match view {
             Some(v) => cmd.env("SIGIL_WARNINGS", v),
             None => cmd.env_remove("SIGIL_WARNINGS"),
         };
         let out = cmd.output().expect("run sigil build");
-        assert!(out.status.success(), "sigil build --ram-report failed: {out:?}");
+        assert!(out.status.success(), "sigil build --report ram failed: {out:?}");
         String::from_utf8_lossy(&out.stderr).into_owned()
     };
 
-    // `--ram-report` fires no warn-tier diagnostic today, so the DEFAULT view must
+    // `--report ram` fires no warn-tier diagnostic today, so the DEFAULT view must
     // print nothing at all — the "silence means zero, and only zero" contract, on
     // the real binary.
     let default = run(None);
@@ -304,13 +304,13 @@ fn the_build_binary_prints_the_tally_and_off_silences_it() {
     );
     assert_eq!(run(Some("off")), default, "`off` and a clean tier agree");
 
-    // And the printer IS reachable from this path: a `--ram-report` over a tree with
+    // And the printer IS reachable from this path: a `--report ram` over a tree with
     // no RAM-region module warns, and the tally names the class.
     let tmp = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(tmp.path().join("engine")).unwrap();
     std::fs::write(tmp.path().join("engine/ram.emp"), "module engine.ram\n").unwrap();
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_sigil"));
-    cmd.args(["build", "--aeon", tmp.path().to_str().unwrap(), "--native", "--ram-report"]);
+    cmd.args(["build", "--aeon", tmp.path().to_str().unwrap(), "--native", "--report", "ram"]);
     let warned = String::from_utf8_lossy(&cmd.output().expect("run").stderr).into_owned();
     assert!(
         warned.contains("warning: ") && warned.contains("ram.no-region"),
@@ -324,7 +324,7 @@ fn the_build_binary_prints_the_tally_and_off_silences_it() {
     // `off` on the SAME tree prints no warn-tier line — proof the view is consulted
     // rather than the tier being empty.
     let mut off = std::process::Command::new(env!("CARGO_BIN_EXE_sigil"));
-    off.args(["build", "--aeon", tmp.path().to_str().unwrap(), "--native", "--ram-report"])
+    off.args(["build", "--aeon", tmp.path().to_str().unwrap(), "--native", "--report", "ram"])
         .env("SIGIL_WARNINGS", "off");
     let silenced = String::from_utf8_lossy(&off.output().expect("run").stderr).into_owned();
     assert!(

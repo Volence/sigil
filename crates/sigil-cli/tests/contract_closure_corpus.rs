@@ -400,3 +400,69 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
          splices, so this changes only when a context's acquire does"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The `--report contracts` surface.
+// ---------------------------------------------------------------------------
+
+/// THE SURFACE IS WIRED, AND IT IS SHAPE-PARAMETERIZED.
+///
+/// Every gate above calls `analyze_corpus_with` directly and hands it a hand-written
+/// define list, so all of them stay green if `run_contract_report` is deleted or stops
+/// reading the target's profile. This drives the real binary and reads its real stdout.
+///
+/// The load-bearing assertion is the LAST one. A census run against the wrong define
+/// set analyzes arms the shipped ROM never assembles: with `MAX_RING_BUFFER` absent
+/// `DrawRings` cannot lower its `vram_art(...)` operand and the instruction DROPS, and
+/// with `SOUND_DRIVER_ENABLED` absent every game-side sound call site comptime-vanishes
+/// from the walk. Pinning zero drops through the binary pins that the profile reaches
+/// the analysis, which is what this surface exists to guarantee.
+#[test]
+fn the_contracts_report_is_wired_and_carries_the_targets_defines() {
+    let aeon = PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    );
+    if !aeon.exists() {
+        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
+        }
+        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
+        return;
+    }
+
+    let run = |extra: &[&str]| -> String {
+        let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_sigil"));
+        cmd.args(["build", "--aeon", aeon.to_str().unwrap(), "--native"]);
+        cmd.args(extra);
+        cmd.args(["--report", "contracts"]);
+        let out = cmd.output().expect("run sigil build --report contracts");
+        assert!(out.status.success(), "sigil build --report contracts failed: {out:?}");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    let plain = run(&["--game", "sonic4"]);
+    let debug = run(&["--game", "sonic4", "--debug"]);
+    let demo = run(&["--game", "demo"]);
+
+    assert!(plain.starts_with("contract closure — sonic4 plain\n"), "header: {plain:.80}");
+    assert!(debug.starts_with("contract closure — sonic4 debug\n"), "header: {debug:.80}");
+    assert!(demo.starts_with("contract closure — demo plain\n"), "header: {demo:.80}");
+
+    // The shapes differ in the defines the walk RAN under, not merely in a label:
+    // DEBUG is the build-shape axis and MAX_RING_BUFFER is the game→engine axis.
+    let defines = |s: &str| -> String {
+        s.lines().find(|l| l.starts_with("defines: ")).expect("a defines line").to_string()
+    };
+    assert!(defines(&plain).contains("DEBUG=0"), "{}", defines(&plain));
+    assert!(defines(&debug).contains("DEBUG=1"), "{}", defines(&debug));
+    assert!(defines(&plain).contains("MAX_RING_BUFFER=128"), "{}", defines(&plain));
+    assert!(defines(&demo).contains("MAX_RING_BUFFER=16"), "{}", defines(&demo));
+
+    // The defines REACH the analysis: with them the corpus lowers whole.
+    for (label, out) in [("sonic4 plain", &plain), ("sonic4 debug", &debug), ("demo", &demo)] {
+        assert!(
+            out.contains("-- dropped instructions (must be 0): 0 --"),
+            "{label}: the report dropped instructions, so its walk is missing defines:\n{out:.400}"
+        );
+    }
+}

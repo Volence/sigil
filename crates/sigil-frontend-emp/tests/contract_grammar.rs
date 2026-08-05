@@ -504,3 +504,29 @@ fn unconditional_outs_expands_z80_pairs() {
     assert_eq!(sig.cond_out_regs(RegFile::Z80), set(&["h", "l"]));
     assert_eq!(sig.unconditional_outs(RegFile::Z80), set(&["b", "c"]));
 }
+
+/// `cond_out_guards` keys the guarded registers exactly as `cond_out_regs` does,
+/// and carries the CONDITION each one is guarded by — the fact the §4 subcontract
+/// relation compares. Two guard clauses on one register contribute both codes.
+#[test]
+fn cond_out_guards_carry_each_registers_condition_codes() {
+    let f = ok("module m\nextern proc P () clobbers(d1) out(d0, a1 if eq, a2 if mi, a2 if pl)\n");
+    let sig = &externs(&f)[0].sig;
+    let guards = sig.cond_out_guards(RegFile::M68k);
+    assert_eq!(guards.keys().cloned().collect::<BTreeSet<_>>(), sig.cond_out_regs(RegFile::M68k));
+    assert_eq!(guards["a1"], set(&["eq"]));
+    assert_eq!(guards["a2"], set(&["mi", "pl"]));
+    assert_eq!(sig.unconditional_outs(RegFile::M68k), set(&["d0"]));
+}
+
+/// The condition is CANONICAL, not textual: `hs`/`lo` are the documented aliases
+/// of `cc`/`cs`, so a guard spelled either way must compare equal. A raw-text
+/// comparison would reject a target guarding `hs` against a bound spelling `cc`.
+#[test]
+fn cond_out_guards_fold_the_cc_aliases() {
+    let f = ok("module m\nextern proc P () clobbers(d1) out(a1 if hs, a2 if lo)\n");
+    let sig = &externs(&f)[0].sig;
+    let guards = sig.cond_out_guards(RegFile::M68k);
+    assert_eq!(guards["a1"], set(&["cc"]));
+    assert_eq!(guards["a2"], set(&["cs"]));
+}

@@ -733,21 +733,22 @@ fn run_build(args: &[String]) {
             eprintln!("error: {msg}");
             eprintln!(
                 "usage: sigil build --aeon <dir> [-o <out.bin>] [--emit-lst <lst>] \
-                 [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean] [--ram-report]\n\
+                 [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean] \
+                 [--report ram|contracts]\n\
                  env:   SIGIL_WARNINGS=off|summary|full  (warn-tier detail; default summary)"
             );
             process::exit(2);
         }
     };
     let aeon_path = std::path::Path::new(&opts.aeon);
-    if opts.ram_report {
-        run_ram_report(aeon_path, &opts.target);
-        return;
+    match opts.report {
+        Some(ReportKind::Ram) => run_ram_report(aeon_path, &opts.target),
+        Some(ReportKind::Contracts) => run_contract_report(aeon_path, &opts.target),
+        None => run_build_native(aeon_path, &opts),
     }
-    run_build_native(aeon_path, &opts);
 }
 
-/// `--ram-report` (T1): print the RAM map for the selected target — one row per
+/// `--report ram` (T1): print the RAM map for the selected target — one row per
 /// `region`, with its base/end address, allocated size, alignment/pad padding, budget
 /// limit, and headroom. The numbers come from the SAME region resolver the build runs
 /// (`resolve::build_ram_report` over the frontend's region layout), against the
@@ -760,24 +761,11 @@ fn run_build(args: &[String]) {
 /// render-free so a future Spec-3 editor inlay-hint surface can reuse it directly.
 fn run_ram_report(aeon: &std::path::Path, target: &BuildTarget) {
     use sigil_frontend_emp::resolve;
-    use sigil_harness::native;
 
     // The target's shipping profile supplies the game RAM module + the exact `-D`
     // define set the `.emp` RAM modules read (SYSTEM_STACK, DEBUG, the game sizing
     // consts engine.ram consumes: MAX_RING_BUFFER / COLLECTED_WINDOW_SLOTS / …).
-    let (label, profile) = match target {
-        BuildTarget::Sonic4 { debug } => (
-            if *debug { "sonic4 debug".to_string() } else { "sonic4 plain".to_string() },
-            native::sonic4_profile(*debug),
-        ),
-        BuildTarget::Demo { debug } => (
-            if *debug { "demo debug".to_string() } else { "demo plain".to_string() },
-            native::demo_profile(*debug),
-        ),
-        BuildTarget::ConfigA => ("config_a".to_string(), native::config_a_profile()),
-        BuildTarget::ConfigB => ("config_b".to_string(), native::config_b_profile()),
-        BuildTarget::Lean => ("lean".to_string(), native::lean_profile()),
-    };
+    let (label, profile) = target.label_and_profile();
 
     let (manifest, mdiags) = resolve::manifest::Manifest::scan(aeon);
     if mdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
@@ -838,6 +826,227 @@ fn print_ram_report(label: &str, rows: &[sigil_frontend_emp::lower::RamRegionRow
     }
 }
 
+/// `--report contracts`: print the whole-corpus contract-closure report for the
+/// selected target — the transitive-closure census (`corpus_contracts::analyze_corpus_with`)
+/// that the §1 closure, the §6 flag/conditional-result gates, D1b/D1c/D1d, the
+/// survives verifier, G5 slot typing, the `[bus.*]` inference tier and the declared
+/// `[context.*]` tier all already compute during a build.
+///
+/// The report is a VIEW, not a second analysis: every number below is a field of the
+/// one `ContractReport` the frontend builds. What the report surface adds over a
+/// hand-driven walk is the INPUTS — the module set comes from the manifest scan and
+/// the comptime defines come from the target's shipping profile, so a shape's real
+/// `-D` set (DEBUG, CRASH_REPORT, the game sizing consts) is what the closure sees.
+/// A census run against the wrong define set silently analyzes arms the shipped ROM
+/// never assembles.
+fn run_contract_report(aeon: &std::path::Path, target: &BuildTarget) {
+    use sigil_frontend_emp::corpus_contracts;
+    use sigil_frontend_emp::resolve;
+
+    let (label, profile) = target.label_and_profile();
+
+    let (manifest, mdiags) = resolve::manifest::Manifest::scan(aeon);
+    // A parse error means the closure would walk a broken tree and report numbers
+    // nobody can act on, so it fails here exactly as a build would. Warn-tier
+    // diagnostics (the module path lint) route through the same policy channel.
+    let errors: Vec<_> =
+        mdiags.iter().filter(|d| d.level == sigil_span::Level::Error).cloned().collect();
+    render_program_diags(&manifest, &errors);
+    let index = sigil_frontend_emp::resolve::manifest::SourceIndex::new(&manifest);
+    report_warnings(&sigil_harness::native::collect_warnings(&index, &[&mdiags], None));
+    if !errors.is_empty() {
+        process::exit(1);
+    }
+
+    let defines: Vec<(String, i128)> =
+        profile.emp_defines.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+    let files: Vec<_> = manifest.modules.iter().map(|m| m.file.clone()).collect();
+    let report = corpus_contracts::analyze_corpus_with(&files, &defines);
+    print_contract_report(&label, &defines, &report);
+}
+
+/// Render a [`ContractReport`](sigil_frontend_emp::corpus_contracts::ContractReport) as
+/// plain text: a header (module/proc counts + the define set the walk ran under), then
+/// one section per firing family, each headed by its count so an empty family still
+/// shows its zero. Counts are the report's own vector lengths — nothing is recomputed
+/// here.
+fn print_contract_report(
+    label: &str,
+    defines: &[(String, i128)],
+    report: &sigil_frontend_emp::corpus_contracts::ContractReport,
+) {
+    println!("contract closure — {label}");
+    let ds: Vec<String> = defines.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    println!("defines: {}", if ds.is_empty() { "(none)".to_string() } else { ds.join(" ") });
+    println!();
+    println!(
+        "procs (incl externs): {}   externs: {}   contract-types: {}",
+        report.proc_count, report.extern_count, report.contract_type_count
+    );
+
+    println!("\n-- dropped instructions (must be 0): {} --", report.dropped_instrs);
+    for (proc, n) in &report.dropped_by_proc {
+        println!("  DROPPED {n:>3}  {proc}");
+    }
+
+    println!("\n-- extern/proc collisions (§11 Q4): {} --", report.extern_collisions.len());
+    for (name, _span) in &report.extern_collisions {
+        println!("  COLLISION  {name}  (declared both extern proc and proc)");
+    }
+
+    let holes = &report.closure.unresolved_callees;
+    println!("\n-- unresolved callees (holes — missing extern proc?): {} --", holes.len());
+    for h in holes {
+        println!("  HOLE  {h}");
+    }
+
+    println!("\n-- firings ({}): --", report.firings.len());
+    for f in &report.firings {
+        let kind = if f.unbounded {
+            "UNBOUNDED".to_string()
+        } else if f.transitive {
+            format!("transitive {}", f.reg.as_deref().unwrap_or("?"))
+        } else {
+            format!("direct     {}", f.reg.as_deref().unwrap_or("?"))
+        };
+        println!("  {:<28} {kind}", f.proc);
+    }
+
+    use sigil_frontend_emp::flag_check::FlagFiringKind;
+    println!("\n-- flag-result firings (§6, {}): --", report.flag_firings.len());
+    for f in &report.flag_firings {
+        let kind = match &f.kind {
+            FlagFiringKind::Unused => format!("[call.flag-result-unused] {} unconsumed", f.flag),
+            FlagFiringKind::InvalidPathRead { reg, cc } => {
+                format!("[call.result-invalid-path] {reg} read where !{cc}")
+            }
+        };
+        println!("  {:<28} calls {:<24} {kind}", f.proc, f.callee);
+    }
+
+    println!("\n-- [call.input-undefined] firings (D1b, {}): --", report.input_firings.len());
+    for f in &report.input_firings {
+        println!("  {:<28} calls {:<24} input {} undefined on some path", f.proc, f.callee, f.reg);
+    }
+
+    println!(
+        "\n-- [call.live-clobbered] firings (D1c, {}): --",
+        report.live_clobbered_firings.len()
+    );
+    for f in &report.live_clobbered_firings {
+        println!("  {:<28} calls {:<24} holds {} across clobber", f.proc, f.callee, f.reg);
+    }
+
+    println!(
+        "\n-- [proc.out-cond-survives-unverifiable] firings ({}): --",
+        report.survives_firings.len()
+    );
+    for f in &report.survives_firings {
+        println!("  {:<28} out({} if {}) claims survival, but {}", f.proc, f.reg, f.cc, f.reason);
+    }
+
+    println!("\n-- dead-saves (D1d worklist, {}): --", report.dead_saves.len());
+    for d in &report.dead_saves {
+        println!("  {:<28} {:<4} bracketing {}", d.proc, d.reg, d.callees.join(","));
+    }
+
+    println!("\n-- [call.slot-type-mismatch] firings (G5, {}): --", report.slot_firings.len());
+    for f in &report.slot_firings {
+        let found = f.found.as_deref().unwrap_or("an untyped value");
+        println!(
+            "  {:<28} calls {:<24} slot {} expects {} but found {}",
+            f.proc, f.callee, f.reg, f.expected, found
+        );
+    }
+
+    println!(
+        "\n-- [branch.condition-constant] firings (item-4 rider, {}): --",
+        report.branch_const_firings.len()
+    );
+    for f in &report.branch_const_firings {
+        let dir = if f.always_taken { "ALWAYS taken" } else { "NEVER taken" };
+        println!(
+            "  {:<28} b{:<3} statically decided ({dir}) @ {}..{}",
+            f.proc, f.cc, f.span.start, f.span.end
+        );
+    }
+
+    println!(
+        "\n-- [bus.*] Z80-bus machine-state firings (item-4 core, {}): --",
+        report.bus_firings.len()
+    );
+    for f in &report.bus_firings {
+        use sigil_frontend_emp::z80_bus::BusFiringKind::*;
+        let code = match f.kind {
+            DoubleStop => "[bus.double-stop]      (E011)",
+            StartWithoutStop => "[bus.start-without-stop] (E008)",
+            StoppedAtReturn => "[bus.stopped-at-return]  (E007)",
+            VdpWriteUnstopped => "[bus.vdp-write-unstopped](E006)",
+            ReleasedAtReturn => "[bus.released-at-return]     ",
+        };
+        println!("  {:<28} {code} @ {}..{}", f.proc, f.span.start, f.span.end);
+    }
+
+    println!(
+        "\n-- [context.*] declared machine-state tier: {} region(s), {} claim(s), \
+         {} discharged call site(s), {} bracket firing(s), {} unsatisfied requirement(s), \
+         {} unknown context reference(s) --",
+        report.context_regions.len(),
+        report.context_claim_sites.len(),
+        report.context_discharged.len(),
+        report.context_firings.len(),
+        report.context_unsatisfied.len(),
+        report.unknown_context_refs.len(),
+    );
+    for (proc, ctx) in &report.context_regions {
+        println!("  {proc:<28} with {ctx}");
+    }
+    for (proc, kind, ctx) in &report.context_claim_sites {
+        println!("  {proc:<28} {kind}({ctx})");
+    }
+    for f in &report.context_firings {
+        use sigil_frontend_emp::context::ContextFiringKind::*;
+        let id = match f.kind {
+            Escape => "[context.escape]",
+            EntrySkip => "[context.entry-skip]",
+            Reacquire => "[context.reacquire]",
+        };
+        println!("  {:<28} {id} `{}` @ {}..{}", f.proc, f.ctx, f.span.start, f.span.end);
+    }
+    for f in &report.context_unsatisfied {
+        println!(
+            "  {:<28} [context.unsatisfied] `{}` at call to {} @ {}..{}",
+            f.proc, f.ctx, f.callee, f.span.start, f.span.end
+        );
+    }
+    for (proc, ctx, span) in &report.unknown_context_refs {
+        println!("  {proc:<28} [context.unknown] `{ctx}` @ {}..{}", span.start, span.end);
+    }
+}
+
+/// Which report `--report <kind>` prints instead of building. Each kind renders a
+/// view of data the BUILD already computes for the selected target, so a report and
+/// the ROM it describes can never disagree.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum ReportKind {
+    /// The per-region RAM map (T1).
+    Ram,
+    /// The whole-corpus contract-closure census.
+    Contracts,
+}
+
+impl ReportKind {
+    /// Parse the `--report` value. Unrecognised is a usage error, never a silent
+    /// fallback: a typo must not print the wrong report.
+    fn parse(value: &str) -> Result<ReportKind, String> {
+        match value {
+            "ram" => Ok(ReportKind::Ram),
+            "contracts" => Ok(ReportKind::Contracts),
+            other => Err(format!("unknown --report '{other}' (want ram or contracts)")),
+        }
+    }
+}
+
 /// Which native target `sigil build --native` produces.
 enum BuildTarget {
     /// Canonical sonic4 (the pinned driver — the `native_full_rom` gate path).
@@ -853,14 +1062,40 @@ enum BuildTarget {
     Lean,
 }
 
+impl BuildTarget {
+    /// The target's display label and its shipping
+    /// [`GameProfile`](sigil_harness::native::GameProfile).
+    ///
+    /// Every report reads its inputs from the profile — the game's own modules, the
+    /// comptime `-D` defines the `.emp` sources see — so the mapping lives once here
+    /// rather than per report. A report keyed off a different profile than the build
+    /// describes a ROM that was never produced.
+    fn label_and_profile(&self) -> (String, sigil_harness::native::GameProfile) {
+        use sigil_harness::native;
+        match self {
+            BuildTarget::Sonic4 { debug } => (
+                if *debug { "sonic4 debug".to_string() } else { "sonic4 plain".to_string() },
+                native::sonic4_profile(*debug),
+            ),
+            BuildTarget::Demo { debug } => (
+                if *debug { "demo debug".to_string() } else { "demo plain".to_string() },
+                native::demo_profile(*debug),
+            ),
+            BuildTarget::ConfigA => ("config_a".to_string(), native::config_a_profile()),
+            BuildTarget::ConfigB => ("config_b".to_string(), native::config_b_profile()),
+            BuildTarget::Lean => ("lean".to_string(), native::lean_profile()),
+        }
+    }
+}
+
 struct BuildOpts {
     aeon: String,
     output: Option<String>,
     emit_lst: Option<String>,
     target: BuildTarget,
-    /// `--ram-report`: print the RAM map (per-region address/size/padding/headroom)
-    /// for the selected target and exit, without building the ROM (T1).
-    ram_report: bool,
+    /// `--report <kind>`: print a report over the selected target and exit, without
+    /// building the ROM. `None` builds.
+    report: Option<ReportKind>,
 }
 
 /// Parse `sigil build`'s argument slice. `--aeon <dir>` is required; `-o <path>`,
@@ -868,6 +1103,11 @@ struct BuildOpts {
 /// `--lean` are optional. `--config-a`/`--config-b`/`--lean` fix the whole shape
 /// (sonic4 game), so they conflict with `--game`/`--debug`. `--native` is accepted as a no-op (post-flip
 /// the native build is the only build).
+///
+/// `--report <kind>` replaces the build with a report over the same target. The
+/// kinds share ONE flag rather than one flag each (`--ram-report`, `--contracts-report`,
+/// …): a report is a view of the build's own data, the set of views grows, and a
+/// closed vocabulary behind one flag is the surface that stays legible as it does.
 fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut aeon: Option<String> = None;
     let mut output: Option<String> = None;
@@ -875,7 +1115,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut game: Option<String> = None;
     let mut debug = false;
     let mut config: Option<char> = None;
-    let mut ram_report = false;
+    let mut report: Option<ReportKind> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -889,7 +1129,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             "--config-a" => config = Some('a'),
             "--config-b" => config = Some('b'),
             "--lean" => config = Some('l'),
-            "--ram-report" => ram_report = true,
+            "--report" => report = Some(ReportKind::parse(&next_value(args, &mut i, "--report")?)?),
             other => return Err(format!("unexpected argument '{other}'")),
         }
         i += 1;
@@ -914,7 +1154,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             Some(g) => return Err(format!("unknown --game '{g}' (want sonic4 or demo)")),
         },
     };
-    Ok(BuildOpts { aeon, output, emit_lst, target, ram_report })
+    Ok(BuildOpts { aeon, output, emit_lst, target, report })
 }
 
 /// Consume the value after a value-taking flag at `args[*i]`, advancing `i`. A
