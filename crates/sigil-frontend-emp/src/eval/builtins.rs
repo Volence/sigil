@@ -737,6 +737,9 @@ impl<'a> Evaluator<'a> {
                 ops: vec![CodeOperand::Sym(target_label.clone())],
                 span,
                 as_type: None,
+                // `User` at construction; the statement-call splice boundary
+                // re-authors the pad as `Splice { template: "pad_to_cycles" }`.
+                author: crate::value::ItemAuthor::User,
             });
             items.push(CodeItem::Label { name: target_label, export: false, span });
         }
@@ -747,6 +750,9 @@ impl<'a> Evaluator<'a> {
                 ops: Vec::new(),
                 span,
                 as_type: None,
+                // `User` at construction; the statement-call splice boundary
+                // re-authors the pad as `Splice { template: "pad_to_cycles" }`.
+                author: crate::value::ItemAuthor::User,
             });
         }
         Value::Code(CodeBuf { items })

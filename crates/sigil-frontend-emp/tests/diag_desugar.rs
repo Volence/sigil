@@ -413,3 +413,148 @@ section s (cpu: m68000) {
 
 
 
+// ---------------------------------------------------------------------------
+// 5. AUTHORSHIP — the emission-site obligation behind the sr-lint exemption.
+// ---------------------------------------------------------------------------
+//
+// `[proc.sr-undeclared]` exempts `AssertDesugar`-authored SR writes because the
+// desugar's push/pop balance is the COMPILER's obligation. These tests ARE that
+// obligation's pin, at the emission site: if the desugar ever grows an
+// unbalanced path — or stops stamping its items — this fails, not a corpus
+// measurement.
+
+use sigil_frontend_emp::value::{CodeItem, CodeOperand, ItemAuthor, Reg};
+
+/// The lowered CodeBuf of the one proc `p` in `src` (DEBUG defined to `debug`).
+fn proc_items(src: &str, debug: i128) -> Vec<CodeItem> {
+    use sigil_frontend_emp::ast::Item;
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.iter().all(|d| d.level != Level::Error), "parse: {perrs:?}");
+    let proc = file
+        .items
+        .iter()
+        .find_map(|it| match it {
+            Item::Section(s) => s.items.iter().find_map(|si| match si {
+                Item::Proc(d) if d.name == "p" => Some(d),
+                _ => None,
+            }),
+            Item::Proc(d) if d.name == "p" => Some(d),
+            _ => None,
+        })
+        .expect("proc `p`");
+    let (buf, _diags, _counter) = sigil_frontend_emp::eval::eval_proc_body(
+        &file,
+        &proc.name,
+        &proc.params,
+        &proc.body,
+        proc.span,
+        0,
+        Cpu::M68000,
+        &[("DEBUG".into(), debug)],
+        &sigil_frontend_emp::contract::InterfaceEnv::empty(),
+    );
+    buf.expect("Code").items
+}
+
+/// Every instruction the `assert` desugar emits is `AssertDesugar`-authored,
+/// and its SR traffic is balanced BY CONSTRUCTION: the first instruction is the
+/// `move.w sr, -(sp)` save, the last is the `move.w (sp)+, sr` restore, and
+/// the restore is the expansion's ONLY SR-destination write.
+#[test]
+fn the_assert_expansion_is_desugar_authored_and_sr_balanced() {
+    let src = "\
+module m
+section s (cpu: m68000) {
+    proc p () clobbers(d4) {
+        assert.b d4, eq, #0
+    }
+}
+";
+    let items = proc_items(src, 1);
+    let instrs: Vec<&CodeItem> =
+        items.iter().filter(|i| matches!(i, CodeItem::Instr { .. })).collect();
+    assert!(!instrs.is_empty(), "the DEBUG expansion emits instructions");
+    for it in &instrs {
+        let CodeItem::Instr { author, mnemonic, .. } = it else { unreachable!() };
+        assert_eq!(
+            *author,
+            ItemAuthor::AssertDesugar,
+            "every expansion instruction is the desugar's (`{mnemonic}` is not)"
+        );
+    }
+    let CodeItem::Instr { mnemonic, ops, .. } = instrs[0] else { unreachable!() };
+    assert_eq!(mnemonic, "move", "the expansion opens with the CCR save");
+    assert_eq!(
+        ops.as_slice(),
+        &[CodeOperand::Sr, CodeOperand::PreDec(Reg::A7)],
+        "first instruction is `move.w sr, -(sp)`"
+    );
+    let CodeItem::Instr { ops: last_ops, .. } = instrs[instrs.len() - 1] else { unreachable!() };
+    assert_eq!(
+        last_ops.as_slice(),
+        &[CodeOperand::PostInc(Reg::A7), CodeOperand::Sr],
+        "last instruction is the `move.w (sp)+, sr` restore"
+    );
+    let sr_dest_writes = instrs
+        .iter()
+        .filter(|i| {
+            let CodeItem::Instr { ops, .. } = i else { return false };
+            matches!(ops.last(), Some(CodeOperand::Sr))
+        })
+        .count();
+    assert_eq!(sr_dest_writes, 1, "the restore is the expansion's only SR write");
+}
+
+/// The user's own lines around an `assert` stay `User`-authored — the stamp is
+/// scoped to the expansion, so the exemption can never leak onto hand-written
+/// code before or after it.
+#[test]
+fn lines_around_an_assert_stay_user_authored() {
+    let src = "\
+module m
+section s (cpu: m68000) {
+    proc p () clobbers(d4) {
+        moveq   #0, d4
+        assert.b d4, eq, #0
+        rts
+    }
+}
+";
+    let items = proc_items(src, 1);
+    let user_mnemonics: Vec<&str> = items
+        .iter()
+        .filter_map(|i| match i {
+            CodeItem::Instr { mnemonic, author: ItemAuthor::User, .. } => {
+                Some(mnemonic.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        user_mnemonics,
+        ["moveq", "rts"],
+        "exactly the hand-written lines are User-authored"
+    );
+}
+
+/// The consumer-side effect of the emission-site obligation: an `assert` in a
+/// `clobbers()` proc no longer fires `[proc.sr-undeclared]` — the desugar's
+/// restore is `AssertDesugar`-authored and its balance is proven above, so the
+/// lint has nothing to charge the containing proc with.
+#[test]
+fn an_assert_no_longer_fires_sr_undeclared_on_its_proc() {
+    let src = "\
+module m
+section s (cpu: m68000) {
+    proc p () clobbers(d4) {
+        assert.b d4, eq, #0
+        rts
+    }
+}
+";
+    let (_m, msgs) = lower_with_debug(src, 1);
+    assert!(
+        !msgs.iter().any(|m| m.contains("[proc.sr-undeclared]")),
+        "the desugar's SR restore must not be charged to `p`: {msgs:?}"
+    );
+}

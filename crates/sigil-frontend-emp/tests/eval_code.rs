@@ -90,6 +90,7 @@ fn instr_with_operands_survives_concat_and_displays() {
         ops: vec![CodeOperand::Imm(1), CodeOperand::Reg(Reg::D0)],
         span: dummy_span(),
         as_type: None,
+        author: sigil_frontend_emp::value::ItemAuthor::User,
     });
     let joined = CodeBuf::concat(b.clone(), label("done"));
     assert_eq!(joined.items.len(), 2);

@@ -251,6 +251,18 @@ pub struct Evaluator<'a> {
     /// caller-visible `Owner.name` spelling instead (§5.2) — the owner is the
     /// proc name for a proc body and `k` for a raw `asm { }` (T5).
     asm_counter: u32,
+    /// The [`ItemAuthor`](crate::value::ItemAuthor) every instruction lowered
+    /// RIGHT NOW is stamped with — `User` except while a compiler construct is
+    /// emitting on the containing author's behalf (the `assert` desugar sets
+    /// `AssertDesugar` around its expansion; splice boundaries re-author their
+    /// spliced items separately, see [`crate::value::author_user_items`]).
+    item_author: crate::value::ItemAuthor,
+    /// The contexts whose acquire/release SR round-trip has already been proven
+    /// (or fired) by THIS evaluator — the `[proc.sr-undeclared]`
+    /// definition-site check runs once per context, not once per adopter.
+    /// Cross-module dedup of the firing is by (level, message, span): every
+    /// consumer module anchors the same message at the same declaration span.
+    sr_checked_contexts: std::collections::HashSet<String>,
     /// The enclosing module's dotted id (`a.b.c`, the `module` header path),
     /// empty in the no-file [`new`](Self::new) mode. Threaded into every label
     /// hygiene [`Owner`](crate::lower::hygiene::Owner) so a hidden local symbol is
@@ -520,6 +532,8 @@ impl<'a> Evaluator<'a> {
             struct_construct_in_progress: Vec::new(),
             refine_check_in_progress: Vec::new(),
             asm_counter: 0,
+            item_author: crate::value::ItemAuthor::User,
+            sr_checked_contexts: std::collections::HashSet::new(),
             module_id: String::new(),
             allowed_lints: Vec::new(),
             local_value_names: std::collections::HashSet::new(),

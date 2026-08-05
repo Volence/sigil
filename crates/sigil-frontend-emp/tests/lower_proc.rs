@@ -1115,21 +1115,23 @@ fn a_hand_written_sr_write_inside_the_bracketed_body_still_fires() {
     assert_eq!(sr_firings(&diags), 1, "the body's own SR write must still be charged: {diags:?}");
 }
 
-/// A context that masks and never restores — the round-trip gate's counterexample.
+/// A context that masks and never restores — the round-trip proof's
+/// counterexample.
 const MASK_ONLY_CTX: &str = "context mask_only {\n\
      \tacquire = asm { move.w #$2700, sr }\n\
      \trelease = asm { nop }\n\
      }\n";
 
-/// The exemption is gated on the acquire and release ROUND-TRIPPING SR, not
-/// granted to every region: a context that masks and never restores leaves the
-/// consumer's SR genuinely changed, so the write is still charged to somebody.
+/// The exemption never waives the round-trip obligation — it REDIRECTS it to
+/// the context definition: a context that masks and never restores leaves every
+/// consumer's SR genuinely changed, and the firing lands at the context's own
+/// declaration (naming the context), not at the consumer.
 ///
 /// NOT VACUOUS: the only difference from
 /// [`bracketed_sr_traffic_is_the_contexts_declaration_not_the_consumers`] is the
 /// missing `move.w (sp)+, sr` in the release.
 #[test]
-fn a_context_that_never_restores_sr_still_charges_its_consumer() {
+fn a_context_that_never_restores_sr_fires_at_its_own_definition() {
     let src = format!(
         "module m\n{MASK_ONLY_CTX}\
          proc f() clobbers(d0) {{\n\
@@ -1140,13 +1142,19 @@ fn a_context_that_never_restores_sr_still_charges_its_consumer() {
          }}\n"
     );
     let (_module, diags) = lower(&src);
-    assert_eq!(sr_firings(&diags), 1, "an unrestored mask must stay charged: {diags:?}");
+    assert_eq!(sr_firings(&diags), 1, "an unrestored mask must fire: {diags:?}");
+    assert!(
+        diags.iter().any(|d| d.message.contains("context `mask_only`")),
+        "the firing names the CONTEXT (the obligation lives at its definition): {diags:?}"
+    );
 }
 
 /// A release whose LAST SR write is not the restore does not round-trip either —
 /// the trailing-write limb of the balance rule, reached from the release half.
+/// One firing at the definition, not one per spliced instruction: the context
+/// is the party charged, and it has exactly one declaration to fix.
 #[test]
-fn a_release_that_re_masks_after_restoring_still_charges_its_consumer() {
+fn a_release_that_re_masks_after_restoring_fires_at_the_definition() {
     let src = "module m\n\
                context restore_then_mask {\n\
                \tacquire = asm { move.w sr, -(sp)\n\
@@ -1161,18 +1169,24 @@ fn a_release_that_re_masks_after_restoring_still_charges_its_consumer() {
                \trts\n\
                }\n";
     let (_module, diags) = lower(src);
-    assert_eq!(sr_firings(&diags), 3, "a release that re-masks leaves SR changed: {diags:?}");
+    assert_eq!(sr_firings(&diags), 1, "a release that re-masks leaves SR changed: {diags:?}");
+    assert!(
+        diags.iter().any(|d| d.message.contains("context `restore_then_mask`")),
+        "the firing names the context: {diags:?}"
+    );
 }
 
-/// The round trip is decided PER REGION, not once for the proc.
+/// The round trip is decided PER CONTEXT, each on its own acquire/release.
 ///
 /// NOT VACUOUS, and nothing else covers it: every other gate here builds a proc
-/// with exactly ONE bracket, so a mutant that folds the regions into a single
-/// "do they all round-trip" bool passes all of them. Here two brackets disagree,
-/// and only the sound one is exempt — `ints_off`'s mask and restore stay silent
-/// while `mask_only`'s mask is charged.
+/// with exactly ONE bracket, so a mutant that folds the proofs into a single
+/// "do they all round-trip" bool passes all of them. Here two contexts disagree,
+/// and only the sound one is silent — `ints_off`'s mask and restore stay exempt
+/// while `mask_only` fires at its definition. The proof is also CHECKED ONCE:
+/// a second `mask_only` bracket adds no second firing (one declaration, one
+/// obligation, one report).
 #[test]
-fn each_region_is_judged_on_its_own_round_trip() {
+fn each_context_is_judged_once_on_its_own_round_trip() {
     let src = format!(
         "module m\n{INTS_OFF_CTX}{MASK_ONLY_CTX}\
          proc f() clobbers(d0) {{\n\
@@ -1182,6 +1196,9 @@ fn each_region_is_judged_on_its_own_round_trip() {
          \twith mask_only {{\n\
          \t\tmoveq #1, d0\n\
          \t}}\n\
+         \twith mask_only {{\n\
+         \t\tmoveq #2, d0\n\
+         \t}}\n\
          \trts\n\
          }}\n"
     );
@@ -1189,7 +1206,7 @@ fn each_region_is_judged_on_its_own_round_trip() {
     assert_eq!(
         sr_firings(&diags),
         1,
-        "only the region that fails the round trip is charged: {diags:?}"
+        "only the context that fails the round trip fires, once: {diags:?}"
     );
 }
 

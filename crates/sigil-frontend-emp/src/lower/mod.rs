@@ -29,6 +29,7 @@ pub(crate) use code::is_recognized_mnemonic;
 pub(crate) use code::m68k_mnemonic;
 pub(crate) use code::{m68k_default_size, reg_kind};
 pub(crate) use proc::instr_written_regs;
+pub(crate) use proc::{sr_writes_round_trip, writes_dest_register};
 
 use crate::ast;
 use crate::eval::eval_proc_body;

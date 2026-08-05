@@ -8,11 +8,10 @@
 //! WHY IDS AND NOT COUNTS. The house baseline shape (`out_verify_corpus`'s
 //! `D1C_BASELINE`) pins identified rows, and the natural analogue here would be a
 //! per-`(shape, id)` count. It is deliberately NOT pinned, for two reasons:
-//!   - The counts are SHAPE-DEPENDENT and move on ordinary engine work — every
-//!     `[proc.sr-undeclared]` firing is the `assert` desugar's own
-//!     `move.w sr,-(sp)` / `move.w (sp)+,sr` pair, so adding one debug assert to one
-//!     proc moves the number. A baseline that churns on unrelated work gets
-//!     rubber-stamped, and a rubber-stamped gate asserts nothing.
+//!   - The counts are SHAPE-DEPENDENT and move on ordinary engine work — a
+//!     comptime-gated proc entering or leaving a shape moves them. A baseline
+//!     that churns on unrelated work gets rubber-stamped, and a rubber-stamped
+//!     gate asserts nothing.
 //!   - The id SET is shape-INVARIANT and moves only when a lint starts or stops
 //!     firing on the corpus — which is exactly the event that must never pass
 //!     unnoticed. It also has teeth in the retirement direction: clearing a class
@@ -44,26 +43,29 @@ const CORPUS_LINTS: &[&str] = &[
     "proc.undeclared-fallthrough",
 ];
 
-/// What a `DEBUG == 1` shape fires ON TOP of [`CORPUS_LINTS`].
-///
-/// `proc.sr-undeclared` is a shape-only class because `assert` is: the desugar
-/// emits its own `move.w sr,-(sp)` … `move.w (sp)+,sr` pair and the lint charges
-/// the compiler's code to the asserting proc, so the class appears exactly where
-/// asserts compile. Every hand-written SR write in the corpus is declared, so with
-/// the asserts elided it does not fire at all.
-const DEBUG_ONLY_LINTS: &[&str] = &["proc.sr-undeclared"];
-
 /// The firing set per build shape, spelled as [`CORPUS_LINTS`] plus whatever that
 /// shape adds. Every SHIPPED shape has its own row, so a lint that fires in one
 /// shape only cannot hide behind a shape nobody watches — and because the shared
 /// ids live in ONE list, retiring a class corpus-wide stays the one-line diff it
 /// should be while a shape-only class is visible as its own entry.
+///
+/// NO shape adds anything today. The retired shape-only class:
+/// `proc.sr-undeclared` fired in the three `DEBUG == 1` rows because the
+/// `assert` desugar's own `move.w (sp)+,sr` restore was charged to the
+/// asserting proc. Those items are `AssertDesugar`-authored now and the lint
+/// exempts them — the desugar's balance is pinned at the emission site
+/// (`diag_desugar.rs`), and [`debug_shape_sr_writes_are_author_checked`] holds
+/// the exemption's ground here. The retirement has TEETH in this gate's
+/// favorite direction: a DEBUG row is empty, so the FIRST hand-written
+/// undeclared SR write in any debug-gated proc makes `proc.sr-undeclared`
+/// appear in that row and fails the id-set gate loudly — the crowd it used to
+/// hide in is gone.
 const WARN_ID_BASELINE: &[(&str, &[&str])] = &[
     ("sonic4 plain", &[]),
-    ("sonic4 debug", DEBUG_ONLY_LINTS),
+    ("sonic4 debug", &[]),
     ("demo plain", &[]),
-    ("demo debug", DEBUG_ONLY_LINTS),
-    ("config_a", DEBUG_ONLY_LINTS),
+    ("demo debug", &[]),
+    ("config_a", &[]),
     ("config_b", &[]),
     ("lean", &[]),
 ];
@@ -91,13 +93,13 @@ type ShapeWarnings = (&'static str, Vec<native::BuildWarning>);
 /// own lowering.
 ///
 /// All seven are watched, not a canonical subset: the shapes differ by comptime
-/// defines that DO gate lint-bearing code, and the divergence reaches the ID SET
-/// this gate pins — the three `DEBUG == 1` shapes are the only ones where
-/// `[proc.sr-undeclared]` fires at all, so a shape-only lint is a real escape
-/// route. (Shapes also diverge below the id set, which this gate deliberately does
-/// not watch: `lean` fires one fewer `[proc.undeclared-fallthrough]` than the
-/// canonical shapes because it drops `ErrorHandlerBlob`, and the class stays in
-/// its row.)
+/// defines that DO gate lint-bearing code, and the divergence can reach the ID
+/// SET this gate pins — `[proc.sr-undeclared]` fired in exactly the three
+/// `DEBUG == 1` shapes until the assert desugar's items carried their author,
+/// so a shape-only lint is a real escape route. (Shapes also diverge below the
+/// id set, which this gate deliberately does not watch: `lean` fires one fewer
+/// `[proc.undeclared-fallthrough]` than the canonical shapes because it drops
+/// `ErrorHandlerBlob`, and the class stays in its row.)
 fn corpus_warnings() -> Option<&'static [ShapeWarnings]> {
     static CACHE: OnceLock<Option<Vec<ShapeWarnings>>> = OnceLock::new();
     CACHE
@@ -146,56 +148,108 @@ fn warn_tier_lint_ids_match_the_frozen_baseline() {
     }
 }
 
-/// EVERY surviving `[proc.sr-undeclared]` firing is the `assert` desugar's own
-/// save/restore pair — the property [`DEBUG_ONLY_LINTS`] asserts in prose, made
-/// executable.
+/// Every SR write in a `DEBUG == 1` shape's item streams carries an author with
+/// a RECEIVING obligation — the typed replacement of the retired
+/// source-line-reading property test (`every_surviving_sr_firing_is_the_assert_desugar`,
+/// which proved "every firing is the desugar" by re-reading source text the
+/// compiler had already classified and thrown away).
 ///
-/// This is the gate that keeps the id set honest for a class that is now 100%
-/// compiler-generated. Listing `proc.sr-undeclared` in the `DEBUG == 1` rows
-/// admits the class, and an id SET cannot tell 43 firings from 44 — so without
-/// this, a NEW hand-written undeclared SR write in any debug-gated proc would
-/// join the crowd and never be seen again.
+/// The exemption ledger this asserts, author by author:
+///   - `AssertDesugar` — exempt from `[proc.sr-undeclared]`; the balance proof
+///     lives at the emission site (`diag_desugar.rs`'s
+///     `the_assert_expansion_is_desugar_authored_and_sr_balanced`).
+///   - `Context` — exempt; the round-trip proof lives at the context
+///     DEFINITION (`lower_with`'s once-per-context check).
+///   - `User` / `Splice` — NOT exempt: the lint charges the containing proc,
+///     and the id-set gate above pins every row to zero surviving firings, so
+///     the first undeclared one fails that gate with its id named.
+///   - `EntrySynth` — must not appear: the synthesis emits no instructions
+///     (pinned in `sigil-harness`), so an EntrySynth SR write would be an
+///     authored effect with NO obligation home yet — the one defect class the
+///     author field must not admit.
+/// A future `ItemAuthor` variant fails the match at compile time, so a new
+/// author cannot ship without declaring where its obligation lands.
 ///
-/// A COUNT would also catch it, and was rejected for this id on measured grounds
-/// (see the header): adding one debug assert to one proc moves the number, so the
-/// baseline would churn on work that has nothing to do with it and get
-/// rubber-stamped. This asserts the property instead, which is what the project
-/// actually controls — a new assert is still an assert and changes nothing here,
-/// while the first hand-written SR write to go undeclared fails immediately with
-/// the site named. Its kill condition is the desugar's own: when sigil stops
-/// linting its own emitted code this whole class goes to zero and the gate below
-/// starts asserting emptiness on its own.
+/// NON-VACUITY: desugar-authored SR writes must be SEEN (`seen > 0`) — the
+/// DEBUG shapes compile asserts today, so a walk that stops reaching them
+/// cannot silently pass.
 #[test]
-fn every_surviving_sr_firing_is_the_assert_desugar() {
-    let Some(shapes) = corpus_warnings() else { return };
+fn debug_shape_sr_writes_are_author_checked() {
+    use sigil_frontend_emp::corpus_contracts::{
+        analyze_corpus_with_contracts, bind_corpus_interfaces,
+    };
+    use sigil_frontend_emp::value::ItemAuthor;
     let Some(aeon) = aeon_dir() else { return };
 
-    let mut seen = 0usize;
-    for (label, warnings) in shapes {
-        for w in warnings.iter().filter(|w| w.id == "proc.sr-undeclared") {
-            let loc = w.location.as_deref().unwrap_or_else(|| {
-                panic!("`{label}`: an sr-undeclared firing with no source location: {}", w.message)
-            });
-            // `path:line:col`, the path relative to the scanned aeon root.
-            let (path, rest) = loc.rsplit_once(':').and_then(|(p, _col)| p.rsplit_once(':')).unwrap_or_else(
-                || panic!("`{label}`: unparseable location `{loc}`"),
-            );
-            let line: usize = rest.parse().unwrap_or_else(|_| panic!("`{label}`: `{loc}`"));
-            let text = std::fs::read_to_string(aeon.join(path))
-                .unwrap_or_else(|e| panic!("`{label}`: cannot read `{path}`: {e}"));
-            let src = text.lines().nth(line - 1).unwrap_or_else(|| panic!("`{label}`: `{loc}`"));
-            assert!(
-                src.contains("assert."),
-                "`{label}`: a HAND-WRITTEN SR write is undeclared at {loc}:\n  {}\n\
-                 Declare `clobbers(sr)`, or `preserves(sr)` if the body save/restores it — \
-                 every other firing in this class is the `assert` desugar's own pair.",
-                src.trim()
-            );
-            seen += 1;
+    // The corpus source walk — the house per-file pattern (`slot_type_corpus`).
+    fn emp_files(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                if p.file_name().is_some_and(|n| n == ".worktrees") {
+                    continue;
+                }
+                emp_files(&p, out);
+            } else if p.extension().is_some_and(|x| x == "emp") {
+                out.push(p);
+            }
         }
     }
-    // Cannot pass by measuring nothing: the DEBUG shapes fire this class today.
-    assert!(seen > 0, "no sr-undeclared firing was examined — measure before trusting");
+    let mut paths = Vec::new();
+    emp_files(&aeon.join("engine"), &mut paths);
+    emp_files(&aeon.join("games"), &mut paths);
+    paths.sort();
+    let files: Vec<sigil_frontend_emp::ast::File> = paths
+        .iter()
+        .map(|p| {
+            let s = std::fs::read_to_string(p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+            let (f, d) = sigil_frontend_emp::parse_str(&s);
+            assert!(
+                d.iter().all(|x| x.level != sigil_span::Level::Error),
+                "{} parse errors: {d:?}",
+                p.display()
+            );
+            f
+        })
+        .collect();
+
+    let mut seen_desugar = 0usize;
+    let mut seen_context = 0usize;
+    let mut walked_debug_shapes = 0usize;
+    for (label, profile) in native::shipped_shapes() {
+        let defines = native::shape_defines(&profile);
+        if !defines.iter().any(|(k, v)| k == "DEBUG" && *v == 1) {
+            continue;
+        }
+        walked_debug_shapes += 1;
+        let (iface_env, bind_diags) =
+            bind_corpus_interfaces(&files, &defines, profile.game_module_prefix());
+        assert!(
+            bind_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "shape `{label}`: L1 bind errors: {bind_diags:?}"
+        );
+        let r = analyze_corpus_with_contracts(&files, &defines, &iface_env);
+        assert!(!r.sr_writes.is_empty(), "`{label}`: no SR write examined — measure before trusting");
+        for (proc, author, _span) in &r.sr_writes {
+            match author {
+                ItemAuthor::AssertDesugar => seen_desugar += 1,
+                ItemAuthor::Context { .. } => seen_context += 1,
+                // Charged by the lint; the id-set baseline pins zero firings.
+                ItemAuthor::User | ItemAuthor::Splice { .. } => {}
+                ItemAuthor::EntrySynth => panic!(
+                    "`{label}`: an EntrySynth-authored SR write in `{proc}` — the entry \
+                     synthesis emits no instructions today, and no obligation home exists \
+                     for one that writes SR; build the receiving contract before shipping it"
+                ),
+            }
+        }
+    }
+    assert_eq!(walked_debug_shapes, 3, "the three DEBUG == 1 shapes are the class's home");
+    assert!(seen_desugar > 0, "no desugar-authored SR write was seen — the exemption is vacuous");
+    // Context-authored SR traffic is corpus-real too (`ints_off` brackets); its
+    // count is reported, not pinned (adoption moves it).
+    eprintln!("sr-write census: desugar-authored {seen_desugar}, context-authored {seen_context}");
 }
 
 /// Every warn-tier diagnostic the corpus fires carries a `[area.name]` id.

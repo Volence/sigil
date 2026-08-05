@@ -25,8 +25,8 @@ use crate::ast::{self, AsmStmt, BinOp, InstrLine, Operand, TextOrSplice};
 use crate::lower::hygiene::{LabelScope, Owner};
 use crate::parser::expr_span;
 use crate::value::{
-    CodeBuf, CodeItem, CodeOperand, Reg, Value, Width, Z80Cond, Z80Index, Z80Pair, Z80Reg8,
-    Z80RegClass,
+    CodeBuf, CodeItem, CodeOperand, ContextPhase, Reg, Value, Width, Z80Cond, Z80Index, Z80Pair,
+    Z80Reg8, Z80RegClass,
 };
 use sigil_span::{Level, Span};
 
@@ -54,6 +54,17 @@ fn collect_labels<'a>(body: &'a [AsmStmt], out: &mut Vec<(&'a str, bool, Span)>)
             AsmStmt::With { body, .. } => collect_labels(body, out),
             _ => {}
         }
+    }
+}
+
+/// The template name a statement-call / `{expr}` splice records on the items
+/// it inlines ([`crate::value::ItemAuthor::Splice`]): the callee path for a
+/// call, `<expr>` for any other splice expression. Carried, not consumed —
+/// the `-> Code` fn-contract check is ledger row 1551's parcel.
+fn splice_template_name(expr: &ast::Expr) -> String {
+    match expr {
+        ast::Expr::Call { callee, .. } => callee.segments.join("."),
+        _ => "<expr>".to_string(),
     }
 }
 
@@ -253,7 +264,15 @@ impl Evaluator<'_> {
                 }
                 self.note_if_comptime_error(watermark, expr_span(expr));
                 match v {
-                    Value::Code(inner) => buf.items.extend(inner.items),
+                    Value::Code(mut inner) => {
+                        crate::value::author_user_items(
+                            &mut inner.items,
+                            &crate::value::ItemAuthor::Splice {
+                                template: splice_template_name(expr),
+                            },
+                        );
+                        buf.items.extend(inner.items)
+                    }
                     // A body-position guard (`ensure(...)`) yields Unit and emits
                     // no code — the rung-4 `ensure(cycles(...) == N)` site.
                     Value::Unit => {}
@@ -336,6 +355,7 @@ impl Evaluator<'_> {
                     ops: vec![],
                     span: *span,
                     as_type: None,
+                    author: self.item_author.clone(),
                 });
             }
             AsmStmt::If { cond, then, els, span: _ } => {
@@ -399,7 +419,15 @@ impl Evaluator<'_> {
                 let v = self.eval_expr(expr, env);
                 self.note_if_comptime_error(watermark, expr_span(expr));
                 match v {
-                    Value::Code(inner) => buf.items.extend(inner.items),
+                    Value::Code(mut inner) => {
+                        crate::value::author_user_items(
+                            &mut inner.items,
+                            &crate::value::ItemAuthor::Splice {
+                                template: splice_template_name(expr),
+                            },
+                        );
+                        buf.items.extend(inner.items)
+                    }
                     Value::Poison => {}
                     Value::Data(_) => self.error(
                         expr_span(expr),
@@ -529,13 +557,16 @@ impl Evaluator<'_> {
             return;
         };
         // Clone out of the borrow: evaluating the exprs needs `&mut self`.
+        let decl_span = decl.span;
         let (acquire, release) = (acquire.clone(), release.clone());
         buf.push(CodeItem::ContextMark {
             ctx: ctx.to_string(),
             kind: crate::value::ContextMarkKind::Enter,
             span,
         });
-        self.splice_context_code(&acquire, ctx, "acquire", span, buf, env);
+        let acq_start = buf.items.len();
+        self.splice_context_code(&acquire, ctx, ContextPhase::Acquire, span, buf, env);
+        let acq_end = buf.items.len();
         buf.push(CodeItem::ContextMark {
             ctx: ctx.to_string(),
             kind: crate::value::ContextMarkKind::AcquireEnd,
@@ -547,12 +578,46 @@ impl Evaluator<'_> {
             kind: crate::value::ContextMarkKind::BodyEnd,
             span,
         });
-        self.splice_context_code(&release, ctx, "release", span, buf, env);
+        let rel_start = buf.items.len();
+        self.splice_context_code(&release, ctx, ContextPhase::Release, span, buf, env);
+        let rel_end = buf.items.len();
         buf.push(CodeItem::ContextMark {
             ctx: ctx.to_string(),
             kind: crate::value::ContextMarkKind::Exit,
             span,
         });
+        // THE CONTEXT'S OWN SR OBLIGATION, checked where the code lives. The
+        // bracket's spliced SR traffic is `Context`-authored, so the consumer's
+        // `[proc.sr-undeclared]` never charges it — which is sound only because
+        // the round-trip proof runs HERE, against the definition: a context
+        // that masks and never restores fires at its own declaration, once per
+        // context (not per adopter; the cross-module duplicate collapses on the
+        // (level, message, span) key every warn collector dedups by).
+        //
+        // SCOPE — why SR-only: a round-tripped SR is unobservable to the
+        // consumer, so the bracket alone discharges it; a register the acquire
+        // clobbered and the release did not restore IS observable and stays the
+        // consumer's to declare. A context cannot declare its own net
+        // perturbation today (`perturbs(...)` is demand-parked; ledgered).
+        // ASSUMPTION, stated because nothing checks it: the round trip is a
+        // caller-visible guarantee only if the body leaves the stack balanced
+        // at the release, since the restore pops whatever is on top —
+        // balanced-stack verification is S2-D7(b)'s dataflow job.
+        if self.sr_checked_contexts.insert(ctx.to_string())
+            && !crate::lower::sr_writes_round_trip(
+                buf.items[acq_start..acq_end].iter().chain(&buf.items[rel_start..rel_end]),
+            )
+        {
+            self.warn(
+                decl_span,
+                format!(
+                    "[proc.sr-undeclared] context `{ctx}`'s acquire and release do not \
+                     round-trip `sr` — the spliced traffic leaves every consumer's \
+                     interrupt mask changed; save SR in `acquire` and make the \
+                     `move.w (sp)+, sr` restore the release's last SR write"
+                ),
+            );
+        }
     }
 
     /// Lower a bracket's statements inline against the enclosing scope + buffer,
@@ -573,23 +638,35 @@ impl Evaluator<'_> {
     }
 
     /// Evaluate one half of a context's bracket (`acquire`/`release`) and splice
-    /// its items. It MUST be Code — the same contract a statement-position call
-    /// carries — and an empty Code splices nothing (a legal, if pointless,
-    /// context).
+    /// its items, authored as the CONTEXT's ([`crate::value::ItemAuthor::Context`]
+    /// — the bracket is the consumer's declaration, so the spliced lines are the
+    /// context's to answer for). It MUST be Code — the same contract a
+    /// statement-position call carries — and an empty Code splices nothing (a
+    /// legal, if pointless, context).
     fn splice_context_code(
         &mut self,
         expr: &ast::Expr,
         ctx: &str,
-        half: &str,
+        phase: ContextPhase,
         span: Span,
         buf: &mut CodeBuf,
         env: &mut Env,
     ) {
+        let half = match phase {
+            ContextPhase::Acquire => "acquire",
+            ContextPhase::Release => "release",
+        };
         let watermark = self.diags.len();
         let v = self.eval_expr(expr, env);
         self.note_if_comptime_error(watermark, span);
         match v {
-            Value::Code(inner) => buf.items.extend(inner.items),
+            Value::Code(mut inner) => {
+                crate::value::author_user_items(
+                    &mut inner.items,
+                    &crate::value::ItemAuthor::Context { name: ctx.to_string(), phase },
+                );
+                buf.items.extend(inner.items)
+            }
             Value::Poison => {}
             other => self.error(
                 expr_span(expr),
@@ -730,9 +807,19 @@ impl Evaluator<'_> {
         self.asm_counter += 1;
         let diag_scope = self.diag_label_scope();
         let stmts = crate::eval::diag::build_assert_expansion(n, &diag_scope, p, span);
+        // Every expansion instruction is the DESUGAR's, not the asserting
+        // proc's author's — recorded at emission so an effect lint charges the
+        // compiler's own surface (the emission-site balance pin) instead of the
+        // containing proc. Restored after: the expansion cannot nest an assert,
+        // but the save/restore keeps the stamp scoped by construction.
+        let saved_author = std::mem::replace(
+            &mut self.item_author,
+            crate::value::ItemAuthor::AssertDesugar,
+        );
         for stmt in &stmts {
             self.lower_asm_stmt(stmt, scope, buf, env);
         }
+        self.item_author = saved_author;
     }
 
     /// Lower a `raise_error` (spec §4.3) or `raise_exception` (t25): NO DEBUG
@@ -913,7 +1000,16 @@ impl Evaluator<'_> {
             let v = self.eval_call(&callee, &args, instr.span, env);
             self.note_if_comptime_error(watermark, instr.span);
             match v {
-                Value::Code(inner) => return Some(inner),
+                Value::Code(mut inner) => {
+                    // The splice boundary claims the template's own lines
+                    // ([`crate::value::ItemAuthor::Splice`]); a finer
+                    // compiler-authored fact inside the template survives.
+                    crate::value::author_user_items(
+                        &mut inner.items,
+                        &crate::value::ItemAuthor::Splice { template: name.clone() },
+                    );
+                    return Some(inner);
+                }
                 Value::Poison => return Some(CodeBuf::empty()),
                 other => {
                     self.error(
@@ -998,6 +1094,7 @@ impl Evaluator<'_> {
                 ops,
                 span: instr.span,
                 as_type: instr.dispatch_bound.clone(),
+                author: self.item_author.clone(),
             });
         }
         // `movep` transfers ALTERNATE bytes (d, d+2[, d+4, d+6]) — each touched
@@ -1033,6 +1130,7 @@ impl Evaluator<'_> {
             ops,
             span: instr.span,
             as_type: instr.dispatch_bound.clone(),
+            author: self.item_author.clone(),
         })
     }
 

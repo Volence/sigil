@@ -896,6 +896,7 @@ mod edge_model_tests {
             ops,
             span: sp(),
             as_type: None,
+            author: crate::value::ItemAuthor::User,
         }
     }
     fn label(name: &str) -> CodeItem {
