@@ -282,8 +282,10 @@ pub fn regions_of(proc: &str, items: &[CodeItem]) -> (Vec<Region>, Vec<ContextFi
 ///
 /// - **escape** — an edge out of the acquire+body range that does not land back
 ///   inside the region is a path that skips the release. `Return`, `FallOff` and
-///   a `Defer` from a TAIL transfer (an external `jbra`) are escapes for the same
-///   reason; a `Defer` from a CALL is not — a call returns.
+///   a `Defer` (a tail transfer, e.g. an external `jbra`) are escapes for the
+///   same reason. A call is not among them: a call comes back, and the edge
+///   builders say so — every call mnemonic gets its fall-through and nothing
+///   else.
 /// - **reacquire (by branch)** — an edge from the body or the release back INTO
 ///   the acquire re-runs it with no matching release. That is the unbounded
 ///   `move.w sr,-(sp)` leak in bracket form, and it is why the acquire needs its
@@ -348,8 +350,6 @@ pub fn check_regions(
             if !region.in_body(idx) {
                 continue;
             }
-            let Some((mnem, _)) = cfg.instr(idx) else { continue };
-            let is_call = is_call_mnemonic(mnem, cpu);
             for edge in edges_for(&cfg, cpu, idx) {
                 match edge {
                     // A branch BACK into the acquire re-runs it. Excluded when
@@ -363,10 +363,9 @@ pub fn check_regions(
                     Edge::Follow(succ) if !region.contains(succ) => {
                         fire(ContextFiringKind::Escape, span_at(items, idx, region));
                     }
-                    // A CALL returns, so its `Defer` is not a path out. (The CFG
-                    // classifies `bsr` as a conditional branch on mnemonic shape,
-                    // which would otherwise read an ordinary call as an escape.)
-                    Edge::Defer if is_call => {}
+                    // A call is never one of these: both builders give every call
+                    // mnemonic its fall-through and nothing else, because a call
+                    // comes back. So a `Defer` here is a genuine transfer out.
                     Edge::Return | Edge::FallOff | Edge::Defer => {
                         fire(ContextFiringKind::Escape, span_at(items, idx, region));
                     }

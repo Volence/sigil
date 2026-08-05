@@ -372,9 +372,16 @@ impl<'a> Cfg<'a> {
                 None => vec![Edge::Defer],
             };
         }
-        // Conditional `jr cc`/`jp cc`/`call cc`: the taken edge (local → follow,
-        // external → defer) PLUS the fall-through.
-        if matches!(mnem, "jp" | "jr" | "call") && leads_cc {
+        // Conditional `jr cc`/`jp cc`: the taken edge (local → follow, external →
+        // defer) PLUS the fall-through.
+        //
+        // `call cc` is NOT one of these. It CALLS and comes back, so its only
+        // successor is the fall-through — the same fact that keeps 68k `bsr` out
+        // of the conditional-branch arm above. Giving a `call nz, .helper` the
+        // branch's taken edge splices the helper's body into this proc's flow at
+        // the caller's state; giving `call nz, External` a `Defer` claims the flag
+        // and the register file leave the proc, which they do not.
+        if matches!(mnem, "jp" | "jr") && leads_cc {
             let mut v = Vec::new();
             match branch_target(ops).and_then(|t| self.label_target.get(t)) {
                 Some(&tgt) => v.push(Edge::Follow(tgt)),
@@ -398,8 +405,8 @@ impl<'a> Cfg<'a> {
             }
             return v;
         }
-        // Everything else (incl. `call Name`, which returns) falls through; the
-        // end of the body runs off it.
+        // Everything else (incl. `call Name` and `call cc, Name`, which return)
+        // falls through; the end of the body runs off it.
         match fallthrough {
             Some(f) => vec![Edge::Follow(f)],
             None => vec![Edge::FallOff],
@@ -931,6 +938,45 @@ mod edge_model_tests {
         ];
         let cfg = Cfg::build(&items);
         assert_eq!(cfg.edges(0), vec![Edge::Follow(1)], "`bsr` calls; it does not branch");
+    }
+
+    /// PROBE 2's live Z80 twin. `call cc` is spelled like a conditional branch
+    /// and is not one, exactly as `bsr` is spelled like one and is not one — but
+    /// the Z80 builder was still listing it beside `jp cc`/`jr cc`. A local
+    /// target got spliced into the caller's flow; an external one got a `Defer`
+    /// claiming control left the proc.
+    ///
+    /// The second half is the invariant that lets `context.rs` drop its
+    /// `Defer if is_call` arm: NO call mnemonic yields a transfer-out edge under
+    /// either builder, so nothing has to compensate for one.
+    #[test]
+    fn a_conditional_z80_call_calls_it_does_not_branch() {
+        let local = vec![
+            instr("call", vec![cc(Z80Cond::Nz), sym(".helper")]),
+            instr("ret", vec![]),
+            label(".helper"),
+            instr("nop", vec![]),
+            instr("ret", vec![]),
+        ];
+        let cfg = Cfg::build(&local);
+        assert_eq!(
+            cfg.z80_edges(0),
+            vec![Edge::Follow(1)],
+            "the callee is not a successor of the caller"
+        );
+
+        let external = vec![
+            instr("call", vec![cc(Z80Cond::Nz), sym("Fm_NoteOff")]),
+            instr("ret", vec![]),
+        ];
+        let cfg = Cfg::build(&external);
+        assert_eq!(cfg.z80_edges(0), vec![Edge::Follow(1)], "a call comes back");
+
+        // A `call cc` closing a body still falls off it — it does not return, and
+        // it does not transfer out.
+        let tail = vec![instr("call", vec![cc(Z80Cond::Nz), sym("Fm_NoteOff")])];
+        let cfg = Cfg::build(&tail);
+        assert_eq!(cfg.z80_edges(0), vec![Edge::FallOff]);
     }
 
     /// PROBE 3 (B′-3a). The CPU whose return table applies is settled by WHICH
