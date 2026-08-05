@@ -25,7 +25,9 @@
 //! `SIGIL_STRICT_GATE` a missing tree HARD-FAILS (shipping ERROR gate); otherwise
 //! it skips green.
 
-use sigil_frontend_emp::corpus_contracts::{analyze_corpus_with, ContractReport};
+use sigil_frontend_emp::corpus_contracts::{
+    analyze_corpus_with_contracts, bind_corpus_interfaces, ContractReport,
+};
 use sigil_frontend_emp::parse_str;
 use sigil_harness::native;
 use std::path::{Path, PathBuf};
@@ -123,9 +125,12 @@ fn parse_all(srcs: &[(PathBuf, String)]) -> Vec<sigil_frontend_emp::ast::File> {
 
 /// `(shape label, profile, report)` for every shipped shape — ONE parse, seven
 /// analyses. The define set is the shape's own [`native::shape_defines`], the exact
-/// set `--report contracts` and the build read, so this gate and the ROM see the
-/// same code. The profile rides along so a shape-partitioning probe reads
-/// `profile.sound_on` rather than a second, hand-kept list of labels.
+/// set `--report contracts` and the build read, and each shape binds its own game's
+/// L1 interface env (the same walk `contract_closure_corpus.rs` runs — two gates
+/// walking two different corpora would disagree about which arms exist), so this
+/// gate and the ROM see the same code. The profile rides along so a
+/// shape-partitioning probe reads `profile.sound_on` rather than a second,
+/// hand-kept list of labels.
 fn analyze_every_shape(
     srcs: &[(PathBuf, String)],
 ) -> Vec<(&'static str, native::GameProfile, ContractReport)> {
@@ -133,7 +138,23 @@ fn analyze_every_shape(
     native::shipped_shapes()
         .into_iter()
         .map(|(label, profile)| {
-            let r = analyze_corpus_with(&files, &native::shape_defines(&profile));
+            let defines = native::shape_defines(&profile);
+            let game_prefix = profile
+                .game_ram_module
+                .rsplit_once('.')
+                .map_or(profile.game_ram_module, |(p, _)| p);
+            let (iface_env, bind_diags) =
+                bind_corpus_interfaces(&files, &defines, game_prefix);
+            let bind_errors: Vec<_> = bind_diags
+                .iter()
+                .filter(|d| d.level == sigil_span::Level::Error)
+                .collect();
+            assert!(
+                bind_errors.is_empty(),
+                "shape `{label}`: L1 interface bind errors — a half-bound env silently \
+                 discards `Iface.MEMBER`-gated arms from the walk: {bind_errors:?}"
+            );
+            let r = analyze_corpus_with_contracts(&files, &defines, &iface_env);
             (label, profile, r)
         })
         .collect()

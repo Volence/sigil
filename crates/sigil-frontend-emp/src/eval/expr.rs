@@ -392,6 +392,7 @@ impl<'a> Evaluator<'a> {
                     if self.label_ctx_active() {
                         return Value::Label(name.to_string());
                     }
+                    self.note_unresolved_name(name.to_string(), path.span);
                     self.error(path.span, format!("unknown name `{name}`"));
                     Value::Poison
                 }
@@ -562,6 +563,7 @@ impl<'a> Evaluator<'a> {
         if self.label_ctx_active() {
             return Value::Label(full);
         }
+        self.note_unresolved_name(full.clone(), path.span);
         self.error(path.span, format!("unknown name `{full}`"));
         Value::Poison
     }

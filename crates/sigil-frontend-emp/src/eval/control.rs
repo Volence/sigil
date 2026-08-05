@@ -215,10 +215,20 @@ impl<'a> Evaluator<'a> {
             return Flow::Normal(Value::Poison);
         }
         // A `return` fired while evaluating the condition itself — propagate it.
+        // The watermark/harvest pair feeds the `[comptime.unresolved]` surface:
+        // a name this condition referenced that resolution missed is recorded at
+        // the same eval the branch decision reads (a `Poison` condition below
+        // silently selects NO branch, which is exactly the invisibility the
+        // surface exists to make loud).
+        let mark = self.unresolved_mark();
         let c = match self.eval_operand(cond, env) {
             Ok(v) => v,
-            Err(f) => return f,
+            Err(f) => {
+                self.harvest_comptime_unresolved(mark);
+                return f;
+            }
         };
+        self.harvest_comptime_unresolved(mark);
         // A PROVISIONAL `here()` cannot steer comptime control flow (D-H.2): its
         // truth value is unknown until link. Refuse loudly rather than fold a
         // stale baseline value.
