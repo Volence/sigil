@@ -4,7 +4,8 @@ Branch `l1-p2-conversion` (paired: sigil + aeon). Spec
 `specs/2026-08-02-l1-game-contract-design.md` §8 P2. Gated on P1's countersign.
 The engine now DECLARES the `Game` interface; both games BIND it in `.emp`
 manifests; the boot/game_loop/camera mirrors die; `games/*/config/game.asm` ×2
-are DELETED. No merge — gate-green branches + this packet for the overseer.
+are DELETED. Gate-green branches + this packet for the overseer; merge state
+lives in the campaign log, not here.
 
 Strict suite **2941 / 0 / 4** (2938 baseline + 3 new whole-build probes; no
 tests net-retired — the isolated port oracles were RE-POINTED in place).

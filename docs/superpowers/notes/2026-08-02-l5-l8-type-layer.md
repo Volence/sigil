@@ -1,10 +1,10 @@
 # 2026-08-02 — L5 + L8: the type-layer parcel (close packet)
 
-Status: **Checkpoint for the overseer's countersign + merge.** Branch pair
+Status: Merge state lives in the campaign log, not here. Branch pair
 `lang-l5l8-types` (aeon + sigil), both off the merged K5 tips (aeon `8516892`,
 sigil `7643ee62`). Two stages, committed separately per side. **Six targets
 byte-identical to the chain-18 goldens; strict 2904 → 2915 (+11 new tests, 0
-retired — the one drift-guard probe was REPURPOSED, not removed).** NOT merged.
+retired — the one drift-guard probe was REPURPOSED, not removed).**
 
 Branch tips:
 - aeon: `c886f83` (L8) on top of `aedb89e` (L5).

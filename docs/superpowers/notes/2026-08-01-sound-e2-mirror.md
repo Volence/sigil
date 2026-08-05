@@ -1,13 +1,13 @@
 # 2026-08-01 — SOUND-E2: the sound-constants mirror dissolution (close packet)
 
-Status: **DONE — branches unmerged for the overseer's countersign.** Branch pair
+Status: DONE. Merge state lives in the campaign log, not here. Branch pair
 `sound-e2-mirror` (aeon + sigil, both off the E1 branch). The seam-1 399-entry
 resident-blob const mirror and seam-2's pinned DAC-head carriers are **DISSOLVED** —
 every resident-module `-D` value now flows from `engine/sound/sound_constants.emp`
 (the E1 authority) through the shared `eval_all_pub_consts` path. **All 15 generated
 Z80 blobs byte-identical (before→after, every step); all six ROM targets
 byte-identical to the chain tips; strict 2868/0/4.** `dac_sample_tab.emp`'s 2
-externs swapped to `use` (the E1 deferral). NOT merged. Spec: §2 E2 of
+externs swapped to `use` (the E1 deferral). Spec: §2 E2 of
 `docs/superpowers/specs/2026-08-01-sound-constants-flip-design.md` (now stamped
 SHIPPED). This is the payoff parcel: **no hand-maintained copy of any engine sound
 constant survives.**

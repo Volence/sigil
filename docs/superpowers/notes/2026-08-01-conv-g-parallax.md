@@ -1,9 +1,9 @@
 # 2026-08-01 — CONV-G PARCEL G: the parallax config DSL (close packet)
 
-Status: **Checkpoint for the overseer's countersign + merge.** Branch pair
+Status: Merge state lives in the campaign log, not here. Branch pair
 `conv-g-parallax` (aeon + sigil). The §4.6 parallax macro layer + the 10 config
 files are `.emp`-native; six targets byte-identical; strict green at the baseline
-count. NOT merged — the merge is the overseer's.
+count.
 
 ## §0 — THE HEADLINE
 

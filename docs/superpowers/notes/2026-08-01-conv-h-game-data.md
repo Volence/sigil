@@ -1,9 +1,9 @@
 # 2026-08-01 — CONV-H PARCEL H: the remaining game data (close packet)
 
-Status: **Checkpoint for the overseer's countersign + merge.** Branch pair
+Status: Merge state lives in the campaign log, not here. Branch pair
 `conv-h-game-data` (aeon + sigil). Three files retired/ported to the byte-identity
 bar (#34, #46, #35); the demo tree (#14/#15/#17/#18/#20) and #12 boot_data are
-scoped named remainders with numbered premise corrections. NOT merged.
+scoped named remainders with numbered premise corrections.
 
 ## §0 — THE HEADLINE
 

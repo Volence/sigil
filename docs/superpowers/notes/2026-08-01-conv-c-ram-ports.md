@@ -1,6 +1,6 @@
 # 2026-08-01 — CONV-C PARCEL C: the ram.asm ports to `vars` (close packet — BLOCKED FINDING)
 
-Status: **Checkpoint for the overseer's countersign.** Branch pair `conv-c-ram`
+Status: Merge state lives in the campaign log, not here. Branch pair `conv-c-ram`
 (aeon + sigil). The parcel is **re-scoped to a construct-gap finding**: the
 region-form `vars` construct the census names as the port mechanism **does not
 exist as a working lowering** — it parses and is then INERT by a recorded
@@ -8,7 +8,6 @@ campaign decision. No `ram.asm` file is completable via `vars` today, so the
 disciplined outcome (the brief's explicit scale-warning clause) is the finding +
 census/ledger annotation, **NOT a forced partial mechanism**. Zero build-input
 edits; every target byte-identical to chain-9; strict unchanged at 2849/0/4.
-NOT merged — the merge is the overseer's.
 
 ## §0 — THE HEADLINE
 

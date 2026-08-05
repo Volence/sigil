@@ -1,6 +1,6 @@
 # 2026-08-04 — B′-0: the conditional-out overlap relax (close packet)
 
-Status: **countersigned and MERGED** — sigil `4a21063a`, aeon `b96051a`. The
+Status: Merge state lives in the campaign log, not here. The
 merge waited for a quiet window and a rebase, exactly as this line originally
 predicted it would need to: the concurrent engine session moved both masters
 (chain 33 → 36 during the build session alone, and 36 → 38 while the parcel

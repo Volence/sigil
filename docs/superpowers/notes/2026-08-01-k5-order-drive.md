@@ -8,7 +8,7 @@ map DRIVES section order (completing spec §1-fact-1 STAGE-2, ruled R2+R1 at K1)
 `specs/2026-08-01-k-capstone-design.md` (§1 fact-1 STAGE-2, §5). Predecessor: K1
 (`notes/2026-08-01-k1-map-authority.md`, the VALIDATE stage this DRIVES-inverts).
 
-Commits (branches unmerged for the countersign): sigil `7cea9f51` (order-drive flip),
+Commits (merge state lives in the campaign log, not here): sigil `7cea9f51` (order-drive flip),
 `46101a02` (sigil.map.toml retirement); aeon `9284631` (the per-game map edits).
 
 ---

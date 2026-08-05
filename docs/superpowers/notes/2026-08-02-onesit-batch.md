@@ -1,7 +1,7 @@
 # The language-round one-sitting batch — L3 · L4 · L12 (+ bookkeeping)
 
-**Parcel:** the Tier-3 one-sitting batch (Opus porter; overseer countersigns/merges
-— NOT merged/pushed). **Repos:** sigil `lang-onesit` · aeon `lang-onesit`
+**Parcel:** the Tier-3 one-sitting batch (Opus porter). Merge state lives in the
+campaign log, not here. **Repos:** sigil `lang-onesit` · aeon `lang-onesit`
 (paired worktrees). **Date:** 2026-08-02.
 **Agenda:** `specs/2026-08-02-language-round-agenda.md` Tier 3.
 **Ledger:** `notes/2026-08-02-language-round-ledger.md` §L3/§L4/§L6/§L11/§L12/§L13.

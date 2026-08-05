@@ -1,7 +1,8 @@
 # 2026-08-05 — B′-4: the `--report` surface + the cc-precision hole
 
 Branch pair: sigil `bprime-4` (from master `50382ddc`) / aeon `bprime-4` (from
-master `77d5317`, **untouched — no aeon change was needed**). Unmerged, unpushed.
+master `77d5317`, **untouched — no aeon change was needed**). Merge state lives
+in the campaign log, not here.
 
 Two tasks, one parcel: (1) delta spec §5's report consolidation, (2) handoff §5's
 cc-precision hole. They landed together because the report surface is what

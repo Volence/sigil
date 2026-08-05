@@ -1,7 +1,6 @@
 # 2026-08-05 — `Edge::Return` / `Edge::FallOff`: the CFG builder decides once
 
-Status: **checkpoint for the overseer's countersign + merge. NOT merged, NOT
-pushed.** Branch `edge-split` off sigil `ea7b1c36`, **zero commits in aeon** — a
+Status: Merge state lives in the campaign log, not here. Branch `edge-split` off sigil `ea7b1c36`, **zero commits in aeon** — a
 sigil-only parcel. Worktrees `sigil/.worktrees/b4` + `aeon/.worktrees/b4`
 (aeon at `77d5317`, read-only reference).
 

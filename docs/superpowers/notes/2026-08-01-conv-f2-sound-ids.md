@@ -1,11 +1,10 @@
 # 2026-08-01 — CONV-F2 #24: the sound-ids flip (close packet)
 
-Status: **DONE — branches unmerged for the overseer's countersign + merge.** Branch
+Status: DONE. Merge state lives in the campaign log, not here. Branch
 pair `conv-f2-sound-ids` (aeon + sigil, both off the merged Parcel-F tips). Parcel F's
 #24 (`config/sound_ids.asm`) is **FLIPPED and the file DELETED**; the SFX-bank-count
 family is **DISSOLVED into `sfx_bank.emp`** (the ruling's mechanical path). Six targets
-byte-identical + all 15 Z80 blobs identical; strict 2867 → 2866 (−1 retired probe). NOT
-merged.
+byte-identical + all 15 Z80 blobs identical; strict 2867 → 2866 (−1 retired probe).
 
 ## §0 — THE HEADLINE
 

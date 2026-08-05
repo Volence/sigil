@@ -1,6 +1,6 @@
 # 2026-08-04 — B′-1: generalized contexts (close packet)
 
-Status: **countersigned and MERGED** — sigil `f1de60df`, aeon `0e1f32c`. Built as
+Status: Merge state lives in the campaign log, not here. Built as
 branch pair `bprime-1` off sigil `6d332f5b` / aeon `b54f44d`, in two commits per
 repo (the construct, then corpus adoption), sequenced so an adoption problem
 could never entangle the construct. Both masters moved to the `b-jumps` parcel

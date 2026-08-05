@@ -1,11 +1,10 @@
 # 2026-08-01 — CONV-F PARCEL F: the game-config / P6 module (close packet)
 
-Status: **Checkpoint for the overseer's countersign + merge.** Branch pair
+Status: Merge state lives in the campaign log, not here. Branch pair
 `conv-f-game-config` (aeon + sigil). **#21 `config/constants.asm` is FLIPPED to
 `.emp` and DELETED; #22 `game.asm` and #24 `sound_ids.asm` are SCOPED with premise
 corrections and remainder analysis but NOT yet flipped** (see §8). Every built
 target byte-identical to the chain goldens; strict 2868 → 2867 (−1 retired probe).
-NOT merged — the merge is the overseer's.
 
 ## §0 — THE HEADLINE
 
