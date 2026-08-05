@@ -1649,9 +1649,9 @@ impl Parser {
         let mut list = Vec::new();
         if !self.at(&Tok::RParen) {
             loop {
-                let lo = self.reg_segment_name("register");
+                let lo = self.reg_endpoint_name("register");
                 let hi = if self.eat(&Tok::Minus) {
-                    Some(self.reg_segment_name("range-end register"))
+                    Some(self.reg_endpoint_name("range-end register"))
                 } else {
                     None
                 };
@@ -1667,12 +1667,12 @@ impl Parser {
         list
     }
 
-    /// Parse one reglist segment ENDPOINT: an identifier, optionally carrying one
+    /// Parse one reglist ENDPOINT: an identifier, optionally carrying one
     /// dotted suffix — the spelling the SR half tokens use (`sr.mask` / `sr.ccr`).
     /// The dotted name flows through as a single string; its validity is a
     /// lowering check (`[proc.*-invalid]`) like every other endpoint spelling, per
     /// the clause grammar's defer-validity rule.
-    fn reg_segment_name(&mut self, what: &str) -> String {
+    fn reg_endpoint_name(&mut self, what: &str) -> String {
         let mut name = self.expect_ident(what);
         if self.eat(&Tok::Dot) {
             name.push('.');
@@ -1701,7 +1701,7 @@ impl Parser {
         if !self.at(&Tok::RParen) {
             loop {
                 let seg_start = self.span();
-                let lo = self.reg_segment_name("register or flag");
+                let lo = self.reg_endpoint_name("register or flag");
                 if self.eat(&Tok::Colon) {
                     if is_register_name(&lo) {
                         // `dN: Type` — a typed data-register result (G5 §7 tier
@@ -1723,7 +1723,7 @@ impl Parser {
                     }
                 } else {
                     let hi = if self.eat(&Tok::Minus) {
-                        Some(self.reg_segment_name("range-end register"))
+                        Some(self.reg_endpoint_name("range-end register"))
                     } else {
                         None
                     };

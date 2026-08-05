@@ -2043,7 +2043,7 @@ fn preserves_post_call_clobber_still_errors() {
 // SR partitions into the system byte (`sr.mask`) and the condition codes
 // (`sr.ccr`); bare `sr` means both halves. The split exists so the
 // out/preserves partition check can SEE a flag result against a preserved
-// CCR — the overlap the bare token structurally hid (`preserves_reg_bit`
+// CCR — an overlap invisible to the register walk (`preserves_reg_bit`
 // answers `None` for `sr`, and a flag result never joins the out reglist).
 
 /// THE PINNED PARTITION FACT, half 1: a flag result lives in CCR, so
@@ -2090,10 +2090,9 @@ fn out_carry_does_not_overlap_preserves_sr_mask() {
     );
 }
 
-/// Bare `sr` still means BOTH halves, so the pre-split conflation
-/// (`out(carry: …) preserves(sr)`) now fires the overlap the split was built
-/// to surface — this is the old QueueDMA_Deferrable spelling becoming
-/// visible.
+/// Bare `sr` covers the CCR half, so `out(carry: …) preserves(sr)` is the
+/// same returned-and-untouched contradiction as the explicit half — a flag
+/// result partitions cleanly only against `sr.mask`.
 #[test]
 fn out_carry_overlapping_bare_preserves_sr_errors() {
     let src = "module m\n\
@@ -2193,10 +2192,7 @@ fn sr_half_tokens_fold_with_bare_sr() {
                \x20   rts\n\
                }\n";
     let (_module, diags) = lower(src);
-    assert!(
-        diags.iter().all(|d| d.level != Level::Error),
-        "the fold is a set union, not a diagnostic: {diags:?}"
-    );
+    assert!(diags.is_empty(), "the fold is a set union, not a diagnostic: {diags:?}");
 }
 
 /// `preserves(sr.ccr)` verifies in the one shape the slice can see: every
@@ -2304,5 +2300,150 @@ fn a_dotted_non_sr_register_is_invalid() {
     assert!(
         has_tag(&diags, "[proc.clobber-invalid]"),
         "d0.mask is not a register or SR token: {diags:?}"
+    );
+}
+
+/// A declared `falls_into` is a tail transfer with no mnemonic: the successor's
+/// flag traffic is invisible to the walk, so the claim refuses.
+#[test]
+fn preserves_sr_ccr_refuses_a_declared_fallthrough() {
+    let src = "module m\n\
+               proc a() preserves(sr.ccr) falls_into b {\n\
+               \x20   move.w  sr, -(sp)\n\
+               \x20   move.w  (sp)+, sr\n\
+               }\n\
+               proc b() {\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-unverifiable]"),
+        "a fallthrough hands the caller the successor's flags: {diags:?}"
+    );
+}
+
+/// A body that can run off its end is the same mnemonic-less tail, undeclared.
+#[test]
+fn preserves_sr_ccr_refuses_a_body_that_can_run_off_the_end() {
+    let src = "module m\n\
+               proc f() preserves(sr.ccr) {\n\
+               \x20   move.w  sr, -(sp)\n\
+               \x20   move.w  (sp)+, sr\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-unverifiable]"),
+        "control running off the end escapes the walk: {diags:?}"
+    );
+}
+
+/// A nested save refuses — the slice pairs one bracket at a time.
+#[test]
+fn preserves_sr_ccr_refuses_a_nested_save() {
+    let src = "module m\n\
+               proc f() preserves(sr.ccr) {\n\
+               \x20   move.w  sr, -(sp)\n\
+               \x20   move.w  sr, -(sp)\n\
+               \x20   move.w  (sp)+, sr\n\
+               \x20   move.w  (sp)+, sr\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-unverifiable]"),
+        "nested saves cannot be paired statically: {diags:?}"
+    );
+}
+
+/// An unmatched save refuses — nothing restores the captured CCR.
+#[test]
+fn preserves_sr_ccr_refuses_an_unmatched_save() {
+    let src = "module m\n\
+               proc f() preserves(sr.ccr) {\n\
+               \x20   move.w  sr, -(sp)\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-unverifiable]"),
+        "a save with no restore proves nothing: {diags:?}"
+    );
+}
+
+/// An unconditional tail transfer refuses — the flags the caller finally sees
+/// are the target's.
+#[test]
+fn preserves_sr_ccr_refuses_a_tail_transfer() {
+    let src = "module m\n\
+               proc f() preserves(sr.ccr) {\n\
+               \x20   jbra    Helper\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-unverifiable]"),
+        "a tail transfer's flags are the target's: {diags:?}"
+    );
+}
+
+/// `rte` loads SR wholesale from the stack with no `sr` operand — the one SR
+/// write the round-trip slice's operand shapes cannot see, so a mask claim
+/// over an `rte`-bearing body fails the balance check.
+#[test]
+fn an_rte_fails_a_mask_claim() {
+    let src = "module m\n\
+               proc f() preserves(sr.mask) {\n\
+               \x20   rte\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-sr-unbalanced]"),
+        "rte rewrites the mask from the stack: {diags:?}"
+    );
+}
+
+/// A whole-SR destination always perturbs the interrupt mask, so a contract
+/// covering only the CCR half leaves that write undeclared — the warn tier's
+/// bar is MASK coverage, not any-token.
+#[test]
+fn clobbers_sr_ccr_alone_does_not_silence_a_whole_sr_write() {
+    let src = "module m\n\
+               proc f() clobbers(sr.ccr) {\n\
+               \x20   move.w  #$2700, sr\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.sr-undeclared]"),
+        "a ccr-only token does not address a mask write: {diags:?}"
+    );
+}
+
+/// The mask arms of the out partition: an `out` SR token's mask half against a
+/// preserved mask is output-and-untouched, per half.
+#[test]
+fn out_sr_token_overlaps_a_preserved_mask() {
+    let src = "module m\n\
+               proc f() out(sr.mask) preserves(sr.mask) {\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.out-preserves-overlap]"),
+        "the mask half partitions like any state: {diags:?}"
+    );
+}
+
+/// A dotted token inside a range is invalid at lowering, like every other
+/// non-register endpoint.
+#[test]
+fn a_dotted_token_in_a_range_is_invalid() {
+    let src = "module m\n\
+               proc f() preserves(sr.mask-d0) {\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-invalid]"),
+        "an SR token cannot bound a range: {diags:?}"
     );
 }
