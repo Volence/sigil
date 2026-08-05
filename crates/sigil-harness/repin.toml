@@ -1488,6 +1488,12 @@ tests = ["sprites_port"]
 name = "Sprite_Table_Dirty"
 tests = ["sprites_port"]
 
+# NEW-3 emit bracket (defect-batch-8): read by buffers' enqueue gate, written at
+# Render_Sprites' entry/exits. Consumed by both port tests' addr carriers.
+[[symbol]]
+name = "Sprite_Emit_Active"
+tests = ["sprites_port", "buffers_port"]
+
 [[symbol]]
 name = "Sprite_Bands"
 tests = ["sprites_port"]

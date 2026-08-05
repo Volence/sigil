@@ -82,7 +82,11 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // slack to absorb 0xE without crossing an alignment boundary — the shapes
     // legitimately move by different amounts, which is why this row is a
     // per-shape pair and not a single delta.
-    ("Ground_Move_Cap", 0x10766, 0x107BA),
+    // `defect-batch-8` (2026-08-05): +0x10 DEBUG ONLY. player_common's C1c swap
+    // (bare ori -> set_priority_band's andi+ori pair, +0x6) crossed a 16-byte
+    // alignment boundary in the debug region; plain absorbed the same +0x6 in
+    // existing pad slack — the mirror image of the b-jumps shift above.
+    ("Ground_Move_Cap", 0x10766, 0x107CA),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)

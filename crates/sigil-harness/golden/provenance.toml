@@ -2118,3 +2118,57 @@ full_crc = "ba9bbfe5"
 full_size = 423451
 anchor_crc = "786deada"
 anchor_end = 0x5f724
+
+[[entry]]
+name = "defect-batch-8"
+ab = "docs/superpowers/notes/2026-08-05-defect-batch-ab.md"
+note = "8-defect batch: NEW-1..5 + C1b/C1c/C1d (cascade, band inheritance, 64-row BG)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "3d13cb23"
+full_size = 423805
+anchor_crc = "5f6864bf"
+anchor_end = 0x5f724
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "7ec58b38"
+full_size = 305010
+anchor_crc = "1a6020ba"
+anchor_end = 0x436c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "f63b6603"
+full_size = 91258
+anchor_crc = "a1dfd7fb"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "09754767"
+full_size = 93955
+anchor_crc = "12cc51de"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "237def48"
+full_size = 379822
+anchor_crc = "0291b327"
+anchor_end = 0x5cbae
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "fdcb4dff"
+full_size = 413344
+anchor_crc = "788b357b"
+anchor_end = 0x5dc30
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "b0befdd6"
+full_size = 423428
+anchor_crc = "5f0be608"
+anchor_end = 0x5f724

@@ -279,8 +279,28 @@ fn config_b_doctored_size_table_breaks_the_build() {
     }
 
     // (b) Doctor a CONTIGUOUS entry (+2): packing must ignore it — byte-identical build.
+    //
+    // The probe entry must GENUINELY abut its predecessor in the CURRENT freeze —
+    // contiguity is incidental layout, not a property of the symbol. The previous
+    // hardcoded probe (`HeightMaps`) rotted at `defect-batch-8`: the parcel's
+    // upstream shift left `Ani_Particle_End 0x25838` / `HeightMaps 0x25840` — an
+    // 8-byte alignment hole — so `is_anchor` (tb > chain_end) started honoring the
+    // TABLE for collision_data and the doctoring legitimately changed the ROM. The
+    // precondition assert makes that rot mode loud instead of a byte-dump: if it
+    // fires, the layout shifted — pick a head label that abuts again.
     let mut inert_profile = native::config_b_profile();
-    let inert = "HeightMaps";
+    let inert = "Ani_Particle";
+    let inert_pred_end = "Ani_Sonic_End";
+    if let native::SizeSource::Frozen(t) = &inert_profile.size_source {
+        let head = *t.get(inert).unwrap_or_else(|| panic!("{inert} not in table"));
+        let prev = *t.get(inert_pred_end).unwrap_or_else(|| panic!("{inert_pred_end} not in table"));
+        assert_eq!(
+            head, prev,
+            "t24(b) precondition: `{inert}` ({head:#x}) no longer abuts `{inert_pred_end}` \
+             ({prev:#x}) in the frozen table — the freeze shifted the layout; choose a new \
+             contiguous probe entry"
+        );
+    }
     if let native::SizeSource::Frozen(t) = &mut inert_profile.size_source {
         *t.get_mut(inert).unwrap_or_else(|| panic!("{inert} not in table")) += 2;
     }

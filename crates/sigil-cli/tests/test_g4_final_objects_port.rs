@@ -467,7 +467,11 @@ fn g4_undoctored_compile_equals_the_reference_window() {
     };
     let c = compile_real_files(shape);
     let swap_sec = c.linked.section("path_swap").expect("linked path_swap");
-    assert_eq!(swap_sec.bytes, swap_ref, "undoctored path_swap must match");
+    // Same align-fill tolerance as the reference gate (defect-batch-8: the parcel's
+    // shift left 2 pad bytes inside the pin span, which a raw assert_eq! read as a
+    // mismatch while g4_objects_regions_match_reference — using the tolerant
+    // comparator — stayed green).
+    assert_region_matches(&swap_sec.bytes, &swap_ref, "undoctored path_swap");
 }
 
 /// A doctored reference window must NOT match the compiled bytes (the gate can

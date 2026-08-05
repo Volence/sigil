@@ -129,6 +129,7 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         ("Static_Hscroll_Line", pick(pins::STATIC_HSCROLL_LINE)),
         ("Palette_Dirty", pick(pins::PALETTE_DIRTY)),
         ("Sprite_Table_Dirty", pick(pins::SPRITE_TABLE_DIRTY)),
+        ("Sprite_Emit_Active", pick(pins::SPRITE_EMIT_ACTIVE)),
         ("DMA_Critical_Slot", pick(pins::DMA_CRITICAL_SLOT)),
         ("DMA_Critical_End", pick(pins::DMA_CRITICAL_END)),
         ("Parallax_Active_Config", pick(pins::PARALLAX_ACTIVE_CONFIG)),

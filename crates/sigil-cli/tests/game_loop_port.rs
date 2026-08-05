@@ -477,6 +477,8 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     // (prepended above), so only the z80_bus register stays a link extern.
     let pairs: Vec<(&str, &str)> = vec![
         ("Z80_BUS_REQUEST", "$A11100"),
+        // NEW-1 (defect-batch-8): VInt_Lag's $8F02 re-assert names VDP_CTRL.
+        ("VDP_CTRL", "$C00004"),
     ];
     sections.extend(sigil_harness::test_support::assemble_equ_pairs(&pairs));
 

@@ -59,6 +59,8 @@ const PLAIN_LABELS: &[(&str, u32)] = &[
     ("Camera_X", pins::CAMERA_X.plain),
     ("Camera_Y", pins::CAMERA_Y.plain),
     ("Draw_Sprite", pins::DRAW_SPRITE.plain),
+    // C1b cascade (defect-batch-8): DeleteObject's front-guarded DeleteChildren call
+    ("DeleteChildren", pins::DELETE_CHILDREN.plain),
     // object-pool occupancy — the dynamic live-list (spawn-order maintenance)
     ("Dynamic_Live", pins::DYNAMIC_LIVE.plain),
     ("Dynamic_Live_Count", pins::DYNAMIC_LIVE_COUNT.plain),

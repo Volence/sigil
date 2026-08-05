@@ -98,6 +98,7 @@ const PLAIN: Shape = Shape {
         ("Camera_X", pins::CAMERA_X.plain),
         ("Camera_Y", pins::CAMERA_Y.plain),
         ("Draw_Sprite", pins::DRAW_SPRITE.plain),
+        ("DeleteChildren", pins::DELETE_CHILDREN.plain),
         // object-pool occupancy — the dynamic live-list (spawn-order maintenance)
         ("Dynamic_Live", pins::DYNAMIC_LIVE.plain),
         ("Dynamic_Live_Count", pins::DYNAMIC_LIVE_COUNT.plain),
@@ -125,6 +126,7 @@ const DEBUG: Shape = Shape {
         ("Camera_X", pins::CAMERA_X.debug),
         ("Camera_Y", pins::CAMERA_Y.debug),
         ("Draw_Sprite", pins::DRAW_SPRITE.debug),
+        ("DeleteChildren", pins::DELETE_CHILDREN.debug),
         // object-pool occupancy — the dynamic live-list (spawn-order maintenance)
         ("Dynamic_Live", pins::DYNAMIC_LIVE.debug),
         ("Dynamic_Live_Count", pins::DYNAMIC_LIVE_COUNT.debug),

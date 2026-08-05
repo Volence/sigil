@@ -60,7 +60,8 @@ fn strict_gate() -> bool {
 /// authored in engine/sound/sound_constants.emp (prepended in lower_vblank), so
 /// they are comptime consts, not link externs.
 fn value_equs() -> Vec<Section> {
-    let pairs: Vec<(&str, &str)> = vec![("Z80_BUS_REQUEST", "$A11100")];
+    // VDP_CTRL: NEW-1 (defect-batch-8) — VInt_Lag's $8F02 re-assert names it.
+    let pairs: Vec<(&str, &str)> = vec![("Z80_BUS_REQUEST", "$A11100"), ("VDP_CTRL", "$C00004")];
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
