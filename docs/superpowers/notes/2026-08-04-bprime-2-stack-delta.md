@@ -157,7 +157,7 @@ get to guess.
 
 ## §3 — The lint set, and its POSITIVE and SILENCE probes
 
-27 integration tests (`crates/sigil-frontend-emp/tests/stack_balance.rs`) + 10
+28 integration tests (`crates/sigil-frontend-emp/tests/stack_balance.rs`) + 10
 unit tests (`preserves.rs::frame_tests`).
 
 **Positives** — `push_without_pop_is_unbalanced` (asserts the tier is
@@ -284,7 +284,7 @@ the warn path is proven by tests only — stated here rather than implied.
 ## §6 — HONEST GAPS
 
 1. **`link`/`unlk` have ZERO corpus adopters and cannot get any.** The 68k
-   backend has no encoder for either mnemonic, so the rule is proven by 8 unit
+   backend has no encoder for either mnemonic, so the rule is proven by 10 unit
    tests over hand-built `CodeItem`s and by nothing else. This is the same shape
    as B′-1's `requires(z80_stopped)` having zero corpus adopters outside tests —
    implemented for soundness (an unmodeled `link` corrupted the shipped
@@ -596,8 +596,8 @@ A `with stack_frame { end_row: u16, cur_row: u16, … } { … }` bracket — B�
 context machinery generalized from a machine-state lattice to a memory layout —
 would give the compiler the slot map the author already has in their head. It
 would (a) name the slots so the code stops counting bytes, (b) make the
-displaced store CHECKABLE instead of a bailout, taking coverage from 401/404 to
-404/404, and (c) make the 17 `addq #N, sp` cleanup sites structural rather than
+displaced store CHECKABLE instead of a bailout, taking coverage from 383/386 to
+386/386, and (c) make the 17 `addq #N, sp` cleanup sites structural rather than
 hand-balanced. Recorded as a demand, not built: it is a real construct and this
 parcel is a checker.
 
@@ -631,9 +631,9 @@ touched, no cycle or DMA-window claim made. The one engine-shaped observation is
 the language ask above, and the honest version of it is "two procs use the stack
 as a scratch frame", which is a legitimate 68000 technique and not a defect.
 
-The census DOES hand the engine a fact it did not have: **401 of 404 return
-sites are now proven to leave sp exactly at its entry value**, and the three that
-are not are named. Any future parcel that touches sp discipline starts from a
+The census DOES hand the engine a fact it did not have: **383 of the 386 charged
+return sites are now proven to leave sp exactly at its entry value**, and the
+three that are not are named. Any future parcel that touches sp discipline starts from a
 measured baseline rather than an assumption.
 
 ### Neither bucket — the headline
