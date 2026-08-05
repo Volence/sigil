@@ -5,8 +5,10 @@
 //! original "don't duplicate" rationale protected are predominantly 68k-specific
 //! (movem masks, linear-delta address arithmetic, sp-displacement hazards), while
 //! the genuinely shared part — the CPU-agnostic CFG ([`crate::flag_check::Cfg`]) —
-//! is ALREADY shared. So this sibling REUSES that CFG and duplicates nothing that
-//! matters; `preserves.rs` stays byte-untouched.
+//! is ALREADY shared. So this sibling REUSES that CFG — including its Z80
+//! successor model, [`Cfg::z80_edges`], which is the ONE place a Z80 edge is
+//! classified — and duplicates nothing that matters; `preserves.rs` stays
+//! byte-untouched.
 //!
 //! The proof mirrors `preserves.rs`'s dataflow SKELETON: a forward dataflow over
 //! the shared CFG tracking a symbolic stack of slots (each tagged with which
@@ -20,8 +22,8 @@
 //!   zero on our slot stack.
 //! - **join meets entry bits by AND; a depth mismatch bails** — mirrors
 //!   `preserves.rs:506` (`join`).
-//! - **a bail is path-local and only matters if it reaches a return** — mirrors
-//!   `preserves.rs:165` (`bailed_reached_return`).
+//! - **a bail is path-local and only matters if it reaches an exit** — mirrors
+//!   `preserves.rs` (`bailed_reached_exit`).
 //!
 //! Z80 divergences from the 68k proof, by design (§4.2):
 //! - every save is a `push rr` / `pop rr` PAIR (no movem, no single-register push);
@@ -185,11 +187,6 @@ fn is_call(mnem: &str) -> bool {
     matches!(mnem, "call" | "rst")
 }
 
-/// True for a Z80 RETURN terminator (an `rts`-analog return edge).
-fn is_return(mnem: &str) -> bool {
-    matches!(mnem, "ret" | "reti" | "retn")
-}
-
 /// An unmodeled sp hazard → bail: `ex (sp),hl`/`ex (sp),ix` (the rung-3
 /// trampoline alias), or a direct sp write that is not a push/pop
 /// (`ld sp,…` / `inc sp` / `dec sp` / `add hl,sp`-into-sp — replaces or
@@ -302,8 +299,8 @@ pub fn verify_z80_preserved(
     in_state.insert(entry_idx, State { stack: Vec::new(), entry: [true; NU], bailed: false });
     let mut work: VecDeque<usize> = VecDeque::from([entry_idx]);
     let mut bail_reason: Option<String> = None;
-    let mut bailed_reached_return = false;
-    let mut saw_return = false;
+    let mut bailed_reached_exit = false;
+    let mut saw_exit = false;
     let mut all_returns_preserve: BTreeMap<usize, bool> =
         checked.iter().map(|(_, i)| (*i, true)).collect();
 
@@ -315,7 +312,7 @@ pub fn verify_z80_preserved(
                 bail_reason.get_or_insert(reason);
             }
         }
-        for edge in z80_edges(&cfg, idx) {
+        for edge in cfg.z80_edges(idx) {
             match edge {
                 Edge::Follow(succ) => {
                     let changed = match in_state.get(&succ) {
@@ -338,11 +335,12 @@ pub fn verify_z80_preserved(
                         work.push_back(succ);
                     }
                 }
-                Edge::Abandon => {
-                    // A `ret` / fall-off-end: checkpoint every checked register.
-                    saw_return = true;
+                // A `ret`, or control running off the end: either way the caller
+                // reads the register file from here — checkpoint it.
+                Edge::Return | Edge::FallOff => {
+                    saw_exit = true;
                     if st.bailed {
-                        bailed_reached_return = true;
+                        bailed_reached_exit = true;
                     } else {
                         for (_, i) in &checked {
                             if !st.entry[*i] {
@@ -353,17 +351,17 @@ pub fn verify_z80_preserved(
                 }
                 // An external tail transfer (`jp`/`jr` to a non-local target) is an
                 // EXIT: this proc's real return happens inside the tail-callee.
-                // Closing the §13.4 vacuous `!saw_return` hole (gap 3) — a proc that
+                // Closing the §13.4 vacuous `!saw_exit` hole (gap 3) — a proc that
                 // ONLY tail-transfers used to pass `preserves` vacuously, silently
                 // verifying a contract its body breaks. The proc preserves rN across
                 // the transfer iff rN holds its entry value AT the jp AND the
                 // tail-callee itself preserves rN (unknown/indirect target →
-                // conservative clobber, via the oracle). Mirrors `Edge::Abandon`
-                // plus the callee oracle.
+                // conservative clobber, via the oracle). Mirrors the
+                // `Return`/`FallOff` arm plus the callee oracle.
                 Edge::Defer => {
-                    saw_return = true;
+                    saw_exit = true;
                     if st.bailed {
-                        bailed_reached_return = true;
+                        bailed_reached_exit = true;
                     } else {
                         let tail_callee = cfg.instr(idx).and_then(|(_, ops)| branch_sym(ops));
                         for (name, i) in &checked {
@@ -380,9 +378,9 @@ pub fn verify_z80_preserved(
     checked
         .iter()
         .map(|(name, i)| {
-            let status = if !saw_return {
+            let status = if !saw_exit {
                 PreserveStatus::Verified
-            } else if bailed_reached_return {
+            } else if bailed_reached_exit {
                 // TIGHTENED (t36 ruling iii): once ANY bailed path reaches a return,
                 // the `ret` continues execution INSIDE the caller-observed extent (the
                 // trampoline dispatches into handler procs; an `ld sp` recomputes the
@@ -472,83 +470,6 @@ fn transfer(cfg: &Cfg, idx: usize, st: &mut State, callee_map: &CalleePreserves)
         st.entry[u] = false;
     }
     None
-}
-
-/// The successor edges of instruction `idx` under Z80 terminator semantics. The
-/// shared `Cfg::edges` is 68k-terminator-aware (`rts`/`bra`/…); the Z80 proof
-/// needs `ret`/`jp`/`jr`/`djnz`/`call` semantics, so it computes edges itself from
-/// the shared `Cfg`'s `instr`/`next_instr`/`label_index` primitives.
-///
-/// A CONDITIONAL form (a leading `Z80Cc`) is a genuine two-way split — it
-/// contributes BOTH its taken edge and its fall-through. A `preserves` proof
-/// that dropped the fall-through of a `jr cc`/`jp cc`/`ret cc` would MISS a
-/// register clobbered only on that path and wrongly verify the preserve (the
-/// §13.4-E soundness gap). This mirrors the flag check's `Cfg::z80_edges`
-/// (`flag_check.rs`) — the same conditional split, one edge model.
-fn z80_edges(cfg: &Cfg, idx: usize) -> Vec<Edge> {
-    let Some((mnem, ops)) = cfg.instr(idx) else { return vec![] };
-    let leads_cc = matches!(ops.first(), Some(CodeOperand::Z80Cc(_)));
-    // Unconditional return.
-    if is_return(mnem) && !leads_cc {
-        return vec![Edge::Abandon];
-    }
-    // Conditional `ret cc`: the taken edge returns (abandon); the fall-through
-    // stays in the proc.
-    if is_return(mnem) && leads_cc {
-        return match cfg.next_instr(idx) {
-            Some(f) => vec![Edge::Abandon, Edge::Follow(f)],
-            None => vec![Edge::Abandon, Edge::Abandon],
-        };
-    }
-    // Unconditional tail transfer: `jp`/`jr` follows a LOCAL label; a jump to a
-    // local END-label (no following instruction) is a fall-off exit (Abandon); a
-    // transfer to an EXTERNAL symbol (or a computed `jp (hl)`) defers out of the
-    // proc as a tail call.
-    if matches!(mnem, "jp" | "jr") && !leads_cc {
-        return vec![branch_edge(cfg, ops)];
-    }
-    // Conditional `jr cc`/`jp cc`: the taken edge (as above) PLUS the fall-through.
-    if matches!(mnem, "jp" | "jr") && leads_cc {
-        let mut v = vec![branch_edge(cfg, ops)];
-        match cfg.next_instr(idx) {
-            Some(f) => v.push(Edge::Follow(f)),
-            None => v.push(Edge::Abandon),
-        }
-        return v;
-    }
-    // `djnz` branches AND falls through.
-    if mnem == "djnz" {
-        let mut v = Vec::new();
-        if let Some(tgt) = branch_sym(ops).and_then(|t| cfg.label_index(t)) {
-            v.push(Edge::Follow(tgt));
-        }
-        match cfg.next_instr(idx) {
-            Some(f) => v.push(Edge::Follow(f)),
-            None => v.push(Edge::Abandon),
-        }
-        return v;
-    }
-    // Everything else (incl. `call`, which returns) falls through; the end of the
-    // body abandons (fall-off).
-    match cfg.next_instr(idx) {
-        Some(f) => vec![Edge::Follow(f)],
-        None => vec![Edge::Abandon],
-    }
-}
-
-/// The taken-edge of a `jp`/`jr` from its target: a LOCAL label with an
-/// instruction after it is followed; a LOCAL end-label (no following instruction —
-/// a jump to the proc's fall-off point) is an Abandon; an EXTERNAL symbol or a
-/// computed `jp (hl)` (no symbol) is a Defer tail transfer.
-fn branch_edge(cfg: &Cfg, ops: &[CodeOperand]) -> Edge {
-    match branch_sym(ops) {
-        Some(t) => match cfg.label_index(t) {
-            Some(tgt) => Edge::Follow(tgt),
-            None if cfg.is_local_label(t) => Edge::Abandon,
-            None => Edge::Defer,
-        },
-        None => Edge::Defer,
-    }
 }
 
 /// The last bare-`Sym` operand of a branch/tail instruction (its target label).
