@@ -576,6 +576,7 @@ mod tests {
             ops,
             span: sp(),
             as_type: None,
+            author: crate::value::ItemAuthor::User,
         }
     }
     fn label(name: &str) -> CodeItem {
@@ -732,6 +733,7 @@ mod tests {
                 ops: vec![sym("skip")],
                 span: sp(),
                 as_type: None,
+                author: crate::value::ItemAuthor::User,
             },
             instr("moveq", vec![CodeOperand::Imm(1), CodeOperand::Reg(crate::value::Reg::D0)]),
             label("skip"),
@@ -859,6 +861,7 @@ mod tests {
             ops: vec![CodeOperand::PostInc(a1), CodeOperand::Ind(a5)],
             span: sp(),
             as_type: None,
+            author: crate::value::ItemAuthor::User,
         };
         let items = vec![
             entry(crate::value::Width::L),

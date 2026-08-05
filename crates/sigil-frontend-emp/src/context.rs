@@ -202,16 +202,13 @@ impl Region {
     /// Is item index `i` inside the spliced ACQUIRE? Landing here from outside
     /// the acquire re-runs it with no matching release; the acquire's OWN
     /// internal branch (a `bne .wait_z80` spin) does not, which is why the rule
-    /// is about the edge's SOURCE as well as its target.
+    /// is about the edge's SOURCE as well as its target. (Which half a spliced
+    /// item belongs to is otherwise the item's own
+    /// [`ItemAuthor::Context`](crate::value::ItemAuthor) `phase` — the range
+    /// form exists for the reacquire edge rule, whose question is about an
+    /// edge's TARGET index, not an item.)
     pub fn in_acquire(&self, i: usize) -> bool {
         i > self.enter && i < self.acquire_end
-    }
-
-    /// Is item index `i` inside the spliced RELEASE? Together with
-    /// [`Region::in_acquire`] this names the two halves the CONTEXT authored, as
-    /// against the body between them, which is the consumer's own code.
-    pub fn in_release(&self, i: usize) -> bool {
-        i > self.body_end && i < self.exit
     }
 
     /// Is item index `i` inside the acquire+BODY half — the range the escape

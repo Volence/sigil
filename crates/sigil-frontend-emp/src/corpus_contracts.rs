@@ -207,6 +207,15 @@ pub struct ContractReport {
     /// silent). Expected census: single digits (raw computed jumps outside the
     /// typed-dispatch idiom); today's corpus is EMPTY.
     pub unanalyzable_allows: Vec<(String, String)>,
+    /// Every SR-DESTINATION write in the walked 68k procs, with WHO wrote it:
+    /// `(proc, author, span)`, sorted (proc, span). The typed census behind the
+    /// warn tier's authorship gate: `[proc.sr-undeclared]` exempts
+    /// `Context`/`AssertDesugar`-authored writes (each proven at its author's
+    /// own surface), so the gate reads THIS to assert the exemption never
+    /// covers an author whose obligation lands nowhere — and that the desugar
+    /// class is actually populated (non-vacuity; the `Context` count is
+    /// reported, not pinned — adoption moves it).
+    pub sr_writes: Vec<(String, crate::value::ItemAuthor, Span)>,
 }
 
 /// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
@@ -808,6 +817,23 @@ pub fn analyze_corpus_with_contracts(
     unanalyzable_allows.sort();
     unanalyzable_allows.dedup();
 
+    // The SR-write authorship census: every write-form instruction whose
+    // destination is SR, with the author the emitting construct recorded
+    // (`ItemAuthor`). 68k `proc_bufs` only — SR is a 68k register, and the
+    // `[proc.sr-undeclared]` lint this census audits is 68k-only.
+    let mut sr_writes: Vec<(String, crate::value::ItemAuthor, Span)> = Vec::new();
+    for pb in &proc_bufs {
+        for item in &pb.buf.items {
+            let CodeItem::Instr { mnemonic, ops, span, author, .. } = item else { continue };
+            if crate::lower::writes_dest_register(mnemonic)
+                && matches!(ops.last(), Some(crate::value::CodeOperand::Sr))
+            {
+                sr_writes.push((pb.name.clone(), author.clone(), *span));
+            }
+        }
+    }
+    sr_writes.sort_by(|a, b| (&a.0, a.2.start).cmp(&(&b.0, b.2.start)));
+
     // Both body-eval passes (68k PASS 2 + the Z80 flag pass) have contributed by
     // here. Exact-duplicate rows collapse (a template instantiated twice evaluates
     // the same condition twice); distinct sites stay distinct.
@@ -848,6 +874,7 @@ pub fn analyze_corpus_with_contracts(
         context_regions,
         bus_contexts,
         unanalyzable_allows,
+        sr_writes,
     }
 }
 

@@ -599,6 +599,15 @@ reasons spelled out.
    detection to the `sr` arm (a matching `move.w sr,-(sp)` / `move.w (sp)+,sr` pair
    is a preserve), or mark generated instructions as tool-emitted and exempt them.
    The first is better — it also fixes hand-written balanced pairs.
+   **DONE 2026-08-05 (codeitem-author parcel), via the second mechanism made
+   sound:** `CodeItem::Instr` carries `author: ItemAuthor`; the desugar's items
+   are `AssertDesugar`-authored and exempt, with the balance proof pinned at the
+   emission site (not per-corpus). DEBUG-shape firings 42/41/42 (chain-47
+   measurement) → 0; every `WARN_ID_BASELINE` row is empty, so a new
+   hand-written undeclared SR write APPEARS in the id set instead of joining a
+   crowd. (The hand-written-balanced-pair half of option one remains undone —
+   a hand pair still wants `preserves(sr)` declared, which is the honest
+   spelling anyway.)
 3. **The nine TRUE POSITIVES** — declare `preserves(sr)` on the ~4 procs in
    `irq.emp`, `dma_queue.emp`, `ojz_scroll_test.emp` and `clobbers(sr)` on
    `release_fault.emp`'s terminal mask. An aeon parcel; byte-neutral.

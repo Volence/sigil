@@ -71,7 +71,8 @@ pub fn lower_code_buf(
                 diags.append(&mut ds);
                 builder.emit_data(&bytes, fixups, *span);
             }
-            CodeItem::Instr { mnemonic, size, ops, span, as_type: _ } => {
+            // `as_type` and `author` are analysis-tier facts — neither emits.
+            CodeItem::Instr { mnemonic, size, ops, span, .. } => {
                 // `jbra`/`jbsr` are emp-ONLY mnemonic-position words (D2.18): they
                 // must NOT enter sigil-isa's shared mnemonic table (the AS
                 // front-end keeps rejecting them). Recognize them HERE, before the

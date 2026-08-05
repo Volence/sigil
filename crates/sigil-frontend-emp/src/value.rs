@@ -324,6 +324,77 @@ pub struct CodeBuf {
     pub items: Vec<CodeItem>,
 }
 
+/// Who put a [`CodeItem::Instr`] in the stream. `User` means the containing
+/// item's author wrote it; everything else names the construct that spliced or
+/// synthesised it. Authorship REDIRECTS a checking obligation to the author's
+/// own declared surface — it never waives one: a `Context`-authored SR write is
+/// exempt from the consumer's `[proc.sr-undeclared]` because the round-trip
+/// proof lives at the context DEFINITION; an `AssertDesugar` write is exempt
+/// because the desugar's push/pop balance is pinned at the emission site.
+///
+/// Authorship is a SEMANTIC fact, not a location fact: the desugar's items
+/// carry the user's `assert` span (right for diagnostics), and a same-file
+/// template splice is indistinguishable by source — spans stay what they are.
+///
+/// A splice records the NEAREST construct: an item a construct already authored
+/// keeps that finer fact through an outer splice (an `assert` inside a spliced
+/// template stays `AssertDesugar`), so only `User` items are re-authored at a
+/// splice boundary.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ItemAuthor {
+    /// The containing proc/asm block's author wrote this line.
+    User,
+    /// The `assert` desugar emitted it (the CCR save/compare/raise/restore
+    /// expansion). Its SR balance is the COMPILER's obligation, pinned by a
+    /// unit test at the emission site.
+    AssertDesugar,
+    /// A `with <name> { }` bracket spliced it as the named context's acquire or
+    /// release. The context's SR round-trip is proven at its DEFINITION.
+    Context {
+        /// The context's name.
+        name: String,
+        /// Which spliced half carries the item.
+        phase: ContextPhase,
+    },
+    /// The tool-synthesised entry module emitted it. Sigil does not lint its
+    /// own synthesis; the synthesis site owns its invariants. The synthetic
+    /// entry emits only `use` lines today, so this author has no live
+    /// construction site — pinned by `synthetic_entry_emits_no_code` in
+    /// `sigil-harness`.
+    EntrySynth,
+    /// A comptime template call/`{expr}` splice inlined it. Carried, not yet
+    /// consumed: checking a template splice against a declared `-> Code` fn
+    /// contract is ledger row 1551's parcel; the field stops the information
+    /// loss so that parcel starts whole.
+    Splice {
+        /// The spliced template's name (the callee path, or `<expr>` for a
+        /// non-call splice expression).
+        template: String,
+    },
+}
+
+/// Which half of a `with` bracket a [`ItemAuthor::Context`] item belongs to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContextPhase {
+    /// The spliced `acquire`.
+    Acquire,
+    /// The spliced `release`.
+    Release,
+}
+
+/// Re-author every `User`-authored instruction in `items` as `author` — the
+/// splice-boundary rule ([`ItemAuthor`]): the nearest construct claims the
+/// items it splices, while a finer compiler-authored fact survives the splice.
+pub fn reauthor_user_items(items: &mut [CodeItem], author: &ItemAuthor) {
+    for item in items {
+        if let CodeItem::Instr { author: a, .. } = item {
+            if *a == ItemAuthor::User {
+                *a = author.clone();
+            }
+        }
+    }
+}
+
 /// One ordered piece of a [`CodeBuf`] (T1): a label, a single instruction, or a
 /// [`DataBuf`] spliced into the code stream (§6.2).
 #[derive(Clone, Debug, PartialEq)]
@@ -355,6 +426,9 @@ pub enum CodeItem {
         /// destination register with a domain newtype; on an indirect call it is
         /// the dispatch bound (consumed separately via the AST). Emits NOTHING.
         as_type: Option<String>,
+        /// Who put this instruction in the stream ([`ItemAuthor`]). Emits
+        /// NOTHING — an effect lint reads it to charge the right party.
+        author: ItemAuthor,
     },
     /// A [`DataBuf`] spliced into a code stream (§6.2) — a `Data` value inlined
     /// between instructions. Produced today by `dc.b`/`dc.w`/`dc.l` statements

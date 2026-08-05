@@ -3705,6 +3705,39 @@ mod error_handler_placement_tests {
 }
 
 #[cfg(test)]
+mod entry_synth_tests {
+    //! THE `ItemAuthor::EntrySynth` GROUND. The synthetic entry module is a
+    //! setting site of the CodeItem author field with ZERO live constructions:
+    //! its every item is a bare `use` line, so it lowers no instruction an
+    //! effect lint could charge. This pin is what keeps that true — the day the
+    //! synthesis emits anything else, this fails and the emitting code must
+    //! stamp its items `EntrySynth` (and declare where their obligations land)
+    //! before it ships. The diagnostic-tier guard (the `SourceId` exclusion in
+    //! [`super::collect_warnings`]) stays: `use`-statement diagnostics are not
+    //! `Instr` items, so the author field cannot carry them.
+    use super::synthetic_entry_src;
+
+    #[test]
+    fn synthetic_entry_emits_no_code() {
+        let src = synthetic_entry_src(&[], "games.sonic4.ram", "games.sonic4.game");
+        let (file, perrs) = sigil_frontend_emp::parse_file(&src, sigil_span::SourceId(0));
+        assert!(
+            perrs.iter().all(|d| d.level != sigil_span::Level::Error),
+            "the synthetic entry must parse clean: {perrs:?}"
+        );
+        for item in &file.items {
+            assert!(
+                matches!(item, sigil_frontend_emp::ast::Item::Use(_)),
+                "the synthetic entry holds a non-`use` item — it now emits code, so its \
+                 items must be `ItemAuthor::EntrySynth`-stamped with a declared \
+                 obligation home before shipping: {item:?}"
+            );
+        }
+        assert!(!file.items.is_empty(), "the entry drives reachability via `use` lines");
+    }
+}
+
+#[cfg(test)]
 mod warn_tier_tests {
     //! THE WARN TIER's collection contract. Every non-error diagnostic the `.emp`
     //! build produces reaches [`EmpProgram::warnings`] located and deduplicated,
