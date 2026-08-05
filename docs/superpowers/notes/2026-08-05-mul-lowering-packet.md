@@ -336,18 +336,50 @@ constant, let the compiler pick the encoding" — satisfying the design's
 acceptance-list item on when to annotate bounds). SPEC2 docs row deferred to
 the next unfreeze, as the design specifies.
 
-## 11 · Commits (merge-order constraint: sigil BEFORE aeon)
+## 11 · The rebase onto codeitem-author (`2a399687`) and the authorship ruling
 
-- sigil `mul-lowering`: `d3079680` (construct + cost row + tests + docs),
-  `d0067ce6` (label namespace fix), `e4b04e6c` (panel fix-ups + this packet),
-  plus the final-numbers packet commit at the branch tip.
+Sigil master moved mid-lane (the b3 CodeItem-AUTHOR merge). Rebase of the
+four commits produced ONE conflict (both parcels appended gap-ledger rows;
+resolved master-first) — `eval/asm.rs` auto-merged cleanly: AUTHOR's stamping
+happens at statement emission and splice boundaries, this lane's expansion at
+buffer completion; the two compose by construction.
+
+**The authorship ruling (overseer-directed, §2-grounded):** the expansion's
+emitted instructions PROPAGATE the construct item's own authorship — the
+generators stamp `User` and `expand_item` lifts that through
+`reauthor_user_items`, the AUTHOR parcel's own splice-boundary helper, so the
+two passes share one mechanism and cannot drift. No new variant, and
+deliberately NO compiler author: §2 says authorship never exempts, it
+redirects — and there is nothing here to redirect. The operand registers are
+the author's choice, so the chain's scratch write is the containing proc's
+obligation exactly as the construct line was (a compiler author in the
+`AssertDesugar`/`Context` mold would EXEMPT those writes from
+`check_clobbers` and reopen the silently-clobbered-scratch hole this lane
+exists to close — the integration pins
+`scratch_clobber_is_seen_by_the_clobber_lint` hold post-rebase and enforce
+this). A `Splice`-carried `mul_const` keeps its template name for the
+`-> Code` contract parcel (ledger row 1551); a `Context`-carried one keeps
+its context, and the SR exemption is vacuous over the expansion vocabulary
+(no SR-destination writes exist in it). The compiler chose only the
+SPELLING, and the spelling carries no obligation the proc's contracts do not
+already own.
+
+## 12 · Commits (merge-order constraint: sigil BEFORE aeon)
+
+Rebased onto sigil master `2a399687`; aeon master verified unchanged at
+`2ccb40f` (local == origin), so the aeon branch needed no rebase.
+
+- sigil `mul-lowering` (in order): `2355779c` (construct + cost row + tests +
+  docs), `5aac04e1` (label namespace), `2a1bef4e` (panel fix-ups),
+  `1f55e76b` (packet numbers), `de66debb` (authorship adaptation), plus the
+  rebased-bar packet commit at the tip.
 - aeon `mul-lowering`: `f52d247` (the two byte-identical adoptions in
   object_test_state.emp), `322748b` (comment trim, panel round). **The aeon
   commits build only against a sigil binary containing the construct — the
   sigil merge must land first, and per the standing trap, merging this
   two-repo parcel stales every other in-flight lane's aeon worktree.**
 
-## 12 · Step-3 vs step-5 findings
+## 13 · Step-3 vs step-5 findings
 
 **Step-3 (language asks):**
 1. THE finding: the corpus's multiply-chain idiom is word-width with
@@ -379,3 +411,29 @@ sits exactly ON the boundary, and the byte tie-break (4 vs 12) is what
 actually decides. The cost table's 2-cycle granularity is doing real work;
 any future table correction of ±2 on `move`/`lsl`/`add` flips corpus-visible
 decisions and MUST ride the golden gates (stated in the module header).
+
+## 14 · Post-rebase bars (overseer own-run, 2026-08-05)
+
+The porter's session died (host restart) between the authorship rebase
+(`de66debb`) and the promised rebased-bar commit; the overseer ran the full
+bar set own-run at the rebased tip against the b4 aeon (`322748b`):
+
+- **Strict `SIGIL_STRICT_GATE=1`: 3346 passed / 0 failed / 4 ignored = 3350
+  over 310 suites, zero `FAILED` lines** (failures-first scan). Arithmetic:
+  master at `2a399687` carries 3327 `#[test]`, this parcel adds 23 → 3350
+  exactly. (Suite count 310 vs the pre-rebase 312 is a suite-layout shift
+  from the author merge; the per-test arithmetic closes.)
+- **Byte bar: all SEVEN targets fresh-build captured** via the
+  `capture_goldens.sh` procedure (canonical four through `./build.sh`,
+  config-a/b + lean through `sigil build`, canonical restore OK) — every
+  full CRC present at the provenance chain tip (7/7), `refreeze --check` OK
+  (tip `sst-fold`, chain len 47), `repin --check` pins.rs unchanged.
+- **Warn tiers:** plain 19, id set identical to §7. s4-DEBUG is **18**, not
+  §7's 60: the codeitem-author merge retired the 42 `proc.sr-undeclared`
+  assert-desugar firings (60 − 42 = 18) and the id set confirms
+  `sr-undeclared` absent — the rebase composing with b3 exactly as the b3
+  design intended, recorded here as the countersign.
+- Procedure note: `capture_goldens.sh` requires `SIGIL_BUILD` exported for
+  the `build.sh` targets (only the config shapes receive it internally);
+  a bare invocation dies silently at the first target because `build.sh`'s
+  error goes to the suppressed stdout.
