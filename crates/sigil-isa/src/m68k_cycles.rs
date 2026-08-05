@@ -290,6 +290,19 @@ pub fn instr_cycles(m: Mnemonic, size: Size, ops: &[CatOp]) -> CycleCost {
         // 168 — ABOVE the UM maximum; recorded as a source disagreement, not
         // adopted: two independent sources agree 158 bounds the hardware
         // (oracle-next's returned range already INCLUDES its trailing refill).
+        // MULU with a KNOWN immediate source prices EXACTLY: the UM's `38+2n`
+        // has n = the number of ones in the source operand, and an immediate
+        // source's ones are visible at compile time. Add the Table 8-2
+        // immediate fetch. The all-ones source (n=16) reproduces the ceiling
+        // row below, so the exact form and the maximum cannot drift apart.
+        // MULS stays a ceiling even with a known immediate: its n counts the
+        // 01/10 transitions of the 17-bit sign-extended source — value-aware
+        // pricing is one line of popcount away but has no consumer yet, and an
+        // unconsumed exact row is an untested claim.
+        (Mulu, [CatOp::ImmVal(v), CatOp::Ea(EaCat::Dn)]) => {
+            let ones = (*v as u16).count_ones() as u16;
+            exact(38 + 2 * ones + ea_time(EaCat::Imm, false))
+        }
         (Mulu | Muls, [src, CatOp::Ea(EaCat::Dn)]) => match src.cat() {
             Some(s) => at_most(70 + ea_time(s, false)),
             None => CycleCost::Unmodeled,
@@ -741,6 +754,21 @@ mod tests {
     // Table 8-4 with the UM maxima — the data-dependent forms: sound ceilings,
     // never exact, and the DIVS entry is the one the two emulator cores
     // disagree on (Exodus 168 vs UM/oracle-next ≤ 158) — the UM number wins.
+    // Table 8-4's MULU footnote — `38 + 2n`, n = ones in the source: a known
+    // immediate prices exactly, and the all-ones immediate meets the ceiling
+    // row, pinning the exact form and the maximum together.
+    #[test]
+    fn mulu_immediate_prices_on_its_ones_count() {
+        use EaCat::*;
+        assert_eq!(exact(Mulu, Size::W, &[CatOp::ImmVal(0), ea(Dn)]), 42); // 38 + 0 + 4
+        assert_eq!(exact(Mulu, Size::W, &[CatOp::ImmVal(1), ea(Dn)]), 44);
+        assert_eq!(exact(Mulu, Size::W, &[CatOp::ImmVal(66), ea(Dn)]), 46); // two ones
+        assert_eq!(exact(Mulu, Size::W, &[CatOp::ImmVal(0x00FF), ea(Dn)]), 58); // eight ones
+        assert_eq!(exact(Mulu, Size::W, &[CatOp::ImmVal(0xFFFF), ea(Dn)]), 74); // = the ceiling
+        // MULS keeps its ceiling with a known immediate (transition count unmodeled).
+        assert_eq!(at_most(Muls, Size::W, &[CatOp::ImmVal(66), ea(Dn)]), 74);
+    }
+
     #[test]
     fn data_dependent_maxima_are_ceilings_not_exact() {
         use EaCat::*;

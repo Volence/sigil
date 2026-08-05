@@ -53,3 +53,33 @@ hit it on the `OJZ_Act_Pool_PageTable` page pointers and a block-blob dedup alia
 ledgered as L11 and DOCUMENTED-AS-IDIOM by the language round,
 `specs/2026-08-02-language-round-agenda.md` Tier 3. Revisit as a grammar change
 only if the asymmetry keeps biting.)
+
+## Multiplying: name the constant, let the compiler pick the encoding
+
+Demand: the lens sweep's R-B (mulu-vs-repeated-add) and the corpus's
+hand-derived stride chains (×66/×80/×160) — every one a paper derivation the
+reader had to re-verify. Ruled 2026-08-03; shipped in the mul-lowering parcel.
+
+- **A constant multiplier → `mul_const dN, #n[, dScratch]`.** The intent
+  (`×66`) stays in the source; the compiler picks shift-add chain vs `mulu` by
+  the M68000UM cycle table. Contract: `dN.l = u16(dN.w) × n` — exactly
+  `mulu.w`'s, all 32 result bits valid; condition codes are
+  clobbered-undefined. Grant a scratch when you can spare one: the general
+  chains need the original value twice, and without a scratch the candidate
+  set shrinks to `mulu` + pure shifts (no hidden register allocation, so the
+  grant is yours to make). The scratch may come back clobbered — declare it in
+  `clobbers(...)` like any write; the lint sees the chain's real instructions.
+
+- **A data-dependent multiplier → `mul_bounded dDst, dSrc, #M[, dScratch]`**,
+  where `M` is the largest value `dSrc` can hold (inclusive). The bound is
+  MANDATORY — an unbounded operand's worst case is undecidable and the
+  construct refuses rather than guesses. Choose `M` from the same fact a
+  module-level `ensure` already states (grid width, table count); the cost
+  decision is worst-vs-worst, and for any real bound (`M ≥ 3`) it picks
+  `mulu`. `dSrc` is clobbered-undefined after the splice under EITHER
+  lowering — never rely on it.
+
+- **When NOT to use them:** a word-result stride into an `adda.w` (the
+  section/tile_cache/plane chains) is a WORD-width idiom the v1 long contract
+  deliberately does not cover — keep the hand chain and its `ensure` guard
+  until the sized-variant ruling (gap-ledger row, mul-lowering 2026-08-05).
