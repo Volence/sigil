@@ -287,12 +287,13 @@ impl<'a> Cfg<'a> {
         self.label_target.get(name).copied()
     }
 
-    /// Whether `name` is a label DEFINED among these items — INCLUDING one at the
-    /// very end with no following instruction, which [`Cfg::label_index`] returns
-    /// `None` for. The Z80 tail-transfer edge model needs this to tell a local
-    /// jump-to-proc-end (a fall-off exit) from a transfer to an EXTERNAL symbol (a
-    /// tail call): a `jr cc, .end` whose `.end:` closes the proc must not be read
-    /// as an external tail transfer.
+    /// Whether `name` labels this proc's OWN body — any label DEFINED among these
+    /// items, INCLUDING a body-closing one at the very end with no following
+    /// instruction, which [`Cfg::label_index`] returns `None` for. The shared
+    /// [`Cfg::branch_edge`] three-way needs this on BOTH CPUs to tell a jump to a
+    /// body-closing local label (a fall-off exit) from a transfer to an EXTERNAL
+    /// symbol (a tail call): a `jbra .end` / `jr cc, .end` whose `.end:` closes
+    /// the proc must not be read as an external tail transfer.
     pub(crate) fn is_local_label(&self, name: &str) -> bool {
         self.items.iter().any(|it| matches!(it, CodeItem::Label { name: n, .. } if n == name))
     }
@@ -1072,11 +1073,7 @@ mod edge_model_tests {
     /// This holds on BOTH the unconditional arm and a conditional branch's TAKEN
     /// edge — a `beq .done` closing the body falls off on the taken side and
     /// falls through on the other. The contrast: an external symbol is a genuine
-    /// transfer out, and an in-body local is followed. Before the edge builders
-    /// were unified the 68k arms mapped every `label_target` miss to `Defer`, so
-    /// the closing-label case was indistinguishable from an external tail call —
-    /// this pins the fix on the CPU the raw census's two corpus sites live on
-    /// (`jbra .done` in buffers.emp, `jbra .rpc_done` in frames.emp).
+    /// transfer out, and an in-body local is followed.
     #[test]
     fn a_68k_jump_to_a_closing_label_falls_off_it_does_not_transfer_out() {
         // Unconditional: `.done:` closes the proc.
