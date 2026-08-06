@@ -287,12 +287,13 @@ impl<'a> Cfg<'a> {
         self.label_target.get(name).copied()
     }
 
-    /// Whether `name` is a label DEFINED among these items — INCLUDING one at the
-    /// very end with no following instruction, which [`Cfg::label_index`] returns
-    /// `None` for. The Z80 tail-transfer edge model needs this to tell a local
-    /// jump-to-proc-end (a fall-off exit) from a transfer to an EXTERNAL symbol (a
-    /// tail call): a `jr cc, .end` whose `.end:` closes the proc must not be read
-    /// as an external tail transfer.
+    /// Whether `name` labels this proc's OWN body — any label DEFINED among these
+    /// items, INCLUDING a body-closing one at the very end with no following
+    /// instruction, which [`Cfg::label_index`] returns `None` for. The shared
+    /// [`Cfg::branch_edge`] three-way needs this on BOTH CPUs to tell a jump to a
+    /// body-closing local label (a fall-off exit) from a transfer to an EXTERNAL
+    /// symbol (a tail call): a `jbra .end` / `jr cc, .end` whose `.end:` closes
+    /// the proc must not be read as an external tail transfer.
     pub(crate) fn is_local_label(&self, name: &str) -> bool {
         self.items.iter().any(|it| matches!(it, CodeItem::Label { name: n, .. } if n == name))
     }
@@ -303,8 +304,14 @@ impl<'a> Cfg<'a> {
     /// instruction, and [`Edge::Defer`] is a transfer to an EXTERNAL target (not
     /// a local label), which local analysis cannot judge.
     ///
-    /// The `Return`/`FallOff` choice is made in an edge BUILDER and nowhere
-    /// else — every consumer reads it off the edge.
+    /// A branch's taken edge is resolved by the shared [`Self::branch_edge`]
+    /// three-way, so a trailing local label — one that CLOSES the body with no
+    /// instruction after it — is a [`Edge::FallOff`], NOT a [`Edge::Defer`]:
+    /// control reaches the fall-off point where this proc's own analysis still
+    /// applies, and that is a deliberate, named case, not an external transfer.
+    ///
+    /// The `Return`/`FallOff`/`Defer` choice is made in an edge BUILDER and
+    /// nowhere else — every consumer reads it off the edge.
     pub(crate) fn edges(&self, idx: usize) -> Vec<Edge> {
         let Some((mnem, ops)) = self.instr(idx) else { return vec![] };
         if RETURN_MNEMONICS.contains(&mnem) {
@@ -312,12 +319,10 @@ impl<'a> Cfg<'a> {
         }
         let fallthrough = self.next_instr.get(&idx).copied();
         if UNCOND_MNEMONICS.contains(&mnem) {
-            // An unconditional tail transfer: to a LOCAL label → follow it; to an
-            // external symbol (a tail call) → defer.
-            return match branch_target(ops).and_then(|t| self.label_target.get(t)) {
-                Some(&tgt) => vec![Edge::Follow(tgt)],
-                None => vec![Edge::Defer],
-            };
+            // An unconditional tail transfer, resolved by the shared three-way: a
+            // local label → follow it; a local label that CLOSES the body → fall
+            // off it; an external symbol (a tail call) → defer.
+            return vec![self.branch_edge(ops)];
         }
         // A conditional branch (`bXX`/`dbXX`) that is NOT a carry consumer:
         // fall-through PLUS the taken edge. (Carry consumers are handled by the
@@ -332,11 +337,10 @@ impl<'a> Cfg<'a> {
         let is_cond_branch = (mnem.starts_with('b') && mnem.len() == 3 && mnem != "bsr")
             || mnem.starts_with("db");
         if is_cond_branch {
-            let mut v = Vec::new();
-            match branch_target(ops).and_then(|t| self.label_target.get(t)) {
-                Some(&tgt) => v.push(Edge::Follow(tgt)),
-                None => v.push(Edge::Defer), // branch to external symbol
-            }
+            // The taken edge goes through the shared three-way (external → defer,
+            // trailing local → fall off, in-body local → follow); the fall-through
+            // is the next instruction, or the end of the body.
+            let mut v = vec![self.branch_edge(ops)];
             match fallthrough {
                 Some(f) => v.push(Edge::Follow(f)),
                 None => v.push(Edge::FallOff),
@@ -382,7 +386,7 @@ impl<'a> Cfg<'a> {
         }
         // Unconditional `jp`/`jr`: the taken edge, classified by its target.
         if matches!(mnem, "jp" | "jr") && !leads_cc {
-            return vec![self.z80_branch_edge(ops)];
+            return vec![self.branch_edge(ops)];
         }
         // Conditional `jr cc`/`jp cc`: the taken edge PLUS the fall-through.
         //
@@ -393,7 +397,7 @@ impl<'a> Cfg<'a> {
         // the caller's state; giving `call nz, External` a `Defer` claims the flag
         // and the register file leave the proc, which they do not.
         if matches!(mnem, "jp" | "jr") && leads_cc {
-            let mut v = vec![self.z80_branch_edge(ops)];
+            let mut v = vec![self.branch_edge(ops)];
             match fallthrough {
                 Some(f) => v.push(Edge::Follow(f)),
                 None => v.push(Edge::FallOff),
@@ -420,12 +424,20 @@ impl<'a> Cfg<'a> {
         }
     }
 
-    /// The taken edge of a Z80 `jp`/`jr`, classified by its TARGET: a local label
-    /// with an instruction after it is followed; a local label that CLOSES the
-    /// proc is a fall-off exit, not a transfer out (the `jr z, .div_ok` that ends
-    /// a body before its `falls_into` successor); an external symbol, or a
-    /// computed `jp (hl)` naming no symbol, is a transfer out of the proc.
-    fn z80_branch_edge(&self, ops: &[CodeOperand]) -> Edge {
+    /// The taken edge of a branch — 68k `bra`/`jmp`/`bXX`/`dbXX` OR Z80
+    /// `jp`/`jr` — classified by its TARGET. This is the ONE branch-edge
+    /// resolution both CPUs share: a local label with an instruction after it is
+    /// followed; a local label that CLOSES the proc is a fall-off exit, not a
+    /// transfer out (the trailing `jbra .done` / `jr z, .div_ok` that ends a body
+    /// before its `falls_into` successor); an external symbol, or a computed
+    /// `jmp (a0)`/`jp (hl)` naming no symbol, is a transfer out of the proc.
+    ///
+    /// The three-way is CPU-independent, so both builders route their target
+    /// edges through here. A closing label has no entry in the `label_target`
+    /// map (that map holds the first instruction AT or after a label, and a
+    /// closing label has none), so the map alone cannot tell it from an external
+    /// symbol — `is_local_label` is what supplies the `FallOff`/`Defer` split.
+    fn branch_edge(&self, ops: &[CodeOperand]) -> Edge {
         match branch_target(ops) {
             Some(t) => match self.label_target.get(t) {
                 Some(&tgt) => Edge::Follow(tgt),
@@ -1052,6 +1064,60 @@ mod edge_model_tests {
         ];
         let cfg = Cfg::build(&external);
         assert_eq!(cfg.z80_edges(1), vec![Edge::Defer]);
+    }
+
+    /// The 68k twin of the closing-label rule, routed through the SAME shared
+    /// `branch_edge` three-way: a `jbra .done` whose `.done:` closes the body is
+    /// a `FallOff` (control reaches the fall-off point where this proc's analysis
+    /// still applies), never a `Defer` (a transfer to an external tail callee).
+    /// This holds on BOTH the unconditional arm and a conditional branch's TAKEN
+    /// edge — a `beq .done` closing the body falls off on the taken side and
+    /// falls through on the other. The contrast: an external symbol is a genuine
+    /// transfer out, and an in-body local is followed.
+    #[test]
+    fn a_68k_jump_to_a_closing_label_falls_off_it_does_not_transfer_out() {
+        // Unconditional: `.done:` closes the proc.
+        let uncond = vec![
+            instr("jsr", vec![sym("FlagCallee")]),
+            instr("jbra", vec![sym(".done")]),
+            label(".done"),
+        ];
+        let cfg = Cfg::build(&uncond);
+        assert_eq!(cfg.edges(1), vec![Edge::FallOff], "`.done` closes this 68k proc");
+
+        // Conditional-taken: `beq .done` where `.done:` closes the body — the
+        // taken edge falls off, the fall-through stays in the body.
+        let guarded = vec![
+            instr("jsr", vec![sym("FlagCallee")]),
+            instr("beq", vec![sym(".done")]),
+            instr("nop", vec![]),
+            label(".done"),
+        ];
+        let cfg = Cfg::build(&guarded);
+        assert_eq!(cfg.edges(1), vec![Edge::FallOff, Edge::Follow(2)]);
+
+        // The contrast that gives the rule its content: a label this body does
+        // NOT define is a transfer out, on both arms.
+        let external_uncond = vec![instr("jbra", vec![sym("Elsewhere")])];
+        assert_eq!(Cfg::build(&external_uncond).edges(0), vec![Edge::Defer]);
+        let external_cond = vec![instr("beq", vec![sym("Elsewhere")])];
+        assert_eq!(
+            Cfg::build(&external_cond).edges(0),
+            vec![Edge::Defer, Edge::FallOff],
+            "external taken edge defers; the fall-through runs off the end"
+        );
+
+        // An in-body local label (an instruction after it) is followed, not
+        // fallen off — the third leg of the three-way.
+        let in_body = vec![
+            instr("jbra", vec![sym(".loop")]),
+            label(".loop"),
+            instr("nop", vec![]),
+            instr("rts", vec![]),
+        ];
+        // `.loop` maps to the first instruction AT or after it — the `nop` at
+        // item index 2.
+        assert_eq!(Cfg::build(&in_body).edges(0), vec![Edge::Follow(2)]);
     }
 
     /// Every mnemonic in a CPU's return table is classified by that CPU's return
