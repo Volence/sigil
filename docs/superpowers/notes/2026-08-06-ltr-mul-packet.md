@@ -153,11 +153,12 @@ there is unchanged.
 ## 4 · Bars
 
 - **Full strict** (`--no-fail-fast`, `SIGIL_STRICT_GATE=1`, AEON_DIR = this
-  lane's aeon), **after the refreeze and the final rebase**: **3451 passed / 0
-  failed / 4 ignored = 3455**, and the branch's own `#[test]` total is **3455** —
-  closes exactly. (Pre-rebase the same run was 3448/0/4 = 3452; the +3 is the
-  `preserve_oracle_threading.rs` suite this branch picked up from master, not
-  this parcel.) Before the refreeze the run was 3425/23/4: those 23 were entirely the
+  lane's aeon), **after the refreeze and the final rebase onto the Track C
+  masters**: **3476 passed / 0 failed / 4 ignored = 3480**, and the branch's own
+  `#[test]` total is **3480** — closes exactly. (The total moved twice from
+  master, never from this parcel: 3452 at the refreeze, 3455 with `srmask`'s
+  `preserve_oracle_threading.rs`, 3480 with Track C's suites.) Before the
+  refreeze the run was 3425/23/4: those 23 were entirely the
   stale-golden / frozen-reference class a byte-changing parcel produces
   (`*_anchor_matches_golden`, `*_full_file`, `*_size_table_rederives_native`,
   `native_full_sonic4_*`, `boot_*_region_matches_reference`,
@@ -168,7 +169,10 @@ there is unchanged.
   evidence that they were reference staleness and not behaviour.
 - **Warn tiers ×7:** the firing lint-ID SET is identical across all seven
   targets (`module.path-mismatch`, `proc.undeclared-fallthrough`,
-  `proc.out-unwritten`, `proc.clobber-undeclared`), with counts 19 on the
+  `proc.out-unwritten`, `proc.clobber-undeclared`) — re-verified on the Track C
+  base, where the three new `option.*` ids fire **zero** times, so the set is
+  unchanged (checked, not assumed: `[option.raw-sentinel]` is planned
+  zero-firing and is). Counts are 19 on the
   plain-family shapes (s4, demo, config_b: 9/6/3/1) and 18 on the
   debug-family shapes (s4.debug, demo.debug, config_a, lean: 9/5/3/1) — the
   pre-parcel baseline exactly. No deliberate lint delta in this parcel and none
@@ -313,14 +317,27 @@ so in present tense.
 
 Behaviour, ripple, docs and the refreeze are separate commits.
 
-**Rebases.** The branches were rebased twice mid-parcel as masters moved, and
-every gate was re-proven own-run after each. The final sigil base carries the
-`srmask` merge, whose emitter changes (`lower/proc.rs`, `corpus_contracts.rs`)
-are **byte-neutral against this parcel's frozen goldens** — verified by
-rebuilding both canonical shapes after the rebase and reproducing `3b6cad91` /
-`e3963874` exactly, with `refreeze --check` still OK. That check was not
-optional: a byte-moving change on master would have staled this parcel's
-refreeze.
+**Rebases.** The branches were rebased three times mid-parcel as masters moved,
+and every gate was re-proven own-run after each — the frozen goldens make this
+mandatory, because a byte-moving change on master would silently stale this
+parcel's refreeze and leave the `--ab` ref describing the wrong delta.
+
+The final base is sigil `a630fd3f` / aeon `ad4c6ef` (the **Track C**
+niche-sentinel Option merge), which is the demanding one: it changed the aeon
+**corpus** (`types.emp`, `objects/core.emp`, `entity_window.emp`, `rings.emp`,
+`sst.emp`, `constants.emp`) as well as the sigil frontend. All **seven** targets
+were rebuilt and reproduce their frozen chain-49 CRCs exactly — `3b6cad91`,
+`e3963874`, `b8df1c2b`, `30173928`, `7660f157`, `ace527ba`, `69c20328`, with
+every anchor CRC and anchor size unchanged too — so Track C is byte-neutral
+against this parcel and the refreeze stands unmodified. Nothing was re-frozen on
+top of it.
+
+Two adjacencies resolved rather than assumed away: Track C's `assume_some`
+zero-cost arm lands in the same `m68k_cycles.rs`/`z80_cycles.rs` pre-table match
+block this parcel's generator prices through — both arms survive and the mul
+cost decisions are unchanged — and the gap-ledger conflicted as a pure
+append-vs-append, resolved keeping both lanes' rows. The earlier `srmask` base
+was likewise verified byte-neutral.
 
 ## 9 · Traps recorded (they cost two full A/B passes)
 
