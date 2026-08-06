@@ -165,6 +165,7 @@ fn warn_tier_lint_ids_match_the_frozen_baseline() {
 ///     (pinned in `sigil-harness`), so an EntrySynth SR write would be an
 ///     authored effect with NO obligation home yet — the one defect class the
 ///     author field must not admit.
+///
 /// A future `ItemAuthor` variant fails the match at compile time, so a new
 /// author cannot ship without declaring where its obligation lands.
 ///

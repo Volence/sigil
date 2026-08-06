@@ -253,6 +253,13 @@ fn lower_module_inner(
     // cycle-budget and CCR-bracket walks. Cheap set over the file's own items;
     // empty when no decl carries the attribute (the common case).
     let noreturn = collect_noreturn_symbols(&file.items);
+    // The interrupt-mask-preservers oracle (68k preserves-through-tail credit): the
+    // set of visible procs/externs declaring `preserves(sr)`/`preserves(sr.mask)`,
+    // consulted by the mask-claim tail credit so an unconditional external tail to
+    // a preserving sibling is credited. Cheap per-file set; empty in the common
+    // case (a 68k module with no SR-mask contract).
+    let sr_mask_preservers =
+        collect_sr_mask_preservers(&file.items, file, &opts.defines, contracts);
 
     // Diagnostics produced by the always-on `Item::Vars` overlay-validation pass
     // (Plan 7 #6). Overlay decl checks fire in EVERY evaluator that forces the
@@ -314,7 +321,7 @@ fn lower_module_inner(
                     file,
                     decl,
                     proc::Siblings { index, items: &file.items },
-                    proc::ProcCtx { cpu: initial_cpu, as_compat, defines: &opts.defines, invariant_regs: &invariant_regs, callee_preserves: &callee_preserves, contracts, noreturn: &noreturn },
+                    proc::ProcCtx { cpu: initial_cpu, as_compat, defines: &opts.defines, invariant_regs: &invariant_regs, callee_preserves: &callee_preserves, contracts, noreturn: &noreturn, sr_mask_preservers: &sr_mask_preservers },
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
@@ -460,6 +467,7 @@ fn lower_module_inner(
                     &mut overlay_pass_diags,
                     contracts,
                     &noreturn,
+                    &sr_mask_preservers,
                 );
                 // Leave the named section open; the next item (or `finish`)
                 // folds its length.
@@ -621,6 +629,7 @@ fn lower_section_items(
     overlay_pass_diags: &mut Vec<Diagnostic>,
     contracts: &crate::contract::InterfaceEnv,
     noreturn: &std::collections::BTreeSet<String>,
+    sr_mask_preservers: &std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
 ) -> bool {
     for (index, item) in sec.items.iter().enumerate() {
         match item {
@@ -646,7 +655,7 @@ fn lower_section_items(
                     file,
                     decl,
                     proc::Siblings { index, items: &sec.items },
-                    proc::ProcCtx { cpu: placement.cpu, as_compat, defines: placement.defines, invariant_regs, callee_preserves, contracts, noreturn },
+                    proc::ProcCtx { cpu: placement.cpu, as_compat, defines: placement.defines, invariant_regs, callee_preserves, contracts, noreturn, sr_mask_preservers },
                     builder,
                     diags,
                     asm_counter,
@@ -1781,7 +1790,7 @@ fn collect_z80_callee_preserves(
 /// (noreturn-tail model), recursing into sections. The set the cycle-budget and
 /// CCR-bracket walks consult to tell a divergent tail transfer (a name here)
 /// from a real tail call. Cheap; empty in the common case.
-fn collect_noreturn_symbols(items: &[ast::Item]) -> std::collections::BTreeSet<String> {
+pub(crate) fn collect_noreturn_symbols(items: &[ast::Item]) -> std::collections::BTreeSet<String> {
     fn walk(items: &[ast::Item], set: &mut std::collections::BTreeSet<String>) {
         for item in items {
             match item {
@@ -1799,6 +1808,103 @@ fn collect_noreturn_symbols(items: &[ast::Item]) -> std::collections::BTreeSet<S
     let mut set = std::collections::BTreeSet::new();
     walk(items, &mut set);
     set
+}
+
+/// The interrupt-mask-preservers oracle (68k preserves-through-tail credit): each
+/// `proc` / `extern proc` whose contract declares `preserves(sr)` (bare — both
+/// halves) or `preserves(sr.mask)`, mapped to the set of its EXPORT LABELS that
+/// are SAVE-FIRST-BRACKET entry points (fully-qualified `Owner.label` names).
+///
+/// The mask-claim tail credit consults it two ways. A PLAIN-NAME tail into a
+/// preserver enters at the owner's own entry, exactly where its `preserves(sr.mask)`
+/// was verified — always safe, decided by key presence alone (`Sound_Ping →
+/// Sound_PostByte`). An `Owner.label` tail enters MID-body (the shared-core
+/// `QueueDMA_Critical → QueueDMA_Deferrable.transfer` shape), and the SR round-trip
+/// is a BRACKET property that does NOT survive entry-point restriction: a label
+/// placed AFTER the owner's `move.w sr, -(sp)` save would let a tail-entrant skip
+/// the save, so the eventual `move.w (sp)+, sr` restore pops a word it never
+/// pushed and the `rts` returns to garbage. So an export label is a safe entry
+/// ONLY if it precedes the owner's FIRST SR-touching instruction (equivalently:
+/// entry there still sees the whole save-first bracket) — computed here from the
+/// owner's evaluated body. `sr.ccr` alone does NOT preserve the mask (excluded);
+/// an extern preserver has no body, so it maps to an empty label set (plain-name
+/// credit only). Recurses into sections.
+///
+/// The membership reads a proc's DECLARED `preserves` only, not the module
+/// `invariant` union the design's oracle also names — a conservative, corpus-dead
+/// simplification: a module-scope `invariant: preserves(sr.mask)` is a rung-2 Z80
+/// construct with no 68k adopter today, so a 68k proc that preserves the mask
+/// only THROUGH an inherited invariant is silently uncredited (a refusal, the safe
+/// direction). Union the invariant here the day a 68k module carries one.
+pub(crate) fn collect_sr_mask_preservers(
+    items: &[ast::Item],
+    file: &ast::File,
+    defines: &[(String, i128)],
+    contracts: &crate::contract::InterfaceEnv,
+) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+    fn tokens_cover_mask(preserves: &[(String, Option<String>)]) -> bool {
+        preserves
+            .iter()
+            .any(|(lo, hi)| hi.is_none() && (lo == "sr" || lo == "sr.mask"))
+    }
+    /// The owner's export labels that precede its FIRST SR-touching instruction.
+    /// A re-evaluation of the body (discarding diagnostics) reads the resolved
+    /// CodeItem stream, where the save/mask/restore are `CodeOperand::Sr` operands
+    /// and each `export .label:` is a fully-qualified `CodeItem::Label`. The scan
+    /// stops at the first Sr operand (or `rte`/`rtr`, which restore SR) — every
+    /// export label before it is a save-first-bracket entry.
+    fn safe_entry_labels(
+        p: &ast::ProcDecl,
+        file: &ast::File,
+        defines: &[(String, i128)],
+        contracts: &crate::contract::InterfaceEnv,
+    ) -> std::collections::BTreeSet<String> {
+        use crate::value::{CodeItem, CodeOperand};
+        let mut safe = std::collections::BTreeSet::new();
+        let (buf, _diags, _next) = crate::eval::eval_proc_body(
+            file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, defines, contracts,
+        );
+        let Some(buf) = buf else { return safe };
+        for item in &buf.items {
+            match item {
+                CodeItem::Label { name, export: true, .. } => {
+                    safe.insert(name.clone());
+                }
+                CodeItem::Instr { mnemonic, ops, .. } => {
+                    let touches_sr = matches!(mnemonic.as_str(), "rte" | "rtr")
+                        || ops.iter().any(|o| matches!(o, CodeOperand::Sr));
+                    if touches_sr {
+                        break; // first SR op — later export labels are not save-first entries
+                    }
+                }
+                _ => {}
+            }
+        }
+        safe
+    }
+    fn walk(
+        items: &[ast::Item],
+        file: &ast::File,
+        defines: &[(String, i128)],
+        contracts: &crate::contract::InterfaceEnv,
+        map: &mut std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+    ) {
+        for item in items {
+            match item {
+                ast::Item::Proc(p) if tokens_cover_mask(&p.preserves) => {
+                    map.insert(p.name.clone(), safe_entry_labels(p, file, defines, contracts));
+                }
+                ast::Item::ExternProc(e) if tokens_cover_mask(&e.sig.preserves) => {
+                    map.insert(e.name.clone(), std::collections::BTreeSet::new());
+                }
+                ast::Item::Section(sec) => walk(&sec.items, file, defines, contracts, map),
+                _ => {}
+            }
+        }
+    }
+    let mut map = std::collections::BTreeMap::new();
+    walk(items, file, defines, contracts, &mut map);
+    map
 }
 
 fn validate_module_invariants(

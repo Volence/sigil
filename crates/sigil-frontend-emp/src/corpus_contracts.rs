@@ -380,6 +380,14 @@ pub fn analyze_corpus_with_contracts(
     let contract_type_count = types.len();
     let proc_count = nodes.len();
 
+    // The corpus-wide `@noreturn` symbol set (noreturn-tail model): the oracle
+    // round consults it so a `preserves` proc whose error rail tails into a
+    // `@noreturn` handler is not charged for a path that never returns.
+    let noreturn: BTreeSet<String> = files
+        .iter()
+        .flat_map(|f| crate::lower::collect_noreturn_symbols(&f.items))
+        .collect();
+
     let mut closure = compute_closure(&nodes, &types);
 
     // The callee-preserves ORACLE round (§5) — the transitive upgrade to each proc's
@@ -411,6 +419,8 @@ pub fn analyze_corpus_with_contracts(
                 &pb.buf.items,
                 &pb.preserve_check,
                 crate::preserves::CallPolicy::Oracle(&base_effective),
+                pb.falls_into.as_deref(),
+                &noreturn,
             );
             let all_verified = pb.preserve_check.iter().all(|r| {
                 matches!(status.get(r), Some(crate::preserves::PreserveStatus::Verified))
@@ -1107,6 +1117,10 @@ struct ProcBuf {
     /// declares no `preserves` (or a malformed one).
     preserve_check: Vec<Reg>,
     preserve_names: BTreeSet<String>,
+    /// The proc's declared `falls_into` successor (if any) — the tail-credit
+    /// context the callee-preserves oracle round feeds to `verify_preserved` so a
+    /// fall-through into a preserving successor is credited.
+    falls_into: Option<String>,
     /// The `(register, cc)` pairs that can carry a §7.1 survives claim
     /// ([`ast::ProcDecl::cond_out_pairs`]) — canonical, and already excluding a
     /// register ALSO named unconditionally (whose out is unconditional, and for
@@ -1218,6 +1232,7 @@ fn collect_items(
                         span: p.span,
                         preserve_check,
                         preserve_names,
+                        falls_into: p.falls_into.clone(),
                         cond_out_pairs: p.cond_out_pairs(crate::regfile::RegFile::M68k),
                     });
                 }
@@ -1295,6 +1310,7 @@ fn collect_z80_flag_procs(
                         // the oracle round skip this buf (preserve_check empty).
                         preserve_check: Vec::new(),
                         preserve_names: std::collections::BTreeSet::new(),
+                        falls_into: None,
                         // The §7.1 survives walk is 68k-only; a Z80 buf never
                         // reaches it (these live in their own vector).
                         cond_out_pairs: Vec::new(),

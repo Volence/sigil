@@ -36,10 +36,21 @@ fn status_with(src: &str, reg: Reg, policy: CallPolicy) -> PreserveStatus {
             _ => None,
         })
         .expect("a proc");
+    // Build the `@noreturn` set the way lowering does, so a tail into a declared
+    // divergent handler is recognized as a diverging (obligation-free) exit.
+    let noreturn: BTreeSet<String> = file
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Proc(p) if p.is_noreturn() => Some(p.name.clone()),
+            Item::ExternProc(e) if e.is_noreturn() => Some(e.name.clone()),
+            _ => None,
+        })
+        .collect();
     let (buf, _d, _n) =
         eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[], &sigil_frontend_emp::contract::InterfaceEnv::empty());
     let buf = buf.expect("codebuf");
-    let mut r = verify_preserved(&buf.items, &[reg], policy);
+    let mut r = verify_preserved(&buf.items, &[reg], policy, p.falls_into.as_deref(), &noreturn);
     r.remove(&reg).expect("status for the checked reg")
 }
 
@@ -330,12 +341,15 @@ fn pop_underflow_is_unverifiable() {
 /// A soundness bailout on a NORETURN path (a `subq #2,sp` before a `jmp` to an
 /// external error handler — the DEBUG `assert`/`raise_error` shape) must NOT
 /// poison the verification of the RETURNING paths. a0 is push/pop-preserved on
-/// the rts path; the bailed path diverges (never returns), so a0 still verifies.
-/// (Path-LOCAL bailout, not global.)
+/// the rts path; the bailed path diverges (never returns via the `@noreturn`
+/// handler), so a0 still verifies. (Path-LOCAL bailout, not global.) The tail
+/// into the `@noreturn` handler is an obligation-free exit (§2 composition) — the
+/// same reason the corpus's real error rails are `@noreturn`-declared / authored.
 #[test]
 fn bailout_on_noreturn_path_does_not_poison_returns() {
     let s = status(
         "module m\n\
+         @noreturn\nextern proc MDDBG__ErrorHandler () clobbers()\n\
          proc P () clobbers(d0) {\n\
              move.l  a0, -(sp)\n\
              lea     X, a0\n\
@@ -938,4 +952,216 @@ fn sp_cleanup_probe_core_missing_restore_does_not_preserve() {
         Reg::A0,
     );
     assert!(!is_verified(&s), "no restore → a0 not preserved, got {s:?}");
+}
+
+// ===========================================================================
+// 68k preserves-through-tail credit (2026-08-06) — the `Edge::Defer` exit and
+// the `falls_into` fall-off become obligation sites charged through the
+// callee-preserves oracle, closing the tail-only vacuity hole (§13.4, the hole
+// the Z80 already closed) and granting the sibling-credit. Rows 2079 + 2088.
+// ===========================================================================
+
+// --- vacuity regression pair -----------------------------------------------
+
+/// VACUITY REGRESSION (the watched fail): a tail-only proc whose sole exit is an
+/// unconditional external tail into a callee that CLOBBERS a0 does NOT preserve
+/// a0 — the Defer exit is now an obligation site, so the false `preserves(a0)`
+/// FIRES. PRE-FIX the `Edge::Defer` was ignored under `AllReturns`, so a0 (never
+/// written locally) passed VACUOUSLY — the exact soundness hole this closes.
+#[test]
+fn tail_only_false_preserve_fires() {
+    let eff = oracle("Sibling", &["a0", "d0"]); // the tail-callee destroys a0
+    let s = status_with(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             jbra    Sibling\n\
+         }\n",
+        Reg::A0,
+        CallPolicy::Oracle(&eff),
+    );
+    assert!(is_not_preserved(&s), "tail into a clobbering callee → NotPreserved, got {s:?}");
+}
+
+/// HONEST tail-only HOLDS: the same shape, but the tail-callee PRESERVES a0 (and
+/// a0 is never written locally) → Verified. The credit the vacuity fix grants.
+#[test]
+fn tail_only_honest_preserve_holds() {
+    let eff = oracle("Sibling", &["d0", "d1"]); // preserves a0
+    let s = status_with(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             jbra    Sibling\n\
+         }\n",
+        Reg::A0,
+        CallPolicy::Oracle(&eff),
+    );
+    assert!(is_verified(&s), "tail into a preserving callee → Verified, got {s:?}");
+}
+
+// --- credit pair (a mixed body: one rts path, one tail path) ---------------
+
+/// CREDIT (holds): a0 is saved/restored on the `rts` path AND the tail path
+/// jumps to a callee that preserves a0 → Verified. The Defer edge is discharged
+/// by the oracle.
+#[test]
+fn tail_credit_to_preserving_callee_holds() {
+    let eff = oracle("Sibling", &["d0", "d1"]); // preserves a0
+    let s = status_with(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             tst.b   d0\n\
+             bne     .tail\n\
+             rts\n\
+         .tail:\n\
+             jbra    Sibling\n\
+         }\n",
+        Reg::A0,
+        CallPolicy::Oracle(&eff),
+    );
+    assert!(is_verified(&s), "a0 untouched + preserving tail → Verified, got {s:?}");
+}
+
+/// CREDIT (fires): the SAME mixed body, but the tail-callee CLOBBERS a0 → the
+/// tail path breaks the claim → NotPreserved. The oracle credits only a genuinely
+/// preserving tail.
+#[test]
+fn tail_credit_to_clobbering_callee_fires() {
+    let eff = oracle("Sibling", &["a0", "d0"]); // clobbers a0
+    let s = status_with(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             tst.b   d0\n\
+             bne     .tail\n\
+             rts\n\
+         .tail:\n\
+             jbra    Sibling\n\
+         }\n",
+        Reg::A0,
+        CallPolicy::Oracle(&eff),
+    );
+    assert!(is_not_preserved(&s), "clobbering tail → NotPreserved, got {s:?}");
+}
+
+// --- @noreturn composition (item 2) ----------------------------------------
+
+/// A tail into a `@noreturn` handler carries NO preserves obligation — the
+/// diverging exit never returns to the caller, so a0 (never written) stays
+/// Verified even though the handler's contract preserves nothing. Without this,
+/// every proc whose error rail tails into the handler blob would false-fire.
+#[test]
+fn noreturn_tail_carries_no_obligation() {
+    let empty: BTreeMap<String, RegEffect> = BTreeMap::new(); // handler preserves nothing
+    let s = status_with(
+        "module m\n\
+         @noreturn\nextern proc Handler () clobbers()\n\
+         proc P () clobbers(d0) {\n\
+             jbra    Handler\n\
+         }\n",
+        Reg::A0,
+        CallPolicy::Oracle(&empty),
+    );
+    assert!(is_verified(&s), "a @noreturn tail is obligation-free → Verified, got {s:?}");
+}
+
+/// CONTROL: the SAME shape without the `@noreturn` declaration IS an obligation —
+/// the (non-diverging) tail into a callee that preserves nothing clobbers a0 →
+/// NotPreserved. The divergence, not the tail shape, is what excuses the charge.
+#[test]
+fn non_noreturn_tail_is_charged() {
+    let empty: BTreeMap<String, RegEffect> = BTreeMap::new();
+    let s = status_with(
+        "module m\n\
+         extern proc Handler () clobbers()\n\
+         proc P () clobbers(d0) {\n\
+             jbra    Handler\n\
+         }\n",
+        Reg::A0,
+        CallPolicy::Oracle(&empty),
+    );
+    assert!(is_not_preserved(&s), "a non-@noreturn tail is charged → NotPreserved, got {s:?}");
+}
+
+// --- falls_into threading (item 3) — 68k mirror of the Psg_EmitDivisor pins -
+
+/// EMPTY-BODY + falls_into: a body with NO instructions whose declared
+/// `falls_into` successor PRESERVES a0 → Verified (control flows straight into
+/// the successor's frame, which keeps a0).
+#[test]
+fn empty_body_falls_into_preserving_successor_holds() {
+    let eff = oracle("Q", &["d0"]); // Q preserves a0
+    let s = status_with(
+        "module m\n\
+         proc P () clobbers(d0) falls_into Q {\n\
+         }\n",
+        Reg::A0,
+        CallPolicy::Oracle(&eff),
+    );
+    assert!(is_verified(&s), "empty body + preserving successor → Verified, got {s:?}");
+}
+
+/// EMPTY-BODY + falls_into (fires): the same empty body, but the successor
+/// CLOBBERS a0 → NotPreserved.
+#[test]
+fn empty_body_falls_into_clobbering_successor_fires() {
+    let eff = oracle("Q", &["a0"]); // Q clobbers a0
+    let s = status_with(
+        "module m\n\
+         proc P () clobbers(d0) falls_into Q {\n\
+         }\n",
+        Reg::A0,
+        CallPolicy::Oracle(&eff),
+    );
+    assert!(is_not_preserved(&s), "empty body + clobbering successor → NotPreserved, got {s:?}");
+}
+
+/// FALL-OFF + falls_into: a NON-empty body that runs off its end into a declared
+/// `falls_into` successor — a0 held at the end AND the successor preserves it →
+/// Verified.
+#[test]
+fn fall_off_into_preserving_successor_holds() {
+    let eff = oracle("Q", &["d0"]); // Q preserves a0
+    let s = status_with(
+        "module m\n\
+         proc P () clobbers(d0) falls_into Q {\n\
+             moveq   #0, d0\n\
+         }\n",
+        Reg::A0,
+        CallPolicy::Oracle(&eff),
+    );
+    assert!(is_verified(&s), "fall-off into a preserving successor → Verified, got {s:?}");
+}
+
+/// FALL-OFF + falls_into (fires): the same fall-off, but the successor CLOBBERS
+/// a0 → NotPreserved.
+#[test]
+fn fall_off_into_clobbering_successor_fires() {
+    let eff = oracle("Q", &["a0"]); // Q clobbers a0
+    let s = status_with(
+        "module m\n\
+         proc P () clobbers(d0) falls_into Q {\n\
+             moveq   #0, d0\n\
+         }\n",
+        Reg::A0,
+        CallPolicy::Oracle(&eff),
+    );
+    assert!(is_not_preserved(&s), "fall-off into a clobbering successor → NotPreserved, got {s:?}");
+}
+
+// --- indirect / computed tail (negative control) ---------------------------
+
+/// A computed tail (`jmp (a1)`) names no symbol, so the oracle can attribute
+/// nothing to it — it preserves NOTHING. A tail-only proc through it does not
+/// preserve a0 (even under a fully-preserving world), the conservative direction.
+#[test]
+fn computed_tail_preserves_nothing() {
+    let eff = oracle("Sibling", &["d0"]); // irrelevant — the tail names no symbol
+    let s = status_with(
+        "module m\n\
+         proc P () clobbers(d0) {\n\
+             jmp     (a1)\n\
+         }\n",
+        Reg::A0,
+        CallPolicy::Oracle(&eff),
+    );
+    assert!(is_not_preserved(&s), "a computed tail preserves nothing → NotPreserved, got {s:?}");
 }
