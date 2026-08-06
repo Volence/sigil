@@ -316,12 +316,12 @@ fn check_stack_balance(
 ///     `falls_into` names a symbol that is ITSELF `@noreturn` — the successor
 ///     never returns either, so neither does this proc. Any other fall-off
 ///     returns into its successor and is refused.
-///   * **A trailing-local transfer is a fall-off in disguise.** On the 68k
-///     `Cfg::edges`, an unconditional transfer to a LOCAL label that CLOSES the
-///     body (no instruction after it) classifies as `Edge::Defer` — but control
-///     runs straight off the end. This resolves it as a `FallOff` (the ruled
-///     NARROW fix; the `Cfg::edges` unification with its cross-analysis blast
-///     radius is a separate ledgered parcel). The Z80 builder already models it.
+///   * **A trailing-local transfer is a fall-off.** A transfer to a LOCAL label
+///     that CLOSES the body (no instruction after it) reaches the fall-off point
+///     where this proc's analysis still applies. The shared `Cfg::branch_edge`
+///     three-way classifies it as an `Edge::FallOff` on BOTH CPUs, so this walk
+///     reads it off the edge like any other fall-off — no consumer-side
+///     trailing-label test is needed.
 ///
 /// What CANNOT be checked here — that a real transfer's TARGET never returns —
 /// is the transitive claim, trusted exactly like every other declared contract
@@ -334,18 +334,14 @@ fn check_noreturn(
     noreturn: &BTreeSet<String>,
     diags: &mut Vec<Diagnostic>,
 ) {
-    use crate::flag_check::{branch_target, Cfg, Edge};
-    use crate::value::CodeOperand;
+    use crate::flag_check::{Cfg, Edge};
     let cfg = Cfg::build(&buf.items);
     // A fall-off is honest only when the declared successor is itself `@noreturn`.
+    // A trailing-local transfer is one of those fall-offs — `Cfg::branch_edge`
+    // classifies it as `Edge::FallOff`, so it needs no special case here.
     let falls_into_noreturn = proc.falls_into.as_deref().is_some_and(|s| noreturn.contains(s));
-    // Is this transfer to a LOCAL label that closes the body (no instruction
-    // after it)? Then its 68k `Defer` edge is really a fall-off.
-    let is_trailing_local = |ops: &[CodeOperand]| {
-        branch_target(ops).is_some_and(|t| cfg.is_local_label(t) && cfg.label_index(t).is_none())
-    };
     for (idx, item) in buf.items.iter().enumerate() {
-        let CodeItem::Instr { span, ops, .. } = item else { continue };
+        let CodeItem::Instr { span, .. } = item else { continue };
         let edges = match cpu {
             Cpu::Z80 => cfg.z80_edges(idx),
             _ => cfg.edges(idx),
@@ -355,9 +351,6 @@ fn check_noreturn(
                 Edge::Return => Some("returns here (a return instruction)"),
                 Edge::FallOff if !falls_into_noreturn => {
                     Some("runs off the end of the body into whatever follows")
-                }
-                Edge::Defer if is_trailing_local(ops) && !falls_into_noreturn => {
-                    Some("runs off the end via a transfer to a body-closing local label")
                 }
                 Edge::FallOff | Edge::Follow(_) | Edge::Defer => None,
             };
@@ -1975,7 +1968,11 @@ fn check_ccr_advisory(
 ///     caller); only a real EXTERNAL tail leaves with the target's flags. A
 ///     transfer to a TRAILING local label (one that closes the body) is NOT
 ///     intra-proc — control runs off the end — so `label_index` (None for a
-///     trailing label), not `is_local_label`, is the gate.
+///     trailing label), not `is_local_label`, is the gate. This walk reads
+///     `label_index` DIRECTLY rather than the `Cfg::edges` builder, so the shared
+///     `Cfg::branch_edge` three-way does not serve it; keyed on the SAME
+///     `label_index` map the builder is, it is a reader-level gate that cannot
+///     drift from the builder.
 fn ccr_bracket_refusal(items: &[CodeItem], noreturn: &BTreeSet<String>) -> Option<String> {
     use crate::flag_check::{transfer_target_sym, Cfg};
     use crate::value::{CodeOperand, Reg};
