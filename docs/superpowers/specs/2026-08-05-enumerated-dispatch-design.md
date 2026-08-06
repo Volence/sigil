@@ -13,10 +13,19 @@ A trailing clause on a computed-transfer instruction, naming the finite set of
 labels the transfer can land on:
 
 ```
-jmp     .jump_table(a1)     targets(.done, .drain_1, .drain_2, .drain_3,
-                                    .drain_4, .drain_5, .drain_6, .drain_7,
-                                    .drain_8)
+jmp     .jump_table(a1)     targets(.slot_0, .slot_1, .slot_2, .slot_3,
+                                    .slot_4, .slot_5, .slot_6, .slot_7,
+                                    .slot_8)
 ```
+
+The enumeration names the PHYSICAL LANDING points — the labels sitting at the
+table's stride offsets — never labels downstream of them. Naming a downstream
+label (the drain a slot branches to, rather than the slot itself) walks the
+budget PAST the slot's own dispatch code and produces a machine-checked
+number the hardware exceeds; the dma_queue adoption's regression pin
+(`targets_charge_the_landed_on_code_not_a_downstream_label`) exists because
+this parcel made exactly that mistake first. Landing labels cost zero bytes —
+place one at every `table + k·stride` offset and enumerate those.
 
 - Legal ONLY on an unconditional computed transfer (a `jmp`-class mnemonic
   whose edge today is `Defer` with no resolvable `Sym` target: the
