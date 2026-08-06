@@ -27,13 +27,27 @@
 //! pattern as the conditional-external-tail grep-proof that became a regression
 //! test.)
 //!
+//! WHY THIS GATE LIVES IN sigil-cli, PER SHAPE. Evaluated with NO comptime defines
+//! (its earlier home in `sigil-frontend-emp/tests`, which cannot depend on
+//! `sigil-harness` — the layering the shape profiles live behind), a `movem (sp)+`
+//! restore inside a `DEBUG`/`CRASH_REPORT`/`SOUND_*`-gated arm never lowers, so the
+//! exemption over that arm is UNGUARDED. Here it re-evaluates every proc under each
+//! shipped shape's own `-D` set (`native::shape_defines`) with that shape's bound L1
+//! interface env, so a debug-only stack-restore is scanned exactly when the ROM that
+//! ships it turns the arm on. The property must hold under EVERY shape; the
+//! non-vacuity floor pins the WIDENED (per-shape-union) restore count, and the
+//! define-free baseline is reported beside it so a shape that stops widening is
+//! visible.
+//!
 //! Gated on `AEON_DIR` (skips green when the tree is absent, like the port gates).
 
-use sigil_frontend_emp::ast::Item;
+use sigil_frontend_emp::ast::{File as EmpFile, Item};
+use sigil_frontend_emp::corpus_contracts::bind_corpus_interfaces;
 use sigil_frontend_emp::eval::eval_proc_body;
 use sigil_frontend_emp::lower::expand_reglist_regs;
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::value::{CodeItem, CodeOperand, Reg};
+use sigil_harness::native;
 use sigil_ir::backend::Cpu;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -91,40 +105,22 @@ fn movem_restore_mask(mnem: &str, ops: &[CodeOperand]) -> Option<u16> {
     }
 }
 
-#[test]
-fn every_stack_movem_restore_has_a_matching_save() {
-    // House reference-gate pattern (repin_pins/mt_port): default the sibling
-    // aeon tree, and under SIGIL_STRICT_GATE a missing reference is a HARD
-    // failure — a permanent guard that silently skips in the standard strict
-    // invocation (`SIGIL_STRICT_GATE=1 cargo test --workspace`, no AEON_DIR)
-    // would be prose with extra steps.
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
-    if !aeon.exists() {
-        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
-            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
-        }
-        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
-    let mut paths = Vec::new();
-    emp_files(&aeon.join("engine"), &mut paths);
-    emp_files(&aeon.join("games"), &mut paths);
-    paths.sort();
-    assert!(!paths.is_empty(), "no .emp files under {}", aeon.display());
-
+/// Scan every proc in `files`, evaluated under `defines` + `iface_env`, for the
+/// hidden-fresh-pop property. Returns `(violations, restore_count)` — the count is
+/// how many `movem (sp)+, …` restores the walk VISITED (the non-vacuity witness).
+fn scan(
+    files: &[(PathBuf, EmpFile)],
+    defines: &[(String, i128)],
+    iface_env: &sigil_frontend_emp::contract::InterfaceEnv,
+) -> (Vec<String>, usize) {
     let mut violations: Vec<String> = Vec::new();
     let mut restore_count = 0usize;
     let mut counter = 0u32;
-    for path in &paths {
-        let src = std::fs::read_to_string(path).unwrap();
-        let (file, _diags) = parse_str(&src);
+    for (path, file) in files {
         for item in &file.items {
             let Item::Proc(p) = item else { continue };
             let (buf, _d, next) = eval_proc_body(
-                &file, &p.name, &p.params, &p.body, p.span, counter, Cpu::M68000, &[],
-                &sigil_frontend_emp::contract::InterfaceEnv::empty(),
+                file, &p.name, &p.params, &p.body, p.span, counter, Cpu::M68000, defines, iface_env,
             );
             counter = next;
             let Some(buf) = buf else { continue };
@@ -167,22 +163,77 @@ fn every_stack_movem_restore_has_a_matching_save() {
             }
         }
     }
+    (violations, restore_count)
+}
 
-    assert!(
-        violations.is_empty(),
-        "(sp)+ movem-restore exemption tripwire — {} hidden fresh-pop(s) found; re-adjudicate \
-         the exemption before shipping:\n{}",
-        violations.len(),
-        violations.join("\n")
+/// The reference tree, or `None` when it is absent and strict mode is off.
+fn aeon_dir() -> Option<PathBuf> {
+    let aeon = PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
     );
-    // NON-VACUOUS: the corpus must actually exercise the guarded form. The live
-    // aeon tree has 26 `movem (sp)+, …` restores (the Stage-0 census figure); a
-    // floor of 20 tolerates minor churn while catching a sweep that silently stops
-    // visiting the guarded instructions (an eval/walker regression that would make
-    // this pass emptily).
+    if !aeon.exists() {
+        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
+        }
+        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
+        return None;
+    }
+    Some(aeon)
+}
+
+#[test]
+fn every_stack_movem_restore_has_a_matching_save() {
+    let Some(aeon) = aeon_dir() else { return };
+
+    let mut paths = Vec::new();
+    emp_files(&aeon.join("engine"), &mut paths);
+    emp_files(&aeon.join("games"), &mut paths);
+    paths.sort();
+    assert!(!paths.is_empty(), "no .emp files under {}", aeon.display());
+    let files: Vec<(PathBuf, EmpFile)> =
+        paths.iter().map(|p| (p.clone(), parse_str(&std::fs::read_to_string(p).unwrap()).0)).collect();
+    let just_files: Vec<EmpFile> = files.iter().map(|(_, f)| f.clone()).collect();
+
+    // The DEFINE-FREE baseline (this gate's earlier no-`-D` coverage) — reported
+    // beside the per-shape scan so a shape that stops widening is visible.
+    let empty_env = sigil_frontend_emp::contract::InterfaceEnv::empty();
+    let (base_viol, base_count) = scan(&files, &[], &empty_env);
+    assert!(base_viol.is_empty(), "define-free baseline hidden fresh-pop(s):\n{}", base_viol.join("\n"));
+
+    // Per shape: evaluate every proc under the shape's own `-D` set + bound L1
+    // interface env, so DEBUG/CRASH_REPORT/SOUND-gated stack restores are scanned
+    // exactly when the shipped ROM turns their arm on.
+    let mut widest = base_count;
+    let mut census = format!("define-free baseline: {base_count} restores");
+    for (label, profile) in native::shipped_shapes() {
+        let defines = native::shape_defines(&profile);
+        let (iface_env, bind_diags) =
+            bind_corpus_interfaces(&just_files, &defines, profile.game_module_prefix());
+        assert!(
+            bind_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "shape `{label}`: L1 bind errors: {bind_diags:?}"
+        );
+        let (viol, count) = scan(&files, &defines, &iface_env);
+        assert!(
+            viol.is_empty(),
+            "(sp)+ movem-restore exemption tripwire under shape `{label}` — {} hidden fresh-pop(s); \
+             re-adjudicate the exemption before shipping:\n{}",
+            viol.len(),
+            viol.join("\n")
+        );
+        census.push_str(&format!("; {label}: {count}"));
+        widest = widest.max(count);
+    }
+    eprintln!("== movem-restore census ==\n{census}");
+
+    // NON-VACUOUS: the WIDEST shape must actually exercise the guarded form. The
+    // live aeon tree has 26+ `movem (sp)+, …` restores in the define-free arms
+    // alone; the per-shape scan can only add. A floor of 20 tolerates minor churn
+    // while catching a sweep that silently stops visiting the guarded instructions
+    // (an eval/walker regression that would make this pass emptily).
     assert!(
-        restore_count >= 20,
-        "expected ~26 `movem (sp)+, …` restores in the corpus, visited only {restore_count} — \
+        widest >= 20,
+        "expected 26+ `movem (sp)+, …` restores in the widest shape, visited only {widest} — \
          the guard has gone (near-)vacuous"
     );
 }
