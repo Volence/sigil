@@ -93,3 +93,39 @@ NEITHER-BUCKET HEADLINE: the census-by-verification pattern — add the claim, l
 `[proc.preserves-unverifiable]` error tier adjudicate, keep only what compiles — made
 Item 1 a mechanical 15-for-15 with zero manual proof reading. All three items are
 byte-neutral (contract text is comptime; test/doc edits emit no ROM byte).
+
+## Panel round (2026-08-06)
+
+Zero MUST-FIX. All 15 `preserves(a0)` claims were independently traced and HOLD —
+Lens C refutation attempts failed on every path, including DeleteObject's
+slot-zero/pointer-restore and Sonic_LoadArt's Perform_DPLC closure. Adjudicated
+fixups, all in sigil `hyg` (aeon branch untouched):
+
+1. The three relocated tests' doc comments reworded from relocation-narration
+   ("its earlier home… here it re-runs") to present-tense contract facts — the
+   layering rationale kept (sigil-cli depends on both crates; per-shape `-D` lowering
+   is the point), the old-location contrast dropped.
+2. `movem_restore_guard`'s stale "26+" figure (comment + panic message) corrected to
+   the measured 32 define-free / 33 widest.
+3. `movem_restore_guard` gained a WIDENING pin: the widest shape's visited-restore
+   count must STRICTLY EXCEED the define-free baseline (33 > 32 today). Without it a
+   sound-gated restore that stops lowering leaves the gate quietly green. The `>= 20`
+   floor stays.
+4. `dead_save`'s non-vacuity floor raised from `> 0` to `>= 3` (tolerant, not an
+   exact pin), giving the ledger's census-3 claim teeth.
+5. The `aeon_dir()`/`SIGIL_STRICT_GATE` idiom unified — `dead_save` and `preserves`
+   now use the `fn aeon_dir() -> Option<PathBuf>` helper form `movem` already had;
+   `preserves`' `6 * 7` derived as `cases.len() * shipped_shapes().len()`.
+6. Ledger: the budget-census close carries its date (— CLOSED 2026-08-06); a new
+   step-3 row records the shared corpus-test-harness helper ask (the copy-pasted
+   `emp_files` / `aeon_dir` / `shipped_shapes`→`shape_defines`→`bind_corpus_interfaces`
+   loop across ~7 tests, whose symptoms were this round's stale-count and
+   helper-drift catches).
+
+Declined (recorded, no action): whole-corpus `@noreturn` note (already exact-matched),
+dead_save not pinning the firing set (dump-by-design).
+
+Re-gate after fixups: strict 3447 passed / 0 failed / 4 ignored = 3451 == branch
+`#[test]` total; byte bar ×7 identical to committed goldens; refreeze `--check` OK
+(chain 48); clippy `-D warnings` clean on the changed tests. Fixups are test/doc only
+— byte-neutral.
