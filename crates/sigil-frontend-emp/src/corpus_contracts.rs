@@ -365,6 +365,18 @@ pub fn analyze_corpus_with_contracts(
         if module_is_z80(&file.module) {
             continue;
         }
+        // The per-file oracle inputs (§register-preserve credit) — built from the
+        // SAME sources the primary `lower` checker feeds `check_preserves`, so the
+        // corpus verdict stays consistent with the primary path (see
+        // `PreserveInputs`). Rebuilt per file: both sets are file-local, matching
+        // the primary checker's per-file scope.
+        let file_noreturn = crate::lower::collect_noreturn_symbols(&file.items);
+        let file_sr_mask_preservers =
+            crate::lower::collect_sr_mask_preservers(&file.items, file, defines, contracts);
+        let preserve_inputs = PreserveInputs {
+            noreturn: &file_noreturn,
+            sr_mask_preservers: &file_sr_mask_preservers,
+        };
         collect_items(
             &file.items,
             file,
@@ -382,6 +394,7 @@ pub fn analyze_corpus_with_contracts(
             &mut dropped_by_proc,
             &mut comptime_unresolved,
             contracts,
+            &preserve_inputs,
         );
     }
     dropped_by_proc.sort();
@@ -1236,6 +1249,19 @@ fn collect_discarded(body: &[AsmStmt], out: &mut Vec<Span>) {
     }
 }
 
+/// The per-file inputs the register-preserve oracle threads into `check_preserves`
+/// at its two corpus call sites (`preserve_oracle_inputs`, `verified_preserves_regs`):
+/// the `@noreturn` symbols and the SR-mask preservers of the file being walked.
+/// Built once per file from the SAME sources the primary `lower` checker uses
+/// (`collect_noreturn_symbols` / `collect_sr_mask_preservers`), so the corpus
+/// register verdict stays consistent with the primary path the day a proc both
+/// register-preserves AND claims the mask through an external tail. Inert on the
+/// frozen corpus (no such proc), measured so.
+struct PreserveInputs<'a> {
+    noreturn: &'a BTreeSet<String>,
+    sr_mask_preservers: &'a BTreeMap<String, BTreeSet<String>>,
+}
+
 /// Recurse the item list (into `section {}` blocks), registering every proc /
 /// extern proc / contract type.
 #[allow(clippy::too_many_arguments)]
@@ -1256,13 +1282,14 @@ fn collect_items(
     dropped_by_proc: &mut Vec<(String, usize)>,
     comptime_unresolved: &mut Vec<(String, String, Span)>,
     contracts: &crate::contract::InterfaceEnv,
+    preserve_inputs: &PreserveInputs,
 ) {
     for item in items {
         match item {
             Item::Proc(p) => {
                 proc_names.insert(p.name.clone());
                 let (node, buf, dropped, unresolved) =
-                    proc_node(p, file, counter, defines, env, contracts);
+                    proc_node(p, file, counter, defines, env, contracts, preserve_inputs);
                 if dropped > 0 {
                     dropped_by_proc.push((p.name.clone(), dropped));
                 }
@@ -1280,7 +1307,12 @@ fn collect_items(
                 }
                 // Stash the CodeBuf + discard sites for the post-walk checks.
                 if let Some(buf) = buf {
-                    let (preserve_check, preserve_names) = preserve_oracle_inputs(p, &buf);
+                    let (preserve_check, preserve_names) = preserve_oracle_inputs(
+                        p,
+                        &buf,
+                        preserve_inputs.noreturn,
+                        preserve_inputs.sr_mask_preservers,
+                    );
                     let mut discarded = Vec::new();
                     collect_discarded(&p.body, &mut discarded);
                     proc_bufs.push(ProcBuf {
@@ -1314,7 +1346,7 @@ fn collect_items(
             Item::Section(s) => collect_items(
                 &s.items, file, nodes, types, extern_names, proc_names, extern_spans, counter,
                 flag_callees, cond_callees, proc_bufs, defines, env, dropped_by_proc,
-                comptime_unresolved, contracts,
+                comptime_unresolved, contracts, preserve_inputs,
             ),
             _ => {}
         }
@@ -1399,6 +1431,7 @@ fn proc_node(
     defines: &[(String, i128)],
     env: &[Item],
     contracts: &crate::contract::InterfaceEnv,
+    preserve_inputs: &PreserveInputs,
 ) -> (ProcNode, Option<CodeBuf>, usize, Vec<(String, Span)>) {
     let (buf, _diags, next, dropped, unresolved) = crate::eval::eval_proc_body_env(
         file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::M68000, defines, env, contracts,
@@ -1412,7 +1445,12 @@ fn proc_node(
         // Local writes — `a7` filtered as stack discipline (census caveat 5).
         local_writes = proc_written_registers(buf).into_iter().filter(|r| r != "a7").collect();
         // Provably-preserved registers (declared + D2.32 movem-verified).
-        verified_preserves = verified_preserves_regs(p, buf);
+        verified_preserves = verified_preserves_regs(
+            p,
+            buf,
+            preserve_inputs.noreturn,
+            preserve_inputs.sr_mask_preservers,
+        );
         // Direct-call edges from the resolved CodeBuf (post-comptime accurate).
         for it in &buf.items {
             if let CodeItem::Instr { mnemonic, ops, author, .. } = it {

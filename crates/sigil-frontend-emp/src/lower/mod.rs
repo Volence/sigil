@@ -253,11 +253,16 @@ fn lower_module_inner(
     // cycle-budget and CCR-bracket walks. Cheap set over the file's own items;
     // empty when no decl carries the attribute (the common case).
     let noreturn = collect_noreturn_symbols(&file.items);
-    // The interrupt-mask-preservers oracle (68k preserves-through-tail credit): the
-    // set of visible procs/externs declaring `preserves(sr)`/`preserves(sr.mask)`,
-    // consulted by the mask-claim tail credit so an unconditional external tail to
-    // a preserving sibling is credited. Cheap per-file set; empty in the common
-    // case (a 68k module with no SR-mask contract).
+    // The interrupt-mask-preservers oracle (68k preserves-through-tail credit): a
+    // MAP from each visible proc/extern that DECLARES `preserves(sr)` /
+    // `preserves(sr.mask)` to its safe-entry export labels (the labels preceding
+    // the owner's first SR touch — the `Owner.label` mid-body tail credit reads
+    // them; an extern maps to the empty set, plain-name credit only). Consulted by
+    // the mask-claim tail credit so an unconditional external tail to a preserving
+    // sibling is credited. Membership is DECLARATION-only by design — the credit
+    // discharges an error-tier proof obligation, so it must follow a check that
+    // actually ran (see `collect_sr_mask_preservers`). Cheap per-file; empty in the
+    // common case (a 68k module with no SR-mask contract).
     let sr_mask_preservers =
         collect_sr_mask_preservers(&file.items, file, &opts.defines, contracts);
 
@@ -1830,12 +1835,17 @@ pub(crate) fn collect_noreturn_symbols(items: &[ast::Item]) -> std::collections:
 /// an extern preserver has no body, so it maps to an empty label set (plain-name
 /// credit only). Recurses into sections.
 ///
-/// The membership reads a proc's DECLARED `preserves` only, not the module
-/// `invariant` union the design's oracle also names — a conservative, corpus-dead
-/// simplification: a module-scope `invariant: preserves(sr.mask)` is a rung-2 Z80
-/// construct with no 68k adopter today, so a 68k proc that preserves the mask
-/// only THROUGH an inherited invariant is silently uncredited (a refusal, the safe
-/// direction). Union the invariant here the day a 68k module carries one.
+/// Membership reads a proc's DECLARED `preserves` ONLY. The module-scope
+/// `invariant` is deliberately NOT unioned in: this map's credit is a PROOF
+/// DISCHARGE — `sr_mask_preservers_credit` returning true suppresses the
+/// error-tier `[proc.preserves-sr-unbalanced]` obligation and returns early — and
+/// on 68k nothing enforces a module invariant against any body (the Z80 arm
+/// forces every proc to prove it via `check.extend(invariant_regs)`; the 68k arm
+/// never consults `invariant_regs`). A declared `preserves(sr)`/`preserves(sr.mask)`
+/// is non-empty, so it DOES run `check_preserves` → `check_preserves_sr` on that
+/// body; crediting an undeclared proc through an unenforced invariant would trade
+/// that proof for a promise. Credit follows proof. Ledger row 2090 carries the
+/// enforcement precondition and the ordering trap.
 pub(crate) fn collect_sr_mask_preservers(
     items: &[ast::Item],
     file: &ast::File,
