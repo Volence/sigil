@@ -254,7 +254,8 @@ fn reglist_mask(ops: &[CodeOperand]) -> Option<u16> {
 #[derive(Clone, Copy)]
 pub enum ReturnScope<'a> {
     /// EVERY exit that leaves the body: a return, a fall-off-end, and a tail
-    /// transfer out ([`Edge::Defer`]). The `preserves(rN)` contract — a tail
+    /// transfer out ([`Edge::TailOut`] or [`Edge::BranchOut`]). The
+    /// `preserves(rN)` contract — a tail
     /// exit is an obligation site charged through the callee-preserves oracle
     /// ([`PreserveObserver::exit`]), which is what closes the tail-only vacuity
     /// hole; a diverging (`@noreturn` / authored-rail) tail carries no obligation.
@@ -380,7 +381,7 @@ pub fn verify_preserved_on(
     if has_call {
         ever_clobbered = [true; 16];
     }
-    // An external tail transfer (an `Edge::Defer`) and the declared `falls_into`
+    // A transfer out of the body (either edge flavor) and the declared `falls_into`
     // successor exit into a callee that clobbers every register it does not
     // provably preserve — so a register the tail-callee destroys must not stay
     // credited past a bailout as "never written". Mirrors `z80_preserves.rs`'s
@@ -390,7 +391,7 @@ pub fn verify_preserved_on(
     if matches!(scope, ReturnScope::AllReturns) {
         for (idx, it) in items.iter().enumerate() {
             let CodeItem::Instr { ops, author, .. } = it else { continue };
-            if !cfg.edges(idx).iter().any(|e| matches!(e, Edge::Defer)) {
+            if !cfg.edges(idx).iter().any(|e| matches!(e, Edge::TailOut | Edge::BranchOut)) {
                 continue;
             }
             if matches!(author, ItemAuthor::AssertDesugar) {
@@ -487,7 +488,11 @@ enum ExitKind {
     Return,
     /// [`Edge::FallOff`] — control ran past the last instruction of the body.
     FallOff,
-    /// [`Edge::Defer`] — a transfer to a non-local symbol.
+    /// A transfer out of the body — [`Edge::TailOut`] or [`Edge::BranchOut`].
+    /// One kind for both flavors: both of this enum's consumers (the entry-value
+    /// proof and the stack-balance checker) charge the callee oracle identically
+    /// whatever terminator produced the exit, so the distinction would be surface
+    /// with no consumer.
     Defer,
 }
 
@@ -576,7 +581,10 @@ fn run_stack_dataflow<O: StackObserver>(
                 // is a real tail call whose effect is a TRANSITIVE property the
                 // closure accounts for via its own tail edge (corpus
                 // `TAIL_MNEMONICS`). Consumers decide whether to charge it.
-                Edge::Defer => obs.exit(idx, &st, ExitKind::Defer),
+                // Both flavors of transfer out are charged identically: the exit
+                // is an exit whatever terminator produced it, and every consumer
+                // of `ExitKind::Defer` charges the callee oracle the same way.
+                Edge::TailOut | Edge::BranchOut => obs.exit(idx, &st, ExitKind::Defer),
             }
         }
     }
@@ -1299,7 +1307,8 @@ pub struct StackFinding {
 /// tracked exactly can fire.
 ///
 /// Scope: exits that END THIS BODY ([`Edge::Return`], and [`Edge::FallOff`] when
-/// `charge_fall_off_end`). A tail transfer out of the proc ([`Edge::Defer`]) is
+/// `charge_fall_off_end`). A transfer out of the proc ([`Edge::TailOut`] /
+/// [`Edge::BranchOut`]) is
 /// deliberately not charged, for the reason the entry-value proof gives — it may
 /// diverge (a noreturn error rail owes its caller nothing), and nothing in the
 /// language marks that yet.
@@ -1494,8 +1503,8 @@ pub fn find_dead_saves(
                     work.push_back(succ);
                 }
             }
-            // Return / FallOff / Defer: control leaves the body — the save's fate
-            // is decided at its pop, not here.
+            // Return / FallOff / TailOut / BranchOut: control leaves the body —
+            // the save's fate is decided at its pop, not here.
         }
         if bailed {
             break;

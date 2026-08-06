@@ -120,7 +120,7 @@ fn escape_fires_on_a_return_inside_the_body() {
 }
 
 /// A tail transfer to an EXTERNAL symbol leaves the proc — and the region —
-/// without the release (`Edge::Defer`).
+/// without the release (`Edge::TailOut`).
 #[test]
 fn escape_fires_on_a_tail_transfer_out() {
     let r = analyze(&format!(

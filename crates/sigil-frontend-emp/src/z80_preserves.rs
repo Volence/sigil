@@ -450,7 +450,7 @@ pub fn verify_z80_preserved(
                 // Control running off the end of the body. In a proc with a declared
                 // `falls_into` successor, the closing `}` continues into that
                 // successor's frame — semantically identical to an explicit `jr`
-                // tail (`Edge::Defer`): rN survives iff it holds its entry value here
+                // tail (`Edge::TailOut`): rN survives iff it holds its entry value here
                 // AND the successor itself preserves it. Without a `falls_into`,
                 // running off the end is a plain exit (checkpoint the entry bits).
                 Edge::FallOff => {
@@ -483,7 +483,10 @@ pub fn verify_z80_preserved(
                 // tail-callee itself preserves rN (unknown/indirect target →
                 // conservative clobber, via the oracle). Mirrors the
                 // `Return`/`FallOff` arm plus the callee oracle.
-                Edge::Defer => {
+                // Both flavors are exits charged through the callee oracle; a
+                // conditional branch out is over-obligated rather than missed,
+                // which is this check's safe polarity.
+                Edge::TailOut | Edge::BranchOut => {
                     saw_exit = true;
                     if st.bailed || !st.stack.is_empty() {
                         bailed_reached_exit = true;

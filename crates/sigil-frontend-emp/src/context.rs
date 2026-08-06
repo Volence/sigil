@@ -279,7 +279,8 @@ pub fn regions_of(proc: &str, items: &[CodeItem]) -> (Vec<Region>, Vec<ContextFi
 ///
 /// - **escape** — an edge out of the acquire+body range that does not land back
 ///   inside the region is a path that skips the release. `Return`, `FallOff` and
-///   a `Defer` (a tail transfer, e.g. an external `jbra`) are escapes for the
+///   a transfer out (a tail such as an external `jbra`, or a conditional branch
+///   whose target leaves the body) are escapes for the
 ///   same reason. A call is not among them: a call comes back, and the edge
 ///   builders say so — every call mnemonic gets its fall-through and nothing
 ///   else.
@@ -360,11 +361,11 @@ pub fn check_regions(
                     Edge::Follow(succ) if !region.contains(succ) => {
                         fire(ContextFiringKind::Escape, span_at(items, idx, region));
                     }
-                    // A `Defer` here is a genuine transfer out. No call reaches
-                    // it: both builders give every call mnemonic its fall-through
-                    // and nothing else — or, at the end of a body, only the
-                    // fall-off, which IS an escape and fires as one.
-                    Edge::Return | Edge::FallOff | Edge::Defer => {
+                    // A transfer out here is a genuine escape in either flavor. No
+                    // call reaches it: both builders give every call mnemonic its
+                    // fall-through and nothing else — or, at the end of a body,
+                    // only the fall-off, which IS an escape and fires as one.
+                    Edge::Return | Edge::FallOff | Edge::TailOut | Edge::BranchOut => {
                         fire(ContextFiringKind::Escape, span_at(items, idx, region));
                     }
                     Edge::Follow(_) => {}

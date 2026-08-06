@@ -362,7 +362,7 @@ fn check_noreturn(
                 Edge::FallOff if !falls_into_noreturn => {
                     Some("runs off the end of the body into whatever follows")
                 }
-                Edge::FallOff | Edge::Follow(_) | Edge::Defer => None,
+                Edge::FallOff | Edge::Follow(_) | Edge::TailOut | Edge::BranchOut => None,
             };
             if let Some(why) = why {
                 push(
@@ -2076,10 +2076,12 @@ fn check_preserves_sr(
 /// runs off its end, transfers into a local label, or DIVERGES. The shape the
 /// mask-claim tail credit consults: the caller-observed SR past this exit is
 /// entirely the tail target's. The last instruction's SOLE edge being
-/// `Edge::Defer` identifies the unconditional external transfer — the unified
+/// `Edge::TailOut` identifies the unconditional external transfer — the unified
 /// `Cfg::edges` builder classifies a transfer INTO a local label (including a
-/// body-closing trailing label) as `Follow`/`FallOff`, so a `Defer` here is
+/// body-closing trailing label) as `Follow`/`FallOff`, so a `TailOut` here is
 /// always a genuine external tail; no trailing-label special case is needed.
+/// A conditional branch out is an `Edge::BranchOut` and never an instruction's
+/// only edge, so the singleton test cannot admit one.
 ///
 /// A DIVERGENT tail — an `AssertDesugar`-authored assert/raise rail, or a jump to
 /// a `@noreturn` handler — never returns to the caller, so it carries no mask
@@ -2094,7 +2096,7 @@ fn terminal_external_tail(buf: &crate::value::CodeBuf, noreturn: &BTreeSet<Strin
         .enumerate()
         .rev()
         .find_map(|(i, it)| matches!(it, CodeItem::Instr { .. }).then_some(i))?;
-    if cfg.edges(last) != vec![Edge::Defer] {
+    if cfg.edges(last) != vec![Edge::TailOut] {
         return None;
     }
     let CodeItem::Instr { ops, author, .. } = &buf.items[last] else { return None };

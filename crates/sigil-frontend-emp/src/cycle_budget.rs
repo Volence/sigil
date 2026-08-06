@@ -54,7 +54,7 @@
 //! A computed transfer (`jmp .table(a1)`) is refused because its destination set
 //! is DATA. The one exception is an author-written `targets(.a, .b, …)` clause
 //! (enumerated-dispatch design §2): it names the finite set of LOCAL labels the
-//! transfer can land on, and the walk turns the `Defer` into that many `Follow`
+//! transfer can land on, and the walk turns the `TailOut` into that many `Follow`
 //! edges — the fixed cost charged once, then a max/min over the arms, exactly as
 //! for a two-edge branch ([`enumerated_succs`]). Exhaustiveness is the AUTHOR's
 //! claim, verified only for existence/locality/distinctness — so ONLY this opt-in
@@ -124,6 +124,14 @@ pub enum BudgetFindingKind {
     },
     /// `[cycles.ambiguous-branch]` — an outcome-split conditional whose taken and
     /// fall-through edges cannot be told apart.
+    ///
+    /// A DEFENSIVE refusal with no reachable input: every split-cost conditional
+    /// on both CPUs presents both of its edges, so the two numbers always have
+    /// somewhere to be routed (`cycle_budget.rs` tests,
+    /// `a_split_cost_conditional_always_presents_both_its_edges`). It is kept
+    /// because its polarity is safe — an edge model or cost table that later
+    /// produced a one-edge split would refuse here rather than charge one of two
+    /// numbers to the single edge it had.
     AmbiguousBranch {
         /// The conditional's mnemonic.
         mnemonic: String,
@@ -544,7 +552,7 @@ pub fn check_dispatch_targets(items: &[CodeItem], cpu: Cpu) -> Vec<DispatchFindi
             });
             continue;
         }
-        // Legal only on a BARE computed transfer: exactly one `Defer` edge and no
+        // Legal only on a BARE computed transfer: exactly one `TailOut` edge and no
         // operand naming a symbol. Everything else already has an exact edge (a
         // direct `jmp .label`, a tail `jmp External`) or is no transfer at all.
         let names_a_target = ops.iter().any(|o| {
@@ -553,7 +561,7 @@ pub fn check_dispatch_targets(items: &[CodeItem], cpu: Cpu) -> Vec<DispatchFindi
                 CodeOperand::Sym(_) | CodeOperand::SymOff { .. } | CodeOperand::AbsSym { .. }
             )
         });
-        if !matches!(cpu_edges(&cfg, cpu, idx).as_slice(), [Edge::Defer]) || names_a_target {
+        if !matches!(cpu_edges(&cfg, cpu, idx).as_slice(), [Edge::TailOut]) || names_a_target {
             out.push(DispatchFinding {
                 kind: DispatchFindingKind::Redundant { mnemonic: mnemonic.clone() },
                 span: *span,
@@ -608,11 +616,11 @@ struct ChargedEdge {
 /// The successor item indices an enumerated-dispatch `targets(...)` clause names,
 /// when the clause is present and every named label resolves LOCALLY. `None` when
 /// there is no clause to honor here — the instruction carries no targets, OR it is
-/// not a bare COMPUTED transfer (a single `Defer` naming no symbol), OR a name does
+/// not a bare COMPUTED transfer (a single `TailOut` naming no symbol), OR a name does
 /// not resolve to a local label — and the caller falls back to the ordinary edge
 /// model (which then refuses the computed transfer as it did before this form).
 ///
-/// This is the ONE consumer of `targets`. It turns a `Defer` into `Follow` edges
+/// This is the ONE consumer of `targets`. It turns a `TailOut` into `Follow` edges
 /// and nothing else: no `Cfg` edge builder changes, so the preserves prover, the
 /// flag walks, and the clobbers closure keep treating the instruction as an opaque
 /// computed transfer. A wrong enumeration can therefore mis-measure only the budget
@@ -622,7 +630,9 @@ fn enumerated_succs(cfg: &Cfg, cpu: Cpu, items: &[CodeItem], idx: usize) -> Opti
     if targets.is_empty() {
         return None;
     }
-    // Only a BARE computed transfer is enumerable: exactly one `Defer` edge and no
+    // Only a BARE computed transfer is enumerable: exactly one `TailOut` edge and no
+    // sibling — a `BranchOut` is never an instruction's only edge, so the singleton
+    // pattern admits the unconditional computed transfer and nothing else.
     // operand naming a symbol. A direct `jmp .label` (or `jmp External`) already
     // has an exact edge — the redundant case the per-proc dispatch check refuses —
     // so the clause is ignored here and the exact edge stands.
@@ -632,7 +642,7 @@ fn enumerated_succs(cfg: &Cfg, cpu: Cpu, items: &[CodeItem], idx: usize) -> Opti
             CodeOperand::Sym(_) | CodeOperand::SymOff { .. } | CodeOperand::AbsSym { .. }
         )
     });
-    if !matches!(cpu_edges(cfg, cpu, idx).as_slice(), [Edge::Defer]) || names_a_target {
+    if !matches!(cpu_edges(cfg, cpu, idx).as_slice(), [Edge::TailOut]) || names_a_target {
         return None;
     }
     // Resolve every name to its local instruction index; a single miss abandons
@@ -674,7 +684,7 @@ fn charged_edges(
     }
     // Enumerated dispatch: an unconditional computed transfer carrying a
     // `targets(...)` clause is the ONE way this walk sees THROUGH a computed jump.
-    // The `Defer` its edge model produces becomes N `Follow` edges here — the
+    // The `TailOut` its edge model produces becomes N `Follow` edges here — the
     // instruction's own fixed cost charged once, then a fan-out to each named
     // local label, exactly like a two-edge branch fans out. This arm is
     // self-contained (it consumes the clause and returns), leaving the ordinary
@@ -697,13 +707,13 @@ fn charged_edges(
     let edges = cpu_edges(cfg, cpu, idx);
     // A DIVERGENT terminal transfer ends the path exactly like a return: nothing
     // after it runs in THIS proc, so its cost need not be accounted. Two forms,
-    // and only these — the `Defer` is otherwise unbounded (below):
+    // and only these — a transfer out is otherwise unbounded (below):
     //   * an `ItemAuthor::AssertDesugar`-authored unconditional transfer — the
     //     assert / raise-error / raise-exception rail's `jmp (pages).l`, which the
     //     compiler emitted knowing it never returns. A HAND-written `jmp` to the
-    //     same blob stays a plain `Defer` (authorship is the distinguisher).
+    //     same blob stays a plain `TailOut` (authorship is the distinguisher).
     //   * a transfer whose named target is declared `@noreturn`.
-    // Computed once (an instruction-level fact) and consulted at the `Defer` arms.
+    // Computed once (an instruction-level fact) and consulted at the transfer-out arms.
     // The target is read through the UNIFIED extractor so `jmp (Diverge).l` (an
     // `AbsSym`) matches a `@noreturn` symbol, not only a bare `jbra Diverge`.
     let target = crate::flag_check::transfer_target_sym(ops);
@@ -726,20 +736,20 @@ fn charged_edges(
         match e {
             // A divergent terminal (`@noreturn` target, or an authored rail's
             // `jmp`) closes the path like a return — charged below, not refused.
-            Edge::Defer if divergent_terminal => {}
+            Edge::TailOut | Edge::BranchOut if divergent_terminal => {}
             // Transferring out with no symbolic target is a COMPUTED transfer
             // (`jp (hl)`, `jmp .table(a1)`): the honest refusal names the shape,
             // because "code outside this proc" may be false — a jump-table
             // dispatch lands inside its own body, through addresses the walk
             // cannot enumerate.
-            Edge::Defer if !names_a_target => {
+            Edge::TailOut | Edge::BranchOut if !names_a_target => {
                 return bail(BudgetFindingKind::ComputedTransfer {
                     mnemonic: mnem.to_string(),
                 })
             }
             // Running off the end, or transferring out, leaves cost this bound
             // cannot see. Refuse rather than report a ceiling that is too low.
-            Edge::FallOff | Edge::Defer => {
+            Edge::FallOff | Edge::TailOut | Edge::BranchOut => {
                 return bail(BudgetFindingKind::UnboundedTransfer {
                     mnemonic: mnem.to_string(),
                 })
@@ -772,8 +782,10 @@ fn charged_edges(
             // A return — or a divergent terminal transfer — CLOSES the path: the
             // caller owns everything after it (a divergent transfer owns nothing).
             Edge::Return => out.push(ChargedEdge { cost, succ: None }),
-            Edge::Defer if divergent_terminal => out.push(ChargedEdge { cost, succ: None }),
-            Edge::FallOff | Edge::Defer => unreachable!("refused above"),
+            Edge::TailOut | Edge::BranchOut if divergent_terminal => {
+                out.push(ChargedEdge { cost, succ: None })
+            }
+            Edge::FallOff | Edge::TailOut | Edge::BranchOut => unreachable!("refused above"),
         }
     }
     // An instruction with no successors at all cannot happen for a modeled op
@@ -818,7 +830,7 @@ fn postorder(
             .into_iter()
             .filter_map(|e| match e {
                 Edge::Follow(s) => Some(s),
-                Edge::Return | Edge::FallOff | Edge::Defer => None,
+                Edge::Return | Edge::FallOff | Edge::TailOut | Edge::BranchOut => None,
             })
             .collect()
     };
@@ -1386,7 +1398,7 @@ mod tests {
     use crate::value::{ItemAuthor, Reg, Width};
 
     /// A `jmp .disp(reg)` computed transfer carrying a `targets(...)` clause. The
-    /// `DispSymInd` operand names no symbol, so its edge is a bare `Defer` — the
+    /// `DispSymInd` operand names no symbol, so its edge is a bare `TailOut` — the
     /// enumerable shape.
     fn jmp_targets(disp: &str, reg: Reg, targets: &[&str]) -> CodeItem {
         CodeItem::Instr {
@@ -1457,9 +1469,9 @@ mod tests {
     // ORTHOGONALITY (spec §2): the clause changes NOTHING the other analyses see.
     // Not just the edge model — the actual VERDICTS. The preserves prover, the
     // flag def-use walk, and the stack-balance verdict all follow `flag_check::Cfg`
-    // edges, and those are a single `Defer` for the computed jmp with the clause
+    // edges, and those are a single `TailOut` for the computed jmp with the clause
     // and without it. A future consumer that read `targets` directly (turning the
-    // `Defer` into `Follow` edges into the drains) would change all three verdicts
+    // `TailOut` into `Follow` edges into the drains) would change all three verdicts
     // — this pin flips red the day that happens.
     #[test]
     fn enumerated_targets_leave_the_base_analyses_untouched() {
@@ -1469,10 +1481,10 @@ mod tests {
         if let CodeItem::Instr { targets, .. } = &mut without[0] {
             targets.clear();
         }
-        // The edge model itself: identical, and a single `Defer`.
+        // The edge model itself: identical, and a single `TailOut`.
         let e_with = crate::flag_check::Cfg::build(&with).edges(0);
         assert_eq!(e_with, crate::flag_check::Cfg::build(&without).edges(0));
-        assert_eq!(e_with, vec![Edge::Defer]);
+        assert_eq!(e_with, vec![Edge::TailOut]);
         // The preserves prover's verdict on the drain registers.
         let regs = [crate::value::Reg::A1, crate::value::Reg::A5];
         assert_eq!(

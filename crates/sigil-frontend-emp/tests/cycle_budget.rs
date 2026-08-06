@@ -185,15 +185,58 @@ fn a_djnz_loop_is_refused() {
     );
 }
 
-/// A `djnz` whose target is NOT a local label presents only one edge, so its
-/// 13/8 split cannot be routed — the walk refuses rather than charging one of the
-/// two numbers to the edge it does have.
+/// A `djnz` whose target is not a label of this body takes its counting leg OUT
+/// of the proc, so the path's cost continues somewhere this walk cannot see. The
+/// refusal names that — the structural fact, not the downstream symptom that its
+/// 13/8 split has nowhere to be routed.
 #[test]
-fn an_unroutable_split_is_refused() {
+fn a_djnz_leg_out_of_the_body_is_refused() {
     assert_one(
         &z80("@budget(cycles: 100)", "    djnz Elsewhere\n    ret\n"),
-        "cycles.ambiguous-branch",
+        "cycles.unbounded-transfer",
     );
+}
+
+/// EVERY split-cost conditional presents BOTH of its edges, so the taken and
+/// not-taken numbers always have somewhere to be routed. That is the property
+/// `[cycles.ambiguous-branch]` guards against losing, and while it holds the
+/// guard has no input — the refusal a body earns instead is the structural one
+/// naming what actually leaves the proc.
+///
+/// Swept over every Z80 and 68k split-cost terminator in every target shape,
+/// including the three a raw `label_target` lookup would drop the leg for. A
+/// counted sweep, so it cannot pass by measuring nothing; the `ret z` twin that
+/// MEASURES proves the walk is awake on the same instruction class.
+#[test]
+fn a_split_cost_conditional_always_presents_both_its_edges() {
+    let z80_shapes = [
+        "    djnz Elsewhere\n    ret\n",   // leg out of the body
+        "    djnz .done\n    ret\n.done:\n", // leg to a body-closing label
+        "    djnz Elsewhere\n",            // leg out, and no fall-through
+        "    jr z, Elsewhere\n    ret\n",
+        "    jr z, .done\n    ret\n.done:\n",
+        "    jr z, Elsewhere\n",
+        "    ret z\n",
+    ];
+    let mut swept = 0;
+    for body in z80_shapes {
+        assert_one(&z80("@budget(cycles: 100)", body), "cycles.unbounded-transfer");
+        swept += 1;
+    }
+    let m68k_shapes = [
+        "    beq Elsewhere\n    rts\n",
+        "    beq Elsewhere\n",
+        "    dbra d0, Elsewhere\n    rts\n",
+    ];
+    for body in m68k_shapes {
+        assert_one(&m68k("@budget(cycles: 100)", body), "cycles.unbounded-transfer");
+        swept += 1;
+    }
+    assert_eq!(swept, 10, "the sweep covered {swept} shapes");
+
+    // The twin: a `ret cc` that stays inside the body routes its 11/5 split
+    // across two edges and MEASURES.
+    assert_silent(&z80("@budget(cycles: 100)", "    ret z\n    ret\n"));
 }
 
 /// A CONDITIONAL return at the end of a body returns on its taken edge and runs
@@ -695,3 +738,4 @@ fn a_trailing_target_refuses_end_to_end() {
         "trailing-label target must refuse: {r:?}"
     );
 }
+

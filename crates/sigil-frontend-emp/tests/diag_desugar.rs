@@ -521,7 +521,7 @@ section s (cpu: m68000) {
 /// The `raise_error` rail is `AssertDesugar`-authored end to end — its terminal
 /// `jmp (pages).l` is the compiler's authored divergent transfer (spec §1(b)),
 /// so the noreturn-tail consumers treat it as a divergent terminal, and a
-/// hand-written `jmp` to the same blob stays a plain `Defer`.
+/// hand-written `jmp` to the same blob stays a plain `TailOut`.
 #[test]
 fn the_raise_error_rail_is_desugar_authored_with_a_divergent_jmp() {
     let src = "\

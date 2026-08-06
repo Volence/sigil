@@ -706,7 +706,7 @@ fn z80_trampoline_locally_written_invariant_still_fires() {
 // checkpoint the tail as a plain exit WITHOUT consulting the successor's
 // contract — so `preserves(rN)` passed even when the tail clobbers rN. The
 // FallOff arm of a `falls_into` proc now applies the same logic the explicit
-// `jr` tail (`Edge::Defer`) takes: rN survives iff it holds its entry value AND
+// `jr` tail (`Edge::TailOut`) takes: rN survives iff it holds its entry value AND
 // the successor itself preserves it.
 // ======================================================================
 

@@ -301,17 +301,18 @@ impl<'a> Cfg<'a> {
     /// The successor edges of the instruction at `idx` under 68k terminator
     /// semantics: [`Edge::Follow`] stays in the proc, [`Edge::Return`] is one of
     /// `RETURN_MNEMONICS`, [`Edge::FallOff`] is control running past the last
-    /// instruction, and [`Edge::Defer`] is a transfer to an EXTERNAL target (not
-    /// a local label), which local analysis cannot judge.
+    /// instruction, and the transfer-out pair leaves for a target local analysis
+    /// cannot judge — [`Edge::TailOut`] from an unconditional terminator,
+    /// [`Edge::BranchOut`] from a conditional one's taken side.
     ///
     /// A branch's taken edge is resolved by the shared [`Self::branch_edge`]
     /// three-way, so a trailing local label — one that CLOSES the body with no
-    /// instruction after it — is a [`Edge::FallOff`], NOT a [`Edge::Defer`]:
+    /// instruction after it — is a [`Edge::FallOff`], NOT a transfer out:
     /// control reaches the fall-off point where this proc's own analysis still
     /// applies, and that is a deliberate, named case, not an external transfer.
     ///
-    /// The `Return`/`FallOff`/`Defer` choice is made in an edge BUILDER and
-    /// nowhere else — every consumer reads it off the edge.
+    /// The variant choice is made in an edge BUILDER and nowhere else — every
+    /// consumer reads it off the edge.
     pub(crate) fn edges(&self, idx: usize) -> Vec<Edge> {
         let Some((mnem, ops)) = self.instr(idx) else { return vec![] };
         if RETURN_MNEMONICS.contains(&mnem) {
@@ -321,8 +322,8 @@ impl<'a> Cfg<'a> {
         if UNCOND_MNEMONICS.contains(&mnem) {
             // An unconditional tail transfer, resolved by the shared three-way: a
             // local label → follow it; a local label that CLOSES the body → fall
-            // off it; an external symbol (a tail call) → defer.
-            return vec![self.branch_edge(ops)];
+            // off it; anything else leaves the proc unconditionally → `TailOut`.
+            return vec![self.branch_edge(ops, OutFlavor::Tail)];
         }
         // A conditional branch (`bXX`/`dbXX`) that is NOT a carry consumer:
         // fall-through PLUS the taken edge. (Carry consumers are handled by the
@@ -337,10 +338,10 @@ impl<'a> Cfg<'a> {
         let is_cond_branch = (mnem.starts_with('b') && mnem.len() == 3 && mnem != "bsr")
             || mnem.starts_with("db");
         if is_cond_branch {
-            // The taken edge goes through the shared three-way (external → defer,
-            // trailing local → fall off, in-body local → follow); the fall-through
-            // is the next instruction, or the end of the body.
-            let mut v = vec![self.branch_edge(ops)];
+            // The taken edge goes through the shared three-way (out of the body →
+            // `BranchOut`, trailing local → fall off, in-body local → follow); the
+            // fall-through is the next instruction, or the end of the body.
+            let mut v = vec![self.branch_edge(ops, OutFlavor::Branch)];
             match fallthrough {
                 Some(f) => v.push(Edge::Follow(f)),
                 None => v.push(Edge::FallOff),
@@ -364,8 +365,9 @@ impl<'a> Cfg<'a> {
     /// carry-CONSUMING conditional is pruned by the caller before `z80_edges` is
     /// reached, so only Z/parity-testing conditionals arrive here, each a genuine
     /// two-way split). `call cc` is NOT such a form — it calls and comes back, so
-    /// its only successor is the fall-through. An external `jp`/`jr` target
-    /// `Defer`s (the flag flows out).
+    /// its only successor is the fall-through. An external `jp`/`jr` target is a
+    /// transfer out (the flag flows out): [`Edge::TailOut`] unconditionally,
+    /// [`Edge::BranchOut`] on a `jp cc`/`jr cc`/`djnz` taken leg.
     pub(crate) fn z80_edges(&self, idx: usize) -> Vec<Edge> {
         let Some((mnem, ops)) = self.instr(idx) else { return vec![] };
         let leads_cc = matches!(ops.first(), Some(CodeOperand::Z80Cc(_)));
@@ -386,7 +388,7 @@ impl<'a> Cfg<'a> {
         }
         // Unconditional `jp`/`jr`: the taken edge, classified by its target.
         if matches!(mnem, "jp" | "jr") && !leads_cc {
-            return vec![self.branch_edge(ops)];
+            return vec![self.branch_edge(ops, OutFlavor::Tail)];
         }
         // Conditional `jr cc`/`jp cc`: the taken edge PLUS the fall-through.
         //
@@ -394,22 +396,24 @@ impl<'a> Cfg<'a> {
         // successor is the fall-through — the same fact that keeps 68k `bsr` out
         // of the conditional-branch arm above. Giving a `call nz, .helper` the
         // branch's taken edge splices the helper's body into this proc's flow at
-        // the caller's state; giving `call nz, External` a `Defer` claims the flag
-        // and the register file leave the proc, which they do not.
+        // the caller's state; giving `call nz, External` a transfer-out edge
+        // claims the flag and the register file leave the proc, which they do not.
         if matches!(mnem, "jp" | "jr") && leads_cc {
-            let mut v = vec![self.branch_edge(ops)];
+            let mut v = vec![self.branch_edge(ops, OutFlavor::Branch)];
             match fallthrough {
                 Some(f) => v.push(Edge::Follow(f)),
                 None => v.push(Edge::FallOff),
             }
             return v;
         }
-        // `djnz` — a counting loop: branch to its label PLUS fall-through.
+        // `djnz` — a counting loop: its taken leg PLUS the fall-through. The leg
+        // goes through the SAME three-way as every other conditional taken edge,
+        // so a target this body does not define keeps an edge (`BranchOut`) and a
+        // body-closing local label reads as the fall-off it is. A raw
+        // `label_target` lookup here would emit NO edge for either shape, and a
+        // path that no walk can see is a path no analysis can charge.
         if mnem == "djnz" {
-            let mut v = Vec::new();
-            if let Some(&tgt) = branch_target(ops).and_then(|t| self.label_target.get(t)) {
-                v.push(Edge::Follow(tgt));
-            }
+            let mut v = vec![self.branch_edge(ops, OutFlavor::Branch)];
             match fallthrough {
                 Some(f) => v.push(Edge::Follow(f)),
                 None => v.push(Edge::FallOff),
@@ -436,15 +440,28 @@ impl<'a> Cfg<'a> {
     /// edges through here. A closing label has no entry in the `label_target`
     /// map (that map holds the first instruction AT or after a label, and a
     /// closing label has none), so the map alone cannot tell it from an external
-    /// symbol — `is_local_label` is what supplies the `FallOff`/`Defer` split.
-    fn branch_edge(&self, ops: &[CodeOperand]) -> Edge {
+    /// symbol — `is_local_label` is what supplies the fall-off/transfer-out split.
+    ///
+    /// `flavor` carries the one fact this function cannot see: whether the
+    /// TERMINATOR is conditional. That axis lives at the call site, which holds
+    /// the mnemonic and the CPU's terminator set, and it decides which
+    /// transfer-out variant a leaving edge takes.
+    fn branch_edge(&self, ops: &[CodeOperand], flavor: OutFlavor) -> Edge {
         match branch_target(ops) {
             Some(t) => match self.label_target.get(t) {
                 Some(&tgt) => Edge::Follow(tgt),
                 None if self.is_local_label(t) => Edge::FallOff,
-                None => Edge::Defer,
+                None => flavor.out_edge(),
             },
-            None => Edge::Defer,
+            // A target the operands NAME no symbol for: a computed transfer
+            // (`jmp (a0)`, `jp (hl)`), or a symbol-offset/absolute form
+            // `branch_target` does not read. It takes the caller's flavor like
+            // any other leaving edge. A CONDITIONAL computed target is
+            // unconstructible on both ISAs today (68k `bXX`/`dbXX` take a label;
+            // Z80 `jp cc` takes `nn`), so this arm yields `BranchOut` only if the
+            // parser grows such a form — which is why it maps rather than
+            // asserting unreachable on an operand shape.
+            None => flavor.out_edge(),
         }
     }
 
@@ -598,17 +615,26 @@ pub(crate) fn conditional_out_edge_credits(
     credits
 }
 
-/// A control-flow edge out of one instruction. Built by [`Cfg::edges`] (68k),
-/// [`Cfg::z80_edges`], and [`crate::z80_preserves`]'s own Z80 builder.
+/// A control-flow edge out of one instruction. Built by [`Cfg::edges`] (68k) and
+/// [`Cfg::z80_edges`] — those two builders and nowhere else.
 ///
 /// **The builder decides, once.** Which variant an edge carries is settled where
 /// the edge is CONSTRUCTED — the only place that holds the mnemonic, the CPU's
 /// terminator set, and whether a conditional terminator's taken or fall-through
 /// side is being emitted. A consumer that reads the mnemonic back off the
-/// instruction to tell a return from a fall-off is re-deriving a fact the edge
-/// already states, and it must re-supply the CPU to do it: read through the wrong
-/// CPU's table a Z80 `ret` is a fall-off-end, and keyed on the shared mnemonic
-/// both edges of an end-of-body `ret cc` are returns.
+/// instruction to tell a return from a fall-off, or a tail transfer from a
+/// conditional branch out, is re-deriving a fact the edge already states, and it
+/// must re-supply the CPU to do it: read through the wrong CPU's table a Z80
+/// `ret` is a fall-off-end, and keyed on the shared mnemonic both edges of an
+/// end-of-body `ret cc` are returns.
+///
+/// **No variant claims anything about a transfer's TARGET** — not whether it
+/// returns, diverges, or falls onward. [`Edge::Return`] and [`Edge::FallOff`]
+/// are facts about the MACHINE; what a target does is not builder-visible and is
+/// a consumer's own charge to make through its callee oracle. What IS
+/// builder-visible is the conditional/unconditional axis of the TERMINATOR, and
+/// that axis is the entire content of the
+/// [`Edge::TailOut`]/[`Edge::BranchOut`] split.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Edge {
     /// Control stays in this proc, arriving at item index `.0`.
@@ -622,10 +648,40 @@ pub(crate) enum Edge {
     /// declared `falls_into` end is a continuation), so a consumer that cares
     /// carries its own flag; the edge states only the machine fact.
     FallOff,
-    /// Control leaves this proc for a symbol local analysis cannot read — a tail
-    /// transfer, or a conditional branch whose target is external. It neither
-    /// follows nor ends here: the flag, the register, the stack all flow out.
-    Defer,
+    /// The successor of an UNCONDITIONAL transfer that leaves the body: an
+    /// external symbol (`jbra Foo`, `jp Foo`), a symbol-offset or absolute form
+    /// the abs seam lowers, or a computed target (`jmp (a0)`, `jp (hl)`).
+    /// Control leaves the proc on every execution that reaches the instruction,
+    /// so a `TailOut` is that instruction's ONLY edge.
+    TailOut,
+    /// The TAKEN successor of a CONDITIONAL terminator whose target is outside
+    /// the body. Always accompanied by a sibling local edge ([`Edge::Follow`] or
+    /// [`Edge::FallOff`]) — never an instruction's only edge.
+    BranchOut,
+}
+
+/// Which transfer-out variant a terminator's leaving edge carries.
+///
+/// The conditional/unconditional axis is a property of the TERMINATOR, and the
+/// shared [`Cfg::branch_edge`] three-way sees only operands — so the axis is
+/// passed IN from the call site that already knows it. Making it a type rather
+/// than a bare [`Edge`] parameter keeps a caller from handing the three-way a
+/// local edge as a "flavor".
+#[derive(Clone, Copy)]
+enum OutFlavor {
+    /// An unconditional transfer: the instruction's only edge leaves the body.
+    Tail,
+    /// A conditional terminator's taken side: a sibling local edge follows it.
+    Branch,
+}
+
+impl OutFlavor {
+    fn out_edge(self) -> Edge {
+        match self {
+            OutFlavor::Tail => Edge::TailOut,
+            OutFlavor::Branch => Edge::BranchOut,
+        }
+    }
 }
 
 /// Whether a mnemonic names a DIRECT subroutine call — the site whose flag
@@ -850,7 +906,8 @@ fn reads_reg_before_redefine(
             if let Edge::Follow(i) = e {
                 queue.push_back(i);
             }
-            // Return / FallOff / Defer: the path leaves without a read — safe here.
+            // Return / FallOff / TailOut / BranchOut: the path leaves without a
+            // read — safe here.
         }
     }
     false
@@ -860,9 +917,9 @@ fn reads_reg_before_redefine(
 /// there a path that REACHES a redefine / return / proc-end ([`Edge::Return`] or
 /// [`Edge::FallOff`]) without first crossing a carry consumer? Consumers PRUNE
 /// (that path is
-/// satisfied); a `Defer` edge (tail call to an external symbol) also prunes (the
-/// flag flows out of the proc — not a local abandonment). The visited set gives
-/// the CFG real joins so loops terminate.
+/// satisfied); a transfer-out edge in either flavor also prunes (the flag flows
+/// out of the proc — not a local abandonment). The visited set gives the CFG
+/// real joins so loops terminate.
 fn abandons_flag(cfg: &Cfg, call_idx: usize, cpu: Cpu) -> bool {
     // The Z80 terminator/edge model diverges from 68k (`ret` vs `rts`, `jr`/`jp`
     // vs `bra`/`jmp`, conditional `jr cc`), so the carry-tracking walk consults
@@ -883,7 +940,9 @@ fn abandons_flag(cfg: &Cfg, call_idx: usize, cpu: Cpu) -> bool {
             // hands it to a caller that never asked for it, and running off the
             // end drops it. This check does not care which.
             Edge::Return | Edge::FallOff => return true,
-            Edge::Defer => continue, // flows out of the proc — not local
+            // Both flavors flow out of the proc — not a local abandonment. The
+            // conditional's sibling `Follow` edge is walked separately.
+            Edge::TailOut | Edge::BranchOut => continue,
             Edge::Follow(i) => i,
         };
         if !visited.insert(idx) {
@@ -973,7 +1032,7 @@ mod edge_model_tests {
     /// The Z80 twin: `call cc` is spelled like a conditional branch and is not
     /// one, for the same reason `bsr` is not one. Listed beside `jp cc`/`jr cc`
     /// it splices a local target into the caller's flow, and hands an external
-    /// target a `Defer` claiming control left the proc.
+    /// target a transfer-out edge claiming control left the proc.
     ///
     /// The external and tail cases pin the invariant `context.rs` relies on: NO
     /// call mnemonic yields a transfer-out edge, so no consumer needs a call
@@ -1063,13 +1122,13 @@ mod edge_model_tests {
             instr("jr", vec![sym("Elsewhere")]),
         ];
         let cfg = Cfg::build(&external);
-        assert_eq!(cfg.z80_edges(1), vec![Edge::Defer]);
+        assert_eq!(cfg.z80_edges(1), vec![Edge::TailOut]);
     }
 
     /// The 68k twin of the closing-label rule, routed through the SAME shared
     /// `branch_edge` three-way: a `jbra .done` whose `.done:` closes the body is
     /// a `FallOff` (control reaches the fall-off point where this proc's analysis
-    /// still applies), never a `Defer` (a transfer to an external tail callee).
+    /// still applies), never a transfer out to an external tail callee.
     /// This holds on BOTH the unconditional arm and a conditional branch's TAKEN
     /// edge — a `beq .done` closing the body falls off on the taken side and
     /// falls through on the other. The contrast: an external symbol is a genuine
@@ -1099,12 +1158,13 @@ mod edge_model_tests {
         // The contrast that gives the rule its content: a label this body does
         // NOT define is a transfer out, on both arms.
         let external_uncond = vec![instr("jbra", vec![sym("Elsewhere")])];
-        assert_eq!(Cfg::build(&external_uncond).edges(0), vec![Edge::Defer]);
+        assert_eq!(Cfg::build(&external_uncond).edges(0), vec![Edge::TailOut]);
         let external_cond = vec![instr("beq", vec![sym("Elsewhere")])];
         assert_eq!(
             Cfg::build(&external_cond).edges(0),
-            vec![Edge::Defer, Edge::FallOff],
-            "external taken edge defers; the fall-through runs off the end"
+            vec![Edge::BranchOut, Edge::FallOff],
+            "the conditional's taken edge leaves as a `BranchOut`; the fall-through \
+             runs off the end"
         );
 
         // An in-body local label (an instruction after it) is followed, not
@@ -1153,5 +1213,133 @@ mod edge_model_tests {
         let cfg = Cfg::build(&items);
         assert_eq!(cfg.edges(0), vec![Edge::Return]);
         assert_eq!(cfg.z80_edges(0), vec![Edge::FallOff], "`rts` is no Z80 terminator");
+    }
+
+    // ---- the transfer-out split ------------------------------------------
+
+    /// The structural invariant the singleton-pattern consumers rest on
+    /// (`cycle_budget::enumerated_succs`, `lower::proc::terminal_external_tail`):
+    /// a `BranchOut` is the taken side of a CONDITIONAL terminator, so it always
+    /// has a sibling local edge and is NEVER an instruction's only edge — while a
+    /// `TailOut` always IS. A `[Edge::TailOut]` pattern therefore admits exactly
+    /// the unconditional transfers out, and no future conditional shape can slip
+    /// through it.
+    ///
+    /// Swept over every terminator shape on both CPUs whose target leaves the
+    /// body, with a count on each side so the sweep cannot pass by observing
+    /// nothing.
+    #[test]
+    fn a_branch_out_always_has_a_sibling_and_a_tail_out_never_does() {
+        let conditional: Vec<Vec<CodeItem>> = vec![
+            // 68k conditional branch / dbcc, external target.
+            vec![instr("beq", vec![sym("Elsewhere")]), instr("rts", vec![])],
+            vec![instr("dbra", vec![sym("Elsewhere")]), instr("rts", vec![])],
+            // The same, CLOSING the body (the sibling is a `FallOff`, not a
+            // `Follow`) — a shape that would read as a singleton if the sibling
+            // were dropped.
+            vec![instr("bne", vec![sym("Elsewhere")])],
+            // Z80 `jr cc` / `jp cc` / `djnz`, external target.
+            vec![instr("jr", vec![cc(Z80Cond::Z), sym("Elsewhere")]), instr("ret", vec![])],
+            vec![instr("jp", vec![cc(Z80Cond::Nz), sym("Elsewhere")]), instr("ret", vec![])],
+            vec![instr("djnz", vec![sym("Elsewhere")]), instr("ret", vec![])],
+            vec![instr("djnz", vec![sym("Elsewhere")])],
+        ];
+        let mut branch_outs = 0;
+        for items in &conditional {
+            let cfg = Cfg::build(items);
+            for edges in [cfg.edges(0), cfg.z80_edges(0)] {
+                if edges.contains(&Edge::BranchOut) {
+                    branch_outs += 1;
+                    assert!(
+                        edges.len() >= 2,
+                        "a `BranchOut` must carry a sibling local edge, got {edges:?}"
+                    );
+                    assert!(
+                        !edges.contains(&Edge::TailOut),
+                        "the two flavors never share an instruction: {edges:?}"
+                    );
+                }
+            }
+        }
+        assert!(branch_outs >= 7, "the sweep observed only {branch_outs} `BranchOut` edges");
+
+        let unconditional: Vec<Vec<CodeItem>> = vec![
+            vec![instr("jbra", vec![sym("Elsewhere")])],
+            vec![instr("bra", vec![sym("Elsewhere")])],
+            vec![instr("jmp", vec![CodeOperand::Ind(Reg::A0)])],
+            vec![instr("jp", vec![sym("Elsewhere")])],
+            vec![instr("jr", vec![sym("Elsewhere")])],
+            vec![instr("jp", vec![CodeOperand::Z80IndHl])],
+        ];
+        let mut tail_outs = 0;
+        for items in &unconditional {
+            let cfg = Cfg::build(items);
+            for edges in [cfg.edges(0), cfg.z80_edges(0)] {
+                if edges.contains(&Edge::TailOut) {
+                    tail_outs += 1;
+                    assert_eq!(edges, vec![Edge::TailOut], "a `TailOut` is the only edge");
+                }
+            }
+        }
+        assert!(tail_outs >= 6, "the sweep observed only {tail_outs} `TailOut` edges");
+    }
+
+    /// A COMPUTED transfer — one whose operands name no symbol at all — leaves the
+    /// proc unconditionally, so it is a singleton `TailOut` on both CPUs. This is
+    /// the shape the enumerated-dispatch `targets(...)` clause is legal on, and
+    /// the pattern that admits it is the singleton one.
+    #[test]
+    fn a_computed_transfer_is_a_singleton_tail_out() {
+        let m68k = vec![instr("jmp", vec![CodeOperand::Ind(Reg::A0)])];
+        assert_eq!(Cfg::build(&m68k).edges(0), vec![Edge::TailOut]);
+
+        let z80 = vec![instr("jp", vec![CodeOperand::Z80IndHl])];
+        assert_eq!(Cfg::build(&z80).z80_edges(0), vec![Edge::TailOut]);
+    }
+
+    /// A `djnz` taken leg goes through the SAME three-way as every other
+    /// conditional taken edge, so no shape of target loses its edge.
+    ///
+    /// The in-body backward loop — the only shape the corpus writes — is a
+    /// `Follow`, unchanged. The two shapes a raw `label_target` lookup would drop
+    /// keep an edge: a target this body does not define is a `BranchOut`, and a
+    /// local label that CLOSES the body is the `FallOff` it is on every other
+    /// terminator. A dropped leg is a path no walk can see and no analysis can
+    /// charge.
+    #[test]
+    fn a_djnz_leg_that_leaves_the_body_keeps_its_edge() {
+        // In-body backward loop: `Follow` the label, then fall through.
+        let loop_back = vec![
+            label(".spin"),
+            instr("nop", vec![]),
+            instr("djnz", vec![sym(".spin")]),
+            instr("ret", vec![]),
+        ];
+        let cfg = Cfg::build(&loop_back);
+        assert_eq!(cfg.z80_edges(2), vec![Edge::Follow(1), Edge::Follow(3)]);
+
+        // A target this body does not define: the leg leaves as a `BranchOut`,
+        // and the fall-through stays.
+        let external = vec![instr("djnz", vec![sym("Elsewhere")]), instr("ret", vec![])];
+        let cfg = Cfg::build(&external);
+        assert_eq!(cfg.z80_edges(0), vec![Edge::BranchOut, Edge::Follow(1)]);
+
+        // A local label that CLOSES the body: the leg reaches the fall-off point,
+        // where this proc's own analysis still applies.
+        let trailing = vec![
+            instr("djnz", vec![sym(".done")]),
+            instr("ret", vec![]),
+            label(".done"),
+        ];
+        let cfg = Cfg::build(&trailing);
+        assert_eq!(cfg.z80_edges(0), vec![Edge::FallOff, Edge::Follow(1)]);
+
+        // Both leaving shapes closing the body too — the fall-through becomes a
+        // `FallOff` and the leg is still there.
+        let external_closing = vec![instr("djnz", vec![sym("Elsewhere")])];
+        assert_eq!(
+            Cfg::build(&external_closing).z80_edges(0),
+            vec![Edge::BranchOut, Edge::FallOff]
+        );
     }
 }
