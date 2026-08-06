@@ -38,7 +38,15 @@ fn residue_status(aeon: &Path, file_rel: &str, proc: &str, reg: Reg) -> Preserve
     let (buf, _d, _n) =
         eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[], &sigil_frontend_emp::contract::InterfaceEnv::empty());
     let buf = buf.unwrap_or_else(|| panic!("no codebuf for {proc}"));
-    verify_preserved(&buf.items, &[reg], CallPolicy::ClobberAll).remove(&reg).unwrap()
+    verify_preserved(
+        &buf.items,
+        &[reg],
+        CallPolicy::ClobberAll,
+        p.falls_into.as_deref(),
+        &std::collections::BTreeSet::new(),
+    )
+    .remove(&reg)
+    .unwrap()
 }
 
 #[test]

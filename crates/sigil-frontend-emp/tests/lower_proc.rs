@@ -2793,3 +2793,128 @@ fn ccr_advisory_fires_on_a_falls_into_bare_sr_proc() {
         "a bare-sr proc that falls into its successor is not silently green: {diags:?}"
     );
 }
+
+// ===========================================================================
+// 68k preserves-through-tail credit — the sr.mask half (§2.4). An unconditional
+// external tail to a callee that preserves the interrupt mask is CREDITED for a
+// `preserves(sr.mask)` claim; anything else is refused, closing the vacuity a
+// mask-claiming tail-only body would pass through. Explicit `sr.mask` also
+// refuses the mnemonic-less tails (`falls_into` / run-off-end).
+// ===========================================================================
+
+/// CREDIT (holds): a mask-claiming proc whose body has no SR write of its own but
+/// tails unconditionally into a sibling that preserves the mask is CREDITED — no
+/// diagnostic. (The QueueDMA_Critical → QueueDMA_Deferrable shape, synthetic.)
+#[test]
+fn sr_mask_tail_into_preserving_sibling_is_credited() {
+    let src = "module m\n\
+               proc Sib() clobbers() preserves(sr.mask) {\n\
+               \tmove.w sr, -(sp)\n\
+               \tmove.w #$2700, sr\n\
+               \tmove.w (sp)+, sr\n\
+               \trts\n\
+               }\n\
+               proc P() clobbers() preserves(sr.mask) {\n\
+               \tjbra Sib\n\
+               }\n";
+    let (_m, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.preserves-sr-unbalanced]"),
+        "a tail into a mask-preserving sibling is credited: {diags:?}"
+    );
+}
+
+/// REFUSAL (fires): the SAME shape, but the tail target does NOT preserve the
+/// mask → the mask claim is refused (the vacuity hole a tail-only body would
+/// otherwise pass through).
+#[test]
+fn sr_mask_tail_into_non_preserving_target_fires() {
+    let src = "module m\n\
+               proc Other() clobbers() {\n\
+               \trts\n\
+               }\n\
+               proc P() clobbers() preserves(sr.mask) {\n\
+               \tjbra Other\n\
+               }\n";
+    let (_m, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-sr-unbalanced]"),
+        "a tail into a non-mask-preserving target is refused: {diags:?}"
+    );
+}
+
+/// The `Owner.label` exported-label tail (`jbra Owner.transfer`) credits when the
+/// OWNER preserves the mask — the shared-core idiom the real QueueDMA siblings use.
+#[test]
+fn sr_mask_tail_into_owner_export_label_is_credited() {
+    let src = "module m\n\
+               proc Sib() clobbers() preserves(sr.mask) {\n\
+               \tmove.w sr, -(sp)\n\
+               \texport .transfer:\n\
+               \tmove.w #$2700, sr\n\
+               \tmove.w (sp)+, sr\n\
+               \trts\n\
+               }\n\
+               proc P() clobbers() preserves(sr.mask) {\n\
+               \tjbra Sib.transfer\n\
+               }\n";
+    let (_m, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.preserves-sr-unbalanced]"),
+        "a tail into an owner's export label credits via the owner's mask contract: {diags:?}"
+    );
+}
+
+/// EXPLICIT `sr.mask` + `falls_into` is refused — the mask is not provably the
+/// caller's past a fall-through this slice cannot see (the mnemonic-less tail
+/// refusal, now covering the explicit mask claim nothing else guarded).
+#[test]
+fn sr_mask_falls_into_is_refused() {
+    let src = "module m\n\
+               proc P() clobbers() preserves(sr.mask) falls_into Q {\n\
+               \tmove.w sr, -(sp)\n\
+               \tmove.w (sp)+, sr\n\
+               }\n\
+               proc Q() clobbers() { rts }\n";
+    let (_m, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-sr-unbalanced]"),
+        "an explicit sr.mask that falls into its successor is refused: {diags:?}"
+    );
+}
+
+/// CONTROL: a mask-claiming proc that RETURNS (no tail) with a genuine SR
+/// round-trip still passes — the tail machinery does not disturb the base slice.
+#[test]
+fn sr_mask_round_trip_returning_body_still_holds() {
+    let src = "module m\n\
+               proc P() clobbers() preserves(sr.mask) {\n\
+               \tmove.w sr, -(sp)\n\
+               \tmove.w #$2700, sr\n\
+               \tmove.w (sp)+, sr\n\
+               \trts\n\
+               }\n";
+    let (_m, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.preserves-sr-unbalanced]"),
+        "a returning round-trip body is unaffected by the tail credit: {diags:?}"
+    );
+}
+
+/// A mask-claiming proc whose terminating tail DIVERGES into a `@noreturn`
+/// handler is NOT refused — the diverging exit never returns, so it carries no
+/// mask obligation (the same `@noreturn` composition the register credit uses;
+/// the assert/raise rail case is covered by `diag_assert_vector`).
+#[test]
+fn sr_mask_noreturn_tail_is_not_refused() {
+    let src = "module m\n\
+               @noreturn\nextern proc Handler () clobbers()\n\
+               proc P() clobbers() preserves(sr.mask) {\n\
+               \tjbra Handler\n\
+               }\n";
+    let (_m, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.preserves-sr-unbalanced]"),
+        "a @noreturn tail carries no mask obligation: {diags:?}"
+    );
+}

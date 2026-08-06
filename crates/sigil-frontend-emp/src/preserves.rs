@@ -48,9 +48,9 @@
 //! place that decides.
 
 use crate::closure::RegEffect;
-use crate::flag_check::{entry_instr_idx, instr_span, Cfg, Edge};
+use crate::flag_check::{entry_instr_idx, instr_span, transfer_target_sym, Cfg, Edge};
 use crate::lower::instr_written_regs;
-use crate::value::{CodeItem, CodeOperand, Reg, Width};
+use crate::value::{CodeItem, CodeOperand, ItemAuthor, Reg, Width};
 use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -224,56 +224,77 @@ fn reglist_mask(ops: &[CodeOperand]) -> Option<u16> {
 /// Which exits the entry-value proof is obligated on.
 #[derive(Clone, Copy)]
 pub enum ReturnScope<'a> {
-    /// Every `rts` / fall-off-end; a transfer OUT of the proc is ignored — the
-    /// `preserves(rN)` contract (see the `Edge::Defer` arm for why).
+    /// EVERY exit that leaves the body: a return, a fall-off-end, and a tail
+    /// transfer out ([`Edge::Defer`]). The `preserves(rN)` contract — a tail
+    /// exit is an obligation site charged through the callee-preserves oracle
+    /// ([`PreserveObserver::exit`]), which is what closes the tail-only vacuity
+    /// hole; a diverging (`@noreturn` / authored-rail) tail carries no obligation.
     AllReturns,
     /// Exactly these instruction indices, counting ANY edge that leaves the proc
-    /// — a return or a transfer out. The ¬cc exits of an `out(rN if cc)`
-    /// survives-claim
+    /// — a return or a transfer out — charged at its RAW entry bits. The ¬cc
+    /// exits of an `out(rN if cc)` survives-claim
     /// ([`out_verify::check_cond_out_survives`](crate::out_verify::check_cond_out_survives)),
     /// which must hold wherever control leaves, not only where it `rts`.
     Sites(&'a BTreeSet<usize>),
 }
 
-impl ReturnScope<'_> {
-    /// Is leaving instruction `idx` by an `exit` a checkpoint for this proof?
-    /// `AllReturns` obligates the exits that END THIS BODY — a return and a
-    /// fall-off-end alike, since either hands the register file back to the
-    /// caller — and ignores a transfer out, whose callee owns what happens next.
-    /// `Sites` names its own exits and treats every kind alike.
-    fn checks(&self, idx: usize, exit: ExitKind) -> bool {
-        match self {
-            ReturnScope::AllReturns => exit.ends_this_body(),
-            ReturnScope::Sites(s) => s.contains(&idx),
-        }
-    }
-}
-
 /// Verify `preserves(rN)` for each register in `check` over a proc's evaluated
 /// CodeBuf `items`. One forward dataflow serves all checked registers.
+///
+/// `falls_into` names the proc's declared fall-through successor (if any) and
+/// `noreturn` the visible `@noreturn` symbol set — both fed to the exit
+/// checkpoints so a tail transfer / fall-through into a callee is credited
+/// through the callee-preserves oracle (the 68k analog of the Z80 credit; see
+/// [`PreserveObserver::exit`]). Pass `None` / an empty set for a body whose tail
+/// edges carry no such credit.
 pub fn verify_preserved(
     items: &[CodeItem],
     check: &[Reg],
     policy: CallPolicy,
+    falls_into: Option<&str>,
+    noreturn: &BTreeSet<String>,
 ) -> BTreeMap<Reg, PreserveStatus> {
-    verify_preserved_on(items, check, policy, ReturnScope::AllReturns)
+    verify_preserved_on(items, check, policy, ReturnScope::AllReturns, falls_into, noreturn)
 }
 
 /// [`verify_preserved`] with the obligated exits chosen by `scope` — the entry
 /// point the ¬cc survives-claim uses. Everything about the proof is identical;
-/// only WHICH exits must show the entry value differs.
+/// only WHICH exits must show the entry value differs. `falls_into`/`noreturn`
+/// carry the tail-credit context (see [`verify_preserved`]); the `Sites` scope
+/// (the survives-claim) charges its named exits at their raw entry bits, so the
+/// tail credit is applied ONLY under `AllReturns` (a `preserves` contract).
 pub fn verify_preserved_on(
     items: &[CodeItem],
     check: &[Reg],
     policy: CallPolicy,
     scope: ReturnScope<'_>,
+    falls_into: Option<&str>,
+    noreturn: &BTreeSet<String>,
 ) -> BTreeMap<Reg, PreserveStatus> {
     let cfg = Cfg::build(items);
 
     // The first instruction is the entry point; a body with no instructions
-    // preserves everything vacuously.
+    // preserves everything vacuously — UNLESS the proc declares a `falls_into`
+    // successor: then control flows straight through the empty body into that
+    // successor's frame, so rN survives iff the successor itself preserves it
+    // (mirrors `z80_preserves.rs`'s empty-body arm; an absent/indirect/unknown
+    // successor preserves nothing, via the oracle). A `Sites` scope has no exits
+    // in an empty body, so it is unaffected.
     let Some(entry_idx) = entry_instr_idx(items) else {
-        return check.iter().map(|r| (*r, PreserveStatus::Verified)).collect();
+        return check
+            .iter()
+            .map(|r| {
+                let status = match (scope, falls_into) {
+                    (ReturnScope::AllReturns, Some(succ))
+                        if !call_preserves(&policy, Some(succ), *r) =>
+                    {
+                        PreserveStatus::NotPreserved
+                    }
+                    _ => PreserveStatus::Verified,
+                };
+                (*r, status)
+            })
+            .collect();
     };
 
     // Which registers are ever clobbered (a generic write, or ANY call — a call
@@ -313,6 +334,40 @@ pub fn verify_preserved_on(
     if has_call {
         ever_clobbered = [true; 16];
     }
+    // An external tail transfer (an `Edge::Defer`) and the declared `falls_into`
+    // successor exit into a callee that clobbers every register it does not
+    // provably preserve — so a register the tail-callee destroys must not stay
+    // credited past a bailout as "never written". Mirrors `z80_preserves.rs`'s
+    // tail/falls_into marking. A DIVERGENT tail (an `@noreturn` target or an
+    // `AssertDesugar`-authored rail) never returns to the caller, so it charges
+    // nothing. AllReturns only — a `Sites` scope keeps its exact former set.
+    if matches!(scope, ReturnScope::AllReturns) {
+        for (idx, it) in items.iter().enumerate() {
+            let CodeItem::Instr { ops, author, .. } = it else { continue };
+            if !cfg.edges(idx).iter().any(|e| matches!(e, Edge::Defer)) {
+                continue;
+            }
+            if matches!(author, ItemAuthor::AssertDesugar) {
+                continue; // an authored divergent rail — never returns
+            }
+            let callee = transfer_target_sym(ops);
+            if callee.is_some_and(|t| noreturn.contains(t)) {
+                continue; // a `@noreturn` tail — never returns
+            }
+            for (i, r) in REG_BY_IDX.iter().enumerate() {
+                if *r != Reg::A7 && !call_preserves(&policy, callee, *r) {
+                    ever_clobbered[i] = true;
+                }
+            }
+        }
+        if let Some(succ) = falls_into {
+            for (i, r) in REG_BY_IDX.iter().enumerate() {
+                if *r != Reg::A7 && !call_preserves(&policy, Some(succ), *r) {
+                    ever_clobbered[i] = true;
+                }
+            }
+        }
+    }
 
     // For each checked register: does EVERY in-scope exit see it at its entry
     // value? Starts true; an exit with a clobbered value flips it false. Plus, per
@@ -323,6 +378,10 @@ pub fn verify_preserved_on(
     let mut obs = PreserveObserver {
         check,
         scope,
+        policy,
+        items,
+        falls_into,
+        noreturn,
         all_exits_preserve: check.iter().map(|r| (*r, true)).collect(),
         delta_ok: check.iter().map(|r| (*r, true)).collect(),
         saw_exit: false,
@@ -373,15 +432,6 @@ enum ExitKind {
     FallOff,
     /// [`Edge::Defer`] — a transfer to a non-local symbol.
     Defer,
-}
-
-impl ExitKind {
-    /// Does control leave THIS proc's body here for good, rather than being
-    /// handed to a symbol whose own return this proof cannot read? True for a
-    /// return and for a fall-off-end; false for a transfer out.
-    fn ends_this_body(self) -> bool {
-        matches!(self, ExitKind::Return | ExitKind::FallOff)
-    }
 }
 
 /// What a consumer of the symbolic-stack dataflow observes as it walks a proc.
@@ -477,10 +527,16 @@ fn run_stack_dataflow<O: StackObserver>(
 }
 
 /// The entry-value proof's view of the shared walk: charge every IN-SCOPE exit
-/// against the checked registers, ignore merges.
+/// against the checked registers, ignore merges. Holds the tail-credit context
+/// (`policy`/`items`/`falls_into`/`noreturn`) so a `Defer` or `falls_into`
+/// exit consults the callee-preserves oracle at the point of consumption.
 struct PreserveObserver<'a> {
     check: &'a [Reg],
     scope: ReturnScope<'a>,
+    policy: CallPolicy<'a>,
+    items: &'a [CodeItem],
+    falls_into: Option<&'a str>,
+    noreturn: &'a BTreeSet<String>,
     all_exits_preserve: BTreeMap<Reg, bool>,
     delta_ok: BTreeMap<Reg, bool>,
     saw_exit: bool,
@@ -489,12 +545,60 @@ struct PreserveObserver<'a> {
 
 impl StackObserver for PreserveObserver<'_> {
     fn exit(&mut self, idx: usize, st: &State, exit: ExitKind) {
-        // `AllReturns` ignores a `Defer` entirely (see [`run_stack_dataflow`]);
-        // a `Sites` scope names its own exits, and control leaving the proc IS
-        // one — a register already destroyed HERE is destroyed from the caller's
-        // view whatever the target does.
-        if self.scope.checks(idx, exit) {
-            self.checkpoint(st);
+        match self.scope {
+            // A `Sites` scope (the ¬cc survives-claim) names its own exits and
+            // charges each at its RAW entry bits — a register already destroyed
+            // HERE is destroyed from the caller's view whatever the target does.
+            // The tail credit is a `preserves`-contract concept and does not apply.
+            ReturnScope::Sites(s) => {
+                if s.contains(&idx) {
+                    self.checkpoint(st);
+                }
+            }
+            // A `preserves(rN)` contract. Every exit that ENDS THIS BODY is an
+            // obligation site — the vacuity hole (a tail-only proc used to have
+            // ZERO obligation sites) closes here, in the same motion that grants
+            // the tail credit. This is the 68k mirror of `z80_preserves.rs`'s
+            // `Defer`/`FallOff` arms.
+            ReturnScope::AllReturns => match exit {
+                // A plain return hands the register file straight back.
+                ExitKind::Return => self.checkpoint(st),
+                // Control off the end. With a declared `falls_into` successor the
+                // closing `}` continues into that successor's frame — rN survives
+                // iff it holds its entry value here AND the successor preserves it
+                // (the same charge the `Defer` arm makes to a tail-callee). Without
+                // one, running off the end hands the register file back like a
+                // return.
+                ExitKind::FallOff => match self.falls_into {
+                    Some(succ) => self.checkpoint_after_tail(st, Some(succ)),
+                    None => self.checkpoint(st),
+                },
+                // An external tail transfer. It either DIVERGES — an `@noreturn`
+                // target, or an `AssertDesugar`-authored assert/raise rail, which
+                // never returns to the caller and so carries no preserves
+                // obligation (the `@noreturn` composition) — or it is a real tail
+                // call: rN survives iff it holds its entry value AT the jump AND
+                // the tail-callee itself preserves rN (unknown / indirect /
+                // equ-boundary target → conservative clobber, via the oracle).
+                ExitKind::Defer => {
+                    let items = self.items;
+                    let (callee, divergent) = match &items[idx] {
+                        CodeItem::Instr { ops, author, .. } => {
+                            if matches!(author, ItemAuthor::AssertDesugar) {
+                                (None, true)
+                            } else {
+                                let c = transfer_target_sym(ops);
+                                (c, c.is_some_and(|t| self.noreturn.contains(t)))
+                            }
+                        }
+                        _ => (None, false),
+                    };
+                    if divergent {
+                        return; // a diverging exit never returns — no obligation
+                    }
+                    self.checkpoint_after_tail(st, callee);
+                }
+            },
         }
     }
 }
@@ -516,6 +620,19 @@ fn apply_callee_effect(st: &mut State, policy: &CallPolicy, callee: Option<&str>
 }
 
 impl PreserveObserver<'_> {
+    /// Charge a TAIL exit (a `Defer` transfer, or a `falls_into` fall-off) to
+    /// `callee`: apply the callee-preserves oracle to a COPY of the exit state —
+    /// a register the callee does not provably preserve loses its entry bit, and
+    /// every register's linear delta ends (the callee may recompute it) — then
+    /// checkpoint that state. So rN survives iff it held its entry value AT the
+    /// jump AND the callee preserves it, exactly as the CALL transfer charges an
+    /// in-body call. `callee = None` (indirect / equ boundary) preserves nothing.
+    fn checkpoint_after_tail(&mut self, st: &State, callee: Option<&str>) {
+        let mut st2 = st.clone();
+        apply_callee_effect(&mut st2, &self.policy, callee);
+        self.checkpoint(&st2);
+    }
+
     /// Charge one in-scope exit against every checked register: the linear-delta
     /// proof needs Δ==0 on an unbailed path, and the stack/entry-bit model needs
     /// the entry bit still set.
@@ -1538,7 +1655,7 @@ mod frame_tests {
     #[test]
     fn a_paired_frame_preserves_its_frame_pointer() {
         let items = [link(0, Reg::A6, -8), unlk(1, Reg::A6), rts(2)];
-        let got = verify_preserved(&items, &[Reg::A6], CallPolicy::ClobberAll);
+        let got = verify_preserved(&items, &[Reg::A6], CallPolicy::ClobberAll, None, &BTreeSet::new());
         assert_eq!(got[&Reg::A6], PreserveStatus::Verified);
     }
 
@@ -1547,7 +1664,7 @@ mod frame_tests {
     #[test]
     fn an_unclosed_frame_does_not_preserve_its_frame_pointer() {
         let items = [link(0, Reg::A6, -8), rts(1)];
-        let got = verify_preserved(&items, &[Reg::A6], CallPolicy::ClobberAll);
+        let got = verify_preserved(&items, &[Reg::A6], CallPolicy::ClobberAll, None, &BTreeSet::new());
         assert_eq!(got[&Reg::A6], PreserveStatus::NotPreserved);
     }
 
@@ -1591,5 +1708,52 @@ mod frame_tests {
                 "frame size {size} must bail"
             );
         }
+    }
+
+    /// A `jmp` authored by the `assert`/`raise` desugar is a DIVERGENT rail — it
+    /// never returns to the caller, so its tail carries NO preserves obligation
+    /// even when its target preserves nothing (the `@noreturn`-composition sibling
+    /// that needs no declared symbol). Here the sole exit is such a rail, so a0
+    /// (untouched) verifies; the `User`-authored control below is charged.
+    #[test]
+    fn an_assert_desugar_tail_is_obligation_free() {
+        let jmp = |author| CodeItem::Instr {
+            mnemonic: "jmp".to_string(),
+            size: None,
+            ops: vec![CodeOperand::Sym("Handler".to_string())],
+            span: Span { source: SourceId(0), start: 0, end: 1 },
+            as_type: None,
+            targets: Vec::new(),
+            author,
+        };
+        // Handler preserves nothing (absent from the oracle map).
+        let empty: BTreeMap<String, RegEffect> = BTreeMap::new();
+        let noreturn = BTreeSet::new();
+        let authored = verify_preserved(
+            &[jmp(ItemAuthor::AssertDesugar)],
+            &[Reg::A0],
+            CallPolicy::Oracle(&empty),
+            None,
+            &noreturn,
+        );
+        assert_eq!(
+            authored[&Reg::A0],
+            PreserveStatus::Verified,
+            "an AssertDesugar divergent tail carries no obligation"
+        );
+        // CONTROL: the same tail authored by the USER is a real tail call — a0 is
+        // charged against Handler's (empty) contract → NotPreserved.
+        let user = verify_preserved(
+            &[jmp(ItemAuthor::User)],
+            &[Reg::A0],
+            CallPolicy::Oracle(&empty),
+            None,
+            &noreturn,
+        );
+        assert_eq!(
+            user[&Reg::A0],
+            PreserveStatus::NotPreserved,
+            "a User-authored tail into a non-preserving target is charged"
+        );
     }
 }

@@ -1476,8 +1476,8 @@ mod tests {
         // The preserves prover's verdict on the drain registers.
         let regs = [crate::value::Reg::A1, crate::value::Reg::A5];
         assert_eq!(
-            verify_preserved(&with, &regs, CallPolicy::ClobberAll),
-            verify_preserved(&without, &regs, CallPolicy::ClobberAll),
+            verify_preserved(&with, &regs, CallPolicy::ClobberAll, None, &BTreeSet::new()),
+            verify_preserved(&without, &regs, CallPolicy::ClobberAll, None, &BTreeSet::new()),
         );
         // The flag def-use walk's verdict.
         let no_callees = BTreeMap::new();

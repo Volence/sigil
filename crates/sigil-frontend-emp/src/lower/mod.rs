@@ -253,6 +253,12 @@ fn lower_module_inner(
     // cycle-budget and CCR-bracket walks. Cheap set over the file's own items;
     // empty when no decl carries the attribute (the common case).
     let noreturn = collect_noreturn_symbols(&file.items);
+    // The interrupt-mask-preservers oracle (68k preserves-through-tail credit): the
+    // set of visible procs/externs declaring `preserves(sr)`/`preserves(sr.mask)`,
+    // consulted by the mask-claim tail credit so an unconditional external tail to
+    // a preserving sibling is credited. Cheap per-file set; empty in the common
+    // case (a 68k module with no SR-mask contract).
+    let sr_mask_preservers = collect_sr_mask_preservers(&file.items);
 
     // Diagnostics produced by the always-on `Item::Vars` overlay-validation pass
     // (Plan 7 #6). Overlay decl checks fire in EVERY evaluator that forces the
@@ -314,7 +320,7 @@ fn lower_module_inner(
                     file,
                     decl,
                     proc::Siblings { index, items: &file.items },
-                    proc::ProcCtx { cpu: initial_cpu, as_compat, defines: &opts.defines, invariant_regs: &invariant_regs, callee_preserves: &callee_preserves, contracts, noreturn: &noreturn },
+                    proc::ProcCtx { cpu: initial_cpu, as_compat, defines: &opts.defines, invariant_regs: &invariant_regs, callee_preserves: &callee_preserves, contracts, noreturn: &noreturn, sr_mask_preservers: &sr_mask_preservers },
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
@@ -460,6 +466,7 @@ fn lower_module_inner(
                     &mut overlay_pass_diags,
                     contracts,
                     &noreturn,
+                    &sr_mask_preservers,
                 );
                 // Leave the named section open; the next item (or `finish`)
                 // folds its length.
@@ -621,6 +628,7 @@ fn lower_section_items(
     overlay_pass_diags: &mut Vec<Diagnostic>,
     contracts: &crate::contract::InterfaceEnv,
     noreturn: &std::collections::BTreeSet<String>,
+    sr_mask_preservers: &std::collections::BTreeSet<String>,
 ) -> bool {
     for (index, item) in sec.items.iter().enumerate() {
         match item {
@@ -646,7 +654,7 @@ fn lower_section_items(
                     file,
                     decl,
                     proc::Siblings { index, items: &sec.items },
-                    proc::ProcCtx { cpu: placement.cpu, as_compat, defines: placement.defines, invariant_regs, callee_preserves, contracts, noreturn },
+                    proc::ProcCtx { cpu: placement.cpu, as_compat, defines: placement.defines, invariant_regs, callee_preserves, contracts, noreturn, sr_mask_preservers },
                     builder,
                     diags,
                     asm_counter,
@@ -1781,7 +1789,7 @@ fn collect_z80_callee_preserves(
 /// (noreturn-tail model), recursing into sections. The set the cycle-budget and
 /// CCR-bracket walks consult to tell a divergent tail transfer (a name here)
 /// from a real tail call. Cheap; empty in the common case.
-fn collect_noreturn_symbols(items: &[ast::Item]) -> std::collections::BTreeSet<String> {
+pub(crate) fn collect_noreturn_symbols(items: &[ast::Item]) -> std::collections::BTreeSet<String> {
     fn walk(items: &[ast::Item], set: &mut std::collections::BTreeSet<String>) {
         for item in items {
             match item {
@@ -1789,6 +1797,39 @@ fn collect_noreturn_symbols(items: &[ast::Item]) -> std::collections::BTreeSet<S
                     set.insert(p.name.clone());
                 }
                 ast::Item::ExternProc(e) if e.is_noreturn() => {
+                    set.insert(e.name.clone());
+                }
+                ast::Item::Section(sec) => walk(&sec.items, set),
+                _ => {}
+            }
+        }
+    }
+    let mut set = std::collections::BTreeSet::new();
+    walk(items, &mut set);
+    set
+}
+
+/// Collect every `proc` / `extern proc` whose contract declares `preserves(sr)`
+/// (bare — both halves) or `preserves(sr.mask)` — the interrupt-mask preservers.
+/// The per-file oracle the mask-claim tail credit consults: an unconditional
+/// external tail to a name here keeps the mask round-tripping through the tail
+/// (the QueueDMA_Critical → QueueDMA_Deferrable.transfer shape). `sr.ccr` alone
+/// does NOT preserve the mask, so it is excluded. Recurses into sections.
+pub(crate) fn collect_sr_mask_preservers(
+    items: &[ast::Item],
+) -> std::collections::BTreeSet<String> {
+    fn tokens_cover_mask(preserves: &[(String, Option<String>)]) -> bool {
+        preserves
+            .iter()
+            .any(|(lo, hi)| hi.is_none() && (lo == "sr" || lo == "sr.mask"))
+    }
+    fn walk(items: &[ast::Item], set: &mut std::collections::BTreeSet<String>) {
+        for item in items {
+            match item {
+                ast::Item::Proc(p) if tokens_cover_mask(&p.preserves) => {
+                    set.insert(p.name.clone());
+                }
+                ast::Item::ExternProc(e) if tokens_cover_mask(&e.sig.preserves) => {
                     set.insert(e.name.clone());
                 }
                 ast::Item::Section(sec) => walk(&sec.items, set),

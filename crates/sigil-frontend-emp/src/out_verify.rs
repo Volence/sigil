@@ -597,7 +597,17 @@ pub fn check_cond_out_survives(
         if sites.is_empty() {
             continue; // no PROVABLY-¬cc exit — nothing this analysis can judge
         }
-        let status = verify_preserved_on(items, &[*reg], policy, ReturnScope::Sites(&sites));
+        // The survives-claim charges its named `Sites` at raw entry bits — the tail
+        // credit (a `preserves`-contract concept) does not apply, so the
+        // `falls_into`/`@noreturn` context is empty here.
+        let status = verify_preserved_on(
+            items,
+            &[*reg],
+            policy,
+            ReturnScope::Sites(&sites),
+            None,
+            &BTreeSet::new(),
+        );
         // Only a PROVEN entry-value round-trip clears the claim; every other
         // outcome fires. The polarity is `check_preserves`': absence of a positive
         // proof is the failure, never a pass.

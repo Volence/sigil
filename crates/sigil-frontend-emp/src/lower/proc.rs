@@ -80,6 +80,12 @@ pub(super) struct ProcCtx<'a> {
     /// a name in this set is a TERMINAL edge, not an unbounded transfer — read by
     /// the cycle-budget and CCR-bracket walks. Empty when no decl carries it.
     pub noreturn: &'a std::collections::BTreeSet<String>,
+    /// The interrupt-mask-preservers set (68k preserves-through-tail credit):
+    /// every visible proc / `extern proc` declaring `preserves(sr)` or
+    /// `preserves(sr.mask)`. The mask-claim tail credit consults it so an
+    /// unconditional external tail to a preserving sibling round-trips the mask.
+    /// Empty when no visible decl preserves the mask.
+    pub sr_mask_preservers: &'a std::collections::BTreeSet<String>,
 }
 
 /// Lower one proc: define its label, evaluate + lower its body, then run the
@@ -168,7 +174,7 @@ pub(super) fn lower_proc(
     if ctx.cpu == Cpu::Z80 {
         check_z80_preserves(proc, &buf, ctx.invariant_regs, ctx.callee_preserves, diags);
     } else if !proc.preserves.is_empty() {
-        check_preserves(proc, &buf, ctx.noreturn, diags);
+        check_preserves(proc, &buf, ctx.noreturn, ctx.sr_mask_preservers, diags);
     }
 
     // 5b. `@noreturn` contract (noreturn-tail model): a proc claiming it never
@@ -1254,6 +1260,7 @@ fn check_preserves(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,
     noreturn: &BTreeSet<String>,
+    sr_mask_preservers: &BTreeSet<String>,
     diags: &mut Vec<Diagnostic>,
 ) {
     // Fold the declared segments to the canonical movem mask
@@ -1406,7 +1413,14 @@ fn check_preserves(
     // ledgered against S2-D7's dataflow half).
     if pres_sr.mask {
         let before = diags.len();
-        check_preserves_sr(proc, buf, if explicit_bare_sr { "sr" } else { "sr.mask" }, diags);
+        check_preserves_sr(
+            proc,
+            buf,
+            if explicit_bare_sr { "sr" } else { "sr.mask" },
+            sr_mask_preservers,
+            noreturn,
+            diags,
+        );
         // Advisory (noreturn-tail model, warn tier): bare `preserves(sr)` claims
         // BOTH halves, but only the mask round-trips through `check_preserves_sr`
         // — its CCR half is otherwise unverified (ledgered against S2-D7). The
@@ -1454,6 +1468,8 @@ fn check_preserves(
         &buf.items,
         &regs,
         crate::preserves::CallPolicy::ClobberAll,
+        proc.falls_into.as_deref(),
+        noreturn,
     );
     let not_verified: Vec<crate::value::Reg> = regs
         .iter()
@@ -1467,6 +1483,8 @@ fn check_preserves(
         &buf.items,
         &not_verified,
         crate::preserves::CallPolicy::PreserveAll,
+        proc.falls_into.as_deref(),
+        noreturn,
     );
     let unverifiable: Vec<String> = not_verified
         .iter()
@@ -1828,8 +1846,58 @@ fn check_preserves_sr(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,
     token: &str,
+    sr_mask_preservers: &BTreeSet<String>,
+    noreturn: &BTreeSet<String>,
     diags: &mut Vec<Diagnostic>,
 ) {
+    // The mnemonic-less tail refusals (68k preserves-through-tail credit, §2.4):
+    // a declared `falls_into`, or a body that can run off its end, hands the
+    // caller the successor's SR — which this slice cannot see. Applied to the
+    // EXPLICIT `sr.mask` claim, whose mask round-trip nothing else guards, closing
+    // the vacuity that let a fall-through / run-off body pass without proving the
+    // mask survives the leave. A BARE `sr` proc leaves these two shapes to the CCR
+    // advisory (WARN), which keeps its current tail behavior (§2.4) — its mask half
+    // stays the S2-D7 deferral, unchanged.
+    if token == "sr.mask" {
+        if let Some(why) = sr_tail_refusal(proc, buf, Cpu::M68000) {
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!(
+                    "[proc.preserves-sr-unbalanced] `{}` declares `preserves({token})` but the \
+                     interrupt mask is not provably the caller's at return: {why}",
+                    proc.name
+                ),
+            );
+            return;
+        }
+    }
+    // An UNCONDITIONAL EXTERNAL tail (the QueueDMA_Critical → *.transfer shape):
+    // the SR the caller finally sees is the tail-callee's, so the mask claim holds
+    // only if that callee ITSELF preserves the mask. A tail to a provable
+    // preserver is CREDITED (the tail edge discharged; the body's own SR writes
+    // must still round-trip below); a tail to anything else is REFUSED, closing
+    // the vacuity hole a mask-claiming tail-only body would pass through. A
+    // trailing-LOCAL-label transfer is not an external tail — this lane does not
+    // special-case it (spec §3); it stays with the round-trip slice.
+    if let Some(target) = terminal_external_tail(buf, noreturn) {
+        if !sr_mask_preservers_credit(sr_mask_preservers, &target) {
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!(
+                    "[proc.preserves-sr-unbalanced] `{}` declares `preserves({token})` but it \
+                     leaves through an unconditional tail to `{target}`, which is not known to \
+                     preserve the interrupt mask (declare `preserves(sr.mask)` on the tail \
+                     target to credit the mask through the tail)",
+                    proc.name
+                ),
+            );
+            return;
+        }
+    }
     if !sr_writes_round_trip(buf.items.iter()) {
         push(
             diags,
@@ -1844,6 +1912,60 @@ fn check_preserves_sr(
             ),
         );
     }
+}
+
+/// The target symbol of a body's terminating UNCONDITIONAL EXTERNAL tail transfer
+/// (`bra`/`jbra`/`jmp` to a symbol that is neither a local label with a following
+/// instruction nor a body-closing local label), or `None` when the body returns,
+/// runs off its end, transfers to a local label, or DIVERGES. The shape the
+/// mask-claim tail credit consults: the caller-observed SR past this exit is
+/// entirely the tail target's. The last instruction's SOLE edge being
+/// `Edge::Defer` identifies the unconditional external transfer; the extra
+/// `is_local_label` guard keeps a trailing-local pseudo-`Defer` (which t-edges
+/// reclassifies) out — this lane must not special-case it (spec §3), so it reads
+/// as "no external tail" and stays with the round-trip slice.
+///
+/// A DIVERGENT tail — an `AssertDesugar`-authored assert/raise rail, or a jump to
+/// a `@noreturn` handler — never returns to the caller, so it carries no mask
+/// obligation (the same `@noreturn` composition the register credit applies):
+/// it reads as "no external tail" and the body's own SR discipline decides.
+fn terminal_external_tail(buf: &crate::value::CodeBuf, noreturn: &BTreeSet<String>) -> Option<String> {
+    use crate::flag_check::{transfer_target_sym, Cfg, Edge};
+    let cfg = Cfg::build(&buf.items);
+    let last = buf
+        .items
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(i, it)| matches!(it, CodeItem::Instr { .. }).then_some(i))?;
+    if cfg.edges(last) != vec![Edge::Defer] {
+        return None;
+    }
+    let CodeItem::Instr { ops, author, .. } = &buf.items[last] else { return None };
+    if matches!(author, crate::value::ItemAuthor::AssertDesugar) {
+        return None; // an authored divergent rail — never returns
+    }
+    let target = transfer_target_sym(ops)?;
+    if cfg.is_local_label(target) {
+        return None; // a trailing-local pseudo-Defer — not an external tail
+    }
+    if noreturn.contains(target) {
+        return None; // a `@noreturn` tail — never returns
+    }
+    Some(target.to_string())
+}
+
+/// Does the interrupt-mask-preservers set credit a tail to `target`? A plain
+/// name is looked up directly; an `Owner.label` exported-label target (the
+/// shared-core `*.transfer` idiom) credits when `Owner` preserves the mask — the
+/// same owner-resolution the closure's `resolve_callee_key` uses, sound because
+/// the label's tail is a subset of the owner's body whose SR discipline the
+/// contract already covers.
+fn sr_mask_preservers_credit(set: &BTreeSet<String>, target: &str) -> bool {
+    if set.contains(target) {
+        return true;
+    }
+    matches!(target.split_once('.'), Some((owner, _)) if set.contains(owner))
 }
 
 /// The `preserves(sr.ccr)` slice: the condition codes at every return must be
@@ -2357,15 +2479,29 @@ pub fn verified_preserves_regs(
         return BTreeSet::new();
     }
     let mut sink = Vec::new();
-    // This caller reads only the ERROR-tier round-trip verdict; the bare-`sr` CCR
-    // advisory (warn) is discarded, so an empty `@noreturn` set is sufficient.
-    check_preserves(proc, buf, &BTreeSet::new(), &mut sink);
+    // This caller reads only the ERROR-tier round-trip verdict for the REGISTER
+    // preserves (the `sr` token is dropped from the register-file closure); the
+    // bare-`sr` CCR advisory (warn) is discarded, so an empty `@noreturn` set is
+    // sufficient, and an empty mask-preservers set only means a mask-claim tail is
+    // uncreditable here — inert, since no register-preserving proc also claims the
+    // mask through an external tail (the mask-tail adopters carry no register
+    // preserves), so the sr verdict never suppresses a register credit.
+    check_preserves(proc, buf, &BTreeSet::new(), &BTreeSet::new(), &mut sink);
     if sink.iter().any(|d| matches!(d.level, Level::Error)) {
         return BTreeSet::new();
     }
     let regs = crate::preserves::expand_mask(preserve_mask(proc));
-    let status =
-        crate::preserves::verify_preserved(&buf.items, &regs, crate::preserves::CallPolicy::ClobberAll);
+    // The oracle-free base SEED (ClobberAll): a `falls_into`/tail exit charges its
+    // successor, which under ClobberAll preserves nothing — so a call-/tail-blocked
+    // register seeds NotPreserved and the corpus oracle round re-credits it (the
+    // empty `@noreturn` set only defers a divergent-tail credit to that round).
+    let status = crate::preserves::verify_preserved(
+        &buf.items,
+        &regs,
+        crate::preserves::CallPolicy::ClobberAll,
+        proc.falls_into.as_deref(),
+        &BTreeSet::new(),
+    );
     if regs
         .iter()
         .all(|r| matches!(status.get(r), Some(crate::preserves::PreserveStatus::Verified)))
@@ -2391,8 +2527,10 @@ pub fn preserve_oracle_inputs(
         return (Vec::new(), BTreeSet::new());
     }
     let mut sink = Vec::new();
-    // ERROR-tier verdict only (see `verified_preserves_regs`); empty `@noreturn`.
-    check_preserves(proc, buf, &BTreeSet::new(), &mut sink);
+    // ERROR-tier verdict only (see `verified_preserves_regs`); empty `@noreturn`
+    // and empty mask-preservers (the register-credit inputs never depend on the
+    // mask-tail verdict — see `verified_preserves_regs`).
+    check_preserves(proc, buf, &BTreeSet::new(), &BTreeSet::new(), &mut sink);
     if sink.iter().any(|d| matches!(d.level, Level::Error)) {
         return (Vec::new(), BTreeSet::new());
     }
