@@ -27,7 +27,10 @@ prices 24 + 14·M instead of 28 + 14·M and its mulu boundary moves from M = 2 t
 M = 3 (mulu at M ≥ 4). Row 2165 predicted exactly this; the prediction was
 confirmed and taken.
 
-Nine sites moved, two are refused-with-reason:
+Nine sites moved, two are refused-with-reason, and **one was missed by the
+census entirely** (§7 step-5 item 0 — the panel's catch; spec §7 withdraws R2's
+"every multiply is construct-spelled" end-state claim as false). The accurate
+end state is nine moved, two refused, one outstanding — not a completed sweep.
 
 | Group | Site | Chosen lowering | Δcy | Δsize |
 |---|---|---|---|---|
@@ -261,6 +264,32 @@ so in present tense.
    is bound-independent, so the untrusted-bound exposure did not grow.
 
 **Step-5 (engine findings, not taken).**
+
+0. **The census was WRONG, and the panel caught it — `Section_FlatIDXY`'s
+   `.fxy_mul` is a third hand multiply loop.** The spec's §3 census said
+   "exactly seven un-adopted sites"; there are eight. The missed site is the
+   same `sec_y × grid_w` repeated-add family Group B adopted, with four live
+   callers (`entity_window.emp` ×3, `ojz_scroll_test.emp` ×1). An independent
+   re-census (run after the catch, not before) confirms it is the only one
+   outstanding — the corpus's other `dbf`+`add` loops are not constant
+   multiplies. It is NOT adopted here, ruled: adoption is byte-changing and
+   would demand a second refreeze on top of chain 49 plus a fresh A/B and panel,
+   and it is not a pure swap — the loop accumulates directly from memory
+   (`add.w Act.grid_w(a2), d0`), so the construct needs a register preload,
+   changing register pressure at a site whose contract leaves only d1 spare.
+   The hand loop is correct; this is deferred optimization, not a defect.
+   Ledgered with the measured facts.
+
+   **The process lesson, which is the more valuable half.** The porter brief's
+   rule is to verify each spec claim against the current tree before building
+   it. I verified that every site the census *named* existed and was as
+   described — and that is exactly the check that cannot catch this class. A
+   completeness claim ("exactly seven") is only testable by re-running the
+   census independently, which I did not do until the panel forced it. Verifying
+   the members of a set is not verifying the set. A census that says "exactly N"
+   and is wrong is worth more as a corrected record than as a quiet fix, so the
+   false claim is withdrawn in the spec, the ledger, and here rather than
+   silently narrowed.
 
 1. The two refused ×80 sites (§7 step-3 item 1) are the headline non-adoption.
    They are recorded as *optimal*, not as debt: `((x<<2)+x)<<4` is the right
