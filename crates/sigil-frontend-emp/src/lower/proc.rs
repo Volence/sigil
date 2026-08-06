@@ -35,7 +35,7 @@ use crate::value::{CodeItem, CodeOperand, Reg};
 use sigil_ir::backend::{Cpu, IrStreamer};
 use sigil_ir::IrBuilder;
 use sigil_span::{Diagnostic, Level, Span};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 /// This proc's position among its declaration-order siblings — the context a
 /// declared `falls_into` needs to check physical adjacency (§5.1). Bundling the
@@ -80,12 +80,16 @@ pub(super) struct ProcCtx<'a> {
     /// a name in this set is a TERMINAL edge, not an unbounded transfer — read by
     /// the cycle-budget and CCR-bracket walks. Empty when no decl carries it.
     pub noreturn: &'a std::collections::BTreeSet<String>,
-    /// The interrupt-mask-preservers set (68k preserves-through-tail credit):
+    /// The interrupt-mask-preservers oracle (68k preserves-through-tail credit):
     /// every visible proc / `extern proc` declaring `preserves(sr)` or
-    /// `preserves(sr.mask)`. The mask-claim tail credit consults it so an
-    /// unconditional external tail to a preserving sibling round-trips the mask.
-    /// Empty when no visible decl preserves the mask.
-    pub sr_mask_preservers: &'a std::collections::BTreeSet<String>,
+    /// `preserves(sr.mask)`, mapped to its save-first-bracket export-label entries
+    /// (see [`crate::lower::collect_sr_mask_preservers`]). The mask-claim tail
+    /// credit consults it so an unconditional external tail to a preserving sibling
+    /// round-trips the mask — a plain-name tail by key presence, an `Owner.label`
+    /// tail only when the label is a save-first entry. Empty when no visible decl
+    /// preserves the mask.
+    pub sr_mask_preservers:
+        &'a std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
 }
 
 /// Lower one proc: define its label, evaluate + lower its body, then run the
@@ -1260,7 +1264,7 @@ fn check_preserves(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,
     noreturn: &BTreeSet<String>,
-    sr_mask_preservers: &BTreeSet<String>,
+    sr_mask_preservers: &BTreeMap<String, BTreeSet<String>>,
     diags: &mut Vec<Diagnostic>,
 ) {
     // Fold the declared segments to the canonical movem mask
@@ -1846,7 +1850,7 @@ fn check_preserves_sr(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,
     token: &str,
-    sr_mask_preservers: &BTreeSet<String>,
+    sr_mask_preservers: &BTreeMap<String, BTreeSet<String>>,
     noreturn: &BTreeSet<String>,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -1951,17 +1955,24 @@ fn terminal_external_tail(buf: &crate::value::CodeBuf, noreturn: &BTreeSet<Strin
     Some(target.to_string())
 }
 
-/// Does the interrupt-mask-preservers set credit a tail to `target`? A plain
-/// name is looked up directly; an `Owner.label` exported-label target (the
-/// shared-core `*.transfer` idiom) credits when `Owner` preserves the mask — the
-/// same owner-resolution the closure's `resolve_callee_key` uses, sound because
-/// the label's tail is a subset of the owner's body whose SR discipline the
-/// contract already covers.
-fn sr_mask_preservers_credit(set: &BTreeSet<String>, target: &str) -> bool {
-    if set.contains(target) {
-        return true;
+/// Does the interrupt-mask-preservers oracle credit a tail to `target`? A PLAIN
+/// name credits when it is a preserver — the tail enters at the owner's own entry,
+/// exactly where `preserves(sr.mask)` was verified. An `Owner.label` target (the
+/// shared-core `*.transfer` idiom) enters MID-body, so it credits ONLY when the
+/// label is a SAVE-FIRST-BRACKET entry of the owner (`safe.contains(target)`) —
+/// the SR round-trip is NOT a monotone property that survives entry-point
+/// restriction (a subset-of-the-body argument, valid for `clobbers`, is INVALID
+/// here): a label past the owner's save would let the entrant skip it and pop a
+/// word it never pushed. [`crate::lower::collect_sr_mask_preservers`] computes the
+/// safe-entry set from the owner's evaluated body.
+fn sr_mask_preservers_credit(map: &BTreeMap<String, BTreeSet<String>>, target: &str) -> bool {
+    if map.contains_key(target) {
+        return true; // a plain-name tail into a preserver — the owner's own entry
     }
-    matches!(target.split_once('.'), Some((owner, _)) if set.contains(owner))
+    match target.split_once('.') {
+        Some((owner, _)) => map.get(owner).is_some_and(|safe| safe.contains(target)),
+        None => false,
+    }
 }
 
 /// The `preserves(sr.ccr)` slice: the condition codes at every return must be
@@ -2482,7 +2493,7 @@ pub fn verified_preserves_regs(
     // uncreditable here — inert, since no register-preserving proc also claims the
     // mask through an external tail (the mask-tail adopters carry no register
     // preserves), so the sr verdict never suppresses a register credit.
-    check_preserves(proc, buf, &BTreeSet::new(), &BTreeSet::new(), &mut sink);
+    check_preserves(proc, buf, &BTreeSet::new(), &BTreeMap::new(), &mut sink);
     if sink.iter().any(|d| matches!(d.level, Level::Error)) {
         return BTreeSet::new();
     }
@@ -2526,7 +2537,7 @@ pub fn preserve_oracle_inputs(
     // ERROR-tier verdict only (see `verified_preserves_regs`); empty `@noreturn`
     // and empty mask-preservers (the register-credit inputs never depend on the
     // mask-tail verdict — see `verified_preserves_regs`).
-    check_preserves(proc, buf, &BTreeSet::new(), &BTreeSet::new(), &mut sink);
+    check_preserves(proc, buf, &BTreeSet::new(), &BTreeMap::new(), &mut sink);
     if sink.iter().any(|d| matches!(d.level, Level::Error)) {
         return (Vec::new(), BTreeSet::new());
     }

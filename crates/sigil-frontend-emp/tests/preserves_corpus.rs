@@ -35,18 +35,23 @@ fn residue_status(aeon: &Path, file_rel: &str, proc: &str, reg: Reg) -> Preserve
             _ => None,
         })
         .unwrap_or_else(|| panic!("proc {proc} not found in {file_rel}"));
+    // Build the `@noreturn` set the way lowering does, so a tail into a declared
+    // divergent handler is recognized as an obligation-free exit (oracle parity).
+    let noreturn: std::collections::BTreeSet<String> = file
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Proc(p) if p.is_noreturn() => Some(p.name.clone()),
+            Item::ExternProc(e) if e.is_noreturn() => Some(e.name.clone()),
+            _ => None,
+        })
+        .collect();
     let (buf, _d, _n) =
         eval_proc_body(&file, &p.name, &p.params, &p.body, p.span, 0, Cpu::M68000, &[], &sigil_frontend_emp::contract::InterfaceEnv::empty());
     let buf = buf.unwrap_or_else(|| panic!("no codebuf for {proc}"));
-    verify_preserved(
-        &buf.items,
-        &[reg],
-        CallPolicy::ClobberAll,
-        p.falls_into.as_deref(),
-        &std::collections::BTreeSet::new(),
-    )
-    .remove(&reg)
-    .unwrap()
+    verify_preserved(&buf.items, &[reg], CallPolicy::ClobberAll, p.falls_into.as_deref(), &noreturn)
+        .remove(&reg)
+        .unwrap()
 }
 
 #[test]

@@ -2844,9 +2844,38 @@ fn sr_mask_tail_into_non_preserving_target_fires() {
 }
 
 /// The `Owner.label` exported-label tail (`jbra Owner.transfer`) credits when the
-/// OWNER preserves the mask — the shared-core idiom the real QueueDMA siblings use.
+/// label is a SAVE-FIRST-BRACKET entry — the label precedes the owner's
+/// `move.w sr, -(sp)` save, so a tail-entrant executes the save and the restore
+/// pops what it pushed. This is the real QueueDMA layout (`.transfer` at the top
+/// of the core, before the save).
 #[test]
 fn sr_mask_tail_into_owner_export_label_is_credited() {
+    let src = "module m\n\
+               proc Sib() clobbers() preserves(sr.mask) {\n\
+               \tmove.w #$2700, d0\n\
+               \texport .transfer:\n\
+               \tmove.w sr, -(sp)\n\
+               \tmove.w #$2700, sr\n\
+               \tmove.w (sp)+, sr\n\
+               \trts\n\
+               }\n\
+               proc P() clobbers() preserves(sr.mask) {\n\
+               \tjbra Sib.transfer\n\
+               }\n";
+    let (_m, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.preserves-sr-unbalanced]"),
+        "a save-first-bracket entry label credits via the owner's mask contract: {diags:?}"
+    );
+}
+
+/// The UNSOUND `Owner.label` layout the position check must catch: the label sits
+/// AFTER the owner's `move.w sr, -(sp)` save, so a tail-entrant SKIPS the save and
+/// the owner's `move.w (sp)+, sr` restore pops a word it never pushed (the `rts`
+/// then returns to garbage). The credit REFUSES — the SR round-trip is a bracket
+/// property that does not survive entry-point restriction.
+#[test]
+fn sr_mask_tail_into_owner_label_after_save_fires() {
     let src = "module m\n\
                proc Sib() clobbers() preserves(sr.mask) {\n\
                \tmove.w sr, -(sp)\n\
@@ -2860,8 +2889,8 @@ fn sr_mask_tail_into_owner_export_label_is_credited() {
                }\n";
     let (_m, diags) = lower(src);
     assert!(
-        !has_tag(&diags, "[proc.preserves-sr-unbalanced]"),
-        "a tail into an owner's export label credits via the owner's mask contract: {diags:?}"
+        has_tag(&diags, "[proc.preserves-sr-unbalanced]"),
+        "a label past the owner's save is not a safe entry — the mask claim is refused: {diags:?}"
     );
 }
 
