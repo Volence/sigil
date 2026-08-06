@@ -139,10 +139,17 @@ section s (cpu: m68000) {
 /// (`$A0,$00`). Golden = the hand-written transliteration, assembled.
 #[test]
 fn rings_byte_form_matches_transliteration() {
+    // The hand-written `golden` claims `preserves(sr.mask)`, its `construct` twin
+    // bare `preserves(sr)` — and both emit identical BYTES (contracts emit
+    // nothing). This is the noreturn-tail model, not an inconsistency: the
+    // desugar's inner `move.w sr, -(sp)` frame push is `AssertDesugar`-authored on
+    // a divergent rail, so the CCR-bracket advisory clears `construct`'s CCR half;
+    // the SAME instruction hand-written in `golden` is `User`-authored and reads
+    // as a nested bracket save, so a linear walk can prove only the mask half.
     let src = "\
 module m
 section s (cpu: m68000) {
-    proc golden () clobbers(d4) preserves(sr) {
+    proc golden () clobbers(d4) preserves(sr.mask) {
         move.w  sr, -(sp)
         cmp.b   #0, d4
         beq.w   .assert_ok
@@ -181,7 +188,7 @@ fn core_long_form_matches_transliteration() {
     let src = "\
 module m
 section s (cpu: m68000) {
-    proc golden () clobbers() preserves(sr) {
+    proc golden () clobbers() preserves(sr.mask) {
         move.w  sr, -(sp)
         cmp.l   #Object_RAM, a0
         bhs.w   .skip1
@@ -217,7 +224,7 @@ fn core_word_form_matches_transliteration() {
     let src = "\
 module m
 section s (cpu: m68000) {
-    proc golden () clobbers(d7) preserves(sr) {
+    proc golden () clobbers(d7) preserves(sr.mask) {
         move.w  sr, -(sp)
         cmp.w   #NUM_DYNAMIC, d7
         blo.w   .skip3
@@ -256,7 +263,7 @@ fn tst_form_uses_tst_not_cmp() {
     let src = "\
 module m
 section s (cpu: m68000) {
-    proc golden () clobbers(d1) preserves(sr) {
+    proc golden () clobbers(d1) preserves(sr.mask) {
         move.w  sr, -(sp)
         tst.w   d1
         beq.w   .skip
@@ -503,6 +510,58 @@ section s (cpu: m68000) {
         })
         .count();
     assert_eq!(sr_dest_writes, 1, "the restore is the expansion's only SR write");
+}
+
+/// The `raise_error` rail is `AssertDesugar`-authored too — its terminal
+/// `jmp (pages).l` is the compiler's authored divergent transfer (spec §1(b)),
+/// so the noreturn-tail consumers treat it as a divergent terminal. (Before this
+/// parcel the rail carried ambient `User`, and nothing marked its divergence.)
+#[test]
+fn the_raise_error_rail_is_desugar_authored_with_a_divergent_jmp() {
+    let src = "\
+module m
+section s (cpu: m68000) {
+    proc p () clobbers() {
+        raise_error \"bad\"
+    }
+}
+";
+    let items = proc_items(src, 1);
+    let instrs: Vec<&CodeItem> =
+        items.iter().filter(|i| matches!(i, CodeItem::Instr { .. })).collect();
+    assert!(!instrs.is_empty(), "the raise rail emits instructions");
+    for it in &instrs {
+        let CodeItem::Instr { author, mnemonic, .. } = it else { unreachable!() };
+        assert_eq!(*author, ItemAuthor::AssertDesugar, "`{mnemonic}` must be the desugar's");
+    }
+    let CodeItem::Instr { mnemonic, author, .. } = instrs[instrs.len() - 1] else { unreachable!() };
+    assert_eq!(mnemonic, "jmp", "the rail ends in the divergent `jmp (pages)`");
+    assert_eq!(*author, ItemAuthor::AssertDesugar, "the terminal transfer is authored");
+}
+
+/// The `raise_exception` rail (the exception-vector shape, no frame push) is
+/// likewise `AssertDesugar`-authored end to end, terminal `jmp` included.
+#[test]
+fn the_raise_exception_rail_is_desugar_authored_with_a_divergent_jmp() {
+    let src = "\
+module m
+section s (cpu: m68000) {
+    proc p () clobbers() {
+        raise_exception \"BUS ERROR\"
+    }
+}
+";
+    let items = proc_items(src, 1);
+    let instrs: Vec<&CodeItem> =
+        items.iter().filter(|i| matches!(i, CodeItem::Instr { .. })).collect();
+    assert!(!instrs.is_empty(), "the raise_exception rail emits instructions");
+    for it in &instrs {
+        let CodeItem::Instr { author, mnemonic, .. } = it else { unreachable!() };
+        assert_eq!(*author, ItemAuthor::AssertDesugar, "`{mnemonic}` must be the desugar's");
+    }
+    let CodeItem::Instr { mnemonic, author, .. } = instrs[instrs.len() - 1] else { unreachable!() };
+    assert_eq!(mnemonic, "jmp", "the rail ends in the divergent `jmp (pages)`");
+    assert_eq!(*author, ItemAuthor::AssertDesugar, "the terminal transfer is authored");
 }
 
 /// The user's own lines around an `assert` stay `User`-authored — the stamp is

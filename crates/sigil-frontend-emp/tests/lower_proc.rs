@@ -2547,3 +2547,161 @@ fn a_dotted_token_in_a_range_is_invalid() {
         "an SR token cannot bound a range: {diags:?}"
     );
 }
+
+// ---- @noreturn (noreturn-tail model) --------------------------------------
+
+/// Parse + lower with `DEBUG=1` (the assert/raise rails expand) for the CCR
+/// advisory tests; the base `lower` helper leaves DEBUG undefined.
+fn lower_debug(src: &str) -> (Module, Vec<Diagnostic>) {
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    lower_module(
+        &file,
+        &LowerOptions {
+            initial_cpu: Cpu::M68000,
+            include_root: None,
+            embed_base: None,
+            defines: vec![("DEBUG".into(), 1)],
+        },
+    )
+}
+
+/// A `@noreturn` proc ending in a terminal transfer is clean — no path returns.
+#[test]
+fn noreturn_terminal_transfer_is_clean() {
+    let src = "module m\n@noreturn\nproc loop() clobbers(d0-d7/a0-a6) {\n\tnop\n\tjbra loop\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(!has_tag(&diags, "[noreturn.returns]"), "a looping tail never returns: {diags:?}");
+}
+
+/// A `@noreturn` proc with an `rts` fires `[noreturn.returns]` at error tier.
+#[test]
+fn noreturn_with_rts_errors() {
+    let src = "module m\n@noreturn\nproc f() clobbers() {\n\trts\n}\n";
+    let (_module, diags) = lower(src);
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[noreturn.returns]"))
+        .unwrap_or_else(|| panic!("expected [noreturn.returns], got: {diags:?}"));
+    assert_eq!(hit.level, Level::Error);
+}
+
+/// A CONDITIONAL return is caught too — the `rts` carries a return edge whatever
+/// branch reaches it.
+#[test]
+fn noreturn_with_conditional_rts_errors() {
+    let src = "module m\n@noreturn\nproc f() clobbers() {\n\
+               \ttst.b d0\n\
+               \tbeq .skip\n\
+               \trts\n\
+               .skip:\n\
+               \tjmp Somewhere\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(has_tag(&diags, "[noreturn.returns]"), "a conditional rts still returns: {diags:?}");
+}
+
+/// A `@noreturn` proc that runs off the end of the body fires — falling into
+/// whatever follows is not leaving by a transfer or a loop.
+#[test]
+fn noreturn_fall_off_end_errors() {
+    let src = "module m\n@noreturn\nproc f() clobbers() {\n\tnop\n}\n";
+    let (_module, diags) = lower(src);
+    assert!(has_tag(&diags, "[noreturn.returns]"), "a fall-off end returns to a successor: {diags:?}");
+}
+
+/// `@noreturn` takes no arguments — the form is a parse-time steering error.
+#[test]
+fn noreturn_takes_no_arguments() {
+    let (_file, perrs) = parse_str("module m\n@noreturn(\"why\")\nproc f() clobbers() {\n\tjmp X\n}\n");
+    assert!(
+        perrs.iter().any(|d| d.message.contains("[attr.form]") && d.message.contains("noreturn")),
+        "expected the no-args form error: {perrs:?}"
+    );
+}
+
+/// `@noreturn` is accepted on an `extern proc` sig (the attrs channel).
+#[test]
+fn noreturn_on_extern_proc_parses() {
+    let (_file, perrs) = parse_str("module m\n@noreturn\nextern proc Diverge () clobbers()\n");
+    assert!(perrs.is_empty(), "an extern proc carries @noreturn: {perrs:?}");
+}
+
+// ---- bare-`sr` CCR advisory (noreturn-tail model) -------------------------
+
+/// A bare-`preserves(sr)` proc whose mask round-trips but which writes flags
+/// AFTER the restore is named by the warn-tier `[proc.ccr-advisory]` — the CCR
+/// half the mask proof does not reach.
+#[test]
+fn ccr_advisory_names_post_restore_flag_traffic() {
+    let src = "module m\n\
+               proc f() clobbers(d0) preserves(sr) {\n\
+               \tmove.w sr, -(sp)\n\
+               \tmove.w #$2700, sr\n\
+               \tmove.w (sp)+, sr\n\
+               \ttst.b d0\n\
+               \trts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.ccr-advisory]"))
+        .unwrap_or_else(|| panic!("expected [proc.ccr-advisory], got: {diags:?}"));
+    assert_eq!(hit.level, Level::Warning);
+}
+
+/// A bare-`sr` proc whose every CCR effect sits inside the bracket draws NO
+/// advisory (the honest bare adopter — Sound_PostByte's shape).
+#[test]
+fn ccr_advisory_silent_when_whole_body_bracketed() {
+    let src = "module m\n\
+               proc f() clobbers() preserves(sr) {\n\
+               \tmove.w sr, -(sp)\n\
+               \tmove.w #$2700, sr\n\
+               \tnop\n\
+               \tmove.w (sp)+, sr\n\
+               \trts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(!has_tag(&diags, "[proc.ccr-advisory]"), "a fully-bracketed body is clean: {diags:?}");
+}
+
+/// A `jbra` to a LOCAL label is intra-proc flow, not a caller-visible leave —
+/// the advisory does not false-positive on it (local-label awareness).
+#[test]
+fn ccr_advisory_silent_on_local_jump() {
+    let src = "module m\n\
+               proc f() clobbers() preserves(sr) {\n\
+               \tmove.w sr, -(sp)\n\
+               \tmove.w #$2700, sr\n\
+               \tjbra .done\n\
+               .done:\n\
+               \tmove.w (sp)+, sr\n\
+               \trts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(!has_tag(&diags, "[proc.ccr-advisory]"), "a local jump is not a leave: {diags:?}");
+}
+
+/// A DEBUG-shape `raise_error` rail inside the bracket does NOT false-positive
+/// the advisory — the rail is `AssertDesugar`-authored and diverges, so its
+/// internal `move.w sr, -(sp)` and `jmp (pages)` are skipped (Sound_Init shape).
+#[test]
+fn ccr_advisory_silent_on_debug_rail_inside_bracket() {
+    let src = "module m\n\
+               proc f() clobbers(d0) preserves(sr) {\n\
+               \tmove.w sr, -(sp)\n\
+               \tmove.w #$2700, sr\n\
+               \ttst.b d0\n\
+               \tbne .ok\n\
+               \traise_error \"bad\"\n\
+               .ok:\n\
+               \tmove.w (sp)+, sr\n\
+               \trts\n\
+               }\n";
+    let (_module, diags) = lower_debug(src);
+    assert!(
+        !has_tag(&diags, "[proc.ccr-advisory]"),
+        "an authored raise rail is not a caller-visible CCR effect: {diags:?}"
+    );
+}

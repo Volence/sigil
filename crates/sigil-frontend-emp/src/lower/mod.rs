@@ -247,6 +247,12 @@ fn lower_module_inner(
     } else {
         crate::z80_preserves::CalleePreserves::new()
     };
+    // The `@noreturn` symbol set (noreturn-tail model): each visible `proc` /
+    // `extern proc` declaring `@noreturn`, so a divergent tail transfer to one is
+    // a TERMINAL edge rather than an unbounded transfer — consulted by the
+    // cycle-budget and CCR-bracket walks. Cheap set over the file's own items;
+    // empty when no decl carries the attribute (the common case).
+    let noreturn = collect_noreturn_symbols(&file.items);
 
     // Diagnostics produced by the always-on `Item::Vars` overlay-validation pass
     // (Plan 7 #6). Overlay decl checks fire in EVERY evaluator that forces the
@@ -308,7 +314,7 @@ fn lower_module_inner(
                     file,
                     decl,
                     proc::Siblings { index, items: &file.items },
-                    proc::ProcCtx { cpu: initial_cpu, as_compat, defines: &opts.defines, invariant_regs: &invariant_regs, callee_preserves: &callee_preserves, contracts },
+                    proc::ProcCtx { cpu: initial_cpu, as_compat, defines: &opts.defines, invariant_regs: &invariant_regs, callee_preserves: &callee_preserves, contracts, noreturn: &noreturn },
                     &mut builder,
                     &mut diags,
                     &mut asm_counter,
@@ -453,6 +459,7 @@ fn lower_module_inner(
                     &mut asm_counter,
                     &mut overlay_pass_diags,
                     contracts,
+                    &noreturn,
                 );
                 // Leave the named section open; the next item (or `finish`)
                 // folds its length.
@@ -613,6 +620,7 @@ fn lower_section_items(
     asm_counter: &mut u32,
     overlay_pass_diags: &mut Vec<Diagnostic>,
     contracts: &crate::contract::InterfaceEnv,
+    noreturn: &std::collections::BTreeSet<String>,
 ) -> bool {
     for (index, item) in sec.items.iter().enumerate() {
         match item {
@@ -638,7 +646,7 @@ fn lower_section_items(
                     file,
                     decl,
                     proc::Siblings { index, items: &sec.items },
-                    proc::ProcCtx { cpu: placement.cpu, as_compat, defines: placement.defines, invariant_regs, callee_preserves, contracts },
+                    proc::ProcCtx { cpu: placement.cpu, as_compat, defines: placement.defines, invariant_regs, callee_preserves, contracts, noreturn },
                     builder,
                     diags,
                     asm_counter,
@@ -1767,6 +1775,30 @@ fn collect_z80_callee_preserves(
     }
     walk(items, rf, invariant_regs, &mut map);
     map
+}
+
+/// Collect every `proc` / `extern proc` in the module declaring `@noreturn`
+/// (noreturn-tail model), recursing into sections. The set the cycle-budget and
+/// CCR-bracket walks consult to tell a divergent tail transfer (a name here)
+/// from a real tail call. Cheap; empty in the common case.
+fn collect_noreturn_symbols(items: &[ast::Item]) -> std::collections::BTreeSet<String> {
+    fn walk(items: &[ast::Item], set: &mut std::collections::BTreeSet<String>) {
+        for item in items {
+            match item {
+                ast::Item::Proc(p) if p.is_noreturn() => {
+                    set.insert(p.name.clone());
+                }
+                ast::Item::ExternProc(e) if e.is_noreturn() => {
+                    set.insert(e.name.clone());
+                }
+                ast::Item::Section(sec) => walk(&sec.items, set),
+                _ => {}
+            }
+        }
+    }
+    let mut set = std::collections::BTreeSet::new();
+    walk(items, &mut set);
+    set
 }
 
 fn validate_module_invariants(

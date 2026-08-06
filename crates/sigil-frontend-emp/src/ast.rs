@@ -1070,6 +1070,13 @@ fn unconditional_outs_of(
 /// [`Self::cond_only_out_regs`] — a register mentioned unconditionally as well
 /// keeps the unconditional reading, and the relax must not reach it.
 impl ProcDecl {
+    /// Whether this proc declares `@noreturn` — a CHECKED claim that no path
+    /// returns (`[noreturn.returns]`), consulted as a divergent-terminal fact by
+    /// the cycle-budget and CCR-bracket walks.
+    pub fn is_noreturn(&self) -> bool {
+        self.attrs.iter().any(|a| a.name == "noreturn")
+    }
+
     /// The registers carrying an `out(rN if cc)` guard, canonical under `rf`.
     pub fn cond_out_regs(
         &self,
@@ -1212,8 +1219,21 @@ pub struct ExternProcDecl {
     pub name: String,
     /// The declared signature (params + contract clauses).
     pub sig: ProcSig,
+    /// Item-level `@`-attributes preceding the decl (the attrs channel, §8):
+    /// `@noreturn` marks a still-`.asm` callee that never returns, so a divergent
+    /// tail to it is not a real transfer. Empty for a plain extern.
+    pub attrs: Vec<Attr>,
     /// Span of the whole declaration.
     pub span: Span,
+}
+
+impl ExternProcDecl {
+    /// Whether this `extern proc` sig declares `@noreturn` — the caller-side
+    /// statement that a still-`.asm` callee never returns. Trusted, not checked
+    /// (there is no body here to walk), exactly like every other extern contract.
+    pub fn is_noreturn(&self) -> bool {
+        self.attrs.iter().any(|a| a.name == "noreturn")
+    }
 }
 
 /// An `extern NAME: Type` declaration (L8): a typed reference to a value symbol

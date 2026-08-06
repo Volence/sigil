@@ -264,23 +264,24 @@ impl Parser {
         attrs
     }
 
-    /// Attach the collected item-level `@`-attributes to `item`. Only a `proc`
-    /// carries them; anywhere else the attribute has no consumer, which for a
-    /// declared contract is worse than a parse error. Shared by BOTH item loops —
-    /// the top-level one and the section body — because a proc inside a `section`
-    /// is still a proc and its contract is still its contract.
+    /// Attach the collected item-level `@`-attributes to `item`. A `proc` or an
+    /// `extern proc` carries them; anywhere else the attribute has no consumer,
+    /// which for a declared contract is worse than a parse error. Shared by BOTH
+    /// item loops — the top-level one and the section body — because a proc inside
+    /// a `section` is still a proc and its contract is still its contract.
     fn attach_item_attrs(&mut self, item: &mut Item, attrs: Vec<Attr>) {
         if attrs.is_empty() {
             return;
         }
         match item {
             Item::Proc(p) => p.attrs = attrs,
+            Item::ExternProc(d) => d.attrs = attrs,
             other => {
                 let sp = item_span(other);
                 self.diag_at(
                     sp,
-                    "an `@`-attribute here is only supported on a `proc` \
-                     declaration (contract-grammar v2 §8: `@scaffolding`)",
+                    "an `@`-attribute here is only supported on a `proc` or `extern proc` \
+                     declaration (contract-grammar v2 §8: `@scaffolding`, `@noreturn`)",
                 );
             }
         }
@@ -299,7 +300,8 @@ impl Parser {
         // proof and buys none. (`@align` / `@shape_divergent` are not in this
         // family — they are consumed at their own syntactic positions and never
         // reach here.)
-        const KNOWN: [&str; 5] = ["as_compat", "allow", "scaffolding", "budget", "cycles_exact"];
+        const KNOWN: [&str; 6] =
+            ["as_compat", "allow", "scaffolding", "budget", "cycles_exact", "noreturn"];
         if !KNOWN.contains(&attr.name.as_str()) {
             self.diag_at(
                 attr.span,
@@ -345,6 +347,13 @@ impl Parser {
                 attr.span,
                 "[cycles.form] `@cycles_exact` takes no arguments — it proves every \
                  path through the proc costs the same, whatever that cost is",
+            );
+        }
+        if attr.name == "noreturn" && !attr.args.is_empty() {
+            self.diag_at(
+                attr.span,
+                "[attr.form] `@noreturn` takes no arguments — it is a checked claim that \
+                 no path returns (`[noreturn.returns]` proves it on the body)",
             );
         }
         if attr.name == "scaffolding" && attr.args.len() != 1 {
@@ -1966,7 +1975,9 @@ impl Parser {
         let sig = self.proc_sig();
         let span = start.merge(self.prev_span());
         self.expect_line_end();
-        ExternProcDecl { public, name, sig, span }
+        // `attrs` is filled by `attach_item_attrs` from the leading `@`-attributes
+        // the item loop already collected (the same channel a `proc` uses).
+        ExternProcDecl { public, name, sig, attrs: Vec::new(), span }
     }
 
     /// Parse an `extern NAME: Type` declaration (L8): a typed reference to an

@@ -64,12 +64,12 @@
 //!     claim.
 
 use crate::flag_check::{entry_instr_idx, instr_span, Cfg, Edge};
-use crate::value::{CodeItem, CodeOperand, Width};
+use crate::value::{CodeItem, CodeOperand, ItemAuthor, Width};
 use crate::z80_cycles::Cost;
 use sigil_backend_m68k::m68k_cycles::CycleCost;
 use sigil_ir::backend::Cpu;
 use sigil_span::Span;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// What a cycle-budget walk concluded.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -172,7 +172,8 @@ impl BudgetFindingKind {
             ),
             Self::UnboundedTransfer { mnemonic } => format!(
                 "`{mnemonic}` continues into code outside this proc, so the path's cost is \
-                 not accounted here — a cycle budget needs every path to end at a return"
+                 not accounted here — a cycle budget needs every path to end at a return \
+                 (or a transfer to a `@noreturn` target, which ends the path)"
             ),
             Self::ComputedTransfer { mnemonic } => format!(
                 "`{mnemonic}` transfers to a COMPUTED target, so where this path goes is \
@@ -281,7 +282,12 @@ fn cpu_edges(cfg: &Cfg, cpu: Cpu, idx: usize) -> Vec<Edge> {
 /// `items` is the proc's evaluated `CodeBuf`; `cpu` selects the timing model and
 /// the edge model. A body with no instructions is refused ([`BudgetFindingKind::
 /// EmptyBody`]): only a return ends a charged path, and an empty body has none.
-pub fn path_costs(items: &[CodeItem], cpu: Cpu, decl_span: Span) -> Result<PathCosts, BudgetFinding> {
+pub fn path_costs(
+    items: &[CodeItem],
+    cpu: Cpu,
+    decl_span: Span,
+    noreturn: &BTreeSet<String>,
+) -> Result<PathCosts, BudgetFinding> {
     // Inline data is not an `Instr`, so the CFG links straight across it and would
     // charge it nothing — while on hardware those bytes decode and execute if
     // control reaches them. Only a reachability proof could tell the two apart,
@@ -308,7 +314,7 @@ pub fn path_costs(items: &[CodeItem], cpu: Cpu, decl_span: Span) -> Result<PathC
     // diagnostic is deterministic and names the first offender in reading order.
     let mut inexact: Option<(usize, String)> = None;
     for &idx in &order {
-        let CodeItem::Instr { mnemonic, size, ops, span, .. } = &items[idx] else {
+        let CodeItem::Instr { mnemonic, size, ops, span, author, .. } = &items[idx] else {
             unreachable!("postorder holds instruction indices only");
         };
         let cost = walk_cost(cpu, mnemonic, *size, ops);
@@ -319,7 +325,7 @@ pub fn path_costs(items: &[CodeItem], cpu: Cpu, decl_span: Span) -> Result<PathC
         if ceiling && inexact.as_ref().is_none_or(|(i, _)| idx < *i) {
             inexact = Some((idx, mnemonic.clone()));
         }
-        let charged = charged_edges(&cfg, cpu, idx, mnemonic, ops, &cost, *span)?;
+        let charged = charged_edges(&cfg, cpu, idx, mnemonic, ops, author, &cost, noreturn, *span)?;
         let mut lo = u64::MAX;
         let mut hi = 0u64;
         for e in charged {
@@ -346,11 +352,12 @@ pub fn check_cycle_budget(
     decl_span: Span,
     budget: Option<u64>,
     exact: bool,
+    noreturn: &BTreeSet<String>,
 ) -> Vec<BudgetFinding> {
     if budget.is_none() && !exact {
         return Vec::new();
     }
-    let costs = match path_costs(items, cpu, decl_span) {
+    let costs = match path_costs(items, cpu, decl_span, noreturn) {
         Ok(c) => c,
         Err(f) => return vec![f],
     };
@@ -408,13 +415,16 @@ struct ChargedEdge {
 /// edge 0. A form presenting anything but exactly two edges does not satisfy
 /// that reading, so a split cost over it is refused rather than charged a number
 /// the rule picked blind.
+#[allow(clippy::too_many_arguments)] // the walk's per-instruction facts; each is load-bearing
 fn charged_edges(
     cfg: &Cfg,
     cpu: Cpu,
     idx: usize,
     mnem: &str,
     ops: &[CodeOperand],
+    author: &ItemAuthor,
     cost: &WalkCost,
+    noreturn: &BTreeSet<String>,
     span: Span,
 ) -> Result<Vec<ChargedEdge>, BudgetFinding> {
     let bail = |kind| Err(BudgetFinding { kind, span });
@@ -422,6 +432,19 @@ fn charged_edges(
         return bail(BudgetFindingKind::OpaqueCall { mnemonic: mnem.to_string() });
     }
     let edges = cpu_edges(cfg, cpu, idx);
+    // A DIVERGENT terminal transfer ends the path exactly like a return: nothing
+    // after it runs in THIS proc, so its cost need not be accounted. Two forms,
+    // and only these — the `Defer` is otherwise unbounded (below):
+    //   * an `ItemAuthor::AssertDesugar`-authored unconditional transfer — the
+    //     assert / raise-error / raise-exception rail's `jmp (pages).l`, which the
+    //     compiler emitted knowing it never returns. A HAND-written `jmp` to the
+    //     same blob stays a plain `Defer` (authorship is the distinguisher).
+    //   * a transfer whose named target is declared `@noreturn`.
+    // Computed once (an instruction-level fact) and consulted at the `Defer` arms.
+    let target = crate::flag_check::branch_target(ops);
+    let is_uncond_transfer = matches!(mnem, "bra" | "jbra" | "jmp" | "jra");
+    let divergent_terminal = (matches!(author, ItemAuthor::AssertDesugar) && is_uncond_transfer)
+        || target.is_some_and(|t| noreturn.contains(t));
     // The STRUCTURAL refusals come before the cost-table one: a path that
     // escapes the body is unboundable whatever the instruction costs, and for a
     // computed transfer (`jp (hl)`) an "add it to the table" refusal would be a
@@ -438,6 +461,9 @@ fn charged_edges(
     });
     for e in &edges {
         match e {
+            // A divergent terminal (`@noreturn` target, or an authored rail's
+            // `jmp`) closes the path like a return — charged below, not refused.
+            Edge::Defer if divergent_terminal => {}
             // Transferring out with no symbolic target is a COMPUTED transfer
             // (`jp (hl)`, `jmp .table(a1)`): the honest refusal names the shape,
             // because "code outside this proc" may be false — a jump-table
@@ -480,8 +506,10 @@ fn charged_edges(
         };
         match e {
             Edge::Follow(s) => out.push(ChargedEdge { cost, succ: Some(*s) }),
-            // A return CLOSES the path: the caller owns everything after it.
+            // A return — or a divergent terminal transfer — CLOSES the path: the
+            // caller owns everything after it (a divergent transfer owns nothing).
             Edge::Return => out.push(ChargedEdge { cost, succ: None }),
+            Edge::Defer if divergent_terminal => out.push(ChargedEdge { cost, succ: None }),
             Edge::FallOff | Edge::Defer => unreachable!("refused above"),
         }
     }
@@ -579,6 +607,19 @@ mod tests {
             author: crate::value::ItemAuthor::User,
         }
     }
+    /// An instruction stamped with a specific author — used to build an
+    /// `AssertDesugar` divergent rail terminal.
+    fn instr_authored(mnemonic: &str, ops: Vec<CodeOperand>, author: ItemAuthor) -> CodeItem {
+        CodeItem::Instr { mnemonic: mnemonic.to_string(), size: None, ops, span: sp(), as_type: None, author }
+    }
+    /// The empty `@noreturn` set (the default for every pre-existing fixture).
+    fn nr() -> BTreeSet<String> {
+        BTreeSet::new()
+    }
+    /// A `@noreturn` set naming `names`.
+    fn nr_of(names: &[&str]) -> BTreeSet<String> {
+        names.iter().map(|s| s.to_string()).collect()
+    }
     fn label(name: &str) -> CodeItem {
         CodeItem::Label { name: name.to_string(), export: false, span: sp() }
     }
@@ -602,7 +643,7 @@ mod tests {
             instr("nop", vec![]),
             instr("ret", vec![]),
         ];
-        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
+        let c = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap();
         assert_eq!((c.min, c.max), (26, 26));
     }
 
@@ -616,7 +657,7 @@ mod tests {
             label("skip"),
             instr("ret", vec![]),
         ];
-        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
+        let c = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap();
         assert_eq!((c.min, c.max), (21, 22));
     }
 
@@ -629,7 +670,7 @@ mod tests {
             label("skip"),
             instr("ret", vec![]),
         ];
-        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
+        let c = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap();
         assert_eq!((c.min, c.max), (20, 24));
     }
 
@@ -641,7 +682,7 @@ mod tests {
             instr("nop", vec![]),
             instr("ret", vec![]),
         ];
-        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
+        let c = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap();
         assert_eq!((c.min, c.max), (11, 19)); // 11 ; 5 + 4 + 10
     }
 
@@ -653,7 +694,7 @@ mod tests {
             instr("nop", vec![]),
             instr("jp", vec![sym("loop")]),
         ];
-        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::UnboundedLoop);
     }
 
@@ -670,7 +711,7 @@ mod tests {
             label("join"),
             instr("ret", vec![]),
         ];
-        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
+        let c = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap();
         // left: 10 + 4 + 10 + 10 = 34 ; right: 10 + 4 + 4 + 10 = 28
         assert_eq!((c.min, c.max), (28, 34));
     }
@@ -679,7 +720,7 @@ mod tests {
     #[test]
     fn a_call_is_opaque() {
         let items = vec![instr("call", vec![sym("Helper")]), instr("ret", vec![])];
-        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::OpaqueCall { mnemonic: "call".into() });
     }
 
@@ -687,7 +728,7 @@ mod tests {
     #[test]
     fn a_tail_transfer_out_is_unbounded() {
         let items = vec![instr("nop", vec![]), instr("jp", vec![sym("Elsewhere")])];
-        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap_err();
         assert_eq!(
             e.kind,
             BudgetFindingKind::UnboundedTransfer { mnemonic: "jp".into() }
@@ -698,7 +739,7 @@ mod tests {
     #[test]
     fn a_fall_off_the_end_is_unbounded() {
         let items = vec![instr("nop", vec![]), instr("nop", vec![])];
-        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap_err();
         assert_eq!(
             e.kind,
             BudgetFindingKind::UnboundedTransfer { mnemonic: "nop".into() }
@@ -709,7 +750,7 @@ mod tests {
     #[test]
     fn an_off_table_op_is_unknown() {
         let items = vec![instr("rlca", vec![]), instr("ret", vec![])];
-        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::UnknownOp { mnemonic: "rlca".into() });
     }
 
@@ -717,7 +758,7 @@ mod tests {
     #[test]
     fn a_68k_straight_line_measures() {
         let items = vec![instr("nop", vec![]), instr("rts", vec![])];
-        let c = path_costs(&items, Cpu::M68000, sp()).unwrap();
+        let c = path_costs(&items, Cpu::M68000, sp(), &nr()).unwrap();
         assert_eq!((c.min, c.max), (20, 20));
         assert_eq!(c.inexact, None);
     }
@@ -739,7 +780,7 @@ mod tests {
             label("skip"),
             instr("rts", vec![]),
         ];
-        let c = path_costs(&items, Cpu::M68000, sp()).unwrap();
+        let c = path_costs(&items, Cpu::M68000, sp(), &nr()).unwrap();
         assert_eq!((c.min, c.max), (26, 28));
         assert_eq!(c.inexact, None);
     }
@@ -754,7 +795,7 @@ mod tests {
             label("skip"),
             instr("rts", vec![]),
         ];
-        let c = path_costs(&items, Cpu::M68000, sp()).unwrap();
+        let c = path_costs(&items, Cpu::M68000, sp(), &nr()).unwrap();
         // taken 10 + 16 = 26; not-taken ceiling 12 + 4 + 16 = 32.
         assert_eq!((c.min, c.max), (26, 32));
         assert_eq!(c.inexact.as_deref(), Some("beq"));
@@ -765,7 +806,7 @@ mod tests {
     fn a_68k_call_is_opaque() {
         for m in ["jsr", "bsr", "jbsr"] {
             let items = vec![instr(m, vec![sym("Helper")]), instr("rts", vec![])];
-            let e = path_costs(&items, Cpu::M68000, sp()).unwrap_err();
+            let e = path_costs(&items, Cpu::M68000, sp(), &nr()).unwrap_err();
             assert_eq!(e.kind, BudgetFindingKind::OpaqueCall { mnemonic: m.into() });
         }
     }
@@ -774,7 +815,7 @@ mod tests {
     #[test]
     fn a_68k_loop_is_unbounded() {
         let items = vec![label("loop"), instr("nop", vec![]), instr("bra", vec![sym("loop")])];
-        let e = path_costs(&items, Cpu::M68000, sp()).unwrap_err();
+        let e = path_costs(&items, Cpu::M68000, sp(), &nr()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::UnboundedLoop);
         let items = vec![
             label("loop"),
@@ -782,7 +823,7 @@ mod tests {
             instr("dbf", vec![CodeOperand::Reg(crate::value::Reg::D0), sym("loop")]),
             instr("rts", vec![]),
         ];
-        let e = path_costs(&items, Cpu::M68000, sp()).unwrap_err();
+        let e = path_costs(&items, Cpu::M68000, sp(), &nr()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::UnboundedLoop);
     }
 
@@ -802,11 +843,11 @@ mod tests {
             label("table"),
             instr("rts", vec![]),
         ];
-        let e = path_costs(&items, Cpu::M68000, sp()).unwrap_err();
+        let e = path_costs(&items, Cpu::M68000, sp(), &nr()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::ComputedTransfer { mnemonic: "jmp".into() });
         // The Z80 twin: `jp (hl)` names no symbol either.
         let items = vec![instr("jp", vec![CodeOperand::Z80IndHl])];
-        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::ComputedTransfer { mnemonic: "jp".into() });
     }
 
@@ -820,8 +861,8 @@ mod tests {
             label("join"),
             instr("rts", vec![]),
         ];
-        assert!(check_cycle_budget(&items, Cpu::M68000, sp(), Some(28), false).is_empty());
-        let f = check_cycle_budget(&items, Cpu::M68000, sp(), Some(27), true);
+        assert!(check_cycle_budget(&items, Cpu::M68000, sp(), Some(28), false, &nr()).is_empty());
+        let f = check_cycle_budget(&items, Cpu::M68000, sp(), Some(27), true, &nr());
         assert_eq!(f.len(), 2);
         assert_eq!(f[0].kind, BudgetFindingKind::OverBudget { worst: 28, budget: 27 });
         assert_eq!(f[1].kind, BudgetFindingKind::InexactCost { mnemonic: "jbra".into() });
@@ -832,7 +873,7 @@ mod tests {
     #[test]
     fn a_68k_fall_off_the_end_is_unbounded() {
         let items = vec![instr("nop", vec![]), instr("nop", vec![])];
-        let e = path_costs(&items, Cpu::M68000, sp()).unwrap_err();
+        let e = path_costs(&items, Cpu::M68000, sp(), &nr()).unwrap_err();
         assert_eq!(
             e.kind,
             BudgetFindingKind::UnboundedTransfer { mnemonic: "nop".into() }
@@ -844,7 +885,7 @@ mod tests {
     #[test]
     fn an_off_table_68k_op_is_unknown() {
         let items = vec![instr("link", vec![]), instr("rts", vec![])];
-        let e = path_costs(&items, Cpu::M68000, sp()).unwrap_err();
+        let e = path_costs(&items, Cpu::M68000, sp(), &nr()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::UnknownOp { mnemonic: "link".into() });
     }
 
@@ -870,7 +911,7 @@ mod tests {
             entry(crate::value::Width::W),
             instr("rts", vec![]),
         ];
-        let c = path_costs(&items, Cpu::M68000, sp()).unwrap();
+        let c = path_costs(&items, Cpu::M68000, sp(), &nr()).unwrap();
         assert_eq!((c.min, c.max), (88, 88)); // 72 + 16, exact
         assert_eq!(c.inexact, None);
     }
@@ -880,10 +921,10 @@ mod tests {
     #[test]
     fn an_empty_body_cannot_hold_a_budget() {
         let items = vec![label("only")];
-        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::EmptyBody);
         assert_eq!(
-            path_costs(&[], Cpu::M68000, sp()).unwrap_err().kind,
+            path_costs(&[], Cpu::M68000, sp(), &nr()).unwrap_err().kind,
             BudgetFindingKind::EmptyBody
         );
     }
@@ -897,8 +938,8 @@ mod tests {
             label("skip"),
             instr("ret", vec![]),
         ];
-        assert!(check_cycle_budget(&items, Cpu::Z80, sp(), Some(24), false).is_empty());
-        let f = check_cycle_budget(&items, Cpu::Z80, sp(), Some(23), false);
+        assert!(check_cycle_budget(&items, Cpu::Z80, sp(), Some(24), false, &nr()).is_empty());
+        let f = check_cycle_budget(&items, Cpu::Z80, sp(), Some(23), false, &nr());
         assert_eq!(f.len(), 1);
         assert_eq!(
             f[0].kind,
@@ -915,7 +956,7 @@ mod tests {
             label("skip"),
             instr("ret", vec![]),
         ];
-        let f = check_cycle_budget(&uneven, Cpu::Z80, sp(), None, true);
+        let f = check_cycle_budget(&uneven, Cpu::Z80, sp(), None, true, &nr());
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].kind, BudgetFindingKind::PathMismatch { min: 20, max: 24 });
         // Rejoining the arms costs the fall-through a `jp .join` (10 T), so the
@@ -934,7 +975,7 @@ mod tests {
         ];
         // taken: 10 + 4*4 + 10 = 36 ; not-taken: 10 + 4 + 10 + 10 = 34.
         assert_eq!(
-            check_cycle_budget(&rejoined, Cpu::Z80, sp(), None, true)[0].kind,
+            check_cycle_budget(&rejoined, Cpu::Z80, sp(), None, true, &nr())[0].kind,
             BudgetFindingKind::PathMismatch { min: 34, max: 36 }
         );
         // Spelling the short arm's join as `jr` (12 T) rather than `jp` (10 T)
@@ -942,7 +983,7 @@ mod tests {
         // dense mode makes, and here it is machine-checked instead of counted.
         let mut balanced = rejoined.clone();
         balanced[2] = instr("jr", vec![sym("join")]);
-        assert!(check_cycle_budget(&balanced, Cpu::Z80, sp(), None, true).is_empty());
+        assert!(check_cycle_budget(&balanced, Cpu::Z80, sp(), None, true, &nr()).is_empty());
     }
 
     // A proc declaring neither attribute is not walked at all, so an unbounded
@@ -950,7 +991,7 @@ mod tests {
     #[test]
     fn an_undeclared_proc_is_not_walked() {
         let items = vec![label("loop"), instr("jp", vec![sym("loop")])];
-        assert!(check_cycle_budget(&items, Cpu::Z80, sp(), None, false).is_empty());
+        assert!(check_cycle_budget(&items, Cpu::Z80, sp(), None, false, &nr()).is_empty());
     }
 
     // Both conclusions come off ONE walk, so a proc carrying both attributes
@@ -963,7 +1004,7 @@ mod tests {
             label("skip"),
             instr("ret", vec![]),
         ];
-        let f = check_cycle_budget(&items, Cpu::Z80, sp(), Some(20), true);
+        let f = check_cycle_budget(&items, Cpu::Z80, sp(), Some(20), true, &nr());
         assert_eq!(f.len(), 2);
         assert_eq!(f[0].kind.lint_id(), "cycles.over-budget");
         assert_eq!(f[1].kind.lint_id(), "cycles.path-mismatch");
@@ -974,7 +1015,7 @@ mod tests {
     #[test]
     fn a_bail_replaces_the_conclusions() {
         let items = vec![instr("call", vec![sym("Helper")]), instr("ret", vec![])];
-        let f = check_cycle_budget(&items, Cpu::Z80, sp(), Some(1), true);
+        let f = check_cycle_budget(&items, Cpu::Z80, sp(), Some(1), true, &nr());
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].kind.lint_id(), "cycles.opaque-call");
     }
@@ -995,7 +1036,7 @@ mod tests {
             items.push(label(&format!("j{i}")));
         }
         items.push(instr("ret", vec![]));
-        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
+        let c = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap();
         // per diamond: left 10+4+10 = 24, right 10+4+4 = 18; + ret 10.
         assert_eq!((c.min, c.max), (18 * 10 + 10, 24 * 10 + 10));
     }
@@ -1010,7 +1051,7 @@ mod tests {
             instr("djnz", vec![sym("loop")]),
             instr("ret", vec![]),
         ];
-        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::UnboundedLoop);
     }
 
@@ -1022,7 +1063,7 @@ mod tests {
     #[test]
     fn a_tail_conditional_return_refuses_its_fall_through() {
         let items = vec![instr("nop", vec![]), instr("ret", vec![cc(Z80Cond::Z)])];
-        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap_err();
         assert_eq!(
             e.kind,
             BudgetFindingKind::UnboundedTransfer { mnemonic: "ret".into() }
@@ -1034,7 +1075,7 @@ mod tests {
             instr("ret", vec![cc(Z80Cond::Z)]),
             instr("ret", vec![]),
         ];
-        let c = path_costs(&closed, Cpu::Z80, sp()).unwrap();
+        let c = path_costs(&closed, Cpu::Z80, sp(), &nr()).unwrap();
         assert_eq!((c.min, c.max), (15, 19));
     }
 
@@ -1048,7 +1089,7 @@ mod tests {
             CodeItem::Inline(crate::value::DataBuf { cells: Vec::new(), size: 4 }, sp()),
             instr("ret", vec![]),
         ];
-        let e = path_costs(&items, Cpu::Z80, sp()).unwrap_err();
+        let e = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap_err();
         assert_eq!(e.kind, BudgetFindingKind::InlineData);
     }
 
@@ -1064,7 +1105,70 @@ mod tests {
         assert_eq!(crate::z80_cycles::span_cost(&body).unwrap(), 18);
         let mut items = body;
         items.push(instr("ret", vec![])); // 10
-        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
+        let c = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap();
         assert_eq!((c.min, c.max), (28, 28));
+    }
+
+    // ---- noreturn-tail model: divergent terminals close the budget walk -------
+
+    // An assert / raise rail's `jmp (pages).l` DIVERGES: the compiler authored it
+    // (`ItemAuthor::AssertDesugar`) knowing it never returns, so its terminal
+    // transfer closes the path like a return and the proc stays MEASURABLE. A
+    // HAND-written `jmp` to the same symbol stays a plain unbounded transfer —
+    // authorship is the only distinguisher (spec §1(b)). The refuses-before /
+    // verifies-after pin the spec's §5 bar names.
+    #[test]
+    fn an_authored_rail_terminal_closes_the_budget_where_a_hand_jmp_refuses() {
+        // BEFORE: a User `jmp (pages)` is an unbounded transfer.
+        let user = vec![instr("nop", vec![]), instr("jmp", vec![sym("pages")])];
+        let e = path_costs(&user, Cpu::M68000, sp(), &nr()).unwrap_err();
+        assert_eq!(e.kind, BudgetFindingKind::UnboundedTransfer { mnemonic: "jmp".into() });
+        // AFTER: the SAME jmp stamped as the desugar's closes the path — nop (4)
+        // + jmp abs.l ceiling (12) = 16, and the budget verifies.
+        let rail = vec![
+            instr("nop", vec![]),
+            instr_authored("jmp", vec![sym("pages")], ItemAuthor::AssertDesugar),
+        ];
+        let c = path_costs(&rail, Cpu::M68000, sp(), &nr()).unwrap();
+        assert_eq!((c.min, c.max), (16, 16));
+        assert!(check_cycle_budget(&rail, Cpu::M68000, sp(), Some(16), false, &nr()).is_empty());
+        // A User jmp to the same symbol is unmeasurable — no `@noreturn`, no author.
+        let over = check_cycle_budget(&user, Cpu::M68000, sp(), Some(16), false, &nr());
+        assert_eq!(over[0].kind, BudgetFindingKind::UnboundedTransfer { mnemonic: "jmp".into() });
+    }
+
+    // A tail transfer to a `@noreturn`-declared target closes the path: the
+    // divergence is stated by the target's contract, not by authorship, so a
+    // HAND-written `jbra GameLoop` measures when `GameLoop` is `@noreturn` and
+    // refuses when it is not.
+    #[test]
+    fn a_tail_to_a_noreturn_target_closes_the_path() {
+        let items = vec![instr("nop", vec![]), instr("jbra", vec![sym("Diverge")])];
+        // Not marked: an unbounded transfer.
+        let e = path_costs(&items, Cpu::M68000, sp(), &nr()).unwrap_err();
+        assert_eq!(e.kind, BudgetFindingKind::UnboundedTransfer { mnemonic: "jbra".into() });
+        // Marked `@noreturn`: the transfer is a terminal, the path closes.
+        let c = path_costs(&items, Cpu::M68000, sp(), &nr_of(&["Diverge"])).unwrap();
+        // nop (4) + jbra's `jmp abs.l` rung ceiling (12).
+        assert_eq!((c.min, c.max), (16, 16));
+        assert!(check_cycle_budget(&items, Cpu::M68000, sp(), Some(16), false, &nr_of(&["Diverge"])).is_empty());
+    }
+
+    // A CONDITIONAL branch's taken edge to a `@noreturn` target diverges while its
+    // fall-through continues — the two-edge split still routes each edge its own
+    // cost, and only the diverging side closes.
+    #[test]
+    fn a_conditional_branch_to_a_noreturn_target_closes_only_the_taken_edge() {
+        let items = vec![
+            instr("beq", vec![sym("Diverge")]), // taken -> @noreturn (closes); fall -> rts
+            instr("rts", vec![]),
+        ];
+        // Without the mark the taken edge is an unbounded transfer.
+        assert!(path_costs(&items, Cpu::M68000, sp(), &nr()).is_err());
+        // With it, the walk measures: the fall-through path (beq not-taken + rts).
+        let c = path_costs(&items, Cpu::M68000, sp(), &nr_of(&["Diverge"])).unwrap();
+        // The path that RETURNS is beq(not-taken) + rts; the diverging taken edge
+        // closes with its own cost and contributes no successor. Both are finite.
+        assert!(c.max >= c.min && c.min > 0);
     }
 }
