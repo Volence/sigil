@@ -95,3 +95,37 @@ Multi-niche options (two sentinels), option-of-option, payload-carrying enums
 at runtime (still D2.14-rejected), pointer-typed niches (`*T ? 0` — wants the
 memory-region facet story first; ledgered as the natural sequel once the
 contract spec's §9 region facets ever wake).
+
+## §6 — 2026-08-06 amendment (Fable, at the phase-1 drift checkpoint)
+
+The dispatch drift-verification found one factual error and three
+under-specifications; ruled as follows, superseding the text above where they
+conflict:
+
+1. **§4's flagship is WRONG.** The `Alloc*` family signals "no free slot" via
+   the Z flag + a `d0` boolean with `out(a1 if eq)` — no allocator returns
+   `$FF`, and nothing there is option-shaped. The C1 flagships are instead:
+   **`slot_tag @ $2A`** (u8, `$FF` = `SLOT_TAG_UNTAGGED`; `TagRef = SlotTag ?
+   $FF`, guarded read at entity_window.emp:1522) for the field/table-index
+   case, and **`EntityWindow_EntryForSection`'s `d0` word sentinel**
+   (`moveq #-1` "section untracked", callers `tst.w/bmi`) for the register
+   case.
+2. **`assume_some!` is REGISTER-only in C1.** All flow-sensitive type state is
+   register-keyed today; a var/field-path retype wants a new keying structure.
+   The path-keyed form is ledgered as a gap with the witness, not built. It is
+   a new statement node (emits nothing) feeding the existing `type_slice`
+   register-retype path — NOT a `TrapKind` (those lower to `illegal`).
+3. **`[option.unguarded-use]` is a distinct lint id emitted by the existing
+   `type_slice` engine**, not a new pass: where the engine finds
+   option-where-payload-expected, the option id REPLACES the generic
+   `[call.slot-type-mismatch]` at that site (one engine, two messages, no
+   double-fire). Sites the engine cannot see are honest ledgered gaps.
+4. Byte bar is SEVEN targets (the ×6 above predates the growth).
+   `[option.raw-sentinel]` is planned zero-firing on the corpus (conversions
+   use `.none`); if it fires anywhere the warn-tier baseline updates in the
+   same commit as a named delta.
+5. **C2's substrate is confirmed ABSENT** (2026-08-06 audit: no
+   dominance/post-dominance anywhere; `cmp/cmpi/tst` are opaque CCR clobbers
+   with no compared-location-vs-constant memory; `valid_edge` bails at joins).
+   C2 stays parked; any future revival must budget for dominance + the
+   compare-const threading as new work, not "riding P4".
