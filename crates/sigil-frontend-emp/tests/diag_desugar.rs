@@ -602,6 +602,108 @@ section s (cpu: m68000) {
     );
 }
 
+/// The STRUCTURAL INVARIANT the closure's authorship exclusion rests on. That
+/// exclusion (corpus_contracts: an `ItemAuthor::AssertDesugar` instruction
+/// contributes no callee edge) is keyed on authorship, justified by authorship ∧
+/// DIVERGENCE. Authorship is enforced at the emission-site stamp; this pins the
+/// divergence half over the actual lowered items, so a future desugar that
+/// emitted a RETURNING helper call on a surviving path would FAIL here instead of
+/// being silently dropped from the closure — a case the counterfactual censuses
+/// cannot catch (an AssertDesugar call to a real-proc node lands in NEITHER
+/// `abs_call_edges` NOR `authored_rail_holes`). Two properties over all three
+/// desugars:
+///   (a) every AssertDesugar-authored call/tail targets exactly a rail boundary
+///       ({MDDBG__ErrorHandler, MDDBG__ErrorHandler_PagesController}) — never a
+///       returning helper into a real proc; and
+///   (b) for `assert` (the only shape with a surviving path), the `$skip` label
+///       is reached ONLY by the pass branch: every rail call/tail precedes it, and
+///       the instruction that would fall INTO it is the divergent `jmp (pages).l`
+///       — so the surviving suffix at/after `$skip` carries no rail call/tail.
+#[test]
+fn the_assert_desugar_rails_diverge_the_exclusions_structural_pin() {
+    const CALL_TAIL: [&str; 6] = ["jsr", "bsr", "jbsr", "jmp", "bra", "jbra"];
+    const HANDLER: &str = "MDDBG__ErrorHandler";
+    const PAGES: &str = "MDDBG__ErrorHandler_PagesController";
+
+    fn abs_target(ops: &[CodeOperand]) -> Option<&str> {
+        ops.iter().find_map(|o| match o {
+            CodeOperand::AbsSym { target, .. } => Some(target.as_str()),
+            _ => None,
+        })
+    }
+
+    // (a) across all three desugars.
+    let shapes = [
+        ("assert.b d4, eq, #0", "clobbers(d4)"),
+        ("raise_error \"bad\"", "clobbers()"),
+        ("raise_exception \"BUS ERROR\"", "clobbers()"),
+    ];
+    let mut rail_calls = 0usize;
+    for (stmt, clob) in shapes {
+        let src = format!(
+            "module m\nsection s (cpu: m68000) {{\n    proc p () {clob} {{\n        {stmt}\n    }}\n}}\n"
+        );
+        for it in proc_items(&src, 1) {
+            let CodeItem::Instr { mnemonic, ops, author, .. } = &it else { continue };
+            if !CALL_TAIL.contains(&mnemonic.as_str()) || *author != ItemAuthor::AssertDesugar {
+                continue;
+            }
+            let target = abs_target(ops).unwrap_or_else(|| {
+                panic!(
+                    "`{stmt}`: an AssertDesugar `{mnemonic}` names no abs boundary \
+                     (a returning register-indirect helper?): ops={ops:?}"
+                )
+            });
+            assert!(
+                target == HANDLER || target == PAGES,
+                "`{stmt}`: an AssertDesugar `{mnemonic}` targets `{target}`, not a rail \
+                 boundary — a returning helper call into a real proc would be silently \
+                 dropped from the closure"
+            );
+            rail_calls += 1;
+        }
+    }
+    assert!(rail_calls >= 3, "non-vacuity: each rail emits its call+terminal — saw only {rail_calls}");
+
+    // (b) assert only: the surviving path is bounded by the divergent terminal.
+    let src = "\
+module m
+section s (cpu: m68000) {
+    proc p () clobbers(d4) {
+        assert.b d4, eq, #0
+    }
+}
+";
+    let items = proc_items(src, 1);
+    let skip_idx = items
+        .iter()
+        .position(|it| matches!(it, CodeItem::Label { name, .. } if name.contains("$skip")))
+        .expect("the assert expansion mints a `$skip` label");
+    for (i, it) in items.iter().enumerate() {
+        let CodeItem::Instr { mnemonic, author, .. } = it else { continue };
+        if CALL_TAIL.contains(&mnemonic.as_str()) && *author == ItemAuthor::AssertDesugar {
+            assert!(
+                i < skip_idx,
+                "an AssertDesugar `{mnemonic}` at index {i} is at/after `$skip` (index \
+                 {skip_idx}) — a rail call/tail leaked onto the surviving path"
+            );
+        }
+    }
+    let before = items[..skip_idx]
+        .iter()
+        .rev()
+        .find(|it| matches!(it, CodeItem::Instr { .. }))
+        .expect("an instruction precedes `$skip`");
+    let CodeItem::Instr { mnemonic, ops, author, .. } = before else { unreachable!() };
+    assert_eq!(
+        mnemonic, "jmp",
+        "the instruction reaching `$skip` by fall-through must be the divergent terminal, \
+         so `$skip` is entered only by the pass branch"
+    );
+    assert_eq!(*author, ItemAuthor::AssertDesugar, "the divergent terminal is authored");
+    assert_eq!(abs_target(ops), Some(PAGES), "the divergent terminal is `jmp (pages).l`");
+}
+
 /// The consumer-side effect of the emission-site obligation: an `assert` in a
 /// `clobbers()` proc does not fire `[proc.sr-undeclared]` — the desugar's
 /// restore is `AssertDesugar`-authored and its balance is proven above, so the

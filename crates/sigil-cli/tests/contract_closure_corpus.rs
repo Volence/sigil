@@ -1058,7 +1058,7 @@ fn the_contracts_report_is_wired_and_carries_the_targets_defines() {
 }
 
 
-/// §2.3 — THE INVOKE EDGE IS LIVE. `invoke Iface.hook` lowers to `jsr (bound).l`
+/// THE INVOKE EDGE IS LIVE. `invoke Iface.hook` lowers to `jsr (bound).l`
 /// (an `AbsSym`), the only corpus source of an AbsSym call edge, and the closure
 /// must collect it so the bound proc's clobbers charge the invoker. Pinned from
 /// the exposed edge census, NOT inferred from a silent residue: both corpus
@@ -1102,13 +1102,13 @@ fn the_corpus_invoke_edges_are_collected() {
     );
 }
 
-/// §2.4 — THE AUTHORSHIP EXCLUSION, and its revert probe. The `assert`/`raise`
+/// THE AUTHORSHIP EXCLUSION, and its revert probe. The `assert`/`raise`
 /// desugars lower to `jsr (MDDBG__…).l` naming contractless equ boundaries; they
 /// are excluded from the closure by AUTHORSHIP (`ItemAuthor::AssertDesugar`), so
 /// they never enter the edge census — their absence there proves the exclusion —
 /// and the residue stays empty. The REVERT PROBE is `authored_rail_holes`:
 /// exactly the `unresolved_callees` the gate WOULD report if the exclusion were
-/// stripped (b9's measurement, executable). It names precisely the two desugar
+/// stripped. It names precisely the two desugar
 /// boundaries in every shape (asserts ship everywhere), so a lost exclusion fails
 /// here naming the exact sites.
 #[test]
@@ -1143,7 +1143,7 @@ fn the_assert_rails_are_excluded_by_authorship_the_revert_probe() {
     }
 }
 
-/// §2.5 — NON-VACUITY: the invoke edge does not just exist, it CHARGES. A
+/// NON-VACUITY: the invoke edge does not just exist, it CHARGES. A
 /// synthetic invoker declares only `clobbers(d0)` but its bound hook clobbers d5;
 /// the transitive-clobber diagnostic must FIRE on the invoker. The corpus
 /// invokers declare full-universe clobbers, so corpus silence proves the edge
@@ -1222,10 +1222,10 @@ pub implement H {
     );
 }
 
-/// §2.6 — HAND-WRITTEN vs AUTHORED, both polarities of the same `jsr (sym).l`
+/// HAND-WRITTEN vs AUTHORED, both polarities of the same `jsr (sym).l`
 /// shape. A USER-authored abs call to an equ/link boundary is an unresolved HOLE
 /// (its honest exit is an `extern proc` contract). The SAME shape emitted by the
-/// `assert` desugar (authored AssertDesugar) is NOT a hole — excluded by §1 —
+/// `assert` desugar (authored AssertDesugar) is NOT a hole — excluded by authorship —
 /// while still counted a would-be hole in `authored_rail_holes`, so the exclusion
 /// is provably doing the work rather than the rail simply not existing.
 #[test]
