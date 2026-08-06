@@ -56,6 +56,19 @@ you have READ the final output of your final gate run and written your report.
 
 - Verify each spec claim against the CURRENT tree before building it (7+ stale
   plan items caught to date); a wrong claim = STOP and report.
+- RE-CITE AT PICKUP. Every ledger-row number, file line, and symbol location in
+  your brief or spec is re-resolved against the tree before you build on it —
+  resolve rows by their SUBSTANCE (grep the claim), never by the number you were
+  handed. Four citation-decay instances in one week: a handoff cited two lanes
+  by row numbers that landed on unrelated rows, and a ledger row's own code
+  citations had drifted by ~250 lines. Rows append, but lines move under them.
+- NAME THE BASELINE. Any comparison — "differs on two axes", "three of the four
+  match", "N sites remain" — states what it is measured AGAINST, in the same
+  sentence. Paid for by a frame-of-reference error that survived two reviewers
+  in sequence: four call-target matchers were ranked by risk against EACH OTHER
+  when the decision needed them ranked against the symbol they would fold ONTO,
+  and the ordering inverts between the two baselines. Both reviewers were
+  confidently wrong, and each raised the other's confidence.
 - Comments: present-tense contract facts only — no change-history narration, no
   parcel tags. Brace-indent house style. Ledger rows for honest gaps, with
   measurements, same commit as the code where possible.
