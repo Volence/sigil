@@ -432,7 +432,7 @@ pub enum CodeItem {
         /// each already mangled through the proc's label scope so it matches the
         /// [`CodeItem::Label`] symbols the CFG keys on. Empty for an instruction
         /// with no clause. Emits NOTHING — ONLY the cycle-budget walk reads it (a
-        /// `Defer` edge carrying targets becomes N `Follow` edges in
+        /// `TailOut` edge carrying targets becomes N `Follow` edges in
         /// `charged_edges`); every other CFG consumer keeps treating the
         /// instruction as an opaque computed transfer.
         targets: Vec<String>,

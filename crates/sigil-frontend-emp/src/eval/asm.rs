@@ -1004,7 +1004,7 @@ impl Evaluator<'_> {
         // rail diverges (`jmp (pages).l`), so its unconditional terminal is an
         // AUTHORED divergent transfer: analyses that read authorship treat it as a
         // terminal that never returns to the caller (a hand-written `jmp` to the
-        // same blob stays a plain `Defer`). Restored after; the tail cannot nest a
+        // same blob stays a plain `TailOut`). Restored after; the tail cannot nest a
         // raise, but the save/restore keeps the stamp scoped by construction.
         let saved_author = std::mem::replace(
             &mut self.item_author,

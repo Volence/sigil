@@ -24,10 +24,12 @@
 //!   `conditional_out_edge_credits` primitive (item #2) — only on the caller's
 //!   cc-success edge, so a proc whose out is sourced from a relabeled conditional
 //!   callee (Load_Object←`AllocDynamic out(a1 if eq)`) still verifies.
-//! - **Tail-out credit** at an `Edge::Defer` from an UNCONDITIONAL tail
-//!   (`bra`/`jbra`/`jmp`/`jra`, Finding 3): a tail transfer is a return of P from
-//!   the caller's view, so it is a required return path; if the target is a known
-//!   proc, credit its unconditional out, else the out cannot be verified ⇒ FIRE.
+//! - **Tail-out credit** at an `Edge::TailOut` (Finding 3): a tail transfer is a
+//!   return of P from the caller's view, so it is a required return path; if the
+//!   target is a known proc, credit its unconditional out, else the out cannot be
+//!   verified ⇒ FIRE. An `Edge::BranchOut` is not a required return path and is
+//!   skipped — the edge builder decides which of the two an exit is, so this
+//!   module holds no mnemonic table of its own.
 //!
 //! Soundness polarity: a dishonest out ⇒ must-def falsely credits rN defined ⇒
 //! D1b false NEGATIVE (the dangerous direction). So the verifier only blesses a
@@ -137,12 +139,6 @@ fn is_addr_reg(r: Reg) -> bool {
 
 fn is_call(mnem: &str) -> bool {
     matches!(mnem, "jsr" | "jbsr" | "bsr")
-}
-
-/// UNCONDITIONAL tail transfers — a `Defer` from one of these is a required
-/// return path (control leaves P for the target, which returns to P's caller).
-fn is_uncond_tail(mnem: &str) -> bool {
-    matches!(mnem, "bra" | "jbra" | "jmp" | "jra")
 }
 
 /// The registers instruction `(mnem, ops, size)` PRODUCES at full width. Built on
@@ -329,15 +325,16 @@ pub fn verify_out(
                 Edge::Return | Edge::FallOff => {
                     check_return(&st, &here, &guard, &mut ok, &mut fail_reason);
                 }
-                Edge::Defer => {
+                // A conditional branch out (a divergent handler or a transitive
+                // tail) is not a local counterexample — ignore it, mirroring
+                // `preserves`. The edge states which flavor this is; the mnemonic
+                // is not consulted.
+                Edge::BranchOut => {}
+                Edge::TailOut => {
                     // An UNCONDITIONAL tail transfer is a required return path
-                    // (Finding 3); a conditional-branch Defer (a divergent handler
-                    // or a transitive tail) is not a local counterexample — ignore
-                    // it, mirroring `preserves`.
-                    let Some((mnem, ops)) = cfg.instr(idx) else { continue };
-                    if !is_uncond_tail(mnem) {
-                        continue;
-                    }
+                    // (Finding 3): control leaves P for the target, which returns
+                    // to P's caller.
+                    let Some((_, ops)) = cfg.instr(idx) else { continue };
                     // Credit the tail target's UNCONDITIONAL out (a known proc
                     // producing rN); an external / unresolved target credits
                     // nothing ⇒ any un-produced out fails here.
@@ -538,10 +535,10 @@ pub struct CondOutSurvivesFiring {
 /// already folds them) shrinks this set monotonically and can only add checking.
 ///
 /// An EXIT is any edge that ends the proc — a `Return`, a `FallOff`, or a
-/// `Defer` (a transfer out, conditional or not). The survives claim is a
+/// transfer out in either flavor (`TailOut`/`BranchOut`). The survives claim is a
 /// promise to the CALLER, so it must hold wherever control leaves, not only where
 /// it returns; a `bne ErrorPath` out of the ¬cc edge would otherwise be a hole.
-/// What the transfer's TARGET does is not charged here — see the `Edge::Defer`
+/// What the transfer's TARGET does is not charged here — see the transfer-out
 /// arm in [`crate::preserves`].
 ///
 /// Absence from `flags` (an unreachable index) contributes no site, which agrees
@@ -956,9 +953,13 @@ pub(crate) fn cc_inert_data_op(mnem: &str) -> bool {
 
 /// A control-transfer mnemonic — a conditional/unconditional branch, a `dbcc`
 /// counting form, a jump/tail, or a return. None WRITE the data condition codes.
+///
+/// This asks a FLAG-WRITE question, not a control-flow one: its callers hold a
+/// bare mnemonic and no CFG, so there is no edge to read the answer off. The
+/// `b`-prefixed three-letter forms cover `bra` and every `bXX`; `jbra` is the one
+/// tail spelling that needs naming.
 fn is_branch_or_return(mnem: &str) -> bool {
-    matches!(mnem, "rts" | "rte" | "rtr" | "rtd" | "jmp" | "jra")
-        || is_uncond_tail(mnem)
+    matches!(mnem, "rts" | "rte" | "rtr" | "rtd" | "jmp" | "jra" | "jbra")
         || (mnem.starts_with('b') && mnem.len() == 3)
         || mnem.starts_with("db")
 }

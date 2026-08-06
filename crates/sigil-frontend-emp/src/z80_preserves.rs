@@ -450,7 +450,7 @@ pub fn verify_z80_preserved(
                 // Control running off the end of the body. In a proc with a declared
                 // `falls_into` successor, the closing `}` continues into that
                 // successor's frame — semantically identical to an explicit `jr`
-                // tail (`Edge::Defer`): rN survives iff it holds its entry value here
+                // tail (`Edge::TailOut`): rN survives iff it holds its entry value here
                 // AND the successor itself preserves it. Without a `falls_into`,
                 // running off the end is a plain exit (checkpoint the entry bits).
                 Edge::FallOff => {
@@ -474,16 +474,19 @@ pub fn verify_z80_preserved(
                         }
                     }
                 }
-                // An external tail transfer (`jp`/`jr` to a non-local target) is an
-                // EXIT: this proc's real return happens inside the tail-callee.
-                // Closing the §13.4 vacuous `!saw_exit` hole (gap 3) — a proc that
-                // ONLY tail-transfers used to pass `preserves` vacuously, silently
-                // verifying a contract its body breaks. The proc preserves rN across
-                // the transfer iff rN holds its entry value AT the jp AND the
-                // tail-callee itself preserves rN (unknown/indirect target →
-                // conservative clobber, via the oracle). Mirrors the
+                // A transfer to a non-local target is an EXIT: this proc's real
+                // return happens inside the callee. Both flavors arrive here — an
+                // unconditional `jp`/`jr` tail, and the TAKEN leg of a conditional
+                // `jr cc`/`jp cc`/`djnz` — and both are charged the same way, which
+                // OVER-obligates a conditional leg rather than missing it, this
+                // check's safe polarity. Closing the §13.4 vacuous `!saw_exit` hole
+                // (gap 3) — a proc that ONLY transfers out used to pass `preserves`
+                // vacuously, silently verifying a contract its body breaks. The proc
+                // preserves rN across the transfer iff rN holds its entry value AT
+                // the transfer AND the callee itself preserves rN (unknown/indirect
+                // target → conservative clobber, via the oracle). Mirrors the
                 // `Return`/`FallOff` arm plus the callee oracle.
-                Edge::Defer => {
+                Edge::TailOut | Edge::BranchOut => {
                     saw_exit = true;
                     if st.bailed || !st.stack.is_empty() {
                         bailed_reached_exit = true;
