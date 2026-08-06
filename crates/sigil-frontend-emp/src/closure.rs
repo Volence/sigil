@@ -153,7 +153,10 @@ impl RegEffect {
 /// owner's effect to a mid-body entry is a sound over-approximation: the
 /// label's tail is a subset of the body whose writes the closure already
 /// unions. An unknown owner falls through unchanged and surfaces as a hole.
-fn resolve_callee_key<'a>(procs: &BTreeMap<String, ProcNode>, callee: &'a str) -> &'a str {
+// `pub(crate)` so the `authored_rail_holes` census walk in `corpus_contracts`
+// tests a would-be hole against the SAME resolver the closure's own hole
+// determination uses (below), never a hand-rolled second copy.
+pub(crate) fn resolve_callee_key<'a>(procs: &BTreeMap<String, ProcNode>, callee: &'a str) -> &'a str {
     if procs.contains_key(callee) {
         return callee;
     }

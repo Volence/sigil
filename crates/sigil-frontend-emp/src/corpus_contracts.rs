@@ -216,6 +216,24 @@ pub struct ContractReport {
     /// class is actually populated (non-vacuity; the `Context` count is
     /// reported, not pinned — adoption moves it).
     pub sr_writes: Vec<(String, crate::value::ItemAuthor, Span)>,
+    /// The AbsSym call-edge census — every call/tail edge the closure collects
+    /// through AbsSym recognition (`jsr (sym).l` naming a global symbol), as
+    /// `(proc, callee)`, sorted+deduped, with AssertDesugar-authored rails
+    /// EXCLUDED by authorship. `invoke Iface.hook` is the sole corpus source of
+    /// such an edge, so a shape that binds a hook shows `(invoker, bound_proc)`
+    /// here and the `assert`/`raise` rails' `jsr (MDDBG__…).l` never appear. The
+    /// edge being live is asserted from THIS census, not inferred from a silent
+    /// residue: both corpus invokers declare full-universe clobbers, so their
+    /// effect on the closure is otherwise invisible.
+    pub abs_call_edges: Vec<(String, String)>,
+    /// The would-be holes the authorship exclusion suppresses: every
+    /// AssertDesugar-authored abs-call target that resolves to NEITHER a `proc`
+    /// nor an `extern proc` — exactly the `unresolved_callees` the residue gate
+    /// reports if the exclusion is stripped. The corpus set is the two desugar
+    /// link boundaries `{MDDBG__ErrorHandler, MDDBG__ErrorHandler_PagesController}`.
+    /// The revert probe asserts this set names exactly those, so the exclusion's
+    /// effect is a checked fact rather than a silent absence.
+    pub authored_rail_holes: BTreeSet<String>,
 }
 
 /// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
@@ -766,7 +784,13 @@ pub fn analyze_corpus_with_contracts(
         let always: BTreeSet<String> = node.requires.union(&node.grants).cloned().collect();
         let regions = proc_regions.get(&pb.name).map(|r| r.as_slice()).unwrap_or(&[]);
         for (idx, it) in pb.buf.items.iter().enumerate() {
-            let CodeItem::Instr { mnemonic, ops, span, .. } = it else { continue };
+            let CodeItem::Instr { mnemonic, ops, span, author, .. } = it else { continue };
+            // An authored divergent rail contributes no callee edge — here it
+            // also discharges no context obligation (the rail's target is the
+            // compiler's own contract, not a call the host proc makes).
+            if matches!(author, crate::value::ItemAuthor::AssertDesugar) {
+                continue;
+            }
             if !CALL_MNEMONICS.contains(&mnemonic.as_str())
                 && !TAIL_MNEMONICS.contains(&mnemonic.as_str())
             {
@@ -844,6 +868,38 @@ pub fn analyze_corpus_with_contracts(
     }
     sr_writes.sort_by(|a, b| (&a.0, a.2.start).cmp(&(&b.0, b.2.start)));
 
+    // The AbsSym call-edge census + the excluded-rail hole census.
+    // ONE walk over the same 68k `proc_bufs` the closure's edge builder reads: an
+    // abs-long `jsr/jmp (sym).l` call/tail with a global target. AssertDesugar-
+    // authored rails split OUT of the edge set exactly as at the edge builder,
+    // and are recorded as holes when their target resolves to no proc/extern —
+    // the counterfactual residue the exclusion suppresses.
+    let mut abs_call_edges: Vec<(String, String)> = Vec::new();
+    let mut authored_rail_holes: BTreeSet<String> = BTreeSet::new();
+    for pb in &proc_bufs {
+        for item in &pb.buf.items {
+            let CodeItem::Instr { mnemonic, ops, author, .. } = item else { continue };
+            if !CALL_MNEMONICS.contains(&mnemonic.as_str())
+                && !TAIL_MNEMONICS.contains(&mnemonic.as_str())
+            {
+                continue;
+            }
+            if !ops.iter().any(|o| matches!(o, CodeOperand::AbsSym { .. })) {
+                continue;
+            }
+            let Some(target) = call_target_sym(ops) else { continue };
+            if matches!(author, crate::value::ItemAuthor::AssertDesugar) {
+                if !nodes.contains_key(crate::closure::resolve_callee_key(&nodes, &target)) {
+                    authored_rail_holes.insert(target);
+                }
+            } else {
+                abs_call_edges.push((pb.name.clone(), target));
+            }
+        }
+    }
+    abs_call_edges.sort();
+    abs_call_edges.dedup();
+
     // Both body-eval passes (68k PASS 2 + the Z80 flag pass) have contributed by
     // here. Exact-duplicate rows collapse (a template instantiated twice evaluates
     // the same condition twice); distinct sites stay distinct.
@@ -885,6 +941,8 @@ pub fn analyze_corpus_with_contracts(
         bus_contexts,
         unanalyzable_allows,
         sr_writes,
+        abs_call_edges,
+        authored_rail_holes,
     }
 }
 
@@ -1357,13 +1415,25 @@ fn proc_node(
         verified_preserves = verified_preserves_regs(p, buf);
         // Direct-call edges from the resolved CodeBuf (post-comptime accurate).
         for it in &buf.items {
-            if let CodeItem::Instr { mnemonic, ops, .. } = it {
+            if let CodeItem::Instr { mnemonic, ops, author, .. } = it {
+                // Authorship exclusion: an `ItemAuthor::AssertDesugar`
+                // instruction is a compiler-emitted divergent rail (the assert /
+                // raise-error / raise-exception `jsr (HANDLER).l` + terminal
+                // `jmp (PAGES).l`). Its target is the compiler's own contract,
+                // not a return-path edge of the host proc — the same premise the
+                // noreturn model consumes for the rail's terminal — so it
+                // contributes NO callee edge. A HAND-written call to the same
+                // symbol (authored `User`) stays a plain edge.
+                if matches!(author, crate::value::ItemAuthor::AssertDesugar) {
+                    continue;
+                }
+                if !CALL_MNEMONICS.contains(&mnemonic.as_str())
+                    && !TAIL_MNEMONICS.contains(&mnemonic.as_str())
+                {
+                    continue;
+                }
                 if let Some(target) = call_target_sym(ops) {
-                    if CALL_MNEMONICS.contains(&mnemonic.as_str())
-                        || TAIL_MNEMONICS.contains(&mnemonic.as_str())
-                    {
-                        direct_callees.push(target);
-                    }
+                    direct_callees.push(target);
                 }
             }
         }
@@ -1487,43 +1557,42 @@ fn reg_name(name: &str) -> Option<String> {
     Reg::from_name(name).map(|r| r.to_string())
 }
 
-/// The `Sym` target of a call/tail-shaped instruction, if its sole operand is a
-/// bare GLOBAL symbol (a DIRECT call `jsr Foo` / a tail `jbra Foo`). `None` for
-/// an indirect `jsr (aN)` (register-based operand), a non-call, or a LOCAL-label
-/// target: hygiene mangles local labels as `$module$proc$label`, and a `bra`/
-/// `jbra` to a local label (`.loop`) is intra-proc control flow, never a callee
-/// — the `$` marks it so it is dropped from both the edge set and the
-/// hole/unresolved report (a real proc/extern name never contains `$`).
+/// The GLOBAL-symbol target of a call/tail-shaped instruction, across every
+/// direct-target spelling the shared extractor reads: the bare `Sym` (`jsr Foo`),
+/// the offset absolute `SymOff` (`jmp Item.field`), and the pinned absolute
+/// `AbsSym` (`jsr (sym).l`). The last is what `invoke Iface.hook` lowers to (an
+/// engine→game call), so recognizing it charges the bound proc's clobbers into
+/// the invoker's closure. `None` for a register-indirect `jsr (aN)` (no symbolic
+/// target), or a LOCAL-label target: hygiene mangles local labels as
+/// `$module$proc$label`, and a `bra`/`jbra` to a local label (`.loop`) is
+/// intra-proc control flow, never a callee — the `$` marks it so it is dropped
+/// from both the edge set and the hole/unresolved report (a real proc/extern name
+/// never contains `$`). The CALLER gates the mnemonic
+/// ([`CALL_MNEMONICS`]/[`TAIL_MNEMONICS`]); this reads only the target.
 ///
-/// **S2-D6 U2 — the "contract invoke" edge (scope note).** `invoke Iface.hook`
-/// lowers to an absolute-long `jsr (sym).l` (`CodeOperand::AbsSym`) naming the
-/// bound proc, so charging its target's clobbers means recognizing that shape
-/// here. It is NOT recognized. The per-shape gates walk BOUND interface envs
-/// ([`analyze_corpus_with_contracts`]), so an `invoke` DOES emit its
-/// `jsr (bound_proc).l` in each shape's walk. Measured (residue-b9): the two
-/// corpus invokers' bound targets resolve to real procs, so recognizing AbsSym
-/// charges them with ZERO new firings in all seven shapes (both invokers already
-/// declare full-universe clobbers).
+/// Delegates to [`crate::flag_check::transfer_target_sym`], the AbsSym-aware
+/// extractor the noreturn model and the abs seam also read, so the closure
+/// recognizes `jsr (sym).l` for one spelling of "the symbol a transfer names". A
+/// recognized callee — bare `Sym`, `SymOff`, or `AbsSym` — resolves the same way:
+/// a `proc` charges its contract, an `extern proc` its declared surface, and any
+/// other name (INCLUDING an equ/link boundary) is an `unresolved_callees` HOLE.
+/// The residue-empty gate therefore means every call edge the corpus ships is
+/// contract-charged or compiler-owned.
 ///
-/// The blocker is a DIFFERENT abs-long shape that recognizing AbsSym also picks
-/// up: the diagnostics desugars (`assert` / `raise_error` / `raise_exception`)
-/// expand to `jsr (MDDBG__ErrorHandler).l` / `jmp (…_PagesController).l`, whose
-/// targets are contractless `pub equ … = extern("ErrorHandlerBlob")+off` LINK
-/// BOUNDARIES — neither `proc` nor `extern proc`. Recognizing them registers
-/// `{MDDBG__ErrorHandler, MDDBG__ErrorHandler_PagesController}` as
-/// `unresolved_callees` HOLES in EVERY shape (measured), which the
-/// `corpus_closure_residue_is_empty_the_error_gate` treats as a build error. The
-/// fix wants an abs-long-indirect-to-known-equ/link-symbol EXCLUSION (a resolved
-/// boundary, `⊥` for clobbers — not a hole; a bare-`Sym` call to an unknown name
-/// stays a hole, `MysteryAsmRoutine`) — ledgered, needs its own gate run. The
-/// lowering `invoke` → `jsr (sym).l` is proven in the game_contract tests; the
-/// direct-call propagation it composes with is proven by
-/// `direct_jsr_and_bsr_call_edges`.
+/// The `assert`/`raise` desugars also lower to `jsr (MDDBG__ErrorHandler).l` /
+/// `jmp (…_PagesController).l` naming contractless `pub equ … = extern(…)+off`
+/// LINK BOUNDARIES. Those are excluded from the closure not by symbol kind but by
+/// AUTHORSHIP: they carry `ItemAuthor::AssertDesugar`, and the collection sites
+/// drop an authored divergent rail (the rail's target is the compiler's own
+/// contract, not a return-path edge of the host proc). A hand-written
+/// `jsr (Equ).l` (authored `User`) is a plain edge whose honest exit is an
+/// `extern proc` contract for the boundary. The lowering `invoke` → `jsr (sym).l`
+/// is proven in the game_contract tests, and the direct-call propagation it
+/// composes with is proven by `direct_jsr_and_bsr_call_edges`.
 fn call_target_sym(ops: &[CodeOperand]) -> Option<String> {
-    match ops {
-        [CodeOperand::Sym(name)] if !name.contains('$') => Some(name.clone()),
-        _ => None,
-    }
+    crate::flag_check::transfer_target_sym(ops)
+        .filter(|s| !s.contains('$'))
+        .map(str::to_string)
 }
 
 /// Scan a proc body (recursing comptime-`if` branches) for indirect call sites,
