@@ -46,10 +46,16 @@ shapes pre/post (the two corpus sites are the live subjects):
    through the `is_uncond_tail` Defer re-check and goes straight to
    `check_return`. Note but do NOT take row 2147's `Edge::TailOut` split.
 3. **cycle_budget** (cycle_budget.rs:659-786): trailing transfer refuses as
-   FallOff instead of unbounded-transfer — message changes only; the
-   `divergent_terminal` escape never applied to this shape (check_noreturn
-   already refuses it on `@noreturn` procs). Confirm Process_DMA_Critical's
-   @budget is unmoved.
+   FallOff instead of Defer — the diagnostic is IDENTICAL either way (both
+   arms funnel to `UnboundedTransfer` before any cost accumulates, so a
+   FallOff-classified trailing transfer can never yield a wrong total). The
+   `divergent_terminal` escape gates on Defer arms only; its non-application
+   to trailing shapes holds because the AssertDesugar×trailing-local
+   intersection is empty on the corpus (rails jmp to external divergent
+   blobs) — state that in the census, since the arms do not structurally
+   exclude it. Confirm Process_DMA_Critical's @budget is unmoved.
+   [Amended per t-edges Lens C: the original text predicted a message change
+   that does not occur.]
 4. **flag_check::abandons_flag** (flag_check.rs:854-874): FallOff reads
    "abandoned" where Defer read "flows out" — `[call.flag-result-unused]` can
    newly fire. buffers.emp's proc is a carry-out site (`andi/ori #_,ccr`
