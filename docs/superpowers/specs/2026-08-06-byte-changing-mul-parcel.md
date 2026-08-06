@@ -118,3 +118,23 @@ the LTR encodings), unit oracle extended per R3.
 - If R4 lands mulu at a loop site, record the actual-vs-ceiling honesty note
   at the site (the hand loop was cheaper for small sec_y; the construct prices
   worst-case — that is the contract, stated once, at the site).
+
+## 6 · 2026-08-06 amendment — the Group C 326/374 ruling
+
+The porter's phase-1 finding is accepted: `tile_cache.emp:326-329` and `:374-377`
+compute `d5 = d2 × 80` with **d2 live afterwards** (reused at :373 and :393), and
+`mul_const.w` multiplies IN PLACE. Every adoption spelling therefore regresses a
+hot tile-cache path — a preload costs +4 cy / +2 B, the no-scratch form costs
++18 cy — so adoption is REFUSED at both sites. The hand single-temp form
+`((d2<<2)+d2)<<4` (32 cy, 8 B) is already optimal precisely because it re-reads a
+preserved source. R2's "every remaining hand multiply adopts" is amended: it binds
+only where adoption does not regress. Bar #3 (no scene regresses) and the
+better-not-same doctrine outrank construct-uniformity.
+
+Actions: ledger both sites as documented non-adoptions (optimal hand form; name
+the construct gap so no future sweep re-proposes them), and open a step-3
+language ask for the three-address form `mul_const.w dDst, dSrc, #n, dScratch`
+(dst ≠ src, src preserved) — it would emit exactly the single-temp bytes and make
+both sites byte-neutral adoptions. Final adoption tally for this parcel: Group A
+×4 auto-re-derived, Group B ×2, Group C-1355, Group D ×2 = 9 sites moved, 2
+refused-with-reason.
