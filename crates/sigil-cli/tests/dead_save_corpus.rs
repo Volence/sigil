@@ -3,14 +3,14 @@
 //! callees for every firing. The checkpoint measurement (does the lint find the
 //! review's named customers — dplc, load_object, children — and what beyond).
 //!
-//! WHY PER SHAPE, IN sigil-cli. Its earlier home (`sigil-frontend-emp/tests`)
-//! cannot depend on `sigil-harness`, so it could only call the no-`-D`
-//! `analyze_corpus` — a dead save inside a `DEBUG`/`CRASH_REPORT`/`SOUND_*`-gated
-//! arm never lowered and so was never on the worklist. Here it re-runs the walk
-//! under each shipped shape's own `-D` set (`native::shape_defines`) with that
-//! shape's bound L1 interface env, so a debug-only dead save is dumped when the ROM
-//! that ships it turns the arm on. The define-free baseline count is reported beside
-//! the per-shape counts, so a shape that widens the worklist is visible.
+//! THIS WALK RUNS PER SHIPPED SHAPE, from sigil-cli. The gate lives in sigil-cli
+//! because that crate depends on `sigil-harness` — the owner of the shape `-D`
+//! profiles — as well as `sigil-frontend-emp`. It runs the dead-save walk under each
+//! shipped shape's own `-D` set (`native::shape_defines`) with that shape's bound L1
+//! interface env, so a dead save inside a `DEBUG`/`CRASH_REPORT`/`SOUND_*`-gated arm
+//! is dumped when the ROM that ships it turns the arm on — a no-`-D` walk lowers no
+//! gated arm and never sees it. The define-free baseline count is reported beside the
+//! per-shape counts, so a shape that widens the worklist is visible.
 //!
 //! Reference tree: defaults to the sibling aeon checkout (override with `AEON_DIR`);
 //! under `SIGIL_STRICT_GATE` a missing tree HARD-FAILS so the dump runs in the
@@ -38,8 +38,9 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-#[test]
-fn dead_save_worklist_over_corpus() {
+/// The reference tree, or `None` when it is absent and strict mode is off (under
+/// `SIGIL_STRICT_GATE` a missing tree HARD-FAILS — the house reference-gate pattern).
+fn aeon_dir() -> Option<PathBuf> {
     let aeon = PathBuf::from(
         std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
     );
@@ -48,8 +49,14 @@ fn dead_save_worklist_over_corpus() {
             panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
         }
         eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
-        return;
+        return None;
     }
+    Some(aeon)
+}
+
+#[test]
+fn dead_save_worklist_over_corpus() {
+    let Some(aeon) = aeon_dir() else { return };
     let mut paths = Vec::new();
     emp_files(&aeon.join("engine"), &mut paths);
     emp_files(&aeon.join("games"), &mut paths);
@@ -95,11 +102,15 @@ fn dead_save_worklist_over_corpus() {
     }
     eprintln!("{report}");
 
-    // NON-VACUOUS: the walk must actually reach the dead-save analysis. The corpus
-    // has a live worklist (the review's named customers), so an empty result under
-    // every shape means the analysis stopped running, not that the corpus is clean.
+    // NON-VACUOUS: the walk must reach the dead-save analysis AND find the census the
+    // ledger states. The live worklist is 3 firings (TestChurnObj_Main/A0,
+    // TileCache_FillColumn/D7, TileCache_WarmupBelowRow/D7) in every shape; a tolerant
+    // floor of 3 (not an exact pin — this is a dump, adoption may retire a customer)
+    // gives the stated census teeth: a walk that stops running, or one that silently
+    // loses a customer, drops below it and fails.
     assert!(
-        widest > 0,
-        "no [proc.dead-save] firing under any shape — the worklist analysis is not running"
+        widest >= 3,
+        "expected the 3-firing dead-save census in the widest shape, found only {widest} — \
+         the worklist analysis is not running or has silently lost a customer"
     );
 }

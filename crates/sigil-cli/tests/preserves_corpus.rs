@@ -9,16 +9,16 @@
 //! subtraction, not local preservation). A local NotPreserved for Load_Object is
 //! therefore CORRECT, not a failure — exactly the nuance the checkpoint surfaces.
 //!
-//! WHY PER SHAPE, IN sigil-cli. Its earlier home (`sigil-frontend-emp/tests`)
-//! cannot depend on `sigil-harness`, so the residue eval ran with NO comptime
-//! defines: a save/restore inside a `DEBUG`/`CRASH_REPORT`/`SOUND_*`-gated arm of
-//! one of these procs would not lower, and the LOCAL status the checkpoint pins
-//! could silently differ from the status the shipped ROM's shape actually has.
-//! Here each residue proc is re-evaluated under EVERY shipped shape's own `-D` set
-//! (`native::shape_defines`) with that shape's bound L1 interface env: the checkpoint
-//! prediction must hold under all seven, so the pin is shape-STABLE, not an artifact
-//! of the empty define set. The number of `(proc, shape)` residue evaluations is
-//! reported as the non-vacuity witness.
+//! THIS CHECKPOINT RUNS PER SHIPPED SHAPE, from sigil-cli. The gate lives in
+//! sigil-cli because that crate depends on `sigil-harness` — the owner of the shape
+//! `-D` profiles — as well as `sigil-frontend-emp`. Each residue proc is evaluated
+//! under every shipped shape's own `-D` set (`native::shape_defines`) with that
+//! shape's bound L1 interface env: a save/restore inside a
+//! `DEBUG`/`CRASH_REPORT`/`SOUND_*`-gated arm of one of these procs lowers only when
+//! that shape turns the arm on, so the checkpoint prediction must hold under all
+//! seven shapes — the pin is shape-STABLE, not an artifact of an empty define set.
+//! The number of `(proc, shape)` residue evaluations is reported as the non-vacuity
+//! witness.
 //!
 //! Reference tree: defaults to the sibling aeon checkout (override with `AEON_DIR`).
 //! Under `SIGIL_STRICT_GATE` a missing tree HARD-FAILS so this checkpoint pin runs
@@ -51,6 +51,22 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// The reference tree, or `None` when it is absent and strict mode is off (under
+/// `SIGIL_STRICT_GATE` a missing tree HARD-FAILS — the house reference-gate pattern).
+fn aeon_dir() -> Option<PathBuf> {
+    let aeon = PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    );
+    if !aeon.exists() {
+        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
+        }
+        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
+        return None;
+    }
+    Some(aeon)
+}
+
 /// Evaluate the named proc from `file_rel` under `defines` + `iface_env` and return
 /// its residue register's LOCAL preserve status. `noreturn` is the whole-corpus
 /// `@noreturn` set, so a tail into a declared divergent handler is recognized as an
@@ -81,16 +97,7 @@ fn residue_status(
 
 #[test]
 fn residue_procs_verify_as_predicted() {
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
-    if !aeon.exists() {
-        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
-            panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
-        }
-        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
-        return;
-    }
+    let Some(aeon) = aeon_dir() else { return };
 
     // Parse the whole corpus once (the env binding and the whole-corpus `@noreturn`
     // set both need every file), and index each residue proc's home file by module
@@ -160,6 +167,12 @@ fn residue_procs_verify_as_predicted() {
     eprintln!("{report}");
     assert!(mismatches.is_empty(), "residue verification drifted:\n{}", mismatches.join("\n"));
 
-    // NON-VACUOUS: 6 residue procs × 7 shipped shapes were actually evaluated.
-    assert_eq!(evals, 6 * 7, "expected 6 residue procs across 7 shapes, evaluated {evals}");
+    // NON-VACUOUS: every residue proc across every shipped shape was evaluated.
+    let expected = cases.len() * native::shipped_shapes().len();
+    assert_eq!(
+        evals, expected,
+        "expected {} residue procs across {} shapes, evaluated {evals}",
+        cases.len(),
+        native::shipped_shapes().len()
+    );
 }

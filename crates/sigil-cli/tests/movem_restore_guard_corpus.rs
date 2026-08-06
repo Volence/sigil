@@ -27,17 +27,19 @@
 //! pattern as the conditional-external-tail grep-proof that became a regression
 //! test.)
 //!
-//! WHY THIS GATE LIVES IN sigil-cli, PER SHAPE. Evaluated with NO comptime defines
-//! (its earlier home in `sigil-frontend-emp/tests`, which cannot depend on
-//! `sigil-harness` — the layering the shape profiles live behind), a `movem (sp)+`
-//! restore inside a `DEBUG`/`CRASH_REPORT`/`SOUND_*`-gated arm never lowers, so the
-//! exemption over that arm is UNGUARDED. Here it re-evaluates every proc under each
-//! shipped shape's own `-D` set (`native::shape_defines`) with that shape's bound L1
-//! interface env, so a debug-only stack-restore is scanned exactly when the ROM that
-//! ships it turns the arm on. The property must hold under EVERY shape; the
-//! non-vacuity floor pins the WIDENED (per-shape-union) restore count, and the
-//! define-free baseline is reported beside it so a shape that stops widening is
-//! visible.
+//! THIS GATE RUNS PER SHIPPED SHAPE, from sigil-cli. Evaluated with no comptime
+//! defines, a `movem (sp)+` restore inside a `DEBUG`/`CRASH_REPORT`/`SOUND_*`-gated
+//! arm never lowers, so the exemption over that arm goes unguarded. The gate lives
+//! in sigil-cli because that crate depends on `sigil-harness` — the owner of the
+//! shape `-D` profiles — as well as `sigil-frontend-emp`; it evaluates every proc
+//! under each shipped shape's own `-D` set (`native::shape_defines`) with that
+//! shape's bound L1 interface env, so a define-gated stack-restore is scanned exactly
+//! when the ROM that ships it turns the arm on. The property holds under EVERY shape.
+//! Two non-vacuity guards keep it honest: a floor on the widest shape's visited-
+//! restore count, and a WIDENING pin asserting the widest shape strictly exceeds the
+//! define-free baseline — the widening is the relocation's whole point, so a
+//! define-gated restore that stops lowering must fail loudly, not leave the gate
+//! quietly green.
 //!
 //! Gated on `AEON_DIR` (skips green when the tree is absent, like the port gates).
 
@@ -203,7 +205,7 @@ fn every_stack_movem_restore_has_a_matching_save() {
     // Per shape: evaluate every proc under the shape's own `-D` set + bound L1
     // interface env, so DEBUG/CRASH_REPORT/SOUND-gated stack restores are scanned
     // exactly when the shipped ROM turns their arm on.
-    let mut widest = base_count;
+    let mut widest = 0usize;
     let mut census = format!("define-free baseline: {base_count} restores");
     for (label, profile) in native::shipped_shapes() {
         let defines = native::shape_defines(&profile);
@@ -227,13 +229,26 @@ fn every_stack_movem_restore_has_a_matching_save() {
     eprintln!("== movem-restore census ==\n{census}");
 
     // NON-VACUOUS: the WIDEST shape must actually exercise the guarded form. The
-    // live aeon tree has 26+ `movem (sp)+, …` restores in the define-free arms
-    // alone; the per-shape scan can only add. A floor of 20 tolerates minor churn
-    // while catching a sweep that silently stops visiting the guarded instructions
-    // (an eval/walker regression that would make this pass emptily).
+    // live aeon tree visits 32 `movem (sp)+, …` restores in the define-free arms
+    // and 33 in the widest shape; the per-shape scan can only add. A floor of 20
+    // tolerates minor churn while catching a sweep that silently stops visiting the
+    // guarded instructions (an eval/walker regression that would make this pass
+    // emptily).
     assert!(
         widest >= 20,
-        "expected 26+ `movem (sp)+, …` restores in the widest shape, visited only {widest} — \
+        "expected 32+ `movem (sp)+, …` restores in the widest shape, visited only {widest} — \
          the guard has gone (near-)vacuous"
+    );
+
+    // WIDENING PIN: the widest shape must scan STRICTLY MORE restores than the
+    // define-free baseline (33 > 32 today — the `SOUND_DRIVER_ENABLED`-gated
+    // restore). The widening is the whole point of running per shape; without this,
+    // a define-gated restore that stops lowering leaves the gate quietly green while
+    // its exemption goes back to unguarded.
+    assert!(
+        widest > base_count,
+        "the per-shape scan visited {widest} restores, no more than the define-free baseline \
+         {base_count} — the define-gated arms are no longer widening coverage; a gated \
+         `movem (sp)+` restore has stopped lowering and its exemption is unguarded again"
     );
 }
