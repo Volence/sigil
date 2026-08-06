@@ -2495,11 +2495,18 @@ pub fn verified_preserves_regs(
     // bare-`sr` CCR advisory (warn) is discarded. The `@noreturn` set and the
     // mask-preservers map are threaded from the caller — the SAME sources the
     // primary `check_preserves` call consumes — so this register verdict stays
-    // consistent with the primary path the day a proc both register-preserves AND
-    // claims the mask through an external tail (a mask-tail verdict could then
-    // suppress a register credit). On the frozen corpus no proc does, so the
-    // threaded sets are inert here (measured byte-identical); the coupling no
-    // longer rots silently.
+    // consistent with the primary path when a proc both register-preserves AND
+    // claims the mask through an external tail: a mask-tail REFUSAL is an error
+    // here, and an error zeroes the credit outright.
+    //
+    // The threading is inert only while the mask-claiming proc's terminal tail is
+    // REACHABLE — then the tail poisons every register under `ClobberAll` below and
+    // the credit is empty either way. It is LOAD-BEARING when that terminal tail is
+    // unreachable (dead code): `terminal_external_tail` classifies on the last
+    // instruction regardless of reachability, while `verify_preserved` is
+    // reachability-based, so the body's live return path can round-trip a register
+    // that the empty-map mask refusal would have discarded. Measured inert on the
+    // frozen corpus (byte-identical), not assumed.
     check_preserves(proc, buf, noreturn, sr_mask_preservers, &mut sink);
     if sink.iter().any(|d| matches!(d.level, Level::Error)) {
         return BTreeSet::new();
