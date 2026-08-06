@@ -563,6 +563,23 @@ impl<'a> Evaluator<'a> {
                 );
                 return Value::Poison;
             }
+            // Step 3d: a niche-option's `.none` member (niche-option spec §1) — a
+            // typed const of the sentinel value, usable in operands
+            // (`cmpi.b #SlotRef.none, d0`, `move.b #SlotRef.none, var`). Carries
+            // the option newtype so `[option.raw-sentinel]` can tell it from a raw
+            // literal at an option-typed position; erases to the sentinel byte in
+            // emission (byte-identical to the raw sentinel it replaces).
+            if b == "none" {
+                if let Some(sentinel_expr) = self.newtype_sentinel_expr(a) {
+                    let Some(sentinel) = self.eval_const_index(sentinel_expr) else {
+                        return Value::Poison;
+                    };
+                    return Value::Typed {
+                        ty: Box::new(crate::layout::Ty::Newtype(a.to_string())),
+                        val: Box::new(Value::Int(sentinel)),
+                    };
+                }
+            }
         }
         // Any other multi-segment path (module paths, unknown enums).
         let full = path.segments.join(".");

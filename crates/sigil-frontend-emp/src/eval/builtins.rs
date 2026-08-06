@@ -737,6 +737,7 @@ impl<'a> Evaluator<'a> {
                 ops: vec![CodeOperand::Sym(target_label.clone())],
                 span,
                 as_type: None,
+                sentinel_of: None,
                 targets: Vec::new(),
                 // `User` at construction; the statement-call splice boundary
                 // re-authors the pad as `Splice { template: "pad_to_cycles" }`.
@@ -751,6 +752,7 @@ impl<'a> Evaluator<'a> {
                 ops: Vec::new(),
                 span,
                 as_type: None,
+                sentinel_of: None,
                 targets: Vec::new(),
                 // `User` at construction; the statement-call splice boundary
                 // re-authors the pad as `Splice { template: "pad_to_cycles" }`.

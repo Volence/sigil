@@ -1045,6 +1045,96 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    /// The sentinel EXPRESSION of a niche-option newtype (`newtype SlotRef =
+    /// SlotId ? $FF`), if `name` declares the `? SENTINEL` clause. AST-only (no
+    /// eval) — the greppable "is this an option" probe.
+    pub(crate) fn newtype_sentinel_expr(&self, name: &str) -> Option<&'a ast::Expr> {
+        self.newtypes.get(name).copied().and_then(|d| d.sentinel.as_ref())
+    }
+
+    /// The effective inclusive scalar bounds `(lo, hi)` a value of `ty` may
+    /// occupy — following newtype/refined/prim/fixed layers to the tightest
+    /// declared range (a `where` refinement wins over the underlying prim). The
+    /// niche-overlap check uses it to prove a sentinel lies OUTSIDE the payload's
+    /// range. `None` for a type with no scalar bound (struct/bitfield/enum/…).
+    /// Cycle-guarded on the shared layout stack (a `newtype A = B; newtype B = A`
+    /// chain reports once and yields `None` rather than overflowing the stack).
+    pub(crate) fn effective_scalar_bounds(&mut self, ty: &Ty, span: Span) -> Option<(i128, i128)> {
+        match ty {
+            Ty::Refined { lo, hi, .. } => Some((*lo, *hi)),
+            Ty::Newtype(name) => {
+                let decl = self.newtypes.get(name.as_str()).copied()?;
+                if let Some((lo_expr, hi_expr)) = &decl.refine {
+                    let lo = self.eval_const_index(lo_expr)?;
+                    let hi = self.eval_const_index(hi_expr)?;
+                    return Some((lo, hi));
+                }
+                let result = self.with_cycle_guard(crate::eval::CycleStack::Layout, name, span, "type", |this| {
+                    let underlying = this.resolve_type(&decl.underlying);
+                    this.effective_scalar_bounds(&underlying, span)
+                });
+                result.flatten()
+            }
+            Ty::Prim { width, signed, .. } => Some(prim_bounds(*width, *signed)),
+            Ty::Fixed { i, f } => {
+                let bits = self.fixed_width_bits(*i, *f, span)?;
+                Some((-(1i128 << (bits - 1)), (1i128 << (bits - 1)) - 1))
+            }
+            _ => None,
+        }
+    }
+
+    /// Validate a niche-option newtype's `? SENTINEL` clause (niche-option spec
+    /// §1): the sentinel must lie OUTSIDE the payload's refinement range — else
+    /// the niche it claims is already a valid payload value and the option is
+    /// unsound (`[option.niche-overlap]`, error). A payload with NO `where` range
+    /// makes the full-range overlap immediate: an option NEEDS the niche carved
+    /// out. A payload with no scalar bound at all (a struct/enum underlying) can
+    /// host no niche. Fires once per option decl (the once-per-compile driver).
+    pub(crate) fn check_option_niche(&mut self, decl: &ast::NewtypeDecl) {
+        let Some(sentinel_expr) = &decl.sentinel else { return };
+        let Some(sentinel) = self.eval_const_index(sentinel_expr) else { return };
+        let payload = self.resolve_type(&decl.underlying);
+        if matches!(payload, Ty::Poison) {
+            return;
+        }
+        // The payload's effective range. The option's OWN `where` refinement wins
+        // (the inline form `u8 where LO..HI ? S`, whose refinement rides `decl`
+        // itself, not the underlying); otherwise the underlying's range (the
+        // two-decl form `SlotId ? S`, where the range lives on `SlotId`).
+        let bounds = if let Some((lo_expr, hi_expr)) = &decl.refine {
+            match (self.eval_const_index(lo_expr), self.eval_const_index(hi_expr)) {
+                (Some(lo), Some(hi)) => Some((lo, hi)),
+                _ => return,
+            }
+        } else {
+            self.effective_scalar_bounds(&payload, decl.span)
+        };
+        let Some((lo, hi)) = bounds else {
+            self.error(
+                decl.span,
+                format!(
+                    "[option.niche-overlap] `{}`'s payload `{}` has no scalar niche to carve \
+                     the sentinel {sentinel} out of",
+                    decl.name,
+                    payload.describe()
+                ),
+            );
+            return;
+        };
+        if lo <= sentinel && sentinel <= hi {
+            self.error(
+                decl.span,
+                format!(
+                    "[option.niche-overlap] sentinel {sentinel} is a valid `{}` value ({lo}..{hi}) \
+                     — an option needs the niche carved out (narrow the payload's `where` range \
+                     to exclude {sentinel})",
+                    payload.describe()
+                ),
+            );
+        }
+    }
+
     /// Compute the bit layout of the bitfield named `name` (T4, D-P3.10).
     ///
     /// Fields are declared MSB→LSB: a `cursor` starts at `repr_bits` and walks

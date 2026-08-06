@@ -705,6 +705,7 @@ pub fn analyze_corpus_with_contracts(
     // `typed_out` map each such slot to its register index + newtype. `effective`
     // (the transitive clobber closure) + `callee_out` model the post-call degrade.
     let newtype_names = collect_newtype_names(files);
+    let option_payloads = collect_option_payloads(files, &newtype_names);
     let (typed_params, typed_out) = collect_typed_slots(files, &newtype_names);
     // The caller-facing degrade contract: each callee's DECLARED clobbers (the
     // S2-D6 ERROR gate proves declared ⊇ actual-minus-preserved, so declared is
@@ -732,6 +733,7 @@ pub fn analyze_corpus_with_contracts(
             &callee_out,
             &callee_clobbers,
             &newtype_names,
+            &option_payloads,
             &own,
         ));
     }
@@ -1085,6 +1087,35 @@ fn collect_newtype_names(files: &[ast::File]) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for file in files {
         walk(&file.items, &mut out);
+    }
+    out
+}
+
+/// Map each niche-option newtype (`newtype SlotRef = SlotId ? $FF`) to its
+/// PAYLOAD newtype name (`SlotId`). The slot check reads it to recognise a
+/// niche-option flowing into its own payload slot as `[option.unguarded-use]`
+/// rather than the generic mismatch. An option whose payload is a bare prim
+/// (no newtype name) is absent — the slot check tracks domain newtypes only.
+fn collect_option_payloads(
+    files: &[ast::File],
+    newtypes: &BTreeSet<String>,
+) -> BTreeMap<String, String> {
+    fn walk(items: &[Item], newtypes: &BTreeSet<String>, out: &mut BTreeMap<String, String>) {
+        for item in items {
+            match item {
+                Item::Newtype(n) if n.sentinel.is_some() => {
+                    if let Some(payload) = newtype_of(&n.underlying, newtypes) {
+                        out.insert(n.name.clone(), payload);
+                    }
+                }
+                Item::Section(s) => walk(&s.items, newtypes, out),
+                _ => {}
+            }
+        }
+    }
+    let mut out = BTreeMap::new();
+    for file in files {
+        walk(&file.items, newtypes, &mut out);
     }
     out
 }

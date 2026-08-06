@@ -426,6 +426,16 @@ pub enum CodeItem {
         /// destination register with a domain newtype; on an indirect call it is
         /// the dispatch bound (consumed separately via the AST). Emits NOTHING.
         as_type: Option<String>,
+        /// When an immediate operand of this instruction was written as a
+        /// niche-option's `.none` member (`cmpi.b #SlotRef.none, d0`), the
+        /// option newtype's name — the SANCTIONED spelling of the sentinel.
+        /// `None` when the sentinel value was written as a raw literal
+        /// (`cmpi.b #$FF, d0`), which `[option.raw-sentinel]` nudges toward
+        /// `.none` at a position the type-slice engine knows is option-typed.
+        /// Emits NOTHING — only the option lints read it. Rides the
+        /// concatenation splice with the item (no offset bookkeeping), exactly
+        /// like `as_type`/`author`.
+        sentinel_of: Option<String>,
         /// The enumerated-dispatch clause's RESOLVED target labels (enumerated-
         /// dispatch design §2): the finite label set an unconditional COMPUTED
         /// transfer (`jmp .table(a1) targets(.done, .drain_1, …)`) can land on,

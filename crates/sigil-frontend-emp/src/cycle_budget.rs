@@ -873,6 +873,7 @@ mod tests {
             ops,
             span: sp(),
             as_type: None,
+            sentinel_of: None,
             targets: Vec::new(),
             author: crate::value::ItemAuthor::User,
         }
@@ -880,7 +881,7 @@ mod tests {
     /// An instruction stamped with a specific author — used to build an
     /// `AssertDesugar` divergent rail terminal.
     fn instr_authored(mnemonic: &str, ops: Vec<CodeOperand>, author: ItemAuthor) -> CodeItem {
-        CodeItem::Instr { mnemonic: mnemonic.to_string(), size: None, ops, span: sp(), as_type: None, targets: Vec::new(), author }
+        CodeItem::Instr { mnemonic: mnemonic.to_string(), size: None, ops, span: sp(), as_type: None, sentinel_of: None, targets: Vec::new(), author }
     }
     /// The empty `@noreturn` set (the default for every pre-existing fixture).
     fn nr() -> BTreeSet<String> {
@@ -1044,6 +1045,7 @@ mod tests {
                 ops: vec![sym("skip")],
                 span: sp(),
                 as_type: None,
+                sentinel_of: None,
                 targets: Vec::new(),
                 author: crate::value::ItemAuthor::User,
             },
@@ -1173,6 +1175,7 @@ mod tests {
             ops: vec![CodeOperand::PostInc(a1), CodeOperand::Ind(a5)],
             span: sp(),
             as_type: None,
+            sentinel_of: None,
             targets: Vec::new(),
             author: crate::value::ItemAuthor::User,
         };
@@ -1395,6 +1398,7 @@ mod tests {
             ops: vec![CodeOperand::DispSymInd { target: disp.into(), reg }],
             span: sp(),
             as_type: None,
+            sentinel_of: None,
             targets: targets.iter().map(|s| s.to_string()).collect(),
             author: ItemAuthor::User,
         }
@@ -1408,6 +1412,7 @@ mod tests {
             ops: vec![CodeOperand::PostInc(Reg::A1), CodeOperand::Ind(Reg::A5)],
             span: sp(),
             as_type: None,
+            sentinel_of: None,
             targets: Vec::new(),
             author: ItemAuthor::User,
         }
@@ -1559,6 +1564,7 @@ mod tests {
                 ops: vec![CodeOperand::Ind(Reg::A1)],
                 span: sp(),
                 as_type: None,
+                sentinel_of: None,
                 targets: vec!["done".into()],
                 author: ItemAuthor::User,
             },
@@ -1580,6 +1586,7 @@ mod tests {
                 ops: vec![sym("done")],
                 span: sp(),
                 as_type: None,
+                sentinel_of: None,
                 targets: vec!["done".into()],
                 author: ItemAuthor::User,
             },
@@ -1659,6 +1666,7 @@ mod tests {
                 ops: vec![CodeOperand::Z80IndHl],
                 span: sp(),
                 as_type: None,
+                sentinel_of: None,
                 targets: vec!["a".into()],
                 author: ItemAuthor::User,
             },

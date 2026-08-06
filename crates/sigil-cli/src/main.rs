@@ -991,11 +991,19 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
         println!("  {:<28} {:<4} bracketing {}", d.proc, d.reg, d.callees.join(","));
     }
 
-    println!("\n-- [call.slot-type-mismatch] firings (G5, {}): --", report.slot_firings.len());
+    println!(
+        "\n-- [call.slot-type-mismatch] / [option.unguarded-use] firings (G5, {}): --",
+        report.slot_firings.len()
+    );
     for f in &report.slot_firings {
+        use sigil_frontend_emp::type_slice::FiringKind;
         let found = f.found.as_deref().unwrap_or("an untyped value");
+        let id = match f.kind {
+            FiringKind::OptionUnguarded => "[option.unguarded-use]",
+            FiringKind::SlotType => "[call.slot-type-mismatch]",
+        };
         println!(
-            "  {:<28} calls {:<24} slot {} expects {} but found {}",
+            "  {id:<26} {:<28} calls {:<24} slot {} expects {} but found {}",
             f.proc, f.callee, f.reg, f.expected, found
         );
     }
