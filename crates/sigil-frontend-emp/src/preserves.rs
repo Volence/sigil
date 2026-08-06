@@ -130,7 +130,7 @@ pub enum PreserveStatus {
 /// weaker than the `Full` one.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Facet {
-    /// The full register — the bare `preserves(dN)` claim (unchanged behaviour).
+    /// The full register — the bare `preserves(dN)` claim.
     Full,
     /// The low 16 bits — the `preserves(dN.w)` claim.
     Word,
@@ -1008,24 +1008,35 @@ fn transfer(
 /// when the stack is empty (an underflow the balance model reports separately).
 const EMPTY_SLOT: Slot = Slot { reg: None, bytes: 0, save_width: None };
 
-/// A width that carries at least the low WORD — `.w` or `.l` (not `.b`, not
-/// unsized). The gate for crediting the word facet on a restore.
-fn is_word_or_long(w: Option<Width>) -> bool {
-    matches!(w, Some(Width::W) | Some(Width::L))
-}
-
-/// Credit a restore of `r` from `slot` (a pop or a `(sp)` peek of width `pop_w`,
-/// `is_long` = the restore is `.l`) to the entry-value bits. The FULL facet
-/// round-trips iff a `.l` restore matches a `.l`-saved slot (unchanged from the
-/// pre-facet model); the WORD facet iff the slot holds `r` AND both the save and
-/// the restore carry at least a word — a `.b` save/restore round-trips only the
-/// byte, so it credits neither. Full implies word, so a `.l` round-trip sets both,
-/// keeping the `entry ⟹ entry_word` invariant even when the save was unsized.
-fn credit_restore(st: &mut State, r: Reg, slot: Slot, is_long: bool, pop_w: Option<Width>) {
+/// Credit a restore of `r` from `slot` (a pop or a `(sp)` peek of width `restore_w`,
+/// `is_long` = the restore is `.l`) to the entry-value bits.
+///
+/// **The restore width must MATCH the save width**, for both facets. A round-trip
+/// is only a round-trip when the bytes read back are the bytes written: on a
+/// big-endian 68000 a `.w` read of a `.l`-saved slot loads the saved HIGH word into
+/// the register's LOW word, so it restores nothing about the entry low word, and a
+/// `.l` read of a `.w`-saved slot pulls in whatever sits beneath the slot. The POP
+/// arm gets the same discipline from its byte-balance check only in TOTAL, and the
+/// `(sp)` PEEK arm has no balance check at all, so the guard belongs here where
+/// both consumers share it.
+///
+/// - FULL round-trip: a `.l` restore of a `.l`-saved slot holding `r`.
+/// - WORD round-trip: an equal-width `.w`-or-`.l` save/restore pair holding `r` — a
+///   `.b` pair round-trips only the byte, so it credits neither facet.
+///
+/// Full implies word (a matched `.l` pair satisfies both), keeping the
+/// `entry ⟹ entry_word` invariant.
+fn credit_restore(st: &mut State, r: Reg, slot: Slot, is_long: bool, restore_w: Option<Width>) {
     let matched = slot.reg == Some(r);
-    let full = is_long && matched;
+    // An UNSIZED push transfers a long — the same default `slot_bytes` charges it
+    // 4 bytes for. The restore side keeps the strict `Some(Width::L)` test
+    // (`is_long`), so an unsized restore credits nothing.
+    let save_w = slot.save_width.unwrap_or(Width::L);
+    let full = matched && is_long && save_w == Width::L;
     st.entry[reg_idx(r)] = full;
-    let word_rt = matched && is_word_or_long(pop_w) && is_word_or_long(slot.save_width);
+    let word_rt = matched
+        && matches!(restore_w, Some(Width::W) | Some(Width::L))
+        && restore_w == Some(save_w);
     st.entry_word[reg_idx(r)] = full || word_rt;
     st.delta[reg_idx(r)] = None;
 }
@@ -1151,8 +1162,10 @@ fn linear_write_amount(mnem: &str, ops: &[CodeOperand], size: Option<Width>, r: 
 fn tag(st: &State, r: Reg, bytes: u32, width: Option<Width>) -> Slot {
     // Which facet the push captures decides whether the slot holds `r`'s entry
     // value: a `.l` push captures the FULL register (valid iff `entry`), a
-    // `.w`/`.b` push the low word/byte (valid iff `entry_word`). `save_width`
-    // rides along so the matching restore credits only the facet it can round-trip.
+    // `.w`/`.b` push the low word/byte (valid iff `entry_word`). `save_width` rides
+    // along so [`credit_restore`] can demand an EQUAL-width restore, which is what
+    // confines a `.w`-tagged slot to the word facet: a `.l` pop over it credits
+    // nothing, because a full round-trip requires a `.l`-saved slot.
     let holds = match width {
         Some(Width::W) | Some(Width::B) => st.entry_word[reg_idx(r)],
         _ => st.entry[reg_idx(r)],

@@ -879,3 +879,103 @@ fn a_poisoned_loop_head_lands_on_the_surface() {
         "both loop heads' unresolved names must surface"
     );
 }
+
+// ===========================================================================
+// §6 partial-width — conservative v1, pinned THROUGH the implementing path.
+// ===========================================================================
+
+/// A `.w`-round-tripping proc that declares `preserves(d5.w)`.
+const WORD_CALLEE: &str = "module m\n\
+     proc WCallee () clobbers(d0) preserves(d5.w) {\n\
+     \x20   move.w d5, -(sp)\n\
+     \x20   moveq #0, d5\n\
+     \x20   move.w (sp)+, d5\n\
+     \x20   rts\n\
+     }\n";
+
+/// THE PERMISSION HALF of conservative v1, driven through the real path: a
+/// `preserves(dN.w)` licenses clobbering the FULL dN, so the declaring proc must
+/// NOT fire `[proc.clobber-undeclared]` on d5 — even though d5 is written, is not
+/// in `clobbers`, and is deliberately NOT credited to `verified_preserves`.
+///
+/// This pins the mechanism (`declared_clobbers` gaining the word-facet registers):
+/// with that extension removed, `effective` still contains d5 (a local write the
+/// facet never subtracts) while `allowed` loses it, and this fires.
+#[test]
+fn a_word_facet_licenses_the_full_register_as_a_clobber() {
+    let r = analyze(&[WORD_CALLEE]);
+    assert!(
+        !fires(&r, "WCallee", "d5"),
+        "a `preserves(d5.w)` licenses d5 as a clobber — it must not fire: {:?}",
+        r.firings
+    );
+    // Non-vacuity: the walk DID see this proc and its d5 write. The identical proc
+    // WITHOUT the facet fires, so the assertion above is about the facet and not
+    // about an empty analysis.
+    let bare = analyze(&["module m\n\
+         proc WCallee () clobbers(d0) {\n\
+         \x20   move.w d5, -(sp)\n\
+         \x20   moveq #0, d5\n\
+         \x20   move.w (sp)+, d5\n\
+         \x20   rts\n\
+         }\n"]);
+    assert!(
+        fires(&bare, "WCallee", "d5"),
+        "without the facet the same d5 write IS an undeclared clobber: {:?}",
+        bare.firings
+    );
+}
+
+/// THE NO-CREDIT HALF of conservative v1: to every consumer a `.w`-preserving
+/// callee is a FULL clobber of d5, so a caller that declares `preserves(d5)` across
+/// the call is not credited and fires. Nothing about the callee's word facet may
+/// weaken a consumer's verdict (spec §3).
+#[test]
+fn a_caller_gets_no_full_credit_through_a_word_preserving_callee() {
+    let r = analyze(&[
+        WORD_CALLEE,
+        "module n\nproc Caller () clobbers(d0) preserves(d5) {\n jbsr WCallee\n rts }\n",
+    ]);
+    assert!(
+        fires(&r, "Caller", "d5"),
+        "a `.w`-preserving callee is a full clobber to its caller: {:?}",
+        r.firings
+    );
+}
+
+/// The contract SURFACE records the facet (spec §3): `preserves(dN.w)` is
+/// distinguishable from a plain `clobbers(dN)` downstream, even though the two are
+/// deliberately identical to the closure's verdicts.
+#[test]
+fn the_word_facet_is_recorded_on_the_contract_surface() {
+    let r = analyze(&[WORD_CALLEE]);
+    assert_eq!(
+        r.word_preserve_claims,
+        vec![("WCallee".to_string(), "d5".to_string())],
+        "the facet is recorded as a claim, not erased into the clobber set"
+    );
+    // And a plain clobber of the same register records NO claim — the surface
+    // genuinely distinguishes them.
+    let bare = analyze(&["module m\nproc P () clobbers(d0, d5) {\n moveq #0, d5\n rts }\n"]);
+    assert!(
+        bare.word_preserve_claims.is_empty(),
+        "a plain clobber is not a word-facet claim: {:?}",
+        bare.word_preserve_claims
+    );
+}
+
+/// The word-facet OBLIGATION gate fires when the claim is false: a proc declaring
+/// `preserves(d5.w)` whose body does not round-trip the low word is reported by
+/// `word_preserve_firings`. The corpus assert-empty gate is only meaningful because
+/// this path is reachable.
+#[test]
+fn a_false_word_facet_claim_fires_the_obligation_gate() {
+    let r = analyze(&[
+        "module m\nproc Liar () clobbers(d0) preserves(d5.w) {\n moveq #0, d5\n rts }\n",
+    ]);
+    assert!(
+        r.word_preserve_firings.iter().any(|(p, reg, _)| p == "Liar" && reg == "d5.w"),
+        "a false `.w` claim must fire the obligation gate: {:?}",
+        r.word_preserve_firings
+    );
+}

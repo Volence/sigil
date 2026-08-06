@@ -2994,8 +2994,10 @@ fn word_facet_b_spelling_refused() {
     let (_m, diags) = lower("module m\nproc p() clobbers(d0) preserves(d5.b) {\n    rts\n}\n");
     assert!(has_tag(&diags, "[proc.preserves-invalid]"), "`.b` facet refused: {diags:?}");
     assert!(
-        diags.iter().any(|d| d.message.contains(".b") && d.message.contains("demand-gated")),
-        "the `.b` arm names its own reason: {diags:?}"
+        diags
+            .iter()
+            .any(|d| d.message.contains("no `.b` facet") && d.message.contains("the low word")),
+        "the `.b` arm names its own reason in-domain: {diags:?}"
     );
 }
 

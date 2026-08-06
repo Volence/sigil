@@ -243,6 +243,12 @@ pub struct ContractReport {
     /// which the word facet silences by design (`dN` is licensed-clobbered), so the
     /// obligation needs this dedicated gate.
     pub word_preserve_firings: Vec<(String, String, Span)>,
+    /// The §6 partial-width CONTRACT SURFACE: every `preserves(dN.w)` the corpus
+    /// declares, as `(proc, "dN")`, sorted. Spec §3 records the facet for a
+    /// width-aware consumer to read; this is that record, and it is also the
+    /// NON-VACUITY census for `word_preserve_firings` — an assert-empty firing gate
+    /// is only meaningful if claims existed to check, and this says which.
+    pub word_preserve_claims: Vec<(String, String)>,
 }
 
 /// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
@@ -487,9 +493,13 @@ pub fn analyze_corpus_with_contracts(
     // the word facet silences by licensing `dN`'s clobber). ClobberAll would refire
     // every DEFERRED (correct) claim, so the Oracle is mandatory.
     let mut word_preserve_firings: Vec<(String, String, Span)> = Vec::new();
+    let mut word_preserve_claims: Vec<(String, String)> = Vec::new();
     for pb in &proc_bufs {
         if pb.preserve_word_check.is_empty() {
             continue;
+        }
+        for r in &pb.preserve_word_check {
+            word_preserve_claims.push((pb.name.clone(), r.to_string()));
         }
         let status = crate::preserves::verify_preserved_word(
             &pb.buf.items,
@@ -505,6 +515,7 @@ pub fn analyze_corpus_with_contracts(
         }
     }
     word_preserve_firings.sort_by(|a, b| (&a.0, &a.1, a.2.start).cmp(&(&b.0, &b.1, b.2.start)));
+    word_preserve_claims.sort();
 
     // Callee contract maps shared by the caller-side checks (§6 invalid-path, D1b
     // must-def, D1c). Built once here, after the whole corpus is walked.
@@ -997,6 +1008,7 @@ pub fn analyze_corpus_with_contracts(
         abs_call_edges,
         authored_rail_holes,
         word_preserve_firings,
+        word_preserve_claims,
     }
 }
 
@@ -1573,6 +1585,9 @@ fn proc_node(
             c.extend(crate::lower::preserve_word_regs(p));
             c
         },
+        // The facet itself, kept distinguishable from the plain clobber above (spec
+        // §3: recorded in the contract surface for a width-aware consumer).
+        word_preserves: crate::lower::preserve_word_regs(p),
         params: param_regs_typed(&p.params),
         out: expand_reglist_regs(p.out.as_deref().unwrap_or(&[])),
         has_clobber_contract: p.clobbers.is_some(),

@@ -1322,81 +1322,46 @@ fn check_preserves(
         // with its own arm. The mask itself is folded quietly by
         // [`preserve_word_mask`]; this arm only VALIDATES.
         if hi.is_none() {
-            if let Some((regtok, suffix)) = lo.split_once('.') {
-                let Some(bit) = preserves_reg_bit(regtok) else {
+            let facet = WordFacet::fold_token(lo);
+            if !matches!(facet, WordFacet::NotAFacet) {
+                if let WordFacet::Rejected(why) = facet {
+                    let reason = match why {
+                        WordFacetError::NotARegister => {
+                            let regtok = lo.split_once('.').map(|(r, _)| r).unwrap_or(lo);
+                            format!("`{regtok}` is not a register (d0-d7/a0-a7/sp)")
+                        }
+                        WordFacetError::AddressWord => {
+                            "a word facet is a DATA-register form only — an address-register `.w` \
+                             write sign-extends into the whole register, so it is not a \
+                             partial-width claim"
+                                .to_string()
+                        }
+                        WordFacetError::Byte => {
+                            "there is no `.b` facet — the only partial-width facet is `.w`, the \
+                             low word"
+                                .to_string()
+                        }
+                        WordFacetError::Long => {
+                            let regtok = lo.split_once('.').map(|(r, _)| r).unwrap_or(lo);
+                            format!(
+                                "bare `{regtok}` IS the full-width claim; `.l` is not a separate \
+                                 facet spelling"
+                            )
+                        }
+                        WordFacetError::Unknown => {
+                            "the only partial-width facet is `.w`, the low word".to_string()
+                        }
+                    };
                     push(
                         diags,
                         Level::Error,
                         proc.span,
                         format!(
-                            "[proc.preserves-invalid] `{}` declares `preserves({lo})` — `{regtok}` \
-                             is not a register (d0-d7/a0-a7/sp)",
+                            "[proc.preserves-invalid] `{}` declares `preserves({lo})` — {reason}",
                             proc.name
                         ),
                     );
                     bad = true;
-                    continue;
-                };
-                let is_data = bit < 8; // d0..d7 = bits 0..7
-                match suffix {
-                    "w" if is_data => {} // the one accepted facet — folded by preserve_word_mask
-                    "w" => {
-                        push(
-                            diags,
-                            Level::Error,
-                            proc.span,
-                            format!(
-                                "[proc.preserves-invalid] `{}` declares `preserves({lo})` — a word \
-                                 facet is a DATA-register form only; an address-register `.w` write \
-                                 sign-extends the whole register, so `{regtok}.w` is not a \
-                                 partial-width claim",
-                                proc.name
-                            ),
-                        );
-                        bad = true;
-                    }
-                    "b" => {
-                        push(
-                            diags,
-                            Level::Error,
-                            proc.span,
-                            format!(
-                                "[proc.preserves-invalid] `{}` declares `preserves({lo})` — there \
-                                 is no `.b` facet (partial-width preservation is demand-gated to \
-                                 `.w`, the low word)",
-                                proc.name
-                            ),
-                        );
-                        bad = true;
-                    }
-                    "l" => {
-                        push(
-                            diags,
-                            Level::Error,
-                            proc.span,
-                            format!(
-                                "[proc.preserves-invalid] `{}` declares `preserves({lo})` — bare \
-                                 `{regtok}` IS the full-width claim; `.l` is not a separate facet \
-                                 spelling",
-                                proc.name
-                            ),
-                        );
-                        bad = true;
-                    }
-                    other => {
-                        push(
-                            diags,
-                            Level::Error,
-                            proc.span,
-                            format!(
-                                "[proc.preserves-invalid] `{}` declares `preserves({lo})` — `.{other}` \
-                                 is not a register facet (the only partial-width facet is `.w`, the \
-                                 low word)",
-                                proc.name
-                            ),
-                        );
-                        bad = true;
-                    }
                 }
                 continue;
             }
@@ -1674,10 +1639,10 @@ fn check_preserves(
             proc.span,
             format!(
                 "[proc.preserves-unverifiable] `{}` declares `preserves({})` but {} not \
-                 provably preserved — no save/restore round-trips {} entry value on every \
-                 return path (individual push/pop, `movem.l` pair, or `(sp)` peek), an \
-                 unmodeled sp op blocks the proof, or a `.w` restore sign-extends and \
-                 preserves nothing",
+                 provably preserved — no `.l` save/restore round-trips {} FULL entry value on \
+                 every return path (individual push/pop, `movem.l` pair, or `(sp)` peek), or an \
+                 unmodeled sp op blocks the proof. A `.w` save/restore round-trips only the LOW \
+                 WORD: if that is what the code guarantees, declare `preserves(dN.w)`",
                 proc.name,
                 mask_reglist(declared),
                 unverifiable.join(", "),
@@ -1889,6 +1854,12 @@ fn check_out(
             preserved_mask |= 1 << bit;
         }
     }
+    // §6 partial-width: the word facet is a PRESERVE too, so `out(dN)
+    // preserves(dN.w)` is the same contradiction at half width — the low word
+    // cannot both carry a returned result and hold its entry value. Read through
+    // the same fold the validator uses, and reported on its own arm so the message
+    // names the facet the contract actually spells.
+    let word_mask = preserve_word_mask(proc);
     for name in &valid {
         if let Some(bit) = preserves_reg_bit(name) {
             if preserved_mask & (1 << bit) != 0 {
@@ -1900,6 +1871,18 @@ fn check_out(
                         "[proc.out-preserves-overlap] `{}` declares `{name}` both output and \
                          preserved — a register is either a returned result or left untouched, \
                          not both",
+                        proc.name
+                    ),
+                );
+            } else if word_mask & (1 << bit) != 0 {
+                push(
+                    diags,
+                    Level::Error,
+                    proc.span,
+                    format!(
+                        "[proc.out-preserves-overlap] `{}` declares `{name}` both output and \
+                         word-preserved (`{name}.w`) — the low word is either a returned result \
+                         or the caller's entry value, not both",
                         proc.name
                     ),
                 );
@@ -2635,27 +2618,72 @@ fn preserve_mask(proc: &ast::ProcDecl) -> u16 {
     mask
 }
 
+/// How one dotted REGISTER-facet token reads — the §6 partial-width fold, the
+/// analog of [`SrCover::fold_token`] and, like it, the ONE place the spelling is
+/// decided. Both the VALIDATOR (which refuses a bad facet) and the OBLIGATION fold
+/// (which decides what must be proven) read this, so "accepted" and "obligated"
+/// cannot disagree — a disagreement would be silent in the dangerous direction (a
+/// facet accepted at the surface but never checked).
+enum WordFacet {
+    /// `dN.w` — the low-word facet on a data register, the one accepted form.
+    /// Carries its canonical movem-mask bit.
+    Word(u8),
+    /// A dotted token that is NOT a legal facet, with the reason for its arm.
+    Rejected(WordFacetError),
+    /// Not a dotted token at all — a plain register / range endpoint.
+    NotAFacet,
+}
+
+/// Why a dotted register-facet token is refused — one variant per message arm.
+enum WordFacetError {
+    /// The part before the dot is not a register (`foo.w`).
+    NotARegister,
+    /// `.w` on an ADDRESS register: an address-register word write sign-extends
+    /// into the whole register, so a word facet there is not a partial claim.
+    AddressWord,
+    /// `.b` — no byte facet exists (only the low word has witnesses).
+    Byte,
+    /// `.l` — bare `dN` already IS the full-width claim.
+    Long,
+    /// Any other suffix.
+    Unknown,
+}
+
+impl WordFacet {
+    /// Read `token` as a register facet. Only `dN.w` is a facet; everything else is
+    /// either rejected with its reason or is not a dotted token at all. SR halves
+    /// (`sr.mask`/`sr.ccr`) are consumed as SR tokens BEFORE this is reached, so a
+    /// dotted token arriving here is a register-facet attempt.
+    fn fold_token(token: &str) -> WordFacet {
+        let Some((regtok, suffix)) = token.split_once('.') else {
+            return WordFacet::NotAFacet;
+        };
+        let Some(bit) = preserves_reg_bit(regtok) else {
+            return WordFacet::Rejected(WordFacetError::NotARegister);
+        };
+        let is_data = bit < 8; // d0..d7 = bits 0..7
+        match suffix {
+            "w" if is_data => WordFacet::Word(bit),
+            "w" => WordFacet::Rejected(WordFacetError::AddressWord),
+            "b" => WordFacet::Rejected(WordFacetError::Byte),
+            "l" => WordFacet::Rejected(WordFacetError::Long),
+            _ => WordFacet::Rejected(WordFacetError::Unknown),
+        }
+    }
+}
+
 /// The `preserves(dN.w)` word-facet registers folded to a movem mask — the §6
-/// partial-width facet. Quiet (spelling validity — a `.b`/`.l`/`aN.w`/unknown
-/// facet — is [`check_preserves`]' job): ONLY a well-formed `.w` on a DATA
-/// register contributes; every other dotted token is dropped, exactly as
-/// [`reglist_set_quiet`] drops it from the FULL mask. The SR halves carry a dot
-/// too but are consumed as SR tokens first, so a dotted token reaching here is a
-/// register-facet attempt.
+/// partial-width facet. Quiet (spelling validity is [`check_preserves`]' job,
+/// through the SAME [`WordFacet::fold_token`]): only a well-formed `dN.w`
+/// contributes.
 fn preserve_word_mask(proc: &ast::ProcDecl) -> u16 {
     let mut mask = 0u16;
     for (lo, hi) in &proc.preserves {
         if hi.is_some() {
             continue; // a facet is a single, never a range endpoint
         }
-        if let Some((regtok, suffix)) = lo.split_once('.') {
-            if suffix == "w" {
-                if let Some(bit) = preserves_reg_bit(regtok) {
-                    if bit < 8 {
-                        mask |= 1 << bit; // d0..d7 only
-                    }
-                }
-            }
+        if let WordFacet::Word(bit) = WordFacet::fold_token(lo) {
+            mask |= 1 << bit;
         }
     }
     mask

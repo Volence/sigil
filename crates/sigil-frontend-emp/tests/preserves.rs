@@ -1326,3 +1326,86 @@ fn word_caller_through_w_preserving_callee_refuses() {
         "a fully-preserving callee keeps the low word"
     );
 }
+
+/// A `.w` PEEK of a `.l`-saved slot round-trips NOTHING. On a big-endian 68000 the
+/// `.w` read at `(sp)` loads the saved HIGH word into d5's low word, so the entry
+/// low word is destroyed. The peek arm has no byte-balance check, so the
+/// equal-width guard in `credit_restore` is the only thing standing here.
+#[test]
+fn word_peek_of_a_long_save_credits_nothing() {
+    let src = "module m\n\
+               proc p() clobbers(d0) preserves(d5.w) {\n\
+               \x20   move.l d5, -(sp)\n\
+               \x20   moveq #0, d5\n\
+               \x20   move.w (sp), d5\n\
+               \x20   addq.l #4, sp\n\
+               \x20   rts\n\
+               }\n";
+    assert!(
+        is_not_preserved(&status_word(src, Reg::D5)),
+        "a `.w` peek of a `.l` save reads the HIGH word — no word round-trip"
+    );
+    assert!(is_not_preserved(&status(src, Reg::D5)), "and certainly no full round-trip");
+}
+
+/// The POP arm reaches the same verdict by a different route: a `.w` pop of a
+/// `.l`-saved slot lands MID-SLOT, which the byte-balance check answers with a
+/// BAIL (`Unverifiable`) before `credit_restore` is consulted. Either way no
+/// credit — the two arms differ only in which guard fires first, which is exactly
+/// why the width test also lives in `credit_restore` for the balance-free peek.
+#[test]
+fn word_pop_of_a_long_save_credits_nothing() {
+    let src = "module m\n\
+               proc p() clobbers(d0) preserves(d5.w) {\n\
+               \x20   move.l d5, -(sp)\n\
+               \x20   moveq #0, d5\n\
+               \x20   move.w (sp)+, d5\n\
+               \x20   addq.l #2, sp\n\
+               \x20   rts\n\
+               }\n";
+    let s = status_word(src, Reg::D5);
+    assert!(!is_verified(&s), "a `.w` pop of a `.l` save must not credit the low word: {s:?}");
+    assert!(is_unverifiable(&s), "the mid-slot byte balance bails first: {s:?}");
+}
+
+/// A `.l` PEEK of a `.w`-saved slot credits nothing either — the read pulls in
+/// whatever sits beneath the 2-byte slot.
+#[test]
+fn full_peek_of_a_word_save_credits_nothing() {
+    let src = "module m\n\
+               proc p() clobbers(d0) preserves(d5) {\n\
+               \x20   move.w d5, -(sp)\n\
+               \x20   moveq #0, d5\n\
+               \x20   move.l (sp), d5\n\
+               \x20   addq.l #2, sp\n\
+               \x20   rts\n\
+               }\n";
+    assert!(
+        is_not_preserved(&status(src, Reg::D5)),
+        "a `.l` peek of a `.w` save reads past the slot — no full round-trip"
+    );
+    assert!(is_not_preserved(&status_word(src, Reg::D5)), "nor a word round-trip");
+}
+
+/// THE NON-WEAKENING PIN: a `.w` round-trip (which sets the word facet) must not
+/// let a LATER `.l` pop over two `.w` slots credit the FULL register. The byte
+/// balance is satisfied (want 4, got 2+2) and the top slot holds d5, but the
+/// machine leaves `d5 = (entry_d5.w << 16) | d0.w` — the full claim is false.
+/// A full round-trip requires a `.l`-SAVED slot, which is what refuses it.
+#[test]
+fn a_long_pop_over_two_word_slots_does_not_credit_the_full_register() {
+    let src = "module m\n\
+               proc p() clobbers(d0) preserves(d5) {\n\
+               \x20   move.w d5, -(sp)\n\
+               \x20   moveq #0, d5\n\
+               \x20   move.w (sp)+, d5\n\
+               \x20   move.w d0, -(sp)\n\
+               \x20   move.w d5, -(sp)\n\
+               \x20   move.l (sp)+, d5\n\
+               \x20   rts\n\
+               }\n";
+    assert!(
+        is_not_preserved(&status(src, Reg::D5)),
+        "a `.l` pop spanning two `.w` slots does not restore the full register"
+    );
+}
