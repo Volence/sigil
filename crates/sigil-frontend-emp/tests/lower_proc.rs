@@ -2710,7 +2710,7 @@ fn ccr_advisory_silent_on_debug_rail_inside_bracket() {
 
 /// M1 counterexample (a): a `@noreturn` proc with an unconditional transfer to a
 /// TRAILING local label (`.out:` closes the body) — `Cfg::edges` hands it back as
-/// `Edge::Defer` on 68k, but control runs off the end and returns. Refused.
+/// `Edge::TailOut` on 68k, but control runs off the end and returns. Refused.
 #[test]
 fn noreturn_trailing_local_transfer_is_a_fall_off() {
     let src = "module m\n@noreturn\nproc P () clobbers() {\n\

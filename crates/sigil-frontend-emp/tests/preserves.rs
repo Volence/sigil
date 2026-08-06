@@ -300,7 +300,7 @@ fn entry_exit_movem_fast_path_preserves() {
 /// A `dbf dN, .loop` copy loop between a save and restore (the Collected_Park/
 /// UnparkSlot shape): a0 is pushed, advanced through the loop (`(a0)+`), then
 /// popped back. The `dbcc` target is its SECOND operand — the CFG must resolve
-/// it as a LOCAL back-edge, not an external `Defer`, or a0 falsely reports
+/// it as a LOCAL back-edge, not an external `TailOut`, or a0 falsely reports
 /// NotPreserved.
 #[test]
 fn dbf_loop_between_save_and_restore_preserves() {
@@ -324,7 +324,7 @@ fn dbf_loop_between_save_and_restore_preserves() {
 /// REGRESSION PIN for the shared-CFG `dbcc dN, label` target resolution (the
 /// checkpoint's finding). `dbcc`'s label is its SECOND operand; if the CFG reads
 /// the FIRST (`ops.first()` — the counter register), the taken edge misresolves
-/// to an external `Defer` and the loop-carried save falsely reports NotPreserved.
+/// to an external `TailOut` and the loop-carried save falsely reports NotPreserved.
 /// Here a0 is preserved ONLY because the `dbcc` back-edge stays local: the pop
 /// after the loop restores it. A first-operand regression flips this to
 /// NotPreserved. (`dbeq`/`dbcc`/`dbf` all share the two-operand shape.)
@@ -1001,7 +1001,7 @@ fn sp_cleanup_probe_core_missing_restore_does_not_preserve() {
 }
 
 // ===========================================================================
-// 68k preserves-through-tail credit (2026-08-06) — the `Edge::Defer` exit and
+// 68k preserves-through-tail credit — the `Edge::TailOut` exit and
 // the `falls_into` fall-off become obligation sites charged through the
 // callee-preserves oracle, closing the tail-only vacuity hole (§13.4, the hole
 // the Z80 already closed) and granting the sibling-credit. Rows 2079 + 2088.
@@ -1011,8 +1011,8 @@ fn sp_cleanup_probe_core_missing_restore_does_not_preserve() {
 
 /// VACUITY REGRESSION (the watched fail): a tail-only proc whose sole exit is an
 /// unconditional external tail into a callee that CLOBBERS a0 does NOT preserve
-/// a0 — the Defer exit is now an obligation site, so the false `preserves(a0)`
-/// FIRES. PRE-FIX the `Edge::Defer` was ignored under `AllReturns`, so a0 (never
+/// a0 — the tail-out exit is an obligation site, so the false `preserves(a0)`
+/// FIRES. Were the `Edge::TailOut` ignored under `AllReturns`, a0 (never
 /// written locally) passed VACUOUSLY — the exact soundness hole this closes.
 #[test]
 fn tail_only_false_preserve_fires() {
@@ -1047,7 +1047,7 @@ fn tail_only_honest_preserve_holds() {
 // --- credit pair (a mixed body: one rts path, one tail path) ---------------
 
 /// CREDIT (holds): a0 is saved/restored on the `rts` path AND the tail path
-/// jumps to a callee that preserves a0 → Verified. The Defer edge is discharged
+/// jumps to a callee that preserves a0 → Verified. The tail-out edge is discharged
 /// by the oracle.
 #[test]
 fn tail_credit_to_preserving_callee_holds() {

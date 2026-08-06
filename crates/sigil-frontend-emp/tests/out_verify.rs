@@ -3,7 +3,7 @@
 //! A proc declaring `out(rN)` must PRODUCE rN on every required return path: a
 //! full-width (`.l`) data-register write / `moveq`, any address-register write or
 //! advance, a callee's UNCONDITIONAL `out(rN)` at a call, or a tail-transfer
-//! target's UNCONDITIONAL `out(rN)` at a `Defer`. A param is NOT a production (no
+//! target's UNCONDITIONAL `out(rN)` at a `TailOut`. A param is NOT a production (no
 //! seed). A `.w`/`.b` data write leaves the high word stale and does NOT verify
 //! (mirrors `preserves`'s `is_long`). Conditional `out(rN if cc)` is obligated
 //! only on the cc-success return paths; an UNKNOWN cc at a return keeps the
@@ -233,7 +233,7 @@ fn advanced_cursor_on_all_paths_verifies() {
     assert!(is_produced(&s), "a4 advanced on every path → Produced, got {s:?}");
 }
 
-// === 4. Defer (Finding 3) =================================================
+// === 4. TailOut (Finding 3) ===============================================
 
 /// `out(a1)` produced by a tail `jbra ProducesA1` where ProducesA1 declares
 /// UNCONDITIONAL `out(a1)` ⇒ verifies (a tail transfer is a required return
@@ -280,6 +280,79 @@ fn tail_to_external_symbol_fires() {
         &map(&[]),
     );
     assert!(is_unverified(&s), "tail to an external symbol → Unverified, got {s:?}");
+}
+
+/// A KNOWN-INCOMPLETENESS pin, not a correctness pin.
+///
+/// A CONDITIONAL branch out of the body (`bne ErrorHandler`) is an
+/// `Edge::BranchOut`, and this check skips it rather than charging it — mirroring
+/// `preserves`. So the proc below is blessed `Produced` for a1 even though the
+/// branch leaves with a1 unwritten, and every caller then credits a1 as defined on
+/// a path where it is not. That is a HOLE in the module's own dangerous polarity
+/// (`out` under-reporting is what breaks callers), and it is held open
+/// deliberately: charging the leg would fire at ERROR tier on every divergent
+/// handler and every transitive tail, and nothing in the language marks divergence
+/// at a conditional target yet. Behaviour is identical to before the edge split —
+/// the flavor made the skip readable, it did not create it.
+///
+/// Census: ZERO corpus procs reach this arm (no `BranchOut` sits inside an `out()`
+/// proc), so the hole is latent and unguarded; this is its only exemplar. Ledgered
+/// as an open gap — closing it needs a divergence marker, not a polarity flip.
+#[test]
+fn a_conditional_branch_out_is_not_a_required_return_path() {
+    let s = status_uncond(
+        "module m\n\
+         proc P () clobbers(d0) out(a1) {\n\
+             cmpi.w  #0, Flag\n\
+             bne     ErrorHandler\n\
+             lea     Slot, a1\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        &map(&[]),
+    );
+    assert!(is_produced(&s), "a1 produced on the returning path → Produced, got {s:?}");
+}
+
+/// The polarity that gives the skip its content: the SAME external target
+/// reached UNCONDITIONALLY is an `Edge::TailOut` — a required return path — and
+/// with no credit available for an unknown target, it FIRES. One terminator's
+/// conditionality is the entire difference between the two verdicts, and the
+/// edge is the only thing that carries it.
+#[test]
+fn the_same_target_reached_unconditionally_is_a_required_return_path() {
+    let s = status_uncond(
+        "module m\n\
+         proc P () clobbers(d0) out(a1) {\n\
+             cmpi.w  #0, Flag\n\
+             jbra    ErrorHandler\n\
+         }\n",
+        "P",
+        Reg::A1,
+        &map(&[]),
+    );
+    assert!(is_unverified(&s), "an unconditional tail out owes a1 → Unverified, got {s:?}");
+}
+
+/// The skip is a skip, not a blanket pass: a1 unproduced on the RETURNING path
+/// still fires with the conditional branch out present. Without this the pin
+/// above would hold on a verifier that had stopped checking altogether.
+#[test]
+fn a_conditional_branch_out_does_not_excuse_the_returning_path() {
+    let s = status_uncond(
+        "module m\n\
+         proc P () clobbers(d0) out(a1) {\n\
+             cmpi.w  #0, Flag\n\
+             bne     ErrorHandler\n\
+             moveq   #0, d0\n\
+             rts\n\
+         }\n",
+        "P",
+        Reg::A1,
+        &map(&[]),
+    );
+    assert!(is_unverified(&s), "a1 never produced → Unverified, got {s:?}");
 }
 
 // === 5. conditional out(rN if cc) — the FindStagedBlock shape ===============
@@ -800,10 +873,10 @@ fn the_oracle_settles_a_call_blocked_survives_claim_both_ways() {
     );
 }
 
-/// Control LEAVING the proc on a ¬cc edge is an exit, not just an `rts`. A
-/// `jbra` out of the failure edge with a1 already destroyed FIRES — under
-/// `preserves(rN)`'s `AllReturns` the same `Defer` is ignored entirely, so this
-/// is the one place the scoped proof is deliberately stricter.
+/// Control LEAVING the proc on a ¬cc edge is an exit, not just an `rts`. A `jbra`
+/// out of the failure edge with a1 already destroyed FIRES — under
+/// `preserves(rN)`'s `AllReturns` the same tail-out edge is ignored entirely, so
+/// this is the one place the scoped proof is deliberately stricter.
 ///
 /// The TARGET is not charged, and the second half pins that: the identical tail
 /// with a1 untouched is clean even when the target is unknown. A transfer out may
