@@ -134,9 +134,13 @@ strips) · HBlank raster contract (no armed consumer; doc note rides N-1).
   proposal (the 2026-08-03 design). `mul_bounded` makes the choice the cost
   model's; at the site's bound the worst-vs-worst verdict is mulu (ceiling 70
   vs loop 28 + 18·M — the loop wins only through M = 2), so the code-review
-  argument is now a computed fact. The section.emp site itself stays
-  as-written until a byte-changing parcel adopts (word-width contract gap —
-  see the mul-lowering ledger rows).
+  argument is now a computed fact. The `mul_const.w` sized variant
+  (2026-08-05 ruling, specs/2026-08-05-mul-const-w-design.md) shipped and
+  adopted the four word-width STRIDE sites byte-identically. The two
+  repeated-add LOOP sites (section.emp `.gxy_mul`, tile_cache.emp `.mul_loop`)
+  stay as-written: adopting `mul_bounded.w` there emits `mulu` (the cost
+  winner at any real bound) and is byte-CHANGING, so it rides a deliberate
+  byte-changing parcel (gap-ledger loop-site row).
 - **R-C · scheduling**: sweep parcels (Sections 1+3) → S-1 lint → A1/A2 arc, or
   S-1 first? (Lean: parcels first — small, evidence-fresh; lint spec in parallel.)
 

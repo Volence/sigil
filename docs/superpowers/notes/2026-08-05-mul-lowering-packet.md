@@ -179,6 +179,15 @@ negative result; the sized-variant demand (`mul_const.w`, upper word
 unchanged-garbage, author owns the range proof) is a gap-ledger row with all
 four sites as its demand census — a language-round ask, not this lane's call.
 
+**UPDATE 2026-08-05 (the bar is now satisfiable):** the language round ruled
+the sized variant UP (specs/2026-08-05-mul-const-w-design.md — the ONE
+refinement it made: the word contract leaves the upper word UNDEFINED, not
+"unchanged-garbage", so `mulu.w` stays a candidate). The mul-w parcel
+(notes/2026-08-05-mul-w-packet.md) shipped `mul_const.w`/`mul_bounded.w` and
+adopted all four stride sites byte-identically — the negative result above was
+the LONG contract's, exactly as anticipated; the word contract prices what the
+sites compute and the chains win back the 2–12 cycles.
+
 **Refused:** nothing — no site presented an unknowable bound or signedness
 (the corpus `muls` sites never entered scope; signed is refused by v1's
 surface, §2).
