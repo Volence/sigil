@@ -426,6 +426,16 @@ pub enum CodeItem {
         /// destination register with a domain newtype; on an indirect call it is
         /// the dispatch bound (consumed separately via the AST). Emits NOTHING.
         as_type: Option<String>,
+        /// The enumerated-dispatch clause's RESOLVED target labels (enumerated-
+        /// dispatch design §2): the finite label set an unconditional COMPUTED
+        /// transfer (`jmp .table(a1) targets(.done, .drain_1, …)`) can land on,
+        /// each already mangled through the proc's label scope so it matches the
+        /// [`CodeItem::Label`] symbols the CFG keys on. Empty for an instruction
+        /// with no clause. Emits NOTHING — ONLY the cycle-budget walk reads it (a
+        /// `Defer` edge carrying targets becomes N `Follow` edges in
+        /// `charged_edges`); every other CFG consumer keeps treating the
+        /// instruction as an opaque computed transfer.
+        targets: Vec<String>,
         /// Who put this instruction in the stream ([`ItemAuthor`]). Emits
         /// NOTHING — an effect lint reads it to charge the right party.
         author: ItemAuthor,

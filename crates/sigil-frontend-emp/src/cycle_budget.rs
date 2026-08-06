@@ -29,7 +29,7 @@
 //! | a back edge (any loop) | `[cycles.unbounded-loop]` | the longest path through a cycle is unbounded; no trip count is declared |
 //! | a call (`call`/`rst`; `jsr`/`bsr`/`jbsr`) | `[cycles.opaque-call]` | the callee's cost is not a local fact |
 //! | a tail transfer out, or control off the end of the body | `[cycles.unbounded-transfer]` | the path continues into code this walk cannot see |
-//! | a transfer to a COMPUTED target (`jp (hl)`, `jmp .table(a1)`) | `[cycles.computed-transfer]` | the destination set is data, not structure |
+//! | a transfer to a COMPUTED target (`jp (hl)`, `jmp .table(a1)`) | `[cycles.computed-transfer]` | the destination set is data, not structure — UNLESS a `targets(...)` clause enumerates the reachable local labels (see below) |
 //! | an op outside the CPU's cost table | `[cycles.unknown-op]` | no cost is assignable |
 //! | an outcome-split conditional whose two edges cannot be told apart | `[cycles.ambiguous-branch]` | the two costs cannot be routed to their edges |
 //! | inline data in the code stream | `[cycles.inline-data]` | those bytes DECODE if control reaches them, and the CFG does not model them as instructions |
@@ -48,6 +48,19 @@
 //! actually returns. That single rule is what makes the bound sound in the one
 //! direction that matters: every other way out of the body leaves cost
 //! unaccounted, so it is refused rather than silently treated as zero.
+//!
+//! ## Enumerated dispatch — the one way through a computed transfer
+//!
+//! A computed transfer (`jmp .table(a1)`) is refused because its destination set
+//! is DATA. The one exception is an author-written `targets(.a, .b, …)` clause
+//! (enumerated-dispatch design §2): it names the finite set of LOCAL labels the
+//! transfer can land on, and the walk turns the `Defer` into that many `Follow`
+//! edges — the fixed cost charged once, then a max/min over the arms, exactly as
+//! for a two-edge branch ([`enumerated_succs`]). Exhaustiveness is the AUTHOR's
+//! claim, verified only for existence/locality/distinctness — so ONLY this opt-in
+//! walk reads the clause; a wrong enumeration mis-measures the budget it feeds and
+//! nothing else. Enumerated cycles fall to the unbounded-loop refusal naturally.
+//! The clause's own validity refusals live in [`check_dispatch_targets`].
 //!
 //! ## Three things a budget does NOT say
 //!
@@ -172,12 +185,15 @@ impl BudgetFindingKind {
             ),
             Self::UnboundedTransfer { mnemonic } => format!(
                 "`{mnemonic}` continues into code outside this proc, so the path's cost is \
-                 not accounted here — a cycle budget needs every path to end at a return"
+                 not accounted here — a cycle budget needs every path to end at a return \
+                 (a computed dispatch landing on LOCAL labels can be enumerated with a \
+                 `targets(...)` clause)"
             ),
             Self::ComputedTransfer { mnemonic } => format!(
                 "`{mnemonic}` transfers to a COMPUTED target, so where this path goes is \
                  data, not structure — the walk cannot enumerate destinations the program \
-                 text does not name"
+                 text does not name; name the reachable LOCAL labels with a `targets(...)` \
+                 clause on the transfer to budget it"
             ),
             Self::AmbiguousBranch { mnemonic } => format!(
                 "`{mnemonic}` costs differently taken and not-taken, and its two edges are \
@@ -319,7 +335,7 @@ pub fn path_costs(items: &[CodeItem], cpu: Cpu, decl_span: Span) -> Result<PathC
         if ceiling && inexact.as_ref().is_none_or(|(i, _)| idx < *i) {
             inexact = Some((idx, mnemonic.clone()));
         }
-        let charged = charged_edges(&cfg, cpu, idx, mnemonic, ops, &cost, *span)?;
+        let charged = charged_edges(&cfg, cpu, items, idx, mnemonic, ops, &cost, *span)?;
         let mut lo = u64::MAX;
         let mut hi = 0u64;
         for e in charged {
@@ -387,12 +403,211 @@ pub fn check_cycle_budget(
     out
 }
 
+// ---------------------------------------------------------------------------
+// Enumerated dispatch — the `targets(...)` clause's own validity refusals
+// (enumerated-dispatch design §1). These are decidable from ONE proc body and
+// fire whether or not a budget is declared: a `targets(...)` clause that names
+// the wrong thing reads as a checked claim and is not one. The cycle-budget walk
+// (above) is the only CONSUMER; this is the GATEKEEPER.
+// ---------------------------------------------------------------------------
+
+/// What a `targets(...)` clause got wrong.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DispatchFindingKind {
+    /// `[dispatch.targets-on-call]` — a clause on a call (`jsr`/`bsr`/`jbsr`). A
+    /// call's cost is callee-cost composition, deliberately NOT this form.
+    OnCall {
+        /// The call mnemonic.
+        mnemonic: String,
+    },
+    /// `[dispatch.targets-redundant]` — a clause on an instruction whose control
+    /// target is already exact (a direct `jmp .label` / `jmp External`) or which
+    /// is not an unconditional computed transfer at all. The enumeration buys
+    /// nothing where the edge is already known.
+    Redundant {
+        /// The annotated mnemonic.
+        mnemonic: String,
+    },
+    /// `[dispatch.target-unknown]` — a named `.local` label is defined nowhere in
+    /// this proc body.
+    Unknown {
+        /// The unresolved label, as written.
+        label: String,
+    },
+    /// `[dispatch.target-nonlocal]` — a named target resolves to a symbol that is
+    /// not a LOCAL label of this proc (a cross-proc / global name). A nonlocal arm
+    /// would also need callee costs, so v1 refuses it to keep the form's meaning
+    /// sharp.
+    Nonlocal {
+        /// The nonlocal name, as written.
+        label: String,
+    },
+    /// `[dispatch.target-duplicate]` — the same label is named twice.
+    Duplicate {
+        /// The repeated label.
+        label: String,
+    },
+}
+
+impl DispatchFindingKind {
+    /// The lint id this kind reports under.
+    pub fn lint_id(&self) -> &'static str {
+        match self {
+            Self::OnCall { .. } => "dispatch.targets-on-call",
+            Self::Redundant { .. } => "dispatch.targets-redundant",
+            Self::Unknown { .. } => "dispatch.target-unknown",
+            Self::Nonlocal { .. } => "dispatch.target-nonlocal",
+            Self::Duplicate { .. } => "dispatch.target-duplicate",
+        }
+    }
+
+    /// The finding's body text, after the `[id] in `proc`: ` prefix.
+    pub fn message(&self) -> String {
+        match self {
+            Self::OnCall { mnemonic } => format!(
+                "`targets(...)` names where control GOES, but `{mnemonic}` is a call — its \
+                 cost is the callee's, which is the opaque-call problem, not this form"
+            ),
+            Self::Redundant { mnemonic } => format!(
+                "`targets(...)` applies only to an unconditional COMPUTED transfer \
+                 (`jmp .table(a1)`); `{mnemonic}` here already has an exact control target, so \
+                 the enumeration is redundant"
+            ),
+            Self::Unknown { label } => format!(
+                "`targets(...)` names `{label}`, but no such local label is defined in this proc"
+            ),
+            Self::Nonlocal { label } => format!(
+                "`targets(...)` names `{label}`, which is not a LOCAL label of this proc — a \
+                 cross-proc target would also need the callee's cost, so v1 refuses it"
+            ),
+            Self::Duplicate { label } => format!(
+                "`targets(...)` names `{label}` more than once — an enumeration lists each \
+                 reachable label once"
+            ),
+        }
+    }
+}
+
+/// One `targets(...)` validity refusal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DispatchFinding {
+    /// What the clause got wrong.
+    pub kind: DispatchFindingKind,
+    /// The annotated instruction's span.
+    pub span: Span,
+}
+
+/// Check every `targets(...)` clause in one proc body for the §1 refusals. Runs
+/// unconditionally (no attribute gates it): a wrong enumeration is a wrong claim
+/// whether or not a `@budget` reads it. Cheap when no clause is present — the
+/// per-instruction scan below only builds a [`Cfg`] when at least one exists.
+pub fn check_dispatch_targets(items: &[CodeItem], cpu: Cpu) -> Vec<DispatchFinding> {
+    let any = items
+        .iter()
+        .any(|it| matches!(it, CodeItem::Instr { targets, .. } if !targets.is_empty()));
+    if !any {
+        return Vec::new();
+    }
+    let cfg = Cfg::build(items);
+    let mut out = Vec::new();
+    for (idx, it) in items.iter().enumerate() {
+        let CodeItem::Instr { mnemonic, ops, span, targets, .. } = it else { continue };
+        if targets.is_empty() {
+            continue;
+        }
+        if crate::context::is_call_mnemonic(mnemonic, cpu) {
+            out.push(DispatchFinding {
+                kind: DispatchFindingKind::OnCall { mnemonic: mnemonic.clone() },
+                span: *span,
+            });
+            continue;
+        }
+        // Legal only on a BARE computed transfer: exactly one `Defer` edge and no
+        // operand naming a symbol. Everything else already has an exact edge (a
+        // direct `jmp .label`, a tail `jmp External`) or is no transfer at all.
+        let names_a_target = ops.iter().any(|o| {
+            matches!(
+                o,
+                CodeOperand::Sym(_) | CodeOperand::SymOff { .. } | CodeOperand::AbsSym { .. }
+            )
+        });
+        if !matches!(cpu_edges(&cfg, cpu, idx).as_slice(), [Edge::Defer]) || names_a_target {
+            out.push(DispatchFinding {
+                kind: DispatchFindingKind::Redundant { mnemonic: mnemonic.clone() },
+                span: *span,
+            });
+            continue;
+        }
+        // The label set: each must be distinct and a LOCAL label of this proc.
+        // Names arrive resolved through the label scope, so a valid local reads as
+        // its mangled `CodeItem::Label` symbol; an undefined `.local` kept its dot
+        // (unknown), a cross-proc/global name kept its bare spelling (nonlocal).
+        let mut seen: std::collections::BTreeSet<&String> = std::collections::BTreeSet::new();
+        for label in targets {
+            if !seen.insert(label) {
+                out.push(DispatchFinding {
+                    kind: DispatchFindingKind::Duplicate { label: label.clone() },
+                    span: *span,
+                });
+                continue;
+            }
+            if cfg.is_local_label(label) {
+                continue;
+            }
+            let kind = if label.starts_with('.') {
+                DispatchFindingKind::Unknown { label: label.clone() }
+            } else {
+                DispatchFindingKind::Nonlocal { label: label.clone() }
+            };
+            out.push(DispatchFinding { kind, span: *span });
+        }
+    }
+    out
+}
+
 /// One charged successor of an instruction.
 struct ChargedEdge {
     /// T-states charged for taking THIS edge out of the instruction.
     cost: u64,
     /// The next instruction, or `None` when the path ENDS here (a return).
     succ: Option<usize>,
+}
+
+/// The successor item indices an enumerated-dispatch `targets(...)` clause names,
+/// when the clause is present and every named label resolves LOCALLY. `None` when
+/// there is no clause to honor here — the instruction carries no targets, OR it is
+/// not a bare COMPUTED transfer (a single `Defer` naming no symbol), OR a name does
+/// not resolve to a local label — and the caller falls back to the ordinary edge
+/// model (which then refuses the computed transfer as it did before this form).
+///
+/// This is the ONE consumer of `targets`. It turns a `Defer` into `Follow` edges
+/// and nothing else: no `Cfg` edge builder changes, so the preserves prover, the
+/// flag walks, and the clobbers closure keep treating the instruction as an opaque
+/// computed transfer. A wrong enumeration can therefore mis-measure only the budget
+/// its author opted into, and can corrupt no soundness-bearing analysis.
+fn enumerated_succs(cfg: &Cfg, cpu: Cpu, items: &[CodeItem], idx: usize) -> Option<Vec<usize>> {
+    let CodeItem::Instr { targets, ops, .. } = &items[idx] else { return None };
+    if targets.is_empty() {
+        return None;
+    }
+    // Only a BARE computed transfer is enumerable: exactly one `Defer` edge and no
+    // operand naming a symbol. A direct `jmp .label` (or `jmp External`) already
+    // has an exact edge — the redundant case the per-proc dispatch check refuses —
+    // so the clause is ignored here and the exact edge stands.
+    let names_a_target = ops.iter().any(|o| {
+        matches!(
+            o,
+            CodeOperand::Sym(_) | CodeOperand::SymOff { .. } | CodeOperand::AbsSym { .. }
+        )
+    });
+    if !matches!(cpu_edges(cfg, cpu, idx).as_slice(), [Edge::Defer]) || names_a_target {
+        return None;
+    }
+    // Resolve every name to its local instruction index; a single miss abandons
+    // the whole enumeration (the walk falls back to a `ComputedTransfer` refusal
+    // rather than silently under-count a malformed clause — the dispatch check
+    // owns that diagnostic).
+    targets.iter().map(|t| cfg.label_index(t)).collect()
 }
 
 /// The charged successors of `idx`. Every way out of the body except an
@@ -408,9 +623,11 @@ struct ChargedEdge {
 /// edge 0. A form presenting anything but exactly two edges does not satisfy
 /// that reading, so a split cost over it is refused rather than charged a number
 /// the rule picked blind.
+#[allow(clippy::too_many_arguments)] // the walk's per-instruction facts, already destructured by the caller
 fn charged_edges(
     cfg: &Cfg,
     cpu: Cpu,
+    items: &[CodeItem],
     idx: usize,
     mnem: &str,
     ops: &[CodeOperand],
@@ -420,6 +637,28 @@ fn charged_edges(
     let bail = |kind| Err(BudgetFinding { kind, span });
     if crate::context::is_call_mnemonic(mnem, cpu) {
         return bail(BudgetFindingKind::OpaqueCall { mnemonic: mnem.to_string() });
+    }
+    // Enumerated dispatch: an unconditional computed transfer carrying a
+    // `targets(...)` clause is the ONE way this walk sees THROUGH a computed jump.
+    // The `Defer` its edge model produces becomes N `Follow` edges here — the
+    // instruction's own fixed cost charged once, then a fan-out to each named
+    // local label, exactly like a two-edge branch fans out. This arm is
+    // self-contained (it consumes the clause and returns), leaving the ordinary
+    // edge refusals below untouched for every other shape.
+    if let Some(succs) = enumerated_succs(cfg, cpu, items, idx) {
+        let t = match cost {
+            WalkCost::Fixed { t, .. } => *t,
+            // A computed jmp is unconditional, so its charge is Fixed. A Split or
+            // an off-table cost would be a table defect at a dispatch mnemonic —
+            // refuse honestly rather than route a number the arm picked blind.
+            WalkCost::Split { .. } => {
+                return bail(BudgetFindingKind::AmbiguousBranch { mnemonic: mnem.to_string() })
+            }
+            WalkCost::Unknown => {
+                return bail(BudgetFindingKind::UnknownOp { mnemonic: mnem.to_string() })
+            }
+        };
+        return Ok(succs.into_iter().map(|s| ChargedEdge { cost: t, succ: Some(s) }).collect());
     }
     let edges = cpu_edges(cfg, cpu, idx);
     // The STRUCTURAL refusals come before the cost-table one: a path that
@@ -517,6 +756,12 @@ fn postorder(
     // default. A dropped in-proc successor loses a path, and a lost path makes
     // the bound too LOW — the one direction a budget must not err in.
     let succs = |i: usize| -> Vec<usize> {
+        // An enumerated computed transfer resolves to its named local labels; the
+        // topo walk must see the SAME successors the cost pass charges, or a
+        // drain arm would go unvisited and its cost unfilled.
+        if let Some(ts) = enumerated_succs(cfg, cpu, items, i) {
+            return ts;
+        }
         cpu_edges(cfg, cpu, i)
             .into_iter()
             .filter_map(|e| match e {
@@ -576,6 +821,7 @@ mod tests {
             ops,
             span: sp(),
             as_type: None,
+            targets: Vec::new(),
             author: crate::value::ItemAuthor::User,
         }
     }
@@ -733,6 +979,7 @@ mod tests {
                 ops: vec![sym("skip")],
                 span: sp(),
                 as_type: None,
+                targets: Vec::new(),
                 author: crate::value::ItemAuthor::User,
             },
             instr("moveq", vec![CodeOperand::Imm(1), CodeOperand::Reg(crate::value::Reg::D0)]),
@@ -861,6 +1108,7 @@ mod tests {
             ops: vec![CodeOperand::PostInc(a1), CodeOperand::Ind(a5)],
             span: sp(),
             as_type: None,
+            targets: Vec::new(),
             author: crate::value::ItemAuthor::User,
         };
         let items = vec![
@@ -1066,5 +1314,233 @@ mod tests {
         items.push(instr("ret", vec![])); // 10
         let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
         assert_eq!((c.min, c.max), (28, 28));
+    }
+
+    // ---- enumerated dispatch — `targets(...)` -----------------------------
+
+    use crate::value::{ItemAuthor, Reg, Width};
+
+    /// A `jmp .disp(reg)` computed transfer carrying a `targets(...)` clause. The
+    /// `DispSymInd` operand names no symbol, so its edge is a bare `Defer` — the
+    /// enumerable shape.
+    fn jmp_targets(disp: &str, reg: Reg, targets: &[&str]) -> CodeItem {
+        CodeItem::Instr {
+            mnemonic: "jmp".into(),
+            size: None,
+            ops: vec![CodeOperand::DispSymInd { target: disp.into(), reg }],
+            span: sp(),
+            as_type: None,
+            targets: targets.iter().map(|s| s.to_string()).collect(),
+            author: ItemAuthor::User,
+        }
+    }
+
+    /// `move.l (a1)+, (a5)` — one drain send word, 20 cycles exact.
+    fn drain_move() -> CodeItem {
+        CodeItem::Instr {
+            mnemonic: "move".into(),
+            size: Some(Width::L),
+            ops: vec![CodeOperand::PostInc(Reg::A1), CodeOperand::Ind(Reg::A5)],
+            span: sp(),
+            as_type: None,
+            targets: Vec::new(),
+            author: ItemAuthor::User,
+        }
+    }
+
+    /// The dma-drain shape in miniature: a computed `jmp` enumerated over three
+    /// local labels, the drain groups falling through each other. The walk sees
+    /// THROUGH the dispatch — `jmp (d16,An)` 10, then max over the three arms.
+    fn dispatch_fixture() -> Vec<CodeItem> {
+        vec![
+            jmp_targets("table", Reg::A1, &["done", "drain_2", "drain_1"]), // 0: entry, 10
+            label("table"),
+            instr("rts", vec![]),  // unreachable — reached only by an address the walk can't name
+            label("drain_2"),
+            drain_move(), // 20
+            label("drain_1"),
+            drain_move(), // 20
+            instr("rts", vec![]), // 16
+            label("done"),
+            instr("rts", vec![]), // 16
+        ]
+    }
+
+    // The enumerated dispatch is MEASURED: the dearest arm (`drain_2`) drains two
+    // groups then returns (10 + 20 + 20 + 16 = 66); the `done` arm is 10 + 16 = 26.
+    #[test]
+    fn enumerated_targets_measures_a_computed_dispatch() {
+        let c = path_costs(&dispatch_fixture(), Cpu::M68000, sp()).unwrap();
+        assert_eq!((c.min, c.max), (26, 66));
+        assert_eq!(c.inexact, None);
+    }
+
+    // The SAME `jmp` WITHOUT the clause is the pre-form behavior: a computed
+    // transfer the walk refuses BY NAME. The clause is the ONLY thing that lets
+    // the budget see through it.
+    #[test]
+    fn without_targets_the_same_jmp_refuses() {
+        let mut items = dispatch_fixture();
+        // Strip the clause off the entry jmp; everything else is identical.
+        if let CodeItem::Instr { targets, .. } = &mut items[0] {
+            targets.clear();
+        }
+        let e = path_costs(&items, Cpu::M68000, sp()).unwrap_err();
+        assert_eq!(e.kind, BudgetFindingKind::ComputedTransfer { mnemonic: "jmp".into() });
+    }
+
+    // ORTHOGONALITY (spec §2): the clause changes NOTHING the other CFG consumers
+    // see. The 68k edge model — what the preserves prover and the flag walks read
+    // — is a single `Defer` for the entry jmp with the clause AND without it. Only
+    // the cycle-budget walk (above) reads the clause.
+    #[test]
+    fn enumerated_targets_leave_the_base_edge_model_untouched() {
+        let with = dispatch_fixture();
+        let mut without = with.clone();
+        if let CodeItem::Instr { targets, .. } = &mut without[0] {
+            targets.clear();
+        }
+        let e_with = crate::flag_check::Cfg::build(&with).edges(0);
+        let e_without = crate::flag_check::Cfg::build(&without).edges(0);
+        assert_eq!(e_with, e_without);
+        assert_eq!(e_with, vec![Edge::Defer]);
+    }
+
+    // PERTURBATION (spec §5): add one send group to the dearest arm and the worst
+    // path rises by exactly that group's 20 cycles — a budget pinned at the old
+    // ceiling now fires. The enumeration tracks the arms, not a frozen number.
+    #[test]
+    fn a_perturbed_drain_arm_moves_the_budget() {
+        assert!(check_cycle_budget(&dispatch_fixture(), Cpu::M68000, sp(), Some(66), false).is_empty());
+        let mut items = dispatch_fixture();
+        items.insert(4, drain_move()); // an extra group at the head of `drain_2`
+        let c = path_costs(&items, Cpu::M68000, sp()).unwrap();
+        assert_eq!(c.max, 86);
+        let f = check_cycle_budget(&items, Cpu::M68000, sp(), Some(66), false);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].kind, BudgetFindingKind::OverBudget { worst: 86, budget: 66 });
+    }
+
+    // THE DRAIN-LABEL TRAP (soundness regression pin): a `targets(...)` label must
+    // name the PHYSICAL landing point, not a label DOWNSTREAM of it. A jump-table
+    // dispatch lands on a slot whose prologue (here two `nop`s standing in for the
+    // real `lea/lea`) executes BEFORE control reaches the drain. Naming the landing
+    // label charges that prologue; naming the drain label DOWNSTREAM of it fans the
+    // walk PAST the prologue and under-counts by exactly its cost — an unsound
+    // ceiling the hardware exceeds. The pin proves the walk charges landed-on code:
+    // the landing enumeration MUST measure dearer than the downstream one.
+    #[test]
+    fn targets_charge_the_landed_on_code_not_a_downstream_label() {
+        let build = |target: &str| {
+            vec![
+                jmp_targets("slot", Reg::A1, &[target]),
+                label("landing"),
+                instr("nop", vec![]), // 4 — the slot's dispatch prologue
+                instr("nop", vec![]), // 4
+                label("drain"),
+                drain_move(),         // 20
+                instr("rts", vec![]), // 16
+            ]
+        };
+        let landing = path_costs(&build("landing"), Cpu::M68000, sp()).unwrap();
+        let downstream = path_costs(&build("drain"), Cpu::M68000, sp()).unwrap();
+        // jmp 10 + [prologue 4+4] + drain 20 + rts 16 vs jmp 10 + drain 20 + rts 16.
+        assert_eq!((landing.max, downstream.max), (54, 46));
+        assert_eq!(landing.max - downstream.max, 8, "the drain-label spelling skips the 8-cycle prologue");
+    }
+
+    // An enumerated target that leads back onto the path is a cycle, and falls to
+    // the existing unbounded-loop refusal with no new rule — the topo walk sees
+    // the enumerated successor exactly as the cost pass does.
+    #[test]
+    fn an_enumerated_cycle_is_unbounded() {
+        let items = vec![
+            label("top"),
+            instr("nop", vec![]),
+            jmp_targets("t", Reg::A1, &["top"]),
+        ];
+        let e = path_costs(&items, Cpu::M68000, sp()).unwrap_err();
+        assert_eq!(e.kind, BudgetFindingKind::UnboundedLoop);
+    }
+
+    // ---- the `targets(...)` validity refusals (§1) ------------------------
+
+    // A clause on a CALL is refused: a call's cost is callee-cost composition, not
+    // this form.
+    #[test]
+    fn targets_on_a_call_is_refused() {
+        let items = vec![
+            CodeItem::Instr {
+                mnemonic: "jsr".into(),
+                size: None,
+                ops: vec![CodeOperand::Ind(Reg::A1)],
+                span: sp(),
+                as_type: None,
+                targets: vec!["done".into()],
+                author: ItemAuthor::User,
+            },
+            label("done"),
+            instr("rts", vec![]),
+        ];
+        let f = check_dispatch_targets(&items, Cpu::M68000);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].kind, DispatchFindingKind::OnCall { mnemonic: "jsr".into() });
+    }
+
+    // A clause on a DIRECT `jmp .label` (an already-exact edge) is redundant.
+    #[test]
+    fn targets_on_a_direct_jmp_is_redundant() {
+        let items = vec![
+            CodeItem::Instr {
+                mnemonic: "jmp".into(),
+                size: None,
+                ops: vec![sym("done")],
+                span: sp(),
+                as_type: None,
+                targets: vec!["done".into()],
+                author: ItemAuthor::User,
+            },
+            label("done"),
+            instr("rts", vec![]),
+        ];
+        let f = check_dispatch_targets(&items, Cpu::M68000);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].kind, DispatchFindingKind::Redundant { mnemonic: "jmp".into() });
+    }
+
+    // An unknown local label, a nonlocal target, and a duplicate are each named.
+    #[test]
+    fn targets_name_checks_fire() {
+        let unknown = vec![jmp_targets("t", Reg::A1, &[".typo"]), instr("rts", vec![])];
+        let f = check_dispatch_targets(&unknown, Cpu::M68000);
+        assert_eq!(f, vec![DispatchFinding {
+            kind: DispatchFindingKind::Unknown { label: ".typo".into() },
+            span: sp(),
+        }]);
+
+        let nonlocal = vec![jmp_targets("t", Reg::A1, &["OtherProc"]), instr("rts", vec![])];
+        let f = check_dispatch_targets(&nonlocal, Cpu::M68000);
+        assert_eq!(f, vec![DispatchFinding {
+            kind: DispatchFindingKind::Nonlocal { label: "OtherProc".into() },
+            span: sp(),
+        }]);
+
+        let dup = vec![
+            jmp_targets("t", Reg::A1, &["done", "done"]),
+            label("done"),
+            instr("rts", vec![]),
+        ];
+        let f = check_dispatch_targets(&dup, Cpu::M68000);
+        assert_eq!(f, vec![DispatchFinding {
+            kind: DispatchFindingKind::Duplicate { label: "done".into() },
+            span: sp(),
+        }]);
+    }
+
+    // A well-formed enumeration draws no refusal — the passing twin, so a green
+    // cannot mean the check is dead.
+    #[test]
+    fn a_valid_enumeration_is_silent() {
+        assert!(check_dispatch_targets(&dispatch_fixture(), Cpu::M68000).is_empty());
     }
 }

@@ -226,6 +226,35 @@ pub(super) fn lower_proc(
     // `@budget(cycles: N)` ceiling and the `@cycles_exact` equal-cost proof.
     // Purely declaration-driven — a proc carrying neither attribute is not walked.
     check_cycle_budget(file, proc, &buf, &ctx, diags);
+
+    // 13. Enumerated-dispatch `targets(...)` validity (enumerated-dispatch design
+    // §1): the clause is legal only on an unconditional computed transfer naming
+    // distinct LOCAL labels. Unlike the budget it feeds, this runs whether or not
+    // a `@budget` reads the clause — a wrong enumeration is a wrong claim on its
+    // own. Cheap when no clause is present.
+    check_dispatch_targets(proc, &buf, &ctx, diags);
+}
+
+/// Report the `[dispatch.*]` `targets(...)` refusals for one proc body.
+///
+/// Tier: ERROR, like a budget — the clause is an author-written claim opted into,
+/// so a wrong one never softens and `@allow` would contradict the opt-in. The
+/// finding is a fact about ONE proc body (its own instructions and labels), which
+/// licenses the hard failure.
+fn check_dispatch_targets(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    ctx: &ProcCtx,
+    diags: &mut Vec<Diagnostic>,
+) {
+    for f in crate::cycle_budget::check_dispatch_targets(&buf.items, ctx.cpu) {
+        push(
+            diags,
+            Level::Error,
+            f.span,
+            format!("[{}] in `{}`: {}", f.kind.lint_id(), proc.name, f.kind.message()),
+        );
+    }
 }
 
 /// Report the `[stack.*]` findings for one proc body.

@@ -374,6 +374,7 @@ impl Evaluator<'_> {
                     ops: vec![],
                     span: *span,
                     as_type: None,
+                    targets: Vec::new(),
                     author: self.item_author.clone(),
                 });
             }
@@ -753,6 +754,7 @@ impl Evaluator<'_> {
                     span,
                     dispatch_bound: None,
                     discards: None,
+                    targets: Vec::new(),
                 });
                 self.lower_asm_stmt(&jsr, scope, buf, env);
             }
@@ -1125,6 +1127,13 @@ impl Evaluator<'_> {
         if mnemonic == "dc" {
             return self.lower_dc(instr, size, env);
         }
+        // The enumerated-dispatch `targets(...)` labels, resolved through THIS
+        // proc's label scope so each name matches the mangled symbol its
+        // `CodeItem::Label` carries — the same rewrite a branch target gets. The
+        // clause emits nothing; only the cycle-budget walk reads the resolved set.
+        // Empty for an instruction with no clause.
+        let targets: Vec<String> =
+            instr.targets.iter().map(|t| scope.resolve_ref(t)).collect();
         if mnemonic == "movem" {
             let ops = self.map_movem_operands(instr, scope, env, size)?;
             return Some(CodeItem::Instr {
@@ -1133,6 +1142,7 @@ impl Evaluator<'_> {
                 ops,
                 span: instr.span,
                 as_type: instr.dispatch_bound.clone(),
+                targets,
                 author: self.item_author.clone(),
             });
         }
@@ -1169,6 +1179,7 @@ impl Evaluator<'_> {
             ops,
             span: instr.span,
             as_type: instr.dispatch_bound.clone(),
+            targets,
             author: self.item_author.clone(),
         })
     }

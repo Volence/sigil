@@ -2878,6 +2878,41 @@ impl Parser {
         } else {
             None
         };
+        // Optional `targets(.a, .b, …)` enumerated-dispatch clause (enumerated-
+        // dispatch design §1): the finite label set an unconditional COMPUTED
+        // transfer can land on. `targets` is an ordinary ident everywhere else,
+        // so the guard requires it be directly followed by `(`. An EMPTY set is
+        // refused here (a mnemonic-position enumeration that enumerates nothing
+        // is a contradiction); the semantic refusals (redundant/on-call/unknown/
+        // nonlocal/duplicate) need the whole proc body and live in the per-proc
+        // dispatch check.
+        let targets = if self.at_kw("targets") && matches!(self.peek2(), Tok::LParen) {
+            self.bump(); // `targets`
+            self.expect(&Tok::LParen, "`(`");
+            let mut names = Vec::new();
+            if !self.at(&Tok::RParen) {
+                loop {
+                    names.push(self.target_label());
+                    if !self.eat(&Tok::Comma) {
+                        break;
+                    }
+                }
+            }
+            if names.is_empty() {
+                let sp = self.prev_span();
+                self.diag_at(
+                    sp,
+                    "[dispatch.targets-empty] `targets()` names no labels — an enumerated \
+                     dispatch that enumerates nothing is a contradiction; drop the clause or \
+                     name the reachable labels"
+                        .to_string(),
+                );
+            }
+            self.expect(&Tok::RParen, "`)`");
+            names
+        } else {
+            Vec::new()
+        };
         // Optional trailing `@discards(name)` (§6 / §11 Q3): the explicit opt-out
         // of the flag-result must-use check for a call to an `out(carry:)` callee.
         // `@` starts no other instruction-trailing construct, so a bare peek is
@@ -2902,7 +2937,24 @@ impl Parser {
         // Span computed before the line end so the newline isn't included.
         let span = start.merge(self.prev_span());
         self.expect_line_end_or_rbrace();
-        InstrLine { mnemonic, size, operands, dispatch_bound, discards, span }
+        InstrLine { mnemonic, size, operands, dispatch_bound, discards, targets, span }
+    }
+
+    /// One `targets(...)` label name: a leading-dot `.local` (the corpus form) or
+    /// a bare/qualified `Owner.label` name, spelled exactly as written so lowering
+    /// can resolve it through the same label scope a branch target uses.
+    fn target_label(&mut self) -> String {
+        let mut s = String::new();
+        if self.eat(&Tok::Dot) {
+            s.push('.');
+        }
+        s.push_str(&self.expect_ident("a `targets(...)` label name"));
+        while self.at(&Tok::Dot) && matches!(self.peek2(), Tok::Ident(_)) {
+            self.bump(); // `.`
+            s.push('.');
+            s.push_str(&self.expect_ident("a label segment"));
+        }
+        s
     }
 
     /// Like [`Parser::expect_line_end`], but also accepts a directly-following

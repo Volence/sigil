@@ -500,6 +500,7 @@ fn instr(mnemonic: &str, size: Option<&str>, operands: Vec<Operand>, span: Span)
         span,
         dispatch_bound: None,
         discards: None,
+        targets: Vec::new(),
     })
 }
 
@@ -512,6 +513,7 @@ fn dc_b(bytes: &[u8], span: Span) -> AsmStmt {
         span,
         dispatch_bound: None,
         discards: None,
+        targets: Vec::new(),
     })
 }
 
