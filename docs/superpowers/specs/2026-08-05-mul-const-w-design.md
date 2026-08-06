@@ -73,6 +73,12 @@ For `mul_const.w(n)`:
    bits only. The suppressed-cheaper-LTR fact is a recorded step-5 finding
    (the hand chains sit 2–10 cycles from optimal; recoverable only by a
    deliberate byte-changing parcel), never a silent default.
+   **TAKEN by the 2026-08-06 byte-changing parcel** (specs/2026-08-06-byte-
+   changing-mul-parcel.md R1): the ≥ 3-bit gate relaxed to ≥ 2, so the LTR
+   chain competes with the two-power arm at every stride and `choose()` takes
+   it on cycles (32/32/34 over 34/40/44). This paragraph describes the
+   superseded byte-identity régime — the §4 costs below are the two-power
+   arm's, which is no longer the winner at 2 set bits.
 
 For `mul_bounded.w`: `mulu.w` (70 ceiling) vs the word repeated-add loop
 (priced from the same seam). Same tie-breaking as the long form: fewest
