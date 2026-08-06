@@ -1002,9 +1002,19 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
             FiringKind::OptionUnguarded => "[option.unguarded-use]",
             FiringKind::SlotType => "[call.slot-type-mismatch]",
         };
+        // The option firing carries its own remedy — the whole point of giving it
+        // a distinct id is telling the author the ONE thing that fixes it.
+        let remedy = match f.kind {
+            FiringKind::OptionUnguarded => format!(
+                " — the sentinel is never ruled out on this path; guard it \
+                 (`cmpi #{}.none, {}` / branch away) then `assume_some! {}, {}`",
+                found, f.reg, f.reg, f.expected
+            ),
+            FiringKind::SlotType => String::new(),
+        };
         println!(
-            "  {id:<26} {:<28} calls {:<24} slot {} expects {} but found {}",
-            f.proc, f.callee, f.reg, f.expected, found
+            "  {id:<26} {:<28} calls {:<24} slot {} expects {} but found {}{}",
+            f.proc, f.callee, f.reg, f.expected, found, remedy
         );
     }
 

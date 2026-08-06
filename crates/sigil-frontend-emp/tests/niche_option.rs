@@ -69,6 +69,40 @@ fn niche_overlap_ranged_fires() {
 }
 
 #[test]
+fn negative_sentinel_on_unsigned_payload_overlaps() {
+    // `u8 ? -1` STORES $FF, which is a valid `u8` — the niche is not carved. The
+    // interval test must judge the value the payload's storage holds, not the
+    // unbounded integer the author typed (`-1 ∉ [0,255]` would wrongly pass).
+    let msgs = lower_msgs("module m\npub newtype O = u8 ? -1\n");
+    assert!(has(&msgs, "[option.niche-overlap]"), "-1 stores as $FF, a valid u8: {msgs:?}");
+}
+
+#[test]
+fn negative_sentinel_on_unsigned_ranged_payload_overlaps() {
+    // Same hole one layer down: the payload's `where` range is what $FF must
+    // escape, and `-1` normalized is $FF, which is inside `0..$FF`.
+    let msgs = lower_msgs("module m\npub newtype P = u8 where 0..$FF\npub newtype O = P ? -1\n");
+    assert!(has(&msgs, "[option.niche-overlap]"), "-1 stores as $FF, inside 0..$FF: {msgs:?}");
+}
+
+#[test]
+fn negative_sentinel_on_signed_payload_is_a_real_niche() {
+    // The flagship idiom: on a SIGNED payload `-1` is genuinely outside `0..3`,
+    // so the same spelling that is unsound on u8 is sound here. Both polarities of
+    // the normalization live in one pair.
+    let msgs = lower_msgs("module m\npub newtype I = i16 where 0..3\npub newtype O = I ? -1\n");
+    assert!(!has(&msgs, "[option.niche-overlap]"), "-1 is outside 0..3 on i16: {msgs:?}");
+}
+
+#[test]
+fn sentinel_wider_than_the_payload_storage_is_refused() {
+    // `$100` does not fit a u8 at all: it would truncate to 0 — a valid payload —
+    // carving no niche. Refused rather than silently accepted.
+    let msgs = lower_msgs("module m\npub newtype O = u8 where 0..$7E ? $100\n");
+    assert!(has(&msgs, "[option.niche-overlap]"), "$100 cannot be stored in a u8: {msgs:?}");
+}
+
+#[test]
 fn niche_valid_does_not_fire() {
     // Sentinel OUTSIDE the payload range — a sound niche. Non-vacuity: the build
     // is otherwise clean, so a missing overlap is a real accept, not a swallowed
@@ -119,6 +153,66 @@ fn assume_some_on_non_register_errors() {
     assert!(has(&msgs, "[asm.assume-not-register]"), "a non-register target must be loud: {msgs:?}");
 }
 
+#[test]
+fn assume_some_on_unknown_payload_errors() {
+    // An unresolvable payload name would otherwise bless the register with a type
+    // the slice engine ignores — a silent no-op marker reading as a checked one.
+    let msgs = lower_msgs(
+        "module m\npub newtype P = u8 where 0..$7E\npub newtype Opt = P ? $FF\n\
+         proc p() {\n    assume_some! d0, Nosuch\n    rts\n}\n",
+    );
+    assert!(has(&msgs, "[option.assume-not-option]"), "an unknown payload must be loud: {msgs:?}");
+}
+
+#[test]
+fn assume_some_on_a_non_option_payload_errors() {
+    // A real newtype that no option wraps: the marker could never discharge an
+    // `[option.unguarded-use]`, so it is a lie about a check that happened.
+    let msgs = lower_msgs(
+        "module m\npub newtype P = u8 where 0..$7E\npub newtype Opt = P ? $FF\n\
+         pub newtype Lonely = u8\n\
+         proc p() {\n    assume_some! d0, Lonely\n    rts\n}\n",
+    );
+    assert!(has(&msgs, "[option.assume-not-option]"), "a non-payload newtype must be loud: {msgs:?}");
+}
+
+#[test]
+fn assume_some_on_a_pointer_payload_names_what_it_got() {
+    let msgs = lower_msgs(
+        "module m\npub newtype P = u8 where 0..$7E\npub newtype Opt = P ? $FF\n\
+         struct S { f: u8 @ 0 }\n\
+         proc p() {\n    assume_some! d0, *S\n    rts\n}\n",
+    );
+    assert!(has(&msgs, "[asm.assume-payload]"), "a pointer payload must be loud: {msgs:?}");
+    assert!(msgs.iter().any(|m| m.contains("got `*S`")), "the diagnostic must name what it got: {msgs:?}");
+}
+
+#[test]
+fn none_on_a_non_option_newtype_errors() {
+    // Keying on the decl first means a `.none` on a plain newtype is a loud member
+    // error, not a fall-through to the link-symbol path (an undefined symbol at
+    // link, far from the mistake).
+    let msgs = lower_msgs(
+        "module m\npub newtype Plain = u8\nproc p() {\n    move.b #Plain.none, d0\n    rts\n}\n",
+    );
+    assert!(
+        msgs.iter().any(|m| m.contains("is not a niche-option")),
+        "a `.none` on a non-option must be loud: {msgs:?}"
+    );
+}
+
+#[test]
+fn typo_member_on_an_option_errors() {
+    let msgs = lower_msgs(
+        "module m\npub newtype P = u8 where 0..$7E\npub newtype Opt = P ? $FF\n\
+         proc p() {\n    move.b #Opt.nome, d0\n    rts\n}\n",
+    );
+    assert!(
+        msgs.iter().any(|m| m.contains("has no member `nome`")),
+        "a typo'd option member must be loud: {msgs:?}"
+    );
+}
+
 // ---- §1/§2 unguarded-use (error) via the type-slice engine ----------------
 
 const OPT_PRE: &str = "module m\n\
@@ -144,12 +238,19 @@ fn unguarded_use_fires_and_is_the_only_firing() {
 
 #[test]
 fn assume_some_extraction_clears_the_firing() {
-    // Same call, but the guarded `assume_some!` retypes d0 SlotRef→Slot on the
-    // path — the payload slot is now satisfied, no firing.
+    // Same call, but the spec §2 guard — compare against the SENTINEL and branch
+    // away on equal — then `assume_some!` retypes d0 SlotRef→Slot on the surviving
+    // path, so the payload slot is satisfied and nothing fires.
+    //
+    // The guard is `cmpi #SlotRef.none` and NOT `tst`: the payload range here is
+    // `0..$7E`, so 0 is a VALID payload — a `tst/beq` would branch away on the one
+    // value that was already safe and let the $FF sentinel reach the marker. This
+    // fixture is the repo's "how to use assume_some!" exemplar, so it must show
+    // the shape a guard-dominance check would accept, not merely one C1 trusts.
     let r = analyze(&format!(
         "{OPT_PRE}pub proc C () clobbers(d0) {{\n\
              jbsr Find\n\
-             tst.b d0\n\
+             cmpi.b #SlotRef.none, d0\n\
              beq .none\n\
              assume_some! d0, Slot\n\
              jbsr Use\n\
@@ -163,6 +264,54 @@ fn assume_some_extraction_clears_the_firing() {
         "assume_some! must satisfy the payload slot: {:?}",
         r.slot_firings
     );
+}
+
+#[test]
+fn same_shape_without_the_marker_still_fires() {
+    // NON-VACUITY twin of `assume_some_extraction_clears_the_firing`: the exact
+    // same guarded body with the marker REMOVED must still fire, proving the
+    // clearance above comes from the marker and not from the guard's control flow
+    // (which C1 does not read) or from the call site becoming invisible.
+    let r = analyze(&format!(
+        "{OPT_PRE}pub proc C () clobbers(d0) {{\n\
+             jbsr Find\n\
+             cmpi.b #SlotRef.none, d0\n\
+             beq .none\n\
+             jbsr Use\n\
+         .none:\n\
+             rts\n\
+         }}\n"
+    ));
+    let hits: Vec<_> = r.slot_firings.iter().filter(|f| f.proc == "C").collect();
+    assert_eq!(hits.len(), 1, "without the marker the option is unguarded: {:?}", r.slot_firings);
+    assert_eq!(hits[0].kind, FiringKind::OptionUnguarded);
+}
+
+#[test]
+fn extraction_does_not_leak_across_the_join() {
+    // A marker on ONE path must not type the register after the paths REJOIN: the
+    // lattice's meet degrades a register the two edges disagree about. Here the
+    // extraction happens only on the guarded path, but `Use` is called AFTER the
+    // join — where d0 is SlotRef on the other edge — so it must still fire.
+    let r = analyze(&format!(
+        "{OPT_PRE}pub proc C () clobbers(d0) {{\n\
+             jbsr Find\n\
+             cmpi.b #SlotRef.none, d0\n\
+             beq .join\n\
+             assume_some! d0, Slot\n\
+         .join:\n\
+             jbsr Use\n\
+             rts\n\
+         }}\n"
+    ));
+    let hits: Vec<_> = r.slot_firings.iter().filter(|f| f.proc == "C").collect();
+    assert_eq!(hits.len(), 1, "the extraction must not survive the join: {:?}", r.slot_firings);
+    // The meet degrades d0 to UNTYPED at the join (one edge extracted to Slot, the
+    // other still holds SlotRef), so the site reports the generic mismatch rather
+    // than the option id — the engine cannot prove the option is what arrives. The
+    // load-bearing property is that it fires at all; the id follows the lattice.
+    assert_eq!(hits[0].kind, FiringKind::SlotType, "join degrades to untyped: {hits:?}");
+    assert_eq!(hits[0].found, None, "untyped at the join, not SlotRef: {hits:?}");
 }
 
 #[test]

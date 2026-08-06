@@ -1959,10 +1959,10 @@ pub enum AsmStmt {
     /// marker in the `todo!`/`unreachable!` bang family. Emits ZERO bytes — it
     /// retypes `reg` from a niche-option to its payload for the remainder of the
     /// path (the type-slice register lattice reads it exactly as an `as Payload`
-    /// bless). In C1 it is TRUSTED — a greppable, auditable "I checked the
-    /// sentinel", one instruction wide. Register-only in C1: a var/field-access
-    /// path is not retypeable while flow-sensitive type state stays register-
-    /// keyed (ledgered gap).
+    /// bless). TRUSTED: a greppable, auditable "I checked the sentinel", one
+    /// instruction wide — the compiler verifies the payload's SHAPE, never the
+    /// guard. Register-only: a var/field-access path is not retypeable while
+    /// flow-sensitive type state stays register-keyed.
     AssumeSome {
         /// The register being extracted (spelling, e.g. `"d0"`).
         reg: String,

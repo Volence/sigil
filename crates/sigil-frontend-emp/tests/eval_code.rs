@@ -90,7 +90,6 @@ fn instr_with_operands_survives_concat_and_displays() {
         ops: vec![CodeOperand::Imm(1), CodeOperand::Reg(Reg::D0)],
         span: dummy_span(),
         as_type: None,
-        sentinel_of: None,
         targets: Vec::new(),
         author: sigil_frontend_emp::value::ItemAuthor::User,
     });

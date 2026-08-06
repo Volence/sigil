@@ -1567,7 +1567,6 @@ mod frame_tests {
             ops,
             span: Span { source: SourceId(0), start: idx, end: idx + 1 },
             as_type: None,
-            sentinel_of: None,
             targets: Vec::new(),
             author: crate::value::ItemAuthor::User,
         }
@@ -1724,7 +1723,6 @@ mod frame_tests {
             ops: vec![CodeOperand::Sym("Handler".to_string())],
             span: Span { source: SourceId(0), start: 0, end: 1 },
             as_type: None,
-            sentinel_of: None,
             targets: Vec::new(),
             author,
         };

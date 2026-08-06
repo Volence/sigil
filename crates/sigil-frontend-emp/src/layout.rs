@@ -1052,6 +1052,63 @@ impl<'a> Evaluator<'a> {
         self.newtypes.get(name).copied().and_then(|d| d.sentinel.as_ref())
     }
 
+    /// The niche-option `name`'s sentinel as the value its payload storage holds
+    /// — the written expression evaluated, then normalized through
+    /// [`normalize_sentinel`](Self::normalize_sentinel). This is the ONE spelling
+    /// of "the sentinel value" every consumer uses (`.none`'s typed const, the
+    /// raw-sentinel field comparison), so an author's `-1` and the `$FF` it
+    /// stores can never be judged as different values.
+    /// Whether ANY declared niche-option names `payload` as its payload type —
+    /// i.e. whether `payload` is the `T` of some `newtype Opt = T ? sentinel`.
+    /// `assume_some!` extracts an option, so a payload no option wraps means the
+    /// marker can discharge nothing.
+    pub(crate) fn newtype_is_option_payload(&self, payload: &str) -> bool {
+        self.newtypes.values().any(|d| {
+            d.sentinel.is_some()
+                && matches!(&d.underlying, ast::Type::Named(p)
+                    if p.segments.last().map(String::as_str) == Some(payload))
+        })
+    }
+
+    /// Resolves SILENTLY: an unrepresentable sentinel is reported once, at the
+    /// decl, by [`check_option_niche`](Self::check_option_niche) — a use site must
+    /// not re-report it once per mention.
+    pub(crate) fn option_sentinel_value(&mut self, name: &str, span: Span) -> Option<i128> {
+        let expr = self.newtype_sentinel_expr(name)?;
+        let written = self.eval_const_index(expr)?;
+        let decl = self.newtypes.get(name).copied()?;
+        let payload = self.resolve_type(&decl.underlying);
+        let watermark = self.diags.len();
+        let normalized = self.normalize_sentinel(&payload, written, span);
+        self.diags.truncate(watermark);
+        normalized
+    }
+
+    /// Evaluate a newtype's own `where LO..HI` refinement bounds under the
+    /// DEDICATED refinement cycle guard — the ONE place that eval happens, shared
+    /// by [`check_value_fits_ty_labeled`](Self::check_value_fits_ty_labeled) and
+    /// [`effective_scalar_bounds`](Self::effective_scalar_bounds) so the guard
+    /// cannot be present in one ladder and missing from the other. A bound that
+    /// (transitively) constructs the SAME newtype (`newtype N = u8 where 0..N(2)`)
+    /// would otherwise re-enter without bound and abort on a native stack
+    /// overflow; the guard turns that into a diagnosed cycle.
+    pub(crate) fn newtype_refine_bounds(
+        &mut self,
+        name: &str,
+        decl: &'a ast::NewtypeDecl,
+        span: Span,
+    ) -> Option<(i128, i128)> {
+        let (lo_expr, hi_expr) = decl.refine.as_ref()?;
+        self.with_cycle_guard(crate::eval::CycleStack::Refine, name, span, "type", |this| {
+            match (this.eval_const_index(lo_expr), this.eval_const_index(hi_expr)) {
+                (Some(lo), Some(hi)) => Some((lo, hi)),
+                // A non-int bound already reported via `eval_const_index`.
+                _ => None,
+            }
+        })
+        .flatten()
+    }
+
     /// The effective inclusive scalar bounds `(lo, hi)` a value of `ty` may
     /// occupy — following newtype/refined/prim/fixed layers to the tightest
     /// declared range (a `where` refinement wins over the underlying prim). The
@@ -1064,10 +1121,8 @@ impl<'a> Evaluator<'a> {
             Ty::Refined { lo, hi, .. } => Some((*lo, *hi)),
             Ty::Newtype(name) => {
                 let decl = self.newtypes.get(name.as_str()).copied()?;
-                if let Some((lo_expr, hi_expr)) = &decl.refine {
-                    let lo = self.eval_const_index(lo_expr)?;
-                    let hi = self.eval_const_index(hi_expr)?;
-                    return Some((lo, hi));
+                if decl.refine.is_some() {
+                    return self.newtype_refine_bounds(name, decl, span);
                 }
                 let result = self.with_cycle_guard(crate::eval::CycleStack::Layout, name, span, "type", |this| {
                     let underlying = this.resolve_type(&decl.underlying);
@@ -1091,21 +1146,29 @@ impl<'a> Evaluator<'a> {
     /// makes the full-range overlap immediate: an option NEEDS the niche carved
     /// out. A payload with no scalar bound at all (a struct/enum underlying) can
     /// host no niche. Fires once per option decl (the once-per-compile driver).
-    pub(crate) fn check_option_niche(&mut self, decl: &ast::NewtypeDecl) {
+    pub(crate) fn check_option_niche(&mut self, decl: &'a ast::NewtypeDecl) {
         let Some(sentinel_expr) = &decl.sentinel else { return };
-        let Some(sentinel) = self.eval_const_index(sentinel_expr) else { return };
+        let Some(written) = self.eval_const_index(sentinel_expr) else { return };
         let payload = self.resolve_type(&decl.underlying);
         if matches!(payload, Ty::Poison) {
             return;
         }
+        // The sentinel is a BIT PATTERN in the payload's storage, so the range
+        // test must judge the value the payload actually sees: `u8 ? -1` stores
+        // $FF, which IS a valid `u8` — the niche is not carved. Normalizing first
+        // (and refusing a sentinel the storage cannot hold at all) is what makes
+        // the interval test sound across widths and signedness.
+        let Some(sentinel) = self.normalize_sentinel(&payload, written, decl.span) else {
+            return;
+        };
         // The payload's effective range. The option's OWN `where` refinement wins
         // (the inline form `u8 where LO..HI ? S`, whose refinement rides `decl`
         // itself, not the underlying); otherwise the underlying's range (the
         // two-decl form `SlotId ? S`, where the range lives on `SlotId`).
-        let bounds = if let Some((lo_expr, hi_expr)) = &decl.refine {
-            match (self.eval_const_index(lo_expr), self.eval_const_index(hi_expr)) {
-                (Some(lo), Some(hi)) => Some((lo, hi)),
-                _ => return,
+        let bounds = if decl.refine.is_some() {
+            match self.newtype_refine_bounds(&decl.name, decl, decl.span) {
+                Some(b) => Some(b),
+                None => return,
             }
         } else {
             self.effective_scalar_bounds(&payload, decl.span)
@@ -1123,16 +1186,63 @@ impl<'a> Evaluator<'a> {
             return;
         };
         if lo <= sentinel && sentinel <= hi {
+            // Name BOTH spellings when normalization moved the value, so the
+            // `u8 ? -1` case reads as the $FF collision it actually is.
+            let as_stored = if sentinel == written {
+                String::new()
+            } else {
+                format!(" (written {written}, stored as {sentinel})")
+            };
             self.error(
                 decl.span,
                 format!(
-                    "[option.niche-overlap] sentinel {sentinel} is a valid `{}` value ({lo}..{hi}) \
-                     — an option needs the niche carved out (narrow the payload's `where` range \
-                     to exclude {sentinel})",
+                    "[option.niche-overlap] sentinel {sentinel}{as_stored} is a valid `{}` value \
+                     ({lo}..{hi}) — an option needs the niche carved out (narrow the payload's \
+                     `where` range to exclude {sentinel})",
                     payload.describe()
                 ),
             );
         }
+    }
+
+    /// Reinterpret a niche-option's written sentinel as the value the payload's
+    /// storage actually holds: a negative sentinel on an unsigned payload becomes
+    /// its two's-complement pattern (`u8 ? -1` → 255), an out-of-signedness
+    /// positive on a signed payload sign-extends. A sentinel the storage cannot
+    /// hold AT ALL (`u8 ? $100`, which would silently truncate to a valid payload
+    /// 0) is refused — the niche must be a real, writable bit pattern. `None`
+    /// means a diagnostic was emitted (or the payload has no scalar storage, in
+    /// which case the caller's own "no scalar niche" path reports).
+    pub(crate) fn normalize_sentinel(&mut self, ty: &Ty, written: i128, span: Span) -> Option<i128> {
+        let (bits, signed) = match self.effective_underlying(ty, span) {
+            Ty::Prim { width, signed, .. } => (u32::from(width) * 8, signed),
+            // A `fixed<I,F>` value is stored in an `I+F`-bit SIGNED integer.
+            Ty::Fixed { i, f } => (self.fixed_width_bits(i, f, span)?, true),
+            // No scalar storage — the caller reports "no scalar niche".
+            _ => return Some(written),
+        };
+        if bits == 0 || bits >= 128 {
+            return Some(written);
+        }
+        // Representable as SOME bit pattern in this width: the union of the
+        // signed and unsigned windows.
+        let lo_repr = -(1i128 << (bits - 1));
+        let hi_repr = (1i128 << bits) - 1;
+        if written < lo_repr || written > hi_repr {
+            self.error(
+                span,
+                format!(
+                    "[option.niche-overlap] sentinel {written} is not representable in the \
+                     {}-byte payload storage ({lo_repr}..{hi_repr}) — it would truncate to a \
+                     valid payload value, carving no niche",
+                    bits / 8
+                ),
+            );
+            return None;
+        }
+        let mask = (1i128 << bits) - 1;
+        let low = written & mask;
+        Some(if signed && (low & (1i128 << (bits - 1))) != 0 { low - (1i128 << bits) } else { low })
     }
 
     /// Compute the bit layout of the bitfield named `name` (T4, D-P3.10).
@@ -1290,26 +1400,17 @@ impl<'a> Evaluator<'a> {
                     // known in `self.newtypes`.
                     return true;
                 };
-                if let Some((lo_expr, hi_expr)) = &decl.refine {
-                    // A newtype whose `where` bound (transitively) constructs the
-                    // SAME newtype (`newtype N = u8 where 0 .. N(2)`) would re-enter
-                    // this validation without bound and abort the process with a
-                    // native stack overflow (T8 review, Critical). Guard on a
-                    // DEDICATED stack — NOT `layout_in_progress`, whose reuse would
-                    // falsely flag the legitimate `where 0 .. sizeof(S)` /
-                    // `struct S { x: N }` size re-entrancy — so a construction cycle
-                    // is diagnosed like the underlying-chain cycle above.
-                    let result =
-                        self.with_cycle_guard(crate::eval::CycleStack::Refine, name, span, "type", |this| {
-                            match (this.eval_const_index(lo_expr), this.eval_const_index(hi_expr)) {
-                                (Some(lo), Some(hi)) => {
-                                    this.check_in_range(val, lo, hi, span, &format!("newtype {label}"))
-                                }
-                                // A non-int bound already reported via `eval_const_index`.
-                                _ => false,
-                            }
-                        });
-                    return result.unwrap_or(false);
+                if decl.refine.is_some() {
+                    // The bounds eval (and its dedicated re-entrancy guard) is
+                    // shared with `effective_scalar_bounds` via
+                    // `newtype_refine_bounds`; only the diagnostic is this
+                    // function's own.
+                    return match self.newtype_refine_bounds(name, decl, span) {
+                        Some((lo, hi)) => {
+                            self.check_in_range(val, lo, hi, span, &format!("newtype {label}"))
+                        }
+                        None => false,
+                    };
                 }
                 // Recurse into the underlying type but KEEP `label` — the author
                 // wrote `Angle(x)`, so the eventual `u8` range check must blame

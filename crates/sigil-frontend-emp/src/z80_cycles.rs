@@ -101,6 +101,11 @@ fn is_sym(op: &CodeOperand) -> bool {
 pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
     use CodeOperand::*;
     match (mnemonic, ops) {
+        // The niche-option `assume_some` extraction marker emits no bytes and
+        // executes nothing — zero cycles, exactly. Without this arm a Z80
+        // `@budget` proc containing a marker hard-bails `[cycles.unknown-op]` on
+        // an instruction that is not in the ROM.
+        ("assume_some", _) => Cost::Fixed(0),
         // --- 8-bit loads ---
         // ld r, r'                                    4
         ("ld", [a, b]) if is_reg8(a) && is_reg8(b) => Cost::Fixed(4),
@@ -241,7 +246,6 @@ mod tests {
             ops,
             span: sp(),
             as_type: None,
-            sentinel_of: None,
             targets: Vec::new(),
             author: crate::value::ItemAuthor::User,
         }

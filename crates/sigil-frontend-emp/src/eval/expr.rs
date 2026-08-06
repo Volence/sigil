@@ -569,15 +569,37 @@ impl<'a> Evaluator<'a> {
             // the option newtype so `[option.raw-sentinel]` can tell it from a raw
             // literal at an option-typed position; erases to the sentinel byte in
             // emission (byte-identical to the raw sentinel it replaces).
-            if b == "none" {
-                if let Some(sentinel_expr) = self.newtype_sentinel_expr(a) {
-                    let Some(sentinel) = self.eval_const_index(sentinel_expr) else {
-                        return Value::Poison;
-                    };
-                    return Value::Typed {
-                        ty: Box::new(crate::layout::Ty::Newtype(a.to_string())),
-                        val: Box::new(Value::Int(sentinel)),
-                    };
+            //
+            // Keys on the DECL first (like the `offsets`/`dispatch`/`table` steps
+            // above), so a typo'd member on a real option is a loud member error
+            // here rather than falling through to the link-symbol path and
+            // surfacing as an undefined symbol at link.
+            if self.newtypes.contains_key(a) {
+                if self.newtype_sentinel_expr(a).is_some() {
+                    if b == "none" {
+                        let Some(sentinel) = self.option_sentinel_value(a, path.span) else {
+                            return Value::Poison;
+                        };
+                        return Value::Typed {
+                            ty: Box::new(crate::layout::Ty::Newtype(a.to_string())),
+                            val: Box::new(Value::Int(sentinel)),
+                        };
+                    }
+                    self.error(
+                        path.span,
+                        format!("niche-option `{a}` has no member `{b}` (expected `.none`)"),
+                    );
+                    return Value::Poison;
+                }
+                if b == "none" {
+                    self.error(
+                        path.span,
+                        format!(
+                            "newtype `{a}` is not a niche-option, so it has no `.none` — declare \
+                             it as `newtype {a} = <payload> ? <sentinel>` to carve a niche"
+                        ),
+                    );
+                    return Value::Poison;
                 }
             }
         }

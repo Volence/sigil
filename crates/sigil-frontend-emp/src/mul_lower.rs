@@ -697,7 +697,6 @@ fn instr(mnemonic: &str, size: Option<Width>, ops: Vec<CodeOperand>, span: Span)
         ops,
         span,
         as_type: None,
-        sentinel_of: None,
         targets: Vec::new(),
         // The placeholder the expansion's final `reauthor_user_items` pass
         // lifts to the construct item's own authorship.
@@ -1239,7 +1238,6 @@ mod tests {
                 ops: vec![reg(Reg::D0), imm(66)],
                 span: sp(),
                 as_type: None,
-                sentinel_of: None,
                 targets: Vec::new(),
                 author: ItemAuthor::User,
             }],

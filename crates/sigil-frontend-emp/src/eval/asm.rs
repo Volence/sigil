@@ -351,9 +351,9 @@ impl Evaluator<'_> {
                 // rides the CodeBuf as the reserved `assume_some` mnemonic
                 // (skipped at emission, `lower::code`) carrying the payload in
                 // `as_type`, which the type-slice lattice reads exactly as an
-                // `as Payload` bless on the register. TRUSTED in C1 (a greppable
-                // "I checked the sentinel"); C2 promotes it to guard-dominance-
-                // checked once that substrate exists.
+                // `as Payload` bless on the register. TRUSTED: the marker asserts
+                // the author checked the sentinel; the compiler checks only that
+                // the SHAPE is a real payload type, never the guard itself.
                 let Some(r) = Reg::from_name(reg) else {
                     self.error(
                         *span,
@@ -369,21 +369,52 @@ impl Evaluator<'_> {
                 // same surface `as Payload` accepts. A pointer/array/tuple payload
                 // has no niche-option meaning.
                 let ast::Type::Named(path) = ty else {
+                    let resolved = self.resolve_type(ty);
                     self.error(
                         *span,
-                        "[asm.assume-payload] `assume_some!`'s payload must be a named \
-                         newtype (the option's payload type)",
+                        format!(
+                            "[asm.assume-payload] `assume_some!`'s payload must be a named \
+                             newtype (the option's payload type), got `{}`",
+                            resolved.describe()
+                        ),
                     );
                     return;
                 };
                 let payload = path.segments.last().cloned().unwrap_or_default();
+                // The payload must be a DECLARED newtype: an unresolvable name
+                // would otherwise bless the register with a type the slice engine
+                // silently ignores — a no-op marker reading as a checked one.
+                if !self.newtypes.contains_key(payload.as_str()) {
+                    self.error(
+                        *span,
+                        format!(
+                            "[option.assume-not-option] `{payload}` is not a declared newtype, so \
+                             `assume_some! {reg}, {payload}` extracts nothing — name the option's \
+                             PAYLOAD type (the `T` in `newtype Opt = T ? sentinel`)"
+                        ),
+                    );
+                    return;
+                }
+                // The payload must be some option's payload — extracting from a
+                // type no option wraps means the marker can never discharge an
+                // `[option.unguarded-use]`, so it is a silent lie about a check.
+                if !self.newtype_is_option_payload(&payload) {
+                    self.error(
+                        *span,
+                        format!(
+                            "[option.assume-not-option] no niche-option has `{payload}` as its \
+                             payload — `assume_some!` extracts an option, so `{payload}` must be \
+                             the `T` of some `newtype Opt = {payload} ? sentinel`"
+                        ),
+                    );
+                    return;
+                }
                 buf.push(CodeItem::Instr {
                     mnemonic: "assume_some".to_string(),
                     size: None,
                     ops: vec![CodeOperand::Reg(r)],
                     span: *span,
                     as_type: Some(payload),
-                    sentinel_of: None,
                     targets: Vec::new(),
                     author: self.item_author.clone(),
                 });
@@ -417,7 +448,6 @@ impl Evaluator<'_> {
                     ops: vec![],
                     span: *span,
                     as_type: None,
-                    sentinel_of: None,
                     targets: Vec::new(),
                     author: self.item_author.clone(),
                 });
@@ -1203,10 +1233,6 @@ impl Evaluator<'_> {
         // Empty for an instruction with no clause.
         let targets: Vec<String> =
             instr.targets.iter().map(|t| scope.resolve_ref(t)).collect();
-        // Whether an immediate operand of this line is a niche-option's `.none`
-        // member — the SANCTIONED sentinel spelling `[option.raw-sentinel]` reads
-        // to tell `#SlotRef.none` from a raw `#$FF` at an option-typed position.
-        let sentinel_of = self.option_sentinel_operand(&instr.operands);
         if mnemonic == "movem" {
             let ops = self.map_movem_operands(instr, scope, env, size)?;
             return Some(CodeItem::Instr {
@@ -1215,7 +1241,6 @@ impl Evaluator<'_> {
                 ops,
                 span: instr.span,
                 as_type: instr.dispatch_bound.clone(),
-                sentinel_of,
                 targets,
                 author: self.item_author.clone(),
             });
@@ -1247,14 +1272,13 @@ impl Evaluator<'_> {
             }
             ops.push(self.map_operand(op, scope, env, op_width)?);
         }
-        self.check_raw_sentinel(&instr.operands, &ops, &sentinel_of, instr.span);
+        self.check_raw_sentinel(&instr.operands, &ops, instr.span);
         Some(CodeItem::Instr {
             mnemonic,
             size,
             ops,
             span: instr.span,
             as_type: instr.dispatch_bound.clone(),
-            sentinel_of,
             targets,
             author: self.item_author.clone(),
         })
@@ -1288,13 +1312,7 @@ impl Evaluator<'_> {
     /// sees it), and zero-firing once the corpus stores `.none`. The register-
     /// held-option position (which needs the cross-file type-slice dataflow) is a
     /// ledgered C1 gap; this catches the field-typed position, which is local.
-    fn check_raw_sentinel(
-        &mut self,
-        operands: &[ast::Operand],
-        ops: &[CodeOperand],
-        sentinel_of: &Option<String>,
-        span: Span,
-    ) {
+    fn check_raw_sentinel(&mut self, operands: &[ast::Operand], ops: &[CodeOperand], span: Span) {
         // Cheap gate: the nudge needs a raw immediate sibling at all.
         if !ops.iter().any(|o| matches!(o, CodeOperand::Imm(_))) {
             return;
@@ -1303,7 +1321,7 @@ impl Evaluator<'_> {
             return;
         };
         // Written as `#option.none` already — the sanctioned spelling, no nudge.
-        if sentinel_of.as_deref() == Some(option.as_str()) {
+        if self.option_sentinel_operand(operands).as_deref() == Some(option.as_str()) {
             return;
         }
         if ops.iter().any(|o| matches!(o, CodeOperand::Imm(v) if *v == sentinel)) {
@@ -1336,8 +1354,10 @@ impl Evaluator<'_> {
                 continue;
             };
             let crate::layout::Ty::Newtype(name) = fty else { continue };
-            let Some(sentinel_expr) = self.newtype_sentinel_expr(&name) else { continue };
-            if let Some(sentinel) = self.eval_const_index(sentinel_expr) {
+            if self.newtype_sentinel_expr(&name).is_none() {
+                continue;
+            }
+            if let Some(sentinel) = self.option_sentinel_value(&name, span) {
                 return Some((name, sentinel));
             }
         }

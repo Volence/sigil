@@ -923,7 +923,6 @@ mod edge_model_tests {
             ops,
             span: sp(),
             as_type: None,
-            sentinel_of: None,
             targets: Vec::new(),
             author: crate::value::ItemAuthor::User,
         }
