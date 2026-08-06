@@ -13,9 +13,18 @@ Section_RedrawPlanes is NOT this parcel (see §6).
 
 **(a) `@noreturn` on proc declarations** (and `extern proc` sigs), via the
 existing attrs channel. It is a CHECKED claim, not an annotation: a
-`@noreturn` proc body must contain NO `Return` edge (`[noreturn.returns]`
-refusal on any rts-class exit, conditional returns included) — every path must
-leave by transfer or loop. That check is cheap on the existing Cfg and makes
+`@noreturn` proc body must contain NO `Return` edge and NO fall-off-the-end
+(`[noreturn.returns]` refusal on any rts-class exit, conditional returns
+included, and on `FallOff` — control off the end of the body "returns" into
+the successor) — every path must leave by transfer or loop. Two refinements
+the first panel round proved necessary: (a) an unconditional transfer to a
+TRAILING local label (a label that closes the body with no instruction after
+it) IS a fall-off in different spelling — the check must resolve it as such,
+not accept it as an external `Defer` (the Z80 edge builder already models
+this; the 68k `Cfg::edges` unification is a separate ledgered parcel with
+cross-analysis blast radius); (b) `falls_into` composes: a `@noreturn` proc's
+FallOff into a successor that is itself `@noreturn`-declared is honest and
+accepted; into anything else it is refused. That check is cheap on the existing Cfg and makes
 the attribute self-verifying at the declaration site; what cannot be verified
 is the TRANSITIVE claim (the target it jumps to could return), which is
 exactly as trusted as every other declared contract in the closure — the
