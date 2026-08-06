@@ -92,7 +92,8 @@ fn oracle_inputs_need_the_real_mask_preservers_map() {
 
     // WITH the real map: the mask-tail to `Sibling` is credited, `check_preserves`
     // emits no error, and the oracle input carries `a0` for the closure round.
-    let (check_real, names_real) = preserve_oracle_inputs(p, &buf, &noreturn, &map_with("Sibling"));
+    let (check_real, names_real, _word) =
+        preserve_oracle_inputs(p, &buf, &noreturn, &map_with("Sibling"));
     assert!(
         !check_real.is_empty() && names_real.contains("a0"),
         "real map must keep the a0 oracle input: check={check_real:?} names={names_real:?}"
@@ -101,7 +102,7 @@ fn oracle_inputs_need_the_real_mask_preservers_map() {
     // WITH an empty map (the rot): the mask-tail refuses with
     // `[proc.preserves-sr-unbalanced]`, which zeroes the oracle input — the closure
     // can no longer re-credit `a0` through the tail.
-    let (check_empty, names_empty) =
+    let (check_empty, names_empty, _word_empty) =
         preserve_oracle_inputs(p, &buf, &noreturn, &BTreeMap::new());
     assert!(
         check_empty.is_empty() && names_empty.is_empty(),
@@ -152,7 +153,7 @@ fn base_credit_is_tail_poisoned_when_the_terminal_tail_is_reachable() {
     // error) — proven by the oracle-inputs path in the test above being non-empty
     // for this same shape. So the emptiness below is the ClobberAll tail poison,
     // not a silent mask refusal.
-    let (check_real, _) = preserve_oracle_inputs(p, &buf, &noreturn, &map_with("Sibling"));
+    let (check_real, _, _) = preserve_oracle_inputs(p, &buf, &noreturn, &map_with("Sibling"));
     assert!(!check_real.is_empty(), "guard: the real map must discharge the mask claim here");
 
     assert!(
@@ -162,5 +163,60 @@ fn base_credit_is_tail_poisoned_when_the_terminal_tail_is_reachable() {
     assert!(
         verified_preserves_regs(p, &buf, &noreturn, &BTreeMap::new()).is_empty(),
         "reachable tail: the empty map errors on the mask claim before the register walk"
+    );
+}
+
+/// `keeper` claims a FULL register (a0, never written), the mask (through a terminal
+/// tail) and the §6 word facet (d5, genuinely round-tripped) — three clauses, so a
+/// failure of one can be watched against the others.
+const MASK_PLUS_WORD_TAIL: &str = "module m\n\
+     extern proc Sibling() preserves(sr.mask)\n\
+     proc keeper() clobbers(d0) preserves(a0, sr.mask, d5.w) {\n\
+         move.w d5, -(sp)\n\
+         moveq #0, d5\n\
+         move.w (sp)+, d5\n\
+         jbra Sibling\n\
+     }\n";
+
+/// THE FAIL-CLOSED POLARITY, as a checked fact. `preserve_oracle_inputs` returns a
+/// CREDIT (the full-register pair) and an OBLIGATION (the word set), and they must
+/// react to a shape error in OPPOSITE directions.
+///
+/// With an empty mask-preservers map the mask claim refuses, which correctly zeroes
+/// the register CREDIT — but that error belongs to the `sr.mask` clause, not to
+/// `d5.w`. If the word set collapsed with it, the `.w` obligation would be checked
+/// by nobody: the per-file gate DEFERS a call-blocked claim silently, and the corpus
+/// gate this feeds is its final authority. So the word set must SURVIVE the error.
+#[test]
+fn the_word_obligation_survives_an_unrelated_clause_error() {
+    let (file, buf) = keeper_of(MASK_PLUS_WORD_TAIL);
+    let p = decl(&file);
+    let noreturn = BTreeSet::new();
+
+    // Baseline: with the real map nothing errors, and both come through.
+    let (check_ok, names_ok, word_ok) =
+        preserve_oracle_inputs(p, &buf, &noreturn, &map_with("Sibling"));
+    assert!(
+        word_ok.iter().any(|r| r.to_string() == "d5"),
+        "the real map must carry the d5 word obligation: {word_ok:?}"
+    );
+    // Non-vacuity for the contrast below: the credit really is populated here.
+    assert!(
+        !check_ok.is_empty() || !names_ok.is_empty(),
+        "guard: the real map discharges the mask claim, so the credit is live"
+    );
+
+    // The rot: an empty map refuses the mask claim.
+    let (check_empty, names_empty, word_empty) =
+        preserve_oracle_inputs(p, &buf, &noreturn, &BTreeMap::new());
+    assert!(
+        check_empty.is_empty() && names_empty.is_empty(),
+        "a shape error must zero the CREDIT (safe direction): \
+         check={check_empty:?} names={names_empty:?}"
+    );
+    assert!(
+        word_empty.iter().any(|r| r.to_string() == "d5"),
+        "but the word OBLIGATION must survive it — dropping it would leave the `.w` \
+         claim unverified by anything: {word_empty:?}"
     );
 }

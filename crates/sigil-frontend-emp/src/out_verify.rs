@@ -67,7 +67,7 @@
 
 use crate::flag_check::{conditional_out_edge_credits, Cfg, Edge};
 use crate::lower::instr_written_regs;
-use crate::preserves::{verify_preserved_on, CallPolicy, PreserveStatus, ReturnScope};
+use crate::preserves::{verify_preserved_on, CallPolicy, Facet, PreserveStatus, ReturnScope};
 use crate::value::{CodeItem, CodeOperand, Reg, Width};
 use sigil_span::Span;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -605,6 +605,7 @@ pub fn check_cond_out_survives(
             &[*reg],
             policy,
             ReturnScope::Sites(&sites),
+            Facet::Full,
             None,
             &BTreeSet::new(),
         );

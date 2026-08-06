@@ -806,6 +806,9 @@ pub fn z80_clobbers_report_doctored(
                             out: expand(p.out.as_deref().unwrap_or(&[])),
                             has_clobber_contract: p.clobbers.is_some() || doctored.is_some(),
                             verified_preserves,
+                            // The §6 word facet is a 68k data-register form; this
+                            // seam builds Z80 nodes, whose preserves are units.
+                            word_preserves: BTreeSet::new(),
                             requires: p.requires.iter().map(|(n, _)| n.clone()).collect(),
                             grants: p.grants.iter().map(|(n, _)| n.clone()).collect(),
                             unanalyzable_allowed: false,

@@ -205,6 +205,74 @@ fn corpus_has_zero_dropped_instructions() {
     }
 }
 
+/// §6 partial-width — THE WORD-FACET ERROR GATE. Every `preserves(dN.w)` claim in
+/// the corpus must round-trip its low word under the closure's verified `effective`
+/// oracle, on EVERY shipped shape. The per-file byte gate DEFERS the four witnesses
+/// (Player_Main / TestPlayer_Main d7, Collected_ParkSlot d2, EntityWindow_TrySpawnRing
+/// d5) — their round-trips cross calls it cannot see through — so this closure gate
+/// is their final authority (the analog of `[proc.clobber-undeclared]` catching a
+/// full-preserve deferral, which the word facet silences by licensing dN's clobber).
+/// Runs per shape so the DEBUG-gated d2/d5 arms are proven by their round-trip in the
+/// debug shape AND by never-written in the plain shape. A non-empty set is a false or
+/// unprovable partial-width claim.
+#[test]
+fn corpus_word_facet_preserves_all_verify_the_error_gate() {
+    let Some(srcs) = corpus_sources() else { return };
+
+    // The four genuine witnesses — the procs that round-trip a register's LOW word
+    // in their OWN body. PINNED, not merely counted: an assert-empty firing gate
+    // says nothing about whether any claim was examined, so the CLAIM CENSUS is
+    // asserted exactly. (The three transitive EntityWindow callers and `TestPlayer`
+    // are deliberately ABSENT — they carry their register only through a call / a
+    // fall-through, which under conservative v1 is a full clobber, so they keep
+    // `clobbers`. Their absence here is the pin on that ruling.)
+    let expected_claims: Vec<(String, String)> = [
+        ("Collected_ParkSlot", "d2"),
+        ("EntityWindow_TrySpawnRing", "d5"),
+        ("Player_Main", "d7"),
+        ("TestPlayer_Main", "d7"),
+    ]
+    .iter()
+    .map(|(p, r)| (p.to_string(), r.to_string()))
+    .collect();
+
+    let shapes = analyze_every_shape(&srcs);
+    let shape_count = shapes.len();
+    let mut checked = 0usize;
+    let mut report = String::from("\n== §6 word-facet claims per shape ==\n");
+
+    for (label, _profile, r) in shapes {
+        report.push_str(&format!("  [{label:<12}] claims {:?}\n", r.word_preserve_claims));
+        // The ERROR gate: every declared low word round-trips under the closure's
+        // verified `effective` oracle.
+        assert!(
+            r.word_preserve_firings.is_empty(),
+            "shape `{label}`: `preserves(dN.w)` low word not provable under the closure \
+             oracle (a false/unprovable partial-width claim): {:?}",
+            r.word_preserve_firings
+        );
+        // NON-VACUITY: the gate above ranged over exactly these claims. The DEBUG-
+        // gated d2/d5 arms exist in every shape's DECLARATION (a contract is not
+        // comptime-conditional), so the claim set is shape-INDEPENDENT even though
+        // what proves each claim is not: in a DEBUG shape the round-trip proves it,
+        // in a plain shape the register is never written.
+        assert_eq!(
+            r.word_preserve_claims, expected_claims,
+            "shape `{label}`: the word-facet claim census drifted — the error gate above \
+             is only as meaningful as the set it ranged over"
+        );
+        checked += r.word_preserve_claims.len();
+    }
+    eprintln!("{report}");
+
+    assert_eq!(
+        checked,
+        expected_claims.len() * shape_count,
+        "expected {} claims across {shape_count} shapes, checked {checked}",
+        expected_claims.len()
+    );
+}
+
 /// THE `[comptime.unresolved]` ERROR GATE — the toggle complement of the drop gate
 /// above. The two are disjoint by construction: a missing VALUE define drops the
 /// instruction that needed it (loud above), while a missing/misspelled TOGGLE
@@ -464,7 +532,11 @@ fn a_clobber_undeclared_inside_a_comptime_gate_fires_in_exactly_the_debug_shapes
     let mut doctored = false;
     for (p, s) in &mut srcs {
         if p.file_name().is_some_and(|n| n == "entity_window.emp") {
-            let needle = "proc Collected_ParkSlot () clobbers(d0-d2, a1) preserves(a0) {";
+            // Drop the `d2.w` word facet: Collected_ParkSlot's DEBUG dup-id scan
+            // writes d2, so with neither a `clobbers(d2)` nor the `preserves(d2.w)`
+            // facet licensing it, the write is an undeclared clobber — in exactly the
+            // DEBUG shapes (§6 partial-width: the facet is the license the probe removes).
+            let needle = "proc Collected_ParkSlot () clobbers(d0-d1, a1) preserves(a0, d2.w) {";
             let weaken = "proc Collected_ParkSlot () clobbers(d0-d1, a1) preserves(a0) {";
             assert!(s.contains(needle), "negative probe anchor not found in {}", p.display());
             *s = s.replacen(needle, weaken, 1);

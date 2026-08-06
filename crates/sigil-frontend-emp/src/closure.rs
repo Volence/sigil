@@ -79,6 +79,15 @@ pub struct ProcNode {
     /// contributes NOTHING here (it stays a D2.32 error); `sr` is out of the
     /// register-file closure's scope.
     pub verified_preserves: BTreeSet<String>,
+    /// The §6 partial-width word-facet registers this proc declares
+    /// (`preserves(dN.w)`) — the CONTRACT SURFACE the facet is recorded on. Under
+    /// conservative v1 each is ALSO in `declared_clobbers` (a `.w`-preserving callee
+    /// is a full clobber to every consumer, so no consumer weakens), which is what
+    /// keeps the closure's verdicts identical to a bare `clobbers(dN)`; this set is
+    /// what a width-AWARE consumer would read the day one exists, and what lets the
+    /// facet be told apart from a plain clobber downstream. Deliberately NOT
+    /// subtracted from `effective`.
+    pub word_preserves: BTreeSet<String>,
     /// Contexts every call site of this proc must have active (§3.3,
     /// `requires(...)`). Part of the ONE contract record, alongside the register
     /// facets — but NOT a fixpoint input: unlike a clobber set, a context

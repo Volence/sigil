@@ -1040,6 +1040,12 @@ fn check_clobbers(
     // declared-but-UNVERIFIABLE preserves subtracts nothing and the register still
     // fires — the lint keeps its teeth against a lying `preserves`.
     allowed.extend(verified_preserves_regs(proc, buf, noreturn, sr_mask_preservers));
+    // §6 partial-width: a `preserves(dN.w)` licenses clobbering the FULL `dN` (the
+    // upper word is unspecified, the whole register clobberable from a caller's
+    // conservative-v1 view) — so it silences `[proc.clobber-undeclared]` on `dN`
+    // exactly as `clobbers(dN)` would, WITHOUT crediting `dN` as preserved to the
+    // closure. The low-word round-trip is verified separately (`check_preserves`).
+    allowed.extend(preserve_word_regs(proc));
     // Whether any clause covers the MASK half — computed once, read per item.
     // A whole-SR destination always writes the mask, so only a mask-covering
     // token (`sr` or `sr.mask`, in any clause) addresses it; `sr.ccr` alone
@@ -1309,6 +1315,57 @@ fn check_preserves(
             bad = true;
             continue;
         }
+        // A dotted REGISTER facet — `preserves(dN.w)` (§6 partial-width). The SR
+        // half tokens (`sr.mask`/`sr.ccr`) were consumed above, so a remaining
+        // dotted token is a register-facet attempt. The ONE facet with witnesses
+        // is `.w` on a DATA register (the low word); every other spelling refuses
+        // with its own arm. The mask itself is folded quietly by
+        // [`preserve_word_mask`]; this arm only VALIDATES.
+        if hi.is_none() {
+            let facet = WordFacet::fold_token(lo);
+            if !matches!(facet, WordFacet::NotAFacet) {
+                if let WordFacet::Rejected(why) = facet {
+                    let reason = match why {
+                        WordFacetError::NotARegister => {
+                            let regtok = lo.split_once('.').map(|(r, _)| r).unwrap_or(lo);
+                            format!("`{regtok}` is not a register (d0-d7/a0-a7/sp)")
+                        }
+                        WordFacetError::AddressWord => {
+                            "a word facet is a DATA-register form only — an address-register `.w` \
+                             write sign-extends into the whole register, so it is not a \
+                             partial-width claim"
+                                .to_string()
+                        }
+                        WordFacetError::Byte => {
+                            "there is no `.b` facet — the only partial-width facet is `.w`, the \
+                             low word"
+                                .to_string()
+                        }
+                        WordFacetError::Long => {
+                            let regtok = lo.split_once('.').map(|(r, _)| r).unwrap_or(lo);
+                            format!(
+                                "bare `{regtok}` IS the full-width claim; `.l` is not a separate \
+                                 facet spelling"
+                            )
+                        }
+                        WordFacetError::Unknown => {
+                            "the only partial-width facet is `.w`, the low word".to_string()
+                        }
+                    };
+                    push(
+                        diags,
+                        Level::Error,
+                        proc.span,
+                        format!(
+                            "[proc.preserves-invalid] `{}` declares `preserves({lo})` — {reason}",
+                            proc.name
+                        ),
+                    );
+                    bad = true;
+                }
+                continue;
+            }
+        }
         let Some(lo_bit) = preserves_reg_bit(lo) else {
             push(
                 diags,
@@ -1366,6 +1423,11 @@ fn check_preserves(
         return;
     }
 
+    // §6 partial-width word facets. A register full-preserved AND word-preserved
+    // is redundant (full subsumes word) — drop it from the word set so the full
+    // proof is the only obligation.
+    let declared_word = preserve_word_mask(proc) & !declared;
+
     // A register cannot be both preserved and clobbered — a contradictory
     // contract is diagnosed, not resolved. Expand the clobbers reglist quietly
     // (C1 item 2 — `check_clobbers` owns its diagnostics). (The SR family
@@ -1401,6 +1463,23 @@ fn check_preserves(
                     format!(
                         "[proc.preserves-clobbers-overlap] `{}` declares `{c}` both preserved \
                          and clobbered — a register cannot be in both sets",
+                        proc.name
+                    ),
+                );
+                return;
+            }
+            // §6: the word facet is a preserve too — `preserves({c}.w) clobbers({c})`
+            // claims the low word survives AND licenses destroying the register, a
+            // contradiction. (The upper word is clobberable by the facet itself; a
+            // separate `clobbers` entry is the incoherent part.)
+            if declared_word & (1 << bit) != 0 {
+                push(
+                    diags,
+                    Level::Error,
+                    proc.span,
+                    format!(
+                        "[proc.preserves-clobbers-overlap] `{}` declares `{c}` both word-preserved \
+                         (`{c}.w`) and clobbered — a register cannot be in both sets",
                         proc.name
                     ),
                 );
@@ -1443,8 +1522,62 @@ fn check_preserves(
         // routes to `check_z80_preserves`), so the CPU is fixed here.
         check_preserves_sr_ccr(proc, buf, Cpu::M68000, noreturn, diags);
     }
+    // §6 partial-width word facets (`preserves(dN.w)`). Same DEFER discipline as
+    // the full check below — the byte gate proves what one file can (`ClobberAll`)
+    // and DEFERS a call-blocked round-trip (verifies under `PreserveAll`) to the
+    // corpus oracle; a LOCAL failure (no `.w`/`.l` round-trip, only a `.b`
+    // fragment, an sp bailout) is a real error here. This runs independently of the
+    // full mask below (a proc may declare only word facets).
+    if declared_word != 0 {
+        let wregs = crate::preserves::expand_mask(declared_word);
+        let real = crate::preserves::verify_preserved_word(
+            &buf.items,
+            &wregs,
+            crate::preserves::CallPolicy::ClobberAll,
+            proc.falls_into.as_deref(),
+            noreturn,
+        );
+        let not_verified: Vec<crate::value::Reg> = wregs
+            .iter()
+            .copied()
+            .filter(|r| !matches!(real.get(r), Some(crate::preserves::PreserveStatus::Verified)))
+            .collect();
+        if !not_verified.is_empty() {
+            let optimistic = crate::preserves::verify_preserved_word(
+                &buf.items,
+                &not_verified,
+                crate::preserves::CallPolicy::PreserveAll,
+                proc.falls_into.as_deref(),
+                noreturn,
+            );
+            let unverifiable: Vec<String> = not_verified
+                .iter()
+                .filter(|r| {
+                    !matches!(optimistic.get(r), Some(crate::preserves::PreserveStatus::Verified))
+                })
+                .map(|r| format!("{r}.w"))
+                .collect();
+            if !unverifiable.is_empty() {
+                push(
+                    diags,
+                    Level::Error,
+                    proc.span,
+                    format!(
+                        "[proc.preserves-unverifiable] `{}` declares `preserves({})` but {} not \
+                         provably preserved — no `.w` (or `.l`) save/restore round-trips the low \
+                         word on every return path (a `.b` restore round-trips only the byte, or an \
+                         unmodeled sp op blocks the proof)",
+                        proc.name,
+                        unverifiable.join(", "),
+                        if unverifiable.len() == 1 { "it is" } else { "they are" },
+                    ),
+                );
+            }
+        }
+    }
+
     if declared == 0 {
-        return; // SR-family-only contract: no movem pair to demand
+        return; // no full mask (SR-family- or word-facet-only contract)
     }
 
     // §5 verified preserves (the dataflow upgrade — subsumes the D2.32 movem-pair
@@ -1506,10 +1639,10 @@ fn check_preserves(
             proc.span,
             format!(
                 "[proc.preserves-unverifiable] `{}` declares `preserves({})` but {} not \
-                 provably preserved — no save/restore round-trips {} entry value on every \
-                 return path (individual push/pop, `movem.l` pair, or `(sp)` peek), an \
-                 unmodeled sp op blocks the proof, or a `.w` restore sign-extends and \
-                 preserves nothing",
+                 provably preserved — no `.l` save/restore round-trips {} FULL entry value on \
+                 every return path (individual push/pop, `movem.l` pair, or `(sp)` peek), or an \
+                 unmodeled sp op blocks the proof. A `.w` save/restore round-trips only the LOW \
+                 WORD: if that is what the code guarantees, declare `preserves(dN.w)`",
                 proc.name,
                 mask_reglist(declared),
                 unverifiable.join(", "),
@@ -1721,6 +1854,12 @@ fn check_out(
             preserved_mask |= 1 << bit;
         }
     }
+    // §6 partial-width: the word facet is a PRESERVE too, so `out(dN)
+    // preserves(dN.w)` is the same contradiction at half width — the low word
+    // cannot both carry a returned result and hold its entry value. Read through
+    // the same fold the validator uses, and reported on its own arm so the message
+    // names the facet the contract actually spells.
+    let word_mask = preserve_word_mask(proc);
     for name in &valid {
         if let Some(bit) = preserves_reg_bit(name) {
             if preserved_mask & (1 << bit) != 0 {
@@ -1732,6 +1871,18 @@ fn check_out(
                         "[proc.out-preserves-overlap] `{}` declares `{name}` both output and \
                          preserved — a register is either a returned result or left untouched, \
                          not both",
+                        proc.name
+                    ),
+                );
+            } else if word_mask & (1 << bit) != 0 {
+                push(
+                    diags,
+                    Level::Error,
+                    proc.span,
+                    format!(
+                        "[proc.out-preserves-overlap] `{}` declares `{name}` both output and \
+                         word-preserved (`{name}.w`) — the low word is either a returned result \
+                         or the caller's entry value, not both",
                         proc.name
                     ),
                 );
@@ -2467,6 +2618,92 @@ fn preserve_mask(proc: &ast::ProcDecl) -> u16 {
     mask
 }
 
+/// How one dotted REGISTER-facet token reads — the §6 partial-width fold, the
+/// analog of [`SrCover::fold_token`] and, like it, the ONE place the spelling is
+/// decided. Both the VALIDATOR (which refuses a bad facet) and the OBLIGATION fold
+/// (which decides what must be proven) read this, so "accepted" and "obligated"
+/// cannot disagree — a disagreement would be silent in the dangerous direction (a
+/// facet accepted at the surface but never checked).
+enum WordFacet {
+    /// `dN.w` — the low-word facet on a data register, the one accepted form.
+    /// Carries its canonical movem-mask bit.
+    Word(u8),
+    /// A dotted token that is NOT a legal facet, with the reason for its arm.
+    Rejected(WordFacetError),
+    /// Not a dotted token at all — a plain register / range endpoint.
+    NotAFacet,
+}
+
+/// Why a dotted register-facet token is refused — one variant per message arm.
+enum WordFacetError {
+    /// The part before the dot is not a register (`foo.w`).
+    NotARegister,
+    /// `.w` on an ADDRESS register: an address-register word write sign-extends
+    /// into the whole register, so a word facet there is not a partial claim.
+    AddressWord,
+    /// `.b` — no byte facet exists (only the low word has witnesses).
+    Byte,
+    /// `.l` — bare `dN` already IS the full-width claim.
+    Long,
+    /// Any other suffix.
+    Unknown,
+}
+
+impl WordFacet {
+    /// Read `token` as a register facet. Only `dN.w` is a facet; everything else is
+    /// either rejected with its reason or is not a dotted token at all. SR halves
+    /// (`sr.mask`/`sr.ccr`) are consumed as SR tokens BEFORE this is reached, so a
+    /// dotted token arriving here is a register-facet attempt.
+    fn fold_token(token: &str) -> WordFacet {
+        let Some((regtok, suffix)) = token.split_once('.') else {
+            return WordFacet::NotAFacet;
+        };
+        let Some(bit) = preserves_reg_bit(regtok) else {
+            return WordFacet::Rejected(WordFacetError::NotARegister);
+        };
+        let is_data = bit < 8; // d0..d7 = bits 0..7
+        match suffix {
+            "w" if is_data => WordFacet::Word(bit),
+            "w" => WordFacet::Rejected(WordFacetError::AddressWord),
+            "b" => WordFacet::Rejected(WordFacetError::Byte),
+            "l" => WordFacet::Rejected(WordFacetError::Long),
+            _ => WordFacet::Rejected(WordFacetError::Unknown),
+        }
+    }
+}
+
+/// The `preserves(dN.w)` word-facet registers folded to a movem mask — the §6
+/// partial-width facet. Quiet (spelling validity is [`check_preserves`]' job,
+/// through the SAME [`WordFacet::fold_token`]): only a well-formed `dN.w`
+/// contributes.
+fn preserve_word_mask(proc: &ast::ProcDecl) -> u16 {
+    let mut mask = 0u16;
+    for (lo, hi) in &proc.preserves {
+        if hi.is_some() {
+            continue; // a facet is a single, never a range endpoint
+        }
+        if let WordFacet::Word(bit) = WordFacet::fold_token(lo) {
+            mask |= 1 << bit;
+        }
+    }
+    mask
+}
+
+/// The `preserves(dN.w)` word-facet register NAMES (`d0`..`d7`) — the clobber
+/// PERMISSION half of the partial-width facet. Under conservative v1 a
+/// `preserves(dN.w)` licenses clobbering the FULL `dN` for callers (the caller-
+/// visible contract is identical to `clobbers(dN)`), so these names join the
+/// "allowed to clobber" set everywhere a declared clobber does — the local
+/// `[proc.clobber-undeclared]` allowed set and the closure's `declared_clobbers`.
+/// The low-word ROUND-TRIP is the separate obligation [`check_preserves`] verifies
+/// (and the corpus oracle re-verifies for a deferred, call-blocked claim).
+pub fn preserve_word_regs(proc: &ast::ProcDecl) -> BTreeSet<String> {
+    crate::preserves::expand_mask(preserve_word_mask(proc))
+        .into_iter()
+        .map(|r| r.to_string())
+        .collect()
+}
+
 /// The register set a proc PROVABLY preserves with NO callee-contract knowledge —
 /// the contract closure's oracle-FREE base `verifiedPreserved(P)` (§1): a register
 /// the proc writes but save/restores by its OWN machinery does not escape it. The
@@ -2534,20 +2771,38 @@ pub fn verified_preserves_regs(
 }
 
 /// The inputs the corpus callee-preserves oracle round ([`crate::corpus_contracts`])
-/// needs for one proc: `(check_regs, credit_names)` — the declared registers to
-/// re-verify under the oracle, and the full declared set to credit iff EVERY
-/// `check_reg` round-trips. `(empty, empty)` when `preserves` is absent or its shape
-/// is malformed (a malformed contract credits nothing, mirroring
-/// [`verified_preserves_regs`]). The oracle round need not re-run
-/// [`check_preserves`]: an empty `check_regs` result already means "no credit".
+/// needs for one proc: `(check_regs, credit_names, word_check_regs)` — the declared
+/// full registers to re-verify under the oracle, the full declared set to CREDIT iff
+/// every `check_reg` round-trips, and the §6 word-facet registers whose low-word
+/// round-trip the oracle must re-prove.
+///
+/// **The three outputs do not share a polarity, which is why they are computed
+/// together.** `check_regs`/`credit_names` are a CREDIT: empty means "grant
+/// nothing", so a malformed contract returning empty leaves the closure
+/// conservative — safe, and the reason the shape-error guard returns empty for them.
+/// `word_check_regs` is an OBLIGATION: empty means "check nothing", and a `.w` claim
+/// dropped here is verified by NOBODY, because the per-file gate DEFERS a
+/// call-blocked claim silently and the corpus gate is its final authority. So the
+/// word set FAILS CLOSED — folded from the declared spelling and kept even when the
+/// shape check errors, since that error can belong to a DIFFERENT clause of the same
+/// contract (`preserves(sr.mask, d5.w)`) and losing a real obligation to an
+/// unrelated diagnostic is the failure this note exists to prevent. A kept
+/// obligation costs at most a firing the real Oracle re-proves away; a dropped one
+/// costs an unverified contract.
+///
+/// The oracle round need not re-run [`check_preserves`]: an empty `check_regs`
+/// already means "no credit".
 pub fn preserve_oracle_inputs(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,
     noreturn: &BTreeSet<String>,
     sr_mask_preservers: &BTreeMap<String, BTreeSet<String>>,
-) -> (Vec<crate::value::Reg>, BTreeSet<String>) {
+) -> (Vec<crate::value::Reg>, BTreeSet<String>, Vec<crate::value::Reg>) {
+    // §6 word facet, folded from the DECLARED spelling before any shape verdict —
+    // the FAIL-CLOSED half (see the polarity note in the doc comment).
+    let word_regs = crate::preserves::expand_mask(preserve_word_mask(proc));
     if proc.preserves.is_empty() {
-        return (Vec::new(), BTreeSet::new());
+        return (Vec::new(), BTreeSet::new(), Vec::new());
     }
     let mut sink = Vec::new();
     // ERROR-tier verdict only (see `verified_preserves_regs`); the `@noreturn` set
@@ -2555,9 +2810,13 @@ pub fn preserve_oracle_inputs(
     // primary path consumes), inert on the frozen corpus and measured so.
     check_preserves(proc, buf, noreturn, sr_mask_preservers, &mut sink);
     if sink.iter().any(|d| matches!(d.level, Level::Error)) {
-        return (Vec::new(), BTreeSet::new());
+        return (Vec::new(), BTreeSet::new(), word_regs);
     }
-    (crate::preserves::expand_mask(preserve_mask(proc)), expand_reglist_regs(&proc.preserves))
+    (
+        crate::preserves::expand_mask(preserve_mask(proc)),
+        expand_reglist_regs(&proc.preserves),
+        word_regs,
+    )
 }
 
 /// Format a canonical movem mask back to its reglist spelling (`d0-d1/a0`) —
