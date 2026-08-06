@@ -138,3 +138,33 @@ language ask for the three-address form `mul_const.w dDst, dSrc, #n, dScratch`
 both sites byte-neutral adoptions. Final adoption tally for this parcel: Group A
 ×4 auto-re-derived, Group B ×2, Group C-1355, Group D ×2 = 9 sites moved, 2
 refused-with-reason.
+
+## 7 · 2026-08-06 amendment — R2's end-state claim was FALSE (panel catch)
+
+The ltr lens panel caught a census miss against this spec's own §3 table and R2.
+The census claimed "exactly seven un-adopted sites"; there are EIGHT. The missed
+one: `section.emp` `Section_FlatIDXY`'s `.fxy_mul` — a live repeated-add loop
+computing `sec_y × grid_w`, the same `mul_bounded.w` family as the two loops
+Group B adopted, with four live callers (entity_window ×3, ojz_scroll_test).
+
+**R2 is amended.** Its claim that after this parcel "every multiply in the
+corpus is construct-spelled and model-priced" and "no opportunistic adoption
+debt survives" is WITHDRAWN as false. The accurate end state: nine sites moved,
+two refused with reason (the in-place-construct blocker, §6), and ONE site
+neither adopted nor previously examined.
+
+**The third loop site is NOT adopted in this parcel — ruled, with the reason.**
+Adopting it is byte-changing, so it would demand a SECOND golden refreeze on top
+of chain 49, a fresh behavioural A/B, and a fresh panel — none of which can be
+held to the bar at this point in the run. It is also not a pure swap like the
+other two: the loop accumulates directly from memory (`add.w Act.grid_w(a2),
+d0`), so `mul_bounded.w` needs a register preload first, changing register
+pressure at a site whose contract is `clobbers(d1) out(d0: SectionId)`. That
+deserves its own measurement, not a late rider. The hand loop is CORRECT; this
+is deferred optimization, not a defect.
+
+Actions: open a ledger row for the site carrying the measured facts (shape,
+callers, the preload requirement, and that it is the last known hand multiply),
+and correct the "every multiply" phrasing wherever this parcel asserted it — the
+packet and row 2165's close included. A census that says "exactly N" and is
+wrong is worth more as a corrected record than as a quiet fix.
