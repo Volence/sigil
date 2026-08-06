@@ -32,10 +32,12 @@
 //! gates and must run in the standard strict invocation, not silently skip.
 
 use sigil_frontend_emp::corpus_contracts::{
-    analyze_corpus, analyze_corpus_with_contracts, bind_corpus_interfaces, ContractReport,
+    analyze_corpus, analyze_corpus_with, analyze_corpus_with_contracts, bind_corpus_interfaces,
+    ContractReport,
 };
 use sigil_frontend_emp::parse_str;
 use sigil_harness::native;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 /// Recursively collect `*.emp` files under `dir`, skipping `.worktrees`.
@@ -1053,4 +1055,218 @@ fn the_contracts_report_is_wired_and_carries_the_targets_defines() {
              define or interface binding is missing from its walk:\n{out:.400}"
         );
     }
+}
+
+
+/// §2.3 — THE INVOKE EDGE IS LIVE. `invoke Iface.hook` lowers to `jsr (bound).l`
+/// (an `AbsSym`), the only corpus source of an AbsSym call edge, and the closure
+/// must collect it so the bound proc's clobbers charge the invoker. Pinned from
+/// the exposed edge census, NOT inferred from a silent residue: both corpus
+/// invokers declare full-universe clobbers, so charging them moves no firing and
+/// the edge's existence would otherwise be invisible. The hooks bind only under
+/// SOUND_DEBUG_HOTKEYS==1 (config_a); every other shape carries the `= empty`
+/// default and emits no invoke — both halves pinned.
+#[test]
+fn the_corpus_invoke_edges_are_collected() {
+    let Some(srcs) = corpus_sources() else { return };
+    let debug_edge = ("GameLoop".to_string(), "Debug_MusicToggle".to_string());
+    let boot_edge = ("EntryPoint".to_string(), "SoundTest_BootPing".to_string());
+    let mut bound_shapes = 0usize;
+    for (label, profile, r) in analyze_every_shape(&srcs) {
+        let hotkeys = native::shape_defines(&profile)
+            .iter()
+            .any(|(k, v)| k == "SOUND_DEBUG_HOTKEYS" && *v == 1);
+        let has_debug = r.abs_call_edges.contains(&debug_edge);
+        let has_boot = r.abs_call_edges.contains(&boot_edge);
+        if hotkeys {
+            assert!(
+                has_debug && has_boot,
+                "shape `{label}`: SOUND_DEBUG_HOTKEYS binds both hooks, so both invoke \
+                 edges must be collected — got {:?}",
+                r.abs_call_edges
+            );
+            bound_shapes += 1;
+        } else {
+            assert!(
+                !has_debug && !has_boot,
+                "shape `{label}`: no hotkeys, so the hooks stay `= empty` and emit no \
+                 invoke edge — got {:?}",
+                r.abs_call_edges
+            );
+        }
+    }
+    assert_eq!(
+        bound_shapes, 1,
+        "exactly one shipped shape (config_a) binds the hooks; if this count moves, \
+         the invoke-edge pin's non-vacuity must be re-confirmed"
+    );
+}
+
+/// §2.4 — THE AUTHORSHIP EXCLUSION, and its revert probe. The `assert`/`raise`
+/// desugars lower to `jsr (MDDBG__…).l` naming contractless equ boundaries; they
+/// are excluded from the closure by AUTHORSHIP (`ItemAuthor::AssertDesugar`), so
+/// they never enter the edge census — their absence there proves the exclusion —
+/// and the residue stays empty. The REVERT PROBE is `authored_rail_holes`:
+/// exactly the `unresolved_callees` the gate WOULD report if the exclusion were
+/// stripped (b9's measurement, executable). It names precisely the two desugar
+/// boundaries in every shape (asserts ship everywhere), so a lost exclusion fails
+/// here naming the exact sites.
+#[test]
+fn the_assert_rails_are_excluded_by_authorship_the_revert_probe() {
+    let Some(srcs) = corpus_sources() else { return };
+    let rails: BTreeSet<String> =
+        ["MDDBG__ErrorHandler", "MDDBG__ErrorHandler_PagesController"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+    for (label, _profile, r) in analyze_every_shape(&srcs) {
+        for (proc, callee) in &r.abs_call_edges {
+            assert!(
+                !rails.contains(callee),
+                "shape `{label}`: an AssertDesugar rail leaked into the edge census as \
+                 ({proc}, {callee}) — the authorship exclusion is not applied"
+            );
+        }
+        assert_eq!(
+            r.authored_rail_holes, rails,
+            "shape `{label}`: the would-be holes the exclusion suppresses must be exactly \
+             the two desugar boundaries (strip the exclusion → the residue fails naming \
+             these) — got {:?}",
+            r.authored_rail_holes
+        );
+        // And the live residue stays empty — the exclusion actually holds.
+        assert!(
+            r.closure.unresolved_callees.is_empty(),
+            "shape `{label}`: residue must be empty with the exclusion applied — got {:?}",
+            r.closure.unresolved_callees
+        );
+    }
+}
+
+/// §2.5 — NON-VACUITY: the invoke edge does not just exist, it CHARGES. A
+/// synthetic invoker declares only `clobbers(d0)` but its bound hook clobbers d5;
+/// the transitive-clobber diagnostic must FIRE on the invoker. The corpus
+/// invokers declare full-universe clobbers, so corpus silence proves the edge
+/// harmless, not that the charge lands — this proves it lands, and the unbound
+/// half proves the edge vanishes with the binding.
+#[test]
+fn a_synthetic_invoke_charges_the_bound_hooks_clobbers() {
+    let engine = "\
+module engine.synth
+pub interface H {
+    hook tick () clobbers(d0-d7/a0-a6) = empty
+}
+section s (cpu: m68000) {
+    pub proc Invoker () clobbers(d0) {
+        invoke H.tick
+        rts
+    }
+    pub proc Boom () clobbers(d0-d7/a0-a6) {
+        moveq #0, d5
+        rts
+    }
+}
+";
+    let bound_game = "\
+module games.synth.game
+pub implement H {
+    hook tick = Boom
+}
+";
+    let files: Vec<_> = [engine, bound_game].iter().map(|s| parse_str(s).0).collect();
+    let (env, bind_diags) = bind_corpus_interfaces(&files, &[], "games.synth");
+    assert!(
+        bind_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "bind errors: {bind_diags:?}"
+    );
+    let r = analyze_corpus_with_contracts(&files, &[], &env);
+    assert!(
+        r.abs_call_edges.contains(&("Invoker".to_string(), "Boom".to_string())),
+        "the synthetic invoke edge must be collected: {:?}",
+        r.abs_call_edges
+    );
+    assert!(
+        r.firings
+            .iter()
+            .any(|f| f.proc == "Invoker" && f.reg.as_deref() == Some("d5")),
+        "the invoke edge must charge the bound hook's d5 into the invoker (which declares \
+         only d0) — got {:?}",
+        r.firings
+            .iter()
+            .map(|f| (f.proc.as_str(), f.reg.as_deref()))
+            .collect::<Vec<_>>()
+    );
+
+    // Unbound half: the demo-shaped implement binds no hook, so `invoke` emits
+    // nothing — no edge, no charge, no firing on the invoker.
+    let empty_game = "module games.synth.game\npub implement H {}\n";
+    let files2: Vec<_> = [engine, empty_game].iter().map(|s| parse_str(s).0).collect();
+    let (env2, bind2) = bind_corpus_interfaces(&files2, &[], "games.synth");
+    assert!(
+        bind2.iter().all(|d| d.level != sigil_span::Level::Error),
+        "bind errors (unbound): {bind2:?}"
+    );
+    let r2 = analyze_corpus_with_contracts(&files2, &[], &env2);
+    assert!(
+        r2.abs_call_edges.is_empty(),
+        "an unbound hook emits no invoke edge: {:?}",
+        r2.abs_call_edges
+    );
+    assert!(
+        !r2.firings.iter().any(|f| f.proc == "Invoker"),
+        "an unbound hook charges nothing into the invoker: {:?}",
+        r2.firings
+            .iter()
+            .map(|f| (f.proc.as_str(), f.reg.as_deref()))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// §2.6 — HAND-WRITTEN vs AUTHORED, both polarities of the same `jsr (sym).l`
+/// shape. A USER-authored abs call to an equ/link boundary is an unresolved HOLE
+/// (its honest exit is an `extern proc` contract). The SAME shape emitted by the
+/// `assert` desugar (authored AssertDesugar) is NOT a hole — excluded by §1 —
+/// while still counted a would-be hole in `authored_rail_holes`, so the exclusion
+/// is provably doing the work rather than the rail simply not existing.
+#[test]
+fn a_hand_written_abs_call_is_a_hole_the_authored_rail_is_not() {
+    let src = "\
+module test.polarity
+pub equ Boundary = extern(\"BoundaryBlob\")
+section s (cpu: m68000) {
+    pub proc HandCall () clobbers(d0-d7/a0-a6) {
+        jsr (Boundary).l
+        rts
+    }
+    pub proc Asserter () clobbers(d0-d7/a0-a6) {
+        assert.b d0, eq, #0
+        rts
+    }
+}
+";
+    let files = vec![parse_str(src).0];
+    let r = analyze_corpus_with(&files, &[("DEBUG".to_string(), 1)]);
+    // Polarity 1 (User) — a hole.
+    assert!(
+        r.closure.unresolved_callees.contains("Boundary"),
+        "a hand-written `jsr (Boundary).l` (User-authored) must be an unresolved hole: {:?}",
+        r.closure.unresolved_callees
+    );
+    assert!(
+        r.abs_call_edges.contains(&("HandCall".to_string(), "Boundary".to_string())),
+        "the hand-written abs call must be a collected edge: {:?}",
+        r.abs_call_edges
+    );
+    // Polarity 2 (AssertDesugar) — NOT a hole, but a would-be hole.
+    assert!(
+        !r.closure.unresolved_callees.contains("MDDBG__ErrorHandler"),
+        "the assert desugar's rail (AssertDesugar) must be excluded from the residue: {:?}",
+        r.closure.unresolved_callees
+    );
+    assert!(
+        r.authored_rail_holes.contains("MDDBG__ErrorHandler"),
+        "the excluded rail must still register as a would-be hole (else the exclusion is \
+         vacuous here): {:?}",
+        r.authored_rail_holes
+    );
 }
