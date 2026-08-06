@@ -181,8 +181,9 @@ fn refusals_surface_through_the_pipeline() {
 
 // The word contract through the full pipeline: `mul_const.w` at each corpus
 // stride emits BYTE-IDENTICAL code to the hand-derived left-to-right shift-add
-// chain — the lowering `choose()` picks over the two-power arm on cycles once
-// the LTR arm competes at 2 set bits.
+// chain. The LTR arm is a candidate at 2 set bits, and at each of these strides
+// it is the only chain the generator offers, so `choose()` takes it over
+// `mulu.w` on cycles.
 #[test]
 fn word_strides_are_byte_identical_to_hand_chains() {
     // (n, first-shift, second-shift) of `move.w d0,d1 / lsl.w #p,d0 /
