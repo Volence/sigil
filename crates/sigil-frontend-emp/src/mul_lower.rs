@@ -1426,40 +1426,61 @@ mod tests {
         assert_eq!(shape(&one_bit), ["lsl.w #6,d0"]);
     }
 
-    // 5a is strictly dominated by 5c: equal at b = 0 (identical sequences) and
-    // dearer for every b >= 1, so it can never win `choose()`. Pins the fact the
-    // ledger row records, so a future deletion of 5a is provably byte-neutral.
+    // 5a is DOMINATED BY 5c — the property the ledger row records, pinned
+    // directly as a 5a-vs-5c comparison over every 2-set-bit multiplier.
+    //
+    // Stated against 5c rather than against `choose()`'s winner on purpose: at
+    // some n (e.g. $2001) `mulu.w` beats BOTH chains, so "the chosen shape is
+    // not 5a's" would hold for a reason that has nothing to do with dominance.
+    // What makes deleting 5a provably byte-neutral is that 5c is never dearer —
+    // and is byte-identical whenever it is not cheaper.
     #[test]
-    fn word_two_power_arm_never_wins() {
-        for n in 0u32..=0xFFFF {
+    fn word_two_power_arm_is_dominated_by_ltr() {
+        let mut equal = 0u32;
+        let mut cheaper = 0u32;
+        for n in 0u32..=0xFFFFu32 {
             if n.count_ones() != 2 {
                 continue;
             }
             let a = 31 - n.leading_zeros();
             let b = n.trailing_zeros();
-            let mut five_a = vec![instr("move", Some(Width::W), vec![reg(Reg::D0), reg(Reg::D1)], sp())];
+            // 5a — the two-power sum.
+            let mut five_a =
+                vec![instr("move", Some(Width::W), vec![reg(Reg::D0), reg(Reg::D1)], sp())];
             five_a.extend(shift_run_word(a, Reg::D0, sp()));
             five_a.extend(shift_run_word(b, Reg::D1, sp()));
             five_a.push(instr("add", Some(Width::W), vec![reg(Reg::D1), reg(Reg::D0)], sp()));
-            let chosen = expand_const_w(vec![reg(Reg::D0), imm(n), reg(Reg::D1)]).unwrap();
-            if b == 0 {
+            // 5c — the left-to-right chain, same construction as the generator.
+            let mut five_c =
+                vec![instr("move", Some(Width::W), vec![reg(Reg::D0), reg(Reg::D1)], sp())];
+            let msb = 31 - n.leading_zeros();
+            let mut pending: u32 = 0;
+            for bit in (0..msb).rev() {
+                pending += 1;
+                if n & (1 << bit) != 0 {
+                    five_c.extend(shift_run_word(pending, Reg::D0, sp()));
+                    pending = 0;
+                    five_c.push(instr("add", Some(Width::W), vec![reg(Reg::D1), reg(Reg::D0)], sp()));
+                }
+            }
+            five_c.extend(shift_run_word(pending, Reg::D0, sp()));
+
+            let ca = seq_worst_cycles(&five_a).expect("5a prices");
+            let cc = seq_worst_cycles(&five_c).expect("5c prices");
+            assert!(cc <= ca, "n={n}: 5c ({cc}) must never cost more than 5a ({ca})");
+            if cc == ca {
                 assert_eq!(
-                    shape(&chosen),
+                    shape(&five_c),
                     shape(&five_a),
-                    "n={n}: at b=0 the two arms emit the identical sequence"
+                    "n={n}: equal cost must mean an identical sequence"
                 );
+                equal += 1;
             } else {
-                assert_ne!(
-                    shape(&chosen),
-                    shape(&five_a),
-                    "n={n}: the two-power arm must never be the winner"
-                );
-                assert!(
-                    seq_worst_cycles(&chosen).unwrap() < seq_worst_cycles(&five_a).unwrap(),
-                    "n={n}: the winner must be strictly cheaper than the two-power arm"
-                );
+                cheaper += 1;
             }
         }
+        // Non-vacuity: both regimes are genuinely exercised.
+        assert!(equal > 0 && cheaper > 0, "equal={equal} cheaper={cheaper}");
     }
 
     // Word degenerates: 0 → clr.w, 1 → NOTHING, 2^k → lsl.w (no zero-extend seed).

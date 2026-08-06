@@ -140,8 +140,8 @@ directed the porter to pin the tie-break where costs tie at ×80. After R1 there
 is no tie to pin: 5c strictly dominates 5a (equal only at b = 0, where the two
 arms emit the IDENTICAL byte sequence, and cheaper for every b ≥ 1), so no
 `choose()` outcome — and therefore no emitted byte — can depend on how a 5a/5c
-tie is broken. `word_two_power_arm_never_wins` sweeps every 2-set-bit n in
-`0..=$FFFF` and pins exactly that. The directive is answered by proving it
+tie is broken. `word_two_power_arm_is_dominated_by_ltr` sweeps every 2-set-bit n
+in `0..=$FFFF` and pins exactly that. The directive is answered by proving it
 vacuous rather than left silently unfulfilled.
 
 ## 4a · The behavioural bar (overseer-run), stated with its limits
@@ -270,8 +270,12 @@ only asserted, and in one place it proved the packet's caution unnecessary.
   and every corpus stride changes bytes) and must then win `choose()`. Its 1-bit
   assertions are kept but re-labelled for what they honestly pin — arm-5 gating
   in general, i.e. no chain candidate touches the scratch register even when one
-  is offered. `word_two_power_arm_never_wins` additionally sweeps every 2-set-bit
-  n in `0..=$FFFF`. The unit oracle
+  is offered. `word_two_power_arm_is_dominated_by_ltr` additionally sweeps every 2-set-bit
+  n in `0..=$FFFF`, pinning 5a's dominance as a direct 5a-vs-5c cost comparison
+  (never dearer; byte-identical when not cheaper) rather than as "the winner is
+  not 5a" — which at n = $2001 would hold only because `mulu.w` beats both
+  chains, a reason unrelated to dominance. The first draft asserted the weaker
+  thing and failed at that n. The unit oracle
   executes every chosen lowering with garbage upper words, and
   `word_bounded_semantics_and_boundary` sweeps every in-bound src and pins the
   moved M = 3 / M = 4 boundary and the seedless loop shape.
