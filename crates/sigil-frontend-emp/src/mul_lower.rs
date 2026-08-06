@@ -354,10 +354,10 @@ fn mul_const_candidates_long(
 /// The WORD candidate set (low-word result, upper word free). Differs from the
 /// long set in exactly one structural way: NO zero-extend seed anywhere. Word
 /// ops (`lsl.w`/`add.w`/`sub.w`/`move.w`) leave dst's upper word untouched,
-/// which is why the two-power chain the corpus adopts beats `mulu.w` — no
-/// zero-extend to pay for. The two-power chain emits a plain `lsl.w` per term
-/// (NOT the long form's `add.l` doubling optimization): it is the corpus's own
-/// proven idiom, byte-identical to the hand-derived strides (×66/×80/×160).
+/// which is why a word chain beats `mulu.w` at the corpus's stride multipliers —
+/// there is no zero-extend to pay for. The winner at those strides is the
+/// left-to-right chain (5c); the corpus spells every one of them
+/// `mul_const.w` and takes whatever this set prices cheapest.
 fn mul_const_candidates_word(
     dst: Reg,
     n: u32,
@@ -387,9 +387,17 @@ fn mul_const_candidates_word(
     // `n >> b` below is safe only under that guard).
     if let Some(s) = scratch {
         if n.count_ones() >= 2 {
-            // 5a — the two-power sum (the corpus stride idiom): n = 2^a + 2^b,
-            // a > b. `move.w D,S / lsl.w #a,D / lsl.w #b,S / add.w S,D` — the two
-            // shifted terms summed. Byte-identical to the hand ×66/×80/×160.
+            // 5a — the two-power sum: n = 2^a + 2^b, a > b.
+            // `move.w D,S / lsl.w #a,D / lsl.w #b,S / add.w S,D` — the two
+            // shifted terms summed.
+            //
+            // STRICTLY DOMINATED, and retained only because removing it is a
+            // byte-proving change rather than a comment fix. Against 5c at the
+            // same n this costs 20 + shiftcost(a) + shiftcost(b) where 5c costs
+            // 20 + shiftcost(a): equal at b = 0 (where both emit the identical
+            // sequence) and dearer for every b ≥ 1. So there is no n at which
+            // this arm wins `choose()`, and no emitted byte depends on it.
+            // Deleting it is a clean follow-up that must re-prove the goldens.
             if n.count_ones() == 2 {
                 let a = 31 - n.leading_zeros();
                 let b = n.trailing_zeros();
@@ -413,16 +421,15 @@ fn mul_const_candidates_word(
                 items.extend(shift_run_word(b, dst, span));
                 cands.push(items);
             }
-            // 5c — general left-to-right binary, gated to ≥ 3 set bits (word ops
-            // over the seed `move.w D,S`; S holds the original throughout). The
-            // gate is LOAD-BEARING, not cosmetic: a faithful 2-bit LTR prices
-            // 32/32/34 at the ×66/×80/×160 sites — BELOW the two-power chain's
-            // 34/40/44 — so ungated it would win `choose()` there and defeat the
-            // byte-identity bar at every adoption site. Restricting it to ≥ 3 bits
-            // (where the two-power arm does not apply and no adoption site exists)
-            // keeps the corpus strides on the hand chain. The oracle executes this
-            // arm via n = 11/19 in NS (5c is the CHOSEN lowering there, 30 vs mulu 48).
-            if n.count_ones() >= 3 {
+            // 5c — general left-to-right binary (word ops over the seed
+            // `move.w D,S`; S holds the original throughout), a candidate at ≥ 2
+            // set bits. It is the cheapest chain this set generates at every n
+            // it applies to — never dearer than the two-power arm (5a), which it
+            // strictly dominates — so it is the lowering of the corpus's stride
+            // multipliers: 32/32/34 cycles at ×66/×80/×160, against `mulu.w`'s
+            // 46. The oracle executes this arm across the 2-bit strides and the
+            // ≥ 3-bit multipliers (n = 11/19 in NS) with garbage-upper seeds.
+            if n.count_ones() >= 2 {
                 let mut items =
                     vec![instr("move", Some(Width::W), vec![reg(dst), reg(s)], span)];
                 let msb = 31 - n.leading_zeros();
@@ -513,12 +520,18 @@ fn expand_mul_bounded(
         *counter += 1;
         let l_loop = format!("$mul${module}${c}$loop");
         let l_done = format!("$mul${module}${c}$done");
-        let setup = vec![
-            instr("moveq", None, vec![imm(0), reg(s)], span),
-            instr("move", Some(Width::W), vec![reg(dst), reg(s)], span),
-            instr("moveq", None, vec![imm(0), reg(dst)], span),
-            instr("subq", Some(Width::W), vec![imm(1), reg(src)], span),
-        ];
+        // The multiplicand holder `s` is seeded `move.w dst, s`. Only the LONG
+        // contract also zeroes its upper word (`moveq #0, s`), because only its
+        // `add.l s, dst` body reads all 32 bits; the word contract's
+        // `add.w s, dst` reads `s`'s low word alone, so `s`'s upper word is
+        // undefined throughout the word loop and never read.
+        let mut setup = Vec::new();
+        if width == MulWidth::Long {
+            setup.push(instr("moveq", None, vec![imm(0), reg(s)], span));
+        }
+        setup.push(instr("move", Some(Width::W), vec![reg(dst), reg(s)], span));
+        setup.push(instr("moveq", None, vec![imm(0), reg(dst)], span));
+        setup.push(instr("subq", Some(Width::W), vec![imm(1), reg(src)], span));
         let add = instr("add", Some(acc_width), vec![reg(s), reg(dst)], span);
         // Worst-case cycles from the SAME cost seam as everything else.
         let setup_cost: u32 = setup.iter().map(item_worst_cycles).sum();
@@ -546,11 +559,10 @@ fn expand_mul_bounded(
         (items, cycles)
     });
 
-    // Worst-vs-worst comparison. The long loop (28 + 18·M) never equals mulu's
-    // flat 70, but the WORD loop (28 + 14·M) hits exactly 70 at M = 3 — a real
-    // cycle tie. The strict `<` resolves that tie to mulu (enumeration order,
-    // mulu first), which is why word M = 2 picks the loop and M = 3 picks mulu
-    // (pinned by `word_bounded_semantics_and_boundary`).
+    // Worst-vs-worst comparison against mulu's flat 70 ceiling. The long loop
+    // costs 28 + 18·M and wins through M = 2; the word loop, carrying no
+    // upper-word seed, costs 24 + 14·M and wins through M = 3 (mulu at M ≥ 4).
+    // Both boundaries are pinned by `*_bounded_semantics_and_boundary`.
     match loop_cand {
         Some((items, loop_cost)) if loop_cost < mulu_cost => Ok(items),
         _ => Ok(mulu_items),
@@ -673,11 +685,15 @@ fn shift_run(mut k: u32, d: Reg, span: Span) -> Vec<CodeItem> {
 }
 
 /// ×2^k on a WORD register: `lsl.w` chunks of ≤ 8 (nothing for k = 0). Unlike
-/// [`shift_run`], a k = 1 double stays a plain `lsl.w #1` (NOT `add.w d,d`):
-/// the corpus's hand strides shift each two-power term with `lsl.w`, and the
-/// two-power chain must reproduce those bytes exactly. `add.w d,d` would be four
-/// cycles cheaper (4 vs `lsl.w #1`'s 8) but byte-different — the word contract
-/// adopts the proven idiom, not a re-optimized one.
+/// [`shift_run`], a k = 1 double emits a plain `lsl.w #1` rather than
+/// `add.w d,d`.
+///
+/// That is a MISSED four cycles (`add.w d,d` costs 4, `lsl.w #1` costs 8), not a
+/// contract: it was chosen to hold a byte-identity bar against hand-written
+/// strides that no longer exist, and that bar is retired. Taking it is
+/// byte-changing — it would move every chain whose trailing run is a single
+/// shift, including the ×66 stride — so it belongs to a parcel that re-proves
+/// the goldens, and is recorded in the gap ledger.
 fn shift_run_word(mut k: u32, d: Reg, span: Span) -> Vec<CodeItem> {
     let mut items = Vec::new();
     while k > 0 {
@@ -1299,11 +1315,12 @@ mod tests {
     // what makes the word candidate set free to include mulu.
     #[test]
     fn word_upper_is_free_mulu_trashes_chain_preserves() {
-        // ×66 with scratch → the two-power chain, all word ops.
+        // ×66 with scratch → the left-to-right chain (32 cy, beats the two-power
+        // arm's 34), all word ops that leave dst's upper word untouched.
         let chain = expand_const_w(vec![reg(Reg::D0), imm(66), reg(Reg::D1)]).unwrap();
         assert_eq!(
             shape(&chain),
-            ["move.w d0,d1", "lsl.w #6,d0", "lsl.w #1,d1", "add.w d1,d0"]
+            ["move.w d0,d1", "lsl.w #5,d0", "add.w d1,d0", "lsl.w #1,d0"]
         );
         let mut regs = BTreeMap::new();
         regs.insert(Reg::D0, 0xDEAD_0002);
@@ -1331,29 +1348,139 @@ mod tests {
         );
     }
 
-    // The corpus strides resolve to the two-power WORD chain — byte-identical to
-    // the hand-derived ×66/×80/×160 (34/40/44 cycles vs mulu's 46). This is the
-    // acceptance foundation the long contract could not meet.
+    // The corpus strides resolve to the left-to-right WORD chain (32/32/34 cycles
+    // vs mulu's 46 and the two-power arm's 34/40/44). `choose()` takes LTR over
+    // the two-power arm at these 2-bit multipliers on cycles; the chain uses only
+    // word ops that leave dst's upper word free.
     #[test]
     fn word_corpus_strides_resolve_to_chains() {
         let c66 = expand_const_w(vec![reg(Reg::D0), imm(66), reg(Reg::D1)]).unwrap();
         assert_eq!(
             shape(&c66),
-            ["move.w d0,d1", "lsl.w #6,d0", "lsl.w #1,d1", "add.w d1,d0"]
+            ["move.w d0,d1", "lsl.w #5,d0", "add.w d1,d0", "lsl.w #1,d0"]
         );
         let c80 = expand_const_w(vec![reg(Reg::D0), imm(80), reg(Reg::D1)]).unwrap();
         assert_eq!(
             shape(&c80),
-            ["move.w d0,d1", "lsl.w #6,d0", "lsl.w #4,d1", "add.w d1,d0"]
+            ["move.w d0,d1", "lsl.w #2,d0", "add.w d1,d0", "lsl.w #4,d0"]
         );
         let c160 = expand_const_w(vec![reg(Reg::D0), imm(160), reg(Reg::D1)]).unwrap();
         assert_eq!(
             shape(&c160),
-            ["move.w d0,d1", "lsl.w #7,d0", "lsl.w #5,d1", "add.w d1,d0"]
+            ["move.w d0,d1", "lsl.w #2,d0", "add.w d1,d0", "lsl.w #5,d0"]
         );
-        // Without scratch the two-power chain is unavailable → mulu (always legal).
+        // Without scratch no chain is available → mulu (always legal).
         let c66_noscr = expand_const_w(vec![reg(Reg::D0), imm(66)]).unwrap();
         assert_eq!(shape(&c66_noscr), ["mulu.w #66,d0"]);
+    }
+
+    // The 5c gate, probed where it is actually DECIDABLE — at the CANDIDATE SET,
+    // not at `choose()`'s output.
+    //
+    // What discriminates what, stated exactly, because the obvious framing does
+    // not hold: a 1-bit multiplier cannot test 5c's own `>= 2` threshold at all.
+    // Arm 5's OUTER guard already excludes 1-bit n, and even with both guards
+    // removed 5c would lose to the plain shift arm (22 cy / 4 B against 18 / 2),
+    // so `choose()` returns `lsl.w` no matter what 5c's gate says. The 1-bit
+    // assertions below therefore pin arm-5 GATING IN GENERAL (a chain must never
+    // be generated for a single set bit, so scratch is never touched even when
+    // offered) — they are honest, non-vacuous, and NOT a probe of `>= 2`.
+    //
+    // The 2-bit assertions are what discriminate the changed gate: 5c must be
+    // GENERATED at exactly 2 set bits and must WIN. Regress the gate to `>= 3`
+    // and the LTR candidate disappears, the two-power arm wins by default, and
+    // every corpus stride changes bytes — so these fail loudly.
+    #[test]
+    fn word_gate_boundary_generates_and_selects_the_ltr_arm() {
+        let ltr80 = ["move.w d0,d1", "lsl.w #2,d0", "add.w d1,d0", "lsl.w #4,d0"];
+        let two_power80 = ["move.w d0,d1", "lsl.w #6,d0", "lsl.w #4,d1", "add.w d1,d0"];
+        let cands: Vec<Vec<String>> =
+            mul_const_candidates_word(Reg::D0, 80, Some(Reg::D1), sp())
+                .iter()
+                .map(|c| shape(c))
+                .collect();
+        assert!(
+            cands.iter().any(|c| c.as_slice() == ltr80),
+            "5c must be GENERATED at 2 set bits (a `>= 3` gate removes it): {cands:?}"
+        );
+        assert!(
+            cands.iter().any(|c| c.as_slice() == two_power80),
+            "5a is retained (dominated, never a winner): {cands:?}"
+        );
+        // ... and it is the one `choose()` takes.
+        let two_bit = expand_const_w(vec![reg(Reg::D0), imm(80), reg(Reg::D1)]).unwrap();
+        assert_eq!(shape(&two_bit), ltr80);
+
+        // 1-bit: arm 5 generates nothing, so NO candidate mentions the scratch
+        // register even though one was offered.
+        let cands1: Vec<Vec<String>> =
+            mul_const_candidates_word(Reg::D0, 64, Some(Reg::D1), sp())
+                .iter()
+                .map(|c| shape(c))
+                .collect();
+        assert!(
+            cands1.iter().all(|c| !c.iter().any(|i| i.contains("d1"))),
+            "a 1-bit multiplier generates no chain candidate at all: {cands1:?}"
+        );
+        let one_bit = expand_const_w(vec![reg(Reg::D0), imm(64), reg(Reg::D1)]).unwrap();
+        assert_eq!(shape(&one_bit), ["lsl.w #6,d0"]);
+    }
+
+    // 5a is DOMINATED BY 5c — the property the ledger row records, pinned
+    // directly as a 5a-vs-5c comparison over every 2-set-bit multiplier.
+    //
+    // Stated against 5c rather than against `choose()`'s winner on purpose: at
+    // some n (e.g. $2001) `mulu.w` beats BOTH chains, so "the chosen shape is
+    // not 5a's" would hold for a reason that has nothing to do with dominance.
+    // What makes deleting 5a provably byte-neutral is that 5c is never dearer —
+    // and is byte-identical whenever it is not cheaper.
+    #[test]
+    fn word_two_power_arm_is_dominated_by_ltr() {
+        let mut equal = 0u32;
+        let mut cheaper = 0u32;
+        for n in 0u32..=0xFFFFu32 {
+            if n.count_ones() != 2 {
+                continue;
+            }
+            let a = 31 - n.leading_zeros();
+            let b = n.trailing_zeros();
+            // 5a — the two-power sum.
+            let mut five_a =
+                vec![instr("move", Some(Width::W), vec![reg(Reg::D0), reg(Reg::D1)], sp())];
+            five_a.extend(shift_run_word(a, Reg::D0, sp()));
+            five_a.extend(shift_run_word(b, Reg::D1, sp()));
+            five_a.push(instr("add", Some(Width::W), vec![reg(Reg::D1), reg(Reg::D0)], sp()));
+            // 5c — the left-to-right chain, same construction as the generator.
+            let mut five_c =
+                vec![instr("move", Some(Width::W), vec![reg(Reg::D0), reg(Reg::D1)], sp())];
+            let msb = 31 - n.leading_zeros();
+            let mut pending: u32 = 0;
+            for bit in (0..msb).rev() {
+                pending += 1;
+                if n & (1 << bit) != 0 {
+                    five_c.extend(shift_run_word(pending, Reg::D0, sp()));
+                    pending = 0;
+                    five_c.push(instr("add", Some(Width::W), vec![reg(Reg::D1), reg(Reg::D0)], sp()));
+                }
+            }
+            five_c.extend(shift_run_word(pending, Reg::D0, sp()));
+
+            let ca = seq_worst_cycles(&five_a).expect("5a prices");
+            let cc = seq_worst_cycles(&five_c).expect("5c prices");
+            assert!(cc <= ca, "n={n}: 5c ({cc}) must never cost more than 5a ({ca})");
+            if cc == ca {
+                assert_eq!(
+                    shape(&five_c),
+                    shape(&five_a),
+                    "n={n}: equal cost must mean an identical sequence"
+                );
+                equal += 1;
+            } else {
+                cheaper += 1;
+            }
+        }
+        // Non-vacuity: both regimes are genuinely exercised.
+        assert!(equal > 0 && cheaper > 0, "equal={equal} cheaper={cheaper}");
     }
 
     // Word degenerates: 0 → clr.w, 1 → NOTHING, 2^k → lsl.w (no zero-extend seed).
@@ -1371,8 +1498,9 @@ mod tests {
     }
 
     // mul_bounded.w: both lowerings compute (zx(dst.w) × src) mod 2^16 for every
-    // in-bound src; the loop accumulates with add.w and the boundary matches the
-    // long form (loop through M = 2, mulu at M ≥ 3).
+    // in-bound src; the loop accumulates with add.w and wins through M = 3
+    // (mulu at M ≥ 4), one M past the long form's boundary because it carries
+    // no upper-word seed.
     #[test]
     fn word_bounded_semantics_and_boundary() {
         for &m in &[0u32, 1, 2, 3, 16] {
@@ -1398,13 +1526,14 @@ mod tests {
                 }
             }
         }
-        // At M = 2 the loop wins and accumulates with add.w; at M = 3 mulu wins.
-        let m2 = expand_bounded_w(vec![reg(Reg::D0), reg(Reg::D1), imm(2), reg(Reg::D2)])
+        // At M = 3 the loop wins and accumulates with add.w; the word loop's
+        // setup carries no `moveq #0` for the multiplicand holder (its upper
+        // word is never read). At M = 4 mulu wins.
+        let m3 = expand_bounded_w(vec![reg(Reg::D0), reg(Reg::D1), imm(3), reg(Reg::D2)])
             .unwrap();
         assert_eq!(
-            shape(&m2),
+            shape(&m3),
             [
-                "moveq #0,d2",
                 "move.w d0,d2",
                 "moveq #0,d0",
                 "subq.w #1,d1",
@@ -1415,9 +1544,9 @@ mod tests {
                 "$mul$m$0$done:"
             ]
         );
-        let m3 = expand_bounded_w(vec![reg(Reg::D0), reg(Reg::D1), imm(3), reg(Reg::D2)])
+        let m4 = expand_bounded_w(vec![reg(Reg::D0), reg(Reg::D1), imm(4), reg(Reg::D2)])
             .unwrap();
-        assert_eq!(shape(&m3), ["mulu.w d1,d0"]);
+        assert_eq!(shape(&m4), ["mulu.w d1,d0"]);
     }
 
     // `.l` (and any non-`.w` suffix) refuses; `.w` is accepted.

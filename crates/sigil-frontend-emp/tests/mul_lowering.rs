@@ -179,22 +179,24 @@ fn refusals_surface_through_the_pipeline() {
     assert!(has_tag(&diags, "[mul.operands]"), "{diags:?}");
 }
 
-// The word contract's acceptance bar through the full pipeline: `mul_const.w`
-// at each corpus stride emits BYTE-IDENTICAL code to the hand-derived two-power
-// shift-add chain — the byte-identical adoption the long contract could not meet.
+// The word contract through the full pipeline: `mul_const.w` at each corpus
+// stride emits BYTE-IDENTICAL code to the hand-derived left-to-right shift-add
+// chain — the lowering `choose()` picks over the two-power arm on cycles once
+// the LTR arm competes at 2 set bits.
 #[test]
 fn word_strides_are_byte_identical_to_hand_chains() {
-    // (n, high-term shift, low-term shift): 66 = 64+2, 80 = 64+16, 160 = 128+32.
-    for (n, a, b) in [(66u32, 6, 1), (80, 6, 4), (160, 7, 5)] {
+    // (n, first-shift, second-shift) of `move.w d0,d1 / lsl.w #p,d0 /
+    // add.w d1,d0 / lsl.w #q,d0`: 66 → (5,1), 80 → (2,4), 160 → (2,5).
+    for (n, p, q) in [(66u32, 5, 1), (80, 2, 4), (160, 2, 5)] {
         let (m_new, d_new) = lower(&format!(
             "module m\nproc p() clobbers(d0, d1) {{\n    mul_const.w d0, #{n}, d1\n    rts\n}}\n"
         ));
         let (m_old, d_old) = lower(&format!(
             "module m\nproc p() clobbers(d0, d1) {{\n\
              \x20   move.w d0, d1\n\
-             \x20   lsl.w #{a}, d0\n\
-             \x20   lsl.w #{b}, d1\n\
+             \x20   lsl.w #{p}, d0\n\
              \x20   add.w d1, d0\n\
+             \x20   lsl.w #{q}, d0\n\
              \x20   rts\n}}\n"
         ));
         assert!(errors(&d_new).is_empty(), "n={n}: {d_new:?}");

@@ -214,6 +214,10 @@ step-3 ask #1 of the long-form parcel, now delivered. The `shl_l` companion
    it is deliberately SUPPRESSED (gated to ≥ 3 set bits) to hold byte-identity,
    and is recoverable only by a deliberate byte-changing parcel that re-derives
    each stride to the LTR encoding and re-freezes the goldens.
+   **TAKEN by the 2026-08-06 byte-changing parcel** (specs/2026-08-06-byte-
+   changing-mul-parcel.md R1; notes/2026-08-06-ltr-mul-packet.md): the gate
+   relaxed to ≥ 2 set bits, `choose()` now takes LTR at every stride site on
+   cycles, and the goldens re-froze. The suppression no longer exists.
 
 **Neither-bucket headline:** the whole corpus stride family sits 2–12 cycles
 UNDER mulu's 46 at word width — and exactly ON mulu at LONG width (the long
