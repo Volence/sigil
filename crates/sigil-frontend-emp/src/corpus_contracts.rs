@@ -1480,17 +1480,29 @@ fn reg_name(name: &str) -> Option<String> {
 /// hole/unresolved report (a real proc/extern name never contains `$`).
 ///
 /// **S2-D6 U2 — the "contract invoke" edge (scope note).** `invoke Iface.hook`
-/// lowers to an absolute-long `jsr (sym).l` (`CodeOperand::AbsSym`), so charging
-/// its target's clobbers means recognizing that shape here. It is NOT recognized:
-/// (a) the corpus contract walk analyzes with the EMPTY interface env, under
-/// which an `invoke` emits nothing at all, so there is no edge to charge in the
-/// gate today; and (b) the corpus's only abs-long calls are the vendored debugger
-/// entries (`jsr (MDDBG__ErrorHandler).l`), which carry no `extern proc` contract
-/// — treating them as direct callees turns them into unresolved holes. Wiring the
-/// invoke edge (env-threaded closure + resolvable-vs-⊤ abs-long handling) is L1
-/// game-contract-seam work, deliberately deferred. The lowering `invoke` →
-/// `jsr (sym).l` is proven in the game_contract tests; the direct-call
-/// propagation it composes with is proven by `direct_jsr_and_bsr_call_edges`.
+/// lowers to an absolute-long `jsr (sym).l` (`CodeOperand::AbsSym`) naming the
+/// bound proc, so charging its target's clobbers means recognizing that shape
+/// here. It is NOT recognized. The per-shape gates walk BOUND interface envs
+/// ([`analyze_corpus_with_contracts`]), so an `invoke` DOES emit its
+/// `jsr (bound_proc).l` in each shape's walk. Measured (residue-b9): the two
+/// corpus invokers' bound targets resolve to real procs, so recognizing AbsSym
+/// charges them with ZERO new firings in all seven shapes (both invokers already
+/// declare full-universe clobbers).
+///
+/// The blocker is a DIFFERENT abs-long shape that recognizing AbsSym also picks
+/// up: the diagnostics desugars (`assert` / `raise_error` / `raise_exception`)
+/// expand to `jsr (MDDBG__ErrorHandler).l` / `jmp (…_PagesController).l`, whose
+/// targets are contractless `pub equ … = extern("ErrorHandlerBlob")+off` LINK
+/// BOUNDARIES — neither `proc` nor `extern proc`. Recognizing them registers
+/// `{MDDBG__ErrorHandler, MDDBG__ErrorHandler_PagesController}` as
+/// `unresolved_callees` HOLES in EVERY shape (measured), which the
+/// `corpus_closure_residue_is_empty_the_error_gate` treats as a build error. The
+/// fix wants an abs-long-indirect-to-known-equ/link-symbol EXCLUSION (a resolved
+/// boundary, `⊥` for clobbers — not a hole; a bare-`Sym` call to an unknown name
+/// stays a hole, `MysteryAsmRoutine`) — ledgered, needs its own gate run. The
+/// lowering `invoke` → `jsr (sym).l` is proven in the game_contract tests; the
+/// direct-call propagation it composes with is proven by
+/// `direct_jsr_and_bsr_call_edges`.
 fn call_target_sym(ops: &[CodeOperand]) -> Option<String> {
     match ops {
         [CodeOperand::Sym(name)] if !name.contains('$') => Some(name.clone()),
