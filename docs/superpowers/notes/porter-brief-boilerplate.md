@@ -68,7 +68,12 @@ you have READ the final output of your final gate run and written your report.
   in sequence: four call-target matchers were ranked by risk against EACH OTHER
   when the decision needed them ranked against the symbol they would fold ONTO,
   and the ordering inverts between the two baselines. Both reviewers were
-  confidently wrong, and each raised the other's confidence.
+  confidently wrong, and each raised the other's confidence. And naming the
+  baseline is not enough on its own: a relative claim is only as good as a
+  baseline someone RE-DERIVED this session, and re-derived means counted, not
+  remembered. The rule's first firing was a correct "3 commits ahead of session
+  start" hung on a remembered absolute that was two commits stale — the
+  comparison was sound, the unexamined anchor was not.
 - Comments: present-tense contract facts only — no change-history narration, no
   parcel tags. Brace-indent house style. Ledger rows for honest gaps, with
   measurements, same commit as the code where possible.
