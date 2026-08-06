@@ -1,7 +1,8 @@
 # Residue micro-parcel (b9) — close packet
 
 Three small, unrelated-but-adjacent closures from today's scouting round. Small
-parcel, full bars. Branches UNMERGED (overseer merges after a lens panel).
+parcel, full bars. No merge-state claims — the overseer owns merges; commits
+listed below for the queue.
 
 ## Commits
 - aeon `bc84f5d` — `section: RedrawPlanes declares the SR halves its body earns`

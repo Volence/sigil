@@ -1482,10 +1482,9 @@ fn reg_name(name: &str) -> Option<String> {
 /// **S2-D6 U2 — the "contract invoke" edge (scope note).** `invoke Iface.hook`
 /// lowers to an absolute-long `jsr (sym).l` (`CodeOperand::AbsSym`) naming the
 /// bound proc, so charging its target's clobbers means recognizing that shape
-/// here. It is NOT recognized, but the OLD reason no longer holds: the per-shape
-/// gates now walk BOUND interface envs ([`analyze_corpus_with_contracts`]), so an
-/// `invoke` DOES emit its `jsr (bound_proc).l` in each shape's walk — the
-/// "empty-env makes it moot" rationale is dead. Measured (residue-b9): the two
+/// here. It is NOT recognized. The per-shape gates walk BOUND interface envs
+/// ([`analyze_corpus_with_contracts`]), so an `invoke` DOES emit its
+/// `jsr (bound_proc).l` in each shape's walk. Measured (residue-b9): the two
 /// corpus invokers' bound targets resolve to real procs, so recognizing AbsSym
 /// charges them with ZERO new firings in all seven shapes (both invokers already
 /// declare full-universe clobbers).
@@ -1495,8 +1494,8 @@ fn reg_name(name: &str) -> Option<String> {
 /// expand to `jsr (MDDBG__ErrorHandler).l` / `jmp (…_PagesController).l`, whose
 /// targets are contractless `pub equ … = extern("ErrorHandlerBlob")+off` LINK
 /// BOUNDARIES — neither `proc` nor `extern proc`. Recognizing them registers
-/// `{MDDBG__ErrorHandler, MDDBG__ErrorHandler_PagesController}` as `unresolved_
-/// callees` HOLES in EVERY shape (measured), which the
+/// `{MDDBG__ErrorHandler, MDDBG__ErrorHandler_PagesController}` as
+/// `unresolved_callees` HOLES in EVERY shape (measured), which the
 /// `corpus_closure_residue_is_empty_the_error_gate` treats as a build error. The
 /// fix wants an abs-long-indirect-to-known-equ/link-symbol EXCLUSION (a resolved
 /// boundary, `⊥` for clobbers — not a hole; a bare-`Sym` call to an unknown name
