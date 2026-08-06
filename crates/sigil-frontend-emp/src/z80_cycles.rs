@@ -150,6 +150,11 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
         // --- unconditional jump (10) vs CONDITIONAL jp cc (10 either outcome) ---
         ("jp", [t]) if is_sym(t) => Cost::Fixed(10),
         ("jp", [cc, t]) if is_cc(cc) && is_sym(t) => Cost::Fixed(10),
+        // `jp (hl)` — the register-indirect computed transfer (4 T, 1 M-cycle),
+        // the Z80 twin of the 68k `jmp (a1)` dispatch. Priced so an enumerated
+        // `jp (hl) targets(...)` can carry a budget; unenumerated it is still a
+        // `[cycles.computed-transfer]` refusal (the structural check comes first).
+        ("jp", [Z80IndHl]) => Cost::Fixed(4),
 
         // --- UNCONDITIONAL `jr e` (12 T, 2 bytes) — the DENSE pad primitive.
         // Unambiguous (there is no not-taken outcome), unlike `jr cc` below. It is

@@ -447,6 +447,15 @@ pub enum DispatchFindingKind {
         /// The repeated label.
         label: String,
     },
+    /// `[dispatch.target-trailing]` — a named label is LOCAL but has no instruction
+    /// at or after it: it closes the body, so it is a fall-off in disguise, not a
+    /// landing point. Left un-refused it produces contradictory diagnostics — the
+    /// checker accepts it, then the budget walk refuses the transfer as computed,
+    /// telling the author to add the clause they already wrote.
+    Trailing {
+        /// The trailing label.
+        label: String,
+    },
 }
 
 impl DispatchFindingKind {
@@ -458,6 +467,7 @@ impl DispatchFindingKind {
             Self::Unknown { .. } => "dispatch.target-unknown",
             Self::Nonlocal { .. } => "dispatch.target-nonlocal",
             Self::Duplicate { .. } => "dispatch.target-duplicate",
+            Self::Trailing { .. } => "dispatch.target-trailing",
         }
     }
 
@@ -483,6 +493,11 @@ impl DispatchFindingKind {
             Self::Duplicate { label } => format!(
                 "`targets(...)` names `{label}` more than once — an enumeration lists each \
                  reachable label once"
+            ),
+            Self::Trailing { label } => format!(
+                "`targets(...)` names `{label}`, which closes the proc with no instruction \
+                 after it — a trailing label is a fall-off, not a landing point, so control \
+                 never arrives there through the dispatch"
             ),
         }
     }
@@ -552,6 +567,16 @@ pub fn check_dispatch_targets(items: &[CodeItem], cpu: Cpu) -> Vec<DispatchFindi
                 continue;
             }
             if cfg.is_local_label(label) {
+                // A local label with an instruction at/after it is a real landing
+                // point; one with NONE closes the body and is a fall-off, not a
+                // landing point (the b8 trailing-label reading).
+                if cfg.label_index(label).is_some() {
+                    continue;
+                }
+                out.push(DispatchFinding {
+                    kind: DispatchFindingKind::Trailing { label: label.clone() },
+                    span: *span,
+                });
                 continue;
             }
             let kind = if label.starts_with('.') {
@@ -1389,21 +1414,39 @@ mod tests {
         assert_eq!(e.kind, BudgetFindingKind::ComputedTransfer { mnemonic: "jmp".into() });
     }
 
-    // ORTHOGONALITY (spec §2): the clause changes NOTHING the other CFG consumers
-    // see. The 68k edge model — what the preserves prover and the flag walks read
-    // — is a single `Defer` for the entry jmp with the clause AND without it. Only
-    // the cycle-budget walk (above) reads the clause.
+    // ORTHOGONALITY (spec §2): the clause changes NOTHING the other analyses see.
+    // Not just the edge model — the actual VERDICTS. The preserves prover, the
+    // flag def-use walk, and the stack-balance verdict all follow `flag_check::Cfg`
+    // edges, and those are a single `Defer` for the computed jmp with the clause
+    // and without it. A future consumer that read `targets` directly (turning the
+    // `Defer` into `Follow` edges into the drains) would change all three verdicts
+    // — this pin flips red the day that happens.
     #[test]
-    fn enumerated_targets_leave_the_base_edge_model_untouched() {
+    fn enumerated_targets_leave_the_base_analyses_untouched() {
+        use crate::preserves::{check_stack_balance, verify_preserved, CallPolicy};
         let with = dispatch_fixture();
         let mut without = with.clone();
         if let CodeItem::Instr { targets, .. } = &mut without[0] {
             targets.clear();
         }
+        // The edge model itself: identical, and a single `Defer`.
         let e_with = crate::flag_check::Cfg::build(&with).edges(0);
-        let e_without = crate::flag_check::Cfg::build(&without).edges(0);
-        assert_eq!(e_with, e_without);
+        assert_eq!(e_with, crate::flag_check::Cfg::build(&without).edges(0));
         assert_eq!(e_with, vec![Edge::Defer]);
+        // The preserves prover's verdict on the drain registers.
+        let regs = [crate::value::Reg::A1, crate::value::Reg::A5];
+        assert_eq!(
+            verify_preserved(&with, &regs, CallPolicy::ClobberAll),
+            verify_preserved(&without, &regs, CallPolicy::ClobberAll),
+        );
+        // The flag def-use walk's verdict.
+        let no_callees = BTreeMap::new();
+        assert_eq!(
+            crate::flag_check::check_flag_unused("f", &with, &no_callees, &[], Cpu::M68000),
+            crate::flag_check::check_flag_unused("f", &without, &no_callees, &[], Cpu::M68000),
+        );
+        // The stack-balance verdict.
+        assert_eq!(check_stack_balance(&with, true), check_stack_balance(&without, true));
     }
 
     // PERTURBATION (spec §5): add one send group to the dearest arm and the worst
@@ -1542,5 +1585,49 @@ mod tests {
     #[test]
     fn a_valid_enumeration_is_silent() {
         assert!(check_dispatch_targets(&dispatch_fixture(), Cpu::M68000).is_empty());
+    }
+
+    // A target naming a TRAILING label (one that closes the body, no instruction
+    // after it) is a fall-off in disguise, refused BY NAME — otherwise the checker
+    // accepts it and the walk then refuses the transfer as computed, a contradiction.
+    #[test]
+    fn a_trailing_label_target_is_refused() {
+        let items = vec![
+            jmp_targets("t", Reg::A1, &["done"]),
+            drain_move(),
+            instr("rts", vec![]),
+            label("done"), // trailing: closes the proc, no instruction after it
+        ];
+        let f = check_dispatch_targets(&items, Cpu::M68000);
+        assert_eq!(
+            f,
+            vec![DispatchFinding {
+                kind: DispatchFindingKind::Trailing { label: "done".into() },
+                span: sp(),
+            }]
+        );
+    }
+
+    // The Z80 twin: `jp (hl) targets(.a)` — a computed transfer naming no symbol —
+    // enumerates just like the 68k `jmp .table(a1)`. `jp (hl)` 4 + nop 4 + ret 10.
+    #[test]
+    fn a_z80_computed_jp_enumerates() {
+        let items = vec![
+            CodeItem::Instr {
+                mnemonic: "jp".into(),
+                size: None,
+                ops: vec![CodeOperand::Z80IndHl],
+                span: sp(),
+                as_type: None,
+                targets: vec!["a".into()],
+                author: ItemAuthor::User,
+            },
+            label("a"),
+            instr("nop", vec![]),
+            instr("ret", vec![]),
+        ];
+        assert!(check_dispatch_targets(&items, Cpu::Z80).is_empty());
+        let c = path_costs(&items, Cpu::Z80, sp()).unwrap();
+        assert_eq!((c.min, c.max), (18, 18));
     }
 }

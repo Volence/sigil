@@ -58,6 +58,17 @@ pub fn lower_code_buf(
     builder: &mut IrBuilder,
     diags: &mut Vec<Diagnostic>,
 ) {
+    // Enumerated-dispatch `targets(...)` validity (enumerated-dispatch design §1).
+    // EVERY code buf funnels through here — a named proc, a dispatch-table inline
+    // body, a script body, or an item-position `asm {}` template — so this is the
+    // one chokepoint that catches a `targets(...)` clause on any path (a proc
+    // never double-reports it because its validation no longer runs a second
+    // copy). ERROR-tier (an author-written claim, like the budget it feeds); the
+    // check is cheap when no clause is present. The message is self-describing and
+    // the span pins the instruction, so no proc name is threaded here.
+    for f in crate::cycle_budget::check_dispatch_targets(&code.items, cpu) {
+        push_err(diags, f.span, format!("[{}]: {}", f.kind.lint_id(), f.kind.message()));
+    }
     for item in &code.items {
         match item {
             CodeItem::Label { name, .. } => builder.define_label(name),

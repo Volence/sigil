@@ -1125,6 +1125,19 @@ impl Evaluator<'_> {
         let mnemonic = self.resolve_mnemonic(&instr.mnemonic, env)?;
         let size = self.resolve_size(instr.size.as_ref(), instr.span, env)?;
         if mnemonic == "dc" {
+            // `dc` lowers to inline DATA, not a `CodeItem::Instr`, so it never
+            // reaches the enumerated-dispatch validity check — refuse a stray
+            // `targets(...)` here rather than let `dc.w 5 targets(.x)` silently
+            // drop the clause. Data is not a computed transfer; there is nowhere
+            // for control to land.
+            if !instr.targets.is_empty() {
+                self.error(
+                    instr.span,
+                    "[dispatch.targets-on-data] `targets(...)` names where control lands, \
+                     but `dc` emits DATA, not a transfer — a data directive has no landing \
+                     points to enumerate",
+                );
+            }
             return self.lower_dc(instr, size, env);
         }
         // The enumerated-dispatch `targets(...)` labels, resolved through THIS
