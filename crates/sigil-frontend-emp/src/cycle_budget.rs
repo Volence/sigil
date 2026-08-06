@@ -441,24 +441,24 @@ fn charged_edges(
     //     same blob stays a plain `Defer` (authorship is the distinguisher).
     //   * a transfer whose named target is declared `@noreturn`.
     // Computed once (an instruction-level fact) and consulted at the `Defer` arms.
-    let target = crate::flag_check::branch_target(ops);
+    // The target is read through the UNIFIED extractor so `jmp (Diverge).l` (an
+    // `AbsSym`) matches a `@noreturn` symbol, not only a bare `jbra Diverge`.
+    let target = crate::flag_check::transfer_target_sym(ops);
+    let names_a_target = target.is_some();
     let is_uncond_transfer = matches!(mnem, "bra" | "jbra" | "jmp" | "jra");
-    let divergent_terminal = (matches!(author, ItemAuthor::AssertDesugar) && is_uncond_transfer)
-        || target.is_some_and(|t| noreturn.contains(t));
+    // The authored-rail arm is CONJOINED with `names_a_target` so it is
+    // order-independent with the coming enum-dispatch `targets()` arm by
+    // construction: an authored terminal that names nothing is not a rail.
+    let divergent_terminal =
+        (matches!(author, ItemAuthor::AssertDesugar) && is_uncond_transfer && names_a_target)
+            || target.is_some_and(|t| noreturn.contains(t));
     // The STRUCTURAL refusals come before the cost-table one: a path that
     // escapes the body is unboundable whatever the instruction costs, and for a
     // computed transfer (`jp (hl)`) an "add it to the table" refusal would be a
     // misleading invitation — a table entry would not make it boundable.
-    // A transfer NAMES its target when any operand carries a symbol — the bare
-    // `Sym` a branch takes, or the pinned/offset absolutes (`jmp (Sym).w`,
-    // `jmp Item.field`) the abs seam lowers. Only a target the program text
-    // does not name at all (`jp (hl)`, `jmp .table(a1)`) is computed.
-    let names_a_target = ops.iter().any(|o| {
-        matches!(
-            o,
-            CodeOperand::Sym(_) | CodeOperand::SymOff { .. } | CodeOperand::AbsSym { .. }
-        )
-    });
+    // `names_a_target` (above) is true when a transfer NAMES its target — the bare
+    // `Sym`, or the pinned/offset absolutes; only a target the program text does
+    // not name at all (`jp (hl)`, `jmp .table(a1)`) is computed.
     for e in &edges {
         match e {
             // A divergent terminal (`@noreturn` target, or an authored rail's
@@ -1152,6 +1152,22 @@ mod tests {
         // nop (4) + jbra's `jmp abs.l` rung ceiling (12).
         assert_eq!((c.min, c.max), (16, 16));
         assert!(check_cycle_budget(&items, Cpu::M68000, sp(), Some(16), false, &nr_of(&["Diverge"])).is_empty());
+    }
+
+    // S3: the `@noreturn` match reads the UNIFIED target extractor, so an absolute
+    // long `jmp (Diverge).l` (an `AbsSym`, which `branch_target` cannot see)
+    // matches a `@noreturn` symbol and closes the path.
+    #[test]
+    fn a_tail_via_abs_long_to_a_noreturn_target_closes_the_path() {
+        let items = vec![
+            instr("nop", vec![]),
+            instr("jmp", vec![CodeOperand::AbsSym { target: "Diverge".into(), long: true }]),
+        ];
+        // Not marked: unbounded (an AbsSym still names a target, so not computed).
+        assert!(path_costs(&items, Cpu::M68000, sp(), &nr()).is_err());
+        // Marked: the AbsSym target matches, the path closes and measures.
+        let c = path_costs(&items, Cpu::M68000, sp(), &nr_of(&["Diverge"])).unwrap();
+        assert_eq!((c.min, c.max), (16, 16)); // nop 4 + jmp abs.l 12
     }
 
     // A CONDITIONAL branch's taken edge to a `@noreturn` target diverges while its

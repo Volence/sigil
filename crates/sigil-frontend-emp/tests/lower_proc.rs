@@ -2705,3 +2705,91 @@ fn ccr_advisory_silent_on_debug_rail_inside_bracket() {
         "an authored raise rail is not a caller-visible CCR effect: {diags:?}"
     );
 }
+
+// ---- @noreturn refinements (amended spec ad670db4): trailing-local + falls_into
+
+/// M1 counterexample (a): a `@noreturn` proc with an unconditional transfer to a
+/// TRAILING local label (`.out:` closes the body) — `Cfg::edges` hands it back as
+/// `Edge::Defer` on 68k, but control runs off the end and returns. Refused.
+#[test]
+fn noreturn_trailing_local_transfer_is_a_fall_off() {
+    let src = "module m\n@noreturn\nproc P () clobbers() {\n\
+               \tmoveq #0, d0\n\
+               \tbra .out\n\
+               .spin:\n\
+               \tjbra .spin\n\
+               .out:\n\
+               }\n";
+    let (_m, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[noreturn.returns]"),
+        "a transfer to a body-closing local label falls off: {diags:?}"
+    );
+}
+
+/// M1 counterexample (b): the CCR walk must NOT read a `jbra .end` whose `.end:`
+/// closes the body as intra-proc flow — control falls off, so the flags the
+/// caller sees are the successor's. Was ACCEPTED when `is_local_label` cleared
+/// trailing labels; `label_index` (None for a trailing label) refuses it.
+#[test]
+fn ccr_trailing_local_transfer_is_a_leave() {
+    let src = "module m\nproc f() clobbers(sr.mask) preserves(sr.ccr) {\n\
+               \tmove.w sr, -(sp)\n\
+               \tmove.w #$2700, sr\n\
+               \tmove.w (sp)+, sr\n\
+               \tjbra .end\n\
+               .end:\n\
+               }\n";
+    let (_m, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-unverifiable]"),
+        "a jbra to a body-closing label is a leave, not intra-proc flow: {diags:?}"
+    );
+}
+
+/// S2 (falls_into composition), honest polarity: a `@noreturn` proc that falls
+/// into a successor which is ITSELF `@noreturn` is accepted.
+#[test]
+fn noreturn_falls_into_noreturn_successor_composes() {
+    let src = "module m\n\
+               @noreturn\nproc P () clobbers() falls_into Q {\n\tnop\n}\n\
+               @noreturn\nproc Q () clobbers() {\n\tjbra Q\n}\n";
+    let (_m, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[noreturn.returns]"),
+        "a fall into a @noreturn successor composes: {diags:?}"
+    );
+}
+
+/// S2, refused polarity: a `@noreturn` proc falling into a RETURNING successor
+/// returns into it — refused.
+#[test]
+fn noreturn_falls_into_returning_successor_is_refused() {
+    let src = "module m\n\
+               @noreturn\nproc P () clobbers() falls_into Q {\n\tnop\n}\n\
+               proc Q () clobbers() {\n\trts\n}\n";
+    let (_m, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[noreturn.returns]"),
+        "a fall into a returning successor returns: {diags:?}"
+    );
+}
+
+/// S1: the bare-`sr` advisory reuses the ERROR check's tail refusal — a bare-`sr`
+/// proc that falls into its successor is NAMED (its CCR is the successor's), not
+/// silently green.
+#[test]
+fn ccr_advisory_fires_on_a_falls_into_bare_sr_proc() {
+    let src = "module m\n\
+               proc f() clobbers() preserves(sr) falls_into g {\n\
+               \tmove.w sr, -(sp)\n\
+               \tmove.w #$2700, sr\n\
+               \tmove.w (sp)+, sr\n\
+               }\n\
+               proc g() clobbers() { rts }\n";
+    let (_m, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.ccr-advisory]"),
+        "a bare-sr proc that falls into its successor is not silently green: {diags:?}"
+    );
+}

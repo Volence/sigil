@@ -188,6 +188,8 @@ fn core_long_form_matches_transliteration() {
     let src = "\
 module m
 section s (cpu: m68000) {
+    // golden = sr.mask, construct = bare sr (byte-identical): the asymmetry is the
+    // model — see the rings-form fixture above.
     proc golden () clobbers() preserves(sr.mask) {
         move.w  sr, -(sp)
         cmp.l   #Object_RAM, a0
@@ -224,6 +226,8 @@ fn core_word_form_matches_transliteration() {
     let src = "\
 module m
 section s (cpu: m68000) {
+    // golden = sr.mask, construct = bare sr (byte-identical): the asymmetry is the
+    // model — see the rings-form fixture above.
     proc golden () clobbers(d7) preserves(sr.mask) {
         move.w  sr, -(sp)
         cmp.w   #NUM_DYNAMIC, d7
@@ -263,6 +267,8 @@ fn tst_form_uses_tst_not_cmp() {
     let src = "\
 module m
 section s (cpu: m68000) {
+    // golden = sr.mask, construct = bare sr (byte-identical): the asymmetry is the
+    // model — see the rings-form fixture above.
     proc golden () clobbers(d1) preserves(sr.mask) {
         move.w  sr, -(sp)
         tst.w   d1
@@ -512,10 +518,10 @@ section s (cpu: m68000) {
     assert_eq!(sr_dest_writes, 1, "the restore is the expansion's only SR write");
 }
 
-/// The `raise_error` rail is `AssertDesugar`-authored too — its terminal
+/// The `raise_error` rail is `AssertDesugar`-authored end to end — its terminal
 /// `jmp (pages).l` is the compiler's authored divergent transfer (spec §1(b)),
-/// so the noreturn-tail consumers treat it as a divergent terminal. (Before this
-/// parcel the rail carried ambient `User`, and nothing marked its divergence.)
+/// so the noreturn-tail consumers treat it as a divergent terminal, and a
+/// hand-written `jmp` to the same blob stays a plain `Defer`.
 #[test]
 fn the_raise_error_rail_is_desugar_authored_with_a_divergent_jmp() {
     let src = "\
