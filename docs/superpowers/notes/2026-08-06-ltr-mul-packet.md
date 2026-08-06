@@ -153,9 +153,11 @@ there is unchanged.
 ## 4 · Bars
 
 - **Full strict** (`--no-fail-fast`, `SIGIL_STRICT_GATE=1`, AEON_DIR = this
-  lane's aeon), **after the refreeze**: **3448 passed / 0 failed / 4 ignored =
-  3452**, and the branch's own `#[test]` total is **3452** — closes exactly.
-  Before the refreeze the same run was 3425/23/4: those 23 were entirely the
+  lane's aeon), **after the refreeze and the final rebase**: **3451 passed / 0
+  failed / 4 ignored = 3455**, and the branch's own `#[test]` total is **3455** —
+  closes exactly. (Pre-rebase the same run was 3448/0/4 = 3452; the +3 is the
+  `preserve_oracle_threading.rs` suite this branch picked up from master, not
+  this parcel.) Before the refreeze the run was 3425/23/4: those 23 were entirely the
   stale-golden / frozen-reference class a byte-changing parcel produces
   (`*_anchor_matches_golden`, `*_full_file`, `*_size_table_rederives_native`,
   `native_full_sonic4_*`, `boot_*_region_matches_reference`,
@@ -310,6 +312,15 @@ so in present tense.
   worst-case-contract comments at both loop sites (byte-neutral, verified).
 
 Behaviour, ripple, docs and the refreeze are separate commits.
+
+**Rebases.** The branches were rebased twice mid-parcel as masters moved, and
+every gate was re-proven own-run after each. The final sigil base carries the
+`srmask` merge, whose emitter changes (`lower/proc.rs`, `corpus_contracts.rs`)
+are **byte-neutral against this parcel's frozen goldens** — verified by
+rebuilding both canonical shapes after the rebase and reproducing `3b6cad91` /
+`e3963874` exactly, with `refreeze --check` still OK. That check was not
+optional: a byte-moving change on master would have staled this parcel's
+refreeze.
 
 ## 9 · Traps recorded (they cost two full A/B passes)
 
