@@ -10,12 +10,28 @@
 //! mul_bounded dD, dS2, #M, dS   // same, dS = scratch (enables the loop candidate)
 //! ```
 //!
-//! **Result contract (pinned):** identical to `mulu.w` over the full input
-//! domain — dst.l = zero-extended(dst.w) × n, all 32 result bits valid
-//! (k·x ≤ $FFFF·$FFFF < 2³², so a chain in `.l` ops after zero-extension is
-//! exact). One contract, one meaning; no word-result variant in v1 (design §5 —
-//! the corpus's word-width hand chains are a RECORDED sized-variant demand, not
-//! a license to fork the contract).
+//! **Two contracts, one per name — the suffix IS part of the name** (the
+//! 2026-08-05 sized-variant ruling):
+//!
+//! - **bare (LONG)**: `dst.l = zero-extended(dst.w) × n`, all 32 result bits
+//!   valid (k·x ≤ $FFFF·$FFFF < 2³², so a chain in `.l` ops after a zero-extend
+//!   is exact). A caller who needs the upper word spells this form.
+//! - **`.w` (WORD)**: `dst.w = (u16(dst.w) × n) mod 2^16`; the **upper word of
+//!   `dst` is UNDEFINED** after the construct. The multiply is total mod 2^16 —
+//!   whether the product FITS a word is the AUTHOR's range obligation (carried
+//!   where the corpus already carries it, the module `ensure`), never checked
+//!   here. Loosening the upper word is deliberate: an unchanged-upper promise
+//!   would exclude `mulu.w` (it writes all 32 bits) from the word candidate set,
+//!   condemning a many-set-bits multiplier to an unbounded chain. The word
+//!   chains the corpus adopts happen to leave the upper word untouched; callers
+//!   may not rely on it, and the unit oracle seeds garbage to prove the freedom.
+//!
+//! `.l` (or any other suffix) is REFUSED (`[mul.size]`): bare already IS the
+//! long form, so a second spelling of one meaning is a reader tax. The word
+//! candidate set differs from the long set in exactly one structural way — there
+//! is NO zero-extend seed anywhere in it (that is the entire economic point:
+//! the word chains price what the sites compute, and win back the 2–12 cycles a
+//! zero-extend would cost them against `mulu`).
 //!
 //! **Expansion point (the soundness decision):** a construct item expands into
 //! ORDINARY instructions at [`expand_buf`], called when an evaluated
@@ -63,6 +79,16 @@ use crate::value::{CodeBuf, CodeItem, CodeOperand, ItemAuthor, Reg, Width};
 use sigil_backend_m68k::m68k_cycles::CycleCost;
 use sigil_ir::backend::Cpu;
 use sigil_span::{Diagnostic, Level, Span};
+
+/// Which of the two contracts a construct spelling selects (the suffix IS the
+/// name): bare `mul_const`/`mul_bounded` is [`MulWidth::Long`] (32-bit result),
+/// the `.w` spelling is [`MulWidth::Word`] (low word, upper undefined). Any
+/// other suffix is refused before this ever binds.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum MulWidth {
+    Long,
+    Word,
+}
 
 /// Whether `base` is one of the two multiply-construct mnemonic-position words.
 /// Reserved on BOTH CPUs (like `dc`/`jbra`: a comptime fn named `mul_const` is
@@ -163,19 +189,35 @@ pub(crate) fn expand_item(
     counter: &mut u32,
     author: &ItemAuthor,
 ) -> Result<Vec<CodeItem>, Diagnostic> {
-    if size.is_some() {
-        return Err(err(
-            span,
-            format!(
-                "[mul.size] `{mnemonic}` takes no size suffix — its one contract is \
-                 dst.l = u16(dst.w) × n (a word-result variant is deliberately \
-                 unratified; design §5)"
-            ),
-        ));
-    }
+    let width = match size {
+        None => MulWidth::Long,
+        Some(Width::W) => MulWidth::Word,
+        Some(other) => {
+            let sfx = width_suffix(other);
+            // `.l` would be a DUPLICATE of the long form (bare already means it);
+            // `.b`/`.s` would be a NEW, unratified narrow contract — different
+            // refusals for different reasons.
+            let tail = if other == Width::L {
+                "there is no `.l` — bare already IS the long form, so a second name \
+                 for one meaning is a reader tax"
+            } else {
+                "there is no `.b`/`.s` — a byte- or short-width multiply would be an \
+                 unratified THIRD contract, not a duplicate spelling (no consumer yet)"
+            };
+            return Err(err(
+                span,
+                format!(
+                    "[mul.size] `{mnemonic}.{sfx}` — bare `{mnemonic}` IS the LONG form \
+                     (dst.l = u16(dst.w) × n, all 32 bits) and `.w` is the WORD form \
+                     (dst.w = the low word of the product; the upper word is undefined); \
+                     {tail}"
+                ),
+            ));
+        }
+    };
     let mut items = match mnemonic {
-        "mul_const" => expand_mul_const(ops, span)?,
-        "mul_bounded" => expand_mul_bounded(ops, span, module, counter)?,
+        "mul_const" => expand_mul_const(ops, span, width)?,
+        "mul_bounded" => expand_mul_bounded(ops, span, module, counter, width)?,
         _ => unreachable!("guarded by is_mul_mnemonic"),
     };
     // Generators stamp `User`; the splice-boundary helper lifts that to the
@@ -186,7 +228,11 @@ pub(crate) fn expand_item(
 
 // ---- mul_const ----------------------------------------------------------
 
-fn expand_mul_const(ops: &[CodeOperand], span: Span) -> Result<Vec<CodeItem>, Diagnostic> {
+fn expand_mul_const(
+    ops: &[CodeOperand],
+    span: Span,
+    width: MulWidth,
+) -> Result<Vec<CodeItem>, Diagnostic> {
     let (dst, n, scratch) = match ops {
         [d, CodeOperand::Imm(n)] => (data_reg(d, "dst", span)?, *n, None),
         [d, CodeOperand::Imm(n), s] => (
@@ -219,13 +265,34 @@ fn expand_mul_const(ops: &[CodeOperand], span: Span) -> Result<Vec<CodeItem>, Di
              reads the original value from scratch after dst is reshaped)",
         ));
     }
-    let candidates = mul_const_candidates(dst, n, scratch, span);
+    let candidates = mul_const_candidates(dst, n, scratch, span, width);
     Ok(choose(candidates))
 }
 
 /// The fixed candidate set for `mul_const`, in enumeration (tie-preference)
-/// order. Every candidate computes EXACTLY dst.l = zx(dst.w) × n.
-fn mul_const_candidates(dst: Reg, n: u32, scratch: Option<Reg>, span: Span) -> Vec<Vec<CodeItem>> {
+/// order — routed by the two contracts. Every LONG candidate computes exactly
+/// dst.l = zx(dst.w) × n; every WORD candidate computes exactly
+/// dst.w = (u16(dst.w) × n) mod 2^16 (upper word free).
+fn mul_const_candidates(
+    dst: Reg,
+    n: u32,
+    scratch: Option<Reg>,
+    span: Span,
+    width: MulWidth,
+) -> Vec<Vec<CodeItem>> {
+    match width {
+        MulWidth::Long => mul_const_candidates_long(dst, n, scratch, span),
+        MulWidth::Word => mul_const_candidates_word(dst, n, scratch, span),
+    }
+}
+
+/// The LONG candidate set (32-bit result, zero-extend seeded).
+fn mul_const_candidates_long(
+    dst: Reg,
+    n: u32,
+    scratch: Option<Reg>,
+    span: Span,
+) -> Vec<Vec<CodeItem>> {
     let mut cands: Vec<Vec<CodeItem>> = Vec::new();
     // 1 — `mulu.w #n, dst`: always legal, needs no zero-extend (MULU reads only
     // dst.w and writes the full 32-bit product). Enumerates FIRST so equal
@@ -284,6 +351,98 @@ fn mul_const_candidates(dst: Reg, n: u32, scratch: Option<Reg>, span: Span) -> V
     cands
 }
 
+/// The WORD candidate set (low-word result, upper word free). Differs from the
+/// long set in exactly one structural way: NO zero-extend seed anywhere. Word
+/// ops (`lsl.w`/`add.w`/`sub.w`/`move.w`) leave dst's upper word untouched,
+/// which is why the two-power chain the corpus adopts beats `mulu.w` — no
+/// zero-extend to pay for. The two-power chain emits a plain `lsl.w` per term
+/// (NOT the long form's `add.l` doubling optimization): it is the corpus's own
+/// proven idiom, byte-identical to the hand-derived strides (×66/×80/×160).
+fn mul_const_candidates_word(
+    dst: Reg,
+    n: u32,
+    scratch: Option<Reg>,
+    span: Span,
+) -> Vec<Vec<CodeItem>> {
+    let mut cands: Vec<Vec<CodeItem>> = Vec::new();
+    // 1 — `mulu.w #n, dst`: always legal. It writes all 32 bits, licensed here
+    // by the undefined-upper contract; enumerates FIRST so equal (cycles, bytes)
+    // ties resolve to it.
+    cands.push(vec![instr("mulu", Some(Width::W), vec![imm(n), reg(dst)], span)]);
+    // 2 — n = 0 → `clr.w dst` (the low word is zero; upper left free).
+    if n == 0 {
+        cands.push(vec![instr("clr", Some(Width::W), vec![reg(dst)], span)]);
+    }
+    // 3 — n = 1 → ZERO instructions. The word result is already in dst.w; the
+    // honest lowering of ×1 mod 2^16 is nothing.
+    if n == 1 {
+        cands.push(Vec::new());
+    }
+    // 4 — n = 2^k → `lsl.w` run(s) on dst directly (word shift, no seed).
+    if n >= 2 && n.is_power_of_two() {
+        cands.push(shift_run_word(n.trailing_zeros(), dst, span));
+    }
+    // 5 — scratch chains (need the original value twice → scratch-gated; a
+    // chain needs ≥ 2 set bits, so 0/1/2^k never reach here — and the shared
+    // `n >> b` below is safe only under that guard).
+    if let Some(s) = scratch {
+        if n.count_ones() >= 2 {
+            // 5a — the two-power sum (the corpus stride idiom): n = 2^a + 2^b,
+            // a > b. `move.w D,S / lsl.w #a,D / lsl.w #b,S / add.w S,D` — the two
+            // shifted terms summed. Byte-identical to the hand ×66/×80/×160.
+            if n.count_ones() == 2 {
+                let a = 31 - n.leading_zeros();
+                let b = n.trailing_zeros();
+                let mut items =
+                    vec![instr("move", Some(Width::W), vec![reg(dst), reg(s)], span)];
+                items.extend(shift_run_word(a, dst, span));
+                items.extend(shift_run_word(b, s, span));
+                items.push(instr("add", Some(Width::W), vec![reg(s), reg(dst)], span));
+                cands.push(items);
+            }
+            // 5b — the ±1 factored form n = (2^a − 1)·2^b (×63 = x·64 − x):
+            // `move.w D,S / lsl.w #a,D / sub.w S,D / lsl.w #b,D`.
+            let b = n.trailing_zeros();
+            let m = n >> b;
+            if (m + 1).is_power_of_two() && m >= 3 {
+                let a = (m + 1).trailing_zeros();
+                let mut items =
+                    vec![instr("move", Some(Width::W), vec![reg(dst), reg(s)], span)];
+                items.extend(shift_run_word(a, dst, span));
+                items.push(instr("sub", Some(Width::W), vec![reg(s), reg(dst)], span));
+                items.extend(shift_run_word(b, dst, span));
+                cands.push(items);
+            }
+            // 5c — general left-to-right binary, gated to ≥ 3 set bits (word ops
+            // over the seed `move.w D,S`; S holds the original throughout). The
+            // gate is LOAD-BEARING, not cosmetic: a faithful 2-bit LTR prices
+            // 32/32/34 at the ×66/×80/×160 sites — BELOW the two-power chain's
+            // 34/40/44 — so ungated it would win `choose()` there and defeat the
+            // byte-identity bar at every adoption site. Restricting it to ≥ 3 bits
+            // (where the two-power arm does not apply and no adoption site exists)
+            // keeps the corpus strides on the hand chain. The oracle executes this
+            // arm via n = 11/19 in NS (5c is the CHOSEN lowering there, 30 vs mulu 48).
+            if n.count_ones() >= 3 {
+                let mut items =
+                    vec![instr("move", Some(Width::W), vec![reg(dst), reg(s)], span)];
+                let msb = 31 - n.leading_zeros();
+                let mut pending: u32 = 0;
+                for bit in (0..msb).rev() {
+                    pending += 1;
+                    if n & (1 << bit) != 0 {
+                        items.extend(shift_run_word(pending, dst, span));
+                        pending = 0;
+                        items.push(instr("add", Some(Width::W), vec![reg(s), reg(dst)], span));
+                    }
+                }
+                items.extend(shift_run_word(pending, dst, span));
+                cands.push(items);
+            }
+        }
+    }
+    cands
+}
+
 // ---- mul_bounded --------------------------------------------------------
 
 fn expand_mul_bounded(
@@ -291,7 +450,15 @@ fn expand_mul_bounded(
     span: Span,
     module: &str,
     counter: &mut u32,
+    width: MulWidth,
 ) -> Result<Vec<CodeItem>, Diagnostic> {
+    // The accumulate runs at the result width: `.l` for the long contract, `.w`
+    // for the word contract (upper word free). Everything else — the mulu.w
+    // candidate, the loop structure, the worst-vs-worst comparison — is shared.
+    let acc_width = match width {
+        MulWidth::Long => Width::L,
+        MulWidth::Word => Width::W,
+    };
     let (dst, src, bound, scratch) = match ops {
         [d, s, CodeOperand::Imm(m)] => {
             (data_reg(d, "dst", span)?, data_reg(s, "src", span)?, *m, None)
@@ -352,7 +519,7 @@ fn expand_mul_bounded(
             instr("moveq", None, vec![imm(0), reg(dst)], span),
             instr("subq", Some(Width::W), vec![imm(1), reg(src)], span),
         ];
-        let add = instr("add", Some(Width::L), vec![reg(s), reg(dst)], span);
+        let add = instr("add", Some(acc_width), vec![reg(s), reg(dst)], span);
         // Worst-case cycles from the SAME cost seam as everything else.
         let setup_cost: u32 = setup.iter().map(item_worst_cycles).sum();
         let (bcs_taken, bcs_not_taken) = branch_cost("bcs", Some(Width::S));
@@ -379,10 +546,11 @@ fn expand_mul_bounded(
         (items, cycles)
     });
 
-    // Worst-vs-worst comparison; a cycle tie is impossible here (mulu is a flat
-    // 70 and the loop's total is 26 or 28 + 18·M — never 70), so the byte
-    // tie-break never arbitrates between them; on the impossible tie the
-    // enumeration order (mulu first) would decide.
+    // Worst-vs-worst comparison. The long loop (28 + 18·M) never equals mulu's
+    // flat 70, but the WORD loop (28 + 14·M) hits exactly 70 at M = 3 — a real
+    // cycle tie. The strict `<` resolves that tie to mulu (enumeration order,
+    // mulu first), which is why word M = 2 picks the loop and M = 3 picks mulu
+    // (pinned by `word_bounded_semantics_and_boundary`).
     match loop_cand {
         Some((items, loop_cost)) if loop_cost < mulu_cost => Ok(items),
         _ => Ok(mulu_items),
@@ -504,6 +672,22 @@ fn shift_run(mut k: u32, d: Reg, span: Span) -> Vec<CodeItem> {
     items
 }
 
+/// ×2^k on a WORD register: `lsl.w` chunks of ≤ 8 (nothing for k = 0). Unlike
+/// [`shift_run`], a k = 1 double stays a plain `lsl.w #1` (NOT `add.w d,d`):
+/// the corpus's hand strides shift each two-power term with `lsl.w`, and the
+/// two-power chain must reproduce those bytes exactly. `add.w d,d` would be four
+/// cycles cheaper (4 vs `lsl.w #1`'s 8) but byte-different — the word contract
+/// adopts the proven idiom, not a re-optimized one.
+fn shift_run_word(mut k: u32, d: Reg, span: Span) -> Vec<CodeItem> {
+    let mut items = Vec::new();
+    while k > 0 {
+        let step = k.min(8);
+        items.push(instr("lsl", Some(Width::W), vec![imm(step), reg(d)], span));
+        k -= step;
+    }
+    items
+}
+
 // ---- small constructors -------------------------------------------------
 
 fn instr(mnemonic: &str, size: Option<Width>, ops: Vec<CodeOperand>, span: Span) -> CodeItem {
@@ -534,6 +718,17 @@ fn sym(s: &str) -> CodeOperand {
 
 fn err(span: Span, message: impl Into<String>) -> Diagnostic {
     Diagnostic { level: Level::Error, message: message.into(), primary: span }
+}
+
+/// The surface spelling of a refused size suffix, for the `[mul.size]` message
+/// (`.w` is accepted and never reaches this).
+fn width_suffix(w: Width) -> &'static str {
+    match w {
+        Width::B => "b",
+        Width::W => "w",
+        Width::L => "l",
+        Width::S => "s",
+    }
 }
 
 /// The operand must be a DATA register (mulu's destination and the shift ops
@@ -575,6 +770,16 @@ mod tests {
     fn expand_bounded(ops: Vec<CodeOperand>) -> Result<Vec<CodeItem>, Diagnostic> {
         let mut c = 0;
         expand_item("mul_bounded", None, &ops, sp(), "m", &mut c, &ItemAuthor::User)
+    }
+
+    fn expand_const_w(ops: Vec<CodeOperand>) -> Result<Vec<CodeItem>, Diagnostic> {
+        let mut c = 0;
+        expand_item("mul_const", Some(Width::W), &ops, sp(), "m", &mut c, &ItemAuthor::User)
+    }
+
+    fn expand_bounded_w(ops: Vec<CodeOperand>) -> Result<Vec<CodeItem>, Diagnostic> {
+        let mut c = 0;
+        expand_item("mul_bounded", Some(Width::W), &ops, sp(), "m", &mut c, &ItemAuthor::User)
     }
 
     /// Render an item list as compact `mnemonic.size ops` strings for pins.
@@ -678,6 +883,30 @@ mod tests {
                             let v = regs[&d].wrapping_sub(get(&ops[0], regs));
                             regs.insert(d, v);
                         }
+                        // Word arithmetic: operate on the low word, PRESERVE the
+                        // upper word — the property the word contract leaves free
+                        // and the oracle proves a chain honors (while mulu does not).
+                        ("lsl", Some(Width::W)) => {
+                            let d = dst_reg(&ops[1]);
+                            let k = get(&ops[0], regs);
+                            let old = *regs.get(&d).unwrap_or(&0);
+                            let low = ((old & 0xFFFF) << k) & 0xFFFF;
+                            regs.insert(d, (old & 0xFFFF_0000) | low);
+                        }
+                        ("add", Some(Width::W)) => {
+                            let d = dst_reg(&ops[1]);
+                            let old = *regs.get(&d).unwrap_or(&0);
+                            let v = get(&ops[0], regs) & 0xFFFF;
+                            let low = (old & 0xFFFF).wrapping_add(v) & 0xFFFF;
+                            regs.insert(d, (old & 0xFFFF_0000) | low);
+                        }
+                        ("sub", Some(Width::W)) => {
+                            let d = dst_reg(&ops[1]);
+                            let old = *regs.get(&d).unwrap_or(&0);
+                            let v = get(&ops[0], regs) & 0xFFFF;
+                            let low = (old & 0xFFFF).wrapping_sub(v) & 0xFFFF;
+                            regs.insert(d, (old & 0xFFFF_0000) | low);
+                        }
                         ("mulu", Some(Width::W)) => {
                             let d = dst_reg(&ops[1]);
                             let a = regs[&d] & 0xFFFF;
@@ -727,8 +956,8 @@ mod tests {
     }
 
     const NS: &[u32] = &[
-        0, 1, 2, 3, 5, 6, 7, 36, 40, 63, 64, 66, 80, 96, 160, 255, 256, 512, 4096,
-        0x8000, 0x8001, 0xAAAA, 0xFFFF,
+        0, 1, 2, 3, 5, 6, 7, 11, 19, 36, 40, 63, 64, 66, 80, 96, 160, 255, 256,
+        512, 4096, 0x8000, 0x8001, 0xAAAA, 0xFFFF,
     ];
     const XS: &[u16] = &[0, 1, 2, 0x1234, 0x7FFF, 0x8000, 0xABCD, 0xFFFE, 0xFFFF];
 
@@ -930,19 +1159,19 @@ mod tests {
     #[test]
     fn every_straight_line_candidate_prices_exactly() {
         for &n in NS {
-            for cand in
-                mul_const_candidates(Reg::D0, n, Some(Reg::D1), sp())
-            {
-                for item in &cand {
-                    let CodeItem::Instr { mnemonic, size, ops, .. } = item else {
-                        continue;
-                    };
-                    match instr_cost(mnemonic, *size, ops) {
-                        CycleCost::Fixed { exact: true, .. } => {}
-                        other => panic!(
-                            "candidate for n={n} has non-exact cost {other:?}: \
-                             {mnemonic}"
-                        ),
+            for width in [MulWidth::Long, MulWidth::Word] {
+                for cand in mul_const_candidates(Reg::D0, n, Some(Reg::D1), sp(), width) {
+                    for item in &cand {
+                        let CodeItem::Instr { mnemonic, size, ops, .. } = item else {
+                            continue;
+                        };
+                        match instr_cost(mnemonic, *size, ops) {
+                            CycleCost::Fixed { exact: true, .. } => {}
+                            other => panic!(
+                                "candidate for n={n} width={width:?} has non-exact \
+                                 cost {other:?}: {mnemonic}"
+                            ),
+                        }
                     }
                 }
             }
@@ -969,10 +1198,12 @@ mod tests {
             tag(expand_const(vec![reg(Reg::A0), imm(66)])).contains("[mul.reg-class]")
         );
         assert!(tag(expand_const(vec![reg(Reg::D0)])).contains("[mul.operands]"));
+        // `.w` is now a VALID second contract (the word form); `.l` (and any
+        // other suffix) refuses — bare already IS the long form.
         let mut c = 0;
         let sized = expand_item(
             "mul_const",
-            Some(Width::W),
+            Some(Width::L),
             &[reg(Reg::D0), imm(66)],
             sp(),
             "m",
@@ -1027,5 +1258,182 @@ mod tests {
         let ds = expand_buf(&mut m68k, Some(Cpu::M68000), "m", &mut c);
         assert!(ds.is_empty());
         assert_eq!(shape(&m68k.items), ["mulu.w #66,d0"]);
+    }
+
+    // ---- the word contract (`.w`) ---------------------------------------
+
+    // The WORD result contract, proven by execution: every chosen `.w` lowering
+    // computes exactly (zx(x) × n) mod 2^16 in dst's LOW word, over the sampled +
+    // boundary inputs with garbage upper words. NOTHING is asserted about the
+    // upper word — that is the contract's freedom.
+    #[test]
+    fn word_lowering_matches_low_word_and_leaves_upper_free() {
+        for &n in NS {
+            for &with_scratch in &[false, true] {
+                let mut ops = vec![reg(Reg::D0), imm(n)];
+                if with_scratch {
+                    ops.push(reg(Reg::D1));
+                }
+                let items = expand_const_w(ops).expect("expands");
+                for &x in XS {
+                    for &garbage in &[0u32, 0xDEAD_0000, 0xFFFF_0000] {
+                        let mut regs = BTreeMap::new();
+                        regs.insert(Reg::D0, garbage | u32::from(x));
+                        regs.insert(Reg::D1, 0xBEEF_CAFE);
+                        run(&items, &mut regs);
+                        assert_eq!(
+                            regs[&Reg::D0] & 0xFFFF,
+                            u32::from(x).wrapping_mul(n) & 0xFFFF,
+                            "n={n} x={x:#x} scratch={with_scratch} shape={:?}",
+                            shape(&items)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // The dedicated upper-word-freedom pin: a `.w` lowering that PICKS mulu
+    // genuinely trashes the upper word, while a chosen chain leaves it untouched
+    // — BOTH are contract-legal (the upper word is undefined), which is exactly
+    // what makes the word candidate set free to include mulu.
+    #[test]
+    fn word_upper_is_free_mulu_trashes_chain_preserves() {
+        // ×66 with scratch → the two-power chain, all word ops.
+        let chain = expand_const_w(vec![reg(Reg::D0), imm(66), reg(Reg::D1)]).unwrap();
+        assert_eq!(
+            shape(&chain),
+            ["move.w d0,d1", "lsl.w #6,d0", "lsl.w #1,d1", "add.w d1,d0"]
+        );
+        let mut regs = BTreeMap::new();
+        regs.insert(Reg::D0, 0xDEAD_0002);
+        regs.insert(Reg::D1, 0xBEEF_0000);
+        run(&chain, &mut regs);
+        assert_eq!(regs[&Reg::D0] & 0xFFFF, 2 * 66);
+        assert_eq!(
+            regs[&Reg::D0] & 0xFFFF_0000,
+            0xDEAD_0000,
+            "the word chain leaves dst's upper word untouched"
+        );
+        // A two-set-bit multiplier whose chain loses to mulu on cycles (×$8001:
+        // the far-apart bits make the shift run dear) → mulu, which writes all
+        // 32 bits.
+        let mulu = expand_const_w(vec![reg(Reg::D0), imm(0x8001), reg(Reg::D1)]).unwrap();
+        assert_eq!(shape(&mulu), ["mulu.w #32769,d0"]);
+        let mut regs = BTreeMap::new();
+        regs.insert(Reg::D0, 0xDEAD_0002);
+        run(&mulu, &mut regs);
+        assert_eq!(regs[&Reg::D0] & 0xFFFF, 2u32.wrapping_mul(0x8001) & 0xFFFF);
+        assert_ne!(
+            regs[&Reg::D0] & 0xFFFF_0000,
+            0xDEAD_0000,
+            "mulu writes the full product — the upper word is trashed (contract-legal)"
+        );
+    }
+
+    // The corpus strides resolve to the two-power WORD chain — byte-identical to
+    // the hand-derived ×66/×80/×160 (34/40/44 cycles vs mulu's 46). This is the
+    // acceptance foundation the long contract could not meet.
+    #[test]
+    fn word_corpus_strides_resolve_to_chains() {
+        let c66 = expand_const_w(vec![reg(Reg::D0), imm(66), reg(Reg::D1)]).unwrap();
+        assert_eq!(
+            shape(&c66),
+            ["move.w d0,d1", "lsl.w #6,d0", "lsl.w #1,d1", "add.w d1,d0"]
+        );
+        let c80 = expand_const_w(vec![reg(Reg::D0), imm(80), reg(Reg::D1)]).unwrap();
+        assert_eq!(
+            shape(&c80),
+            ["move.w d0,d1", "lsl.w #6,d0", "lsl.w #4,d1", "add.w d1,d0"]
+        );
+        let c160 = expand_const_w(vec![reg(Reg::D0), imm(160), reg(Reg::D1)]).unwrap();
+        assert_eq!(
+            shape(&c160),
+            ["move.w d0,d1", "lsl.w #7,d0", "lsl.w #5,d1", "add.w d1,d0"]
+        );
+        // Without scratch the two-power chain is unavailable → mulu (always legal).
+        let c66_noscr = expand_const_w(vec![reg(Reg::D0), imm(66)]).unwrap();
+        assert_eq!(shape(&c66_noscr), ["mulu.w #66,d0"]);
+    }
+
+    // Word degenerates: 0 → clr.w, 1 → NOTHING, 2^k → lsl.w (no zero-extend seed).
+    #[test]
+    fn word_degenerates_and_powers() {
+        let z = expand_const_w(vec![reg(Reg::D0), imm(0)]).unwrap();
+        assert_eq!(shape(&z), ["clr.w d0"]);
+        let one = expand_const_w(vec![reg(Reg::D0), imm(1)]).unwrap();
+        assert!(one.is_empty(), "×1 mod 2^16 is zero instructions");
+        let p6 = expand_const_w(vec![reg(Reg::D0), imm(64)]).unwrap();
+        assert_eq!(shape(&p6), ["lsl.w #6,d0"]);
+        // ×512 = 2^9: two lsl.w chunks (≤ 8 each), still a pure word shift.
+        let p9 = expand_const_w(vec![reg(Reg::D0), imm(512)]).unwrap();
+        assert_eq!(shape(&p9), ["lsl.w #8,d0", "lsl.w #1,d0"]);
+    }
+
+    // mul_bounded.w: both lowerings compute (zx(dst.w) × src) mod 2^16 for every
+    // in-bound src; the loop accumulates with add.w and the boundary matches the
+    // long form (loop through M = 2, mulu at M ≥ 3).
+    #[test]
+    fn word_bounded_semantics_and_boundary() {
+        for &m in &[0u32, 1, 2, 3, 16] {
+            for &with_scratch in &[false, true] {
+                let mut ops = vec![reg(Reg::D0), reg(Reg::D1), imm(m)];
+                if with_scratch {
+                    ops.push(reg(Reg::D2));
+                }
+                let items = expand_bounded_w(ops).expect("expands");
+                for src in 0..=m.min(20) {
+                    for &x in &[0u16, 1, 7, 0x8000, 0xFFFF] {
+                        let mut regs = BTreeMap::new();
+                        regs.insert(Reg::D0, 0xDEAD_0000 | u32::from(x));
+                        regs.insert(Reg::D1, 0x5555_0000 | src);
+                        regs.insert(Reg::D2, 0x0BAD_F00D);
+                        run(&items, &mut regs);
+                        assert_eq!(
+                            regs[&Reg::D0] & 0xFFFF,
+                            u32::from(x).wrapping_mul(src) & 0xFFFF,
+                            "M={m} src={src} x={x:#x} scratch={with_scratch}"
+                        );
+                    }
+                }
+            }
+        }
+        // At M = 2 the loop wins and accumulates with add.w; at M = 3 mulu wins.
+        let m2 = expand_bounded_w(vec![reg(Reg::D0), reg(Reg::D1), imm(2), reg(Reg::D2)])
+            .unwrap();
+        assert_eq!(
+            shape(&m2),
+            [
+                "moveq #0,d2",
+                "move.w d0,d2",
+                "moveq #0,d0",
+                "subq.w #1,d1",
+                "bcs.s $mul$m$0$done",
+                "$mul$m$0$loop:",
+                "add.w d2,d0",
+                "dbf d1,$mul$m$0$loop",
+                "$mul$m$0$done:"
+            ]
+        );
+        let m3 = expand_bounded_w(vec![reg(Reg::D0), reg(Reg::D1), imm(3), reg(Reg::D2)])
+            .unwrap();
+        assert_eq!(shape(&m3), ["mulu.w d1,d0"]);
+    }
+
+    // `.l` (and any non-`.w` suffix) refuses; `.w` is accepted.
+    #[test]
+    fn word_size_suffix_routing() {
+        let mut c = 0;
+        let long = expand_item(
+            "mul_const",
+            Some(Width::L),
+            &[reg(Reg::D0), imm(66)],
+            sp(),
+            "m",
+            &mut c,
+            &ItemAuthor::User,
+        );
+        assert!(long.unwrap_err().message.contains("[mul.size]"));
+        assert!(expand_const_w(vec![reg(Reg::D0), imm(66), reg(Reg::D1)]).is_ok());
     }
 }

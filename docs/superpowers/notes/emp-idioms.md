@@ -79,7 +79,17 @@ reader had to re-verify. Ruled 2026-08-03; shipped in the mul-lowering parcel.
   `mulu`. `dSrc` is clobbered-undefined after the splice under EITHER
   lowering — never rely on it.
 
-- **When NOT to use them:** a word-result stride into an `adda.w` (the
-  section/tile_cache/plane chains) is a WORD-width idiom the v1 long contract
-  deliberately does not cover — keep the hand chain and its `ensure` guard
-  until the sized-variant ruling (gap-ledger row, mul-lowering 2026-08-05).
+- **A word-result stride → `mul_const.w dN, #n[, dScratch]`** (the suffix IS
+  part of the name). Contract: `dN.w = (u16(dN.w) × n) mod 2^16`; the **upper
+  word of `dN` is UNDEFINED** after the construct. This is the idiom for a
+  stride into an `adda.w` (the section/tile_cache/plane ×66/×80/×160 chains):
+  the product fits a word by construction, so the range is YOUR obligation —
+  carry it exactly where the corpus already does, the module-level `ensure` —
+  and the compiler emits the two-power shift-add chain that beats `mulu` (no
+  zero-extend to pay for). Spell bare `mul_const` (the long form) only when you
+  need the full 32-bit product; `.l` is refused (a second name for one meaning).
+
+- **When NOT to use them:** the two repeated-add loop sites (section.emp
+  `.gxy_mul`, tile_cache.emp `.mul_loop`) are `mul_bounded.w` shapes, but the
+  cost model picks `mulu` at their bound — adopting there is byte-CHANGING and
+  waits for a deliberate byte-changing parcel (gap-ledger loop-site row).
