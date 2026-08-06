@@ -151,7 +151,6 @@ const D1C_BASELINE: &[(&str, &str, &str)] = &[
     ("PState_AirShared", "Air_WallProbeRight", "d4"),
     ("PState_Spindash", "Player_SensorFloor", "d0"),
     ("PState_Spindash", "Player_SensorFloor", "d1"),
-    ("Parallax_CheckBoundary", "Section_GetSecPtrXY", "d2"),
     ("Parallax_Update", "Decode_Factor_A", "d2"),
     ("Parallax_Update", "Decode_Factor_B", "d2"),
     ("TestPlayer_Main", "Player_SensorFloor", "d0"),
