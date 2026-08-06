@@ -168,3 +168,44 @@ callers, the preload requirement, and that it is the last known hand multiply),
 and correct the "every multiply" phrasing wherever this parcel asserted it — the
 packet and row 2165's close included. A census that says "exactly N" and is
 wrong is worth more as a corrected record than as a quiet fix.
+
+## 8 · 2026-08-06 amendment — the census missed THREE, and R6's ripple list is stale
+
+**§7 understated the miss.** Lens C found two more beyond `Section_FlatIDXY`:
+
+1. `collision_lookup.emp:62-66` — a two-power ×80 word chain with a separate
+   scratch: the EXACT "form (a)" shape Groups A/D adopt, sitting in
+   `Collision_GetType`, the player-sensor collision probe called per sensor per
+   frame. It is HOTTER than every site this parcel touched, and it is a drop-in
+   (`mul_const.w d1, #80, d2`): 40 cy → 32 cy, 8 B → 8 B, ZERO size ripple, d2
+   already licensed by `clobbers(d1-d3/a0)` and dead after. It was named in the
+   corpus's own comment (`tile_cache.emp:70-71`, "Collision lookup carries its
+   own inline copy") and still fell out of the census.
+2. `entity_window.emp:1605-1612` — a ×22 hand chain (three set bits), adoptable
+   even under the OLD ≥3 gate, so the mul-w round missed it too.
+   (`parallax.emp:585-589`'s ×10 single-temp form is a LEGITIMATE non-adoption —
+   28 cy vs 30 with a preload — but was never recorded as one.)
+
+So the census was 8 → 11 sites. **Every "no opportunistic adoption debt
+survives" / "every multiply is construct-spelled" claim in this spec, the packet
+and row 2165 is false and is withdrawn.** The accurate end state: 9 moved, 2
+refused-with-reason, 3 missed-and-now-ledgered, 1 legitimate-non-adoption
+recorded.
+
+**None of the three is adopted tonight.** Each is byte-changing, so each demands
+a fresh refreeze, a fresh behavioural A/B and a fresh panel — the collision site
+most of all, precisely because it is the hottest and therefore the one whose
+verification must not be rushed. They are the highest-value follow-up parcel in
+the queue, with their numbers already measured.
+
+**Bar #3 answered honestly:** the bar said the tile-cache hot-path win "must show
+up or the packet says why not". The wins landed at the sites the census named,
+but the hottest ×80 stride in the engine was never in the census. That is the
+honest answer, and it is a census failure, not a measurement failure.
+
+**R6's ripple checklist is STALE and is corrected here.** It names `engine.inc`
+and `mixed_dac_rom.rs` as mandatory hand-edit sites; BOTH WERE DELETED from both
+repos (verified — `git ls-files` returns nothing in either). The live surface is
+THREE: `pins.rs` (auto, via repin) + `crates/sigil-harness/tests/repin_pins.rs`
+(hand-typed literals) + `repin.toml` (only when a region is added). The next
+byte-moving parcel must not inherit the stale list.
