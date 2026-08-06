@@ -383,7 +383,7 @@ fn mul_const_candidates_word(
         cands.push(shift_run_word(n.trailing_zeros(), dst, span));
     }
     // 5 — scratch chains (need the original value twice → scratch-gated; a
-    // chain needs ≥ 2 set bits, so 0/1/2^k never reach here — and the shared
+    // chain needs ≥ 2 set bits, so 0/1/2^k never reach here — and 5b's
     // `n >> b` below is safe only under that guard).
     if let Some(s) = scratch {
         if n.count_ones() >= 2 {
@@ -402,10 +402,14 @@ fn mul_const_candidates_word(
             }
             // 5c — general left-to-right binary (word ops over the seed
             // `move.w D,S`; S holds the original throughout), a candidate at ≥ 2
-            // set bits. It is the cheapest chain this set generates at every n
-            // it applies to, so it is the lowering of the corpus's stride
-            // multipliers: 32/32/34 cycles at ×66/×80/×160, against `mulu.w`'s
-            // 46. At a two-power n = 2^a + 2^b it subsumes the two-power sum
+            // set bits. At n with exactly TWO set bits it is the cheapest chain
+            // this set generates (5b applies there only at n = 3·2^b, where 5c
+            // wins by 2 cycles), which is why it is the lowering of the corpus's
+            // stride multipliers: 32/32/34 cycles at ×66/×80/×160, against
+            // `mulu.w`'s 46. That is the limit of the claim — at ≥ 3 set bits 5b
+            // is cheaper wherever it applies with m ≥ 7, e.g. n = 63, where 5b
+            // costs 26 against 5c's 64. At a two-power n = 2^a + 2^b it subsumes
+            // the two-power sum
             // `move.w D,S / lsl.w #a,D / lsl.w #b,S / add.w S,D`: identical
             // bytes at b = 0 and strictly cheaper for every b ≥ 1, which
             // `word_two_power_arm_is_dominated_by_ltr` pins over the whole
@@ -1410,8 +1414,15 @@ mod tests {
     // does not carry it as its own arm: 5c is never dearer, and is byte-identical
     // whenever it is not cheaper. Both shapes are constructed HERE, by hand, so
     // this theorem is independent of what the generator offers — it holds for any
-    // future arm that rediscovers two-power factoring, not just for the one that
-    // used to exist.
+    // arm that factors a two-power n this way, whether or not the candidate set
+    // carries one.
+    //
+    // Hand-building 5c is what makes the theorem arm-independent, and it is also
+    // what would let the theorem outlive the generator: if `shift_run_word` ever
+    // takes the open k = 1 `add.w d,d` row, the hand shape stops being what the
+    // generator emits and this test would keep proving a fact about a 5c that no
+    // longer exists — and stay green. The presence assertion in the loop closes
+    // that: the hand shape must be IN the generated candidate set at every n.
     //
     // Stated as a direct 5a-vs-5c cost comparison rather than against `choose()`'s
     // winner on purpose: at some n (e.g. $2001) `mulu.w` beats BOTH chains, so
@@ -1452,6 +1463,16 @@ mod tests {
                 }
             }
             five_c.extend(shift_run_word(pending, Reg::D0, sp()));
+
+            // Generator-dependence guard: the hand 5c must be a shape the word
+            // candidate generator actually offers, or the dominance theorem
+            // below is about a chain nothing emits.
+            let cands = mul_const_candidates_word(Reg::D0, n, Some(Reg::D1), sp());
+            assert!(
+                cands.iter().any(|c| shape(c) == shape(&five_c)),
+                "n={n}: the hand-built 5c is not in the generated candidate set {:?}",
+                cands.iter().map(|c| shape(c)).collect::<Vec<_>>()
+            );
 
             let ca = seq_worst_cycles(&five_a).expect("5a prices");
             let cc = seq_worst_cycles(&five_c).expect("5c prices");
