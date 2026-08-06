@@ -52,6 +52,18 @@ anywhere** — that is the whole economic point. Priced through the SAME
    `lsl.w` per term (NOT the long form's `add.w`-doubling optimization) — that
    is what makes it byte-identical to the hand strides.
 
+**Spec vs implementation (the §3 contradiction, resolved).** The spec's §3 prose
+says the word chain is "left-to-right binary … mirroring the long generators at
+word width", but its OWN pinned costs (×66 chain = 34, ×80 = 40, ×160 = 44) are
+the two-power hand-chain costs, NOT the LTR costs (a faithful word LTR prices
+×66/×80/×160 at 32/32/34 — cheaper). Byte-identity at the four sites and those
+pinned costs BOTH require the **two-power** generator, so that is what shipped;
+the LTR arm is deliberately gated to ≥ 3 set bits (where no adoption site exists)
+so it can never undercut the two-power chain at a stride site. The master spec
+was amended to state this two-power/LTR ruling (**sigil `06d3cc40`**); this
+lane's branch base (`ea0ee860`) predates the amendment — NOT rebased (docs-only,
+the merge handles it), cited here.
+
 ## 3 · The four-site byte-identity proof
 
 Each adopted site, its chosen word candidate, and the cost derivation that makes
@@ -120,17 +132,21 @@ byte-CHANGING. Ledgered (gap-ledger loop-site row); R-B annotation updated.
   counts identical to the expected bar (the four adoptions add no warning: each
   proc already declared its scratch in `clobbers`).
 - **Full strict `SIGIL_STRICT_GATE=1` (AEON_DIR = b6 adopted corpus):**
-  **3373 passed / 0 failed / 4 ignored = 3377 over 310 suites.** Failures-first
+  **3375 passed / 0 failed / 4 ignored = 3379 over 310 suites.** Failures-first
   scan of the capture: ZERO `FAILED` / `panicked` / `error[` lines. Test
-  arithmetic: base `#[test]` 3369, this parcel adds 8 (unit:
+  arithmetic: base `#[test]` 3369, this parcel adds 10 — unit (6):
   `word_lowering_matches_low_word_and_leaves_upper_free`,
   `word_upper_is_free_mulu_trashes_chain_preserves`,
   `word_corpus_strides_resolve_to_chains`, `word_degenerates_and_powers`,
   `word_bounded_semantics_and_boundary`, `word_size_suffix_routing`;
-  integration: `word_strides_are_byte_identical_to_hand_chains`,
-  `word_scratch_clobber_is_seen_by_the_clobber_lint`) → 3377; the `.w`-refusal
-  probes were flipped to `.l` in place (not added). 3373 passed + 4 ignored =
-  3377 = 3369 + 8 — closes exactly.
+  integration (4): `word_strides_are_byte_identical_to_hand_chains`,
+  `word_scratch_clobber_is_seen_by_the_clobber_lint`,
+  `word_through_a_comptime_asm_template_is_byte_identical` (the template path),
+  `word_byte_suffix_refuses` (the `.b` probe) → 3379; the `.w`-refusal probes
+  were flipped to `.l` in place (not added). 3375 passed + 4 ignored = 3379 =
+  3369 + 10 — closes exactly. (n = 11/19 added to the oracle's NS so the ≥ 3-bit
+  LTR arm is a CHOSEN lowering and executes with garbage-upper seeds — iterations,
+  not new tests.)
 - **Clippy `-D warnings` (`-p sigil-frontend-emp --all-targets`):** clean. One
   finding fixed en route — a pre-existing `redundant_closure` in
   `expand_mul_bounded`'s loop-cost sum (`|i| item_worst_cycles(i)` →
@@ -193,6 +209,11 @@ step-3 ask #1 of the long-form parcel, now delivered. The `shl_l` companion
    encoding the two-power generator does not emit; adopting those sites would be
    byte-CHANGING (a cheaper-or-equal chain, decided by the model) — a candidate
    only for a deliberate byte-changing parcel, not this one.
+3. The LTR shape is 2–10 cy CHEAPER than the two-power chain at the four stride
+   sites (a faithful word LTR prices ×66/×80/×160 at 32/32/34 vs 34/40/44);
+   it is deliberately SUPPRESSED (gated to ≥ 3 set bits) to hold byte-identity,
+   and is recoverable only by a deliberate byte-changing parcel that re-derives
+   each stride to the LTR encoding and re-freezes the goldens.
 
 **Neither-bucket headline:** the whole corpus stride family sits 2–12 cycles
 UNDER mulu's 46 at word width — and exactly ON mulu at LONG width (the long
@@ -205,12 +226,16 @@ future table change rides the golden gates, same as the long form's note.
 ## 9 · Commits
 
 - sigil `mul-w` (off `ea0ee860`): `e5bd21bf` (the `.w` construct + word
-  candidates + oracle arms + tests + the redundant-closure clippy fix), plus
-  the docs/packet commit at the tip (this file, the gap-ledger close + loop
-  row, the R-B annotation, the mul-lowering-packet §5 pointer, emp-idioms).
-- aeon `mul-w` (off `b9b1056`): `a95b44f` (the four byte-identical adoptions in
-  section.emp / tile_cache.emp / plane_buffer.emp).
+  candidates + oracle arms + tests + the redundant-closure clippy fix),
+  `7f6de4eb` (docs + this packet), plus the lens-panel fix-up commit at the tip
+  (comment corrections — LTR-gate reason, word M=3 tie, add.w 4-cy; the
+  `[mul.size]` `.l`-vs-`.b/.s` message split; NS n = 11/19 so the ≥3-bit LTR arm
+  executes; the template-path + `.b` integration pins; and the packet/ledger
+  dispositions).
+- aeon `mul-w` (off `b9b1056`): `a95b44f` (the four byte-identical adoptions),
+  plus the lens-panel comment-trim commit at the tip (narration → multiplier
+  fact, matching the plane_buffer style).
 
-Branches stay UNMERGED — the overseer merges after a lens panel. The aeon
-commits build only against a sigil binary carrying the `.w` construct, so the
-sigil merge lands first.
+Branches stay UNMERGED. The aeon commits build only against a sigil binary
+carrying the `.w` construct — so the merge queue's ORDER constraint is: sigil
+must precede aeon (a land-order fact, not a claim about what has merged).

@@ -215,3 +215,34 @@ fn word_scratch_clobber_is_seen_by_the_clobber_lint() {
         "the word chain writes d1; the lint must see it: {diags:?}"
     );
 }
+
+// The TEMPLATE path (the corpus's `mul_cache_stride` shape): a `mul_const.w`
+// inside a comptime fn returning `asm {}` is a cpu-less template that DEFERS and
+// expands at the caller's CodeBuf completion — its bytes must equal the
+// statement-position spelling exactly (both adoption call sites depend on this).
+#[test]
+fn word_through_a_comptime_asm_template_is_byte_identical() {
+    let via_fn = "module m\n\
+        comptime fn stride(d: Reg, s: Reg) -> Code {\n\
+        \x20   return asm { mul_const.w {d}, #80, {s} }\n\
+        }\n\
+        proc p() clobbers(d0, d1) {\n\
+        \x20   stride(d0, d1)\n\
+        \x20   rts\n}\n";
+    let direct = "module m\nproc p() clobbers(d0, d1) {\n\
+        \x20   mul_const.w d0, #80, d1\n\
+        \x20   rts\n}\n";
+    let (m_fn, d_fn) = lower(via_fn);
+    let (m_direct, d_direct) = lower(direct);
+    assert!(errors(&d_fn).is_empty(), "{d_fn:?}");
+    assert!(errors(&d_direct).is_empty(), "{d_direct:?}");
+    assert_eq!(flatten(&m_fn), flatten(&m_direct));
+}
+
+// `.b` (like `.l`) refuses — a byte-width multiply is an unratified contract.
+#[test]
+fn word_byte_suffix_refuses() {
+    let (_m, diags) =
+        lower("module m\nproc p() {\n    mul_const.b d0, #66\n    rts\n}\n");
+    assert!(has_tag(&diags, "[mul.size]"), "{diags:?}");
+}

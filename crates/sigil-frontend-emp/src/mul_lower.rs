@@ -193,15 +193,24 @@ pub(crate) fn expand_item(
         None => MulWidth::Long,
         Some(Width::W) => MulWidth::Word,
         Some(other) => {
+            let sfx = width_suffix(other);
+            // `.l` would be a DUPLICATE of the long form (bare already means it);
+            // `.b`/`.s` would be a NEW, unratified narrow contract — different
+            // refusals for different reasons.
+            let tail = if other == Width::L {
+                "there is no `.l` — bare already IS the long form, so a second name \
+                 for one meaning is a reader tax"
+            } else {
+                "there is no `.b`/`.s` — a byte- or short-width multiply would be an \
+                 unratified THIRD contract, not a duplicate spelling (no consumer yet)"
+            };
             return Err(err(
                 span,
                 format!(
                     "[mul.size] `{mnemonic}.{sfx}` — bare `{mnemonic}` IS the LONG form \
                      (dst.l = u16(dst.w) × n, all 32 bits) and `.w` is the WORD form \
-                     (dst.w = the low word of the product; the upper word is undefined). \
-                     There is no `.{sfx}` spelling — a second name for one meaning is a \
-                     reader tax",
-                    sfx = width_suffix(other),
+                     (dst.w = the low word of the product; the upper word is undefined); \
+                     {tail}"
                 ),
             ));
         }
@@ -404,9 +413,15 @@ fn mul_const_candidates_word(
                 items.extend(shift_run_word(b, dst, span));
                 cands.push(items);
             }
-            // 5c — general left-to-right binary for ≥ 3 set bits (word ops over
-            // the seed `move.w D,S`; S holds the original throughout). No corpus
-            // site reaches this arm (all strides are two-power); the oracle sweeps it.
+            // 5c — general left-to-right binary, gated to ≥ 3 set bits (word ops
+            // over the seed `move.w D,S`; S holds the original throughout). The
+            // gate is LOAD-BEARING, not cosmetic: a faithful 2-bit LTR prices
+            // 32/32/34 at the ×66/×80/×160 sites — BELOW the two-power chain's
+            // 34/40/44 — so ungated it would win `choose()` there and defeat the
+            // byte-identity bar at every adoption site. Restricting it to ≥ 3 bits
+            // (where the two-power arm does not apply and no adoption site exists)
+            // keeps the corpus strides on the hand chain. The oracle executes this
+            // arm via n = 11/19 in NS (5c is the CHOSEN lowering there, 30 vs mulu 48).
             if n.count_ones() >= 3 {
                 let mut items =
                     vec![instr("move", Some(Width::W), vec![reg(dst), reg(s)], span)];
@@ -531,10 +546,11 @@ fn expand_mul_bounded(
         (items, cycles)
     });
 
-    // Worst-vs-worst comparison; a cycle tie is impossible here (mulu is a flat
-    // 70 and the loop's total is 26 or 28 + 18·M — never 70), so the byte
-    // tie-break never arbitrates between them; on the impossible tie the
-    // enumeration order (mulu first) would decide.
+    // Worst-vs-worst comparison. The long loop (28 + 18·M) never equals mulu's
+    // flat 70, but the WORD loop (28 + 14·M) hits exactly 70 at M = 3 — a real
+    // cycle tie. The strict `<` resolves that tie to mulu (enumeration order,
+    // mulu first), which is why word M = 2 picks the loop and M = 3 picks mulu
+    // (pinned by `word_bounded_semantics_and_boundary`).
     match loop_cand {
         Some((items, loop_cost)) if loop_cost < mulu_cost => Ok(items),
         _ => Ok(mulu_items),
@@ -659,9 +675,9 @@ fn shift_run(mut k: u32, d: Reg, span: Span) -> Vec<CodeItem> {
 /// ×2^k on a WORD register: `lsl.w` chunks of ≤ 8 (nothing for k = 0). Unlike
 /// [`shift_run`], a k = 1 double stays a plain `lsl.w #1` (NOT `add.w d,d`):
 /// the corpus's hand strides shift each two-power term with `lsl.w`, and the
-/// two-power chain must reproduce those bytes exactly. `add.w d,d` would be two
-/// cycles cheaper but byte-different — the word contract adopts the proven
-/// idiom, not a re-optimized one.
+/// two-power chain must reproduce those bytes exactly. `add.w d,d` would be four
+/// cycles cheaper (4 vs `lsl.w #1`'s 8) but byte-different — the word contract
+/// adopts the proven idiom, not a re-optimized one.
 fn shift_run_word(mut k: u32, d: Reg, span: Span) -> Vec<CodeItem> {
     let mut items = Vec::new();
     while k > 0 {
@@ -939,8 +955,8 @@ mod tests {
     }
 
     const NS: &[u32] = &[
-        0, 1, 2, 3, 5, 6, 7, 36, 40, 63, 64, 66, 80, 96, 160, 255, 256, 512, 4096,
-        0x8000, 0x8001, 0xAAAA, 0xFFFF,
+        0, 1, 2, 3, 5, 6, 7, 11, 19, 36, 40, 63, 64, 66, 80, 96, 160, 255, 256,
+        512, 4096, 0x8000, 0x8001, 0xAAAA, 0xFFFF,
     ];
     const XS: &[u16] = &[0, 1, 2, 0x1234, 0x7FFF, 0x8000, 0xABCD, 0xFFFE, 0xFFFF];
 
