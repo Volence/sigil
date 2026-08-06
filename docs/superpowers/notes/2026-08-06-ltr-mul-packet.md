@@ -9,7 +9,9 @@ notes/2026-08-05-mul-w-packet.md. This packet states only what differs.
 This is the corpus's first deliberate byte-MOVING optimization pass since
 conversion. The byte gate is an AUDIT, not identity: every delta is named
 below, and behavioural identity is the overseer's emulator A/B, not a porter
-claim. **The A/B verdict is not in this packet** — see §7.
+claim. The A/B **passed** — evidence and its coverage limits in
+`2026-08-06-ltr-mul-ab.md` (the provenance `ab` ref for chain entry 49),
+summarised in §4a.
 
 ## 1 · What moved
 
@@ -120,22 +122,65 @@ No site depends on a scratch's final value. The `.fr_no_coll` even-row path
 skips the multiply in both the old and new spellings, so d4's carry-through
 there is unchanged.
 
+## 4a · The behavioural bar (overseer-run), stated with its limits
+
+- **PLAIN shape** — the shipping artifact, and what the owner play-tests:
+  **byte-identical in work RAM, VDP (VRAM/CRAM/VSRAM/register file) and
+  framebuffer** at an in-level anchor (RAM64k `3845DADA`, VDP combined
+  `4E59D92B7D06E719`, framebuffer `CED4B186836B7421` — same both ROMs). A
+  screenshot confirms full zone art with the player rendered, so the tile cache,
+  section lookups and plane buffer — every changed multiply site — are genuinely
+  exercised.
+- **DEBUG shape** — VDP bit-identical at all three checkpoints (frozen scene
+  `0A39113FDC4C3CB6`, 6-step camera sweep driving cache fills
+  `6C9E7D7099782FE4`, 600-frame ObjectTest churn soak `4AC6459142D74AE6`), lag
+  frames identical at every anchor. Work RAM differs **only** as dead scratch
+  residue in dead stack, attributed three independent ways: `BISECT1` (zero
+  relocation, same delta, identical VDP — kills the return-address theory), the
+  static liveness audit in §3, and the plain shape's byte-identical RAM (the
+  delta appears exactly where debug instrumentation spills more registers to
+  stack, and nowhere else).
+- **LAG FRAMES ARE IDENTICAL, NOT REDUCED** (26/40/52/52, both ROMs). The cycle
+  wins are real at the sites but land well inside the frame budget on these
+  scenes and do **not** convert into recovered lag frames. **No lag win is
+  claimed.** The honest result: the win is measured in cycles at the sites
+  (−2/−2/−8/−8/−10/−10/−4 plus Group B's ≈−600 worst case on the cold paths), no
+  scene regressed, and no lag frame was recovered on the scenes exercised.
+- **Not run**: a live A/B of `BISECT2` (Groups A+C+D, also zero-relocation).
+  Those sites rest on the byte-delta audit, the static liveness audit and the
+  full-parcel identity above, not on a dedicated live control.
+
 ## 4 · Bars
 
 - **Full strict** (`--no-fail-fast`, `SIGIL_STRICT_GATE=1`, AEON_DIR = this
-  lane's aeon): **3425 passed / 23 failed / 4 ignored = 3452**, and the branch's
-  own `#[test]` total is **3452** — closes exactly. The 23 failures are entirely
-  the stale-golden / frozen-reference class a byte-changing parcel produces
-  before its refreeze: `*_anchor_matches_golden`, `*_full_file`,
-  `*_size_table_rederives_native`, `native_full_sonic4_*`,
-  `boot_*_region_matches_reference`, `config_b_frozen_placement_exact`,
-  `config_b_doctored_size_table_breaks_the_build` (its undoctored control),
-  `deform_pointer_equals_placed_label_vma` (its frozen-placement sanity gate),
-  `flipped_config_a_anchor_matches_golden`. No behavioural or lint failure.
-- **Warn tiers:** identical to baseline on every shape — plain 19
-  (path-mismatch 9 / undeclared-fallthrough 6 / out-unwritten 3 /
-  clobber-undeclared 1), debug 18. No deliberate lint delta in this parcel; the
-  adoptions add no warning.
+  lane's aeon), **after the refreeze**: **3448 passed / 0 failed / 4 ignored =
+  3452**, and the branch's own `#[test]` total is **3452** — closes exactly.
+  Before the refreeze the same run was 3425/23/4: those 23 were entirely the
+  stale-golden / frozen-reference class a byte-changing parcel produces
+  (`*_anchor_matches_golden`, `*_full_file`, `*_size_table_rederives_native`,
+  `native_full_sonic4_*`, `boot_*_region_matches_reference`,
+  `config_b_frozen_placement_exact`, `config_b_doctored_size_table_breaks_the_build`
+  via its undoctored control, `deform_pointer_equals_placed_label_vma` via its
+  frozen-placement sanity gate, `flipped_config_a_anchor_matches_golden`). All
+  23 cleared on the refreeze; none needed a hand fix, which is itself the
+  evidence that they were reference staleness and not behaviour.
+- **Warn tiers ×7:** the firing lint-ID SET is identical across all seven
+  targets (`module.path-mismatch`, `proc.undeclared-fallthrough`,
+  `proc.out-unwritten`, `proc.clobber-undeclared`), with counts 19 on the
+  plain-family shapes (s4, demo, config_b: 9/6/3/1) and 18 on the
+  debug-family shapes (s4.debug, demo.debug, config_a, lean: 9/5/3/1) — the
+  pre-parcel baseline exactly. No deliberate lint delta in this parcel and none
+  introduced; the adoptions add no warning (every proc already declared its
+  scratch in `clobbers`).
+- **Refreeze:** chain entry **49** (`ltr-mul`), appended by `refreeze --freeze`
+  with a real `--ab` ref (`docs/superpowers/notes/2026-08-06-ltr-mul-ab.md`) —
+  mandatory here because all seven anchors moved. The one command ran
+  `capture_goldens.sh --write`, `derive_offcanonical_sizes.sh` and `repin` in
+  order, then appended the entry; the seven frozen CRCs equal the porter's
+  earlier independent capture exactly. **`refreeze --check`: OK (tip `ltr-mul`,
+  chain len 49).** Canonical ROMs rebuilt after capture, one shape per
+  invocation, and both verified against the newly frozen blobs (`3b6cad91` /
+  `e3963874`).
 - **repin:** `pins.rs unchanged` after regeneration. The post-flip ripple is
   pins.rs (auto) plus the hermetic `repin_pins.rs` SOUND_API base literals
   (hand, −0x20 both shapes); `engine.inc` and `mixed_dac_rom.rs` do not exist in
@@ -264,15 +309,30 @@ so in present tense.
 - aeon `ltr-mul` (rebased onto `76013f2`): the Group B/C/D adoptions, and the
   worst-case-contract comments at both loop sites (byte-neutral, verified).
 
-Behaviour, ripple, and docs are separate commits. The refreeze is deliberately
-NOT in this branch yet — see below.
+Behaviour, ripple, docs and the refreeze are separate commits.
 
-## 9 · What is NOT done
+## 9 · Traps recorded (they cost two full A/B passes)
 
-The golden/provenance refreeze (chain entry 49), the `offcanonical_sizes` /
-boot-region / frozen-placement re-derivation, and the post-refreeze strict
-re-run are all HELD pending the overseer's emulator A/B verdict. The 23 strict
-failures listed in §4 are precisely the set that refreeze closes; none of them
-should be read as green-by-assumption. If the A/B adjudicates the parcel as
-behaviourally divergent, none of this ships and the branches are discarded
-rather than refrozen.
+Both are emulator-harness traps, both are campaign-general, and neither is
+specific to this parcel — but a cycle-changing parcel is exactly what exposes
+the first one.
+
+1. **An A/B anchored on `pause` is INVALID for a cycle-changing parcel.**
+   `pause` lands at an arbitrary intra-frame instant whose phase differs between
+   the two ROMs *precisely because* the code timing changed. A poke applied
+   there lands at a different point within the frame, and the scene then
+   diverges from the harness's own stimulus — a self-inflicted difference that
+   looks exactly like a behavioural regression. Anchor on a deterministic PC
+   (`run_to VInt_Level`) before poking. This produced, and then retracted, a
+   false "ObjectTest churn ends with different object positions" finding.
+2. **`reload_rom`'s diagnostic can lie.** It reported "reload was silently
+   rejected" (pointer unchanged) when the load had in fact succeeded. Verify the
+   cart by hashing it (`memory_hash addr 0 len <filesize>` against the expected
+   CRC32), never by trusting the reload diagnostic.
+
+## 10 · State
+
+The refreeze is DONE (chain entry 49, §4), the post-refreeze strict run is green
+with closing arithmetic, and `refreeze --check` passes. The branches are
+UNMERGED and carry no merge-state claim; the panel and the merge are the
+overseer's.
