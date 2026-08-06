@@ -2388,3 +2388,57 @@ full_crc = "e3963874"
 full_size = 423571
 anchor_crc = "2263979c"
 anchor_end = 0x5f758
+
+[[entry]]
+name = "mul2"
+ab = "docs/superpowers/notes/2026-08-06-mul2-ab.md"
+note = "Collision_GetType's row stride adopts mul_const.w: one in-place 8-byte window, zero relocation on all seven shapes"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "c6e8cd87"
+full_size = 423949
+anchor_crc = "87e2f1c0"
+anchor_end = 0x5f758
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "48ef0d0b"
+full_size = 301205
+anchor_crc = "3058600a"
+anchor_end = 0x42d90
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "fbf40075"
+full_size = 91330
+anchor_crc = "9a6e9984"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "8c17cd39"
+full_size = 94031
+anchor_crc = "55d0a513"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "29d49dc6"
+full_size = 379110
+anchor_crc = "6887e085"
+anchor_end = 0x5c8e6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "4f43c8d9"
+full_size = 411167
+anchor_crc = "a8187316"
+anchor_end = 0x5d968
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "159b152f"
+full_size = 423571
+anchor_crc = "018cade0"
+anchor_end = 0x5f758
