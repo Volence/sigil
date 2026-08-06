@@ -96,3 +96,21 @@ correct its drifted `preserves.rs:470`→`:792` citation); row 2138's
 vocabulary note gains a pointer here. Lane-M (sr.mask plumbing) touches the
 oracle-input wiring this parcel reads — the overseer sequences the merges;
 rebase and re-prove per the queue.
+
+## §6 — 2026-08-06 amendment (Fable, at the pw porter's §4 stop)
+
+The porter's pre-build verification caught §4 contradicting §3: the census's
+"five define-gates arms" was wrong. Only FOUR witnesses round-trip the word in
+their own bodies: `Player_Main` d7 (player_common.emp 340/346), `TestPlayer`
+d7 (test_player.emp 244/246), `Collected_ParkSlot` d2 (entity_window.emp
+377/388, DEBUG arm), `EntityWindow_TrySpawnRing` d5 (entity_window.emp
+999/1019, DEBUG arm). The other three EntityWindow procs
+(`ScanRingsRight`/`PopulateSectionRings`/`RescanRings`) carry d5 only
+TRANSITIVELY through `jbsr EntityWindow_TrySpawnRing` — under §3's
+conservative v1 they must NOT flip (a `.w`-preserving callee is a full-width
+clobber to callers), and they are hereby the REAL-CORPUS witnesses for §3's
+conservative-refusal pin: their `clobbers(d0-d5,a0)` stays, and the pin
+proves a caller claiming `preserves(d5)` through the `.w`-preserving callee
+still refuses. §4's adoption list is amended to the four genuine witnesses.
+The §1 demand check PASSED (RunObjects' `dbf d7` counter crosses the object
+dispatch; Debug_AssertObjLoop asserts it) — the consumer is real.
