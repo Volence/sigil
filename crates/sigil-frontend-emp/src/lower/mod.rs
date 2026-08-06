@@ -190,6 +190,11 @@ fn lower_module_inner(
     validate_comptime_tests(&file.items, &mut diags);
     validate_shadowed_mnemonics(&file.items, &mut diags);
     validate_shadowed_imports(&file.items, &mut diags);
+    // Niche-option `[option.niche-overlap]` (spec §1): a sentinel that overlaps
+    // its payload's range is refused here, once per compile, whether or not the
+    // option is ever constructed — an evaluator pass (the sentinel + payload
+    // bounds are comptime values), unlike the AST-only validators above.
+    diags.extend(crate::eval::validate_option_newtypes(file, &opts.defines));
 
     // Spec 2 · Plan 6 (D-P6.3): a module-level `@as_compat` attribute marks this
     // file as a faithful port of AS-assembled source, opting it into the

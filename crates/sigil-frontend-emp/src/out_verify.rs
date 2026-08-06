@@ -943,7 +943,14 @@ pub(crate) fn cc_transparent(mnem: &str) -> bool {
 /// call preserves a COMPUTED flag's transparency question differently from an
 /// ENTRY-CCR question), so each classifies control flow itself.
 pub(crate) fn cc_inert_data_op(mnem: &str) -> bool {
-    matches!(mnem, "movea" | "lea" | "pea" | "movem" | "exg" | "nop" | "adda" | "suba")
+    // `assume_some` is the niche-option extraction marker: it emits no bytes and
+    // executes nothing, so it writes no condition code. Listing it keeps a marker
+    // placed between a conditional-out call and its guard from bailing the
+    // edge-credit walk on a mnemonic that is not even in the ROM.
+    matches!(
+        mnem,
+        "movea" | "lea" | "pea" | "movem" | "exg" | "nop" | "adda" | "suba" | "assume_some"
+    )
 }
 
 /// A control-transfer mnemonic — a conditional/unconditional branch, a `dbcc`

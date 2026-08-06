@@ -1470,6 +1470,33 @@ impl Default for Evaluator<'_> {
     }
 }
 
+/// Validate every niche-option newtype's `? SENTINEL` clause once per compile
+/// (`[option.niche-overlap]`, niche-option spec §1). The build path calls this
+/// so an option whose sentinel overlaps its payload's range is refused whether
+/// or not the option is ever constructed — carving the niche is the option's
+/// precondition, not a use-site check. Recurses into `section {}` blocks exactly
+/// as [`Evaluator::index_items`] does (§7.1's flat namespace).
+pub fn validate_option_newtypes(
+    file: &crate::ast::File,
+    defines: &[(String, i128)],
+) -> Vec<Diagnostic> {
+    fn walk<'a>(ev: &mut Evaluator<'a>, items: &'a [crate::ast::Item]) {
+        for item in items {
+            match item {
+                crate::ast::Item::Newtype(n) if n.sentinel.is_some() => ev.check_option_niche(n),
+                crate::ast::Item::Section(s) => walk(ev, &s.items),
+                _ => {}
+            }
+        }
+    }
+    run_on_eval_stack(|| {
+        let mut ev = Evaluator::with_file(file);
+        ev.seed_defines(defines);
+        walk(&mut ev, &file.items);
+        ev.diags
+    })
+}
+
 /// Evaluate the top-level `const` named `name` in `file` to a comptime
 /// [`Value`], returning it alongside every diagnostic emitted.
 ///

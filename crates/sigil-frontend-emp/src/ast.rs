@@ -1532,6 +1532,12 @@ pub struct NewtypeDecl {
     pub underlying: Type,
     /// The optional `where LO..HI` range refinement, as `(lo, hi)`.
     pub refine: Option<(Expr, Expr)>,
+    /// The optional `? SENTINEL` niche-option clause (`newtype SlotRef = SlotId
+    /// ? $FF`): a distinct type whose values are a valid `underlying` or the
+    /// sentinel literal. The sentinel must be provably OUTSIDE `underlying`'s
+    /// refinement range (`[option.niche-overlap]` otherwise). Zero layout
+    /// impact — the option is the underlying's storage width, the niche reused.
+    pub sentinel: Option<Expr>,
     /// Span of the whole declaration.
     pub span: Span,
 }
@@ -1947,6 +1953,23 @@ pub enum AsmStmt {
         /// views, value newtypes).
         ty: Type,
         /// Span of the whole `let` statement.
+        span: Span,
+    },
+    /// `assume_some! <reg>, <Payload>` (niche-option spec §2): the extraction
+    /// marker in the `todo!`/`unreachable!` bang family. Emits ZERO bytes — it
+    /// retypes `reg` from a niche-option to its payload for the remainder of the
+    /// path (the type-slice register lattice reads it exactly as an `as Payload`
+    /// bless). TRUSTED: a greppable, auditable "I checked the sentinel", one
+    /// instruction wide — the compiler verifies the payload's SHAPE, never the
+    /// guard. Register-only: a var/field-access path is not retypeable while
+    /// flow-sensitive type state stays register-keyed.
+    AssumeSome {
+        /// The register being extracted (spelling, e.g. `"d0"`).
+        reg: String,
+        /// The payload type the register holds on this path once the sentinel
+        /// is ruled out.
+        ty: Type,
+        /// Span of the whole statement.
         span: Span,
     },
     /// A `todo!`/`unreachable!` statement trap (S2-D11(e)): assembles to the

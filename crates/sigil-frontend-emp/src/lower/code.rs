@@ -96,6 +96,14 @@ pub fn lower_code_buf(
                     lower_jbra_jbsr(mnemonic, *size, ops, *span, cpu, builder, diags);
                     continue;
                 }
+                // `assume_some` is the niche-option extraction marker (spec §2):
+                // an emp-only mnemonic-position word carrying a register + its
+                // payload type in `as_type`, which the type-slice lattice reads
+                // as an `as Payload` bless. It emits ZERO bytes — like `jbra`, it
+                // must never reach the shared isa mnemonic table.
+                if mnemonic == "assume_some" {
+                    continue;
+                }
                 // `mul_const`/`mul_bounded` (the cost-model multiply constructs)
                 // normally expand at CodeBuf completion (`mul_lower::expand_buf`,
                 // where the contract analyses then see the chosen lowering's real

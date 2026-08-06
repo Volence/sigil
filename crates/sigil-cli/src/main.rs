@@ -991,12 +991,30 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
         println!("  {:<28} {:<4} bracketing {}", d.proc, d.reg, d.callees.join(","));
     }
 
-    println!("\n-- [call.slot-type-mismatch] firings (G5, {}): --", report.slot_firings.len());
+    println!(
+        "\n-- [call.slot-type-mismatch] / [option.unguarded-use] firings (G5, {}): --",
+        report.slot_firings.len()
+    );
     for f in &report.slot_firings {
+        use sigil_frontend_emp::type_slice::FiringKind;
         let found = f.found.as_deref().unwrap_or("an untyped value");
+        let id = match f.kind {
+            FiringKind::OptionUnguarded => "[option.unguarded-use]",
+            FiringKind::SlotType => "[call.slot-type-mismatch]",
+        };
+        // The option firing carries its own remedy — the whole point of giving it
+        // a distinct id is telling the author the ONE thing that fixes it.
+        let remedy = match f.kind {
+            FiringKind::OptionUnguarded => format!(
+                " — the sentinel is never ruled out on this path; guard it \
+                 (`cmpi #{}.none, {}` / branch away) then `assume_some! {}, {}`",
+                found, f.reg, f.reg, f.expected
+            ),
+            FiringKind::SlotType => String::new(),
+        };
         println!(
-            "  {:<28} calls {:<24} slot {} expects {} but found {}",
-            f.proc, f.callee, f.reg, f.expected, found
+            "  {id:<26} {:<28} calls {:<24} slot {} expects {} but found {}{}",
+            f.proc, f.callee, f.reg, f.expected, found, remedy
         );
     }
 

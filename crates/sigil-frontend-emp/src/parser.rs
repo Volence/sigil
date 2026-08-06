@@ -934,9 +934,14 @@ impl Parser {
         self.expect(&Tok::Eq, "`=`");
         let underlying = self.ty_base();
         let refine = if self.eat_kw("where") { self.try_where_range() } else { None };
+        // The niche-option clause `? SENTINEL` (`newtype SlotRef = SlotId ? $FF`):
+        // a distinct type carrying the underlying-or-the-sentinel. Parsed after
+        // the optional `where` so an inline-ranged option
+        // (`u8 where 0..$7E ? $FF`) is also spellable.
+        let sentinel = if self.eat(&Tok::Question) { Some(self.expr()) } else { None };
         let span = start.merge(self.prev_span());
         self.expect_line_end();
-        NewtypeDecl { public, name, underlying, refine, span }
+        NewtypeDecl { public, name, underlying, refine, sentinel, span }
     }
 
     /// Parse a `bitfield Name: repr { field: bits [@ anchor], ... }` declaration.
@@ -2393,6 +2398,21 @@ impl Parser {
                 let span = start.merge(self.prev_span());
                 self.expect_line_end_or_rbrace();
                 return Some(AsmStmt::Trap { kind, message, span });
+            }
+            // `assume_some! <reg>, <Payload>` (niche-option spec §2) — the
+            // extraction marker in the same bang family. Same `!`-adjacency rule.
+            if w == "assume_some"
+                && matches!(self.peek2(), Tok::Bang)
+                && self.adjacent_to_next()
+            {
+                self.bump(); // ident
+                self.bump(); // `!`
+                let reg = self.expect_ident("a register after `assume_some!`");
+                self.expect(&Tok::Comma, "`,` between the register and its payload type");
+                let ty = self.ty();
+                let span = start.merge(self.prev_span());
+                self.expect_line_end_or_rbrace();
+                return Some(AsmStmt::AssumeSome { reg, ty, span });
             }
         }
         // statement-position comptime `if` (tranche 5, H1): `if` is a

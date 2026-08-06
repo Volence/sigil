@@ -37,9 +37,22 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 const CALL_MNEMONICS: [&str; 3] = ["jsr", "bsr", "jbsr"];
 const TAIL_MNEMONICS: [&str; 4] = ["jmp", "bra", "jbra", "jra"];
 
-/// One `[call.slot-type-mismatch]` firing: at `span`, `proc` calls `callee`
-/// passing `found` (a wrong newtype, or `None` = an untyped/undefined value) in
-/// register `reg`, but `callee` declares that slot as `expected`.
+/// Which message ONE firing carries — the engine emits exactly one id per
+/// offending slot, never both (niche-option spec §3, R7): a niche-option flowing
+/// into its own payload slot is `[option.unguarded-use]`; every other wrong or
+/// untyped value is the generic `[call.slot-type-mismatch]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FiringKind {
+    /// A wrong-newtype / untyped value in a domain-typed slot.
+    SlotType,
+    /// A niche-option (`found`) used where its PAYLOAD (`expected`) is required —
+    /// the sentinel was never ruled out (no `assume_some!` on this path).
+    OptionUnguarded,
+}
+
+/// One slot-check firing: at `span`, `proc` calls `callee` passing `found` (a
+/// wrong newtype, or `None` = an untyped/undefined value) in register `reg`, but
+/// `callee` declares that slot as `expected`. `kind` selects the lint id.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlotTypeMismatch {
     pub proc: String,
@@ -47,6 +60,7 @@ pub struct SlotTypeMismatch {
     pub reg: String,
     pub expected: String,
     pub found: Option<String>,
+    pub kind: FiringKind,
     pub span: Span,
 }
 
@@ -268,6 +282,7 @@ pub fn check_slot_types(
     callee_out: &BTreeMap<String, BTreeSet<String>>,
     callee_clobbers: &BTreeMap<String, Option<BTreeSet<String>>>,
     newtypes: &BTreeSet<String>,
+    options: &BTreeMap<String, String>,
     own_params: &[(usize, String)],
 ) -> Vec<SlotTypeMismatch> {
     let mut firings = Vec::new();
@@ -300,12 +315,23 @@ pub fn check_slot_types(
         for (reg_i, expected) in slots {
             let found = &st[*reg_i];
             if found.as_deref() != Some(expected.as_str()) {
+                // A niche-option whose PAYLOAD is exactly `expected` is the
+                // unguarded-use case (the sentinel was never ruled out); every
+                // other found value is the generic slot-type mismatch. One id per
+                // site — never both.
+                let kind = match found.as_deref() {
+                    Some(f) if options.get(f).map(String::as_str) == Some(expected.as_str()) => {
+                        FiringKind::OptionUnguarded
+                    }
+                    _ => FiringKind::SlotType,
+                };
                 firings.push(SlotTypeMismatch {
                     proc: proc.to_string(),
                     callee: callee.to_string(),
                     reg: reg_name(*reg_i),
                     expected: expected.clone(),
                     found: found.clone(),
+                    kind,
                     span: *span,
                 });
             }

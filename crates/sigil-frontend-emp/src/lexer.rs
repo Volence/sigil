@@ -28,6 +28,9 @@ pub enum Tok {
     LBrace, RBrace, LParen, RParen, LBracket, RBracket,
     Comma, Colon, Semi, Dot, At, Hash, Star, Plus, Minus, Slash, Percent,
     Amp, Pipe, Caret, Bang, Lt, Gt, Eq, Tilde,
+    /// A question mark `?` — the niche-option newtype form `T ? sentinel`
+    /// (`newtype SlotRef = SlotId ? $FF`). Used nowhere else in the grammar.
+    Question,
     EqEq, Ne, Le, Ge, Shl, Shr, Arrow, DotDot, PlusPlus, AndAnd, OrOr,
     /// The pipe operator `|>` (function application, D-P2.17). Matched before
     /// single `|` so it is never mis-lexed as `Pipe` then `Gt`.
@@ -168,7 +171,7 @@ pub fn lex(src: &str, source: SourceId) -> (Vec<Token>, Vec<LexError>) {
                         b'/' => (Tok::Slash, 1), b'%' => (Tok::Percent, 1), b'&' => (Tok::Amp, 1),
                         b'|' => (Tok::Pipe, 1), b'^' => (Tok::Caret, 1), b'!' => (Tok::Bang, 1),
                         b'<' => (Tok::Lt, 1), b'>' => (Tok::Gt, 1), b'=' => (Tok::Eq, 1),
-                        b'~' => (Tok::Tilde, 1),
+                        b'~' => (Tok::Tilde, 1), b'?' => (Tok::Question, 1),
                         _ => {
                             // Advance by the full char so multi-byte UTF-8 never
                             // leaves `i` mid-character.

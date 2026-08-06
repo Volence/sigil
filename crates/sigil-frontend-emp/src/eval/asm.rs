@@ -345,6 +345,80 @@ impl Evaluator<'_> {
                     self.diags.truncate(watermark);
                 }
             }
+            AsmStmt::AssumeSome { reg, ty, span } => {
+                // Niche-option spec §2: retype `reg` from a niche-option to its
+                // payload for the remainder of the path. Emits ZERO bytes — it
+                // rides the CodeBuf as the reserved `assume_some` mnemonic
+                // (skipped at emission, `lower::code`) carrying the payload in
+                // `as_type`, which the type-slice lattice reads exactly as an
+                // `as Payload` bless on the register. TRUSTED: the marker asserts
+                // the author checked the sentinel; the compiler checks only that
+                // the SHAPE is a real payload type, never the guard itself.
+                let Some(r) = Reg::from_name(reg) else {
+                    self.error(
+                        *span,
+                        format!(
+                            "[asm.assume-not-register] `{reg}` is not a register; \
+                             `assume_some! <reg>, <Payload>` extracts a niche-option \
+                             held in a data/address register (aN/dN)"
+                        ),
+                    );
+                    return;
+                };
+                // The payload must be a plain named (value-newtype) type — the
+                // same surface `as Payload` accepts. A pointer/array/tuple payload
+                // has no niche-option meaning.
+                let ast::Type::Named(path) = ty else {
+                    let resolved = self.resolve_type(ty);
+                    self.error(
+                        *span,
+                        format!(
+                            "[asm.assume-payload] `assume_some!`'s payload must be a named \
+                             newtype (the option's payload type), got `{}`",
+                            resolved.describe()
+                        ),
+                    );
+                    return;
+                };
+                let payload = path.segments.last().cloned().unwrap_or_default();
+                // The payload must be a DECLARED newtype: an unresolvable name
+                // would otherwise bless the register with a type the slice engine
+                // silently ignores — a no-op marker reading as a checked one.
+                if !self.newtypes.contains_key(payload.as_str()) {
+                    self.error(
+                        *span,
+                        format!(
+                            "[option.assume-not-option] `{payload}` is not a declared newtype, so \
+                             `assume_some! {reg}, {payload}` extracts nothing — name the option's \
+                             PAYLOAD type (the `T` in `newtype Opt = T ? sentinel`)"
+                        ),
+                    );
+                    return;
+                }
+                // The payload must be some option's payload — extracting from a
+                // type no option wraps means the marker can never discharge an
+                // `[option.unguarded-use]`, so it is a silent lie about a check.
+                if !self.newtype_is_option_payload(&payload) {
+                    self.error(
+                        *span,
+                        format!(
+                            "[option.assume-not-option] no niche-option has `{payload}` as its \
+                             payload — `assume_some!` extracts an option, so `{payload}` must be \
+                             the `T` of some `newtype Opt = {payload} ? sentinel`"
+                        ),
+                    );
+                    return;
+                }
+                buf.push(CodeItem::Instr {
+                    mnemonic: "assume_some".to_string(),
+                    size: None,
+                    ops: vec![CodeOperand::Reg(r)],
+                    span: *span,
+                    as_type: Some(payload),
+                    targets: Vec::new(),
+                    author: self.item_author.clone(),
+                });
+            }
             AsmStmt::Trap { kind, message, span } => {
                 // S2-D11(e): both spellings assemble to the 68k ILLEGAL
                 // word — the file builds and RUNS to the hole. 68k-only
@@ -1198,6 +1272,7 @@ impl Evaluator<'_> {
             }
             ops.push(self.map_operand(op, scope, env, op_width)?);
         }
+        self.check_raw_sentinel(&instr.operands, &ops, instr.span);
         Some(CodeItem::Instr {
             mnemonic,
             size,
@@ -1207,6 +1282,86 @@ impl Evaluator<'_> {
             targets,
             author: self.item_author.clone(),
         })
+    }
+
+    /// Scan an instruction line's operands for a niche-option's `.none` member
+    /// used as an immediate (`cmpi.b #SlotRef.none, d0`). Returns the option
+    /// newtype's name — the SANCTIONED sentinel spelling — so
+    /// `[option.raw-sentinel]` can distinguish it from a raw `#$FF` literal at
+    /// the same option-typed position. Purely syntactic on the operand AST (the
+    /// evaluated immediate erases `.none` and a raw literal to the same
+    /// `Imm(sentinel)`), so it rides no scratch state.
+    fn option_sentinel_operand(&self, operands: &[ast::Operand]) -> Option<String> {
+        for op in operands {
+            if let ast::Operand::Imm(ast::Expr::Path(p)) = op {
+                if let [head, member] = p.segments.as_slice() {
+                    if member == "none" && self.newtype_sentinel_expr(head).is_some() {
+                        return Some(head.clone());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// `[option.raw-sentinel]` (niche-option spec §1, WARN): a niche-option's
+    /// sentinel value written as a RAW immediate into a position the compiler
+    /// knows is option-typed — here, a store/compare against a struct field whose
+    /// declared type is that option — nudges toward the typed `#Option.none`
+    /// spelling. Emitted DURING lowering (a build warning, so the warn-tier gate
+    /// sees it), and zero-firing once the corpus stores `.none`. The register-
+    /// held-option position (which needs the cross-file type-slice dataflow) is a
+    /// ledgered C1 gap; this catches the field-typed position, which is local.
+    fn check_raw_sentinel(&mut self, operands: &[ast::Operand], ops: &[CodeOperand], span: Span) {
+        // Cheap gate: the nudge needs a raw immediate sibling at all.
+        if !ops.iter().any(|o| matches!(o, CodeOperand::Imm(_))) {
+            return;
+        }
+        let Some((option, sentinel)) = self.option_field_in_operands(operands, span) else {
+            return;
+        };
+        // Written as `#option.none` already — the sanctioned spelling, no nudge.
+        if self.option_sentinel_operand(operands).as_deref() == Some(option.as_str()) {
+            return;
+        }
+        if ops.iter().any(|o| matches!(o, CodeOperand::Imm(v) if *v == sentinel)) {
+            self.warn(
+                span,
+                format!(
+                    "[option.raw-sentinel] the `{option}` sentinel {sentinel} is written as a raw \
+                     immediate at a `{option}`-typed field — write `#{option}.none` (the option's \
+                     typed sentinel) so the niche stays greppable"
+                ),
+            );
+        }
+    }
+
+    /// A struct-field-access operand (`Sst.slot_tag(a0)`) whose declared field
+    /// type is a niche-option, as `(option name, sentinel value)`. Reads the
+    /// EXPLICIT `Struct.field` qualifier — the flagship form — so no register
+    /// typing is needed; the bare `field(reg)` form on a typed register is the
+    /// ledgered gap.
+    fn option_field_in_operands(&mut self, operands: &[ast::Operand], span: Span) -> Option<(String, i128)> {
+        for op in operands {
+            let ast::Operand::DispInd { disp: ast::Expr::Path(p), .. } = op else { continue };
+            let [struct_name, field] = p.segments.as_slice() else { continue };
+            if !self.structs.contains_key(struct_name.as_str()) {
+                continue;
+            }
+            let layout = self.layout_of_struct(struct_name, span);
+            let Some(fty) = layout.fields.iter().find(|f| &f.name == field).map(|f| f.ty.clone())
+            else {
+                continue;
+            };
+            let crate::layout::Ty::Newtype(name) = fty else { continue };
+            if self.newtype_sentinel_expr(&name).is_none() {
+                continue;
+            }
+            if let Some(sentinel) = self.option_sentinel_value(&name, span) {
+                return Some((name, sentinel));
+            }
+        }
+        None
     }
 
     /// `dc.b`/`dc.w`/`dc.l` — code-embedded constant data (tranche 8, the

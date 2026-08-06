@@ -48,6 +48,10 @@ pub fn instr_cost(mnemonic: &str, size: Option<Width>, ops: &[CodeOperand]) -> C
     match mnemonic {
         "jbra" | "jra" => return CycleCost::Fixed { cycles: 12, exact: false },
         "jbsr" => return CycleCost::Fixed { cycles: 20, exact: false },
+        // The niche-option `assume_some` extraction marker (spec §2) emits zero
+        // bytes and executes nothing — it costs zero, exactly, so it never
+        // perturbs a `@budget` proc it happens to sit in.
+        "assume_some" => return CycleCost::Fixed { cycles: 0, exact: true },
         _ => {}
     }
     let Some(m) = m68k_mnemonic(mnemonic) else {
