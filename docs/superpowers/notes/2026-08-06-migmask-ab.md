@@ -383,3 +383,87 @@ which is work the overseer needs anyway if probe 3 desyncs.
   mechanism probe 1 measured directly.
 * Only one slot differing. That is the correct, predicted result for a rightward
   or downward slide.
+
+---
+
+# EXECUTION — overseer's foreground run (2026-08-06)
+
+Carts: OLD = `s4.debug.bin` golden at master `f4d87aae` (`159b152f`/423571);
+NEW = the same golden on this branch (`7e273b14`/423571). **Both verified by
+`memory_hash`, never by the reload diagnostic — whose `first16` is byte-identical
+for the two carts and therefore cannot distinguish them.** Symbols loaded from
+`s4.debug.lst`, which independently confirmed the RAM table (`Camera_X` =
+`$00FFA152`, `Entity_Window_Anchor` = `$00FFACC0`).
+
+## PROBE 1 — PASS. The mechanism differs, 8 of 8 predictions exact.
+
+Breakpoint at the id-read (`$004B32` OLD / `$004B30` NEW), `d0.w` at each of the
+four per-entry hits. Read with step-then-resume, because resuming *at* a
+breakpoint re-triggers it without executing (an identical register file on two
+consecutive breaks is the tell).
+
+| entry | OLD predicted | OLD measured | NEW predicted | NEW measured |
+|---|---|---|---|---|
+| 0 | `$0000` | **`$0000`** | `$0000` | **`$0000`** |
+| 1 | `$0016` | **`$0016`** | `$001A` | **`$001A`** |
+| 2 | `$002C` | **`$002C`** | `$0034` | **`$0034`** |
+| 3 | `$0042` | **`$0042`** | `$004E` | **`$004E`** |
+
+**Corroboration nobody specified.** The breakpoint sits *on* the `move.b`, so
+`d2` still holds the PREVIOUS entry's fetched id. Reading it across the hits
+gives the ids actually fetched:
+
+* OLD: `$01`, `$1F`, `$1F` — a repeated value that is a ROM-pointer byte.
+* NEW: `$01`, `$02`, `$04` — a coherent set of section ids for a 2×2 window.
+
+That is the defect exhibited directly on the shipping code path: the old stride
+reads pointer bytes and calls them section ids.
+
+## PROBE 3 — ANSWERED, and it CORRECTS the packet's headline.
+
+Both carts ran the fixture from the anchored init breakpoint to completion.
+`Replay_Ptr` ended at **`$0005E6A0` on both**; `Replay_Done` = `$FF` on both;
+and `Entity_Loaded_Masks` after the full 2059-tick run hashed **`0x25913C7E` on
+both carts, identically**.
+
+**The breakpoint at the id-read was never hit during the entire replay.** The
+window never slides: the anchor stayed `(0,0)` and the camera never left section
+0. So `MigrateMasks` never executes during the fixture.
+
+**Therefore the bug was PRESENT in the recording build but never FIRED.** The 33
+checkpoint hashes do not encode the mis-indexing, the fixture does **not** need
+re-recording on account of this parcel, and it will not desync against the fix.
+The dating argument established presence; only this run establishes non-firing.
+
+## PROBE 2 — NOT ESTABLISHED. No difference observed, and the run is the reason.
+
+Forced a slide on both carts by poking `Camera_X` to `$0C000000`, then compared
+`Entity_Loaded_Masks` at the next `EntityWindow_Scan`. Both carts: **`0x90A0AADC`,
+anchor `(1,1)`** — identical.
+
+Per this document's own rule that is "no qualifying slide found", NOT a
+refutation. Two concrete reasons, both found by running it:
+
+1. **The capture point is wrong, and it is my error, not the spec's.** The next
+   `Scan` is DOWNSTREAM of the post-slide entity re-load, which repopulates the
+   masks and can absorb the very difference being measured. Pre-slide slot 0 was
+   `$7F` and slot 1 `$01`; post-slide slot 1 is `$03` on both carts — a value
+   that is neither input, i.e. rebuilt rather than migrated. **The correct capture
+   is at `MigrateMasks`' RETURN (`step_out` from the id-read breakpoint), before
+   anything else touches the masks.**
+2. **The camera-poke drive is not reproducible run-to-run.** The same poke value
+   slid the window on some runs and not others: `Camera_Update` pulls the poked
+   value back (observed `$0C000000` → `$0BF00000`) between an arbitrary pause and
+   the scan. **The poke must be applied AT the `EntityWindow_Scan` breakpoint**
+   (`$0046A8`, same address on both carts, downstream of `Camera_Update`) — done
+   that way it fired reliably on both carts.
+
+**Probe 2 is OWED.** Re-run with the poke at `$0046A8` and the capture at
+`MigrateMasks`' return.
+
+## Verdict
+
+The mechanism is **proven live and exactly as predicted**, including the old code
+reading ROM-pointer bytes as section ids. The fixture question is **settled**: the
+bug never fires there, so no re-recording is owed. The downstream mask-outcome
+comparison is **not established** and is not claimed.
