@@ -2284,7 +2284,7 @@ anchor_end = 0x5f758
 [[entry]]
 name = "enum-dispatch"
 ab = ""
-note = "enumerated dispatch: +9 .slot_k landing labels record real code locations; deb2 appendix +171/+191 B; all 7 ROM anchors byte-identical (identity proof)"
+note = "enumerated dispatch: nine .slot_k landing labels record real code locations; deb2 appendix grows per shape (s4 +171, s4.debug +191, demo +171, demo.debug +178, config_a +178, config_b +173 B; lean unchanged); all 7 ROM anchors byte-identical (identity proof)"
 
 [entry.targets.config_a]
 golden = "config_a.bin"

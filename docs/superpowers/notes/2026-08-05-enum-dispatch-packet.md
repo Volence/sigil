@@ -1,8 +1,11 @@
 # The enumerated-dispatch form `targets(...)` — parcel packet (2026-08-05)
 
-Spec: `specs/2026-08-05-enumerated-dispatch-design.md` (RULED, Fable). Closes the
-gap-ledger enumerated-dispatch row (`[bprime-3b, 2026-08-05]`); links row 1140
-(typed jump-table) as the exhaustive-by-construction successor.
+Spec: `specs/2026-08-05-enumerated-dispatch-design.md` (RULED, Fable), amended on
+master `a5a24390` ("targets() names the landing points, and the example stops
+teaching the trap" — the §1 example now shows the landing-label spelling; this
+adoption follows it). Closes the gap-ledger enumerated-dispatch row
+(`[bprime-3b, 2026-08-05]`); links row 1140 (typed jump-table) as the
+exhaustive-by-construction successor.
 
 ## Numbers first
 
@@ -15,9 +18,11 @@ gap-ledger enumerated-dispatch row (`[bprime-3b, 2026-08-05]`); links row 1140
   appendix, so its full == anchor and is identical outright). The `targets(...)`
   labels emit ZERO ROM bytes; the assembled ROM does not move.
 - **full_crc drifts on the six deb2-carrying shapes (appendix-only)** — the nine
-  `.slot_k` landing labels add +171 B (plain) / +191 B (debug) to the sigil-canonical
-  deb2 symbol table (+9 syms; and shift the header checksum), so the FULL-FILE CRC
-  moves while the ROM does not. The `native_full_rom` gate pins the full-file, so
+  `.slot_k` landing labels grow the sigil-canonical deb2 symbol table per shape
+  (s4 +171, s4.debug +191, demo +171, demo.debug +178, config_a +178, config_b
+  +173 B; lean unchanged — no appendix; and the header checksum shifts), so the
+  FULL-FILE CRC moves while the ROM does not. The `native_full_rom` gate pins the
+  full-file, so
   this is a GOLDEN REFREEZE (chain **47→48**, ruled Option 1 — see below), not a
   free drift. lean (appendix-free) is identical outright.
 - Warn tiers UNCHANGED: plain 19 / DEBUG 18, id-identical. `pins.rs` UNCHANGED (the
@@ -32,7 +37,8 @@ changes by design — and all seven anchors held byte-identical (lean identical
 outright), which IS the chain-48 entry's evidence (no A/B ref needed; `--ab ""`).
 Refrozen via the standard procedure (`refreeze --freeze enum-dispatch` →
 `capture_goldens.sh --write` + `derive_offcanonical_sizes.sh` + `repin` + chain
-append). Appendix growth: +9 syms, +171 B plain / +191 B debug.
+append). Appendix growth per shape: s4 +171, s4.debug +191, demo +171, demo.debug
++178, config_a +178, config_b +173 B (lean unchanged).
 
 REFUSED alternative (Option 2): suppressing the `.slot_k` label class from deb2 to
 hold the checksum — that hides true code locations from the debugger to preserve a
@@ -49,9 +55,11 @@ Chain-48 CRC table (full = new after append; anchor = unchanged from chain 47):
 | config_a | 61e4e78e / 424049 | bf1dde89 / 391000 |
 | config_b | 07e3f465 / 301305 | db32d41b / 273808 |
 | lean | b92cb485 / 379110 | d32cee18 / 379110 |
-- Strict gate: base `#[test]` at master `326809e5` = 3369; +19 (10 unit in
-  `cycle_budget.rs`, 9 integration in `tests/cycle_budget.rs`) = 3388. Full strict
-  green with AEON_DIR = the b7 aeon worktree. clippy `-D warnings` clean.
+- Strict gate close (failures-first: 0 FAILED, 0 panics): base `#[test]` at master
+  `326809e5` = 3369; +26 (12 unit in `cycle_budget.rs`, 14 integration in
+  `tests/cycle_budget.rs`) = 3395. Final run: PASSED + IGNORED = 3395 (4 ignored).
+  Full strict green with AEON_DIR = the b7 aeon worktree; `native_full_rom`
+  plain+debug pass against the chain-48 goldens. clippy `-D warnings` clean.
 
 ## The three numbers reconciled (spec §4) — they MEET
 
@@ -87,25 +95,36 @@ and the B′-3b table were NOT adjusted (they already said 670).
 
 - **Grammar** (`parser.rs`, `ast.rs`): a trailing `targets(.a, .b, …)` clause on an
   instruction line, parsed after the operands and the `as ContractType` bound,
-  before `@discards`. Empty `targets()` is refused at parse (`[dispatch.targets-
-  empty]`). AST `InstrLine.targets: Vec<String>` (source-spelled names).
+  before `@discards`. Empty `targets()` is refused at parse (the
+  `dispatch.targets-empty` id). AST `InstrLine.targets: Vec<String>` (source-spelled
+  names).
 - **Carry** (`value.rs`, `eval/asm.rs`): `CodeItem::Instr.targets: Vec<String>`,
   each name resolved through the proc's label scope (`LabelScope::resolve_ref`) so
   it matches the mangled `CodeItem::Label` symbol the CFG keys on. Emits nothing.
+  A `dc` directive lowers to inline DATA before the targets resolution, so a stray
+  `dc.w 5 targets(.x)` is refused there loudly (`dispatch.targets-on-data`) rather
+  than silently dropped.
 - **Consumption** (`cycle_budget.rs`): `enumerated_succs` is the ONE consumer — a
-  bare `Defer` (a `jmp` naming no symbol) carrying a non-empty `targets` becomes N
-  `Follow` edges, the fixed cost charged once, exactly as a two-edge branch fans
-  out. Both `postorder`'s successor closure and `charged_edges` route through it,
-  so the topo order and the cost pass agree. No `Cfg` edge builder changed — the
-  arm is self-contained (the noreturn lane's later `charged_edges` arm composes).
-  The `[cycles.computed-transfer]` / `[cycles.unbounded-transfer]` messages gained
-  a pointer to the form.
-- **Refusals** (`cycle_budget::check_dispatch_targets`, wired in `lower/proc.rs`
-  step 13): runs on every proc, budget or not. `[dispatch.targets-on-call]`,
-  `[dispatch.targets-redundant]` (an already-exact edge or a non-transfer),
-  `[dispatch.target-unknown]` (undefined `.local`), `[dispatch.target-nonlocal]`
-  (cross-proc/global), `[dispatch.target-duplicate]`. ERROR-tier, unsoftened
-  (author-written claim, like a budget).
+  bare `Defer` (a `jmp`/`jp (hl)` naming no symbol) carrying a non-empty `targets`
+  becomes N `Follow` edges, the fixed cost charged once, exactly as a two-edge
+  branch fans out. Both `postorder`'s successor closure and `charged_edges` route
+  through it, so the topo order and the cost pass agree. No `Cfg` edge builder
+  changed — the arm is self-contained (the noreturn lane's later `charged_edges`
+  arm composes). The `[cycles.computed-transfer]` / `[cycles.unbounded-transfer]`
+  messages gained a pointer to the form. `z80_cycles` gains `jp (hl)` = 4 T so the
+  Z80 computed dispatch is measurable (unenumerated it is still a computed-transfer
+  refusal — the structural check comes first).
+- **Refusals** (`cycle_budget::check_dispatch_targets`, wired at the SINGLE
+  `lower_code_buf` chokepoint every code buf funnels through — a named proc, a
+  dispatch-table inline body, a script body, or an item-position `asm {}` template,
+  so no path can carry a clause unchecked, and a proc never double-reports because
+  its validation no longer runs a second copy): `dispatch.targets-on-call`,
+  `dispatch.targets-redundant` (an already-exact edge or a non-transfer),
+  `dispatch.target-unknown` (undefined `.local`), `dispatch.target-nonlocal`
+  (cross-proc/global), `dispatch.target-duplicate`, and `dispatch.target-trailing`
+  (a local label that closes the body — a fall-off, not a landing point; the b8
+  reading, which otherwise produced contradictory diagnostics). ERROR-tier,
+  unsoftened (author-written claim, like a budget).
 - **Adoption** (`engine/system/dma_queue.emp`): `Process_DMA_Critical`'s
   `jmp .jump_table(a1)` gains `targets(.slot_0..8)` — nine zero-byte labels at the
   physical landing points — and the proc gains `@budget(cycles: 670)`; the header
@@ -139,18 +158,24 @@ assertion. The two ledger rows are now cross-linked.
 ## Tests
 
 Unit (`src/cycle_budget.rs`): the miniature drain shape measures (26/66);
-without-clause refuses `[cycles.computed-transfer]`; the base-edge-model
-orthogonality pin; a perturbed drain arm moves the budget (§5 perturbation pin,
-fixture not corpus); the **drain-label-trap regression pin**
-(`targets_charge_the_landed_on_code_not_a_downstream_label`: a downstream
-enumeration measures strictly smaller than the landing one, 54 vs 46 — the walk
-charges landed-on code); an enumerated cycle falls to `[cycles.unbounded-loop]`;
-the five validity refusals + a passing twin.
+without-clause refuses `[cycles.computed-transfer]`; the STRENGTHENED orthogonality
+pin (`enumerated_targets_leave_the_base_analyses_untouched` — compares the
+preserves-prover, flag def-use, and stack-balance VERDICTS with-and-without the
+clause, not just Cfg edges, so a future direct-item-reader consumer flips it red); a
+perturbed drain arm moves the budget (§5 perturbation pin, fixture not corpus); the
+**drain-label-trap regression pin** (`targets_charge_the_landed_on_code_not_a_
+downstream_label`: a downstream enumeration measures strictly smaller than the
+landing one, 54 vs 46 — the walk charges landed-on code); a trailing-label target
+refused; a Z80 `jp (hl) targets(...)` measures (18); an enumerated cycle falls to
+`[cycles.unbounded-loop]`; the six validity refusals + a passing twin.
 
 Integration (`tests/cycle_budget.rs`, full pipeline incl. label mangling): the
-positive `@budget` pin (66 verifies clean, no refusal); over-budget names 66 on
-the fixture; without-clause still refuses; the five refusals end-to-end; the
-empty-set refusal at parse.
+positive `@budget` pin (66 verifies clean, no refusal); over-budget names 66;
+without-clause still refuses; the validity refusals end-to-end (on-call, redundant,
+unknown, nonlocal, duplicate, trailing, on-data); the empty-set refusal at parse;
+`as T` + `targets(...)` compose in the grammar; and the clause is checked on the
+non-proc funnels — a DISPATCH inline body and a SCRIPT body each refuse a
+`targets(.typo)` through the shared `lower_code_buf` chokepoint.
 
 ## Per-pass findings
 
@@ -193,28 +218,35 @@ exceed.
 
 ## Adjudicated
 
-- **proc.rs wiring placement — ACCEPTED.** The always-on dispatch-validity check is
-  wired in `lower/proc.rs` beside the existing `check_cycle_budget` (the cycle-
-  budget orchestration site); one additive call + its reporter, touching no
-  preserves/flag/closure behavior. Recorded as adjudicated (coordinator).
+- **Wiring — ACCEPTED, then consolidated.** The first cut wired the dispatch-
+  validity check in `lower/proc.rs` (accepted by the coordinator). The panel then
+  took the wider fix: the check now runs at the SINGLE `lower_code_buf` chokepoint
+  every code buf funnels through (named proc, dispatch inline body, script body,
+  item-position `asm {}` template), and the `lower/proc.rs` call is removed so a
+  proc never double-reports. No preserves/flag/closure behavior touched.
 
 ## Commits (for the queue)
 
 sigil (branch `enum-dispatch`, off `326809e5`):
-- `7fcc1d57` — the feature (grammar, carry, consumption, refusals, tests) + the
-  pre-existing mul_lower `redundant_closure` fold for `-D warnings`.
-- a follow-up commit — the drain-label-trap regression pin.
-- the docs commit — packet + gap-ledger + B′-3b §6 pointer.
+- `32ca21e4` — the feature (grammar, carry, consumption, refusals, the drain-label-
+  trap pin) + the pre-existing mul_lower `redundant_closure` fold for `-D warnings`.
+- `02ff1f00` — the docs (packet + gap-ledger + B′-3b §6 pointer).
+- `19969cc7` — the golden refreeze (chain 47→48).
+- this round's commit(s) — the consolidated panel fixes (centralized dispatch
+  check on the three funnels + `dc` + trailing-label refusals; strengthened
+  orthogonality pin; `as T`/`jp (hl)` tests; `jp (hl)` cost; packet/ledger/docs).
 
 aeon (branch `enum-dispatch`, off `b9b1056`):
-- one commit — `dma_queue.emp`: the `targets(.slot_0..8)` clause on the physical
+- `de078af` — `dma_queue.emp`: the `targets(.slot_0..8)` clause on the physical
   landing labels + `@budget(cycles: 670)`.
+- this round's commit — the ensure-message + comment corrections.
 
 Scope touched: `parser.rs`, `ast.rs`, `value.rs`, `eval/asm.rs`, `cycle_budget.rs`,
-`lower/proc.rs` (adjudicated above), the `targets:` field threaded through every
-`CodeItem::Instr` / `InstrLine` construction site, tests, and docs (this packet +
-gap-ledger + B′-3b §6 pointer). One aeon file (`dma_queue.emp`). No preserves/flag/
-closure consumer touched; `charged_edges` not restructured beyond the self-contained
-targets arm. Byte bar: all seven ROM anchors byte-identical; full_crc drift on the
-six deb2 shapes is appendix-only (blessed by provenance.toml); warn tiers 19/18
-unchanged.
+`z80_cycles.rs`, `lower/code.rs` (the centralized check), `lower/proc.rs` (call
+removed), the `targets:` field threaded through every `CodeItem::Instr` /
+`InstrLine` construction site, tests, and docs (this packet + gap-ledger + B′-3b §6
+pointer) + the golden refreeze (chain 48). One aeon file (`dma_queue.emp`). No
+preserves/flag/closure consumer touched; `charged_edges` not restructured beyond
+the self-contained targets arm. Byte bar: all seven ROM anchors byte-identical;
+full_crc drift on the six deb2 shapes is appendix-only (chain-48 refreeze); warn
+tiers 19/18 unchanged.
