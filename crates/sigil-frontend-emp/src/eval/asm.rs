@@ -374,6 +374,7 @@ impl Evaluator<'_> {
                     ops: vec![],
                     span: *span,
                     as_type: None,
+                    targets: Vec::new(),
                     author: self.item_author.clone(),
                 });
             }
@@ -753,6 +754,7 @@ impl Evaluator<'_> {
                     span,
                     dispatch_bound: None,
                     discards: None,
+                    targets: Vec::new(),
                 });
                 self.lower_asm_stmt(&jsr, scope, buf, env);
             }
@@ -1123,8 +1125,28 @@ impl Evaluator<'_> {
         let mnemonic = self.resolve_mnemonic(&instr.mnemonic, env)?;
         let size = self.resolve_size(instr.size.as_ref(), instr.span, env)?;
         if mnemonic == "dc" {
+            // `dc` lowers to inline DATA, not a `CodeItem::Instr`, so it never
+            // reaches the enumerated-dispatch validity check — refuse a stray
+            // `targets(...)` here rather than let `dc.w 5 targets(.x)` silently
+            // drop the clause. Data is not a computed transfer; there is nowhere
+            // for control to land.
+            if !instr.targets.is_empty() {
+                self.error(
+                    instr.span,
+                    "[dispatch.targets-on-data] `targets(...)` names where control lands, \
+                     but `dc` emits DATA, not a transfer — a data directive has no landing \
+                     points to enumerate",
+                );
+            }
             return self.lower_dc(instr, size, env);
         }
+        // The enumerated-dispatch `targets(...)` labels, resolved through THIS
+        // proc's label scope so each name matches the mangled symbol its
+        // `CodeItem::Label` carries — the same rewrite a branch target gets. The
+        // clause emits nothing; only the cycle-budget walk reads the resolved set.
+        // Empty for an instruction with no clause.
+        let targets: Vec<String> =
+            instr.targets.iter().map(|t| scope.resolve_ref(t)).collect();
         if mnemonic == "movem" {
             let ops = self.map_movem_operands(instr, scope, env, size)?;
             return Some(CodeItem::Instr {
@@ -1133,6 +1155,7 @@ impl Evaluator<'_> {
                 ops,
                 span: instr.span,
                 as_type: instr.dispatch_bound.clone(),
+                targets,
                 author: self.item_author.clone(),
             });
         }
@@ -1169,6 +1192,7 @@ impl Evaluator<'_> {
             ops,
             span: instr.span,
             as_type: instr.dispatch_bound.clone(),
+            targets,
             author: self.item_author.clone(),
         })
     }

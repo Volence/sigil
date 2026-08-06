@@ -226,6 +226,13 @@ pub(super) fn lower_proc(
     // `@budget(cycles: N)` ceiling and the `@cycles_exact` equal-cost proof.
     // Purely declaration-driven — a proc carrying neither attribute is not walked.
     check_cycle_budget(file, proc, &buf, &ctx, diags);
+
+    // The enumerated-dispatch `targets(...)` validity check (§1) is NOT here: it
+    // runs in `lower_code_buf` (super::lower_code_buf, called above at #? for this
+    // proc's buf), the single chokepoint EVERY code buf funnels through — a named
+    // proc, a dispatch-table inline body, a script body, or an item-position
+    // `asm {}` template. Running it there catches a `targets(...)` clause on any
+    // path with no double-report.
 }
 
 /// Report the `[stack.*]` findings for one proc body.

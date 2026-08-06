@@ -98,7 +98,7 @@ pub(crate) fn expand_buf(
     let items = std::mem::take(&mut buf.items);
     for item in items {
         match item {
-            CodeItem::Instr { ref mnemonic, size, ref ops, span, ref as_type, ref author }
+            CodeItem::Instr { ref mnemonic, size, ref ops, span, ref as_type, ref author, .. }
                 if is_mul_mnemonic(mnemonic) =>
             {
                 if cpu == Cpu::Z80 {
@@ -354,7 +354,7 @@ fn expand_mul_bounded(
         ];
         let add = instr("add", Some(Width::L), vec![reg(s), reg(dst)], span);
         // Worst-case cycles from the SAME cost seam as everything else.
-        let setup_cost: u32 = setup.iter().map(|i| item_worst_cycles(i)).sum();
+        let setup_cost: u32 = setup.iter().map(item_worst_cycles).sum();
         let (bcs_taken, bcs_not_taken) = branch_cost("bcs", Some(Width::S));
         let (dbf_taken, dbf_not_taken) = branch_cost("dbf", None);
         let add_cost = item_worst_cycles(&add);
@@ -513,6 +513,7 @@ fn instr(mnemonic: &str, size: Option<Width>, ops: Vec<CodeOperand>, span: Span)
         ops,
         span,
         as_type: None,
+        targets: Vec::new(),
         // The placeholder the expansion's final `reauthor_user_items` pass
         // lifts to the construct item's own authorship.
         author: ItemAuthor::User,
@@ -1006,6 +1007,7 @@ mod tests {
                 ops: vec![reg(Reg::D0), imm(66)],
                 span: sp(),
                 as_type: None,
+                targets: Vec::new(),
                 author: ItemAuthor::User,
             }],
         };

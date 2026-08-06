@@ -501,3 +501,197 @@ fn a_split_conditional_charges_each_edge_separately() {
     let f = assert_one(&d, "cycles.path-mismatch");
     assert!(f.message.contains("21") && f.message.contains("22"), "{}", f.message);
 }
+
+// ===========================================================================
+// Enumerated dispatch — `targets(...)` (enumerated-dispatch design)
+// ===========================================================================
+
+/// Every `[dispatch.*]` diagnostic, whatever the id.
+fn dispatch_diags(diags: &[Diagnostic]) -> Vec<&Diagnostic> {
+    diags.iter().filter(|d| d.message.contains("[dispatch.")).collect()
+}
+
+/// A 68k module whose proc `f` carries the given attribute line and body,
+/// clobbering a1/a5 the way the drain shape does.
+fn dispatch_mod(attrs: &str, body: &str) -> Vec<Diagnostic> {
+    lower_cpu(
+        &format!("module m\n{attrs}\nproc f () clobbers(a1/a5) {{\n{body}}}\n"),
+        Cpu::M68000,
+    )
+}
+
+/// The dma-drain shape in miniature, full pipeline: a computed `jmp` enumerated
+/// over three local labels, the drain groups falling through each other. The
+/// dearest arm is `jmp`(10) + two `move.l`(20) + `rts`(16) = 66.
+const DISPATCH_BODY: &str = "\
+        jmp     .table(a1) targets(.done, .drain_2, .drain_1)\n\
+    .table:\n\
+        rts\n\
+    .drain_2:\n\
+        move.l  (a1)+, (a5)\n\
+    .drain_1:\n\
+        move.l  (a1)+, (a5)\n\
+        rts\n\
+    .done:\n\
+        rts\n";
+
+/// End-to-end (spec §5 positive pin): the clause resolves through the label
+/// scope, the walk sees THROUGH the dispatch, and a budget pinned at the measured
+/// ceiling verifies clean — no cycle finding, no dispatch refusal.
+#[test]
+fn an_enumerated_dispatch_verifies_its_budget() {
+    let d = dispatch_mod("@budget(cycles: 66)", DISPATCH_BODY);
+    assert_silent(&d);
+    assert!(dispatch_diags(&d).is_empty(), "no refusal on a well-formed clause: {:?}", dispatch_diags(&d));
+}
+
+/// One under the ceiling and the walk reports the measured 66 — proof the number
+/// came from the enumerated arms, not the prose.
+#[test]
+fn an_enumerated_dispatch_over_budget_names_its_cost() {
+    let d = dispatch_mod("@budget(cycles: 65)", DISPATCH_BODY);
+    let f = assert_one(&d, "cycles.over-budget");
+    assert!(f.message.contains("66"), "names the measured worst path: {}", f.message);
+}
+
+/// Without the clause the SAME jmp is the pre-form refusal: a computed transfer
+/// the walk will not put a number on.
+#[test]
+fn without_the_clause_the_dispatch_still_refuses() {
+    let body = DISPATCH_BODY.replacen(" targets(.done, .drain_2, .drain_1)", "", 1);
+    let d = dispatch_mod("@budget(cycles: 66)", &body);
+    assert_one(&d, "cycles.computed-transfer");
+}
+
+/// The refusals, each a full-pipeline probe with the corpus spelling.
+#[test]
+fn targets_on_a_call_refuses_end_to_end() {
+    let d = dispatch_mod("", "        jsr (a1) targets(.done)\n    .done:\n        rts\n");
+    let r = dispatch_diags(&d);
+    assert_eq!(r.len(), 1, "{r:?}");
+    assert!(r[0].message.contains("[dispatch.targets-on-call]"), "{}", r[0].message);
+    assert_eq!(r[0].level, Level::Error);
+}
+
+#[test]
+fn targets_on_a_direct_jmp_refuses_end_to_end() {
+    let d = dispatch_mod("", "        jmp .done targets(.done)\n    .done:\n        rts\n");
+    let r = dispatch_diags(&d);
+    assert_eq!(r.len(), 1, "{r:?}");
+    assert!(r[0].message.contains("[dispatch.targets-redundant]"), "{}", r[0].message);
+}
+
+#[test]
+fn an_unknown_target_refuses_end_to_end() {
+    let d = dispatch_mod("", "        jmp .table(a1) targets(.typo)\n    .table:\n        rts\n");
+    let r = dispatch_diags(&d);
+    assert_eq!(r.len(), 1, "{r:?}");
+    assert!(r[0].message.contains("[dispatch.target-unknown]"), "{}", r[0].message);
+}
+
+#[test]
+fn a_nonlocal_target_refuses_end_to_end() {
+    let d = dispatch_mod("", "        jmp .table(a1) targets(SomeGlobal)\n    .table:\n        rts\n");
+    let r = dispatch_diags(&d);
+    assert_eq!(r.len(), 1, "{r:?}");
+    assert!(r[0].message.contains("[dispatch.target-nonlocal]"), "{}", r[0].message);
+}
+
+#[test]
+fn a_duplicate_target_refuses_end_to_end() {
+    let d = dispatch_mod(
+        "",
+        "        jmp .table(a1) targets(.done, .done)\n    .table:\n        rts\n    .done:\n        rts\n",
+    );
+    let r = dispatch_diags(&d);
+    assert_eq!(r.len(), 1, "{r:?}");
+    assert!(r[0].message.contains("[dispatch.target-duplicate]"), "{}", r[0].message);
+}
+
+/// The empty set is a contradiction, refused at PARSE (before lowering) — so the
+/// probe reads the parse diagnostics directly.
+#[test]
+fn an_empty_target_set_refuses_at_parse() {
+    let (_f, perrs) = parse_str("module m\nproc f () {\n    jmp .table(a1) targets()\n.table:\n    rts\n}\n");
+    assert!(
+        perrs.iter().any(|d| d.message.contains("[dispatch.targets-empty]")),
+        "parse diagnostics: {perrs:?}"
+    );
+}
+
+/// §1 composition: `as ContractType` and `targets(...)` are orthogonal and parse
+/// together on one instruction (as bounds CLOBBER, targets bounds GO).
+#[test]
+fn as_type_and_targets_compose_in_the_grammar() {
+    let (_f, d) =
+        parse_str("module m\nproc f () {\n    jmp .t(a1) as Foo targets(.a, .b)\n.a:\n    rts\n.b:\n    rts\n}\n");
+    assert!(d.is_empty(), "`as` and `targets` should parse together: {d:?}");
+}
+
+/// The clause is checked on a DISPATCH-table inline body (not just a named proc):
+/// the buf funnels through the same `lower_code_buf` chokepoint. A `targets(.typo)`
+/// there must refuse, not silently carry.
+#[test]
+fn a_dispatch_inline_body_checks_its_targets() {
+    let d = lower_cpu(
+        "module m\ndispatch R (encoding: word_offsets) {\n    Go: { jmp .t(a1) targets(.typo)\n.t:\n    rts },\n}\n",
+        Cpu::M68000,
+    );
+    let r = dispatch_diags(&d);
+    assert!(
+        r.iter().any(|x| x.message.contains("[dispatch.target-unknown]")),
+        "dispatch inline body must check its targets: {r:?}"
+    );
+}
+
+/// The clause is checked on a SCRIPT body (the third funnel through
+/// `lower_code_buf`). A `targets(.typo)` there must refuse.
+#[test]
+fn a_script_body_checks_its_targets() {
+    let src = "module m\n\
+newtype ScriptPc = u16\n\
+struct S (size: $24) {\n\
+    _pad0: [u8; $20],\n\
+    resume: ScriptPc @ $20,\n\
+    _pad1: [u8; 2] @ $22,\n\
+}\n\
+script s (a0: *S) (encoding: word_offsets) shows Draw {\n\
+    jmp .t(a1) targets(.typo)\n\
+.t:\n\
+    yield\n\
+}\n";
+    let d = lower_cpu(src, Cpu::M68000);
+    let r = dispatch_diags(&d);
+    assert!(
+        r.iter().any(|x| x.message.contains("[dispatch.target-unknown]")),
+        "script body must check its targets: {r:?}"
+    );
+}
+
+/// A `dc` directive lowers to inline DATA, never a `CodeItem::Instr`, so it would
+/// skip the enumerated-dispatch check — a stray `targets(...)` on it is refused
+/// loudly rather than silently dropped.
+#[test]
+fn targets_on_dc_data_is_refused() {
+    let d = dispatch_mod("", "        dc.w 5 targets(.x)\n");
+    assert!(
+        d.iter().any(|x| x.message.contains("[dispatch.targets-on-data]")),
+        "dc must refuse a targets clause: {:?}",
+        d.iter().map(|x| &x.message).collect::<Vec<_>>()
+    );
+}
+
+/// A trailing label (one that closes the body) named as a target is refused
+/// end-to-end: a fall-off is not a landing point.
+#[test]
+fn a_trailing_target_refuses_end_to_end() {
+    let d = dispatch_mod(
+        "",
+        "        jmp .t(a1) targets(.done)\n    .t:\n        rts\n    .done:\n",
+    );
+    let r = dispatch_diags(&d);
+    assert!(
+        r.iter().any(|x| x.message.contains("[dispatch.target-trailing]")),
+        "trailing-label target must refuse: {r:?}"
+    );
+}

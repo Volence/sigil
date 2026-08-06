@@ -2093,6 +2093,13 @@ pub struct InstrLine {
     /// `Some(name)` names the discarded flag-result; `None` on an unannotated
     /// instruction. Emits nothing (metadata for the caller-side check).
     pub discards: Option<String>,
+    /// A trailing `targets(.a, .b, …)` enumerated-dispatch clause (enumerated-
+    /// dispatch design, 2026-08-05): the finite set of LOCAL labels an
+    /// unconditional COMPUTED transfer (`jmp .table(a1)`) can land on. The names
+    /// are source-spelled here (a leading-dot `.local` or a bare/qualified name);
+    /// lowering resolves each through the label scope. Empty for an instruction
+    /// with no clause. Emits nothing — only the cycle-budget walk consumes it.
+    pub targets: Vec<String>,
     /// Span of the whole instruction line.
     pub span: Span,
 }

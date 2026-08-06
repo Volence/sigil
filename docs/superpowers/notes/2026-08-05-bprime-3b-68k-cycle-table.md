@@ -201,6 +201,18 @@ actually pick for the RAM slot vars, the true worst case is 662.
 than the slot-8 chain, so slot-8 is the worst path — consistent with the
 author's own framing.
 
+**Update (enum-dispatch, 2026-08-05): this refusal is now LIFTED at the
+flagship, and the walk lands on the SAME 670 this section derives.** The
+enumerated-dispatch `targets(...)` form
+(`specs/2026-08-05-enumerated-dispatch-design.md`) names the nine PHYSICAL
+landing labels (`.slot_0..8`, each at `.jump_table + k·14`), so the walk charges
+each slot's dispatch body before following into its drain and
+`Process_DMA_Critical` carries `@budget(cycles: 670)` — the exact worst chain
+above (`movea.w` 16 + `suba.w` 12 + `jmp` 10 + `lea` 12 + `lea` 12 + 576 +
+`move.w` reset 16 + `rts` 16). The measured, prose, and table numbers now MEET.
+(An earlier cut named the downstream drain labels and measured 646 — 24 under,
+fanning past the slot-8 leas; corrected to the landing labels.)
+
 ## §7 — The corpus census (sonic4 shape, throwaway instrumentation, removed)
 
 **Mnemonic/EA coverage:** the 68k corpus is 8,006 instructions over ~60

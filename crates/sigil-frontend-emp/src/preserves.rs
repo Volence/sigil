@@ -1450,6 +1450,7 @@ mod frame_tests {
             ops,
             span: Span { source: SourceId(0), start: idx, end: idx + 1 },
             as_type: None,
+            targets: Vec::new(),
             author: crate::value::ItemAuthor::User,
         }
     }

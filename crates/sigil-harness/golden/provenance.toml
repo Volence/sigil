@@ -2280,3 +2280,57 @@ full_crc = "6c296656"
 full_size = 423480
 anchor_crc = "8448717a"
 anchor_end = 0x5f758
+
+[[entry]]
+name = "enum-dispatch"
+ab = ""
+note = "enumerated dispatch: nine .slot_k landing labels record real code locations; deb2 appendix grows per shape (s4 +171, s4.debug +191, demo +171, demo.debug +178, config_a +178, config_b +173 B; lean unchanged); all 7 ROM anchors byte-identical (identity proof)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "61e4e78e"
+full_size = 424049
+anchor_crc = "bf1dde89"
+anchor_end = 0x5f758
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "07e3f465"
+full_size = 301305
+anchor_crc = "db32d41b"
+anchor_end = 0x42d90
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "cbddc142"
+full_size = 91429
+anchor_crc = "1a72e3e0"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "b61f462d"
+full_size = 94133
+anchor_crc = "efd16be5"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "b92cb485"
+full_size = 379110
+anchor_crc = "d32cee18"
+anchor_end = 0x5c8e6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "b5ffb094"
+full_size = 411267
+anchor_crc = "b5be8fef"
+anchor_end = 0x5d968
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "57fd08f9"
+full_size = 423671
+anchor_crc = "8448717a"
+anchor_end = 0x5f758
