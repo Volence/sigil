@@ -1879,8 +1879,8 @@ fn check_preserves_sr(
     // preserver is CREDITED (the tail edge discharged; the body's own SR writes
     // must still round-trip below); a tail to anything else is REFUSED, closing
     // the vacuity hole a mask-claiming tail-only body would pass through. A
-    // trailing-LOCAL-label transfer is not an external tail — this lane does not
-    // special-case it (spec §3); it stays with the round-trip slice.
+    // transfer INTO a local label (the builder classifies it `Follow`/`FallOff`)
+    // is not an external tail and stays with the round-trip slice.
     if let Some(target) = terminal_external_tail(buf, noreturn) {
         if !sr_mask_preservers_credit(sr_mask_preservers, &target) {
             push(
@@ -1915,15 +1915,14 @@ fn check_preserves_sr(
 }
 
 /// The target symbol of a body's terminating UNCONDITIONAL EXTERNAL tail transfer
-/// (`bra`/`jbra`/`jmp` to a symbol that is neither a local label with a following
-/// instruction nor a body-closing local label), or `None` when the body returns,
-/// runs off its end, transfers to a local label, or DIVERGES. The shape the
+/// (`bra`/`jbra`/`jmp` to an external symbol), or `None` when the body returns,
+/// runs off its end, transfers into a local label, or DIVERGES. The shape the
 /// mask-claim tail credit consults: the caller-observed SR past this exit is
 /// entirely the tail target's. The last instruction's SOLE edge being
-/// `Edge::Defer` identifies the unconditional external transfer; the extra
-/// `is_local_label` guard keeps a trailing-local pseudo-`Defer` (which t-edges
-/// reclassifies) out — this lane must not special-case it (spec §3), so it reads
-/// as "no external tail" and stays with the round-trip slice.
+/// `Edge::Defer` identifies the unconditional external transfer — the unified
+/// `Cfg::edges` builder classifies a transfer INTO a local label (including a
+/// body-closing trailing label) as `Follow`/`FallOff`, so a `Defer` here is
+/// always a genuine external tail; no trailing-label special case is needed.
 ///
 /// A DIVERGENT tail — an `AssertDesugar`-authored assert/raise rail, or a jump to
 /// a `@noreturn` handler — never returns to the caller, so it carries no mask
@@ -1946,9 +1945,6 @@ fn terminal_external_tail(buf: &crate::value::CodeBuf, noreturn: &BTreeSet<Strin
         return None; // an authored divergent rail — never returns
     }
     let target = transfer_target_sym(ops)?;
-    if cfg.is_local_label(target) {
-        return None; // a trailing-local pseudo-Defer — not an external tail
-    }
     if noreturn.contains(target) {
         return None; // a `@noreturn` tail — never returns
     }
