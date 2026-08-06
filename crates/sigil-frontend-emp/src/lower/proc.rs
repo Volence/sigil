@@ -165,7 +165,7 @@ pub(super) fn lower_proc(
     // every register write is undeclared) — likewise a modernization warning
     // silenced under `@as_compat`.
     if proc.clobbers.is_some() && !ctx.as_compat {
-        check_clobbers(proc, &buf, ctx.cpu, diags);
+        check_clobbers(proc, &buf, ctx.cpu, ctx.noreturn, ctx.sr_mask_preservers, diags);
     }
 
     // 5. Preserves contract. On Z80 (rung-2 §4.2) the push/pop `preserves` proof
@@ -977,6 +977,8 @@ fn check_clobbers(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,
     cpu: Cpu,
+    noreturn: &BTreeSet<String>,
+    sr_mask_preservers: &BTreeMap<String, BTreeSet<String>>,
     diags: &mut Vec<Diagnostic>,
 ) {
     // On Z80 (rung-2 §2/§2.2, gap 1) the reglist validates against the Z80
@@ -1037,7 +1039,7 @@ fn check_clobbers(
     // ONLY the declared set that PASSES §5 (∅ on any preserves error), so a
     // declared-but-UNVERIFIABLE preserves subtracts nothing and the register still
     // fires — the lint keeps its teeth against a lying `preserves`.
-    allowed.extend(verified_preserves_regs(proc, buf));
+    allowed.extend(verified_preserves_regs(proc, buf, noreturn, sr_mask_preservers));
     // Whether any clause covers the MASK half — computed once, read per item.
     // A whole-SR destination always writes the mask, so only a mask-covering
     // token (`sr` or `sr.mask`, in any clause) addresses it; `sr.ccr` alone
@@ -2481,6 +2483,8 @@ fn preserve_mask(proc: &ast::ProcDecl) -> u16 {
 pub fn verified_preserves_regs(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,
+    noreturn: &BTreeSet<String>,
+    sr_mask_preservers: &BTreeMap<String, BTreeSet<String>>,
 ) -> BTreeSet<String> {
     if proc.preserves.is_empty() {
         return BTreeSet::new();
@@ -2488,12 +2492,15 @@ pub fn verified_preserves_regs(
     let mut sink = Vec::new();
     // This caller reads only the ERROR-tier round-trip verdict for the REGISTER
     // preserves (the `sr` token is dropped from the register-file closure); the
-    // bare-`sr` CCR advisory (warn) is discarded, so an empty `@noreturn` set is
-    // sufficient, and an empty mask-preservers set only means a mask-claim tail is
-    // uncreditable here — inert, since no register-preserving proc also claims the
-    // mask through an external tail (the mask-tail adopters carry no register
-    // preserves), so the sr verdict never suppresses a register credit.
-    check_preserves(proc, buf, &BTreeSet::new(), &BTreeMap::new(), &mut sink);
+    // bare-`sr` CCR advisory (warn) is discarded. The `@noreturn` set and the
+    // mask-preservers map are threaded from the caller — the SAME sources the
+    // primary `check_preserves` call consumes — so this register verdict stays
+    // consistent with the primary path the day a proc both register-preserves AND
+    // claims the mask through an external tail (a mask-tail verdict could then
+    // suppress a register credit). On the frozen corpus no proc does, so the
+    // threaded sets are inert here (measured byte-identical); the coupling no
+    // longer rots silently.
+    check_preserves(proc, buf, noreturn, sr_mask_preservers, &mut sink);
     if sink.iter().any(|d| matches!(d.level, Level::Error)) {
         return BTreeSet::new();
     }
@@ -2529,15 +2536,17 @@ pub fn verified_preserves_regs(
 pub fn preserve_oracle_inputs(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,
+    noreturn: &BTreeSet<String>,
+    sr_mask_preservers: &BTreeMap<String, BTreeSet<String>>,
 ) -> (Vec<crate::value::Reg>, BTreeSet<String>) {
     if proc.preserves.is_empty() {
         return (Vec::new(), BTreeSet::new());
     }
     let mut sink = Vec::new();
-    // ERROR-tier verdict only (see `verified_preserves_regs`); empty `@noreturn`
-    // and empty mask-preservers (the register-credit inputs never depend on the
-    // mask-tail verdict — see `verified_preserves_regs`).
-    check_preserves(proc, buf, &BTreeSet::new(), &BTreeMap::new(), &mut sink);
+    // ERROR-tier verdict only (see `verified_preserves_regs`); the `@noreturn` set
+    // and mask-preservers map are threaded from the caller (the same sources the
+    // primary path consumes), inert on the frozen corpus and measured so.
+    check_preserves(proc, buf, noreturn, sr_mask_preservers, &mut sink);
     if sink.iter().any(|d| matches!(d.level, Level::Error)) {
         return (Vec::new(), BTreeSet::new());
     }

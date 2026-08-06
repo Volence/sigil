@@ -1830,12 +1830,18 @@ pub(crate) fn collect_noreturn_symbols(items: &[ast::Item]) -> std::collections:
 /// an extern preserver has no body, so it maps to an empty label set (plain-name
 /// credit only). Recurses into sections.
 ///
-/// The membership reads a proc's DECLARED `preserves` only, not the module
-/// `invariant` union the design's oracle also names — a conservative, corpus-dead
-/// simplification: a module-scope `invariant: preserves(sr.mask)` is a rung-2 Z80
-/// construct with no 68k adopter today, so a 68k proc that preserves the mask
-/// only THROUGH an inherited invariant is silently uncredited (a refusal, the safe
-/// direction). Union the invariant here the day a 68k module carries one.
+/// Membership is a proc's DECLARED `preserves` UNIONED with the module-scope
+/// `invariant`: a module carrying `invariant: preserves(sr)` /
+/// `invariant: preserves(sr.mask)` guarantees the mask through every proc, so
+/// each proc (and `extern proc`) in that module counts as a mask-preserver even
+/// with no explicit `preserves` — the §3.2 inheritance the design's oracle names.
+/// The invariant coverage is read from the raw module attr form (its args carry
+/// the `sr`/`sr.mask` spelling directly), independent of the register-file
+/// reglist expansion `validate_module_invariants` runs — SR is not a movem
+/// register, so the two paths recognize the mask token by its spelling. The union
+/// is corpus-dead today (no 68k module carries a mask invariant), so this credits
+/// nothing on the frozen corpus; it removes the silent under-credit the day one
+/// does.
 pub(crate) fn collect_sr_mask_preservers(
     items: &[ast::Item],
     file: &ast::File,
@@ -1846,6 +1852,32 @@ pub(crate) fn collect_sr_mask_preservers(
         preserves
             .iter()
             .any(|(lo, hi)| hi.is_none() && (lo == "sr" || lo == "sr.mask"))
+    }
+    /// Whether the module carries an `invariant: preserves(...)` whose arg list
+    /// names the mask (`sr` or `sr.mask`) — the module-wide guarantee that makes
+    /// every proc a mask-preserver by §3.2 inheritance. Reads the raw attr Expr:
+    /// each arg is a bare path, so `sr` is a one-segment path and `sr.mask` a
+    /// two-segment one; joined with `.` they match the same two spellings
+    /// `tokens_cover_mask` accepts (`sr.ccr` is excluded — it does not cover the
+    /// mask half). `holds(...)` (the value-bound invariant form) never names a
+    /// register mask, so only `preserves(...)` is inspected.
+    fn module_invariant_covers_mask(module: &ast::ModuleDecl) -> bool {
+        module.attrs.iter().any(|(name, expr)| {
+            if name != "invariant" {
+                return false;
+            }
+            let ast::Expr::Call { callee, args, .. } = expr else { return false };
+            if callee.segments.last().map(String::as_str) != Some("preserves") {
+                return false;
+            }
+            args.iter().any(|a| match &a.value {
+                ast::Expr::Path(p) => {
+                    let joined = p.segments.join(".");
+                    joined == "sr" || joined == "sr.mask"
+                }
+                _ => false,
+            })
+        })
     }
     /// The owner's export labels that precede its FIRST SR-touching instruction.
     /// A re-evaluation of the body (discarding diagnostics) reads the resolved
@@ -1887,23 +1919,27 @@ pub(crate) fn collect_sr_mask_preservers(
         file: &ast::File,
         defines: &[(String, i128)],
         contracts: &crate::contract::InterfaceEnv,
+        inv_covers: bool,
         map: &mut std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
     ) {
         for item in items {
             match item {
-                ast::Item::Proc(p) if tokens_cover_mask(&p.preserves) => {
+                ast::Item::Proc(p) if inv_covers || tokens_cover_mask(&p.preserves) => {
                     map.insert(p.name.clone(), safe_entry_labels(p, file, defines, contracts));
                 }
-                ast::Item::ExternProc(e) if tokens_cover_mask(&e.sig.preserves) => {
+                ast::Item::ExternProc(e) if inv_covers || tokens_cover_mask(&e.sig.preserves) => {
                     map.insert(e.name.clone(), std::collections::BTreeSet::new());
                 }
-                ast::Item::Section(sec) => walk(&sec.items, file, defines, contracts, map),
+                ast::Item::Section(sec) => {
+                    walk(&sec.items, file, defines, contracts, inv_covers, map)
+                }
                 _ => {}
             }
         }
     }
+    let inv_covers = module_invariant_covers_mask(&file.module);
     let mut map = std::collections::BTreeMap::new();
-    walk(items, file, defines, contracts, &mut map);
+    walk(items, file, defines, contracts, inv_covers, &mut map);
     map
 }
 
@@ -2316,5 +2352,71 @@ fn validate_defines(items: &[ast::Item], defines: &[(String, i128)], diags: &mut
                 format!("[defines.collision] '{define_name}' is provided by -D and declared by the module"),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod sr_mask_invariant_tests {
+    //! Item-1 pins: the module-`invariant` union in [`collect_sr_mask_preservers`].
+    //! A module carrying `invariant: preserves(sr)` / `preserves(sr.mask)` credits
+    //! every proc as a mask-preserver by §3.2 inheritance; an invariant that does
+    //! NOT cover the mask credits nothing by inheritance. Corpus-dead today, so
+    //! these are the only witnesses that the union is wired.
+    use super::collect_sr_mask_preservers;
+
+    /// Parse `src` and collect its mask-preservers map (empty defines / contracts).
+    fn preservers(
+        src: &str,
+    ) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+        let (file, perrs) = crate::parse_str(src);
+        assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+        let contracts = crate::contract::InterfaceEnv::empty();
+        collect_sr_mask_preservers(&file.items, &file, &[], &contracts)
+    }
+
+    #[test]
+    fn module_mask_invariant_credits_every_proc() {
+        // Positive: both mask spellings (`sr`, `sr.mask`) make every proc in the
+        // module a mask-preserver with NO explicit `preserves`.
+        for inv in ["sr", "sr.mask"] {
+            let src = format!(
+                "module m (invariant: preserves({inv}))\n\
+                 proc p() {{\n    rts\n}}\n\
+                 proc q() {{\n    rts\n}}\n"
+            );
+            let map = preservers(&src);
+            assert!(map.contains_key("p"), "invariant preserves({inv}): `p` uncredited: {map:?}");
+            assert!(map.contains_key("q"), "invariant preserves({inv}): `q` uncredited: {map:?}");
+        }
+    }
+
+    #[test]
+    fn non_mask_invariant_credits_only_self_declared() {
+        // Negative twin: an invariant naming only the CCR half (`sr.ccr`) does NOT
+        // cover the mask, so it credits nothing by inheritance — only a proc's OWN
+        // `preserves(sr)` is credited. `keeper` is the non-vacuity guard: the map
+        // mechanism is live, so `plain`'s absence is a real refusal, not a wholly
+        // empty map.
+        let src = "module m (invariant: preserves(sr.ccr))\n\
+                   proc plain() {\n    rts\n}\n\
+                   proc keeper() preserves(sr) {\n    rts\n}\n";
+        let map = preservers(src);
+        assert!(!map.contains_key("plain"), "`sr.ccr` invariant must not credit `plain`: {map:?}");
+        assert!(map.contains_key("keeper"), "self-declared `preserves(sr)` must be credited: {map:?}");
+    }
+
+    #[test]
+    fn no_invariant_credits_only_self_declared() {
+        // Negative twin: no module invariant at all — same refusal, same
+        // non-vacuity guard (`keeper` self-declares `preserves(sr.mask)`).
+        let src = "module m\n\
+                   proc plain() {\n    rts\n}\n\
+                   proc keeper() preserves(sr.mask) {\n    rts\n}\n";
+        let map = preservers(src);
+        assert!(!map.contains_key("plain"), "no invariant must not credit `plain`: {map:?}");
+        assert!(
+            map.contains_key("keeper"),
+            "self-declared `preserves(sr.mask)` must be credited: {map:?}"
+        );
     }
 }
