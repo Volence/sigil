@@ -64,9 +64,15 @@ For `mul_const.w(n)`:
    lowering of ×1 mod 2^16 is nothing). Deterministic, pinned.
 4. n = 2^k → `lsl.w` run(s) on dst directly (k ≥ 1; runs ≤ 8 per lsl).
 5. With scratch, ≥ 2 set bits: the word add/shift chain over
-   `move.w dst, scr` seeds (`add.w`/`lsl.w` bodies — word ops throughout),
-   left-to-right binary + the subtract form, mirroring the long generators
-   at word width.
+   `move.w dst, scr` seeds (`add.w`/`lsl.w` bodies — word ops throughout).
+   For EXACTLY 2 set bits the candidate is the two-power sum-of-shifted-terms
+   chain — the §4 pinned costs (34/40/44) are its sums, and this is
+   load-bearing: a faithful left-to-right binary chain at 2 bits prices
+   32/32/34, would win the cost decision, and would defeat the §4
+   byte-identity bar at every site. LTR + the subtract form apply at ≥ 3 set
+   bits only. The suppressed-cheaper-LTR fact is a recorded step-5 finding
+   (the hand chains sit 2–10 cycles from optimal; recoverable only by a
+   deliberate byte-changing parcel), never a silent default.
 
 For `mul_bounded.w`: `mulu.w` (70 ceiling) vs the word repeated-add loop
 (priced from the same seam). Same tie-breaking as the long form: fewest
