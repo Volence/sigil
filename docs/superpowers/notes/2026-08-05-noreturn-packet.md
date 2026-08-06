@@ -1,8 +1,10 @@
 # noreturn-tail model — packet (2026-08-05)
 
-Executes the ruled spec `specs/2026-08-05-noreturn-tail-design.md`. Branch
-`noreturn` in both worktrees, cut from sigil `326809e5` / aeon `b9b1056`. NOT
-merged, NOT pushed — the overseer merges after a lens panel.
+Executes the ruled spec `specs/2026-08-05-noreturn-tail-design.md` (amended on
+master `ad670db4` after the first panel round: the trailing-local fall-off and
+the `falls_into` composition rule). Branch `noreturn` in both worktrees, cut
+from sigil `326809e5` / aeon `b9b1056`. No merge-state claims — the overseer
+owns the queue.
 
 ## Numbers first
 
@@ -14,36 +16,46 @@ merged, NOT pushed — the overseer merges after a lens panel.
   re-cmp'd OK after the config clobbers. The adoption emits no bytes; every
   analysis change is byte-neutral.
 - **Strict** (`SIGIL_STRICT_GATE=1 AEON_DIR=<aeon b8> cargo test --workspace
-  --release --no-fail-fast`, foreground, failures-first): **3380 passed / 0
-  failed / 4 ignored** across 310 suites. Base `#[test]` at the branch point =
-  **3369**; the tree now holds **3384** (`git grep -c '#\[test\]'`), the +15 are
-  this lane's new tests, all passing. `3380 + 4 = 3384` — nothing skipped. The
-  four ignored are the standing set.
+  --release --no-fail-fast`, foreground, failures-first, re-run after the fix-up):
+  **3386 passed / 0 failed / 4 ignored** across 310 suites. Base `#[test]` at the
+  branch point = **3369**; the tree now holds **3390** (`git grep -c '#\[test\]'`),
+  the +21 are this lane's new tests (15 model + 6 fix-up), all passing.
+  `3386 + 4 = 3390` — nothing skipped. `refreeze --check: OK (chain len 47)`.
 - **Warn tiers: UNCHANGED in every shape**, measured before (branch point) and
-  after: plain 19 · debug 18 · demo 19 · demodbg 18 · config_a 18 · config_b 19
-  · lean 18, identical id breakdowns (module.path-mismatch, undeclared-
-  fallthrough, out-unwritten, clobber-undeclared). **`[proc.ccr-advisory]` fires
-  ZERO times in every shape** — see §CCR below.
+  after the fix-up: plain 19 · debug 18 · demo 19 · demodbg 18 · config_a 18 ·
+  config_b 19 · lean 18, identical id breakdowns (module.path-mismatch,
+  undeclared-fallthrough, out-unwritten, clobber-undeclared). **`[proc.ccr-
+  advisory]` and `[noreturn.returns]` fire ZERO times in every shape** — the S1
+  (falls_into) and M1 (trailing-local) refusals tripped NO corpus proc; only
+  test-fixture behavior changed, per the panel's expectation.
 - **repin: pins.rs / engine.inc / mixed_dac_rom.rs / repin_pins.rs / repin.toml
   UNTOUCHED** (git status clean of all five). No chain bump.
-- **clippy** `--workspace --release --all-targets`: clean on the Rust side (exit
-  0 under `-D warnings`; the only cc-crate warnings are the pre-existing vendored
-  `sigil-clownlzss-sys` enigma.h C++ warnings, not this lane's).
+- **clippy** `--workspace --release --all-targets`: this lane's changed files are
+  clean. Three PRE-EXISTING warnings surface in files this branch never touches
+  (`mul_lower.rs:357` redundant-closure, `warn_tier_corpus.rs:168-169` doc-list);
+  `git diff` against the branch point shows both files untouched, so they are not
+  this lane's — left for the owning parcel.
 
 ## Commits (for the queue)
 
 - sigil `0dce3719` — noreturn-tail model (code): `@noreturn` attr + check + set,
-  cycle_budget consumer, AssertDesugar rail stamp, CCR advisory. 9 files.
-- sigil (branch tip, this commit) — ledger (5 rows) + this packet.
+  cycle_budget consumer, AssertDesugar rail stamp, CCR advisory.
+- sigil `ac6ef2bc` — ledger (5 rows) + packet (model round).
+- sigil (fix-up, code) — M1 trailing-local + S2 falls_into composition + S1 tail
+  refusal + S3 unified `transfer_target_sym`, +6 pins.
+- sigil (fix-up, docs) — ledger (census numbers + 4 fix-up rows) + packet update.
 - aeon `ce0eaee` — `@noreturn` on the 12 stubs + ErrorHandlerBlob + GameLoop +
-  EntryPoint. 3 files.
+  EntryPoint.
+- aeon (fix-up) — `@noreturn` on `ReleaseFault`, `SndDrv_Init`/`_Idle`/`_Sample`,
+  `Z80_Sound_Entry`, `Z80_IdleProgram`. 21 decls total.
 
 ## Land order — MEASURED, sigil-first
 
-The aeon adoption does not parse under old sigil: building aeon b8 (with the 15
+The aeon adoption does not parse under old sigil: building aeon b8 (with the 21
 `@noreturn` decls) through a sigil binary at the branch point `326809e5` fails
-with **`[attr.unknown] @noreturn is not a known attribute` × 15** (one per
-adopter). So **sigil must merge before aeon**. Once sigil is in, aeon builds
+with the verbatim error **`[attr.unknown] `@noreturn` is not a known attribute
+(expected one of: as_compat, allow, scaffolding, budget, cycles_exact)`** (one
+per adopter). So **sigil must merge before aeon**. Once sigil is in, aeon builds
 byte-identically (the seven CRCs above were captured with the b8 sigil over b8
 aeon). There is no reverse coupling: old aeon builds under new sigil unchanged
 (the byte bar's baseline was new-sigil/old-aeon).
@@ -159,6 +171,64 @@ All four enabling items:
   proven). The twins stay byte-identical (contracts emit nothing) — this
   asymmetry IS the model, documented in a comment on the fixture.
 
+## Panel fix-up round (spec amended `ad670db4`)
+
+The three-lens panel adjudicated; all items TAKEN in one consolidated round.
+
+- **M1 (Lens B, real 68k soundness hole)** — an unconditional transfer to a
+  TRAILING local label (a `.end:` that closes the body) classifies as
+  `Edge::Defer` on the 68k `Cfg::edges`, and both new checks accepted the lie: a
+  `@noreturn` proc falling off via `bra .out` passed `[noreturn.returns]`, and a
+  `preserves(sr.ccr)`/bare-`sr` proc whose `jbra .end` reads as intra-proc flow
+  was ACCEPTED where it was refused. **Ruled NARROW fix, taken:** `check_noreturn`
+  treats a `Defer` to a trailing local label (`is_local_label(t) &&
+  label_index(t).is_none()`) as a `FallOff`; the CCR walk gates intra-proc on
+  `cfg.label_index(t).is_some()` instead of `is_local_label`. `Cfg::edges` is NOT
+  touched — the 68k builder unification is a ledgered own-parcel (cross-analysis
+  blast radius). Both counterexamples pinned verbatim
+  (`noreturn_trailing_local_transfer_is_a_fall_off`,
+  `ccr_trailing_local_transfer_is_a_leave`).
+- **S1** — `check_ccr_advisory` now reuses the ERROR check's `sr_tail_refusal`
+  (factored): a bare-`sr` proc with a declared `falls_into` or a non-terminator
+  ending refuses BEFORE walking, so it is not silently green
+  (`ccr_advisory_fires_on_a_falls_into_bare_sr_proc`).
+- **S2 (spec-amended composition)** — `[noreturn.returns]` accepts a `FallOff`
+  IFF the proc's `falls_into` names a symbol that is itself `@noreturn`; refused
+  otherwise. Both polarities pinned
+  (`noreturn_falls_into_noreturn_successor_composes`,
+  `noreturn_falls_into_returning_successor_is_refused`). SndDrv_Init is the first
+  live corpus adopter (empty init body + `falls_into SndDrv_Idle`, itself
+  `@noreturn`).
+- **S3** — the `@noreturn` / computed-target extraction is unified in one
+  `flag_check::transfer_target_sym` (`Sym | SymOff | AbsSym`), replacing the
+  `Sym`-only `branch_target` at both consumers, so `jmp (Diverge).l` (an
+  `AbsSym`) matches a `@noreturn` symbol
+  (`a_tail_via_abs_long_to_a_noreturn_target_closes_the_path`). The cycle_budget
+  authored-terminal arm is conjoined with `names_a_target` so it is
+  order-independent with the coming b7 `targets()` arm by construction.
+
+**Adoptions added (Lens C census, byte-neutral, all pass `[noreturn.returns]`
+as-written):** `ReleaseFault` (release_fault.emp — the missed 68k sibling, ends
+`.halt: bra .halt`); Z80 `SndDrv_Idle`/`SndDrv_Sample`/`Z80_Sound_Entry`
+(z80_sound_driver.emp) + `Z80_IdleProgram` (z80_init.emp); and `SndDrv_Init` (the
+S2 live adopter). 21 `@noreturn` decls total.
+
+**INFO edges recorded to the ledger, not code:** a data-only `@noreturn` body
+(`ErrorHandlerBlob`) passes vacuously — an accepted-lie edge for a literally-
+empty proc, load-bearing and by design; `jsr`/`bsr` to a `@noreturn` target
+stays `[cycles.opaque-call]` (conservative, no consumer); the `@noreturn` set is
+per-module (a cross-module divergent tail needs `extern proc @noreturn` re-decl).
+
+**seam1** — the synthesized `extern proc` stubs (`seam1.rs`) now carry `@noreturn`
+across the seam (filtering it OUT of `@budget`/`@scaffolding`, which are
+body-only), so a stub states the same divergence the body proves.
+
+**Fixture dispositions** — `diag_desugar` `golden`↔`construct` (§iv above);
+`diag_assert_vector.rs:147` declares bare `preserves(sr)` on a hand-written raise
+transliteration and its test asserts only ERROR-freedom, so the warn-tier
+advisory (if it fires on the `User`-authored frame-sim) is orthogonal — no change
+needed, disposition recorded.
+
 ## Ledger (spec §5)
 
 - `[t25 error_handler panel A1]` (the noreturn ask) → **CLOSED**.
@@ -168,12 +238,14 @@ All four enabling items:
   OPEN**: noreturn was NOT the sole missing piece — the out-cond transitive
   CHARGE is an out_verify SURVIVES-verifier change (call-target code, scoped out
   §4/§6); now unblocked.
-- `[bprime-2, 2026-08-04]` (stack delta) → **census recorded, charge OFF**: the
-  corpus push-then-tail population is dominated by push + `jbra .local` (intra-
-  proc, `Edge::Follow`, never a `Defer` exit); the genuine push-then-external-
-  tail set cannot be soundly enumerated without running the charge, and
-  preserves.rs's Defer arm is byte-frozen this lane. Unblocked on the divergence
-  distinction; enabling is a dedicated preserves.rs parcel.
+- `[bprime-2, 2026-08-04]` (stack delta) → **census recorded (EMPTY set), charge
+  OFF**: the push-then-EXTERNAL-tail population is ZERO. Every corpus
+  push-then-transfer is push + `jbra .local` (intra-proc, `Edge::Follow`, never a
+  `Defer` exit): `section.emp:533/584/628/667`, `sprites.emp:249/:254`; `pea` in
+  code = 0. No legitimate arg-passing tail to protect and no site the charge would
+  fire on; left OFF because turning it on is a byte-frozen preserves.rs Defer-arm
+  change. Unblocked on the divergence distinction; a future push-then-external-
+  tail is adjudicated when it appears.
 - `[bare-sr-flip lens C, 2026-08-05]` (preserves-through-tail) → **Z80 precedent
   cited** (spec §6): `z80_preserves`'s `Edge::Defer` arm already credits a tail
   transfer to a preserving callee via its `CalleePreserves` oracle; the 68k
