@@ -27,10 +27,12 @@ prices 24 + 14·M instead of 28 + 14·M and its mulu boundary moves from M = 2 t
 M = 3 (mulu at M ≥ 4). Row 2165 predicted exactly this; the prediction was
 confirmed and taken.
 
-Nine sites moved, two are refused-with-reason, and **one was missed by the
-census entirely** (§7 step-5 item 0 — the panel's catch; spec §7 withdraws R2's
-"every multiply is construct-spelled" end-state claim as false). The accurate
-end state is nine moved, two refused, one outstanding — not a completed sweep.
+Nine sites moved, two are refused-with-reason, and **three were missed by the
+census entirely** (§7 step-5 item 0 — the panel's catches; spec §7 then §8
+withdraw R2's "every multiply is construct-spelled" / "no opportunistic adoption
+debt survives" claims as FALSE). The accurate end state: **9 moved, 2
+refused-with-reason, 3 missed-and-now-ledgered, 1 legitimate-non-adoption
+recorded** — a census of 11 sites, not 7, and not a completed sweep.
 
 | Group | Site | Chosen lowering | Δcy | Δsize |
 |---|---|---|---|---|
@@ -46,7 +48,7 @@ end state is nine moved, two refused, one outstanding — not a completed sweep.
 
 Group A needed no `.emp` edit — those sites already spelled `mul_const.w`, and
 R1 alone re-derived their lowering. That is the construct paying off: a
-generator ruling improved six emission sites with zero source churn.
+generator ruling improved five emission sites with zero source churn.
 
 ## 2 · R4: the model chose `mulu` at both loop sites
 
@@ -67,7 +69,7 @@ so the no-scratch form is the honest spelling rather than an invented register.
 
 Anchor SIZE is unchanged on every target — the ~32 B code shrink is absorbed by
 padding before the fixed `EndOfRom` — while anchor CONTENT moved. Full files
-shrink 100 B on the appendix-bearing shapes because Group B removed four deb2
+shrink 99-102 B on the appendix-bearing shapes (per-target below) because Group B removed four deb2
 labels (`.gxy_mul`, `.gxy_add_x`, `.mul_loop`, `.mul_test`); `lean` carries no
 appendix and is size-stable, content-only.
 
@@ -81,8 +83,16 @@ appendix and is size-stable, content-only.
 | config_b | `07e3f465`/301305 → `ace527ba`/301205 | `db32d41b` → `e6e20c75` | 273808 (stable) |
 | lean | `b92cb485`/379110 → `69c20328`/379110 | `d32cee18` → `cd73fb65` | 379110 (stable) |
 
-**Where the shift lands, exactly.** From the committed old size tables against a
-fresh derivation, only nine boundary symbols moved, all inside one band:
+**Where the shift lands, exactly — PER SHAPE.** From the committed old size
+tables against a fresh derivation. The plain shape moves **nine** boundary
+symbols, all inside one band; the debug-family shapes move **eleven**, the two
+extra being debug-only symbols that sit inside the same band
+(`CompressionSelfTest` 0x7548 → 0x7528, `CSelf_S4LZ_Plain` 0x7760 → 0x7740, both
+−0x20). The distinction matters here rather than being pedantry: the debug shape
+is precisely the one whose RAM delta the moved-pointer refutation defends, so
+its own ladder is what has to be quoted.
+
+Plain shape (debug addresses differ; the deltas are identical):
 
 ```
 Collision_GetType    0x5260 -> 0x5250   -0x10
@@ -125,6 +135,15 @@ No site depends on a scratch's final value. The `.fr_no_coll` even-row path
 skips the multiply in both the old and new spellings, so d4's carry-through
 there is unchanged.
 
+**The Group C tie-break is unobservable, which is why nothing pins it.** Spec §3
+directed the porter to pin the tie-break where costs tie at ×80. After R1 there
+is no tie to pin: 5c strictly dominates 5a (equal only at b = 0, where the two
+arms emit the IDENTICAL byte sequence, and cheaper for every b ≥ 1), so no
+`choose()` outcome — and therefore no emitted byte — can depend on how a 5a/5c
+tie is broken. `word_two_power_arm_never_wins` sweeps every 2-set-bit n in
+`0..=$FFFF` and pins exactly that. The directive is answered by proving it
+vacuous rather than left silently unfulfilled.
+
 ## 4a · The behavioural bar (overseer-run), stated with its limits
 
 - **PLAIN shape** — the shipping artifact, and what the owner play-tests:
@@ -152,6 +171,46 @@ there is unchanged.
 - **Not run**: a live A/B of `BISECT2` (Groups A+C+D, also zero-relocation).
   Those sites rest on the byte-delta audit, the static liveness audit and the
   full-parcel identity above, not on a dedicated live control.
+
+## 4b · What the review panel established (stronger than the porter's own claims)
+
+Recording this because in two places the panel proved something the packet had
+only asserted, and in one place it proved the packet's caution unnecessary.
+
+- **The LTR arithmetic is PROVEN, not merely pinned.** All three multipliers
+  re-derived independently (×66: x→32x→33x→66x; ×80 and ×160: x→4x→5x→80x/160x),
+  with an airtight mod-2^16 argument: every emitted op is `.w`, and `.w` ops ARE
+  the mod-2^16 ring operations, so an overflowing intermediate cannot corrupt
+  the low word for ANY x. The equivalence oracle executes each chosen lowering
+  through an ISA-faithful interpreter written independently of the chain
+  constructor, so the proof is not circular.
+- **The Group B upper-word hazard is REFUTED BY PROOF, not by scene luck** —
+  materially stronger than this packet's "undefined but unread" framing. Both
+  sites are guarded (`sec_y < grid_h`), so the product is
+  `< grid_w·grid_h ≤ MAX_ACT_SECTIONS = 48`; a product under 2^16 leaves the
+  upper word ZERO — exactly what `moveq #0` + `add.w` produced before. A nonzero
+  upper word would require `grid_w·grid_h ≥ 65536`, barred by the standing
+  `MAX_ACT_SECTIONS ≤ 496` assert. **That holds for every future act, not just
+  today's.** Downstream was traced to the next full write at both sites anyway:
+  no `.l` read, no `movea.l`, no index-as-long, no `swap`, no long compare.
+  Condition codes: the next instruction at each site is itself a flag-setter,
+  and the Group C/D chains whose last op changed reach no branch without an
+  intervening setter.
+- **Scratch liveness re-derived independently at 8/8 sites**, including branch
+  targets, the DEBUG assert block and the `.fr_no_coll` join — with the
+  structural clincher this packet's table missed: the pre-parcel code already
+  destroyed the same registers, so liveness is *unchanged* and only the residual
+  VALUE differs.
+- **The D1c row removal is genuine**, verified from `closure.rs`'s definition
+  (effective sets are BODY-derived, not declaration-derived) rather than from
+  the packet's prose.
+- **The refusals are correct**: d2 is live at the cited downstream reads.
+- On the ripple: all 14 provenance CRCs were independently recomputed, the
+  region ladder re-derived from PLANE_BUFFER down to SOUND_API with the
+  −0x10/−0x10/−0x20 arithmetic reconciled against the per-site byte table, and a
+  negative sweep run for all 21 pre-parcel addresses in the moved band across
+  every `.rs`/`.toml`/`.sh` in the tree — zero stale hits. The 5-site ripple is
+  complete.
 
 ## 4 · Bars
 
@@ -195,14 +254,24 @@ there is unchanged.
   (hand, −0x20 both shapes); `engine.inc` and `mixed_dac_rom.rs` do not exist in
   this tree, and no region was added, so `repin.toml` is untouched. Z80 stays
   byte-neutral (no Z80 source moved).
-- **`corpus_bytediff.sh`:** `RESULT: all identical`. Honest reading: the example
-  corpus contains no 2-bit `mul_const.w`/`mul_bounded.w`, so this probe does not
-  exercise the changed path. The whole-ROM audit above is the real evidence —
-  the probe is sigil-only and example-scoped, exactly as bar #1 says.
-- **Negative probes, both polarities, on the new gate boundary:**
-  `word_gate_boundary_two_bits_chain_one_bit_shift` pins that a 2-bit multiplier
-  takes the scratch chain (LTR by cost) and a 1-bit multiplier still takes the
-  scratch-free `lsl.w` arm even when a scratch is offered. The unit oracle
+- **`corpus_bytediff.sh`:** `RESULT: all identical` — and **inert for this
+  parcel**: `examples/` contains no multiply construct at all, so the probe
+  cannot exercise a single changed path. It is reported for completeness, not as
+  evidence. The whole-ROM audit above is the evidence, exactly as bar #1 says.
+- **Gate probes — and an earlier "both polarities" claim CORRECTED.** The
+  original 1-bit half of this probe was VACUOUS and is replaced: a 1-bit
+  multiplier cannot discriminate 5c's `>= 2` threshold, because arm 5's outer
+  guard already excludes it and, even with both guards removed, 5c would lose to
+  the plain shift arm (22 cy / 4 B against 18 / 2) — so `choose()` returns
+  `lsl.w` whatever the gate says, and mutating the gate left the test green.
+  `word_gate_boundary_generates_and_selects_the_ltr_arm` now probes the
+  CANDIDATE SET, where the gate is decidable: at 2 set bits the LTR arm must be
+  GENERATED (a `>= 3` regression removes it, the two-power arm wins by default,
+  and every corpus stride changes bytes) and must then win `choose()`. Its 1-bit
+  assertions are kept but re-labelled for what they honestly pin — arm-5 gating
+  in general, i.e. no chain candidate touches the scratch register even when one
+  is offered. `word_two_power_arm_never_wins` additionally sweeps every 2-set-bit
+  n in `0..=$FFFF`. The unit oracle
   executes every chosen lowering with garbage upper words, and
   `word_bounded_semantics_and_boundary` sweeps every in-bound src and pins the
   moved M = 3 / M = 4 boundary and the seedless loop shape.
@@ -234,9 +303,14 @@ so in present tense.
 - Row 2165 **CLOSED** with the R4 outcome (both sites adopted, model chose
   `mulu`, bound `MAX_ACT_SECTIONS` = 48; the dead-seed prediction confirmed and
   taken; the D1c side effect recorded).
-- Two rows **OPENED**: the `tile_cache.emp:326-329` / `:374-377` non-adoptions
-  (closed-as-ruled, with the reason named so no sweep re-proposes them), and the
-  step-3 language ask for the three-address form.
+- Rows recorded for the two refusals and the follow-up work: the
+  `TileCache_CopyBlockColumn` ×80 pair **CLOSED-AS-RULED** (the reason named, and
+  anchored on symbol/block names rather than line numbers, since the row exists
+  to stop a FUTURE sweep and line numbers drift), the `parallax.emp` ×10
+  **CLOSED-AS-RULED** legitimate non-adoption, and **OPENED**: the step-3
+  three-address ask, the three census misses, the dominated candidate 5a, the
+  `shift_run_word` k = 1 pessimisation, and the `Section_GetSecPtrXY`
+  over-declaration.
 - The mul-w packet's step-5 item 3 and the mul-const-w design §3 paragraph both
   carry "taken by this parcel" pointers.
 - No row opened for the LTR suppression — it died here, as the spec directed.
@@ -265,31 +339,53 @@ so in present tense.
 
 **Step-5 (engine findings, not taken).**
 
-0. **The census was WRONG, and the panel caught it — `Section_FlatIDXY`'s
-   `.fxy_mul` is a third hand multiply loop.** The spec's §3 census said
-   "exactly seven un-adopted sites"; there are eight. The missed site is the
-   same `sec_y × grid_w` repeated-add family Group B adopted, with four live
-   callers (`entity_window.emp` ×3, `ojz_scroll_test.emp` ×1). An independent
-   re-census (run after the catch, not before) confirms it is the only one
-   outstanding — the corpus's other `dbf`+`add` loops are not constant
-   multiplies. It is NOT adopted here, ruled: adoption is byte-changing and
-   would demand a second refreeze on top of chain 49 plus a fresh A/B and panel,
-   and it is not a pure swap — the loop accumulates directly from memory
-   (`add.w Act.grid_w(a2), d0`), so the construct needs a register preload,
-   changing register pressure at a site whose contract leaves only d1 spare.
-   The hand loop is correct; this is deferred optimization, not a defect.
-   Ledgered with the measured facts.
+0. **THE CENSUS WAS WRONG THREE TIMES, and the hottest ×80 stride in the engine
+   was never in it.** The spec's §3 census said "exactly seven un-adopted
+   sites"; there are eleven. All three misses were verified against the tree
+   before being recorded:
+
+   - **`collision_lookup.emp`, `Collision_GetType`** — a two-power ×80 word
+     chain with a separate scratch, the exact "form (a)" shape Groups A/D
+     adopt, in the player-sensor collision probe called per sensor per frame.
+     **Hotter than every site this parcel touched.** A pure drop-in
+     (`mul_const.w d1, #80, d2`): 40 → 32 cy, 8 B → 8 B, zero ripple, d2
+     already licensed and verifiably dead after. It was NAMED in the corpus's
+     own `mul_cache_stride` comment and still fell out of the census.
+   - **`entity_window.emp`, `EntityWindow_MigrateMasks`** — a ×22 chain (three
+     set bits), adoptable even under the OLD ≥ 3 gate, so the mul-w round
+     missed it too.
+   - **`Section_FlatIDXY`'s `.fxy_mul`** — a third repeated-add loop, same
+     `sec_y × grid_w` family as Group B, four live callers, accumulating
+     directly from memory so the construct needs a preload.
+
+   Also now recorded: **`parallax.emp`'s ×10 is a LEGITIMATE non-adoption**
+   (hand 28 cy vs 30 with the preload the live source forces) — correct as
+   written, and previously not recorded as a decision at all.
+
+   None is adopted tonight: each is byte-changing and demands a fresh refreeze,
+   A/B and panel — the collision site most of all, precisely because it is the
+   hottest and so the one whose verification must not be rushed. They are the
+   highest-value follow-up parcel in the queue, with their numbers measured.
+
+   **Bar #3, answered honestly.** The bar said the tile-cache hot-path win must
+   show up or the packet must say why not. The wins landed at the sites the
+   census named — and the hottest ×80 stride in the engine was never in the
+   census. That is a **census failure, not a measurement failure**, and it is
+   also why lag frames did not move (§4a): the parcel optimized real code that
+   simply was not the bottleneck.
 
    **The process lesson, which is the more valuable half.** The porter brief's
    rule is to verify each spec claim against the current tree before building
    it. I verified that every site the census *named* existed and was as
    described — and that is exactly the check that cannot catch this class. A
    completeness claim ("exactly seven") is only testable by re-running the
-   census independently, which I did not do until the panel forced it. Verifying
-   the members of a set is not verifying the set. A census that says "exactly N"
-   and is wrong is worth more as a corrected record than as a quiet fix, so the
-   false claim is withdrawn in the spec, the ledger, and here rather than
-   silently narrowed.
+   census independently, which I did not do until the panel forced it, and even
+   then my re-census found only the loop-shaped miss because I searched for
+   `dbf` accumulate loops and not for two-power shift chains. **Verifying the
+   members of a set is not verifying the set, and re-running a census with the
+   same mental template as the original reproduces the original's blind spot.**
+   Every false completeness claim is withdrawn in the spec, the ledger and here
+   rather than quietly narrowed.
 
 1. The two refused ×80 sites (§7 step-3 item 1) are the headline non-adoption.
    They are recorded as *optimal*, not as debt: `((x<<2)+x)<<4` is the right
@@ -300,32 +396,44 @@ so in present tense.
    "form (b)" cousins. If the three-address form ships, the natural follow-up is
    a second comptime fn (or a widened `mul_cache_stride`) so all four ×80 sites
    name the stride constant rather than open-coding 80.
-3. `Section_GetSecPtrXY`'s `clobbers(d1-d2)` now over-declares (the body
-   preserves d2). Narrowing it to `clobbers(d1)` would be honest and would let
-   callers carry a typed `GridX` in d2 across the call — but it is a contract
-   change with its own caller-side ripple and no demand today, so it is left
-   alone and the comment explains the choice. Deliberately not taken here: a
-   byte-changing parcel should not also move a public contract.
-4. Both Group B sites were labelled cold paths in the source and both now pay a
-   flat 70 rather than a data-dependent cost. Nothing measured suggests they
-   were hot; if a future profile disagrees, the honest fix is a bound tightened
-   to the *act's* real grid height rather than the global ceiling — which would
-   put the loop back in play at M ≤ 3.
+3. `Section_GetSecPtrXY`'s `clobbers(d1-d2)` now over-declares (the body never
+   touches d2) — and this is NOT the "no demand today" item an earlier draft
+   called it. **A live caller already depends on the undeclared preservation:**
+   `parallax.emp`'s `Parallax_CheckBoundary` holds a value in d2 across
+   `jbsr Section_GetSecPtrXY` and reads it afterwards, so it is correct only
+   because the body preserves d2 while the contract explicitly disclaims it.
+   Narrowing to `clobbers(d1)` would make the contract match reality and
+   legalise what the caller already does. Not taken here because a byte-changing
+   parcel should not also move a public contract, but ledgered with urgency it
+   did not previously have — the parcel deleted the only MECHANICAL record of the
+   dependency when the D1c firing for that exact triple left the baseline.
+4. Both Group B sites are cold paths (stated at each) and both now pay a flat
+   70 rather than a data-dependent cost. Nothing measured suggests they were
+   hot; if a future profile disagrees, the honest fix is a tighter bound — but
+   **the tightening differs per site, because the two sites bound DIFFERENT
+   operands**. `mul_bounded.w` constrains the COUNTER: at `tile_cache.emp` the
+   counter is `sec_y`, so the act's real grid HEIGHT is the right bound; at
+   `section.emp` the operands are reversed and the counter is `grid_w`, so grid
+   height bounds nothing there and the right bound is the act's real grid WIDTH.
+   An earlier draft prescribed grid height for both, which is wrong for the
+   section site.
 
 **Neither-bucket headlines.**
 
-- **A generator ruling improved six emission sites with zero source churn.**
+- **A generator ruling improved five emission sites with zero source churn.**
   Group A needed no `.emp` edit at all; relaxing one gate re-derived every
   already-adopted stride. That is the payoff the construct was bought for, and
   it only shows up on a parcel that is allowed to move bytes — which is why the
   mul-w round's deliberate suppression was the right call *then* and the wrong
   state to leave standing.
-- **The entire layout shift comes from Group B alone.** Bisect builds confirm
-  it: R1-only (Group A, no `.emp` edits) is 411267 bytes, and A+C+D is *also*
-  411267 — the C-1355 −2 B is absorbed by alignment padding. Only removing the
-  two hand loops and their four labels moves anything. So "byte-changing" here
-  decomposes into a large, purely-opcode change that shifts nothing, plus one
-  small structural change that shifts everything downstream by −0x20.
+- **The layout shift is Group B's alone; the other groups are size-stable.**
+  Bisect builds: R1-only (Group A, no `.emp` edits) is 411267 bytes and is
+  genuinely ZERO-relocation — its deb2 appendix is byte-identical to the golden,
+  so every symbol name and address is unchanged. A+C+D is *also* 411267 bytes,
+  but that is size-stable, NOT zero-relocation: Group C-1355 sheds 2 B and that
+  shift IS realized in the band symbols, with alignment padding absorbing it
+  before the total. Only Group B — the two hand loops and their four labels —
+  moves the file size and shifts everything downstream by −0x20.
 - **Cost-table granularity is doing real work again.** The ×160 site sat at 44
   vs mulu's 46 under the two-power arm and now sits at 34; the ×66 site moved 34
   → 32. A ±2 correction on `move`/`lsl`/`add` no longer flips chain↔mulu at any
