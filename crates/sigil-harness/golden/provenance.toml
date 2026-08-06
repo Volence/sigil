@@ -2334,3 +2334,57 @@ full_crc = "57fd08f9"
 full_size = 423671
 anchor_crc = "8448717a"
 anchor_end = 0x5f758
+
+[[entry]]
+name = "ltr-mul"
+ab = "docs/superpowers/notes/2026-08-06-ltr-mul-ab.md"
+note = "LTR multiply lowering + loop-site mul_bounded.w adoption: 9 sites moved (Group A x4 auto-re-derived by the R1 gate relax, Group B x2 loops -> mulu, C-1355, D x2); all 7 anchors move (content; anchor sizes stable), appendix shapes -100 B from 4 removed labels; A/B: VDP bit-identical at 3 checkpoints, lag identical, RAM delta = unread dead-scratch residue"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "7660f157"
+full_size = 423949
+anchor_crc = "1b3b3708"
+anchor_end = 0x5f758
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "ace527ba"
+full_size = 301205
+anchor_crc = "e6e20c75"
+anchor_end = 0x42d90
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "b8df1c2b"
+full_size = 91330
+anchor_crc = "e8988a2f"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "30173928"
+full_size = 94031
+anchor_crc = "3b5b11e9"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "69c20328"
+full_size = 379110
+anchor_crc = "cd73fb65"
+anchor_end = 0x5c8e6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "3b6cad91"
+full_size = 411167
+anchor_crc = "09beac0f"
+anchor_end = 0x5d968
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "e3963874"
+full_size = 423571
+anchor_crc = "2263979c"
+anchor_end = 0x5f758
