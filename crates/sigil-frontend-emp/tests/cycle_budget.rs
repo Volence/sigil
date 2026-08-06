@@ -197,18 +197,25 @@ fn a_djnz_leg_out_of_the_body_is_refused() {
     );
 }
 
-/// EVERY split-cost conditional presents BOTH of its edges, so the taken and
-/// not-taken numbers always have somewhere to be routed. That is the property
-/// `[cycles.ambiguous-branch]` guards against losing, and while it holds the
-/// guard has no input — the refusal a body earns instead is the structural one
-/// naming what actually leaves the proc.
+/// A split-cost conditional whose leg leaves the body earns the STRUCTURAL
+/// refusal, and earns it FIRST: `charged_edges` refuses on the first leaving edge,
+/// before it counts edges or consults the cost table. So `[cycles.ambiguous-branch]`
+/// is not what a body gets here — `[cycles.unbounded-transfer]` is, and it names
+/// what actually happens: the leg leaves the proc.
+///
+/// What this does NOT measure is the edge COUNT. Because the structural refusal
+/// comes first, a shape presenting a single leaving edge would earn the same id and
+/// this sweep would stay green — so the invariant that leaves the ambiguous-branch
+/// guard inputless is pinned crate-side instead, off the edge builders themselves
+/// (`cycle_budget.rs`'s `mod tests`,
+/// `a_split_cost_terminator_presents_exactly_two_edges`).
 ///
 /// Swept over every Z80 and 68k split-cost terminator in every target shape,
 /// including the three a raw `label_target` lookup would drop the leg for. A
 /// counted sweep, so it cannot pass by measuring nothing; the `ret z` twin that
 /// MEASURES proves the walk is awake on the same instruction class.
 #[test]
-fn a_split_cost_conditional_always_presents_both_its_edges() {
+fn a_split_cost_conditional_is_refused_before_its_edges_are_counted() {
     let z80_shapes = [
         "    djnz Elsewhere\n    ret\n",   // leg out of the body
         "    djnz .done\n    ret\n.done:\n", // leg to a body-closing label
@@ -310,9 +317,21 @@ fn a_misspelled_attribute_is_loud() {
 }
 
 /// A call costs whatever its callee costs, which is not a fact about this proc.
+///
+/// The CONDITIONAL form is the one that matters beyond the obvious: `call cc`
+/// carries a SPLIT cost (17/10) over a SINGLE edge — it calls and comes back, so
+/// its only successor is the fall-through — which is the exact shape
+/// `[cycles.ambiguous-branch]` exists to refuse. It never gets there because the
+/// call bail is the first statement of `charged_edges`. This pins which of the two
+/// refusals a `call cc` earns, so a reordering that broke the ambiguous-branch
+/// guard's inputlessness would show up as a changed id here.
 #[test]
 fn a_call_is_refused() {
     assert_one(&z80("@budget(cycles: 100)", "    call Helper\n    ret\n"), "cycles.opaque-call");
+    assert_one(
+        &z80("@budget(cycles: 100)", "    call nz, Helper\n    ret\n"),
+        "cycles.opaque-call",
+    );
 }
 
 /// A tail transfer out leaves the accounted region.
@@ -738,4 +757,3 @@ fn a_trailing_target_refuses_end_to_end() {
         "trailing-label target must refuse: {r:?}"
     );
 }
-

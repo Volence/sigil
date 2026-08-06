@@ -253,12 +253,12 @@ fn reglist_mask(ops: &[CodeOperand]) -> Option<u16> {
 /// Which exits the entry-value proof is obligated on.
 #[derive(Clone, Copy)]
 pub enum ReturnScope<'a> {
-    /// EVERY exit that leaves the body: a return, a fall-off-end, and a tail
-    /// transfer out ([`Edge::TailOut`] or [`Edge::BranchOut`]). The
-    /// `preserves(rN)` contract — a tail
-    /// exit is an obligation site charged through the callee-preserves oracle
-    /// ([`PreserveObserver::exit`]), which is what closes the tail-only vacuity
-    /// hole; a diverging (`@noreturn` / authored-rail) tail carries no obligation.
+    /// EVERY exit that leaves the body: a return, a fall-off-end, and a transfer
+    /// out ([`Edge::TailOut`] or [`Edge::BranchOut`]). The `preserves(rN)`
+    /// contract — a transfer-out exit is an obligation site charged through the
+    /// callee-preserves oracle ([`PreserveObserver::exit`]), which is what closes
+    /// the tail-only vacuity hole; a diverging (`@noreturn` / authored-rail)
+    /// transfer carries no obligation.
     AllReturns,
     /// Exactly these instruction indices, counting ANY edge that leaves the proc
     /// — a return or a transfer out — charged at its RAW entry bits. The ¬cc
@@ -478,10 +478,14 @@ pub fn verify_preserved_on(
 
 /// How control left the proc at an exit the shared walk reports.
 ///
-/// One variant per [`Edge`] that leaves the body, carried straight through from
-/// the CFG builder. Each consumer states its own POLICY as a match over these —
-/// the two that differ (whether a fall-off-end is a return) differ in the arm,
-/// not in a re-reading of the exit instruction's mnemonic.
+/// Carried straight through from the CFG builder, and NOT one variant per [`Edge`]:
+/// the four leaving edges ([`Edge::Return`], [`Edge::FallOff`], [`Edge::TailOut`],
+/// [`Edge::BranchOut`]) collapse to three kinds, because both transfer-out flavors
+/// reach the same arm in both consumers (see [`ExitKind::Defer`]). The collapse is
+/// deliberate: this enum carries the distinctions its consumers ACT on, and a
+/// fourth kind no arm reads would be surface. Each consumer states its own POLICY
+/// as a match over these — the two that differ (whether a fall-off-end is a return)
+/// differ in the arm, not in a re-reading of the exit instruction's mnemonic.
 #[derive(Clone, Copy)]
 enum ExitKind {
     /// [`Edge::Return`] — an `rts`/`rte`/`rtr`/`rtd`.
@@ -628,27 +632,32 @@ impl StackObserver for PreserveObserver<'_> {
             // obligation site — the vacuity hole (a tail-only proc used to have
             // ZERO obligation sites) closes here, in the same motion that grants
             // the tail credit. This is the 68k mirror of `z80_preserves.rs`'s
-            // `Defer`/`FallOff` arms.
+            // transfer-out (`TailOut`/`BranchOut`) and `FallOff` arms.
             ReturnScope::AllReturns => match exit {
                 // A plain return hands the register file straight back.
                 ExitKind::Return => self.checkpoint(st),
                 // Control off the end. With a declared `falls_into` successor the
                 // closing `}` continues into that successor's frame — rN survives
                 // iff it holds its entry value here AND the successor preserves it
-                // (the same charge the `Defer` arm makes to a tail-callee). Without
-                // one, running off the end hands the register file back like a
-                // return.
+                // (the same charge the transfer-out arm below makes to a
+                // tail-callee). Without one, running off the end hands the register
+                // file back like a return.
                 ExitKind::FallOff => match self.falls_into {
                     Some(succ) => self.checkpoint_after_tail(st, Some(succ)),
                     None => self.checkpoint(st),
                 },
-                // An external tail transfer. It either DIVERGES — an `@noreturn`
-                // target, or an `AssertDesugar`-authored assert/raise rail, which
-                // never returns to the caller and so carries no preserves
-                // obligation (the `@noreturn` composition) — or it is a real tail
-                // call: rN survives iff it holds its entry value AT the jump AND
-                // the tail-callee itself preserves rN (unknown / indirect /
-                // equ-boundary target → conservative clobber, via the oracle).
+                // A transfer out of the body — an unconditional tail
+                // ([`Edge::TailOut`]) or a conditional terminator's taken leg
+                // ([`Edge::BranchOut`]); both arrive here. It either DIVERGES — an
+                // `@noreturn` target, or an `AssertDesugar`-authored assert/raise
+                // rail, which never returns to the caller and so carries no
+                // preserves obligation (the `@noreturn` composition) — or it is a
+                // real transfer whose callee owns the rest of the path: rN survives
+                // iff it holds its entry value AT the transfer AND the callee itself
+                // preserves rN (unknown / indirect / equ-boundary target →
+                // conservative clobber, via the oracle). A conditional leg is
+                // charged the same way, which OVER-obligates rather than misses —
+                // this check's safe polarity.
                 ExitKind::Defer => {
                     let items = self.items;
                     let (callee, divergent) = match &items[idx] {
@@ -1308,10 +1317,9 @@ pub struct StackFinding {
 ///
 /// Scope: exits that END THIS BODY ([`Edge::Return`], and [`Edge::FallOff`] when
 /// `charge_fall_off_end`). A transfer out of the proc ([`Edge::TailOut`] /
-/// [`Edge::BranchOut`]) is
-/// deliberately not charged, for the reason the entry-value proof gives — it may
-/// diverge (a noreturn error rail owes its caller nothing), and nothing in the
-/// language marks that yet.
+/// [`Edge::BranchOut`]) is deliberately not charged, for the reason the
+/// entry-value proof gives — it may diverge (a noreturn error rail owes its caller
+/// nothing), and nothing in the language marks that yet.
 ///
 /// The policy is [`CallPolicy::ClobberAll`] because a call's STACK effect is
 /// policy-independent (it nets zero — the return address it pushes is popped by

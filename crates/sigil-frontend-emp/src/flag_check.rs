@@ -323,7 +323,7 @@ impl<'a> Cfg<'a> {
             // An unconditional tail transfer, resolved by the shared three-way: a
             // local label → follow it; a local label that CLOSES the body → fall
             // off it; anything else leaves the proc unconditionally → `TailOut`.
-            return vec![self.branch_edge(ops, OutFlavor::Tail)];
+            return vec![self.branch_edge(ops, OutFlavor::TailOut)];
         }
         // A conditional branch (`bXX`/`dbXX`) that is NOT a carry consumer:
         // fall-through PLUS the taken edge. (Carry consumers are handled by the
@@ -341,7 +341,7 @@ impl<'a> Cfg<'a> {
             // The taken edge goes through the shared three-way (out of the body →
             // `BranchOut`, trailing local → fall off, in-body local → follow); the
             // fall-through is the next instruction, or the end of the body.
-            let mut v = vec![self.branch_edge(ops, OutFlavor::Branch)];
+            let mut v = vec![self.branch_edge(ops, OutFlavor::BranchOut)];
             match fallthrough {
                 Some(f) => v.push(Edge::Follow(f)),
                 None => v.push(Edge::FallOff),
@@ -388,7 +388,7 @@ impl<'a> Cfg<'a> {
         }
         // Unconditional `jp`/`jr`: the taken edge, classified by its target.
         if matches!(mnem, "jp" | "jr") && !leads_cc {
-            return vec![self.branch_edge(ops, OutFlavor::Tail)];
+            return vec![self.branch_edge(ops, OutFlavor::TailOut)];
         }
         // Conditional `jr cc`/`jp cc`: the taken edge PLUS the fall-through.
         //
@@ -399,7 +399,7 @@ impl<'a> Cfg<'a> {
         // the caller's state; giving `call nz, External` a transfer-out edge
         // claims the flag and the register file leave the proc, which they do not.
         if matches!(mnem, "jp" | "jr") && leads_cc {
-            let mut v = vec![self.branch_edge(ops, OutFlavor::Branch)];
+            let mut v = vec![self.branch_edge(ops, OutFlavor::BranchOut)];
             match fallthrough {
                 Some(f) => v.push(Edge::Follow(f)),
                 None => v.push(Edge::FallOff),
@@ -413,7 +413,7 @@ impl<'a> Cfg<'a> {
         // `label_target` lookup here would emit NO edge for either shape, and a
         // path that no walk can see is a path no analysis can charge.
         if mnem == "djnz" {
-            let mut v = vec![self.branch_edge(ops, OutFlavor::Branch)];
+            let mut v = vec![self.branch_edge(ops, OutFlavor::BranchOut)];
             match fallthrough {
                 Some(f) => v.push(Edge::Follow(f)),
                 None => v.push(Edge::FallOff),
@@ -453,14 +453,19 @@ impl<'a> Cfg<'a> {
                 None if self.is_local_label(t) => Edge::FallOff,
                 None => flavor.out_edge(),
             },
-            // A target the operands NAME no symbol for: a computed transfer
-            // (`jmp (a0)`, `jp (hl)`), or a symbol-offset/absolute form
-            // `branch_target` does not read. It takes the caller's flavor like
-            // any other leaving edge. A CONDITIONAL computed target is
-            // unconstructible on both ISAs today (68k `bXX`/`dbXX` take a label;
-            // Z80 `jp cc` takes `nn`), so this arm yields `BranchOut` only if the
-            // parser grows such a form — which is why it maps rather than
-            // asserting unreachable on an operand shape.
+            // A target the operands NAME no symbol for. TWO routes reach here, and
+            // they differ in how reachable a CONDITIONAL is:
+            //   * a COMPUTED transfer (`jmp (a0)`, `jp (hl)`) — a conditional form
+            //     is unconstructible on both ISAs today (68k `bXX`/`dbXX` take a
+            //     label; Z80 `jp cc` takes `nn`), so this route yields `BranchOut`
+            //     only if the parser grows such a form;
+            //   * a symbol-offset or absolute form [`branch_target`] does not read
+            //     (`SymOff`, `AbsSym`) — nothing STOPS a conditional from lowering
+            //     to one, and this route is checked against no corpus instance, so
+            //     treat it as reachable.
+            // Either way the edge takes the caller's flavor like any other leaving
+            // edge, which is why this arm maps rather than asserting unreachable on
+            // an operand shape.
             None => flavor.out_edge(),
         }
     }
@@ -670,16 +675,21 @@ pub(crate) enum Edge {
 #[derive(Clone, Copy)]
 enum OutFlavor {
     /// An unconditional transfer: the instruction's only edge leaves the body.
-    Tail,
+    /// Produces [`Edge::TailOut`].
+    TailOut,
     /// A conditional terminator's taken side: a sibling local edge follows it.
-    Branch,
+    /// Produces [`Edge::BranchOut`].
+    BranchOut,
 }
 
 impl OutFlavor {
+    /// The 1:1 map onto the leaving edge. A method rather than a bare cast so the
+    /// three-way's leaving arms name one thing, and a caller cannot hand it a
+    /// local edge in place of a flavor.
     fn out_edge(self) -> Edge {
         match self {
-            OutFlavor::Tail => Edge::TailOut,
-            OutFlavor::Branch => Edge::BranchOut,
+            OutFlavor::TailOut => Edge::TailOut,
+            OutFlavor::BranchOut => Edge::BranchOut,
         }
     }
 }
@@ -1233,7 +1243,12 @@ mod edge_model_tests {
         let conditional: Vec<Vec<CodeItem>> = vec![
             // 68k conditional branch / dbcc, external target.
             vec![instr("beq", vec![sym("Elsewhere")]), instr("rts", vec![])],
-            vec![instr("dbra", vec![sym("Elsewhere")]), instr("rts", vec![])],
+            // `dbcc` in its real two-operand form (`dbra dN, label`) — the counter
+            // register is what makes it one, and the probe spells it.
+            vec![
+                instr("dbra", vec![CodeOperand::Reg(Reg::D0), sym("Elsewhere")]),
+                instr("rts", vec![]),
+            ],
             // The same, CLOSING the body (the sibling is a `FallOff`, not a
             // `Follow`) — a shape that would read as a singleton if the sibling
             // were dropped.

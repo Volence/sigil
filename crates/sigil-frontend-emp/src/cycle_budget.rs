@@ -31,7 +31,7 @@
 //! | a tail transfer out, or control off the end of the body | `[cycles.unbounded-transfer]` | the path continues into code this walk cannot see |
 //! | a transfer to a COMPUTED target (`jp (hl)`, `jmp .table(a1)`) | `[cycles.computed-transfer]` | the destination set is data, not structure — UNLESS a `targets(...)` clause enumerates the reachable local labels (see below) |
 //! | an op outside the CPU's cost table | `[cycles.unknown-op]` | no cost is assignable |
-//! | an outcome-split conditional whose two edges cannot be told apart | `[cycles.ambiguous-branch]` | the two costs cannot be routed to their edges |
+//! | an outcome-split conditional whose two edges cannot be told apart | `[cycles.ambiguous-branch]` | the two costs cannot be routed to their edges (a defensive guard with no input from THIS walk — see [`BudgetFindingKind::AmbiguousBranch`]; the id's live producer is the `cycles(L1, L2)` span builtin) |
 //! | inline data in the code stream | `[cycles.inline-data]` | those bytes DECODE if control reaches them, and the CFG does not model them as instructions |
 //! | a body with no instructions | `[cycles.empty-body]` | its one path never returns, so there is no path cost to bound |
 //! | `@cycles_exact` over an instruction whose cost is a CEILING | `[cycles.inexact-cost]` | a maximum can bound a budget but cannot prove an equality |
@@ -125,13 +125,47 @@ pub enum BudgetFindingKind {
     /// `[cycles.ambiguous-branch]` — an outcome-split conditional whose taken and
     /// fall-through edges cannot be told apart.
     ///
-    /// A DEFENSIVE refusal with no reachable input: every split-cost conditional
-    /// on both CPUs presents both of its edges, so the two numbers always have
-    /// somewhere to be routed (`cycle_budget.rs` tests,
-    /// `a_split_cost_conditional_always_presents_both_its_edges`). It is kept
-    /// because its polarity is safe — an edge model or cost table that later
-    /// produced a one-edge split would refuse here rather than charge one of two
-    /// numbers to the single edge it had.
+    /// **THIS VARIANT is a defensive refusal with no reachable input; the LINT ID
+    /// is live.** The same id is emitted by a second producer that fires on real
+    /// input — [`crate::z80_cycles::CycleBail::AmbiguousBranch`], reached through
+    /// the `cycles(L1, L2)` span builtin ([`crate::eval::builtins`]) and pinned by
+    /// `z80_cycles`'s own `mod tests` and `tests/t40_cycles.rs`. Nothing here
+    /// licenses deleting the diagnostic; the inputless claim is scoped to this
+    /// walk's two producers, which are inputless for two DIFFERENT reasons:
+    ///
+    ///   * the SPLIT-vs-`two_way` guard in [`charged_edges`] — every split-cost
+    ///     terminator on both CPUs presents exactly two edges, so a split cost
+    ///     always has somewhere to be routed;
+    ///   * the enumerated-dispatch arm in the same function — a dispatch mnemonic
+    ///     (`jmp`/`jp`, the only shapes a `targets(...)` clause is legal on) never
+    ///     carries a Split table cost, so the arm's `WalkCost::Split` case has no
+    ///     input either. It would be a cost-table defect, refused rather than
+    ///     routed blind.
+    ///
+    /// The near miss, and the ordering it depends on: `call cc` DOES carry a split
+    /// cost with a single edge (it calls and comes back, so its only successor is
+    /// the fall-through). It never reaches the guard because
+    /// [`crate::context::is_call_mnemonic`] refuses it as `[cycles.opaque-call]`
+    /// FIRST — and that is structural, not a corpus accident: the call bail is the
+    /// first refusal [`charged_edges`] makes, before any edge or cost is consulted.
+    /// Reorder those two and this variant acquires an input (measured: moving the
+    /// call bail below the `two_way` guard makes `call nz, Helper` earn
+    /// `[cycles.ambiguous-branch]`; `tests/cycle_budget.rs`'s `a_call_is_refused`
+    /// is the pin that would catch it).
+    ///
+    /// The evidence is a counted ENUMERATION of today's terminator shapes
+    /// (`tests/cycle_budget.rs`,
+    /// `a_split_cost_conditional_is_refused_before_its_edges_are_counted`, with the
+    /// edge-count invariant itself pinned crate-side in this module's `mod tests`,
+    /// `a_split_cost_terminator_presents_exactly_two_edges`) — not a proof. A
+    /// terminator shape added later is not in that sweep.
+    ///
+    /// Kept because its polarity is safe: an edge model or cost table that later
+    /// produced a one-edge split refuses here rather than charging one of two
+    /// numbers to the single edge it has. **Kill condition:** delete this variant
+    /// (not the lint id) when the edge model makes a one-edge split-cost terminator
+    /// unrepresentable by construction, so that the guard cannot be reached even by
+    /// a table or builder change.
     AmbiguousBranch {
         /// The conditional's mnemonic.
         mnemonic: String,
@@ -616,9 +650,10 @@ struct ChargedEdge {
 /// The successor item indices an enumerated-dispatch `targets(...)` clause names,
 /// when the clause is present and every named label resolves LOCALLY. `None` when
 /// there is no clause to honor here — the instruction carries no targets, OR it is
-/// not a bare COMPUTED transfer (a single `TailOut` naming no symbol), OR a name does
-/// not resolve to a local label — and the caller falls back to the ordinary edge
-/// model (which then refuses the computed transfer as it did before this form).
+/// not a bare COMPUTED transfer (a single `TailOut` naming no symbol), OR a name
+/// does not resolve to a local label — and the caller falls back to the ordinary
+/// edge model (which then refuses the computed transfer as it did before this
+/// form).
 ///
 /// This is the ONE consumer of `targets`. It turns a `TailOut` into `Follow` edges
 /// and nothing else: no `Cfg` edge builder changes, so the preserves prover, the
@@ -631,11 +666,14 @@ fn enumerated_succs(cfg: &Cfg, cpu: Cpu, items: &[CodeItem], idx: usize) -> Opti
         return None;
     }
     // Only a BARE computed transfer is enumerable: exactly one `TailOut` edge and no
-    // sibling — a `BranchOut` is never an instruction's only edge, so the singleton
-    // pattern admits the unconditional computed transfer and nothing else.
     // operand naming a symbol. A direct `jmp .label` (or `jmp External`) already
     // has an exact edge — the redundant case the per-proc dispatch check refuses —
     // so the clause is ignored here and the exact edge stands.
+    //
+    // The singleton pattern needs no sibling test of its own: a `BranchOut` is never
+    // an instruction's only edge, so `[TailOut]` admits exactly the unconditional
+    // transfers out, and the `names_a_target` clause narrows those to the computed
+    // ones.
     let names_a_target = ops.iter().any(|o| {
         matches!(
             o,
@@ -761,6 +799,11 @@ fn charged_edges(
         return bail(BudgetFindingKind::UnknownOp { mnemonic: mnem.to_string() });
     }
     let two_way = edges.len() == 2;
+    // No input today: every split-cost terminator on both CPUs presents exactly two
+    // edges, and the one split-cost form that presents a single edge (`call cc`) is
+    // refused as an opaque call at the top of this function. See
+    // [`BudgetFindingKind::AmbiguousBranch`] for the enumeration, the ordering
+    // dependency, and the kill condition.
     if matches!(cost, WalkCost::Split { .. }) && !two_way {
         return bail(BudgetFindingKind::AmbiguousBranch { mnemonic: mnem.to_string() });
     }
@@ -996,6 +1039,92 @@ mod tests {
         let c = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap();
         // left: 10 + 4 + 10 + 10 = 34 ; right: 10 + 4 + 4 + 10 = 28
         assert_eq!((c.min, c.max), (28, 34));
+    }
+
+    /// The EDGE-COUNT invariant that leaves the `two_way` guard of
+    /// [`BudgetFindingKind::AmbiguousBranch`] without an input: every split-cost
+    /// TERMINATOR on both CPUs presents exactly two edges, so a Split cost always
+    /// has two places to be routed. Read off the edge builders directly, because
+    /// the diagnostic cannot show it — the structural transfer-out refusal in
+    /// [`charged_edges`] fires on the first leaving edge, BEFORE `two_way` is ever
+    /// computed, so a one-edge shape would still be refused and a source-level
+    /// sweep would still be green.
+    ///
+    /// Counted, and paired with both polarities: a `jbra`/`jp` tail has ONE edge
+    /// and is Fixed-cost (a split with one edge is what the guard fears, and no
+    /// terminator here is one), while `call cc` IS a Split cost with a single edge
+    /// — saved only because [`charged_edges`] refuses calls before it looks at
+    /// edges or cost at all.
+    #[test]
+    fn a_split_cost_terminator_presents_exactly_two_edges() {
+        // (cpu, items) — every split-cost terminator shape both builders produce:
+        // out of the body, to a body-closing local, and with no fall-through.
+        let d0 = || CodeOperand::Reg(crate::value::Reg::D0);
+        let shapes: Vec<(Cpu, Vec<CodeItem>)> = vec![
+            (Cpu::Z80, vec![instr("djnz", vec![sym("Elsewhere")]), instr("ret", vec![])]),
+            (
+                Cpu::Z80,
+                vec![instr("djnz", vec![sym(".done")]), instr("ret", vec![]), label(".done")],
+            ),
+            (Cpu::Z80, vec![instr("djnz", vec![sym("Elsewhere")])]),
+            (
+                Cpu::Z80,
+                vec![instr("jr", vec![cc(Z80Cond::Z), sym("Elsewhere")]), instr("ret", vec![])],
+            ),
+            (
+                Cpu::Z80,
+                vec![
+                    instr("jr", vec![cc(Z80Cond::Z), sym(".done")]),
+                    instr("ret", vec![]),
+                    label(".done"),
+                ],
+            ),
+            (Cpu::Z80, vec![instr("jr", vec![cc(Z80Cond::Z), sym("Elsewhere")])]),
+            (Cpu::Z80, vec![instr("ret", vec![cc(Z80Cond::Z)])]),
+            (Cpu::M68000, vec![instr("beq", vec![sym("Elsewhere")]), instr("rts", vec![])]),
+            (Cpu::M68000, vec![instr("beq", vec![sym("Elsewhere")])]),
+            (
+                Cpu::M68000,
+                vec![instr("dbra", vec![d0(), sym("Elsewhere")]), instr("rts", vec![])],
+            ),
+        ];
+        let mut swept = 0;
+        for (cpu, items) in &shapes {
+            let CodeItem::Instr { mnemonic, ops, .. } = &items[0] else { unreachable!() };
+            let cost = walk_cost(*cpu, mnemonic, None, ops);
+            assert!(
+                matches!(cost, WalkCost::Split { .. }),
+                "`{mnemonic}` must be a SPLIT cost for this sweep to mean anything"
+            );
+            let edges = cpu_edges(&Cfg::build(items), *cpu, 0);
+            assert_eq!(edges.len(), 2, "`{mnemonic}` must present two edges, got {edges:?}");
+            swept += 1;
+        }
+        assert_eq!(swept, 10, "the sweep covered {swept} shapes");
+
+        // The other polarity: a single-edge terminator is not a split cost.
+        for (cpu, items) in [
+            (Cpu::M68000, vec![instr("jbra", vec![sym("Elsewhere")])]),
+            (Cpu::Z80, vec![instr("jp", vec![sym("Elsewhere")])]),
+        ] {
+            let CodeItem::Instr { mnemonic, ops, .. } = &items[0] else { unreachable!() };
+            assert_eq!(cpu_edges(&Cfg::build(&items), cpu, 0).len(), 1, "`{mnemonic}` is a tail");
+            assert!(
+                matches!(walk_cost(cpu, mnemonic, None, ops), WalkCost::Fixed { .. }),
+                "an unconditional tail charges one number"
+            );
+        }
+
+        // The near miss, machine-checked: `call cc` DOES carry a split cost with a
+        // single edge. The guard never sees it only because the call bail is the
+        // first refusal `charged_edges` makes — an ORDERING dependency, not a
+        // property of the shape.
+        let call_cc =
+            vec![instr("call", vec![cc(Z80Cond::Nz), sym("Helper")]), instr("ret", vec![])];
+        let CodeItem::Instr { mnemonic, ops, .. } = &call_cc[0] else { unreachable!() };
+        assert!(matches!(walk_cost(Cpu::Z80, mnemonic, None, ops), WalkCost::Split { .. }));
+        assert_eq!(cpu_edges(&Cfg::build(&call_cc), Cpu::Z80, 0).len(), 1);
+        assert!(crate::context::is_call_mnemonic(mnemonic, Cpu::Z80), "the bail that saves it");
     }
 
     // A call's cost is its callee's, which is not a local fact.

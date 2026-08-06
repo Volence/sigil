@@ -282,14 +282,22 @@ fn tail_to_external_symbol_fires() {
     assert!(is_unverified(&s), "tail to an external symbol → Unverified, got {s:?}");
 }
 
-/// A CONDITIONAL branch out of the body (`bne ErrorHandler`) is an
-/// `Edge::BranchOut`, not a required return path: it is a divergent handler or a
-/// transitive tail, and it is skipped rather than charged — mirroring
-/// `preserves`. So a1 produced before the `rts` VERIFIES, even though it is not
-/// produced at the branch.
+/// A KNOWN-INCOMPLETENESS pin, not a correctness pin.
 ///
-/// This is the arm no corpus proc exercises today (no `BranchOut` sits inside an
-/// `out()` proc), so it is held here.
+/// A CONDITIONAL branch out of the body (`bne ErrorHandler`) is an
+/// `Edge::BranchOut`, and this check skips it rather than charging it — mirroring
+/// `preserves`. So the proc below is blessed `Produced` for a1 even though the
+/// branch leaves with a1 unwritten, and every caller then credits a1 as defined on
+/// a path where it is not. That is a HOLE in the module's own dangerous polarity
+/// (`out` under-reporting is what breaks callers), and it is held open
+/// deliberately: charging the leg would fire at ERROR tier on every divergent
+/// handler and every transitive tail, and nothing in the language marks divergence
+/// at a conditional target yet. Behaviour is identical to before the edge split —
+/// the flavor made the skip readable, it did not create it.
+///
+/// Census: ZERO corpus procs reach this arm (no `BranchOut` sits inside an `out()`
+/// proc), so the hole is latent and unguarded; this is its only exemplar. Ledgered
+/// as an open gap — closing it needs a divergence marker, not a polarity flip.
 #[test]
 fn a_conditional_branch_out_is_not_a_required_return_path() {
     let s = status_uncond(
@@ -865,10 +873,10 @@ fn the_oracle_settles_a_call_blocked_survives_claim_both_ways() {
     );
 }
 
-/// Control LEAVING the proc on a ¬cc edge is an exit, not just an `rts`. A
-/// `jbra` out of the failure edge with a1 already destroyed FIRES — under
-/// `preserves(rN)`'s `AllReturns` the same tail-out edge is ignored entirely, so this
-/// is the one place the scoped proof is deliberately stricter.
+/// Control LEAVING the proc on a ¬cc edge is an exit, not just an `rts`. A `jbra`
+/// out of the failure edge with a1 already destroyed FIRES — under
+/// `preserves(rN)`'s `AllReturns` the same tail-out edge is ignored entirely, so
+/// this is the one place the scoped proof is deliberately stricter.
 ///
 /// The TARGET is not charged, and the second half pins that: the identical tail
 /// with a1 untouched is clean even when the target is unknown. A transfer out may

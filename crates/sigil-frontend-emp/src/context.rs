@@ -280,10 +280,9 @@ pub fn regions_of(proc: &str, items: &[CodeItem]) -> (Vec<Region>, Vec<ContextFi
 /// - **escape** — an edge out of the acquire+body range that does not land back
 ///   inside the region is a path that skips the release. `Return`, `FallOff` and
 ///   a transfer out (a tail such as an external `jbra`, or a conditional branch
-///   whose target leaves the body) are escapes for the
-///   same reason. A call is not among them: a call comes back, and the edge
-///   builders say so — every call mnemonic gets its fall-through and nothing
-///   else.
+///   whose target leaves the body) are escapes for the same reason. A call is not
+///   among them: a call comes back, and the edge builders say so — every call
+///   mnemonic gets its fall-through and nothing else.
 /// - **reacquire (by branch)** — an edge from the body or the release back INTO
 ///   the acquire re-runs it with no matching release. That is the unbounded
 ///   `move.w sr,-(sp)` leak in bracket form, and it is why the acquire needs its
