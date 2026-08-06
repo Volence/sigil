@@ -234,6 +234,15 @@ pub struct ContractReport {
     /// The revert probe asserts this set names exactly those, so the exclusion's
     /// effect is a checked fact rather than a silent absence.
     pub authored_rail_holes: BTreeSet<String>,
+    /// The §6 partial-width `[proc.preserves-unverifiable]` firings: a proc declares
+    /// `preserves(dN.w)` whose low-word round-trip DEFERRED at the per-file byte
+    /// gate (call-blocked) and could NOT be proven under the closure's verified
+    /// `effective` oracle either — a false or unprovable word claim. `(proc, "dN.w",
+    /// span)`, sorted. The word-facet analog of a full-preserve deferral erroring at
+    /// the closure gate: a full deferral surfaces via `[proc.clobber-undeclared]`,
+    /// which the word facet silences by design (`dN` is licensed-clobbered), so the
+    /// obligation needs this dedicated gate.
+    pub word_preserve_firings: Vec<(String, String, Span)>,
 }
 
 /// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
@@ -467,6 +476,35 @@ pub fn analyze_corpus_with_contracts(
     }
 
     let firings = check_firings(&nodes, &closure);
+
+    // §6 partial-width word-facet gate. The per-file byte gate DEFERS a call-blocked
+    // `preserves(dN.w)` low-word round-trip (verifies under `PreserveAll`, silent);
+    // THIS is its final authority — re-prove the low word under the closure's
+    // verified `effective` oracle, so a preserving callee keeps the round-trip alive
+    // exactly as the full-preserve oracle round does. A register that still does not
+    // round-trip its low word here is a false/unprovable word claim (the analog the
+    // `[proc.clobber-undeclared]` closure gate provides for a full deferral, which
+    // the word facet silences by licensing `dN`'s clobber). ClobberAll would refire
+    // every DEFERRED (correct) claim, so the Oracle is mandatory.
+    let mut word_preserve_firings: Vec<(String, String, Span)> = Vec::new();
+    for pb in &proc_bufs {
+        if pb.preserve_word_check.is_empty() {
+            continue;
+        }
+        let status = crate::preserves::verify_preserved_word(
+            &pb.buf.items,
+            &pb.preserve_word_check,
+            crate::preserves::CallPolicy::Oracle(&closure.effective),
+            pb.falls_into.as_deref(),
+            &noreturn,
+        );
+        for r in &pb.preserve_word_check {
+            if !matches!(status.get(r), Some(crate::preserves::PreserveStatus::Verified)) {
+                word_preserve_firings.push((pb.name.clone(), format!("{r}.w"), pb.span));
+            }
+        }
+    }
+    word_preserve_firings.sort_by(|a, b| (&a.0, &a.1, a.2.start).cmp(&(&b.0, &b.1, b.2.start)));
 
     // Callee contract maps shared by the caller-side checks (§6 invalid-path, D1b
     // must-def, D1c). Built once here, after the whole corpus is walked.
@@ -958,6 +996,7 @@ pub fn analyze_corpus_with_contracts(
         sr_writes,
         abs_call_edges,
         authored_rail_holes,
+        word_preserve_firings,
     }
 }
 
@@ -1219,6 +1258,11 @@ struct ProcBuf {
     /// declares no `preserves` (or a malformed one).
     preserve_check: Vec<Reg>,
     preserve_names: BTreeSet<String>,
+    /// The §6 partial-width word-facet registers (`preserves(dN.w)`) to re-verify
+    /// under the closure oracle — the deferred, call-blocked low-word round-trips
+    /// the per-file byte gate left silent. Empty when the proc declares no `.w`
+    /// facet (or a malformed `preserves`).
+    preserve_word_check: Vec<Reg>,
     /// The proc's declared `falls_into` successor (if any) — the tail-credit
     /// context the callee-preserves oracle round feeds to `verify_preserved` so a
     /// fall-through into a preserving successor is credited.
@@ -1338,12 +1382,13 @@ fn collect_items(
                 }
                 // Stash the CodeBuf + discard sites for the post-walk checks.
                 if let Some(buf) = buf {
-                    let (preserve_check, preserve_names) = preserve_oracle_inputs(
-                        p,
-                        &buf,
-                        preserve_inputs.noreturn,
-                        preserve_inputs.sr_mask_preservers,
-                    );
+                    let (preserve_check, preserve_names, preserve_word_check) =
+                        preserve_oracle_inputs(
+                            p,
+                            &buf,
+                            preserve_inputs.noreturn,
+                            preserve_inputs.sr_mask_preservers,
+                        );
                     let mut discarded = Vec::new();
                     collect_discarded(&p.body, &mut discarded);
                     proc_bufs.push(ProcBuf {
@@ -1353,6 +1398,7 @@ fn collect_items(
                         span: p.span,
                         preserve_check,
                         preserve_names,
+                        preserve_word_check,
                         falls_into: p.falls_into.clone(),
                         cond_out_pairs: p.cond_out_pairs(crate::regfile::RegFile::M68k),
                     });
@@ -1431,6 +1477,9 @@ fn collect_z80_flag_procs(
                         // the oracle round skip this buf (preserve_check empty).
                         preserve_check: Vec::new(),
                         preserve_names: std::collections::BTreeSet::new(),
+                        // The §6 word facet is a 68k register concept; a Z80 buf's
+                        // preserves are the z80_preserves sibling's job.
+                        preserve_word_check: Vec::new(),
                         falls_into: None,
                         // The §7.1 survives walk is 68k-only; a Z80 buf never
                         // reaches it (these live in their own vector).
@@ -1513,7 +1562,17 @@ fn proc_node(
         direct_callees,
         indirect_sites: collect_indirect_sites(&p.body),
         is_extern: false,
-        declared_clobbers: expand_reglist_regs(p.clobbers.as_deref().unwrap_or(&[])),
+        // §6 partial-width: a `preserves(dN.w)` licenses clobbering the full `dN`
+        // for callers (conservative v1 — the caller-visible contract is identical
+        // to `clobbers(dN)`), so `dN` joins the declared clobber set. It is NOT in
+        // `verified_preserves`, so the closure keeps clobbering it (no credit to
+        // callers) while `[proc.clobber-undeclared]` stays silenced. The low-word
+        // round-trip is the word-facet oracle gate's separate obligation.
+        declared_clobbers: {
+            let mut c = expand_reglist_regs(p.clobbers.as_deref().unwrap_or(&[]));
+            c.extend(crate::lower::preserve_word_regs(p));
+            c
+        },
         params: param_regs_typed(&p.params),
         out: expand_reglist_regs(p.out.as_deref().unwrap_or(&[])),
         has_clobber_contract: p.clobbers.is_some(),

@@ -122,6 +122,20 @@ pub enum PreserveStatus {
     Unverifiable(String),
 }
 
+/// Which register FACET a preserve claim is about. The `preserves(dN.w)` word
+/// facet (§6 partial-width) is proven against the low 16 bits; the bare claim
+/// against the FULL register. One dataflow computes BOTH exit maps; the facet
+/// only selects which the verdict reads. `Full` ⟹ `Word` (a proof of the full
+/// register subsumes the low word), so the `Word` verdict is monotonically
+/// weaker than the `Full` one.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Facet {
+    /// The full register — the bare `preserves(dN)` claim (unchanged behaviour).
+    Full,
+    /// The low 16 bits — the `preserves(dN.w)` claim.
+    Word,
+}
+
 /// A stack slot. `reg = Some(r)` holds register `r`'s entry value; `None` is
 /// opaque. `bytes` is the TRUE pushed width (`.l`=4, `.w`=2, byte-on-a7=2, each
 /// `movem` member its own size, a `link` frame its whole allocation) — the
@@ -133,6 +147,13 @@ pub enum PreserveStatus {
 struct Slot {
     reg: Option<Reg>,
     bytes: u32,
+    /// The WIDTH of the push that created this slot — the facet the slot can
+    /// restore. A `.l` push (4 bytes) round-trips the FULL register; a `.w` push
+    /// (2 bytes) only the low WORD; a `.b` push (also 2 bytes on a7, but carrying
+    /// one meaningful byte) round-trips neither the word nor the full register, so
+    /// it is distinguished from `.w` here even though `bytes` cannot tell them
+    /// apart. `None` for an opaque / unsized push.
+    save_width: Option<Width>,
 }
 
 /// The stack byte width a push of size `size` consumes on a7. Long=4, word=2; a
@@ -153,6 +174,13 @@ fn slot_bytes(size: Option<Width>) -> u32 {
 struct State {
     stack: Vec<Slot>,
     entry: [bool; 16],
+    /// Per-register LOW-WORD facet: `true` iff the register's low 16 bits equal
+    /// their entry value. Weaker than `entry` (the FULL register) and maintained
+    /// so that `entry[i]` ⟹ `entry_word[i]`: a `.w` save/restore round-trip
+    /// credits THIS without crediting `entry`, a `.l` round-trip credits both, and
+    /// any generic write clears both. The `preserves(dN.w)` facet reads this map.
+    /// (§6 partial-width.)
+    entry_word: [bool; 16],
     /// Per-register LINEAR DELTA from its entry value (§5 register-arithmetic
     /// extension): `Some(d)` means the register currently holds `entry + d`,
     /// tracked through `(rN)+`/`-(rN)`, `lea d(rN), rN`, and `adda/suba #imm, rN`;
@@ -181,6 +209,7 @@ impl State {
         State {
             stack: Vec::new(),
             entry: [true; 16],
+            entry_word: [true; 16],
             delta: [Some(0); 16],
             frames: Vec::new(),
             bailed: false,
@@ -254,7 +283,23 @@ pub fn verify_preserved(
     falls_into: Option<&str>,
     noreturn: &BTreeSet<String>,
 ) -> BTreeMap<Reg, PreserveStatus> {
-    verify_preserved_on(items, check, policy, ReturnScope::AllReturns, falls_into, noreturn)
+    verify_preserved_on(items, check, policy, ReturnScope::AllReturns, Facet::Full, falls_into, noreturn)
+}
+
+/// [`verify_preserved`] for the LOW-WORD facet (`preserves(dN.w)`, §6): a register
+/// is Verified iff its low 16 bits hold their entry value on every in-scope exit —
+/// via a `.w` OR `.l` save/restore round-trip, a full-register proof (the delta
+/// round-trip or a `.l` restore, both of which subsume the word), or never being
+/// written. The full proof implies the word, so this verdict is monotonically
+/// WEAKER than [`verify_preserved`]'s.
+pub fn verify_preserved_word(
+    items: &[CodeItem],
+    check: &[Reg],
+    policy: CallPolicy,
+    falls_into: Option<&str>,
+    noreturn: &BTreeSet<String>,
+) -> BTreeMap<Reg, PreserveStatus> {
+    verify_preserved_on(items, check, policy, ReturnScope::AllReturns, Facet::Word, falls_into, noreturn)
 }
 
 /// [`verify_preserved`] with the obligated exits chosen by `scope` — the entry
@@ -268,6 +313,7 @@ pub fn verify_preserved_on(
     check: &[Reg],
     policy: CallPolicy,
     scope: ReturnScope<'_>,
+    facet: Facet,
     falls_into: Option<&str>,
     noreturn: &BTreeSet<String>,
 ) -> BTreeMap<Reg, PreserveStatus> {
@@ -383,18 +429,29 @@ pub fn verify_preserved_on(
         falls_into,
         noreturn,
         all_exits_preserve: check.iter().map(|r| (*r, true)).collect(),
+        all_exits_preserve_word: check.iter().map(|r| (*r, true)).collect(),
         delta_ok: check.iter().map(|r| (*r, true)).collect(),
         saw_exit: false,
         bailed_reached_exit: false,
     };
     let bail_reason = run_stack_dataflow(&cfg, entry_idx, items, &policy, &mut obs);
-    let PreserveObserver { all_exits_preserve, delta_ok, saw_exit, bailed_reached_exit, .. } = obs;
+    let PreserveObserver {
+        all_exits_preserve, all_exits_preserve_word, delta_ok, saw_exit, bailed_reached_exit, ..
+    } = obs;
 
     // Resolve each checked register's status.
     check
         .iter()
         .map(|r| {
             let clobbered = ever_clobbered[reg_idx(*r)];
+            // The exit map the facet reads: the FULL entry bits, or the low-WORD
+            // ones. The delta round-trip and the bailout arms are facet-independent
+            // (a delta proof of the full register subsumes the word; a bailout that
+            // blocks the round-trip blocks it for either facet).
+            let exits_preserve = match facet {
+                Facet::Full => &all_exits_preserve,
+                Facet::Word => &all_exits_preserve_word,
+            };
             let status = if !saw_exit || delta_ok[r] {
                 // No in-scope exit (vacuous), OR the linear-delta round-trip proves
                 // the register holds its entry value at EVERY one — a positive proof
@@ -408,7 +465,7 @@ pub fn verify_preserved_on(
                 PreserveStatus::Unverifiable(
                     bail_reason.clone().unwrap_or_else(|| "unverifiable stack".to_string()),
                 )
-            } else if all_exits_preserve[r] {
+            } else if exits_preserve[r] {
                 PreserveStatus::Verified
             } else {
                 PreserveStatus::NotPreserved
@@ -538,6 +595,10 @@ struct PreserveObserver<'a> {
     falls_into: Option<&'a str>,
     noreturn: &'a BTreeSet<String>,
     all_exits_preserve: BTreeMap<Reg, bool>,
+    /// The low-WORD companion to `all_exits_preserve` — an exit that leaves a
+    /// register's low word clobbered flips it false. Read for the `Facet::Word`
+    /// verdict. (§6 partial-width.)
+    all_exits_preserve_word: BTreeMap<Reg, bool>,
     delta_ok: BTreeMap<Reg, bool>,
     saw_exit: bool,
     bailed_reached_exit: bool,
@@ -614,6 +675,12 @@ fn apply_callee_effect(st: &mut State, policy: &CallPolicy, callee: Option<&str>
     for (i, r) in REG_BY_IDX.iter().enumerate() {
         if !call_preserves(policy, callee, *r) {
             st.entry[i] = false;
+            // Conservative v1: a callee's word facet is invisible here, so a
+            // register the callee does not provably FULLY preserve is a clobber of
+            // BOTH facets (the low word included). This is what makes a caller
+            // claiming `preserves(dN)` OR `preserves(dN.w)` through a `.w`-preserving
+            // callee still refuse — the callee reads as a full clobber.
+            st.entry_word[i] = false;
         }
     }
     st.delta = [None; 16];
@@ -652,6 +719,9 @@ impl PreserveObserver<'_> {
             for r in self.check {
                 if !st.entry[reg_idx(*r)] {
                     *self.all_exits_preserve.get_mut(r).unwrap() = false;
+                }
+                if !st.entry_word[reg_idx(*r)] {
+                    *self.all_exits_preserve_word.get_mut(r).unwrap() = false;
                 }
             }
         }
@@ -789,8 +859,10 @@ fn transfer(
     policy: &CallPolicy,
 ) -> Option<String> {
     let (mnem, ops) = cfg.instr(idx)?;
-    // Only a FULL (`.l`) transfer round-trips an address/data register; a `.w`/`.b`
-    // restore moves or sign-extends a fragment and preserves nothing.
+    // Only a FULL (`.l`) transfer round-trips the WHOLE register; a `.w` restore
+    // round-trips just the low WORD (crediting `entry_word`, the `preserves(dN.w)`
+    // facet), and a `.b` restore neither. `is_long` gates the full-facet credit;
+    // the word facet reads the push/pop widths through [`credit_restore`].
     let is_long = matches!(instr_size(items, idx), Some(Width::L));
 
     // A call nets zero on the stack (its pushed return address is popped by its own
@@ -834,19 +906,20 @@ fn transfer(
 
     // PUSH — `-(sp)`.
     if is_push(ops) {
-        let bytes = slot_bytes(instr_size(items, idx));
+        let width = instr_size(items, idx);
+        let bytes = slot_bytes(width);
         if let Some(mask) = reglist_mask(ops) {
             // movem save: push in REVERSE canonical order so the lowest register
             // (d0) lands on top, matching the (sp)+ restore order. Each member is
             // `bytes` wide (a `.w` movem stores 2 bytes per member).
             for r in expand_mask(mask).into_iter().rev() {
-                st.stack.push(tag(st, r, bytes));
+                st.stack.push(tag(st, r, bytes, width));
             }
         } else {
             // Single push: the SOURCE (first operand) if it is a plain register.
             let slot = match ops.first() {
-                Some(CodeOperand::Reg(r)) => tag(st, *r, bytes),
-                _ => Slot { reg: None, bytes }, // non-register value → opaque slot
+                Some(CodeOperand::Reg(r)) => tag(st, *r, bytes, width),
+                _ => Slot { reg: None, bytes, save_width: width }, // non-register → opaque
             };
             st.stack.push(slot);
         }
@@ -871,19 +944,20 @@ fn transfer(
                 _ => Vec::new(),
             },
         };
-        let per = slot_bytes(instr_size(items, idx)) as i64;
+        let pop_w = instr_size(items, idx);
+        let per = slot_bytes(pop_w) as i64;
         let want = per * regs.len().max(1) as i64;
         let mut got = 0i64;
         // movem restores in canonical ascending order; a single pop is one reg.
         // Drain first so a width disagreement is caught before any entry bit is
         // set from a slot the pop did not actually consume.
-        let mut popped: Vec<Option<Reg>> = Vec::with_capacity(regs.len());
+        let mut popped: Vec<Slot> = Vec::with_capacity(regs.len());
         while got < want {
             let Some(slot) = st.stack.pop() else {
                 return Some("stack underflow — pop drains more than was pushed".to_string());
             };
             got += slot.bytes as i64;
-            popped.push(slot.reg);
+            popped.push(slot);
         }
         if got != want {
             return Some(
@@ -891,22 +965,19 @@ fn transfer(
             );
         }
         for (r, slot) in regs.iter().zip(popped) {
-            // A `.w`/`.b` restore does not round-trip the full register.
-            st.entry[reg_idx(*r)] = is_long && slot == Some(*r);
-            // A pop LOADS the register from the stack — a fresh value, not a
-            // static offset of entry. The stack/entry-bit model judges it; the
-            // delta tracker gives up on it.
-            st.delta[reg_idx(*r)] = None;
+            // Credit the full and/or word facet per the pop and save widths; a pop
+            // LOADS the register (a fresh value), so the delta tracker gives up.
+            credit_restore(st, *r, slot, is_long, pop_w);
         }
         return None;
     }
 
-    // PEEK — `(sp)` (no stack change), a full `.l` read of the top slot.
+    // PEEK — `(sp)` (no stack change), a read of the top slot.
     if is_peek(mnem, ops) {
         if let Some(CodeOperand::Reg(dst)) = ops.last() {
-            let top = st.stack.last().and_then(|s| s.reg);
-            st.entry[reg_idx(*dst)] = is_long && top == Some(*dst);
-            st.delta[reg_idx(*dst)] = None; // a fresh load; entry-bit model judges it
+            let peek_w = instr_size(items, idx);
+            let top = st.stack.last().copied().unwrap_or(EMPTY_SLOT);
+            credit_restore(st, *dst, top, is_long, peek_w);
         }
         return None;
     }
@@ -922,11 +993,41 @@ fn transfer(
             continue;
         }
         st.entry[reg_idx(r)] = false;
+        // Any write to the register changes at least its low word (a `.b`/`.w`
+        // write touches the low bytes; a `.l`/`swap` the whole register), so the
+        // word facet is cleared too — a later `.w` restore re-sets it.
+        st.entry_word[reg_idx(r)] = false;
         if let Some(d) = st.delta[reg_idx(r)] {
             st.delta[reg_idx(r)] = linear_write_amount(mnem, ops, width, r).map(|amount| d + amount);
         }
     }
     None
+}
+
+/// A shared empty slot (no register, zero bytes) — the `(sp)` peek's fallback
+/// when the stack is empty (an underflow the balance model reports separately).
+const EMPTY_SLOT: Slot = Slot { reg: None, bytes: 0, save_width: None };
+
+/// A width that carries at least the low WORD — `.w` or `.l` (not `.b`, not
+/// unsized). The gate for crediting the word facet on a restore.
+fn is_word_or_long(w: Option<Width>) -> bool {
+    matches!(w, Some(Width::W) | Some(Width::L))
+}
+
+/// Credit a restore of `r` from `slot` (a pop or a `(sp)` peek of width `pop_w`,
+/// `is_long` = the restore is `.l`) to the entry-value bits. The FULL facet
+/// round-trips iff a `.l` restore matches a `.l`-saved slot (unchanged from the
+/// pre-facet model); the WORD facet iff the slot holds `r` AND both the save and
+/// the restore carry at least a word — a `.b` save/restore round-trips only the
+/// byte, so it credits neither. Full implies word, so a `.l` round-trip sets both,
+/// keeping the `entry ⟹ entry_word` invariant even when the save was unsized.
+fn credit_restore(st: &mut State, r: Reg, slot: Slot, is_long: bool, pop_w: Option<Width>) {
+    let matched = slot.reg == Some(r);
+    let full = is_long && matched;
+    st.entry[reg_idx(r)] = full;
+    let word_rt = matched && is_word_or_long(pop_w) && is_word_or_long(slot.save_width);
+    st.entry_word[reg_idx(r)] = full || word_rt;
+    st.delta[reg_idx(r)] = None;
 }
 
 /// Open a stack frame: `link aN, #-d` pushes aN (4 bytes), sets aN to the new sp,
@@ -959,14 +1060,15 @@ fn apply_link(st: &mut State, ops: &[CodeOperand]) -> Option<String> {
     let Some(alloc) = disp.checked_neg().and_then(|n| u32::try_from(n).ok()) else {
         return Some("`link` frame size does not fit the tracked slot width".to_string());
     };
-    let slot = tag(st, *fp, 4);
+    let slot = tag(st, *fp, 4, Some(Width::L));
     st.stack.push(slot);
     st.frames.push((*fp, st.stack.len()));
     if alloc > 0 {
-        st.stack.push(Slot { reg: None, bytes: alloc });
+        st.stack.push(Slot { reg: None, bytes: alloc, save_width: None });
     }
     // aN now holds sp, not its entry value, and is no longer a static offset of it.
     st.entry[reg_idx(*fp)] = false;
+    st.entry_word[reg_idx(*fp)] = false;
     st.delta[reg_idx(*fp)] = None;
     None
 }
@@ -987,7 +1089,10 @@ fn apply_unlk(st: &mut State, ops: &[CodeOperand]) -> Option<String> {
         Some((open, depth)) if open == *fp && depth <= st.stack.len() => {
             st.stack.truncate(depth);
             let saved = st.stack.pop().and_then(|s| s.reg);
+            // The saved fp is a full `.l` slot (`link` pushed 4 bytes), so a match
+            // restores both facets.
             st.entry[reg_idx(*fp)] = saved == Some(*fp);
+            st.entry_word[reg_idx(*fp)] = saved == Some(*fp);
             st.delta[reg_idx(*fp)] = None;
             None
         }
@@ -1043,8 +1148,16 @@ fn linear_write_amount(mnem: &str, ops: &[CodeOperand], size: Option<Width>, r: 
 
 /// The slot tag for a `bytes`-wide push of register `r` at the current state:
 /// `reg = Some(r)` iff `r` still holds its entry value.
-fn tag(st: &State, r: Reg, bytes: u32) -> Slot {
-    Slot { reg: if st.entry[reg_idx(r)] { Some(r) } else { None }, bytes }
+fn tag(st: &State, r: Reg, bytes: u32, width: Option<Width>) -> Slot {
+    // Which facet the push captures decides whether the slot holds `r`'s entry
+    // value: a `.l` push captures the FULL register (valid iff `entry`), a
+    // `.w`/`.b` push the low word/byte (valid iff `entry_word`). `save_width`
+    // rides along so the matching restore credits only the facet it can round-trip.
+    let holds = match width {
+        Some(Width::W) | Some(Width::B) => st.entry_word[reg_idx(r)],
+        _ => st.entry[reg_idx(r)],
+    };
+    Slot { reg: if holds { Some(r) } else { None }, bytes, save_width: width }
 }
 
 fn sp_hazard_reason(ops: &[CodeOperand]) -> String {
@@ -1086,13 +1199,16 @@ fn join(acc: &mut State, other: &State) {
             return;
         }
         // Registers meet pointwise: a slot holds a saved value only if both paths
-        // agree it holds the SAME register's value.
-        if a.reg != b.reg {
+        // agree it holds the SAME register's value AT THE SAME width. A width
+        // disagreement (`.w` vs `.b` at equal `bytes`) means the two paths saved
+        // different facets, so neither is creditable → drop the slot's tag.
+        if a.reg != b.reg || a.save_width != b.save_width {
             a.reg = None;
         }
     }
     for i in 0..16 {
         acc.entry[i] = acc.entry[i] && other.entry[i];
+        acc.entry_word[i] = acc.entry_word[i] && other.entry_word[i];
         // Delta meets by exact agreement: a register whose incoming deltas differ
         // (e.g. a loop's Δ=0 initial vs Δ=+4 back-edge) is no longer statically
         // known → untrackable. Two `None`s stay `None`; equal `Some`s survive.

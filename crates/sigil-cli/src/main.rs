@@ -986,6 +986,14 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
         println!("  {:<28} out({} if {}) claims survival, but {}", f.proc, f.reg, f.cc, f.reason);
     }
 
+    println!(
+        "\n-- [proc.preserves-unverifiable] word-facet firings (§6, {}): --",
+        report.word_preserve_firings.len()
+    );
+    for (proc, reg, _span) in &report.word_preserve_firings {
+        println!("  {proc:<28} preserves({reg}) not provable under the closure oracle");
+    }
+
     println!("\n-- dead-saves (D1d worklist, {}): --", report.dead_saves.len());
     for d in &report.dead_saves {
         println!("  {:<28} {:<4} bracketing {}", d.proc, d.reg, d.callees.join(","));

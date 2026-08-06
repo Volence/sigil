@@ -18,7 +18,9 @@ use sigil_frontend_emp::ast::Item;
 use sigil_frontend_emp::eval::eval_proc_body;
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::closure::RegEffect;
-use sigil_frontend_emp::preserves::{verify_preserved, CallPolicy, PreserveStatus};
+use sigil_frontend_emp::preserves::{
+    verify_preserved, verify_preserved_word, CallPolicy, PreserveStatus,
+};
 use sigil_frontend_emp::value::Reg;
 use sigil_ir::backend::Cpu;
 use std::collections::{BTreeMap, BTreeSet};
@@ -58,6 +60,50 @@ fn status_with(src: &str, reg: Reg, policy: CallPolicy) -> PreserveStatus {
 /// gate's default and the pre-oracle behavior.
 fn status(src: &str, reg: Reg) -> PreserveStatus {
     status_with(src, reg, CallPolicy::ClobberAll)
+}
+
+/// [`status_with`] for the §6 LOW-WORD facet (`preserves(dN.w)`) — the same eval,
+/// resolved through [`verify_preserved_word`].
+fn status_word_with(src: &str, reg: Reg, policy: CallPolicy) -> PreserveStatus {
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "parse: {diags:?}");
+    let p = file
+        .items
+        .iter()
+        .find_map(|i| match i {
+            Item::Proc(p) => Some(p),
+            _ => None,
+        })
+        .expect("a proc");
+    let noreturn: BTreeSet<String> = file
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Proc(p) if p.is_noreturn() => Some(p.name.clone()),
+            Item::ExternProc(e) if e.is_noreturn() => Some(e.name.clone()),
+            _ => None,
+        })
+        .collect();
+    let (buf, _d, _n) = eval_proc_body(
+        &file,
+        &p.name,
+        &p.params,
+        &p.body,
+        p.span,
+        0,
+        Cpu::M68000,
+        &[],
+        &sigil_frontend_emp::contract::InterfaceEnv::empty(),
+    );
+    let buf = buf.expect("codebuf");
+    let mut r =
+        verify_preserved_word(&buf.items, &[reg], policy, p.falls_into.as_deref(), &noreturn);
+    r.remove(&reg).expect("word status for the checked reg")
+}
+
+/// Word-facet status under the conservative model.
+fn status_word(src: &str, reg: Reg) -> PreserveStatus {
+    status_word_with(src, reg, CallPolicy::ClobberAll)
 }
 
 /// A one-entry `effective` oracle map: `callee` clobbers exactly `clobbers`.
@@ -1164,4 +1210,119 @@ fn computed_tail_preserves_nothing() {
         CallPolicy::Oracle(&eff),
     );
     assert!(is_not_preserved(&s), "a computed tail preserves nothing → NotPreserved, got {s:?}");
+}
+
+// ===========================================================================
+// §6 partial-width — the `preserves(dN.w)` LOW-WORD facet model.
+// ===========================================================================
+
+/// A `.w` save/restore round-trips the LOW WORD (the witness shape: `move.w dK,
+/// -(sp)` … full-width interior write … `move.w (sp)+, dK`): the word facet is
+/// Verified, but the FULL claim is NOT — the upper word left as the interior
+/// write's bits. Both polarities pinned in one body.
+#[test]
+fn word_w_roundtrip_verifies_word_but_refuses_full() {
+    let src = "module m\n\
+               proc p() clobbers(d0) preserves(d5.w) {\n\
+               \x20   move.w d5, -(sp)\n\
+               \x20   moveq #0, d5\n\
+               \x20   move.w (sp)+, d5\n\
+               \x20   rts\n\
+               }\n";
+    assert!(is_verified(&status_word(src, Reg::D5)), "the low word round-trips");
+    assert!(
+        is_not_preserved(&status(src, Reg::D5)),
+        "a `.w` restore does NOT round-trip the full register — today's behaviour, must not regress"
+    );
+}
+
+/// A FULL (`.l`) round-trip proves the WORD claim (stronger proves weaker) AND the
+/// full claim — the monotone `entry ⟹ entry_word` invariant.
+#[test]
+fn word_l_roundtrip_proves_word_and_full() {
+    let src = "module m\n\
+               proc p() clobbers(d0) preserves(d5) {\n\
+               \x20   move.l d5, -(sp)\n\
+               \x20   moveq #0, d5\n\
+               \x20   move.l (sp)+, d5\n\
+               \x20   rts\n\
+               }\n";
+    assert!(is_verified(&status(src, Reg::D5)), "a `.l` round-trip proves the full claim");
+    assert!(is_verified(&status_word(src, Reg::D5)), "and therefore the weaker word claim");
+}
+
+/// NON-VACUITY: a `.w` claim against a body with NO round-trip (d5 written, never
+/// restored) REFUSES — the credit cannot pass by measuring nothing.
+#[test]
+fn word_no_roundtrip_refuses() {
+    let src = "module m\n\
+               proc p() clobbers(d0) preserves(d5.w) {\n\
+               \x20   moveq #0, d5\n\
+               \x20   rts\n\
+               }\n";
+    assert!(is_not_preserved(&status_word(src, Reg::D5)), "no round-trip → word refuses");
+}
+
+/// A `.b` save/restore round-trips only the BYTE, so it does NOT credit the word
+/// facet — the `.w`/`.b` distinction the equal stack `bytes` cannot make, carried
+/// by `save_width`.
+#[test]
+fn word_b_roundtrip_refuses_word() {
+    let src = "module m\n\
+               proc p() clobbers(d0) preserves(d5.w) {\n\
+               \x20   move.b d5, -(sp)\n\
+               \x20   moveq #0, d5\n\
+               \x20   move.b (sp)+, d5\n\
+               \x20   rts\n\
+               }\n";
+    assert!(
+        is_not_preserved(&status_word(src, Reg::D5)),
+        "a byte round-trip preserves only the byte, not the word"
+    );
+}
+
+/// Interior writes between save and restore are LICENSED (that is the bracket's
+/// point); a write AFTER the restore REFUTES — exactly as full-width does.
+#[test]
+fn word_write_after_restore_refutes() {
+    let src = "module m\n\
+               proc p() clobbers(d0) preserves(d5.w) {\n\
+               \x20   move.w d5, -(sp)\n\
+               \x20   move.w (sp)+, d5\n\
+               \x20   moveq #0, d5\n\
+               \x20   rts\n\
+               }\n";
+    assert!(
+        is_not_preserved(&status_word(src, Reg::D5)),
+        "a write past the restore leaves the low word clobbered"
+    );
+}
+
+/// CONSERVATIVE v1: a caller claiming `preserves(d5.w)` THROUGH a callee that only
+/// word-preserves d5 must still REFUSE — a `.w`-preserving callee reads as a FULL
+/// clobber of d5 to every consumer (the effective map records it as clobbering
+/// d5), so the caller's low word is not credited across the call. Pins the
+/// `.w`-callee-is-a-full-clobber ruling that keeps the three transitive EntityWindow
+/// callers honest.
+#[test]
+fn word_caller_through_w_preserving_callee_refuses() {
+    // The callee's `.w` preserve is encoded in `effective` as a FULL clobber of d5
+    // (conservative v1 credits no word facet to consumers).
+    let eff = oracle("WordCallee", &["d5"]);
+    let src = "module m\n\
+               proc p() clobbers(d0) preserves(d5.w) {\n\
+               \x20   jsr WordCallee\n\
+               \x20   rts\n\
+               }\n";
+    assert!(
+        is_not_preserved(&status_word_with(src, Reg::D5, CallPolicy::Oracle(&eff))),
+        "the low word does not survive a callee that clobbers d5 (a `.w`-preserver, to a consumer)"
+    );
+    // Control: a callee that fully preserves d5 (absent from its clobber set) keeps
+    // the word alive across the call.
+    let eff_ok = oracle("WordCallee", &["d0"]);
+    assert!(
+        is_verified(&status_word_with(src, Reg::D5, CallPolicy::Oracle(&eff_ok))),
+        "a fully-preserving callee keeps the low word"
+    );
 }

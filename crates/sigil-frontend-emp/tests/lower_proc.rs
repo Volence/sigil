@@ -2947,3 +2947,124 @@ fn sr_mask_noreturn_tail_is_not_refused() {
         "a @noreturn tail carries no mask obligation: {diags:?}"
     );
 }
+
+// ===========================================================================
+// §6 partial-width — `preserves(dN.w)` surface (facet spelling + obligation).
+// Each refusal arm gets both polarities; the accepted `.w` facet is proven clean.
+// ===========================================================================
+
+/// POSITIVE polarity: a well-formed `preserves(d5.w)` whose body round-trips the
+/// low word compiles with NO diagnostic — neither `-invalid` nor `-unverifiable`.
+#[test]
+fn word_facet_valid_roundtrip_is_clean() {
+    let src = "module m\n\
+               proc p() clobbers(d0) preserves(d5.w) {\n\
+               \x20   move.w d5, -(sp)\n\
+               \x20   moveq #0, d5\n\
+               \x20   move.w (sp)+, d5\n\
+               \x20   rts\n\
+               }\n";
+    let (_m, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.preserves-invalid]")
+            && !has_tag(&diags, "[proc.preserves-unverifiable]"),
+        "a valid word facet with a round-trip is clean: {diags:?}"
+    );
+}
+
+/// NEGATIVE (non-vacuity): a `preserves(d5.w)` whose body does NOT round-trip the
+/// low word is `[proc.preserves-unverifiable]`.
+#[test]
+fn word_facet_no_roundtrip_is_unverifiable() {
+    let src = "module m\n\
+               proc p() clobbers(d0) preserves(d5.w) {\n\
+               \x20   moveq #0, d5\n\
+               \x20   rts\n\
+               }\n";
+    let (_m, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[proc.preserves-unverifiable]"),
+        "a word facet with no round-trip must refuse: {diags:?}"
+    );
+}
+
+/// `.b` facet — REFUSED (demand-gated to `.w`, no byte witness).
+#[test]
+fn word_facet_b_spelling_refused() {
+    let (_m, diags) = lower("module m\nproc p() clobbers(d0) preserves(d5.b) {\n    rts\n}\n");
+    assert!(has_tag(&diags, "[proc.preserves-invalid]"), "`.b` facet refused: {diags:?}");
+    assert!(
+        diags.iter().any(|d| d.message.contains(".b") && d.message.contains("demand-gated")),
+        "the `.b` arm names its own reason: {diags:?}"
+    );
+}
+
+/// `aN.w` — REFUSED (address-register word writes sign-extend the full register).
+#[test]
+fn word_facet_address_register_refused() {
+    let (_m, diags) = lower("module m\nproc p() clobbers(d0) preserves(a3.w) {\n    rts\n}\n");
+    assert!(has_tag(&diags, "[proc.preserves-invalid]"), "`aN.w` refused: {diags:?}");
+    assert!(
+        diags.iter().any(|d| d.message.contains("sign-extend")),
+        "the address arm names sign-extension: {diags:?}"
+    );
+}
+
+/// `.l` — REFUSED (bare `dN` IS the full claim; one spelling per meaning).
+#[test]
+fn word_facet_l_spelling_refused() {
+    let (_m, diags) = lower("module m\nproc p() clobbers(d0) preserves(d5.l) {\n    rts\n}\n");
+    assert!(has_tag(&diags, "[proc.preserves-invalid]"), "`.l` facet refused: {diags:?}");
+    assert!(
+        diags.iter().any(|d| d.message.contains("full-width claim")),
+        "the `.l` arm steers to the bare spelling: {diags:?}"
+    );
+}
+
+/// An unknown facet (`.q`) — REFUSED (the only partial-width facet is `.w`).
+#[test]
+fn word_facet_unknown_spelling_refused() {
+    let (_m, diags) = lower("module m\nproc p() clobbers(d0) preserves(d5.q) {\n    rts\n}\n");
+    assert!(has_tag(&diags, "[proc.preserves-invalid]"), "`.q` facet refused: {diags:?}");
+}
+
+/// A word facet on a NON-register (`foo.w`) — REFUSED as an invalid register.
+#[test]
+fn word_facet_non_register_refused() {
+    let (_m, diags) = lower("module m\nproc p() clobbers(d0) preserves(foo.w) {\n    rts\n}\n");
+    assert!(has_tag(&diags, "[proc.preserves-invalid]"), "`foo.w` refused: {diags:?}");
+}
+
+/// `preserves(d5.w) clobbers(d5)` — the facet is a preserve; declaring the same
+/// register clobbered is the overlap contradiction.
+#[test]
+fn word_facet_clobbers_overlap_refused() {
+    let (_m, diags) = lower(
+        "module m\nproc p() clobbers(d0, d5) preserves(d5.w) {\n\
+         \x20   move.w d5, -(sp)\n    move.w (sp)+, d5\n    rts\n}\n",
+    );
+    assert!(
+        has_tag(&diags, "[proc.preserves-clobbers-overlap]"),
+        "word-preserved AND clobbered is a contradiction: {diags:?}"
+    );
+}
+
+/// A register full-preserved AND word-preserved is redundant, not an error —
+/// the full proof subsumes the word (the `& !declared` fold).
+#[test]
+fn word_facet_full_plus_word_is_not_an_error() {
+    let src = "module m\n\
+               proc p() clobbers(d0) preserves(d5, d5.w) {\n\
+               \x20   move.l d5, -(sp)\n\
+               \x20   moveq #0, d5\n\
+               \x20   move.l (sp)+, d5\n\
+               \x20   rts\n\
+               }\n";
+    let (_m, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.preserves-invalid]")
+            && !has_tag(&diags, "[proc.preserves-clobbers-overlap]")
+            && !has_tag(&diags, "[proc.preserves-unverifiable]"),
+        "full+word on the same register is redundant, not an error: {diags:?}"
+    );
+}
