@@ -925,9 +925,21 @@ impl Evaluator<'_> {
                 span,
             )
         };
+        // Every raise-tail instruction is the DESUGAR's, not the raising proc's
+        // author's — the same stamp `lower_assert` applies to its expansion. The
+        // rail diverges (`jmp (pages).l`), so its unconditional terminal is an
+        // AUTHORED divergent transfer: analyses that read authorship treat it as a
+        // terminal that never returns to the caller (a hand-written `jmp` to the
+        // same blob stays a plain `Defer`). Restored after; the tail cannot nest a
+        // raise, but the save/restore keeps the stamp scoped by construction.
+        let saved_author = std::mem::replace(
+            &mut self.item_author,
+            crate::value::ItemAuthor::AssertDesugar,
+        );
         for stmt in &stmts {
             self.lower_asm_stmt(stmt, scope, buf, env);
         }
+        self.item_author = saved_author;
     }
 
     /// Read `DEBUG` from the comptime scope for the `assert` gate. Returns

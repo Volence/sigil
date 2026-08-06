@@ -261,7 +261,16 @@ fn collect_pub_proc_stubs(
                 };
                 out.insert(
                     p.name.clone(),
-                    ast::ExternProcDecl { public: false, name: p.name.clone(), sig, span: p.span },
+                    ast::ExternProcDecl {
+                        public: false,
+                        name: p.name.clone(),
+                        sig,
+                        // Carry `@noreturn` across the seam so the synthesized stub
+                        // states the same divergence the body proves; other attrs
+                        // (`@budget`/`@scaffolding`) are body-only and dropped.
+                        attrs: p.attrs.iter().filter(|a| a.name == "noreturn").cloned().collect(),
+                        span: p.span,
+                    },
                 );
             }
             ast::Item::Section(sec) => collect_pub_proc_stubs(&sec.items, inv, out),

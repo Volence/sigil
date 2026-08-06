@@ -212,6 +212,21 @@ pub(crate) fn branch_target(ops: &[CodeOperand]) -> Option<&str> {
     })
 }
 
+/// The link symbol a transfer NAMES, across every direct-target spelling: the
+/// bare `Sym` a branch/tail takes, plus the pinned/offset absolute forms
+/// (`jmp (Sym).l` → `AbsSym`, `jmp Item.field` → `SymOff`) the abs seam lowers.
+/// Wider than [`branch_target`] (which sees only `Sym`), so a `@noreturn` match
+/// or a computed-target test reads `jmp (Diverge).l` the same as `jbra Diverge`.
+/// `None` for a register-indirect (`jsr (a1)`) or a computed dispatch.
+pub(crate) fn transfer_target_sym(ops: &[CodeOperand]) -> Option<&str> {
+    ops.iter().rev().find_map(|o| match o {
+        CodeOperand::Sym(name) => Some(name.as_str()),
+        CodeOperand::SymOff { sym, .. } => Some(sym.as_str()),
+        CodeOperand::AbsSym { target, .. } => Some(target.as_str()),
+        _ => None,
+    })
+}
+
 /// A resolved per-proc control-flow view over a CodeBuf's items. Exposed
 /// `pub(crate)` so the §5 verified-`preserves` dataflow ([`crate::preserves`])
 /// REUSES this exact CFG substrate (spec §11 Q1: extend G2's CFG, do not

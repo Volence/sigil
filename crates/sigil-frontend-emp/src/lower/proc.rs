@@ -75,6 +75,11 @@ pub(super) struct ProcCtx<'a> {
     /// evaluator so its body resolves `Iface.MEMBER` and lowers
     /// `invoke Iface.hook`. Empty for a contract-free build.
     pub contracts: &'a crate::contract::InterfaceEnv,
+    /// The module's `@noreturn` symbol set (noreturn-tail model): every visible
+    /// `proc` / `extern proc` declaring `@noreturn`. A divergent tail transfer to
+    /// a name in this set is a TERMINAL edge, not an unbounded transfer — read by
+    /// the cycle-budget and CCR-bracket walks. Empty when no decl carries it.
+    pub noreturn: &'a std::collections::BTreeSet<String>,
 }
 
 /// Lower one proc: define its label, evaluate + lower its body, then run the
@@ -163,7 +168,14 @@ pub(super) fn lower_proc(
     if ctx.cpu == Cpu::Z80 {
         check_z80_preserves(proc, &buf, ctx.invariant_regs, ctx.callee_preserves, diags);
     } else if !proc.preserves.is_empty() {
-        check_preserves(proc, &buf, diags);
+        check_preserves(proc, &buf, ctx.noreturn, diags);
+    }
+
+    // 5b. `@noreturn` contract (noreturn-tail model): a proc claiming it never
+    // returns must contain NO return edge — every path leaves by transfer or
+    // loop. A CHECKED declared claim, error-tier, never `@as_compat`-silenced.
+    if proc.is_noreturn() {
+        check_noreturn(proc, &buf, ctx.cpu, ctx.noreturn, diags);
     }
 
     // 6. Output contract (S2-D6e): a declared `out(...)` set. Like `preserves`,
@@ -290,6 +302,82 @@ fn check_stack_balance(
     }
 }
 
+/// Report `[noreturn.returns]` for a `@noreturn` proc whose body can return.
+///
+/// The claim is CHECKED locally: a `@noreturn` body must have no `Edge::Return`
+/// (an `rts`/`rte`/`rtr`/`rtd`, or the Z80 `ret`-class — conditional returns
+/// included, since the returning instruction carries the edge whatever branch
+/// reaches it) and no `Edge::FallOff` (control off the end into whatever
+/// follows). Every path must leave by a real tail transfer or a back edge (a
+/// loop). Two refinements the panel proved necessary (amended spec §1, master
+/// `ad670db4`):
+///
+///   * **`falls_into` composes.** A `FallOff` is honest IFF the proc's declared
+///     `falls_into` names a symbol that is ITSELF `@noreturn` — the successor
+///     never returns either, so neither does this proc. Any other fall-off
+///     returns into its successor and is refused.
+///   * **A trailing-local transfer is a fall-off in disguise.** On the 68k
+///     `Cfg::edges`, an unconditional transfer to a LOCAL label that CLOSES the
+///     body (no instruction after it) classifies as `Edge::Defer` — but control
+///     runs straight off the end. This resolves it as a `FallOff` (the ruled
+///     NARROW fix; the `Cfg::edges` unification with its cross-analysis blast
+///     radius is a separate ledgered parcel). The Z80 builder already models it.
+///
+/// What CANNOT be checked here — that a real transfer's TARGET never returns —
+/// is the transitive claim, trusted exactly like every other declared contract
+/// in the closure. Error-tier, unsuppressible: a false `@noreturn` misinforms
+/// every consumer that trusts it.
+fn check_noreturn(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    cpu: Cpu,
+    noreturn: &BTreeSet<String>,
+    diags: &mut Vec<Diagnostic>,
+) {
+    use crate::flag_check::{branch_target, Cfg, Edge};
+    use crate::value::CodeOperand;
+    let cfg = Cfg::build(&buf.items);
+    // A fall-off is honest only when the declared successor is itself `@noreturn`.
+    let falls_into_noreturn = proc.falls_into.as_deref().is_some_and(|s| noreturn.contains(s));
+    // Is this transfer to a LOCAL label that closes the body (no instruction
+    // after it)? Then its 68k `Defer` edge is really a fall-off.
+    let is_trailing_local = |ops: &[CodeOperand]| {
+        branch_target(ops).is_some_and(|t| cfg.is_local_label(t) && cfg.label_index(t).is_none())
+    };
+    for (idx, item) in buf.items.iter().enumerate() {
+        let CodeItem::Instr { span, ops, .. } = item else { continue };
+        let edges = match cpu {
+            Cpu::Z80 => cfg.z80_edges(idx),
+            _ => cfg.edges(idx),
+        };
+        for e in edges {
+            let why = match e {
+                Edge::Return => Some("returns here (a return instruction)"),
+                Edge::FallOff if !falls_into_noreturn => {
+                    Some("runs off the end of the body into whatever follows")
+                }
+                Edge::Defer if is_trailing_local(ops) && !falls_into_noreturn => {
+                    Some("runs off the end via a transfer to a body-closing local label")
+                }
+                Edge::FallOff | Edge::Follow(_) | Edge::Defer => None,
+            };
+            if let Some(why) = why {
+                push(
+                    diags,
+                    Level::Error,
+                    *span,
+                    format!(
+                        "[noreturn.returns] `{}` is declared `@noreturn` but a path {why} — a \
+                         `@noreturn` body must leave only by a tail transfer or a loop (a \
+                         `falls_into` a `@noreturn` successor composes)",
+                        proc.name
+                    ),
+                );
+            }
+        }
+    }
+}
+
 /// Report the `[cycles.*]` findings for one proc body.
 ///
 /// Tier (U-spec §6, "Budget overrun: error · `@as_compat` n/a · `@allow` no"):
@@ -344,8 +432,9 @@ fn check_cycle_budget(
     // The DECLARATION is what a verdict is about, and it is always in this file —
     // a spliced body's instructions may carry another module's spans.
     let decl_span = first.span;
-    for f in crate::cycle_budget::check_cycle_budget(&buf.items, ctx.cpu, decl_span, budget, exact)
-    {
+    for f in crate::cycle_budget::check_cycle_budget(
+        &buf.items, ctx.cpu, decl_span, budget, exact, ctx.noreturn,
+    ) {
         let what = match (&f.kind, &proc.falls_into) {
             // A declared fallthrough is not an unknown escape — the successor is
             // named and checked. Its COST still leaves this proc, so the refusal
@@ -1168,7 +1257,12 @@ pub fn proc_written_registers(buf: &crate::value::CodeBuf) -> BTreeSet<String> {
 /// 68k-only, like the clobber lint (movem/`sp` are 68k concepts); a Z80 proc
 /// declaring `preserves` gets the missing-pair error, which is honest — the
 /// slice cannot verify it.
-fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mut Vec<Diagnostic>) {
+fn check_preserves(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    noreturn: &BTreeSet<String>,
+    diags: &mut Vec<Diagnostic>,
+) {
     // Fold the declared segments to the canonical movem mask
     // (bit0=D0..bit7=D7, bit8=A0..bit15=A7 — the `CodeOperand::RegList`
     // convention).
@@ -1318,12 +1412,23 @@ fn check_preserves(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, diags: &mu
     // presence (a flag write after the restore is invisible here; the gap is
     // ledgered against S2-D7's dataflow half).
     if pres_sr.mask {
+        let before = diags.len();
         check_preserves_sr(proc, buf, if explicit_bare_sr { "sr" } else { "sr.mask" }, diags);
+        // Advisory (noreturn-tail model, warn tier): bare `preserves(sr)` claims
+        // BOTH halves, but only the mask round-trips through `check_preserves_sr`
+        // — its CCR half is otherwise unverified (ledgered against S2-D7). The
+        // CCR-bracket walk names a bare-`sr` proc whose condition codes are not
+        // provably the caller's at return. Gated on the mask proof PASSING, so it
+        // stays CCR-SPECIFIC: a proc that already failed the round-trip is not
+        // also nagged about the half it never reached.
+        if explicit_bare_sr && diags.len() == before {
+            check_ccr_advisory(proc, buf, noreturn, diags);
+        }
     }
     if explicit_sr_ccr {
         // This fn is the 68k arm of the `lower_proc` preserves dispatch (Z80
         // routes to `check_z80_preserves`), so the CPU is fixed here.
-        check_preserves_sr_ccr(proc, buf, Cpu::M68000, diags);
+        check_preserves_sr_ccr(proc, buf, Cpu::M68000, noreturn, diags);
     }
     if declared == 0 {
         return; // SR-family-only contract: no movem pair to demand
@@ -1774,22 +1879,32 @@ fn check_preserves_sr(
 /// dataflow half is the real answer), and the round trip assumes a balanced
 /// stack at the restore (S2-D7(b), the same deferral the context
 /// definition-site round-trip check rests on).
-fn check_preserves_sr_ccr(
-    proc: &ast::ProcDecl,
-    buf: &crate::value::CodeBuf,
-    cpu: Cpu,
-    diags: &mut Vec<Diagnostic>,
-) {
-    // A fallthrough — declared or reachable — is a tail transfer with no
-    // mnemonic, so the walk below would never see it.
-    let tail_refusal = if proc.falls_into.is_some() {
+/// The mnemonic-less tail refusals shared by the `sr.ccr` ERROR check and the
+/// bare-`sr` advisory: a declared `falls_into`, or a body that can run off its
+/// end, hands control to a successor whose flag traffic this walk cannot see, so
+/// the CCR the caller finally observes is not this proc's. Factored so the
+/// advisory refuses these BEFORE walking, exactly as the ERROR check does (a
+/// bare-`sr` proc falling into its successor must not read as silently green).
+fn sr_tail_refusal(proc: &ast::ProcDecl, buf: &crate::value::CodeBuf, cpu: Cpu) -> Option<String> {
+    if proc.falls_into.is_some() {
         Some("the proc falls into its successor — the flags the caller sees are the successor's".to_string())
     } else if !ends_in_terminator(buf, cpu) {
         Some("control can run off the end of the body into whatever follows".to_string())
     } else {
         None
-    };
-    if let Some(why) = tail_refusal.or_else(|| ccr_bracket_refusal(&buf.items)) {
+    }
+}
+
+fn check_preserves_sr_ccr(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    cpu: Cpu,
+    noreturn: &BTreeSet<String>,
+    diags: &mut Vec<Diagnostic>,
+) {
+    if let Some(why) =
+        sr_tail_refusal(proc, buf, cpu).or_else(|| ccr_bracket_refusal(&buf.items, noreturn))
+    {
         push(
             diags,
             Level::Error,
@@ -1805,13 +1920,75 @@ fn check_preserves_sr_ccr(
     }
 }
 
-/// The [`check_preserves_sr_ccr`] walk: `None` iff every CCR effect in `items`
-/// is bracketed by the SR save/restore pair, else the first refusal reason.
-fn ccr_bracket_refusal(items: &[CodeItem]) -> Option<String> {
+/// The bare-`preserves(sr)` CCR-half advisory (noreturn-tail model, warn tier).
+///
+/// Bare `sr` claims the mask AND the condition codes; `check_preserves_sr` proves
+/// only the mask round-trip. This runs the SAME bracket walk the explicit
+/// `sr.ccr` ERROR uses, at WARNING tier, so a bare-`sr` adopter whose CCR half is
+/// not provably the caller's is NAMED — the interim the sr-split ledger row asked
+/// for, short of S2-D7's dataflow. The walk is divergence- and local-label-aware
+/// (an assert/raise rail and a `jbra .local` are not caller-visible CCR leaves),
+/// so it does not false-positive on the DEBUG-shape rails the sr-split lane could
+/// not enable it over. It ALSO refuses the mnemonic-less tails ([`sr_tail_refusal`])
+/// the ERROR check does — a bare-`sr` proc that falls into its successor, or runs
+/// off its end, must not read as silently green. WARN tier (non-blocking): the
+/// honest downgrade is declaring `preserves(sr.mask)`, visible in the source.
+fn check_ccr_advisory(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    noreturn: &BTreeSet<String>,
+    diags: &mut Vec<Diagnostic>,
+) {
+    // The advisory is the 68k arm of the bare-`sr` preserves dispatch (Z80 routes
+    // to `check_z80_preserves`), so the CPU for the tail refusal is fixed.
+    if let Some(why) =
+        sr_tail_refusal(proc, buf, Cpu::M68000).or_else(|| ccr_bracket_refusal(&buf.items, noreturn))
+    {
+        push(
+            diags,
+            Level::Warning,
+            proc.span,
+            format!(
+                "[proc.ccr-advisory] `{}` declares bare `preserves(sr)` (both halves), but its \
+                 condition codes are not provably the caller's at return: {why} — declare \
+                 `preserves(sr.mask)` if only the interrupt mask round-trips (path-sensitive \
+                 flag liveness is S2-D7)",
+                proc.name
+            ),
+        );
+    }
+}
+
+/// The CCR-bracket walk (shared by the explicit-`sr.ccr` ERROR and the bare-`sr`
+/// advisory): `None` iff every CCR effect in `items` is bracketed by the SR
+/// save/restore pair, else the first refusal reason.
+///
+/// Divergence- and local-label-aware (noreturn-tail model):
+///   * `ItemAuthor::AssertDesugar` items are SKIPPED — an assert / raise rail is
+///     the compiler's own divergent expansion, proven at the emission site; on
+///     the success path the assert restores SR, and on the failure path the rail
+///     never returns to the caller, so its internal SR save and flag effects are
+///     invisible to the caller's condition codes.
+///   * an unconditional transfer to a LOCAL label WITH A FOLLOWING INSTRUCTION is
+///     intra-proc flow (the shared `Cfg` decides via `label_index`), not a leave;
+///     a transfer to a `@noreturn` target diverges (its flags never reach the
+///     caller); only a real EXTERNAL tail leaves with the target's flags. A
+///     transfer to a TRAILING local label (one that closes the body) is NOT
+///     intra-proc — control runs off the end — so `label_index` (None for a
+///     trailing label), not `is_local_label`, is the gate.
+fn ccr_bracket_refusal(items: &[CodeItem], noreturn: &BTreeSet<String>) -> Option<String> {
+    use crate::flag_check::{transfer_target_sym, Cfg};
     use crate::value::{CodeOperand, Reg};
+    let cfg = Cfg::build(items);
     let mut saved = false;
     for item in items {
-        let CodeItem::Instr { mnemonic, ops, .. } = item else { continue };
+        let CodeItem::Instr { mnemonic, ops, author, .. } = item else { continue };
+        // An assert/raise rail is the compiler's own divergent expansion — proven
+        // at the emission site, invisible to the caller's CCR. Skip it whole (its
+        // `move.w sr, -(sp)` frame push must NOT read as a nested bracket save).
+        if matches!(author, crate::value::ItemAuthor::AssertDesugar) {
+            continue;
+        }
         // The bracket's own halves.
         if matches!(ops.as_slice(), [CodeOperand::Sr, CodeOperand::PreDec(Reg::A7)]) {
             if saved {
@@ -1839,10 +2016,23 @@ fn ccr_bracket_refusal(items: &[CodeItem]) -> Option<String> {
                 }
             }
             CcrEffect::Leaves => {
-                return Some(format!(
-                    "control leaves through `{mnemonic}` — the flags the caller sees are the \
-                     target's"
-                ));
+                // A transfer to a LOCAL label with a following instruction is
+                // intra-proc flow (not a leave); a transfer to a `@noreturn`
+                // target diverges and its flags never reach the caller; only a
+                // real external (or trailing-local) tail leaves. `label_index` is
+                // None for a body-closing label, so a `jbra .end` at the end reads
+                // as a leave, not intra-proc. The target is read through the
+                // UNIFIED extractor so `jmp (Diverge).l` (an `AbsSym`) matches.
+                match transfer_target_sym(ops) {
+                    Some(t) if cfg.label_index(t).is_some() => {}
+                    Some(t) if noreturn.contains(t) => {}
+                    _ => {
+                        return Some(format!(
+                            "control leaves through `{mnemonic}` — the flags the caller sees \
+                             are the target's"
+                        ));
+                    }
+                }
             }
             CcrEffect::Writes => {
                 if !saved {
@@ -2170,7 +2360,9 @@ pub fn verified_preserves_regs(
         return BTreeSet::new();
     }
     let mut sink = Vec::new();
-    check_preserves(proc, buf, &mut sink);
+    // This caller reads only the ERROR-tier round-trip verdict; the bare-`sr` CCR
+    // advisory (warn) is discarded, so an empty `@noreturn` set is sufficient.
+    check_preserves(proc, buf, &BTreeSet::new(), &mut sink);
     if sink.iter().any(|d| matches!(d.level, Level::Error)) {
         return BTreeSet::new();
     }
@@ -2202,7 +2394,8 @@ pub fn preserve_oracle_inputs(
         return (Vec::new(), BTreeSet::new());
     }
     let mut sink = Vec::new();
-    check_preserves(proc, buf, &mut sink);
+    // ERROR-tier verdict only (see `verified_preserves_regs`); empty `@noreturn`.
+    check_preserves(proc, buf, &BTreeSet::new(), &mut sink);
     if sink.iter().any(|d| matches!(d.level, Level::Error)) {
         return (Vec::new(), BTreeSet::new());
     }
