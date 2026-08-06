@@ -170,10 +170,48 @@ fn refusals_surface_through_the_pipeline() {
     let (_m, diags) =
         lower("module m\nproc p() {\n    mul_const d0, #66, d0\n    rts\n}\n");
     assert!(has_tag(&diags, "[mul.scratch-aliases]"), "{diags:?}");
+    // `.w` is now a valid contract; `.l` (and any other suffix) refuses.
     let (_m, diags) =
-        lower("module m\nproc p() {\n    mul_const.w d0, #66\n    rts\n}\n");
+        lower("module m\nproc p() {\n    mul_const.l d0, #66\n    rts\n}\n");
     assert!(has_tag(&diags, "[mul.size]"), "{diags:?}");
     let (_m, diags) =
         lower("module m\nproc p() {\n    mul_bounded d0, d1\n    rts\n}\n");
     assert!(has_tag(&diags, "[mul.operands]"), "{diags:?}");
+}
+
+// The word contract's acceptance bar through the full pipeline: `mul_const.w`
+// at each corpus stride emits BYTE-IDENTICAL code to the hand-derived two-power
+// shift-add chain — the byte-identical adoption the long contract could not meet.
+#[test]
+fn word_strides_are_byte_identical_to_hand_chains() {
+    // (n, high-term shift, low-term shift): 66 = 64+2, 80 = 64+16, 160 = 128+32.
+    for (n, a, b) in [(66u32, 6, 1), (80, 6, 4), (160, 7, 5)] {
+        let (m_new, d_new) = lower(&format!(
+            "module m\nproc p() clobbers(d0, d1) {{\n    mul_const.w d0, #{n}, d1\n    rts\n}}\n"
+        ));
+        let (m_old, d_old) = lower(&format!(
+            "module m\nproc p() clobbers(d0, d1) {{\n\
+             \x20   move.w d0, d1\n\
+             \x20   lsl.w #{a}, d0\n\
+             \x20   lsl.w #{b}, d1\n\
+             \x20   add.w d1, d0\n\
+             \x20   rts\n}}\n"
+        ));
+        assert!(errors(&d_new).is_empty(), "n={n}: {d_new:?}");
+        assert!(errors(&d_old).is_empty(), "n={n}: {d_old:?}");
+        assert_eq!(flatten(&m_new), flatten(&m_old), "n={n} not byte-identical");
+    }
+}
+
+// The word chain's scratch write is seen by the clobber lint exactly like the
+// long form's — the word path shares expand_item's authorship/analysis tail.
+#[test]
+fn word_scratch_clobber_is_seen_by_the_clobber_lint() {
+    let (_m, diags) = lower(
+        "module m\nproc p() clobbers(d0) {\n    mul_const.w d0, #66, d1\n    rts\n}\n",
+    );
+    assert!(
+        has_tag(&diags, "[proc.clobber-undeclared]"),
+        "the word chain writes d1; the lint must see it: {diags:?}"
+    );
 }
