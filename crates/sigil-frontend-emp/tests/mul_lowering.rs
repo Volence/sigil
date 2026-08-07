@@ -242,6 +242,57 @@ fn word_through_a_comptime_asm_template_is_byte_identical() {
     assert_eq!(flatten(&m_fn), flatten(&m_direct));
 }
 
+// `sizeof(...)` is an ordinary comptime integer in the multiplier position, so a
+// stride can DERIVE from the struct it walks instead of restating its size. The
+// derivation is what earns the spelling: change the struct and the multiplier
+// changes with it, which is the property a restated stride cannot offer.
+#[test]
+fn a_sizeof_multiplier_derives_from_the_struct() {
+    // Two layouts of one struct, 26 and 22 bytes — the same shape and the same
+    // one-field difference the corpus's own EntityScanState grew.
+    let via_sizeof = |size: &str, tail: &str| {
+        format!(
+            "module m\n\
+             struct S (size: {size}) {{\n\
+             \x20   a: u32 @ $00,\n\
+             \x20   b: u32 @ $04,\n\
+             \x20   c: u32 @ $08,\n\
+             \x20   d: u32 @ $0C,\n\
+             \x20   e: u32 @ $10,\n\
+             \x20   f: u16 @ $14,\n\
+             {tail}\
+             }}\n\
+             proc p() clobbers(d0, d1) {{\n\
+             \x20   mul_const.w d0, #sizeof(S), d1\n\
+             \x20   rts\n}}\n"
+        )
+    };
+    let via_literal = |n: u32| {
+        format!(
+            "module m\nproc p() clobbers(d0, d1) {{\n\
+             \x20   mul_const.w d0, #{n}, d1\n\
+             \x20   rts\n}}\n"
+        )
+    };
+
+    // Accepted, and identical to the literal spelling of the same number.
+    let (m_sizeof, d_sizeof) = lower(&via_sizeof("$1A", "    g: u32 @ $16,\n"));
+    let (m_literal, d_literal) = lower(&via_literal(26));
+    assert!(errors(&d_sizeof).is_empty(), "sizeof multiplier refused: {d_sizeof:?}");
+    assert!(errors(&d_literal).is_empty(), "{d_literal:?}");
+    assert_eq!(flatten(&m_sizeof), flatten(&m_literal), "sizeof($1A) != #26");
+
+    // NON-VACUITY, the half that matters: a different struct size produces
+    // different bytes, and they are the bytes of THAT size's literal. A spelling
+    // that compiled but ignored the struct would pass the assertion above.
+    let (m_shrunk, d_shrunk) = lower(&via_sizeof("$16", ""));
+    let (m_lit22, d_lit22) = lower(&via_literal(22));
+    assert!(errors(&d_shrunk).is_empty(), "{d_shrunk:?}");
+    assert!(errors(&d_lit22).is_empty(), "{d_lit22:?}");
+    assert_ne!(flatten(&m_sizeof), flatten(&m_shrunk), "the multiplier ignored the struct");
+    assert_eq!(flatten(&m_shrunk), flatten(&m_lit22), "sizeof($16) != #22");
+}
+
 // `.b` (like `.l`) refuses — a byte-width multiply is an unratified contract.
 #[test]
 fn word_byte_suffix_refuses() {

@@ -70,6 +70,16 @@ reader had to re-verify. Ruled 2026-08-03; shipped in the mul-lowering parcel.
   grant is yours to make). The scratch may come back clobbered — declare it in
   `clobbers(...)` like any write; the lint sees the chain's real instructions.
 
+- **The multiplier may DERIVE — prefer the derived spelling.** The immediate
+  position takes any comptime integer expression, `sizeof(T)` included, not just
+  a literal or a bare named `const`. So for any struct size, entry stride or
+  array pitch, spell the fact rather than its value:
+  `mul_const.w d0, #sizeof(EntityScanState), d1`. A restated stride is a silent
+  wrong answer waiting on the next layout change — the byte gate cannot see it
+  (golden and fresh build agree on the wrong number), and it has cost this
+  corpus two live bugs in the same proc, in opposite directions. A derived
+  multiplier needs no `ensure` beside it; a literal one does.
+
 - **A data-dependent multiplier → `mul_bounded dDst, dSrc, #M[, dScratch]`**,
   where `M` is the largest value `dSrc` can hold (inclusive). The bound is
   MANDATORY — an unbounded operand's worst case is undecidable and the
@@ -89,7 +99,14 @@ reader had to re-verify. Ruled 2026-08-03; shipped in the mul-lowering parcel.
   zero-extend to pay for). Spell bare `mul_const` (the long form) only when you
   need the full 32-bit product; `.l` is refused (a second name for one meaning).
 
-- **When NOT to use them:** the two repeated-add loop sites (section.emp
-  `.gxy_mul`, tile_cache.emp `.mul_loop`) are `mul_bounded.w` shapes, but the
-  cost model picks `mulu` at their bound — adopting there is byte-CHANGING and
-  waits for a deliberate byte-changing parcel (gap-ledger loop-site row).
+- **When NOT to use them:** a power of two. `mul_const.w` for `×32` is a
+  6-instruction chain where `lsl.w #5` is one instruction and two bytes; the
+  construct's value is naming a derived constant, and a shift count cannot
+  derive from a size today (there is no `log2` builtin). Also: a site where the
+  multiplicand is live afterwards — `mul_const` multiplies IN PLACE, so every
+  construct spelling costs a preload the hand chain does not need, which is why
+  the two `tile_cache.emp` hand chains stay hand-written under an `ensure`.
+  (The former entry here — the two repeated-add loop sites `section.emp`
+  `.gxy_mul` and `tile_cache.emp` `.mul_loop` awaiting a byte-changing parcel —
+  is retired: both were adopted as `mul_bounded.w` at the ltr-mul parcel and
+  neither label exists in the corpus any more.)
