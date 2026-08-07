@@ -359,8 +359,14 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // tail loses object_test_state's span: ASSEMBLED_LEN −0x2C8 (re-quantised).
     // DEBUG grows +0x34 net from the ownership moves (TestArt -> ojz_scroll_test,
     // the enemy/parent objdefs -> object_test_state).
-    assert_eq!(pins::ASSEMBLED_LEN, 0x5D968);
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F758); // +6 cheat-flag arm write; +0x34 objtest-gate moves
+    // `slide-fixture` (2026-08-07): a second recorded input fixture (240 B,
+    // +0xF0 after alignment) embedded beside the standing one, covering the
+    // entity-window slide path the shipped stream never reaches, in all four
+    // crossing directions. It is placed after ALL gameplay content and before
+    // the fault-handler island, so zero gameplay addresses move — BOTH shapes
+    // grow by exactly 0xF0 and every fault-vector pin shifts by the same amount.
+    assert_eq!(pins::ASSEMBLED_LEN, 0x5DA58); // +0xF0 slide-fixture
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F848); // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the

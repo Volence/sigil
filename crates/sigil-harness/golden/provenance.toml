@@ -2496,3 +2496,57 @@ full_crc = "7e273b14"
 full_size = 423571
 anchor_crc = "6e6dcfec"
 anchor_end = 0x5f758
+
+[[entry]]
+name = "slide-fixture"
+ab = "docs/superpowers/notes/2026-08-07-slide-fixture-ab.md"
+note = "a second recorded input fixture covering the entity-window slide path in all four crossing directions; +262 bytes after all gameplay content, so only the fault island and EndOfRom move"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "a29754a0"
+full_size = 424209
+anchor_crc = "1ad4c994"
+anchor_end = 0x5f848
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "6e22c742"
+full_size = 301467
+anchor_crc = "f61bc2df"
+anchor_end = 0x42e80
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "b3ceaac5"
+full_size = 91330
+anchor_crc = "d697f872"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "f36cd2b4"
+full_size = 94031
+anchor_crc = "d88fac6c"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "81e65633"
+full_size = 379350
+anchor_crc = "9921cbfe"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "d1367368"
+full_size = 411429
+anchor_crc = "ea62ffca"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "8c420efd"
+full_size = 423831
+anchor_crc = "b1f25b4b"
+anchor_end = 0x5f848
