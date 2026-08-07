@@ -921,3 +921,47 @@ fn a_tail_exit_on_the_not_cc_path_is_an_exit_but_its_target_is_not_charged() {
         "an unknown tail target must NOT be charged — it may be a noreturn error rail"
     );
 }
+/// WHY the aeon corpus's `[proc.out-unverified]` residue fires: the WIDTH rule,
+/// not control flow. Three shapes, measured — the first two are the hypotheses
+/// this test exists to REFUTE, so nobody re-proposes them.
+///
+/// The corpus residue is dominated by procs that produce a sub-width value
+/// (`Collision_GetType` returns an attr BYTE; `GetSineCosine` returns table
+/// WORDS) and declare `out(rN)`, which means all 32 bits. `out` has no width
+/// facet, so the declaration cannot say what is true. That is a
+/// LANGUAGE-SURFACE gap — the contract is as close as the surface allows — and
+/// not a loose contract or a verifier-model gap.
+#[test]
+fn the_out_residue_is_a_width_gap_not_a_control_flow_one() {
+    let m = map(&[]);
+
+    // REFUTED HYPOTHESIS 1 — a local subroutine's `rts` charged as a proc
+    // return. It is not: `jbsr` yields only a fall-through edge, so an
+    // unreachable local body is never walked.
+    let local_sub = "module m\nproc P () clobbers(d1) out(d0) {\n\
+        \x20       jbsr    .helper\n\x20       moveq   #1, d0\n\x20       rts\n\
+        \x20   .helper:\n\x20       moveq   #2, d1\n\x20       rts\n}\n";
+    assert!(is_produced(&status_uncond(local_sub, "P", Reg::D0, &m)),
+        "a local subroutine's rts must NOT be charged as a proc-level return");
+
+    // REFUTED HYPOTHESIS 2 — a narrowing write demoting an earlier full-width
+    // production. It does not: once produced, still produced.
+    let narrowed = "module m\nproc P () clobbers(d3) out(d0) {\n\
+        \x20       moveq   #16, d0\n\x20       sub.w   d3, d0\n\x20       rts\n}\n";
+    assert!(is_produced(&status_uncond(narrowed, "P", Reg::D0, &m)),
+        "a narrowing write after a full-width production must not un-produce");
+
+    // THE ACTUAL CAUSE — a return path whose ONLY write to the register is
+    // sub-width. `Collision_GetType`'s shape verbatim.
+    let byte_path = "module m\nproc P (d1: u16) clobbers(d1/a0) out(d0) {\n\
+        \x20       tst.w   d1\n\x20       beq     .air\n\
+        \x20       move.b  (a0, d1.w), d0\n\x20       rts\n\
+        \x20   .air:\n\x20       moveq   #0, d0\n\x20       rts\n}\n";
+    assert!(is_unverified(&status_uncond(byte_path, "P", Reg::D0, &m)),
+        "a sub-width final write must not verify a full-width out");
+
+    // Control: widening that one write is the whole difference.
+    let long_path = byte_path.replace("move.b  (a0, d1.w), d0", "move.l  (a0, d1.w), d0");
+    assert!(is_produced(&status_uncond(&long_path, "P", Reg::D0, &m)),
+        "widening the same write verifies — the width rule is the discriminator");
+}
