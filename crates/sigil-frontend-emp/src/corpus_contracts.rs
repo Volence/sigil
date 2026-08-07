@@ -574,6 +574,7 @@ pub fn analyze_corpus_with_contracts(
             &cond_callees,
             &extern_names,
             &falls_into_procs,
+            &noreturn,
         );
 
     // §6 caller-side flag checks, now that every callee's contract is known. §6
@@ -719,6 +720,7 @@ pub fn analyze_corpus_with_contracts(
             // same call, so control running off this body's end is not a return
             // and the out claim is not due there.
             pb.falls_into.is_none(),
+            &noreturn,
         ));
     }
     out_firings.sort_by(|a, b| (&a.proc, &a.reg, a.span.start).cmp(&(&b.proc, &b.reg, b.span.start)));

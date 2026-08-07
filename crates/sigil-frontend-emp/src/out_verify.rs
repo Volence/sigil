@@ -113,8 +113,9 @@ pub fn check_out(
     cond_callees: &BTreeMap<String, Vec<(String, String)>>,
     span: Span,
     charge_fall_off_end: bool,
+    noreturn: &BTreeSet<String>,
 ) -> Vec<OutFiring> {
-    verify_out(items, uncond, cond, callee_uncond_out, cond_callees, charge_fall_off_end)
+    verify_out(items, uncond, cond, callee_uncond_out, cond_callees, charge_fall_off_end, noreturn)
         .into_iter()
         .filter_map(|(r, status)| match status {
             OutStatus::Produced => None,
@@ -243,6 +244,7 @@ pub fn verify_out(
     callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
     cond_callees: &BTreeMap<String, Vec<(String, String)>>,
     charge_fall_off_end: bool,
+    noreturn: &BTreeSet<String>,
 ) -> BTreeMap<Reg, OutStatus> {
     let cfg = Cfg::build(items);
 
@@ -345,6 +347,14 @@ pub fn verify_out(
                 // is not consulted.
                 Edge::BranchOut => {}
                 Edge::TailOut => {
+                    // ...UNLESS it DIVERGES. An `@noreturn` target or an
+                    // `AssertDesugar`-authored raise rail never returns to P's
+                    // caller, so it is not a return path and carries no out
+                    // obligation. Same predicate `preserves` uses — one place, so a
+                    // checker cannot know half the successor story.
+                    if crate::preserves::exit_diverges(&items[idx], noreturn) {
+                        continue;
+                    }
                     // An UNCONDITIONAL tail transfer is a required return path
                     // (Finding 3): control leaves P for the target, which returns
                     // to P's caller.
@@ -416,6 +426,7 @@ pub fn compute_verified_outs(
     declared_cond: &CondOutMap,
     extern_names: &BTreeSet<String>,
     falls_into: &BTreeSet<String>,
+    noreturn: &BTreeSet<String>,
 ) -> (UncondOutMap, CondOutMap) {
     // SEED: externs verified by axiom; every other proc empty.
     let mut v_uncond: BTreeMap<String, BTreeSet<String>> = declared_uncond
@@ -459,7 +470,7 @@ pub fn compute_verified_outs(
                 continue;
             }
             let statuses =
-                verify_out(items, &uncond, &cond, &v_uncond, &v_cond, !falls_into.contains(name));
+                verify_out(items, &uncond, &cond, &v_uncond, &v_cond, !falls_into.contains(name), noreturn);
             let unver: BTreeSet<String> = statuses
                 .iter()
                 .filter(|(_, s)| matches!(s, OutStatus::Unverified(_)))

@@ -476,6 +476,31 @@ pub fn verify_preserved_on(
         .collect()
 }
 
+/// Does the transfer-out at this item DIVERGE — i.e. never come back to this
+/// proc's caller?
+///
+/// Two ways, and both must be here rather than in a consumer: an `@noreturn`
+/// target, and an `AssertDesugar`-authored assert/raise rail (compiler-authored,
+/// so it carries no symbol a consumer could look up). A divergent exit owes the
+/// caller nothing — it is not a return path for ANY per-exit obligation.
+///
+/// THE SHARED SUCCESSOR-AWARE PREDICATE. Every checker that walks exits needs the
+/// same two facts — a declared `falls_into` successor means a fall-off is not an
+/// exit, and a divergent tail means a transfer-out is not one either — and the
+/// class of bugs from a checker knowing neither is well attested. `preserves`
+/// carries both; `out_verify` reads this one; the stack walk takes the
+/// `falls_into` half as a flag. A checker that iterates exits without consulting
+/// this is the next instance waiting to happen.
+pub(crate) fn exit_diverges(item: &CodeItem, noreturn: &BTreeSet<String>) -> bool {
+    match item {
+        CodeItem::Instr { ops, author, .. } => {
+            matches!(author, ItemAuthor::AssertDesugar)
+                || transfer_target_sym(ops).is_some_and(|t| noreturn.contains(t))
+        }
+        _ => false,
+    }
+}
+
 /// How control left the proc at an exit the shared walk reports.
 ///
 /// Carried straight through from the CFG builder, and NOT one variant per [`Edge`]:
@@ -660,17 +685,15 @@ impl StackObserver for PreserveObserver<'_> {
                 // this check's safe polarity.
                 ExitKind::Defer => {
                     let items = self.items;
-                    let (callee, divergent) = match &items[idx] {
-                        CodeItem::Instr { ops, author, .. } => {
-                            if matches!(author, ItemAuthor::AssertDesugar) {
-                                (None, true)
-                            } else {
-                                let c = transfer_target_sym(ops);
-                                (c, c.is_some_and(|t| self.noreturn.contains(t)))
-                            }
+                    let callee = match &items[idx] {
+                        CodeItem::Instr { ops, author, .. }
+                            if !matches!(author, ItemAuthor::AssertDesugar) =>
+                        {
+                            transfer_target_sym(ops)
                         }
-                        _ => (None, false),
+                        _ => None,
                     };
+                    let divergent = exit_diverges(&items[idx], self.noreturn);
                     if divergent {
                         return; // a diverging exit never returns — no obligation
                     }

@@ -1378,7 +1378,7 @@ fn contract_baselines_hold_for_every_shipped_shape() {
 
         let out: Vec<(String, String)> =
             r.out_firings.iter().map(|f| (f.proc.clone(), f.reg.clone())).collect();
-        let d = contract_baseline::diff_out_unverified(&out, profile.debug);
+        let d = contract_baseline::diff_out_unverified(&out);
         assert!(
             d.is_clean(),
             "shape `{label}`: {}",

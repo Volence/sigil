@@ -61,7 +61,7 @@ fn status_uncond(
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-    verify_out(items, &[reg], &[], callee_uncond_out, &no_cond, true)
+    verify_out(items, &[reg], &[], callee_uncond_out, &no_cond, true, &BTreeSet::new())
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -368,7 +368,7 @@ fn status_cond(
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out, &no_cond, true)
+    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out, &no_cond, true, &BTreeSet::new())
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -389,7 +389,7 @@ fn status_uncond_cond_callee(
     for (callee, r, cc) in cond_callees {
         cond.entry(callee.to_string()).or_default().push((r.to_string(), cc.to_string()));
     }
-    verify_out(items, &[reg], &[], callee_uncond_out, &cond, true)
+    verify_out(items, &[reg], &[], callee_uncond_out, &cond, true, &BTreeSet::new())
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -680,7 +680,7 @@ fn fixpoint_uncond(
     let declared_uncond = map(declared);
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     let extern_names: BTreeSet<String> = externs.iter().map(|s| s.to_string()).collect();
-    compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &extern_names, &BTreeSet::new()).0
+    compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &extern_names, &BTreeSet::new(), &BTreeSet::new()).0
 }
 
 fn verified(m: &BTreeMap<String, BTreeSet<String>>, proc: &str, reg: Reg) -> bool {
@@ -989,7 +989,7 @@ fn a_falls_into_procs_fall_off_end_is_not_a_required_return() {
     let m = map(&[]);
 
     // charge_fall_off_end = false — the `falls_into` case.
-    let exempt = verify_out(items, &[Reg::A1], &[], &m, &no_cond, false)
+    let exempt = verify_out(items, &[Reg::A1], &[], &m, &no_cond, false, &BTreeSet::new())
         .remove(&Reg::A1)
         .expect("status");
     assert!(is_produced(&exempt), "a falls_into proc must not be charged at its fall-off");
@@ -997,7 +997,7 @@ fn a_falls_into_procs_fall_off_end_is_not_a_required_return() {
     // charge_fall_off_end = true — the ORDINARY case. The same body, with no
     // declared successor, still fires: the exemption is tied to the declaration,
     // not to the shape of the body.
-    let charged = verify_out(items, &[Reg::A1], &[], &m, &no_cond, true)
+    let charged = verify_out(items, &[Reg::A1], &[], &m, &no_cond, true, &BTreeSet::new())
         .remove(&Reg::A1)
         .expect("status");
     assert!(is_unverified(&charged), "without falls_into the same body must still fire");
