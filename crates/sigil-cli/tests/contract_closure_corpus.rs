@@ -913,10 +913,24 @@ fn corpus_flag_results_declared_vs_verified_credit_agree() {
 /// ONE fixpoint source, so they cannot disagree on whether an out is honest.
 /// (1) every residue firing names an out ABSENT from the verified map (the residue
 /// IS the verified complement); (2) a corpus witness that the residue-reporting
-/// switch actually landed — `Collision_GetType::out(d0)`, which grounds ONLY in the
-/// narrow-width (unverified) `Tile_Cache_GetCollision::out(d0)`, appears here (it
-/// would NOT under the pre-switch declared credit). If someone re-points the residue
-/// surface back at the declared map, the witness fails.
+/// switch to VERIFIED credit actually landed.
+///
+/// The witness must be a firing that exists ONLY under verified credit — i.e. one
+/// whose register is DECLARED by the proc it sources from, so declared credit
+/// would satisfy it and only the unproven verification withholds it.
+/// `Art_Decompress::out(a1)` is that shape: it produces `a1` nowhere itself (a
+/// pure dispatcher, `jbra ZX0_Decompress` / `jbra S4LZ_Decompress`), and
+/// `S4LZ_Decompress` DECLARES `out(a0, a1)` while verifying only `a0`. Under
+/// declared credit the tail would hand it `a1` and the row would vanish; under
+/// verified credit it stands.
+///
+/// `Collision_GetType::out(d0)` was the original witness and is NO LONGER VALID —
+/// recorded here because the failure is silent and the shape recurs. It was chosen
+/// when it sourced `d0` from a narrow-width `Tile_Cache_GetCollision`, but aeon
+/// `49b7f3d` fused that proc into `Collision_GetType`, which is now a LEAF with no
+/// calls at all. Callee credit cannot apply to it, so it fires identically under
+/// both maps: it still passes, and detects nothing. A witness whose discriminating
+/// power lives in another repo needs re-checking when that repo moves.
 #[test]
 fn corpus_out_residue_is_the_verified_complement() {
     let Some(r) = corpus_report() else { return };
@@ -931,12 +945,58 @@ fn corpus_out_residue_is_the_verified_complement() {
         );
     }
     assert!(
-        r.out_firings.iter().any(|f| f.proc == "Collision_GetType" && f.reg == "d0"),
-        "expected Collision_GetType::out(d0) in the fixpoint residue (chain-grounding \
-         through the unverified Tile_Cache_GetCollision) — the residue-reporting switch \
-         to verified credit did not land. got: {:?}",
+        r.out_firings.iter().any(|f| f.proc == "Art_Decompress" && f.reg == "a1"),
+        "expected Art_Decompress::out(a1) in the fixpoint residue — it grounds ONLY in \
+         S4LZ_Decompress::out(a1), which is DECLARED but not verified, so this row exists \
+         under verified credit and not under declared. Its absence means the residue \
+         surface is reading the declared map. got: {:?}",
         r.out_firings.iter().map(|f| (f.proc.as_str(), f.reg.as_str())).collect::<Vec<_>>()
     );
+}
+
+/// EDGE-SENSITIVE CONDITIONAL-OUT CREDIT, stated as a corpus witness rather than
+/// left as an absence. `out_verify`'s header names `Load_Object`←`AllocDynamic` as
+/// the worked example of an out sourced from a conditional callee and credited
+/// only on the caller's cc-success edge. Nothing asserted it: the capability was
+/// visible only as `Load_Object` NOT appearing in the residue, and an absence is
+/// not a claim — a credit that regressed would surface as an unexplained new
+/// baseline violation rather than as the named capability breaking.
+///
+/// The witness is TWO-part, because the interesting half is the conditional
+/// sourcing, not the credit. If `AllocDynamic` were ever relabeled to an
+/// unconditional `out(a1)`, `Load_Object`'s credit would still land — through the
+/// trivial path — and a one-part witness would keep passing while testing nothing
+/// about edge-sensitivity. So the source must still be genuinely conditional
+/// (`a1 if eq`) AND the credit must still reach the caller.
+///
+/// D1c fires `Load_Object @ AllocDynamic :: a1` on this same triple and that is
+/// NOT a contradiction: D1c's close is edge-BLIND by a deliberate ruling
+/// (`calls.rs`'s `destroys_value` header, §4 Finding 5 — coupling D1c to the edge
+/// primitive risks a degrade-to-miss on a `valid_edge` bail, judged worse than the
+/// documented false positive). Same proc, same register, same callee, two lints,
+/// opposite verdicts, both intended.
+#[test]
+fn corpus_conditional_callee_out_is_credited_edge_sensitively() {
+    let Some(srcs) = corpus_sources() else { return };
+
+    for (label, _profile, r) in analyze_every_shape(&srcs) {
+        let cond = r.verified_cond_out.get("AllocDynamic");
+        assert!(
+            cond.is_some_and(|cs| {
+                cs.iter().any(|(reg, cc)| reg.as_str() == "a1" && cc.as_str() == "eq")
+            }),
+            "shape `{label}`: AllocDynamic no longer verifies a CONDITIONAL out(a1 if eq) \
+             (got {cond:?}). The Load_Object witness below only tests edge-sensitive credit \
+             while its source is conditional — adjudicate before re-pointing it",
+        );
+        assert!(
+            r.verified_uncond_out.get("Load_Object").is_some_and(|s| s.contains("a1")),
+            "shape `{label}`: Load_Object::out(a1) is no longer credited from AllocDynamic's \
+             cc-success edge — the edge-sensitive conditional-out credit named in \
+             out_verify's header regressed. verified={:?}",
+            r.verified_uncond_out.get("Load_Object")
+        );
+    }
 }
 
 /// §3.2 THE BRACKET GATE. Every `with` region in the corpus must prove its

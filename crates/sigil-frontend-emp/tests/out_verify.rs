@@ -61,7 +61,7 @@ fn status_uncond(
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-    verify_out(items, &[reg], &[], callee_uncond_out, &no_cond)
+    verify_out(items, &[reg], &[], callee_uncond_out, &no_cond, None, &BTreeSet::new())
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -368,7 +368,7 @@ fn status_cond(
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out, &no_cond)
+    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out, &no_cond, None, &BTreeSet::new())
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -389,7 +389,7 @@ fn status_uncond_cond_callee(
     for (callee, r, cc) in cond_callees {
         cond.entry(callee.to_string()).or_default().push((r.to_string(), cc.to_string()));
     }
-    verify_out(items, &[reg], &[], callee_uncond_out, &cond)
+    verify_out(items, &[reg], &[], callee_uncond_out, &cond, None, &BTreeSet::new())
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -680,7 +680,24 @@ fn fixpoint_uncond(
     let declared_uncond = map(declared);
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     let extern_names: BTreeSet<String> = externs.iter().map(|s| s.to_string()).collect();
-    compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &extern_names).0
+    compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &extern_names, &BTreeMap::new(), &BTreeSet::new()).0
+}
+
+/// [`fixpoint_uncond`] with a `falls_into` successor map — the plumbing that
+/// carries each proc's declared successor from the proc table into the fixpoint.
+fn fixpoint_uncond_fi(
+    src: &str,
+    declared: &[(&str, &[Reg])],
+    falls_into: &[(&str, &str)],
+) -> BTreeMap<String, BTreeSet<String>> {
+    let all = eval_all(src);
+    let proc_items: BTreeMap<String, &[CodeItem]> =
+        all.iter().map(|(n, v)| (n.clone(), v.as_slice())).collect();
+    let declared_uncond = map(declared);
+    let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    let fi: BTreeMap<String, String> =
+        falls_into.iter().map(|(p, s)| (p.to_string(), s.to_string())).collect();
+    compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &BTreeSet::new(), &fi, &BTreeSet::new()).0
 }
 
 fn verified(m: &BTreeMap<String, BTreeSet<String>>, proc: &str, reg: Reg) -> bool {
@@ -919,5 +936,178 @@ fn a_tail_exit_on_the_not_cc_path_is_an_exit_but_its_target_is_not_charged() {
         survives(untouched, "P", &[(Reg::A1, "eq")], &["d0"], CallPolicy::Oracle(&unknown))
             .is_empty(),
         "an unknown tail target must NOT be charged — it may be a noreturn error rail"
+    );
+}
+/// WHY the aeon corpus's `[proc.out-unverified]` residue fires: the WIDTH rule,
+/// not control flow. Three shapes, measured — the first two are the hypotheses
+/// this test exists to REFUTE, so nobody re-proposes them.
+///
+/// The corpus residue is dominated by procs that produce a sub-width value
+/// (`Collision_GetType` returns an attr BYTE; `GetSineCosine` returns table
+/// WORDS) and declare `out(rN)`, which means all 32 bits. `out` has no width
+/// facet, so the declaration cannot say what is true. That is a
+/// LANGUAGE-SURFACE gap — the contract is as close as the surface allows — and
+/// not a loose contract or a verifier-model gap.
+#[test]
+fn the_out_residue_is_a_width_gap_not_a_control_flow_one() {
+    let m = map(&[]);
+
+    // REFUTED HYPOTHESIS 1 — a local subroutine's `rts` charged as a proc
+    // return. It is not: `jbsr` yields only a fall-through edge, so an
+    // unreachable local body is never walked.
+    let local_sub = "module m\nproc P () clobbers(d1) out(d0) {\n\
+        \x20       jbsr    .helper\n\x20       moveq   #1, d0\n\x20       rts\n\
+        \x20   .helper:\n\x20       moveq   #2, d1\n\x20       rts\n}\n";
+    assert!(is_produced(&status_uncond(local_sub, "P", Reg::D0, &m)),
+        "a local subroutine's rts must NOT be charged as a proc-level return");
+
+    // REFUTED HYPOTHESIS 2 — a narrowing write demoting an earlier full-width
+    // production. It does not: once produced, still produced.
+    let narrowed = "module m\nproc P () clobbers(d3) out(d0) {\n\
+        \x20       moveq   #16, d0\n\x20       sub.w   d3, d0\n\x20       rts\n}\n";
+    assert!(is_produced(&status_uncond(narrowed, "P", Reg::D0, &m)),
+        "a narrowing write after a full-width production must not un-produce");
+
+    // THE ACTUAL CAUSE — a return path whose ONLY write to the register is
+    // sub-width. `Collision_GetType`'s shape verbatim.
+    let byte_path = "module m\nproc P (d1: u16) clobbers(d1/a0) out(d0) {\n\
+        \x20       tst.w   d1\n\x20       beq     .air\n\
+        \x20       move.b  (a0, d1.w), d0\n\x20       rts\n\
+        \x20   .air:\n\x20       moveq   #0, d0\n\x20       rts\n}\n";
+    assert!(is_unverified(&status_uncond(byte_path, "P", Reg::D0, &m)),
+        "a sub-width final write must not verify a full-width out");
+
+    // Control: widening that one write is the whole difference.
+    let long_path = byte_path.replace("move.b  (a0, d1.w), d0", "move.l  (a0, d1.w), d0");
+    assert!(is_produced(&status_uncond(&long_path, "P", Reg::D0, &m)),
+        "widening the same write verifies — the width rule is the discriminator");
+}
+
+/// A declared `falls_into` proc's fall-off-end TRANSFERS the out obligation to
+/// the successor — it does not discharge it. Control continues into the successor
+/// inside the same call, so the claim is credited from the successor's verified
+/// unconditional out, exactly as a tail transfer is credited from its target.
+///
+/// `S4LZ_DecompressDict out(a1) falls_into S4LZ_Decompress` is the corpus
+/// exhibit: its own body only READS `a1` (`suba.l a1, a4`), so whether the claim
+/// stands depends entirely on the successor.
+///
+/// The polarities that matter vary the SUCCESSOR, not the flag. Varying only the
+/// flag would keep passing under an implementation that ignores the successor
+/// altogether — i.e. it would pin the vacuity as the contract. A body that
+/// produces nothing must verify only when something else provably produces it.
+#[test]
+fn a_falls_into_procs_fall_off_charges_the_successor() {
+    // A body that never produces `a1` and never returns — it runs off the end.
+    let src = "module m\n\
+        proc P (a1: *u8) clobbers(a4) out(a1) {\n\
+        \x20       suba.l  a1, a4\n\
+        }\n";
+    let all = eval_all(src);
+    let items = all.get("P").expect("no proc P");
+    let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+
+    let check = |succ: Option<&str>, m: &BTreeMap<String, BTreeSet<String>>| {
+        verify_out(items, &[Reg::A1], &[], m, &no_cond, succ, &BTreeSet::new())
+            .remove(&Reg::A1)
+            .expect("status")
+    };
+
+    // (1) The successor PRODUCES a1 — the obligation lands and is discharged.
+    let produced = map(&[("Q", &[Reg::A1])]);
+    assert!(
+        is_produced(&check(Some("Q"), &produced)),
+        "a falls_into fall-off must be credited from the successor's verified out"
+    );
+
+    // (2) The successor does NOT produce a1 — the obligation lands and FAILS.
+    // This is the case a blanket exemption cannot express, and the one that
+    // proves the successor is actually consulted.
+    let barren = map(&[("Q", &[Reg::D0])]);
+    assert!(
+        is_unverified(&check(Some("Q"), &barren)),
+        "a successor that does not produce the register must not verify the claim"
+    );
+
+    // (3) The successor is unknown to the walk (extern / unresolved) — it credits
+    // nothing, so the claim cannot be proven.
+    assert!(
+        is_unverified(&check(Some("Q"), &map(&[]))),
+        "an unknown successor credits nothing and must not verify the claim"
+    );
+
+    // (4) No declared successor — the ordinary case. The same body still fires,
+    // and it fires for the same reason: nothing produces `a1`.
+    assert!(
+        is_unverified(&check(None, &produced)),
+        "without falls_into the same body must still fire"
+    );
+}
+
+/// THE PLUMBING, one layer above [`verify_out`]: the successor NAME must actually
+/// travel from the proc table, through `compute_verified_outs`, into the fall-off
+/// credit. `P falls_into Q` where P produces nothing and Q grounds locally — P can
+/// verify ONLY if that map arrived intact.
+///
+/// This exists because the corpus CANNOT witness it. The one 68k `falls_into` proc
+/// declaring an out is `S4LZ_DecompressDict out(a1) falls_into S4LZ_Decompress`,
+/// and the successor's own `a1` is unverified, so that row fires identically
+/// whether the credit is wired up or silently dropped. A mutant replacing either
+/// end of the plumbing with `None` passes every other gate in the tree.
+#[test]
+fn falls_into_successor_credit_reaches_the_fixpoint() {
+    // P falls off its end producing nothing; Q produces a1 locally and returns.
+    let src = "module m\n\
+        proc P () clobbers(d0) out(a1) {\n\
+        \x20       moveq   #0, d0\n\
+        }\n\
+        proc Q () clobbers() out(a1) {\n\
+        \x20       lea     Slot, a1\n\
+        \x20       rts\n\
+        }\n";
+
+    // Q grounds locally either way.
+    let wired = fixpoint_uncond_fi(src, &[("P", &[Reg::A1]), ("Q", &[Reg::A1])], &[("P", "Q")]);
+    assert!(verified(&wired, "Q", Reg::A1), "Q produces a1 locally");
+    assert!(
+        verified(&wired, "P", Reg::A1),
+        "P must be credited from its declared successor Q — the falls_into map did not \
+         reach the fall-off credit"
+    );
+
+    // The SAME program with the successor map empty: nothing credits P, so the
+    // claim cannot be proven. This is the mutant the corpus cannot catch.
+    let unwired = fixpoint_uncond_fi(src, &[("P", &[Reg::A1]), ("Q", &[Reg::A1])], &[]);
+    assert!(verified(&unwired, "Q", Reg::A1), "Q still grounds locally");
+    assert!(
+        !verified(&unwired, "P", Reg::A1),
+        "with no successor map P has nothing to credit from and must NOT verify"
+    );
+}
+
+/// The fall-off credit is EDGE-LOCAL: it discharges the claim at the fall-off, and
+/// nowhere else. A body with both an `rts` path and a fall-off path must still
+/// FIRE, because the `rts` path returns to the caller without the successor ever
+/// running. An implementation that credited the successor globally — as a
+/// post-proc fact rather than on the one edge — would wrongly bless this.
+#[test]
+fn falls_into_credit_does_not_reach_an_rts_on_another_path() {
+    let src = "module m\n\
+        proc P (d1: u16) clobbers(d0) out(a1) {\n\
+        \x20       tst.w   d1\n\
+        \x20       beq     .out\n\
+        \x20       moveq   #0, d0\n\
+        \x20   .out:\n\
+        \x20       rts\n\
+        }\n\
+        proc Q () clobbers() out(a1) {\n\
+        \x20       lea     Slot, a1\n\
+        \x20       rts\n\
+        }\n";
+    let m = fixpoint_uncond_fi(src, &[("P", &[Reg::A1]), ("Q", &[Reg::A1])], &[("P", "Q")]);
+    assert!(
+        !verified(&m, "P", Reg::A1),
+        "an rts path returns without entering the successor — the fall-off credit \
+         must not discharge it"
     );
 }

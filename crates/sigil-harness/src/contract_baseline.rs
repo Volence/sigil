@@ -25,10 +25,24 @@ use std::collections::BTreeMap;
 /// `[proc.out-unverified]` (§G4.5): a proc declares `out(rN)` but the closure
 /// cannot prove `rN` is produced on every required return path.
 ///
+/// SHAPE-INVARIANT, unlike [`D1C_BASELINE`] — measured on every one of the seven
+/// shipped shapes. If that ever stops holding, the D1c pair above is the shape to
+/// copy; do not flatten a real per-family difference into one array.
+///
 /// Every row here carries the same reason — "not produced on a required return
-/// path" — and the set clusters into a small number of verifier-model gaps rather
-/// than 30 independent loose contracts. The per-row adjudication lives in the
+/// path" — and the set clusters into a small number of causes rather than
+/// independent loose contracts. The dominant one is a LANGUAGE-SURFACE gap: the
+/// proc produces a sub-width value and `out(rN)` means all 32 bits, which the
+/// declaration has no way to say. The per-row adjudication lives in the
 /// campaign gap ledger; see the burn-down rows.
+///
+/// ROWS ARE NOT INDEPENDENT SITES. Credit flows along calls, tails and
+/// `falls_into` successors, so one unproven production can hold several rows
+/// open: `S4LZ_Decompress :: a1` is the root, and `Art_Decompress :: a1` (tail
+/// MUST-intersection) and `S4LZ_DecompressDict :: a1` (fall-off charged to its
+/// successor) are its dependants. A burn-down that counts rows will over-count
+/// the work and can "fix" a dependant by papering its root — compute the census
+/// over the fixpoint.
 pub const OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
     ("Art_Decompress", "a1"),
     ("Collision_GetType", "d0"),
@@ -118,8 +132,11 @@ pub const D1C_DEBUG_EXTRA: &[(&str, &str, &str)] = &[
 
 /// The D1c baseline for a shape: invariant rows, plus the debug-family addition.
 ///
-/// `[proc.out-unverified]` needs no such split — measured shape by shape, it is
-/// 30 on every one of the seven targets, so [`OUT_UNVERIFIED_BASELINE`] is flat.
+/// `[proc.out-unverified]` needs no such split — measured shape by shape, it
+/// fires the SAME set on every one of the seven targets, so
+/// [`OUT_UNVERIFIED_BASELINE`] is flat. The count is not restated here: the array
+/// is the one authority, and a number written down twice is the fork this
+/// module's preamble exists to prevent.
 pub fn d1c_baseline(debug_family: bool) -> Vec<(&'static str, &'static str, &'static str)> {
     let mut rows: Vec<_> = D1C_BASELINE.to_vec();
     if debug_family {

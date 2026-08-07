@@ -390,17 +390,14 @@ pub fn verify_preserved_on(
     // nothing. AllReturns only — a `Sites` scope keeps its exact former set.
     if matches!(scope, ReturnScope::AllReturns) {
         for (idx, it) in items.iter().enumerate() {
-            let CodeItem::Instr { ops, author, .. } = it else { continue };
+            let CodeItem::Instr { ops, .. } = it else { continue };
             if !cfg.edges(idx).iter().any(|e| matches!(e, Edge::TailOut | Edge::BranchOut)) {
                 continue;
             }
-            if matches!(author, ItemAuthor::AssertDesugar) {
-                continue; // an authored divergent rail — never returns
+            if exit_diverges(it, noreturn) {
+                continue; // never returns to the caller — charges nothing
             }
             let callee = transfer_target_sym(ops);
-            if callee.is_some_and(|t| noreturn.contains(t)) {
-                continue; // a `@noreturn` tail — never returns
-            }
             for (i, r) in REG_BY_IDX.iter().enumerate() {
                 if *r != Reg::A7 && !call_preserves(&policy, callee, *r) {
                     ever_clobbered[i] = true;
@@ -474,6 +471,44 @@ pub fn verify_preserved_on(
             (*r, status)
         })
         .collect()
+}
+
+/// Does the transfer-out at this item DIVERGE — i.e. never come back to this
+/// proc's caller?
+///
+/// Two ways, and both must be here rather than in a consumer: an `@noreturn`
+/// target, and an `AssertDesugar`-authored assert/raise rail (compiler-authored,
+/// so it carries no symbol a consumer could look up). A divergent exit owes the
+/// caller nothing — it is not a return path for ANY per-exit obligation.
+///
+/// THE SHARED SUCCESSOR-AWARE PREDICATE, and the two facts are NOT the same kind
+/// of fact — conflating them is itself a defect this project has paid for:
+///
+/// - A divergent tail is not a return path AT ALL. The obligation DISAPPEARS,
+///   because there is no caller to owe anything to. That is this predicate.
+/// - A declared `falls_into` successor does NOT make a fall-off vanish. The
+///   fall-off is still an exit; its obligation MOVES to the successor and is
+///   charged against the successor's contract. `preserves` does this by deferring
+///   to `checkpoint_after_tail(st, Some(succ))`, and `out_verify` by crediting the
+///   successor's verified out — both exactly as they charge a tail transfer.
+///
+/// Reading the second as "the exit is exempt" re-opens the vacuity hole this file
+/// documents closing: a proc whose only exit is a fall-off would have ZERO
+/// obligation sites, so every claim it declares would verify on no evidence.
+///
+/// `preserves` carries both facts; `out_verify` reads this one and takes the
+/// successor NAME for the other. The stack walk takes a `falls_into` BOOL, and it
+/// is the one place where dropping the charge is sound — the successor's own
+/// unconditional balance check discharges it. No value obligation has that
+/// discharge, so the flag shape does not generalise.
+pub(crate) fn exit_diverges(item: &CodeItem, noreturn: &BTreeSet<String>) -> bool {
+    match item {
+        CodeItem::Instr { ops, author, .. } => {
+            matches!(author, ItemAuthor::AssertDesugar)
+                || transfer_target_sym(ops).is_some_and(|t| noreturn.contains(t))
+        }
+        _ => false,
+    }
 }
 
 /// How control left the proc at an exit the shared walk reports.
@@ -660,17 +695,15 @@ impl StackObserver for PreserveObserver<'_> {
                 // this check's safe polarity.
                 ExitKind::Defer => {
                     let items = self.items;
-                    let (callee, divergent) = match &items[idx] {
-                        CodeItem::Instr { ops, author, .. } => {
-                            if matches!(author, ItemAuthor::AssertDesugar) {
-                                (None, true)
-                            } else {
-                                let c = transfer_target_sym(ops);
-                                (c, c.is_some_and(|t| self.noreturn.contains(t)))
-                            }
+                    let callee = match &items[idx] {
+                        CodeItem::Instr { ops, author, .. }
+                            if !matches!(author, ItemAuthor::AssertDesugar) =>
+                        {
+                            transfer_target_sym(ops)
                         }
-                        _ => (None, false),
+                        _ => None,
                     };
+                    let divergent = exit_diverges(&items[idx], self.noreturn);
                     if divergent {
                         return; // a diverging exit never returns — no obligation
                     }

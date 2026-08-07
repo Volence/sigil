@@ -559,8 +559,25 @@ pub fn analyze_corpus_with_contracts(
     // table in the residue note.
     let proc_items: BTreeMap<String, &[CodeItem]> =
         proc_bufs.iter().map(|pb| (pb.name.clone(), pb.buf.items.as_slice())).collect();
+    // Proc -> its declared `falls_into` successor. A fall-off-end here is not a
+    // return: control continues into the successor inside the same call, so the
+    // out claim is CHARGED AGAINST THE SUCCESSOR's verified outs rather than
+    // against this body — the same credit a tail transfer gets. The successor's
+    // NAME is the payload, because a "has a successor" bit cannot credit anything
+    // and would leave the claim resting on nothing.
+    let falls_into_succ: BTreeMap<String, String> = proc_bufs
+        .iter()
+        .filter_map(|pb| pb.falls_into.clone().map(|succ| (pb.name.clone(), succ)))
+        .collect();
     let (verified_uncond_out, verified_cond_out): (UncondOutMap, CondOutMap) =
-        compute_verified_outs(&proc_items, &callee_uncond_out, &cond_callees, &extern_names);
+        compute_verified_outs(
+            &proc_items,
+            &callee_uncond_out,
+            &cond_callees,
+            &extern_names,
+            &falls_into_succ,
+            &noreturn,
+        );
 
     // §6 caller-side flag checks, now that every callee's contract is known. §6
     // keeps the DECLARED credit (redefine-kill semantics). `flag_firings_verified`
@@ -701,6 +718,12 @@ pub fn analyze_corpus_with_contracts(
             &verified_uncond_out,
             &verified_cond_out,
             pb.span,
+            // A declared `falls_into` continues into its successor inside the
+            // same call, so control running off this body's end is not a return —
+            // the claim is charged against the successor's verified outs, one
+            // derivation shared with the fixpoint above.
+            pb.falls_into.as_deref(),
+            &noreturn,
         ));
     }
     out_firings.sort_by(|a, b| (&a.proc, &a.reg, a.span.start).cmp(&(&b.proc, &b.reg, b.span.start)));
