@@ -1,7 +1,7 @@
 # Collision lane, step 1c — the Load_Object contradiction, read and closed
 # (+ the panel fixup: an unsound widening the lane had already landed)
 
-Branch `collision` @ 7d863b4a (sigil only; aeon has no collision commits).
+Branch `collision` @ 2ae03153 (sigil only; aeon has no collision commits).
 Base: sigil master fe7a2b73, aeon master d8c93d7.
 
 **Read the fixup section before the rest.** The investigation below closed the
@@ -169,10 +169,11 @@ arguments with no allow.
 ## Gates (all own-run, none waived)
 
 - **Strict** `SIGIL_STRICT_GATE=1 AEON_DIR=<aeon collision worktree> cargo test
-  --workspace --release`: **3515 passed / 0 failed / 4 ignored = 3519**.
-  Closing arithmetic: branch's own `#[test]` total = **3519**. Closes exactly.
-  (+1 over the branch's prior 3518 = the witness added; the fixup replaced one
-  test with another, 1 for 1, so the total is unchanged by it.)
+  --workspace --release`: **3517 passed / 0 failed / 4 ignored = 3521**.
+  Closing arithmetic: branch's own `#[test]` total = **3521**. Closes exactly.
+  (+3 over the branch's inherited 3518: the credit witness, the plumbing test,
+  the edge-locality test. The first fixup replaced one test with another, 1 for
+  1, so it moved no count.)
 - **clippy** `--workspace --release --all-targets -- -D warnings`: clean. It was
   NOT clean on the inherited branch — `check_out` had been pushed to nine
   arguments with no allow, and master's is exactly seven.
@@ -214,6 +215,44 @@ previously blessed.
 **Neither bucket:** the residue's cascade structure was not previously written
 down anywhere, and it materially resizes the out-type adoption work — now THREE
 dependants of one root rather than two.
+
+## The re-panel on the fixup — verdict SOUND, two gaps closed
+
+A fourth read-only lens verified the fix against a clean tree at a named SHA.
+Verdict: **correct and sound, no MUST-FIX.** It checked the fixpoint algebra
+(monotone; every `true` bit traces to a local full-width production, so
+self-loops and mutual `falls_into` stabilise at ⊥ rather than at a false fixed
+point), the edge model (`Edge::FallOff` also covers a branch to a trailing local
+label — and the credit is correct there too, since such a label sits at the same
+address as the fall-through into the successor), and confirmed the credit is
+edge-LOCAL (a `credit` copy, so it cannot leak to an `Edge::Return` on another
+path). It also confirmed the `check_cond_out_survives` `None` argument is a DEAD
+argument on the `Sites` path, not a policy inconsistency.
+
+Two SHOULD-FIX, both acted on, and the first is the more interesting:
+
+**The plumbing was untestable from the corpus, and half of it still is.** The
+lens argued a mutant replacing the successor lookup with `None` at either end
+would pass every gate. **Both mutants were run rather than argued.** Site 1 (the
+fixpoint lookup) is now CAUGHT by a test that builds its own discriminating pair.
+Site 2 (the per-proc firing tier) — **mutant GREEN, measured across 28 corpus
+tests.** The reason is structural: the corpus's only 68k `falls_into`+`out` site
+is `S4LZ_DecompressDict`, whose successor's `a1` is itself unverified, so the row
+fires identically whether the credit is wired or dropped. It is not unguarded by
+accident — `corpus_out_residue_is_the_verified_complement` catches the divergence
+the moment any corpus site gets credited — but that guard is dormant today, and
+that is a coverage fact worth writing down rather than a green light.
+
+A second test pins edge-locality (a body with both an `rts` and a fall-off still
+fires), closing the lens's NOTE that the original could pass under a globally-
+crediting implementation.
+
+**And a comment that taught the bug.** `lower/proc.rs`'s exemption justified
+itself by citing `out_verify`'s `charge_fall_off_end` as "the same line" — written
+by the commit that introduced the unsound drop. That flag no longer exists and
+the closure now draws a different line, so the comment endorsed exactly the
+reasoning that produced the defect. A stale comment is not cosmetic when it
+encodes a rejected design as precedent.
 
 ## Open, deliberately not fixed here
 
