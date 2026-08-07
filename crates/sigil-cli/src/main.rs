@@ -872,7 +872,6 @@ fn run_contract_report(aeon: &std::path::Path, target: &BuildTarget) {
     let defines = sigil_harness::native::shape_defines(&profile);
     let report = corpus_closure_or_exit(aeon, target);
     print_report_header("contract closure", &label, &defines);
-    let _ = profile;
     print_contract_report(&report);
 }
 
@@ -913,23 +912,25 @@ fn corpus_closure_or_exit(
     corpus_contracts::analyze_corpus_with_contracts(&files, &defines, &iface_env)
 }
 
-/// THE BUILD-INTEGRATED CLOSURE GATE (default-ON, owner-ruled 2026-08-07).
+/// THE BUILD-INTEGRATED CLOSURE GATE (default-ON).
 ///
-/// Until this landed, the corpus closure ran only in Sigil's CI and the strict
-/// gates: it stopped MERGES, never builds. An engine author could add a loose
-/// `out()` contract, build a working ROM, and learn about it a day later from a
-/// gate they never run. The two-tier story stays true — per-file declared-contract
-/// checks are build diagnostics and error tier stops the build — but the closure
-/// tier now stops the build too, on the same terms.
+/// The corpus closure needs the whole call graph, so it cannot be computed by
+/// per-file lowering; it runs here, before the link. That makes the two-tier
+/// story complete: per-file declared-contract checks are build diagnostics whose
+/// error tier stops the build, and the closure tier stops it too, by this gate.
 ///
 /// RATCHET, not assert-empty. Two families carry a frozen residue that is mostly
 /// verifier-model gap rather than loose contract, and the standing ruling bars
 /// editing engine code to please a checker; they are pinned instead, both
-/// directions. Two families are zero-firing today and are asserted empty from day
-/// one, with no baseline to go stale.
+/// directions. The zero-firing families are asserted empty, with no baseline to
+/// go stale.
 ///
 /// Baselines come from `sigil_harness::contract_baseline` — the SAME constants the
 /// CI gates assert against. Neither side owns a copy.
+///
+/// The gate reads the baseline and NOTHING else: `@allow` / `@as_compat` are
+/// per-file-tier mechanisms and do not soften a closure finding. A row leaves
+/// this gate by being adjudicated into the baseline, or by being fixed.
 ///
 /// `SIGIL_CONTRACTS=0` is the emergency opt-out (aeon's `build.sh` maps
 /// `CONTRACTS=0` onto it). It is loud: a skipped gate prints why.
@@ -946,6 +947,59 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
 
     let report = corpus_closure_or_exit(aeon, target);
     let mut failed = false;
+
+    // BLINDNESS FIRST, and it is not a baseline change. If instructions dropped
+    // or a comptime condition failed to resolve, the closure UNDER-approximates:
+    // firings vanish, the baseline diff reports them as GONE, and the message
+    // below would tell the author to delete the pin over an analysis that just
+    // went blind — the destructive direction the ratchet exists to prevent. These
+    // two must therefore fail with their own message, before any diff runs.
+    if report.dropped_instrs != 0 {
+        eprintln!(
+            "error: the contract closure DROPPED {} instruction(s) — the analysis is \
+             under-approximating, so every finding below it is unreliable. This is NOT a \
+             baseline change; do not adjudicate rows against it.",
+            report.dropped_instrs
+        );
+        for (proc, n) in &report.dropped_by_proc {
+            eprintln!("  {proc}: {n}");
+        }
+        failed = true;
+    }
+    if !report.comptime_unresolved.is_empty() {
+        eprintln!(
+            "error: {} comptime condition(s) did not resolve — a poisoned condition \
+             discards BOTH arms, so the closure never saw that code. NOT a baseline change.",
+            report.comptime_unresolved.len()
+        );
+        for (m, n, _) in &report.comptime_unresolved {
+            eprintln!("  {m}: {n}");
+        }
+        failed = true;
+    }
+    if failed {
+        eprintln!(
+            "error: contract closure gate FAILED — the analysis is blind. Fix the drops \
+             or the unresolved conditions; the baselines mean nothing until it can see."
+        );
+        process::exit(1);
+    }
+
+    // The families CI already asserts EMPTY. Gating only the four baselined ones
+    // would have made "the closure gates the build" true of a quarter of it.
+    let mut empty_gate = |name: &str, n: usize| {
+        if n != 0 {
+            eprintln!("error: {name} — {n} firing(s); this family is zero-firing by contract.");
+            failed = true;
+        }
+    };
+    empty_gate("unresolved callees (missing extern proc?)", report.closure.unresolved_callees.len());
+    empty_gate("extern/proc collisions", report.extern_collisions.len());
+    empty_gate("[proc.clobber-undeclared] closure firings", report.firings.len());
+    empty_gate("[proc.preserves-unverifiable] word-facet firings", report.word_preserve_firings.len());
+    empty_gate("[context.escape]/[context.entry-skip]/[context.reacquire]", report.context_firings.len());
+    empty_gate("unknown context references", report.unknown_context_refs.len());
+    empty_gate("[call.input-undefined] firings", report.input_firings.len());
 
     let out_got: Vec<(String, String)> =
         report.out_firings.iter().map(|f| (f.proc.clone(), f.reg.clone())).collect();

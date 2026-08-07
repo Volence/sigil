@@ -829,10 +829,12 @@ corpus closure and, until 2026-08-07, minted no `Diagnostic` anywhere — it exi
 only as a field on the closure report that CI read. A per-file lowering pass
 cannot compute it, because the requirement lives on a callee in another module.
 
-Two things changed on 2026-08-07 and the claim is now true again, by a different
-route than the packet implies: the closure runs on every build (`sigil build`
-before linking; aeon `build.sh` default-on, `CONTRACTS=0` the emergency hatch),
-and `[context.unsatisfied]` is asserted EMPTY there — it is zero-firing today, so
-it takes no baseline and a first firing stops the build.
+What changed on 2026-08-07: the closure runs on every build (`sigil build` before
+linking; aeon `build.sh` default-on, `CONTRACTS=0` the emergency hatch), and
+`[context.unsatisfied]` is asserted EMPTY there, so a first firing stops the
+build. Precisely, though — it still mints no `Diagnostic`: the gate prints its own
+line and exits non-zero, with no span and no entry in the warn tally. The packet's
+"compile-time check" reading is closer to true than it was, and it is still not
+what the implementation does.
 
 See §6.1 of the contract-unification spec for the tier map this belongs to.

@@ -125,6 +125,10 @@ pub fn d1c_baseline(debug_family: bool) -> Vec<(&'static str, &'static str, &'st
     if debug_family {
         rows.extend_from_slice(D1C_DEBUG_EXTRA);
     }
+    // Sorted, so the combined baseline stays comparable to the analysis's own
+    // sort order — appending the debug rows after the invariant ones would
+    // otherwise foreclose an order pin for the debug family.
+    rows.sort_unstable();
     rows
 }
 
@@ -158,16 +162,20 @@ fn diff_multiset(got: Vec<String>, want: Vec<String>) -> BaselineDiff {
         m
     };
     let (g, w) = (tally(&got), tally(&want));
+    // Report the COUNTS, not the bare key. A row that goes 2 -> 1 is a real
+    // change and a bare key renders it as if the row vanished entirely — the
+    // reader greps, finds the call still there, and concludes the gate is broken.
+    let render = |k: &String, got_n: usize, want_n: usize| format!("{k} (got {got_n}, want {want_n})");
     BaselineDiff {
         added: g
             .iter()
             .filter(|(k, n)| w.get(*k).copied().unwrap_or(0) < **n)
-            .map(|(k, _)| k.clone())
+            .map(|(k, n)| render(k, *n, w.get(k).copied().unwrap_or(0)))
             .collect(),
         removed: w
             .iter()
             .filter(|(k, n)| g.get(*k).copied().unwrap_or(0) < **n)
-            .map(|(k, _)| k.clone())
+            .map(|(k, n)| render(k, g.get(k).copied().unwrap_or(0), *n))
             .collect(),
     }
 }

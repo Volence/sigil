@@ -8,10 +8,8 @@
 //! reads — one copy, so a pin cannot fork into two halves that disagree.
 
 use sigil_frontend_emp::corpus_contracts::{analyze_corpus, ContractReport};
-use sigil_harness::contract_baseline;
 use sigil_frontend_emp::out_verify::survives_message;
 use sigil_frontend_emp::parse_str;
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -116,61 +114,13 @@ fn cond_out_survives_claims_all_prove() {
 /// no claim.
 const SURVIVES_CLAIM_SITES: &[&str] = &["AllocEffect"];
 
-/// D1c HAS TEETH (the gate-weakness row): the corpus's `[call.live-clobbered]`
-/// firing set must equal [`D1C_BASELINE`] exactly. A contract edit that narrows
-/// a callee's effective set — the destructive direction, since the same closure
-/// feeds `find_dead_saves` — drops a row here and fails.
-#[test]
-fn d1c_firings_match_the_frozen_baseline() {
-    let Some(r) = corpus_report() else { return };
-
-    let got: Vec<(String, String, String)> = r
-        .live_clobbered_firings
-        .iter()
-        .map(|f| (f.proc.clone(), f.callee.clone(), f.reg.clone()))
-        .collect();
-    // The corpus walk here uses NO defines, which is the PLAIN family's view.
-    let d = contract_baseline::diff_d1c(&got, false);
-    assert!(d.is_clean(), "{}", contract_baseline::adjudication_message("[call.live-clobbered] (D1c)", &d));
-
-    // ORDER is part of the pin: the multiset already matched, so a failure here
-    // is the analysis sort alone.
-    let want: Vec<(String, String, String)> = contract_baseline::d1c_baseline(false)
-        .iter()
-        .map(|(p, c, reg)| (p.to_string(), c.to_string(), reg.to_string()))
-        .collect();
-    assert_eq!(got, want, "D1c firing ORDER changed — the analysis sort is part of the pin");
-}
-
-/// `[proc.out-unverified]` now has TEETH too, on the same pattern and against the
-/// same shared constants the build gate reads. Before this pin the residue was
-/// DUMPED for adjudication and nothing failed when it moved — a new loose `out()`
-/// contract could land and scroll past.
-///
-/// Assert-empty is not available: the corpus carries 30 firings today, most of
-/// them verifier-model gaps rather than loose contracts, and the ruling bars
-/// editing engine code to please a checker. So the gate is a RATCHET — the set may
-/// not grow, and a row that stops firing must be adjudicated rather than silently
-/// dropped.
-#[test]
-fn out_unverified_firings_match_the_frozen_baseline() {
-    let Some(r) = corpus_report() else { return };
-
-    let got: Vec<(String, String)> =
-        r.out_firings.iter().map(|f| (f.proc.clone(), f.reg.clone())).collect();
-    let d = contract_baseline::diff_out_unverified(&got);
-    assert!(
-        d.is_clean(),
-        "{}",
-        contract_baseline::adjudication_message("[proc.out-unverified]", &d)
-    );
-
-    // Non-vacuity: the baseline is non-empty and the corpus actually produced
-    // firings, so a silently-emptied analysis fails here rather than passing.
-    assert_eq!(
-        got.len(),
-        contract_baseline::OUT_UNVERIFIED_BASELINE.len(),
-        "firing count moved against the baseline length"
-    );
-    assert!(!got.is_empty(), "no firings at all — the analysis produced nothing to pin");
-}
+// The `[call.live-clobbered]` and `[proc.out-unverified]` baseline gates do NOT
+// live here, and the reason is load-bearing: this file's `corpus_report()` walks
+// DEFINE-FREE, and a define-free walk discards BOTH arms of every
+// `if DEBUG == 1 { }` / `if SOUND_DRIVER_ENABLED == 1 { }`. It is a strict
+// under-approximation of every shipped shape, not the view of any one of them —
+// see `contract_closure_corpus.rs`'s header, which says so directly. Pinning a
+// frozen baseline against it would make the pin unsatisfiable the moment a gated
+// arm gained or lost a firing: the define-free walk would report one count and
+// the per-shape builds another, with no baseline value satisfying both. Those
+// gates walk every shipped shape, in `contract_closure_corpus.rs`.

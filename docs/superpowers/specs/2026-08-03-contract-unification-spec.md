@@ -191,7 +191,7 @@ scope, ledgered as a P3 follow-on so the parcel stays bounded.
 | Finding | Tier | `@as_compat` | `@allow` |
 |---|---|---|---|
 | Declared-contract violation (any facet) | error | no effect | no |
-| `[contract.live-clobbered]` | error | softens to warn | yes, per-site |
+| `[call.live-clobbered]` | error | softens to warn | yes, per-site |
 | `[context.unsatisfied]` / `[context.escape]` / `[context.entry-skip]` / `[context.reacquire]` | error | no effect (contexts are always declared surface) | no |
 | `[contract.blind-call]` | error | softens to warn | yes |
 | `[contract.pub-undeclared]` | warn (P1) → error (P2+) | softens to warn | yes |
@@ -232,9 +232,18 @@ merely coarse; the pin is shape-invariant rows plus a per-family addition.
 class only.** A violation of a DECLARED contract has no suppression flag — you
 either meet the contract or change it. INFERRED-ONLY findings (`[stack.*]`,
 live-clobbered, blind-call, …) take `@as_compat` softening and per-site `@allow`
-by ratified design; that is what the two right-hand columns encode. Measured
-2026-08-07: the corpus has exactly **one** `@allow` and **zero** `@as_compat`, so
-both hatches are ratified surface with no adopters.
+by ratified design; that is what the two right-hand columns encode.
+
+**Those columns describe the PER-FILE tier only. The closure gate does not read
+them.** It diffs the frozen baseline and nothing else, so a per-site `@allow` on
+a live-clobbered site does NOT stop the build failing — the row has to be
+adjudicated into the baseline instead. Stating this precisely matters here more
+than anywhere: a footnote whose job is to say which tier stops what must not
+imply a hatch the gating tier has never had.
+
+Measured: the corpus carries **zero** `@as_compat` and exactly **one** `@allow`,
+and that one is `@allow("layout.odd-field")` — a layout lint, not a contract
+finding. So neither contract hatch has an adopter.
 
 **Baselined residue is not a bug list.** A pinned row is one of three things, and
 the ledger tracks which:
@@ -246,6 +255,10 @@ the ledger tracks which:
    please a checker is barred.
 3. **Language-surface gap** — the contract cannot be *expressed*. The declaration
    is as close as the surface allows, and closing it is a language question.
+
+A fourth outcome is possible and is deliberately NOT a bucket: **the contract is
+right and the CODE is wrong.** That is not residue to classify, it is a bug to
+fix, and it leaves the baseline by being fixed rather than by being categorised.
 
 The `Collision_Probe*` cluster is under adjudication and spans categories; it is
 cited here as an example of why the taxonomy has three buckets rather than two,
