@@ -199,6 +199,58 @@ scope, ledgered as a P3 follow-on so the parcel stays bounded.
 | `[stack.*]` | error | softens to warn | yes |
 | Budget overrun | error | n/a (new-style attr) | no |
 
+### §6.1 — WHICH tier stops WHAT (footnote, 2026-08-07)
+
+The table above gives the SEVERITY of a finding. It does not say what a finding
+stops, and the two are independent. Enforcement is **two-tier**:
+
+* **Per-file declared-contract checks are BUILD diagnostics.** They run during
+  lowering, on one module at a time, and error tier stops the build. "The checker
+  caught it, so the build stopped" is true here.
+* **The corpus CLOSURE — out-verification, context closure, live-clobbered, the
+  budget walks — needs the whole call graph** and cannot be computed from one
+  file. It was therefore CI-only for its whole life: it stopped merges, never
+  builds. **Since 2026-08-07 it runs on every build too** (`sigil build` invokes
+  it before linking; aeon's `build.sh` defaults it on, `CONTRACTS=0` is the
+  documented emergency hatch). So closure findings now gate the build as well —
+  but by a different mechanism, and with different semantics, than the per-file
+  tier.
+
+**The closure gate is a RATCHET, not an assert-empty.** Two families carry a
+frozen baseline; a firing outside it fails, and a baseline row that stops firing
+fails as a stale pin (the narrowing direction is destructive — the same closure
+feeds the dead-save walk). Families that are zero-firing are asserted empty with
+no baseline at all. One copy of each baseline is shared by the gate and the CI
+gates.
+
+**Baselines can be shape-dependent and the pin must say so.** `[call.live-
+clobbered]` fires 20 times in the plain shape family and 25 in the debug family
+— debug-gated code the plain shapes never assemble. A flat baseline is wrong, not
+merely coarse; the pin is shape-invariant rows plus a per-family addition.
+
+**Suppression is two-class, and the table's `@allow` column is about the second
+class only.** A violation of a DECLARED contract has no suppression flag — you
+either meet the contract or change it. INFERRED-ONLY findings (`[stack.*]`,
+live-clobbered, blind-call, …) take `@as_compat` softening and per-site `@allow`
+by ratified design; that is what the two right-hand columns encode. Measured
+2026-08-07: the corpus has exactly **one** `@allow` and **zero** `@as_compat`, so
+both hatches are ratified surface with no adopters.
+
+**Baselined residue is not a bug list.** A pinned row is one of three things, and
+the ledger tracks which:
+
+1. **Loose contract** — the declaration over-claims. Burn it down.
+2. **Verifier-model gap** — the contract is right and the analysis cannot see it
+   (e.g. a register advanced only through `(An)+`, which the write detection does
+   not model). It stays pinned until the model grows; editing engine code to
+   please a checker is barred.
+3. **Language-surface gap** — the contract cannot be *expressed*. The declaration
+   is as close as the surface allows, and closing it is a language question.
+
+The `Collision_Probe*` cluster is under adjudication and spans categories; it is
+cited here as an example of why the taxonomy has three buckets rather than two,
+not as a settled classification.
+
 ## §7 — Reporting
 
 `--report contracts`: every proc's DERIVED contract in valid annotation syntax
