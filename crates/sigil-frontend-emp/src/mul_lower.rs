@@ -407,8 +407,9 @@ fn mul_const_candidates_word(
             // wins by 6 cycles), which is why it is the lowering of the corpus's
             // stride multipliers: 28/32/34 cycles at ×66/×80/×160, against
             // `mulu.w`'s 46. That is the limit of the claim — at ≥ 3 set bits 5b
-            // is cheaper wherever it applies with m ≥ 7, e.g. n = 63, where 5b
-            // costs 26 against 5c's 44. At a two-power n = 2^a + 2^b it subsumes
+            // is cheaper wherever it applies with m ≥ 15; at m = 7 the two TIE at
+            // 20 cycles and 5b wins only the byte tie-break (6 B against 10 B),
+            // e.g. n = 63, where 5b costs 26 against 5c's 44. At a two-power n = 2^a + 2^b it subsumes
             // the two-power sum
             // `move.w D,S / lsl.w #a,D / lsl.w #b,S / add.w S,D`: identical
             // bytes at b = 0 and strictly cheaper for every b ≥ 1, which
@@ -657,6 +658,12 @@ fn seed_pair(dst: Reg, s: Reg, span: Span) -> Vec<CodeItem> {
 /// ×2^k on a long register: nothing for k = 0; any REMAINING single double —
 /// a run of 1, or the 1-bit remainder after `lsl.l` chunks of 8 (k = 9) — is
 /// `add.l d,d` (8 cycles, vs `lsl.l #1`'s 10).
+///
+/// `add` and `lsl` leave DIFFERENT overflow flags for the same doubling — at
+/// either width — which the construct's clobbered-undefined CC contract
+/// licenses: the meaning of the tail's flags is not part of `mul_const`'s
+/// contract and already changes with `n`. [`shift_run_word`] makes the same
+/// substitution at the word's own costs.
 fn shift_run(mut k: u32, d: Reg, span: Span) -> Vec<CodeItem> {
     let mut items = Vec::new();
     while k > 0 {
@@ -675,12 +682,8 @@ fn shift_run(mut k: u32, d: Reg, span: Span) -> Vec<CodeItem> {
 /// a run of 1, or the 1-bit remainder after `lsl.w` chunks of 8 (k = 9) — is
 /// `add.w d,d` (4 cycles, vs `lsl.w #1`'s 8). The same shape as [`shift_run`],
 /// at the word's own costs; both encodings are 2 bytes, so the preference is
-/// cycles-only.
-///
-/// `add` and `lsl` leave DIFFERENT overflow flags for the same doubling, which
-/// the construct's clobbered-undefined CC contract licenses: the meaning of the
-/// tail's flags is not part of `mul_const`'s contract and already changes with
-/// `n`.
+/// cycles-only. The CC licence for the substitution is stated on [`shift_run`]
+/// and is width-independent.
 fn shift_run_word(mut k: u32, d: Reg, span: Span) -> Vec<CodeItem> {
     let mut items = Vec::new();
     while k > 0 {
@@ -962,8 +965,9 @@ mod tests {
         }
     }
 
-    // Every multiplier the corpus spells — 26 (`sizeof(EntityScanState)`), 36,
-    // 40, 66 (`sizeof(Sec)`), 80 and 160 — plus the small, boundary and
+    // Every multiplier the corpus spells — 10 (`sizeof(band_entry)`), 26
+    // (`sizeof(EntityScanState)`), 36, 40, 66 (`sizeof(Sec)`), 80 and 160 —
+    // plus the small, boundary and
     // chain-shape cases. An adopted constant belongs here: the executing
     // oracles below are what prove its chosen lowering computes the product,
     // and a multiplier the corpus emits but the oracle never runs is an
@@ -1429,11 +1433,12 @@ mod tests {
     // carries one.
     //
     // Hand-building 5c is what makes the theorem arm-independent, and it is also
-    // what would let the theorem outlive the generator: if `shift_run_word` ever
-    // takes the open k = 1 `add.w d,d` row, the hand shape stops being what the
-    // generator emits and this test would keep proving a fact about a 5c that no
+    // what could let the theorem outlive the generator: a hand shape that drifts
+    // from what the generator emits would keep proving a fact about a 5c that no
     // longer exists — and stay green. The presence assertion in the loop closes
     // that: the hand shape must be IN the generated candidate set at every n.
+    // The hand shape calls `shift_run_word` rather than spelling its runs, so a
+    // change to the run coding tracks here automatically.
     //
     // Stated as a direct 5a-vs-5c cost comparison rather than against `choose()`'s
     // winner on purpose: at some n (e.g. $2001) `mulu.w` beats BOTH chains, so

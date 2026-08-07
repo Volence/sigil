@@ -65,8 +65,9 @@ the reload diagnostic** — `first16` is byte-identical for the two.
 ## The complete byte delta — five sites, every shape, nothing else
 
 Re-derived this session by differing the built ROMs against the chain-51 golden
-blobs. All four canonical shapes carry **exactly the same seven runs**: the
-header checksum plus these five sites. **Every ROM size and every golden
+blobs. All seven targets carry **exactly the same seven runs**: the header
+checksum, four 2-byte sites, and the parallax site — which splits into TWO runs
+(5 bytes then 1) because `D645` collides in the middle of the replaced chain. **Every ROM size and every golden
 `anchor_end` is unmoved**, so nothing is re-placed and every symbol address in
 this note is the same on both carts.
 
@@ -135,8 +136,12 @@ fail all five, not pass them.
 
 **Anchor:** `Parallax_Step4_Fill.copy_band` `$006F22`, hit every frame.
 
-At the hit, `step` to the `lea` that follows the chain (4 instructions on both
-carts — the chains are the same length) and read `d2`, `d3`, `d5`.
+At the hit, `step` to the `lea` that follows the chain — **5 instructions on
+both carts**: the `move.w d2,d3` preload the anchor sits on, plus the
+4-instruction chain. (Stepping only 4 stops one instruction short, where `d3`
+holds 5·d2 on NEW against 8·d2 on OLD; a reader who did that would see `d3`
+differ and wrongly conclude the arithmetic claim is refuted.) Read `d2`, `d3`,
+`d5`.
 
 * `d2` (the band index, the chain's input) — MUST match. If it differs the two
   runs are not at the same game state and nothing below is interpretable.
@@ -328,7 +333,12 @@ for chain 51; they are reproduced here and unmoved by this parcel. Zero desyncs
 means all 33 curated checkpoint hashes agree.
 
 **Non-vacuity:** site 3 (`TileCache_DecompressBlock`) fired during the run on
-both carts, at the **same `Logic_Tick` = `$54E`** — itself an equality
+both carts, at the **same `Logic_Tick` = `$54E`**. Site 5 is NOT observed here —
+it is covered by probe 2's own drive — and site 4 never fires at all (below).
+The spec listed all three under this probe's non-vacuity condition; only site 3
+discharges it here, and the other two are discharged or reported elsewhere rather
+than left implied. `Logic_Tick` equality is a DETERMINISM check, not a timing
+one: an all-cheaper parcel moves cycle phase, not logic frames — itself an equality
 measurement, since a timing-sensitive divergence would move the tick at which
 the first block decompresses.
 
