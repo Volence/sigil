@@ -2496,3 +2496,57 @@ full_crc = "7e273b14"
 full_size = 423571
 anchor_crc = "6e6dcfec"
 anchor_end = 0x5f758
+
+[[entry]]
+name = "mulw-parallax"
+ab = "docs/superpowers/notes/2026-08-07-mulw-parallax-ab.md"
+note = "the word shift run doubles with add.w at k=1 (four corpus lowerings) and parallax's shadow-entry stride+copy derive from sizeof(band_entry); five encoding sites, no size or placement change"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "737ea6f3"
+full_size = 423949
+anchor_crc = "da72fbef"
+anchor_end = 0x5f758
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "a3fbd5b1"
+full_size = 301205
+anchor_crc = "407fc443"
+anchor_end = 0x42d90
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "80b9531c"
+full_size = 91330
+anchor_crc = "c24cf9af"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "8f4be1a1"
+full_size = 94031
+anchor_crc = "52ae6971"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "125f7735"
+full_size = 379110
+anchor_crc = "dd68475f"
+anchor_end = 0x5c8e6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "b2a91f66"
+full_size = 411167
+anchor_crc = "57a4bb6a"
+anchor_end = 0x5d968
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "da2e3646"
+full_size = 423571
+anchor_crc = "65ca5ccd"
+anchor_end = 0x5f758

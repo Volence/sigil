@@ -969,7 +969,7 @@ mod tests {
     // and a multiplier the corpus emits but the oracle never runs is an
     // unexecuted claim.
     const NS: &[u32] = &[
-        0, 1, 2, 3, 5, 6, 7, 11, 19, 26, 36, 40, 63, 64, 66, 80, 96, 160, 255,
+        0, 1, 2, 3, 5, 6, 7, 10, 11, 19, 26, 36, 40, 63, 64, 66, 80, 96, 160, 255,
         256, 512, 4096, 0x8000, 0x8001, 0xAAAA, 0xFFFF,
     ];
     const XS: &[u16] = &[0, 1, 2, 0x1234, 0x7FFF, 0x8000, 0xABCD, 0xFFFE, 0xFFFF];
