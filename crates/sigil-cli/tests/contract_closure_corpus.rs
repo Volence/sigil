@@ -939,6 +939,51 @@ fn corpus_out_residue_is_the_verified_complement() {
     );
 }
 
+/// EDGE-SENSITIVE CONDITIONAL-OUT CREDIT, stated as a corpus witness rather than
+/// left as an absence. `out_verify`'s header names `Load_Object`←`AllocDynamic` as
+/// the worked example of an out sourced from a conditional callee and credited
+/// only on the caller's cc-success edge. Nothing asserted it: the capability was
+/// visible only as `Load_Object` NOT appearing in the residue, and an absence is
+/// not a claim — a credit that regressed would surface as an unexplained new
+/// baseline violation rather than as the named capability breaking.
+///
+/// The witness is TWO-part, because the interesting half is the conditional
+/// sourcing, not the credit. If `AllocDynamic` were ever relabeled to an
+/// unconditional `out(a1)`, `Load_Object`'s credit would still land — through the
+/// trivial path — and a one-part witness would keep passing while testing nothing
+/// about edge-sensitivity. So the source must still be genuinely conditional
+/// (`a1 if eq`) AND the credit must still reach the caller.
+///
+/// D1c fires `Load_Object @ AllocDynamic :: a1` on this same triple and that is
+/// NOT a contradiction: D1c's close is edge-BLIND by a deliberate ruling
+/// (`calls.rs`'s `destroys_value` header, §4 Finding 5 — coupling D1c to the edge
+/// primitive risks a degrade-to-miss on a `valid_edge` bail, judged worse than the
+/// documented false positive). Same proc, same register, same callee, two lints,
+/// opposite verdicts, both intended.
+#[test]
+fn corpus_conditional_callee_out_is_credited_edge_sensitively() {
+    let Some(srcs) = corpus_sources() else { return };
+
+    for (label, _profile, r) in analyze_every_shape(&srcs) {
+        let cond = r.verified_cond_out.get("AllocDynamic");
+        assert!(
+            cond.is_some_and(|cs| {
+                cs.iter().any(|(reg, cc)| reg.as_str() == "a1" && cc.as_str() == "eq")
+            }),
+            "shape `{label}`: AllocDynamic no longer verifies a CONDITIONAL out(a1 if eq) \
+             (got {cond:?}). The Load_Object witness below only tests edge-sensitive credit \
+             while its source is conditional — adjudicate before re-pointing it",
+        );
+        assert!(
+            r.verified_uncond_out.get("Load_Object").is_some_and(|s| s.contains("a1")),
+            "shape `{label}`: Load_Object::out(a1) is no longer credited from AllocDynamic's \
+             cc-success edge — the edge-sensitive conditional-out credit named in \
+             out_verify's header regressed. verified={:?}",
+            r.verified_uncond_out.get("Load_Object")
+        );
+    }
+}
+
 /// §3.2 THE BRACKET GATE. Every `with` region in the corpus must prove its
 /// pairing: no path leaves the body without the release, no branch enters it past
 /// the acquire, no acquired context is taken twice. The per-file gate already
