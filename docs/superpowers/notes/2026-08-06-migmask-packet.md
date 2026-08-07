@@ -293,9 +293,23 @@ sigil master `8dce8ef6` and aeon master `077dc7d`.
 ## Behavioural evidence — the bar is INVERTED here
 
 This parcel must EXHIBIT a difference, so no identity check counts as evidence.
-The porter did not run the emulator (overseer-only). The A/B is **specified**, in
-executable detail, at `docs/superpowers/notes/2026-08-06-migmask-ab.md`, and
-referenced as this chain entry's `ab`. **The note was REBUILT in the fixup round
+The porter did not run the emulator (overseer-only). The A/B is specified at
+`docs/superpowers/notes/2026-08-06-migmask-ab.md`, referenced as this chain
+entry's `ab`, and has since been **EXECUTED** — the results are appended to that
+note under `EXECUTION`. Status:
+
+| probe | result |
+|---|---|
+| 1 — the mechanism | **PASS, 8/8 predictions exact**, plus corroboration nobody specified: `d2` at the breakpoint holds the previously fetched id, reading OLD `$01, $1F, $1F` (a repeated ROM-pointer byte) against NEW `$01, $02, $04` (coherent 2×2 section ids). The defect exhibited directly on the shipping code path. |
+| 2 — the consequence | **OWED.** First run captured downstream of the post-slide entity re-load (masks rebuilt, not migrated) and poked the camera at an arbitrary pause where `Camera_Update` pulled it back. Both are deviations from this spec, which said to capture at `MigrateMasks`' RETURN and to poke AT the `EntityWindow_Scan` breakpoint; done that way the slide fired reliably on both carts. Per the note's own rule this is "no qualifying slide found", **not** a refutation. |
+| 3 — the fixture | **ANSWERED, and it inverted the packet's headline** — see below. |
+
+The parcel therefore ships with its mechanism measured and its consequence
+unmeasured, and that is stated rather than papered over. The fix is right by
+construction — the stride IS `sizeof(EntityScanState)` — so what probe 2 owes is
+a characterisation of the bug's effect, not a verdict on the change.
+
+The spec as originally written, for the record: **The note was REBUILT in the fixup round
 — a lens panel found three defects that would each have wasted a live run, two of
 which would have produced a WRONG conclusion.** Since the overseer executes it,
 the note, not this packet, is the primary artefact. In summary:
@@ -462,14 +476,37 @@ phrase, overstated the coverage.
 
 Nothing the porter can run detects this: the fixture is played only on the
 emulator, and no consumer of it exists anywhere under `crates/*/tests` or
-`crates/*/src`. Probe 3 of the A/B specifies the run with its own non-vacuity
-control (OLD must first reach `Replay_Done = $FF` with zero desyncs, which is
-what `b014865` recorded). A desync on NEW is the sharpest available exhibit that
-shipped behaviour changed **and** means the fixture must be re-recorded on the
-fixed ROM before it can serve as a regression net again; a clean run on NEW
-instead bounds the fix's blast radius. Either way the general defect is worth
-carrying: **a recorded regression net captured from a buggy build silently
-promotes the bug to the spec, and re-recording is the only repair.**
+`crates/*/src`.
+
+**ANSWERED — the overseer executed probe 3 after this packet's fixup round, and
+the answer inverts this headline.** Both carts ran the fixture to completion:
+`Replay_Ptr` ended at `$0005E6A0` on both, `Replay_Done` = `$FF` on both, zero
+desyncs, and `Entity_Loaded_Masks` after all 2059 ticks hashed `0x25913C7E`
+**identically on both carts**. The reason is stronger than "no qualifying slide":
+the id-read breakpoint was **never hit** — the anchor stays `(0,0)`, the camera
+never leaves section 0, and `MigrateMasks` never executes in this stream. So the
+bug was PRESENT in the recording build and **never FIRED** in it; the 33
+checkpoint hashes do not encode the mis-indexing and **the fixture needs no
+re-recording on account of this parcel.**
+
+That is exactly the distinction the fixup round forced into this prose one round
+before the run made it load-bearing: the dating proves presence, only the run
+proves firing. Had the packet kept its original stronger claim, it would now be
+a shipped falsehood.
+
+The general defect still stands **as a class** — a recorded regression net
+captured from a buggy build silently promotes the bug to the spec, and
+re-recording is the only repair — it simply did not happen here. The procedure
+the class needs is "reason about the dating, then MEASURE whether it fired".
+
+**And the run produced a bigger finding than the one it was sent to settle:**
+the shipped deterministic stream never exercises `EntityWindow_Slide`,
+`MigrateMasks`, `PopulateSectionRings` or `InitSection`'s compare-clear at all.
+The corpus's only automated behavioural net has **zero coverage of the
+entity-window slide path** — which is a large part of why a wrong constant
+survived nine days and two byte-changing parcels. Carried as its own OPEN ledger
+row with a kill condition (a second fixture that crosses section boundaries and
+is proven to FAIL on the OLD cart).
 
 Second, smaller headline: **a byte-changing edit was relocation-free.** Zero
 boundary labels moved in any of seven shapes, `pins.rs` was unchanged, and the
@@ -494,8 +531,12 @@ Added by the parcel:
    labels in the non-DEBUG shapes and **twelve** in the DEBUG shapes; and the
    mechanism is a fixed placement slot, not pre-existing slack — three shapes
    had ZERO tail padding beforehand.
-3. The replay fixture was recorded from a build carrying the bug — OPEN, with a
-   kill condition.
+3. The replay fixture was recorded from a build carrying the bug — **now CLOSED
+   by the executed probe 3: present in the recording build, never fired in it,
+   no re-record owed.** Its original headline ("a recording of the bug") was the
+   reasonable inference and was wrong; the correction is recorded in the row
+   rather than overwritten. The coverage gap it exposed is carried as a new
+   OPEN row (the fixture never exercises the slide path at all).
 4. The 07-22 bar sweep result over the module, and the missing `log2` — OPEN,
    with a kill condition. **Corrected in the fixup:** the module census is now
    complete (23 sites, `lsr.w #3` is ×7 not ×4, and `:748`'s `lsr.w #1` gets a
