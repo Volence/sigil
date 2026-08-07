@@ -23,6 +23,10 @@ pub mod test_support;
 /// bin and the `repin_pins` staleness test.
 pub mod repin;
 
+/// The FROZEN contract-closure baselines — the single copy the CI gates and the
+/// build-integrated closure gate both read, so a pin cannot fork.
+pub mod contract_baseline;
+
 /// GENERATED layout pins (regions/symbols/offsets in both build shapes) —
 /// the single source the port tests import. Regenerate with
 /// `cargo run -p sigil-harness --bin repin`; never edit by hand.

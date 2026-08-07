@@ -111,6 +111,17 @@ capture_config() {
     if [[ "$WRITE" == "1" ]]; then cp "$path" "$HERE/$golden"; echo "   frozen -> golden/$golden"; fi
 }
 
+# The config/lean captures CLOBBER the canonical s4.bin / s4.debug.bin and are
+# restored at the end, so an abort between the two leaves a config ROM sitting
+# where every other gate reads the canonical one. Under `set -e` the contract
+# closure gate makes that reachable for the first time: a baseline drift on any
+# one shape aborts mid-sequence. The trap restores unconditionally.
+restore_canonical() {
+    ( cd "$AEON" && SIGIL_EMIT="$SIGIL_EMIT" ./build.sh sonic4 >/dev/null 2>&1 \
+        && DEBUG=1 SIGIL_EMIT="$SIGIL_EMIT" ./build.sh sonic4 >/dev/null 2>&1 ) || true
+}
+trap restore_canonical EXIT
+
 echo "== Flip Stage 1 golden capture — all seven, fresh-build =="
 echo "   aeon: $AEON  ($(cd "$AEON" && git rev-parse --short HEAD 2>/dev/null || echo '?'))"
 

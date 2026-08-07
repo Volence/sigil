@@ -36,6 +36,7 @@ use sigil_frontend_emp::corpus_contracts::{
     ContractReport,
 };
 use sigil_frontend_emp::parse_str;
+use sigil_harness::contract_baseline;
 use sigil_harness::native;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -1340,5 +1341,60 @@ section s (cpu: m68000) {
         "the excluded rail must still register as a would-be hole (else the exclusion is \
          vacuous here): {:?}",
         r.authored_rail_holes
+    );
+}
+
+/// THE FROZEN CONTRACT BASELINES, PER SHIPPED SHAPE — the CI half of the same
+/// pin the build-integrated closure gate enforces, reading the SAME constants
+/// from `sigil_harness::contract_baseline` so the two cannot fork.
+///
+/// Per SHAPE, not once: `[call.live-clobbered]` is shape-dependent (the debug
+/// family assembles debug-gated code the plain family never sees), and a
+/// define-free walk would see neither arm of any gated `if`. Walking every shape
+/// under its own profile is what makes this pin a statement about shipped code —
+/// and it is what exercises `d1c_baseline(true)`, which no define-free gate can
+/// reach.
+///
+/// RATCHET, both directions: a firing outside the baseline is a new violation; a
+/// baseline row that stops firing is a stale pin, and possibly an analysis that
+/// narrowed — the destructive direction, since the same closure feeds the
+/// dead-save walk.
+#[test]
+fn contract_baselines_hold_for_every_shipped_shape() {
+    let Some(srcs) = corpus_sources() else { return };
+
+    for (label, profile, r) in analyze_every_shape(&srcs) {
+        let d1c: Vec<(String, String, String)> = r
+            .live_clobbered_firings
+            .iter()
+            .map(|f| (f.proc.clone(), f.callee.clone(), f.reg.clone()))
+            .collect();
+        let d = contract_baseline::diff_d1c(&d1c, profile.debug);
+        assert!(
+            d.is_clean(),
+            "shape `{label}`: {}",
+            contract_baseline::adjudication_message("[call.live-clobbered] (D1c)", &d)
+        );
+
+        let out: Vec<(String, String)> =
+            r.out_firings.iter().map(|f| (f.proc.clone(), f.reg.clone())).collect();
+        let d = contract_baseline::diff_out_unverified(&out);
+        assert!(
+            d.is_clean(),
+            "shape `{label}`: {}",
+            contract_baseline::adjudication_message("[proc.out-unverified]", &d)
+        );
+
+        // Non-vacuity that is not implied by `is_clean()`: the walk must have
+        // produced firings at all. An analysis that silently returned nothing
+        // would match an empty baseline cleanly — but these baselines are not
+        // empty, so a zero result fails above. What this catches instead is the
+        // shape LIST going empty, which `is_clean()` over zero iterations cannot.
+        assert!(!d1c.is_empty(), "shape `{label}`: no D1c firings at all");
+    }
+    assert_eq!(
+        native::shipped_shapes().len(),
+        7,
+        "the shape list shrank — a baseline that walks fewer shapes pins less"
     );
 }

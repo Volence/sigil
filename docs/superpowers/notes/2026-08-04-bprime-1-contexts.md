@@ -818,3 +818,23 @@ The general lesson for the next construct that lowers to a variable number of
 instructions: **ship a census with it, and pin the census.** That is why both new
 corpus gates carry an exact count rather than an assert-empty, and it is the
 cheapest available defence against the class.
+
+---
+
+## CORRECTING NOTE (2026-08-07)
+
+This packet describes `[context.unsatisfied]` as a compile-time check. That was
+true of the DESIGN and not of the implementation: the check is computed by the
+corpus closure and, until 2026-08-07, minted no `Diagnostic` anywhere — it existed
+only as a field on the closure report that CI read. A per-file lowering pass
+cannot compute it, because the requirement lives on a callee in another module.
+
+What changed on 2026-08-07: the closure runs on every build (`sigil build` before
+linking; aeon `build.sh` default-on, `CONTRACTS=0` the emergency hatch), and
+`[context.unsatisfied]` is asserted EMPTY there, so a first firing stops the
+build. Precisely, though — it still mints no `Diagnostic`: the gate prints its own
+line and exits non-zero, with no span and no entry in the warn tally. The packet's
+"compile-time check" reading is closer to true than it was, and it is still not
+what the implementation does.
+
+See §6.1 of the contract-unification spec for the tier map this belongs to.

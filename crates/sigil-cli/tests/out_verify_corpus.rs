@@ -1,16 +1,15 @@
 //! Contract-grammar v2 §G4.5 — the callee-side `out()` production residue over
-//! the REAL aeon corpus. Checkpoint-B inspection: DUMP every `[proc.out-
-//! unverified]` firing for adjudication (not yet an assert-empty gate).
+//! the REAL aeon corpus, and D1c beside it. The residue is DUMPED for reading and
+//! PINNED for enforcement: assert-empty is unavailable while most of the residue
+//! is verifier-model gap rather than loose contract, so the gate is a ratchet.
 //!
-//! D1c (`[call.live-clobbered]`) rides here too, and unlike the residue it has
-//! TEETH: [`d1c_firings_match_the_frozen_baseline`] pins the exact firing set, so
-//! a contract edit that makes D1c miss a real held-value clobber — or invent one
-//! — fails the suite rather than scrolling past in a dump.
+//! BOTH families now have TEETH, against the SHARED baseline constants in
+//! `sigil_harness::contract_baseline` that the build-integrated closure gate also
+//! reads — one copy, so a pin cannot fork into two halves that disagree.
 
 use sigil_frontend_emp::corpus_contracts::{analyze_corpus, ContractReport};
 use sigil_frontend_emp::out_verify::survives_message;
 use sigil_frontend_emp::parse_str;
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -115,99 +114,13 @@ fn cond_out_survives_claims_all_prove() {
 /// no claim.
 const SURVIVES_CLAIM_SITES: &[&str] = &["AllocEffect"];
 
-/// The exact `[call.live-clobbered]` (D1c) firing set over the aeon corpus,
-/// `(caller, callee, register)`, sorted as the analysis sorts it.
-///
-/// D1c is OBSERVE-ONLY — it is not an assert-empty gate, and these firings are
-/// not all bugs. The baseline exists so the set cannot MOVE unnoticed: a contract
-/// edit that suppresses a real held-value clobber (the destructive direction) or
-/// invents one fails the suite instead of scrolling past in a dump.
-///
-/// Two entries are DOCUMENTED false positives, both of the same class — D1c's
-/// close is edge-blind, so a register read that is really a conditional callee's
-/// PRODUCED value on the cc-success edge looks like a destroyed held value. They
-/// are `TileCache_FillRow @ TileCache_FindStagedBlock :: a1` and `Load_Object @
-/// AllocDynamic :: a1`; `calls.rs`'s `destroys_value` header carries the
-/// per-site reasoning. An edge-precise D1c that never degrades on a bail would
-/// dissolve the class.
-///
-/// The remaining rows are recorded, not adjudicated: they are the corpus's
-/// standing D1c surface as of this freeze. Changing one is a decision, and the
-/// failure message says so.
-const D1C_BASELINE: &[(&str, &str, &str)] = &[
-    ("CreateChild_Complex", "AllocDynamic", "a1"),
-    ("CreateChild_FlipAware", "AllocDynamic", "a1"),
-    ("CreateChild_Linked", "AllocDynamic", "a1"),
-    ("CreateChild_Normal", "AllocDynamic", "a1"),
-    ("CreateEffect_Normal", "AllocEffect", "a1"),
-    ("CreateEffect_Simple", "AllocEffect", "a1"),
-    ("GameState_ObjectTestChurn_Init", "AllocDynamic", "a1"),
-    ("GameState_ObjectTest_Init", "AllocDynamic", "a1"),
-    ("Ground_Move_Cap", "Player_SensorWallDir", "d0"),
-    // DOCUMENTED FP (edge-blind close) — see calls.rs::destroys_value.
-    ("Load_Object", "AllocDynamic", "a1"),
-    ("PState_AirShared", "Air_WallProbeLeft", "d4"),
-    ("PState_AirShared", "Air_WallProbeRight", "d1"),
-    ("PState_AirShared", "Air_WallProbeRight", "d4"),
-    ("PState_Spindash", "Player_SensorFloor", "d0"),
-    ("PState_Spindash", "Player_SensorFloor", "d1"),
-    ("Parallax_Update", "Decode_Factor_A", "d2"),
-    ("Parallax_Update", "Decode_Factor_B", "d2"),
-    ("TestPlayer_Main", "Player_SensorFloor", "d0"),
-    ("TestPlayer_Main", "Player_SensorFloor", "d2"),
-    // DOCUMENTED FP (edge-blind close) — see calls.rs::destroys_value.
-    ("TileCache_FillRow", "TileCache_FindStagedBlock", "a1"),
-];
-
-/// A firing list as a MULTISET: `(caller, callee, register)` → how many times it
-/// fires. The same triple can fire at two call sites in one proc, so counting is
-/// what makes a gained or lost duplicate visible; a set membership test would let
-/// it through both the added and the removed list.
-fn tally(rows: &[(String, String, String)]) -> BTreeMap<&(String, String, String), usize> {
-    let mut m = BTreeMap::new();
-    for r in rows {
-        *m.entry(r).or_default() += 1;
-    }
-    m
-}
-
-/// D1c HAS TEETH (the gate-weakness row): the corpus's `[call.live-clobbered]`
-/// firing set must equal [`D1C_BASELINE`] exactly. A contract edit that narrows
-/// a callee's effective set — the destructive direction, since the same closure
-/// feeds `find_dead_saves` — drops a row here and fails.
-#[test]
-fn d1c_firings_match_the_frozen_baseline() {
-    let Some(r) = corpus_report() else { return };
-
-    let got: Vec<(String, String, String)> = r
-        .live_clobbered_firings
-        .iter()
-        .map(|f| (f.proc.clone(), f.callee.clone(), f.reg.clone()))
-        .collect();
-    let want: Vec<(String, String, String)> = D1C_BASELINE
-        .iter()
-        .map(|(p, c, reg)| (p.to_string(), c.to_string(), reg.to_string()))
-        .collect();
-
-    // MULTISET diff (see `tally`), not a set diff.
-    let (gt, wt) = (tally(&got), tally(&want));
-    let added: Vec<_> =
-        gt.iter().filter(|(k, n)| wt.get(*k).copied().unwrap_or(0) < **n).collect();
-    let removed: Vec<_> =
-        wt.iter().filter(|(k, n)| gt.get(*k).copied().unwrap_or(0) < **n).collect();
-    assert!(
-        added.is_empty() && removed.is_empty(),
-        "[call.live-clobbered] (D1c) moved against the frozen baseline.\n  \
-         NEW firings (a caller now holds a value across a call that destroys it): {added:?}\n  \
-         GONE firings (a callee's effective set NARROWED — the same closure feeds \
-         find_dead_saves, so a dropped row can mean a load-bearing save is now reported \
-         dead): {removed:?}\n  \
-         If the change is intended, adjudicate each row and update D1C_BASELINE in the \
-         same commit."
-    );
-    assert_eq!(
-        got, want,
-        "D1c firing ORDER changed — the analysis sort is part of the pin (the multiset \
-         matches, so this is ordering alone)"
-    );
-}
+// The `[call.live-clobbered]` and `[proc.out-unverified]` baseline gates do NOT
+// live here, and the reason is load-bearing: this file's `corpus_report()` walks
+// DEFINE-FREE, and a define-free walk discards BOTH arms of every
+// `if DEBUG == 1 { }` / `if SOUND_DRIVER_ENABLED == 1 { }`. It is a strict
+// under-approximation of every shipped shape, not the view of any one of them —
+// see `contract_closure_corpus.rs`'s header, which says so directly. Pinning a
+// frozen baseline against it would make the pin unsatisfiable the moment a gated
+// arm gained or lost a firing: the define-free walk would report one count and
+// the per-shape builds another, with no baseline value satisfying both. Those
+// gates walk every shipped shape, in `contract_closure_corpus.rs`.
