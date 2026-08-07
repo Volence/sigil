@@ -301,13 +301,27 @@ note under `EXECUTION`. Status:
 | probe | result |
 |---|---|
 | 1 — the mechanism | **PASS, 8/8 predictions exact**, plus corroboration nobody specified: `d2` at the breakpoint holds the previously fetched id, reading OLD `$01, $1F, $1F` (a repeated ROM-pointer byte) against NEW `$01, $02, $04` (coherent 2×2 section ids). The defect exhibited directly on the shipping code path. |
-| 2 — the consequence | **OWED.** First run captured downstream of the post-slide entity re-load (masks rebuilt, not migrated) and poked the camera at an arbitrary pause where `Camera_Update` pulled it back. Both are deviations from this spec, which said to capture at `MigrateMasks`' RETURN and to poke AT the `EntityWindow_Scan` breakpoint; done that way the slide fired reliably on both carts. Per the note's own rule this is "no qualifying slide found", **not** a refutation. |
+| 2 — the consequence | **PASS on re-run.** Identical inputs (whole register file included, `a4` = `$FFFFAD46`) at `$4B1C` on both carts; content precondition satisfied at entry k=1. **Output at the proc's return: OLD all 128 bytes zero — the mask is LOST; NEW slot 1 = `$3F` + obj `$01` — MIGRATED.** Exactly one slot differs, the predicted count for a leftward slide. Corroborated by the engine's OWN duplicate tripwire: the OLD cart raises `assert.w d5,ne,d4` / `Got: 0100` (section `$01`, index `$00`) inside `EntityWindow_TrySpawnRing`, while NEW runs the identical schedule clean. |
 | 3 — the fixture | **ANSWERED, and it inverted the packet's headline** — see below. |
 
-The parcel therefore ships with its mechanism measured and its consequence
-unmeasured, and that is stated rather than papered over. The fix is right by
-construction — the stride IS `sizeof(EntityScanState)` — so what probe 2 owes is
-a characterisation of the bug's effect, not a verdict on the change.
+**The A/B is complete; nothing about the change is now unmeasured.** The first
+probe-2 attempt is recorded as what it was — two executor deviations from the
+spec (capture downstream of the post-slide re-load; poke at an arbitrary pause
+where `Camera_Update` pulls it back), not a refutation.
+
+Two findings from the re-run worth more than the probe itself:
+
+* **Only a LEFTWARD slide can exhibit anything.** Entry 0 is `0 × stride` and is
+  correct under both strides, so from the boot anchor no rightward or downward
+  slide can differ — the one populated section is exactly the one such a slide
+  drops. The rightward slide migrating byte-identically on BOTH carts is a
+  measured confirmation of the direction model, and it is what keeps the control
+  intact up to the slide that can differ.
+* **A "resume" from a PC sitting on a breakpoint re-triggers it without
+  executing**, and the result looks exactly like a clean negative: `Logic_Tick`
+  stayed at 1 across a dozen resume/wait cycles while every poke landed and every
+  read returned a coherent, static state. Ledgered as a standing bar on the
+  instrument — prove a tick counter advanced before reading anything as evidence.
 
 The spec as originally written, for the record: **The note was REBUILT in the fixup round
 — a lens panel found three defects that would each have wasted a live run, two of

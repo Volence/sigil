@@ -467,3 +467,170 @@ The mechanism is **proven live and exactly as predicted**, including the old cod
 reading ROM-pointer bytes as section ids. The fixture question is **settled**: the
 bug never fires there, so no re-recording is owed. The downstream mask-outcome
 comparison is **not established** and is not claimed.
+
+---
+
+# PROBE 2 — RE-RUN AND ESTABLISHED (2026-08-06, second sitting)
+
+Re-run per this note's own prescription after the first attempt's two executor
+deviations. **Result: identical inputs, different outputs, at the same anchor —
+and the OLD cart trips the engine's own duplicate tripwire while the NEW cart
+runs clean.**
+
+Carts by `memory_hash` over the full 423571 bytes, never the reload diagnostic
+(whose `first16` is byte-identical for the two): OLD `0x159B152F`, NEW
+`0x7E273B14`.
+
+## The drive that works, and why the fixture cannot be it
+
+Probe 3 established that the shipped stream never slides, so the fixture cannot
+drive probe 2 at all. The drive is a **scripted camera walk with the poke applied
+AT the `EntityWindow_Scan` breakpoint** (`$0046A8` — same address on both carts,
+and downstream of `Camera_Update`, which is what stops the poke being pulled
+back). Input stays LIVE with no buttons pressed, so the run is deterministic.
+
+**A slide alone is not enough — the exhibit needs a populated section that
+SURVIVES onto a MISREAD entry.** Entry 0 is `0 × stride` and is correct under
+both strides, so:
+
+* from the boot anchor `(0,0)` only section `(0,0)` is populated, and it is the
+  one section that no rightward or downward slide keeps — **no slide from boot
+  can exhibit anything**;
+* a rightward slide moves the surviving `(1,0)` onto entry **0** — correct even
+  under the bug;
+* only a **leftward** slide moves `(1,0)` onto entry **1**, a misread
+  destination.
+
+So the schedule walks right to populate section 1, slides right to seat it on
+entry 0, then slides left to move it to entry 1.
+
+Schedule, anchored on `Logic_Tick` (value-anchored, not step-counted, so both
+carts are at the same game state):
+
+| at | poke `Camera_X` | effect |
+|---|---|---|
+| `Scan` break, `Logic_Tick == 1` | `$0900` | camera parks by section 1's rings (world x `$900`-`$9C0`, read out of the ROM ring list at `$00011F62`) |
+| next `Scan` break | `$0A00` | anchor `(0,0)` → `(1,0)` — the rightward slide |
+| next `Scan` break | `$0200` (far) or `$09FF` (near) | anchor `(1,0)` → `(0,0)` — **the leftward slide** |
+
+`EntityWindow_Slide` is called at `Scan:897`, **before** the per-section
+scan/despawn loop, so the masks are intact when `MigrateMasks` runs even when the
+poke moves the camera far away.
+
+## The control — and the rightward slide proves it holds
+
+Both carts were byte-identical at every checkpoint up to the leftward slide:
+
+| checkpoint | OLD | NEW |
+|---|---|---|
+| `Logic_Tick == 1`, masks | all zero | all zero |
+| after the `$0900` frame | slot 0 `$7F`+obj`$01`, slot 1 `$3F`+obj`$01` | identical |
+| after the rightward slide | anchor `(1,0)`, slot 0 `$3F`+obj`$01`, slot 1 `$F00F` | identical |
+
+**The rightward slide migrating identically on both carts is itself a measured
+confirmation of the direction model:** its only survivor lands on entry 0, which
+the ×22 stride computes correctly, so no difference is possible there — and none
+occurred. The control is therefore intact right up to the first slide that can
+differ.
+
+At the leftward slide's `MigrateMasks` entry (`$004B1C`, the same address on both
+carts) the proc's entire input was byte-identical, `a4` included:
+
+* `Entity_Scan_State` (104 B) — identical
+* `Entity_Mask_Scratch` (132 B) — identical
+* `Entity_Window_Active` = `$0F` — identical
+* `a4` = `$FFFFAD46` (= `Entity_Mask_Scratch`) — identical
+* in fact the **entire register file** matched, d0-d7 and a0-a7
+
+## Step 0 — the content precondition, SATISFIED
+
+New anchor `(0,0)`; grid_w = 3. Live entry ids and the snapshot:
+
+| new entry k | id `E[k]` | ×22 read lands on | snapshot | block non-zero? |
+|---|---|---|---|---|
+| 0 | `$00` | `$00` (correct — offset 0) | not present | — |
+| 1 | `$01` | **`$1F`** (offset 40, not 44) | j=0 | **YES** — `$3F` rings + `$01` obj |
+| 2 | `$03` | `$1F` (offset 62, not 70) | not present | — |
+| 3 | `$04` | `$1F` (offset 84, not 96) | j=2 | no (all zero) |
+
+Snapshot ids `$01 $02 $04 $05`. **Qualifying entry: k = 1** — non-void, present in
+the snapshot, and its block is non-zero. `$1F` is a `ess_rom_*_ptr` byte and is
+absent from the snapshot id set, so the OLD match must fail. (This is the same
+`$1F` probe 1 saw in `d2`.)
+
+## Steps 1-2 — the output at `MigrateMasks`' RETURN
+
+Captured by `step_out` from inside the proc, before anything else touches the
+masks:
+
+| slot | OLD (×22) | NEW (×26) |
+|---|---|---|
+| 0 | all zero | all zero |
+| **1** | **all zero — the mask is LOST** | **`$3F` rings + `$01` obj — MIGRATED** |
+| 2 | all zero | all zero |
+| 3 | all zero | all zero |
+
+**Exactly one slot differs, and it is slot 1** — the predicted count for a
+leftward slide in which one survivor carries a non-zero mask. (Entry 3's survivor
+qualifies structurally but its snapshot block is empty, so it cannot show.)
+
+This is **direction (a)**: the compare-clear zeroed entry 1 because its section
+changed, the identity match then failed on the garbage `$1F`, and six already-
+spawned rings plus one object are now marked unloaded.
+
+## Corroboration — the OLD cart trips the engine's OWN duplicate tripwire
+
+Re-run with the leftward poke at `$09FF` instead of `$0200`, so the rings stay
+inside the load band and are re-scanned on the following frame.
+
+**OLD cart: `ErrorHandlerBlob`.**
+
+```
+Assertion failed:
+> assert.w d5,ne,d4
+Got: 0100
+Offset: 0047BA  engine.objects.entity_window.raise
+```
+
+`$47BA` is inside `EntityWindow_TrySpawnRing` (`$4728`-`$4822`); the assertion is
+the DEBUG no-dup scan whose source comment reads *"always fails: duplicate
+(sec,idx)"*. `Got: 0100` is the entry key word — **section `$01`, list index
+`$00`** — i.e. exactly the section whose mask was lost, spawning a ring it
+already had in the buffer.
+
+**NEW cart, identical schedule: no assertion, gameplay continues normally.**
+
+* `assets/2026-08-06-migmask-probe2-old-dup-assert.png`
+* `assets/2026-08-06-migmask-probe2-new-clean.png`
+
+So the duplicate-spawn consequence is not merely inferred from the mask bytes —
+the engine's own tripwire fires on the buggy cart and stays silent on the fixed
+one.
+
+## Verdict
+
+**Probe 2 is ESTABLISHED, in both the mask outcome and the downstream symptom,
+with the control measured rather than assumed.** Together with probe 1 (mechanism
+live, 8/8 exact) and probe 3 (the shipped fixture never reaches the code), the
+A/B is complete. Nothing about the change is now unmeasured.
+
+## Methodology trap found in this sitting — worth more than the probe
+
+**Resuming while the PC sits ON a breakpoint address re-triggers that breakpoint
+without executing anything.** The first hour of this sitting drove a camera walk
+that never happened: `Logic_Tick` stayed at **1** across a dozen resume/wait
+cycles while every poke landed in RAM and was silently discarded, and every read
+returned a plausible, unchanging state. It looks exactly like "the game is
+running and nothing is happening", which is indistinguishable from a real
+negative result — and a negative result is precisely what an inverted-bar A/B
+must never accept uncritically.
+
+The tell is a **frame or tick counter that does not advance**; the fix is
+`step 1` then `resume`. It also fires at `EntityPoint` right after `reload_rom`.
+The overseer hit the same trap in the first sitting and recorded it for probe 1
+("an identical register file on two consecutive breaks is the tell"); it cost a
+second sitting because it was recorded as a probe-1 detail rather than as a
+standing rule for this instrument.
+
+**RULE: every emulator A/B reads a tick/frame counter at two consecutive
+anchors and proves it advanced, before reading anything else as evidence.**
