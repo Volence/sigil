@@ -26,8 +26,10 @@ use std::collections::BTreeMap;
 /// cannot prove `rN` is produced on every required return path.
 ///
 /// Every row here carries the same reason — "not produced on a required return
-/// path" — and the set clusters into a small number of verifier-model gaps rather
-/// than 30 independent loose contracts. The per-row adjudication lives in the
+/// path" — and the set clusters into a small number of causes rather than
+/// independent loose contracts. The dominant one is a LANGUAGE-SURFACE gap: the
+/// proc produces a sub-width value and `out(rN)` means all 32 bits, which the
+/// declaration has no way to say. The per-row adjudication lives in the
 /// campaign gap ledger; see the burn-down rows.
 pub const OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
     ("Art_Decompress", "a1"),
@@ -57,10 +59,30 @@ pub const OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
     ("InsertSpriteMasks", "a4"),
     ("InsertSpriteMasks", "d5"),
     ("S4LZ_Decompress", "a1"),
-    ("S4LZ_DecompressDict", "a1"),
     ("Section_RedrawPlanes", "d7"),
     ("Tile_Cache_GetTile", "d2"),
 ];
+
+/// The `[proc.out-unverified]` rows only the DEBUG family produces.
+///
+/// `S4LZ_DecompressDict` declares `falls_into`, so its fall-off-end is exempt in
+/// every shape. The debug shape additionally assembles an `assert.w` inside
+/// `if DEBUG == 1`, whose failure path tail-transfers to the raise handler — and
+/// `out_verify` does not model `@noreturn`, so that non-returning exit is charged
+/// as a required return path. A separate gap from the `falls_into` one, with its
+/// own ledger row.
+pub const OUT_UNVERIFIED_DEBUG_EXTRA: &[(&str, &str)] = &[("S4LZ_DecompressDict", "a1")];
+
+/// The `[proc.out-unverified]` baseline for a shape: invariant rows, plus the
+/// debug-family addition.
+pub fn out_unverified_baseline(debug_family: bool) -> Vec<(&'static str, &'static str)> {
+    let mut rows: Vec<_> = OUT_UNVERIFIED_BASELINE.to_vec();
+    if debug_family {
+        rows.extend_from_slice(OUT_UNVERIFIED_DEBUG_EXTRA);
+    }
+    rows.sort_unstable();
+    rows
+}
 
 /// `[call.live-clobbered]` (D1c) — the SHAPE-INVARIANT rows: a caller holds a
 /// value in a register across a call whose callee destroys it.
@@ -181,10 +203,10 @@ fn diff_multiset(got: Vec<String>, want: Vec<String>) -> BaselineDiff {
 }
 
 /// Diff the corpus's `[proc.out-unverified]` firings against the frozen baseline.
-pub fn diff_out_unverified(got: &[(String, String)]) -> BaselineDiff {
+pub fn diff_out_unverified(got: &[(String, String)], debug_family: bool) -> BaselineDiff {
     diff_multiset(
         got.iter().map(|(p, r)| format!("{p} :: out({r})")).collect(),
-        OUT_UNVERIFIED_BASELINE
+        out_unverified_baseline(debug_family)
             .iter()
             .map(|(p, r)| format!("{p} :: out({r})"))
             .collect(),

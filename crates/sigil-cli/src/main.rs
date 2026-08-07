@@ -1003,7 +1003,7 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
 
     let out_got: Vec<(String, String)> =
         report.out_firings.iter().map(|f| (f.proc.clone(), f.reg.clone())).collect();
-    let d = bl::diff_out_unverified(&out_got);
+    let d = bl::diff_out_unverified(&out_got, target.label_and_profile().1.debug);
     if !d.is_clean() {
         eprintln!("error: {}", bl::adjudication_message("[proc.out-unverified]", &d));
         failed = true;

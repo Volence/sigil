@@ -1972,9 +1972,19 @@ fn check_out(
     // out-unwritten — a declared output never written on any path is a false
     // claim. Same write detection as check_clobbers (the shared
     // [`instr_written_regs`] detector via [`proc_written_registers`]).
+    //
+    // EXCEPT under a declared `falls_into`: control continues into the successor
+    // inside the same call, so the output may legitimately be produced THERE and
+    // never touched here. `S4LZ_DecompressDict out(a1) falls_into S4LZ_Decompress`
+    // is the corpus exhibit — its own body only READS `a1` (`suba.l a1, a4`) and
+    // the successor advances it. Charging the claim to this body demands
+    // production from a proc that never returns. The closure tier draws the same
+    // line via `out_verify`'s `charge_fall_off_end`, and the stack checker via
+    // `check_stack_balance`'s flag of the same name.
     let written = proc_written_registers(buf);
+    let charge_unwritten = proc.falls_into.is_none();
     for name in &valid {
-        if !written.contains(name.as_str()) {
+        if charge_unwritten && !written.contains(name.as_str()) {
             push(
                 diags,
                 Level::Warning,

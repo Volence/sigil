@@ -112,8 +112,9 @@ pub fn check_out(
     callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
     cond_callees: &BTreeMap<String, Vec<(String, String)>>,
     span: Span,
+    charge_fall_off_end: bool,
 ) -> Vec<OutFiring> {
-    verify_out(items, uncond, cond, callee_uncond_out, cond_callees)
+    verify_out(items, uncond, cond, callee_uncond_out, cond_callees, charge_fall_off_end)
         .into_iter()
         .filter_map(|(r, status)| match status {
             OutStatus::Produced => None,
@@ -241,6 +242,7 @@ pub fn verify_out(
     cond: &[(Reg, String)],
     callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
     cond_callees: &BTreeMap<String, Vec<(String, String)>>,
+    charge_fall_off_end: bool,
 ) -> BTreeMap<Reg, OutStatus> {
     let cfg = Cfg::build(items);
 
@@ -319,11 +321,23 @@ pub fn verify_out(
                         work.push_back(succ);
                     }
                 }
-                // A return, or control running off the end: either way the caller
-                // reads the register file from here, so the claim is due — and
-                // neither gets extra credit on the way out.
-                Edge::Return | Edge::FallOff => {
+                // A return: the caller reads the register file from here, so the
+                // claim is due, with no extra credit on the way out.
+                Edge::Return => {
                     check_return(&st, &here, &guard, &mut ok, &mut fail_reason);
+                }
+                // Control running off the end is a required return path ONLY when
+                // the proc actually returns there. A declared `falls_into
+                // Successor` continues into its successor INSIDE THE SAME CALL,
+                // and the successor is what produces the value — so charging the
+                // claim here would demand production from a proc that never
+                // returns. The stack checker draws the same line, and its caller
+                // computes the same flag: `charge_fall_off_end =
+                // proc.falls_into.is_none()` into `check_stack_balance`.
+                Edge::FallOff => {
+                    if charge_fall_off_end {
+                        check_return(&st, &here, &guard, &mut ok, &mut fail_reason);
+                    }
                 }
                 // A conditional branch out (a divergent handler or a transitive
                 // tail) is not a local counterexample — ignore it, mirroring
@@ -401,6 +415,7 @@ pub fn compute_verified_outs(
     declared_uncond: &UncondOutMap,
     declared_cond: &CondOutMap,
     extern_names: &BTreeSet<String>,
+    falls_into: &BTreeSet<String>,
 ) -> (UncondOutMap, CondOutMap) {
     // SEED: externs verified by axiom; every other proc empty.
     let mut v_uncond: BTreeMap<String, BTreeSet<String>> = declared_uncond
@@ -443,7 +458,8 @@ pub fn compute_verified_outs(
             if uncond.is_empty() && cond.is_empty() {
                 continue;
             }
-            let statuses = verify_out(items, &uncond, &cond, &v_uncond, &v_cond);
+            let statuses =
+                verify_out(items, &uncond, &cond, &v_uncond, &v_cond, !falls_into.contains(name));
             let unver: BTreeSet<String> = statuses
                 .iter()
                 .filter(|(_, s)| matches!(s, OutStatus::Unverified(_)))

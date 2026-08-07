@@ -559,8 +559,22 @@ pub fn analyze_corpus_with_contracts(
     // table in the residue note.
     let proc_items: BTreeMap<String, &[CodeItem]> =
         proc_bufs.iter().map(|pb| (pb.name.clone(), pb.buf.items.as_slice())).collect();
+    // Procs whose fall-off-end is NOT a return: control continues into the
+    // declared successor inside the same call, so the out claim is due there and
+    // not here. Same line the stack checker draws.
+    let falls_into_procs: BTreeSet<String> = proc_bufs
+        .iter()
+        .filter(|pb| pb.falls_into.is_some())
+        .map(|pb| pb.name.clone())
+        .collect();
     let (verified_uncond_out, verified_cond_out): (UncondOutMap, CondOutMap) =
-        compute_verified_outs(&proc_items, &callee_uncond_out, &cond_callees, &extern_names);
+        compute_verified_outs(
+            &proc_items,
+            &callee_uncond_out,
+            &cond_callees,
+            &extern_names,
+            &falls_into_procs,
+        );
 
     // §6 caller-side flag checks, now that every callee's contract is known. §6
     // keeps the DECLARED credit (redefine-kill semantics). `flag_firings_verified`
@@ -701,6 +715,10 @@ pub fn analyze_corpus_with_contracts(
             &verified_uncond_out,
             &verified_cond_out,
             pb.span,
+            // A declared `falls_into` continues into its successor inside the
+            // same call, so control running off this body's end is not a return
+            // and the out claim is not due there.
+            pb.falls_into.is_none(),
         ));
     }
     out_firings.sort_by(|a, b| (&a.proc, &a.reg, a.span.start).cmp(&(&b.proc, &b.reg, b.span.start)));

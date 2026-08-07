@@ -61,7 +61,7 @@ fn status_uncond(
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-    verify_out(items, &[reg], &[], callee_uncond_out, &no_cond)
+    verify_out(items, &[reg], &[], callee_uncond_out, &no_cond, true)
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -368,7 +368,7 @@ fn status_cond(
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out, &no_cond)
+    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out, &no_cond, true)
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -389,7 +389,7 @@ fn status_uncond_cond_callee(
     for (callee, r, cc) in cond_callees {
         cond.entry(callee.to_string()).or_default().push((r.to_string(), cc.to_string()));
     }
-    verify_out(items, &[reg], &[], callee_uncond_out, &cond)
+    verify_out(items, &[reg], &[], callee_uncond_out, &cond, true)
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -680,7 +680,7 @@ fn fixpoint_uncond(
     let declared_uncond = map(declared);
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     let extern_names: BTreeSet<String> = externs.iter().map(|s| s.to_string()).collect();
-    compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &extern_names).0
+    compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &extern_names, &BTreeSet::new()).0
 }
 
 fn verified(m: &BTreeMap<String, BTreeSet<String>>, proc: &str, reg: Reg) -> bool {
@@ -964,4 +964,41 @@ fn the_out_residue_is_a_width_gap_not_a_control_flow_one() {
     let long_path = byte_path.replace("move.b  (a0, d1.w), d0", "move.l  (a0, d1.w), d0");
     assert!(is_produced(&status_uncond(&long_path, "P", Reg::D0, &m)),
         "widening the same write verifies — the width rule is the discriminator");
+}
+
+/// A declared `falls_into` proc's fall-off-end is NOT a required return path.
+/// Control continues into the successor inside the same call, and the successor
+/// is what produces the value — so charging the claim here would demand
+/// production from a proc that never returns.
+///
+/// `S4LZ_DecompressDict out(a1) falls_into S4LZ_Decompress` is the corpus
+/// exhibit: its own body only READS `a1` (`suba.l a1, a4`) and the successor
+/// advances it. Both polarities are pinned, because the exemption must not
+/// become a blanket excuse — without the declaration the same body must still
+/// fire.
+#[test]
+fn a_falls_into_procs_fall_off_end_is_not_a_required_return() {
+    // A body that never produces `a1` and never returns — it runs off the end.
+    let src = "module m\n\
+        proc P (a1: *u8) clobbers(a4) out(a1) {\n\
+        \x20       suba.l  a1, a4\n\
+        }\n";
+    let all = eval_all(src);
+    let items = all.get("P").expect("no proc P");
+    let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    let m = map(&[]);
+
+    // charge_fall_off_end = false — the `falls_into` case.
+    let exempt = verify_out(items, &[Reg::A1], &[], &m, &no_cond, false)
+        .remove(&Reg::A1)
+        .expect("status");
+    assert!(is_produced(&exempt), "a falls_into proc must not be charged at its fall-off");
+
+    // charge_fall_off_end = true — the ORDINARY case. The same body, with no
+    // declared successor, still fires: the exemption is tied to the declaration,
+    // not to the shape of the body.
+    let charged = verify_out(items, &[Reg::A1], &[], &m, &no_cond, true)
+        .remove(&Reg::A1)
+        .expect("status");
+    assert!(is_unverified(&charged), "without falls_into the same body must still fire");
 }
