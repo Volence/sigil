@@ -559,13 +559,15 @@ pub fn analyze_corpus_with_contracts(
     // table in the residue note.
     let proc_items: BTreeMap<String, &[CodeItem]> =
         proc_bufs.iter().map(|pb| (pb.name.clone(), pb.buf.items.as_slice())).collect();
-    // Procs whose fall-off-end is NOT a return: control continues into the
-    // declared successor inside the same call, so the out claim is due there and
-    // not here. Same line the stack checker draws.
-    let falls_into_procs: BTreeSet<String> = proc_bufs
+    // Proc -> its declared `falls_into` successor. A fall-off-end here is not a
+    // return: control continues into the successor inside the same call, so the
+    // out claim is CHARGED AGAINST THE SUCCESSOR's verified outs rather than
+    // against this body — the same credit a tail transfer gets. The successor's
+    // NAME is the payload, because a "has a successor" bit cannot credit anything
+    // and would leave the claim resting on nothing.
+    let falls_into_succ: BTreeMap<String, String> = proc_bufs
         .iter()
-        .filter(|pb| pb.falls_into.is_some())
-        .map(|pb| pb.name.clone())
+        .filter_map(|pb| pb.falls_into.clone().map(|succ| (pb.name.clone(), succ)))
         .collect();
     let (verified_uncond_out, verified_cond_out): (UncondOutMap, CondOutMap) =
         compute_verified_outs(
@@ -573,7 +575,7 @@ pub fn analyze_corpus_with_contracts(
             &callee_uncond_out,
             &cond_callees,
             &extern_names,
-            &falls_into_procs,
+            &falls_into_succ,
             &noreturn,
         );
 
@@ -717,9 +719,10 @@ pub fn analyze_corpus_with_contracts(
             &verified_cond_out,
             pb.span,
             // A declared `falls_into` continues into its successor inside the
-            // same call, so control running off this body's end is not a return
-            // and the out claim is not due there.
-            pb.falls_into.is_none(),
+            // same call, so control running off this body's end is not a return —
+            // the claim is charged against the successor's verified outs, one
+            // derivation shared with the fixpoint above.
+            pb.falls_into.as_deref(),
             &noreturn,
         ));
     }

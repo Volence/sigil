@@ -390,17 +390,14 @@ pub fn verify_preserved_on(
     // nothing. AllReturns only — a `Sites` scope keeps its exact former set.
     if matches!(scope, ReturnScope::AllReturns) {
         for (idx, it) in items.iter().enumerate() {
-            let CodeItem::Instr { ops, author, .. } = it else { continue };
+            let CodeItem::Instr { ops, .. } = it else { continue };
             if !cfg.edges(idx).iter().any(|e| matches!(e, Edge::TailOut | Edge::BranchOut)) {
                 continue;
             }
-            if matches!(author, ItemAuthor::AssertDesugar) {
-                continue; // an authored divergent rail — never returns
+            if exit_diverges(it, noreturn) {
+                continue; // never returns to the caller — charges nothing
             }
             let callee = transfer_target_sym(ops);
-            if callee.is_some_and(|t| noreturn.contains(t)) {
-                continue; // a `@noreturn` tail — never returns
-            }
             for (i, r) in REG_BY_IDX.iter().enumerate() {
                 if *r != Reg::A7 && !call_preserves(&policy, callee, *r) {
                     ever_clobbered[i] = true;
@@ -484,13 +481,26 @@ pub fn verify_preserved_on(
 /// so it carries no symbol a consumer could look up). A divergent exit owes the
 /// caller nothing — it is not a return path for ANY per-exit obligation.
 ///
-/// THE SHARED SUCCESSOR-AWARE PREDICATE. Every checker that walks exits needs the
-/// same two facts — a declared `falls_into` successor means a fall-off is not an
-/// exit, and a divergent tail means a transfer-out is not one either — and the
-/// class of bugs from a checker knowing neither is well attested. `preserves`
-/// carries both; `out_verify` reads this one; the stack walk takes the
-/// `falls_into` half as a flag. A checker that iterates exits without consulting
-/// this is the next instance waiting to happen.
+/// THE SHARED SUCCESSOR-AWARE PREDICATE, and the two facts are NOT the same kind
+/// of fact — conflating them is itself a defect this project has paid for:
+///
+/// - A divergent tail is not a return path AT ALL. The obligation DISAPPEARS,
+///   because there is no caller to owe anything to. That is this predicate.
+/// - A declared `falls_into` successor does NOT make a fall-off vanish. The
+///   fall-off is still an exit; its obligation MOVES to the successor and is
+///   charged against the successor's contract. `preserves` does this by deferring
+///   to `checkpoint_after_tail(st, Some(succ))`, and `out_verify` by crediting the
+///   successor's verified out — both exactly as they charge a tail transfer.
+///
+/// Reading the second as "the exit is exempt" re-opens the vacuity hole this file
+/// documents closing: a proc whose only exit is a fall-off would have ZERO
+/// obligation sites, so every claim it declares would verify on no evidence.
+///
+/// `preserves` carries both facts; `out_verify` reads this one and takes the
+/// successor NAME for the other. The stack walk takes a `falls_into` BOOL, and it
+/// is the one place where dropping the charge is sound — the successor's own
+/// unconditional balance check discharges it. No value obligation has that
+/// discharge, so the flag shape does not generalise.
 pub(crate) fn exit_diverges(item: &CodeItem, noreturn: &BTreeSet<String>) -> bool {
     match item {
         CodeItem::Instr { ops, author, .. } => {

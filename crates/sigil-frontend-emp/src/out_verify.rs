@@ -104,6 +104,9 @@ pub struct OutFiring {
 /// unverified]` firings. `uncond` are the unconditional outs, `cond` the
 /// `(reg, cc)` conditional outs; `callee_uncond_out` is the SHARED map (callee /
 /// tail-target credit).
+// The proc's identity, its body, its two declared out sets, the two shared credit
+// maps, and the two successor facts — each load-bearing, none derivable from another.
+#[allow(clippy::too_many_arguments)]
 pub fn check_out(
     proc_name: &str,
     items: &[CodeItem],
@@ -112,10 +115,10 @@ pub fn check_out(
     callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
     cond_callees: &BTreeMap<String, Vec<(String, String)>>,
     span: Span,
-    charge_fall_off_end: bool,
+    falls_into: Option<&str>,
     noreturn: &BTreeSet<String>,
 ) -> Vec<OutFiring> {
-    verify_out(items, uncond, cond, callee_uncond_out, cond_callees, charge_fall_off_end, noreturn)
+    verify_out(items, uncond, cond, callee_uncond_out, cond_callees, falls_into, noreturn)
         .into_iter()
         .filter_map(|(r, status)| match status {
             OutStatus::Produced => None,
@@ -243,7 +246,7 @@ pub fn verify_out(
     cond: &[(Reg, String)],
     callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
     cond_callees: &BTreeMap<String, Vec<(String, String)>>,
-    charge_fall_off_end: bool,
+    falls_into: Option<&str>,
     noreturn: &BTreeSet<String>,
 ) -> BTreeMap<Reg, OutStatus> {
     let cfg = Cfg::build(items);
@@ -328,18 +331,42 @@ pub fn verify_out(
                 Edge::Return => {
                     check_return(&st, &here, &guard, &mut ok, &mut fail_reason);
                 }
-                // Control running off the end is a required return path ONLY when
-                // the proc actually returns there. A declared `falls_into
-                // Successor` continues into its successor INSIDE THE SAME CALL,
-                // and the successor is what produces the value — so charging the
-                // claim here would demand production from a proc that never
-                // returns. The stack checker draws the same line, and its caller
-                // computes the same flag: `charge_fall_off_end =
-                // proc.falls_into.is_none()` into `check_stack_balance`.
+                // Control running off the end. Without a declared successor the
+                // proc returns here, so the claim is charged against the state as
+                // it stands. WITH a declared `falls_into Successor` the closing
+                // `}` continues into that successor's frame inside the same call
+                // — so the obligation MOVES to the successor, it does not vanish:
+                // rN is produced iff this body produced it OR the successor's
+                // VERIFIED unconditional out produces it. This is the same charge
+                // the `Edge::TailOut` arm below makes to a tail target, because it
+                // is the same control relationship with the target named in the
+                // declaration instead of an operand — and it is the line
+                // `preserves` draws (`ExitKind::FallOff` defers to
+                // `checkpoint_after_tail(st, Some(succ))`).
+                //
+                // Dropping the charge instead would re-open the vacuity hole
+                // `preserves` documents closing: a proc whose ONLY exit is a
+                // fall-off would have ZERO obligation sites and every declared out
+                // would verify on no evidence. That matters beyond this module —
+                // a verified out is consumed as a must-def DEFINITION by D1b, so a
+                // claim blessed here silences a live check at every call site.
+                //
+                // The stack checker's flag is deliberately NOT the model: stack
+                // balance is discharged by the successor's own unconditional
+                // balance check, and no such discharge exists for a value claim
+                // (nothing requires a successor to declare the register at all).
                 Edge::FallOff => {
-                    if charge_fall_off_end {
-                        check_return(&st, &here, &guard, &mut ok, &mut fail_reason);
+                    let mut credit = st;
+                    if let Some(succ) = falls_into {
+                        if let Some(outs) = callee_uncond_out.get(succ) {
+                            for name in outs {
+                                if let Some(r) = Reg::from_name(name) {
+                                    credit[reg_idx(r)] = true;
+                                }
+                            }
+                        }
                     }
+                    check_return(&credit, &here, &guard, &mut ok, &mut fail_reason);
                 }
                 // A conditional branch out (a divergent handler or a transitive
                 // tail) is not a local counterexample — ignore it, mirroring
@@ -425,7 +452,7 @@ pub fn compute_verified_outs(
     declared_uncond: &UncondOutMap,
     declared_cond: &CondOutMap,
     extern_names: &BTreeSet<String>,
-    falls_into: &BTreeSet<String>,
+    falls_into: &BTreeMap<String, String>,
     noreturn: &BTreeSet<String>,
 ) -> (UncondOutMap, CondOutMap) {
     // SEED: externs verified by axiom; every other proc empty.
@@ -469,8 +496,17 @@ pub fn compute_verified_outs(
             if uncond.is_empty() && cond.is_empty() {
                 continue;
             }
-            let statuses =
-                verify_out(items, &uncond, &cond, &v_uncond, &v_cond, !falls_into.contains(name), noreturn);
+            // The successor's VERIFIED outs are what a fall-off credits, so the
+            // fixpoint carries the successor NAME, not a "has a successor" bit.
+            let statuses = verify_out(
+                items,
+                &uncond,
+                &cond,
+                &v_uncond,
+                &v_cond,
+                falls_into.get(name).map(String::as_str),
+                noreturn,
+            );
             let unver: BTreeSet<String> = statuses
                 .iter()
                 .filter(|(_, s)| matches!(s, OutStatus::Unverified(_)))

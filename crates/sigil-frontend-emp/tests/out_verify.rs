@@ -61,7 +61,7 @@ fn status_uncond(
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-    verify_out(items, &[reg], &[], callee_uncond_out, &no_cond, true, &BTreeSet::new())
+    verify_out(items, &[reg], &[], callee_uncond_out, &no_cond, None, &BTreeSet::new())
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -368,7 +368,7 @@ fn status_cond(
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out, &no_cond, true, &BTreeSet::new())
+    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out, &no_cond, None, &BTreeSet::new())
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -389,7 +389,7 @@ fn status_uncond_cond_callee(
     for (callee, r, cc) in cond_callees {
         cond.entry(callee.to_string()).or_default().push((r.to_string(), cc.to_string()));
     }
-    verify_out(items, &[reg], &[], callee_uncond_out, &cond, true, &BTreeSet::new())
+    verify_out(items, &[reg], &[], callee_uncond_out, &cond, None, &BTreeSet::new())
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -680,7 +680,7 @@ fn fixpoint_uncond(
     let declared_uncond = map(declared);
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     let extern_names: BTreeSet<String> = externs.iter().map(|s| s.to_string()).collect();
-    compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &extern_names, &BTreeSet::new(), &BTreeSet::new()).0
+    compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &extern_names, &BTreeMap::new(), &BTreeSet::new()).0
 }
 
 fn verified(m: &BTreeMap<String, BTreeSet<String>>, proc: &str, reg: Reg) -> bool {
@@ -966,18 +966,21 @@ fn the_out_residue_is_a_width_gap_not_a_control_flow_one() {
         "widening the same write verifies — the width rule is the discriminator");
 }
 
-/// A declared `falls_into` proc's fall-off-end is NOT a required return path.
-/// Control continues into the successor inside the same call, and the successor
-/// is what produces the value — so charging the claim here would demand
-/// production from a proc that never returns.
+/// A declared `falls_into` proc's fall-off-end TRANSFERS the out obligation to
+/// the successor — it does not discharge it. Control continues into the successor
+/// inside the same call, so the claim is credited from the successor's verified
+/// unconditional out, exactly as a tail transfer is credited from its target.
 ///
 /// `S4LZ_DecompressDict out(a1) falls_into S4LZ_Decompress` is the corpus
-/// exhibit: its own body only READS `a1` (`suba.l a1, a4`) and the successor
-/// advances it. Both polarities are pinned, because the exemption must not
-/// become a blanket excuse — without the declaration the same body must still
-/// fire.
+/// exhibit: its own body only READS `a1` (`suba.l a1, a4`), so whether the claim
+/// stands depends entirely on the successor.
+///
+/// The polarities that matter vary the SUCCESSOR, not the flag. Varying only the
+/// flag would keep passing under an implementation that ignores the successor
+/// altogether — i.e. it would pin the vacuity as the contract. A body that
+/// produces nothing must verify only when something else provably produces it.
 #[test]
-fn a_falls_into_procs_fall_off_end_is_not_a_required_return() {
+fn a_falls_into_procs_fall_off_charges_the_successor() {
     // A body that never produces `a1` and never returns — it runs off the end.
     let src = "module m\n\
         proc P (a1: *u8) clobbers(a4) out(a1) {\n\
@@ -986,19 +989,40 @@ fn a_falls_into_procs_fall_off_end_is_not_a_required_return() {
     let all = eval_all(src);
     let items = all.get("P").expect("no proc P");
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-    let m = map(&[]);
 
-    // charge_fall_off_end = false — the `falls_into` case.
-    let exempt = verify_out(items, &[Reg::A1], &[], &m, &no_cond, false, &BTreeSet::new())
-        .remove(&Reg::A1)
-        .expect("status");
-    assert!(is_produced(&exempt), "a falls_into proc must not be charged at its fall-off");
+    let check = |succ: Option<&str>, m: &BTreeMap<String, BTreeSet<String>>| {
+        verify_out(items, &[Reg::A1], &[], m, &no_cond, succ, &BTreeSet::new())
+            .remove(&Reg::A1)
+            .expect("status")
+    };
 
-    // charge_fall_off_end = true — the ORDINARY case. The same body, with no
-    // declared successor, still fires: the exemption is tied to the declaration,
-    // not to the shape of the body.
-    let charged = verify_out(items, &[Reg::A1], &[], &m, &no_cond, true, &BTreeSet::new())
-        .remove(&Reg::A1)
-        .expect("status");
-    assert!(is_unverified(&charged), "without falls_into the same body must still fire");
+    // (1) The successor PRODUCES a1 — the obligation lands and is discharged.
+    let produced = map(&[("Q", &[Reg::A1])]);
+    assert!(
+        is_produced(&check(Some("Q"), &produced)),
+        "a falls_into fall-off must be credited from the successor's verified out"
+    );
+
+    // (2) The successor does NOT produce a1 — the obligation lands and FAILS.
+    // This is the case a blanket exemption cannot express, and the one that
+    // proves the successor is actually consulted.
+    let barren = map(&[("Q", &[Reg::D0])]);
+    assert!(
+        is_unverified(&check(Some("Q"), &barren)),
+        "a successor that does not produce the register must not verify the claim"
+    );
+
+    // (3) The successor is unknown to the walk (extern / unresolved) — it credits
+    // nothing, so the claim cannot be proven.
+    assert!(
+        is_unverified(&check(Some("Q"), &map(&[]))),
+        "an unknown successor credits nothing and must not verify the claim"
+    );
+
+    // (4) No declared successor — the ordinary case. The same body still fires,
+    // and it fires for the same reason: nothing produces `a1`.
+    assert!(
+        is_unverified(&check(None, &produced)),
+        "without falls_into the same body must still fire"
+    );
 }
