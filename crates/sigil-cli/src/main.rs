@@ -868,9 +868,25 @@ fn print_ram_report(rows: &[sigil_frontend_emp::lower::RamRegionRow]) {
 /// already walks, and narrowing it to `profile.registry` would make this surface
 /// disagree with all of them — recorded in the gap ledger rather than changed here.
 fn run_contract_report(aeon: &std::path::Path, target: &BuildTarget) {
+    let (label, profile) = target.label_and_profile();
+    let defines = sigil_harness::native::shape_defines(&profile);
+    let report = corpus_closure_or_exit(aeon, target);
+    print_report_header("contract closure", &label, &defines);
+    let _ = profile;
+    print_contract_report(&report);
+}
+
+/// The one closure both `--report contracts` and the build gate run, so a build
+/// can never be gated on a different analysis than the report displays. Exits on
+/// a scan or interface-bind failure — a half-bound env silently poisons every
+/// condition it missed, so it is as fatal here as it is for the report.
+fn corpus_closure_or_exit(
+    aeon: &std::path::Path,
+    target: &BuildTarget,
+) -> sigil_frontend_emp::corpus_contracts::ContractReport {
     use sigil_frontend_emp::corpus_contracts;
 
-    let (label, profile) = target.label_and_profile();
+    let (_label, profile) = target.label_and_profile();
     let defines = sigil_harness::native::shape_defines(&profile);
     let manifest = scan_or_exit(aeon);
 
@@ -894,9 +910,96 @@ fn run_contract_report(aeon: &std::path::Path, target: &BuildTarget) {
     if !bind_errors.is_empty() {
         process::exit(1);
     }
-    let report = corpus_contracts::analyze_corpus_with_contracts(&files, &defines, &iface_env);
-    print_report_header("contract closure", &label, &defines);
-    print_contract_report(&report);
+    corpus_contracts::analyze_corpus_with_contracts(&files, &defines, &iface_env)
+}
+
+/// THE BUILD-INTEGRATED CLOSURE GATE (default-ON, owner-ruled 2026-08-07).
+///
+/// Until this landed, the corpus closure ran only in Sigil's CI and the strict
+/// gates: it stopped MERGES, never builds. An engine author could add a loose
+/// `out()` contract, build a working ROM, and learn about it a day later from a
+/// gate they never run. The two-tier story stays true — per-file declared-contract
+/// checks are build diagnostics and error tier stops the build — but the closure
+/// tier now stops the build too, on the same terms.
+///
+/// RATCHET, not assert-empty. Two families carry a frozen residue that is mostly
+/// verifier-model gap rather than loose contract, and the standing ruling bars
+/// editing engine code to please a checker; they are pinned instead, both
+/// directions. Two families are zero-firing today and are asserted empty from day
+/// one, with no baseline to go stale.
+///
+/// Baselines come from `sigil_harness::contract_baseline` — the SAME constants the
+/// CI gates assert against. Neither side owns a copy.
+///
+/// `SIGIL_CONTRACTS=0` is the emergency opt-out (aeon's `build.sh` maps
+/// `CONTRACTS=0` onto it). It is loud: a skipped gate prints why.
+fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
+    use sigil_harness::contract_baseline as bl;
+
+    if std::env::var("SIGIL_CONTRACTS").is_ok_and(|v| v == "0") {
+        eprintln!(
+            "warning: contract closure gate SKIPPED (SIGIL_CONTRACTS=0). This is the \
+             emergency opt-out — the build is not contract-checked."
+        );
+        return;
+    }
+
+    let report = corpus_closure_or_exit(aeon, target);
+    let mut failed = false;
+
+    let out_got: Vec<(String, String)> =
+        report.out_firings.iter().map(|f| (f.proc.clone(), f.reg.clone())).collect();
+    let d = bl::diff_out_unverified(&out_got);
+    if !d.is_clean() {
+        eprintln!("error: {}", bl::adjudication_message("[proc.out-unverified]", &d));
+        failed = true;
+    }
+
+    let d1c_got: Vec<(String, String, String)> = report
+        .live_clobbered_firings
+        .iter()
+        .map(|f| (f.proc.clone(), f.callee.clone(), f.reg.clone()))
+        .collect();
+    // D1c is shape-dependent: the debug family assembles code the plain family
+    // never sees, so the pin is per-family (measured 20 plain / 25 debug).
+    let d = bl::diff_d1c(&d1c_got, target.label_and_profile().1.debug);
+    if !d.is_clean() {
+        eprintln!("error: {}", bl::adjudication_message("[call.live-clobbered] (D1c)", &d));
+        failed = true;
+    }
+
+    // Zero-firing families: asserted EMPTY, no baseline. A first firing is a real
+    // finding and must stop the build rather than start a pin.
+    if !report.context_unsatisfied.is_empty() {
+        eprintln!(
+            "error: [context.unsatisfied] — {} unsatisfied requirement(s); this family is \
+             zero-firing by contract, so a firing is a defect, not a baseline candidate:",
+            report.context_unsatisfied.len()
+        );
+        for c in &report.context_unsatisfied {
+            eprintln!("  {c:?}");
+        }
+        failed = true;
+    }
+    if !report.survives_firings.is_empty() {
+        eprintln!(
+            "error: [proc.out-cond-survives-unverifiable] — {} firing(s); zero-firing by \
+             contract:",
+            report.survives_firings.len()
+        );
+        for f in &report.survives_firings {
+            eprintln!("  {} :: out({} if {}) — {}", f.proc, f.reg, f.cc, f.reason);
+        }
+        failed = true;
+    }
+
+    if failed {
+        eprintln!(
+            "error: contract closure gate FAILED. Set SIGIL_CONTRACTS=0 (aeon: CONTRACTS=0) \
+             to build anyway — that is an emergency hatch, not a fix."
+        );
+        process::exit(1);
+    }
 }
 
 /// Render a [`ContractReport`](sigil_frontend_emp::corpus_contracts::ContractReport) as
@@ -976,6 +1079,11 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
     );
     for f in &report.live_clobbered_firings {
         println!("  {:<28} calls {:<24} holds {} across clobber", f.proc, f.callee, f.reg);
+    }
+
+    println!("\n-- [proc.out-unverified] firings (§G4.5, {}): --", report.out_firings.len());
+    for f in &report.out_firings {
+        println!("  {:<28} out({}) — {}", f.proc, f.reg, f.reason);
     }
 
     println!(
@@ -1373,6 +1481,11 @@ fn report_warnings(warnings: &[sigil_harness::native::BuildWarning]) {
 /// `build_full_file_chained` model the same rule off `GameProfile::crash_report`.
 fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     use sigil_harness::native;
+
+    // The closure gate runs BEFORE the build: a contract failure should cost a
+    // second, not a full link, and it must not leave a fresh artifact on disk
+    // that looks like it passed.
+    run_contract_gate(aeon, &opts.target);
 
     // The LABEL comes from the same place the reports read it, so a build and a
     // report over one target can never name it differently.
