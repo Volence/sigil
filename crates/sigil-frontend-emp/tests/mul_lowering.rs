@@ -187,8 +187,16 @@ fn refusals_surface_through_the_pipeline() {
 #[test]
 fn word_strides_are_byte_identical_to_hand_chains() {
     // (n, first-shift, second-shift) of `move.w d0,d1 / lsl.w #p,d0 /
-    // add.w d1,d0 / lsl.w #q,d0`: 66 → (5,1), 80 → (2,4), 160 → (2,5).
+    // add.w d1,d0 / <tail ×2^q>`: 66 → (5,1), 80 → (2,4), 160 → (2,5).
+    // A q = 1 tail is a single doubling and is spelled `add.w d0,d0` (4 cycles)
+    // rather than `lsl.w #1,d0` (8) — same two bytes, so ×66 is the stride this
+    // preference actually reaches.
     for (n, p, q) in [(66u32, 5, 1), (80, 2, 4), (160, 2, 5)] {
+        let tail = if q == 1 {
+            "    add.w d0, d0\n".to_string()
+        } else {
+            format!("    lsl.w #{q}, d0\n")
+        };
         let (m_new, d_new) = lower(&format!(
             "module m\nproc p() clobbers(d0, d1) {{\n    mul_const.w d0, #{n}, d1\n    rts\n}}\n"
         ));
@@ -197,7 +205,7 @@ fn word_strides_are_byte_identical_to_hand_chains() {
              \x20   move.w d0, d1\n\
              \x20   lsl.w #{p}, d0\n\
              \x20   add.w d1, d0\n\
-             \x20   lsl.w #{q}, d0\n\
+             {tail}\
              \x20   rts\n}}\n"
         ));
         assert!(errors(&d_new).is_empty(), "n={n}: {d_new:?}");
