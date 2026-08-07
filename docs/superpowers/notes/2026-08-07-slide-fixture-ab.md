@@ -2,7 +2,7 @@
 
 The parcel adds a SECOND recorded input fixture,
 `games/sonic4/data/replays/ojz_slide_fixture.bin`, and embeds it beside the
-standing one. It is ROM-size-changing (+262 bytes), so it re-freezes the goldens,
+standing one. It is ROM-size-changing (+0xF0 assembled), so it re-freezes the goldens,
 and this note is its evidence.
 
 ## Why it exists — the hole, measured not assumed
@@ -17,7 +17,7 @@ The mulw-parallax A/B then measured a second face of the same hole: a breakpoint
 on `Section_GetSecPtrXY`'s stride was armed for the whole 2059-tick run on both
 carts and **never fired**.
 
-So the corpus's only automated behavioural net had ZERO coverage of
+So the corpus's only recorded behavioural fixture had ZERO coverage of
 `EntityWindow_Slide`, `EntityWindow_MigrateMasks`, `PopulateSectionRings` and
 `EntityWindow_InitSection`'s compare-clear. That is a large part of why a live
 mis-index survived nine days and two byte-changing parcels.
@@ -59,10 +59,13 @@ deterministic by construction, so a no-op tap in the stream replays as a no-op
 tap. It is left in rather than trimmed, because trimming it would mean shipping a
 stream that was never actually executed.
 
-`Ring_Count` read `$0E15` after the first run, so rings were genuinely collected
-in the section that later survives onto a misread entry — the content
-precondition the migmask A/B had to force with camera pokes is met here by
-ordinary gameplay input.
+A word read at `Ring_Count` returned `$0E15` after the first run — that is
+`Ring_Count = $0E` and its neighbour `Ring_HighWater = $15`, since `Ring_Count`
+is a `u8`. Note `Ring_Count` counts entries in the spawn `Ring_Buffer`, not rings
+collected; the collected counter is `Ring_Counter`. What actually establishes the
+content precondition is not this read but probe 2's outcome: the ×22 cart's
+duplicate tripwire fires naming section `$01` list index `$00`, which is only
+reachable if section 1's rings were spawned and marked loaded.
 
 Vertical movement uses **debug free flight**, which needs no level-data change
 and no poke: `games/sonic4/test/ojz_scroll_test.emp:77` arms
@@ -74,15 +77,15 @@ moves 16 px/frame against a stationary 0 px/frame on the ground.
 Read out at the end: `Replay_Record_Idx` = `$05D8` = **1496 ticks**,
 `Replay_Check_Idx` = `$18` = **24 checkpoints**, first checkpoint at
 `Logic_Tick` 2. Packed with `tools/replay_pack.py` → **240 bytes**, which the
-packer's own SOCD/escape validation accepted (no `$FF`, no U+D, no L+R — the
-`mode` button used for the idle stretches does not reach the 3-button latch, and
-the recorded idle bytes are `$00`). The decoded run lengths match the drive
+packer's own SOCD/escape validation accepted (no `$FF`, no U+D, no L+R; the idle
+stretches record as `$00`). The decoded run lengths match the drive
 exactly: `$08`×271, `$04`×400, `$00`×80, `$10`×2, `$02`×300, `$10`×2, `$02`×160,
 `$01`×180, `$10`×2, `$00`×99.
 
 ## Probe 1 — the fixed cart must complete CLEAN
 
-Run TWICE, and the second run is the one that counts.
+Validated twice, on two different streams — the draft by RAM injection, this one
+from ROM.
 
 **Draft validation, stream injected into RAM** — written to
 `Replay_Record_Buf` (`$FFB408`, 8 KB of DEBUG RAM playback never touches),
@@ -196,7 +199,12 @@ sharper gap than "no vertical coverage", and it is what remains ledgered.
 
 ## The byte cost
 
-+262 bytes (240 fixture + alignment) in both shapes. `replay_fixture.emp`'s own
+`+0xF0` = **240 assembled bytes in both shapes — the fixture exactly, with no
+alignment padding** (the base `0x5C8B2` is even and the length 240 is even). The
+golden BLOBS grow by more: `s4`/`config_b` +262, `s4.debug`/`config_a` +260,
+`lean` +240. The extra bytes are the compressed `deb2` symbol appendix gaining
+the new label — measured directly, `s4.bin`'s appendix goes 27831 → 27853 — not
+alignment, and `lean` shows +240 exactly because it carries no appendix. `replay_fixture.emp`'s own
 header states the consequence and it holds here: the fixture is placed after all
 gameplay content and before the fault-handler island, so **zero gameplay
 addresses shift** — only the island and `EndOfRom` move, and `repin` re-pins

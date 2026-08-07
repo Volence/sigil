@@ -85,3 +85,15 @@ you have READ the final output of your final gate run and written your report.
   the overseer owns the merge queue.
 - If resumed after an interruption: re-verify tree state (status/branch/HEAD)
   before continuing.
+- **`git checkout -- <file>` is FORBIDDEN in a lane worktree.** It reverts to the
+  last COMMIT, so using it to undo a negative-probe perturbation silently
+  destroys every uncommitted parcel edit in that file. The trap fired TWICE in
+  one session, the second time after it had already been ledgered. Revert a probe
+  by string-replace, or by `git stash push -- <probe-file>` when the file carries
+  no parcel content. Confirm with `git diff --stat` that the parcel's own edits
+  survived before moving on.
+- **A lens panel is dispatched only against a CLEAN worktree, with the review SHA
+  named in the brief.** A panel that reviews committed state while fixes sit
+  uncommitted reviews something nobody is proposing to merge; two panels in one
+  round opened their reports by saying so. A dirty-tree panel review is VOID —
+  commit or stash first, then dispatch.

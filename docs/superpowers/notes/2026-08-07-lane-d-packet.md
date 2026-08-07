@@ -118,8 +118,9 @@ it — the same class as Lane B's lying `ensure` comment, in a different file.
 this lane tractable, and it should be the standard technique.** The fixture is
 reached through `Replay_Ptr`, an ordinary long, and `Replay_Record_Buf` is 8 KB of
 DEBUG RAM that playback does not touch. So a candidate stream can be validated
-against *any* cart — including a deliberately-broken one — with no rebuild, no
-golden churn and no chain entry, and only the stream that survives that gets
+against any DEBUG cart — including a deliberately-broken one — with no rebuild,
+no golden churn and no chain entry (both the record buffer and the checkpoint
+compare are `if DEBUG == 1`), and only the stream that survives that gets
 embedded. Every previous fixture change had to pay a ROM rebuild to be testable at
 all, which makes "record it, embed it, then find out" the path of least
 resistance; this inverts that.

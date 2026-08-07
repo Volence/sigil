@@ -2498,55 +2498,55 @@ anchor_crc = "6e6dcfec"
 anchor_end = 0x5f758
 
 [[entry]]
-name = "slide-fixture"
-ab = "docs/superpowers/notes/2026-08-07-slide-fixture-ab.md"
-note = "a second recorded input fixture covering the entity-window slide path in all four crossing directions; +262 bytes after all gameplay content, so only the fault island and EndOfRom move"
+name = "mulw-parallax"
+ab = "docs/superpowers/notes/2026-08-07-mulw-parallax-ab.md"
+note = "the word shift run doubles with add.w at k=1 (four corpus lowerings) and parallax's shadow-entry stride+copy derive from sizeof(band_entry); five encoding sites, no size or placement change"
 
 [entry.targets.config_a]
 golden = "config_a.bin"
-full_crc = "a29754a0"
-full_size = 424209
-anchor_crc = "1ad4c994"
-anchor_end = 0x5f848
+full_crc = "737ea6f3"
+full_size = 423949
+anchor_crc = "da72fbef"
+anchor_end = 0x5f758
 
 [entry.targets.config_b]
 golden = "config_b.bin"
-full_crc = "6e22c742"
-full_size = 301467
-anchor_crc = "f61bc2df"
-anchor_end = 0x42e80
+full_crc = "a3fbd5b1"
+full_size = 301205
+anchor_crc = "407fc443"
+anchor_end = 0x42d90
 
 [entry.targets.demo]
 golden = "demo.bin"
-full_crc = "b3ceaac5"
+full_crc = "80b9531c"
 full_size = 91330
-anchor_crc = "d697f872"
+anchor_crc = "c24cf9af"
 anchor_end = 0x11224
 
 [entry.targets.demo_debug]
 golden = "demo.debug.bin"
-full_crc = "f36cd2b4"
+full_crc = "8f4be1a1"
 full_size = 94031
-anchor_crc = "d88fac6c"
+anchor_crc = "52ae6971"
 anchor_end = 0x11224
 
 [entry.targets.lean]
 golden = "lean.bin"
-full_crc = "81e65633"
-full_size = 379350
-anchor_crc = "9921cbfe"
-anchor_end = 0x5c9d6
+full_crc = "125f7735"
+full_size = 379110
+anchor_crc = "dd68475f"
+anchor_end = 0x5c8e6
 
 [entry.targets.s4]
 golden = "s4.bin"
-full_crc = "d1367368"
-full_size = 411429
-anchor_crc = "ea62ffca"
-anchor_end = 0x5da58
+full_crc = "b2a91f66"
+full_size = 411167
+anchor_crc = "57a4bb6a"
+anchor_end = 0x5d968
 
 [entry.targets.s4_debug]
 golden = "s4.debug.bin"
-full_crc = "8c420efd"
-full_size = 423831
-anchor_crc = "b1f25b4b"
-anchor_end = 0x5f848
+full_crc = "da2e3646"
+full_size = 423571
+anchor_crc = "65ca5ccd"
+anchor_end = 0x5f758
