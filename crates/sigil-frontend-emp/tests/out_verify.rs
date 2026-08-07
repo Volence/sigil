@@ -683,6 +683,23 @@ fn fixpoint_uncond(
     compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &extern_names, &BTreeMap::new(), &BTreeSet::new()).0
 }
 
+/// [`fixpoint_uncond`] with a `falls_into` successor map — the plumbing that
+/// carries each proc's declared successor from the proc table into the fixpoint.
+fn fixpoint_uncond_fi(
+    src: &str,
+    declared: &[(&str, &[Reg])],
+    falls_into: &[(&str, &str)],
+) -> BTreeMap<String, BTreeSet<String>> {
+    let all = eval_all(src);
+    let proc_items: BTreeMap<String, &[CodeItem]> =
+        all.iter().map(|(n, v)| (n.clone(), v.as_slice())).collect();
+    let declared_uncond = map(declared);
+    let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    let fi: BTreeMap<String, String> =
+        falls_into.iter().map(|(p, s)| (p.to_string(), s.to_string())).collect();
+    compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &BTreeSet::new(), &fi, &BTreeSet::new()).0
+}
+
 fn verified(m: &BTreeMap<String, BTreeSet<String>>, proc: &str, reg: Reg) -> bool {
     m.get(proc).is_some_and(|s| s.contains(&reg.to_string()))
 }
@@ -1024,5 +1041,73 @@ fn a_falls_into_procs_fall_off_charges_the_successor() {
     assert!(
         is_unverified(&check(None, &produced)),
         "without falls_into the same body must still fire"
+    );
+}
+
+/// THE PLUMBING, one layer above [`verify_out`]: the successor NAME must actually
+/// travel from the proc table, through `compute_verified_outs`, into the fall-off
+/// credit. `P falls_into Q` where P produces nothing and Q grounds locally — P can
+/// verify ONLY if that map arrived intact.
+///
+/// This exists because the corpus CANNOT witness it. The one 68k `falls_into` proc
+/// declaring an out is `S4LZ_DecompressDict out(a1) falls_into S4LZ_Decompress`,
+/// and the successor's own `a1` is unverified, so that row fires identically
+/// whether the credit is wired up or silently dropped. A mutant replacing either
+/// end of the plumbing with `None` passes every other gate in the tree.
+#[test]
+fn falls_into_successor_credit_reaches_the_fixpoint() {
+    // P falls off its end producing nothing; Q produces a1 locally and returns.
+    let src = "module m\n\
+        proc P () clobbers(d0) out(a1) {\n\
+        \x20       moveq   #0, d0\n\
+        }\n\
+        proc Q () clobbers() out(a1) {\n\
+        \x20       lea     Slot, a1\n\
+        \x20       rts\n\
+        }\n";
+
+    // Q grounds locally either way.
+    let wired = fixpoint_uncond_fi(src, &[("P", &[Reg::A1]), ("Q", &[Reg::A1])], &[("P", "Q")]);
+    assert!(verified(&wired, "Q", Reg::A1), "Q produces a1 locally");
+    assert!(
+        verified(&wired, "P", Reg::A1),
+        "P must be credited from its declared successor Q — the falls_into map did not \
+         reach the fall-off credit"
+    );
+
+    // The SAME program with the successor map empty: nothing credits P, so the
+    // claim cannot be proven. This is the mutant the corpus cannot catch.
+    let unwired = fixpoint_uncond_fi(src, &[("P", &[Reg::A1]), ("Q", &[Reg::A1])], &[]);
+    assert!(verified(&unwired, "Q", Reg::A1), "Q still grounds locally");
+    assert!(
+        !verified(&unwired, "P", Reg::A1),
+        "with no successor map P has nothing to credit from and must NOT verify"
+    );
+}
+
+/// The fall-off credit is EDGE-LOCAL: it discharges the claim at the fall-off, and
+/// nowhere else. A body with both an `rts` path and a fall-off path must still
+/// FIRE, because the `rts` path returns to the caller without the successor ever
+/// running. An implementation that credited the successor globally — as a
+/// post-proc fact rather than on the one edge — would wrongly bless this.
+#[test]
+fn falls_into_credit_does_not_reach_an_rts_on_another_path() {
+    let src = "module m\n\
+        proc P (d1: u16) clobbers(d0) out(a1) {\n\
+        \x20       tst.w   d1\n\
+        \x20       beq     .out\n\
+        \x20       moveq   #0, d0\n\
+        \x20   .out:\n\
+        \x20       rts\n\
+        }\n\
+        proc Q () clobbers() out(a1) {\n\
+        \x20       lea     Slot, a1\n\
+        \x20       rts\n\
+        }\n";
+    let m = fixpoint_uncond_fi(src, &[("P", &[Reg::A1]), ("Q", &[Reg::A1])], &[("P", "Q")]);
+    assert!(
+        !verified(&m, "P", Reg::A1),
+        "an rts path returns without entering the successor — the fall-off credit \
+         must not discharge it"
     );
 }
