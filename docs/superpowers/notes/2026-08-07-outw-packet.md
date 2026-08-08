@@ -262,6 +262,23 @@ same way.
   `collect_out_widths` walks procs and externs only: feeding an unenforced
   declaration into the credit map would let a wrong type widen a claim silently.
 
+## Residue witnesses: checked, and one retired witness corrected
+
+Flagged by the overseer as a hazard (second witness-decay instance in one test).
+Cleared BY RUNNING, not by grep: `corpus_out_residue_is_the_verified_complement`
+pins `Art_Decompress :: a1`, which this parcel does not close, and the suite is
+green (26/26). Grepping every one of the 14 closed rows across
+`crates/*/tests` and `crates/*/src` found no other assertion pinning any of them —
+the remaining hits are byte-pin and port tests keyed on proc NAMES, untouched by a
+contract clause.
+
+One correction landed. That test's comment recording the RETIRED witness said
+`Collision_GetType :: out(d0)` "still passes, and detects nothing". It no longer
+fires at all — the proc now declares `out(d0: u8)`, which its `move.b` fetch
+proves — so restoring it would be a failing assertion rather than a weak one. The
+comment now says so. A retired witness needs re-checking before it is restored,
+not only before it is trusted.
+
 ## Files
 
 **sigil** — `out_verify.rs` (the width lattice, `OutWidth`/`OutWidths`, the three
@@ -270,7 +287,8 @@ carries widths), `calls.rs` (must-def reads the keys), `corpus_contracts.rs`
 (`collect_out_widths` / `out_width_of` / `collect_newtype_underlying`),
 `parser.rs` (`out(dN: T if cc)`), `contract_baseline.rs` (30 → 16 rows + the
 corrected header), `tests/out_width.rs` (new, 15 gates), `tests/out_verify.rs`
-(arity), the design note, four gap-ledger rows.
+(arity), `tests/contract_closure_corpus.rs` (the retired-witness comment), the
+design note, four gap-ledger rows.
 
 **aeon** — `collision_lookup.emp`, `tile_cache.emp`, `math.emp` (+ the stale
 comment), `section.emp`, `entity_window.emp`, `player_sensors.emp` (4 procs + the
