@@ -288,14 +288,16 @@ fn compile_real_file(
     }
 
     // Outbound bare-name proof: a real caller's `bsr.w Sound_PlaySFX`. The
-    // consumer is PHASED at $9000 — inside bsr.w's ±32K of both shapes'
+    // consumer is PHASED at $A000 — inside bsr.w's ±32K of both shapes'
     // targets, so the asserted displacement is a real reachable one (an
     // unphased far carrier would only "pass" mod 2^16; sigil-link's missing
     // pc-rel16 range check is gap-ledgered, and port #1's review caught
     // exactly this vacuity). ($8000 originally; the t19 bg_anim debug assert
-    // slid sound_api's debug region end past $8000 and collided.)
+    // slid sound_api's debug region end past $8000 and collided; art-streaming
+    // Task 6 (chain 63) slid it past $9000, so bumped to $A000 — still inside
+    // bsr.w's +-32K of Sound_PlaySFX.)
     let asm = "cpu 68000\n\
-               phase $9000\n\
+               phase $A000\n\
                Consumer:\n\
                \tbsr.w   Sound_PlaySFX\n\
                \trts\n";
@@ -304,7 +306,7 @@ fn compile_real_file(
         .unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}"))
         .sections;
     for sec in &mut consumer {
-        sec.lma = 0x9000;
+        sec.lma = 0xA000;
         sec.placement = SectionPlacement::Pinned;
         sec.group = None;
     }
@@ -396,7 +398,7 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     let consumer = linked
         .sections
         .iter()
-        .find(|s| s.lma == 0x9000)
+        .find(|s| s.lma == 0xA000)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
     let target = shape.base as i64 + shape.play_sfx_off as i64;
