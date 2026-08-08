@@ -46,11 +46,13 @@ fn harvest_emits_the_as_field_offsets_and_sizes() {
     // A spread across all eight struct twins — the offsets structs.asm's
     // `struct … endstruct` generated, now authored by the `.emp` structs.
     let want: &[(&str, i64)] = &[
-        // Act ($22)
+        // Act ($26) — grew from $22 when P2b added act_sec_local_maps at $22
+        // (art-streaming Task 5); the harvest expectation was stale until the
+        // full suite ran under Task 6.
         ("Act_sec_grid_ptr", 0x00),
         ("Act_grid_w", 0x04),
         ("Act_edge_mode", 0x20),
-        ("Act_len", 0x22),
+        ("Act_len", 0x26),
         // Sec ($42)
         ("Sec_sec_block_index", 0x00),
         ("Sec_sec_parallax_config", 0x14),

@@ -103,14 +103,17 @@ fn dead_save_worklist_over_corpus() {
     eprintln!("{report}");
 
     // NON-VACUOUS: the walk must reach the dead-save analysis AND find the census the
-    // ledger states. The live worklist is 3 firings (TestChurnObj_Main/A0,
-    // TileCache_FillColumn/D7, TileCache_WarmupBelowRow/D7) in every shape; a tolerant
-    // floor of 3 (not an exact pin — this is a dump, adoption may retire a customer)
-    // gives the stated census teeth: a walk that stops running, or one that silently
-    // loses a customer, drops below it and fails.
+    // ledger states. The live worklist is now 1 firing (TestChurnObj_Main/A0) in every
+    // shape: art-streaming-p2-task6 (2026-08-08) RETIRED two customers —
+    // TileCache_FillColumn/D7 + TileCache_WarmupBelowRow/D7 — when the copy sites were
+    // rewritten for patch-at-cache-entry (CopyBlockColumn's clobber set + the per-word
+    // PatchWord fills changed FillColumn/Warmup's D7 liveness; the contract-closure gate
+    // proves the preservation is still correct). Tolerant floor of 1 (not an exact pin —
+    // this is a dump, adoption may retire a customer) gives the census teeth: a walk that
+    // stops running drops below it and fails.
     assert!(
-        widest >= 3,
-        "expected the 3-firing dead-save census in the widest shape, found only {widest} — \
-         the worklist analysis is not running or has silently lost a customer"
+        widest >= 1,
+        "expected the dead-save census (>=1: TestChurnObj_Main/A0) in the widest shape, \
+         found {widest} — the worklist analysis is not running"
     );
 }

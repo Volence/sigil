@@ -372,6 +372,15 @@ tests = ["load_art_port"]
 # decode + blocking verify + raise_error) is absent from the plain shape.
 name = "page_in"
 start = "PageIn_Process"
+end = "PageCache_Init"
+
+[[region]]
+# Art-streaming P2b Task 6 — the VRAM page-frame residency cache (page_cache.emp).
+# Native-only (no AS twin, so no gate). End is the next placement: bg.asm's
+# BG_Init. Shape-DEPENDENT length: PageCache_Audit + the Ref/Unref/AllocFrame
+# DEBUG asserts are absent from the plain shape.
+name = "page_cache"
+start = "PageCache_Init"
 end = "BG_Init"
 
 [[region]]
@@ -2168,6 +2177,40 @@ tests = ["load_art_port"]
 [[symbol]]
 name = "PageIn_Land_Pending"
 tests = ["load_art_port"]
+
+# Art-streaming P2b Task 6 — the page_cache cross-seam operands. Port tests that
+# re-lower a caller module standalone need these resolved to their real VMAs:
+# load_art -> PageCache_Init; tile_cache -> PageCache_PatchWord / PageCache_Audit;
+# page_in -> PageCache_AllocFrame / PageCache_Publish.
+[[symbol]]
+name = "PageCache_Init"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "PageCache_AllocFrame"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "PageCache_Publish"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "PageCache_PatchWord"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "PageCache_Audit"
+tests = ["tile_cache_port"]
+
+# P2b Task 6 — new tile-cache RAM cells the standalone tile_cache lowering carries.
+[[symbol]]
+name = "Cache_Art_Stall"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Page_Audit_Ticks"
+debug_only = true
+tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Flush_VDP_Shadow"

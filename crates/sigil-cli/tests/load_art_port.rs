@@ -108,7 +108,9 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         // Art-streaming P2a Task 4 — Level_LoadArt drives the pool load through the
         // page-in FIFO (PageIn_Flush/Enqueue calls, PageIn_Pool_Table store, the
         // budget raise, and the drain-wait flag polls).
-        ("PageIn_Flush", pick(pins::PAGE_IN_FLUSH)),
+        // P2b Task 6: Level_LoadArt now opens with PageCache_Init (which itself
+        // calls PageIn_Flush internally — page_cache's concern, not load_art's).
+        ("PageCache_Init", pick(pins::PAGE_CACHE_INIT)),
         ("PageIn_Enqueue", pick(pins::PAGE_IN_ENQUEUE)),
         ("PageIn_Pool_Table", pick(pins::PAGE_IN_POOL_TABLE)),
         ("PageIn_Queue_Count", pick(pins::PAGE_IN_QUEUE_COUNT)),
@@ -505,7 +507,9 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         // Art-streaming P2a Task 4 — Level_LoadArt drives the pool load through the
         // page-in FIFO (PageIn_Flush/Enqueue calls, PageIn_Pool_Table store, drain-wait
         // flag polls); the co-lowered vblank's Important-drain release adds the last three.
-        ("PageIn_Flush", pick(pins::PAGE_IN_FLUSH)),
+        // P2b Task 6: Level_LoadArt now opens with PageCache_Init (which itself
+        // calls PageIn_Flush internally — page_cache's concern, not load_art's).
+        ("PageCache_Init", pick(pins::PAGE_CACHE_INIT)),
         ("PageIn_Enqueue", pick(pins::PAGE_IN_ENQUEUE)),
         ("PageIn_Pool_Table", pick(pins::PAGE_IN_POOL_TABLE)),
         ("PageIn_Queue_Count", pick(pins::PAGE_IN_QUEUE_COUNT)),

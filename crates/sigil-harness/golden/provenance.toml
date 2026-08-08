@@ -2982,3 +2982,57 @@ full_crc = "f6a5fe12"
 full_size = 425538
 anchor_crc = "ea7851c8"
 anchor_end = 0x5f848
+
+[[entry]]
+name = "art-streaming-p2-task6"
+ab = "docs/superpowers/notes/2026-08-08-art-streaming-p2-task6-ab.md"
+note = "page-frame residency cache (P2b Task 6)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "8ca21828"
+full_size = 427017
+anchor_crc = "25b1e3ac"
+anchor_end = 0x5f848
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "94ab8f8e"
+full_size = 307751
+anchor_crc = "0ec73f60"
+anchor_end = 0x43ea2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "fc479c4c"
+full_size = 93194
+anchor_crc = "03fcfaae"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "bb95cf77"
+full_size = 96455
+anchor_crc = "20b83f97"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "6d7379c1"
+full_size = 379350
+anchor_crc = "b278afdd"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "741b665d"
+full_size = 413630
+anchor_crc = "e3f4bc6c"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "c2ab3e8c"
+full_size = 426671
+anchor_crc = "a4475d15"
+anchor_end = 0x5f848

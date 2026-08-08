@@ -166,10 +166,17 @@ fn tile_cache_addr_labels(debug: bool) -> Vec<Section> {
         ("Frame_Counter", pick(pins::FRAME_COUNTER)),
         ("Section_Plane_Dirty", pick(pins::SECTION_PLANE_DIRTY)),
         ("S4LZ_DecompressDict", pick(pins::S4_LZ_DECOMPRESS_DICT)),
+        // P2b Task 6: the copy sites call PageCache_PatchWord per nametable word +
+        // PageCache_Audit periodically; the demand-stall flag rides Cache_Art_Stall.
+        ("PageCache_PatchWord", pick(pins::PAGE_CACHE_PATCH_WORD)),
+        ("PageCache_Audit", pick(pins::PAGE_CACHE_AUDIT)),
+        ("Cache_Art_Stall", pick(pins::CACHE_ART_STALL)),
     ];
     if debug {
         table.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
         table.push(("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER));
+        // Debug-only: the periodic residency audit's frame counter.
+        table.push(("Page_Audit_Ticks", pins::PAGE_AUDIT_TICKS));
     }
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
@@ -283,10 +290,16 @@ fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAsser
 
 fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     // Packed placement (Wave-B B-0) may end a region window in ALIGNMENT FILL: the
-    // pins span runs to the next section's aligned base. Tolerate a short (< 16 B)
+    // pins span runs to the next section's aligned base. Tolerate a short (<= 0x20 B)
     // all-zero tail beyond the lowered image; every real byte still compares.
+    // Raised 16 -> 0x20 for art-streaming-p2-task6 (2026-08-08): inserting the
+    // page_cache section moved collision_lookup's packed base onto a coarser
+    // boundary, so tile_cache's region window now carries a 0x16-byte (plain) /
+    // 0x10-byte (debug) all-zero alignment tail — the whole-ROM native_full_rom
+    // gate proves the real bytes are byte-exact; this is the redundant per-section
+    // view. The all-zero requirement still rejects any real-code truncation.
     let expected = if expected.len() > candidate.len()
-        && expected.len() - candidate.len() < 16
+        && expected.len() - candidate.len() <= 0x20
         && expected[candidate.len()..].iter().all(|&b| b == 0)
     {
         &expected[..candidate.len()]
@@ -485,10 +498,16 @@ fn tile_cache_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
         // NO S4LZ_DecompressDict carrier — the t22 flip (kill row 30): the
         // name resolves to s4lz.emp's proc compiled into this same
         // link; a stale carrier would be the §11 Q4 collision.
+        // P2b Task 6: page_cache is NOT co-lowered here, so its copy-site callees
+        // + the stall flag are carriers.
+        ("PageCache_PatchWord", pick(pins::PAGE_CACHE_PATCH_WORD)),
+        ("PageCache_Audit", pick(pins::PAGE_CACHE_AUDIT)),
+        ("Cache_Art_Stall", pick(pins::CACHE_ART_STALL)),
     ];
     if debug {
         v.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
         v.push(("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER));
+        v.push(("Page_Audit_Ticks", pins::PAGE_AUDIT_TICKS));
     }
     v
 }

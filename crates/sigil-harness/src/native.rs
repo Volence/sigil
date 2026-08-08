@@ -284,6 +284,12 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // placed between load_art and bg per map.toml `order`. Engine-agnostic
         // (demo gets it too; its DEBUG self-test scaffold is HAS_ACT_ART_POOL-gated).
         m!("engine.page_in", "page_in", pins::PAGE_IN),
+        // Art-streaming P2b Task 6 — the VRAM page-frame residency cache
+        // (page_cache.emp), placed between page_in and bg per map.toml `order`.
+        // Engine-agnostic (demo links it too; tile_cache/page_in/load_art call
+        // PageCache_* cross-seam). Shape-DEPENDENT length: PageCache_Audit and the
+        // Ref/Unref/AllocFrame DEBUG asserts are DEBUG-only.
+        m!("engine.page_cache", "page_cache", pins::PAGE_CACHE),
         m!("engine.bg", "bg", pins::BG),
         m!("engine.bg_anim", "bg_anim", pins::BG_ANIM),
         // ── Engine debug / sound caller ──
