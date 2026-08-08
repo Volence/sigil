@@ -979,3 +979,131 @@ fn a_false_word_facet_claim_fires_the_obligation_gate() {
         r.word_preserve_firings
     );
 }
+
+/// A `[proc.out-unverified]` firing on `(proc, reg)` is present.
+fn out_fires(
+    r: &sigil_frontend_emp::corpus_contracts::ContractReport,
+    proc: &str,
+    reg: &str,
+) -> bool {
+    r.out_firings.iter().any(|f| f.proc == proc && f.reg == reg)
+}
+
+/// THE SITE-2 PLUMBING GUARD, one layer above the fixpoint's own
+/// `falls_into_successor_credit_reaches_the_fixpoint`: the `falls_into` successor
+/// name must travel from the proc table into the PER-PROC out check, not only
+/// into the verified-out fixpoint.
+///
+/// The two arguments are independent and neither guard covers the other. The
+/// fixpoint's copy decides which procs end up VERIFIED; this one decides whether a
+/// proc's OWN claim is charged at its fall-off. A mutant that replaces either with
+/// `None` leaves the other's guard green.
+///
+/// THE CORPUS CANNOT WITNESS THIS. No 68k proc declares both `falls_into` and an
+/// `out`, so the argument is dead over every shipped shape and a `None` mutant
+/// passes all seven byte gates and the whole closure corpus. `PsgVolEnv_Resolve`
+/// is the only proc of that shape anywhere and it is Z80, which the closure tier
+/// excludes twice over (`proc_bufs` skips `(cpu: z80)` modules and `Reg::from_name`
+/// rejects Z80 spellings). This test is therefore the ONLY thing standing under
+/// the argument.
+///
+/// The polarities vary the SUCCESSOR'S PRODUCTION, not the `falls_into` flag.
+/// Varying the flag alone would keep passing under an implementation that ignores
+/// the successor entirely — it would pin the vacuity as the contract.
+#[test]
+fn falls_into_successor_credit_reaches_the_per_proc_out_check() {
+    // P produces a1 nowhere and runs off its end into Q; Q produces a1 locally.
+    // The claim must be credited from Q's verified out.
+    let credited = analyze(&[
+        "module m\n\
+         proc P () clobbers(d0) out(a1) falls_into Q {\n\
+        \x20   moveq #0, d0\n\
+         }\n\
+         proc Q () clobbers() out(a1) {\n\
+        \x20   lea Slot, a1\n\
+        \x20   rts\n\
+         }\n",
+    ]);
+    assert!(
+        !out_fires(&credited, "P", "a1"),
+        "P's fall-off must be credited from Q's verified out(a1): {:?}",
+        credited.out_firings
+    );
+
+    // NON-VACUITY, and the reason the successor is provably consulted: the same
+    // body whose successor does NOT produce a1 must still fire. Without this the
+    // assertion above would also pass on a surface that never populates at all.
+    let barren = analyze(&[
+        "module m\n\
+         proc P () clobbers(d0) out(a1) falls_into Q {\n\
+        \x20   moveq #0, d0\n\
+         }\n\
+         proc Q () clobbers(d0) out(d0) {\n\
+        \x20   moveq #0, d0\n\
+        \x20   rts\n\
+         }\n",
+    ]);
+    assert!(
+        out_fires(&barren, "P", "a1"),
+        "a successor that does not produce a1 leaves P's claim unproven: {:?}",
+        barren.out_firings
+    );
+}
+
+/// THE OUT-RESIDUE SURFACE READS THE VERIFIED MAP, NOT THE DECLARED ONE.
+///
+/// `D` produces `a1` nowhere and tails into `S`; `S` DECLARES `out(a1)` but never
+/// produces it. Under DECLARED credit the tail hands `D` its `a1` and `D` vanishes
+/// from the residue. Under VERIFIED credit `S`'s own claim is unproven, so it
+/// credits nothing and `D` stands. `D` firing is the entire discriminator.
+///
+/// This is a SYNTHETIC and belongs here rather than in the corpus. The corpus
+/// witness for this fact was `Art_Decompress::out(a1)` grounding in
+/// `S4LZ_Decompress`, and before that `Collision_GetType::out(d0)` — the latter
+/// went silently inert when aeon fused its callee into a leaf, passing while
+/// detecting nothing. Both had the same defect: their discriminating power lived
+/// in another repo and decayed when that repo moved. No row in the present residue
+/// carries the shape at all — every one writes its own register and sources none
+/// of it from a callee, tail or successor — so a corpus witness is not merely
+/// fragile here, it is unavailable.
+#[test]
+fn the_out_residue_surface_uses_verified_credit_not_declared() {
+    // S declares out(a1) and produces nothing, so its claim is unverifiable and
+    // it credits nothing to the tail that grounds in it.
+    let unverified_source = analyze(&[
+        "module m\n\
+         proc D () clobbers(d0) out(a1) {\n\
+        \x20   jbra S\n\
+         }\n\
+         proc S () clobbers(d0) out(a1) {\n\
+        \x20   moveq #0, d0\n\
+        \x20   rts\n\
+         }\n",
+    ]);
+    assert!(
+        out_fires(&unverified_source, "D", "a1"),
+        "D's out(a1) grounds ONLY in S's declared-but-unverified out, so under verified \
+         credit it must stand in the residue; its absence means the surface is reading \
+         the declared map: {:?}",
+        unverified_source.out_firings
+    );
+
+    // THE OPPOSITE POLARITY, and the non-vacuity control: the same D over a source
+    // that DOES produce a1 must not fire. Without this, D firing above would be
+    // equally consistent with a surface that fires on every declared out.
+    let verified_source = analyze(&[
+        "module m\n\
+         proc D () clobbers(d0) out(a1) {\n\
+        \x20   jbra S\n\
+         }\n\
+         proc S () clobbers(d0) out(a1) {\n\
+        \x20   lea Slot, a1\n\
+        \x20   rts\n\
+         }\n",
+    ]);
+    assert!(
+        !out_fires(&verified_source, "D", "a1"),
+        "a tail into a VERIFIED producer must discharge D's claim: {:?}",
+        verified_source.out_firings
+    );
+}
