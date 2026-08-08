@@ -264,7 +264,7 @@ it. The rule moved to one `validate_out_types` pass over `Item::Proc` /
 `Item::ExternProc` / `Item::ContractType`. A rule enforced on one of three forms
 is a rule an author meets by accident.
 
-## Named mutants — 32, every one RED
+## Named mutants — 34, every one RED
 
 `scratchpad/mutants.py` applies each, runs its test, requires FAILURE, and
 restores by SNAPSHOT (a deletion mutant has no unique text to reverse-patch —
@@ -304,9 +304,11 @@ that bit once and stranded the tree mid-run).
 | ‡ the address-out width pin dropped | `an_address_out_credits_a_full_long_whatever_its_type_says` | RED |
 | § **`flag_check`'s `.map(\|c\| c.credit())` -> `.strict()`** | `the_conditional_out_edge_credit_draws_the_credit_side` | RED |
 | § `unresolvable_leaf`'s unknown-`Named` arm -> `None` | `an_out_type_the_corpus_cannot_resolve_is_reported` | RED |
-| § an unresolvable type credits `B` instead of `L` | `an_unresolvable_out_type_credits_exactly_what_a_bare_out_would` | RED |
+| § an unresolvable type credits `B` instead of `L` | `a_simple_unresolvable_out_type_credits_what_a_bare_out_would` | RED |
+| ¶ the scan's typed-out slots suppressed | `no_corpus_out_type_is_unresolvable` | RED |
+| ¶ `OutClaim::merge` takes `max` on the credit side | `an_unresolvable_reading_under_a_collision_credits_narrower_than_bare` | RED |
 
-Bold rows are fixup round 1; ‡ rows are fixup round 2; § rows are round 3.
+Bold rows are fixup round 1; ‡ rows are fixup round 2; § rows are round 3; ¶ rows are the final round.
 
 **Which spelling was mutated, where a phrase has two.** The ‡ "collision
 resolved by first-reading" row mutates the NEWTYPE-side resolution
@@ -520,7 +522,7 @@ capped transfer-out charges, `writes_partial_bits` + `ext_promotion`),
 non-vacuity guard), the design note, the gap-ledger rows.
 
 Every count in this packet is derived from the tree at this tip, not remembered:
-30 `#[test]` in `out_width.rs`, 3 in `out_verify_corpus.rs`, 32 mutant rows, 17
+30 `#[test]` in `out_width.rs`, 3 in `out_verify_corpus.rs`, 34 mutant rows, 17
 typed out slots in the corpus.
 
 **aeon** — `collision_lookup.emp`, `tile_cache.emp`, `math.emp` (+ the stale
