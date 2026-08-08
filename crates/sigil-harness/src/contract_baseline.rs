@@ -26,13 +26,6 @@ use std::collections::BTreeMap;
 /// twin): a Z80 proc declares `out(rN)` but the production dataflow cannot prove
 /// `rN` (a register UNIT) is written on every required return path.
 ///
-/// A SEPARATE array from [`OUT_UNVERIFIED_BASELINE`], never merged into it: the
-/// 68k residue is keyed by `dN`/`aN` and carries a width facet; the Z80 residue is
-/// keyed by the 8-bit/index UNITS (`h`/`l`/`a`/`ix`/…) an `out(hl)` expands to and
-/// has no width. One flat array, because a Z80 out is a DECLARATION (not
-/// comptime-gated), so its residue is the SAME set on every shipped shape — the
-/// closure gate walks all seven and the diff must hold for each.
-///
 /// EVERY ROW IS ONE CLASS — a CARRY-CONDITIONAL RESULT. Each firing names a
 /// register that is a valid result ONLY on the callee's carry-CLEAR (success)
 /// edge: produced there (`… / or a / ret`), and left unproduced on the carry-SET

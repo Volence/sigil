@@ -1572,3 +1572,92 @@ fn z80_out_must_join_fires_on_a_merge_of_produced_and_unproduced() {
     assert!(z80_out_fires(&r, "P", "l"), "l produced on only one leg must fire under MUST join: {:?}", r.z80_out_firings);
     assert!(!z80_out_fires(&r, "P", "h"), "h produced on both legs must pass: {:?}", r.z80_out_firings);
 }
+
+/// CALL-CC BLESSING (fixup item 1): a `call cc, Foo` returns on BOTH edges but
+/// z80_edges models it as a single fall-through, so crediting Foo's out there
+/// would bless production that only ran when the condition held. P's out(hl)
+/// grounds ONLY in a conditional `call nz, Helper` — it must FIRE. (Before the
+/// fix the fall-through credit blessed it.)
+#[test]
+fn z80_out_conditional_call_does_not_bless_its_callee_out() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af) {\n\
+               or a\n\
+               call nz, Helper\n\
+               ret\n\
+           }\n\
+           proc Helper () out(hl) {\n\
+               ld hl, 0\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(z80_out_fires(&r, "P", "h"), "a conditional call must not bless Helper's out(hl): {:?}", r.z80_out_firings);
+    assert!(z80_out_fires(&r, "P", "l"), "a conditional call must not bless Helper's out(hl): {:?}", r.z80_out_firings);
+}
+
+/// t24 POSITIVE control: the SAME shape with an UNCONDITIONAL `call Helper` still
+/// credits Helper's verified out — the fix spares only the conditional form.
+#[test]
+fn z80_out_unconditional_call_still_credits_its_callee_out() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af) {\n\
+               call Helper\n\
+               ret\n\
+           }\n\
+           proc Helper () out(hl) {\n\
+               ld hl, 0\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(!z80_out_fires(&r, "P", "h"), "an unconditional call must still credit Helper's out(hl): {:?}", r.z80_out_firings);
+    assert!(!z80_out_fires(&r, "P", "l"), "an unconditional call must still credit Helper's out(hl): {:?}", r.z80_out_firings);
+}
+
+/// EXCHANGE SEMANTICS (fixup item 2): production is gen-only, so a CANCELLING
+/// `ex de,hl` pair must NOT mark hl produced — after the round trip hl holds its
+/// untouched entry value. P out(hl) whose only "writes" to hl are two cancelling
+/// `ex de,hl` (de itself never produced) must FIRE. (Before the fix the exchange
+/// gen-all marked hl produced — the Finding-2 shape.)
+#[test]
+fn z80_out_cancelling_ex_de_hl_pair_fires() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af, de) {\n\
+               ex de, hl\n\
+               ex de, hl\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(z80_out_fires(&r, "P", "h"), "a cancelling ex de,hl pair must not produce hl: {:?}", r.z80_out_firings);
+    assert!(z80_out_fires(&r, "P", "l"), "a cancelling ex de,hl pair must not produce hl: {:?}", r.z80_out_firings);
+}
+
+/// EXCHANGE PERMUTATION (fixup item 2, positive twin — the VolEnv_ResolveScan
+/// shape the blanket-clear ruling was rejected for): REAL writes to d,e between
+/// two `ex de,hl` genuinely land the produced value in hl. `ld d/ld e` produce
+/// {d,e}; the first `ex de,hl` permutes them into {h,l} (and clears the old d,e);
+/// hl is then genuinely produced — out(hl) must PASS.
+#[test]
+fn z80_out_ex_de_hl_permutes_real_production_into_hl() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af, de) {\n\
+               ld d, 0\n\
+               ld e, 0\n\
+               ex de, hl\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(!z80_out_fires(&r, "P", "h"), "real d,e writes permuted into hl must produce h: {:?}", r.z80_out_firings);
+    assert!(!z80_out_fires(&r, "P", "l"), "real d,e writes permuted into hl must produce l: {:?}", r.z80_out_firings);
+}

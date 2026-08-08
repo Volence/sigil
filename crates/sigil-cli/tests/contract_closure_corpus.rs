@@ -1513,7 +1513,12 @@ fn contract_baselines_hold_for_every_shipped_shape() {
         );
         // …with a NAMED witness so an out-declaration deletion that coincidentally
         // preserves the count still fails (pin content, not only cardinality).
-        for witness in [("Snd_DacLookup", "h"), ("Fm_RoutePart", "b"), ("Psg_HwCh", "a")] {
+        for witness in [
+            ("Snd_DacLookup", "h"),
+            ("Fm_RoutePart", "b"),
+            ("Psg_HwCh", "a"),
+            ("Sfx_QueueEntryPtr", "h"),
+        ] {
             assert!(
                 r.z80_out_claims.iter().any(|(p, u)| p == witness.0 && u == witness.1),
                 "shape `{label}`: the Z80 out claim `{} :: out({})` is gone — the \

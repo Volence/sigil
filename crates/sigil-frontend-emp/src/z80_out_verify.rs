@@ -19,13 +19,23 @@
 //! - **No param seed** (68k Finding 2): entry credits NOTHING; a production must
 //!   come from a write / callee-out / tail-out / fall-into-out on the path. An
 //!   `out(rN)` naming a register the body never writes FIRES.
-//! - **Callee-out credit** at a `call`/`rst` via the shared verified-out map — a
-//!   returning call credits the callee's VERIFIED out units. A tail `jp`/`jr` to a
-//!   known proc credits its verified out at the [`Edge::TailOut`] exit (a tail
-//!   transfer is a return of P from the caller's view — a required return path),
-//!   and a declared `falls_into S` credits S's verified out at the [`Edge::FallOff`]
-//!   end (the `PsgVolEnv_Resolve → VolEnv_ResolveScan` shape). An external /
-//!   unresolved target credits nothing ⇒ any un-produced out fails there.
+//! - **Callee-out credit** at an UNCONDITIONAL `call`/`rst` via the shared
+//!   verified-out map — a returning call credits the callee's VERIFIED out units. A
+//!   `call cc, Foo` credits NOTHING: it returns on both its taken and not-taken
+//!   paths (one fall-through edge), so Foo's out is produced only when the condition
+//!   held, not on the fall-through — crediting it would bless production that may
+//!   never run (over-fire direction). A tail `jp`/`jr` to a known proc credits its
+//!   verified out at the [`Edge::TailOut`] exit (a tail transfer is a return of P
+//!   from the caller's view — a required return path), and a declared `falls_into S`
+//!   credits S's verified out at the [`Edge::FallOff`] end (the
+//!   `PsgVolEnv_Resolve → VolEnv_ResolveScan` shape). An external / unresolved
+//!   target credits nothing ⇒ any un-produced out fails there.
+//! - **Exchanges move, never generate** ([`apply_exchange`]): production is
+//!   gen-only, so `ex`/`exx` PERMUTE or INVALIDATE produced bits rather than
+//!   setting them — `ex de,hl` swaps `d`↔`h`/`e`↔`l`, `exx` clears {b,c,d,e,h,l},
+//!   `ex af,af'` clears `a`, and `ex (sp),rr` clears the pair. This is the sole
+//!   place the produce side diverges from [`crate::z80_preserves`]'s clobber view
+//!   (a swap DOES change those registers, so the clobber side counts them written).
 //! - **Divergent tail** (the noreturn model, and where this twin does NOT
 //!   over-obligate): a tail transfer to an `@noreturn` target — or an
 //!   `AssertDesugar`-authored raise rail — never returns to P's caller, so it is
@@ -57,8 +67,8 @@
 
 use crate::flag_check::{Cfg, Edge};
 use crate::preserves::exit_diverges;
-use crate::value::{CodeItem, CodeOperand};
-use crate::z80_preserves::{unit_idx, z80_produced_units, NU};
+use crate::value::{CodeItem, CodeOperand, Z80Pair};
+use crate::z80_preserves::{pair_units, unit_idx, z80_produced_units, NU};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 /// Proc name → the set of register-out UNIT names it declares (`out(hl)` →
@@ -120,18 +130,85 @@ fn credit_target_outs(st: &mut State, target: &str, callee_verified_out: &Z80Out
     }
 }
 
-/// Apply instruction `idx`'s effect to `st`: gen each produced unit, and credit a
-/// returning call's callee verified outs.
+/// Apply instruction `idx`'s effect to `st`: gen each produced unit, credit a
+/// returning UNCONDITIONAL call's callee verified outs, and permute/invalidate
+/// produced bits across an exchange.
 fn transfer(cfg: &Cfg, idx: usize, st: &mut State, callee_verified_out: &Z80OutMap) {
     let Some((mnem, ops)) = cfg.instr(idx) else { return };
     if is_call(mnem) {
-        if let Some(target) = direct_target(ops) {
-            credit_target_outs(st, target, callee_verified_out);
+        // A `call cc, Foo` returns on BOTH its taken and its not-taken paths —
+        // `z80_edges` models it as a single fall-through — so Foo's out is produced
+        // only when the condition HELD, not on the fall-through the credit applies
+        // to. Crediting it there would bless production that may never have run. Only
+        // an UNCONDITIONAL `call` credits its callee (the over-fire direction: a
+        // conditional call's out is treated as not produced).
+        let leads_cc = matches!(ops.first(), Some(CodeOperand::Z80Cc(_)));
+        if !leads_cc {
+            if let Some(target) = direct_target(ops) {
+                credit_target_outs(st, target, callee_verified_out);
+            }
         }
+        return;
+    }
+    // An exchange PERMUTES or INVALIDATES produced bits rather than generating them
+    // (production is gen-only, so a cancelling `ex de,hl` pair would otherwise mark
+    // hl produced while it holds the untouched entry value — Finding 2).
+    if apply_exchange(mnem, ops, st) {
         return;
     }
     for u in z80_produced_units(mnem, ops) {
         produce(st, u);
+    }
+}
+
+/// Apply a Z80 exchange to the PRODUCED-bit state, returning `true` when `mnem` is
+/// an exchange (so the caller skips the gen-only path). This is the produce-side
+/// dual of [`crate::z80_preserves`]'s clobber view, and it diverges from it on
+/// purpose: a swap DOES change the destination registers (so the clobber/preserve
+/// side counts them written), but it does not GENERATE a value on this pass, so
+/// here it moves or discards produced bits instead of setting them:
+///
+/// - `ex de,hl` — a true permutation of the produced bits (`d`↔`h`, `e`↔`l`).
+/// - `exx` — the main {b,c,d,e,h,l} bank swaps with the untracked shadow bank, so
+///   their produced bits are CLEARED (the incoming shadow value is unproduced;
+///   over-fire direction).
+/// - `ex af,af'` — swaps `a` (and flags) with the shadow bank, so `a`'s produced
+///   bit is CLEARED (`f` is never an out unit).
+/// - `ex (sp),hl` / `ex (sp),ix` / `ex (sp),iy` — the pair takes the top-of-stack
+///   value, which is unproduced, so the pair's produced bits are CLEARED.
+fn apply_exchange(mnem: &str, ops: &[CodeOperand], st: &mut State) -> bool {
+    let ui = |n: &str| unit_idx(n).expect("known unit");
+    match mnem {
+        "exx" => {
+            for n in ["b", "c", "d", "e", "h", "l"] {
+                st[ui(n)] = false;
+            }
+            true
+        }
+        "ex" => {
+            match ops.first() {
+                Some(CodeOperand::Z80Pair(Z80Pair::De)) => {
+                    st.swap(ui("d"), ui("h"));
+                    st.swap(ui("e"), ui("l"));
+                }
+                Some(CodeOperand::Z80Pair(Z80Pair::Af)) | Some(CodeOperand::Z80AfShadow) => {
+                    st[ui("a")] = false;
+                }
+                // `ex (sp),rr` — the pair is whichever Z80Pair operand appears; clear
+                // its units (the top-of-stack value it takes on is unproduced).
+                _ => {
+                    for op in ops {
+                        if let CodeOperand::Z80Pair(p) = op {
+                            for u in pair_units(*p) {
+                                st[u] = false;
+                            }
+                        }
+                    }
+                }
+            }
+            true
+        }
+        _ => false,
     }
 }
 
