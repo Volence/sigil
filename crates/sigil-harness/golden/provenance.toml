@@ -2604,3 +2604,57 @@ full_crc = "557c98d8"
 full_size = 423831
 anchor_crc = "b1d0d921"
 anchor_end = 0x5f848
+
+[[entry]]
+name = "widen-d5-addqw"
+ab = "docs/superpowers/notes/2026-08-08-widen-d5-addqw-ab.md"
+note = "widen four addq.b #1,d5 sprite-counter increments to addq.w; adopt out(d5:u16)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "1d8b8c80"
+full_size = 424209
+anchor_crc = "ad1701c0"
+anchor_end = 0x5f848
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "3c4159c3"
+full_size = 301467
+anchor_crc = "da02b228"
+anchor_end = 0x42e80
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "cbb673b7"
+full_size = 91330
+anchor_crc = "79671370"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "b561d462"
+full_size = 94031
+anchor_crc = "1068bc51"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "7160dbb8"
+full_size = 379350
+anchor_crc = "bc4e11bc"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "92e5a90f"
+full_size = 411429
+anchor_crc = "349f3862"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "e8291ccb"
+full_size = 423831
+anchor_crc = "23f453cf"
+anchor_end = 0x5f848

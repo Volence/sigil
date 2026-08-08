@@ -29,27 +29,29 @@ use std::collections::BTreeMap;
 /// shipped shapes. If that ever stops holding, the D1c pair above is the shape to
 /// copy; do not flatten a real per-family difference into one array.
 ///
-/// ALL BUT ONE of these rows carry the reason "not produced on a required return
-/// path": the register has no write at all on some path, and no declaration can
-/// change that. The exception, `Emit_ObjectPieces :: d5`, carries the WIDTH
-/// reason instead — it is produced, one byte wide, under a claim of four.
-/// (Counts are stated relatively on purpose: the array is the one authority, and
-/// a number written down twice is the fork this module's preamble prevents.)
+/// EVERY row here carries the reason "not produced on a required return path": the
+/// register has no write at all on some path, and no declaration can change that.
+/// The `DrawRings` / `InsertSpriteMasks` / `Emit_ObjectPieces` cursors thread a
+/// sprite counter (`d5`) and a SAT pointer (`a4`) that advance only when a sprite
+/// is emitted; the empty-buffer, cap-already-reached-at-entry, and
+/// every-candidate-culled paths write neither, and the no-param-seed model
+/// (`out_verify` Finding 2) does not credit a threaded entry value as production.
+/// These are production-completeness rows, not width rows.
 ///
-/// It is the one row here a type would close, and it is left open deliberately.
-/// The body advances the sprite total with `addq.b`; its call sites read that
-/// counter at `.w` (and at `.b` in the loop's own cap test). Declaring
-/// `out(d5: u8)` would close the row by publishing a contract narrower than the
-/// callers consume — sound as a claim, useless as a promise. The two sides are
-/// reconciled by widening the increment, not by narrowing the declaration; the
-/// gap ledger carries it with that kill condition.
+/// The width facet is real and exercised by `out_verify`'s unit tests, but the
+/// corpus currently exhibits no sub-width production row: the three sprite-counter
+/// procs increment `d5` with `addq.w` and declare `out(d5: u16)`, so on the paths
+/// that DO produce `d5` the width matches every caller's `.w` read (and the lone
+/// `.b` cap test a `u16` also covers). `out(d5: u8)` is the barred adoption — it
+/// would publish a contract narrower than the callers consume, sound as a claim and
+/// useless as a promise. (The array is the one authority for counts; a number
+/// written down twice is the fork this module's preamble prevents.)
 ///
-/// The sub-width half is sayable: `out(dN: T)` claims `sizeof(T)` bytes and a
-/// write that wide or wider produces it. Which rows are sub-width production and
-/// which are genuinely unproduced is measured by turning the width rule off and
-/// reading the result as a SET DIFF, never by classifying rows by eye. Reproduce
-/// it that way rather than trusting any prose here; the standing write-up is the
-/// item-1 fixpoint census, a lane document that may not sit beside this file.
+/// Which rows are sub-width production and which are genuinely unproduced is
+/// measured by turning the width rule off and reading the result as a SET DIFF,
+/// never by classifying rows by eye. Reproduce it that way rather than trusting any
+/// prose here; the standing write-up is the item-1 fixpoint census, a lane document
+/// that may not sit beside this file.
 ///
 /// ROWS ARE NOT INDEPENDENT SITES, in general. Credit flows along calls, tails and
 /// `falls_into` successors, so one unproven production can hold several rows open.
@@ -74,7 +76,6 @@ pub const OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
     ("Collision_ProbeUp", "d2"),
     ("DrawRings", "a4"),
     ("DrawRings", "d5"),
-    ("Emit_ObjectPieces", "d5"),
     ("InsertSpriteMasks", "a4"),
     ("InsertSpriteMasks", "d5"),
 ];
