@@ -209,34 +209,60 @@ A `.w` read. **`i16` is correct at every site.**
 
 ## RULINGS
 
-**C1 — newtype resolution is unscoped and was file-order dependent. Fail-safe
-built; scoping ledgered.** The type table is keyed by bare leaf name, matching
-every other G5 consumer (`newtype_of` reads `path.segments.last()`), so two
-modules declaring one name share a row. Measured before the fix: `analyze([a,b])`
-and `analyze([b,a])` disagreed, and the relaxing direction was reachable. **A
-colliding name now answers its WIDEST reading** — the only direction that can
-over-fire rather than bless — pinned by an order-independent gate that runs the
-same corpus in both orders. Full module-scoping is NOT built here: doing it for
-widths alone would create a second type authority scoped differently from the one
-`[call.slot-type-mismatch]` uses, which is the two-authorities failure the design
-exists to prevent. Ledgered with that as the kill.
+**C1 — a colliding type name is STRICT for its owner and STINGY for its callers.**
+The first version of this rule (one width, `max`) was unsound, and the reason is
+structural: the width map has TWO consumers with OPPOSITE fail-safe directions.
+The proc's own obligation wants the WIDEST reading (over-firing is safe); a
+caller's credit wants the NARROWEST (over-crediting is not). **No single width is
+safe for both**, so `max` made the wrong answer deterministic rather than removing
+it. Executed at the previous tip: `proc P () out(d0) { jbsr C }` fired alone and
+VERIFIED once an unrelated module declared the same newtype name — and through an
+`extern`, where §3 seeds VERIFIED by axiom with no body to re-prove the inflated
+width, the credit had nothing behind it at all.
 
-**C2 — a duplicated proc name can no longer relax a bare out.** Same max-merge,
-plus every declared out register is now carried explicitly at its bare width so a
-merge can SEE an untyped declaration. Without that, a typed row would stand alone
-against an absent one. Duplicate proc names are ill-formed anyway, so this is a
-fail-safe — but it was the one construction where writing a type somewhere changed
-a bare declaration's verdict somewhere else, and the no-migration property is what
-the whole feature rests on. Two order-independent gates.
+The claim is now a pair, `OutClaim { strict, credit }`, merged with `max` and
+`min` respectively. The safety condition is `credit <= strict`: an out is credited
+only once VERIFIED, and verification is charged at `strict`, so every credit is
+backed by a proof — except across an extern, which is exactly why the extern case
+is one of the three the gate exercises. Module-scoping the type table remains the
+real repair and stays ledgered.
 
-**C3 — `out(aN: T)` is REFUSED**, with `[proc.out-invalid]` at lowering. Measured
-first: `out(a0: u8)` verified vacuously (every 68k address write covers all 32
-bits, so the claim cannot be violated) while its bare-claiming caller FIRED — the
-declaration's only observable effect was capping callers at a width the hardware
-will not produce. A declaration that cannot be wrong and can only over-fire is not
-a contract. Refusing beats ignoring because ignoring leaves the author's stated
-intent unanswered, and a domain type on an address result has a correct home
-already: the pointee, as a param.
+**C2 — a duplicated proc name cannot relax a bare out.** Unchanged from round 1
+(the same merge, plus every declared out register carried explicitly at its bare
+width) and now merging `OutClaim`s rather than widths.
+
+**Stated exactly, because round 1 stated it too broadly:** no migration from the
+TYPE facet — with no type written anywhere, every bare `out(rN)` means what it
+meant. That is pinned by gates. It is NOT "no bare verdict moves": the
+partial-coverage fix moves two, `out(d0) { ext.l d0 }` and
+`out(d0) { bclr.l #1, d0 }`, which verified on master and now fire. Both move in
+the false-negative-closing direction and neither has a corpus site.
+
+**C3 — REVISED after measuring: refuse only a type that states an IMPOSSIBLE
+width, not every type.** My round-1 blanket refusal was too broad. Measured
+against the corpus: address PARAMS are typed at ten-plus sites, and
+`ZX0_Decompress (a0: *u8, a1: *u8) … out(a0, a1)` and `Art_Decompress` type the
+very registers they then declare bare as outs — so a blanket refusal makes the
+output-direction dual of an in-use facet unsayable, while `collect_typed_slots`
+already accepts `a0`-`a7`. Thirty address-register outs are declared today, none
+typed.
+
+So: `out(a0: u8)` is refused (an address write covers all 32 bits, so the claim
+cannot be violated and would cap callers below what the hardware produces);
+`out(a0: *u8)` is PERMITTED and carries its domain to `[call.slot-type-mismatch]`.
+**And the soundness does not rest on that diagnostic:** an address-register out is
+pinned to a full long inside `collect_out_widths`, which is the one function every
+declaration form flows through. Cost accepted: `out(a0: u8)` is refused rather
+than silently pinned, so an author who means something by it is told, and a
+per-file lint that is silenced still cannot make the credit unsound.
+
+**The C3 refusal now covers all three declaration forms.** It had lived in the
+per-proc contract check, which `extern proc` and `type X = proc (…)` never reach;
+executed, both produced ZERO diagnostics, and the extern's harm was live — its
+caller fired with `a0 is produced only .b wide` and no body existed to re-prove
+it. The rule moved to one `validate_out_types` pass over `Item::Proc` /
+`Item::ExternProc` / `Item::ContractType`. A rule enforced on one of three forms
+is a rule an author meets by accident.
 
 ## Named mutants — 26, all RED
 
@@ -271,9 +297,21 @@ that bit once and stranded the tree mid-run).
 | **`Section` recursion dropped (newtypes)** | `a_newtype_declared_inside_a_section_resolves` | RED |
 | **newtype collision: first wins** | `a_colliding_newtype_name_resolves_to_the_widest_reading` | RED |
 | **bare out regs dropped from the row** | `a_duplicated_proc_name_cannot_relax_a_bare_out` | RED |
-| **the address-result refusal deleted** | `a_type_on_an_address_register_result_is_refused` | RED |
+| **the address-result refusal deleted** — superseded, see below | — | — |
+| ‡ collision resolved by first-reading | `a_colliding_newtype_name_is_strict_for_its_owner_and_stingy_for_its_callers` | RED |
+| ‡ **`OutClaim::merge` takes `max` on BOTH sides** (the rule F1 rejected) | same | RED |
+| ‡ `delivered()` reads the STRICT side | same | RED |
+| ‡ `validate_out_types` walks `Item::Proc` only | `a_narrow_type_on_an_address_result_is_refused_on_every_declaration_form` | RED |
+| ‡ the address-out width pin dropped | `an_address_out_credits_a_full_long_whatever_its_type_says` | RED |
 
-Bold rows are the fixup round. Five of them (`diagnostic arguments swapped`, `the
+Bold rows are fixup round 1; ‡ rows are fixup round 2.
+
+**Exact mutated strings matter.** The `Scc` mutant is `mnem == "seq"`, NOT
+`mnem == "scc"` — no CodeItem mnemonic is ever the string `"scc"` (the forms are
+`seq`/`sne`/`shi`/…), so the obvious spelling leaves the whole suite GREEN and
+reads as a vacuous gate. `"bchg"` in `writes_partial_bits` matches nothing today
+for the same class of reason: `Bchg` is not in the ISA `Mnemonic` enum. Both are
+now said in the code. Five of them (`diagnostic arguments swapped`, `the
 ExternProc arm deleted`, and the three walk-coverage mutants) were GREEN against
 the whole strict suite before this round — the code they mutate had no test of any
 kind, and the diagnostic one is the sharpest: **the per-site "body produces"
@@ -358,7 +396,39 @@ assertion, and the note says so.
   out dies at the first forwarder that declares no `out`. Both are why
   `collect_out_widths` walks procs and externs only.
 
+## The engine finding (F3) — investigated, not fixed
+
+`Section_RedrawPlanes` clamps its LEFT tracker and assigns its RIGHT one:
+
+```
+move.w  Cache_Left_Col, d0
+cmp.w   d0, d5
+bge     .track_left_ok
+move.w  d0, d5              // d5 = max(start_world_col, Cache_Left_Col)
+.track_left_ok:
+move.w  Cache_Head_Col, d7  // unconditional — no min against start_world_col + 63
+```
+
+Both sit under ONE comment reading "Clamp to cache range". Measured against the
+engine's own idiom, the asymmetry is real: `section.emp:591-593` and
+`plane_buffer.emp:262-264` both spell the right edge `min(x, Cache_Head_Col)` and
+comment it as a clamp. The redraw paints at most 64 columns and skips any outside
+`[Cache_Left_Col, Cache_Head_Col]`, so the painted set is
+`[max(start, Cache_Left_Col), min(start+63, Cache_Head_Col)]` — and the symmetric
+tracker is the `min`. **The cache is wider than the plane** (`TILE_CACHE_COLS =
+80` vs 64 plane columns), so `Cache_Head_Col` exceeds `start_world_col + 63` by up
+to 16 in the ordinary case, and `Section_UpdateColumns` reads that tracker to
+decide what still needs streaming.
+
+**What stops me calling it a bug:** the plane is a 64-cell ring, so a column past
+`start+63` aliases a cell inside the painted span and may already be correct by
+wrap. That is an oracle question, not a reading one. Three sources disagree —
+header (`start_world_col + 63`), sibling idiom (`min`) and code (unconditional
+assignment) — which is itself the finding. Ledgered with the experiment that
+settles it. Not fixed here, as instructed.
+
 ## Files
+
 
 **sigil** — `out_verify.rs` (the width lattice, `OutWidth`/`OutWidths`, the three
 capped transfer-out charges, `writes_partial_bits` + `ext_promotion`),

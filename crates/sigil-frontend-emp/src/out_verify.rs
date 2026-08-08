@@ -86,9 +86,53 @@ pub type UncondOutMap = BTreeMap<String, BTreeSet<String>>;
 /// Proc name → its `(reg, cc)` CONDITIONAL outs. Used for both the DECLARED map
 /// and the fixpoint's VERIFIED map.
 pub type CondOutMap = BTreeMap<String, Vec<(String, String)>>;
-/// Proc name → the declared width of each TYPED out register. A register absent
-/// from the inner map is a bare `out(rN)` and claims [`OutWidth::L`].
-pub type OutWidthMap = BTreeMap<String, BTreeMap<String, OutWidth>>;
+/// Proc name → the declared claim of each out register. A register absent from the
+/// inner map is a bare `out(rN)`: [`OutWidth::L`] on both sides.
+pub type OutWidthMap = BTreeMap<String, BTreeMap<String, OutClaim>>;
+
+/// The TWO widths one `out` declaration answers with — which are the same number
+/// only while the declaration is unambiguous.
+///
+/// A width map has two consumers pulling in OPPOSITE directions:
+///
+/// - the proc's OWN obligation, where WIDER is STRICTER: a claim charged too wide
+///   merely over-fires, while one charged too narrow blesses a body that never
+///   wrote the bytes;
+/// - a CALLER's credit, where wider is more PERMISSIVE: credit drawn too wide lets
+///   a caller publish a claim its callee never made.
+///
+/// So NO SINGLE WIDTH is fail-safe for both, and a map storing one number is
+/// unsound on one side by construction. Splitting them is not a refinement of the
+/// collision rule — it is what makes a collision rule possible at all.
+///
+/// The safety condition is `credit <= strict`: an out is credited only once
+/// VERIFIED, and verification is charged at `strict`, so a credit no wider than
+/// the obligation is always backed by a proof. The one place that reasoning does
+/// NOT reach is an EXTERN, whose outs seed verified by §3 axiom with no body to
+/// prove anything — which is exactly where an inflated credit does real harm.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OutClaim {
+    /// What this proc's own returns are charged at — the WIDEST reading.
+    pub strict: OutWidth,
+    /// What a caller / tail / `falls_into` may draw — the NARROWEST reading.
+    pub credit: OutWidth,
+}
+
+impl OutClaim {
+    /// An unambiguous declaration: one width, both sides.
+    pub const fn exact(w: OutWidth) -> OutClaim {
+        OutClaim { strict: w, credit: w }
+    }
+
+    /// Fold another reading of the SAME name into this claim, keeping each side's
+    /// fail-safe direction.
+    pub fn merge(self, other: OutClaim) -> OutClaim {
+        OutClaim {
+            strict: self.strict.max(other.strict),
+            credit: self.credit.min(other.credit),
+        }
+    }
+}
 
 /// How many low-order bytes of a register an `out` claim covers.
 ///
@@ -124,7 +168,7 @@ impl OutWidth {
 }
 
 /// The empty own-widths map behind [`OutWidths::bare`].
-static NO_OWN_WIDTHS: BTreeMap<String, OutWidth> = BTreeMap::new();
+static NO_OWN_WIDTHS: BTreeMap<String, OutClaim> = BTreeMap::new();
 /// The empty corpus-widths map behind [`OutWidths::bare`].
 static NO_CALLEE_WIDTHS: OutWidthMap = BTreeMap::new();
 
@@ -138,7 +182,7 @@ static NO_CALLEE_WIDTHS: OutWidthMap = BTreeMap::new();
 #[derive(Clone, Copy)]
 pub struct OutWidths<'a> {
     /// This proc's own obligations, by register. Absent ⇒ [`OutWidth::L`].
-    pub own: &'a BTreeMap<String, OutWidth>,
+    pub own: &'a BTreeMap<String, OutClaim>,
     /// Every proc's declared out widths, for callee / tail-target / `falls_into`
     /// credit: a callee whose contract is `out(d0: u8)` credits its caller ONE
     /// BYTE of d0, so a caller claiming a bare `out(d0)` is still unverified.
@@ -153,14 +197,17 @@ impl OutWidths<'_> {
         OutWidths { own: &NO_OWN_WIDTHS, callees: &NO_CALLEE_WIDTHS }
     }
 
-    /// The width `reg` must be produced at to satisfy THIS proc's claim.
+    /// The width `reg` must be produced at to satisfy THIS proc's claim — the
+    /// STRICT side.
     fn required(&self, reg: Reg) -> OutWidth {
-        self.own.get(&reg.to_string()).copied().unwrap_or(OutWidth::L)
+        self.own.get(&reg.to_string()).map(|c| c.strict).unwrap_or(OutWidth::L)
     }
 
-    /// The width `callee`'s declared `out(reg)` delivers, for credit.
+    /// The width `callee`'s declared `out(reg)` delivers, for credit — the CREDIT
+    /// side. Never `required`'s answer: the two consumers of this map fail safe in
+    /// opposite directions (see [`OutClaim`]).
     fn delivered(&self, callee: &str, reg: &str) -> OutWidth {
-        self.callees.get(callee).and_then(|m| m.get(reg)).copied().unwrap_or(OutWidth::L)
+        self.callees.get(callee).and_then(|m| m.get(reg)).map(|c| c.credit).unwrap_or(OutWidth::L)
     }
 }
 
@@ -254,6 +301,17 @@ fn is_call(mnem: &str) -> bool {
 /// operand size alone is not the produced width, and this is where the "no
 /// production from nothing" guard lives.
 ///
+/// **A WIDER RMW does raise a NARROWER recorded width, and that is a consequence
+/// of the width facet worth stating outright.** `add.l d1, d0` after a byte-wide
+/// production records a long, because `add.l` genuinely writes all 32 bits —
+/// every one of them on this pass. What it does not establish is that those bits
+/// mean anything, and the same is true of the `.l` RMW that has always been
+/// credited here. So a byte of CALLEE credit can still be raised to a long by
+/// `add.l`/`or.l`/`not.l`/`movem.l (sp)+, d0` and the rest of the family; `ext`
+/// is closed on COVERAGE grounds and not on provenance ones, and closing the
+/// family would mean adopting a provenance model the header rules out of scope.
+/// Ledgered as its own class rather than left implicit in this paragraph.
+///
 /// **movem LOAD (item #2 cascade growth).** A `movem` whose register list is the
 /// DESTINATION — the LAST operand, e.g. `movem.l (sp)+, d0-d2/a1` — writes every
 /// listed register at FULL WIDTH and so PRODUCES each of them, for BOTH sizes:
@@ -321,7 +379,14 @@ fn produced_regs(mnem: &str, ops: &[CodeOperand], size: Option<Width>) -> Vec<(R
 ///
 /// `Scc` is deliberately absent: `seq.b d0` writes all eight bits of the byte
 /// ($00 or $FF), so it produces a byte exactly as `move.b` does. Verified against
-/// the ISA classifier rather than assumed from the family's shape.
+/// the ISA classifier rather than assumed from the family's shape — the mnemonics
+/// reaching here are `seq`/`sne`/`shi`/… , never the string `"scc"`, so a rule
+/// keyed on that spelling would match nothing.
+///
+/// `"bchg"` is listed for the same reason its siblings are, and matches nothing
+/// TODAY: `Bchg` is not in `sigil_isa::m68k::Mnemonic`, so `writes_dest_register`
+/// already answers false for it. It is here so that adding the mnemonic cannot
+/// land it in the covers-its-size default by omission.
 fn writes_partial_bits(mnem: &str) -> bool {
     matches!(mnem, "tas" | "bset" | "bclr" | "bchg")
 }

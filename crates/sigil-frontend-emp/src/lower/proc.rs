@@ -1817,33 +1817,6 @@ fn check_out(
     let mut valid: Vec<String> = out_set.regs.into_iter().collect();
     valid.sort();
 
-    // A TYPE on an ADDRESS-register result is refused. On the 68k every write to
-    // an address register covers all 32 bits — `movea.w` sign-extends, `(aN)+`
-    // advances the whole pointer — so an `out(aN: T)` claim narrower than a long
-    // can never be violated, and a declaration that cannot be wrong states
-    // nothing. What it DOES do is cap every caller's credit at a width the
-    // hardware will not produce, so a caller claiming a bare `out(aN)` sourced
-    // from it fires with no honest remedy. Refused here rather than silently
-    // ignored, because ignoring it would leave the author's stated intent
-    // un-answered.
-    for (reg, _, span) in &proc.out_types {
-        let Some(r) = crate::value::Reg::from_name(reg) else { continue };
-        if (r as usize) < 8 {
-            continue; // a data register — the type carries its width
-        }
-        push(
-            diags,
-            Level::Error,
-            *span,
-            format!(
-                "[proc.out-invalid] `{}` declares a TYPE on the address-register result \
-                 `{reg}` — an address result carries no width claim, because every 68k \
-                 address write covers all 32 bits. Drop the type: it can never be violated, \
-                 and it caps every caller's credit at a width the hardware will not produce",
-                proc.name,
-            ),
-        );
-    }
 
     // out ∩ clobbers — returned AND scratch is contradictory. Expand the
     // clobbers reglist quietly (`check_clobbers` owns its diagnostics).

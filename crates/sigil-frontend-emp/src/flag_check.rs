@@ -625,8 +625,13 @@ pub(crate) fn conditional_out_edge_credits(
             // success edge, not a long. The max-merge below is defensive only: the
             // key is `(call index, successor)`, so one edge has exactly one callee
             // and the entry cannot already hold a different width for `name`.
-            let w =
-                out_widths.get(callee).and_then(|m| m.get(&name)).copied().unwrap_or(OutWidth::L);
+            // The CREDIT side of the callee's claim — never the strict side; the
+            // two fail safe in opposite directions ([`OutClaim`]).
+            let w = out_widths
+                .get(callee)
+                .and_then(|m| m.get(&name))
+                .map(|c| c.credit)
+                .unwrap_or(OutWidth::L);
             if let Some(edge) = cfg.valid_edge(idx, cc) {
                 let slot = credits.entry(edge).or_default().entry(name).or_insert(w);
                 if *slot < w {

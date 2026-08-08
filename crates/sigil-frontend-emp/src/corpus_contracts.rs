@@ -28,7 +28,7 @@ use crate::lower::{
 };
 use crate::out_verify::{
     check_cond_out_survives, check_out, compute_verified_outs, CondOutMap, CondOutSurvivesFiring,
-    OutFiring, OutWidth, OutWidthMap, OutWidths, UncondOutMap,
+    OutClaim, OutFiring, OutWidth, OutWidthMap, OutWidths, UncondOutMap,
 };
 use crate::preserves::{find_dead_saves, DeadSave};
 use crate::branch_const::{check_branch_const, BranchConstFiring};
@@ -702,7 +702,7 @@ pub fn analyze_corpus_with_contracts(
     // produced nowhere in its own body and tails into `S4LZ_Decompress`, whose
     // `out(a1)` is DECLARED and unverified.
     let mut out_firings: Vec<OutFiring> = Vec::new();
-    let empty_widths: BTreeMap<String, OutWidth> = BTreeMap::new();
+    let empty_widths: BTreeMap<String, OutClaim> = BTreeMap::new();
     for pb in &proc_bufs {
         let uncond: Vec<Reg> = callee_uncond_out
             .get(&pb.name)
@@ -1188,8 +1188,8 @@ fn collect_newtype_underlying(files: &[ast::File]) -> BTreeMap<String, Vec<ast::
     out
 }
 
-/// How many low-order bytes of a register a value of type `ty` occupies — the
-/// content of an `out(dN: T)` claim.
+/// The [`OutClaim`] a value of type `ty` states — how many low-order bytes of a
+/// register it occupies, on each of the claim's two sides.
 ///
 /// **A NEWTYPE NARROWS to its underlying type**, transitively (`EntryRef` →
 /// `EntryIndex` → `i16` → two bytes). It has to: `out(d0: EntryRef)` and
@@ -1207,42 +1207,45 @@ fn collect_newtype_underlying(files: &[ast::File]) -> BTreeMap<String, Vec<ast::
 ///
 /// `depth` bounds a newtype cycle (`newtype A = B` / `newtype B = A`). Such a
 /// corpus is rejected elsewhere; here it must merely not hang.
-fn out_width_of(
+fn out_claim_of(
     ty: &ast::Type,
     newtypes: &BTreeMap<String, Vec<ast::Type>>,
     depth: usize,
-) -> OutWidth {
+) -> OutClaim {
     if depth == 0 {
-        return OutWidth::L;
+        return OutClaim::exact(OutWidth::L);
     }
     match ty {
         // A refinement narrows the VALUE range, never the storage — the width is
         // the underlying type's.
-        ast::Type::Refined(inner, _, _) => out_width_of(inner, newtypes, depth - 1),
+        ast::Type::Refined(inner, _, _) => out_claim_of(inner, newtypes, depth - 1),
         // A 68k pointer is a full address register's worth.
-        ast::Type::Ptr(_) => OutWidth::L,
-        ast::Type::Fixed { i, f } => bits_to_width(i + f),
+        ast::Type::Ptr(_) => OutClaim::exact(OutWidth::L),
+        ast::Type::Fixed { i, f } => OutClaim::exact(bits_to_width(i + f)),
         ast::Type::Named(path) => {
-            let Some(leaf) = path.segments.last() else { return OutWidth::L };
+            let Some(leaf) = path.segments.last() else { return OutClaim::exact(OutWidth::L) };
             match leaf.as_str() {
-                "u8" | "i8" => OutWidth::B,
-                "u16" | "i16" | "u16le" => OutWidth::W,
-                "u32" | "i32" => OutWidth::L,
-                // A name declared more than once corpus-wide answers the WIDEST
-                // of its readings. That is the direction that cannot relax a
-                // claim: an unresolvable name already answers `L`, so a collision
-                // can only ever over-fire, never bless.
+                "u8" | "i8" => OutClaim::exact(OutWidth::B),
+                "u16" | "i16" | "u16le" => OutClaim::exact(OutWidth::W),
+                "u32" | "i32" => OutClaim::exact(OutWidth::L),
+                // A name declared more than once corpus-wide is AMBIGUOUS, and the
+                // two sides of the claim resolve it in opposite directions: the
+                // proc's own obligation takes the WIDEST reading, a caller's credit
+                // the NARROWEST. Neither number alone is fail-safe — taking the
+                // widest for both makes a caller's verdict depend on an unrelated
+                // module's declaration, and through an EXTERN (verified by axiom,
+                // with no body to re-prove it) that is a plain over-credit.
                 _ => match newtypes.get(leaf) {
                     Some(unders) => unders
                         .iter()
-                        .map(|u| out_width_of(u, newtypes, depth - 1))
-                        .max()
-                        .unwrap_or(OutWidth::L),
-                    None => OutWidth::L,
+                        .map(|u| out_claim_of(u, newtypes, depth - 1))
+                        .reduce(OutClaim::merge)
+                        .unwrap_or(OutClaim::exact(OutWidth::L)),
+                    None => OutClaim::exact(OutWidth::L),
                 },
             }
         }
-        ast::Type::Array(_, _) | ast::Type::Tuple(_) => OutWidth::L,
+        ast::Type::Array(_, _) | ast::Type::Tuple(_) => OutClaim::exact(OutWidth::L),
     }
 }
 
@@ -1276,18 +1279,32 @@ fn collect_out_widths(files: &[ast::File]) -> OutWidthMap {
         out: Option<&[(String, Option<String>)]>,
         out_types: &[(String, ast::Type, Span)],
         newtypes: &BTreeMap<String, Vec<ast::Type>>,
-    ) -> BTreeMap<String, OutWidth> {
-        let mut row: BTreeMap<String, OutWidth> = expand_reglist_regs(out.unwrap_or(&[]))
+    ) -> BTreeMap<String, OutClaim> {
+        let mut row: BTreeMap<String, OutClaim> = expand_reglist_regs(out.unwrap_or(&[]))
             .into_iter()
-            .filter_map(|name| Reg::from_name(&name).map(|r| (r.to_string(), OutWidth::L)))
+            .filter_map(|name| {
+                Reg::from_name(&name).map(|r| (r.to_string(), OutClaim::exact(OutWidth::L)))
+            })
             .collect();
         for (reg, ty, _) in out_types {
             // Canonical `d0`..`a7` spelling — the same names the production state
             // is keyed by. A non-register endpoint (a `carry:` flag result never
             // reaches here) drops out.
-            if let Some(r) = Reg::from_name(reg) {
-                row.insert(r.to_string(), out_width_of(ty, newtypes, 16));
-            }
+            let Some(r) = Reg::from_name(reg) else { continue };
+            // An ADDRESS-register result is pinned to `L` whatever its type says.
+            // Every 68k write to an address register covers all 32 bits, so `L` is
+            // both the only width it can be obligated at and the only width it can
+            // honestly credit — a narrower reading would cap callers below what the
+            // hardware produces. The TYPE still flows to `collect_typed_slots`, so
+            // a domain type on an address result keeps its `[call.slot-type-mismatch]`
+            // meaning; only its WIDTH is ignored, because an address register has no
+            // width to state.
+            let claim = if (r as usize) >= 8 {
+                OutClaim::exact(OutWidth::L)
+            } else {
+                out_claim_of(ty, newtypes, 16)
+            };
+            row.insert(r.to_string(), claim);
         }
         row
     }
@@ -1299,7 +1316,7 @@ fn collect_out_widths(files: &[ast::File]) -> OutWidthMap {
     // would relax another file's BARE `out(d0)` under the same name, which is the
     // one construction where writing a type anywhere changes a bare declaration's
     // verdict somewhere else.
-    fn merge(out: &mut OutWidthMap, name: &str, r: BTreeMap<String, OutWidth>) {
+    fn merge(out: &mut OutWidthMap, name: &str, r: BTreeMap<String, OutClaim>) {
         match out.get_mut(name) {
             None => {
                 out.insert(name.to_string(), r);
@@ -1307,12 +1324,13 @@ fn collect_out_widths(files: &[ast::File]) -> OutWidthMap {
             Some(existing) => {
                 let regs: BTreeSet<String> =
                     existing.keys().chain(r.keys()).cloned().collect();
+                let bare = OutClaim::exact(OutWidth::L);
                 let merged = regs
                     .into_iter()
                     .map(|reg| {
-                        let a = existing.get(&reg).copied().unwrap_or(OutWidth::L);
-                        let b = r.get(&reg).copied().unwrap_or(OutWidth::L);
-                        (reg, a.max(b))
+                        let a = existing.get(&reg).copied().unwrap_or(bare);
+                        let b = r.get(&reg).copied().unwrap_or(bare);
+                        (reg, a.merge(b))
                     })
                     .collect();
                 *existing = merged;

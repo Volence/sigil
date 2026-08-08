@@ -425,8 +425,16 @@ fn an_inline_where_refinement_narrows_to_its_inner_type() {
 /// MUTANT: credit `ext` at its operand size like any other write (drop the
 /// `covers_its_size` guard and `ext_promotion`). `ExtByte`, `ExtWord` and
 /// `ExtLongBare` all stop firing and this test goes RED. Run: confirmed RED.
+///
+/// WHAT THIS TEST ALONE DOES NOT CATCH: the mutant "`ext` promotes from ANY
+/// existing production" (ignoring the one-step-down `required` threshold) leaves
+/// it GREEN — every body here either has no production at all or has a correctly
+/// stepped chain. That threshold is guarded by
+/// [`an_ext_after_a_call_cannot_launder_a_capped_credit`], where a BYTE
+/// production meets an `ext.l`. Named here rather than left to be discovered: a
+/// test whose name promises more than it proves is how a reader stops looking.
 #[test]
-fn ext_promotes_an_existing_production_and_makes_none() {
+fn ext_makes_no_production_of_its_own() {
     let r = analyze(&[
         "module m\n\
          proc ExtByte () out(d0: u8) {\n ext.w d0\n rts\n}\n\
@@ -441,8 +449,15 @@ fn ext_promotes_an_existing_production_and_makes_none() {
     assert!(verified(&r, "ExtChain", "d0"), "firings: {:?}", r.out_firings);
 }
 
-/// The callee-credit cap is only worth having if it cannot be laundered. A
-/// correctly-capped BYTE of credit followed by `ext.l` must not become a long.
+/// A correctly-capped BYTE of credit followed by `ext.l` must not become a long.
+///
+/// This closes the `ext` route specifically, on COVERAGE grounds: `ext.l` writes
+/// only bits 16-31, so it cannot make bits 0-15 that were never produced. It does
+/// NOT close laundering in general — a `.l` RMW (`add.l`, `or.l`, `not.l`,
+/// `movem.l (sp)+, d0`, …) still raises a byte of credit to a long, because a
+/// `.l` RMW genuinely writes all 32 bits and the module's property boundary puts
+/// value PROVENANCE out of scope. That residue is ledgered as its own class; do
+/// not read this gate as proving the general property.
 ///
 /// MUTANT: credit `ext` at its operand size. `Launder` stops firing and this test
 /// goes RED. Run: confirmed RED.
@@ -588,23 +603,51 @@ fn a_newtype_declared_inside_a_section_resolves() {
 
 // === scoping and collisions =================================================
 
-/// A TYPE on an ADDRESS-register result is refused. It is unfalsifiable (every
-/// 68k address write covers all 32 bits, so the claim can never be violated) and
-/// its only effect is capping callers at a width the hardware will not produce.
-/// A declaration that cannot be wrong and can only over-fire is not a contract.
+/// A NARROWER-than-long type on an address-register result is refused, on EVERY
+/// declaration form that can carry an `out` clause.
 ///
-/// MUTANT: delete the address-register arm from `lower/proc.rs`'s `check_out`.
-/// The parse becomes clean, `analyze`'s diagnostics assert stops tripping, and
-/// this test goes RED. Run: confirmed RED.
+/// Every 68k address write covers all 32 bits, so `out(a0: u8)` claims something
+/// the hardware cannot produce. A POINTER or domain type whose width IS a long is
+/// PERMITTED and meaningful: it carries no width news, but it is the
+/// output-direction dual of the typed address PARAMS the corpus already uses
+/// (`ZX0_Decompress (a0: *u8, a1: *u8) … out(a0, a1)` types those very registers
+/// as inputs), and `[call.slot-type-mismatch]` reads it.
+///
+/// The three forms are asserted together because this rule previously lived in
+/// the per-proc contract check, which `extern proc` and `type X = proc (…)` never
+/// reach — and the extern is the form that does live harm, its outs seeding
+/// VERIFIED by axiom with no body to re-prove them.
+///
+/// MUTANT: restrict `validate_out_types`'s walk to `ast::Item::Proc`. The extern
+/// and contract-type cases stop firing and this test goes RED. Run: confirmed RED.
 #[test]
-fn a_type_on_an_address_register_result_is_refused() {
-    let msgs = lower_diag_messages("module m\nproc P () out(a0: u8) {\n lea 4, a0\n rts\n}\n");
-    assert!(
-        msgs.iter().any(|m| m.contains("[proc.out-invalid]") && m.contains("address-register")),
-        "expected the address-result refusal, got: {msgs:?}"
-    );
-    // A DATA-register type through the same path must stay silent, or the arm is
-    // refusing types rather than refusing address results.
+fn a_narrow_type_on_an_address_result_is_refused_on_every_declaration_form() {
+    for (label, src) in [
+        ("proc", "module m\nproc P () out(a0: u8) {\n lea 4, a0\n rts\n}\n"),
+        ("extern proc", "module m\nextern proc E () out(a0: u8)\n"),
+        ("contract type", "module m\ntype T = proc () out(a0: u8)\n"),
+    ] {
+        let msgs = lower_diag_messages(src);
+        assert!(
+            msgs.iter().any(|m| m.contains("[proc.out-invalid]") && m.contains("address-register")),
+            "{label}: expected the narrow-address-result refusal, got: {msgs:?}"
+        );
+    }
+    // PERMITTED on all three: a pointer type is a long and states a domain, not a
+    // width. Refusing it would make the output dual of an in-use facet unsayable.
+    for (label, src) in [
+        ("proc", "module m\nproc R () out(a0: *u8) {\n lea 4, a0\n rts\n}\n"),
+        ("extern proc", "module m\nextern proc F () out(a0: *u8)\n"),
+        ("contract type", "module m\ntype U = proc () out(a0: *u8)\n"),
+    ] {
+        let msgs = lower_diag_messages(src);
+        assert!(
+            !msgs.iter().any(|m| m.contains("[proc.out-invalid]")),
+            "{label}: a pointer type on an address result must be permitted, got: {msgs:?}"
+        );
+    }
+    // A DATA-register type stays silent, or the rule refuses types rather than
+    // refusing impossible widths.
     let quiet =
         lower_diag_messages("module m\nproc Q () out(d0: u8) {\n move.b #1, d0\n rts\n}\n");
     assert!(
@@ -613,29 +656,97 @@ fn a_type_on_an_address_register_result_is_refused() {
     );
 }
 
-/// A newtype NAME declared twice corpus-wide answers the WIDEST of its readings.
-/// The type table is keyed by bare leaf name (matching every other G5 consumer),
-/// so it is unscoped; resolving a collision toward the widest is the direction
-/// that can only ever over-fire. Order-independence is asserted directly, because
-/// the failure mode this replaces was "last writer wins".
+/// An address-register out CREDITS a full long whatever its type says, so a
+/// domain type there can never cap a caller below what the hardware produces.
 ///
-/// MUTANT: resolve a collision by taking the first (or last) reading instead of
-/// the max. One of the two orders verifies and this test goes RED. Run: confirmed
-/// RED.
+/// This is the soundness half and it does NOT depend on the diagnostic above
+/// firing: a per-file lint can be silenced, and the extern form reached no lint at
+/// all until this round. The width pin lives where every declaration form flows
+/// through one function.
+///
+/// MUTANT: drop the address-register pin in `collect_out_widths`'s `row` (let
+/// `out_claim_of` answer for `a0`). `CallerBare` fires and this test goes RED.
+/// Run: confirmed RED.
 #[test]
-fn a_colliding_newtype_name_resolves_to_the_widest_reading() {
+fn an_address_out_credits_a_full_long_whatever_its_type_says() {
+    let r = analyze(&[
+        "module m\n\
+         extern proc E () out(a0: u8)\n\
+         proc CallerBare () out(a0) {\n jbsr E\n rts\n}\n",
+    ]);
+    assert_subjects(&r, &["CallerBare"]);
+    assert!(verified(&r, "CallerBare", "a0"), "firings: {:?}", r.out_firings);
+}
+
+/// A colliding newtype name resolves in OPPOSITE directions for the claim's two
+/// consumers — WIDEST for the proc's own obligation, NARROWEST for a caller's
+/// credit — and this gate exercises BOTH.
+///
+/// One gate over one consumer is what let the first version of this rule ship
+/// unsound. `max()` alone is fail-safe for the obligation (it over-fires) and
+/// unsafe for the credit (it over-credits), and a test that checked only the
+/// obligation could not see the difference. There is no single width safe for
+/// both, so there is no single-consumer test that can guard this.
+///
+/// MUTANT A: resolve a collision by taking the first reading instead of merging.
+/// One of the file orders flips and this test goes RED. Run: confirmed RED.
+/// MUTANT B: make `OutClaim::merge` take `max` on BOTH sides — the single-width
+/// rule this replaced. The caller and extern halves stop firing under collision
+/// and this test goes RED. Run: confirmed RED.
+#[test]
+fn a_colliding_newtype_name_is_strict_for_its_owner_and_stingy_for_its_callers() {
     let wide = "module a\npub newtype Dup = u32\n";
-    let narrow = "module b\npub newtype Dup = u8\nproc P () out(d0: Dup) {\n move.b #1, d0\n rts\n}\n";
-    for (label, order) in [("wide first", [wide, narrow]), ("narrow first", [narrow, wide])] {
-        let r = analyze(&order);
-        assert_subjects(&r, &["P"]);
-        assert!(
-            out_fires(&r, "P", "d0"),
-            "{label}: a colliding name must answer its widest reading, so a `.b` write \
-             cannot discharge it; firings: {:?}",
-            r.out_firings
-        );
+    // OWN: the body writes a BYTE, so the widest reading must still charge it.
+    let own = "module b\npub newtype Dup = u8\n\
+        proc Own () out(d0: Dup) {\n move.b #1, d0\n rts\n}\n";
+    // CALLER: the callee's body writes a LONG, so it verifies under either
+    // reading — but a caller may draw only the NARROWEST credit its callee's
+    // ambiguous contract promises, and a bare claim needs four bytes.
+    let caller = "module b\npub newtype Dup = u8\n\
+        proc C () out(d0: Dup) {\n move.l #1, d0\n rts\n}\n\
+        proc P () out(d0) {\n jbsr C\n rts\n}\n";
+    // EXTERN: the sharpest case. An extern's outs seed VERIFIED by §3 axiom, so
+    // no body ever re-proves an inflated credit.
+    let ext = "module b\npub newtype Dup = u8\nextern proc E () out(d0: Dup)\n\
+        proc Q () out(d0) {\n jbsr E\n rts\n}\n";
+
+    // Per subject: the verdict ALONE, and the verdict under a collision. The two
+    // sides are expected to differ from each other and NOT from file order.
+    //
+    // OWN is charged at the WIDEST reading, so a collision legitimately turns a
+    // passing claim into a firing one — that is the fail-safe working. CALLER and
+    // EXTERN draw the NARROWEST credit, so a collision must never turn a firing
+    // into a pass; that is the direction the single-width rule got wrong.
+    for (subject, src, fires_alone, fires_collided) in [
+        ("Own", own, false, true),
+        ("P", caller, true, true),
+        ("Q", ext, true, true),
+    ] {
+        for (order_label, order, want) in [
+            ("alone", vec![src], fires_alone),
+            ("collision first", vec![wide, src], fires_collided),
+            ("collision last", vec![src, wide], fires_collided),
+        ] {
+            let r = analyze(&order);
+            assert_subjects(&r, &[subject]);
+            assert_eq!(
+                out_fires(&r, subject, "d0"),
+                want,
+                "{subject}/{order_label}: expected fires={want}. A collision may only \
+                 ever tighten, never bless, and it may never depend on file order; \
+                 firings: {:?}",
+                r.out_firings
+            );
+        }
     }
+
+    // NON-VACUITY: with only the WIDE reading present the caller genuinely
+    // verifies, so the asserts above are not "everything always fires".
+    let unambiguous = "module b\npub newtype Dup = u32\n\
+        proc C () out(d0: Dup) {\n move.l #1, d0\n rts\n}\n\
+        proc P () out(d0) {\n jbsr C\n rts\n}\n";
+    let r = analyze(&[unambiguous]);
+    assert!(verified(&r, "P", "d0"), "firings: {:?}", r.out_firings);
 }
 
 /// A duplicated PROC name cannot let one file's typed out relax another file's

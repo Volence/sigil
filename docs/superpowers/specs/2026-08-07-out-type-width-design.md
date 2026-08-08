@@ -10,6 +10,13 @@ A bare `out(rN)` claims all 32 bits of `rN`. A typed `out(dN: T)` claims the low
 **`produced >= required`**: a write at the declared width or wider proves the
 claim; a narrower one does not.
 
+**No migration from the TYPE facet**: with no type written anywhere, every bare
+`out(rN)` means exactly what it meant. That property is exact and is pinned by
+gates. It is NOT a claim that no bare verdict moves at all — the partial-coverage
+fix below does move two, `out(d0) { ext.l d0 }` and `out(d0) { bclr.l #1, d0 }`,
+which verified before and now fire. Both move in the false-negative-CLOSING
+direction, and neither has a corpus site.
+
 `out(dN: T)` is not new grammar. The parser has carried `out_types: Vec<(String,
 Type, Span)>` since the G5 typed-slot work, and two corpus procs were already
 declaring one (`Section_FlatIDXY out(d0: SectionId)`, `EntityWindow_EntryForSection
@@ -180,11 +187,18 @@ caller-side invariant (`moveq #0, d5` before the loop, capped at
 `MAX_VDP_SPRITES = 80`) that the callee cannot state. The repair is widening the
 increment, not narrowing the declaration; both are in the gap ledger.
 
-The corollary rule, from `Section_RedrawPlanes :: d5`: **never type a register
-whose bare claim already verifies.** `d5` is produced by `move.l Camera_X, d5`, so
-`out(d5)` is proven at 32 bits today; adding `: u16` would trade a machine-checked
-claim for a weaker one and buy nothing. Its sibling `d7` is typed because `d7` is
-in the residue and `move.w Cache_Head_Col, d7` is all the body delivers.
+The corollary rule: **never type a register whose bare claim already verifies AND
+whose full width is a RESULT.** Both halves are load-bearing, and
+`Section_RedrawPlanes :: d5` is why. Its bare `out(d5)` verifies — `move.l
+Camera_X, d5` is a full-width gen — but the `swap` that follows leaves the high
+word holding the camera's sub-pixel fraction, so the "machine-checked 32-bit
+claim" is over sixteen bits of residue and only the low word is the result. Its
+sole caller has always read `move.w`. `d5` is typed `u16`, exactly like the `d7`
+beside it.
+
+Stated without the register: a width credit proves which BYTES were written on
+this pass, never which ones CARRY the result. Only the caller sweep can tell those
+apart, so only the caller sweep decides an adoption.
 
 ## A type on an ADDRESS-register result is refused
 
