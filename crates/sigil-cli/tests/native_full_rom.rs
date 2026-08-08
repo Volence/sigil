@@ -91,7 +91,11 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // RAM) flip a cross-bank branch reach in the debug shape, netting -0x2 at this
     // intra-bank label; plain is unchanged (the object bank is absolutely anchored and
     // the plain shape kept the same branch widths). Per-shape pair, hand-updated.
-    ("Ground_Move_Cap", 0x10766, 0x107C8),
+    // `art-streaming-p2-task3` (2026-08-08): a further -0x2 DEBUG ONLY. The Task-3 page_in
+    // section (+0x166 debug) + the VBlank hook + the boot-debug reach ripple push the
+    // cross-bank distance again, flipping another debug branch reach at this intra-bank
+    // label (0x107C8 -> 0x107C6); plain 0x10766 unchanged (object bank anchored).
+    ("Ground_Move_Cap", 0x10766, 0x107C6),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)

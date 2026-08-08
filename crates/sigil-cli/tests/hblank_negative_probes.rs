@@ -275,14 +275,19 @@ fn standalone_compile_without_cross_seam_label_is_a_loud_missing_symbol_error() 
 fn wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_hblank_src() else { return };
 
+    // The wrong base is DERIVED from the real base (+0x100) so it can never
+    // collide as the layout shifts — the original hardcoded 0x2280 became the real
+    // HBLANK base after the art-streaming-p2-task3 VBlank-hook growth (+0x30),
+    // which would make real == wrong and vacuously break the assert_ne! below.
+    let wrong_base = pins::HBLANK.plain_base + 0x100;
     let real_sections = place_hblank(&src, &format!("{:#x}", pins::HBLANK.plain_base));
-    let wrong_sections = place_hblank(&src, "0x2280");
+    let wrong_sections = place_hblank(&src, &format!("{wrong_base:#x}"));
 
     let real_hblank = real_sections.iter().find(|s| s.name == "hblank").expect("real hblank section");
     let wrong_hblank = wrong_sections.iter().find(|s| s.name == "hblank").expect("wrong hblank section");
 
     assert_eq!(real_hblank.lma, pins::HBLANK.plain_base, "the real map must place hblank at the plain base");
-    assert_eq!(wrong_hblank.lma, 0x2280, "the doctored map must place hblank at $2280");
+    assert_eq!(wrong_hblank.lma, wrong_base, "the doctored map must place hblank at the derived wrong base");
     assert_ne!(
         real_hblank.lma, wrong_hblank.lma,
         "placement must genuinely move with the map base — not be an echo/hardcode"

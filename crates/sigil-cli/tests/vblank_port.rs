@@ -99,10 +99,18 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         ("Process_DMA_Deferrable", pick(pins::PROCESS_DMA_DEFERRABLE)),
         ("Vscroll_Write", pick(pins::VSCROLL_WRITE)),
         ("Read_Controllers", pick(pins::READ_CONTROLLERS)),
+        // Art-streaming P2a Task 3 — the VBlank bookmark hook's cross-seam operands.
+        ("PageIn_InFlight", pick(pins::PAGE_IN_IN_FLIGHT)),
+        ("PageIn_Saved_PC", pick(pins::PAGE_IN_SAVED_PC)),
+        ("PageIn_Process", if debug { pins::PAGE_IN.debug_base } else { pins::PAGE_IN.plain_base }),
+        ("PageIn_BankRegs", pick(pins::PAGE_IN_BANK_REGS)),
+        ("ZX0R_Decompress", if debug { pins::ZX0_RESUME.debug_base } else { pins::ZX0_RESUME.plain_base }),
+        ("ZX0R_Decompress.__end", pick(pins::ZX0R_DECOMPRESS_END)),
     ];
     if debug {
         table.push(("Lag_Frame_Count", pins::LAG_FRAME_COUNT));
         table.push(("DMA_Bytes_ThisFrame", pins::DMA_BYTES_THIS_FRAME));
+        table.push(("Dbg_PageIn_Preempts", pins::DBG_PAGE_IN_PREEMPTS));
     }
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {

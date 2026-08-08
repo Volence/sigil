@@ -361,9 +361,18 @@ tests = ["parallax_port"]
 # RaiseError expansion (release arm is the 6-byte drain-and-retry).
 name = "load_art"
 start = "Art_Decompress"
-end = "BG_Init"
+end = "PageIn_Process"
 gate = "SIGIL_EMP_LOAD_ART"
 tests = ["load_art_port"]
+
+[[region]]
+# Art-streaming P2a — the VBlank-bookmark page-in dispatcher (page_in.emp).
+# Native-only (no AS twin, so no gate). End is the next placement: bg.asm's
+# BG_Init. Shape-DEPENDENT length: the DEBUG-only self-test scaffold (sliced
+# decode + blocking verify + raise_error) is absent from the plain shape.
+name = "page_in"
+start = "PageIn_Process"
+end = "BG_Init"
 
 [[region]]
 # Tranche 19 — Plane B background load (BG_Init, §2 A.5). End is the next
@@ -2077,6 +2086,35 @@ tests = ["vblank_port"]
 name = "DMA_Bytes_ThisFrame"
 debug_only = true
 tests = ["vblank_port"]
+
+# Art-streaming P2a Task 3 — the VBlank bookmark hook's cross-seam operands. Only
+# the two_module_ownership_flip test (game_loop_port.rs) needs them stubbed: it
+# re-lowers vblank in a MINIMAL 2-module composition, so PageIn_InFlight (the arm
+# tst), PageIn_Saved_PC (the PC bank), PageIn_BankRegs (the redirect immediate),
+# and ZX0R_Decompress.__end (the range-check upper bound) must resolve to their
+# real VMAs for the byte-exact compare. (vblank_port uses the full harness, so it
+# resolves them from engine.ram / page_in / zx0_resume directly.)
+[[symbol]]
+name = "PageIn_InFlight"
+tests = ["game_loop_port"]
+
+[[symbol]]
+name = "PageIn_Saved_PC"
+tests = ["game_loop_port"]
+
+[[symbol]]
+name = "PageIn_BankRegs"
+tests = ["game_loop_port"]
+
+[[symbol]]
+name = "Dbg_PageIn_Preempts"
+debug_only = true
+tests = ["game_loop_port"]
+
+[[symbol]]
+name = "ZX0R_Decompress.__end"
+const_name = "ZX0R_DECOMPRESS_END"
+tests = ["game_loop_port"]
 
 [[symbol]]
 name = "Flush_VDP_Shadow"

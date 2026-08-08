@@ -188,8 +188,8 @@ fn generated_pins_match_the_hand_typed_baseline() {
     assert_eq!(pins::BOOT.plain_base, 0x200);
     assert_eq!(pins::BOOT.debug_base, 0x200);
     assert_eq!(pins::BOOT.plain_len, 0x1A0);  // +0x8 item27: EntryPoint's `lea (SYSTEM_STACK).w, sp` (4 B) + a 4 B align pad the new plain length needs
-    assert_eq!(pins::BOOT.debug_len, 0x1A0);  // +0x4 item27: the same lea; debug was already 4-aligned so it takes no pad — the two shapes converge
-    assert_eq!(pins::BOOT_DATA, pins::Pin { plain: 0x3A0, debug: 0x3A0 });  // +0x8/+0x4 item27: rides BOOT's growth; both shapes now start boot_data at the same address
+    assert_eq!(pins::BOOT.debug_len, 0x1B0);  // +0x4 item27: the same lea; debug was already 4-aligned so it takes no pad — the two shapes converge  // +0x10 art-streaming-p2-task3: DEBUG-only branch-reach ripple — the downstream page_in section + RAM growth pushes a boot-debug jbsr target (Sound_Init / CompressionSelfTest) far enough to flip its reach form (+0x10 code, debug shape only; plain len unchanged)
+    assert_eq!(pins::BOOT_DATA, pins::Pin { plain: 0x3A0, debug: 0x3B0 });  // +0x8/+0x4 item27: rides BOOT's growth; both shapes now start boot_data at the same address  // debug +0x10 art-streaming-p2-task3: rides BOOT.debug_len's boot-debug reach ripple
 
     // Then the I3 replay parcel (input/replay plan, 2026-08-02): engine.replay
     // (Input_Tick + Replay_Hash) inserts between game_loop and s4lz, so every
@@ -302,34 +302,49 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // DEBUG_ASSEMBLED_LEN hold; the debug symbol appendix grew with the new labels but is
     // past EndOfRom (unpinned). The three DEBUG PageIn counters (+0x6 RAM, debug only)
     // slide RAM pins not asserted in this function.
-    assert_eq!(pins::ANIMATE.plain_base, 0x3140);  // +0x10 item27: the boot-growth slide (aligned), which every region downstream of boot inherits  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2
-    assert_eq!(pins::ANIMATE.debug_base, 0x38AE);  // +0x10 item27: same boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2
+    // ART-STREAMING-P2-TASK3 (aeon parcel/art-streaming-p2, chain entry 57). Two engine-block
+    // growths + one new section. (1) VBLANK grows +0x30 BOTH shapes — the VBlank bookmark hook
+    // (tst InFlight / irq_frame.pc range-check / redirect) + VSync_Wait's PageIn_Process slice +
+    // its moveq re-zero. (2) BOOT grows +0x10 DEBUG only — a boot-debug jbsr reach flip from the
+    // downstream growth (see BOOT.debug_len). So every engine region downstream of VBLANK slides
+    // +0x30 PLAIN / +0x40 DEBUG (= vblank +0x30 in both, plus the boot +0x10 in debug): DPLC/CORE/
+    // ANIMATE/RINGS bases + DELETE_OBJECT. (3) The new page_in.emp section (PageIn_Process, between
+    // load_art and bg) adds +0x5A plain / +0x166 debug, so regions BELOW it (SOUND_API) slide the
+    // fuller +0x80 plain / +0x1A0 debug. LENs of ported regions unchanged; the engine growth is
+    // absorbed by `org $10000`, so ASSEMBLED_LEN / DEBUG_ASSEMBLED_LEN hold. RAM: the 36-byte
+    // release bookmark record sits at the RAM tail (game-RAM-only ripple, not asserted here); the
+    // 2 DEBUG scaffold bytes sit in the @shape_divergent block, sliding Object_RAM +0x2 DEBUG
+    // (PLAYER_1 / DYNAMIC_SLOTS below). NOTE: the SOUND_API / MDDBG / PLAYER_1 / DYNAMIC_SLOTS hand
+    // literals below were also STALE from prior rounds (the repin_pins baseline missed them); this
+    // update brings them fully current, folding the prior drift into the task-3 tags.
+    assert_eq!(pins::ANIMATE.plain_base, 0x3170);  // +0x10 item27: the boot-growth slide (aligned), which every region downstream of boot inherits  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3
+    assert_eq!(pins::ANIMATE.debug_base, 0x38EE);  // +0x10 item27: same boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3
     assert_eq!(pins::ANIMATE.plain_len, 0x194);  // +0xA bug005: AF_SET_FIELD rail + refresh idiom
     assert_eq!(pins::ANIMATE.debug_len, 0x2B8);  // +0x10 bug005: same + the debug-fenced rail
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x34D4);  // +0x10 item27: boot-growth slide  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2
-    assert_eq!(pins::RINGS.debug_base, 0x3D6E);  // +0x10 item27: boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2
+    assert_eq!(pins::RINGS.plain_base, 0x3504);  // +0x10 item27: boot-growth slide  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3
+    assert_eq!(pins::RINGS.debug_base, 0x3DAE);  // +0x10 item27: boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
     // core LEN shrank −0xA in c4 (Spawn_Count: InitObjectRAM store −4 + RunObjects
     // moveq+store −6). Bases −0xA in c5 (the boot.asm CROSS_RESET store removal is
     // upstream of dplc/core, so core's base slides with everything downstream of boot).
-    assert_eq!(pins::CORE.plain_base, 0x2A20);  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2
+    assert_eq!(pins::CORE.plain_base, 0x2A50);  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3
     assert_eq!(pins::CORE.plain_len, 0x300);    // addrfree-invariant: plain's +0x40 span is ≡0 (mod 4), tail pad unchanged  // +0x18 defect-batch-8
-    assert_eq!(pins::CORE.debug_base, 0x2C70);  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2
+    assert_eq!(pins::CORE.debug_base, 0x2CB0);  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3
     assert_eq!(pins::CORE.debug_len, 0x750);    // +2 addrfree: the tail align pad that absorbs debug's ≡2 (mod 4) span — placement, core.emp untouched  // +0x20 defect-batch-8
-    assert_eq!(pins::DPLC.plain_base, 0x2978);  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2
-    assert_eq!(pins::DPLC.debug_base, 0x2BC8);  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0xc sst-fold  // +0x80 art-streaming-p2-task2
+    assert_eq!(pins::DPLC.plain_base, 0x29A8);  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3
+    assert_eq!(pins::DPLC.debug_base, 0x2C08);  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0xc sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3
     assert_eq!(pins::DPLC.plain_len, 0xA8);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xa8);   // item 6 REMOVED (soak disproved single-entry) — debug == plain  // +0x4 sst-fold
 
     // animate_port.rs: the DeleteObject inbound label. bug005-invariant: the +2
     // tail clear lands INSIDE DeleteObject after its label, so the label holds.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2AF0, debug: 0x2D40 });  // +0x10 item27: slides with core on the boot growth  // defect-batch-8: plain +0x10, debug +0x20  // sst-fold  // +0x80 art-streaming-p2-task2
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2B20, debug: 0x2D80 });  // +0x10 item27: slides with core on the boot growth  // defect-batch-8: plain +0x10, debug +0x20  // sst-fold  // +0x80 art-streaming-p2-task2  // art-streaming-p2-task3: plain +0x30, debug +0x40
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
@@ -556,8 +571,8 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // loops (byte-neutral, −20 cycles/child), and PopulateSpawnedPieceCount's
     // one-register park moved to move.l/movea.l (−12 cycles/child, −4 bytes,
     // which also restored the plain-shape branch margin the wave had consumed).
-    assert_eq!(pins::SOUND_API.plain_base, 0x654e);  // +0x50 item28-transpose: section +0x20 (per-column RedrawPlanes blit) + bg +0x30 (column blit + move.l tile guard) slide everything downstream  // +0x30 defect-batch-8  // +0x10 sst-fold  // -0x20 ltr-mul: tile_cache/section multiply shrink slides everything downstream
-    assert_eq!(pins::SOUND_API.debug_base, 0x81c0);  // +0x50 item28-transpose: same slide, both shapes  // -0x20 defect-batch-8  // +0x10 sst-fold  // -0x20 ltr-mul
+    assert_eq!(pins::SOUND_API.plain_base, 0x664E);  // +0x50 item28-transpose: section +0x20 (per-column RedrawPlanes blit) + bg +0x30 (column blit + move.l tile guard) slide everything downstream  // +0x30 defect-batch-8  // +0x10 sst-fold  // -0x20 ltr-mul: tile_cache/section multiply shrink slides everything downstream  // +0x100 art-streaming-p2-task3 (folds a prior missed round): +0x80 the task-2 zx0_resume slide the baseline never took, plus +0x80 this task (vblank +0x30 + page_in +0x5A, aligned)
+    assert_eq!(pins::SOUND_API.debug_base, 0x84B0);  // +0x50 item28-transpose: same slide, both shapes  // -0x20 defect-batch-8  // +0x10 sst-fold  // -0x20 ltr-mul  // +0x2F0 art-streaming-p2-task3 (folds a prior missed round): +0x150 the task-2 slide the baseline never took, plus +0x1A0 this task (boot +0x10 + vblank +0x30 + page_in +0x166)
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A
@@ -570,13 +585,13 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
 
     // rings_port.rs DEBUG.labels: the debug-only error-handler entries.
     // +0xCC (churn) +0xC (hook guards) both in the debug ROM, like DEBUG_ASSEMBLED_LEN.
-    assert_eq!(pins::MDDBG_ERROR_HANDLER, 0x5_E704);
-    assert_eq!(pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER, 0x5_F4CA);
+    assert_eq!(pins::MDDBG_ERROR_HANDLER, 0x5_E8F2);  // +0x1EE art-streaming-p2-task3 (folds prior missed rounds): the debug ROM's symbol-appendix island rides the full debug-ROM growth (page_in + hook + boot-debug ripple) plus the baseline drift never taken
+    assert_eq!(pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER, 0x5_F6B8);  // +0x1EE art-streaming-p2-task3: same debug-appendix slide
 
     // collision_port.rs: sign-extended RAM labels truncated to u32. debug +0x2:
     // Debug_Scene_Freeze's RAM byte+pad shifts every __DEBUG__-block-downstream
     // RAM symbol (Player_1 among them); plain shape unchanged.
-    assert_eq!(pins::PLAYER_1, pins::Pin { plain: 0xFFFF_89EE, debug: 0xFFFF_8A12 });
+    assert_eq!(pins::PLAYER_1, pins::Pin { plain: 0xFFFF_8A00, debug: 0xFFFF_8A2C });  // debug +0x2 art-streaming-p2-task3: the 2 DEBUG scaffold bytes (Dbg_PageIn_Test_Cycles/Done) in the @shape_divergent block slide Object_RAM in the debug shape. plain +0x12 folds a prior missed round (a RAM-growth parcel the baseline never took; the release bookmark record itself is at the RAM tail, not here)
     // DYNAMIC_SLOTS also debug +0x2 (downstream of the __DEBUG__ block).
-    assert_eq!(pins::DYNAMIC_SLOTS, pins::Pin { plain: 0xFFFF_8A8E, debug: 0xFFFF_8AB2 });
+    assert_eq!(pins::DYNAMIC_SLOTS, pins::Pin { plain: 0xFFFF_8AA0, debug: 0xFFFF_8ACC });  // debug +0x2 art-streaming-p2-task3 (+ prior-round plain +0x12 catch-up), same as PLAYER_1
 }

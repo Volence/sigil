@@ -280,6 +280,10 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         m!("engine.camera", "camera", pins::CAMERA),
         m!("engine.parallax", "parallax", pins::PARALLAX),
         m!("engine.load_art", "load_art", pins::LOAD_ART),
+        // Art-streaming P2a — the VBlank-bookmark page-in dispatcher (page_in.emp),
+        // placed between load_art and bg per map.toml `order`. Engine-agnostic
+        // (demo gets it too; its DEBUG self-test scaffold is HAS_ACT_ART_POOL-gated).
+        m!("engine.page_in", "page_in", pins::PAGE_IN),
         m!("engine.bg", "bg", pins::BG),
         m!("engine.bg_anim", "bg_anim", pins::BG_ANIM),
         // ── Engine debug / sound caller ──
