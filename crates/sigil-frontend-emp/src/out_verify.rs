@@ -467,7 +467,8 @@ fn direct_target(ops: &[CodeOperand]) -> Option<&str> {
 
 /// Apply instruction `idx`'s effect to `st`: gen each production at the width it
 /// covers, widen an existing one through `ext`, and credit a call's callee
-/// unconditional outs at the width that callee declared.
+/// unconditional outs at the width that callee declared. `depth` bounds the
+/// local-`bsr` credit recursion (a helper that itself `bsr`s a local helper).
 fn transfer(
     cfg: &Cfg,
     idx: usize,
@@ -475,6 +476,7 @@ fn transfer(
     items: &[CodeItem],
     callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
     widths: OutWidths<'_>,
+    depth: usize,
 ) {
     let Some((mnem, ops)) = cfg.instr(idx) else { return };
     let size = match items.get(idx) {
@@ -487,6 +489,19 @@ fn transfer(
         // (the shared map), each at the width that callee's contract promises.
         if let Some(target) = direct_target(ops) {
             credit_target_outs(st, target, callee_uncond_out, widths);
+        } else if let Some(sub) =
+            local_bsr_credit(cfg, items, ops, callee_uncond_out, widths, depth)
+        {
+            // A LOCAL `bsr .helper`: the helper block returns to the instruction
+            // after the call, so credit what it GUARANTEES produced — the same
+            // gen-only production a named callee's out gets.
+            for i in 0..16 {
+                if let Some(w) = sub[i] {
+                    if st[i].is_none_or(|have| have < w) {
+                        st[i] = Some(w);
+                    }
+                }
+            }
         }
         return;
     }
@@ -521,6 +536,122 @@ fn credit_target_outs(
             produce(st, r, widths.delivered(target, name));
         }
     }
+}
+
+/// The registers a LOCAL `bsr .helper` / `jbsr .helper` GUARANTEES produced when
+/// it returns, each at the narrowest width over every path from `.helper` to a
+/// leave point — the MUST-intersection of the helper's own productions, or `None`
+/// when the target is not a local helper (an external call, a computed `jsr (aN)`),
+/// nothing is guaranteed, or the recursion cap is hit.
+///
+/// A `bsr` gets only its fall-through edge from [`Cfg::edges`] (deliberately — the
+/// taken edge would splice the helper's body in at the caller's stack), and a local
+/// label is `$`-mangled so [`direct_target`] rejects it. So a block entered ONLY by
+/// `jbsr .L` is invisible to the caller's out obligations in both directions. This
+/// credits the caller with what the helper must write, the way [`credit_target_outs`]
+/// credits a named callee's verified outs — but the helper carries no separate
+/// contract, so its guaranteed productions are computed here from its body.
+///
+/// A block that is BOTH fallen into and `bsr`'d is not assumed away: this walk
+/// answers only "what does control entering at `.L` produce before it leaves", and
+/// the main walk independently charges any fall-through reachability of the same
+/// `rts`es as genuine proc returns. Recursion (a helper that `bsr`s a local helper)
+/// is bounded by `depth`; at the cap the credit is empty — fail-safe: credit
+/// nothing rather than loop.
+fn local_bsr_credit(
+    cfg: &Cfg,
+    items: &[CodeItem],
+    ops: &[CodeOperand],
+    callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
+    widths: OutWidths<'_>,
+    depth: usize,
+) -> Option<State> {
+    const DEPTH_CAP: usize = 8;
+    if depth >= DEPTH_CAP {
+        return None;
+    }
+    let name = crate::flag_check::branch_target(ops)?;
+    // Only a LOCAL label of this proc names a helper block; an external target is a
+    // real call (handled by `direct_target`) and a computed `jsr (aN)` names nothing.
+    if !cfg.is_local_label(name) {
+        return None;
+    }
+    let entry = cfg.label_index(name)?;
+
+    // Forward MUST-produce over the helper's body, seeded EMPTY: the credit is what
+    // the HELPER contributes, merged into the caller's state by `transfer`. Every
+    // edge that LEAVES the helper (a return, a fall-off, a transfer out in either
+    // flavor) is an exit whose produced state joins into the intersection; a
+    // `Follow` stays inside the helper. Intersecting over EVERY leave point — not
+    // just returns — keeps a helper that tail-transfers out from over-crediting.
+    let mut in_state: BTreeMap<usize, State> = BTreeMap::from([(entry, [None; 16])]);
+    let mut work: VecDeque<usize> = VecDeque::from([entry]);
+    let mut exit: Option<State> = None;
+    while let Some(idx) = work.pop_front() {
+        let mut st = in_state[&idx];
+        transfer(cfg, idx, &mut st, items, callee_uncond_out, widths, depth + 1);
+        for edge in out_edges(cfg, idx) {
+            match edge {
+                Edge::Follow(succ) => {
+                    let changed = match in_state.get(&succ) {
+                        None => {
+                            in_state.insert(succ, st);
+                            true
+                        }
+                        Some(existing) => {
+                            let merged = join(existing, &st);
+                            if merged != *existing {
+                                in_state.insert(succ, merged);
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                    };
+                    if changed {
+                        work.push_back(succ);
+                    }
+                }
+                Edge::Return | Edge::FallOff | Edge::TailOut | Edge::BranchOut => {
+                    exit = Some(match exit {
+                        Some(acc) => join(&acc, &st),
+                        None => st,
+                    });
+                }
+            }
+        }
+    }
+    exit
+}
+
+/// The out-verifier's view of `idx`'s successor edges: an enumerated computed
+/// dispatch (`jmp .table(pc,Xn) targets(.a, .b, …)`) becomes N `Follow` edges to
+/// its landing blocks, so a `PcRelIdx`/`DispSymInd` intra-proc dispatch is verified
+/// INSIDE the proc — its landing blocks reachable, and no false out obligation
+/// charged at a transfer that never leaves. Every other instruction takes
+/// [`Cfg::edges`] unchanged.
+///
+/// This makes the out-verifier a SECOND consumer of `targets(...)` beside the
+/// cycle-budget walk. `preserves`/`flag_check` still treat a computed dispatch as
+/// opaque — fail-safe (they over-approximate the transfer), so leaving them is a
+/// precision residual, not a soundness gap.
+///
+/// TRUST BOUNDARY. Out-verify's soundness THROUGH a targets dispatch rests on the
+/// author-supplied landing list being EXHAUSTIVE: a list that omits a reachable
+/// landing hides a return path, so an out never produced there verifies anyway —
+/// and a verified out feeds must-def as a definition. Nothing here proves
+/// exhaustiveness (it is not provable in general from the operands). The
+/// enumerated view is therefore trusted ONLY where nothing rides on it: no
+/// out-declaring proc in the corpus carries a targets dispatch, pinned by
+/// `cfg_blind_spots.rs::no_out_declaring_proc_carries_a_targets_dispatch`, so the
+/// day the two meet, that gate forces the exhaustiveness question before the
+/// blessing path is inherited (campaign-gap-ledger.md, the "exhaustiveness trust"
+/// row).
+fn out_edges(cfg: &Cfg, idx: usize) -> Vec<Edge> {
+    if let Some(succs) = cfg.enumerated_dispatch(idx) {
+        return succs.into_iter().map(Edge::Follow).collect();
+    }
+    cfg.edges(idx)
 }
 
 /// Verify each declared output register of a proc over its evaluated CodeBuf.
@@ -580,10 +711,10 @@ pub fn verify_out(
 
     while let Some(idx) = work.pop_front() {
         let mut st = in_state[&idx];
-        transfer(&cfg, idx, &mut st, items, callee_uncond_out, widths);
+        transfer(&cfg, idx, &mut st, items, callee_uncond_out, widths, 0);
         let here = flags.get(&idx).copied().unwrap_or(Flags::TOP);
 
-        for edge in cfg.edges(idx) {
+        for edge in out_edges(&cfg, idx) {
             match edge {
                 Edge::Follow(succ) => {
                     let mut edge_st = st;
@@ -894,8 +1025,7 @@ fn not_cc_exit_sites(cfg: &Cfg, flags: &BTreeMap<usize, Flags>, cc: &str) -> BTr
         if f.eval(cc) != Some(false) {
             continue; // not a PROVABLY-¬cc exit — no survives obligation here
         }
-        let leaves = cfg
-            .edges(idx)
+        let leaves = out_edges(cfg, idx)
             .iter()
             .any(|e| !matches!(e, Edge::Follow(_)));
         if leaves {
@@ -1085,7 +1215,7 @@ fn flags_after(cfg: &Cfg, items: &[CodeItem]) -> BTreeMap<usize, Flags> {
             None => incoming,
         };
         after.insert(idx, here);
-        for edge in cfg.edges(idx) {
+        for edge in out_edges(cfg, idx) {
             let Edge::Follow(succ) = edge else { continue };
             let edge_flags = split_cc(cfg, idx, succ, here);
             let changed = match in_flags.get(&succ) {

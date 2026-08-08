@@ -603,7 +603,7 @@ fn z80_flag_result_dropped_over_corpus_fires() {
 /// `clobbers` — an `out` register is WRITTEN by whatever target is installed, so
 /// a caller holding a live value in it across the dispatch is wrong. The live
 /// corpus shape is `player_sensors.emp`'s `SensorProbe … clobbers(d3-d5/a1)
-/// out(d0, d1, d2)` reached through `jsr (a2) as SensorProbe`.
+/// out(d0: i16, d1: u8, d2: u8)` reached through `jsr (a2) as SensorProbe`.
 ///
 /// This matters beyond permissiveness: the same `effective` set feeds
 /// `preserves::find_dead_saves`, so a bound narrower than the truth makes a
