@@ -86,7 +86,12 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // (bare ori -> set_priority_band's andi+ori pair, +0x6) crossed a 16-byte
     // alignment boundary in the debug region; plain absorbed the same +0x6 in
     // existing pad slack — the mirror image of the b-jumps shift above.
-    ("Ground_Move_Cap", 0x10766, 0x107CA),
+    // `art-streaming-p2-task2` (2026-08-08): -0x2 DEBUG ONLY. The zx0_resume section
+    // (+0x80) inserted ahead of the object bank + the three DEBUG PageIn counters (+0x6
+    // RAM) flip a cross-bank branch reach in the debug shape, netting -0x2 at this
+    // intra-bank label; plain is unchanged (the object bank is absolutely anchored and
+    // the plain shape kept the same branch widths). Per-shape pair, hand-updated.
+    ("Ground_Move_Cap", 0x10766, 0x107C8),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)

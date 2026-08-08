@@ -55,6 +55,14 @@ fn addr_labels() -> Vec<Section> {
         ("S4LZ_DecompressDict", pins::S4_LZ_DECOMPRESS_DICT.debug),
         // Art_Decompress = the load_art region's start symbol.
         ("Art_Decompress", pins::LOAD_ART.debug_base),
+        // Art-streaming P2a Task 2 — the ZX0-vs-ZX0R act-pool equivalence walk
+        // (gated HAS_ACT_ART_POOL, injected below) calls both decoders directly and
+        // names buffer B + the act descriptor as cross-seam addresses. ZX0R region
+        // start = ZX0R_Decompress; act-descriptor region start = OJZ_Act1_Descriptor.
+        ("ZX0_Decompress", pins::ZX0.debug_base),
+        ("ZX0R_Decompress", pins::ZX0_RESUME.debug_base),
+        ("Block_Stage_Buffers", pins::BLOCK_STAGE_BUFFERS.debug),
+        ("OJZ_Act1_Descriptor", pins::ACT_DESCRIPTOR.debug_base),
         ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
         ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
     ];
@@ -141,7 +149,11 @@ fn compile_at(
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.clone()),
         embed_base: Some(aeon.clone()),
-        defines: vec![("DEBUG".to_string(), 1), ("SOUND_DRIVER_ENABLED".to_string(), 1)],
+        defines: vec![
+            ("DEBUG".to_string(), 1),
+            ("SOUND_DRIVER_ENABLED".to_string(), 1),
+            ("HAS_ACT_ART_POOL".to_string(), 1), // sonic4 ships the act pool (P2a Task 2 eq walk)
+        ],
     };
     let aeon_root = aeon.clone();
     let embed_base_for = move |_id: &str| -> Option<PathBuf> { Some(aeon_root.clone()) };

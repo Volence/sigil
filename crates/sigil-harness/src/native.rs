@@ -254,6 +254,9 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // ── Engine compression ──
         m!("engine.s4lz", "s4lz", pins::S4LZ),
         m!("engine.zx0", "zx0", pins::ZX0),
+        // Art-streaming P2a — the resumable stack-flat ZX0 decoder (zx0_resume.emp),
+        // placed between the blocking ZX0 decoder and math per map.toml `order`.
+        m!("engine.zx0_resume", "zx0_resume", pins::ZX0_RESUME),
         m!("engine.math", "math", pins::MATH),
         // ── Engine objects ──
         // Parcel K4 inc-6: the object-code-bank base (ObjCodeBase + the offset-0 safety
@@ -497,6 +500,10 @@ pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile 
             ("CRASH_REPORT", 1),
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
+            // The game ships an act-wide ZX0 art pool (OJZ) — gates the DEBUG
+            // CompressionSelfTest act-pool ZX0R equivalence walk (engine module,
+            // demo-shared: demo has no pool, so it defines this 0).
+            ("HAS_ACT_ART_POOL", 1),
             // sonic4 game-config (games/sonic4/config/constants.asm); the engine
             // `.emp` reads these as -D (rings.emp / entity_window.emp), the
             // `ensure(extern(..)==..)` cross-checks them against the AS config.
@@ -582,6 +589,7 @@ pub fn demo_profile(debug: bool) -> GameProfile {
             ("CRASH_REPORT", 1),
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
+            ("HAS_ACT_ART_POOL", 0),   // demo ships no act art pool (skips the ZX0R act-pool selftest walk)
             // demo game-config (games/demo/config/constants.emp) engine-VARYING
             // interface values — homed here (not the `.emp`) per the `-D`-not-in-
             // `.emp` rule; the values that DIFFER from sonic4.
@@ -650,6 +658,7 @@ pub fn config_b_profile() -> GameProfile {
             ("CRASH_REPORT", 1),
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
+            ("HAS_ACT_ART_POOL", 1),
             // Config-B is the sonic4 game (sound off), so sonic4's game-config.
             ("MAX_RING_BUFFER", 128),
             ("VRAM_RING_PLACEHOLDER", 0x3E8),
@@ -706,6 +715,7 @@ pub fn config_a_profile() -> GameProfile {
             ("CRASH_REPORT", 1),
             ("SOUND_DEBUG_HOTKEYS", 1),
             ("SOUND_DBG_MIRROR", 1),
+            ("HAS_ACT_ART_POOL", 1),
             // Config-A is the sonic4 game (debug + sound), so sonic4's game-config.
             ("MAX_RING_BUFFER", 128),
             ("VRAM_RING_PLACEHOLDER", 0x3E8),
@@ -755,6 +765,7 @@ pub fn lean_profile() -> GameProfile {
             ("CRASH_REPORT", 0),
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
+            ("HAS_ACT_ART_POOL", 1),
             // Lean is the sonic4 game, so sonic4's game-config.
             ("MAX_RING_BUFFER", 128),
             ("VRAM_RING_PLACEHOLDER", 0x3E8),

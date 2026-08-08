@@ -179,13 +179,21 @@ tests = ["s4lz_port"]
 
 [[region]]
 # Tranche 22 — the ZX0 (modern/V2) blocking decompressor. End is the next
-# placement: math.asm's GetSineCosine. Shape-INVARIANT $58 (the file has no
-# ifdef arms).
+# placement: ZX0R_Decompress (the resumable twin, art-streaming P2a). Shape-
+# INVARIANT $58 (the file has no ifdef arms).
 name = "zx0"
 start = "ZX0_Decompress"
-end = "GetSineCosine"
+end = "ZX0R_Decompress"
 gate = "SIGIL_EMP_ZX0"
 tests = ["zx0_port"]
+
+[[region]]
+# Art-streaming P2a — the resumable stack-flat ZX0 decoder (zx0_resume.emp).
+# Native-only (no AS twin, so no gate). End is the next placement: math's
+# GetSineCosine. Shape-INVARIANT (no ifdef arms).
+name = "zx0_resume"
+start = "ZX0R_Decompress"
+end = "GetSineCosine"
 
 [[region]]
 name = "math"
