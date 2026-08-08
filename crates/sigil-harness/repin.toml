@@ -2116,6 +2116,44 @@ name = "ZX0R_Decompress.__end"
 const_name = "ZX0R_DECOMPRESS_END"
 tests = ["game_loop_port"]
 
+# Art-streaming P2a Task 4 — VInt_Level's Important-drain Staging_Busy release
+# references PageIn_Staging_Busy cross-seam; the two_module_ownership_flip test
+# (game_loop_port.rs) re-lowers vblank standalone and needs it stubbed to its real
+# VMA. load_art_port also stubs it (Level_LoadArt's drain-wait polls it). (DMA_Important
+# / DMA_Important_Slot already carry pins from dma_queue_port.)
+[[symbol]]
+name = "PageIn_Staging_Busy"
+tests = ["game_loop_port", "load_art_port"]
+
+# Art-streaming P2a Task 4 — Level_LoadArt drives the pool load through the page-in
+# FIFO: it calls PageIn_Flush/PageIn_Enqueue, sets PageIn_Pool_Table, and its
+# drain-wait polls PageIn_Queue_Count/PageIn_Suspended/PageIn_Land_Pending
+# (PageIn_InFlight/PageIn_Staging_Busy already pinned). The load_art_port re-lower
+# needs them stubbed to their real VMAs.
+[[symbol]]
+name = "PageIn_Flush"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "PageIn_Enqueue"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "PageIn_Pool_Table"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "PageIn_Queue_Count"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "PageIn_Suspended"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "PageIn_Land_Pending"
+tests = ["load_art_port"]
+
 [[symbol]]
 name = "Flush_VDP_Shadow"
 tests = ["vblank_port"]

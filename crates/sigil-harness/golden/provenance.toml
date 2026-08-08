@@ -2820,3 +2820,57 @@ full_crc = "93a1de99"
 full_size = 424955
 anchor_crc = "16962316"
 anchor_end = 0x5f848
+
+[[entry]]
+name = "art-streaming-p2-task4"
+ab = "docs/superpowers/notes/2026-08-08-art-streaming-p2-task4-ab.md"
+note = "P2a Task 4 COMPLETE: page-in request FIFO + landing handshake + cancel/flush; level init rides the streaming path; Task-3 self-test scaffold deleted"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "0353fd28"
+full_size = 425445
+anchor_crc = "3fe745c0"
+anchor_end = 0x5f848
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c49f7bcb"
+full_size = 302545
+anchor_crc = "4f10bab0"
+anchor_end = 0x42e80
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "fabd99c2"
+full_size = 92419
+anchor_crc = "375a1e1d"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "c5cbee0b"
+full_size = 95179
+anchor_crc = "e682513a"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "1263aff3"
+full_size = 379350
+anchor_crc = "c62bb881"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "fadc6c8e"
+full_size = 412527
+anchor_crc = "7792008d"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "ba59add6"
+full_size = 425087
+anchor_crc = "c3b67b48"
+anchor_end = 0x5f848

@@ -105,6 +105,18 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         ("VSync_Wait", pick(pins::V_SYNC_WAIT)),
         ("QueueDMA_Critical", pick(pins::QUEUE_DMA_CRITICAL)),
         ("BG_Init", pick(pins::BG_INIT)),
+        // Art-streaming P2a Task 4 — Level_LoadArt drives the pool load through the
+        // page-in FIFO (PageIn_Flush/Enqueue calls, PageIn_Pool_Table store, the
+        // budget raise, and the drain-wait flag polls).
+        ("PageIn_Flush", pick(pins::PAGE_IN_FLUSH)),
+        ("PageIn_Enqueue", pick(pins::PAGE_IN_ENQUEUE)),
+        ("PageIn_Pool_Table", pick(pins::PAGE_IN_POOL_TABLE)),
+        ("PageIn_Queue_Count", pick(pins::PAGE_IN_QUEUE_COUNT)),
+        ("PageIn_InFlight", pick(pins::PAGE_IN_IN_FLIGHT)),
+        ("PageIn_Suspended", pick(pins::PAGE_IN_SUSPENDED)),
+        ("PageIn_Land_Pending", pick(pins::PAGE_IN_LAND_PENDING)),
+        ("PageIn_Staging_Busy", pick(pins::PAGE_IN_STAGING_BUSY)),
+        ("DMA_Budget_Default", pick(pins::DMA_BUDGET_DEFAULT)),
     ];
     if debug {
         // Debug shape only: the raise_error construct's error-handler entry
@@ -203,10 +215,10 @@ fn compile_real_file(
 
 fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     // Packed placement (Wave-B B-0) may end a region window in ALIGNMENT FILL: the
-    // pins span runs to the next section's aligned base. Tolerate a short (< 16 B)
-    // all-zero tail beyond the lowered image; every real byte still compares.
+    // pins span runs to the next section's aligned base (0x20). Tolerate a short
+    // (< 32 B) all-zero tail beyond the lowered image; every real byte still compares.
     let expected = if expected.len() > candidate.len()
-        && expected.len() - candidate.len() < 16
+        && expected.len() - candidate.len() < 32
         && expected[candidate.len()..].iter().all(|&b| b == 0)
     {
         &expected[..candidate.len()]
@@ -331,14 +343,15 @@ fn flip_lower(
 }
 
 /// Compare a compiled flip region against its reference span, tolerating a short
-/// (< 16 B) trailing all-zero ALIGNMENT PAD in the reference. Packed placement
-/// (Wave-B B-0) runs a pins region span to the NEXT section's aligned base, so an
-/// upstream size shift (e.g. wave-c PARALLAX growth pushing load_art) can leave the
-/// reference slice carrying zero pad the compiled image does not. Every real byte
-/// still compares (matches boot_port's `assert_region_matches`).
+/// (< 32 B) trailing all-zero ALIGNMENT PAD in the reference. Packed placement
+/// (Wave-B B-0) runs a pins region span to the NEXT section's aligned base (0x20),
+/// so an upstream size shift (e.g. art-streaming-p2-task4's VInt_Level growth ending
+/// vblank plain 0x10 short of HBLANK's 0x20-aligned base) can leave the reference
+/// slice carrying up to 31 zero pad bytes the compiled image does not. Every real
+/// byte still compares (matches boot_port's `assert_region_matches`).
 fn assert_flip_region(compiled: &[u8], reference: &[u8], what: &str) {
     let reference = if reference.len() > compiled.len()
-        && reference.len() - compiled.len() < 16
+        && reference.len() - compiled.len() < 32
         && reference[compiled.len()..].iter().all(|&b| b == 0)
     {
         &reference[..compiled.len()]
@@ -489,6 +502,18 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("PageIn_BankRegs", pick(pins::PAGE_IN_BANK_REGS)),
         ("ZX0R_Decompress", if debug { pins::ZX0_RESUME.debug_base } else { pins::ZX0_RESUME.plain_base }),
         ("ZX0R_Decompress.__end", pick(pins::ZX0R_DECOMPRESS_END)),
+        // Art-streaming P2a Task 4 — Level_LoadArt drives the pool load through the
+        // page-in FIFO (PageIn_Flush/Enqueue calls, PageIn_Pool_Table store, drain-wait
+        // flag polls); the co-lowered vblank's Important-drain release adds the last three.
+        ("PageIn_Flush", pick(pins::PAGE_IN_FLUSH)),
+        ("PageIn_Enqueue", pick(pins::PAGE_IN_ENQUEUE)),
+        ("PageIn_Pool_Table", pick(pins::PAGE_IN_POOL_TABLE)),
+        ("PageIn_Queue_Count", pick(pins::PAGE_IN_QUEUE_COUNT)),
+        ("PageIn_Suspended", pick(pins::PAGE_IN_SUSPENDED)),
+        ("PageIn_Land_Pending", pick(pins::PAGE_IN_LAND_PENDING)),
+        ("PageIn_Staging_Busy", pick(pins::PAGE_IN_STAGING_BUSY)),
+        ("DMA_Important", pick(pins::DMA_IMPORTANT)),
+        ("DMA_Important_Slot", pick(pins::DMA_IMPORTANT_SLOT)),
     ];
     if debug {
         table.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));

@@ -263,10 +263,13 @@ fn compile_emp(
 /// On mismatch, report the first differing offset plus context on each side.
 fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     // Packed placement (Wave-B B-0) may end a region window in ALIGNMENT FILL: the
-    // pins span runs to the next section's aligned base. Tolerate a short (< 16 B)
-    // all-zero tail beyond the lowered image; every real byte still compares.
+    // pins span runs to the next section's aligned base. Sections align to 0x20, so
+    // the fill runs 0..31 bytes (art-streaming-p2-task4: VInt_Level's growth ended
+    // vblank's plain code at 0x2290, a full 0x10 short of HBLANK's 0x20-aligned
+    // 0x22A0 base). Tolerate a short (< 32 B) all-zero tail beyond the lowered
+    // image; every real byte still compares.
     let expected = if expected.len() > candidate.len()
-        && expected.len() - candidate.len() < 16
+        && expected.len() - candidate.len() < 32
         && expected[candidate.len()..].iter().all(|&b| b == 0)
     {
         &expected[..candidate.len()]
@@ -525,6 +528,10 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("PageIn_BankRegs", pick(pins::PAGE_IN_BANK_REGS)),
         ("ZX0R_Decompress", if debug { pins::ZX0_RESUME.debug_base } else { pins::ZX0_RESUME.plain_base }),
         ("ZX0R_Decompress.__end", pick(pins::ZX0R_DECOMPRESS_END)),
+        // Art-streaming P2a Task 4 — VInt_Level's Important-drain Staging_Busy release.
+        ("PageIn_Staging_Busy", pick(pins::PAGE_IN_STAGING_BUSY)),
+        ("DMA_Important", pick(pins::DMA_IMPORTANT)),
+        ("DMA_Important_Slot", pick(pins::DMA_IMPORTANT_SLOT)),
     ];
     if debug {
         table.push(("Lag_Frame_Count", pins::LAG_FRAME_COUNT));
