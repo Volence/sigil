@@ -27,8 +27,9 @@ use crate::lower::{
     expand_reglist_regs, preserve_oracle_inputs, proc_written_registers, verified_preserves_regs,
 };
 use crate::out_verify::{
-    check_cond_out_survives, check_out, compute_verified_outs, CondOutMap, CondOutSurvivesFiring,
-    OutClaim, OutFiring, OutWidth, OutWidthMap, OutWidths, UncondOutMap,
+    check_cond_out_survives, check_inout, check_out, compute_verified_inouts, compute_verified_outs,
+    CondOutMap, CondOutSurvivesFiring, InoutCallees, InoutFiring, OutClaim, OutFiring, OutWidth,
+    OutWidthMap, OutWidths, UncondOutMap,
 };
 use crate::preserves::{find_dead_saves, DeadSave};
 use crate::z80_out_verify::{check_z80_out, compute_verified_z80_outs, Z80OutFiring, Z80OutMap};
@@ -101,6 +102,11 @@ pub struct ContractReport {
     /// out-honesty check). Sorted (proc, reg). NOT yet joined to the error gate —
     /// the checkpoint-B residue is adjudicated before the flip.
     pub out_firings: Vec<OutFiring>,
+    /// The `[proc.inout-unverified]` firings: a proc declares `inout(rN)` but the
+    /// body leaves rN Broken on some exit path (a partial write, a clobbering or
+    /// conditional-out callee, or an unknown callee). Unlike `out`, PASS-THROUGH is
+    /// valid, so an unwritten path does NOT fire. Sorted (proc, reg).
+    pub inout_firings: Vec<InoutFiring>,
     /// The §7.1 `[proc.out-cond-survives-unverifiable]` firings: a proc declares
     /// `out(rN if cc)` with rN ABSENT from `clobbers` — the survives-claim — but
     /// rN's entry value is not provably intact on every ¬cc return path. Proved
@@ -144,6 +150,11 @@ pub struct ContractReport {
     /// The verified-out fixpoint's CONDITIONAL outs (the dual of
     /// `verified_uncond_out` for `out(rN if cc)`).
     pub verified_cond_out: CondOutMap,
+    /// The verified-INOUT fixpoint: proc → the `inout(rN)` registers proven
+    /// non-Broken on every exit. The complement of `inout_firings` per proc, and the
+    /// rule-6 composition credit. Exposed so a test can assert an in-out proc
+    /// verifies where the same body under `out` would not (the non-vacuity pair).
+    pub verified_inout: UncondOutMap,
     /// Total instructions DROPPED across the corpus because an operand/mnemonic
     /// did not resolve during the single-file eval — the substrate hazard the
     /// cross-file type environment closes. With a complete environment this is
@@ -586,6 +597,27 @@ pub fn analyze_corpus_with_contracts(
             (n.clone(), outs.iter().filter(|r| !cond.contains(r)).cloned().collect())
         })
         .collect();
+    // The declared `inout(...)` registers per proc — the check_inout obligation set,
+    // and (once verified) the rule-6 composition credit. Kept apart from
+    // `callee_uncond_out`, which folds them in for caller-side crediting.
+    let callee_inout: BTreeMap<String, BTreeSet<String>> =
+        nodes.iter().map(|(n, node)| (n.clone(), node.inout.clone())).collect();
+    // Each proc's effective clobber set as a plain name set — the rule-5 input to
+    // the inout verifier (a register a callee destroys breaks an in-out value
+    // threaded across the call). A ⊤ effect clobbers everything, so it expands to
+    // the whole register file; a proc absent here is an unknown callee (Broken).
+    let all_regs: BTreeSet<String> = ["d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let effective_clobbers: BTreeMap<String, BTreeSet<String>> = closure
+        .effective
+        .iter()
+        .map(|(n, eff)| {
+            let set = if eff.top { all_regs.clone() } else { eff.regs.clone() };
+            (n.clone(), set)
+        })
+        .collect();
 
     // The VERIFIED-out FIXPOINT (contract-grammar v2 §G4.5). An out is credited as
     // a reaching DEFINITION only once PROVEN produced on every required return path
@@ -626,6 +658,37 @@ pub fn analyze_corpus_with_contracts(
             &out_widths,
         );
 
+    // The VERIFIED-INOUT fixpoint — the in-out analogue of the out fixpoint. An
+    // `inout(rN)` is verified iff the exit-side check leaves rN non-Broken on every
+    // path (pass-through counts), with callee credit drawn only from verified
+    // outs/inouts. The width map is `inout(rN: T)`'s (so `inout(d5: u16)` charges at
+    // `.w`); an in-out register absent there is a bare 32-bit claim.
+    let inout_widths = collect_inout_widths(files);
+    let verified_inout: UncondOutMap = compute_verified_inouts(
+        &proc_items,
+        &callee_inout,
+        &verified_uncond_out,
+        &cond_callees,
+        &effective_clobbers,
+        &extern_names,
+        &falls_into_succ,
+        &noreturn,
+        &inout_widths,
+    );
+    // The caller-side CREDIT union: a call to a verified-out OR verified-inout callee
+    // reproduces the register for the caller. D1b must-def and the out-verify credit
+    // read THIS, so an in-out callee credits its callers exactly as the parcel-A
+    // `out` form did — no D1b/§6 regression from moving `d5`/`a4` out→inout. (D1c and
+    // §6-declared keep the DECLARED `callee_uncond_out`, which already folds inout in
+    // via `node.out`.)
+    let verified_out_credit: UncondOutMap = {
+        let mut m = verified_uncond_out.clone();
+        for (name, regs) in &verified_inout {
+            m.entry(name.clone()).or_default().extend(regs.iter().cloned());
+        }
+        m
+    };
+
     // §6 caller-side flag checks, now that every callee's contract is known. §6
     // keeps the DECLARED credit (redefine-kill semantics). `flag_firings_verified`
     // recomputes the invalid-path check against the VERIFIED credit — the honest-
@@ -650,7 +713,7 @@ pub fn analyze_corpus_with_contracts(
             &pb.name,
             &pb.buf.items,
             &verified_cond_out,
-            &verified_uncond_out,
+            &verified_out_credit,
         ));
     }
     // rung-2 §13.3 sub-part 3 — the Z80 caller-must-consume flag check. PASS 2
@@ -755,12 +818,15 @@ pub fn analyze_corpus_with_contracts(
         let caller_params =
             nodes.get(&pb.name).map(|n| n.params.clone()).unwrap_or_default();
         // D1b credits an out as a DEFINITION ⇒ VERIFIED maps (the flip foundation).
+        // An inout callee reproduces the register too, so the credit union folds in
+        // verified inouts — a caller passing `d5` (defined by an inout DrawRings
+        // call) onward is not flagged undefined.
         input_firings.extend(check_input_undefined(
             &pb.name,
             &caller_params,
             &pb.buf.items,
             &callee_params,
-            &verified_uncond_out,
+            &verified_out_credit,
             &verified_cond_out,
         ));
         live_clobbered_firings.extend(check_live_clobbered(
@@ -795,10 +861,16 @@ pub fn analyze_corpus_with_contracts(
     let mut out_firings: Vec<OutFiring> = Vec::new();
     let empty_widths: BTreeMap<String, OutClaim> = BTreeMap::new();
     for pb in &proc_bufs {
+        // The out OBLIGATION excludes inout registers: they are folded into
+        // `callee_uncond_out` for caller crediting, but their exit-side claim is the
+        // threaded-cursor one (pass-through valid), checked by `check_inout` below —
+        // NOT the produce-on-every-path one `check_out` charges.
+        let own_inout = callee_inout.get(&pb.name);
         let uncond: Vec<Reg> = callee_uncond_out
             .get(&pb.name)
             .into_iter()
             .flatten()
+            .filter(|r| !own_inout.is_some_and(|s| s.contains(*r)))
             .filter_map(|r| Reg::from_name(r))
             .collect();
         let cond: Vec<(Reg, String)> = cond_callees
@@ -815,7 +887,7 @@ pub fn analyze_corpus_with_contracts(
             &pb.buf.items,
             &uncond,
             &cond,
-            &verified_uncond_out,
+            &verified_out_credit,
             &verified_cond_out,
             pb.span,
             // A declared `falls_into` continues into its successor inside the
@@ -831,6 +903,42 @@ pub fn analyze_corpus_with_contracts(
         ));
     }
     out_firings.sort_by(|a, b| (&a.proc, &a.reg, a.span.start).cmp(&(&b.proc, &b.reg, b.span.start)));
+
+    // The in-out exit-side residue: every declared `inout(rN)` must be non-Broken on
+    // every exit path (pass-through valid). Registers checked are each proc's
+    // DECLARED inouts; callee credit is the VERIFIED out (rule 3) + VERIFIED inout
+    // (rule 6) maps, with `effective_clobbers` for the clobber rule (5).
+    let mut inout_firings: Vec<InoutFiring> = Vec::new();
+    for pb in &proc_bufs {
+        let tracked: Vec<Reg> = callee_inout
+            .get(&pb.name)
+            .into_iter()
+            .flatten()
+            .filter_map(|r| Reg::from_name(r))
+            .collect();
+        if tracked.is_empty() {
+            continue;
+        }
+        inout_firings.extend(check_inout(
+            &pb.name,
+            &pb.buf.items,
+            &tracked,
+            OutWidths {
+                own: inout_widths.get(&pb.name).unwrap_or(&empty_widths),
+                callees: &inout_widths,
+            },
+            InoutCallees {
+                uncond_out: &verified_uncond_out,
+                inout: &verified_inout,
+                cond_out: &cond_callees,
+                effective_clobbers: &effective_clobbers,
+            },
+            pb.span,
+            pb.falls_into.as_deref(),
+            &noreturn,
+        ));
+    }
+    inout_firings.sort_by(|a, b| (&a.proc, &a.reg, a.span.start).cmp(&(&b.proc, &b.reg, b.span.start)));
 
     // §7.1 the SURVIVES half: a cond-out register absent from `clobbers` must be
     // provably PRESERVED on every ¬cc return path. The per-file gate proves what a
@@ -1113,12 +1221,14 @@ pub fn analyze_corpus_with_contracts(
         input_firings,
         live_clobbered_firings,
         out_firings,
+        inout_firings,
         survives_firings,
         survives_claim_sites,
         unresolvable_out_types,
         typed_out_slots,
         verified_uncond_out,
         verified_cond_out,
+        verified_inout,
         dropped_instrs,
         dropped_by_proc,
         comptime_unresolved,
@@ -1507,6 +1617,62 @@ fn collect_out_widths(
     unresolvable.sort();
     slots.sort();
     (out, unresolvable, slots)
+}
+
+/// The corpus-wide `inout(rN: T)` width map: proc → register → the width its type
+/// claims — the [`collect_out_widths`] analogue for the in-out facet. A bare
+/// `inout(rN)` (or an address register whatever its type) is `L`; a typed data
+/// register narrows to its type. This is what makes `inout(d5: u16)` charge the
+/// exit-production check at `.w`, so `addq.w` verifies and `addq.b` breaks.
+fn collect_inout_widths(files: &[ast::File]) -> OutWidthMap {
+    fn row(
+        inout: Option<&[(String, Option<String>)]>,
+        inout_types: &[(String, ast::Type, Span)],
+        newtypes: &BTreeMap<String, Vec<ast::Type>>,
+    ) -> BTreeMap<String, OutClaim> {
+        let mut row: BTreeMap<String, OutClaim> = expand_reglist_regs(inout.unwrap_or(&[]))
+            .into_iter()
+            .filter_map(|name| {
+                Reg::from_name(&name).map(|r| (r.to_string(), OutClaim::exact(OutWidth::L)))
+            })
+            .collect();
+        for (reg, ty, _) in inout_types {
+            let Some(r) = Reg::from_name(reg) else { continue };
+            let claim = if (r as usize) >= 8 {
+                OutClaim::exact(OutWidth::L) // an address register has no width to state
+            } else {
+                out_claim_of(ty, newtypes, 16)
+            };
+            row.insert(r.to_string(), claim);
+        }
+        row
+    }
+    fn walk(items: &[Item], newtypes: &BTreeMap<String, Vec<ast::Type>>, out: &mut OutWidthMap) {
+        for item in items {
+            match item {
+                Item::Proc(p) => {
+                    let r = row(p.inout.as_deref(), &p.inout_types, newtypes);
+                    if !r.is_empty() {
+                        out.insert(p.name.clone(), r);
+                    }
+                }
+                Item::ExternProc(e) => {
+                    let r = row(e.sig.inout.as_deref(), &e.sig.inout_types, newtypes);
+                    if !r.is_empty() {
+                        out.insert(e.name.clone(), r);
+                    }
+                }
+                Item::Section(s) => walk(&s.items, newtypes, out),
+                _ => {}
+            }
+        }
+    }
+    let newtypes = collect_newtype_underlying(files);
+    let mut out = OutWidthMap::new();
+    for file in files {
+        walk(&file.items, &newtypes, &mut out);
+    }
+    out
 }
 
 /// The leaf NAME of a type whose width [`out_claim_of`] cannot derive, or `None`
@@ -2037,7 +2203,15 @@ fn proc_node(
         // §3: recorded in the contract surface for a width-aware consumer).
         word_preserves: crate::lower::preserve_word_regs(p),
         params: param_regs_typed(&p.params),
-        out: expand_reglist_regs(p.out.as_deref().unwrap_or(&[])),
+        // Fold `inout` into `out` for caller-side crediting: an in-out register is
+        // written/produced by the callee exactly as an out is, so the closure /
+        // D1c / §6 must see it as a result. The exit-side obligation is separate.
+        out: {
+            let mut o = expand_reglist_regs(p.out.as_deref().unwrap_or(&[]));
+            o.extend(expand_reglist_regs(p.inout.as_deref().unwrap_or(&[])));
+            o
+        },
+        inout: expand_reglist_regs(p.inout.as_deref().unwrap_or(&[])),
         has_clobber_contract: p.clobbers.is_some(),
         verified_preserves,
         requires: p.requires.iter().map(|(n, _)| n.clone()).collect(),
@@ -2084,7 +2258,9 @@ fn extern_node(e: &ExternProcDecl) -> ProcNode {
     // "does the callee WRITE this", and a conditional result is written on its
     // cc edge. The UNCONDITIONAL subtraction happens once, downstream, where a
     // gate needs an out to be a DEFINITION on every edge.
-    let out = expand_reglist_regs(e.sig.out.as_deref().unwrap_or(&[]));
+    let mut out = expand_reglist_regs(e.sig.out.as_deref().unwrap_or(&[]));
+    let inout = expand_reglist_regs(e.sig.inout.as_deref().unwrap_or(&[]));
+    out.extend(inout.iter().cloned());
     let mut effective = sig_clobbers(&e.sig);
     effective.extend(out.iter().cloned());
     ProcNode {
@@ -2092,6 +2268,7 @@ fn extern_node(e: &ExternProcDecl) -> ProcNode {
         declared_clobbers: effective,
         params: sig_param_regs(&e.sig),
         out,
+        inout,
         has_clobber_contract: e.sig.clobbers.is_some(),
         requires: e.sig.requires.iter().map(|(n, _)| n.clone()).collect(),
         ..Default::default()

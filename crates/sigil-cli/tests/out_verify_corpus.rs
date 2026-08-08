@@ -161,7 +161,7 @@ fn no_corpus_out_type_is_unresolvable() {
     // The corpus's typed out slots, pinned exactly. A count that only ever grows
     // would let a deletion pass; this notices in both directions and prints the
     // set, so an intended change is adjudicated rather than absorbed.
-    assert_eq!(slots.len(), 30, "the corpus's typed out slots: {slots:?}");
+    assert_eq!(slots.len(), 28, "the corpus's typed out slots: {slots:?}");
 }
 
 /// Every proc that declares `out(rN if cc)` with rN ABSENT from its `clobbers` —

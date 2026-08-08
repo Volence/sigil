@@ -196,7 +196,7 @@ pub(super) fn lower_proc(
     // a contract is declared (`Some(_)`; the explicit empty `out()` counts —
     // it declares "returns nothing", so any listed register would be moot but
     // the overlap/unwritten checks still apply to whatever IS listed).
-    if proc.out.is_some() {
+    if proc.out.is_some() || proc.inout.is_some() {
         check_out(proc, &buf, ctx.cpu, diags);
     }
 
@@ -1032,6 +1032,13 @@ fn check_clobbers(
     // `out`'s own validation runs in `check_out`, so expand it quietly here.
     let outs = reglist_set_quiet(proc.out.as_deref().unwrap_or(&[]));
     allowed.extend(outs.regs);
+    // In-out registers are BOTH input and result: the proc advances/re-produces
+    // them for the caller (`addq.w #1, d5` on an `inout(d5)` cursor), so a write is
+    // part of the contract, not an undeclared clobber. They are also required to be
+    // params (`[proc.inout-not-param]`), so this is belt-and-braces with the param
+    // extend above — but it keeps the allowance even if that rule is violated.
+    let inouts = reglist_set_quiet(proc.inout.as_deref().unwrap_or(&[]));
+    allowed.extend(inouts.regs);
     // §5 VERIFIED preserves are allowed writes too (S2-D6 FP-kill): a register the
     // proc writes but provably SAVE/RESTORES round-trips to its entry value — it is
     // preserved, not clobbered, so it must not fire `[proc.clobber-undeclared]`.
@@ -1714,6 +1721,21 @@ fn check_out(
     // file expansion behind it, without which a raw-text set would miss `sp`/`a7`
     // on 68k and every Z80 pair spelling (`hl` expands to `h`+`l`).
     if cpu == Cpu::Z80 {
+        // The in-out facet is 68k-only tonight — its exit-production verifier is
+        // the 68k write/CFG machinery. A Z80 `inout(...)` is rejected rather than
+        // silently unchecked.
+        if proc.inout.as_deref().is_some_and(|v| !v.is_empty()) {
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!(
+                    "[proc.inout-z80-unsupported] `{}` declares `inout(...)` on a Z80 proc — the \
+                     in-out facet is 68k-only",
+                    proc.name
+                ),
+            );
+        }
         let rf = crate::regfile::RegFile::Z80;
         let cond_guarded = proc.cond_only_out_regs(rf);
         let out_set = crate::regfile::expand_reglist(
@@ -1891,6 +1913,88 @@ fn check_out(
                     ),
                 );
             }
+        }
+    }
+
+    // The in-out facet's partition rules. An `inout` register is a caller
+    // obligation on BOTH sides — provided at entry, read at exit — so it is
+    // mutually exclusive with every other disposition and must be a param.
+    let inout_set = reglist_expand_checked(
+        proc.inout.as_deref().unwrap_or(&[]),
+        "inout",
+        &proc.name,
+        proc.span,
+        diags,
+    );
+    let mut inout_valid: Vec<String> = inout_set.regs.into_iter().collect();
+    inout_valid.sort();
+    let param_regs: std::collections::HashSet<String> =
+        proc.params.iter().map(|(n, _, _)| n.clone()).collect();
+    let out_reg_set: std::collections::HashSet<String> = valid.iter().cloned().collect();
+    for name in &inout_valid {
+        // inout ∩ params: an in-out value is a declared INPUT; requiring it be a
+        // param is what lets the existing param → D1b machinery discharge the
+        // "caller seeds rN live" half with no separate read-side dataflow.
+        if !param_regs.contains(name) {
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!(
+                    "[proc.inout-not-param] `{}` declares `inout({name})` but `{name}` is not a \
+                     param — an in-out register is a caller-provided input, so it must be declared \
+                     in the param list",
+                    proc.name
+                ),
+            );
+        }
+        // inout ∩ clobbers: clobbers says the caller may NOT rely on the exit
+        // value; inout says the opposite.
+        if clobbers.regs.contains(name) {
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!(
+                    "[proc.inout-clobbers-overlap] `{}` declares `{name}` both in-out and \
+                     clobbered — an in-out register's exit value is promised to the caller, so it \
+                     cannot also be destroyed scratch",
+                    proc.name
+                ),
+            );
+        }
+        // inout ∩ preserves: preserves promises exit == entry; inout deliberately
+        // does not (the exit value may differ — an advanced cursor).
+        if let Some(bit) = preserves_reg_bit(name) {
+            if (preserved_mask | word_mask) & (1 << bit) != 0 {
+                push(
+                    diags,
+                    Level::Error,
+                    proc.span,
+                    format!(
+                        "[proc.inout-preserves-overlap] `{}` declares `{name}` both in-out and \
+                         preserved — an in-out register's exit value need not equal its entry \
+                         value, so it cannot also be promised unchanged",
+                        proc.name
+                    ),
+                );
+            }
+        }
+        // inout ∩ out: one register, one exit disposition. `out` requires
+        // production on every path; `inout` allows pass-through — a register cannot
+        // be checked under both.
+        if out_reg_set.contains(name) {
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!(
+                    "[proc.inout-out-overlap] `{}` declares `{name}` both `inout` and `out` — an \
+                     in-out register is checked as a threaded cursor (pass-through valid), an out \
+                     as a produced result; a register takes exactly one",
+                    proc.name
+                ),
+            );
         }
     }
 

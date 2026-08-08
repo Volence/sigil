@@ -69,48 +69,45 @@ pub const Z80_OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
 /// shipped shapes. If that ever stops holding, the D1c pair above is the shape to
 /// copy; do not flatten a real per-family difference into one array.
 ///
-/// EVERY row here carries the reason "not produced on a required return path": the
-/// register has no write at all on some path, and no declaration can change that.
-/// The `DrawRings` / `InsertSpriteMasks` / `Emit_ObjectPieces` cursors thread a
-/// sprite counter (`d5`) and a SAT pointer (`a4`) that advance only when a sprite
-/// is emitted; the empty-buffer, cap-already-reached-at-entry, and
-/// every-candidate-culled paths write neither, and the no-param-seed model
-/// (`out_verify` Finding 2) does not credit a threaded entry value as production.
-/// These are production-completeness rows, not width rows.
+/// EMPTY: every declared 68k register `out` in the corpus VERIFIES — proven
+/// produced (at its declared width) on every required return path. The array is
+/// still the live gate surface: a firing that appears here is a NEW violation and
+/// fails the closure gate, and an entry added without a corresponding corpus firing
+/// is a stale pin that also fails. The emptiness is a hard-won fixpoint, reached by
+/// three distinct repairs, each of which retired its rows to the mechanism that
+/// actually closes it:
 ///
-/// The width facet is real and exercised by `out_verify`'s unit tests, but the
-/// corpus currently exhibits no sub-width production row: the three sprite-counter
-/// procs increment `d5` with `addq.w` and declare `out(d5: u16)`, so on the paths
-/// that DO produce `d5` the width matches every caller's `.w` read (and the lone
-/// `.b` cap test a `u16` also covers). `out(d5: u8)` is the barred adoption — it
-/// would publish a contract narrower than the callers consume, sound as a claim and
-/// useless as a promise. (The array is the one authority for counts; a number
-/// written down twice is the fork this module's preamble prevents.)
+/// - WIDTH rows (`Emit_ObjectPieces d5`): produced on every path but one byte wide
+///   under a word claim — closed by widening the increment to `addq.w` and typing
+///   `out(d5: u16)`.
+/// - THREADED-CURSOR rows (`DrawRings` / `InsertSpriteMasks` `a4`/`d5`): un-written
+///   on the empty / cap-reached / all-culled paths, which no width change closes —
+///   retired by adopting `inout(a4)` / `inout(d5: u16)`, where PASS-THROUGH is
+///   contract-valid. Their exit-side residue now lives in
+///   [`INOUT_UNVERIFIED_BASELINE`] (also empty), NOT here.
+/// - CROSS-PROC CREDIT rows (`Collision_Probe` `d1`/`d2`): produced only through a
+///   local `bsr` to a shared helper, which the credit model now follows.
 ///
-/// Which rows are sub-width production and which are genuinely unproduced is
-/// measured by turning the width rule off and reading the result as a SET DIFF,
-/// never by classifying rows by eye. Reproduce it that way rather than trusting any
-/// prose here; the standing write-up is the item-1 fixpoint census, a lane document
-/// that may not sit beside this file.
+/// The distinctions matter and are measured, never classified by eye — each residue
+/// (produce-on-every-path `out`, produce-at-declared-width `out(dN: T)`,
+/// thread-through `inout`, and the Z80 unit domain) is read as a SET DIFF against
+/// its own baseline. This array holding at EMPTY is the strongest form of that: any
+/// non-empty diff is a real regression.
+pub const OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[];
+
+/// `[proc.inout-unverified]` — a proc declares `inout(rN)` but the body leaves rN
+/// Broken on some exit path (a partial write under the declared width, a clobbering
+/// or conditional-out callee, or an unknown callee). Unlike `out`, PASS-THROUGH is
+/// contract-valid, so an unwritten path never fires.
 ///
-/// ROWS ARE NOT INDEPENDENT SITES, in general. Credit flows along calls, tails and
-/// `falls_into` successors, so one unproven production can hold several rows open.
-/// A burn-down that counts rows then over-counts the work and can "fix" a
-/// dependant by papering over its root — compute the census over the fixpoint, and
-/// read every measurement as a SET DIFF rather than a count.
-///
-/// Every row presently here is nonetheless self-contained: each proc writes its
-/// own register in its own body and sources none of it from a callee, tail or
-/// successor. That is a fact about today's corpus, not a property of the analysis,
-/// and it is why no row here can serve as the cross-proc credit witness — see
-/// `contract_closure_corpus.rs::corpus_out_residue_is_the_verified_complement`,
-/// whose witness moved to a synthetic for exactly this reason.
-pub const OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
-    ("DrawRings", "a4"),
-    ("DrawRings", "d5"),
-    ("InsertSpriteMasks", "a4"),
-    ("InsertSpriteMasks", "d5"),
-];
+/// EMPTY, and the emptiness is the whole point of the facet. `DrawRings` and
+/// `InsertSpriteMasks` thread `a4`/`d5` and, on their empty-buffer /
+/// cap-reached / all-culled paths, write neither — which fired FOUR `out` rows
+/// (the produce-on-every-path obligation) but is exactly what `inout` permits. The
+/// increments are word-wide (`addq.w`, parcel A) so the paths that DO write produce
+/// the declared width; nothing is left Broken. A mutant narrowing an increment back
+/// to `addq.b` re-populates this baseline (the anti-vacuity probe).
+pub const INOUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[];
 
 /// `[call.live-clobbered]` (D1c) — the SHAPE-INVARIANT rows: a caller holds a
 /// value in a register across a call whose callee destroys it.
@@ -254,6 +251,17 @@ pub fn diff_z80_out_unverified(got: &[(String, String)]) -> BaselineDiff {
         Z80_OUT_UNVERIFIED_BASELINE
             .iter()
             .map(|(p, u)| format!("{p} :: out({u})"))
+            .collect(),
+    )
+}
+
+/// Diff the corpus's `[proc.inout-unverified]` firings against the frozen baseline.
+pub fn diff_inout_unverified(got: &[(String, String)]) -> BaselineDiff {
+    diff_multiset(
+        got.iter().map(|(p, r)| format!("{p} :: inout({r})")).collect(),
+        INOUT_UNVERIFIED_BASELINE
+            .iter()
+            .map(|(p, r)| format!("{p} :: inout({r})"))
             .collect(),
     )
 }

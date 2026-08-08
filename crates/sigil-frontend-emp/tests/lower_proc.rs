@@ -3155,3 +3155,45 @@ fn word_facet_full_plus_word_is_not_an_error() {
         "full+word on the same register is redundant, not an error: {diags:?}"
     );
 }
+
+// --- The in-out facet's partition rules (Spec 2026-08-08-inout) -------------
+
+#[test]
+fn inout_register_must_be_a_param() {
+    // d5 is NOT a param → [proc.inout-not-param].
+    let (_m, diags) = lower("module m\n proc P () clobbers() inout(d5: u16) {\n rts\n }\n");
+    assert!(has_tag(&diags, "[proc.inout-not-param]"), "inout non-param must fire: {diags:?}");
+    // With d5 a param, that rule is silent.
+    let (_m, ok) = lower("module m\n proc P (d5: u16) clobbers() inout(d5: u16) {\n addq.w #1, d5\n rts\n }\n");
+    assert!(!has_tag(&ok, "[proc.inout-not-param]"), "inout param must not fire: {ok:?}");
+}
+
+#[test]
+fn inout_and_clobbers_overlap_is_an_error() {
+    let (_m, diags) = lower("module m\n proc P (d5: u16) clobbers(d5) inout(d5: u16) {\n addq.w #1, d5\n rts\n }\n");
+    assert!(has_tag(&diags, "[proc.inout-clobbers-overlap]"), "inout∩clobbers must fire: {diags:?}");
+}
+
+#[test]
+fn inout_and_preserves_overlap_is_an_error() {
+    let (_m, diags) = lower("module m\n proc P (d5: u16) clobbers() preserves(d5) inout(d5: u16) {\n addq.w #1, d5\n rts\n }\n");
+    assert!(has_tag(&diags, "[proc.inout-preserves-overlap]"), "inout∩preserves must fire: {diags:?}");
+}
+
+#[test]
+fn inout_and_out_overlap_is_an_error() {
+    let (_m, diags) = lower("module m\n proc P (d5: u16) clobbers() out(d5) inout(d5: u16) {\n addq.w #1, d5\n rts\n }\n");
+    assert!(has_tag(&diags, "[proc.inout-out-overlap]"), "inout∩out must fire: {diags:?}");
+}
+
+#[test]
+fn clean_inout_declaration_has_no_partition_error() {
+    let (_m, diags) = lower("module m\n proc P (d5: u16, a4: *u8) clobbers(d0) inout(d5: u16, a4: *u8) {\n addq.w #1, d5\n move.b d5, (a4)+\n rts\n }\n");
+    assert!(
+        !has_tag(&diags, "[proc.inout-not-param]")
+            && !has_tag(&diags, "[proc.inout-clobbers-overlap]")
+            && !has_tag(&diags, "[proc.inout-preserves-overlap]")
+            && !has_tag(&diags, "[proc.inout-out-overlap]"),
+        "a clean inout decl must raise no partition error: {diags:?}"
+    );
+}

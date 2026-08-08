@@ -1020,6 +1020,17 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
         failed = true;
     }
 
+    // The in-out exit-side residue — its OWN baseline, wired into the SAME gate as
+    // `out` so a new `inout` firing stops the build (the Z80-lane lesson: a new
+    // baseline that no gate reads is dark).
+    let inout_got: Vec<(String, String)> =
+        report.inout_firings.iter().map(|f| (f.proc.clone(), f.reg.clone())).collect();
+    let d = bl::diff_inout_unverified(&inout_got);
+    if !d.is_clean() {
+        eprintln!("error: {}", bl::adjudication_message("[proc.inout-unverified]", &d));
+        failed = true;
+    }
+
     let d1c_got: Vec<(String, String, String)> = report
         .live_clobbered_firings
         .iter()
@@ -1149,6 +1160,11 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
     println!("\n-- [proc.out-unverified] firings (§G4.5, {}): --", report.out_firings.len());
     for f in &report.out_firings {
         println!("  {:<28} out({}) — {}", f.proc, f.reg, f.reason);
+    }
+
+    println!("\n-- [proc.inout-unverified] firings ({}): --", report.inout_firings.len());
+    for f in &report.inout_firings {
+        println!("  {:<28} inout({}) — {}", f.proc, f.reg, f.reason);
     }
 
     println!(

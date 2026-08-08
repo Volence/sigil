@@ -962,6 +962,403 @@ pub fn compute_verified_outs(
 }
 
 // ===========================================================================
+// The `inout(rN)` facet — a threaded-cursor contract (Spec: 2026-08-08-inout).
+//
+// `inout` differs from `out` on exactly one axis: PASS-THROUGH is contract-valid.
+// The caller provides a meaningful value at entry and reads a meaningful value at
+// exit, and the body is NOT obligated to write the register — an unwritten path
+// hands the entry value straight back. That is why `inout(a4)`/`inout(d5)` verify
+// on `DrawRings`/`InsertSpriteMasks` where the `out` form fired: their empty /
+// cap-reached / all-culled paths write neither cursor.
+//
+// The lattice is three-valued in the spec (Entry | Produced | Broken) but COLLAPSES
+// to Broken / not-Broken, because every transfer treats Entry and Produced
+// identically: both pass at exit. So the state carries only the BREAK cause (`None`
+// = OK, covering Entry and Produced). A partial write (`addq.b #1, d5` under a `u16`
+// claim) BREAKS the register — this is the rule that kills the vacuous form the
+// campaign proved would verify the old byte increment; entry bytes must never blend
+// with a narrower write. A full-width write (or a callee's unconditional out) then
+// REPAIRS it: only the exit value matters.
+// ===========================================================================
+
+/// Why an `inout` register is Broken at a program point — carried in the lattice so
+/// the exit diagnostic can name the cause without a second String per cell.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InBroke {
+    /// A write narrower than the declared width (`addq.b` under `u16`).
+    Partial(OutWidth),
+    /// A write that does not cover its own operand size (`bset`/`tas`) or carries
+    /// no knowable size — neither produces the declared width.
+    SubSize,
+    /// A callee that destroys the register (it is in the callee's clobber set with
+    /// no unconditional out).
+    CalleeClobber,
+    /// A callee that produces the register only CONDITIONALLY — not production
+    /// (fail-safe over-fire, spec rule 4).
+    CalleeCond,
+    /// An indirect / unknown callee — nothing proves it preserves or reproduces
+    /// the register.
+    UnknownCallee,
+}
+
+impl InBroke {
+    fn describe(self, reg: Reg, need: OutWidth) -> String {
+        match self {
+            InBroke::Partial(w) => format!(
+                "`{reg}` is written only {} wide on a required exit path, and the in-out \
+                 declaration claims {} — a narrower write breaks the threaded value",
+                w.suffix(),
+                need.suffix()
+            ),
+            InBroke::SubSize => format!(
+                "`{reg}` is written by a form that does not cover its declared width on a \
+                 required exit path — the in-out value is left partial"
+            ),
+            InBroke::CalleeClobber => {
+                format!("`{reg}` is destroyed by a callee on a required exit path")
+            }
+            InBroke::CalleeCond => format!(
+                "`{reg}` is produced only conditionally by a callee on a required exit path \
+                 — a conditional result is not a threaded in-out value"
+            ),
+            InBroke::UnknownCallee => format!(
+                "`{reg}` crosses an indirect or unknown callee on a required exit path — \
+                 nothing proves it survives"
+            ),
+        }
+    }
+}
+
+/// The inout abstract state: per register, `None` = OK (Entry or Produced — both
+/// satisfy the contract), `Some(cause)` = Broken.
+type InState = [Option<InBroke>; 16];
+
+/// Join two inout states at a merge: BROKEN ABSORBS. A register broken on any
+/// incoming path is broken here (a's cause wins when both break, for determinism).
+fn inout_join(a: &InState, b: &InState) -> InState {
+    let mut out = *a;
+    for i in 0..16 {
+        out[i] = a[i].or(b[i]);
+    }
+    out
+}
+
+/// Every callee-disposition map `verify_inout` reads, bundled — mirrors
+/// [`OutWidths`]'s reason for bundling: a call site must never mix a proc's own row
+/// with the corpus rows.
+#[derive(Clone, Copy)]
+pub struct InoutCallees<'a> {
+    /// VERIFIED unconditional outs — a call to one REPRODUCES the register (spec
+    /// rule 3: Broken → OK repair).
+    pub uncond_out: &'a UncondOutMap,
+    /// VERIFIED inouts — a call to one is state-PRESERVING (spec rule 6: unchanged,
+    /// no repair, because the callee only threads the value it was handed).
+    pub inout: &'a UncondOutMap,
+    /// Conditional outs — a call produces the register only on the cc edge, which
+    /// is not production (spec rule 4: Broken).
+    pub cond_out: &'a CondOutMap,
+    /// Each proc's effective clobber set. Presence as a key marks a KNOWN callee; a
+    /// register in the set is destroyed (spec rule 5: Broken). Absent as a key ⇒
+    /// unknown callee ⇒ Broken (spec scope guard).
+    pub effective_clobbers: &'a BTreeMap<String, BTreeSet<String>>,
+}
+
+/// The disposition of one tracked register `r` at a call to `target`.
+enum InDisp {
+    /// Reproduced — repairs a prior break (rule 3).
+    Ok,
+    /// State-preserving — leave the register as it was (rules 6, 7).
+    Unchanged,
+    /// Destroyed / conditional / unknown (rules 4, 5, scope guard).
+    Broken(InBroke),
+}
+
+fn inout_call_disposition(r: Reg, target: Option<&str>, callees: InoutCallees<'_>) -> InDisp {
+    let name = r.to_string();
+    let Some(t) = target else { return InDisp::Broken(InBroke::UnknownCallee) };
+    // rule 3: an unconditional out reproduces the register.
+    if callees.uncond_out.get(t).is_some_and(|s| s.contains(&name)) {
+        return InDisp::Ok;
+    }
+    // rule 6: an inout callee threads the value through unchanged.
+    if callees.inout.get(t).is_some_and(|s| s.contains(&name)) {
+        return InDisp::Unchanged;
+    }
+    // rule 4: a conditional out is not production.
+    if callees.cond_out.get(t).is_some_and(|v| v.iter().any(|(rr, _)| *rr == name)) {
+        return InDisp::Broken(InBroke::CalleeCond);
+    }
+    // A known callee (present in the effective-clobber map) either clobbers the
+    // register (rule 5) or, absent from its clobber set, preserves it (rule 7).
+    match callees.effective_clobbers.get(t) {
+        Some(clob) if clob.contains(&name) => InDisp::Broken(InBroke::CalleeClobber),
+        Some(_) => InDisp::Unchanged, // preserved / untouched
+        None => InDisp::Broken(InBroke::UnknownCallee), // unknown callee
+    }
+}
+
+/// Apply instruction `idx` to the inout state for the TRACKED registers.
+fn inout_transfer(
+    cfg: &Cfg,
+    idx: usize,
+    st: &mut InState,
+    items: &[CodeItem],
+    tracked: &[Reg],
+    widths: OutWidths<'_>,
+    callees: InoutCallees<'_>,
+) {
+    let Some((mnem, ops)) = cfg.instr(idx) else { return };
+    if is_call(mnem) {
+        let target = direct_target(ops);
+        for &r in tracked {
+            match inout_call_disposition(r, target, callees) {
+                InDisp::Ok => st[reg_idx(r)] = None,
+                InDisp::Unchanged => {}
+                InDisp::Broken(b) => st[reg_idx(r)] = Some(b),
+            }
+        }
+        return;
+    }
+    // `ext` widens whatever value is already there without reading or breaking the
+    // low bytes — state-preserving for the OK/Broken question (an OK byte extends to
+    // an OK word; a broken byte stays broken).
+    if mnem == "ext" {
+        return;
+    }
+    let size = match items.get(idx) {
+        Some(CodeItem::Instr { size, .. }) => *size,
+        _ => None,
+    };
+    let produced = produced_regs(mnem, ops, size);
+    for r in instr_written_regs(mnem, ops) {
+        if !tracked.contains(&r) {
+            continue;
+        }
+        let need = widths.required(r);
+        match produced.iter().find(|(pr, _)| *pr == r).map(|(_, w)| *w) {
+            // A write at least as wide as the claim REPRODUCES the value (repair).
+            Some(w) if w >= need => st[reg_idx(r)] = None,
+            // A narrower write BREAKS it (the partial-write rule — the anti-vacuity
+            // core: entry bytes must not blend with a narrower write).
+            Some(w) => st[reg_idx(r)] = Some(InBroke::Partial(w)),
+            // A write not covering its operand size (bset/tas) or with no knowable
+            // width leaves the value partial.
+            None => st[reg_idx(r)] = Some(InBroke::SubSize),
+        }
+    }
+}
+
+/// Verify each declared `inout` register of a proc: at every normal exit the
+/// register must NOT be Broken (Entry and Produced both pass). Returns each tracked
+/// register's exit disposition — `None` = verified, `Some(reason)` = a firing.
+#[allow(clippy::too_many_arguments)]
+pub fn verify_inout(
+    items: &[CodeItem],
+    tracked: &[Reg],
+    widths: OutWidths<'_>,
+    callees: InoutCallees<'_>,
+    falls_into: Option<&str>,
+    noreturn: &BTreeSet<String>,
+) -> BTreeMap<Reg, Option<String>> {
+    let cfg = Cfg::build(items);
+    let Some(entry_idx) = items.iter().position(|it| matches!(it, CodeItem::Instr { .. })) else {
+        // No body → nothing can break the entry value; every inout verifies.
+        return tracked.iter().map(|r| (*r, None)).collect();
+    };
+
+    let mut in_state: BTreeMap<usize, InState> = BTreeMap::new();
+    in_state.insert(entry_idx, [None; 16]); // entry: every register OK (Entry value)
+    let mut work: VecDeque<usize> = VecDeque::from([entry_idx]);
+
+    // First break cause seen at any exit, per register (for the diagnostic).
+    let mut broken_at_exit: BTreeMap<Reg, InBroke> = BTreeMap::new();
+
+    let check_exit = |st: &InState, broken_at_exit: &mut BTreeMap<Reg, InBroke>| {
+        for &r in tracked {
+            if let Some(cause) = st[reg_idx(r)] {
+                broken_at_exit.entry(r).or_insert(cause);
+            }
+        }
+    };
+
+    while let Some(idx) = work.pop_front() {
+        let mut st = in_state[&idx];
+        inout_transfer(&cfg, idx, &mut st, items, tracked, widths, callees);
+
+        for edge in cfg.edges(idx) {
+            match edge {
+                Edge::Follow(succ) => {
+                    let changed = match in_state.get(&succ) {
+                        None => {
+                            in_state.insert(succ, st);
+                            true
+                        }
+                        Some(existing) => {
+                            let merged = inout_join(existing, &st);
+                            if merged != *existing {
+                                in_state.insert(succ, merged);
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                    };
+                    if changed {
+                        work.push_back(succ);
+                    }
+                }
+                Edge::Return => check_exit(&st, &mut broken_at_exit),
+                Edge::FallOff => {
+                    // A `falls_into` successor continues threading the cursor in the
+                    // same call: a register the successor's VERIFIED uncond out
+                    // reproduces is repaired, mirroring `out`'s fall-off credit.
+                    let mut credit = st;
+                    if let Some(succ) = falls_into {
+                        if let Some(outs) = callees.uncond_out.get(succ) {
+                            for name in outs {
+                                if let Some(r) = Reg::from_name(name) {
+                                    credit[reg_idx(r)] = None;
+                                }
+                            }
+                        }
+                    }
+                    check_exit(&credit, &mut broken_at_exit);
+                }
+                Edge::BranchOut => {}
+                Edge::TailOut => {
+                    if crate::preserves::exit_diverges(&items[idx], noreturn) {
+                        continue;
+                    }
+                    let Some((_, ops)) = cfg.instr(idx) else { continue };
+                    let mut credit = st;
+                    if let Some(target) = direct_target(ops) {
+                        if let Some(outs) = callees.uncond_out.get(target) {
+                            for name in outs {
+                                if let Some(r) = Reg::from_name(name) {
+                                    credit[reg_idx(r)] = None;
+                                }
+                            }
+                        }
+                    }
+                    check_exit(&credit, &mut broken_at_exit);
+                }
+            }
+        }
+    }
+
+    tracked
+        .iter()
+        .map(|r| {
+            let status =
+                broken_at_exit.get(r).map(|cause| cause.describe(*r, widths.required(*r)));
+            (*r, status)
+        })
+        .collect()
+}
+
+/// One `[proc.inout-unverified]` firing: `proc` declares `inout(reg)` but the body
+/// leaves it Broken on some required exit path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InoutFiring {
+    pub proc: String,
+    pub reg: String,
+    pub reason: String,
+    pub span: Span,
+}
+
+/// Run the inout check for a proc and collect its `[proc.inout-unverified]` firings.
+#[allow(clippy::too_many_arguments)]
+pub fn check_inout(
+    proc_name: &str,
+    items: &[CodeItem],
+    tracked: &[Reg],
+    widths: OutWidths<'_>,
+    callees: InoutCallees<'_>,
+    span: Span,
+    falls_into: Option<&str>,
+    noreturn: &BTreeSet<String>,
+) -> Vec<InoutFiring> {
+    verify_inout(items, tracked, widths, callees, falls_into, noreturn)
+        .into_iter()
+        .filter_map(|(r, status)| {
+            status.map(|reason| InoutFiring { proc: proc_name.to_string(), reg: r.to_string(), reason, span })
+        })
+        .collect()
+}
+
+/// The VERIFIED-inout fixpoint — the inout analogue of [`compute_verified_outs`].
+/// A proc's `inout(rN)` is VERIFIED iff [`verify_inout`] leaves rN non-Broken on
+/// every exit when callee credit is drawn ONLY from already-VERIFIED outs/inouts.
+/// Externs seed verified by §3 axiom; body procs grow from ⊥. Monotone (credit only
+/// repairs), so it terminates; a round-cap turns any regression into a panic.
+#[allow(clippy::too_many_arguments)]
+pub fn compute_verified_inouts(
+    proc_items: &BTreeMap<String, &[CodeItem]>,
+    declared_inout: &UncondOutMap,
+    verified_uncond_out: &UncondOutMap,
+    cond_out: &CondOutMap,
+    effective_clobbers: &BTreeMap<String, BTreeSet<String>>,
+    extern_names: &BTreeSet<String>,
+    falls_into: &BTreeMap<String, String>,
+    noreturn: &BTreeSet<String>,
+    inout_widths: &OutWidthMap,
+) -> UncondOutMap {
+    let mut verified: UncondOutMap = declared_inout
+        .iter()
+        .map(|(name, regs)| {
+            let seed = if extern_names.contains(name) { regs.clone() } else { BTreeSet::new() };
+            (name.clone(), seed)
+        })
+        .collect();
+
+    let total: usize = declared_inout.values().map(|s| s.len()).sum();
+    let cap = total + 2;
+    let mut round = 0usize;
+    loop {
+        let mut changed = false;
+        for (name, items) in proc_items {
+            let tracked: Vec<Reg> = declared_inout
+                .get(name)
+                .into_iter()
+                .flatten()
+                .filter_map(|r| Reg::from_name(r))
+                .collect();
+            if tracked.is_empty() {
+                continue;
+            }
+            let statuses = verify_inout(
+                items,
+                &tracked,
+                OutWidths { own: inout_widths.get(name).unwrap_or(&NO_OWN_WIDTHS), callees: inout_widths },
+                InoutCallees {
+                    uncond_out: verified_uncond_out,
+                    inout: &verified,
+                    cond_out,
+                    effective_clobbers,
+                },
+                falls_into.get(name).map(String::as_str),
+                noreturn,
+            );
+            let new_set: BTreeSet<String> = tracked
+                .iter()
+                .filter(|r| statuses.get(r).map(Option::is_none).unwrap_or(false))
+                .map(|r| r.to_string())
+                .collect();
+            if verified.get(name) != Some(&new_set) {
+                verified.insert(name.clone(), new_set);
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+        round += 1;
+        assert!(round <= cap, "verified-inout fixpoint did not stabilize in {cap} rounds");
+    }
+    verified
+}
+
+// ===========================================================================
 // The ¬cc half of `out(rN if cc)` — the SURVIVES claim (delta spec §7.1/§7.2).
 // ===========================================================================
 
