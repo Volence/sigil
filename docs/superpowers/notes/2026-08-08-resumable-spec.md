@@ -22,8 +22,9 @@ a faithful port cannot opt out of it):
 - a CALL — `bsr` / `jsr` / `jbsr` — pushes a return address;
 - `pea` pushes an address; `link` / `unlk` build / tear a frame;
 - a RETURN — `rts` / `rte` / `rtr` / `rtd` — pops the return address off the stack;
-- any operand naming sp/a7 — `-(sp)` push, `(sp)+` pop, `(sp)` / `d(sp)` / `(sp,Xn)`
-  alias forms, a bare `sp` operand, or a `movem` register list containing a7.
+- any operand naming sp/a7 — `-(sp)` push, `(sp)+` pop, `(sp)` / `d(sp)` / `Sym(sp)`
+  (symbolic-displacement) / `(sp,Xn)` alias forms, sp as a PC-relative index
+  (`Sym(pc,sp.size)`), a bare `sp` operand, or a `movem` register list containing a7.
 
 PERMITTED (and must stay permitted): the terminal `jmp (aN)` (aN ≠ a7) continuation
 exit — a computed transfer through an address register, no stack touch. The typed
@@ -63,12 +64,14 @@ through `check_clobbers` rather than a new reglist checker. So `@resumable(d0)` 
 parse error (`[attr.form]`). This is the `inout` A2 move: discharge an obligation
 through existing machinery rather than a new dataflow.
 
-**D2 — the scan reads the LOWERED stream, so stack ops via lowering are caught.**
-`scan_stack_ops` walks `buf.items` (the evaluated `CodeItem` stream), not AST source
-tokens. A `with <ctx> { }` bracket that splices an acquire `move.l d7,-(sp)` is
-caught exactly like a literal push — pinned by
-`tests/resumable.rs::a_with_bracket_that_emits_a_push_is_caught`. This is why the
-check lives at lowering (post-eval) and not at parse.
+**D2 — the scan reads the evaluated/spliced `CodeBuf`, so stack ops that only
+appear after evaluation are caught.** `scan_stack_ops` walks `buf.items` — the
+`eval_proc_body` output, post-`with`-splice and post-comptime-template but
+pre-backend-encoding — not AST source tokens. A `with <ctx> { }` bracket that
+splices an acquire `move.l d7,-(sp)` is caught exactly like a literal push —
+pinned by `tests/resumable.rs::a_with_bracket_that_emits_a_push_is_caught`. This
+is why the check lives after eval and not at parse. (Wording precise: it is the
+evaluated CodeBuf, not the backend-encoded byte stream.)
 
 **D3 — `rts`-family is forbidden, beyond the sketch's enumerated list.** The sketch
 enumerates `bsr/jsr/jbsr/pea/link/movem`; the implementation ALSO forbids the return
@@ -88,7 +91,11 @@ second `use` and no addition to the export index / rename map. The dot spelling
 top-level symbol ABSENT from the rename map and thus not cross-module-resolvable
 without touching `resolve/imports.rs`; the dotted owner-local form resolves for free.
 Pinned by `extent_symbol_resolves_from_another_module` (both the reference side and
-the definition side canonicalize to the same string).
+the definition side canonicalize to the same string). The `.__end` owner-local name
+is RESERVED: a body-defined `export .__end:` hygiene-resolves to the same
+`Proc.__end` symbol and would silently mint a duplicate at a different offset, so it
+is rejected (`[resumable.extent-reserved]`); a non-export `.__end:` mangles to
+`$mod$Proc$__end` and does not collide (pinned both ways).
 
 **D5 — byte- and symbol-neutral over the whole existing corpus.** No corpus proc is
 `@resumable`, so neither feature emits anything anywhere but a resumable proc's own

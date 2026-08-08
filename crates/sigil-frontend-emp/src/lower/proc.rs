@@ -151,7 +151,32 @@ pub(super) fn lower_proc(
     // label emits no bytes, and no existing corpus proc is `@resumable`, so this is
     // byte- and symbol-neutral everywhere but a resumable proc's own module.
     if proc.is_resumable() {
-        builder.define_label(&format!("{}.__end", proc.name));
+        let end_sym = format!("{}.__end", proc.name);
+        // `.__end` is RESERVED for the generated extent label. A body-defined
+        // `export .__end:` hygiene-resolves to the SAME `Proc.__end` symbol
+        // (`Owner.name`) and would silently collide with a second definition at a
+        // different offset. (A non-export `.__end:` mangles to `$mod$Proc$__end`
+        // and does not collide, so the name compare below is exactly the collision
+        // set.) Reject the source label rather than mint a duplicate symbol.
+        let collides = buf
+            .items
+            .iter()
+            .any(|it| matches!(it, CodeItem::Label { name, .. } if *name == end_sym));
+        if collides {
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!(
+                    "[resumable.extent-reserved] `@resumable` proc `{}` defines an exported \
+                     `.__end` label, but that name is reserved for the generated extent symbol \
+                     `{end_sym}` (the `[Proc, Proc.__end)` range bound) — rename the label",
+                    proc.name
+                ),
+            );
+        } else {
+            builder.define_label(&end_sym);
+        }
     }
 
     // 2/3. Fallthrough contract. A declared `falls_into` demands adjacency (a
@@ -357,8 +382,9 @@ fn check_stack_balance(
 ///   the body's liveness against, so the "anything outside the set is an error"
 ///   half (the mandatory `check_clobbers`) has no set and is vacuous.
 /// - `[resumable.stack-op]` — one per sp-touching instruction the body contains
-///   ([`crate::resumable::scan_stack_ops`], which reads the LOWERED stream so a
-///   stack op arriving via a `with` bracket or a template splice is caught too).
+///   ([`crate::resumable::scan_stack_ops`], which scans the evaluated/spliced
+///   `CodeBuf` — post-`with`-splice, pre-backend-encoding — so a stack op
+///   arriving via a `with` bracket or a template splice is caught too).
 fn check_resumable(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,

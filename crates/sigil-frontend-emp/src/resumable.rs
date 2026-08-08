@@ -9,11 +9,12 @@
 //! in registers. This module is the checked form of that "NO stack access"
 //! contract clause.
 //!
-//! **It reads the LOWERED instruction stream** ([`CodeItem`]s, post-eval), not
-//! source tokens — so a stack op that arrives by lowering (a `with <ctx> { }`
-//! bracket splicing an acquire push, a comptime template emitting a `movem`) is
-//! caught exactly like a literal one. That is the whole point of scanning `buf`
-//! rather than the AST.
+//! **It scans the evaluated/spliced `CodeBuf`** ([`CodeItem`]s as produced by
+//! `eval_proc_body` — post-`with`-splice and post-comptime-template, but
+//! pre-backend-encoding), not source tokens. So a stack op that only APPEARS
+//! after evaluation (a `with <ctx> { }` bracket splicing an acquire push, a
+//! comptime template emitting a `movem`) is caught exactly like a literal one.
+//! That is the whole point of scanning `buf.items` rather than the AST.
 //!
 //! What is forbidden (each is build-fatal — the safety argument of §1 rests on
 //! it, so it never softens under `@as_compat`):
@@ -53,10 +54,10 @@ pub struct StackOpFinding {
 /// canonical [`CodeOperand::RegList`] convention).
 const A7_MASK_BIT: u16 = 0x8000;
 
-/// Scan a lowered proc body for every instruction that touches the stack pointer.
-/// Returns a finding per offending instruction (at most one per instruction — the
-/// FIRST reason found), in body order. An empty result means the body is provably
-/// stackless.
+/// Scan an evaluated/spliced proc body (the post-`with`-splice `CodeBuf.items`)
+/// for every instruction that touches the stack pointer. Returns a finding per
+/// offending instruction (at most one per instruction — the FIRST reason found),
+/// in body order. An empty result means the body is provably stackless.
 pub fn scan_stack_ops(items: &[CodeItem]) -> Vec<StackOpFinding> {
     let mut out = Vec::new();
     for item in items {
@@ -103,9 +104,14 @@ fn operand_sp_touch(op: &CodeOperand) -> Option<String> {
         CodeOperand::PostInc(Reg::A7) => "an `(sp)+` pop",
         CodeOperand::Ind(Reg::A7) => "an `(sp)` stack access",
         CodeOperand::DispInd { reg: Reg::A7, .. } => "a `d(sp)` displaced stack access",
+        CodeOperand::DispSymInd { reg: Reg::A7, .. } => {
+            "a `Sym(sp)` symbolic-displacement stack access"
+        }
         CodeOperand::IndIdx { reg: Reg::A7, .. } | CodeOperand::IndIdx { xn: Reg::A7, .. } => {
             "an `(sp,Xn)` indexed stack access"
         }
+        // sp as the index register of a PC-relative access (`Sym(pc,sp.size)`).
+        CodeOperand::PcRelIdx { xn: Reg::A7, .. } => "sp used as a PC-relative index register",
         CodeOperand::Reg(Reg::A7) => "a bare `sp`/`a7` operand (stack-pointer arithmetic)",
         CodeOperand::RegList(mask) if mask & A7_MASK_BIT != 0 => {
             "a `movem` register list containing sp/a7"
@@ -172,8 +178,10 @@ mod tests {
             CodeOperand::PostInc(Reg::A7),
             CodeOperand::Ind(Reg::A7),
             CodeOperand::DispInd { disp: 4, reg: Reg::A7 },
+            CodeOperand::DispSymInd { target: "T".to_string(), reg: Reg::A7 },
             CodeOperand::IndIdx { reg: Reg::A7, disp: 0, xn: Reg::D0, xlong: false },
             CodeOperand::IndIdx { reg: Reg::A0, disp: 0, xn: Reg::A7, xlong: false },
+            CodeOperand::PcRelIdx { target: "T".to_string(), addend: 0, xn: Reg::A7, xlong: false },
             CodeOperand::Reg(Reg::A7),
             CodeOperand::RegList(A7_MASK_BIT | 0x0001),
         ];
@@ -181,6 +189,36 @@ mod tests {
             let f = scan_stack_ops(&[instr("move", vec![op.clone(), CodeOperand::Reg(Reg::D0)])]);
             assert_eq!(f.len(), 1, "{op:?} should fire");
         }
+    }
+
+    #[test]
+    fn a_symbolic_displacement_over_sp_fires() {
+        // `Sym(sp)` — the symbolic-d16 dispatch idiom pointed at the stack pointer.
+        let f = scan_stack_ops(&[instr(
+            "jmp",
+            vec![CodeOperand::DispSymInd { target: "Tbl".to_string(), reg: Reg::A7 }],
+        )]);
+        assert_eq!(f.len(), 1, "Sym(sp) is a forbidden stack access");
+        assert!(f[0].what.contains("sp"), "{}", f[0].what);
+    }
+
+    #[test]
+    fn sp_as_a_pc_relative_index_fires() {
+        // `Sym(pc,sp.w)` — sp used as the index register of a PC-relative access.
+        let f = scan_stack_ops(&[instr(
+            "lea",
+            vec![
+                CodeOperand::PcRelIdx {
+                    target: "Tbl".to_string(),
+                    addend: 0,
+                    xn: Reg::A7,
+                    xlong: false,
+                },
+                CodeOperand::Reg(Reg::A0),
+            ],
+        )]);
+        assert_eq!(f.len(), 1, "sp as a PC-rel index is a forbidden stack access");
+        assert!(f[0].what.contains("sp"), "{}", f[0].what);
     }
 
     #[test]

@@ -332,6 +332,50 @@ fn extent_symbol_is_emitted_at_end_of_body() {
 }
 
 #[test]
+fn a_body_exporting_dunder_end_collides_and_errors() {
+    // An exported `.__end:` label hygiene-resolves to the SAME `ZX0R.__end`
+    // symbol the extent generator mints — a silent duplicate. It is reserved.
+    let src = "module m\n\
+@resumable\n\
+pub proc ZX0R (a0: *u8) clobbers(d0) {\n\
+    moveq #0, d0\n\
+    export .__end:\n\
+    jmp (a0)\n\
+}\n";
+    let (module, diags) = lower(src);
+    let d = find(&diags, "[resumable.extent-reserved]");
+    assert_eq!(d.level, Level::Error);
+    // And no duplicate `ZX0R.__end` label was minted (the source label is the
+    // only definition; the generator stood down).
+    let sec = module.sections.first().unwrap();
+    assert_eq!(
+        sec.labels.iter().filter(|l| l.name == "ZX0R.__end").count(),
+        1,
+        "exactly one `ZX0R.__end` (the source label), not a colliding pair"
+    );
+}
+
+#[test]
+fn a_body_with_a_nonexport_dunder_end_does_not_collide() {
+    // A NON-export `.__end:` mangles to `$m$ZX0R$__end` — a different symbol — so
+    // it does NOT collide, and the generated extent label is still emitted.
+    let src = "module m\n\
+@resumable\n\
+pub proc ZX0R (a0: *u8) clobbers(d0) {\n\
+    moveq #0, d0\n\
+    .__end:\n\
+    jmp (a0)\n\
+}\n";
+    let (module, diags) = lower(src);
+    assert!(!has_tag(&diags, "[resumable.extent-reserved]"), "no collision: {diags:?}");
+    let sec = module.sections.first().unwrap();
+    assert!(
+        sec.labels.iter().any(|l| l.name == "ZX0R.__end"),
+        "the generated extent label is present"
+    );
+}
+
+#[test]
 fn no_extent_symbol_for_a_plain_proc() {
     // A non-`@resumable` proc gets no `.__end` label — the feature is inert over
     // the existing corpus.
