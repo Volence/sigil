@@ -29,20 +29,26 @@ use std::collections::BTreeMap;
 /// shipped shapes. If that ever stops holding, the D1c pair above is the shape to
 /// copy; do not flatten a real per-family difference into one array.
 ///
-/// Every row here carries the same reason — "not produced on a required return
-/// path" — and the set clusters into a small number of causes rather than
-/// independent loose contracts. Measured over the fixpoint, the residue splits
-/// evenly: a SUB-WIDTH production the declaration could not state, and a
-/// genuinely unproduced path. The first half is now sayable — `out(dN: T)`
-/// claims `sizeof(T)` bytes and a write that wide or wider produces it.
+/// FIFTEEN of these rows carry the reason "not produced on a required return
+/// path": the register has no write at all on some path, and no declaration can
+/// change that. The SIXTEENTH, `Emit_ObjectPieces :: d5`, carries the WIDTH
+/// reason instead — it is produced, one byte wide, under a claim of four.
 ///
-/// `Emit_ObjectPieces :: d5` is the one row here that a type WOULD close and
-/// that is deliberately left open: the body writes d5 with `addq.b`, and all
-/// three call sites read the running sprite total at `.w`. Declaring `out(d5:
-/// u8)` would close the row by publishing a contract narrower than the callers
-/// consume — sound as a claim, useless as a promise. The two sides are reconciled
-/// by widening the increment, not by narrowing the declaration; the gap ledger
-/// carries it. Every other row here is out of a type's reach entirely.
+/// It is the one row here a type would close, and it is left open deliberately.
+/// The body advances the sprite total with `addq.b`; its call sites read that
+/// counter at `.w` (and at `.b` in the loop's own cap test). Declaring
+/// `out(d5: u8)` would close the row by publishing a contract narrower than the
+/// callers consume — sound as a claim, useless as a promise. The two sides are
+/// reconciled by widening the increment, not by narrowing the declaration; the
+/// gap ledger carries it with that kill condition.
+///
+/// The sub-width half is now sayable: `out(dN: T)` claims `sizeof(T)` bytes and a
+/// write that wide or wider produces it. The split that motivated it — of a
+/// 30-row residue, exactly half sub-width production and half genuinely
+/// unproduced — is measured by turning the width rule off and reading the result
+/// as a SET DIFF, not by classifying rows by eye. Reproduce it that way rather
+/// than trusting this sentence; the standing write-up is the item-1 fixpoint
+/// census, which is a lane document and may not sit beside this file.
 ///
 /// ROWS ARE NOT INDEPENDENT SITES. Credit flows along calls, tails and
 /// `falls_into` successors, so one unproven production can hold several rows

@@ -622,8 +622,9 @@ pub(crate) fn conditional_out_edge_credits(
             let name = reg.to_string();
             // The credited WIDTH is the callee's own declared one — a callee
             // promising `out(d0: u8 if eq)` credits its caller a byte on the
-            // success edge, not a long. Two callees crediting the same register on
-            // one edge keep the WIDER promise (each is independently true there).
+            // success edge, not a long. The max-merge below is defensive only: the
+            // key is `(call index, successor)`, so one edge has exactly one callee
+            // and the entry cannot already hold a different width for `name`.
             let w =
                 out_widths.get(callee).and_then(|m| m.get(&name)).copied().unwrap_or(OutWidth::L);
             if let Some(edge) = cfg.valid_edge(idx, cc) {

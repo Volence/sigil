@@ -1,8 +1,9 @@
 //! Contract-grammar v2 §G4.5 — verified `out()` by symbolic production tracking.
 //!
 //! The callee-side dual of `preserves` (§5): a proc declaring `out(rN)` must
-//! PRODUCE rN on every required return path, where "produce" means rN holds a
-//! full-width value written on THIS pass. This is a forward MUST-produce dataflow
+//! PRODUCE rN on every required return path, where "produce" means the width the
+//! declaration claims — all 32 bits for a bare `out(rN)`, `sizeof(T)` for an
+//! `out(dN: T)` — is written on THIS pass. This is a forward MUST-produce dataflow
 //! over the SAME lightweight CFG G2 ([`crate::flag_check::Cfg`]) `preserves` and
 //! `calls` already share — modeled on `preserves::verify_preserved` (the true
 //! structural dual), NOT on `must_defined_in` (which is width-blind and
@@ -244,8 +245,14 @@ fn is_call(mnem: &str) -> bool {
 /// of scope. Splitting them at sub-`.l` widths only would also make "produce" mean
 /// two different things depending on the declared type — the strict form applying
 /// precisely where the claim is WEAKER — and the corpus's `.l` credit has never
-/// drawn that line. Measured on the corpus: five of the fifteen width-gap rows
-/// close only through an RMW write.
+/// drawn that line.
+///
+/// **What IS distinguished is a write that does not cover its own operand size.**
+/// [`writes_partial_bits`] forms touch one bit; `ext` writes only the half ABOVE
+/// the bits it reads. Both are genuine register writes and the clobber lint counts
+/// them, but neither discharges a claim over bytes it never wrote — so the
+/// operand size alone is not the produced width, and this is where the "no
+/// production from nothing" guard lives.
 ///
 /// **movem LOAD (item #2 cascade growth).** A `movem` whose register list is the
 /// DESTINATION — the LAST operand, e.g. `movem.l (sp)+, d0-d2/a1` — writes every
@@ -286,16 +293,70 @@ fn produced_regs(mnem: &str, ops: &[CodeOperand], size: Option<Width>) -> Vec<(R
             Some(Width::S) | None => None,
         }
     };
+    // A form that does not cover its own operand size contributes no DATA-register
+    // production here. Its address-register side effects (an auto-inc base) still
+    // count — those are full-width by the 68k rule regardless of the mnemonic.
+    let covers_its_size = !writes_partial_bits(mnem) && mnem != "ext";
     instr_written_regs(mnem, ops)
         .into_iter()
         .filter_map(|r| {
             if is_addr_reg(r) {
                 Some((r, OutWidth::L))
-            } else {
+            } else if covers_its_size {
                 data_width.map(|w| (r, w))
+            } else {
+                None
             }
         })
         .collect()
+}
+
+/// The 68k forms whose write touches only PART of the operand size, so they
+/// cannot produce a value of that size on their own.
+///
+/// `tas.b` tests a byte and sets its bit 7; `bset`/`bclr`/`bchg` set, clear or
+/// invert the ONE bit their first operand selects. Each is a real register write
+/// and `[proc.clobber-undeclared]` must keep counting it — but a claim that `d0`
+/// holds a byte-wide result is not discharged by writing one of its bits.
+///
+/// `Scc` is deliberately absent: `seq.b d0` writes all eight bits of the byte
+/// ($00 or $FF), so it produces a byte exactly as `move.b` does. Verified against
+/// the ISA classifier rather than assumed from the family's shape.
+fn writes_partial_bits(mnem: &str) -> bool {
+    matches!(mnem, "tas" | "bset" | "bclr" | "bchg")
+}
+
+/// An `ext` PROMOTION as `(reg, result, required)`: `ext` raises `reg` to
+/// `result` where a production of at least `required` already stands, and
+/// produces nothing whatsoever on its own.
+///
+/// `ext.w d0` sign-extends d0's low BYTE across its high byte — it writes bits
+/// 8-15 and never touches bits 0-7. So it cannot discharge a `u8` claim, whose
+/// entire content is the bits it does not write, and it discharges a `u16` claim
+/// only where the byte beneath was already produced. `ext.l` is the same shape one
+/// step up (bits 16-31 from bits 0-15).
+///
+/// This is the ONE place the module separates a write that carries a value from a
+/// write that merely widens one, and it is what stops `ext` from laundering a
+/// narrow production — including a correctly-capped byte of callee credit — into
+/// a wide claim.
+fn ext_promotion(
+    mnem: &str,
+    ops: &[CodeOperand],
+    size: Option<Width>,
+) -> Option<(Reg, OutWidth, OutWidth)> {
+    if mnem != "ext" {
+        return None;
+    }
+    let Some(CodeOperand::Reg(r)) = ops.last() else { return None };
+    if is_addr_reg(*r) {
+        return None; // `ext` has no address-register form
+    }
+    match size {
+        Some(Width::W) => Some((*r, OutWidth::W, OutWidth::B)),
+        Some(Width::L) => Some((*r, OutWidth::L, OutWidth::W)),
+        _ => None,
+    }
 }
 
 /// The abstract state at a program point: the WIDTH each register is MUST-produced
@@ -323,8 +384,9 @@ fn direct_target(ops: &[CodeOperand]) -> Option<&str> {
     }
 }
 
-/// Apply instruction `idx`'s effect to `st`: gen full-width productions and
-/// credit a call's callee unconditional outs.
+/// Apply instruction `idx`'s effect to `st`: gen each production at the width it
+/// covers, widen an existing one through `ext`, and credit a call's callee
+/// unconditional outs at the width that callee declared.
 fn transfer(
     cfg: &Cfg,
     idx: usize,
@@ -352,6 +414,13 @@ fn transfer(
     // Finding 5; a later partial write does not un-produce).
     for (r, w) in produced_regs(mnem, ops, size) {
         produce(st, r, w);
+    }
+    // An `ext` widens an existing production rather than making one, so it is
+    // applied against the state instead of being read off the operand size.
+    if let Some((r, result, required)) = ext_promotion(mnem, ops, size) {
+        if st[reg_idx(r)].is_some_and(|have| have >= required) {
+            produce(st, r, result);
+        }
     }
 }
 

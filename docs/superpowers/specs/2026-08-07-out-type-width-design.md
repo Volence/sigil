@@ -30,6 +30,13 @@ type, which means two authorities for how wide an `EntryRef` is, free to disagre
 Making the type carry its own width gives one authority and no second thing to
 keep in sync.
 
+One authority for a NAME, and the name is resolved unscoped: the type table is
+keyed by bare leaf, matching every other G5 consumer. Two modules declaring the
+same newtype name share a row, and a collision answers the WIDEST reading — the
+only direction that cannot relax a claim. Module-scoping is ledgered; doing it
+for widths alone would produce the second authority this paragraph exists to
+avoid.
+
 ### The spelling asymmetry against `preserves` is deliberate
 
 `preserves` takes a FACET (`preserves(d3.w)`, `preserves(sr.mask)`); `out` takes a
@@ -98,14 +105,19 @@ The brief said to start from "defining writes produce, RMW does not" and extend
 only on evidence. Both rules were implemented and the corpus measured under each,
 with the adoption in place:
 
-| production rule | residue | rows that close |
+| production rule | residue | |
 |---|---|---|
-| pure width (a write of the declared width or wider) | **16** | all the width-gap rows an adoption reaches |
-| defining writes only below `.l` | **20** | 5 fewer |
+| pure width (a write of the declared width or wider) | **16** | — |
+| defining writes only below `.l` | **20** | 4 rows re-open |
 
-The five rows that close ONLY through an RMW write, by set diff:
-`Collision_Probe{Down,Left,Right,Up} :: d0` (`add.w d3, d0` / `neg.w d0` on the
-`.full_back` path) and `Emit_ObjectPieces :: d5` (`addq.b #1, d5`).
+The set diff is exactly four rows: `Collision_Probe{Down,Left,Right,Up} :: d0`,
+which reach their `.full_back` return through `add.w d3, d0` / `neg.w d0`.
+
+A fifth corpus production is RMW-only — `Emit_ObjectPieces :: d5`'s `addq.b #1,
+d5` — but it is NOT in the diff, because its type was refused on the two-sided
+test and the row is open under both rules. Stated separately rather than folded
+into the four: a set diff reports what MOVED, and a row that never closes cannot
+move.
 
 **Ruled: pure width.** The evidence is one third of the target set, but the
 argument is what settles it. The module's `.l` rule has ALWAYS credited RMW —
@@ -117,11 +129,30 @@ and it is the kind of incoherence a later reader resolves in whichever direction
 is convenient.
 
 The brief's guard — "never let RMW alone count as production from nothing" — is
-honoured, but by the transfer function rather than by a mnemonic list. Width is
-tracked per register as a lattice and production is **gen-only across widths**: a
-write at width `w` raises the recorded width to `max(recorded, w)` and a later
-narrower write retracts nothing. So `addq.b #1, d5` credits one byte and one byte
-only; it can never manufacture the claim above it. What it does credit is
+honoured for the RMW case by the transfer function rather than by a mnemonic
+list. Width is tracked per register as a lattice and production is **gen-only
+across widths**: a write at width `w` raises the recorded width to
+`max(recorded, w)` and a later narrower write retracts nothing. So `addq.b #1,
+d5` credits one byte and one byte only; it can never manufacture the claim above
+it.
+
+**The lattice is not the whole guard, and an earlier draft of this note was wrong
+to say it was.** A write also has to COVER the size it is written at, which the
+operand size alone does not establish. `ext.w d0` writes bits 8-15 from bits 0-7
+and never touches bits 0-7; `tas.b` sets one bit; `bset`/`bclr`/`bchg` set or
+clear one. All are `writes_last_operand` forms, so crediting them at operand size
+produced a false verification at every width — measured as `out(d0: u8) { ext.w
+d0 }` and `out(d0: u8) { tas.b d0 }` both VERIFYING. Worse, one `ext.l` after a
+correctly-capped byte of callee credit laundered it back into a long, defeating
+the cap this note advertises below as its soundness argument.
+
+So `ext` is modelled as a PROMOTION — it raises an existing production one step
+and makes none — and the single-bit forms produce nothing. `Scc` is deliberately
+NOT swept in with them: `seq.b d0` writes all eight bits ($00 or $FF) and
+produces a byte exactly as `move.b` does. The `.l` forms of this family were
+mis-credited on master too (`out(d0) { ext.l d0 }` verified there), so the fix
+closes a pre-existing hole as well as the one narrowing widened; it moves no
+corpus row in either direction. What it does credit is
 d5's low byte holding a value written on this pass, which is exactly the property
 `out` states and exactly what an inline `move.b` beside it would credit.
 
@@ -154,6 +185,22 @@ whose bare claim already verifies.** `d5` is produced by `move.l Camera_X, d5`, 
 `out(d5)` is proven at 32 bits today; adding `: u16` would trade a machine-checked
 claim for a weaker one and buy nothing. Its sibling `d7` is typed because `d7` is
 in the residue and `move.w Cache_Head_Col, d7` is all the body delivers.
+
+## A type on an ADDRESS-register result is refused
+
+`out(aN: T)` parses and is rejected at lowering with `[proc.out-invalid]`.
+
+Every 68k write to an address register covers all 32 bits — `movea.w`
+sign-extends, `(aN)+` advances the whole pointer — so a narrower claim on an
+address result can never be violated. A declaration that cannot be wrong states
+nothing. What it does do is real and unwanted: it caps every caller's credit at a
+width the hardware will not produce, so a caller claiming a bare `out(aN)` sourced
+from it fires with no honest remedy. Measured before the refusal landed:
+`out(a0: u8)` verified vacuously and its bare-claiming caller fired.
+
+Refusing beats ignoring, because ignoring leaves the author's stated intent
+unanswered — and a domain type on an address result has a correct home already,
+on the pointee (`a1: *Sst` as a param).
 
 ## Where the width is charged
 

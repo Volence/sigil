@@ -13,7 +13,9 @@
 //! true under a checker that stopped charging widths at all.
 
 use sigil_frontend_emp::corpus_contracts::{analyze_corpus, ContractReport};
+use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
+use sigil_ir::backend::Cpu;
 
 /// Parse each source (demanding a clean parse) and run the corpus contract walk.
 fn analyze(srcs: &[&str]) -> ContractReport {
@@ -28,9 +30,37 @@ fn analyze(srcs: &[&str]) -> ContractReport {
     analyze_corpus(&files)
 }
 
+/// The lowering diagnostics for one source — the per-file contract gate, which is
+/// where an author meets a refused declaration. The corpus walk above never sees
+/// them, so a refusal needs its own path.
+fn lower_diag_messages(src: &str) -> Vec<String> {
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "the source must PARSE; a refusal is a lowering check: {perrs:?}");
+    let (_, diags) = lower_module(
+        &file,
+        &LowerOptions {
+            initial_cpu: Cpu::M68000,
+            include_root: None,
+            embed_base: None,
+            defines: vec![],
+        },
+    );
+    diags.into_iter().map(|d| d.message).collect()
+}
+
 /// Does `[proc.out-unverified]` fire on `(proc, reg)`?
 fn out_fires(r: &ContractReport, proc: &str, reg: &str) -> bool {
     r.out_firings.iter().any(|f| f.proc == proc && f.reg == reg)
+}
+
+/// The `reason` text of the firing on `(proc, reg)`.
+fn out_reason(r: &ContractReport, proc: &str, reg: &str) -> String {
+    r.out_firings
+        .iter()
+        .find(|f| f.proc == proc && f.reg == reg)
+        .unwrap_or_else(|| panic!("no firing on {proc}::{reg}; firings: {:?}", r.out_firings))
+        .reason
+        .clone()
 }
 
 /// Is `(proc, reg)` in the VERIFIED-out map — the fixpoint's positive answer?
@@ -382,4 +412,252 @@ fn an_inline_where_refinement_narrows_to_its_inner_type() {
     assert_subjects(&r, &["Refined", "RefinedTooNarrow"]);
     assert!(verified(&r, "Refined", "d0"), "firings: {:?}", r.out_firings);
     assert!(out_fires(&r, "RefinedTooNarrow", "d0"), "the refinement must not widen to `.b`");
+}
+
+// === forms that do not cover their own operand size =========================
+
+/// `ext` WIDENS a production; it does not make one. `ext.w d0` writes bits 8-15
+/// from bits 0-7 and never touches bits 0-7, so it cannot discharge a `u8` claim
+/// — the bits it does not write ARE the claim — and it discharges a `u16` one only
+/// where the byte beneath was already produced. `ExtChain` is the legitimate
+/// promotion the rule must keep: a real byte, widened twice, is a long.
+///
+/// MUTANT: credit `ext` at its operand size like any other write (drop the
+/// `covers_its_size` guard and `ext_promotion`). `ExtByte`, `ExtWord` and
+/// `ExtLongBare` all stop firing and this test goes RED. Run: confirmed RED.
+#[test]
+fn ext_promotes_an_existing_production_and_makes_none() {
+    let r = analyze(&[
+        "module m\n\
+         proc ExtByte () out(d0: u8) {\n ext.w d0\n rts\n}\n\
+         proc ExtWord () out(d0: u16) {\n ext.w d0\n rts\n}\n\
+         proc ExtLongBare () out(d0) {\n ext.l d0\n rts\n}\n\
+         proc ExtChain () out(d0) {\n move.b #1, d0\n ext.w d0\n ext.l d0\n rts\n}\n",
+    ]);
+    assert_subjects(&r, &["ExtByte", "ExtWord", "ExtLongBare", "ExtChain"]);
+    assert!(out_fires(&r, "ExtByte", "d0"), "`ext.w` never writes the byte a u8 claim covers");
+    assert!(out_fires(&r, "ExtWord", "d0"), "`ext.w` over an unproduced byte widens nothing");
+    assert!(out_fires(&r, "ExtLongBare", "d0"), "`ext.l` over an unproduced word widens nothing");
+    assert!(verified(&r, "ExtChain", "d0"), "firings: {:?}", r.out_firings);
+}
+
+/// The callee-credit cap is only worth having if it cannot be laundered. A
+/// correctly-capped BYTE of credit followed by `ext.l` must not become a long.
+///
+/// MUTANT: credit `ext` at its operand size. `Launder` stops firing and this test
+/// goes RED. Run: confirmed RED.
+#[test]
+fn an_ext_after_a_call_cannot_launder_a_capped_credit() {
+    let r = analyze(&[
+        "module m\n\
+         proc Byte () out(d0: u8) {\n move.b #1, d0\n rts\n}\n\
+         proc Launder () out(d0) {\n jbsr Byte\n ext.l d0\n rts\n}\n\
+         proc Honest () out(d0) {\n jbsr Byte\n ext.w d0\n ext.l d0\n rts\n}\n",
+    ]);
+    assert_subjects(&r, &["Byte", "Launder", "Honest"]);
+    assert!(out_fires(&r, "Launder", "d0"), "a byte of credit and one `ext.l` is not a long");
+    assert!(verified(&r, "Honest", "d0"), "firings: {:?}", r.out_firings);
+}
+
+/// A single-bit write is a real register write and a real clobber, but it
+/// discharges no width claim. `Scc` is the deliberate exclusion: `seq.b` writes
+/// all eight bits of its byte ($00 or $FF), so it produces a byte exactly as
+/// `move.b` does, and a rule that swept the whole "sets bits" family would be
+/// wrong about it.
+///
+/// MUTANT: add `"scc"`-family mnemonics to `writes_partial_bits` (or drop the
+/// function and credit every form at its size). Either direction breaks a half of
+/// this test and it goes RED. Run: confirmed RED in both directions.
+#[test]
+fn single_bit_writers_produce_nothing_but_scc_produces_its_byte() {
+    let r = analyze(&[
+        "module m\n\
+         proc Tas () out(d0: u8) {\n tas.b d0\n rts\n}\n\
+         proc Bset () out(d0: u8) {\n bset.b #1, d0\n rts\n}\n\
+         proc Bclr () out(d0) {\n bclr.l #1, d0\n rts\n}\n\
+         proc Scc () out(d0: u8) {\n seq.b d0\n rts\n}\n",
+    ]);
+    assert_subjects(&r, &["Tas", "Bset", "Bclr", "Scc"]);
+    assert!(out_fires(&r, "Tas", "d0"), "`tas.b` sets one bit");
+    assert!(out_fires(&r, "Bset", "d0"), "`bset` sets one bit");
+    assert!(out_fires(&r, "Bclr", "d0"), "`bclr` clears one bit");
+    assert!(verified(&r, "Scc", "d0"), "firings: {:?}", r.out_firings);
+}
+
+// === the diagnostic, which the adoption evidence is read off =================
+
+/// The width diagnostic names the produced width and the claimed width, IN THAT
+/// ORDER. This is not a cosmetic gate: the per-site "body produces" evidence
+/// behind every adoption in this parcel was read off this string, so a
+/// transposition would invert the evidence while every other gate stayed green.
+///
+/// MUTANT: swap the two `suffix()` arguments in `check_return`'s `Some(have)`
+/// arm. Before this test the whole strict suite stayed GREEN at 3532/0/4; now
+/// this test goes RED. Run: confirmed RED.
+#[test]
+fn the_width_diagnostic_names_produced_then_claimed() {
+    let r = analyze(&[
+        "module m\n\
+         proc ByteUnderWord () out(d0: u16) {\n move.b #1, d0\n rts\n}\n\
+         proc WordUnderBare () out(d0) {\n move.w #1, d0\n rts\n}\n\
+         proc Nothing () out(d0) {\n nop\n rts\n}\n",
+    ]);
+    assert_subjects(&r, &["ByteUnderWord", "WordUnderBare", "Nothing"]);
+    assert_eq!(
+        out_reason(&r, "ByteUnderWord", "d0"),
+        "`d0` is produced only .b wide on a required return path, and the declaration \
+         claims .w",
+        "the produced width comes first and the claimed width second"
+    );
+    assert_eq!(
+        out_reason(&r, "WordUnderBare", "d0"),
+        "`d0` is produced only .w wide on a required return path, and the declaration \
+         claims .l"
+    );
+    // A register produced NOWHERE takes the other arm, which names no width at
+    // all — so the pair also pins which arm each case lands in.
+    assert_eq!(
+        out_reason(&r, "Nothing", "d0"),
+        "`d0` not produced on a required return path"
+    );
+}
+
+// === externs ================================================================
+
+/// An EXTERN's typed out caps its callers like any other. Externs seed the
+/// fixpoint VERIFIED by §3 axiom — there is no body to check — so a dropped
+/// extern width does not merely lose precision: it credits a caller a full long
+/// on a claim nothing ever examined, and that credit reaches D1b must-def on a
+/// shipping ERROR gate.
+///
+/// MUTANT: delete the `Item::ExternProc` arm of `collect_out_widths`. Before this
+/// test the whole strict suite stayed GREEN; now `CallerBare` stops firing and
+/// this test goes RED. Run: confirmed RED.
+#[test]
+fn an_externs_typed_out_caps_its_callers() {
+    let r = analyze(&[
+        "module m\n\
+         extern proc E () out(d0: u8)\n\
+         proc CallerBare () out(d0) {\n jbsr E\n rts\n}\n\
+         proc CallerByte () out(d0: u8) {\n jbsr E\n rts\n}\n",
+    ]);
+    assert_subjects(&r, &["CallerBare", "CallerByte"]);
+    assert!(out_fires(&r, "CallerBare", "d0"), "a byte of extern credit cannot prove 32 bits");
+    assert!(verified(&r, "CallerByte", "d0"), "firings: {:?}", r.out_firings);
+}
+
+/// A typed out declared inside a `section { }` is collected. Same class as the
+/// extern arm — an unwalked declaration silently reverts to the 32-bit default,
+/// which RELAXES nothing for the proc itself but UNCAPS every caller's credit.
+///
+/// MUTANT: drop the `Item::Section` recursion from `collect_out_widths`.
+/// `SectionCallerBare` stops firing and this test goes RED. Run: confirmed RED.
+#[test]
+fn a_typed_out_inside_a_section_is_collected() {
+    let r = analyze(&[
+        "module m\n\
+         section rom {\n\
+             proc SectionByte () out(d0: u8) {\n move.b #1, d0\n rts\n}\n\
+         }\n\
+         proc SectionCallerBare () out(d0) {\n jbsr SectionByte\n rts\n}\n",
+    ]);
+    assert_subjects(&r, &["SectionByte", "SectionCallerBare"]);
+    assert!(verified(&r, "SectionByte", "d0"), "firings: {:?}", r.out_firings);
+    assert!(out_fires(&r, "SectionCallerBare", "d0"), "a section-nested type must still cap");
+}
+
+/// A newtype declared inside a `section { }` resolves. Weakest of the three
+/// walk-coverage gates and included for the same reason: an unwalked newtype
+/// falls back to the 32-bit default, so the failure is a claim that quietly stops
+/// being checkable rather than one that fires.
+///
+/// MUTANT: drop the `Item::Section` recursion from `collect_newtype_underlying`.
+/// `SecNewtype` fires and this test goes RED. Run: confirmed RED.
+#[test]
+fn a_newtype_declared_inside_a_section_resolves() {
+    let r = analyze(&[
+        "module m\n\
+         section rom {\n\
+             newtype SecWord = u16\n\
+         }\n\
+         proc SecNewtype () out(d0: SecWord) {\n move.w #1, d0\n rts\n}\n",
+    ]);
+    assert_subjects(&r, &["SecNewtype"]);
+    assert!(verified(&r, "SecNewtype", "d0"), "firings: {:?}", r.out_firings);
+}
+
+// === scoping and collisions =================================================
+
+/// A TYPE on an ADDRESS-register result is refused. It is unfalsifiable (every
+/// 68k address write covers all 32 bits, so the claim can never be violated) and
+/// its only effect is capping callers at a width the hardware will not produce.
+/// A declaration that cannot be wrong and can only over-fire is not a contract.
+///
+/// MUTANT: delete the address-register arm from `lower/proc.rs`'s `check_out`.
+/// The parse becomes clean, `analyze`'s diagnostics assert stops tripping, and
+/// this test goes RED. Run: confirmed RED.
+#[test]
+fn a_type_on_an_address_register_result_is_refused() {
+    let msgs = lower_diag_messages("module m\nproc P () out(a0: u8) {\n lea 4, a0\n rts\n}\n");
+    assert!(
+        msgs.iter().any(|m| m.contains("[proc.out-invalid]") && m.contains("address-register")),
+        "expected the address-result refusal, got: {msgs:?}"
+    );
+    // A DATA-register type through the same path must stay silent, or the arm is
+    // refusing types rather than refusing address results.
+    let quiet =
+        lower_diag_messages("module m\nproc Q () out(d0: u8) {\n move.b #1, d0\n rts\n}\n");
+    assert!(
+        !quiet.iter().any(|m| m.contains("[proc.out-invalid]")),
+        "a data-register type must not be refused, got: {quiet:?}"
+    );
+}
+
+/// A newtype NAME declared twice corpus-wide answers the WIDEST of its readings.
+/// The type table is keyed by bare leaf name (matching every other G5 consumer),
+/// so it is unscoped; resolving a collision toward the widest is the direction
+/// that can only ever over-fire. Order-independence is asserted directly, because
+/// the failure mode this replaces was "last writer wins".
+///
+/// MUTANT: resolve a collision by taking the first (or last) reading instead of
+/// the max. One of the two orders verifies and this test goes RED. Run: confirmed
+/// RED.
+#[test]
+fn a_colliding_newtype_name_resolves_to_the_widest_reading() {
+    let wide = "module a\npub newtype Dup = u32\n";
+    let narrow = "module b\npub newtype Dup = u8\nproc P () out(d0: Dup) {\n move.b #1, d0\n rts\n}\n";
+    for (label, order) in [("wide first", [wide, narrow]), ("narrow first", [narrow, wide])] {
+        let r = analyze(&order);
+        assert_subjects(&r, &["P"]);
+        assert!(
+            out_fires(&r, "P", "d0"),
+            "{label}: a colliding name must answer its widest reading, so a `.b` write \
+             cannot discharge it; firings: {:?}",
+            r.out_firings
+        );
+    }
+}
+
+/// A duplicated PROC name cannot let one file's typed out relax another file's
+/// BARE one. Duplicate proc names are ill-formed and flagged elsewhere, so this is
+/// a fail-safe — but without it there is exactly one construction in which writing
+/// a type somewhere changes a bare declaration's verdict somewhere else, and the
+/// no-migration property is what this whole feature rests on.
+///
+/// MUTANT: drop the untyped registers from `row` (collect only `out_types`), or
+/// let a later row replace an earlier one instead of merging to the widest. The
+/// bare declaration verifies and this test goes RED. Run: confirmed RED.
+#[test]
+fn a_duplicated_proc_name_cannot_relax_a_bare_out() {
+    let typed = "module a\nproc P () out(d0: u8) {\n move.b #1, d0\n rts\n}\n";
+    let bare = "module b\nproc P () out(d0) {\n move.b #1, d0\n rts\n}\n";
+    for (label, order) in [("typed first", [typed, bare]), ("bare first", [bare, typed])] {
+        let r = analyze(&order);
+        assert_subjects(&r, &["P"]);
+        assert!(
+            out_fires(&r, "P", "d0"),
+            "{label}: the bare claim must survive the merge; firings: {:?}",
+            r.out_firings
+        );
+    }
 }

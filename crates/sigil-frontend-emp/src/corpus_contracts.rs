@@ -698,8 +698,9 @@ pub fn analyze_corpus_with_contracts(
     // — the out-verify residue surface reports the SAME fact D1b's must-def credits,
     // so the WARN residue and the ERROR gate can never disagree on whether an out is
     // honest). This is the fixpoint's own residue: a proc whose out grounds only in
-    // an unverified callee out (Collision_GetType ← the narrow-width
-    // Tile_Cache_GetCollision) now correctly appears here.
+    // an unverified callee out appears here — `Art_Decompress`'s `a1`, which is
+    // produced nowhere in its own body and tails into `S4LZ_Decompress`, whose
+    // `out(a1)` is DECLARED and unverified.
     let mut out_firings: Vec<OutFiring> = Vec::new();
     let empty_widths: BTreeMap<String, OutWidth> = BTreeMap::new();
     for pb in &proc_bufs {
@@ -1156,15 +1157,24 @@ fn slot_reg_idx(name: &str) -> Option<usize> {
     Reg::from_name(name).map(|r| r as usize)
 }
 
-/// Every declared newtype's UNDERLYING type, by name (recursing sections). Read
-/// only by [`out_width_of`], which needs the payload a newtype erases to and not
-/// merely whether the name is one.
-fn collect_newtype_underlying(files: &[ast::File]) -> BTreeMap<String, ast::Type> {
-    fn walk(items: &[Item], out: &mut BTreeMap<String, ast::Type>) {
+/// Every declared newtype's UNDERLYING type, by BARE name (recursing sections).
+/// Read only by [`out_width_of`], which needs the payload a newtype erases to and
+/// not merely whether the name is one.
+///
+/// The key is the bare leaf name, matching how every other G5 consumer resolves a
+/// type (`newtype_of` reads `path.segments.last()`). That makes the table
+/// UNSCOPED: two modules declaring the same newtype name share one row. A NAME
+/// COLLISION is therefore resolved by [`collect_out_widths`] toward the widest
+/// reading rather than by declaration order — see the merge there. Module-scoping
+/// the whole type layer is the real repair and is ledgered; it cannot be done for
+/// widths alone without creating a second type authority scoped differently from
+/// the one the slot check uses.
+fn collect_newtype_underlying(files: &[ast::File]) -> BTreeMap<String, Vec<ast::Type>> {
+    fn walk(items: &[Item], out: &mut BTreeMap<String, Vec<ast::Type>>) {
         for item in items {
             match item {
                 Item::Newtype(n) => {
-                    out.insert(n.name.clone(), n.underlying.clone());
+                    out.entry(n.name.clone()).or_default().push(n.underlying.clone());
                 }
                 Item::Section(s) => walk(&s.items, out),
                 _ => {}
@@ -1197,7 +1207,11 @@ fn collect_newtype_underlying(files: &[ast::File]) -> BTreeMap<String, ast::Type
 ///
 /// `depth` bounds a newtype cycle (`newtype A = B` / `newtype B = A`). Such a
 /// corpus is rejected elsewhere; here it must merely not hang.
-fn out_width_of(ty: &ast::Type, newtypes: &BTreeMap<String, ast::Type>, depth: usize) -> OutWidth {
+fn out_width_of(
+    ty: &ast::Type,
+    newtypes: &BTreeMap<String, Vec<ast::Type>>,
+    depth: usize,
+) -> OutWidth {
     if depth == 0 {
         return OutWidth::L;
     }
@@ -1214,8 +1228,16 @@ fn out_width_of(ty: &ast::Type, newtypes: &BTreeMap<String, ast::Type>, depth: u
                 "u8" | "i8" => OutWidth::B,
                 "u16" | "i16" | "u16le" => OutWidth::W,
                 "u32" | "i32" => OutWidth::L,
+                // A name declared more than once corpus-wide answers the WIDEST
+                // of its readings. That is the direction that cannot relax a
+                // claim: an unresolvable name already answers `L`, so a collision
+                // can only ever over-fire, never bless.
                 _ => match newtypes.get(leaf) {
-                    Some(under) => out_width_of(under, newtypes, depth - 1),
+                    Some(unders) => unders
+                        .iter()
+                        .map(|u| out_width_of(u, newtypes, depth - 1))
+                        .max()
+                        .unwrap_or(OutWidth::L),
                     None => OutWidth::L,
                 },
             }
@@ -1242,33 +1264,74 @@ fn bits_to_width(bits: u32) -> OutWidth {
 /// fixpoint seeds VERIFIED, so a typed extern out must credit its callers at the
 /// declared width and not a long.
 fn collect_out_widths(files: &[ast::File]) -> OutWidthMap {
+    // One proc's row: EVERY declared out register, typed ones at their type's
+    // width and untyped ones at the bare 32-bit claim.
+    //
+    // The untyped registers are carried EXPLICITLY, even though an absent register
+    // already reads as `L`. They are what makes the collision merge below able to
+    // see a BARE declaration at all: without them a duplicate proc name whose
+    // other declaration is untyped would contribute no row, and the typed one
+    // would stand alone and relax it.
     fn row(
+        out: Option<&[(String, Option<String>)]>,
         out_types: &[(String, ast::Type, Span)],
-        newtypes: &BTreeMap<String, ast::Type>,
+        newtypes: &BTreeMap<String, Vec<ast::Type>>,
     ) -> BTreeMap<String, OutWidth> {
-        out_types
-            .iter()
-            .filter_map(|(reg, ty, _)| {
-                // Canonical `d0`..`a7` spelling — the same names the production
-                // state is keyed by. A non-register endpoint (a `carry:` flag
-                // result never reaches here) drops out.
-                Reg::from_name(reg).map(|r| (r.to_string(), out_width_of(ty, newtypes, 16)))
-            })
-            .collect()
+        let mut row: BTreeMap<String, OutWidth> = expand_reglist_regs(out.unwrap_or(&[]))
+            .into_iter()
+            .filter_map(|name| Reg::from_name(&name).map(|r| (r.to_string(), OutWidth::L)))
+            .collect();
+        for (reg, ty, _) in out_types {
+            // Canonical `d0`..`a7` spelling — the same names the production state
+            // is keyed by. A non-register endpoint (a `carry:` flag result never
+            // reaches here) drops out.
+            if let Some(r) = Reg::from_name(reg) {
+                row.insert(r.to_string(), out_width_of(ty, newtypes, 16));
+            }
+        }
+        row
     }
-    fn walk(items: &[Item], newtypes: &BTreeMap<String, ast::Type>, out: &mut OutWidthMap) {
+    // Merge `r` into `out[name]`, keeping the WIDEST reading of every register
+    // mentioned by EITHER row, and treating a register absent from one row as its
+    // bare 32-bit claim. Proc names are meant to be unique corpus-wide (a
+    // duplicate is ill-formed and `[proc]`-level checks say so), so this is a
+    // fail-safe rather than a feature: without it one file's typed `out(d0: u8)`
+    // would relax another file's BARE `out(d0)` under the same name, which is the
+    // one construction where writing a type anywhere changes a bare declaration's
+    // verdict somewhere else.
+    fn merge(out: &mut OutWidthMap, name: &str, r: BTreeMap<String, OutWidth>) {
+        match out.get_mut(name) {
+            None => {
+                out.insert(name.to_string(), r);
+            }
+            Some(existing) => {
+                let regs: BTreeSet<String> =
+                    existing.keys().chain(r.keys()).cloned().collect();
+                let merged = regs
+                    .into_iter()
+                    .map(|reg| {
+                        let a = existing.get(&reg).copied().unwrap_or(OutWidth::L);
+                        let b = r.get(&reg).copied().unwrap_or(OutWidth::L);
+                        (reg, a.max(b))
+                    })
+                    .collect();
+                *existing = merged;
+            }
+        }
+    }
+    fn walk(items: &[Item], newtypes: &BTreeMap<String, Vec<ast::Type>>, out: &mut OutWidthMap) {
         for item in items {
             match item {
                 Item::Proc(p) => {
-                    let r = row(&p.out_types, newtypes);
+                    let r = row(p.out.as_deref(), &p.out_types, newtypes);
                     if !r.is_empty() {
-                        out.insert(p.name.clone(), r);
+                        merge(out, &p.name, r);
                     }
                 }
                 Item::ExternProc(e) => {
-                    let r = row(&e.sig.out_types, newtypes);
+                    let r = row(e.sig.out.as_deref(), &e.sig.out_types, newtypes);
                     if !r.is_empty() {
-                        out.insert(e.name.clone(), r);
+                        merge(out, &e.name, r);
                     }
                 }
                 Item::Section(s) => walk(&s.items, newtypes, out),
