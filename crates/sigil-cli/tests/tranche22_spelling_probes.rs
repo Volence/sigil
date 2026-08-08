@@ -83,8 +83,9 @@ fn assert_byte_identical(reference: &[u8], candidate: &[u8], what: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// P1 — falls_into between two PUB procs, NON-empty first body: the
-// S4LZ_DecompressDict preamble falling into the shared S4LZ_Decompress body.
+// P1 — falls_into between two PUB procs, NON-empty first body, modelled on the
+// S4LZ dict preamble falling into the shared decompressor body. The contracts
+// below are a fixture for that SHAPE, not a copy of those procs' declarations.
 // Byte parity + adjacency + both names visible to a second module's jbsr.
 // ---------------------------------------------------------------------------
 

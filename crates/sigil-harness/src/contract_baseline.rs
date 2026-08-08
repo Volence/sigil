@@ -29,10 +29,12 @@ use std::collections::BTreeMap;
 /// shipped shapes. If that ever stops holding, the D1c pair above is the shape to
 /// copy; do not flatten a real per-family difference into one array.
 ///
-/// FIFTEEN of these rows carry the reason "not produced on a required return
+/// ALL BUT ONE of these rows carry the reason "not produced on a required return
 /// path": the register has no write at all on some path, and no declaration can
-/// change that. The SIXTEENTH, `Emit_ObjectPieces :: d5`, carries the WIDTH
+/// change that. The exception, `Emit_ObjectPieces :: d5`, carries the WIDTH
 /// reason instead — it is produced, one byte wide, under a claim of four.
+/// (Counts are stated relatively on purpose: the array is the one authority, and
+/// a number written down twice is the fork this module's preamble prevents.)
 ///
 /// It is the one row here a type would close, and it is left open deliberately.
 /// The body advances the sprite total with `addq.b`; its call sites read that
@@ -42,23 +44,26 @@ use std::collections::BTreeMap;
 /// reconciled by widening the increment, not by narrowing the declaration; the
 /// gap ledger carries it with that kill condition.
 ///
-/// The sub-width half is now sayable: `out(dN: T)` claims `sizeof(T)` bytes and a
-/// write that wide or wider produces it. The split that motivated it — of a
-/// 30-row residue, exactly half sub-width production and half genuinely
-/// unproduced — is measured by turning the width rule off and reading the result
-/// as a SET DIFF, not by classifying rows by eye. Reproduce it that way rather
-/// than trusting this sentence; the standing write-up is the item-1 fixpoint
-/// census, which is a lane document and may not sit beside this file.
+/// The sub-width half is sayable: `out(dN: T)` claims `sizeof(T)` bytes and a
+/// write that wide or wider produces it. Which rows are sub-width production and
+/// which are genuinely unproduced is measured by turning the width rule off and
+/// reading the result as a SET DIFF, never by classifying rows by eye. Reproduce
+/// it that way rather than trusting any prose here; the standing write-up is the
+/// item-1 fixpoint census, a lane document that may not sit beside this file.
 ///
-/// ROWS ARE NOT INDEPENDENT SITES. Credit flows along calls, tails and
-/// `falls_into` successors, so one unproven production can hold several rows
-/// open: `S4LZ_Decompress :: a1` is the root, and `Art_Decompress :: a1` (tail
-/// MUST-intersection) and `S4LZ_DecompressDict :: a1` (fall-off charged to its
-/// successor) are its dependants. A burn-down that counts rows will over-count
-/// the work and can "fix" a dependant by papering its root — compute the census
-/// over the fixpoint.
+/// ROWS ARE NOT INDEPENDENT SITES, in general. Credit flows along calls, tails and
+/// `falls_into` successors, so one unproven production can hold several rows open.
+/// A burn-down that counts rows then over-counts the work and can "fix" a
+/// dependant by papering over its root — compute the census over the fixpoint, and
+/// read every measurement as a SET DIFF rather than a count.
+///
+/// Every row presently here is nonetheless self-contained: each proc writes its
+/// own register in its own body and sources none of it from a callee, tail or
+/// successor. That is a fact about today's corpus, not a property of the analysis,
+/// and it is why no row here can serve as the cross-proc credit witness — see
+/// `contract_closure_corpus.rs::corpus_out_residue_is_the_verified_complement`,
+/// whose witness moved to a synthetic for exactly this reason.
 pub const OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
-    ("Art_Decompress", "a1"),
     ("Collision_ProbeDown", "d1"),
     ("Collision_ProbeDown", "d2"),
     ("Collision_ProbeLeft", "d1"),
@@ -72,8 +77,6 @@ pub const OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
     ("Emit_ObjectPieces", "d5"),
     ("InsertSpriteMasks", "a4"),
     ("InsertSpriteMasks", "d5"),
-    ("S4LZ_Decompress", "a1"),
-    ("S4LZ_DecompressDict", "a1"),
 ];
 
 /// `[call.live-clobbered]` (D1c) — the SHAPE-INVARIANT rows: a caller holds a

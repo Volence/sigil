@@ -758,8 +758,8 @@ fn fixpoint_extern_out_seeds_verified() {
 
 /// EXTERN-SEED MUTATION (rider 2a): the SAME body with E NOT seeded as an extern
 /// (a mutant that drops extern-out axioms — E then has no body, is never
-/// processed, and stays unverified) → P's `out(a1)` FIRES. This is the failure
-/// `S4LZ_DecompressDict::out(a1)` would hit corpus-wide without the seed (the
+/// processed, and stays unverified) → P's `out(a1)` FIRES. This is the failure any
+/// out grounded in an extern leaf would hit corpus-wide without the seed (the
 /// scratch-experiment's own bug, promoted to a permanent guard).
 #[test]
 fn fixpoint_without_extern_seed_fires() {
@@ -990,9 +990,10 @@ fn the_out_residue_is_a_width_gap_not_a_control_flow_one() {
 /// inside the same call, so the claim is credited from the successor's verified
 /// unconditional out, exactly as a tail transfer is credited from its target.
 ///
-/// `S4LZ_DecompressDict out(a1) falls_into S4LZ_Decompress` is the corpus
-/// exhibit: its own body only READS `a1` (`suba.l a1, a4`), so whether the claim
-/// stands depends entirely on the successor.
+/// The shape is a body that only READS the claimed register, so whether the claim
+/// stands depends entirely on the successor. It has no 68k corpus exhibit — no
+/// shipping 68k proc declares both `falls_into` and an `out` — which is precisely
+/// why the polarities below must be carried by a synthetic.
 ///
 /// The polarities that matter vary the SUCCESSOR, not the flag. Varying only the
 /// flag would keep passing under an implementation that ignores the successor
@@ -1046,16 +1047,30 @@ fn a_falls_into_procs_fall_off_charges_the_successor() {
     );
 }
 
-/// THE PLUMBING, one layer above [`verify_out`]: the successor NAME must actually
-/// travel from the proc table, through `compute_verified_outs`, into the fall-off
-/// credit. `P falls_into Q` where P produces nothing and Q grounds locally — P can
-/// verify ONLY if that map arrived intact.
+/// THE PLUMBING, one layer above [`verify_out`]: the successor name must reach the
+/// fall-off credit inside `compute_verified_outs`. `P falls_into Q` where P
+/// produces nothing and Q grounds locally — P can verify ONLY if that map arrived
+/// intact.
 ///
-/// This exists because the corpus CANNOT witness it. The one 68k `falls_into` proc
-/// declaring an out is `S4LZ_DecompressDict out(a1) falls_into S4LZ_Decompress`,
-/// and the successor's own `a1` is unverified, so that row fires identically
-/// whether the credit is wired up or silently dropped. A mutant replacing either
-/// end of the plumbing with `None` passes every other gate in the tree.
+/// SCOPE, stated because it is easy to over-read: this builds the map by hand and
+/// calls `compute_verified_outs` directly, so it guards the FUNCTION'S PARAMETER
+/// and NOT the corpus walk's wiring of it. Dropping `&falls_into_succ` at the
+/// `compute_verified_outs` call site leaves this test green. Measured, that mutant
+/// reddens two OTHER gates, both of which run `analyze_corpus` end to end:
+/// `out_width.rs::falls_into_credit_is_capped_at_the_successors_declared_width`,
+/// and the verified-map presence assertion inside
+/// `corpus_contracts.rs::falls_into_successor_credit_reaches_the_per_proc_out_check`.
+///
+/// This exists because the corpus cannot witness the property directly: NO 68k proc
+/// declares both `falls_into` and an `out`, so the successor argument is dead over
+/// every shipped shape. (`PsgVolEnv_Resolve` is the only proc of that shape anywhere
+/// and it is Z80, which the closure tier excludes.)
+///
+/// The plumbing has TWO ends and they are not symmetric. This test covers only the
+/// fixpoint's parameter. The per-proc out check's own successor argument is covered
+/// solely by `corpus_contracts.rs::falls_into_successor_credit_reaches_the_per_proc_out_check`
+/// — nothing here reaches it, and a `None` mutant at that call site leaves every
+/// test in this file green.
 #[test]
 fn falls_into_successor_credit_reaches_the_fixpoint() {
     // P falls off its end producing nothing; Q produces a1 locally and returns.

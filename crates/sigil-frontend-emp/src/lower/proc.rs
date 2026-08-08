@@ -1975,9 +1975,26 @@ fn check_out(
     //
     // EXCEPT under a declared `falls_into`: control continues into the successor
     // inside the same call, so the output may legitimately be produced THERE and
-    // never touched here. `S4LZ_DecompressDict out(a1) falls_into S4LZ_Decompress`
-    // is the corpus exhibit — its own body only READS `a1` (`suba.l a1, a4`) and
-    // the successor advances it.
+    // never touched here — a body that only READS the register still has an honest
+    // claim if the successor produces it.
+    //
+    // THE EXEMPTION ITSELF IS UNASSERTED, in this precise sense: pinning
+    // `charge_unwritten` to TRUE — removing the exemption — is green across the
+    // whole tree, so nothing states that a `falls_into` proc's declared out is
+    // meant to be spared here. The opposite pin is NOT green, and the asymmetry is
+    // the point: `charge_unwritten` gates this diagnostic for EVERY proc, so
+    // pinning it false silences `[proc.out-unwritten]` corpus-wide and reddens
+    // `lower_proc.rs`'s `out_unwritten_warns` and
+    // `as_compat_does_not_silence_out_contract` plus `warn_tier_corpus.rs`'s
+    // frozen id set. Those gates cover the CHECK; none covers the EXEMPTION.
+    //
+    // No 68k proc declares both `falls_into` and an `out`, so no corpus proc
+    // reaches the spared branch. `tranche22_spelling_probes.rs`'s `Dict` fixture
+    // does execute it, but that probe asserts only the absence of `Level::Error`
+    // and this fires at `Level::Warning`. The frontend's other `falls_into` + `out`
+    // synthetics assert over `out_verify::check_out`, a DIFFERENT function from
+    // this one. The Z80 route is closed independently — the out-unwritten check is
+    // 68k-only, so the single proc of that shape anywhere never reaches here.
     //
     // THIS TIER'S EXEMPTION IS WEAKER THAN THE CLOSURE'S, deliberately and
     // visibly. The closure does NOT exempt: `out_verify` charges the fall-off
