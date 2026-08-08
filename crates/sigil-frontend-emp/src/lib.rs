@@ -22,6 +22,7 @@ pub mod parser;
 pub mod preserves;
 pub mod regfile;
 pub mod resolve;
+pub mod resumable;
 pub mod z80_preserves;
 pub mod type_slice;
 pub mod value;

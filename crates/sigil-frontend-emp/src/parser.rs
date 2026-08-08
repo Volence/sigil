@@ -300,8 +300,8 @@ impl Parser {
         // proof and buys none. (`@align` / `@shape_divergent` are not in this
         // family — they are consumed at their own syntactic positions and never
         // reach here.)
-        const KNOWN: [&str; 6] =
-            ["as_compat", "allow", "scaffolding", "budget", "cycles_exact", "noreturn"];
+        const KNOWN: [&str; 7] =
+            ["as_compat", "allow", "scaffolding", "budget", "cycles_exact", "noreturn", "resumable"];
         if !KNOWN.contains(&attr.name.as_str()) {
             self.diag_at(
                 attr.span,
@@ -354,6 +354,18 @@ impl Parser {
                 attr.span,
                 "[attr.form] `@noreturn` takes no arguments — it is a checked claim that \
                  no path returns (`[noreturn.returns]` proves it on the body)",
+            );
+        }
+        // `@resumable` is a marker: its declared register-state set IS the proc's
+        // ordinary contract (params + `clobbers` + `out`), not a reglist argument
+        // here — the stackless proof and the register-set boundary both read those
+        // existing clauses (bookmark ask 1). So it takes nothing, like `@noreturn`.
+        if attr.name == "resumable" && !attr.args.is_empty() {
+            self.diag_at(
+                attr.span,
+                "[attr.form] `@resumable` takes no arguments — its register-state set is \
+                 the proc's own `clobbers(...)`/`out(...)` contract, and the stackless \
+                 guarantee is proven on the body (`[resumable.stack-op]`)",
             );
         }
         if attr.name == "scaffolding" && attr.args.len() != 1 {
