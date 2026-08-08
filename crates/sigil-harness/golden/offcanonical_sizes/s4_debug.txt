@@ -7,8 +7,8 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=s4_debug
 # reproduces_golden=s4.debug.bin
-# golden_crc32=c70bc157
-# assembled_anchor=0a822f21
+# golden_crc32=f6a5fe12
+# assembled_anchor=ea7851c8
 # assembled_end=0x5f848
 # labels=75
 Ani_Particle 0x26908
@@ -21,7 +21,7 @@ BgAnim_Table 0x26868
 BootData 0x3b0
 BootData_End 0x1bae
 BusError 0x5e798
-CSelf_S4LZ_Plain 0x7b06
+CSelf_S4LZ_Plain 0x7b16
 Camera_Init 0x6bc0
 Checksum 0x18e
 Collected_Init 0x3fd2
@@ -69,7 +69,7 @@ Sfx_33 0x5d53a
 Song_MovingTrucks 0x58607
 Sonic_InitAssets 0x10d00
 SoundTablesZ80_Head 0x58000
-Sound_PostByte 0x8580
+Sound_PostByte 0x8590
 TestAnimated 0x10d50
 TestChildPart 0x11146
 TestChurnObj 0x112e0

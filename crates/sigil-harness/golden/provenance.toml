@@ -2928,3 +2928,57 @@ full_crc = "c70bc157"
 full_size = 425538
 anchor_crc = "0a822f21"
 anchor_end = 0x5f848
+
+[[entry]]
+name = "art-streaming-p2-task5-selftest"
+ab = "docs/superpowers/notes/2026-08-08-art-streaming-p2-task5-ab.md"
+note = "self-test manifest-v2 walk (crash fix): stride PageManifest, skip size-0/raw, ZX0-only equivalence"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "957b01ee"
+full_size = 425907
+anchor_crc = "a211c63d"
+anchor_end = 0x5f848
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "33cb44f2"
+full_size = 307092
+anchor_crc = "84a08e9b"
+anchor_end = 0x43ea2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "2789b196"
+full_size = 92534
+anchor_crc = "ad68aafb"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "87244229"
+full_size = 95326
+anchor_crc = "98012c31"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "c41ae626"
+full_size = 379350
+anchor_crc = "7e8606a5"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "dcb6c78f"
+full_size = 412966
+anchor_crc = "e497dec0"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "f6a5fe12"
+full_size = 425538
+anchor_crc = "ea7851c8"
+anchor_end = 0x5f848

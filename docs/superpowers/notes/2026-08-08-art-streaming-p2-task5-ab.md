@@ -90,3 +90,23 @@ ANCHOR_GAP change ships.
   all shapes green, byte-repro of the translation (0 mismatches), the six golden
   gates + ojz_run_b_port (incl. sec_local_maps) + act_descriptor_port + repin_pins
   + refreeze --check.
+
+## Follow-up: self-test manifest-v2 walk (crash fix, 2026-08-08)
+
+Oracle boot ADDRESS-ERRORed at `CompressionSelfTest.eq_page` (faulting 0x400001,
+odd/past EndOfRom): the DEBUG-boot ZX0-vs-ZX0R equivalence walk was the THIRD
+manifest consumer (after page_in + act_descriptor) and still strided
+`act_art_pool_table` as the OLD longword pointer array (stride 4), so it walked the
+stride-8 `PageManifest` records as garbage pointers. Fixed in
+`engine/debug/compression_selftest.emp`: the `.eq_page` walk now strides
+`sizeof(PageManifest)=8`, takes the source from `pm_source` and length from
+`pm_tiles*32`, SKIPS `pm_tiles==0`, and equivalence-tests ONLY
+`pm_form==ART_PAGE_FORM_ZX0` pages (a raw page is skipped — ZX0R would misparse raw
+bytes). This also RESOLVES DEFERRED_WORK item (b) from the Task-3 review
+("self-test doesn't assert form") — now fixed, not deferred.
+
+DEBUG-shape-only change (the walk is inside `if HAS_ACT_ART_POOL == 1`, DEBUG-only
+module): s4.debug.bin crc c70bc157→f6a5fe12 (len UNCHANGED 425538 — no layout
+shift, no pin/table change), config_a.bin re-frozen. plain s4.bin (dcb6c78f), demo,
+demo.debug, config_b, lean are BYTE-UNCHANGED (verified md5-identical). Debug
+goldens refrozen; chain 60.
