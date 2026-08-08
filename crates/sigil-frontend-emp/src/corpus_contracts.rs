@@ -2186,7 +2186,7 @@ fn proc_node(
     let node = ProcNode {
         local_writes,
         direct_callees,
-        indirect_sites: collect_indirect_sites(&p.body),
+        indirect_sites: collect_indirect_sites(&p.body, p.is_resumable()),
         is_extern: false,
         // §6 partial-width: a `preserves(dN.w)` licenses clobbering the full `dN`
         // for callers (conservative v1 — the caller-visible contract is identical
@@ -2367,29 +2367,93 @@ fn call_target_sym(ops: &[CodeOperand]) -> Option<String> {
 /// returning each site's declared bound: `Some(type)` for `jsr (aN) as Type`,
 /// `None` for an unbounded `jsr (aN)`. A call whose target is a bare symbol
 /// (direct) contributes no indirect site.
-fn collect_indirect_sites(body: &[AsmStmt]) -> Vec<Option<String>> {
+///
+/// `is_resumable` reconciles the closure gate with the `@resumable` stackless
+/// contract (bookmark ask 1): a resumable proc exits by a terminal computed
+/// `jmp (aN)` (aN != a7) to a caller-loaded continuation — a BOUNDED, return-like
+/// terminator, not a dispatch into unknown code. Its register budget is already
+/// pinned (a resumable proc MUST declare `clobbers`, and the stackless scan bounds
+/// the body), so such an exit contributes NO unbounded ⊤ site. See
+/// [`is_resumable_continuation_exit`] for the exact (and deliberately narrow) shape
+/// this credits.
+fn collect_indirect_sites(body: &[AsmStmt], is_resumable: bool) -> Vec<Option<String>> {
     let mut sites = Vec::new();
-    walk_body_for_indirect(body, &mut sites);
+    walk_body_for_indirect(body, is_resumable, &mut sites);
     sites
 }
 
-fn walk_body_for_indirect(body: &[AsmStmt], sites: &mut Vec<Option<String>>) {
+fn walk_body_for_indirect(body: &[AsmStmt], is_resumable: bool, sites: &mut Vec<Option<String>>) {
     for stmt in body {
         match stmt {
             AsmStmt::Instr(instr) => {
                 if is_indirect_call(instr) {
+                    // A `@resumable` proc's untyped `jmp (aN)` continuation exit is
+                    // credited as a bounded terminator, not an unbounded site — so
+                    // it does not force the proc's effect to ⊤.
+                    if is_resumable && is_resumable_continuation_exit(instr) {
+                        continue;
+                    }
                     sites.push(instr.dispatch_bound.clone());
                 }
             }
             AsmStmt::If { then, els, .. } => {
-                walk_body_for_indirect(then, sites);
+                walk_body_for_indirect(then, is_resumable, sites);
                 if let Some(e) = els {
-                    walk_body_for_indirect(e, sites);
+                    walk_body_for_indirect(e, is_resumable, sites);
                 }
             }
-            AsmStmt::With { body, .. } => walk_body_for_indirect(body, sites),
+            AsmStmt::With { body, .. } => walk_body_for_indirect(body, is_resumable, sites),
             _ => {}
         }
+    }
+}
+
+/// A `@resumable` proc's terminal continuation exit that the closure credits as
+/// bounded: an UNTYPED indirect TAIL transfer (`jmp (aN)`) through an address
+/// register that is NOT a7. It leaves the proc to a caller-loaded continuation, so
+/// it is return-like, not a call into unknown code that would clobber the caller's
+/// registers.
+///
+/// Deliberately narrow, on three axes, each keeping the credit sound:
+/// - **TAIL only** (`jmp`/`bra`/`jbra`, never a CALL): an indirect CALL in a
+///   resumable proc (`jsr (aN)`) is already build-fatal via `[resumable.stack-op]`
+///   (it pushes), so it is not a shape this must — or does — credit.
+/// - **aN != a7**: a `jmp (sp)`/`jmp (a7)` READS the stack (also
+///   `[resumable.stack-op]`); excluding it keeps the credit fail-safe (an
+///   unrecognizable / spliced operand register is NOT credited either).
+/// - **UNTYPED only** (`dispatch_bound.is_none()`): a `jmp (aN) as Type` (bookmark
+///   ask 5) is bounded by the dispatch TYPE's effect through the existing indirect-
+///   site machinery, which is STRICTER (it charges the type's clobbers). Excluding
+///   the typed form here lets that bound supersede this credit cleanly the day ask
+///   5 lands — no double-handling, no weakening.
+fn is_resumable_continuation_exit(instr: &InstrLine) -> bool {
+    let Some(m) = single_text(&instr.mnemonic) else { return false };
+    if !TAIL_MNEMONICS.contains(&m) || instr.dispatch_bound.is_some() {
+        return false;
+    }
+    matches!(
+        instr.operands.first().and_then(ind_single_register),
+        Some(r) if r != Reg::A7
+    )
+}
+
+/// The single base register of a bare register-indirect operand (`(aN)`), or
+/// `None` for any richer form (displaced, indexed, sized, multi-part, or a
+/// non-register expression). `Reg::from_name` maps the `sp` spelling to `a7`, so a
+/// `jmp (sp)` resolves to [`Reg::A7`] and is caught by the caller's exclusion.
+fn ind_single_register(op: &Operand) -> Option<Reg> {
+    let Operand::Ind { parts, size, .. } = op else { return None };
+    if size.is_some() || parts.len() != 1 {
+        return None;
+    }
+    let (expr, part_size) = &parts[0];
+    if part_size.is_some() {
+        return None;
+    }
+    let ast::Expr::Path(p) = expr else { return None };
+    match p.segments.as_slice() {
+        [seg] => Reg::from_name(seg),
+        _ => None,
     }
 }
 
