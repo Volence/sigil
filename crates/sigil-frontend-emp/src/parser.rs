@@ -300,8 +300,10 @@ impl Parser {
         // proof and buys none. (`@align` / `@shape_divergent` are not in this
         // family — they are consumed at their own syntactic positions and never
         // reach here.)
-        const KNOWN: [&str; 7] =
-            ["as_compat", "allow", "scaffolding", "budget", "cycles_exact", "noreturn", "resumable"];
+        const KNOWN: [&str; 8] = [
+            "as_compat", "allow", "scaffolding", "budget", "cycles_exact", "noreturn", "resumable",
+            "continuation",
+        ];
         if !KNOWN.contains(&attr.name.as_str()) {
             self.diag_at(
                 attr.span,
@@ -366,6 +368,17 @@ impl Parser {
                 "[attr.form] `@resumable` takes no arguments — its register-state set is \
                  the proc's own `clobbers(...)`/`out(...)` contract, and the stackless \
                  guarantee is proven on the body (`[resumable.stack-op]`)",
+            );
+        }
+        // `@continuation` is a marker (bookmark ask 4): a proc entered by a
+        // manufactured/hardware transfer (`rte`/`jmp`), not a call. Its declared
+        // register-state set is its own `clobbers(...)` — trusted, not proven — so
+        // it takes no arguments, like `@resumable`/`@noreturn`.
+        if attr.name == "continuation" && !attr.args.is_empty() {
+            self.diag_at(
+                attr.span,
+                "[attr.form] `@continuation` takes no arguments — its register-state set is \
+                 the proc's own `clobbers(...)` contract, declared (trusted), not proven",
             );
         }
         if attr.name == "scaffolding" && attr.args.len() != 1 {

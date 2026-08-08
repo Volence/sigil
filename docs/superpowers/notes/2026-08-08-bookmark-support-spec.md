@@ -114,3 +114,84 @@ exemption are all inert everywhere else. The new `ItemAuthor::IrqFrame` variant 
 matched only by `is_irq_frame_access` (every other `ItemAuthor` site is
 `matches!`/construction — no exhaustive break). Full `sigil-frontend-emp` suite
 green (119 groups).
+
+---
+
+## Ask 4 — manufactured-frame resume license: `@continuation`
+
+### The decision (design-open ask — CHOSEN: the `@continuation` proc form)
+
+The sketch offered two designs — a `@continuation` proc form OR paired intrinsics
+(`bank_frame`/`resume_frame`). I measured what each aeon shape actually trips in the
+live checker before choosing (probes, then discarded):
+
+- Shape (a), `PageIn_BankRegs` — entered by `rte`, banks live decoder registers to
+  RAM, exits by a bare `rts`. **Measured: it lowers CLEAN as an ordinary proc** (a
+  register-bank store + `rts`; the "entered by rte / rts into the grand-caller"
+  fact is invisible to the checker, which does not model who calls a proc). The
+  sketch's "fits no proc form" is true SEMANTICALLY but not as a checker rejection.
+- Shape (b), the manufactured resume — `move.w <sr>,-(sp)` / `move.l <pc>,-(sp)` /
+  `rte`. **Measured: `[stack.unbalanced]`** — the stack model sees depth +6 at the
+  `rte` and charges it as a return that should be at depth 0 (it does not model the
+  `rte` as popping the 6-byte frame the sequence just pushed). This is the ONE real
+  guarantee that must be licensed.
+
+**D4.1 — chose `@continuation` (a proc attribute), NOT paired intrinsics.**
+Rationale:
+- It fits the existing attribute machinery EXACTLY — a marker attribute registered
+  in `validate_attr_form`, an `is_continuation()` predicate, and a gated
+  check-relaxation in `lower/proc.rs`, mirroring the `@resumable` scaffold that
+  just landed (asks 1-2). No new statement grammar, no new `AsmStmt`, no
+  stack-model marker.
+- It covers BOTH aeon shapes under ONE coherent concept — "a proc entered by a
+  manufactured/hardware transfer is a `@continuation`": shape (a) `PageIn_BankRegs`
+  is a `@continuation` (rte-entered, rts-exit); the manufactured resume of shape
+  (b) becomes its own `jmp`-entered `@continuation` proc (`push SR/push PC/rte`)
+  that the normal caller (`PageIn_Process`) tail-transfers to with a plain
+  `jmp`/`jbra`. This is consistent with `PageIn_BankRegs` already being
+  continuation-shaped, and it makes the resume a named, greppable primitive rather
+  than an inline raw-`rte` sequence buried in a normal proc.
+- The paired-intrinsics alternative was REJECTED for the D1-style reason in the
+  resumable note: an intrinsic that only rewrites the stack-model treatment of a
+  push/push/rte adds a statement form + a new `ItemAuthor`/edge marker to discharge
+  one obligation the attribute discharges with a single gate — a parallel mechanism
+  where an existing one (the attribute + trust-root pattern) fits.
+
+**CONSEQUENCE for the aeon side (Task 3 must adopt this shape):** the manufactured
+resume is its OWN `@continuation` proc, `jmp`-entered from `PageIn_Process`, not an
+inline `rte` in a normal proc. `PageIn_Process` stays an ordinary callable proc and
+reaches the resume by a tail `jmp`/`jbra`. If a future need forces the resume to be
+inline in a normal proc, the paired-intrinsic (`resume_frame`) is the fallback — but
+nothing in the sketch requires inline, and the continuation-proc shape is cleaner.
+
+### Semantics + guards
+
+SEMANTICS. A `@continuation` proc is entered by a manufactured or hardware control
+transfer (`rte`/`jmp`), not a call; its register-state set is DECLARED (its
+`clobbers(...)`), trusted, not proven. **The license is a stack-balance EXEMPTION**
+(`lower/proc.rs` gates `check_stack_balance` off when `is_continuation()`): a
+continuation's manufactured `rte`/`rts` consume a frame the model never saw pushed
+(the hijacked exception frame, or the push-SR/push-PC pair the `rte` pops), so its
+frame discipline is the author's responsibility — a trust root, exactly as
+`grants(...)` is a hardware-dispatch trust root the assembler cannot verify.
+
+**D4.2 — the exemption is stack-balance ONLY, not a blanket silence.** Every other
+per-proc check still runs on a continuation: the clobber lint still fires
+`[proc.clobber-undeclared]` on an undeclared write (pinned by
+`continuation_still_runs_the_clobber_lint`), preserves/out/noreturn/context all
+apply. The trust root is scoped to exactly the guarantee the manufactured frame
+breaks.
+
+GUARDS (both ERROR-tier, never softened):
+- `[continuation.contract-required]` — a `@continuation` MUST declare `clobbers(...)`
+  (its trusted register-state set; also what keeps the clobber lint live, since
+  `check_clobbers` gates on `clobbers.is_some()`).
+- `[continuation.z80-unsupported]` — 68k only (the exception frame + `rte` + the
+  stack model it relaxes are 68k), matching the `@resumable`/`inout` scope guards.
+- `@continuation(...)` with args is `[attr.form]` (a bare marker, like `@resumable`).
+
+**D4.3 — opt-in and check-neutral over the corpus.** The exemption and both guards
+gate on `is_continuation()`, which no existing proc carries; the negative control
+`the_same_body_without_the_attribute_still_fires` pins that an ORDINARY proc's
+manufactured `rte` is still `[stack.unbalanced]` — the license does not weaken the
+guarantee. Full `sigil-frontend-emp` suite green (120 groups).
