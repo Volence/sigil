@@ -36,7 +36,7 @@
 //!   the day it appears).
 
 use crate::flag_check::{Cfg, Edge};
-use crate::preserves::PreserveStatus;
+use crate::preserves::{exit_diverges, PreserveStatus};
 use crate::value::{CodeItem, CodeOperand, Z80Pair, Z80Reg8};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -69,9 +69,10 @@ fn callee_preserves(map: &CalleePreserves, callee: Option<&str>, unit: &str) -> 
 
 /// The Z80 register UNITS the proof tracks — the 8-bit halves plus the index
 /// units (`sp` is stack discipline, the a7 analog, never tracked). Indexed
-/// `a=0 … l=7, ix=8, iy=9`.
-const UNITS: [&str; 10] = ["a", "f", "b", "c", "d", "e", "h", "l", "ix", "iy"];
-const NU: usize = 10;
+/// `a=0 … l=7, ix=8, iy=9`. Shared with [`crate::z80_out_verify`] so the out
+/// production twin ranges over the SAME unit universe the preserve proof does.
+pub(crate) const UNITS: [&str; 10] = ["a", "f", "b", "c", "d", "e", "h", "l", "ix", "iy"];
+pub(crate) const NU: usize = 10;
 
 /// The bail reason when an exit edge (`ret`/fall-off/tail-transfer) is reached with a
 /// tracked push slot still live — a cross-seam `push` here / `pop` in the successor
@@ -80,13 +81,15 @@ const NU: usize = 10;
 const STACK_AT_EXIT_BAIL: &str = "exit reached with a non-empty push stack (a cross-seam push/pop the local model cannot pair)";
 
 /// The unit index of a register spelling, or `None` for a non-tracked name.
-fn unit_idx(name: &str) -> Option<usize> {
+/// Shared with [`crate::z80_out_verify`] so both proofs map a contract-reglist
+/// unit name onto the same index.
+pub(crate) fn unit_idx(name: &str) -> Option<usize> {
     UNITS.iter().position(|u| *u == name)
 }
 
 /// The component units a register pair covers (`bc → {b,c}`, `af → {a,f}`;
 /// `ix`/`iy` are single 16-bit units; `sp` covers nothing — stack discipline).
-fn pair_units(p: Z80Pair) -> Vec<usize> {
+pub(crate) fn pair_units(p: Z80Pair) -> Vec<usize> {
     match p {
         Z80Pair::Bc => vec![idx("b"), idx("c")],
         Z80Pair::De => vec![idx("d"), idx("e")],
@@ -197,6 +200,29 @@ fn z80_writes_regs(mnem: &str, ops: &[CodeOperand]) -> Vec<usize> {
     }
 }
 
+/// The register UNITS a plain Z80 instruction PRODUCES — a value written on this
+/// pass — for [`crate::z80_out_verify`]'s out-honesty dataflow. It is
+/// [`z80_writes_regs`] (the register write set, WITHOUT the `f` flag unit: an out
+/// register is never `f`) PLUS a `pop rr`, which loads its pair from the stack and
+/// so writes each component register. `push` produces nothing (it reads a pair);
+/// `call`/`rst` credit is the callee's declared out, applied by the caller in
+/// [`crate::z80_out_verify`], not here. Sharing the write detector with the
+/// preserve proof is what keeps a production claim and a clobber claim from
+/// drifting apart on the same instruction.
+pub(crate) fn z80_produced_units(mnem: &str, ops: &[CodeOperand]) -> Vec<usize> {
+    let mut w = z80_writes_regs(mnem, ops);
+    if mnem == "pop" {
+        if let Some(CodeOperand::Z80Pair(p)) = ops.first() {
+            for u in pair_units(*p) {
+                if !w.contains(&u) {
+                    w.push(u);
+                }
+            }
+        }
+    }
+    w
+}
+
 /// Does this Z80 mnemonic leave the flag register `f` UNTOUCHED? The complement of
 /// the F-writer classification [`z80_writes`] layers on. The polarity is
 /// conservative: an unmodeled mnemonic is treated as a flag WRITER (returns
@@ -298,12 +324,23 @@ struct State {
 /// evaluated CodeBuf `items`. One forward dataflow serves all checked registers.
 /// A name outside the tracked Z80 universe is reported `Verified` vacuously (the
 /// caller validated register spelling upstream).
+///
+/// `noreturn` is the corpus `@noreturn` symbol set: a tail transfer to a diverging
+/// target (an `@noreturn` proc, or an `AssertDesugar` raise rail) is NOT a return
+/// path — the callee never hands control back to P's caller — so it carries no
+/// preserve obligation and clobbers nothing P's caller observes. This mirrors the
+/// 68k twin ([`crate::preserves`] calls [`exit_diverges`] at its transfer-out
+/// arm); without it, a `preserves(rN)` proc whose only exit tails into a noreturn
+/// handler is charged for a path that never returns (over-obligation). Corpus-dead
+/// today — no `preserves`-declaring Z80 proc tails into a noreturn target — so this
+/// is byte- and residue-neutral, closing the gap before a proc of that shape lands.
 pub fn verify_z80_preserved(
     items: &[CodeItem],
     check: &[String],
     invariant_regs: &[String],
     callee_map: &CalleePreserves,
     falls_into: Option<&str>,
+    noreturn: &BTreeSet<String>,
 ) -> BTreeMap<String, PreserveStatus> {
     let checked: Vec<(String, usize)> =
         check.iter().filter_map(|n| unit_idx(n).map(|i| (n.clone(), i))).collect();
@@ -353,8 +390,10 @@ pub fn verify_z80_preserved(
             // An external tail transfer (`jp`/`jr` to a symbol that is neither a
             // local label nor a local end-label) exits into the tail-callee, which
             // clobbers every unit it does not preserve. A local (end-)label jump is
-            // an in-proc fall-off, not a tail call — excluded.
-            if matches!(mnemonic.as_str(), "jp" | "jr") {
+            // an in-proc fall-off, not a tail call — excluded. A DIVERGING tail (an
+            // `@noreturn` target / raise rail) never returns to P's caller, so it
+            // clobbers nothing P's caller observes — excluded too.
+            if matches!(mnemonic.as_str(), "jp" | "jr") && !exit_diverges(it, noreturn) {
                 if let Some(t) = branch_sym(ops) {
                     if cfg.label_index(t).is_none() && !cfg.is_local_label(t) {
                         for (u, name) in UNITS.iter().enumerate() {
@@ -487,6 +526,15 @@ pub fn verify_z80_preserved(
                 // target → conservative clobber, via the oracle). Mirrors the
                 // `Return`/`FallOff` arm plus the callee oracle.
                 Edge::TailOut | Edge::BranchOut => {
+                    // A DIVERGING transfer (an `@noreturn` target / raise rail) is
+                    // not a return path — control never reaches P's caller — so it
+                    // carries no preserve obligation. Same predicate the 68k twin
+                    // uses; skip this edge (a sibling fall-through, if any, still
+                    // charges). Without this, a preserve claim would be charged
+                    // against a path that never returns.
+                    if exit_diverges(&items[idx], noreturn) {
+                        continue;
+                    }
                     saw_exit = true;
                     if st.bailed || !st.stack.is_empty() {
                         bailed_reached_exit = true;

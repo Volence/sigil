@@ -1232,3 +1232,432 @@ fn the_conditional_out_credit_surface_also_uses_verified_credit() {
         verified_source.verified_cond_out
     );
 }
+
+// ===========================================================================
+// §G4.5 Z80 out-honesty — the unit-domain twin of the 68k out-verify, exercised
+// through the SAME production wiring (`analyze_corpus` → the Z80 pass →
+// `check_z80_out`), never by hand-building the checker's input. Every negative
+// probe carries a positive control (the t24 rule).
+// ===========================================================================
+
+/// A Z80 `[proc.out-unverified]` firing on `(proc, unit)` is present.
+fn z80_out_fires(
+    r: &sigil_frontend_emp::corpus_contracts::ContractReport,
+    proc: &str,
+    unit: &str,
+) -> bool {
+    r.z80_out_firings.iter().any(|f| f.proc == proc && f.unit == unit)
+}
+
+/// NEGATIVE probe (FIRE): a Z80 `out(hl)` whose body never writes `hl` fires on
+/// BOTH pair halves — the no-production-from-nothing rule, per unit. Stands under
+/// the corpus Z80 pass's `check_z80_out` call site.
+#[test]
+fn z80_out_never_written_fires() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af) {\n\
+               ld a, 5\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(z80_out_fires(&r, "P", "h"), "out(hl) never writing hl must fire h: {:?}", r.z80_out_firings);
+    assert!(z80_out_fires(&r, "P", "l"), "out(hl) never writing hl must fire l: {:?}", r.z80_out_firings);
+}
+
+/// POSITIVE control (PASS): a Z80 `out(hl)` whose body writes `hl` on the only
+/// return path verifies — no firing. The non-vacuity twin of the FIRE probe.
+#[test]
+fn z80_out_written_passes() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) {\n\
+               ld hl, 0\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(!z80_out_fires(&r, "P", "h"), "written out(hl) must not fire: {:?}", r.z80_out_firings);
+    assert!(!z80_out_fires(&r, "P", "l"), "written out(hl) must not fire: {:?}", r.z80_out_firings);
+    // Non-vacuity: the claim was EXAMINED and CARRIED, not merely absent from the firings.
+    assert!(
+        r.z80_verified_out.get("P").is_some_and(|s| s.contains("h") && s.contains("l")),
+        "P's out(hl) must be carried in the Z80 verified map: {:?}",
+        r.z80_verified_out.get("P")
+    );
+}
+
+/// UNIT GRANULARITY: `out(hl)` writing only `l` (`ld l, a`) fires `h` and passes
+/// `l` — the check ranges over each 8-bit half of a pair, not the pair as a whole.
+#[test]
+fn z80_out_partial_pair_fires_the_unwritten_half() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af) {\n\
+               ld a, 5\n\
+               ld l, a\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(z80_out_fires(&r, "P", "h"), "the unwritten half h must fire: {:?}", r.z80_out_firings);
+    assert!(!z80_out_fires(&r, "P", "l"), "the written half l must pass: {:?}", r.z80_out_firings);
+}
+
+/// THE CORPUS RESIDUE SHAPE (carry-conditional result): a register produced ONLY
+/// on the carry-clear success edge, declared as an UNCONDITIONAL `out` beside a
+/// `out(carry:)` flag result, fires on the failure edge — exactly the six frozen
+/// baseline rows. `hl` is set on `.ok` (carry cleared by `or a`) and untouched on
+/// the `scf/ret` failure edge.
+#[test]
+fn z80_out_carry_conditional_result_fires_on_the_failure_edge() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl, carry: ok) clobbers(af) {\n\
+               or a\n\
+               jr z, .bad\n\
+               ld hl, 0\n\
+               or a\n\
+               ret\n\
+           .bad:\n\
+               scf\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(z80_out_fires(&r, "P", "h"), "hl unproduced on the scf/ret edge must fire: {:?}", r.z80_out_firings);
+    assert!(z80_out_fires(&r, "P", "l"), "hl unproduced on the scf/ret edge must fire: {:?}", r.z80_out_firings);
+}
+
+/// The `out(carry: NAME)` FLAG result is NOT a register unit — a proc whose ONLY
+/// out is the carry flag (no register reglist) produces no Z80 out firing, and no
+/// out claim rows. Guards against the carry NAME leaking into the register-unit
+/// domain.
+#[test]
+fn z80_out_carry_flag_only_is_not_a_register_claim() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(carry: found) clobbers(f) {\n\
+               scf\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(r.z80_out_firings.is_empty(), "a carry-only out has no register claim: {:?}", r.z80_out_firings);
+    assert!(
+        !r.z80_out_claims.iter().any(|(p, _)| p == "P"),
+        "a carry-only out declares no register unit claim: {:?}",
+        r.z80_out_claims
+    );
+}
+
+/// FALLS_INTO CREDIT, both polarities (the live `PsgVolEnv_Resolve →
+/// VolEnv_ResolveScan` shape). P produces `hl` nowhere and falls into S; when S
+/// produces `hl` locally, P's claim is credited from S's verified out — no firing;
+/// when S does NOT, P stands. Stands under the per-proc `check_z80_out` call site's
+/// `falls_into` argument AND the fixpoint's.
+#[test]
+fn z80_out_falls_into_successor_credit() {
+    let credited = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af) falls_into S {\n\
+               ld a, 1\n\
+           }\n\
+           proc S () out(hl) {\n\
+               ld hl, 0\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(!z80_out_fires(&credited, "P", "h"), "P credited from S's out(hl): {:?}", credited.z80_out_firings);
+    assert!(!z80_out_fires(&credited, "P", "l"), "P credited from S's out(hl): {:?}", credited.z80_out_firings);
+    assert!(
+        credited.z80_verified_out.get("P").is_some_and(|s| s.contains("h") && s.contains("l")),
+        "P's hl must be carried in the verified map via the fall-through: {:?}",
+        credited.z80_verified_out.get("P")
+    );
+
+    // NON-VACUITY / opposite polarity: a successor that does NOT produce hl leaves
+    // P's claim unproven — proving the successor is genuinely consulted.
+    let barren = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af) falls_into S {\n\
+               ld a, 1\n\
+           }\n\
+           proc S () clobbers(af) {\n\
+               ld a, 2\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(z80_out_fires(&barren, "P", "h"), "a successor not producing hl leaves P unproven: {:?}", barren.z80_out_firings);
+}
+
+/// CALL CREDIT: a returning `call Helper` credits Helper's verified out. P out(hl)
+/// grounds only in Helper's out(hl); Helper produces it → P passes. The opposite
+/// (Helper unverified) is covered by the verified-vs-declared test below.
+#[test]
+fn z80_out_call_credit() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af) {\n\
+               call Helper\n\
+               ret\n\
+           }\n\
+           proc Helper () out(hl) {\n\
+               ld hl, 0\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(!z80_out_fires(&r, "P", "h"), "call to an hl-producing Helper credits P: {:?}", r.z80_out_firings);
+    assert!(!z80_out_fires(&r, "P", "l"), "call to an hl-producing Helper credits P: {:?}", r.z80_out_firings);
+}
+
+/// TAIL CREDIT + the DIVERGENCE (noreturn) exemption. P out(hl) tail-jumps to a
+/// producing Sink → the tail is a required return path, credited → no firing. A
+/// tail into a `@noreturn` Dead is NOT a return path → no obligation there, so a
+/// body that otherwise produces nothing still passes for the diverging edge.
+#[test]
+fn z80_out_tail_credit_and_noreturn_exemption() {
+    // (a) tail into a verified producer: credited.
+    let credited = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af) {\n\
+               ld a, 1\n\
+               jp Sink\n\
+           }\n\
+           proc Sink () out(hl) {\n\
+               ld hl, 0\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(!z80_out_fires(&credited, "P", "h"), "tail into an hl producer credits P: {:?}", credited.z80_out_firings);
+
+    // (b) tail into a NON-producing target: P stands (the tail is a required
+    // return path and the target credits nothing).
+    let uncredited = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af) {\n\
+               ld a, 1\n\
+               jp Sink\n\
+           }\n\
+           proc Sink () clobbers(af) {\n\
+               ld a, 2\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(z80_out_fires(&uncredited, "P", "h"), "tail into a non-producer leaves P unproven: {:?}", uncredited.z80_out_firings);
+
+    // (c) tail into a @noreturn target: NOT a return path, so the diverging edge
+    // carries no out obligation — P passes even though it produces nothing.
+    let diverging = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af) {\n\
+               ld a, 1\n\
+               jp Dead\n\
+           }\n\
+           @noreturn\n\
+           proc Dead () clobbers(af, bc, de, hl, ix, iy) {\n\
+               jp Dead\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(!z80_out_fires(&diverging, "P", "h"), "a tail into @noreturn Dead carries no out obligation: {:?}", diverging.z80_out_firings);
+}
+
+/// THE Z80 RESIDUE SURFACE READS THE VERIFIED MAP, NOT THE DECLARED ONE — the Z80
+/// twin of `the_out_residue_surface_uses_verified_credit_not_declared`. D grounds
+/// its out(hl) ONLY in S's declared-but-unproduced out(hl). Under DECLARED credit
+/// the tail would hand D its hl and D would vanish; under VERIFIED credit S's own
+/// claim is unproven, credits nothing, and D stands. D firing is the discriminator.
+#[test]
+fn z80_out_residue_uses_verified_credit_not_declared() {
+    // S declares out(hl) and produces nothing → its claim is unverifiable, so it
+    // credits nothing to the tail that grounds in it.
+    let unverified_source = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc D () out(hl) clobbers(af) {\n\
+               ld a, 1\n\
+               jp S\n\
+           }\n\
+           proc S () out(hl) clobbers(af) {\n\
+               ld a, 2\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(
+        z80_out_fires(&unverified_source, "D", "h"),
+        "D grounds only in S's declared-but-unproduced out(hl); under verified credit it \
+         must stand — its absence means the surface reads the declared map: {:?}",
+        unverified_source.z80_out_firings
+    );
+
+    // OPPOSITE polarity / non-vacuity: the same D over a source that DOES produce
+    // hl must not fire.
+    let verified_source = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc D () out(hl) clobbers(af) {\n\
+               ld a, 1\n\
+               jp S\n\
+           }\n\
+           proc S () out(hl) {\n\
+               ld hl, 0\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(
+        !z80_out_fires(&verified_source, "D", "h"),
+        "a tail into a VERIFIED producer must discharge D's claim: {:?}",
+        verified_source.z80_out_firings
+    );
+    assert!(
+        verified_source.z80_verified_out.get("S").is_some_and(|s| s.contains("h")),
+        "the source S must really be a verified producer, or the case degenerates: {:?}",
+        verified_source.z80_verified_out.get("S")
+    );
+}
+
+/// THE MUST-JOIN DISCRIMINATOR: two paths that each produce hl on ONE side of a
+/// branch and NOT the other, REJOINING before a single shared `ret`. A MUST
+/// (intersection) join produces hl at the merge only if BOTH incoming paths do —
+/// so `l` (produced on only one leg) is unproduced at the shared exit and FIRES.
+/// A MAY (union) join would wrongly bless it. This is the test the corpus residue
+/// cannot provide: its carry-conditional firings come from SEPARATE return edges,
+/// never a merge, so the join rule is inert against them.
+#[test]
+fn z80_out_must_join_fires_on_a_merge_of_produced_and_unproduced() {
+    // The merge (.join `or a`) is a DISTINCT instruction that is the SOLE
+    // predecessor of the exit `ret`, so `ret` never sees a leg's state directly —
+    // only the JOINED state. The producing (taken) leg reaches the merge first, so
+    // under MAY the merge holds {h,l} when it propagates and `l` passes; under MUST
+    // the non-producing leg intersects it to {h} before the merge propagates, so
+    // `l` fires. (A merge that coincides with the exit fires `l` under BOTH joins —
+    // the exit sees the under-producing leg directly — which is why the join must
+    // be a distinct node here.)
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af) {\n\
+               ld h, 0\n\
+               or a\n\
+               jr z, .prod\n\
+               jr .join\n\
+           .prod:\n\
+               ld l, 0\n\
+           .join:\n\
+               or a\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(z80_out_fires(&r, "P", "l"), "l produced on only one leg must fire under MUST join: {:?}", r.z80_out_firings);
+    assert!(!z80_out_fires(&r, "P", "h"), "h produced on both legs must pass: {:?}", r.z80_out_firings);
+}
+
+/// CALL-CC BLESSING (fixup item 1): a `call cc, Foo` returns on BOTH edges but
+/// z80_edges models it as a single fall-through, so crediting Foo's out there
+/// would bless production that only ran when the condition held. P's out(hl)
+/// grounds ONLY in a conditional `call nz, Helper` — it must FIRE. (Before the
+/// fix the fall-through credit blessed it.)
+#[test]
+fn z80_out_conditional_call_does_not_bless_its_callee_out() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af) {\n\
+               or a\n\
+               call nz, Helper\n\
+               ret\n\
+           }\n\
+           proc Helper () out(hl) {\n\
+               ld hl, 0\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(z80_out_fires(&r, "P", "h"), "a conditional call must not bless Helper's out(hl): {:?}", r.z80_out_firings);
+    assert!(z80_out_fires(&r, "P", "l"), "a conditional call must not bless Helper's out(hl): {:?}", r.z80_out_firings);
+}
+
+/// t24 POSITIVE control: the SAME shape with an UNCONDITIONAL `call Helper` still
+/// credits Helper's verified out — the fix spares only the conditional form.
+#[test]
+fn z80_out_unconditional_call_still_credits_its_callee_out() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af) {\n\
+               call Helper\n\
+               ret\n\
+           }\n\
+           proc Helper () out(hl) {\n\
+               ld hl, 0\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(!z80_out_fires(&r, "P", "h"), "an unconditional call must still credit Helper's out(hl): {:?}", r.z80_out_firings);
+    assert!(!z80_out_fires(&r, "P", "l"), "an unconditional call must still credit Helper's out(hl): {:?}", r.z80_out_firings);
+}
+
+/// EXCHANGE SEMANTICS (fixup item 2): production is gen-only, so a CANCELLING
+/// `ex de,hl` pair must NOT mark hl produced — after the round trip hl holds its
+/// untouched entry value. P out(hl) whose only "writes" to hl are two cancelling
+/// `ex de,hl` (de itself never produced) must FIRE. (Before the fix the exchange
+/// gen-all marked hl produced — the Finding-2 shape.)
+#[test]
+fn z80_out_cancelling_ex_de_hl_pair_fires() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af, de) {\n\
+               ex de, hl\n\
+               ex de, hl\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(z80_out_fires(&r, "P", "h"), "a cancelling ex de,hl pair must not produce hl: {:?}", r.z80_out_firings);
+    assert!(z80_out_fires(&r, "P", "l"), "a cancelling ex de,hl pair must not produce hl: {:?}", r.z80_out_firings);
+}
+
+/// EXCHANGE PERMUTATION (fixup item 2, positive twin — the VolEnv_ResolveScan
+/// shape the blanket-clear ruling was rejected for): REAL writes to d,e between
+/// two `ex de,hl` genuinely land the produced value in hl. `ld d/ld e` produce
+/// {d,e}; the first `ex de,hl` permutes them into {h,l} (and clears the old d,e);
+/// hl is then genuinely produced — out(hl) must PASS.
+#[test]
+fn z80_out_ex_de_hl_permutes_real_production_into_hl() {
+    let r = analyze(&[
+        "module m (cpu: z80)\n\
+         section s (cpu: z80, vma: $0) {\n\
+           proc P () out(hl) clobbers(af, de) {\n\
+               ld d, 0\n\
+               ld e, 0\n\
+               ex de, hl\n\
+               ret\n\
+           }\n\
+         }\n",
+    ]);
+    assert!(!z80_out_fires(&r, "P", "h"), "real d,e writes permuted into hl must produce h: {:?}", r.z80_out_firings);
+    assert!(!z80_out_fires(&r, "P", "l"), "real d,e writes permuted into hl must produce l: {:?}", r.z80_out_firings);
+}

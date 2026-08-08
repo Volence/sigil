@@ -22,6 +22,46 @@
 
 use std::collections::BTreeMap;
 
+/// `[proc.out-unverified]` for `(cpu: z80)` procs (§G4.5, the Z80 unit-domain
+/// twin): a Z80 proc declares `out(rN)` but the production dataflow cannot prove
+/// `rN` (a register UNIT) is written on every required return path.
+///
+/// EVERY ROW IS ONE CLASS — a CARRY-CONDITIONAL RESULT. Each firing names a
+/// register that is a valid result ONLY on the callee's carry-CLEAR (success)
+/// edge: produced there (`… / or a / ret`), and left unproduced on the carry-SET
+/// (failure) edge (`scf / ret`), which the caller does not read. The declaration
+/// pairs the register out with a `out(carry: NAME)` flag result that IS the
+/// register's validity signal — and the caller-side `[call.flag-result-unused]`
+/// gate proves every caller consumes that carry before touching the register.
+///
+/// The register is declared UNCONDITIONALLY (`out(iy)`, `out(de)`, …) rather than
+/// as the honest conditional form `out(rN if nc)`, because the Z80 conditional
+/// REGISTER out is represented-not-wired (unlike the 68k `out(rN if cc)`, which is
+/// modeled). So the production check — reading the declaration as written — cannot
+/// see the conditional edge and correctly reports the register unproduced on the
+/// failure path. These are verifier-model / contract-precision gaps, NOT dishonest
+/// declarations: none is a register never written on ANY path (each IS produced on
+/// its success edge), so there is no byte-neutral aeon fix that is not a narrowing
+/// of a true contract. KILL CONDITION: wiring the Z80 `out(rN if cc)` form (so the
+/// declaration can name the carry edge) closes every row here at once.
+///
+/// A SEPARATE array from [`OUT_UNVERIFIED_BASELINE`], never merged into it: the
+/// 68k residue is keyed by `dN`/`aN` and carries a width facet; the Z80 residue is
+/// keyed by the 8-bit/index UNITS (`h`/`l`/`a`/`ix`/…) an `out(hl)` expands to and
+/// has no width. One flat array, because a Z80 out is a DECLARATION (not
+/// comptime-gated), so its residue is the SAME set on every shipped shape — the
+/// closure gate walks all seven and the diff must hold for each. The non-vacuity
+/// census (`z80_out_claims`) proves the gate ranged over the real out declarations
+/// rather than passing because the walk saw nothing.
+pub const Z80_OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
+    ("Sfx_MusicChanPtr", "iy"),
+    ("Sfx_ResolveBlob", "d"),
+    ("Sfx_ResolveBlob", "e"),
+    ("Sfx_SelectVoice", "d"),
+    ("Snd_DacLookup", "h"),
+    ("Snd_DacLookup", "l"),
+];
+
 /// `[proc.out-unverified]` (§G4.5): a proc declares `out(rN)` but the closure
 /// cannot prove `rN` is produced on every required return path.
 ///
@@ -208,6 +248,20 @@ pub fn diff_out_unverified(got: &[(String, String)]) -> BaselineDiff {
         OUT_UNVERIFIED_BASELINE
             .iter()
             .map(|(p, r)| format!("{p} :: out({r})"))
+            .collect(),
+    )
+}
+
+/// Diff the corpus's Z80 `[proc.out-unverified]` firings against the frozen Z80
+/// baseline. Its OWN diff fn against its OWN array — never folded into
+/// [`diff_out_unverified`], so a Z80 row and a 68k row can never masquerade for
+/// each other in a multiset that spans both key spaces.
+pub fn diff_z80_out_unverified(got: &[(String, String)]) -> BaselineDiff {
+    diff_multiset(
+        got.iter().map(|(p, u)| format!("{p} :: out({u})")).collect(),
+        Z80_OUT_UNVERIFIED_BASELINE
+            .iter()
+            .map(|(p, u)| format!("{p} :: out({u})"))
             .collect(),
     )
 }

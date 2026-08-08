@@ -176,7 +176,9 @@ pub(super) fn lower_proc(
     // (byte-frozen — `preserves.rs` untouched). Both are opt-in declared
     // CONTRACTs, error-tier, NOT silenced by `@as_compat`.
     if ctx.cpu == Cpu::Z80 {
-        check_z80_preserves(proc, &buf, ctx.invariant_regs, ctx.callee_preserves, diags);
+        check_z80_preserves(
+            proc, &buf, ctx.invariant_regs, ctx.callee_preserves, ctx.noreturn, diags,
+        );
     } else if !proc.preserves.is_empty() {
         check_preserves(proc, &buf, ctx.noreturn, ctx.sr_mask_preservers, diags);
     }
@@ -728,6 +730,7 @@ fn check_z80_preserves(
     buf: &crate::value::CodeBuf,
     invariant_regs: &[String],
     callee_preserves: &crate::z80_preserves::CalleePreserves,
+    noreturn: &BTreeSet<String>,
     diags: &mut Vec<Diagnostic>,
 ) {
     use crate::preserves::PreserveStatus;
@@ -757,6 +760,7 @@ fn check_z80_preserves(
             invariant_regs,
             callee_preserves,
             proc.falls_into.as_deref(),
+            noreturn,
         );
     for (reg, status) in statuses {
         // Whether `reg` is an INHERITED invariant (vs an explicit preserve) — for

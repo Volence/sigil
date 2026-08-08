@@ -1002,6 +1002,45 @@ fn corpus_conditional_callee_out_is_credited_edge_sensitively() {
     }
 }
 
+/// Z80 CONSISTENCY (the twin of `corpus_out_residue_is_the_verified_complement`):
+/// the Z80 out-verify residue surface and the Z80 verified-out fixpoint read ONE
+/// source, so they cannot disagree on whether a Z80 out is honest — every residue
+/// unit is ABSENT from the verified map, i.e. the residue IS the verified
+/// complement. Guarded against vacuity in its OWN walk: the residue must be
+/// non-empty (else the loop below passes by measuring nothing).
+///
+/// Define-free like `corpus_report()`: the Z80 pass walks every `(cpu: z80)`
+/// module regardless of comptime defines, so the Z80 out residue is the same set a
+/// per-shape walk sees; the SHIPPED-SHAPE authority is the frozen-baseline gate
+/// above.
+#[test]
+fn corpus_z80_out_residue_is_the_verified_complement() {
+    let Some(r) = corpus_report() else { return };
+    assert!(
+        !r.z80_out_firings.is_empty(),
+        "the Z80 out residue is empty — the loop below would pass by measuring nothing"
+    );
+    for f in &r.z80_out_firings {
+        let marked_verified =
+            r.z80_verified_out.get(&f.proc).is_some_and(|s| s.contains(&f.unit));
+        assert!(
+            !marked_verified,
+            "{}::out({}) is in the Z80 out-verify residue yet marked VERIFIED — the residue \
+             surface and the fixpoint have drifted apart",
+            f.proc, f.unit
+        );
+    }
+    // The complement's positive half: a proc whose out DID verify must carry the
+    // unit in the verified map (a locally-produced out, the common case). Without
+    // this the check above is satisfied by a fixpoint that verifies nothing at all.
+    assert!(
+        r.z80_verified_out.get("Fm_RoutePart").is_some_and(|s| s.contains("b") && s.contains("c")),
+        "Fm_RoutePart's locally-produced out(b, c) must be VERIFIED — a fixpoint that \
+         verifies nothing would make the residue-complement check vacuous: {:?}",
+        r.z80_verified_out.get("Fm_RoutePart")
+    );
+}
+
 /// §3.2 THE BRACKET GATE. Every `with` region in the corpus must prove its
 /// pairing: no path leaves the body without the release, no branch enters it past
 /// the acquire, no acquired context is taken twice. The per-file gate already
@@ -1447,6 +1486,48 @@ fn contract_baselines_hold_for_every_shipped_shape() {
             "shape `{label}`: {}",
             contract_baseline::adjudication_message("[proc.out-unverified]", &d)
         );
+
+        // §G4.5 Z80 out-honesty — the Z80 unit-domain twin, against its OWN frozen
+        // array. Shape-invariant (a Z80 out is a declaration, not comptime-gated),
+        // so the SAME diff must hold for every shipped shape. Its non-vacuity is the
+        // claim census below, not this diff — the frozen set is not empty, so a walk
+        // that silently saw no Z80 procs would fail this diff as GONE rows.
+        let z80_out: Vec<(String, String)> =
+            r.z80_out_firings.iter().map(|f| (f.proc.clone(), f.unit.clone())).collect();
+        let d = contract_baseline::diff_z80_out_unverified(&z80_out);
+        assert!(
+            d.is_clean(),
+            "shape `{label}`: {}",
+            contract_baseline::adjudication_message("[proc.out-unverified] (Z80)", &d)
+        );
+        // NON-VACUITY: the Z80 out check must have ranged over the corpus's real out
+        // declarations. `z80_out_claims` is the DECLARED register-out set (a Z80 out
+        // is shape-independent), so a walk that lost the Z80 modules empties it here
+        // even while `is_clean()` might hold over a matching-empty firing set.
+        assert!(
+            r.z80_out_claims.len() >= 30,
+            "shape `{label}`: only {} Z80 out claims — the Z80 pass lost modules, so \
+             the Z80 out gate above ranged over almost nothing: {:?}",
+            r.z80_out_claims.len(),
+            r.z80_out_claims
+        );
+        // …with a NAMED witness so an out-declaration deletion that coincidentally
+        // preserves the count still fails (pin content, not only cardinality).
+        for witness in [
+            ("Snd_DacLookup", "h"),
+            ("Fm_RoutePart", "b"),
+            ("Psg_HwCh", "a"),
+            ("Sfx_QueueEntryPtr", "h"),
+        ] {
+            assert!(
+                r.z80_out_claims.iter().any(|(p, u)| p == witness.0 && u == witness.1),
+                "shape `{label}`: the Z80 out claim `{} :: out({})` is gone — the \
+                 non-vacuity witness for the Z80 out gate: {:?}",
+                witness.0,
+                witness.1,
+                r.z80_out_claims
+            );
+        }
 
         // Non-vacuity that is not implied by `is_clean()`: the walk must have
         // produced firings at all. An analysis that silently returned nothing

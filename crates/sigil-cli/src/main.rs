@@ -1009,6 +1009,17 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
         failed = true;
     }
 
+    // §G4.5 Z80 out-honesty — its OWN frozen array, wired here so `sigil build`
+    // enforces the Z80 baseline exactly as the CI test does (the "read by both
+    // gates, neither owns a copy" invariant contract_baseline.rs states).
+    let z80_out_got: Vec<(String, String)> =
+        report.z80_out_firings.iter().map(|f| (f.proc.clone(), f.unit.clone())).collect();
+    let d = bl::diff_z80_out_unverified(&z80_out_got);
+    if !d.is_clean() {
+        eprintln!("error: {}", bl::adjudication_message("[proc.out-unverified] (Z80)", &d));
+        failed = true;
+    }
+
     let d1c_got: Vec<(String, String, String)> = report
         .live_clobbered_firings
         .iter()
@@ -1138,6 +1149,15 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
     println!("\n-- [proc.out-unverified] firings (§G4.5, {}): --", report.out_firings.len());
     for f in &report.out_firings {
         println!("  {:<28} out({}) — {}", f.proc, f.reg, f.reason);
+    }
+
+    println!(
+        "\n-- [proc.out-unverified] Z80 firings (§G4.5, {} over {} claim(s)): --",
+        report.z80_out_firings.len(),
+        report.z80_out_claims.len()
+    );
+    for f in &report.z80_out_firings {
+        println!("  {:<28} out({}) — {}", f.proc, f.unit, f.reason);
     }
 
     println!(
