@@ -287,8 +287,22 @@ pub(super) fn lower_proc(
     // every 68k body. 68k only: `preserves.rs` and the `Cfg` edge model it walks
     // are the 68k pair (`z80_preserves` is the Z80 sibling and has no stack-delta
     // arm yet).
-    if ctx.cpu != Cpu::Z80 {
+    // A `@continuation` proc is exempt (bookmark ask 4): it is entered by a
+    // manufactured/hardware transfer and its manufactured `rte`/`rts` consume a
+    // frame the model never saw pushed (the hijacked exception frame, or a
+    // push-SR/push-PC pair the `rte` pops). Its frame discipline is the author's
+    // responsibility — a trust root, like `grants(...)`. Gated on
+    // `is_continuation()`, which no existing corpus proc carries, so this is
+    // check-neutral everywhere else.
+    if ctx.cpu != Cpu::Z80 && !proc.is_continuation() {
         check_stack_balance(file, proc, &buf, ctx.as_compat, diags);
+    }
+
+    // 11a. `@continuation` (bookmark ask 4): the manufactured-frame license's own
+    // validity — a declared register-state set and the 68k scope guard. The
+    // stack-balance exemption above is the license itself; this is its two guards.
+    if proc.is_continuation() {
+        check_continuation(proc, ctx.cpu, diags);
     }
 
     // 11b. `@resumable` (bookmark ask 1): the STACKLESS contract. The body must
@@ -426,6 +440,51 @@ fn check_resumable(
                 "[resumable.stack-op] in `{}`: {} — a `@resumable` proc must keep all live \
                  state in registers and touch the stack nowhere (it exits by `jmp (aN)`)",
                 proc.name, f.what
+            ),
+        );
+    }
+}
+
+/// Report the `@continuation` (manufactured-frame license) validity failures
+/// (bookmark ask 4). The license itself — the stack-balance exemption — is applied
+/// at the call site; this owns its two guards, both ERROR-tier and NEVER softened
+/// (a manufactured-transfer trust root is a strict opt-in, not a faithful-port
+/// lint):
+///
+/// - `[continuation.z80-unsupported]` — the manufactured-frame mechanism (the
+///   68k exception frame, `rte`, the stack model it relaxes) is 68k; matching the
+///   `@resumable`/`inout` Z80 scope guards.
+/// - `[continuation.contract-required]` — a `@continuation` proc MUST declare its
+///   register-state set with `clobbers(...)`. It is entered mid-transfer with live
+///   registers the checker cannot prove; the declared set is the trusted contract
+///   consumers compile against. An undeclared set would silently exempt the proc
+///   from the clobber lint (`check_clobbers` gates on `clobbers.is_some()`) with no
+///   register contract at all.
+fn check_continuation(proc: &ast::ProcDecl, cpu: Cpu, diags: &mut Vec<Diagnostic>) {
+    if cpu == Cpu::Z80 {
+        push(
+            diags,
+            Level::Error,
+            proc.span,
+            format!(
+                "[continuation.z80-unsupported] `{}` declares `@continuation`, but the \
+                 manufactured-frame mechanism (the 68k exception frame + `rte` it licenses) is \
+                 68k-only",
+                proc.name
+            ),
+        );
+        return;
+    }
+    if proc.clobbers.is_none() {
+        push(
+            diags,
+            Level::Error,
+            proc.span,
+            format!(
+                "[continuation.contract-required] `@continuation` proc `{}` must declare its \
+                 register-state set with `clobbers(...)` — it is entered mid-transfer with live \
+                 registers the checker cannot prove, so the declared set is the trusted contract",
+                proc.name
             ),
         );
     }

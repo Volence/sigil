@@ -371,6 +371,15 @@ pub enum ItemAuthor {
         /// non-call splice expression).
         template: String,
     },
+    /// The line carries a compiler-RESOLVED `irq_frame.pc` accessor (bookmark
+    /// ask 3): a `(disp, sp)` memory operand the toolchain derived from the
+    /// handler's full-save `movem` to address the stacked interrupted PC. The
+    /// author itself wrote the line, but the sp-relative operand is a
+    /// toolchain-verified frame access ABOVE the saved registers, so the
+    /// preserves stack model exempts it from the alias-hazard bail (a store there
+    /// provably cannot corrupt a saved-register slot) — realizing the ask's
+    /// nuance (a) that a PC rewrite still satisfies `preserves(d0-a6)`.
+    IrqFrame,
 }
 
 /// Which half of a `with` bracket a [`ItemAuthor::Context`] item belongs to.

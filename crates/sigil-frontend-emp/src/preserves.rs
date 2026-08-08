@@ -814,6 +814,39 @@ fn is_safe_sp_disp_read(mnem: &str, ops: &[CodeOperand]) -> bool {
         && matches!(ops.last(), Some(CodeOperand::Reg(r)) if *r != Reg::A7)
 }
 
+/// The instruction at `idx` carries a compiler-resolved `irq_frame.pc` accessor
+/// (authored [`ItemAuthor::IrqFrame`], bookmark ask 3) AND that derived `(disp, sp)`
+/// is its ONLY sp-referencing operand — so the exemption from the sp alias-hazard
+/// bail applies to the derived, provably-above-the-saves access ALONE.
+///
+/// GAP B: the exemption is DERIVED-OPERAND-scoped, not line-scoped. A line like
+/// `move.l irq_frame.pc, 8(sp)` carries the derived read AND a second hand-written
+/// `d(sp)` STORE that CAN alias a saved-register slot; that second operand must
+/// still bail. So the exemption holds only when exactly one operand touches sp
+/// (the accessor). Any second sp operand drops the exemption and the hazard fires.
+fn is_irq_frame_access(items: &[CodeItem], idx: usize) -> bool {
+    let Some(CodeItem::Instr { author: ItemAuthor::IrqFrame, ops, .. }) = items.get(idx) else {
+        return false;
+    };
+    ops.iter().filter(|o| operand_touches_sp(o)).count() == 1
+}
+
+/// Whether an operand references sp/a7 in an ALIAS-hazard position — the same set
+/// [`sp_hazard`] flags (a bare `a7`, `(sp)`, `d(sp)`, `(sp,Xn)`). Used to count the
+/// sp operands on an `irq_frame.pc` line so the exemption stays scoped to the one
+/// derived access (bookmark ask 3 GAP B). Push/pop (`-(sp)`/`(sp)+`) are handled by
+/// the dedicated slot machinery, not this alias-hazard set.
+fn operand_touches_sp(op: &CodeOperand) -> bool {
+    matches!(
+        op,
+        CodeOperand::Reg(Reg::A7)
+            | CodeOperand::Ind(Reg::A7)
+            | CodeOperand::DispInd { reg: Reg::A7, .. }
+            | CodeOperand::IndIdx { reg: Reg::A7, .. }
+            | CodeOperand::IndIdx { xn: Reg::A7, .. }
+    )
+}
+
 /// A plain `(sp)` READ: the top slot is the SOURCE and the destination is
 /// something else. A load cannot alter a slot's contents, so it is not an alias
 /// hazard whatever the mnemonic — `adda.w (sp), a2` reads the top word exactly as
@@ -834,16 +867,7 @@ fn is_sp_top_read(ops: &[CodeOperand]) -> bool {
 /// cannot alter a slot's contents: the `(sp)` peek ([`is_peek`]) and the
 /// displaced-frame read ([`is_safe_sp_disp_read`]).
 fn sp_hazard(ops: &[CodeOperand]) -> bool {
-    ops.iter().any(|o| {
-        matches!(
-            o,
-            CodeOperand::Reg(Reg::A7)
-                | CodeOperand::Ind(Reg::A7)
-                | CodeOperand::DispInd { reg: Reg::A7, .. }
-                | CodeOperand::IndIdx { reg: Reg::A7, .. }
-                | CodeOperand::IndIdx { xn: Reg::A7, .. }
-        )
-    })
+    ops.iter().any(operand_touches_sp)
 }
 
 /// If `(mnem, ops)` is an IMMEDIATE sp-INCREASE (`add`/`addq`/`adda #N, sp`), the
@@ -949,8 +973,18 @@ fn transfer(
     // READ into a plain register (`movea.l d(sp), aN`), the displaced analogue of
     // the `(sp)` peek: a load cannot alias a tracked slot (only a store could), so
     // it is safe and takes the normal register-write handling below (§5 grow —
-    // sp_hazard's own "could alias" rationale is write-only).
-    if sp_hazard(ops) && !is_sp_top_read(ops) && !is_safe_sp_disp_read(mnem, ops) {
+    // sp_hazard's own "could alias" rationale is write-only). And EXCEPT a
+    // compiler-resolved `irq_frame.pc` accessor (bookmark ask 3 nuance (a)): the
+    // toolchain derived its `(disp, sp)` from the handler's full-save `movem`, so
+    // it provably addresses the exception frame ABOVE the saved registers and
+    // cannot alias a tracked slot — a PC rewrite there still satisfies
+    // `preserves(d0-a6)`. It takes the normal handling below (a store to memory
+    // writes no register, so the entry-value bits are untouched).
+    if sp_hazard(ops)
+        && !is_sp_top_read(ops)
+        && !is_safe_sp_disp_read(mnem, ops)
+        && !is_irq_frame_access(items, idx)
+    {
         return Some(sp_hazard_reason(ops));
     }
 

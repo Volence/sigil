@@ -1107,6 +1107,22 @@ impl ProcDecl {
         self.attrs.iter().any(|a| a.name == "resumable")
     }
 
+    /// Whether this proc declares `@continuation` — the MANUFACTURED-FRAME license
+    /// (bookmark ask 4): a proc entered by a manufactured or hardware control
+    /// transfer (`rte`/`jmp`) rather than a call, whose register-state set is
+    /// declared (trusted), not proven. It is the trust root for the supervisor
+    /// bookmark's re-entry primitives — the `rte`-entered register-banking stub
+    /// (exits by bare `rts` into its grand-caller's frame) and the `jmp`-entered
+    /// resume (push SR / push PC / `rte`). A `@continuation` proc is exempt from
+    /// the stack-balance charge (`check_stack_balance`): its frame discipline is
+    /// the manufactured-transfer author's responsibility, exactly as `grants(...)`
+    /// is a trust root the assembler cannot verify. Requires a declared
+    /// `clobbers(...)` (`[continuation.contract-required]`); 68k-only
+    /// (`[continuation.z80-unsupported]`).
+    pub fn is_continuation(&self) -> bool {
+        self.attrs.iter().any(|a| a.name == "continuation")
+    }
+
     /// The registers carrying an `out(rN if cc)` guard, canonical under `rf`.
     pub fn cond_out_regs(
         &self,
