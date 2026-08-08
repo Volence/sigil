@@ -31,6 +31,7 @@
 
 use crate::closure::RegEffect;
 use crate::flag_check::{conditional_out_edge_credits, Cfg, Edge};
+use crate::out_verify::{OutWidth, OutWidthMap};
 use crate::lower::instr_written_regs;
 use crate::value::{CodeItem, CodeOperand};
 use sigil_span::Span;
@@ -159,7 +160,7 @@ fn must_defined_in(
     entry: usize,
     params: &BTreeSet<String>,
     callee_out: &BTreeMap<String, BTreeSet<String>>,
-    edge_credit: &BTreeMap<(usize, usize), BTreeSet<String>>,
+    edge_credit: &BTreeMap<(usize, usize), BTreeMap<String, OutWidth>>,
 ) -> BTreeMap<usize, BTreeSet<String>> {
     let mut in_def: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
     in_def.insert(entry, params.clone());
@@ -191,9 +192,13 @@ fn must_defined_in(
             // intersection at `succ` — NOT a global "rN defined post-call" fact
             // (§3): at a merge reached from this success edge AND a non-producing
             // predecessor, the intersection below correctly drops rN.
+            // The credit's WIDTHS are deliberately dropped: must-def is width-blind
+            // end to end (`written_names` credits a `.b` write as a definition too),
+            // and honouring a width here alone would make a callee's byte-wide out
+            // define less than the identical inline byte write beside it.
             let edge_out = match edge_credit.get(&(idx, succ)) {
                 None => out.clone(),
-                Some(extra) => out.union(extra).cloned().collect(),
+                Some(extra) => out.iter().cloned().chain(extra.keys().cloned()).collect(),
             };
             let changed = match in_def.get(&succ) {
                 None => {
@@ -239,7 +244,7 @@ pub fn check_input_undefined(
     // §4). `callee_out` here is the UNCONDITIONAL subset (the corpus subtracts the
     // conditional-out registers), so must-def's unconditional credit stays sound
     // and the conditional credit is applied edge-sensitively below.
-    let edge_credit = conditional_out_edge_credits(&cfg, items, cond_callees);
+    let edge_credit = conditional_out_edge_credits(&cfg, items, cond_callees, &OutWidthMap::new());
     let defined = must_defined_in(&cfg, entry, params, callee_out, &edge_credit);
 
     let mut firings = Vec::new();

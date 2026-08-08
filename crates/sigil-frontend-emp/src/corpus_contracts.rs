@@ -28,7 +28,7 @@ use crate::lower::{
 };
 use crate::out_verify::{
     check_cond_out_survives, check_out, compute_verified_outs, CondOutMap, CondOutSurvivesFiring,
-    OutFiring, UncondOutMap,
+    OutFiring, OutWidth, OutWidthMap, OutWidths, UncondOutMap,
 };
 use crate::preserves::{find_dead_saves, DeadSave};
 use crate::branch_const::{check_branch_const, BranchConstFiring};
@@ -569,6 +569,12 @@ pub fn analyze_corpus_with_contracts(
         .iter()
         .filter_map(|pb| pb.falls_into.clone().map(|succ| (pb.name.clone(), succ)))
         .collect();
+    // Proc -> the WIDTH each typed `out(dN: T)` claims. A bare `out(rN)` is absent
+    // and keeps its 32-bit meaning, so this map only ever RELAXES an obligation —
+    // and only where an author wrote a type. It serves both directions at once:
+    // a proc's own row is what its returns are charged, and every other proc's row
+    // is what a call / tail / fall-off to it may be credited.
+    let out_widths = collect_out_widths(files);
     let (verified_uncond_out, verified_cond_out): (UncondOutMap, CondOutMap) =
         compute_verified_outs(
             &proc_items,
@@ -577,6 +583,7 @@ pub fn analyze_corpus_with_contracts(
             &extern_names,
             &falls_into_succ,
             &noreturn,
+            &out_widths,
         );
 
     // §6 caller-side flag checks, now that every callee's contract is known. §6
@@ -694,6 +701,7 @@ pub fn analyze_corpus_with_contracts(
     // an unverified callee out (Collision_GetType ← the narrow-width
     // Tile_Cache_GetCollision) now correctly appears here.
     let mut out_firings: Vec<OutFiring> = Vec::new();
+    let empty_widths: BTreeMap<String, OutWidth> = BTreeMap::new();
     for pb in &proc_bufs {
         let uncond: Vec<Reg> = callee_uncond_out
             .get(&pb.name)
@@ -724,6 +732,10 @@ pub fn analyze_corpus_with_contracts(
             // derivation shared with the fixpoint above.
             pb.falls_into.as_deref(),
             &noreturn,
+            OutWidths {
+                own: out_widths.get(&pb.name).unwrap_or(&empty_widths),
+                callees: &out_widths,
+            },
         ));
     }
     out_firings.sort_by(|a, b| (&a.proc, &a.reg, a.span.start).cmp(&(&b.proc, &b.reg, b.span.start)));
@@ -1142,6 +1154,134 @@ fn newtype_of(ty: &ast::Type, newtypes: &BTreeSet<String>) -> Option<String> {
 /// register spelling.
 fn slot_reg_idx(name: &str) -> Option<usize> {
     Reg::from_name(name).map(|r| r as usize)
+}
+
+/// Every declared newtype's UNDERLYING type, by name (recursing sections). Read
+/// only by [`out_width_of`], which needs the payload a newtype erases to and not
+/// merely whether the name is one.
+fn collect_newtype_underlying(files: &[ast::File]) -> BTreeMap<String, ast::Type> {
+    fn walk(items: &[Item], out: &mut BTreeMap<String, ast::Type>) {
+        for item in items {
+            match item {
+                Item::Newtype(n) => {
+                    out.insert(n.name.clone(), n.underlying.clone());
+                }
+                Item::Section(s) => walk(&s.items, out),
+                _ => {}
+            }
+        }
+    }
+    let mut out = BTreeMap::new();
+    for file in files {
+        walk(&file.items, &mut out);
+    }
+    out
+}
+
+/// How many low-order bytes of a register a value of type `ty` occupies — the
+/// content of an `out(dN: T)` claim.
+///
+/// **A NEWTYPE NARROWS to its underlying type**, transitively (`EntryRef` →
+/// `EntryIndex` → `i16` → two bytes). It has to: `out(d0: EntryRef)` and
+/// `out(d0: u16)` are two spellings of ONE slot, so if a domain type did not carry
+/// its width, a typed out could never state one — the author's only route to a
+/// narrow claim would be deleting the domain type, which is exactly the
+/// declaration the `[call.slot-type-mismatch]` slice needs. Narrowing also keeps a
+/// single authority for how wide a `SectionId` is.
+///
+/// Anything whose width is not derivable here — an unknown name, a struct, an
+/// enum, an array, a tuple — answers [`OutWidth::L`]. That is the CONSERVATIVE
+/// answer, not a fallback: L is the bare-`out` obligation, so an unresolvable type
+/// relaxes nothing and the check stays exactly as strict as it was before anyone
+/// wrote a type.
+///
+/// `depth` bounds a newtype cycle (`newtype A = B` / `newtype B = A`). Such a
+/// corpus is rejected elsewhere; here it must merely not hang.
+fn out_width_of(ty: &ast::Type, newtypes: &BTreeMap<String, ast::Type>, depth: usize) -> OutWidth {
+    if depth == 0 {
+        return OutWidth::L;
+    }
+    match ty {
+        // A refinement narrows the VALUE range, never the storage — the width is
+        // the underlying type's.
+        ast::Type::Refined(inner, _, _) => out_width_of(inner, newtypes, depth - 1),
+        // A 68k pointer is a full address register's worth.
+        ast::Type::Ptr(_) => OutWidth::L,
+        ast::Type::Fixed { i, f } => bits_to_width(i + f),
+        ast::Type::Named(path) => {
+            let Some(leaf) = path.segments.last() else { return OutWidth::L };
+            match leaf.as_str() {
+                "u8" | "i8" => OutWidth::B,
+                "u16" | "i16" | "u16le" => OutWidth::W,
+                "u32" | "i32" => OutWidth::L,
+                _ => match newtypes.get(leaf) {
+                    Some(under) => out_width_of(under, newtypes, depth - 1),
+                    None => OutWidth::L,
+                },
+            }
+        }
+        ast::Type::Array(_, _) | ast::Type::Tuple(_) => OutWidth::L,
+    }
+}
+
+/// The register width holding `bits`, rounded UP to a 68k operand size and capped
+/// at a long — a register has no wider claim to make.
+fn bits_to_width(bits: u32) -> OutWidth {
+    match bits {
+        0..=8 => OutWidth::B,
+        9..=16 => OutWidth::W,
+        _ => OutWidth::L,
+    }
+}
+
+/// Build the corpus-wide `out(dN: T)` width map: proc name → register → the width
+/// its declared type claims. A proc with no typed out is absent, and a register
+/// with no type is absent from its proc's row — both mean the bare 32-bit claim.
+///
+/// Externs are included: their declared outs are §3 boundary axioms that the
+/// fixpoint seeds VERIFIED, so a typed extern out must credit its callers at the
+/// declared width and not a long.
+fn collect_out_widths(files: &[ast::File]) -> OutWidthMap {
+    fn row(
+        out_types: &[(String, ast::Type, Span)],
+        newtypes: &BTreeMap<String, ast::Type>,
+    ) -> BTreeMap<String, OutWidth> {
+        out_types
+            .iter()
+            .filter_map(|(reg, ty, _)| {
+                // Canonical `d0`..`a7` spelling — the same names the production
+                // state is keyed by. A non-register endpoint (a `carry:` flag
+                // result never reaches here) drops out.
+                Reg::from_name(reg).map(|r| (r.to_string(), out_width_of(ty, newtypes, 16)))
+            })
+            .collect()
+    }
+    fn walk(items: &[Item], newtypes: &BTreeMap<String, ast::Type>, out: &mut OutWidthMap) {
+        for item in items {
+            match item {
+                Item::Proc(p) => {
+                    let r = row(&p.out_types, newtypes);
+                    if !r.is_empty() {
+                        out.insert(p.name.clone(), r);
+                    }
+                }
+                Item::ExternProc(e) => {
+                    let r = row(&e.sig.out_types, newtypes);
+                    if !r.is_empty() {
+                        out.insert(e.name.clone(), r);
+                    }
+                }
+                Item::Section(s) => walk(&s.items, newtypes, out),
+                _ => {}
+            }
+        }
+    }
+    let newtypes = collect_newtype_underlying(files);
+    let mut out = OutWidthMap::new();
+    for file in files {
+        walk(&file.items, &newtypes, &mut out);
+    }
+    out
 }
 
 /// Collect every declared newtype NAME across the corpus (recursing sections).

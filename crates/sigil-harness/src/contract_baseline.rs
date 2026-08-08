@@ -31,10 +31,18 @@ use std::collections::BTreeMap;
 ///
 /// Every row here carries the same reason — "not produced on a required return
 /// path" — and the set clusters into a small number of causes rather than
-/// independent loose contracts. The dominant one is a LANGUAGE-SURFACE gap: the
-/// proc produces a sub-width value and `out(rN)` means all 32 bits, which the
-/// declaration has no way to say. The per-row adjudication lives in the
-/// campaign gap ledger; see the burn-down rows.
+/// independent loose contracts. Measured over the fixpoint, the residue splits
+/// evenly: a SUB-WIDTH production the declaration could not state, and a
+/// genuinely unproduced path. The first half is now sayable — `out(dN: T)`
+/// claims `sizeof(T)` bytes and a write that wide or wider produces it.
+///
+/// `Emit_ObjectPieces :: d5` is the one row here that a type WOULD close and
+/// that is deliberately left open: the body writes d5 with `addq.b`, and all
+/// three call sites read the running sprite total at `.w`. Declaring `out(d5:
+/// u8)` would close the row by publishing a contract narrower than the callers
+/// consume — sound as a claim, useless as a promise. The two sides are reconciled
+/// by widening the increment, not by narrowing the declaration; the gap ledger
+/// carries it. Every other row here is out of a type's reach entirely.
 ///
 /// ROWS ARE NOT INDEPENDENT SITES. Credit flows along calls, tails and
 /// `falls_into` successors, so one unproven production can hold several rows
@@ -45,35 +53,21 @@ use std::collections::BTreeMap;
 /// over the fixpoint.
 pub const OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
     ("Art_Decompress", "a1"),
-    ("Collision_GetType", "d0"),
-    ("Collision_ProbeDown", "d0"),
     ("Collision_ProbeDown", "d1"),
     ("Collision_ProbeDown", "d2"),
-    ("Collision_ProbeLeft", "d0"),
     ("Collision_ProbeLeft", "d1"),
     ("Collision_ProbeLeft", "d2"),
-    ("Collision_ProbeRight", "d0"),
     ("Collision_ProbeRight", "d1"),
     ("Collision_ProbeRight", "d2"),
-    ("Collision_ProbeUp", "d0"),
     ("Collision_ProbeUp", "d1"),
     ("Collision_ProbeUp", "d2"),
     ("DrawRings", "a4"),
     ("DrawRings", "d5"),
     ("Emit_ObjectPieces", "d5"),
-    ("EntityWindow_DeriveWindow", "d2"),
-    ("EntityWindow_DeriveWindow", "d3"),
-    ("EntityWindow_DeriveWindow", "d4"),
-    ("EntityWindow_DeriveWindow", "d5"),
-    ("EntityWindow_EntryForSection", "d0"),
-    ("GetSineCosine", "d0"),
-    ("GetSineCosine", "d1"),
     ("InsertSpriteMasks", "a4"),
     ("InsertSpriteMasks", "d5"),
     ("S4LZ_Decompress", "a1"),
     ("S4LZ_DecompressDict", "a1"),
-    ("Section_RedrawPlanes", "d7"),
-    ("Tile_Cache_GetTile", "d2"),
 ];
 
 /// `[call.live-clobbered]` (D1c) — the SHAPE-INVARIANT rows: a caller holds a

@@ -8,12 +8,15 @@
 //! structural dual), NOT on `must_defined_in` (which is width-blind and
 //! param-seeded, both unsound for out-honesty):
 //!
-//! - **Width-aware** (Finding 1): only a FULL-WIDTH write produces. For a DATA
-//!   register that is a `.l` write or a `moveq` (all 32 bits); a `.w`/`.b` write
-//!   leaves the high word stale and does NOT verify (exactly `preserves`'s
-//!   `is_long` rule). For an ADDRESS register every write/advance is full-width
-//!   (68k address writes touch all 32 bits — `movea.w` sign-extends, `(aN)+`
-//!   advances the pointer), so any address-register write/advance produces it.
+//! - **Width-aware** (Finding 1): a write produces only at the width it writes,
+//!   and the DECLARATION says how much width the claim covers. A bare `out(rN)`
+//!   claims all 32 bits, so for a DATA register only a `.l` write or a `moveq`
+//!   satisfies it; a `.w`/`.b` write leaves the high word stale (exactly
+//!   `preserves`'s `is_long` rule). A TYPED `out(dN: T)` claims only the low
+//!   `sizeof(T)` bytes, and a write of that width OR WIDER produces it — see
+//!   [`OutWidth`]. For an ADDRESS register every write/advance is full-width (68k
+//!   address writes touch all 32 bits — `movea.w` sign-extends, `(aN)+` advances
+//!   the pointer), so any address-register write/advance produces it.
 //! - **No param seed** (Finding 2): entry state credits NOTHING; a production
 //!   must come from a write / callee-out / tail-out on the path. An `out(rN)`
 //!   where rN is P's own param but is never re-written FIRES (a mislabeled
@@ -33,13 +36,15 @@
 //!
 //! Soundness polarity: a dishonest out ⇒ must-def falsely credits rN defined ⇒
 //! D1b false NEGATIVE (the dangerous direction). So the verifier only blesses a
-//! PROVEN full-width production; when in doubt it FIRES. This is a MUST analysis
-//! (produced-on-all-required-paths = intersection join).
+//! production PROVEN at least as wide as the declaration claims; when in doubt it
+//! FIRES. This is a MUST analysis (produced-on-all-required-paths = meet join).
 //!
-//! **Property boundary** (Finding 5): this proves rN holds a full-width value
-//! produced on this pass, NOT that the value is semantically correct — a proc that
-//! produces rN then stomps it before `rts` still verifies (the stomp is itself a
-//! production). Value-provenance is out of scope.
+//! **Property boundary** (Finding 5): this proves rN's declared width holds a
+//! value written on this pass, NOT that the value is semantically correct — a proc
+//! that produces rN then stomps it before `rts` still verifies (the stomp is
+//! itself a production). Value-provenance is out of scope, and so is the
+//! definedness of the bits ABOVE a typed out's width: `out(d0: u8)` says nothing
+//! about d0's upper 24 bits, which is the whole point of writing the type.
 //!
 //! # The other half of `out(rN if cc)` — the SURVIVES claim
 //!
@@ -80,6 +85,83 @@ pub type UncondOutMap = BTreeMap<String, BTreeSet<String>>;
 /// Proc name → its `(reg, cc)` CONDITIONAL outs. Used for both the DECLARED map
 /// and the fixpoint's VERIFIED map.
 pub type CondOutMap = BTreeMap<String, Vec<(String, String)>>;
+/// Proc name → the declared width of each TYPED out register. A register absent
+/// from the inner map is a bare `out(rN)` and claims [`OutWidth::L`].
+pub type OutWidthMap = BTreeMap<String, BTreeMap<String, OutWidth>>;
+
+/// How many low-order bytes of a register an `out` claim covers.
+///
+/// A bare `out(rN)` claims all four (the pre-type contract, unchanged). An
+/// `out(dN: T)` claims `sizeof(T)` — the declaration's whole content here, which
+/// is why the clause takes a TYPE and not a width suffix: the corpus already has
+/// one authority for how wide a `SectionId` is, and a second spelling beside it
+/// could disagree with it.
+///
+/// Ordered narrow-to-wide, and the order is load-bearing: production credit is
+/// `produced >= required`, so a `.l` write satisfies a `u8` claim and a `.b`
+/// write does not satisfy a `u16` one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum OutWidth {
+    /// One byte — `u8`/`i8` (`.b`).
+    B,
+    /// Two bytes — `u16`/`i16`/`fixed<8,8>` (`.w`).
+    W,
+    /// Four bytes — `u32`/`i32`/a pointer, and every bare `out(rN)` (`.l`).
+    L,
+}
+
+impl OutWidth {
+    /// The 68k size suffix this width is written at — the spelling a diagnostic
+    /// uses, so the reader is pointed at an operand size and not at a byte count.
+    pub fn suffix(self) -> &'static str {
+        match self {
+            OutWidth::B => ".b",
+            OutWidth::W => ".w",
+            OutWidth::L => ".l",
+        }
+    }
+}
+
+/// The empty own-widths map behind [`OutWidths::bare`].
+static NO_OWN_WIDTHS: BTreeMap<String, OutWidth> = BTreeMap::new();
+/// The empty corpus-widths map behind [`OutWidths::bare`].
+static NO_CALLEE_WIDTHS: OutWidthMap = BTreeMap::new();
+
+/// The declared out WIDTHS one production check reads.
+///
+/// Two maps and not one, because they answer different questions: `own` is what
+/// THIS proc must deliver at each return, `callees` is what a called / tailed-to /
+/// fallen-into proc DELIVERS and may therefore be credited for. Bundling them
+/// keeps a call site from passing the corpus map where the proc's own row belongs
+/// (which would silently obligate every proc at every other proc's widths).
+#[derive(Clone, Copy)]
+pub struct OutWidths<'a> {
+    /// This proc's own obligations, by register. Absent ⇒ [`OutWidth::L`].
+    pub own: &'a BTreeMap<String, OutWidth>,
+    /// Every proc's declared out widths, for callee / tail-target / `falls_into`
+    /// credit: a callee whose contract is `out(d0: u8)` credits its caller ONE
+    /// BYTE of d0, so a caller claiming a bare `out(d0)` is still unverified.
+    pub callees: &'a OutWidthMap,
+}
+
+impl OutWidths<'_> {
+    /// The all-bare default: every out on both sides claims all 32 bits. This is
+    /// the pre-type contract exactly, so a check run under it is
+    /// indistinguishable from the untyped verifier.
+    pub const fn bare() -> OutWidths<'static> {
+        OutWidths { own: &NO_OWN_WIDTHS, callees: &NO_CALLEE_WIDTHS }
+    }
+
+    /// The width `reg` must be produced at to satisfy THIS proc's claim.
+    fn required(&self, reg: Reg) -> OutWidth {
+        self.own.get(&reg.to_string()).copied().unwrap_or(OutWidth::L)
+    }
+
+    /// The width `callee`'s declared `out(reg)` delivers, for credit.
+    fn delivered(&self, callee: &str, reg: &str) -> OutWidth {
+        self.callees.get(callee).and_then(|m| m.get(reg)).copied().unwrap_or(OutWidth::L)
+    }
+}
 
 /// The proof outcome for one declared output register.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -117,8 +199,9 @@ pub fn check_out(
     span: Span,
     falls_into: Option<&str>,
     noreturn: &BTreeSet<String>,
+    widths: OutWidths<'_>,
 ) -> Vec<OutFiring> {
-    verify_out(items, uncond, cond, callee_uncond_out, cond_callees, falls_into, noreturn)
+    verify_out(items, uncond, cond, callee_uncond_out, cond_callees, falls_into, noreturn, widths)
         .into_iter()
         .filter_map(|(r, status)| match status {
             OutStatus::Produced => None,
@@ -146,11 +229,23 @@ fn is_call(mnem: &str) -> bool {
     matches!(mnem, "jsr" | "jbsr" | "bsr")
 }
 
-/// The registers instruction `(mnem, ops, size)` PRODUCES at full width. Built on
-/// the shared [`instr_written_regs`] detector (dest register + auto-inc/dec
-/// bases), then width-filtered: an address register is always full-width; a data
-/// register only via a `.l` write or a `moveq`. A `.w`/`.b` data write is dropped
-/// (Finding 1).
+/// The registers instruction `(mnem, ops, size)` PRODUCES, each with the WIDTH it
+/// produces at. Built on the shared [`instr_written_regs`] detector (the dest
+/// register plus auto-inc/dec bases), then width-classified: an address register
+/// is always full-width; a data register at the instruction's own size, with `moveq`'s
+/// sign-extended long a special case. A data write whose CodeItem carries no size
+/// produces nothing — the width is not knowable, and the check's polarity is to
+/// fire when in doubt.
+///
+/// **RMW is not distinguished from a defining write, deliberately.** `addq.b #1,
+/// d5` and `move.b d0, d5` both leave d5's low byte holding a value written on
+/// this pass, which is exactly the property `out` claims and D1b consumes; the
+/// difference between them is value provenance, which the module header rules out
+/// of scope. Splitting them at sub-`.l` widths only would also make "produce" mean
+/// two different things depending on the declared type — the strict form applying
+/// precisely where the claim is WEAKER — and the corpus's `.l` credit has never
+/// drawn that line. Measured on the corpus: five of the fifteen width-gap rows
+/// close only through an RMW write.
 ///
 /// **movem LOAD (item #2 cascade growth).** A `movem` whose register list is the
 /// DESTINATION — the LAST operand, e.g. `movem.l (sp)+, d0-d2/a1` — writes every
@@ -164,7 +259,7 @@ fn is_call(mnem: &str) -> bool {
 /// STORE (`movem.l d0-d2/a1, -(sp)`, reglist FIRST = source) is NOT a production:
 /// its `ops.last()` is the `-(sp)` predec, not a `RegList`, so it falls through to
 /// the base-advance path exactly as it must (it READS the reglist).
-fn produced_regs(mnem: &str, ops: &[CodeOperand], size: Option<Width>) -> Vec<Reg> {
+fn produced_regs(mnem: &str, ops: &[CodeOperand], size: Option<Width>) -> Vec<(Reg, OutWidth)> {
     if mnem == "movem" {
         if let Some(CodeOperand::RegList(mask)) = ops.last() {
             // Full-width for every listed register (both sizes) — plus the
@@ -175,20 +270,49 @@ fn produced_regs(mnem: &str, ops: &[CodeOperand], size: Option<Width>) -> Vec<Re
                     regs.push(r);
                 }
             }
-            return regs;
+            return regs.into_iter().map(|r| (r, OutWidth::L)).collect();
         }
     }
-    let data_full_width = size == Some(Width::L) || mnem == "moveq";
+    // `moveq` sign-extends its byte immediate across all 32 bits; every other
+    // data write covers exactly its operand size. `.s` is a branch displacement,
+    // not a data width, so it produces nothing.
+    let data_width = if mnem == "moveq" {
+        Some(OutWidth::L)
+    } else {
+        match size {
+            Some(Width::B) => Some(OutWidth::B),
+            Some(Width::W) => Some(OutWidth::W),
+            Some(Width::L) => Some(OutWidth::L),
+            Some(Width::S) | None => None,
+        }
+    };
     instr_written_regs(mnem, ops)
         .into_iter()
-        .filter(|r| is_addr_reg(*r) || data_full_width)
+        .filter_map(|r| {
+            if is_addr_reg(r) {
+                Some((r, OutWidth::L))
+            } else {
+                data_width.map(|w| (r, w))
+            }
+        })
         .collect()
 }
 
-/// The abstract state at a program point: which registers are MUST-produced on
-/// every path here. The cc classification lives in its own dataflow
-/// ([`flags_after`]), which both halves of `out(rN if cc)` read.
-type State = [bool; 16];
+/// The abstract state at a program point: the WIDTH each register is MUST-produced
+/// at on every path here, `None` for "not produced at all". The cc classification
+/// lives in its own dataflow ([`flags_after`]), which both halves of
+/// `out(rN if cc)` read.
+type State = [Option<OutWidth>; 16];
+
+/// Record a production of `reg` at `w`, keeping the WIDEST claim proven so far.
+/// Gen-only (Finding 5): a later narrower write does not un-produce the bytes an
+/// earlier wider one already wrote.
+fn produce(st: &mut State, reg: Reg, w: OutWidth) {
+    let slot = &mut st[reg_idx(reg)];
+    if slot.is_none_or(|have| have < w) {
+        *slot = Some(w);
+    }
+}
 
 /// The bare `Sym` target of a direct call/tail (`jbsr Foo` / `jbra Foo`), or
 /// `None` for an indirect / local-label (`$`-mangled) target.
@@ -207,6 +331,7 @@ fn transfer(
     st: &mut State,
     items: &[CodeItem],
     callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
+    widths: OutWidths<'_>,
 ) {
     let Some((mnem, ops)) = cfg.instr(idx) else { return };
     let size = match items.get(idx) {
@@ -216,23 +341,35 @@ fn transfer(
 
     if is_call(mnem) {
         // A returning call: credit its UNCONDITIONAL out registers as produced
-        // (the shared map).
+        // (the shared map), each at the width that callee's contract promises.
         if let Some(target) = direct_target(ops) {
-            if let Some(outs) = callee_uncond_out.get(target) {
-                for name in outs {
-                    if let Some(r) = Reg::from_name(name) {
-                        st[reg_idx(r)] = true;
-                    }
-                }
-            }
+            credit_target_outs(st, target, callee_uncond_out, widths);
         }
         return;
     }
 
     // Production is gen-only (a value produced upstream stays produced —
     // Finding 5; a later partial write does not un-produce).
-    for r in produced_regs(mnem, ops, size) {
-        st[reg_idx(r)] = true;
+    for (r, w) in produced_regs(mnem, ops, size) {
+        produce(st, r, w);
+    }
+}
+
+/// Credit `target`'s VERIFIED unconditional outs into `st`, each at the width
+/// `target` declares. One helper for all three transfer-out charges (call, tail,
+/// `falls_into`), so a byte-wide callee out cannot be credited as a long at one
+/// of them and a byte at the others.
+fn credit_target_outs(
+    st: &mut State,
+    target: &str,
+    callee_uncond_out: &BTreeMap<String, BTreeSet<String>>,
+    widths: OutWidths<'_>,
+) {
+    let Some(outs) = callee_uncond_out.get(target) else { return };
+    for name in outs {
+        if let Some(r) = Reg::from_name(name) {
+            produce(st, r, widths.delivered(target, name));
+        }
     }
 }
 
@@ -240,6 +377,7 @@ fn transfer(
 /// `uncond` are the unconditional outs; `cond` are `(reg, cc)` conditional outs
 /// (obligated only on the cc-success return paths — an UNKNOWN cc keeps the
 /// obligation).
+#[allow(clippy::too_many_arguments)]
 pub fn verify_out(
     items: &[CodeItem],
     uncond: &[Reg],
@@ -248,6 +386,7 @@ pub fn verify_out(
     cond_callees: &BTreeMap<String, Vec<(String, String)>>,
     falls_into: Option<&str>,
     noreturn: &BTreeSet<String>,
+    widths: OutWidths<'_>,
 ) -> BTreeMap<Reg, OutStatus> {
     let cfg = Cfg::build(items);
 
@@ -258,7 +397,7 @@ pub fn verify_out(
     // AllocDynamic's `out(a1 if eq)` produces a1 on Load_Object's `bne .alloc_fail`
     // fall-through (the eq-success edge). Applied as a per-edge transfer that
     // re-joins by intersection at merges — NOT a global post-call fact (§3).
-    let edge_credit = conditional_out_edge_credits(&cfg, items, cond_callees);
+    let edge_credit = conditional_out_edge_credits(&cfg, items, cond_callees, widths.callees);
     // The cc classification at every return — the SHARED map the ¬cc survives
     // obligation reads too, so the two halves of `out(rN if cc)` partition the
     // return paths by one predicate.
@@ -281,7 +420,7 @@ pub fn verify_out(
     };
 
     let mut in_state: BTreeMap<usize, State> = BTreeMap::new();
-    in_state.insert(entry_idx, [false; 16]);
+    in_state.insert(entry_idx, [None; 16]);
     let mut work: VecDeque<usize> = VecDeque::from([entry_idx]);
 
     // Per checked register: produced on EVERY required return path so far, and
@@ -291,7 +430,7 @@ pub fn verify_out(
 
     while let Some(idx) = work.pop_front() {
         let mut st = in_state[&idx];
-        transfer(&cfg, idx, &mut st, items, callee_uncond_out);
+        transfer(&cfg, idx, &mut st, items, callee_uncond_out, widths);
         let here = flags.get(&idx).copied().unwrap_or(Flags::TOP);
 
         for edge in cfg.edges(idx) {
@@ -301,9 +440,9 @@ pub fn verify_out(
                     // Item #2: credit a callee's conditional out on THIS success
                     // edge only (per-edge transfer; the join below re-intersects).
                     if let Some(regs) = edge_credit.get(&(idx, succ)) {
-                        for name in regs {
+                        for (name, w) in regs {
                             if let Some(r) = Reg::from_name(name) {
-                                edge_st[reg_idx(r)] = true;
+                                produce(&mut edge_st, r, *w);
                             }
                         }
                     }
@@ -329,7 +468,7 @@ pub fn verify_out(
                 // A return: the caller reads the register file from here, so the
                 // claim is due, with no extra credit on the way out.
                 Edge::Return => {
-                    check_return(&st, &here, &guard, &mut ok, &mut fail_reason);
+                    check_return(&st, &here, &guard, widths, &mut ok, &mut fail_reason);
                 }
                 // Control running off the end. Without a declared successor the
                 // proc returns here, so the claim is charged against the state as
@@ -358,15 +497,9 @@ pub fn verify_out(
                 Edge::FallOff => {
                     let mut credit = st;
                     if let Some(succ) = falls_into {
-                        if let Some(outs) = callee_uncond_out.get(succ) {
-                            for name in outs {
-                                if let Some(r) = Reg::from_name(name) {
-                                    credit[reg_idx(r)] = true;
-                                }
-                            }
-                        }
+                        credit_target_outs(&mut credit, succ, callee_uncond_out, widths);
                     }
-                    check_return(&credit, &here, &guard, &mut ok, &mut fail_reason);
+                    check_return(&credit, &here, &guard, widths, &mut ok, &mut fail_reason);
                 }
                 // A conditional branch out (a divergent handler or a transitive
                 // tail) is not a local counterexample — ignore it, mirroring
@@ -391,15 +524,9 @@ pub fn verify_out(
                     // nothing ⇒ any un-produced out fails here.
                     let mut credit = st;
                     if let Some(target) = direct_target(ops) {
-                        if let Some(outs) = callee_uncond_out.get(target) {
-                            for name in outs {
-                                if let Some(r) = Reg::from_name(name) {
-                                    credit[reg_idx(r)] = true;
-                                }
-                            }
-                        }
+                        credit_target_outs(&mut credit, target, callee_uncond_out, widths);
                     }
-                    check_return(&credit, &here, &guard, &mut ok, &mut fail_reason);
+                    check_return(&credit, &here, &guard, widths, &mut ok, &mut fail_reason);
                 }
             }
         }
@@ -454,6 +581,7 @@ pub fn compute_verified_outs(
     extern_names: &BTreeSet<String>,
     falls_into: &BTreeMap<String, String>,
     noreturn: &BTreeSet<String>,
+    out_widths: &OutWidthMap,
 ) -> (UncondOutMap, CondOutMap) {
     // SEED: externs verified by axiom; every other proc empty.
     let mut v_uncond: BTreeMap<String, BTreeSet<String>> = declared_uncond
@@ -506,6 +634,10 @@ pub fn compute_verified_outs(
                 &v_cond,
                 falls_into.get(name).map(String::as_str),
                 noreturn,
+                OutWidths {
+                    own: out_widths.get(name).unwrap_or(&NO_OWN_WIDTHS),
+                    callees: out_widths,
+                },
             );
             let unver: BTreeSet<String> = statuses
                 .iter()
@@ -710,9 +842,10 @@ pub fn survives_message(f: &CondOutSurvivesFiring) -> String {
 /// At one return, charge every checked register whose obligation applies here but
 /// whose value is not in `produced`.
 fn check_return(
-    produced: &[bool; 16],
+    produced: &State,
     flags: &Flags,
     guard: &BTreeMap<Reg, Option<String>>,
+    widths: OutWidths<'_>,
     ok: &mut BTreeMap<Reg, bool>,
     fail_reason: &mut BTreeMap<Reg, String>,
 ) {
@@ -724,10 +857,21 @@ fn check_return(
                 continue; // this return is on the !cc edge — no obligation
             }
         }
-        if !produced[reg_idx(*r)] {
+        // The claim is met by a production AT LEAST as wide as the declaration
+        // asks for: a `.l` write satisfies `out(d0: u8)`, a `.b` write does not
+        // satisfy a bare `out(d0)`.
+        let need = widths.required(*r);
+        if produced[reg_idx(*r)].is_none_or(|have| have < need) {
             *ok.get_mut(r).unwrap() = false;
-            fail_reason.entry(*r).or_insert_with(|| {
-                format!("`{r}` not produced on a required return path")
+            let got = produced[reg_idx(*r)];
+            fail_reason.entry(*r).or_insert_with(|| match got {
+                None => format!("`{r}` not produced on a required return path"),
+                Some(have) => format!(
+                    "`{r}` is produced only {} wide on a required return path, and the \
+                     declaration claims {}",
+                    have.suffix(),
+                    need.suffix()
+                ),
             });
         }
     }
@@ -845,12 +989,14 @@ fn simple_branch_cond(mnem: &str) -> Option<&'static str> {
     })
 }
 
-/// Join two produced-sets on entry to the same node: INTERSECTION (MUST —
-/// produced only if BOTH paths produce it).
+/// Join two produced-states on entry to the same node: the MUST meet — a register
+/// is produced only as wide as the NARROWER path produces it, and not at all if
+/// either path does not (`None` is the bottom of `Option<OutWidth>`'s order, so
+/// `min` states both rules at once).
 fn join(a: &State, b: &State) -> State {
     let mut out = *a;
     for i in 0..16 {
-        out[i] = a[i] && b[i];
+        out[i] = a[i].min(b[i]);
     }
     out
 }
