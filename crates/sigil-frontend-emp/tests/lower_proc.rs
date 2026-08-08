@@ -1412,6 +1412,50 @@ fn out_unwritten_warns() {
     assert!(hit.message.contains("a1"), "must name the unwritten output: {}", hit.message);
 }
 
+/// A discriminating pair for the `falls_into` out-unwritten exemption
+/// (`charge_unwritten = proc.falls_into.is_none()` in `check_out`): `a`
+/// declares `out(a1)` and never writes it, but declares `falls_into b`, whose
+/// body writes `a1` — control continues into `b` inside the same call, so the
+/// claim may be discharged there and `a`'s own unwritten check is spared.
+/// Paired with `out_unwritten_fires_without_falls_into` below, which is the
+/// same proc minus the `falls_into` clause and must warn.
+#[test]
+fn falls_into_exempts_declared_out_from_unwritten() {
+    let src = "module m\n\
+               proc a() out(a1) falls_into b {\n\
+               \x20   rts\n\
+               }\n\
+               proc b() {\n\
+               \x20   movea.w #0, a1\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.out-unwritten]"),
+        "a falls_into proc's declared out must be exempt from the unwritten \
+         check: {diags:?}"
+    );
+    assert!(diags.iter().all(|d| d.level != Level::Error), "clean contract: {diags:?}");
+}
+
+/// The other half of the pair above: same declared `out(a1)`, never written,
+/// WITHOUT `falls_into` — the exemption does not apply and the check fires as
+/// it does for any ordinary proc.
+#[test]
+fn out_unwritten_fires_without_falls_into() {
+    let src = "module m\n\
+               proc a() out(a1) {\n\
+               \x20   rts\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[proc.out-unwritten]"))
+        .expect("without falls_into the exemption does not apply; expected out-unwritten");
+    assert_eq!(hit.level, Level::Warning);
+    assert!(hit.message.contains("a1"), "must name the unwritten output: {}", hit.message);
+}
+
 #[test]
 fn out_clobbers_overlap_errors() {
     // A register cannot be both a returned result and destroyed scratch.
