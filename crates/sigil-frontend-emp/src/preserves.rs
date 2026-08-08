@@ -815,13 +815,35 @@ fn is_safe_sp_disp_read(mnem: &str, ops: &[CodeOperand]) -> bool {
 }
 
 /// The instruction at `idx` carries a compiler-resolved `irq_frame.pc` accessor
-/// (authored [`ItemAuthor::IrqFrame`], bookmark ask 3): its `(disp, sp)` operand
-/// was derived from the handler's full-save `movem` and provably addresses the
-/// exception frame above the saves, so it is exempt from the sp alias-hazard bail.
+/// (authored [`ItemAuthor::IrqFrame`], bookmark ask 3) AND that derived `(disp, sp)`
+/// is its ONLY sp-referencing operand — so the exemption from the sp alias-hazard
+/// bail applies to the derived, provably-above-the-saves access ALONE.
+///
+/// GAP B: the exemption is DERIVED-OPERAND-scoped, not line-scoped. A line like
+/// `move.l irq_frame.pc, 8(sp)` carries the derived read AND a second hand-written
+/// `d(sp)` STORE that CAN alias a saved-register slot; that second operand must
+/// still bail. So the exemption holds only when exactly one operand touches sp
+/// (the accessor). Any second sp operand drops the exemption and the hazard fires.
 fn is_irq_frame_access(items: &[CodeItem], idx: usize) -> bool {
+    let Some(CodeItem::Instr { author: ItemAuthor::IrqFrame, ops, .. }) = items.get(idx) else {
+        return false;
+    };
+    ops.iter().filter(|o| operand_touches_sp(o)).count() == 1
+}
+
+/// Whether an operand references sp/a7 in an ALIAS-hazard position — the same set
+/// [`sp_hazard`] flags (a bare `a7`, `(sp)`, `d(sp)`, `(sp,Xn)`). Used to count the
+/// sp operands on an `irq_frame.pc` line so the exemption stays scoped to the one
+/// derived access (bookmark ask 3 GAP B). Push/pop (`-(sp)`/`(sp)+`) are handled by
+/// the dedicated slot machinery, not this alias-hazard set.
+fn operand_touches_sp(op: &CodeOperand) -> bool {
     matches!(
-        items.get(idx),
-        Some(CodeItem::Instr { author: ItemAuthor::IrqFrame, .. })
+        op,
+        CodeOperand::Reg(Reg::A7)
+            | CodeOperand::Ind(Reg::A7)
+            | CodeOperand::DispInd { reg: Reg::A7, .. }
+            | CodeOperand::IndIdx { reg: Reg::A7, .. }
+            | CodeOperand::IndIdx { xn: Reg::A7, .. }
     )
 }
 
@@ -845,16 +867,7 @@ fn is_sp_top_read(ops: &[CodeOperand]) -> bool {
 /// cannot alter a slot's contents: the `(sp)` peek ([`is_peek`]) and the
 /// displaced-frame read ([`is_safe_sp_disp_read`]).
 fn sp_hazard(ops: &[CodeOperand]) -> bool {
-    ops.iter().any(|o| {
-        matches!(
-            o,
-            CodeOperand::Reg(Reg::A7)
-                | CodeOperand::Ind(Reg::A7)
-                | CodeOperand::DispInd { reg: Reg::A7, .. }
-                | CodeOperand::IndIdx { reg: Reg::A7, .. }
-                | CodeOperand::IndIdx { xn: Reg::A7, .. }
-        )
-    })
+    ops.iter().any(operand_touches_sp)
 }
 
 /// If `(mnem, ops)` is an IMMEDIATE sp-INCREASE (`add`/`addq`/`adda #N, sp`), the

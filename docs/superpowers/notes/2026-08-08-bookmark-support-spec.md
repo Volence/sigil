@@ -112,8 +112,40 @@ corpus-neutral (the author only overrides `User`, never a splice/context author)
 `irq_frame.*`, so `map_plain`'s interception, the movem tracking, and the preserves
 exemption are all inert everywhere else. The new `ItemAuthor::IrqFrame` variant is
 matched only by `is_irq_frame_access` (every other `ItemAuthor` site is
-`matches!`/construction — no exhaustive break). Full `sigil-frontend-emp` suite
-green (119 groups).
+`matches!`/construction — no exhaustive break; the one exhaustive test match in
+`sigil-cli::warn_tier_corpus` gained a `| IrqFrame` arm). Full `sigil-frontend-emp`
+suite green.
+
+**D3.5 — GAP A (hardening): the derivation refuses an intervening sp mutation
+rather than miscompute.** The single-anchor `save_bytes` model assumed nothing
+touched sp between the anchoring `movem …,-(sp)` and the accessor. Two ways that
+breaks — a SECOND `movem …,-(sp)` (which would need accumulation, and previously
+OVERWROTE the anchor), and a non-movem push / `pea` / `link` / direct sp write
+(untracked) — both silently mis-offset. Fix: `track_irq_frame_sp` runs for EVERY
+lowered instruction and sets an `irq_frame_sp_dirty` flag when any sp-moving
+instruction (`instr_moves_sp`: a `-(sp)`/`(sp)+` operand, `pea`/`link`/`unlk`, or sp
+as the write destination) intervenes while an anchor is live; a second save-movem
+dirties too. The accessor then REFUSES with `[irqframe.sp-mutated]` (refusal, not a
+best-guess — silent wrongness is the one forbidden outcome; the canonical
+single-save handler needs nothing fancier). Conservative by design: a false positive
+only refuses. Pinned by `a_nested_save_between_anchor_and_use_is_fatal`,
+`an_interposed_push_between_anchor_and_use_is_fatal`, and
+`the_canonical_shape_with_interposed_nonsp_code_is_clean` (non-sp code between the
+save and the accessor stays clean — a `d(sp)` read/write does not move sp, so the
+accessor never dirties itself).
+
+**D3.6 — GAP B (hardening): the preserves exemption is DERIVED-OPERAND-scoped, not
+line-scoped.** `is_irq_frame_access` originally exempted the whole `IrqFrame`-
+authored line, so `move.l irq_frame.pc, 8(sp)` — the derived read PLUS a second
+hand-written `d(sp)` STORE into a saved-register slot — silently bypassed the alias
+hazard and could corrupt a restored register with no diagnostic. Fix: the exemption
+holds only when the line has EXACTLY ONE sp-referencing operand (the derived
+accessor); any second sp operand drops the exemption and the `sp_hazard` bail fires
+as it would for any aliasing store. The sp set is now the shared
+`operand_touches_sp` predicate (`sp_hazard` reuses it, so the count and the bail can
+never diverge). Pinned by `a_second_aliasing_sp_store_still_bails` (the aliasing
+store re-fires `[proc.preserves-unverifiable]`) and `pure_read_and_redirect_stay_exempt`
+(the single-operand read and redirect stay exempt).
 
 ---
 

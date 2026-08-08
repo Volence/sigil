@@ -495,6 +495,17 @@ pub struct Evaluator<'a> {
     /// wants ("derived by the toolchain from the movem set, not hand-maintained").
     /// 68k-only; a Z80 body never sets it.
     irq_frame_save_bytes: Option<u32>,
+    /// Set when an sp mutation the single-anchor `irq_frame_save_bytes` model
+    /// cannot represent intervenes between the anchoring `movem …,-(sp)` and an
+    /// `irq_frame.pc` accessor (bookmark ask 3 GAP A): a SECOND `movem …,-(sp)` (it
+    /// would need accumulation, not overwrite), or a non-movem push / `pea` /
+    /// `link` / direct sp write. Deriving `save_bytes + 2` would then be silently
+    /// wrong, so the accessor is REFUSED (`[irqframe.sp-mutated]`) rather than
+    /// miscompute the offset. Cleared with the anchor (a fresh save, or a restore).
+    /// Conservative: any sp-moving instruction between anchor and use trips it — the
+    /// canonical single-save handler shape (movem save, then the accessor with only
+    /// non-sp code between) never does.
+    irq_frame_sp_dirty: bool,
     /// Set by [`irq_frame_accessor`](Self::irq_frame_accessor) while mapping the
     /// operands of the instruction currently being lowered, so
     /// [`lower_instr_to_item`](Self::lower_instr_to_item) can author that one
@@ -581,6 +592,7 @@ impl<'a> Evaluator<'a> {
             enclosing_owner: None,
             minted_local_labels: Vec::new(),
             irq_frame_save_bytes: None,
+            irq_frame_sp_dirty: false,
             irq_frame_operand_pending: false,
             pad_label_seq: 0,
         }

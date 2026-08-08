@@ -184,6 +184,117 @@ pub proc H () clobbers(d0) grants(vblank) {\n\
     assert_eq!(d.level, Level::Error);
 }
 
+// ---- GAP B: the preserves exemption is derived-operand-scoped --------------
+
+/// A pure READ (`move.l irq_frame.pc, d0`) and a pure REDIRECT (`move.l #X,
+/// irq_frame.pc`) each carry ONE sp operand (the derived accessor) — both stay
+/// exempt from the preserves alias-hazard bail.
+#[test]
+fn pure_read_and_redirect_stay_exempt() {
+    let read = "module m\n\
+context vblank { granted }\n\
+pub proc H () clobbers() preserves(d0-d7/a0-a6) grants(vblank) {\n\
+    movem.l d0-a6, -(sp)\n\
+    move.l irq_frame.pc, d0\n\
+    movem.l (sp)+, d0-a6\n\
+    rte\n\
+}\n";
+    // A read writes d0, which `preserves(d0-..)` then round-trips via the movem —
+    // so declare d0 clobbered here and prove only that no hazard/preserves ERROR
+    // fires from the sp access itself.
+    let read = read.replace("clobbers()", "clobbers(d0)").replace("preserves(d0-d7/a0-a6)", "preserves(d1-d7/a0-a6)");
+    assert!(!has_tag(&diags(&read), "[proc.preserves-unverifiable]"), "pure read stays exempt: {:?}", diags(&read));
+
+    let redirect = "module m\n\
+context vblank { granted }\n\
+pub proc H () clobbers() preserves(d0-d7/a0-a6) grants(vblank) {\n\
+    movem.l d0-a6, -(sp)\n\
+    move.l #$00FF0000, irq_frame.pc\n\
+    movem.l (sp)+, d0-a6\n\
+    rte\n\
+}\n";
+    assert!(!has_tag(&diags(redirect), "[proc.preserves-unverifiable]"), "pure redirect stays exempt");
+}
+
+/// A line carrying the derived accessor AND a SECOND hand-written aliasing `d(sp)`
+/// STORE (`move.l irq_frame.pc, 8(sp)`) must NOT be blanket-exempted — the second
+/// store into a saved-register slot must re-fire the sp alias hazard, so the
+/// preserves proof bails as it would for any aliasing store.
+#[test]
+fn a_second_aliasing_sp_store_still_bails() {
+    let src = "module m\n\
+context vblank { granted }\n\
+pub proc H () clobbers() preserves(d0-d7/a0-a6) grants(vblank) {\n\
+    movem.l d0-a6, -(sp)\n\
+    move.l irq_frame.pc, 8(sp)\n\
+    movem.l (sp)+, d0-a6\n\
+    rte\n\
+}\n";
+    // The `8(sp)` store aliases a saved slot: the exemption must NOT apply, so the
+    // preserves proof cannot verify the round-trip (the classic bail).
+    assert!(
+        has_tag(&diags(src), "[proc.preserves-unverifiable]"),
+        "a second aliasing d(sp) store must re-fire the hazard (not be blanket-exempted)"
+    );
+}
+
+// ---- GAP A: the offset derivation refuses an intervening sp mutation --------
+
+/// A NESTED save (`movem …,-(sp)` twice) would need accumulation, not overwrite —
+/// the single-anchor model refuses rather than miscompute.
+#[test]
+fn a_nested_save_between_anchor_and_use_is_fatal() {
+    let src = "module m\n\
+context vblank { granted }\n\
+pub proc H () clobbers(d0-d7/a0-a6) grants(vblank) {\n\
+    movem.l d0-a6, -(sp)\n\
+    movem.l d0-d1, -(sp)\n\
+    move.l irq_frame.pc, d0\n\
+    movem.l (sp)+, d0-d1\n\
+    movem.l (sp)+, d0-a6\n\
+    rte\n\
+}\n";
+    assert!(has_tag(&diags(src), "[irqframe.sp-mutated]"), "a nested save must refuse the accessor");
+}
+
+/// An interposed non-movem PUSH (`move.l d0,-(sp)`) is untracked by the movem
+/// anchor — refuse rather than derive a stale offset.
+#[test]
+fn an_interposed_push_between_anchor_and_use_is_fatal() {
+    let src = "module m\n\
+context vblank { granted }\n\
+pub proc H () clobbers(d0-d7/a0-a6) grants(vblank) {\n\
+    movem.l d0-a6, -(sp)\n\
+    move.l d0, -(sp)\n\
+    move.l irq_frame.pc, d0\n\
+    addq.l #4, sp\n\
+    movem.l (sp)+, d0-a6\n\
+    rte\n\
+}\n";
+    assert!(has_tag(&diags(src), "[irqframe.sp-mutated]"), "an interposed push must refuse the accessor");
+}
+
+/// The canonical single-save shape — with ordinary NON-sp code between the save
+/// and the accessor — stays clean (no false `[irqframe.sp-mutated]`).
+#[test]
+fn the_canonical_shape_with_interposed_nonsp_code_is_clean() {
+    let src = "module m\n\
+context vblank { granted }\n\
+pub proc H () clobbers(d0-d7/a0-a6) grants(vblank) {\n\
+    movem.l d0-a6, -(sp)\n\
+    tst.b Some_Flag\n\
+    beq.s .skip\n\
+    movea.l Some_Ptr, a0\n\
+    cmpi.l #$1234, d1\n\
+.skip:\n\
+    move.l irq_frame.pc, d0\n\
+    movem.l (sp)+, d0-a6\n\
+    rte\n\
+}\n";
+    let ds = diags(src);
+    assert!(!has_tag(&ds, "[irqframe."), "non-sp code between save and use must stay clean: {ds:?}");
+}
+
 // ---- inertness: `irq_frame` is the ONLY reserved prefix --------------------
 
 #[test]

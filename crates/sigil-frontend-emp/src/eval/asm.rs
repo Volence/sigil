@@ -1243,7 +1243,7 @@ impl Evaluator<'_> {
             // exception-frame anchor (saved-register bytes below the SR+PC the CPU
             // pushed); a `movem.<sz> (sp)+, <list>` restore tears it down. The
             // offset the intrinsic reads is `save_bytes + 2`.
-            self.track_irq_frame_movem(&ops, size);
+            self.track_irq_frame_sp(&mnemonic, &ops, size);
             return Some(CodeItem::Instr {
                 mnemonic,
                 size,
@@ -1282,6 +1282,11 @@ impl Evaluator<'_> {
             ops.push(self.map_operand(op, scope, env, op_width)?);
         }
         self.check_raw_sentinel(&instr.operands, &ops, instr.span);
+        // Update the irq_frame anchor's sp-mutation tracking (bookmark ask 3 GAP A)
+        // for EVERY instruction: a push/pop/pea/link/direct-sp-write between the
+        // anchoring movem and an accessor dirties the derivation. The accessor's own
+        // `d(sp)` line does not move sp, so this is a no-op for it.
+        self.track_irq_frame_sp(&mnemonic, &ops, size);
         // A line carrying a resolved `irq_frame.pc` accessor is authored IrqFrame
         // (the preserves sp-hazard exemption, bookmark ask 3 nuance (a)); it
         // overrides the ambient author only for its own instruction. Never applies
@@ -2789,29 +2794,54 @@ impl Evaluator<'_> {
     /// as `#expr` (`Operand::Imm`) or a `{splice}` (`Operand::Splice`) — so a
     /// future reader wondering why `move.l some.const, d0` is treated as a symbol
     /// `some.const` rather than that const's value is oriented here.
-    /// Update [`irq_frame_save_bytes`](Evaluator::irq_frame_save_bytes) from a just-
-    /// lowered `movem` (bookmark ask 3). A SAVE — a register list plus a `-(sp)`
-    /// predecrement destination — records the pushed byte count (`list_count *
-    /// size_bytes`) as the exception-frame anchor. A RESTORE — a register list plus
-    /// a `(sp)+` postincrement source — clears it (the frame is gone once the regs
-    /// are popped). A movem that does not touch sp leaves the anchor unchanged.
-    fn track_irq_frame_movem(&mut self, ops: &[CodeOperand], size: Option<Width>) {
-        let mask = ops.iter().find_map(|o| match o {
-            CodeOperand::RegList(m) => Some(*m),
-            _ => None,
-        });
-        let Some(mask) = mask else { return };
-        let size_bytes = match size {
-            Some(Width::L) => 4,
-            Some(Width::W) => 2,
-            // movem is only .w/.l; anything else is a malformed movem already
-            // diagnosed elsewhere — do not anchor off it.
-            _ => return,
-        };
-        if ops.iter().any(|o| matches!(o, CodeOperand::PreDec(Reg::A7))) {
-            self.irq_frame_save_bytes = Some(mask.count_ones() * size_bytes);
-        } else if ops.iter().any(|o| matches!(o, CodeOperand::PostInc(Reg::A7))) {
+    /// Update the `irq_frame.pc` frame anchor from a just-lowered instruction
+    /// (bookmark ask 3, incl. GAP A). Called for EVERY instruction so an sp
+    /// mutation between the anchoring `movem` and the accessor is caught:
+    ///
+    /// - a RESTORE `movem.<sz> (sp)+, <list>` tears the frame down — clear the
+    ///   anchor and the dirty flag (an accessor after it is `[irqframe.no-save]`);
+    /// - a SAVE `movem.<sz> <list>, -(sp)` ANCHORS if none is live (records the
+    ///   pushed byte count `list_count * size_bytes`, dirty = false). A SECOND save
+    ///   while already anchored is an sp mutation the single-anchor model cannot
+    ///   represent (it would need accumulation) — DIRTY it rather than overwrite;
+    /// - any OTHER sp-moving instruction while anchored (a non-movem push, `pea`,
+    ///   `link`/`unlk`, a direct sp write) also DIRTIES the anchor — deriving
+    ///   `save_bytes + 2` past it would be silently wrong.
+    ///
+    /// A non-sp instruction (the canonical `tst`/`beq`/`movea`/`cmpi` between the
+    /// save and the accessor) leaves the anchor untouched. The accessor's own line
+    /// (a `d(sp)` read/write) does not move sp, so it never dirties itself.
+    fn track_irq_frame_sp(&mut self, mnem: &str, ops: &[CodeOperand], size: Option<Width>) {
+        // Restore: the frame is gone.
+        if mnem == "movem" && ops.iter().any(|o| matches!(o, CodeOperand::PostInc(Reg::A7))) {
             self.irq_frame_save_bytes = None;
+            self.irq_frame_sp_dirty = false;
+            return;
+        }
+        // Save-to-`-(sp)`: anchor if first, else dirty (second push).
+        if mnem == "movem" && ops.iter().any(|o| matches!(o, CodeOperand::PreDec(Reg::A7))) {
+            let anchored = self.irq_frame_save_bytes.is_some();
+            let size_bytes = match size {
+                Some(Width::L) => 4,
+                Some(Width::W) => 2,
+                _ => return, // malformed movem, diagnosed elsewhere
+            };
+            let mask = ops.iter().find_map(|o| match o {
+                CodeOperand::RegList(m) => Some(*m),
+                _ => None,
+            });
+            let Some(mask) = mask else { return };
+            if anchored {
+                self.irq_frame_sp_dirty = true;
+            } else {
+                self.irq_frame_save_bytes = Some(mask.count_ones() * size_bytes);
+                self.irq_frame_sp_dirty = false;
+            }
+            return;
+        }
+        // Any other sp-moving instruction while anchored invalidates the derivation.
+        if self.irq_frame_save_bytes.is_some() && instr_moves_sp(mnem, ops) {
+            self.irq_frame_sp_dirty = true;
         }
     }
 
@@ -2869,7 +2899,6 @@ impl Evaluator<'_> {
             );
         }
         let disp = match self.irq_frame_save_bytes {
-            Some(save) => save as i128 + 2,
             None => {
                 self.error(
                     span,
@@ -2881,6 +2910,21 @@ impl Evaluator<'_> {
                 // encodes and only the [irqframe.no-save] error surfaces.
                 15 * 4 + 2
             }
+            // GAP A: an sp mutation the single-anchor model cannot follow intervened
+            // between the anchoring movem and here (a second `movem …,-(sp)`, a
+            // non-movem push, `pea`/`link`, a direct sp write). `save_bytes + 2` no
+            // longer names the stacked PC — REFUSE rather than miscompute.
+            Some(save) if self.irq_frame_sp_dirty => {
+                self.error(
+                    span,
+                    "[irqframe.sp-mutated] the stack moved between the anchoring `movem …,-(sp)` \
+                     and `irq_frame.pc` (a second save, a push, `pea`/`link`, or a direct sp \
+                     write) — the derived displacement would be wrong; keep the full-save movem \
+                     immediately before the accessor (only non-sp code between them)",
+                );
+                save as i128 + 2
+            }
+            Some(save) => save as i128 + 2,
         };
         // Author the containing instruction `IrqFrame` so the preserves stack model
         // exempts this sp-relative access from the alias-hazard bail (nuance (a)).
@@ -3167,6 +3211,23 @@ fn width_from_text(t: &str) -> Option<Width> {
 /// call sites' brevity.
 fn reg_from_name(name: &str) -> Option<Reg> {
     Reg::from_name(name)
+}
+
+/// A CONSERVATIVE "this instruction moves sp" test for the `irq_frame.pc` anchor's
+/// dirty tracking (bookmark ask 3 GAP A). True for a push/pop (`-(sp)`/`(sp)+`
+/// operand), a `pea`/`link`/`unlk`, or a direct sp write (sp as the destination —
+/// the last operand). A `d(sp)` / `(sp)` read-or-write does NOT move sp (it leaves
+/// the frame offset unchanged), so the accessor's own line never trips it. Over-
+/// approximation is safe here: a false positive only REFUSES the accessor
+/// (`[irqframe.sp-mutated]`), never miscomputes it — silent wrongness is the one
+/// forbidden outcome.
+fn instr_moves_sp(mnem: &str, ops: &[CodeOperand]) -> bool {
+    if matches!(mnem, "pea" | "link" | "unlk") {
+        return true;
+    }
+    ops.iter()
+        .any(|o| matches!(o, CodeOperand::PreDec(Reg::A7) | CodeOperand::PostInc(Reg::A7)))
+        || matches!(ops.last(), Some(CodeOperand::Reg(Reg::A7)))
 }
 
 /// The Z80 control-flow mnemonics whose FIRST operand may be a condition code
