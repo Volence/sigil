@@ -32,16 +32,16 @@ fn extern_proc_minimal_clobbers() {
     assert!(es[0].sig.params.is_empty());
 }
 
-/// A full §3 boundary decl: typed params + a multi-reg clobbers + an `out`. The
-/// SHAPE is what this pins; the register set is a fixture, not a copy of any
-/// current proc's contract. All clauses, order-free.
+/// A full §3 boundary decl: typed params + a multi-reg clobbers + an `out`, all
+/// clauses, order-free. The name is deliberately synthetic — a real proc's name on
+/// a fixture contract turns every later `grep` for that symbol into a false lead.
 #[test]
 fn extern_proc_full_contract() {
     let f = ok("module engine.level\n\
-                extern proc S4LZ_DecompressDict (a4: *DictBase, d4) clobbers(a3, a4) out(a1)\n");
+                extern proc DictDecoder (a4: *DictBase, d4) clobbers(a3, a4) out(a1)\n");
     let es = externs(&f);
     assert_eq!(es.len(), 1);
-    assert_eq!(es[0].name, "S4LZ_DecompressDict");
+    assert_eq!(es[0].name, "DictDecoder");
     assert_eq!(es[0].sig.params.len(), 2);
     assert_eq!(es[0].sig.params[0].0, "a4");
     assert_eq!(es[0].sig.params[1].0, "d4");

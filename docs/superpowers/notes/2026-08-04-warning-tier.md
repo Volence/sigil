@@ -180,6 +180,15 @@ declares the same `out`:
 | `Art_Decompress` (`load_art.emp:46`) | `jbra ZX0_Decompress` / `jbra S4LZ_Decompress` | both `out(a0, a1)` |
 | `Load_Object` (`load_object.emp:38`) | `jbsr AllocDynamic` | `out(a1 if eq)` |
 
+> **SUPERSEDED IN PART — the first two rows no longer exist.** Their `out(a1)` was
+> false rather than a lint gap: a zero-byte stream never writes `a1`, so the
+> "output" was the caller's own input pointer. It is retired to `clobbers(a1)`, and
+> the aeon path is `engine/compression/s4lz.emp` (never `s4lz_decompress.emp`).
+> `Load_Object :: a1` is now the class's ONLY firing, so the counts below read 1,
+> not 3. The root cause stated above still stands for that row, and the one fix
+> named below still retires the class — at which point `warn_tier_corpus.rs`'s
+> frozen id set must drop `proc.out-unwritten` in the same commit.
+
 The lint checks only the proc's own instruction writes. **`out()` is not discharged
 by a callee's or a fallthrough target's declared `out()`.** One fix retires the whole
 class — and it is exactly the kind of contract-closure reasoning `closure.rs` already

@@ -994,10 +994,17 @@ fn out_fires(
 /// name must travel from the proc table into the PER-PROC out check, not only
 /// into the verified-out fixpoint.
 ///
-/// The two arguments are independent and neither guard covers the other. The
-/// fixpoint's copy decides which procs end up VERIFIED; this one decides whether a
-/// proc's OWN claim is charged at its fall-off. A mutant that replaces either with
-/// `None` leaves the other's guard green.
+/// The fixpoint's copy decides which procs end up VERIFIED; this one decides
+/// whether a proc's OWN claim is charged at its fall-off.
+///
+/// The coverage is ASYMMETRIC, measured rather than assumed. A `None` mutant at
+/// the per-proc call site reddens the fall-off assertion below and nothing else in
+/// the tree. A `None` mutant at the FIXPOINT's call site also reddens this test —
+/// through the verified-map presence assertion, not the fall-off one — as well as
+/// `out_width.rs::falls_into_credit_is_capped_at_the_successors_declared_width`.
+/// So this test covers both arguments while `out_verify.rs`'s
+/// `falls_into_successor_credit_reaches_the_fixpoint` covers neither call site,
+/// only the function parameter it hand-builds.
 ///
 /// THE CORPUS CANNOT WITNESS THIS. No 68k proc declares both `falls_into` and an
 /// `out`, so the argument is dead over every shipped shape and a `None` mutant
@@ -1213,5 +1220,15 @@ fn the_conditional_out_credit_surface_also_uses_verified_credit() {
         "a call into a source whose conditional out IS verified must discharge D's \
          claim: {:?}",
         verified_source.out_firings
+    );
+    // ...and S's conditional out must really BE verified, or the control above
+    // passes because D was never charged rather than because it was credited.
+    assert!(
+        verified_source
+            .verified_cond_out
+            .get("S")
+            .is_some_and(|v| v.iter().any(|(reg, _)| reg == "a1")),
+        "S's out(a1 if eq) must be carried in the verified conditional map: {:?}",
+        verified_source.verified_cond_out
     );
 }

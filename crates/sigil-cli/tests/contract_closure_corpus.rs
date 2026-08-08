@@ -931,8 +931,11 @@ fn corpus_flag_results_declared_vs_verified_credit_agree() {
 /// the shape at all: every one writes its own register and sources none of it from
 /// a callee, tail or successor, so a corpus witness is not merely fragile here but
 /// unavailable. The fact is guarded instead — in both polarities, and against a
-/// declared-credit mutant — by `sigil-frontend-emp/tests/corpus_contracts.rs`,
-/// `the_out_residue_surface_uses_verified_credit_not_declared`. A witness whose
+/// declared-credit mutant — by `sigil-frontend-emp/tests/corpus_contracts.rs`.
+/// TWO tests, because `check_out` takes TWO credit maps and a guard over one says
+/// nothing about the other: `the_out_residue_surface_uses_verified_credit_not_declared`
+/// for the unconditional map, `the_conditional_out_credit_surface_also_uses_verified_credit`
+/// for the conditional one. A witness whose
 /// discriminating power lives in another repo needs re-checking whenever that repo
 /// moves; a synthetic one does not.
 #[test]

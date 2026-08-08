@@ -1053,20 +1053,24 @@ fn a_falls_into_procs_fall_off_charges_the_successor() {
 /// intact.
 ///
 /// SCOPE, stated because it is easy to over-read: this builds the map by hand and
-/// calls `compute_verified_outs` directly, so it guards the FUNCTION'S PARAMETER,
-/// not the corpus walk's own wiring of it. Dropping `&falls_into_succ` at the
-/// `compute_verified_outs` call site leaves this test green; the gate that catches
-/// that is `out_width.rs::falls_into_credit_is_capped_at_the_successors_declared_width`,
-/// which runs `analyze_corpus` end to end.
+/// calls `compute_verified_outs` directly, so it guards the FUNCTION'S PARAMETER
+/// and NOT the corpus walk's wiring of it. Dropping `&falls_into_succ` at the
+/// `compute_verified_outs` call site leaves this test green. Measured, that mutant
+/// reddens two OTHER gates, both of which run `analyze_corpus` end to end:
+/// `out_width.rs::falls_into_credit_is_capped_at_the_successors_declared_width`,
+/// and the verified-map presence assertion inside
+/// `corpus_contracts.rs::falls_into_successor_credit_reaches_the_per_proc_out_check`.
 ///
-/// This exists because the corpus CANNOT witness it. NO 68k proc declares both
-/// `falls_into` and an `out`, so the successor argument is dead over every shipped
-/// shape and a mutant replacing this end of the plumbing with `None` passes every
-/// other gate in the tree. (`PsgVolEnv_Resolve` is the only proc of that shape
-/// anywhere and it is Z80, which the closure tier excludes.) The SECOND end — the
-/// successor argument to the per-proc out check — is guarded by its own synthetic,
-/// `corpus_contracts.rs::falls_into_successor_credit_reaches_the_per_proc_out_check`;
-/// neither guard covers the other's argument.
+/// This exists because the corpus cannot witness the property directly: NO 68k proc
+/// declares both `falls_into` and an `out`, so the successor argument is dead over
+/// every shipped shape. (`PsgVolEnv_Resolve` is the only proc of that shape anywhere
+/// and it is Z80, which the closure tier excludes.)
+///
+/// The plumbing has TWO ends and they are not symmetric. This test covers only the
+/// fixpoint's parameter. The per-proc out check's own successor argument is covered
+/// solely by `corpus_contracts.rs::falls_into_successor_credit_reaches_the_per_proc_out_check`
+/// — nothing here reaches it, and a `None` mutant at that call site leaves every
+/// test in this file green.
 #[test]
 fn falls_into_successor_credit_reaches_the_fixpoint() {
     // P falls off its end producing nothing; Q produces a1 locally and returns.

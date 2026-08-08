@@ -720,9 +720,12 @@ pub fn analyze_corpus_with_contracts(
     // so the WARN residue and the ERROR gate can never disagree on whether an out is
     // honest). This is the fixpoint's own residue: a proc whose out grounds only in
     // an unverified callee out appears here, where a declared-credit reading would
-    // discharge it. NO shipping proc currently has that shape, so the discriminating
-    // pair is a synthetic —
-    // `tests/corpus_contracts.rs::the_out_residue_surface_uses_verified_credit_not_declared`.
+    // discharge it. NO shipping proc currently has that shape, so BOTH credit maps
+    // below are discriminated by synthetics, one per map —
+    // `tests/corpus_contracts.rs::the_out_residue_surface_uses_verified_credit_not_declared`
+    // for `verified_uncond_out`, and `::the_conditional_out_credit_surface_also_uses_verified_credit`
+    // for `verified_cond_out`. They are separate arguments and one guard does not
+    // cover the other.
     let mut out_firings: Vec<OutFiring> = Vec::new();
     let empty_widths: BTreeMap<String, OutClaim> = BTreeMap::new();
     for pb in &proc_bufs {
