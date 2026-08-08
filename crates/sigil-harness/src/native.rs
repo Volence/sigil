@@ -355,6 +355,9 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         //   ojz_act_assets  — OJZ_Palette / BGND_Palette / OJZ_Act1_BG_{Layout,Tiles}
         //   ojz_bg_anim     — BgAnim_Table (disabled stub) + BgAnim_Banks
         m!("games.sonic4.ojz_sec_block_blobs_act1", "sec_block_blobs", pins::SEC_BLOCK_BLOBS),
+        // art-streaming-p2-task5 — per-section local->global tile-index tables
+        // (sec_local_maps.emp), placed after the block blobs per map.toml `order`.
+        m!("games.sonic4.ojz_sec_local_maps_act1", "sec_local_maps", pins::SEC_LOCAL_MAPS),
         m!("games.sonic4.ojz_act_assets_act1", "ojz_act_assets", pins::OJZ_ACT_ASSETS),
         m!("games.sonic4.ojz_bg_anim_act1", "ojz_bg_anim", pins::OJZ_BG_ANIM),
         // Parcel K4: the global collision + Sonic character data (HeightMaps ..
@@ -1779,7 +1782,7 @@ fn measure_or_spread(
             let mut spread = pins.to_vec();
             for (rank, &i) in order.iter().enumerate() {
                 if let Some(Some(p)) = spread.get_mut(i).map(|s| s.as_mut()) {
-                    *p += 0x100 * rank as u32;
+                    *p += 0x400 * rank as u32;
                 }
             }
             let v = image_lens_pinned(sections, &spread)
@@ -1975,7 +1978,7 @@ fn packed_true_bases(
     // Round 0: lengths at the PROVISIONAL bases (labeled sections at prov, label-less
     // pure-data blobs at scratch — the proven Frozen measuring pins). When a section
     // GREW, prov pins collide and the resolve fails — retry with a small cumulative
-    // spread (+0x80 per ROM section, order-preserving): big enough to absorb
+    // spread (+0x400 per ROM section, order-preserving): big enough to absorb
     // parcel-scale growth, small enough that cross-section CONDITIONAL branches (no
     // long form) keep their reach. This spread is a MEASURING device only — final
     // bases come from the island/contiguity rounds below and re-measure to a
@@ -1985,7 +1988,10 @@ fn packed_true_bases(
     // by 4 bytes). Widened 0x80->0x100 for input-6button (2026-08-02): the full
     // 6-button burst rewrite (two-pad ext accumulate + per-frame type detect +
     // unconditional Z80 bracket) grows the controllers region by 0xB0, past the old
-    // 0x80 spread. A growth beyond this is a hand ruling.
+    // 0x80 spread. Widened 0x100->0x400 for art-streaming-p2-task5 (2026-08-08): the
+    // 64-tile art-pool cutover grows ojz_act_pool by 0x33A in ONE section (3 ZX0
+    // pages -> 10 + the local-map island + the 8-byte manifest-v2 stride), past the
+    // old 0x100 adjacent-step. A growth beyond this is a hand ruling.
     let prov_pins: Vec<Option<u32>> = (0..n)
         .map(|i| if labeled[i] { prov[i].map(|v| v as u32) } else { None })
         .collect();

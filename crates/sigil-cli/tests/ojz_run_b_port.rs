@@ -47,6 +47,11 @@ const SECTIONS: &[(&str, &str, Region)] = &[
         pins::SEC_BLOCK_BLOBS,
     ),
     (
+        "games/sonic4/data/generated/ojz/act1/sec_local_maps.emp",
+        "sec_local_maps",
+        pins::SEC_LOCAL_MAPS,
+    ),
+    (
         "games/sonic4/data/levels/ojz/act1/act_assets.emp",
         "ojz_act_assets",
         pins::OJZ_ACT_ASSETS,

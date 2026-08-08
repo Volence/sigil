@@ -123,6 +123,8 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
         ("OJZ_Act1_BG_Tiles", pins::OJZ_ACT1_BG_TILES.plain, pins::OJZ_ACT1_BG_TILES.debug),
         ("ParallaxConfig_OJZ_Default", pins::PARALLAX_CONFIG_OJZ_DEFAULT.plain, pins::PARALLAX_CONFIG_OJZ_DEFAULT.debug),
         ("OJZ_Act_Pool_PageTable", pins::OJZ_ACT_POOL_PAGE_TABLE.plain, pins::OJZ_ACT_POOL_PAGE_TABLE.debug),
+        // art-streaming-p2-task5: the descriptor's Act.act_sec_local_maps field.
+        ("OJZ_Sec_LocalMaps", pins::OJZ_SEC_LOCAL_MAPS.plain, pins::OJZ_SEC_LOCAL_MAPS.debug),
         ("OJZ_Sec0_Blocks", pins::OJZ_SEC0_BLOCKS.plain, pins::OJZ_SEC0_BLOCKS.debug),
         ("OJZ_Sec1_Blocks", pins::OJZ_SEC1_BLOCKS.plain, pins::OJZ_SEC1_BLOCKS.debug),
         ("OJZ_Sec2_Blocks", pins::OJZ_SEC2_BLOCKS.plain, pins::OJZ_SEC2_BLOCKS.debug),

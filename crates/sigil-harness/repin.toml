@@ -629,6 +629,15 @@ tests = ["act_descriptor_port"]
 [[region]]
 name = "sec_block_blobs"
 start = "OJZ_Sec0_Blocks"
+end = "OJZ_Sec0_LocalMap"
+tests = ["ojz_run_b_port"]
+
+# art-streaming-p2-task5 — the per-section local->global tile-index tables
+# (sec_local_maps.emp), placed by contiguity after the block blobs and before the
+# palette/BG assets. No AS twin (P2b-era generated data). end-is-next-placement.
+[[region]]
+name = "sec_local_maps"
+start = "OJZ_Sec0_LocalMap"
 end = "OJZ_Palette"
 tests = ["ojz_run_b_port"]
 
@@ -1650,6 +1659,12 @@ tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "OJZ_Act_Pool_PageTable"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+# art-streaming-p2-task5 — the [*u8;9] per-section local->global pointer table the
+# descriptor reads (Act.act_sec_local_maps).
+name = "OJZ_Sec_LocalMaps"
 tests = ["act_descriptor_port"]
 
 [[symbol]]
