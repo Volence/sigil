@@ -3036,3 +3036,57 @@ full_crc = "c2ab3e8c"
 full_size = 426671
 anchor_crc = "a4475d15"
 anchor_end = 0x5f848
+
+[[entry]]
+name = "art-streaming-p2-task6-lru-fix"
+ab = "docs/superpowers/notes/2026-08-08-art-streaming-p2-task6-ab.md"
+note = "LRU flag/link single-owner fix (boot audit)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "59a1cacf"
+full_size = 427041
+anchor_crc = "b1d0e00b"
+anchor_end = 0x5f848
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "5a506c24"
+full_size = 307775
+anchor_crc = "63eb60a2"
+anchor_end = 0x43ea2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "1f6b8e5d"
+full_size = 93218
+anchor_crc = "55f957a2"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "f0ae943d"
+full_size = 96479
+anchor_crc = "8ade135c"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "9a2ebfe1"
+full_size = 379350
+anchor_crc = "378290f5"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "56ef26dc"
+full_size = 413654
+anchor_crc = "e874598f"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "e88a4b48"
+full_size = 426695
+anchor_crc = "ea009c3b"
+anchor_end = 0x5f848
