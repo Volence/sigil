@@ -483,6 +483,26 @@ pub struct Evaluator<'a> {
     /// typo'd `.labell`) is a LOUD diagnostic naming the label rather than a
     /// silent undefined link symbol. Reset per body (save/restore around nesting).
     minted_local_labels: Vec<(String, Span)>,
+    /// The byte size of the most recent full-save `movem.<sz> <list>, -(sp)` in
+    /// the body being lowered — the anchor from which the `irq_frame.pc` intrinsic
+    /// (bookmark ask 3) derives the stacked interrupted-PC displacement
+    /// `save_bytes + 2` (the 2 is the 68k group-1 exception frame's SR word, which
+    /// sits between the saved registers and the PC). `None` until a save-to-`-(sp)`
+    /// movem is lowered, and cleared by a restore (`movem.<sz> (sp)+, <list>`)
+    /// because the exception frame is gone once the registers are popped. Set/read
+    /// in body order (statements lower sequentially), so at an `irq_frame.pc`
+    /// operand this reflects every movem BEFORE it — exactly the derivation the ask
+    /// wants ("derived by the toolchain from the movem set, not hand-maintained").
+    /// 68k-only; a Z80 body never sets it.
+    irq_frame_save_bytes: Option<u32>,
+    /// Set by [`irq_frame_accessor`](Self::irq_frame_accessor) while mapping the
+    /// operands of the instruction currently being lowered, so
+    /// [`lower_instr_to_item`](Self::lower_instr_to_item) can author that one
+    /// instruction [`ItemAuthor::IrqFrame`] (the preserves-model exemption for the
+    /// stacked-frame access, bookmark ask 3 nuance (a)). Reset at each
+    /// instruction's entry and consumed when its CodeItem is built, so it never
+    /// leaks past its own line.
+    irq_frame_operand_pending: bool,
     /// A monotonic id for the hidden branch-target labels a DENSE
     /// [`pad_to_cycles`](Self::eval_pad_to_cycles) mints (one per emitted `jr`).
     /// Those labels are synthesized directly as `CodeItem::Label`s — they never
@@ -560,6 +580,8 @@ impl<'a> Evaluator<'a> {
             data_value_in_progress: Vec::new(),
             enclosing_owner: None,
             minted_local_labels: Vec::new(),
+            irq_frame_save_bytes: None,
+            irq_frame_operand_pending: false,
             pad_label_seq: 0,
         }
     }

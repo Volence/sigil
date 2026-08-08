@@ -1208,6 +1208,9 @@ impl Evaluator<'_> {
         scope: &LabelScope,
         env: &mut Env,
     ) -> Option<CodeItem> {
+        // Clear the per-instruction `irq_frame.pc` author flag; an operand map
+        // below sets it iff THIS line reads/writes the accessor (bookmark ask 3).
+        self.irq_frame_operand_pending = false;
         let mnemonic = self.resolve_mnemonic(&instr.mnemonic, env)?;
         let size = self.resolve_size(instr.size.as_ref(), instr.span, env)?;
         if mnemonic == "dc" {
@@ -1235,6 +1238,12 @@ impl Evaluator<'_> {
             instr.targets.iter().map(|t| scope.resolve_ref(t)).collect();
         if mnemonic == "movem" {
             let ops = self.map_movem_operands(instr, scope, env, size)?;
+            // Track the full-save/restore frame for the `irq_frame.pc` intrinsic
+            // (bookmark ask 3). A `movem.<sz> <list>, -(sp)` establishes the
+            // exception-frame anchor (saved-register bytes below the SR+PC the CPU
+            // pushed); a `movem.<sz> (sp)+, <list>` restore tears it down. The
+            // offset the intrinsic reads is `save_bytes + 2`.
+            self.track_irq_frame_movem(&ops, size);
             return Some(CodeItem::Instr {
                 mnemonic,
                 size,
@@ -1273,6 +1282,18 @@ impl Evaluator<'_> {
             ops.push(self.map_operand(op, scope, env, op_width)?);
         }
         self.check_raw_sentinel(&instr.operands, &ops, instr.span);
+        // A line carrying a resolved `irq_frame.pc` accessor is authored IrqFrame
+        // (the preserves sp-hazard exemption, bookmark ask 3 nuance (a)); it
+        // overrides the ambient author only for its own instruction. Never applies
+        // under a splice/context author — the accessor is a user-written operand,
+        // and those authors never map an `irq_frame.pc` (comptime-context code).
+        let author = if std::mem::take(&mut self.irq_frame_operand_pending)
+            && self.item_author == crate::value::ItemAuthor::User
+        {
+            crate::value::ItemAuthor::IrqFrame
+        } else {
+            self.item_author.clone()
+        };
         Some(CodeItem::Instr {
             mnemonic,
             size,
@@ -1280,7 +1301,7 @@ impl Evaluator<'_> {
             span: instr.span,
             as_type: instr.dispatch_bound.clone(),
             targets,
-            author: self.item_author.clone(),
+            author,
         })
     }
 
@@ -2768,6 +2789,105 @@ impl Evaluator<'_> {
     /// as `#expr` (`Operand::Imm`) or a `{splice}` (`Operand::Splice`) — so a
     /// future reader wondering why `move.l some.const, d0` is treated as a symbol
     /// `some.const` rather than that const's value is oriented here.
+    /// Update [`irq_frame_save_bytes`](Evaluator::irq_frame_save_bytes) from a just-
+    /// lowered `movem` (bookmark ask 3). A SAVE — a register list plus a `-(sp)`
+    /// predecrement destination — records the pushed byte count (`list_count *
+    /// size_bytes`) as the exception-frame anchor. A RESTORE — a register list plus
+    /// a `(sp)+` postincrement source — clears it (the frame is gone once the regs
+    /// are popped). A movem that does not touch sp leaves the anchor unchanged.
+    fn track_irq_frame_movem(&mut self, ops: &[CodeOperand], size: Option<Width>) {
+        let mask = ops.iter().find_map(|o| match o {
+            CodeOperand::RegList(m) => Some(*m),
+            _ => None,
+        });
+        let Some(mask) = mask else { return };
+        let size_bytes = match size {
+            Some(Width::L) => 4,
+            Some(Width::W) => 2,
+            // movem is only .w/.l; anything else is a malformed movem already
+            // diagnosed elsewhere — do not anchor off it.
+            _ => return,
+        };
+        if ops.iter().any(|o| matches!(o, CodeOperand::PreDec(Reg::A7))) {
+            self.irq_frame_save_bytes = Some(mask.count_ones() * size_bytes);
+        } else if ops.iter().any(|o| matches!(o, CodeOperand::PostInc(Reg::A7))) {
+            self.irq_frame_save_bytes = None;
+        }
+    }
+
+    /// The `irq_frame.pc` intrinsic (bookmark ask 3): the sanctioned accessor for
+    /// the stacked interrupted-PC longword an interrupt handler wants to read or
+    /// rewrite (the supervisor-bookmark redirect). It lowers to `(<disp>, sp)`
+    /// where `<disp>` is DERIVED by the toolchain — `save_bytes + 2` from the
+    /// handler's full-save `movem` — instead of the hand-maintained `62(sp)` magic
+    /// the S3K bookmark used. Two validity rules the checker enforces (the ask's
+    /// nuance (b)):
+    ///
+    /// - HANDLER CONTEXT: the enclosing proc must carry a `grants(...)` clause (a
+    ///   trust-root entered by hardware / a dispatcher). `irq_frame.pc` in an
+    ///   ordinary proc is `[irqframe.not-handler]` — an ordinary proc has no
+    ///   hardware-pushed exception frame to point at.
+    /// - PRIOR FULL-SAVE MOVEM: a `movem.<sz> <list>, -(sp)` must precede the
+    ///   accessor so the displacement can be derived. Without it the frame offset is
+    ///   undefined — `[irqframe.no-save]`.
+    ///
+    /// Nuance (a) — a handler that REWRITES the return PC (`move.l #New,
+    /// irq_frame.pc`) still satisfies `preserves(d0-a6)` — holds for free: the
+    /// write targets the STACKED frame (memory at `disp(sp)`), never a register, so
+    /// the movem-round-trip preserves slice and the register clobber lint are
+    /// untouched, and it moves sp by nothing so stack-balance sees no delta. Only
+    /// `.pc` is a valid field; any other (`irq_frame.foo`) is
+    /// `[irqframe.unknown-field]`.
+    ///
+    /// Returns the resolved `(disp, sp)` operand (on the two validity errors it
+    /// still returns an operand — with a best-effort displacement — so the caller
+    /// surfaces exactly one clear diagnostic, not a second "instruction dropped").
+    fn irq_frame_accessor(&mut self, field: &str, span: Span) -> Option<CodeOperand> {
+        if field != "pc" {
+            self.error(
+                span,
+                format!(
+                    "[irqframe.unknown-field] `irq_frame.{field}` is not an intrinsic — the only \
+                     stacked-frame accessor is `irq_frame.pc` (the interrupted return PC)"
+                ),
+            );
+            return None;
+        }
+        // Handler context: the enclosing proc must `grants(...)`.
+        let is_handler = match &self.enclosing_owner {
+            Some(crate::lower::hygiene::Owner::Proc { name, .. }) => {
+                self.procs.get(name.as_str()).is_some_and(|p| !p.grants.is_empty())
+            }
+            _ => false,
+        };
+        if !is_handler {
+            self.error(
+                span,
+                "[irqframe.not-handler] `irq_frame.pc` is only valid inside an interrupt handler \
+                 (a proc with a `grants(...)` clause) — an ordinary proc has no hardware-pushed \
+                 exception frame to address",
+            );
+        }
+        let disp = match self.irq_frame_save_bytes {
+            Some(save) => save as i128 + 2,
+            None => {
+                self.error(
+                    span,
+                    "[irqframe.no-save] `irq_frame.pc` needs a prior full-save `movem.<sz> \
+                     <list>, -(sp)` in this handler — the stacked-PC displacement is derived from \
+                     it (saved-register bytes + the exception frame's SR word)",
+                );
+                // Best-effort fallback (d0-a6.l = 62) so the instruction still
+                // encodes and only the [irqframe.no-save] error surfaces.
+                15 * 4 + 2
+            }
+        };
+        // Author the containing instruction `IrqFrame` so the preserves stack model
+        // exempts this sp-relative access from the alias-hazard bail (nuance (a)).
+        self.irq_frame_operand_pending = true;
+        Some(CodeOperand::DispInd { disp, reg: Reg::A7 })
+    }
+
     fn map_plain(
         &mut self,
         expr: &ast::Expr,
@@ -2818,6 +2938,12 @@ impl Evaluator<'_> {
             // through to today's `Owner.label` link-symbol behavior below.
             if p.segments.len() == 2 {
                 let (item, field) = (p.segments[0].as_str(), p.segments[1].as_str());
+                // `irq_frame.<field>` is a reserved INTRINSIC (bookmark ask 3), not
+                // an `Item.field` address nor an `Owner.label` reference: the
+                // sanctioned stacked-interrupted-PC accessor in an IRQ handler.
+                if item == "irq_frame" {
+                    return self.irq_frame_accessor(field, expr_span(expr));
+                }
                 if let Some(struct_name) = self.data_item_struct_name(item) {
                     // A known struct-typed item: the field MUST exist (a loud
                     // comptime error naming struct+field otherwise — NOT a silent

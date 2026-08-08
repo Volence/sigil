@@ -814,6 +814,17 @@ fn is_safe_sp_disp_read(mnem: &str, ops: &[CodeOperand]) -> bool {
         && matches!(ops.last(), Some(CodeOperand::Reg(r)) if *r != Reg::A7)
 }
 
+/// The instruction at `idx` carries a compiler-resolved `irq_frame.pc` accessor
+/// (authored [`ItemAuthor::IrqFrame`], bookmark ask 3): its `(disp, sp)` operand
+/// was derived from the handler's full-save `movem` and provably addresses the
+/// exception frame above the saves, so it is exempt from the sp alias-hazard bail.
+fn is_irq_frame_access(items: &[CodeItem], idx: usize) -> bool {
+    matches!(
+        items.get(idx),
+        Some(CodeItem::Instr { author: ItemAuthor::IrqFrame, .. })
+    )
+}
+
 /// A plain `(sp)` READ: the top slot is the SOURCE and the destination is
 /// something else. A load cannot alter a slot's contents, so it is not an alias
 /// hazard whatever the mnemonic — `adda.w (sp), a2` reads the top word exactly as
@@ -949,8 +960,18 @@ fn transfer(
     // READ into a plain register (`movea.l d(sp), aN`), the displaced analogue of
     // the `(sp)` peek: a load cannot alias a tracked slot (only a store could), so
     // it is safe and takes the normal register-write handling below (§5 grow —
-    // sp_hazard's own "could alias" rationale is write-only).
-    if sp_hazard(ops) && !is_sp_top_read(ops) && !is_safe_sp_disp_read(mnem, ops) {
+    // sp_hazard's own "could alias" rationale is write-only). And EXCEPT a
+    // compiler-resolved `irq_frame.pc` accessor (bookmark ask 3 nuance (a)): the
+    // toolchain derived its `(disp, sp)` from the handler's full-save `movem`, so
+    // it provably addresses the exception frame ABOVE the saved registers and
+    // cannot alias a tracked slot — a PC rewrite there still satisfies
+    // `preserves(d0-a6)`. It takes the normal handling below (a store to memory
+    // writes no register, so the entry-value bits are untouched).
+    if sp_hazard(ops)
+        && !is_sp_top_read(ops)
+        && !is_safe_sp_disp_read(mnem, ops)
+        && !is_irq_frame_access(items, idx)
+    {
         return Some(sp_hazard_reason(ops));
     }
 
