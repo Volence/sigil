@@ -35,8 +35,11 @@ Aeon (`feat/art-streaming-p2`, commit `d3e51a1` + the generator `e28a471`):
   OJZ_Palette). **act_descriptor.emp**: `act_sec_local_maps: OJZ_Sec_LocalMaps`.
 - Full donor re-bake ran; the byte-repro invariant holds: all 589,824 nametable
   words, translated new-LOCAL→global through each section's `sec{N}_local_map.bin`,
-  reproduce the OLD GLOBAL strips exactly (0 mismatches). Every non-art-pool output
-  (collision, entity, palette, BG, source strips) is BYTE-IDENTICAL to master.
+  reproduce the OLD GLOBAL strips exactly (0 mismatches). The ROM strips
+  (`sec*_strips_a.bin`) and block blobs (`sec*_blocks.bin`) DID change content (now
+  local-indexed, same size); the byte-identical set is the non-art outputs the
+  cutover doesn't touch: collision tables, entity data (objects/rings), palette, BG
+  (tiles/zone layout), and the editor-baseline `sec*_strips_source.bin`.
 
 Sigil (`master`), this parcel:
 - **Registry** (`native.rs`): new section `m!("games.sonic4.ojz_sec_local_maps_act1",

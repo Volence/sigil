@@ -10,9 +10,14 @@
 //!   `OJZ_Act_Pool_Page0`. The `ObjDef_*` archetypes are cross-module link labels
 //!   (test_objects / path_swap), injected here as a synthetic seam at their ROM
 //!   addresses (Abs32 fixups bake addresses, so the pointer cells are load-bearing).
-//! - **ojz_act_pool** (`games.sonic4.ojz_act_pool_act1`): 3 ZX0 page `embed()`s +
-//!   the `OJZ_Act_Pool_PageTable` (`dc.l` page addresses, same-module `extern()`s
-//!   resolved at link). `OJZ_Act_Pool_Page0` .. `OJZ_Act1_Descriptor`.
+//! - **ojz_act_pool** (`games.sonic4.ojz_act_pool_act1`): the 10 ZX0/raw page
+//!   `embed()`s + the manifest-v2 `OJZ_Act_Pool_PageTable` — a
+//!   `[PageManifest; 10]` array of `{pm_source, pm_tiles, pm_form, pm_flags}`
+//!   records (stride 8; same-module `extern()`s resolved at link). The module
+//!   `use`s the `PageManifest` type from `engine.structs`; the standalone compile
+//!   can't resolve that cross-module `use`, so the isolated source injects the
+//!   `PageManifest` struct definition (the type analog of the `ObjDef` symbol
+//!   seam below). `OJZ_Act_Pool_Page0` .. `OJZ_Act1_Descriptor`.
 //!
 //! Each section is byte-compared against the reference ROM at its pin base.
 //! Content is shape-invariant (debug = same bytes at +0x88).
@@ -98,6 +103,20 @@ fn compile_section(
     let path = aeon.join(emp_rel);
     let src = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    // ojz_act_pool.emp `use`s the PageManifest type (the manifest-v2 table records)
+    // from engine.structs; a standalone single-module compile can't resolve that
+    // cross-module `use`, so inject the struct definition in place of the `use`
+    // (the type analog of the ObjDef symbol seam). Layout MUST match
+    // engine/structs.emp::PageManifest exactly, or the emitted table bytes diverge.
+    let src = src.replace(
+        "use engine.structs.{PageManifest}",
+        "struct PageManifest {\n\
+         \tpm_source: *u8,\n\
+         \tpm_tiles: u16,\n\
+         \tpm_form: u8,\n\
+         \tpm_flags: u8,\n\
+         }",
+    );
     let (file, pdiags) = parse_str(&src);
     assert!(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
