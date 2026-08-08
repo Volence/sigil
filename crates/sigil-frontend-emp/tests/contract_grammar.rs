@@ -32,8 +32,9 @@ fn extern_proc_minimal_clobbers() {
     assert!(es[0].sig.params.is_empty());
 }
 
-/// The full §3 S4LZ_DecompressDict boundary decl: typed params + a multi-reg
-/// clobbers + an `out` (the advances-a1 in-out cursor). All clauses, order-free.
+/// A full §3 boundary decl: typed params + a multi-reg clobbers + an `out`. The
+/// SHAPE is what this pins; the register set is a fixture, not a copy of any
+/// current proc's contract. All clauses, order-free.
 #[test]
 fn extern_proc_full_contract() {
     let f = ok("module engine.level\n\

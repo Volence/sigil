@@ -1976,9 +1976,15 @@ fn check_out(
     // EXCEPT under a declared `falls_into`: control continues into the successor
     // inside the same call, so the output may legitimately be produced THERE and
     // never touched here — a body that only READS the register still has an honest
-    // claim if the successor produces it. The exemption has NO 68k corpus exhibit
-    // today: no 68k proc declares both `falls_into` and an `out`, so this arm is
-    // exercised only by the frontend's own synthetics.
+    // claim if the successor produces it.
+    //
+    // THIS ARM IS UNGUARDED AND UNEXERCISED. No 68k proc declares both `falls_into`
+    // and an `out`, and nothing asserts this tier's exemption in either direction,
+    // so pinning `charge_unwritten` to either constant is green across the whole
+    // tree. The frontend's `falls_into` + `out` synthetics all assert over
+    // `out_verify::check_out`'s firings, which is a DIFFERENT function from this
+    // one. The Z80 route is closed independently: the out-unwritten check is
+    // 68k-only, so the single proc of that shape anywhere never reaches here.
     //
     // THIS TIER'S EXEMPTION IS WEAKER THAN THE CLOSURE'S, deliberately and
     // visibly. The closure does NOT exempt: `out_verify` charges the fall-off

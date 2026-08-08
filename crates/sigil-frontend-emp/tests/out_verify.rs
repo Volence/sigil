@@ -1047,10 +1047,17 @@ fn a_falls_into_procs_fall_off_charges_the_successor() {
     );
 }
 
-/// THE PLUMBING, one layer above [`verify_out`]: the successor NAME must actually
-/// travel from the proc table, through `compute_verified_outs`, into the fall-off
-/// credit. `P falls_into Q` where P produces nothing and Q grounds locally — P can
-/// verify ONLY if that map arrived intact.
+/// THE PLUMBING, one layer above [`verify_out`]: the successor name must reach the
+/// fall-off credit inside `compute_verified_outs`. `P falls_into Q` where P
+/// produces nothing and Q grounds locally — P can verify ONLY if that map arrived
+/// intact.
+///
+/// SCOPE, stated because it is easy to over-read: this builds the map by hand and
+/// calls `compute_verified_outs` directly, so it guards the FUNCTION'S PARAMETER,
+/// not the corpus walk's own wiring of it. Dropping `&falls_into_succ` at the
+/// `compute_verified_outs` call site leaves this test green; the gate that catches
+/// that is `out_width.rs::falls_into_credit_is_capped_at_the_successors_declared_width`,
+/// which runs `analyze_corpus` end to end.
 ///
 /// This exists because the corpus CANNOT witness it. NO 68k proc declares both
 /// `falls_into` and an `out`, so the successor argument is dead over every shipped

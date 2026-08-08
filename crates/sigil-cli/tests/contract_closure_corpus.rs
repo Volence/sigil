@@ -914,9 +914,12 @@ fn corpus_flag_results_declared_vs_verified_credit_agree() {
 /// every residue firing names an out ABSENT from the verified map, i.e. the
 /// residue IS the verified complement.
 ///
-/// The loop cannot go vacuous unnoticed: an empty `out_firings` would mean every
-/// baseline row stopped firing, which
-/// `contract_baselines_hold_for_every_shipped_shape` reports as GONE rows.
+/// The loop is guarded against vacuity IN ITS OWN WALK. Deferring that to
+/// `contract_baselines_hold_for_every_shipped_shape` would not do: that gate runs
+/// `analyze_every_shape` under each shape's defines, while `corpus_report()` walks
+/// DEFINE-FREE and is a strict under-approximation of every shipped shape — it can
+/// go empty while all seven still fire. `out_verify_corpus.rs` refuses the same
+/// inference in the same direction, and for the same reason.
 ///
 /// THE SECOND HALF OF THIS TEST NOW LIVES IN A SYNTHETIC, deliberately. It
 /// asserted a corpus row that exists ONLY under verified credit, proving the
@@ -935,6 +938,10 @@ fn corpus_flag_results_declared_vs_verified_credit_agree() {
 #[test]
 fn corpus_out_residue_is_the_verified_complement() {
     let Some(r) = corpus_report() else { return };
+    assert!(
+        !r.out_firings.is_empty(),
+        "the residue is empty — the loop below would pass by measuring nothing"
+    );
     for f in &r.out_firings {
         let marked_verified =
             r.verified_uncond_out.get(&f.proc).is_some_and(|s| s.contains(&f.reg));
