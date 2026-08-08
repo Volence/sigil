@@ -287,6 +287,40 @@ impl<'a> Cfg<'a> {
         self.label_target.get(name).copied()
     }
 
+    /// The local landing indices of a targets-carrying BARE COMPUTED transfer
+    /// (`jmp .table(pc,Xn) targets(.a, .b, …)` — the `(d8,PC,Xn)` `PcRelIdx` and
+    /// the `(An)` `DispSymInd` forms), or `None` when `idx` is not such a transfer
+    /// or a named target does not resolve locally.
+    ///
+    /// The 68k out-verifier's counterpart of `cycle_budget`'s enumerated-dispatch
+    /// resolution: without it a computed intra-proc dispatch is one opaque
+    /// [`Edge::TailOut`], so its landing blocks are unreachable and the transfer
+    /// charges an out obligation at a point control never leaves. Honoring the
+    /// clause turns the transfer into N `Follow` edges — the dispatch stays INSIDE
+    /// the proc, exactly as the `targets(...)` clause already declares.
+    ///
+    /// Eligibility mirrors the per-proc dispatch check: exactly one `TailOut` edge
+    /// and no operand naming a symbol (a direct `jmp .label` / tail `jmp External`
+    /// already has an exact edge). A single unresolved target abandons the whole
+    /// enumeration — the caller falls back to the opaque transfer rather than a
+    /// partial edge set.
+    pub(crate) fn enumerated_dispatch(&self, idx: usize) -> Option<Vec<usize>> {
+        let CodeItem::Instr { targets, ops, .. } = &self.items[idx] else { return None };
+        if targets.is_empty() {
+            return None;
+        }
+        let names_a_target = ops.iter().any(|o| {
+            matches!(
+                o,
+                CodeOperand::Sym(_) | CodeOperand::SymOff { .. } | CodeOperand::AbsSym { .. }
+            )
+        });
+        if names_a_target || !matches!(self.edges(idx).as_slice(), [Edge::TailOut]) {
+            return None;
+        }
+        targets.iter().map(|t| self.label_index(t)).collect()
+    }
+
     /// Whether `name` labels this proc's OWN body — any label DEFINED among these
     /// items, INCLUDING a body-closing one at the very end with no following
     /// instruction, which [`Cfg::label_index`] returns `None` for. The shared

@@ -106,14 +106,6 @@ pub const Z80_OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
 /// `contract_closure_corpus.rs::corpus_out_residue_is_the_verified_complement`,
 /// whose witness moved to a synthetic for exactly this reason.
 pub const OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
-    ("Collision_ProbeDown", "d1"),
-    ("Collision_ProbeDown", "d2"),
-    ("Collision_ProbeLeft", "d1"),
-    ("Collision_ProbeLeft", "d2"),
-    ("Collision_ProbeRight", "d1"),
-    ("Collision_ProbeRight", "d2"),
-    ("Collision_ProbeUp", "d1"),
-    ("Collision_ProbeUp", "d2"),
     ("DrawRings", "a4"),
     ("DrawRings", "d5"),
     ("InsertSpriteMasks", "a4"),
