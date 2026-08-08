@@ -1975,9 +1975,10 @@ fn check_out(
     //
     // EXCEPT under a declared `falls_into`: control continues into the successor
     // inside the same call, so the output may legitimately be produced THERE and
-    // never touched here. `S4LZ_DecompressDict out(a1) falls_into S4LZ_Decompress`
-    // is the corpus exhibit — its own body only READS `a1` (`suba.l a1, a4`) and
-    // the successor advances it.
+    // never touched here — a body that only READS the register still has an honest
+    // claim if the successor produces it. The exemption has NO 68k corpus exhibit
+    // today: no 68k proc declares both `falls_into` and an `out`, so this arm is
+    // exercised only by the frontend's own synthetics.
     //
     // THIS TIER'S EXEMPTION IS WEAKER THAN THE CLOSURE'S, deliberately and
     // visibly. The closure does NOT exempt: `out_verify` charges the fall-off

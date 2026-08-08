@@ -719,9 +719,10 @@ pub fn analyze_corpus_with_contracts(
     // — the out-verify residue surface reports the SAME fact D1b's must-def credits,
     // so the WARN residue and the ERROR gate can never disagree on whether an out is
     // honest). This is the fixpoint's own residue: a proc whose out grounds only in
-    // an unverified callee out appears here — `Art_Decompress`'s `a1`, which is
-    // produced nowhere in its own body and tails into `S4LZ_Decompress`, whose
-    // `out(a1)` is DECLARED and unverified.
+    // an unverified callee out appears here, where a declared-credit reading would
+    // discharge it. NO shipping proc currently has that shape, so the discriminating
+    // pair is a synthetic —
+    // `tests/corpus_contracts.rs::the_out_residue_surface_uses_verified_credit_not_declared`.
     let mut out_firings: Vec<OutFiring> = Vec::new();
     let empty_widths: BTreeMap<String, OutClaim> = BTreeMap::new();
     for pb in &proc_bufs {

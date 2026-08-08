@@ -910,30 +910,28 @@ fn corpus_flag_results_declared_vs_verified_credit_agree() {
 }
 
 /// CONSISTENCY (brief §2.6): the out-verify residue surface and D1b must-def read
-/// ONE fixpoint source, so they cannot disagree on whether an out is honest.
-/// (1) every residue firing names an out ABSENT from the verified map (the residue
-/// IS the verified complement); (2) a corpus witness that the residue-reporting
-/// switch to VERIFIED credit actually landed.
+/// ONE fixpoint source, so they cannot disagree on whether an out is honest —
+/// every residue firing names an out ABSENT from the verified map, i.e. the
+/// residue IS the verified complement.
 ///
-/// The witness must be a firing that exists ONLY under verified credit — i.e. one
-/// whose register is DECLARED by the proc it sources from, so declared credit
-/// would satisfy it and only the unproven verification withholds it.
-/// `Art_Decompress::out(a1)` is that shape: it produces `a1` nowhere itself (a
-/// pure dispatcher, `jbra ZX0_Decompress` / `jbra S4LZ_Decompress`), and
-/// `S4LZ_Decompress` DECLARES `out(a0, a1)` while verifying only `a0`. Under
-/// declared credit the tail would hand it `a1` and the row would vanish; under
-/// verified credit it stands.
+/// The loop cannot go vacuous unnoticed: an empty `out_firings` would mean every
+/// baseline row stopped firing, which
+/// `contract_baselines_hold_for_every_shipped_shape` reports as GONE rows.
 ///
-/// `Collision_GetType::out(d0)` was the original witness and is NO LONGER VALID —
-/// recorded here because the failure is silent and the shape recurs. It was chosen
-/// when it sourced `d0` from a narrow-width `Tile_Cache_GetCollision`, but aeon
-/// `49b7f3d` fused that proc into `Collision_GetType`, which is now a LEAF with no
-/// calls at all. Callee credit cannot apply to it, so it fired identically under
-/// both maps: it passed, and detected nothing. It has since stopped firing
-/// ENTIRELY — the proc declares `out(d0: u8)`, which its `move.b` fetch proves —
-/// so restoring it would not be a weak witness but a failing assertion. A witness
-/// whose discriminating power lives in another repo needs re-checking when that
-/// repo moves, and a retired one needs re-checking before it is ever restored.
+/// THE SECOND HALF OF THIS TEST NOW LIVES IN A SYNTHETIC, deliberately. It
+/// asserted a corpus row that exists ONLY under verified credit, proving the
+/// surface reads the VERIFIED map and not the DECLARED one. Two successive corpus
+/// witnesses decayed out from under it: `Collision_GetType::out(d0)` when aeon
+/// `49b7f3d` fused its callee into a leaf — it kept passing while detecting
+/// nothing — and `Art_Decompress::out(a1)` when the decompressors' unproduced
+/// `out(a1)` was retired to `clobbers(a1)`. No row in the present residue carries
+/// the shape at all: every one writes its own register and sources none of it from
+/// a callee, tail or successor, so a corpus witness is not merely fragile here but
+/// unavailable. The fact is guarded instead — in both polarities, and against a
+/// declared-credit mutant — by `sigil-frontend-emp/tests/corpus_contracts.rs`,
+/// `the_out_residue_surface_uses_verified_credit_not_declared`. A witness whose
+/// discriminating power lives in another repo needs re-checking whenever that repo
+/// moves; a synthetic one does not.
 #[test]
 fn corpus_out_residue_is_the_verified_complement() {
     let Some(r) = corpus_report() else { return };
@@ -947,14 +945,6 @@ fn corpus_out_residue_is_the_verified_complement() {
             f.proc, f.reg
         );
     }
-    assert!(
-        r.out_firings.iter().any(|f| f.proc == "Art_Decompress" && f.reg == "a1"),
-        "expected Art_Decompress::out(a1) in the fixpoint residue — it grounds ONLY in \
-         S4LZ_Decompress::out(a1), which is DECLARED but not verified, so this row exists \
-         under verified credit and not under declared. Its absence means the residue \
-         surface is reading the declared map. got: {:?}",
-        r.out_firings.iter().map(|f| (f.proc.as_str(), f.reg.as_str())).collect::<Vec<_>>()
-    );
 }
 
 /// EDGE-SENSITIVE CONDITIONAL-OUT CREDIT, stated as a corpus witness rather than
