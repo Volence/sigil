@@ -479,6 +479,8 @@ fn find_proc_contract(all_items: &[&ast::Item], sym: &str) -> Option<Contract> {
                     out_flags: p.out_flags.clone(),
                     out_cond: p.out_cond.clone(),
                     out_types: p.out_types.clone(),
+                    inout: p.inout.clone(),
+                    inout_types: p.inout_types.clone(),
                     requires: p.requires.clone(),
                 };
                 // A proc that declares no clobber contract is an unbounded leaf

@@ -3155,3 +3155,116 @@ fn word_facet_full_plus_word_is_not_an_error() {
         "full+word on the same register is redundant, not an error: {diags:?}"
     );
 }
+
+// --- The in-out facet's partition rules (Spec 2026-08-08-inout) -------------
+
+#[test]
+fn inout_register_must_be_a_param() {
+    // d5 is NOT a param → [proc.inout-not-param].
+    let (_m, diags) = lower("module m\n proc P () clobbers() inout(d5: u16) {\n rts\n }\n");
+    assert!(has_tag(&diags, "[proc.inout-not-param]"), "inout non-param must fire: {diags:?}");
+    // With d5 a param, that rule is silent.
+    let (_m, ok) = lower("module m\n proc P (d5: u16) clobbers() inout(d5: u16) {\n addq.w #1, d5\n rts\n }\n");
+    assert!(!has_tag(&ok, "[proc.inout-not-param]"), "inout param must not fire: {ok:?}");
+}
+
+#[test]
+fn inout_and_clobbers_overlap_is_an_error() {
+    let (_m, diags) = lower("module m\n proc P (d5: u16) clobbers(d5) inout(d5: u16) {\n addq.w #1, d5\n rts\n }\n");
+    assert!(has_tag(&diags, "[proc.inout-clobbers-overlap]"), "inout∩clobbers must fire: {diags:?}");
+}
+
+#[test]
+fn inout_and_preserves_overlap_is_an_error() {
+    let (_m, diags) = lower("module m\n proc P (d5: u16) clobbers() preserves(d5) inout(d5: u16) {\n addq.w #1, d5\n rts\n }\n");
+    assert!(has_tag(&diags, "[proc.inout-preserves-overlap]"), "inout∩preserves must fire: {diags:?}");
+}
+
+#[test]
+fn inout_and_out_overlap_is_an_error() {
+    let (_m, diags) = lower("module m\n proc P (d5: u16) clobbers() out(d5) inout(d5: u16) {\n addq.w #1, d5\n rts\n }\n");
+    assert!(has_tag(&diags, "[proc.inout-out-overlap]"), "inout∩out must fire: {diags:?}");
+}
+
+#[test]
+fn clean_inout_declaration_has_no_partition_error() {
+    let (_m, diags) = lower("module m\n proc P (d5: u16, a4: *u8) clobbers(d0) inout(d5: u16, a4: *u8) {\n addq.w #1, d5\n move.b d5, (a4)+\n rts\n }\n");
+    assert!(
+        !has_tag(&diags, "[proc.inout-not-param]")
+            && !has_tag(&diags, "[proc.inout-clobbers-overlap]")
+            && !has_tag(&diags, "[proc.inout-preserves-overlap]")
+            && !has_tag(&diags, "[proc.inout-out-overlap]"),
+        "a clean inout decl must raise no partition error: {diags:?}"
+    );
+}
+
+// --- inout on BOUNDARY declarations (extern / contract type) + z80 body ------
+
+#[test]
+fn extern_inout_non_param_is_rejected() {
+    // The extern-fold blessing shape: d5 is NOT a param of Q, so folding its inout
+    // into the caller-credit maps would bless a caller's out(d5). The boundary pass
+    // rejects it at the declaration.
+    let (_m, diags) = lower(
+        "module m\nextern proc Q (a0: *u8) clobbers() inout(d5: u16)\n",
+    );
+    assert!(has_tag(&diags, "[proc.inout-not-param]"), "extern inout non-param must fire: {diags:?}");
+    // Properly a param → no structural inout error.
+    let (_m, ok) = lower(
+        "module m\nextern proc Q (d5: u16) clobbers() inout(d5: u16)\n",
+    );
+    assert!(
+        !has_tag(&ok, "[proc.inout-not-param]")
+            && !has_tag(&ok, "[proc.inout-clobbers-overlap]")
+            && !has_tag(&ok, "[proc.inout-out-overlap]"),
+        "a well-formed extern inout must not fire: {ok:?}"
+    );
+}
+
+#[test]
+fn extern_inout_clobbers_overlap_is_rejected() {
+    let (_m, diags) = lower(
+        "module m\nextern proc Q (d5: u16) clobbers(d5) inout(d5: u16)\n",
+    );
+    assert!(has_tag(&diags, "[proc.inout-clobbers-overlap]"), "extern inout∩clobbers must fire: {diags:?}");
+}
+
+#[test]
+fn extern_inout_on_z80_is_unsupported() {
+    let (_m, diags) = lower(
+        "module m\nsection s (cpu: z80, vma: $8000) {\n\
+         extern proc Q (d5: u16) clobbers() inout(d5: u16)\n}\n",
+    );
+    assert!(has_tag(&diags, "[proc.inout-z80-unsupported]"), "extern inout on z80 must fire: {diags:?}");
+}
+
+#[test]
+fn body_inout_on_z80_is_unsupported() {
+    // Item 2: a BODY proc in a z80 section declaring inout fires the guard.
+    let (_m, diags) = lower(
+        "module m\nsection s (cpu: z80, vma: $8000) {\n\
+         proc P (d5: u16) clobbers() inout(d5: u16) {\n    ret\n}\n}\n",
+    );
+    assert!(has_tag(&diags, "[proc.inout-z80-unsupported]"), "z80 body inout must fire: {diags:?}");
+    // A z80 body WITHOUT inout does not fire it.
+    let (_m, ok) = lower(
+        "module m\nsection s (cpu: z80, vma: $8000) {\n\
+         proc P () clobbers() {\n    ret\n}\n}\n",
+    );
+    assert!(!has_tag(&ok, "[proc.inout-z80-unsupported]"), "z80 body without inout must not fire: {ok:?}");
+}
+
+#[test]
+fn inout_narrow_address_type_is_invalid() {
+    // Item 3: inout(a4: u16) — an address register with a sub-long type — mirrors
+    // the out-side [proc.out-invalid] address-width lint on the inout facet.
+    let (_m, diags) = lower(
+        "module m\n proc P (a4: *u8) clobbers() inout(a4: u16) {\n move.b (a4)+, d0\n rts\n }\n",
+    );
+    assert!(has_tag(&diags, "[proc.inout-invalid]"), "narrow-address inout type must fire: {diags:?}");
+    // A pointer type on the address register is accepted (documentation, width = long).
+    let (_m, ok) = lower(
+        "module m\n proc P (a4: *u8) clobbers() inout(a4: *u8) {\n move.b (a4)+, d0\n rts\n }\n",
+    );
+    assert!(!has_tag(&ok, "[proc.inout-invalid]"), "pointer-typed address inout must not fire: {ok:?}");
+}

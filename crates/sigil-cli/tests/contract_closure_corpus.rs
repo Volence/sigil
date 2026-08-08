@@ -941,9 +941,15 @@ fn corpus_flag_results_declared_vs_verified_credit_agree() {
 #[test]
 fn corpus_out_residue_is_the_verified_complement() {
     let Some(r) = corpus_report() else { return };
+    // The 68k out residue is now EMPTY corpus-wide (every declared out verifies),
+    // so this loop is vacuous here — the NON-VACUOUS complement witness moved to a
+    // synthetic (`corpus_contracts.rs::the_out_residue_surface_uses_verified_credit_not_declared`).
+    // What must still be non-empty is the analysis's PRODUCT: a walk that silently
+    // returned nothing would make the vacuity meaningless, so pin the verified map.
     assert!(
-        !r.out_firings.is_empty(),
-        "the residue is empty — the loop below would pass by measuring nothing"
+        !r.verified_uncond_out.is_empty(),
+        "the verified-out map is empty — the walk produced nothing, so the complement \
+         property below would hold vacuously for the wrong reason"
     );
     for f in &r.out_firings {
         let marked_verified =
@@ -953,6 +959,35 @@ fn corpus_out_residue_is_the_verified_complement() {
             "{}::out({}) is in the out-verify residue yet marked VERIFIED — the residue \
              surface and must-def credit have drifted apart",
             f.proc, f.reg
+        );
+    }
+}
+
+/// The in-out facet VERIFIED something real — the non-vacuity witness for the
+/// whole parcel. `DrawRings` and `InsertSpriteMasks` adopt `inout(a4)` /
+/// `inout(d5: u16)`, and both cursors must appear in the verified-inout map (they
+/// pass because pass-through is valid, and the writing paths produce the declared
+/// width). If this went empty, the four retired baseline rows would have been
+/// retired against a check that proves nothing.
+#[test]
+fn corpus_inout_facet_verifies_the_sprite_cursors() {
+    let Some(r) = corpus_report() else { return };
+    for (proc, reg) in
+        [("DrawRings", "a4"), ("DrawRings", "d5"), ("InsertSpriteMasks", "a4"), ("InsertSpriteMasks", "d5")]
+    {
+        assert!(
+            r.verified_inout.get(proc).is_some_and(|s| s.contains(reg)),
+            "{proc}::inout({reg}) is not in the verified-inout map — the facet did not verify \
+             the cursor it was adopted for. verified_inout: {:?}",
+            r.verified_inout
+        );
+    }
+    // And none of them is left firing (the complement).
+    for f in &r.inout_firings {
+        assert!(
+            !matches!(f.proc.as_str(), "DrawRings" | "InsertSpriteMasks"),
+            "{}::inout({}) is firing yet was adopted to verify — {}",
+            f.proc, f.reg, f.reason
         );
     }
 }
@@ -1528,6 +1563,18 @@ fn contract_baselines_hold_for_every_shipped_shape() {
                 r.z80_out_claims
             );
         }
+
+        // The in-out exit-side residue, its OWN frozen baseline, gated across every
+        // shape exactly as `out` is — the four `DrawRings`/`InsertSpriteMasks`
+        // `a4`/`d5` rows retired here (empty), so a mutant that re-breaks one fires.
+        let inout: Vec<(String, String)> =
+            r.inout_firings.iter().map(|f| (f.proc.clone(), f.reg.clone())).collect();
+        let d = contract_baseline::diff_inout_unverified(&inout);
+        assert!(
+            d.is_clean(),
+            "shape `{label}`: {}",
+            contract_baseline::adjudication_message("[proc.inout-unverified]", &d)
+        );
 
         // Non-vacuity that is not implied by `is_clean()`: the walk must have
         // produced firings at all. An analysis that silently returned nothing

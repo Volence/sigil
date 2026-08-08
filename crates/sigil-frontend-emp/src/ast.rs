@@ -889,6 +889,21 @@ pub struct ProcDecl {
     /// type is metadata the caller-side slot-type slice checks. `(reg, ty, span)`.
     /// Empty for a proc with no typed output.
     pub out_types: Vec<(String, Type, Span)>,
+    /// Registers this proc takes AND returns — the in-out cursor facet. The caller
+    /// provides a meaningful value at entry and reads a meaningful value at exit;
+    /// unlike `out`, PASS-THROUGH (no write) is contract-valid, and unlike
+    /// `preserves` the exit value need not equal the entry value. Same
+    /// movem-reglist grammar as `out`/`clobbers`. An `inout` register is a caller
+    /// obligation on BOTH sides, so it MUST be a declared param
+    /// (`[proc.inout-not-param]`) and may be in NEITHER `clobbers`
+    /// (`[proc.inout-clobbers-overlap]`) NOR `preserves`
+    /// (`[proc.inout-preserves-overlap]`). `None` = undeclared; `Some(vec![])` =
+    /// the explicit `inout()` form.
+    pub inout: Option<Vec<(String, Option<String>)>>,
+    /// Typed in-out registers declared via `inout(rN: Type)` — the `inout`
+    /// analogue of `out_types`. The register ALSO joins `inout`; the type gives the
+    /// width the exit-production check charges. `(reg, ty, span)`; empty = none.
+    pub inout_types: Vec<(String, Type, Span)>,
     /// Contexts every call site of this proc must have active (§3.3):
     /// `requires(z80_stopped, vblank)`. `(name, span)` in source order; empty
     /// for a proc with no context requirement. CHECKED at every call site by
@@ -939,6 +954,11 @@ pub struct ProcSig {
     /// Typed data-register results (`out(dN: Type)`, G5 §7 tier 5) — see the
     /// same field on [`ProcDecl`]. `(reg, ty, span)`; empty = none.
     pub out_types: Vec<(String, Type, Span)>,
+    /// In-out registers (`inout(rN)` / `inout(rN: T)`) — see the same field on
+    /// [`ProcDecl`]. `None` = undeclared, `Some(vec![])` = explicit empty.
+    pub inout: Option<Vec<(String, Option<String>)>>,
+    /// Typed in-out registers (`inout(rN: Type)`) — see [`ProcDecl::inout_types`].
+    pub inout_types: Vec<(String, Type, Span)>,
     /// `requires(ctx, …)` (§3.3) — see the same field on [`ProcDecl`]. An
     /// `extern proc` carries it so an `.asm`-defined callee can demand a context
     /// exactly as a `.emp` one does. There is deliberately no `grants` here: a
@@ -1109,6 +1129,15 @@ impl ProcDecl {
     ) -> std::collections::BTreeSet<String> {
         unconditional_outs_of(self.out.as_deref(), &self.out_cond, rf)
     }
+
+    /// The declared in-out registers, canonical under `rf` — the expanded
+    /// `inout` reglist. There is no conditional `inout`, so no subtraction.
+    pub fn inout_regs(
+        &self,
+        rf: crate::regfile::RegFile,
+    ) -> std::collections::BTreeSet<String> {
+        expand_contract_reglist(self.inout.as_deref().unwrap_or(&[]), rf)
+    }
 }
 
 impl ProcSig {
@@ -1142,6 +1171,15 @@ impl ProcSig {
         rf: crate::regfile::RegFile,
     ) -> std::collections::BTreeSet<String> {
         unconditional_outs_of(self.out.as_deref(), &self.out_cond, rf)
+    }
+
+    /// The declared in-out registers, canonical under `rf`. See
+    /// [`ProcDecl::inout_regs`].
+    pub fn inout_regs(
+        &self,
+        rf: crate::regfile::RegFile,
+    ) -> std::collections::BTreeSet<String> {
+        expand_contract_reglist(self.inout.as_deref().unwrap_or(&[]), rf)
     }
 }
 

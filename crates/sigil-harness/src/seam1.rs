@@ -257,6 +257,8 @@ fn collect_pub_proc_stubs(
                     out_flags: p.out_flags.clone(),
                     out_cond: p.out_cond.clone(),
                     out_types: p.out_types.clone(),
+                    inout: p.inout.clone(),
+                    inout_types: p.inout_types.clone(),
                     requires: p.requires.clone(),
                 };
                 out.insert(
@@ -804,6 +806,8 @@ pub fn z80_clobbers_report_doctored(
                             declared_clobbers,
                             params: BTreeSet::new(),
                             out: expand(p.out.as_deref().unwrap_or(&[])),
+                            // The in-out facet is 68k-only; a Z80 seam node has none.
+                            inout: BTreeSet::new(),
                             has_clobber_contract: p.clobbers.is_some() || doctored.is_some(),
                             verified_preserves,
                             // The §6 word facet is a 68k data-register form; this

@@ -69,48 +69,42 @@ pub const Z80_OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
 /// shipped shapes. If that ever stops holding, the D1c pair above is the shape to
 /// copy; do not flatten a real per-family difference into one array.
 ///
-/// EVERY row here carries the reason "not produced on a required return path": the
-/// register has no write at all on some path, and no declaration can change that.
-/// The `DrawRings` / `InsertSpriteMasks` / `Emit_ObjectPieces` cursors thread a
-/// sprite counter (`d5`) and a SAT pointer (`a4`) that advance only when a sprite
-/// is emitted; the empty-buffer, cap-already-reached-at-entry, and
-/// every-candidate-culled paths write neither, and the no-param-seed model
-/// (`out_verify` Finding 2) does not credit a threaded entry value as production.
-/// These are production-completeness rows, not width rows.
+/// EMPTY: every declared 68k register `out` in the corpus verifies — proven
+/// produced, at its declared width, on every required return path. The array is the
+/// live gate surface: a firing that appears here is a NEW violation and fails the
+/// closure gate, and an entry added with no corresponding corpus firing is a stale
+/// pin that also fails.
 ///
-/// The width facet is real and exercised by `out_verify`'s unit tests, but the
-/// corpus currently exhibits no sub-width production row: the three sprite-counter
-/// procs increment `d5` with `addq.w` and declare `out(d5: u16)`, so on the paths
-/// that DO produce `d5` the width matches every caller's `.w` read (and the lone
-/// `.b` cap test a `u16` also covers). `out(d5: u8)` is the barred adoption — it
-/// would publish a contract narrower than the callers consume, sound as a claim and
-/// useless as a promise. (The array is the one authority for counts; a number
-/// written down twice is the fork this module's preamble prevents.)
+/// A row would land here only for a register a proc CLAIMS to produce (`out`) but
+/// does not produce on some return path. Three kinds of near-miss belong to OTHER
+/// mechanisms and are prevented from accumulating here, by construction, not by
+/// pinning:
 ///
-/// Which rows are sub-width production and which are genuinely unproduced is
-/// measured by turning the width rule off and reading the result as a SET DIFF,
-/// never by classifying rows by eye. Reproduce it that way rather than trusting any
-/// prose here; the standing write-up is the item-1 fixpoint census, a lane document
-/// that may not sit beside this file.
+/// - a register produced too NARROW is a `out(dN: T)` width claim, charged at the
+///   type's width — not a missing production;
+/// - a register a proc THREADS (provides at entry, hands back at exit) rather than
+///   produces is the `inout` facet, whose residue is [`INOUT_UNVERIFIED_BASELINE`];
+/// - a register produced through a local `bsr` to a shared helper is credited by the
+///   cross-proc credit model, so it is produced, not unproven.
 ///
-/// ROWS ARE NOT INDEPENDENT SITES, in general. Credit flows along calls, tails and
-/// `falls_into` successors, so one unproven production can hold several rows open.
-/// A burn-down that counts rows then over-counts the work and can "fix" a
-/// dependant by papering over its root — compute the census over the fixpoint, and
-/// read every measurement as a SET DIFF rather than a count.
+/// Which of the four residues (`out`, `out(dN: T)` width, `inout`, and the Z80 unit
+/// domain) a firing belongs to is measured as a SET DIFF against its own baseline,
+/// never classified by eye. This array holding at EMPTY is the strongest form of
+/// that guard: any non-empty diff is a real regression.
+pub const OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[];
+
+/// `[proc.inout-unverified]` — a proc declares `inout(rN)` but the body leaves rN
+/// BROKEN on some exit path: a write narrower than the declared width, a clobbering
+/// or conditional-out callee, or an unknown callee. Unlike `out`, PASS-THROUGH (no
+/// write) is contract-valid — the caller's entry value is a meaningful exit value —
+/// so an unwritten path never fires.
 ///
-/// Every row presently here is nonetheless self-contained: each proc writes its
-/// own register in its own body and sources none of it from a callee, tail or
-/// successor. That is a fact about today's corpus, not a property of the analysis,
-/// and it is why no row here can serve as the cross-proc credit witness — see
-/// `contract_closure_corpus.rs::corpus_out_residue_is_the_verified_complement`,
-/// whose witness moved to a synthetic for exactly this reason.
-pub const OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
-    ("DrawRings", "a4"),
-    ("DrawRings", "d5"),
-    ("InsertSpriteMasks", "a4"),
-    ("InsertSpriteMasks", "d5"),
-];
+/// EMPTY. The array is the live gate surface with the same ratchet as
+/// [`OUT_UNVERIFIED_BASELINE`]: a new firing is a NEW violation, an unfounded entry
+/// a stale pin. A register whose exit value is not meaningful under the declared
+/// width — a sub-width write blending with the entry bytes — is the one thing that
+/// populates it.
+pub const INOUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[];
 
 /// `[call.live-clobbered]` (D1c) — the SHAPE-INVARIANT rows: a caller holds a
 /// value in a register across a call whose callee destroys it.
@@ -254,6 +248,17 @@ pub fn diff_z80_out_unverified(got: &[(String, String)]) -> BaselineDiff {
         Z80_OUT_UNVERIFIED_BASELINE
             .iter()
             .map(|(p, u)| format!("{p} :: out({u})"))
+            .collect(),
+    )
+}
+
+/// Diff the corpus's `[proc.inout-unverified]` firings against the frozen baseline.
+pub fn diff_inout_unverified(got: &[(String, String)]) -> BaselineDiff {
+    diff_multiset(
+        got.iter().map(|(p, r)| format!("{p} :: inout({r})")).collect(),
+        INOUT_UNVERIFIED_BASELINE
+            .iter()
+            .map(|(p, r)| format!("{p} :: inout({r})"))
             .collect(),
     )
 }

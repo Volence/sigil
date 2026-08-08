@@ -196,7 +196,7 @@ pub(super) fn lower_proc(
     // a contract is declared (`Some(_)`; the explicit empty `out()` counts —
     // it declares "returns nothing", so any listed register would be moot but
     // the overlap/unwritten checks still apply to whatever IS listed).
-    if proc.out.is_some() {
+    if proc.out.is_some() || proc.inout.is_some() {
         check_out(proc, &buf, ctx.cpu, diags);
     }
 
@@ -1032,6 +1032,13 @@ fn check_clobbers(
     // `out`'s own validation runs in `check_out`, so expand it quietly here.
     let outs = reglist_set_quiet(proc.out.as_deref().unwrap_or(&[]));
     allowed.extend(outs.regs);
+    // In-out registers are BOTH input and result: the proc advances/re-produces
+    // them for the caller (`addq.w #1, d5` on an `inout(d5)` cursor), so a write is
+    // part of the contract, not an undeclared clobber. They are also required to be
+    // params (`[proc.inout-not-param]`), so this is belt-and-braces with the param
+    // extend above — but it keeps the allowance even if that rule is violated.
+    let inouts = reglist_set_quiet(proc.inout.as_deref().unwrap_or(&[]));
+    allowed.extend(inouts.regs);
     // §5 VERIFIED preserves are allowed writes too (S2-D6 FP-kill): a register the
     // proc writes but provably SAVE/RESTORES round-trips to its entry value — it is
     // preserved, not clobbered, so it must not fire `[proc.clobber-undeclared]`.
@@ -1687,6 +1694,146 @@ fn check_preserves(
 /// concept, so this runs for both CPUs; the unwritten check reuses the 68k
 /// write-form heuristic, which on Z80 simply finds no matching writes (a Z80
 /// `out` currently cannot be verified-written — honest, like `preserves`).
+/// The four in-out PARTITION rules, shared by the body-proc check ([`check_out`])
+/// and the boundary-declaration pass ([`validate_boundary_inout`], for `extern
+/// proc` / `type = proc`). Each is a membership test over pre-expanded sets, so both
+/// callers compute the sets from their own AST shape and this is the one authority
+/// for the four messages. The `[proc.inout-not-param]` rule is what routes the
+/// in-out INPUT obligation through the existing param→D1b machinery, and its
+/// enforcement on externs is what closes the extern-fold blessing path.
+pub(crate) fn check_inout_partition(
+    owner: &str,
+    span: Span,
+    inout_valid: &[String],
+    param_regs: &std::collections::HashSet<String>,
+    clobbers_regs: &std::collections::HashSet<String>,
+    preserved_mask: u16,
+    word_mask: u16,
+    out_reg_set: &std::collections::HashSet<String>,
+    diags: &mut Vec<Diagnostic>,
+) {
+    for name in inout_valid {
+        if !param_regs.contains(name) {
+            push(
+                diags,
+                Level::Error,
+                span,
+                format!(
+                    "[proc.inout-not-param] `{owner}` declares `inout({name})` but `{name}` is not \
+                     a param — an in-out register is a caller-provided input, so it must be \
+                     declared in the param list"
+                ),
+            );
+        }
+        if clobbers_regs.contains(name) {
+            push(
+                diags,
+                Level::Error,
+                span,
+                format!(
+                    "[proc.inout-clobbers-overlap] `{owner}` declares `{name}` both in-out and \
+                     clobbered — an in-out register's exit value is promised to the caller, so it \
+                     cannot also be destroyed scratch"
+                ),
+            );
+        }
+        if let Some(bit) = preserves_reg_bit(name) {
+            if (preserved_mask | word_mask) & (1 << bit) != 0 {
+                push(
+                    diags,
+                    Level::Error,
+                    span,
+                    format!(
+                        "[proc.inout-preserves-overlap] `{owner}` declares `{name}` both in-out and \
+                         preserved — an in-out register's exit value need not equal its entry \
+                         value, so it cannot also be promised unchanged"
+                    ),
+                );
+            }
+        }
+        if out_reg_set.contains(name) {
+            push(
+                diags,
+                Level::Error,
+                span,
+                format!(
+                    "[proc.inout-out-overlap] `{owner}` declares `{name}` both `inout` and `out` — \
+                     an in-out register is checked as a threaded cursor (pass-through valid), an \
+                     out as a produced result; a register takes exactly one"
+                ),
+            );
+        }
+    }
+}
+
+/// The full in-out structural check for a BOUNDARY declaration — an `extern proc`
+/// or a `type = proc` contract type — whose body the closure never sees. Without
+/// this, an `extern proc Q (a0) inout(d5)` (d5 not a param) would fold `d5` into the
+/// caller-credit maps and seed it VERIFIED by §3 axiom, blessing a caller's
+/// `out(d5)` with no gate firing (D1b stays silent because `d5 ∉ Q.params`). Running
+/// the SAME five rules `check_out` runs on bodies closes that path at the
+/// declaration. `is_z80` gates the 68k-only facet.
+pub(crate) fn validate_boundary_inout(
+    owner: &str,
+    span: Span,
+    params: &std::collections::HashSet<String>,
+    clobbers: Option<&[(String, Option<String>)]>,
+    preserves: &[(String, Option<String>)],
+    out: Option<&[(String, Option<String>)]>,
+    inout: Option<&[(String, Option<String>)]>,
+    is_z80: bool,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let inout_nonempty = inout.is_some_and(|v| !v.is_empty());
+    if is_z80 {
+        if inout_nonempty {
+            push(
+                diags,
+                Level::Error,
+                span,
+                format!(
+                    "[proc.inout-z80-unsupported] `{owner}` declares `inout(...)` on a Z80 \
+                     declaration — the in-out facet is 68k-only"
+                ),
+            );
+        }
+        return;
+    }
+    let inout_set = reglist_expand_checked(inout.unwrap_or(&[]), "inout", owner, span, diags);
+    let mut inout_valid: Vec<String> = inout_set.regs.into_iter().collect();
+    inout_valid.sort();
+    if inout_valid.is_empty() {
+        return;
+    }
+    let clobbers_regs = reglist_set_quiet(clobbers.unwrap_or(&[])).regs;
+    let out_reg_set = reglist_set_quiet(out.unwrap_or(&[])).regs;
+    let mut preserved_mask: u16 = 0;
+    for (lo, hi) in preserves {
+        let Some(lo_bit) = preserves_reg_bit(lo) else { continue };
+        let hi_bit = match hi {
+            None => lo_bit,
+            Some(h) => match preserves_reg_bit(h) {
+                Some(b) if b >= lo_bit => b,
+                _ => continue,
+            },
+        };
+        for bit in lo_bit..=hi_bit {
+            preserved_mask |= 1 << bit;
+        }
+    }
+    check_inout_partition(
+        owner,
+        span,
+        &inout_valid,
+        params,
+        &clobbers_regs,
+        preserved_mask,
+        /* word_mask */ 0,
+        &out_reg_set,
+        diags,
+    );
+}
+
 fn check_out(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,
@@ -1714,6 +1861,21 @@ fn check_out(
     // file expansion behind it, without which a raw-text set would miss `sp`/`a7`
     // on 68k and every Z80 pair spelling (`hl` expands to `h`+`l`).
     if cpu == Cpu::Z80 {
+        // The in-out facet is 68k-only tonight — its exit-production verifier is
+        // the 68k write/CFG machinery. A Z80 `inout(...)` is rejected rather than
+        // silently unchecked.
+        if proc.inout.as_deref().is_some_and(|v| !v.is_empty()) {
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!(
+                    "[proc.inout-z80-unsupported] `{}` declares `inout(...)` on a Z80 proc — the \
+                     in-out facet is 68k-only",
+                    proc.name
+                ),
+            );
+        }
         let rf = crate::regfile::RegFile::Z80;
         let cond_guarded = proc.cond_only_out_regs(rf);
         let out_set = crate::regfile::expand_reglist(
@@ -1893,6 +2055,33 @@ fn check_out(
             }
         }
     }
+
+    // The in-out facet's partition rules. An `inout` register is a caller
+    // obligation on BOTH sides — provided at entry, read at exit — so it is
+    // mutually exclusive with every other disposition and must be a param.
+    let inout_set = reglist_expand_checked(
+        proc.inout.as_deref().unwrap_or(&[]),
+        "inout",
+        &proc.name,
+        proc.span,
+        diags,
+    );
+    let mut inout_valid: Vec<String> = inout_set.regs.into_iter().collect();
+    inout_valid.sort();
+    let param_regs: std::collections::HashSet<String> =
+        proc.params.iter().map(|(n, _, _)| n.clone()).collect();
+    let out_reg_set: std::collections::HashSet<String> = valid.iter().cloned().collect();
+    check_inout_partition(
+        &proc.name,
+        proc.span,
+        &inout_valid,
+        &param_regs,
+        &clobbers.regs,
+        preserved_mask,
+        word_mask,
+        &out_reg_set,
+        diags,
+    );
 
     // The SR-half partition (the sr split). A flag result (`out(carry: …)`)
     // lives in CCR and a conditional result's `if cc` guard is read from CCR,

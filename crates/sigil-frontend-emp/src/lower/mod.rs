@@ -240,6 +240,12 @@ fn lower_module_inner(
     // the pre-T1 behavior).
     let module_cpu = module_declared_cpu(&file.module, &mut diags);
     let initial_cpu = module_cpu.unwrap_or(opts.initial_cpu);
+    // The in-out structural rules on BOUNDARY declarations (`extern proc` /
+    // `type = proc`), which `check_out` reaches only for bodies. Without this an
+    // extern's `inout` folds into the caller-credit maps and seeds VERIFIED with no
+    // gate — the extern-fold blessing path. Runs with the module CPU, updated per
+    // `(cpu:)` section, so `[proc.inout-z80-unsupported]` fires on a Z80 boundary.
+    validate_inout_boundaries(&file.items, initial_cpu, &mut diags);
     // Validate the rung-2 module `invariant` clauses against the module CPU's
     // register file (ruling 4) and capture the inherited-preserve unit set every
     // Z80 proc is checked against (§3.2 inheritance).
@@ -2053,10 +2059,15 @@ fn validate_out_types(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
     }
     fn check(
         owner: &str,
-        out_types: &[(String, ast::Type, sigil_span::Span)],
+        facet: &str,
+        types: &[(String, ast::Type, sigil_span::Span)],
         diags: &mut Vec<Diagnostic>,
     ) {
-        for (reg, ty, span) in out_types {
+        // `out` names a returned RESULT, `inout` a threaded register — same
+        // address-width rule (every 68k address write is full-width), reported on
+        // the facet the author actually wrote.
+        let noun = if facet == "inout" { "in-out register" } else { "result" };
+        for (reg, ty, span) in types {
             let Some(r) = crate::value::Reg::from_name(reg) else { continue };
             if (r as usize) < 8 {
                 continue; // a data register — the type's width is the claim
@@ -2068,7 +2079,7 @@ fn validate_out_types(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
                 level: Level::Error,
                 primary: *span,
                 message: format!(
-                    "[proc.out-invalid] `{owner}` declares the address-register result \
+                    "[proc.{facet}-invalid] `{owner}` declares the address-register {noun} \
                      `{reg}` with a type narrower than an address register — every 68k \
                      address write covers all 32 bits, so the claim can never be violated \
                      and would cap callers below what the hardware produces. Use a \
@@ -2082,15 +2093,62 @@ fn validate_out_types(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
     fn walk(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
         for item in items {
             match item {
-                ast::Item::Proc(p) => check(&p.name, &p.out_types, diags),
-                ast::Item::ExternProc(e) => check(&e.name, &e.sig.out_types, diags),
-                ast::Item::ContractType(t) => check(&t.name, &t.sig.out_types, diags),
+                ast::Item::Proc(p) => {
+                    check(&p.name, "out", &p.out_types, diags);
+                    check(&p.name, "inout", &p.inout_types, diags);
+                }
+                ast::Item::ExternProc(e) => {
+                    check(&e.name, "out", &e.sig.out_types, diags);
+                    check(&e.name, "inout", &e.sig.inout_types, diags);
+                }
+                ast::Item::ContractType(t) => {
+                    check(&t.name, "out", &t.sig.out_types, diags);
+                    check(&t.name, "inout", &t.sig.inout_types, diags);
+                }
                 ast::Item::Section(s) => walk(&s.items, diags),
                 _ => {}
             }
         }
     }
     walk(items, diags);
+}
+
+/// The in-out structural rules ([`crate::lower::proc::validate_boundary_inout`]) on
+/// every `extern proc` / `type = proc` BOUNDARY declaration — the forms `check_out`
+/// does not reach. Tracks the CPU through `(cpu:)` sections so the 68k-only guard
+/// (`[proc.inout-z80-unsupported]`) fires on a Z80 boundary. This is what closes the
+/// extern-fold blessing path (an extern `inout` on a non-param register would
+/// otherwise seed VERIFIED with no gate).
+fn validate_inout_boundaries(items: &[ast::Item], cpu: Cpu, diags: &mut Vec<Diagnostic>) {
+    fn param_names(params: &[(String, Option<ast::Type>, sigil_span::Span)]) -> std::collections::HashSet<String> {
+        params.iter().map(|(n, _, _)| n.clone()).collect()
+    }
+    for item in items {
+        match item {
+            ast::Item::ExternProc(e) => {
+                crate::lower::proc::validate_boundary_inout(
+                    &e.name, e.span, &param_names(&e.sig.params),
+                    e.sig.clobbers.as_deref(), &e.sig.preserves, e.sig.out.as_deref(),
+                    e.sig.inout.as_deref(), cpu == Cpu::Z80, diags,
+                );
+            }
+            ast::Item::ContractType(t) => {
+                crate::lower::proc::validate_boundary_inout(
+                    &t.name, t.span, &param_names(&t.sig.params),
+                    t.sig.clobbers.as_deref(), &t.sig.preserves, t.sig.out.as_deref(),
+                    t.sig.inout.as_deref(), cpu == Cpu::Z80, diags,
+                );
+            }
+            ast::Item::Section(s) => {
+                let sec_cpu = s.attrs.iter()
+                    .find(|(k, _)| k == "cpu")
+                    .map(|(_, v)| attr_cpu(v))
+                    .unwrap_or(cpu);
+                validate_inout_boundaries(&s.items, sec_cpu, diags);
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Once-per-compile validation of `offsets` blocks. Two hard errors: (1) a

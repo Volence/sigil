@@ -1795,6 +1795,8 @@ impl Parser {
         let mut out_flags = Vec::new();
         let mut out_cond = Vec::new();
         let mut out_types = Vec::new();
+        let mut inout = None;
+        let mut inout_types = Vec::new();
         let mut requires = Vec::new();
         let mut grants = Vec::new();
         let mut falls_into = None;
@@ -1821,6 +1823,20 @@ impl Parser {
                 out_flags = flags;
                 out_cond = conds;
                 out_types = types;
+            } else if self.eat_kw("inout") {
+                // `inout(rN)` / `inout(rN: T)` — the in-out cursor facet. Same
+                // reglist + typed grammar as `out`, but NO flag or conditional
+                // forms: an in-out value is unconditional by construction (the
+                // caller reads it on every path), so `inout(carry: n)` and
+                // `inout(rN if cc)` are rejected (scope guard).
+                self.expect(&Tok::LParen, "`(`");
+                let sp = self.prev_span();
+                let (regs, flags, conds, types) = self.out_list();
+                if !flags.is_empty() || !conds.is_empty() {
+                    self.diag_at(sp, "`inout(...)` takes only registers and `rN: T` types — no `carry:`/`if cc` forms (an in-out value is unconditional)".to_string());
+                }
+                inout = Some(regs);
+                inout_types = types;
             } else if self.eat_kw("preserves") {
                 // `preserves(d0-d1/a0)` — the movem-style reglist (S2-D6b
                 // syntactic slice), now the shared `clobbers`/`out` grammar.
@@ -1835,7 +1851,7 @@ impl Parser {
         self.expect(&Tok::LBrace, "`{`");
         let body = self.asm_body(/* splices_allowed = */ false);
         self.expect(&Tok::RBrace, "`}`");
-        ProcDecl { public, name, params, clobbers, preserves, out, out_flags, out_cond, out_types, requires, grants, falls_into, attrs: Vec::new(), body, span: start.merge(self.prev_span()) }
+        ProcDecl { public, name, params, clobbers, preserves, out, out_flags, out_cond, out_types, inout, inout_types, requires, grants, falls_into, attrs: Vec::new(), body, span: start.merge(self.prev_span()) }
     }
 
     /// Parse a context-name list clause — `requires(a, b)` / `grants(a)` (§3.3).
@@ -1941,6 +1957,8 @@ impl Parser {
         let mut out_flags = Vec::new();
         let mut out_cond = Vec::new();
         let mut out_types = Vec::new();
+        let mut inout = None;
+        let mut inout_types = Vec::new();
         let mut requires = Vec::new();
         loop {
             if self.eat_kw("clobbers") {
@@ -1953,6 +1971,15 @@ impl Parser {
                 out_flags = flags;
                 out_cond = conds;
                 out_types = types;
+            } else if self.eat_kw("inout") {
+                self.expect(&Tok::LParen, "`(`");
+                let sp = self.prev_span();
+                let (regs, flags, conds, types) = self.out_list();
+                if !flags.is_empty() || !conds.is_empty() {
+                    self.diag_at(sp, "`inout(...)` takes only registers and `rN: T` types — no `carry:`/`if cc` forms (an in-out value is unconditional)".to_string());
+                }
+                inout = Some(regs);
+                inout_types = types;
             } else if self.eat_kw("preserves") {
                 self.expect(&Tok::LParen, "`(`");
                 preserves = self.reg_list();
@@ -1962,7 +1989,7 @@ impl Parser {
                 break;
             }
         }
-        ProcSig { params, clobbers, preserves, out, out_flags, out_cond, out_types, requires }
+        ProcSig { params, clobbers, preserves, out, out_flags, out_cond, out_types, inout, inout_types, requires }
     }
 
     /// Parse a contract-signature param list — like [`Parser::param_list`] but

@@ -64,8 +64,18 @@ pub struct ProcNode {
     pub declared_clobbers: BTreeSet<String>,
     /// `params` register bindings — allowed writes (not clobbers).
     pub params: BTreeSet<String>,
-    /// `out(...)` results — allowed writes (not clobbers).
+    /// `out(...)` results — allowed writes (not clobbers). The `inout(...)`
+    /// registers are FOLDED IN here too: an in-out register is WRITTEN/produced by
+    /// the callee exactly as an out is, so the closure, D1c, and §6 must treat it
+    /// as a produced result (a caller holding a value in it across the call is
+    /// wrong). The distinct in-out obligation — pass-through-valid exit production —
+    /// is checked separately via [`inout`](Self::inout).
     pub out: BTreeSet<String>,
+    /// The declared `inout(...)` registers, kept apart from [`out`](Self::out) so
+    /// the exit-side verifier can obligate them under the threaded-cursor rule
+    /// (pass-through valid) instead of the `out` produce-on-every-path rule. These
+    /// are ALSO folded into `out` for caller-side crediting.
+    pub inout: BTreeSet<String>,
     /// Whether the proc declares any clobber contract at all — the firing check
     /// only runs on procs that opted in (mirrors `check_clobbers`' gate).
     pub has_clobber_contract: bool,

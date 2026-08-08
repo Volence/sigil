@@ -989,6 +989,115 @@ fn out_fires(
     r.out_firings.iter().any(|f| f.proc == proc && f.reg == reg)
 }
 
+/// THE LAUNDERING PROBE (inout-fold soundness). The design credits a callee's
+/// `inout(rN)` as production for the CALLER's `out(rN)` obligation (inout is folded
+/// into the verified credit union, so `verify_out` sees a `jbsr Q` where Q is
+/// `inout(d5)` as producing d5). That is sound ONLY IF the call site independently
+/// charges the caller for providing a DEFINED register at entry — otherwise a proc
+/// P whose entry d5 is garbage could "launder" it through Q's pass-through and have
+/// its `out(d5)` blessed on a value it never defined.
+///
+/// The backstop is D1b `[call.input-undefined]`: `inout(d5)` FORCES d5 to be a param
+/// of Q (`[proc.inout-not-param]`), and D1b charges every call site to define Q's
+/// params. So the laundering P fires D1b at `jbsr Q`, and the ERROR gate rejects it —
+/// even though `verify_out` alone was fooled (measured below: P's `out(d5)` does NOT
+/// appear in the out residue, proving D1b is the SOLE catch, not a coincidental
+/// double-cover). The catch lives in BOTH the CI gate
+/// (`contract_closure_corpus.rs::corpus_input_undefined_is_empty_the_error_gate`) and
+/// the build gate (`main.rs::run_contract_gate`, the `[call.input-undefined]`
+/// empty_gate) — the two read the same `input_firings`.
+#[test]
+fn inout_credit_laundering_is_caught_by_d1b() {
+    // Q: a pure pass-through inout — verifies (pass-through is valid), and its inout
+    // credit is what would launder a caller's undefined d5.
+    let q = "proc Q (d5: u16) clobbers() inout(d5: u16) { rts }\n";
+    // LAUNDERING P: out(d5), and d5's ONLY touch is `jbsr Q`. P never defines d5.
+    let laundering = analyze(&[&format!(
+        "module m\n{q}\
+         proc P () clobbers() out(d5) {{\n\
+             jbsr Q\n\
+             rts }}\n"
+    )]);
+    assert!(
+        input_fires(&laundering, "P", "Q", "d5"),
+        "the laundering P must be caught by D1b [call.input-undefined] on d5: {:?}",
+        laundering.input_firings
+    );
+    // MEASURED: verify_out itself was FOOLED — P's out(d5) is credited by Q's inout,
+    // so it is NOT in the out residue. D1b is the sole catch. (If this ever starts
+    // firing too, the double-cover is a bonus, not the guarantee.)
+    assert!(
+        !out_fires(&laundering, "P", "d5"),
+        "expected verify_out to credit Q's inout for P's out(d5) (so D1b is the load-\
+         bearing catch) — if out-verify now fires, re-read the soundness argument: {:?}",
+        laundering.out_firings
+    );
+
+    // HONEST P2: genuinely defines d5 before the call → D1b is SILENT and it passes.
+    let honest = analyze(&[&format!(
+        "module m\n{q}\
+         proc P2 () clobbers() out(d5) {{\n\
+             moveq #0, d5\n\
+             jbsr Q\n\
+             rts }}\n"
+    )]);
+    assert!(
+        !input_fires(&honest, "P2", "Q", "d5"),
+        "the honest P2 defines d5 before the call → D1b must stay silent: {:?}",
+        honest.input_firings
+    );
+    assert!(
+        !out_fires(&honest, "P2", "d5"),
+        "the honest P2's out(d5) is produced (moveq) → no out residue: {:?}",
+        honest.out_firings
+    );
+}
+
+/// THE EXTERN-FOLD LAUNDERING backstop (extern arm of the soundness probe). An
+/// `extern proc`'s outs seed the verified maps by §3 axiom (no body to prove), and
+/// its `inout` folds into the caller-credit maps exactly as a body's does — so the
+/// same laundering shape applies through a boundary declaration. A MALFORMED extern
+/// (`inout(d5)` with d5 NOT a param) is rejected at lowering by
+/// `[proc.inout-not-param]` (see `lower_proc.rs::extern_inout_non_param_is_rejected`,
+/// the declaration-time catch). This probe covers the WELL-FORMED extern: even when
+/// Q properly declares `d5` a param, a caller P whose entry `d5` is garbage cannot
+/// launder its `out(d5)` through Q — D1b `[call.input-undefined]` fires at the call,
+/// because `d5` is Q's param. `verify_out` alone is again fooled (P's out is
+/// credited by the extern's folded inout), so D1b is the sole catch.
+#[test]
+fn inout_extern_credit_laundering_is_caught_by_d1b() {
+    let ext = "extern proc Q (d5: u16) clobbers() inout(d5: u16)\n";
+    let laundering = analyze(&[&format!(
+        "module m\n{ext}\
+         proc P () clobbers() out(d5) {{\n\
+             jbsr Q\n\
+             rts }}\n"
+    )]);
+    assert!(
+        input_fires(&laundering, "P", "Q", "d5"),
+        "the extern-fold laundering P must be caught by D1b [call.input-undefined]: {:?}",
+        laundering.input_firings
+    );
+    assert!(
+        !out_fires(&laundering, "P", "d5"),
+        "verify_out is fooled by the extern's folded inout (so D1b is the catch): {:?}",
+        laundering.out_firings
+    );
+    // Honest caller: defines d5 first → D1b silent, passes.
+    let honest = analyze(&[&format!(
+        "module m\n{ext}\
+         proc P2 () clobbers() out(d5) {{\n\
+             moveq #0, d5\n\
+             jbsr Q\n\
+             rts }}\n"
+    )]);
+    assert!(
+        !input_fires(&honest, "P2", "Q", "d5"),
+        "the honest extern caller defines d5 before the call → D1b silent: {:?}",
+        honest.input_firings
+    );
+}
+
 /// THE SITE-2 PLUMBING GUARD, one layer above the fixpoint's own
 /// `falls_into_successor_credit_reaches_the_fixpoint`: the `falls_into` successor
 /// name must travel from the proc table into the PER-PROC out check, not only
