@@ -108,6 +108,54 @@ fn cond_out_survives_claims_all_prove() {
     );
 }
 
+/// No `out(rN: T)` in the corpus names a type the corpus cannot resolve to a
+/// width. An unresolvable type is not unsound — it answers the bare 32-bit claim
+/// on both sides, exactly as the declaration would with no type at all — but it
+/// silently means something other than what its author wrote, and a width cannot
+/// be guessed from a name that resolves to nothing.
+///
+/// Assert-EMPTY rather than baselined: there is no adjudication to make. Either
+/// the name is a typo, or the module declaring it is missing from the walk, and
+/// both are fixed rather than pinned.
+#[test]
+fn no_corpus_out_type_is_unresolvable() {
+    let Some(r) = corpus_report() else { return };
+    let rows: Vec<String> = r
+        .unresolvable_out_types
+        .iter()
+        .map(|(p, reg, ty)| format!("{p} :: out({reg}: {ty})"))
+        .collect();
+    assert!(
+        rows.is_empty(),
+        "an `out(rN: T)` names a type the corpus cannot resolve to a width, so it \
+         silently claims all 32 bits instead of what was written:\n  {}",
+        rows.join("\n  ")
+    );
+    // NON-VACUITY, measured on the SCAN's own subject matter. `typed_out_slots` is
+    // what the type walk saw; a map keyed by proc NAME cannot serve here, because
+    // it carries a key whether or not that proc declares a type, so stripping every
+    // type off the corpus would leave it unchanged.
+    let slots: Vec<(&str, &str)> =
+        r.typed_out_slots.iter().map(|(p, g)| (p.as_str(), g.as_str())).collect();
+    for exemplar in [
+        ("Collision_GetType", "d0"),
+        ("GetSineCosine", "d0"),
+        ("Tile_Cache_GetTile", "d2"),
+    ] {
+        assert!(
+            slots.contains(&exemplar),
+            "the walk did not see `{} :: out({}: T)`, so the assert above ranges \
+             over less than it should. slots: {slots:?}",
+            exemplar.0,
+            exemplar.1
+        );
+    }
+    // The corpus's typed out slots, pinned exactly. A count that only ever grows
+    // would let a deletion pass; this notices in both directions and prints the
+    // set, so an intended change is adjudicated rather than absorbed.
+    assert_eq!(slots.len(), 17, "the corpus's typed out slots: {slots:?}");
+}
+
 /// Every proc that declares `out(rN if cc)` with rN ABSENT from its `clobbers` —
 /// i.e. every proc whose survives claim the gate above actually proves.
 /// `AllocDynamic` is deliberately not here: it names a1 in `clobbers` and makes

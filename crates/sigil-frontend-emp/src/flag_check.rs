@@ -23,7 +23,7 @@
 
 use crate::calls::call_unconditional_outs;
 use crate::lower::instr_written_regs;
-use crate::out_verify::cc_transparent;
+use crate::out_verify::{cc_transparent, OutWidth, OutWidthMap};
 use crate::value::{CodeItem, CodeOperand, Reg, Z80Cond};
 use sigil_ir::backend::Cpu;
 use sigil_span::Span;
@@ -597,12 +597,19 @@ impl<'a> Cfg<'a> {
 /// by intersection at merges (§3). A `valid_edge` bail contributes nothing (the
 /// conservative default). Register names are canonicalized to the `d0`..`a7`
 /// spelling the def/produce sets use.
+///
+/// Each credit carries the callee's declared [`OutWidth`] beside the register.
+/// The out-verifier consumes it (a byte-wide conditional out credits a byte);
+/// must-def reads the KEYS only, because its whole definition lattice — including
+/// its local-write transfer — is width-blind, and taking half a width model there
+/// would make a callee credit stricter than an equivalent inline write.
 pub(crate) fn conditional_out_edge_credits(
     cfg: &Cfg,
     items: &[CodeItem],
     cond_callees: &BTreeMap<String, Vec<(String, String)>>,
-) -> BTreeMap<(usize, usize), BTreeSet<String>> {
-    let mut credits: BTreeMap<(usize, usize), BTreeSet<String>> = BTreeMap::new();
+    out_widths: &OutWidthMap,
+) -> BTreeMap<(usize, usize), BTreeMap<String, OutWidth>> {
+    let mut credits: BTreeMap<(usize, usize), BTreeMap<String, OutWidth>> = BTreeMap::new();
     for (idx, it) in items.iter().enumerate() {
         let CodeItem::Instr { mnemonic, ops, .. } = it else { continue };
         if !CALL_MNEMONICS.contains(&mnemonic.as_str()) {
@@ -612,8 +619,24 @@ pub(crate) fn conditional_out_edge_credits(
         let Some(conds) = cond_callees.get(callee) else { continue };
         for (reg, cc) in conds {
             let Some(reg) = Reg::from_name(reg) else { continue };
+            let name = reg.to_string();
+            // The credited WIDTH is the callee's own declared one — a callee
+            // promising `out(d0: u8 if eq)` credits its caller a byte on the
+            // success edge, not a long. The max-merge below is defensive only: the
+            // key is `(call index, successor)`, so one edge has exactly one callee
+            // and the entry cannot already hold a different width for `name`.
+            // The CREDIT side of the callee's claim — never the strict side; the
+            // two fail safe in opposite directions ([`OutClaim`]).
+            let w = out_widths
+                .get(callee)
+                .and_then(|m| m.get(&name))
+                .map(|c| c.credit())
+                .unwrap_or(OutWidth::L);
             if let Some(edge) = cfg.valid_edge(idx, cc) {
-                credits.entry(edge).or_default().insert(reg.to_string());
+                let slot = credits.entry(edge).or_default().entry(name).or_insert(w);
+                if *slot < w {
+                    *slot = w;
+                }
             }
         }
     }

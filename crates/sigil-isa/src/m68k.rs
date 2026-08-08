@@ -81,6 +81,14 @@ pub enum Mnemonic {
 /// last-operand-register writes (`true`); `exg` and `link`/`unlk` write registers
 /// NOT expressible as "the last operand" and additionally need an operand-shape
 /// arm in the front-end's `instr_written_regs` (the doc there records this).
+/// **A `true` here is not a promise that the write COVERS the operand size.**
+/// `Ext` writes only the half above the bits it reads, and `Tas`/`Bset`/`Bclr`
+/// write a single bit. A consumer reasoning about how much of a register a write
+/// establishes must classify those itself — `sigil_frontend_emp::out_verify`'s
+/// `writes_partial_bits` and `ext_promotion` are that classification, and they are
+/// plain string matches with no exhaustiveness link back to this enum. Adding a
+/// mnemonic breaks the match below and forces a decision HERE; it will not force
+/// one there, so a new partial-coverage form must be added there by hand.
 pub fn writes_last_operand(m: Mnemonic) -> bool {
     use Mnemonic::*;
     match m {

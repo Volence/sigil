@@ -1706,6 +1706,9 @@ impl Parser {
     /// - `<reg> if <cc>` → a conditional register result (§6). `reg` STILL joins
     ///   the reglist (the closure charges it as written); the `cc` guard rides in
     ///   the returned cond list. cc/reg validity is `[proc.out-cond-invalid]`.
+    /// - `<reg> : <type> [if <cc>]` → a typed register result, optionally also
+    ///   conditional. The two facets are independent — width and existence — so
+    ///   they compose rather than excluding each other.
     /// - `<reg>[-<reg>]` → a plain reglist segment (the existing `out` grammar).
     fn out_list(&mut self) -> ParsedOutClause {
         let mut regs = Vec::new();
@@ -1720,13 +1723,28 @@ impl Parser {
                     if is_register_name(&lo) {
                         // `dN: Type` — a typed data-register result (G5 §7 tier
                         // 5). The register STILL joins the reglist (out-verify
-                        // checks it is written); the domain newtype rides in
-                        // `types` for the caller-side slot-type slice. The flag
+                        // checks it is written); the type rides in `types`, where
+                        // the caller-side slot-type slice reads its domain newtype
+                        // and the out-production check reads its WIDTH. The flag
                         // form below is distinguished by `lo` being a flag name
                         // (`carry`), not a register.
                         let ty = self.ty();
+                        // `dN: Type if cc` — the two result facets compose: the
+                        // type says how much of the register the result occupies,
+                        // the cc says on which return edges the result exists.
+                        // Parsed here rather than in the bare arm below because
+                        // the type is consumed first and would otherwise leave
+                        // `if` sitting where a `,`/`/`/`)` must follow.
+                        let cc = if self.eat_kw("if") {
+                            Some(self.expect_ident("condition code"))
+                        } else {
+                            None
+                        };
                         let span = seg_start.merge(self.prev_span());
                         types.push((lo.clone(), ty, span));
+                        if let Some(cc) = cc {
+                            conds.push(CondResult { reg: lo.clone(), cc, span });
+                        }
                         regs.push((lo, None));
                     } else {
                         // `flag: name` — a status-flag result. `carry` today; the

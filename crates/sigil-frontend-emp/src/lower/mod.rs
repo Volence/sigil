@@ -191,6 +191,7 @@ fn lower_module_inner(
     validate_comptime_tests(&file.items, &mut diags);
     validate_shadowed_mnemonics(&file.items, &mut diags);
     validate_shadowed_imports(&file.items, &mut diags);
+    validate_out_types(&file.items, &mut diags);
     // Niche-option `[option.niche-overlap]` (spec §1): a sentinel that overlaps
     // its payload's range is refused here, once per compile, whether or not the
     // option is ever constructed — an evaluator pass (the sentinel + payload
@@ -2006,6 +2007,90 @@ fn attr_cpu(expr: &ast::Expr) -> Cpu {
 /// Push an error diagnostic at `span`.
 fn err(diags: &mut Vec<Diagnostic>, span: Span, message: String) {
     diags.push(Diagnostic { level: Level::Error, message, primary: span });
+}
+
+/// Refuse an `out(aN: T)` whose type states a width NARROWER than an address
+/// register can hold — the `proc.out-invalid` lint.
+///
+/// Every 68k write to an address register covers all 32 bits (`movea.w`
+/// sign-extends, `(aN)+` advances the whole pointer), so `out(a0: u8)` claims
+/// something the hardware cannot produce: it can never be violated, and a caller
+/// drawing credit from it would be capped below what the callee actually
+/// delivers. A DOMAIN type whose width IS a long — `out(a0: *Sst)` — is
+/// permitted: it carries no width news, and that is the point — it states a
+/// DOMAIN, the output-side dual of the typed address PARAMS the corpus already
+/// uses. Note what it does NOT do: `newtype_of` matches a `Type::Named` whose leaf
+/// is a declared newtype, so `out(a0: Sst)` records a typed out slot for
+/// `[call.slot-type-mismatch]` and `out(a0: *Sst)` records none. The POINTER
+/// spelling is documentation until the slot collector reads through a pointer.
+///
+/// Only a type whose width is DEFINITELY narrower fires. This pass sees one file,
+/// so a name it cannot resolve to a primitive is left alone rather than guessed
+/// at; the width a narrower type would have caused is separately pinned to a long
+/// where the widths are collected, so soundness never rests on this diagnostic
+/// firing.
+///
+/// Applied to EVERY declaration form that carries an `out` clause — `proc`,
+/// `extern proc` and a `type X = proc (...)` contract type — from one pass. The
+/// per-proc contract checks reach only `Item::Proc`, and a rule enforced on one of
+/// three forms is a rule an author meets by accident.
+fn validate_out_types(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
+    /// The width a type states, when that is knowable from ONE file: `Some(bytes)`
+    /// for a primitive or a `fixed<I,F>`, `None` for a pointer, a named type this
+    /// file cannot resolve, or any shape with no single width.
+    fn stated_bytes(ty: &ast::Type) -> Option<u32> {
+        match ty {
+            ast::Type::Refined(inner, _, _) => stated_bytes(inner),
+            ast::Type::Fixed { i, f } => Some((i + f).div_ceil(8)),
+            ast::Type::Named(path) => match path.segments.last()?.as_str() {
+                "u8" | "i8" => Some(1),
+                "u16" | "i16" | "u16le" => Some(2),
+                "u32" | "i32" => Some(4),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    fn check(
+        owner: &str,
+        out_types: &[(String, ast::Type, sigil_span::Span)],
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        for (reg, ty, span) in out_types {
+            let Some(r) = crate::value::Reg::from_name(reg) else { continue };
+            if (r as usize) < 8 {
+                continue; // a data register — the type's width is the claim
+            }
+            if stated_bytes(ty).is_none_or(|b| b >= 4) {
+                continue; // a long, or a width this file cannot judge
+            }
+            diags.push(Diagnostic {
+                level: Level::Error,
+                primary: *span,
+                message: format!(
+                    "[proc.out-invalid] `{owner}` declares the address-register result \
+                     `{reg}` with a type narrower than an address register — every 68k \
+                     address write covers all 32 bits, so the claim can never be violated \
+                     and would cap callers below what the hardware produces. Use a \
+                     domain newtype whose width is a long (`{reg}: T`, which the slot \
+                     check also reads), a pointer type (`{reg}: *T`, documentation \
+                     only), or drop the type"
+                ),
+            });
+        }
+    }
+    fn walk(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
+        for item in items {
+            match item {
+                ast::Item::Proc(p) => check(&p.name, &p.out_types, diags),
+                ast::Item::ExternProc(e) => check(&e.name, &e.sig.out_types, diags),
+                ast::Item::ContractType(t) => check(&t.name, &t.sig.out_types, diags),
+                ast::Item::Section(s) => walk(&s.items, diags),
+                _ => {}
+            }
+        }
+    }
+    walk(items, diags);
 }
 
 /// Once-per-compile validation of `offsets` blocks. Two hard errors: (1) a

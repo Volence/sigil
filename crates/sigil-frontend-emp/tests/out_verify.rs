@@ -15,7 +15,7 @@ use sigil_frontend_emp::ast::Item;
 use sigil_frontend_emp::eval::eval_proc_body;
 use sigil_frontend_emp::closure::RegEffect;
 use sigil_frontend_emp::out_verify::{
-    check_cond_out_survives, compute_verified_outs, verify_out, OutStatus,
+    check_cond_out_survives, compute_verified_outs, verify_out, OutStatus, OutWidthMap, OutWidths,
 };
 use sigil_frontend_emp::preserves::CallPolicy;
 use sigil_frontend_emp::parse_str;
@@ -61,7 +61,7 @@ fn status_uncond(
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-    verify_out(items, &[reg], &[], callee_uncond_out, &no_cond, None, &BTreeSet::new())
+    verify_out(items, &[reg], &[], callee_uncond_out, &no_cond, None, &BTreeSet::new(), OutWidths::bare())
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -368,7 +368,7 @@ fn status_cond(
     let all = eval_all(src);
     let items = all.get(proc).unwrap_or_else(|| panic!("no proc {proc}"));
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
-    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out, &no_cond, None, &BTreeSet::new())
+    verify_out(items, &[], &[(reg, cc.to_string())], callee_uncond_out, &no_cond, None, &BTreeSet::new(), OutWidths::bare())
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -389,7 +389,7 @@ fn status_uncond_cond_callee(
     for (callee, r, cc) in cond_callees {
         cond.entry(callee.to_string()).or_default().push((r.to_string(), cc.to_string()));
     }
-    verify_out(items, &[reg], &[], callee_uncond_out, &cond, None, &BTreeSet::new())
+    verify_out(items, &[reg], &[], callee_uncond_out, &cond, None, &BTreeSet::new(), OutWidths::bare())
         .remove(&reg)
         .expect("status for the checked reg")
 }
@@ -680,7 +680,7 @@ fn fixpoint_uncond(
     let declared_uncond = map(declared);
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     let extern_names: BTreeSet<String> = externs.iter().map(|s| s.to_string()).collect();
-    compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &extern_names, &BTreeMap::new(), &BTreeSet::new()).0
+    compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &extern_names, &BTreeMap::new(), &BTreeSet::new(), &OutWidthMap::new()).0
 }
 
 /// [`fixpoint_uncond`] with a `falls_into` successor map — the plumbing that
@@ -697,7 +697,7 @@ fn fixpoint_uncond_fi(
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     let fi: BTreeMap<String, String> =
         falls_into.iter().map(|(p, s)| (p.to_string(), s.to_string())).collect();
-    compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &BTreeSet::new(), &fi, &BTreeSet::new()).0
+    compute_verified_outs(&proc_items, &declared_uncond, &no_cond, &BTreeSet::new(), &fi, &BTreeSet::new(), &OutWidthMap::new()).0
 }
 
 fn verified(m: &BTreeMap<String, BTreeSet<String>>, proc: &str, reg: Reg) -> bool {
@@ -938,16 +938,17 @@ fn a_tail_exit_on_the_not_cc_path_is_an_exit_but_its_target_is_not_charged() {
         "an unknown tail target must NOT be charged — it may be a noreturn error rail"
     );
 }
-/// WHY the aeon corpus's `[proc.out-unverified]` residue fires: the WIDTH rule,
-/// not control flow. Three shapes, measured — the first two are the hypotheses
-/// this test exists to REFUTE, so nobody re-proposes them.
+/// WHY a `[proc.out-unverified]` firing over a sub-width body is the WIDTH rule
+/// and not control flow. Three shapes, measured — the first two are the
+/// hypotheses this test exists to REFUTE, so nobody re-proposes them.
 ///
-/// The corpus residue is dominated by procs that produce a sub-width value
-/// (`Collision_GetType` returns an attr BYTE; `GetSineCosine` returns table
-/// WORDS) and declare `out(rN)`, which means all 32 bits. `out` has no width
-/// facet, so the declaration cannot say what is true. That is a
-/// LANGUAGE-SURFACE gap — the contract is as close as the surface allows — and
-/// not a loose contract or a verifier-model gap.
+/// A proc that produces a sub-width value and declares a BARE `out(rN)` claims
+/// all 32 bits and fires. The remedy is the declaration: `out(dN: T)` claims
+/// `sizeof(T)` and a write that wide or wider discharges it. `Collision_GetType`
+/// (an attr BYTE) and `GetSineCosine` (table WORDS) were the corpus exemplars of
+/// this shape and both now declare their type, so neither is in the residue —
+/// the shape below is a synthetic body, and the third hypothesis is what stays
+/// true of it.
 #[test]
 fn the_out_residue_is_a_width_gap_not_a_control_flow_one() {
     let m = map(&[]);
@@ -969,7 +970,8 @@ fn the_out_residue_is_a_width_gap_not_a_control_flow_one() {
         "a narrowing write after a full-width production must not un-produce");
 
     // THE ACTUAL CAUSE — a return path whose ONLY write to the register is
-    // sub-width. `Collision_GetType`'s shape verbatim.
+    // sub-width, under a BARE `out(d0)`. This is `Collision_GetType`'s body
+    // shape; the corpus proc itself declares `out(d0: u8)` and verifies.
     let byte_path = "module m\nproc P (d1: u16) clobbers(d1/a0) out(d0) {\n\
         \x20       tst.w   d1\n\x20       beq     .air\n\
         \x20       move.b  (a0, d1.w), d0\n\x20       rts\n\
@@ -1008,7 +1010,7 @@ fn a_falls_into_procs_fall_off_charges_the_successor() {
     let no_cond: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
 
     let check = |succ: Option<&str>, m: &BTreeMap<String, BTreeSet<String>>| {
-        verify_out(items, &[Reg::A1], &[], m, &no_cond, succ, &BTreeSet::new())
+        verify_out(items, &[Reg::A1], &[], m, &no_cond, succ, &BTreeSet::new(), OutWidths::bare())
             .remove(&Reg::A1)
             .expect("status")
     };

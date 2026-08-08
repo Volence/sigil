@@ -28,7 +28,7 @@ use crate::lower::{
 };
 use crate::out_verify::{
     check_cond_out_survives, check_out, compute_verified_outs, CondOutMap, CondOutSurvivesFiring,
-    OutFiring, UncondOutMap,
+    OutClaim, OutFiring, OutWidth, OutWidthMap, OutWidths, UncondOutMap,
 };
 use crate::preserves::{find_dead_saves, DeadSave};
 use crate::branch_const::{check_branch_const, BranchConstFiring};
@@ -113,6 +113,27 @@ pub struct ContractReport {
     /// of claims it ranged over: a contract edit that DELETES a claim would make
     /// the gate quietly vacuous, and this is what a test pins to notice.
     pub survives_claim_sites: Vec<String>,
+    /// Every `out(rN: T)` whose `T` the corpus cannot resolve to a width, as
+    /// `(proc, register, type)`. Sorted.
+    ///
+    /// An unresolvable type answers the BARE claim on both sides — 32 bits
+    /// obligated, 32 bits credited — so it degrades to exactly the declaration the
+    /// author would have written with no type at all, and is no less sound than
+    /// one. What it is NOT is what the author asked for: a typo'd or unimported
+    /// type name silently means "all 32 bits" instead of the narrow thing intended.
+    /// The width cannot be guessed, so the answer is to say so rather than to
+    /// choose a number, and this is the surface that says it. Only the corpus walk
+    /// can: the newtype table is corpus-wide, so a per-file pass would fire on
+    /// every legitimate cross-module type.
+    pub unresolvable_out_types: Vec<(String, String, String)>,
+    /// Every `out(rN: T)` SLOT the type walk saw, as `(proc, register)`. Sorted.
+    ///
+    /// The subject matter of [`Self::unresolvable_out_types`], exposed so an
+    /// assert-empty over that list can be guarded against ranging over nothing.
+    /// A guard built on any map keyed by PROC NAME cannot do it: those carry a key
+    /// whether or not the proc declares a type at all, so stripping every type off
+    /// the corpus leaves them unchanged. This list loses a row.
+    pub typed_out_slots: Vec<(String, String)>,
     /// The verified-out FIXPOINT result — each proc's UNCONDITIONAL outs PROVEN
     /// produced (extern outs seeded verified). The DEFINITION credit source for D1b
     /// must-def and the `out_firings` residue surface; exposed so the consistency
@@ -569,6 +590,12 @@ pub fn analyze_corpus_with_contracts(
         .iter()
         .filter_map(|pb| pb.falls_into.clone().map(|succ| (pb.name.clone(), succ)))
         .collect();
+    // Proc -> the WIDTH each typed `out(dN: T)` claims. A bare `out(rN)` is absent
+    // and keeps its 32-bit meaning, so this map only ever RELAXES an obligation —
+    // and only where an author wrote a type. It serves both directions at once:
+    // a proc's own row is what its returns are charged, and every other proc's row
+    // is what a call / tail / fall-off to it may be credited.
+    let (out_widths, unresolvable_out_types, typed_out_slots) = collect_out_widths(files);
     let (verified_uncond_out, verified_cond_out): (UncondOutMap, CondOutMap) =
         compute_verified_outs(
             &proc_items,
@@ -577,6 +604,7 @@ pub fn analyze_corpus_with_contracts(
             &extern_names,
             &falls_into_succ,
             &noreturn,
+            &out_widths,
         );
 
     // §6 caller-side flag checks, now that every callee's contract is known. §6
@@ -691,9 +719,11 @@ pub fn analyze_corpus_with_contracts(
     // — the out-verify residue surface reports the SAME fact D1b's must-def credits,
     // so the WARN residue and the ERROR gate can never disagree on whether an out is
     // honest). This is the fixpoint's own residue: a proc whose out grounds only in
-    // an unverified callee out (Collision_GetType ← the narrow-width
-    // Tile_Cache_GetCollision) now correctly appears here.
+    // an unverified callee out appears here — `Art_Decompress`'s `a1`, which is
+    // produced nowhere in its own body and tails into `S4LZ_Decompress`, whose
+    // `out(a1)` is DECLARED and unverified.
     let mut out_firings: Vec<OutFiring> = Vec::new();
+    let empty_widths: BTreeMap<String, OutClaim> = BTreeMap::new();
     for pb in &proc_bufs {
         let uncond: Vec<Reg> = callee_uncond_out
             .get(&pb.name)
@@ -724,6 +754,10 @@ pub fn analyze_corpus_with_contracts(
             // derivation shared with the fixpoint above.
             pb.falls_into.as_deref(),
             &noreturn,
+            OutWidths {
+                own: out_widths.get(&pb.name).unwrap_or(&empty_widths),
+                callees: &out_widths,
+            },
         ));
     }
     out_firings.sort_by(|a, b| (&a.proc, &a.reg, a.span.start).cmp(&(&b.proc, &b.reg, b.span.start)));
@@ -1011,6 +1045,8 @@ pub fn analyze_corpus_with_contracts(
         out_firings,
         survives_firings,
         survives_claim_sites,
+        unresolvable_out_types,
+        typed_out_slots,
         verified_uncond_out,
         verified_cond_out,
         dropped_instrs,
@@ -1142,6 +1178,297 @@ fn newtype_of(ty: &ast::Type, newtypes: &BTreeSet<String>) -> Option<String> {
 /// register spelling.
 fn slot_reg_idx(name: &str) -> Option<usize> {
     Reg::from_name(name).map(|r| r as usize)
+}
+
+/// Every declared newtype's UNDERLYING type, by BARE name (recursing sections).
+/// Read only by [`out_claim_of`], which needs the payload a newtype erases to and
+/// not merely whether the name is one.
+///
+/// The key is the bare leaf name, matching how every other G5 consumer resolves a
+/// type (`newtype_of` reads `path.segments.last()`). That makes the table
+/// UNSCOPED: two modules declaring the same newtype name share one row. A NAME
+/// COLLISION is therefore resolved by [`collect_out_widths`] toward the widest
+/// reading rather than by declaration order — see the merge there. Module-scoping
+/// the whole type layer is the real repair and is ledgered; it cannot be done for
+/// widths alone without creating a second type authority scoped differently from
+/// the one the slot check uses.
+fn collect_newtype_underlying(files: &[ast::File]) -> BTreeMap<String, Vec<ast::Type>> {
+    fn walk(items: &[Item], out: &mut BTreeMap<String, Vec<ast::Type>>) {
+        for item in items {
+            match item {
+                Item::Newtype(n) => {
+                    out.entry(n.name.clone()).or_default().push(n.underlying.clone());
+                }
+                Item::Section(s) => walk(&s.items, out),
+                _ => {}
+            }
+        }
+    }
+    let mut out = BTreeMap::new();
+    for file in files {
+        walk(&file.items, &mut out);
+    }
+    out
+}
+
+/// The [`OutClaim`] a value of type `ty` states — how many low-order bytes of a
+/// register it occupies, on each of the claim's two sides.
+///
+/// **A NEWTYPE NARROWS to its underlying type**, transitively (`EntryRef` →
+/// `EntryIndex` → `i16` → two bytes). It has to: `out(d0: EntryRef)` and
+/// `out(d0: u16)` are two spellings of ONE slot, so if a domain type did not carry
+/// its width, a typed out could never state one — the author's only route to a
+/// narrow claim would be deleting the domain type, which is exactly the
+/// declaration the `[call.slot-type-mismatch]` slice needs. Narrowing also keeps a
+/// single authority for how wide a `SectionId` is.
+///
+/// Anything whose width is not derivable here — an unknown name, a struct, an
+/// enum, an array, a tuple — answers [`OutWidth::L`]. That is the CONSERVATIVE
+/// answer, not a fallback: L is the bare-`out` obligation, so an unresolvable type
+/// relaxes nothing and the check stays exactly as strict as it was before anyone
+/// wrote a type.
+///
+/// `depth` bounds a newtype cycle (`newtype A = B` / `newtype B = A`). Such a
+/// corpus is rejected elsewhere; here it must merely not hang.
+fn out_claim_of(
+    ty: &ast::Type,
+    newtypes: &BTreeMap<String, Vec<ast::Type>>,
+    depth: usize,
+) -> OutClaim {
+    if depth == 0 {
+        return OutClaim::exact(OutWidth::L);
+    }
+    match ty {
+        // A refinement narrows the VALUE range, never the storage — the width is
+        // the underlying type's.
+        ast::Type::Refined(inner, _, _) => out_claim_of(inner, newtypes, depth - 1),
+        // A 68k pointer is a full address register's worth.
+        ast::Type::Ptr(_) => OutClaim::exact(OutWidth::L),
+        ast::Type::Fixed { i, f } => OutClaim::exact(bits_to_width(i + f)),
+        ast::Type::Named(path) => {
+            let Some(leaf) = path.segments.last() else { return OutClaim::exact(OutWidth::L) };
+            match leaf.as_str() {
+                "u8" | "i8" => OutClaim::exact(OutWidth::B),
+                "u16" | "i16" | "u16le" => OutClaim::exact(OutWidth::W),
+                "u32" | "i32" => OutClaim::exact(OutWidth::L),
+                // A name declared more than once corpus-wide is AMBIGUOUS, and the
+                // two sides of the claim resolve it in opposite directions: the
+                // proc's own obligation takes the WIDEST reading, a caller's credit
+                // the NARROWEST. Neither number alone is fail-safe — taking the
+                // widest for both makes a caller's verdict depend on an unrelated
+                // module's declaration, and through an EXTERN (verified by axiom,
+                // with no body to re-prove it) that is a plain over-credit.
+                _ => match newtypes.get(leaf) {
+                    Some(unders) => unders
+                        .iter()
+                        .map(|u| out_claim_of(u, newtypes, depth - 1))
+                        .reduce(OutClaim::merge)
+                        .unwrap_or(OutClaim::exact(OutWidth::L)),
+                    None => OutClaim::exact(OutWidth::L),
+                },
+            }
+        }
+        ast::Type::Array(_, _) | ast::Type::Tuple(_) => OutClaim::exact(OutWidth::L),
+    }
+}
+
+/// The register width holding `bits`, rounded UP to a 68k operand size and capped
+/// at a long — a register has no wider claim to make.
+fn bits_to_width(bits: u32) -> OutWidth {
+    match bits {
+        0..=8 => OutWidth::B,
+        9..=16 => OutWidth::W,
+        _ => OutWidth::L,
+    }
+}
+
+/// Build the corpus-wide `out(dN: T)` width map: proc name → register → the width
+/// its declared type claims. A proc with no typed out is absent, and a register
+/// with no type is absent from its proc's row — both mean the bare 32-bit claim.
+///
+/// Externs are included: their declared outs are §3 boundary axioms that the
+/// fixpoint seeds VERIFIED, so a typed extern out must credit its callers at the
+/// declared width and not a long.
+#[allow(clippy::type_complexity)]
+fn collect_out_widths(
+    files: &[ast::File],
+) -> (OutWidthMap, Vec<(String, String, String)>, Vec<(String, String)>) {
+    // One proc's row: EVERY declared out register, typed ones at their type's
+    // width and untyped ones at the bare 32-bit claim.
+    //
+    // The untyped registers are carried EXPLICITLY, even though an absent register
+    // already reads as `L`. They are what makes the collision merge below able to
+    // see a BARE declaration at all: without them a duplicate proc name whose
+    // other declaration is untyped would contribute no row, and the typed one
+    // would stand alone and relax it.
+    fn row(
+        out: Option<&[(String, Option<String>)]>,
+        out_types: &[(String, ast::Type, Span)],
+        newtypes: &BTreeMap<String, Vec<ast::Type>>,
+    ) -> BTreeMap<String, OutClaim> {
+        let mut row: BTreeMap<String, OutClaim> = expand_reglist_regs(out.unwrap_or(&[]))
+            .into_iter()
+            .filter_map(|name| {
+                Reg::from_name(&name).map(|r| (r.to_string(), OutClaim::exact(OutWidth::L)))
+            })
+            .collect();
+        for (reg, ty, _) in out_types {
+            // Canonical `d0`..`a7` spelling — the same names the production state
+            // is keyed by. A non-register endpoint (a `carry:` flag result never
+            // reaches here) drops out.
+            let Some(r) = Reg::from_name(reg) else { continue };
+            // An ADDRESS-register result is pinned to `L` whatever its type says.
+            // Every 68k write to an address register covers all 32 bits, so `L` is
+            // both the only width it can be obligated at and the only width it can
+            // honestly credit — a narrower reading would cap callers below what the
+            // hardware produces. The TYPE still flows to `collect_typed_slots`, so
+            // a domain type on an address result keeps its `[call.slot-type-mismatch]`
+            // meaning; only its WIDTH is ignored, because an address register has no
+            // width to state.
+            let claim = if (r as usize) >= 8 {
+                OutClaim::exact(OutWidth::L)
+            } else {
+                out_claim_of(ty, newtypes, 16)
+            };
+            row.insert(r.to_string(), claim);
+        }
+        row
+    }
+    // Merge `r` into `out[name]`, folding every register mentioned by EITHER row
+    // through `OutClaim::merge` — widest `strict`, narrowest `credit` — and
+    // treating a register absent from one row as its bare 32-bit claim. Proc names are meant to be unique corpus-wide (a
+    // duplicate is ill-formed and `[proc]`-level checks say so), so this is a
+    // fail-safe rather than a feature: without it one file's typed `out(d0: u8)`
+    // would relax another file's BARE `out(d0)` under the same name, which is the
+    // one construction where writing a type anywhere changes a bare declaration's
+    // verdict somewhere else.
+    fn merge(out: &mut OutWidthMap, name: &str, r: BTreeMap<String, OutClaim>) {
+        match out.get_mut(name) {
+            None => {
+                out.insert(name.to_string(), r);
+            }
+            Some(existing) => {
+                let regs: BTreeSet<String> =
+                    existing.keys().chain(r.keys()).cloned().collect();
+                let bare = OutClaim::exact(OutWidth::L);
+                let merged = regs
+                    .into_iter()
+                    .map(|reg| {
+                        let a = existing.get(&reg).copied().unwrap_or(bare);
+                        let b = r.get(&reg).copied().unwrap_or(bare);
+                        (reg, a.merge(b))
+                    })
+                    .collect();
+                *existing = merged;
+            }
+        }
+    }
+    fn walk(items: &[Item], newtypes: &BTreeMap<String, Vec<ast::Type>>, out: &mut OutWidthMap) {
+        for item in items {
+            match item {
+                Item::Proc(p) => {
+                    let r = row(p.out.as_deref(), &p.out_types, newtypes);
+                    if !r.is_empty() {
+                        merge(out, &p.name, r);
+                    }
+                }
+                Item::ExternProc(e) => {
+                    let r = row(e.sig.out.as_deref(), &e.sig.out_types, newtypes);
+                    if !r.is_empty() {
+                        merge(out, &e.name, r);
+                    }
+                }
+                Item::Section(s) => walk(&s.items, newtypes, out),
+                _ => {}
+            }
+        }
+    }
+    let newtypes = collect_newtype_underlying(files);
+    let mut out = OutWidthMap::new();
+    for file in files {
+        walk(&file.items, &newtypes, &mut out);
+    }
+    // The same walk again for the unresolvable-type report. Kept separate from the
+    // width build so the width answer stays a pure function of the type: a name
+    // that cannot be resolved still answers the bare claim, and reporting it must
+    // not change what it answers.
+    let mut unresolvable = Vec::new();
+    let mut slots = Vec::new();
+    fn scan(
+        items: &[Item],
+        newtypes: &BTreeMap<String, Vec<ast::Type>>,
+        out: &mut Vec<(String, String, String)>,
+        slots: &mut Vec<(String, String)>,
+    ) {
+        fn each(
+            owner: &str,
+            out_types: &[(String, ast::Type, Span)],
+            newtypes: &BTreeMap<String, Vec<ast::Type>>,
+            out: &mut Vec<(String, String, String)>,
+            slots: &mut Vec<(String, String)>,
+        ) {
+            for (reg, ty, _) in out_types {
+                let Some(r) = Reg::from_name(reg) else { continue };
+                slots.push((owner.to_string(), r.to_string()));
+                if (r as usize) >= 8 {
+                    continue; // an address result is pinned to a long; its type states no width
+                }
+                if let Some(name) = unresolvable_leaf(ty, newtypes, 16) {
+                    out.push((owner.to_string(), r.to_string(), name));
+                }
+            }
+        }
+        for item in items {
+            match item {
+                Item::Proc(p) => each(&p.name, &p.out_types, newtypes, out, slots),
+                Item::ExternProc(e) => each(&e.name, &e.sig.out_types, newtypes, out, slots),
+                Item::ContractType(t) => each(&t.name, &t.sig.out_types, newtypes, out, slots),
+                Item::Section(s) => scan(&s.items, newtypes, out, slots),
+                _ => {}
+            }
+        }
+    }
+    for file in files {
+        scan(&file.items, &newtypes, &mut unresolvable, &mut slots);
+    }
+    unresolvable.sort();
+    slots.sort();
+    (out, unresolvable, slots)
+}
+
+/// The leaf NAME of a type whose width [`out_claim_of`] cannot derive, or `None`
+/// when it can. Mirrors that function's shape exactly — a divergence between the
+/// two would report a type that resolves, or stay silent about one that does not.
+fn unresolvable_leaf(
+    ty: &ast::Type,
+    newtypes: &BTreeMap<String, Vec<ast::Type>>,
+    depth: usize,
+) -> Option<String> {
+    if depth == 0 {
+        return Some("<type nesting too deep to resolve>".to_string());
+    }
+    match ty {
+        ast::Type::Refined(inner, _, _) => unresolvable_leaf(inner, newtypes, depth - 1),
+        // A pointer is a long by the 68k register rule, not by resolution.
+        ast::Type::Ptr(_) => None,
+        ast::Type::Fixed { .. } => None,
+        ast::Type::Named(path) => {
+            let leaf = path.segments.last()?;
+            match leaf.as_str() {
+                "u8" | "i8" | "u16" | "i16" | "u16le" | "u32" | "i32" => None,
+                _ => match newtypes.get(leaf) {
+                    // A colliding name resolves iff EVERY reading does.
+                    Some(unders) => {
+                        unders.iter().find_map(|u| unresolvable_leaf(u, newtypes, depth - 1))
+                    }
+                    None => Some(leaf.clone()),
+                },
+            }
+        }
+        ast::Type::Array(_, _) | ast::Type::Tuple(_) => {
+            Some("<an array or tuple has no register width>".to_string())
+        }
+    }
 }
 
 /// Collect every declared newtype NAME across the corpus (recursing sections).

@@ -928,9 +928,12 @@ fn corpus_flag_results_declared_vs_verified_credit_agree() {
 /// recorded here because the failure is silent and the shape recurs. It was chosen
 /// when it sourced `d0` from a narrow-width `Tile_Cache_GetCollision`, but aeon
 /// `49b7f3d` fused that proc into `Collision_GetType`, which is now a LEAF with no
-/// calls at all. Callee credit cannot apply to it, so it fires identically under
-/// both maps: it still passes, and detects nothing. A witness whose discriminating
-/// power lives in another repo needs re-checking when that repo moves.
+/// calls at all. Callee credit cannot apply to it, so it fired identically under
+/// both maps: it passed, and detected nothing. It has since stopped firing
+/// ENTIRELY — the proc declares `out(d0: u8)`, which its `move.b` fetch proves —
+/// so restoring it would not be a weak witness but a failing assertion. A witness
+/// whose discriminating power lives in another repo needs re-checking when that
+/// repo moves, and a retired one needs re-checking before it is ever restored.
 #[test]
 fn corpus_out_residue_is_the_verified_complement() {
     let Some(r) = corpus_report() else { return };
