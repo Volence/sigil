@@ -2017,9 +2017,12 @@ fn err(diags: &mut Vec<Diagnostic>, span: Span, message: String) {
 /// something the hardware cannot produce: it can never be violated, and a caller
 /// drawing credit from it would be capped below what the callee actually
 /// delivers. A DOMAIN type whose width IS a long — `out(a0: *Sst)` — is
-/// permitted and meaningful: it carries no width news, but it is the output-side
-/// dual of the typed address PARAMS the corpus already uses, and
-/// `[call.slot-type-mismatch]` reads it.
+/// permitted: it carries no width news, and that is the point — it states a
+/// DOMAIN, the output-side dual of the typed address PARAMS the corpus already
+/// uses. Note what it does NOT do: `newtype_of` matches a `Type::Named` whose leaf
+/// is a declared newtype, so `out(a0: Sst)` records a typed out slot for
+/// `[call.slot-type-mismatch]` and `out(a0: *Sst)` records none. The POINTER
+/// spelling is documentation until the slot collector reads through a pointer.
 ///
 /// Only a type whose width is DEFINITELY narrower fires. This pass sees one file,
 /// so a name it cannot resolve to a primitive is left alone rather than guessed
@@ -2069,8 +2072,9 @@ fn validate_out_types(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
                      `{reg}` with a type narrower than an address register — every 68k \
                      address write covers all 32 bits, so the claim can never be violated \
                      and would cap callers below what the hardware produces. Use a \
-                     pointer or domain type whose width is a long (`{reg}: *T`), or drop \
-                     the type"
+                     domain newtype whose width is a long (`{reg}: T`, which the slot \
+                     check also reads), a pointer type (`{reg}: *T`, documentation \
+                     only), or drop the type"
                 ),
             });
         }
@@ -2088,7 +2092,6 @@ fn validate_out_types(items: &[ast::Item], diags: &mut Vec<Diagnostic>) {
     }
     walk(items, diags);
 }
-
 
 /// Once-per-compile validation of `offsets` blocks. Two hard errors: (1) a
 /// duplicate member name makes the reverse-direction ordinal ambiguous

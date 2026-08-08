@@ -630,7 +630,7 @@ pub(crate) fn conditional_out_edge_credits(
             let w = out_widths
                 .get(callee)
                 .and_then(|m| m.get(&name))
-                .map(|c| c.credit)
+                .map(|c| c.credit())
                 .unwrap_or(OutWidth::L);
             if let Some(edge) = cfg.valid_edge(idx, cc) {
                 let slot = credits.entry(edge).or_default().entry(name).or_insert(w);

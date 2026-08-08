@@ -264,7 +264,7 @@ it. The rule moved to one `validate_out_types` pass over `Item::Proc` /
 `Item::ExternProc` / `Item::ContractType`. A rule enforced on one of three forms
 is a rule an author meets by accident.
 
-## Named mutants — 26, all RED
+## Named mutants — 33, every one RED
 
 `scratchpad/mutants.py` applies each, runs its test, requires FAILURE, and
 restores by SNAPSHOT (a deletion mutant has no unique text to reverse-patch —
@@ -287,7 +287,7 @@ that bit once and stranded the tree mid-run).
 | an unknown type defaults to `B` | `an_underivable_out_type_keeps_the_bare_32_bit_claim` | RED |
 | the parser drops the `if` clause | `a_typed_out_composes_with_the_conditional_form` | RED |
 | the parser drops the cond entry | `a_typed_conditional_out_is_still_unobligated_on_the_not_cc_return` | RED |
-| **`ext` credited at operand size** | `ext_promotes_an_existing_production_and_makes_none` | RED |
+| **`ext` credited at operand size** | `ext_makes_no_production_of_its_own` | RED |
 | **`ext` credited at operand size (launder)** | `an_ext_after_a_call_cannot_launder_a_capped_credit` | RED |
 | **partial-bit writers credited** | `single_bit_writers_produce_nothing_but_scc_produces_its_byte` | RED |
 | **`Scc` swept into the partial-bit family** | `single_bit_writers_produce_nothing_but_scc_produces_its_byte` | RED |
@@ -295,16 +295,24 @@ that bit once and stranded the tree mid-run).
 | **the `ExternProc` arm deleted** | `an_externs_typed_out_caps_its_callers` | RED |
 | **`Section` recursion dropped (widths)** | `a_typed_out_inside_a_section_is_collected` | RED |
 | **`Section` recursion dropped (newtypes)** | `a_newtype_declared_inside_a_section_resolves` | RED |
-| **newtype collision: first wins** | `a_colliding_newtype_name_resolves_to_the_widest_reading` | RED |
+| **newtype collision: first wins** | `a_colliding_newtype_name_is_strict_for_its_owner_and_stingy_for_its_callers` | RED |
 | **bare out regs dropped from the row** | `a_duplicated_proc_name_cannot_relax_a_bare_out` | RED |
-| **the address-result refusal deleted** — superseded, see below | — | — |
 | ‡ collision resolved by first-reading | `a_colliding_newtype_name_is_strict_for_its_owner_and_stingy_for_its_callers` | RED |
 | ‡ **`OutClaim::merge` takes `max` on BOTH sides** (the rule F1 rejected) | same | RED |
 | ‡ `delivered()` reads the STRICT side | same | RED |
 | ‡ `validate_out_types` walks `Item::Proc` only | `a_narrow_type_on_an_address_result_is_refused_on_every_declaration_form` | RED |
 | ‡ the address-out width pin dropped | `an_address_out_credits_a_full_long_whatever_its_type_says` | RED |
+| § **`flag_check`'s `.map(\|c\| c.credit())` -> `.strict()`** | `the_conditional_out_edge_credit_draws_the_credit_side` | RED |
+| § `unresolvable_leaf`'s unknown-`Named` arm -> `None` | `an_out_type_the_corpus_cannot_resolve_is_reported` | RED |
+| § an unresolvable type credits `B` instead of `L` | `an_unresolvable_out_type_credits_exactly_what_a_bare_out_would` | RED |
 
-Bold rows are fixup round 1; ‡ rows are fixup round 2.
+Bold rows are fixup round 1; ‡ rows are fixup round 2; § rows are round 3.
+
+**Which spelling was mutated, where a phrase has two.** The ‡ "collision
+resolved by first-reading" row mutates the NEWTYPE-side resolution
+(`out_claim_of`'s `.reduce(OutClaim::merge)` -> `.first()`). The other reading of
+that phrase — the proc-row `merge` keeping the first entry — is a different mutant
+caught by a different gate, `a_duplicated_proc_name_cannot_relax_a_bare_out`.
 
 **Exact mutated strings matter.** The `Scc` mutant is `mnem == "seq"`, NOT
 `mnem == "scc"` — no CodeItem mnemonic is ever the string `"scc"` (the forms are
@@ -396,6 +404,45 @@ assertion, and the note says so.
   out dies at the first forwarder that declares no `out`. Both are why
   `collect_out_widths` walks procs and externs only.
 
+## Round 3: the fifth charge site, and a type that resolves to nothing
+
+**The conditional-out edge credit was correct and UNGATED.** It is the FIFTH
+place a width is charged and the only one that does not route through
+`credit_target_outs` — it is a per-EDGE transfer, so it reads `.credit()` itself.
+Measured before gating: flipping that one read to `.strict()` re-opens the
+collision blessing verbatim (both collision orders drop to zero firings) while the
+**entire frontend suite stays green at 2344 passed / 0 failed**. Now gated, with
+an extern carrying the claim because an extern's outs seed VERIFIED by axiom.
+
+The spec's charge-site list said "four places, one helper". It is five, and the
+one it omitted was the one nothing checked. That list is now labelled a soundness
+artifact rather than a summary: anything missing from it is something nothing is
+checking.
+
+**An unresolvable out type: reported, not re-widthed.** `out(d0: NotAType)`
+answers `L` on both sides. That is not "conservative" — on the credit side `L` is
+the weakest — but it IS exact DEGRADATION: measured, an `out(d0: u8x)` extern and
+an `out(d0)` extern credit their callers identically, so an unresolvable type
+behaves as the bare declaration it collapses to and is no less sound than one.
+
+The loss is silence: the author asked for something narrow and got 32 bits with no
+signal, and a width cannot be guessed from a name that means nothing. So the
+repair is a REPORT, not a number — `ContractReport::unresolvable_out_types`,
+assert-empty over the corpus with a non-vacuity guard, covering `proc` /
+`extern proc` / contract types. The corpus is clean today. Both texts that called
+`L` conservative are corrected.
+
+**`out(a0: *T)` does not reach `[call.slot-type-mismatch]`** — measured
+(`out(a0: Sst)` types the slot, `out(a0: *Sst)` leaves it Untyped). The decision to
+permit it stands, on the corrected grounds that it is TRUE rather than that it is
+checked; the diagnostic's remedy text now steers at the newtype spelling and marks
+the pointer one as documentation.
+
+**`OutClaim`'s invariant is now enforced, not merely constructional.** Fields are
+private behind `strict()` / `credit()` accessors, with `debug_assert!(credit <=
+strict)` in `merge` and at the credit read — a direct struct literal can no longer
+silently over-credit.
+
 ## The engine finding (F3) — investigated, not fixed
 
 `Section_RedrawPlanes` clamps its LEFT tracker and assigns its RIGHT one:
@@ -429,11 +476,10 @@ settles it. Not fixed here, as instructed.
 
 ## Files
 
-
 **sigil** — `out_verify.rs` (the width lattice, `OutWidth`/`OutWidths`, the three
 capped transfer-out charges, `writes_partial_bits` + `ext_promotion`),
 `flag_check.rs` (edge credits carry widths), `calls.rs` (must-def reads the keys),
-`corpus_contracts.rs` (`collect_out_widths` / `out_width_of` /
+`corpus_contracts.rs` (`collect_out_widths` / `out_claim_of` /
 `collect_newtype_underlying` + the collision merge), `parser.rs`
 (`out(dN: T if cc)`), `lower/proc.rs` (the address-result refusal),
 `contract_baseline.rs` (16 rows + the corrected header), `tests/out_width.rs`

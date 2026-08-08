@@ -113,9 +113,9 @@ pub type OutWidthMap = BTreeMap<String, BTreeMap<String, OutClaim>>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OutClaim {
     /// What this proc's own returns are charged at — the WIDEST reading.
-    pub strict: OutWidth,
+    strict: OutWidth,
     /// What a caller / tail / `falls_into` may draw — the NARROWEST reading.
-    pub credit: OutWidth,
+    credit: OutWidth,
 }
 
 impl OutClaim {
@@ -127,10 +127,26 @@ impl OutClaim {
     /// Fold another reading of the SAME name into this claim, keeping each side's
     /// fail-safe direction.
     pub fn merge(self, other: OutClaim) -> OutClaim {
-        OutClaim {
+        let merged = OutClaim {
             strict: self.strict.max(other.strict),
             credit: self.credit.min(other.credit),
-        }
+        };
+        debug_assert!(merged.credit <= merged.strict, "OutClaim invariant: credit <= strict");
+        merged
+    }
+
+    /// The width an obligation is charged at.
+    pub fn strict(self) -> OutWidth {
+        self.strict
+    }
+
+    /// The width a caller may draw. Never wider than [`Self::strict`] — the
+    /// fields are private and every constructor here preserves that, because a
+    /// direct `OutClaim { strict: B, credit: L }` would silently over-credit and
+    /// nothing downstream re-checks it.
+    pub fn credit(self) -> OutWidth {
+        debug_assert!(self.credit <= self.strict, "OutClaim invariant: credit <= strict");
+        self.credit
     }
 }
 
@@ -200,14 +216,14 @@ impl OutWidths<'_> {
     /// The width `reg` must be produced at to satisfy THIS proc's claim — the
     /// STRICT side.
     fn required(&self, reg: Reg) -> OutWidth {
-        self.own.get(&reg.to_string()).map(|c| c.strict).unwrap_or(OutWidth::L)
+        self.own.get(&reg.to_string()).map(|c| c.strict()).unwrap_or(OutWidth::L)
     }
 
     /// The width `callee`'s declared `out(reg)` delivers, for credit — the CREDIT
     /// side. Never `required`'s answer: the two consumers of this map fail safe in
     /// opposite directions (see [`OutClaim`]).
     fn delivered(&self, callee: &str, reg: &str) -> OutWidth {
-        self.callees.get(callee).and_then(|m| m.get(reg)).map(|c| c.credit).unwrap_or(OutWidth::L)
+        self.callees.get(callee).and_then(|m| m.get(reg)).map(|c| c.credit()).unwrap_or(OutWidth::L)
     }
 }
 

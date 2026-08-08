@@ -1817,7 +1817,6 @@ fn check_out(
     let mut valid: Vec<String> = out_set.regs.into_iter().collect();
     valid.sort();
 
-
     // out ∩ clobbers — returned AND scratch is contradictory. Expand the
     // clobbers reglist quietly (`check_clobbers` owns its diagnostics).
     let clobbers = reglist_set_quiet(proc.clobbers.as_deref().unwrap_or(&[]));

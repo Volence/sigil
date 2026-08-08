@@ -397,7 +397,7 @@ fn a_typed_conditional_out_is_still_unobligated_on_the_not_cc_return() {
 ///
 /// This gate exists because the niche-option gate above does NOT reach this arm:
 /// a `newtype X = i16 where 0..3` parks its range in the newtype declaration and
-/// hands `out_width_of` a bare `i16`. Written after the refinement mutant survived
+/// hands `out_claim_of` a bare `i16`. Written after the refinement mutant survived
 /// the niche-option gate.
 ///
 /// MUTANT: answer `L` for `Type::Refined` instead of recursing into the inner
@@ -611,7 +611,9 @@ fn a_newtype_declared_inside_a_section_resolves() {
 /// PERMITTED and meaningful: it carries no width news, but it is the
 /// output-direction dual of the typed address PARAMS the corpus already uses
 /// (`ZX0_Decompress (a0: *u8, a1: *u8) … out(a0, a1)` types those very registers
-/// as inputs), and `[call.slot-type-mismatch]` reads it.
+/// as inputs). It is permitted because it is TRUE, not because it is checked —
+/// measured, a pointer-spelled out type does not reach
+/// `[call.slot-type-mismatch]`.
 ///
 /// The three forms are asserted together because this rule previously lived in
 /// the per-proc contract check, which `extern proc` and `type X = proc (…)` never
@@ -633,8 +635,11 @@ fn a_narrow_type_on_an_address_result_is_refused_on_every_declaration_form() {
             "{label}: expected the narrow-address-result refusal, got: {msgs:?}"
         );
     }
-    // PERMITTED on all three: a pointer type is a long and states a domain, not a
-    // width. Refusing it would make the output dual of an in-use facet unsayable.
+    // PERMITTED on all three: a pointer type's width IS a long, so it states
+    // nothing the hardware contradicts, and refusing a true statement would make
+    // the output dual of an in-use facet unsayable. That is the whole reason —
+    // NOT that it reaches `[call.slot-type-mismatch]`, which it does not: only a
+    // `Type::Named` newtype leaf records a typed out slot there.
     for (label, src) in [
         ("proc", "module m\nproc R () out(a0: *u8) {\n lea 4, a0\n rts\n}\n"),
         ("extern proc", "module m\nextern proc F () out(a0: *u8)\n"),
@@ -771,4 +776,131 @@ fn a_duplicated_proc_name_cannot_relax_a_bare_out() {
             r.out_firings
         );
     }
+}
+
+/// The CONDITIONAL-out edge credit is the FIFTH charge site, and it draws from the
+/// same two-sided claim as the other four — `.credit`, never `.strict`.
+///
+/// It does not route through `credit_target_outs` (it is a per-EDGE transfer, not
+/// a per-instruction one), so the three sibling cap gates cannot reach it. Flipping
+/// that one read to `.strict` re-opens the collision blessing verbatim while the
+/// entire frontend suite stays green — measured at 2344 passed / 0 failed before
+/// this gate existed. A correct fix nothing can see break is one edit from being
+/// an incorrect fix nothing can see break.
+///
+/// The extern carries the claim because an extern's outs seed VERIFIED by §3
+/// axiom: there is no body to re-prove an inflated conditional credit.
+///
+/// MUTANT (exact string): in `flag_check.rs`'s `conditional_out_edge_credits`,
+/// `.map(|c| c.credit)` -> `.map(|c| c.strict)`. The two collision orders drop to
+/// zero firings and this test goes RED. Run: confirmed RED; confirmed GREEN across
+/// the whole suite without this test.
+#[test]
+fn the_conditional_out_edge_credit_draws_the_credit_side() {
+    let wide = "module a\npub newtype Dup = u32\n";
+    let src = "module b\npub newtype Dup = u8\n\
+        extern proc E () clobbers(d1) out(d0: Dup if eq)\n\
+        proc P () clobbers(d1) out(d0 if eq) {\n\
+            jbsr E\n bne .no\n rts\n.no:\n rts\n}\n";
+    for (order_label, order) in [
+        ("alone", vec![src]),
+        ("collision first", vec![wide, src]),
+        ("collision last", vec![src, wide]),
+    ] {
+        let r = analyze(&order);
+        assert_subjects(&r, &["P"]);
+        assert!(
+            out_fires(&r, "P", "d0"),
+            "{order_label}: a byte of conditional credit cannot prove a bare 32-bit \
+             conditional claim, and an unrelated module declaring the same type name \
+             must not change that; firings: {:?}",
+            r.out_firings
+        );
+    }
+    // NON-VACUITY: the same shape with an unambiguous WIDE type verifies, so the
+    // asserts above are not "a conditional out always fires".
+    let ok = "module b\npub newtype Dup = u32\n\
+        extern proc E () clobbers(d1) out(d0: Dup if eq)\n\
+        proc P () clobbers(d1) out(d0 if eq) {\n\
+            jbsr E\n bne .no\n rts\n.no:\n rts\n}\n";
+    let r = analyze(&[ok]);
+    assert!(
+        !out_fires(&r, "P", "d0"),
+        "an unambiguous long of conditional credit must discharge the claim; \
+         firings: {:?}",
+        r.out_firings
+    );
+}
+
+/// A type the corpus cannot resolve to a width is REPORTED, because the width it
+/// answers cannot be the one the author meant.
+///
+/// The width itself is not the defect and is deliberately unchanged: an
+/// unresolvable type answers the bare claim on BOTH sides, which is exactly the
+/// declaration that would have been written with no type at all — measured, an
+/// `out(d0: u8x)` extern and an `out(d0)` extern credit their callers
+/// identically. What is missing without this surface is any signal that the
+/// author asked for something narrower and silently got 32 bits, and a width
+/// cannot be guessed from a name that means nothing.
+///
+/// Reported from the CORPUS walk and not the per-file gate: the newtype table is
+/// corpus-wide, so a per-file pass would fire on every legitimate cross-module
+/// type.
+///
+/// MUTANT: make `unresolvable_leaf` answer `None` for an unknown `Named` leaf
+/// (the arm `None => Some(leaf.clone())` -> `None => None`). The typo and the
+/// deep-chain cases stop being reported and this test goes RED. Run: confirmed
+/// RED.
+#[test]
+fn an_out_type_the_corpus_cannot_resolve_is_reported() {
+    let r = analyze(&[
+        "module m\n\
+         pub newtype Good = u16\n\
+         extern proc E () out(d0: NotADeclaredType)\n\
+         proc Typo () out(d1: AlsoNotOne) {\n move.w #1, d1\n rts\n}\n\
+         proc Fine () out(d2: Good) {\n move.w #1, d2\n rts\n}\n\
+         proc Prim () out(d3: u8) {\n move.b #1, d3\n rts\n}\n\
+         proc Ptr () out(a0: *Good) {\n lea 4, a0\n rts\n}\n",
+    ]);
+    let got: Vec<(&str, &str, &str)> = r
+        .unresolvable_out_types
+        .iter()
+        .map(|(p, g, t)| (p.as_str(), g.as_str(), t.as_str()))
+        .collect();
+    assert_eq!(
+        got,
+        vec![("E", "d0", "NotADeclaredType"), ("Typo", "d1", "AlsoNotOne")],
+        "exactly the unresolvable ones, and every declaration form"
+    );
+    // The width answer is UNCHANGED by reporting: the resolvable narrow claims
+    // still bind, so this surface is a report and not a second width rule.
+    assert!(verified(&r, "Fine", "d2"), "firings: {:?}", r.out_firings);
+    assert!(verified(&r, "Prim", "d3"), "firings: {:?}", r.out_firings);
+    assert!(verified(&r, "Ptr", "a0"), "firings: {:?}", r.out_firings);
+}
+
+/// An unresolvable type degrades to EXACTLY the bare declaration — the reason the
+/// report above is a report and not a width change. Both sides of the claim
+/// answer 32 bits, so a caller draws what a bare `out(rN)` would have credited,
+/// no more.
+///
+/// MUTANT: answer a narrower `credit` for an unresolvable type (e.g.
+/// `OutClaim { strict: L, credit: B }`). `Typoed` fires, `Bare` does not, the
+/// assert_eq below breaks and this test goes RED. Run: confirmed RED.
+#[test]
+fn an_unresolvable_out_type_credits_exactly_what_a_bare_out_would() {
+    let typoed = analyze(&[
+        "module m\nextern proc E () out(d0: NotADeclaredType)\n\
+         proc Typoed () out(d0) {\n jbsr E\n rts\n}\n",
+    ]);
+    let bare = analyze(&[
+        "module m\nextern proc E () out(d0)\n\
+         proc Bare () out(d0) {\n jbsr E\n rts\n}\n",
+    ]);
+    assert_eq!(
+        verified(&typoed, "Typoed", "d0"),
+        verified(&bare, "Bare", "d0"),
+        "an unresolvable type must behave as the bare declaration it degrades to"
+    );
+    assert!(verified(&bare, "Bare", "d0"), "the control must actually verify");
 }

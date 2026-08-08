@@ -113,6 +113,19 @@ pub struct ContractReport {
     /// of claims it ranged over: a contract edit that DELETES a claim would make
     /// the gate quietly vacuous, and this is what a test pins to notice.
     pub survives_claim_sites: Vec<String>,
+    /// Every `out(rN: T)` whose `T` the corpus cannot resolve to a width, as
+    /// `(proc, register, type)`. Sorted.
+    ///
+    /// An unresolvable type answers the BARE claim on both sides — 32 bits
+    /// obligated, 32 bits credited — so it degrades to exactly the declaration the
+    /// author would have written with no type at all, and is no less sound than
+    /// one. What it is NOT is what the author asked for: a typo'd or unimported
+    /// type name silently means "all 32 bits" instead of the narrow thing intended.
+    /// The width cannot be guessed, so the answer is to say so rather than to
+    /// choose a number, and this is the surface that says it. Only the corpus walk
+    /// can: the newtype table is corpus-wide, so a per-file pass would fire on
+    /// every legitimate cross-module type.
+    pub unresolvable_out_types: Vec<(String, String, String)>,
     /// The verified-out FIXPOINT result — each proc's UNCONDITIONAL outs PROVEN
     /// produced (extern outs seeded verified). The DEFINITION credit source for D1b
     /// must-def and the `out_firings` residue surface; exposed so the consistency
@@ -574,7 +587,7 @@ pub fn analyze_corpus_with_contracts(
     // and only where an author wrote a type. It serves both directions at once:
     // a proc's own row is what its returns are charged, and every other proc's row
     // is what a call / tail / fall-off to it may be credited.
-    let out_widths = collect_out_widths(files);
+    let (out_widths, unresolvable_out_types) = collect_out_widths(files);
     let (verified_uncond_out, verified_cond_out): (UncondOutMap, CondOutMap) =
         compute_verified_outs(
             &proc_items,
@@ -1024,6 +1037,7 @@ pub fn analyze_corpus_with_contracts(
         out_firings,
         survives_firings,
         survives_claim_sites,
+        unresolvable_out_types,
         verified_uncond_out,
         verified_cond_out,
         dropped_instrs,
@@ -1158,7 +1172,7 @@ fn slot_reg_idx(name: &str) -> Option<usize> {
 }
 
 /// Every declared newtype's UNDERLYING type, by BARE name (recursing sections).
-/// Read only by [`out_width_of`], which needs the payload a newtype erases to and
+/// Read only by [`out_claim_of`], which needs the payload a newtype erases to and
 /// not merely whether the name is one.
 ///
 /// The key is the bare leaf name, matching how every other G5 consumer resolves a
@@ -1266,7 +1280,7 @@ fn bits_to_width(bits: u32) -> OutWidth {
 /// Externs are included: their declared outs are §3 boundary axioms that the
 /// fixpoint seeds VERIFIED, so a typed extern out must credit its callers at the
 /// declared width and not a long.
-fn collect_out_widths(files: &[ast::File]) -> OutWidthMap {
+fn collect_out_widths(files: &[ast::File]) -> (OutWidthMap, Vec<(String, String, String)>) {
     // One proc's row: EVERY declared out register, typed ones at their type's
     // width and untyped ones at the bare 32-bit claim.
     //
@@ -1308,9 +1322,9 @@ fn collect_out_widths(files: &[ast::File]) -> OutWidthMap {
         }
         row
     }
-    // Merge `r` into `out[name]`, keeping the WIDEST reading of every register
-    // mentioned by EITHER row, and treating a register absent from one row as its
-    // bare 32-bit claim. Proc names are meant to be unique corpus-wide (a
+    // Merge `r` into `out[name]`, folding every register mentioned by EITHER row
+    // through `OutClaim::merge` — widest `strict`, narrowest `credit` — and
+    // treating a register absent from one row as its bare 32-bit claim. Proc names are meant to be unique corpus-wide (a
     // duplicate is ill-formed and `[proc]`-level checks say so), so this is a
     // fail-safe rather than a feature: without it one file's typed `out(d0: u8)`
     // would relax another file's BARE `out(d0)` under the same name, which is the
@@ -1362,7 +1376,82 @@ fn collect_out_widths(files: &[ast::File]) -> OutWidthMap {
     for file in files {
         walk(&file.items, &newtypes, &mut out);
     }
-    out
+    // The same walk again for the unresolvable-type report. Kept separate from the
+    // width build so the width answer stays a pure function of the type: a name
+    // that cannot be resolved still answers the bare claim, and reporting it must
+    // not change what it answers.
+    let mut unresolvable = Vec::new();
+    fn scan(
+        items: &[Item],
+        newtypes: &BTreeMap<String, Vec<ast::Type>>,
+        out: &mut Vec<(String, String, String)>,
+    ) {
+        fn each(
+            owner: &str,
+            out_types: &[(String, ast::Type, Span)],
+            newtypes: &BTreeMap<String, Vec<ast::Type>>,
+            out: &mut Vec<(String, String, String)>,
+        ) {
+            for (reg, ty, _) in out_types {
+                let Some(r) = Reg::from_name(reg) else { continue };
+                if (r as usize) >= 8 {
+                    continue; // an address result is pinned to a long; its type states no width
+                }
+                if let Some(name) = unresolvable_leaf(ty, newtypes, 16) {
+                    out.push((owner.to_string(), r.to_string(), name));
+                }
+            }
+        }
+        for item in items {
+            match item {
+                Item::Proc(p) => each(&p.name, &p.out_types, newtypes, out),
+                Item::ExternProc(e) => each(&e.name, &e.sig.out_types, newtypes, out),
+                Item::ContractType(t) => each(&t.name, &t.sig.out_types, newtypes, out),
+                Item::Section(s) => scan(&s.items, newtypes, out),
+                _ => {}
+            }
+        }
+    }
+    for file in files {
+        scan(&file.items, &newtypes, &mut unresolvable);
+    }
+    unresolvable.sort();
+    (out, unresolvable)
+}
+
+/// The leaf NAME of a type whose width [`out_claim_of`] cannot derive, or `None`
+/// when it can. Mirrors that function's shape exactly — a divergence between the
+/// two would report a type that resolves, or stay silent about one that does not.
+fn unresolvable_leaf(
+    ty: &ast::Type,
+    newtypes: &BTreeMap<String, Vec<ast::Type>>,
+    depth: usize,
+) -> Option<String> {
+    if depth == 0 {
+        return Some("<type nesting too deep to resolve>".to_string());
+    }
+    match ty {
+        ast::Type::Refined(inner, _, _) => unresolvable_leaf(inner, newtypes, depth - 1),
+        // A pointer is a long by the 68k register rule, not by resolution.
+        ast::Type::Ptr(_) => None,
+        ast::Type::Fixed { .. } => None,
+        ast::Type::Named(path) => {
+            let leaf = path.segments.last()?;
+            match leaf.as_str() {
+                "u8" | "i8" | "u16" | "i16" | "u16le" | "u32" | "i32" => None,
+                _ => match newtypes.get(leaf) {
+                    // A colliding name resolves iff EVERY reading does.
+                    Some(unders) => {
+                        unders.iter().find_map(|u| unresolvable_leaf(u, newtypes, depth - 1))
+                    }
+                    None => Some(leaf.clone()),
+                },
+            }
+        }
+        ast::Type::Array(_, _) | ast::Type::Tuple(_) => {
+            Some("<an array or tuple has no register width>".to_string())
+        }
+    }
 }
 
 /// Collect every declared newtype NAME across the corpus (recursing sections).

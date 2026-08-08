@@ -108,6 +108,41 @@ fn cond_out_survives_claims_all_prove() {
     );
 }
 
+/// No `out(rN: T)` in the corpus names a type the corpus cannot resolve to a
+/// width. An unresolvable type is not unsound — it answers the bare 32-bit claim
+/// on both sides, exactly as the declaration would with no type at all — but it
+/// silently means something other than what its author wrote, and a width cannot
+/// be guessed from a name that resolves to nothing.
+///
+/// Assert-EMPTY rather than baselined: there is no adjudication to make. Either
+/// the name is a typo, or the module declaring it is missing from the walk, and
+/// both are fixed rather than pinned.
+#[test]
+fn no_corpus_out_type_is_unresolvable() {
+    let Some(r) = corpus_report() else { return };
+    let rows: Vec<String> = r
+        .unresolvable_out_types
+        .iter()
+        .map(|(p, reg, ty)| format!("{p} :: out({reg}: {ty})"))
+        .collect();
+    assert!(
+        rows.is_empty(),
+        "an `out(rN: T)` names a type the corpus cannot resolve to a width, so it \
+         silently claims all 32 bits instead of what was written:\n  {}",
+        rows.join("\n  ")
+    );
+    // NON-VACUITY: the corpus must actually CONTAIN typed outs, or the assert
+    // above ranges over nothing and passes for free.
+    let typed = r
+        .verified_uncond_out
+        .keys()
+        .filter(|p| {
+            ["Collision_GetType", "GetSineCosine", "Tile_Cache_GetTile"].contains(&p.as_str())
+        })
+        .count();
+    assert_eq!(typed, 3, "the typed-out exemplars must be in the walk");
+}
+
 /// Every proc that declares `out(rN if cc)` with rN ABSENT from its `clobbers` —
 /// i.e. every proc whose survives claim the gate above actually proves.
 /// `AllocDynamic` is deliberately not here: it names a1 in `clobbers` and makes
