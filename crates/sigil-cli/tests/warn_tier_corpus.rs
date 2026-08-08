@@ -235,7 +235,10 @@ fn debug_shape_sr_writes_are_author_checked() {
                 ItemAuthor::AssertDesugar => seen_desugar += 1,
                 ItemAuthor::Context { .. } => seen_context += 1,
                 // Charged by the lint; the id-set baseline pins zero firings.
-                ItemAuthor::User | ItemAuthor::Splice { .. } => {}
+                // `IrqFrame` (bookmark ask 3) authors an `irq_frame.pc` MEMORY
+                // access, never an SR write, so it is treated like `User` here (the
+                // corpus has none today; the arm keeps the match exhaustive).
+                ItemAuthor::User | ItemAuthor::Splice { .. } | ItemAuthor::IrqFrame => {}
                 ItemAuthor::EntrySynth => panic!(
                     "`{label}`: an EntrySynth-authored SR write in `{proc}` — the entry \
                      synthesis emits no instructions today, and no obligation home exists \
