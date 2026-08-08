@@ -103,6 +103,50 @@ module: the extent label is byte-free (labels emit no bytes) and appears only fo
 resumable procs, and the two new checks + the mandatory-`check_clobbers` widening are
 gated on `is_resumable()`. The seven shipped shapes are unaffected.
 
+## Closure-gate reconciliation (lane-resumable-closure, 2026-08-08)
+
+**D6 — the terminal `jmp (aN)` continuation is a BOUNDED terminator in the
+whole-corpus closure gate, not an unbounded ⊤ tail-transfer.** The first real
+`@resumable` proc tripped `corpus_contracts.rs`: `collect_indirect_sites` modeled a
+computed `jmp (aN)` as an unbounded indirect dispatch (`None` bound), so the proc's
+effective clobber set became ⊤ and `[proc.clobber-undeclared]` fired unbounded
+(`ZX0R_Decompress UNBOUNDED`) — even with the clean reference contract. The per-file
+scan (D1-D5) and the closure gate were never reconciled; D5's byte-neutrality held
+only because no corpus proc was `@resumable` yet.
+
+Fix (extend, don't parallel): `collect_indirect_sites(body, is_resumable)` now skips
+the site for a resumable proc's continuation exit — `is_resumable_continuation_exit`:
+an UNTYPED (`dispatch_bound.is_none()`) indirect TAIL transfer (`jmp`/`bra`/`jbra`)
+through a bare address register that is NOT a7. It is credited like a return/`@noreturn`
+terminator (contributes no ⊤ site), because a resumable proc's register budget is
+already pinned (mandatory `clobbers` + the stackless scan) and the exit leaves to a
+caller-loaded continuation, not into unknown code. Keyed on the `@resumable` attribute,
+never a proc name; the `@allow` census stays empty.
+
+Three deliberate exclusions keep it sound and forward-compatible:
+- **TAIL only** — an indirect CALL (`jsr (aN)`) in a resumable proc is already
+  `[resumable.stack-op]` (it pushes), so it is not a shape to credit.
+- **aN != a7** — `jmp (sp)` READS the stack (also `[resumable.stack-op]`); excluding
+  it (and any unrecognizable/spliced operand) makes the credit fail-safe.
+- **UNTYPED only** — a `jmp (aN) as Type` (ask 5) is bounded by the dispatch TYPE's
+  effect through the EXISTING indirect-site machinery, which is stricter. Excluding
+  the typed form lets that bound SUPERSEDE this credit cleanly the day ask 5 lands —
+  no double-handling. Pinned by
+  `resumable_typed_exit_is_bounded_by_the_type_not_the_attribute`.
+
+Tests (`tests/corpus_contracts.rs`): `resumable_continuation_exit_is_not_unbounded`
+(clean contract passes), `nonresumable_jmp_indirect_still_fires_unbounded` (the credit
+does not leak to a non-resumable proc with the same shape),
+`resumable_jmp_through_sp_is_not_credited` (a7 exclusion), and the typed-supersede test.
+
+**D6a — a written param cursor (`(a0)+`) must be declared `out`/`clobbers` in a
+`@resumable` proc.** The closure gate does NOT excuse a written PARAM the way
+`check_clobbers` does (a param declares an input, not a licence to destroy it). So the
+real ZX0R — whose `a0`/`a1` cursors ADVANCE past their buffers — must declare
+`out(a0, a1)` (the draft header's "Out: a0/a1 past ends"), not merely list them as
+params. This was masked before the D6 fix because a ⊤ effect subsumes every concrete
+register; bounding the exit surfaced it. A consumer note, not a Sigil change.
+
 ## Deferred (bookmark asks not in this lane)
 
 Asks 3 (sanctioned stacked-frame accessor `irq_frame.pc`), 4 (manufactured-frame

@@ -149,6 +149,92 @@ fn unbounded_indirect_fires_unbounded() {
     );
 }
 
+/// Bookmark ask-1 closure reconciliation: a `@resumable` proc exits by a terminal
+/// computed `jmp (aN)` (aN != a7) continuation — a BOUNDED, return-like terminator,
+/// not a dispatch into unknown code. The closure gate must credit it as such, NOT
+/// as an unbounded ⊤ tail-transfer. With the CLEAN reference contract (its whole
+/// register budget declared), the proc passes the closure gate — no `unbounded`
+/// firing and no `[proc.clobber-undeclared]`.
+#[test]
+fn resumable_continuation_exit_is_not_unbounded() {
+    // Faithful ZX0R shape: a0 is a src cursor the decode ADVANCES (`(a0)+`), so it
+    // is a declared `out` (a written param needs an effect declaration; the closure
+    // does not excuse it as `check_clobbers` does). The continuation is a3.
+    let r = analyze(&[
+        "module m\n\
+         @resumable\n\
+         pub proc ZX0R (a0: *u8, a3: *u8) clobbers(d0) out(a0) {\n\
+             moveq #0, d0\n\
+             move.b (a0)+, d0\n\
+             jmp (a3)\n\
+         }\n",
+    ]);
+    assert!(
+        !r.firings.iter().any(|f| f.proc == "ZX0R"),
+        "the resumable continuation exit must not make ZX0R's effect ⊤: {:?}",
+        r.firings
+    );
+}
+
+/// The credit MUST NOT LEAK: the SAME `jmp (aN)` in a NON-`@resumable` proc is
+/// still an unbounded indirect tail-transfer and still fires. The skip is keyed on
+/// the attribute, never on the shape alone.
+#[test]
+fn nonresumable_jmp_indirect_still_fires_unbounded() {
+    let r = analyze(&[
+        "module m\nproc Dispatch () clobbers(d0) {\n moveq #0, d0\n jmp (a3)\n }\n",
+    ]);
+    assert!(
+        r.firings.iter().any(|f| f.proc == "Dispatch" && f.unbounded),
+        "a non-resumable jmp (aN) must still fire unbounded: {:?}",
+        r.firings
+    );
+}
+
+/// The credit is a7-excluded: a `jmp (a7)`/`jmp (sp)` reads the stack (already
+/// `[resumable.stack-op]` at lowering), so even under `@resumable` the closure does
+/// NOT credit it — it stays an unbounded site. Keyed on the register, fail-safe.
+#[test]
+fn resumable_jmp_through_sp_is_not_credited() {
+    let r = analyze(&[
+        "module m\n\
+         @resumable\n\
+         pub proc Bad () clobbers(d0) {\n moveq #0, d0\n jmp (sp)\n }\n",
+    ]);
+    assert!(
+        r.firings.iter().any(|f| f.proc == "Bad" && f.unbounded),
+        "jmp (sp) must not be credited as a bounded continuation: {:?}",
+        r.firings
+    );
+}
+
+/// The typed form supersedes cleanly: a `jmp (aN) as Type` continuation (bookmark
+/// ask 5, once it lands) is bounded by the dispatch TYPE, not by the attribute
+/// credit — so a resumable proc whose typed exit target clobbers a register the
+/// proc does not declare STILL fires on that register. The attribute credit only
+/// covers the UNTYPED exit, leaving the typed bound authoritative.
+#[test]
+fn resumable_typed_exit_is_bounded_by_the_type_not_the_attribute() {
+    let r = analyze(&[
+        "module m\n\
+         type Cont = proc () clobbers(d0, d5)\n\
+         @resumable\n\
+         pub proc ZX0R (a3: *u8) clobbers(d0) {\n\
+             moveq #0, d0\n\
+             jmp (a3) as Cont\n\
+         }\n",
+    ]);
+    // d5 is clobbered by the typed exit target but NOT declared on ZX0R → fires.
+    assert!(fires(&r, "ZX0R", "d5"), "typed exit's bound must charge d5: {:?}", r.firings);
+    // d0 is declared, so it must not fire (the type credit is concrete, not ⊤).
+    assert!(!fires(&r, "ZX0R", "d0"), "d0 is declared: {:?}", r.firings);
+    assert!(
+        !r.firings.iter().any(|f| f.proc == "ZX0R" && f.unbounded),
+        "a typed exit is bounded, never ⊤: {:?}",
+        r.firings
+    );
+}
+
 /// S2-D6 U2 — the DIRECT `jsr Foo` / `bsr Foo` call edge (companion to the
 /// `jbsr` edge in `transitive_callee_leak_fires_over_corpus`): a plain `jsr` to a
 /// resolvable proc symbol unions the callee's declared write surface into the
