@@ -1412,13 +1412,17 @@ fn out_unwritten_warns() {
     assert!(hit.message.contains("a1"), "must name the unwritten output: {}", hit.message);
 }
 
-/// A discriminating pair for the `falls_into` out-unwritten exemption
-/// (`charge_unwritten = proc.falls_into.is_none()` in `check_out`): `a`
-/// declares `out(a1)` and never writes it, but declares `falls_into b`, whose
-/// body writes `a1` — control continues into `b` inside the same call, so the
-/// claim may be discharged there and `a`'s own unwritten check is spared.
-/// Paired with `out_unwritten_fires_without_falls_into` below, which is the
-/// same proc minus the `falls_into` clause and must warn.
+/// The `falls_into` out-unwritten exemption (`charge_unwritten =
+/// proc.falls_into.is_none()` in `check_out`) is STRUCTURAL: it looks only at
+/// whether `falls_into` is declared, never at the successor's body, so it
+/// spares `a`'s declared `out(a1)` even though `a` itself never writes `a1`.
+/// Whether the claim is actually discharged is a DIFFERENT function's job —
+/// the whole-program closure verifier, `out_verify` — which this proc-local
+/// check never calls. Paired with
+/// `falls_into_exempts_even_when_successor_leaves_it_unwritten` below (same
+/// shape, but `b` ALSO never writes `a1` — the exemption fires all the same,
+/// because it never looked) and `out_unwritten_fires_without_falls_into`
+/// (same proc minus `falls_into`, which must warn).
 #[test]
 fn falls_into_exempts_declared_out_from_unwritten() {
     let src = "module m\n\
@@ -1429,18 +1433,55 @@ fn falls_into_exempts_declared_out_from_unwritten() {
                \x20   movea.w #0, a1\n\
                \x20   rts\n\
                }\n";
-    let (_module, diags) = lower(src);
+    let (module, diags) = lower(src);
     assert!(
         !has_tag(&diags, "[proc.out-unwritten]"),
         "a falls_into proc's declared out must be exempt from the unwritten \
          check: {diags:?}"
     );
     assert!(diags.iter().all(|d| d.level != Level::Error), "clean contract: {diags:?}");
+    // The absence above must come from the exemption, not from `a` failing to
+    // reach lowering at all.
+    let section = module.sections.first().expect("one section");
+    assert!(
+        section.labels.iter().any(|l| l.name == "a"),
+        "proc `a` must reach lowering: {:?}",
+        section.labels
+    );
 }
 
-/// The other half of the pair above: same declared `out(a1)`, never written,
-/// WITHOUT `falls_into` — the exemption does not apply and the check fires as
-/// it does for any ordinary proc.
+/// The exemption is blanket, not checked: same shape as
+/// `falls_into_exempts_declared_out_from_unwritten` above, except `b` ALSO
+/// never writes `a1`. `check_out` still spares `a`, because it never inspects
+/// `b` at all — this is the only guard anywhere in the tree on the fact that
+/// the exemption does not verify discharge; that verification is the
+/// whole-program closure's (`out_verify`), not this check's.
+#[test]
+fn falls_into_exempts_even_when_successor_leaves_it_unwritten() {
+    let src = "module m\n\
+               proc a() out(a1) falls_into b {\n\
+               \x20   rts\n\
+               }\n\
+               proc b() {\n\
+               \x20   rts\n\
+               }\n";
+    let (module, diags) = lower(src);
+    assert!(
+        !has_tag(&diags, "[proc.out-unwritten]"),
+        "the exemption does not inspect the successor's body, so it fires \
+         even when b also never writes a1: {diags:?}"
+    );
+    let section = module.sections.first().expect("one section");
+    assert!(
+        section.labels.iter().any(|l| l.name == "a"),
+        "proc `a` must reach lowering: {:?}",
+        section.labels
+    );
+}
+
+/// The exemption's other half: same declared `out(a1)`, never written,
+/// WITHOUT `falls_into` — it does not apply and the check fires as it does
+/// for any ordinary proc.
 #[test]
 fn out_unwritten_fires_without_falls_into() {
     let src = "module m\n\
