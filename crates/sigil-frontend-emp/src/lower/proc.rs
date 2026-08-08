@@ -1694,6 +1694,146 @@ fn check_preserves(
 /// concept, so this runs for both CPUs; the unwritten check reuses the 68k
 /// write-form heuristic, which on Z80 simply finds no matching writes (a Z80
 /// `out` currently cannot be verified-written — honest, like `preserves`).
+/// The four in-out PARTITION rules, shared by the body-proc check ([`check_out`])
+/// and the boundary-declaration pass ([`validate_boundary_inout`], for `extern
+/// proc` / `type = proc`). Each is a membership test over pre-expanded sets, so both
+/// callers compute the sets from their own AST shape and this is the one authority
+/// for the four messages. The `[proc.inout-not-param]` rule is what routes the
+/// in-out INPUT obligation through the existing param→D1b machinery, and its
+/// enforcement on externs is what closes the extern-fold blessing path.
+pub(crate) fn check_inout_partition(
+    owner: &str,
+    span: Span,
+    inout_valid: &[String],
+    param_regs: &std::collections::HashSet<String>,
+    clobbers_regs: &std::collections::HashSet<String>,
+    preserved_mask: u16,
+    word_mask: u16,
+    out_reg_set: &std::collections::HashSet<String>,
+    diags: &mut Vec<Diagnostic>,
+) {
+    for name in inout_valid {
+        if !param_regs.contains(name) {
+            push(
+                diags,
+                Level::Error,
+                span,
+                format!(
+                    "[proc.inout-not-param] `{owner}` declares `inout({name})` but `{name}` is not \
+                     a param — an in-out register is a caller-provided input, so it must be \
+                     declared in the param list"
+                ),
+            );
+        }
+        if clobbers_regs.contains(name) {
+            push(
+                diags,
+                Level::Error,
+                span,
+                format!(
+                    "[proc.inout-clobbers-overlap] `{owner}` declares `{name}` both in-out and \
+                     clobbered — an in-out register's exit value is promised to the caller, so it \
+                     cannot also be destroyed scratch"
+                ),
+            );
+        }
+        if let Some(bit) = preserves_reg_bit(name) {
+            if (preserved_mask | word_mask) & (1 << bit) != 0 {
+                push(
+                    diags,
+                    Level::Error,
+                    span,
+                    format!(
+                        "[proc.inout-preserves-overlap] `{owner}` declares `{name}` both in-out and \
+                         preserved — an in-out register's exit value need not equal its entry \
+                         value, so it cannot also be promised unchanged"
+                    ),
+                );
+            }
+        }
+        if out_reg_set.contains(name) {
+            push(
+                diags,
+                Level::Error,
+                span,
+                format!(
+                    "[proc.inout-out-overlap] `{owner}` declares `{name}` both `inout` and `out` — \
+                     an in-out register is checked as a threaded cursor (pass-through valid), an \
+                     out as a produced result; a register takes exactly one"
+                ),
+            );
+        }
+    }
+}
+
+/// The full in-out structural check for a BOUNDARY declaration — an `extern proc`
+/// or a `type = proc` contract type — whose body the closure never sees. Without
+/// this, an `extern proc Q (a0) inout(d5)` (d5 not a param) would fold `d5` into the
+/// caller-credit maps and seed it VERIFIED by §3 axiom, blessing a caller's
+/// `out(d5)` with no gate firing (D1b stays silent because `d5 ∉ Q.params`). Running
+/// the SAME five rules `check_out` runs on bodies closes that path at the
+/// declaration. `is_z80` gates the 68k-only facet.
+pub(crate) fn validate_boundary_inout(
+    owner: &str,
+    span: Span,
+    params: &std::collections::HashSet<String>,
+    clobbers: Option<&[(String, Option<String>)]>,
+    preserves: &[(String, Option<String>)],
+    out: Option<&[(String, Option<String>)]>,
+    inout: Option<&[(String, Option<String>)]>,
+    is_z80: bool,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let inout_nonempty = inout.is_some_and(|v| !v.is_empty());
+    if is_z80 {
+        if inout_nonempty {
+            push(
+                diags,
+                Level::Error,
+                span,
+                format!(
+                    "[proc.inout-z80-unsupported] `{owner}` declares `inout(...)` on a Z80 \
+                     declaration — the in-out facet is 68k-only"
+                ),
+            );
+        }
+        return;
+    }
+    let inout_set = reglist_expand_checked(inout.unwrap_or(&[]), "inout", owner, span, diags);
+    let mut inout_valid: Vec<String> = inout_set.regs.into_iter().collect();
+    inout_valid.sort();
+    if inout_valid.is_empty() {
+        return;
+    }
+    let clobbers_regs = reglist_set_quiet(clobbers.unwrap_or(&[])).regs;
+    let out_reg_set = reglist_set_quiet(out.unwrap_or(&[])).regs;
+    let mut preserved_mask: u16 = 0;
+    for (lo, hi) in preserves {
+        let Some(lo_bit) = preserves_reg_bit(lo) else { continue };
+        let hi_bit = match hi {
+            None => lo_bit,
+            Some(h) => match preserves_reg_bit(h) {
+                Some(b) if b >= lo_bit => b,
+                _ => continue,
+            },
+        };
+        for bit in lo_bit..=hi_bit {
+            preserved_mask |= 1 << bit;
+        }
+    }
+    check_inout_partition(
+        owner,
+        span,
+        &inout_valid,
+        params,
+        &clobbers_regs,
+        preserved_mask,
+        /* word_mask */ 0,
+        &out_reg_set,
+        diags,
+    );
+}
+
 fn check_out(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,
@@ -1931,72 +2071,17 @@ fn check_out(
     let param_regs: std::collections::HashSet<String> =
         proc.params.iter().map(|(n, _, _)| n.clone()).collect();
     let out_reg_set: std::collections::HashSet<String> = valid.iter().cloned().collect();
-    for name in &inout_valid {
-        // inout ∩ params: an in-out value is a declared INPUT; requiring it be a
-        // param is what lets the existing param → D1b machinery discharge the
-        // "caller seeds rN live" half with no separate read-side dataflow.
-        if !param_regs.contains(name) {
-            push(
-                diags,
-                Level::Error,
-                proc.span,
-                format!(
-                    "[proc.inout-not-param] `{}` declares `inout({name})` but `{name}` is not a \
-                     param — an in-out register is a caller-provided input, so it must be declared \
-                     in the param list",
-                    proc.name
-                ),
-            );
-        }
-        // inout ∩ clobbers: clobbers says the caller may NOT rely on the exit
-        // value; inout says the opposite.
-        if clobbers.regs.contains(name) {
-            push(
-                diags,
-                Level::Error,
-                proc.span,
-                format!(
-                    "[proc.inout-clobbers-overlap] `{}` declares `{name}` both in-out and \
-                     clobbered — an in-out register's exit value is promised to the caller, so it \
-                     cannot also be destroyed scratch",
-                    proc.name
-                ),
-            );
-        }
-        // inout ∩ preserves: preserves promises exit == entry; inout deliberately
-        // does not (the exit value may differ — an advanced cursor).
-        if let Some(bit) = preserves_reg_bit(name) {
-            if (preserved_mask | word_mask) & (1 << bit) != 0 {
-                push(
-                    diags,
-                    Level::Error,
-                    proc.span,
-                    format!(
-                        "[proc.inout-preserves-overlap] `{}` declares `{name}` both in-out and \
-                         preserved — an in-out register's exit value need not equal its entry \
-                         value, so it cannot also be promised unchanged",
-                        proc.name
-                    ),
-                );
-            }
-        }
-        // inout ∩ out: one register, one exit disposition. `out` requires
-        // production on every path; `inout` allows pass-through — a register cannot
-        // be checked under both.
-        if out_reg_set.contains(name) {
-            push(
-                diags,
-                Level::Error,
-                proc.span,
-                format!(
-                    "[proc.inout-out-overlap] `{}` declares `{name}` both `inout` and `out` — an \
-                     in-out register is checked as a threaded cursor (pass-through valid), an out \
-                     as a produced result; a register takes exactly one",
-                    proc.name
-                ),
-            );
-        }
-    }
+    check_inout_partition(
+        &proc.name,
+        proc.span,
+        &inout_valid,
+        &param_regs,
+        &clobbers.regs,
+        preserved_mask,
+        word_mask,
+        &out_reg_set,
+        diags,
+    );
 
     // The SR-half partition (the sr split). A flag result (`out(carry: …)`)
     // lives in CCR and a conditional result's `if cc` guard is read from CCR,

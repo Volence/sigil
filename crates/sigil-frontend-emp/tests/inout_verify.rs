@@ -174,3 +174,32 @@ fn rule7_preserving_callee_is_unchanged_and_unknown_breaks() {
     let empty = BTreeMap::new();
     assert!(!inout_ok(src, "P", Reg::D5, &d5_u16(), &uncond, &inout, &c, &empty), "unknown callee must break");
 }
+
+// -- Width asymmetry: data claim is strict, address claim is always long. ------
+
+#[test]
+fn width_asymmetry_data_word_under_long_breaks() {
+    // A DATA register under a bare (long) inout claim: a .w write leaves the high
+    // word stale → Broken. This pins the model directly (the data side is strict).
+    let src = "module m\n proc P (d5: u16) clobbers() inout(d5) {\n move.w #0, d5\n rts\n }\n";
+    let (m, c) = empty_maps();
+    let long = BTreeMap::from([("d5".to_string(), OutClaim::exact(OutWidth::L))]);
+    assert!(
+        !inout_ok(src, "P", Reg::D5, &long, &m, &m, &c, &m),
+        "a .w write to a data register under a long inout claim must BREAK"
+    );
+}
+
+#[test]
+fn width_asymmetry_address_advance_under_long_passes() {
+    // An ADDRESS register under a long claim: a `.w` auto-inc advance still covers
+    // all 32 bits (68k address writes are full-width), so it PRODUCES → OK. This is
+    // the a4-cursor property, pinned directly rather than only transitively.
+    let src = "module m\n proc P (a4: *u8) clobbers(d0) inout(a4) {\n move.w (a4)+, d0\n rts\n }\n";
+    let (m, c) = empty_maps();
+    let long = BTreeMap::from([("a4".to_string(), OutClaim::exact(OutWidth::L))]);
+    assert!(
+        inout_ok(src, "P", Reg::A4, &long, &m, &m, &c, &m),
+        "an address-register .w auto-inc under a long claim must PASS (full-width advance)"
+    );
+}

@@ -1053,6 +1053,51 @@ fn inout_credit_laundering_is_caught_by_d1b() {
     );
 }
 
+/// THE EXTERN-FOLD LAUNDERING backstop (extern arm of the soundness probe). An
+/// `extern proc`'s outs seed the verified maps by §3 axiom (no body to prove), and
+/// its `inout` folds into the caller-credit maps exactly as a body's does — so the
+/// same laundering shape applies through a boundary declaration. A MALFORMED extern
+/// (`inout(d5)` with d5 NOT a param) is rejected at lowering by
+/// `[proc.inout-not-param]` (see `lower_proc.rs::extern_inout_non_param_is_rejected`,
+/// the declaration-time catch). This probe covers the WELL-FORMED extern: even when
+/// Q properly declares `d5` a param, a caller P whose entry `d5` is garbage cannot
+/// launder its `out(d5)` through Q — D1b `[call.input-undefined]` fires at the call,
+/// because `d5` is Q's param. `verify_out` alone is again fooled (P's out is
+/// credited by the extern's folded inout), so D1b is the sole catch.
+#[test]
+fn inout_extern_credit_laundering_is_caught_by_d1b() {
+    let ext = "extern proc Q (d5: u16) clobbers() inout(d5: u16)\n";
+    let laundering = analyze(&[&format!(
+        "module m\n{ext}\
+         proc P () clobbers() out(d5) {{\n\
+             jbsr Q\n\
+             rts }}\n"
+    )]);
+    assert!(
+        input_fires(&laundering, "P", "Q", "d5"),
+        "the extern-fold laundering P must be caught by D1b [call.input-undefined]: {:?}",
+        laundering.input_firings
+    );
+    assert!(
+        !out_fires(&laundering, "P", "d5"),
+        "verify_out is fooled by the extern's folded inout (so D1b is the catch): {:?}",
+        laundering.out_firings
+    );
+    // Honest caller: defines d5 first → D1b silent, passes.
+    let honest = analyze(&[&format!(
+        "module m\n{ext}\
+         proc P2 () clobbers() out(d5) {{\n\
+             moveq #0, d5\n\
+             jbsr Q\n\
+             rts }}\n"
+    )]);
+    assert!(
+        !input_fires(&honest, "P2", "Q", "d5"),
+        "the honest extern caller defines d5 before the call → D1b silent: {:?}",
+        honest.input_firings
+    );
+}
+
 /// THE SITE-2 PLUMBING GUARD, one layer above the fixpoint's own
 /// `falls_into_successor_credit_reaches_the_fixpoint`: the `falls_into` successor
 /// name must travel from the proc table into the PER-PROC out check, not only

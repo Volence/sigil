@@ -69,44 +69,41 @@ pub const Z80_OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[
 /// shipped shapes. If that ever stops holding, the D1c pair above is the shape to
 /// copy; do not flatten a real per-family difference into one array.
 ///
-/// EMPTY: every declared 68k register `out` in the corpus VERIFIES — proven
-/// produced (at its declared width) on every required return path. The array is
-/// still the live gate surface: a firing that appears here is a NEW violation and
-/// fails the closure gate, and an entry added without a corresponding corpus firing
-/// is a stale pin that also fails. The emptiness is a hard-won fixpoint, reached by
-/// three distinct repairs, each of which retired its rows to the mechanism that
-/// actually closes it:
+/// EMPTY: every declared 68k register `out` in the corpus verifies — proven
+/// produced, at its declared width, on every required return path. The array is the
+/// live gate surface: a firing that appears here is a NEW violation and fails the
+/// closure gate, and an entry added with no corresponding corpus firing is a stale
+/// pin that also fails.
 ///
-/// - WIDTH rows (`Emit_ObjectPieces d5`): produced on every path but one byte wide
-///   under a word claim — closed by widening the increment to `addq.w` and typing
-///   `out(d5: u16)`.
-/// - THREADED-CURSOR rows (`DrawRings` / `InsertSpriteMasks` `a4`/`d5`): un-written
-///   on the empty / cap-reached / all-culled paths, which no width change closes —
-///   retired by adopting `inout(a4)` / `inout(d5: u16)`, where PASS-THROUGH is
-///   contract-valid. Their exit-side residue now lives in
-///   [`INOUT_UNVERIFIED_BASELINE`] (also empty), NOT here.
-/// - CROSS-PROC CREDIT rows (`Collision_Probe` `d1`/`d2`): produced only through a
-///   local `bsr` to a shared helper, which the credit model now follows.
+/// A row would land here only for a register a proc CLAIMS to produce (`out`) but
+/// does not produce on some return path. Three kinds of near-miss belong to OTHER
+/// mechanisms and are prevented from accumulating here, by construction, not by
+/// pinning:
 ///
-/// The distinctions matter and are measured, never classified by eye — each residue
-/// (produce-on-every-path `out`, produce-at-declared-width `out(dN: T)`,
-/// thread-through `inout`, and the Z80 unit domain) is read as a SET DIFF against
-/// its own baseline. This array holding at EMPTY is the strongest form of that: any
-/// non-empty diff is a real regression.
+/// - a register produced too NARROW is a `out(dN: T)` width claim, charged at the
+///   type's width — not a missing production;
+/// - a register a proc THREADS (provides at entry, hands back at exit) rather than
+///   produces is the `inout` facet, whose residue is [`INOUT_UNVERIFIED_BASELINE`];
+/// - a register produced through a local `bsr` to a shared helper is credited by the
+///   cross-proc credit model, so it is produced, not unproven.
+///
+/// Which of the four residues (`out`, `out(dN: T)` width, `inout`, and the Z80 unit
+/// domain) a firing belongs to is measured as a SET DIFF against its own baseline,
+/// never classified by eye. This array holding at EMPTY is the strongest form of
+/// that guard: any non-empty diff is a real regression.
 pub const OUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[];
 
 /// `[proc.inout-unverified]` — a proc declares `inout(rN)` but the body leaves rN
-/// Broken on some exit path (a partial write under the declared width, a clobbering
-/// or conditional-out callee, or an unknown callee). Unlike `out`, PASS-THROUGH is
-/// contract-valid, so an unwritten path never fires.
+/// BROKEN on some exit path: a write narrower than the declared width, a clobbering
+/// or conditional-out callee, or an unknown callee. Unlike `out`, PASS-THROUGH (no
+/// write) is contract-valid — the caller's entry value is a meaningful exit value —
+/// so an unwritten path never fires.
 ///
-/// EMPTY, and the emptiness is the whole point of the facet. `DrawRings` and
-/// `InsertSpriteMasks` thread `a4`/`d5` and, on their empty-buffer /
-/// cap-reached / all-culled paths, write neither — which fired FOUR `out` rows
-/// (the produce-on-every-path obligation) but is exactly what `inout` permits. The
-/// increments are word-wide (`addq.w`, parcel A) so the paths that DO write produce
-/// the declared width; nothing is left Broken. A mutant narrowing an increment back
-/// to `addq.b` re-populates this baseline (the anti-vacuity probe).
+/// EMPTY. The array is the live gate surface with the same ratchet as
+/// [`OUT_UNVERIFIED_BASELINE`]: a new firing is a NEW violation, an unfounded entry
+/// a stale pin. A register whose exit value is not meaningful under the declared
+/// width — a sub-width write blending with the entry bytes — is the one thing that
+/// populates it.
 pub const INOUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[];
 
 /// `[call.live-clobbered]` (D1c) — the SHAPE-INVARIANT rows: a caller holds a
