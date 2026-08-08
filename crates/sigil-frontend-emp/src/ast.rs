@@ -1097,6 +1097,16 @@ impl ProcDecl {
         self.attrs.iter().any(|a| a.name == "noreturn")
     }
 
+    /// Whether this proc declares `@resumable` — the STACKLESS contract (bookmark
+    /// ask 1): the body touches sp NOWHERE and keeps all live state in registers,
+    /// so a supervisor interrupt can bookmark and resume it from any depth. A
+    /// CHECKED claim — `check_resumable` proves it on the body
+    /// (`[resumable.stack-op]`) and requires a declared register-state set
+    /// (`[resumable.contract-required]`).
+    pub fn is_resumable(&self) -> bool {
+        self.attrs.iter().any(|a| a.name == "resumable")
+    }
+
     /// The registers carrying an `out(rN if cc)` guard, canonical under `rf`.
     pub fn cond_out_regs(
         &self,

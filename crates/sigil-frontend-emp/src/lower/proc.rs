@@ -140,6 +140,45 @@ pub(super) fn lower_proc(
     let Some(buf) = buf else { return };
     super::lower_code_buf(&buf, ctx.cpu, ctx.as_compat, builder, diags);
 
+    // Exported EXTENT symbol (bookmark ask 2): a `@resumable` proc gets a linkable
+    // `Proc.__end` label at the byte immediately past its body, so a consumer
+    // compiles a `[Proc, Proc.__end)` PC range check from toolchain symbols
+    // instead of a hand-maintained sentinel. The builder cursor sits at the body
+    // end right after `lower_code_buf`, so this is that position. It rides the
+    // exported-label naming path (`Owner.local`, like `export .name:` → `foo.name`)
+    // so `canonicalize_name`'s dotted-owner rule module-qualifies it exactly as the
+    // proc's own symbol — no rename-table change, same cross-module visibility. A
+    // label emits no bytes, and no existing corpus proc is `@resumable`, so this is
+    // byte- and symbol-neutral everywhere but a resumable proc's own module.
+    if proc.is_resumable() {
+        let end_sym = format!("{}.__end", proc.name);
+        // `.__end` is RESERVED for the generated extent label. A body-defined
+        // `export .__end:` hygiene-resolves to the SAME `Proc.__end` symbol
+        // (`Owner.name`) and would silently collide with a second definition at a
+        // different offset. (A non-export `.__end:` mangles to `$mod$Proc$__end`
+        // and does not collide, so the name compare below is exactly the collision
+        // set.) Reject the source label rather than mint a duplicate symbol.
+        let collides = buf
+            .items
+            .iter()
+            .any(|it| matches!(it, CodeItem::Label { name, .. } if *name == end_sym));
+        if collides {
+            push(
+                diags,
+                Level::Error,
+                proc.span,
+                format!(
+                    "[resumable.extent-reserved] `@resumable` proc `{}` defines an exported \
+                     `.__end` label, but that name is reserved for the generated extent symbol \
+                     `{end_sym}` (the `[Proc, Proc.__end)` range bound) — rename the label",
+                    proc.name
+                ),
+            );
+        } else {
+            builder.define_label(&end_sym);
+        }
+    }
+
     // 2/3. Fallthrough contract. A declared `falls_into` demands adjacency (a
     // hard ERROR when broken — never silenced); an undeclared but reachable
     // fall-off the end is a modernization WARNING that `@as_compat` silences
@@ -164,7 +203,13 @@ pub(super) fn lower_proc(
     // explicit empty `clobbers()` counts: it declares "touches nothing", so
     // every register write is undeclared) — likewise a modernization warning
     // silenced under `@as_compat`.
-    if proc.clobbers.is_some() && !ctx.as_compat {
+    // A `@resumable` proc's register-state set IS this contract (params + clobbers
+    // + out); "anything live outside the declared set is an error" (bookmark ask 1)
+    // is exactly `[proc.clobber-undeclared]`, so the check is MANDATORY there —
+    // it runs even under `@as_compat` (a resumable proc is a strict new contract,
+    // not a faithful port). `check_resumable` separately requires the `clobbers`
+    // set to be declared, so this gate's `is_some()` is met whenever it matters.
+    if proc.clobbers.is_some() && (!ctx.as_compat || proc.is_resumable()) {
         check_clobbers(proc, &buf, ctx.cpu, ctx.noreturn, ctx.sr_mask_preservers, diags);
     }
 
@@ -246,6 +291,16 @@ pub(super) fn lower_proc(
         check_stack_balance(file, proc, &buf, ctx.as_compat, diags);
     }
 
+    // 11b. `@resumable` (bookmark ask 1): the STACKLESS contract. The body must
+    // touch sp NOWHERE — no call/frame/return mnemonic, no sp operand — so a
+    // supervisor interrupt can bookmark and resume it. Build-fatal and NEVER
+    // softened (`@as_compat` does not reach it): the whole VBlank-bookmark safety
+    // argument rests on this property. The register-state half is the mandatory
+    // `check_clobbers` above; this owns the stackless half + its two guards.
+    if proc.is_resumable() {
+        check_resumable(proc, &buf, ctx.cpu, diags);
+    }
+
     // 12. Cycle budgets (delta spec §4 / U-spec §4-cycles): the declared
     // `@budget(cycles: N)` ceiling and the `@cycles_exact` equal-cost proof.
     // Purely declaration-driven — a proc carrying neither attribute is not walked.
@@ -311,6 +366,68 @@ fn check_stack_balance(
             ),
         };
         push(diags, level, f.span, format!("[{id}] in `{}`: {what}", proc.name));
+    }
+}
+
+/// Report the `@resumable` (stackless) contract failures for one proc body
+/// (bookmark ask 1). Three diagnostics, all ERROR-tier and NEVER softened — the
+/// VBlank-bookmark safety argument rests on the stackless property, so a faithful
+/// port cannot opt out of it the way it opts out of modernization lints:
+///
+/// - `[resumable.z80-unsupported]` — the stack model and the bookmark mechanism
+///   are 68k; `@resumable` on a Z80 proc is rejected (matching the `inout`
+///   facet's Z80 scope guard). No stackless scan follows.
+/// - `[resumable.contract-required]` — a `@resumable` proc MUST declare its
+///   register-state set via `clobbers(...)`. Without it there is nothing to bound
+///   the body's liveness against, so the "anything outside the set is an error"
+///   half (the mandatory `check_clobbers`) has no set and is vacuous.
+/// - `[resumable.stack-op]` — one per sp-touching instruction the body contains
+///   ([`crate::resumable::scan_stack_ops`], which scans the evaluated/spliced
+///   `CodeBuf` — post-`with`-splice, pre-backend-encoding — so a stack op
+///   arriving via a `with` bracket or a template splice is caught too).
+fn check_resumable(
+    proc: &ast::ProcDecl,
+    buf: &crate::value::CodeBuf,
+    cpu: Cpu,
+    diags: &mut Vec<Diagnostic>,
+) {
+    if cpu == Cpu::Z80 {
+        push(
+            diags,
+            Level::Error,
+            proc.span,
+            format!(
+                "[resumable.z80-unsupported] `{}` declares `@resumable`, but the stackless \
+                 contract is 68k-only (the supervisor bookmark mechanism it enables is 68k)",
+                proc.name
+            ),
+        );
+        return;
+    }
+    if proc.clobbers.is_none() {
+        push(
+            diags,
+            Level::Error,
+            proc.span,
+            format!(
+                "[resumable.contract-required] `@resumable` proc `{}` must declare its \
+                 register-state set with `clobbers(...)` — it is what bounds the body's \
+                 liveness (a touch outside params/clobbers/out is `[proc.clobber-undeclared]`)",
+                proc.name
+            ),
+        );
+    }
+    for f in crate::resumable::scan_stack_ops(&buf.items) {
+        push(
+            diags,
+            Level::Error,
+            f.span,
+            format!(
+                "[resumable.stack-op] in `{}`: {} — a `@resumable` proc must keep all live \
+                 state in registers and touch the stack nowhere (it exits by `jmp (aN)`)",
+                proc.name, f.what
+            ),
+        );
     }
 }
 
