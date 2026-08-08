@@ -879,16 +879,27 @@ fn an_out_type_the_corpus_cannot_resolve_is_reported() {
     assert!(verified(&r, "Ptr", "a0"), "firings: {:?}", r.out_firings);
 }
 
-/// An unresolvable type degrades to EXACTLY the bare declaration — the reason the
-/// report above is a report and not a width change. Both sides of the claim
-/// answer 32 bits, so a caller draws what a bare `out(rN)` would have credited,
-/// no more.
+/// An unresolvable type SIMPLE typo degrades to exactly the bare declaration —
+/// the reason the report above is a report and not a width change. Both sides of
+/// the claim answer 32 bits, so a caller draws what a bare `out(rN)` would have
+/// credited, no more.
+///
+/// **Scoped to the simple case deliberately: the universal is FALSE.** Under a
+/// name COLLISION where one reading resolves and the other does not, the
+/// unresolvable reading contributes `L` to a `min` and loses it — `Dup = u8` in
+/// one module and `Dup = NotAType` in another gives `strict = max(L,B) = L` and
+/// `credit = min(L,B) = B`, so the caller is credited NARROWER than bare and
+/// fires where the bare control does not. Fail-safe in direction, so no hole, but
+/// the reported set and the degrades-to-bare set are not the same set — and it is
+/// the degradation that justifies reporting rather than re-widthing. The
+/// justification therefore covers the typo, which is the case it was measured on,
+/// and not every unresolvable type.
 ///
 /// MUTANT: answer a narrower `credit` for an unresolvable type (e.g.
 /// `OutClaim { strict: L, credit: B }`). `Typoed` fires, `Bare` does not, the
 /// assert_eq below breaks and this test goes RED. Run: confirmed RED.
 #[test]
-fn an_unresolvable_out_type_credits_exactly_what_a_bare_out_would() {
+fn a_simple_unresolvable_out_type_credits_what_a_bare_out_would() {
     let typoed = analyze(&[
         "module m\nextern proc E () out(d0: NotADeclaredType)\n\
          proc Typoed () out(d0) {\n jbsr E\n rts\n}\n",
@@ -903,4 +914,40 @@ fn an_unresolvable_out_type_credits_exactly_what_a_bare_out_would() {
         "an unresolvable type must behave as the bare declaration it degrades to"
     );
     assert!(verified(&bare, "Bare", "d0"), "the control must actually verify");
+}
+
+/// The counterexample that scopes the claim above: an unresolvable reading under a
+/// name COLLISION credits NARROWER than bare, not equal to it.
+///
+/// `credit = min(L, B) = B`, so the unresolvable reading's `L` is discarded by the
+/// merge and the caller draws a byte. The direction is fail-safe — narrower credit
+/// only ever over-fires — but it means "an unresolvable type behaves as the bare
+/// declaration" is true of a simple typo and false in general, and the sibling
+/// test's name and doc are scoped accordingly.
+///
+/// MUTANT: make `OutClaim::merge` take `max` on the credit side. `Collided` stops
+/// firing, matching the bare control, and this test goes RED. Run: confirmed RED.
+#[test]
+fn an_unresolvable_reading_under_a_collision_credits_narrower_than_bare() {
+    let collided = analyze(&[
+        "module a\npub newtype Dup = u8\n",
+        "module b\npub newtype Dup = NotAType\n",
+        "module c\nextern proc E () out(d0: Dup)\n\
+         proc P () out(d0) {\n jbsr E\n rts\n}\n",
+    ]);
+    assert_subjects(&collided, &["P"]);
+    // Reported as unresolvable AND credited narrower than bare — both at once.
+    assert!(
+        collided.unresolvable_out_types.iter().any(|(p, r, t)| p == "E" && r == "d0" && t == "NotAType"),
+        "rows: {:?}",
+        collided.unresolvable_out_types
+    );
+    assert!(out_fires(&collided, "P", "d0"), "firings: {:?}", collided.out_firings);
+
+    // The bare control does NOT fire, which is what makes this a difference.
+    let bare = analyze(&[
+        "module c\nextern proc E () out(d0)\n\
+         proc P () out(d0) {\n jbsr E\n rts\n}\n",
+    ]);
+    assert!(verified(&bare, "P", "d0"), "firings: {:?}", bare.out_firings);
 }

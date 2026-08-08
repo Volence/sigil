@@ -126,6 +126,14 @@ pub struct ContractReport {
     /// can: the newtype table is corpus-wide, so a per-file pass would fire on
     /// every legitimate cross-module type.
     pub unresolvable_out_types: Vec<(String, String, String)>,
+    /// Every `out(rN: T)` SLOT the type walk saw, as `(proc, register)`. Sorted.
+    ///
+    /// The subject matter of [`Self::unresolvable_out_types`], exposed so an
+    /// assert-empty over that list can be guarded against ranging over nothing.
+    /// A guard built on any map keyed by PROC NAME cannot do it: those carry a key
+    /// whether or not the proc declares a type at all, so stripping every type off
+    /// the corpus leaves them unchanged. This list loses a row.
+    pub typed_out_slots: Vec<(String, String)>,
     /// The verified-out FIXPOINT result — each proc's UNCONDITIONAL outs PROVEN
     /// produced (extern outs seeded verified). The DEFINITION credit source for D1b
     /// must-def and the `out_firings` residue surface; exposed so the consistency
@@ -587,7 +595,7 @@ pub fn analyze_corpus_with_contracts(
     // and only where an author wrote a type. It serves both directions at once:
     // a proc's own row is what its returns are charged, and every other proc's row
     // is what a call / tail / fall-off to it may be credited.
-    let (out_widths, unresolvable_out_types) = collect_out_widths(files);
+    let (out_widths, unresolvable_out_types, typed_out_slots) = collect_out_widths(files);
     let (verified_uncond_out, verified_cond_out): (UncondOutMap, CondOutMap) =
         compute_verified_outs(
             &proc_items,
@@ -1038,6 +1046,7 @@ pub fn analyze_corpus_with_contracts(
         survives_firings,
         survives_claim_sites,
         unresolvable_out_types,
+        typed_out_slots,
         verified_uncond_out,
         verified_cond_out,
         dropped_instrs,
@@ -1280,7 +1289,10 @@ fn bits_to_width(bits: u32) -> OutWidth {
 /// Externs are included: their declared outs are §3 boundary axioms that the
 /// fixpoint seeds VERIFIED, so a typed extern out must credit its callers at the
 /// declared width and not a long.
-fn collect_out_widths(files: &[ast::File]) -> (OutWidthMap, Vec<(String, String, String)>) {
+#[allow(clippy::type_complexity)]
+fn collect_out_widths(
+    files: &[ast::File],
+) -> (OutWidthMap, Vec<(String, String, String)>, Vec<(String, String)>) {
     // One proc's row: EVERY declared out register, typed ones at their type's
     // width and untyped ones at the bare 32-bit claim.
     //
@@ -1381,19 +1393,23 @@ fn collect_out_widths(files: &[ast::File]) -> (OutWidthMap, Vec<(String, String,
     // that cannot be resolved still answers the bare claim, and reporting it must
     // not change what it answers.
     let mut unresolvable = Vec::new();
+    let mut slots = Vec::new();
     fn scan(
         items: &[Item],
         newtypes: &BTreeMap<String, Vec<ast::Type>>,
         out: &mut Vec<(String, String, String)>,
+        slots: &mut Vec<(String, String)>,
     ) {
         fn each(
             owner: &str,
             out_types: &[(String, ast::Type, Span)],
             newtypes: &BTreeMap<String, Vec<ast::Type>>,
             out: &mut Vec<(String, String, String)>,
+            slots: &mut Vec<(String, String)>,
         ) {
             for (reg, ty, _) in out_types {
                 let Some(r) = Reg::from_name(reg) else { continue };
+                slots.push((owner.to_string(), r.to_string()));
                 if (r as usize) >= 8 {
                     continue; // an address result is pinned to a long; its type states no width
                 }
@@ -1404,19 +1420,20 @@ fn collect_out_widths(files: &[ast::File]) -> (OutWidthMap, Vec<(String, String,
         }
         for item in items {
             match item {
-                Item::Proc(p) => each(&p.name, &p.out_types, newtypes, out),
-                Item::ExternProc(e) => each(&e.name, &e.sig.out_types, newtypes, out),
-                Item::ContractType(t) => each(&t.name, &t.sig.out_types, newtypes, out),
-                Item::Section(s) => scan(&s.items, newtypes, out),
+                Item::Proc(p) => each(&p.name, &p.out_types, newtypes, out, slots),
+                Item::ExternProc(e) => each(&e.name, &e.sig.out_types, newtypes, out, slots),
+                Item::ContractType(t) => each(&t.name, &t.sig.out_types, newtypes, out, slots),
+                Item::Section(s) => scan(&s.items, newtypes, out, slots),
                 _ => {}
             }
         }
     }
     for file in files {
-        scan(&file.items, &newtypes, &mut unresolvable);
+        scan(&file.items, &newtypes, &mut unresolvable, &mut slots);
     }
     unresolvable.sort();
-    (out, unresolvable)
+    slots.sort();
+    (out, unresolvable, slots)
 }
 
 /// The leaf NAME of a type whose width [`out_claim_of`] cannot derive, or `None`

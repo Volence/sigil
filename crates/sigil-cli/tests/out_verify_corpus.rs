@@ -131,16 +131,29 @@ fn no_corpus_out_type_is_unresolvable() {
          silently claims all 32 bits instead of what was written:\n  {}",
         rows.join("\n  ")
     );
-    // NON-VACUITY: the corpus must actually CONTAIN typed outs, or the assert
-    // above ranges over nothing and passes for free.
-    let typed = r
-        .verified_uncond_out
-        .keys()
-        .filter(|p| {
-            ["Collision_GetType", "GetSineCosine", "Tile_Cache_GetTile"].contains(&p.as_str())
-        })
-        .count();
-    assert_eq!(typed, 3, "the typed-out exemplars must be in the walk");
+    // NON-VACUITY, measured on the SCAN's own subject matter. `typed_out_slots` is
+    // what the type walk saw; a map keyed by proc NAME cannot serve here, because
+    // it carries a key whether or not that proc declares a type, so stripping every
+    // type off the corpus would leave it unchanged.
+    let slots: Vec<(&str, &str)> =
+        r.typed_out_slots.iter().map(|(p, g)| (p.as_str(), g.as_str())).collect();
+    for exemplar in [
+        ("Collision_GetType", "d0"),
+        ("GetSineCosine", "d0"),
+        ("Tile_Cache_GetTile", "d2"),
+    ] {
+        assert!(
+            slots.contains(&exemplar),
+            "the walk did not see `{} :: out({}: T)`, so the assert above ranges \
+             over less than it should. slots: {slots:?}",
+            exemplar.0,
+            exemplar.1
+        );
+    }
+    // The corpus's typed out slots, pinned exactly. A count that only ever grows
+    // would let a deletion pass; this notices in both directions and prints the
+    // set, so an intended change is adjudicated rather than absorbed.
+    assert_eq!(slots.len(), 17, "the corpus's typed out slots: {slots:?}");
 }
 
 /// Every proc that declares `out(rN if cc)` with rN ABSENT from its `clobbers` —

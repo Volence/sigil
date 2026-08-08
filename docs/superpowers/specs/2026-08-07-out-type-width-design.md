@@ -253,8 +253,9 @@ checking until the slot collector reads through a pointer.
 
 ## Where the width is charged
 
-FIVE places. Four route through one helper; the fifth does not, and that is
-exactly why it needs naming here:
+FIVE places: ONE obligation and FOUR credits. Three of the four credits route
+through one helper; the fourth does not, and that is exactly why it needs naming
+here:
 
 - the proc's OWN returns — `OutWidths::own`, the obligation, read through
   `required()` (the STRICT side);
@@ -266,9 +267,11 @@ exactly why it needs naming here:
   than a per-instruction one, so it cannot share the helper, and it reads
   `.credit` itself.
 
-The last three of those four credit sites all read the CREDIT side. An earlier
-draft of this list said "four places, one helper", and the site it omitted was the
-one with no gate: flipping its single `.credit` to `.strict` re-opened the
+ALL FOUR credit sites read the CREDIT side; the single obligation site reads the
+STRICT side. Naming any smaller number drops a site from the enumeration this
+paragraph exists to make exhaustive — an earlier draft said "four places, one
+helper" and both halves were wrong: it is five places, and the helper carries
+three of them. The site that draft omitted was the one with no gate: flipping its single `.credit` to `.strict` re-opened the
 collision blessing while the entire frontend suite stayed green at 2344 passed.
 **A list of charge sites is a soundness artifact, not a summary** — anything
 missing from it is something nothing is checking.

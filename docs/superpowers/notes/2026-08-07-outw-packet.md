@@ -264,7 +264,7 @@ it. The rule moved to one `validate_out_types` pass over `Item::Proc` /
 `Item::ExternProc` / `Item::ContractType`. A rule enforced on one of three forms
 is a rule an author meets by accident.
 
-## Named mutants — 33, every one RED
+## Named mutants — 32, every one RED
 
 `scratchpad/mutants.py` applies each, runs its test, requires FAILURE, and
 restores by SNAPSHOT (a deletion mutant has no unique text to reverse-patch —
@@ -411,13 +411,18 @@ place a width is charged and the only one that does not route through
 `credit_target_outs` — it is a per-EDGE transfer, so it reads `.credit()` itself.
 Measured before gating: flipping that one read to `.strict()` re-opens the
 collision blessing verbatim (both collision orders drop to zero firings) while the
-**entire frontend suite stays green at 2344 passed / 0 failed**. Now gated, with
+**entire frontend suite stayed green — 2344 passed / 0 failed, measured on the tip that carried the ungated read**. Now gated, with
 an extern carrying the claim because an extern's outs seed VERIFIED by axiom.
 
-The spec's charge-site list said "four places, one helper". It is five, and the
-one it omitted was the one nothing checked. That list is now labelled a soundness
-artifact rather than a summary: anything missing from it is something nothing is
-checking.
+The spec's charge-site list said "four places, one helper". Both halves were
+wrong, and the corrected count is derived from the tree rather than remembered:
+`credit_target_outs` has THREE call sites (jbsr / `falls_into` / `TailOut`),
+`required()` is read at ONE (the obligation, not through the helper), and
+`flag_check`'s edge credit is the fourth credit site. So **five places — one
+obligation and four credits, three of the four through the helper — and ALL FOUR
+credits read the credit side.** The site the old list omitted was the one nothing
+checked. It is now labelled a soundness artifact rather than a summary: anything
+missing from it is something nothing is checking.
 
 **An unresolvable out type: reported, not re-widthed.** `out(d0: NotAType)`
 answers `L` on both sides. That is not "conservative" — on the credit side `L` is
@@ -432,16 +437,40 @@ assert-empty over the corpus with a non-vacuity guard, covering `proc` /
 `extern proc` / contract types. The corpus is clean today. Both texts that called
 `L` conservative are corrected.
 
+**Scoped, because the universal is false.** "An unresolvable type credits exactly
+what a bare out would" holds for a simple typo — the case it was measured on — and
+NOT under a name collision: with `Dup = u8` in one module and `Dup = NotAType` in
+another, `credit = min(L, B) = B`, so the unresolvable reading loses the `min` and
+the caller is credited NARROWER than bare and fires where the bare control does
+not. Fail-safe in direction, so no hole, but the reported set and the
+degrades-to-bare set are not the same set — and it was the degradation that
+justified reporting rather than re-widthing. The test carrying that claim is
+renamed to the case it proves, and the counterexample is now a gate of its own.
+
+**The corpus gate's non-vacuity guard was itself vacuous, and is replaced.** It
+filtered `verified_uncond_out.keys()` — the PRODUCTION half's output, which
+carries a key for a proc whether or not any of its outs verified, or whether it
+declares a type at all. Attack executed: stripping the types off all three
+exemplars in the aeon corpus left the guard GREEN while moving the residue 16 to
+20. The guard now measures the SCAN's own subject, `typed_out_slots` (17, pinned
+exactly, both directions), and the same attack turns it RED naming the slot that
+vanished. The rule was already written down 40 lines above it in the same file, for
+`survives_claim_sites`; this is its second instance.
+
 **`out(a0: *T)` does not reach `[call.slot-type-mismatch]`** — measured
 (`out(a0: Sst)` types the slot, `out(a0: *Sst)` leaves it Untyped). The decision to
 permit it stands, on the corrected grounds that it is TRUE rather than that it is
 checked; the diagnostic's remedy text now steers at the newtype spelling and marks
 the pointer one as documentation.
 
-**`OutClaim`'s invariant is now enforced, not merely constructional.** Fields are
-private behind `strict()` / `credit()` accessors, with `debug_assert!(credit <=
-strict)` in `merge` and at the credit read — a direct struct literal can no longer
-silently over-credit.
+**`OutClaim`'s invariant is carried by FIELD PRIVACY.** The fields are private
+behind `strict()` / `credit()` accessors, so a direct
+`OutClaim { strict: B, credit: L }` cannot be written outside the module and both
+constructors that exist preserve `credit <= strict`. That is the real enforcement.
+The `debug_assert!`s beside them are documentation with a runtime check attached
+and should be read as no more: the workspace declares no `[profile.release]`, so
+`debug_assertions` is off under `--release` and they never execute in the strict
+gate — and by construction nothing in-tree can make them fire anyway.
 
 ## The engine finding (F3) — investigated, not fixed
 
@@ -480,12 +509,19 @@ settles it. Not fixed here, as instructed.
 capped transfer-out charges, `writes_partial_bits` + `ext_promotion`),
 `flag_check.rs` (edge credits carry widths), `calls.rs` (must-def reads the keys),
 `corpus_contracts.rs` (`collect_out_widths` / `out_claim_of` /
-`collect_newtype_underlying` + the collision merge), `parser.rs`
-(`out(dN: T if cc)`), `lower/proc.rs` (the address-result refusal),
+`collect_newtype_underlying`, the per-side merge, `unresolvable_out_types` +
+`typed_out_slots`), `parser.rs` (`out(dN: T if cc)`), `lower/mod.rs`
+(`validate_out_types` over all three declaration forms), `lower/proc.rs`,
+`sigil-isa/src/m68k.rs` (the partial-coverage cross-reference),
 `contract_baseline.rs` (16 rows + the corrected header), `tests/out_width.rs`
-(new, 25 gates), `tests/out_verify.rs` (arity + the retired-limitation note),
-`tests/contract_closure_corpus.rs` (the retired-witness note), the design note,
-the gap-ledger rows.
+(new, 30 gates), `tests/out_verify.rs` (arity + the retired-limitation note),
+`tests/contract_closure_corpus.rs` (the retired-witness note),
+`sigil-cli/tests/out_verify_corpus.rs` (the unresolvable-type gate + its
+non-vacuity guard), the design note, the gap-ledger rows.
+
+Every count in this packet is derived from the tree at this tip, not remembered:
+30 `#[test]` in `out_width.rs`, 3 in `out_verify_corpus.rs`, 32 mutant rows, 17
+typed out slots in the corpus.
 
 **aeon** — `collision_lookup.emp`, `tile_cache.emp`, `math.emp` (+ the stale
 comment), `section.emp` (d5 and d7), `entity_window.emp`, `player_sensors.emp`
