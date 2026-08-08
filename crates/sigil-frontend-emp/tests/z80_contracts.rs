@@ -1063,3 +1063,55 @@ fn z80_exit_with_balanced_stack_holds() {
         "a balanced push/pop leaves the stack empty — preserves(de) must hold, got: {diags:?}"
     );
 }
+
+// ======================================================================
+// The noreturn-tail exemption (the secondary item): `verify_z80_preserved`'s
+// transfer-out arm consults `@noreturn` exactly as the 68k twin's
+// `exit_diverges` does. A tail into a diverging target is not a return path, so
+// it carries no preserve obligation. Every negative carries a positive control.
+// ======================================================================
+
+/// THE EXEMPTION (positive): `P preserves(de)` never writes `de` and tail-jumps
+/// into a `@noreturn` handler. The diverging tail is not a return path, so
+/// `preserves(de)` is NOT charged against it — no firing. Before the fix the tail
+/// arm charged the callee oracle (`Dead` does not preserve `de`) and fired.
+#[test]
+fn z80_tail_into_noreturn_carries_no_preserve_obligation() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(de) {\n\
+                 ld a, 1\n\
+                 jp Dead\n\
+               }\n\
+               @noreturn\n\
+               proc Dead() clobbers(af, bc, de, hl, ix, iy) {\n\
+                 jp Dead\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "a tail into a @noreturn handler is not a return path — preserves(de) must not \
+         be charged against it, got: {diags:?}"
+    );
+}
+
+/// t24 NEGATIVE control: the SAME shape with a NON-noreturn tail callee that
+/// clobbers `de` still fires — the exemption spares only DIVERGING tails, not
+/// ordinary ones. This is the mutant-revert of the fix (drop the `@noreturn`).
+#[test]
+fn z80_tail_into_ordinary_clobbering_callee_still_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() preserves(de) {\n\
+                 ld a, 1\n\
+                 jp Live\n\
+               }\n\
+               proc Live() clobbers(af, bc, de, hl, ix, iy) {\n\
+                 ld d, a\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.preserves-unverifiable]")),
+        "a tail into an ordinary de-clobbering callee is a real return path — \
+         preserves(de) must still fire, got: {diags:?}"
+    );
+}

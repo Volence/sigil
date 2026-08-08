@@ -31,6 +31,7 @@ use crate::out_verify::{
     OutClaim, OutFiring, OutWidth, OutWidthMap, OutWidths, UncondOutMap,
 };
 use crate::preserves::{find_dead_saves, DeadSave};
+use crate::z80_out_verify::{check_z80_out, compute_verified_z80_outs, Z80OutFiring, Z80OutMap};
 use crate::branch_const::{check_branch_const, BranchConstFiring};
 use crate::context::{bracketed_at, check_regions, regions_of, ContextFiring, Region};
 use crate::z80_bus::{check_bus_state, BusEntry, BusFiring};
@@ -270,6 +271,24 @@ pub struct ContractReport {
     /// NON-VACUITY census for `word_preserve_firings` — an assert-empty firing gate
     /// is only meaningful if claims existed to check, and this says which.
     pub word_preserve_claims: Vec<(String, String)>,
+    /// The §G4.5 `[proc.out-unverified]` firings for `(cpu: z80)` procs: a Z80 proc
+    /// declares `out(rN)` but the body does not PRODUCE `rN` (a register UNIT) on
+    /// every required return path. The Z80 sibling of [`Self::out_firings`],
+    /// SEPARATE because the 68k closure skips Z80 modules twice over (`proc_bufs`
+    /// excludes them, `Reg::from_name` rejects Z80 spellings) — the check is the
+    /// Z80 unit-domain twin. Sorted (proc, unit).
+    pub z80_out_firings: Vec<Z80OutFiring>,
+    /// The Z80 verified-out FIXPOINT result — each Z80 proc's out UNITS PROVEN
+    /// produced (extern outs seeded verified). The residue surface's own source;
+    /// exposed so a consistency test can assert the residue is exactly the
+    /// complement of this map (the two surfaces read ONE source and cannot drift).
+    pub z80_verified_out: Z80OutMap,
+    /// Every `(cpu: z80)` proc that DECLARES a register out, as `(proc, unit)`
+    /// rows, sorted. The NON-VACUITY census for [`Self::z80_out_firings`] — an
+    /// assert-baseline gate over the firings is only as meaningful as the set of
+    /// out claims it ranged over, and this is that set (a Z80 out is a DECLARATION,
+    /// not comptime-conditional, so it is shape-independent).
+    pub z80_out_claims: Vec<(String, String)>,
 }
 
 /// Analyze the parsed corpus with the canonical no-`-D` config (census-parity).
@@ -647,11 +666,18 @@ pub fn analyze_corpus_with_contracts(
     // result — the represented-not-wired boundary).
     let mut z80_flag_callees: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut z80_proc_bufs: Vec<ProcBuf> = Vec::new();
+    // §G4.5 Z80 out-honesty inputs, collected in the SAME Z80 pass: each proc /
+    // extern's declared register-out UNIT set, each proc's `falls_into` successor,
+    // and the Z80 extern names (fixpoint boundary seeds).
+    let mut z80_declared_out: Z80OutMap = BTreeMap::new();
+    let mut z80_falls_into: BTreeMap<String, String> = BTreeMap::new();
+    let mut z80_extern_names: BTreeSet<String> = BTreeSet::new();
     for file in files {
         if module_is_z80(&file.module) {
             collect_z80_flag_procs(
                 &file.items, file, &mut counter, defines, &env, &mut z80_flag_callees,
                 &mut z80_proc_bufs, &mut comptime_unresolved, contracts,
+                &mut z80_declared_out, &mut z80_falls_into, &mut z80_extern_names,
             );
         }
     }
@@ -661,6 +687,46 @@ pub fn analyze_corpus_with_contracts(
         flag_firings_verified.extend(unused.iter().cloned());
         flag_firings.extend(unused);
     }
+
+    // §G4.5 Z80 callee-side out-honesty. The Z80 unit-domain twin of the 68k
+    // out-verify below: every declared `out(rN)` register unit must be PRODUCED on
+    // every required return path. The VERIFIED-out FIXPOINT grounds each claim only
+    // in already-verified callee / tail / `falls_into` outs (extern outs seed
+    // verified — §3 boundary axioms), so a proc whose out grounds only in an
+    // unverified callee out appears in the residue. The `noreturn` set is the
+    // corpus-wide one computed above; it spares a tail transfer into an `@noreturn`
+    // handler the out obligation, exactly as the 68k `exit_diverges` does.
+    let z80_proc_items: BTreeMap<String, &[CodeItem]> =
+        z80_proc_bufs.iter().map(|pb| (pb.name.clone(), pb.buf.items.as_slice())).collect();
+    let z80_verified_out = compute_verified_z80_outs(
+        &z80_proc_items,
+        &z80_declared_out,
+        &z80_extern_names,
+        &z80_falls_into,
+        &noreturn,
+    );
+    let mut z80_out_firings: Vec<Z80OutFiring> = Vec::new();
+    let mut z80_out_claims: Vec<(String, String)> = Vec::new();
+    for pb in &z80_proc_bufs {
+        let Some(units) = z80_declared_out.get(&pb.name) else { continue };
+        if units.is_empty() {
+            continue;
+        }
+        for u in units {
+            z80_out_claims.push((pb.name.clone(), u.clone()));
+        }
+        let out_units: Vec<String> = units.iter().cloned().collect();
+        z80_out_firings.extend(check_z80_out(
+            &pb.name,
+            &pb.buf.items,
+            &out_units,
+            &z80_verified_out,
+            z80_falls_into.get(&pb.name).map(String::as_str),
+            &noreturn,
+        ));
+    }
+    z80_out_firings.sort_by(|a, b| (&a.proc, &a.unit).cmp(&(&b.proc, &b.unit)));
+    z80_out_claims.sort();
 
     // Deterministic order (proc, callee, flag); spans stay in encounter order
     // via the stable sort.
@@ -1072,6 +1138,9 @@ pub fn analyze_corpus_with_contracts(
         authored_rail_holes,
         word_preserve_firings,
         word_preserve_claims,
+        z80_out_firings,
+        z80_verified_out,
+        z80_out_claims,
     }
 }
 
@@ -1814,6 +1883,9 @@ fn collect_z80_flag_procs(
     z80_proc_bufs: &mut Vec<ProcBuf>,
     comptime_unresolved: &mut Vec<(String, String, Span)>,
     contracts: &crate::contract::InterfaceEnv,
+    z80_declared_out: &mut Z80OutMap,
+    z80_falls_into: &mut BTreeMap<String, String>,
+    z80_extern_names: &mut BTreeSet<String>,
 ) {
     for item in items {
         match item {
@@ -1821,6 +1893,18 @@ fn collect_z80_flag_procs(
                 let flags = flags_of(&p.out_flags);
                 if !flags.is_empty() {
                     z80_flag_callees.insert(p.name.clone(), flags);
+                }
+                // §G4.5: the declared register-out UNIT set (the reglist part of
+                // `out(hl, carry: found)` is `{h, l}`; the carry flag rides
+                // `out_flags` and is not a register unit). Recorded even when empty
+                // so the fixpoint and the claim census range over exactly the procs
+                // that declare a register out.
+                let out_units = p.unconditional_outs(crate::regfile::RegFile::Z80);
+                if !out_units.is_empty() {
+                    z80_declared_out.insert(p.name.clone(), out_units);
+                }
+                if let Some(succ) = &p.falls_into {
+                    z80_falls_into.insert(p.name.clone(), succ.clone());
                 }
                 let (buf, _diags, next, _dropped, unresolved) = crate::eval::eval_proc_body_env(
                     file, &p.name, &p.params, &p.body, p.span, *counter, Cpu::Z80, defines, env, contracts,
@@ -1858,10 +1942,20 @@ fn collect_z80_flag_procs(
                 if !flags.is_empty() {
                     z80_flag_callees.insert(e.name.clone(), flags);
                 }
+                // A Z80 `extern proc`'s declared out is a §3 boundary AXIOM — no
+                // body to prove, so the fixpoint seeds it VERIFIED. Recorded so a
+                // Z80 proc crediting an extern out (call / tail / falls_into) can
+                // ground its own claim in it.
+                z80_extern_names.insert(e.name.clone());
+                let out_units = e.sig.unconditional_outs(crate::regfile::RegFile::Z80);
+                if !out_units.is_empty() {
+                    z80_declared_out.insert(e.name.clone(), out_units);
+                }
             }
             Item::Section(s) => collect_z80_flag_procs(
                 &s.items, file, counter, defines, env, z80_flag_callees, z80_proc_bufs,
-                comptime_unresolved, contracts,
+                comptime_unresolved, contracts, z80_declared_out, z80_falls_into,
+                z80_extern_names,
             ),
             _ => {}
         }

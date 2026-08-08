@@ -73,6 +73,14 @@ fn dump_out_unverified_residue() {
     for f in &r.survives_firings {
         eprintln!("  {} :: out({} if {}) — {}", f.proc, f.reg, f.cc, f.reason);
     }
+    eprintln!(
+        "=== Z80 [proc.out-unverified] residue: {} firing(s), over {} out claim(s) ===",
+        r.z80_out_firings.len(),
+        r.z80_out_claims.len()
+    );
+    for f in &r.z80_out_firings {
+        eprintln!("  {} :: out({}) — {}", f.proc, f.unit, f.reason);
+    }
 }
 
 /// The §7.1 SURVIVES claim over the real corpus, under the closure's
