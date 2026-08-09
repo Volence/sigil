@@ -3306,3 +3306,57 @@ full_crc = "9d92d8d4"
 full_size = 426878
 anchor_crc = "b40c13cf"
 anchor_end = 0x5f848
+
+[[entry]]
+name = "t6-closeout-reinit-delete"
+ab = "docs/superpowers/notes/2026-08-08-t6-closeout-items1-3-ab.md"
+note = "delete dead TileCache_Reinit + Publish zero-extend + fold Page_Queued_Bits clear into PageIn_Flush; net -56B absorbed at org 0x10000"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "4c3aba66"
+full_size = 427168
+anchor_crc = "bc0f14e9"
+anchor_end = 0x5f848
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "4700f182"
+full_size = 307721
+anchor_crc = "38cad11a"
+anchor_end = 0x43ea2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "08ea9c90"
+full_size = 93164
+anchor_crc = "120fc766"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "29ac1084"
+full_size = 96608
+anchor_crc = "3499d2fe"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "d2651241"
+full_size = 379350
+anchor_crc = "d5de7970"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "d26f87f9"
+full_size = 413598
+anchor_crc = "7482bb30"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "0be6612b"
+full_size = 426824
+anchor_crc = "a1a8fef7"
+anchor_end = 0x5f848
