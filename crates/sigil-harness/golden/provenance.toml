@@ -3198,3 +3198,57 @@ full_crc = "8f263805"
 full_size = 426878
 anchor_crc = "1d60bec9"
 anchor_end = 0x5f848
+
+[[entry]]
+name = "art-streaming-p2-task6-pfpage-store-fix"
+ab = "docs/superpowers/notes/2026-08-08-art-streaming-p2-task6-ab.md"
+note = "Publish frame-offset stale-upper-byte fix (pf_page never stored)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "f0d42224"
+full_size = 427222
+anchor_crc = "4f998fbd"
+anchor_end = 0x5f848
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "840bad75"
+full_size = 307775
+anchor_crc = "f82a298e"
+anchor_end = 0x43ea2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "2650507f"
+full_size = 93218
+anchor_crc = "7c9d70da"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "e11899e0"
+full_size = 96662
+anchor_crc = "358d2151"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "cd426ad6"
+full_size = 379350
+anchor_crc = "41889f87"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "5a942cb8"
+full_size = 413654
+anchor_crc = "1a9c6cf6"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "c6b970ec"
+full_size = 426878
+anchor_crc = "457b3092"
+anchor_end = 0x5f848

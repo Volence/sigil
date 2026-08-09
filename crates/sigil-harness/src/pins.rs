@@ -1119,10 +1119,10 @@ pub const PAGE_CACHE_ALLOC_FRAME: Pin = Pin { plain: 0x67B4, debug: 0x7716 };
 pub const PAGE_CACHE_PUBLISH: Pin = Pin { plain: 0x683E, debug: 0x7848 };
 
 /// `PageCache_PatchWord`. tests: tile_cache_port
-pub const PAGE_CACHE_PATCH_WORD: Pin = Pin { plain: 0x68DA, debug: 0x7940 };
+pub const PAGE_CACHE_PATCH_WORD: Pin = Pin { plain: 0x68DC, debug: 0x7942 };
 
 /// `PageCache_Audit`. tests: tile_cache_port
-pub const PAGE_CACHE_AUDIT: Pin = Pin { plain: 0x69E0, debug: 0x7A48 };
+pub const PAGE_CACHE_AUDIT: Pin = Pin { plain: 0x69E2, debug: 0x7A4A };
 
 /// `Cache_Art_Stall`. tests: tile_cache_port
 pub const CACHE_ART_STALL: Pin = Pin { plain: 0xFFFFA85E, debug: 0xFFFFA8DE };
