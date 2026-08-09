@@ -430,8 +430,8 @@ tests = ["compression_selftest_port"]
 # re-derive it on any sound_api debug-shape byte change.
 name = "sound_api"
 start = "Sound_PostByte"
-len = 0x20A       # plain: the twelve Sound_* procs, incl. both capture-then-test Z80-handshake spins
-debug_len = 0x3B4 # debug: + the two SPIN_WATCHDOG_LIMIT bounded-spin rails (raise_error blobs), DEBUG-only
+len = 0x2A8       # plain: the Sound_* procs incl. the pkg-1 API v2 wrappers (pause/jingle/composed-fade + status readers)
+debug_len = 0x452 # debug: + the SPIN_WATCHDOG_LIMIT bounded-spin rails (raise_error blobs), DEBUG-only
 gate = "SIGIL_EMP_SOUND_API"
 tests = ["sound_api_port"]
 

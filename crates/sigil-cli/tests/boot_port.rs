@@ -98,8 +98,8 @@ fn golden(name: &str) -> Option<Vec<u8>> {
 /// `GameState_OJZScroll_Init` (the game proc), not the retired `Game_Entry` equ.
 fn frozen_symbol(debug: bool, name: &str) -> u64 {
     match (name, debug) {
-        ("Z80_SOUND_SIZE", false) => 0x172E,
-        ("Z80_SOUND_SIZE", true) => 0x17AC,
+        ("Z80_SOUND_SIZE", false) => 0x1870,   // sound pkg 1 (blob 6255 → even 6256)
+        ("Z80_SOUND_SIZE", true) => 0x18EE,    // sound pkg 1 (blob 6381 → even 6382)
         ("GameState_OJZScroll_Init", false) => 0x5C230,  // objtest-gate: the DEBUG-only scene left the plain tail
         ("GameState_OJZScroll_Init", true) => 0x5E00E,   // objtest-gate: ownership moves shifted the debug tail
         _ => panic!("no frozen value pinned for symbol `{name}` (debug={debug})"),

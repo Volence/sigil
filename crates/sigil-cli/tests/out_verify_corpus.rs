@@ -164,7 +164,9 @@ fn no_corpus_out_type_is_unresolvable() {
     // 28 -> 30 for art-streaming-p2-task6 (2026-08-08): PageCache_AllocFrame :: out(d0)
     // PageCache_AllocFrame :: out(d0) is the residency cache's typed return
     // (PageCache_Lookup deleted — zero callers, lens F-6 fixup 2026-08-09).
-    assert_eq!(slots.len(), 29, "the corpus's typed out slots: {slots:?}");
+    // 29 -> 30 for sound-pkg1 (2026-08-09): Sound_ReadStat :: out(d0) — the
+    // API v2 status-mirror reader's typed return.
+    assert_eq!(slots.len(), 30, "the corpus's typed out slots: {slots:?}");
 }
 
 /// Every proc that declares `out(rN if cc)` with rN ABSENT from its `clobbers` —

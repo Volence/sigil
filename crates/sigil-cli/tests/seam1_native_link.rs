@@ -109,7 +109,7 @@ fn native_blob_matches_reference_debug() {
 #[test]
 fn blob_lengths_are_canonical() {
     assert_eq!(BLOB_LEN_DEBUG - BLOB_LEN_PLAIN, 0x7E, "debug grows +$7E over plain");
-    assert_eq!(BLOB_LEN_PLAIN, 0x172D, "plain blob length (item-25 sequencer M1: -8 B, was $1735)");
+    assert_eq!(BLOB_LEN_PLAIN, 0x186F, "plain blob length (sound pkg 1: +322 B net of the -118 B Snd_ZeroBlock reclaim, was $172D)");
 }
 
 /// The PLACEMENT contract, stated structurally instead of by re-pinned addresses:
@@ -158,15 +158,22 @@ fn blob_diverges_when_banked_carrier_doctored() {
     assert_ne!(doctored, expected, "the byte gate is vacuous if a doctored carrier still matches");
 }
 
-/// t24 positive control (CONST `-D` axis): a doctored `SND_STAT_TICK` must make the
-/// blob's abs-mem operands DIVERGE from the reference.
+/// t24 positive control (CONST `-D` axis): a doctored request-slot const must make
+/// the blob's abs-mem operands DIVERGE from the reference.
+///
+/// RE-AIMED at `SND_REQ_MUSIC` (sound-pkg1, 2026-08-09): the original carrier
+/// `SND_STAT_TICK` is now the anchor the package's game-feel mirrors derive
+/// from, and the module's own drift-lock `ensure` catches a doctored value at
+/// LOWER time — strictly earlier than this test's blob compare, so the axis it
+/// proved is now enforced upstream. The probe moves to a mailbox slot that is
+/// abs-mem-consumed but not mirror-anchored.
 #[test]
 fn blob_diverges_when_const_doctored() {
     let Some(refrom) = read_ref("s4.bin") else { return };
     let base = blob_lma(false) as usize;
     let expected = &refrom[base..base + BLOB_LEN_PLAIN];
-    let doctored = native_blob_doctored(&aeon_dir(), false, Some(("SND_STAT_TICK", 0x1DED)));
-    assert_ne!(doctored, expected, "a moved SND_STAT_TICK must change the blob's abs-mem operands");
+    let doctored = native_blob_doctored(&aeon_dir(), false, Some(("SND_REQ_MUSIC", 0x1DED)));
+    assert_ne!(doctored, expected, "a moved SND_REQ_MUSIC must change the blob's abs-mem operands");
 }
 
 /// The exported-symbol contract is present: `sound_sequencer.emp` exports all 26
