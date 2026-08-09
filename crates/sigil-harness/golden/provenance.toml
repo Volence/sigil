@@ -4007,3 +4007,56 @@ full_crc = "e56965b6"
 full_size = 427844
 anchor_crc = "38db8173"
 anchor_end = 0x5f848
+
+[[entry]]
+name = "wave-panel-closing"
+ab = "aeon wave-panel adjudication (9 seats): convergent blank-map guard + PatchWord pool bound + blank early-outs; oracle smoke this session"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "b4cf0adb"
+full_size = 428313
+anchor_crc = "436c5763"
+anchor_end = 0x5f848
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "406665ca"
+full_size = 308109
+anchor_crc = "5c18bc7f"
+anchor_end = 0x43ea2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "1084cd7e"
+full_size = 93552
+anchor_crc = "4f614c0b"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "e9f317ec"
+full_size = 97696
+anchor_crc = "fe2bb742"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "895ff9fc"
+full_size = 379350
+anchor_crc = "870c6470"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "4cc05e0f"
+full_size = 413953
+anchor_crc = "eaab77fa"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "b6bc22d3"
+full_size = 427926
+anchor_crc = "ebbf83ec"
+anchor_end = 0x5f848
