@@ -4114,3 +4114,57 @@ full_crc = "d13b9f6a"
 full_size = 427704
 anchor_crc = "710053d1"
 anchor_end = 0x5f850
+
+[[entry]]
+name = "sound-pkg1"
+ab = "aeon sound-pkg1 branch (10 commits, gate: own-build byte-match, replay net PASS on debug, release boot smoke, music-silence A/B = pre-existing)"
+note = "sound package 1: pause/jingle/fade-terminals+R4 rates/COMM/status mirrors + TimerA-DMA ruling; blob 5933->6255 plain, 6059->6381 debug (3 B headroom)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "7a3951b3"
+full_size = 428258
+anchor_crc = "dcbd093c"
+anchor_end = 0x5f850
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "108d87e6"
+full_size = 307888
+anchor_crc = "60f6ef42"
+anchor_end = 0x43ea8
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "37393ae5"
+full_size = 93324
+anchor_crc = "592eabd3"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "cd7bdd51"
+full_size = 97466
+anchor_crc = "a6068494"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "32d1e18e"
+full_size = 379350
+anchor_crc = "c43fe63a"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "09784b83"
+full_size = 413913
+anchor_crc = "b9bd163e"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "a994731e"
+full_size = 427876
+anchor_crc = "0ecf571d"
+anchor_end = 0x5f850

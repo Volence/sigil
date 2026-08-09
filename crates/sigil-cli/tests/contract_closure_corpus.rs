@@ -1144,9 +1144,11 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
     // sound-OFF fences (VInt_Level / VInt_Lag / Section_RedrawPlanes) lower their
     // bodies bare, contributing no region. Those three are proven by the PER-FILE
     // gate in every shape the ×7 byte bar builds, where the flag has a value.
+    // 17 -> 19 for sound-pkg1 (2026-08-09): the new API v2 status reader
+    // Sound_ReadStat arrives with its ints_off + z80_stopped capture pair.
     assert_eq!(
         r.context_regions.len(),
-        17,
+        19,
         "the `with` bracket census moved — corpus adoption changed. Update deliberately: {:?}",
         r.context_regions
     );

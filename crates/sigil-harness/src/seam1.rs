@@ -23,7 +23,9 @@ use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 
-/// The plain-shape blob length (`Z80_SOUND_SIZE`, s4.lst) — 6172 B.
+/// The plain-shape blob length (`Z80_SOUND_SIZE`, s4.lst) — 6255 B
+/// (aeon sound package 1: pause engine + fade terminals/rates + jingle
+/// push/pop + COMM + status mirrors, net of the −118 B Snd_ZeroBlock reclaim).
 ///
 /// TRIPWIRE, NOT AN INPUT. Module bases are DERIVED from a running cursor
 /// ([`place_resident_sections`]), so nothing here participates in placement;
@@ -31,10 +33,12 @@ use sigil_ir::{Section, SectionPlacement, SymbolTable};
 /// [`emit_sound_blob`] asserts the emitted blob against. When a module
 /// legitimately grows or shrinks, re-pin this to the new measured length
 /// (and re-pin the `Z80_SOUND_SIZE` mirrors in the boot/tranche gates).
-pub const BLOB_LEN_PLAIN: usize = 0x172D;
+pub const BLOB_LEN_PLAIN: usize = 0x186F;
 /// The debug blob length = plain + $7E (the sequencer's 16 `if DEBUG==1` bodies).
-/// Same TRIPWIRE-not-input status as [`BLOB_LEN_PLAIN`].
-pub const BLOB_LEN_DEBUG: usize = 0x172D + 0x7E;
+/// Same TRIPWIRE-not-input status as [`BLOB_LEN_PLAIN`]. Package 1 leaves
+/// 3 B of debug headroom against the $18F0 ceiling — any resident addition
+/// needs a reclaim first (aeon DEFERRED_WORK carries candidates).
+pub const BLOB_LEN_DEBUG: usize = 0x186F + 0x7E;
 
 /// The blob's LMA base = `Z80_Sound_Start` = `BootData + 54`. SHAPE-DEPENDENT: the
 /// debug shape grows +4 UPSTREAM of BootData (boot `__DEBUG__` content). Pin-sourced
