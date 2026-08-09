@@ -3252,3 +3252,57 @@ full_crc = "c6b970ec"
 full_size = 426878
 anchor_crc = "457b3092"
 anchor_end = 0x5f848
+
+[[entry]]
+name = "rebaseline-clean-head"
+ab = "docs/superpowers/notes/2026-08-08-golden-rebaseline-clean-head.md"
+note = "chain-65 goldens were frozen against a dirty tree; re-anchor all seven shapes to committed HEAD (collision/OJZ)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "bf0e24df"
+full_size = 427222
+anchor_crc = "9c5516fa"
+anchor_end = 0x5f848
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "3d9049af"
+full_size = 307775
+anchor_crc = "ff864cb3"
+anchor_end = 0x43ea2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "2650507f"
+full_size = 93218
+anchor_crc = "7c9d70da"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "e11899e0"
+full_size = 96662
+anchor_crc = "358d2151"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "7d29f0b3"
+full_size = 379350
+anchor_crc = "8b5c5655"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "de51d2da"
+full_size = 413654
+anchor_crc = "693c210b"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "9d92d8d4"
+full_size = 426878
+anchor_crc = "b40c13cf"
+anchor_end = 0x5f848
