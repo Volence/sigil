@@ -95,7 +95,11 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // section (+0x166 debug) + the VBlank hook + the boot-debug reach ripple push the
     // cross-bank distance again, flipping another debug branch reach at this intra-bank
     // label (0x107C8 -> 0x107C6); plain 0x10766 unchanged (object bank anchored).
-    ("Ground_Move_Cap", 0x10766, 0x107C6),
+    // `player-polish-trio` (2026-08-09): the .ball roll-hold recompute grows
+    // player_common upstream of this label — +0x20 plain / +0x10 debug (a
+    // debug branch-reach flip absorbs 0x10, the same class as the p2-task3
+    // note above).
+    ("Ground_Move_Cap", 0x10786, 0x107D6),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)
