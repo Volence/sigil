@@ -3738,3 +3738,57 @@ full_crc = "ec1039e6"
 full_size = 427611
 anchor_crc = "8c7d535d"
 anchor_end = 0x5f848
+
+[[entry]]
+name = "art-streaming-p2c-t8-t9"
+ab = "docs/superpowers/notes/2026-08-09-art-streaming-p2c-t8-t9-ab.md"
+note = "P2c Vectorman dual DMA cap + B&R per-act art budget + phase fix + fixture floor 9 (chains 75-78)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "9625c840"
+full_size = 428093
+anchor_crc = "6f847fad"
+anchor_end = 0x5f848
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "9620d023"
+full_size = 308382
+anchor_crc = "26a35bbb"
+anchor_end = 0x43ea2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "a6f22428"
+full_size = 93824
+anchor_crc = "cb9c6a79"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "8c44567f"
+full_size = 97524
+anchor_crc = "5fce8dc9"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "c0799a9d"
+full_size = 379350
+anchor_crc = "e40df1fa"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "dc69fe70"
+full_size = 414263
+anchor_crc = "b1f12ccf"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "87813995"
+full_size = 427749
+anchor_crc = "24e83950"
+anchor_end = 0x5f848

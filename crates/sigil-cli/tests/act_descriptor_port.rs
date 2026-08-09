@@ -233,7 +233,14 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![],
+        // engine.constants (an ambient here) computes PAGE_FRAMES_CLAMP from the
+        // STRESS_EVICT build define (0 in every shipped shape; 1 only in the
+        // off-canonical stress_evict fixture) and comptime-ensures it — so the lowering
+        // needs the define the native driver always injects (native.rs: ("STRESS_EVICT",
+        // 0)). Without it this single-file lower can hit `unknown name STRESS_EVICT`
+        // whenever the ensure gets force-evaluated (surfaced by the art-streaming P2c
+        // Act-struct growth perturbing evaluation order). Match the native default.
+        defines: vec![("STRESS_EVICT".to_string(), 0)],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
