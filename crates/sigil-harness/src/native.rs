@@ -1961,6 +1961,7 @@ fn true_bases_by_index(
     src: &SizeSource,
     map_order: &[String],
     fixture: bool,
+    anchor_addrs: &std::collections::HashSet<u32>,
 ) -> Result<Vec<Option<u32>>, String> {
     let n = sections.len();
     match src {
@@ -1991,7 +1992,7 @@ fn true_bases_by_index(
                     None => prov[i] = Some(s.lma as i64), // baked fallback (order only)
                 }
             }
-            packed_true_bases(sections, &prov, &labeled, map_order, fixture)
+            packed_true_bases(sections, &prov, &labeled, map_order, fixture, anchor_addrs)
         }
     }
 }
@@ -2031,7 +2032,14 @@ fn packed_true_bases(
     labeled: &[bool],
     map_order: &[String],
     fixture: bool,
+    anchor_addrs: &std::collections::HashSet<u32>,
 ) -> Result<Vec<Option<u32>>, String> {
+    // FIXTURE (stress-art): after the growable OJZ sections are relocated to the ROM tail,
+    // the sections that STAY carry frozen provisional bases from the OLD (pre-relocation)
+    // layout, so a stale prov-gap would otherwise infer a SPURIOUS island (and leave a hole
+    // the undeclared-island check rejects). Suppress the prov-gap island unless `p` is a
+    // DECLARED org anchor (object bank / DAC / sound) — everything else packs contiguously.
+    let is_anchor_gap = |p: i64| -> bool { anchor_addrs.contains(&(p as u32)) };
     let n = sections.len();
     let mut order: Vec<usize> = (0..n).filter(|&i| prov[i].is_some()).collect();
     // ── K5: THE MAP DRIVES ORDER ──
@@ -2134,7 +2142,7 @@ fn packed_true_bases(
                         islands[i] = true;
                         p
                     }
-                    Some(r) if p > r + ANCHOR_GAP => {
+                    Some(r) if p > r + ANCHOR_GAP && (!fixture || is_anchor_gap(p)) => {
                         islands[i] = true;
                         p
                     }
@@ -2165,7 +2173,7 @@ fn packed_true_bases(
                 p // hard-org phase-run tail: absolute
             } else {
                 match running {
-                    Some(r) if p > r + ANCHOR_GAP => {
+                    Some(r) if p > r + ANCHOR_GAP && (!fixture || is_anchor_gap(p)) => {
                         islands[i] = true;
                         p
                     }
@@ -2536,6 +2544,45 @@ fn is_position_independent(s: &Section) -> bool {
         .all(|f| matches!(f, Fragment::Data(_) | Fragment::Fill { .. } | Fragment::Reserve { .. }))
 }
 
+/// FIXTURE-ONLY (stress-art): relocate the stress-GROWABLE OJZ generated sections past the
+/// sound banks so their uniquified inflation extends the ROM TAIL instead of overrunning
+/// OJZ's hard DAC anchor at $48000. OJZ's pre-DAC hole caps in-order act data at ~21 KB of
+/// slack, and the fixture grows three sections there — the act art POOL (41 pages), the
+/// per-section BLOCK blobs, and the local->global MAPS (both grow with the re-pointed clone
+/// references). Relocating all three keeps the 116 KB `collision_data` section (adjacent to
+/// the DAC anchor) at its canonical position, so the anchor's island gap survives.
+///
+/// Every relocated section is reached ONLY through a manifest / descriptor pointer
+/// (`act_art_pool_table`, `sec_block_index`, `act_sec_local_maps` — all `extern`), so moving
+/// them is faithful to the residency design's position-independence contract, not a hack.
+///
+/// They move (preserving their relative order) to IMMEDIATELY BEFORE the fault-handler island
+/// (`ReleaseFault` release / `BusError` debug — consecutive at the tail ahead of `EndOfRom`),
+/// so error_handler stays the LAST byte-emitting section (the MDDBG deb2 locator invariant
+/// holds in the fixture too). The org anchors (object bank, DAC/sound phase banks) are
+/// untouched and still fail loud on any real overrun. Gated by `fixture_placement`; shipped
+/// shapes never call this.
+fn relocate_fixture_pool(order: &mut Vec<String>) -> Result<(), String> {
+    // Head-labels of the stress-growable OJZ generated sections, in ROM order.
+    const GROWABLE: &[&str] = &["OJZ_Act_Pool_Page0", "OJZ_Sec0_Blocks", "OJZ_Sec0_LocalMap"];
+    let mut moved: Vec<String> = Vec::new();
+    for head in GROWABLE {
+        match order.iter().position(|s| s == head) {
+            Some(at) => moved.push(order.remove(at)),
+            None => return Err(format!("fixture placement: growable section `{head}` not in the map order")),
+        }
+    }
+    // Insert the moved run just before the fault-handler island (recompute after removals).
+    let fault_at = order
+        .iter()
+        .position(|s| s == "ReleaseFault" || s == "BusError")
+        .ok_or("fixture placement: no fault-handler island (ReleaseFault/BusError) in the map order")?;
+    for (k, head) in moved.into_iter().enumerate() {
+        order.insert(fault_at + k, head);
+    }
+    Ok(())
+}
+
 /// Build the whole native ROM with every base COMPUTED by declared-order chaining
 /// (the S1.2 generalization). `debug` selects the shape. The DECLARED ORDER for the
 /// canonical-sonic4 bootstrap is the address order (baked lmas known-correct — the
@@ -2715,11 +2762,27 @@ pub fn build_rom_chained_with_listing(
         .map_err(|e| format!("read {}: {e}", map_path.display()))?;
     let map = sigil_link::load_map(&map_src)
         .map_err(|e| format!("load {}: {e}", map_path.display()))?;
-    let pmap = crate::map_placement::load_placement_map(&map_src)
+    let mut pmap = crate::map_placement::load_placement_map(&map_src)
         .map_err(|e| format!("placement {}: {e}", map_path.display()))?;
 
+    // FIXTURE-ONLY (stress-art) — the SECOND half of the fixture_placement waiver PAIR
+    // (the first is the packing-guard waiver in `packed_true_bases`). The uniquified pool
+    // grows past OJZ's pre-DAC-anchor hole, so relocate the manifest-pointed pool section
+    // past the sound banks (see `relocate_fixture_pool`). The relocated order is fed to BOTH
+    // the packer (below) and `validate_placement` (post-resolve), so the map-order
+    // subsequence check passes against the fixture's ACTUAL order — one flag gates both
+    // waivers, and neither is a blanket bypass. Shipped shapes never enter here
+    // (fixture_placement is false, and the CLI refuses --stress-art with any shipped shape).
+    if profile.fixture_placement {
+        relocate_fixture_pool(&mut pmap.order)?;
+    }
+
+    // The declared org-anchor addresses (object bank / DAC / sound) — the fixture keeps ONLY
+    // these as prov-gap islands after relocation; shipped shapes ignore the set.
+    let anchor_addrs: std::collections::HashSet<u32> =
+        pmap.anchors_for(profile.sound_on).map(|a| a.at).collect();
     // The declared order DRIVES the walk; each ROM section's TRUE base, then its exact span.
-    let true_bases = true_bases_by_index(&sections, &profile.size_source, &pmap.order, profile.fixture_placement)?;
+    let true_bases = true_bases_by_index(&sections, &profile.size_source, &pmap.order, profile.fixture_placement, &anchor_addrs)?;
     let spans = declared_spans_by_index(&sections, &true_bases)?;
 
     let all = apply_declared_chain(sections, &true_bases, &spans);
@@ -2827,7 +2890,7 @@ fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Sec
     sections.extend(build_emp(aeon, profile)?.sections);
     // K5: the declared map order drives the walk (identical to the emit path's placement).
     let map_order = placement_map_order(aeon, profile)?;
-    let true_bases = true_bases_by_index(&sections, &profile.size_source, &map_order, profile.fixture_placement)?;
+    let true_bases = true_bases_by_index(&sections, &profile.size_source, &map_order, profile.fixture_placement, &std::collections::HashSet::new())?;
     let spans = declared_spans_by_index(&sections, &true_bases)?;
     let all = apply_declared_chain(sections, &true_bases, &spans);
     let stubs = SymbolTable::new();
@@ -3778,7 +3841,7 @@ mod placement_validation_tests {
         let prov = vec![Some(0x100i64), Some(0x200i64)];
         let labeled = vec![true, true];
         let order = vec!["High".to_string(), "Low".to_string()];
-        let bases = packed_true_bases(&secs, &prov, &labeled, &order, false).unwrap();
+        let bases = packed_true_bases(&secs, &prov, &labeled, &order, false, &std::collections::HashSet::new()).unwrap();
         // High is the run head (declared first) → its provisional base 0x200; Low packs
         // right after it at 0x210 — the layout follows the MAP, inverting the prov order.
         assert_eq!(bases[1], Some(0x200), "High (declared first) anchors at its prov");
@@ -3786,7 +3849,7 @@ mod placement_validation_tests {
         // Control: with the map order empty (no drive) the walk falls back to the prov
         // sort — Low@0x100 first, High packs after at 0x110.
         let none: Vec<String> = vec![];
-        let baked = packed_true_bases(&secs, &prov, &labeled, &none, false).unwrap();
+        let baked = packed_true_bases(&secs, &prov, &labeled, &none, false, &std::collections::HashSet::new()).unwrap();
         assert_eq!(baked[0], Some(0x100), "prov fallback: Low at its prov");
         assert_eq!(baked[1], Some(0x110), "prov fallback: High packs after Low");
     }
