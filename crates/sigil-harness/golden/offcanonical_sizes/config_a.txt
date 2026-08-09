@@ -7,8 +7,8 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=config_a
 # reproduces_golden=config_a.bin
-# golden_crc32=59eeaf99
-# assembled_anchor=4ae14a71
+# golden_crc32=63526030
+# assembled_anchor=59493ff5
 # assembled_end=0x5f848
 # labels=79
 Ani_Particle 0x26910
@@ -17,19 +17,19 @@ Ani_Sonic 0x268a2
 Ani_Sonic_End 0x26910
 AnimateSprite 0x3900
 Art_Decompress 0x73da
-BG_Init 0x80a0
-BgAnim_Init 0x8180
+BG_Init 0x8070
+BgAnim_Init 0x8150
 BgAnim_Table 0x26870
 BootData 0x3a8
 BootData_End 0x1b9e
 BusError 0x5e798
-CSelf_S4LZ_Plain 0x85de
+CSelf_S4LZ_Plain 0x85ae
 Camera_Init 0x6c50
 Checksum 0x18e
 Collected_Init 0x3fe0
 Collision_GetType 0x61f0
 Collision_ProbeDown 0x6258
-CompressionSelfTest 0x82d8
+CompressionSelfTest 0x82a8
 Dac_Temp_Blip 0x48000
 Debug_MusicToggle 0x6750
 DeformTable_Zero 0x11460
@@ -72,8 +72,8 @@ Sfx_33 0x5d53a
 Song_MovingTrucks 0x58607
 Sonic_InitAssets 0x10d00
 SoundTablesZ80_Head 0x58000
-Sound_DebugMirror 0x9420
-Sound_PostByte 0x9060
+Sound_DebugMirror 0x93f0
+Sound_PostByte 0x9030
 TestAnimated 0x10d44
 TestChildPart 0x11146
 TestChurnObj 0x112e0
