@@ -3576,3 +3576,57 @@ full_crc = "ca9bbd3f"
 full_size = 427468
 anchor_crc = "b8c9684f"
 anchor_end = 0x5f848
+
+[[entry]]
+name = "art-streaming-p2-task7-soakfix4"
+ab = "docs/superpowers/notes/2026-08-08-art-streaming-p2-task7-ab.md"
+note = "Task 7 soak fix #4: AllocFrame .detach sentinels pf_page=FFFF so the bijectivity audit skips in-flight frames"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "dbf48d9c"
+full_size = 427812
+anchor_crc = "633e0e23"
+anchor_end = 0x5f848
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "e4b144aa"
+full_size = 308257
+anchor_crc = "4c0e5dfe"
+anchor_end = 0x43ea2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "65389d86"
+full_size = 93698
+anchor_crc = "fcb65f16"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "c5c8dcaf"
+full_size = 97250
+anchor_crc = "f2573150"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "9ac8e66b"
+full_size = 379350
+anchor_crc = "e7305d8c"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "6c61b849"
+full_size = 414138
+anchor_crc = "e0030bd7"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "b138ac86"
+full_size = 427468
+anchor_crc = "fd33eacf"
+anchor_end = 0x5f848
