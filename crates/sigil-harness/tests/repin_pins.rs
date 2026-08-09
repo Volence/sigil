@@ -416,8 +416,16 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // crossing directions. It is placed after ALL gameplay content and before
     // the fault-handler island, so zero gameplay addresses move — BOTH shapes
     // grow by exactly 0xF0 and every fault-vector pin shifts by the same amount.
-    assert_eq!(pins::ASSEMBLED_LEN, 0x5DA58); // +0xF0 slide-fixture
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F848); // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture
+    // `patchrun-batch` (2026-08-09, aeon 01d9d05): PageCache_PatchWord/Ref/Unref
+    // deleted, PatchRun_Seq/_Col emitted (net −230 B real code) — the object
+    // bank absorbs the shrink as fill, BOTH totals stay put; every pin in the
+    // affected modules shifts (the −0x30 family in the repin diff).
+    // `replay-rerecord` (2026-08-09, P-2 closure): both input fixtures
+    // re-recorded against post-P2 master (standing 314→272 B, slide 240→288 B,
+    // net +6 → +8 after alignment). Placed after all gameplay content, so zero
+    // gameplay addresses move; plain absorbs it in quantization, debug grows +8.
+    assert_eq!(pins::ASSEMBLED_LEN, 0x5DA58); // +0xF0 slide-fixture; patchrun/rerecord absorbed
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F850); // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the

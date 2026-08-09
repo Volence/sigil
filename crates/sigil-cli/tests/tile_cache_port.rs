@@ -169,9 +169,11 @@ fn tile_cache_addr_labels(debug: bool) -> Vec<Section> {
         ("Frame_Counter", pick(pins::FRAME_COUNTER)),
         ("Section_Plane_Dirty", pick(pins::SECTION_PLANE_DIRTY)),
         ("S4LZ_DecompressDict", pick(pins::S4_LZ_DECOMPRESS_DICT)),
-        // P2b Task 6: the copy sites call PageCache_PatchWord per nametable word +
-        // PageCache_Audit periodically; the demand-stall flag rides Cache_Art_Stall.
-        ("PageCache_PatchWord", pick(pins::PAGE_CACHE_PATCH_WORD)),
+        // P2b Task 6 (revised by patch-run batching, aeon 01d9d05): the copy sites
+        // call PageCache_PatchRun_Seq/_Col once per run + PageCache_Audit
+        // periodically; the demand-stall flag rides Cache_Art_Stall.
+        ("PageCache_PatchRun_Seq", pick(pins::PAGE_CACHE_PATCH_RUN_SEQ)),
+        ("PageCache_PatchRun_Col", pick(pins::PAGE_CACHE_PATCH_RUN_COL)),
         ("PageCache_Audit", pick(pins::PAGE_CACHE_AUDIT)),
         ("Cache_Art_Stall", pick(pins::CACHE_ART_STALL)),
         // P2c Task 10: the two demand-stall exits set the camera soft-clamp bits.
@@ -512,9 +514,10 @@ fn tile_cache_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
         // NO S4LZ_DecompressDict carrier — the t22 flip (kill row 30): the
         // name resolves to s4lz.emp's proc compiled into this same
         // link; a stale carrier would be the §11 Q4 collision.
-        // P2b Task 6: page_cache is NOT co-lowered here, so its copy-site callees
-        // + the stall flag are carriers.
-        ("PageCache_PatchWord", pick(pins::PAGE_CACHE_PATCH_WORD)),
+        // P2b Task 6 (revised by patch-run batching, aeon 01d9d05): page_cache is
+        // NOT co-lowered here, so its copy-site callees + the stall flag are carriers.
+        ("PageCache_PatchRun_Seq", pick(pins::PAGE_CACHE_PATCH_RUN_SEQ)),
+        ("PageCache_PatchRun_Col", pick(pins::PAGE_CACHE_PATCH_RUN_COL)),
         ("PageCache_Audit", pick(pins::PAGE_CACHE_AUDIT)),
         ("Cache_Art_Stall", pick(pins::CACHE_ART_STALL)),
         // P2c Task 10: the two demand-stall exits set the camera soft-clamp bits.
