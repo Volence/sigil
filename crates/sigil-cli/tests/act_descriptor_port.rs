@@ -234,13 +234,10 @@ fn compile_real_file(
         include_root: Some(dir.clone()),
         embed_base: None,
         // engine.constants (an ambient here) computes PAGE_FRAMES_CLAMP from the
-        // STRESS_EVICT build define (0 in every shipped shape; 1 only in the
-        // off-canonical stress_evict fixture) and comptime-ensures it — so the lowering
-        // needs the define the native driver always injects (native.rs: ("STRESS_EVICT",
-        // 0)). Without it this single-file lower can hit `unknown name STRESS_EVICT`
-        // whenever the ensure gets force-evaluated (surfaced by the art-streaming P2c
-        // Act-struct growth perturbing evaluation order). Match the native default.
-        defines: vec![("STRESS_EVICT".to_string(), 0)],
+        // STRESS_EVICT build define and comptime-ensures it. The native default
+        // (STRESS_EVICT=0) is now seeded by `lower_module_inner` itself (the one
+        // lowering funnel), so this single-file lower needs no per-port inject.
+        defines: vec![],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(

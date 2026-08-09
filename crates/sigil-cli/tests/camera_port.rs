@@ -215,18 +215,10 @@ fn compile_real_file(
         include_root: Some(dir.clone()),
         embed_base: None,
         // engine.constants (chained as an ambient above) computes PAGE_FRAMES_CLAMP
-        // from the STRESS_EVICT build define (0 in every shipped shape; 1 only in the
-        // off-canonical stress_evict fixture) and comptime-ensures it — so this
-        // single-region lower needs the define the native driver always injects
-        // (native.rs: ("STRESS_EVICT", 0)). Without it the ensure can force-evaluate to
-        // `unknown name STRESS_EVICT` (surfaced when the art-streaming P2c Task-10
-        // camera/constants growth perturbed evaluation order). Match the native default;
-        // same one-liner as act_descriptor_port. (sigil-harness hygiene tracked
-        // separately — this fixes only the camera test the parcel directly touches.)
-        defines: vec![
-            ("DEBUG".to_string(), i128::from(debug)),
-            ("STRESS_EVICT".to_string(), 0),
-        ],
+        // from the STRESS_EVICT build define and comptime-ensures it. The native
+        // default (STRESS_EVICT=0) is now seeded by `lower_module_inner` itself (the
+        // one lowering funnel), so this single-region lower needs no per-port inject.
+        defines: vec![("DEBUG".to_string(), i128::from(debug))],
     };
     let (module, ldiags) =
         lower_module_with_contracts(&file, &opts, &camera_contract_env(jump_lock));
@@ -400,9 +392,9 @@ fn jump_lock_off_compiles_without_game_symbols() {
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        // STRESS_EVICT=0: same native-default inject as the main lower above (the
-        // chained engine.constants ambient comptime-ensures a STRESS_EVICT-derived const).
-        defines: vec![("DEBUG".to_string(), 0), ("STRESS_EVICT".to_string(), 0)],
+        // STRESS_EVICT=0 (the chained engine.constants ambient comptime-ensures a
+        // STRESS_EVICT-derived const) is now seeded by `lower_module_inner` itself.
+        defines: vec![("DEBUG".to_string(), 0)],
     };
     let (module, ldiags) = lower_module_with_contracts(&file, &opts, &camera_contract_env(0));
     assert!(

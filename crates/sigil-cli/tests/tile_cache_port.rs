@@ -248,9 +248,9 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        // STRESS_EVICT=0: native-default inject (chained engine.constants ambient
-        // comptime-ensures a STRESS_EVICT-derived const; eval order perturbed by P2c T10).
-        defines: vec![("DEBUG".to_string(), i128::from(debug)), ("STRESS_EVICT".to_string(), 0)],
+        // STRESS_EVICT=0 (chained engine.constants ambient comptime-ensures a
+        // STRESS_EVICT-derived const) is now seeded by `lower_module_inner` itself.
+        defines: vec![("DEBUG".to_string(), i128::from(debug))],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -416,9 +416,9 @@ fn lower_and_place(
         initial_cpu: Cpu::M68000,
         include_root: Some(include_root),
         embed_base: None,
-        // STRESS_EVICT=0: native-default inject (chained engine.constants ambient
-        // comptime-ensures a STRESS_EVICT-derived const; eval order perturbed by P2c T10).
-        defines: vec![("DEBUG".to_string(), i128::from(debug)), ("STRESS_EVICT".to_string(), 0)],
+        // STRESS_EVICT=0 (chained engine.constants ambient comptime-ensures a
+        // STRESS_EVICT-derived const) is now seeded by `lower_module_inner` itself.
+        defines: vec![("DEBUG".to_string(), i128::from(debug))],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(

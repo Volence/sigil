@@ -175,6 +175,38 @@ fn lower_module_inner(
     external_region_ends: &std::collections::HashMap<String, u32>,
     contracts: &crate::contract::InterfaceEnv,
 ) -> (Module, Vec<Diagnostic>) {
+    // Native-driver default comptime defines. The whole-program build (native.rs)
+    // always injects these explicitly; an ISOLATED single-file lower (the region-
+    // port tests, which chain `engine/system/constants.emp` as an ambient) does
+    // not, yet that ambient force-evaluates `PAGE_FRAMES_CLAMP`, which references
+    // `STRESS_EVICT`. Absent the define, such a lower aborts with `unknown name
+    // STRESS_EVICT` (eval-order-sensitive: which ports trip depends on Act-struct
+    // growth perturbing evaluation order). Seed the native default HERE, in the one
+    // lowering funnel every caller passes through, so every module sees the same
+    // comptime environment as the real build. Byte-neutral: a shipped shape sets
+    // STRESS_EVICT=0 (== the default) and the off-canonical stress_evict fixture
+    // sets it to 1 — both supply it EXPLICITLY, and explicit caller defines win the
+    // merge below, so no emitted byte changes for any build. This retires the three
+    // per-port one-liner injects (act_descriptor/camera/tile_cache) the region-port
+    // gates carried, and covers the ports that never had one (e.g. animate).
+    const NATIVE_DEFAULT_DEFINES: &[(&str, i128)] = &[("STRESS_EVICT", 0)];
+    let merged_opts;
+    let opts = if NATIVE_DEFAULT_DEFINES
+        .iter()
+        .all(|(n, _)| opts.defines.iter().any(|(m, _)| m == n))
+    {
+        opts
+    } else {
+        let mut o = opts.clone();
+        for (n, v) in NATIVE_DEFAULT_DEFINES {
+            if !o.defines.iter().any(|(m, _)| m == n) {
+                o.defines.push(((*n).to_string(), *v));
+            }
+        }
+        merged_opts = o;
+        &merged_opts
+    };
+
     let mut builder = IrBuilder::new();
     let mut diags = Vec::new();
 
