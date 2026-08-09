@@ -133,6 +133,17 @@ pub struct GameProfile {
     /// The inapplicable-drift-guard allowlist (t24 both-directions), per target.
     pub inapplicable_guards: Vec<(&'static str, &'static str)>,
     pub size_source: SizeSource,
+    /// FIXTURE-ONLY derived placement (Art-streaming P2c Task 11 stress-art). When true,
+    /// `packed_true_bases` packs every non-island section GREEDILY from live-measured sizes
+    /// with NO frozen provisional-base overrun check and NO island-reclassification guard —
+    /// so a fixture whose art pool grew tens of KB in one section (uniquified OJZ pool, 41
+    /// pages) places without a "hand ruling", while the org-anchored islands (object bank,
+    /// DAC/sound phase banks, error_handler-last) are STILL held (island/phase-bank
+    /// classification is unchanged) and any real anchor overrun still fails loud at the
+    /// final `resolve_layout`. FALSE for every shipped shape (a shipped shape that needed
+    /// this would be masking a real placement regression) — the CLI refuses to pair
+    /// `--stress-art` with any shipped shape selector.
+    pub fixture_placement: bool,
     /// `EndOfRom` — the assembled-bar length.
     pub assembled_len: usize,
 }
@@ -531,6 +542,7 @@ pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile 
         require_one_text: true,
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
         size_source,
+        fixture_placement: false,
         assembled_len: if debug { pins::DEBUG_ASSEMBLED_LEN } else { pins::ASSEMBLED_LEN },
     }
 }
@@ -622,6 +634,7 @@ pub fn demo_profile(debug: bool) -> GameProfile {
         } else {
             "demo.txt"
         })),
+        fixture_placement: false,
         assembled_len: 0x11224,
     }
 }
@@ -686,6 +699,7 @@ pub fn config_b_profile() -> GameProfile {
         require_one_text: true,
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
         size_source: SizeSource::Frozen(load_frozen_table("config_b.txt")),
+        fixture_placement: false,
         assembled_len: 0x434d0,
     }
 }
@@ -744,6 +758,7 @@ pub fn config_a_profile() -> GameProfile {
         require_one_text: true,
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
         size_source: SizeSource::Frozen(load_frozen_table("config_a.txt")),
+        fixture_placement: false,
         assembled_len: 0x5f65a,
     }
 }
@@ -795,6 +810,7 @@ pub fn lean_profile() -> GameProfile {
         require_one_text: true,
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
         size_source: SizeSource::Frozen(load_frozen_table("lean.txt")),
+        fixture_placement: false,
         assembled_len: pins::ASSEMBLED_LEN,
     }
 }
@@ -820,6 +836,26 @@ pub fn stress_evict_profile() -> GameProfile {
             d.1 = 1;
         }
     }
+    p
+}
+
+/// STRESS_ART (Art-streaming P2c Task 11 stress fixture): sonic4 DEBUG built against a
+/// UNIQUIFIED act art pool (`ojz_strip_gen --stress-uniquify`, 41 pages) that inflates the
+/// `ojz_act_pool` section by tens of KB — far past the packed-placement spread step, so the
+/// canonical `Frozen` placement fails with a "hand ruling" collision. Unlike `stress_evict`
+/// (an immediate-operand clamp the frozen size table resolves exactly), this fixture CHANGES
+/// SECTION SIZES, so it opts into `fixture_placement`: greedy pack from measured sizes, no
+/// frozen provisional-base overrun / island-reclass guard. The org-anchored islands (object
+/// bank $10000, DAC/sound phase banks $48000/$58000, error_handler-last) are UNCHANGED.
+///
+/// DELIBERATELY UNFROZEN like `stress_evict`: no golden, no `provenance.toml` entry, not a
+/// `refreeze`/`shipped_shapes` target, and NOT in `shape_defines`/`shipped_shapes` (its
+/// placement waiver must never gate or describe a shipped shape). Everything else matches
+/// `sonic4_profile(true)`; the pool inflation is a build-time data swap, not a define.
+pub fn stress_art_profile() -> GameProfile {
+    let mut p = sonic4_profile(true);
+    p.name = "stress_art";
+    p.fixture_placement = true;
     p
 }
 
@@ -1822,17 +1858,28 @@ fn measure_or_spread(
     pins: &[Option<u32>],
     order: &[usize],
     what: &str,
+    fixture: bool,
 ) -> Result<(Vec<u32>, bool), String> {
-    match image_lens_pinned(sections, pins) {
+    match image_lens_pinned(sections, pins, fixture) {
         Ok(v) => Ok((v, false)),
         Err(_collision) => {
+            // A grown section collides with its frozen neighbour at the pinned bases: retry
+            // with a small cumulative per-rank spread (order-preserving) — a MEASURING
+            // device only (final bases come from the pack rounds and re-measure to a
+            // fixpoint, so widening it never moves an unchanged section). The step stays
+            // 0x400: it must stay under the ±32 KB conditional-branch reach (a bigger step
+            // pushes cross-section conditional branches out of range, which is a hard error,
+            // not a relaxation). A FIXTURE (stress-art) whose growth exceeds that reach does
+            // NOT rely on the spread — `image_lens_pinned(.., fixture=true)` measures its
+            // pure-DATA sections (the inflated pool + downstream tables) at disjoint scratch
+            // slots (position-independent), so the grown data never collides here at all.
             let mut spread = pins.to_vec();
             for (rank, &i) in order.iter().enumerate() {
                 if let Some(Some(p)) = spread.get_mut(i).map(|s| s.as_mut()) {
                     *p += 0x400 * rank as u32;
                 }
             }
-            let v = image_lens_pinned(sections, &spread)
+            let v = image_lens_pinned(sections, &spread, fixture)
                 .map_err(|e| format!("span pass ({what}, post-growth): {e}"))?;
             Ok((v, true))
         }
@@ -1843,7 +1890,11 @@ fn measure_or_spread(
 /// each ROM section is pinned at `pin_lma[idx]` (falling back to its baked lma). Keyed
 /// by the section's stable index. The unique-name tag makes the read unambiguous (the
 /// tree carries same-named `text`/`sec<lma>` sections); names never affect bytes.
-fn image_lens_pinned(sections: &[Section], pin_lma: &[Option<u32>]) -> Result<Vec<u32>, String> {
+fn image_lens_pinned(
+    sections: &[Section],
+    pin_lma: &[Option<u32>],
+    fixture: bool,
+) -> Result<Vec<u32>, String> {
     let mut tagged: Vec<Section> = sections.to_vec();
     // ROM sections with NO pin (label-less data blobs whose true base is not yet known)
     // are pinned at DISJOINT high scratch slots: they are pure DATA, so image_len is
@@ -1858,8 +1909,19 @@ fn image_lens_pinned(sections: &[Section], pin_lma: &[Option<u32>]) -> Result<Ve
             // would otherwise ignore it and pack within its group, defeating the pin).
             s.placement = SectionPlacement::Pinned;
             s.group = None;
+            // FIXTURE (stress-art): a labeled section that inflated tens of KB (the
+            // uniquified pool + the tables that ride it) is PURE DATA — its image_len is
+            // position-independent — so measure it at a disjoint scratch slot instead of
+            // its frozen pin. That keeps the grown data from overlapping its frozen
+            // neighbour WITHOUT a wide spread, so cross-section CONDITIONAL branches in the
+            // (unchanged, still frozen-pinned) CODE sections keep their ±32 KB reach. Only
+            // position-independent sections qualify; a section with any relaxable fragment
+            // stays at its pin so its branch widths measure correctly.
+            let is_phase_bank =
+                s.vma_base.map(|v| v != s.lma && v >= 0x8000).unwrap_or(false);
+            let force_scratch = fixture && !is_phase_bank && is_position_independent(s);
             match pin_lma.get(i) {
-                Some(Some(p)) => s.lma = *p,
+                Some(Some(p)) if !force_scratch => s.lma = *p,
                 _ => {
                     s.lma = scratch;
                     // keep vma tracking the scratch lma so labels don't leak a stale base
@@ -1898,6 +1960,7 @@ fn true_bases_by_index(
     sections: &[Section],
     src: &SizeSource,
     map_order: &[String],
+    fixture: bool,
 ) -> Result<Vec<Option<u32>>, String> {
     let n = sections.len();
     match src {
@@ -1928,7 +1991,7 @@ fn true_bases_by_index(
                     None => prov[i] = Some(s.lma as i64), // baked fallback (order only)
                 }
             }
-            packed_true_bases(sections, &prov, &labeled, map_order)
+            packed_true_bases(sections, &prov, &labeled, map_order, fixture)
         }
     }
 }
@@ -1967,6 +2030,7 @@ fn packed_true_bases(
     prov: &[Option<i64>],
     labeled: &[bool],
     map_order: &[String],
+    fixture: bool,
 ) -> Result<Vec<Option<u32>>, String> {
     let n = sections.len();
     let mut order: Vec<usize> = (0..n).filter(|&i| prov[i].is_some()).collect();
@@ -2043,7 +2107,7 @@ fn packed_true_bases(
         .map(|i| if labeled[i] { prov[i].map(|v| v as u32) } else { None })
         .collect();
     let (mut img, mut img_distorted) =
-        measure_or_spread(sections, &prov_pins, &order, "spread round")?;
+        measure_or_spread(sections, &prov_pins, &order, "spread round", fixture)?;
     let mut prev_islands: Option<Vec<bool>> = None;
     for _round in 0..8 {
         let mut out: Vec<Option<u32>> = vec![None; n];
@@ -2083,7 +2147,12 @@ fn packed_true_bases(
                         // markers at the 68k minimum (2); emitters keep the inference.
                         let a = if img[i] == 0 { 2 } else { align_of(p) };
                         let packed = (r + a - 1) / a * a;
-                        if packed > p + ANCHOR_GAP {
+                        // FIXTURE (stress-art): the whole point is a section that grew tens of
+                        // KB, so downstream runs DO overrun their frozen provisional bases —
+                        // waive the org-hole overrun check and pack greedily. A run that
+                        // overruns a real ORG ANCHOR (island/phase bank) still fails loud at the
+                        // final `resolve_layout` overlap check, so anchors stay protected.
+                        if !fixture && packed > p + ANCHOR_GAP {
                             return Err(format!(
                                 "packed base {packed:#x} for section `{}` overruns its provisional {p:#x} by more than the island margin — a run grew past its org hole; hand ruling needed",
                                 sections[i].name
@@ -2110,12 +2179,20 @@ fn packed_true_bases(
             out[i] = Some(tb as u32);
             running = Some(tb + img[i] as i64);
         }
-        if let Some(prev) = &prev_islands {
-            if *prev != islands {
-                return Err(
-                    "island classification changed between packing rounds — growth ate an org hole; hand ruling needed"
-                        .to_string(),
-                );
+        // FIXTURE (stress-art): a section growing tens of KB shifts downstream sections far
+        // enough that borderline (non-anchor) island classification can wobble between the
+        // shrinking-length rounds. That is expected for a fixture and harmless — the true
+        // org anchors (huge prov gaps / phase banks) stay islands regardless — so the
+        // reclass guard is waived; the walk still converges to a fixpoint or fails loud on
+        // non-convergence below.
+        if !fixture {
+            if let Some(prev) = &prev_islands {
+                if *prev != islands {
+                    return Err(
+                        "island classification changed between packing rounds — growth ate an org hole; hand ruling needed"
+                            .to_string(),
+                    );
+                }
             }
         }
         prev_islands = Some(islands);
@@ -2153,7 +2230,7 @@ fn packed_true_bases(
         // round budget and fails loud below — never silently returns spread-derived
         // bases.
         let (img2, distorted) =
-            measure_or_spread(sections, &remeasure, &order, "packed round")?;
+            measure_or_spread(sections, &remeasure, &order, "packed round", fixture)?;
         if img2 == img && !img_distorted && !distorted {
             return Ok(out);
         }
@@ -2181,7 +2258,10 @@ fn declared_spans_by_index(
     let pin: Vec<Option<u32>> = (0..sections.len())
         .map(|i| if phase_region[i] { None } else { true_bases[i] })
         .collect();
-    let img = image_lens_pinned(sections, &pin).map_err(|e| format!("span pass (declared): {e}"))?;
+    // Declared spans measure at the FINAL true_bases (code at frozen bases, fixture data
+    // packed contiguously) — no fixture scratch treatment needed; the packed layout is
+    // already overlap-free, and each pure-data span comes from its base-to-next gap.
+    let img = image_lens_pinned(sections, &pin, false).map_err(|e| format!("span pass (declared): {e}"))?;
     let mut rom: Vec<(usize, u32, u32)> = (0..sections.len())
         .filter_map(|i| true_bases.get(i).and_then(|o| *o).map(|tb| (i, tb, img[i])))
         .collect();
@@ -2443,6 +2523,19 @@ fn is_rom_section(s: &Section) -> bool {
     }
 }
 
+/// A section whose image length is POSITION-INDEPENDENT: every fragment advances the
+/// cursor by its own fixed length (no relaxable / base-dependent fragment, no `Org`
+/// seek). Such a section can be measured at any base — the fixture (stress-art) round-0
+/// measure pins its inflated pure-DATA sections at disjoint scratch slots on this test,
+/// so a section that grew past the conditional-branch reach never forces the code region
+/// apart. A section with any relaxable fragment (a jmp/jsr/branch ladder) is width-
+/// variable and must measure at its real base.
+fn is_position_independent(s: &Section) -> bool {
+    s.fragments
+        .iter()
+        .all(|f| matches!(f, Fragment::Data(_) | Fragment::Fill { .. } | Fragment::Reserve { .. }))
+}
+
 /// Build the whole native ROM with every base COMPUTED by declared-order chaining
 /// (the S1.2 generalization). `debug` selects the shape. The DECLARED ORDER for the
 /// canonical-sonic4 bootstrap is the address order (baked lmas known-correct — the
@@ -2626,7 +2719,7 @@ pub fn build_rom_chained_with_listing(
         .map_err(|e| format!("placement {}: {e}", map_path.display()))?;
 
     // The declared order DRIVES the walk; each ROM section's TRUE base, then its exact span.
-    let true_bases = true_bases_by_index(&sections, &profile.size_source, &pmap.order)?;
+    let true_bases = true_bases_by_index(&sections, &profile.size_source, &pmap.order, profile.fixture_placement)?;
     let spans = declared_spans_by_index(&sections, &true_bases)?;
 
     let all = apply_declared_chain(sections, &true_bases, &spans);
@@ -2734,7 +2827,7 @@ fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Sec
     sections.extend(build_emp(aeon, profile)?.sections);
     // K5: the declared map order drives the walk (identical to the emit path's placement).
     let map_order = placement_map_order(aeon, profile)?;
-    let true_bases = true_bases_by_index(&sections, &profile.size_source, &map_order)?;
+    let true_bases = true_bases_by_index(&sections, &profile.size_source, &map_order, profile.fixture_placement)?;
     let spans = declared_spans_by_index(&sections, &true_bases)?;
     let all = apply_declared_chain(sections, &true_bases, &spans);
     let stubs = SymbolTable::new();
@@ -3685,7 +3778,7 @@ mod placement_validation_tests {
         let prov = vec![Some(0x100i64), Some(0x200i64)];
         let labeled = vec![true, true];
         let order = vec!["High".to_string(), "Low".to_string()];
-        let bases = packed_true_bases(&secs, &prov, &labeled, &order).unwrap();
+        let bases = packed_true_bases(&secs, &prov, &labeled, &order, false).unwrap();
         // High is the run head (declared first) → its provisional base 0x200; Low packs
         // right after it at 0x210 — the layout follows the MAP, inverting the prov order.
         assert_eq!(bases[1], Some(0x200), "High (declared first) anchors at its prov");
@@ -3693,7 +3786,7 @@ mod placement_validation_tests {
         // Control: with the map order empty (no drive) the walk falls back to the prov
         // sort — Low@0x100 first, High packs after at 0x110.
         let none: Vec<String> = vec![];
-        let baked = packed_true_bases(&secs, &prov, &labeled, &none).unwrap();
+        let baked = packed_true_bases(&secs, &prov, &labeled, &none, false).unwrap();
         assert_eq!(baked[0], Some(0x100), "prov fallback: Low at its prov");
         assert_eq!(baked[1], Some(0x110), "prov fallback: High packs after Low");
     }

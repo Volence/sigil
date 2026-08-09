@@ -1339,6 +1339,12 @@ enum BuildTarget {
     /// fixture built on demand. Reuses the DEBUG frozen size table (the STRESS_EVICT
     /// clamp is an immediate, not a size change), so the chainer resolves it directly.
     StressEvict,
+    /// Off-canonical DEV shape (Art-streaming P2c Task 11): sonic4 DEBUG built against a
+    /// UNIQUIFIED act art pool (41 pages). UNFROZEN — no golden, not a `refreeze` target.
+    /// Unlike `StressEvict`, the pool inflation CHANGES section sizes past the packed-
+    /// placement spread step, so its profile sets `fixture_placement` (greedy pack from
+    /// measured sizes; org anchors still held). Built on demand for the acceptance soak.
+    StressArt,
 }
 
 impl BuildTarget {
@@ -1365,6 +1371,9 @@ impl BuildTarget {
             BuildTarget::Lean => ("lean".to_string(), native::lean_profile()),
             BuildTarget::StressEvict => {
                 ("stress_evict".to_string(), native::stress_evict_profile())
+            }
+            BuildTarget::StressArt => {
+                ("stress_art".to_string(), native::stress_art_profile())
             }
         }
     }
@@ -1398,6 +1407,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut debug = false;
     let mut config: Option<char> = None;
     let mut stress_evict = false;
+    let mut stress_art = false;
     let mut report: Option<ReportKind> = None;
 
     let mut i = 0;
@@ -1417,6 +1427,12 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             // size, forcing continuous eviction). UNFROZEN — no golden, not a refreeze
             // target; built on demand for the controller's forced-eviction soak.
             "--stress-evict" => stress_evict = true,
+            // Off-canonical DEV shape (Art-streaming P2c Task 11): sonic4 DEBUG against a
+            // UNIQUIFIED act art pool (41 pages, +tens of KB in the ojz_act_pool section).
+            // UNFROZEN — no golden, not a refreeze target. Selects fixture placement (the
+            // profile sets `fixture_placement`), plumbed ONLY from build.sh's STRESS_ART
+            // path. Fixes the whole shape, so it refuses any shipped-shape selector below.
+            "--stress-art" => stress_art = true,
             "--report" => {
                 let kind = ReportKind::parse(&next_value(args, &mut i, "--report")?)?;
                 if report.is_some_and(|prev| prev != kind) {
@@ -1434,6 +1450,9 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     if stress_evict && (config.is_some() || game.is_some() || debug) {
         return Err("--stress-evict fixes the shape (sonic4 debug + STRESS_EVICT); do not combine with --game/--debug/--config-*".into());
     }
+    if stress_art && (config.is_some() || game.is_some() || debug || stress_evict) {
+        return Err("--stress-art fixes the shape (sonic4 debug + uniquified pool + fixture placement); do not combine with --game/--debug/--config-*/--stress-evict".into());
+    }
     let target = match config {
         Some(c) => {
             if game.is_some() || debug {
@@ -1446,6 +1465,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             }
         }
         None if stress_evict => BuildTarget::StressEvict,
+        None if stress_art => BuildTarget::StressArt,
         None => match game.as_deref() {
             None | Some("sonic4") => BuildTarget::Sonic4 { debug },
             Some("demo") => BuildTarget::Demo { debug },
@@ -1632,6 +1652,12 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             true,
             native::SONIC4_APPENDIX_FLOOR,
             native::build_rom_chained_with_listing(aeon, &native::stress_evict_profile()),
+        ),
+        // Off-canonical DEV fixture (uniquified pool) — CHAINER with fixture placement.
+        BuildTarget::StressArt => (
+            true,
+            native::SONIC4_APPENDIX_FLOOR,
+            native::build_rom_chained_with_listing(aeon, &native::stress_art_profile()),
         ),
     };
     let native::RomBuild { rom, listing, warnings } = match built {
