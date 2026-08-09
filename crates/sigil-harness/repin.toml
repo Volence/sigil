@@ -1315,6 +1315,18 @@ tests = ["camera_port"]
 name = "Camera_Hold_Frames"
 tests = ["camera_port"]
 
+# P2c Task 10 — art-streaming camera soft-clamp bits. camera_port reads them,
+# tile_cache_port's fill sets them (both standalone lowers carry the cell).
+[[symbol]]
+name = "Camera_Art_Hold"
+tests = ["camera_port", "tile_cache_port"]
+
+# P2c Task 10 — DEBUG-only soft-clamp frame counter (camera_port debug lower).
+[[symbol]]
+name = "Dbg_Cam_Clamp_Frames"
+debug_only = true
+tests = ["camera_port"]
+
 # Per-act camera clamp ceilings, hoisted out of clamp_camera_axis (F-2 sweep-fix).
 [[symbol]]
 name = "Camera_X_Max"
@@ -2209,6 +2221,15 @@ tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Page_Audit_Ticks"
+debug_only = true
+tests = ["tile_cache_port"]
+
+# chain-74 demand-stall watchdog counter (DEBUG-only). Referenced by tile_cache.emp's
+# watchdog bump but never pinned/labeled at chain-74 — its tile_cache_port debug region
+# test was masked-red by the STRESS_EVICT force-eval abort until the P2c T10 inject
+# unmasked it. Pre-existing gap, closed here (add the missing debug label).
+[[symbol]]
+name = "Cache_Stall_Watchdog"
 debug_only = true
 tests = ["tile_cache_port"]
 

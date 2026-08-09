@@ -171,12 +171,16 @@ fn tile_cache_addr_labels(debug: bool) -> Vec<Section> {
         ("PageCache_PatchWord", pick(pins::PAGE_CACHE_PATCH_WORD)),
         ("PageCache_Audit", pick(pins::PAGE_CACHE_AUDIT)),
         ("Cache_Art_Stall", pick(pins::CACHE_ART_STALL)),
+        // P2c Task 10: the two demand-stall exits set the camera soft-clamp bits.
+        ("Camera_Art_Hold", pick(pins::CAMERA_ART_HOLD)),
     ];
     if debug {
         table.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
         table.push(("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER));
         // Debug-only: the periodic residency audit's frame counter.
         table.push(("Page_Audit_Ticks", pins::PAGE_AUDIT_TICKS));
+        // chain-74 demand-stall watchdog (DEBUG); pre-existing missing label, closed w/ P2c T10.
+        table.push(("Cache_Stall_Watchdog", pins::CACHE_STALL_WATCHDOG));
     }
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
@@ -244,7 +248,9 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+        // STRESS_EVICT=0: native-default inject (chained engine.constants ambient
+        // comptime-ensures a STRESS_EVICT-derived const; eval order perturbed by P2c T10).
+        defines: vec![("DEBUG".to_string(), i128::from(debug)), ("STRESS_EVICT".to_string(), 0)],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -410,7 +416,9 @@ fn lower_and_place(
         initial_cpu: Cpu::M68000,
         include_root: Some(include_root),
         embed_base: None,
-        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+        // STRESS_EVICT=0: native-default inject (chained engine.constants ambient
+        // comptime-ensures a STRESS_EVICT-derived const; eval order perturbed by P2c T10).
+        defines: vec![("DEBUG".to_string(), i128::from(debug)), ("STRESS_EVICT".to_string(), 0)],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -503,11 +511,14 @@ fn tile_cache_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
         ("PageCache_PatchWord", pick(pins::PAGE_CACHE_PATCH_WORD)),
         ("PageCache_Audit", pick(pins::PAGE_CACHE_AUDIT)),
         ("Cache_Art_Stall", pick(pins::CACHE_ART_STALL)),
+        // P2c Task 10: the two demand-stall exits set the camera soft-clamp bits.
+        ("Camera_Art_Hold", pick(pins::CAMERA_ART_HOLD)),
     ];
     if debug {
         v.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
         v.push(("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER));
         v.push(("Page_Audit_Ticks", pins::PAGE_AUDIT_TICKS));
+        v.push(("Cache_Stall_Watchdog", pins::CACHE_STALL_WATCHDOG));
     }
     v
 }

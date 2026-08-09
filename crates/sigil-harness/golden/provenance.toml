@@ -3792,3 +3792,57 @@ full_crc = "87813995"
 full_size = 427749
 anchor_crc = "24e83950"
 anchor_end = 0x5f848
+
+[[entry]]
+name = "camera-soft-clamp-t10"
+ab = "docs/superpowers/notes/2026-08-09-art-streaming-p2c-t10-camera-soft-clamp-ab.md"
+note = "P2c Task 10: camera soft-clamp on art demand-miss (honorable S3K-gate degradation) + sub-page-budget deadlock ensure (chain 76)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "a89bf1c6"
+full_size = 428196
+anchor_crc = "74c0db93"
+anchor_end = 0x5f848
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "5022ede9"
+full_size = 308444
+anchor_crc = "35dcacb3"
+anchor_end = 0x43ea2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "7d567f2d"
+full_size = 93887
+anchor_crc = "6417850f"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "5e57c1b4"
+full_size = 97624
+anchor_crc = "d16770eb"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "79a2b02f"
+full_size = 379350
+anchor_crc = "ab11e1ab"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "5c9c8eb3"
+full_size = 414325
+anchor_crc = "44350d3a"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "fc6f8c61"
+full_size = 427852
+anchor_crc = "13f526f3"
+anchor_end = 0x5f848

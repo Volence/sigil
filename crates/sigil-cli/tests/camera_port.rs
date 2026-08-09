@@ -131,20 +131,27 @@ fn camera_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
 /// `Current_Act_Ptr` — each a `phase`d one-byte carrier at its pinned
 /// per-shape VMA (label position selects abs.w width and the low-word bytes).
 fn camera_addr_labels(debug: bool) -> Vec<Section> {
-    let table: [(&str, pins::Pin); 9] = [
-        ("Camera_X", pins::CAMERA_X),
-        ("Camera_Y", pins::CAMERA_Y),
-        ("Camera_Deadzone_Base", pins::CAMERA_DEADZONE_BASE),
-        ("Camera_Pan_Offset", pins::CAMERA_PAN_OFFSET),
-        ("Camera_Hold_Frames", pins::CAMERA_HOLD_FRAMES),
-        ("Camera_X_Max", pins::CAMERA_X_MAX),
-        ("Camera_Y_Max", pins::CAMERA_Y_MAX),
-        ("Player_1", pins::PLAYER_1),
-        ("Current_Act_Ptr", pins::CURRENT_ACT_PTR),
+    let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
+    let mut table: Vec<(&str, u32)> = vec![
+        ("Camera_X", pick(pins::CAMERA_X)),
+        ("Camera_Y", pick(pins::CAMERA_Y)),
+        ("Camera_Deadzone_Base", pick(pins::CAMERA_DEADZONE_BASE)),
+        ("Camera_Pan_Offset", pick(pins::CAMERA_PAN_OFFSET)),
+        ("Camera_Hold_Frames", pick(pins::CAMERA_HOLD_FRAMES)),
+        // P2c Task 10: the soft-clamp axis-hold bits Camera_Update reads.
+        ("Camera_Art_Hold", pick(pins::CAMERA_ART_HOLD)),
+        ("Camera_X_Max", pick(pins::CAMERA_X_MAX)),
+        ("Camera_Y_Max", pick(pins::CAMERA_Y_MAX)),
+        ("Player_1", pick(pins::PLAYER_1)),
+        ("Current_Act_Ptr", pick(pins::CURRENT_ACT_PTR)),
     ];
+    if debug {
+        // P2c Task 10: the DEBUG-only soft-clamp frame counter (abs.w in the DEBUG
+        // counter bump at Camera_Update entry).
+        table.push(("Dbg_Cam_Clamp_Frames", pins::DBG_CAM_CLAMP_FRAMES));
+    }
     let mut out = Vec::new();
-    for (i, (name, pin)) in table.iter().enumerate() {
-        let vma = if debug { pin.debug } else { pin.plain };
+    for (i, (name, vma)) in table.iter().enumerate() {
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
         let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
         let mut secs = assemble(&asm, &opts)
@@ -207,7 +214,19 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![("DEBUG".to_string(), i128::from(debug))],
+        // engine.constants (chained as an ambient above) computes PAGE_FRAMES_CLAMP
+        // from the STRESS_EVICT build define (0 in every shipped shape; 1 only in the
+        // off-canonical stress_evict fixture) and comptime-ensures it — so this
+        // single-region lower needs the define the native driver always injects
+        // (native.rs: ("STRESS_EVICT", 0)). Without it the ensure can force-evaluate to
+        // `unknown name STRESS_EVICT` (surfaced when the art-streaming P2c Task-10
+        // camera/constants growth perturbed evaluation order). Match the native default;
+        // same one-liner as act_descriptor_port. (sigil-harness hygiene tracked
+        // separately — this fixes only the camera test the parcel directly touches.)
+        defines: vec![
+            ("DEBUG".to_string(), i128::from(debug)),
+            ("STRESS_EVICT".to_string(), 0),
+        ],
     };
     let (module, ldiags) =
         lower_module_with_contracts(&file, &opts, &camera_contract_env(jump_lock));
@@ -381,7 +400,9 @@ fn jump_lock_off_compiles_without_game_symbols() {
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![("DEBUG".to_string(), 0)],
+        // STRESS_EVICT=0: same native-default inject as the main lower above (the
+        // chained engine.constants ambient comptime-ensures a STRESS_EVICT-derived const).
+        defines: vec![("DEBUG".to_string(), 0), ("STRESS_EVICT".to_string(), 0)],
     };
     let (module, ldiags) = lower_module_with_contracts(&file, &opts, &camera_contract_env(0));
     assert!(
