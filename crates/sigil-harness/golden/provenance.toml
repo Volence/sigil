@@ -3630,3 +3630,57 @@ full_crc = "b138ac86"
 full_size = 427468
 anchor_crc = "fd33eacf"
 anchor_end = 0x5f848
+
+[[entry]]
+name = "art-streaming-p2-task7-soakfix5"
+ab = "docs/superpowers/notes/2026-08-08-art-streaming-p2-task7-ab.md"
+note = "Task 7 soak fix #5: continuous page-in claim in PageIn_Enqueue (sole claim site) closes the double-load dedupe gap + duplicate-publish assert"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "4fd9888b"
+full_size = 427878
+anchor_crc = "04b401ff"
+anchor_end = 0x5f848
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "0e41612d"
+full_size = 308281
+anchor_crc = "d992030d"
+anchor_end = 0x43ea2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "a7254cdd"
+full_size = 93722
+anchor_crc = "ae635277"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "944285fe"
+full_size = 97316
+anchor_crc = "59f20832"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "49b0c4b0"
+full_size = 379350
+anchor_crc = "292c0070"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "bcabfac7"
+full_size = 414162
+anchor_crc = "442fe810"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "eda7fcdd"
+full_size = 427534
+anchor_crc = "ea8c77da"
+anchor_end = 0x5f848
