@@ -157,6 +157,9 @@ fn tile_cache_addr_labels(debug: bool) -> Vec<Section> {
         ("Block_Stage_Next", pick(pins::BLOCK_STAGE_NEXT)),
         ("Block_Stage_Buffers", pick(pins::BLOCK_STAGE_BUFFERS)),
         ("Block_Stage_Ptrs", pick(pins::BLOCK_STAGE_PTRS)),
+        // F-3 merge-translation cells (per-slot map array + current-block map).
+        ("Block_Stage_Maps", pick(pins::BLOCK_STAGE_MAPS)),
+        ("Cache_Cur_LocalMap", pick(pins::CACHE_CUR_LOCAL_MAP)),
         ("Block_Stage_ZeroPage", pick(pins::BLOCK_STAGE_ZERO_PAGE)),
         ("Tile_Cache_Nametable", pick(pins::TILE_CACHE_NAMETABLE)),
         ("Tile_Cache_Collision", pick(pins::TILE_CACHE_COLLISION)),
@@ -495,6 +498,9 @@ fn tile_cache_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
         ("Block_Stage_Next", pick(pins::BLOCK_STAGE_NEXT)),
         ("Block_Stage_Buffers", pick(pins::BLOCK_STAGE_BUFFERS)),
         ("Block_Stage_Ptrs", pick(pins::BLOCK_STAGE_PTRS)),
+        // F-3 merge-translation cells (per-slot map array + current-block map).
+        ("Block_Stage_Maps", pick(pins::BLOCK_STAGE_MAPS)),
+        ("Cache_Cur_LocalMap", pick(pins::CACHE_CUR_LOCAL_MAP)),
         ("Block_Stage_ZeroPage", pick(pins::BLOCK_STAGE_ZERO_PAGE)),
         ("Tile_Cache_Nametable", pick(pins::TILE_CACHE_NAMETABLE)),
         ("Tile_Cache_Collision", pick(pins::TILE_CACHE_COLLISION)),

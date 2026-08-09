@@ -53,13 +53,13 @@ fn addr_labels() -> Vec<Section> {
     let table: Vec<(&str, u32)> = vec![
         ("Art_Staging_Buffer", pins::ART_STAGING_BUFFER.debug),
         ("S4LZ_DecompressDict", pins::S4_LZ_DECOMPRESS_DICT.debug),
-        // Art_Decompress = the load_art region's start symbol.
-        ("Art_Decompress", pins::LOAD_ART.debug_base),
+        // F-6: Art_Decompress lives in THIS module now; its rare arm tail-jumps
+        // the cross-seam S4LZ_Decompress.
+        ("S4LZ_Decompress", pins::S4_LZ_DECOMPRESS.debug),
         // Art-streaming P2a Task 2 — the ZX0-vs-ZX0R act-pool equivalence walk
         // (gated HAS_ACT_ART_POOL, injected below) calls both decoders directly and
         // names buffer B + the act descriptor as cross-seam addresses. ZX0R region
         // start = ZX0R_Decompress; act-descriptor region start = OJZ_Act1_Descriptor.
-        ("ZX0_Decompress", pins::ZX0.debug_base),
         ("ZX0R_Decompress", pins::ZX0_RESUME.debug_base),
         ("Block_Stage_Buffers", pins::BLOCK_STAGE_BUFFERS.debug),
         ("OJZ_Act1_Descriptor", pins::ACT_DESCRIPTOR.debug_base),

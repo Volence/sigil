@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 78 regions, 332 symbols, 7 offsets
+//! [provenance] 78 regions, 341 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -652,6 +652,33 @@ pub const DMA_DEFERRABLE_SLOT: Pin = Pin { plain: 0xFFFF8212, debug: 0xFFFF8212 
 
 /// `DMA_Budget_Remaining`. tests: dma_queue_port
 pub const DMA_BUDGET_REMAINING: Pin = Pin { plain: 0xFFFF8216, debug: 0xFFFF8216 };
+
+/// `DMA_Enq_Bytes_Frame`. tests: bg_anim_port, dma_queue_port, dplc_port, game_loop_port, load_art_port, vblank_port
+pub const DMA_ENQ_BYTES_FRAME: Pin = Pin { plain: 0xFFFF8218, debug: 0xFFFF8218 };
+
+/// `Act_Art_Budget`. tests: load_art_port
+pub const ACT_ART_BUDGET: Pin = Pin { plain: 0xFFFFB48A, debug: 0xFFFFB518 };
+
+/// `Art_Budget_Remaining`. tests: load_art_port
+pub const ART_BUDGET_REMAINING: Pin = Pin { plain: 0xFFFFB48C, debug: 0xFFFFB51A };
+
+/// `PageIn_Pool_Pages`. tests: load_art_port
+pub const PAGE_IN_POOL_PAGES: Pin = Pin { plain: 0xFFFFB47E, debug: 0xFFFFB50C };
+
+/// `PageIn_Bulk_Drain`. tests: load_art_port
+pub const PAGE_IN_BULK_DRAIN: Pin = Pin { plain: 0xFFFFB479, debug: 0xFFFFB507 };
+
+/// `PageIn_Fully_Resident`. tests: load_art_port
+pub const PAGE_IN_FULLY_RESIDENT: Pin = Pin { plain: 0xFFFFB480, debug: 0xFFFFB50E };
+
+/// `Block_Stage_Maps`. tests: tile_cache_port
+pub const BLOCK_STAGE_MAPS: Pin = Pin { plain: 0xFFFFB0E6, debug: 0xFFFFB174 };
+
+/// `Cache_Cur_LocalMap`. tests: tile_cache_port
+pub const CACHE_CUR_LOCAL_MAP: Pin = Pin { plain: 0xFFFFB126, debug: 0xFFFFB1B4 };
+
+/// `Dbg_DMA_Enq_Capped` — debug-shape consumer only (`debug_only`). tests: bg_anim_port, dma_queue_port, dplc_port
+pub const DBG_DMA_ENQ_CAPPED: u32 = 0xFFFF8A0C;
 
 /// `DMA_Overflow_Count` — debug-shape consumer only (`debug_only`). tests: dma_queue_port
 pub const DMA_OVERFLOW_COUNT: u32 = 0xFFFF8A0A;

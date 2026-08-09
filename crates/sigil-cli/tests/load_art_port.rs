@@ -101,7 +101,6 @@ fn addr_labels(debug: bool) -> Vec<Section> {
     let mut table: Vec<(&str, u32)> = vec![
         ("Art_Staging_Buffer", pick(pins::ART_STAGING_BUFFER)),
         ("S4LZ_Decompress", pick(pins::S4_LZ_DECOMPRESS)),
-        ("ZX0_Decompress", pick(pins::ZX0_DECOMPRESS)),
         ("VSync_Wait", pick(pins::V_SYNC_WAIT)),
         ("QueueDMA_Critical", pick(pins::QUEUE_DMA_CRITICAL)),
         ("BG_Init", pick(pins::BG_INIT)),
@@ -119,6 +118,14 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         ("PageIn_Land_Pending", pick(pins::PAGE_IN_LAND_PENDING)),
         ("PageIn_Staging_Busy", pick(pins::PAGE_IN_STAGING_BUSY)),
         ("DMA_Budget_Default", pick(pins::DMA_BUDGET_DEFAULT)),
+        // P-3 family (pre-existing post-P2 seam rot): Level_LoadArt's chain-71
+        // act-context bind + the P2c budget seed + the F-3/M-2 latch cells.
+        ("Current_Act_Ptr", pick(pins::CURRENT_ACT_PTR)),
+        ("Act_Art_Budget", pick(pins::ACT_ART_BUDGET)),
+        ("Art_Budget_Remaining", pick(pins::ART_BUDGET_REMAINING)),
+        ("PageIn_Pool_Pages", pick(pins::PAGE_IN_POOL_PAGES)),
+        ("PageIn_Bulk_Drain", pick(pins::PAGE_IN_BULK_DRAIN)),
+        ("PageIn_Fully_Resident", pick(pins::PAGE_IN_FULLY_RESIDENT)),
     ];
     if debug {
         // Debug shape only: the raise_error construct's error-handler entry
@@ -432,20 +439,6 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     sections.extend(s4_sections);
     asserts.extend(s4_asserts);
 
-    let zx_base = if debug { pins::ZX0.debug_base } else { pins::ZX0.plain_base };
-    let zx_len = if debug { pins::ZX0.debug_len } else { pins::ZX0.plain_len };
-    let (zx_sections, zx_asserts) = flip_lower(
-        parse_file(&aeon.join("engine/compression/zx0.emp")),
-        vec![],
-        aeon.join("engine/compression"),
-        "zx0",
-        zx_base,
-        zx_len,
-        vec![("DEBUG".to_string(), dbg)],
-    );
-    sections.extend(zx_sections);
-    asserts.extend(zx_asserts);
-
     // Value seam: ONE combined equ blob (a second assemble_equ_pairs call
     // would redefine its `Stub:` carrier label).
     // SND_Z80_BASE / SND_CTRL_DMA_ACTIVE are authored in sound_constants.emp now
@@ -484,6 +477,15 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("Ctrl_2_Ext_Press_Accum", pick(pins::CTRL_2_EXT_PRESS_ACCUM)),
         ("DMA_Budget_Default", pick(pins::DMA_BUDGET_DEFAULT)),
         ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
+        // P-3 family rows (same set as the standalone table above); the flip
+        // also lowers vblank, whose VInt_Level resets the byte-cap cell.
+        ("DMA_Enq_Bytes_Frame", pick(pins::DMA_ENQ_BYTES_FRAME)),
+        ("Current_Act_Ptr", pick(pins::CURRENT_ACT_PTR)),
+        ("Act_Art_Budget", pick(pins::ACT_ART_BUDGET)),
+        ("Art_Budget_Remaining", pick(pins::ART_BUDGET_REMAINING)),
+        ("PageIn_Pool_Pages", pick(pins::PAGE_IN_POOL_PAGES)),
+        ("PageIn_Bulk_Drain", pick(pins::PAGE_IN_BULK_DRAIN)),
+        ("PageIn_Fully_Resident", pick(pins::PAGE_IN_FULLY_RESIDENT)),
         // m1-budget-fix: VInt_Level now charges the plane drain + Critical DMA.
         ("Plane_Buffer_Ptr", pick(pins::PLANE_BUFFER_PTR)),
         ("DMA_Critical", pick(pins::DMA_CRITICAL)),
@@ -566,10 +568,6 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     let sr = &refrom[s4_base as usize..s4_base as usize + s4_len];
     assert_eq!(s4.bytes.len(), sr.len(), "s4lz ({shape} flip): length");
     assert_eq!(s4.bytes, sr, "s4lz ({shape} flip): bytes must match the reference");
-    let zx = linked.section("zx0").expect("zx0 region");
-    let zr = &refrom[zx_base as usize..zx_base as usize + zx_len];
-    assert_eq!(zx.bytes.len(), zr.len(), "zx0 ({shape} flip): length");
-    assert_eq!(zx.bytes, zr, "zx0 ({shape} flip): bytes must match the reference");
 }
 
 #[test]

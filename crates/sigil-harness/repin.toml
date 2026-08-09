@@ -1430,6 +1430,50 @@ tests = ["dma_queue_port"]
 name = "DMA_Budget_Remaining"
 tests = ["dma_queue_port"]
 
+# P2c Task 8 byte cap — the shared .transfer core charges this cell; every
+# harness composition that lowers dma_queue needs the seam row (its absence
+# was masked by the flip tests' ROM-presence skip — P-3).
+[[symbol]]
+name = "DMA_Enq_Bytes_Frame"
+tests = ["bg_anim_port", "dma_queue_port", "dplc_port", "game_loop_port", "load_art_port", "vblank_port"]
+
+# P-3 family (pre-existing post-P2 seam rot, baseline preS+preA FAIL): the
+# load_art composition's missing RAM rows.
+[[symbol]]
+name = "Act_Art_Budget"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "Art_Budget_Remaining"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "PageIn_Pool_Pages"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "PageIn_Bulk_Drain"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "PageIn_Fully_Resident"
+tests = ["load_art_port"]
+
+# F-3 merge-translation cells (wave-f3-f1-f6): the per-slot map array + the
+# current-block map cell read by PatchWord and the prefetch scan.
+[[symbol]]
+name = "Block_Stage_Maps"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Cur_LocalMap"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Dbg_DMA_Enq_Capped"
+tests = ["bg_anim_port", "dma_queue_port", "dplc_port"]
+debug_only = true
+
 [[symbol]]
 name = "DMA_Overflow_Count"
 debug_only = true

@@ -382,9 +382,13 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("DMA_Important_Slot", pick(pins::DMA_IMPORTANT_SLOT)),
         ("DMA_Deferrable_Slot", pick(pins::DMA_DEFERRABLE_SLOT)),
         ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
+        // P2c Task 8 byte cap — the shared .transfer core charges this cell (P-3:
+        // this row was missing from the cap's landing; the ROM-presence skip hid it).
+        ("DMA_Enq_Bytes_Frame", pick(pins::DMA_ENQ_BYTES_FRAME)),
     ];
     if debug {
         labels.push(("DMA_Overflow_Count", pins::DMA_OVERFLOW_COUNT));
+        labels.push(("Dbg_DMA_Enq_Capped", pins::DBG_DMA_ENQ_CAPPED));
         labels.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
         labels.push((
             "MDDBG__ErrorHandler_PagesController",

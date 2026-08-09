@@ -450,9 +450,12 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("DMA_Important_Slot", pick(pins::DMA_IMPORTANT_SLOT)),
         ("DMA_Deferrable_Slot", pick(pins::DMA_DEFERRABLE_SLOT)),
         ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
+        // P2c Task 8 byte cap seam (P-3 family).
+        ("DMA_Enq_Bytes_Frame", pick(pins::DMA_ENQ_BYTES_FRAME)),
     ];
     if debug {
         labels.push(("DMA_Overflow_Count", pins::DMA_OVERFLOW_COUNT));
+        labels.push(("Dbg_DMA_Enq_Capped", pins::DBG_DMA_ENQ_CAPPED));
     }
 
     let mut lma = 0x0100_0000u32;

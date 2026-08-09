@@ -52,7 +52,7 @@ fn harvest_emits_the_as_field_offsets_and_sizes() {
         ("Act_sec_grid_ptr", 0x00),
         ("Act_grid_w", 0x04),
         ("Act_edge_mode", 0x20),
-        ("Act_len", 0x26),
+        ("Act_len", 0x28),   // P2 grew Act 0x22->0x28 (art-pool table/pages/budget fields); was stale at 0x26 (P-3 family)
         // Sec ($42)
         ("Sec_sec_block_index", 0x00),
         ("Sec_sec_parallax_config", 0x14),
