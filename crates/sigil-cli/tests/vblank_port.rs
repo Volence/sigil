@@ -86,6 +86,8 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         ("Ctrl_2_Ext_Press_Accum", pick(pins::CTRL_2_EXT_PRESS_ACCUM)),
         ("DMA_Budget_Default", pick(pins::DMA_BUDGET_DEFAULT)),
         ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
+        // P2c Task 8 byte cap seam (P-3 family): VInt_Level resets the frame cell.
+        ("DMA_Enq_Bytes_Frame", pick(pins::DMA_ENQ_BYTES_FRAME)),
         // m1-budget-fix: VInt_Level charges the plane drain + Critical DMA against
         // the window budget, so it now references these RAM cells directly.
         ("Plane_Buffer_Ptr", pick(pins::PLANE_BUFFER_PTR)),

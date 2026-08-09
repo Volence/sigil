@@ -509,6 +509,8 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("Ctrl_2_Ext_Press_Accum", pick(pins::CTRL_2_EXT_PRESS_ACCUM)),
         ("DMA_Budget_Default", pick(pins::DMA_BUDGET_DEFAULT)),
         ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
+        // P2c Task 8 byte cap seam (P-3 family): VInt_Level resets the frame cell.
+        ("DMA_Enq_Bytes_Frame", pick(pins::DMA_ENQ_BYTES_FRAME)),
         // m1-budget-fix: VInt_Level now charges the plane drain + Critical DMA.
         ("Plane_Buffer_Ptr", pick(pins::PLANE_BUFFER_PTR)),
         ("DMA_Critical", pick(pins::DMA_CRITICAL)),

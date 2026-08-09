@@ -168,24 +168,16 @@ tests = ["game_loop_port"]
 [[region]]
 # Tranche 22 — the S4LZ v3 blocking decompressor (S4LZ_DecompressDict +
 # S4LZ_Decompress shared-body fall-through entries + internal TileDelta_Undo).
-# End is the next placement: zx0_decompress.asm's ZX0_Decompress.
+# End is the next placement: ZX0R_Decompress (aeon F-6 deleted engine.zx0 —
+# the blocking ZX0 decoder lives in compression_selftest, DEBUG-only, with its
+# sole consumer).
 # Shape-DEPENDENT length: the debug surplus (+$104) is the three `ifdebug`
 # assert blocks (dict-even + version-byte + dict-range) with message blobs.
 name = "s4lz"
 start = "S4LZ_DecompressDict"
-end = "ZX0_Decompress"
+end = "ZX0R_Decompress"
 gate = "SIGIL_EMP_S4LZ"
 tests = ["s4lz_port"]
-
-[[region]]
-# Tranche 22 — the ZX0 (modern/V2) blocking decompressor. End is the next
-# placement: ZX0R_Decompress (the resumable twin, art-streaming P2a). Shape-
-# INVARIANT $58 (the file has no ifdef arms).
-name = "zx0"
-start = "ZX0_Decompress"
-end = "ZX0R_Decompress"
-gate = "SIGIL_EMP_ZX0"
-tests = ["zx0_port"]
 
 [[region]]
 # Art-streaming P2a — the resumable stack-flat ZX0 decoder (zx0_resume.emp).
@@ -345,22 +337,21 @@ tests = ["camera_port"]
 
 [[region]]
 # Tranche 18 — the §4.6 parallax pipeline (per-cell/per-line HScroll + whole-plane/
-# per-column Vscroll builder). End is the next placement: load_art.asm's
-# Art_Decompress (engine.inc; end-is-next-placement, the load_object precedent).
-# Plain $5B02..$6058 = $556 bytes.
+# per-column Vscroll builder). End is the next placement: load_art's
+# Level_LoadArt (F-6: Art_Decompress moved into compression_selftest).
 name = "parallax"
 start = "Parallax_Init"
-end = "Art_Decompress"
+end = "Level_LoadArt"
 gate = "SIGIL_EMP_PARALLAX"
 tests = ["parallax_port"]
 
 [[region]]
-# Tranche 20 — level art loader (Art_Decompress version dispatch +
-# Level_LoadArt paged pool load). End is the next placement: bg.asm's
-# BG_Init. Shape-DEPENDENT length: the debug surplus is the .drop_page
-# RaiseError expansion (release arm is the 6-byte drain-and-retry).
+# Tranche 20 — level art loader (Level_LoadArt paged pool load; the blocking
+# Art_Decompress dispatch moved to compression_selftest — F-6). End is the next
+# placement: page_in's PageIn_Process. Shape-DEPENDENT length: the debug
+# surplus is the .drop_page RaiseError expansion.
 name = "load_art"
-start = "Art_Decompress"
+start = "Level_LoadArt"
 end = "PageIn_Process"
 gate = "SIGIL_EMP_LOAD_ART"
 tests = ["load_art_port"]
@@ -1439,6 +1430,50 @@ tests = ["dma_queue_port"]
 name = "DMA_Budget_Remaining"
 tests = ["dma_queue_port"]
 
+# P2c Task 8 byte cap — the shared .transfer core charges this cell; every
+# harness composition that lowers dma_queue needs the seam row (its absence
+# was masked by the flip tests' ROM-presence skip — P-3).
+[[symbol]]
+name = "DMA_Enq_Bytes_Frame"
+tests = ["bg_anim_port", "dma_queue_port", "dplc_port", "game_loop_port", "load_art_port", "vblank_port"]
+
+# P-3 family (pre-existing post-P2 seam rot, baseline preS+preA FAIL): the
+# load_art composition's missing RAM rows.
+[[symbol]]
+name = "Act_Art_Budget"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "Art_Budget_Remaining"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "PageIn_Pool_Pages"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "PageIn_Bulk_Drain"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "PageIn_Fully_Resident"
+tests = ["load_art_port"]
+
+# F-3 merge-translation cells (wave-f3-f1-f6): the per-slot map array + the
+# current-block map cell read by PatchWord and the prefetch scan.
+[[symbol]]
+name = "Block_Stage_Maps"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Cur_LocalMap"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Dbg_DMA_Enq_Capped"
+tests = ["bg_anim_port", "dma_queue_port", "dplc_port"]
+debug_only = true
+
 [[symbol]]
 name = "DMA_Overflow_Count"
 debug_only = true
@@ -1453,10 +1488,6 @@ tests = ["load_art_port"]
 
 [[symbol]]
 name = "S4LZ_Decompress"
-tests = ["load_art_port"]
-
-[[symbol]]
-name = "ZX0_Decompress"
 tests = ["load_art_port"]
 
 [[symbol]]

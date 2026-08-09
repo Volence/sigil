@@ -264,9 +264,10 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         m!("engine.replay", "replay", pins::REPLAY),
         // ── Engine compression ──
         m!("engine.s4lz", "s4lz", pins::S4LZ),
-        m!("engine.zx0", "zx0", pins::ZX0),
-        // Art-streaming P2a — the resumable stack-flat ZX0 decoder (zx0_resume.emp),
-        // placed between the blocking ZX0 decoder and math per map.toml `order`.
+        // engine.zx0 DELETED (aeon F-6): the blocking ZX0 decoder moved into
+        // engine.compression_selftest (its sole consumer, DEBUG-only) — release
+        // ships the streaming decoders only.
+        // Art-streaming P2a — the resumable stack-flat ZX0 decoder (zx0_resume.emp).
         m!("engine.zx0_resume", "zx0_resume", pins::ZX0_RESUME),
         m!("engine.math", "math", pins::MATH),
         // ── Engine objects ──

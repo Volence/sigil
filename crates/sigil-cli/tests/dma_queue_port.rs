@@ -128,11 +128,15 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         ("DMA_Important_Slot", pick(pins::DMA_IMPORTANT_SLOT)),
         ("DMA_Deferrable_Slot", pick(pins::DMA_DEFERRABLE_SLOT)),
         ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
+        // P2c Task 8 byte cap seam (P-3: missing since the cap landed; the
+        // ROM-presence skip hid it).
+        ("DMA_Enq_Bytes_Frame", pick(pins::DMA_ENQ_BYTES_FRAME)),
     ];
     if debug {
         // Debug shape only: the overflow counter exists only in debug RAM
         // (ram.asm's `ifdef __DEBUG__` profiling block).
         table.push(("DMA_Overflow_Count", pins::DMA_OVERFLOW_COUNT));
+        table.push(("Dbg_DMA_Enq_Capped", pins::DBG_DMA_ENQ_CAPPED));
     }
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
