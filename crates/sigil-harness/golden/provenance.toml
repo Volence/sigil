@@ -3144,3 +3144,57 @@ full_crc = "afb4b11d"
 full_size = 426819
 anchor_crc = "e6fde45a"
 anchor_end = 0x5f848
+
+[[entry]]
+name = "art-streaming-p2-task6-staging-isolation"
+ab = "docs/superpowers/notes/2026-08-08-art-streaming-p2-task6-ab.md"
+note = "staging-buffer isolation + audit ground-truth snapshot"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "0aa69421"
+full_size = 427222
+anchor_crc = "542cbcb3"
+anchor_end = 0x5f848
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "ccb0ca64"
+full_size = 307775
+anchor_crc = "2e679920"
+anchor_end = 0x43ea2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "636f8248"
+full_size = 93218
+anchor_crc = "178ce237"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "185524a6"
+full_size = 96662
+anchor_crc = "5bf60d6e"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "e1db73c8"
+full_size = 379350
+anchor_crc = "1b876c27"
+anchor_end = 0x5c9d6
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "847c23ed"
+full_size = 413654
+anchor_crc = "a47cb767"
+anchor_end = 0x5da58
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "8f263805"
+full_size = 426878
+anchor_crc = "1d60bec9"
+anchor_end = 0x5f848
