@@ -2223,7 +2223,7 @@ tests = ["load_art_port"]
 
 # Art-streaming P2b Task 6 — the page_cache cross-seam operands. Port tests that
 # re-lower a caller module standalone need these resolved to their real VMAs:
-# load_art -> PageCache_Init; tile_cache -> PageCache_PatchWord / PageCache_Audit;
+# load_art -> PageCache_Init; tile_cache -> PageCache_PatchRun_Seq / _Col / PageCache_Audit;
 # page_in -> PageCache_AllocFrame / PageCache_Publish.
 [[symbol]]
 name = "PageCache_Init"
@@ -2237,8 +2237,14 @@ tests = ["load_art_port"]
 name = "PageCache_Publish"
 tests = ["load_art_port"]
 
+# patch-run batching (aeon 01d9d05): PatchWord deleted; the copy sites bank once
+# per run via the two run-walk procs.
 [[symbol]]
-name = "PageCache_PatchWord"
+name = "PageCache_PatchRun_Seq"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "PageCache_PatchRun_Col"
 tests = ["tile_cache_port"]
 
 [[symbol]]
