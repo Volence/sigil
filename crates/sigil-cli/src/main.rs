@@ -1334,6 +1334,11 @@ enum BuildTarget {
     /// `ReleaseFault`. Owner-ruled 2026-08-04; `build.sh` refuses `CRASH_REPORT=0`
     /// and points here.
     Lean,
+    /// Off-canonical DEV shape (Art-streaming P2b Task 7): sonic4 DEBUG + STRESS_EVICT.
+    /// UNFROZEN — no golden blob, not a `refreeze` target; a forced-eviction soak
+    /// fixture built on demand. Reuses the DEBUG frozen size table (the STRESS_EVICT
+    /// clamp is an immediate, not a size change), so the chainer resolves it directly.
+    StressEvict,
 }
 
 impl BuildTarget {
@@ -1358,6 +1363,9 @@ impl BuildTarget {
             BuildTarget::ConfigA => ("config_a".to_string(), native::config_a_profile()),
             BuildTarget::ConfigB => ("config_b".to_string(), native::config_b_profile()),
             BuildTarget::Lean => ("lean".to_string(), native::lean_profile()),
+            BuildTarget::StressEvict => {
+                ("stress_evict".to_string(), native::stress_evict_profile())
+            }
         }
     }
 }
@@ -1389,6 +1397,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut game: Option<String> = None;
     let mut debug = false;
     let mut config: Option<char> = None;
+    let mut stress_evict = false;
     let mut report: Option<ReportKind> = None;
 
     let mut i = 0;
@@ -1403,6 +1412,11 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             "--config-a" => config = Some('a'),
             "--config-b" => config = Some('b'),
             "--lean" => config = Some('l'),
+            // Off-canonical DEV shape (Art-streaming P2b Task 7): sonic4 DEBUG with the
+            // STRESS_EVICT comptime define = 1 (clamps the residency cache below the pool
+            // size, forcing continuous eviction). UNFROZEN — no golden, not a refreeze
+            // target; built on demand for the controller's forced-eviction soak.
+            "--stress-evict" => stress_evict = true,
             "--report" => {
                 let kind = ReportKind::parse(&next_value(args, &mut i, "--report")?)?;
                 if report.is_some_and(|prev| prev != kind) {
@@ -1417,6 +1431,9 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
 
     let aeon = aeon.ok_or("--aeon <dir> is required")?;
 
+    if stress_evict && (config.is_some() || game.is_some() || debug) {
+        return Err("--stress-evict fixes the shape (sonic4 debug + STRESS_EVICT); do not combine with --game/--debug/--config-*".into());
+    }
     let target = match config {
         Some(c) => {
             if game.is_some() || debug {
@@ -1428,6 +1445,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
                 _ => BuildTarget::Lean,
             }
         }
+        None if stress_evict => BuildTarget::StressEvict,
         None => match game.as_deref() {
             None | Some("sonic4") => BuildTarget::Sonic4 { debug },
             Some("demo") => BuildTarget::Demo { debug },
@@ -1608,6 +1626,12 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
             false,
             native::SONIC4_APPENDIX_FLOOR,
             native::build_rom_chained_with_listing(aeon, &native::lean_profile()),
+        ),
+        // Off-canonical DEV soak shape — the declared-order CHAINER, debug appendix.
+        BuildTarget::StressEvict => (
+            true,
+            native::SONIC4_APPENDIX_FLOOR,
+            native::build_rom_chained_with_listing(aeon, &native::stress_evict_profile()),
         ),
     };
     let native::RomBuild { rom, listing, warnings } = match built {

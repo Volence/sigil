@@ -517,6 +517,10 @@ pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile 
             // CompressionSelfTest act-pool ZX0R equivalence walk (engine module,
             // demo-shared: demo has no pool, so it defines this 0).
             ("HAS_ACT_ART_POOL", 1),
+            // Forced-eviction dev fixture (Art-streaming P2b Task 7): 0 in every shipped
+            // shape (PAGE_FRAMES_CLAMP == PAGE_FRAMES, byte-inert); 1 only in the
+            // off-canonical `stress_evict` profile.
+            ("STRESS_EVICT", 0),
             // sonic4 game-config (games/sonic4/config/constants.asm); the engine
             // `.emp` reads these as -D (rings.emp / entity_window.emp), the
             // `ensure(extern(..)==..)` cross-checks them against the AS config.
@@ -603,6 +607,7 @@ pub fn demo_profile(debug: bool) -> GameProfile {
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
             ("HAS_ACT_ART_POOL", 0),   // demo ships no act art pool (skips the ZX0R act-pool selftest walk)
+            ("STRESS_EVICT", 0),       // dev-fixture define (Task 7); byte-inert at 0
             // demo game-config (games/demo/config/constants.emp) engine-VARYING
             // interface values — homed here (not the `.emp`) per the `-D`-not-in-
             // `.emp` rule; the values that DIFFER from sonic4.
@@ -672,6 +677,7 @@ pub fn config_b_profile() -> GameProfile {
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
             ("HAS_ACT_ART_POOL", 1),
+            ("STRESS_EVICT", 0),       // dev-fixture define (Task 7); byte-inert at 0
             // Config-B is the sonic4 game (sound off), so sonic4's game-config.
             ("MAX_RING_BUFFER", 128),
             ("VRAM_RING_PLACEHOLDER", 0x3E8),
@@ -729,6 +735,7 @@ pub fn config_a_profile() -> GameProfile {
             ("SOUND_DEBUG_HOTKEYS", 1),
             ("SOUND_DBG_MIRROR", 1),
             ("HAS_ACT_ART_POOL", 1),
+            ("STRESS_EVICT", 0),       // dev-fixture define (Task 7); byte-inert at 0
             // Config-A is the sonic4 game (debug + sound), so sonic4's game-config.
             ("MAX_RING_BUFFER", 128),
             ("VRAM_RING_PLACEHOLDER", 0x3E8),
@@ -779,6 +786,7 @@ pub fn lean_profile() -> GameProfile {
             ("SOUND_DEBUG_HOTKEYS", 0),
             ("SOUND_DBG_MIRROR", 0),
             ("HAS_ACT_ART_POOL", 1),
+            ("STRESS_EVICT", 0),       // dev-fixture define (Task 7); byte-inert at 0
             // Lean is the sonic4 game, so sonic4's game-config.
             ("MAX_RING_BUFFER", 128),
             ("VRAM_RING_PLACEHOLDER", 0x3E8),
@@ -789,6 +797,30 @@ pub fn lean_profile() -> GameProfile {
         size_source: SizeSource::Frozen(load_frozen_table("lean.txt")),
         assembled_len: pins::ASSEMBLED_LEN,
     }
+}
+
+/// STRESS_EVICT (off-canonical DEV shape, Art-streaming P2b Task 7): the sonic4 DEBUG
+/// profile with the `STRESS_EVICT` comptime define flipped 0 -> 1. That clamps the
+/// residency cache's usable frame count (`PAGE_FRAMES_CLAMP`) below the OJZ pool size,
+/// so the pool can NO LONGER be fully resident and every circuit forces continuous
+/// evict/reload traffic through the page cache — the fixture the controller's
+/// forced-eviction soak drives.
+///
+/// It is DELIBERATELY UNFROZEN: no `golden/stress_evict.bin`, no `provenance.toml`
+/// entry, not a `refreeze`/`shipped_shapes` target. The clamp is an immediate operand,
+/// not a size change, so the DEBUG frozen size table (`s4_debug.txt`) resolves it
+/// exactly — the chainer builds it with no new table. Everything else (registry,
+/// crash-report island, sound) is identical to `sonic4_profile(true)`, so nothing but
+/// the residency-cache behaviour differs.
+pub fn stress_evict_profile() -> GameProfile {
+    let mut p = sonic4_profile(true);
+    p.name = "stress_evict";
+    for d in p.emp_defines.iter_mut() {
+        if d.0 == "STRESS_EVICT" {
+            d.1 = 1;
+        }
+    }
+    p
 }
 
 /// EVERY SHIPPED SHAPE, in `capture_goldens.sh` order — the one table a gate meaning
@@ -969,7 +1001,16 @@ pub fn harvest_engine_constants(aeon: &Path) -> Result<Vec<(String, i64)>, Strin
     if pdiags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("harvest_engine_constants: parse: {:?}", pdiags.first()));
     }
-    let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(&file, Some(aeon), &[]);
+    // STRESS_EVICT (Art-streaming Task-7 dev-fixture define) must be seeded: the new
+    // PAGE_FRAMES_CLAMP pub const references it, and eval_all_pub_consts folds EVERY
+    // pub const. This harvest is shape-agnostic and feeds the AS -D side only; the
+    // .emp build takes STRESS_EVICT from the PROFILE's emp_defines, so the harvested
+    // PAGE_FRAMES_CLAMP (== PAGE_FRAMES at the seed 0) is an unused AS define.
+    let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(
+        &file,
+        Some(aeon),
+        &[("STRESS_EVICT".to_string(), 0)],
+    );
     if diags.iter().any(|d| d.level == sigil_span::Level::Error) {
         return Err(format!("harvest_engine_constants: resolve: {:?}", diags.first()));
     }

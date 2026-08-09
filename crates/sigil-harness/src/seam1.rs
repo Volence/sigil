@@ -905,7 +905,15 @@ pub(crate) fn sound_authority_consts(aeon: &Path) -> std::sync::Arc<BTreeMap<Str
     if let Some(m) = cache.lock().unwrap().get(aeon) {
         return m.clone();
     }
-    let z80_ram = eval_pub_consts(&aeon.join("engine/system/constants.emp"), aeon, &[])
+    // STRESS_EVICT is the Art-streaming Task-7 dev-fixture define; PAGE_FRAMES_CLAMP
+    // references it, and eval_all_pub_consts evaluates EVERY pub const, so it must be
+    // seeded even though it is irrelevant to sound sizing (the clamp is a residency-
+    // cache knob; 0 == the shipped value, byte-inert here).
+    let z80_ram = eval_pub_consts(
+        &aeon.join("engine/system/constants.emp"),
+        aeon,
+        &[("STRESS_EVICT".to_string(), 0)],
+    )
         .into_iter()
         .find(|(n, _)| n == "Z80_RAM")
         .map(|(_, v)| v)
