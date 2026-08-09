@@ -4168,3 +4168,57 @@ full_crc = "a994731e"
 full_size = 427876
 anchor_crc = "0ecf571d"
 anchor_end = 0x5f850
+
+[[entry]]
+name = "player-polish-trio"
+ab = "aeon docs/superpowers/notes/2026-08-09-player-polish-trio-ab.md"
+note = "S3K-parity trio (roll anim 4-|gsp|, camera curl comp, layer-anchored deform) + fixture re-record (determinism x2 each, release pass)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "ec2da120"
+full_size = 428350
+anchor_crc = "da8d60af"
+anchor_end = 0x5f880
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "9642bdaf"
+full_size = 307994
+anchor_crc = "199accdc"
+anchor_end = 0x43ee8
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "ada3b86f"
+full_size = 93344
+anchor_crc = "c65f2d48"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "ac4b8138"
+full_size = 97486
+anchor_crc = "4779bfa1"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "9ef76775"
+full_size = 379398
+anchor_crc = "687d959c"
+anchor_end = 0x5ca06
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "52a4807d"
+full_size = 414003
+anchor_crc = "8a3a55c1"
+anchor_end = 0x5da88
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "001b07ee"
+full_size = 427966
+anchor_crc = "0123e845"
+anchor_end = 0x5f880

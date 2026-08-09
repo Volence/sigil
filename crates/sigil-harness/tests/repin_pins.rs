@@ -429,8 +429,8 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // shifts +0x140 (the uniform family in the repin diff), and BOTH totals
     // hold: the object bank absorbs the 68k growth as fill and the blob span
     // sits inside BootData's fixed reservation.
-    assert_eq!(pins::ASSEMBLED_LEN, 0x5DA58); // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F850); // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed
+    assert_eq!(pins::ASSEMBLED_LEN, 0x5DA88); // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F880); // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed  // +0x30 player-polish-trio
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the
@@ -611,8 +611,8 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // loops (byte-neutral, −20 cycles/child), and PopulateSpawnedPieceCount's
     // one-register park moved to move.l/movea.l (−12 cycles/child, −4 bytes,
     // which also restored the plain-shape branch margin the wave had consumed).
-    assert_eq!(pins::SOUND_API.plain_base, 0x6EDE);  // +0x50 item28-transpose: section +0x20 (per-column RedrawPlanes blit) + bg +0x30 (column blit + move.l tile guard) slide everything downstream  // +0x30 defect-batch-8  // +0x10 sst-fold  // -0x20 ltr-mul: tile_cache/section multiply shrink slides everything downstream  // +0x100 art-streaming-p2-task3 (folds a prior missed round): +0x80 the task-2 zx0_resume slide the baseline never took, plus +0x80 this task (vblank +0x30 + page_in +0x5A, aligned)  // +0x180 art-streaming-p2-task4: vblank +0x20 + page_in plain len 0x5A->0x1A6 (the FIFO/procs replacing the debug-only scaffold)  // +0x520 wave-f3-f1-f6  // +0x20 wave-panel-closing  // +0x1D0 sound-pkg1
-    assert_eq!(pins::SOUND_API.debug_base, 0x9580);  // +0x50 item28-transpose: same slide, both shapes  // -0x20 defect-batch-8  // +0x10 sst-fold  // -0x20 ltr-mul  // +0x2F0 art-streaming-p2-task3 (folds a prior missed round): +0x150 the task-2 slide the baseline never took, plus +0x1A0 this task (boot +0x10 + vblank +0x30 + page_in +0x166)  // +0x10 art-streaming-p2-task4: vblank +0x10 + load_art/page_in debug net (load_art len -0x40, page_in base -0x30 + len +0x40)  // +0xd90 wave-f3-f1-f6  // +0x90 wave-panel-closing  // +0x2A0 sound-pkg1
+    assert_eq!(pins::SOUND_API.plain_base, 0x6EFE);  // +0x50 item28-transpose: section +0x20 (per-column RedrawPlanes blit) + bg +0x30 (column blit + move.l tile guard) slide everything downstream  // +0x30 defect-batch-8  // +0x10 sst-fold  // -0x20 ltr-mul: tile_cache/section multiply shrink slides everything downstream  // +0x100 art-streaming-p2-task3 (folds a prior missed round): +0x80 the task-2 zx0_resume slide the baseline never took, plus +0x80 this task (vblank +0x30 + page_in +0x5A, aligned)  // +0x180 art-streaming-p2-task4: vblank +0x20 + page_in plain len 0x5A->0x1A6 (the FIFO/procs replacing the debug-only scaffold)  // +0x520 wave-f3-f1-f6  // +0x20 wave-panel-closing  // +0x1D0 sound-pkg1  // +0x20 player-polish-trio
+    assert_eq!(pins::SOUND_API.debug_base, 0x9590);  // +0x50 item28-transpose: same slide, both shapes  // -0x20 defect-batch-8  // +0x10 sst-fold  // -0x20 ltr-mul  // +0x2F0 art-streaming-p2-task3 (folds a prior missed round): +0x150 the task-2 slide the baseline never took, plus +0x1A0 this task (boot +0x10 + vblank +0x30 + page_in +0x166)  // +0x10 art-streaming-p2-task4: vblank +0x10 + load_art/page_in debug net (load_art len -0x40, page_in base -0x30 + len +0x40)  // +0xd90 wave-f3-f1-f6  // +0x90 wave-panel-closing  // +0x2A0 sound-pkg1  // +0x10 player-polish-trio
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A
