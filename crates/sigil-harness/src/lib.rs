@@ -62,10 +62,11 @@ use sigil_link::LinkedImage;
 /// then `0x3E0 → 0x3DE` in the t23 boot clr.w wave (−2 upstream; the Z80
 /// blob content is byte-identical, only its ROM position shifts).
 pub const REGION_A_LMA: u32 = 0x3DE;
-/// Region B base LMA: the phase-`08000h` Moving-Trucks / SFX engine-table bank.
-/// Provenance: `MovingTrucks_Bank_Start`. Slid `0x60000 → 0x58000` in the
-/// 2026-07-21 Deep-Forest-BG re-baseline (the OJZ BG art ahead of it shrank).
-pub const REGION_B_LMA: u32 = 0x58000;
+// `REGION_B_LMA` (the phase-`08000h` Moving-Trucks / SFX engine-table bank base)
+// used to live here as a pinned literal. It had no remaining consumers, and the
+// bank base's sole authority is now the `sound_bank` anchor in
+// `games/<g>/map.toml` (read by `seam2::bank_anchors` / `seam2::sound_layout`), so
+// the const was DELETED rather than left as a second, drifting truth.
 
 /// The bytes of the linked section whose LMA equals `lma`. Regions are keyed by
 /// their ROM base address, not by section name — the front-end's auto-section
