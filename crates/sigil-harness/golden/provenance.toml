@@ -4328,3 +4328,56 @@ full_crc = "bbcb1b50"
 full_size = 428014
 anchor_crc = "e03dd8e1"
 anchor_end = 0x5f8b0
+
+[[entry]]
+name = "sound-pkg4"
+ab = "aeon sound-pkg4 19b5517c: correctness batch D4/D1/D6/D7/B3/E5 + R1 drain-underrun rider, on top of Task-0's -98 B item-25 reclaim. Blob 6255->6164 plain / 6381->6294 debug (90 B headroom, retiring the 3 B ceiling); every downstream region slides -0x60 both shapes. GATES: 4 shapes green crc 1180de13/3a2f7306 with the length tripwire ARMED; plain-shape SFX real-output verified across FM+PSG routes (the pkg-3 regression class); D4 verified by direct A/B - poking sc_transpose=+12 on live PSG channels leaves the control build's divisor set overlapping (no effect) but shifts pkg-4's set disjointly an octave up (214->107 exact)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "48ff5942"
+full_size = 428398
+anchor_crc = "11cac893"
+anchor_end = 0x5f8b0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "9642bdaf"
+full_size = 307994
+anchor_crc = "199accdc"
+anchor_end = 0x43ee8
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "ada3b86f"
+full_size = 93344
+anchor_crc = "c65f2d48"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "ac4b8138"
+full_size = 97486
+anchor_crc = "4779bfa1"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "c4d896f3"
+full_size = 379446
+anchor_crc = "8ac2c5e4"
+anchor_end = 0x5ca36
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "1180de13"
+full_size = 414051
+anchor_crc = "4a72f050"
+anchor_end = 0x5dab8
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "3a2f7306"
+full_size = 428014
+anchor_crc = "9d2397ec"
+anchor_end = 0x5f8b0

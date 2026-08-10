@@ -122,8 +122,8 @@ fn native_blob_matches_reference_debug() {
 /// Both current lengths are odd, hence a 1-byte pad in each shape.
 #[test]
 fn blob_lengths_are_canonical() {
-    assert_eq!(BLOB_LEN_DEBUG - BLOB_LEN_PLAIN, 0x7E, "debug grows +$7E over plain");
-    assert_eq!(BLOB_LEN_PLAIN, 0x186F, "plain blob length (sound pkg 1: +322 B net of the -118 B Snd_ZeroBlock reclaim, was $172D)");
+    assert_eq!(BLOB_LEN_DEBUG - BLOB_LEN_PLAIN, 0x82, "debug grows +$82 over plain (pkg 4 D7 added a 4 B debug-only operand-0 trap)");
+    assert_eq!(BLOB_LEN_PLAIN, 0x1814, "plain blob length (sound pkg 4: -91 B net — Task-0 item-25 reclaim -98 B, D6 +4, R1 +6, E5 +1, D4 byte-neutral; was $186F)");
 }
 
 /// The PLACEMENT contract, stated structurally instead of by re-pinned addresses:

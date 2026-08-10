@@ -344,34 +344,43 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // RINGS bases + DELETE_OBJECT). LENs of these regions unchanged; engine growth absorbed
     // by `org $10000`, so ASSEMBLED_LEN / DEBUG_ASSEMBLED_LEN hold. The Act struct's +2-byte
     // act_art_budget + the new RAM words slide only unasserted data/RAM pins.
-    assert_eq!(pins::ANIMATE.plain_base, 0x32A0);  // +0x10 item27: the boot-growth slide (aligned), which every region downstream of boot inherits  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1
-    assert_eq!(pins::ANIMATE.debug_base, 0x3A1E);  // +0x10 item27: same boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1
+        // `sound-pkg4` (2026-08-10): the resident Z80 blob SHRANK — Task-0's item-25
+    // sequencer reclaim (-98 B) net of the package's own resident additions (D6 +4,
+    // R1 +6, E5 +1; D4/D1/D7-release byte-neutral) leaves plain 6255->6164 and debug
+    // 6381->6294. The blob's even-aligned reserved span inside BootData therefore
+    // shrinks and EVERY engine/object region downstream slides -0x60 in BOTH shapes
+    // (the uniform -0x60 family in the repin diff). Region LENs are unchanged and the
+    // ROM totals hold (`org $10000` absorbs it), so only the bases move. Debug
+    // headroom against the $18F0 ceiling goes 3 B -> 90 B, retiring the constraint
+    // that shaped packages 1-3.
+    assert_eq!(pins::ANIMATE.plain_base, 0x3240);  // +0x10 item27: the boot-growth slide (aligned), which every region downstream of boot inherits  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
+    assert_eq!(pins::ANIMATE.debug_base, 0x39BE);  // +0x10 item27: same boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
     assert_eq!(pins::ANIMATE.plain_len, 0x194);  // +0xA bug005: AF_SET_FIELD rail + refresh idiom
     assert_eq!(pins::ANIMATE.debug_len, 0x2B8);  // +0x10 bug005: same + the debug-fenced rail
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x3634);  // +0x10 item27: boot-growth slide  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1
-    assert_eq!(pins::RINGS.debug_base, 0x3EDE);  // +0x10 item27: boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1
+    assert_eq!(pins::RINGS.plain_base, 0x35D4);  // +0x10 item27: boot-growth slide  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
+    assert_eq!(pins::RINGS.debug_base, 0x3E7E);  // +0x10 item27: boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
     // core LEN shrank −0xA in c4 (Spawn_Count: InitObjectRAM store −4 + RunObjects
     // moveq+store −6). Bases −0xA in c5 (the boot.asm CROSS_RESET store removal is
     // upstream of dplc/core, so core's base slides with everything downstream of boot).
-    assert_eq!(pins::CORE.plain_base, 0x2B80);  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1
+    assert_eq!(pins::CORE.plain_base, 0x2B20);  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
     assert_eq!(pins::CORE.plain_len, 0x300);    // addrfree-invariant: plain's +0x40 span is ≡0 (mod 4), tail pad unchanged  // +0x18 defect-batch-8
-    assert_eq!(pins::CORE.debug_base, 0x2DE0);  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1
+    assert_eq!(pins::CORE.debug_base, 0x2D80);  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
     assert_eq!(pins::CORE.debug_len, 0x750);    // +2 addrfree: the tail align pad that absorbs debug's ≡2 (mod 4) span — placement, core.emp untouched  // +0x20 defect-batch-8
-    assert_eq!(pins::DPLC.plain_base, 0x2AD8);  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1
-    assert_eq!(pins::DPLC.debug_base, 0x2D38);  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0xc sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1
+    assert_eq!(pins::DPLC.plain_base, 0x2A78);  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
+    assert_eq!(pins::DPLC.debug_base, 0x2CD8);  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0xc sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
     assert_eq!(pins::DPLC.plain_len, 0xA8);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xa8);   // item 6 REMOVED (soak disproved single-entry) — debug == plain  // +0x4 sst-fold
 
     // animate_port.rs: the DeleteObject inbound label. bug005-invariant: the +2
     // tail clear lands INSIDE DeleteObject after its label, so the label holds.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2C50, debug: 0x2EB0 });  // +0x10 item27: slides with core on the boot growth  // defect-batch-8: plain +0x10, debug +0x20  // sst-fold  // +0x80 art-streaming-p2-task2  // art-streaming-p2-task3: plain +0x30, debug +0x40  // art-streaming-p2-task4: plain +0x20, debug +0x10  // art-streaming-p2c-t8-t9: plain +0x20, debug +0x30  // wave-f3-f1-f6: plain -0x50, debug -0x50  // +0x140 sound-pkg1
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2BF0, debug: 0x2E50 });  // +0x10 item27: slides with core on the boot growth  // defect-batch-8: plain +0x10, debug +0x20  // sst-fold  // +0x80 art-streaming-p2-task2  // art-streaming-p2-task3: plain +0x30, debug +0x40  // art-streaming-p2-task4: plain +0x20, debug +0x10  // art-streaming-p2c-t8-t9: plain +0x20, debug +0x30  // wave-f3-f1-f6: plain -0x50, debug -0x50  // +0x140 sound-pkg1  // -0x60 sound-pkg4
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
@@ -620,8 +629,8 @@ fn secondary_pin_classes_match_the_hand_typed_baseline() {
     // loops (byte-neutral, −20 cycles/child), and PopulateSpawnedPieceCount's
     // one-register park moved to move.l/movea.l (−12 cycles/child, −4 bytes,
     // which also restored the plain-shape branch margin the wave had consumed).
-    assert_eq!(pins::SOUND_API.plain_base, 0x6EFE);  // +0x50 item28-transpose: section +0x20 (per-column RedrawPlanes blit) + bg +0x30 (column blit + move.l tile guard) slide everything downstream  // +0x30 defect-batch-8  // +0x10 sst-fold  // -0x20 ltr-mul: tile_cache/section multiply shrink slides everything downstream  // +0x100 art-streaming-p2-task3 (folds a prior missed round): +0x80 the task-2 zx0_resume slide the baseline never took, plus +0x80 this task (vblank +0x30 + page_in +0x5A, aligned)  // +0x180 art-streaming-p2-task4: vblank +0x20 + page_in plain len 0x5A->0x1A6 (the FIFO/procs replacing the debug-only scaffold)  // +0x520 wave-f3-f1-f6  // +0x20 wave-panel-closing  // +0x1D0 sound-pkg1  // +0x20 player-polish-trio
-    assert_eq!(pins::SOUND_API.debug_base, 0x9590);  // +0x50 item28-transpose: same slide, both shapes  // -0x20 defect-batch-8  // +0x10 sst-fold  // -0x20 ltr-mul  // +0x2F0 art-streaming-p2-task3 (folds a prior missed round): +0x150 the task-2 slide the baseline never took, plus +0x1A0 this task (boot +0x10 + vblank +0x30 + page_in +0x166)  // +0x10 art-streaming-p2-task4: vblank +0x10 + load_art/page_in debug net (load_art len -0x40, page_in base -0x30 + len +0x40)  // +0xd90 wave-f3-f1-f6  // +0x90 wave-panel-closing  // +0x2A0 sound-pkg1  // +0x10 player-polish-trio
+    assert_eq!(pins::SOUND_API.plain_base, 0x6E9E);  // +0x50 item28-transpose: section +0x20 (per-column RedrawPlanes blit) + bg +0x30 (column blit + move.l tile guard) slide everything downstream  // +0x30 defect-batch-8  // +0x10 sst-fold  // -0x20 ltr-mul: tile_cache/section multiply shrink slides everything downstream  // +0x100 art-streaming-p2-task3 (folds a prior missed round): +0x80 the task-2 zx0_resume slide the baseline never took, plus +0x80 this task (vblank +0x30 + page_in +0x5A, aligned)  // +0x180 art-streaming-p2-task4: vblank +0x20 + page_in plain len 0x5A->0x1A6 (the FIFO/procs replacing the debug-only scaffold)  // +0x520 wave-f3-f1-f6  // +0x20 wave-panel-closing  // +0x1D0 sound-pkg1  // +0x20 player-polish-trio  // -0x60 sound-pkg4
+    assert_eq!(pins::SOUND_API.debug_base, 0x9530);  // +0x50 item28-transpose: same slide, both shapes  // -0x20 defect-batch-8  // +0x10 sst-fold  // -0x20 ltr-mul  // +0x2F0 art-streaming-p2-task3 (folds a prior missed round): +0x150 the task-2 slide the baseline never took, plus +0x1A0 this task (boot +0x10 + vblank +0x30 + page_in +0x166)  // +0x10 art-streaming-p2-task4: vblank +0x10 + load_art/page_in debug net (load_art len -0x40, page_in base -0x30 + len +0x40)  // +0xd90 wave-f3-f1-f6  // +0x90 wave-panel-closing  // +0x2A0 sound-pkg1  // +0x10 player-polish-trio  // -0x60 sound-pkg4
     // §D backlog c1+c2 (2026-07-23): the constant-flag spin-class fix (capture-then-
     // test in await_slot + wait_alive, +0x4 both shapes) + the DEBUG-only
     // SPIN_WATCHDOG rails on both spins (+0xB4 debug only). plain len 0x206 -> 0x20A

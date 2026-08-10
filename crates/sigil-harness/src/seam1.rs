@@ -33,12 +33,14 @@ use sigil_ir::{Section, SectionPlacement, SymbolTable};
 /// [`emit_sound_blob`] asserts the emitted blob against. When a module
 /// legitimately grows or shrinks, re-pin this to the new measured length
 /// (and re-pin the `Z80_SOUND_SIZE` mirrors in the boot/tranche gates).
-pub const BLOB_LEN_PLAIN: usize = 0x186F;
-/// The debug blob length = plain + $7E (the sequencer's 16 `if DEBUG==1` bodies).
-/// Same TRIPWIRE-not-input status as [`BLOB_LEN_PLAIN`]. Package 1 leaves
-/// 3 B of debug headroom against the $18F0 ceiling — any resident addition
-/// needs a reclaim first (aeon DEFERRED_WORK carries candidates).
-pub const BLOB_LEN_DEBUG: usize = 0x186F + 0x7E;
+pub const BLOB_LEN_PLAIN: usize = 0x1814;
+/// The debug blob length = plain + $82 (the sequencer's `if DEBUG==1` bodies;
+/// package 4's D7 operand-0 trap added 4 debug-only bytes to the previous $7E).
+/// Same TRIPWIRE-not-input status as [`BLOB_LEN_PLAIN`]. Package 4's Task-0
+/// reclaim (-98 B) minus its own additions leaves **90 B of debug headroom**
+/// against the $18F0 ceiling — the 3 B ceiling that constrained packages 1-3
+/// is gone.
+pub const BLOB_LEN_DEBUG: usize = 0x1814 + 0x82;
 
 /// The blob's LMA base = `Z80_Sound_Start` = `BootData + 54`. SHAPE-DEPENDENT: the
 /// debug shape grows +4 UPSTREAM of BootData (boot `__DEBUG__` content). Pin-sourced

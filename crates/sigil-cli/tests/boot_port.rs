@@ -90,7 +90,7 @@ fn golden(name: &str) -> Option<Vec<u8>> {
 /// Provenance — the values in the frozen goldens (`golden/s4.bin` 414K /
 /// `golden/s4.debug.bin`), matching the asl-canonical `s4.lst`/`s4.debug.lst`
 /// at the freeze commit:
-///   Z80_SOUND_SIZE  plain $181C   debug $189A   (the resident Z80 driver span)
+///   Z80_SOUND_SIZE  plain $1814   debug $1896   (the resident Z80 driver span)
 ///   GameState_OJZScroll_Init  plain $5C260 debug $5E03C  (the Game.entry link target; sound-pkg3 values)
 ///
 /// L1 P2: `#Game.ENTRY_ID` is now a comptime const (3), folded from the game
@@ -98,8 +98,8 @@ fn golden(name: &str) -> Option<Vec<u8>> {
 /// `GameState_OJZScroll_Init` (the game proc), not the retired `Game_Entry` equ.
 fn frozen_symbol(debug: bool, name: &str) -> u64 {
     match (name, debug) {
-        ("Z80_SOUND_SIZE", false) => 0x1870,   // sound pkg 1 (blob 6255 → even 6256)
-        ("Z80_SOUND_SIZE", true) => 0x18EE,    // sound pkg 1 (blob 6381 → even 6382)
+        ("Z80_SOUND_SIZE", false) => 0x1814,   // sound pkg 4 (blob 6164, already even)
+        ("Z80_SOUND_SIZE", true) => 0x1896,    // sound pkg 4 (blob 6294, already even)
         ("GameState_OJZScroll_Init", false) => 0x5C260,  // objtest-gate; +0x30 sound-pkg3 v2 (banked dac_sample_tab growth + mod-8 base pads precede the game tail)
         ("GameState_OJZScroll_Init", true) => 0x5E03C,   // objtest-gate; +0x2E sound-pkg3 v2 (same growth + pads, debug layout)
         _ => panic!("no frozen value pinned for symbol `{name}` (debug={debug})"),
