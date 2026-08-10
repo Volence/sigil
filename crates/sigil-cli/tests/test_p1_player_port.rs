@@ -343,7 +343,7 @@ fn act_struct_items(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::Item
 
 struct PcShape {
     sonic_init_assets: u32,
-    sonic_load_art: u32,
+    player_load_art: u32,
     phys_table_sonic: u32,
     animate_sprite: u32,
     draw_sprite: u32,
@@ -385,7 +385,7 @@ struct PcShape {
 
 const PC_PLAIN: PcShape = PcShape {
     sonic_init_assets: pins::SONIC.plain_base,
-    sonic_load_art: pins::SONIC_LOAD_ART.plain,
+    player_load_art: pins::PLAYER_LOAD_ART.plain,
     phys_table_sonic: pins::PHYS_TABLE_SONIC.plain,
     animate_sprite: pins::ANIMATE.plain_base,
     draw_sprite: pins::DRAW_SPRITE.plain,
@@ -419,7 +419,7 @@ const PC_PLAIN: PcShape = PcShape {
 };
 const PC_DEBUG: PcShape = PcShape {
     sonic_init_assets: pins::SONIC.debug_base,
-    sonic_load_art: pins::SONIC_LOAD_ART.debug,
+    player_load_art: pins::PLAYER_LOAD_ART.debug,
     phys_table_sonic: pins::PHYS_TABLE_SONIC.debug,
     animate_sprite: pins::ANIMATE.debug_base,
     draw_sprite: pins::DRAW_SPRITE.debug,
@@ -501,7 +501,7 @@ fn compile_player_common(
     let mut groups: Vec<Vec<Section>> = vec![
         as_constant_equs(),
         as_label_at("Sonic_InitAssets", shape.sonic_init_assets),
-        as_label_at("Sonic_LoadArt", shape.sonic_load_art),
+        as_label_at("Player_LoadArt", shape.player_load_art),
         as_label_at("PhysTable_Sonic", shape.phys_table_sonic),
         as_label_at("AnimateSprite", shape.animate_sprite),
         as_label_at("Draw_Sprite", shape.draw_sprite),

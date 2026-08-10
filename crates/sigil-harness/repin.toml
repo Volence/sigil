@@ -2378,11 +2378,25 @@ end = "PState_Ground"
 gate = "SIGIL_EMP_PLAYER_COMMON"
 tests = ["test_p1_player_port"]
 
+# sonic is now the Sonic character RECORD only (CharDef_Sonic + PhysTable_Sonic).
+# Its two procs folded into the shared loaders in `characters` when the roster
+# landed, so the head label moved Sonic_InitAssets -> CharDef_Sonic and the span
+# now ends where characters begins.
 [[region]]
 name = "sonic"
-start = "Sonic_InitAssets"
-end = "TestStatic_Main"
+start = "CharDef_Sonic"
+end = "CharacterDefs"
 gate = "SIGIL_EMP_SONIC"
+tests = ["test_p1_player_port"]
+
+# characters — the roster table + the shared per-character asset/art loaders
+# (CharacterDefs, Player_InitAssets, Player_LoadArt, Ability_None). Sits between
+# sonic and test_static; still the last player content before test_static.
+[[region]]
+name = "characters"
+start = "CharacterDefs"
+end = "TestStatic_Main"
+gate = "SIGIL_EMP_CHARACTERS"
 tests = ["test_p1_player_port"]
 
 # P2+P3 (tranche 35) — the player state machines. Three per-file object-bank
@@ -2405,7 +2419,7 @@ tests = ["test_p2_player_states_port"]
 [[region]]
 name = "player_spindash"
 start = "PState_Spindash"
-end = "Sonic_InitAssets"
+end = "CharDef_Sonic"
 gate = "SIGIL_EMP_PLAYER_SPINDASH"
 tests = ["test_p2_player_states_port"]
 
@@ -2491,7 +2505,7 @@ tests = ["test_p4_player_sensors_port"]
 name = "HeightMapsRot"
 tests = ["test_p4_player_sensors_port"]
 [[symbol]]
-name = "Sonic_LoadArt"
+name = "Player_LoadArt"
 tests = ["test_p1_player_port"]
 [[symbol]]
 name = "PhysTable_Sonic"

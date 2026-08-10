@@ -4434,3 +4434,57 @@ full_crc = "b8249dad"
 full_size = 428056
 anchor_crc = "e063d731"
 anchor_end = 0x5f8b0
+
+[[entry]]
+name = "characters-modulespec"
+ab = "aeon@3f34a78a docs/superpowers/notes/2026-08-10-characters-modulespec-ab.md"
+note = "characters section split out of player_common; ModuleSpec registered; class PS, anchor-identical"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "b4bc0e02"
+full_size = 428553
+anchor_crc = "31231810"
+anchor_end = 0x5f8b0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "abb56749"
+full_size = 308183
+anchor_crc = "ca835893"
+anchor_end = 0x43f38
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "e40a43ce"
+full_size = 93386
+anchor_crc = "de40caee"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "b5a586d1"
+full_size = 97528
+anchor_crc = "6a7ac597"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "bf221a83"
+full_size = 379446
+anchor_crc = "2efc47d7"
+anchor_end = 0x5ca36
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "11504636"
+full_size = 414153
+anchor_crc = "e770643f"
+anchor_end = 0x5dab8
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "1a623f64"
+full_size = 428171
+anchor_crc = "d9e64f6b"
+anchor_end = 0x5f8b0
