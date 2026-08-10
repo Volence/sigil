@@ -145,6 +145,12 @@ pub const D1C_BASELINE: &[(&str, &str, &str)] = &[
     ("TestPlayer_Main", "Player_SensorFloor", "d2"),
     // DOCUMENTED FP (edge-blind close) — see calls.rs::destroys_value.
     ("TileCache_FillRow", "TileCache_FindStagedBlock", "a1"),
+    // Same documented FP class, second caller (perf/fillcol-hoist 2026-08-10):
+    // FillColumn's inlined hot copy body consumes FindStagedBlock's PRODUCED a1
+    // on the success edge exactly as FillRow does — the edge-blind close reads
+    // it as a destroyed held value. Adjudicated by the controller against the
+    // FillRow precedent before T3 landed. An edge-precise D1c dissolves both.
+    ("TileCache_FillColumn", "TileCache_FindStagedBlock", "a1"),
 ];
 
 /// The D1c rows that only the DEBUG family produces — debug-gated code the plain
