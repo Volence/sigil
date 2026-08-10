@@ -238,14 +238,28 @@ fn wrong_bank_cross_seam_label_fires_all_five_co_residency_ensures() {
 
     let assert_diags =
         sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &module.link_asserts);
+    // Count ERRORS only: since sound-pkg3 v2 the mt body carries odd-sized mod-8
+    // tail pads (`_sfx_align_*`), so THIS probe's doctored $60000 base also lands
+    // SongTable/SongPatchTable odd and two `[layout.odd-item]` WARNINGS ride along
+    // (impossible at the real placed base — the pads exist precisely to keep the
+    // real base ≡ 0 mod 8). The probe's claim is about the five co-residency
+    // ensures, which are error-tier.
+    let errors: Vec<_> = assert_diags
+        .iter()
+        .filter(|d| d.level == sigil_span::Level::Error)
+        .collect();
     assert_eq!(
-        assert_diags.len(),
+        errors.len(),
         5,
         "expected all five co-residency ensures to fire (wrong bank), got: {assert_diags:?}"
     );
     assert!(
-        assert_diags.iter().all(|d| d.level == Level::Error),
-        "every firing ensure must be Level::Error: {assert_diags:?}"
+        assert_diags
+            .iter()
+            .filter(|d| !d.message.contains("[layout.odd-item]"))
+            .all(|d| d.level == Level::Error),
+        "every firing ENSURE must be Level::Error (the doctored-base [layout.odd-item] \
+         warnings are the pads' expected shadow, not ensures): {assert_diags:?}"
     );
     assert!(
         assert_diags

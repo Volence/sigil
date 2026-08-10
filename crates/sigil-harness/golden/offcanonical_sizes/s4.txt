@@ -7,9 +7,9 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=s4
 # reproduces_golden=s4.bin
-# golden_crc32=52a4807d
-# assembled_anchor=8a3a55c1
-# assembled_end=0x5da88
+# golden_crc32=204cdb55
+# assembled_anchor=87ee8641
+# assembled_end=0x5dab8
 # labels=62
 Ani_Sonic 0x26200
 AnimateSprite 0x32a0
@@ -18,7 +18,7 @@ BgAnim_Init 0x6e60
 BgAnim_Table 0x261c2
 BootData 0x3a0
 BootData_End 0x1c56
-BusError 0x5c9d8
+BusError 0x5ca08
 Camera_Init 0x5dd0
 Checksum 0x18e
 Collected_Init 0x37ec
@@ -26,10 +26,10 @@ Collision_GetType 0x5440
 Collision_ProbeDown 0x54b0
 Dac_Temp_Blip 0x48000
 DeformTable_Zero 0x10da4
-EndOfRom 0x5da88
+EndOfRom 0x5dab8
 EntryPoint 0x200
 GameLoop 0x256e
-GameState_OJZScroll_Init 0x5c230
+GameState_OJZScroll_Init 0x5c260
 GetSineCosine 0x2840
 HBlank_Install 0x2410
 HeightMaps 0x2626e
@@ -61,8 +61,8 @@ Read_Controllers 0x2460
 RingBuffer_Add 0x3634
 S4LZ_DecompressDict 0x26d0
 Section_Init 0x59a4
-Sfx_33 0x5bae8
-Song_MovingTrucks 0x58607
+Sfx_33 0x5bb10
+Song_MovingTrucks 0x58628
 Sonic_InitAssets 0x10cbc
 SoundTablesZ80_Head 0x58000
 Sound_PostByte 0x6efe

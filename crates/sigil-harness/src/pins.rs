@@ -39,9 +39,9 @@ pub struct ShapeOffset {
 // ── ROM end (the listing `END` line address, per shape) ──
 
 /// Assembled (pre-convsym) ROM length, plain shape. tests: m1d_rom, m1d_debug_rom, mixed_dac_rom
-pub const ASSEMBLED_LEN: usize = 0x5DA88;
+pub const ASSEMBLED_LEN: usize = 0x5DAB8;
 /// Assembled (pre-convsym) ROM length, `__DEBUG__` shape. tests: m1d_rom, m1d_debug_rom, mixed_dac_rom
-pub const DEBUG_ASSEMBLED_LEN: usize = 0x5F880;
+pub const DEBUG_ASSEMBLED_LEN: usize = 0x5F8B0;
 
 // ── Regions (manifest order) ──
 
@@ -232,31 +232,31 @@ pub const OJZ_BG_ANIM: Region = Region { plain_base: 0x261C2, debug_base: 0x2687
 pub const OBJDEFS: Region = Region { plain_base: 0x11830, debug_base: 0x11EF2, plain_len: 0x38, debug_len: 0x34 };
 
 /// `GameState_ObjectTest_Init` .. `GameState_OJZScroll_Init` (debug-only region; plain empty at `GameState_OJZScroll_Init`) — gate `SIGIL_EMP_OBJECT_TEST_STATE`. tests: test_t1_harness_states_port
-pub const OBJECT_TEST_STATE: Region = Region { plain_base: 0x5C230, debug_base: 0x5DC82, plain_len: 0x0, debug_len: 0x38C };
+pub const OBJECT_TEST_STATE: Region = Region { plain_base: 0x5C260, debug_base: 0x5DCB0, plain_len: 0x0, debug_len: 0x38C };
 
 /// `GameState_OJZScroll_Init` .. `Replay_OJZ_Fixture` — gate `SIGIL_EMP_OJZ_SCROLL_TEST`. tests: test_t1_harness_states_port
-pub const OJZ_SCROLL_TEST: Region = Region { plain_base: 0x5C230, debug_base: 0x5E00E, plain_len: 0x548, debug_len: 0x55E };
+pub const OJZ_SCROLL_TEST: Region = Region { plain_base: 0x5C260, debug_base: 0x5E03C, plain_len: 0x548, debug_len: 0x55E };
 
 /// `Replay_OJZ_Fixture` .. `BusError`.
-pub const REPLAY_FIXTURE: Region = Region { plain_base: 0x5C778, debug_base: 0x5E56C, plain_len: 0x260, debug_len: 0x264 };
+pub const REPLAY_FIXTURE: Region = Region { plain_base: 0x5C7A8, debug_base: 0x5E59A, plain_len: 0x260, debug_len: 0x266 };
 
 /// `BusError` .. `EndOfRom` — gate `SIGIL_EMP_ERROR_HANDLER`. tests: error_handler_port
-pub const ERROR_HANDLER: Region = Region { plain_base: 0x5C9D8, debug_base: 0x5E7D0, plain_len: 0x10B0, debug_len: 0x10B0 };
+pub const ERROR_HANDLER: Region = Region { plain_base: 0x5CA08, debug_base: 0x5E800, plain_len: 0x10B0, debug_len: 0x10B0 };
 
 /// `Dac_Temp_Blip` .. start + 0xF8BC plain / 0xF8BC debug (literal — no end symbol) — gate `SIGIL_EMP_DAC`. tests: dac_bank_port
 pub const DAC_BANKS: Region = Region { plain_base: 0x48000, debug_base: 0x48000, plain_len: 0xF8BC, debug_len: 0xF8BC };
 
-/// `Song_MovingTrucks` .. start + 0x34E1 plain / 0x4F33 debug (literal — no end symbol) — gate `SIGIL_EMP_MT`. tests: mt_bank_port
-pub const MT_BANK_BLOB: Region = Region { plain_base: 0x58607, debug_base: 0x58607, plain_len: 0x34E1, debug_len: 0x4F33 };
+/// `Song_MovingTrucks` .. start + 0x34E8 plain / 0x4F38 debug (literal — no end symbol) — gate `SIGIL_EMP_MT`. tests: mt_bank_port
+pub const MT_BANK_BLOB: Region = Region { plain_base: 0x58628, debug_base: 0x58628, plain_len: 0x34E8, debug_len: 0x4F38 };
 
 /// `Sfx_33` .. start + 0x748 plain / 0x748 debug (literal — no end symbol) — gate `SIGIL_EMP_SFX`. tests: sfx_bank_port
-pub const SFX_BANK_BLOB: Region = Region { plain_base: 0x5BAE8, debug_base: 0x5D53A, plain_len: 0x748, debug_len: 0x748 };
+pub const SFX_BANK_BLOB: Region = Region { plain_base: 0x5BB10, debug_base: 0x5D560, plain_len: 0x748, debug_len: 0x748 };
 
-/// `SoundTablesZ80_Head` .. start + 0x607 plain / 0x607 debug (literal — no end symbol) — gate `SIGIL_EMP_SOUNDBANKHEAD`. tests: soundbankhead_port
-pub const SOUNDBANKHEAD: Region = Region { plain_base: 0x58000, debug_base: 0x58000, plain_len: 0x607, debug_len: 0x607 };
+/// `SoundTablesZ80_Head` .. start + 0x628 plain / 0x628 debug (literal — no end symbol) — gate `SIGIL_EMP_SOUNDBANKHEAD`. tests: soundbankhead_port
+pub const SOUNDBANKHEAD: Region = Region { plain_base: 0x58000, debug_base: 0x58000, plain_len: 0x628, debug_len: 0x628 };
 
 /// `EndOfRom` .. start + 0x0 plain / 0x0 debug (literal — no end symbol) — gate `SIGIL_EMP_EPILOGUE`. tests: m1d_rom, m1d_debug_rom
-pub const EPILOGUE: Region = Region { plain_base: 0x5DA88, debug_base: 0x5F880, plain_len: 0x0, debug_len: 0x0 };
+pub const EPILOGUE: Region = Region { plain_base: 0x5DAB8, debug_base: 0x5F8B0, plain_len: 0x0, debug_len: 0x0 };
 
 /// `ObjCodeBase` .. start + 0x2 plain / 0x2 debug (literal — no end symbol) — gate `SIGIL_EMP_OBJCODEBASE`. tests: m1d_rom, m1d_debug_rom
 pub const OBJCODEBASE: Region = Region { plain_base: 0x10000, debug_base: 0x10000, plain_len: 0x2, debug_len: 0x2 };
@@ -321,40 +321,40 @@ pub const GET_SINE_COSINE: Pin = Pin { plain: 0x2840, debug: 0x2AA0 };
 pub const ENTRY_POINT: Pin = Pin { plain: 0x200, debug: 0x200 };
 
 /// `BusError` — debug-shape consumer only (`debug_only`). tests: vectors_port
-pub const BUS_ERROR: u32 = 0x5E7D0;
+pub const BUS_ERROR: u32 = 0x5E800;
 
 /// `AddressError` — debug-shape consumer only (`debug_only`). tests: vectors_port
-pub const ADDRESS_ERROR: u32 = 0x5E7E8;
+pub const ADDRESS_ERROR: u32 = 0x5E818;
 
 /// `IllegalInstr` — debug-shape consumer only (`debug_only`). tests: vectors_port
-pub const ILLEGAL_INSTR: u32 = 0x5E804;
+pub const ILLEGAL_INSTR: u32 = 0x5E834;
 
 /// `ZeroDivide` — debug-shape consumer only (`debug_only`). tests: vectors_port
-pub const ZERO_DIVIDE: u32 = 0x5E826;
+pub const ZERO_DIVIDE: u32 = 0x5E856;
 
 /// `ChkInstr` — debug-shape consumer only (`debug_only`). tests: vectors_port
-pub const CHK_INSTR: u32 = 0x5E840;
+pub const CHK_INSTR: u32 = 0x5E870;
 
 /// `TrapvInstr` — debug-shape consumer only (`debug_only`). tests: vectors_port
-pub const TRAPV_INSTR: u32 = 0x5E85E;
+pub const TRAPV_INSTR: u32 = 0x5E88E;
 
 /// `PrivilegeViol` — debug-shape consumer only (`debug_only`). tests: vectors_port
-pub const PRIVILEGE_VIOL: u32 = 0x5E87E;
+pub const PRIVILEGE_VIOL: u32 = 0x5E8AE;
 
 /// `Trace` — debug-shape consumer only (`debug_only`). tests: vectors_port
-pub const TRACE: u32 = 0x5E8A0;
+pub const TRACE: u32 = 0x5E8D0;
 
 /// `Line1010Emu` — debug-shape consumer only (`debug_only`). tests: vectors_port
-pub const LINE1010_EMU: u32 = 0x5E8B4;
+pub const LINE1010_EMU: u32 = 0x5E8E4;
 
 /// `Line1111Emu` — debug-shape consumer only (`debug_only`). tests: vectors_port
-pub const LINE1111_EMU: u32 = 0x5E8D4;
+pub const LINE1111_EMU: u32 = 0x5E904;
 
 /// `ErrorExcept` — debug-shape consumer only (`debug_only`). tests: vectors_port
-pub const ERROR_EXCEPT: u32 = 0x5E8F4;
+pub const ERROR_EXCEPT: u32 = 0x5E924;
 
 /// `ErrorTrap` — debug-shape consumer only (`debug_only`). tests: vectors_port
-pub const ERROR_TRAP: u32 = 0x5E912;
+pub const ERROR_TRAP: u32 = 0x5E942;
 
 /// `VBlank_Handler`. tests: m1c_vector_table
 pub const V_BLANK_HANDLER: Pin = Pin { plain: 0x2240, debug: 0x22E0 };
@@ -618,10 +618,10 @@ pub const ENTITY_LOADED_CLEAR: Pin = Pin { plain: 0x3A76, debug: 0x4642 };
 pub const SOUND_PLAY_RING: Pin = Pin { plain: 0x70BA, debug: 0x98F6 };
 
 /// `MDDBG__ErrorHandler` — debug-shape consumer only (`debug_only`). tests: rings_port
-pub const MDDBG_ERROR_HANDLER: u32 = 0x5E92A;
+pub const MDDBG_ERROR_HANDLER: u32 = 0x5E95A;
 
 /// `MDDBG__ErrorHandler_PagesController` — debug-shape consumer only (`debug_only`). tests: rings_port
-pub const MDDBG_ERROR_HANDLER_PAGES_CONTROLLER: u32 = 0x5F6F0;
+pub const MDDBG_ERROR_HANDLER_PAGES_CONTROLLER: u32 = 0x5F720;
 
 /// `DMA_Critical`. tests: dma_queue_port
 pub const DMA_CRITICAL: Pin = Pin { plain: 0xFFFF804E, debug: 0xFFFF804E };
@@ -813,10 +813,10 @@ pub const SFX_RING_WR: Pin = Pin { plain: 0xFFFFAF76, debug: 0xFFFFB004 };
 pub const SFX_RING_RD: Pin = Pin { plain: 0xFFFFAF77, debug: 0xFFFFB005 };
 
 /// `SongTable`. tests: sound_api_port
-pub const SONG_TABLE: Pin = Pin { plain: 0x5BAE0, debug: 0x5D522 };
+pub const SONG_TABLE: Pin = Pin { plain: 0x5BB08, debug: 0x5D548 };
 
 /// `SongPatchTable`. tests: sound_api_port
-pub const SONG_PATCH_TABLE: Pin = Pin { plain: 0x5BAE4, debug: 0x5D52E };
+pub const SONG_PATCH_TABLE: Pin = Pin { plain: 0x5BB0C, debug: 0x5D554 };
 
 /// `OJZ_Palette`. tests: act_descriptor_port
 pub const OJZ_PALETTE: Pin = Pin { plain: 0x20940, debug: 0x20FF6 };

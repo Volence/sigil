@@ -755,15 +755,17 @@ gate = "SIGIL_EMP_DAC"
 tests = ["dac_bank_port"]
 
 # Parcel K4 inc-5 Stage 3 — the Moving-Trucks streaming bank BODY, native
-# (mt_bank_blob.emp embeds the seam-2 mt_bank{,_debug}.bin @ $58607, after the phased
-# soundBankHead). Shape-INVARIANT start ($58607), shape-DEPENDENT size (debug adds
-# DrumTest + HCZ2): literal len 0x34E1 plain, debug_len 0x4F33. No end label (the SFX
-# block follows at a per-shape address). gate SIGIL_EMP_MT holes out the AS org-skip.
+# (mt_bank_blob.emp embeds the seam-2 mt_bank{,_debug}.bin @ $58628, after the phased
+# soundBankHead). Shape-INVARIANT start ($58628), shape-DEPENDENT size (debug adds
+# DrumTest + HCZ2): literal len 0x34E8 plain, debug_len 0x4F38 (sound-pkg3 v2: the
+# mod-8 _sfx_align_* tail pads land in the body split-bin, +7 plain / +5 debug).
+# No end label (the SFX block follows at a per-shape address). gate SIGIL_EMP_MT
+# holes out the AS org-skip.
 [[region]]
 name = "mt_bank_blob"
 start = "Song_MovingTrucks"
-len = 0x34E1
-debug_len = 0x4F33
+len = 0x34E8
+debug_len = 0x4F38
 gate = "SIGIL_EMP_MT"
 tests = ["mt_bank_port"]
 
@@ -781,14 +783,16 @@ tests = ["sfx_bank_port"]
 
 # Parcel K4 inc-5 Stage 4b — the engine-table bank HEAD, native (soundbankhead.emp
 # places the 5 heads as a PHASE-BANK section, LMA $58000 / VMA $8000). Was the
-# soundBankHead macro (sound_bank.inc, DELETED). Literal len 0x607 (the head is
-# $8000..$8607 contiguous; shape-invariant size, shape-dependent content). gate
+# soundBankHead macro (sound_bank.inc, DELETED). Literal len 0x628 (the head is
+# $8000..$8628 contiguous; shape-invariant size, shape-dependent content; grew
+# $607→$625 at sound-pkg3 (DacSampleTable 9→12 B/descriptor) then →$628 at v2's
+# DacHeadPad mod-8 rounding). gate
 # SIGIL_EMP_SOUNDBANKHEAD holes out the AS phase block + org-skip. start
 # SoundTablesZ80_Head (already a frozen key + the `sound_bank` map anchor).
 [[region]]
 name = "soundbankhead"
 start = "SoundTablesZ80_Head"
-len = 0x607
+len = 0x628
 gate = "SIGIL_EMP_SOUNDBANKHEAD"
 tests = ["soundbankhead_port"]
 

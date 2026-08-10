@@ -27,8 +27,10 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (`DEBUG=0`): `s4.bin[0x58607..0x5BAE8]` (13,537 bytes).
-//! Debug (`DEBUG=1`): `s4.debug.bin[0x58607..0x5D53A]` (20,275 bytes).
+//! Plain (`DEBUG=0`): `s4.bin[0x58628..0x5BB10]` (13,544 bytes).
+//! Debug (`DEBUG=1`): `s4.debug.bin[0x58628..0x5D560]` (20,280 bytes).
+//! (Windows slid +0x21/+0x2E at sound-pkg3 v2 (growth + mod-8 pads; pads land in-region so sizes grew +7/+5) 2026-08-10: the banked dac_sample_tab
+//! ahead of this bank grew 90→120 B; region CONTENT unchanged, sizes held.)
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -43,21 +45,27 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::test_support::{reference_tree, strict_gate};
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
 
-/// The module's own directory in aeon's tree — the `include_root` under which
-/// the six `embed("*.bin")` fixtures resolve. Honors `AEON_DIR` (mirroring
-/// `dac_port.rs`/the `sigil-harness` gates) with the workspace default.
-fn sound_dir() -> PathBuf {
-    let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
-    Path::new(&aeon).join("games/sonic4/data/sound")
-}
-
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+/// REFERENCE-DEPENDENT: the module's own directory in aeon's tree — the
+/// `include_root` under which the six `embed("*.bin")` fixtures resolve.
+/// `Some(dir)` when the tree carries `mt_bank.emp` and all six blobs; `None` —
+/// both tests SKIP green — when it does not, unless `SIGIL_STRICT_GATE=1` makes
+/// absence a hard failure.
+fn sound_dir() -> Option<PathBuf> {
+    reference_tree(&[
+        "games/sonic4/data/sound/mt_bank.emp",
+        "games/sonic4/data/sound/song_movingtrucks.bin",
+        "games/sonic4/data/sound/movingtrucks_pitchtable_stream.bin",
+        "games/sonic4/data/sound/movingtrucks_patches.bin",
+        "games/sonic4/data/sound/song_drumtest.bin",
+        "games/sonic4/data/sound/song_hcz2.bin",
+        "games/sonic4/data/sound/hcz2_patches.bin",
+    ])
+    .map(|aeon| aeon.join("games/sonic4/data/sound"))
 }
 
 /// The FROZEN golden slice comparand (the asl-witnessed reference), NOT the live
@@ -94,8 +102,8 @@ fn map_toml() -> &'static str {
      \n\
      [[region]]\n\
      name = \"mt_bank\"\n\
-     lma_base = 0x58607\n\
-     size = 0x79F9\n\
+     lma_base = 0x58628\n\
+     size = 0x79D8\n\
      kind = \"rom\"\n"
 }
 
@@ -125,9 +133,9 @@ fn as_bank_start_label(debug: i128) -> Vec<Section> {
 /// image, and the link-assert diagnostics (expected empty — all five ensures
 /// pass).
 fn compile_real_file(
+    dir: &Path,
     debug: i128,
 ) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_span::Diagnostic>, Vec<LinkAssert>) {
-    let dir = sound_dir();
     let emp_path = dir.join("mt_bank.emp");
     let src = std::fs::read_to_string(&emp_path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", emp_path.display()));
@@ -140,7 +148,7 @@ fn compile_real_file(
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
-        include_root: Some(dir.clone()),
+        include_root: Some(dir.to_path_buf()),
         embed_base: None,
         defines: vec![("DEBUG".to_string(), debug)],
     };
@@ -220,12 +228,13 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-/// (DEBUG=0) The `mt_bank` section's linked bytes equal `s4.bin[0x58607..0x5BAE8]`.
+/// (DEBUG=0) The `mt_bank` section's linked bytes equal `s4.bin[0x58628..0x5BB10]`.
 #[test]
 fn mt_bank_region_matches_reference() {
+    let Some(dir) = sound_dir() else { return };
     let Some(refrom) = golden("s4.bin") else { return };
 
-    let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(0);
+    let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(&dir, 0);
     assert_eq!(
         guard_assert_count(&link_asserts),
         7,
@@ -236,18 +245,19 @@ fn mt_bank_region_matches_reference() {
         "the five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"
     );
 
-    let expected = &refrom[0x58607..0x5BAE8];
+    let expected = &refrom[0x58628..0x5BB10];
     let section = linked.section("mt_bank").expect("linked image must carry mt_bank");
-    assert_region_matches(&section.bytes, expected, "mt_bank (DEBUG=0) vs s4.bin[0x58607..0x5BAE8]");
+    assert_region_matches(&section.bytes, expected, "mt_bank (DEBUG=0) vs s4.bin[0x58628..0x5BB10]");
 }
 
 /// (DEBUG=1) The `mt_bank` section's linked bytes equal
-/// `s4.debug.bin[0x58607..0x5D53A]`.
+/// `s4.debug.bin[0x58628..0x5D560]`.
 #[test]
 fn mt_bank_debug_region_matches_reference() {
+    let Some(dir) = sound_dir() else { return };
     let Some(refrom) = golden("s4.debug.bin") else { return };
 
-    let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(1);
+    let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(&dir, 1);
     assert_eq!(
         guard_assert_count(&link_asserts),
         7,
@@ -258,7 +268,7 @@ fn mt_bank_debug_region_matches_reference() {
         "the five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"
     );
 
-    let expected = &refrom[0x58607..0x5D53A];
+    let expected = &refrom[0x58628..0x5D560];
     let section = linked.section("mt_bank").expect("linked image must carry mt_bank");
-    assert_region_matches(&section.bytes, expected, "mt_bank (DEBUG=1) vs s4.debug.bin[0x58607..0x5D53A]");
+    assert_region_matches(&section.bytes, expected, "mt_bank (DEBUG=1) vs s4.debug.bin[0x58628..0x5D560]");
 }

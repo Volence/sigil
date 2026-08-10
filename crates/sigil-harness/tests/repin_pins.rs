@@ -429,8 +429,17 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // shifts +0x140 (the uniform family in the repin diff), and BOTH totals
     // hold: the object bank absorbs the 68k growth as fill and the blob span
     // sits inside BootData's fixed reservation.
-    assert_eq!(pins::ASSEMBLED_LEN, 0x5DA88); // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F880); // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed  // +0x30 player-polish-trio
+    // `sound-pkg3` (2026-08-10): DacSample descriptor 9→12 (append-only ds_vol +
+    // ds_mix_rsvd, DAC ratification insurance) grows the BANKED dac_sample_tab
+    // 90→120 B (+0x20 after even alignment) inside the sound bank — pure banked
+    // DATA, resident Z80 blob UNCHANGED (plain 6255 / debug 6381, 3 B headroom
+    // held). Every pin downstream of the sound bank shifts +0x20 (the uniform
+    // +0x20 family in the repin diff), SONG_TABLE/SONG_PATCH_TABLE slide +0x1E
+    // within the bank (head span $607→$625), and BOTH totals grow +0x30 net (v2: +0x10 more from the mod-8 structural pads that realign the sfx_bank base after the fold-vs-placement off-by-2) — the
+    // bank precedes the fault-handler island and nothing absorbs banked-data
+    // growth.
+    assert_eq!(pins::ASSEMBLED_LEN, 0x5DAB8); // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x5F8B0); // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the

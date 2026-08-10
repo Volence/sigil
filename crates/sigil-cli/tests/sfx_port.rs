@@ -12,7 +12,7 @@
 //! Unlike `mt_bank.emp`, this module carries NO `DEBUG` member: the SFX block's
 //! CONTENT is byte-identical plain and debug (1864 bytes = `$748` in both) — only
 //! its BASE address shifts, because it sits after the shape-dependent song tables
-//! (plain `$5BAE8` / debug `$5D53A`). So the SHAPE lives entirely in the MAP
+//! (plain `$5BB10` / debug `$5D560`). So the SHAPE lives entirely in the MAP
 //! (per-shape `map_toml(debug)` region base, R7), not in the module: `lower` runs
 //! with an EMPTY `defines` vec for both shapes.
 //!
@@ -32,8 +32,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$5BAE8`): `s4.bin[0x5BAE8..0x5C230]` (1864 bytes).
-//! Debug (map base `$5D53A`): `s4.debug.bin[0x5D53A..0x5DC82]` (1864 bytes).
+//! Plain (map base `$5BB10`): `s4.bin[0x5BB10..0x5C258]` (1864 bytes).
+//! Debug (map base `$5D560`): `s4.debug.bin[0x5D560..0x5DCA8]` (1864 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -48,21 +48,24 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::test_support::{reference_tree, strict_gate};
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
 
-/// The module's own directory in aeon's tree — the `include_root` under which
-/// the eighteen `embed("sfx_*.bin")` fixtures resolve. Honors `AEON_DIR`
-/// (mirroring `mt_port.rs`/the `sigil-harness` gates) with the workspace default.
-fn sound_dir() -> PathBuf {
-    let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
-    Path::new(&aeon).join("games/sonic4/data/sound/sfx")
-}
-
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+/// REFERENCE-DEPENDENT: the module's own directory in aeon's tree — the
+/// `include_root` under which the eighteen `embed("sfx_*.bin")` fixtures
+/// resolve. `Some(dir)` when the tree carries the module and its fixtures (the
+/// first pair stands for the set — they ship together in this one directory);
+/// `None` — both tests SKIP green — when it does not, unless
+/// `SIGIL_STRICT_GATE=1` makes absence a hard failure.
+fn sound_dir() -> Option<PathBuf> {
+    reference_tree(&[
+        "games/sonic4/data/sound/sfx/sfx_bank.emp",
+        "games/sonic4/data/sound/sfx/sfx_33.bin",
+        "games/sonic4/data/sound/sfx/sfx_33_patches.bin",
+    ])
+    .map(|aeon| aeon.join("games/sonic4/data/sound/sfx"))
 }
 
 /// The FROZEN golden slice comparand (the asl-witnessed reference), NOT the live
@@ -86,13 +89,13 @@ fn golden(name: &str) -> Option<Vec<u8>> {
 /// (opened by its top-level `ensure` — R-T0.3's carrier contract) and the real
 /// `sfx_bank` region pinned at the R7 PER-SHAPE LMA, sized to the bank top
 /// ($60000). The ONLY structural difference from `mt_port.rs`'s map: the region
-/// base is shape-dependent, so this is a `fn of debug` — plain `$5BAE8`/`$4518`,
-/// debug `$5D53A`/`$2AC6` (both run to the `$60000` bank top).
+/// base is shape-dependent, so this is a `fn of debug` — plain `$5BB10`/`$44F0`,
+/// debug `$5D560`/`$2AA0` (both run to the `$60000` bank top).
 fn map_toml(debug: bool) -> String {
     let (base, size) = if debug {
-        ("0x5D53A", "0x2AC6")
+        ("0x5D560", "0x2AA0")
     } else {
-        ("0x5BAE8", "0x4518")
+        ("0x5BB10", "0x44F0")
     };
     format!(
         "fill = 0x00\n\
@@ -134,9 +137,9 @@ fn as_bank_start_label() -> Vec<Section> {
 /// `.emp` sections, the linked image, the link-assert diagnostics (expected empty
 /// — the ONE ensure passes), and the module's captured link asserts.
 fn compile_real_file(
+    dir: &Path,
     debug: bool,
 ) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_span::Diagnostic>, Vec<LinkAssert>) {
-    let dir = sound_dir();
     let emp_path = dir.join("sfx_bank.emp");
     let src = std::fs::read_to_string(&emp_path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", emp_path.display()));
@@ -150,7 +153,7 @@ fn compile_real_file(
     // NO defines: the SFX block is shape-invariant; the shape lives in the map.
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
-        include_root: Some(dir.clone()),
+        include_root: Some(dir.to_path_buf()),
         embed_base: None,
         defines: vec![],
     };
@@ -223,12 +226,13 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-/// (plain) The `sfx_bank` section's linked bytes equal `s4.bin[0x5BAE8..0x5C230]`.
+/// (plain) The `sfx_bank` section's linked bytes equal `s4.bin[0x5BB10..0x5C258]`.
 #[test]
 fn sfx_bank_region_matches_reference() {
+    let Some(dir) = sound_dir() else { return };
     let Some(refrom) = golden("s4.bin") else { return };
 
-    let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(false);
+    let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(&dir, false);
     assert_eq!(
         guard_assert_count(&link_asserts),
         1,
@@ -239,18 +243,19 @@ fn sfx_bank_region_matches_reference() {
         "the cross-seam co-residency ensure must PASS (link succeeded): {assert_diags:?}"
     );
 
-    let expected = &refrom[0x5BAE8..0x5C230];
+    let expected = &refrom[0x5BB10..0x5C258];
     let section = linked.section("sfx_bank").expect("linked image must carry sfx_bank");
-    assert_region_matches(&section.bytes, expected, "sfx_bank (plain) vs s4.bin[0x5BAE8..0x5C230]");
+    assert_region_matches(&section.bytes, expected, "sfx_bank (plain) vs s4.bin[0x5BB10..0x5C258]");
 }
 
 /// (debug) The `sfx_bank` section's linked bytes equal
-/// `s4.debug.bin[0x5D53A..0x5DC82]`.
+/// `s4.debug.bin[0x5D560..0x5DCA8]`.
 #[test]
 fn sfx_bank_debug_region_matches_reference() {
+    let Some(dir) = sound_dir() else { return };
     let Some(refrom) = golden("s4.debug.bin") else { return };
 
-    let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(true);
+    let (_resolved, linked, assert_diags, link_asserts) = compile_real_file(&dir, true);
     assert_eq!(
         guard_assert_count(&link_asserts),
         1,
@@ -261,9 +266,9 @@ fn sfx_bank_debug_region_matches_reference() {
         "the cross-seam co-residency ensure must PASS (link succeeded): {assert_diags:?}"
     );
 
-    let expected = &refrom[0x5D53A..0x5DC82];
+    let expected = &refrom[0x5D560..0x5DCA8];
     let section = linked.section("sfx_bank").expect("linked image must carry sfx_bank");
-    assert_region_matches(&section.bytes, expected, "sfx_bank (debug) vs s4.debug.bin[0x5D53A..0x5DC82]");
+    assert_region_matches(&section.bytes, expected, "sfx_bank (debug) vs s4.debug.bin[0x5D560..0x5DCA8]");
 }
 
 /// Count the deferred GUARD asserts, excluding the D2.29 [layout.odd-item]

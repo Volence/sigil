@@ -4222,3 +4222,109 @@ full_crc = "001b07ee"
 full_size = 427966
 anchor_crc = "0123e845"
 anchor_end = 0x5f880
+
+[[entry]]
+name = "sound-pkg3"
+ab = "aeon sound-pkg3 79d65502: DacSample 9->12 banked-table growth (+0x20 both shapes, resident blob unchanged 6255/6381); gates: rebuild crc match 1fe4e5a4, oracle DAC pulse via x12 stride, MT rendered A/B cosine 1.0000 vs pre-branch"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "03a5f44b"
+full_size = 428382
+anchor_crc = "511a4735"
+anchor_end = 0x5f8a0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "9642bdaf"
+full_size = 307994
+anchor_crc = "199accdc"
+anchor_end = 0x43ee8
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "ada3b86f"
+full_size = 93344
+anchor_crc = "c65f2d48"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "ac4b8138"
+full_size = 97486
+anchor_crc = "4779bfa1"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "2d10e7dc"
+full_size = 379430
+anchor_crc = "f89efb6d"
+anchor_end = 0x5ca26
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "0841b0c4"
+full_size = 414035
+anchor_crc = "2d1bf627"
+anchor_end = 0x5daa8
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "1fe4e5a4"
+full_size = 427998
+anchor_crc = "2bd640e9"
+anchor_end = 0x5f8a0
+
+[[entry]]
+name = "sound-pkg3-v2"
+ab = "aeon sound-pkg3 46ea51f: v2 supersedes chain-84 sound-pkg3 entry — sfx_bank fold-vs-placement off-by-2 fixed via structural mod-8 comptime pads (plain SFX was silent, caught by controller real-output gate; pointer cells byte-verified both shapes; plain jump PSG 467Hz + dash FM restored on oracle; resident blobs unchanged 6255/6381)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "b1318f0b"
+full_size = 428398
+anchor_crc = "e824e490"
+anchor_end = 0x5f8b0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "9642bdaf"
+full_size = 307994
+anchor_crc = "199accdc"
+anchor_end = 0x43ee8
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "ada3b86f"
+full_size = 93344
+anchor_crc = "c65f2d48"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "ac4b8138"
+full_size = 97486
+anchor_crc = "4779bfa1"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "0350b8fe"
+full_size = 379446
+anchor_crc = "9be7a284"
+anchor_end = 0x5ca36
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "204cdb55"
+full_size = 414051
+anchor_crc = "87ee8641"
+anchor_end = 0x5dab8
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "bbcb1b50"
+full_size = 428014
+anchor_crc = "e03dd8e1"
+anchor_end = 0x5f8b0

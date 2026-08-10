@@ -6,7 +6,7 @@
 //! PHASE-BANK section (`games.sonic4.soundbankhead`, vma $8000 / lma $58000) embedding
 //! the seam-2-emitted head artifacts (sound_tables_z80 / movingtrucks_pitchtable /
 //! sfx_blob_win_tab / seq_opcode_tab / dac_sample_tab). Head label SoundTablesZ80_Head;
-//! shape-INVARIANT size (0x607), shape-DEPENDENT content (SfxBlobWinTab / SeqOpcodeTable
+//! shape-INVARIANT size (0x628 — sound-pkg3 v2), shape-DEPENDENT content (SfxBlobWinTab / SeqOpcodeTable
 //! differ per shape). The AS twin's `fatal` span walls are the module's comptime ensures.
 //!
 //! EMIT-FIRST: the embedded head `.bin` are gitignored build artifacts, so the gate
@@ -91,7 +91,7 @@ fn gate(debug: bool, rom_name: &str) {
     let linked = compile(lma, len, debug);
     let base = lma;
     let sec = linked.section("soundbankhead").expect("linked image must carry soundbankhead");
-    assert_eq!(sec.bytes.len(), len, "soundbankhead must emit {len:#x} bytes ($8000..$8607)");
+    assert_eq!(sec.bytes.len(), len, "soundbankhead must emit {len:#x} bytes ($8000..$8628)");
     let expected = &refrom[base as usize..base as usize + len];
     if let Some(i) = (0..len).find(|&i| sec.bytes[i] != expected[i]) {
         panic!(
