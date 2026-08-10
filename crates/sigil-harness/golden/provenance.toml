@@ -4381,3 +4381,56 @@ full_crc = "3a2f7306"
 full_size = 428014
 anchor_crc = "9d2397ec"
 anchor_end = 0x5f8b0
+
+[[entry]]
+name = "t1-draw-unroll"
+ab = "aeon e1367aee: Draw_TileColumn 4-cell gather unroll cherry-picked from perf/fillcol-hoist (T1 only, owner ruling 2026-08-10 — the rest of the parcel showed no lag win and is parked as research). +42 B/shape. Measured in the parcel A/B: Draw_TileColumn 2750->2361 cycles (-14%) at the same address with the symbol resolved both sides. GATES: 4 shapes green (s4 414093/92e4d868, s4.debug 428056/b8249dad); replay net BOTH fixtures hold with all checkpoint hashes matching (pure-perf parcel must not desync)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "83d5eb9e"
+full_size = 428438
+anchor_crc = "bf2150a1"
+anchor_end = 0x5f8b0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "9b1635b3"
+full_size = 308036
+anchor_crc = "95d8994a"
+anchor_end = 0x43ee8
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "e40a43ce"
+full_size = 93386
+anchor_crc = "de40caee"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "b5a586d1"
+full_size = 97528
+anchor_crc = "6a7ac597"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "2dc355d9"
+full_size = 379446
+anchor_crc = "da10fba9"
+anchor_end = 0x5ca36
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "92e4d868"
+full_size = 414093
+anchor_crc = "6a8d85cb"
+anchor_end = 0x5dab8
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "b8249dad"
+full_size = 428056
+anchor_crc = "e063d731"
+anchor_end = 0x5f8b0
