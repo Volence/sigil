@@ -417,6 +417,30 @@ pub(crate) fn native_sound_symbols(aeon: &Path, debug: bool) -> Vec<(String, u32
 /// window like the real value, so nothing folds differently by sign or range.
 const DAC_SAMPLE_TABLE_SIZE_PROBE: i64 = 0x8000;
 
+/// The placeholder sound-bank id the SIZE-ONLY lowering folds for BOTH bank-id
+/// names (`SND_ENGINE_TABLE_BANK` in the driver, `SFX_BLOB_BANK` in `sound_sfx`).
+///
+/// WHY THIS IS SOUND — a STRONGER argument than [`DAC_SAMPLE_TABLE_SIZE_PROBE`]'s:
+/// a bank id reaches the Z80 only as an 8-bit immediate (`ld a,n`-class, the value
+/// written to the cartridge bank latch), and EVERY `n` in `0..=255` encodes in the
+/// same 2 bytes. So the emitted span is placeholder-INVARIANT for any legal 8-bit
+/// value — not merely for values in the same range as the real one. The only
+/// requirement on this constant is that it BE a legal 8-bit immediate. As with the
+/// DAC probe, the placeholder never reaches emitted bytes: every real emit lowers
+/// with the map-derived value from [`crate::seam2::sound_bank_id`].
+const SOUND_BANK_ID_SIZE_PROBE: i64 = 0x0B;
+
+/// The full preset set for the SIZE-ONLY lowering path: every const whose real
+/// value is derived through `seam2::sound_layout`. Presetting ALL of them is what
+/// keeps the size-only path out of that derivation — a missing entry re-enters
+/// `sound_layout` from inside its own body (its memo only publishes at the END, so
+/// the re-entrant call finds an empty cache) and recurses without bound.
+const SIZE_ONLY_PRESETS: &[(&str, i64)] = &[
+    ("DacSampleTable", DAC_SAMPLE_TABLE_SIZE_PROBE),
+    ("SND_ENGINE_TABLE_BANK", SOUND_BANK_ID_SIZE_PROBE),
+    ("SFX_BLOB_BANK", SOUND_BANK_ID_SIZE_PROBE),
+];
+
 /// The 26 handler VMAs (`vma_base + offset`), per shape. The sequencer's base is
 /// DERIVED (the driver's emitted span), and its internal `if DEBUG==1` growth
 /// re-bases the handlers AFTER a debug block, so the values are shape-DEPENDENT.
@@ -439,12 +463,7 @@ fn handler_symbols(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
     let specs = file_specs();
     let seq_idx =
         specs.iter().position(|s| s.section == "sound_sequencer").expect("sequencer spec");
-    let (sections, bases, _spans) = place_resident_sections(
-        aeon,
-        debug,
-        None,
-        &[("DacSampleTable", DAC_SAMPLE_TABLE_SIZE_PROBE)],
-    );
+    let (sections, bases, _spans) = place_resident_sections(aeon, debug, None, SIZE_ONLY_PRESETS);
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout (handler symbols) failed: {d:?}"));
     let sec = resolved
@@ -989,16 +1008,19 @@ pub(crate) fn sound_tables_authority_consts(aeon: &Path) -> std::sync::Arc<BTree
 /// the generated vol-env data supply them in the mixed AS build. Each carries its
 /// provenance. (Contrast the 384 contract values, which flow from the authority,
 /// and the SFX-bank counts, which flow from `sfx_bank_authority_consts`.)
-/// `DacSampleTable` is NOT here — it is DERIVED from seam-2's map-driven DAC head
-/// placement and resolved LAZILY in [`resolve_consts`] (only the resident driver
-/// requests it), so building this map never re-enters `seam2::sound_layout`.
+/// The map-DERIVED values are NOT here — `DacSampleTable` (seam-2's map-driven DAC
+/// head placement) and the two sound-bank ids `SND_ENGINE_TABLE_BANK` /
+/// `SFX_BLOB_BANK` (the `sound_bank` anchor's `bankid`) are resolved LAZILY in
+/// [`resolve_consts`], only when a module actually requests them, so building this
+/// map never re-enters `seam2::sound_layout`.
 fn seam_emit_config() -> BTreeMap<&'static str, i64> {
     BTreeMap::from([
         // Game config (games/sonic4/main.asm + config/sound_ids.asm + config/game.asm)
         // — the resident blob needs the game's bank/id layout to build; the AS side
         // gets these from main.asm. Not engine sound contract, so not in the authority.
-        ("SND_ENGINE_TABLE_BANK", 0x0B), // main.asm: MovingTrucks_Bank_Start >> 15
-        ("SFX_BLOB_BANK", 0x0B),         // main.asm: = SND_ENGINE_TABLE_BANK
+        // SND_ENGINE_TABLE_BANK / SFX_BLOB_BANK are NOT here — they are DERIVED from
+        // the map's `sound_bank` anchor (`seam2::sound_bank_id`) and resolved lazily
+        // in `resolve_consts`, exactly like `DacSampleTable`.
         // SFX_ID_BASE / SFX_TABLE_LEN are NOT here (Parcel F2) — their authority is
         // sfx_bank.emp (SfxTable-derived), resolved via `sfx_bank_authority_consts`.
         ("SFXID_REV_LOOP", 0xAB),        // config/sound_ids.emp (= SFXID_SPINDASH)
@@ -1024,14 +1046,15 @@ fn seam_emit_config() -> BTreeMap<&'static str, i64> {
 /// `DacSampleTable` window VMA. A name in none is a loud panic (a seam name with
 /// no home is a build error, never a silent wrong byte).
 ///
-/// `DacSampleTable` is resolved LAST and only when a file actually requests it (the
-/// resident driver): its value comes from `seam2::sound_layout`, which lowers the
-/// seq-opcode table via the symbols-only path — so no non-driver file's resolution
-/// (e.g. the sequencer's, reached inside that derivation) triggers the derivation.
+/// The map-derivations (`DacSampleTable`; `SND_ENGINE_TABLE_BANK` /
+/// `SFX_BLOB_BANK`) are resolved LAST and only when a file actually requests them:
+/// their values come from `seam2::sound_layout`, which lowers the seq-opcode table
+/// via the symbols-only path — so no file whose consts are resolved INSIDE that
+/// derivation re-enters it.
 ///
 /// `presets` wins over every source and is consulted FIRST — the size-only
-/// lowering path uses it to supply a placeholder `DacSampleTable` so the
-/// seam-2 derivation is never entered (see [`DAC_SAMPLE_TABLE_SIZE_PROBE`]).
+/// lowering path uses it to supply placeholders for all three so the seam-2
+/// derivation is never entered (see [`DAC_SAMPLE_TABLE_SIZE_PROBE`]).
 fn resolve_consts(
     aeon: &Path,
     names: &[&'static str],
@@ -1060,11 +1083,24 @@ fn resolve_consts(
                         }) as i64
                     })
                 })
+                .or_else(|| {
+                    // ONE derivation for BOTH names: the engine-table bank and the SFX
+                    // blob bank are the SAME bank by construction (aeon asserts it in
+                    // six places — sfx_bank.emp's co-residency ensure, mt_bank.emp's
+                    // guards), so a second derivation would only be a second thing to
+                    // drift.
+                    matches!(n, "SND_ENGINE_TABLE_BANK" | "SFX_BLOB_BANK").then(|| {
+                        crate::seam2::sound_bank_id(aeon).unwrap_or_else(|e| {
+                            panic!("sound-bank id derivation (seam2::sound_layout): {e}")
+                        }) as i64
+                    })
+                })
                 .unwrap_or_else(|| {
                     panic!(
                         "seam-1 const `{n}` is in none of the sound_constants.emp authority, \
                          the sfx_bank.emp authority, the sound_tables_z80.emp vol-env-count \
-                         authority, the emit-config list, nor the DacSampleTable map-derivation"
+                         authority, the emit-config list, nor the DacSampleTable / \
+                         sound-bank-id map-derivations"
                     )
                 });
             (n, v)

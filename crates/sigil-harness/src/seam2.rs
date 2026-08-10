@@ -49,6 +49,11 @@ use crate::map_placement::load_placement_map;
 /// reaches via an intra-section `align $8000`.
 const DAC_INTRA_BANK_ALIGN: u32 = 0x8000;
 
+/// The Genesis `$8000`-window bank size. The sound bank spans
+/// `[sound_bank, sound_bank + BANK_WINDOW_SIZE)`; its top is the ceiling every
+/// in-bank artifact must fit under.
+const BANK_WINDOW_SIZE: u32 = 0x8000;
+
 /// The sound-bank section head-labels in the map's declared `order`, in the
 /// sequence this emit lays them down: the DAC bank island, then the `$8000`-window
 /// head bank, then the Moving-Trucks streaming bank, then the SFX block. A map
@@ -57,12 +62,14 @@ const DAC_INTRA_BANK_ALIGN: u32 = 0x8000;
 const SOUND_BANK_ORDER: [&str; 4] =
     ["Dac_Temp_Blip", "SoundTablesZ80_Head", "Song_MovingTrucks", "Sfx_33"];
 
-/// An even, in-`$B`-bank scratch base used ONLY to measure the shape-invariant SFX
-/// window-head LENGTH before the real SFX-block base is known (the real base needs
-/// the Moving-Trucks body length, which sits later in the derivation). The head's
-/// LENGTH is placement-invariant (135 window pointers × 2 bytes); its CONTENT is
-/// not, but the length measurement never uses the content.
-const SFX_LEN_PROBE_BASE: u32 = 0x5A000;
+/// Offset from the `sound_bank` anchor to an even, in-bank scratch base used ONLY
+/// to measure the shape-invariant SFX window-head LENGTH before the real SFX-block
+/// base is known (the real base needs the Moving-Trucks body length, which sits
+/// later in the derivation). The head's LENGTH is placement-invariant (135 window
+/// pointers × 2 bytes); its CONTENT is not, but the length measurement never uses
+/// the content. Kept an ANCHOR-RELATIVE offset (not an absolute LMA) so the probe
+/// base stays inside the sound bank wherever the map puts that bank.
+const SFX_LEN_PROBE_OFFSET: u32 = 0x2000;
 
 /// The two declared bank anchors from `games/<g>/map.toml`, validated against the
 /// declared byte-emitting `order`.
@@ -189,7 +196,9 @@ pub fn sound_layout(aeon: &Path) -> Result<SoundLayout, String> {
     // length, derived below); its LENGTH is placement-invariant, so measure it at a
     // scratch base.
     let l_sfxhead =
-        emit_sfx_body_and_head_at(aeon, SFX_LEN_PROBE_BASE, sfx_win_tab_lma)?.head.len() as u32;
+        emit_sfx_body_and_head_at(aeon, a.sound_bank + SFX_LEN_PROBE_OFFSET, sfx_win_tab_lma)?
+            .head
+            .len() as u32;
 
     let seq_opcode_tab_lma = sfx_win_tab_lma + l_sfxhead;
     let l_seq = emit_seq_opcode_tab(aeon, false)?.len() as u32;
@@ -200,8 +209,8 @@ pub fn sound_layout(aeon: &Path) -> Result<SoundLayout, String> {
             as u32;
 
     let mt_bank_lma = dac_sample_tab_lma + l_dach;
-    let l_mt_plain = emit_mt_bank_at(aeon, false, mt_bank_lma)?.bytes.len() as u32;
-    let l_mt_debug = emit_mt_bank_at(aeon, true, mt_bank_lma)?.bytes.len() as u32;
+    let l_mt_plain = emit_mt_bank_at(aeon, false, mt_bank_lma, a.sound_bank)?.bytes.len() as u32;
+    let l_mt_debug = emit_mt_bank_at(aeon, true, mt_bank_lma, a.sound_bank)?.bytes.len() as u32;
 
     let sfx_bank_lma_plain = mt_bank_lma + l_mt_plain;
     let sfx_bank_lma_debug = mt_bank_lma + l_mt_debug;
@@ -231,6 +240,18 @@ pub fn dac_sample_table_vma(aeon: &Path) -> Result<u32, String> {
     let a = bank_anchors(aeon)?;
     let l = sound_layout(aeon)?;
     Ok(a.sound_bank_vma + (l.dac_sample_tab_lma - l.sound_tables_z80_lma))
+}
+
+/// The Genesis cartridge BANK ID of the sound bank — the `$8000`-window page the
+/// head bank / Moving-Trucks bank / SFX block all share. Derived from the same map
+/// authority the placement flows from, so the seam-1 `SND_ENGINE_TABLE_BANK` /
+/// `SFX_BLOB_BANK` consts move with the bank instead of being pinned literals.
+///
+/// The mask/shift form is EXACTLY `bankid()`'s (`(sym & $7F8000) >> 15`, see
+/// `sigil-frontend-emp/src/eval/builtins.rs::eval_bankid`) — the value aeon's
+/// `bankid(MovingTrucks_Bank_Start)` co-residency ensures fold against.
+pub fn sound_bank_id(aeon: &Path) -> Result<u32, String> {
+    Ok((sound_layout(aeon)?.sound_tables_z80_lma & 0x7F_8000) >> 15)
 }
 
 /// The `DacSampleTable` byte length: 10 descriptors × 9 bytes.
@@ -507,7 +528,8 @@ pub struct SfxBodyAndHead {
 /// Lower + co-link `sfx_bank.emp` (bank body + the `SFX_WIN_*` equ layer) with
 /// `sfx_blob_win_tab.emp` (the phased head) at the per-shape SFX-block base and
 /// return the body + the head. Supplies the same cross-seam carriers `sfx_port.rs`
-/// does — `MovingTrucks_Bank_Start` (@ `$58000`, the bank the SFX block shares) +
+/// does — `MovingTrucks_Bank_Start` (@ the `sound_bank` anchor, the bank the SFX
+/// block shares) +
 /// `SFX_ID_BASE`/`SFX_COUNT`/`SFX_TABLE_LEN` (config/sound_ids.asm's ungated
 /// equs, read by the drift guards) — and checks all link asserts PASS (the body's
 /// 1 co-residency + 3 drift guards; the head's 1 span guard). Byte-deterministic
@@ -538,9 +560,11 @@ pub fn emit_sfx_body_and_head_doctored(
 }
 
 /// [`emit_sfx_body_and_head`]'s explicit-placement core: co-link the SFX block at
-/// `sfx_base` and the window-pointer head at `head_lma`. Map-derivation-free so
-/// [`sound_layout`] can measure the (placement-invariant) head length before the
-/// real `sfx_base` is known. The block CONTENT folds from `sfx_base`
+/// `sfx_base` and the window-pointer head at `head_lma`. Free of the
+/// [`sound_layout`] derivation (it reads only the map anchors, which do not depend
+/// on any artifact length) so [`sound_layout`] can measure the
+/// (placement-invariant) head length before the real `sfx_base` is known. The
+/// block CONTENT folds from `sfx_base`
 /// (`winptr(Sfx_NN)`); the head's own placement (`head_lma`) is content-neutral
 /// (its window is the section's `vma: $8000` attr). The block payloads are
 /// shape-invariant — the per-shape difference is entirely which `sfx_base` the
@@ -562,7 +586,17 @@ fn emit_sfx_body_and_head_at(
     let mut link_asserts = body.link_asserts.clone();
     link_asserts.extend(head.link_asserts.clone());
 
-    let sfx_size = 0x60000 - sfx_base; // to the bank top
+    // The SFX block runs to the top of the sound bank, DERIVED from the map anchor
+    // (`sound_bank + $8000`) rather than pinned — a hardcoded top would silently
+    // wrap this u32 subtraction into a ~4 GB region the moment the bank moves up.
+    let bank_start = bank_anchors(aeon)?.sound_bank;
+    let bank_top = bank_start + BANK_WINDOW_SIZE;
+    let sfx_size = bank_top.checked_sub(sfx_base).ok_or_else(|| {
+        format!(
+            "SFX block base {sfx_base:#X} is above the sound-bank top {bank_top:#X} \
+             (bank {bank_start:#X} + {BANK_WINDOW_SIZE:#X}) — the block cannot fit its bank"
+        )
+    })?;
 
     let mut sections: Vec<Section> = body.sections;
     sections.extend(head.sections);
@@ -582,8 +616,9 @@ fn emit_sfx_body_and_head_at(
         return Err(format!("place_sections errors: {pd:?}"));
     }
 
-    // The cross-seam carriers: the bank-start label (@ $58000, for the body's
-    // bankid co-residency ensure) + the SFX_TABLE_LEN equ the head span guard
+    // The cross-seam carriers: the bank-start label (@ the map's `sound_bank`
+    // anchor, for the body's bankid co-residency ensure) + the SFX_TABLE_LEN equ
+    // the head span guard
     // reads (sfx_blob_win_tab.emp's `ensure(135 == extern("SFX_TABLE_LEN"))`).
     // Parcel F2: SFX_TABLE_LEN is SOURCED FROM sfx_bank.emp itself (SfxTable.len,
     // via the authority-eval) — no hardcoded mirror; the body's own SFX_ID_BASE/
@@ -594,7 +629,7 @@ fn emit_sfx_body_and_head_at(
         .copied()
         .ok_or("sfx_bank.emp authority missing SFX_TABLE_LEN")?;
     let carrier_asm = format!(
-        "cpu 68000\nphase $58000\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSFX_TABLE_LEN = {sfx_table_len}\n"
+        "cpu 68000\nphase ${bank_start:X}\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSFX_TABLE_LEN = {sfx_table_len}\n"
     );
     let mut carriers = assemble(
         &carrier_asm,
@@ -930,17 +965,25 @@ pub struct MtBank {
 /// Lower + co-link `mt_bank.emp` at the map-derived bank pin (`$58607`) and return
 /// the bank body + the `SongTable`/`SongPatchTable` addresses. Supplies the same
 /// THREE cross-seam carriers `mt_port.rs` does — `MovingTrucks_Bank_Start` (label @
-/// `$58000`, bank `$B`) + `SONG_MOVINGTRUCKS`=1 + `SONG_COUNT` (1 plain / 3 debug) —
+/// the `sound_bank` anchor) + `SONG_MOVINGTRUCKS`=1 + `SONG_COUNT` (1 plain / 3 debug) —
 /// and checks the module's 7 link asserts (5 co-residency + 2 drift guards) all
 /// PASS. Byte-deterministic from the tracked `.emp` + its embeds.
 pub fn emit_mt_bank(aeon: &Path, debug: bool) -> Result<MtBank, String> {
-    emit_mt_bank_at(aeon, debug, sound_layout(aeon)?.mt_bank_lma)
+    emit_mt_bank_at(aeon, debug, sound_layout(aeon)?.mt_bank_lma, bank_anchors(aeon)?.sound_bank)
 }
 
 /// [`emit_mt_bank`]'s explicit-placement core: place the Moving-Trucks bank at
-/// `mt_bank_lma`. Map-derivation-free so [`sound_layout`] can measure the (shape-
-/// dependent) bank length that fixes the following SFX-block base.
-fn emit_mt_bank_at(aeon: &Path, debug: bool, mt_bank_lma: u32) -> Result<MtBank, String> {
+/// `mt_bank_lma`, with the `MovingTrucks_Bank_Start` co-residency carrier phased at
+/// `bank_start` (the map's `sound_bank` anchor). BOTH addresses arrive as
+/// PARAMETERS — this core is map-derivation-free so [`sound_layout`] can measure
+/// the (shape-dependent) bank length that fixes the following SFX-block base
+/// without re-entering itself; do not reach for `bank_anchors`/`sound_layout` here.
+fn emit_mt_bank_at(
+    aeon: &Path,
+    debug: bool,
+    mt_bank_lma: u32,
+    bank_start: u32,
+) -> Result<MtBank, String> {
     let dir = aeon.join("games/sonic4/data/sound");
     let emp = dir.join("mt_bank.emp");
     let src = std::fs::read_to_string(&emp).map_err(|e| format!("read {}: {e}", emp.display()))?;
@@ -976,12 +1019,13 @@ fn emit_mt_bank_at(aeon: &Path, debug: bool, mt_bank_lma: u32) -> Result<MtBank,
         return Err(format!("place_sections errors: {pd:?}"));
     }
 
-    // The cross-seam carrier: MovingTrucks_Bank_Start label @ VMA $58000 (bank $B,
-    // where the head bank lands — the SAME bank mt_bank lands in) + the two song-id
-    // equs the drift guards read (SONG_COUNT is shape-dependent, per sound_ids.asm).
+    // The cross-seam carrier: MovingTrucks_Bank_Start label @ the caller-supplied
+    // `sound_bank` anchor VMA (where the head bank lands — the SAME bank mt_bank
+    // lands in) + the two song-id equs the drift guards read (SONG_COUNT is
+    // shape-dependent, per sound_ids.asm).
     let song_count = if debug { 3 } else { 1 };
     let carrier_asm = format!(
-        "cpu 68000\nphase $58000\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSONG_MOVINGTRUCKS = 1\nSONG_COUNT = {song_count}\n"
+        "cpu 68000\nphase ${bank_start:X}\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSONG_MOVINGTRUCKS = 1\nSONG_COUNT = {song_count}\n"
     );
     let mut carriers = assemble(
         &carrier_asm,
