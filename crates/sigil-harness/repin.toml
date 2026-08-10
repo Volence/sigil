@@ -2505,6 +2505,21 @@ tests = ["test_p4_player_sensors_port"]
 name = "HeightMapsRot"
 tests = ["test_p4_player_sensors_port"]
 [[symbol]]
+name = "Character_ID"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "Player_Chardef"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "Ability_None"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "CharacterDefs"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "Player_InitAssets"
+tests = ["test_p1_player_port"]
+[[symbol]]
 name = "Player_LoadArt"
 tests = ["test_p1_player_port"]
 [[symbol]]

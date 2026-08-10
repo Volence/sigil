@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 79 regions, 342 symbols, 7 offsets
+//! [provenance] 79 regions, 347 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1273,6 +1273,21 @@ pub const HEIGHT_MAPS: Pin = Pin { plain: 0x262AE, debug: 0x269D0 };
 
 /// `HeightMapsRot`. tests: test_p4_player_sensors_port
 pub const HEIGHT_MAPS_ROT: Pin = Pin { plain: 0x272AE, debug: 0x279D0 };
+
+/// `Character_ID`. tests: test_p1_player_port
+pub const CHARACTER_ID: Pin = Pin { plain: 0xFFFFB490, debug: 0xFFFFDD26 };
+
+/// `Player_Chardef`. tests: test_p1_player_port
+pub const PLAYER_CHARDEF: Pin = Pin { plain: 0xFFFFB492, debug: 0xFFFFDD28 };
+
+/// `Ability_None`. tests: test_p1_player_port
+pub const ABILITY_NONE: Pin = Pin { plain: 0x10D3A, debug: 0x10DFE };
+
+/// `CharacterDefs`. tests: test_p1_player_port
+pub const CHARACTER_DEFS: Pin = Pin { plain: 0x10CFC, debug: 0x10DC0 };
+
+/// `Player_InitAssets`. tests: test_p1_player_port
+pub const PLAYER_INIT_ASSETS: Pin = Pin { plain: 0x10D08, debug: 0x10DCC };
 
 /// `Player_LoadArt`. tests: test_p1_player_port
 pub const PLAYER_LOAD_ART: Pin = Pin { plain: 0x10D20, debug: 0x10DE4 };

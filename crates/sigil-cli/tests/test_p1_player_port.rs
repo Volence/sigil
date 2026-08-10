@@ -158,10 +158,16 @@ fn map_toml(name: &str, base: u32, len: usize) -> String {
 
 fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     // Packed placement (Wave-B B-0) may end a region window in ALIGNMENT FILL: the
-    // pins span runs to the next section's aligned base. Tolerate a short (< 16 B)
-    // all-zero tail beyond the lowered image; every real byte still compares.
+    // pins span runs to the next section's aligned base. Tolerate a short all-zero
+    // tail beyond the lowered image; every real byte still compares.
+    //
+    // Threshold is < 32 (was < 16): once the character roster moved out of
+    // player_common into its own `characters` section, player_common's debug
+    // window ends in 18 bytes of zero fill before the next section's aligned
+    // base. 32 is the largest section alignment in play, so it is the principled
+    // bound — verified all-zero, not a masked content gap.
     let expected = if expected.len() > candidate.len()
-        && expected.len() - candidate.len() < 16
+        && expected.len() - candidate.len() < 32
         && expected[candidate.len()..].iter().all(|&b| b == 0)
     {
         &expected[..candidate.len()]
@@ -207,6 +213,7 @@ fn ref_window(aeon: &Path, rom: &str, base: u32, len: usize) -> Option<Vec<u8>> 
 
 struct SonicShape {
     perform_dplc: u32,
+    ability_none: u32,
     draw_sprite: u32,
     map_sonic: u32,
     ani_sonic: u32,
@@ -220,6 +227,7 @@ struct SonicShape {
 
 const SONIC_PLAIN: SonicShape = SonicShape {
     perform_dplc: pins::DPLC.plain_base,
+    ability_none: pins::ABILITY_NONE.plain,
     draw_sprite: pins::DRAW_SPRITE.plain,
     map_sonic: pins::MAP_SONIC.plain,
     ani_sonic: pins::SONIC_ANIMS.plain_base,
@@ -232,6 +240,7 @@ const SONIC_PLAIN: SonicShape = SonicShape {
 };
 const SONIC_DEBUG: SonicShape = SonicShape {
     perform_dplc: pins::DPLC.debug_base,
+    ability_none: pins::ABILITY_NONE.debug,
     draw_sprite: pins::DRAW_SPRITE.debug,
     map_sonic: pins::MAP_SONIC.debug,
     ani_sonic: pins::SONIC_ANIMS.debug_base,
@@ -259,7 +268,10 @@ fn compile_sonic(aeon: &Path, shape: &SonicShape) -> (sigil_link::LinkedImage, u
     };
 
     let main = parse_file(&aeon.join("games/sonic4/player/sonic.emp"));
-    let file = with_ambient(vec![types(), sst(), constants(), objdef(), game_consts()], main);
+    let file = with_ambient(
+        vec![types(), sst(), constants(), objdef(), game_consts(), character_def_struct_items(&aeon)],
+        main,
+    );
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -279,6 +291,7 @@ fn compile_sonic(aeon: &Path, shape: &SonicShape) -> (sigil_link::LinkedImage, u
     for group in [
         &mut as_constant_equs(),
         &mut as_label_at("Perform_DPLC", shape.perform_dplc),
+        &mut as_label_at("Ability_None", shape.ability_none),
         &mut as_label_at("Draw_Sprite", shape.draw_sprite),
         &mut as_label_at("Map_Sonic", shape.map_sonic),
         &mut as_label_at("Ani_Sonic", shape.ani_sonic),
@@ -341,8 +354,24 @@ fn act_struct_items(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::Item
         .collect()
 }
 
+/// The `CharacterDef` record (engine/structs.emp). Both `sonic.emp` (which IS a
+/// `CharacterDef` literal now) and `player_common.emp` (which dereferences one
+/// through `Player_Chardef`) `use` it, so the isolated-lowering ambient set has
+/// to carry it or lowering fails outright. Same shape as `act_struct_items`.
+fn character_def_struct_items(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    use sigil_frontend_emp::ast::Item;
+    let file = parse_file(&aeon.join("engine/structs.emp"));
+    file.items
+        .into_iter()
+        .filter(|it| matches!(it, Item::Struct(d) if d.name == "CharacterDef"))
+        .collect()
+}
+
 struct PcShape {
-    sonic_init_assets: u32,
+    character_id: u32,
+    player_chardef: u32,
+    character_defs: u32,
+    player_init_assets: u32,
     player_load_art: u32,
     phys_table_sonic: u32,
     animate_sprite: u32,
@@ -384,7 +413,10 @@ struct PcShape {
 }
 
 const PC_PLAIN: PcShape = PcShape {
-    sonic_init_assets: pins::SONIC.plain_base,
+    character_id: pins::CHARACTER_ID.plain,
+    player_chardef: pins::PLAYER_CHARDEF.plain,
+    character_defs: pins::CHARACTER_DEFS.plain,
+    player_init_assets: pins::PLAYER_INIT_ASSETS.plain,
     player_load_art: pins::PLAYER_LOAD_ART.plain,
     phys_table_sonic: pins::PHYS_TABLE_SONIC.plain,
     animate_sprite: pins::ANIMATE.plain_base,
@@ -418,7 +450,10 @@ const PC_PLAIN: PcShape = PcShape {
     len: pins::PLAYER_COMMON.plain_len,
 };
 const PC_DEBUG: PcShape = PcShape {
-    sonic_init_assets: pins::SONIC.debug_base,
+    character_id: pins::CHARACTER_ID.debug,
+    player_chardef: pins::PLAYER_CHARDEF.debug,
+    character_defs: pins::CHARACTER_DEFS.debug,
+    player_init_assets: pins::PLAYER_INIT_ASSETS.debug,
     player_load_art: pins::PLAYER_LOAD_ART.debug,
     phys_table_sonic: pins::PHYS_TABLE_SONIC.debug,
     animate_sprite: pins::ANIMATE.debug_base,
@@ -478,7 +513,10 @@ fn compile_player_common(
 
     let main = parse_file(&aeon.join("games/sonic4/player/player_common.emp"));
     let file = with_ambient(
-        vec![types(), sst(), constants(), objdef(), coords(), act(), game_consts()],
+        vec![
+            types(), sst(), constants(), objdef(), coords(), act(), game_consts(),
+            character_def_struct_items(&aeon),
+        ],
         main,
     );
     let (module, ldiags) = lower_module(&file, &opts);
@@ -500,7 +538,10 @@ fn compile_player_common(
     let mut lma = 0x0100_0000u32;
     let mut groups: Vec<Vec<Section>> = vec![
         as_constant_equs(),
-        as_label_at("Sonic_InitAssets", shape.sonic_init_assets),
+        as_label_at("Character_ID", shape.character_id),
+        as_label_at("Player_Chardef", shape.player_chardef),
+        as_label_at("CharacterDefs", shape.character_defs),
+        as_label_at("Player_InitAssets", shape.player_init_assets),
         as_label_at("Player_LoadArt", shape.player_load_art),
         as_label_at("PhysTable_Sonic", shape.phys_table_sonic),
         as_label_at("AnimateSprite", shape.animate_sprite),
