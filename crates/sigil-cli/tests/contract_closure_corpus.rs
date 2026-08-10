@@ -602,8 +602,13 @@ fn an_interface_gated_arm_is_walked_under_each_shapes_own_game() {
     let mut doctored = false;
     for (p, s) in &mut srcs {
         if p.file_name().is_some_and(|n| n == "camera.emp") {
-            let needle = "if Game.CAMERA_JUMP_LOCK {\n            move.b  PL_STATE_ADDR, d2";
-            let weaken = "if Game.CAMERA_JUMP_LOCK {\n            moveq   #0, d5\n            move.b  PL_STATE_ADDR, d2";
+            // C1 re-anchor: the arm's first instruction was `move.b PL_STATE_ADDR, d2`
+            // (a whole absolute address summed from `extern("Player_1")`). The camera
+            // follows `Camera_Target` now, so it already holds the LEADER's SST in a0
+            // and reads the state byte as a displacement off it. Same arm, same gate —
+            // only the instruction the probe plants itself in front of changed.
+            let needle = "if Game.CAMERA_JUMP_LOCK {\n            move.b  PL_STATE_OFF(a0), d2";
+            let weaken = "if Game.CAMERA_JUMP_LOCK {\n            moveq   #0, d5\n            move.b  PL_STATE_OFF(a0), d2";
             assert!(s.contains(needle), "negative probe anchor not found in {}", p.display());
             *s = s.replacen(needle, weaken, 1);
             doctored = true;

@@ -1297,6 +1297,14 @@ tests = ["rings_port", "section_port", "camera_port", "bg_anim_port"]
 name = "Camera_Y"
 tests = ["rings_port", "section_port", "camera_port", "bg_anim_port"]
 
+# C1: the LEADER pointer. Engine RAM word holding the SST address the camera
+# follows; camera.emp and path_swap.emp read it where both used to name
+# `Player_1` outright, and the two harness states seed it at init. Pinned for the
+# same four consumers, so a RAM-layout parcel carries it automatically.
+[[symbol]]
+name = "Camera_Target"
+tests = ["camera_port", "test_g4_final_objects_port", "test_t1_harness_states_port"]
+
 # Camera-follow state RAM (tranche 19 — camera_port cross-seam carriers).
 [[symbol]]
 name = "Camera_Deadzone_Base"
@@ -2522,20 +2530,26 @@ tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_LoadArt"
 tests = ["test_p1_player_port"]
+# C1: the THIRD record reader — the cd_ability dispatch. player_air's
+# PState_AirShared calls it on a fresh jump press while already airborne, so it is
+# a cross-seam branch target of the player_air region, not just of the roster.
+[[symbol]]
+name = "Player_Ability"
+tests = ["test_p2_player_states_port"]
 [[symbol]]
 name = "PhysTable_Sonic"
 tests = ["test_p1_player_port"]
+# C1 (per-slot player working state): the single-global `Player_Phys` row +
+# `Player_Quadrant` + `Player_JumpBuffer` are GONE — folded into a
+# `[PlayerBlock; NUM_PLAYERS]` array whose ONE label is the array base. Every
+# consumer now addresses the block a4-relative (a4 = the calling slot's block,
+# established once per player frame by player_common's `player_block` splice), so
+# `Player_Blocks` is the only cell name that survives as a cross-seam value and
+# the `Player_Phys_End` adjacency marker has no referent (sizeof(PlayerBlock) is
+# the stride now). player_ground/air/spindash/sensors reference NO player-state
+# RAM label at all any more, which is why their pin rows retire with the cells.
 [[symbol]]
-name = "Player_Phys"
-tests = ["test_p1_player_port"]
-[[symbol]]
-name = "Player_Phys_End"
-tests = ["test_p1_player_port"]
-[[symbol]]
-name = "Player_Quadrant"
-tests = ["test_p1_player_port"]
-[[symbol]]
-name = "Player_JumpBuffer"
+name = "Player_Blocks"
 tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_Ring_Index"

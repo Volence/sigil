@@ -8,7 +8,9 @@
 //! BASE shifts with upstream __DEBUG__ growth ($50A8 plain / $5E40 debug), but
 //! its OWN layout is shape-invariant ($4FC both) — so the content bytes track
 //! per-shape cross-seam operands (the Collision_GetType bsr.w displacement + the
-//! four ROM-table abs.l addresses + the Player_Quadrant abs.w) → compile twice.
+//! four ROM-table abs.l addresses) → compile twice. C1 retired the fifth such
+//! operand: the quadrant the surface body rotates by is per-slot player-block
+//! state now, read `PBLK_QUADRANT(a4)`, so no RAM address enters these bytes.
 //!
 //! REFERENCE-DEPENDENT: the sources and the reference ROMs live in the sibling
 //! `aeon` tree (`AEON_DIR`, default `/home/volence/sonic_hacks/aeon`). Absent,
@@ -69,17 +71,15 @@ fn with_ambient(
 
 /// The AS-side value seam: SST field equs (incl. SST_interact) + engine constants
 /// (ST_*, PLAYER_X_RADIUS) + the file-local SOLID_* mirror the ensures resolve
-/// against + Player_Quadrant (shape-dependent RAM addr, abs.w).
-fn as_constant_equs(shape: &Shape) -> Vec<Section> {
+/// against. Shape-independent since C1: the module's last shape-dependent extern
+/// was `Player_Quadrant`, and that cell no longer exists.
+fn as_constant_equs() -> Vec<Section> {
     use sigil_harness::test_support::{engine_constant_equs, sst_field_equs};
     let mut pairs = sst_field_equs();
     pairs.extend(engine_constant_equs());
     // player_sensors' file-local engine-constant mirror (1st .emp consumer).
     pairs.push(("SOLID_TOP", "1"));
     pairs.push(("SOLID_LRB", "2"));
-    // Player_Quadrant — RAM, shape-dependent, read as (Player_Quadrant).w.
-    let player_quadrant = format!("${:X}", shape.player_quadrant);
-    pairs.push(("Player_Quadrant", player_quadrant.as_str()));
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
@@ -156,7 +156,6 @@ struct Shape {
     angle_table: u32,
     height_maps: u32,
     height_maps_rot: u32,
-    player_quadrant: u32,
     base: u32,
     len: usize,
     rom: &'static str,
@@ -168,7 +167,6 @@ const PLAIN: Shape = Shape {
     angle_table: pins::ANGLE_TABLE.plain,
     height_maps: pins::HEIGHT_MAPS.plain,
     height_maps_rot: pins::HEIGHT_MAPS_ROT.plain,
-    player_quadrant: pins::PLAYER_QUADRANT.plain,
     base: pins::PLAYER_SENSORS.plain_base,
     len: pins::PLAYER_SENSORS.plain_len,
     rom: "s4.bin",
@@ -180,7 +178,6 @@ const DEBUG: Shape = Shape {
     angle_table: pins::ANGLE_TABLE.debug,
     height_maps: pins::HEIGHT_MAPS.debug,
     height_maps_rot: pins::HEIGHT_MAPS_ROT.debug,
-    player_quadrant: pins::PLAYER_QUADRANT.debug,
     base: pins::PLAYER_SENSORS.debug_base,
     len: pins::PLAYER_SENSORS.debug_len,
     rom: "s4.debug.bin",
@@ -220,7 +217,7 @@ fn sensors_bytes(shape: &Shape) -> Option<Vec<u8>> {
     );
 
     // Cross-seam labels pinned at their reference addresses: the surviving-AS
-    // collision lookup proc + its four ROM tables (Player_Quadrant is an equ).
+    // collision lookup proc + its four ROM tables.
     let labels: [(&str, u32); 5] = [
         ("Collision_GetType", shape.collision_get_type),
         ("SolidityTable", shape.solidity_table),
@@ -229,7 +226,7 @@ fn sensors_bytes(shape: &Shape) -> Option<Vec<u8>> {
         ("HeightMapsRot", shape.height_maps_rot),
     ];
 
-    let mut groups: Vec<Vec<Section>> = vec![as_constant_equs(shape)];
+    let mut groups: Vec<Vec<Section>> = vec![as_constant_equs()];
     for (name, addr) in labels {
         groups.push(as_label_at(name, addr));
     }

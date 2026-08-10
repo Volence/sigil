@@ -91,7 +91,7 @@ fn golden(name: &str) -> Option<Vec<u8>> {
 /// `golden/s4.debug.bin`), matching the asl-canonical `s4.lst`/`s4.debug.lst`
 /// at the freeze commit:
 ///   Z80_SOUND_SIZE  plain $1814   debug $1896   (the resident Z80 driver span)
-///   GameState_OJZScroll_Init  plain $5C260 debug $5E03C  (the Game.entry link target; sound-pkg3 values)
+///   GameState_OJZScroll_Init  plain $5C260 debug $5E044  (the Game.entry link target)
 ///
 /// L1 P2: `#Game.ENTRY_ID` is now a comptime const (3), folded from the game
 /// contract env — no link symbol; and `#Game.entry`'s link target is
@@ -101,7 +101,7 @@ fn frozen_symbol(debug: bool, name: &str) -> u64 {
         ("Z80_SOUND_SIZE", false) => 0x1814,   // sound pkg 4 (blob 6164, already even)
         ("Z80_SOUND_SIZE", true) => 0x1896,    // sound pkg 4 (blob 6294, already even)
         ("GameState_OJZScroll_Init", false) => 0x5C260,  // objtest-gate; +0x30 sound-pkg3 v2 (banked dac_sample_tab growth + mod-8 base pads precede the game tail)
-        ("GameState_OJZScroll_Init", true) => 0x5E03C,   // objtest-gate; +0x2E sound-pkg3 v2 (same growth + pads, debug layout)
+        ("GameState_OJZScroll_Init", true) => 0x5E044,   // character-dispatch-c1: +8 (debug-only growth ahead of the game tail; plain unmoved)
         _ => panic!("no frozen value pinned for symbol `{name}` (debug={debug})"),
     }
 }

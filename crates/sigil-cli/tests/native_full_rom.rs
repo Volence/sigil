@@ -99,7 +99,19 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // player_common upstream of this label — +0x20 plain / +0x10 debug (a
     // debug branch-reach flip absorbs 0x10, the same class as the p2-task3
     // note above).
-    ("Ground_Move_Cap", 0x10786, 0x107D6),
+    // `character-dispatch-c1` (2026-08-10): plain 0x10786 -> 0x107B6, debug
+    // 0x107D6 -> 0x108C6. Two effects stack. (1) player_common grows ahead of
+    // player_ground, sliding its base +0x20 plain / +0x70 debug. (2) player_ground
+    // itself repacks: its physics/quadrant/jump-buffer reads left absolute EAs for
+    // a4-relative PBLK_* displacements, so the module now carries NO shape-
+    // dependent operand at all and its intra-region layout is identical in both
+    // shapes — this label sits at region base + 0x2E6 in BOTH. The old debug
+    // literal implied 0x266, which the shape-invariance says was already stale; it
+    // survived because the `assembled length` assert above fires first and masked
+    // this row on every run since it drifted. The row stays UNPINNED on purpose
+    // (an independent check of the convsym resolve path — deriving it from a pin
+    // would make the assertion circular), so it is hand-updated, with the reason.
+    ("Ground_Move_Cap", 0x107B6, 0x108C6),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)

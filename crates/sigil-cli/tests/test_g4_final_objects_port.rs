@@ -67,6 +67,14 @@ struct Shape {
     art_sonic: u32,
     map_test_obj: u32,
     player_1: u32,
+    /// C1: the per-slot player-block array base. The `player_block` splice
+    /// test_player expands `lea`s it, so it is a cross-seam RAM operand of
+    /// this region now.
+    player_blocks: u32,
+    /// C1: path_swap follows `Camera_Target` (the leader SST pointer in engine
+    /// RAM) instead of a hardwired `Player_1`, so the follow works for whichever
+    /// character is leading.
+    camera_target: u32,
     cheat_flags: u32,
     player_base: u32,
     player_len: usize,
@@ -91,6 +99,8 @@ const PLAIN: Shape = Shape {
     art_sonic: pins::ART_SONIC.plain,
     map_test_obj: pins::MAP_TEST_OBJ.plain,
     player_1: pins::PLAYER_1.plain,
+    player_blocks: pins::PLAYER_BLOCKS.plain,
+    camera_target: pins::CAMERA_TARGET.plain,
     cheat_flags: pins::CHEAT_FLAGS.plain,
     player_base: pins::TEST_PLAYER.plain_base,
     player_len: pins::TEST_PLAYER.plain_len,
@@ -114,6 +124,8 @@ const DEBUG: Shape = Shape {
     art_sonic: pins::ART_SONIC.debug,
     map_test_obj: pins::MAP_TEST_OBJ.debug,
     player_1: pins::PLAYER_1.debug,
+    player_blocks: pins::PLAYER_BLOCKS.debug,
+    camera_target: pins::CAMERA_TARGET.debug,
     cheat_flags: pins::CHEAT_FLAGS.debug,
     player_base: pins::TEST_PLAYER.debug_base,
     player_len: pins::TEST_PLAYER.debug_len,
@@ -148,6 +160,35 @@ fn parse_file(path: &std::path::Path) -> sigil_frontend_emp::ast::File {
         path.display()
     );
     file
+}
+
+/// C1 ambient items test_player borrows from the player cluster: the `PlayerBlock`
+/// record (games/sonic4/config/ram.emp) and the `player_block` splice
+/// (games/sonic4/player/player_common.emp). test_player calls the sensor wrappers,
+/// which since C1 take a4 = the calling slot's block, so it derives a4 through the
+/// SAME splice the real player frame uses — and a comptime fn expands in the
+/// CALLER's scope, so both the fn and the type it strides by have to resolve here.
+///
+/// Filtered to those two items on purpose: prepending either module wholesale would
+/// drag player_common's entire code span (and ram.emp's whole RAM map) into a
+/// single-module compile whose bytes are being compared against a ROM window.
+fn player_block_ambient(aeon: &std::path::Path) -> sigil_frontend_emp::ast::File {
+    use sigil_frontend_emp::ast::Item;
+    let mut ram = parse_file(&aeon.join("games/sonic4/config/ram.emp"));
+    let mut items: Vec<Item> = ram
+        .items
+        .drain(..)
+        .filter(|it| matches!(it, Item::Struct(d) if d.name == "PlayerBlock"))
+        .collect();
+    items.extend(
+        parse_file(&aeon.join("games/sonic4/player/player_common.emp"))
+            .items
+            .into_iter()
+            .filter(|it| matches!(it, Item::ComptimeFn(d) if d.name == "player_block")),
+    );
+    assert_eq!(items.len(), 2, "expected PlayerBlock + player_block in the C1 ambient set");
+    ram.items = items;
+    ram
 }
 
 fn with_ambient(
@@ -273,7 +314,10 @@ fn compile_real_files(shape: &Shape) -> Compiled {
     let enemy = parse_file(&aeon.join("games/sonic4/objects/test_enemy.emp"));
     let swap = parse_file(&aeon.join("games/sonic4/objects/path_swap.emp"));
 
-    let player_file = with_ambient(vec![types(), sst(), constants(), objdef(), game_consts()], player);
+    let player_file = with_ambient(
+        vec![types(), sst(), constants(), objdef(), game_consts(), player_block_ambient(&aeon)],
+        player,
+    );
     let enemy_file = with_ambient(vec![types(), sst(), constants()], enemy);
     let swap_file = with_ambient(vec![types(), sst(), constants(), objdef(), game_consts()], swap);
 
@@ -327,6 +371,8 @@ fn compile_real_files(shape: &Shape) -> Compiled {
         as_label_at("DPLC_Sonic", shape.dplc_sonic),
         as_label_at("Art_Sonic", shape.art_sonic),
         as_label_at("Map_TestObj", shape.map_test_obj),
+        as_label_at("Player_Blocks", shape.player_blocks),
+        as_label_at("Camera_Target", shape.camera_target),
         as_outbound_consumer(),
     ];
     if shape.debug {
@@ -446,12 +492,21 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
 
     // Outbound proof: the AS objroutine(TestEnemy_Init) word + the dc.l
     // ObjDef_PathSwap resolve to the .emp-owned addresses.
+    // Located by its `Consumer:` label, not by an ordinal into the harness-private
+    // LMA ladder: that index silently pointed at the wrong section the moment C1
+    // added two cross-seam label groups ahead of it.
+    let consumer_lma = c
+        .resolved
+        .iter()
+        .find(|s| s.labels.iter().any(|l| l.name == "Consumer"))
+        .expect("outbound consumer section (the `Consumer:` label)")
+        .lma;
     let consumer = c
         .linked
         .sections
         .iter()
-        .find(|s| s.lma == 0x0100_0000 + 13 * 0x10_0000)
-        .expect("outbound consumer at its harness-private LMA");
+        .find(|s| s.lma == consumer_lma)
+        .expect("linked outbound consumer");
     let enemy_word = u16::from_be_bytes([consumer.bytes[0], consumer.bytes[1]]);
     assert_eq!(
         enemy_word,

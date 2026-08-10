@@ -118,10 +118,8 @@ fn as_constant_equs(shape: &Shape) -> Vec<Section> {
     // `Stub:` section it emits is unique (a second assemble_equ_pairs call would
     // collide on `Stub`).
     let ctrl_1_held = format!("${:X}", shape.ctrl_1_held);
-    let player_jump_buffer = format!("${:X}", shape.player_jump_buffer);
-    let player_quadrant = format!("${:X}", shape.player_quadrant);
+    let ctrl_1_press = format!("${:X}", shape.ctrl_1_press);
     let camera_hold_frames = format!("${:X}", shape.camera_hold_frames);
-    let player_phys = format!("${:X}", shape.player_phys);
     // Cheat_Flags: the runtime debug-fly gate. player_air's release-cap check reads
     // it to decide whether B still sustains a jump (parcel `b-jumps`), the same way
     // Player_Main's latch does. PIN-SOURCED, shape-dependent (game RAM) — the
@@ -129,10 +127,15 @@ fn as_constant_equs(shape: &Shape) -> Vec<Section> {
     let cheat_flags = format!("${:X}", shape.cheat_flags);
     pairs.push(("Cheat_Flags", cheat_flags.as_str()));
     pairs.push(("Ctrl_1_Held", ctrl_1_held.as_str()));
-    pairs.push(("Player_JumpBuffer", player_jump_buffer.as_str()));
-    pairs.push(("Player_Quadrant", player_quadrant.as_str()));
+    // C1: PState_AirShared gained the ability gate — a FRESH jump press while
+    // already airborne calls Player_Ability — so player_air reads the press-edge
+    // latch, not just the held state.
+    pairs.push(("Ctrl_1_Press", ctrl_1_press.as_str()));
     pairs.push(("Camera_Hold_Frames", camera_hold_frames.as_str()));
-    pairs.push(("Player_Phys", player_phys.as_str()));
+    // C1: Player_Phys / Player_Quadrant / Player_JumpBuffer are GONE. The state
+    // bodies read the same values as PBLK_* displacements off a4 (the calling
+    // slot's PlayerBlock), so not one player-state RAM address survives as a
+    // cross-seam operand of these three regions.
     // game-config (config/constants.asm + config/sound_ids.asm) mirrors
     pairs.push(("PSTATE_GROUND", "0"));
     pairs.push(("PSTATE_ROLL", "2"));
@@ -232,6 +235,10 @@ struct Shape {
     debug: bool,
     // cross-seam callees
     player_set_state: u32,
+    /// C1: the cd_ability dispatch (characters.emp). PState_AirShared calls it
+    /// on a fresh jump press while already airborne, making the roster's third
+    /// record reader a cross-seam branch target of player_air.
+    player_ability: u32,
     player_snap_to_surface: u32,
     player_sensor_floor: u32,
     player_sensor_ceiling: u32,
@@ -251,16 +258,15 @@ struct Shape {
     player_jump: u32,
     // RAM
     ctrl_1_held: u32,
-    player_jump_buffer: u32,
-    player_quadrant: u32,
+    ctrl_1_press: u32,
     camera_hold_frames: u32,
     cheat_flags: u32,
-    player_phys: u32,
 }
 
 const PLAIN: Shape = Shape {
     debug: false,
     player_set_state: pins::PLAYER_SET_STATE.plain,
+    player_ability: pins::PLAYER_ABILITY.plain,
     player_snap_to_surface: pins::PLAYER_SNAP_TO_SURFACE.plain,
     player_sensor_floor: pins::PLAYER_SENSOR_FLOOR.plain,
     player_sensor_ceiling: pins::PLAYER_SENSOR_CEILING.plain,
@@ -278,16 +284,15 @@ const PLAIN: Shape = Shape {
     pstate_airball: pins::P_STATE_AIR_BALL.plain,
     player_jump: 0x105F0, // filled at need; ground-local (see note)
     ctrl_1_held: pins::CTRL_1_HELD.plain,
-    player_jump_buffer: pins::PLAYER_JUMP_BUFFER.plain,
-    player_quadrant: pins::PLAYER_QUADRANT.plain,
+    ctrl_1_press: pins::CTRL_1_PRESS.plain,
     camera_hold_frames: pins::CAMERA_HOLD_FRAMES.plain,
     cheat_flags: pins::CHEAT_FLAGS.plain,
-    player_phys: pins::PLAYER_PHYS.plain,
 };
 
 const DEBUG: Shape = Shape {
     debug: true,
     player_set_state: pins::PLAYER_SET_STATE.debug,
+    player_ability: pins::PLAYER_ABILITY.debug,
     player_snap_to_surface: pins::PLAYER_SNAP_TO_SURFACE.debug,
     player_sensor_floor: pins::PLAYER_SENSOR_FLOOR.debug,
     player_sensor_ceiling: pins::PLAYER_SENSOR_CEILING.debug,
@@ -305,11 +310,9 @@ const DEBUG: Shape = Shape {
     pstate_airball: pins::P_STATE_AIR_BALL.debug,
     player_jump: 0x105F0,
     ctrl_1_held: pins::CTRL_1_HELD.debug,
-    player_jump_buffer: pins::PLAYER_JUMP_BUFFER.debug,
-    player_quadrant: pins::PLAYER_QUADRANT.debug,
+    ctrl_1_press: pins::CTRL_1_PRESS.debug,
     camera_hold_frames: pins::CAMERA_HOLD_FRAMES.debug,
     cheat_flags: pins::CHEAT_FLAGS.debug,
-    player_phys: pins::PLAYER_PHYS.debug,
 }
 ;
 
@@ -354,8 +357,9 @@ fn compile_region(
 
     // Cross-seam labels pinned at their reference addresses. A label the CURRENT
     // region defines locally (`locals`) is skipped — pinning it would collide.
-    let labels: [(&str, u32); 17] = [
+    let labels: [(&str, u32); 18] = [
         ("Player_SetState", shape.player_set_state),
+        ("Player_Ability", shape.player_ability),
         ("Player_SnapToSurface", shape.player_snap_to_surface),
         ("Player_SensorFloor", shape.player_sensor_floor),
         ("Player_SensorCeiling", shape.player_sensor_ceiling),

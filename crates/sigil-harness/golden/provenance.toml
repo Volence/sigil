@@ -4488,3 +4488,57 @@ full_crc = "1a623f64"
 full_size = 428171
 anchor_crc = "d9e64f6b"
 anchor_end = 0x5f8b0
+
+[[entry]]
+name = "character-dispatch-c1"
+ab = "aeon@777b928f — replay net both fixtures Replay_Done=$FF, no desync/fault; Camera_Target A/B ba657909 vs 4dc1c331 identical Camera_X/Y"
+note = "C1 per-slot PlayerBlock array behind a4 + cd_ability dispatch + Camera_Target leader pointer; RAM pins retire Player_Phys/Quadrant/JumpBuffer"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "3dfd5f4a"
+full_size = 428545
+anchor_crc = "5b1f1461"
+anchor_end = 0x5f8c0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "7376d867"
+full_size = 308200
+anchor_crc = "e64b2cb4"
+anchor_end = 0x43f90
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "bab8ccf4"
+full_size = 93399
+anchor_crc = "5190f2c1"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "e31532d1"
+full_size = 97541
+anchor_crc = "f406dd13"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "db9c0717"
+full_size = 379454
+anchor_crc = "d214673d"
+anchor_end = 0x5ca3e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "83af3057"
+full_size = 414092
+anchor_crc = "c81ce341"
+anchor_end = 0x5dac0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "9e243f81"
+full_size = 428163
+anchor_crc = "888dec75"
+anchor_end = 0x5f8c0

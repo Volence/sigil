@@ -21,7 +21,7 @@
 //!
 //! ## Cross-seam symbols
 //! - RAM (abs.w operands): `Camera_X/Y`, `Camera_Pan_Offset`,
-//!   `Camera_Deadzone_Base`, `Camera_Hold_Frames`, `Player_1`,
+//!   `Camera_Deadzone_Base`, `Camera_Hold_Frames`, `Camera_Target`,
 //!   `Current_Act_Ptr` — each a `phase`d one-byte carrier at its pinned
 //!   per-shape VMA (pins.rs, repin-derived).
 //! - Game-owned values: `_pl_state` (address-sum equ — defers through the
@@ -127,7 +127,7 @@ fn camera_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
-/// The cross-seam ADDRESS symbols — camera RAM state + `Player_1` +
+/// The cross-seam ADDRESS symbols — camera RAM state + `Camera_Target` +
 /// `Current_Act_Ptr` — each a `phase`d one-byte carrier at its pinned
 /// per-shape VMA (label position selects abs.w width and the low-word bytes).
 fn camera_addr_labels(debug: bool) -> Vec<Section> {
@@ -142,7 +142,11 @@ fn camera_addr_labels(debug: bool) -> Vec<Section> {
         ("Camera_Art_Hold", pick(pins::CAMERA_ART_HOLD)),
         ("Camera_X_Max", pick(pins::CAMERA_X_MAX)),
         ("Camera_Y_Max", pick(pins::CAMERA_Y_MAX)),
-        ("Player_1", pick(pins::PLAYER_1)),
+        // C1: the camera follows `Camera_Target` — an engine RAM word holding the
+        // LEADER's SST pointer, seeded by level init — where it used to name
+        // `Player_1` outright. That is what makes the follow character-agnostic,
+        // and it is why `Player_1` is no longer a cross-seam symbol of this module.
+        ("Camera_Target", pick(pins::CAMERA_TARGET)),
         ("Current_Act_Ptr", pick(pins::CURRENT_ACT_PTR)),
     ];
     if debug {

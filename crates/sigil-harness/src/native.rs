@@ -334,13 +334,16 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // player_common owns the shared player FRAME, this owns the roster the frame
         // dispatches through. Placed right after `sonic` per map.toml `order`.
         //
-        // DUMMY_REGION: every profile that links this module (canonical plain/debug,
-        // config_a/config_b, lean) is a `SizeSource::Frozen` target, so the chainer
-        // sizes and places the section live from the frozen table + the map order and
-        // the region base/len are never read — the `release_fault` precedent. Only the
-        // `sonic4_pinned_profile` bootstrap reads regions; re-running THAT would need a
-        // real pin, which is a `repin.toml` entry plus a `repin` run (the controller's).
-        m!("games.sonic4.characters", "characters", DUMMY_REGION),
+        // Every profile that links this module (canonical plain/debug, config_a/
+        // config_b, lean) is a `SizeSource::Frozen` target, so the chainer sizes and
+        // places the section live from the frozen table + the map order and the
+        // region base/len are never read there. The `sonic4_pinned_profile`
+        // bootstrap DOES read them, which is why this carries a real pin rather than
+        // DUMMY_REGION: the placeholder collapsed the section onto base 0, where it
+        // collided with `vectors` and made `resolve_pinned_sections` unusable
+        // (soundbankhead_port's PinnedBaked probe). The pin exists because
+        // repin.toml declares a `characters` region — the debt that comment named.
+        m!("games.sonic4.characters", "characters", pins::CHARACTERS),
         // ── Game objects ──
         // test_player + test_enemy fully flipped (conv-d #48/#47): both .asm deleted.
         // test_player.emp owns TPlayerV; test_animated.emp owns DplcV; STUB_FLOOR_Y

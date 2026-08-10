@@ -219,8 +219,6 @@ struct SonicShape {
     ani_sonic: u32,
     dplc_sonic: u32,
     art_sonic: u32,
-    player_phys: u32,
-    player_phys_end: u32,
     base: u32,
     len: usize,
 }
@@ -233,8 +231,6 @@ const SONIC_PLAIN: SonicShape = SonicShape {
     ani_sonic: pins::SONIC_ANIMS.plain_base,
     dplc_sonic: pins::DPLC_SONIC.plain,
     art_sonic: pins::ART_SONIC.plain,
-    player_phys: pins::PLAYER_PHYS.plain,
-    player_phys_end: pins::PLAYER_PHYS_END.plain,
     base: pins::SONIC.plain_base,
     len: pins::SONIC.plain_len,
 };
@@ -246,8 +242,6 @@ const SONIC_DEBUG: SonicShape = SonicShape {
     ani_sonic: pins::SONIC_ANIMS.debug_base,
     dplc_sonic: pins::DPLC_SONIC.debug,
     art_sonic: pins::ART_SONIC.debug,
-    player_phys: pins::PLAYER_PHYS.debug,
-    player_phys_end: pins::PLAYER_PHYS_END.debug,
     base: pins::SONIC.debug_base,
     len: pins::SONIC.debug_len,
 };
@@ -269,7 +263,10 @@ fn compile_sonic(aeon: &Path, shape: &SonicShape) -> (sigil_link::LinkedImage, u
 
     let main = parse_file(&aeon.join("games/sonic4/player/sonic.emp"));
     let file = with_ambient(
-        vec![types(), sst(), constants(), objdef(), game_consts(), character_def_struct_items(&aeon)],
+        vec![
+            types(), sst(), constants(), objdef(), game_consts(),
+            character_def_struct_items(&aeon), player_block_struct_items(&aeon),
+        ],
         main,
     );
     let (module, ldiags) = lower_module(&file, &opts);
@@ -297,8 +294,6 @@ fn compile_sonic(aeon: &Path, shape: &SonicShape) -> (sigil_link::LinkedImage, u
         &mut as_label_at("Ani_Sonic", shape.ani_sonic),
         &mut as_label_at("DPLC_Sonic", shape.dplc_sonic),
         &mut as_label_at("Art_Sonic", shape.art_sonic),
-        &mut as_label_at("Player_Phys", shape.player_phys),
-        &mut as_label_at("Player_Phys_End", shape.player_phys_end),
     ] {
         for sec in group.iter_mut() {
             sec.lma = lma;
@@ -354,6 +349,23 @@ fn act_struct_items(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::Item
         .collect()
 }
 
+/// The `PlayerBlock` record (games/sonic4/config/ram.emp). C1 made the game RAM
+/// module the AUTHOR of the per-slot player layout, and both modules under test
+/// bind to it at comptime — `sonic.emp` sizes PhysTable_Sonic against
+/// `offsetof(PlayerBlock, quadrant)`, `player_common.emp` strides slots by
+/// `sizeof(PlayerBlock)` and checks its PBLK_* displacements the same way — so the
+/// isolated-lowering ambient set has to carry the struct or lowering fails
+/// outright. Filtered to the struct alone: ram.emp's `region`/`vars` items would
+/// drag the whole game RAM map into these single-module compiles.
+fn player_block_struct_items(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    use sigil_frontend_emp::ast::Item;
+    let file = parse_file(&aeon.join("games/sonic4/config/ram.emp"));
+    file.items
+        .into_iter()
+        .filter(|it| matches!(it, Item::Struct(d) if d.name == "PlayerBlock"))
+        .collect()
+}
+
 /// The `CharacterDef` record (engine/structs.emp). Both `sonic.emp` (which IS a
 /// `CharacterDef` literal now) and `player_common.emp` (which dereferences one
 /// through `Player_Chardef`) `use` it, so the isolated-lowering ambient set has
@@ -386,9 +398,15 @@ struct PcShape {
     pstate_jump: u32,
     pstate_rolljump: u32,
     pstate_airball: u32,
-    player_phys: u32,
-    player_quadrant: u32,
-    player_jump_buffer: u32,
+    /// C1: the per-slot player working blocks. ONE label now — the array base
+    /// player_common's `player_block` splice `lea`s, then strides by
+    /// `sizeof(PlayerBlock)` for slot 1. The three cells this replaced
+    /// (Player_Phys / Player_Quadrant / Player_JumpBuffer) no longer exist.
+    player_blocks: u32,
+    /// C1: `player_block` and Player_Main's ring gate both `cmpa.w #Player_1` to
+    /// tell the leader from the follower, so the slot-0 SST address is a
+    /// cross-seam operand of this module's bytes for the first time.
+    player_1: u32,
     player_ring_index: u32,
     player_pos_ring: u32,
     player_stat_ring: u32,
@@ -431,9 +449,8 @@ const PC_PLAIN: PcShape = PcShape {
     pstate_jump: pins::P_STATE_JUMP.plain,
     pstate_rolljump: pins::P_STATE_ROLL_JUMP.plain,
     pstate_airball: pins::P_STATE_AIR_BALL.plain,
-    player_phys: pins::PLAYER_PHYS.plain,
-    player_quadrant: pins::PLAYER_QUADRANT.plain,
-    player_jump_buffer: pins::PLAYER_JUMP_BUFFER.plain,
+    player_blocks: pins::PLAYER_BLOCKS.plain,
+    player_1: pins::PLAYER_1.plain,
     player_ring_index: pins::PLAYER_RING_INDEX.plain,
     player_pos_ring: pins::PLAYER_POS_RING.plain,
     player_stat_ring: pins::PLAYER_STAT_RING.plain,
@@ -468,9 +485,8 @@ const PC_DEBUG: PcShape = PcShape {
     pstate_jump: pins::P_STATE_JUMP.debug,
     pstate_rolljump: pins::P_STATE_ROLL_JUMP.debug,
     pstate_airball: pins::P_STATE_AIR_BALL.debug,
-    player_phys: pins::PLAYER_PHYS.debug,
-    player_quadrant: pins::PLAYER_QUADRANT.debug,
-    player_jump_buffer: pins::PLAYER_JUMP_BUFFER.debug,
+    player_blocks: pins::PLAYER_BLOCKS.debug,
+    player_1: pins::PLAYER_1.debug,
     player_ring_index: pins::PLAYER_RING_INDEX.debug,
     player_pos_ring: pins::PLAYER_POS_RING.debug,
     player_stat_ring: pins::PLAYER_STAT_RING.debug,
@@ -515,7 +531,7 @@ fn compile_player_common(
     let file = with_ambient(
         vec![
             types(), sst(), constants(), objdef(), coords(), act(), game_consts(),
-            character_def_struct_items(&aeon),
+            character_def_struct_items(&aeon), player_block_struct_items(&aeon),
         ],
         main,
     );
@@ -556,9 +572,8 @@ fn compile_player_common(
         as_label_at("PState_Jump", shape.pstate_jump),
         as_label_at("PState_RollJump", shape.pstate_rolljump),
         as_label_at("PState_AirBall", shape.pstate_airball),
-        as_label_at("Player_Phys", shape.player_phys),
-        as_label_at("Player_Quadrant", shape.player_quadrant),
-        as_label_at("Player_JumpBuffer", shape.player_jump_buffer),
+        as_label_at("Player_Blocks", shape.player_blocks),
+        as_label_at("Player_1", shape.player_1),
         as_label_at("Player_Ring_Index", shape.player_ring_index),
         as_label_at("Player_Pos_Ring", shape.player_pos_ring),
         as_label_at("Player_Stat_Ring", shape.player_stat_ring),
@@ -629,19 +644,29 @@ fn p1_player_common_debug_region_matches_reference() {
 
 // ── guard gate + t24 positive control / negative probe ───────────────────────
 
-/// player_common's mirror drift guards are FULLY RETIRED. sst.emp's 30 SST_*
+/// player_common's MIRROR drift guards are fully retired. sst.emp's 30 SST_*
 /// ambient guards retired at the conv-a structs flip; the PSTATE_*/ANIM_*/
 /// VRAM_TEST_MARKER mirror guards retired at conv-f (config constants flipped to
 /// `.emp`, `use`d now); and the last one — the SFXID_SKID sound mirror — retired at
-/// conv-f #24/F2 (SFXID_SKID `use`d from games.sonic4.sound_ids, its authority). So
-/// ZERO local mirror guards remain: the byte-region gates (p1_*_region_matches_
-/// reference) + the engine-side authority guards are the surviving drift net. Any
-/// link asserts that DO survive (none today) must still pass.
+/// conv-f #24/F2 (SFXID_SKID `use`d from games.sonic4.sound_ids, its authority).
+///
+/// ONE link assert survives, and it is NOT a mirror guard: C1's
+/// `extern("Player_1") & $FFFF8000 == $FFFF8000`. `player_block` and Player_Main's
+/// ring gate both tell the leader from the follower with `cmpa.w #Player_1` — a
+/// SIGN-EXTENDED word compared against a full address register — which is only
+/// correct while Player_1 lives in the w-addressable window. It reads a link-time
+/// address, so it cannot fold at comptime the way the PBLK_* `offsetof` ensures in
+/// the same module do; it has to ride the link. Counting it here is the point:
+/// this test is where a silently-dropped build-time check would show up.
 #[test]
 fn p1_drift_guards_all_pass() {
     let Some(aeon) = ref_sources() else { return };
     let (_linked, resolved, asserts, guards) = compile_player_common(&aeon, &PC_PLAIN);
-    assert_eq!(guards, 0, "player_common's mirror drift guards are fully retired (F2); got {guards}");
+    assert_eq!(
+        guards, 1,
+        "player_common's mirror guards are retired; the one survivor is C1's Player_1 \
+         w-addressable check (cmpa.w sign-extension); got {guards}"
+    );
     let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -659,9 +684,11 @@ fn p1_undoctored_compile_equals_the_reference_window() {
     if let Some(want) = ref_window(&aeon, "s4.bin", PC_PLAIN.base, PC_PLAIN.len) {
         // Packed placement: the pin LEN spans to the next section's aligned
         // base, so the window may end in a short all-zero align pad beyond the
-        // lowered image (same tolerance as assert_region_matches).
+        // lowered image (same tolerance as assert_region_matches — 32, the
+        // largest section alignment in play; C1's plain window ends in exactly
+        // 16 pad bytes, which the old `< 16` bound excluded by one).
         let want_trimmed = if want.len() > got.len()
-            && want.len() - got.len() < 16
+            && want.len() - got.len() < 32
             && want[got.len()..].iter().all(|&b| b == 0)
         {
             &want[..got.len()]
