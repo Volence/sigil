@@ -8,11 +8,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      # CI checks out only this repo, so the reference-dependent m1b_gate tests
-      # (checksum vs aeon/s4.bin, s4budget, Oracle) self-skip here; those
-      # fidelity gates run pre-merge locally via SIGIL_STRICT_GATE=1 in an env
-      # that has the sibling aeon/oracle repos.
+      # CI checks out only this repo. Every REFERENCE-DEPENDENT test — anything
+      # compiling sources out of the sibling aeon tree, plus the m1b_gate
+      # checksum/s4budget/Oracle gates — self-skips here via
+      # `sigil_harness::test_support::reference_tree`. AEON_DIR is pointed at a
+      # path that cannot exist so the skip is what CI exercises, rather than
+      # depending on the runner not happening to have the default path.
+      #
+      # Those fidelity gates run pre-merge locally with SIGIL_STRICT_GATE=1 in
+      # an env that HAS the sibling aeon/oracle repos; under that flag the same
+      # guard panics instead of skipping, so a green CI can never stand in for
+      # the byte gate.
       - name: test
+        env:
+          AEON_DIR: /nonexistent/aeon-not-checked-out-in-ci
         run: cargo test --workspace
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings

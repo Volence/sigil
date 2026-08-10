@@ -5,22 +5,29 @@
 //! burst-copy ensure-chain, and (later tests) the `objdef()` emitter + the
 //! `test_objects.emp` consumer byte-gated against the AS macro.
 //!
-//! REFERENCE-DEPENDENT: reads the sibling aeon tree via `AEON_DIR`. For the
-//! t14 branch this must point at the worktree
-//! (`aeon/.worktrees/sigil-emp-tranche14`) per the paired-state gate.
+//! REFERENCE-DEPENDENT: the ambient `.emp` sources live in the sibling aeon tree
+//! (`AEON_DIR`, default `/home/volence/sonic_hacks/aeon`). Absent, the tests that
+//! read them SKIP green — unless `SIGIL_STRICT_GATE=1` makes a missing reference a
+//! hard failure, so the pre-merge run cannot skip a gate. The inline-lowering test
+//! is reference-free and always runs.
 
 use sigil_frontend_emp::eval::eval_const;
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::value::Value;
+use sigil_harness::test_support::{aeon_dir, reference_tree, strict_gate};
 use sigil_ir::backend::Cpu;
-use std::path::PathBuf;
 
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
-}
+/// The sources [`sst_ambient_with`] reads.
+const SST_AMBIENT_SOURCES: &[&str] = &["engine/system/types.emp", "engine/objects/sst.emp"];
+
+/// The sources [`emitter_ambient`] reads.
+const EMITTER_SOURCES: &[&str] = &[
+    "engine/system/types.emp",
+    "engine/objects/sst.emp",
+    "engine/system/constants.emp",
+    "engine/objects/objdef.emp",
+];
 
 fn parse_file(rel: &str) -> sigil_frontend_emp::ast::File {
     let path = aeon_dir().join(rel);
@@ -63,6 +70,7 @@ fn sst_ambient_with(extra: &str) -> sigil_frontend_emp::ast::File {
 /// The `extern("SST_*")` drift guards defer to link and do not fire here.
 #[test]
 fn objdef_burst_copy_ensure_chain_passes() {
+    let Some(_) = reference_tree(SST_AMBIENT_SOURCES) else { return };
     let file = sst_ambient_with("");
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -81,6 +89,7 @@ fn objdef_burst_copy_ensure_chain_passes() {
 /// the burst-copy correspondence (code_addr@0, x_vel@2, mappings@8, pad@$18).
 #[test]
 fn objdef_compact_layout_offsets() {
+    let Some(_) = reference_tree(SST_AMBIENT_SOURCES) else { return };
     for (probe, want) in [
         ("const R = offsetof(ObjDef, code_addr)", 0),
         ("const R = offsetof(ObjDef, x_vel)", 2),
@@ -192,6 +201,7 @@ fn emitter_ambient(consumer_body: &str) -> sigil_frontend_emp::ast::File {
 
 #[test]
 fn objdef_solid_record_bytes_and_fixups() {
+    let Some(_) = reference_tree(EMITTER_SOURCES) else { return };
     // ObjDef_Solid: priority 3, 16x16, COLLISION_SOLID(8).
     let file = emitter_ambient(
         "const VRAM_TEST_OBJ = $03E0\n\
@@ -236,6 +246,7 @@ fn objdef_solid_record_bytes_and_fixups() {
 
 #[test]
 fn objdef_priority_over_7_is_a_compile_error() {
+    let Some(_) = reference_tree(EMITTER_SOURCES) else { return };
     // The refinement upgrade of the macro's runtime `fatal "priority exceeds 7"`.
     let file = emitter_ambient(
         "data Bad: ObjDef = objdef(code: \"X\", map: \"Y\", priority: 8)\n",
@@ -255,6 +266,7 @@ fn objdef_priority_over_7_is_a_compile_error() {
 
 #[test]
 fn vram_art_pal_over_3_is_a_compile_error() {
+    let Some(_) = reference_tree(EMITTER_SOURCES) else { return };
     // The typed-interface upgrade of vram_art: pal is a `0..3` refinement, so
     // pal=4 (which would corrupt the priority bit via `pal<<13`) is caught at
     // compile time instead of silently mis-packing.
@@ -317,7 +329,7 @@ fn objdef_reference_gate(shape: &ObjShape) {
     let aeon = aeon_dir();
     let rom_path = aeon.join(shape.rom);
     let Ok(refrom) = std::fs::read(&rom_path) else {
-        if std::env::var("SIGIL_STRICT_GATE").is_ok() {
+        if strict_gate() {
             panic!("SIGIL_STRICT_GATE set but reference missing: {}", rom_path.display());
         }
         eprintln!("skip: reference ROM not at {} (set AEON_DIR)", rom_path.display());

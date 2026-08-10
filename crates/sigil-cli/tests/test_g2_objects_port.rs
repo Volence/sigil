@@ -22,26 +22,40 @@
 //! - **The `.particle_desc` descriptor blob**: `dc.w TestParticle - ObjCodeBase`
 //!   resolves the effect child's bank offset across the seam.
 //!
-//! REFERENCE-DEPENDENT (`AEON_DIR`, default sibling). Absent, tests SKIP green
-//! unless `SIGIL_STRICT_GATE=1`.
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
+//! `/home/volence/sonic_hacks/aeon`). Absent, every test here SKIPS green —
+//! unless `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
+//!
+//! ```text
+//! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test test_g2_objects_port
+//! ```
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
+use sigil_harness::test_support::{reference_tree, strict_gate};
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
-}
-
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+/// The reference tree, or `None` (skip green) when it lacks a source this gate
+/// compiles. Every test opens with it — the compile side runs BEFORE any ROM
+/// read, so guarding only the ROM window would leave the sources unguarded.
+fn ref_sources() -> Option<PathBuf> {
+    reference_tree(&[
+        "engine/objects/children.emp",
+        "engine/objects/objdef.emp",
+        "engine/objects/sst.emp",
+        "engine/system/constants.emp",
+        "engine/system/types.emp",
+        "games/sonic4/config/constants.emp",
+        "games/sonic4/objects/test_churn.emp",
+        "games/sonic4/objects/test_emitter.emp",
+        "games/sonic4/objects/test_helpers.emp",
+        "games/sonic4/objects/test_stress_emitter.emp",
+    ])
 }
 
 /// The engine-constants twin's guard count (shared with test_particle/animated).
@@ -229,8 +243,7 @@ struct Compiled {
 
 /// Compile the three real object modules with ambient deps, place at the bank
 /// addresses, append the synthetic cross-seam sections, and link.
-fn compile_real_files(shape: &Shape) -> Compiled {
-    let aeon = aeon_dir();
+fn compile_real_files(aeon: &Path, shape: &Shape) -> Compiled {
     let types = || parse_file(&aeon.join("engine/system/types.emp"));
     let sst = || parse_file(&aeon.join("engine/objects/sst.emp"));
     let constants = || parse_file(&aeon.join("engine/system/constants.emp"));
@@ -256,7 +269,7 @@ fn compile_real_files(shape: &Shape) -> Compiled {
     for (region, rel) in files {
         let main = parse_file(&aeon.join(rel));
         let file = with_ambient(
-            vec![types(), sst(), constants(), objdef(), spawn_desc_file(&aeon), game_consts(), test_helpers_file(&aeon)],
+            vec![types(), sst(), constants(), objdef(), spawn_desc_file(aeon), game_consts(), test_helpers_file(aeon)],
             main,
         );
         let (module, ldiags) = lower_module(&file, &opts);
@@ -336,10 +349,10 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-/// Load the reference ROM window `[base..base+len]`, or None (skip) when
-/// AEON_DIR has no built ROM and strict gating is off.
-fn ref_window(rom_name: &str, base: usize, len: usize) -> Option<Vec<u8>> {
-    let rom_path = aeon_dir().join(rom_name);
+/// Load the reference ROM window `[base..base+len]`, or None (skip) when the
+/// tree carries no built ROM and strict gating is off.
+fn ref_window(aeon: &Path, rom_name: &str, base: usize, len: usize) -> Option<Vec<u8>> {
+    let rom_path = aeon.join(rom_name);
     match std::fs::read(&rom_path) {
         Ok(rom) => Some(rom[base..base + len].to_vec()),
         Err(_) => {
@@ -354,6 +367,7 @@ fn ref_window(rom_name: &str, base: usize, len: usize) -> Option<Vec<u8>> {
 
 /// All three regions' reference gate + the drift guards + the outbound proof.
 fn reference_gate(shape: &Shape, rom_name: &str) {
+    let Some(aeon) = ref_sources() else { return };
     // objtest-gate (2026-08-05): all three G2 modules are DEBUG-only — the plain
     // arm's job flips to proving their regions carry ZERO plain bytes (the
     // modules still compile; the byte gates run on the debug arm).
@@ -362,18 +376,20 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         assert_eq!(shape.churn_len, 0, "gated trio must be all-empty in plain");
         // The trio must still COMPILE standalone — at the DEBUG bases (the plain
         // pins all collapse onto the plain_anchor and would overlap).
-        let _ = compile_real_files(&DEBUG);
+        let _ = compile_real_files(&aeon, &DEBUG);
         return;
     }
-    let Some(emitter_ref) = ref_window(rom_name, shape.emitter_base as usize, shape.emitter_len)
+    let Some(emitter_ref) =
+        ref_window(&aeon, rom_name, shape.emitter_base as usize, shape.emitter_len)
     else {
         return;
     };
     let stress_ref =
-        ref_window(rom_name, shape.stress_base as usize, shape.stress_len).unwrap();
-    let churn_ref = ref_window(rom_name, shape.churn_base as usize, shape.churn_len).unwrap();
+        ref_window(&aeon, rom_name, shape.stress_base as usize, shape.stress_len).unwrap();
+    let churn_ref =
+        ref_window(&aeon, rom_name, shape.churn_base as usize, shape.churn_len).unwrap();
 
-    let c = compile_real_files(shape);
+    let c = compile_real_files(&aeon, shape);
 
     // sst.emp's SST_* wall retired at the conv-a structs flip; each file's own
     // VRAM_TEST_OBJ mirror guard retired at conv-f (config constants flipped to
@@ -440,10 +456,13 @@ fn g2_objects_debug_regions_match_reference() {
 fn g2_undoctored_compile_equals_the_reference_window() {
     // objtest-gate: the trio is DEBUG-only — the probe pair runs on the debug shape.
     let shape = &DEBUG;
-    let Some(churn_ref) = ref_window("s4.debug.bin", shape.churn_base as usize, shape.churn_len) else {
+    let Some(aeon) = ref_sources() else { return };
+    let Some(churn_ref) =
+        ref_window(&aeon, "s4.debug.bin", shape.churn_base as usize, shape.churn_len)
+    else {
         return;
     };
-    let c = compile_real_files(shape);
+    let c = compile_real_files(&aeon, shape);
     let churn_sec = c.linked.section("test_churn").expect("linked test_churn");
     assert_eq!(churn_sec.bytes, churn_ref, "undoctored test_churn must match");
 }
@@ -453,11 +472,13 @@ fn g2_undoctored_compile_equals_the_reference_window() {
 #[test]
 fn g2_doctored_reference_diverges() {
     let shape = &DEBUG;
-    let Some(mut churn_ref) = ref_window("s4.debug.bin", shape.churn_base as usize, shape.churn_len)
+    let Some(aeon) = ref_sources() else { return };
+    let Some(mut churn_ref) =
+        ref_window(&aeon, "s4.debug.bin", shape.churn_base as usize, shape.churn_len)
     else {
         return;
     };
-    let c = compile_real_files(shape);
+    let c = compile_real_files(&aeon, shape);
     let churn_sec = c.linked.section("test_churn").expect("linked test_churn");
     churn_ref[0] ^= 0xFF;
     assert_ne!(

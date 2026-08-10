@@ -13,19 +13,34 @@
 //! — its transitive clobbers depend on the un-traversable computed edge — so it is
 //! reported SEPARATELY, never as an in-scope firing.
 //!
+//! REFERENCE-DEPENDENT: the five resident sound `.emp` modules live in the
+//! sibling `aeon` tree (`AEON_DIR`, default `/home/volence/sonic_hacks/aeon`).
+//! Absent, every test here SKIPS green — unless `SIGIL_STRICT_GATE=1` makes a
+//! missing reference a hard failure, so the pre-merge run cannot skip the
+//! diagnostic.
+//!
 //! ```text
-//! AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test z80_clobbers_incomplete
+//! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test z80_clobbers_incomplete
 //! ```
 
 use sigil_harness::seam1::{
     in_scope_firings, is_opcode_dispatch_proc, z80_clobbers_report, z80_clobbers_report_doctored,
 };
+use sigil_harness::test_support::reference_tree;
 use std::path::PathBuf;
 
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
+/// The reference tree the clobbers closure reads: the five resident modules plus
+/// the constant authorities their `-D` defines resolve against. `None` skips.
+fn sound_tree() -> Option<PathBuf> {
+    reference_tree(&[
+        "engine/sound/z80_sound_driver.emp",
+        "engine/sound/sound_sequencer.emp",
+        "engine/sound/sound_sfx.emp",
+        "engine/sound/sound_fm.emp",
+        "engine/sound/sound_psg.emp",
+        "engine/sound/sound_constants.emp",
+        "engine/system/constants.emp",
+    ])
 }
 
 /// Reglist segments from a set of bare Z80 register names.
@@ -43,8 +58,9 @@ fn segs(names: &[&str]) -> Vec<(String, Option<String>)> {
 /// scope (reported separately, asserted present in `dispatch_submachine_is_excluded`).
 #[test]
 fn honest_corpus_no_in_scope_firings() {
+    let Some(aeon) = sound_tree() else { return };
     for debug in [false, true] {
-        let report = z80_clobbers_report(&aeon_dir(), debug);
+        let report = z80_clobbers_report(&aeon, debug);
         let in_scope = in_scope_firings(&report);
         assert!(
             in_scope.is_empty(),
@@ -64,8 +80,9 @@ fn honest_corpus_no_in_scope_firings() {
 /// only, so the fixpoint closes against seam-1 alone).
 #[test]
 fn closure_is_complete_no_drops_no_unresolved() {
+    let Some(aeon) = sound_tree() else { return };
     for debug in [false, true] {
-        let report = z80_clobbers_report(&aeon_dir(), debug);
+        let report = z80_clobbers_report(&aeon, debug);
         assert_eq!(report.dropped, 0, "shape debug={debug}: {} dropped instructions", report.dropped);
         assert!(
             report.unresolved_callees.is_empty(),
@@ -86,8 +103,9 @@ fn closure_is_complete_no_drops_no_unresolved() {
 /// the native link (t37 §3.1). Sfx_Frame is IN scope (not a dispatch proc).
 #[test]
 fn red_fixture_sfx_frame_iy_underclaim_fires() {
+    let Some(aeon) = sound_tree() else { return };
     let doctor = [("Sfx_Frame", segs(&["af", "bc", "de", "hl", "ix"]))];
-    let report = z80_clobbers_report_doctored(&aeon_dir(), false, &doctor);
+    let report = z80_clobbers_report_doctored(&aeon, false, &doctor);
     let fired: Vec<_> = in_scope_firings(&report)
         .into_iter()
         .filter(|f| f.proc == "Sfx_Frame")
@@ -112,15 +130,16 @@ fn red_fixture_sfx_frame_iy_underclaim_fires() {
 /// (`clobbers(af,bc,de,hl,iy)`); doctoring it to omit iy fires iy.
 #[test]
 fn non_vacuity_injected_underclaim_on_sfx_steal() {
+    let Some(aeon) = sound_tree() else { return };
     // Honest: no in-scope firing on Sfx_Steal.
-    let honest = z80_clobbers_report(&aeon_dir(), false);
+    let honest = z80_clobbers_report(&aeon, false);
     assert!(
         !in_scope_firings(&honest).iter().any(|f| f.proc == "Sfx_Steal"),
         "Sfx_Steal must be honest un-doctored"
     );
     // Doctored to omit iy: fires iy.
     let doctor = [("Sfx_Steal", segs(&["af", "bc", "de", "hl"]))];
-    let report = z80_clobbers_report_doctored(&aeon_dir(), false, &doctor);
+    let report = z80_clobbers_report_doctored(&aeon, false, &doctor);
     assert!(
         in_scope_firings(&report)
             .iter()
@@ -142,7 +161,8 @@ fn non_vacuity_injected_underclaim_on_sfx_steal() {
 /// empty analysis.
 #[test]
 fn dispatch_submachine_is_excluded_but_present() {
-    let report = z80_clobbers_report(&aeon_dir(), false);
+    let Some(aeon) = sound_tree() else { return };
+    let report = z80_clobbers_report(&aeon, false);
     let excluded: Vec<_> =
         report.firings.iter().filter(|f| is_opcode_dispatch_proc(&f.proc)).collect();
     assert!(

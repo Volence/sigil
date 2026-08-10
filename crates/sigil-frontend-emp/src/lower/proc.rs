@@ -1877,6 +1877,9 @@ fn check_preserves(
 /// for the four messages. The `[proc.inout-not-param]` rule is what routes the
 /// in-out INPUT obligation through the existing param→D1b machinery, and its
 /// enforcement on externs is what closes the extern-fold blessing path.
+// Each parameter is one pre-expanded set the four rules test membership against;
+// the arity IS the rule's input list, so it stays flat rather than bundled.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn check_inout_partition(
     owner: &str,
     span: Span,
@@ -1949,6 +1952,9 @@ pub(crate) fn check_inout_partition(
 /// `out(d5)` with no gate firing (D1b stays silent because `d5 ∉ Q.params`). Running
 /// the SAME five rules `check_out` runs on bodies closes that path at the
 /// declaration. `is_z80` gates the 68k-only facet.
+// One parameter per declared reglist facet, mirroring `check_out`'s body-side
+// signature; the arity IS the declaration's facet list.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn validate_boundary_inout(
     owner: &str,
     span: Span,

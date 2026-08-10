@@ -74,7 +74,14 @@ fn inout_ok(
     statuses.get(&reg).expect("status for reg").is_none()
 }
 
-fn empty_maps() -> (BTreeMap<String, BTreeSet<String>>, BTreeMap<String, Vec<(String, String)>>) {
+/// The per-callee register-set map (`uncond_out` / `inout` / `cond_out` shapes).
+type RegSetMap = BTreeMap<String, BTreeSet<String>>;
+/// The per-callee effective-clobbers map: `(reg, width)` pairs per callee.
+type ClobberMap = BTreeMap<String, Vec<(String, String)>>;
+
+/// A fresh empty `(reg-set, clobbers)` pair — the no-callee baseline the rule
+/// probes start from.
+fn empty_maps() -> (RegSetMap, ClobberMap) {
     (BTreeMap::new(), BTreeMap::new())
 }
 

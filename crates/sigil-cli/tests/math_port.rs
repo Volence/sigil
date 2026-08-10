@@ -83,6 +83,7 @@ use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
+use sigil_harness::test_support::{reference_tree, strict_gate};
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
@@ -92,12 +93,18 @@ fn region_base(debug: bool) -> u32 {
     if debug { pins::MATH.debug_base } else { pins::MATH.plain_base }
 }
 
+/// REFERENCE-DEPENDENT: `Some(aeon_root)` when the tree carries the three
+/// sources this gate reads (`math.emp`, the ambient `types.emp`, and the
+/// embedded `sine.bin`); `None` — both tests SKIP green — when it does not,
+/// unless `SIGIL_STRICT_GATE=1` makes absence a hard failure.
+fn math_tree() -> Option<PathBuf> {
+    reference_tree(&["engine/system/math.emp", "engine/system/types.emp", "engine/data/sine.bin"])
+}
+
 /// The module's own directory in aeon's tree — where `math.emp` itself
 /// lives, and the base for reading the source file.
-fn math_dir() -> PathBuf {
-    let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
-    Path::new(&aeon).join("engine/system")
+fn math_dir(aeon: &Path) -> PathBuf {
+    aeon.join("engine/system")
 }
 
 /// The sandbox's hard containment BOUNDARY — the module's PARENT directory
@@ -105,10 +112,8 @@ fn math_dir() -> PathBuf {
 /// (`engine/system/`) and its embed target (`engine/data/`). Paired with
 /// `math_embed_base` (below): `include_root` is the boundary,
 /// `embed_base` is the join point relative `embed` paths climb FROM.
-fn math_include_root() -> PathBuf {
-    let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
-    Path::new(&aeon).join("engine")
+fn math_include_root(aeon: &Path) -> PathBuf {
+    aeon.join("engine")
 }
 
 /// The `embed` join base — the module's OWN directory (`engine/system/`),
@@ -117,12 +122,8 @@ fn math_include_root() -> PathBuf {
 /// one level to `engine/`, then descends to `engine/data/sine.bin` — the
 /// final resolved path is checked against `math_include_root`'s boundary
 /// and passes (it's a descendant of `engine/`).
-fn math_embed_base() -> PathBuf {
-    math_dir()
-}
-
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+fn math_embed_base(aeon: &Path) -> PathBuf {
+    math_dir(aeon)
 }
 
 /// The frozen reference ROMs (harness `golden/`), NOT the live tree `s4.bin`
@@ -188,8 +189,8 @@ fn as_outbound_consumer() -> Vec<Section> {
 /// outbound-consumer section at a harness-private LMA (clear of both map
 /// regions) -> ONE `resolve_layout` -> `link`. Returns the placed+resolved
 /// `.emp` sections and the linked image.
-fn compile_real_file(debug: bool) -> (Vec<Section>, sigil_link::LinkedImage) {
-    let dir = math_dir();
+fn compile_real_file(aeon: &Path, debug: bool) -> (Vec<Section>, sigil_link::LinkedImage) {
+    let dir = math_dir(aeon);
     let emp_path = dir.join("math.emp");
     let src = std::fs::read_to_string(&emp_path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", emp_path.display()));
@@ -222,8 +223,8 @@ fn compile_real_file(debug: bool) -> (Vec<Section>, sigil_link::LinkedImage) {
     // join point) — see `math_include_root`/`math_embed_base`'s docs.
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
-        include_root: Some(math_include_root()),
-        embed_base: Some(math_embed_base()),
+        include_root: Some(math_include_root(aeon)),
+        embed_base: Some(math_embed_base(aeon)),
         defines: vec![],
     };
     let (module, ldiags) = lower_module(&file, &opts);
@@ -296,12 +297,13 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
 /// `Sine_Table`.
 #[test]
 fn math_region_matches_reference() {
+    let Some(aeon) = math_tree() else { return };
     let Some(refrom) = golden("s4.bin") else {
         eprintln!("skip: golden s4.bin not present");
         return;
     };
 
-    let (_resolved, linked) = compile_real_file(false);
+    let (_resolved, linked) = compile_real_file(&aeon, false);
 
     let base = region_base(false) as usize;
     let expected = &refrom[base..base + pins::MATH.plain_len];
@@ -338,12 +340,13 @@ fn math_region_matches_reference() {
 /// resolve to the correct per-shape addresses.
 #[test]
 fn math_debug_region_matches_reference() {
+    let Some(aeon) = math_tree() else { return };
     let Some(refrom) = golden("s4.debug.bin") else {
         eprintln!("skip: golden s4.debug.bin not present");
         return;
     };
 
-    let (_resolved, linked) = compile_real_file(true);
+    let (_resolved, linked) = compile_real_file(&aeon, true);
 
     let base = region_base(true) as usize;
     let expected = &refrom[base..base + pins::MATH.debug_len];

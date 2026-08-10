@@ -11,38 +11,41 @@
 //! the AS side used to generate (a wrong offset would move ROM bytes — the
 //! six-target byte-identity is the ultimate check; this pins the mechanism).
 //!
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
+//! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
+//! `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
+//!
 //! ```text
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test structs_module
 //! ```
 
 use sigil_harness::native::harvest_engine_struct_offsets;
+use sigil_harness::test_support::reference_tree;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+/// The harvested `<Struct>_<field>` / `<Struct>_len` equs, or `None` when the
+/// reference tree lacks a source the harvest reads. The listed paths are
+/// `types.emp` (the ambient type environment) plus every file
+/// `STRUCT_OFFSET_TWINS` names.
+fn harvested() -> Option<HashMap<String, i64>> {
+    let aeon = reference_tree(&[
+        "engine/system/types.emp",
+        "engine/structs.emp",
+        "engine/objects/sst.emp",
+        "engine/objects/entity_window.emp",
+        "engine/level/parallax.emp",
+    ])?;
+    Some(
+        harvest_engine_struct_offsets(&aeon)
+            .expect("struct-offset harvest")
+            .into_iter()
+            .collect(),
     )
-}
-
-fn skip() -> bool {
-    std::env::var("AEON_DIR").is_err() && !Path::new("/home/volence/sonic_hacks/aeon").exists()
-}
-
-fn harvested() -> HashMap<String, i64> {
-    harvest_engine_struct_offsets(&aeon_dir())
-        .expect("struct-offset harvest")
-        .into_iter()
-        .collect()
 }
 
 #[test]
 fn harvest_emits_the_as_field_offsets_and_sizes() {
-    if skip() {
-        eprintln!("skip: AEON_DIR unset");
-        return;
-    }
-    let h = harvested();
+    let Some(h) = harvested() else { return };
     // A spread across all eight struct twins — the offsets structs.asm's
     // `struct … endstruct` generated, now authored by the `.emp` structs.
     let want: &[(&str, i64)] = &[
@@ -101,11 +104,7 @@ fn harvest_emits_the_as_field_offsets_and_sizes() {
 
 #[test]
 fn sst_interact_is_the_record_tail_word() {
-    if skip() {
-        eprintln!("skip: AEON_DIR unset");
-        return;
-    }
-    let h = harvested();
+    let Some(h) = harvested() else { return };
     // The one derived equate structs.asm carried outside a struct block.
     // sst-fold (2026-08-05): frame_off moved into the engine block at $2E, so
     // the custom window is the record tail again and

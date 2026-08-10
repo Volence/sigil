@@ -19,26 +19,39 @@
 //! - **vram_bytes HOISTED to objdef.emp** (2nd consumer, row 63) — sonic + the
 //!   retrofitted test_animated share it.
 //!
-//! REFERENCE-DEPENDENT (`AEON_DIR`, default sibling). Absent, tests SKIP green
-//! unless `SIGIL_STRICT_GATE=1`.
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
+//! `/home/volence/sonic_hacks/aeon`). Absent, every test here SKIPS green —
+//! unless `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
+//!
+//! ```text
+//! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test test_p1_player_port
+//! ```
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
+use sigil_harness::test_support::{reference_tree, strict_gate};
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
-}
-
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+/// The reference tree, or `None` (skip green) when it lacks a source either
+/// compile helper reads. Every test opens with it — both helpers run BEFORE any
+/// ROM read, so guarding only the ROM window would leave the sources unguarded.
+fn ref_sources() -> Option<PathBuf> {
+    reference_tree(&[
+        "engine/coords.emp",
+        "engine/objects/objdef.emp",
+        "engine/objects/sst.emp",
+        "engine/structs.emp",
+        "engine/system/constants.emp",
+        "engine/system/types.emp",
+        "games/sonic4/config/constants.emp",
+        "games/sonic4/player/player_common.emp",
+        "games/sonic4/player/sonic.emp",
+    ])
 }
 
 const OBJ_CODE_BASE: u32 = pins::OBJ_CODE_BASE.plain;
@@ -173,8 +186,8 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-fn ref_window(rom: &str, base: u32, len: usize) -> Option<Vec<u8>> {
-    let path = aeon_dir().join(rom);
+fn ref_window(aeon: &Path, rom: &str, base: u32, len: usize) -> Option<Vec<u8>> {
+    let path = aeon.join(rom);
     match std::fs::read(&path) {
         Ok(bytes) => {
             let b = base as usize;
@@ -230,8 +243,7 @@ const SONIC_DEBUG: SonicShape = SonicShape {
     len: pins::SONIC.debug_len,
 };
 
-fn compile_sonic(shape: &SonicShape) -> (sigil_link::LinkedImage, usize) {
-    let aeon = aeon_dir();
+fn compile_sonic(aeon: &Path, shape: &SonicShape) -> (sigil_link::LinkedImage, usize) {
     let types = || parse_file(&aeon.join("engine/system/types.emp")).items;
     let sst = || parse_file(&aeon.join("engine/objects/sst.emp")).items;
     let constants = || parse_file(&aeon.join("engine/system/constants.emp")).items;
@@ -297,18 +309,20 @@ fn sonic_region_bytes(linked: &sigil_link::LinkedImage) -> Vec<u8> {
 
 #[test]
 fn p1_sonic_region_matches_reference() {
-    let (linked, _g) = compile_sonic(&SONIC_PLAIN);
+    let Some(aeon) = ref_sources() else { return };
+    let (linked, _g) = compile_sonic(&aeon, &SONIC_PLAIN);
     let got = sonic_region_bytes(&linked);
-    if let Some(want) = ref_window("s4.bin", SONIC_PLAIN.base, SONIC_PLAIN.len) {
+    if let Some(want) = ref_window(&aeon, "s4.bin", SONIC_PLAIN.base, SONIC_PLAIN.len) {
         assert_region_matches(&got, &want, "sonic (plain)");
     }
 }
 
 #[test]
 fn p1_sonic_debug_region_matches_reference() {
-    let (linked, _g) = compile_sonic(&SONIC_DEBUG);
+    let Some(aeon) = ref_sources() else { return };
+    let (linked, _g) = compile_sonic(&aeon, &SONIC_DEBUG);
     let got = sonic_region_bytes(&linked);
-    if let Some(want) = ref_window("s4.debug.bin", SONIC_DEBUG.base, SONIC_DEBUG.len) {
+    if let Some(want) = ref_window(&aeon, "s4.debug.bin", SONIC_DEBUG.base, SONIC_DEBUG.len) {
         assert_region_matches(&got, &want, "sonic (debug)");
     }
 }
@@ -438,14 +452,16 @@ const PC_DEBUG: PcShape = PcShape {
     len: pins::PLAYER_COMMON.debug_len,
 };
 
-fn compile_player_common(shape: &PcShape) -> (sigil_link::LinkedImage, Vec<Section>, Vec<sigil_ir::LinkAssert>, usize) {
-    let aeon = aeon_dir();
+fn compile_player_common(
+    aeon: &Path,
+    shape: &PcShape,
+) -> (sigil_link::LinkedImage, Vec<Section>, Vec<sigil_ir::LinkAssert>, usize) {
     let types = || parse_file(&aeon.join("engine/system/types.emp")).items;
     let sst = || parse_file(&aeon.join("engine/objects/sst.emp")).items;
     let constants = || parse_file(&aeon.join("engine/system/constants.emp")).items;
     let objdef = || parse_file(&aeon.join("engine/objects/objdef.emp")).items;
     let coords = || parse_file(&aeon.join("engine/coords.emp")).items;
-    let act = || act_struct_items(&aeon);
+    let act = || act_struct_items(aeon);
     // PSTATE_*/ANIM_*/VRAM_TEST_MARKER authority (Parcel F: config/constants.asm → `.emp`).
     let game_consts = || parse_file(&aeon.join("games/sonic4/config/constants.emp")).items;
 
@@ -552,18 +568,20 @@ fn pc_region_bytes(linked: &sigil_link::LinkedImage) -> Vec<u8> {
 
 #[test]
 fn p1_player_common_region_matches_reference() {
-    let (linked, _r, _a, _g) = compile_player_common(&PC_PLAIN);
+    let Some(aeon) = ref_sources() else { return };
+    let (linked, _r, _a, _g) = compile_player_common(&aeon, &PC_PLAIN);
     let got = pc_region_bytes(&linked);
-    if let Some(want) = ref_window("s4.bin", PC_PLAIN.base, PC_PLAIN.len) {
+    if let Some(want) = ref_window(&aeon, "s4.bin", PC_PLAIN.base, PC_PLAIN.len) {
         assert_region_matches(&got, &want, "player_common (plain)");
     }
 }
 
 #[test]
 fn p1_player_common_debug_region_matches_reference() {
-    let (linked, _r, _a, _g) = compile_player_common(&PC_DEBUG);
+    let Some(aeon) = ref_sources() else { return };
+    let (linked, _r, _a, _g) = compile_player_common(&aeon, &PC_DEBUG);
     let got = pc_region_bytes(&linked);
-    if let Some(want) = ref_window("s4.debug.bin", PC_DEBUG.base, PC_DEBUG.len) {
+    if let Some(want) = ref_window(&aeon, "s4.debug.bin", PC_DEBUG.base, PC_DEBUG.len) {
         assert_region_matches(&got, &want, "player_common (debug)");
     }
 }
@@ -580,7 +598,8 @@ fn p1_player_common_debug_region_matches_reference() {
 /// link asserts that DO survive (none today) must still pass.
 #[test]
 fn p1_drift_guards_all_pass() {
-    let (_linked, resolved, asserts, guards) = compile_player_common(&PC_PLAIN);
+    let Some(aeon) = ref_sources() else { return };
+    let (_linked, resolved, asserts, guards) = compile_player_common(&aeon, &PC_PLAIN);
     assert_eq!(guards, 0, "player_common's mirror drift guards are fully retired (F2); got {guards}");
     let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &asserts);
     assert!(
@@ -593,9 +612,10 @@ fn p1_drift_guards_all_pass() {
 /// window exactly. If this fails, the negative probe below proves nothing.
 #[test]
 fn p1_undoctored_compile_equals_the_reference_window() {
-    let (linked, _r, _a, _g) = compile_player_common(&PC_PLAIN);
+    let Some(aeon) = ref_sources() else { return };
+    let (linked, _r, _a, _g) = compile_player_common(&aeon, &PC_PLAIN);
     let got = pc_region_bytes(&linked);
-    if let Some(want) = ref_window("s4.bin", PC_PLAIN.base, PC_PLAIN.len) {
+    if let Some(want) = ref_window(&aeon, "s4.bin", PC_PLAIN.base, PC_PLAIN.len) {
         // Packed placement: the pin LEN spans to the next section's aligned
         // base, so the window may end in a short all-zero align pad beyond the
         // lowered image (same tolerance as assert_region_matches).
@@ -615,9 +635,10 @@ fn p1_undoctored_compile_equals_the_reference_window() {
 /// compiled bytes — the gate can actually fail. Doctors a pins-derived offset.
 #[test]
 fn p1_doctored_reference_diverges() {
-    let (linked, _r, _a, _g) = compile_player_common(&PC_PLAIN);
+    let Some(aeon) = ref_sources() else { return };
+    let (linked, _r, _a, _g) = compile_player_common(&aeon, &PC_PLAIN);
     let got = pc_region_bytes(&linked);
-    let Some(mut want) = ref_window("s4.bin", PC_PLAIN.base, PC_PLAIN.len) else {
+    let Some(mut want) = ref_window(&aeon, "s4.bin", PC_PLAIN.base, PC_PLAIN.len) else {
         return;
     };
     want[0] ^= 0xFF; // flip the first opcode byte
@@ -627,9 +648,10 @@ fn p1_doctored_reference_diverges() {
 /// NEGATIVE PROBE (sonic region): a doctored reference window must NOT match.
 #[test]
 fn p1_sonic_doctored_reference_diverges() {
-    let (linked, _g) = compile_sonic(&SONIC_PLAIN);
+    let Some(aeon) = ref_sources() else { return };
+    let (linked, _g) = compile_sonic(&aeon, &SONIC_PLAIN);
     let got = sonic_region_bytes(&linked);
-    let Some(mut want) = ref_window("s4.bin", SONIC_PLAIN.base, SONIC_PLAIN.len) else {
+    let Some(mut want) = ref_window(&aeon, "s4.bin", SONIC_PLAIN.base, SONIC_PLAIN.len) else {
         return;
     };
     want[0] ^= 0xFF;

@@ -13,6 +13,13 @@
 //! EMIT-FIRST: the embedded `.bin` are gitignored build artifacts, so the gate runs
 //! `ensure_generated` FIRST, then compares.
 //!
+//! REFERENCE-DEPENDENT: the sources and the reference ROMs live in the sibling
+//! `aeon` tree (`AEON_DIR`, default `/home/volence/sonic_hacks/aeon`). Absent,
+//! every test here SKIPS green — unless `SIGIL_STRICT_GATE=1` makes a missing
+//! reference a hard failure, so the pre-merge run cannot skip a gate. The split
+//! tests guard BEFORE `ensure_generated`, which WRITES its artifacts into the
+//! tree.
+//!
 //! ```text
 //! SIGIL_STRICT_GATE=1 SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test mt_bank_port
@@ -21,19 +28,21 @@
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::test_support::{aeon_dir as aeon_root, reference_tree, strict_gate};
 use sigil_harness::{native, pins};
 use sigil_ir::backend::Cpu;
 use sigil_ir::SymbolTable;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-fn aeon_root() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
-}
-
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+/// The reference tree the split gate reads: `mt_bank.emp` (the un-split lowering)
+/// and the resident blob head `ensure_generated` re-emits alongside it. `None`
+/// skips — checked BEFORE `ensure_generated`, which writes into the tree.
+fn mt_tree() -> Option<PathBuf> {
+    reference_tree(&[
+        "games/sonic4/data/sound/mt_bank.emp",
+        "games/sonic4/data/sound/mt_bank_blob.emp",
+        "engine/sound/z80_sound_driver.emp",
+    ])
 }
 
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -108,12 +117,11 @@ fn mt_bank_debug_matches_reference() {
 /// SongPatchTable) concatenated are byte-identical to the un-split lowering of
 /// `mt_bank.emp`, both shapes. Ties the on-disk split back to its source of truth
 /// (`emit_mt_bank`), so a split-boundary bug (wrong offset) fails here loudly.
-fn split_reassembles(debug: bool) {
+fn split_reassembles(aeon: &Path, debug: bool) {
     let _guard = LOCK.lock().unwrap();
-    let aeon = aeon_root();
-    native::ensure_generated(&aeon);
+    native::ensure_generated(aeon);
     let gen = aeon.join("engine/sound/generated");
-    let mt = sigil_harness::seam2::emit_mt_bank(&aeon, debug)
+    let mt = sigil_harness::seam2::emit_mt_bank(aeon, debug)
         .unwrap_or_else(|e| panic!("emit_mt_bank({debug}): {e}"));
     let (body, st, spt) = if debug {
         ("mt_bank_body_debug.bin", "mt_songtable_debug.bin", "mt_songpatchtable_debug.bin")
@@ -132,10 +140,12 @@ fn split_reassembles(debug: bool) {
 
 #[test]
 fn split_artifacts_reassemble_to_unsplit_blob_plain() {
-    split_reassembles(false);
+    let Some(aeon) = mt_tree() else { return };
+    split_reassembles(&aeon, false);
 }
 
 #[test]
 fn split_artifacts_reassemble_to_unsplit_blob_debug() {
-    split_reassembles(true);
+    let Some(aeon) = mt_tree() else { return };
+    split_reassembles(&aeon, true);
 }

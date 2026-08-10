@@ -22,26 +22,38 @@
 //! - **`vram_art` adoption** + the `VRAM_TEST_OBJ: VramTile` game-config mirror
 //!   (drift guard resolves against config/constants.asm, which survives).
 //!
-//! REFERENCE-DEPENDENT (`AEON_DIR`, default sibling). Absent, tests SKIP green
-//! unless `SIGIL_STRICT_GATE=1`.
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
+//! `/home/volence/sonic_hacks/aeon`). Absent, every test here SKIPS green —
+//! unless `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
+//!
+//! ```text
+//! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test test_g3_objects_port
+//! ```
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
+use sigil_harness::test_support::{reference_tree, strict_gate};
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
-}
-
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+/// The reference tree, or `None` (skip green) when it lacks a source this gate
+/// compiles. Every test opens with it — the compile side runs BEFORE any ROM
+/// read, so guarding only the ROM window would leave the sources unguarded.
+fn ref_sources() -> Option<PathBuf> {
+    reference_tree(&[
+        "engine/objects/children.emp",
+        "engine/objects/objdef.emp",
+        "engine/objects/sst.emp",
+        "engine/system/constants.emp",
+        "engine/system/types.emp",
+        "games/sonic4/config/constants.emp",
+        "games/sonic4/objects/test_helpers.emp",
+        "games/sonic4/objects/test_parent.emp",
+    ])
 }
 
 /// The engine-constants twin's guard count (shared with the sibling object ports).
@@ -192,14 +204,13 @@ struct Compiled {
 /// Compile the real test_parent module with ambient deps (incl. the hoisted
 /// SpawnDesc struct), place at the bank address, append the synthetic cross-seam
 /// sections, and link.
-fn compile_real_file(shape: &Shape) -> Compiled {
-    let aeon = aeon_dir();
+fn compile_real_file(aeon: &Path, shape: &Shape) -> Compiled {
     let types = || parse_file(&aeon.join("engine/system/types.emp")).items;
     let sst = || parse_file(&aeon.join("engine/objects/sst.emp")).items;
     let constants = || parse_file(&aeon.join("engine/system/constants.emp")).items;
     let objdef = || parse_file(&aeon.join("engine/objects/objdef.emp")).items;
-    let spawn_desc = || spawn_desc_items(&aeon);
-    let test_helpers = || test_helpers_items(&aeon);
+    let spawn_desc = || spawn_desc_items(aeon);
+    let test_helpers = || test_helpers_items(aeon);
     // VRAM_TEST_OBJ's authority (Parcel F: config/constants.asm → `.emp`).
     let game_consts = || parse_file(&aeon.join("games/sonic4/config/constants.emp")).items;
 
@@ -288,10 +299,10 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-/// Load the reference ROM window `[base..base+len]`, or None (skip) when
-/// AEON_DIR has no built ROM and strict gating is off.
-fn ref_window(rom_name: &str, base: usize, len: usize) -> Option<Vec<u8>> {
-    let rom_path = aeon_dir().join(rom_name);
+/// Load the reference ROM window `[base..base+len]`, or None (skip) when the
+/// tree carries no built ROM and strict gating is off.
+fn ref_window(aeon: &Path, rom_name: &str, base: usize, len: usize) -> Option<Vec<u8>> {
+    let rom_path = aeon.join(rom_name);
     match std::fs::read(&rom_path) {
         Ok(rom) => Some(rom[base..base + len].to_vec()),
         Err(_) => {
@@ -306,19 +317,21 @@ fn ref_window(rom_name: &str, base: usize, len: usize) -> Option<Vec<u8>> {
 
 /// The region's reference gate + the drift guards.
 fn reference_gate(shape: &Shape, rom_name: &str) {
+    let Some(aeon) = ref_sources() else { return };
     // objtest-gate (2026-08-05): test_parent is DEBUG-only — the plain arm proves
     // the region carries ZERO plain bytes and that the module still compiles (at
     // the DEBUG base; the plain pin is the collapsed plain_anchor).
     if shape.parent_len == 0 {
-        let _ = compile_real_file(&DEBUG);
+        let _ = compile_real_file(&aeon, &DEBUG);
         return;
     }
-    let Some(parent_ref) = ref_window(rom_name, shape.parent_base as usize, shape.parent_len)
+    let Some(parent_ref) =
+        ref_window(&aeon, rom_name, shape.parent_base as usize, shape.parent_len)
     else {
         return;
     };
 
-    let c = compile_real_file(shape);
+    let c = compile_real_file(&aeon, shape);
 
     // sst.emp's SST_* wall retired at the conv-a structs flip; test_parent's own
     // VRAM_TEST_OBJ mirror guard retired at conv-f (config constants flipped to
@@ -356,11 +369,13 @@ fn g3_objects_debug_regions_match_reference() {
 fn g3_undoctored_compile_equals_the_reference_window() {
     // objtest-gate: DEBUG-only module — the probe pair runs on the debug shape.
     let shape = &DEBUG;
-    let Some(parent_ref) = ref_window("s4.debug.bin", shape.parent_base as usize, shape.parent_len)
+    let Some(aeon) = ref_sources() else { return };
+    let Some(parent_ref) =
+        ref_window(&aeon, "s4.debug.bin", shape.parent_base as usize, shape.parent_len)
     else {
         return;
     };
-    let c = compile_real_file(shape);
+    let c = compile_real_file(&aeon, shape);
     let sec = c.linked.section("test_parent").expect("linked test_parent");
     // Packed placement: the pin LEN spans to the next section's aligned base,
     // so the window may end in a short all-zero align pad beyond the lowered
@@ -381,11 +396,13 @@ fn g3_undoctored_compile_equals_the_reference_window() {
 #[test]
 fn g3_doctored_reference_diverges() {
     let shape = &DEBUG;
-    let Some(mut parent_ref) = ref_window("s4.debug.bin", shape.parent_base as usize, shape.parent_len)
+    let Some(aeon) = ref_sources() else { return };
+    let Some(mut parent_ref) =
+        ref_window(&aeon, "s4.debug.bin", shape.parent_base as usize, shape.parent_len)
     else {
         return;
     };
-    let c = compile_real_file(shape);
+    let c = compile_real_file(&aeon, shape);
     let sec = c.linked.section("test_parent").expect("linked test_parent");
     parent_ref[0] ^= 0xFF;
     assert_ne!(

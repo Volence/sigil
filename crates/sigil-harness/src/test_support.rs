@@ -35,10 +35,18 @@
 //! `[layout.odd-item]` parity asserts. Counting/checking guards means excluding
 //! the parity asserts; [`drift_guards_only`] / [`guard_assert_count`] are the
 //! shared idiom.
+//!
+//! ## 3. The REFERENCE-DEPENDENT guard
+//!
+//! A port gate compiles sources out of the sibling `aeon` working copy, which a
+//! checkout of this repo alone does not have. [`reference_tree`] is the one
+//! guard those tests open with: skip green when the named paths are absent, and
+//! panic instead under `SIGIL_STRICT_GATE=1` so the pre-merge run cannot skip.
 
 use sigil_frontend_as::{assemble, Options};
 use sigil_ir::assert::MsgPart;
 use sigil_ir::{Cpu, LinkAssert, Section};
+use std::path::PathBuf;
 
 // ── 1. The AS-truth equ blob ────────────────────────────────────────────────
 
@@ -304,6 +312,48 @@ pub fn drift_guards_only(asserts: &[LinkAssert]) -> impl Iterator<Item = &LinkAs
 /// asserts). The established `guard_assert_count` idiom, now shared.
 pub fn guard_assert_count(asserts: &[LinkAssert]) -> usize {
     drift_guards_only(asserts).count()
+}
+
+// ── 3. The REFERENCE-DEPENDENT guard ────────────────────────────────────────
+
+/// The aeon reference tree: `AEON_DIR`, or the workspace default.
+pub fn aeon_dir() -> PathBuf {
+    PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    )
+}
+
+/// `true` when `SIGIL_STRICT_GATE` is set — the pre-merge fidelity run, where a
+/// missing reference is a FAILURE rather than a skip.
+pub fn strict_gate() -> bool {
+    std::env::var("SIGIL_STRICT_GATE").is_ok()
+}
+
+/// The guard every REFERENCE-DEPENDENT test opens with: `Some(aeon)` when the
+/// tree carries every path in `rels`, `None` — skip green — when it does not.
+///
+/// The skip exists for environments that check out THIS repo alone (CI): the
+/// aeon tree is a sibling working copy, not a dependency sigil can vendor. It
+/// must never quietly swallow a real gate, so `SIGIL_STRICT_GATE=1` turns a
+/// missing reference into a panic naming the absent path — that is the flag the
+/// pre-merge run sets, and under it these tests cannot skip.
+///
+/// `rels` are the aeon-relative paths the caller actually reads (`.emp` sources,
+/// fixtures, ROMs). Naming them — rather than probing the tree root — is what
+/// makes the guard honest against an `AEON_DIR` pointed at an incomplete tree.
+pub fn reference_tree(rels: &[&str]) -> Option<PathBuf> {
+    let aeon = aeon_dir();
+    if let Some(missing) = rels.iter().find(|rel| !aeon.join(rel).exists()) {
+        let path = aeon.join(missing);
+        assert!(
+            !strict_gate(),
+            "SIGIL_STRICT_GATE set but reference missing: {}",
+            path.display()
+        );
+        eprintln!("skip: reference not at {} (set AEON_DIR)", path.display());
+        return None;
+    }
+    Some(aeon)
 }
 
 #[cfg(test)]

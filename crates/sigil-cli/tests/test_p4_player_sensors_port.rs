@@ -10,26 +10,32 @@
 //! per-shape cross-seam operands (the Collision_GetType bsr.w displacement + the
 //! four ROM-table abs.l addresses + the Player_Quadrant abs.w) → compile twice.
 //!
-//! REFERENCE-DEPENDENT (`AEON_DIR`, default sibling). Absent, tests SKIP green
-//! unless `SIGIL_STRICT_GATE=1`.
+//! REFERENCE-DEPENDENT: the sources and the reference ROMs live in the sibling
+//! `aeon` tree (`AEON_DIR`, default `/home/volence/sonic_hacks/aeon`). Absent,
+//! every test here SKIPS green — unless `SIGIL_STRICT_GATE=1` makes a missing
+//! reference a hard failure.
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
+use sigil_harness::test_support::reference_tree;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::PathBuf;
 
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
-}
-
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+/// `Some(aeon_root)` when the tree carries every source this gate compiles —
+/// `player_sensors.emp` plus its four ambient engine modules; `None` — skip
+/// green — when it does not (a panic under `SIGIL_STRICT_GATE=1`).
+fn sensors_tree() -> Option<PathBuf> {
+    reference_tree(&[
+        "engine/system/types.emp",
+        "engine/objects/sst.emp",
+        "engine/system/constants.emp",
+        "engine/coords.emp",
+        "games/sonic4/player/player_sensors.emp",
+    ])
 }
 
 fn parse_file(path: &std::path::Path) -> sigil_frontend_emp::ast::File {
@@ -134,21 +140,14 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
+/// The reference ROM window, or `None` when the aeon tree carries no such ROM
+/// (skip green; a panic under `SIGIL_STRICT_GATE=1`).
 fn ref_window(rom: &str, base: u32, len: usize) -> Option<Vec<u8>> {
-    let path = aeon_dir().join(rom);
-    match std::fs::read(&path) {
-        Ok(bytes) => {
-            let b = base as usize;
-            Some(bytes[b..b + len].to_vec())
-        }
-        Err(_) => {
-            if strict_gate() {
-                panic!("SIGIL_STRICT_GATE set but reference missing: {}", path.display());
-            }
-            eprintln!("skip: reference ROM not at {} (set AEON_DIR)", path.display());
-            None
-        }
-    }
+    let path = reference_tree(&[rom])?.join(rom);
+    let bytes = std::fs::read(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let b = base as usize;
+    Some(bytes[b..b + len].to_vec())
 }
 
 struct Shape {
@@ -188,8 +187,8 @@ const DEBUG: Shape = Shape {
 };
 
 /// Compile player_sensors.emp as its own region against the pinned seam.
-fn sensors_bytes(shape: &Shape) -> Vec<u8> {
-    let aeon = aeon_dir();
+fn sensors_bytes(shape: &Shape) -> Option<Vec<u8>> {
+    let aeon = sensors_tree()?;
     let types = || parse_file(&aeon.join("engine/system/types.emp")).items;
     let sst = || parse_file(&aeon.join("engine/objects/sst.emp")).items;
     let constants = || parse_file(&aeon.join("engine/system/constants.emp")).items;
@@ -250,12 +249,12 @@ fn sensors_bytes(shape: &Shape) -> Vec<u8> {
         .unwrap_or_else(|d| panic!("player_sensors resolve_layout failed: {d:?}"));
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("player_sensors link failed: {d:?}"));
-    linked.section("player_sensors").expect("linked region").bytes.clone()
+    Some(linked.section("player_sensors").expect("linked region").bytes.clone())
 }
 
 #[test]
 fn p4_sensors_region_matches_reference() {
-    let got = sensors_bytes(&PLAIN);
+    let Some(got) = sensors_bytes(&PLAIN) else { return };
     if let Some(want) = ref_window(PLAIN.rom, PLAIN.base, PLAIN.len) {
         assert_region_matches(&got, &want, "player_sensors (plain)");
     }
@@ -263,7 +262,7 @@ fn p4_sensors_region_matches_reference() {
 
 #[test]
 fn p4_sensors_debug_region_matches_reference() {
-    let got = sensors_bytes(&DEBUG);
+    let Some(got) = sensors_bytes(&DEBUG) else { return };
     if let Some(want) = ref_window(DEBUG.rom, DEBUG.base, DEBUG.len) {
         assert_region_matches(&got, &want, "player_sensors (debug)");
     }
@@ -271,7 +270,7 @@ fn p4_sensors_debug_region_matches_reference() {
 
 #[test]
 fn p4_sensors_undoctored_compile_equals_the_reference_window() {
-    let got = sensors_bytes(&PLAIN);
+    let Some(got) = sensors_bytes(&PLAIN) else { return };
     if let Some(want) = ref_window(PLAIN.rom, PLAIN.base, PLAIN.len) {
         assert_eq!(got, want, "undoctored player_sensors must match the reference window");
     }
@@ -279,7 +278,7 @@ fn p4_sensors_undoctored_compile_equals_the_reference_window() {
 
 #[test]
 fn p4_sensors_doctored_reference_diverges() {
-    let got = sensors_bytes(&PLAIN);
+    let Some(got) = sensors_bytes(&PLAIN) else { return };
     let Some(mut want) = ref_window(PLAIN.rom, PLAIN.base, PLAIN.len) else {
         return;
     };

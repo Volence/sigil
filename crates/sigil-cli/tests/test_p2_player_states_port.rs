@@ -8,26 +8,38 @@
 //! files import the player_common keystone (PlayerV overlay + surviving-AS
 //! mirrors) and dispatch back through the Player_States offset table.
 //!
-//! REFERENCE-DEPENDENT (`AEON_DIR`, default sibling). Absent, tests SKIP green
-//! unless `SIGIL_STRICT_GATE=1`.
+//! REFERENCE-DEPENDENT: the sources and the reference ROMs live in the sibling
+//! `aeon` tree (`AEON_DIR`, default `/home/volence/sonic_hacks/aeon`). Absent,
+//! every test here SKIPS green — unless `SIGIL_STRICT_GATE=1` makes a missing
+//! reference a hard failure.
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
+use sigil_harness::test_support::reference_tree;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
-}
+/// The aeon-relative sources EVERY state-file compile reads: the player_common
+/// keystone plus the four ambient engine modules.
+const COMMON_SOURCES: &[&str] = &[
+    "games/sonic4/player/player_common.emp",
+    "engine/system/types.emp",
+    "engine/objects/sst.emp",
+    "engine/system/constants.emp",
+    "engine/coords.emp",
+];
 
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+/// `Some(aeon_root)` when the tree carries the common sources AND the one state
+/// file `state_rel` names; `None` — skip green — when it does not (a panic under
+/// `SIGIL_STRICT_GATE=1`).
+fn player_tree(state_rel: &str) -> Option<PathBuf> {
+    let mut rels = COMMON_SOURCES.to_vec();
+    rels.push(state_rel);
+    reference_tree(&rels)
 }
 
 const OBJ_CODE_BASE: u32 = pins::OBJ_CODE_BASE.plain;
@@ -204,21 +216,14 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
+/// The reference ROM window, or `None` when the aeon tree carries no such ROM
+/// (skip green; a panic under `SIGIL_STRICT_GATE=1`).
 fn ref_window(rom: &str, base: u32, len: usize) -> Option<Vec<u8>> {
-    let path = aeon_dir().join(rom);
-    match std::fs::read(&path) {
-        Ok(bytes) => {
-            let b = base as usize;
-            Some(bytes[b..b + len].to_vec())
-        }
-        Err(_) => {
-            if strict_gate() {
-                panic!("SIGIL_STRICT_GATE set but reference missing: {}", path.display());
-            }
-            eprintln!("skip: reference ROM not at {} (set AEON_DIR)", path.display());
-            None
-        }
-    }
+    let path = reference_tree(&[rom])?.join(rom);
+    let bytes = std::fs::read(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let b = base as usize;
+    Some(bytes[b..b + len].to_vec())
 }
 
 // ─── shared cross-seam callee + RAM pins ─────────────────────────────────────
@@ -310,6 +315,7 @@ const DEBUG: Shape = Shape {
 
 /// Compile one player state file as its own region against the pinned seam.
 fn compile_region(
+    aeon: &Path,
     shape: &Shape,
     emp_rel: &str,
     region: &str,
@@ -317,12 +323,11 @@ fn compile_region(
     len: usize,
     locals: &[&str],
 ) -> Vec<u8> {
-    let aeon = aeon_dir();
     let types = || parse_file(&aeon.join("engine/system/types.emp")).items;
     let sst = || parse_file(&aeon.join("engine/objects/sst.emp")).items;
     let constants = || parse_file(&aeon.join("engine/system/constants.emp")).items;
     let coords = || parse_file(&aeon.join("engine/coords.emp")).items;
-    let pc = || player_common_imports(&aeon);
+    let pc = || player_common_imports(aeon);
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
@@ -397,20 +402,22 @@ fn compile_region(
 
 // ─── SPINDASH region ─────────────────────────────────────────────────────────
 
-fn spindash_bytes(shape: &Shape) -> Vec<u8> {
-    compile_region(
+fn spindash_bytes(shape: &Shape) -> Option<Vec<u8>> {
+    let aeon = player_tree("games/sonic4/player/player_spindash.emp")?;
+    Some(compile_region(
+        &aeon,
         shape,
         "games/sonic4/player/player_spindash.emp",
         "player_spindash",
         if shape.debug { pins::PLAYER_SPINDASH.debug_base } else { pins::PLAYER_SPINDASH.plain_base },
         if shape.debug { pins::PLAYER_SPINDASH.debug_len } else { pins::PLAYER_SPINDASH.plain_len },
         &["PState_Spindash"],
-    )
+    ))
 }
 
 #[test]
 fn p2_spindash_region_matches_reference() {
-    let got = spindash_bytes(&PLAIN);
+    let Some(got) = spindash_bytes(&PLAIN) else { return };
     if let Some(want) = ref_window("s4.bin", pins::PLAYER_SPINDASH.plain_base, pins::PLAYER_SPINDASH.plain_len) {
         assert_region_matches(&got, &want, "player_spindash (plain)");
     }
@@ -418,7 +425,7 @@ fn p2_spindash_region_matches_reference() {
 
 #[test]
 fn p2_spindash_debug_region_matches_reference() {
-    let got = spindash_bytes(&DEBUG);
+    let Some(got) = spindash_bytes(&DEBUG) else { return };
     if let Some(want) = ref_window("s4.debug.bin", pins::PLAYER_SPINDASH.debug_base, pins::PLAYER_SPINDASH.debug_len) {
         assert_region_matches(&got, &want, "player_spindash (debug)");
     }
@@ -426,7 +433,7 @@ fn p2_spindash_debug_region_matches_reference() {
 
 #[test]
 fn p2_spindash_undoctored_compile_equals_the_reference_window() {
-    let got = spindash_bytes(&PLAIN);
+    let Some(got) = spindash_bytes(&PLAIN) else { return };
     if let Some(want) = ref_window("s4.bin", pins::PLAYER_SPINDASH.plain_base, pins::PLAYER_SPINDASH.plain_len) {
         assert_eq!(got, want, "undoctored player_spindash must match the reference window");
     }
@@ -434,7 +441,7 @@ fn p2_spindash_undoctored_compile_equals_the_reference_window() {
 
 #[test]
 fn p2_spindash_doctored_reference_diverges() {
-    let got = spindash_bytes(&PLAIN);
+    let Some(got) = spindash_bytes(&PLAIN) else { return };
     let Some(mut want) = ref_window("s4.bin", pins::PLAYER_SPINDASH.plain_base, pins::PLAYER_SPINDASH.plain_len) else {
         return;
     };
@@ -444,20 +451,22 @@ fn p2_spindash_doctored_reference_diverges() {
 
 // ─── AIR region ──────────────────────────────────────────────────────────────
 
-fn air_bytes(shape: &Shape) -> Vec<u8> {
-    compile_region(
+fn air_bytes(shape: &Shape) -> Option<Vec<u8>> {
+    let aeon = player_tree("games/sonic4/player/player_air.emp")?;
+    Some(compile_region(
+        &aeon,
         shape,
         "games/sonic4/player/player_air.emp",
         "player_air",
         if shape.debug { pins::PLAYER_AIR.debug_base } else { pins::PLAYER_AIR.plain_base },
         if shape.debug { pins::PLAYER_AIR.debug_len } else { pins::PLAYER_AIR.plain_len },
         &["PState_Air", "PState_AirBall", "PState_RollJump", "PState_Jump"],
-    )
+    ))
 }
 
 #[test]
 fn p2_air_region_matches_reference() {
-    let got = air_bytes(&PLAIN);
+    let Some(got) = air_bytes(&PLAIN) else { return };
     if let Some(want) = ref_window("s4.bin", pins::PLAYER_AIR.plain_base, pins::PLAYER_AIR.plain_len) {
         assert_region_matches(&got, &want, "player_air (plain)");
     }
@@ -465,7 +474,7 @@ fn p2_air_region_matches_reference() {
 
 #[test]
 fn p2_air_debug_region_matches_reference() {
-    let got = air_bytes(&DEBUG);
+    let Some(got) = air_bytes(&DEBUG) else { return };
     if let Some(want) = ref_window("s4.debug.bin", pins::PLAYER_AIR.debug_base, pins::PLAYER_AIR.debug_len) {
         assert_region_matches(&got, &want, "player_air (debug)");
     }
@@ -473,7 +482,7 @@ fn p2_air_debug_region_matches_reference() {
 
 #[test]
 fn p2_air_undoctored_compile_equals_the_reference_window() {
-    let got = air_bytes(&PLAIN);
+    let Some(got) = air_bytes(&PLAIN) else { return };
     if let Some(want) = ref_window("s4.bin", pins::PLAYER_AIR.plain_base, pins::PLAYER_AIR.plain_len) {
         // The pin len spans to the next section base, which may include align
         // pad after the code (B-0 packed placement); the compile emits exact
@@ -487,7 +496,7 @@ fn p2_air_undoctored_compile_equals_the_reference_window() {
 
 #[test]
 fn p2_air_doctored_reference_diverges() {
-    let got = air_bytes(&PLAIN);
+    let Some(got) = air_bytes(&PLAIN) else { return };
     let Some(mut want) = ref_window("s4.bin", pins::PLAYER_AIR.plain_base, pins::PLAYER_AIR.plain_len) else {
         return;
     };
@@ -497,20 +506,22 @@ fn p2_air_doctored_reference_diverges() {
 
 // ─── GROUND region ───────────────────────────────────────────────────────────
 
-fn ground_bytes(shape: &Shape) -> Vec<u8> {
-    compile_region(
+fn ground_bytes(shape: &Shape) -> Option<Vec<u8>> {
+    let aeon = player_tree("games/sonic4/player/player_ground.emp")?;
+    Some(compile_region(
+        &aeon,
         shape,
         "games/sonic4/player/player_ground.emp",
         "player_ground",
         if shape.debug { pins::PLAYER_GROUND.debug_base } else { pins::PLAYER_GROUND.plain_base },
         if shape.debug { pins::PLAYER_GROUND.debug_len } else { pins::PLAYER_GROUND.plain_len },
         &["PState_Ground", "PState_Roll", "Player_Jump"],
-    )
+    ))
 }
 
 #[test]
 fn p2_ground_region_matches_reference() {
-    let got = ground_bytes(&PLAIN);
+    let Some(got) = ground_bytes(&PLAIN) else { return };
     if let Some(want) = ref_window("s4.bin", pins::PLAYER_GROUND.plain_base, pins::PLAYER_GROUND.plain_len) {
         assert_region_matches(&got, &want, "player_ground (plain)");
     }
@@ -518,7 +529,7 @@ fn p2_ground_region_matches_reference() {
 
 #[test]
 fn p2_ground_debug_region_matches_reference() {
-    let got = ground_bytes(&DEBUG);
+    let Some(got) = ground_bytes(&DEBUG) else { return };
     if let Some(want) = ref_window("s4.debug.bin", pins::PLAYER_GROUND.debug_base, pins::PLAYER_GROUND.debug_len) {
         assert_region_matches(&got, &want, "player_ground (debug)");
     }
@@ -526,7 +537,7 @@ fn p2_ground_debug_region_matches_reference() {
 
 #[test]
 fn p2_ground_undoctored_compile_equals_the_reference_window() {
-    let got = ground_bytes(&PLAIN);
+    let Some(got) = ground_bytes(&PLAIN) else { return };
     if let Some(want) = ref_window("s4.bin", pins::PLAYER_GROUND.plain_base, pins::PLAYER_GROUND.plain_len) {
         // Packed placement: the pin LEN spans to the next section's aligned
         // base, so the window may end in a short all-zero align pad beyond the
@@ -545,7 +556,7 @@ fn p2_ground_undoctored_compile_equals_the_reference_window() {
 
 #[test]
 fn p2_ground_doctored_reference_diverges() {
-    let got = ground_bytes(&PLAIN);
+    let Some(got) = ground_bytes(&PLAIN) else { return };
     let Some(mut want) = ref_window("s4.bin", pins::PLAYER_GROUND.plain_base, pins::PLAYER_GROUND.plain_len) else {
         return;
     };

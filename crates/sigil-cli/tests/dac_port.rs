@@ -47,17 +47,19 @@ use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_ir::backend::Cpu;
+use sigil_harness::test_support::reference_tree;
 use sigil_ir::{Expr, Section, SymbolTable};
 use std::path::{Path, PathBuf};
 
-/// The module's own directory in aeon's tree — the `include_root` under which
-/// `embed("temp_blip.bin")` and `embed("dac/*.pcm")` resolve, and where the
-/// `.emp` and its fixtures live. Honors `AEON_DIR` (mirroring the sigil-harness
-/// tests) with the workspace default.
-fn sound_dir() -> PathBuf {
-    let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
-    Path::new(&aeon).join("games/sonic4/data/sound")
+/// REFERENCE-DEPENDENT: the sources live in the sibling aeon tree. Absent, both
+/// tests SKIP green — unless `SIGIL_STRICT_GATE=1`, which makes absence a
+/// failure.
+fn sound_dir() -> Option<PathBuf> {
+    reference_tree(&[
+        "games/sonic4/data/sound/dac_samples.emp",
+        "games/sonic4/data/sound/temp_blip.bin",
+    ])
+    .map(|aeon| aeon.join("games/sonic4/data/sound"))
 }
 
 /// The two-bank map, pinned at the CURRENT baseline (aeon's `s4.lst`; NOT the
@@ -91,8 +93,7 @@ fn map_toml() -> &'static str {
 /// Parse → lower (with the sound-dir include-root) → place into the map →
 /// resolve. Returns the placed+resolved sections (equ exprs folded to
 /// `Expr::Int`) plus the linked image, asserting a clean pipeline at each stage.
-fn compile_real_file() -> (Vec<Section>, sigil_link::LinkedImage) {
-    let dir = sound_dir();
+fn compile_real_file(dir: &Path) -> (Vec<Section>, sigil_link::LinkedImage) {
     let emp_path = dir.join("dac_samples.emp");
     let src = std::fs::read_to_string(&emp_path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", emp_path.display()));
@@ -107,7 +108,7 @@ fn compile_real_file() -> (Vec<Section>, sigil_link::LinkedImage) {
         initial_cpu: Cpu::M68000,
         // The module's OWN directory — so `embed("dac/kick.pcm")` /
         // `embed("temp_blip.bin")` resolve within the capability sandbox.
-        include_root: Some(dir.clone()),
+        include_root: Some(dir.to_path_buf()),
         embed_base: None,
         defines: vec![],
     };
@@ -155,8 +156,8 @@ fn equ_value(sections: &[Section], name: &str) -> i64 {
 /// (30,908 bytes), the blip bank == `temp_blip.bin` (2,880 bytes).
 #[test]
 fn dac_bank_payloads_match_disk_fixtures() {
-    let dir = sound_dir();
-    let (_resolved, linked) = compile_real_file();
+    let Some(dir) = sound_dir() else { return };
+    let (_resolved, linked) = compile_real_file(&dir);
 
     // The nine drums, in the .asm's exact order.
     let drum_files = [
@@ -206,7 +207,8 @@ fn dac_bank_payloads_match_disk_fixtures() {
 /// against `s4.lst` (search each symbol there to re-derive on a re-baseline).
 #[test]
 fn snd_equ_values_match_s4lst_baseline() {
-    let (resolved, _linked) = compile_real_file();
+    let Some(dir) = sound_dir() else { return };
+    let (resolved, _linked) = compile_real_file(&dir);
     let v = |name: &str| equ_value(&resolved, name);
 
     // (BANK, PTR, LEN) per sample — the s4.lst pins (current baseline).

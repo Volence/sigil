@@ -11,6 +11,12 @@
 //!     base is `$3E2` (+4 upstream of BootData), NOT `$3DE`; the design §2.1/OQ-2
 //!     comparand fixed the +$7E SIZE but assumed the base held (corrected here).
 //!
+//! REFERENCE-DEPENDENT: the five sound `.emp` sources live in the sibling `aeon`
+//! tree (`AEON_DIR`, default `/home/volence/sonic_hacks/aeon`). Absent, every
+//! test that links the blob SKIPS green — unless `SIGIL_STRICT_GATE=1` makes a
+//! missing reference a hard failure, so the pre-merge run cannot skip the byte
+//! gate. `blob_lengths_are_canonical` is reference-free and always runs.
+//!
 //! ```text
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test seam1_native_link
 //! ```
@@ -19,15 +25,21 @@ use sigil_harness::seam1::{
     self, blob_lma, native_blob_doctored, native_sound_blob, resident_module_bases,
     BLOB_LEN_DEBUG, BLOB_LEN_PLAIN,
 };
+use sigil_harness::test_support::{reference_tree, strict_gate};
 use std::path::PathBuf;
 
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
-}
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+/// The reference tree the native link reads: the five resident modules plus the
+/// constant authorities their `-D` defines resolve against. `None` skips.
+fn sound_tree() -> Option<PathBuf> {
+    reference_tree(&[
+        "engine/sound/z80_sound_driver.emp",
+        "engine/sound/sound_sequencer.emp",
+        "engine/sound/sound_sfx.emp",
+        "engine/sound/sound_fm.emp",
+        "engine/sound/sound_psg.emp",
+        "engine/sound/sound_constants.emp",
+        "engine/system/constants.emp",
+    ])
 }
 
 /// The FROZEN golden slice comparand (the asl-witnessed reference), NOT the live
@@ -76,8 +88,9 @@ fn assert_blob_matches(blob: &[u8], expected: &[u8], debug: bool, what: &str) {
 /// (PLAIN) the natively-linked blob == `s4.bin[0x3DE..0x3DE+0x181C]`.
 #[test]
 fn native_blob_matches_reference_plain() {
+    let Some(aeon) = sound_tree() else { return };
     let Some(refrom) = read_ref("s4.bin") else { return };
-    let blob = native_sound_blob(&aeon_dir(), false).bytes;
+    let blob = native_sound_blob(&aeon, false).bytes;
     let base = blob_lma(false) as usize;
     let expected = &refrom[base..base + BLOB_LEN_PLAIN];
     assert_blob_matches(&blob, expected, false, "native blob (plain) vs s4.bin[$3DE..$1BFA]");
@@ -88,8 +101,9 @@ fn native_blob_matches_reference_plain() {
 /// operand bytes derived from the real imports per shape.
 #[test]
 fn native_blob_matches_reference_debug() {
+    let Some(aeon) = sound_tree() else { return };
     let Some(refrom) = read_ref("s4.debug.bin") else { return };
-    let blob = native_sound_blob(&aeon_dir(), true).bytes;
+    let blob = native_sound_blob(&aeon, true).bytes;
     let base = blob_lma(true) as usize;
     let expected = &refrom[base..base + BLOB_LEN_DEBUG];
     assert_blob_matches(&blob, expected, true, "native blob (debug) vs s4.debug.bin[$3E2..$1C7C]");
@@ -122,9 +136,10 @@ fn blob_lengths_are_canonical() {
 /// `call` missed.)
 #[test]
 fn module_bases_are_a_gapless_cursor() {
+    let Some(aeon) = sound_tree() else { return };
     let Some(_) = read_ref("s4.bin") else { return };
     for (debug, len) in [(false, BLOB_LEN_PLAIN), (true, BLOB_LEN_DEBUG)] {
-        let bases = resident_module_bases(&aeon_dir(), debug);
+        let bases = resident_module_bases(&aeon, debug);
         assert_eq!(bases.len(), 5, "five resident modules");
         assert_eq!(bases[0].1, 0, "the driver anchors the blob at VMA $0000 (debug={debug})");
         for w in bases.windows(2) {
@@ -138,7 +153,7 @@ fn module_bases_are_a_gapless_cursor() {
             );
         }
         // The blob is a CONCATENATION, so the last base + its span == the total.
-        let blob = native_sound_blob(&aeon_dir(), debug).bytes;
+        let blob = native_sound_blob(&aeon, debug).bytes;
         assert_eq!(blob.len(), len, "blob length tripwire (debug={debug})");
         assert!(
             (bases[4].1 as usize) < len,
@@ -151,10 +166,11 @@ fn module_bases_are_a_gapless_cursor() {
 /// the blob DIVERGE from the reference — the byte gate is not vacuous.
 #[test]
 fn blob_diverges_when_banked_carrier_doctored() {
+    let Some(aeon) = sound_tree() else { return };
     let Some(refrom) = read_ref("s4.bin") else { return };
     let base = blob_lma(false) as usize;
     let expected = &refrom[base..base + BLOB_LEN_PLAIN];
-    let doctored = native_blob_doctored(&aeon_dir(), false, Some(("SeqOpcodeTable", 0x8ABC)));
+    let doctored = native_blob_doctored(&aeon, false, Some(("SeqOpcodeTable", 0x8ABC)));
     assert_ne!(doctored, expected, "the byte gate is vacuous if a doctored carrier still matches");
 }
 
@@ -169,10 +185,11 @@ fn blob_diverges_when_banked_carrier_doctored() {
 /// abs-mem-consumed but not mirror-anchored.
 #[test]
 fn blob_diverges_when_const_doctored() {
+    let Some(aeon) = sound_tree() else { return };
     let Some(refrom) = read_ref("s4.bin") else { return };
     let base = blob_lma(false) as usize;
     let expected = &refrom[base..base + BLOB_LEN_PLAIN];
-    let doctored = native_blob_doctored(&aeon_dir(), false, Some(("SND_REQ_MUSIC", 0x1DED)));
+    let doctored = native_blob_doctored(&aeon, false, Some(("SND_REQ_MUSIC", 0x1DED)));
     assert_ne!(doctored, expected, "a moved SND_REQ_MUSIC must change the blob's abs-mem operands");
 }
 
@@ -184,11 +201,12 @@ fn blob_diverges_when_const_doctored() {
 /// instead of false-failing here.
 #[test]
 fn handler_symbol_contract_complete() {
+    let Some(aeon) = sound_tree() else { return };
     let Some(_) = read_ref("s4.bin") else { return };
-    let bases = resident_module_bases(&aeon_dir(), false);
+    let bases = resident_module_bases(&aeon, false);
     let lo = bases.iter().find(|(n, _)| n == "sound_sequencer").expect("sequencer base").1;
     let hi = bases.iter().find(|(n, _)| n == "sound_sfx").expect("sfx base").1;
-    let syms = native_sound_blob(&aeon_dir(), false).symbols;
+    let syms = native_sound_blob(&aeon, false).symbols;
     assert_eq!(
         syms.len(),
         seam1::HANDLER_SYMBOLS.len(),
