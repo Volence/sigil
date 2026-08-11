@@ -4704,3 +4704,57 @@ full_crc = "a094cb5c"
 full_size = 564404
 anchor_crc = "3189f98c"
 anchor_end = 0x808d4
+
+[[entry]]
+name = "tails-appendage"
+ab = "aeon@4a045277 — plain ROM byte-identical to its predecessor 34ac1c10 (the caller is entirely if DEBUG==1), so the release shape is unmoved; prior state de1f915e passed both replay fixtures Replay_Done=$FF with no desync/fault and flight measured at $20/frame thrust cutting off at the -$100 cap"
+note = "Tails' twin-tail child object (Effect pool, hand-rolled spawn, own DPLC into VRAM_TAILS_APPENDAGE, separate priority band) + the DEBUG-only refresh call; chain-91 shape ruling"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "33e3ae17"
+full_size = 564972
+anchor_crc = "7f3bde20"
+anchor_end = 0x808d8
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "9475bda4"
+full_size = 445203
+anchor_crc = "219610ed"
+anchor_end = 0x65290
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "aa131a19"
+full_size = 93415
+anchor_crc = "2406180f"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "069a6405"
+full_size = 97558
+anchor_crc = "37b062e4"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "aa0c6a21"
+full_size = 514462
+anchor_crc = "b5031fcc"
+anchor_end = 0x7d99e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "6847825e"
+full_size = 550165
+anchor_crc = "44fc6453"
+anchor_end = 0x7ea20
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "9030ed84"
+full_size = 564588
+anchor_crc = "5ee58ad1"
+anchor_end = 0x808d8
