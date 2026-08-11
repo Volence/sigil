@@ -7,8 +7,8 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=demo
 # reproduces_golden=demo.bin
-# golden_crc32=59c257bd
-# assembled_anchor=05d55c2e
+# golden_crc32=00732c78
+# assembled_anchor=cfadbc68
 # assembled_end=0x11224
 # labels=40
 AnimateSprite 0x1b4a
@@ -42,7 +42,7 @@ Plane_Buffer_Reset 0x2d08
 PopulateSpawnedPieceCount 0x2990
 Read_Controllers 0xba8
 RingBuffer_Add 0x1ee0
-S4LZ_DecompressDict 0xe18
+S4LZ_DecompressDict 0xe20
 Section_Init 0x3d78
 Tile_Cache_GetTile 0x3030
 TouchResponse 0x1ce0

@@ -4866,3 +4866,57 @@ full_crc = "09824b2f"
 full_size = 565036
 anchor_crc = "e68afb9b"
 anchor_end = 0x80998
+
+[[entry]]
+name = "replay-hash-layout-proof"
+ab = "aeon@5129060c — all three replay gates PASS on the re-stamped fixtures (standing+slide debug, standing release, Replay_Done=$FF, no desync/fault); the hash previously folded the two free-stack cursor ADDRESSES raw — proven by control (golden ROM passes, post-parcel build desynced at tick 2 with Object_RAM/Dynamic_Free_Stack measured -2, interact zero); cursors now fold as occupancy, interact as an Object_RAM offset; fixture input streams byte-identical (every diff inside a checkpoint payload, 27+37 checks re-stamped via probe-ROM log, CRC cross-checked); RAM layout byte-identical (PAGE_FRAMES_MAX decouple), 74 ROM pins +0x10 uniform, zero RAM pins"
+note = "prep parcel for the VRAM-linker design: layout-proof replay hash (cursor occupancy + interact offset normalization) + PAGE_FRAMES_MAX capacity/count split so pool resizes stop moving RAM"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "c0d98831"
+full_size = 565458
+anchor_crc = "ed5b5118"
+anchor_end = 0x80998
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "85555860"
+full_size = 445546
+anchor_crc = "4b762089"
+anchor_end = 0x652f0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "00732c78"
+full_size = 93547
+anchor_crc = "cfadbc68"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "4191b14c"
+full_size = 97728
+anchor_crc = "35250e59"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "ae459423"
+full_size = 514654
+anchor_crc = "1175ad11"
+anchor_end = 0x7da5e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "e81e5ceb"
+full_size = 550656
+anchor_crc = "784d4c27"
+anchor_end = 0x7eae0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "c24d0d03"
+full_size = 565054
+anchor_crc = "9542efb0"
+anchor_end = 0x80998
