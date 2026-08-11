@@ -368,6 +368,13 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // `offsets` construct in games.sonic4.data.mappings.test_mappings.
         m!("games.sonic4.test_mappings", "test_mappings", pins::TEST_MAPPINGS),
         m!("games.sonic4.sonic_anims", "sonic_anims", pins::SONIC_ANIMS),
+        // Character-dispatch C1 task 5: the Tails animation scripts
+        // (tails_anims.emp) — `Ani_Tails` + `Ani_TailsAppendage`, both indexed by
+        // the shared ANIM_* ids. A peer of `sonic_anims`, placed right after it
+        // per map.toml `order`. DUMMY_REGION for the same reason `characters`
+        // carries one comment above: every profile that links it is a
+        // `SizeSource::Frozen` target, so base/len here are never read.
+        m!("games.sonic4.tails_anims", "tails_anims", DUMMY_REGION),
         // particle_anims: DEBUG-only below (sole consumer test_particle is).
         // Parcel K3 run A: the OJZ act1 interior island HEAD — the contiguous run
         // BEFORE the descriptor. Two native `.emp` sections (both generator-emitted):
@@ -399,6 +406,19 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // Art_Sonic), was the flat BINCLUDE island at the tail of main.asm's
         // gameDataIncludes. Native `embed()` section; boundary key HeightMaps.
         m!("games.sonic4.collision_data", "collision_data", pins::COLLISION_DATA),
+        // Character-dispatch C1 task 5: the Tails sprite data (tails_data.emp) —
+        // body + twin-tail appendage mappings/DPLC/art, a PEER of the Sonic trio
+        // that rides `collision_data`, hence this registry slot. Its map.toml
+        // `order` slot is NOT here though: 132 KB does not fit between Art_Sonic
+        // and the $48000 dac_banks anchor, so the section is placed at the ROM
+        // tail (map.toml carries the why). Registry position is organizational;
+        // the map drives placement (K5).
+        // Nothing consumes it yet (the roster still points CHAR_TAILS at the Sonic
+        // record); it is the data half of the character split, landed first.
+        // DUMMY_REGION: every profile that links it is a `SizeSource::Frozen`
+        // target, so the chainer sizes and places the section live from the frozen
+        // table + the map order and the region base/len are never read.
+        m!("games.sonic4.tails_data", "tails_data", DUMMY_REGION),
         // Parcel K4 inc-5 Stage 2 (P2 DAC probe): the DAC sample banks are native —
         // dac_banks.emp embeds the seam-2 dac_blip_bank.bin @ $48000 + dac_shared_bank.bin
         // @ $50000 (the .bin ensure_generated emits). Sound-ON ONLY: filtered out of the
