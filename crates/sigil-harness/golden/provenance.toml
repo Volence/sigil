@@ -4650,3 +4650,57 @@ full_crc = "101514c0"
 full_size = 564012
 anchor_crc = "2a8910da"
 anchor_end = 0x808e4
+
+[[entry]]
+name = "tails-flight"
+ab = "aeon@de1f915e — emulator-verified: both replay fixtures Replay_Done=$FF no desync/fault (Sonic behaviour-identical); flight as Tails enters PSTATE_FLY ($0E) on a second airborne jump press, fly_fuel seeded 240, thrust $20/frame (y_vel $0178->$0138), cut off at the -$100 cap (y_vel $FEF8)"
+note = "PSTATE_FLY + Ability_TailsFlight in a new player_fly section inside the object bank; plus per-character collision box, roll-hold/curl geometry, the Camera_Curl_Offset engine-RAM cell, and Tails art re-indexed"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "867a5831"
+full_size = 564778
+anchor_crc = "770fc418"
+anchor_end = 0x808d4
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "824014e5"
+full_size = 444887
+anchor_crc = "dedc625b"
+anchor_end = 0x651e0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "aa131a19"
+full_size = 93415
+anchor_crc = "2406180f"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "069a6405"
+full_size = 97558
+anchor_crc = "37b062e4"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "737ad39b"
+full_size = 514462
+anchor_crc = "823001e0"
+anchor_end = 0x7d99e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "00b726f3"
+full_size = 550025
+anchor_crc = "ed4f251e"
+anchor_end = 0x7ea20
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "a094cb5c"
+full_size = 564404
+anchor_crc = "3189f98c"
+anchor_end = 0x808d4

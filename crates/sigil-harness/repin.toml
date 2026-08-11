@@ -1334,6 +1334,16 @@ tests = ["rings_port", "section_port", "camera_port", "bg_anim_port"]
 name = "Camera_Target"
 tests = ["camera_port", "test_g4_final_objects_port", "test_t1_harness_states_port"]
 
+# tails-flight (aeon 89837e3e): the curl compensation the camera applies while the
+# leader is balled up. Engine RAM word, PUBLISHED by the game
+# (Player_RefreshPhysics writes it from the active character's record) and READ by
+# the engine — the same engine-owned-cell-the-game-fills shape as Camera_Target
+# above, and pinned for the same reason: it is a cross-seam operand of camera.emp's
+# bytes, so it must ride RAM-layout parcels automatically.
+[[symbol]]
+name = "Camera_Curl_Offset"
+tests = ["camera_port", "test_p1_player_port"]
+
 # Camera-follow state RAM (tranche 19 — camera_port cross-seam carriers).
 [[symbol]]
 name = "Camera_Deadzone_Base"
@@ -2529,6 +2539,12 @@ name = "PState_RollJump"
 tests = ["test_p1_player_port"]
 [[symbol]]
 name = "PState_AirBall"
+tests = ["test_p1_player_port"]
+# tails-flight (aeon de1f915e): the seventh player state. player_common's state
+# offset table names it like the other six, so it is a cross-seam branch target of
+# that region even though only Tails' ability hook ever enters it.
+[[symbol]]
+name = "PState_Fly"
 tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_SensorFloor"

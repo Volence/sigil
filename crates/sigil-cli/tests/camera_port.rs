@@ -147,6 +147,11 @@ fn camera_addr_labels(debug: bool) -> Vec<Section> {
         // `Player_1` outright. That is what makes the follow character-agnostic,
         // and it is why `Player_1` is no longer a cross-seam symbol of this module.
         ("Camera_Target", pick(pins::CAMERA_TARGET)),
+        // tails-flight (aeon 89837e3e): the curl compensation. The game publishes
+        // it per character (Player_RefreshPhysics, from the record's two box
+        // heights) and the camera consumes it, which is what keeps the follow
+        // correct when a balled-up character's centre drops.
+        ("Camera_Curl_Offset", pick(pins::CAMERA_CURL_OFFSET)),
         ("Current_Act_Ptr", pick(pins::CURRENT_ACT_PTR)),
     ];
     if debug {

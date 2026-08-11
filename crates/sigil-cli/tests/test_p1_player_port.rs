@@ -375,7 +375,15 @@ fn character_def_struct_items(aeon: &std::path::Path) -> Vec<sigil_frontend_emp:
     let file = parse_file(&aeon.join("engine/structs.emp"));
     file.items
         .into_iter()
-        .filter(|it| matches!(it, Item::Struct(d) if d.name == "CharacterDef"))
+        .filter(|it| match it {
+            Item::Struct(d) => d.name == "CharacterDef",
+            // tails-flight (aeon 512a5f9e): the curl geometry became per-character,
+            // derived from the record's two box heights, so player_common's
+            // curl_head_rise expands these two blessed height-half views. They ride
+            // the same splice as the record they offset into.
+            Item::ComptimeFn(d) => matches!(d.name.as_str(), "cd_stand_h_off" | "cd_roll_h_off"),
+            _ => false,
+        })
         .collect()
 }
 
@@ -398,6 +406,8 @@ struct PcShape {
     pstate_jump: u32,
     pstate_rolljump: u32,
     pstate_airball: u32,
+    /// tails-flight: PSTATE_FLY, the seventh entry in the state offset table.
+    pstate_fly: u32,
     /// C1: the per-slot player working blocks. ONE label now — the array base
     /// player_common's `player_block` splice `lea`s, then strides by
     /// `sizeof(PlayerBlock)` for slot 1. The three cells this replaced
@@ -407,6 +417,10 @@ struct PcShape {
     /// tell the leader from the follower, so the slot-0 SST address is a
     /// cross-seam operand of this module's bytes for the first time.
     player_1: u32,
+    /// tails-flight (aeon 89837e3e): Player_RefreshPhysics PUBLISHES the active
+    /// character's curl compensation to this engine-RAM cell for the camera to
+    /// read — the write side of the seam camera_port gates from the other end.
+    camera_curl_offset: u32,
     player_ring_index: u32,
     player_pos_ring: u32,
     player_stat_ring: u32,
@@ -449,8 +463,10 @@ const PC_PLAIN: PcShape = PcShape {
     pstate_jump: pins::P_STATE_JUMP.plain,
     pstate_rolljump: pins::P_STATE_ROLL_JUMP.plain,
     pstate_airball: pins::P_STATE_AIR_BALL.plain,
+    pstate_fly: pins::P_STATE_FLY.plain,
     player_blocks: pins::PLAYER_BLOCKS.plain,
     player_1: pins::PLAYER_1.plain,
+    camera_curl_offset: pins::CAMERA_CURL_OFFSET.plain,
     player_ring_index: pins::PLAYER_RING_INDEX.plain,
     player_pos_ring: pins::PLAYER_POS_RING.plain,
     player_stat_ring: pins::PLAYER_STAT_RING.plain,
@@ -485,8 +501,10 @@ const PC_DEBUG: PcShape = PcShape {
     pstate_jump: pins::P_STATE_JUMP.debug,
     pstate_rolljump: pins::P_STATE_ROLL_JUMP.debug,
     pstate_airball: pins::P_STATE_AIR_BALL.debug,
+    pstate_fly: pins::P_STATE_FLY.debug,
     player_blocks: pins::PLAYER_BLOCKS.debug,
     player_1: pins::PLAYER_1.debug,
+    camera_curl_offset: pins::CAMERA_CURL_OFFSET.debug,
     player_ring_index: pins::PLAYER_RING_INDEX.debug,
     player_pos_ring: pins::PLAYER_POS_RING.debug,
     player_stat_ring: pins::PLAYER_STAT_RING.debug,
@@ -572,8 +590,10 @@ fn compile_player_common(
         as_label_at("PState_Jump", shape.pstate_jump),
         as_label_at("PState_RollJump", shape.pstate_rolljump),
         as_label_at("PState_AirBall", shape.pstate_airball),
+        as_label_at("PState_Fly", shape.pstate_fly),
         as_label_at("Player_Blocks", shape.player_blocks),
         as_label_at("Player_1", shape.player_1),
+        as_label_at("Camera_Curl_Offset", shape.camera_curl_offset),
         as_label_at("Player_Ring_Index", shape.player_ring_index),
         as_label_at("Player_Pos_Ring", shape.player_pos_ring),
         as_label_at("Player_Stat_Ring", shape.player_stat_ring),

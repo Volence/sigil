@@ -73,6 +73,24 @@ fn with_ambient(
     }
 }
 
+/// The `engine.structs` items the curl geometry stands on (aeon 512a5f9e): the
+/// `CharacterDef` record plus `cd_stand_h_off` / `cd_roll_h_off`, the two blessed
+/// height-half views `curl_head_rise` expands into. Filtered rather than prepended
+/// whole — `structs.emp` carries the Act/Sec records and their drift-guard ensures,
+/// which would demand externs this isolated compile has no seam for.
+fn curl_geometry_items(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    use sigil_frontend_emp::ast::Item;
+    parse_file(&aeon.join("engine/structs.emp"))
+        .items
+        .into_iter()
+        .filter(|it| match it {
+            Item::Struct(d) => d.name == "CharacterDef",
+            Item::ComptimeFn(d) => matches!(d.name.as_str(), "cd_stand_h_off" | "cd_roll_h_off"),
+            _ => false,
+        })
+        .collect()
+}
+
 /// The keystone items the state files import: the PlayerV overlay, the shared
 /// comptime-fn macros (mask_opposing_lr / dist_to_fix / set_*_size), and the two
 /// jump-button masks. Filtered from player_common.emp — the rest of the keystone
@@ -93,9 +111,22 @@ fn player_common_imports(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast:
         .into_iter()
         .filter(|it| match it {
             Item::Vars(d) => d.name.as_deref() == Some("PlayerV"),
+            // `curl_head_rise` / `curl_shift_px` joined the splice at aeon 512a5f9e:
+            // the curl geometry stopped being an engine-wide CURL_Y_SHIFT constant and
+            // became DERIVED per character from the two box heights in its record, so
+            // player_ground and player_air call them where they used to fold a literal.
+            // Same rule as the masks below — spliced from the authority rather than
+            // mirrored, so a change to the derivation reaches this gate as a byte diff.
+            // (`curl_shift_px` expands `curl_head_rise`, so both must be present.)
             Item::ComptimeFn(d) => matches!(
                 d.name.as_str(),
-                "mask_opposing_lr" | "dist_to_fix" | "set_standing_size" | "set_ball_size" | "abs_w"
+                "mask_opposing_lr"
+                    | "dist_to_fix"
+                    | "set_standing_size"
+                    | "set_ball_size"
+                    | "abs_w"
+                    | "curl_head_rise"
+                    | "curl_shift_px"
             ),
             Item::Const(d) => {
                 matches!(d.name.as_str(), "BUTTON_JUMP_MASK" | "BUTTON_JUMP_MASK_NO_B")
@@ -239,6 +270,10 @@ struct Shape {
     /// on a fresh jump press while already airborne, making the roster's third
     /// record reader a cross-seam branch target of player_air.
     player_ability: u32,
+    /// aeon 512a5f9e: the curl geometry and the unroll ceiling probes read the
+    /// ACTIVE character's record, so the state files now dereference the cached
+    /// `Player_Chardef` pointer where they used to fold engine-wide constants.
+    player_chardef: u32,
     player_snap_to_surface: u32,
     player_sensor_floor: u32,
     player_sensor_ceiling: u32,
@@ -267,6 +302,7 @@ const PLAIN: Shape = Shape {
     debug: false,
     player_set_state: pins::PLAYER_SET_STATE.plain,
     player_ability: pins::PLAYER_ABILITY.plain,
+    player_chardef: pins::PLAYER_CHARDEF.plain,
     player_snap_to_surface: pins::PLAYER_SNAP_TO_SURFACE.plain,
     player_sensor_floor: pins::PLAYER_SENSOR_FLOOR.plain,
     player_sensor_ceiling: pins::PLAYER_SENSOR_CEILING.plain,
@@ -293,6 +329,7 @@ const DEBUG: Shape = Shape {
     debug: true,
     player_set_state: pins::PLAYER_SET_STATE.debug,
     player_ability: pins::PLAYER_ABILITY.debug,
+    player_chardef: pins::PLAYER_CHARDEF.debug,
     player_snap_to_surface: pins::PLAYER_SNAP_TO_SURFACE.debug,
     player_sensor_floor: pins::PLAYER_SENSOR_FLOOR.debug,
     player_sensor_ceiling: pins::PLAYER_SENSOR_CEILING.debug,
@@ -340,7 +377,8 @@ fn compile_region(
     };
 
     let main = parse_file(&aeon.join(emp_rel));
-    let file = with_ambient(vec![types(), sst(), constants(), coords(), pc()], main);
+    let file =
+        with_ambient(vec![types(), sst(), constants(), coords(), curl_geometry_items(aeon), pc()], main);
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -357,9 +395,10 @@ fn compile_region(
 
     // Cross-seam labels pinned at their reference addresses. A label the CURRENT
     // region defines locally (`locals`) is skipped — pinning it would collide.
-    let labels: [(&str, u32); 18] = [
+    let labels: [(&str, u32); 19] = [
         ("Player_SetState", shape.player_set_state),
         ("Player_Ability", shape.player_ability),
+        ("Player_Chardef", shape.player_chardef),
         ("Player_SnapToSurface", shape.player_snap_to_surface),
         ("Player_SensorFloor", shape.player_sensor_floor),
         ("Player_SensorCeiling", shape.player_sensor_ceiling),

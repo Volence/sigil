@@ -71,7 +71,7 @@ fn map_toml(debug: bool) -> String {
 }
 
 /// The AS-side equs the drift guards read back through `extern()`: the
-/// twelve `ANIM_*` ids (`games/sonic4/config/constants.asm` truth) plus the
+/// fourteen `ANIM_*` ids (`games/sonic4/config/constants.emp` truth) plus the
 /// full engine-constants twin blob — sonic_anims' three former local command
 /// mirrors consolidated into the twin at the animate port (tranche 9,
 /// kill-list row 3), so the twin's 30 ensures now ride this module's
@@ -90,7 +90,13 @@ fn as_equs() -> Vec<Section> {
         ("ANIM_DUCK", "8"),
         ("ANIM_SKID", "9"),
         ("ANIM_GETUP", "10"),
-        ("ANIM_COUNT", "11"),
+        // tails-flight (aeon de1f915e): the two flight poses join the SHARED id
+        // space, so every character's table grows a row and ANIM_COUNT moves with
+        // them. `fly_fuel` alone picks between the two — "tired" is the re-flap
+        // gate failing its fuel test, not a separate state.
+        ("ANIM_FLY", "11"),
+        ("ANIM_FLY_TIRED", "12"),
+        ("ANIM_COUNT", "13"),
     ]);
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
@@ -179,11 +185,16 @@ fn compile_real_file(
     (resolved, linked, link_asserts)
 }
 
-/// All twelve ordinal/count drift guards must be captured (identified by
+/// All fourteen ordinal/count drift guards must be captured (identified by
 /// their message text — the constants twin's 30 "disagree" ensures and the
 /// trailing `align 2` congruence assert also ride `link_asserts`) and PASS
 /// against the equs. The three former command-byte guards died in the
 /// tranche-9 row-3 consolidation (the twin's own ensures cover the values).
+/// tails-flight (aeon de1f915e) took the count 12 -> 14: `ANIM_FLY` and
+/// `ANIM_FLY_TIRED` joined the shared id space (ANIM_COUNT 11 -> 13), and every
+/// character's table grows a row per id, so each new id brings its own ordinal
+/// guard. The count is asserted rather than ranged precisely so an id added
+/// WITHOUT its guard shows up here.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = link_asserts
         .iter()
@@ -193,7 +204,7 @@ fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAsser
             })
         })
         .count();
-    assert_eq!(guards, 12, "all twelve ordinal drift guards must be captured");
+    assert_eq!(guards, 14, "all fourteen ordinal drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

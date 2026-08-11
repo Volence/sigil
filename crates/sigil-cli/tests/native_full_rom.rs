@@ -111,6 +111,15 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // this row on every run since it drifted. The row stays UNPINNED on purpose
     // (an independent check of the convsym resolve path — deriving it from a pin
     // would make the assertion circular), so it is hand-updated, with the reason.
+    // `tails-flight` (2026-08-11): plain 0x107A6 -> 0x107F2, debug 0x108C6 ->
+    // 0x10912 — +0x4C in BOTH shapes, and it decomposes exactly: player_common
+    // grows (0x4CE -> 0x4FE plain, 0x5DE -> 0x61E debug) and slides player_ground's
+    // base +0x40 in each, then player_ground's own body grows +0xC where the roll
+    // hold and the unroll ceiling probe started deriving the curl geometry from the
+    // record instead of folding a constant. The intra-region offset lands at 0x2F2
+    // in BOTH shapes (it was 0x2E6 in both) — still shape-invariant, which is the
+    // property this row exists to witness, and the reason the pair could be
+    // re-derived rather than guessed.
     // `tails-character` (2026-08-10): plain 0x107B6 -> 0x107A6, DEBUG UNCHANGED.
     // Making Tails a real record shrinks player_common's PLAIN span 0x4CE -> 0x4BE
     // (a 16-byte region-alignment step), sliding player_ground's plain base
@@ -119,7 +128,7 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // intra-region offset is 0x2E6 in BOTH shapes, unchanged from chain 89 — this
     // label still moves only with its region base, which is the property the row
     // is here to witness. Per-shape pair, hand-updated (unpinned on purpose).
-    ("Ground_Move_Cap", 0x107A6, 0x108C6),
+    ("Ground_Move_Cap", 0x107F2, 0x10912),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)

@@ -295,12 +295,21 @@ fn config_b_doctored_size_table_breaks_the_build() {
     // tails-data (2026-08-10): the precondition FIRED, exactly as designed —
     // `Ani_Tails` (the Tails anim scripts) now sits between `Ani_Sonic_End` and
     // `HeightMaps`, and its 0xEA length leaves a 6-byte align pad before
-    // HeightMaps, so HeightMaps stopped abutting. The probe moves one section
-    // EARLIER to the entry that took over the abutting slot: `Ani_Tails` starts
-    // exactly at `Ani_Sonic_End` (0x262b0 in config_b, no pad — Ani_Sonic_End is
-    // 16-aligned). Same property under test, one link down the chain.
-    let inert = "Ani_Tails";
-    let inert_pred_end = "Ani_Sonic_End";
+    // HeightMaps, so HeightMaps stopped abutting. The probe moved one section
+    // EARLIER, to `Ani_Tails` itself.
+    // tails-flight (2026-08-11): it fired AGAIN, and for the same reason one step
+    // further up. `ANIM_FLY`/`ANIM_FLY_TIRED` joined the shared id space, so every
+    // character's anim table grew two rows: `Ani_Sonic_End` stopped being
+    // 16-aligned and `Ani_Tails` now sits behind an 8-byte pad. Chasing the same
+    // section a third time is the wrong move — the anim tables grow whenever an
+    // animation is added, so any pair inside that run rots on a schedule.
+    // The probe therefore moves UPSTREAM of the growth, to `Ani_Sonic` anchored on
+    // `Map_TestObj_End`: test_mappings is a fixed-size index (0x30 — a word-offset
+    // table with one entry per test object, not per animation), so its end abuts
+    // `Ani_Sonic` exactly and stays put across anim churn. Same property under
+    // test; a predecessor that does not move when animations do.
+    let inert = "Ani_Sonic";
+    let inert_pred_end = "Map_TestObj_End";
     if let native::SizeSource::Frozen(t) = &inert_profile.size_source {
         let head = *t.get(inert).unwrap_or_else(|| panic!("{inert} not in table"));
         let prev = *t.get(inert_pred_end).unwrap_or_else(|| panic!("{inert_pred_end} not in table"));
