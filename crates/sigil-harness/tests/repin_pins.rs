@@ -447,6 +447,17 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // within the bank (head span $607→$625), and BOTH totals grow +0x30 net (v2: +0x10 more from the mod-8 structural pads that realign the sfx_bank base after the fold-vs-placement off-by-2) — the
     // bank precedes the fault-handler island and nothing absorbs banked-data
     // growth.
+    // `tails-character` (2026-08-10, aeon 2a2259d5): Tails becomes a REAL record
+    // (CharDef_Tails + PhysTable_Tails, CharacterDefs[CHAR_TAILS] repointed off the
+    // Sonic stub) plus a DEBUG-only character-cycle hotkey hosted in the level
+    // state. PLAIN does not move at all: the +0x30 record and the roster repoint
+    // land inside the fixed 0x10000 object bank, which absorbs them as fill, and
+    // the hotkey emits nothing outside `if DEBUG == 1 {}` — so ASSEMBLED_LEN holds
+    // at 0x7EA20 and the release ROM body is byte-identical. DEBUG grows +0xC4:
+    // ojz_scroll_test gains the hotkey (+0xCC region), and the fault-handler island
+    // and EndOfRom follow it, netting 0x80820 -> 0x808E4 after the replay fixture's
+    // own 2-byte re-measure. A shape-asymmetric parcel, which is exactly why these
+    // two totals are asserted separately.
     // `tails-data` (2026-08-10, aeon 607fd121): the S3K Tails body + twin-tail
     // appendage assets. TWO separate deltas, and only one of them is large.
     // `Ani_Tails` (0xEA of anim script) lands beside `Ani_Sonic` where it belongs
@@ -472,7 +483,7 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // island, EndOfRom) lands only +8 plain / +0x10 debug. Hence a 0x50/0xB0
     // content delta showing up as an 8/0x10 total delta.
     assert_eq!(pins::ASSEMBLED_LEN, 0x7EA20); // +0x20F60 tails-data (Map_Tails exiled to the ROM tail) // +8 character-dispatch-c1 (0x50 of player growth, repacked past the sound bank) // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x80820); // +0x20F60 tails-data (same exile) // +0x10 character-dispatch-c1 (0xB0 of player growth, repacked past the sound bank) // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x808E4); // +0xC4 tails-character (DEBUG-only hotkey; plain unmoved) // +0x20F60 tails-data (same exile) // +0x10 character-dispatch-c1 (0xB0 of player growth, repacked past the sound bank) // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the

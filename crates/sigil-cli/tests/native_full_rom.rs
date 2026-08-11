@@ -111,7 +111,15 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // this row on every run since it drifted. The row stays UNPINNED on purpose
     // (an independent check of the convsym resolve path — deriving it from a pin
     // would make the assertion circular), so it is hand-updated, with the reason.
-    ("Ground_Move_Cap", 0x107B6, 0x108C6),
+    // `tails-character` (2026-08-10): plain 0x107B6 -> 0x107A6, DEBUG UNCHANGED.
+    // Making Tails a real record shrinks player_common's PLAIN span 0x4CE -> 0x4BE
+    // (a 16-byte region-alignment step), sliding player_ground's plain base
+    // 0x104D0 -> 0x104C0; the debug region carried enough pad slack to absorb the
+    // same change without crossing a boundary, so its base holds at 0x105E0. The
+    // intra-region offset is 0x2E6 in BOTH shapes, unchanged from chain 89 — this
+    // label still moves only with its region base, which is the property the row
+    // is here to witness. Per-shape pair, hand-updated (unpinned on purpose).
+    ("Ground_Move_Cap", 0x107A6, 0x108C6),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)
