@@ -270,8 +270,11 @@ pub const OBJCODEBASE: Region = Region { plain_base: 0x10000, debug_base: 0x1000
 /// `Player_Init` .. `PState_Ground` — gate `SIGIL_EMP_PLAYER_COMMON`. tests: test_p1_player_port
 pub const PLAYER_COMMON: Region = Region { plain_base: 0x10002, debug_base: 0x10002, plain_len: 0x4CE, debug_len: 0x5DE };
 
-/// `CharDef_Sonic` .. `CharacterDefs` — gate `SIGIL_EMP_SONIC`. tests: test_p1_player_port
+/// `CharDef_Sonic` .. `CharDef_Tails` — gate `SIGIL_EMP_SONIC`. tests: test_p1_player_port
 pub const SONIC: Region = Region { plain_base: 0x10D0C, debug_base: 0x10E20, plain_len: 0x30, debug_len: 0x30 };
+
+/// `CharDef_Tails` .. `CharacterDefs` — gate `SIGIL_EMP_TAILS`. tests: test_p1_player_port
+pub const TAILS: Region = Region { plain_base: 0x10D3C, debug_base: 0x10E50, plain_len: 0x30, debug_len: 0x30 };
 
 /// `CharacterDefs` .. `TestStatic_Main` — gate `SIGIL_EMP_CHARACTERS`. tests: test_p1_player_port
 pub const CHARACTERS: Region = Region { plain_base: 0x10D3C, debug_base: 0x10E50, plain_len: 0x4C, debug_len: 0x50 };

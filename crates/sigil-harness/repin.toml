@@ -2418,12 +2418,27 @@ tests = ["test_p1_player_port"]
 # sonic is now the Sonic character RECORD only (CharDef_Sonic + PhysTable_Sonic).
 # Its two procs folded into the shared loaders in `characters` when the roster
 # landed, so the head label moved Sonic_InitAssets -> CharDef_Sonic and the span
-# now ends where characters begins.
+# now ends where characters begins. Since C1 task 6 the `tails` record sits
+# between the two, so the end anchor is CharDef_Tails rather than CharacterDefs.
 [[region]]
 name = "sonic"
 start = "CharDef_Sonic"
-end = "CharacterDefs"
+end = "CharDef_Tails"
 gate = "SIGIL_EMP_SONIC"
+tests = ["test_p1_player_port"]
+
+# tails (C1 task 6) — the Tails character RECORD (CharDef_Tails +
+# PhysTable_Tails), the exact peer of `sonic` and placed right after it per
+# map.toml `order`, so the two records sit together and the roster that indexes
+# them follows. Pure data; no procs. Pinned rather than left on DUMMY_REGION for
+# the reason `characters` and `tails_anims` carry real pins: the
+# `sonic4_pinned_profile` bootstrap READS region bases, and a placeholder
+# collapses the section onto base 0 where it collides with `vectors`.
+[[region]]
+name = "tails"
+start = "CharDef_Tails"
+end = "CharacterDefs"
+gate = "SIGIL_EMP_TAILS"
 tests = ["test_p1_player_port"]
 
 # characters — the roster table + the shared per-character asset/art loaders

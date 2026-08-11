@@ -327,6 +327,20 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         m!("games.sonic4.player_air", "player_air", pins::PLAYER_AIR),
         m!("games.sonic4.player_spindash", "player_spindash", pins::PLAYER_SPINDASH),
         m!("games.sonic4.sonic", "sonic", pins::SONIC),
+        // Character-dispatch C1 task 6: the Tails character RECORD (tails.emp) —
+        // CharDef_Tails + PhysTable_Tails, pure data, the exact peer of `sonic`
+        // and placed right after it per map.toml `order`. This is what makes
+        // CHAR_TAILS a real roster row instead of a stub aimed at CharDef_Sonic;
+        // the sprite data it points at (Map_/DPLC_/Art_Tails, Ani_Tails) landed in
+        // task 5 as `tails_data` / `tails_anims`.
+        //
+        // Real pin, not DUMMY_REGION — same reason as `characters` / `tails_anims`
+        // / `tails_data`: every shipped profile is a `SizeSource::Frozen` target
+        // that never reads base/len, but the `sonic4_pinned_profile` bootstrap DOES,
+        // and the placeholder collapses the section onto base 0 where it collides
+        // with `vectors` (the soundbankhead_port PinnedBaked probe — failure chain
+        // 89).
+        m!("games.sonic4.tails", "tails", pins::TAILS),
         // The character ROSTER (characters.emp): the CharacterDefs table, the
         // character-agnostic asset/art loaders (Player_InitAssets / Player_LoadArt),
         // the AbilityHook type and Ability_None. A PEER of `sonic` (and of the coming
