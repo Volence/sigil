@@ -152,11 +152,11 @@ pub struct SoundLayout {
     pub seq_opcode_tab_lma: u32,
     /// `DacSampleTable` head LMA (`$585AD`), last head — the head bank ends here.
     pub dac_sample_tab_lma: u32,
-    /// `mt_bank` LMA (`$58607`) — `sound_bank` anchor + the head-bank span.
+    /// `mt_bank` LMA (`$58628`) — `sound_bank` anchor + the head-bank span.
     pub mt_bank_lma: u32,
-    /// `sfx_bank` block base, plain shape (`$5BAE8`) — `mt_bank` + the plain MT body.
+    /// `sfx_bank` block base, plain shape (`$5BB10`) — `mt_bank` + the plain MT body.
     pub sfx_bank_lma_plain: u32,
-    /// `sfx_bank` block base, debug shape (`$5D53A`) — `mt_bank` + the debug MT body.
+    /// `sfx_bank` block base, debug shape (`$5D560`) — `mt_bank` + the debug MT body.
     pub sfx_bank_lma_debug: u32,
 }
 
@@ -167,6 +167,27 @@ pub struct SoundLayout {
 /// Moving-Trucks body length. Memoized per aeon root (the derivation lowers ~7
 /// artifacts). Recursion-free: the length measurements call the emit CORES
 /// (`*_at`), never the public `sound_layout`-consuming wrappers.
+/// One section's FROZEN PROVISIONAL BASE, read from the committed size table — the
+/// input `native::packed_align_of` derives a section's alignment quantum from.
+///
+/// Reading the frozen table here is a deliberate, narrow coupling: the quantum is a
+/// property of the pin, so predicting the walk's base REQUIRES the pin. It is the
+/// same number the walk itself reads, through the same `pub` reader, so the two
+/// cannot drift. (A better end-state is to declare the quantum in map.toml and have
+/// both sides read the declaration — then it is a reviewed fact in a diff instead of
+/// an emergent property of the last refreeze. Ledgered, not done here.)
+fn frozen_prov(table: &str, label: &str) -> Result<u32, String> {
+    crate::native::load_frozen_table(table)
+        .get(label)
+        .copied()
+        .ok_or_else(|| {
+            format!(
+                "frozen table {table} has no `{label}` — the seam-2 placement \
+                 prediction cannot derive that section's alignment quantum"
+            )
+        })
+}
+
 pub fn sound_layout(aeon: &Path) -> Result<SoundLayout, String> {
     static CACHE: std::sync::OnceLock<
         std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, SoundLayout>>,
@@ -208,12 +229,32 @@ pub fn sound_layout(aeon: &Path) -> Result<SoundLayout, String> {
         emit_dac_body_and_head_at(aeon, dac_blip_lma, dac_shared_lma, dac_sample_tab_lma)?.head.len()
             as u32;
 
-    let mt_bank_lma = dac_sample_tab_lma + l_dach;
+    // mt_bank and sfx_bank are the only two members of this layout that are CHAINED
+    // AND PACKED (everything above is a declared map anchor, a phase-bank org, or a
+    // section-internal offset — none of which the packing walk can move). The walk
+    // does NOT lay them down contiguously: it rounds the running cursor up to
+    // `native::packed_align_of(frozen provisional base)`. This used to be a plain
+    // `+` here, which agreed with the walk only for as long as every sum happened to
+    // land on the quantum already — and stopped agreeing the moment the sound head
+    // grew 8 bytes, folding every SFX pointer 8 bytes short of its blob.
+    //
+    // So predict with the walk's OWN function rather than restate its arithmetic.
+    // Byte-neutral whenever the sum is already aligned, which is every shape today.
+    let mt_bank_lma = crate::native::packed_chained_base(
+        dac_sample_tab_lma + l_dach,
+        frozen_prov("s4.txt", "Song_MovingTrucks")?,
+    );
     let l_mt_plain = emit_mt_bank_at(aeon, false, mt_bank_lma, a.sound_bank)?.bytes.len() as u32;
     let l_mt_debug = emit_mt_bank_at(aeon, true, mt_bank_lma, a.sound_bank)?.bytes.len() as u32;
 
-    let sfx_bank_lma_plain = mt_bank_lma + l_mt_plain;
-    let sfx_bank_lma_debug = mt_bank_lma + l_mt_debug;
+    let sfx_bank_lma_plain = crate::native::packed_chained_base(
+        mt_bank_lma + l_mt_plain,
+        frozen_prov("s4.txt", "Sfx_33")?,
+    );
+    let sfx_bank_lma_debug = crate::native::packed_chained_base(
+        mt_bank_lma + l_mt_debug,
+        frozen_prov("s4_debug.txt", "Sfx_33")?,
+    );
 
     let _ = a.sound_bank_vma; // consumed by seam1's DacSampleTable window derivation
     let layout = SoundLayout {
@@ -527,7 +568,7 @@ pub fn emit_dac_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
 /// body+head shape, per SHAPE (unlike the DAC, both halves shift with the build
 /// shape because the SFX block sits after the shape-dependent song tables).
 pub struct SfxBodyAndHead {
-    /// `sfx_bank` @ `$5BAE8` (plain) / `$5D53A` (debug) — 1864 bytes.
+    /// `sfx_bank` @ `$5BB10` (plain) / `$5D560` (debug) — 1864 bytes.
     pub body: Vec<u8>,
     /// `SfxBlobWinTab` @ `$5845F` — the 270-byte (135 × 2) window-pointer head.
     pub head: Vec<u8>,
@@ -933,7 +974,7 @@ pub fn emit_seq_opcode_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), Stri
 }
 
 /// Emit the seam-2 SFX build inputs to `out_dir`: `sfx_bank{,_debug}.bin` (the
-/// $5BAE8/$5D53A block bodies) + `sfx_blob_win_tab{,_debug}.bin` (the co-linked
+/// $5BB10/$5D560 block bodies) + `sfx_blob_win_tab{,_debug}.bin` (the co-linked
 /// 270-byte window-pointer heads). SHAPE-DEPENDENT (both halves shift with the
 /// build shape — the SFX block sits after the shape-dependent song tables), so
 /// there IS a `_debug` variant of each. NO syms file: unlike the MT bank
@@ -959,7 +1000,7 @@ pub fn emit_sfx_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
 /// begin (`SongTable`/`SongPatchTable`, read cross-seam by `sound_api.emp`). The
 /// offsets partition `bytes` into the three artifacts the split emits.
 pub struct MtBank {
-    /// `mt_bank` @ `$58607` — song streams + pitch table + patch bank + the two
+    /// `mt_bank` @ `$58628` — song streams + pitch table + patch bank + the two
     /// pointer tables, shape-dependent length.
     pub bytes: Vec<u8>,
     /// Byte offset within `bytes` where `SongTable` begins (a `SONG_COUNT`*4-byte
@@ -970,7 +1011,7 @@ pub struct MtBank {
     pub song_patch_table_off: usize,
 }
 
-/// Lower + co-link `mt_bank.emp` at the map-derived bank pin (`$58607`) and return
+/// Lower + co-link `mt_bank.emp` at the map-derived bank pin (`$58628`) and return
 /// the bank body + the `SongTable`/`SongPatchTable` addresses. Supplies the same
 /// THREE cross-seam carriers `mt_port.rs` does — `MovingTrucks_Bank_Start` (label @
 /// the `sound_bank` anchor) + `SONG_MOVINGTRUCKS`=1 + `SONG_COUNT` (1 plain / 3 debug) —

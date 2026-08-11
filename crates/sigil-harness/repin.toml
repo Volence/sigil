@@ -800,7 +800,7 @@ tests = ["mt_bank_port"]
 
 # Parcel K4 inc-5 Stage 4 — the SFX block, native (sfx_bank_blob.emp embeds the seam-2
 # sfx_bank{,_debug}.bin, after the native MT body). Shape-INVARIANT size (0x748 both),
-# shape-DEPENDENT start ($5BAE8 plain / $5D53A debug — the MT body before it differs).
+# shape-DEPENDENT start ($5BB10 plain / $5D560 debug — the MT body before it differs).
 # Literal len (no end label; nothing byte-emitting follows in the sound macro). gate
 # SIGIL_EMP_SFX holes out the AS org-skip.
 [[region]]

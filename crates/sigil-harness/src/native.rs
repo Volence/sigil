@@ -2105,6 +2105,41 @@ fn true_bases_by_index(
 /// boundary keys the size derivation (`derive_frozen_table`) reads back. It no longer
 /// AUTHORS the sequence — reordering the map reorders the layout; a byte-emitting section
 /// the map omits fails loud at the post-resolve `validate_placement`.
+/// THE PACKING WALK'S ALIGNMENT RULE — the largest power of two in {16,8,4,2} that
+/// divides a chained section's FROZEN PROVISIONAL BASE.
+///
+/// Lifted out of `packed_true_bases`' body (where it was a local closure) to become
+/// the SINGLE authority, because `seam2::sound_layout` has to predict the very same
+/// base: it bakes ABSOLUTE pointers into emitted blobs (the SfxTable cells, the
+/// `SFX_WIN_*` window pointers, the MT song-table pointers) against its own
+/// derivation, and if that derivation and this walk disagree the pointers are short
+/// by the difference and the sound goes silent at runtime. A second copy of this
+/// arithmetic is the bug, not the fix — that is the lesson of the three unmaintained
+/// copies of the sound-bank addresses (commit 2c49f538).
+///
+/// A WARNING THIS SIGNATURE CANNOT ENFORCE: the quantum is a property of the frozen
+/// PIN, so a repin can change a section's alignment without a line of alignment code
+/// changing. Not hypothetical — 2c49f538 moved the SFX pin from $5BAE8 (%16 == 8,
+/// quantum 8) to $5BB10 (%16 == 0, quantum 16), silently doubling it and
+/// invalidating the mod-8 structural pads aeon had built against the old value. The
+/// always-on `validate_sound_fold` gate exists to make that class loud.
+pub fn packed_align_of(prov: u32) -> u32 {
+    for a in [16u32, 8, 4, 2] {
+        if prov % a == 0 {
+            return a;
+        }
+    }
+    1
+}
+
+/// The base the packing walk gives a chained section whose frozen provisional base
+/// is `prov`, when the running cursor arrives at `running`. The prediction half of
+/// [`packed_align_of`]; mirrors the apply site in `packed_true_bases` exactly.
+pub fn packed_chained_base(running: u32, prov: u32) -> u32 {
+    let a = packed_align_of(prov);
+    (running + a - 1) / a * a
+}
+
 fn packed_true_bases(
     sections: &[Section],
     prov: &[Option<i64>],
@@ -2164,14 +2199,6 @@ fn packed_true_bases(
     };
     order.sort_by_key(|&i| (eff_rank(i), prov[i].unwrap(), i));
     const ANCHOR_GAP: i64 = 0x400;
-    let align_of = |p: i64| -> i64 {
-        for a in [16i64, 8, 4, 2] {
-            if p % a == 0 {
-                return a;
-            }
-        }
-        1
-    };
 
     // Round 0: lengths at the PROVISIONAL bases (labeled sections at prov, label-less
     // pure-data blobs at scratch — the proven Frozen measuring pins). When a section
@@ -2232,7 +2259,7 @@ fn packed_true_bases(
                         // inferred align-16 (i4: the enclosed replay fixture) opens a fill
                         // gap the assembled-bar completeness guard rightly rejects. Cap
                         // markers at the 68k minimum (2); emitters keep the inference.
-                        let a = if img[i] == 0 { 2 } else { align_of(p) };
+                        let a = if img[i] == 0 { 2 } else { packed_align_of(p as u32) as i64 };
                         let packed = (r + a - 1) / a * a;
                         // FIXTURE (stress-art): the whole point is a section that grew tens of
                         // KB, so downstream runs DO overrun their frozen provisional bases —
@@ -2703,6 +2730,80 @@ pub fn build_rom_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, 
 ///
 /// The frozen tables are DEMOTED to the per-label provisional-base measurement cache
 /// (anchors + alignment + boundary keys); the map is the sole ORDER + anchor AUTHORITY.
+
+/// THE FOLD-VS-PLACEMENT GATE — the one aeon has been asking for in
+/// `games/sonic4/data/sound/sfx_bank_blob.emp` ("the fold-vs-placement equality gate
+/// is the sigil ask in DEFERRED_WORK").
+///
+/// seam-2 bakes ABSOLUTE pointers into the emitted sound blobs — the `SfxTable`
+/// pointer cells inside `sfx_bank.bin`, the nine `SFX_WIN_*` window pointers
+/// `sfx_blob_win_tab.bin` consumes, and the MT song/patch table pointers — against
+/// the base `seam2::sound_layout` PREDICTS. The chainer then places those blobs
+/// independently. If the two disagree by N, every one of those pointers is N bytes
+/// short of the data it names and the sound is silent or garbled at runtime, with no
+/// build error and no visible symptom short of listening to it.
+///
+/// The pre-existing aeon-side wall, `ensure((winptr(Sfx_33) & 7) == 0)`, cannot catch
+/// this: it checks only that the PLACED base is 8-aligned, and in the real failure
+/// both the predicted and the placed base were 8-aligned (`$5BB18` and `$5BB20`).
+/// Only comparing the two numbers finds it.
+///
+/// ALWAYS-ON, deliberately, and NOT behind `SIGIL_STRICT_GATE` — the previous
+/// instance of this failure (sound package 3, a persistent silent -2) shipped
+/// precisely because the checks that would have caught it were opt-in.
+fn validate_sound_fold(
+    aeon: &Path,
+    resolved: &[Section],
+    profile: &GameProfile,
+) -> Result<(), String> {
+    if !profile.sound_on {
+        return Ok(()); // no sound bank in this shape; the layout is meaningless
+    }
+    let layout = crate::seam2::sound_layout(aeon)?;
+
+    // LMA, not vma_origin(): the sound-bank heads are phased (`vma: $8000`), so a
+    // VMA read would hand back a window address and compare against nothing.
+    let placed = |label: &str| -> Option<u32> {
+        resolved.iter().find_map(|sec| {
+            sec.labels
+                .iter()
+                .find(|l| l.name == label)
+                .map(|l| sec.lma + l.offset)
+        })
+    };
+
+    let sfx_predicted = if profile.debug {
+        layout.sfx_bank_lma_debug
+    } else {
+        layout.sfx_bank_lma_plain
+    };
+    for (label, predicted) in
+        [("Song_MovingTrucks", layout.mt_bank_lma), ("Sfx_33", sfx_predicted)]
+    {
+        let Some(actual) = placed(label) else { continue }; // not in this shape
+        if actual != predicted {
+            let quantum = packed_align_of(load_frozen_table(
+                if profile.debug { "s4_debug.txt" } else { "s4.txt" },
+            )
+            .get(label)
+            .copied()
+            .unwrap_or(0));
+            return Err(format!(
+                "[sound.fold-vs-placement] seam-2 folded absolute pointers against \
+                 `{label}` = {predicted:#x} but the chainer placed it at {actual:#x} \
+                 (delta {:+}). Every pointer cell in that blob is off by the same \
+                 amount, so the sound would be silent or garbled at runtime with no \
+                 other symptom. The chainer aligns this section's base to {quantum} \
+                 (the largest power of two dividing its frozen provisional base — see \
+                 native::packed_align_of); seam2::sound_layout must predict the same \
+                 base. Fix the prediction, not the pin.",
+                actual as i64 - predicted as i64
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub fn validate_placement(
     resolved: &[Section],
     pmap: &crate::map_placement::PlacementMap,
@@ -2914,6 +3015,7 @@ pub fn build_rom_chained_with_listing(
     // the declared sequence + island anchors + hole (a bug in the drive, or a section the map
     // omits, fails loud). Its regions drive emit_rom + the object-bank budget.
     validate_placement(&resolved, &pmap, profile.sound_on)?;
+    validate_sound_fold(aeon, &resolved, profile)?;
     check_object_bank_budget(&resolved, &map, &pmap)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))?;
     Ok(RomBuild { rom, listing, warnings })
