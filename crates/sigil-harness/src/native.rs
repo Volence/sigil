@@ -326,6 +326,19 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         m!("games.sonic4.player_ground", "player_ground", pins::PLAYER_GROUND),
         m!("games.sonic4.player_air", "player_air", pins::PLAYER_AIR),
         m!("games.sonic4.player_spindash", "player_spindash", pins::PLAYER_SPINDASH),
+        // Character-dispatch C2: Tails' flight (player_fly.emp) — PSTATE_FLY's
+        // body plus Ability_TailsFlight, the AbilityHook CharDef_Tails points at.
+        // The fourth player STATE file, so it sits with the other three and ahead
+        // of the character records per map.toml `order`; it is also the last
+        // player code before them, which is why `player_spindash`'s end anchor
+        // moves from CharDef_Sonic to PState_Fly.
+        //
+        // Real pin, not DUMMY_REGION — same reason as `tails` / `characters` /
+        // `tails_anims`: every shipped profile is a `SizeSource::Frozen` target
+        // that never reads base/len, but the `sonic4_pinned_profile` bootstrap
+        // DOES, and the placeholder collapses the section onto base 0 where it
+        // collides with `vectors` (failure chain 89).
+        m!("games.sonic4.player_fly", "player_fly", pins::PLAYER_FLY),
         m!("games.sonic4.sonic", "sonic", pins::SONIC),
         // Character-dispatch C1 task 6: the Tails character RECORD (tails.emp) —
         // CharDef_Tails + PhysTable_Tails, pure data, the exact peer of `sonic`

@@ -123,6 +123,16 @@ pub const INOUT_UNVERIFIED_BASELINE: &[(&str, &str)] = &[];
 /// AllocDynamic :: a1`; `calls.rs`'s `destroys_value` header carries the per-site
 /// reasoning. An edge-precise D1c would dissolve the class.
 pub const D1C_BASELINE: &[(&str, &str, &str)] = &[
+    // Adjudicated (aeon character-dispatch C2, Tails' flight): these three rows
+    // were `PState_AirShared @ …` verbatim. The air body's angle-decay +
+    // collision-by-motion-class tail was factored into `Air_Collide` so
+    // PState_Fly could share it — the wall-probe call sites and the d1/d4 held
+    // values around them are UNCHANGED byte for byte, only the enclosing proc's
+    // name moved. Same edge-blind close as the other documented FPs: d4 is the
+    // probes' PRODUCED hit flag on the taken edge, not a destroyed held value.
+    ("Air_Collide", "Air_WallProbeLeft", "d4"),
+    ("Air_Collide", "Air_WallProbeRight", "d1"),
+    ("Air_Collide", "Air_WallProbeRight", "d4"),
     ("CreateChild_Complex", "AllocDynamic", "a1"),
     ("CreateChild_FlipAware", "AllocDynamic", "a1"),
     ("CreateChild_Linked", "AllocDynamic", "a1"),
@@ -134,9 +144,6 @@ pub const D1C_BASELINE: &[(&str, &str, &str)] = &[
     ("Ground_Move_Cap", "Player_SensorWallDir", "d0"),
     // DOCUMENTED FP (edge-blind close) — see calls.rs::destroys_value.
     ("Load_Object", "AllocDynamic", "a1"),
-    ("PState_AirShared", "Air_WallProbeLeft", "d4"),
-    ("PState_AirShared", "Air_WallProbeRight", "d1"),
-    ("PState_AirShared", "Air_WallProbeRight", "d4"),
     ("PState_Spindash", "Player_SensorFloor", "d0"),
     ("PState_Spindash", "Player_SensorFloor", "d1"),
     ("Parallax_Update", "Decode_Factor_A", "d2"),

@@ -285,8 +285,11 @@ pub const PLAYER_GROUND: Region = Region { plain_base: 0x104C0, debug_base: 0x10
 /// `PState_Air` .. `PState_Spindash` — gate `SIGIL_EMP_PLAYER_AIR`. tests: test_p2_player_states_port
 pub const PLAYER_AIR: Region = Region { plain_base: 0x10930, debug_base: 0x10A50, plain_len: 0x330, debug_len: 0x330 };
 
-/// `PState_Spindash` .. `CharDef_Sonic` — gate `SIGIL_EMP_PLAYER_SPINDASH`. tests: test_p2_player_states_port
-pub const PLAYER_SPINDASH: Region = Region { plain_base: 0x10C60, debug_base: 0x10D80, plain_len: 0x9C, debug_len: 0xA0 };
+/// `PState_Spindash` .. `PState_Fly` — gate `SIGIL_EMP_PLAYER_SPINDASH`. tests: test_p2_player_states_port
+pub const PLAYER_SPINDASH: Region = Region { plain_base: 0x10CE0, debug_base: 0x10E00, plain_len: 0x9C, debug_len: 0x9C };
+
+/// `PState_Fly` .. `CharDef_Sonic` — gate `SIGIL_EMP_PLAYER_FLY`. tests: test_p2_player_states_port
+pub const PLAYER_FLY: Region = Region { plain_base: 0x10D7C, debug_base: 0x10E9C, plain_len: 0x108, debug_len: 0x114 };
 
 /// `Collision_ProbeDown` .. `Section_Init` — gate `SIGIL_EMP_PLAYER_SENSORS`. tests: test_p4_player_sensors_port
 pub const PLAYER_SENSORS: Region = Region { plain_base: 0x5470, debug_base: 0x63F0, plain_len: 0x4F4, debug_len: 0x4F4 };
