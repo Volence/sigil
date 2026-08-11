@@ -4758,3 +4758,57 @@ full_crc = "9030ed84"
 full_size = 564588
 anchor_crc = "5ee58ad1"
 anchor_end = 0x808d8
+
+[[entry]]
+name = "aeon-arctan"
+ab = "aeon@7ebe1169 — OJZ replay fixture Replay_Done=$FF, no REPLAY DESYNC, no fault screen; all three shapes rebuilt at the handoff CRCs (s4 22004a74/550402, s4.debug f0f80cc8/564820, demo.debug 19f64bfb/97692)"
+note = "GetArcTan in engine/system/math.emp + the appendage's angle-banked roll frames; repin owed by aeon 7ebe1169, which landed after chain 93"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "2b2183a2"
+full_size = 565202
+anchor_crc = "2bc58db8"
+anchor_end = 0x808d8
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "e4416046"
+full_size = 445534
+anchor_crc = "031d6e7b"
+anchor_end = 0x652f0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "59c257bd"
+full_size = 93549
+anchor_crc = "05d55c2e"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "19f64bfb"
+full_size = 97692
+anchor_crc = "5c6910f6"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "512faace"
+full_size = 514462
+anchor_crc = "fcd9184f"
+anchor_end = 0x7d99e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "22004a74"
+full_size = 550402
+anchor_crc = "5b1bf101"
+anchor_end = 0x7ea20
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "f0f80cc8"
+full_size = 564820
+anchor_crc = "92f8e73f"
+anchor_end = 0x808d8

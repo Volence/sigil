@@ -166,7 +166,10 @@ fn no_corpus_out_type_is_unresolvable() {
     // (PageCache_Lookup deleted — zero callers, lens F-6 fixup 2026-08-09).
     // 29 -> 30 for sound-pkg1 (2026-08-09): Sound_ReadStat :: out(d0) — the
     // API v2 status-mirror reader's typed return.
-    assert_eq!(slots.len(), 30, "the corpus's typed out slots: {slots:?}");
+    // 30 -> 31 for aeon-arctan (2026-08-11): GetArcTan :: out(d0) — the engine
+    // arctan the Tails appendage banks its roll frames off, math.emp's second
+    // typed-return proc alongside GetSineCosine.
+    assert_eq!(slots.len(), 31, "the corpus's typed out slots: {slots:?}");
 }
 
 /// Every proc that declares `out(rN if cc)` with rN ABSENT from its `clobbers` —

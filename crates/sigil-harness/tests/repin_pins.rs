@@ -353,34 +353,47 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // ROM totals hold (`org $10000` absorbs it), so only the bases move. Debug
     // headroom against the $18F0 ceiling goes 3 B -> 90 B, retiring the constraint
     // that shaped packages 1-3.
-    assert_eq!(pins::ANIMATE.plain_base, 0x3240);  // +0x10 item27: the boot-growth slide (aligned), which every region downstream of boot inherits  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
-    assert_eq!(pins::ANIMATE.debug_base, 0x39BE);  // +0x10 item27: same boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
+    //   `aeon-arctan` (2026-08-11, chain entry 94): the repin aeon 7ebe1169 owed and
+    // never took — that commit landed AFTER chain 93's freeze, so the tree sat on
+    // 148 drifted pins and 134 non-strict failures until this entry. `GetArcTan`
+    // joins engine/system/math.emp (the appendage banks its roll frames off a real
+    // arctan instead of a facing test), growing MATH's LEN 0x298 -> 0x3F8: +0x160 in
+    // BOTH shapes, the only LEN in the parcel that moves. Everything downstream of
+    // math in the engine bank therefore slides a uniform +0x160 both shapes (the
+    // family below), and the sonic4-rooted data tables slide +0x60 plain / +0x70
+    // debug — the smaller figure because the appendage's own section absorbs part of
+    // the growth as fill. TAILS_APPENDAGE is the one region whose LEN also moves
+    // (0xB2 -> 0x112 plain, 0x106 -> 0x176 debug): the arctan call site plus the
+    // 8-way bank table. ASSEMBLED_LEN / DEBUG_ASSEMBLED_LEN both hold — `org $10000`
+    // absorbs the engine growth, as it has for the last five chains.
+    assert_eq!(pins::ANIMATE.plain_base, 0x33A0);  // +0x10 item27: the boot-growth slide (aligned), which every region downstream of boot inherits  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan
+    assert_eq!(pins::ANIMATE.debug_base, 0x3B1E);  // +0x10 item27: same boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan
     assert_eq!(pins::ANIMATE.plain_len, 0x194);  // +0xA bug005: AF_SET_FIELD rail + refresh idiom
     assert_eq!(pins::ANIMATE.debug_len, 0x2B8);  // +0x10 bug005: same + the debug-fenced rail
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x35D4);  // +0x10 item27: boot-growth slide  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
-    assert_eq!(pins::RINGS.debug_base, 0x3E7E);  // +0x10 item27: boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
+    assert_eq!(pins::RINGS.plain_base, 0x3734);  // +0x10 item27: boot-growth slide  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan
+    assert_eq!(pins::RINGS.debug_base, 0x3FDE);  // +0x10 item27: boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
     // core LEN shrank −0xA in c4 (Spawn_Count: InitObjectRAM store −4 + RunObjects
     // moveq+store −6). Bases −0xA in c5 (the boot.asm CROSS_RESET store removal is
     // upstream of dplc/core, so core's base slides with everything downstream of boot).
-    assert_eq!(pins::CORE.plain_base, 0x2B20);  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
+    assert_eq!(pins::CORE.plain_base, 0x2C80);  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan
     assert_eq!(pins::CORE.plain_len, 0x300);    // addrfree-invariant: plain's +0x40 span is ≡0 (mod 4), tail pad unchanged  // +0x18 defect-batch-8
-    assert_eq!(pins::CORE.debug_base, 0x2D80);  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
+    assert_eq!(pins::CORE.debug_base, 0x2EE0);  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan
     assert_eq!(pins::CORE.debug_len, 0x750);    // +2 addrfree: the tail align pad that absorbs debug's ≡2 (mod 4) span — placement, core.emp untouched  // +0x20 defect-batch-8
-    assert_eq!(pins::DPLC.plain_base, 0x2A78);  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
-    assert_eq!(pins::DPLC.debug_base, 0x2CD8);  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0xc sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4
+    assert_eq!(pins::DPLC.plain_base, 0x2BD8);  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan
+    assert_eq!(pins::DPLC.debug_base, 0x2E38);  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0xc sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan
     assert_eq!(pins::DPLC.plain_len, 0xA8);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xa8);   // item 6 REMOVED (soak disproved single-entry) — debug == plain  // +0x4 sst-fold
 
     // animate_port.rs: the DeleteObject inbound label. bug005-invariant: the +2
     // tail clear lands INSIDE DeleteObject after its label, so the label holds.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2BF0, debug: 0x2E50 });  // +0x10 item27: slides with core on the boot growth  // defect-batch-8: plain +0x10, debug +0x20  // sst-fold  // +0x80 art-streaming-p2-task2  // art-streaming-p2-task3: plain +0x30, debug +0x40  // art-streaming-p2-task4: plain +0x20, debug +0x10  // art-streaming-p2c-t8-t9: plain +0x20, debug +0x30  // wave-f3-f1-f6: plain -0x50, debug -0x50  // +0x140 sound-pkg1  // -0x60 sound-pkg4
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2D50, debug: 0x2FB0 });  // +0x160 aeon-arctan: slides with core/dplc on the math growth  // +0x10 item27: slides with core on the boot growth  // defect-batch-8: plain +0x10, debug +0x20  // sst-fold  // +0x80 art-streaming-p2-task2  // art-streaming-p2-task3: plain +0x30, debug +0x40  // art-streaming-p2-task4: plain +0x20, debug +0x10  // art-streaming-p2c-t8-t9: plain +0x20, debug +0x30  // wave-f3-f1-f6: plain -0x50, debug -0x50  // +0x140 sound-pkg1  // -0x60 sound-pkg4
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
