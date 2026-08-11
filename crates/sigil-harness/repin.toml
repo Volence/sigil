@@ -2471,8 +2471,22 @@ tests = ["test_p2_player_states_port"]
 [[region]]
 name = "player_spindash"
 start = "PState_Spindash"
-end = "CharDef_Sonic"
+end = "PState_Fly"
 gate = "SIGIL_EMP_PLAYER_SPINDASH"
+tests = ["test_p2_player_states_port"]
+
+# player_fly (character-dispatch C2) — Tails' flight: PSTATE_FLY's body plus the
+# AbilityHook that enters it. The fourth player state file and the last player
+# CODE before the character records, so its end anchor is CharDef_Sonic, which
+# player_spindash's used to be. Pinned rather than left on DUMMY_REGION for the
+# reason `tails` / `characters` / `tails_anims` all carry real pins: the
+# `sonic4_pinned_profile` bootstrap READS region bases, and a placeholder
+# collapses the section onto base 0 where it collides with `vectors`.
+[[region]]
+name = "player_fly"
+start = "PState_Fly"
+end = "CharDef_Sonic"
+gate = "SIGIL_EMP_PLAYER_FLY"
 tests = ["test_p2_player_states_port"]
 
 # P4 (tranche 38) — player_sensors, the collision sensor primitives. Lives in
