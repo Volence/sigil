@@ -27,8 +27,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (`DEBUG=0`): `s4.bin[0x58628..0x5BB10]` (13,544 bytes).
-//! Debug (`DEBUG=1`): `s4.debug.bin[0x58628..0x5D560]` (20,280 bytes).
+//! Plain (`DEBUG=0`): `s4.bin[0x58630..0x5BB20]` (13,544 bytes).
+//! Debug (`DEBUG=1`): `s4.debug.bin[0x58630..0x5D570]` (20,280 bytes).
 //! (Windows slid +0x21/+0x2E at sound-pkg3 v2 (growth + mod-8 pads; pads land in-region so sizes grew +7/+5) 2026-08-10: the banked dac_sample_tab
 //! ahead of this bank grew 90→120 B; region CONTENT unchanged, sizes held.)
 //!
@@ -102,7 +102,7 @@ fn map_toml() -> &'static str {
      \n\
      [[region]]\n\
      name = \"mt_bank\"\n\
-     lma_base = 0x58628\n\
+     lma_base = 0x58630\n\
      size = 0x79D8\n\
      kind = \"rom\"\n"
 }
@@ -228,7 +228,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-/// (DEBUG=0) The `mt_bank` section's linked bytes equal `s4.bin[0x58628..0x5BB10]`.
+/// (DEBUG=0) The `mt_bank` section's linked bytes equal `s4.bin[0x58630..0x5BB20]`.
 #[test]
 fn mt_bank_region_matches_reference() {
     let Some(dir) = sound_dir() else { return };
@@ -245,13 +245,13 @@ fn mt_bank_region_matches_reference() {
         "the five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"
     );
 
-    let expected = &refrom[0x58628..0x5BB10];
+    let expected = &refrom[0x58630..0x5BB20];
     let section = linked.section("mt_bank").expect("linked image must carry mt_bank");
-    assert_region_matches(&section.bytes, expected, "mt_bank (DEBUG=0) vs s4.bin[0x58628..0x5BB10]");
+    assert_region_matches(&section.bytes, expected, "mt_bank (DEBUG=0) vs s4.bin[0x58630..0x5BB20]");
 }
 
 /// (DEBUG=1) The `mt_bank` section's linked bytes equal
-/// `s4.debug.bin[0x58628..0x5D560]`.
+/// `s4.debug.bin[0x58630..0x5D570]`.
 #[test]
 fn mt_bank_debug_region_matches_reference() {
     let Some(dir) = sound_dir() else { return };
@@ -268,7 +268,7 @@ fn mt_bank_debug_region_matches_reference() {
         "the five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"
     );
 
-    let expected = &refrom[0x58628..0x5D560];
+    let expected = &refrom[0x58630..0x5D570];
     let section = linked.section("mt_bank").expect("linked image must carry mt_bank");
-    assert_region_matches(&section.bytes, expected, "mt_bank (DEBUG=1) vs s4.debug.bin[0x58628..0x5D560]");
+    assert_region_matches(&section.bytes, expected, "mt_bank (DEBUG=1) vs s4.debug.bin[0x58630..0x5D570]");
 }

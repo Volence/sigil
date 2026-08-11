@@ -12,7 +12,7 @@
 //! Unlike `mt_bank.emp`, this module carries NO `DEBUG` member: the SFX block's
 //! CONTENT is byte-identical plain and debug (1864 bytes = `$748` in both) — only
 //! its BASE address shifts, because it sits after the shape-dependent song tables
-//! (plain `$5BB10` / debug `$5D560`). So the SHAPE lives entirely in the MAP
+//! (plain `$5BB20` / debug `$5D570`). So the SHAPE lives entirely in the MAP
 //! (per-shape `map_toml(debug)` region base, R7), not in the module: `lower` runs
 //! with an EMPTY `defines` vec for both shapes.
 //!
@@ -32,8 +32,8 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$5BB10`): `s4.bin[0x5BB10..0x5C258]` (1864 bytes).
-//! Debug (map base `$5D560`): `s4.debug.bin[0x5D560..0x5DCA8]` (1864 bytes).
+//! Plain (map base `$5BB20`): `s4.bin[0x5BB20..0x5C31E]` (2046 bytes).
+//! Debug (map base `$5D570`): `s4.debug.bin[0x5D570..0x5DD6E]` (2046 bytes).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -89,13 +89,13 @@ fn golden(name: &str) -> Option<Vec<u8>> {
 /// (opened by its top-level `ensure` — R-T0.3's carrier contract) and the real
 /// `sfx_bank` region pinned at the R7 PER-SHAPE LMA, sized to the bank top
 /// ($60000). The ONLY structural difference from `mt_port.rs`'s map: the region
-/// base is shape-dependent, so this is a `fn of debug` — plain `$5BB10`/`$44F0`,
-/// debug `$5D560`/`$2AA0` (both run to the `$60000` bank top).
+/// base is shape-dependent, so this is a `fn of debug` — plain `$5BB20`/`$44E0`,
+/// debug `$5D570`/`$2A90` (both run to the `$60000` bank top).
 fn map_toml(debug: bool) -> String {
     let (base, size) = if debug {
-        ("0x5D560", "0x2AA0")
+        ("0x5D570", "0x2A90")
     } else {
-        ("0x5BB10", "0x44F0")
+        ("0x5BB20", "0x44E0")
     };
     format!(
         "fill = 0x00\n\
@@ -226,7 +226,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-/// (plain) The `sfx_bank` section's linked bytes equal `s4.bin[0x5BB10..0x5C258]`.
+/// (plain) The `sfx_bank` section's linked bytes equal `s4.bin[0x5BB20..0x5C31E]`.
 #[test]
 fn sfx_bank_region_matches_reference() {
     let Some(dir) = sound_dir() else { return };
@@ -243,13 +243,13 @@ fn sfx_bank_region_matches_reference() {
         "the cross-seam co-residency ensure must PASS (link succeeded): {assert_diags:?}"
     );
 
-    let expected = &refrom[0x5BB10..0x5C258];
+    let expected = &refrom[0x5BB20..0x5C31E];
     let section = linked.section("sfx_bank").expect("linked image must carry sfx_bank");
-    assert_region_matches(&section.bytes, expected, "sfx_bank (plain) vs s4.bin[0x5BB10..0x5C258]");
+    assert_region_matches(&section.bytes, expected, "sfx_bank (plain) vs s4.bin[0x5BB20..0x5C31E]");
 }
 
 /// (debug) The `sfx_bank` section's linked bytes equal
-/// `s4.debug.bin[0x5D560..0x5DCA8]`.
+/// `s4.debug.bin[0x5D570..0x5DD6E]`.
 #[test]
 fn sfx_bank_debug_region_matches_reference() {
     let Some(dir) = sound_dir() else { return };
@@ -266,9 +266,9 @@ fn sfx_bank_debug_region_matches_reference() {
         "the cross-seam co-residency ensure must PASS (link succeeded): {assert_diags:?}"
     );
 
-    let expected = &refrom[0x5D560..0x5DCA8];
+    let expected = &refrom[0x5D570..0x5DD6E];
     let section = linked.section("sfx_bank").expect("linked image must carry sfx_bank");
-    assert_region_matches(&section.bytes, expected, "sfx_bank (debug) vs s4.debug.bin[0x5D560..0x5DCA8]");
+    assert_region_matches(&section.bytes, expected, "sfx_bank (debug) vs s4.debug.bin[0x5D570..0x5DD6E]");
 }
 
 /// Count the deferred GUARD asserts, excluding the D2.29 [layout.odd-item]

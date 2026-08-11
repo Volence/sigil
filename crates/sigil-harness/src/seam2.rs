@@ -296,7 +296,8 @@ pub fn sound_bank_id(aeon: &Path) -> Result<u32, String> {
 }
 
 /// The `DacSampleTable` byte length: 10 descriptors × 12 bytes, + the 3-byte
-/// head-tail alignment pad aeon's `dac_sample_tab.emp` appends (`DacHeadPad`).
+/// head-tail alignment pad aeon's `dac_sample_tab.emp` appends (`DacHeadPad`),
+/// which is 7 bytes since the SFX id range reached $BB — so 120 + 7 = 127.
 ///
 /// Was `10 × 9 = 90` until sound-pkg-3 (2026-08-10) grew the descriptor to 12
 /// bytes (`ds_vol` + the mix-cursor reserve appended, so no existing offset
@@ -304,7 +305,7 @@ pub fn sound_bank_id(aeon: &Path) -> Result<u32, String> {
 /// `seam2_*` family red under `SIGIL_STRICT_GATE=1` ever since; corrected
 /// 2026-08-11. It tracks the EMITTED span including the pad, so it moves again if
 /// the pad re-rounds — as it does whenever a head upstream of the table resizes.
-pub const DAC_SAMPLE_TAB_LEN: usize = 123;
+pub const DAC_SAMPLE_TAB_LEN: usize = 127;
 
 /// The two DAC bank payloads, emitted from `dac_samples.emp` — the exact bytes
 /// asl would BINCLUDE at `$48000` / `$50000` (each after an `align $8000`).

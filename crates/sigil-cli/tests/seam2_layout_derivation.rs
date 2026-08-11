@@ -36,20 +36,23 @@ fn sound_layout_derives_the_frozen_addresses() {
         sound_tables_z80_lma: 0x58000,
         pitchtable_lma: 0x58357,
         sfx_win_tab_lma: 0x5845F,
-        seq_opcode_tab_lma: 0x5856D,
-        dac_sample_tab_lma: 0x585AD,
-        // The three below were re-pinned 2026-08-11 to the addresses the map has
-        // actually been deriving since sound-pkg-3 (2026-08-10). That package grew
-        // the DAC descriptor 9 -> 12 bytes, which took DacSampleTable's span from
-        // 90 to 123 and pushed everything after it: mt_bank +0x21, and both SFX
-        // bases +0x28 (the extra 7 bytes being the head-tail 8-alignment pad
-        // re-rounding). The frozen values were never updated, so this target has
-        // been red under SIGIL_STRICT_GATE=1 for six chains — inherited debt, not
-        // a fresh move. Nothing upstream of dac_sample_tab_lma shifted, which is
-        // the confirmation that the growth starts exactly at the descriptor table.
-        mt_bank_lma: 0x58628,        // was 0x58607 (+0x21)
-        sfx_bank_lma_plain: 0x5BB10, // was 0x5BAE8 (+0x28)
-        sfx_bank_lma_debug: 0x5D560, // was 0x5D53A (+0x26)
+        seq_opcode_tab_lma: 0x58571,
+        dac_sample_tab_lma: 0x585B1,
+        // The three below moved TWICE on 2026-08-11, and the split matters:
+        //   * sound-pkg-3 (2026-08-10) grew the DAC descriptor 9 -> 12 bytes, taking
+        //     DacSampleTable 90 -> 123 and pushing mt_bank +0x21 / both SFX bases
+        //     +0x28. Those frozen values were never updated, which kept this target
+        //     red under SIGIL_STRICT_GATE=1 for six chains (fixed in 2c49f538).
+        //   * sfx-flight added the $BA/$BB SFX, widening SfxBlobWinTab by 4 bytes and
+        //     re-rounding DacHeadPad 3 -> 7, so the head grew 8 and everything after
+        //     it followed. seq_opcode_tab and dac_sample_tab are +4 from that alone.
+        // The SFX bases are ALIGNED values, not sums: the packing walk rounds this
+        // section's base up to 16 (see native::packed_align_of), and since 113f3006
+        // sound_layout predicts that rather than assuming a contiguous pack. Nothing
+        // upstream of seq_opcode_tab_lma moved in either step.
+        mt_bank_lma: 0x58630,
+        sfx_bank_lma_plain: 0x5BB20,
+        sfx_bank_lma_debug: 0x5D570,
     };
     assert_eq!(got, want, "map-derived seam-2 placement drifted from the frozen chain-22 addresses");
 }
@@ -91,7 +94,7 @@ fn moved_dac_anchor_moves_the_derivation() {
     assert_eq!(got.dac_blip_lma, 0x40000, "the DAC blip LMA must follow the moved anchor");
     assert_eq!(got.dac_shared_lma, 0x48000, "the shared bank follows blip + the intra-bank align");
     // The sound-bank chain (a separate anchor) is untouched by the DAC move.
-    assert_eq!(got.mt_bank_lma, 0x58628, "the head-bank chain is independent of the DAC anchor");
+    assert_eq!(got.mt_bank_lma, 0x58630, "the head-bank chain is independent of the DAC anchor");
 }
 
 /// FAIL-LOUD: a reordered `order` (SFX block before its MT-bank predecessor) desyncs

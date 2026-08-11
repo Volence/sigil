@@ -4812,3 +4812,57 @@ full_crc = "f0f80cc8"
 full_size = 564820
 anchor_crc = "92f8e73f"
 anchor_end = 0x808d8
+
+[[entry]]
+name = "sfx-flight"
+ab = "aeon@f90f3bbc+sfx — Fly_TickSfx dispatches d0=$BA from Player_1 on S3K's 16-frame cadence (oracle bp at Sound_PlaySFX, registers captured while PSTATE_FLY active, fuel $EF->$DB); POINTER CORRECTNESS PROVEN: emitted SfxTable cell $33 = 0x5D570 == the placed blob address 0x5D570 (was 8 short pre-113f3006), $BA -> 0x5DA9C, $BB -> 0x5DAF4; the always-on fold-vs-placement gate is silent on all three shapes; audibility NOT verified (this emulator is silent for the pre-change golden's jump SFX too, control-tested)"
+note = "SFX id range $33..$B9 -> $33..$BB: S3K sfx_Flying/sfx_FlyTired wired to Tails' flight on S3K's 16-frame cadence, phase-offset +8, on-screen gated, tired off the fuel byte"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "5fbaa05b"
+full_size = 565440
+anchor_crc = "69dda358"
+anchor_end = 0x80998
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "9cfa208c"
+full_size = 445548
+anchor_crc = "f8d618c5"
+anchor_end = 0x652f0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "59c257bd"
+full_size = 93549
+anchor_crc = "05d55c2e"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "19f64bfb"
+full_size = 97692
+anchor_crc = "5c6910f6"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "289daec5"
+full_size = 514654
+anchor_crc = "7343eda1"
+anchor_end = 0x7da5e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "5119eef5"
+full_size = 550640
+anchor_crc = "e26b760f"
+anchor_end = 0x7eae0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "09824b2f"
+full_size = 565036
+anchor_crc = "e68afb9b"
+anchor_end = 0x80998

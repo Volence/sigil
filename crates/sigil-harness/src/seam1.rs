@@ -137,7 +137,11 @@ fn file_specs() -> Vec<FileSpec> {
 /// resolve against the AS side. `DacSampleTable` is a driver `-D`, not here.
 fn banked_carriers() -> Vec<(&'static str, i64)> {
     vec![
-        ("SeqOpcodeTable", 0x856D),
+        // SeqOpcodeTable sits immediately AFTER SfxBlobWinTab in the head, so its
+        // VMA moves whenever the SFX id range grows: 0x856D -> 0x8571 when $BA/$BB
+        // extended the range to $BB (+2 cells = +4 bytes of win table). Everything
+        // below it in this list is upstream of the win table and does not move.
+        ("SeqOpcodeTable", 0x8571),
         ("SfxBlobWinTab", 0x845F),
         ("FmPitchTableZ", 0x8000),
         ("LogVolumeLutZ", 0x817C),

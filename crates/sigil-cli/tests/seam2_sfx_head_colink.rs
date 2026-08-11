@@ -64,8 +64,8 @@ fn body_window(layout: &SoundLayout, debug: bool) -> (&'static str, usize) {
     }
 }
 
-const SFX_WIN_TAB_LEN: usize = 270; // 135 dense ids × 2 bytes
-const SFX_BODY_LEN: usize = 1864;
+const SFX_WIN_TAB_LEN: usize = 274; // 137 dense ids ($33..=$BB) × 2 bytes
+const SFX_BODY_LEN: usize = 2046;
 
 /// THE HEAD BYTE GATE: the co-linked `SfxBlobWinTab` == the reference ROM slice
 /// at `$5845F`, in BOTH shapes (each vs its own ROM — the head is
@@ -82,8 +82,8 @@ fn colinked_sfx_head_matches_the_reference_rom_slice_both_shapes() {
     let win_lma = layout.sfx_win_tab_lma;
     for (debug, shape) in [(false, "plain"), (true, "debug")] {
         let out = emit_sfx_body_and_head(&aeon, debug).expect("emit_sfx_body_and_head co-links");
-        assert_eq!(out.head.len(), SFX_WIN_TAB_LEN, "SfxBlobWinTab is 135 × 2 = 270 bytes");
-        assert_eq!(out.body.len(), SFX_BODY_LEN, "sfx_bank body is 1864 bytes");
+        assert_eq!(out.head.len(), SFX_WIN_TAB_LEN, "SfxBlobWinTab is 137 × 2 = 274 bytes");
+        assert_eq!(out.body.len(), SFX_BODY_LEN, "sfx_bank body is 2046 bytes");
 
         let rom = golden(if debug { "s4.debug.bin" } else { "s4.bin" });
         let lo = win_lma as usize;

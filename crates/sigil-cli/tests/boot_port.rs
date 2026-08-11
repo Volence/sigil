@@ -91,7 +91,7 @@ fn golden(name: &str) -> Option<Vec<u8>> {
 /// `golden/s4.debug.bin`), matching the asl-canonical `s4.lst`/`s4.debug.lst`
 /// at the freeze commit:
 ///   Z80_SOUND_SIZE  plain $1814   debug $1896   (the resident Z80 driver span)
-///   GameState_OJZScroll_Init  plain $7D1C0 debug $7EFA4  (the Game.entry link target)
+///   GameState_OJZScroll_Init  plain $7D280 debug $7F064  (the Game.entry link target)
 ///
 /// L1 P2: `#Game.ENTRY_ID` is now a comptime const (3), folded from the game
 /// contract env — no link symbol; and `#Game.entry`'s link target is
@@ -100,8 +100,8 @@ fn frozen_symbol(debug: bool, name: &str) -> u64 {
     match (name, debug) {
         ("Z80_SOUND_SIZE", false) => 0x1814,   // sound pkg 4 (blob 6164, already even)
         ("Z80_SOUND_SIZE", true) => 0x1896,    // sound pkg 4 (blob 6294, already even)
-        ("GameState_OJZScroll_Init", false) => 0x7D1C0,  // tails-data: +0x20F60 — Map_Tails (132 KB) is exiled to the ROM tail, ahead of the game states
-        ("GameState_OJZScroll_Init", true) => 0x7EFA4,   // tails-data: +0x20F60, same exile as plain
+        ("GameState_OJZScroll_Init", false) => 0x7D280,  // sfx-flight: +0xC0  // tails-data: +0x20F60 — Map_Tails (132 KB) is exiled to the ROM tail, ahead of the game states
+        ("GameState_OJZScroll_Init", true) => 0x7F064,   // sfx-flight: +0xC0   // tails-data: +0x20F60, same exile as plain
         _ => panic!("no frozen value pinned for symbol `{name}` (debug={debug})"),
     }
 }

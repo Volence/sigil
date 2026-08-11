@@ -174,7 +174,7 @@ fn straddle_doctored_map_base_is_a_loud_bank_boundary_error() {
          [[region]]\n\
          name = \"sfx_bank\"\n\
          lma_base = 0x67C00\n\
-         size = 0x800\n\
+         size = 0x1000\n\
          kind = \"rom\"\n",
     )
     .expect("map must load");

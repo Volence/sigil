@@ -517,8 +517,19 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // everything past it repacks, so the post-bank tail (the fault-handler
     // island, EndOfRom) lands only +8 plain / +0x10 debug. Hence a 0x50/0xB0
     // content delta showing up as an 8/0x10 total delta.
-    assert_eq!(pins::ASSEMBLED_LEN, 0x7EA20); // +0x20F60 tails-data (Map_Tails exiled to the ROM tail) // +8 character-dispatch-c1 (0x50 of player growth, repacked past the sound bank) // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x808D8); // +4 tails-appendage (the DEBUG-only jmp abs.l tail call) // -0x10 tails-flight (bank absorbs flight; ojz harness shrank) // +0xC4 tails-character (DEBUG-only hotkey; plain unmoved) // +0x20F60 tails-data (same exile) // +0x10 character-dispatch-c1 (0xB0 of player growth, repacked past the sound bank) // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)
+    //   `sfx-flight` (2026-08-11): +0xC0 in BOTH shapes, and the symmetry is the
+    // tell. The parcel adds 182 bytes of SFX data (two S3K blobs + their patch
+    // banks + 4 bytes of win table) and ~0x22 of shape-invariant code (Fly_TickSfx),
+    // none of it DEBUG-fenced — so unlike most parcels there is no plain/debug
+    // asymmetry to explain. The sound bank is fixed-base at 0x48000, so the growth
+    // repacks everything after it and lands on the tail as one uniform bump.
+    // The SFX block base is now an ALIGNED value rather than a contiguous sum
+    // (113f3006): the packing walk rounds it up to 16, and sound_layout predicts
+    // that instead of assuming contiguity, which is what makes the emitted pointers
+    // agree with the placement. Without that fix this parcel shipped every SFX
+    // pointer 8 bytes short.
+    assert_eq!(pins::ASSEMBLED_LEN, 0x7EAE0); // +0x20F60 tails-data (Map_Tails exiled to the ROM tail) // +8 character-dispatch-c1 (0x50 of player growth, repacked past the sound bank) // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x80998); // +4 tails-appendage (the DEBUG-only jmp abs.l tail call) // -0x10 tails-flight (bank absorbs flight; ojz harness shrank) // +0xC4 tails-character (DEBUG-only hotkey; plain unmoved) // +0x20F60 tails-data (same exile) // +0x10 character-dispatch-c1 (0xB0 of player growth, repacked past the sound bank) // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the

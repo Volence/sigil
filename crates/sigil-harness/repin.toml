@@ -806,7 +806,7 @@ tests = ["mt_bank_port"]
 [[region]]
 name = "sfx_bank_blob"
 start = "Sfx_33"
-len = 0x748
+len = 0x7FE
 gate = "SIGIL_EMP_SFX"
 tests = ["sfx_bank_port"]
 
@@ -821,7 +821,7 @@ tests = ["sfx_bank_port"]
 [[region]]
 name = "soundbankhead"
 start = "SoundTablesZ80_Head"
-len = 0x628
+len = 0x630
 gate = "SIGIL_EMP_SOUNDBANKHEAD"
 tests = ["soundbankhead_port"]
 
