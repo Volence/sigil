@@ -371,10 +371,12 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // Character-dispatch C1 task 5: the Tails animation scripts
         // (tails_anims.emp) — `Ani_Tails` + `Ani_TailsAppendage`, both indexed by
         // the shared ANIM_* ids. A peer of `sonic_anims`, placed right after it
-        // per map.toml `order`. DUMMY_REGION for the same reason `characters`
-        // carries one comment above: every profile that links it is a
-        // `SizeSource::Frozen` target, so base/len here are never read.
-        m!("games.sonic4.tails_anims", "tails_anims", DUMMY_REGION),
+        // per map.toml `order`. Carries a REAL pin, not DUMMY_REGION: every shipped
+        // profile is `SizeSource::Frozen` and never reads base/len, but the
+        // `sonic4_pinned_profile` bootstrap does, and a placeholder collapses the
+        // section onto base 0 where it collides with `vectors` (soundbankhead_port's
+        // PinnedBaked probe) — the `characters` failure chain 89 root-caused.
+        m!("games.sonic4.tails_anims", "tails_anims", pins::TAILS_ANIMS),
         // particle_anims: DEBUG-only below (sole consumer test_particle is).
         // Parcel K3 run A: the OJZ act1 interior island HEAD — the contiguous run
         // BEFORE the descriptor. Two native `.emp` sections (both generator-emitted):
@@ -415,10 +417,9 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // the map drives placement (K5).
         // Nothing consumes it yet (the roster still points CHAR_TAILS at the Sonic
         // record); it is the data half of the character split, landed first.
-        // DUMMY_REGION: every profile that links it is a `SizeSource::Frozen`
-        // target, so the chainer sizes and places the section live from the frozen
-        // table + the map order and the region base/len are never read.
-        m!("games.sonic4.tails_data", "tails_data", DUMMY_REGION),
+        // Real pin, same reason as `tails_anims` above: the PinnedBaked bootstrap
+        // reads region bases, and DUMMY_REGION collapses the section onto 0.
+        m!("games.sonic4.tails_data", "tails_data", pins::TAILS_DATA),
         // Parcel K4 inc-5 Stage 2 (P2 DAC probe): the DAC sample banks are native —
         // dac_banks.emp embeds the seam-2 dac_blip_bank.bin @ $48000 + dac_shared_bank.bin
         // @ $50000 (the .bin ensure_generated emits). Sound-ON ONLY: filtered out of the

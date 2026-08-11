@@ -29,12 +29,55 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
+/// Parse a `.emp` file, panicking on parse errors.
+fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
+    let src = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let (file, pd) = parse_str(&src);
+    assert!(pd.iter().all(|d| d.level != sigil_span::Level::Error), "parse {}: {pd:?}", path.display());
+    file
+}
+
+/// The ambient set the module's comptime WALL needs (tails-data parcel, aeon
+/// 607fd121). `collision_data.emp` gained
+///
+///     ensure(VRAM_TEST_SONIC + dplc_peak_tiles(_dplc_sonic) <= VRAM_TEST_OBJ, ...)
+///
+/// which turns "Sonic's peak DPLC frame fits the character VRAM window" from a
+/// stale comment into a build-time fact. Two names have to resolve for the module
+/// to lower at all: the window bounds from the game config, and the comptime DPLC
+/// parser from `engine.objects.dplc`.
+///
+/// The DPLC module is filtered to that ONE comptime fn — prepending it wholesale
+/// would pull `perform_dplc` and its siblings into a compile whose bytes are being
+/// compared against a ROM window. The two constants modules emit nothing, so they
+/// ride whole; the engine one is needed because the same parcel gave the game
+/// config its own VRAM-window ensures, which read TILE_SIZE / VRAM_SPRITE_TABLE /
+/// MAX_VDP_SPRITES / VRAM_HSCROLL_TABLE from engine.constants.
+fn wall_ambient(aeon: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    use sigil_frontend_emp::ast::Item;
+    let mut items = parse_file(&aeon.join("engine/system/constants.emp")).items;
+    items.extend(parse_file(&aeon.join("games/sonic4/config/constants.emp")).items);
+    items.extend(
+        parse_file(&aeon.join("engine/objects/dplc.emp"))
+            .items
+            .into_iter()
+            .filter(|it| matches!(it, Item::ComptimeFn(d) if d.name == "dplc_peak_tiles")),
+    );
+    items
+}
+
 fn compile(base: u32, len: usize) -> sigil_link::LinkedImage {
     let aeon = aeon_root();
     let path = aeon.join("games/sonic4/data/collision/collision_data.emp");
-    let src = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read: {e}"));
-    let (file, pd) = parse_str(&src);
-    assert!(pd.iter().all(|d| d.level != sigil_span::Level::Error), "parse: {pd:?}");
+    let main = parse_file(&path);
+    let mut items = wall_ambient(&aeon);
+    items.extend(main.items.iter().cloned());
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items,
+        docs: main.docs.clone(),
+    };
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.clone()),

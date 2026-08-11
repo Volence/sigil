@@ -589,6 +589,35 @@ end = "Ani_Sonic_End"
 gate = "SIGIL_EMP_SONIC_ANIMS"
 tests = ["sonic_anims_port"]
 
+# tails-data (C1 task 5): `Ani_Tails` + `Ani_TailsAppendage`, the peer of
+# sonic_anims, placed right after it per map.toml `order`. Section-END anchor
+# rather than the next head: the successor (`Ani_Particle`) is DEBUG-only, so a
+# head anchor would need a per-shape end for a region whose own span is
+# shape-invariant. Pinned rather than left on DUMMY_REGION because the
+# `sonic4_pinned_profile` bootstrap READS region bases, and a placeholder collapses
+# the section onto base 0 where it collides with `vectors` — the exact failure
+# `characters` hit before chain 89 gave it a real pin.
+[[region]]
+name = "tails_anims"
+start = "Ani_Tails"
+end = "Ani_Tails_End"
+gate = "SIGIL_EMP_TAILS_ANIMS"
+tests = ["sonic_anims_port"]
+
+# tails-data (C1 task 5): the Tails body + twin-tail appendage mappings/DPLC/art.
+# Its map.toml `order` slot is at the ROM TAIL, past the sound banks — 132 KB does
+# not fit between Art_Sonic ($4277E) and the $48000 dac_banks org anchor. That
+# exile is a ROM-address workaround the parked "banks late, data unbounded"
+# relayout retires; the region declaration here is indifferent to where the map
+# puts it. Section-END anchor for the same reason as tails_anims: the successor
+# (`GameState_ObjectTest_Init`) is DEBUG-only.
+[[region]]
+name = "tails_data"
+start = "Map_Tails"
+end = "Map_Tails_End"
+gate = "SIGIL_EMP_TAILS_DATA"
+tests = ["collision_data_port"]
+
 [[region]]
 name = "particle_anims"
 start = "Ani_Particle"

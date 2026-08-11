@@ -292,7 +292,14 @@ fn config_b_doctored_size_table_breaks_the_build() {
     // objtest-gate (2026-08-05): Ani_Particle left the table (particle_anims is
     // DEBUG-only) — and with it gone, HeightMaps abuts Ani_Sonic_End again, so
     // the original probe entry is valid once more, now precondition-guarded.
-    let inert = "HeightMaps";
+    // tails-data (2026-08-10): the precondition FIRED, exactly as designed —
+    // `Ani_Tails` (the Tails anim scripts) now sits between `Ani_Sonic_End` and
+    // `HeightMaps`, and its 0xEA length leaves a 6-byte align pad before
+    // HeightMaps, so HeightMaps stopped abutting. The probe moves one section
+    // EARLIER to the entry that took over the abutting slot: `Ani_Tails` starts
+    // exactly at `Ani_Sonic_End` (0x262b0 in config_b, no pad — Ani_Sonic_End is
+    // 16-aligned). Same property under test, one link down the chain.
+    let inert = "Ani_Tails";
     let inert_pred_end = "Ani_Sonic_End";
     if let native::SizeSource::Frozen(t) = &inert_profile.size_source {
         let head = *t.get(inert).unwrap_or_else(|| panic!("{inert} not in table"));

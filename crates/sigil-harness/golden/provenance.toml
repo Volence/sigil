@@ -4542,3 +4542,57 @@ full_crc = "9e243f81"
 full_size = 428163
 anchor_crc = "888dec75"
 anchor_end = 0x5f8c0
+
+[[entry]]
+name = "tails-data"
+ab = "aeon@607fd121 — unreferenced data only (no code path consumes Tails' assets); prior C1 state 777b928f passed both replay fixtures Replay_Done=$FF with no desync/fault, camera A/B identical"
+note = "S3K Tails body + twin-tail appendage art/mappings/DPLC + Ani_Tails; Map_Tails exiled to the ROM tail past the sound banks (map.toml records the why); section-GROWING hand ruling, mirror of chain-46"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "66da6a63"
+full_size = 564054
+anchor_crc = "d4f1ab6b"
+anchor_end = 0x80820
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "e153be48"
+full_size = 443940
+anchor_crc = "7e645670"
+anchor_end = 0x64fe0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "bab8ccf4"
+full_size = 93399
+anchor_crc = "5190f2c1"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "e31532d1"
+full_size = 97541
+anchor_crc = "f406dd13"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "405df069"
+full_size = 514462
+anchor_crc = "d82b8974"
+anchor_end = 0x7d99e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "49a40fc7"
+full_size = 549595
+anchor_crc = "d23ca122"
+anchor_end = 0x7ea20
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "1614b313"
+full_size = 563672
+anchor_crc = "6ecfd92b"
+anchor_end = 0x80820
