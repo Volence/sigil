@@ -371,6 +371,19 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // (soundbankhead_port's PinnedBaked probe). The pin exists because
         // repin.toml declares a `characters` region — the debt that comment named.
         m!("games.sonic4.characters", "characters", pins::CHARACTERS),
+        // Character-dispatch C1: Tails' twin tails (tails_appendage.emp) — the
+        // appendage CHILD OBJECT (its reconcile, its effect-pool spawn, and the
+        // per-frame parent copy + own DPLC stream + draw). Tails-owned GAME
+        // content, so it is placed with the character records rather than among
+        // the test objects, and being the last player-side content before them it
+        // takes the slot `characters`' end anchor used to name (TestStatic_Main).
+        //
+        // Real pin, not DUMMY_REGION — same reason as `tails` / `characters` /
+        // `player_fly`: every shipped profile is a `SizeSource::Frozen` target
+        // that never reads base/len, but the `sonic4_pinned_profile` bootstrap
+        // DOES, and the placeholder collapses the section onto base 0 where it
+        // collides with `vectors` (failure chain 89).
+        m!("games.sonic4.tails_appendage", "tails_appendage", pins::TAILS_APPENDAGE),
         // ── Game objects ──
         // test_player + test_enemy fully flipped (conv-d #48/#47): both .asm deleted.
         // test_player.emp owns TPlayerV; test_animated.emp owns DplcV; STUB_FLOOR_Y

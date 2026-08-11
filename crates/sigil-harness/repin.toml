@@ -2453,12 +2453,29 @@ tests = ["test_p1_player_port"]
 
 # characters — the roster table + the shared per-character asset/art loaders
 # (CharacterDefs, Player_InitAssets, Player_LoadArt, Ability_None). Sits between
-# sonic and test_static; still the last player content before test_static.
+# sonic and tails_appendage; its end anchor moved from TestStatic_Main to
+# TailsAppendage_Refresh when the appendage object took that slot.
 [[region]]
 name = "characters"
 start = "CharacterDefs"
-end = "TestStatic_Main"
+end = "TailsAppendage_Refresh"
 gate = "SIGIL_EMP_CHARACTERS"
+tests = ["test_p1_player_port"]
+
+# tails_appendage (character-dispatch C1) — Tails' twin tails as their own child
+# object: the reconcile the character switch calls, the effect-pool spawn, and the
+# per-frame parent copy + DPLC + draw. Tails-owned GAME content, so it sits with
+# the character records rather than among the test objects, and it is the last
+# player-side content before test_static — which is why `characters`' end anchor
+# moves here. Pinned rather than left on DUMMY_REGION for the reason `tails` /
+# `characters` / `player_fly` all carry real pins: the `sonic4_pinned_profile`
+# bootstrap READS region bases, and a placeholder collapses the section onto base
+# 0 where it collides with `vectors`.
+[[region]]
+name = "tails_appendage"
+start = "TailsAppendage_Refresh"
+end = "TestStatic_Main"
+gate = "SIGIL_EMP_TAILS_APPENDAGE"
 tests = ["test_p1_player_port"]
 
 # P2+P3 (tranche 35) — the player state machines. Three per-file object-bank

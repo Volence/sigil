@@ -276,8 +276,11 @@ pub const SONIC: Region = Region { plain_base: 0x10E84, debug_base: 0x10FB0, pla
 /// `CharDef_Tails` .. `CharacterDefs` — gate `SIGIL_EMP_TAILS`. tests: test_p1_player_port
 pub const TAILS: Region = Region { plain_base: 0x10EB4, debug_base: 0x10FE0, plain_len: 0x30, debug_len: 0x30 };
 
-/// `CharacterDefs` .. `TestStatic_Main` — gate `SIGIL_EMP_CHARACTERS`. tests: test_p1_player_port
-pub const CHARACTERS: Region = Region { plain_base: 0x10EE4, debug_base: 0x11010, plain_len: 0x4C, debug_len: 0x50 };
+/// `CharacterDefs` .. `TailsAppendage_Refresh` — gate `SIGIL_EMP_CHARACTERS`. tests: test_p1_player_port
+pub const CHARACTERS: Region = Region { plain_base: 0x10EE4, debug_base: 0x11010, plain_len: 0x4A, debug_len: 0x4A };
+
+/// `TailsAppendage_Refresh` .. `TestStatic_Main` — gate `SIGIL_EMP_TAILS_APPENDAGE`. tests: test_p1_player_port
+pub const TAILS_APPENDAGE: Region = Region { plain_base: 0x10F2E, debug_base: 0x1105A, plain_len: 0xB2, debug_len: 0x106 };
 
 /// `PState_Ground` .. `PState_Air` — gate `SIGIL_EMP_PLAYER_GROUND`. tests: test_p2_player_states_port
 pub const PLAYER_GROUND: Region = Region { plain_base: 0x10500, debug_base: 0x10620, plain_len: 0x490, debug_len: 0x490 };
