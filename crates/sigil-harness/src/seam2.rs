@@ -254,8 +254,16 @@ pub fn sound_bank_id(aeon: &Path) -> Result<u32, String> {
     Ok((sound_layout(aeon)?.sound_tables_z80_lma & 0x7F_8000) >> 15)
 }
 
-/// The `DacSampleTable` byte length: 10 descriptors × 9 bytes.
-pub const DAC_SAMPLE_TAB_LEN: usize = 90;
+/// The `DacSampleTable` byte length: 10 descriptors × 12 bytes, + the 3-byte
+/// head-tail alignment pad aeon's `dac_sample_tab.emp` appends (`DacHeadPad`).
+///
+/// Was `10 × 9 = 90` until sound-pkg-3 (2026-08-10) grew the descriptor to 12
+/// bytes (`ds_vol` + the mix-cursor reserve appended, so no existing offset
+/// moved). This constant was not re-pinned then, which is what has kept the
+/// `seam2_*` family red under `SIGIL_STRICT_GATE=1` ever since; corrected
+/// 2026-08-11. It tracks the EMITTED span including the pad, so it moves again if
+/// the pad re-rounds — as it does whenever a head upstream of the table resizes.
+pub const DAC_SAMPLE_TAB_LEN: usize = 123;
 
 /// The two DAC bank payloads, emitted from `dac_samples.emp` — the exact bytes
 /// asl would BINCLUDE at `$48000` / `$50000` (each after an `align $8000`).

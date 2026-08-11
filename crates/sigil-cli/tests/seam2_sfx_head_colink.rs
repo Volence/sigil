@@ -25,6 +25,7 @@
 
 use sigil_harness::seam2::{
     emit_sfx_artifacts, emit_sfx_body_and_head, emit_sfx_body_and_head_doctored, sound_layout,
+    SoundLayout,
 };
 use std::path::PathBuf;
 
@@ -44,12 +45,22 @@ fn golden(name: &str) -> Vec<u8> {
     std::fs::read(&path).unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()))
 }
 
-/// The reference SFX-block body window per shape (1864 bytes = `$748`).
-fn body_window(debug: bool) -> (&'static str, usize) {
+/// The reference SFX-block body window per shape, DERIVED from the map rather
+/// than hand-pinned.
+///
+/// It used to hardcode `$5BAE8` / `$5D53A`. Those went stale at sound-pkg-3
+/// (2026-08-10, the 9 -> 12 byte DAC descriptor pushed both bases +0x28) and
+/// stayed stale, which is half of why this target has been red under
+/// `SIGIL_STRICT_GATE=1` since. Since `sound_layout` already derives exactly these
+/// two addresses — and `sound_layout_derives_the_frozen_addresses` in
+/// seam2_layout_derivation.rs is the test that pins them against literals — taking
+/// them from there removes the duplicate hand-maintained copy instead of just
+/// correcting it. One pin, one place.
+fn body_window(layout: &SoundLayout, debug: bool) -> (&'static str, usize) {
     if debug {
-        ("s4.debug.bin", 0x5D53A)
+        ("s4.debug.bin", layout.sfx_bank_lma_debug as usize)
     } else {
-        ("s4.bin", 0x5BAE8)
+        ("s4.bin", layout.sfx_bank_lma_plain as usize)
     }
 }
 
@@ -67,7 +78,8 @@ fn colinked_sfx_head_matches_the_reference_rom_slice_both_shapes() {
         return;
     }
     let aeon = aeon_dir();
-    let win_lma = sound_layout(&aeon).expect("sound_layout derives sfx_win_tab_lma").sfx_win_tab_lma;
+    let layout = sound_layout(&aeon).expect("sound_layout derives the SFX LMAs");
+    let win_lma = layout.sfx_win_tab_lma;
     for (debug, shape) in [(false, "plain"), (true, "debug")] {
         let out = emit_sfx_body_and_head(&aeon, debug).expect("emit_sfx_body_and_head co-links");
         assert_eq!(out.head.len(), SFX_WIN_TAB_LEN, "SfxBlobWinTab is 135 × 2 = 270 bytes");
@@ -88,7 +100,7 @@ fn colinked_sfx_head_matches_the_reference_rom_slice_both_shapes() {
         }
         assert_eq!(out.head, head_ref, "co-linked SfxBlobWinTab must equal the {shape} reference @ $5845F");
 
-        let (rom_name, base) = body_window(debug);
+        let (rom_name, base) = body_window(&layout, debug);
         assert_eq!(rom_name, if debug { "s4.debug.bin" } else { "s4.bin" });
         let body_ref = &rom[base..base + SFX_BODY_LEN];
         assert_eq!(out.body, body_ref, "co-linked sfx_bank body must equal the {shape} reference");

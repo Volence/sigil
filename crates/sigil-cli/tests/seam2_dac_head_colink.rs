@@ -61,7 +61,7 @@ fn colinked_dac_head_matches_the_reference_rom_slice_both_shapes() {
     let aeon = aeon_dir();
     let out = emit_dac_body_and_head(&aeon).expect("emit_dac_body_and_head co-links");
 
-    assert_eq!(out.head.len(), DAC_SAMPLE_TAB_LEN, "DacSampleTable is 10 × 9 = 90 bytes");
+    assert_eq!(out.head.len(), DAC_SAMPLE_TAB_LEN, "DacSampleTable is 10 × 12 + a 3-byte align pad = 123 bytes");
 
     // The head is shape-invariant: gate against BOTH frozen goldens at the same LMA.
     let lma = sound_layout(&aeon).expect("sound_layout derives dac_sample_tab_lma").dac_sample_tab_lma;
