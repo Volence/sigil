@@ -5082,3 +5082,57 @@ full_crc = "137f16a4"
 full_size = 565280
 anchor_crc = "8186befd"
 anchor_end = 0x809b0
+
+[[entry]]
+name = "dust-spindash"
+ab = "aeon@24e7f6a0 — emulator-verified ON SCREEN: charge dust cycles behind the charging ball (screenshot), VRAM 0x7200 streams the charge frames; TEARDOWNS proven: release into roll (dust gone next frame) and character-switch mid-charge B/A/B (Sonic charging -> Tails w/ appendage, no dust remnant, no crash — the exact path a hook-based teardown would double-delete; floor-loss skipped as mechanism-identical: the retirement is a total state poll); all three replay gates PASS on the ORIGINAL fixtures (standing+slide debug, standing release, Replay_Done=$FF) — the fixture's own charge windows avoid all checkpoint instants, measured. Implementation deviations both improvements: PHook keeps its d0-preserving PlayerHook contract via a bracket (the closure gate caught the naive widening), and bne-cross-section spelled beq/.live+jbra (no far conditional)"
+note = "dust plan Task 5: DustSpindash_Spawn (PHook_SpindashEnter) + Main (per-frame parent copy, facing mirror, Deferrable DPLC, STATE-POLL retirement via DustV.player in sst_custom — not parent_ptr)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "da514240"
+full_size = 565776
+anchor_crc = "364caf4e"
+anchor_end = 0x809b0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "02f49561"
+full_size = 449198
+anchor_crc = "90ec0548"
+anchor_end = 0x66010
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "51a1f9ae"
+full_size = 93547
+anchor_crc = "e441d48a"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d9deebfa"
+full_size = 97728
+anchor_crc = "0ba20c19"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "d466d7d7"
+full_size = 514670
+anchor_crc = "25b92c72"
+anchor_end = 0x7da6e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "b0eef405"
+full_size = 550962
+anchor_crc = "58ae4d08"
+anchor_end = 0x7eaf0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "51e8bec9"
+full_size = 565370
+anchor_crc = "aa4b958c"
+anchor_end = 0x809b0
