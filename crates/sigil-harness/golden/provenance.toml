@@ -5136,3 +5136,57 @@ full_crc = "51e8bec9"
 full_size = 565370
 anchor_crc = "aa4b958c"
 anchor_end = 0x809b0
+
+[[entry]]
+name = "dust-tails-lift"
+ab = "aeon@fb9d8b0b — user-reported (playing Tails): the charge cloud floated detached from his ball. Root cause: donor mappings authored against Sonic's standing radius 19; Tails stands at 15, so the raw origin copy sank the cloud 4 px into the floor. Fix derives the lift from the record per frame (ref − radius: 0 Sonic / 4 Tails, S3K's $38-flag parity), ensure pins the reference to PLAYER_Y_RADIUS. Emulator-verified as TAILS: charge cloud attached to the ball on the ground line, skid puffs correctly seated at his feet; standing replay gate PASS on the original fixture (Sonic arithmetic unchanged — a sub of 0)"
+note = "dust: per-character ground-line lift for the charge follower; Tails' skid puffs were already correct via the Task-4 record derivation"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "e49f887a"
+full_size = 565776
+anchor_crc = "aafd7095"
+anchor_end = 0x809b0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "e9052584"
+full_size = 449230
+anchor_crc = "910604d5"
+anchor_end = 0x66030
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "51a1f9ae"
+full_size = 93547
+anchor_crc = "e441d48a"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d9deebfa"
+full_size = 97728
+anchor_crc = "0ba20c19"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "50a7f0b9"
+full_size = 514670
+anchor_crc = "755792cb"
+anchor_end = 0x7da6e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "a48412e3"
+full_size = 550962
+anchor_crc = "24474363"
+anchor_end = 0x7eaf0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "0bc380f1"
+full_size = 565370
+anchor_crc = "efb1a401"
+anchor_end = 0x809b0
