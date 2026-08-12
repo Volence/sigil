@@ -11,12 +11,16 @@
 # assembled_anchor=4fd503e7
 # assembled_end=0x80998
 # labels=86
-Ani_Particle 0x26f00
-Ani_Particle_End 0x26f08
-Ani_Sonic 0x26d62
-Ani_Sonic_End 0x26de8
-Ani_Tails 0x26df0
-Ani_Tails_End 0x26ef2
+# HAND RULING (dust-effect Task 3, 2026-08-11): the Ani_Sonic..Ani_Particle run shifted
+# +0xC30 and HeightMaps +0xC50 for the inserted dust_data + dust_anims sections (sound-on:
+# the $48000/$58000 anchors absorb it before the tail). Transient until the post-verification
+# refreeze re-derives this file exactly (objtest-gate precedent, 2026-08-05).
+Ani_Particle 0x27b30
+Ani_Particle_End 0x27b38
+Ani_Sonic 0x27992
+Ani_Sonic_End 0x27a18
+Ani_Tails 0x27a20
+Ani_Tails_End 0x27b22
 AnimateSprite 0x3b30
 BG_Init 0x8780
 BgAnim_Init 0x8860
@@ -44,7 +48,7 @@ GameState_OJZScroll_Init 0x7f064
 GameState_ObjectTest_Init 0x7ecd0
 GetSineCosine 0x2a50
 HBlank_Install 0x2460
-HeightMaps 0x26f08
+HeightMaps 0x27b58
 InitObjectRAM 0x2ef0
 InitSpriteSystem 0x3640
 Init_DMA_Queue 0x1cda

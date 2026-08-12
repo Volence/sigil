@@ -11,17 +11,22 @@
 # assembled_anchor=d10610d1
 # assembled_end=0x652f0
 # labels=68
-Ani_Sonic 0x26512
-Ani_Sonic_End 0x26598
-Ani_Tails 0x265a0
-Ani_Tails_End 0x266a2
+# HAND RULING (dust-effect Task 3, 2026-08-11): the Ani_Sonic..Ani_Tails run shifted +0xC30
+# and EVERYTHING from HeightMaps to EndOfRom +0xC50 for the inserted dust_data + dust_anims
+# sections — sound-OFF has no $48000/$58000 anchors, so the run is contiguous to the ROM end.
+# Transient until the post-verification refreeze re-derives this file exactly (objtest-gate
+# precedent, 2026-08-05).
+Ani_Sonic 0x27142
+Ani_Sonic_End 0x271c8
+Ani_Tails 0x271d0
+Ani_Tails_End 0x272d2
 AnimateSprite 0x1b4a
 BG_Init 0x5620
 BgAnim_Init 0x5700
 BgAnim_Table 0x264e0
 BootData 0x396
 BootData_End 0x406
-BusError 0x64240
+BusError 0x64e90
 Camera_Init 0x4678
 CharDef_Sonic 0x10e60
 CharDef_Tails 0x10e90
@@ -31,20 +36,20 @@ Collected_Init 0x20a0
 Collision_GetType 0x3d10
 Collision_ProbeDown 0x3d78
 DeformTable_Zero 0x110d0
-EndOfRom 0x652f0
+EndOfRom 0x65f40
 EntryPoint 0x200
 GameLoop 0xcc0
-GameState_OJZScroll_Init 0x63a90
+GameState_OJZScroll_Init 0x646e0
 GetSineCosine 0xf90
 HBlank_Install 0xb60
-HeightMaps 0x266b0
+HeightMaps 0x27300
 InitObjectRAM 0x1434
 InitSpriteSystem 0x1730
 Init_DMA_Queue 0x452
 Init_SpriteTable 0x780
 Level_LoadArt 0x4e30
 Load_Object 0x2c80
-Map_Tails 0x42b30
+Map_Tails 0x43780
 Map_TestObj 0x264e2
 Map_TestObj_End 0x26512
 OJZ_Act1_Descriptor 0x14c74
@@ -65,7 +70,7 @@ Plane_Buffer_Reset 0x2d08
 Player_Init 0x10002
 PopulateSpawnedPieceCount 0x2990
 Read_Controllers 0xba8
-Replay_OJZ_Fixture 0x63fdc
+Replay_OJZ_Fixture 0x64c2c
 RingBuffer_Add 0x1ee0
 S4LZ_DecompressDict 0xe20
 Section_Init 0x4270

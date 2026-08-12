@@ -11,8 +11,12 @@
 # assembled_anchor=f34ff422
 # assembled_end=0x7da5e
 # labels=68
-Ani_Sonic 0x26580
-Ani_Tails 0x26606
+# HAND RULING (dust-effect Task 3, 2026-08-11): Ani_Sonic/Ani_Tails shifted +0xC30 and
+# HeightMaps +0xC50 for the inserted dust_data + dust_anims sections (sound-on: the
+# $48000/$58000 anchors absorb it before the tail). Transient until the post-verification
+# refreeze re-derives this file exactly (objtest-gate precedent, 2026-08-05).
+Ani_Sonic 0x271b0
+Ani_Tails 0x27236
 AnimateSprite 0x33b0
 BG_Init 0x6eb0
 BgAnim_Init 0x6f90
@@ -35,7 +39,7 @@ GameLoop 0x250e
 GameState_OJZScroll_Init 0x7d280
 GetSineCosine 0x27f0
 HBlank_Install 0x23b0
-HeightMaps 0x26708
+HeightMaps 0x27358
 InitObjectRAM 0x2c90
 InitSpriteSystem 0x2f90
 Init_DMA_Queue 0x1c4a
