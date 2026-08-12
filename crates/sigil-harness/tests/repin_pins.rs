@@ -539,8 +539,21 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // that instead of assuming contiguity, which is what makes the emitted pointers
     // agree with the placement. Without that fix this parcel shipped every SFX
     // pointer 8 bytes short.
-    assert_eq!(pins::ASSEMBLED_LEN, 0x7EAE0); // +0x20F60 tails-data (Map_Tails exiled to the ROM tail) // +8 character-dispatch-c1 (0x50 of player growth, repacked past the sound bank) // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x80998); // +4 tails-appendage (the DEBUG-only jmp abs.l tail call) // -0x10 tails-flight (bank absorbs flight; ojz harness shrank) // +0xC4 tails-character (DEBUG-only hotkey; plain unmoved) // +0x20F60 tails-data (same exile) // +0x10 character-dispatch-c1 (0xB0 of player growth, repacked past the sound bank) // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight
+    //   `dust-data` (2026-08-11, dust-effect Task 3): two new DATA sections —
+    // dust_data (0xBDA: mappings x2 + charge DPLC + the 88-tile art blob) after
+    // Map_TestObj, and dust_anims (0x14: the charge loop + puff one-shot) after
+    // Ani_Particle — plus ojz_scroll_test's resident puff-block DMA (+0x14 plain /
+    // +0x18 debug). The ~3 KB data insertion slides the collision/character run
+    // (SONIC_ANIMS.. COLLISION_DATA, the +0xBDA..+0xC00 family in the repin diff)
+    // but is ABSORBED by the fixed $48000 dac_banks anchor, so neither total sees
+    // it. What the totals DO see is the ojz_scroll_test growth, which sits past the
+    // sound banks: plain +0x10 after quantization, debug +0x18. The insertion
+    // overran the packer's 0x400 island margin (one section growing 0xBDA), so this
+    // parcel took the objtest-gate HAND RULING: Ani_Sonic/Ani_Tails/Ani_Particle/
+    // HeightMaps hand-shifted +0xC30/+0xC50 in the canonical frozen tables, exact
+    // values re-derived by the post-verification refreeze.
+    assert_eq!(pins::ASSEMBLED_LEN, 0x7EAF0); // +0x20F60 tails-data (Map_Tails exiled to the ROM tail) // +8 character-dispatch-c1 (0x50 of player growth, repacked past the sound bank) // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x10 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x809B0); // +4 tails-appendage (the DEBUG-only jmp abs.l tail call) // -0x10 tails-flight (bank absorbs flight; ojz harness shrank) // +0xC4 tails-character (DEBUG-only hotkey; plain unmoved) // +0x20F60 tails-data (same exile) // +0x10 character-dispatch-c1 (0xB0 of player growth, repacked past the sound bank) // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x18 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the

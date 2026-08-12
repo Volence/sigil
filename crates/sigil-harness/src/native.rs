@@ -407,6 +407,15 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // (Map_TestObj word-offset table + 3 frame records), authored via the
         // `offsets` construct in games.sonic4.data.mappings.test_mappings.
         m!("games.sonic4.test_mappings", "test_mappings", pins::TEST_MAPPINGS),
+        // Dust sprite data (dust_data.emp, dust-effect Task 3): mappings x2, the
+        // charge DPLC, and the 88-tile art blob whose tail 16 tiles are the
+        // resident puff block. Placed right after test_mappings per map.toml
+        // `order` (2816 B of art fits the data region's headroom, so unlike
+        // Tails' 132 KB it needs no ROM-tail exile). Real pin, not DUMMY_REGION —
+        // same reason as `tails_data`: the `sonic4_pinned_profile` bootstrap
+        // reads region bases, and a placeholder collapses the section onto base 0
+        // where it collides with `vectors` (failure chain 89).
+        m!("games.sonic4.dust_data", "dust_data", pins::DUST_DATA),
         m!("games.sonic4.sonic_anims", "sonic_anims", pins::SONIC_ANIMS),
         // Character-dispatch C1 task 5: the Tails animation scripts
         // (tails_anims.emp) — `Ani_Tails` + `Ani_TailsAppendage`, both indexed by
@@ -418,6 +427,13 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // PinnedBaked probe) — the `characters` failure chain 89 root-caused.
         m!("games.sonic4.tails_anims", "tails_anims", pins::TAILS_ANIMS),
         // particle_anims: DEBUG-only below (sole consumer test_particle is).
+        // Dust animation scripts (dust_anims.emp, dust-effect Task 3): the charge
+        // loop + the puff one-shot. Sits right after particle_anims per map.toml
+        // `order` (union; in plain, where Ani_Particle is absent, it follows
+        // tails_anims directly). BOTH shapes — the dust objects are shipped
+        // content, unlike the debug-only particle scripts. Real pin, not
+        // DUMMY_REGION — same reason as `tails_anims` (failure chain 89).
+        m!("games.sonic4.dust_anims", "dust_anims", pins::DUST_ANIMS),
         // Parcel K3 run A: the OJZ act1 interior island HEAD — the contiguous run
         // BEFORE the descriptor. Two native `.emp` sections (both generator-emitted):
         //   entity_data  — the 9-section type tables / object placements / ring lists

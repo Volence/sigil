@@ -572,15 +572,28 @@ gate = "SIGIL_EMP_PARALLAX_CONFIGS"
 tests = ["parallax_configs_port"]
 
 # conv-h #35 — the test-object sprite mapping index (Map_TestObj word-offset
-# table + 3 frame records). END = the next section head (Ani_Sonic, the native
-# sonic_anims region base) — the end-is-next-placement precedent. The Map_TestObj
-# LABEL pin (below) still serves objdef_port's cross-seam map pointer.
+# table + 3 frame records). END = the next section head — the end-is-next-placement
+# precedent; since the dust parcel that is `Map_DustSpindash` (dust_data), no longer
+# `Ani_Sonic`. The Map_TestObj LABEL pin (below) still serves objdef_port's
+# cross-seam map pointer.
 [[region]]
 name = "test_mappings"
 start = "Map_TestObj"
-end = "Ani_Sonic"
+end = "Map_DustSpindash"
 gate = "SIGIL_EMP_TEST_MAPPINGS"
 tests = ["test_mappings_port"]
+
+# Dust sprite data (dust_data.emp): mappings x2, the charge DPLC, and the 88-tile
+# art blob whose tail 16 tiles are the resident puff block. Placed right after
+# test_mappings per map.toml `order`. Section-END anchor (the synthesized
+# `<head>_End` marker) rather than the next head, so the region's span stays its
+# own regardless of what packs after it. New content, not a port — no port test
+# consumes it yet.
+[[region]]
+name = "dust_data"
+start = "Map_DustSpindash"
+end = "Map_DustSpindash_End"
+gate = "SIGIL_EMP_DUST_DATA"
 
 [[region]]
 name = "sonic_anims"
@@ -624,10 +637,23 @@ start = "Ani_Particle"
 end = "Ani_Particle_End"
 # objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
 debug_only = true
-plain_anchor = "HeightMaps"
+# plain next placement: was HeightMaps; the dust parcel put Ani_DustSpindash
+# (dust_anims, both shapes) between this region and HeightMaps.
+plain_anchor = "Ani_DustSpindash"
 gate = "SIGIL_EMP_PARTICLE_ANIMS"
 # test_objects_port pins Ani_Particle (= this region's base) as an anim table.
 tests = ["particle_anims_port", "test_objects_port"]
+
+# Dust animation scripts (dust_anims.emp) — the charge loop + the puff one-shot.
+# Placed right after particle_anims per map.toml `order` (union; in plain, where
+# Ani_Particle is absent, it follows tails_anims directly). Section-END anchor
+# (the synthesized `<head>_End` marker) covers both tables. New content, not a
+# port — no port test consumes it yet.
+[[region]]
+name = "dust_anims"
+start = "Ani_DustSpindash"
+end = "Ani_DustSpindash_End"
+gate = "SIGIL_EMP_DUST_ANIMS"
 
 # Parcel K3 run A — the OJZ act1 interior-island HEAD, two native `.emp` sections
 # BEFORE the descriptor. No gate: no AS twin (entity_data.asm + the pool include +
