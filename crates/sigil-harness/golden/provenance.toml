@@ -5028,3 +5028,57 @@ full_crc = "f67f8f87"
 full_size = 565194
 anchor_crc = "0ef30029"
 anchor_end = 0x809b0
+
+[[entry]]
+name = "dust-puff"
+ab = "aeon@26344203 — emulator-verified ON SCREEN: skid dust spawns on the arm frame and every 4 frames, multiple puffs at DIFFERENT animation stages coexisting (the resident block's purpose), captured mid-scroll; all three replay gates PASS on the ORIGINAL fixtures (standing+slide debug, standing release, Replay_Done=$FF) — a probe run additionally proved every checkpoint hash byte-identical to pre-dust, so dust is fully hash-neutral for these streams. Ops note for the record: an earlier desync at OFF-GRID tick 1576 was a stale Replay_Ptr (the fixture moved +0x18 with the dust insertion; the gate was armed with the old address) — an off-grid desync tick is the signature of a MISARMED pointer, not a hash mismatch. PlayerBlock stride 18->20 (dust_timer + even-pad); 3 game-RAM pins +4; implementer caught a plan bug (AllocEffect clobbers d0 = the plan's x_pos source; banked in d2)"
+note = "dust plan Task 4: DustPuff_Spawn/Main (fire-and-forget, band 2, resident art = zero DMA for life) + Dust_Tick cadence off skid_latch in Player_Display + the PlayerBlock cadence byte"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "67345c23"
+full_size = 565684
+anchor_crc = "413bd5c2"
+anchor_end = 0x809b0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "fb125344"
+full_size = 448948
+anchor_crc = "47570052"
+anchor_end = 0x65f70
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "51a1f9ae"
+full_size = 93547
+anchor_crc = "e441d48a"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d9deebfa"
+full_size = 97728
+anchor_crc = "0ba20c19"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "8052c79a"
+full_size = 514670
+anchor_crc = "d20fc638"
+anchor_end = 0x7da6e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "626641ec"
+full_size = 550872
+anchor_crc = "c8f808e6"
+anchor_end = 0x7eaf0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "137f16a4"
+full_size = 565280
+anchor_crc = "8186befd"
+anchor_end = 0x809b0
