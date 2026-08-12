@@ -4920,3 +4920,57 @@ full_crc = "c24d0d03"
 full_size = 565054
 anchor_crc = "9542efb0"
 anchor_end = 0x80998
+
+[[entry]]
+name = "vram-t0-carve"
+ab = "aeon@c51a4ff9 — ALL THREE replay gates PASS on the UNTOUCHED fixtures (standing+slide debug, standing release, Replay_Done=$FF, no desync/fault): the layout-proof hash + PAGE_FRAMES_MAX doing their job on the registry's first layout change. ROM lengths unchanged (in-place PAGE_FRAMES immediates), repin no-op (zero pins moved), RAM byte-identical. The generated authority ensure fired LIVE during the parcel (demo built against the stale 960 and failed by name until its contract followed). Map diff: pool 960->896, dust windows 896/912, 36 spare — docs/generated/vram-map-sonic4.md"
+note = "VRAM linker T0 complete: declared contracts (vram.toml x2), deterministic generator (22 tests), byte-identical verbatim capture, Python-mirror collapse (the four copies of 448), then the dust carve as the first deliberate change"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "97f31567"
+full_size = 565458
+anchor_crc = "4fd503e7"
+anchor_end = 0x80998
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "76ee1473"
+full_size = 445546
+anchor_crc = "d10610d1"
+anchor_end = 0x652f0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "51a1f9ae"
+full_size = 93547
+anchor_crc = "e441d48a"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d9deebfa"
+full_size = 97728
+anchor_crc = "0ba20c19"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "ab548e07"
+full_size = 514654
+anchor_crc = "f34ff422"
+anchor_end = 0x7da5e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "effd3c58"
+full_size = 550656
+anchor_crc = "65e755e2"
+anchor_end = 0x7eae0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "6961f402"
+full_size = 565054
+anchor_crc = "5cabb9b4"
+anchor_end = 0x80998
