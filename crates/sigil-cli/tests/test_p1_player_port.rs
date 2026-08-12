@@ -436,6 +436,13 @@ struct PcShape {
     /// bug005 H1 follow-ups: animate.emp's RefreshSpritePieceCount, now called
     /// cross-module by player_common (animate base + REFRESH_OFF per shape).
     refresh_spc: u32,
+    /// dust Task 4/5: Player_Display calls Dust_Tick (the skid-dust cadence);
+    /// PHook_SpindashEnter calls DustSpindash_Spawn (the charge-dust follower).
+    /// Both live in the dust_spindash section — Dust_Tick IS its start label
+    /// (DUST_SPINDASH region base per shape); the spawn proc sits at an interior
+    /// offset and rides its own DUST_SPINDASH_SPAWN symbol pin.
+    dust_tick: u32,
+    dustspindash_spawn: u32,
     /// bug005: player_common gained `if DEBUG == 1 { assert.w … }` (the
     /// BoundsInit never-ran net), so the module now takes the DEBUG define and
     /// the debug shape carries the MDDBG__* error-handler seams.
@@ -478,6 +485,8 @@ const PC_PLAIN: PcShape = PcShape {
     cheat_flags: pins::CHEAT_FLAGS.plain,
     player_bound_bottom: pins::PLAYER_BOUND_BOTTOM.plain,
     refresh_spc: pins::ANIMATE.plain_base + pins::REFRESH_OFF.plain as u32,
+    dust_tick: pins::DUST_SPINDASH.plain_base,
+    dustspindash_spawn: pins::DUST_SPINDASH_SPAWN.plain,
     debug: false,
     base: pins::PLAYER_COMMON.plain_base,
     len: pins::PLAYER_COMMON.plain_len,
@@ -516,6 +525,8 @@ const PC_DEBUG: PcShape = PcShape {
     cheat_flags: pins::CHEAT_FLAGS.debug,
     player_bound_bottom: pins::PLAYER_BOUND_BOTTOM.debug,
     refresh_spc: pins::ANIMATE.debug_base + pins::REFRESH_OFF.debug as u32,
+    dust_tick: pins::DUST_SPINDASH.debug_base,
+    dustspindash_spawn: pins::DUST_SPINDASH_SPAWN.debug,
     debug: true,
     base: pins::PLAYER_COMMON.debug_base,
     len: pins::PLAYER_COMMON.debug_len,
@@ -611,6 +622,12 @@ fn compile_player_common(
         // player_common call animate.emp's RefreshSpritePieceCount cross-module
         // (was intra-module in animate only). VMA = animate base + REFRESH_OFF.
         as_label_at("RefreshSpritePieceCount", shape.refresh_spc),
+        // dust Task 4/5: Player_Display calls Dust_Tick; PHook_SpindashEnter
+        // calls DustSpindash_Spawn. Dust_Tick heads the dust_spindash section
+        // (= DUST_SPINDASH region base); the spawn proc is interior, pinned as
+        // DUST_SPINDASH_SPAWN.
+        as_label_at("Dust_Tick", shape.dust_tick),
+        as_label_at("DustSpindash_Spawn", shape.dustspindash_spawn),
     ];
     if shape.debug {
         // DEBUG-only: the BoundsInit never-ran assert.w expansion jsr/jmps these

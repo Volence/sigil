@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 88 regions, 348 symbols, 7 offsets
+//! [provenance] 88 regions, 349 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1354,6 +1354,9 @@ pub const PLAYER_BOUND_RIGHT: Pin = Pin { plain: 0xFFFFB4C4, debug: 0xFFFFDD5A }
 
 /// `Player_Bound_Bottom`. tests: test_p1_player_port
 pub const PLAYER_BOUND_BOTTOM: Pin = Pin { plain: 0xFFFFB4C6, debug: 0xFFFFDD5C };
+
+/// `DustSpindash_Spawn`. tests: test_p1_player_port
+pub const DUST_SPINDASH_SPAWN: Pin = Pin { plain: 0x110F8, debug: 0x11270 };
 
 // ── Region-relative offsets (manifest order) ──
 

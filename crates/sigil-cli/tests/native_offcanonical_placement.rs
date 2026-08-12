@@ -308,16 +308,39 @@ fn config_b_doctored_size_table_breaks_the_build() {
     // table with one entry per test object, not per animation), so its end abuts
     // `Ani_Sonic` exactly and stays put across anim churn. Same property under
     // test; a predecessor that does not move when animations do.
+    // dust (2026-08-11, aeon 6a2f26f2, refreeze chains 98-99): the precondition
+    // fired a THIRD time, but this time the probe itself is still sound — the
+    // dust sprite-data section (head `Map_DustSpindash`, per map.toml order
+    // Map_TestObj -> Map_DustSpindash -> Ani_Sonic) landed between the pair.
+    // `Map_DustSpindash` is NOT a boundary key (the frozen key set is inherited
+    // from the committed table; the chainer doesn't need one for it), so the
+    // table alone can no longer witness the abutment by key equality. The
+    // section's image is the four generated dust blobs back-to-back
+    // (map_dust_spindash + map_dust_puff + dplc_dust + art_dust = 0xBDA today),
+    // and it fills the hole EXACTLY — `Ani_Sonic` still abuts, one section
+    // later. The witness therefore adds the MEASURED blob lengths from the same
+    // aeon tree the build embeds: it tracks dust-art regeneration instead of
+    // rotting on it, and any padding/reorder between the pair still fails loud.
     let inert = "Ani_Sonic";
     let inert_pred_end = "Map_TestObj_End";
+    let dust_data_len: u32 = ["map_dust_spindash.bin", "map_dust_puff.bin", "dplc_dust.bin", "art_dust.bin"]
+        .iter()
+        .map(|f| {
+            let p = aeon.join("games/sonic4/data/generated/dust").join(f);
+            std::fs::metadata(&p)
+                .unwrap_or_else(|e| panic!("t24(b) precondition: dust blob {} unreadable: {e}", p.display()))
+                .len() as u32
+        })
+        .sum();
     if let native::SizeSource::Frozen(t) = &inert_profile.size_source {
         let head = *t.get(inert).unwrap_or_else(|| panic!("{inert} not in table"));
         let prev = *t.get(inert_pred_end).unwrap_or_else(|| panic!("{inert_pred_end} not in table"));
         assert_eq!(
-            head, prev,
+            head,
+            prev + dust_data_len,
             "t24(b) precondition: `{inert}` ({head:#x}) no longer abuts `{inert_pred_end}` \
-             ({prev:#x}) in the frozen table — the freeze shifted the layout; choose a new \
-             contiguous probe entry"
+             ({prev:#x}) + the dust_data image ({dust_data_len:#x}) in the frozen table — \
+             the freeze shifted the layout; choose a new contiguous probe entry"
         );
     }
     // The doctoring delta must PRESERVE the entry's inferred alignment class:

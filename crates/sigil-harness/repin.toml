@@ -2710,3 +2710,13 @@ tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_Bound_Bottom"
 tests = ["test_p1_player_port"]
+# dust Task 4/5 (aeon 26344203 / 24e7f6a0): player_common calls INTO the
+# dust_spindash section — Player_Display calls Dust_Tick (the skid-dust cadence,
+# Task 4) and PHook_SpindashEnter calls DustSpindash_Spawn (the charge-dust
+# follower, Task 5). Dust_Tick is the dust_spindash REGION's start label, so it
+# rides DUST_SPINDASH.plain_base/.debug_base and needs no symbol pin of its own;
+# DustSpindash_Spawn sits at an interior offset, so the port test's synthetic
+# anchor needs this pin.
+[[symbol]]
+name = "DustSpindash_Spawn"
+tests = ["test_p1_player_port"]

@@ -128,7 +128,15 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // intra-region offset is 0x2E6 in BOTH shapes, unchanged from chain 89 — this
     // label still moves only with its region base, which is the property the row
     // is here to witness. Per-shape pair, hand-updated (unpinned on purpose).
-    ("Ground_Move_Cap", 0x107F2, 0x10912),
+    // `dust` (2026-08-11, aeon 26344203/24e7f6a0, chains 99-100): plain 0x107F2 ->
+    // 0x10802, debug 0x10912 -> 0x10922 — +0x10 in BOTH shapes. Tasks 4+5 grew
+    // player_common ahead of player_ground (Player_Display's `jbsr Dust_Tick` +
+    // PHook_SpindashEnter's `jbsr DustSpindash_Spawn`): 0x4FE -> 0x50E plain,
+    // 0x61E -> 0x62E debug, sliding player_ground's base 0x10500 -> 0x10510 /
+    // 0x10620 -> 0x10630. The intra-region offset holds at 0x2F2 in BOTH shapes
+    // (unchanged since tails-flight) — still shape-invariant, so the pair was
+    // re-derived from base + 0x2F2 rather than guessed.
+    ("Ground_Move_Cap", 0x10802, 0x10922),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)
