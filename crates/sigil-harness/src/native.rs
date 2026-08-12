@@ -384,6 +384,19 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // DOES, and the placeholder collapses the section onto base 0 where it
         // collides with `vectors` (failure chain 89).
         m!("games.sonic4.tails_appendage", "tails_appendage", pins::TAILS_APPENDAGE),
+        // Dust-effect Task 4: the skid dust. dust_puff.emp is the fire-and-forget
+        // puff object (world-coord spawn + animate/draw Main — resident art, so
+        // it queues no DMA in its whole life); dust_spindash.emp carries
+        // Dust_Tick, the per-frame skid cadence Player_Display calls (Task 5
+        // adds the charge-dust follower to the same section). Player-side game
+        // content, placed right after tails_appendage per map.toml `order` —
+        // tails_appendage's end anchor moves to DustPuff_Spawn. Real pins, not
+        // DUMMY_REGION — same reason as `tails_appendage` (the
+        // `sonic4_pinned_profile` bootstrap reads region bases; a placeholder
+        // collapses the section onto base 0 where it collides with `vectors`,
+        // failure chain 89).
+        m!("games.sonic4.dust_puff", "dust_puff", pins::DUST_PUFF),
+        m!("games.sonic4.dust_spindash", "dust_spindash", pins::DUST_SPINDASH),
         // ── Game objects ──
         // test_player + test_enemy fully flipped (conv-d #48/#47): both .asm deleted.
         // test_player.emp owns TPlayerV; test_animated.emp owns DplcV; STUB_FLOOR_Y

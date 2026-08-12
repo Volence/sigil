@@ -2491,18 +2491,40 @@ tests = ["test_p1_player_port"]
 # tails_appendage (character-dispatch C1) — Tails' twin tails as their own child
 # object: the reconcile the character switch calls, the effect-pool spawn, and the
 # per-frame parent copy + DPLC + draw. Tails-owned GAME content, so it sits with
-# the character records rather than among the test objects, and it is the last
-# player-side content before test_static — which is why `characters`' end anchor
-# moves here. Pinned rather than left on DUMMY_REGION for the reason `tails` /
-# `characters` / `player_fly` all carry real pins: the `sonic4_pinned_profile`
-# bootstrap READS region bases, and a placeholder collapses the section onto base
-# 0 where it collides with `vectors`.
+# the character records rather than among the test objects. Pinned rather than
+# left on DUMMY_REGION for the reason `tails` / `characters` / `player_fly` all
+# carry real pins: the `sonic4_pinned_profile` bootstrap READS region bases, and
+# a placeholder collapses the section onto base 0 where it collides with
+# `vectors`. End anchor moved TestStatic_Main -> DustPuff_Spawn when the dust
+# objects took the slot after it (dust-effect Task 4).
 [[region]]
 name = "tails_appendage"
 start = "TailsAppendage_Refresh"
-end = "TestStatic_Main"
+end = "DustPuff_Spawn"
 gate = "SIGIL_EMP_TAILS_APPENDAGE"
 tests = ["test_p1_player_port"]
+
+# dust_puff (dust-effect Task 4) — the fire-and-forget skid puff object: the
+# world-coord spawn + the animate/draw Main (resident art, zero DMA). Player-side
+# game content, placed right after tails_appendage per map.toml `order` — which
+# is why tails_appendage's end anchor moves to this head. end-is-next-placement
+# (Dust_Tick heads dust_spindash, both shapes). New content, not a port — no
+# port test consumes it yet.
+[[region]]
+name = "dust_puff"
+start = "DustPuff_Spawn"
+end = "Dust_Tick"
+gate = "SIGIL_EMP_DUST_PUFF"
+
+# dust_spindash (dust-effect Task 4) — Dust_Tick, the per-frame skid-dust
+# cadence called from Player_Display (Task 5 adds the charge-dust follower to
+# this same section). end-is-next-placement (TestStatic_Main is live PLAIN
+# content, both shapes).
+[[region]]
+name = "dust_spindash"
+start = "Dust_Tick"
+end = "TestStatic_Main"
+gate = "SIGIL_EMP_DUST_SPINDASH"
 
 # P2+P3 (tranche 35) — the player state machines. Three per-file object-bank
 # gates; pure code, bank windows shape-invariant. Each region's end anchor is
