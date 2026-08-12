@@ -490,6 +490,9 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("Plane_Buffer_Ptr", pick(pins::PLANE_BUFFER_PTR)),
         ("DMA_Critical", pick(pins::DMA_CRITICAL)),
         ("DMA_Critical_Slot", pick(pins::DMA_CRITICAL_SLOT)),
+        // Effects P1: both VInt paths call the raster re-arm, which lives in hblank —
+        // an outbound cross-seam call target from vblank's standalone re-lower.
+        ("Raster_VBlank", pick(pins::RASTER_V_BLANK)),
         ("Flush_VDP_Shadow", pick(pins::FLUSH_VDP_SHADOW)),
         ("Enqueue_Dirty_Buffers", pick(pins::ENQUEUE_DIRTY_BUFFERS)),
         ("VInt_DrawLevel", pick(pins::V_INT_DRAW_LEVEL)),

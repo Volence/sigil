@@ -5244,3 +5244,165 @@ full_crc = "5f51e251"
 full_size = 706778
 anchor_crc = "e772fdf2"
 anchor_end = 0xa3080
+
+[[entry]]
+name = "effects-p1-raster"
+ab = "oracle: raster split exact at line 120 (zero target px above row 118, full from 120) in two mid-scroll captures; character CRAM line 0 sentinel survives a boundary crossing; both replay fixtures Replay_Done=$FF net-silent — docs/benchmarks/effects-p1/GATE-EVIDENCE.md"
+note = "effects P1: sparse HInt raster tier + per-section palette (lines 1-3)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "d457ec61"
+full_size = 707668
+anchor_crc = "74e12fd6"
+anchor_end = 0xa3080
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "5c24e3ce"
+full_size = 591689
+anchor_crc = "b977cd53"
+anchor_end = 0x88930
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "99f8040d"
+full_size = 94022
+anchor_crc = "38c7f586"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "3fb491ad"
+full_size = 98202
+anchor_crc = "49be8862"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "2ad2efb2"
+full_size = 655678
+anchor_crc = "bd2d3506"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "99b67dd8"
+full_size = 692868
+anchor_crc = "b09d0ce5"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "a3f4f13e"
+full_size = 707280
+anchor_crc = "7a1a3c75"
+anchor_end = 0xa3080
+
+[[entry]]
+name = "effects-p1-raster"
+ab = "oracle: raster split exact at line 120 (zero target px above row 118, full from row 120) in two independent mid-scroll captures, framebuffer pixel-identical across the master rebase; character CRAM line 0 sentinel survives a section crossing; both replay fixtures Replay_Done=$FF net-silent — docs/benchmarks/effects-p1/GATE-EVIDENCE.md"
+note = "effects P1: sparse HInt raster tier + per-section palette (CRAM lines 1-3)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "0a9311b9"
+full_size = 707668
+anchor_crc = "066a6ec5"
+anchor_end = 0xa3080
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "5a0493d6"
+full_size = 591689
+anchor_crc = "57f707b8"
+anchor_end = 0x88930
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "6c86d9ad"
+full_size = 94022
+anchor_crc = "89aef109"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "32ae93c3"
+full_size = 98202
+anchor_crc = "7fe8e4f8"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "14bb9293"
+full_size = 655678
+anchor_crc = "ae49210e"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "6bfe9090"
+full_size = 692868
+anchor_crc = "ef519de4"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "c5505229"
+full_size = 707280
+anchor_crc = "1898964d"
+anchor_end = 0xa3080
+
+[[entry]]
+name = "effects-p1-raster"
+ab = "oracle: dispatcher fires, write is transient (whole-frame A/B vs a wrong pal_dirty_mask), boundary within a couple of lines of the authored 120 (exact line deferred to P2 T4 — art-coverage confound documented); character CRAM line 0 sentinel survives a section crossing; both replay fixtures Replay_Done=$FF net-silent — docs/benchmarks/effects-p1/GATE-EVIDENCE.md"
+note = "effects P1: sparse HInt raster tier + per-section palette (CRAM lines 1-3)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "e36a3521"
+full_size = 707668
+anchor_crc = "5aac071d"
+anchor_end = 0xa3080
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "d7a1fe7a"
+full_size = 591689
+anchor_crc = "a6aa634c"
+anchor_end = 0x88930
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "ef2b3408"
+full_size = 94022
+anchor_crc = "d25f9650"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "4f1ca00b"
+full_size = 98202
+anchor_crc = "01113d1b"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "79cda3ed"
+full_size = 655678
+anchor_crc = "979e58e8"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "06039814"
+full_size = 692868
+anchor_crc = "ceed0771"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "1d402453"
+full_size = 707280
+anchor_crc = "445eff95"
+anchor_end = 0xa3080

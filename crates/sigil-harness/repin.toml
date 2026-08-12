@@ -2187,7 +2187,9 @@ tests = ["buffers_port"]
 
 [[symbol]]
 name = "Palette_Dirty"
-tests = ["buffers_port"]
+# hblank_port joins buffers_port with effects P1: the raster dispatcher re-asserts
+# the program's pal_dirty_mask into this every frame.
+tests = ["buffers_port", "hblank_port"]
 
 [[symbol]]
 name = "Parallax_Active_Config"
@@ -2729,6 +2731,53 @@ tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Pal_SonicTails"
 tests = ["test_p1_player_port"]
+# Effects P1: the two gate fixtures act_descriptor now names per-section —
+# OJZ_TestRaster into sec_raster_table (section 1) and OJZ_TestPal into sec_pal
+# (section 2). Both live in `parallax_configs` (the game-side effects library), so
+# from act_descriptor's side they are cross-seam DATA operands, and the isolated
+# act_descriptor re-lower has to be given them or its link fails unresolved.
+# Same class as Pal_SonicTails above: a caller module reaching a data symbol that
+# lives in a different region.
+[[symbol]]
+name = "OJZ_TestRaster"
+tests = ["act_descriptor_port"]
+[[symbol]]
+name = "OJZ_TestPal"
+tests = ["act_descriptor_port"]
+# Effects P1: the raster dispatcher's RAM working set + the palette dirty mask,
+# read by the sparse dispatcher now living in hblank.emp. They are engine.ram
+# labels, so from hblank's standalone re-lower they are inbound cross-seam RAM
+# operands and hblank_port has to be given their true per-shape VMAs.
+[[symbol]]
+name = "Raster_Program"
+tests = ["hblank_port"]
+[[symbol]]
+name = "Raster_Cursor"
+tests = ["hblank_port"]
+[[symbol]]
+name = "Raster_Pending"
+tests = ["hblank_port"]
+[[symbol]]
+name = "Raster_Buf_A"
+tests = ["hblank_port"]
+[[symbol]]
+name = "Raster_Active_Buf"
+tests = ["hblank_port"]
+# Effects P1: vblank.emp calls into the dispatcher, so from the game-loop/vblank
+# standalone re-lower Raster_VBlank is an outbound cross-seam CALL target.
+[[symbol]]
+name = "Raster_VBlank"
+tests = ["game_loop_port", "vblank_port", "load_art_port", "boot_port"]
+# Effects P1: Parallax_CheckBoundary is the single place the engine notices a
+# section crossing, so the palette and raster consumers hang off it — outbound
+# cross-seam calls from parallax's standalone re-lower (Palette_LoadSection lives
+# in buffers, Raster_InstallSection in hblank).
+[[symbol]]
+name = "Palette_LoadSection"
+tests = ["parallax_port"]
+[[symbol]]
+name = "Raster_InstallSection"
+tests = ["parallax_port"]
 # C1 (per-slot player working state): the single-global `Player_Phys` row +
 # `Player_Quadrant` + `Player_JumpBuffer` are GONE — folded into a
 # `[PlayerBlock; NUM_PLAYERS]` array whose ONE label is the array base. Every

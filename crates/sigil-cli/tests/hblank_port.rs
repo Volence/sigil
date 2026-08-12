@@ -95,6 +95,13 @@ fn hblank_value_equs() -> Vec<Section> {
     let pairs = [
         ("VDP_Shadow_vdp_mode1", "$00"),
         ("VDP_Shadow_vdp_hint_rate", "$0A"),
+        // Effects P1: the raster dispatcher writes the VDP ports directly. These are
+        // engine.constants values, which the constant harvest turns into LINK
+        // EQUATES rather than comptime constants (see the note in bg_anim.emp), so
+        // prepending constants.emp cannot resolve them — the standalone link has to
+        // be handed the values. Authority: engine/system/constants.emp:400-401.
+        ("VDP_CTRL", "$C00004"),
+        ("VDP_DATA", "$C00000"),
     ];
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
@@ -104,10 +111,20 @@ fn hblank_value_equs() -> Vec<Section> {
 /// differs by shape (it lives at the RAM tail, past the `__DEBUG__` block).
 fn cross_seam_labels(debug: bool) -> Vec<Section> {
     let slot = if debug { pins::H_BLANK_VECTOR_SLOT.debug } else { pins::H_BLANK_VECTOR_SLOT.plain };
-    let labels: [(&str, u32); 3] = [
+    // Effects P1 adds the sparse raster dispatcher's RAM working set. These are
+    // shape-INVARIANT (Raster_State sits in upper_ram ahead of the __DEBUG__ block,
+    // so repin derived identical plain/debug VMAs) — only the vector slot, at the
+    // RAM tail past that block, differs by shape.
+    let labels: [(&str, u32); 9] = [
         ("HBlank_Vector_Slot", slot),
         ("VDP_Shadow_Table", pins::VDP_SHADOW_TABLE.plain),
         ("VDP_Dirty_Mask", pins::VDP_DIRTY_MASK.plain),
+        ("Raster_Program", pins::RASTER_PROGRAM.plain),
+        ("Raster_Cursor", pins::RASTER_CURSOR.plain),
+        ("Raster_Pending", pins::RASTER_PENDING.plain),
+        ("Raster_Buf_A", pins::RASTER_BUF_A.plain),
+        ("Raster_Active_Buf", pins::RASTER_ACTIVE_BUF.plain),
+        ("Palette_Dirty", pins::PALETTE_DIRTY.plain),
     ];
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
     let mut out = Vec::new();
@@ -168,10 +185,37 @@ fn compile_real_file(debug: bool) -> sigil_link::LinkedImage {
         vdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "vdp.emp parse errors: {vdiags:?}"
     );
+    // Effects P1: hblank.emp now also carries the sparse raster dispatcher, whose
+    // Raster_InstallSection reads `Sec.sec_raster_table` and whose handler brackets
+    // with engine.irq's `ints_off`. Prepend those twins too — same shape as
+    // buffers_port, which has prepended engine.structs since it grew its own Sec
+    // consumer.
+    let structs_path = dir.parent().expect("engine/system has a parent").join("structs.emp");
+    let structs_src = std::fs::read_to_string(&structs_path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", structs_path.display()));
+    let (structs_file, sdiags) = parse_str(&structs_src);
+    assert!(
+        sdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "structs.emp parse errors: {sdiags:?}"
+    );
+    let irq_path = dir.parent().expect("engine/system has a parent").join("irq.emp");
+    let irq_src = std::fs::read_to_string(&irq_path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", irq_path.display()));
+    let (irq_file, idiags) = parse_str(&irq_src);
+    assert!(
+        idiags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "irq.emp parse errors: {idiags:?}"
+    );
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
-        items: vdp_file.items.into_iter().chain(main.items).collect(),
+        items: vdp_file
+            .items
+            .into_iter()
+            .chain(structs_file.items)
+            .chain(irq_file.items)
+            .chain(main.items)
+            .collect(),
         docs: main.docs.clone(),
     };
 
