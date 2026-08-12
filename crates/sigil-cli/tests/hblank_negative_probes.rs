@@ -92,8 +92,16 @@ fn map_toml(base: &str) -> String {
 /// (`HBlank_Vector_Slot` at the RAM tail, `VDP_Shadow_Table`, `VDP_Dirty_Mask`),
 /// each `phase`d to its true plain VMA — `hblank_port.rs::cross_seam_labels`.
 fn cross_seam_labels() -> Vec<Section> {
-    let labels: [(&str, u32); 3] = [
+    // Effects P1 adds the raster dispatcher's RAM working set (mirrors
+    // hblank_port.rs::cross_seam_labels).
+    let labels: [(&str, u32); 9] = [
         ("HBlank_Vector_Slot", pins::H_BLANK_VECTOR_SLOT.plain),
+        ("Raster_Program", pins::RASTER_PROGRAM.plain),
+        ("Raster_Cursor", pins::RASTER_CURSOR.plain),
+        ("Raster_Pending", pins::RASTER_PENDING.plain),
+        ("Raster_Buf_A", pins::RASTER_BUF_A.plain),
+        ("Raster_Active_Buf", pins::RASTER_ACTIVE_BUF.plain),
+        ("Palette_Dirty", pins::PALETTE_DIRTY.plain),
         ("VDP_Shadow_Table", pins::VDP_SHADOW_TABLE.plain),
         ("VDP_Dirty_Mask", pins::VDP_DIRTY_MASK.plain),
     ];
@@ -129,10 +137,35 @@ fn place_hblank(src: &str, base: &str) -> Vec<Section> {
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", vdp_path.display()));
     let (vdp_file, vdiags) = parse_str(&vdp_src);
     assert!(vdiags.iter().all(|d| d.level != Level::Error), "vdp.emp parse errors: {vdiags:?}");
+    // Effects P1: hblank.emp also carries the sparse raster dispatcher, which reads
+    // `Sec.sec_raster_table` (engine.structs) and brackets with `ints_off`
+    // (engine.irq). Prepend both twins so the doctored copies lower like the real
+    // file — same additions hblank_port.rs made.
+    let structs_path =
+        hblank_dir().parent().expect("engine/system has a parent").join("structs.emp");
+    let structs_src = std::fs::read_to_string(&structs_path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", structs_path.display()));
+    let (structs_file, sdiags) = parse_str(&structs_src);
+    assert!(
+        sdiags.iter().all(|d| d.level != Level::Error),
+        "structs.emp parse errors: {sdiags:?}"
+    );
+    let irq_path =
+        hblank_dir().parent().expect("engine/system has a parent").join("irq.emp");
+    let irq_src = std::fs::read_to_string(&irq_path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", irq_path.display()));
+    let (irq_file, idiags) = parse_str(&irq_src);
+    assert!(idiags.iter().all(|d| d.level != Level::Error), "irq.emp parse errors: {idiags:?}");
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
-        items: vdp_file.items.into_iter().chain(main.items).collect(),
+        items: vdp_file
+            .items
+            .into_iter()
+            .chain(structs_file.items)
+            .chain(irq_file.items)
+            .chain(main.items)
+            .collect(),
         docs: main.docs.clone(),
     };
     let opts = LowerOptions {
@@ -196,6 +229,14 @@ fn doctored_jsr_register_produces_different_bytes_than_genuine() {
 /// the trampoline's `HBlank_Vector_Slot`/`VDP_*` abs operands to resolve).
 fn link_placed(mut sections: Vec<Section>) -> sigil_link::LinkedImage {
     sections.extend(cross_seam_labels());
+    // Effects P1: the raster dispatcher writes the VDP ports, which are
+    // engine.constants values the harvest turns into LINK EQUATES, so the standalone
+    // link has to be handed their values (hblank_port.rs does the same in its
+    // value-equ table). Authority: engine/system/constants.emp:400-401.
+    sections.extend(sigil_harness::test_support::assemble_equ_pairs(&[
+        ("VDP_CTRL", "$C00004"),
+        ("VDP_DATA", "$C00000"),
+    ]));
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
     sigil_link::link(&resolved, &SymbolTable::new()).unwrap_or_else(|d| panic!("link: {d:?}"))

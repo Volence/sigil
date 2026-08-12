@@ -1151,15 +1151,22 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
     // gate in every shape the ×7 byte bar builds, where the flag has a value.
     // 17 -> 19 for sound-pkg1 (2026-08-09): the new API v2 status reader
     // Sound_ReadStat arrives with its ints_off + z80_stopped capture pair.
+    // 20 since effects P1: Raster_HInt brackets with `ints_off` to raise to IPL 7 for
+    // the duration of its VDP writes (IRQ4 is entered at IPL 4, so IRQ6 can nest and
+    // retarget the VDP address latch mid-op).
     assert_eq!(
         r.context_regions.len(),
-        19,
+        20,
         "the `with` bracket census moved — corpus adoption changed. Update deliberately: {:?}",
         r.context_regions
     );
     // …with a NAMED witness, so an un-adoption that coincidentally preserves the
     // count still fails (the house pattern: pin content, not only cardinality).
-    for witness in [("Read_Controllers", "z80_stopped"), ("Sound_PostByte", "ints_off")] {
+    for witness in [
+        ("Read_Controllers", "z80_stopped"),
+        ("Sound_PostByte", "ints_off"),
+        ("Raster_HInt", "ints_off"),
+    ] {
         assert!(
             r.context_regions
                 .iter()

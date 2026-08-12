@@ -192,6 +192,9 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         ("Init_DMA_Queue", rbase(pins::DMA_QUEUE)),
         ("Init_SpriteTable", rbase(pins::BUFFERS)),
         ("BuildStaticDMA", pick(pins::BUILD_STATIC_DMA)),
+        // Effects P1: both VInt paths call the raster re-arm, which lives in hblank —
+        // an outbound cross-seam call target from vblank's standalone re-lower.
+        ("Raster_VBlank", pick(pins::RASTER_V_BLANK)),
         ("Flush_VDP_Shadow", pick(pins::FLUSH_VDP_SHADOW)),
         ("Sound_Init", pick(pins::SOUND_INIT)),
         ("GameLoop", rbase(pins::GAME_LOOP)),

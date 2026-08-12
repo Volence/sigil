@@ -147,7 +147,12 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
     // −4 (the Parallax_* block, Camera_*, Vscroll_Factor, Hscroll_Buffer). The two
     // VDP_* cells below live at $800A/$801E — BEFORE the deleted pair — so they hold.
     // Camera_X/Y now pin-sourced (they carry the −4 too; matches Current_Act_Ptr style).
-    let table: [(&str, u32, u32); 26] = [
+    let table: [(&str, u32, u32); 28] = [
+        // Effects P1: Parallax_CheckBoundary is the one place the engine notices a
+        // section crossing, so the palette and raster consumers hang off it — two more
+        // cross-module transfer targets (buffers / hblank).
+        ("Palette_LoadSection", pins::PALETTE_LOAD_SECTION.plain, pins::PALETTE_LOAD_SECTION.debug),
+        ("Raster_InstallSection", pins::RASTER_INSTALL_SECTION.plain, pins::RASTER_INSTALL_SECTION.debug),
         // Pin-sourced base + ram.emp-mirror intra-block offsets (input-6button:
         // the third hand-shift of this table killed the literal class — the t24
         // rot rule; the offsets are the block layout this test pins down anyway).
