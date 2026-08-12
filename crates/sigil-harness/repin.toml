@@ -2626,8 +2626,21 @@ tests = ["test_p2_player_states_port"]
 [[region]]
 name = "player_fly"
 start = "PState_Fly"
-end = "CharDef_Sonic"
+end = "PState_Glide"
 gate = "SIGIL_EMP_PLAYER_FLY"
+tests = ["test_p2_player_states_port"]
+
+# player_glide (character-dispatch C4 Task 10) — Knuckles' glide/slide:
+# PSTATE_GLIDE/GLIDEFALL/SLIDE plus Ability_KnuxGlide, the AbilityHook that enters
+# them. The fifth player state file and the last player CODE before the character
+# records, so its end anchor is CharDef_Sonic, which player_fly's used to be.
+# Pinned rather than DUMMY_REGION for the same reason player_fly is (the
+# sonic4_pinned_profile bootstrap reads region bases).
+[[region]]
+name = "player_glide"
+start = "PState_Glide"
+end = "CharDef_Sonic"
+gate = "SIGIL_EMP_PLAYER_GLIDE"
 tests = ["test_p2_player_states_port"]
 
 # P4 (tranche 38) — player_sensors, the collision sensor primitives. Lives in

@@ -144,6 +144,12 @@ pub const D1C_BASELINE: &[(&str, &str, &str)] = &[
     ("Ground_Move_Cap", "Player_SensorWallDir", "d0"),
     // DOCUMENTED FP (edge-blind close) — see calls.rs::destroys_value.
     ("Load_Object", "AllocDynamic", "a1"),
+    // DOCUMENTED FP (Knuckles C4 Task 10): PState_GlideFall stores the capped
+    // gravity value to y_vel BEFORE calling Glide_Collide, so the d0 the analysis
+    // sees "live" across the call is DEAD — the post-call `btst d0` reads
+    // Glide_Collide's PRODUCED flags byte, not the gravity value. Same edge-blind
+    // close as the Air_Collide/Air_WallProbe rows above.
+    ("PState_GlideFall", "Glide_Collide", "d0"),
     ("PState_Spindash", "Player_SensorFloor", "d0"),
     ("PState_Spindash", "Player_SensorFloor", "d1"),
     ("Parallax_Update", "Decode_Factor_A", "d2"),
