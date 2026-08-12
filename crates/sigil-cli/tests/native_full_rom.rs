@@ -136,7 +136,18 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // 0x10620 -> 0x10630. The intra-region offset holds at 0x2F2 in BOTH shapes
     // (unchanged since tails-flight) — still shape-invariant, so the pair was
     // re-derived from base + 0x2F2 rather than guessed.
-    ("Ground_Move_Cap", 0x10802, 0x10922),
+    // `knuckles-def` (2026-08-12, C4 task 9): plain 0x10802 -> 0x10822, debug
+    // 0x10922 -> 0x10942 — +0x20 in BOTH shapes. The per-character CRAM line 0
+    // added ~0x20 to Player_RefreshPhysics (re-load the record, test the pointer,
+    // an eight-long copy loop, the dirty bit), and that proc is in player_common,
+    // ahead of player_ground: the region slides 0x10510 -> 0x10530 plain /
+    // 0x10630 -> 0x10650 debug. Symmetric because the copy is not DEBUG-fenced.
+    // The intra-region offset holds at 0x2F2 in BOTH shapes (unchanged since
+    // tails-flight) — still shape-invariant, which is the property this row exists
+    // to witness, so the pair was re-derived from base + 0x2F2 rather than guessed.
+    // Note this label moved for a reason ENTIRELY separate from the parcel's big
+    // number: the 0x226D0 of Knuckles art lands at the ROM tail, far behind here.
+    ("Ground_Move_Cap", 0x10822, 0x10942),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)

@@ -552,8 +552,31 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // parcel took the objtest-gate HAND RULING: Ani_Sonic/Ani_Tails/Ani_Particle/
     // HeightMaps hand-shifted +0xC30/+0xC50 in the canonical frozen tables, exact
     // values re-derived by the post-verification refreeze.
-    assert_eq!(pins::ASSEMBLED_LEN, 0x7EAF0); // +0x20F60 tails-data (Map_Tails exiled to the ROM tail) // +8 character-dispatch-c1 (0x50 of player growth, repacked past the sound bank) // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x10 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0x809B0); // +4 tails-appendage (the DEBUG-only jmp abs.l tail call) // -0x10 tails-flight (bank absorbs flight; ojz harness shrank) // +0xC4 tails-character (DEBUG-only hotkey; plain unmoved) // +0x20F60 tails-data (same exile) // +0x10 character-dispatch-c1 (0xB0 of player growth, repacked past the sound bank) // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x18 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)
+    //   `knuckles-def` (2026-08-12, C4 task 9): +0x226D0 in BOTH shapes, and the
+    // symmetry is the whole story — this is DATA, none of it DEBUG-fenced. The
+    // knuckles_data section (0x226C8: mappings + DPLC + art + the two CRAM line-0
+    // palettes) takes the SAME ROM-tail exile Map_Tails took, for the same reason:
+    // Art_Sonic ends at $4277E and the dac_banks org anchor sits at $48000, so
+    // there is nowhere near enough headroom for another 137 KB of character art.
+    // It lands directly behind Map_Tails, ahead of the game-state islands, so
+    // everything from the game states onward moves by its aligned span. That is
+    // the second half of the exile this file's tails-data paragraph promised would
+    // get "its next paragraph" when the parked "banks late, data unbounded"
+    // relayout lands — it has not landed, so the exile compounds instead.
+    // The insertion overran the packer's 0x400 island margin in all five sonic4
+    // shapes, so this parcel took the objtest-gate HAND RULING. Each shape's delta
+    // was MEASURED off the placer's own overrun report rather than assumed, which
+    // matters: config_b came out at +0x22890, not +0x226D0, because the sound-OFF
+    // shape has no dac/sound-bank anchor to absorb the run before the tail. Exact
+    // values re-derived by the post-verification refreeze (chain 102), and a
+    // second derive proved a no-op fixpoint.
+    // Note what these totals do NOT show: the +0x20 of player_common growth from
+    // the per-character palette copy. It lands ahead of the fixed $48000 sound
+    // bank, which repacks it away — the same absorption the character-dispatch-c1
+    // paragraph above describes. The only reason these totals move at all is the
+    // ROM-tail art.
+    assert_eq!(pins::ASSEMBLED_LEN, 0xA11C0); // +0x20F60 tails-data (Map_Tails exiled to the ROM tail) // +8 character-dispatch-c1 (0x50 of player growth, repacked past the sound bank) // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x10 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)  // +0x226D0 knuckles-def (Map_Knuckles takes the same ROM-tail exile)
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0xA3080); // +4 tails-appendage (the DEBUG-only jmp abs.l tail call) // -0x10 tails-flight (bank absorbs flight; ojz harness shrank) // +0xC4 tails-character (DEBUG-only hotkey; plain unmoved) // +0x20F60 tails-data (same exile) // +0x10 character-dispatch-c1 (0xB0 of player growth, repacked past the sound bank) // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x18 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)  // +0x226D0 knuckles-def (same exile, same delta — the data is not DEBUG-fenced)
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the

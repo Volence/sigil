@@ -5190,3 +5190,57 @@ full_crc = "0bc380f1"
 full_size = 565370
 anchor_crc = "efb1a401"
 anchor_end = 0x809b0
+
+[[entry]]
+name = "knuckles-def"
+ab = "aeon@a4626d94 — emulator-verified ON SCREEN: the character hotkey resolves Character_ID=2 / Player_Chardef=$11074 (CharDef_Knuckles) and Knuckles renders in HIS OWN colours, running mid-motion, from his own mappings/DPLC/art. The palette ROUND-TRIP is the load-bearing check and it passes: cycling Knuckles -> Sonic restores Sonic to blue, which is exactly the case a cd_palette of 0 on the Sonic/Tails records would have failed (the WIP corrected the handoff on this, and the correction is proven). Both replay gates PASS unchanged as Sonic (standing + slide, Replay_Done=$FF, no fault) — the per-character palette copy sits in Player_RefreshPhysics, off every per-frame path, so Sonic is behaviour-identical. Frozen-table ruling: Knuckles art inserts 0x226C8 ahead of the game-state islands, overrunning the packer's 0x400 island margin in all five sonic4 shapes; each delta was MEASURED off the placer's own overrun report rather than assumed (+0x226D0 for s4/s4_debug/config_a/lean, +0x22890 for config_b, whose sound-off run has no dac anchor to absorb it), and a second derive is a proven no-op fixpoint — which THIS freeze re-derives exactly. repin derived KNUCKLES 0x3C, KNUCKLES_ANIMS 0x130, KNUCKLES_DATA 0x226C8; TAILS 0x30 -> 0x34 is the cd_palette field"
+note = "character-dispatch C4 task 9: the Knuckles record + converted S3K assets + CharacterDef.cd_palette (a per-character CRAM line 0 — his art needs a colour our line 0 lacks, so unlike Tails he cannot be re-indexed), retiring the TEMP roster stub"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "e313d08a"
+full_size = 707164
+anchor_crc = "0180601f"
+anchor_end = 0xa3080
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "857c2dc4"
+full_size = 591042
+anchor_crc = "59c7e4cb"
+anchor_end = 0x888a0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "51a1f9ae"
+full_size = 93547
+anchor_crc = "e441d48a"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d9deebfa"
+full_size = 97728
+anchor_crc = "0ba20c19"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "b59b9d7d"
+full_size = 655678
+anchor_crc = "6acd00e6"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "77a68bbd"
+full_size = 692365
+anchor_crc = "de9b896b"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "5f51e251"
+full_size = 706778
+anchor_crc = "e772fdf2"
+anchor_end = 0xa3080

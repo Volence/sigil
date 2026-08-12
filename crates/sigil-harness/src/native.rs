@@ -354,6 +354,17 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // with `vectors` (the soundbankhead_port PinnedBaked probe — failure chain
         // 89).
         m!("games.sonic4.tails", "tails", pins::TAILS),
+        // Character-dispatch C4 task 9: the Knuckles character RECORD
+        // (knuckles.emp) — CharDef_Knuckles + PhysTable_Knuckles, the third peer
+        // of `sonic` / `tails`, placed right after them per map.toml `order`
+        // (which moves `tails`' end anchor from CharacterDefs to
+        // CharDef_Knuckles). Landing it retires the TEMP roster stub that aimed
+        // CHAR_KNUCKLES at the Sonic record, so every CHAR_* id now resolves to
+        // its own complete record. His `cd_ability` is still Ability_None —
+        // glide/climb are tasks 10-11 — but his art, mappings, animations, boxes,
+        // physics row and PALETTE are his own. Real pin, not DUMMY_REGION, for
+        // the reason `tails` carries one (failure chain 89).
+        m!("games.sonic4.knuckles", "knuckles", pins::KNUCKLES),
         // The character ROSTER (characters.emp): the CharacterDefs table, the
         // character-agnostic asset/art loaders (Player_InitAssets / Player_LoadArt),
         // the AbilityHook type and Ability_None. A PEER of `sonic` (and of the coming
@@ -439,6 +450,11 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // section onto base 0 where it collides with `vectors` (soundbankhead_port's
         // PinnedBaked probe) — the `characters` failure chain 89 root-caused.
         m!("games.sonic4.tails_anims", "tails_anims", pins::TAILS_ANIMS),
+        // Character-dispatch C4 task 9: the Knuckles animation scripts
+        // (knuckles_anims.emp) — `Ani_Knuckles` on the shared ANIM_* ids, the
+        // third peer of sonic_anims / tails_anims and placed right after them per
+        // map.toml `order`. Real pin, not DUMMY_REGION (failure chain 89).
+        m!("games.sonic4.knuckles_anims", "knuckles_anims", pins::KNUCKLES_ANIMS),
         // particle_anims: DEBUG-only below (sole consumer test_particle is).
         // Dust animation scripts (dust_anims.emp, dust-effect Task 3): the charge
         // loop + the puff one-shot. Sits right after particle_anims per map.toml
@@ -489,6 +505,16 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // Real pin, same reason as `tails_anims` above: the PinnedBaked bootstrap
         // reads region bases, and DUMMY_REGION collapses the section onto 0.
         m!("games.sonic4.tails_data", "tails_data", pins::TAILS_DATA),
+        // Character-dispatch C4 task 9: the Knuckles sprite data
+        // (knuckles_data.emp) — mappings/DPLC/art plus the two CRAM line-0
+        // palettes the per-character palette swap reads. Registry slot beside
+        // `tails_data` because it is the same kind of thing; like Tails' it is
+        // map-placed at the ROM TAIL, since the art does not fit between
+        // Art_Sonic and the $48000 dac_banks anchor. Unlike Tails, Knuckles could
+        // NOT be brought into our palette order by an index permutation — his art
+        // uses an S3K colour our line 0 lacks — which is why this module ships a
+        // palette at all. Real pin, same reason as `tails_data`.
+        m!("games.sonic4.knuckles_data", "knuckles_data", pins::KNUCKLES_DATA),
         // Parcel K4 inc-5 Stage 2 (P2 DAC probe): the DAC sample banks are native —
         // dac_banks.emp embeds the seam-2 dac_blip_bank.bin @ $48000 + dac_shared_bank.bin
         // @ $50000 (the .bin ensure_generated emits). Sound-ON ONLY: filtered out of the

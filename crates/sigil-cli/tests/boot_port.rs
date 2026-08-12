@@ -100,8 +100,8 @@ fn frozen_symbol(debug: bool, name: &str) -> u64 {
     match (name, debug) {
         ("Z80_SOUND_SIZE", false) => 0x1814,   // sound pkg 4 (blob 6164, already even)
         ("Z80_SOUND_SIZE", true) => 0x1896,    // sound pkg 4 (blob 6294, already even)
-        ("GameState_OJZScroll_Init", false) => 0x7D280,  // sfx-flight: +0xC0  // tails-data: +0x20F60 — Map_Tails (132 KB) is exiled to the ROM tail, ahead of the game states
-        ("GameState_OJZScroll_Init", true) => 0x7F064,   // sfx-flight: +0xC0   // tails-data: +0x20F60, same exile as plain
+        ("GameState_OJZScroll_Init", false) => 0x9F950,  // sfx-flight: +0xC0  // tails-data: +0x20F60 — Map_Tails (132 KB) is exiled to the ROM tail, ahead of the game states  // knuckles-def: +0x226D0 — Map_Knuckles takes the SAME exile, for the same reason, directly behind Tails'
+        ("GameState_OJZScroll_Init", true) => 0xA1734,   // sfx-flight: +0xC0   // tails-data: +0x20F60, same exile as plain  // knuckles-def: +0x226D0, same exile again
         _ => panic!("no frozen value pinned for symbol `{name}` (debug={debug})"),
     }
 }

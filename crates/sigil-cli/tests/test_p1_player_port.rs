@@ -219,6 +219,11 @@ struct SonicShape {
     ani_sonic: u32,
     dplc_sonic: u32,
     art_sonic: u32,
+    /// knuckles-def (C4 task 9): `CharDef_Sonic.cd_palette` — the shared CRAM
+    /// line 0 Sonic and Tails both name (a real pointer, not 0, so the roster
+    /// cycle restores it on the way back from Knuckles). It lives in
+    /// knuckles_data, so it is cross-seam from `sonic`.
+    pal_sonic_tails: u32,
     base: u32,
     len: usize,
 }
@@ -231,6 +236,7 @@ const SONIC_PLAIN: SonicShape = SonicShape {
     ani_sonic: pins::SONIC_ANIMS.plain_base,
     dplc_sonic: pins::DPLC_SONIC.plain,
     art_sonic: pins::ART_SONIC.plain,
+    pal_sonic_tails: pins::PAL_SONIC_TAILS.plain,
     base: pins::SONIC.plain_base,
     len: pins::SONIC.plain_len,
 };
@@ -242,6 +248,7 @@ const SONIC_DEBUG: SonicShape = SonicShape {
     ani_sonic: pins::SONIC_ANIMS.debug_base,
     dplc_sonic: pins::DPLC_SONIC.debug,
     art_sonic: pins::ART_SONIC.debug,
+    pal_sonic_tails: pins::PAL_SONIC_TAILS.debug,
     base: pins::SONIC.debug_base,
     len: pins::SONIC.debug_len,
 };
@@ -294,6 +301,7 @@ fn compile_sonic(aeon: &Path, shape: &SonicShape) -> (sigil_link::LinkedImage, u
         &mut as_label_at("Ani_Sonic", shape.ani_sonic),
         &mut as_label_at("DPLC_Sonic", shape.dplc_sonic),
         &mut as_label_at("Art_Sonic", shape.art_sonic),
+        &mut as_label_at("Pal_SonicTails", shape.pal_sonic_tails),
     ] {
         for sec in group.iter_mut() {
             sec.lma = lma;
@@ -421,6 +429,13 @@ struct PcShape {
     /// character's curl compensation to this engine-RAM cell for the camera to
     /// read — the write side of the seam camera_port gates from the other end.
     camera_curl_offset: u32,
+    /// knuckles-def (C4 task 9): the same proc now also publishes the active
+    /// character's CRAM line 0 — `CharacterDef.cd_palette` copied into the engine's
+    /// palette buffer, line 0 marked dirty for the VBlank per-line DMA. Two more
+    /// cross-seam engine-RAM operands in player_common's bytes, so the isolated
+    /// compile has to supply them the way it already supplies camera_curl_offset.
+    palette_buffer: u32,
+    palette_dirty: u32,
     player_ring_index: u32,
     player_pos_ring: u32,
     player_stat_ring: u32,
@@ -474,6 +489,8 @@ const PC_PLAIN: PcShape = PcShape {
     player_blocks: pins::PLAYER_BLOCKS.plain,
     player_1: pins::PLAYER_1.plain,
     camera_curl_offset: pins::CAMERA_CURL_OFFSET.plain,
+    palette_buffer: pins::PALETTE_BUFFER.plain,
+    palette_dirty: pins::PALETTE_DIRTY.plain,
     player_ring_index: pins::PLAYER_RING_INDEX.plain,
     player_pos_ring: pins::PLAYER_POS_RING.plain,
     player_stat_ring: pins::PLAYER_STAT_RING.plain,
@@ -514,6 +531,8 @@ const PC_DEBUG: PcShape = PcShape {
     player_blocks: pins::PLAYER_BLOCKS.debug,
     player_1: pins::PLAYER_1.debug,
     camera_curl_offset: pins::CAMERA_CURL_OFFSET.debug,
+    palette_buffer: pins::PALETTE_BUFFER.debug,
+    palette_dirty: pins::PALETTE_DIRTY.debug,
     player_ring_index: pins::PLAYER_RING_INDEX.debug,
     player_pos_ring: pins::PLAYER_POS_RING.debug,
     player_stat_ring: pins::PLAYER_STAT_RING.debug,
@@ -605,6 +624,8 @@ fn compile_player_common(
         as_label_at("Player_Blocks", shape.player_blocks),
         as_label_at("Player_1", shape.player_1),
         as_label_at("Camera_Curl_Offset", shape.camera_curl_offset),
+        as_label_at("Palette_Buffer", shape.palette_buffer),
+        as_label_at("Palette_Dirty", shape.palette_dirty),
         as_label_at("Player_Ring_Index", shape.player_ring_index),
         as_label_at("Player_Pos_Ring", shape.player_pos_ring),
         as_label_at("Player_Stat_Ring", shape.player_stat_ring),
