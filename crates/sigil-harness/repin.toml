@@ -341,9 +341,30 @@ tests = ["camera_port"]
 # Level_LoadArt (F-6: Art_Decompress moved into compression_selftest).
 name = "parallax"
 start = "Parallax_Init"
-end = "Level_LoadArt"
+end = "Raster_Install"
 gate = "SIGIL_EMP_PARALLAX"
 tests = ["parallax_port"]
+
+[[region]]
+# Effects P1 module split: the sparse HInt raster dispatcher, moved out of the
+# `hblank` section (which is the RAM-trampoline dispatch mechanism only). Takes the
+# slot between parallax and palette, which is why parallax's end anchor moved off
+# Level_LoadArt. End is the next placement: palette's Palette_LoadSection.
+name = "raster"
+start = "Raster_Install"
+end = "Palette_LoadSection"
+gate = "SIGIL_EMP_RASTER"
+tests = ["raster_port"]
+
+[[region]]
+# Effects P1 module split: the per-section palette load, moved out of `buffers`
+# (which keeps the CRAM upload machinery). Phase 2's composition pipeline grows here.
+# End is the next placement: load_art's Level_LoadArt.
+name = "palette"
+start = "Palette_LoadSection"
+end = "Level_LoadArt"
+gate = "SIGIL_EMP_PALETTE"
+tests = ["palette_port"]
 
 [[region]]
 # Tranche 20 — level art loader (Level_LoadArt paged pool load; the blocking
@@ -2145,7 +2166,7 @@ tests = ["vdp_init_port"]
 name = "HBLANK_UNINSTALL_OFF"
 sym = "HBlank_Uninstall"
 region = "hblank"
-tests = ["hblank_port"]
+tests = ["raster_port"]
 
 # ── Tranche 21 cross-seam symbols (buffers_port / vblank_port) ──────────────
 
@@ -2189,7 +2210,7 @@ tests = ["buffers_port"]
 name = "Palette_Dirty"
 # hblank_port joins buffers_port with effects P1: the raster dispatcher re-asserts
 # the program's pal_dirty_mask into this every frame.
-tests = ["buffers_port", "hblank_port"]
+tests = ["buffers_port", "palette_port"]
 
 [[symbol]]
 name = "Parallax_Active_Config"
@@ -2744,25 +2765,24 @@ tests = ["act_descriptor_port"]
 [[symbol]]
 name = "OJZ_TestPal"
 tests = ["act_descriptor_port"]
-# Effects P1: the raster dispatcher's RAM working set + the palette dirty mask,
-# read by the sparse dispatcher now living in hblank.emp. They are engine.ram
-# labels, so from hblank's standalone re-lower they are inbound cross-seam RAM
-# operands and hblank_port has to be given their true per-shape VMAs.
+# Effects P1: the raster dispatcher's RAM working set. They are engine.ram labels, so
+# from engine.effects.raster's standalone re-lower they are inbound cross-seam RAM
+# operands and raster_port has to be given their true per-shape VMAs.
 [[symbol]]
 name = "Raster_Program"
-tests = ["hblank_port"]
+tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Cursor"
-tests = ["hblank_port"]
+tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Pending"
-tests = ["hblank_port"]
+tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Buf_A"
-tests = ["hblank_port"]
+tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Active_Buf"
-tests = ["hblank_port"]
+tests = ["raster_port"]
 # Effects P1: vblank.emp calls into the dispatcher, so from the game-loop/vblank
 # standalone re-lower Raster_VBlank is an outbound cross-seam CALL target.
 [[symbol]]

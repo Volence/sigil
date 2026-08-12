@@ -5406,3 +5406,57 @@ full_crc = "1d402453"
 full_size = 707280
 anchor_crc = "445eff95"
 anchor_end = 0xa3080
+
+[[entry]]
+name = "effects-module-split"
+ab = "pure code motion: raster dispatcher out of engine.hblank, palette consumer out of engine.buffers, into engine/effects/{raster,palette}.emp. Total emitted length unchanged in every shape; oracle re-verified"
+note = "effects P1 module split — two new sections, no behaviour change"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "d36c7d24"
+full_size = 707668
+anchor_crc = "fc433489"
+anchor_end = 0xa3080
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "6568d627"
+full_size = 591689
+anchor_crc = "38b52229"
+anchor_end = 0x88930
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "16e7b34e"
+full_size = 94022
+anchor_crc = "862e6648"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "da9c57c0"
+full_size = 98202
+anchor_crc = "c8f84a1b"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "462a1c40"
+full_size = 655678
+anchor_crc = "2fcc0ba5"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "22454ba7"
+full_size = 692868
+anchor_crc = "e94248ab"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "5aa8d851"
+full_size = 707280
+anchor_crc = "ffe41fc1"
+anchor_end = 0xa3080
