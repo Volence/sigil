@@ -7,26 +7,21 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=config_b
 # reproduces_golden=config_b.bin
-# golden_crc32=76ee1473
-# assembled_anchor=d10610d1
-# assembled_end=0x652f0
+# golden_crc32=e8fa4371
+# assembled_anchor=ef77c46b
+# assembled_end=0x65ef0
 # labels=68
-# HAND RULING (dust-effect Task 3, 2026-08-11): the Ani_Sonic..Ani_Tails run shifted +0xC30
-# and EVERYTHING from HeightMaps to EndOfRom +0xC50 for the inserted dust_data + dust_anims
-# sections — sound-OFF has no $48000/$58000 anchors, so the run is contiguous to the ROM end.
-# Transient until the post-verification refreeze re-derives this file exactly (objtest-gate
-# precedent, 2026-08-05).
-Ani_Sonic 0x27142
-Ani_Sonic_End 0x271c8
-Ani_Tails 0x271d0
-Ani_Tails_End 0x272d2
+Ani_Sonic 0x270ec
+Ani_Sonic_End 0x27172
+Ani_Tails 0x27180
+Ani_Tails_End 0x27282
 AnimateSprite 0x1b4a
 BG_Init 0x5620
 BgAnim_Init 0x5700
 BgAnim_Table 0x264e0
 BootData 0x396
 BootData_End 0x406
-BusError 0x64e90
+BusError 0x64e40
 Camera_Init 0x4678
 CharDef_Sonic 0x10e60
 CharDef_Tails 0x10e90
@@ -36,20 +31,20 @@ Collected_Init 0x20a0
 Collision_GetType 0x3d10
 Collision_ProbeDown 0x3d78
 DeformTable_Zero 0x110d0
-EndOfRom 0x65f40
+EndOfRom 0x65ef0
 EntryPoint 0x200
 GameLoop 0xcc0
-GameState_OJZScroll_Init 0x646e0
+GameState_OJZScroll_Init 0x64680
 GetSineCosine 0xf90
 HBlank_Install 0xb60
-HeightMaps 0x27300
+HeightMaps 0x272a0
 InitObjectRAM 0x1434
 InitSpriteSystem 0x1730
 Init_DMA_Queue 0x452
 Init_SpriteTable 0x780
 Level_LoadArt 0x4e30
 Load_Object 0x2c80
-Map_Tails 0x43780
+Map_Tails 0x43720
 Map_TestObj 0x264e2
 Map_TestObj_End 0x26512
 OJZ_Act1_Descriptor 0x14c74
@@ -70,7 +65,7 @@ Plane_Buffer_Reset 0x2d08
 Player_Init 0x10002
 PopulateSpawnedPieceCount 0x2990
 Read_Controllers 0xba8
-Replay_OJZ_Fixture 0x64c2c
+Replay_OJZ_Fixture 0x64be0
 RingBuffer_Add 0x1ee0
 S4LZ_DecompressDict 0xe20
 Section_Init 0x4270

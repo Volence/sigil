@@ -7,27 +7,23 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=config_a
 # reproduces_golden=config_a.bin
-# golden_crc32=97f31567
-# assembled_anchor=4fd503e7
-# assembled_end=0x80998
+# golden_crc32=cf5fb40b
+# assembled_anchor=dee9427f
+# assembled_end=0x809b0
 # labels=86
-# HAND RULING (dust-effect Task 3, 2026-08-11): the Ani_Sonic..Ani_Particle run shifted
-# +0xC30 and HeightMaps +0xC50 for the inserted dust_data + dust_anims sections (sound-on:
-# the $48000/$58000 anchors absorb it before the tail). Transient until the post-verification
-# refreeze re-derives this file exactly (objtest-gate precedent, 2026-08-05).
-Ani_Particle 0x27b30
-Ani_Particle_End 0x27b38
-Ani_Sonic 0x27992
-Ani_Sonic_End 0x27a18
-Ani_Tails 0x27a20
-Ani_Tails_End 0x27b22
+Ani_Particle 0x27ae0
+Ani_Particle_End 0x27ae8
+Ani_Sonic 0x2793c
+Ani_Sonic_End 0x279c2
+Ani_Tails 0x279d0
+Ani_Tails_End 0x27ad2
 AnimateSprite 0x3b30
 BG_Init 0x8780
 BgAnim_Init 0x8860
 BgAnim_Table 0x26d30
 BootData 0x3b0
 BootData_End 0x1c8e
-BusError 0x7f8e8
+BusError 0x7f900
 CSelf_S4LZ_Plain 0x8d26
 Camera_Init 0x6f50
 CharDef_Sonic 0x10fd0
@@ -41,14 +37,14 @@ CompressionSelfTest 0x89b8
 Dac_Temp_Blip 0x48000
 Debug_MusicToggle 0x6a50
 DeformTable_Zero 0x11920
-EndOfRom 0x80998
+EndOfRom 0x809b0
 EntryPoint 0x200
 GameLoop 0x25b6
 GameState_OJZScroll_Init 0x7f064
 GameState_ObjectTest_Init 0x7ecd0
 GetSineCosine 0x2a50
 HBlank_Install 0x2460
-HeightMaps 0x27b58
+HeightMaps 0x27b00
 InitObjectRAM 0x2ef0
 InitSpriteSystem 0x3640
 Init_DMA_Queue 0x1cda
@@ -76,7 +72,7 @@ Plane_Buffer_Reset 0x5394
 Player_Init 0x10002
 PopulateSpawnedPieceCount 0x4f70
 Read_Controllers 0x24a8
-Replay_OJZ_Fixture 0x7f688
+Replay_OJZ_Fixture 0x7f6a0
 RingBuffer_Add 0x3ff0
 S4LZ_DecompressDict 0x27d0
 Section_Init 0x6b20

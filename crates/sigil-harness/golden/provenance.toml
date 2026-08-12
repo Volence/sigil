@@ -4974,3 +4974,57 @@ full_crc = "6961f402"
 full_size = 565054
 anchor_crc = "5cabb9b4"
 anchor_end = 0x80998
+
+[[entry]]
+name = "dust-data"
+ab = "aeon@6a2f26f2 — emulator-verified: 512 bytes at VRAM tile 896 (0x7000) byte-identical to art_dust.bin's tail 16 tiles after level init, pixel nibbles exactly the remapped palette set {0,4,6,7}; demo byte-identical (sonic4-only data); repin derived DUST_DATA len 0xBDA / DUST_ANIMS len 0x14 both shapes; the 0xBDA insertion exceeded the packer's single-section margin so the objtest-gate hand-ruling recipe shifted the frozen tables in ALL FIVE shapes (canonical 9910e17b, off-canonical c7e4c531 — config_b's anchorless run needed the whole tail +0xC50), which THIS freeze re-derives exactly"
+note = "dust plan Task 3: dust_data.emp (mappings x2, charge DPLC, 88-tile art blob) + dust_anims.emp (14-frame charge loop, 16-frame puff w/ AF_DELETE) + the resident puff-block DMA at level init; VRAM constants from the registry"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "cf5fb40b"
+full_size = 565598
+anchor_crc = "dee9427f"
+anchor_end = 0x809b0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "e8fa4371"
+full_size = 448734
+anchor_crc = "ef77c46b"
+anchor_end = 0x65ef0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "51a1f9ae"
+full_size = 93547
+anchor_crc = "e441d48a"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d9deebfa"
+full_size = 97728
+anchor_crc = "0ba20c19"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "b273c5be"
+full_size = 514670
+anchor_crc = "a3feb01a"
+anchor_end = 0x7da6e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "d3c65c4c"
+full_size = 550786
+anchor_crc = "c692314c"
+anchor_end = 0x7eaf0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "f67f8f87"
+full_size = 565194
+anchor_crc = "0ef30029"
+anchor_end = 0x809b0
