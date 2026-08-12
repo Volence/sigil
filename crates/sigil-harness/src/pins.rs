@@ -321,11 +321,16 @@ pub const PLAYER_SPINDASH: Region = Region { plain_base: 0x10D10, debug_base: 0x
 /// `PState_Fly` .. `PState_Glide` — gate `SIGIL_EMP_PLAYER_FLY`. tests: test_p2_player_states_port
 pub const PLAYER_FLY: Region = Region { plain_base: 0x10DAC, debug_base: 0x10ECC, plain_len: 0x134, debug_len: 0x134 };
 
-/// `PState_Glide` .. `CharDef_Sonic` — gate `SIGIL_EMP_PLAYER_GLIDE`. tests: test_p2_player_states_port
+/// `PState_Glide` .. `Climb_WallDist` — gate `SIGIL_EMP_PLAYER_GLIDE`. tests: test_p2_player_states_port
 /// PLACEHOLDER pin (Knuckles C4 Task 10): the canonical shapes place this section by
 /// map.toml `order` + live contiguity (SizeSource::Frozen), so base/len here are only
 /// the ordering-fallback + bootstrap seed; the controller re-pins at merge via `repin`.
 pub const PLAYER_GLIDE: Region = Region { plain_base: 0x10EE0, debug_base: 0x11000, plain_len: 0x400, debug_len: 0x400 };
+
+/// `Climb_WallDist` .. `CharDef_Sonic` — gate `SIGIL_EMP_PLAYER_CLIMB`. tests: test_p2_player_states_port
+/// PLACEHOLDER pin (Knuckles C4 Task 11): same story as PLAYER_GLIDE — placed by map
+/// `order` + live contiguity; the controller re-pins at merge.
+pub const PLAYER_CLIMB: Region = Region { plain_base: 0x112E0, debug_base: 0x11400, plain_len: 0x400, debug_len: 0x400 };
 
 /// `Collision_ProbeDown` .. `Section_Init` — gate `SIGIL_EMP_PLAYER_SENSORS`. tests: test_p4_player_sensors_port
 pub const PLAYER_SENSORS: Region = Region { plain_base: 0x55F0, debug_base: 0x6550, plain_len: 0x4F4, debug_len: 0x4F4 };

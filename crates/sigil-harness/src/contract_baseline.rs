@@ -144,6 +144,13 @@ pub const D1C_BASELINE: &[(&str, &str, &str)] = &[
     ("Ground_Move_Cap", "Player_SensorWallDir", "d0"),
     // DOCUMENTED FP (edge-blind close) — see calls.rs::destroys_value.
     ("Load_Object", "AllocDynamic", "a1"),
+    // DOCUMENTED FP (Knuckles C4 Task 11): PState_Climb calls Climb_WallDist at two
+    // sites (climbing up, climbing down), and at each the d0 the coarse walk sees
+    // "live" is DEAD — its last pre-call write is the latch-drift compare at the top,
+    // and the post-call `cmpi d0` reads Climb_WallDist's PRODUCED wall distance. Listed
+    // twice for the two call sites (the multiset count). Same close as PState_GlideFall.
+    ("PState_Climb", "Climb_WallDist", "d0"),
+    ("PState_Climb", "Climb_WallDist", "d0"),
     // DOCUMENTED FP (Knuckles C4 Task 10): PState_GlideFall stores the capped
     // gravity value to y_vel BEFORE calling Glide_Collide, so the d0 the coarse
     // build-side walk sees "live" across the call is DEAD — the post-call `btst d0`

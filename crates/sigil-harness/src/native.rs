@@ -353,6 +353,12 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // reason as `player_fly`: every shipped profile is a `SizeSource::Frozen` target
         // that never reads base/len, but the `sonic4_pinned_profile` bootstrap DOES.
         m!("games.sonic4.player_glide", "player_glide", pins::PLAYER_GLIDE),
+        // Character-dispatch C4 Task 11: Knuckles' wall climb + ledge pull-up
+        // (player_climb.emp) — PSTATE_CLIMB/LEDGE plus the glide wall-catch. The sixth
+        // player STATE file, placed right after player_glide per map.toml `order`
+        // (player_glide's end anchor moves to Climb_WallDist). Placeholder pin, controller
+        // re-pins at merge (same bootstrap reason as player_glide).
+        m!("games.sonic4.player_climb", "player_climb", pins::PLAYER_CLIMB),
         m!("games.sonic4.sonic", "sonic", pins::SONIC),
         // Character-dispatch C1 task 6: the Tails character RECORD (tails.emp) —
         // CharDef_Tails + PhysTable_Tails, pure data, the exact peer of `sonic`

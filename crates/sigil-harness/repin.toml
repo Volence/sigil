@@ -2639,8 +2639,20 @@ tests = ["test_p2_player_states_port"]
 [[region]]
 name = "player_glide"
 start = "PState_Glide"
-end = "CharDef_Sonic"
+end = "Climb_WallDist"
 gate = "SIGIL_EMP_PLAYER_GLIDE"
+tests = ["test_p2_player_states_port"]
+
+# player_climb (character-dispatch C4 Task 11) — Knuckles' wall climb + ledge pull-up:
+# PSTATE_CLIMB/LEDGE plus the glide wall-catch. The sixth player state file and the
+# last player CODE before the character records, so its end anchor is CharDef_Sonic,
+# which player_glide's used to be. Its head label is the first-emitted proc
+# (Climb_WallDist). Pinned rather than DUMMY_REGION for the bootstrap reason.
+[[region]]
+name = "player_climb"
+start = "Climb_WallDist"
+end = "CharDef_Sonic"
+gate = "SIGIL_EMP_PLAYER_CLIMB"
 tests = ["test_p2_player_states_port"]
 
 # P4 (tranche 38) — player_sensors, the collision sensor primitives. Lives in
