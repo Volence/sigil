@@ -291,6 +291,11 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         m!("engine.section", "section", pins::SECTION),
         m!("engine.camera", "camera", pins::CAMERA),
         m!("engine.parallax", "parallax", pins::PARALLAX),
+        // Effects P1 module split: the sparse raster dispatcher and the per-section
+        // palette load, moved out of engine.hblank / engine.buffers into the effects
+        // suite's own modules. Placed between parallax and load_art per map `order`.
+        m!("engine.effects.raster", "raster", pins::RASTER),
+        m!("engine.effects.palette", "palette", pins::PALETTE),
         m!("engine.load_art", "load_art", pins::LOAD_ART),
         // Art-streaming P2a — the VBlank-bookmark page-in dispatcher (page_in.emp),
         // placed between load_art and bg per map.toml `order`. Engine-agnostic
