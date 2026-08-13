@@ -604,7 +604,29 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // paragraph above describes. The only reason these totals move at all is the
     // ROM-tail art.
     assert_eq!(pins::ASSEMBLED_LEN, 0xA11C0); // +0x20F60 tails-data (Map_Tails exiled to the ROM tail) // +8 character-dispatch-c1 (0x50 of player growth, repacked past the sound bank) // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x10 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)  // +0x226D0 knuckles-def (Map_Knuckles takes the same ROM-tail exile)
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0xA3080); // +4 tails-appendage (the DEBUG-only jmp abs.l tail call) // -0x10 tails-flight (bank absorbs flight; ojz harness shrank) // +0xC4 tails-character (DEBUG-only hotkey; plain unmoved) // +0x20F60 tails-data (same exile) // +0x10 character-dispatch-c1 (0xB0 of player growth, repacked past the sound bank) // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x18 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)  // +0x226D0 knuckles-def (same exile, same delta — the data is not DEBUG-fenced)
+    // knuckles-c4 (2026-08-12): plain HOLDS at 0xA11C0, debug +0x10 -> 0xA3090.
+    // The parcel added Knuckles' whole glide family — two new sections
+    // (PLAYER_GLIDE 0x2A8, PLAYER_CLIMB ~0x2FA) plus five state rows in each of
+    // player_common's three offset tables and their enter hooks. That growth is
+    // real and shows up in the REGION pins (+0xD0 on the player regions:
+    // P_STATE_GROUND 0x10530 -> 0x10600 plain, and the same +0xD0 debug; +0x670
+    // on CHARACTER_DEFS/PLAYER_INIT_ASSETS/PLAYER_LOAD_ART/PLAYER_ABILITY; +0x690
+    // plain / +0x730 debug on the OJZ entity/type tables; +0x9E0 plain / +0xA70
+    // debug on SOLIDITY_TABLE/ANGLE_TABLE/HEIGHT_MAPS/HEIGHT_MAPS_ROT), but it
+    // does NOT reach the plain total: like character-dispatch-c1 and the
+    // per-character palette copy before it, the player-region growth lands ahead
+    // of the fixed $48000 sound bank and is repacked away. Debug carries the
+    // residual 0x10 because its islands sit past the absorbing anchor.
+    // Five NEW symbol pins were derived, not hand-placed: P_STATE_GLIDE 0x10FAE,
+    // P_STATE_GLIDE_FALL 0x1113A, P_STATE_SLIDE 0x1117E, P_STATE_CLIMB 0x112B0,
+    // P_STATE_LEDGE 0x1145C (plain). They exist for the same reason PState_Fly's
+    // does: player_common's offset tables name them, so they are cross-seam
+    // branch targets that the isolated player_common link must resolve.
+    // NOT in these totals: the DEBUG glide test platform. It briefly added 0x30
+    // to the debug entity_data and was REVERTED (aeon@8dc43d9b) — a DEBUG-only
+    // ENTITY violates the debug_len == plain_len invariant the ported sections
+    // rely on. Debug is therefore byte-for-byte the pre-scaffold ROM.
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0xA3090); // +4 tails-appendage (the DEBUG-only jmp abs.l tail call) // -0x10 tails-flight (bank absorbs flight; ojz harness shrank) // +0xC4 tails-character (DEBUG-only hotkey; plain unmoved) // +0x20F60 tails-data (same exile) // +0x10 character-dispatch-c1 (0xB0 of player growth, repacked past the sound bank) // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x18 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)  // +0x226D0 knuckles-def (same exile, same delta — the data is not DEBUG-fenced)  // +0x10 knuckles-c4 (glide family; plain repacked past the sound bank, debug keeps the residual)
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the
