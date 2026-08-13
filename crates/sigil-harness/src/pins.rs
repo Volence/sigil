@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 95 regions, 365 symbols, 7 offsets
+//! [provenance] 95 regions, 369 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1379,6 +1379,12 @@ pub const OJZ_TEST_RASTER: Pin = Pin { plain: 0x123EE, debug: 0x12C42 };
 /// `OJZ_TestPal`. tests: act_descriptor_port
 pub const OJZ_TEST_PAL: Pin = Pin { plain: 0x12412, debug: 0x12C66 };
 
+/// `OJZ_TestGradient`. tests: act_descriptor_port
+pub const OJZ_TEST_GRADIENT: Pin = Pin { plain: 0x126DE, debug: 0x12F32 };
+
+/// `OJZ_ShimmerCycle`. tests: act_descriptor_port
+pub const OJZ_SHIMMER_CYCLE: Pin = Pin { plain: 0x12472, debug: 0x12CC6 };
+
 /// `Raster_Program`. tests: raster_port
 pub const RASTER_PROGRAM: Pin = Pin { plain: 0xFFFF8998, debug: 0xFFFF8998 };
 
@@ -1402,6 +1408,12 @@ pub const PALETTE_LOAD_SECTION: Pin = Pin { plain: 0x6892, debug: 0x7812 };
 
 /// `Raster_InstallSection`. tests: parallax_port
 pub const RASTER_INSTALL_SECTION: Pin = Pin { plain: 0x6816, debug: 0x7796 };
+
+/// `Palette_InstallCycleSection`. tests: parallax_port
+pub const PALETTE_INSTALL_CYCLE_SECTION: Pin = Pin { plain: 0x694E, debug: 0x78CE };
+
+/// `Palette_Compose`. tests: game_loop_port
+pub const PALETTE_COMPOSE: Pin = Pin { plain: 0x6984, debug: 0x7904 };
 
 /// `Player_Blocks`. tests: test_p1_player_port
 pub const PLAYER_BLOCKS: Pin = Pin { plain: 0xFFFFB792, debug: 0xFFFFE028 };

@@ -110,6 +110,10 @@ struct Shape {
     // Parcel I3: game_loop's `jbsr Input_Tick` (bsr.w pc-relative) target — the
     // replay seam, a shape-specific code VMA (unlike the shape-invariant RAM cells).
     input_tick: u32,
+    // Effects P2: game_loop's `jbsr Palette_Compose` — the once-per-frame palette
+    // composition. Same class as `input_tick`: a pc-relative call into another
+    // section, so the VMA is shape-specific and must come from pins.
+    palette_compose: u32,
 }
 
 const PLAIN: Shape = Shape {
@@ -118,6 +122,7 @@ const PLAIN: Shape = Shape {
     vsync_wait: pins::V_SYNC_WAIT.plain,
     drain: pins::SOUND_DRAIN_SFX_RING.plain,
     input_tick: pins::INPUT_TICK.plain,
+    palette_compose: pins::PALETTE_COMPOSE.plain,
 };
 const DEBUG: Shape = Shape {
     base: pins::GAME_LOOP.debug_base,
@@ -129,6 +134,7 @@ const DEBUG: Shape = Shape {
     vsync_wait: pins::V_SYNC_WAIT.debug,
     drain: pins::SOUND_DRAIN_SFX_RING.debug,
     input_tick: pins::INPUT_TICK.debug,
+    palette_compose: pins::PALETTE_COMPOSE.debug,
 };
 
 /// Compile the real `engine/system/game_loop.emp` with the given defines,
@@ -140,6 +146,7 @@ fn compile_emp(
     vsync_wait: u32,
     drain: u32,
     input_tick: u32,
+    palette_compose: u32,
     dbg_toggle: u32,
     with_consumer: bool,
 ) -> (Vec<Section>, sigil_link::LinkedImage) {
@@ -198,6 +205,7 @@ fn compile_emp(
         ("VSync_Wait", vsync_wait),
         ("Sound_DrainSfxRing", drain),
         ("Input_Tick", input_tick),              // I3: jbsr Input_Tick (replay seam)
+        ("Palette_Compose", palette_compose), // Effects P2: jbsr Palette_Compose
         ("Debug_MusicToggle", dbg_toggle),
         ("Logic_Tick", pins::LOGIC_TICK.plain),  // I2: addq.l #1, Logic_Tick (shape-invariant RAM)
         ("Game_State", pins::GAME_STATE.plain),
@@ -315,7 +323,16 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     // Debug_MusicToggle is unreferenced in the (1,0) combo; any synthetic
     // position satisfies the link without touching the bytes.
     let (_, linked) =
-        compile_emp(&defines, shape.base, shape.vsync_wait, shape.drain, shape.input_tick, 0x3000, true);
+        compile_emp(
+            &defines,
+            shape.base,
+            shape.vsync_wait,
+            shape.drain,
+            shape.input_tick,
+            shape.palette_compose,
+            0x3000,
+            true,
+        );
 
     let lo = shape.base as usize;
     let expected = &refrom[lo..lo + shape.len];
@@ -518,6 +535,10 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         // Effects P1: both VInt paths call the raster re-arm, which lives in hblank —
         // an outbound cross-seam call target from vblank's standalone re-lower.
         ("Raster_VBlank", pick(pins::RASTER_V_BLANK)),
+        // Effects P2: GameLoop composes the palette once per frame. It is arithmetic,
+        // not VDP work, so it hangs off the main loop rather than VBlank — an outbound
+        // cross-seam call target from game_loop's standalone re-lower, peer of the above.
+        ("Palette_Compose", pick(pins::PALETTE_COMPOSE)),
         ("Flush_VDP_Shadow", pick(pins::FLUSH_VDP_SHADOW)),
         ("Enqueue_Dirty_Buffers", pick(pins::ENQUEUE_DIRTY_BUFFERS)),
         ("VInt_DrawLevel", pick(pins::V_INT_DRAW_LEVEL)),

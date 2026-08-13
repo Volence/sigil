@@ -143,6 +143,11 @@ fn misspelled_cross_seam_symbol_is_loud() {
         "VSync_Wait",
         "Sound_DrainSfxRing",
         "Input_Tick",           // I3 replay seam
+        // Effects P2: GameLoop's jbsr Palette_Compose. MUST be supplied here even
+        // though this probe is about a DIFFERENT symbol: the assert only checks that
+        // resolve/link failed, so any unrelated unresolved name satisfies it for the
+        // wrong reason and the probe silently stops testing the misspelling.
+        "Palette_Compose",
         "Logic_Tick",
         "Game_State",
     ]));
@@ -171,6 +176,10 @@ fn oversize_combo_overlapping_resume_bytes_is_loud() {
         "VSync_Wait",
         "Sound_DrainSfxRing",
         "Input_Tick",           // I3 replay seam
+        // Effects P2 — same vacuity hazard as probe (a): this assert only checks that
+        // resolve/link failed, so an unresolved Palette_Compose would "pass" it without
+        // the resume-byte overlap ever being exercised.
+        "Palette_Compose",
         "Logic_Tick",
         "Game_State",
         "Debug_MusicToggle",
@@ -211,7 +220,7 @@ fn drain_define_is_load_bearing() {
             pins::GAME_LOOP.plain_len as u32,
         );
         assert!(diags.iter().all(|d| d.level != Level::Error), "lower/place: {diags:?}");
-        sections.extend(synthetic_labels(&["VSync_Wait", "Sound_DrainSfxRing", "Input_Tick", "Logic_Tick", "Game_State"]));
+        sections.extend(synthetic_labels(&["VSync_Wait", "Sound_DrainSfxRing", "Input_Tick", "Palette_Compose", "Logic_Tick", "Game_State"]));
         let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
             .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
