@@ -344,6 +344,21 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // DOES, and the placeholder collapses the section onto base 0 where it
         // collides with `vectors` (failure chain 89).
         m!("games.sonic4.player_fly", "player_fly", pins::PLAYER_FLY),
+        // Character-dispatch C4 Task 10: Knuckles' glide/slide (player_glide.emp) —
+        // PSTATE_GLIDE/GLIDEFALL/SLIDE plus Ability_KnuxGlide, the AbilityHook
+        // CharDef_Knuckles points at. The FIFTH player STATE file, placed right after
+        // player_fly and ahead of the character records per map.toml `order` (which
+        // moves player_fly's end anchor from CharDef_Sonic to PState_Glide). Real pin
+        // (placeholder values, controller re-pins at merge), not DUMMY_REGION — same
+        // reason as `player_fly`: every shipped profile is a `SizeSource::Frozen` target
+        // that never reads base/len, but the `sonic4_pinned_profile` bootstrap DOES.
+        m!("games.sonic4.player_glide", "player_glide", pins::PLAYER_GLIDE),
+        // Character-dispatch C4 Task 11: Knuckles' wall climb + ledge pull-up
+        // (player_climb.emp) — PSTATE_CLIMB/LEDGE plus the glide wall-catch. The sixth
+        // player STATE file, placed right after player_glide per map.toml `order`
+        // (player_glide's end anchor moves to Climb_WallDist). Placeholder pin, controller
+        // re-pins at merge (same bootstrap reason as player_glide).
+        m!("games.sonic4.player_climb", "player_climb", pins::PLAYER_CLIMB),
         m!("games.sonic4.sonic", "sonic", pins::SONIC),
         // Character-dispatch C1 task 6: the Tails character RECORD (tails.emp) —
         // CharDef_Tails + PhysTable_Tails, pure data, the exact peer of `sonic`
@@ -2259,6 +2274,19 @@ fn packed_true_bases(
     };
     order.sort_by_key(|&i| (eff_rank(i), prov[i].unwrap(), i));
     const ANCHOR_GAP: i64 = 0x400;
+    // GROWTH_DRIFT_TOLERANCE — how far a CONTIGUOUSLY-packed section's base may drift
+    // above its (stale) frozen provisional before the packer demands a hand ruling.
+    // This is DISTINCT from ANCHOR_GAP: ANCHOR_GAP classifies islands and MUST stay
+    // 0x400 (widening it would repack an unchanged 0x400-0x1000 org gap contiguously
+    // and move a golden), whereas this tolerance only bounds downstream DRIFT and never
+    // touches an unchanged section (which packs at drift 0). A real org-anchor overrun
+    // still fails loud at the final `resolve_layout` overlap check, so anchors stay
+    // protected regardless. Widened 0x400 -> 0x1000 for the Knuckles C4 parcel
+    // (2026-08-12): the new player_glide/player_climb state modules add ~0x700 to the
+    // object bank, which propagates contiguously into the data region and drifts the
+    // anim tables past the old 0x400. The controller's merge-time refreeze regenerates
+    // the frozen tables, after which the drift is 0 and this tolerance goes unused.
+    const GROWTH_DRIFT_TOLERANCE: i64 = 0x1000;
 
     // Round 0: lengths at the PROVISIONAL bases (labeled sections at prov, label-less
     // pure-data blobs at scratch — the proven Frozen measuring pins). When a section
@@ -2326,9 +2354,9 @@ fn packed_true_bases(
                         // waive the org-hole overrun check and pack greedily. A run that
                         // overruns a real ORG ANCHOR (island/phase bank) still fails loud at the
                         // final `resolve_layout` overlap check, so anchors stay protected.
-                        if !fixture && packed > p + ANCHOR_GAP {
+                        if !fixture && packed > p + GROWTH_DRIFT_TOLERANCE {
                             return Err(format!(
-                                "packed base {packed:#x} for section `{}` overruns its provisional {p:#x} by more than the island margin — a run grew past its org hole; hand ruling needed",
+                                "packed base {packed:#x} for section `{}` overruns its provisional {p:#x} by more than the drift tolerance — a run grew past its org hole; hand ruling needed",
                                 sections[i].name
                             ));
                         }

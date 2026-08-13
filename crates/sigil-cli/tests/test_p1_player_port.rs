@@ -416,6 +416,11 @@ struct PcShape {
     pstate_airball: u32,
     /// tails-flight: PSTATE_FLY, the seventh entry in the state offset table.
     pstate_fly: u32,
+    pstate_glide: u32,
+    pstate_glidefall: u32,
+    pstate_slide: u32,
+    pstate_climb: u32,
+    pstate_ledge: u32,
     /// C1: the per-slot player working blocks. ONE label now — the array base
     /// player_common's `player_block` splice `lea`s, then strides by
     /// `sizeof(PlayerBlock)` for slot 1. The three cells this replaced
@@ -486,6 +491,11 @@ const PC_PLAIN: PcShape = PcShape {
     pstate_rolljump: pins::P_STATE_ROLL_JUMP.plain,
     pstate_airball: pins::P_STATE_AIR_BALL.plain,
     pstate_fly: pins::P_STATE_FLY.plain,
+    pstate_glide: pins::P_STATE_GLIDE.plain,
+    pstate_glidefall: pins::P_STATE_GLIDE_FALL.plain,
+    pstate_slide: pins::P_STATE_SLIDE.plain,
+    pstate_climb: pins::P_STATE_CLIMB.plain,
+    pstate_ledge: pins::P_STATE_LEDGE.plain,
     player_blocks: pins::PLAYER_BLOCKS.plain,
     player_1: pins::PLAYER_1.plain,
     camera_curl_offset: pins::CAMERA_CURL_OFFSET.plain,
@@ -528,6 +538,11 @@ const PC_DEBUG: PcShape = PcShape {
     pstate_rolljump: pins::P_STATE_ROLL_JUMP.debug,
     pstate_airball: pins::P_STATE_AIR_BALL.debug,
     pstate_fly: pins::P_STATE_FLY.debug,
+    pstate_glide: pins::P_STATE_GLIDE.debug,
+    pstate_glidefall: pins::P_STATE_GLIDE_FALL.debug,
+    pstate_slide: pins::P_STATE_SLIDE.debug,
+    pstate_climb: pins::P_STATE_CLIMB.debug,
+    pstate_ledge: pins::P_STATE_LEDGE.debug,
     player_blocks: pins::PLAYER_BLOCKS.debug,
     player_1: pins::PLAYER_1.debug,
     camera_curl_offset: pins::CAMERA_CURL_OFFSET.debug,
@@ -621,6 +636,13 @@ fn compile_player_common(
         as_label_at("PState_RollJump", shape.pstate_rolljump),
         as_label_at("PState_AirBall", shape.pstate_airball),
         as_label_at("PState_Fly", shape.pstate_fly),
+        // knuckles-c4: the five glide-family rows player_common's offset
+        // tables name — cross-seam branch targets, like PState_Fly above.
+        as_label_at("PState_Glide", shape.pstate_glide),
+        as_label_at("PState_GlideFall", shape.pstate_glidefall),
+        as_label_at("PState_Slide", shape.pstate_slide),
+        as_label_at("PState_Climb", shape.pstate_climb),
+        as_label_at("PState_Ledge", shape.pstate_ledge),
         as_label_at("Player_Blocks", shape.player_blocks),
         as_label_at("Player_1", shape.player_1),
         as_label_at("Camera_Curl_Offset", shape.camera_curl_offset),

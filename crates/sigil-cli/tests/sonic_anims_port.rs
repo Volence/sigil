@@ -96,7 +96,24 @@ fn as_equs() -> Vec<Section> {
         // gate failing its fuel test, not a separate state.
         ("ANIM_FLY", "11"),
         ("ANIM_FLY_TIRED", "12"),
-        ("ANIM_COUNT", "13"),
+        // knuckles-c4 (2026-08-12): the glide family's ELEVEN poses join the same
+        // shared id space, on the same terms — every character's table grows a row
+        // per id and ANIM_COUNT moves with them. Five of them are the glide's own
+        // turn cycle (S3K frames $C0-$C4, index 4 being the mirror point that
+        // `Player_Animate` folds back to pose 0 with the flip bit), which is why
+        // the glide costs five ids where flight cost two.
+        ("ANIM_GLIDE_0", "13"),
+        ("ANIM_GLIDE_1", "14"),
+        ("ANIM_GLIDE_2", "15"),
+        ("ANIM_GLIDE_3", "16"),
+        ("ANIM_GLIDE_4", "17"),
+        ("ANIM_GLIDEFALL", "18"),
+        ("ANIM_SLIDE", "19"),
+        ("ANIM_SLIDE_GETUP", "20"),
+        ("ANIM_GLIDE_LAND", "21"),
+        ("ANIM_CLIMB", "22"),
+        ("ANIM_LEDGE", "23"),
+        ("ANIM_COUNT", "24"),
     ]);
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
@@ -195,6 +212,14 @@ fn compile_real_file(
 /// character's table grows a row per id, so each new id brings its own ordinal
 /// guard. The count is asserted rather than ranged precisely so an id added
 /// WITHOUT its guard shows up here.
+/// knuckles-c4 (2026-08-12) took the count 14 -> 25. The number is exactly
+/// `ANIM_COUNT + 1`: ONE ordinal guard per shared id (`Ani_Sonic.Walk ==
+/// ANIM_WALK` .. `.Ledge == ANIM_LEDGE`, ids 0..23) plus the single
+/// `.count == ANIM_COUNT` guard — which is why 13 ids gave 14 and 24 ids give
+/// 25. The glide family added ELEVEN ids: five glide turn poses ($C0-$C4),
+/// GLIDEFALL, SLIDE, SLIDE_GETUP, GLIDE_LAND, CLIMB, LEDGE. The count GREW in
+/// lockstep, i.e. every new id arrived WITH its guard; one added without would
+/// show up as a shortfall here rather than as a silent ordinal drift at runtime.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = link_asserts
         .iter()
@@ -204,7 +229,7 @@ fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAsser
             })
         })
         .count();
-    assert_eq!(guards, 14, "all fourteen ordinal drift guards must be captured");
+    assert_eq!(guards, 25, "all twenty-five ordinal drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
