@@ -2702,6 +2702,26 @@ tests = ["test_p1_player_port"]
 [[symbol]]
 name = "PState_Fly"
 tests = ["test_p1_player_port"]
+# knuckles-c4 (2026-08-12): the five glide-family rows. Same rationale as
+# PState_Fly above — player_common's offset tables name them, so they are
+# cross-seam branch targets of that region even though only Knuckles' ability
+# hook can enter the family. Without these pins the isolated player_common link
+# fails with dangling `PState_Glide`/`GlideFall`/`Slide`/`Climb`/`Ledge`.
+[[symbol]]
+name = "PState_Glide"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "PState_GlideFall"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "PState_Slide"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "PState_Climb"
+tests = ["test_p1_player_port"]
+[[symbol]]
+name = "PState_Ledge"
+tests = ["test_p1_player_port"]
 [[symbol]]
 name = "Player_SensorFloor"
 tests = ["test_p1_player_port"]

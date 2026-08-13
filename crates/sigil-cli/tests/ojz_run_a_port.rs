@@ -191,6 +191,12 @@ fn gate(debug: bool, rom_name: &str) {
     for (emp_rel, section, region, seam) in sections() {
         let base = if debug { region.debug_base } else { region.plain_base };
         let len = region.plain_len; // shape-invariant
+        // Load-bearing, and it caught a real design mistake (knuckles-c4,
+        // 2026-08-12): a DEBUG-gated test platform appended to sec0's object list
+        // made `entity_data` 48 bytes longer in the debug shape. Level DATA is
+        // expected to be shape-identical — the port tests compile one length for
+        // both shapes — so a DEBUG-only entity is not expressible here. The
+        // scaffold was reverted rather than this assert relaxed.
         assert_eq!(region.debug_len, region.plain_len, "{section} len must be shape-invariant");
 
         let linked = compile_section(emp_rel, section, base, len, seam, debug);

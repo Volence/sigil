@@ -5460,3 +5460,56 @@ full_crc = "5aa8d851"
 full_size = 707280
 anchor_crc = "ffe41fc1"
 anchor_end = 0xa3080
+
+[[entry]]
+name = "knuckles-c4"
+ab = "oracle: wall-catch -> climb -> LEDGE at y=557 -> stand at (464,528); climb 1..3px recess tolerance verified (dist 2 at y=561 no longer freezes; gap reads 4 at y=560 and the ledge fires by S3K's own unchanged threshold, shape-29 slope tile); climb-down lands on the ground instead of falling to y~5920; glide -> land -> SLIDE with x_vel preserved (0x1004), and the slide now integrates position (x=494 spd 0x1800 -> x=565 spd 0x17A0) leaving a DustPuff trailing at x=494, ~440px total travel; solid-object top -> SLIDE 0x0FE4 -> slide off the edge -> ledge-drop -> GLIDEFALL. Sound blob untouched: both shapes build clean with the BLOB_LEN tripwire ARMED, so no BLOB_LEN/Z80_SOUND_SIZE/seam-1 re-pin was needed. Release byte-identical across the DEBUG test scaffold (8 platform records present in s4.debug.bin, absent from s4.bin). Full note: docs/benchmarks/knuckles-c4/GATE-EVIDENCE.md (aeon@546e5aee)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "9d753637"
+full_size = 710007
+anchor_crc = "7251a8d3"
+anchor_end = 0xa3090
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "2a3c9d9b"
+full_size = 596473
+anchor_crc = "45156122"
+anchor_end = 0x892f0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "16e7b34e"
+full_size = 94022
+anchor_crc = "862e6648"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "da9c57c0"
+full_size = 98202
+anchor_crc = "c8f84a1b"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "e9d70231"
+full_size = 655678
+anchor_crc = "31b881a1"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "3d2cf804"
+full_size = 695154
+anchor_crc = "318f37be"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "89d59dfb"
+full_size = 709621
+anchor_crc = "a72804cd"
+anchor_end = 0xa3090

@@ -195,6 +195,13 @@ fn compile_real_file(
 /// character's table grows a row per id, so each new id brings its own ordinal
 /// guard. The count is asserted rather than ranged precisely so an id added
 /// WITHOUT its guard shows up here.
+/// knuckles-c4 (2026-08-12) took the count 14 -> 25: the glide family added FIVE
+/// shared ids — `ANIM_GLIDE_0`, `ANIM_GLIDEFALL`, `ANIM_SLIDE`, `ANIM_CLIMB`,
+/// `ANIM_LEDGE` — and each lands an ordinal guard in every table that must carry
+/// a row for it (Sonic / Tails / the Tails appendage), which is precisely the
+/// lockstep this assert exists to police. The count GREW, i.e. every new id
+/// arrived WITH its guards; a missing one would have shown up as a shortfall
+/// here rather than as a silent ordinal drift at runtime.
 fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
     let guards = link_asserts
         .iter()
@@ -204,7 +211,7 @@ fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAsser
             })
         })
         .count();
-    assert_eq!(guards, 14, "all fourteen ordinal drift guards must be captured");
+    assert_eq!(guards, 25, "all twenty-five ordinal drift guards must be captured");
     let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),

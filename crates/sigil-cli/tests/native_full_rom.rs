@@ -147,7 +147,19 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // to witness, so the pair was re-derived from base + 0x2F2 rather than guessed.
     // Note this label moved for a reason ENTIRELY separate from the parcel's big
     // number: the 0x226D0 of Knuckles art lands at the ROM tail, far behind here.
-    ("Ground_Move_Cap", 0x10822, 0x10942),
+    // `knuckles-c4` (2026-08-12, C4 tasks 10-11): plain 0x10822 -> 0x108F2, debug
+    // 0x10942 -> 0x10A12 — +0xD0 in BOTH shapes. Knuckles' glide family grew
+    // player_common ahead of player_ground: five new state rows in each of the
+    // three parallel tables (Player_States / PState_EnterHooks / PState_ExitHooks
+    // for GLIDE/GLIDEFALL/SLIDE/CLIMB/LEDGE), their enter hooks, and the PlayerV
+    // scratch the climb needs. player_ground's base slides 0x10530 -> 0x10600
+    // plain / 0x10650 -> 0x10720 debug (repin's P_STATE_GROUND, same +0xD0).
+    // Symmetric because none of it is DEBUG-fenced. The intra-region offset holds
+    // at 0x2F2 in BOTH shapes (unchanged since tails-flight) — still
+    // shape-invariant, which is the property this row exists to witness, so the
+    // pair was RE-DERIVED as base + 0x2F2, not guessed: 0x10600 + 0x2F2 = 0x108F2
+    // and 0x10720 + 0x2F2 = 0x10A12.
+    ("Ground_Move_Cap", 0x108F2, 0x10A12),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)
