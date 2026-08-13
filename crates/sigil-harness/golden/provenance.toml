@@ -5676,3 +5676,57 @@ full_crc = "de29f8f4"
 full_size = 711298
 anchor_crc = "96de7399"
 anchor_end = 0xa30b0
+
+[[entry]]
+name = "character-lens-sweep-postmerge"
+ab = "docs/superpowers/notes/2026-08-13-character-lens-sweep.md"
+note = "re-freeze on merged master: picks up the effects-P3 lane's ojz_fixture re-stamp (32a79e1d), which is embedded in the ROM"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "8cb75de6"
+full_size = 711666
+anchor_crc = "68a44fb7"
+anchor_end = 0xa30b0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "b860aab0"
+full_size = 598846
+anchor_crc = "9f7b223d"
+anchor_end = 0x895d0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "d5ea5776"
+full_size = 95615
+anchor_crc = "7cd0cdfb"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "321ad9c6"
+full_size = 99783
+anchor_crc = "fc49dec9"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "1602cde3"
+full_size = 655726
+anchor_crc = "2737f366"
+anchor_end = 0xa016e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "fedcf197"
+full_size = 696836
+anchor_crc = "202f705f"
+anchor_end = 0xa11f0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "3dc20e2c"
+full_size = 711298
+anchor_crc = "b748bed7"
+anchor_end = 0xa30b0
