@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 95 regions, 369 symbols, 7 offsets
+//! [provenance] 95 regions, 376 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -424,6 +424,27 @@ pub const BOOT_DATA_VDP_REGS: Pin = Pin { plain: 0x3BA, debug: 0x3CA };
 
 /// `Ctrl_1_Held`. tests: controllers_port
 pub const CTRL_1_HELD: Pin = Pin { plain: 0xFFFF802C, debug: 0xFFFF802C };
+
+/// `Ctrl_1_Held_Raw`. tests: controllers_port
+pub const CTRL_1_HELD_RAW: Pin = Pin { plain: 0xFFFFB78A, debug: 0xFFFFB818 };
+
+/// `Ctrl_2_Held`. tests: vblank_port
+pub const CTRL_2_HELD: Pin = Pin { plain: 0xFFFF802E, debug: 0xFFFF802E };
+
+/// `Ctrl_1_Ext_Held`. tests: vblank_port
+pub const CTRL_1_EXT_HELD: Pin = Pin { plain: 0xFFFF8032, debug: 0xFFFF8032 };
+
+/// `Ctrl_2_Ext_Held`. tests: vblank_port
+pub const CTRL_2_EXT_HELD: Pin = Pin { plain: 0xFFFF8034, debug: 0xFFFF8034 };
+
+/// `Ctrl_2_Held_Raw`. tests: vblank_port
+pub const CTRL_2_HELD_RAW: Pin = Pin { plain: 0xFFFFB78B, debug: 0xFFFFB819 };
+
+/// `Ctrl_1_Ext_Held_Raw`. tests: vblank_port
+pub const CTRL_1_EXT_HELD_RAW: Pin = Pin { plain: 0xFFFFB78C, debug: 0xFFFFB81A };
+
+/// `Ctrl_2_Ext_Held_Raw`. tests: vblank_port
+pub const CTRL_2_EXT_HELD_RAW: Pin = Pin { plain: 0xFFFFB78D, debug: 0xFFFFB81B };
 
 /// `VSync_Wait`. tests: game_loop_port, load_art_port
 pub const V_SYNC_WAIT: Pin = Pin { plain: 0x239E, debug: 0x2446 };

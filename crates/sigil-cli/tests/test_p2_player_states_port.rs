@@ -56,6 +56,23 @@ fn parse_file(path: &std::path::Path) -> sigil_frontend_emp::ast::File {
     file
 }
 
+
+/// The `PlayerBlock` record (games/sonic4/config/ram.emp) — needed since the
+/// character-lens-sweep parcel bound each module's PBLK_* displacements to the type
+/// that owns the layout (`ensure(PBLK_X == offsetof(PlayerBlock, x))`). 16 of the 21
+/// displacements across 8 files previously carried no guard at all; the guards are
+/// comptime-only in the ROM but they ARE a cross-seam reference, so the
+/// isolated-lowering ambient set has to carry the struct. Filtered to the struct
+/// alone: ram.emp's `region`/`vars` items would drag the whole game RAM map in.
+fn player_block_struct_items(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::Item> {
+    use sigil_frontend_emp::ast::Item;
+    let file = parse_file(&aeon.join("games/sonic4/config/ram.emp"));
+    file.items
+        .into_iter()
+        .filter(|it| matches!(it, Item::Struct(d) if d.name == "PlayerBlock"))
+        .collect()
+}
+
 fn with_ambient(
     deps: Vec<Vec<sigil_frontend_emp::ast::Item>>,
     main: sigil_frontend_emp::ast::File,
@@ -378,7 +395,7 @@ fn compile_region(
 
     let main = parse_file(&aeon.join(emp_rel));
     let file =
-        with_ambient(vec![types(), sst(), constants(), coords(), curl_geometry_items(aeon), pc()], main);
+        with_ambient(vec![types(), sst(), constants(), coords(), curl_geometry_items(aeon), pc(), player_block_struct_items(aeon)], main);
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),

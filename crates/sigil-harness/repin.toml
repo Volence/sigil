@@ -1096,6 +1096,41 @@ tests = ["vdp_init_port"]
 name = "Ctrl_1_Held"
 tests = ["controllers_port"]
 
+# The IRQ-owned HELD raw shadows (aeon character-lens-sweep, 2026-08-13). Read_Controllers
+# writes these every physical VBlank; VInt_Level alone latches them into the published
+# Ctrl_*_Held. They live at the RAM TAIL, NOT contiguous with the controller block, so the
+# port test carries them on a SECOND phased section anchored here.
+[[symbol]]
+name = "Ctrl_1_Held_Raw"
+tests = ["controllers_port"]
+
+# The rest of the HELD family, now referenced by VInt_Level's publish step
+# (aeon character-lens-sweep): Held is latched ONCE per tick from the raw shadows,
+# so vblank references both sides of the copy for all four cells.
+[[symbol]]
+name = "Ctrl_2_Held"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Ctrl_1_Ext_Held"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Ctrl_2_Ext_Held"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Ctrl_2_Held_Raw"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Ctrl_1_Ext_Held_Raw"
+tests = ["vblank_port"]
+
+[[symbol]]
+name = "Ctrl_2_Ext_Held_Raw"
+tests = ["vblank_port"]
+
 # game_loop (tranche 5)
 
 [[symbol]]
