@@ -475,6 +475,17 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("Ctrl_1_Ext_Press_Accum", pick(pins::CTRL_1_EXT_PRESS_ACCUM)),
         ("Ctrl_2_Ext_Press", pick(pins::CTRL_2_EXT_PRESS)),
         ("Ctrl_2_Ext_Press_Accum", pick(pins::CTRL_2_EXT_PRESS_ACCUM)),
+        // character-lens-sweep (2026-08-13): VInt_Level publishes the held bytes,
+        // latching them once per tick from the IRQ-owned raw shadows (a lag VBlank
+        // must not overwrite a running tick's input). Both sides of that copy.
+        ("Ctrl_1_Held", pick(pins::CTRL_1_HELD)),
+        ("Ctrl_2_Held", pick(pins::CTRL_2_HELD)),
+        ("Ctrl_1_Ext_Held", pick(pins::CTRL_1_EXT_HELD)),
+        ("Ctrl_2_Ext_Held", pick(pins::CTRL_2_EXT_HELD)),
+        ("Ctrl_1_Held_Raw", pick(pins::CTRL_1_HELD_RAW)),
+        ("Ctrl_2_Held_Raw", pick(pins::CTRL_2_HELD_RAW)),
+        ("Ctrl_1_Ext_Held_Raw", pick(pins::CTRL_1_EXT_HELD_RAW)),
+        ("Ctrl_2_Ext_Held_Raw", pick(pins::CTRL_2_EXT_HELD_RAW)),
         ("DMA_Budget_Default", pick(pins::DMA_BUDGET_DEFAULT)),
         ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
         // P-3 family rows (same set as the standalone table above); the flip

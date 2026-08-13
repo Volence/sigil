@@ -112,8 +112,15 @@ fn as_hw_port_equs() -> Vec<Section> {
 }
 
 fn as_ctrl_ram_labels() -> Vec<Section> {
-    let asm = "cpu 68000\n\
-               phase $FFFF802C\n\
+    // Pin-sourced rather than hardcoded, and TWO phased runs: the controller block,
+    // plus the four HELD raw shadows at the RAM tail (aeon character-lens-sweep,
+    // 2026-08-13). Read_Controllers writes the shadows every physical VBlank and
+    // VInt_Level alone latches them into the published Ctrl_*_Held, so a lag VBlank
+    // cannot overwrite a running tick's input — which means `controllers` references
+    // the shadows and a standalone compile must define them.
+    let asm = format!(
+        "cpu 68000\n\
+               phase ${:X}\n\
                Ctrl_1_Held:\n\
                \tdc.b 0\n\
                \tds.b 1\n\
@@ -137,10 +144,23 @@ fn as_ctrl_ram_labels() -> Vec<Section> {
                Pad_1_Type:\n\
                \tdc.b 0\n\
                Pad_2_Type:\n\
-               \tdc.b 0\n";
+               \tdc.b 0\n\
+               phase ${:X}\n\
+               Ctrl_1_Held_Raw:\n\
+               \tdc.b 0\n\
+               Ctrl_2_Held_Raw:\n\
+               \tdc.b 0\n\
+               Ctrl_1_Ext_Held_Raw:\n\
+               \tdc.b 0\n\
+               Ctrl_2_Ext_Held_Raw:\n\
+               \tdc.b 0\n",
+        sigil_harness::pins::CTRL_1_HELD.plain,
+        sigil_harness::pins::CTRL_1_HELD_RAW.plain
+    );
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
-    assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (ctrl ram labels): {d:?}")).sections
+    assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (ctrl ram labels): {d:?}")).sections
 }
+
 
 /// `constants.emp`'s items (its six `pub const`s + six drift-guard
 /// `ensure`s), read fresh each call so a doctored `src` never shares mutable
@@ -226,9 +246,13 @@ fn link_controllers_placed(mut sections: Vec<Section>) -> sigil_link::LinkedImag
         sec.group = None;
     }
     sections.extend(hw_equs);
+    // One private LMA PER SECTION: `phase` starts a new section and the RAM labels
+    // now come in two disjoint runs (controller block + the RAM-tail HELD shadows),
+    // so a single shared LMA collides ("overlap in the image (colliding pins)").
+    // The LMAs are harness-private; only the phased VMAs matter to the link.
     let mut ram_labels = as_ctrl_ram_labels();
-    for sec in &mut ram_labels {
-        sec.lma = 0x0200_0000;
+    for (i, sec) in ram_labels.iter_mut().enumerate() {
+        sec.lma = 0x0200_0000 + (i as u32) * 0x0001_0000;
         sec.placement = SectionPlacement::Pinned;
         sec.group = None;
     }

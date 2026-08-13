@@ -84,6 +84,21 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         ("Ctrl_1_Ext_Press_Accum", pick(pins::CTRL_1_EXT_PRESS_ACCUM)),
         ("Ctrl_2_Ext_Press", pick(pins::CTRL_2_EXT_PRESS)),
         ("Ctrl_2_Ext_Press_Accum", pick(pins::CTRL_2_EXT_PRESS_ACCUM)),
+        // character-lens-sweep (2026-08-13): VInt_Level now PUBLISHES the held
+        // bytes too, latching them once per tick from the IRQ-owned raw shadows.
+        // Read_Controllers runs on every physical VBlank including lag frames, so
+        // it may not write the bytes game logic reads — a lag VBlank landing
+        // mid-tick would otherwise replace the tick's held input with the live pad
+        // (under replay playback: $00, i.e. all held input dropped for the rest of
+        // the tick). Both sides of that copy are referenced here.
+        ("Ctrl_1_Held", pick(pins::CTRL_1_HELD)),
+        ("Ctrl_2_Held", pick(pins::CTRL_2_HELD)),
+        ("Ctrl_1_Ext_Held", pick(pins::CTRL_1_EXT_HELD)),
+        ("Ctrl_2_Ext_Held", pick(pins::CTRL_2_EXT_HELD)),
+        ("Ctrl_1_Held_Raw", pick(pins::CTRL_1_HELD_RAW)),
+        ("Ctrl_2_Held_Raw", pick(pins::CTRL_2_HELD_RAW)),
+        ("Ctrl_1_Ext_Held_Raw", pick(pins::CTRL_1_EXT_HELD_RAW)),
+        ("Ctrl_2_Ext_Held_Raw", pick(pins::CTRL_2_EXT_HELD_RAW)),
         ("DMA_Budget_Default", pick(pins::DMA_BUDGET_DEFAULT)),
         ("DMA_Budget_Remaining", pick(pins::DMA_BUDGET_REMAINING)),
         // P2c Task 8 byte cap seam (P-3 family): VInt_Level resets the frame cell.

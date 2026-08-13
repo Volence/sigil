@@ -61,7 +61,7 @@ fn wall_ambient(aeon: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
         parse_file(&aeon.join("engine/objects/dplc.emp"))
             .items
             .into_iter()
-            .filter(|it| matches!(it, Item::ComptimeFn(d) if d.name == "dplc_peak_tiles")),
+            .filter(|it| matches!(it, Item::ComptimeFn(d) if d.name == "dplc_peak_tiles" || d.name == "dplc_peak_entries")),
     );
     items
 }

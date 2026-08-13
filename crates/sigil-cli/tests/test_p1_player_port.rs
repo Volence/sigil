@@ -370,7 +370,12 @@ fn player_block_struct_items(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::
     let file = parse_file(&aeon.join("games/sonic4/config/ram.emp"));
     file.items
         .into_iter()
-        .filter(|it| matches!(it, Item::Struct(d) if d.name == "PlayerBlock"))
+        // PHYS_ROW_WORDS rides along (character-lens-sweep, 2026-08-13): it is the
+        // shared authority for the physics row's length, used BOTH as each
+        // PhysTable_*'s declared array size and by their drift guards, so a module
+        // carrying a PhysTable cannot lower without it.
+        .filter(|it| matches!(it, Item::Struct(d) if d.name == "PlayerBlock")
+            || matches!(it, Item::Const(d) if d.name == "PHYS_ROW_WORDS"))
         .collect()
 }
 

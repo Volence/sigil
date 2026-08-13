@@ -187,7 +187,7 @@ fn as_hw_port_equs() -> Vec<Section> {
 /// u16 pair that used to sit between `Region_Flags` and `Ctrl_1_Held` is gone) —
 /// `hblank_port.rs::as_handler_ptr_label`'s technique, one `phase`d section
 /// carrying all four labels at their real relative offsets.
-fn as_ctrl_ram_labels() -> Vec<Section> {
+fn as_ctrl_ram_labels(debug: bool) -> Vec<Section> {
     let asm = format!(
         "cpu 68000\n\
                phase ${:X}\n\
@@ -214,8 +214,21 @@ fn as_ctrl_ram_labels() -> Vec<Section> {
                Pad_1_Type:\n\
                \tdc.b 0\n\
                Pad_2_Type:\n\
+               \tdc.b 0\n\
+               phase ${:X}\n\
+               Ctrl_1_Held_Raw:\n\
+               \tdc.b 0\n\
+               Ctrl_2_Held_Raw:\n\
+               \tdc.b 0\n\
+               Ctrl_1_Ext_Held_Raw:\n\
+               \tdc.b 0\n\
+               Ctrl_2_Ext_Held_Raw:\n\
                \tdc.b 0\n",
-        pins::CTRL_1_HELD.plain
+        pins::CTRL_1_HELD.plain,
+        // SHAPE-DEPENDENT, unlike the controller block above: the raw shadows sit at
+        // the RAM TAIL, behind the shape-divergent blocks, so plain and debug differ
+        // (0xFFFFB78A / 0xFFFFB818).
+        if debug { pins::CTRL_1_HELD_RAW.debug } else { pins::CTRL_1_HELD_RAW.plain }
     );
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (ctrl ram labels): {d:?}")).sections
@@ -334,9 +347,15 @@ fn compile_real_file(debug: bool) -> (Vec<Section>, sigil_link::LinkedImage, Vec
     }
     sections.extend(hw_equs);
 
-    let mut ram_labels = as_ctrl_ram_labels();
-    for sec in &mut ram_labels {
-        sec.lma = 0x0200_0000;
+    // One private LMA PER SECTION: `phase` starts a new section, and the RAM labels
+    // now come in TWO disjoint runs — the controller block, plus the HELD raw shadows
+    // that live at the RAM tail (aeon character-lens-sweep). Pinning both to one LMA
+    // collides ("overlap in the image (colliding pins)"). The LMAs are harness-private
+    // and carry no meaning beyond being distinct and clear of the map regions; only
+    // the phased VMAs matter to the link.
+    let mut ram_labels = as_ctrl_ram_labels(debug);
+    for (i, sec) in ram_labels.iter_mut().enumerate() {
+        sec.lma = 0x0200_0000 + (i as u32) * 0x0001_0000;
         sec.placement = SectionPlacement::Pinned;
         sec.group = None;
     }
