@@ -19,8 +19,12 @@
 //!   `PageManifest` struct definition (the type analog of the `ObjDef` symbol
 //!   seam below). `OJZ_Act_Pool_Page0` .. `OJZ_Act1_Descriptor`.
 //!
-//! Each section is byte-compared against the reference ROM at its pin base.
-//! Content is shape-invariant (debug = same bytes at +0x88).
+//! Each section is byte-compared against the reference ROM at its pin base, from ONE
+//! compile, plus a tail check that the gap to the next section is map fill. Content is
+//! shape-invariant: the debug shape is the same bytes at its own base, with the Abs32
+//! pointer cells relocated by the base delta. The REGION LENGTHS are not shape-invariant
+//! and must not be asserted equal — they are `end-is-next-placement` spans that include
+//! placer slack. See the block in `gate()`.
 //!
 //! ```text
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test ojz_run_a_port
@@ -47,6 +51,10 @@ fn strict_gate() -> bool {
 
 /// One `ObjDef` record — the stride between `ObjDef_Static` and `ObjDef_Solid`.
 const OBJDEF_LEN: u32 = 0x1A;
+
+/// The fill byte `games/sonic4/map.toml` places these sections with (`fill = 0x00`).
+/// Inter-section slack is written with it; emitted data is not.
+const MAP_FILL: u8 = 0x00;
 
 /// The `ObjDef_*` seam entity_data's type-table pointers resolve against — the
 /// per-shape ROM addresses the Abs32 pointer cells bake in.
@@ -190,14 +198,50 @@ fn gate(debug: bool, rom_name: &str) {
 
     for (emp_rel, section, region, seam) in sections() {
         let base = if debug { region.debug_base } else { region.plain_base };
-        let len = region.plain_len; // shape-invariant
-        // Load-bearing, and it caught a real design mistake (knuckles-c4,
-        // 2026-08-12): a DEBUG-gated test platform appended to sec0's object list
-        // made `entity_data` 48 bytes longer in the debug shape. Level DATA is
-        // expected to be shape-identical — the port tests compile one length for
-        // both shapes — so a DEBUG-only entity is not expressible here. The
-        // scaffold was reverted rather than this assert relaxed.
-        assert_eq!(region.debug_len, region.plain_len, "{section} len must be shape-invariant");
+        // The MODULE'S OWN emitted length. Both modules here are generated and carry
+        // no shape conditionals, and `compile_section` lowers them with
+        // `defines: vec![]` — so this ONE compile is the authority for both shapes,
+        // and the plain region (which has no trailing placer slack) states its length.
+        // If a future parcel ever leaves slack after the PLAIN section too, the
+        // "must emit exactly" assert below fails loudly rather than silently drifting.
+        let len = region.plain_len;
+        // The region pin's LENGTH IS NOT THE SECTION'S LENGTH. These regions are
+        // declared `end-is-next-placement` (sigil-harness/repin.toml): the pin spans
+        // start-symbol -> NEXT SECTION's start symbol, so it swallows whatever
+        // inter-section fill the placer happened to leave. That slack is shape-varying
+        // by nature — 50 of the 95 region pins already carry `debug_len != plain_len`
+        // on master, including level data (`act_descriptor` +6, `sec_block_blobs` -12,
+        // `objdefs` -4), and `act_descriptor` is this region's immediate neighbour
+        // using the identical pattern.
+        //
+        // This test used to `assert_eq!(debug_len, plain_len)` here. That held for 100+
+        // parcels by luck of placement and then fired on effects-p2 with a 2-byte delta
+        // on `ojz_act_pool` — investigated 2026-08-13 and ruled a STALE FIXTURE, not a
+        // shape leak: the section's 0x2F16 bytes are byte-identical between shapes
+        // except the 10 Abs32 page pointers, each shifted by exactly the base delta
+        // (0x850), and the 2 extra debug bytes are 0x00 map fill sitting OUTSIDE the
+        // section at 0x1600E. Asserting on end-is-next-placement lengths measures the
+        // placer, not the data.
+        //
+        // The invariant that IS load-bearing — and that caught the real knuckles-c4
+        // mistake (a DEBUG-gated test platform appended to sec0's object list made
+        // `entity_data` 48 bytes longer in the debug shape) — is that the module emits
+        // the SAME BYTES in both shapes. Two checks enforce it exactly:
+        //   1. the byte comparison below, run against BOTH ROMs from ONE compile. In
+        //      the knuckles-c4 case the extra records sat mid-region, so every later
+        //      byte shifted and this diffed on the first one.
+        //   2. the tail check: everything between the module's last byte and the next
+        //      section's start must be MAP FILL. Emitted data is not fill, so a
+        //      debug-only record APPENDED to the tail is caught here.
+        // Together those are strictly sharper than the length equality they replace.
+        let shape_len = if debug { region.debug_len } else { region.plain_len };
+        assert!(
+            shape_len >= len,
+            "`{section}` ({}) region is {shape_len:#x} but the module emits {len:#x} bytes — the \
+             next section starts INSIDE this one, which means the content really did shrink by \
+             shape. That is a real shape leak, not placer slack; do not re-baseline.",
+            if debug { "debug" } else { "plain" }
+        );
 
         let linked = compile_section(emp_rel, section, base, len, seam, debug);
         let sec = linked
@@ -211,6 +255,22 @@ fn gate(debug: bool, rom_name: &str) {
                 if debug { "debug" } else { "plain" },
                 &sec.bytes[i.saturating_sub(4)..(i + 8).min(len)],
                 &expected[i.saturating_sub(4)..(i + 8).min(len)]
+            );
+        }
+
+        // Tail slack must be pure map fill (`fill = 0x00` in games/sonic4/map.toml) —
+        // see the block above. Anything else means the shape emitted extra DATA.
+        let slack = &refrom[base as usize + len..base as usize + shape_len];
+        if let Some(i) = slack.iter().position(|&b| b != MAP_FILL) {
+            panic!(
+                "`{section}` ({}) emits {len:#x} bytes but the next section starts {shape_len:#x} \
+                 in, and the gap is NOT map fill — first non-fill at gap offset {i:#x} \
+                 (ROM {:#x}): {:02x?}. Non-fill slack means this shape emitted extra level DATA \
+                 (the knuckles-c4 DEBUG-entity failure mode). Level data must be shape-identical: \
+                 fix the emitter, do not re-baseline.",
+                if debug { "debug" } else { "plain" },
+                base as usize + len + i,
+                &slack[i..(i + 8).min(slack.len())]
             );
         }
     }
