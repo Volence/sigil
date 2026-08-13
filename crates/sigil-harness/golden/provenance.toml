@@ -5568,3 +5568,57 @@ full_crc = "f9b3d140"
 full_size = 711252
 anchor_crc = "db5ef644"
 anchor_end = 0xa30b0
+
+[[entry]]
+name = "palette-variant-derive"
+ab = "docs/benchmarks/effects-p2/PALETTE-VARIANT-GATE-AB.md"
+note = "Gate the variant derive on PAL_ACT_VARIANT_STALE: 19332 cyc/frame (15.1%) -> 0, staging image byte-identical, idle 62.7% -> 77.9%."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "4b13957b"
+full_size = 711600
+anchor_crc = "a2f2ddf0"
+anchor_end = 0xa30b0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "a169d04d"
+full_size = 598766
+anchor_crc = "40134fac"
+anchor_end = 0x895b0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "dba0596c"
+full_size = 95549
+anchor_crc = "8232a9f9"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "3214cca7"
+full_size = 99717
+anchor_crc = "d8165363"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "1cfde66b"
+full_size = 655726
+anchor_crc = "1e61a84a"
+anchor_end = 0xa016e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "601fc11b"
+full_size = 696788
+anchor_crc = "fd4470a7"
+anchor_end = 0xa11f0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "d792e8d6"
+full_size = 711252
+anchor_crc = "4225a3bb"
+anchor_end = 0xa30b0

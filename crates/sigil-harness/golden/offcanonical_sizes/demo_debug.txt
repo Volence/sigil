@@ -7,22 +7,22 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=demo_debug
 # reproduces_golden=demo.debug.bin
-# golden_crc32=7ba4a51a
-# assembled_anchor=2c8c77c0
+# golden_crc32=3214cca7
+# assembled_anchor=d8165363
 # assembled_end=0x11224
 # labels=42
 AnimateSprite 0x225e
-BG_Init 0x6ef0
-BgAnim_Init 0x6fd0
+BG_Init 0x6f10
+BgAnim_Init 0x6ff0
 BootData 0x39a
 BootData_End 0x406
 BusError 0x10174
-CSelf_S4LZ_Plain 0x73a8
+CSelf_S4LZ_Plain 0x73c8
 Camera_Init 0x5080
 Checksum 0x18e
 Collected_Init 0x292a
 Collision_GetType 0x4c10
-CompressionSelfTest 0x7128
+CompressionSelfTest 0x7148
 DemoBox_Main 0x10002
 EndOfRom 0x11224
 EntryPoint 0x200
@@ -34,7 +34,7 @@ InitObjectRAM 0x162c
 InitSpriteSystem 0x1d70
 Init_DMA_Queue 0x45a
 Init_SpriteTable 0x7a0
-Level_LoadArt 0x5e90
+Level_LoadArt 0x5eb0
 Load_Object 0x3a2c
 ObjCodeBase 0x10000
 ObjDef_DemoBox 0x10006
