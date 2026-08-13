@@ -5102,6 +5102,27 @@ mod tests {
             .unwrap_or_default()
     }
 
+    /// Address-register-destination ALU hygiene (effects-P2 corruption fix,
+    /// 2026-08-12). End-to-end: `add/sub dN,aM` must FAIL to assemble (they alias
+    /// ADDX/SUBX — `D549`-style silent memory corruption), matching this file's
+    /// stated "left to fail loud" intent for add/sub. `cmp` An-dest is asl's `cmpa`
+    /// spelling (promoted). The explicit `adda`/`suba`/`cmpa` spellings assemble.
+    #[test]
+    fn alu_address_register_destination_spelling_probes() {
+        let head = "        cpu 68000\n        padding off\n        phase 0\n";
+        // adda/suba/cmpa explicit spellings assemble to the address-arithmetic words.
+        assert_eq!(image(&format!("{head}        adda.w a0,a1\n")), vec![0xD2, 0xC8]);
+        assert_eq!(image(&format!("{head}        suba.l a0,a1\n")), vec![0x93, 0xC8]);
+        assert_eq!(image(&format!("{head}        cmpa.l a0,a1\n")), vec![0xB3, 0xC8]);
+        // `cmp.l a0,a1` promotes to cmpa (asl parity — the debugger `assert` macro).
+        assert_eq!(image(&format!("{head}        cmp.l a0,a1\n")), vec![0xB3, 0xC8]);
+        // `add.w dN,aM` / `sub` now FAIL LOUD (were silent ADDX garbage).
+        assert!(run(&format!("{head}        add.w d2,a1\n"), &Options::default()).is_err(),
+                "add.w d2,a1 must fail to assemble (needs adda)");
+        assert!(run(&format!("{head}        sub.l d0,a1\n"), &Options::default()).is_err(),
+                "sub.l d0,a1 must fail to assemble (needs suba)");
+    }
+
     /// Every `EquSym` named `name` across all sections of an assembled module
     /// (Task B1) — a `Vec` so a test can assert exactly-one-ness itself rather
     /// than this helper silently picking the first/last.

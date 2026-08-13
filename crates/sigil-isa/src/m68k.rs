@@ -359,9 +359,38 @@ fn encode_alu_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
                 _ => unreachable!(),
             };
             match (src, dst) {
-                // <ea>,Dn — reg is the Dn destination, opmode 0xx.
+                // <ea>,Dn — reg is the Dn destination, opmode 0xx. (An SOURCE is a
+                // valid EA here — `add.w a0,d1` is fine.)
                 (ea, Operand::Dn(n)) => (base, n & 0b111, sz, ea),
-                // Dn,<ea> — reg is the Dn source, opmode 1xx.
+                // An DESTINATION has NO encoding in this family: the `Dn,<ea>`
+                // direction's EA field cannot name an address register (mode 001 is
+                // not an alterable-memory EA). Silently taking the `Dn,<ea>` arm
+                // below produced `D549`-style words that the 68000 decodes as
+                // `ADDX -(An),-(An)` — a memory-corrupting garbage opcode (the
+                // effects-P2 raster/palette corruption, 2026-08-12). ADD/SUB have the
+                // `adda`/`suba` address-arithmetic instructions for this; AND/OR have
+                // none. Reject LOUD, naming the spelling — matching AS's stated intent
+                // ("left to fail loud … never silently mis-encoded", sigil-frontend-as
+                // eval.rs), which this backstops now that it actually fails.
+                (Operand::Dn(_), Operand::An(_)) => {
+                    let hint = match inst.mnemonic {
+                        Mnemonic::Add => {
+                            "write `adda` (address arithmetic; word/long only, no `.b`)"
+                        }
+                        Mnemonic::Sub => {
+                            "write `suba` (address arithmetic; word/long only, no `.b`)"
+                        }
+                        // AND/OR: no ANDA/ORA exists — the operation is genuinely
+                        // undefined against an address register.
+                        _ => "no address-register-destination form exists for this operation",
+                    };
+                    return Err(IsaError::UnsupportedForm(format!(
+                        "{:?}.{:?} with an address-register destination is not encodable — {hint}",
+                        inst.mnemonic, inst.size
+                    )));
+                }
+                // Dn,<ea> — reg is the Dn source, opmode 1xx (ea is memory: An was
+                // rejected above, Dn dest was taken by the first arm).
                 (Operand::Dn(n), ea) => (base, n & 0b111, sz + 0b100, ea),
                 (s, d) => {
                     return Err(IsaError::UnsupportedForm(format!(
@@ -1321,6 +1350,55 @@ mod vocab_tests {
         // Move still works.
         let mv = Instruction { mnemonic: Mnemonic::Move, size: Size::W, ops: vec![Operand::Dn(1), Operand::Dn(0)] };
         assert_eq!(encode(&mv).unwrap(), vec![0x30, 0x01]);
+    }
+
+    /// Address-register-destination hygiene for the ALU-EA family (effects-P2
+    /// corruption fix, 2026-08-12). `add/sub/and/or dN,aM` must NOT silently encode
+    /// as the `Dn,<ea>` form with An as the EA — that emitted `D549`-style words the
+    /// 68000 decodes as `ADDX -(An),-(An)`, corrupting memory. ADD/SUB reject with an
+    /// `adda`/`suba` hint; AND/OR reject (no address-register form). The CORRECT
+    /// spellings still encode, and the `<ea>,Dn` direction with an An SOURCE is
+    /// untouched.
+    #[test]
+    fn alu_ea_rejects_address_register_destination() {
+        // --- garbage forms now fail loud (were silent D549-style ADDX) ---
+        let add_da = Instruction { mnemonic: Mnemonic::Add, size: Size::W, ops: vec![Operand::Dn(2), Operand::An(1)] };
+        assert!(matches!(encode(&add_da), Err(IsaError::UnsupportedForm(_))), "add.w d2,a1 must be rejected");
+        let sub_da = Instruction { mnemonic: Mnemonic::Sub, size: Size::L, ops: vec![Operand::Dn(0), Operand::An(1)] };
+        assert!(matches!(encode(&sub_da), Err(IsaError::UnsupportedForm(_))), "sub.l d0,a1 must be rejected");
+        let and_da = Instruction { mnemonic: Mnemonic::And, size: Size::W, ops: vec![Operand::Dn(0), Operand::An(1)] };
+        assert!(matches!(encode(&and_da), Err(IsaError::UnsupportedForm(_))), "and.w d0,a1 must be rejected (no ANDA)");
+        let or_da = Instruction { mnemonic: Mnemonic::Or, size: Size::W, ops: vec![Operand::Dn(0), Operand::An(1)] };
+        assert!(matches!(encode(&or_da), Err(IsaError::UnsupportedForm(_))), "or.w d0,a1 must be rejected (no ORA)");
+        // The ADD hint names `adda`.
+        match encode(&add_da) {
+            Err(IsaError::UnsupportedForm(msg)) => assert!(msg.contains("adda"), "hint should name adda: {msg}"),
+            other => panic!("expected UnsupportedForm, got {other:?}"),
+        }
+
+        // --- the CORRECT spellings encode (adda/suba/cmpa) ---
+        let adda = Instruction { mnemonic: Mnemonic::Adda, size: Size::W, ops: vec![Operand::An(0), Operand::An(1)] };
+        assert_eq!(encode(&adda).unwrap(), vec![0xD2, 0xC8], "adda.w a0,a1");
+        let suba = Instruction { mnemonic: Mnemonic::Suba, size: Size::L, ops: vec![Operand::An(0), Operand::An(1)] };
+        assert_eq!(encode(&suba).unwrap(), vec![0x93, 0xC8], "suba.l a0,a1");
+        let cmpa = Instruction { mnemonic: Mnemonic::Cmpa, size: Size::L, ops: vec![Operand::An(0), Operand::An(1)] };
+        assert_eq!(encode(&cmpa).unwrap(), vec![0xB3, 0xC8], "cmpa.l a0,a1");
+
+        // --- adda/suba/cmpa are word/long only: byte form errors ---
+        let adda_b = Instruction { mnemonic: Mnemonic::Adda, size: Size::B, ops: vec![Operand::An(0), Operand::An(1)] };
+        assert!(matches!(encode(&adda_b), Err(IsaError::UnsupportedForm(_))), "adda.b has no byte form");
+        let cmpa_b = Instruction { mnemonic: Mnemonic::Cmpa, size: Size::B, ops: vec![Operand::An(0), Operand::An(1)] };
+        assert!(matches!(encode(&cmpa_b), Err(IsaError::UnsupportedForm(_))), "cmpa.b has no byte form");
+
+        // --- regression: An SOURCE with a Dn destination is STILL valid (add.w a0,d1) ---
+        let add_ad = Instruction { mnemonic: Mnemonic::Add, size: Size::W, ops: vec![Operand::An(0), Operand::Dn(1)] };
+        assert_eq!(encode(&add_ad).unwrap(), vec![0xD2, 0x48], "add.w a0,d1 (An source) still encodes");
+        // --- regression: Dn,<memory> still encodes (add.w d0,(a1)) ---
+        let add_dm = Instruction { mnemonic: Mnemonic::Add, size: Size::W, ops: vec![Operand::Dn(0), Operand::Ind(1)] };
+        assert_eq!(encode(&add_dm).unwrap(), vec![0xD1, 0x51], "add.w d0,(a1) still encodes");
+        // --- plain Dn,Dn still encodes (add.w d0,d1) ---
+        let add_dd = Instruction { mnemonic: Mnemonic::Add, size: Size::W, ops: vec![Operand::Dn(0), Operand::Dn(1)] };
+        assert_eq!(encode(&add_dd).unwrap(), vec![0xD2, 0x40], "add.w d0,d1 still encodes");
     }
 
     /// S2-D6 U1 — the ISA-derived write model. Every write-form mnemonic the

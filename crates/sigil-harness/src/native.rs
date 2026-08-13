@@ -35,6 +35,21 @@ use sigil_link::LinkedImage;
 use crate::pins::{self, Region};
 use crate::{seam1, seam2};
 
+/// Format EVERY build error, one per line, instead of only the first.
+///
+/// A `build_program` failure is usually a small cluster of related diagnostics (a
+/// struct-literal type mismatch reports both the offending field and the item that
+/// failed to emit), and reporting only `first` hides whichever one names the actual
+/// mistake. Byte spans rather than `file:line` because `build_program_open_embed`
+/// does not hand back the `SourceMap` needed to resolve them — locating the span is
+/// `head -c <end> <file> | tail -c <end-start>`.
+fn fmt_diag_list(errs: &[&sigil_span::Diagnostic]) -> String {
+    errs.iter()
+        .map(|d| format!("  [{:?}] {} @ {:?}", d.level, d.message, d.primary))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 // ── Flip Stage 2 · S1.2 — THE GAME PROFILE (the off-canonical driver parameters) ──
 //
 // The Stage-1 native driver is sonic4-shaped throughout (registry, defines, keystones,
@@ -1792,9 +1807,9 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
     let berr: Vec<_> = bdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     if !berr.is_empty() {
         return Err(format!(
-            "build_program: {} error(s); first: {:?}",
+            "build_program: {} error(s);\n{}",
             berr.len(),
-            berr.first()
+            fmt_diag_list(&berr)
         ));
     }
 

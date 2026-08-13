@@ -5514,3 +5514,57 @@ full_crc = "d8e0c6c2"
 full_size = 709621
 anchor_crc = "f95a3169"
 anchor_end = 0xa3090
+
+[[entry]]
+name = "effects-p2"
+ab = "docs/benchmarks/effects-p2/GATE-EVIDENCE.md"
+note = "Effects P2: dense tier + row-119 blanking fix + world-anchored water"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "6622861d"
+full_size = 711620
+anchor_crc = "d7967479"
+anchor_end = 0xa30b0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "8ba8cb99"
+full_size = 598766
+anchor_crc = "31b40243"
+anchor_end = 0x895b0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "58b566be"
+full_size = 95549
+anchor_crc = "df1951fe"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7ba4a51a"
+full_size = 99717
+anchor_crc = "2c8c77c0"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "b82afe4a"
+full_size = 655726
+anchor_crc = "a814c4f6"
+anchor_end = 0xa016e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "2e932149"
+full_size = 696788
+anchor_crc = "e60f44c9"
+anchor_end = 0xa11f0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "f9b3d140"
+full_size = 711252
+anchor_crc = "db5ef644"
+anchor_end = 0xa30b0

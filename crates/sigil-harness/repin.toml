@@ -2810,6 +2810,17 @@ tests = ["act_descriptor_port"]
 [[symbol]]
 name = "OJZ_TestPal"
 tests = ["act_descriptor_port"]
+# Effects P2: the same class, two parcels later — OJZ_TestGradient is the dense-tier
+# gate fixture (Task 5, a 96-line OP_RUN_GRADIENT ramp) that act_descriptor names into
+# section 2's sec_raster_table, and OJZ_ShimmerCycle is the Task 8 per-section cycling
+# script it names into sec_pal_cycle. Both live in `parallax_configs` alongside the two
+# P1 fixtures above, so both are cross-seam DATA operands from act_descriptor's side.
+[[symbol]]
+name = "OJZ_TestGradient"
+tests = ["act_descriptor_port"]
+[[symbol]]
+name = "OJZ_ShimmerCycle"
+tests = ["act_descriptor_port"]
 # Effects P1: the raster dispatcher's RAM working set. They are engine.ram labels, so
 # from engine.effects.raster's standalone re-lower they are inbound cross-seam RAM
 # operands and raster_port has to be given their true per-shape VMAs.
@@ -2843,6 +2854,18 @@ tests = ["parallax_port"]
 [[symbol]]
 name = "Raster_InstallSection"
 tests = ["parallax_port"]
+# Effects P2 Task 8 (per-section palette cycling): parallax's boundary crossing now
+# also consumes Sec.sec_pal_cycle, so Palette_InstallCycleSection joins the two above
+# as an outbound cross-seam call from parallax's standalone re-lower.
+[[symbol]]
+name = "Palette_InstallCycleSection"
+tests = ["parallax_port"]
+# Effects P2: the palette engine composes once per frame from GameLoop (arithmetic,
+# not VDP work, so it is main-loop and not VBlank) — an outbound cross-seam call from
+# the game_loop standalone re-lower, the peer of Raster_VBlank above.
+[[symbol]]
+name = "Palette_Compose"
+tests = ["game_loop_port"]
 # C1 (per-slot player working state): the single-global `Player_Phys` row +
 # `Player_Quadrant` + `Player_JumpBuffer` are GONE — folded into a
 # `[PlayerBlock; NUM_PLAYERS]` array whose ONE label is the array base. Every
