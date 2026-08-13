@@ -5622,3 +5622,57 @@ full_crc = "d792e8d6"
 full_size = 711252
 anchor_crc = "4225a3bb"
 anchor_end = 0xa30b0
+
+[[entry]]
+name = "character-lens-sweep"
+ab = "docs/superpowers/notes/2026-08-13-character-lens-sweep.md"
+note = "character lens sweep: input latch, skid latch, wall-catch facing + left off-by-one, slide quadrant, state leaks, DPLC entry guards"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "231249e7"
+full_size = 711666
+anchor_crc = "493282f9"
+anchor_end = 0xa30b0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "f8349e6f"
+full_size = 598846
+anchor_crc = "beedef73"
+anchor_end = 0x895d0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "d5ea5776"
+full_size = 95615
+anchor_crc = "7cd0cdfb"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "321ad9c6"
+full_size = 99783
+anchor_crc = "fc49dec9"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "22befb9a"
+full_size = 655726
+anchor_crc = "70506a09"
+anchor_end = 0xa016e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "eada520c"
+full_size = 696836
+anchor_crc = "01b9bd11"
+anchor_end = 0xa11f0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "de29f8f4"
+full_size = 711298
+anchor_crc = "96de7399"
+anchor_end = 0xa30b0

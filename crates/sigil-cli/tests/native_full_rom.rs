@@ -159,7 +159,18 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // shape-invariant, which is the property this row exists to witness, so the
     // pair was RE-DERIVED as base + 0x2F2, not guessed: 0x10600 + 0x2F2 = 0x108F2
     // and 0x10720 + 0x2F2 = 0x10A12.
-    ("Ground_Move_Cap", 0x108F2, 0x10A12),
+    // `character-lens-sweep` (2026-08-13): plain 0x108F2 -> 0x10902, debug 0x10A12
+    // UNCHANGED — and this is the first ASYMMETRIC move this row has recorded.
+    // player_common grew ahead of player_ground (the skid latch's one-writer clear at
+    // the top of Player_Animate, the ST_PUSHING clear in PHook_GroundEnter, minus the
+    // clear retired from .skid_drop), sliding P_STATE_GROUND 0x10600 -> 0x10610 in
+    // PLAIN only; the debug base holds at 0x10720. Every prior entry here was
+    // symmetric and said so, so the asymmetry is called out rather than glossed:
+    // the debug shape absorbs the growth ahead of this region.
+    // The intra-region offset holds at 0x2F2 in BOTH shapes — the shape-invariance
+    // this row exists to witness is intact — so the pair is RE-DERIVED as base +
+    // 0x2F2, not guessed: 0x10610 + 0x2F2 = 0x10902 and 0x10720 + 0x2F2 = 0x10A12.
+    ("Ground_Move_Cap", 0x10902, 0x10A12),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)
