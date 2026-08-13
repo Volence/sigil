@@ -408,23 +408,31 @@ fn generated_pins_match_the_hand_typed_baseline() {
     //   `effects-p2-palette` (2026-08-13, chain entry 108): the palette engine + the
     // dense raster tier. `RASTER` len +0xDA and `PALETTE` len +0x480, both SYMMETRIC
     // (none of it is DEBUG-fenced), so everything downstream of the palette section
-    // slides a flat +0x560 plain / +0x570 debug. That arithmetic closes exactly:
-    // 0x6 (game_loop) + 0xDA (raster) + 0x480 (palette) = 0x560, and the debug side is
-    // the same 0x560 plus the +0x10 upstream step below.
+    // slides a flat +0x560 plain / +0x570 debug.
+    //   THE +6 IN THAT SUM IS `PARALLAX`, NOT `game_loop` (corrected in review — the
+    // first draft of this row misattributed it, and the totals close either way, which
+    // is exactly why it needed checking). parallax.emp gained
+    // `jbsr Palette_InstallCycleSection` at the boundary crossing: PARALLAX len
+    // 0x5F8 -> 0x5FE, which pushes RASTER's base +6. So the chain is
+    // parallax 0x6 + raster 0xDA + palette 0x480 = 0x560, and debug is that plus the
+    // +0x10 upstream step below.
+    //   `game_loop` ALSO grew +6 (its own `jbsr Palette_Compose`, len 0x1C -> 0x22), but
+    // it is absorbed and contributes ZERO to the downstream slide: in PLAIN the next
+    // section's slack takes it exactly (REPLAY len -6) and S4LZ..CAMERA plain bases are
+    // all +0. Do not merge the two 6s — a future parcel that adds +6 to game_loop while
+    // dropping the parallax call would produce the same 0x560 and read as "explained".
     //   The +0x10 DEBUG-ONLY upstream step, traced rather than assumed (it is the row
-    // family on CORE/DPLC/ANIMATE/RINGS and 13 more): game_loop.emp gained
-    // `jbsr Palette_Compose`, so GAME_LOOP len grows +6 in BOTH shapes. In PLAIN the
-    // next section's slack absorbs it exactly (REPLAY len -6) and the downstream slide
-    // is +0. In DEBUG the same +6 crosses an 8-alignment boundary twice — REPLAY len
-    // +2 pushes S4LZ +8, then ZX0_RESUME len +8 pushes MATH +0x10 — and every region
-    // from MATH to RASTER inherits that +0x10. Both those "len" moves are placer slack,
-    // not code: these are `end-is-next-placement` spans, so they measure the gap to the
-    // next section. NOTHING in replay or zx0 changed on this branch.
+    // family on CORE/DPLC/ANIMATE/RINGS and 13 more): game_loop's +6 crosses an
+    // 8-alignment boundary twice in the DEBUG shape — REPLAY len +2 pushes S4LZ +8, then
+    // ZX0_RESUME len +8 pushes MATH +0x10 — and every region from MATH to RASTER
+    // inherits it. Both those "len" moves are placer slack, not code: these are
+    // `end-is-next-placement` spans measuring the gap to the next section. NOTHING in
+    // replay or zx0 changed on this branch.
     //   NOTE SOUND_API is NOT an alignment-asymmetry row this time (contrast the two
-    // chains above, where it took an extra +-0x10): it takes the flat +0x560/+0x570
-    // like the rest of the downstream family, and its plain-vs-debug difference is
-    // entirely the upstream +0x10. Checked, because assuming SOUND_API is always the
-    // odd row would be the same mistake in the opposite direction.
+    // chains above, where it took an extra +-0x10): it takes the flat +0x560/+0x570 like
+    // the rest of the downstream family, and its plain-vs-debug difference is entirely
+    // the upstream +0x10. Checked, because assuming SOUND_API is always the odd row
+    // would be the same mistake in the opposite direction.
     assert_eq!(pins::ANIMATE.plain_base, 0x33C0);  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: the boot-growth slide (aligned), which every region downstream of boot inherits  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof
     assert_eq!(pins::ANIMATE.debug_base, 0x3B3E);  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: same boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof
     assert_eq!(pins::ANIMATE.plain_len, 0x194);  // +0xA bug005: AF_SET_FIELD rail + refresh idiom
@@ -623,6 +631,32 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // bank, which repacks it away — the same absorption the character-dispatch-c1
     // paragraph above describes. The only reason these totals move at all is the
     // ROM-tail art.
+    // ── Level-data shape relation (added effects-p2, 2026-08-13, on review) ──
+    // `ojz_run_a_port` used to be the ONLY thing asserting that ojz_act_pool's region
+    // length is shape-invariant. That assert was correct about the data and wrong about
+    // what it measured — region pins are `end-is-next-placement`, so their length carries
+    // the placer's inter-section fill — and it was replaced there by checks on the
+    // section's own bytes. Replacing it left NOTHING pinning the relation, which is a
+    // real loss of coverage even though the assert it replaced was ill-founded. These
+    // rows put it back where a per-parcel ledger belongs, so a future move is loud and
+    // has to be explained rather than silently absorbed.
+    //
+    // The 2-byte debug excess is PLACER FILL at 0x1600E (verified: the 0x2F16 of section
+    // content is byte-identical between shapes except the 10 Abs32 page pointers, each
+    // shifted by exactly the 0x850 base delta). Its ORIGIN is parallax_configs below —
+    // that is the row that actually explains the +2, and it had no pin at all.
+    assert_eq!(pins::OJZ_ACT_POOL.plain_len, 0x2F16);
+    assert_eq!(pins::OJZ_ACT_POOL.debug_len, 0x2F18);  // +2 effects-p2-palette: inter-section fill, NOT emitted data — if this grows, check the emitter before re-baselining
+    // parallax_configs gained OJZ_TestGradient (the 96-line dense-tier gate fixture) and
+    // OJZ_ShimmerCycle (the Task 8 cycling script): +0x280 plain / +0x28E debug. The
+    // shapes differ because the new data CONSUMED 0xE of pre-existing debug-side slack
+    // (master carried 0xB1C plain / 0xB0E debug — a -14 asymmetry — and both shapes now
+    // land on 0xD9C), so this parcel ELIMINATED a shape asymmetry here. That 0xE is what
+    // makes downstream level-data debug bases take +0x28E against plain's +0x280, and it
+    // is what ultimately lands the 2 bytes of fill after ojz_act_pool above.
+    assert_eq!(pins::PARALLAX_CONFIGS.plain_len, 0xD9C);
+    assert_eq!(pins::PARALLAX_CONFIGS.debug_len, 0xD9C);
+
     assert_eq!(pins::ASSEMBLED_LEN, 0xA11F0); // +0x30 effects-p2-palette: the +0x560 engine growth is org-anchor absorbed (as it has been for several chains) and only this reaches the ROM tail // +0x20F60 tails-data (Map_Tails exiled to the ROM tail) // +8 character-dispatch-c1 (0x50 of player growth, repacked past the sound bank) // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x10 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)  // +0x226D0 knuckles-def (Map_Knuckles takes the same ROM-tail exile)
     // knuckles-c4 (2026-08-12): plain HOLDS at 0xA11C0, debug +0x10 -> 0xA3090.
     // The parcel added Knuckles' whole glide family — two new sections

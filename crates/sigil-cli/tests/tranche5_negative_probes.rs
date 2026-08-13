@@ -152,12 +152,25 @@ fn misspelled_cross_seam_symbol_is_loud() {
         "Game_State",
     ]));
 
-    let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true);
-    let loud = match resolved {
-        Err(_) => true,
-        Ok(resolved) => sigil_link::link(&resolved, &SymbolTable::new()).is_err(),
+    // PIN THE CAUSE, do not just assert "something failed". A bare `loud` check is
+    // satisfied by ANY unresolved name, which is how this probe went vacuous when
+    // game_loop.emp gained `Palette_Compose` (the supplied set above is the fix, but a
+    // supplied set is a moving target — the next cross-seam callee breaks it again).
+    // Requiring the diagnostic to NAME the doctored symbol makes the probe self-detecting:
+    // it can only pass for its own reason. Pattern borrowed from tranche6's
+    // objroutine_typo probe.
+    let msgs = match sigil_link::resolve_layout(&sections, &SymbolTable::new(), true) {
+        Err(d) => d.iter().map(|d| d.message.clone()).collect::<Vec<_>>(),
+        Ok(resolved) => match sigil_link::link(&resolved, &SymbolTable::new()) {
+            Err(d) => d.iter().map(|d| d.message.clone()).collect::<Vec<_>>(),
+            Ok(_) => Vec::new(),
+        },
     };
-    assert!(loud, "a misspelled cross-seam symbol must fail resolve or link, not emit");
+    assert!(
+        msgs.iter().any(|m| m.contains("Sound_DrainSfxRungg")),
+        "a misspelled cross-seam symbol must fail resolve or link NAMING the typo, not \
+         emit — and not fail for some unrelated unresolved symbol: {msgs:?}"
+    );
 }
 
 /// (b) The hotkeys-on combo (0x1A bytes post-I2) collides with the AS-side bytes
@@ -193,13 +206,20 @@ fn oversize_combo_overlapping_resume_bytes_is_loud() {
     }
     sections.extend(resume);
 
-    let loud = match sigil_link::resolve_layout(&sections, &SymbolTable::new(), true) {
-        Err(_) => true,
-        Ok(resolved) => sigil_link::link(&resolved, &SymbolTable::new()).is_err(),
+    // PIN THE CAUSE (same hazard as probe (a) above): a bare `loud` check is satisfied by
+    // any unresolved symbol, so require the diagnostic to be about the COLLISION.
+    let msgs = match sigil_link::resolve_layout(&sections, &SymbolTable::new(), true) {
+        Err(d) => d.iter().map(|d| d.message.clone()).collect::<Vec<_>>(),
+        Ok(resolved) => match sigil_link::link(&resolved, &SymbolTable::new()) {
+            Err(d) => d.iter().map(|d| d.message.clone()).collect::<Vec<_>>(),
+            Ok(_) => Vec::new(),
+        },
     };
     assert!(
-        loud,
-        "the 0x1A-byte hotkeys-on body must collide loudly with the resume bytes at $2314"
+        msgs.iter().any(|m| m.contains("overlap")),
+        "the 0x1A-byte hotkeys-on body must collide loudly with the resume bytes at $2314, \
+         and the diagnostic must say so rather than the probe passing on an unrelated \
+         unresolved symbol: {msgs:?}"
     );
 }
 

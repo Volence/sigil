@@ -69,8 +69,9 @@ fn aeon_dir() -> PathBuf {
 /// $A000 again. Each bump cost a confusing overlap failure, so derive it: the debug
 /// region's end rounded up to the next 4K boundary is always clear and always near.
 ///
-/// The `bsr.w` reach is not asserted here — the displacement assert at the end of the
-/// gate is the real check, and it names the expected target if this ever drifts too far.
+/// Reach is NOT self-evident from this function and is asserted explicitly at the use
+/// site. Do not lean on the displacement equality there for it: that assert truncates
+/// both sides with `as i16`, so it cannot detect an out-of-range displacement.
 fn consumer_lma() -> u32 {
     let debug_end = pins::SOUND_API.debug_base + pins::SOUND_API.debug_len as u32;
     (debug_end + 0xFFF) & !0xFFF
@@ -308,9 +309,12 @@ fn compile_real_file(
     // Outbound bare-name proof: a real caller's `bsr.w Sound_PlaySFX`. The
     // consumer is PHASED at `consumer_lma()` — inside bsr.w's ±32K of both shapes'
     // targets, so the asserted displacement is a real reachable one (an
-    // unphased far carrier would only "pass" mod 2^16; sigil-link's missing
-    // pc-rel16 range check is gap-ledgered, and port #1's review caught
-    // exactly this vacuity).
+    // unphased far carrier would only "pass" mod 2^16, which is what port #1's review
+    // caught. NOTE the old text here claimed sigil-link has no pc-rel16 range check —
+    // that is STALE: `bsr.w` lowers to FixupKind::PcRelDisp16 and sigil-link DOES range
+    // check it and errors, so link() fails loudly. The explicit reach assert at the use
+    // site is belt-and-braces, and exists because the displacement EQUALITY cannot see
+    // range at all.)
     let lma = consumer_lma();
     let asm = format!(
         "cpu 68000\n\
@@ -420,7 +424,23 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
     let target = shape.base as i64 + shape.play_sfx_off as i64;
-    let expected_disp = (target - (consumer.lma as i64 + 2)) as i16;
+    let true_disp = target - (consumer.lma as i64 + 2);
+    // REACH, checked on the UNTRUNCATED value and therefore separately from the equality
+    // below. The `as i16` in the comparison truncates BOTH sides, so if the displacement
+    // ever left `bsr.w` range the equality would still hold and the proof would go
+    // vacuous — it cannot police its own reach. `consumer_lma()` is anchored to the DEBUG
+    // region's end, which is the far side from the PLAIN target, so plain sets the margin:
+    // 0x383E of 0x7FFF today, and SOUND_API.debug_base moved +0x570 in this one parcel.
+    // Without this line the eventual failure would surface as a bare
+    // "(d16,PC) displacement out of range" naming `bsr.w`, nowhere near sound_api.
+    assert!(
+        (-0x8000..=0x7FFF).contains(&true_disp),
+        "`consumer_lma()` ({:#x}) has drifted out of `bsr.w` reach of Sound_PlaySFX \
+         ({target:#x}): displacement {true_disp:#x}. Re-anchor the harness-private LMA \
+         (below BOTH shapes' bases, or nearer the target).",
+        consumer_lma()
+    );
+    let expected_disp = true_disp as i16;
     assert_eq!(
         disp, expected_disp,
         "bare-name proof: `bsr.w Sound_PlaySFX` must resolve to {target:#x}"
