@@ -80,3 +80,70 @@ fn recovery_terminates_on_extern_disp_in_context() {
         "post-fix: the extern-in-displacement form must be a clean parse error, not a hang"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The class, not the site (sigil lens sweep 2026-08-13, seat FUZZ / finding S18)
+// ---------------------------------------------------------------------------
+//
+// The fix above was applied to `ensure`/`ensure_fatal`/`align`/`extern` and later
+// `interface`/`implement`, and was never generalized. `context` — structurally
+// identical — was missed, and `printf 'context' > t.emp` hung the build forever
+// with no diagnostic. Delta-debugged to seven bytes by a mutation fuzzer over
+// 2,738 real `.emp` files.
+//
+// So the guard is now structural: both item-list loops (top level and section
+// body) force progress when an iteration parses no item AND consumes no token,
+// which terminates the class regardless of which openers are contextual. These
+// tests assert that property over EVERY opener, driven from the parser's own
+// list, so a newly-added contextual opener cannot reintroduce the hang.
+
+/// Run `parse_str` on another thread and fail if it does not return in time.
+/// A plain call would HANG THE TEST BINARY on regression rather than fail it —
+/// which is the whole defect under test.
+fn parse_within(src: &str) -> Vec<sigil_span::Diagnostic> {
+    use std::sync::mpsc;
+    let (tx, rx) = mpsc::channel();
+    let owned = src.to_string();
+    std::thread::spawn(move || {
+        let (_f, diags) = parse_str(&owned);
+        let _ = tx.send(diags);
+    });
+    rx.recv_timeout(std::time::Duration::from_secs(20))
+        .unwrap_or_else(|_| panic!("parse did not terminate — recovery is spinning on:\n{src}"))
+}
+
+#[test]
+fn every_declaration_opener_terminates_at_top_level() {
+    for kw in sigil_frontend_emp::parser::Parser::DECL_OPENERS {
+        let diags = parse_within(&format!("module m in s\n\n{kw}\n"));
+        assert!(
+            diags.iter().any(|d| d.level == sigil_span::Level::Error),
+            "a bare `{kw}` at item position must be a clean parse error"
+        );
+    }
+}
+
+#[test]
+fn every_declaration_opener_terminates_inside_a_section_body() {
+    // The section-body item loop is a SECOND copy of the same loop shape and
+    // had the same defect; the original fix only ever looked at top level.
+    for kw in sigil_frontend_emp::parser::Parser::DECL_OPENERS {
+        let diags = parse_within(&format!("module m in s\n\nsection Foo {{\n{kw}\n}}\n"));
+        assert!(
+            diags.iter().any(|d| d.level == sigil_span::Level::Error),
+            "a bare `{kw}` inside a section body must be a clean parse error"
+        );
+    }
+}
+
+/// The exact seven-byte input from the sweep: no trailing newline, no `module`
+/// header, nothing else. Kept verbatim because minimized repros rot when
+/// paraphrased.
+#[test]
+fn the_seven_byte_input_terminates() {
+    let diags = parse_within("context");
+    assert!(
+        diags.iter().any(|d| d.level == sigil_span::Level::Error),
+        "`context` alone must be a clean parse error, not an infinite loop"
+    );
+}

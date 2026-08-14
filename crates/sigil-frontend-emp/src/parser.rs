@@ -457,6 +457,7 @@ impl Parser {
                 break;
             }
             // Item-level `@`-attributes (§8) sit between the docs and the item.
+            let before = self.pos;
             let attrs = self.item_attrs();
             match self.item() {
                 Some(mut item) => {
@@ -473,6 +474,7 @@ impl Parser {
                     self.recover_to_next_decl(false);
                 }
             }
+            self.force_item_progress(before);
         }
         File { module, attrs, items, docs: std::mem::take(&mut self.docs) }
     }
@@ -641,6 +643,19 @@ impl Parser {
         None
     }
 
+    /// The keywords that can begin a declaration, as error recovery understands
+    /// them. Public so the robustness suite can assert that EVERY one of them
+    /// terminates in item position rather than hand-mirroring the list — the
+    /// mirror is how the `context` hang survived four rounds of this same fix.
+    ///
+    /// Membership here is a claim about the FIRST token only. Several entries
+    /// are contextual (an item only given what follows), which is why
+    /// `force_item_progress` exists.
+    pub const DECL_OPENERS: [&str; 25] = ["use", "const", "equ", "enum", "bitfield", "struct",
+                                          "vars", "data", "proc", "script", "comptime", "section", "pub",
+                                          "newtype", "offsets", "table", "dispatch", "ensure", "ensure_fatal",
+                                          "align", "extern", "type", "interface", "implement", "context"];
+
     /// Error recovery: skip until a token that can start a declaration.
     ///
     /// `in_block` must be true when the caller is inside a brace-delimited
@@ -656,10 +671,6 @@ impl Parser {
     /// a stray `}` is just garbage to skip past (the old behavior),
     /// otherwise recovery would loop forever re-diagnosing the same token.
     fn recover_to_next_decl(&mut self, in_block: bool) {
-        const OPENERS: [&str; 25] = ["use", "const", "equ", "enum", "bitfield", "struct",
-                                     "vars", "data", "proc", "script", "comptime", "section", "pub",
-                                     "newtype", "offsets", "table", "dispatch", "ensure", "ensure_fatal",
-                                     "align", "extern", "type", "interface", "implement", "context"];
         let mut depth = 0i32;
         loop {
             match self.peek() {
@@ -672,7 +683,7 @@ impl Parser {
                 // it to the recovered-to item instead of silently eating it
                 // (S2-D11(d) review m2).
                 Tok::DocLine(_) if depth <= 0 => return,
-                Tok::Ident(s) if depth <= 0 && OPENERS.contains(&s.as_str()) => {
+                Tok::Ident(s) if depth <= 0 && Self::DECL_OPENERS.contains(&s.as_str()) => {
                     // `ensure`/`ensure_fatal` are CONTEXTUAL openers — only a real
                     // item when followed by `(`. A bare occurrence is not an item
                     // (`item()` won't consume it), so stopping here would spin the
@@ -713,6 +724,36 @@ impl Parser {
                 _ => { self.bump(); }
             }
         }
+    }
+
+    /// Progress guard for the two item-list loops (top level and section body).
+    ///
+    /// `before` is the cursor at the top of the iteration. An iteration that
+    /// parses no item AND consumes no token spins forever, so force-advance
+    /// past the offending token with a diagnostic instead. A front-end must
+    /// error loudly, never hang.
+    ///
+    /// This is the structural form of a rule that had been rediscovered four
+    /// times as per-keyword special cases in `recover_to_next_decl`: an opener
+    /// in `OPENERS` that is only CONTEXTUALLY an item (`ensure`/`align`/
+    /// `extern`/`interface`/`implement`, and `context` — which was missed,
+    /// leaving `printf 'context' > t.emp` hanging the build forever) makes
+    /// `item()` fail on the same token recovery then stops at. Enforcing
+    /// progress here terminates the class regardless of which openers are
+    /// contextual, so the next one added cannot reintroduce the hang.
+    ///
+    /// Eof needs no guard: both callers break on it at the loop head.
+    fn force_item_progress(&mut self, before: usize) {
+        if self.pos != before || self.at(&Tok::Eof) || self.at(&Tok::RBrace) {
+            return;
+        }
+        let sp = self.span();
+        // `item()` normally already reported this exact token; a second copy of
+        // the same message at the same span is noise, so only speak when it did not.
+        if !self.diags.last().is_some_and(|d| d.primary == sp) {
+            self.diag_at(sp, format!("expected a declaration, found {:?}", self.peek()));
+        }
+        self.bump();
     }
 
     fn use_decl(&mut self) -> UseDecl {
@@ -3630,6 +3671,7 @@ impl Parser {
                     }
                     break;
                 }
+                let before = self.pos;
                 let attrs = self.item_attrs();
                 let mut parsed = self.item();
                 if let Some(item) = parsed.as_mut() {
@@ -3678,6 +3720,7 @@ impl Parser {
                     Some(i) => items.push(i),
                     None => self.recover_to_next_decl(true),
                 }
+                self.force_item_progress(before);
             }
             self.expect(&Tok::RBrace, "`}`");
             SectionDecl { name, attrs, items, span: start.merge(self.prev_span()) }
