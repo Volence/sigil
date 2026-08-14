@@ -283,6 +283,32 @@ pub fn dac_sample_table_vma(aeon: &Path) -> Result<u32, String> {
     Ok(a.sound_bank_vma + (l.dac_sample_tab_lma - l.sound_tables_z80_lma))
 }
 
+/// The `$8000`-window VMAs of the head-bank members seam-1 supplies as equ
+/// carriers — derived from the same [`sound_layout`] the placement flows from,
+/// exactly as [`dac_sample_table_vma`] is.
+///
+/// seam-1 carries these as HAND-WRITTEN literals (`banked_carriers`), and those
+/// literals are baked into the shipped resident driver's operand bytes. Nothing
+/// compared the two, so the failure mode was: an SFX id-range growth moves the
+/// derived head, the literal stays put, the golden byte gate breaks, and the
+/// natural remediation — refreeze — blesses the WRONG blob. The `0x856D ->
+/// 0x8571` bump recorded in seam-1's own comment is that exact move having
+/// happened once already (lens sweep, seat LINK, finding S9).
+///
+/// `native.rs` states the rule this restores: "a second copy of this arithmetic
+/// is the bug, not the fix — that is the lesson of the three unmaintained copies
+/// of the sound-bank addresses."
+pub fn banked_head_vmas(aeon: &Path) -> Result<Vec<(&'static str, u32)>, String> {
+    let a = bank_anchors(aeon)?;
+    let l = sound_layout(aeon)?;
+    let vma = |lma: u32| a.sound_bank_vma + (lma - l.sound_tables_z80_lma);
+    Ok(vec![
+        ("SndDefaultPitchTable", vma(l.pitchtable_lma)),
+        ("SfxBlobWinTab", vma(l.sfx_win_tab_lma)),
+        ("SeqOpcodeTable", vma(l.seq_opcode_tab_lma)),
+    ])
+}
+
 /// The Genesis cartridge BANK ID of the sound bank — the `$8000`-window page the
 /// head bank / Moving-Trucks bank / SFX block all share. Derived from the same map
 /// authority the placement flows from, so the seam-1 `SND_ENGINE_TABLE_BANK` /
