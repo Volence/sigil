@@ -1761,6 +1761,56 @@ mod tests {
         }
     }
 
+    /// `Fragment::baseline_len` (sigil-ir) and `frag_len(frag, 0)` (here) must
+    /// give the same answer for EVERY variant.
+    ///
+    /// They are the same quantity owned by two crates: the front ends advance the
+    /// section cursor by the first, and this crate shifts label offsets assuming
+    /// the second. That contract was stated in `sigil-ir`, relied on here, and
+    /// satisfied in the front ends, with no check anywhere — and a disagreement
+    /// does not fail, it silently desyncs label addresses (lens sweep, seat IR,
+    /// finding S7). `emit_fragment` now derives its advance, which removes the
+    /// chance of a front end passing the wrong number; this test removes the
+    /// chance of the two DEFINITIONS drifting.
+    #[test]
+    fn baseline_len_agrees_with_frag_len_at_rung_zero() {
+        let sp = Span { source: SourceId(0), start: 0, end: 0 };
+        let data = |n: usize| DataFragment { bytes: vec![0u8; n], fixups: vec![], span: sp };
+        let cand = |n: usize| RelaxCandidate {
+            bytes: vec![0u8; n],
+            fixup: Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Sym("T".into()) },
+        };
+        let frags = vec![
+            Fragment::Data(data(7)),
+            Fragment::Fill { value: 0, count: 5, span: sp },
+            Fragment::Reserve { count: 9, span: sp },
+            Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("T".into()), span: sp },
+            Fragment::RelaxAbsSym {
+                short: cand(4),
+                long: cand(6),
+                target: Expr::Sym("T".into()),
+                span: sp,
+            },
+            Fragment::RelaxLadder {
+                candidates: vec![cand(2), cand(4), cand(6)],
+                target: Expr::Sym("T".into()),
+                span: sp,
+            },
+        ];
+        for f in &frags {
+            assert_eq!(
+                f.baseline_len(),
+                frag_len(f, 0),
+                "baseline_len and frag_len(_, 0) disagree for {f:?}"
+            );
+        }
+        // Non-vacuity: the length-variable variants must actually report their
+        // SMALLEST form, not their largest — otherwise both sides could agree on
+        // a wrong constant.
+        assert_eq!(frags[3].baseline_len(), 4, "JmpJsrSym baseline is the abs.w width");
+        assert_eq!(frags[5].baseline_len(), 2, "a ladder's baseline is its first candidate");
+    }
+
     #[test]
     fn inst_len_is_4_for_w_and_6_for_l() {
         assert_eq!(AbsWidth::W.inst_len(), 4);

@@ -221,7 +221,7 @@ fn lower_m68k_instr(
                 span,
             );
             // abs.w baseline advance (4 bytes); the linker chooses the true width.
-            builder.emit_fragment(frag, 4);
+            builder.emit_fragment(frag);
             return;
         }
     }
@@ -435,11 +435,8 @@ fn lower_unsized_branch(
             return;
         }
     };
-    // Baseline advance = the smallest (first) candidate's length (`.s` = 2),
-    // mirroring `jbra`/`RelaxAbsSym`; resolve_layout grows the fragment on demand.
-    let advance = candidates[0].bytes.len() as u32;
     let frag = Fragment::RelaxLadder { candidates, target, span };
-    builder.emit_fragment(frag, advance);
+    builder.emit_fragment(frag);
 }
 
 /// `jbra L` / `jbsr L`: emp-only auto-reaching branches (D2.18). Unlike sized
@@ -515,9 +512,8 @@ fn lower_jbra_jbsr(
     // Baseline advance = the smallest (first) candidate's length (bra.s = 2),
     // mirroring how JmpJsrSym advances by its abs.w baseline; resolve_layout grows
     // the fragment as the resolved target demands.
-    let advance = candidates[0].bytes.len() as u32;
     let frag = Fragment::RelaxLadder { candidates, target, span };
-    builder.emit_fragment(frag, advance);
+    builder.emit_fragment(frag);
 }
 
 /// An instruction carrying ONE `Sym(pc)` / `Sym(pc,Xn.size)` operand — a
@@ -1341,7 +1337,6 @@ fn lower_m68k_abs_sym(
     // fences a trailing ext-word operand for the relaxable case), so its ext
     // field is the final 2 bytes of the abs.w candidate.
     let offset = (short_bytes.len() - 2) as u32;
-    let advance = short_bytes.len() as u32; // baseline (abs.w) cursor advance
     let frag = Fragment::RelaxAbsSym {
         short: RelaxCandidate {
             bytes: short_bytes,
@@ -1354,7 +1349,7 @@ fn lower_m68k_abs_sym(
         target,
         span,
     };
-    builder.emit_fragment(frag, advance);
+    builder.emit_fragment(frag);
 }
 
 /// True for a [`CodeOperand`] that contributes its own extension word(s) to the
@@ -1795,9 +1790,8 @@ fn lower_z80_instr(
     if matches!(m, Z80Mnemonic::Jr) {
         if let [CodeOperand::Sym(name)] = ops {
             let candidates = Z80Backend.lower_jr_jp_candidates(Expr::Sym(name.clone()), span);
-            let advance = candidates[0].bytes.len() as u32;
             let frag = Fragment::RelaxLadder { candidates, target: Expr::Sym(name.clone()), span };
-            builder.emit_fragment(frag, advance);
+            builder.emit_fragment(frag);
             return;
         }
     }
@@ -1825,13 +1819,12 @@ fn lower_z80_instr(
                 span,
             ) {
                 Ok(candidates) => {
-                    let advance = candidates[0].bytes.len() as u32;
                     let frag = Fragment::RelaxLadder {
                         candidates,
                         target: Expr::Sym(name.clone()),
                         span,
                     };
-                    builder.emit_fragment(frag, advance);
+                    builder.emit_fragment(frag);
                 }
                 Err(e) => push_err(diags, span, e.message),
             }
