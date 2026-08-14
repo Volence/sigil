@@ -9,16 +9,18 @@
 //! ## No shape define
 //!
 //! Like every code port so far, `vdp_init.emp` carries no `DEBUG` member:
-//! the block's CONTENT is byte-identical plain and debug (0x48 bytes in
-//! both) — only its BASE address shifts (plain `$1C0A`, debug `$1C8C`), so
+//! the block's CONTENT is byte-identical plain and debug (`pins::VDP_INIT`'s
+//! plain_len == debug_len) — only its BASE address shifts (`pins::VDP_INIT`
+//! plain_base/debug_base), so
 //! the shape lives entirely in the MAP. `lower_module` runs with an EMPTY
 //! `defines` vec for both shapes.
 //!
 //! ## What this port exercises that the prior four did not
 //!
-//! - **`(An,Xn)` indexed EA** — `move.b (a0,d2.w), d0` (Flush's shadow-value
-//!   load) is the first real consumer of the tranche-3 operand-grammar
-//!   addition (68k `(d8,An,Xn)`, brief extension word, d=0).
+//! - **`(An,Xn)` indexed EA** — `move.b d1, (a0,d0.w)` (`Set_VDP_Reg`'s shadow
+//!   store; before the blanket-restore parcel it was Flush's `move.b (a0,d2.w),
+//!   d0` shadow-value load) is the first real consumer of the tranche-3
+//!   operand-grammar addition (68k `(d8,An,Xn)`, brief extension word, d=0).
 //! - **Cross-seam pc-relative EA** — `lea.l BootData_VDPRegs(pc), a0`
 //!   targets an AS-side ROM label (`engine/system/boot.asm`), so the
 //!   `PcRelDisp16` fixup resolves against a link-supplied symbol at its true
@@ -35,10 +37,12 @@
 //! - One AS-side `equ`: `VDP_CTRL = $C00004` (`engine/constants.asm:12`),
 //!   read via `lea.l VDP_CTRL, a1` — a bare symbolic absolute operand the
 //!   linker widths to abs.l ($C00004 has no abs.w spelling).
-//! - Two AS-side RAM labels: `VDP_Shadow_Table`/`VDP_Dirty_Mask`
-//!   (`engine/ram.asm`, phased at `$FFFF800A`/`$FFFF801E` — engine RAM, so
-//!   SHAPE-INVARIANT; the 20-byte gap is the 19-byte shadow table plus its
-//!   odd-length pad byte), widthed to abs.w by the asl rule.
+//! - One AS-side RAM label: `VDP_Shadow_Table` (`engine/ram.emp`, phased at
+//!   `pins::VDP_SHADOW_TABLE` — engine RAM, so SHAPE-INVARIANT), widthed to
+//!   abs.w by the asl rule. It was a PAIR until the blanket-restore parcel:
+//!   `VDP_Dirty_Mask` sat 20 bytes above it (19 shadow bytes + the odd-length
+//!   pad) and is now deleted — the flush re-blits every shadowed register
+//!   unconditionally, so there is no dirty state to track.
 //! - One AS-side ROM label: `BootData_VDPRegs` (`engine/system/boot.asm`),
 //!   phased at its true per-shape VMA — the pc-rel target described above.
 //!
@@ -53,13 +57,15 @@
 //! (`bsr.w VDP_Shadow_Init`) and `Flush_VDP_Shadow` from the VBlank path —
 //! this test builds a synthetic AS-side consumer with BOTH `bsr.w` forms and
 //! asserts each fixup resolves to the correct per-shape address (plain
-//! `$1C0A`/`$1C20`, debug `$1C8C`/`$1CA2`), proving both `pub proc` names
+//! region base and base + `pins::FLUSH_VDP_SHADOW_OFF`), proving both `pub proc` names
 //! surface as bare link symbols cross-seam.
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$1C0A`): `s4.bin[0x1C0A..0x1C52]` (0x48 bytes).
-//! Debug (map base `$1C8C`): `s4.debug.bin[0x1C8C..0x1CD4]` (0x48 bytes).
+//! Plain: `s4.bin[VDP_INIT.plain_base .. +plain_len]`.
+//! Debug: `s4.debug.bin[VDP_INIT.debug_base .. +debug_len]`.
+//! (Addresses/length are pin-sourced — never hand-typed here; a byte-moving
+//! parcel re-books them via `repin` and this prose stays true.)
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -100,7 +106,7 @@ fn twin_guards() -> usize {
 
 /// The map: a `text` region for `vdp_init.emp`'s zero-byte default-section
 /// carrier, and the real `vdp_init` region pinned at the per-shape reference
-/// base, sized to the 0x48-byte block (plain `$1C0A`, debug `$1C8C`).
+/// base, sized from `pins::VDP_INIT` (base per shape, plain_len for both).
 fn map_toml(debug: bool) -> String {
     // Base/size sourced from `sigil_harness::pins` (regenerate via `repin`).
     let base = if debug { pins::VDP_INIT.debug_base } else { pins::VDP_INIT.plain_base };
@@ -137,22 +143,25 @@ fn as_twin_equs() -> Vec<Section> {
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
-/// The synthetic AS-side cross-seam unit supplying the two VDP RAM labels —
+/// The synthetic AS-side cross-seam unit supplying the VDP RAM label —
 /// `engine/ram.emp`. `VDP_Shadow_Table`'s base is PIN-SOURCED (t24 rule — never
-/// hand-shift a RAM VMA; it rides every RAM-layout parcel automatically); the 19
-/// shadow bytes + odd-length pad byte then derive `VDP_Dirty_Mask` (base + 20).
-/// Engine RAM, shape-invariant, so `.plain` serves both shapes. I2 (input/replay,
-/// 2026-08-02) slid the pair +4 ($800A/$801E → $800E/$8022) via the Logic_Tick
-/// u32 inserted after Frame_Counter.
+/// hand-shift a RAM VMA; it rides every RAM-layout parcel automatically). Engine
+/// RAM, shape-invariant, so `.plain` serves both shapes. I2 (input/replay,
+/// 2026-08-02) slid it +4 ($800A → $800E) via the Logic_Tick u32 inserted after
+/// Frame_Counter.
+///
+/// The carrier still spans the FULL 20-byte footprint the real `ram.emp` gives
+/// the table (19 shadow bytes + the `pad(1)` that survives the blanket-restore
+/// parcel for even alignment) even though nothing is labelled at the top of it —
+/// `VDP_Dirty_Mask` used to be, and modelling the extent keeps the carrier an
+/// honest picture of the RAM it stands in for.
 fn as_vdp_ram_labels() -> Vec<Section> {
     let asm = format!(
         "cpu 68000\n\
          phase ${:X}\n\
          VDP_Shadow_Table:\n\
          \tdc.b 0\n\
-         \tds.b 19\n\
-         VDP_Dirty_Mask:\n\
-         \tdc.l 0\n",
+         \tds.b 19\n",
         pins::VDP_SHADOW_TABLE.plain
     );
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
@@ -372,7 +381,7 @@ fn assert_outbound_consumer(linked: &sigil_link::LinkedImage, init: i64, flush: 
 }
 
 /// (plain) The `vdp_init` section's linked bytes equal
-/// `s4.bin[0x1C0A..0x1C52]`, AND both outbound `bsr.w` fixups resolve to the
+/// the pinned plain `s4.bin` window, AND both outbound `bsr.w` fixups resolve to the
 /// per-shape proc addresses.
 #[test]
 fn vdp_init_region_matches_reference() {
@@ -392,13 +401,13 @@ fn vdp_init_region_matches_reference() {
     let base = pins::VDP_INIT.plain_base as usize;
     let expected = &refrom[base..base + pins::VDP_INIT.plain_len];
     let section = linked.section("vdp_init").expect("linked image must carry vdp_init");
-    assert_region_matches(&section.bytes, expected, "vdp_init (plain) vs s4.bin[0x1C0A..0x1C52]");
+    assert_region_matches(&section.bytes, expected, "vdp_init (plain) vs the pinned s4.bin window");
 
     assert_outbound_consumer(&linked, base as i64, (base + pins::FLUSH_VDP_SHADOW_OFF) as i64, "plain");
 }
 
 /// (debug) The `vdp_init` section's linked bytes equal
-/// `s4.debug.bin[0x1C8C..0x1CD4]`, AND both outbound fixups resolve to the
+/// the pinned debug `s4.debug.bin` window, AND both outbound fixups resolve to the
 /// per-shape proc addresses.
 #[test]
 fn vdp_init_debug_region_matches_reference() {
@@ -418,7 +427,7 @@ fn vdp_init_debug_region_matches_reference() {
     let base = pins::VDP_INIT.debug_base as usize;
     let expected = &refrom[base..base + pins::VDP_INIT.debug_len];
     let section = linked.section("vdp_init").expect("linked image must carry vdp_init");
-    assert_region_matches(&section.bytes, expected, "vdp_init (debug) vs s4.debug.bin[0x1C8C..0x1CD4]");
+    assert_region_matches(&section.bytes, expected, "vdp_init (debug) vs the pinned s4.debug.bin window");
 
     assert_outbound_consumer(&linked, base as i64, (base + pins::FLUSH_VDP_SHADOW_OFF) as i64, "debug");
 }

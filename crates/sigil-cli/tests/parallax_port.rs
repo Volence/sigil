@@ -14,8 +14,10 @@
 //!
 //! ## Cross-seam symbols
 //! - RAM labels (abs.w operands): the `Parallax_*` state block, `Camera_X/Y`,
-//!   `Current_Act_Ptr`, `Vscroll_Factor`, `Hscroll_*`, `VDP_Shadow_Table`,
-//!   `VDP_Dirty_Mask` — each a `phase`d one-byte carrier at its true per-shape VMA.
+//!   `Current_Act_Ptr`, `Vscroll_Factor`, `Hscroll_*`, `VDP_Shadow_Table`
+//!   — each a `phase`d one-byte carrier at its true per-shape VMA. (`VDP_Dirty_Mask`
+//!   left this list with the blanket-restore parcel: the mode3 write-throughs are
+//!   now shadow-only, so the symbol no longer exists in aeon's RAM map.)
 //! - ROM transfer target: `Section_GetSecPtrXY` (the one cross-module `jsr`; a NEW
 //!   caller of section.emp's already-owned symbol — a standard cross-module link
 //!   resolution, NOT an ownership flip).
@@ -145,9 +147,10 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
     // PAL NTSC-only (ruling B, 2026-08-02): the Timing_Step/Frame_Accumulator u16
     // pair at $FFFF8028 was deleted, so every RAM symbol at/after $FFFF802C slid
     // −4 (the Parallax_* block, Camera_*, Vscroll_Factor, Hscroll_Buffer). The two
-    // VDP_* cells below live at $800A/$801E — BEFORE the deleted pair — so they hold.
+    // VDP_Shadow_Table cell below lives BEFORE the deleted pair, so it holds. (It had
+    // a VDP_Dirty_Mask sibling until the blanket-restore parcel deleted that symbol.)
     // Camera_X/Y now pin-sourced (they carry the −4 too; matches Current_Act_Ptr style).
-    let table: [(&str, u32, u32); 29] = [
+    let table: [(&str, u32, u32); 28] = [
         // Effects P1: Parallax_CheckBoundary is the one place the engine notices a
         // section crossing, so the palette and raster consumers hang off it — two more
         // cross-module transfer targets (buffers / hblank).
@@ -188,11 +191,10 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
         ("Current_Act_Ptr", pins::CURRENT_ACT_PTR.plain, pins::CURRENT_ACT_PTR.debug),
         ("Vscroll_Factor", pins::VSCROLL_FACTOR.plain, pins::VSCROLL_FACTOR.debug),
         ("Hscroll_Buffer", pins::HSCROLL_BUFFER.plain, pins::HSCROLL_BUFFER.debug),
-        // Pin-sourced (t24 rule — never hand-shift a RAM VMA): both slid +4 in I2
+        // Pin-sourced (t24 rule — never hand-shift a RAM VMA): slid +4 in I2
         // (input/replay, 2026-08-02) via the Logic_Tick u32 after Frame_Counter
-        // ($800A/$801E → $800E/$8022). Shape-invariant engine RAM.
+        // ($800A → $800E). Shape-invariant engine RAM.
         ("VDP_Shadow_Table", pins::VDP_SHADOW_TABLE.plain, pins::VDP_SHADOW_TABLE.debug),
-        ("VDP_Dirty_Mask", pins::VDP_DIRTY_MASK.plain, pins::VDP_DIRTY_MASK.debug),
         // ROM transfer target — sourced from pins (shifts with the engine bank;
         // t18 trampoline moved it +0x36). RAM symbols above are tail/pad-stable.
         ("Section_GetSecPtrXY", pins::SECTION_GET_SEC_PTR_XY.plain, pins::SECTION_GET_SEC_PTR_XY.debug),

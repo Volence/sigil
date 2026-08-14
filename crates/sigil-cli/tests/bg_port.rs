@@ -22,6 +22,7 @@
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test bg_port
 //! ```
 
+use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
@@ -115,6 +116,35 @@ fn bg_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
+/// The cross-seam ADDRESS labels — the MD Debugger entry points only. bg.emp was a
+/// pure-equ consumer until the blanket-restore parcel gave BG_Init a DEBUG-shape
+/// `IPL >= 6` assert around its autoincrement excursion; `assert.w` expands to
+/// `jsr (MDDBG__ErrorHandler).l` / `jmp (MDDBG__ErrorHandler_PagesController).l`, so
+/// the two blob entry points become real cross-seam fixups (sprites_port precedent).
+/// The pins are shape-invariant; the plain shape comptime-gates the assert away and
+/// simply leaves the carriers unreferenced.
+fn bg_addr_labels() -> Vec<Section> {
+    let table: [(&str, u32); 2] = [
+        ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
+        ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
+    ];
+    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let mut out = Vec::new();
+    for (i, (name, vma)) in table.iter().enumerate() {
+        let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
+        for mut sec in assemble(&asm, &opts)
+            .unwrap_or_else(|d| panic!("AS assemble ({name}): {d:?}"))
+            .sections
+        {
+            sec.lma = 0x0200_0000 + (i as u32) * 0x1_0000;
+            sec.placement = SectionPlacement::Pinned;
+            sec.group = None;
+            out.push(sec);
+        }
+    }
+    out
+}
+
 /// Parse a .emp file, panicking on parse errors.
 fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
     let src = std::fs::read_to_string(path)
@@ -185,6 +215,7 @@ fn compile_real_file(
         sec.group = None;
     }
     sections.extend(equs);
+    sections.extend(bg_addr_labels());
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout failed: {d:?}"));

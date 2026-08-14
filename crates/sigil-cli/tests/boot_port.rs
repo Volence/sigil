@@ -101,7 +101,7 @@ fn frozen_symbol(debug: bool, name: &str) -> u64 {
         ("Z80_SOUND_SIZE", false) => 0x1814,   // sound pkg 4 (blob 6164, already even)
         ("Z80_SOUND_SIZE", true) => 0x1896,    // sound pkg 4 (blob 6294, already even)
         ("GameState_OJZScroll_Init", false) => 0x9F950,  // sfx-flight: +0xC0  // tails-data: +0x20F60 — Map_Tails (132 KB) is exiled to the ROM tail, ahead of the game states  // knuckles-def: +0x226D0 — Map_Knuckles takes the SAME exile, for the same reason, directly behind Tails'
-        ("GameState_OJZScroll_Init", true) => 0xA1734,   // sfx-flight: +0xC0   // tails-data: +0x20F60, same exile as plain  // knuckles-def: +0x226D0, same exile again
+        ("GameState_OJZScroll_Init", true) => 0xA1724,   // sfx-flight: +0xC0   // tails-data: +0x20F60, same exile as plain  // knuckles-def: +0x226D0, same exile again  // blanket-restore: -0x10, DEBUG ONLY — boot's own region shrank 0x10 in the debug shape (the deleted `ori.l ... VDP_Dirty_Mask` crossed a 16-byte align boundary), and unlike the -0x30 engine-bank slide that shrink is NOT re-absorbed by the org anchor before the ROM tail, so the game states slide with it. The plain value holds: its -0x30 IS absorbed. Cross-checked against pins::OJZ_SCROLL_TEST.debug_base (0xA1724) — the same address derived independently by repin.
         _ => panic!("no frozen value pinned for symbol `{name}` (debug={debug})"),
     }
 }
@@ -209,8 +209,9 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         ("DMA_Budget_Default", pick(pins::DMA_BUDGET_DEFAULT)),
         ("HBlank_Vector_Slot", pick(pins::H_BLANK_VECTOR_SLOT)),
         ("RAM_Start", pick(pins::RAM_START)),
+        // VDP_Dirty_Mask left this table with the blanket-restore parcel: boot's
+        // VInt-enable is a shadow write-through only, so the symbol is gone.
         ("VDP_Shadow_Table", pick(pins::VDP_SHADOW_TABLE)),
-        ("VDP_Dirty_Mask", pick(pins::VDP_DIRTY_MASK)),
     ];
     if debug {
         table.push(("CompressionSelfTest", pins::COMPRESSION_SELFTEST.debug_base));

@@ -121,7 +121,14 @@ fn section_value_equs() -> Vec<Section> {
 /// load-bearing: abs.w/abs.l width selection and PC-rel disp both read it).
 fn section_addr_labels(debug: bool) -> Vec<Section> {
     let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
-    let table: [(&str, u32); 19] = [
+    let table: [(&str, u32); 21] = [
+        // DEBUG-only: the blanket-restore parcel's IPL>=6 assert on
+        // Section_RedrawPlanes' two autoincrement excursions expands to
+        // jsr/jmp these (sprites_port/core_port precedent). Shape-invariant
+        // pins, carried in both shapes — in plain the assert is comptime-gated
+        // out and the carriers simply go unreferenced.
+        ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
+        ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
         ("Draw_TileColumn", pick(pins::DRAW_TILE_COLUMN)),
         ("Draw_TileRow_FromCache", pick(pins::DRAW_TILE_ROW_FROM_CACHE)),
         ("EntityWindow_Init", pick(pins::ENTITY_WINDOW_INIT)),
@@ -233,7 +240,13 @@ fn compile_real_file(
         embed_base: None,
         // The sonic4 reference is sound-on, so the Section_RedrawPlanes poke-storm
         // sound bracket (gated on SOUND_DRIVER_ENABLED) is present in the reference.
-        defines: vec![("SOUND_DRIVER_ENABLED".to_string(), i128::from(1))],
+        // DEBUG is now load-bearing here too: the blanket-restore parcel added an
+        // `if DEBUG == 1` IPL>=6 assert around the autoincrement excursions, so the
+        // shape must reach the lowerer or the name does not resolve at all.
+        defines: vec![
+            ("SOUND_DRIVER_ENABLED".to_string(), i128::from(1)),
+            ("DEBUG".to_string(), i128::from(debug)),
+        ],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(

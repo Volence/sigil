@@ -22,7 +22,10 @@
 //!
 //! - INBOUND (AS-side RAM the `.emp` reads/writes): `HBlank_Vector_Slot` (the
 //!   patched slot at the RAM tail — per-shape VMA, `pins::H_BLANK_VECTOR_SLOT`),
-//!   `VDP_Shadow_Table` and `VDP_Dirty_Mask` (the shadow write-through). Each is
+//!   and `VDP_Shadow_Table` (the shadow write-through — the dirty mask is gone
+//!   as of the blanket-restore parcel: the VBlank flush re-blits every shadowed
+//!   register unconditionally, so `VDP_Dirty_Mask` was deleted from aeon's RAM
+//!   map and the twin's symbol table with it). Each is
 //!   supplied by a `phase`d one-byte carrier at its true VMA — the
 //!   `parallax_port.rs`/`sfx_port.rs` idiom. The two `VDP_Shadow_*` struct-field
 //!   offsets the `.emp` reads back through `extern()` (its drift-lock ensures)
@@ -104,10 +107,9 @@ fn hblank_value_equs() -> Vec<Section> {
 /// differs by shape (it lives at the RAM tail, past the `__DEBUG__` block).
 fn cross_seam_labels(debug: bool) -> Vec<Section> {
     let slot = if debug { pins::H_BLANK_VECTOR_SLOT.debug } else { pins::H_BLANK_VECTOR_SLOT.plain };
-    let labels: [(&str, u32); 3] = [
+    let labels: [(&str, u32); 2] = [
         ("HBlank_Vector_Slot", slot),
         ("VDP_Shadow_Table", pins::VDP_SHADOW_TABLE.plain),
-        ("VDP_Dirty_Mask", pins::VDP_DIRTY_MASK.plain),
     ];
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
     let mut out = Vec::new();

@@ -24,7 +24,7 @@
 //! (b) standalone-compile diagnostic — compile the real `hblank.emp` WITHOUT
 //!     the synthetic RAM cross-seam sections: `resolve_layout` fails LOUD. The
 //!     trampoline's cross-seam references are plain abs-sym operands
-//!     (`HBlank_Vector_Slot`, `VDP_Shadow_Table`, `VDP_Dirty_Mask`), so the
+//!     (`HBlank_Vector_Slot`, `VDP_Shadow_Table`), so the
 //!     firing diagnostic is `relax.rs`'s `RelaxAbsSym` guard, which names the
 //!     first missing symbol (`HBlank_Vector_Slot`) with the Item-C
 //!     cross-seam-standalone framing ("references symbol(s) ... not defined in
@@ -89,13 +89,13 @@ fn map_toml(base: &str) -> String {
 }
 
 /// The synthetic AS-side RAM cross-seam labels the trampoline writes/reads
-/// (`HBlank_Vector_Slot` at the RAM tail, `VDP_Shadow_Table`, `VDP_Dirty_Mask`),
-/// each `phase`d to its true plain VMA — `hblank_port.rs::cross_seam_labels`.
+/// (`HBlank_Vector_Slot` at the RAM tail, `VDP_Shadow_Table`), each `phase`d to
+/// its true plain VMA — `hblank_port.rs::cross_seam_labels`. (`VDP_Dirty_Mask`
+/// was a third carrier until the blanket-restore parcel deleted the symbol.)
 fn cross_seam_labels() -> Vec<Section> {
-    let labels: [(&str, u32); 3] = [
+    let labels: [(&str, u32); 2] = [
         ("HBlank_Vector_Slot", pins::H_BLANK_VECTOR_SLOT.plain),
         ("VDP_Shadow_Table", pins::VDP_SHADOW_TABLE.plain),
-        ("VDP_Dirty_Mask", pins::VDP_DIRTY_MASK.plain),
     ];
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
     let mut out = Vec::new();

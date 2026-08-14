@@ -190,7 +190,11 @@ fn collision_array_label(vma: &str) -> Vec<Section> {
     )
 }
 
-/// The `VDP_CTRL` equ + the two VDP RAM labels (shape-invariant).
+/// The `VDP_CTRL` equ + the VDP shadow-table RAM label (shape-invariant).
+/// This supplied a PAIR of RAM labels until the blanket-restore parcel deleted
+/// `VDP_Dirty_Mask` from aeon's RAM map (the flush now re-blits every shadowed
+/// register unconditionally, so there is no dirty state), which also retired the
+/// inter-label pad derivation that used to size the gap between the two.
 fn vdp_cross_seam() -> Vec<Section> {
     let mut s = as_sections(
         "cpu 68000\n\
@@ -200,16 +204,13 @@ fn vdp_cross_seam() -> Vec<Section> {
         0x0100_0000,
     );
     let shadow = pins::VDP_SHADOW_TABLE.plain;
-    let pad = pins::VDP_DIRTY_MASK.plain - shadow - 1; // table bytes between the two labels
     s.extend(as_sections(
         &format!(
             "cpu 68000\n\
              phase ${shadow:X}\n\
              VDP_Shadow_Table:\n\
              \tdc.b 0\n\
-             \tds.b {pad}\n\
-             VDP_Dirty_Mask:\n\
-             \tdc.l 0\n"
+             \tds.b 19\n"
         ),
         0x0200_0000,
     ));
@@ -400,8 +401,13 @@ fn collision_lookup_standalone_compile_is_a_loud_missing_symbol_error() {
 
 /// Compile the real `vdp_init.emp` WITHOUT its cross-seam sections: the link
 /// must fail LOUD, naming a symbol from the module's own cross-seam surface
-/// (`VDP_CTRL` equ, the two VDP RAM labels, or the `BootData_VDPRegs`
+/// (`VDP_CTRL` equ, the `VDP_Shadow_Table` RAM label, or the `BootData_VDPRegs`
 /// pc-relative EA target).
+///
+/// The accept-list below lost `VDP_Dirty_Mask` with the blanket-restore parcel.
+/// That NARROWS the probe rather than weakening it: the module no longer
+/// references that symbol at all, so a diagnostic naming it was unreachable —
+/// keeping it would only have let a future wrong-symbol diagnostic slip through.
 #[test]
 fn vdp_init_standalone_compile_is_a_loud_missing_symbol_error() {
     let Some(src) = real_src("engine/system", "vdp_init.emp") else { return };
@@ -419,10 +425,10 @@ fn vdp_init_standalone_compile_is_a_loud_missing_symbol_error() {
         "compiling vdp_init.emp standalone (no cross-seam sections) must be a loud link \
          error, not a silent/panicking one",
     );
-    let names = ["VDP_CTRL", "VDP_Shadow_Table", "VDP_Dirty_Mask", "BootData_VDPRegs"];
+    let names = ["VDP_CTRL", "VDP_Shadow_Table", "BootData_VDPRegs"];
     assert!(
         err.iter().any(|d| d.level == Level::Error && names.iter().any(|n| d.message.contains(n))),
-        "expected a loud diagnostic naming one of vdp_init.emp's four cross-seam symbols, \
+        "expected a loud diagnostic naming one of vdp_init.emp's three cross-seam symbols, \
          got: {err:?}"
     );
 }
