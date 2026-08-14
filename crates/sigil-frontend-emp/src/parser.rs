@@ -61,6 +61,9 @@ pub struct Parser {
     /// would let the condition's guard pre-fire (consuming nothing) right
     /// before `stmt_block`'s guard, desyncing its brace recovery.
     block_depth: u32,
+    /// Latched once a depth guard fires, and cleared when the next top-level
+    /// expression starts. See [`Parser::depth_limit_hit`].
+    depth_exceeded: bool,
     /// `///` doc runs attached to items so far (S2-D11(d)); moved into
     /// [`File::docs`] when the file finishes parsing.
     docs: Vec<DocEntry>,
@@ -82,6 +85,7 @@ impl Parser {
             no_struct_lit: false,
             splice_ctx: false,
             block_depth: 0,
+            depth_exceeded: false,
             docs: Vec::new(),
         }
     }
@@ -819,9 +823,8 @@ impl Parser {
     fn ty_base(&mut self) -> Type {
         // Same depth guard as the expression grammar: `*`/`[`/`(` type arms
         // all recurse, so a `****...u8` bomb would otherwise abort the process.
-        if self.depth >= MAX_EXPR_DEPTH {
+        if self.depth_limit_hit("type") {
             let span = self.span();
-            self.diag_at(span, "type nesting too deep (max 128)");
             return Type::Named(Path { segments: vec!["<error>".into()], span });
         }
         self.depth += 1;
@@ -3741,6 +3744,12 @@ impl Parser {
     /// `lhs |> rhs` desugars to an ordinary [`Expr::Call`], so the evaluator
     /// needs no pipe node of its own.
     pub(crate) fn expr(&mut self) -> Expr {
+        // A fresh top-level expression clears the depth latch: one pathological
+        // expression must not silence the rest of the file. Nested calls (depth
+        // > 0) must NOT clear it — that would re-arm the descent it exists to stop.
+        if self.depth == 0 {
+            self.depth_exceeded = false;
+        }
         let mut lhs = self.expr_bp(1);
         while self.at(&Tok::PipeGt) {
             self.bump(); // `|>`
@@ -3834,14 +3843,50 @@ impl Parser {
         lhs
     }
 
+    /// The expression/type depth guard, and the LATCH that makes it terminal.
+    ///
+    /// Returning a poison node at the limit is not enough on its own, because the
+    /// poison is returned WITHOUT CONSUMING the token that provoked it: the
+    /// enclosing frame sees the same `[`/`(` still pending, treats it as a fresh
+    /// operand, and descends another `MAX_EXPR_DEPTH`. Depth then tracks INPUT
+    /// SIZE rather than the constant, and a large enough input aborts the process
+    /// with SIGABRT — which cannot be `catch_unwind`'d, so `sigil` dies with no
+    /// diagnostic at all. Measured before this latch: `a[[[…` at 30,000 died;
+    /// `primary_expr`'s comment claimed the guarded entry points "cover every
+    /// unbounded recursion path", and the bracket-index arm disproved it.
+    ///
+    /// So the first fire LATCHES. Every expression and type entry point then
+    /// returns immediately, and every postfix/element loop stops, so the parse
+    /// unwinds to a recovery point instead of re-descending. The latch clears when
+    /// the next top-level expression begins (`depth == 0`), so one pathological
+    /// expression does not silence the rest of the file. The diagnostic is emitted
+    /// ONCE per latch rather than once per re-descent — the same input used to
+    /// emit tens of thousands of identical lines.
+    fn depth_limit_hit(&mut self, what: &str) -> bool {
+        if self.depth_exceeded {
+            return true;
+        }
+        if self.depth >= MAX_EXPR_DEPTH {
+            let span = self.span();
+            self.diag_at(span, format!("{what} nesting too deep (max {MAX_EXPR_DEPTH})"));
+            self.depth_exceeded = true;
+            return true;
+        }
+        false
+    }
+
+    /// A poison expression node anchored at the current token.
+    fn poison_expr(&mut self) -> Expr {
+        let span = self.span();
+        Expr::Path(Path { segments: vec!["<error>".into()], span })
+    }
+
     fn unary_expr(&mut self) -> Expr {
         // Same depth guard as `primary_expr`: a long `-`/`!`/`~` chain would
         // otherwise recurse once per operator — bounded only by input size,
         // not by a constant — and abort the process with a stack overflow.
-        if self.depth >= MAX_EXPR_DEPTH {
-            let span = self.span();
-            self.diag_at(span, "expression nesting too deep (max 128)");
-            return Expr::Path(Path { segments: vec!["<error>".into()], span });
+        if self.depth_limit_hit("expression") {
+            return self.poison_expr();
         }
         let start = self.span();
         let op = match self.peek() {
@@ -3874,6 +3919,12 @@ impl Parser {
     fn postfix_expr(&mut self) -> Expr {
         let mut e = self.primary_expr();
         loop {
+            // The index arm recurses through `self.expr()` below. Once the depth
+            // latch is set, continuing would re-read the pending `[` as another
+            // index and descend again — the exact growth this guard exists to stop.
+            if self.depth_exceeded {
+                break;
+            }
             if self.at(&Tok::LBracket) {
                 self.bump();
                 // Struct literals are unambiguous again inside `[...]` —
@@ -3934,10 +3985,8 @@ impl Parser {
         // with a stack overflow. Guarded entry points: `primary_expr`,
         // `unary_expr`, and `ty` — together they cover every unbounded
         // recursion path (`expr_bp` recurses only via unary/primary).
-        if self.depth >= MAX_EXPR_DEPTH {
-            let span = self.span();
-            self.diag_at(span, "expression nesting too deep (max 128)");
-            return Expr::Path(Path { segments: vec!["<error>".into()], span });
+        if self.depth_limit_hit("expression") {
+            return self.poison_expr();
         }
         self.depth += 1;
         let r = self.primary_expr_inner();
@@ -3962,6 +4011,7 @@ impl Parser {
                 if !self.at(&Tok::RBracket) {
                     loop {
                         elems.push(self.expr());
+                        if self.depth_exceeded { break; }
                         self.skip_newlines();
                         if !self.eat(&Tok::Comma) { break; }
                         self.skip_newlines();

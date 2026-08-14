@@ -8,6 +8,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+
+      # WHAT A GREEN BADGE ON THIS WORKFLOW MEANS — and what it does not.
+      #
       # CI checks out only this repo. Every REFERENCE-DEPENDENT test — anything
       # compiling sources out of the sibling aeon tree, plus the m1b_gate
       # checksum/s4budget/Oracle gates — self-skips here via
@@ -15,14 +18,66 @@ jobs:
       # path that cannot exist so the skip is what CI exercises, rather than
       # depending on the runner not happening to have the default path.
       #
-      # Those fidelity gates run pre-merge locally with SIGIL_STRICT_GATE=1 in
-      # an env that HAS the sibling aeon/oracle repos; under that flag the same
-      # guard panics instead of skipping, so a green CI can never stand in for
-      # the byte gate.
+      # That skip set is LARGE and it is NOT self-announcing: a runtime skip
+      # returns early and the harness counts it as a PASS. Roughly 350 of ~3,700
+      # tests skip here, and every build-and-compare golden gate is among them —
+      # each `native_offcanonical_rom` anchor compare, all `native_offcanonical_full`,
+      # the placement gates, `native_full_rom`, both `native_rom`, `pins_rs_is_current`,
+      # `m1b_gate`, `m1c_vector_table`, and the `seam1_native_link` set.
+      #
+      # So: A GREEN RUN HERE CARRIES ZERO WHOLE-ROM BYTE EVIDENCE. It proves the
+      # workspace compiles, clippy is clean, and the reference-INdependent tests
+      # pass. The byte gate runs pre-merge locally with SIGIL_STRICT_GATE=1 in an
+      # env that HAS the sibling aeon/oracle repos; under that flag the same guard
+      # PANICS instead of skipping, so a green CI can never stand in for it.
+      #
+      # `refreeze --check` is not that gate either — it reads the committed
+      # golden blobs and recomputes their CRCs, so it compares two committed files
+      # with each other and never builds anything.
+      #
+      # The skip count is reported below rather than left invisible, so a change
+      # that silently moves tests INTO the skip set is visible in the log instead
+      # of showing up as "still green".
       - name: test
         env:
           AEON_DIR: /nonexistent/aeon-not-checked-out-in-ci
-        run: cargo test --workspace
+        run: |
+          # pipefail is mandatory: without it the pipeline reports `tee`'s exit
+          # status and a failing suite reads as green. That exact shape (an
+          # aggregate through `head` returning 0 while tests were red) has already
+          # cost one bad merge.
+          set -o pipefail
+          cargo test --workspace -- --nocapture 2>&1 | tee test-output.txt
+
+      - name: report reference-dependent skips
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ ! -f test-output.txt ]; then
+            echo "no test output captured — nothing to report"
+            exit 0
+          fi
+          total=$(grep -c '^skip: ' test-output.txt || true)
+          echo "==================================================================="
+          echo " reference-dependent gates SKIPPED in this run: ${total}"
+          echo " (each one is counted as a PASS by the test harness)"
+          echo "==================================================================="
+          grep '^skip: ' test-output.txt \
+            | sed -E 's#(set AEON_DIR)#\1#; s#/[^ ]*/([^/ ]+)#.../\1#g' \
+            | sort | uniq -c | sort -rn | head -40
+          echo "-------------------------------------------------------------------"
+          echo "A green run above does NOT prove any whole-ROM byte claim."
+          echo "Run the byte gate locally: SIGIL_STRICT_GATE=1 with AEON_DIR set to"
+          echo "the sibling aeon checkout, which turns every skip above into a panic."
+          # A count of zero means the skip mechanism itself broke (or the reporter
+          # stopped matching), which would silently restore the false reassurance
+          # this step exists to remove.
+          if [ "${total}" -eq 0 ]; then
+            echo "ERROR: expected reference-dependent skips in CI and found none —"
+            echo "either AEON_DIR resolved to a real tree, or the skip reporting broke."
+            exit 1
+          fi
+
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: crate-graph guard

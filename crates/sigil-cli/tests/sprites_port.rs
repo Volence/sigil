@@ -329,6 +329,16 @@ fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAsser
 
 /// On mismatch, report the first differing offset plus context on each side.
 fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
+    // A gate over an EMPTY image proves nothing, and the tolerance below would
+    // hide that: with no candidate bytes it shrinks `expected` to zero length, the
+    // length assert compares 0 == 0, and the diff loop runs over an empty range —
+    // so the test passes if the module emits nothing at all. Confirmed live on
+    // OJZ_BG_ANIM, a 14-byte all-zero plain window (lens sweep, seat GATE, S15).
+    assert!(
+        !candidate.is_empty(),
+        "{what}: the module emitted NO BYTES — a region gate over an empty window \
+         proves nothing. Either the module stopped emitting, or this pin should not exist."
+    );
     // Packed placement (Wave-B B-0) may end a region window in ALIGNMENT FILL: the
     // pins span runs to the next section's aligned base. Tolerate a short (< 16 B)
     // all-zero tail beyond the lowered image; every real byte still compares.

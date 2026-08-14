@@ -210,7 +210,16 @@ pub(super) fn lower_proc(
     // not a faithful port). `check_resumable` separately requires the `clobbers`
     // set to be declared, so this gate's `is_some()` is met whenever it matters.
     if proc.clobbers.is_some() && (!ctx.as_compat || proc.is_resumable()) {
-        check_clobbers(proc, &buf, ctx.cpu, ctx.noreturn, ctx.sr_mask_preservers, diags);
+        check_clobbers(
+            proc,
+            &buf,
+            ctx.cpu,
+            ctx.noreturn,
+            ctx.sr_mask_preservers,
+            ctx.invariant_regs,
+            ctx.callee_preserves,
+            diags,
+        );
     }
 
     // 5. Preserves contract. On Z80 (rung-2 §4.2) the push/pop `preserves` proof
@@ -1159,16 +1168,32 @@ fn check_clobbers(
     cpu: Cpu,
     noreturn: &BTreeSet<String>,
     sr_mask_preservers: &BTreeMap<String, BTreeSet<String>>,
+    invariant_regs: &[String],
+    callee_preserves: &crate::z80_preserves::CalleePreserves,
     diags: &mut Vec<Diagnostic>,
 ) {
     // On Z80 (rung-2 §2/§2.2, gap 1) the reglist validates against the Z80
     // register file via the CPU-aware recognizer, NOT the 68k universe — so
     // `clobbers(af, b)` is accepted and `clobbers(d0)` is `[proc.clobber-invalid]`.
-    // The undeclared-write LINT below is 68k-only (Z80 mnemonics carry no 68k
-    // `Reg` destination — see this fn's doc), so on Z80 reglist validation is the
-    // whole job.
+    //
+    // Reglist validation used to be the WHOLE job here, on the reasoning that the
+    // undeclared-write lint below is 68k-shaped (it reads 68k `Reg` destinations).
+    // That left `clobbers(...)` on Z80 checked for SPELLING only: a proc writing a
+    // register it never declared compiled with zero diagnostics, while the
+    // identical 68k shape fired immediately. The claim did not stay inside sigil —
+    // aeon's `sound_psg.emp`/`sound_fm.emp` headers state the register contract is
+    // "machine-checked" and cite a prior bug caused by a false clobber comment as
+    // the reason to trust it, over ~9,600 lines of Z80 sound driver (lens sweep,
+    // seat Vb, finding S4). What made it insidious is that the claim was two-thirds
+    // true: `preserves(...)` and `out(...)` ARE verified on Z80.
+    //
+    // The write detector already existed — `z80_written_registers` is what the
+    // transitive clobber closure uses as this proc's `local_writes`. So the closure
+    // knew the writes all along; only the local per-proc lint was missing. Sharing
+    // the one detector is deliberate: a clobber claim and a preserve proof must not
+    // drift apart on the same instruction.
     if cpu == Cpu::Z80 {
-        crate::regfile::expand_reglist(
+        let clob = crate::regfile::expand_reglist(
             proc.clobbers.as_deref().unwrap_or(&[]),
             crate::regfile::RegFile::Z80,
             |reason| {
@@ -1183,6 +1208,66 @@ fn check_clobbers(
                 )
             },
         );
+        let mut allowed: HashSet<String> = clob.into_iter().collect();
+        // Same allowances the 68k arm grants, in the Z80 vocabulary: params are
+        // declarative register bindings, `out`/`inout` are results the proc exists
+        // to produce, and a pair name expands to its halves.
+        let expand_quiet = |segs: &[(String, Option<String>)]| -> Vec<String> {
+            crate::regfile::expand_reglist(segs, crate::regfile::RegFile::Z80, |_| {})
+                .into_iter()
+                .collect()
+        };
+        let param_segs: Vec<(String, Option<String>)> =
+            proc.params.iter().map(|(n, _, _)| (n.clone(), None)).collect();
+        allowed.extend(expand_quiet(&param_segs));
+        allowed.extend(expand_quiet(proc.out.as_deref().unwrap_or(&[])));
+        allowed.extend(expand_quiet(proc.inout.as_deref().unwrap_or(&[])));
+        // VERIFIED preserves only — the same subtraction the 68k arm makes, and for
+        // the same reason: a declared-but-unprovable `preserves` must subtract
+        // nothing, so the lint keeps its teeth against a lying clause. Module
+        // `invariant` regs are inherited onto every proc's preserve set (§3.2), so
+        // they are checked here exactly as `check_z80_preserves` checks them.
+        let mut check: Vec<String> = proc.preserves.iter().map(|(r, _)| r.clone()).collect();
+        check.extend(invariant_regs.iter().cloned());
+        if !check.is_empty() {
+            let statuses = crate::z80_preserves::verify_z80_preserved(
+                &buf.items,
+                &check,
+                invariant_regs,
+                callee_preserves,
+                proc.falls_into.as_deref(),
+                noreturn,
+            );
+            for (reg, status) in statuses {
+                if matches!(status, crate::preserves::PreserveStatus::Verified) {
+                    allowed.insert(reg);
+                }
+            }
+        }
+        // Conservatism, stated so it is not mistaken for completeness: the shared
+        // detector is a curated, FALSE-NEGATIVE-leaning allowlist (a
+        // memory-destination form writes no register; `sp`/`i`/`r` and the shadow
+        // bank are outside the tracked unit set). So this lint proves "every write
+        // it models is declared", not "the declared set is exhaustive". That is the
+        // same bound the Z80 preserve proof and the clobber closure already carry —
+        // sharing one detector is what keeps the three from disagreeing about the
+        // same instruction.
+        for w in crate::z80_preserves::z80_written_registers(buf) {
+            if allowed.contains(w.as_str()) {
+                continue;
+            }
+            push(
+                diags,
+                Level::Warning,
+                proc.span,
+                format!(
+                    "[proc.clobber-undeclared] `{}` writes `{w}`, which is not in its \
+                     contract — add it to `clobbers(...)`, or `preserves({w})` if the \
+                     body save/restores it",
+                    proc.name
+                ),
+            );
+        }
         return;
     }
     // Expand + validate the clobbers reglist (C1 items 2/6): ranges expand to

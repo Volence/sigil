@@ -137,6 +137,17 @@ fn gate(debug: bool, rom_name: &str) {
         let sec = linked
             .section(section)
             .unwrap_or_else(|| panic!("linked image must carry `{section}`"));
+        // A gate over an EMPTY image proves nothing, and the pad tolerance below
+        // would hide that: with no emitted bytes it shrinks `len` to zero, the
+        // length assert compares 0 == 0, and the diff loop runs over an empty
+        // range. This is where the vacuity was confirmed — `ojz_bg_anim`'s plain
+        // window is 14 all-zero bytes, so the gate passed whether or not
+        // `bg_anim.emp` emitted anything (lens sweep, seat GATE, S15).
+        assert!(
+            !sec.bytes.is_empty(),
+            "`{section}` emitted NO BYTES — a pin over an empty window proves nothing. \
+             Either the module stopped emitting, or this pin should not exist."
+        );
         // Packed placement (Wave-B B-0): the pin LEN spans to the NEXT section's
         // aligned base, so the window may end in a short all-zero align pad
         // beyond the lowered image (bug005: sec_block_blobs 0xB08A emitted vs a
