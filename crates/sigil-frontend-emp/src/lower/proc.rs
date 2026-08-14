@@ -1162,6 +1162,10 @@ fn is_terminator(mnemonic: &str, cpu: Cpu) -> bool {
 /// [`is_terminator`]). It also assumes param NAMES are register spellings
 /// (`a0`/`d2`/…), which is today's model (§5.1); if params ever gain symbolic
 /// names bound to registers, a write to that register would false-positive here.
+// 8 args: the Z80 arm needs `invariant_regs` + `callee_preserves` to subtract
+// VERIFIED preserves, exactly as the 68k arm does. Bundling them into a struct
+// would hide that both CPUs read the same inputs.
+#[allow(clippy::too_many_arguments)]
 fn check_clobbers(
     proc: &ast::ProcDecl,
     buf: &crate::value::CodeBuf,

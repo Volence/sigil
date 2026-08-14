@@ -282,7 +282,7 @@ fn compile_sonic(aeon: &Path, shape: &SonicShape) -> (sigil_link::LinkedImage, u
     let file = with_ambient(
         vec![
             types(), sst(), constants(), objdef(), game_consts(),
-            character_def_struct_items(&aeon), player_block_struct_items(&aeon),
+            character_def_struct_items(aeon), player_block_struct_items(aeon),
         ],
         main,
     );
@@ -609,7 +609,7 @@ fn compile_player_common(
     let file = with_ambient(
         vec![
             types(), sst(), constants(), objdef(), coords(), act(), game_consts(),
-            character_def_struct_items(&aeon), player_block_struct_items(&aeon),
+            character_def_struct_items(aeon), player_block_struct_items(aeon),
         ],
         main,
     );

@@ -155,6 +155,9 @@ fn fold_const_literal(
 /// window must resolve against (Plan 7 #8). Each collected `pub vars` overlay clone
 /// has its window resolved here and STAMPED (`resolved_window`), so the consumer
 /// binds it at the definition site verbatim rather than re-scanning its own structs.
+// 8 args: `def_id` identifies the defining module for the fold memo, which is
+// keyed by (module, const) — see `ConstFoldCache`.
+#[allow(clippy::too_many_arguments)]
 fn collect_pub_comptime(
     def_id: &str,
     def_file: &ast::File,

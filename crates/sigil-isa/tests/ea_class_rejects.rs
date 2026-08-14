@@ -126,21 +126,21 @@ fn movem_direction_governs_its_modes() {
     let regs = Operand::RegList(0x00FF);
     // STORE (regs -> memory): control alterable + `-(An)`. `(An)+` is NOT a store mode.
     reject("movem.l d0-d7,(a0)+",
-           ins(Mnemonic::Movem, Size::L, vec![regs.clone(), Operand::PostInc(0)]));
+           ins(Mnemonic::Movem, Size::L, vec![regs, Operand::PostInc(0)]));
     reject("movem.l d0-d7,(d16,pc)",
-           ins(Mnemonic::Movem, Size::L, vec![regs.clone(), Operand::Pcd16(8)]));
+           ins(Mnemonic::Movem, Size::L, vec![regs, Operand::Pcd16(8)]));
     accept("movem.l d0-d7,-(a7)",
-           ins(Mnemonic::Movem, Size::L, vec![regs.clone(), Operand::PreDec(7)]));
+           ins(Mnemonic::Movem, Size::L, vec![regs, Operand::PreDec(7)]));
     accept("movem.l d0-d7,(a0)",
-           ins(Mnemonic::Movem, Size::L, vec![regs.clone(), Operand::Ind(0)]));
+           ins(Mnemonic::Movem, Size::L, vec![regs, Operand::Ind(0)]));
 
     // LOAD (memory -> regs): control + `(An)+`. `-(An)` is NOT a load mode, and
     // PC-relative IS legal here — MOVEM load explicitly permits it. That form used
     // to be rejected outright.
     reject("movem.l -(a0),d0-d7",
-           ins(Mnemonic::Movem, Size::L, vec![Operand::PreDec(0), regs.clone()]));
+           ins(Mnemonic::Movem, Size::L, vec![Operand::PreDec(0), regs]));
     accept("movem.l (a7)+,d0-d7",
-           ins(Mnemonic::Movem, Size::L, vec![Operand::PostInc(7), regs.clone()]));
+           ins(Mnemonic::Movem, Size::L, vec![Operand::PostInc(7), regs]));
     accept("movem.l (d16,pc),d0-d7",
            ins(Mnemonic::Movem, Size::L, vec![Operand::Pcd16(8), regs]));
 }

@@ -140,6 +140,9 @@ const DEBUG: Shape = Shape {
 /// Compile the real `engine/system/game_loop.emp` with the given defines,
 /// pinned at `base`, with the synthetic cross-seam labels at the given VMAs.
 /// Returns (resolved sections, linked image).
+// One argument per synthetic cross-seam VMA; a struct would just relocate the
+// list without making any call site clearer.
+#[allow(clippy::too_many_arguments)]
 fn compile_emp(
     defines: &[(&str, i128)],
     base: u32,

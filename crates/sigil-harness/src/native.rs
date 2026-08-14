@@ -2237,7 +2237,7 @@ fn true_bases_by_index(
 /// always-on `validate_sound_fold` gate exists to make that class loud.
 pub fn packed_align_of(prov: u32) -> u32 {
     for a in [16u32, 8, 4, 2] {
-        if prov % a == 0 {
+        if prov.is_multiple_of(a) {
             return a;
         }
     }
@@ -2249,7 +2249,7 @@ pub fn packed_align_of(prov: u32) -> u32 {
 /// [`packed_align_of`]; mirrors the apply site in `packed_true_bases` exactly.
 pub fn packed_chained_base(running: u32, prov: u32) -> u32 {
     let a = packed_align_of(prov);
-    (running + a - 1) / a * a
+    running.div_ceil(a) * a
 }
 
 fn packed_true_bases(
@@ -2855,7 +2855,7 @@ pub fn build_rom_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, 
 ///
 /// The frozen tables are DEMOTED to the per-label provisional-base measurement cache
 /// (anchors + alignment + boundary keys); the map is the sole ORDER + anchor AUTHORITY.
-
+///
 /// THE FOLD-VS-PLACEMENT GATE — the one aeon has been asking for in
 /// `games/sonic4/data/sound/sfx_bank_blob.emp` ("the fold-vs-placement equality gate
 /// is the sigil ask in DEFERRED_WORK").
