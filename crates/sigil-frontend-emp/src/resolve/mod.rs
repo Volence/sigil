@@ -248,6 +248,28 @@ fn stamp_overlay_window(def_file: &ast::File, item: &mut ast::Item) {
 /// the bind pass's own recursion depth). These are the only bind modules that
 /// need ambient-prepend: their binding VALUES / comptime-`if` conditions may read
 /// `use`d game consts, which the plain file's scope lacks.
+/// How many item-position `ensure`/`ensure_fatal` guards this file declares —
+/// top level plus one `section` deep, the same depth the lowering walks.
+///
+/// An item-position `ensure` is evaluated IFF its module is lowered, and a module
+/// is lowered iff it is in the `use`-reachability closure of the profile's entry.
+/// A module outside that closure therefore ships guards that never run, and
+/// nothing said so — no warning, no report mode; the only way to learn the rule
+/// was to read `native.rs` (lens sweep, seat COMPTIME, finding S21).
+fn ensure_count(file: &ast::File) -> usize {
+    fn walk(items: &[ast::Item], depth: u32) -> usize {
+        items
+            .iter()
+            .map(|it| match it {
+                ast::Item::Ensure(_) => 1,
+                ast::Item::Section(s) if depth == 0 => walk(&s.items, 1),
+                _ => 0,
+            })
+            .sum()
+    }
+    walk(&file.items, 0)
+}
+
 fn file_declares_implement(file: &ast::File) -> bool {
     file.items.iter().any(|it| match it {
         ast::Item::Implement(_) => true,
@@ -501,6 +523,43 @@ fn build_program_with(
 
     // 1. Reachability BFS over `use` edges from the entry (and the prelude seed).
     let reachable = reachable_modules(manifest, entry_id, prelude_id, &mut diags);
+
+    // [module.unreachable] — a module OUTSIDE the closure is never lowered, so the
+    // item-position `ensure` guards it ships never evaluate. That is a silent shape
+    // rule: a guard can be written, reviewed, and merged while being incapable of
+    // firing, and no diagnostic distinguishes it from one that holds. Report the
+    // ones that carry guards, so an unevaluated guard is a visible fact about the
+    // profile rather than something you learn by reading the driver.
+    //
+    // Warning, not error: not being reachable is legitimate (a module can belong to
+    // another profile, or be lowered through a different seam — the sound modules
+    // reach lowering via seam-1/seam-2, not this closure). What is NOT legitimate
+    // is not knowing.
+    {
+        let in_closure: HashSet<usize> = reachable.iter().copied().collect();
+        for (i, pm) in manifest.modules.iter().enumerate() {
+            if in_closure.contains(&i) {
+                continue;
+            }
+            let n = ensure_count(&pm.file);
+            if n == 0 {
+                continue;
+            }
+            diags.push(Diagnostic {
+                level: Level::Warning,
+                message: format!(
+                    "[module.unreachable] module `{}` is outside this profile's `use` closure, \
+                     so its {n} `ensure` guard(s) are never evaluated for this target — they \
+                     cannot fail here, whatever they assert. (A module lowered through another \
+                     seam evaluates them THERE: the Z80 sound modules reach lowering via \
+                     seam-1/seam-2, not this closure. Check which applies before treating it as \
+                     a defect — and do not `use` a module merely to silence this.)",
+                    pm.id
+                ),
+                primary: pm.file.module.span,
+            });
+        }
+    }
 
     // 2. Export index over ALL modules in the manifest — not just the reachable
     //    set. `suggest_use` must be able to point at an exporting module the entry
