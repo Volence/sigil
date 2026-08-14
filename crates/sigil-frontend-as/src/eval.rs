@@ -2874,7 +2874,7 @@ impl Asm {
                 // LINK time instead of hard-erroring at ASSEMBLE time.
                 if self.defer_unresolved_jsr_jmp && matches!(self.fold(&target), Fold::Poison) {
                     let frag = self.m68k.lower_jmp_jsr_sym(is_jsr, target, span);
-                    self.builder.emit_fragment(frag, 4);
+                    self.builder.emit_fragment(frag);
                     return;
                 }
                 let (width, fixup_target) = match self.fold(&target) {

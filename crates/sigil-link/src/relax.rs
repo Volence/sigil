@@ -1753,12 +1753,133 @@ mod tests {
         assert_eq!(asl_width_rule(0xFF_FFFF, true), AbsWidth::W);
     }
 
+    // ---- exact reach boundaries (lens sweep, seat RELAX, finding S6) ---------
+    //
+    // Relaxation is SOUND: termination is proven, determinism holds, and the reach
+    // predicate is the same arithmetic expression as the emitter's range check, so
+    // a mis-sized branch cannot be silent. The gap was COVERAGE — of the eight
+    // exact boundaries the predicate encodes, exactly one (-128) had a test. These
+    // are the other seven, plus the two 68k `.s` special cases, asserted directly
+    // against `rung_reaches` so each boundary is pinned to the arithmetic rather
+    // than to an end-to-end layout that happens to exercise it.
+
+    /// Build a one-rung candidate whose fixup sits at `offset` within the fragment.
+    fn reach_cand(kind: FixupKind, offset: u32, len: usize) -> RelaxCandidate {
+        RelaxCandidate {
+            bytes: vec![0u8; len],
+            fixup: Fixup { kind, offset, target: Expr::Sym("T".into()) },
+        }
+    }
+
+    /// `rung_reaches` for a candidate placed at `frag_start`, aimed at `target`.
+    fn reaches(kind: FixupKind, frag_start: u32, offset: u32, target: i64) -> bool {
+        let c = reach_cand(kind, offset, 2);
+        rung_reaches(&c, frag_start, target, false, sp(), "s").expect("supported kind")
+    }
+
+    /// 68k `bra.s`: disp = target - (site_vma + 1), fits i8, and MUST be non-zero
+    /// (the 68000 reads a 0x00 displacement byte as the word-form escape).
+    #[test]
+    fn pcrel8_boundaries_are_exact() {
+        // site_vma = 0 + 1 = 1, so disp = target - 2.
+        let d = |disp: i64| reaches(FixupKind::PcRel8, 0, 1, disp + 2);
+        assert!(d(127), "+127 is the last reachable forward displacement");
+        assert!(!d(128), "+128 must NOT reach");
+        assert!(d(-128), "-128 is the last reachable backward displacement");
+        assert!(!d(-129), "-129 must NOT reach");
+        // The two special cases the arithmetic alone would not give you.
+        assert!(!d(0), "disp 0 is the word-form escape — unencodable as `.s`");
+        assert!(d(1) && d(-1), "±1 are ordinary reachable displacements");
+    }
+
+    /// 68k `bra.w`: disp = target - site_vma, fits i16. Zero IS encodable here.
+    #[test]
+    fn pcrel_disp16_boundaries_are_exact() {
+        let d = |disp: i64| reaches(FixupKind::PcRelDisp16, 0, 2, disp + 2);
+        assert!(d(0x7FFF), "+0x7FFF is the last reachable forward displacement");
+        assert!(!d(0x8000), "+0x8000 must NOT reach");
+        assert!(d(-0x8000), "-0x8000 is the last reachable backward displacement");
+        assert!(!d(-0x8001), "-0x8001 must NOT reach");
+        assert!(d(0), "disp 0 is encodable in the word form (no escape rule)");
+    }
+
+    /// Z80 `jr e`: disp = target - (site_vma + 1), fits i8 — and unlike the 68k
+    /// `.s` byte, disp 0 IS encodable (the Z80 has no word-form escape). That
+    /// asymmetry is the one a shared implementation would get wrong.
+    #[test]
+    fn z80_jr_rel8_boundaries_are_exact() {
+        let d = |disp: i64| reaches(FixupKind::Z80JrRel8, 0, 1, disp + 2);
+        assert!(d(127), "+127 is the last reachable forward displacement");
+        assert!(!d(128), "+128 must NOT reach");
+        assert!(d(-128), "-128 is the last reachable backward displacement");
+        assert!(!d(-129), "-129 must NOT reach");
+        assert!(d(0), "disp 0 IS encodable on Z80 — no word-form escape to collide with");
+    }
+
+    /// The always-reaching rungs really do always reach — the top of each ladder,
+    /// which is what makes the fixpoint terminate rather than run out of rungs.
+    #[test]
+    fn wide_rungs_always_reach() {
+        assert!(reaches(FixupKind::Abs32Be, 0, 2, 0x00FF_FFFF), "abs.l reaches anywhere");
+        assert!(reaches(FixupKind::Value16Le, 0, 1, 0xFFFF), "jp nn reaches the whole Z80 space");
+    }
+
     #[test]
     fn dash_a_does_not_change_width() {
         // -A is irrelevant to jmp/jsr width (confirmed by the asl sweep).
         for addr in [0x0000i64, 0x7FFF, 0x8000, 0xFF_8000, 0xFF_FFFF] {
             assert_eq!(asl_width_rule(addr, true), asl_width_rule(addr, false));
         }
+    }
+
+    /// `Fragment::baseline_len` (sigil-ir) and `frag_len(frag, 0)` (here) must
+    /// give the same answer for EVERY variant.
+    ///
+    /// They are the same quantity owned by two crates: the front ends advance the
+    /// section cursor by the first, and this crate shifts label offsets assuming
+    /// the second. That contract was stated in `sigil-ir`, relied on here, and
+    /// satisfied in the front ends, with no check anywhere — and a disagreement
+    /// does not fail, it silently desyncs label addresses (lens sweep, seat IR,
+    /// finding S7). `emit_fragment` now derives its advance, which removes the
+    /// chance of a front end passing the wrong number; this test removes the
+    /// chance of the two DEFINITIONS drifting.
+    #[test]
+    fn baseline_len_agrees_with_frag_len_at_rung_zero() {
+        let sp = Span { source: SourceId(0), start: 0, end: 0 };
+        let data = |n: usize| DataFragment { bytes: vec![0u8; n], fixups: vec![], span: sp };
+        let cand = |n: usize| RelaxCandidate {
+            bytes: vec![0u8; n],
+            fixup: Fixup { kind: FixupKind::Abs16Be, offset: 0, target: Expr::Sym("T".into()) },
+        };
+        let frags = vec![
+            Fragment::Data(data(7)),
+            Fragment::Fill { value: 0, count: 5, span: sp },
+            Fragment::Reserve { count: 9, span: sp },
+            Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("T".into()), span: sp },
+            Fragment::RelaxAbsSym {
+                short: cand(4),
+                long: cand(6),
+                target: Expr::Sym("T".into()),
+                span: sp,
+            },
+            Fragment::RelaxLadder {
+                candidates: vec![cand(2), cand(4), cand(6)],
+                target: Expr::Sym("T".into()),
+                span: sp,
+            },
+        ];
+        for f in &frags {
+            assert_eq!(
+                f.baseline_len(),
+                frag_len(f, 0),
+                "baseline_len and frag_len(_, 0) disagree for {f:?}"
+            );
+        }
+        // Non-vacuity: the length-variable variants must actually report their
+        // SMALLEST form, not their largest — otherwise both sides could agree on
+        // a wrong constant.
+        assert_eq!(frags[3].baseline_len(), 4, "JmpJsrSym baseline is the abs.w width");
+        assert_eq!(frags[5].baseline_len(), 2, "a ladder's baseline is its first candidate");
     }
 
     #[test]

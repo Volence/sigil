@@ -592,3 +592,75 @@ fn missing_conditional_out_violates() {
         "must name the unproduced conditional result: {v:?}"
     );
 }
+
+// ---- IndirectPolicy: the `as Type` bound is TRUSTED, not proven (S12) -------
+//
+// `jsr (aN) as Type` replaces the ⊤ an unbounded indirect would contribute with
+// the contract type's clobber set. The relation that would JUSTIFY that —
+// `subcontract_violations`, documented as "what makes a dispatch target
+// installable" — has exactly one call site, interface `implement` binding, and is
+// never called at a dispatch site. So nothing checks that the procs actually
+// installed in the table satisfy the bound (lens sweep, seat Va, finding S12);
+// aeon ships a DEBUG-only RUNTIME assert as the workaround.
+//
+// The narrowing is load-bearing and cannot just be dropped: forcing ⊤ at every
+// site produces 53 `[proc.clobber-undeclared]` firings on the corpus. So the
+// policy is chosen per consumer, and these tests pin that both readings exist and
+// genuinely differ.
+
+use sigil_frontend_emp::closure::{compute_closure_with, IndirectPolicy};
+
+/// The two policies disagree on a BOUNDED site — the narrowing is real, so
+/// choosing the wrong policy for a consumer is a real hazard, not a formality.
+#[test]
+fn bounded_indirect_is_narrowed_only_under_trust() {
+    let mut procs = BTreeMap::new();
+    procs.insert(
+        "Dispatch".to_string(),
+        ProcNode { indirect_sites: vec![Some("HBlankHandler".to_string())], ..Default::default() },
+    );
+    let mut types = BTreeMap::new();
+    types.insert("HBlankHandler".to_string(), eff(&["d0", "d1", "a0"]));
+
+    let trusting = compute_closure_with(&procs, &types, IndirectPolicy::TrustTypeBound);
+    assert_eq!(trusting.effective["Dispatch"], eff(&["d0", "d1", "a0"]));
+    assert!(!trusting.effective["Dispatch"].top, "the bound narrows away from ⊤");
+
+    let sound = compute_closure_with(&procs, &types, IndirectPolicy::Unbounded);
+    assert!(
+        sound.effective["Dispatch"].top,
+        "an unverified bound must read as ⊤ under the sound policy, got {:?}",
+        sound.effective["Dispatch"]
+    );
+}
+
+/// `compute_closure` keeps its historical meaning — the trusting policy — so every
+/// existing caller and frozen baseline is unchanged by the split.
+#[test]
+fn default_closure_still_trusts_the_bound() {
+    let mut procs = BTreeMap::new();
+    procs.insert(
+        "Dispatch".to_string(),
+        ProcNode { indirect_sites: vec![Some("HBlankHandler".to_string())], ..Default::default() },
+    );
+    let mut types = BTreeMap::new();
+    types.insert("HBlankHandler".to_string(), eff(&["d0"]));
+    assert_eq!(
+        compute_closure(&procs, &types).effective["Dispatch"],
+        compute_closure_with(&procs, &types, IndirectPolicy::TrustTypeBound).effective["Dispatch"]
+    );
+}
+
+/// An UNBOUNDED indirect is ⊤ under both policies — the policy only ever concerns
+/// the bounded case.
+#[test]
+fn unbounded_indirect_is_top_under_both_policies() {
+    let mut procs = BTreeMap::new();
+    procs.insert(
+        "Dispatch".to_string(),
+        ProcNode { indirect_sites: vec![None], ..Default::default() },
+    );
+    let types = BTreeMap::new();
+    assert!(compute_closure_with(&procs, &types, IndirectPolicy::TrustTypeBound).effective["Dispatch"].top);
+    assert!(compute_closure_with(&procs, &types, IndirectPolicy::Unbounded).effective["Dispatch"].top);
+}

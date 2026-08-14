@@ -110,7 +110,8 @@ pub fn sst_field_equs() -> Vec<(&'static str, &'static str)> {
 /// anonymous (covered by `Act_len`). SOURCE OF TRUTH: `engine/structs.emp`.
 pub fn act_sec_field_equs() -> Vec<(&'static str, &'static str)> {
     vec![
-        // Act (34 bytes / $22)
+        // Act (40 bytes / $28) — tracked by `tests/act_fixture_drift.rs` against
+        // `harvest_engine_struct_offsets`, which reads the live struct.
         ("Act_sec_grid_ptr", "$00"),
         ("Act_grid_w", "$04"),
         ("Act_grid_h", "$06"),
@@ -124,7 +125,10 @@ pub fn act_sec_field_equs() -> Vec<(&'static str, &'static str)> {
         ("Act_act_art_pool_table", "$1A"),
         ("Act_act_art_pool_pages", "$1E"),
         ("Act_edge_mode", "$20"),
-        ("Act_len", "$22"),
+        ("Act_pad_21", "$21"),
+        ("Act_act_sec_local_maps", "$22"),
+        ("Act_act_art_budget", "$26"),
+        ("Act_len", "$28"),
         // Sec (66 bytes / $42)
         ("Sec_sec_block_index", "$00"),
         ("Sec_sec_objects", "$04"),
@@ -166,17 +170,20 @@ pub fn act_sec_field_equs() -> Vec<(&'static str, &'static str)> {
         ("parallax_config_len", "$1C"),
         ("parallax_config_pcfg_band_count", "0"),
         ("parallax_config_pcfg_v_factor_bg", "1"),
+        ("parallax_config_pcfg_v_factor_fg", "2"),
         ("parallax_config_pcfg_layer_mask", "3"),
         ("parallax_config_pcfg_v_center_y", "4"),
         ("parallax_config_pcfg_v_offset", "6"),
         ("parallax_config_pcfg_transition", "8"),
         ("parallax_config_pcfg_deform_speed_fg", "9"),
         ("parallax_config_pcfg_deform_speed_bg", "10"),
+        ("parallax_config_pcfg_pad", "11"),
         ("parallax_config_pcfg_deform_table_fg", "12"),
         ("parallax_config_pcfg_deform_table_bg", "16"),
         ("parallax_config_pcfg_v_deform_table_bg", "20"),
         ("parallax_config_pcfg_v_deform_speed_bg", "24"),
         ("parallax_config_pcfg_v_deform_shift_bg", "25"),
+        ("parallax_config_pcfg_pad2", "26"),
         ("DMAEntry_len", "14"),
     ]
 }

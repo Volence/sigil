@@ -165,6 +165,39 @@ pub enum Fragment {
     Org { target: u32, fill: u8, span: Span },
 }
 
+impl Fragment {
+    /// The cursor advance a front end must use when pushing this fragment — its
+    /// length at rung 0, i.e. the BASELINE that `resolve_layout` assumes when it
+    /// shifts subsequent label offsets (`sigil-link::relax::shift_breakpoints`).
+    ///
+    /// This exists so the advance cannot be passed WRONG. It was previously an
+    /// argument to `IrStreamer::emit_fragment`, with the requirement stated in
+    /// `sigil-ir`, relied on in `sigil-link`, and satisfied in the front ends —
+    /// three crates, and no check anywhere. A wrong value does not fail: it
+    /// produces silently wrong label addresses (lens sweep, seat IR, finding S7).
+    ///
+    /// Length-variable fragments report their SMALLEST form, which is what rung 0
+    /// means; every fixed-length fragment reports its real length.
+    /// `relax::frag_len(frag, 0)` must agree with this for every variant — pinned
+    /// by `baseline_len_agrees_with_frag_len_at_rung_zero` in sigil-link, which is
+    /// the crate that owns the rung model.
+    pub fn baseline_len(&self) -> u32 {
+        match self {
+            Fragment::Data(d) => d.bytes.len() as u32,
+            Fragment::Fill { count, .. } => *count,
+            Fragment::Reserve { count, .. } => *count,
+            Fragment::Org { .. } => 0,
+            // abs.w baseline: opcode word + 16-bit operand.
+            Fragment::JmpJsrSym { .. } => crate::width::AbsWidth::W.inst_len(),
+            Fragment::RelaxAbsSym { short, .. } => short.bytes.len() as u32,
+            // `candidates` is non-decreasing in length, so the first is the smallest.
+            Fragment::RelaxLadder { candidates, .. } => {
+                candidates.first().map(|c| c.bytes.len() as u32).unwrap_or(0)
+            }
+        }
+    }
+}
+
 /// How a [`Section`]'s BASE (its LMA) is derived at link time (R7p.1). Inert
 /// provenance until the placement pass reads it: a `Pinned` section keeps its
 /// baked `lma` verbatim; a `Chained` section's base is computed by its placer

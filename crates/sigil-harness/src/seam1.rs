@@ -155,6 +155,47 @@ fn banked_carriers() -> Vec<(&'static str, i64)> {
     ]
 }
 
+/// Cross-check the hand-written [`banked_carriers`] VMAs against the derivation
+/// in [`crate::seam2::banked_head_vmas`], which computes the same addresses from
+/// the map authority the placement actually flows from.
+///
+/// These literals are baked into the SHIPPED resident driver's operand bytes, and
+/// until this check existed nothing compared them to anything. The failure mode is
+/// specific and nasty: an SFX id-range growth moves the derived head, the literal
+/// stays put, the whole-ROM golden byte gate breaks — and the natural remediation,
+/// refreeze, blesses the WRONG blob. seam-1's own comment records the
+/// `0x856D -> 0x8571` bump, i.e. that move having already happened once, caught by
+/// hand (lens sweep, seat LINK, finding S9).
+///
+/// Only the three HEAD-level members are derivable: the remaining carriers are
+/// offsets INSIDE `SoundTablesZ80_Head`, which `sound_layout` does not model.
+/// Those stay hand-maintained and unchecked — recorded here rather than implied.
+pub fn check_banked_carrier_drift(aeon: &Path) -> Result<(), String> {
+    let derived = crate::seam2::banked_head_vmas(aeon)?;
+    let pinned = banked_carriers();
+    let mut drift = Vec::new();
+    for (name, want) in derived {
+        let Some((_, got)) = pinned.iter().find(|(n, _)| *n == name) else {
+            return Err(format!(
+                "banked_carriers is missing `{name}`, which seam-2 derives — the carrier list \
+                 and the layout have diverged in SHAPE, not just value"
+            ));
+        };
+        if *got as u32 != want {
+            drift.push(format!("{name}: pinned {got:#06x}, derived {want:#06x}"));
+        }
+    }
+    if drift.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "banked_carriers has drifted from the seam-2 derivation: {}. These literals are baked \
+         into the shipped resident driver's operand bytes, so a stale one produces a WRONG blob \
+         that a refreeze would bless. Update `banked_carriers` to the derived values.",
+        drift.join("; ")
+    ))
+}
+
 /// Parse one resident `.emp` file, returning its AST + its directory (the include
 /// root). Panics on a parse error — the blob is a hard build dependency.
 fn parse_one(aeon: &Path, spec: &FileSpec) -> (ast::File, PathBuf) {
@@ -640,6 +681,12 @@ pub fn native_blob_doctored(aeon: &Path, debug: bool, doctor: Option<(&str, i64)
 pub fn emit_sound_blob(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     let out_dir: PathBuf = out_dir.to_path_buf();
     std::fs::create_dir_all(&out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+
+    // Before any bytes: the hand-written banked-head VMAs must still agree with
+    // the derivation. They are baked into the operand bytes emitted below, so a
+    // stale one produces a wrong blob whose only symptom is a broken golden — and
+    // the natural remediation, refreeze, would bless it.
+    check_banked_carrier_drift(aeon)?;
 
     let plain = native_sound_blob(aeon, false);
     let debug = native_sound_blob(aeon, true);

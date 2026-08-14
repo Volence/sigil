@@ -262,7 +262,8 @@ impl IrStreamer for IrBuilder {
         s.bump_max();
     }
 
-    fn emit_fragment(&mut self, frag: Fragment, advance: u32) {
+    fn emit_fragment(&mut self, frag: Fragment) {
+        let advance = frag.baseline_len();
         let s = self.section_mut();
         s.fragments.push(frag);
         s.cursor += advance;
@@ -356,7 +357,7 @@ mod tests {
         let mut b = IrBuilder::new();
         b.switch_section("s", Cpu::M68000, None);
         let frag = Fragment::JmpJsrSym { is_jsr: true, target: Expr::Sym("Sub".into()), span: span() };
-        b.emit_fragment(frag.clone(), 4);
+        b.emit_fragment(frag.clone());
         assert_eq!(b.current_offset(), 4);
         b.define_label("After");
         let (module, _diags) = b.finish();
@@ -373,10 +374,11 @@ mod tests {
         assert!(!b.section_has_relaxable()); // empty section
         b.emit_data(&[0x4E, 0x71], vec![], span());
         assert!(!b.section_has_relaxable()); // plain data does not relax
-        b.emit_fragment(
-            Fragment::JmpJsrSym { is_jsr: false, target: Expr::Sym("T".into()), span: span() },
-            4,
-        );
+        b.emit_fragment(Fragment::JmpJsrSym {
+            is_jsr: false,
+            target: Expr::Sym("T".into()),
+            span: span(),
+        });
         assert!(b.section_has_relaxable()); // a jmp/jsr can grow → provisional
         // A fresh section resets the query (per-section tracking).
         b.switch_section("t", Cpu::M68000, None);

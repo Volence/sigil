@@ -37,6 +37,18 @@ use std::sync::OnceLock;
 /// firings are true positives and which are lint gaps. Listing an id says "known",
 /// not "fine".
 const CORPUS_LINTS: &[&str] = &[
+    // ADJUDICATED 2026-08-14 (lens sweep, seat COMPTIME, finding S21). Fires on
+    // every shipped shape, 14 modules / 53 guards on sonic4 plain. It is NOT a
+    // regression and NOT noise to be silenced: an item-position `ensure` is
+    // evaluated iff its module is in the profile's `use` closure, so these guards
+    // are structurally incapable of firing for this target. Most of the 14 are the
+    // Z80 sound modules, which DO evaluate theirs via seam-1/seam-2. The ones that
+    // do not are the finding: `engine.z80_init` (whose
+    // `ensure(extern("Z80_IDLE_SIZE") == 40)` neither shipped sonic4 shape
+    // evaluates or even defers), `engine.debug.sound_debug`,
+    // `engine.compression_selftest`, and `games.demo.constants`. Retiring those is
+    // engine work; this row is the standing record that they are unevaluated.
+    "module.unreachable",
     "module.path-mismatch",
     "proc.clobber-undeclared",
     "proc.out-unwritten",
