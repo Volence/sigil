@@ -256,8 +256,8 @@ fn encode_alu_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     };
     let sz = size_code(inst.size)?;
 
-    // (base bits 15–12, register field, opmode, ea operand)
-    let (base, reg, opmode, ea): (u16, u8, u16, &Operand) = match inst.mnemonic {
+    // (base bits 15–12, register field, opmode, ea operand, EA modes the ISA permits there)
+    let (base, reg, opmode, ea, allowed): (u16, u8, u16, &Operand, EaSet) = match inst.mnemonic {
         // Address-register destination: reg = An, source is the EA.
         Mnemonic::Cmpa | Mnemonic::Adda | Mnemonic::Suba => {
             let an = match dst {
@@ -286,7 +286,8 @@ fn encode_alu_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
                     )))
                 }
             };
-            (base, an, opmode, src)
+            // Address arithmetic takes ANY source mode, An included.
+            (base, an, opmode, src, EaSet::ALL)
         }
         // Word multiply: reg = Dn destination, source is the EA. muls opmode 111
         // (signed), mulu opmode 011 (unsigned) — a one-bit (bit 8) distinction.
@@ -304,7 +305,7 @@ fn encode_alu_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             if inst.size != Size::W {
                 return Err(IsaError::UnsupportedForm(format!("{name} is word only")));
             }
-            (0b1100, dn, if signed { 0b111 } else { 0b011 }, src)
+            (0b1100, dn, if signed { 0b111 } else { 0b011 }, src, EaSet::DATA)
         }
         // Word divide: reg = Dn destination (32-bit dividend / 16-bit EA divisor
         // → quotient:remainder in Dn). Same shape as muls but base 0b1000; divs
@@ -323,7 +324,7 @@ fn encode_alu_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             if inst.size != Size::W {
                 return Err(IsaError::UnsupportedForm(format!("{name} is word only")));
             }
-            (0b1000, dn, if signed { 0b111 } else { 0b011 }, src)
+            (0b1000, dn, if signed { 0b111 } else { 0b011 }, src, EaSet::DATA)
         }
         // `<ea>,Dn` only: reg = Dn destination.
         Mnemonic::Cmp => {
@@ -335,7 +336,8 @@ fn encode_alu_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
                     )))
                 }
             };
-            (0b1011, dn, sz, src)
+            // `cmp.w a0,d0` is legal; `cmp.b a0,d0` is not, and the An byte rule catches it.
+            (0b1011, dn, sz, src, EaSet::ALL)
         }
         // `Dn,<ea>` only: reg = Dn source.
         Mnemonic::Eor => {
@@ -347,7 +349,8 @@ fn encode_alu_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
                     )))
                 }
             };
-            (0b1011, dn, sz + 0b100, dst)
+            // DATA ALTERABLE: `eor.w d0,a1` otherwise encodes B149 = `cmpm.w (a1)+,(a0)+`.
+            (0b1011, dn, sz + 0b100, dst, EaSet::DATA_ALTERABLE)
         }
         // Bidirectional: `<ea>,Dn` (opmode 0xx) or `Dn,<ea>` (opmode 1xx).
         Mnemonic::Add | Mnemonic::Sub | Mnemonic::And | Mnemonic::Or => {
@@ -361,7 +364,15 @@ fn encode_alu_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             match (src, dst) {
                 // <ea>,Dn — reg is the Dn destination, opmode 0xx. (An SOURCE is a
                 // valid EA here — `add.w a0,d1` is fine.)
-                (ea, Operand::Dn(n)) => (base, n & 0b111, sz, ea),
+                (ea, Operand::Dn(n)) => {
+                    // ADD/SUB take any source mode (An for .w/.l); AND/OR are DATA
+                    // only — `and.w a0,d0` has no encoding.
+                    let allowed = match inst.mnemonic {
+                        Mnemonic::Add | Mnemonic::Sub => EaSet::ALL,
+                        _ => EaSet::DATA,
+                    };
+                    (base, n & 0b111, sz, ea, allowed)
+                }
                 // An DESTINATION has NO encoding in this family: the `Dn,<ea>`
                 // direction's EA field cannot name an address register (mode 001 is
                 // not an alterable-memory EA). Silently taking the `Dn,<ea>` arm
@@ -391,7 +402,7 @@ fn encode_alu_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
                 }
                 // Dn,<ea> — reg is the Dn source, opmode 1xx (ea is memory: An was
                 // rejected above, Dn dest was taken by the first arm).
-                (Operand::Dn(n), ea) => (base, n & 0b111, sz + 0b100, ea),
+                (Operand::Dn(n), ea) => (base, n & 0b111, sz + 0b100, ea, EaSet::MEMORY_ALTERABLE),
                 (s, d) => {
                     return Err(IsaError::UnsupportedForm(format!(
                         "{:?} requires a Dn operand, got {s:?},{d:?}",
@@ -403,7 +414,7 @@ fn encode_alu_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         _ => unreachable!(),
     };
 
-    let (ea_mode, ea_reg, ea_ext) = encode_ea(ea, Field::Source, inst.size)?;
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(ea, allowed, inst.size)?;
     let word: u16 = (base << 12)
         | ((reg as u16) << 9)
         | (opmode << 6)
@@ -459,7 +470,9 @@ fn encode_alu_imm(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Mnemonic::Cmpi => 0b1100,
         _ => unreachable!(),
     };
-    let (ea_mode, ea_reg, ea_ext) = encode_ea(dst, Field::Dest, inst.size)?;
+    // DATA ALTERABLE — the whole family, cmpi included: `addi.w #1,a0` is not
+    // an encoding (write `adda`), and there is no ALU-immediate form against An.
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(dst, EaSet::DATA_ALTERABLE, inst.size)?;
     let word: u16 = (op << 8) | (sz << 6) | ((ea_mode as u16) << 3) | (ea_reg as u16);
     let imm_ext = imm_ext_words(inst.size, imm)?;
 
@@ -533,11 +546,11 @@ fn encode_move_sr(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         },
         _ => unreachable!(),
     };
-    let field = match inst.mnemonic {
-        Mnemonic::MoveToSr => Field::Source,
-        _ => Field::Dest,
+    let allowed = match inst.mnemonic {
+        Mnemonic::MoveToSr => EaSet::DATA,
+        _ => EaSet::DATA_ALTERABLE,
     };
-    let (ea_mode, ea_reg, ea_ext) = encode_ea(ea, field, inst.size)?;
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(ea, allowed, inst.size)?;
     let word: u16 = base | ((ea_mode as u16) << 3) | (ea_reg as u16);
     let mut out = Vec::with_capacity(2 + 2 * ea_ext.len());
     out.extend_from_slice(&word.to_be_bytes());
@@ -600,7 +613,10 @@ fn encode_quick(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         _ => unreachable!(),
     };
     let sz = size_code(inst.size)?;
-    let (ea_mode, ea_reg, ea_ext) = encode_ea(dst, Field::Dest, inst.size)?;
+    // ALTERABLE, not DATA ALTERABLE: addq/subq are the one ALU family with a
+    // legal An destination (`addq.w #1,a0`). The `.b` case is illegal and the
+    // An byte rule in `encode_ea` rejects it.
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(dst, EaSet::ALTERABLE, inst.size)?;
     let word: u16 = (0b0101 << 12)
         | (ddd << 9)
         | (op_bit << 8)
@@ -647,7 +663,9 @@ fn encode_shift(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
                 inst.mnemonic, inst.size
             )));
         }
-        let (ea_mode, ea_reg, ea_ext) = encode_ea(dst, Field::Dest, Size::W)?;
+        // MEMORY ALTERABLE: the one-operand form shifts a memory word. `asl.w d0`
+        // is not it — the register form is the two-operand `asl.w #1,d0`.
+        let (ea_mode, ea_reg, ea_ext) = encode_ea(dst, EaSet::MEMORY_ALTERABLE, Size::W)?;
         let ea: u16 = ((ea_mode as u16) << 3) | (ea_reg as u16);
         let word: u16 = 0xE0C0 | (tt << 9) | (d << 8) | ea;
         let mut out = word.to_be_bytes().to_vec();
@@ -732,7 +750,15 @@ fn encode_bit(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Operand::Dn(_) => Size::L,
         _ => Size::B,
     };
-    let (ea_mode, ea_reg, ea_ext) = encode_ea(dst, Field::Dest, size)?;
+    // `btst` only READS its destination, so it takes DATA; `bset`/`bclr` write and
+    // take DATA ALTERABLE. Neither admits An — `bset d0,a1` otherwise encodes 01C9
+    // = `movep.l d0,$8(a1)`, a MEMORY WRITE, and emits 2 bytes where MOVEP consumes
+    // 4, so the displacement it swallows is the next instruction's opcode word.
+    let allowed = match inst.mnemonic {
+        Mnemonic::Btst => EaSet::DATA,
+        _ => EaSet::DATA_ALTERABLE,
+    };
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(dst, allowed, size)?;
     let ea: u16 = ((ea_mode as u16) << 3) | (ea_reg as u16);
 
     let mut out = Vec::new();
@@ -789,7 +815,14 @@ fn encode_single_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             )))
         }
     };
-    let (ea_mode, ea_reg, ea_ext) = encode_ea(ea, Field::Dest, inst.size)?;
+    // `tst` only reads (DATA); `clr`/`neg`/`not`/`tas`/`Scc` write (DATA ALTERABLE).
+    // Neither admits An on the 68000 — `sne a3` otherwise encodes 56CB = `dbne d3,…`,
+    // a backward branch to garbage. (`tst.w a0` became legal only on the 68020.)
+    let allowed = match inst.mnemonic {
+        Mnemonic::Tst => EaSet::DATA,
+        _ => EaSet::DATA_ALTERABLE,
+    };
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(ea, allowed, inst.size)?;
     let ea_bits: u16 = ((ea_mode as u16) << 3) | (ea_reg as u16);
     let word: u16 = match inst.mnemonic {
         Mnemonic::Clr | Mnemonic::Neg | Mnemonic::Not | Mnemonic::Tst => {
@@ -860,7 +893,9 @@ fn encode_control(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
                 )))
             }
         };
-        let (ea_mode, ea_reg, ea_ext) = encode_ea(src, Field::Source, inst.size)?;
+        // CONTROL: `lea` names an address, so no register direct, no auto-inc/dec
+        // side effect, no immediate (`lea (a0)+,a1` and `lea #$1000,a0` are not forms).
+        let (ea_mode, ea_reg, ea_ext) = encode_ea(src, EaSet::CONTROL, inst.size)?;
         let word: u16 = 0x41C0 | (an << 9) | ((ea_mode as u16) << 3) | (ea_reg as u16);
         let mut out = Vec::with_capacity(2 + 2 * ea_ext.len());
         out.extend_from_slice(&word.to_be_bytes());
@@ -891,7 +926,10 @@ fn encode_control(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
                 Mnemonic::Pea => 0x4840,
                 _ => unreachable!(),
             };
-            let (ea_mode, ea_reg, ea_ext) = encode_ea(op, Field::Source, inst.size)?;
+            // CONTROL, all three. `pea d0` otherwise encodes 4840 = `swap d0`:
+            // nothing is pushed and the stack depth is wrong for the rest of the
+            // routine. `pea` and `swap` genuinely share this base word.
+            let (ea_mode, ea_reg, ea_ext) = encode_ea(op, EaSet::CONTROL, inst.size)?;
             let word: u16 = base | ((ea_mode as u16) << 3) | (ea_reg as u16);
             let mut out = Vec::with_capacity(2 + 2 * ea_ext.len());
             out.extend_from_slice(&word.to_be_bytes());
@@ -1078,7 +1116,17 @@ fn encode_movem(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             ))
         }
     };
-    let (ea_mode, ea_reg, ea_ext) = encode_ea(mem, Field::Dest, inst.size)?;
+    // MOVEM's legal modes differ BY DIRECTION, and the old code passed a
+    // destination field for both — which let the illegal store `movem.l d0-d7,(a0)+`
+    // through and falsely rejected the legal load `movem.l (Lbl,pc),d0-d7`.
+    //   STORE (regs -> mem): control alterable, plus `-(An)`.
+    //   LOAD  (mem -> regs): control, plus `(An)+`.
+    let allowed = if dir == 0 {
+        EaSet::CONTROL_ALTERABLE.or(EaSet::of(EaClass::PreDec))
+    } else {
+        EaSet::CONTROL.or(EaSet::of(EaClass::PostInc))
+    };
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(mem, allowed, inst.size)?;
     let word: u16 = 0x4880 | (dir << 10) | (sz << 6) | ((ea_mode as u16) << 3) | (ea_reg as u16);
 
     // Predecrement `-(An)` reverses the canonical mask's 16 bits; all others emit it as-is.
@@ -1178,13 +1226,6 @@ fn encode_cmpm(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     Ok(word.to_be_bytes().to_vec())
 }
 
-/// Which MOVE field an EA occupies. Only affects word-bit placement + legal-dest checks.
-#[derive(Clone, Copy)]
-enum Field {
-    Source,
-    Dest,
-}
-
 fn encode_move(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     let (src, dst) = match inst.ops.as_slice() {
         [s, d] => (s, d),
@@ -1196,8 +1237,16 @@ fn encode_move(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Size::L => 0b10,
         Size::S => return Err(IsaError::UnsupportedForm("move has no short (.s) size".into())),
     };
-    let (src_mode, src_reg, src_ext) = encode_ea(src, Field::Source, inst.size)?;
-    let (dst_mode, dst_reg, dst_ext) = encode_ea(dst, Field::Dest, inst.size)?;
+    // `move` reads any mode and writes ALTERABLE — data alterable PLUS An.
+    //
+    // An destination is not an exception grudgingly allowed: MOVEA *is* MOVE with
+    // destination mode 001. The two share one opcode layout (`00 ss rrr mmm nnn`),
+    // so the bytes this encoder emits for `move.l Sym,a0` are byte-for-byte the
+    // MOVEA the CPU executes. `movea` has its own encoder only because the corpus
+    // also spells it explicitly. The illegal case is `move.b <ea>,aN` (there is no
+    // MOVEA.B), and the An byte rule in `encode_ea` rejects exactly that.
+    let (src_mode, src_reg, src_ext) = encode_ea(src, EaSet::ALL, inst.size)?;
+    let (dst_mode, dst_reg, dst_ext) = encode_ea(dst, EaSet::ALTERABLE, inst.size)?;
     let word: u16 = (size_bits << 12)
         | ((dst_reg as u16) << 9)
         | ((dst_mode as u16) << 6)
@@ -1246,7 +1295,7 @@ fn encode_movea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             ))
         }
     };
-    let (src_mode, src_reg, src_ext) = encode_ea(src, Field::Source, inst.size)?;
+    let (src_mode, src_reg, src_ext) = encode_ea(src, EaSet::ALL, inst.size)?;
     let word: u16 = (size_bits << 12)
         | (an << 9)
         | (0b001 << 6)
@@ -1260,9 +1309,187 @@ fn encode_movea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     Ok(out)
 }
 
-/// Resolve one EA to `(mode3, reg3, extension_words)`. Used for both source and dest —
-/// the field-order swap lives in `encode_move`, not here.
-fn encode_ea(op: &Operand, field: Field, size: Size) -> Result<(u8, u8, Vec<u16>), IsaError> {
+/// The twelve 68000 effective-address modes, as the ISA's own operand tables name
+/// them. `encode_ea` resolves an `Operand` to one of these and then checks it
+/// against the `EaSet` the *instruction* permits in that position.
+///
+/// This layer exists because resolving a mode and permitting a mode are different
+/// questions, and sigil used to answer only the first. `encode_ea` mapped
+/// `Operand::An` to mode `001` unconditionally, so four instructions whose opcode
+/// space has a neighbour reachable by exactly that mode silently assembled into
+/// the neighbour — see `alias_classes_are_rejected` for the decoded evidence.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EaClass {
+    /// `Dn` — mode 000
+    Dn,
+    /// `An` — mode 001
+    An,
+    /// `(An)` — mode 010
+    Ind,
+    /// `(An)+` — mode 011
+    PostInc,
+    /// `-(An)` — mode 100
+    PreDec,
+    /// `(d16,An)` — mode 101
+    Disp16An,
+    /// `(d8,An,Xn)` — mode 110
+    Disp8AnXn,
+    /// `(xxx).W` — mode 111 reg 000
+    AbsW,
+    /// `(xxx).L` — mode 111 reg 001
+    AbsL,
+    /// `(d16,PC)` — mode 111 reg 010
+    Pcd16,
+    /// `(d8,PC,Xn)` — mode 111 reg 011
+    Pcd8Xn,
+    /// `#imm` — mode 111 reg 100
+    Imm,
+}
+
+impl EaClass {
+    const fn bit(self) -> u16 {
+        1 << (self as u16)
+    }
+    /// How the operand spells in a diagnostic.
+    fn spelling(self) -> &'static str {
+        match self {
+            EaClass::Dn => "Dn",
+            EaClass::An => "An",
+            EaClass::Ind => "(An)",
+            EaClass::PostInc => "(An)+",
+            EaClass::PreDec => "-(An)",
+            EaClass::Disp16An => "(d16,An)",
+            EaClass::Disp8AnXn => "(d8,An,Xn)",
+            EaClass::AbsW => "(xxx).W",
+            EaClass::AbsL => "(xxx).L",
+            EaClass::Pcd16 => "(d16,PC)",
+            EaClass::Pcd8Xn => "(d8,PC,Xn)",
+            EaClass::Imm => "#imm",
+        }
+    }
+}
+
+/// A set of permitted `EaClass`es — the "addressing modes" column of the 68000
+/// manual's per-instruction operand table, made machine-readable.
+#[derive(Clone, Copy)]
+pub struct EaSet(u16);
+
+impl EaSet {
+    const fn of(c: EaClass) -> Self {
+        EaSet(c.bit())
+    }
+    const fn or(self, other: Self) -> Self {
+        EaSet(self.0 | other.0)
+    }
+    const fn without(self, other: Self) -> Self {
+        EaSet(self.0 & !other.0)
+    }
+    const fn and(self, other: Self) -> Self {
+        EaSet(self.0 & other.0)
+    }
+    fn contains(self, c: EaClass) -> bool {
+        self.0 & c.bit() != 0
+    }
+
+    // --- the named classes, defined exactly as the 68000 manual defines them ---
+
+    /// Every mode. The correct set only where the instruction really accepts all
+    /// twelve (`move` source, `movea` source, `cmpa`/`adda`/`suba` source).
+    const ALL: Self = EaSet(0x0FFF);
+    /// All but `An`. An address register is not a *data* operand.
+    const DATA: Self = Self::ALL.without(Self::of(EaClass::An));
+    /// All but `Dn` and `An` — the operand is in memory.
+    const MEMORY: Self = Self::DATA.without(Self::of(EaClass::Dn));
+    /// Modes that name a memory ADDRESS: no register direct, no autoincrement/
+    /// decrement (their side effect has no meaning for an address), no immediate.
+    ///
+    /// `#imm` must be subtracted explicitly — the manual counts immediate among the
+    /// MEMORY modes, so deriving control from memory without this line silently
+    /// leaves `lea #$1000,a0` encodable.
+    const CONTROL: Self = Self::MEMORY
+        .without(Self::of(EaClass::PostInc))
+        .without(Self::of(EaClass::PreDec))
+        .without(Self::of(EaClass::Imm));
+    /// Modes that can be WRITTEN: excludes the two PC-relative modes and `#imm`.
+    const ALTERABLE: Self = Self::ALL
+        .without(Self::of(EaClass::Pcd16))
+        .without(Self::of(EaClass::Pcd8Xn))
+        .without(Self::of(EaClass::Imm));
+    /// `DATA & ALTERABLE` — the commonest destination class (`clr`, `Scc`, `eor`,
+    /// `bset`, the ALU-immediate family, `move` destination).
+    const DATA_ALTERABLE: Self = Self::DATA.and(Self::ALTERABLE);
+    /// `MEMORY & ALTERABLE` — the memory-shift form and the `Dn,<ea>` ALU direction.
+    const MEMORY_ALTERABLE: Self = Self::MEMORY.and(Self::ALTERABLE);
+    /// `CONTROL & ALTERABLE` — MOVEM's store destination, before `-(An)` is added back.
+    const CONTROL_ALTERABLE: Self = Self::CONTROL.and(Self::ALTERABLE);
+}
+
+/// Which of the twelve modes this operand is, or `None` for the pseudo-operands
+/// that their family encoders consume directly and that are never a general EA.
+fn ea_class(op: &Operand) -> Option<EaClass> {
+    Some(match op {
+        Operand::Dn(_) => EaClass::Dn,
+        Operand::An(_) => EaClass::An,
+        Operand::Ind(_) => EaClass::Ind,
+        Operand::PostInc(_) => EaClass::PostInc,
+        Operand::PreDec(_) => EaClass::PreDec,
+        Operand::Disp16An(..) => EaClass::Disp16An,
+        Operand::Disp8AnXn { .. } => EaClass::Disp8AnXn,
+        Operand::AbsW(_) => EaClass::AbsW,
+        Operand::AbsL(_) => EaClass::AbsL,
+        Operand::Pcd16(_) => EaClass::Pcd16,
+        Operand::Pcd8Xn { .. } => EaClass::Pcd8Xn,
+        Operand::Imm(_) => EaClass::Imm,
+        Operand::RegList(_) | Operand::Disp(_) | Operand::Ccr | Operand::Sr => return None,
+    })
+}
+
+/// Resolve one EA to `(mode3, reg3, extension_words)`, rejecting any mode the
+/// instruction does not permit in this position.
+///
+/// `allowed` is the instruction's own operand-table row, supplied by the family
+/// encoder — the caller is the only place that knows which position this is and
+/// what the ISA permits there. It replaces an earlier `Field::Source`/`Dest`
+/// parameter, which could express only "not `#imm`/PC-relative" and therefore let
+/// `An` through everywhere.
+///
+/// `size` supplies the `#imm` extension-word width, and also drives the ISA's one
+/// size-dependent EA rule: an address register is never a BYTE operand.
+fn encode_ea(op: &Operand, allowed: EaSet, size: Size) -> Result<(u8, u8, Vec<u16>), IsaError> {
+    let Some(class) = ea_class(op) else {
+        // Handled by their family encoders (movem/branch/ccr/sr), never as a general EA.
+        let what = match op {
+            Operand::RegList(_) => "register list",
+            Operand::Disp(_) => "branch displacement",
+            Operand::Ccr => "ccr",
+            _ => "sr",
+        };
+        return Err(IsaError::UnsupportedForm(format!("{what} is not a general EA")));
+    };
+
+    if !allowed.contains(class) {
+        // The three non-alterable modes keep the historical `IllegalDest` tag and
+        // wording: for a write position that is precisely what they are, and
+        // callers match on it.
+        return Err(match class {
+            EaClass::Imm | EaClass::Pcd16 | EaClass::Pcd8Xn if allowed.0 & EaSet::ALTERABLE.0 != 0 => {
+                IsaError::IllegalDest(class.spelling().into())
+            }
+            _ => IsaError::UnsupportedForm(format!(
+                "{} is not a legal addressing mode for this operand position",
+                class.spelling()
+            )),
+        });
+    }
+
+    // An address register is a word/long operand only — there is no byte access
+    // to An anywhere in the 68000 (`add.b a0,d0`, `cmp.b a0,d0`, `addq.b #1,a0`).
+    if class == EaClass::An && size == Size::B {
+        return Err(IsaError::UnsupportedForm(
+            "an address register has no byte-size form".into(),
+        ));
+    }
+
     let r = |n: u8| n & 0b111;
     Ok(match *op {
         Operand::Dn(n) => (0b000, r(n), vec![]),
@@ -1272,24 +1499,11 @@ fn encode_ea(op: &Operand, field: Field, size: Size) -> Result<(u8, u8, Vec<u16>
         Operand::PreDec(n) => (0b100, r(n), vec![]),
         Operand::Disp16An(d, n) => (0b101, r(n), vec![d as u16]),
         Operand::Disp8AnXn { d, an, xn, long } => (0b110, r(an), vec![brief_ext(d, xn, long)]),
-        Operand::Pcd8Xn { d, xn, long } => {
-            if let Field::Dest = field {
-                return Err(IsaError::IllegalDest("(d8,PC,Xn)".into()));
-            }
-            (0b111, 0b011, vec![brief_ext(d, xn, long)])
-        }
+        Operand::Pcd8Xn { d, xn, long } => (0b111, 0b011, vec![brief_ext(d, xn, long)]),
         Operand::AbsW(a) => (0b111, 0b000, vec![a as u16]),
         Operand::AbsL(a) => (0b111, 0b001, vec![(a >> 16) as u16, a as u16]),
-        Operand::Pcd16(d) => {
-            if let Field::Dest = field {
-                return Err(IsaError::IllegalDest("(d16,PC)".into()));
-            }
-            (0b111, 0b010, vec![d as u16])
-        }
+        Operand::Pcd16(d) => (0b111, 0b010, vec![d as u16]),
         Operand::Imm(v) => {
-            if let Field::Dest = field {
-                return Err(IsaError::IllegalDest("#imm".into()));
-            }
             let ext = match size {
                 Size::B => vec![(v as u16) & 0x00FF],
                 Size::W => vec![v as u16],
@@ -1298,12 +1512,7 @@ fn encode_ea(op: &Operand, field: Field, size: Size) -> Result<(u8, u8, Vec<u16>
             };
             (0b111, 0b100, ext)
         }
-        // These are handled by their family encoders (movem/branch/ccr/sr) in
-        // later tasks, never resolved as a general EA.
-        Operand::RegList(_) => return Err(IsaError::UnsupportedForm("register list is not a general EA".into())),
-        Operand::Disp(_) => return Err(IsaError::UnsupportedForm("branch displacement is not a general EA".into())),
-        Operand::Ccr => return Err(IsaError::UnsupportedForm("ccr is not a general EA".into())),
-        Operand::Sr => return Err(IsaError::UnsupportedForm("sr is not a general EA".into())),
+        Operand::RegList(_) | Operand::Disp(_) | Operand::Ccr | Operand::Sr => unreachable!("ea_class returned None"),
     })
 }
 
