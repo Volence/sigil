@@ -5730,3 +5730,57 @@ full_crc = "3dc20e2c"
 full_size = 711298
 anchor_crc = "b748bed7"
 anchor_end = 0xa30b0
+
+[[entry]]
+name = "effects-p3-vsram-fixture"
+ab = "docs/benchmarks/effects-p3/GATE-EVIDENCE.md"
+note = "plane B VSRAM banding fixture retargeted (byte 2, $0043) after the 64px null was root-caused to 64px-periodic BG art; oracle-verified, aeon df774e41"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "5158ebcd"
+full_size = 711682
+anchor_crc = "cdb2d50b"
+anchor_end = 0xa30b0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "9b7ed295"
+full_size = 598892
+anchor_crc = "08485a65"
+anchor_end = 0x895f0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "d5ea5776"
+full_size = 95615
+anchor_crc = "7cd0cdfb"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "321ad9c6"
+full_size = 99783
+anchor_crc = "fc49dec9"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "aa3851e9"
+full_size = 655726
+anchor_crc = "d0b59d91"
+anchor_end = 0xa016e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "8bbd7bec"
+full_size = 696850
+anchor_crc = "4de8bb46"
+anchor_end = 0xa11f0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "eb607681"
+full_size = 711314
+anchor_crc = "37e5fe21"
+anchor_end = 0xa30b0
