@@ -4,10 +4,26 @@ use crate::token::{Punct, Tok, Token};
 use sigil_ir::expr::{BinOp, UnOp};
 use sigil_ir::Expr;
 
+/// Maximum operand-nesting depth, mirroring the `.emp` front end's own limit.
+///
+/// Without a bound, `parse_atom`'s three recursive arms (`-x`, `~x`, `(x)`) are
+/// limited only by input size, and a syntactically PERFECT `dc.b (((…1…)))` deep
+/// enough overflows the native stack. That is a SIGABRT, not a panic: it cannot be
+/// `catch_unwind`'d, so `sigil` dies with no diagnostic and no location. Measured
+/// at 40,000 nesting levels before this guard (lens sweep, seat SAFE, finding
+/// S19). Reachable from every operand and every `dc.b/w/l` in a frontend that
+/// still assembles `game_root.asm` on every build.
+///
+/// The corpus nests single digits deep; 128 is far above any real expression and
+/// far below the stack budget.
+const MAX_EXPR_DEPTH: u32 = 128;
+
 /// Parse a leading expression from `toks`; return it plus the unconsumed tail.
-/// `None` if the head is not an expression.
+/// `None` if the head is not an expression, or if it nests past
+/// [`MAX_EXPR_DEPTH`] — the same "not an expression here" answer the unbalanced-
+/// paren arm already returns, so callers report a clean parse error either way.
 pub fn parse_expr(toks: &[Token]) -> Option<(Expr, &[Token])> {
-    parse_bp(toks, 0)
+    parse_bp(toks, 0, 0)
 }
 
 /// Binding-power ladder: higher binds tighter.
@@ -49,14 +65,14 @@ fn infix_bp(p: Punct) -> Option<(u8, BinOp)> {
     })
 }
 
-fn parse_bp(toks: &[Token], min_bp: u8) -> Option<(Expr, &[Token])> {
-    let (mut lhs, mut rest) = parse_atom(toks)?;
+fn parse_bp(toks: &[Token], min_bp: u8, depth: u32) -> Option<(Expr, &[Token])> {
+    let (mut lhs, mut rest) = parse_atom(toks, depth)?;
     while let Some(Tok::Punct(p)) = rest.first().map(|t| &t.tok) {
         let (bp, op) = match infix_bp(*p) {
             Some(x) if x.0 > min_bp => x,
             _ => break,
         };
-        let (rhs, r2) = parse_bp(&rest[1..], bp)?;
+        let (rhs, r2) = parse_bp(&rest[1..], bp, depth)?;
         lhs = Expr::Binary {
             op,
             lhs: Box::new(lhs),
@@ -67,7 +83,11 @@ fn parse_bp(toks: &[Token], min_bp: u8) -> Option<(Expr, &[Token])> {
     Some((lhs, rest))
 }
 
-fn parse_atom(toks: &[Token]) -> Option<(Expr, &[Token])> {
+fn parse_atom(toks: &[Token], depth: u32) -> Option<(Expr, &[Token])> {
+    if depth >= MAX_EXPR_DEPTH {
+        return None;
+    }
+    let depth = depth + 1;
     let (head, rest) = toks.split_first()?;
     match &head.tok {
         Tok::Int(n) => Some((Expr::Int(*n), rest)),
@@ -84,7 +104,7 @@ fn parse_atom(toks: &[Token]) -> Option<(Expr, &[Token])> {
         Tok::Punct(Punct::Star) => Some((Expr::Sym("$".to_string()), rest)),
         Tok::Ident(name) => Some((Expr::Sym(name.clone()), rest)),
         Tok::Punct(Punct::Minus) => {
-            let (inner, r) = parse_atom(rest)?;
+            let (inner, r) = parse_atom(rest, depth)?;
             Some((
                 Expr::Unary {
                     op: UnOp::Neg,
@@ -98,7 +118,7 @@ fn parse_atom(toks: &[Token]) -> Option<(Expr, &[Token])> {
         // `~(mask)` / `~BLOCK_TILE_SIZE-1` parse as `(~x)` then any following
         // binary operator, matching asl.
         Tok::Punct(Punct::Tilde) => {
-            let (inner, r) = parse_atom(rest)?;
+            let (inner, r) = parse_atom(rest, depth)?;
             Some((
                 Expr::Unary {
                     op: UnOp::Not,
@@ -108,13 +128,80 @@ fn parse_atom(toks: &[Token]) -> Option<(Expr, &[Token])> {
             ))
         }
         Tok::Punct(Punct::LParen) => {
-            let (inner, r) = parse_bp(rest, 0)?;
+            let (inner, r) = parse_bp(rest, 0, depth)?;
             match r.first().map(|t| &t.tok) {
                 Some(Tok::Punct(Punct::RParen)) => Some((inner, &r[1..])),
                 _ => None, // unbalanced paren
             }
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod depth_guard_tests {
+    //! The AS front end had NO expression-depth guard at all (sigil lens sweep
+    //! 2026-08-13, seat SAFE, finding S19). `parse_atom`'s three recursive arms
+    //! (`-x`, `~x`, `(x)`) were bounded only by input size, so a syntactically
+    //! PERFECT deeply-parenthesised operand overflowed the native stack and
+    //! aborted the process with SIGABRT. That is not a panic — it cannot be
+    //! `catch_unwind`'d, so `sigil` died with no diagnostic and no location.
+    //! Measured aborting at 40,000 nesting levels.
+    //!
+    //! This frontend is live: it assembles `game_root.asm` on every build, and the
+    //! shape is reachable from every operand and every `dc.b/w/l`.
+    //!
+    //! Each case parses on a child thread with a bounded stack, so the assertion is
+    //! about the guard rather than about whatever stack the harness happens to give
+    //! the main thread, and a regression FAILS (thread died) instead of taking the
+    //! whole test binary down with it.
+    use super::parse_expr;
+    use crate::lexer::lex_line;
+    use sigil_ir::backend::Cpu;
+    use sigil_span::SourceId;
+
+    fn parses(src: String) -> bool {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let h = std::thread::Builder::new()
+            .stack_size(4 * 1024 * 1024)
+            .spawn(move || {
+                let toks = lex_line(&src, Cpu::M68000, SourceId(0), 0).expect("lex");
+                let _ = tx.send(parse_expr(&toks).is_some());
+            })
+            .expect("spawn");
+        let out = rx
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .expect("parse did not terminate");
+        h.join().expect("parser thread died — stack-overflow regression");
+        out
+    }
+
+    #[test]
+    fn deep_parens_are_refused_not_aborted() {
+        let n = 60_000;
+        assert!(
+            !parses(format!("{}1{}", "(".repeat(n), ")".repeat(n))),
+            "a {n}-deep parenthesised operand must be REFUSED, not aborted"
+        );
+    }
+
+    #[test]
+    fn deep_unary_chains_are_refused_not_aborted() {
+        let n = 60_000;
+        assert!(!parses(format!("{}1", "-".repeat(n))), "deep `-` chain must be refused");
+        assert!(!parses(format!("{}1", "~".repeat(n))), "deep `~` chain must be refused");
+    }
+
+    /// Guard the other direction — a bound set too low would refuse real
+    /// expressions. The corpus nests single digits deep.
+    #[test]
+    fn ordinary_nesting_still_parses() {
+        for n in [1usize, 8, 64, 100] {
+            assert!(
+                parses(format!("{}1{}", "(".repeat(n), ")".repeat(n))),
+                "{n}-deep parens are ordinary and must parse"
+            );
+        }
     }
 }
 
