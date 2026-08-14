@@ -801,9 +801,21 @@ pub fn analyze_corpus_with_contracts(
 
     // D1d dead-save worklist: run over every proc's CodeBuf against the closure's
     // VERIFIED effective sets (never raw declared text — pass-3 cuts code on this).
+    //
+    // And because pass-3 cuts code on this, the closure it reads is the CONSERVATIVE
+    // one. A `jsr (aN) as Type` narrowing is trusted, not proven — nothing checks
+    // that the procs installed in the dispatch table satisfy the bound (S12) — and
+    // for THIS consumer the unsafe direction is the narrow one: the smaller a
+    // callee's clobber set looks, the more of the caller's saves look dead. Advice
+    // to DELETE a save must never rest on an unverified bound, so dead-save
+    // detection treats every indirect site as ⊤. The warn-tier analyses below keep
+    // the trusting closure, where a narrower set only suppresses warnings and the
+    // frozen baselines already encode it.
+    let ds_closure =
+        crate::closure::compute_closure_with(&nodes, &types, crate::closure::IndirectPolicy::Unbounded);
     let mut dead_saves: Vec<DeadSave> = Vec::new();
     for pb in &proc_bufs {
-        dead_saves.extend(find_dead_saves(&pb.name, &pb.buf.items, &closure.effective));
+        dead_saves.extend(find_dead_saves(&pb.name, &pb.buf.items, &ds_closure.effective));
     }
     dead_saves.sort_by(|a, b| {
         (&a.proc, a.reg, a.span.start).cmp(&(&b.proc, b.reg, b.span.start))

@@ -189,3 +189,66 @@ fn hole_callee_no_fire() {
     );
     assert!(f.is_empty(), "unknown callee → conservative, no dead-save: {f:?}");
 }
+
+// ---- the dispatch-bound hazard (lens sweep, seat Va, finding S12) -----------
+//
+// This lint's output is acted on BY HAND: pass-3 cuts code from the worklist. So
+// the direction that is unsafe HERE is the narrow one — the smaller a callee's
+// clobber set looks, the more of the caller's saves look dead.
+//
+// `jsr (aN) as Type` narrows an indirect site from ⊤ to the contract type's
+// clobber set, and that narrowing is TRUSTED, not proven: nothing checks that the
+// procs installed in the dispatch table satisfy the bound. A dispatch target that
+// clobbers more than its bound therefore makes this lint recommend deleting the
+// very save that made the caller safe.
+//
+// `corpus_contracts` now feeds dead-save detection a closure built with
+// `IndirectPolicy::Unbounded`, so a save bracketing an indirect dispatch is never
+// reported dead on the strength of an unverified bound. These tests pin the
+// consequence at the lint's own surface, which is where a future refactor would
+// silently undo it.
+
+/// The hazard, stated as the lint sees it: a bracketed callee whose effect reads
+/// as a NARROW set (what a trusted `as Type` bound produces) reports the save
+/// dead — advice to delete it.
+#[test]
+fn narrow_dispatch_effect_would_report_the_save_dead() {
+    let f = run(
+        "module m\n\
+         proc P () clobbers(d2, a0) {\n\
+             movem.l d0-d1, -(sp)\n\
+             jbsr    Dispatch\n\
+             movem.l (sp)+, d0-d1\n\
+             rts\n\
+         }\n",
+        // `Dispatch` narrowed to a bound that excludes d0/d1.
+        &eff(&[("Dispatch", &["d2"])]),
+    );
+    assert!(
+        regs(&f).contains(&Reg::D0) && regs(&f).contains(&Reg::D1),
+        "a narrow callee effect makes the save look dead — this is the advice at risk: {f:?}"
+    );
+}
+
+/// The same save under the SOUND reading of an unverified dispatch bound (⊤): the
+/// advice is withdrawn. `RegEffect::top` is exactly what
+/// `IndirectPolicy::Unbounded` produces for a bounded indirect site.
+#[test]
+fn top_dispatch_effect_withdraws_the_advice() {
+    let mut effective = BTreeMap::new();
+    effective.insert("Dispatch".to_string(), RegEffect { top: true, regs: BTreeSet::new() });
+    let f = run(
+        "module m\n\
+         proc P () clobbers(d2, a0) {\n\
+             movem.l d0-d1, -(sp)\n\
+             jbsr    Dispatch\n\
+             movem.l (sp)+, d0-d1\n\
+             rts\n\
+         }\n",
+        &effective,
+    );
+    assert!(
+        f.is_empty(),
+        "a ⊤ callee may clobber anything — no save across it is deletable: {f:?}"
+    );
+}

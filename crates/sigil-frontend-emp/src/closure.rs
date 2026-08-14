@@ -187,11 +187,56 @@ pub(crate) fn resolve_callee_key<'a>(procs: &BTreeMap<String, ProcNode>, callee:
     callee
 }
 
+/// How a `jsr (aN) as Type` dispatch site is treated by the closure.
+///
+/// `as Type` replaces the ⊤ an unbounded indirect call would contribute with the
+/// contract type's own clobber set. That narrowing is TRUSTED, not proven: the
+/// relation that would justify it — [`subcontract_violations`], documented as
+/// "what makes a dispatch target installable" — is called from exactly one place,
+/// interface `implement` binding, and never at a dispatch site. Nothing checks
+/// that the procs actually installed in the dispatch table satisfy the bound
+/// (lens sweep, seat Va, finding S12). aeon carries 8 such sites and ships a
+/// DEBUG-only RUNTIME assert at `core.emp:520` as a workaround for the
+/// compile-time check the syntax implies exists.
+///
+/// The narrowing cannot simply be dropped: it is load-bearing. Measured by
+/// forcing ⊤ at every site, the corpus produces 53 `[proc.clobber-undeclared]`
+/// closure firings, 2 preserves firings, and moves the frozen `[call.live-clobbered]`
+/// baseline — i.e. 53 engine contracts are written against the narrowed answer.
+/// Withdrawing it is a real aeon+sigil parcel, not a flag flip.
+///
+/// So the policy is chosen PER CONSUMER, because the conservative direction is not
+/// the same for all of them. For the warn-tier analyses a narrower set means FEWER
+/// warnings, and their baselines encode that. For [`crate::preserves::find_dead_saves`]
+/// a narrower set means MORE registers look dead — and its output is a DELETION
+/// instruction acted on by hand, so a wrong narrowing there can recommend deleting
+/// the very save that made the code safe. That consumer gets [`Self::Unbounded`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum IndirectPolicy {
+    /// Trust an `as Type` bound and narrow to the contract type's clobber set.
+    TrustTypeBound,
+    /// Treat every indirect site as ⊤, bounded or not — the sound reading while
+    /// the bound is unverified.
+    Unbounded,
+}
+
 /// Compute the transitive `effective` clobber set for every proc (§1). A
 /// monotone union fixpoint from ∅; terminates on the finite register lattice.
+///
+/// Trusts `as Type` bounds; see [`compute_closure_with`] for the policy and why a
+/// consumer might want the other one.
 pub fn compute_closure(
     procs: &BTreeMap<String, ProcNode>,
     contract_types: &BTreeMap<String, RegEffect>,
+) -> Closure {
+    compute_closure_with(procs, contract_types, IndirectPolicy::TrustTypeBound)
+}
+
+/// [`compute_closure`] with an explicit [`IndirectPolicy`].
+pub fn compute_closure_with(
+    procs: &BTreeMap<String, ProcNode>,
+    contract_types: &BTreeMap<String, RegEffect>,
+    indirect: IndirectPolicy,
 ) -> Closure {
     let mut effective: BTreeMap<String, RegEffect> =
         procs.keys().map(|k| (k.clone(), RegEffect::bottom())).collect();
@@ -227,6 +272,12 @@ pub fn compute_closure(
                 match site {
                     // Unbounded indirect = ⊤ (§1's load-bearing fact).
                     None => {
+                        acc.set_top();
+                    }
+                    // A bound narrows ONLY under `TrustTypeBound`; under
+                    // `Unbounded` a bounded site is ⊤ exactly like an unbounded
+                    // one, because nothing has checked the installed targets.
+                    Some(_) if indirect == IndirectPolicy::Unbounded => {
                         acc.set_top();
                     }
                     Some(ty) => match contract_types.get(ty) {
