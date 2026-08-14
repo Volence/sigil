@@ -6,14 +6,20 @@
 //! pipeline, and asserts the `vdp_init` section's flattened bytes equal the
 //! reference ROM window at the pinned addresses, in BOTH build shapes.
 //!
-//! ## No shape define
+//! ## The shape define
 //!
-//! Like every code port so far, `vdp_init.emp` carries no `DEBUG` member:
-//! the block's CONTENT is byte-identical plain and debug (`pins::VDP_INIT`'s
-//! plain_len == debug_len) — only its BASE address shifts (`pins::VDP_INIT`
-//! plain_base/debug_base), so
-//! the shape lives entirely in the MAP. `lower_module` runs with an EMPTY
+//! `vdp_init.emp` used to carry no `DEBUG` member — the block's CONTENT was
+//! byte-identical plain and debug and only its BASE address shifted, so the
+//! shape lived entirely in the MAP and `lower_module` ran with an EMPTY
 //! `defines` vec for both shapes.
+//!
+//! The blanket-restore parcel's review round ended that: `Set_VDP_Reg` gained
+//! an `if DEBUG == 1 { assert.w d0, ls, #$12 }` bound check on the register
+//! index, so `DEBUG` is now a real name the module reads and the shape reaches
+//! the CONTENT as well as the base (`pins::VDP_INIT` plain_len $3A, debug_len
+//! $92). `lower_module` gets `DEBUG = 0/1` per shape — hardcoding either would
+//! make one of the two gates compare the wrong shape's bytes — and the map
+//! region is sized per shape to match.
 //!
 //! ## What this port exercises that the prior four did not
 //!
@@ -45,6 +51,13 @@
 //!   unconditionally, so there is no dirty state to track.
 //! - One AS-side ROM label: `BootData_VDPRegs` (`engine/system/boot.asm`),
 //!   phased at its true per-shape VMA — the pc-rel target described above.
+//! - DEBUG-only: the two MD Debugger blob entry points. `Set_VDP_Reg`'s bound
+//!   `assert.w` expands to `jsr (MDDBG__ErrorHandler).l` /
+//!   `jmp (MDDBG__ErrorHandler_PagesController).l`, so in the debug shape they
+//!   are real cross-seam fixups (the bg_port/plane_buffer_port precedent from
+//!   this same parcel's first round). Their pins are shape-invariant, so both
+//!   shapes carry them; in plain the assert is comptime-gated out and the
+//!   carriers simply go unreferenced.
 //!
 //! `VDP_Shadow_len` comes from the `engine.constants` twin (step 2's
 //! migration — `use engine.constants.{VDP_Shadow_len}`), so the twin's EIGHT
@@ -106,11 +119,14 @@ fn twin_guards() -> usize {
 
 /// The map: a `text` region for `vdp_init.emp`'s zero-byte default-section
 /// carrier, and the real `vdp_init` region pinned at the per-shape reference
-/// base, sized from `pins::VDP_INIT` (base per shape, plain_len for both).
+/// base, sized from `pins::VDP_INIT` — BOTH per shape. The size used to be
+/// `plain_len` for both shapes because the block's content was shape-invariant;
+/// `Set_VDP_Reg`'s DEBUG-shape bound assert made the debug block longer, so a
+/// plain-sized debug region would no longer hold it.
 fn map_toml(debug: bool) -> String {
     // Base/size sourced from `sigil_harness::pins` (regenerate via `repin`).
     let base = if debug { pins::VDP_INIT.debug_base } else { pins::VDP_INIT.plain_base };
-    let size = pins::VDP_INIT.plain_len;
+    let size = if debug { pins::VDP_INIT.debug_len } else { pins::VDP_INIT.plain_len };
     format!(
         "fill = 0x00\n\
          \n\
@@ -188,6 +204,35 @@ fn as_bootdata_label(debug: bool) -> Vec<Section> {
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (bootdata label): {d:?}")).sections
 }
 
+/// The DEBUG-only cross-seam ADDRESS labels — the MD Debugger entry points.
+/// `Set_VDP_Reg`'s `if DEBUG == 1 { assert.w d0, ls, #$12 }` expands to
+/// `jsr (MDDBG__ErrorHandler).l` / `jmp (MDDBG__ErrorHandler_PagesController).l`,
+/// so both blob entry points become real cross-seam fixups in the debug shape
+/// (the bg_port/plane_buffer_port precedent). The pins are shape-invariant, so
+/// both shapes carry them — in plain the assert is comptime-gated out and the
+/// carriers go unreferenced.
+fn as_mddbg_labels() -> Vec<Section> {
+    let table: [(&str, u32); 2] = [
+        ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
+        ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
+    ];
+    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let mut out = Vec::new();
+    for (i, (name, vma)) in table.iter().enumerate() {
+        let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
+        for mut sec in assemble(&asm, &opts)
+            .unwrap_or_else(|d| panic!("AS assemble ({name}): {d:?}"))
+            .sections
+        {
+            sec.lma = 0x0400_0000 + (i as u32) * 0x1_0000;
+            sec.placement = SectionPlacement::Pinned;
+            sec.group = None;
+            out.push(sec);
+        }
+    }
+    out
+}
+
 /// The synthetic AS-side OUTBOUND consumer — THE BARE-NAME PROOF for both
 /// entry points. Mirrors the real callers' shape (`boot.asm`'s
 /// `bsr.w VDP_Shadow_Init`; the VBlank path's `Flush_VDP_Shadow` call),
@@ -202,10 +247,11 @@ fn as_outbound_consumer() -> Vec<Section> {
     assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}")).sections
 }
 
-/// Lower the real `vdp_init.emp` (NO defines: the block is shape-invariant;
-/// the shape lives in the map) -> place the `.emp` sections into the
-/// per-shape map -> append the FOUR synthetic cross-seam sections (VDP_CTRL
-/// equ + VDP RAM labels + per-shape BootData_VDPRegs + outbound consumer) at
+/// Lower the real `vdp_init.emp` (with `DEBUG` at its per-shape value — the
+/// block is no longer shape-invariant, see the module header) -> place the
+/// `.emp` sections into the per-shape map -> append the FIVE synthetic
+/// cross-seam sections (VDP_CTRL equ + VDP RAM labels + per-shape
+/// BootData_VDPRegs + MDDBG entry points + outbound consumer) at
 /// harness-private LMAs (clear of both map regions) -> ONE `resolve_layout`
 /// -> `link`.
 fn compile_real_file(
@@ -240,7 +286,13 @@ fn compile_real_file(
         initial_cpu: Cpu::M68000,
         include_root: Some(dir.clone()),
         embed_base: None,
-        defines: vec![],
+        // `DEBUG` is load-bearing since the blanket-restore parcel's review round:
+        // `Set_VDP_Reg` gates its bound `assert.w` on it, so the name must resolve
+        // AND must carry the shape actually under test — a hardcoded 0 would make
+        // the debug gate compile the plain block and compare it against the debug
+        // window (a length mismatch, or worse, a silent pass if the lengths ever
+        // coincided).
+        defines: vec![("DEBUG".to_string(), i128::from(debug))],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -283,6 +335,8 @@ fn compile_real_file(
         sec.group = None;
     }
     sections.extend(bootdata);
+
+    sections.extend(as_mddbg_labels());
 
     let mut consumer = as_outbound_consumer();
     for sec in &mut consumer {

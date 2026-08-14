@@ -5892,3 +5892,57 @@ full_crc = "3278caf9"
 full_size = 711399
 anchor_crc = "c269c97a"
 anchor_end = 0xa3090
+
+[[entry]]
+name = "blanket-register-restore"
+ab = "docs/benchmarks/effects-p3/BLANKET-RESTORE-EVIDENCE.md"
+note = "blanket VDP register restore: unconditional 19-reg flush, dirty mask deleted, raster init words deleted, $0F IPL asserts"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "054c6e34"
+full_size = 711804
+anchor_crc = "122948af"
+anchor_end = 0xa3090
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "bbebcbc4"
+full_size = 598929
+anchor_crc = "82acf2a5"
+anchor_end = 0x89600
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "db3f9b0f"
+full_size = 95616
+anchor_crc = "d6c97556"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7c39eda5"
+full_size = 99918
+anchor_crc = "52699465"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "d400c8b3"
+full_size = 655710
+anchor_crc = "6c44212c"
+anchor_end = 0xa015e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "abb6777d"
+full_size = 696855
+anchor_crc = "3e6672d7"
+anchor_end = 0xa11e0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "c13412fc"
+full_size = 711433
+anchor_crc = "e7150b55"
+anchor_end = 0xa3090

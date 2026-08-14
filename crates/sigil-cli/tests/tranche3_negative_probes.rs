@@ -106,7 +106,17 @@ fn place_module(src: &str, twin_src: &str, region: &str, base: &str, size: &str)
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon_dir()),
         embed_base: None,
-        defines: vec![],
+        // These probes are PLAIN-shape only (the shape axis is the port gates'
+        // job — same rule `cache_ram_labels` states), so `DEBUG` is supplied
+        // as 0. It became load-bearing when the
+        // blanket-restore parcel's review round gave `Set_VDP_Reg` an
+        // `if DEBUG == 1` bound assert: without the define, every vdp_init probe
+        // died in `lower_module` with "unknown name `DEBUG`" and stopped testing
+        // its own subject (the standalone probe, in particular, would have
+        // panicked here rather than reaching the link error it exists to assert).
+        // At 0 the assert is comptime-gated out, so the plain block the probes
+        // doctor and compare is exactly the one the plain reference window holds.
+        defines: vec![("DEBUG".to_string(), 0)],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");

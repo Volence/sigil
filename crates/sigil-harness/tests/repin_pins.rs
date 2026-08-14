@@ -222,6 +222,54 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // ROM TOTALS: ASSEMBLED_LEN −0x10, DEBUG_ASSEMBLED_LEN −0x20 — the engine-bank
     // shrink is org-anchor absorbed as usual; only the data-side configs shrink
     // reaches the tail (and the debug shape additionally passes boot's −0x10).
+    //
+    // SECOND ROUND, same parcel (2026-08-14, aeon 717a8f70 — the REVIEW fixes, not
+    // a restatement of the above). Six findings were closed; four are prose or
+    // comptime-only and emit nothing. TWO move bytes, and they move in opposite
+    // directions:
+    //   • vblank.emp −8 B: VInt_Lag's `move.w #$8F02, VDP_CTRL` drain-head
+    //     re-assert is DELETED. That is the very write the "vblank +8 (NEW-1)" row
+    //     further down this ledger booked in, and it went dead the moment round 1
+    //     made the flush unconditional — the blanket blit two calls above restores
+    //     reg $0F every frame and nothing between it and the drain touches the VDP.
+    //     `move.w #imm16,(xxx).l` is 8 B, not 4: VDP_CTRL is $C00004 and has no
+    //     abs.w spelling. In PLAIN this is entirely absorbed — VBLANK.plain_len
+    //     holds at 0x1F0 (an end-is-next-placement span, so the 8 B come out of the
+    //     trailing align fill) and NO plain region base moves at all. The one plain
+    //     pin in the whole re-pin that does move is V_SYNC_WAIT, −8, because it sits
+    //     inside vblank AFTER the deleted line. In DEBUG the same 8 B cross a
+    //     16-byte bucket and VBLANK.debug_len drops a full 0x10 (0x200 → 0x1F0) —
+    //     the identical mechanism round 1 saw on BOOT.debug_len.
+    //   • vdp_init.emp +0x50 DEBUG ONLY: `Set_VDP_Reg` gained
+    //     `if DEBUG == 1 { assert.w d0, ls, #$12 }`, a bound check on the register
+    //     index (its store is a bare `move.b d1,(a0,d0.w)` into a table that sits
+    //     immediately before the interrupt-dispatch block, so an out-of-range index
+    //     used to corrupt RAM silently). VDP_INIT.debug_len 0x42 → 0x92;
+    //     plain_len HOLDS at 0x3A, which is the whole point of a DEBUG-fenced guard.
+    //     Composition read off `s4.debug.lst` rather than inferred: a 10 B guard
+    //     prologue at $1CAE (`move.w sr,-(sp)` + `cmpi.w #$12,d0` + `bls .skip`),
+    //     the 74 B MDDBG diagnostic island at $1CB8..$1D02 (`jsr
+    //     (MDDBG__ErrorHandler).l` + the inline "Assertion failed: > assert.w d0,
+    //     ls, #$12 / Got:" message + `jmp (MDDBG__ErrorHandler_PagesController).l`),
+    //     and +2 on the body for the `move.w (sp)+,sr` restore = 86 B of new code,
+    //     less the 6 B of align fill the old span was carrying ($1CB8→$1CC0 was 8,
+    //     $1D0E→$1D10 is 2) = the +0x50 span. Those two `jsr`/`jmp` targets are why
+    //     vdp_init_port needed MDDBG carriers this round, exactly as bg_port and
+    //     plane_buffer_port did in round 1.
+    // NET SLIDE, this round: PLAIN ZERO everywhere (one pin, V_SYNC_WAIT, −8).
+    // DEBUG +0x50 for the three regions between vdp_init and the deletion
+    // (DMA_QUEUE, BUFFERS, VBLANK bases and the ten interior pins there), then
+    // +0x50 − 0x10 = +0x40 flat for EVERY region and pin below vblank — the family
+    // in this diff. V_SYNC_WAIT alone takes +0x48 in debug, being +0x50 downstream
+    // of vdp_init and −8 of its own.
+    // ROM TOTALS BOTH HOLD this round: no data moved (round 1's PARALLAX_CONFIGS
+    // shrink is not repeated — review fix 4 re-armed the water patch-offset
+    // invariant, which is a comptime `ensure` and emits nothing), the plain shape
+    // did not move, and the debug shape's +0x40 is org-anchor absorbed like every
+    // engine-bank delta before it. ASSEMBLED_LEN and DEBUG_ASSEMBLED_LEN are
+    // therefore UNCHANGED from round 1 — the plain ROM's CONTENT changed (the
+    // vblank −8) without its length changing, which is exactly the case a
+    // length-only check would miss and the frozen goldens catch.
     assert_eq!(pins::BOOT.plain_base, 0x200);
     assert_eq!(pins::BOOT.debug_base, 0x200);
     assert_eq!(pins::BOOT.plain_len, 0x1A0);  // blanket-restore: UNCHANGED — the −8 B ori.l deletion fits inside the existing 16-align pad ahead of BOOT_DATA  // +0x8 item27: EntryPoint's `lea (SYSTEM_STACK).w, sp` (4 B) + a 4 B align pad the new plain length needs
@@ -490,7 +538,7 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // RAM address is UNCHANGED, which is the property the tail placement buys and was
     // verified symbol-by-symbol against a pre-parcel build.
     assert_eq!(pins::ANIMATE.plain_base, 0x33A0);  // -0x30 blanket-restore (vdp_init -0x10 + hblank -0x20)  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: the boot-growth slide (aligned), which every region downstream of boot inherits  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x10 character-lens-sweep
-    assert_eq!(pins::ANIMATE.debug_base, 0x3B1E);  // -0x40 blanket-restore (boot -0x10 + vdp_init -0x10 + hblank -0x20)  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: same boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
+    assert_eq!(pins::ANIMATE.debug_base, 0x3B5E);  // +0x40 blanket-restore-r2 (vdp_init +0x50 for the Set_VDP_Reg bound assert, vblank -0x10 for the dead $8F02 write; DEBUG only)  // -0x40 blanket-restore (boot -0x10 + vdp_init -0x10 + hblank -0x20)  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: same boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
     assert_eq!(pins::ANIMATE.plain_len, 0x194);  // +0xA bug005: AF_SET_FIELD rail + refresh idiom
     assert_eq!(pins::ANIMATE.debug_len, 0x2B8);  // +0x10 bug005: same + the debug-fenced rail
 
@@ -498,7 +546,7 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
     assert_eq!(pins::RINGS.plain_base, 0x3734);  // -0x30 blanket-restore  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x10 character-lens-sweep
-    assert_eq!(pins::RINGS.debug_base, 0x3FDE);  // -0x40 blanket-restore  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
+    assert_eq!(pins::RINGS.debug_base, 0x401E);  // +0x40 blanket-restore-r2 (same flat debug slide as ANIMATE; plain holds)  // -0x40 blanket-restore  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
@@ -507,16 +555,16 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // upstream of dplc/core, so core's base slides with everything downstream of boot).
     assert_eq!(pins::CORE.plain_base, 0x2C80);  // -0x30 blanket-restore  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x10 character-lens-sweep
     assert_eq!(pins::CORE.plain_len, 0x300);    // addrfree-invariant: plain's +0x40 span is ≡0 (mod 4), tail pad unchanged  // +0x18 defect-batch-8
-    assert_eq!(pins::CORE.debug_base, 0x2EE0);  // -0x40 blanket-restore  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
+    assert_eq!(pins::CORE.debug_base, 0x2F20);  // +0x40 blanket-restore-r2 (same flat debug slide; plain holds)  // -0x40 blanket-restore  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
     assert_eq!(pins::CORE.debug_len, 0x750);    // +2 addrfree: the tail align pad that absorbs debug's ≡2 (mod 4) span — placement, core.emp untouched  // +0x20 defect-batch-8
     assert_eq!(pins::DPLC.plain_base, 0x2BD8);  // -0x30 blanket-restore  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x10 character-lens-sweep
-    assert_eq!(pins::DPLC.debug_base, 0x2E38);  // -0x40 blanket-restore  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0xc sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
+    assert_eq!(pins::DPLC.debug_base, 0x2E78);  // +0x40 blanket-restore-r2 (same flat debug slide; plain holds)  // -0x40 blanket-restore  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0xc sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
     assert_eq!(pins::DPLC.plain_len, 0xA8);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xa8);   // item 6 REMOVED (soak disproved single-entry) — debug == plain  // +0x4 sst-fold
 
     // animate_port.rs: the DeleteObject inbound label. bug005-invariant: the +2
     // tail clear lands INSIDE DeleteObject after its label, so the label holds.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2d50, debug: 0x2fb0 });  // blanket-restore: plain -0x30, debug -0x40 (slides with core/dplc)  // debug +0x10 effects-p2-palette (the debug-only upstream align step, same family as CORE/DPLC)  // effects-module-split: plain -0xE0, debug -0xF0  // effects-p1-raster: plain +0xF0, debug +0xF0  // +0x10 replay-hash-layout-proof  // +0x160 aeon-arctan: slides with core/dplc on the math growth  // +0x10 item27: slides with core on the boot growth  // defect-batch-8: plain +0x10, debug +0x20  // sst-fold  // +0x80 art-streaming-p2-task2  // art-streaming-p2-task3: plain +0x30, debug +0x40  // art-streaming-p2-task4: plain +0x20, debug +0x10  // art-streaming-p2c-t8-t9: plain +0x20, debug +0x30  // wave-f3-f1-f6: plain -0x50, debug -0x50  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x10/+0x20 character-lens-sweep
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2d50, debug: 0x2ff0 });  // blanket-restore-r2: plain HOLDS, debug +0x40 (slides with core/dplc; the round-2 growth is DEBUG-fenced)  // blanket-restore: plain -0x30, debug -0x40 (slides with core/dplc)  // debug +0x10 effects-p2-palette (the debug-only upstream align step, same family as CORE/DPLC)  // effects-module-split: plain -0xE0, debug -0xF0  // effects-p1-raster: plain +0xF0, debug +0xF0  // +0x10 replay-hash-layout-proof  // +0x160 aeon-arctan: slides with core/dplc on the math growth  // +0x10 item27: slides with core on the boot growth  // defect-batch-8: plain +0x10, debug +0x20  // sst-fold  // +0x80 art-streaming-p2-task2  // art-streaming-p2-task3: plain +0x30, debug +0x40  // art-streaming-p2-task4: plain +0x20, debug +0x10  // art-streaming-p2c-t8-t9: plain +0x20, debug +0x30  // wave-f3-f1-f6: plain -0x50, debug -0x50  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x10/+0x20 character-lens-sweep
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
