@@ -726,8 +726,26 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // what lands the +8 of fill on ojz_act_pool. Shape parity, restored by P2, is
     // therefore BROKEN again here by 0xC — recorded rather than smoothed over, because
     // the next parcel to touch this region needs to know the shapes have diverged.
-    assert_eq!(pins::PARALLAX_CONFIGS.plain_len, 0xDDC);  // -0x10 blanket-restore parcel's effects rider: 4 raster programs x the deleted `init_count, $8C81` frame-top header pair (4 B each)
-    assert_eq!(pins::PARALLAX_CONFIGS.debug_len, 0xDD0);  // -0x10 blanket-restore: same four deleted init-word pairs
+    // blanket-restore (2026-08-14): -0x10 both shapes. An earlier version of this note
+    // read "4 raster programs x the deleted `init_count, $8C81` header pair (4 B each)",
+    // which is wrong twice over and is corrected here because this prose is the audit
+    // trail the next parcel reads. configs.emp emits FIVE programs, and they did not
+    // shrink uniformly:
+    //   OJZ_TestRaster    18 -> 16 words   -4   (dropped `init_count, $8C81`)
+    //   OJZ_WaterRaster   18 -> 16 words   -4   (dropped `init_count, $8C81`)
+    //   OJZ_TestGradient  34 -> 30 bytes   -4   (RasterGradientProgram lost rgp_init_count + rgp_init_word)
+    //   OJZ_TestRamp      38 -> 34 bytes   -4   (RasterRampProgram lost rrp_init_count + rrp_init_word)
+    //   OJZ_TestVsram     15 -> 14 words   -2   (no set_reg, so it carried init_count ALONE, no init word)
+    // Content shrink is therefore -0x12 (18 B), not -0x10. The REGION measures -0x10
+    // because it is `DeformTable_Zero .. ObjDef_Static` and its tail is placer fill, not
+    // emitted data: OJZ_TestRamp's 34 bytes end at 0x12752 and ObjDef_Static starts at
+    // 0x12760, so 14 bytes of zero fill sit inside the span and absorb the odd 2 B of the
+    // content delta. Verified against the built plain ROM (symbol spans in s4.lst; the
+    // 0x12752..0x12760 bytes read back as zeros). Same lesson as the ojz_act_pool rows
+    // above: a length pin on a fill-terminated region measures the placer as well as the
+    // payload, so a span delta is a LOWER bound on the content delta, never a synonym.
+    assert_eq!(pins::PARALLAX_CONFIGS.plain_len, 0xDDC);  // -0x10 blanket-restore (content -0x12, 2 B absorbed by the region's trailing fill — see above)
+    assert_eq!(pins::PARALLAX_CONFIGS.debug_len, 0xDD0);  // -0x10 blanket-restore: same five programs, same fill absorption
 
     assert_eq!(pins::ASSEMBLED_LEN, 0xA11E0);  // -0x10 blanket-restore: only the configs data shrink reaches the tail; the engine-bank -0x30 is org-anchor absorbed // +0x30 effects-p2-palette: the +0x560 engine growth is org-anchor absorbed (as it has been for several chains) and only this reaches the ROM tail // +0x20F60 tails-data (Map_Tails exiled to the ROM tail) // +8 character-dispatch-c1 (0x50 of player growth, repacked past the sound bank) // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x10 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)  // +0x226D0 knuckles-def (Map_Knuckles takes the same ROM-tail exile)
     // knuckles-c4 (2026-08-12): plain HOLDS at 0xA11C0, debug +0x10 -> 0xA3090.
