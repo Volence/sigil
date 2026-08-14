@@ -1753,6 +1753,77 @@ mod tests {
         assert_eq!(asl_width_rule(0xFF_FFFF, true), AbsWidth::W);
     }
 
+    // ---- exact reach boundaries (lens sweep, seat RELAX, finding S6) ---------
+    //
+    // Relaxation is SOUND: termination is proven, determinism holds, and the reach
+    // predicate is the same arithmetic expression as the emitter's range check, so
+    // a mis-sized branch cannot be silent. The gap was COVERAGE — of the eight
+    // exact boundaries the predicate encodes, exactly one (-128) had a test. These
+    // are the other seven, plus the two 68k `.s` special cases, asserted directly
+    // against `rung_reaches` so each boundary is pinned to the arithmetic rather
+    // than to an end-to-end layout that happens to exercise it.
+
+    /// Build a one-rung candidate whose fixup sits at `offset` within the fragment.
+    fn reach_cand(kind: FixupKind, offset: u32, len: usize) -> RelaxCandidate {
+        RelaxCandidate {
+            bytes: vec![0u8; len],
+            fixup: Fixup { kind, offset, target: Expr::Sym("T".into()) },
+        }
+    }
+
+    /// `rung_reaches` for a candidate placed at `frag_start`, aimed at `target`.
+    fn reaches(kind: FixupKind, frag_start: u32, offset: u32, target: i64) -> bool {
+        let c = reach_cand(kind, offset, 2);
+        rung_reaches(&c, frag_start, target, false, sp(), "s").expect("supported kind")
+    }
+
+    /// 68k `bra.s`: disp = target - (site_vma + 1), fits i8, and MUST be non-zero
+    /// (the 68000 reads a 0x00 displacement byte as the word-form escape).
+    #[test]
+    fn pcrel8_boundaries_are_exact() {
+        // site_vma = 0 + 1 = 1, so disp = target - 2.
+        let d = |disp: i64| reaches(FixupKind::PcRel8, 0, 1, disp + 2);
+        assert!(d(127), "+127 is the last reachable forward displacement");
+        assert!(!d(128), "+128 must NOT reach");
+        assert!(d(-128), "-128 is the last reachable backward displacement");
+        assert!(!d(-129), "-129 must NOT reach");
+        // The two special cases the arithmetic alone would not give you.
+        assert!(!d(0), "disp 0 is the word-form escape — unencodable as `.s`");
+        assert!(d(1) && d(-1), "±1 are ordinary reachable displacements");
+    }
+
+    /// 68k `bra.w`: disp = target - site_vma, fits i16. Zero IS encodable here.
+    #[test]
+    fn pcrel_disp16_boundaries_are_exact() {
+        let d = |disp: i64| reaches(FixupKind::PcRelDisp16, 0, 2, disp + 2);
+        assert!(d(0x7FFF), "+0x7FFF is the last reachable forward displacement");
+        assert!(!d(0x8000), "+0x8000 must NOT reach");
+        assert!(d(-0x8000), "-0x8000 is the last reachable backward displacement");
+        assert!(!d(-0x8001), "-0x8001 must NOT reach");
+        assert!(d(0), "disp 0 is encodable in the word form (no escape rule)");
+    }
+
+    /// Z80 `jr e`: disp = target - (site_vma + 1), fits i8 — and unlike the 68k
+    /// `.s` byte, disp 0 IS encodable (the Z80 has no word-form escape). That
+    /// asymmetry is the one a shared implementation would get wrong.
+    #[test]
+    fn z80_jr_rel8_boundaries_are_exact() {
+        let d = |disp: i64| reaches(FixupKind::Z80JrRel8, 0, 1, disp + 2);
+        assert!(d(127), "+127 is the last reachable forward displacement");
+        assert!(!d(128), "+128 must NOT reach");
+        assert!(d(-128), "-128 is the last reachable backward displacement");
+        assert!(!d(-129), "-129 must NOT reach");
+        assert!(d(0), "disp 0 IS encodable on Z80 — no word-form escape to collide with");
+    }
+
+    /// The always-reaching rungs really do always reach — the top of each ladder,
+    /// which is what makes the fixpoint terminate rather than run out of rungs.
+    #[test]
+    fn wide_rungs_always_reach() {
+        assert!(reaches(FixupKind::Abs32Be, 0, 2, 0x00FF_FFFF), "abs.l reaches anywhere");
+        assert!(reaches(FixupKind::Value16Le, 0, 1, 0xFFFF), "jp nn reaches the whole Z80 space");
+    }
+
     #[test]
     fn dash_a_does_not_change_width() {
         // -A is irrelevant to jmp/jsr width (confirmed by the asl sweep).
