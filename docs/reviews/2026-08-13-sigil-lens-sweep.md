@@ -453,6 +453,166 @@ resolve, with a staleness gate), `validate_placement` (bidirectional), `check_er
 parses the values out of aeon's own `.emp`. That last one is exactly the mechanism the `Act` fixture
 needs.
 
+### S17 — CORRECTION to S2: the build is 2.8 s, not 12.7 s, and the root cause is not the threads
+**Seats:** P1a (forward), P2 (altitude) — both re-measured independently
+
+**S2 above is wrong and this supersedes it.** P1b measured a 4.3 s CPU / 12.7 s wall build. P1a and P2
+each re-measured and found **that number was machine contention from this very lens panel** — 11
+subagents were hammering a 16-core box at load 9-18. On a quiet box, three runs each:
+
+**2.85 s wall, 2.1 s user + 0.7 s system, single-threaded, for a 696,836-byte ROM from 43,467 lines
+of `.emp`.** That is ~15k lines/s. **Sigil is not a slow assembler.** P2 states it plainly: the
+correct read is not "the pipeline is wrong," it's "the pipeline is right and has never been asked to
+use more than one core."
+
+This is a process lesson as much as a perf one: **the panel measured itself.** Any wall-clock number
+taken during a parallel sweep needs an `uptime` check beside it.
+
+**The real #1 defect, and it is still large.** P1a instrumented the binary via gdb (ptrace blocked, so
+non-stopping Python breakpoints at phase boundaries) and got a phase profile plus exact call counts:
+
+| what | count |
+|---|---|
+| `resolve::ambient_items` | **3.14 s of 3.18 s** of `build_program_with` (86% of build) |
+| `fold_const_literal` / `eval_const_with_root` | **36,133 calls** |
+| distinct `pub const` definitions in the corpus | **853** |
+| `stamp_overlay_window` | 43,754 |
+| `parse_file` | 540 (142 distinct files — 3.8 full corpus re-parses) |
+
+**Sigil evaluates ~853 distinct constants 36,133 times — a 42× redundancy factor.** `collect_pub_comptime`
+clones every `pub` comptime item into every consuming module, and folds each one *per consumer*: M
+defining consts × N consuming modules. Each fold spawns a fresh 64 MiB-stack OS thread, builds a
+fresh `Evaluator`, and **re-indexes the entire defining file** (113 KB of AST for `sound_sequencer.emp`)
+to resolve one integer, then throws it all away. Measured 63 µs per call, of which 19 µs is kernel
+time — so **~25% of the whole build is the kernel managing 36k short-lived 64 MiB-stack threads.**
+
+**The fix already exists in the same module.** `eval::eval_all_pub_consts` (`eval/mod.rs:1668`) builds
+*one* evaluator per file and folds every `pub const` through a memo. Calling it lazily per defining
+module collapses 36,133 evaluator constructions to **≤142**. P1a's estimate: **2.85 s → ~0.7 s, a
+3.5-4× speedup on every build.** Risk LOW — pure-function memoization, and the golden CRC gates
+verify byte-identity.
+
+The code already knows: `resolve/mod.rs:105` carries a `TODO(perf)` about this exact M×N shape — for
+*overlays*, which never fire in a real build. The same defect on *consts*, which is 36,133× hot, is
+unremarked.
+
+**Two measured non-findings worth recording so nobody spends effort there:**
+- **LTO + `codegen-units=1` is worth 0%.** P1a built a second binary with both and timed it:
+  2.10/2.13/2.20 s vs 2.11/2.14/2.22 s baseline, byte-identical output, for 54 s of added toolchain
+  time. This is the most commonly-recommended "free" assembler speedup and it is measurably worthless
+  here.
+- **The relaxation fixpoint is 2% of the build.** P2: "ranking this above the const fold would have
+  been the classic mistake — it is the ugliest code in the pipeline and nearly the coldest."
+  `symbols.rs:56`'s `to_string()`-per-lookup is a two-line free win; the incremental-symbol-table
+  rework is not worth the risk at 4,264 symbols.
+
+**And P2's explicit DON'T:** a module→object incremental cache would be **negative today**. The cache
+key is nearly the whole program (ambient items + region_ends + iface_env + defines + every `embed()`ed
+binary), the hit rate on a real edit would be poor, and — the real argument — a stale entry doesn't
+produce a compile error, it produces **a wrong ROM that passes**. Given S15 above, that is precisely
+the failure mode the pin apparatus exists to prevent. Parallelism is invisible to correctness because
+the goldens prove it bit-for-bit; caching is not.
+
+### S18 — A 7-byte input hangs the build forever · HIGH
+**Seat:** FUZZ
+
+Built a mutation fuzzer over 2,738 real `.emp` files, 20,000 trials. **Zero panics** — genuinely good.
+But six hangs, four of which reproduced standalone against the release binary, and delta-debugging
+minimized the smallest to **seven bytes**:
+
+```
+printf 'context' > t.emp && sigil parse t.emp     # hangs forever, no diagnostic
+```
+
+`item()` accepts `context` only when followed by an identifier. `recover_to_next_decl` lists `context`
+among its recovery openers and stops there **without consuming it**. So `item()` fails on the same
+token, recovery stops on the same token, forever — zero-progress infinite loop.
+
+**This is the same bug class already fixed once, for `extern`.** `parser_recovery_hang.rs` exists
+specifically for it and its header says *"A front-end must error loudly, never spin."* The fix was
+applied to `ensure`/`align`/`extern`/`interface`/`implement` and **never generalized to `context`**,
+its structurally identical sibling. FUZZ verified every other contextual opener terminates correctly;
+`context` is uniquely broken. One-line fix mirroring the existing guard.
+
+### S19 — Two confirmed stack-overflow aborts; `unsafe` outside the FFI crates is zero · HIGH
+**Seat:** SAFE
+
+**The good news first, because it's the headline:** `unsafe` outside the three vendored `-sys` crates
+is **zero** — the one grep hit is the word inside a doc comment. The from-scratch-safe-Rust claim
+holds. Default clippy is clean of anything in the panic/overflow/unsafe class.
+
+Two confirmed **uncatchable process aborts** (SIGABRT, no diagnostic — a stack-overflow signal can't
+be `catch_unwind`'d, so `sigil build` just dies):
+
+1. **`sigil-frontend-as`'s expression parser has no depth guard at all.** A syntactically *perfect*
+   `dc.b (((...1...)))` at 40,000 nesting levels aborts. Reachable from every operand and every
+   `dc.b/w/l` — and this frontend is still live, assembling `game_root.asm` on every build.
+2. **`sigil-frontend-emp`'s depth guard is real but its documented completeness claim is false.**
+   `parser.rs:3894` claims `primary_expr`/`unary_expr`/`ty` "cover every unbounded recursion path."
+   They don't: `postfix_expr`'s bracket-index arm recurses into a fresh un-gated `self.expr()` without
+   incrementing depth. When the 128-guard fires it returns poison *without consuming the `[`*, so the
+   enclosing frame re-reads it as an index and starts another 128-deep descent. **Stack depth grows
+   linearly with input, not capped at 128.** Confirmed in gdb at 2,600+ alternating frames. The paren
+   equivalent at 200,000 levels does *not* crash — the control that proves the mechanism.
+
+Also: `sigil-salvador-sys::compress` is the one FFI wrapper that `assert!`s instead of returning
+`Result`, so a C-side failure can never become a diagnostic. Its two siblings are exemplary — and
+`clownlzss-sys` documents a **real past heap overflow** (~50 bytes) fixed by adding a C-shim capacity
+check. Given that history, the absence of any fuzz harness over the three compression crates is the
+gap SAFE flags.
+
+### S20 — The suite's own numbers · HIGH corroboration
+**Seats:** TEST, A2
+
+TEST independently reproduced GATE's CI finding by a different route and landed on the same shape:
+**3,676 tests, 3,672 "pass", of which 360 are silent runtime skips** that print `skip:` and return
+without executing an assertion — invisible because CI doesn't pass `--nocapture`. Genuinely-exercised:
+**3,312.** Four `#[ignore]`d tests, three marked RETIRED; **nothing anywhere runs `--ignored`**, so
+`sigil diff` is never exercised automatically at all.
+
+TEST also names the self-fulfilling-fixture problem precisely: `native_rom.rs` still carries the
+docstring *"prove the whole ROM equals the live `asl` s4.bin"* — **that claim is now false**, the
+comparand is sigil-built. The README status table still says "byte-identical to `asl`." The honest
+mitigating nuance: the ISA-level golden vectors *are* frozen from a real pre-flip `asl` run and remain
+valid, and many `*_port` tests are differential between sigil's two frontends. The circularity is
+specific to the whole-ROM gates — which are exactly the ones that don't run in CI.
+
+A2's doc-truth sweep found ~65-70% true overall, but with a different *shape* than the aeon sweeps:
+the class that matters most — "what a check proves" — sigil gets right almost without exception
+(5/5, test-corroborated). What rots is **headline numbers written at a landing commit and never
+revisited**: `main.rs:16` still describes a `main.asm` include tree that doesn't exist, `native.rs:232`
+says "the 52 modules" when it's 84/95, and the README's "four header bytes" was abandoned by the
+codebase itself five days later in favour of dynamic derivation. Four of five findings trace to just
+two large prose-heavy landings (2026-07-30 flip, 2026-08-04 crash-report ruling).
+
+### S21 — `ensure` reachability is a silent shape rule; ~14 shipped guards never evaluate · HIGH
+**Seat:** COMPTIME
+
+**The evaluator's arithmetic is not the bug** — bare `Int` comptime math is `i128` + `checked_*` and
+errors on overflow; div/mod by zero error; shifts are range-checked. The vacuous guards the aeon
+sweeps found are almost all *reachability* bugs.
+
+An item-position `ensure` is evaluated **iff its module is lowered**, and a module is lowered iff it's
+in the `use`-reachability closure of a synthetic entry seeded from the profile's registry. **25 of 142
+modules are outside the sonic4 closure**, and there is **no `[module.unreachable]` lint anywhere** —
+no warning, no report mode. The only way to discover the rule is to read `native.rs`.
+
+Most of the 25 are covered by other paths (seam1/seam2 lower the sound modules). Four are not:
+`engine.z80_init` (1 guard — **confirms the prior finding, with the exact mechanism**: it's in the
+registry only for `demo` and `config_b`, so both shipped sonic4 shapes never evaluate
+`ensure(extern("Z80_IDLE_SIZE") == 40)` and never even *defer* it), `sound_debug` (2),
+`compression_selftest` (2), `games.demo.constants` (9).
+
+One lint after the BFS — *"module X has N ensure(s) this profile never evaluates"* — retires the whole
+class. COMPTIME also found the **one typed-arithmetic trap**: `Value::Typed` ops use `wrapping_*` +
+width-truncation, and a bare literal **coerces into the typed operand's width**. So on an unsigned
+newtype `ensure(A - B >= 0)` is *always true*. Eleven live `VramTile` guards sit on that surface;
+none is vacuous today (all operands are small), but it is armed and nothing flags it.
+
+And two aeon comments claiming "a comptime span primitive awaits implementation" are **stale** —
+`span()` does exactly what they ask and both sites are pure-data procs in its domain. A third
+complaint survives scrutiny: there is genuinely no *section*-length primitive.
+
 ---
 
 ## 3. Recommended order for the implementing agent
