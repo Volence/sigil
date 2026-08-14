@@ -162,13 +162,26 @@ impl<'a> Evaluator<'a> {
                     last = Value::Unit;
                 }
                 // `patch` / `bind` (§6.4, D-P4.10): the slot + back-patch
-                // mechanism lives in `lower::patch::PatchTable` (T5). These
-                // statements stay no-ops in the Core-free evaluator because the
-                // surface does not yet give a comptime body a section-emission
-                // position to route them into — wiring `Stmt::Patch`/`Stmt::Bind`
-                // to a live section table is a T6/T7 surface-integration concern
-                // (see the `lower::patch` module doc).
-                ast::Stmt::Patch { .. } | ast::Stmt::Bind { .. } => {
+                // mechanism lives in `lower::patch::PatchTable` (T5) — built,
+                // self-tested, and NOT WIRED to these statements. The surface does
+                // not yet give a comptime body a section-emission position to route
+                // them into; connecting `Stmt::Patch`/`Stmt::Bind` to a live section
+                // table is a T6/T7 surface-integration concern (see the
+                // `lower::patch` module doc).
+                //
+                // Until then they must not be SILENT. A statement that parses,
+                // type-checks and then does nothing is a trap: the author's back-patch
+                // simply never happens, and nothing anywhere says so (lens sweep, seat
+                // HALF, finding S13). Zero corpus uses today, so saying it out loud
+                // costs nothing and stops the first real use from being a silent bug.
+                ast::Stmt::Patch { span, .. } | ast::Stmt::Bind { span, .. } => {
+                    self.warn(
+                        *span,
+                        "[patch.unwired] `patch`/`bind` parse but are NOT connected to the \
+                         back-patch mechanism — this statement emits nothing and patches \
+                         nothing. The `lower::patch` slot table exists and is tested; wiring \
+                         these statements to it is unfinished surface integration.",
+                    );
                     last = Value::Unit;
                 }
             }

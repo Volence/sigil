@@ -121,3 +121,31 @@ fn asm_patch_bind_section_still_parse() {
     // `section (...)` with attributes and an empty body.
     parses("module m\nsection s (cpu: z80, vma: $8000) {\n}\n");
 }
+
+/// `patch`/`bind` PARSE (above) but are not connected to the back-patch
+/// mechanism — `lower::patch::PatchTable` is built and self-tested, and nothing
+/// routes these statements into it (lens sweep, seat HALF, finding S13).
+///
+/// A statement that parses, type-checks and then does nothing is a trap: the
+/// author's back-patch never happens and nothing says so. There are zero corpus
+/// uses today, so the diagnostic costs nothing and stops the FIRST real use from
+/// being a silent bug. If someone wires them up, this test should fail — deleting
+/// it is then the right move, and the failure is the reminder.
+#[test]
+fn patch_and_bind_warn_that_they_are_unwired() {
+    // The statements run only when the fn is EVALUATED, so the const forces it.
+    // (An unwired `patch` inside a fn nobody calls stays silent, which is correct:
+    // nothing was asked of it.)
+    let src = "module m\ncomptime fn f() -> int {\n    patch p: u16\n    bind p = 5\n    return 0\n}\npub const X = f()\n";
+    let (file, pdiags) = parse_str(src);
+    assert!(pdiags.is_empty(), "must still parse cleanly: {pdiags:?}");
+
+    let (value, diags) = sigil_frontend_emp::eval::eval_const_with_root(&file, "X", None, &[]);
+    assert!(value.is_some(), "the fn still evaluates — this is a warning, not a failure");
+    let unwired = diags.iter().filter(|d| d.message.contains("[patch.unwired]")).count();
+    assert_eq!(unwired, 2, "one per unwired statement (`patch` and `bind`), got: {diags:?}");
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "reserved, not rejected — it must not be an error: {diags:?}"
+    );
+}

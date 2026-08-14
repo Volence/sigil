@@ -139,6 +139,20 @@ pub enum Mnemonic {
     Ldir,
     LdIA,
     LdRA,
+    // The accumulator/flag 1-byte primitives and `halt`/`rst`. These appeared in
+    // the ANALYZERS (`z80_preserves`'s write sets, `flag_check`'s F-writer table)
+    // long before they had an encoder arm, so writing one was a loud parse error —
+    // never wrong bytes, but a size-reclaim pass reaches for exactly these (`rla`
+    // is 4T/1 byte against the CB-prefixed `rl a` at 8T/2) and `rst` was blocking
+    // ~116 B of sound-driver reclaim (lens sweep, seat CGb, finding S5).
+    Rlca,
+    Rla,
+    Rra,
+    Daa,
+    Cpl,
+    Ccf,
+    Halt,
+    Rst,
 }
 
 /// A decoded instruction: mnemonic + 0..2 operands.
@@ -659,6 +673,33 @@ pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         (Mnemonic::Exx, []) => Ok(vec![0xD9]),
         (Mnemonic::Rrca, []) => Ok(vec![0x0F]),
         (Mnemonic::Scf, []) => Ok(vec![0x37]),
+        // The accumulator rotate group completed: 0x07/0x0F/0x17/0x1F is
+        // rlca/rrca/rla/rra, and `rrca` was already here at 0x0F.
+        (Mnemonic::Rlca, []) => Ok(vec![0x07]),
+        (Mnemonic::Rla, []) => Ok(vec![0x17]),
+        (Mnemonic::Rra, []) => Ok(vec![0x1F]),
+        // The accumulator/flag adjusters, same 0x_7/0x_F column as scf (0x37).
+        (Mnemonic::Daa, []) => Ok(vec![0x27]),
+        (Mnemonic::Cpl, []) => Ok(vec![0x2F]),
+        (Mnemonic::Ccf, []) => Ok(vec![0x3F]),
+        // `halt` sits in the `ld r,r'` block where `ld (hl),(hl)` would be.
+        (Mnemonic::Halt, []) => Ok(vec![0x76]),
+        // `rst p` = 0xC7 | p, for the eight page-zero targets $00..$38 (bits 5-3
+        // select the vector). Any other operand has no encoding — refuse it rather
+        // than mask it into a DIFFERENT valid restart, which is the same
+        // silently-wrong-instruction class the 68k EA work closed.
+        (Mnemonic::Rst, [Operand::Imm8(p)]) => {
+            if p % 8 == 0 && *p <= 0x38 {
+                Ok(vec![0xC7 | (*p & 0x38)])
+            } else {
+                Err(IsaError::OperandRange(format!(
+                    "rst target must be one of $00,$08,$10,$18,$20,$28,$30,$38 — got {p:#04X}"
+                )))
+            }
+        }
+        (Mnemonic::Rst, _) => {
+            Err(IsaError::UnsupportedForm(format!("rst {:?}", inst.ops)))
+        }
         (Mnemonic::Ei, []) => Ok(vec![0xFB]),
         (Mnemonic::Di, []) => Ok(vec![0xF3]),
         // ---- Task 5: CB group — shifts/rotates on r and (hl) ----

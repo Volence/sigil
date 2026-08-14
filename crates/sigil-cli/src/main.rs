@@ -13,9 +13,11 @@
 //! (Spec 2 Plan 1) and reports success or every diagnostic collected.
 //!
 //! `sigil build --aeon <dir>` is THE Aeon ROM build (post-flip, the only one):
-//! it assembles the whole `main.asm` include tree with every `.emp` module
-//! lowered natively, chained-links, folds the checksum, emits the sigil-canonical
-//! `.lst`, and appends the `convsym` deb2 symbol table — the full shipped ROM.
+//! it assembles the game's residual root `.asm` (`games/<game>/game_root.asm`)
+//! with every `.emp` module lowered natively, chained-links, folds the checksum,
+//! emits the sigil-canonical `.lst`, and appends the `convsym` deb2 symbol table —
+//! the full shipped ROM. (It said `main.asm` until 2026-08-14; that file was
+//! deleted at the flip this same sentence describes.)
 
 use std::process;
 
@@ -870,7 +872,7 @@ fn print_ram_report(rows: &[sigil_frontend_emp::lower::RamRegionRow]) {
 fn run_contract_report(aeon: &std::path::Path, target: &BuildTarget) {
     let (label, profile) = target.label_and_profile();
     let defines = sigil_harness::native::shape_defines(&profile);
-    let report = corpus_closure_or_exit(aeon, target);
+    let (report, _manifest) = corpus_closure_or_exit(aeon, target);
     print_report_header("contract closure", &label, &defines);
     print_contract_report(&report);
 }
@@ -882,7 +884,10 @@ fn run_contract_report(aeon: &std::path::Path, target: &BuildTarget) {
 fn corpus_closure_or_exit(
     aeon: &std::path::Path,
     target: &BuildTarget,
-) -> sigil_frontend_emp::corpus_contracts::ContractReport {
+) -> (
+    sigil_frontend_emp::corpus_contracts::ContractReport,
+    sigil_frontend_emp::resolve::manifest::Manifest,
+) {
     use sigil_frontend_emp::corpus_contracts;
 
     let (_label, profile) = target.label_and_profile();
@@ -909,7 +914,9 @@ fn corpus_closure_or_exit(
     if !bind_errors.is_empty() {
         process::exit(1);
     }
-    corpus_contracts::analyze_corpus_with_contracts(&files, &defines, &iface_env)
+    // The manifest rides back out so the gate can turn a firing's span into a
+    // file:line:col — see `locate_firing`.
+    (corpus_contracts::analyze_corpus_with_contracts(&files, &defines, &iface_env), manifest)
 }
 
 /// THE BUILD-INTEGRATED CLOSURE GATE (default-ON).
@@ -945,8 +952,38 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
         return;
     }
 
-    let report = corpus_closure_or_exit(aeon, target);
+    let (report, manifest) = corpus_closure_or_exit(aeon, target);
+    let src_index = sigil_frontend_emp::resolve::manifest::SourceIndex::new(&manifest);
     let mut failed = false;
+
+    // Turn the spans the firings already carry into locations. The whole-program
+    // contract gate is the phase most in need of one — it runs over a 142-module
+    // corpus — and it was the worst-located in the tool: every firing type carries
+    // a REAL span, and the gate collapsed them to `(proc, reg)` strings before
+    // diffing, so a new firing's only breadcrumb was a proc name to grep for
+    // (lens sweep, seat ERR, finding S14). The diff still compares tuples — that
+    // is the pin's identity, and it must stay stable — but the MESSAGE now says
+    // where each new row is.
+    // A diff row renders as "<key> (got N, want M)", so each firing's key is
+    // matched as a PREFIX rather than by parsing the row back apart — the row
+    // format belongs to `contract_baseline`, and a parser here would be a second
+    // copy of it waiting to drift.
+    let report_added = |family: &str, d: &bl::BaselineDiff, keyed: &[(String, sigil_span::Span)]| {
+        if d.added.is_empty() {
+            return;
+        }
+        eprintln!("  where the NEW {family} firings are:");
+        for row in &d.added {
+            let loc = keyed
+                .iter()
+                .find(|(k, _)| row.starts_with(k.as_str()))
+                .and_then(|(_, sp)| src_index.locate(*sp));
+            match loc {
+                Some(loc) => eprintln!("    {loc}: {row}"),
+                None => eprintln!("    (no span recorded): {row}"),
+            }
+        }
+    };
 
     // BLINDNESS FIRST, and it is not a baseline change. If instructions dropped
     // or a comptime condition failed to resolve, the closure UNDER-approximates:
@@ -1006,6 +1043,12 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
     let d = bl::diff_out_unverified(&out_got);
     if !d.is_clean() {
         eprintln!("error: {}", bl::adjudication_message("[proc.out-unverified]", &d));
+        let spans: Vec<(String, sigil_span::Span)> = report
+            .out_firings
+            .iter()
+            .map(|f| (format!("{} :: out({})", f.proc, f.reg), f.span))
+            .collect();
+        report_added("[proc.out-unverified]", &d, &spans);
         failed = true;
     }
 
@@ -1028,6 +1071,12 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
     let d = bl::diff_inout_unverified(&inout_got);
     if !d.is_clean() {
         eprintln!("error: {}", bl::adjudication_message("[proc.inout-unverified]", &d));
+        let spans: Vec<(String, sigil_span::Span)> = report
+            .inout_firings
+            .iter()
+            .map(|f| (format!("{} :: inout({})", f.proc, f.reg), f.span))
+            .collect();
+        report_added("[proc.inout-unverified]", &d, &spans);
         failed = true;
     }
 
@@ -1041,6 +1090,12 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
     let d = bl::diff_d1c(&d1c_got, target.label_and_profile().1.debug);
     if !d.is_clean() {
         eprintln!("error: {}", bl::adjudication_message("[call.live-clobbered] (D1c)", &d));
+        let spans: Vec<(String, sigil_span::Span)> = report
+            .live_clobbered_firings
+            .iter()
+            .map(|f| (format!("{} @ {} :: {}", f.proc, f.callee, f.reg), f.span))
+            .collect();
+        report_added("[call.live-clobbered]", &d, &spans);
         failed = true;
     }
 

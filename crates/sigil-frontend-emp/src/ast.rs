@@ -918,9 +918,22 @@ pub struct ProcDecl {
     /// The proc this one falls into, if any.
     pub falls_into: Option<String>,
     /// Item-level `@`-attributes preceding the decl — currently only
-    /// `@scaffolding("reason")` (contract-grammar v2 §8): inert metadata that
-    /// marks a ratified zero-caller keep so D7's dead-symbol analysis won't nag
-    /// it. Empty for a plain proc.
+    /// `@scaffolding("reason")` (contract-grammar v2 §8): metadata marking a
+    /// ratified zero-caller keep.
+    ///
+    /// IT SUPPRESSES NOTHING TODAY. It was specified to stop "D7's dead-symbol
+    /// analysis" nagging a deliberate keep — and that analysis does not exist
+    /// anywhere in the workspace. The attribute is fully implemented as SYNTAX
+    /// (the reason string is mandatory and parse-validated), which is what makes
+    /// it misleading: five aeon procs carry one, and the annotation reads as an
+    /// interaction with a checker that was never built (lens sweep, seat HALF,
+    /// finding S13).
+    ///
+    /// Keep writing it — it is the ratified way to record the decision, and it is
+    /// exactly the input a dead-symbol lint will want on the day one is written.
+    /// Just do not read it as evidence that anything checked the symbol.
+    ///
+    /// Empty for a plain proc.
     pub attrs: Vec<Attr>,
     /// The proc's assembly body.
     pub body: Vec<AsmStmt>,

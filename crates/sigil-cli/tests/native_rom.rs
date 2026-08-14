@@ -1,9 +1,18 @@
 //! Flip Stage 1 · S1.1 — THE ALL-GATES-ON NATIVE WHOLE-ROM GATE.
 //!
-//! Assemble `main.asm` with every `SIGIL_EMP_*` code gate ON, natively place every
-//! ported `.emp` module at its `pins`-region base, and prove the whole ROM equals
-//! the live `asl` `s4.bin` / `s4.debug.bin` (the assembled-ROM bar — the deb2
-//! appendix full-file bar is S1.4). This is the first time all 53 gates flip at
+//! Assemble the residual root `.asm` with every `SIGIL_EMP_*` code gate ON,
+//! natively place every ported `.emp` module at its `pins`-region base, and prove
+//! the whole ROM equals the committed `s4.bin` / `s4.debug.bin` golden (the
+//! assembled-ROM bar — the deb2 appendix full-file bar is S1.4).
+//!
+//! This docstring used to claim the comparand was "the live `asl` s4.bin". It is
+//! not, and has not been since the Spec-5 Stage-2 flip removed `asl` from the
+//! pipeline (and deleted `main.asm` with it): the golden is SIGIL-BUILT. So this
+//! gate proves reproducibility — the build still yields the frozen bytes — and
+//! NOT agreement with an independent assembler. Keeping the old wording made a
+//! self-comparison read as an oracle (lens sweep, seats TEST/A2, finding S20).
+//!
+//! This is the first time all 53 gates flip at
 //! once through one registry; the 14 first-time real-image placements (BG,
 //! BG_ANIM, CAMERA, CORE, DPLC, ENTITY_WINDOW, LOAD_OBJECT, OBJDEFS, PARALLAX,
 //! PLANE_BUFFER, SECTION, SPRITES, TILE_CACHE, VECTORS) enter the real image here.

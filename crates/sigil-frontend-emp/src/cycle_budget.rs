@@ -1160,9 +1160,9 @@ mod tests {
     // An op outside the T-state table has no assignable cost.
     #[test]
     fn an_off_table_op_is_unknown() {
-        let items = vec![instr("rlca", vec![]), instr("ret", vec![])];
+        let items = vec![instr("ldir", vec![]), instr("ret", vec![])];
         let e = path_costs(&items, Cpu::Z80, sp(), &nr()).unwrap_err();
-        assert_eq!(e.kind, BudgetFindingKind::UnknownOp { mnemonic: "rlca".into() });
+        assert_eq!(e.kind, BudgetFindingKind::UnknownOp { mnemonic: "ldir".into() });
     }
 
     // A 68000 straight line measures through the M68000UM table: nop 4 + rts 16.

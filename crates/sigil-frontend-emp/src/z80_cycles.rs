@@ -148,6 +148,12 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
         // --- no-op (the pad primitive) ---
         ("nop", []) => Cost::Fixed(4),
 
+        // --- 1-byte accumulator/flag primitives: 4 T each, like `nop`/`exx` ---
+        ("rlca" | "rrca" | "rla" | "rra" | "daa" | "cpl" | "ccf" | "halt", []) => Cost::Fixed(4),
+        // `rst p` — an 11 T call to a page-zero vector (1 byte, vs `call nn`'s
+        // 3 bytes / 17 T). That density is why it is worth having.
+        ("rst", [_]) => Cost::Fixed(11),
+
         // --- unconditional return: ret 10 ; reti/retn 14 (both ED-prefixed) ---
         ("ret", []) => Cost::Fixed(10),
         ("reti" | "retn", []) => Cost::Fixed(14),
@@ -339,7 +345,13 @@ mod tests {
     // An off-table op (`rlca`) bails Unknown.
     #[test]
     fn off_table_bails_unknown() {
-        let items = vec![instr("rlca", vec![])];
+        // `ldir` is a REAL Z80 instruction that this table genuinely does not
+        // price, which is the point: the bail must fire on an unmodeled op rather
+        // than guess a cost. (It used to be `rlca` — which became priced when the
+        // eight missing primitives landed, so the test was asserting that a
+        // now-known op was unknown. If `ldir` is ever priced, move this to another
+        // unpriced real op, not to a fake name.)
+        let items = vec![instr("ldir", vec![])];
         assert!(matches!(span_cost(&items), Err(CycleBail::UnknownOp { .. })));
     }
 

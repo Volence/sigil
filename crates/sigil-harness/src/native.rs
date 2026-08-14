@@ -1,17 +1,26 @@
 //! Flip Stage 1 · S1.1 — THE ALL-GATES-ON NATIVE DRIVER.
 //!
-//! The dual-native whole-ROM build: assemble the residual `main.asm` with EVERY
+//! The dual-native whole-ROM build: assemble the residual root `.asm` with EVERY
 //! `SIGIL_EMP_*` code gate ON (so the AS side org-resumes past each gated region,
 //! leaving a hole), natively lower + place EVERY ported `.emp` module at its
 //! `pins`-region base through ONE `resolve_layout` + `link` + `emit_rom`, and
-//! compare the whole ROM byte-for-byte against the live `asl` `s4.bin` /
-//! `s4.debug.bin`. This is the seam-2 whole-ROM template (`seam2_sfx_rom`)
-//! generalized from the sound stack to all 53 gates.
+//! compare the whole ROM byte-for-byte against the committed golden.
+//!
+//! WHAT THE COMPARAND IS, AND IS NOT. This header used to say the compare was
+//! against "the live `asl` `s4.bin`" — and against `main.asm`. Both are gone:
+//! `asl` left the pipeline at the Spec-5 Stage-2 flip and `main.asm` was deleted
+//! with it, so the comparand is a SIGIL-BUILT golden. That makes this gate a
+//! reproducibility and regression gate, NOT an independent-oracle one: it proves
+//! the build still produces the frozen bytes, not that those bytes match a second
+//! assembler. The genuinely `asl`-minted evidence still in the tree is the
+//! ISA-level golden corpus (`sigil-isa`'s vectors, frozen from a real pre-flip
+//! `asl` run) — that remains a real oracle, and it is a different claim from this
+//! one (lens sweep, seats TEST/A2, finding S20).
 //!
 //! The sound stack (DAC/MT/SFX banks + the resident Z80 driver + tables) is NOT
 //! placed here — it enters via the AS side's BINCLUDE of the seam-emitted `.bin`s
-//! (the proven `seam2_sfx_rom` path). Only the 52 CODE/DATA `.emp` modules are
-//! natively placed.
+//! (the proven `seam2_sfx_rom` path). Only the CODE/DATA `.emp` modules listed in
+//! the registry below are natively placed.
 //!
 //! Module resolution is REAL: the registry's module ids seed a synthetic entry
 //! module whose `use` edges drive `build_program`'s reachability BFS, so every
@@ -229,7 +238,12 @@ impl ModuleSpec {
     }
 }
 
-/// THE REGISTRY — the 52 code/data `.emp` modules Stage 1 places natively.
+/// THE REGISTRY — the code/data `.emp` modules Stage 1 places natively.
+///
+/// No count is written here on purpose. It said "52" for long enough to be wrong
+/// by dozens, which is the failure mode A2 measured across this codebase's prose:
+/// a headline number recorded at a landing commit and never revisited. The list
+/// below is the count.
 ///
 /// GAME_DEBUG / SOUND_DEBUG are Config-A-only (canonically empty in the shipped
 /// shapes; their org-resumes assume the Config-A layout) and are NOT in this

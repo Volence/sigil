@@ -355,7 +355,10 @@ fn a_fall_off_the_end_is_refused() {
 #[test]
 fn an_off_table_op_is_refused() {
     assert_silent(&z80("@budget(cycles: 100)", "    nop\n    ret\n"));
-    assert_one(&z80("@budget(cycles: 100)", "    rlca\n    ret\n"), "cycles.unknown-op");
+    // `ldir` is a real Z80 op the cycle table genuinely does not price. It was
+    // `rlca` until that became priced (the eight missing primitives), at which
+    // point this asserted a known op was unknown. Keep it a REAL unpriced op.
+    assert_one(&z80("@budget(cycles: 100)", "    ldir\n    ret\n"), "cycles.unknown-op");
 }
 
 /// A 68k `@budget` measures through the M68000UM table: the ceiling that admits
