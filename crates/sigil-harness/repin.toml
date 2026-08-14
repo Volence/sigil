@@ -2856,6 +2856,13 @@ tests = ["act_descriptor_port"]
 [[symbol]]
 name = "OJZ_ShimmerCycle"
 tests = ["act_descriptor_port"]
+# Effects P3 (vsram parcel): OJZ_TestVsram is the first VSRAM raster program — the
+# plane B scroll-banding gate fixture act_descriptor names into section 0's
+# sec_raster_table. Lives in `parallax_configs` with the others: cross-seam DATA
+# operand from act_descriptor's side.
+[[symbol]]
+name = "OJZ_TestVsram"
+tests = ["act_descriptor_port"]
 # Effects P1: the raster dispatcher's RAM working set. They are engine.ram labels, so
 # from engine.effects.raster's standalone re-lower they are inbound cross-seam RAM
 # operands and raster_port has to be given their true per-shape VMAs.
