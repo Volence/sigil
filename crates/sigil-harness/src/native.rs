@@ -1743,6 +1743,14 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
         "engine.irq",
         "engine.z80_bus",
         "engine.level.parallax_dsl",
+        // Effects Phase 3 (Parcel A): the raster + palette authoring vocabularies.
+        // Pure comptime, no `in <section>`, so neither takes a registry entry, a pins
+        // region, a `map.toml` slot, nor frozen-table rows — see the doc comment above.
+        // Order matters: `normalize_helper_imports` prepends one glob per helper in
+        // LIST order and the later helper silently wins a duplicate name, which is why
+        // `tools/emp_helper_closure.py` gates the set for disjointness.
+        "engine.effects.palette_dsl",
+        "engine.effects.raster_dsl",
     ];
     publicize_helper_comptime(&mut manifest, COMPTIME_HELPERS);
     normalize_helper_imports(&mut manifest, COMPTIME_HELPERS, &[]);
