@@ -1082,10 +1082,6 @@ name = "VDP_Shadow_Table"
 tests = ["vdp_init_port"]
 
 [[symbol]]
-name = "VDP_Dirty_Mask"
-tests = ["vdp_init_port"]
-
-[[symbol]]
 name = "BootData_VDPRegs"
 tests = ["vdp_init_port"]
 

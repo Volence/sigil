@@ -185,11 +185,96 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // BOOT_DATA are UPSTREAM of GAME_LOOP → unchanged; ASSEMBLED_LEN /
     // DEBUG_ASSEMBLED_LEN unchanged (the +2 engine growth absorbed by `org $10000`);
     // CC_DELETE_OFF is an intra-animate offset → unchanged.
+    //
+    // Then the blanket-register-restore parcel (2026-08-14, aeon
+    // parcel/blanket-register-restore) — the VDP shadow flush became
+    // UNCONDITIONAL, and `VDP_Dirty_Mask` was deleted from `engine/ram.emp`
+    // outright. Three engine regions shrink, ALL of them upstream of the object
+    // family, so this is an upstream-slide chain entry with three sources:
+    //   • BOOT: −8 B of code (EntryPoint's `ori.l #(1 << VDP_MODE2_OFF),
+    //     VDP_Dirty_Mask` — an `ori.l #imm32,(xxx).w` is 8 B). `BOOT_DATA` is
+    //     16-ALIGNED, so the plain shape absorbs the −8 inside its existing align
+    //     pad (plain_len holds at 0x1A0) while the debug shape's code length
+    //     crossed back over a 16-byte boundary and drops a full 0x10 — the two
+    //     shapes converge at 0x1A0 and BOOT_DATA converges at 0x3A0. This RETIRES
+    //     the art-streaming-p2-task3 "+0x10 DEBUG-only branch-reach ripple" noted
+    //     on the old debug_len.
+    //   • VDP_INIT: −0x10 both shapes. Net of three edits — `VDP_Shadow_Init`
+    //     loses `clr.l VDP_Dirty_Mask` (−4), `Flush_VDP_Shadow` loses the whole
+    //     dirty-bit walk (mask load, `beq` fast path, `lsr.l`/`bcc`/`tst.l`/`dbeq`
+    //     and the trailing `clr.l`) for a straight `dbf` blit, and a NEW
+    //     `Set_VDP_Reg` proc (10 B) is added. FLUSH_VDP_SHADOW_OFF 0x16 → 0x12 is
+    //     exactly `VDP_Shadow_Init`'s −4.
+    //   • HBLANK: −0x18 of code (three `ori.l` write-throughs: two in
+    //     HBlank_Install, one in HBlank_Uninstall), which the region's 16-byte
+    //     alignment rounds to a −0x20 span. HBLANK_UNINSTALL_OFF 0x2C → 0x1C is
+    //     Install's own −0x10 (its two `ori.l`s).
+    // PARALLAX also shrinks −0x10 (its two mode3 write-throughs) but is downstream
+    // of the object family, so no pin asserted here sees it.
+    // NET UPSTREAM SLIDE for every engine-bank region below hblank: −0x30 PLAIN
+    // (0 + 0x10 + 0x20) / −0x40 DEBUG (0x10 + 0x10 + 0x20).
+    //
+    // Riding along in the same parcel (effects, not the shadow): the per-program
+    // frame-top init words were deleted from every raster program, so each of the
+    // four programs in `games/sonic4/data/parallax/configs.emp` loses its
+    // `init_count, $8C81` header pair (4 B) — PARALLAX_CONFIGS' LENs both −0x10,
+    // its base unchanged (data region, anchored upstream).
+    // ROM TOTALS: ASSEMBLED_LEN −0x10, DEBUG_ASSEMBLED_LEN −0x20 — the engine-bank
+    // shrink is org-anchor absorbed as usual; only the data-side configs shrink
+    // reaches the tail (and the debug shape additionally passes boot's −0x10).
+    //
+    // SECOND ROUND, same parcel (2026-08-14, aeon 717a8f70 — the REVIEW fixes, not
+    // a restatement of the above). Six findings were closed; four are prose or
+    // comptime-only and emit nothing. TWO move bytes, and they move in opposite
+    // directions:
+    //   • vblank.emp −8 B: VInt_Lag's `move.w #$8F02, VDP_CTRL` drain-head
+    //     re-assert is DELETED. That is the very write the "vblank +8 (NEW-1)" row
+    //     further down this ledger booked in, and it went dead the moment round 1
+    //     made the flush unconditional — the blanket blit two calls above restores
+    //     reg $0F every frame and nothing between it and the drain touches the VDP.
+    //     `move.w #imm16,(xxx).l` is 8 B, not 4: VDP_CTRL is $C00004 and has no
+    //     abs.w spelling. In PLAIN this is entirely absorbed — VBLANK.plain_len
+    //     holds at 0x1F0 (an end-is-next-placement span, so the 8 B come out of the
+    //     trailing align fill) and NO plain region base moves at all. The one plain
+    //     pin in the whole re-pin that does move is V_SYNC_WAIT, −8, because it sits
+    //     inside vblank AFTER the deleted line. In DEBUG the same 8 B cross a
+    //     16-byte bucket and VBLANK.debug_len drops a full 0x10 (0x200 → 0x1F0) —
+    //     the identical mechanism round 1 saw on BOOT.debug_len.
+    //   • vdp_init.emp +0x50 DEBUG ONLY: `Set_VDP_Reg` gained
+    //     `if DEBUG == 1 { assert.w d0, ls, #$12 }`, a bound check on the register
+    //     index (its store is a bare `move.b d1,(a0,d0.w)` into a table that sits
+    //     immediately before the interrupt-dispatch block, so an out-of-range index
+    //     used to corrupt RAM silently). VDP_INIT.debug_len 0x42 → 0x92;
+    //     plain_len HOLDS at 0x3A, which is the whole point of a DEBUG-fenced guard.
+    //     Composition read off `s4.debug.lst` rather than inferred: a 10 B guard
+    //     prologue at $1CAE (`move.w sr,-(sp)` + `cmpi.w #$12,d0` + `bls .skip`),
+    //     the 74 B MDDBG diagnostic island at $1CB8..$1D02 (`jsr
+    //     (MDDBG__ErrorHandler).l` + the inline "Assertion failed: > assert.w d0,
+    //     ls, #$12 / Got:" message + `jmp (MDDBG__ErrorHandler_PagesController).l`),
+    //     and +2 on the body for the `move.w (sp)+,sr` restore = 86 B of new code,
+    //     less the 6 B of align fill the old span was carrying ($1CB8→$1CC0 was 8,
+    //     $1D0E→$1D10 is 2) = the +0x50 span. Those two `jsr`/`jmp` targets are why
+    //     vdp_init_port needed MDDBG carriers this round, exactly as bg_port and
+    //     plane_buffer_port did in round 1.
+    // NET SLIDE, this round: PLAIN ZERO everywhere (one pin, V_SYNC_WAIT, −8).
+    // DEBUG +0x50 for the three regions between vdp_init and the deletion
+    // (DMA_QUEUE, BUFFERS, VBLANK bases and the ten interior pins there), then
+    // +0x50 − 0x10 = +0x40 flat for EVERY region and pin below vblank — the family
+    // in this diff. V_SYNC_WAIT alone takes +0x48 in debug, being +0x50 downstream
+    // of vdp_init and −8 of its own.
+    // ROM TOTALS BOTH HOLD this round: no data moved (round 1's PARALLAX_CONFIGS
+    // shrink is not repeated — review fix 4 re-armed the water patch-offset
+    // invariant, which is a comptime `ensure` and emits nothing), the plain shape
+    // did not move, and the debug shape's +0x40 is org-anchor absorbed like every
+    // engine-bank delta before it. ASSEMBLED_LEN and DEBUG_ASSEMBLED_LEN are
+    // therefore UNCHANGED from round 1 — the plain ROM's CONTENT changed (the
+    // vblank −8) without its length changing, which is exactly the case a
+    // length-only check would miss and the frozen goldens catch.
     assert_eq!(pins::BOOT.plain_base, 0x200);
     assert_eq!(pins::BOOT.debug_base, 0x200);
-    assert_eq!(pins::BOOT.plain_len, 0x1A0);  // +0x8 item27: EntryPoint's `lea (SYSTEM_STACK).w, sp` (4 B) + a 4 B align pad the new plain length needs
-    assert_eq!(pins::BOOT.debug_len, 0x1B0);  // +0x4 item27: the same lea; debug was already 4-aligned so it takes no pad — the two shapes converge  // +0x10 art-streaming-p2-task3: DEBUG-only branch-reach ripple — the downstream page_in section + RAM growth pushes a boot-debug jbsr target (Sound_Init / CompressionSelfTest) far enough to flip its reach form (+0x10 code, debug shape only; plain len unchanged)
-    assert_eq!(pins::BOOT_DATA, pins::Pin { plain: 0x3A0, debug: 0x3B0 });  // +0x8/+0x4 item27: rides BOOT's growth; both shapes now start boot_data at the same address  // debug +0x10 art-streaming-p2-task3: rides BOOT.debug_len's boot-debug reach ripple
+    assert_eq!(pins::BOOT.plain_len, 0x1A0);  // blanket-restore: UNCHANGED — the −8 B ori.l deletion fits inside the existing 16-align pad ahead of BOOT_DATA  // +0x8 item27: EntryPoint's `lea (SYSTEM_STACK).w, sp` (4 B) + a 4 B align pad the new plain length needs
+    assert_eq!(pins::BOOT.debug_len, 0x1A0);  // -0x10 blanket-restore: the same −8 B crosses a 16-byte boundary in the debug shape, dropping a whole align bucket; retires the art-streaming-p2-task3 debug-only reach ripple and re-converges with plain  // +0x4 item27: the same lea; debug was already 4-aligned so it takes no pad — the two shapes converge  // +0x10 art-streaming-p2-task3: DEBUG-only branch-reach ripple — the downstream page_in section + RAM growth pushes a boot-debug jbsr target (Sound_Init / CompressionSelfTest) far enough to flip its reach form (+0x10 code, debug shape only; plain len unchanged)
+    assert_eq!(pins::BOOT_DATA, pins::Pin { plain: 0x3A0, debug: 0x3A0 });  // debug -0x10 blanket-restore: rides BOOT.debug_len; both shapes converge again  // +0x8/+0x4 item27: rides BOOT's growth; both shapes now start boot_data at the same address  // debug +0x10 art-streaming-p2-task3: rides BOOT.debug_len's boot-debug reach ripple
 
     // Then the I3 replay parcel (input/replay plan, 2026-08-02): engine.replay
     // (Input_Tick + Replay_Hash) inserts between game_loop and s4lz, so every
@@ -452,34 +537,34 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // the player bound/death cells all take +0x4 — while every pre-existing engine
     // RAM address is UNCHANGED, which is the property the tail placement buys and was
     // verified symbol-by-symbol against a pre-parcel build.
-    assert_eq!(pins::ANIMATE.plain_base, 0x33D0);  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: the boot-growth slide (aligned), which every region downstream of boot inherits  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x10 character-lens-sweep
-    assert_eq!(pins::ANIMATE.debug_base, 0x3B5E);  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: same boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
+    assert_eq!(pins::ANIMATE.plain_base, 0x33A0);  // -0x30 blanket-restore (vdp_init -0x10 + hblank -0x20)  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: the boot-growth slide (aligned), which every region downstream of boot inherits  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x10 character-lens-sweep
+    assert_eq!(pins::ANIMATE.debug_base, 0x3B5E);  // +0x40 blanket-restore-r2 (vdp_init +0x50 for the Set_VDP_Reg bound assert, vblank -0x10 for the dead $8F02 write; DEBUG only)  // -0x40 blanket-restore (boot -0x10 + vdp_init -0x10 + hblank -0x20)  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: same boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
     assert_eq!(pins::ANIMATE.plain_len, 0x194);  // +0xA bug005: AF_SET_FIELD rail + refresh idiom
     assert_eq!(pins::ANIMATE.debug_len, 0x2B8);  // +0x10 bug005: same + the debug-fenced rail
 
     // rings_port.rs: the campaign's first shape-dependent LENGTH. RINGS LEN
     // shrank −6 (item 10: DrawRings camera-bias fold nets −6 B). Bases shifted by
     // the upstream wave.
-    assert_eq!(pins::RINGS.plain_base, 0x3764);  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x10 character-lens-sweep
-    assert_eq!(pins::RINGS.debug_base, 0x401E);  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
+    assert_eq!(pins::RINGS.plain_base, 0x3734);  // -0x30 blanket-restore  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x10 character-lens-sweep
+    assert_eq!(pins::RINGS.debug_base, 0x401E);  // +0x40 blanket-restore-r2 (same flat debug slide as ANIMATE; plain holds)  // -0x40 blanket-restore  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
     assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
     assert_eq!(pins::RINGS.debug_len, 0x214);
 
     // core LEN shrank −0xA in c4 (Spawn_Count: InitObjectRAM store −4 + RunObjects
     // moveq+store −6). Bases −0xA in c5 (the boot.asm CROSS_RESET store removal is
     // upstream of dplc/core, so core's base slides with everything downstream of boot).
-    assert_eq!(pins::CORE.plain_base, 0x2CB0);  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x10 character-lens-sweep
+    assert_eq!(pins::CORE.plain_base, 0x2C80);  // -0x30 blanket-restore  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x10 character-lens-sweep
     assert_eq!(pins::CORE.plain_len, 0x300);    // addrfree-invariant: plain's +0x40 span is ≡0 (mod 4), tail pad unchanged  // +0x18 defect-batch-8
-    assert_eq!(pins::CORE.debug_base, 0x2F20);  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
+    assert_eq!(pins::CORE.debug_base, 0x2F20);  // +0x40 blanket-restore-r2 (same flat debug slide; plain holds)  // -0x40 blanket-restore  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
     assert_eq!(pins::CORE.debug_len, 0x750);    // +2 addrfree: the tail align pad that absorbs debug's ≡2 (mod 4) span — placement, core.emp untouched  // +0x20 defect-batch-8
-    assert_eq!(pins::DPLC.plain_base, 0x2C08);  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x10 character-lens-sweep
-    assert_eq!(pins::DPLC.debug_base, 0x2E78);  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0xc sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
+    assert_eq!(pins::DPLC.plain_base, 0x2BD8);  // -0x30 blanket-restore  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x10 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x10 character-lens-sweep
+    assert_eq!(pins::DPLC.debug_base, 0x2E78);  // +0x40 blanket-restore-r2 (same flat debug slide; plain holds)  // -0x40 blanket-restore  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x20 defect-batch-8  // +0xc sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
     assert_eq!(pins::DPLC.plain_len, 0xA8);     // +0xC: item-11 bcs + post-loop commit (both procs)
     assert_eq!(pins::DPLC.debug_len, 0xa8);   // item 6 REMOVED (soak disproved single-entry) — debug == plain  // +0x4 sst-fold
 
     // animate_port.rs: the DeleteObject inbound label. bug005-invariant: the +2
     // tail clear lands INSIDE DeleteObject after its label, so the label holds.
-    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2d80, debug: 0x2ff0 });  // debug +0x10 effects-p2-palette (the debug-only upstream align step, same family as CORE/DPLC)  // effects-module-split: plain -0xE0, debug -0xF0  // effects-p1-raster: plain +0xF0, debug +0xF0  // +0x10 replay-hash-layout-proof  // +0x160 aeon-arctan: slides with core/dplc on the math growth  // +0x10 item27: slides with core on the boot growth  // defect-batch-8: plain +0x10, debug +0x20  // sst-fold  // +0x80 art-streaming-p2-task2  // art-streaming-p2-task3: plain +0x30, debug +0x40  // art-streaming-p2-task4: plain +0x20, debug +0x10  // art-streaming-p2c-t8-t9: plain +0x20, debug +0x30  // wave-f3-f1-f6: plain -0x50, debug -0x50  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x10/+0x20 character-lens-sweep
+    assert_eq!(pins::DELETE_OBJECT, pins::Pin { plain: 0x2d50, debug: 0x2ff0 });  // blanket-restore-r2: plain HOLDS, debug +0x40 (slides with core/dplc; the round-2 growth is DEBUG-fenced)  // blanket-restore: plain -0x30, debug -0x40 (slides with core/dplc)  // debug +0x10 effects-p2-palette (the debug-only upstream align step, same family as CORE/DPLC)  // effects-module-split: plain -0xE0, debug -0xF0  // effects-p1-raster: plain +0xF0, debug +0xF0  // +0x10 replay-hash-layout-proof  // +0x160 aeon-arctan: slides with core/dplc on the math growth  // +0x10 item27: slides with core on the boot growth  // defect-batch-8: plain +0x10, debug +0x20  // sst-fold  // +0x80 art-streaming-p2-task2  // art-streaming-p2-task3: plain +0x30, debug +0x40  // art-streaming-p2-task4: plain +0x20, debug +0x10  // art-streaming-p2c-t8-t9: plain +0x20, debug +0x30  // wave-f3-f1-f6: plain -0x50, debug -0x50  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x10/+0x20 character-lens-sweep
 
     // m1d_rom.rs / m1d_debug_rom.rs / mixed_dac_rom.rs: the END-line pins.
     // +0xCC both shapes from the churn-first ObjectTest scene (test_churn.asm +
@@ -689,10 +774,28 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // what lands the +8 of fill on ojz_act_pool. Shape parity, restored by P2, is
     // therefore BROKEN again here by 0xC — recorded rather than smoothed over, because
     // the next parcel to touch this region needs to know the shapes have diverged.
-    assert_eq!(pins::PARALLAX_CONFIGS.plain_len, 0xDEC);
-    assert_eq!(pins::PARALLAX_CONFIGS.debug_len, 0xDE0);
+    // blanket-restore (2026-08-14): -0x10 both shapes. An earlier version of this note
+    // read "4 raster programs x the deleted `init_count, $8C81` header pair (4 B each)",
+    // which is wrong twice over and is corrected here because this prose is the audit
+    // trail the next parcel reads. configs.emp emits FIVE programs, and they did not
+    // shrink uniformly:
+    //   OJZ_TestRaster    18 -> 16 words   -4   (dropped `init_count, $8C81`)
+    //   OJZ_WaterRaster   18 -> 16 words   -4   (dropped `init_count, $8C81`)
+    //   OJZ_TestGradient  34 -> 30 bytes   -4   (RasterGradientProgram lost rgp_init_count + rgp_init_word)
+    //   OJZ_TestRamp      38 -> 34 bytes   -4   (RasterRampProgram lost rrp_init_count + rrp_init_word)
+    //   OJZ_TestVsram     15 -> 14 words   -2   (no set_reg, so it carried init_count ALONE, no init word)
+    // Content shrink is therefore -0x12 (18 B), not -0x10. The REGION measures -0x10
+    // because it is `DeformTable_Zero .. ObjDef_Static` and its tail is placer fill, not
+    // emitted data: OJZ_TestRamp's 34 bytes end at 0x12752 and ObjDef_Static starts at
+    // 0x12760, so 14 bytes of zero fill sit inside the span and absorb the odd 2 B of the
+    // content delta. Verified against the built plain ROM (symbol spans in s4.lst; the
+    // 0x12752..0x12760 bytes read back as zeros). Same lesson as the ojz_act_pool rows
+    // above: a length pin on a fill-terminated region measures the placer as well as the
+    // payload, so a span delta is a LOWER bound on the content delta, never a synonym.
+    assert_eq!(pins::PARALLAX_CONFIGS.plain_len, 0xDDC);  // -0x10 blanket-restore (content -0x12, 2 B absorbed by the region's trailing fill — see above)
+    assert_eq!(pins::PARALLAX_CONFIGS.debug_len, 0xDD0);  // -0x10 blanket-restore: same five programs, same fill absorption
 
-    assert_eq!(pins::ASSEMBLED_LEN, 0xA11F0); // +0x30 effects-p2-palette: the +0x560 engine growth is org-anchor absorbed (as it has been for several chains) and only this reaches the ROM tail // +0x20F60 tails-data (Map_Tails exiled to the ROM tail) // +8 character-dispatch-c1 (0x50 of player growth, repacked past the sound bank) // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x10 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)  // +0x226D0 knuckles-def (Map_Knuckles takes the same ROM-tail exile)
+    assert_eq!(pins::ASSEMBLED_LEN, 0xA11E0);  // -0x10 blanket-restore: only the configs data shrink reaches the tail; the engine-bank -0x30 is org-anchor absorbed // +0x30 effects-p2-palette: the +0x560 engine growth is org-anchor absorbed (as it has been for several chains) and only this reaches the ROM tail // +0x20F60 tails-data (Map_Tails exiled to the ROM tail) // +8 character-dispatch-c1 (0x50 of player growth, repacked past the sound bank) // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x10 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)  // +0x226D0 knuckles-def (Map_Knuckles takes the same ROM-tail exile)
     // knuckles-c4 (2026-08-12): plain HOLDS at 0xA11C0, debug +0x10 -> 0xA3090.
     // The parcel added Knuckles' whole glide family — two new sections
     // (PLAYER_GLIDE 0x2A8, PLAYER_CLIMB ~0x2FA) plus five state rows in each of
@@ -715,7 +818,7 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // to the debug entity_data and was REVERTED (aeon@8dc43d9b) — a DEBUG-only
     // ENTITY violates the debug_len == plain_len invariant the ported sections
     // rely on. Debug is therefore byte-for-byte the pre-scaffold ROM.
-    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0xA30B0); // +0x20 effects-p2-palette: same org-anchor absorption; the debug tail takes 0x20 where plain takes 0x30 // +4 tails-appendage (the DEBUG-only jmp abs.l tail call) // -0x10 tails-flight (bank absorbs flight; ojz harness shrank) // +0xC4 tails-character (DEBUG-only hotkey; plain unmoved) // +0x20F60 tails-data (same exile) // +0x10 character-dispatch-c1 (0xB0 of player growth, repacked past the sound bank) // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x18 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)  // +0x226D0 knuckles-def (same exile, same delta — the data is not DEBUG-fenced)  // +0x10 knuckles-c4 (glide family; plain repacked past the sound bank, debug keeps the residual)
+    assert_eq!(pins::DEBUG_ASSEMBLED_LEN, 0xA3090);  // -0x20 blanket-restore: the configs -0x10 plus boot's -0x10, which the debug shape does not re-absorb // +0x20 effects-p2-palette: same org-anchor absorption; the debug tail takes 0x20 where plain takes 0x30 // +4 tails-appendage (the DEBUG-only jmp abs.l tail call) // -0x10 tails-flight (bank absorbs flight; ojz harness shrank) // +0xC4 tails-character (DEBUG-only hotkey; plain unmoved) // +0x20F60 tails-data (same exile) // +0x10 character-dispatch-c1 (0xB0 of player growth, repacked past the sound bank) // +6 cheat-flag arm write; +0x34 objtest-gate moves; +0xF0 slide-fixture; +8 replay-rerecord; sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x18 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)  // +0x226D0 knuckles-def (same exile, same delta — the data is not DEBUG-fenced)  // +0x10 knuckles-c4 (glide family; plain repacked past the sound bank, debug keeps the residual)
 
     // animate_port.rs: `AnimateSprite.cc_delete` − `AnimateSprite`. Shape-
     // DEPENDENT (item 4). Offset stable within animate (.cc_delete precedes the

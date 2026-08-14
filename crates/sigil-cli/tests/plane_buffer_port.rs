@@ -135,7 +135,13 @@ fn plane_buffer_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
 /// VMA (label position is load-bearing: abs.w/abs.l width selection reads it).
 fn plane_buffer_addr_labels(debug: bool) -> Vec<Section> {
     let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
-    let table: [(&str, u32); 11] = [
+    let table: [(&str, u32); 13] = [
+        // DEBUG-only: the blanket-restore parcel's IPL>=6 assert on VInt_DrawLevel's
+        // autoincrement excursion expands to jsr/jmp these (sprites_port precedent).
+        // Shape-invariant pins; in plain the assert is comptime-gated out and the
+        // carriers simply go unreferenced.
+        ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
+        ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
         ("Plane_Buffer", pick(pins::PLANE_BUFFER_BASE)),
         ("Plane_Buffer_Ptr", pick(pins::PLANE_BUFFER_PTR)),
         ("Cache_Left_Col", pick(pins::CACHE_LEFT_COL)),
@@ -465,6 +471,13 @@ fn flip_labels(debug: bool) -> Vec<(&'static str, u32)> {
     ];
     // plane_buffer's additional base label (its RAM buffer base).
     v.push(("Plane_Buffer", pick(pins::PLANE_BUFFER_BASE)));
+    // Both flipped modules now carry a DEBUG-shape IPL>=6 assert (blanket-restore
+    // parcel), whose expansion jsr/jmps the MD Debugger entry points.
+    v.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
+    v.push((
+        "MDDBG__ErrorHandler_PagesController",
+        pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
+    ));
     v
 }
 
