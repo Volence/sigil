@@ -13,9 +13,11 @@
 //! (Spec 2 Plan 1) and reports success or every diagnostic collected.
 //!
 //! `sigil build --aeon <dir>` is THE Aeon ROM build (post-flip, the only one):
-//! it assembles the whole `main.asm` include tree with every `.emp` module
-//! lowered natively, chained-links, folds the checksum, emits the sigil-canonical
-//! `.lst`, and appends the `convsym` deb2 symbol table — the full shipped ROM.
+//! it assembles the game's residual root `.asm` (`games/<game>/game_root.asm`)
+//! with every `.emp` module lowered natively, chained-links, folds the checksum,
+//! emits the sigil-canonical `.lst`, and appends the `convsym` deb2 symbol table —
+//! the full shipped ROM. (It said `main.asm` until 2026-08-14; that file was
+//! deleted at the flip this same sentence describes.)
 
 use std::process;
 

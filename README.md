@@ -24,7 +24,23 @@ extension-word encoding (the [§5.5 hazards](#the-asl-oracle-discipline)) before
 committed to the full backend. The byte-exactness target is the **assembled** ROM
 (`asl` → `p2bin`); `build.sh`'s trailing `convsym -a` debug-symbol append is out of
 scope (not executed — an ELF-`.symtab` analogue), so Sigil's ROM equals `s4.bin`
-except the four `convsym`/`fixheader`-rewritten header bytes.
+except the header bytes the post-pass rewrites (the ROM-end pointer and the
+checksum, both now folded natively rather than shelled to `fixheader`).
+
+> **What the milestone rows above mean today.** They are HISTORY, and they were
+> true when they were earned: each was proven against a live `asl` reference. `asl`
+> has since left the pipeline — Sigil *is* the build, since the Spec-5 Stage-2
+> flip, and `asl` is no longer installed in the repo. So the whole-ROM gates you
+> can run today compare against a **Sigil-built committed golden**: they prove the
+> build still reproduces the frozen bytes, not that those bytes agree with a second
+> assembler.
+>
+> The `asl`-minted evidence that remains genuinely independent is the **ISA-level
+> golden corpus** (`sigil-isa`'s encoding vectors, frozen from a real pre-flip
+> `asl` run), plus the differential `*_port` gates that compare Sigil's own two
+> front ends against each other. Installing `vasm` or `asl` and running a fresh
+> differential corpus is the highest-value verification still untaken for the 68k
+> backend. (Recorded from the 2026-08-13 lens sweep, seats TEST/A2, finding S20.)
 
 ## Workspace layout
 

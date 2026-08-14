@@ -40,7 +40,8 @@ fn cycles_jr_cc_in_span_bails() {
 // An off-table op inside the span is the unknown-op bail.
 #[test]
 fn cycles_off_table_bails() {
-    let e = errs("    .a:\n    rlca\n    .b:\n    ensure(cycles(.a, .b) == 0, \"x\")");
+    // A real Z80 op with no cost entry — see the note in `cycle_budget.rs`.
+    let e = errs("    .a:\n    ldir\n    .b:\n    ensure(cycles(.a, .b) == 0, \"x\")");
     assert!(e.iter().any(|m| m.contains("[cycles.unknown-op]")), "got {e:?}");
 }
 

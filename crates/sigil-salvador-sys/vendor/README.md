@@ -1,5 +1,8 @@
 # Vendored salvador source
 
+> Provenance (upstream, revision, vendoring date, per-file table) lives in
+> **`VENDOR.md`** alongside this file, matching the other vendored C crates.
+
 This directory is a verbatim copy of the C sources from `aeon/tools/salvador/src/`
 (salvador v1.4.2 by Emmanuel Marty — https://github.com/emmanuel-marty/salvador),
 including the bundled `libdivsufsort` library by Yuta Mori
