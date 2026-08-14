@@ -12,6 +12,7 @@ use manifest::{Manifest, ParsedModule};
 use sigil_ir::map::MemoryMap;
 use sigil_ir::{Section, SectionPlacement};
 use sigil_span::{Diagnostic, Level, Span};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
@@ -66,6 +67,85 @@ fn pub_struct_data_name(item: &ast::Item) -> Option<&str> {
     }
 }
 
+/// Per-build memo of "every `pub const` this defining module folds to".
+///
+/// `collect_pub_comptime` folds a defining module's `pub const`s at the DEFINITION
+/// site once per CONSUMING module, so an M-const module imported by N modules paid
+/// M×N evaluator constructions — each one a fresh 64 MiB-stack thread that
+/// re-indexed the whole defining file to resolve a single integer. Folding the
+/// module's consts once and reading the map collapses that to one construction per
+/// defining module.
+///
+/// DELIBERATELY NOT a global or thread-local. This cache is created inside a single
+/// `build_program_with` (or report) call and dropped with it, keyed by module id,
+/// which is unique within one build. A cache that outlived a build and was keyed by
+/// a name that repeats across builds would not fail loudly — it would produce a
+/// WRONG ROM THAT PASSES, which is the one failure mode the golden/pin apparatus
+/// cannot catch (the same argument that ruled out cross-invocation incremental
+/// caching; lens sweep findings S15/S22).
+#[derive(Default)]
+struct ConstFoldCache {
+    by_const: HashMap<(String, String), Option<i64>>,
+}
+
+impl ConstFoldCache {
+    /// This const's folded literal, computing it on first ask.
+    ///
+    /// The computation is [`fold_const_literal`] verbatim, so the answer for a
+    /// given `(module, const)` is exactly what the uncached path produced — the
+    /// saving is entirely in not asking the same question again.
+    ///
+    /// Folding a module's consts EAGERLY as a batch would be faster still (one
+    /// evaluator per module rather than one per const), but it is NOT equivalent,
+    /// and the corpus says so: a batch also folds consts no consumer imports, and
+    /// `raster_dsl.emp`'s `pub comptime fn fire` calls the module-private
+    /// `op_cram_words`, so eager folding fails where the lazy path never asked and
+    /// leaves 73 `unknown function` errors in its wake. Memoization is the part
+    /// that is provably behaviour-preserving, so it is the part taken here.
+    fn folded(
+        &mut self,
+        def_id: &str,
+        def_file: &ast::File,
+        name: &str,
+        defines: &[(String, i128)],
+        include_root: Option<&Path>,
+    ) -> Option<i64> {
+        let key = (def_id.to_string(), name.to_string());
+        if let Some(&hit) = self.by_const.get(&key) {
+            return hit;
+        }
+        let folded = fold_const_literal(def_file, name, defines, include_root);
+        self.by_const.insert(key, folded);
+        folded
+    }
+}
+
+/// Resolve the `pub const` named `name` to an `i64` literal in its DEFINING file's
+/// scope (siblings + `defines` visible), for the injected-clone value fold in
+/// [`collect_pub_comptime`]. Returns `Some(n)` ONLY on a clean resolution: no
+/// Error-level diagnostic, an integer value, and a magnitude that fits `i64` (the
+/// [`ast::Expr::Int`] payload). Any other outcome — an unresolved cross-module
+/// reference `def_file` alone cannot see, a non-int value, an out-of-range
+/// magnitude, a cyclic definition — yields `None` so the caller keeps the const's
+/// original expression (the consumer then resolves it exactly as before). All
+/// diagnostics the probe provokes are discarded: it is a best-effort fold, never a
+/// report site (a real error surfaces at the const's own decl site during lowering).
+///
+/// Reached only through [`ConstFoldCache::folded`] — every caller wants the memo.
+fn fold_const_literal(
+    def_file: &ast::File,
+    name: &str,
+    defines: &[(String, i128)],
+    include_root: Option<&Path>,
+) -> Option<i64> {
+    let (value, diags) = crate::eval::eval_const_with_root(def_file, name, include_root, defines);
+    if diags.iter().any(|d| d.level == Level::Error) {
+        return None;
+    }
+    let n = value?.as_stored_int()?;
+    i64::try_from(n).ok()
+}
+
 /// Collect the pub comptime-only items directly in `items` AND one level inside
 /// any `section {}` body (sections do not nest further — Task 1 rejects that at
 /// parse time — so a single level of recursion is exhaustive), matching `pred`.
@@ -76,11 +156,13 @@ fn pub_struct_data_name(item: &ast::Item) -> Option<&str> {
 /// has its window resolved here and STAMPED (`resolved_window`), so the consumer
 /// binds it at the definition site verbatim rather than re-scanning its own structs.
 fn collect_pub_comptime(
+    def_id: &str,
     def_file: &ast::File,
     items: &[ast::Item],
     pred: &impl Fn(&str) -> bool,
     defines: &[(String, i128)],
     include_root: Option<&Path>,
+    folds: &RefCell<ConstFoldCache>,
     out: &mut Vec<ast::Item>,
 ) {
     for item in items {
@@ -128,14 +210,16 @@ fn collect_pub_comptime(
             // non-int, an out-of-range magnitude) keeps its original expression, so
             // behavior is unchanged for every const the consumer already resolved.
             if let ast::Item::Const(c) = &mut cloned {
-                if let Some(lit) = fold_const_literal(def_file, &c.name, defines, include_root) {
+                let folded =
+                    folds.borrow_mut().folded(def_id, def_file, &c.name, defines, include_root);
+                if let Some(lit) = folded {
                     c.value = ast::Expr::Int(lit, c.span);
                 }
             }
             out.push(cloned);
         }
         if let ast::Item::Section(sec) = item {
-            collect_pub_comptime(def_file, &sec.items, pred, defines, include_root, out);
+            collect_pub_comptime(def_id, def_file, &sec.items, pred, defines, include_root, folds, out);
         }
     }
 }
@@ -153,29 +237,6 @@ fn stamp_overlay_window(def_file: &ast::File, item: &mut ast::Item) {
     }
 }
 
-/// Resolve the `pub const` named `name` to an `i64` literal in its DEFINING file's
-/// scope (siblings + `defines` visible), for the injected-clone value fold in
-/// [`collect_pub_comptime`]. Returns `Some(n)` ONLY on a clean resolution: no
-/// Error-level diagnostic, an integer value, and a magnitude that fits `i64` (the
-/// [`ast::Expr::Int`] payload). Any other outcome — an unresolved cross-module
-/// reference `def_file` cannot see, a non-int value, an out-of-range magnitude, a
-/// cyclic definition — yields `None` so the caller keeps the const's original
-/// expression (the consumer then resolves it exactly as before). All diagnostics
-/// the probe provokes are discarded: it is a best-effort fold, never a report
-/// site (a real error surfaces at the const's own decl site during lowering).
-fn fold_const_literal(
-    def_file: &ast::File,
-    name: &str,
-    defines: &[(String, i128)],
-    include_root: Option<&Path>,
-) -> Option<i64> {
-    let (value, diags) = crate::eval::eval_const_with_root(def_file, name, include_root, defines);
-    if diags.iter().any(|d| d.level == Level::Error) {
-        return None;
-    }
-    let n = value?.as_stored_int()?;
-    i64::try_from(n).ok()
-}
 
 /// Collect the pub comptime-only items (const/struct/enum/bitfield/newtype/comptime fn)
 /// that `module` should see from the prelude and from the modules it `use`s. These are
@@ -201,13 +262,14 @@ fn ambient_items(
     manifest: &Manifest,
     defines: &[(String, i128)],
     include_root: Option<&Path>,
+    folds: &RefCell<ConstFoldCache>,
 ) -> Vec<ast::Item> {
     let mut out = Vec::new();
 
     // Prelude first (own items, added in Part B, shadow these via last-wins).
     if let Some(p) = prelude {
         if p.id != module.id {
-            collect_pub_comptime(&p.file, &p.file.items, &|_| true, defines, include_root, &mut out);
+            collect_pub_comptime(&p.id, &p.file, &p.file.items, &|_| true, defines, include_root, folds, &mut out);
         }
     }
 
@@ -215,7 +277,7 @@ fn ambient_items(
     // the prelude<use precedence; own items shadow both via Part B ordering).
     // Recurses one level into `section {}` bodies so a section-nested `use` is
     // honored too, not just top-level ones.
-    ambient_from_uses(&module.file.items, module, manifest, defines, include_root, &mut out);
+    ambient_from_uses(&module.file.items, module, manifest, defines, include_root, folds, &mut out);
 
     out
 }
@@ -226,6 +288,7 @@ fn ambient_from_uses(
     manifest: &Manifest,
     defines: &[(String, i128)],
     include_root: Option<&Path>,
+    folds: &RefCell<ConstFoldCache>,
     out: &mut Vec<ast::Item>,
 ) {
     for item in items {
@@ -242,25 +305,29 @@ fn ambient_from_uses(
                 match &u.names {
                     ast::UseNames::Whole => {} // whole-path label import — handled by rename/link.
                     ast::UseNames::Glob => collect_pub_comptime(
+                        &base_mod.id,
                         &base_mod.file,
                         &base_mod.file.items,
                         &|_| true,
                         defines,
                         include_root,
+                        folds,
                         out,
                     ),
                     ast::UseNames::List(names) => collect_pub_comptime(
+                        &base_mod.id,
                         &base_mod.file,
                         &base_mod.file.items,
                         &|n| names.iter().any(|w| w == n),
                         defines,
                         include_root,
+                        folds,
                         out,
                     ),
                 }
             }
             ast::Item::Section(sec) => {
-                ambient_from_uses(&sec.items, module, manifest, defines, include_root, out)
+                ambient_from_uses(&sec.items, module, manifest, defines, include_root, folds, out)
             }
             _ => {}
         }
@@ -293,6 +360,8 @@ pub fn build_ram_report(
 ) -> (Vec<crate::lower::RamRegionRow>, Vec<Diagnostic>) {
     let seed_span = Span { source: sigil_span::SourceId(0), start: 0, end: 0 };
     let mut diags: Vec<Diagnostic> = Vec::new();
+    // Scoped to THIS report and dropped with it — see `ConstFoldCache`.
+    let folds = RefCell::new(ConstFoldCache::default());
 
     // Gather each named module, ambient-prepended so its `use`d comptime sizes resolve.
     let mut region_modules: Vec<(&str, ast::File)> = Vec::new();
@@ -317,7 +386,7 @@ pub fn build_ram_report(
             continue;
         }
         let ambient =
-            ambient_items(pm, None, manifest, &opts.defines, opts.include_root.as_deref());
+            ambient_items(pm, None, manifest, &opts.defines, opts.include_root.as_deref(), &folds);
         let file = if ambient.is_empty() {
             pm.file.clone()
         } else {
@@ -424,6 +493,8 @@ fn build_program_with(
 ) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>, Vec<Diagnostic>) {
     let mut diags = Vec::new();
     let mut sections = Vec::new();
+    // Scoped to THIS build and dropped with it — see `ConstFoldCache`.
+    let folds = RefCell::new(ConstFoldCache::default());
     // Deferred link-time assertions (D-H.4) from every reachable module,
     // concatenated (post-rename) — the whole-program list the linker decides.
     let mut link_asserts: Vec<sigil_ir::LinkAssert> = Vec::new();
@@ -505,7 +576,7 @@ fn build_program_with(
                 return None;
             }
             let ambient =
-                ambient_items(pm, prelude_pm, manifest, &opts.defines, opts.include_root.as_deref());
+                ambient_items(pm, prelude_pm, manifest, &opts.defines, opts.include_root.as_deref(), &folds);
             let file = if ambient.is_empty() {
                 pm.file.clone()
             } else {
@@ -547,6 +618,7 @@ fn build_program_with(
                 manifest,
                 &opts.defines,
                 opts.include_root.as_deref(),
+                &folds,
             );
             if ambient.is_empty() {
                 return None;
@@ -618,7 +690,7 @@ fn build_program_with(
         };
 
         let ambient =
-            ambient_items(pm, prelude_pm, manifest, &opts.defines, opts.include_root.as_deref());
+            ambient_items(pm, prelude_pm, manifest, &opts.defines, opts.include_root.as_deref(), &folds);
         let (mut module, ldiags) = if ambient.is_empty() {
             // zero-clone common path; `region_ends` is empty for region-free builds.
             lower_module_with_region_ends_and_contracts(&pm.file, opts, &region_ends, &iface_env)
