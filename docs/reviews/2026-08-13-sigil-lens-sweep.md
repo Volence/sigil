@@ -385,6 +385,74 @@ line* with working `{n}` interpolation. And multi-error reporting is correct eve
 first-error-and-stop anywhere in the CLI. Also: cross-module "unknown symbol" anchors at the **module
 header, not the reference site**, with a `TODO` in `resolve/mod.rs:906` admitting it.
 
+### S15 — A green CI badge carries zero whole-ROM byte evidence · CRITICAL — read this before trusting any prior sweep
+**Seat:** GATE
+
+**Every sweep this week ended some finding with "the whole-ROM byte golden would catch that." That
+premise does not hold in CI.**
+
+- `.github/workflows/ci.yml:22-25` sets `AEON_DIR=/nonexistent/aeon-not-checked-out-in-ci` and does
+  **not** set `SIGIL_STRICT_GATE`. The comment is candid: *"the skip is what CI exercises."*
+- Reproduced in that exact environment: **3,673 tests run, 3,672 pass, and 352 of them (9.6%) skip
+  silently green** — 203 in the ROM/aeon-tree-presence class, across 105 test binaries. **Nothing
+  counts or reports the skips.**
+- All 28 build-and-compare golden gates are in that set: every `native_offcanonical_rom` anchor
+  compare, all 9 `native_offcanonical_full`, all 9 placement gates, `native_full_rom`, both
+  `native_rom`, `pins_rs_is_current`, `m1b_gate`, `m1c_vector_table`, all 6 `seam1_native_link`.
+- What *does* run is `refreeze --check` / `provenance_chain_holds` — which **never builds anything**.
+  `do_check` (`refreeze.rs:146-167`) reads `golden/provenance.toml`, reads `golden/*.bin`, and
+  recomputes CRCs. Its own doc calls it "the gate." It is two committed files agreeing with each
+  other, and it is structurally incapable of answering "does the build produce these bytes?"
+
+That fully explains the `refreeze --check`-green-while-16-golden-tests-red incident: the two gates
+have **disjoint subjects**. `m1b_gate.rs:9` states the consequence outright: *"A green GitHub CI does
+NOT prove the checksum or listing-fidelity claims."*
+
+**And re-freeze has no intent/regression discriminator.** The sole precondition is
+`ab.trim().is_empty() || ab == "asl-witness"` (`refreeze.rs:210`). Any other non-empty string passes.
+Of 111 committed chain entries: 67 name a document that resolves on disk, **33 carry free prose
+naming no document** (one literally defers its proof to a future session), 11 are empty or the
+sentinel. A new target key is never checked at all (no `prev` to compare — `lean` entered this way).
+And `--freeze` regenerates `pins.rs` and the size tables *first*, then reads `anchor_end` back out of
+them — **the measurement window is redefined by the artifact being measured.**
+
+**Plus a confirmed vacuous pin.** 76 of 95 region pins run `[module_A_head, module_B_head)`, so the
+window includes inter-module placer fill; 49 end in zero bytes. `OJZ_BG_ANIM` (`pins.rs:253`) is a
+14-byte all-zero plain window compared against a module the test zero-pads to 14 bytes — **it passes
+if `bg_anim.emp` emits nothing at all.** 39 test files carry an explicit "tolerate a `< 16 B`
+all-zero tail" escape hatch that silently absorbs module shrinkage.
+
+**Consequence for the three aeon packets:** any finding whose only detector was "the golden would
+move" is weaker than recorded — the golden does not run in CI, and a re-freeze is a one-command
+operation gated on a human typing a non-empty string. This does not invalidate those findings; it
+invalidates the *reassurance* attached to several of them.
+
+### S16 — 22 sigil↔aeon seam mirrors; 4 already diverged, 14 unguarded · HIGH
+**Seat:** B2
+
+The seam nothing can check — different languages, different repos. All 22 hand-diffed.
+
+**Already diverged:** sigil's `Act` struct fixture is **6 bytes and 2 fields stale**
+(`test_support.rs:113` says 34 bytes/`$22`; `engine/structs.emp:26` says 40/`$28` — and aeon's own
+line 1 still says 34, so the stale number has two homes). Consumed by 12 port gates. Currently inert
+only because no live `.emp` externs `Act_len`.
+
+Plus the Z80 idle 3-way (S10 above), `CONVSYM_FILTER` citing a `build.sh` line that is now a
+different command entirely, and `build.sh:229` contradicting `build.sh:11-15` on whether release
+ships the appendix.
+
+**And a bulk defect: 190 dangling `.asm`/`.inc` citations across 70 sigil files**, naming 14 aeon
+files the flip deleted (`engine/constants.asm`, `structs.asm`, `main.asm`, `engine.inc`, …), many
+with exact line numbers that are doubly dead. Every one is a hand-copied constant whose authority no
+longer exists — that is the mechanism by which the `Act` and Z80-idle drifts happened and will
+happen again.
+
+**The standard to copy is already in the repo:** `pins.rs` + `repin_pins.rs` (generated from a live
+resolve, with a staleness gate), `validate_placement` (bidirectional), `check_error_handler_is_last`
+(a mirror that checks itself), and `seam1::resolve_consts` — *"No value is hand-maintained here"*, it
+parses the values out of aeon's own `.emp`. That last one is exactly the mechanism the `Act` fixture
+needs.
+
 ---
 
 ## 3. Recommended order for the implementing agent
