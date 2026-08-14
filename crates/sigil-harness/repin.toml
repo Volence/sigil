@@ -2863,6 +2863,12 @@ tests = ["act_descriptor_port"]
 [[symbol]]
 name = "OJZ_TestVsram"
 tests = ["act_descriptor_port"]
+# Effects ramp parcel: OJZ_TestRamp is the OP_RUN_RAMP gate fixture (computed per-line
+# VSRAM values from a 16.16 accumulator) that act_descriptor names into section 0's
+# sec_raster_table. Same class, same home in parallax_configs.
+[[symbol]]
+name = "OJZ_TestRamp"
+tests = ["act_descriptor_port"]
 # Effects P1: the raster dispatcher's RAM working set. They are engine.ram labels, so
 # from engine.effects.raster's standalone re-lower they are inbound cross-seam RAM
 # operands and raster_port has to be given their true per-shape VMAs.

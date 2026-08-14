@@ -137,6 +137,8 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
         // fixture act_descriptor names into section 0's sec_raster_table — same class,
         // same home in parallax_configs.
         ("OJZ_TestVsram", pins::OJZ_TEST_VSRAM.plain, pins::OJZ_TEST_VSRAM.debug),
+        // Effects ramp parcel: the OP_RUN_RAMP gate fixture, same cross-seam class.
+        ("OJZ_TestRamp", pins::OJZ_TEST_RAMP.plain, pins::OJZ_TEST_RAMP.debug),
         ("OJZ_Act_Pool_PageTable", pins::OJZ_ACT_POOL_PAGE_TABLE.plain, pins::OJZ_ACT_POOL_PAGE_TABLE.debug),
         // art-streaming-p2-task5: the descriptor's Act.act_sec_local_maps field.
         ("OJZ_Sec_LocalMaps", pins::OJZ_SEC_LOCAL_MAPS.plain, pins::OJZ_SEC_LOCAL_MAPS.debug),

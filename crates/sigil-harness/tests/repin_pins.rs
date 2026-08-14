@@ -665,7 +665,13 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // shifted by exactly the 0x850 base delta). Its ORIGIN is parallax_configs below —
     // that is the row that actually explains the +2, and it had no pin at all.
     assert_eq!(pins::OJZ_ACT_POOL.plain_len, 0x2F16);
-    assert_eq!(pins::OJZ_ACT_POOL.debug_len, 0x2F18);  // +2 effects-p2-palette: inter-section fill, NOT emitted data — if this grows, check the emitter before re-baselining
+    // effects-ramp-op: 0x2F18 -> 0x2F20, +8 more inter-section FILL, still not emitted
+    // data. Its origin is the parallax_configs row below, which grew ASYMMETRICALLY
+    // (+0x30 plain / +0x24 debug) because OJZ_TestRamp consumed 0xC of pre-existing
+    // debug-side slack. The fill after ojz_act_pool absorbs the difference, exactly as
+    // the effects-p2-palette +2 did. If this grows without a matching parallax_configs
+    // move, check the emitter before re-baselining.
+    assert_eq!(pins::OJZ_ACT_POOL.debug_len, 0x2F20);
     // parallax_configs gained OJZ_TestGradient (the 96-line dense-tier gate fixture) and
     // OJZ_ShimmerCycle (the Task 8 cycling script): +0x280 plain / +0x28E debug. The
     // shapes differ because the new data CONSUMED 0xE of pre-existing debug-side slack
@@ -677,8 +683,14 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // scroll-banding gate fixture (15 words = 30 bytes of program, padded to 0x20).
     // Its hand-typed twin OJZ_VSRAM_HAND is comptime-only (ensure fodder) and emits
     // nothing. Symmetric growth, so the P2-era shape parity here survives.
-    assert_eq!(pins::PARALLAX_CONFIGS.plain_len, 0xDBC);
-    assert_eq!(pins::PARALLAX_CONFIGS.debug_len, 0xDBC);
+    // effects-ramp-op: OJZ_TestRamp, one RasterRampProgram (38 bytes of struct plus
+    // alignment) -> +0x30 plain / +0x24 debug. The 0xC asymmetry is debug-side slack
+    // being consumed, the same mechanism the P2 parcel's note describes above; it is
+    // what lands the +8 of fill on ojz_act_pool. Shape parity, restored by P2, is
+    // therefore BROKEN again here by 0xC — recorded rather than smoothed over, because
+    // the next parcel to touch this region needs to know the shapes have diverged.
+    assert_eq!(pins::PARALLAX_CONFIGS.plain_len, 0xDEC);
+    assert_eq!(pins::PARALLAX_CONFIGS.debug_len, 0xDE0);
 
     assert_eq!(pins::ASSEMBLED_LEN, 0xA11F0); // +0x30 effects-p2-palette: the +0x560 engine growth is org-anchor absorbed (as it has been for several chains) and only this reaches the ROM tail // +0x20F60 tails-data (Map_Tails exiled to the ROM tail) // +8 character-dispatch-c1 (0x50 of player growth, repacked past the sound bank) // +0xF0 slide-fixture; patchrun/rerecord/sound-pkg1 absorbed  // +0x30 player-polish-trio  // +0x30 sound-pkg3 (v2: +0x10 mod-8 base pads after the fold-divergence fix)  // +0xC0 sfx-flight  // +0x10 dust-data (ojz_scroll_test's puff DMA; the 3 KB data insertion is dac-anchor-absorbed)  // +0x226D0 knuckles-def (Map_Knuckles takes the same ROM-tail exile)
     // knuckles-c4 (2026-08-12): plain HOLDS at 0xA11C0, debug +0x10 -> 0xA3090.

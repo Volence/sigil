@@ -5784,3 +5784,57 @@ full_crc = "eb607681"
 full_size = 711314
 anchor_crc = "37e5fe21"
 anchor_end = 0xa30b0
+
+[[entry]]
+name = "effects-ramp-op"
+ab = "docs/benchmarks/effects-p3/RAMP-EVIDENCE.md"
+note = "OP_RUN_RAMP: computed per-line values from a 16.16 accumulator in RAM; gate 74/74 rows match the authored ramp; aeon c2a7e1a9"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "700cf5e4"
+full_size = 711778
+anchor_crc = "2a8cf68a"
+anchor_end = 0xa30b0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "01325062"
+full_size = 599036
+anchor_crc = "fdb279d3"
+anchor_end = 0x89620
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "b5d61955"
+full_size = 95701
+anchor_crc = "554edb41"
+anchor_end = 0x11224
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "dfdfe1b9"
+full_size = 99869
+anchor_crc = "40707f32"
+anchor_end = 0x11224
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "6e0ccb3f"
+full_size = 655726
+anchor_crc = "ca040845"
+anchor_end = 0xa016e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "249db4d9"
+full_size = 696946
+anchor_crc = "8e172685"
+anchor_end = 0xa11f0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "475fa367"
+full_size = 711410
+anchor_crc = "094a6a1c"
+anchor_end = 0xa30b0
