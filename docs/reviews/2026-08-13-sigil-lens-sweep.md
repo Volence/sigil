@@ -613,6 +613,61 @@ And two aeon comments claiming "a comptime span primitive awaits implementation"
 `span()` does exactly what they ask and both sites are pure-data procs in its domain. A third
 complaint survives scrutiny: there is genuinely no *section*-length primitive.
 
+### S22 — The three perf seats reconcile, and the loop's next bottleneck is not sigil · HIGH
+**Seat:** CACHE (final seat, 22 of 23)
+
+CACHE compiled an `LD_PRELOAD` interposition shim (no `strace`/`perf` in the sandbox) and timed the
+syscalls directly. Its numbers look like they contradict P1a; **they don't — they're the same defect
+measured from the other end**:
+
+| | |
+|---|---|
+| `pthread_create` / `pthread_join` | **39,541 each** |
+| time inside `pthread_join` alone | **~2,160 ms** |
+| create + join + munmap | **~2,437 ms of a ~2,728 ms build** |
+
+P1a measured **36,133 redundant const folds at 63 µs each**. CACHE measured **39,541 thread round-trips
+at ~60 µs each**. Those are the same calls: the redundant folds *are* what spawns the threads, and the
+per-call cost is almost entirely thread lifecycle. **~89% of even a fully quiet build is spent inside
+`pthread_create`/`join`/`munmap`.** The two seats agree, and CACHE sharpens the estimate: because the
+cost is the thread round-trip rather than the computation, memoizing the folds removes it nearly
+entirely. The post-fix floor is plausibly **sub-second**, not P1a's more conservative 0.7 s.
+
+**CACHE also refuted a hypothesis with data rather than repeating it.** The suspected per-line
+unbuffered listing write does not exist: **28 `write` calls totalling 1.84 MB (~65 KB each)** —
+`emit_listing` builds one `String` and does one `fs::write`. Worth recording as a non-finding.
+
+**What it did find in I/O:** all **142 of 142 `.emp` files are opened more than once — 5.78 times on
+average, 19 times at worst.** The contract gate runs its own full `Manifest::scan` *plus* a second
+whole-corpus re-read to build a line/col map from text it just discarded (`SIGIL_CONTRACTS=0` drops
+286 opens, cleanly confirming two full passes). `harvest_engine_ram_addresses` scans the entire corpus
+to extract RAM label addresses. `harvest_game_constants` is called 3× and each call re-invokes
+`harvest_engine_constants`, so `constants.emp` is read+parsed+evaluated **up to 4×**; the
+`STRUCT_OFFSET_TWINS` table re-reads `structs.emp` **5×**, once per struct. The listing is built twice
+(~80 ms) — once for `--emit-lst`, once inside the deb2 appendix, then discarded.
+
+**And the finding that reframes the whole exercise.** CACHE timed the non-sigil `build.sh` steps:
+
+| step | wall |
+|---|---|
+| `ctags -R .` (unconditional, repo-wide) | **~410 ms** |
+| `emit_sound_blob` | ~140 ms |
+| four python gates + budget | ~142 ms |
+| **non-sigil total** | **~692 ms** |
+
+None is gated on its inputs having changed. **After the const-fold fix, `ctags -R .` alone could take
+longer than the entire sigil build**, and the non-sigil steps would dominate the edit-build-test loop.
+The highest-leverage target for loop latency would then be `build.sh`, not sigil.
+
+**Two independent seats now say DON'T build incremental compilation.** P2 argued from the cache key
+(nearly the whole program) and the failure mode (a stale entry yields *a wrong ROM that passes*).
+CACHE arrives from measurement: the expensive part isn't re-doing work, it's **doing trivial work in a
+maximally expensive way** — 39,541 OS thread round-trips for align arithmetic. Fix that and there may
+be nothing left worth caching. Both endorse the cheap in-process version instead: stop scanning the
+same 142 files five times in one invocation. That has none of a cross-invocation cache's staleness
+risk, and given S15 — where a stale golden already can't be caught by CI — adding a second mechanism
+that can quietly produce a passing wrong ROM would be the worst possible addition to this codebase.
+
 ---
 
 ## 3. Recommended order for the implementing agent
