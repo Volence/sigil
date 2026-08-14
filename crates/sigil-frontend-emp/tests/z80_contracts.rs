@@ -1115,3 +1115,100 @@ fn z80_tail_into_ordinary_clobbering_callee_still_fires() {
          preserves(de) must still fire, got: {diags:?}"
     );
 }
+
+// ---- the undeclared-write lint on Z80 (lens sweep, seat Vb, finding S4) -----
+//
+// `clobbers(...)` on Z80 was validated for SPELLING only. A proc writing a
+// register it never declared compiled with ZERO diagnostics, while the identical
+// 68k shape fired `[proc.clobber-undeclared]` immediately. The claim did not stay
+// inside sigil: aeon's `sound_psg.emp`/`sound_fm.emp` headers state the register
+// contract is "machine-checked" and cite a prior bug caused by a false clobber
+// comment as the reason to trust it — over ~9,600 lines of Z80 sound driver.
+//
+// This file previously had tests for `[proc.clobber-invalid]` (a bad register
+// NAME) and none for an undeclared WRITE, because no such diagnostic existed.
+
+/// The seat's own repro: a Z80 proc that writes `iy` and declares nothing.
+#[test]
+fn z80_undeclared_write_of_iy_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() clobbers() {\n\
+                 ld iy, 0\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.clobber-undeclared]") && d.contains("iy")),
+        "a Z80 proc writing undeclared `iy` must fire clobber-undeclared, got: {diags:?}"
+    );
+}
+
+/// An ordinary 8-bit write is caught the same way — `iy` is not a special case.
+#[test]
+fn z80_undeclared_write_of_a_plain_register_fires() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() clobbers(b) {\n\
+                 ld b, 1\n\
+                 ld d, 2\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        diags.iter().any(|d| d.contains("[proc.clobber-undeclared]") && d.contains('d')),
+        "an undeclared `d` write must fire, got: {diags:?}"
+    );
+}
+
+/// The positive control (the t24 rule): a HONEST contract stays silent. `b` is
+/// declared, and the pair name in `clobbers(de)` covers both halves.
+#[test]
+fn z80_declared_writes_stay_silent() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() clobbers(b, de) {\n\
+                 ld b, 1\n\
+                 ld d, 2\n\
+                 ld e, 3\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.clobber-undeclared]")),
+        "a fully declared Z80 contract must stay silent, got: {diags:?}"
+    );
+}
+
+/// A declared `out(...)` register is a RESULT the proc exists to produce, not an
+/// undeclared clobber — the same allowance the 68k arm makes.
+#[test]
+fn z80_out_register_is_not_an_undeclared_clobber() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() out(a) clobbers(f) {\n\
+                 ld a, 7\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.clobber-undeclared]")),
+        "an `out(a)` result must not read as an undeclared clobber, got: {diags:?}"
+    );
+}
+
+/// A VERIFIED `preserves(...)` silences the lint — the register round-trips, so it
+/// is preserved rather than clobbered. This is the same subtraction the 68k arm
+/// makes, and it is what keeps an honest push/pop bracket from being forced to
+/// declare a dishonest `clobbers`.
+#[test]
+fn z80_verified_preserves_silences_the_lint() {
+    let src = "module m in s (cpu: z80)\n\
+               proc P() clobbers() preserves(b) {\n\
+                 push bc\n\
+                 ld b, 1\n\
+                 pop bc\n\
+                 ret\n\
+               }\n";
+    let diags = lower_diags(src);
+    assert!(
+        !diags.iter().any(|d| d.contains("[proc.clobber-undeclared]") && d.contains('b')),
+        "a save/restored `b` is preserved, not clobbered, got: {diags:?}"
+    );
+}
