@@ -6481,3 +6481,57 @@ full_crc = "9ed5fcea"
 full_size = 712601
 anchor_crc = "6968c199"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "offscreen-ship-setreg-replay"
+ab = "/home/volence/sonic_hacks/aeon/docs/benchmarks/effects-p3-water-state/GATE-EVIDENCE.md"
+note = "the ship replays the fire's set_reg words at frame top too; shipping only pal_region left rows 0-2 tinted but unshadowed"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "04367c07"
+full_size = 712999
+anchor_crc = "b0d01a1a"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c184a5fa"
+full_size = 600267
+anchor_crc = "d5f567b6"
+anchor_end = 0x897b0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "8bff76d8"
+full_size = 96316
+anchor_crc = "3ca6241a"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "3ccb680c"
+full_size = 100665
+anchor_crc = "0373b4b5"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "a705f08e"
+full_size = 655678
+anchor_crc = "4c78f722"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "5acff780"
+full_size = 697737
+anchor_crc = "69c68e3e"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "34078a94"
+full_size = 712651
+anchor_crc = "45899235"
+anchor_end = 0xa30d0
