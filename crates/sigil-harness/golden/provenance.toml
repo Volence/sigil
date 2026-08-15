@@ -6158,3 +6158,56 @@ full_crc = "9ef00c29"
 full_size = 711670
 anchor_crc = "bab64ccb"
 anchor_end = 0xa3080
+
+[[entry]]
+name = "parcel-p-b"
+ab = "/home/volence/sonic_hacks/aeon/docs/benchmarks/effects-p3-p-b/GATE-EVIDENCE.md"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "385f398b"
+full_size = 712138
+anchor_crc = "51a9c19a"
+anchor_end = 0xa30a0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "3a0533a9"
+full_size = 599456
+anchor_crc = "3ccf8ad8"
+anchor_end = 0x89750
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "03cf667c"
+full_size = 95631
+anchor_crc = "c7f45e84"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7b594c19"
+full_size = 99978
+anchor_crc = "d9332357"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "e2fc6de3"
+full_size = 655662
+anchor_crc = "eaafb21a"
+anchor_end = 0xa012e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "4c4cac75"
+full_size = 696995
+anchor_crc = "6592e801"
+anchor_end = 0xa11b0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "df9d0015"
+full_size = 711770
+anchor_crc = "1163d7ed"
+anchor_end = 0xa30a0
