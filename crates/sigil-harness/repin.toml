@@ -2272,12 +2272,20 @@ region = "vdp_init"
 tests = ["vdp_init_port"]
 
 # HBlank_Uninstall offset within the hblank region — the second proc, checked by
-# hblank_port to anchor the region's two-proc layout.
+# hblank_port to anchor the region's two-proc layout, and by raster_port for the
+# bare-name proof (engine.effects.raster jbsr's HBlank_Uninstall across the seam).
+#
+# THE TAG SAID ONLY `raster_port` AND WAS WRONG, which mattered: while raster_port did
+# not exist this pin READ as dead coverage, and a 2026-08-15 audit of the raster_port
+# tag came within one commit of deleting it — which would have broken hblank_port.rs,
+# whose line 276 is its actual live consumer. The comment two lines above said
+# "checked by hblank_port" the whole time. When a tag and its own comment disagree,
+# grep for the consumer before believing either.
 [[offset]]
 name = "HBLANK_UNINSTALL_OFF"
 sym = "HBlank_Uninstall"
 region = "hblank"
-tests = ["raster_port"]
+tests = ["hblank_port", "raster_port"]
 
 # ── Tranche 21 cross-seam symbols (buffers_port / vblank_port) ──────────────
 
@@ -2962,6 +2970,57 @@ name = "Raster_Buf_A"
 tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Active_Buf"
+tests = ["raster_port"]
+
+# Effects P3 P-b: the rest of engine.effects.raster's INBOUND cross-seam RAM surface.
+# The five pins above were the module's surface in Parcel P1 and were never widened as
+# the module grew — the dense tier (P2), the ramp op, and P-b's patch channels all
+# added RAM the raster module names and nothing pinned. They read as "the raster pins"
+# while covering a pre-P2 module, which is a quieter version of the same defect as
+# pinning something no test consumes: the SET looks complete and is not.
+#
+# Raster_State / Raster_State_End are the region MARKS. raster.emp's
+# `ensure((extern("Raster_State_End") - extern("Raster_State")) == RASTER_STATE_SIZE)`
+# evaluates at lower time, so a standalone re-lower must supply both at their true VMAs
+# or the guard fails the port test for a reason that has nothing to do with the port.
+[[symbol]]
+name = "Raster_Buf_B"
+tests = ["raster_port"]
+[[symbol]]
+name = "Raster_Line"
+tests = ["raster_port"]
+[[symbol]]
+name = "Raster_Dense_Lines"
+tests = ["raster_port"]
+[[symbol]]
+name = "Raster_Dense_Cursor"
+tests = ["raster_port"]
+[[symbol]]
+name = "Raster_Dense_Cmd"
+tests = ["raster_port"]
+[[symbol]]
+name = "Raster_Dense_Kind"
+tests = ["raster_port"]
+[[symbol]]
+name = "Raster_Ramp_Acc"
+tests = ["raster_port"]
+[[symbol]]
+name = "Raster_Ramp_Step"
+tests = ["raster_port"]
+[[symbol]]
+name = "Effects_World_Y"
+tests = ["raster_port"]
+[[symbol]]
+name = "Raster_Patch_Tab"
+tests = ["raster_port"]
+[[symbol]]
+name = "Raster_State"
+tests = ["raster_port"]
+[[symbol]]
+name = "Raster_State_End"
+tests = ["raster_port"]
+[[symbol]]
+name = "Pal_Variant_Stage"
 tests = ["raster_port"]
 # Effects P1: vblank.emp calls into the dispatcher, so from the game-loop/vblank
 # standalone re-lower Raster_VBlank is an outbound cross-seam CALL target.
