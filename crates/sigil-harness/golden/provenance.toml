@@ -5946,3 +5946,56 @@ full_crc = "c13412fc"
 full_size = 711433
 anchor_crc = "e7150b55"
 anchor_end = 0xa3090
+
+[[entry]]
+name = "boot-cursor-section-seam"
+ab = "/home/volence/sonic_hacks/aeon/docs/benchmarks/boot-cursor-seam/AB-EVIDENCE.md"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "8cc6b8f7"
+full_size = 711804
+anchor_crc = "f3ab76c6"
+anchor_end = 0xa3090
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "55298f40"
+full_size = 598929
+anchor_crc = "1146f7ec"
+anchor_end = 0x89600
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "8c6abbfe"
+full_size = 95616
+anchor_crc = "2990c799"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "fdda99a7"
+full_size = 99918
+anchor_crc = "35ee90b7"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "1349409c"
+full_size = 655710
+anchor_crc = "3d7d8ec5"
+anchor_end = 0xa015e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "a6efe203"
+full_size = 696855
+anchor_crc = "6b65cb84"
+anchor_end = 0xa11e0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "3cffc29b"
+full_size = 711433
+anchor_crc = "f04a9200"
+anchor_end = 0xa3090

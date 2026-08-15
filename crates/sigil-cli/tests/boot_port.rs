@@ -188,6 +188,16 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         |r: pins::Region| -> u32 { if debug { r.debug_base } else { r.plain_base } };
     let mut table: Vec<(&str, u32)> = vec![
         ("BootData", pick(pins::BOOT_DATA)),
+        // boot re-anchors its table cursor on the tail with `lea
+        // BootData_PostBlob(pc), a5` before reading the PSG bytes and the post-DMA
+        // VDP commands. It used to reach them by WALKING a5 out of the blob, which
+        // silently ate the chainer's inter-section alignment pad — 4 bytes in debug
+        // (survivable) and 6 in release, where the auto-increment slot read $0000,
+        // the VDP took it as a command's first word, and the control-port flip-flop
+        // stranded so that no VDP write in the whole ROM ever landed again. Naming
+        // the label makes it an outbound cross-seam ref this scope must supply; it
+        // is the boot_tail region's base.
+        ("BootData_PostBlob", rbase(pins::BOOT_TAIL)),
         ("VDP_Shadow_Init", rbase(pins::VDP_INIT)),
         ("Init_DMA_Queue", rbase(pins::DMA_QUEUE)),
         ("Init_SpriteTable", rbase(pins::BUFFERS)),
