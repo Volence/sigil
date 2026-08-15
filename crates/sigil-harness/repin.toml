@@ -3019,6 +3019,18 @@ tests = ["raster_port"]
 name = "Effects_World_Y"
 tests = ["raster_port"]
 [[symbol]]
+name = "Effects_Screen_L"
+tests = ["raster_port", "parallax_port", "buffers_port"]
+[[symbol]]
+name = "Effects_Offscreen_Entry"
+tests = ["raster_port", "buffers_port"]
+[[symbol]]
+name = "Static_Pal_Ship"
+tests = ["raster_port"]
+[[symbol]]
+name = "Build_DMA_Entry"
+tests = ["raster_port"]
+[[symbol]]
 name = "Raster_Patch_Tab"
 tests = ["raster_port"]
 [[symbol]]

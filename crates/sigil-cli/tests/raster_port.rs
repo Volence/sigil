@@ -108,7 +108,7 @@ pub fn map_toml(debug: bool) -> String {
 /// evaluates at lower time, so both must be present at their true VMAs (0x132 = 306 apart)
 /// or the guard fails here for a reason unrelated to the port.
 pub fn cross_seam_labels(debug: bool) -> Vec<Section> {
-    let labels: [(&str, u32); 20] = [
+    let labels: [(&str, u32); 24] = [
         ("Raster_Program", pins::RASTER_PROGRAM.plain),
         ("Raster_Cursor", pins::RASTER_CURSOR.plain),
         ("Raster_Pending", pins::RASTER_PENDING.plain),
@@ -128,6 +128,14 @@ pub fn cross_seam_labels(debug: bool) -> Vec<Section> {
         ("Raster_State_End", pins::RASTER_STATE_END.plain),
         ("Palette_Dirty", pins::PALETTE_DIRTY.plain),
         ("Pal_Variant_Stage", pins::PAL_VARIANT_STAGE.plain),
+        // The off-screen frame-top ship (effects P3). Effects_Screen_L is the latch
+        // Raster_PatchAll now READS instead of deriving `world_y - Camera_Y` itself;
+        // Effects_Offscreen_Entry and Static_Pal_Ship are Raster_InstallPatched's and
+        // Raster_BuildShipEntry's targets. All three are engine RAM ahead of the __DEBUG__
+        // block, so they are shape-invariant like their neighbours above.
+        ("Effects_Screen_L", pins::EFFECTS_SCREEN_L.plain),
+        ("Effects_Offscreen_Entry", pins::EFFECTS_OFFSCREEN_ENTRY.plain),
+        ("Static_Pal_Ship", pins::STATIC_PAL_SHIP.plain),
         // THE ONE SHAPE-DEPENDENT CARRIER. Every raster/palette RAM label above sits
         // ahead of the __DEBUG__ block and so has an identical plain and debug VMA;
         // Camera_Y sits past it and moves ($FFFFA43A -> $FFFFA4C8). Supplying `.plain`
@@ -136,6 +144,12 @@ pub fn cross_seam_labels(debug: bool) -> Vec<Section> {
         // failure was legible only because the plain twin passed: a shared bug would
         // have looked like a port-harness problem rather than a carrier VMA.
         ("Camera_Y", if debug { pins::CAMERA_Y.debug } else { pins::CAMERA_Y.plain }),
+        // SECOND shape-dependent carrier, and a ROM one: Raster_BuildShipEntry tail-calls
+        // engine.buffers' Build_DMA_Entry — the single DMAEntry builder — so the operand is a
+        // code address in another region and moves between shapes like any ROM symbol.
+        // (Camera_Y above is still needed: Raster_PatchAll's read of it went away with the
+        // latch, but Effects_LatchWorldLines in this same module is what does the reading now.)
+        ("Build_DMA_Entry", if debug { pins::BUILD_DMA_ENTRY.debug } else { pins::BUILD_DMA_ENTRY.plain }),
     ];
     carriers(&labels, 0x0400_0000)
 }

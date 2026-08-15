@@ -124,6 +124,13 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         ("Static_Pal_Line1", pick(pins::STATIC_PAL_LINE1)),
         ("Static_Pal_Line2", pick(pins::STATIC_PAL_LINE2)),
         ("Static_Pal_Line3", pick(pins::STATIC_PAL_LINE3)),
+        // The off-screen frame-top ship (effects P3). Enqueue_Dirty_Buffers gained a block
+        // that ships a patched channel's colours when its anchor leaves the top of the screen,
+        // and these are its THREE cross-seam references — declare them here or this gate stops
+        // resolving, which is exactly how it failed when the parcel first built green.
+        ("Static_Pal_Ship", pick(pins::STATIC_PAL_SHIP)),
+        ("Effects_Offscreen_Entry", pick(pins::EFFECTS_OFFSCREEN_ENTRY)),
+        ("Effects_Screen_L", pick(pins::EFFECTS_SCREEN_L)),
         ("Static_Sprite_DMA", pick(pins::STATIC_SPRITE_DMA)),
         ("Static_Hscroll_Cell", pick(pins::STATIC_HSCROLL_CELL)),
         ("Static_Hscroll_Line", pick(pins::STATIC_HSCROLL_LINE)),

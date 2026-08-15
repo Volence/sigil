@@ -125,7 +125,7 @@ fn carriers(labels: &[(&str, u32)], lma_base: u32) -> Vec<Section> {
 }
 
 fn inbound() -> Vec<Section> {
-    let labels: [(&str, u32); 20] = [
+    let labels: [(&str, u32); 24] = [
         ("Raster_Program", pins::RASTER_PROGRAM.plain),
         ("Raster_Cursor", pins::RASTER_CURSOR.plain),
         ("Raster_Pending", pins::RASTER_PENDING.plain),
@@ -145,6 +145,14 @@ fn inbound() -> Vec<Section> {
         ("Raster_State_End", pins::RASTER_STATE_END.plain),
         ("Palette_Dirty", pins::PALETTE_DIRTY.plain),
         ("Pal_Variant_Stage", pins::PAL_VARIANT_STAGE.plain),
+        // The off-screen frame-top ship's cross-seam references — the same three raster_port
+        // declares. A negative probe has to RESOLVE cleanly before it can prove that doctoring
+        // one thing changes the bytes, so a missing carrier here fails the probe as a harness
+        // error rather than as the defect it is hunting.
+        ("Effects_Screen_L", pins::EFFECTS_SCREEN_L.plain),
+        ("Effects_Offscreen_Entry", pins::EFFECTS_OFFSCREEN_ENTRY.plain),
+        ("Static_Pal_Ship", pins::STATIC_PAL_SHIP.plain),
+        ("Build_DMA_Entry", pins::BUILD_DMA_ENTRY.plain),
         ("Camera_Y", pins::CAMERA_Y.plain),
     ];
     carriers(&labels, 0x0400_0000)

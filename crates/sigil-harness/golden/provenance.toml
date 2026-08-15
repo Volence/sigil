@@ -6427,3 +6427,57 @@ full_crc = "9c63bc1a"
 full_size = 712382
 anchor_crc = "a76c20ab"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "offscreen-frame-top-ship"
+ab = "/home/volence/sonic_hacks/aeon/docs/benchmarks/effects-p3-water-state/GATE-EVIDENCE.md"
+note = "a patch channel whose anchor leaves the top of the screen re-ships its fire's colours at frame top; adds Effects_Screen_L[] latch + Effects_Offscreen_Entry + Static_Pal_Ship"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "960f9cf2"
+full_size = 712969
+anchor_crc = "33da1ad8"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "89212a67"
+full_size = 600213
+anchor_crc = "87857ce5"
+anchor_end = 0x897b0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "f2a37230"
+full_size = 96266
+anchor_crc = "f1871156"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d9896c6f"
+full_size = 100615
+anchor_crc = "a06f7377"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "c36728c5"
+full_size = 655678
+anchor_crc = "7e0c1d90"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "6c2a1d9d"
+full_size = 697687
+anchor_crc = "48d3405a"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "9ed5fcea"
+full_size = 712601
+anchor_crc = "6968c199"
+anchor_end = 0xa30d0
