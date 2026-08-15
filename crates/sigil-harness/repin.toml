@@ -349,10 +349,16 @@ tests = ["parallax_port"]
 # Effects P1 module split: the sparse HInt raster dispatcher, moved out of the
 # `hblank` section (which is the RAM-trampoline dispatch mechanism only). Takes the
 # slot between parallax and palette, which is why parallax's end anchor moved off
-# Level_LoadArt. End is the next placement: palette's Palette_LoadSection.
+# Level_LoadArt. End is the next placement: palette's Palette_LoadPal.
+#
+# Palette_LoadPal (not Palette_LoadSection) since effects-P3-C2 Task 13: the legacy
+# per-field "keep current" installers (Palette_LoadSection among them) were deleted
+# once every OJZ section carried a preset, and Palette_LoadPal — the pointer-taking
+# core split out in Task 6, textually right below where Palette_LoadSection used to
+# be — is now the first code symbol in palette.emp, so it re-heads the region.
 name = "raster"
 start = "Raster_Install"
-end = "Palette_LoadSection"
+end = "Palette_LoadPal"
 gate = "SIGIL_EMP_RASTER"
 tests = ["raster_port"]
 
@@ -360,8 +366,11 @@ tests = ["raster_port"]
 # Effects P1 module split: the per-section palette load, moved out of `buffers`
 # (which keeps the CRAM upload machinery). Phase 2's composition pipeline grows here.
 # End is the next placement: load_art's Level_LoadArt.
+#
+# Head is Palette_LoadPal, not Palette_LoadSection — see the raster region's note
+# above (effects-P3-C2 Task 13 re-head).
 name = "palette"
-start = "Palette_LoadSection"
+start = "Palette_LoadPal"
 end = "Level_LoadArt"
 gate = "SIGIL_EMP_PALETTE"
 tests = ["palette_port"]
@@ -2888,22 +2897,16 @@ tests = ["raster_port"]
 [[symbol]]
 name = "Raster_VBlank"
 tests = ["game_loop_port", "vblank_port", "load_art_port", "boot_port"]
-# Effects P1: Parallax_CheckBoundary is the single place the engine notices a
-# section crossing, so the palette and raster consumers hang off it — outbound
-# cross-seam calls from parallax's standalone re-lower (Palette_LoadSection lives
-# in buffers, Raster_InstallSection in hblank).
-[[symbol]]
-name = "Palette_LoadSection"
-tests = ["parallax_port"]
-[[symbol]]
-name = "Raster_InstallSection"
-tests = ["parallax_port"]
-# Effects P2 Task 8 (per-section palette cycling): parallax's boundary crossing now
-# also consumes Sec.sec_pal_cycle, so Palette_InstallCycleSection joins the two above
-# as an outbound cross-seam call from parallax's standalone re-lower.
-[[symbol]]
-name = "Palette_InstallCycleSection"
-tests = ["parallax_port"]
+# Effects P1: Parallax_CheckBoundary was the single place the engine noticed a
+# section crossing, so the palette and raster consumers hung off it — outbound
+# cross-seam calls from parallax's standalone re-lower (Palette_LoadSection lived
+# in buffers, Raster_InstallSection in hblank; Palette_InstallCycleSection joined
+# them for Task 8's per-section palette cycling). All three, and this pin trio,
+# were deleted in effects-P3-C2 Task 13: every OJZ section now carries a preset, so
+# the legacy per-field "keep current" path Parallax_CheckBoundary's `.legacy` branch
+# called them from is gone. The one outbound cross-seam call left at that site,
+# Effects_InstallPreset, has never needed a pin here (added in an earlier C2 task,
+# still unpinned) — parallax_port evidently does not require a VMA pin for it.
 # Effects P2: the palette engine composes once per frame from GameLoop (arithmetic,
 # not VDP work, so it is main-loop and not VBlank) — an outbound cross-seam call from
 # the game_loop standalone re-lower, the peer of Raster_VBlank above.
