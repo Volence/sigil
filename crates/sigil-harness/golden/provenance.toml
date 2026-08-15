@@ -6319,3 +6319,57 @@ full_crc = "3adce11a"
 full_size = 712382
 anchor_crc = "dc748863"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "ojz-patch-band-widen"
+ab = "/home/volence/sonic_hacks/aeon/docs/benchmarks/effects-p3-w/GATE-EVIDENCE.md"
+note = "OJZ channel 0 patch band 40..120 -> 3..120; data-only, the clamp was pinning the water line at screen 40 once the camera descended past world Y 184"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "4b81b36b"
+full_size = 712750
+anchor_crc = "d5410d34"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "82cbd19d"
+full_size = 599962
+anchor_crc = "f1f6af90"
+anchor_end = 0x89790
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "84c57ec9"
+full_size = 96047
+anchor_crc = "de490627"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "693ff2e5"
+full_size = 100396
+anchor_crc = "db0beb6b"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "cfcba51b"
+full_size = 655662
+anchor_crc = "9879614b"
+anchor_end = 0xa012e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "b53cc3da"
+full_size = 697452
+anchor_crc = "7dbd97ca"
+anchor_end = 0xa11b0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "647776ce"
+full_size = 712382
+anchor_crc = "274091ce"
+anchor_end = 0xa30d0
