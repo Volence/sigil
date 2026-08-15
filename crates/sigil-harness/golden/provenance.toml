@@ -6535,3 +6535,57 @@ full_crc = "34078a94"
 full_size = 712651
 anchor_crc = "45899235"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "hint-schedule-local-removal"
+ab = "/home/volence/sonic_hacks/aeon/docs/benchmarks/effects-p3-removal/GATE-EVIDENCE.md"
+note = "the raster schedule is re-recorded each VBlank into the inactive buffer; a record past its band is not emitted, so a boundary below the screen stops rendering instead of clamping"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "e35fa411"
+full_size = 713047
+anchor_crc = "40156419"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "580d09ec"
+full_size = 600328
+anchor_crc = "87259a9f"
+anchor_end = 0x897b0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "dca06660"
+full_size = 96376
+anchor_crc = "c5a56ac4"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "6c5e1875"
+full_size = 100730
+anchor_crc = "7f60e93f"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "45b598bc"
+full_size = 655678
+anchor_crc = "2cc1fb0c"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "f0e45751"
+full_size = 697793
+anchor_crc = "c90c5641"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "3da516e4"
+full_size = 712679
+anchor_crc = "3271cfa8"
+anchor_end = 0xa30d0

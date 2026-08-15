@@ -7,8 +7,8 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=config_b
 # reproduces_golden=config_b.bin
-# golden_crc32=c184a5fa
-# assembled_anchor=d5f567b6
+# golden_crc32=580d09ec
+# assembled_anchor=87259a9f
 # assembled_end=0x897b0
 # labels=68
 Ani_Sonic 0x2803c
@@ -16,8 +16,8 @@ Ani_Sonic_End 0x28146
 Ani_Tails 0x28150
 Ani_Tails_End 0x2830c
 AnimateSprite 0x1baa
-BG_Init 0x5f70
-BgAnim_Init 0x6050
+BG_Init 0x5fe0
+BgAnim_Init 0x60c0
 BgAnim_Table 0x27430
 BootData 0x392
 BootData_End 0x406
@@ -42,7 +42,7 @@ InitObjectRAM 0x1494
 InitSpriteSystem 0x1790
 Init_DMA_Queue 0x442
 Init_SpriteTable 0x770
-Level_LoadArt 0x5780
+Level_LoadArt 0x57f0
 Load_Object 0x2ce0
 Map_Tails 0x44910
 Map_TestObj 0x27432
