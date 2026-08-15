@@ -150,7 +150,7 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
     // VDP_Shadow_Table cell below lives BEFORE the deleted pair, so it holds. (It had
     // a VDP_Dirty_Mask sibling until the blanket-restore parcel deleted that symbol.)
     // Camera_X/Y now pin-sourced (they carry the −4 too; matches Current_Act_Ptr style).
-    let table: [(&str, u32, u32); 28] = [
+    let table: [(&str, u32, u32); 30] = [
         // The MD Debugger carriers the DEBUG-shape asserts jsr/jmp (the section_port /
         // sprites_port precedent). Shape-invariant pins carried in BOTH shapes: in plain
         // the assert is comptime-gated out and these simply go unreferenced.
@@ -217,6 +217,15 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
         // ROM transfer target — sourced from pins (shifts with the engine bank;
         // t18 trampoline moved it +0x36). RAM symbols above are tail/pad-stable.
         ("Section_GetSecPtrXY", pins::SECTION_GET_SEC_PTR_XY.plain, pins::SECTION_GET_SEC_PTR_XY.debug),
+        // Parcel W — the world-anchored deform overlay (Step 4b). TWO new cross-seam
+        // references, and both had to be declared here or this gate stops resolving:
+        //   Effects_World_Y        the anchor bank the overlay READS, owned by engine.ram
+        //                          and shared with the raster patcher — the whole point of
+        //                          the parcel is that it has two readers.
+        //   Raster_GetChannelBand  the outbound call that fetches the channel's authored
+        //                          clamp band, so this side pins where Raster_PatchAll pins.
+        ("Effects_World_Y", pins::EFFECTS_WORLD_Y.plain, pins::EFFECTS_WORLD_Y.debug),
+        ("Raster_GetChannelBand", pins::RASTER_GET_CHANNEL_BAND.plain, pins::RASTER_GET_CHANNEL_BAND.debug),
     ];
     let mut out = Vec::new();
     for (i, (name, plain, dbg)) in table.iter().enumerate() {

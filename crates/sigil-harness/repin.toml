@@ -995,6 +995,14 @@ tests = ["act_descriptor_port"]
 name = "Effects_InstallPreset"
 tests = ["parallax_port"]
 
+# Parcel W — the world-anchored deform overlay's clamp source. parallax.emp's Step 4b
+# calls into raster.emp to read the patch channel's authored band, so the two boundaries
+# clamp at ONE fact instead of two authored copies. Same standalone-scope need as
+# Effects_InstallPreset above: parallax_port must resolve this outbound call.
+[[symbol]]
+name = "Raster_GetChannelBand"
+tests = ["parallax_port"]
+
 [[symbol]]
 name = "TestStatic_Main"
 tests = ["objdef_port"]

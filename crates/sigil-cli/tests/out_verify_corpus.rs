@@ -169,7 +169,12 @@ fn no_corpus_out_type_is_unresolvable() {
     // 30 -> 31 for aeon-arctan (2026-08-11): GetArcTan :: out(d0) — the engine
     // arctan the Tails appendage banks its roll frames off, math.emp's second
     // typed-return proc alongside GetSineCosine.
-    assert_eq!(slots.len(), 31, "the corpus's typed out slots: {slots:?}");
+    // 31 -> 34 for parcel-w (2026-08-15): Raster_GetChannelBand :: out(d0, d1, d2) —
+    // the patch channel's authored clamp band, read by the parallax overlay so both
+    // boundaries clamp at one fact. THREE slots, and typed rather than bare on purpose:
+    // a bare out(dN) claims all 32 bits, which only a .l write or moveq satisfies, and
+    // the band words arrive through move.w. d0 is the found flag, d1/d2 the pair.
+    assert_eq!(slots.len(), 34, "the corpus's typed out slots: {slots:?}");
 }
 
 /// Every proc that declares `out(rN if cc)` with rN ABSENT from its `clobbers` —

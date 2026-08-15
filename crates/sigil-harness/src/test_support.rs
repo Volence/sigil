@@ -177,13 +177,14 @@ pub fn act_sec_field_equs() -> Vec<(&'static str, &'static str)> {
         ("parallax_config_pcfg_transition", "8"),
         ("parallax_config_pcfg_deform_speed_fg", "9"),
         ("parallax_config_pcfg_deform_speed_bg", "10"),
-        ("parallax_config_pcfg_pad", "11"),
+        ("parallax_config_pcfg_anchor_ch", "11"),
         ("parallax_config_pcfg_deform_table_fg", "12"),
         ("parallax_config_pcfg_deform_table_bg", "16"),
         ("parallax_config_pcfg_v_deform_table_bg", "20"),
         ("parallax_config_pcfg_v_deform_speed_bg", "24"),
         ("parallax_config_pcfg_v_deform_shift_bg", "25"),
-        ("parallax_config_pcfg_pad2", "26"),
+        ("parallax_config_pcfg_anchor_dsa", "26"),
+        ("parallax_config_pcfg_anchor_dsb", "27"),
         ("DMAEntry_len", "14"),
     ]
 }
