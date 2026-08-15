@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 97 regions, 380 symbols, 7 offsets
+//! [provenance] 97 regions, 393 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1448,6 +1448,45 @@ pub const RASTER_BUF_A: Pin = Pin { plain: 0xFFFF89A2, debug: 0xFFFF89A2 };
 /// `Raster_Active_Buf`. tests: raster_port
 pub const RASTER_ACTIVE_BUF: Pin = Pin { plain: 0xFFFF8AA2, debug: 0xFFFF8AA2 };
 
+/// `Raster_Buf_B`. tests: raster_port
+pub const RASTER_BUF_B: Pin = Pin { plain: 0xFFFF8A22, debug: 0xFFFF8A22 };
+
+/// `Raster_Line`. tests: raster_port
+pub const RASTER_LINE: Pin = Pin { plain: 0xFFFF89A0, debug: 0xFFFF89A0 };
+
+/// `Raster_Dense_Lines`. tests: raster_port
+pub const RASTER_DENSE_LINES: Pin = Pin { plain: 0xFFFF8AA6, debug: 0xFFFF8AA6 };
+
+/// `Raster_Dense_Cursor`. tests: raster_port
+pub const RASTER_DENSE_CURSOR: Pin = Pin { plain: 0xFFFF8AA8, debug: 0xFFFF8AA8 };
+
+/// `Raster_Dense_Cmd`. tests: raster_port
+pub const RASTER_DENSE_CMD: Pin = Pin { plain: 0xFFFF8AAC, debug: 0xFFFF8AAC };
+
+/// `Raster_Dense_Kind`. tests: raster_port
+pub const RASTER_DENSE_KIND: Pin = Pin { plain: 0xFFFF8AB0, debug: 0xFFFF8AB0 };
+
+/// `Raster_Ramp_Acc`. tests: raster_port
+pub const RASTER_RAMP_ACC: Pin = Pin { plain: 0xFFFF8AB2, debug: 0xFFFF8AB2 };
+
+/// `Raster_Ramp_Step`. tests: raster_port
+pub const RASTER_RAMP_STEP: Pin = Pin { plain: 0xFFFF8AB6, debug: 0xFFFF8AB6 };
+
+/// `Effects_World_Y`. tests: raster_port
+pub const EFFECTS_WORLD_Y: Pin = Pin { plain: 0xFFFF8ABA, debug: 0xFFFF8ABA };
+
+/// `Raster_Patch_Tab`. tests: raster_port
+pub const RASTER_PATCH_TAB: Pin = Pin { plain: 0xFFFF8AC2, debug: 0xFFFF8AC2 };
+
+/// `Raster_State`. tests: raster_port
+pub const RASTER_STATE: Pin = Pin { plain: 0xFFFF8994, debug: 0xFFFF8994 };
+
+/// `Raster_State_End`. tests: raster_port
+pub const RASTER_STATE_END: Pin = Pin { plain: 0xFFFF8AC6, debug: 0xFFFF8AC6 };
+
+/// `Pal_Variant_Stage`. tests: raster_port
+pub const PAL_VARIANT_STAGE: Pin = Pin { plain: 0xFFFF8B86, debug: 0xFFFF8B86 };
+
 /// `Raster_VBlank`. tests: game_loop_port, vblank_port, load_art_port, boot_port
 pub const RASTER_V_BLANK: Pin = Pin { plain: 0x6686, debug: 0x77AA };
 
@@ -1498,5 +1537,5 @@ pub const SINE_TABLE_OFF: usize = 0x18;
 /// `Flush_VDP_Shadow` − `vdp_init` start (shape-invariant, asserted at generation). tests: vdp_init_port
 pub const FLUSH_VDP_SHADOW_OFF: usize = 0x12;
 
-/// `HBlank_Uninstall` − `hblank` start (shape-invariant, asserted at generation). tests: raster_port
+/// `HBlank_Uninstall` − `hblank` start (shape-invariant, asserted at generation). tests: hblank_port, raster_port
 pub const HBLANK_UNINSTALL_OFF: usize = 0x1C;
