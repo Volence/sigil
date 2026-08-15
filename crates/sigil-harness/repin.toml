@@ -349,10 +349,16 @@ tests = ["parallax_port"]
 # Effects P1 module split: the sparse HInt raster dispatcher, moved out of the
 # `hblank` section (which is the RAM-trampoline dispatch mechanism only). Takes the
 # slot between parallax and palette, which is why parallax's end anchor moved off
-# Level_LoadArt. End is the next placement: palette's Palette_LoadSection.
+# Level_LoadArt. End is the next placement: palette's Palette_LoadPal.
+#
+# Palette_LoadPal (not Palette_LoadSection) since effects-P3-C2 Task 13: the legacy
+# per-field "keep current" installers (Palette_LoadSection among them) were deleted
+# once every OJZ section carried a preset, and Palette_LoadPal — the pointer-taking
+# core split out in Task 6, textually right below where Palette_LoadSection used to
+# be — is now the first code symbol in palette.emp, so it re-heads the region.
 name = "raster"
 start = "Raster_Install"
-end = "Palette_LoadSection"
+end = "Palette_LoadPal"
 gate = "SIGIL_EMP_RASTER"
 tests = ["raster_port"]
 
@@ -360,11 +366,32 @@ tests = ["raster_port"]
 # Effects P1 module split: the per-section palette load, moved out of `buffers`
 # (which keeps the CRAM upload machinery). Phase 2's composition pipeline grows here.
 # End is the next placement: load_art's Level_LoadArt.
+#
+# Head is Palette_LoadPal, not Palette_LoadSection — see the raster region's note
+# above (effects-P3-C2 Task 13 re-head).
 name = "palette"
-start = "Palette_LoadSection"
-end = "Level_LoadArt"
+start = "Palette_LoadPal"
+# END REPOINTED 2026-08-14 (Parcel C2): Level_LoadArt -> Effects_InstallPreset. The new
+# preset section sits between them in the map order, so an end at Level_LoadArt made
+# this span cover BOTH sections — the same latent mis-measure the parallax_configs
+# region had, and the reason a length pin on a fill-terminated region measures the
+# placer as well as the payload.
+end = "Effects_InstallPreset"
 gate = "SIGIL_EMP_PALETTE"
 tests = ["palette_port"]
+
+[[region]]
+# Effects P3 Parcel C2 — engine/effects/preset.emp. Holds the EffectsPreset struct
+# (comptime, no bytes) and Effects_InstallPreset, the single total-binding installer
+# that replaced the three per-field consumers at the section crossing.
+#
+# It needs a region because place_sections requires one for every EMITTING section, and
+# this module only started emitting when Effects_InstallPreset was written — before that
+# it was struct-and-constructor only. `soundbankhead_pinned_bootstrap_lands_at_lma_not_vma`
+# is what caught the omission: "section `preset` has no region in the map".
+name = "preset"
+start = "Effects_InstallPreset"
+end = "Level_LoadArt"
 
 [[region]]
 # Tranche 20 — level art loader (Level_LoadArt paged pool load; the blocking
@@ -584,11 +611,31 @@ tests = ["test_g4_final_objects_port"]
 
 # The OJZ parallax block (conv-g): 6 deform tables + 20 parallax_config records,
 # emitted by games/sonic4/data/parallax/configs.emp. Start = the block head
-# DeformTable_Zero (= path_swap's end anchor); end = objdefs' start ObjDef_Static.
+# DeformTable_Zero (= path_swap's end anchor).
+#
+# END REPOINTED 2026-08-14 (Effects P3 Parcel C2), ObjDef_Static -> OJZ_TestRaster.
+# configs.emp used to carry the game-side effects library in its bottom half; that
+# moved to games/sonic4/data/effects/ojz_effects.emp, whose section head OJZ_TestRaster
+# now sits between DeformTable_Zero and ObjDef_Static in the map order. Left pointing at
+# ObjDef_Static the span covered BOTH sections while the port test links only
+# parallax_configs — 0xe9c pinned vs 0xa8a emitted, which the align-pad tolerance
+# (< 16 bytes) correctly refused. The region now means what its name says again.
+# Effects P3 Parcel C2 — games/sonic4/data/effects/ojz_effects.emp, the game-side
+# effects library that used to be the bottom half of configs.emp (the gate fixtures:
+# TestRaster / TestPal / ShimmerCycle / WaterRaster / GradientStream / TestGradient /
+# TestVsram / TestRamp, the five starter palette variants, and the five OJZ presets).
+# Start = its section head OJZ_TestRaster; end = objdefs' start ObjDef_Static, which is
+# what parallax_configs' end used to be before this module was carved out from between
+# them.
+[[region]]
+name = "ojz_effects"
+start = "OJZ_TestRaster"
+end = "ObjDef_Static"
+
 [[region]]
 name = "parallax_configs"
 start = "DeformTable_Zero"
-end = "ObjDef_Static"
+end = "OJZ_TestRaster"
 gate = "SIGIL_EMP_PARALLAX_CONFIGS"
 tests = ["parallax_configs_port"]
 
@@ -915,6 +962,39 @@ tests = ["m1d_rom", "m1d_debug_rom"]
 # objdef byte gate cross-seam symbols: the four routine labels (code_addr =
 # label − ObjCodeBase) + the mappings pointer, resolved to their true VMAs so
 # the .emp records match the reference ROM windows.
+# Effects P3 Parcel C2 — the five OJZ presets. act_descriptor now names one per
+# section through Sec.sec_effects, so its standalone port scope needs them to
+# resolve those fixups (the port-flip rule: a NEW cross-seam ref must be supplied
+# or the re-lower cannot link, and build.sh will not warn).
+[[symbol]]
+name = "OJZ_Preset_Sec0"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Preset_Sec1"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Preset_Sec2"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Preset_Sec3"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "OJZ_Preset_Plain"
+tests = ["act_descriptor_port"]
+
+# Effects P3 Parcel C2 — the crossing's single effects consumer. Replaces the three
+# per-field pins (Palette_LoadSection / Raster_InstallSection /
+# Palette_InstallCycleSection) that `repin` removed when total binding deleted those
+# procs. parallax_port's standalone scope needs this target to resolve the crossing's
+# outbound call.
+[[symbol]]
+name = "Effects_InstallPreset"
+tests = ["parallax_port"]
+
 [[symbol]]
 name = "TestStatic_Main"
 tests = ["objdef_port"]
@@ -2888,22 +2968,16 @@ tests = ["raster_port"]
 [[symbol]]
 name = "Raster_VBlank"
 tests = ["game_loop_port", "vblank_port", "load_art_port", "boot_port"]
-# Effects P1: Parallax_CheckBoundary is the single place the engine notices a
-# section crossing, so the palette and raster consumers hang off it — outbound
-# cross-seam calls from parallax's standalone re-lower (Palette_LoadSection lives
-# in buffers, Raster_InstallSection in hblank).
-[[symbol]]
-name = "Palette_LoadSection"
-tests = ["parallax_port"]
-[[symbol]]
-name = "Raster_InstallSection"
-tests = ["parallax_port"]
-# Effects P2 Task 8 (per-section palette cycling): parallax's boundary crossing now
-# also consumes Sec.sec_pal_cycle, so Palette_InstallCycleSection joins the two above
-# as an outbound cross-seam call from parallax's standalone re-lower.
-[[symbol]]
-name = "Palette_InstallCycleSection"
-tests = ["parallax_port"]
+# Effects P1: Parallax_CheckBoundary was the single place the engine noticed a
+# section crossing, so the palette and raster consumers hung off it — outbound
+# cross-seam calls from parallax's standalone re-lower (Palette_LoadSection lived
+# in buffers, Raster_InstallSection in hblank; Palette_InstallCycleSection joined
+# them for Task 8's per-section palette cycling). All three, and this pin trio,
+# were deleted in effects-P3-C2 Task 13: every OJZ section now carries a preset, so
+# the legacy per-field "keep current" path Parallax_CheckBoundary's `.legacy` branch
+# called them from is gone. The one outbound cross-seam call left at that site,
+# Effects_InstallPreset, has never needed a pin here (added in an earlier C2 task,
+# still unpinned) — parallax_port evidently does not require a VMA pin for it.
 # Effects P2: the palette engine composes once per frame from GameLoop (arithmetic,
 # not VDP work, so it is main-loop and not VBlank) — an outbound cross-seam call from
 # the game_loop standalone re-lower, the peer of Raster_VBlank above.

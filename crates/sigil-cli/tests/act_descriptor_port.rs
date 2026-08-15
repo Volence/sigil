@@ -139,6 +139,15 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
         ("OJZ_TestVsram", pins::OJZ_TEST_VSRAM.plain, pins::OJZ_TEST_VSRAM.debug),
         // Effects ramp parcel: the OP_RUN_RAMP gate fixture, same cross-seam class.
         ("OJZ_TestRamp", pins::OJZ_TEST_RAMP.plain, pins::OJZ_TEST_RAMP.debug),
+        // Effects P3 Parcel C2: each section now names ONE EffectsPreset through
+        // Sec.sec_effects (total binding) instead of three per-field descriptors, so the
+        // five presets are new cross-seam refs this standalone scope must supply — the
+        // port-flip rule, and build.sh does not warn about it.
+        ("OJZ_Preset_Sec0", pins::OJZ_PRESET_SEC0.plain, pins::OJZ_PRESET_SEC0.debug),
+        ("OJZ_Preset_Sec1", pins::OJZ_PRESET_SEC1.plain, pins::OJZ_PRESET_SEC1.debug),
+        ("OJZ_Preset_Sec2", pins::OJZ_PRESET_SEC2.plain, pins::OJZ_PRESET_SEC2.debug),
+        ("OJZ_Preset_Sec3", pins::OJZ_PRESET_SEC3.plain, pins::OJZ_PRESET_SEC3.debug),
+        ("OJZ_Preset_Plain", pins::OJZ_PRESET_PLAIN.plain, pins::OJZ_PRESET_PLAIN.debug),
         ("OJZ_Act_Pool_PageTable", pins::OJZ_ACT_POOL_PAGE_TABLE.plain, pins::OJZ_ACT_POOL_PAGE_TABLE.debug),
         // art-streaming-p2-task5: the descriptor's Act.act_sec_local_maps field.
         ("OJZ_Sec_LocalMaps", pins::OJZ_SEC_LOCAL_MAPS.plain, pins::OJZ_SEC_LOCAL_MAPS.debug),
