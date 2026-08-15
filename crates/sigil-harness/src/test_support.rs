@@ -143,7 +143,7 @@ pub fn act_sec_field_equs() -> Vec<(&'static str, &'static str)> {
         ("Sec_sec_sound_bank", "$28"),
         ("Sec_sec_block_dict", "$2C"),
         ("Sec_sec_anim_blocks", "$30"),
-        ("Sec_sec_collision_s4lz", "$34"),
+        ("Sec_sec_effects", "$34"),
         ("Sec_sec_flags", "$38"),
         ("Sec_sec_music", "$3A"),
         ("Sec_sec_pcfg_pad_3C", "$3C"),
@@ -404,5 +404,30 @@ mod tests {
     #[should_panic(expected = "is not an engine constant")]
     fn override_of_unknown_constant_panics() {
         let _ = with_engine_constant_override("NOT_A_CONSTANT", "0");
+    }
+
+    /// EFX-6: the `act_sec_field_equs` supply-only blob had nothing cross-checking
+    /// it against the live structs, so a renamed `Act`/`Sec` field could leave a
+    /// STALE name in the blob — a dead equ that standalone port test oracles then
+    /// resolve against nothing. `act_fixture_drift.rs` already checks the fixture's
+    /// VALUES against the harvest and that the harvest's fields are all COVERED by
+    /// the fixture, but neither direction catches a name the fixture still supplies
+    /// that the live structs no longer declare. This is that missing direction.
+    #[test]
+    fn sec_field_equ_names_match_the_harvest() {
+        let Some(aeon) = reference_tree(&["engine/structs.emp"]) else { return };
+        let harvested = crate::native::harvest_engine_struct_offsets(&aeon)
+            .expect("harvest_engine_struct_offsets must succeed");
+        let names: std::collections::BTreeSet<&str> =
+            harvested.iter().map(|(n, _)| n.as_str()).collect();
+        for (name, _) in act_sec_field_equs() {
+            assert!(
+                names.contains(name),
+                "test_support.rs supplies `{name}`, which no longer exists in \
+                 engine/structs.emp — a renamed Act/Sec/DMAEntry/parallax_config field \
+                 leaves this blob supplying a DEAD equ that standalone port test oracles \
+                 then resolve against nothing (EFX-6)"
+            );
+        }
     }
 }
