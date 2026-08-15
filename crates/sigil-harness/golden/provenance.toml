@@ -6105,3 +6105,56 @@ full_crc = "50f6ae69"
 full_size = 711656
 anchor_crc = "2d32c1bf"
 anchor_end = 0xa3080
+
+[[entry]]
+name = "parcel-p-a"
+ab = "docs/benchmarks/effects-p3-p-a/GATE-EVIDENCE.md"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "3a236457"
+full_size = 712018
+anchor_crc = "ac5078b1"
+anchor_end = 0xa3080
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "06bbd8c2"
+full_size = 599471
+anchor_crc = "4042f336"
+anchor_end = 0x89750
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "6af0112d"
+full_size = 95652
+anchor_crc = "3ee4738c"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "fdc82cc0"
+full_size = 99998
+anchor_crc = "f015ce68"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "b7f13bc6"
+full_size = 655694
+anchor_crc = "21231e65"
+anchor_end = 0xa014e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "416be247"
+full_size = 697047
+anchor_crc = "a4a5b2ee"
+anchor_end = 0xa11d0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "9ef00c29"
+full_size = 711670
+anchor_crc = "bab64ccb"
+anchor_end = 0xa3080
