@@ -6373,3 +6373,57 @@ full_crc = "647776ce"
 full_size = 712382
 anchor_crc = "274091ce"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "ojz-reband-water-channel"
+ab = "/home/volence/sonic_hacks/aeon/docs/benchmarks/effects-p3-w/GATE-EVIDENCE.md"
+note = "OJZ ch0 3..214 / ch1 216..223; the water channel owns almost the whole screen, worst dry-side error 72 -> 10 lines"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "18bc95d5"
+full_size = 712750
+anchor_crc = "5f9ad87c"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "0bf97e77"
+full_size = 599962
+anchor_crc = "770a35d8"
+anchor_end = 0x89790
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "84c57ec9"
+full_size = 96047
+anchor_crc = "de490627"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "693ff2e5"
+full_size = 100396
+anchor_crc = "db0beb6b"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "56e7a37b"
+full_size = 655662
+anchor_crc = "efaaa0b0"
+anchor_end = 0xa012e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "bf1e6fe0"
+full_size = 697452
+anchor_crc = "c30a62c3"
+anchor_end = 0xa11b0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "9c63bc1a"
+full_size = 712382
+anchor_crc = "a76c20ab"
+anchor_end = 0xa30d0

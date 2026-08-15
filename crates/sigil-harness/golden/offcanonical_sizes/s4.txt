@@ -7,8 +7,8 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=s4
 # reproduces_golden=s4.bin
-# golden_crc32=b53cc3da
-# assembled_anchor=7dbd97ca
+# golden_crc32=bf1e6fe0
+# assembled_anchor=c30a62c3
 # assembled_end=0xa11b0
 # labels=68
 Ani_Sonic 0x28090
