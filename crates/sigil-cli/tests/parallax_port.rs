@@ -151,17 +151,36 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
     // a VDP_Dirty_Mask sibling until the blanket-restore parcel deleted that symbol.)
     // Camera_X/Y now pin-sourced (they carry the −4 too; matches Current_Act_Ptr style).
     let table: [(&str, u32, u32); 28] = [
-        // Effects P1: Parallax_CheckBoundary is the one place the engine notices a
-        // section crossing, so the palette and raster consumers hang off it — two more
-        // cross-module transfer targets (buffers / hblank).
-        ("Palette_LoadSection", pins::PALETTE_LOAD_SECTION.plain, pins::PALETTE_LOAD_SECTION.debug),
-        ("Raster_InstallSection", pins::RASTER_INSTALL_SECTION.plain, pins::RASTER_INSTALL_SECTION.debug),
-        // Effects P2 Task 8: the same crossing now also consumes Sec.sec_pal_cycle, so
-        // per-section palette cycling is a third consumer hanging off the boundary.
+        // The MD Debugger carriers the DEBUG-shape asserts jsr/jmp (the section_port /
+        // sprites_port precedent). Shape-invariant pins carried in BOTH shapes: in plain
+        // the assert is comptime-gated out and these simply go unreferenced.
+        //
+        // Needed here as of Parcel C2: deleting the three per-field installers moved this
+        // region's extent, and the code now inside it carries a DEBUG-only assert.
         (
-            "Palette_InstallCycleSection",
-            pins::PALETTE_INSTALL_CYCLE_SECTION.plain,
-            pins::PALETTE_INSTALL_CYCLE_SECTION.debug,
+            "MDDBG__ErrorHandler",
+            pins::MDDBG_ERROR_HANDLER,
+            pins::MDDBG_ERROR_HANDLER,
+        ),
+        (
+            "MDDBG__ErrorHandler_PagesController",
+            pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
+            pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
+        ),
+        // Effects P3 Parcel C2: the crossing's three per-field consumers
+        // (Palette_LoadSection / Raster_InstallSection / Palette_InstallCycleSection)
+        // are GONE, and their pins with them. A section now names ONE EffectsPreset and
+        // Effects_InstallPreset writes every channel — total binding — so this scope
+        // supplies that single target instead of three.
+        //
+        // Their three `pins::*` constants were removed by `repin` the moment the procs
+        // stopped existing, which is what broke this file: a deleted symbol takes its
+        // pin with it, and any test scope still naming it fails to COMPILE. That is the
+        // mirror of the usual port-flip trap (a NEW cross-seam ref failing to link).
+        (
+            "Effects_InstallPreset",
+            pins::EFFECTS_INSTALL_PRESET.plain,
+            pins::EFFECTS_INSTALL_PRESET.debug,
         ),
         // Pin-sourced base + ram.emp-mirror intra-block offsets (input-6button:
         // the third hand-shift of this table killed the literal class — the t24

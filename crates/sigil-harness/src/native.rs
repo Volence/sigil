@@ -325,6 +325,19 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // suite's own modules. Placed between parallax and load_art per map `order`.
         m!("engine.effects.raster", "raster", pins::RASTER),
         m!("engine.effects.palette", "palette", pins::PALETTE),
+        // Effects P3 Parcel C2 — preset.emp: the EffectsPreset struct plus
+        // Effects_InstallPreset, the single total-binding installer that replaced the
+        // three per-field consumers at the section crossing.
+        //
+        // Real pin, not DUMMY_REGION, for the reason the `characters` / `tails` rows
+        // above give: every shipped profile is SizeSource::Frozen and never reads
+        // base/len, but the `sonic4_pinned_profile` bootstrap DOES, and a placeholder
+        // collapses the section onto base 0 where it collides with `vectors`. Its
+        // absence here is what `soundbankhead_pinned_bootstrap_lands_at_lma_not_vma`
+        // caught, as "section `preset` has no region in the map" — the module only
+        // started EMITTING when Effects_InstallPreset was written, so it needed a
+        // registry row that a struct-and-constructor module had not.
+        m!("engine.effects.preset", "preset", pins::PRESET),
         m!("engine.load_art", "load_art", pins::LOAD_ART),
         // Art-streaming P2a — the VBlank-bookmark page-in dispatcher (page_in.emp),
         // placed between load_art and bg per map.toml `order`. Engine-agnostic
@@ -476,6 +489,13 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // The OJZ parallax block (conv-g): 6 deform tables + 20 parallax_config
         // records, authored via games.sonic4.parallax_configs (+ engine.level.parallax_dsl).
         m!("games.sonic4.parallax_configs", "parallax_configs", pins::PARALLAX_CONFIGS),
+        // Effects P3 Parcel C2 — the game-side effects library, carved out of
+        // configs.emp's bottom half (gate fixtures, the five starter palette variants,
+        // and the five OJZ presets). Same real-pin reasoning as the rows above: the
+        // pinned bootstrap reads base/len even though every shipped Frozen profile does
+        // not. Its absence, like `preset`'s, surfaced only through
+        // soundbankhead_port's PinnedBaked probe.
+        m!("games.sonic4.ojz_effects", "ojz_effects", pins::OJZ_EFFECTS),
         // test_mappings (conv-h #35): the test-object sprite mapping index
         // (Map_TestObj word-offset table + 3 frame records), authored via the
         // `offsets` construct in games.sonic4.data.mappings.test_mappings.
