@@ -6211,3 +6211,57 @@ full_crc = "df9d0015"
 full_size = 711770
 anchor_crc = "1163d7ed"
 anchor_end = 0xa30a0
+
+[[entry]]
+name = "w0-anchor-total-binding"
+ab = "/home/volence/sonic_hacks/aeon/docs/benchmarks/effects-p3-w0/GATE-EVIDENCE.md"
+note = "Effects_World_Y seeded unconditionally in Effects_InstallPreset; Raster_InstallPatched loses its a2 param and seed loop; Raster_Patch_Tab cleared before the seed"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "43e149c2"
+full_size = 712144
+anchor_crc = "36d5dd53"
+anchor_end = 0xa30a0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "423806c9"
+full_size = 599462
+anchor_crc = "33d937e0"
+anchor_end = 0x89750
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "da2b0677"
+full_size = 95635
+anchor_crc = "76625260"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "4ca8e579"
+full_size = 99982
+anchor_crc = "62d09591"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "afcfb96e"
+full_size = 655662
+anchor_crc = "9fd3e7cd"
+anchor_end = 0xa012e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "b2a69c77"
+full_size = 697017
+anchor_crc = "9114428d"
+anchor_end = 0xa11b0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "ef97e7b6"
+full_size = 711776
+anchor_crc = "7e37f983"
+anchor_end = 0xa30a0

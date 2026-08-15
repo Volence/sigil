@@ -142,13 +142,13 @@ pub const CAMERA: Region = Region { plain_base: 0x5EE0, debug_base: 0x6F60, plai
 pub const PARALLAX: Region = Region { plain_base: 0x60B0, debug_base: 0x7140, plain_len: 0x5D0, debug_len: 0x664 };
 
 /// `Raster_Install` .. `Palette_LoadPal` — gate `SIGIL_EMP_RASTER`. tests: raster_port
-pub const RASTER: Region = Region { plain_base: 0x6680, debug_base: 0x77A4, plain_len: 0x210, debug_len: 0x210 };
+pub const RASTER: Region = Region { plain_base: 0x6680, debug_base: 0x77A4, plain_len: 0x204, debug_len: 0x204 };
 
 /// `Palette_LoadPal` .. `Effects_InstallPreset` — gate `SIGIL_EMP_PALETTE`. tests: palette_port
-pub const PALETTE: Region = Region { plain_base: 0x6890, debug_base: 0x79B4, plain_len: 0x45C, debug_len: 0x45C };
+pub const PALETTE: Region = Region { plain_base: 0x6884, debug_base: 0x79A8, plain_len: 0x45C, debug_len: 0x45C };
 
 /// `Effects_InstallPreset` .. `Level_LoadArt`.
-pub const PRESET: Region = Region { plain_base: 0x6CEC, debug_base: 0x7E10, plain_len: 0x94, debug_len: 0x90 };
+pub const PRESET: Region = Region { plain_base: 0x6CE0, debug_base: 0x7E04, plain_len: 0xA0, debug_len: 0x9C };
 
 /// `Level_LoadArt` .. `PageIn_Process` — gate `SIGIL_EMP_LOAD_ART`. tests: load_art_port
 pub const LOAD_ART: Region = Region { plain_base: 0x6D80, debug_base: 0x7EA0, plain_len: 0x90, debug_len: 0x90 };
@@ -354,7 +354,7 @@ pub const OJZ_PRESET_SEC3: Pin = Pin { plain: 0x127EC, debug: 0x13030 };
 pub const OJZ_PRESET_PLAIN: Pin = Pin { plain: 0x12812, debug: 0x13056 };
 
 /// `Effects_InstallPreset`. tests: parallax_port
-pub const EFFECTS_INSTALL_PRESET: Pin = Pin { plain: 0x6CEC, debug: 0x7E10 };
+pub const EFFECTS_INSTALL_PRESET: Pin = Pin { plain: 0x6CE0, debug: 0x7E04 };
 
 /// `TestStatic_Main`. tests: objdef_port
 pub const TEST_STATIC_MAIN: Pin = Pin { plain: 0x118D0, debug: 0x11AA0 };
@@ -1491,7 +1491,7 @@ pub const PAL_VARIANT_STAGE: Pin = Pin { plain: 0xFFFF8B86, debug: 0xFFFF8B86 };
 pub const RASTER_V_BLANK: Pin = Pin { plain: 0x6686, debug: 0x77AA };
 
 /// `Palette_Compose`. tests: game_loop_port
-pub const PALETTE_COMPOSE: Pin = Pin { plain: 0x6944, debug: 0x7A68 };
+pub const PALETTE_COMPOSE: Pin = Pin { plain: 0x6938, debug: 0x7A5C };
 
 /// `Player_Blocks`. tests: test_p1_player_port
 pub const PLAYER_BLOCKS: Pin = Pin { plain: 0xFFFFB7A4, debug: 0xFFFFE03A };
