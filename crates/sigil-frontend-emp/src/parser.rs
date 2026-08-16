@@ -3813,6 +3813,27 @@ impl Parser {
     /// `jmp .cc_table-4(pc,d0.w)`'s `label - 4` (tranche 9).
     fn binary_continue(&mut self, mut lhs: Expr, min_bp: u8) -> Expr {
         loop {
+            // THE LATCH STOPS THE LOOP, not just the recursion — the same guard
+            // `postfix_expr`'s loop already carries, and its absence here was a live
+            // process abort.
+            //
+            // Once `depth_exceeded` is set, `unary_expr` returns a poison node WITHOUT
+            // consuming the token that provoked it. For `const X = ---…---1` that token is
+            // `-`, which this loop then reads as a BINARY minus: bump, parse a poison rhs,
+            // wrap, and go round again. Depth never grows — so the depth guard looks like it
+            // is working — but the loop builds a LEFT-NESTED `Expr::Binary` chain one node
+            // per remaining token. At 60,000 tokens, recursively DROPPING that chain
+            // overflowed the stack and killed the process with SIGABRT, which cannot be
+            // caught, so `sigil` died with no diagnostic at all.
+            //
+            // That is why it presented as flaky: the parse itself always succeeded and the
+            // abort came out of the destructor, so whether it fired depended on how much
+            // stack was left rather than on anything about the input. Isolated it reproduced
+            // 3 runs of 3; inside a loaded `--workspace` run it sometimes survived.
+            // `deep_nesting_aborts::depth_diagnostic_does_not_flood` is the regression test.
+            if self.depth_exceeded {
+                break;
+            }
             let (op, bp) = match self.peek() {
                 Tok::OrOr => (BinOp::Or, 1),
                 Tok::AndAnd => (BinOp::And, 2),

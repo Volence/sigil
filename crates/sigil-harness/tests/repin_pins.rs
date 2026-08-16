@@ -558,6 +558,20 @@ fn generated_pins_match_the_hand_typed_baseline() {
     //   `demo` moves too (crc dca06660 -> c199280f), which is expected and worth stating:
     // demo links Raster_Install and therefore the whole raster module. A parcel touching
     // engine/effects that did NOT move demo would be the surprising one.
+    //   `efx7-explicit-clear` (2026-08-16, chain entry 129): RASTER len +0x10 for the empty-
+    // program teardown test in Raster_VBlank, symmetric. 27 pins move; the shape is the same
+    // downstream slide as the entry above, one step larger. The whole PAGE_IN / PAGE_CACHE /
+    // SOUND_INIT family takes a flat +0x10 in BOTH shapes.
+    //   PALETTE_COMPOSE is the one asymmetric row at +0xA, not +0x10, and it is worth naming
+    // because the instinct is to call it an error. It is not: PALETTE_COMPOSE is a pin INSIDE
+    // the palette section, and the section's own base moved +0x10 while alignment inside it
+    // absorbed 6 — so the pin lands +0xA. Every WHOLE-SECTION base in the family is +0x10; only
+    // this intra-section pin differs, and it differs in the direction alignment can explain.
+    //   The object family (ANIMATE and friends, asserted below) is UNCHANGED again, for the
+    // same reason as the previous entry: RASTER sits downstream of it, so nothing this parcel
+    // touched is ahead of the hand-typed baseline. Two consecutive parcels growing the raster
+    // module without moving a single asserted literal is a property of WHERE raster is placed,
+    // not a coincidence — do not read it as "the baseline no longer bites".
     assert_eq!(pins::ANIMATE.plain_base, 0x3400);  // +0x20 offscreen-ship-setreg-replay  // +0x40 offscreen-frame-top-ship  // +0x10 parcel-w: the object family takes the PLAIN-only slide from buffers.emp growing 0x10 (the HScroll DMA-length key learned about pcfg_anchor_ch). The debug shape absorbs it in existing alignment slack, which is why only plain moves.  // -0x30 blanket-restore (vdp_init -0x10 + hblank -0x20)  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: the boot-growth slide (aligned), which every region downstream of boot inherits  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x10 character-lens-sweep // -0x10 effects-p3-parcel-c2 (the three legacy per-field installers deleted from the effects modules; every region downstream inherits the slide)
     assert_eq!(pins::ANIMATE.debug_base, 0x3BBE);  // +0x10 offscreen-ship-setreg-replay  // +0x50 offscreen-frame-top-ship  // +0x40 blanket-restore-r2 (vdp_init +0x50 for the Set_VDP_Reg bound assert, vblank -0x10 for the dead $8F02 write; DEBUG only)  // -0x40 blanket-restore (boot -0x10 + vdp_init -0x10 + hblank -0x20)  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: same boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
     assert_eq!(pins::ANIMATE.plain_len, 0x194);  // +0xA bug005: AF_SET_FIELD rail + refresh idiom

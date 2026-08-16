@@ -6643,3 +6643,57 @@ full_crc = "a4438c22"
 full_size = 712679
 anchor_crc = "03ade34b"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "efx7-explicit-clear"
+ab = "aeon@d28c9221 — tools/raster_off_gate.py: 12/12 assertions PASS on the new ROM (armed -> off -> re-armed -> off), and the SAME gate fails exactly the six OFF assertions against a pre-fix ROM, so it is not vacuous. Measured before/after on one scene: an armed Raster_Program_None cost 512 cyc/frame over 2 HInt entries; after, the profiler has no row for the handler and reg $00 IE1 reads clear. ab_runner A/B pre vs post on all three committed effects scenes: ALL EQUAL on every gated capture including whole-VDP state_hash, --selfcheck deterministic on all three, so the ARMED path is unchanged."
+note = "EFX-7 closed by making the teardown arm reachable via a semantic empty-program test rather than a sentinel value. RASTER +0x10; 27 pins slide."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "aed8c94c"
+full_size = 713047
+anchor_crc = "c402b42f"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "2a8c4b28"
+full_size = 600328
+anchor_crc = "0c601048"
+anchor_end = 0x897b0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "20452947"
+full_size = 96376
+anchor_crc = "e955f6b4"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d5f9eb63"
+full_size = 100730
+anchor_crc = "432543da"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "956e8251"
+full_size = 655678
+anchor_crc = "753dc9a4"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "9c8ab255"
+full_size = 697793
+anchor_crc = "c90c2e11"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "208043fa"
+full_size = 712679
+anchor_crc = "c231e8c9"
+anchor_end = 0xa30d0
