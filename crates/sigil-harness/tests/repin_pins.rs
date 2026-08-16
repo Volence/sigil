@@ -537,6 +537,27 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // the player bound/death cells all take +0x4 — while every pre-existing engine
     // RAM address is UNCHANGED, which is the property the tail placement buys and was
     // verified symbol-by-symbol against a pre-parcel build.
+    //   `raster-cost-model` (2026-08-16, chain entry 128): the smallest shift this file
+    // has recorded, and it touches NOTHING asserted below. Two live bug fixes in
+    // raster.emp — the ship-entry publish reordered behind Raster_BuildShipEntry, and a
+    // `clr.w Raster_Dense_Lines` added to the per-frame rewind — grow RASTER by exactly
+    // +0x4, SYMMETRIC (neither is DEBUG-fenced). Six pins move and all six are +0x4:
+    // RASTER len, then the PALETTE / PRESET / EFFECTS_INSTALL_PRESET /
+    // RASTER_GET_CHANNEL_BAND / PALETTE_COMPOSE bases downstream of it.
+    //   PRESET's LEN reads -0x4 while its BASE reads +0x4, which looks like code
+    // vanishing and is not: PRESET is an `end-is-next-placement` span, so its base moving
+    // into the section's alignment padding shortens the measured gap by the same 4 bytes.
+    // TOTAL ROM LENGTH IS UNCHANGED IN ALL FOUR SHAPES — 697793 / 712679 / 96376 / 100730
+    // before and after — which is the property that proves the 4 bytes came out of
+    // padding rather than pushing the tail. Nothing upstream of RASTER moves at all, so
+    // the object family (ANIMATE and friends, asserted immediately below) is untouched.
+    //   The parcel's OTHER half — replacing the raster density cost model — is comptime
+    // and emits nothing, so it contributes zero here. If a future reader is looking for
+    // why `518` replaced `526` in the density diagnostic and finds no pin movement for
+    // it, that is correct: see aeon docs/benchmarks/effects-p3/DENSITY-EVIDENCE.md.
+    //   `demo` moves too (crc dca06660 -> c199280f), which is expected and worth stating:
+    // demo links Raster_Install and therefore the whole raster module. A parcel touching
+    // engine/effects that did NOT move demo would be the surprising one.
     assert_eq!(pins::ANIMATE.plain_base, 0x3400);  // +0x20 offscreen-ship-setreg-replay  // +0x40 offscreen-frame-top-ship  // +0x10 parcel-w: the object family takes the PLAIN-only slide from buffers.emp growing 0x10 (the HScroll DMA-length key learned about pcfg_anchor_ch). The debug shape absorbs it in existing alignment slack, which is why only plain moves.  // -0x30 blanket-restore (vdp_init -0x10 + hblank -0x20)  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: the boot-growth slide (aligned), which every region downstream of boot inherits  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x10 character-lens-sweep // -0x10 effects-p3-parcel-c2 (the three legacy per-field installers deleted from the effects modules; every region downstream inherits the slide)
     assert_eq!(pins::ANIMATE.debug_base, 0x3BBE);  // +0x10 offscreen-ship-setreg-replay  // +0x50 offscreen-frame-top-ship  // +0x40 blanket-restore-r2 (vdp_init +0x50 for the Set_VDP_Reg bound assert, vblank -0x10 for the dead $8F02 write; DEBUG only)  // -0x40 blanket-restore (boot -0x10 + vdp_init -0x10 + hblank -0x20)  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: same boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep
     assert_eq!(pins::ANIMATE.plain_len, 0x194);  // +0xA bug005: AF_SET_FIELD rail + refresh idiom

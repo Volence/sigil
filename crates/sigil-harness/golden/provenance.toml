@@ -6589,3 +6589,57 @@ full_crc = "3da516e4"
 full_size = 712679
 anchor_crc = "3271cfa8"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "raster-cost-model"
+ab = "aeon@af32aea7 — ab_runner A/B master vs branch on all three committed effects scenes (mid_band / suppressed / above_screen), s4.debug.bin: ALL EQUAL on every gated capture including the whole-VDP state_hash, --selfcheck deterministic on all three. Replay fixtures NOT run: the net desyncs on MASTER at tick 735 (booked, docs/BUGS.md) and the arming recipe is a still-open queue item, so they cannot discriminate this change. ROM effect is +4 bytes in RASTER, everything after shifted 4; total ROM length unchanged."
+note = "Two live raster bugs (ship-entry publish race, per-frame dense counter) plus the measured per-fire cost model (comptime, byte-neutral on its own)."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "8203be04"
+full_size = 713047
+anchor_crc = "fe266b0d"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "8ab10535"
+full_size = 600328
+anchor_crc = "5ec02825"
+anchor_end = 0x897b0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "c199280f"
+full_size = 96376
+anchor_crc = "67191f9d"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7aa1aae4"
+full_size = 100730
+anchor_crc = "888cee04"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "7eaf50b8"
+full_size = 655678
+anchor_crc = "0241a062"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "d5daa3e5"
+full_size = 697793
+anchor_crc = "18de6b38"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "a4438c22"
+full_size = 712679
+anchor_crc = "03ade34b"
+anchor_end = 0xa30d0
