@@ -2344,6 +2344,13 @@ name = "Parallax_Active_Config"
 tests = ["buffers_port"]
 
 [[symbol]]
+name = "Palette_Ship_Snap"
+# R1 Task 2: Enqueue_Dirty_Buffers' four palette splices reference this RAM tail
+# field directly (lea Palette_Ship_Snap, a2) — declare it here or the standalone
+# buffers_port re-lower stops resolving, same as Static_Pal_Ship/Effects_* above.
+tests = ["buffers_port"]
+
+[[symbol]]
 name = "VBlank_Ready"
 tests = ["vblank_port"]
 

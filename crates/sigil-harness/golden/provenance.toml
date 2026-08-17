@@ -6751,3 +6751,57 @@ full_crc = "f1a8d28d"
 full_size = 712694
 anchor_crc = "b93b8501"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "parcel-r1-splice"
+ab = "parcel-r1-ram"
+note = "R1 Task 2: four snapshot splices in Enqueue_Dirty_Buffers"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "09727b30"
+full_size = 713062
+anchor_crc = "c4def6a3"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c6224a5a"
+full_size = 600343
+anchor_crc = "41e85f16"
+anchor_end = 0x897b0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "c8e662e8"
+full_size = 96391
+anchor_crc = "f18f6a12"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "75750cf5"
+full_size = 100745
+anchor_crc = "01feecd5"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "80dc7e72"
+full_size = 655678
+anchor_crc = "992f4e26"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "2a47906c"
+full_size = 697808
+anchor_crc = "d250b38e"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "f9e38b9f"
+full_size = 712694
+anchor_crc = "98698297"
+anchor_end = 0xa30d0

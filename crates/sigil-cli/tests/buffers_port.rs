@@ -135,6 +135,10 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         ("Static_Hscroll_Cell", pick(pins::STATIC_HSCROLL_CELL)),
         ("Static_Hscroll_Line", pick(pins::STATIC_HSCROLL_LINE)),
         ("Palette_Dirty", pick(pins::PALETTE_DIRTY)),
+        // R1 Task 2: the four snapshot splices in Enqueue_Dirty_Buffers reference this
+        // RAM-tail field directly — declare it here or this gate stops resolving, same
+        // as the Effects P3 trio above.
+        ("Palette_Ship_Snap", pick(pins::PALETTE_SHIP_SNAP)),
         ("Sprite_Table_Dirty", pick(pins::SPRITE_TABLE_DIRTY)),
         ("Sprite_Emit_Active", pick(pins::SPRITE_EMIT_ACTIVE)),
         ("DMA_Critical_Slot", pick(pins::DMA_CRITICAL_SLOT)),
