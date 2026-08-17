@@ -6859,3 +6859,57 @@ full_crc = "04882b94"
 full_size = 712732
 anchor_crc = "be6c0c4f"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "parcel-r1-restore-delay"
+ab = "parcel-r1-opcode"
+note = "R1 Task 13: EFX_RESTORE_DELAY=13 calibrated from the first-datum landing capture; work=212"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "b53d1c5d"
+full_size = 713120
+anchor_crc = "21d9a5fc"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "1f3af903"
+full_size = 600403
+anchor_crc = "650c0e46"
+anchor_end = 0x897b0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "2ecd1031"
+full_size = 96451
+anchor_crc = "0a0bb7a8"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "10aad76c"
+full_size = 100805
+anchor_crc = "224a72b6"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "b3ebb80a"
+full_size = 655678
+anchor_crc = "ca62ba5e"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "7e4dc5de"
+full_size = 697868
+anchor_crc = "202f3c25"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "ab1055d4"
+full_size = 712752
+anchor_crc = "d6c8378b"
+anchor_end = 0xa30d0
