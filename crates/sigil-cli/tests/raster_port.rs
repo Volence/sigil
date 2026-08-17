@@ -108,7 +108,7 @@ pub fn map_toml(debug: bool) -> String {
 /// evaluates at lower time, so both must be present at their true VMAs (0x132 = 306 apart)
 /// or the guard fails here for a reason unrelated to the port.
 pub fn cross_seam_labels(debug: bool) -> Vec<Section> {
-    let labels: [(&str, u32); 24] = [
+    let labels: [(&str, u32); 25] = [
         ("Raster_Program", pins::RASTER_PROGRAM.plain),
         ("Raster_Cursor", pins::RASTER_CURSOR.plain),
         ("Raster_Pending", pins::RASTER_PENDING.plain),
@@ -128,6 +128,14 @@ pub fn cross_seam_labels(debug: bool) -> Vec<Section> {
         ("Raster_State_End", pins::RASTER_STATE_END.plain),
         ("Palette_Dirty", pins::PALETTE_DIRTY.plain),
         ("Pal_Variant_Stage", pins::PAL_VARIANT_STAGE.plain),
+        // R1 Task 3: OP_PAL_RESTORE's body reads Palette_Ship_Snap directly (the ship
+        // snapshot buffers.emp's splices fill) — declare it here or this gate stops
+        // resolving, same as the Palette_Ship_Snap entry Task 2 added to buffers_port.
+        // Shape-dependent like Camera_Y/Build_DMA_Entry below: RAM past __DEBUG__.
+        (
+            "Palette_Ship_Snap",
+            if debug { pins::PALETTE_SHIP_SNAP.debug } else { pins::PALETTE_SHIP_SNAP.plain },
+        ),
         // The off-screen frame-top ship (effects P3). Effects_Screen_L is the latch
         // Raster_PatchAll now READS instead of deriving `world_y - Camera_Y` itself;
         // Effects_Offscreen_Entry and Static_Pal_Ship are Raster_InstallPatched's and

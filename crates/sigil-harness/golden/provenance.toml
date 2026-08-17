@@ -6805,3 +6805,57 @@ full_crc = "f9e38b9f"
 full_size = 712694
 anchor_crc = "98698297"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "parcel-r1-opcode"
+ab = "parcel-r1-splice"
+note = "R1 Task 3: OP_PAL_RESTORE const + rung + body (dead until Task 4)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "2c2d3eee"
+full_size = 713100
+anchor_crc = "af370dac"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "ea9789d8"
+full_size = 600383
+anchor_crc = "030b3812"
+anchor_end = 0x897b0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "2b77aeff"
+full_size = 96431
+anchor_crc = "5f9be196"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "649e1554"
+full_size = 100785
+anchor_crc = "b54119db"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "039fb364"
+full_size = 655678
+anchor_crc = "aa4f7495"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "2c1b2a5f"
+full_size = 697848
+anchor_crc = "f03c16d8"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "04882b94"
+full_size = 712732
+anchor_crc = "be6c0c4f"
+anchor_end = 0xa30d0

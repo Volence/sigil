@@ -125,7 +125,7 @@ fn carriers(labels: &[(&str, u32)], lma_base: u32) -> Vec<Section> {
 }
 
 fn inbound() -> Vec<Section> {
-    let labels: [(&str, u32); 24] = [
+    let labels: [(&str, u32); 25] = [
         ("Raster_Program", pins::RASTER_PROGRAM.plain),
         ("Raster_Cursor", pins::RASTER_CURSOR.plain),
         ("Raster_Pending", pins::RASTER_PENDING.plain),
@@ -145,6 +145,10 @@ fn inbound() -> Vec<Section> {
         ("Raster_State_End", pins::RASTER_STATE_END.plain),
         ("Palette_Dirty", pins::PALETTE_DIRTY.plain),
         ("Pal_Variant_Stage", pins::PAL_VARIANT_STAGE.plain),
+        // R1 Task 3: OP_PAL_RESTORE's body reads Palette_Ship_Snap directly — same
+        // carrier raster_port.rs added, needed here for the same reason (this probe
+        // must resolve cleanly before it can prove doctoring changes the bytes).
+        ("Palette_Ship_Snap", pins::PALETTE_SHIP_SNAP.plain),
         // The off-screen frame-top ship's cross-seam references — the same three raster_port
         // declares. A negative probe has to RESOLVE cleanly before it can prove that doctoring
         // one thing changes the bytes, so a missing carrier here fails the probe as a harness
