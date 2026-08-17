@@ -6697,3 +6697,57 @@ full_crc = "208043fa"
 full_size = 712679
 anchor_crc = "c231e8c9"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "parcel-r1-ram"
+ab = "master"
+note = "Palette_Ship_Snap 128B tail buffer, R1 Task 1"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "1c00c0b2"
+full_size = 713062
+anchor_crc = "53773f26"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "95525586"
+full_size = 600343
+anchor_crc = "25b1717d"
+anchor_end = 0x897b0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "afe50429"
+full_size = 96391
+anchor_crc = "e955f6b4"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "254649b2"
+full_size = 100745
+anchor_crc = "5ee1574d"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "b18723cb"
+full_size = 655678
+anchor_crc = "2be019ba"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "7bce0ece"
+full_size = 697808
+anchor_crc = "c03348e2"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "f1a8d28d"
+full_size = 712694
+anchor_crc = "b93b8501"
+anchor_end = 0xa30d0

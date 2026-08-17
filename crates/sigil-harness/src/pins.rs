@@ -636,7 +636,7 @@ pub const S4_LZ_DECOMPRESS_DICT: Pin = Pin { plain: 0x26D0, debug: 0x2860 };
 pub const PLAYER_1: Pin = Pin { plain: 0xFFFF8D22, debug: 0xFFFF8DB0 };
 
 /// `Cheat_Flags`. tests: test_g4_final_objects_port, test_p1_player_port
-pub const CHEAT_FLAGS: Pin = Pin { plain: 0xFFFFB7B6, debug: 0xFFFFE04C };
+pub const CHEAT_FLAGS: Pin = Pin { plain: 0xFFFFB836, debug: 0xFFFFE0CC };
 
 /// `Dynamic_Slots`. tests: collision_port
 pub const DYNAMIC_SLOTS: Pin = Pin { plain: 0xFFFF8DC2, debug: 0xFFFF8E50 };
@@ -1392,10 +1392,10 @@ pub const HEIGHT_MAPS: Pin = Pin { plain: 0x284F0, debug: 0x28D40 };
 pub const HEIGHT_MAPS_ROT: Pin = Pin { plain: 0x294F0, debug: 0x29D40 };
 
 /// `Character_ID`. tests: test_p1_player_port
-pub const CHARACTER_ID: Pin = Pin { plain: 0xFFFFB7B8, debug: 0xFFFFE04E };
+pub const CHARACTER_ID: Pin = Pin { plain: 0xFFFFB838, debug: 0xFFFFE0CE };
 
 /// `Player_Chardef`. tests: test_p1_player_port
-pub const PLAYER_CHARDEF: Pin = Pin { plain: 0xFFFFB7BA, debug: 0xFFFFE050 };
+pub const PLAYER_CHARDEF: Pin = Pin { plain: 0xFFFFB83A, debug: 0xFFFFE0D0 };
 
 /// `Ability_None`. tests: test_p1_player_port
 pub const ABILITY_NONE: Pin = Pin { plain: 0x11668, debug: 0x117DE };
@@ -1509,25 +1509,25 @@ pub const RASTER_V_BLANK: Pin = Pin { plain: 0x6856, debug: 0x796A };
 pub const PALETTE_COMPOSE: Pin = Pin { plain: 0x6C2A, debug: 0x7D3E };
 
 /// `Player_Blocks`. tests: test_p1_player_port
-pub const PLAYER_BLOCKS: Pin = Pin { plain: 0xFFFFB7BE, debug: 0xFFFFE054 };
+pub const PLAYER_BLOCKS: Pin = Pin { plain: 0xFFFFB83E, debug: 0xFFFFE0D4 };
 
 /// `Player_Ring_Index`. tests: test_p1_player_port
-pub const PLAYER_RING_INDEX: Pin = Pin { plain: 0xFFFFBB00, debug: 0xFFFFE400 };
+pub const PLAYER_RING_INDEX: Pin = Pin { plain: 0xFFFFBC00, debug: 0xFFFFE500 };
 
 /// `Player_Pos_Ring`. tests: test_p1_player_port
-pub const PLAYER_POS_RING: Pin = Pin { plain: 0xFFFFB900, debug: 0xFFFFE200 };
+pub const PLAYER_POS_RING: Pin = Pin { plain: 0xFFFFBA00, debug: 0xFFFFE300 };
 
 /// `Player_Stat_Ring`. tests: test_p1_player_port
-pub const PLAYER_STAT_RING: Pin = Pin { plain: 0xFFFFBA00, debug: 0xFFFFE300 };
+pub const PLAYER_STAT_RING: Pin = Pin { plain: 0xFFFFBB00, debug: 0xFFFFE400 };
 
 /// `Player_Death_Pending`. tests: test_p1_player_port
-pub const PLAYER_DEATH_PENDING: Pin = Pin { plain: 0xFFFFB7E6, debug: 0xFFFFE07C };
+pub const PLAYER_DEATH_PENDING: Pin = Pin { plain: 0xFFFFB866, debug: 0xFFFFE0FC };
 
 /// `Player_Bound_Right`. tests: test_p1_player_port
-pub const PLAYER_BOUND_RIGHT: Pin = Pin { plain: 0xFFFFB7E8, debug: 0xFFFFE07E };
+pub const PLAYER_BOUND_RIGHT: Pin = Pin { plain: 0xFFFFB868, debug: 0xFFFFE0FE };
 
 /// `Player_Bound_Bottom`. tests: test_p1_player_port
-pub const PLAYER_BOUND_BOTTOM: Pin = Pin { plain: 0xFFFFB7EA, debug: 0xFFFFE080 };
+pub const PLAYER_BOUND_BOTTOM: Pin = Pin { plain: 0xFFFFB86A, debug: 0xFFFFE100 };
 
 /// `DustSpindash_Spawn`. tests: test_p1_player_port
 pub const DUST_SPINDASH_SPAWN: Pin = Pin { plain: 0x11824, debug: 0x119F2 };
