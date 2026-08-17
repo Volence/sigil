@@ -170,11 +170,37 @@ pub struct GameProfile {
     pub fixture_placement: bool,
     /// `EndOfRom` — the assembled-bar length.
     pub assembled_len: usize,
+    /// EXTRA ENTRIES (`sigil build --extra-entry`): modules this build must
+    /// EVALUATE although no reachable module `use`s them. Each rides the synthetic
+    /// entry's `use` edges alongside the registry, so the module is lowered inside
+    /// the real profile — the same manifest rewrites (helper publication + glob
+    /// normalization), the same comptime `-D` set — and its module-level `ensure`s
+    /// run, failing the build with their own message when they hold false.
+    ///
+    /// Each element is a dotted module id or a path to a `.emp` file under the scan
+    /// root; [`build_emp`] resolves both and refuses a name that names nothing.
+    /// An extra entry must contribute nothing to the artifact — see
+    /// `refuse_artifact_contribution`.
+    /// EMPTY in every shipping profile: a shape whose ROM depended on one would be
+    /// a shape the `--extra-entry`-free build does not produce.
+    pub extra_entries: Vec<String>,
 }
 
 impl GameProfile {
     pub fn game_root(&self, aeon: &Path) -> std::path::PathBuf {
         aeon.join(self.game_root_rel)
+    }
+
+    /// This profile with `ids` as its [`extra_entries`](Self::extra_entries).
+    /// A builder rather than a constructor argument: the shipping profiles are the
+    /// authority on a shape, and an extra entry is an INVOCATION's addition to one.
+    pub fn with_extra_entries<I, S>(mut self, ids: I) -> GameProfile
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.extra_entries = ids.into_iter().map(Into::into).collect();
+        self
     }
 
     /// The `games.<game>` module-id prefix this shape's modules live under — the
@@ -747,6 +773,7 @@ pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile 
         size_source,
         fixture_placement: false,
         assembled_len: if debug { pins::DEBUG_ASSEMBLED_LEN } else { pins::ASSEMBLED_LEN },
+        extra_entries: Vec::new(),
     }
 }
 
@@ -839,6 +866,7 @@ pub fn demo_profile(debug: bool) -> GameProfile {
         })),
         fixture_placement: false,
         assembled_len: 0x11224,
+        extra_entries: Vec::new(),
     }
 }
 
@@ -904,6 +932,7 @@ pub fn config_b_profile() -> GameProfile {
         size_source: SizeSource::Frozen(load_frozen_table("config_b.txt")),
         fixture_placement: false,
         assembled_len: 0x434d0,
+        extra_entries: Vec::new(),
     }
 }
 
@@ -963,6 +992,7 @@ pub fn config_a_profile() -> GameProfile {
         size_source: SizeSource::Frozen(load_frozen_table("config_a.txt")),
         fixture_placement: false,
         assembled_len: 0x5f65a,
+        extra_entries: Vec::new(),
     }
 }
 
@@ -1015,6 +1045,7 @@ pub fn lean_profile() -> GameProfile {
         size_source: SizeSource::Frozen(load_frozen_table("lean.txt")),
         fixture_placement: false,
         assembled_len: pins::ASSEMBLED_LEN,
+        extra_entries: Vec::new(),
     }
 }
 
@@ -1637,7 +1668,22 @@ fn emp_map_frozen(sections: &[Section]) -> String {
 
 /// A synthetic entry `.emp` source whose `use` edges reach every registry module,
 /// so `build_program`'s reachability BFS pulls them all (and their comptime deps).
-fn synthetic_entry_src(specs: &[ModuleSpec], game_ram_module: &str, manifest_module: &str) -> String {
+///
+/// `extra_entries` are dotted ids appended to the same edge list, which is the WHOLE
+/// mechanism behind `--extra-entry`: reachability is what makes a module's
+/// module-level `ensure`s evaluate, and this file is where reachability is declared.
+/// The edges are bare whole-module `use`s like every other line here — the shape
+/// `[import.no-names]` warns about — and that is safe for exactly one reason: this
+/// module's own diagnostics never reach the build report (`collect_warnings` filters
+/// its `SourceId`, held by `warn_tier_corpus`'s
+/// `the_generated_entry_module_is_not_reported`). An extra entry's own diagnostics
+/// carry ITS source, so they report normally.
+fn synthetic_entry_src(
+    specs: &[ModuleSpec],
+    game_ram_module: &str,
+    manifest_module: &str,
+    extra_entries: &[String],
+) -> String {
     let mut src = String::from("module native_flip_entry\n\n");
     // L1 P2: the engine's Game contract (the interface — pure declaration) and
     // the game's one manifest (the `implement`). Both emit zero bytes and neither
@@ -1662,7 +1708,98 @@ fn synthetic_entry_src(specs: &[ModuleSpec], game_ram_module: &str, manifest_mod
     for s in specs {
         src.push_str(&format!("use {}\n", s.module_id));
     }
+    for id in extra_entries {
+        src.push_str(&format!("use {id}\n"));
+    }
     src
+}
+
+/// Resolve one `--extra-entry` argument to a manifest module id. Accepts a dotted
+/// module id or a path to a `.emp` file (absolute, cwd-relative, or aeon-relative) —
+/// an author names a poison the way it is on disk, and a lane names it the way the
+/// module declares itself.
+///
+/// A name that resolves to nothing is an ERROR, never a skip: a lane whose subject
+/// vanished (renamed, moved, deleted) must fail loudly rather than pass vacuously.
+/// A file that exists but did not PARSE is absent from the manifest and lands here
+/// too — the scan already failed the build on it above, so this arm is reached only
+/// for a file outside the scan root.
+fn resolve_extra_entry(
+    manifest: &resolve::manifest::Manifest,
+    aeon: &Path,
+    arg: &str,
+) -> Result<String, String> {
+    if manifest.by_id.contains_key(arg) {
+        return Ok(arg.to_string());
+    }
+
+    // Path form: compare canonicalized paths against the scanned set, so `./a/b.emp`,
+    // `a/b.emp` and an absolute path all name the same module.
+    let candidates = [aeon.join(arg), std::path::PathBuf::from(arg)];
+    for cand in candidates.iter().filter_map(|p| std::fs::canonicalize(p).ok()) {
+        for pm in &manifest.modules {
+            if std::fs::canonicalize(&pm.path).is_ok_and(|p| p == cand) {
+                // `ParsedModule::id` is the key `by_id` (and so the reachability BFS)
+                // is built on — the module's DECLARED id, which a `[module.path-mismatch]`
+                // module spells differently from its path.
+                return Ok(pm.id.clone());
+            }
+        }
+    }
+
+    Err(format!(
+        "--extra-entry `{arg}`: no such module under the scan root {} — it names \
+         neither a scanned module id nor a scanned `.emp` file path",
+        aeon.display()
+    ))
+}
+
+/// Refuse an extra entry that would CONTRIBUTE to the artifact. `--extra-entry`
+/// exists to run a module's comptime guards inside the real build profile, and it is
+/// byte-neutral by contract: a module reached only this way must contribute nothing.
+/// A module smuggled in through the flag would place into a shipping region
+/// (or chain onto the RAM map and move every address after it) and silently change
+/// the build, so it is refused by name here rather than emitted.
+///
+/// The refused kinds are the ROM-byte producers (`section`/`data`/`proc`/`table`/
+/// `offsets`/`dispatch`/`script`/`align`), `equ` (which mints a link symbol), and the
+/// RAM allocators (`region`, and the region form of `vars` — the one with no name).
+/// Everything else an `.emp` module can declare is comptime-only: it folds to zero
+/// bytes and zero symbols, which is the same line `publicize_helper_comptime` draws.
+/// The check covers the NAMED module; its own `use` edges are ordinary imports of
+/// modules the profile either already reaches or would refuse in turn.
+fn refuse_artifact_contribution(
+    manifest: &resolve::manifest::Manifest,
+    module_id: &str,
+    arg: &str,
+) -> Result<(), String> {
+    use sigil_frontend_emp::ast;
+    let idx = manifest.by_id[module_id];
+    let emitter = manifest.modules[idx].file.items.iter().find_map(|item| match item {
+        ast::Item::Section(_) => Some(("section", "emits into the ROM")),
+        ast::Item::Data(_) => Some(("data", "emits into the ROM")),
+        ast::Item::Proc(_) => Some(("proc", "emits into the ROM")),
+        ast::Item::Table(_) => Some(("table", "emits into the ROM")),
+        ast::Item::Offsets(_) => Some(("offsets", "emits into the ROM")),
+        ast::Item::Dispatch(_) => Some(("dispatch", "emits into the ROM")),
+        ast::Item::Script(_) => Some(("script", "emits into the ROM")),
+        ast::Item::Align(_) => Some(("align", "emits into the ROM")),
+        ast::Item::Equ(_) => Some(("equ", "mints a link symbol")),
+        ast::Item::Region(_) => Some(("region", "allocates RAM")),
+        // The overlay form (`vars Name: window { … }`) is a comptime view over
+        // existing bytes; the region form (no name) is a RAM allocator.
+        ast::Item::Vars(v) if v.name.is_none() => Some(("vars", "allocates RAM")),
+        _ => None,
+    });
+    match emitter {
+        None => Ok(()),
+        Some((kind, effect)) => Err(format!(
+            "--extra-entry `{arg}`: module `{module_id}` declares `{kind}`, which {effect}. \
+             --extra-entry evaluates a module's comptime guards inside the real build \
+             profile and is byte-neutral by contract; a module that contributes to the \
+             artifact must enter the build through the registry and a `use` edge instead."
+        )),
+    }
 }
 
 /// A non-error diagnostic the `.emp` build produced, with its source location
@@ -1789,9 +1926,28 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
     publicize_helper_comptime(&mut manifest, COMPTIME_HELPERS);
     normalize_helper_imports(&mut manifest, COMPTIME_HELPERS, &[]);
 
+    // `--extra-entry`: resolve each name against the SCANNED manifest (so an id and a
+    // path both work) and refuse one that would contribute to the artifact, BEFORE the
+    // entry is minted — an unresolvable or emitting name is a usage error, not a build
+    // failure to dig out of a diagnostic list.
+    let extra_entries: Vec<String> = profile
+        .extra_entries
+        .iter()
+        .map(|arg| {
+            let id = resolve_extra_entry(&manifest, aeon, arg)?;
+            refuse_artifact_contribution(&manifest, &id, arg)?;
+            Ok(id)
+        })
+        .collect::<Result<_, String>>()?;
+
     // Inject the synthetic entry as a fresh module in the manifest.
     let entry_id = "native_flip_entry".to_string();
-    let src = synthetic_entry_src(specs, profile.game_ram_module, profile.manifest_module);
+    let src = synthetic_entry_src(
+        specs,
+        profile.game_ram_module,
+        profile.manifest_module,
+        &extra_entries,
+    );
     // `Manifest::scan` registers one `sources` entry per scanned FILE and pushes a
     // `modules` entry per file that parsed, so `modules.len()` is the next free id
     // only because an unreadable file is a hard error the caller already bailed on.
@@ -4269,7 +4425,7 @@ mod entry_synth_tests {
 
     #[test]
     fn synthetic_entry_emits_no_code() {
-        let src = synthetic_entry_src(&[], "games.sonic4.ram", "games.sonic4.game");
+        let src = synthetic_entry_src(&[], "games.sonic4.ram", "games.sonic4.game", &[]);
         let (file, perrs) = sigil_frontend_emp::parse_file(&src, sigil_span::SourceId(0));
         assert!(
             perrs.iter().all(|d| d.level != sigil_span::Level::Error),
@@ -4284,6 +4440,120 @@ mod entry_synth_tests {
             );
         }
         assert!(!file.items.is_empty(), "the entry drives reachability via `use` lines");
+    }
+
+    /// An extra entry becomes one more `use` edge and nothing else — the flag's whole
+    /// mechanism, pinned at the source it generates so a future edge form (a named
+    /// import, a glob) cannot slip in unnoticed.
+    #[test]
+    fn extra_entries_ride_the_use_edge_list() {
+        let extras = ["games.a.one".to_string(), "games.b.two".to_string()];
+        let src = synthetic_entry_src(&[], "games.sonic4.ram", "games.sonic4.game", &extras);
+        assert!(src.contains("\nuse games.a.one\n"), "{src}");
+        assert!(src.contains("\nuse games.b.two\n"), "{src}");
+        let (file, perrs) = sigil_frontend_emp::parse_file(&src, sigil_span::SourceId(0));
+        assert!(
+            perrs.iter().all(|d| d.level != sigil_span::Level::Error),
+            "the synthetic entry must parse clean with extra entries: {perrs:?}"
+        );
+        for item in &file.items {
+            assert!(matches!(item, sigil_frontend_emp::ast::Item::Use(_)), "{item:?}");
+        }
+        // No extras = the source it produced before the flag existed.
+        let bare = synthetic_entry_src(&[], "games.sonic4.ram", "games.sonic4.game", &[]);
+        assert!(!bare.contains("games.a.one"));
+    }
+}
+
+#[cfg(test)]
+mod extra_entry_tests {
+    //! `--extra-entry`'s NAME RESOLUTION and its byte-neutrality REFUSAL, over a
+    //! two-module scratch tree — so the per-kind verdicts are pinned without a
+    //! reference tree, and the aeon-facing gate (`sigil-cli/tests/extra_entry.rs`)
+    //! is free to assert the end-to-end contract instead of enumerating kinds.
+    use super::{refuse_artifact_contribution, resolve_extra_entry};
+    use sigil_frontend_emp::resolve::manifest::Manifest;
+
+    /// Scan a scratch tree of `(relative path, source)` files.
+    fn scan(files: &[(&str, &str)]) -> (tempfile::TempDir, Manifest) {
+        let dir = tempfile::tempdir().unwrap();
+        for (rel, src) in files {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, src).unwrap();
+        }
+        let (manifest, diags) = Manifest::scan(dir.path());
+        assert!(
+            diags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "the scratch tree must scan clean: {diags:?}"
+        );
+        (dir, manifest)
+    }
+
+    const GUARD_ONLY: &str = "module pkg.guard_only\nconst K = 1\nensure(K == 1, \"holds\")\n";
+
+    /// A dotted id, an aeon-relative path, and an absolute path all name the same
+    /// module — the AUTHORING spelling and the on-disk spelling are both accepted,
+    /// and the resolved id is the module's DECLARED one either way.
+    #[test]
+    fn an_extra_entry_resolves_by_id_and_by_path() {
+        let (dir, m) = scan(&[("pkg/guard_only.emp", GUARD_ONLY)]);
+        let root = dir.path();
+        let abs = root.join("pkg/guard_only.emp");
+        for arg in ["pkg.guard_only", "pkg/guard_only.emp", abs.to_str().unwrap()] {
+            assert_eq!(
+                resolve_extra_entry(&m, root, arg).unwrap(),
+                "pkg.guard_only",
+                "spelling `{arg}` must resolve"
+            );
+        }
+    }
+
+    /// A name that resolves to nothing is an error naming the argument — never a
+    /// silent skip, which would let a lane pass with its subject deleted.
+    #[test]
+    fn an_unresolvable_extra_entry_is_an_error() {
+        let (dir, m) = scan(&[("pkg/guard_only.emp", GUARD_ONLY)]);
+        for arg in ["pkg.gone", "pkg/gone.emp", "/nowhere/gone.emp"] {
+            let e = resolve_extra_entry(&m, dir.path(), arg).unwrap_err();
+            assert!(e.contains(arg), "the error must name the argument: {e}");
+            assert!(e.contains("no such module under the scan root"), "{e}");
+        }
+    }
+
+    /// The byte-neutrality line, per declaration kind: comptime-only items pass;
+    /// every ROM producer, `equ`, and both RAM allocators are refused by name.
+    #[test]
+    fn only_a_comptime_only_extra_entry_is_accepted() {
+        // Each body is appended to a `module pkg.m` line. `(body, refused-kind)`.
+        let cases: &[(&str, Option<&str>)] = &[
+            ("const K = 1\nensure(K == 1, \"holds\")\n", None),
+            ("struct S { a: u8 }\n", None),
+            ("enum E: u8 { A = 0, B = 1 }\n", None),
+            ("comptime fn f(x: u8) -> u8 { return x }\n", None),
+            ("newtype N = u8\n", None),
+            ("data D: [u8; 2] = [1, 2]\n", Some("data")),
+            ("proc P () clobbers() { rts }\n", Some("proc")),
+            ("equ Q = 1\n", Some("equ")),
+            ("section scratch { }\n", Some("section")),
+            ("align 2\n", Some("align")),
+            ("region upper_ram @ $FFFF8000 .. $FFFFFFFF\n", Some("region")),
+            // Region form (no name) allocates RAM; the overlay form is a comptime view.
+            ("vars upper_ram { a: u8 }\n", Some("vars")),
+        ];
+        for (body, refused) in cases {
+            let src = format!("module pkg.m\n{body}");
+            let (_dir, m) = scan(&[("pkg/m.emp", &src)]);
+            let got = refuse_artifact_contribution(&m, "pkg.m", "pkg.m");
+            match refused {
+                None => assert!(got.is_ok(), "`{body}` must be accepted: {got:?}"),
+                Some(kind) => {
+                    let e = got.expect_err(&format!("`{body}` must be refused"));
+                    assert!(e.contains(&format!("`{kind}`")), "must name `{kind}`: {e}");
+                    assert!(e.contains("byte-neutral by contract"), "{e}");
+                }
+            }
+        }
     }
 }
 

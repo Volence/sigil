@@ -736,7 +736,7 @@ fn run_build(args: &[String]) {
             eprintln!(
                 "usage: sigil build --aeon <dir> [-o <out.bin>] [--emit-lst <lst>] \
                  [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean] \
-                 [--report ram|contracts]\n\
+                 [--report ram|contracts] [--extra-entry <module|path.emp>]...\n\
                  env:   SIGIL_WARNINGS=off|summary|full  (warn-tier detail; default summary)"
             );
             process::exit(2);
@@ -1442,6 +1442,10 @@ struct BuildOpts {
     /// `--report <kind>`: print a report over the selected target and exit, without
     /// building the ROM. `None` builds.
     report: Option<ReportKind>,
+    /// `--extra-entry <module>` (repeatable): modules to EVALUATE inside this build's
+    /// profile although nothing `use`s them. Each is a dotted module id or a path to
+    /// an `.emp` file under the scan root.
+    extra_entries: Vec<String>,
 }
 
 /// Parse `sigil build`'s argument slice. `--aeon <dir>` is required; `-o <path>`,
@@ -1454,6 +1458,11 @@ struct BuildOpts {
 /// kinds share ONE flag rather than one flag per kind: a report is a view of the
 /// build's own data, the set of views grows, and a closed vocabulary behind one flag
 /// is the surface that stays legible as it does.
+///
+/// `--extra-entry <module-id-or-path>` is REPEATABLE: each names a module the build
+/// must evaluate although nothing `use`s it, so its module-level `ensure`s run inside
+/// the real profile and a false one fails the build with its own message. It changes
+/// no emitted byte (a module that would emit is refused by name).
 fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut aeon: Option<String> = None;
     let mut output: Option<String> = None;
@@ -1464,6 +1473,7 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut stress_evict = false;
     let mut stress_art = false;
     let mut report: Option<ReportKind> = None;
+    let mut extra_entries: Vec<String> = Vec::new();
 
     let mut i = 0;
     while i < args.len() {
@@ -1488,6 +1498,8 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
             // profile sets `fixture_placement`), plumbed ONLY from build.sh's STRESS_ART
             // path. Fixes the whole shape, so it refuses any shipped-shape selector below.
             "--stress-art" => stress_art = true,
+            // Repeatable, order-preserving: one module evaluated per occurrence.
+            "--extra-entry" => extra_entries.push(next_value(args, &mut i, "--extra-entry")?),
             "--report" => {
                 let kind = ReportKind::parse(&next_value(args, &mut i, "--report")?)?;
                 if report.is_some_and(|prev| prev != kind) {
@@ -1532,7 +1544,12 @@ fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     if report.is_some() && (output.is_some() || emit_lst.is_some()) {
         return Err("--report prints instead of building; drop -o / --emit-lst".into());
     }
-    Ok(BuildOpts { aeon, output, emit_lst, target, report })
+    // An extra entry is evaluated by the BUILD, so pairing it with a report asks for
+    // a guard run and gets a print — same reason `-o` is refused above.
+    if report.is_some() && !extra_entries.is_empty() {
+        return Err("--report prints instead of building; --extra-entry needs a build".into());
+    }
+    Ok(BuildOpts { aeon, output, emit_lst, target, report, extra_entries })
 }
 
 /// Consume the value after a value-taking flag at `args[*i]`, advancing `i`. A
@@ -1673,46 +1690,64 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     // The LABEL comes from the same place the reports read it, so a build and a
     // report over one target can never name it differently.
     let label = opts.target.label_and_profile().0;
+    // `--extra-entry` rides the PROFILE, so every target honours it through one
+    // spelling. Canonical sonic4 keeps its own driver entry point when the list is
+    // empty — the shipped path stays the byte bar's path, untouched — and routes
+    // through the chainer (which is what that driver delegates to for a `Frozen`
+    // size source anyway) when an extra entry has to reach `build_emp`.
+    let extra = &opts.extra_entries;
+    let with_extra = |p: native::GameProfile| p.with_extra_entries(extra.iter().cloned());
     // (rom, listing) from the target's driver + the target's appendix floor + shape.
     let (debug, floor, built) = match &opts.target {
         // Canonical sonic4 → the PINNED driver (the `native_full_rom` gate path).
-        BuildTarget::Sonic4 { debug } => (
+        BuildTarget::Sonic4 { debug } if extra.is_empty() => (
             *debug,
             native::SONIC4_APPENDIX_FLOOR,
             native::build_native_rom_with_listing(aeon, *debug),
+        ),
+        BuildTarget::Sonic4 { debug } => (
+            *debug,
+            native::SONIC4_APPENDIX_FLOOR,
+            native::build_rom_chained_with_listing(
+                aeon,
+                &with_extra(native::sonic4_profile(*debug)),
+            ),
         ),
         // Off-canonical → the declared-order CHAINER (the `native_offcanonical_full` path).
         BuildTarget::Demo { debug } => (
             *debug,
             native::DEMO_APPENDIX_FLOOR,
-            native::build_rom_chained_with_listing(aeon, &native::demo_profile(*debug)),
+            native::build_rom_chained_with_listing(aeon, &with_extra(native::demo_profile(*debug))),
         ),
         BuildTarget::ConfigA => (
             true,
             native::SONIC4_APPENDIX_FLOOR,
-            native::build_rom_chained_with_listing(aeon, &native::config_a_profile()),
+            native::build_rom_chained_with_listing(aeon, &with_extra(native::config_a_profile())),
         ),
         BuildTarget::ConfigB => (
             false,
             native::SONIC4_APPENDIX_FLOOR,
-            native::build_rom_chained_with_listing(aeon, &native::config_b_profile()),
+            native::build_rom_chained_with_listing(aeon, &with_extra(native::config_b_profile())),
         ),
         BuildTarget::Lean => (
             false,
             native::SONIC4_APPENDIX_FLOOR,
-            native::build_rom_chained_with_listing(aeon, &native::lean_profile()),
+            native::build_rom_chained_with_listing(aeon, &with_extra(native::lean_profile())),
         ),
         // Off-canonical DEV soak shape — the declared-order CHAINER, debug appendix.
         BuildTarget::StressEvict => (
             true,
             native::SONIC4_APPENDIX_FLOOR,
-            native::build_rom_chained_with_listing(aeon, &native::stress_evict_profile()),
+            native::build_rom_chained_with_listing(
+                aeon,
+                &with_extra(native::stress_evict_profile()),
+            ),
         ),
         // Off-canonical DEV fixture (uniquified pool) — CHAINER with fixture placement.
         BuildTarget::StressArt => (
             true,
             native::SONIC4_APPENDIX_FLOOR,
-            native::build_rom_chained_with_listing(aeon, &native::stress_art_profile()),
+            native::build_rom_chained_with_listing(aeon, &with_extra(native::stress_art_profile())),
         ),
     };
     let native::RomBuild { rom, listing, warnings } = match built {
@@ -1849,6 +1884,36 @@ mod tests {
         assert!(crate::parse_build_args(&s(&["--aeon", "x", "--lean", "--debug"])).is_err());
         assert!(crate::parse_build_args(&s(&["--aeon", "x", "--lean", "--game", "demo"])).is_err());
         assert!(crate::parse_build_args(&s(&["--aeon", "x", "--game", "genesis"])).is_err());
+    }
+
+    /// `--extra-entry` is REPEATABLE and order-preserving (one module evaluated per
+    /// occurrence), takes a value, and is refused alongside `--report` — which does
+    /// not build, so it could only ignore the modules it was asked to evaluate.
+    #[test]
+    fn parse_build_args_collects_repeated_extra_entries() {
+        let s = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let o = crate::parse_build_args(&s(&[
+            "--aeon",
+            "x",
+            "--extra-entry",
+            "games.a.one",
+            "--extra-entry",
+            "b/two.emp",
+        ]))
+        .unwrap();
+        assert_eq!(o.extra_entries, vec!["games.a.one".to_string(), "b/two.emp".to_string()]);
+
+        assert!(crate::parse_build_args(&s(&["--aeon", "x"])).unwrap().extra_entries.is_empty());
+        assert!(crate::parse_build_args(&s(&["--aeon", "x", "--extra-entry"])).is_err());
+        assert!(crate::parse_build_args(&s(&[
+            "--aeon",
+            "x",
+            "--report",
+            "ram",
+            "--extra-entry",
+            "games.a.one"
+        ]))
+        .is_err());
     }
 
     #[test]
