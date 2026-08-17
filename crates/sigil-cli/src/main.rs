@@ -737,6 +737,8 @@ fn run_build(args: &[String]) {
                 "usage: sigil build --aeon <dir> [-o <out.bin>] [--emit-lst <lst>] \
                  [--game sonic4|demo] [--debug] [--config-a|--config-b|--lean] \
                  [--report ram|contracts] [--extra-entry <module|path.emp>]...\n\
+                 note:  --extra-entry evaluates the NAMED module's comptime guards; the \
+                 named module must emit nothing (its own imports are not checked)\n\
                  env:   SIGIL_WARNINGS=off|summary|full  (warn-tier detail; default summary)"
             );
             process::exit(2);
@@ -1444,7 +1446,8 @@ struct BuildOpts {
     report: Option<ReportKind>,
     /// `--extra-entry <module>` (repeatable): modules to EVALUATE inside this build's
     /// profile although nothing `use`s them. Each is a dotted module id or a path to
-    /// an `.emp` file under the scan root.
+    /// an `.emp` file under the scan root. Only the NAMED module is checked for
+    /// byte-neutrality; what its own imports pull in is not.
     extra_entries: Vec<String>,
 }
 
@@ -1461,8 +1464,10 @@ struct BuildOpts {
 ///
 /// `--extra-entry <module-id-or-path>` is REPEATABLE: each names a module the build
 /// must evaluate although nothing `use`s it, so its module-level `ensure`s run inside
-/// the real profile and a false one fails the build with its own message. It changes
-/// no emitted byte (a module that would emit is refused by name).
+/// the real profile and a false one fails the build with its own message. A NAMED
+/// module that would emit is refused by name; the refusal does not reach through that
+/// module's own imports, so byte-neutrality is a property of the argument, not of its
+/// whole import closure.
 fn parse_build_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut aeon: Option<String> = None;
     let mut output: Option<String> = None;

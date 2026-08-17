@@ -179,8 +179,9 @@ pub struct GameProfile {
     ///
     /// Each element is a dotted module id or a path to a `.emp` file under the scan
     /// root; [`build_emp`] resolves both and refuses a name that names nothing.
-    /// An extra entry must contribute nothing to the artifact — see
-    /// `refuse_artifact_contribution`.
+    /// The NAMED module must contribute nothing to the artifact — and only the named
+    /// module is checked, so a module it imports from outside the closure can still
+    /// pull bytes in; see `refuse_artifact_contribution` for that boundary.
     /// EMPTY in every shipping profile: a shape whose ROM depended on one would be
     /// a shape the `--extra-entry`-free build does not produce.
     pub extra_entries: Vec<String>,
@@ -1714,16 +1715,18 @@ fn synthetic_entry_src(
     src
 }
 
-/// Resolve one `--extra-entry` argument to a manifest module id. Accepts a dotted
-/// module id or a path to a `.emp` file (absolute, cwd-relative, or aeon-relative) —
-/// an author names a poison the way it is on disk, and a lane names it the way the
-/// module declares itself.
+/// Resolve one `--extra-entry` argument to a manifest module id — an author names a
+/// poison the way it is on disk, and a lane names it the way the module declares
+/// itself, so both spellings resolve. PRECEDENCE, in order: a dotted module id wins;
+/// then the argument as a path under the scan root (`<aeon>/<arg>`); then the argument
+/// as a path in its own right (cwd-relative or absolute). So an argument that is both
+/// a declared module id and a relative filename resolves as the id.
 ///
 /// A name that resolves to nothing is an ERROR, never a skip: a lane whose subject
 /// vanished (renamed, moved, deleted) must fail loudly rather than pass vacuously.
-/// A file that exists but did not PARSE is absent from the manifest and lands here
-/// too — the scan already failed the build on it above, so this arm is reached only
-/// for a file outside the scan root.
+/// A file that failed to PARSE does not reach here: `Manifest::scan` registers such a
+/// module anyway, but it raises an Error diagnostic doing so, and `build_emp` bails on
+/// the scan's errors before any extra entry is resolved.
 fn resolve_extra_entry(
     manifest: &resolve::manifest::Manifest,
     aeon: &Path,
@@ -1757,17 +1760,32 @@ fn resolve_extra_entry(
 /// Refuse an extra entry that would CONTRIBUTE to the artifact. `--extra-entry`
 /// exists to run a module's comptime guards inside the real build profile, and it is
 /// byte-neutral by contract: a module reached only this way must contribute nothing.
-/// A module smuggled in through the flag would place into a shipping region
+/// A module NAMED to the flag that declared bytes would place into a shipping region
 /// (or chain onto the RAM map and move every address after it) and silently change
 /// the build, so it is refused by name here rather than emitted.
 ///
 /// The refused kinds are the ROM-byte producers (`section`/`data`/`proc`/`table`/
-/// `offsets`/`dispatch`/`script`/`align`), `equ` (which mints a link symbol), and the
-/// RAM allocators (`region`, and the region form of `vars` — the one with no name).
-/// Everything else an `.emp` module can declare is comptime-only: it folds to zero
-/// bytes and zero symbols, which is the same line `publicize_helper_comptime` draws.
-/// The check covers the NAMED module; its own `use` edges are ordinary imports of
-/// modules the profile either already reaches or would refuse in turn.
+/// `offsets`/`dispatch`/`script`/`align`), `equ` (which mints a link symbol), and
+/// whatever the compiler's own RAM-allocator predicate
+/// ([`file_declares_region`](sigil_frontend_emp::lower::file_declares_region))
+/// recognizes — called rather than restated, so the refusal tracks the allocator if
+/// that predicate grows a case.
+///
+/// Everything else an `.emp` module can declare folds to zero bytes and zero link
+/// symbols, the line `publicize_helper_comptime` draws. `implement`/`interface` are
+/// the one accepted kind that is not purely local: an extra entry carrying either
+/// joins the whole-program contract bind pass. That cannot drift the artifact — a
+/// second `implement` for a bound interface, or a second `interface` of one name, is a
+/// hard error in [`contract::bind`](sigil_frontend_emp::resolve::contract) — so it
+/// fails loudly rather than rebinding a member.
+///
+/// LIMITATION, stated because the flag's promise is otherwise flat: this check covers
+/// the NAMED module ONLY. The named module's own `use` edges are ordinary imports, and
+/// nothing re-runs this refusal over them — importing a module the profile already
+/// reaches costs nothing, but an extra entry that imports a byte-emitting module from
+/// OUTSIDE the closure does pull it in. What catches that is the placement layer (an
+/// unmapped section name fails `map.toml` placement) and the golden CRC gates, not
+/// this function.
 fn refuse_artifact_contribution(
     manifest: &resolve::manifest::Manifest,
     module_id: &str,
@@ -1775,22 +1793,42 @@ fn refuse_artifact_contribution(
 ) -> Result<(), String> {
     use sigil_frontend_emp::ast;
     let idx = manifest.by_id[module_id];
-    let emitter = manifest.modules[idx].file.items.iter().find_map(|item| match item {
-        ast::Item::Section(_) => Some(("section", "emits into the ROM")),
-        ast::Item::Data(_) => Some(("data", "emits into the ROM")),
-        ast::Item::Proc(_) => Some(("proc", "emits into the ROM")),
-        ast::Item::Table(_) => Some(("table", "emits into the ROM")),
-        ast::Item::Offsets(_) => Some(("offsets", "emits into the ROM")),
-        ast::Item::Dispatch(_) => Some(("dispatch", "emits into the ROM")),
-        ast::Item::Script(_) => Some(("script", "emits into the ROM")),
-        ast::Item::Align(_) => Some(("align", "emits into the ROM")),
-        ast::Item::Equ(_) => Some(("equ", "mints a link symbol")),
-        ast::Item::Region(_) => Some(("region", "allocates RAM")),
-        // The overlay form (`vars Name: window { … }`) is a comptime view over
-        // existing bytes; the region form (no name) is a RAM allocator.
-        ast::Item::Vars(v) if v.name.is_none() => Some(("vars", "allocates RAM")),
-        _ => None,
-    });
+    let file = &manifest.modules[idx].file;
+    let emitter = file
+        .items
+        .iter()
+        .find_map(|item| match item {
+            ast::Item::Section(_) => Some(("section", "emits into the ROM")),
+            ast::Item::Data(_) => Some(("data", "emits into the ROM")),
+            ast::Item::Proc(_) => Some(("proc", "emits into the ROM")),
+            ast::Item::Table(_) => Some(("table", "emits into the ROM")),
+            ast::Item::Offsets(_) => Some(("offsets", "emits into the ROM")),
+            ast::Item::Dispatch(_) => Some(("dispatch", "emits into the ROM")),
+            ast::Item::Script(_) => Some(("script", "emits into the ROM")),
+            ast::Item::Align(_) => Some(("align", "emits into the ROM")),
+            ast::Item::Equ(_) => Some(("equ", "mints a link symbol")),
+            _ => None,
+        })
+        // RAM allocation is the compiler's predicate to define. The label below is
+        // only for the message — a kind the predicate grows and this scan does not
+        // recognize still refuses, under its generic name.
+        .or_else(|| {
+            if !sigil_frontend_emp::lower::file_declares_region(file) {
+                return None;
+            }
+            let kind = file
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    ast::Item::Region(_) => Some("region"),
+                    // The overlay form (`vars Name: window { … }`) is a comptime view
+                    // over existing bytes; the region form (no name) allocates.
+                    ast::Item::Vars(v) if v.name.is_none() => Some("vars"),
+                    _ => None,
+                })
+                .unwrap_or("a RAM allocator");
+            Some((kind, "allocates RAM"))
+        });
     match emitter {
         None => Ok(()),
         Some((kind, effect)) => Err(format!(
@@ -1928,8 +1966,10 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
 
     // `--extra-entry`: resolve each name against the SCANNED manifest (so an id and a
     // path both work) and refuse one that would contribute to the artifact, BEFORE the
-    // entry is minted — an unresolvable or emitting name is a usage error, not a build
-    // failure to dig out of a diagnostic list.
+    // entry is minted. Both refusals travel as this function's `Err`, so they reach the
+    // reader as a single named `error:` line under the build-failure prefix (exit 1) —
+    // NOT as a row to dig out of a diagnostic list, and not as the exit-2 usage error a
+    // parse-time flag mistake gets, since resolving a name needs the scanned manifest.
     let extra_entries: Vec<String> = profile
         .extra_entries
         .iter()
@@ -4459,7 +4499,7 @@ mod entry_synth_tests {
         for item in &file.items {
             assert!(matches!(item, sigil_frontend_emp::ast::Item::Use(_)), "{item:?}");
         }
-        // No extras = the source it produced before the flag existed.
+        // With no extras the source carries no extra `use` line.
         let bare = synthetic_entry_src(&[], "games.sonic4.ram", "games.sonic4.game", &[]);
         assert!(!bare.contains("games.a.one"));
     }
@@ -4521,24 +4561,46 @@ mod extra_entry_tests {
         }
     }
 
-    /// The byte-neutrality line, per declaration kind: comptime-only items pass;
-    /// every ROM producer, `equ`, and both RAM allocators are refused by name.
+    /// The byte-neutrality line, EVERY declaration kind the refusal ranges over —
+    /// both directions. The ACCEPT rows are the load-bearing half: they are what fails
+    /// if the refusal is ever widened by accident (collapsing the region-form `vars`
+    /// arm to a bare `Item::Vars(_)` would take the overlay form with it, and an
+    /// overlay is a comptime view over bytes that already exist).
     #[test]
     fn only_a_comptime_only_extra_entry_is_accepted() {
         // Each body is appended to a `module pkg.m` line. `(body, refused-kind)`.
         let cases: &[(&str, Option<&str>)] = &[
+            // ACCEPTED — comptime-only, zero bytes and zero link symbols.
             ("const K = 1\nensure(K == 1, \"holds\")\n", None),
             ("struct S { a: u8 }\n", None),
             ("enum E: u8 { A = 0, B = 1 }\n", None),
             ("comptime fn f(x: u8) -> u8 { return x }\n", None),
             ("newtype N = u8\n", None),
+            ("context ints_off { granted }\n", None),
+            ("comptime test \"holds\" { }\n", None),
+            // The overlay form of `vars` — a comptime view over an existing window,
+            // NOT an allocation. Refusing it would refuse every SST-carrying module.
+            ("struct W { pad: [u8; 4] }\nvars V: W.pad { t: u8 }\n", None),
+            // `interface`/`implement` reach the whole-program contract bind pass; a
+            // duplicate of either is a hard error there, so neither can rebind.
+            ("interface I {\n    const C: u8\n}\n", None),
+            ("implement I {\n    const C = 1\n}\n", None),
+            // REFUSED — ROM producers.
             ("data D: [u8; 2] = [1, 2]\n", Some("data")),
             ("proc P () clobbers() { rts }\n", Some("proc")),
-            ("equ Q = 1\n", Some("equ")),
             ("section scratch { }\n", Some("section")),
             ("align 2\n", Some("align")),
+            ("offsets O {\n    F0: F = 1\n}\n", Some("offsets")),
+            ("table T (cell: *u8, hole: 0) {\n    A: a,\n}\n", Some("table")),
+            ("dispatch R (encoding: word_offsets) {\n    A: a,\n}\n", Some("dispatch")),
+            (
+                "struct S { n: u8 }\nscript B (a0: *S) (encoding: word_offsets) shows done { }\n",
+                Some("script"),
+            ),
+            // REFUSED — a link symbol.
+            ("equ Q = 1\n", Some("equ")),
+            // REFUSED — RAM allocators (the compiler's own predicate).
             ("region upper_ram @ $FFFF8000 .. $FFFFFFFF\n", Some("region")),
-            // Region form (no name) allocates RAM; the overlay form is a comptime view.
             ("vars upper_ram { a: u8 }\n", Some("vars")),
         ];
         for (body, refused) in cases {

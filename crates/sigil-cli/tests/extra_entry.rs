@@ -73,18 +73,18 @@ fn aeon_dir() -> Option<PathBuf> {
 /// The native builds touch the shared `engine/sound/generated` dir — serialize.
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Run `sigil build` over the reference tree with `extra` `--extra-entry` arguments,
-/// discarding the ROM. Returns the process result and its combined output — the aeon
-/// lane reads `stdout + stderr` as one stream and counts `[Error]` over it, so this
-/// gate must too.
-fn build_with(aeon: &PathBuf, extra: &[&str]) -> (Output, String) {
+/// The canonical target the aeon lane builds.
+const SONIC4: &[&str] = &["--game", "sonic4"];
+
+/// Run `sigil build` for `target` over the reference tree with `extra`
+/// `--extra-entry` arguments, discarding the ROM. Returns the process result and its
+/// combined output — the aeon lane reads `stdout + stderr` as one stream and counts
+/// `[Error]` over it, so this gate must too.
+fn build_target_with(aeon: &PathBuf, target: &[&str], extra: &[&str]) -> (Output, String) {
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let out_bin = std::env::temp_dir().join(format!("sigil_extra_entry_{}.bin", std::process::id()));
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_sigil"));
-    cmd.args(["build", "--aeon"])
-        .arg(aeon)
-        .args(["--native", "--game", "sonic4", "-o"])
-        .arg(&out_bin);
+    cmd.args(["build", "--aeon"]).arg(aeon).args(["--native"]).args(target).arg("-o").arg(&out_bin);
     for e in extra {
         cmd.args(["--extra-entry", e]);
     }
@@ -98,7 +98,12 @@ fn build_with(aeon: &PathBuf, extra: &[&str]) -> (Output, String) {
     (out, text)
 }
 
-/// (a) A FAILING extra entry fails the build with its own message, on the normal
+/// The canonical-target shorthand every case below the config-b one uses.
+fn build_with(aeon: &PathBuf, extra: &[&str]) -> (Output, String) {
+    build_target_with(aeon, SONIC4, extra)
+}
+
+/// A FAILING extra entry fails the build with its own message, on the normal
 /// `[Error]` surface, with a nonzero exit — the three things the aeon lane checks.
 ///
 /// NOT VACUOUS: the same build WITHOUT the flag succeeds, so the failure is the
@@ -129,7 +134,24 @@ fn a_failing_extra_entry_fails_the_build_with_its_message() {
     );
 }
 
-/// (c) Two `--extra-entry` flags COMPOSE: both modules are evaluated, both guards
+/// The flag reaches a NON-CANONICAL target too. `--extra-entry` rides the profile, so
+/// every target honours it through one spelling — but canonical sonic4 is the only one
+/// whose driver the flag re-routes, and it is the only one the cases around this test
+/// exercise. `--config-b` (a different profile, a different `-D` set, sound off) holds
+/// the other side: the guard still runs and still fails the build.
+#[test]
+fn an_off_canonical_target_honours_the_flag() {
+    let Some(aeon) = aeon_dir() else { return };
+    let (out, text) = build_target_with(&aeon, &["--config-b"], &[POISON_TWO_RESTORES_PATH]);
+    assert!(!out.status.success(), "expected a nonzero exit; output:\n{text}");
+    assert!(
+        text.contains(POISON_TWO_RESTORES_FRAGMENT),
+        "the guard's own message must reach the report; output:\n{text}"
+    );
+    assert_eq!(text.matches("[Error]").count(), 1, "output:\n{text}");
+}
+
+/// Two `--extra-entry` flags COMPOSE: both modules are evaluated, both guards
 /// fire, and each contributes exactly one `[Error]`. Also proves both accepted
 /// spellings work in one invocation — a path and a dotted module id.
 #[test]
@@ -146,7 +168,7 @@ fn two_extra_entries_compose() {
     );
 }
 
-/// (d) A name that resolves to NOTHING is a loud error, never a silent skip: a lane
+/// A name that resolves to NOTHING is a loud error, never a silent skip: a lane
 /// whose subject was renamed, moved or deleted must fail rather than pass vacuously.
 /// The message must name the argument, which is the whole difference between "fix
 /// this string" and "something is wrong somewhere".
@@ -238,7 +260,7 @@ fn the_cli_writes_the_same_rom_with_a_passing_extra_entry() {
     );
 }
 
-/// (b) A PASSING extra entry moves NO BYTE: the full file is identical to the
+/// A PASSING extra entry moves NO BYTE: the full file is identical to the
 /// flagless build's, and its CRC/size still equal the frozen golden's.
 ///
 /// NOT VACUOUS — the reachability half is proven in the same measurement: without
