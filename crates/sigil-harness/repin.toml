@@ -633,11 +633,16 @@ start = "OJZ_TestRaster"
 end = "ObjDef_Static"
 
 [[region]]
-name = "parallax_configs"
+# RENAMED from "parallax_configs" 2026-08-18 (scanline-P1). The block is no longer
+# hand-authored — it is lowered from authored scenes and emitted by
+# games.sonic4.scene_registry; games.sonic4.parallax_configs is deleted. Same symbols,
+# same span, same bytes: the migration returned all four shapes to their pre-migration
+# crcs and the block was byte-compared equal at the same base. A rename, not a re-measure.
+name = "scene_registry"
 start = "DeformTable_Zero"
 end = "OJZ_TestRaster"
-gate = "SIGIL_EMP_PARALLAX_CONFIGS"
-tests = ["parallax_configs_port"]
+gate = "SIGIL_EMP_SCENE_REGISTRY"
+tests = ["scene_registry_port"]
 
 # conv-h #35 — the test-object sprite mapping index (Map_TestObj word-offset
 # table + 3 frame records). END = the next section head — the end-is-next-placement
