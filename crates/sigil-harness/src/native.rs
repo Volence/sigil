@@ -514,8 +514,13 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // unreachable from this set).
         m!("games.sonic4.data.objdefs.test_objects", "text", pins::OBJDEFS),
         // The OJZ parallax block (conv-g): 6 deform tables + 20 parallax_config
-        // records, authored via games.sonic4.parallax_configs (+ engine.level.parallax_dsl).
-        m!("games.sonic4.parallax_configs", "parallax_configs", pins::PARALLAX_CONFIGS),
+        // records. RE-HOMED 2026-08-18 by scanline-P1: the block is no longer hand-authored
+        // in games.sonic4.parallax_configs (deleted) — it is LOWERED from authored scenes
+        // (games.sonic4.data.effects.ojz_scenes authors, engine.level.scene_dsl lowers,
+        // games.sonic4.scene_registry emits). Same bytes at the same address: the migration
+        // returned all four shapes to their pre-migration crcs and the 0xACE block at
+        // $121C8 is byte-equal, so this row is a RENAME, not a re-measure.
+        m!("games.sonic4.scene_registry", "scene_registry", pins::SCENE_REGISTRY),
         // Effects P3 Parcel C2 — the game-side effects library, carved out of
         // configs.emp's bottom half (gate fixtures, the five starter palette variants,
         // and the five OJZ presets). Same real-pin reasoning as the rows above: the

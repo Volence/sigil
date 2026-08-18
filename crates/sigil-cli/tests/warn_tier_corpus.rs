@@ -72,13 +72,27 @@ const CORPUS_LINTS: &[&str] = &[
 /// (History and the measured retirement numbers: campaign-gap-ledger.md and
 /// notes/2026-08-04-warning-tier.md.)
 const WARN_ID_BASELINE: &[(&str, &[&str])] = &[
-    ("sonic4 plain", &[]),
-    ("sonic4 debug", &[]),
+    // ADJUDICATED 2026-08-18 (scanline-P1): `import.no-names` fires TWICE on sonic4, once
+    // per hand-written closure edge — `use games.sonic4.scene_registry` in ojz_effects.emp
+    // and `use games.sonic4.scene_equiv_proof` in ojz_scroll_test.emp. Both are DELIBERATE
+    // and neither can be spelled another way: a name list does not create the closure edge
+    // (measured — the registry's capability ensure and all of scene_dsl.emp behind it go
+    // dark without the bare use), and a glob on the witness would re-evaluate its twenty
+    // EQ_* consts in the consumer's scope. Demo authors no scenes, so its rows stay empty
+    // and remain a live control on this id.
+    // OPEN, booked in aeon docs/DEFERRED_WORK.md: the lint cannot express "this bare use is
+    // a closure edge", so a real accidental bare use in sonic4 now hides behind these two.
+    // The fix is a spelling for the idiom, not a wider baseline.
+    ("sonic4 plain", &["import.no-names"]),
+    ("sonic4 debug", &["import.no-names"]),
     ("demo plain", &[]),
     ("demo debug", &[]),
-    ("config_a", &[]),
-    ("config_b", &[]),
-    ("lean", &[]),
+    // Same two closure edges — config_a/config_b/lean are sonic4 profiles and carry the
+    // same files. Added together and confirmed by re-running: the gate is bidirectional,
+    // so a shape that did NOT fire would have failed as "NO LONGER FIRING".
+    ("config_a", &["import.no-names"]),
+    ("config_b", &["import.no-names"]),
+    ("lean", &["import.no-names"]),
 ];
 
 /// The reference tree, or `None` when it is absent and strict mode is off.
@@ -296,10 +310,17 @@ fn every_corpus_warning_carries_a_lint_id() {
 /// about. Reporting those would put unactionable rows against a file that does not
 /// exist on disk.
 ///
-/// NOT VACUOUS in either direction: the corpus hand-writes no bare `use` statement,
-/// so an `[import.no-names]` firing can only come from the generated module; and the
-/// lint's teeth against real code are proven in `module_resolution.rs`, so a green
-/// here cannot mean the lint is dead.
+/// PREMISE CORRECTED 2026-08-18 (scanline-P1). This test used to filter on the lint id
+/// alone, on the stated grounds that "the corpus hand-writes no bare `use` statement, so
+/// an `[import.no-names]` firing can only come from the generated module". THAT IS NO
+/// LONGER TRUE: a bare whole-path `use` is the CLOSURE-EDGE idiom — the only way to pull a
+/// zero-emitting module (a guard/witness module, which can never take a registry row) into
+/// a profile's use closure. `ojz_effects.emp` and `ojz_scroll_test.emp` each hand-write one.
+/// So the discriminator is now the LOCATION, not the id: the generated entry is not a file
+/// on disk and its diagnostics carry `location: None`, while a hand-written one names a file
+/// the reader can open. Still not vacuous in either direction — a leaked entry diagnostic
+/// has no location and is caught here; the lint's teeth against real code are proven in
+/// `module_resolution.rs`, so a green here cannot mean the lint is dead.
 #[test]
 fn the_generated_entry_module_is_not_reported() {
     let Some(shapes) = corpus_warnings() else { return };
@@ -307,7 +328,7 @@ fn the_generated_entry_module_is_not_reported() {
     for (label, warnings) in shapes {
         let generated: Vec<&str> = warnings
             .iter()
-            .filter(|w| w.id == "import.no-names")
+            .filter(|w| w.id == "import.no-names" && w.location.is_none())
             .map(|w| w.message.as_str())
             .collect();
         assert!(

@@ -207,8 +207,8 @@ pub const PATH_SWAP: Region = Region { plain_base: 0x118F2, debug_base: 0x120CC,
 /// `OJZ_TestRaster` .. `ObjDef_Static`.
 pub const OJZ_EFFECTS: Region = Region { plain_base: 0x12452, debug_base: 0x12C96, plain_len: 0x4CE, debug_len: 0x4DA };
 
-/// `DeformTable_Zero` .. `OJZ_TestRaster` — gate `SIGIL_EMP_PARALLAX_CONFIGS`. tests: parallax_configs_port
-pub const PARALLAX_CONFIGS: Region = Region { plain_base: 0x11984, debug_base: 0x121C8, plain_len: 0xACE, debug_len: 0xACE };
+/// `DeformTable_Zero` .. `OJZ_TestRaster` — gate `SIGIL_EMP_SCENE_REGISTRY`. tests: scene_registry_port
+pub const SCENE_REGISTRY: Region = Region { plain_base: 0x11984, debug_base: 0x121C8, plain_len: 0xACE, debug_len: 0xACE };
 
 /// `Map_TestObj` .. `Map_DustSpindash` — gate `SIGIL_EMP_TEST_MAPPINGS`. tests: test_mappings_port
 pub const TEST_MAPPINGS: Region = Region { plain_base: 0x27490, debug_base: 0x27CD2, plain_len: 0x30, debug_len: 0x30 };

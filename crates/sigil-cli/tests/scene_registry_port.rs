@@ -1,10 +1,19 @@
 //! conv-g — the OJZ parallax block, region-level byte gate.
 //!
-//! `games/sonic4/data/parallax/configs.emp` (via the `engine.level.parallax_dsl`
-//! authoring vocabulary) emits the six deform tables + twenty `parallax_config`
-//! records that the old `data/parallax/*.asm` files expanded from
-//! `parallax_macros.inc`. This gate lowers the REAL module through the native
-//! build path (`build_emp`), links the self-contained `parallax_configs` section
+//! `games/sonic4/data/effects/scene_registry.emp` emits the six deform tables + twenty
+//! `parallax_config` records, interleaved in ROM order. RE-HOMED 2026-08-18 by scanline-P1:
+//! they are no longer hand-authored. `data/effects/ojz_scenes.emp` authors twenty SCENES
+//! (and emits nothing), `engine/level/scene_dsl.emp` lowers them, and the registry is the
+//! sole emission path. `games/sonic4/data/parallax/configs.emp` — which used to author them
+//! via `engine.level.parallax_dsl`, itself replacing the older `data/parallax/*.asm`
+//! expansion of `parallax_macros.inc` — is DELETED; its `hdr()`/`cfg_band()` constructors
+//! survive only as the test-only oracle in `games/sonic4/test/scene_equiv_proof.emp`.
+//!
+//! THE BYTES DID NOT MOVE ACROSS THAT MIGRATION and this gate is what says so at the
+//! region level: all four shapes returned to their exact pre-migration crcs, and this
+//! 0xACE block was byte-compared equal at the same base. This gate lowers the REAL module
+//! through the native
+//! build path (`build_emp`), links the self-contained `scene_registry` section
 //! (every deform-table pointer is an intra-section label — no externs), and
 //! byte-compares against the reference ROM window `[DeformTable_Zero, ObjDef_Static)`.
 //!
@@ -14,7 +23,7 @@
 //! (factor encoding, `as.sin`/`as.int` deform tables, band decomposition).
 //!
 //! ```text
-//! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test parallax_configs_port
+//! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test scene_registry_port
 //! ```
 
 use sigil_harness::native::{self, build_emp};
@@ -30,7 +39,7 @@ fn strict_gate() -> bool {
 }
 
 fn gate(debug: bool, rom_name: &str, base: usize) {
-    let region_len: usize = if debug { pins::PARALLAX_CONFIGS.debug_len } else { pins::PARALLAX_CONFIGS.plain_len };
+    let region_len: usize = if debug { pins::SCENE_REGISTRY.debug_len } else { pins::SCENE_REGISTRY.plain_len };
     let aeon_dir =
         std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
     let aeon = Path::new(&aeon_dir);
@@ -47,11 +56,11 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
     let native::EmpProgram { sections, .. } =
         build_emp(aeon, &profile).unwrap_or_else(|e| panic!("build_emp: {e}"));
 
-    // The parallax_configs section is self-contained (deform-table pointers are
+    // The scene_registry section is self-contained (deform-table pointers are
     // intra-section labels), so it links standalone.
     let mut parallax: Vec<_> =
-        sections.into_iter().filter(|s| s.name == "parallax_configs").collect();
-    assert_eq!(parallax.len(), 1, "exactly one parallax_configs section");
+        sections.into_iter().filter(|s| s.name == "scene_registry").collect();
+    assert_eq!(parallax.len(), 1, "exactly one scene_registry section");
     // Pin the section at the region base so intra-section deform-table pointers
     // relocate to the golden ROM addresses.
     parallax[0].lma = base as u32;
@@ -63,7 +72,7 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
     let linked = sigil_link::link(&resolved, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("link: {d:?}"));
     let section =
-        linked.section("parallax_configs").expect("linked image carries parallax_configs");
+        linked.section("scene_registry").expect("linked image carries scene_registry");
 
     let expected = &refrom[base..base + region_len];
     // The pin span runs to the next section's aligned base; the emitted image may
@@ -87,10 +96,10 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
 
 #[test]
 fn parallax_block_plain_matches_reference() {
-    gate(false, "s4.bin", pins::PARALLAX_CONFIGS.plain_base as usize);
+    gate(false, "s4.bin", pins::SCENE_REGISTRY.plain_base as usize);
 }
 
 #[test]
 fn parallax_block_debug_matches_reference() {
-    gate(true, "s4.debug.bin", pins::PARALLAX_CONFIGS.debug_base as usize);
+    gate(true, "s4.debug.bin", pins::SCENE_REGISTRY.debug_base as usize);
 }
