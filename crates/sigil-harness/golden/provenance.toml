@@ -7075,3 +7075,111 @@ full_crc = "fb46eb0c"
 full_size = 713137
 anchor_crc = "3b341f37"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "scanline-p2-transitions"
+ab = "aeon@14c20b6b — CAP_TRANSITIONS elision: demo -48 code bytes (StartTransition -18, Step5_Vscroll -16, Active_Config -12, +2 gap), conserved into placer fill, no vacuous site; sonic4 code byte-identical per-proc (deb2 labels only, +108/+110). Gate row flipped informational->real differential with zero gate edits (mask+source-derived expectations). Image pin failed FIRST with named mismatches, re-derived with log. Runtime witness: demo.debug.bin boot on oracle-aether, frame-300 224-row SHA-256 a1a3a829... IDENTICAL to pre-elision ground truth (third consecutive identical capture across elision parcels). effects gates 18/18 exit 0 on merged master; pytest 1066/2"
+note = "CAP_TRANSITIONS: demo -48 code bytes; sonic4 symbols-only"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "789cae1a"
+full_size = 713613
+anchor_crc = "35f30b63"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "3ab6aa51"
+full_size = 600896
+anchor_crc = "4b44c499"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "eb7fd1b6"
+full_size = 95680
+anchor_crc = "8604d8ec"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "6880b54f"
+full_size = 100037
+anchor_crc = "f3fda7f2"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "2632f69f"
+full_size = 655678
+anchor_crc = "cdf83c3a"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "c90f2c7e"
+full_size = 698360
+anchor_crc = "701736a3"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "0755590e"
+full_size = 713245
+anchor_crc = "3b341f37"
+anchor_end = 0xa30d0
+
+[[entry]]
+name = "palette-shift-to-add"
+ab = "aeon@96ee84cc — Tier 3 #4 + #5 palette half: six lsl->add doublings + two tail calls, exactly 16 in-place bytes per ROM, zero symbol movement (all per-proc deltas 0, .lst symbol maps diff-identical). Value-identical class: ab_runner OLD 78d96448-base vs NEW on all three scenes, --selfcheck OK, ALL EQUAL every gated capture incl. state_hash (0x0494C930E6A37B88 / 0xB0BBFFA44C669517 / 0x668CCD56BA59C631 both sides). Flag analysis per site: or.w recomputes CCR after every substitution; masked operands make both encodings CCR-identical anyway. effects gates 18/18 exit 0, cost model unmoved; pytest 1066/2"
+note = "palette: 6x lsl->add + 2 tail calls; 16 in-place bytes, value-identical"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "07be8491"
+full_size = 713613
+anchor_crc = "b6f5a5be"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "264f14e6"
+full_size = 600896
+anchor_crc = "eb830091"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "6835b485"
+full_size = 95680
+anchor_crc = "12481ef6"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "b557a4a2"
+full_size = 100037
+anchor_crc = "95cf9fd1"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "9e651b35"
+full_size = 655678
+anchor_crc = "ec1764d0"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "3976001b"
+full_size = 698360
+anchor_crc = "8c53f6dc"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "73da1db8"
+full_size = 713245
+anchor_crc = "84935f0a"
+anchor_end = 0xa30d0
