@@ -39,27 +39,41 @@ fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
-/// (module `.emp` path relative to the aeon tree, its section name, its pin).
-const SECTIONS: &[(&str, &str, Region)] = &[
+/// A synthesized dep source this oracle prepends to a section's own items,
+/// because the name it carries arrives by `use` from a module a single-file
+/// lower has no way to follow. Derived from the aeon tree at test runtime —
+/// see `sigil_harness::test_support` §4.
+type Prelude = fn(&std::path::Path) -> String;
+
+/// (module `.emp` path relative to the aeon tree, its section name, its pin,
+/// any synthesized preludes it needs).
+const SECTIONS: &[(&str, &str, Region, &[Prelude])] = &[
     (
         "games/sonic4/data/generated/ojz/act1/sec_block_blobs.emp",
         "sec_block_blobs",
         pins::SEC_BLOCK_BLOBS,
+        &[],
     ),
     (
         "games/sonic4/data/generated/ojz/act1/sec_local_maps.emp",
         "sec_local_maps",
         pins::SEC_LOCAL_MAPS,
+        &[],
     ),
     (
+        // `use engine.bg.{BG_LAYOUT_SIZE}` — the module's BG-layout embed is
+        // TYPED `[u8; BG_LAYOUT_SIZE]` (the length is the guard against a
+        // wrong-geometry blob), so the standalone lower needs that one const.
         "games/sonic4/data/levels/ojz/act1/act_assets.emp",
         "ojz_act_assets",
         pins::OJZ_ACT_ASSETS,
+        &[sigil_harness::test_support::bg_layout_size_const_src as Prelude],
     ),
     (
         "games/sonic4/data/generated/ojz/act1/bg_anim.emp",
         "ojz_bg_anim",
         pins::OJZ_BG_ANIM,
+        &[],
     ),
 ];
 
@@ -75,16 +89,43 @@ fn map_toml(section: &str, base: u32, len: usize) -> String {
     )
 }
 
-fn compile_section(emp_rel: &str, section: &str, base: u32, len: usize) -> sigil_link::LinkedImage {
+fn compile_section(
+    emp_rel: &str,
+    section: &str,
+    base: u32,
+    len: usize,
+    preludes: &[Prelude],
+) -> sigil_link::LinkedImage {
     let aeon = aeon_root();
     let path = aeon.join(emp_rel);
     let src = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-    let (file, pdiags) = parse_str(&src);
+    let (main, pdiags) = parse_str(&src);
     assert!(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "{emp_rel} parse errors: {pdiags:?}"
     );
+
+    // Prepend the synthesized dep items (consts only — they emit no bytes, so
+    // the byte comparison below still sees exactly this module's image). The
+    // raster_port/parallax_port idiom.
+    let mut items = Vec::new();
+    for prelude in preludes {
+        let psrc = prelude(&aeon);
+        let (pfile, pdiags) = parse_str(&psrc);
+        assert!(
+            pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
+            "{emp_rel} prelude parse errors: {pdiags:?}\n--- prelude ---\n{psrc}"
+        );
+        items.extend(pfile.items);
+    }
+    items.extend(main.items.clone());
+    let file = sigil_frontend_emp::ast::File {
+        module: main.module.clone(),
+        attrs: main.attrs.clone(),
+        items,
+        docs: main.docs.clone(),
+    };
 
     // embed() paths in these modules are aeon-root-relative.
     let opts = LowerOptions {
@@ -123,7 +164,7 @@ fn gate(debug: bool, rom_name: &str) {
         return;
     };
 
-    for (emp_rel, section, region) in SECTIONS {
+    for (emp_rel, section, region, preludes) in SECTIONS {
         let base = if debug { region.debug_base } else { region.plain_base };
         // Content is shape-invariant; the pin LEN may differ per shape by a short
         // align pad only (objtest-gate: ojz_act_assets' PLAIN successor changed,
@@ -133,7 +174,7 @@ fn gate(debug: bool, rom_name: &str) {
         let (lo, hi) = (region.plain_len.min(region.debug_len), region.plain_len.max(region.debug_len));
         assert!(hi - lo < 16, "{section} len diverges by more than align pad: plain {:#x} debug {:#x}", region.plain_len, region.debug_len);
 
-        let linked = compile_section(emp_rel, section, base, len);
+        let linked = compile_section(emp_rel, section, base, len, preludes);
         let sec = linked
             .section(section)
             .unwrap_or_else(|| panic!("linked image must carry `{section}`"));

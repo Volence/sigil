@@ -390,23 +390,20 @@ pub fn reference_tree(rels: &[&str]) -> Option<PathBuf> {
 // A copied `$001F` in Rust is exactly the "copied expectation" defect this tree
 // keeps re-finding, which is why [`emp_const_literal`] reads the file instead.
 
-/// Read `[pub] const <name> = <integer literal>` out of an `.emp` source and
-/// return its value. Accepts AS-style `$hex`, `0x` hex, `%binary` and decimal,
-/// with optional `_` separators; ignores a trailing `// …` comment and skips
-/// commented-out lines entirely.
+/// Read `[pub] const <name> = <rhs>` out of an `.emp` source and return the
+/// right-hand side TEXT, verbatim, minus any trailing `// …` comment.
 ///
-/// FAILS LOUD in three ways rather than returning a default, because every
-/// caller is a gate whose expectation is this number:
-/// - no such const  → the name moved or was renamed;
-/// - more than one  → ambiguous, the caller cannot know which one it got;
-/// - a NON-LITERAL right-hand side → the const became COMPUTED (the live case:
-///   `games/sonic4/config/game.emp` records that `SCANLINE_CAPS` MAY flip from
-///   the `$001F` literal to `= SceneRegistry_CapsFolded` once the registry
-///   exists). A parse-the-literal helper cannot follow that flip, so it says so
-///   by name instead of silently binding a wrong mask.
-pub fn emp_const_literal(path: &std::path::Path, name: &str) -> i128 {
+/// The scan half of [`emp_const_literal`], split out so a caller that wants the
+/// EXPRESSION rather than a folded number can have it (the live case:
+/// [`bg_layout_size_const_src`] re-declares `BG_LAYOUT_SIZE = 64*64*2` into a
+/// synthesized module and lets sigil's own comptime folder do the arithmetic,
+/// so no product of that expression is ever written down in Rust).
+///
+/// Fails loud two ways rather than returning a default — absent (renamed or
+/// moved) and ambiguous (more than one declaration).
+pub fn emp_const_rhs(path: &std::path::Path, name: &str) -> String {
     let src = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("emp_const_literal: cannot read {}: {e}", path.display()));
+        .unwrap_or_else(|e| panic!("emp_const_rhs: cannot read {}: {e}", path.display()));
     let mut hits: Vec<String> = Vec::new();
     for line in src.lines() {
         let t = line.trim_start();
@@ -423,18 +420,36 @@ pub fn emp_const_literal(path: &std::path::Path, name: &str) -> i128 {
         let rhs = rhs.split("//").next().unwrap_or("").trim();
         hits.push(rhs.to_string());
     }
-    let rhs = match hits.len() {
+    match hits.len() {
         1 => hits.pop().unwrap(),
         0 => panic!(
-            "emp_const_literal: no `const {name} = …` in {} — the const was renamed or moved, \
+            "emp_const_rhs: no `const {name} = …` in {} — the const was renamed or moved, \
              and this gate's expectation is derived from it",
             path.display()
         ),
         n => panic!(
-            "emp_const_literal: {n} declarations of `const {name}` in {} — ambiguous, refuse to guess",
+            "emp_const_rhs: {n} declarations of `const {name}` in {} — ambiguous, refuse to guess",
             path.display()
         ),
-    };
+    }
+}
+
+/// Read `[pub] const <name> = <integer literal>` out of an `.emp` source and
+/// return its value. Accepts AS-style `$hex`, `0x` hex, `%binary` and decimal,
+/// with optional `_` separators; ignores a trailing `// …` comment and skips
+/// commented-out lines entirely.
+///
+/// FAILS LOUD in three ways rather than returning a default, because every
+/// caller is a gate whose expectation is this number:
+/// - no such const  → the name moved or was renamed;
+/// - more than one  → ambiguous, the caller cannot know which one it got;
+/// - a NON-LITERAL right-hand side → the const became COMPUTED (the live case:
+///   `games/sonic4/config/game.emp` records that `SCANLINE_CAPS` MAY flip from
+///   the `$001F` literal to `= SceneRegistry_CapsFolded` once the registry
+///   exists). A parse-the-literal helper cannot follow that flip, so it says so
+///   by name instead of silently binding a wrong mask.
+pub fn emp_const_literal(path: &std::path::Path, name: &str) -> i128 {
+    let rhs = emp_const_rhs(path, name);
     parse_emp_int_literal(&rhs).unwrap_or_else(|| {
         panic!(
             "emp_const_literal: `const {name}` in {} has a NON-LITERAL right-hand side `{rhs}`. \
@@ -510,6 +525,34 @@ pub fn scene_dsl_cap_consts_src(aeon: &std::path::Path) -> String {
         src.push_str(&format!("pub const {name} = ${v:04X}\n"));
     }
     src
+}
+
+/// A synthesized `.emp` source re-declaring `engine/level/bg.emp`'s
+/// `pub const BG_LAYOUT_SIZE`, for a single-module oracle to PREPEND to its dep
+/// items.
+///
+/// `games/sonic4/data/levels/ojz/act1/act_assets.emp` types its BG-layout embed
+/// `[u8; BG_LAYOUT_SIZE]` — the length IS the guard there (a wrong-sized blob
+/// must be an `array length mismatch` at build time, not a transposed
+/// background at runtime), so the type annotation, and therefore this const,
+/// cannot simply be dropped from the oracle's view. `use engine.bg.{…}` has no
+/// module to follow in a single-file lower, exactly like raster.emp's
+/// `use engine.level.scene_dsl.{CAP_ANCHORS}` above.
+///
+/// Synthesized rather than prepending the real `bg.emp`: that module is CODE
+/// (`BG_Init` and friends, itself `use`ing engine.constants / structs / vdp /
+/// z80_bus), and its items lowered into this oracle's file would both drag a
+/// subsystem of further unknown names in and EMIT BYTES into the very section
+/// being byte-compared. Only the one integer is load-bearing.
+///
+/// The value is not written down here: the right-hand side is copied VERBATIM
+/// out of `bg.emp` (`64*64*2` today) and folded by sigil's own comptime
+/// evaluator, so a geometry change in the engine reaches this gate by itself.
+/// Should that expression ever start naming other consts, the lower fails loud
+/// with `unknown name` rather than binding a stale length.
+pub fn bg_layout_size_const_src(aeon: &std::path::Path) -> String {
+    let rhs = emp_const_rhs(&aeon.join("engine/level/bg.emp"), "BG_LAYOUT_SIZE");
+    format!("module engine.bg_layout\npub const BG_LAYOUT_SIZE = {rhs}\n")
 }
 
 /// sonic4's declared parallax capability mask, read from its `implement Game`.
