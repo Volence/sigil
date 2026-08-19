@@ -7237,3 +7237,57 @@ full_crc = "38be3bfe"
 full_size = 713245
 anchor_crc = "b25bed6d"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "raster-dispatch-chain"
+ab = "aeon@649b4359 — Tier 3 #2: leading beq (op fetch already sets Z — no tst.w needed), OP_SET_REG dispatch 80->10, streams +8. Sweep A/B predicted -0.8 N per boundary, measured mean -0.833 (10/12 exact -1, two holds at quantization edges); F1 3044->2624 = -420 = 6x70 exact; F0 unmoved control; spins re-solved by the 1c solver (reg-prefixed +7 N). +2 code bytes fill-absorbed, no symbol moves, +16/ROM deb2 (one label). effects gates 19/19 exit 0 on merged master; pytest 1069/2; demo boot witness SHA-identical (fifth consecutive)"
+note = "dispatch chain: leading beq; reg_set -70 cyc, streams +8"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "4beeefde"
+full_size = 713629
+anchor_crc = "882bed9d"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "eb42b024"
+full_size = 600912
+anchor_crc = "2d8ddf42"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "87973d4e"
+full_size = 95696
+anchor_crc = "9b8a2ad0"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "c0ea1aae"
+full_size = 100053
+anchor_crc = "338f2761"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "e1d5c7dd"
+full_size = 655678
+anchor_crc = "524ecacc"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "33c217fc"
+full_size = 698376
+anchor_crc = "b5ac3038"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "f5ef3b4e"
+full_size = 713261
+anchor_crc = "4eea092a"
+anchor_end = 0xa30d0
