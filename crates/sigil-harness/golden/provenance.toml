@@ -7507,3 +7507,57 @@ full_crc = "b7960905"
 full_size = 713295
 anchor_crc = "81dac5ef"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "raster-cram-anchor-366"
+ab = "aeon@d2974510 — window anchor corrected 371->366 (least-squares fold over 12 groups, s.e. 2.0 cyc; estimator period-bug fixed — 371's validating centre came from the buggy fold, PIN 2 shared the error and is satisfied at 366; pre-SR fold 349 + measured item-6 delta 17 = 366 independently). Five shipped spin words re-solve -1 (F6/F8 hold by rounding). The owner-approved 4-word raise FAILED the pre-committed rule at the corrected anchor (+0.9 cyc early slack vs 4.0 = 2 s.e. and the 2.9 deep-class bar) — RASTER_BURST_MAX_CRAM holds 3, raise booked contingent. Three-way constant split + 5-word self-refusal + two red-first poisons ship. ab_runner x4 state_hash EQUAL, only diffs the five spin words; cost gate exact to the cycle; demo shapes byte-identical; gates 22/22 segmented (one wedge, scoped kill, clean retry); pytest 1074/2, expect-fail 19/19"
+note = "anchor 366; spins -1 x5; ceiling honestly held at 3"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "247556d0"
+full_size = 713663
+anchor_crc = "3e94b0b4"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c801ce2a"
+full_size = 600946
+anchor_crc = "d648c784"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "f7806241"
+full_size = 95733
+anchor_crc = "a4988a3c"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "f9f8d0e5"
+full_size = 100086
+anchor_crc = "57b2000e"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "1e9c5f62"
+full_size = 655678
+anchor_crc = "07cd3347"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "cdabf8a3"
+full_size = 698411
+anchor_crc = "4bc6cdb8"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "d22dda85"
+full_size = 713295
+anchor_crc = "586c0ef4"
+anchor_end = 0xa30d0
