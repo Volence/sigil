@@ -160,6 +160,11 @@ fn s4budget_parses_emit_listing() {
             // error (exit 0 + a `ROM:` line). Actual symbol EXTRACTION (exact
             // resolved values) is proven by the complementary
             // `oracle_loadfromaslisting_resolves_emit_listing` test below.
+            // The set above deliberately includes an EQUATE: s4budget cross-checks
+            // its two address views against each other AND against the `N symbols`
+            // trailer, so this is the gate that a listing carrying equates has not
+            // disturbed that 1:1 invariant (it is why equates get their own
+            // section rather than a `-` row in the symbol table).
             // s4budget's --summary line is printed to stderr (see s4budget.py:608,
             // `print(format_summary(...), file=sys.stderr)`); scan the combined
             // output so this gate is stream-agnostic. Exit 0 + a `ROM:` line both
@@ -181,6 +186,18 @@ fn s4budget_parses_emit_listing() {
 fn oracle_loadfromaslisting_resolves_emit_listing() {
     // The real M1.d Oracle gate: compile a micro-harness against the actual
     // oracle Symbols.cpp and confirm it resolves symbols from our emit_listing.
+    //
+    // TWO claims, because the listing carries two kinds of name (equ-listing
+    // parcel). Oracle's `SymbolTable` is an ADDRESS map — it answers "what code is
+    // at this PC?" — so:
+    //   * `Main`, an address label, MUST resolve at its address;
+    //   * `OBJ_len`, an EQUATE, MUST NOT resolve at all. It is a value, and a
+    //     debugger that resolved `$40` to `OBJ_len` would be naming a constant as
+    //     a location. Equates live in the listing's own `Equate Table` section,
+    //     which Oracle's `ParseLineHeader` does not read.
+    // Nothing regressed here: before this parcel `is_equate` was hardcoded `false`
+    // at every listing construction site, so no real build ever emitted an equate
+    // row and Oracle never saw one.
     let lst = sigil_link::emit_listing(&[
         sigil_link::ListingSymbol { name: "Main".into(), value: 0x1000, is_equate: false, unused: false },
         sigil_link::ListingSymbol { name: "OBJ_len".into(), value: 0x40, is_equate: true, unused: false },
@@ -210,8 +227,10 @@ int main(int argc, char** argv){
   if(!t.LoadFromAsListing(argv[1])){ printf("LOAD_FAILED\n"); return 2; }
   uint32_t a=0; bool ok = t.Lookup("Main", a);
   if(!ok || a != 0x1000){ printf("BAD Main=%06X ok=%d\n", a, ok); return 3; }
-  ok = t.Lookup("OBJ_len", a);
-  if(!ok || a != 0x40){ printf("BAD OBJ_len=%06X ok=%d\n", a, ok); return 4; }
+  // The equate must NOT be in the address map (and must not be confusable with
+  // one: a stray row would resolve it, most likely at its value 0x40).
+  a = 0; ok = t.Lookup("OBJ_len", a);
+  if(ok){ printf("EQUATE LEAKED into the address map: OBJ_len=%06X\n", a); return 4; }
   printf("OK\n");
   return 0;
 }

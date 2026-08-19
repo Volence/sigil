@@ -61,11 +61,46 @@ pub fn demangle_symbols(symbols: &[ListingSymbol]) -> Vec<ListingSymbol> {
     out
 }
 
-/// Emit the AS-`-L`-compatible symbol-table section. Symbols are address-sorted;
-/// each row is `[*]NAME : HEX C|-` `|`. One symbol per line keeps it trivially
-/// parseable (both consumers iterate matches, so layout is cosmetic).
+/// Emit the AS-`-L`-compatible symbol-table section. Address symbols are
+/// address-sorted; each row is `[*]NAME : HEX C` `|`. One symbol per line keeps it
+/// trivially parseable (both consumers iterate matches, so layout is cosmetic).
+///
+/// # The three sections, and why equates get their own
+///
+/// The ADDRESS symbols are rendered TWICE, as two views of one table:
+///
+///  1. the Oracle body listing (`(depth) N/HEXADDR : Name:`), which Oracle's
+///     `LoadFromAsListing`/`ParseLineHeader` reads and from which
+///     `aeon/tools/scene_spans.py::lst_proc_sizes` derives proc sizes;
+///  2. the `Symbol Table (* = unused):` section + its `N symbols` trailer, which
+///     `aeon/tools/s4budget.py::parse_listing` reads.
+///
+/// s4budget CROSS-CHECKS those two views — same length, same `(name, value)`
+/// sequence, both equal to the trailer's own count — precisely so a partial parse
+/// cannot masquerade as a small program. That invariant is load-bearing, and it is
+/// what decides where an EQUATE goes: an equate is a VALUE, not an address, so it
+/// belongs in neither view. Putting it only in the symbol table would break the 1:1
+/// check; putting it in both would make Oracle resolve a constant as a code address
+/// and inject a phantom head into every proc-size window.
+///
+/// So equates get a THIRD section, appended after the trailer, with a row shape of
+/// its own: `EQU <name> = $<8 hex digits>`. That shape matches none of the four
+/// consumer grammars in play — s4budget's ` NAME : HEX C|- |` symbol row (no `:`,
+/// no `|`), its `(N) i/HEX :` source row and `<N> symbols` trailers, scene_spans'
+/// identical `LST_HEAD_RE` address head, and effects_gates' `(0) `-prefixed probe.
+/// A tool that wants the value of a published `pub equ` matches
+/// `^EQU (\S+) = \$([0-9A-F]{8})$` and cannot collide with an address row.
+///
+/// The section (and its `N equates` trailer) is OMITTED entirely when there are no
+/// equates, so a listing with none is byte-identical to the pre-equate format.
+///
+/// Values render as the `u32` [`ListingSymbol`] carries: a negative equate appears
+/// as its two's-complement pattern, exactly as an address-width AS listing would
+/// render it.
 pub fn emit_listing(symbols: &[ListingSymbol]) -> String {
-    let mut rows: Vec<&ListingSymbol> = symbols.iter().collect();
+    let (equates, addrs): (Vec<&ListingSymbol>, Vec<&ListingSymbol>) =
+        symbols.iter().partition(|s| s.is_equate);
+    let mut rows = addrs;
     rows.sort_by(|a, b| a.value.cmp(&b.value).then(a.name.cmp(&b.name)));
     let unused = rows.iter().filter(|s| s.unused).count();
 
@@ -86,11 +121,23 @@ pub fn emit_listing(symbols: &[ListingSymbol]) -> String {
     out.push_str("  --------------------------\n\n");
     for s in &rows {
         let star = if s.unused { "*" } else { " " };
-        let marker = if s.is_equate { "-" } else { "C" };
-        out.push_str(&format!("{star}{} : {:X} {marker} |\n", s.name, s.value));
+        out.push_str(&format!("{star}{} : {:X} C |\n", s.name, s.value));
     }
     out.push_str(&format!("\n   {} symbols\n", rows.len()));
     out.push_str(&format!("    {unused} unused symbols\n"));
+
+    if !equates.is_empty() {
+        let mut eqs = equates;
+        // Name-sorted: an equate has no address to order by, and a stable order
+        // makes the section diffable across builds.
+        eqs.sort_by(|a, b| a.name.cmp(&b.name).then(a.value.cmp(&b.value)));
+        out.push_str("\n  Equate Table (name = value; values, not addresses):\n");
+        out.push_str("  ---------------------------------------------------\n\n");
+        for s in &eqs {
+            out.push_str(&format!("EQU {} = ${:08X}\n", s.name, s.value));
+        }
+        out.push_str(&format!("\n   {} equates\n", eqs.len()));
+    }
     out
 }
 
@@ -107,17 +154,19 @@ mod tests {
         // Mirror s4budget's regex: (\*?)([\w.]+)\s*:\s*(hex|"str")\s+([C\-])\s*\|
         let out = emit_listing(&[
             sym("Main", 0x000000, false, false),
-            sym("OBJ_len", 0x40, true, false),
+            sym("Boot", 0x40, false, false),
             sym("Unused", 0x2000, false, true),
         ]);
         assert!(out.contains("Symbol Table"));
         assert!(out.contains("unused"));
-        // address-sorted; code marker C, equate marker -.
+        // address-sorted; every symbol-table row is an address, marker C.
         assert!(out.contains("Main : 0 C |"));
-        assert!(out.contains("OBJ_len : 40 - |"));
+        assert!(out.contains("Boot : 40 C |"));
         assert!(out.contains("*Unused : 2000 C |"));
         assert!(out.contains("3 symbols"));
         assert!(out.contains("1 unused symbols"));
+        // No equates in this set → no Equate Table at all (format unchanged).
+        assert!(!out.contains("Equate Table"), "an empty equate section was emitted:\n{out}");
     }
 
     #[test]
@@ -175,11 +224,11 @@ mod tests {
     fn emits_oracle_body_lines_before_symbol_table() {
         let out = emit_listing(&[
             sym("Main", 0x1000, false, false),
-            sym("OBJ_len", 0x40, true, false),
+            sym("Boot", 0x40, false, false),
         ]);
         // Oracle body lines (ParseLineHeader format) come first, address-sorted.
         // `(depth) N/HEXADDR :        Name:`
-        assert!(out.contains("(0) 1/40 :        OBJ_len:"), "missing/incorrect body line:\n{out}");
+        assert!(out.contains("(0) 1/40 :        Boot:"), "missing/incorrect body line:\n{out}");
         assert!(out.contains("(0) 2/1000 :        Main:"), "missing/incorrect body line:\n{out}");
         // Every body line must precede the Symbol Table header (s4budget reads only
         // after that header; Oracle reads only the body lines).
@@ -188,6 +237,176 @@ mod tests {
         assert!(body_idx < tab_idx, "body lines must precede the symbol-table section");
         // The symbol-table section is still present and unchanged.
         assert!(out.contains("Main : 1000 C |"));
-        assert!(out.contains("OBJ_len : 40 - |"));
+        assert!(out.contains("Boot : 40 C |"));
+    }
+
+    /// The equate row shape, stated as a contract: an equate lives ONLY in the
+    /// Equate Table, as `EQU <name> = $<8 hex>`, and appears in NEITHER of the two
+    /// address views.
+    ///
+    /// This is the half of the equ-listing parcel the emitter owns. `pub equ` mints
+    /// a link-level `EquSym` with no label, so before this an equate had no row of
+    /// any kind and a comptime-computed constant was unreadable by any tool.
+    #[test]
+    fn equates_get_a_value_row_and_no_address_row() {
+        let out = emit_listing(&[
+            sym("Main", 0x1000, false, false),
+            sym("SCENE_OJZ_BUDGET", 0x2C, true, false),
+            sym("Boot", 0x40, false, false),
+        ]);
+        // The value row exists, in the Equate Table, with the computed value.
+        assert!(out.contains("Equate Table"), "no equate section:\n{out}");
+        assert!(out.contains("EQU SCENE_OJZ_BUDGET = $0000002C"), "no equate row:\n{out}");
+        assert!(out.contains("1 equates"), "no equate trailer:\n{out}");
+        // …and NO address view names it — neither body line nor symbol-table row.
+        assert!(
+            !out.lines().any(|l| l.starts_with("(0) ") && l.contains("SCENE_OJZ_BUDGET")),
+            "an equate reached the Oracle address listing:\n{out}"
+        );
+        assert!(
+            !out.contains("SCENE_OJZ_BUDGET : "),
+            "an equate reached the symbol table:\n{out}"
+        );
+        // The two address views stay 1:1 with each other AND with the trailer —
+        // the s4budget cross-check that decides where an equate may live.
+        assert!(out.contains("(0) 1/40 :        Boot:"), "body numbering:\n{out}");
+        assert!(out.contains("(0) 2/1000 :        Main:"), "body numbering:\n{out}");
+        assert!(out.contains("Boot : 40 C |") && out.contains("Main : 1000 C |"), "{out}");
+        assert!(out.contains("2 symbols"), "the equate must not inflate the count:\n{out}");
+    }
+
+    /// COLLISION CONTROL. An equate row must never parse as an address row under
+    /// any of aeon's `.lst` consumer grammars. Those are, verbatim:
+    ///
+    ///  * `tools/scene_spans.py::LST_HEAD_RE` —
+    ///    `^\(\d+\) \d+/([0-9A-F]+) :\s+([A-Za-z_][A-Za-z0-9_]*):\s*$`
+    ///    (drives `lst_proc_sizes`, hence `demo_specialization_witness.py`'s
+    ///    proc-size differential);
+    ///  * `tools/effects_gates.py`'s dense-stream probe —
+    ///    `line.startswith("(0) ") and line.rstrip().endswith("<Name>:")`;
+    ///  * `tools/s4budget.py`'s `_SYM_ROW_RE`
+    ///    `^\s*(\*?)([\w.$]+)\s*:\s*([0-9A-Fa-f]+)\s+([C\-])\s*\|\s*$`, its
+    ///    `_SRC_ROW_RE`, and its `<N> symbols` / `<N> unused symbols` trailers.
+    ///
+    /// Every one of them is an ADDRESS reader. The equate row starts with the
+    /// literal `EQU `, carries no `/`, no ` : `, no `|`, and its trailer says
+    /// `equates`, not `symbols` — proven here against a hostile equate deliberately
+    /// named like a proc and valued like a ROM address.
+    #[test]
+    fn equate_row_never_parses_as_an_address_row() {
+        // Named like a proc, valued like a real ROM address: if the shapes could
+        // collide at all, this row is the one that would do it.
+        let out = emit_listing(&[
+            sym("Anchor", 0x200, false, false),
+            sym("OJZ_GradientStream", 0x10AF2, true, false),
+        ]);
+
+        // scene_spans.LST_HEAD_RE, transcribed.
+        let head_re = |l: &str| -> bool {
+            let Some(rest) = l.strip_prefix('(') else { return false };
+            let Some((depth, rest)) = rest.split_once(") ") else { return false };
+            if depth.is_empty() || !depth.bytes().all(|b| b.is_ascii_digit()) {
+                return false;
+            }
+            let Some((idx, rest)) = rest.split_once('/') else { return false };
+            if idx.is_empty() || !idx.bytes().all(|b| b.is_ascii_digit()) {
+                return false;
+            }
+            let Some((hex, rest)) = rest.split_once(" :") else { return false };
+            if hex.is_empty() || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return false;
+            }
+            let name = rest.trim_start();
+            let Some(name) = name.strip_suffix(':') else { return false };
+            !name.is_empty()
+                && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                && !name.as_bytes()[0].is_ascii_digit()
+        };
+        // effects_gates' dense-stream probe, transcribed.
+        let gate_probe =
+            |l: &str| l.starts_with("(0) ") && l.trim_end().ends_with("OJZ_GradientStream:");
+        // s4budget's `_SYM_ROW_RE`, transcribed.
+        let sym_row = |l: &str| -> bool {
+            let l = l.trim_start().trim_start_matches('*');
+            let Some((name, rest)) = l.split_once(':') else { return false };
+            let name = name.trim_end();
+            if name.is_empty()
+                || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b"_.$".contains(&b))
+            {
+                return false;
+            }
+            let rest = rest.trim_start();
+            let Some((hex, rest)) = rest.split_once(' ') else { return false };
+            hex.bytes().all(|b| b.is_ascii_hexdigit())
+                && !hex.is_empty()
+                && matches!(rest.trim().trim_end_matches('|').trim(), "C" | "-")
+                && rest.trim_end().ends_with('|')
+        };
+        // s4budget's two trailers, transcribed.
+        let trailer = |l: &str| {
+            let t = l.trim();
+            t.strip_suffix(" symbols").is_some_and(|n| {
+                let n = n.trim_end_matches("unused").trim_end();
+                !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())
+            })
+        };
+
+        // Only the two EQUATE-SECTION lines are under test — the address half of
+        // this listing is supposed to match, and does (controls below).
+        for line in out.lines().filter(|l| l.starts_with("EQU ") || l.contains("equates")) {
+            assert!(!head_re(line), "an equate line parsed as an address head: {line:?}");
+            assert!(!gate_probe(line), "an equate line matched the effects gate probe: {line:?}");
+            assert!(!sym_row(line), "an equate line parsed as a symbol-table row: {line:?}");
+            assert!(!trailer(line), "an equate line parsed as a symbol trailer: {line:?}");
+        }
+        // Positive controls on the SAME transcriptions: the address rows DO match,
+        // so the assertions above test the row shape, not a broken transcription.
+        let addr = emit_listing(&[sym("OJZ_GradientStream", 0x10AF2, false, false)]);
+        assert!(
+            addr.lines().any(head_re),
+            "the transcribed LST_HEAD_RE matches no address row — the control is broken:\n{addr}"
+        );
+        assert!(addr.lines().any(gate_probe), "the transcribed gate probe is broken:\n{addr}");
+        assert!(addr.lines().any(sym_row), "the transcribed _SYM_ROW_RE is broken:\n{addr}");
+        assert!(addr.lines().any(trailer), "the transcribed trailer regex is broken:\n{addr}");
+        // And the equate's value is readable from its own row regardless.
+        assert!(out.contains("EQU OJZ_GradientStream = $00010AF2"), "{out}");
+    }
+
+    /// The s4budget INVARIANT this design exists to preserve, asserted directly:
+    /// the two address views are the same `(name, value)` sequence, of the same
+    /// length, equal to the `N symbols` trailer — with equates present.
+    #[test]
+    fn equates_do_not_disturb_the_two_view_cross_check() {
+        let out = emit_listing(&[
+            sym("Main", 0x1000, false, false),
+            sym("A_EQ", 0x2C, true, false),
+            sym("Boot", 0x40, false, false),
+            sym("Z_EQ", 0xFFFF0000, true, false),
+            sym("Tail", 0x8000, false, true),
+        ]);
+        let body: Vec<(String, u32)> = out
+            .lines()
+            .filter_map(|l| l.strip_prefix("(0) "))
+            .map(|l| {
+                let (head, name) = l.split_once(" :").unwrap();
+                let hex = head.split_once('/').unwrap().1;
+                (name.trim().trim_end_matches(':').to_string(), u32::from_str_radix(hex, 16).unwrap())
+            })
+            .collect();
+        let table: Vec<(String, u32)> = out
+            .lines()
+            .filter(|l| l.trim_end().ends_with(" C |"))
+            .map(|l| {
+                let l = l.trim_start_matches([' ', '*']);
+                let (name, rest) = l.split_once(" : ").unwrap();
+                let hex = rest.split_once(' ').unwrap().0;
+                (name.to_string(), u32::from_str_radix(hex, 16).unwrap())
+            })
+            .collect();
+        assert_eq!(body, table, "the two address views must be one table");
+        assert_eq!(body.len(), 3, "only the three address symbols: {body:?}");
+        assert!(out.contains("3 symbols") && out.contains("1 unused symbols"), "{out}");
+        assert!(out.contains("2 equates"), "{out}");
     }
 }
