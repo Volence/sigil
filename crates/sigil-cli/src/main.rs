@@ -1341,6 +1341,7 @@ fn print_contract_report(report: &sigil_frontend_emp::corpus_contracts::Contract
             Escape => "[context.escape]",
             EntrySkip => "[context.entry-skip]",
             Reacquire => "[context.reacquire]",
+            RteUndischarged => "[context.rte-undischarged]",
         };
         println!("  {:<28} {id} `{}` @ {}..{}", f.proc, f.ctx, f.span.start, f.span.end);
     }

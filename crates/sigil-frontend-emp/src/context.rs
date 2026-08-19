@@ -158,6 +158,13 @@ pub enum ContextFiringKind {
     /// Acquired contexts are not reentrant by default (the Z80 bus request is
     /// not a counting lock: the inner release frees the outer hold).
     Reacquire,
+    /// `[context.rte-undischarged]` — a path out of a `released_by_rte` region
+    /// that does NOT land on an `rte`. This is [`Escape`](Self::Escape)'s twin
+    /// under the rte flavor, and it is a separate kind because it is a separate
+    /// sentence: the ordinary escape says "you skipped the release", this one
+    /// says "the release you named is the exception return, and this path does
+    /// not reach one". An `rts` in a flavored proc is the canonical case.
+    RteUndischarged,
 }
 
 /// One `with`-bracket contract firing.
@@ -191,6 +198,10 @@ pub struct Region {
     pub exit: usize,
     /// The `with` header's span.
     pub span: Span,
+    /// Is the context `released_by_rte` — no spliced release, the 68000's
+    /// exception return discharging the hold? Flips which exits are legal:
+    /// see [`check_regions`].
+    pub released_by_rte: bool,
 }
 
 impl Region {
@@ -230,13 +241,13 @@ impl Region {
 /// file. An unmatched mark (only reachable from a lowering that already
 /// errored) contributes no region.
 pub fn regions_of(proc: &str, items: &[CodeItem]) -> (Vec<Region>, Vec<ContextFiring>) {
-    /// One region under construction: `(ctx, enter, acquire_end, body_end, span)`.
-    type Open = (String, usize, Option<usize>, Option<usize>, Span);
+    /// One region under construction: `(ctx, enter, acquire_end, body_end, span, rte)`.
+    type Open = (String, usize, Option<usize>, Option<usize>, Span, bool);
     let mut open: Vec<Open> = Vec::new();
     let mut regions = Vec::new();
     let mut firings = Vec::new();
     for (idx, it) in items.iter().enumerate() {
-        let CodeItem::ContextMark { ctx, kind, span } = it else { continue };
+        let CodeItem::ContextMark { ctx, kind, span, released_by_rte } = it else { continue };
         match kind {
             ContextMarkKind::Enter => {
                 if open.iter().any(|(c, ..)| c == ctx) {
@@ -247,7 +258,7 @@ pub fn regions_of(proc: &str, items: &[CodeItem]) -> (Vec<Region>, Vec<ContextFi
                         span: *span,
                     });
                 }
-                open.push((ctx.clone(), idx, None, None, *span));
+                open.push((ctx.clone(), idx, None, None, *span, *released_by_rte));
             }
             ContextMarkKind::AcquireEnd => {
                 if let Some(slot) = open.iter_mut().rev().find(|(c, ..)| c == ctx) {
@@ -261,9 +272,17 @@ pub fn regions_of(proc: &str, items: &[CodeItem]) -> (Vec<Region>, Vec<ContextFi
             }
             ContextMarkKind::Exit => {
                 let Some(pos) = open.iter().rposition(|(c, ..)| c == ctx) else { continue };
-                let (ctx, enter, acquire_end, body_end, span) = open.remove(pos);
+                let (ctx, enter, acquire_end, body_end, span, rte) = open.remove(pos);
                 if let (Some(acquire_end), Some(body_end)) = (acquire_end, body_end) {
-                    regions.push(Region { ctx, enter, acquire_end, body_end, exit: idx, span });
+                    regions.push(Region {
+                        ctx,
+                        enter,
+                        acquire_end,
+                        body_end,
+                        exit: idx,
+                        span,
+                        released_by_rte: rte,
+                    });
                 }
             }
         }
@@ -357,15 +376,51 @@ pub fn check_regions(
                     {
                         fire(ContextFiringKind::Reacquire, span_at(items, idx, region));
                     }
+                    // THE RTE FLAVOR'S RELEASE IS AN INSTRUCTION, AND THIS IS WHERE
+                    // IT IS FOUND. A `released_by_rte` region splices nothing after
+                    // the body, so its LEGITIMATE exit is a fall-out — and the whole
+                    // promise ("the exception return restores SR, so no manual
+                    // restore is needed") is true only if that fall-out lands on an
+                    // `rte`. Landing anywhere else is the promise broken, which is
+                    // why this is an error and not a waived check: it is the same
+                    // question `[context.escape]` asks, with a different answer for
+                    // what counts as the release.
+                    // The rte flavor's legitimate fall-out: straight onto the `rte`.
+                    Edge::Follow(succ)
+                        if !region.contains(succ)
+                            && region.released_by_rte
+                            && is_rte(items, succ) => {}
                     Edge::Follow(succ) if !region.contains(succ) => {
-                        fire(ContextFiringKind::Escape, span_at(items, idx, region));
+                        fire(
+                            if region.released_by_rte {
+                                ContextFiringKind::RteUndischarged
+                            } else {
+                                ContextFiringKind::Escape
+                            },
+                            span_at(items, idx, region),
+                        );
                     }
-                    // A transfer out here is a genuine escape in either flavor. No
-                    // call reaches it: both builders give every call mnemonic its
-                    // fall-through and nothing else — or, at the end of a body,
-                    // only the fall-off, which IS an escape and fires as one.
+                    // A transfer out here is a genuine escape in the ordinary
+                    // flavor. No call reaches it: both builders give every call
+                    // mnemonic its fall-through and nothing else — or, at the end
+                    // of a body, only the fall-off, which IS an escape and fires as
+                    // one.
+                    //
+                    // Under the rte flavor an `rte` INSIDE the body is a Return edge
+                    // and is the release taken early — legal, and the only Return
+                    // that is. `rts`/`rtr`/`rtd` return without reloading the
+                    // exception frame's SR, so they leave the mask raised in the
+                    // caller: those, and every non-return exit, fire.
+                    Edge::Return if region.released_by_rte && is_rte(items, idx) => {}
                     Edge::Return | Edge::FallOff | Edge::TailOut | Edge::BranchOut => {
-                        fire(ContextFiringKind::Escape, span_at(items, idx, region));
+                        fire(
+                            if region.released_by_rte {
+                                ContextFiringKind::RteUndischarged
+                            } else {
+                                ContextFiringKind::Escape
+                            },
+                            span_at(items, idx, region),
+                        );
                     }
                     Edge::Follow(_) => {}
                 }
@@ -403,6 +458,21 @@ pub fn check_regions(
     firings.sort_by(|a, b| (&a.proc, &a.ctx, a.span.start).cmp(&(&b.proc, &b.ctx, b.span.start)));
     firings.dedup();
     firings
+}
+
+/// Is item `i` the instruction `rte`?
+///
+/// Deliberately the MNEMONIC and nothing else. `rte` is the only 68000 return
+/// that reloads SR from the exception frame — `rtr` restores the CCR half alone
+/// and leaves the interrupt mask exactly where the handler left it, `rts`
+/// neither — so an rte-released hold is discharged by this one instruction and by
+/// no other. The non-instruction items between (labels, marks) are stepped over,
+/// the same way the CFG steps over them.
+fn is_rte(items: &[CodeItem], i: usize) -> bool {
+    matches!(
+        items.get(i),
+        Some(CodeItem::Instr { mnemonic, .. }) if mnemonic == "rte"
+    )
 }
 
 /// The span to anchor a region firing at: the offending instruction's, falling

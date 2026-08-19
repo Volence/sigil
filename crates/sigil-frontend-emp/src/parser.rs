@@ -1955,10 +1955,22 @@ impl Parser {
     /// context vblank { granted }
     /// ```
     ///
-    /// The two flavors are distinguished by the body's first word, so neither
-    /// needs a keyword before the name. A body naming `granted` alongside
-    /// acquire/release, or one missing either half of the acquired pair, is a
-    /// steering error here (the decl site is where the author can see both).
+    /// The three flavors are distinguished by the body's own words, so none
+    /// needs a keyword before the name. The third is `released_by_rte`, which
+    /// pairs with an `acquire` and stands in for the `release` half:
+    ///
+    /// ```text
+    /// context ints_off_until_rte {    // RTE-RELEASED: the exception return is the release
+    ///     acquire = asm { move.w #$2700, sr }
+    ///     released_by_rte
+    /// }
+    /// ```
+    ///
+    /// A body naming `granted` alongside acquire/release, one naming BOTH
+    /// `release` and `released_by_rte` (two answers to one question), one that
+    /// is `granted` AND `released_by_rte`, or one missing either half of the
+    /// acquired pair, is a steering error here (the decl site is where the
+    /// author can see all of them).
     fn context_decl(&mut self, public: bool) -> ContextDecl {
         let start = self.span();
         self.bump(); // `context`
@@ -1967,6 +1979,7 @@ impl Parser {
         let mut acquire: Option<Expr> = None;
         let mut release: Option<Expr> = None;
         let mut granted = false;
+        let mut rte_released = false;
         loop {
             self.skip_newlines();
             if self.at(&Tok::RBrace) || self.at(&Tok::Eof) { break; }
@@ -1975,8 +1988,13 @@ impl Parser {
                 self.expect_line_end_or_rbrace();
                 continue;
             }
+            if self.eat_kw("released_by_rte") {
+                rte_released = true;
+                self.expect_line_end_or_rbrace();
+                continue;
+            }
             let field_span = self.span();
-            let field = self.expect_ident("`acquire`, `release`, or `granted`");
+            let field = self.expect_ident("`acquire`, `release`, `released_by_rte`, or `granted`");
             match field.as_str() {
                 "acquire" | "release" => {
                     self.expect(&Tok::Eq, "`=`");
@@ -1986,7 +2004,7 @@ impl Parser {
                 other => {
                     self.diag_at(
                         field_span,
-                        format!("unknown `context` field `{other}` — a context body is `acquire = …` + `release = …`, or `granted`"),
+                        format!("unknown `context` field `{other}` — a context body is `acquire = …` + `release = …` (or `released_by_rte`), or `granted`"),
                     );
                     // Consume a `= expr` if one follows so recovery stays in step.
                     if self.eat(&Tok::Eq) { let _ = self.expr(); }
@@ -1996,16 +2014,32 @@ impl Parser {
         }
         self.expect(&Tok::RBrace, "`}` to close the `context` body");
         let span = start.merge(self.prev_span());
-        let kind = match (granted, acquire, release) {
-            (false, Some(acquire), Some(release)) => ContextKind::Acquired { acquire, release },
-            (true, None, None) => ContextKind::Granted,
-            (true, _, _) => {
+        // `released_by_rte` is checked against the other two words FIRST: it
+        // answers the same question `release` does, and it is meaningless on a
+        // granted context (nothing is acquired, so nothing is released).
+        if rte_released && granted {
+            self.diag_at(span, format!("`context {name}` is `granted` AND `released_by_rte` — a granted context has no bracket to release, and no `rte` can discharge a hold nothing took"));
+            rte_released = false;
+        }
+        if rte_released && release.is_some() {
+            self.diag_at(span, format!("`context {name}` names BOTH `release = …` and `released_by_rte` — the release is either spliced code or the exception return, and a context that names both says the hold ends twice. Drop one."));
+            release = None;
+        }
+        let kind = match (granted, rte_released, acquire, release) {
+            (false, false, Some(acquire), Some(release)) => {
+                ContextKind::Acquired { acquire, release: ReleaseSpec::Code(release) }
+            }
+            (false, true, Some(acquire), _) => {
+                ContextKind::Acquired { acquire, release: ReleaseSpec::Rte }
+            }
+            (true, _, None, None) => ContextKind::Granted,
+            (true, ..) => {
                 self.diag_at(span, format!("`context {name}` is `granted` AND names acquire/release — a granted context has no compiler-owned bracket"));
                 ContextKind::Granted
             }
-            (false, a, _) => {
+            (false, _, a, _) => {
                 let missing = if a.is_none() { "acquire" } else { "release" };
-                self.diag_at(span, format!("`context {name}` is missing `{missing} = …` — an acquired context needs both halves (or spell it `granted`)"));
+                self.diag_at(span, format!("`context {name}` is missing `{missing} = …` — an acquired context needs both halves (or spell the release half `released_by_rte`, or the whole context `granted`)"));
                 // Recover as granted: the name still resolves, so downstream
                 // reports name it rather than an avalanche of "unknown context".
                 ContextKind::Granted

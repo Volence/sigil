@@ -858,3 +858,272 @@ fn a_discharged_requirement_is_censused() {
         vec![("Root".to_string(), "Callee".to_string(), "vblank".to_string())]
     );
 }
+
+// ---------------------------------------------------------------------------
+// THE RTE FLAVOR — `released_by_rte` (§3.1's third context body)
+//
+// An interrupt handler that raises the mask for its body does not need to lower
+// it again: `rte` reloads the whole SR from the frame the CPU pushed at entry, so
+// the ordinary flavor's `move.w (sp)+, sr` restore writes a value the very next
+// instruction discards. The flavor lets the release be NAMED rather than spelled
+// — and then proves it is reached, because "the hardware releases this" is only
+// true where control actually gets to an `rte`.
+//
+// Every test below asks one question about that proof. The pair that matters most
+// is [`an_rte_released_bracket_ending_in_rte_is_clean`] (the shipping shape,
+// silent) against [`an_rte_released_bracket_that_returns_with_rts_fires`] (the
+// same bracket in a proc that returns the ordinary way, refused): a flavor that
+// only ever went quiet would be a hole, not a feature.
+// ---------------------------------------------------------------------------
+
+/// Aeon's real flavored context, inline (same reason `Z80_CTX` is spelled out).
+const RTE_CTX: &str = "context ints_off_until_rte {\n\
+     \x20   acquire = asm { move.w #$2700, sr }\n\
+     \x20   released_by_rte\n\
+     }\n";
+
+/// THE SHIPPING SHAPE IS SILENT. `Raster_HInt`'s exact structure: raise the mask,
+/// save registers, work, restore registers, close the bracket, `rte`. No release
+/// is spliced and none is missing — the `rte` immediately after the bracket IS
+/// the release, and the checker finds it.
+#[test]
+fn an_rte_released_bracket_ending_in_rte_is_clean() {
+    let r = analyze(&format!(
+        "module m\n{RTE_CTX}\
+         pub proc H () clobbers() {{\n\
+             with ints_off_until_rte {{\n\
+                 move.w  #$8A00, VDP_CTRL\n\
+             }}\n\
+             rte\n\
+         }}\n"
+    ));
+    assert_eq!(
+        r.context_firings.iter().filter(|f| f.proc == "H").count(),
+        0,
+        "the flavored bracket's own shape must be clean: {:?}",
+        r.context_firings
+    );
+    assert!(
+        r.context_regions.iter().any(|(p, c)| p == "H" && c == "ints_off_until_rte"),
+        "…and NOT because no region was recovered — the silence has to be a PASS: {:?}",
+        r.context_regions
+    );
+}
+
+/// THE POISON, AND THE WHOLE REASON THE FLAVOR IS A MECHANISM RATHER THAN A
+/// WAIVER. The identical bracket in a proc that returns with `rts`: the mask is
+/// raised and never lowered, because `rts` does not touch SR.
+#[test]
+fn an_rte_released_bracket_that_returns_with_rts_fires() {
+    let r = analyze(&format!(
+        "module m\n{RTE_CTX}\
+         pub proc H () clobbers() {{\n\
+             with ints_off_until_rte {{\n\
+                 move.w  #$8A00, VDP_CTRL\n\
+             }}\n\
+             rts\n\
+         }}\n"
+    ));
+    assert_eq!(
+        ctx_count(&r, "H", ContextFiringKind::RteUndischarged),
+        1,
+        "an `rts` exit must fire `[context.rte-undischarged]`: {:?}",
+        r.context_firings
+    );
+    assert_eq!(
+        ctx_count(&r, "H", ContextFiringKind::Escape),
+        0,
+        "…and NOT as a plain escape — the two say different things: {:?}",
+        r.context_firings
+    );
+}
+
+/// `rtr` IS NOT `rte`, and the distinction is the flavor's whole premise. `rtr`
+/// restores the CCR half from the stack and leaves the interrupt MASK exactly
+/// where the handler left it — so a hold "discharged" by `rtr` is not discharged.
+#[test]
+fn an_rtr_exit_does_not_discharge_an_rte_released_hold() {
+    let r = analyze(&format!(
+        "module m\n{RTE_CTX}\
+         pub proc H () clobbers() {{\n\
+             with ints_off_until_rte {{\n\
+                 move.w  #$8A00, VDP_CTRL\n\
+             }}\n\
+             rtr\n\
+         }}\n"
+    ));
+    assert_eq!(
+        ctx_count(&r, "H", ContextFiringKind::RteUndischarged),
+        1,
+        "`rtr` restores CCR only — the mask stays raised: {:?}",
+        r.context_firings
+    );
+}
+
+/// AN INSTRUCTION BETWEEN THE BRACKET AND THE `rte` IS THE HOLD LEAKING, and it is
+/// the mis-edit the flavor invites: close the bracket, do "one more thing", then
+/// return. That one more thing runs at the raised mask the author believes the
+/// bracket ended.
+#[test]
+fn work_between_an_rte_released_bracket_and_its_rte_fires() {
+    let r = analyze(&format!(
+        "module m\n{RTE_CTX}\
+         pub proc H () clobbers(d0) {{\n\
+             with ints_off_until_rte {{\n\
+                 move.w  #$8A00, VDP_CTRL\n\
+             }}\n\
+             moveq   #0, d0\n\
+             rte\n\
+         }}\n"
+    ));
+    assert_eq!(
+        ctx_count(&r, "H", ContextFiringKind::RteUndischarged),
+        1,
+        "the fall-out must land ON the rte, not near it: {:?}",
+        r.context_firings
+    );
+}
+
+/// AN `rte` INSIDE THE BODY IS THE RELEASE TAKEN EARLY — legal, and the only
+/// return that is. A multi-exit handler is the shape this permits, and it is the
+/// shape the ordinary flavor structurally cannot have (one lexical region, one
+/// spliced exit — `engine/irq.emp`'s header lists multi-exit brackets among the
+/// sites that stay hand-spelled).
+#[test]
+fn an_rte_inside_an_rte_released_body_is_the_release() {
+    let r = analyze(&format!(
+        "module m\n{RTE_CTX}\
+         pub proc H () clobbers(d0) {{\n\
+             with ints_off_until_rte {{\n\
+                 tst.w   d0\n\
+                 bne     .slow\n\
+                 rte\n\
+             .slow:\n\
+                 move.w  #$8A00, VDP_CTRL\n\
+             }}\n\
+             rte\n\
+         }}\n"
+    ));
+    assert_eq!(
+        r.context_firings.iter().filter(|f| f.proc == "H").count(),
+        0,
+        "an in-body `rte` discharges its own path: {:?}",
+        r.context_firings
+    );
+}
+
+/// AN `rts` INSIDE THE BODY fires, on the same rule read the other way — the
+/// early-exit arm written wrong, which is not visible from the closing brace.
+#[test]
+fn an_rts_inside_an_rte_released_body_fires() {
+    let r = analyze(&format!(
+        "module m\n{RTE_CTX}\
+         pub proc H () clobbers(d0) {{\n\
+             with ints_off_until_rte {{\n\
+                 tst.w   d0\n\
+                 bne     .done\n\
+                 rts\n\
+             .done:\n\
+                 move.w  #$8A00, VDP_CTRL\n\
+             }}\n\
+             rte\n\
+         }}\n"
+    ));
+    assert_eq!(
+        ctx_count(&r, "H", ContextFiringKind::RteUndischarged),
+        1,
+        "an in-body `rts` leaves the mask raised in the caller: {:?}",
+        r.context_firings
+    );
+}
+
+/// A TAIL TRANSFER OUT still fires. The hold would travel into the callee and come
+/// back through ITS return, which this proc cannot see and cannot promise is an
+/// `rte`.
+#[test]
+fn a_tail_transfer_out_of_an_rte_released_body_fires() {
+    let r = analyze(&format!(
+        "module m\n{RTE_CTX}\
+         proc Elsewhere () clobbers() {{ rts }}\n\
+         pub proc H () clobbers() {{\n\
+             with ints_off_until_rte {{\n\
+                 jbra    Elsewhere\n\
+             }}\n\
+             rte\n\
+         }}\n"
+    ));
+    assert_eq!(
+        ctx_count(&r, "H", ContextFiringKind::RteUndischarged),
+        1,
+        "a tail transfer carries the hold out of the proc: {:?}",
+        r.context_firings
+    );
+}
+
+/// THE ORDINARY FLAVOR IS UNTOUCHED — a bracket with a spliced release still fires
+/// `Escape`, not the new kind. The rte rules are gated on the FLAVOR and not on
+/// the presence of an `rte` anywhere, and this is what says so.
+#[test]
+fn the_ordinary_flavor_still_fires_plain_escape() {
+    let r = analyze(&format!(
+        "module m\n{Z80_CTX}\
+         pub proc P () clobbers(d0) {{\n\
+             with z80_stopped {{\n\
+                 tst.w   d0\n\
+                 bne     .skip\n\
+             }}\n\
+         .skip:\n\
+             rts\n\
+         }}\n"
+    ));
+    assert_eq!(ctx_count(&r, "P", ContextFiringKind::Escape), 1, "{:?}", r.context_firings);
+    assert_eq!(ctx_count(&r, "P", ContextFiringKind::RteUndischarged), 0, "{:?}", r.context_firings);
+}
+
+// ---- the DECLARATION-site rules -------------------------------------------
+
+/// `release = …` AND `released_by_rte` is two answers to one question. Refused at
+/// the decl, which is where the author can see both words.
+#[test]
+fn naming_both_release_and_released_by_rte_is_a_decl_error() {
+    let (_f, diags) = sigil_frontend_emp::parse_str(
+        "module m\n\
+         context c {\n\
+             acquire = asm { move.w #$2700, sr }\n\
+             release = asm { move.w #$2000, sr }\n\
+             released_by_rte\n\
+         }\n",
+    );
+    assert!(
+        diags.iter().any(|d| d.message.contains("released_by_rte")),
+        "expected a decl diagnostic naming the conflict: {diags:?}"
+    );
+}
+
+/// `granted` AND `released_by_rte` is meaningless — a granted context has no
+/// bracket, so there is no hold for an `rte` to end.
+#[test]
+fn granted_and_released_by_rte_is_a_decl_error() {
+    let (_f, diags) = sigil_frontend_emp::parse_str(
+        "module m\n\
+         context c {\n\
+             granted\n\
+             released_by_rte\n\
+         }\n",
+    );
+    assert!(
+        diags.iter().any(|d| d.message.contains("released_by_rte")),
+        "expected a decl diagnostic: {diags:?}"
+    );
+}
+
+/// `released_by_rte` WITHOUT an acquire is still the missing-half error — the
+/// flavor replaces the release, never the acquire.
+#[test]
+fn released_by_rte_without_an_acquire_is_a_decl_error() {
+    let (_f, diags) = sigil_frontend_emp::parse_str("module m\ncontext c {\n released_by_rte\n}\n");
+    assert!(
+        diags.iter().any(|d| d.message.contains("acquire")),
+        "expected the missing-acquire error: {diags:?}"
+    );
+}

@@ -1149,6 +1149,119 @@ fn a_context_that_never_restores_sr_fires_at_its_own_definition() {
     );
 }
 
+// ---- the RTE flavor's obligations, at the DEFINITION ------------------------
+
+/// Aeon's rte-released mask bracket: raise, and let `rte` put it back.
+const RTE_CTX: &str = "context ints_off_until_rte {\n\
+     \tacquire = asm { move.w #$2700, sr }\n\
+     \treleased_by_rte\n\
+     }\n";
+
+/// THE FLAVOR SPLICES NOTHING AFTER THE BODY, and that is visible in the BYTES:
+/// the whole bracket is the two-byte `move.w #$2700, sr` (`46FC 2700`) ahead of
+/// the body, with no restore behind it. The ordinary flavor's `move.w (sp)+, sr`
+/// (`46DF`) must not appear.
+///
+/// The golden is spelled out rather than differenced against `ints_off`, because
+/// what is being pinned is an ABSENCE and a differencing test would pass on a
+/// flavor that spliced the restore somewhere else in the proc.
+#[test]
+fn the_rte_flavor_splices_an_acquire_and_no_release() {
+    let src = format!(
+        "module m\n{RTE_CTX}\
+         proc f() clobbers(d0) {{\n\
+         \twith ints_off_until_rte {{\n\
+         \t\tmoveq #0, d0\n\
+         \t}}\n\
+         \trte\n\
+         }}\n"
+    );
+    let (module, diags) = lower(&src);
+    assert!(diags.iter().all(|d| d.level != Level::Error), "must lower clean: {diags:?}");
+    assert_eq!(
+        flatten(&module),
+        vec![0x46, 0xFC, 0x27, 0x00, 0x70, 0x00, 0x4E, 0x73],
+        "acquire (move.w #$2700,sr) + body (moveq #0,d0) + rte, and nothing between"
+    );
+}
+
+/// THE ROUND-TRIP CHECK IS REPLACED, NOT WAIVED. An rte-released acquire cannot
+/// round-trip SR by construction (it has no release to restore in), so asking
+/// would produce a permanent false report — and the mask it raises is genuinely
+/// discharged, by the `rte` the region proof insists on. Silence here is a
+/// consequence of that proof, not a hole beside it.
+///
+/// NOT VACUOUS: `MASK_ONLY_CTX` above is the SAME acquire under the ordinary
+/// flavor and fires; the only difference is the word `released_by_rte`.
+#[test]
+fn an_rte_released_acquire_is_not_charged_for_failing_to_round_trip() {
+    let src = format!(
+        "module m\n{RTE_CTX}\
+         proc f() clobbers(d0) {{\n\
+         \twith ints_off_until_rte {{\n\
+         \t\tmoveq #0, d0\n\
+         \t}}\n\
+         \trte\n\
+         }}\n"
+    );
+    let (_module, diags) = lower(&src);
+    assert_eq!(sr_firings(&diags), 0, "the rte discharges it: {diags:?}");
+}
+
+/// AN RTE-RELEASED ACQUIRE THAT PUSHES IS REFUSED, and this is the one mis-write
+/// of the flavor that CORRUPTS rather than merely failing to save: `rte` reads
+/// its exception frame from the stack top, so a push with no popping release
+/// returns through whatever was pushed. It is the ordinary flavor's
+/// `move.w sr,-(sp)` idiom carried over by hand — the single most likely edit.
+/// Error tier: nothing downstream recovers from a shifted exception frame.
+#[test]
+fn an_rte_released_acquire_that_pushes_is_an_error() {
+    let src = "module m\n\
+               context bad {\n\
+               \tacquire = asm { move.w sr, -(sp)\n\
+               \t                move.w #$2700, sr }\n\
+               \treleased_by_rte\n\
+               }\n\
+               proc f() clobbers(d0) {\n\
+               \twith bad {\n\
+               \t\tmoveq #0, d0\n\
+               \t}\n\
+               \trte\n\
+               }\n";
+    let (_module, diags) = lower(src);
+    assert!(
+        has_tag(&diags, "[context.rte-acquire-pushes]"),
+        "a pushing rte-released acquire must be refused: {diags:?}"
+    );
+    assert!(
+        diags.iter().any(|d| d.message.contains("[context.rte-acquire-pushes]")
+            && d.level == Level::Error),
+        "…at ERROR tier: {diags:?}"
+    );
+}
+
+/// The push rule is about the RTE FLAVOR, not about pushes: the ordinary
+/// `ints_off` acquire pushes on purpose and must stay silent. Without this the
+/// rule could be implemented as a blanket "no pushes in an acquire" and every
+/// gate above would still pass.
+#[test]
+fn an_ordinary_acquire_may_still_push() {
+    let src = format!(
+        "module m\n{INTS_OFF_CTX}\
+         proc f() clobbers(d0) {{\n\
+         \twith ints_off {{\n\
+         \t\tmoveq #0, d0\n\
+         \t}}\n\
+         \trts\n\
+         }}\n"
+    );
+    let (_module, diags) = lower(&src);
+    assert!(
+        !has_tag(&diags, "[context.rte-acquire-pushes]"),
+        "the ordinary flavor's push is its save: {diags:?}"
+    );
+}
+
 /// A release whose LAST SR write is not the restore does not round-trip either —
 /// the trailing-write limb of the balance rule, reached from the release half.
 /// One firing at the definition, not one per spliced instruction: the context

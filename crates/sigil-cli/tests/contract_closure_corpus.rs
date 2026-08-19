@@ -1151,9 +1151,13 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
     // gate in every shape the ×7 byte bar builds, where the flag has a value.
     // 17 -> 19 for sound-pkg1 (2026-08-09): the new API v2 status reader
     // Sound_ReadStat arrives with its ints_off + z80_stopped capture pair.
-    // 20 since effects P1: Raster_HInt brackets with `ints_off` to raise to IPL 7 for
-    // the duration of its VDP writes (IRQ4 is entered at IPL 4, so IRQ6 can nest and
-    // retarget the VDP address latch mid-op).
+    // 20 since effects P1: Raster_HInt brackets to raise to IPL 7 for the duration of its
+    // VDP writes (IRQ4 is entered at IPL 4, so IRQ6 can nest and retarget the VDP address
+    // latch mid-op). Since Tier-3 item 6 the context it brackets with is
+    // `ints_off_until_rte`, the RTE-RELEASED flavor — the handler's own `rte` reloads SR
+    // from the exception frame, so the ordinary flavor's save/restore pair was 22 measured
+    // cycles per fire spent producing a value the next instruction discards. The COUNT is
+    // unchanged (one bracket either way); the witness below is what records the flavor.
     assert_eq!(
         r.context_regions.len(),
         20,
@@ -1165,7 +1169,9 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
     for witness in [
         ("Read_Controllers", "z80_stopped"),
         ("Sound_PostByte", "ints_off"),
-        ("Raster_HInt", "ints_off"),
+        // The corpus's only RTE-RELEASED bracket, named here so an un-adoption that
+        // silently reverted it to plain `ints_off` fails rather than passing on the count.
+        ("Raster_HInt", "ints_off_until_rte"),
     ] {
         assert!(
             r.context_regions
