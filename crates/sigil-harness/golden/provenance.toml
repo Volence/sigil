@@ -7399,3 +7399,57 @@ full_crc = "896a35c8"
 full_size = 713279
 anchor_crc = "5ead90a9"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "raster-frame-epoch"
+ab = "aeon@1c55013e — substrate item 3 structural close, diagnosis corrected by reproduction: line 223 was never the hazard (refuted with breakpoint event-walk probe); real precondition = IPL-7 window across VINT, reproduced with --stall fixture (fire lost every other frame) and repaired (uniform [2,2,6,10]). Booked epoch flag proven unbuildable (state-identical fires); IE1-deassert built and measured not to work (oracle IACK-only IPL recompute). Shipped: .priming HV-counter guard, V>=224 retires without advancing. +30 cyc per priming fire measured, every marginal byte-identical, zero spins moved, sweep anchors byte-identical pre/post. ab_runner ALL EQUAL x4; gates 22/22 exit 0 on merged master; pytest 1074/2; demo witness SHA-identical (eighth consecutive)"
+note = "priming-arm HV guard; +60 cyc/frame constant; interlock threshold pinned to 224"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "fdd3407c"
+full_size = 713643
+anchor_crc = "0ffbd08a"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "175ce215"
+full_size = 600946
+anchor_crc = "9253e687"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "deacc756"
+full_size = 95733
+anchor_crc = "516a6d2f"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "25eaed93"
+full_size = 100086
+anchor_crc = "3a74b2a2"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "06fe32da"
+full_size = 655678
+anchor_crc = "6a246d23"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "1e230133"
+full_size = 698411
+anchor_crc = "9cb8e972"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "72ab53aa"
+full_size = 713295
+anchor_crc = "06949f80"
+anchor_end = 0xa30d0
