@@ -32,7 +32,7 @@
 //! ```
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
-use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_frontend_emp::lower::{lower_module_with_contracts, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
@@ -189,6 +189,16 @@ fn compile_real_file(
     let structs_file = parse_file(&aeon.join("engine/structs.emp"));
     let consts_file = parse_file(&aeon.join("engine/system/constants.emp"));
     let vdp_file = parse_file(&aeon.join("engine/vdp.emp"));
+    // The SYNTHESIZED `CAP_*` block standing in for
+    // `use engine.level.scene_dsl.{CAP_PER_LINE, CAP_ANCHORS}`: a single-module lower has
+    // no module to follow, and the bit values are read out of scene_dsl.emp at test
+    // runtime (test_support §4) so this gate can never bind a stale mask.
+    let caps_src = sigil_harness::test_support::scene_dsl_cap_consts_src(&aeon);
+    let (caps_file, caps_diags) = parse_str(&caps_src);
+    assert!(
+        caps_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "synthesized CAP_* block parse errors: {caps_diags:?}"
+    );
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
@@ -197,6 +207,7 @@ fn compile_real_file(
             .into_iter()
             .chain(consts_file.items)
             .chain(vdp_file.items)
+            .chain(caps_file.items)
             .chain(main.items)
             .collect(),
         docs: main.docs.clone(),
@@ -208,7 +219,12 @@ fn compile_real_file(
         embed_base: None,
         defines: vec![("DEBUG".to_string(), i128::from(debug))],
     };
-    let (module, ldiags) = lower_module(&file, &opts);
+    // The game-contract env: buffers.emp's HScroll fill gates two blocks on
+    // `Game.SCANLINE_CAPS & CAP_PER_LINE` / `CAP_ANCHORS`, which the whole-program bind
+    // pass resolves and a single-module lower does not. Bound to SONIC4's declared mask,
+    // read from its game.emp — the reference windows below are sonic4-shaped.
+    let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon);
+    let (module, ldiags) = lower_module_with_contracts(&file, &opts, &contracts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "buffers.emp lower errors: {ldiags:?}"

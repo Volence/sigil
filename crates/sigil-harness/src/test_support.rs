@@ -364,6 +364,179 @@ pub fn reference_tree(rels: &[&str]) -> Option<PathBuf> {
     Some(aeon)
 }
 
+// ── 4. The scanline-capability contract seam (Scanline P2 Phase 1) ──────────
+//
+// Phase 1 gated whole blocks of `engine/effects/raster.emp`,
+// `engine/level/parallax.emp` and `engine/system/buffers.emp` behind
+// `if (Game.SCANLINE_CAPS & CAP_<BIT>) != 0 { … }`. Those modules' standalone
+// port oracles concatenate a hand-picked dep list and lower ONE module, so they
+// see neither the whole-program contract bind (which resolves `Game.MEMBER`)
+// nor `engine/level/scene_dsl.emp` (which declares the `CAP_*` bits) — and the
+// lower aborted with `unknown name Game.SCANLINE_CAPS` / `unknown name
+// CAP_ANCHORS`.
+//
+// The fix is the `camera_port` idiom (a synthesized interface + one `implement`)
+// widened by one member, plus a synthesized `pub const CAP_*` block. Both halves
+// are DERIVED FROM THE AEON TREE AT TEST RUNTIME, never copied:
+//
+//   * the bound mask is read from `games/sonic4/config/game.emp` — the port
+//     oracles compare against the SONIC4 reference ROM windows, so the binding
+//     must be sonic4's actual declaration or the gate would be measuring a
+//     specialisation the reference never took;
+//   * the bit values are read from `engine/level/scene_dsl.emp`, whose comment
+//     block names those five `pub const CAP_*` lines THE AUTHORITY (two aeon
+//     tools already parse them the same way).
+//
+// A copied `$001F` in Rust is exactly the "copied expectation" defect this tree
+// keeps re-finding, which is why [`emp_const_literal`] reads the file instead.
+
+/// Read `[pub] const <name> = <integer literal>` out of an `.emp` source and
+/// return its value. Accepts AS-style `$hex`, `0x` hex, `%binary` and decimal,
+/// with optional `_` separators; ignores a trailing `// …` comment and skips
+/// commented-out lines entirely.
+///
+/// FAILS LOUD in three ways rather than returning a default, because every
+/// caller is a gate whose expectation is this number:
+/// - no such const  → the name moved or was renamed;
+/// - more than one  → ambiguous, the caller cannot know which one it got;
+/// - a NON-LITERAL right-hand side → the const became COMPUTED (the live case:
+///   `games/sonic4/config/game.emp` records that `SCANLINE_CAPS` MAY flip from
+///   the `$001F` literal to `= SceneRegistry_CapsFolded` once the registry
+///   exists). A parse-the-literal helper cannot follow that flip, so it says so
+///   by name instead of silently binding a wrong mask.
+pub fn emp_const_literal(path: &std::path::Path, name: &str) -> i128 {
+    let src = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("emp_const_literal: cannot read {}: {e}", path.display()));
+    let mut hits: Vec<String> = Vec::new();
+    for line in src.lines() {
+        let t = line.trim_start();
+        if t.starts_with("//") {
+            continue;
+        }
+        let t = t.strip_prefix("pub ").unwrap_or(t);
+        let Some(rest) = t.strip_prefix("const ") else { continue };
+        let rest = rest.trim_start();
+        let Some(rest) = rest.strip_prefix(name) else { continue };
+        // Guard against `SCANLINE_CAPS_EXTRA` matching a request for `SCANLINE_CAPS`.
+        let rest = rest.trim_start();
+        let Some(rhs) = rest.strip_prefix('=') else { continue };
+        let rhs = rhs.split("//").next().unwrap_or("").trim();
+        hits.push(rhs.to_string());
+    }
+    let rhs = match hits.len() {
+        1 => hits.pop().unwrap(),
+        0 => panic!(
+            "emp_const_literal: no `const {name} = …` in {} — the const was renamed or moved, \
+             and this gate's expectation is derived from it",
+            path.display()
+        ),
+        n => panic!(
+            "emp_const_literal: {n} declarations of `const {name}` in {} — ambiguous, refuse to guess",
+            path.display()
+        ),
+    };
+    parse_emp_int_literal(&rhs).unwrap_or_else(|| {
+        panic!(
+            "emp_const_literal: `const {name}` in {} has a NON-LITERAL right-hand side `{rhs}`. \
+             This helper parses a literal and CANNOT follow a computed const — the live case is \
+             SCANLINE_CAPS flipping from the `$001F` literal to `= SceneRegistry_CapsFolded`. \
+             When that flip lands, this helper must be replaced by a real evaluation of the \
+             const (lower the declaring module and read the folded value), not given a default.",
+            path.display()
+        )
+    })
+}
+
+/// `$1F` / `0x1F` / `%0001` / `31` -> value; `None` for anything that is not a
+/// bare integer literal (an expression, a name, a call).
+fn parse_emp_int_literal(rhs: &str) -> Option<i128> {
+    let s: String = rhs.chars().filter(|c| *c != '_').collect();
+    let (radix, digits) = if let Some(d) = s.strip_prefix('$') {
+        (16, d)
+    } else if let Some(d) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        (16, d)
+    } else if let Some(d) = s.strip_prefix('%') {
+        (2, d)
+    } else {
+        (10, s.as_str())
+    };
+    if digits.is_empty() {
+        return None;
+    }
+    i128::from_str_radix(digits, radix).ok()
+}
+
+/// The `pub const CAP_*` bits `engine/level/scene_dsl.emp` DECLARES, in file
+/// order. The reserved bits underneath them are a comment on purpose (they have
+/// no lowering), and [`emp_const_literal`]'s comment-skipping is what keeps them
+/// out of this list — same rule aeon's own `tools/test_scene_span_labels.py` and
+/// `tools/effects_gates.py` follow.
+pub fn scene_dsl_cap_bits(aeon: &std::path::Path) -> Vec<(String, i128)> {
+    let path = aeon.join("engine/level/scene_dsl.emp");
+    let src = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("scene_dsl_cap_bits: cannot read {}: {e}", path.display()));
+    let mut out = Vec::new();
+    for line in src.lines() {
+        let t = line.trim_start();
+        if t.starts_with("//") {
+            continue;
+        }
+        let Some(rest) = t.strip_prefix("pub const CAP_") else { continue };
+        let Some((name_tail, _)) = rest.split_once('=') else { continue };
+        let name = format!("CAP_{}", name_tail.trim());
+        let v = emp_const_literal(&path, &name);
+        out.push((name, v));
+    }
+    assert!(
+        !out.is_empty(),
+        "scene_dsl_cap_bits: {} declared NO `pub const CAP_*` — the capability bits are the \
+         authority this seam derives from; an empty set would silently elide every gated block",
+        path.display()
+    );
+    out
+}
+
+/// A synthesized `.emp` source declaring the `CAP_*` bits as free top-level
+/// consts, for a single-module oracle to PREPEND to its dep items.
+///
+/// Synthesized rather than prepending the real `scene_dsl.emp`: that file is the
+/// authoring DSL (enums with payloads, the `scene()`/`fold_caps()` elaborators)
+/// and pulling it wholesale into a byte-oracle's closure would widen these
+/// deliberately minimal dep lists by a whole subsystem. Only the five integer
+/// bits are load-bearing here, and their VALUES still come from that file.
+pub fn scene_dsl_cap_consts_src(aeon: &std::path::Path) -> String {
+    let mut src = String::from("module engine.level.scene_dsl_caps\n");
+    for (name, v) in scene_dsl_cap_bits(aeon) {
+        src.push_str(&format!("pub const {name} = ${v:04X}\n"));
+    }
+    src
+}
+
+/// sonic4's declared parallax capability mask, read from its `implement Game`.
+/// The port oracles compare against the sonic4 reference ROM, so this — not a
+/// literal in Rust, and not demo's `0` — is the only binding under which the
+/// re-lower can reproduce the reference bytes.
+pub fn sonic4_scanline_caps(aeon: &std::path::Path) -> i128 {
+    emp_const_literal(&aeon.join("games/sonic4/config/game.emp"), "SCANLINE_CAPS")
+}
+
+/// The resolved game-contract env binding `Game.SCANLINE_CAPS` to
+/// [`sonic4_scanline_caps`] — the `camera_port` interface/implement idiom, one
+/// member wide. `u16` matches the member's declared type in
+/// `engine/system/game_contract.emp`.
+pub fn scanline_caps_contract_env(
+    aeon: &std::path::Path,
+) -> sigil_frontend_emp::contract::InterfaceEnv {
+    let caps = sonic4_scanline_caps(aeon);
+    game_contract_env(
+        "module engine.game_contract\npub interface Game {\n    const SCANLINE_CAPS: u16\n}\n",
+        &format!(
+            "module games.g.game\npub implement Game {{\n    const SCANLINE_CAPS = ${caps:04X}\n}}\n"
+        ),
+        &[],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
