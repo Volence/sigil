@@ -7291,3 +7291,57 @@ full_crc = "f5ef3b4e"
 full_size = 713261
 anchor_crc = "4eea092a"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "raster-dense-kind"
+ab = "aeon@26f965c4 — Tier 3 #3: tri-state Raster_Dense_Mode hoist + the dense tier's FIRST instrument. Booking corrected 6x: 354->350 cyc/line measured both directions (VDP bus-hold absorbs nominal cycles — carried finding: measure, don't book, inside .dense_body). ab_runner ALL EQUAL on all FOUR scenes incl. new dense; 1b sweep OLD=NEW every field; sparse path byte-verified unchanged; demo boot witness SHA-identical (sixth consecutive). Gates 19->22 each red-first; pytest 1074/2. Sigil-side rider this parcel: Raster_Dense_Kind renamed to Raster_Dense_Mode in repin.toml + two port-test carrier labels"
+note = "dense: tri-state mode hoist + dense instrument; symbol rename tracked in repin manifest"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "dab53b97"
+full_size = 713645
+anchor_crc = "ed612e59"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "7ad50370"
+full_size = 600930
+anchor_crc = "be86503f"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "f38eee3d"
+full_size = 95713
+anchor_crc = "4399648e"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "a931ad3e"
+full_size = 100070
+anchor_crc = "2b0bd818"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "e57abc2b"
+full_size = 655678
+anchor_crc = "69e40f4f"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "2da6bcc7"
+full_size = 698393
+anchor_crc = "17c3bb30"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "54f4b253"
+full_size = 713279
+anchor_crc = "42921302"
+anchor_end = 0xa30d0

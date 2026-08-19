@@ -149,7 +149,7 @@ fn inbound() -> Vec<Section> {
         ("Raster_Dense_Lines", pins::RASTER_DENSE_LINES.plain),
         ("Raster_Dense_Cursor", pins::RASTER_DENSE_CURSOR.plain),
         ("Raster_Dense_Cmd", pins::RASTER_DENSE_CMD.plain),
-        ("Raster_Dense_Kind", pins::RASTER_DENSE_KIND.plain),
+        ("Raster_Dense_Mode", pins::RASTER_DENSE_MODE.plain),
         ("Raster_Ramp_Acc", pins::RASTER_RAMP_ACC.plain),
         ("Raster_Ramp_Step", pins::RASTER_RAMP_STEP.plain),
         ("Effects_World_Y", pins::EFFECTS_WORLD_Y.plain),

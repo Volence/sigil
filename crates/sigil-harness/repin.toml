@@ -3019,7 +3019,7 @@ tests = ["raster_port"]
 name = "Raster_Dense_Cmd"
 tests = ["raster_port"]
 [[symbol]]
-name = "Raster_Dense_Kind"
+name = "Raster_Dense_Mode"
 tests = ["raster_port"]
 [[symbol]]
 name = "Raster_Ramp_Acc"
