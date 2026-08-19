@@ -142,13 +142,13 @@ pub const CAMERA: Region = Region { plain_base: 0x5FB0, debug_base: 0x7030, plai
 pub const PARALLAX: Region = Region { plain_base: 0x6180, debug_base: 0x7210, plain_len: 0x730, debug_len: 0x7C4 };
 
 /// `Raster_Install` .. `Palette_LoadPal` — gate `SIGIL_EMP_RASTER`. tests: raster_port
-pub const RASTER: Region = Region { plain_base: 0x68B0, debug_base: 0x79D4, plain_len: 0x352, debug_len: 0x352 };
+pub const RASTER: Region = Region { plain_base: 0x68B0, debug_base: 0x79D4, plain_len: 0x350, debug_len: 0x350 };
 
 /// `Palette_LoadPal` .. `Effects_InstallPreset` — gate `SIGIL_EMP_PALETTE`. tests: palette_port
-pub const PALETTE: Region = Region { plain_base: 0x6C02, debug_base: 0x7D26, plain_len: 0x484, debug_len: 0x484 };
+pub const PALETTE: Region = Region { plain_base: 0x6C00, debug_base: 0x7D24, plain_len: 0x484, debug_len: 0x484 };
 
 /// `Effects_InstallPreset` .. `Level_LoadArt`.
-pub const PRESET: Region = Region { plain_base: 0x7086, debug_base: 0x81AA, plain_len: 0xAA, debug_len: 0xA6 };
+pub const PRESET: Region = Region { plain_base: 0x7084, debug_base: 0x81A8, plain_len: 0xAC, debug_len: 0xA8 };
 
 /// `Level_LoadArt` .. `PageIn_Process` — gate `SIGIL_EMP_LOAD_ART`. tests: load_art_port
 pub const LOAD_ART: Region = Region { plain_base: 0x7130, debug_base: 0x8250, plain_len: 0x90, debug_len: 0x90 };
@@ -354,10 +354,10 @@ pub const OJZ_PRESET_SEC3: Pin = Pin { plain: 0x12836, debug: 0x1307A };
 pub const OJZ_PRESET_PLAIN: Pin = Pin { plain: 0x1285C, debug: 0x130A0 };
 
 /// `Effects_InstallPreset`. tests: parallax_port
-pub const EFFECTS_INSTALL_PRESET: Pin = Pin { plain: 0x7086, debug: 0x81AA };
+pub const EFFECTS_INSTALL_PRESET: Pin = Pin { plain: 0x7084, debug: 0x81A8 };
 
 /// `Raster_GetChannelBand`. tests: parallax_port
-pub const RASTER_GET_CHANNEL_BAND: Pin = Pin { plain: 0x6BA6, debug: 0x7CCA };
+pub const RASTER_GET_CHANNEL_BAND: Pin = Pin { plain: 0x6BA4, debug: 0x7CC8 };
 
 /// `TestStatic_Main`. tests: objdef_port
 pub const TEST_STATIC_MAIN: Pin = Pin { plain: 0x118D0, debug: 0x11AA0 };
@@ -1509,7 +1509,7 @@ pub const PAL_VARIANT_STAGE: Pin = Pin { plain: 0xFFFF8B92, debug: 0xFFFF8B92 };
 pub const RASTER_V_BLANK: Pin = Pin { plain: 0x68B6, debug: 0x79DA };
 
 /// `Palette_Compose`. tests: game_loop_port
-pub const PALETTE_COMPOSE: Pin = Pin { plain: 0x6CB6, debug: 0x7DDA };
+pub const PALETTE_COMPOSE: Pin = Pin { plain: 0x6CB4, debug: 0x7DD8 };
 
 /// `Player_Blocks`. tests: test_p1_player_port
 pub const PLAYER_BLOCKS: Pin = Pin { plain: 0xFFFFB83E, debug: 0xFFFFE0D4 };

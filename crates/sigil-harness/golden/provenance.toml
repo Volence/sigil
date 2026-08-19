@@ -7183,3 +7183,57 @@ full_crc = "73da1db8"
 full_size = 713245
 anchor_crc = "84935f0a"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "raster-stream-word"
+ab = "aeon@1dcc4440 — Tier 3 #1: .cram_loop word via -4(a2), 30->26 cyc (booked 16 was wrong — it dropped the dbf). Sweep-driver A/B on the NEW ROM: last-word boundary crossings +1 N in all four groups, first-word crossings UNCHANGED (pre-burst control); clean range 16..22 centre 19 = solver output unprompted; within-group spacing 30.0->25.0 (2.6 N aliasing, explained); between-group 490.0 both runs (instrument unmoved). F-pins re-derived, F4/F8 the arms that cannot take the cheap word = unmoved controls, cost gate emulator-exact (F3 3872, F5 3212, delta exactly -2/fire). Code delta -2 bytes absorbed by fill, ROM lengths identical. effects gates 18/18 exit 0; pytest 1067/2"
+note = "raster stream word 30->26; spins re-solved; CRAM_MAX raise booked as proposal"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "d0fe0bd2"
+full_size = 713613
+anchor_crc = "4d617f19"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "6b87dce7"
+full_size = 600896
+anchor_crc = "842e18b4"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "1fa06bfc"
+full_size = 95680
+anchor_crc = "992b1715"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "518bc8a7"
+full_size = 100037
+anchor_crc = "a82eedba"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "ee501cdb"
+full_size = 655678
+anchor_crc = "9ce9694b"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "7fb9881c"
+full_size = 698360
+anchor_crc = "8373d5b0"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "38be3bfe"
+full_size = 713245
+anchor_crc = "b25bed6d"
+anchor_end = 0xa30d0
