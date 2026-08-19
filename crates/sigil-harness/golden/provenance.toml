@@ -6913,3 +6913,57 @@ full_crc = "ab1055d4"
 full_size = 712752
 anchor_crc = "d6c8378b"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "raster-substrate-byte-moving"
+ab = "parcel-r1-opcode"
+note = "substrate items 2+4+1a: stale bit on CHANGED, ship guard derives its line, blanking spin per-op program data"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "3652ab8d"
+full_size = 713140
+anchor_crc = "da8c0b81"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "9ea600cb"
+full_size = 600439
+anchor_crc = "9c38029a"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "fafc6704"
+full_size = 96471
+anchor_crc = "8e01cbeb"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "b27ddfe4"
+full_size = 100825
+anchor_crc = "9f538560"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "bb41b078"
+full_size = 655678
+anchor_crc = "f3a4eaad"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "eab1f9a0"
+full_size = 697888
+anchor_crc = "4aba95b7"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "c97cc7b9"
+full_size = 712772
+anchor_crc = "aa31d231"
+anchor_end = 0xa30d0
