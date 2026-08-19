@@ -7345,3 +7345,57 @@ full_crc = "54f4b253"
 full_size = 713279
 anchor_crc = "42921302"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "raster-tail-calls"
+ab = "aeon@873f86e9 — Tier 3 #5 fully closed: two Raster_VBlank tail calls (24 cyc each, site B per-frame). Two-control-build isolation: boundary shift tracks the VBlank TAIL (-24 cyc phase reference via deferred priming IRQ4s), NOT the 128-symbol -2 shift; centre N=18 in all four builds, spins still centred, no re-derive. ab_runner ALL EQUAL x4 scenes incl. dense; cost row unmoved in all eight numbers re-measured same-session; gates 22/22 exit 0 on merged master (one wedge, killed, clean retry); pytest 1074/2; demo witness SHA-identical (seventh consecutive)"
+note = "raster tail calls: -2 bytes, 128 symbols shift, VBlank-tail phase finding"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "33bac000"
+full_size = 713627
+anchor_crc = "807dc104"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "e11d2e40"
+full_size = 600930
+anchor_crc = "8de197be"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "f16d1a50"
+full_size = 95713
+anchor_crc = "2f68119a"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "31a87100"
+full_size = 100070
+anchor_crc = "e31230d3"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "11d424a7"
+full_size = 655678
+anchor_crc = "d0239f6c"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "cf54b017"
+full_size = 698393
+anchor_crc = "b8a83933"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "896a35c8"
+full_size = 713279
+anchor_crc = "5ead90a9"
+anchor_end = 0xa30d0
