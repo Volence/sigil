@@ -7615,3 +7615,57 @@ full_crc = "2d365501"
 full_size = 713863
 anchor_crc = "8bba1390"
 anchor_end = 0xa31c0
+
+[[entry]]
+name = "dense-body-addressing"
+ab = "aeon@5874ac33 — the booked dense rider, measured at exactly nominal 12 cyc/line (five-count sweep 1512+316*lines to the cycle, intercept unmoved; shipped dense content HBlank row 32812->31665). Durable finding: bus-hold absorbs adjacent OPERAND accesses, not instruction-stream fetches — item 3's caveat scoped narrower. Value-identical: ab_runner ALL EQUAL x4 incl. dense; 1b sweep raw records identical both ROMs; sparse cost row unmoved; solver untouched (dense tier has no spin). Raster_HInt 348->340, all ROM lengths unchanged, fill absorbed. Gates 23/23 exit 0 on merged master (one raster_source load-flake, budget raised 20s->120s per wedge-detector doctrine, 5874ac33); pytest 1092/2"
+note = "dense body -4(a2): -12 cyc/line measured; all four shapes move"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "8553cd00"
+full_size = 714229
+anchor_crc = "052a1a24"
+anchor_end = 0xa31c0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "ad666fbd"
+full_size = 600946
+anchor_crc = "f2be55b5"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "aae04929"
+full_size = 95733
+anchor_crc = "8931c98c"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "82884c07"
+full_size = 100152
+anchor_crc = "d6aad293"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "16ab5284"
+full_size = 655678
+anchor_crc = "2fe671e1"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "e111dff7"
+full_size = 698411
+anchor_crc = "eebf3769"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "06af0010"
+full_size = 713863
+anchor_crc = "8360e6c0"
+anchor_end = 0xa31c0
