@@ -7021,3 +7021,57 @@ full_crc = "8610557b"
 full_size = 712772
 anchor_crc = "3b341f37"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "scanline-p2-phase1"
+ab = "aeon@78d96448 — Scanline P2 Phase 1 specialization landing evidence: sonic4 CODE byte-identical (per-proc reconciliation zero at every gating step; ROM delta deb2 symbol appendix only, +365/+362); demo elides 994 code bytes across 7 procs conserved exactly into placer fill. Runtime witness: demo.debug.bin (elided) boot on oracle-aether, 224-row scanline capture at frame 300 (source==raster), frame SHA-256 a1a3a829acd4a3564dc7cee0b50e3b8eedb2237b61d0098a864f56c1417767c9 IDENTICAL to pre-elision ground truth captured twice deterministic (2 colours: #24246D backdrop 71424px + #FFFFFF 16x16 box 256px). Effects gate lane 18/18 exit 0 on the merge incl. 1c cost model exercised-and-exact; scanline span differentials derived from SCANLINE_CAPS; demo witness poison proved the image pin catches a bracket-stripped 42-byte leak the span half cannot see. pytest 1066/2. Full record: aeon merge 78d96448 commit trail + tools/scenes evidence"
+note = "P2 Phase 1: capability elision; sonic4 symbols-only, demo -994 code bytes"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "475a2e46"
+full_size = 713505
+anchor_crc = "35f30b63"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "75844537"
+full_size = 600788
+anchor_crc = "4b44c499"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "14281cd3"
+full_size = 95706
+anchor_crc = "5d401950"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "ed00cfaf"
+full_size = 100056
+anchor_crc = "6d3697f7"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "2632f69f"
+full_size = 655678
+anchor_crc = "cdf83c3a"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "06125172"
+full_size = 698250
+anchor_crc = "701736a3"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "fb46eb0c"
+full_size = 713137
+anchor_crc = "3b341f37"
+anchor_end = 0xa30d0
