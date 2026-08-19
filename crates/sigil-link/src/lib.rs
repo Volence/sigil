@@ -248,6 +248,45 @@ pub fn resolved_symbols(sections: &[Section], stubs: &SymbolTable) -> Vec<(Strin
         .collect()
 }
 
+/// The EQUATES ONLY of a `resolve_layout` output, as `(name, value)` pairs —
+/// every section's `equ_sym` folded to a constant, with the label half of
+/// [`resolved_symbols`] excluded.
+///
+/// This is the listing's equate half (Parcel "equ-listing"): the `.lst` emitter
+/// walks `sec.labels`, which mints ADDRESS rows, so a name published by
+/// `pub equ` (a link-level `EquSym`, no label) had no listing row at all and was
+/// unreadable by any `.lst`-consuming tool. Equates are NOT addresses, so they
+/// cannot be folded into the label set — they need the emitter's separate
+/// `is_equate` (`-` marker) row shape, which is exactly why this is a distinct
+/// query and not a filter over `resolved_symbols` (whose merged table has already
+/// thrown the distinction away).
+///
+/// `sections` must be a `resolve_layout` output (its `equ_syms` pre-folded);
+/// `stubs` seeds the same externals `link()` saw. An equate that still folds to
+/// [`Fold::Poison`] (a cross-seam equate whose external base is not placed in THIS
+/// link — see `link()`'s Pass 1b) is SKIPPED, exactly as `link()` leaves it
+/// undefined: a listing row with a fabricated value would be worse than no row.
+/// Deterministic (name-sorted).
+pub fn resolved_equates(sections: &[Section], stubs: &SymbolTable) -> Vec<(String, i64)> {
+    // Fold against the FULL table (labels + equs) so an equ referencing a label or
+    // an earlier equ resolves — then keep only the equ names.
+    let table = build_symbol_table(sections, stubs);
+    let mut out: Vec<(String, i64)> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for sec in sections {
+        for eq in &sec.equ_syms {
+            if !seen.insert(eq.name.clone()) {
+                continue;
+            }
+            if let Fold::Value(v) = eq.expr.fold(&|name| table.resolve(name, None)) {
+                out.push((eq.name.clone(), v));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 /// Evaluate a program's deferred link-time assertions (D-H.4/D-H.6) against the
 /// post-`resolve_layout` symbol table, returning ONE `Error` diagnostic per
 /// FAILING assert (ALL failures collected, never first-failure). `resolved` is
@@ -988,6 +1027,42 @@ mod tests {
             Vec::<Diagnostic>::new(),
             "an equ-defined symbol in a LinkAssert condition must resolve, not Poison"
         );
+    }
+
+    /// `resolved_equates` returns the EQUATE half of the resolved table and
+    /// nothing else — the query the `.lst` emitter needs, because an equate row
+    /// and a label row are different row SHAPES and `resolved_symbols`' merged
+    /// table has already lost the distinction.
+    ///
+    /// Also pinned here: an equate whose value is COMPUTED from a label VMA folds
+    /// to a constant (this is the case the aeon P2 spike needed and could not get
+    /// — a comptime-derived number published under a name a tool can read).
+    #[test]
+    fn resolved_equates_returns_only_equates_including_label_derived_ones() {
+        let mut carrier = equ_only_section("defs", "SCENE_BUDGET", 0x2C);
+        // A second equate on the same carrier, computed off a label defined by
+        // ANOTHER section — the link-time-folded shape.
+        carrier.equ_syms.push(sigil_ir::EquSym {
+            name: "TAB_PLUS_TWO".into(),
+            expr: Expr::Binary {
+                op: sigil_ir::expr::BinOp::Add,
+                lhs: Box::new(Expr::Sym("SfxBlobWinTab".into())),
+                rhs: Box::new(Expr::Int(2)),
+            },
+            span: span(),
+        });
+        let secs = [carrier, region_b()];
+        let got = resolved_equates(&secs, &SymbolTable::new());
+        assert_eq!(
+            got,
+            vec![("SCENE_BUDGET".to_string(), 0x2C), ("TAB_PLUS_TWO".to_string(), 0x8461)],
+            "equates only, name-sorted, label-derived value folded"
+        );
+        // The label is absent from the equate half but present in the merged one —
+        // the control that proves the filter is the subject, not an empty result.
+        let all = resolved_symbols(&secs, &SymbolTable::new());
+        assert!(all.iter().any(|(n, v)| n == "SfxBlobWinTab" && *v == 0x845F), "{all:?}");
+        assert!(!got.iter().any(|(n, _)| n == "SfxBlobWinTab"), "a label leaked into the equates");
     }
 
     fn span() -> Span {

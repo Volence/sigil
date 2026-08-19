@@ -3337,22 +3337,9 @@ pub fn build_rom_chained_with_listing(
     }
     enforce_inapplicable_allowlist_against(&inapplicable, &link_asserts, &profile.inapplicable_guards)?;
 
-    // Sigil-canonical listing from the resolved image (one C row per label VMA).
-    let mut listing: Vec<sigil_link::ListingSymbol> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for sec in &resolved {
-        let origin = sec.vma_origin();
-        for label in &sec.labels {
-            if seen.insert(label.name.clone()) {
-                listing.push(sigil_link::ListingSymbol {
-                    name: label.name.clone(),
-                    value: origin.wrapping_add(label.offset),
-                    is_equate: false,
-                    unused: false,
-                });
-            }
-        }
-    }
+    // Sigil-canonical listing from the resolved image: one `C` row per label VMA
+    // plus one `-` row per folded equate.
+    let listing = listing_from_resolved(&resolved, &stubs);
 
     let linked = sigil_link::link(&resolved, &stubs)
         .map_err(|d| format!("declared-chain: link: {} diag(s); first {:?}", d.len(), d.first()))?;
@@ -3582,26 +3569,7 @@ pub fn build_native_rom_with_listing(aeon: &Path, debug: bool) -> Result<RomBuil
     let resolved = sigil_link::resolve_layout(&sections, &stubs, true)
         .map_err(|d| format!("resolve_layout: {} diag(s); first: {:?}", d.len(), d.first()))?;
 
-    // Derive the sigil-canonical listing from the resolved image: one `C` row per
-    // section label at its final VMA. De-duplicated (a label defined once) and
-    // deterministic (emit_listing address-sorts). RAM labels (`$FFFFxxxx`) are kept
-    // — convsym's `-range 0 FFFFFF` drops them from the deb2 table, but they belong
-    // in the full listing for the `s4budget` RAM consumer.
-    let mut listing: Vec<sigil_link::ListingSymbol> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for sec in &resolved {
-        let origin = sec.vma_origin();
-        for label in &sec.labels {
-            if seen.insert(label.name.clone()) {
-                listing.push(sigil_link::ListingSymbol {
-                    name: label.name.clone(),
-                    value: origin.wrapping_add(label.offset),
-                    is_equate: false,
-                    unused: false,
-                });
-            }
-        }
-    }
+    let listing = listing_from_resolved(&resolved, &stubs);
 
     // Drift-guard ensures. In the ALL-GATES native build every engine `.asm` twin
     // is gated off, so a guard of the form `ensure(extern("X") == X_mirror)` whose
@@ -3932,6 +3900,60 @@ const ERROR_HANDLER_BLOB_LEN: u32 = 0xF56;
 /// for every Offset/Caller), so a warning would be read past. It is the enforcement
 /// arm of the INVARIANT declared in `games/<g>/map.toml` and documented in
 /// `engine/debug/error_handler.emp`.
+/// The sigil-canonical symbol listing of a `resolve_layout` output — the single
+/// derivation both native drivers (chained + full-file) use.
+///
+/// TWO row kinds, because the listing describes two different kinds of name:
+///
+///  * every section LABEL → an as-`-L` `C` (code/ADDRESS) row at its final VMA.
+///    De-duplicated (a label is defined once) and deterministic (`emit_listing`
+///    address-sorts). RAM labels (`$FFFFxxxx`) are kept — convsym's
+///    `-range 0 FFFFFF` drops them from the deb2 table, but they belong in the
+///    full listing for the `s4budget` RAM consumer.
+///  * every folded EQUATE → an as-`-L` `-` (VALUE) row. `pub equ` mints a
+///    link-level `EquSym` and no label, so before this these names existed in the
+///    linker's symbol table and nowhere a tool could read them; a `.emp` module
+///    could compute a constant at comptime but not publish it. The `-` marker is
+///    the AS form for a value symbol and the discriminator every consumer keys on
+///    — see `sigil_link::emit_listing`, which additionally keeps equates out of
+///    the Oracle address-listing half.
+///
+/// Label rows win a name collision (`seen` is seeded by the label pass): a label
+/// is an address the debugger must resolve, and `link()` already rejects a genuine
+/// equ-vs-label duplicate through its `defined_here` channel, so this is a
+/// belt-and-braces tie-break, not a policy.
+fn listing_from_resolved(
+    resolved: &[sigil_ir::Section],
+    stubs: &SymbolTable,
+) -> Vec<sigil_link::ListingSymbol> {
+    let mut listing: Vec<sigil_link::ListingSymbol> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for sec in resolved {
+        let origin = sec.vma_origin();
+        for label in &sec.labels {
+            if seen.insert(label.name.clone()) {
+                listing.push(sigil_link::ListingSymbol {
+                    name: label.name.clone(),
+                    value: origin.wrapping_add(label.offset),
+                    is_equate: false,
+                    unused: false,
+                });
+            }
+        }
+    }
+    for (name, value) in sigil_link::resolved_equates(resolved, stubs) {
+        if seen.insert(name.clone()) {
+            listing.push(sigil_link::ListingSymbol {
+                name,
+                value: value as u32,
+                is_equate: true,
+                unused: false,
+            });
+        }
+    }
+    listing
+}
+
 fn check_error_handler_is_last(
     listing: &[sigil_link::ListingSymbol],
     appendix_start: usize,
@@ -4005,7 +4027,17 @@ pub fn append_deb2_appendix(
     // plumbing (Stage-3 P2b, OQ-B) so the source-meaningful locals SURVIVE convsym's
     // `as_lst` name parser (which rejects the mangled `$` form) and reach the deb2
     // appendix. ROM-byte-neutral: the appendix is post-`EndOfRom` symbol data only.
-    let deb2_listing = sigil_link::demangle_symbols(listing);
+    //
+    // EQUATES ARE DROPPED HERE, at the deb2 boundary, and the drop is STRUCTURAL —
+    // not a reliance on convsym's `as_lst` reader taking only `C` rows. deb2 is the
+    // MD Debugger's ADDRESS table (it answers "what code is at this PC?"), and an
+    // equate is a value, so an equate has nothing to say to it. Making the exclusion
+    // explicit is also what keeps every shipped ROM BYTE-IDENTICAL across this
+    // parcel: the appendix is part of the ROM, so one leaked row would grow it and
+    // move every golden.
+    let addresses: Vec<sigil_link::ListingSymbol> =
+        listing.iter().filter(|s| !s.is_equate).cloned().collect();
+    let deb2_listing = sigil_link::demangle_symbols(&addresses);
     std::fs::write(&lst, sigil_link::emit_listing(&deb2_listing)).map_err(|e| e.to_string())?;
 
     // convsym: append the deb2 table (build.sh:170-171 flags verbatim).
