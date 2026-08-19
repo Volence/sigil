@@ -39,7 +39,7 @@
 //! ```
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
-use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_frontend_emp::lower::{lower_module_with_contracts, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
@@ -95,6 +95,19 @@ fn real_sources() -> Option<(String, Vec<String>)> {
             }
         }
     }
+    // The synthesized `CAP_*` block, values read out of scene_dsl.emp at runtime — the
+    // same dep `raster_port` prepends. raster.emp's anchors overlay is gated on
+    // `Game.SCANLINE_CAPS & CAP_ANCHORS`, so without this every probe below dies at
+    // LOWER instead of reaching its own subject.
+    let scene_dsl = aeon_dir().join("engine/level/scene_dsl.emp");
+    if !scene_dsl.exists() {
+        if strict_gate() {
+            panic!("SIGIL_STRICT_GATE set but dependency missing: {}", scene_dsl.display());
+        }
+        eprintln!("skip: {} not found", scene_dsl.display());
+        return None;
+    }
+    deps.push(sigil_harness::test_support::scene_dsl_cap_consts_src(&aeon_dir()));
     Some((main, deps))
 }
 
@@ -205,7 +218,11 @@ fn compile(
         embed_base: None,
         defines: vec![],
     };
-    let (module, ldiags) = lower_module(&file, &opts);
+    // Bound to sonic4's declared SCANLINE_CAPS (read from its game.emp), matching
+    // `raster_port`: probe (a) and (c) compare against the sonic4 reference window, and
+    // probe (b)'s missing carriers include RAM only the anchors overlay names.
+    let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon_dir());
+    let (module, ldiags) = lower_module_with_contracts(&file, &opts, &contracts);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
 
     let map = sigil_link::load_map(&map_toml(base)).expect("map must load");

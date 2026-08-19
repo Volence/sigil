@@ -53,7 +53,7 @@
 //! ```
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
-use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_frontend_emp::lower::{lower_module_with_contracts, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
@@ -232,12 +232,19 @@ pub fn compile_real_file(debug: bool, carriers_override: Option<Vec<Section>>) -
 
     let main = parse(&read(dir.join("raster.emp")), "raster.emp");
     // Order matters only in that every name must be defined before the item that reads it
-    // at comptime; these four are leaves.
+    // at comptime; these five are leaves. The last is the SYNTHESIZED `CAP_*` block —
+    // raster.emp's `use engine.level.scene_dsl.{CAP_ANCHORS}` has no module to follow in a
+    // single-file lower, and its values are read out of scene_dsl.emp at test runtime (see
+    // test_support §4) so this gate can never bind a stale mask.
     let deps = [
         parse(&read(engine.join("vdp.emp")), "vdp.emp"),
         parse(&read(engine.join("system/constants.emp")), "constants.emp"),
         parse(&read(engine.join("irq.emp")), "irq.emp"),
         parse(&read(dir.join("raster_dsl.emp")), "raster_dsl.emp"),
+        parse(
+            &sigil_harness::test_support::scene_dsl_cap_consts_src(&aeon_dir()),
+            "scene_dsl CAP_* block",
+        ),
     ];
 
     let mut items = Vec::new();
@@ -258,7 +265,13 @@ pub fn compile_real_file(debug: bool, carriers_override: Option<Vec<Section>>) -
         embed_base: None,
         defines: vec![],
     };
-    let (module, ldiags) = lower_module(&file, &opts);
+    // The game-contract env: raster.emp's anchors overlay sits under
+    // `if (Game.SCANLINE_CAPS & CAP_ANCHORS) != 0`, which the whole-program bind pass
+    // resolves and a single-module lower does not. Bound to SONIC4's declared mask, read
+    // from its game.emp — the reference windows below are sonic4-shaped, so any other
+    // binding would compare a specialisation the reference never took.
+    let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon_dir());
+    let (module, ldiags) = lower_module_with_contracts(&file, &opts, &contracts);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "lower errors: {ldiags:?}"
