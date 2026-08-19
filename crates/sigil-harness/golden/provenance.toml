@@ -6967,3 +6967,57 @@ full_crc = "c97cc7b9"
 full_size = 712772
 anchor_crc = "aa31d231"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "raster-spin-solver-1c"
+ab = "aeon@4143b58c — item 1c A/B + landing evidence: ab_runner OLD 8f629a69 (c97cc7b9) vs NEW 4143b58c (8610557b) on all three committed effects scenes, --selfcheck deterministic; whole-VDP state_hash EQUAL, visible plane EQUAL; ONLY gated diffs are the three authored OJZ spin words (04->15/0A), reg+region spin correctly unmoved at 4. Positive observation: 1b driver re-run on NEW ROM — boundary structure unchanged [22,25,28], solved leading spin 18 inside measured clean [16,21]; effects cost gate emulator-exact on the solved spins (F0 572 F1 3044 F3 3882 F4 4652 F5 3220 F8 4640). Full record: aeon docs/DEFERRED_WORK.md 1c VERIFICATION + docs/benchmarks/scanline-p2/HBLANK-WINDOW-SWEEP-RESULTS.md"
+note = "1c: spins solved from the measured window; 4 data bytes, zero code"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "674ac2f1"
+full_size = 713140
+anchor_crc = "35f30b63"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "a8d4b666"
+full_size = 600439
+anchor_crc = "4b44c499"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "fafc6704"
+full_size = 96471
+anchor_crc = "8e01cbeb"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "b27ddfe4"
+full_size = 100825
+anchor_crc = "9f538560"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "2632f69f"
+full_size = 655678
+anchor_crc = "cdf83c3a"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "d6bc3057"
+full_size = 697888
+anchor_crc = "701736a3"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "8610557b"
+full_size = 712772
+anchor_crc = "3b341f37"
+anchor_end = 0xa30d0
