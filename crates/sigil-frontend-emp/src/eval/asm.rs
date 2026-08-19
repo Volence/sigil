@@ -652,11 +652,22 @@ impl Evaluator<'_> {
         };
         // Clone out of the borrow: evaluating the exprs needs `&mut self`.
         let decl_span = decl.span;
-        let (acquire, release) = (acquire.clone(), release.clone());
+        let acquire = acquire.clone();
+        // The RTE flavor splices no release at all — the 68000's exception return
+        // is the release, and it belongs to the CONSUMER's proc, not to this
+        // bracket. What replaces the spliced code is a PROOF, run by
+        // `context::check_regions` over the region the marks below delimit: every
+        // path out has to land on an `rte`.
+        let release = match release {
+            ast::ReleaseSpec::Code(e) => Some(e.clone()),
+            ast::ReleaseSpec::Rte => None,
+        };
+        let rte = release.is_none();
         buf.push(CodeItem::ContextMark {
             ctx: ctx.to_string(),
             kind: crate::value::ContextMarkKind::Enter,
             span,
+            released_by_rte: rte,
         });
         let acq_start = buf.items.len();
         let acq_ok = self.splice_context_code(&acquire, ctx, ContextPhase::Acquire, span, buf, env);
@@ -665,20 +676,28 @@ impl Evaluator<'_> {
             ctx: ctx.to_string(),
             kind: crate::value::ContextMarkKind::AcquireEnd,
             span,
+            released_by_rte: rte,
         });
         self.lower_with_body(body, scope, buf, env);
         buf.push(CodeItem::ContextMark {
             ctx: ctx.to_string(),
             kind: crate::value::ContextMarkKind::BodyEnd,
             span,
+            released_by_rte: rte,
         });
         let rel_start = buf.items.len();
-        let rel_ok = self.splice_context_code(&release, ctx, ContextPhase::Release, span, buf, env);
+        let rel_ok = match &release {
+            Some(release) => {
+                self.splice_context_code(release, ctx, ContextPhase::Release, span, buf, env)
+            }
+            None => true,
+        };
         let rel_end = buf.items.len();
         buf.push(CodeItem::ContextMark {
             ctx: ctx.to_string(),
             kind: crate::value::ContextMarkKind::Exit,
             span,
+            released_by_rte: rte,
         });
         // THE CONTEXT'S OWN SR OBLIGATION, checked where the code lives. The
         // bracket's spliced SR traffic is `Context`-authored, so the consumer's
@@ -710,7 +729,41 @@ impl Evaluator<'_> {
         // truncated range: the check would stack a spurious "does not
         // round-trip" on the already-reported error, so that bracket is
         // skipped; a later bracket with clean halves is still checked.
-        if acq_ok
+        //
+        // THE RTE FLAVOR IS EXEMPT FROM THE ROUND TRIP AND PAYS FOR IT TWICE
+        // OVER. It cannot round-trip by construction — it has no release to
+        // restore in — so asking would only ever produce a false report. What
+        // discharges its SR write instead is the `rte` that
+        // `context::check_regions` PROVES every exit path reaches: `rte` reloads
+        // the whole SR from the exception frame, so the consumer's mask comes
+        // back without an instruction spent on it. The one thing that argument
+        // needs and the region proof cannot see is checked right here: `rte`
+        // pops that frame off the stack, so an acquire that PUSHES and expects a
+        // release to pop would leave `rte` reading its frame two bytes low —
+        // the exact mis-port of the ordinary flavor's `move.w sr,-(sp)` idiom,
+        // and the one way to write this flavor that corrupts rather than merely
+        // fails to save. It is an ERROR, not a warning: nothing downstream
+        // recovers from a shifted exception frame.
+        if rte && acq_ok {
+            for item in &buf.items[acq_start..acq_end] {
+                let CodeItem::Instr { ops, span: isp, .. } = item else { continue };
+                if ops.iter().any(|o| matches!(o, CodeOperand::PreDec(Reg::A7))) {
+                    self.error(
+                        *isp,
+                        format!(
+                            "[context.rte-acquire-pushes] context `{ctx}`'s acquire PUSHES to \
+                             the stack, but it is `released_by_rte` — there is no release to \
+                             pop it, and the `rte` that discharges the hold reads its \
+                             exception frame from the stack top, so it would return through \
+                             whatever this pushed. An rte-released acquire must leave the \
+                             stack where it found it."
+                        ),
+                    );
+                }
+            }
+        }
+        if !rte
+            && acq_ok
             && rel_ok
             && !crate::lower::sr_writes_round_trip(
                 buf.items[acq_start..acq_end].iter().chain(&buf.items[rel_start..rel_end]),

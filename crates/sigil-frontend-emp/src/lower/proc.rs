@@ -830,6 +830,17 @@ fn check_context_brackets(
                     f.ctx
                 ),
             ),
+            K::RteUndischarged => (
+                "context.rte-undischarged",
+                format!(
+                    "this path leaves the `with {}` region without reaching an `rte` — the \
+                     context is `released_by_rte`, so the exception return IS its release \
+                     and there is no spliced restore behind it. Every exit from the bracket \
+                     must be, or fall straight onto, an `rte`; an `rts`/`rtr`/`rtd` or a \
+                     tail transfer out leaves the hold live in the caller",
+                    f.ctx
+                ),
+            ),
         };
         push(diags, Level::Error, f.span, format!("[{id}] in `{name}`: {what}"));
     }

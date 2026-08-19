@@ -192,13 +192,39 @@ pub enum ContextKind {
     Acquired {
         /// The `acquire = <expr>` Code expression.
         acquire: Expr,
-        /// The `release = <expr>` Code expression.
-        release: Expr,
+        /// How the region is RELEASED — spliced code, or the CPU's own `rte`.
+        release: ReleaseSpec,
     },
     /// A GRANTED context: no acquire/release. Asserted at a root proc via
     /// `grants(...)`; the assembler cannot verify hardware dispatch, so the
     /// grant is a TRUST ROOT — greppable and auditable, never inferred.
     Granted,
+}
+
+/// How an [`ContextKind::Acquired`] context's hold ENDS (§3.1).
+///
+/// The ordinary flavor splices a `release = <expr>` after the body. The `rte`
+/// flavor splices NOTHING and names the 68000's own exception return as the
+/// release: an interrupt handler entered at one IPL that raises the mask for its
+/// body does not need to lower it again, because `rte` reloads the whole SR from
+/// the frame the CPU pushed at entry. The manual restore is dead code — it writes
+/// a value the very next instruction discards.
+///
+/// IT IS NOT A DISABLED CHECK, WHICH IS THE WHOLE POINT OF SPELLING IT. The
+/// promise "the hardware releases this" is only true if control genuinely reaches
+/// an `rte`, so [`crate::context::check_regions`] proves exactly that and nothing
+/// weaker: for an `Rte`-released region, EVERY path out of the bracket — fall-out,
+/// return, tail transfer, branch out — must land on an `rte`. A flavored bracket
+/// in a proc that returns with `rts` fires `[context.rte-undischarged]`. The
+/// ordinary flavor's release is spliced code the compiler can point at; this
+/// flavor's release is an instruction the compiler has to FIND, and refusing to
+/// find it is an error, never a shrug.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReleaseSpec {
+    /// `release = <expr>` — a Code expression spliced after the body.
+    Code(Expr),
+    /// `released_by_rte` — no spliced release; the exception return is it.
+    Rte,
 }
 
 /// A `comptime test "name" [(expect_error: "[diag.id]")] { … }` block

@@ -472,6 +472,13 @@ pub enum CodeItem {
         kind: ContextMarkKind,
         /// The `with` header's span (every mark of one region shares it).
         span: Span,
+        /// Is this region's context `released_by_rte` — no spliced release, the
+        /// exception return discharges the hold? Carried on the MARK rather than
+        /// looked up by name at the checker, for the same reason the marks ride
+        /// the CodeBuf at all: a bracket spliced out of a comptime template
+        /// arrives at the checker as items and nothing else, and the flavor has
+        /// to survive that trip intact.
+        released_by_rte: bool,
     },
 }
 
