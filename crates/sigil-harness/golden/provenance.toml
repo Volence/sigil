@@ -7453,3 +7453,57 @@ full_crc = "72ab53aa"
 full_size = 713295
 anchor_crc = "06949f80"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "raster-sr-flavour"
+ab = "aeon@d5671e2f — Tier 3 #6 as a PAIRED parcel with sigil's new released_by_rte context form (two verifying rules, 14 tests, per-rule poisons). Measured -22 cyc/fire uniform, zero residual (booked 30; third table mispricing this week); dense tier gets 2112 cyc/frame back (a dense line IS a fire — absent from the booking). Sweep +2 N on all four edge boundaries, twice, spread 0: RASTER_HBLANK_END_CYC 351->371, all spins +2 re-solved, historical calibrations pinned via RASTER_ORIGIN_SHIFT_ITEM6. ab_runner x4: state_hash EQUAL, ONLY diffs the re-solved spin words (the required NO proving propagation). Gates 22/22 exit 0 (segmented — full lane wedged twice, stop-race, booked); pytest 1074/2; demo witness SHA-identical (ninth consecutive); ROM lengths unchanged"
+note = "SR round trip -> rte contract; -22/fire, dense -2112/frame; window constant 371"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "dc26898e"
+full_size = 713663
+anchor_crc = "6d5bbed2"
+anchor_end = 0xa30d0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "52ff2ac6"
+full_size = 600946
+anchor_crc = "d50a5350"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "f7806241"
+full_size = 95733
+anchor_crc = "a4988a3c"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "f9f8d0e5"
+full_size = 100086
+anchor_crc = "57b2000e"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "0bf41ae5"
+full_size = 655678
+anchor_crc = "84bb9f88"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "209b5db4"
+full_size = 698411
+anchor_crc = "48e9d96e"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "b7960905"
+full_size = 713295
+anchor_crc = "81dac5ef"
+anchor_end = 0xa30d0
