@@ -7561,3 +7561,57 @@ full_crc = "d22dda85"
 full_size = 713295
 anchor_crc = "586c0ef4"
 anchor_end = 0xa30d0
+
+[[entry]]
+name = "debug-warp-mailbox"
+ab = "aeon@6c341697 — DEBUG-only warp mailbox for Aurora's play-from-cursor. Release shapes BYTE-IDENTICAL (cdabf8a3/f7806241 — confirmed three ways incl. sigil's own release-region oracles); only DEBUG shapes move. Gate warp_mailbox 10/10: mailbox warp 0 differing visible-window nametable words at 2048px diagonal where bare poke tears 698 at +30f; negative control observes the same stale Cache_Prev_Cam_X baseline Aurora measured client-side (aurora 64aee42) — two instruments, one mechanism. Red-first both directions. Gates 23/23 exit 0 on merged master; pytest 1092/2. Expected sigil deltas: debug-region pins only, no release-region movement"
+note = "warp mailbox: DEBUG shapes only; releases byte-identical"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "4d046b47"
+full_size = 714229
+anchor_crc = "ffbee4e6"
+anchor_end = 0xa31c0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "cae2b509"
+full_size = 600946
+anchor_crc = "d648c784"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "f7806241"
+full_size = 95733
+anchor_crc = "a4988a3c"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "183587b5"
+full_size = 100152
+anchor_crc = "9d1fbfad"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "1e9c5f62"
+full_size = 655678
+anchor_crc = "07cd3347"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "cdabf8a3"
+full_size = 698411
+anchor_crc = "4bc6cdb8"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "2d365501"
+full_size = 713863
+anchor_crc = "8bba1390"
+anchor_end = 0xa31c0
