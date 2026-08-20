@@ -1631,6 +1631,13 @@ pub mod capture {
 
     impl CaptureSession {
         /// Start capturing. Blocks until any other live session ends.
+        ///
+        /// Test infrastructure ONLY. While a session is live, EVERY successful
+        /// encode in the process lands in its buffer — a session held across
+        /// unrelated concurrent work collects that work's encodes as if the
+        /// session's build emitted them, and any encode-heavy caller left
+        /// running for the session's lifetime pays the per-encode lock. Keep a
+        /// session scoped tightly around the one build it measures.
         pub fn begin() -> CaptureSession {
             let lock = SESSION.lock().unwrap_or_else(|e| e.into_inner());
             lock_pairs().clear();

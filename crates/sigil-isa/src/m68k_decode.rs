@@ -31,6 +31,9 @@ pub enum DecodeError {
     /// never sets (brief-extension scale/full bits, a nonzero high byte on a
     /// byte-size immediate).
     BadExtension { word: u16, ext: u16, why: String },
+    /// [`decode_exact`] only: the slice holds one complete instruction of
+    /// `used` bytes plus leftover bytes that are not part of it.
+    TrailingBytes { word: u16, used: usize, len: usize },
 }
 
 impl std::fmt::Display for DecodeError {
@@ -44,6 +47,10 @@ impl std::fmt::Display for DecodeError {
             DecodeError::BadExtension { word, ext, why } => {
                 write!(f, "bad extension {ext:04X} under opcode {word:04X}: {why}")
             }
+            DecodeError::TrailingBytes { word, used, len } => write!(
+                f,
+                "trailing bytes: opcode {word:04X} is a {used}-byte instruction but the slice has {len}"
+            ),
         }
     }
 }
@@ -203,10 +210,11 @@ pub fn decode_exact(bytes: &[u8]) -> Result<Instruction, DecodeError> {
     }
     let (inst, used) = decode_one(bytes)?;
     if used != bytes.len() {
-        return Err(unknown(
-            u16::from_be_bytes([bytes[0], bytes[1]]),
-            format!("instruction uses {used} of {} bytes — trailing bytes are not one instruction", bytes.len()),
-        ));
+        return Err(DecodeError::TrailingBytes {
+            word: u16::from_be_bytes([bytes[0], bytes[1]]),
+            used,
+            len: bytes.len(),
+        });
     }
     Ok(inst)
 }
@@ -644,13 +652,6 @@ pub fn canonicalize(i: &Instruction) -> Instruction {
     let mut size = i.size;
     let mut ops = i.ops.clone();
 
-    // Register numbers occupy 3-bit fields; the encoder masks, so the normal
-    // form does too (out-of-range registers are a front-end contract breach,
-    // not an encoding distinction).
-    for op in &mut ops {
-        mask_regs(op);
-    }
-
     // Rule M: `move` to an address register IS `movea` (one opcode layout).
     if mnemonic == Mnemonic::Move {
         if let Some(Operand::An(_)) = ops.last() {
@@ -676,32 +677,45 @@ pub fn canonicalize(i: &Instruction) -> Instruction {
     Instruction { mnemonic, size, ops }
 }
 
-fn mask_regs(op: &mut Operand) {
-    match op {
-        Operand::Dn(n)
-        | Operand::An(n)
-        | Operand::Ind(n)
-        | Operand::PostInc(n)
-        | Operand::PreDec(n) => *n &= 0b111,
-        Operand::Disp16An(_, n) => *n &= 0b111,
-        Operand::Disp8AnXn { an, xn, .. } => {
-            *an &= 0b111;
-            mask_xn(xn);
+/// The first out-of-range register number (>7) in `i`, rendered for a
+/// diagnostic, or `None` when every register field is in `0..=7`. A register
+/// outside the 3-bit field is a front-end contract breach the ENCODER forgives
+/// by masking (`Dn(9)` silently becomes `d1`), so the round-trip check refuses
+/// it loudly instead of comparing the masked ghost.
+fn out_of_range_register(i: &Instruction) -> Option<String> {
+    fn xn_bad(xn: &Xn) -> Option<String> {
+        match xn {
+            Xn::D(n) if *n > 7 => Some(format!("index register Xn::D({n})")),
+            Xn::A(n) if *n > 7 => Some(format!("index register Xn::A({n})")),
+            _ => None,
         }
-        Operand::Pcd8Xn { xn, .. } => mask_xn(xn),
-        _ => {}
     }
+    for op in &i.ops {
+        let bad = match op {
+            Operand::Dn(n) if *n > 7 => Some(format!("Dn({n})")),
+            Operand::An(n) if *n > 7 => Some(format!("An({n})")),
+            Operand::Ind(n) if *n > 7 => Some(format!("Ind({n})")),
+            Operand::PostInc(n) if *n > 7 => Some(format!("PostInc({n})")),
+            Operand::PreDec(n) if *n > 7 => Some(format!("PreDec({n})")),
+            Operand::Disp16An(_, n) if *n > 7 => Some(format!("Disp16An(_, {n})")),
+            Operand::Disp8AnXn { an, xn, .. } => {
+                if *an > 7 { Some(format!("Disp8AnXn base An({an})")) } else { xn_bad(xn) }
+            }
+            Operand::Pcd8Xn { xn, .. } => xn_bad(xn),
+            _ => None,
+        };
+        if bad.is_some() {
+            return bad;
+        }
+    }
+    None
 }
 
-fn mask_xn(xn: &mut Xn) {
-    match xn {
-        Xn::D(n) | Xn::A(n) => *n &= 0b111,
-    }
-}
-
-/// Mask each immediate that the encoding stores at the operation width. The
-/// width-independent immediates (quick data, shift counts, trap vectors, bit
-/// numbers) are hard-range-checked by the encoder and pass through unchanged.
+/// Mask each immediate that the encoding stores at the operation width. Quick
+/// data, shift counts, and trap vectors are hard-range-checked by the encoder
+/// and pass through unchanged; a static bit number is stored in a full u16
+/// extension word, so it compares modulo that word like the CCR immediates
+/// compare modulo their byte.
 fn canonicalize_imms(m: Mnemonic, size: Size, ops: &mut [Operand]) {
     use Mnemonic::*;
     let width_checked = matches!(
@@ -761,16 +775,27 @@ fn canonicalize_imms(m: Mnemonic, size: Size, ops: &mut [Operand]) {
 ///   `Instruction.size` value is not stored in the bytes; both sides normalize
 ///   to one canonical size per form.
 /// - **Rule I** — an immediate stored at the operation width compares modulo
-///   that width (`#-1` and `#$FFFF` are the same word-immediate field), and
-///   3-bit register numbers compare masked. Everything else — EA mode AND
-///   register of every operand, displacement values, masks, conditions, the
-///   mnemonic family — must match exactly, which is precisely what catches a
-///   wrong EA field or an aliased opcode word (the `D549` class: the bytes
-///   decode as `Unknown`/a different family and the check fails loudly).
+///   that width (`#-1` and `#$FFFF` are the same word-immediate field): the
+///   relation proves FIELD fidelity, not value fidelity, because the encoder
+///   itself truncates without a fit check. Register numbers get no such
+///   forgiveness: a register operand outside `0..=7` on the encode side FAILS
+///   the check outright (the encoder masks, so `Dn(9)` would silently emit
+///   `d1` — precisely the silent rewrite this check exists to refuse).
+///   Everything else — EA mode AND register of every operand, displacement
+///   values, masks, conditions, the mnemonic family — must match exactly,
+///   which is precisely what catches a wrong EA field or an aliased opcode
+///   word (the `D549` class: the bytes decode as `Unknown`/a different family
+///   and the check fails loudly).
 ///
 /// A decode failure is ALWAYS a check failure — an emitted instruction the
 /// mirror cannot read is the loudest possible signal, never a skip.
 pub fn roundtrip_check(inst: &Instruction, bytes: &[u8]) -> Result<(), String> {
+    if let Some(bad) = out_of_range_register(inst) {
+        return Err(format!(
+            "round-trip REJECTED: {bad} is out of range (registers are 3-bit, 0..=7) — \
+             the encoder masks it into a different register silently\n  instruction: {inst:?}\n  bytes: {bytes:02X?}"
+        ));
+    }
     let decoded = decode_exact(bytes).map_err(|e| {
         format!("round-trip DECODE failed: {e}\n  encoded from: {inst:?}\n  bytes: {bytes:02X?}")
     })?;
@@ -786,6 +811,11 @@ pub fn roundtrip_check(inst: &Instruction, bytes: &[u8]) -> Result<(), String> {
 
 /// Encode `inst`, then [`roundtrip_check`] the result. Panics with the full
 /// diagnostic on any failure — the one-line self-check the encoder tests use.
+///
+/// Because this calls the real `encode`, invoking it while a
+/// `m68k::capture::CaptureSession` is live records `inst` into that session's
+/// buffer like any other encode; a capture-driven test must not interleave
+/// with it.
 #[track_caller]
 pub fn assert_roundtrip(inst: &Instruction) {
     let bytes = encode(inst)
@@ -873,8 +903,41 @@ mod tests {
 
     #[test]
     fn trailing_bytes_fail_exact_decode() {
-        // nop + one stray word is not one instruction.
-        assert!(decode_exact(&[0x4E, 0x71, 0x00, 0x00]).is_err());
+        // nop + one stray word is not one instruction — and the error is the
+        // dedicated trailing-bytes shape, not a generic unknown.
+        assert!(matches!(
+            decode_exact(&[0x4E, 0x71, 0x00, 0x00]),
+            Err(DecodeError::TrailingBytes { word: 0x4E71, used: 2, len: 4 })
+        ));
+    }
+
+    /// Rule I registers: an out-of-range register on the encode side must FAIL
+    /// the round trip, never be masked into a neighbour. (The encoder emits
+    /// `Dn(9)` as `d1`; the check names the rewrite instead of blessing it.)
+    #[test]
+    fn out_of_range_register_fails_the_roundtrip() {
+        let i = Instruction { mnemonic: Mnemonic::Move, size: Size::W, ops: vec![Dn(9), Dn(0)] };
+        let bytes = encode(&i).expect("the encoder masks and encodes");
+        let err = roundtrip_check(&i, &bytes).expect_err("Dn(9) must fail the round trip");
+        assert!(err.contains("Dn(9)") && err.contains("out of range"), "message must name the register: {err}");
+        // The same instruction with the register in range is fine.
+        let ok = Instruction { mnemonic: Mnemonic::Move, size: Size::W, ops: vec![Dn(1), Dn(0)] };
+        assert_roundtrip(&ok);
+    }
+
+    /// Rule I immediates: the relation proves FIELD fidelity, not value
+    /// fidelity. `#$12345` does not fit a word, the encoder truncates it
+    /// without a fit check (its documented operand contract), and both sides
+    /// mask to the field width — so this round trip is GREEN by design. Value
+    /// validation is the front-end's job; pinning the forgiveness here makes
+    /// any future tightening a deliberate change to this test.
+    #[test]
+    fn oversized_width_stored_immediate_is_field_compared() {
+        assert_roundtrip(&Instruction {
+            mnemonic: Mnemonic::Cmpi,
+            size: Size::W,
+            ops: vec![Imm(0x12345), Dn(0)],
+        });
     }
 
     #[test]
