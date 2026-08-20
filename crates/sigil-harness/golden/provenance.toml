@@ -7939,3 +7939,57 @@ full_crc = "282011e6"
 full_size = 714326
 anchor_crc = "da28230e"
 anchor_end = 0xa3290
+
+[[entry]]
+name = "staging-direct-map"
+ab = "aeon@0cf5a053 — F4: zero-hash side index over the round-robin slots (eviction untouched = F2 baseline intact, proven by Block_Stage_Next equality + exact decompress counts). Probe 402-440->~200 cyc measured within 5-12% of prediction; release down work/tick 86,638 (F2's distance to the line: 42,723). HIT/MISS identity by construction; nametable+collision byte-equal all states; ab_runner ALL EQUAL x4 (F1 wall structurally absent — scenes freeze the fill). Poison tool 3 arms halt; chains measured max-length-1. RAM +320 lower_ram, no game-side repin. Gates 24/24 bare on the REBUILT oracle_gui (rename fallout round 2 fixed by the oracle session — baked-path taxonomy recorded); pytest 1143/3"
+note = "F4: staging side index; all four shapes move"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "e95c1def"
+full_size = 715023
+anchor_crc = "07f878b4"
+anchor_end = 0xa3290
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "a0e221b9"
+full_size = 601296
+anchor_crc = "2a35208a"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "9b4c3df3"
+full_size = 96079
+anchor_crc = "9ae0fa35"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "e78af69e"
+full_size = 100785
+anchor_crc = "ca93b8cc"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "2ef9e608"
+full_size = 655678
+anchor_crc = "25e770d7"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "aa30c5b4"
+full_size = 698760
+anchor_crc = "72cf7aa7"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "2a482069"
+full_size = 714655
+anchor_crc = "24f2e678"
+anchor_end = 0xa3290

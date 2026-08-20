@@ -1353,6 +1353,14 @@ tests = ["tile_cache_port"]
 [[symbol]]
 name = "Block_Stage_Next"
 tests = ["tile_cache_port"]
+[[symbol]]
+name = "Block_Stage_Bucket"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Block_Stage_Chain"
+tests = ["tile_cache_port"]
+
 
 [[symbol]]
 name = "Block_Stage_Buffers"

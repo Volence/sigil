@@ -155,6 +155,9 @@ fn tile_cache_addr_labels(debug: bool) -> Vec<Section> {
         ("Cs_Memo_Gen", pick(pins::CS_MEMO_GEN)),
         ("Block_Stage_Keys", pick(pins::BLOCK_STAGE_KEYS)),
         ("Block_Stage_Next", pick(pins::BLOCK_STAGE_NEXT)),
+        // Streaming-arc F4: the zero-hash side index over the staging slots.
+        ("Block_Stage_Bucket", pick(pins::BLOCK_STAGE_BUCKET)),
+        ("Block_Stage_Chain", pick(pins::BLOCK_STAGE_CHAIN)),
         ("Block_Stage_Buffers", pick(pins::BLOCK_STAGE_BUFFERS)),
         ("Block_Stage_Ptrs", pick(pins::BLOCK_STAGE_PTRS)),
         // F-3 merge-translation cells (per-slot map array + current-block map).
@@ -508,6 +511,9 @@ fn tile_cache_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
         ("Cs_Memo_Gen", pick(pins::CS_MEMO_GEN)),
         ("Block_Stage_Keys", pick(pins::BLOCK_STAGE_KEYS)),
         ("Block_Stage_Next", pick(pins::BLOCK_STAGE_NEXT)),
+        // Streaming-arc F4: the zero-hash side index over the staging slots.
+        ("Block_Stage_Bucket", pick(pins::BLOCK_STAGE_BUCKET)),
+        ("Block_Stage_Chain", pick(pins::BLOCK_STAGE_CHAIN)),
         ("Block_Stage_Buffers", pick(pins::BLOCK_STAGE_BUFFERS)),
         ("Block_Stage_Ptrs", pick(pins::BLOCK_STAGE_PTRS)),
         // F-3 merge-translation cells (per-slot map array + current-block map).
