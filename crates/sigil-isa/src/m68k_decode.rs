@@ -242,7 +242,7 @@ fn decode_word(w: u16, rd: &mut Rd) -> Result<Instruction, DecodeError> {
     let r0 = w & 0b111;
     match w >> 12 {
         0b0000 => decode_line0(w, rd, mode, reg9, r0),
-        0b0001 | 0b0010 | 0b0011 => decode_move(w, rd),
+        0b0001..=0b0011 => decode_move(w, rd),
         0b0100 => decode_line4(w, rd, mode, reg9, r0),
         0b0101 => decode_line5(w, rd, mode, reg9, r0),
         0b0110 => {
