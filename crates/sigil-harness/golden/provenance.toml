@@ -7723,3 +7723,57 @@ full_crc = "203a3bac"
 full_size = 713863
 anchor_crc = "7c6bff96"
 anchor_end = 0xa31c0
+
+[[entry]]
+name = "dense-trailing-fire"
+ab = "aeon@0e5d49b7 — one trailing fire suppressed (booking corrected: arms are one-in-flight; suppress-both refused on slope-vs-intercept at 96 lines). Measured 232 cyc/frame/run, predicted 236; intercept 1512->1280, slope frozen 316.0, five-count sweep exact. Schedule walks UNIFORM both sides incl. stall fixture; ab_runner ALL EQUAL x4 predicted-then-measured. dense_fire_count re-derived lines+4 with .dense_end-falls-into-.park wire pin + poison. Goldens from clean checkout of 0e5d49b7. Gates 23/23 exit 0; pytest 1107/2"
+note = "trailing fire -1: 232 cyc/frame; all shapes move"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "3441bcb9"
+full_size = 714229
+anchor_crc = "5bb907a2"
+anchor_end = 0xa31c0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "06f68ab3"
+full_size = 600946
+anchor_crc = "f7abe0bf"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "7db47b7b"
+full_size = 95733
+anchor_crc = "bfddbe1d"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "4c0a432d"
+full_size = 100152
+anchor_crc = "9ff68bf5"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "5451f160"
+full_size = 655678
+anchor_crc = "70100520"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "d00dd11d"
+full_size = 698411
+anchor_crc = "1bcfb5c9"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "db6981dd"
+full_size = 713843
+anchor_crc = "5b2f78d9"
+anchor_end = 0xa31c0
