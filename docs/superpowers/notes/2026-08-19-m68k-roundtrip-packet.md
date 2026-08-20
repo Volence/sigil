@@ -15,10 +15,20 @@ capture tap on `encode`'s RESULT).
    `abcd`, `exg`, `rox*`, `bchg`, `chk`, `moves`, line-A/F) and 68020-only
    extension bits (brief-ext scale/full bits, nonzero high byte on a byte
    immediate) — is a loud, named `DecodeError` (`Unknown` / `Truncated` /
-   `BadExtension`), never a best-effort operand. The decoder validates every
-   EA against the SAME `EaSet` operand-table row the encoder's family arm
-   enforces (the constants went `pub(crate)` for this), so decode-side and
-   encode-side legality cannot drift apart silently.
+   `BadExtension` / `TrailingBytes`), never a best-effort operand.
+
+   Independence, stated precisely: the ALIASING structure (which bit patterns
+   belong to which family, the dispatch arms, the extended/decimal/exchange
+   neighbours) is independently hand-written, so an encoder arm emitting a
+   neighbour word cannot survive. EA LEGALITY, by contrast, is validated
+   against the SAME `EaSet` constants the encoder uses (made `pub(crate)` for
+   this) — one-sided sharing: a use-site error (a family arm passing the wrong
+   row on either side) is caught, but a corruption of the shared constant
+   itself changes both sides together and round-trips green for the trap-word
+   classes. That residual is pinned by the hand-written negative oracle
+   (`ea_class_rejects.rs`) and bounded by the exhaustive opcode-space sweep
+   (`m68k_opcode_sweep.rs`), which forces decoder legality == encoder legality
+   word-by-word.
 2. **`roundtrip_check(inst, bytes)` / `assert_roundtrip(inst)`** (public in
    `m68k_decode`; test-only in usage). Wired into the existing suites:
    - `tests/encode_m68k.rs` — `check()` round-trips every golden-matched form;
@@ -43,10 +53,22 @@ capture tap on `encode`'s RESULT).
    (relaxation-ladder rungs, fixup placeholders, and comptime trial encodes
    are captured too — all must round-trip regardless, so the superset only
    widens coverage).
-5. **`family_name` / `ALL_FAMILY_NAMES`** in `m68k.rs` — enum-locked family
-   labels (no `_` arm, so a new mnemonic variant fails compilation until
-   classified), plus `Cond::from_cc`. Coverage gates derive "all families"
-   from the constant, never from a measured run.
+5. **`family_name` / `ALL_FAMILY_NAMES`** in `m68k.rs` — family labels, plus
+   `Cond::from_cc`. Coverage gates derive "all families" from the constant,
+   never from a measured run. Locking is split: `family_name`'s no-`_` match
+   is COMPILER-forced (a new `Mnemonic` variant fails to compile until
+   labeled), while the `ALL_FAMILY_NAMES` row for that label is TEST-forced —
+   the onto test (`family_name_is_onto_all_family_names`) plus the stream
+   pass's seen⊆list direction fail until the row is added.
+6. **`m68k_opcode_sweep.rs`** (fixup round) — all 65,536 opcode words, padded
+   with zero extension words: each either fails decode or re-encodes
+   byte-exact to the consumed bytes. 42,783 words decodable, zero exceptions.
+   This is the permanent lock on decoder-legality == encoder-legality that
+   the shared-`EaSet` one-sidedness (item 1) otherwise leaves open.
+7. **Round-trip hardening** (fixup round): out-of-range registers (>7) on the
+   encode side now FAIL `roundtrip_check` with the register named (the
+   encoder masks them — `Dn(9)` would silently emit `d1`); `decode_exact`
+   leftovers are the dedicated `TrailingBytes` error shape, pinned by test.
 
 ## The equivalence relation (doc'd in full at `roundtrip_check`)
 
@@ -59,7 +81,13 @@ freedom the ENCODING has, nothing looser:
   moves, `jmp`/`jsr`/`lea`/`pea`, fixed words, `dbcc`) normalize to one
   canonical size per form, via a single `canonical_size` table both sides use.
 - **Rule I** — width-stored immediates compare modulo the field width
-  (`#-1` ≡ `#$FFFF` at `.w`); 3-bit register numbers compare masked.
+  (`#-1` ≡ `#$FFFF` at `.w`). The relation proves FIELD fidelity, not value
+  fidelity: the encoder truncates without a fit check (its documented operand
+  contract), so an oversized `#$12345` at `.w` round-trips green by design —
+  pinned by `oversized_width_stored_immediate_is_field_compared` so any
+  tightening is deliberate. Registers get no such forgiveness: a register
+  operand outside `0..=7` FAILS the check naming the register (the encoder
+  would mask it into a neighbour silently).
 
 Everything else — every operand's EA mode AND register, displacements, masks,
 conditions, the mnemonic family — must match exactly; that is what catches a
@@ -93,9 +121,12 @@ down to `cmpm` 5).
 
 Derived-expectation notes: the per-shape floor is `> 0` plus structural
 relations (debug > plain per game, sonic4 > demo) — direction checks derived
-from what the shapes are, not pinned magnitudes; the corpus test's count
-assert derives from `corpus.len()`; the family list derives from the
-`Mnemonic` enum via a compiler-forced exhaustive match.
+from what the shapes are, not pinned magnitudes (a uniform proportional
+capture loss preserves them; the >0 asserts and the three-direction family
+checks are the capture-loss defense); the corpus test's count assert derives
+from `corpus.len()`; the family list derives from the `Mnemonic` enum
+(compiler-forced labeling via `family_name`, test-forced listing via the onto
++ subset checks).
 
 ## Red-first mutant records
 
@@ -154,6 +185,49 @@ shape `sonic4 plain`: round-trip MISMATCH:
   bytes:     [B2, FC, 00, 00]
   decoded:   Instruction { mnemonic: Cmpa, size: W, ops: [Imm(0), An(1)] }
 ```
+
+## Red-first mutant records — fixup round (2026-08-20)
+
+**MUTANT F — the panel-named decoder-superset hole.** Mutation in
+`m68k_decode.rs::decode_line0` (ALU-immediate destination row):
+`EaSet::DATA_ALTERABLE` → `EaSet::ALTERABLE`. The opcode sweep went RED and
+NOTHING ELSE moved (full sigil-isa run under the mutant: 131 passed / 1
+failed, the sweep):
+
+```
+96 of 42879 decodable words failed the re-encode (first 25 shown):
+word 0048: decodes to Instruction { mnemonic: Ori, size: W, ops: [Imm(0), An(0)] }
+but the encoder REJECTS it (unsupported form: An is not a legal addressing mode
+for this operand position) — the decoder accepts a word the encoder cannot emit
+```
+
+This is the exact class the sweep exists for: before it, this mutant survived
+every shipped test.
+
+**MUTANT G — unclassified family (third direction).** Mutation: `"lea"` row
+removed from `ALL_FAMILY_NAMES`. Stream pass failed:
+
+```
+captured families not in ALL_FAMILY_NAMES: ["lea"] — unknown family, classify it
+in ALL_FAMILY_NAMES (sigil-isa m68k.rs) so both coverage directions can see it
+```
+
+**MUTANT H — register gate disconnected.** Mutation: the
+`out_of_range_register` early-return in `roundtrip_check` bypassed. The unit
+test failed on its named-register assertion (and showed the defense in depth:
+with masking removed from `canonicalize`, the mismatch arm still catches
+`Dn(9)` → decoded `Dn(1)`, but without naming the cause):
+
+```
+message must name the register: round-trip MISMATCH:
+  encoded:   Instruction { mnemonic: Move, size: W, ops: [Dn(9), Dn(0)] }
+  decoded:   Instruction { mnemonic: Move, size: W, ops: [Dn(1), Dn(0)] }
+```
+
+**Strict-gate verification (fix 2)**: with the aeon tree + `SIGIL_STRICT_GATE=1`
+the stream pass runs green; with `AEON_DIR=/nonexistent` it skip-greens; with
+both it panics `SIGIL_STRICT_GATE set but reference missing:
+/nonexistent/engine/system/vblank.emp`.
 
 ## Runners
 
