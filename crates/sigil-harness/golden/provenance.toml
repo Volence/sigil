@@ -8047,3 +8047,57 @@ full_crc = "6feac827"
 full_size = 714906
 anchor_crc = "4c0e747d"
 anchor_end = 0xa3290
+
+[[entry]]
+name = "parallax-unroll"
+ab = "aeon@ee310483 — the arc's coda: single-channel sampled lines 90 -> 43.25 cyc (pointer-walk + register unpack + 8x unroll; .lp_both the untouched control held 126.1). maxdiag work/tick 134,521 -> 123,016 = 4,984 UNDER the line ON THE MEAN; frames/tick 1.240 -> 1.192 — the ceil model is a floor on a mean, 5/31 frames still spike, the remainder is tick VARIANCE (named, unmeasured, the arc's honest close). right/down hold 1.000 cheaper. Value identity: new hscroll identity gate, 896B x 24f x 10 fixtures ROM-vs-ROM identical, coverage witnesses asserted (each caught a vacuous draft). Landed AFTER T1; the samp_band column carries regime tags (0.59 pre / 148.91 post-unroll — two parcels triangulating one cost). Demo shapes byte-identical. Gates 24/24; pytest 1177/3"
+note = "parallax unroll: mean under the line; variance is the named remainder"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "7c8999bf"
+full_size = 715432
+anchor_crc = "2e45db84"
+anchor_end = 0xa3290
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c0a8d052"
+full_size = 601713
+anchor_crc = "1c2d46e2"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "44289321"
+full_size = 96336
+anchor_crc = "944ff276"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "5f075958"
+full_size = 101044
+anchor_crc = "b230cd4c"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "f7adca4a"
+full_size = 655678
+anchor_crc = "b39a8322"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "1bac7597"
+full_size = 699182
+anchor_crc = "b3bcb102"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "5be03175"
+full_size = 715084
+anchor_crc = "d722b874"
+anchor_end = 0xa3290
