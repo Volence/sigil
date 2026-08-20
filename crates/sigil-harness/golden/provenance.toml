@@ -7885,3 +7885,57 @@ full_crc = "47111ae9"
 full_size = 714234
 anchor_crc = "4135f49d"
 anchor_end = 0xa31e0
+
+[[entry]]
+name = "debug-boot-override"
+ab = "aeon@a2a24eb9 — boot-position override: init consumes Boot_At_* at the one point before any camera/spawn consumer runs; first painted frame IS the destination (0/1189 words vs settled AND vs the warp reference; draw-then-jump deleted, 18 frames saved engine-side). Timing truth gate-proven: boot zeroes work RAM, supported write window is run_to-the-init (pre-resume poison boots authored) — Aurora's client corrected BEFORE build. Gate boot_override (24th) red-first x3; parallax-select poison green-because-all-default handled by premise assertion. Deb2 name-trie trap documented (parked procs still move release; templates don't). Releases byte-identical; s4.debug +92. pytest 1143/3; warp gate 10/10"
+note = "boot-at-cursor: DEBUG-only; releases identical"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "eb4106f0"
+full_size = 714692
+anchor_crc = "eff3af6c"
+anchor_end = 0xa3290
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "7d7db28b"
+full_size = 601067
+anchor_crc = "0644d1c3"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "277fd798"
+full_size = 95850
+anchor_crc = "185c993d"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "fa6c086e"
+full_size = 100454
+anchor_crc = "2188fd63"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "99ec1f61"
+full_size = 655678
+anchor_crc = "234c7839"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "8cf11323"
+full_size = 698517
+anchor_crc = "dbe731ef"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "282011e6"
+full_size = 714326
+anchor_crc = "da28230e"
+anchor_end = 0xa3290
