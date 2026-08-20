@@ -37,7 +37,14 @@ fn reject(what: &str, i: Instruction) {
 
 #[track_caller]
 fn accept(what: &str, i: Instruction) -> Vec<u8> {
-    encode(&i).unwrap_or_else(|e| panic!("{what} is legal and must still encode, got {e:?}"))
+    let bytes =
+        encode(&i).unwrap_or_else(|e| panic!("{what} is legal and must still encode, got {e:?}"));
+    // Every accepted form must also survive the decode round trip — the
+    // categorical form of the alias defense this file probes by hand.
+    if let Err(msg) = sigil_isa::m68k_decode::roundtrip_check(&i, &bytes) {
+        panic!("{what}: {msg}");
+    }
+    bytes
 }
 
 /// The four exact-alias classes. These are the dangerous ones: silently valid,
