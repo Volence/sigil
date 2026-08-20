@@ -8101,3 +8101,57 @@ full_crc = "5be03175"
 full_size = 715084
 anchor_crc = "d722b874"
 anchor_end = 0xa3290
+
+[[entry]]
+name = "forcer-derivation"
+ab = "aeon 95538920 clean-checkout: all four shapes rebuilt, CRCs fa881cad/58b5cfde/44289321/5f075958 match the parcel agent's; 533/533 procs byte-identical, delta is deb2 span-name merge only (-74 B); effects gates 26/26 exit 0; fit sweep exit 0 params unchanged"
+note = "T6 forcer derivation: one comptime fold feeds both mode twins; C1 ruled 896/one-entry"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "cf820ff9"
+full_size = 715358
+anchor_crc = "2e45db84"
+anchor_end = 0xa3290
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "6317bebc"
+full_size = 601639
+anchor_crc = "1c2d46e2"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "44289321"
+full_size = 96336
+anchor_crc = "944ff276"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "5f075958"
+full_size = 101044
+anchor_crc = "b230cd4c"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "f7adca4a"
+full_size = 655678
+anchor_crc = "b39a8322"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "fa881cad"
+full_size = 699108
+anchor_crc = "b3bcb102"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "58b5cfde"
+full_size = 715010
+anchor_crc = "d722b874"
+anchor_end = 0xa3290

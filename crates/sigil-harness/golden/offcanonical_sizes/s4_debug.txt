@@ -7,7 +7,7 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=s4_debug
 # reproduces_golden=s4.debug.bin
-# golden_crc32=5be03175
+# golden_crc32=58b5cfde
 # assembled_anchor=d722b874
 # assembled_end=0xa3290
 # labels=80
