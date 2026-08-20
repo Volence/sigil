@@ -7993,3 +7993,57 @@ full_crc = "2a482069"
 full_size = 714655
 anchor_crc = "24f2e678"
 anchor_end = 0xa3290
+
+[[entry]]
+name = "prefetch-lands"
+ab = "aeon@e6a0e104 — F2: the speculation lands. Timeline instrument (built first) corrected the packet: 59% dead not 100%, and the larger cost was demand-block churn (residency 3.25 vs the 8-tick strip). Schmitt-triggered claims ring (trip 16 / re-arm 8; demand-only window settles at 11 BETWEEN them); memo re-key measured ~0 and booked as correctness. Mid-parcel catch: early return silently stopped aiming the PAGE tier's prefetch — latent cross-tier bug fixed. maxdiag 2.067 -> 1.240 f/t, work 170,723 -> 134,521; right/down held 1.000 byte-identical schedules. Value identity HELD. Residual 6,521 cyc (4.8%). Sigil ripple: memo symbols renamed (L/H/T/B -> *16) + three new RAM cells carried. Gates 24/24; pytest 1143/3; replay net 19/19"
+note = "F2: prefetch guard + rekey; choke broken; memo symbol renames tracked"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "7cb7fe0e"
+full_size = 715274
+anchor_crc = "dabcc2ca"
+anchor_end = 0xa3290
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "bf7c953b"
+full_size = 601535
+anchor_crc = "0f3337fa"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "44289321"
+full_size = 96336
+anchor_crc = "944ff276"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "5f075958"
+full_size = 101044
+anchor_crc = "b230cd4c"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "500aa65e"
+full_size = 655678
+anchor_crc = "30e212a9"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "831fb324"
+full_size = 699004
+anchor_crc = "4b00990e"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "6feac827"
+full_size = 714906
+anchor_crc = "4c0e747d"
+anchor_end = 0xa3290

@@ -1344,7 +1344,7 @@ tests = ["tile_cache_port"]
 # cross-seam RAM label, so pin-source it (t24 rule: never hand-shift a RAM VMA).
 [[symbol]]
 name = "Logic_Tick"
-tests = ["game_loop_port", "bg_anim_port"]
+tests = ["game_loop_port", "bg_anim_port", "tile_cache_port"]
 
 [[symbol]]
 name = "Block_Stage_Keys"
@@ -1444,11 +1444,11 @@ name = "Pfx_Memo_Row"
 tests = ["tile_cache_port"]
 
 [[symbol]]
-name = "Pfx_Memo_L"
+name = "Pfx_Memo_L16"
 tests = ["tile_cache_port"]
 
 [[symbol]]
-name = "Pfx_Memo_H"
+name = "Pfx_Memo_H16"
 tests = ["tile_cache_port"]
 
 [[symbol]]
@@ -1460,16 +1460,41 @@ name = "Cs_Memo_Col"
 tests = ["tile_cache_port"]
 
 [[symbol]]
-name = "Cs_Memo_T"
+name = "Cs_Memo_T16"
 tests = ["tile_cache_port"]
 
 [[symbol]]
-name = "Cs_Memo_B"
+name = "Cs_Memo_B16"
 tests = ["tile_cache_port"]
 
 [[symbol]]
 name = "Cs_Memo_Gen"
 tests = ["tile_cache_port"]
+[[symbol]]
+name = "Pfx_Memo_Mask"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cs_Memo_Mask"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Spec_Gen_Ring"
+tests = ["tile_cache_port"]
+[[symbol]]
+name = "Cache_Spec_Window"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Spec_Blocked"
+tests = ["tile_cache_port"]
+
+[[symbol]]
+name = "Cache_Spec_Skips"
+tests = ["tile_cache_port"]
+
+
+
 
 [[symbol]]
 name = "S4LZ_DecompressDict"
