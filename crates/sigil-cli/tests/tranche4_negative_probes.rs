@@ -375,12 +375,19 @@ fn parse_act_with_structs(act_src: &str, structs_src: &str) -> sigil_frontend_em
         .expect("sec_block_dicts.emp must exist (set AEON_DIR)");
     let (dicts, dd) = parse_str(&dsrc);
     assert!(dd.iter().all(|d| d.level != Level::Error), "sec_block_dicts.emp parse errors: {dd:?}");
+    // T7 (world-Y re-glue): act_descriptor now pins its act span against the scene
+    // registry's SCENE_ACT_SPAN_Y — synthesized VERBATIM at test runtime
+    // (test_support), riding ambient like the other cross-module consts here.
+    let span_src = sigil_harness::test_support::scene_act_span_y_const_src(&aeon_dir());
+    let (span_file, spd) = parse_str(&span_src);
+    assert!(spd.iter().all(|d| d.level != Level::Error), "SCENE_ACT_SPAN_Y shim parse errors: {spd:?}");
     let (act, ad) = parse_str(act_src);
     assert!(ad.iter().all(|d| d.level != Level::Error), "act parse errors: {ad:?}");
     let mut items = structs.items;
     items.extend(constants.items);
     items.extend(manifest.items);
     items.extend(dicts.items);
+    items.extend(span_file.items);
     items.extend(act.items);
     sigil_frontend_emp::ast::File { module: act.module, attrs: act.attrs, items, docs: act.docs }
 }

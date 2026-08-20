@@ -8155,3 +8155,57 @@ full_crc = "58b5cfde"
 full_size = 715010
 anchor_crc = "d722b874"
 anchor_end = 0xa3290
+
+[[entry]]
+name = "worldy-reglue"
+ab = "aeon 07d19c54 clean-checkout: all four shapes rebuilt, CRCs 445092a7/d7b36f90/9320c210/2ef6bf83 match the parcel agent's; sweep 18x3 exact + poison 18/18 red on the committed build; witness pins re-derived; gates 24/25 + stop-race segment green isolated"
+note = "T7 world-Y re-glue: Step 4a rotates in plane lines; record reshaped not resized"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "00ed56e2"
+full_size = 715358
+anchor_crc = "89c7ca19"
+anchor_end = 0xa3290
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "3c031f99"
+full_size = 601639
+anchor_crc = "3d5825f7"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "9320c210"
+full_size = 96336
+anchor_crc = "0311d26e"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "2ef6bf83"
+full_size = 101044
+anchor_crc = "70dfcbcc"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "cf0fb41d"
+full_size = 655678
+anchor_crc = "cd568ff7"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "445092a7"
+full_size = 699108
+anchor_crc = "e0e86b67"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "d7b36f90"
+full_size = 715010
+anchor_crc = "e4f951d1"
+anchor_end = 0xa3290

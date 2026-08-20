@@ -555,6 +555,26 @@ pub fn bg_layout_size_const_src(aeon: &std::path::Path) -> String {
     format!("module engine.bg_layout\npub const BG_LAYOUT_SIZE = {rhs}\n")
 }
 
+/// A synthesized `.emp` source re-declaring `scene_registry.emp`'s
+/// `pub const SCENE_ACT_SPAN_Y`, for act_descriptor.emp's single-module oracles.
+///
+/// T7 (world-Y re-glue) made act_descriptor pin its act span against the scene
+/// registry's declared value (`use games.sonic4.scene_registry.{SCENE_ACT_SPAN_Y}`) —
+/// the mirror direction is forced, act_descriptor already being the registry's
+/// importer. The single-file lower resolves no cross-module `use`, so this rides
+/// ambient, exactly like `bg_layout_size_const_src` above: the RHS is copied
+/// VERBATIM out of scene_registry.emp at test runtime and folded by sigil's own
+/// evaluator, so a span change reaches these gates by itself and can never bind
+/// stale. scene_registry.emp as a whole is CODE-adjacent (its lowerN tables emit
+/// bytes) and must not ride ambient wholesale.
+pub fn scene_act_span_y_const_src(aeon: &std::path::Path) -> String {
+    let rhs = emp_const_rhs(
+        &aeon.join("games/sonic4/data/effects/scene_registry.emp"),
+        "SCENE_ACT_SPAN_Y",
+    );
+    format!("module games.sonic4.scene_span\npub const SCENE_ACT_SPAN_Y = {rhs}\n")
+}
+
 /// sonic4's declared parallax capability mask, read from its `implement Game`.
 /// The port oracles compare against the sonic4 reference ROM, so this — not a
 /// literal in Rust, and not demo's `0` — is the only binding under which the

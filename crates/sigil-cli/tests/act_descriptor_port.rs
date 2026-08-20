@@ -250,8 +250,17 @@ fn compile_real_file(
     let gen = aeon_root().join("games/sonic4/data/generated/ojz/act1");
     let pool_manifest = parse_file(&gen.join("ojz_act_pool_manifest.emp"));
     let block_dicts = parse_file(&gen.join("sec_block_dicts.emp"));
+    // T7 (world-Y re-glue): act_descriptor now pins its act span against the scene
+    // registry's SCENE_ACT_SPAN_Y — synthesized VERBATIM at test runtime
+    // (test_support), never stale, never wholesale.
+    let span_src = sigil_harness::test_support::scene_act_span_y_const_src(&aeon_root());
+    let (span_file, span_diags) = sigil_frontend_emp::parse_str(&span_src);
+    assert!(
+        span_diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "synthesized SCENE_ACT_SPAN_Y block parse errors: {span_diags:?}"
+    );
     let file = with_ambient(
-        vec![structs, constants, pool_manifest, block_dicts],
+        vec![structs, constants, pool_manifest, block_dicts, span_file],
         parse_file(&dir.join("act_descriptor.emp")),
     );
 
