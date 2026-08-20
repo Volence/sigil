@@ -7777,3 +7777,57 @@ full_crc = "db6981dd"
 full_size = 713843
 anchor_crc = "5b2f78d9"
 anchor_end = 0xa31c0
+
+[[entry]]
+name = "audit-off-fill-path"
+ab = "aeon@76afd279 — F5: PageCache_Audit's gate moves from inside Tile_Cache_Fill to the level state's tick step. De-noise measured at idle: fill -3,854 = 100.4% of the audit's cost, null on every other row at right/down (<=0.19%); cadence identical (128 ticks, monotone check class so late never becomes missed). Spelled inline in the game after the engine-proc version's ZERO-BYTE label moved demo's release deb2 appendix — caught via clean-build-derived baselines. Second independent confirmation of old oracle's attribution defect recorded (maxdiag bracket < children both sides). Releases byte-identical through the merge (d00dd11d/7db47b7b); DEBUG shapes move. Gates 23/23 exit 0; pytest 1118/3"
+note = "F5: audit off the fill path; DEBUG-only effect; probe de-noised"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "b50a5295"
+full_size = 714273
+anchor_crc = "6d9723e1"
+anchor_end = 0xa31e0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "06f68ab3"
+full_size = 600946
+anchor_crc = "f7abe0bf"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "7db47b7b"
+full_size = 95733
+anchor_crc = "bfddbe1d"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "30696400"
+full_size = 100132
+anchor_crc = "96d78f85"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "5451f160"
+full_size = 655678
+anchor_crc = "70100520"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "d00dd11d"
+full_size = 698411
+anchor_crc = "1bcfb5c9"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "2191bfdc"
+full_size = 713905
+anchor_crc = "6a457d4c"
+anchor_end = 0xa31e0
