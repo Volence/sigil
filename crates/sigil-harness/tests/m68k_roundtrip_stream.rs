@@ -19,13 +19,20 @@
 //!   never render as green);
 //! - per-shape counts must satisfy structural relations derived from what the
 //!   shapes ARE (debug ⊇ plain code, sonic4 ⊇ demo code), not a pinned count;
-//! - the family union across all shapes is checked TWO-SIDED against the
-//!   enum-derived `ALL_FAMILY_NAMES`: a family missing without a
-//!   `NOT_IN_STREAM` row fails (coverage silently narrowed), and a
-//!   `NOT_IN_STREAM` row that shows up captured fails (the list is stale).
+//! - the family union across all shapes is checked in all three directions
+//!   against the enum-derived `ALL_FAMILY_NAMES`: a family missing without a
+//!   `NOT_IN_STREAM` row fails (coverage silently narrowed), a `NOT_IN_STREAM`
+//!   row that shows up captured fails (the list is stale), and a captured
+//!   family absent from `ALL_FAMILY_NAMES` fails (an unclassified name).
+//!
+//! This file must stay SINGLE-TEST (or every added test must open its own
+//! capture session): the capture tap is process-global, so any encode this
+//! binary performs outside the session's build — another test running in a
+//! parallel thread included — lands in the live session's buffer as if the
+//! build emitted it.
 
 use sigil_harness::native;
-use sigil_harness::test_support::aeon_dir;
+use sigil_harness::test_support::reference_tree;
 use sigil_isa::m68k::{capture::CaptureSession, family_name, ALL_FAMILY_NAMES};
 use sigil_isa::m68k_decode::roundtrip_check;
 use std::collections::{BTreeMap, BTreeSet};
@@ -42,7 +49,9 @@ const NOT_IN_STREAM: &[&str] = &["illegal"];
 
 #[test]
 fn every_emitted_m68k_instruction_roundtrips_in_every_shipped_shape() {
-    let aeon = aeon_dir();
+    // Skip-green without the aeon reference; panic under SIGIL_STRICT_GATE=1.
+    // `vblank.emp` is a shape source every shipped shape's build reads.
+    let Some(aeon) = reference_tree(&["engine/system/vblank.emp"]) else { return };
     let session = CaptureSession::begin();
 
     let mut failures: Vec<String> = Vec::new();
@@ -102,9 +111,11 @@ fn every_emitted_m68k_instruction_roundtrips_in_every_shipped_shape() {
 
     // Structural relations derived from what the shapes are: DEBUG builds carry
     // the plain code PLUS debug-only modules, and sonic4 carries the full game
-    // where demo is the engine-only boot. These are direction checks, not
-    // pinned magnitudes, so a legitimately grown/shrunk build stays green while
-    // a half-captured stream (e.g. one front-end's encodes lost) fails.
+    // where demo is the engine-only boot. Direction checks, not pinned
+    // magnitudes — they catch a shape-selective regression (one shape's build
+    // quietly emitting far less). A UNIFORM proportional capture loss preserves
+    // these inequalities; the defenses against capture loss itself are the
+    // per-shape >0 asserts above and the family-union checks below.
     assert!(
         count("sonic4 debug") > count("sonic4 plain"),
         "sonic4 debug ({}) must emit more instructions than plain ({})",
@@ -124,8 +135,16 @@ fn every_emitted_m68k_instruction_roundtrips_in_every_shipped_shape() {
         count("demo plain")
     );
 
-    // Two-sided family coverage against the enum-derived list.
+    // Family coverage against the enum-derived list, all three directions.
     let seen: BTreeSet<&str> = families.keys().copied().collect();
+    let all: BTreeSet<&str> = ALL_FAMILY_NAMES.iter().copied().collect();
+    let unclassified: Vec<&str> = seen.difference(&all).copied().collect();
+    assert!(
+        unclassified.is_empty(),
+        "captured families not in ALL_FAMILY_NAMES: {unclassified:?} — unknown family, \
+         classify it in ALL_FAMILY_NAMES (sigil-isa m68k.rs) so both coverage \
+         directions can see it"
+    );
     let expected: BTreeSet<&str> = ALL_FAMILY_NAMES
         .iter()
         .copied()
