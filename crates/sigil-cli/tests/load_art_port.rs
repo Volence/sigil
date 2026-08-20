@@ -110,6 +110,10 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         // P2b Task 6: Level_LoadArt now opens with PageCache_Init (which itself
         // calls PageIn_Flush internally — page_cache's concern, not load_art's).
         ("PageCache_Init", pick(pins::PAGE_CACHE_INIT)),
+        // Streaming-arc F1: Level_LoadArt verifies the resident identity map and
+        // latches PageCache_Direct_Map (games ram, DEBUG-independent RAM cell).
+        ("PageCache_Direct_Map", pick(pins::PAGE_CACHE_DIRECT_MAP)),
+        ("Page_Table", pick(pins::PAGE_TABLE)),
         ("PageIn_Enqueue", pick(pins::PAGE_IN_ENQUEUE)),
         ("PageIn_Pool_Table", pick(pins::PAGE_IN_POOL_TABLE)),
         ("PageIn_Queue_Count", pick(pins::PAGE_IN_QUEUE_COUNT)),
@@ -536,6 +540,10 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         // P2b Task 6: Level_LoadArt now opens with PageCache_Init (which itself
         // calls PageIn_Flush internally — page_cache's concern, not load_art's).
         ("PageCache_Init", pick(pins::PAGE_CACHE_INIT)),
+        // Streaming-arc F1: Level_LoadArt verifies the resident identity map and
+        // latches PageCache_Direct_Map (games ram, DEBUG-independent RAM cell).
+        ("PageCache_Direct_Map", pick(pins::PAGE_CACHE_DIRECT_MAP)),
+        ("Page_Table", pick(pins::PAGE_TABLE)),
         ("PageIn_Enqueue", pick(pins::PAGE_IN_ENQUEUE)),
         ("PageIn_Pool_Table", pick(pins::PAGE_IN_POOL_TABLE)),
         ("PageIn_Queue_Count", pick(pins::PAGE_IN_QUEUE_COUNT)),

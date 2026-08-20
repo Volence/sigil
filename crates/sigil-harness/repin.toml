@@ -1720,6 +1720,14 @@ name = "Cache_Cur_LocalMap"
 tests = ["tile_cache_port"]
 
 [[symbol]]
+name = "PageCache_Direct_Map"
+tests = ["load_art_port"]
+
+[[symbol]]
+name = "Page_Table"
+tests = ["load_art_port"]
+
+[[symbol]]
 name = "Dbg_DMA_Enq_Capped"
 tests = ["bg_anim_port", "dma_queue_port", "dplc_port"]
 debug_only = true

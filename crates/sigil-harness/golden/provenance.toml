@@ -7831,3 +7831,57 @@ full_crc = "2191bfdc"
 full_size = 713905
 anchor_crc = "6a457d4c"
 anchor_end = 0xa31e0
+
+[[entry]]
+name = "resident-patch-collapse"
+ab = "aeon@bdabd848 — F1: identity VERIFIED at act load (ruled RAM-rewrite premise false — maps are ROM embeds; escalated, resolved better: Page_Table provably identity under resident load order, Level_LoadArt verifies-then-latches, fallback pre-F1 byte-for-byte). Col 183->103 / Seq 136->88 cyc/word DEBUG, release fill -11.3% measured separately. Value identity: FULL BYTE COMPARE nametable+collision at 4 pinned states ALL EQUAL. maxdiag -16,504 closing to 4% of F1's own model; frames/tick unchanged as predicted — remainder is F2's. ab_runner fixed-frame diffs discharged by baseline-vs-itself control; scene gates the content check, PASS. Audit's replacement invariants poison-proven to halt. Gates 22/22+cost_model-retry green (one stop-race, contended); pytest 1143/3"
+note = "F1: direct-map latch verified at load; all four shapes +106..+329"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "50fe6e88"
+full_size = 714600
+anchor_crc = "e92ef39b"
+anchor_end = 0xa31e0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "7d7db28b"
+full_size = 601067
+anchor_crc = "0644d1c3"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "277fd798"
+full_size = 95850
+anchor_crc = "185c993d"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "fa6c086e"
+full_size = 100454
+anchor_crc = "2188fd63"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "99ec1f61"
+full_size = 655678
+anchor_crc = "234c7839"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "8cf11323"
+full_size = 698517
+anchor_crc = "dbe731ef"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "47111ae9"
+full_size = 714234
+anchor_crc = "4135f49d"
+anchor_end = 0xa31e0
