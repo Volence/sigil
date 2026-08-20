@@ -7669,3 +7669,57 @@ full_crc = "06af0010"
 full_size = 713863
 anchor_crc = "8360e6c0"
 anchor_end = 0xa31c0
+
+[[entry]]
+name = "warp-semantics-fix"
+ab = "aeon@454671bf — the -11 defect fixed: PHook_EnsureStanding's box-growth lift ((39-16)>>1 from the debug-fly marker box) landed on teleports; position now written AFTER Player_SetState (same instructions reordered, DEBUG-only). Fresh-boot controls overturned the terrain-dependence account (two-warps-one-boot was confounded — warp 1 normalized the box). Re-measured verbatim at every request both regimes; leader-simulation recipe documented (one B press, never a flag poke). Release shapes byte-identical e111dff7/aae04929; s4.debug 06af0010->203a3bac. Goldens pinned from a CLEAN checkout of 454671bf — the main tree carries live OJZ/collision content edits (aurora session active) which are deliberately excluded and will get their own refreeze when committed. pytest 1106/2; warp gate 10/10; one cost_model stop-race wedge, green isolated"
+note = "warp -11 fix: DEBUG-only reorder; goldens from clean checkout (live content edits excluded)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "ae6faec3"
+full_size = 714229
+anchor_crc = "fa210372"
+anchor_end = 0xa31c0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "ad666fbd"
+full_size = 600946
+anchor_crc = "f2be55b5"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "aae04929"
+full_size = 95733
+anchor_crc = "8931c98c"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "82884c07"
+full_size = 100152
+anchor_crc = "d6aad293"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "16ab5284"
+full_size = 655678
+anchor_crc = "2fe671e1"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "e111dff7"
+full_size = 698411
+anchor_crc = "eebf3769"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "203a3bac"
+full_size = 713863
+anchor_crc = "7c6bff96"
+anchor_end = 0xa31c0
