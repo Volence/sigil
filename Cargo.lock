@@ -347,6 +347,7 @@ dependencies = [
  "sigil-frontend-as",
  "sigil-frontend-emp",
  "sigil-ir",
+ "sigil-isa",
  "sigil-link",
  "sigil-span",
  "tempfile",
