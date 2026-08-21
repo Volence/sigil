@@ -86,6 +86,15 @@ Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
   test runtime** via `emp_const_rhs` / `emp_const_literal` — never a copied literal.
 - **Never build in the scratchpad/tmp** — `/tmp` is tmpfs; a cargo build there wedges
   the shell. Set `CARGO_TARGET_DIR` to disk for any out-of-tree build.
+- **The main aeon checkout carries the owner's live editor content edits** (collision
+  bins, regenerated act-pool pages under `games/sonic4/data/`) for hours or days at a
+  time — never gate a green on that tree cleaning up. A strict-gate or landing run
+  that matters points `AEON_DIR` at a CLEAN WORKTREE of a committed aeon SHA (build
+  both shapes there first — repin resolves but does not generate; seed the gitignored
+  paths by enumerating them, the list has grown repeatedly). Mid-brushstroke aeon
+  edits flipping sigil port-gate results is environmental, not signal; the tell is
+  broad `*_port` region-diff failures at embedded addresses plus
+  `repin_pins::pins_rs_is_current` failing identically on sigil master.
 
 ## Queue
 
