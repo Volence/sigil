@@ -97,6 +97,40 @@ fn a_tree_with_no_game_map_declares_no_game_rows() {
     assert_eq!(merged, builtin);
 }
 
+/// Shapes sharing a `games/<g>/map.toml` carry the SAME built-in key set.
+///
+/// The built-in-vs-game conflict check runs per shape; if one map-sharing shape
+/// carried a built-in key the others lack, a game `[defines]` row of that name
+/// would error in that shape and silently land in the rest — the same map read
+/// two ways. Key-set equality across each map-path group makes that split
+/// unrepresentable. Reference-free: `map_path` only joins path components, so
+/// the grouping needs no tree on disk.
+#[test]
+fn shapes_sharing_a_game_map_carry_the_same_builtin_key_set() {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let anchor = Path::new("/");
+    let mut by_map: BTreeMap<std::path::PathBuf, Vec<(&str, BTreeSet<&str>)>> = BTreeMap::new();
+    for (label, profile) in native::shipped_shapes() {
+        let keys: BTreeSet<&str> = profile.emp_defines.iter().map(|(k, _)| *k).collect();
+        by_map.entry(profile.map_path(anchor)).or_default().push((label, keys));
+    }
+    for (map, group) in &by_map {
+        let (first_label, first_keys) = &group[0];
+        for (label, keys) in &group[1..] {
+            assert_eq!(
+                keys,
+                first_keys,
+                "shapes `{first_label}` and `{label}` share {} but carry different \
+                 built-in key sets — a game [defines] row named for the difference \
+                 would error in one shape and silently land in the other",
+                map.display()
+            );
+        }
+    }
+    assert!(by_map.len() >= 2, "expected at least the sonic4 and demo map groups: {by_map:?}");
+}
+
 /// Every shipped shape's merge SUCCEEDS against the real aeon tree, and every
 /// built-in row survives it. This is the consumer-side half of the drift net:
 /// a shipped map whose `[defines]` table collides with a built-in row fails
