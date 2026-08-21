@@ -162,12 +162,12 @@ fn analyze_every_shape(
             f
         })
         .collect();
+    let aeon = aeon_dir().expect("aeon tree present");
     native::shipped_shapes()
         .into_iter()
         .map(|(label, profile)| {
-            let aeon = aeon_dir().expect("aeon tree present");
-        let defines =
-            native::shape_defines(&profile, &aeon).expect("shape defines");
+            let defines =
+                native::shape_defines(&profile, &aeon).expect("shape defines");
             let (iface_env, bind_diags) =
                 bind_corpus_interfaces(&files, &defines, game_module_prefix(&profile));
             let bind_errors: Vec<_> = bind_diags
@@ -359,8 +359,8 @@ fn a_profile_that_loses_a_toggle_is_named_by_the_surface_in_every_shape() {
     let Some(srcs) = corpus_sources() else { return };
     let files: Vec<_> = srcs.iter().map(|(_, s)| parse_str(s).0).collect();
 
+    let aeon = aeon_dir().expect("aeon tree present");
     for (label, profile) in native::shipped_shapes() {
-        let aeon = aeon_dir().expect("aeon tree present");
         let mut defines =
             native::shape_defines(&profile, &aeon).expect("shape defines");
         defines.retain(|(k, _)| k != "DEBUG");
@@ -668,8 +668,8 @@ fn a_lost_crash_report_define_is_named_in_exactly_the_plain_shapes() {
     let files: Vec<_> = srcs.iter().map(|(_, s)| parse_str(s).0).collect();
 
     let (mut plain_shapes, mut debug_shapes) = (0, 0);
+    let aeon = aeon_dir().expect("aeon tree present");
     for (label, profile) in native::shipped_shapes() {
-        let aeon = aeon_dir().expect("aeon tree present");
         let mut defines =
             native::shape_defines(&profile, &aeon).expect("shape defines");
         defines.retain(|(k, _)| k != "CRASH_REPORT");
@@ -736,8 +736,8 @@ fn a_lost_mirror_define_is_named_in_exactly_the_debug_sound_on_shapes() {
     let files: Vec<_> = srcs.iter().map(|(_, s)| parse_str(s).0).collect();
 
     let (mut reached_shapes, mut skipped_shapes) = (0, 0);
+    let aeon = aeon_dir().expect("aeon tree present");
     for (label, profile) in native::shipped_shapes() {
-        let aeon = aeon_dir().expect("aeon tree present");
         let mut defines =
             native::shape_defines(&profile, &aeon).expect("shape defines");
         defines.retain(|(k, _)| k != "SOUND_DBG_MIRROR");
@@ -803,8 +803,8 @@ fn a_lost_hotkeys_define_fails_the_interface_bind_in_the_sonic4_shapes() {
     let files: Vec<_> = srcs.iter().map(|(_, s)| parse_str(s).0).collect();
 
     let (mut sonic4_shapes, mut demo_shapes) = (0, 0);
+    let aeon = aeon_dir().expect("aeon tree present");
     for (label, profile) in native::shipped_shapes() {
-        let aeon = aeon_dir().expect("aeon tree present");
         let mut defines =
             native::shape_defines(&profile, &aeon).expect("shape defines");
         defines.retain(|(k, _)| k != "SOUND_DEBUG_HOTKEYS");
@@ -1313,8 +1313,8 @@ fn the_corpus_invoke_edges_are_collected() {
     let debug_edge = ("GameLoop".to_string(), "Debug_MusicToggle".to_string());
     let boot_edge = ("EntryPoint".to_string(), "SoundTest_BootPing".to_string());
     let mut bound_shapes = 0usize;
+    let aeon = aeon_dir().expect("aeon tree present");
     for (label, profile, r) in analyze_every_shape(&srcs) {
-        let aeon = aeon_dir().expect("aeon tree present");
         let hotkeys = native::shape_defines(&profile, &aeon)
             .expect("shape defines")
             .iter()

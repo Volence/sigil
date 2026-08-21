@@ -147,8 +147,8 @@ fn residue_procs_verify_as_predicted() {
     let mut report = String::from("\n== §5 verified-preserves over the 6 residue procs (per shape) ==\n");
     let mut mismatches = Vec::new();
     let mut evals = 0usize;
+    let aeon = aeon_dir().expect("aeon tree present");
     for (label, profile) in native::shipped_shapes() {
-        let aeon = aeon_dir().expect("aeon tree present");
         let defines =
             native::shape_defines(&profile, &aeon).expect("shape defines");
         let (iface_env, bind_diags) =

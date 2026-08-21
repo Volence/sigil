@@ -80,8 +80,8 @@ fn dead_save_worklist_over_corpus() {
     // env, so a dead save gated behind a comptime arm is scanned when the ROM that
     // ships it turns the arm on. The WIDEST worklist is the true dead-save census.
     let mut widest = base.dead_saves.len();
+    let aeon = aeon_dir().expect("aeon tree present");
     for (label, profile) in native::shipped_shapes() {
-        let aeon = aeon_dir().expect("aeon tree present");
         let defines =
             native::shape_defines(&profile, &aeon).expect("shape defines");
         let (iface_env, bind_diags) =

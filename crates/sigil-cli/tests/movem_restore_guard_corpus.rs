@@ -207,8 +207,8 @@ fn every_stack_movem_restore_has_a_matching_save() {
     // exactly when the shipped ROM turns their arm on.
     let mut widest = 0usize;
     let mut census = format!("define-free baseline: {base_count} restores");
+    let aeon = aeon_dir().expect("aeon tree present");
     for (label, profile) in native::shipped_shapes() {
-        let aeon = aeon_dir().expect("aeon tree present");
         let defines =
             native::shape_defines(&profile, &aeon).expect("shape defines");
         let (iface_env, bind_diags) =

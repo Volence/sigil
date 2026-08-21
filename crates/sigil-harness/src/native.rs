@@ -1298,8 +1298,9 @@ pub fn harvest_engine_constants(aeon: &Path) -> Result<Vec<(String, i64)>, Strin
     // STRESS_EVICT (Art-streaming Task-7 dev-fixture define) must be seeded: the new
     // PAGE_FRAMES_CLAMP pub const references it, and eval_all_pub_consts folds EVERY
     // pub const. This harvest is shape-agnostic and feeds the AS -D side only; the
-    // .emp build takes STRESS_EVICT from the PROFILE's emp_defines, so the harvested
-    // PAGE_FRAMES_CLAMP (== PAGE_FRAMES at the seed 0) is an unused AS define.
+    // .emp build takes STRESS_EVICT from the shape_defines merge (where the
+    // profile's built-in rows carry it), so the harvested PAGE_FRAMES_CLAMP
+    // (== PAGE_FRAMES at the seed 0) is an unused AS define.
     let (vals, diags) = sigil_frontend_emp::eval::eval_all_pub_consts(
         &file,
         Some(aeon),
@@ -1460,8 +1461,8 @@ pub fn harvest_engine_struct_offsets(aeon: &Path) -> Result<Vec<(String, i64)>, 
 /// SAME `lower_regions` path the real build uses — a focused `build_program` over
 /// a `use engine.ram`-only entry — then reads the resolved section labels. The
 /// harvest-time and lower-time addresses are the same BY CONSTRUCTION (one code
-/// path, one comptime env = the profile's `emp_defines`), never merely tested.
-/// Shape-specific: `emp_defines` carries `DEBUG` (0/1), so the debug prof block's
+/// path, one comptime env = the [`shape_defines`] merge), never merely tested.
+/// Shape-specific: the merge carries `DEBUG` (0/1), so the debug prof block's
 /// shift flows through to every downstream label's harvested address.
 pub fn harvest_engine_ram_addresses(
     aeon: &Path,
