@@ -28,8 +28,6 @@
 /// like `0x3E8` are TOML integers); each key must be define-identifier-shaped.
 /// A key declared twice fails loud, naming the key and both lines.
 pub fn parse_game_defines(toml_src: &str, origin: &str) -> Result<Vec<(String, i128)>, String> {
-    check_duplicate_define_keys(toml_src, origin)?;
-
     // Deserialize ONLY the `defines` table; every other key in the document is
     // ignored here (serde's unknown-field default), exactly as the placement
     // reader ignores the region keys.
@@ -39,8 +37,25 @@ pub fn parse_game_defines(toml_src: &str, origin: &str) -> Result<Vec<(String, i
         defines: Option<toml::value::Table>,
     }
 
-    let doc: MapDefinesDoc =
-        toml::from_str(toml_src).map_err(|e| format!("{origin}: parse error: {e}"))?;
+    let doc: MapDefinesDoc = match toml::from_str(toml_src) {
+        Ok(doc) => doc,
+        Err(e) => {
+            // The PARSER is the duplicate-key authority (the TOML grammar
+            // forbids them); the line scan runs only after the parser has
+            // reported a duplicate in `[defines]`, to upgrade the message to
+            // the both-lines form. A duplicate the scan cannot see (exotic
+            // quoting) keeps the parser's own message — so the scan can
+            // upgrade a message but never reject a document the parser
+            // accepts (a defines-shaped STRING body is data, not rows).
+            let msg = e.to_string();
+            if msg.contains("duplicate key") && msg.contains("in table `defines`") {
+                if let Some(upgraded) = duplicate_define_key_message(toml_src, origin) {
+                    return Err(upgraded);
+                }
+            }
+            return Err(format!("{origin}: parse error: {e}"));
+        }
+    };
     let Some(table) = doc.defines else {
         return Ok(Vec::new());
     };
@@ -83,8 +98,8 @@ pub fn merge_builtin_and_game(
         if let Some((_, bv)) = builtin.iter().find(|(bk, _)| *bk == key) {
             return Err(format!(
                 "define `{key}` is declared twice: {origin} [defines] (= {gv}) and the \
-                 built-in profile row in sigil-harness native.rs (= {bv}) — a game \
-                 config must not shadow a built-in row (and a built-in must not \
+                 built-in profile row in crates/sigil-harness/src/native.rs (= {bv}) — \
+                 a game config must not shadow a built-in row (and a built-in must not \
                  silently override a game config); delete one of the two declarations"
             ));
         }
@@ -101,13 +116,15 @@ fn is_define_ident(s: &str) -> bool {
         && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
 }
 
-/// Reject a key declared twice inside `[defines]`, naming both lines.
+/// The both-lines message for a key declared twice inside `[defines]`, when the
+/// line scan can locate both rows; `None` when it cannot.
 ///
-/// The TOML grammar already forbids duplicate keys, but the parser's error names
-/// only the second occurrence; this pre-scan names both. It is a message UPGRADE,
-/// not the enforcement: a duplicate this line scan cannot see (exotic quoting)
-/// still fails in `toml::from_str` below it.
-fn check_duplicate_define_keys(src: &str, origin: &str) -> Result<(), String> {
+/// Called only after `toml::from_str` has itself reported a duplicate key in
+/// `[defines]` — the parser is the enforcement, this names the first occurrence
+/// the parser's message omits. Because the scan never runs on a document the
+/// parser accepts, its line-level naivety (a `#` inside a quoted value, exotic
+/// key quoting) can at worst decline the upgrade, never misread data as rows.
+fn duplicate_define_key_message(src: &str, origin: &str) -> Option<String> {
     let mut in_defines = false;
     let mut seen: Vec<(String, usize)> = Vec::new();
     for (idx, raw) in src.lines().enumerate() {
@@ -128,7 +145,7 @@ fn check_duplicate_define_keys(src: &str, origin: &str) -> Result<(), String> {
             continue;
         }
         if let Some((_, first_line)) = seen.iter().find(|(k, _)| k == key) {
-            return Err(format!(
+            return Some(format!(
                 "{origin}: [defines] key `{key}` is declared twice (lines {first_line} \
                  and {}) — a define has exactly one row",
                 idx + 1
@@ -136,7 +153,7 @@ fn check_duplicate_define_keys(src: &str, origin: &str) -> Result<(), String> {
         }
         seen.push((key.to_string(), idx + 1));
     }
-    Ok(())
+    None
 }
 
 #[cfg(test)]
@@ -202,6 +219,17 @@ at = 0x0
         let src = "[other]\nX = 1\nX = 2\n";
         let err = parse_game_defines(src, "fixture/map.toml").unwrap_err();
         assert!(err.contains("parse error"), "expected the toml parse error, got: {err}");
+    }
+
+    #[test]
+    fn a_string_body_shaped_like_a_defines_table_is_not_scanned() {
+        // A multi-line string is DATA; its lines must never reach the duplicate
+        // scan. The scan is consulted only after the parser itself reports a
+        // duplicate in `[defines]`, so a defines-shaped string body cannot
+        // reject a valid map.
+        let src = "[docs]\nbody = \"\"\"\n[defines]\nX = 1\nX = 2\n\"\"\"\n\n[defines]\nREAL = 3\n";
+        let rows = parse_game_defines(src, "fixture/map.toml").unwrap();
+        assert_eq!(rows, vec![("REAL".to_string(), 3)]);
     }
 
     #[test]
