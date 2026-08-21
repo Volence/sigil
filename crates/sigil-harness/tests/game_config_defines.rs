@@ -2,10 +2,11 @@
 //! a game declares comptime define rows in its own `games/<g>/map.toml`, and the
 //! merge with the profile's built-in rows is conflict-checked in both directions.
 //!
-//! Synthetic trees only. `shape_defines` reads nothing but the game's map.toml,
-//! so a tempdir holding just `games/sonic4/map.toml` is a complete fixture — no
-//! aeon checkout is touched, and no shipped map declares a row (the byte gates
-//! hold that neutral state; adoption is the aeon-owned paired lane).
+//! Synthetic trees, plus one reference-gated closer against the real maps.
+//! `shape_defines` reads nothing but the game's map.toml, so a tempdir holding
+//! just `games/sonic4/map.toml` is a complete fixture — no aeon checkout is
+//! written, and no shipped map declares a row (the byte gates hold that neutral
+//! state; adoption is the aeon-owned paired lane).
 
 use sigil_harness::native;
 use std::path::Path;
@@ -100,17 +101,17 @@ fn a_tree_with_no_game_map_declares_no_game_rows() {
 /// built-in row survives it. This is the consumer-side half of the drift net:
 /// a shipped map whose `[defines]` table collides with a built-in row fails
 /// here (and in every build) the moment it lands, and a game row can only
-/// EXTEND the env, never replace a built-in. Skips green when the tree is
-/// absent, like the port gates.
+/// EXTEND the env, never replace a built-in. Reference-gated through the
+/// canonical seam: skips green when the tree is absent, panics under
+/// `SIGIL_STRICT_GATE=1`.
 #[test]
 fn every_shipped_shape_merges_cleanly_against_the_real_tree() {
-    let aeon = std::path::PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
-    if !aeon.join("engine").is_dir() {
-        eprintln!("skip: aeon tree not at {} (set AEON_DIR)", aeon.display());
+    let Some(aeon) = sigil_harness::test_support::reference_tree(&[
+        "games/sonic4/map.toml",
+        "games/demo/map.toml",
+    ]) else {
         return;
-    }
+    };
     for (label, profile) in native::shipped_shapes() {
         let merged = shape_or_panic(&profile, &aeon, label);
         let pairs = as_pairs(&merged);
