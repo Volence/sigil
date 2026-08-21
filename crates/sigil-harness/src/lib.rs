@@ -53,6 +53,11 @@ pub mod native;
 /// hole / budget / order-validation facts the chainer checks its layout against.
 pub mod map_placement;
 
+/// Per-game `[defines]` table reader (`games/<g>/map.toml`) — the game-declared
+/// comptime define rows `native::shape_defines` merges with the profile's
+/// built-in `emp_defines` rows (conflict = loud error, neither source wins).
+pub mod game_defines;
+
 use sigil_link::LinkedImage;
 
 /// Region A base LMA in the assembled ROM: the resident phase-0 Z80 driver.
