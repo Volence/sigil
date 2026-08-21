@@ -243,7 +243,9 @@ fn debug_shape_sr_writes_are_author_checked() {
     let mut seen_context = 0usize;
     let mut walked_debug_shapes = 0usize;
     for (label, profile) in native::shipped_shapes() {
-        let defines = native::shape_defines(&profile);
+        let aeon = aeon_dir().expect("aeon tree present");
+        let defines =
+            native::shape_defines(&profile, &aeon).expect("shape defines");
         if !defines.iter().any(|(k, v)| k == "DEBUG" && *v == 1) {
             continue;
         }

@@ -138,7 +138,8 @@ fn analyze_every_shape(
     native::shipped_shapes()
         .into_iter()
         .map(|(label, profile)| {
-            let defines = native::shape_defines(&profile);
+            let defines =
+                native::shape_defines(&profile, &aeon_dir()).expect("shape defines");
             let (iface_env, bind_diags) =
                 bind_corpus_interfaces(&files, &defines, profile.game_module_prefix());
             let bind_errors: Vec<_> = bind_diags

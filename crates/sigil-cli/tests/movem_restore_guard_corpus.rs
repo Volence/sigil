@@ -208,7 +208,9 @@ fn every_stack_movem_restore_has_a_matching_save() {
     let mut widest = 0usize;
     let mut census = format!("define-free baseline: {base_count} restores");
     for (label, profile) in native::shipped_shapes() {
-        let defines = native::shape_defines(&profile);
+        let aeon = aeon_dir().expect("aeon tree present");
+        let defines =
+            native::shape_defines(&profile, &aeon).expect("shape defines");
         let (iface_env, bind_diags) =
             bind_corpus_interfaces(&just_files, &defines, profile.game_module_prefix());
         assert!(

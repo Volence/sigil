@@ -1125,12 +1125,30 @@ pub fn shipped_shapes() -> Vec<(&'static str, GameProfile)> {
     ]
 }
 
-/// The comptime `-D` set a shape's `.emp` sources are read under, owned by its
-/// shipping profile so an analysis can never describe a shape the build does not
-/// make. `--report contracts` and the corpus gates both read this, so a gate's walk
-/// and the report's walk are the same walk.
-pub fn shape_defines(profile: &GameProfile) -> Vec<(String, i128)> {
-    profile.emp_defines.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+/// The comptime `-D` set a shape's `.emp` sources are read under: the shipping
+/// profile's built-in `emp_defines` rows merged with the game's own
+/// `games/<g>/map.toml` `[defines]` rows (see [`crate::game_defines`]). Owned by
+/// the profile + the game's config so an analysis can never describe a shape the
+/// build does not make. `--report contracts`, the corpus gates, and the `.emp`
+/// build/harvest paths all read THIS merge, so a gate's walk and the build's
+/// walk are the same walk — a game-declared row is visible to every consumer or
+/// to none.
+///
+/// A game row whose key matches a built-in row is a loud error in both
+/// directions (neither source silently wins); a duplicated key inside the table
+/// is a loud error naming both rows. A tree with NO `games/<g>/map.toml`
+/// contributes no game rows — the port-test fixtures build synthetic trees with
+/// region-only or absent maps, and a shape with no map declares no game defines.
+/// Any other read failure is loud.
+pub fn shape_defines(profile: &GameProfile, aeon: &Path) -> Result<Vec<(String, i128)>, String> {
+    let map_path = profile.map_path(aeon);
+    let origin = map_path.display().to_string();
+    let game_rows = match std::fs::read_to_string(&map_path) {
+        Ok(src) => crate::game_defines::parse_game_defines(&src, &origin)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(format!("read {origin}: {e}")),
+    };
+    crate::game_defines::merge_builtin_and_game(&profile.emp_defines, game_rows, &origin)
 }
 
 /// Give EVERY reachable module a glob (`.*`) import of ALL pure-comptime helper
@@ -1500,8 +1518,7 @@ pub fn harvest_engine_ram_addresses(
         path: aeon.join("__ram_harvest_entry__.emp"),
     });
 
-    let defines: Vec<(String, i128)> =
-        profile.emp_defines.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+    let defines = shape_defines(profile, aeon)?;
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.to_path_buf()),
@@ -2022,9 +2039,9 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
     // (`if DEBUG == 1`), so it must be defined in BOTH shapes (0 plain / 1 debug).
     // SOUND_DEBUG_HOTKEYS / SOUND_DBG_MIRROR are the Config-A test-harness flags,
     // read as VALUES (`if X == 1`); OFF in every canonical shape (build.sh never
-    // defines them → 0).
-    let defines: Vec<(String, i128)> =
-        profile.emp_defines.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+    // defines them → 0). The set is the shape_defines merge, so a game's own
+    // `map.toml [defines]` rows reach the comptime env here too.
+    let defines = shape_defines(profile, aeon)?;
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.to_path_buf()),

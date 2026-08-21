@@ -165,7 +165,9 @@ fn analyze_every_shape(
     native::shipped_shapes()
         .into_iter()
         .map(|(label, profile)| {
-            let defines = native::shape_defines(&profile);
+            let aeon = aeon_dir().expect("aeon tree present");
+        let defines =
+            native::shape_defines(&profile, &aeon).expect("shape defines");
             let (iface_env, bind_diags) =
                 bind_corpus_interfaces(&files, &defines, game_module_prefix(&profile));
             let bind_errors: Vec<_> = bind_diags
@@ -358,7 +360,9 @@ fn a_profile_that_loses_a_toggle_is_named_by_the_surface_in_every_shape() {
     let files: Vec<_> = srcs.iter().map(|(_, s)| parse_str(s).0).collect();
 
     for (label, profile) in native::shipped_shapes() {
-        let mut defines = native::shape_defines(&profile);
+        let aeon = aeon_dir().expect("aeon tree present");
+        let mut defines =
+            native::shape_defines(&profile, &aeon).expect("shape defines");
         defines.retain(|(k, _)| k != "DEBUG");
         let (iface_env, bind_diags) =
             bind_corpus_interfaces(&files, &defines, game_module_prefix(&profile));
@@ -422,9 +426,10 @@ fn an_env_free_walk_names_the_interface_member_it_cannot_resolve() {
     let Some(srcs) = corpus_sources() else { return };
     let files: Vec<_> = srcs.iter().map(|(_, s)| parse_str(s).0).collect();
     let (label, profile) = native::shipped_shapes().remove(0);
+    let aeon = aeon_dir().expect("aeon tree present");
     let r = sigil_frontend_emp::corpus_contracts::analyze_corpus_with(
         &files,
-        &native::shape_defines(&profile),
+        &native::shape_defines(&profile, &aeon).expect("shape defines"),
     );
     assert!(
         r.comptime_unresolved
@@ -664,7 +669,9 @@ fn a_lost_crash_report_define_is_named_in_exactly_the_plain_shapes() {
 
     let (mut plain_shapes, mut debug_shapes) = (0, 0);
     for (label, profile) in native::shipped_shapes() {
-        let mut defines = native::shape_defines(&profile);
+        let aeon = aeon_dir().expect("aeon tree present");
+        let mut defines =
+            native::shape_defines(&profile, &aeon).expect("shape defines");
         defines.retain(|(k, _)| k != "CRASH_REPORT");
         let (iface_env, bind_diags) =
             bind_corpus_interfaces(&files, &defines, game_module_prefix(&profile));
@@ -730,7 +737,9 @@ fn a_lost_mirror_define_is_named_in_exactly_the_debug_sound_on_shapes() {
 
     let (mut reached_shapes, mut skipped_shapes) = (0, 0);
     for (label, profile) in native::shipped_shapes() {
-        let mut defines = native::shape_defines(&profile);
+        let aeon = aeon_dir().expect("aeon tree present");
+        let mut defines =
+            native::shape_defines(&profile, &aeon).expect("shape defines");
         defines.retain(|(k, _)| k != "SOUND_DBG_MIRROR");
         let (iface_env, bind_diags) =
             bind_corpus_interfaces(&files, &defines, game_module_prefix(&profile));
@@ -795,7 +804,9 @@ fn a_lost_hotkeys_define_fails_the_interface_bind_in_the_sonic4_shapes() {
 
     let (mut sonic4_shapes, mut demo_shapes) = (0, 0);
     for (label, profile) in native::shipped_shapes() {
-        let mut defines = native::shape_defines(&profile);
+        let aeon = aeon_dir().expect("aeon tree present");
+        let mut defines =
+            native::shape_defines(&profile, &aeon).expect("shape defines");
         defines.retain(|(k, _)| k != "SOUND_DEBUG_HOTKEYS");
         let (_iface_env, bind_diags) =
             bind_corpus_interfaces(&files, &defines, game_module_prefix(&profile));
@@ -1303,7 +1314,9 @@ fn the_corpus_invoke_edges_are_collected() {
     let boot_edge = ("EntryPoint".to_string(), "SoundTest_BootPing".to_string());
     let mut bound_shapes = 0usize;
     for (label, profile, r) in analyze_every_shape(&srcs) {
-        let hotkeys = native::shape_defines(&profile)
+        let aeon = aeon_dir().expect("aeon tree present");
+        let hotkeys = native::shape_defines(&profile, &aeon)
+            .expect("shape defines")
             .iter()
             .any(|(k, v)| k == "SOUND_DEBUG_HOTKEYS" && *v == 1);
         let has_debug = r.abs_call_edges.contains(&debug_edge);

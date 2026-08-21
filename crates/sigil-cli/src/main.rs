@@ -770,7 +770,7 @@ fn run_ram_report(aeon: &std::path::Path, target: &BuildTarget) {
     // define set the `.emp` RAM modules read (SYSTEM_STACK, DEBUG, the game sizing
     // consts engine.ram consumes: MAX_RING_BUFFER / COLLECTED_WINDOW_SLOTS / …).
     let (label, profile) = target.label_and_profile();
-    let defines = sigil_harness::native::shape_defines(&profile);
+    let defines = shape_defines_or_exit(&profile, aeon);
     let manifest = scan_or_exit(aeon);
 
     let opts = sigil_frontend_emp::lower::LowerOptions {
@@ -803,6 +803,19 @@ fn run_ram_report(aeon: &std::path::Path, target: &BuildTarget) {
 /// tier — the `[module.path-mismatch]` family, which no later stage re-reports —
 /// goes through the one `SIGIL_WARNINGS` channel. A report that swallows the
 /// manifest's warnings shows a cleaner tree than the build does.
+/// The shape's merged comptime define set: the profile's built-in rows + the
+/// game's own `map.toml [defines]` rows. A malformed table, a duplicated key, or
+/// a game row shadowing a built-in is a config error that stops the run here.
+fn shape_defines_or_exit(
+    profile: &sigil_harness::native::GameProfile,
+    aeon: &std::path::Path,
+) -> Vec<(String, i128)> {
+    sigil_harness::native::shape_defines(profile, aeon).unwrap_or_else(|e| {
+        eprintln!("error: {e}");
+        process::exit(1);
+    })
+}
+
 fn scan_or_exit(aeon: &std::path::Path) -> sigil_frontend_emp::resolve::manifest::Manifest {
     use sigil_frontend_emp::resolve::manifest::{Manifest, SourceIndex};
     let (manifest, mdiags) = Manifest::scan(aeon);
@@ -873,7 +886,7 @@ fn print_ram_report(rows: &[sigil_frontend_emp::lower::RamRegionRow]) {
 /// disagree with all of them — recorded in the gap ledger rather than changed here.
 fn run_contract_report(aeon: &std::path::Path, target: &BuildTarget) {
     let (label, profile) = target.label_and_profile();
-    let defines = sigil_harness::native::shape_defines(&profile);
+    let defines = shape_defines_or_exit(&profile, aeon);
     let (report, _manifest) = corpus_closure_or_exit(aeon, target);
     print_report_header("contract closure", &label, &defines);
     print_contract_report(&report);
@@ -893,7 +906,7 @@ fn corpus_closure_or_exit(
     use sigil_frontend_emp::corpus_contracts;
 
     let (_label, profile) = target.label_and_profile();
-    let defines = sigil_harness::native::shape_defines(&profile);
+    let defines = shape_defines_or_exit(&profile, aeon);
     let manifest = scan_or_exit(aeon);
 
     let files: Vec<_> = manifest.modules.iter().map(|m| m.file.clone()).collect();
