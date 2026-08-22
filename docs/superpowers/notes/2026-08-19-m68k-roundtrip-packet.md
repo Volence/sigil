@@ -39,10 +39,14 @@ capture tap on `encode`'s RESULT).
 3. **`m68k::capture`** — a process-global, session-scoped tap on `encode`:
    while a `CaptureSession` is live, every successful encode records its
    `(Instruction, bytes)` pair. Global (AtomicBool + Mutex), NOT thread-local,
-   because both front-ends run lowering on spawned big-stack threads
-   (`sigil-frontend-emp/src/eval/mod.rs:1820`, `sigil-frontend-as/src/expr.rs:165`)
-   and a thread-local sink would silently lose those encodes. Idle cost: one
-   relaxed atomic load per encode.
+   because the `.emp` front end runs lowering on a spawned big-stack thread
+   (`run_on_eval_stack`, `sigil-frontend-emp/src/eval/mod.rs:1815-1832`) and a
+   thread-local sink would silently lose those encodes. One front end is the
+   reason, not two: the AS front end has no production thread spawn — its only
+   `spawn` is the `#[cfg(test)] mod depth_guard_tests` helper
+   (`sigil-frontend-as/src/expr.rs:141` opens the module, `:165` is the spawn),
+   which is a stack-overflow regression harness, not a lowering path. Idle
+   cost: one relaxed atomic load per encode.
 4. **`crates/sigil-harness/tests/m68k_roundtrip_stream.rs`** — the CI pass over
    the full emitted stream: for each of the seven shipped shapes,
    `build_rom_chained` runs inside a capture session and every captured pair
