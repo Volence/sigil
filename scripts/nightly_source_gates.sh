@@ -147,6 +147,12 @@ git -C "$AEON_GATES" checkout --force --detach "$AEON_SHA" >> "$LOG" 2>&1 \
 # `checkout --force` leaves whatever a previous night left behind, and a stale
 # generated file is byte-indistinguishable from a correct one.
 rm -rf "$AEON_GATES/engine/sound/generated" "$AEON_GATES/engine/debug/generated"
+# And no built ROM or listing survives in this checkout. Nothing the lane runs reads
+# one, and keeping the tree provably source-only is what makes that claim checkable
+# rather than asserted: a leftover s4.bin from a hand-run build is byte-identical in
+# appearance to a current one, and several port tests treat its mere PRESENCE as
+# "there is an aeon tree here".
+rm -f "$AEON_GATES"/*.bin "$AEON_GATES"/*.lst "$AEON_GATES"/*.p "$AEON_GATES"/*.h
 
 if [[ ! -x "$AEON_GATES/tools/bin/salvador" ]]; then
     mkdir -p "$AEON_GATES/tools/bin"
