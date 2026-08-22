@@ -62,13 +62,13 @@ Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — currently **3819 passed / 0 failed / 4 ignored**
-  under `SIGIL_STRICT_GATE=1` (sigil master `9c08f2a5`, aeon `1ee8f8e6`, 2026-08-22),
+  `AEON_DIR` set to the aeon tree — currently **3821 passed / 0 failed / 4 ignored**
+  under `SIGIL_STRICT_GATE=1` (sigil master `aafe612a`, aeon `1ee8f8e6`, 2026-08-22),
   with **zero `skip:` lines** in the run — check that, not just the
   totals: a reference gate that skips reports nothing and reads as coverage.
   **Reconcile the total against the tree, not against the last remembered bar:**
   `git grep -c '#\[test\]' HEAD -- '*.rs'` summed gives the declared count, and
-  `passed + ignored` must equal it (3819 + 4 = 3823 here). Baseline arithmetic carried
+  `passed + ignored` must equal it (3821 + 4 = 3825 here). Baseline arithmetic carried
   across branches measured on different reference trees does not reconcile and will
   invent a discrepancy that is not there. Never plain
   `cargo test`: without `--release` some gates are impractically slow, without
@@ -279,10 +279,31 @@ share**; `TST` was exactly that, live.
    aeon's build invokes `sigil` without asking what it is. Making the build refuse or warn
    when the assembler's revision ≠ the tree being assembled is an **aeon-side** parcel.
    Not covered by this witness at all: rustc version and build profile.
-2. **A Capstone differential as a permanent gate** — the only non-circular ISA oracle
-   available, already installed; it found the `TST` bug on its first run. Two
-   known-benign disagreements must be excluded by name (`6xFF` branch words, `btst
-   Dn,#imm` sizing).
+2. ~~**A Capstone differential as a permanent gate**~~ — **LANDED** at `aafe612a`
+   (`feat/capstone-differential`). Two gates: `m68k_capstone_differential` (the 65,536-word
+   space, 0.5 s, no aeon dependency, default suite) and `m68k_capstone_stream` (all seven
+   shipped shapes' emitted stream, default suite **and** the nightly source-gate lane).
+   **Non-circularity verified firsthand, not asserted:** under MUTANT T — `Tst` widened to
+   `DATA` on encoder *and* decoder together — the pre-existing `m68k_opcode_sweep` stays
+   GREEN while the capstone gate goes RED naming `4A3A`/`4A7A`/`4ABA` by word. Loud on
+   unmeasurable both directions: capstone absent skips and passes; capstone absent under
+   `SIGIL_STRICT_GATE=1` fails naming the reason.
+   Comparison is on a normalised abstract form (legality, consumed length, mnemonic family,
+   size where capstone reports one, ordered canonical operands) — **never text**, which
+   measures spelling. Capstone's *structured* operand detail is deliberately unused: in
+   5.0.7 its m68k backend leaves `mem.base_reg` invalid for `(An)/(An)+/-(An)` and
+   `mem.disp` zero for absolutes, so a structural compare would measure capstone's own bugs.
+   Both named hypotheses re-derived and both turned out **broader than stated**: the `$FF`
+   long-displacement escape is a 68020 addition capstone applies inside its 000 mode (16
+   words), and the bit-op sizing class is *every* bit-op form, not just dynamic `btst` —
+   capstone is wrong in both directions and it costs a length disagreement too. Five
+   exclusions total, each value-aware, each asserting its derived class size exactly; that
+   size assertion **fired twice during development and was right both times**. Residual
+   after normalisation and exclusion: zero, on all three corpora.
+   Three findings went to the gap ledger rather than being excluded or papered over — see
+   its tail: `encode_bit`'s bit-number field (152 words, a defect **both halves share**,
+   byte-neutral to fix and provably so), the odd `.s` branch displacement latent, and the
+   unpinned oracle version.
 3. **An alignment attribute / even-offset assertion** — the class-level fix for the
    odd-field finding: today a struct wanting even-aligned members can only say so by
    hand-counting bytes into a pad, and the pad goes stale silently. Aeon's own fix has
@@ -310,10 +331,13 @@ element(s), got M`, so rephrasing that diagnostic breaks them.
 queue item. Prose adjacency is not queue membership — state landed/queued in the sentence
 itself, since the next boot's only source is this file.)*
 
-**In flight (2026-08-22):** `feat/capstone-differential` (queue item 2), in an isolated
-worktree, not touching the aeon-paired lane. `feat/version-provenance` **landed** at
-`9c08f2a5`; the merged tree is verified green at the bar above (3819/0/4, zero skips,
-log stamped and attribution-checked). Both parcels landed earlier merged at `cba0a0bc`;
+**Nothing in flight; no agents running (2026-08-22).** Queue items 1 and 2 both landed —
+`feat/version-provenance` at `9c08f2a5`, `feat/capstone-differential` at `aafe612a`. The
+merged tree is verified green at the bar above: **3821 passed / 0 failed / 4 ignored**,
+`3821 + 4 = 3825` reconciling exactly against the declared `#[test]` count, zero `skip:`
+lines under `SIGIL_STRICT_GATE=1`, log stamped and all three new test binaries confirmed
+present in it by name. The nightly lane's self-audit is `gates=35 unclassified=0` on the
+merged tree. Both parcels landed earlier merged at `cba0a0bc`;
 **master is NOT pushed** — sigil `origin/master` is `40f862e2` and local master is 65
 commits ahead (see the local-only anchor warning below).
 
