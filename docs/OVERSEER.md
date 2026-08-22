@@ -117,23 +117,38 @@ wrong-shaped constant compiled clean); and the **Oracle listing gate's `ORACLE_D
 default**, which had gone stale at the oracle/oracle-old rename and made
 `SIGIL_STRICT_GATE=1` — the pre-merge bar this very file names — unsatisfiable.
 
+Also landed today: **`feat/m68k-roundtrip`** (an m68k decoder mirror, a round-trip pass
+over every shipped shape's emitted stream, and an opcode sweep) — carrying the real ISA
+fix it surfaced: `TST` takes `DATA_ALTERABLE` on the MC68000, not `DATA`, so the old row
+admitted nine words the hardware traps. Latent, never emitted, derived four ways. Its
+packet's soundness claim was corrected rather than kept — the sweep's oracle is
+`encode()`, so it proves decoder-subset-of-encoder and **cannot see a defect both halves
+share**; `TST` was exactly that, live.
+
 **Front of the queue, in order:**
 
-1. **`feat/m68k-roundtrip`** — reviewed MERGE-AFTER-FIXES, fixes dispatched. An m68k
-   decoder mirror + round-trip over every shipped shape. Its landing record needed
-   repair (its own soundness claim was falsified: the sweep's oracle is the encoder,
-   so it cannot see a defect both halves share) and it carries a real ISA fix
-   (`Tst` is `DATA_ALTERABLE` on a 68000, not `DATA` — sigil accepts nine words the
-   hardware traps). Merges clean, +14 tests, byte-neutral.
-2. **`feat/game-defines`** (8 commits, unmerged) — the aeon `emp_defines` ask. Two
+1. **`feat/game-defines`** (8 commits, unmerged) — the aeon `emp_defines` ask. Two
    self-recorded lens latents to close first.
-3. **Ungate the warn-tier corpus run from refreeze** — ruled 2026-08-22, owed to the
+2. **Ungate the warn-tier corpus run from refreeze** — ruled 2026-08-22, owed to the
    aeon session for a `docs/OVERSEER.md` cross-reference. A ritual keyed to byte
    movement cannot see a source-derived lint set move; six consecutive zero-byte aeon
    parcels proved it by hiding a real odd-address finding for a day.
-4. **An alignment attribute / even-offset assertion** — the class-level fix for the
-   same finding: today a struct wanting even-aligned members can only say so by
+3. **A provenance witness for the shared binary** — `sigil --version` reporting the
+   revision it was built from. The shared assembler sat three days stale while every
+   aeon build used it, and byte identity is silent on that by construction. Class-level
+   row in the ledger.
+4. **A Capstone differential as a permanent gate** — the only non-circular ISA oracle
+   available, already installed; it found the `TST` bug on its first run. Two
+   known-benign disagreements must be excluded by name (`6xFF` branch words, `btst
+   Dn,#imm` sizing).
+5. **An alignment attribute / even-offset assertion** — the class-level fix for the
+   odd-field finding: today a struct wanting even-aligned members can only say so by
    hand-counting bytes into a pad, and the pad goes stale silently.
+
+**In flight:** `feat/arity-cli-fixture` — a CLI-level regression test for const arity,
+committing the poison and its control beside the check they exercise. It exists because
+the enforcement was covered only at the frontend-unit level while aeon invokes the
+binary, which is how a three-day-stale assembler went unnoticed.
 
 For anything else read newest-first: the dated notes in `docs/superpowers/notes/`
 (start with `2026-08-22-warn-tier-drift-open.md`), then
