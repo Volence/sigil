@@ -370,15 +370,24 @@ frame, which is the one thing mutual verification cannot catch.
 Their side is banked at aeon `1ee8f8e6` (handoff) and `ba189b40` (the `br_ext` unlock
 row, cuttable cold) — both verified reachable from aeon's `origin/master`.
 
-**⚠ Local-only anchors.** Sigil's `origin/master` is `40f862e2` (2026-08-21) while local
-master is far ahead, so **every sigil SHA exchanged with aeon on 2026-08-22 is
-unreachable from origin** — including the arity fixture their unlock row cites, and the
-revision the shared `target/release/sigil` was built from. Aeon recorded those citations
-as local-only deliberately. **When sigil is pushed, whoever acts on one of those rows
-re-verifies reachability rather than trusting the note** — the note was true when
-written and does not stay true by itself. The general form, which composes with the
-SHA-class rule: **a SHA has a class, a path has a time, and a revision has a
-reachability.**
+**Local-only anchors — RESOLVED 2026-08-22.** Sigil's `origin/master` sat at `40f862e2`
+(2026-08-21) while local master ran 80 commits ahead, so every sigil SHA exchanged with
+aeon that day was unreachable from origin, including the arity fixture their unlock row
+cites. Master was pushed to `a70e6644` (owner-approved), fast-forward, no history
+rewritten — verified by `git ls-remote origin refs/heads/master` against the remote
+itself rather than by the local tracking ref, which is the only check that can distinguish
+"pushed" from "looks pushed locally". Reachability from `origin/master` then re-verified
+per SHA: `a24a1b4f` (the arity fixture), `cba0a0bc`, `5c75b5b6`, `9c08f2a5`, `aafe612a`,
+`a70e6644` — all reachable.
+
+**The rule that outlives the incident, and it did NOT stay true by itself:** a note saying
+"this is local-only" is true when written and rots on the next push, exactly as a note
+saying "this is reachable" rots on the next rewrite. **Whoever acts on a cross-repo row
+re-verifies reachability at read time rather than trusting either kind of note.** The
+general form, which composes with the SHA-class rule: **a SHA has a class, a path has a
+time, and a revision has a reachability.** Nothing about sigil being pushed today makes a
+*future* citation fetchable — push before you cite, every time, and verify against the
+remote.
 
 For anything else read newest-first: the dated notes in `docs/superpowers/notes/`
 (start with `2026-08-22-warn-tier-drift-open.md`), then
