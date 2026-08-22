@@ -7,10 +7,13 @@ mod m68k_common;
 
 use m68k_common::{golden_bytes, parse_golden_m68k};
 use sigil_isa::m68k::encode;
+use sigil_isa::m68k_decode::roundtrip_check;
 
 const GOLDEN: &str = include_str!("m68k_golden_vectors.txt");
 
-/// Encode every corpus form whose snippet is in `snippets` and assert it matches golden.
+/// Encode every corpus form whose snippet is in `snippets`, assert it matches
+/// golden byte-for-byte, AND assert it survives the decode round trip (the
+/// categorical alias defense — see `m68k_decode::roundtrip_check`).
 fn check(snippets: &[&str]) {
     let golden = parse_golden_m68k(GOLDEN);
     let corpus = corpus_m68k::corpus_m68k();
@@ -24,6 +27,9 @@ fn check(snippets: &[&str]) {
         let want = golden_bytes(&golden, snip);
         let got = encode(&inst).unwrap_or_else(|e| panic!("encode {snip:?}: {e}"));
         assert_eq!(got, want, "snippet {snip:?}");
+        if let Err(msg) = roundtrip_check(&inst, &got) {
+            panic!("snippet {snip:?}: {msg}");
+        }
     }
 }
 
@@ -214,6 +220,34 @@ fn all_forms_match_golden() {
         }
     }
     assert!(mismatches.is_empty(), "mismatches:\n{}", mismatches.join("\n"));
+}
+
+/// Every corpus form round-trips through the independent decoder. The count
+/// assert is DERIVED from the corpus itself, so a silently skipped form is
+/// impossible — the corpus-coverage gates in `m68k_golden.rs` already pin the
+/// corpus against the golden file.
+#[test]
+fn all_forms_roundtrip_through_the_decoder() {
+    let corpus = corpus_m68k::corpus_m68k();
+    let mut failures = Vec::new();
+    let mut checked = 0usize;
+    for (snip, inst) in &corpus {
+        match encode(inst) {
+            Ok(bytes) => match roundtrip_check(inst, &bytes) {
+                Ok(()) => checked += 1,
+                Err(msg) => failures.push(format!("{snip}: {msg}")),
+            },
+            Err(e) => failures.push(format!("{snip}: encode error {e}")),
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} of {} corpus forms failed the round trip:\n{}",
+        failures.len(),
+        corpus.len(),
+        failures.join("\n")
+    );
+    assert_eq!(checked, corpus.len(), "round-trip count must equal the corpus size");
 }
 
 #[test]

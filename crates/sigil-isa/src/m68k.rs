@@ -119,6 +119,16 @@ pub enum Cond {
 impl Cond {
     #[inline]
     pub fn cc(self) -> u16 { self as u16 }
+
+    /// The condition whose 4-bit cc field is `cc & 0xF` — [`cc`](Self::cc)'s inverse.
+    pub fn from_cc(cc: u16) -> Cond {
+        match cc & 0xF {
+            0x0 => Cond::T, 0x1 => Cond::F, 0x2 => Cond::Hi, 0x3 => Cond::Ls,
+            0x4 => Cond::Cc, 0x5 => Cond::Cs, 0x6 => Cond::Ne, 0x7 => Cond::Eq,
+            0x8 => Cond::Vc, 0x9 => Cond::Vs, 0xA => Cond::Pl, 0xB => Cond::Mi,
+            0xC => Cond::Ge, 0xD => Cond::Lt, 0xE => Cond::Gt, _ => Cond::Le,
+        }
+    }
 }
 
 /// Operation size. `B`/`W`/`L` are the data sizes; `S` is the 8-bit short branch
@@ -196,7 +206,20 @@ impl std::fmt::Display for IsaError {
 impl std::error::Error for IsaError {}
 
 /// Encode one instruction to big-endian machine-code bytes.
+///
+/// Every successful encode is offered to [`capture`] (a no-op unless a capture
+/// session is active) so the round-trip self-check can see the full emitted
+/// stream — see `m68k_decode::roundtrip_check` for the decode-side assert.
 pub fn encode(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    let result = encode_dispatch(inst);
+    if let Ok(bytes) = &result {
+        capture::record(inst, bytes);
+    }
+    result
+}
+
+/// The per-family dispatch behind [`encode`].
+fn encode_dispatch(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     match inst.mnemonic {
         Mnemonic::Move => encode_move(inst),
         Mnemonic::Movea => encode_movea(inst),
@@ -815,13 +838,12 @@ fn encode_single_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             )))
         }
     };
-    // `tst` only reads (DATA); `clr`/`neg`/`not`/`tas`/`Scc` write (DATA ALTERABLE).
-    // Neither admits An on the 68000 — `sne a3` otherwise encodes 56CB = `dbne d3,…`,
-    // a backward branch to garbage. (`tst.w a0` became legal only on the 68020.)
-    let allowed = match inst.mnemonic {
-        Mnemonic::Tst => EaSet::DATA,
-        _ => EaSet::DATA_ALTERABLE,
-    };
+    // All of `tst`/`clr`/`neg`/`not`/`tas`/`Scc` take DATA ALTERABLE on the 68000.
+    // `tst` reads rather than writes, but the 68000 still encodes only the alterable
+    // subset for it — PC-relative and immediate operands arrived with the 68020, and
+    // An with them (`sne a3` otherwise encodes 56CB = `dbne d3,…`, a backward branch
+    // to garbage).
+    let allowed = EaSet::DATA_ALTERABLE;
     let (ea_mode, ea_reg, ea_ext) = encode_ea(ea, allowed, inst.size)?;
     let ea_bits: u16 = ((ea_mode as u16) << 3) | (ea_reg as u16);
     let word: u16 = match inst.mnemonic {
@@ -1351,7 +1373,7 @@ impl EaClass {
         1 << (self as u16)
     }
     /// How the operand spells in a diagnostic.
-    fn spelling(self) -> &'static str {
+    pub(crate) fn spelling(self) -> &'static str {
         match self {
             EaClass::Dn => "Dn",
             EaClass::An => "An",
@@ -1375,10 +1397,10 @@ impl EaClass {
 pub struct EaSet(u16);
 
 impl EaSet {
-    const fn of(c: EaClass) -> Self {
+    pub(crate) const fn of(c: EaClass) -> Self {
         EaSet(c.bit())
     }
-    const fn or(self, other: Self) -> Self {
+    pub(crate) const fn or(self, other: Self) -> Self {
         EaSet(self.0 | other.0)
     }
     const fn without(self, other: Self) -> Self {
@@ -1387,7 +1409,7 @@ impl EaSet {
     const fn and(self, other: Self) -> Self {
         EaSet(self.0 & other.0)
     }
-    fn contains(self, c: EaClass) -> bool {
+    pub(crate) fn contains(self, c: EaClass) -> bool {
         self.0 & c.bit() != 0
     }
 
@@ -1395,38 +1417,38 @@ impl EaSet {
 
     /// Every mode. The correct set only where the instruction really accepts all
     /// twelve (`move` source, `movea` source, `cmpa`/`adda`/`suba` source).
-    const ALL: Self = EaSet(0x0FFF);
+    pub(crate) const ALL: Self = EaSet(0x0FFF);
     /// All but `An`. An address register is not a *data* operand.
-    const DATA: Self = Self::ALL.without(Self::of(EaClass::An));
+    pub(crate) const DATA: Self = Self::ALL.without(Self::of(EaClass::An));
     /// All but `Dn` and `An` — the operand is in memory.
-    const MEMORY: Self = Self::DATA.without(Self::of(EaClass::Dn));
+    pub(crate) const MEMORY: Self = Self::DATA.without(Self::of(EaClass::Dn));
     /// Modes that name a memory ADDRESS: no register direct, no autoincrement/
     /// decrement (their side effect has no meaning for an address), no immediate.
     ///
     /// `#imm` must be subtracted explicitly — the manual counts immediate among the
     /// MEMORY modes, so deriving control from memory without this line silently
     /// leaves `lea #$1000,a0` encodable.
-    const CONTROL: Self = Self::MEMORY
+    pub(crate) const CONTROL: Self = Self::MEMORY
         .without(Self::of(EaClass::PostInc))
         .without(Self::of(EaClass::PreDec))
         .without(Self::of(EaClass::Imm));
     /// Modes that can be WRITTEN: excludes the two PC-relative modes and `#imm`.
-    const ALTERABLE: Self = Self::ALL
+    pub(crate) const ALTERABLE: Self = Self::ALL
         .without(Self::of(EaClass::Pcd16))
         .without(Self::of(EaClass::Pcd8Xn))
         .without(Self::of(EaClass::Imm));
     /// `DATA & ALTERABLE` — the commonest destination class (`clr`, `Scc`, `eor`,
     /// `bset`, the ALU-immediate family, `move` destination).
-    const DATA_ALTERABLE: Self = Self::DATA.and(Self::ALTERABLE);
+    pub(crate) const DATA_ALTERABLE: Self = Self::DATA.and(Self::ALTERABLE);
     /// `MEMORY & ALTERABLE` — the memory-shift form and the `Dn,<ea>` ALU direction.
-    const MEMORY_ALTERABLE: Self = Self::MEMORY.and(Self::ALTERABLE);
+    pub(crate) const MEMORY_ALTERABLE: Self = Self::MEMORY.and(Self::ALTERABLE);
     /// `CONTROL & ALTERABLE` — MOVEM's store destination, before `-(An)` is added back.
-    const CONTROL_ALTERABLE: Self = Self::CONTROL.and(Self::ALTERABLE);
+    pub(crate) const CONTROL_ALTERABLE: Self = Self::CONTROL.and(Self::ALTERABLE);
 }
 
 /// Which of the twelve modes this operand is, or `None` for the pseudo-operands
 /// that their family encoders consume directly and that are never a general EA.
-fn ea_class(op: &Operand) -> Option<EaClass> {
+pub(crate) fn ea_class(op: &Operand) -> Option<EaClass> {
     Some(match op {
         Operand::Dn(_) => EaClass::Dn,
         Operand::An(_) => EaClass::An,
@@ -1527,6 +1549,127 @@ fn brief_ext(d: i8, xn: Xn, long: bool) -> u16 {
     (ty << 15) | (num << 12) | ((long as u16) << 11) | ((d as u8) as u16)
 }
 
+/// The mnemonic's FAMILY name — the label coverage accounting groups by. Each
+/// mnemonic is its own family except the condition-parameterized trios, which
+/// collapse to `"scc"`/`"bcc"`/`"dbcc"` (the condition is a field, not a family).
+/// The match is exhaustive over [`Mnemonic`] with no `_` arm, so adding a variant
+/// fails THIS function to compile and forces a row in [`ALL_FAMILY_NAMES`] — the
+/// same forcing pattern as [`writes_last_operand`].
+pub fn family_name(m: Mnemonic) -> &'static str {
+    use Mnemonic::*;
+    match m {
+        Move => "move", Movea => "movea",
+        Add => "add", Adda => "adda", Sub => "sub", Suba => "suba",
+        And => "and", Or => "or", Eor => "eor",
+        Cmp => "cmp", Cmpa => "cmpa",
+        Muls => "muls", Mulu => "mulu", Divs => "divs", Divu => "divu",
+        Addi => "addi", Subi => "subi", Andi => "andi", Ori => "ori",
+        Eori => "eori", Cmpi => "cmpi",
+        Moveq => "moveq", Addq => "addq", Subq => "subq",
+        Asl => "asl", Asr => "asr", Lsl => "lsl", Lsr => "lsr",
+        Rol => "rol", Ror => "ror",
+        Btst => "btst", Bset => "bset", Bclr => "bclr",
+        Clr => "clr", Neg => "neg", Not => "not", Tst => "tst", Tas => "tas",
+        Scc(_) => "scc",
+        Jmp => "jmp", Jsr => "jsr", Lea => "lea", Pea => "pea",
+        Nop => "nop", Rts => "rts", Rte => "rte", Trap => "trap",
+        Swap => "swap", Ext => "ext", Illegal => "illegal",
+        Bra => "bra", Bsr => "bsr", Bcc(_) => "bcc", Dbcc(_) => "dbcc",
+        Movem => "movem", Movep => "movep", Addx => "addx", Cmpm => "cmpm",
+        MoveToSr => "move-to-sr", MoveFromSr => "move-from-sr",
+        AndiCcr => "andi-ccr", OriCcr => "ori-ccr",
+    }
+}
+
+/// Every family name [`family_name`] can return, exactly once each. A coverage
+/// gate that wants "the whole encodable family set" derives it from HERE (which
+/// the exhaustive match above keeps compiler-locked to the enum), never from a
+/// measured run. `family_name_is_onto_all_family_names` proves the two agree.
+pub const ALL_FAMILY_NAMES: &[&str] = &[
+    "move", "movea",
+    "add", "adda", "sub", "suba", "and", "or", "eor", "cmp", "cmpa",
+    "muls", "mulu", "divs", "divu",
+    "addi", "subi", "andi", "ori", "eori", "cmpi",
+    "moveq", "addq", "subq",
+    "asl", "asr", "lsl", "lsr", "rol", "ror",
+    "btst", "bset", "bclr",
+    "clr", "neg", "not", "tst", "tas", "scc",
+    "jmp", "jsr", "lea", "pea", "nop", "rts", "rte", "trap", "swap", "ext",
+    "illegal",
+    "bra", "bsr", "bcc", "dbcc",
+    "movem", "movep", "addx", "cmpm",
+    "move-to-sr", "move-from-sr", "andi-ccr", "ori-ccr",
+];
+
+/// Encode-stream capture: a process-global tap on [`encode`] for the round-trip
+/// self-check. While a [`CaptureSession`](capture::CaptureSession) is live,
+/// every successful encode anywhere in the process records its
+/// `(Instruction, bytes)` pair; a harness test wraps a whole-ROM build in a
+/// session and round-trip-decodes everything the build encoded. The tap is
+/// global (not thread-local) on purpose: the front-ends run lowering work on
+/// spawned big-stack threads, and a thread-local sink would silently miss those
+/// encodes — the exact silent-coverage-loss failure mode the round-trip pass
+/// exists to prevent.
+///
+/// When no session is live the cost is one relaxed atomic load per encode.
+pub mod capture {
+    use super::Instruction;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Mutex, MutexGuard};
+
+    static ENABLED: AtomicBool = AtomicBool::new(false);
+    static PAIRS: Mutex<Vec<(Instruction, Vec<u8>)>> = Mutex::new(Vec::new());
+    /// Serializes sessions so two concurrent tests cannot interleave streams.
+    static SESSION: Mutex<()> = Mutex::new(());
+
+    /// Exclusive capture session. Recording starts at [`begin`](CaptureSession::begin)
+    /// and stops (with the buffer cleared) when the session drops.
+    pub struct CaptureSession {
+        _lock: MutexGuard<'static, ()>,
+    }
+
+    impl CaptureSession {
+        /// Start capturing. Blocks until any other live session ends.
+        ///
+        /// Test infrastructure ONLY. While a session is live, EVERY successful
+        /// encode in the process lands in its buffer — a session held across
+        /// unrelated concurrent work collects that work's encodes as if the
+        /// session's build emitted them, and any encode-heavy caller left
+        /// running for the session's lifetime pays the per-encode lock. Keep a
+        /// session scoped tightly around the one build it measures.
+        pub fn begin() -> CaptureSession {
+            let lock = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+            lock_pairs().clear();
+            ENABLED.store(true, Ordering::SeqCst);
+            CaptureSession { _lock: lock }
+        }
+
+        /// Take every pair recorded since the session began (or since the last
+        /// `drain`), leaving the session recording.
+        pub fn drain(&self) -> Vec<(Instruction, Vec<u8>)> {
+            std::mem::take(&mut *lock_pairs())
+        }
+    }
+
+    impl Drop for CaptureSession {
+        fn drop(&mut self) {
+            ENABLED.store(false, Ordering::SeqCst);
+            lock_pairs().clear();
+        }
+    }
+
+    fn lock_pairs() -> MutexGuard<'static, Vec<(Instruction, Vec<u8>)>> {
+        PAIRS.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Record one successful encode. No-op unless a session is live.
+    pub(super) fn record(inst: &Instruction, bytes: &[u8]) {
+        if ENABLED.load(Ordering::Relaxed) {
+            lock_pairs().push((inst.clone(), bytes.to_vec()));
+        }
+    }
+}
+
 #[cfg(test)]
 mod vocab_tests {
     use super::*;
@@ -1608,6 +1751,33 @@ mod vocab_tests {
         // --- plain Dn,Dn still encodes (add.w d0,d1) ---
         let add_dd = Instruction { mnemonic: Mnemonic::Add, size: Size::W, ops: vec![Operand::Dn(0), Operand::Dn(1)] };
         assert_eq!(encode(&add_dd).unwrap(), vec![0xD2, 0x40], "add.w d0,d1 still encodes");
+    }
+
+    /// [`family_name`] maps ONTO [`ALL_FAMILY_NAMES`]: every listed name is
+    /// reachable from some mnemonic and no mnemonic maps outside the list, so a
+    /// coverage gate deriving "all families" from the constant sees exactly the
+    /// enum's families (the match in `family_name` is compiler-locked to the enum).
+    #[test]
+    fn family_name_is_onto_all_family_names() {
+        use Mnemonic::*;
+        let every: Vec<Mnemonic> = vec![
+            Move, Movea, Add, Adda, Sub, Suba, And, Or, Eor, Cmp, Cmpa, Muls,
+            Mulu, Divs, Divu, Addi, Subi, Andi, Ori, Eori, Cmpi, Moveq, Addq,
+            Subq, Asl, Asr, Lsl, Lsr, Rol, Ror, Btst, Bset, Bclr, Clr, Neg,
+            Not, Tst, Tas, Scc(Cond::Eq), Jmp, Jsr, Lea, Pea, Nop, Rts, Rte,
+            Trap, Swap, Ext, Illegal, Bra, Bsr, Bcc(Cond::Eq), Dbcc(Cond::Eq),
+            Movem, Movep, Addx, Cmpm, MoveToSr, MoveFromSr, AndiCcr, OriCcr,
+        ];
+        let reached: std::collections::BTreeSet<&str> =
+            every.iter().map(|m| family_name(*m)).collect();
+        let listed: std::collections::BTreeSet<&str> =
+            ALL_FAMILY_NAMES.iter().copied().collect();
+        assert_eq!(reached, listed, "family_name and ALL_FAMILY_NAMES disagree");
+        assert_eq!(
+            ALL_FAMILY_NAMES.len(),
+            listed.len(),
+            "ALL_FAMILY_NAMES carries a duplicate"
+        );
     }
 
     /// S2-D6 U1 — the ISA-derived write model. Every write-form mnemonic the
