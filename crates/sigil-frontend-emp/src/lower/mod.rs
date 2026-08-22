@@ -229,6 +229,16 @@ fn lower_module_inner(
     // option is ever constructed — an evaluator pass (the sentinel + payload
     // bounds are comptime values), unlike the AST-only validators above.
     diags.extend(crate::eval::validate_option_newtypes(file, &opts.defines));
+    // A typed comptime `const`'s array arity (`crate::eval::const_arity`). A
+    // `const` emits no bytes, so the emission-path length guard that constrains a
+    // `data` binding never runs for it; this driver applies the same contract at
+    // the declaration site, whether or not the value is ever read.
+    diags.extend(crate::eval::validate_const_arity(
+        file,
+        &opts.defines,
+        opts.include_root.as_deref(),
+        contracts,
+    ));
 
     // Spec 2 · Plan 6 (D-P6.3): a module-level `@as_compat` attribute marks this
     // file as a faithful port of AS-assembled source, opting it into the

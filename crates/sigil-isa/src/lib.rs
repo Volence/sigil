@@ -49,6 +49,19 @@ pub mod z80;
 /// EA forms and displacements.
 pub mod m68k;
 
+/// # 68000 decoder + round-trip self-check
+///
+/// `m68k_decode::decode_exact` is the encoder's independent mirror — written
+/// from the opcode-map direction over exactly the forms `m68k::encode` emits,
+/// with everything else (including real 68000 instructions sigil never emits)
+/// a loud `DecodeError`. `roundtrip_check`/`assert_roundtrip` compare
+/// encode-side and decode-side instructions under the documented canonical
+/// equivalence, so a wrong EA field or an aliased opcode word (the `D549`
+/// `add.w dN,aM` → `ADDX` class) cannot survive a round trip. The harness
+/// stream pass feeds it every instruction a whole-ROM build encodes, via
+/// `m68k::capture`.
+pub mod m68k_decode;
+
 /// # 68000 instruction timing (B′-3b)
 ///
 /// `m68k_cycles::instr_cycles` prices one resolved instruction form in clock

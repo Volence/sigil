@@ -8209,3 +8209,57 @@ full_crc = "d7b36f90"
 full_size = 715010
 anchor_crc = "e4f951d1"
 anchor_end = 0xa3290
+
+[[entry]]
+name = "curve-layers"
+ab = "aeon 3c68ee11 clean-checkout: all four shapes rebuilt, CRCs 060401e4/0dbaa80f/c708b114/dec88cc1 match the parcel agent's; deb2-appendix-only move proven causally (Parallax_Curve_Carry symbol; zero image bytes, no pin moved); curve ramp sweep 6 positions exact w/ red control; anchored split continues-not-restarts proven both hypotheses"
+note = "T10 curves: Bresenham per-line delta, bounded divs argued; .lp_curve fifth variant"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "4da5b93d"
+full_size = 715358
+anchor_crc = "89c7ca19"
+anchor_end = 0xa3290
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "26c2a615"
+full_size = 601639
+anchor_crc = "3d5825f7"
+anchor_end = 0x897c0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "c708b114"
+full_size = 96336
+anchor_crc = "0311d26e"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "dec88cc1"
+full_size = 101044
+anchor_crc = "70dfcbcc"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "cf0fb41d"
+full_size = 655678
+anchor_crc = "cd568ff7"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "060401e4"
+full_size = 699106
+anchor_crc = "e0e86b67"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "0dbaa80f"
+full_size = 715010
+anchor_crc = "e4f951d1"
+anchor_end = 0xa3290

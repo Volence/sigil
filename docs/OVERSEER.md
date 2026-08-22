@@ -11,6 +11,24 @@ sigil-specific: the landing-lane division, the worktree/test quirks, and the que
 > `empyrean/docs/OVERSEER-PROTOCOL.md` if you haven't. Work the queue. Peers may or
 > may not be running — check `ListAgents`; coordinate if present, proceed solo if not.
 
+**Read the protocol at a committed revision, never through the filesystem path:**
+
+```sh
+git -C ../empyrean fetch -q origin && \
+git -C ../empyrean show origin/main:docs/OVERSEER-PROTOCOL.md
+```
+
+`../empyrean/docs/OVERSEER-PROTOCOL.md` is one peer's live working tree, so reading it
+by path means booting from somebody's uncommitted directory. Carried here because this
+is the only file upstream of that read; the empyrean copy governs on any disagreement.
+Taken from empyrean `274d26d2`.
+
+**Re-read it mid-session.** That file currently moves faster than a session lasts — on
+2026-08-22 it went from `cea2e57c` to `274d26d2` and gained two numbered bars inside
+ninety minutes, both of which landed on this lane's in-flight work. Boot-time is the only
+read anybody performs unless you make yourself perform another; re-read when a peer cites
+a bar you don't recognise, before dispatching a wave, and at any landing.
+
 ## Landing-lane division — THE rule for this repo
 
 The aeon↔sigil landing lane has **one owner, and it is the aeon overseer** (owner
@@ -44,7 +62,10 @@ Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — currently **3752 passed / 0 failed**. Never plain
+  `AEON_DIR` set to the aeon tree — currently **3779 passed / 0 failed / 4 ignored**
+  under `SIGIL_STRICT_GATE=1` against a clean aeon tree (master `34d887c4`,
+  2026-08-22), with **zero `skip:` lines** in the run — check that, not just the
+  totals: a reference gate that skips reports nothing and reads as coverage. Never plain
   `cargo test`: without `--release` some gates are impractically slow, without
   `--workspace --no-fail-fast` a wedge or an early failure hides the rest of the
   result set. Report failures-first with explicit pass/fail counts; never
@@ -86,15 +107,106 @@ Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
   test runtime** via `emp_const_rhs` / `emp_const_literal` — never a copied literal.
 - **Never build in the scratchpad/tmp** — `/tmp` is tmpfs; a cargo build there wedges
   the shell. Set `CARGO_TARGET_DIR` to disk for any out-of-tree build.
+- **The main aeon checkout carries the owner's live editor content edits** (collision
+  bins, regenerated act-pool pages under `games/sonic4/data/`) for hours or days at a
+  time — never gate a green on that tree cleaning up. A strict-gate or landing run
+  that matters points `AEON_DIR` at a CLEAN WORKTREE of a committed aeon SHA, with all
+  four shapes built there first (repin resolves but does not generate). File seeding is
+  RETIRED (`aeon/tools/seed-worktree.sh` is a copies-nothing stub; the OJZ tree and
+  collision tables are committed, generated dirs rebuild via build.sh). What a fresh
+  aeon worktree DOES need: the `.worktrees/sigil` and `skdisasm` symlinks, plus a
+  PAIRED sigil worktree of the same name at `sigil/.worktrees/<name>` — the
+  emp-helper-closure locator hard-asserts that pairing and fails the build without it.
+  Verify the built ROMs against `golden/provenance.toml` (CRC32+size) before trusting
+  the worktree. Mid-brushstroke aeon
+  edits flipping sigil port-gate results is environmental, not signal; the tell is
+  broad `*_port` region-diff failures at embedded addresses plus
+  `repin_pins::pins_rs_is_current` failing identically on sigil master.
 
 ## Queue
 
 The standing sigil-native arc is the **`.emp` language work (Spec 2)** — specs in
-`empyrean/docs/SIGIL_*.md`. Current state (2026-08-19): the whole sound stack is
-sigil-native, the language round + §17 optimization arc + conversion tail are done,
-and the map drives the build. Landed today: the `released_by_rte` context release
-form, the equate-listing `.lst` section, and the `emp_const_rhs` test-support seam —
-all merged.
+`empyrean/docs/SIGIL_*.md`. The whole sound stack is sigil-native, the language round
++ §17 optimization arc + conversion tail are done, and the map drives the build.
+
+**Current state (2026-08-22, master `34d887c4`).** Landed today: **const-arity** — a
+typed comptime `const` literal is now array-arity checked at elaboration (the length
+check lived only in the byte-emission path, which a `const` never reaches, so a
+wrong-shaped constant compiled clean); and the **Oracle listing gate's `ORACLE_DIR`
+default**, which had gone stale at the oracle/oracle-old rename and made
+`SIGIL_STRICT_GATE=1` — the pre-merge bar this very file names — unsatisfiable.
+
+Also landed today: **`feat/m68k-roundtrip`** (an m68k decoder mirror, a round-trip pass
+over every shipped shape's emitted stream, and an opcode sweep) — carrying the real ISA
+fix it surfaced: `TST` takes `DATA_ALTERABLE` on the MC68000, not `DATA`, so the old row
+admitted nine words the hardware traps. Latent, never emitted, derived four ways. Its
+packet's soundness claim was corrected rather than kept — the sweep's oracle is
+`encode()`, so it proves decoder-subset-of-encoder and **cannot see a defect both halves
+share**; `TST` was exactly that, live.
+
+**Front of the queue, in order:**
+
+1. **`feat/game-defines`** (8 commits, unmerged) — the aeon `emp_defines` ask. Two
+   self-recorded lens latents to close first.
+2. **Ungate the warn-tier corpus run from refreeze** — ruled 2026-08-22, owed to the
+   aeon session for a `docs/OVERSEER.md` cross-reference. A ritual keyed to byte
+   movement cannot see a source-derived lint set move; six consecutive zero-byte aeon
+   parcels proved it by hiding a real odd-address finding for a day.
+3. **A provenance witness for the shared binary** — `sigil --version` reporting the
+   revision it was built from. The shared assembler sat three days stale while every
+   aeon build used it, and byte identity is silent on that by construction. Class-level
+   row in the ledger.
+4. **A Capstone differential as a permanent gate** — the only non-circular ISA oracle
+   available, already installed; it found the `TST` bug on its first run. Two
+   known-benign disagreements must be excluded by name (`6xFF` branch words, `btst
+   Dn,#imm` sizing).
+5. **An alignment attribute / even-offset assertion** — the class-level fix for the
+   odd-field finding: today a struct wanting even-aligned members can only say so by
+   hand-counting bytes into a pad, and the pad goes stale silently.
+
+And **`feat/arity-cli-fixture`** — a CLI-level regression test for const arity, driving
+the built binary via `CARGO_BIN_EXE_sigil` over a committed poison/control pair, taking
+no `AEON_DIR` at all. It exists because the enforcement was covered only at the
+frontend-unit level while aeon invokes the **binary** — which is how a three-day-stale
+shared assembler went unnoticed. Red-first on both arms: the poison arm against the
+enforcement reverted, the control arm against the check made unconditional, because a
+reject-everything compiler satisfies the poison arm and is caught only by the control.
+
+**Nothing is in flight; no agents are running.**
+
+## Standing cross-session obligations (2026-08-22)
+
+The aeon session owes sigil two things, both triggered by sigil work rather than by
+time — **ping them, don't assume they are watching**:
+
+- **On the `game-defines` ship notice:** they re-run T8's three measured contexts
+  (data-binding layout, struct harvest, RAM harvest) against a capability-derived
+  define and confirm all three see it. Cheap, theirs to run.
+- **When the alignment attribute lands:** they migrate the two `offsetof(Scene, …) % 2
+  == 0` ensures to it and retire them. Their `ensure`s are a workaround for the missing
+  language feature, not a fix for the class.
+
+Their side is banked at aeon `1ee8f8e6` (handoff) and `ba189b40` (the `br_ext` unlock
+row, cuttable cold) — both verified reachable from aeon's `origin/master`.
+
+**⚠ Local-only anchors.** Sigil's `origin/master` is `40f862e2` (2026-08-21) while local
+master is far ahead, so **every sigil SHA exchanged with aeon on 2026-08-22 is
+unreachable from origin** — including the arity fixture their unlock row cites, and the
+revision the shared `target/release/sigil` was built from. Aeon recorded those citations
+as local-only deliberately. **When sigil is pushed, whoever acts on one of those rows
+re-verifies reachability rather than trusting the note** — the note was true when
+written and does not stay true by itself. The general form, which composes with the
+SHA-class rule: **a SHA has a class, a path has a time, and a revision has a
+reachability.**
+
+For anything else read newest-first: the dated notes in `docs/superpowers/notes/`
+(start with `2026-08-22-warn-tier-drift-open.md`), then
+`docs/superpowers/notes/campaign-gap-ledger.md`, whose tail carries eleven rows added
+2026-08-22 — refinement bounds unchecked on every binding form, interface `const`
+members getting a shape-only check, the `emp_const_rhs` scraper that breaks on any
+const gaining a type, a Capstone differential as the only non-circular ISA oracle,
+and the `--extra-entry` liveness hazard (a red obtained there proves an assertion's
+logic, never that it is reached).
 
 For live next-work, read newest-first: the most recent dated `HANDOFF`/packet notes
 in `docs/superpowers/notes/`, then `docs/superpowers/notes/campaign-gap-ledger.md`
