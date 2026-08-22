@@ -145,15 +145,18 @@ impl Evaluator<'_> {
                     }
                     // A string in a byte-array slot is the byte-context reading
                     // (`lower_str_as_byte_array`): the author sizes `n`, and
-                    // there is no implicit terminator. Non-ASCII poisons the
-                    // conversion there and is not an arity question here, so
-                    // compare CHARACTER count and stay silent on the rest.
+                    // there is no implicit terminator. A non-ASCII character
+                    // poisons the byte conversion on the emitting path BEFORE
+                    // any length is compared, so the byte count is undefined
+                    // there — stay silent rather than invent one.
                     Value::Str(s) if matches!(**elem, Ty::Prim { width: 1, .. }) => {
-                        let len = s.chars().count();
-                        if len != *n {
+                        if s.is_ascii() && s.len() != *n {
                             self.error(
                                 span,
-                                format!("array length mismatch: expected {n} element(s), got {len}"),
+                                format!(
+                                    "array length mismatch: expected {n} element(s), got {}",
+                                    s.len()
+                                ),
                             );
                         }
                     }

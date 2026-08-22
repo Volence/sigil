@@ -175,6 +175,18 @@ fn const_string_byte_array_length_is_checked() {
     assert!(exact.is_empty(), "exact-length string must be clean: {exact:?}");
 }
 
+/// A non-ASCII string has no defined byte count on the emitting path — its
+/// conversion poisons at `[emit.non-ascii]` before any length is compared — so
+/// the const check reports no arity for one either.
+#[test]
+fn const_non_ascii_string_reports_no_arity() {
+    let msgs = diags("module m\nconst S: [u8; 4] = \"ab\u{00e9}\"\n");
+    assert!(
+        !msgs.iter().any(|m| m.contains("array length mismatch")),
+        "a non-ASCII string has no arity to report: {msgs:?}"
+    );
+}
+
 /// An UNTYPED const is unconstrained — no annotation, nothing to check against.
 #[test]
 fn untyped_const_is_unconstrained() {
