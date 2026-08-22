@@ -218,7 +218,10 @@ The standing sigil-native arc is the **`.emp` language work (Spec 2)** — specs
 `empyrean/docs/SIGIL_*.md`. The whole sound stack is sigil-native, the language round
 + §17 optimization arc + conversion tail are done, and the map drives the build.
 
-**Current state (2026-08-22, master `cba0a0bc`).** Landed this session, both
+**Current state (2026-08-22, master `8884e255`, pushed — `origin/master` verified equal by
+`git ls-remote origin refs/heads/master`, not by the local tracking ref).** The two parcels
+below merged at `cba0a0bc`, which master has since moved past; read this heading for where
+master IS, and the per-parcel SHAs for where each landed. Both were
 sigil-internal (neither touches `golden/`, `pins.rs` or `repin.toml`, so neither needed
 aeon-lane sequencing):
 
@@ -304,12 +307,15 @@ share**; `TST` was exactly that, live.
    its tail: `encode_bit`'s bit-number field (152 words, a defect **both halves share**,
    byte-neutral to fix and provably so), the odd `.s` branch displacement latent, and the
    unpinned oracle version.
-3. **An alignment attribute / even-offset assertion** — the class-level fix for the
+3. **An alignment attribute / even-offset assertion** — IN FLIGHT on `feat/field-align`;
+   the class-level fix for the
    odd-field finding: today a struct wanting even-aligned members can only say so by
    hand-counting bytes into a pad, and the pad goes stale silently. Aeon's own fix has
    LANDED (`9a718f74`, `ensure(offsetof(Scene, sc_mask_raw) % 2 == 0, …)`), so this now
    has a live subject to retire rather than a hypothetical one.
-4. **Ten remaining ROM-as-sentinel port tests** — they gate on `s4.bin` existing to
+4. **The remaining ROM-as-sentinel port tests** — IN FLIGHT on
+   `fix/rom-sentinel-port-tests`. Booked as "ten"; that count has not been re-run since it
+   was written, so the branch owes the enumeration before the fix. They gate on `s4.bin` existing to
    answer "is there an aeon tree here", so a source-only tree makes them panic
    "aeon tree missing" while the tree is fully present. One was fixed this session
    (`native_object_bank_budget`, sentinelled on `map.toml`, proven both directions).
@@ -331,15 +337,34 @@ element(s), got M`, so rephrasing that diagnostic breaks them.
 queue item. Prose adjacency is not queue membership — state landed/queued in the sentence
 itself, since the next boot's only source is this file.)*
 
-**Nothing in flight; no agents running (2026-08-22).** Queue items 1 and 2 both landed —
+Queue items 1 and 2 both landed —
 `feat/version-provenance` at `9c08f2a5`, `feat/capstone-differential` at `aafe612a`. The
 merged tree is verified green at the bar above: **3821 passed / 0 failed / 4 ignored**,
 `3821 + 4 = 3825` reconciling exactly against the declared `#[test]` count, zero `skip:`
 lines under `SIGIL_STRICT_GATE=1`, log stamped and all three new test binaries confirmed
 present in it by name. The nightly lane's self-audit is `gates=35 unclassified=0` on the
-merged tree. Both parcels landed earlier merged at `cba0a0bc`;
-**master is NOT pushed** — sigil `origin/master` is `40f862e2` and local master is 65
-commits ahead (see the local-only anchor warning below).
+merged tree. Master is pushed — see the heading of the "current state" paragraph above for
+the tip and how it was verified.
+
+**In flight (2026-08-22, dispatched by this session).** Two worktree agents, both
+sigil-internal, neither touching `golden/` / `pins.rs` / `repin.toml`:
+
+- **`feat/field-align`** — queue item 3, the field alignment attribute. Dispatched
+  assert-only (error-tier, per-field, opt-in), with the auto-padding tier priced-and-parked
+  for a ruling rather than shipped: implicit padding would be the first `.emp` construct
+  that moves bytes the author did not write. The load-bearing design datum, taken from
+  aeon's own comment at `origin/master:engine/level/scene_dsl.emp`, is that
+  `[layout.odd-field]` **did fire** on the drift and was swallowed by a warning baseline
+  nobody re-read — so the missing tier is error, not another warning.
+- **`fix/rom-sentinel-port-tests`** — queue item 4. The booked count of ten is dispatched as
+  **unverified**, with the enumeration itself as the first deliverable (both a filename grep
+  and a `test_support` caller walk, reconciled, since neither is a superset of the other),
+  and an A/B/C classification so genuinely artifact-dependent tests are left alone rather
+  than "fixed".
+
+A note on the `?? sigil` in `git status`: it is a self-symlink `sigil -> /home/volence/sonic_hacks/sigil`
+created 2026-08-20, untracked and harmless. It is NOT a stray nested checkout — resolve it
+before reading it as one.
 
 ## Standing cross-session obligations (2026-08-22)
 
