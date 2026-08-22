@@ -1,7 +1,7 @@
-# The warn-tier lint set drifted — open investigation
+# The warn-tier lint set drifted — diagnosed
 
-Status: **OPEN**. The firing is confirmed; the culprit is not yet named. This note records
-the method and the rulings so the verdict can be dropped in without re-deriving anything.
+Status: **DIAGNOSED.** Culprit named and mechanism pinned. Two follow-ups remain, one per
+repo. The hazard is latent, not live.
 
 ## The firing
 
@@ -17,80 +17,118 @@ Measured inside a full-suite baseline: **3695 passed / 57 failed / 4 ignored**. 
 56 failures are environmental — the aeon main checkout carries the owner's uncommitted
 content edits and builds `s4.bin = c7b9d10d` against a pinned `060401e4`, so every region
 diff, golden CRC and the 37 shifted pins in `pins_rs_is_current` read that noise. This one
-does not belong to that family: no content blob decides a field address.
+does not belong to that family: no content blob decides a field offset.
 
-## What the lint means
+## The verdict
 
-`crates/sigil-frontend-emp/src/lower/regions.rs:592-598`:
+Measured against the clean aeon worktree at committed tip `b1f8a230` (all four ROMs
+verified against the provenance tip: `060401e4` / `0dbaa80f` / `c708b114` / `dec88cc1`),
+using the existing `target/release/sigil` with `SIGIL_WARNINGS=full`:
 
 ```
-[layout.odd-field] field `{name}` needs an even address but lands at {addr}
+engine/level/scene_dsl.emp:1006:5  [layout.odd-field] struct Scene: field sc_mask_raw (2-byte) at odd offset 119
+engine/level/scene_dsl.emp:1007:5  [layout.odd-field] struct Scene: field sc_v_deform_shift_raw (2-byte) at odd offset 121
 ```
 
-It fires on a **word-or-wider REGION field at an odd address** — `layout.rs:449` names it
-"AS's silent address-error trap". `ty_needs_even` (`layout.rs:453`) is true for any prim of
-width >= 2, any pointer, and recursively any array/struct/tuple containing one; `u8` and
-`[u8; N]` are exempt.
+Two firings inside 135 total warnings (proc.clobber-undeclared 68, module.unreachable 44,
+module.path-mismatch 9, proc.undeclared-fallthrough 9, import.no-names 2,
+layout.odd-field 2, proc.out-unwritten 1).
 
-So this is not a tidiness lint. A word-or-wider field at an odd address on a 68000 is the
-silent address-error class, and it wants adjudication on its merits, not a baseline bump.
+## Mechanism: a hand-computed pad that a later field insertion invalidated
 
-Note the construct: it is the **region** declaration, not a `struct` definition. A search
-for struct-definition changes correctly finds nothing and correctly rules nothing out.
+`scene_dsl.emp` pads deliberately, and says so:
 
-## The drift window — derived, and it is wider than either overseer first assumed
+> Pad so the two i16 bridges land on EVEN offsets (94, 96). `Scene` is comptime-only — it
+> never reaches ROM, so an odd 2-byte field could not fault a 68000 today, and sigil's
+> `[layout.odd-field]` is a false positive here in the strict sense. Padded anyway, for one
+> cheap reason: the day anything emits a Scene, an odd word field is an address error, and
+> a warning that has been explained away in a baseline is not there to catch it.
+
+**The comment asserts even offsets 94 and 96; the compiler measures odd 119 and 121.** The
+pad no longer does what it claims. Timeline, from `git log -S` in the aeon tree:
+
+- `120180ac` 2026-08-18 15:07:31 — "fix(scene_dsl): even-align the two i16 bridges in Scene
+  (layout.odd-field)". The pad was added for this exact lint, and it worked.
+- `37732afe` 2026-08-18 15:06:11 — the sigil baseline adjudication, 80 seconds earlier.
+  Consistent: the lint fired, aeon padded, the baseline froze around the fixed state.
+- `ba335e08` 2026-08-21 22:05:08 — P3 Task 12, "left_column_mask is mandatory", inserts
+  `sc_left_col_mask` **above** the pad. Everything after it shifts; 94/96 becomes 119/121.
+
+So T12 silently re-broke a three-day-old fix, and the byte-identity ritual could not see it
+because T12 was zero-byte. The comment's own author predicted the failure mode — "a warning
+that has been explained away in a baseline is not there to catch it" — and what actually
+hid it was a baseline gate not being *run*.
+
+**Severity: latent, not live.** `Scene` is comptime-only and emits nothing, so no shipped
+ROM performs an odd-address word access; all four CRCs held byte-identical across T11-T16,
+which is consistent. What is broken is the guard, in exactly the scenario it was installed
+to cover.
+
+## Correction to an earlier claim in this note
+
+An earlier revision stated the lint fires on a **region** declaration and therefore that
+searching struct definitions could not find it. **That was wrong**, and it was passed to
+the aeon overseer confidently enough that they withdrew a correct finding on the strength
+of it. The lint has three message forms:
+
+- `lower/regions.rs:598` — region fields
+- `layout.rs:835` — overlay fields
+- `layout.rs:1018` — **struct fields** ← the form that fired here
+
+Only the first was read. The general shape of the error: a lookup returned something true
+about the wrong object, and the confidence attached to it steered another session's
+scrutiny away from the place that held the answer.
+
+## The drift window — derived, and wider than either overseer first assumed
 
 The baseline only moves when someone edits it, so the window opens at the array's last
-modification, not at the last refreeze.
+modification, not at the last refreeze. `WARN_ID_BASELINE` is
+`crates/sigil-cli/tests/warn_tier_corpus.rs:74-149`; `git log -L 74,149:<file>` dates it to
+`37732afe`, 2026-08-18 15:06. **Window: 2026-08-18 15:06 -> aeon tip `b1f8a230`** = 25 aeon
+merges, 44 changed `.emp` files, +8869/-738.
 
-- `WARN_ID_BASELINE` is `crates/sigil-cli/tests/warn_tier_corpus.rs:74-149`.
-- `git log -L 74,149:crates/sigil-cli/tests/warn_tier_corpus.rs` → last modified by
-  **`37732afe`, 2026-08-18 15:06** ("re-home the OJZ parallax block"), which also carries
-  the array's most recent `ADJUDICATED 2026-08-18` comment.
+Two wrong windows were proposed first, both by a competent lookup returning a clean answer:
+`b0b85f47..b1f8a230` (sigil — `b0b85f47` **is** the T11 merge, so the range starts after
+it), and T10's refreeze `40f862e2` as the freeze point (aeon — that commit touched the
+tests *directory*, not the baseline array).
 
-**Window: 2026-08-18 15:06 -> aeon tip `b1f8a230`** = 25 aeon merges, 44 changed `.emp`
-files, +8869/-738. Leading candidate by construct: `3e4e5cfc` (p3/t8-extended-record,
-"capability-selected record shapes").
+**A SHA's class is what it CHANGED, not what it touched.** "Last commit under this
+directory" and "last commit to this declaration" are different questions;
+`git log -L <range>:<file>` answers the second. In-repo form of the protocol's cross-repo
+SHA-class rule.
 
-Two wrong windows were proposed on the way here, both by a competent lookup returning a
-clean answer:
-
-- `b0b85f47..b1f8a230` (sigil overseer) — `b0b85f47` **is** the T11 merge, so the range
-  starts after T11 and cannot see it.
-- T10's refreeze `40f862e2` as the freeze point (aeon overseer) — that commit touched
-  `crates/sigil-cli/tests/`, the directory, but not the baseline array.
-
-**The trap, stated generally: a SHA's class is what it CHANGED, not what it touched.**
-"Last commit under this directory" and "last commit to this declaration" are different
-questions with different answers, and `git log -L <range>:<file>` is the one that answers
-the second. This is the same family as the protocol's cross-repo SHA-class rule, applied
-within a repo.
+Also worth recording: the prime candidate reasoned from construct-adjacency (`3e4e5cfc`,
+capability-selected record shapes) was **wrong**. It was T12. Adjacency of subject matter is
+not evidence.
 
 ## Ruling — the corpus run stops being gated on refreeze
 
 Root cause of the six-parcel blind spot, diagnosed by the aeon overseer: the warn-tier
 baseline moves only on a **refreeze**, a refreeze happens only when **bytes move**, and
-aeon's T11-T16 were every one of them zero-byte parcels (all four CRCs held at
-`060401e4` / `0dbaa80f` / `c708b114` / `dec88cc1`). A ritual triggered by byte movement is
-structurally blind to a source-derived lint set moving.
+aeon's T11-T16 were every one of them zero-byte (all four CRCs held). A ritual triggered by
+byte movement is structurally blind to a source-derived lint set moving.
 
 **Ruled (sigil overseer, 2026-08-22): the fix is sigil-side and the trigger changes.** The
 warn-tier corpus already builds every shipped shape against `AEON_DIR`; it becomes a
-standing check that runs against aeon tip regardless of whether bytes moved. Putting the
-trigger on the thing that actually changed (source) instead of a proxy (bytes) also covers
+standing check that runs against aeon tip regardless of whether bytes moved. That covers
 every future source-derived check without aeon's ritual having to enumerate them. Aeon's
-byte-identity check is unchanged and stays where it is.
+byte-identity check is unchanged. The aeon side keeps the *principle* booked (aeon
+`bc5239b5`) and will point at this mechanism once it lands.
 
-Kill condition for this row: the corpus check runs on a trigger independent of refreeze,
-with a red-first proof that a source-only aeon change moves it.
+This instance validates the ruling independently: with the corpus ungated, T12 would have
+been caught at landing on 08-21 rather than in a boot baseline the next day.
 
-## Next step
+## Follow-ups
 
-Run the warn-tier corpus against the clean aeon worktree at committed tip `b1f8a230`
-(`aeon/.worktrees/constlen`, built by the aeon session, CRCs to be verified against the
-provenance tip first) and read the field name out of the diagnostic. Then adjudicate the
-field on its merits.
+1. **sigil (mine):** ungate the corpus run from refreeze. Red-first proof required — a
+   source-only aeon change must move it.
+2. **sigil (mine), language gap:** a struct that wants even-aligned members can only say so
+   by hand-counting bytes into a pad, and the pad goes stale silently when a field is
+   inserted above it. An alignment attribute or an even-offset assertion would make the
+   class impossible rather than merely catchable. Ledger and design.
+3. **aeon (theirs):** re-align the two bridges, preferably via an `@offset` assertion rather
+   than a recomputed pad, so the next insertion fails loudly instead of silently.
 
-Do **not** measure this against `aeon/.worktrees/defines-verify`: its ROMs match the pins
-but its source is an ancestor's, and these gates read aeon source — a pass there means
+Do **not** measure any of this against `aeon/.worktrees/defines-verify`: its ROMs match the
+pins but its source is an ancestor's, and these gates read aeon source — a pass there means
 "aeon satisfied this as of an ancestor" while reading as "aeon satisfies this".
