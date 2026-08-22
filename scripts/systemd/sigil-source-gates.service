@@ -1,0 +1,10 @@
+[Unit]
+Description=sigil aeon-source-derived gate lane (the standing check that replaces refreeze as the trigger)
+
+[Service]
+Type=oneshot
+ExecStart=/home/volence/sonic_hacks/sigil/scripts/nightly_source_gates.sh
+# The script is loud on its own failures. This covers the ones it cannot reach:
+# a missing or non-executable script, a kill, an OOM. A runner that fails
+# silently is the vacuous-gate pattern the lane exists to prevent, one level up.
+ExecStopPost=-/usr/bin/env bash -c 'test "$EXIT_STATUS" = 0 || notify-send -u critical "sigil source gates" "lane runner exited $EXIT_STATUS ($SERVICE_RESULT)"'
