@@ -167,11 +167,119 @@ claims by confidence rather than presenting them as equally solid:
 
 ## Verification
 
-Runner: plain `cargo test`. `crates/sigil-cli/tests/version_provenance.rs` is
-auto-discovered — `sigil-cli/Cargo.toml` declares no explicit `[[test]]` targets
-— so it runs under the repo bar `cargo test --release --workspace --no-fail-fast`
-and under `scripts/nightly_source_gates.sh:209`, which invokes exactly that.
-The test takes no `AEON_DIR` and needs no aeon tree.
+**Runner, cited by selection mechanism.** `crates/sigil-cli/tests/version_provenance.rs`
+is selected by cargo's integration-test autodiscovery: `crates/sigil-cli/Cargo.toml`
+declares no `[[test]]` targets, so cargo builds every `tests/*.rs` in the package
+as its own test binary. It therefore runs under **any unfiltered `cargo test` that
+includes the `sigil-cli` package** — the repo bar
+`cargo test --release --workspace --no-fail-fast`, and `cargo test -p sigil-cli`.
+It needs no engine tree and reads no engine input.
+
+The selecting condition is "no `--test` filter narrows the target set". That is
+what to check if this ever stops running, and it is a property of the invocation,
+not of a line in any file.
+
+> **Correction.** An earlier draft of this packet also cited the nightly
+> source-gates script, by line number, as invoking "exactly that". Both halves
+> were wrong, and the line number would have rotted independently of the claim.
+> The nightly lane builds `ARGS` as one `--test <name>` per entry of its
+> hand-maintained 34-entry `SOURCE_GATES` array and passes them to
+> `cargo test --release --workspace --no-fail-fast "${ARGS[@]}"`. The two flags
+> compose rather than conflict: `--workspace` widens the *package* set to every
+> crate, and the `--test` filters narrow the *target* set within those packages
+> to exactly those 34 named integration-test binaries — which is why gates living
+> outside `sigil-cli` (`cfg_blind_spots`, `act_fixture_drift`,
+> `m68k_roundtrip_stream`, …) are reachable at all. So it is a named subset, not
+> the repo bar. `version_provenance` is not among the 34 and is therefore **not
+> reachable by that invocation**, and it should not be — see the next section.
+>
+> The lane also verifies this itself: it counts `^test result:` lines and refuses
+> to run if the count differs from `${#SOURCE_GATES[@]}`, precisely because a
+> cargo invocation that silently selected nothing exits 0.
+
+### Should this test join the nightly source-gates lane? No.
+
+Derived from the lane's own charter, not from convenience. Its header states what
+it selects for: *every sigil test binary whose inputs are aeon SOURCE plus sigil's
+own compilation of it*, and it excludes anything reading a built ROM, a listing or
+a golden because those need a build to have run. `version_provenance` reads
+neither category — its inputs are the sigil checkout's own git metadata. It is
+outside the classification the lane is built on, in both directions.
+
+There is a second reason, and it is the stronger one. The lane exists because a
+ritual keyed to byte movement is structurally blind to a source-derived lint set
+moving. Its value comes from being a *targeted* backstop with a hand-audited
+list; every entry that does not belong to that story dilutes the list into a
+general-purpose runner, which is the thing its self-audit is designed to keep it
+from becoming. `version_provenance` is already covered by the repo bar on every
+run. Adding it would buy no coverage and would cost the list its meaning.
+
+### The near-miss this review caught: the branch would have taken the lane down
+
+Not a citation error — a live defect, and worse than the thing I was asked to
+check.
+
+The lane audits its own list before running: it greps every `crates/*/tests/*.rs`
+for the identifiers naming aeon inputs, and any match that is neither in
+`SOURCE_GATES` nor derivably artifact-dependent is *unclassified*, at which point
+the lane refuses to run and exits 2. The test file's header said it needs no such
+input — **naming the identifier in order to disclaim it**. The detector cannot
+read English. Replicating the audit against this branch:
+
+```
+SOURCE_GATES entries: 34
+unclassified count: 1
+  version_provenance
+```
+
+That is `COULD NOT RUN`: the nightly backstop dark, at 05:17, reporting nothing —
+precisely the vacuous-gate pattern the script's own header says it exists to
+prevent, reintroduced by a doc comment. After rewording the header to describe
+those inputs by description rather than identifier, the same audit returns
+`unclassified count: 0`.
+
+**Generalisation worth carrying:** in `crates/*/tests/`, the identifiers a
+classifier greps for are *reserved words in prose*, not just in code. Saying "this
+does not use X" is indistinguishable from using it.
+
+**Recommendation, deliberately not acted on (overseer's call).** The trap is
+armed for the next author: the fix above is correct for this file but does not
+disarm it. Tightening the detector to match code uses rather than any occurrence
+would, but that changes what a nightly gate considers unclassified, and getting
+it wrong lets a genuinely aeon-reading gate escape classification silently. That
+is a soundness-reducing risk in someone else's lane and is not mine to take
+inside this parcel. Flagged rather than fixed.
+
+### Detached HEAD: closed, not merely surveyed
+
+Both gate lanes run against detached checkouts, so this is a live configuration.
+Measured on git 2.55, not assumed:
+
+| | attached | detached |
+|---|---|---|
+| `git rev-parse --abbrev-ref HEAD` | `feat/version-provenance` | `HEAD` |
+| `git symbolic-ref --quiet --short HEAD` | `feat/version-provenance` | exit 1, no output |
+
+The original code was **not** a flake: capture and test both called
+`--abbrev-ref`, so both said `HEAD` and agreed. Verified by building and running
+in a genuinely detached checkout — 9/9 green.
+
+It was, however, a bad reading: `branch: HEAD` renders as though the checkout sat
+on a branch of that name, and in the lanes that is the *usual* case rather than
+the exotic one. Both sides now use `symbolic-ref`, which signals the state by exit
+status, leaving no sentinel string to collide with or misread; the banner says
+`branch: detached`. The test derives the same word by the same rule, so the two
+agree by construction rather than by coincidence.
+
+Proven in both states: attached 9/9, detached 9/9. Red-first, detached, with the
+capture left on `--abbrev-ref` while the test derives `detached`:
+
+```
+thread 'version_reports_the_branch_this_tree_is_on' panicked at ...:144:5:
+  left: "HEAD"
+ right: "detached"
+test result: FAILED. 8 passed; 1 failed
+```
 
 ### Suite result
 
@@ -179,13 +287,22 @@ Scope run: `AEON_DIR=/home/volence/sonic_hacks/.aeon-landing cargo test --releas
 -p sigil-cli --no-fail-fast` — the whole `sigil-cli` crate, which is where the
 new file lives and the only crate this parcel touches.
 
+Run **twice**: once on the original implementation, and again after the
+lane-prose and detached-HEAD fixes, since a `build.rs` edit rebuilds every test
+binary in the crate. Identical totals both times:
+
 ```
 138 test binaries | 601 passed | 0 failed | 3 ignored | exit 0
 tests/version_provenance.rs: 9 passed, 0 failed
 ```
 
-No `FAILED` line, no panic, no `error:` in the run. The `.aeon-landing` tree was
-read only.
+No `FAILED` line, no panic, no `error:` in either run. The `.aeon-landing` tree
+was read only.
+
+Plus two targeted runs of `--test version_provenance` in checkout states the
+crate suite does not itself cover: **detached HEAD, 9/9** (the configuration both
+gate lanes use) and **clean working tree, 9/9** (the crate suite runs dirty,
+because the packet file is untracked while it runs).
 
 The full-workspace bar (`--workspace`, 3810/0/4 at master `cba0a0bc`) was not
 re-run; nothing here is reachable from another crate — `sigil-cli` is a leaf
@@ -287,6 +404,9 @@ from a green run.
 | `db498607` | `feat(cli): sigil --version reports the source revision it was built from` |
 | `8af046eb` | `fix(cli): an empty porcelain is a clean tree, not a failed probe` |
 | `527d08ff` | `fix(cli): reach the unknown-provenance branches, and give every unknown a reason` |
+| `36b23919` | `docs(notes): version-provenance packet` |
+| `17dbe779` | `fix(cli): stop the version test's prose from taking the nightly lane down` |
+| `5297069c` | `fix(cli): name the detached state instead of reporting a branch called HEAD` |
 
 Files: `crates/sigil-cli/build.rs` (new), `crates/sigil-cli/src/main.rs`,
 `crates/sigil-cli/tests/version_provenance.rs` (new).
