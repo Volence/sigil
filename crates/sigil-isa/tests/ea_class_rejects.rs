@@ -80,6 +80,28 @@ fn address_register_is_not_a_data_operand() {
     reject("divu.w a0,d0",  ins(Mnemonic::Divu, Size::W, vec![Operand::An(0), Operand::Dn(0)]));
 }
 
+/// `TST`'s operand is DATA ALTERABLE on the MC68000. PC-relative and immediate
+/// operands became legal only on the 68020, so all nine widened forms (three EA
+/// classes x .b/.w/.l) are illegal-instruction traps on a Genesis. Widening the
+/// row back to plain DATA is invisible to the opcode sweep — the sweep's oracle
+/// is `encode()`, which reads the same `EaSet` constant the decoder reads — so
+/// this is the only place the tightening is pinned.
+#[test]
+fn tst_destination_is_data_alterable() {
+    for size in [Size::B, Size::W, Size::L] {
+        reject("tst (d16,pc)", ins(Mnemonic::Tst, size, vec![Operand::Pcd16(8)]));
+        reject(
+            "tst (d8,pc,xn)",
+            ins(Mnemonic::Tst, size, vec![Operand::Pcd8Xn { d: 8, xn: Xn::D(0), long: false }]),
+        );
+        reject("tst #imm", ins(Mnemonic::Tst, size, vec![Operand::Imm(1)]));
+    }
+    // The alterable data modes stay legal at every size.
+    accept("tst.b (a0)", ins(Mnemonic::Tst, Size::B, vec![Operand::Ind(0)]));
+    accept("tst.w (d16,a0)", ins(Mnemonic::Tst, Size::W, vec![Operand::Disp16An(8, 0)]));
+    accept("tst.l (xxx).w", ins(Mnemonic::Tst, Size::L, vec![Operand::AbsW(0x1000)]));
+}
+
 /// An is a word/long operand only — there is no byte access to an address
 /// register anywhere in the 68000, including where An is otherwise legal.
 #[test]

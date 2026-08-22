@@ -838,13 +838,12 @@ fn encode_single_ea(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
             )))
         }
     };
-    // `tst` only reads (DATA); `clr`/`neg`/`not`/`tas`/`Scc` write (DATA ALTERABLE).
-    // Neither admits An on the 68000 — `sne a3` otherwise encodes 56CB = `dbne d3,…`,
-    // a backward branch to garbage. (`tst.w a0` became legal only on the 68020.)
-    let allowed = match inst.mnemonic {
-        Mnemonic::Tst => EaSet::DATA,
-        _ => EaSet::DATA_ALTERABLE,
-    };
+    // All of `tst`/`clr`/`neg`/`not`/`tas`/`Scc` take DATA ALTERABLE on the 68000.
+    // `tst` reads rather than writes, but the 68000 still encodes only the alterable
+    // subset for it — PC-relative and immediate operands arrived with the 68020, and
+    // An with them (`sne a3` otherwise encodes 56CB = `dbne d3,…`, a backward branch
+    // to garbage).
+    let allowed = EaSet::DATA_ALTERABLE;
     let (ea_mode, ea_reg, ea_ext) = encode_ea(ea, allowed, inst.size)?;
     let ea_bits: u16 = ((ea_mode as u16) << 3) | (ea_reg as u16);
     let word: u16 = match inst.mnemonic {

@@ -417,7 +417,7 @@ fn decode_line4(w: u16, rd: &mut Rd, mode: u16, reg9: u16, r0: u16) -> Result<In
             0x4200 => (Mnemonic::Clr, EaSet::DATA_ALTERABLE),
             0x4400 => (Mnemonic::Neg, EaSet::DATA_ALTERABLE),
             0x4600 => (Mnemonic::Not, EaSet::DATA_ALTERABLE),
-            _ => (Mnemonic::Tst, EaSet::DATA),
+            _ => (Mnemonic::Tst, EaSet::DATA_ALTERABLE),
         };
         let op = ea(rd, mode, r0, size, allowed)?;
         return Ok(inst(mn, size, vec![op]));
