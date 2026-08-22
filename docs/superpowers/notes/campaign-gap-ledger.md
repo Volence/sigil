@@ -2402,3 +2402,37 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   by accident — it builds salvador immediately before calling the generator. — OPEN, aeon's
   (kill: the generator's failure path exits nonzero; the lane's output check then becomes
   belt-and-braces rather than the only thing standing there).
+
+- [capstone differential, 2026-08-22] **`encode_bit` writes the whole bit-number word where
+  the MC68000 format specifies `00000000 bbbbbbbb`.** It range-checks with `u16::try_from(v)`
+  only, so `btst #33023,d0` encodes as `0800 80FF`; the capstone differential rejects that word
+  and `asl` errors above 255 (truncating below it). 152 words. **A defect both sigil halves
+  share** — encoder and decoder agree, so the encoder-oracle sweep is blind to it, which is
+  exactly the class the differential exists to find. Not the trapping kind: the hardware takes
+  the bit number modulo 32/8, so what is lost is asl's diagnostic rather than correctness.
+  **Byte-neutral in practice and provably so:** the stream gate is green over all seven shipped
+  shapes, so no shipped shape emits such a word — a range check cannot move a ROM byte. The gate
+  ships around it by not carrying the `$80FF` pad; re-enabling that pad is a one-line change
+  once the check lands, and it also restores negative `(d16,An)` coverage to the sweep (any pad
+  with the high bit set also has a nonzero high byte). — OPEN (kill: `encode_bit` rejects a bit
+  number above the format's 8-bit field, red-first; then the `$80FF` pad rejoins the sweep).
+
+- [capstone differential, 2026-08-22] **The encoder accepts an ODD `.s` branch displacement.**
+  `encode_branch`'s `Size::S` arm checks only `i8::try_from`, and the linker's `PcRel8` arm
+  rejects zero and out-of-range but not oddness. An odd byte displacement branches to an odd
+  address — an address-error trap, the same severity as the `TST` class. Currently unreachable
+  in practice because both operands of the displacement subtraction are even, which is what
+  makes it a latent rather than a live bug; latents of this class have gone live before when a
+  neighbouring change moved an alignment assumption. Found while deriving the `6xFF` exclusion.
+  — OPEN (kill: a `disp % 2 != 0` diagnostic in the linker's `PcRel8` arm closes it by
+  construction; red-first against a hand-built odd displacement).
+
+- [capstone differential, 2026-08-22] **The capstone oracle's version is printed, not pinned.**
+  The adapter banners capstone 5.0.7 / core 5.0.1280 on every run but nothing asserts it. A
+  capstone upgrade that fixes `bit-op-size` or `pc-base-after-extension` will fail the
+  "this exclusion matched nothing" assertion rather than silently widening coverage — the safe
+  direction, and the correct prompt to delete the carve-out. Recorded so the failure is legible
+  as an upgrade rather than read as a regression. Note also: **capstone has no Z80
+  architecture**, so this technique does not extend to the Z80 backend, which keeps only its
+  circular encoder-oracle coverage. — OPEN, informational (kill: n/a; delete when the
+  exclusions do).
