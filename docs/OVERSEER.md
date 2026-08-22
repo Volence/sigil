@@ -44,7 +44,9 @@ Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — currently **3752 passed / 0 failed**. Never plain
+  `AEON_DIR` set to the aeon tree — currently **3762 passed / 0 failed / 4 ignored**
+  under `SIGIL_STRICT_GATE=1` against a clean aeon tree (master `c4c3acbf`,
+  2026-08-22). Never plain
   `cargo test`: without `--release` some gates are impractically slow, without
   `--workspace --no-fail-fast` a wedge or an early failure hides the rest of the
   result set. Report failures-first with explicit pass/fail counts; never
@@ -105,11 +107,42 @@ Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
 ## Queue
 
 The standing sigil-native arc is the **`.emp` language work (Spec 2)** — specs in
-`empyrean/docs/SIGIL_*.md`. Current state (2026-08-19): the whole sound stack is
-sigil-native, the language round + §17 optimization arc + conversion tail are done,
-and the map drives the build. Landed today: the `released_by_rte` context release
-form, the equate-listing `.lst` section, and the `emp_const_rhs` test-support seam —
-all merged.
+`empyrean/docs/SIGIL_*.md`. The whole sound stack is sigil-native, the language round
++ §17 optimization arc + conversion tail are done, and the map drives the build.
+
+**Current state (2026-08-22, master `c4c3acbf`).** Landed today: **const-arity** — a
+typed comptime `const` literal is now array-arity checked at elaboration (the length
+check lived only in the byte-emission path, which a `const` never reaches, so a
+wrong-shaped constant compiled clean); and the **Oracle listing gate's `ORACLE_DIR`
+default**, which had gone stale at the oracle/oracle-old rename and made
+`SIGIL_STRICT_GATE=1` — the pre-merge bar this very file names — unsatisfiable.
+
+**Front of the queue, in order:**
+
+1. **`feat/m68k-roundtrip`** — reviewed MERGE-AFTER-FIXES, fixes dispatched. An m68k
+   decoder mirror + round-trip over every shipped shape. Its landing record needed
+   repair (its own soundness claim was falsified: the sweep's oracle is the encoder,
+   so it cannot see a defect both halves share) and it carries a real ISA fix
+   (`Tst` is `DATA_ALTERABLE` on a 68000, not `DATA` — sigil accepts nine words the
+   hardware traps). Merges clean, +14 tests, byte-neutral.
+2. **`feat/game-defines`** (8 commits, unmerged) — the aeon `emp_defines` ask. Two
+   self-recorded lens latents to close first.
+3. **Ungate the warn-tier corpus run from refreeze** — ruled 2026-08-22, owed to the
+   aeon session for a `docs/OVERSEER.md` cross-reference. A ritual keyed to byte
+   movement cannot see a source-derived lint set move; six consecutive zero-byte aeon
+   parcels proved it by hiding a real odd-address finding for a day.
+4. **An alignment attribute / even-offset assertion** — the class-level fix for the
+   same finding: today a struct wanting even-aligned members can only say so by
+   hand-counting bytes into a pad, and the pad goes stale silently.
+
+For anything else read newest-first: the dated notes in `docs/superpowers/notes/`
+(start with `2026-08-22-warn-tier-drift-open.md`), then
+`docs/superpowers/notes/campaign-gap-ledger.md`, whose tail carries eleven rows added
+2026-08-22 — refinement bounds unchecked on every binding form, interface `const`
+members getting a shape-only check, the `emp_const_rhs` scraper that breaks on any
+const gaining a type, a Capstone differential as the only non-circular ISA oracle,
+and the `--extra-entry` liveness hazard (a red obtained there proves an assertion's
+logic, never that it is reached).
 
 For live next-work, read newest-first: the most recent dated `HANDOFF`/packet notes
 in `docs/superpowers/notes/`, then `docs/superpowers/notes/campaign-gap-ledger.md`

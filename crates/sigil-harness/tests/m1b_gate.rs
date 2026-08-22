@@ -35,9 +35,22 @@ use sigil_span::{SourceId, Span};
 fn aeon_dir() -> PathBuf {
     PathBuf::from(std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".into()))
 }
+/// The C++ `Symbols.cpp` this gate compiles against lives in the LEGACY Exodus
+/// port (`oracle-old`), not in `oracle` — that path now holds the ground-up Rust
+/// rewrite, which has no `linux-port/` tree at all.
+///
+/// **This path makes the gate RUNNABLE, not current.** It pins `emit_listing`
+/// against a consumer that has been replaced: the shipping debugger is the Rust
+/// Oracle, whose symbol loader this gate does not touch. Read the result as a
+/// legacy-compatibility pin — "the listing still parses the way the C++ reader
+/// expected" — and never as evidence that the listing serves the debugger in
+/// use. The currency question that gate was written to ask needs the Rust
+/// loader as its subject.
 fn oracle_gui_dir() -> PathBuf {
-    PathBuf::from(std::env::var("ORACLE_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/oracle".into()))
-        .join("linux-port/gui")
+    PathBuf::from(
+        std::env::var("ORACLE_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/oracle-old".into()),
+    )
+    .join("linux-port/gui")
 }
 fn sp() -> Span { Span { source: SourceId(0), start: 0, end: 0 } }
 
