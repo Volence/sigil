@@ -18,6 +18,9 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 
 [dev-dependencies]
+# The m68k round-trip stream pass (tests/m68k_roundtrip_stream.rs) drives the
+# encoder's capture tap and decode mirror directly.
+sigil-isa = { path = "../sigil-isa" }
 # (sigil-frontend-emp is now a regular dependency — see [dependencies].)
 # The warn-tier collection tests need a real on-disk source file: `SourceIndex`
 # resolves `path:line:col` by READING the file, so a fixture that does not exist
