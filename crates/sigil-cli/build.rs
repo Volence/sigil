@@ -72,6 +72,15 @@ impl Provenance {
     /// emitted by the time a later probe fails, and the banner must describe
     /// what cargo was actually told rather than what the failure implies.
     fn unknown(why: String, tracks: &str) -> Self {
+        // A reasonless "unknown" is the placeholder failure in miniature: it
+        // tells a reader something is wrong and gives them nothing to act on,
+        // which is how a witness stops being read. There is no caller that
+        // should be able to produce one.
+        let why = if why.trim().is_empty() {
+            "the provenance probe failed without reporting a reason".to_string()
+        } else {
+            why
+        };
         Provenance {
             revision: "unknown".into(),
             revision_short: "unknown".into(),

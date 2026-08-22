@@ -208,7 +208,7 @@ fn the_revision_tag_agrees_with_the_reported_tree_state() {
     let revision = field(&stdout, "revision");
     let tree = field(&stdout, "tree");
 
-    if revision == "unknown" || tree.starts_with("unknown") {
+    if revision.starts_with("unknown") || tree.starts_with("unknown") {
         assert!(
             tag == "revision-unknown" || tag.ends_with("-tree-unknown"),
             "an undetermined revision or tree must be tagged as such; tag `{tag}`\n{stdout}"
@@ -254,7 +254,7 @@ fn an_empty_porcelain_reads_as_clean_not_as_unknown() {
 
     // A revision proves git answered at capture time, so a `status` that could
     // not answer in the same run is not a plausible environment difference.
-    if field(&stdout, "revision") == "unknown" {
+    if field(&stdout, "revision").starts_with("unknown") {
         return;
     }
     let porcelain = git(&[
@@ -282,7 +282,7 @@ fn the_banner_discloses_what_it_cannot_track() {
     let stdout = version_stdout("--version");
     let revision = field(&stdout, "revision");
 
-    if revision == "unknown" {
+    if revision.starts_with("unknown") {
         assert!(
             stdout.contains("NO revision"),
             "a binary with no revision must say so in capitals, not merely omit it\n{stdout}"
@@ -316,7 +316,7 @@ fn the_banner_discloses_what_it_cannot_track() {
 #[test]
 fn the_banner_names_the_rerun_triggers_backing_the_revision() {
     let stdout = version_stdout("--version");
-    if field(&stdout, "revision") == "unknown" {
+    if field(&stdout, "revision").starts_with("unknown") {
         return;
     }
     let freshness = field(&stdout, "freshness");
