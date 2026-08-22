@@ -62,10 +62,15 @@ Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — currently **3779 passed / 0 failed / 4 ignored**
-  under `SIGIL_STRICT_GATE=1` against a clean aeon tree (master `34d887c4`,
-  2026-08-22), with **zero `skip:` lines** in the run — check that, not just the
-  totals: a reference gate that skips reports nothing and reads as coverage. Never plain
+  `AEON_DIR` set to the aeon tree — currently **3810 passed / 0 failed / 4 ignored**
+  under `SIGIL_STRICT_GATE=1` (sigil master `cba0a0bc`, aeon `1ee8f8e6`, 2026-08-22),
+  with **zero `skip:` lines** in the run — check that, not just the
+  totals: a reference gate that skips reports nothing and reads as coverage.
+  **Reconcile the total against the tree, not against the last remembered bar:**
+  `git grep -c '#\[test\]' HEAD -- '*.rs'` summed gives the declared count, and
+  `passed + ignored` must equal it (3810 + 4 = 3814 here). Baseline arithmetic carried
+  across branches measured on different reference trees does not reconcile and will
+  invent a discrepancy that is not there. Never plain
   `cargo test`: without `--release` some gates are impractically slow, without
   `--workspace --no-fail-fast` a wedge or an early failure hides the rest of the
   result set. Report failures-first with explicit pass/fail counts; never
@@ -175,7 +180,34 @@ The standing sigil-native arc is the **`.emp` language work (Spec 2)** — specs
 `empyrean/docs/SIGIL_*.md`. The whole sound stack is sigil-native, the language round
 + §17 optimization arc + conversion tail are done, and the map drives the build.
 
-**Current state (2026-08-22, master `34d887c4`).** Landed today: **const-arity** — a
+**Current state (2026-08-22, master `cba0a0bc`).** Landed this session, both
+sigil-internal (neither touches `golden/`, `pins.rs` or `repin.toml`, so neither needed
+aeon-lane sequencing):
+
+- **`feat/game-defines`** — the aeon `emp_defines` ask, with both lens latents closed. A
+  game-declared `[defines]` row now joins the blind-arm polarity net via
+  `audit_game_declared_polarity` (exempted-and-named, with reason-less and stale
+  exemptions both rejected), and `shape_defines`' NotFound tolerance is gone outright.
+  Value-only enforcement at parse time was considered and **rejected**: it would refuse
+  the one safe game-declared toggle (a row the two games declare at opposite values —
+  exactly what the polarity net wants) while still missing `if CAPS == 20` on a
+  non-boolean row. The shipped CLI's failure surface moves: `--report ram` and
+  `--report contracts` now exit on a missing `games/<g>/map.toml` where they proceeded on
+  built-in rows; a full `sigil build` was already fatal there, the diagnostic just moves
+  earlier and names the config instead of the placement.
+- **`feat/warn-tier-ungate`** — the source-gate lane (see that section above), the
+  `CORPUS_OPEN_FINDINGS` register, and `sigil-source-gates.timer`.
+
+**The reference tree for any artifact-dependent run is aeon master, built.** The goldens'
+`provenance.toml` **tip** pins `s4 060401e4/699106 · s4.debug 0dbaa80f/715010 · demo
+c708b114 · demo.debug dec88cc1`, and building all four shapes at aeon `1ee8f8e6`
+reproduces them exactly. `07d19c54`/`445092a7` appear only in the `ab` prose of a
+mid-file historical entry — reading a non-tip entry as the tip cost this session a false
+"corroborated" in a review. `~/sonic_hacks/.aeon-landing` is a built checkout at that
+revision; `~/sonic_hacks/.aeon-sigil-gates` is **source-only by construction** and must
+never be pointed at an artifact-dependent run.
+
+Previously landed the same day: **const-arity** — a
 typed comptime `const` literal is now array-arity checked at elaboration (the length
 check lived only in the byte-emission path, which a `const` never reaches, so a
 wrong-shaped constant compiled clean); and the **Oracle listing gate's `ORACLE_DIR`
@@ -192,23 +224,23 @@ share**; `TST` was exactly that, live.
 
 **Front of the queue, in order:**
 
-1. **`feat/game-defines`** (8 commits, unmerged) — the aeon `emp_defines` ask. Two
-   self-recorded lens latents to close first.
-2. **Ungate the warn-tier corpus run from refreeze** — ruled 2026-08-22, owed to the
-   aeon session for a `docs/OVERSEER.md` cross-reference. A ritual keyed to byte
-   movement cannot see a source-derived lint set move; six consecutive zero-byte aeon
-   parcels proved it by hiding a real odd-address finding for a day.
-3. **A provenance witness for the shared binary** — `sigil --version` reporting the
+1. **A provenance witness for the shared binary** — `sigil --version` reporting the
    revision it was built from. The shared assembler sat three days stale while every
    aeon build used it, and byte identity is silent on that by construction. Class-level
    row in the ledger.
-4. **A Capstone differential as a permanent gate** — the only non-circular ISA oracle
+2. **A Capstone differential as a permanent gate** — the only non-circular ISA oracle
    available, already installed; it found the `TST` bug on its first run. Two
    known-benign disagreements must be excluded by name (`6xFF` branch words, `btst
    Dn,#imm` sizing).
-5. **An alignment attribute / even-offset assertion** — the class-level fix for the
+3. **An alignment attribute / even-offset assertion** — the class-level fix for the
    odd-field finding: today a struct wanting even-aligned members can only say so by
-   hand-counting bytes into a pad, and the pad goes stale silently.
+   hand-counting bytes into a pad, and the pad goes stale silently. Aeon's own fix has
+   LANDED (`9a718f74`, `ensure(offsetof(Scene, sc_mask_raw) % 2 == 0, …)`), so this now
+   has a live subject to retire rather than a hypothetical one.
+4. **Ten remaining ROM-as-sentinel port tests** — they gate on `s4.bin` existing to
+   answer "is there an aeon tree here", so a source-only tree makes them panic
+   "aeon tree missing" while the tree is fully present. One was fixed this session
+   (`native_object_bank_budget`, sentinelled on `map.toml`, proven both directions).
 
 And **`feat/arity-cli-fixture`** — a CLI-level regression test for const arity, driving
 the built binary via `CARGO_BIN_EXE_sigil` over a committed poison/control pair, taking
@@ -218,7 +250,10 @@ shared assembler went unnoticed. Red-first on both arms: the poison arm against 
 enforcement reverted, the control arm against the check made unconditional, because a
 reject-everything compiler satisfies the poison arm and is caught only by the control.
 
-**Nothing is in flight; no agents are running.**
+**Nothing is in flight; no agents are running.** Both parcels above merged at
+`cba0a0bc` and the merged tree is verified green; **master is NOT pushed** — sigil
+`origin/master` is `40f862e2` and local master is far ahead (see the local-only anchor
+warning below).
 
 ## Standing cross-session obligations (2026-08-22)
 
@@ -230,7 +265,21 @@ time — **ping them, don't assume they are watching**:
   define and confirm all three see it. Cheap, theirs to run.
 - **When the alignment attribute lands:** they migrate the two `offsetof(Scene, …) % 2
   == 0` ensures to it and retire them. Their `ensure`s are a workaround for the missing
-  language feature, not a fix for the class.
+  language feature, not a fix for the class. Those ensures now EXIST — aeon landed them
+  at `9a718f74` (merged `1a794ace`), live at `engine/level/scene_dsl.emp:1025,1027` —
+  so this obligation has a concrete subject.
+
+**⚠ An empty commit range does not mean an empty branch.** Both overseers read
+`git rev-list --count master..parcel/scene-even-align-guard` = 0, an empty three-dot
+diff, and `--is-ancestor <tip> master` = true as proof the branch held no work. That
+triple is the signature of a branch **already merged** — its commits are in master, so
+the range is necessarily empty. The fix had landed hours earlier and the lint fired zero
+times. This matters beyond the one incident: those are exactly the commands protocol bar
+16 prescribes for converting a name into behaviour, so **the bar's mechanism is
+necessary and not sufficient** — the output is two-valued and reads as one-valued.
+Disambiguate with `git log <branch>` for its own history, or `--is-ancestor` on a commit
+you expect the branch to CONTAIN. Two lanes cross-verified each other and shared the
+frame, which is the one thing mutual verification cannot catch.
 
 Their side is banked at aeon `1ee8f8e6` (handoff) and `ba189b40` (the `br_ext` unlock
 row, cuttable cold) — both verified reachable from aeon's `origin/master`.
