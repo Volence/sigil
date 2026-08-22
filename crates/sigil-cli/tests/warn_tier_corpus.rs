@@ -17,8 +17,16 @@
 //!     unnoticed. It also has teeth in the retirement direction: clearing a class
 //!     fails this gate until the win is recorded here.
 //!
-//! The limitation is honest and stated: this gate does NOT catch growth WITHIN an
-//! already-firing class. That is the build's tally line's job.
+//! The limitation is honest and stated: the id gate does NOT catch growth WITHIN an
+//! already-firing class. [`CORPUS_OPEN_FINDINGS`] is where a class stops having that
+//! hiding place — it pins `(shape, id, file, symbol)` with a count, so a registered id
+//! firing anywhere else, or one more time, fails. Ids not in the register still rely on
+//! the build's tally line.
+//!
+//! WHERE A NEW FIRING GOES. Into the register, with an owner, a tracking anchor and a
+//! kill condition — not into [`WARN_ID_BASELINE`], which admits an id corpus-wide.
+//! Widening the baseline to quiet a firing is the move that made this whole file
+//! necessary.
 //!
 //! Reference tree: defaults to the sibling aeon checkout (override with `AEON_DIR`);
 //! under `SIGIL_STRICT_GATE` a missing tree HARD-FAILS, the house pattern.
