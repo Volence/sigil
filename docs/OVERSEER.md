@@ -11,6 +11,24 @@ sigil-specific: the landing-lane division, the worktree/test quirks, and the que
 > `empyrean/docs/OVERSEER-PROTOCOL.md` if you haven't. Work the queue. Peers may or
 > may not be running — check `ListAgents`; coordinate if present, proceed solo if not.
 
+**Read the protocol at a committed revision, never through the filesystem path:**
+
+```sh
+git -C ../empyrean fetch -q origin && \
+git -C ../empyrean show origin/main:docs/OVERSEER-PROTOCOL.md
+```
+
+`../empyrean/docs/OVERSEER-PROTOCOL.md` is one peer's live working tree, so reading it
+by path means booting from somebody's uncommitted directory. Carried here because this
+is the only file upstream of that read; the empyrean copy governs on any disagreement.
+Taken from empyrean `274d26d2`.
+
+**Re-read it mid-session.** That file currently moves faster than a session lasts — on
+2026-08-22 it went from `cea2e57c` to `274d26d2` and gained two numbered bars inside
+ninety minutes, both of which landed on this lane's in-flight work. Boot-time is the only
+read anybody performs unless you make yourself perform another; re-read when a peer cites
+a bar you don't recognise, before dispatching a wave, and at any landing.
+
 ## Landing-lane division — THE rule for this repo
 
 The aeon↔sigil landing lane has **one owner, and it is the aeon overseer** (owner
