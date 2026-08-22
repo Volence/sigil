@@ -44,9 +44,10 @@ Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — currently **3762 passed / 0 failed / 4 ignored**
-  under `SIGIL_STRICT_GATE=1` against a clean aeon tree (master `c4c3acbf`,
-  2026-08-22). Never plain
+  `AEON_DIR` set to the aeon tree — currently **3777 passed / 0 failed / 4 ignored**
+  under `SIGIL_STRICT_GATE=1` against a clean aeon tree (master `a02d26b5`,
+  2026-08-22), with **zero `skip:` lines** in the run — check that, not just the
+  totals: a reference gate that skips reports nothing and reads as coverage. Never plain
   `cargo test`: without `--release` some gates are impractically slow, without
   `--workspace --no-fail-fast` a wedge or an early failure hides the rest of the
   result set. Report failures-first with explicit pass/fail counts; never
