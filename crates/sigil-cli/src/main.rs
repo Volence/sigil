@@ -4,6 +4,7 @@
 //!        `sigil parse <input.emp>`
 //!        `sigil emp <input.emp> [-o <output.bin>] [--hex]`
 //!        `sigil build --aeon <dir> [-o <output.bin>] [--emit-lst <lst>] [--game ...] [--debug]`
+//!        `sigil --version` / `sigil -V`
 //!
 //! Assembles the given Z80 source file. Writes the binary image to the path
 //! given by `-o` (if supplied). When `--hex` is passed, prints the output
@@ -18,6 +19,10 @@
 //! emits the sigil-canonical `.lst`, and appends the `convsym` deb2 symbol table —
 //! the full shipped ROM. (It said `main.asm` until 2026-08-14; that file was
 //! deleted at the flip this same sentence describes.)
+//!
+//! `sigil --version` reports the source revision this executable was built from,
+//! which is the only way to tell a current assembler from a stale one: byte
+//! identity cannot, because both emit the same ROM when the source is unchanged.
 
 use std::process;
 
@@ -25,6 +30,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     match args.get(1).map(String::as_str) {
+        Some("--version") | Some("-V") => return run_version(),
         Some("parse") => return run_parse(),
         Some("emp") => return run_emp(&args[2..]),
         Some("test") => return run_test(&args[2..]),
@@ -66,6 +72,7 @@ fn main() {
         Some(path) => path,
         None => {
             eprintln!("usage: sigil <input.asm> [-o <output.bin>] [--hex]");
+            eprintln!("       sigil --version");
             process::exit(2);
         }
     };
@@ -110,6 +117,70 @@ fn main() {
         let rendered: Vec<String> = image.iter().map(|b| format!("{b:02X}")).collect();
         println!("{}", rendered.join(" "));
     }
+}
+
+/// `sigil --version` / `sigil -V` — report the source revision this executable
+/// was built from.
+///
+/// This exists because byte identity cannot answer the question. A stale
+/// assembler and a current one produce identical ROMs whenever the source did
+/// not change, so a matching CRC says nothing about which binary produced it.
+/// Asking the binary is the only direct answer.
+///
+/// The banner states the confidence of each claim rather than presenting them
+/// as equally solid. `revision` is re-captured by cargo whenever git HEAD or
+/// the refs move (`build.rs` names those files as rerun triggers), so it tracks
+/// the code that is actually linked in. `tree` is a snapshot: no file's mtime
+/// follows working-tree dirtiness, so cargo cannot re-capture it, and the
+/// output says so in place rather than letting a reader assume otherwise.
+///
+/// Every field is a word even when nothing could be determined — an empty
+/// string reads as "clean" to a human and passes a grep for a SHA.
+fn run_version() {
+    let revision = env!("SIGIL_REVISION");
+    let short = env!("SIGIL_REVISION_SHORT");
+    let branch = env!("SIGIL_REVISION_BRANCH");
+    let date = env!("SIGIL_REVISION_DATE");
+    let tree_state = env!("SIGIL_TREE_STATE");
+    let tree_detail = env!("SIGIL_TREE_DETAIL");
+    let source_dir = env!("SIGIL_SOURCE_DIR");
+    let tracks = env!("SIGIL_REVISION_TRACKS");
+    let error = env!("SIGIL_PROVENANCE_ERROR");
+
+    // The first line is the greppable one: `<name> <semver> (<revision tag>)`.
+    // The tag carries the tree state so a dirty build cannot be mistaken for
+    // the clean commit it was built near.
+    let tag = match (revision, tree_state) {
+        ("unknown", _) => "revision-unknown".to_string(),
+        (_, "dirty") => format!("{short}-dirty"),
+        (_, "clean") => short.to_string(),
+        _ => format!("{short}-tree-unknown"),
+    };
+    println!("sigil {} ({tag})", env!("CARGO_PKG_VERSION"));
+
+    if revision == "unknown" {
+        println!("  revision:  unknown — {error}");
+        println!("  tree:      unknown — {tree_detail}");
+        println!("  source:    unknown");
+        println!(
+            "  freshness: this binary carries NO revision, so nothing here can confirm it \
+             matches any source tree. Do not treat it as current."
+        );
+        return;
+    }
+
+    println!("  revision:  {revision}");
+    println!("  branch:    {branch}");
+    println!("  committed: {date}");
+    println!("  tree:      {tree_state} at capture — {tree_detail}");
+    println!("  source:    {source_dir}");
+    println!("  freshness: revision is re-captured whenever git HEAD or refs move (cargo tracks {tracks}).");
+    println!(
+        "             tree state is a build-time snapshot; cargo has no trigger for uncommitted\n\
+         \x20            edits, so it may under-report dirt if this binary was relinked without\n\
+         \x20            HEAD moving. Compare `revision` against `git rev-parse HEAD` to check\n\
+         \x20            this binary against a source tree."
+    );
 }
 
 /// `sigil parse <input.emp>` — run the .emp lexer/parser front end only and
