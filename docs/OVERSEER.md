@@ -62,13 +62,13 @@ Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — currently **3810 passed / 0 failed / 4 ignored**
-  under `SIGIL_STRICT_GATE=1` (sigil master `cba0a0bc`, aeon `1ee8f8e6`, 2026-08-22),
+  `AEON_DIR` set to the aeon tree — currently **3819 passed / 0 failed / 4 ignored**
+  under `SIGIL_STRICT_GATE=1` (sigil master `9c08f2a5`, aeon `1ee8f8e6`, 2026-08-22),
   with **zero `skip:` lines** in the run — check that, not just the
   totals: a reference gate that skips reports nothing and reads as coverage.
   **Reconcile the total against the tree, not against the last remembered bar:**
   `git grep -c '#\[test\]' HEAD -- '*.rs'` summed gives the declared count, and
-  `passed + ignored` must equal it (3810 + 4 = 3814 here). Baseline arithmetic carried
+  `passed + ignored` must equal it (3819 + 4 = 3823 here). Baseline arithmetic carried
   across branches measured on different reference trees does not reconcile and will
   invent a discrepancy that is not there. Never plain
   `cargo test`: without `--release` some gates are impractically slow, without
@@ -77,6 +77,24 @@ Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
   `grep | head` test output (it buries FAILED lines).
 - **Pre-merge:** re-run the suite on the merged tree with `SIGIL_STRICT_GATE=1`, which
   turns reference-tree skips into failures so the port gates cannot silently skip.
+- **A suite log does not name the tree it ran in — stamp it, and prove the landed code
+  is IN it** *(2026-08-22, caught at a landing)*. Cargo prints no cwd, no branch and no
+  HEAD, so a run launched from the wrong directory produces a log that is green,
+  plausible, and about somebody else's branch. Precedent, this repo, this lane: a
+  landing run of master reported **3857 passed / 0 failed / 2 ignored, exit 0** — a
+  *higher* number than the bar, which reads as strictly better news. It was another
+  agent's worktree: the log contained that agent's in-flight `m68k_capstone_differential`
+  and contained **zero** occurrences of `version_provenance`, the parcel actually being
+  landed. Nothing in the output said so.
+  Two mechanisms, both cheap, and the second is the one that cannot be fooled:
+  **(1)** stamp the log before cargo writes to it —
+  `{ echo "### pwd=$(pwd)"; echo "### head=$(git rev-parse HEAD)"; echo "### branch=$(git branch --show-current)"; } > "$LOG"` then append the run;
+  **(2)** `grep -c` the log for a test name **unique to the parcel being landed** and
+  require ≥ 1. A landing whose own new tests do not appear in its own green log did not
+  happen. This is why the reconcile-against-the-tree rule above is load-bearing rather
+  than bookkeeping: `passed + ignored` equalling the declared count was the *only*
+  signal that separated the bogus run from the real one (3857 + 2 = 3859 ≠ 3823; the
+  correct re-run gave 3819 + 4 = 3823 exactly). Aggregate greens do not self-attribute.
 - **Port work** follows the port loop (canonical:
   `docs/superpowers/notes/campaign-port-loop.md` — byte gate is step-1 only, then
   modernize/retrospect/back-prop/optimize until dry; dry is panel-adjudicated, not
@@ -92,8 +110,10 @@ Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
 ## The source-gate lane
 
 `scripts/nightly_source_gates.sh`, fired by the `systemd --user` timer
-`sigil-source-gates.timer` at 05:17 daily. It runs the **33 gates whose inputs are aeon
-SOURCE** — the warn-tier corpus and its neighbours — against detached master-tip
+`sigil-source-gates.timer` at 05:17 daily. It runs the **gates whose inputs are aeon
+SOURCE** — the warn-tier corpus and its neighbours, named one per line in the
+hand-maintained `SOURCE_GATES` array; read the count out of the array rather than out of
+this sentence, which is how it went stale the first time — against detached master-tip
 checkouts of *both* repos, at `~/sonic_hacks/.sigil-source-gates` and
 `~/sonic_hacks/.aeon-sigil-gates`. Both live outside their repo roots: a worktree under
 the aeon root double-counts every module in that repo's `tools/emp_helper_closure.py`
@@ -125,6 +145,24 @@ clock.
   enabled-but-uncommitted timer is invisible to every session that did not install it.
 - Do **not** touch `aeon-effects-gates.{service,timer}`; that lane is aeon's, and it
   fires at 04:17 so the two do not contend.
+
+**⚠ The lane's self-audit reads PROSE, and a doc comment can take the whole lane down.**
+Before running, the script classifies every `crates/*/tests/*.rs` matching
+`AEON_DIR|aeon_dir|reference_tree|--aeon` as either in `SOURCE_GATES` or derivably
+artifact-dependent, and exits `2` — the entire nightly backstop dark, reporting nothing —
+if any file is neither. That grep cannot tell a *use* from a *mention*: a new test whose
+header says "takes no `AEON_DIR`" matches on the disclaimer and is unclassifiable by
+construction. Caught on `feat/version-provenance` before landing (replaying the audit gave
+`unclassified=1 [version_provenance]` at the first delivery, `0` after); the fix was to
+describe those inputs without naming the identifiers, and to say why in the file so the
+next author does not re-arm it. **Replay the audit against any branch adding a
+`crates/*/tests/*.rs` file** — it costs one loop and the failure is otherwise invisible
+until 05:17.
+**Left open, deliberately:** tightening the detector to match code uses rather than any
+occurrence would disarm the trap, but it also loosens what the lane considers
+unclassified, and a genuinely aeon-reading gate escaping silently is the failure this
+audit exists to prevent. Soundness-reducing, so it is not a parcel-local call — it needs
+its own ruling.
 
 **Adjudicating a warn-tier firing.** A new firing goes into `CORPUS_OPEN_FINDINGS`
 (`crates/sigil-cli/tests/warn_tier_corpus.rs`), **not** into `WARN_ID_BASELINE`. The
@@ -224,10 +262,23 @@ share**; `TST` was exactly that, live.
 
 **Front of the queue, in order:**
 
-1. **A provenance witness for the shared binary** — `sigil --version` reporting the
-   revision it was built from. The shared assembler sat three days stale while every
-   aeon build used it, and byte identity is silent on that by construction. Class-level
-   row in the ledger.
+1. ~~**A provenance witness for the shared binary**~~ — **LANDED** at `9c08f2a5`
+   (`feat/version-provenance`). `sigil --version` / `-V` reports the revision, branch,
+   commit date, tree state and source dir the binary was built from. Verified firsthand at
+   review: an empty commit touching zero source files re-runs `build.rs` and the binary
+   reports the new revision (1.25s); a detached checkout reports `branch: detached`, not a
+   branch called `HEAD`. Cargo tracks `HEAD`, `<common-dir>/refs` and `packed-refs` — the
+   git-dir/common-dir split is load-bearing, since from a linked worktree cargo must be
+   given the *main* checkout's common dir. **Tree dirtiness is NOT trackable** — cargo has
+   no trigger for uncommitted edits, and the alternatives were priced and refused (a
+   repo-root directory trigger never reaches a fixed point because `target/` is at the
+   root; an unconditional rerun costs 13.2 s wall / 167 s CPU per invocation to refresh
+   one boolean). The banner discloses that limit in place and names the command that
+   settles it, and a test asserts the disclosure so it cannot be quietly tidied away.
+   **The consumer side is still open and is where the original incident actually bit:**
+   aeon's build invokes `sigil` without asking what it is. Making the build refuse or warn
+   when the assembler's revision ≠ the tree being assembled is an **aeon-side** parcel.
+   Not covered by this witness at all: rustc version and build profile.
 2. **A Capstone differential as a permanent gate** — the only non-circular ISA oracle
    available, already installed; it found the `TST` bug on its first run. Two
    known-benign disagreements must be excluded by name (`6xFF` branch words, `btst
@@ -259,10 +310,10 @@ element(s), got M`, so rephrasing that diagnostic breaks them.
 queue item. Prose adjacency is not queue membership — state landed/queued in the sentence
 itself, since the next boot's only source is this file.)*
 
-**In flight (2026-08-22, dispatched from master `5c75b5b6`):** two sigil-internal parcels,
-both in isolated worktrees, neither touching the aeon-paired lane —
-`feat/version-provenance` (queue item 1) and `feat/capstone-differential` (queue item 2).
-Both parcels landed earlier merged at `cba0a0bc` and the merged tree is verified green;
+**In flight (2026-08-22):** `feat/capstone-differential` (queue item 2), in an isolated
+worktree, not touching the aeon-paired lane. `feat/version-provenance` **landed** at
+`9c08f2a5`; the merged tree is verified green at the bar above (3819/0/4, zero skips,
+log stamped and attribution-checked). Both parcels landed earlier merged at `cba0a0bc`;
 **master is NOT pushed** — sigil `origin/master` is `40f862e2` and local master is 65
 commits ahead (see the local-only anchor warning below).
 
