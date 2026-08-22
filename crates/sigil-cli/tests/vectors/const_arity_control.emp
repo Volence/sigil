@@ -1,0 +1,14 @@
+module control.arity
+
+const N_EXT = 0
+
+struct ext {
+    ex_a: u16,
+}
+
+struct rec {
+    r_base: u16,
+    r_ext:  [ext; N_EXT],
+}
+
+const P: rec = rec{ r_base: 1, r_ext: [] }
