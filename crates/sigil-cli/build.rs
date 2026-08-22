@@ -142,10 +142,17 @@ fn probe(manifest_dir: &Path) -> Provenance {
     };
     let revision_short = git(manifest_dir, &["rev-parse", "--short", "HEAD"])
         .unwrap_or_else(|_| revision.chars().take(8).collect());
-    // `--abbrev-ref` renders a detached HEAD as the literal "HEAD"; that is the
-    // honest answer and needs no special case.
-    let branch = git(manifest_dir, &["rev-parse", "--abbrev-ref", "HEAD"])
-        .unwrap_or_else(|_| "unknown".into());
+    // `symbolic-ref`, not `rev-parse --abbrev-ref`: the latter reports a
+    // detached HEAD as the literal string "HEAD", which renders in the banner
+    // as though the checkout were on a branch of that name. Both gate lanes run
+    // against detached checkouts, so that is the common reading, not the exotic
+    // one. `symbolic-ref` signals the state by exit status instead, leaving no
+    // sentinel to misread.
+    //
+    // Reaching here means `rev-parse HEAD` already answered, so git works and a
+    // non-zero exit means what it says: HEAD is not a symbolic ref.
+    let branch = git(manifest_dir, &["symbolic-ref", "--quiet", "--short", "HEAD"])
+        .unwrap_or_else(|_| "detached".into());
     let date =
         git(manifest_dir, &["log", "-1", "--format=%cI", "HEAD"]).unwrap_or_else(|_| "unknown".into());
     let source_dir =

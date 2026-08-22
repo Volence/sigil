@@ -125,11 +125,20 @@ fn version_reports_the_head_of_the_tree_it_was_built_from() {
 /// a second, independent reading of the same trigger — a branch switch that
 /// lands on the same commit still moves HEAD, and this catches a stamp that
 /// missed it.
+///
+/// A **detached** checkout is a first-class case here, not an edge one: both
+/// gate lanes run against detached worktrees, so this expectation must be
+/// derived the same way in both states or it is a flake waiting for the night
+/// it runs. `symbolic-ref` fails exactly when HEAD is not a symbolic ref, and
+/// the capture applies that same rule to reach the same word, so the two sides
+/// agree by construction rather than by coincidence.
 #[test]
 fn version_reports_the_branch_this_tree_is_on() {
-    let expected = git(&["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_else(|why| {
-        panic!("cannot verify the binary's branch against this tree: {why}")
-    });
+    // `git` here returns Err on a non-zero exit, which for `symbolic-ref` is
+    // the detached signal rather than a fault. A genuine git fault is caught by
+    // the revision test, which has no such fallback.
+    let expected = git(&["symbolic-ref", "--quiet", "--short", "HEAD"])
+        .unwrap_or_else(|_| "detached".to_string());
 
     let stdout = version_stdout("--version");
     assert_eq!(
