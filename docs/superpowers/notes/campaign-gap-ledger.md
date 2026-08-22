@@ -2338,3 +2338,42 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   **THE CLASS, which is the deliverable.** This is the third member of a family found the same day, alongside the refreeze-gated lint baseline and the byte-neutral freshness gap (a leftover ROM and a correctly rebuilt one are byte-identical when the parcel is zero-byte). In all three the instrument was **byte identity**, and the failure is not "a gate passed for the wrong reason" — it is that **byte identity is silent on every question of PROVENANCE**: did this come from current source, did this build actually run, is this tool current. It answers "are the bytes the same" perfectly and "should they be" not at all. Each member was found by accident, by three different routes, none of them the gate that was supposed to cover it.
 
   **The remedy is not more byte checks but a provenance witness per trusted artifact.** Two already exist in different forms: `rm -f`-then-rebuild makes *existence* prove freshness (aeon-side, banked at aeon `efd8d666`), and the corpus-ungating parcel makes *source movement* its own trigger rather than riding on byte movement. The shared binary has none. **SHARPENED by the aeon overseer, same day, and it raises the bar on the kill:** the shared binary is now built from a revision that **exists nowhere but this machine** — sigil `origin/master` is `40f862e2` (2026-08-21) while local master is 38 commits ahead, so every SHA exchanged between the two sessions today is local-only (verified with `git merge-base --is-ancestor` against `origin/master`, all five unreachable). A `--version` reporting `538e5a3c` would therefore be **honest and still unresolvable by anyone else**. So a revision string alone is not the witness; **the witness has to survive the artifact leaving the machine, or say plainly that it cannot.** Corollary for cross-repo citation: a lane row citing a local-only fixture is citing something unfetchable, which is why the aeon side recorded its verification as local-only (aeon `ba189b40`) rather than writing citations that look fetchable and are not. — OPEN (kill: the built `sigil` reports the revision it was built from — git SHA + dirty flag — AND that report distinguishes a pushed revision from a local-only one, so "is the tool current?" and "can anyone else obtain this tool?" are both cheap questions instead of ones that surface by accident; consumers that shell out to it can then assert on it, and a lane row citing a binary can cite WHICH binary and whether it is reachable)
+
+- [source-gate lane, 2026-08-22] **`native::ensure_generated` knows about the sound seams and
+  not about the compression vectors, so a never-built aeon checkout cannot lower the sonic4
+  DEBUG shape.** `ensure_generated` (`sigil-harness/src/native.rs`) emits `engine/sound/generated`
+  and stops there. `engine/debug/compression_selftest.emp` embeds five blobs from
+  `engine/debug/generated` and imports `engine.compression_vectors` from the same directory, all
+  produced by aeon's `tools/gen_compression_vectors.py` (which itself needs the vendored
+  `salvador` built). Both directories are gitignored, so on a fresh checkout the shape fails with
+  ten errors — `no module engine.compression_vectors found under the scan root` plus five
+  `[embed.not-found]`. Today this is invisible because every aeon tree anyone points `AEON_DIR`
+  at has had `./build.sh` run in it; it surfaced the moment a lane used a checkout that had not.
+  The source-gate lane works around it in shell (build salvador, run the generator, having first
+  DELETED both directories — they are gitignored, so `checkout --force` leaves whatever the last
+  run left, and a stale generated file is byte-indistinguishable from a correct one). — OPEN
+  (kill: `ensure_generated` shells the generator the same way it calls the seam emitters, so
+  every consumer of the harness gets a lowerable tree instead of each one re-deriving the
+  prerequisite; the shell workaround in the lane script is then deleted).
+
+- [source-gate lane, 2026-08-22] **Eleven port tests gate on `$AEON_DIR/s4.bin` existing while
+  reading no ROM byte.** `if !aeon.join("s4.bin").exists() { skip }` is used as a
+  "is there an aeon tree here" sentinel in `native_object_bank_budget.rs`,
+  `error_handler_port.rs` (`vector_labels_resolve_to_emp_ownership`), `keystone_flip_relocation.rs`,
+  `native_offcanonical_{placement,full,rom}.rs`, `demo_native_port.rs`, `boot_data_port.rs`,
+  `soundbankhead_port.rs`, `vectors_port.rs` and `repin_pins.rs`. The tests behind it are
+  source-only or golden-only; the sentinel just picks the most conspicuous file in a built tree.
+  Consequence: against a source-only checkout they skip green without `SIGIL_STRICT_GATE`, which
+  is the "a gate that skips reports nothing and reads as coverage" shape. `act_fixture_drift.rs`
+  already does it right, sentinelling on `engine/structs.emp`. — OPEN (kill: each sentinel moves
+  to a source path the test actually reads; mechanical, one line each).
+
+- [source-gate lane, 2026-08-22] **The open-findings register is hand-maintained per shape, and
+  the shape list is not derived from `native::shipped_shapes()`.** A `CORPUS_OPEN_FINDINGS` row
+  enumerates its shapes literally. A NEW shipped shape therefore does not automatically demand a
+  row — the firing appears in it, no row claims it, and the gate goes red naming the shape, which
+  is the safe direction but makes shape addition a multi-row edit. Not fixed because the safe
+  direction is safe and the alternative (a row meaning "all shapes") would silently absorb a new
+  shape's firings, which is the direction that hides things. — OPEN, low priority (kill: a row
+  may spell `sites: AllShapes(1)` only once the gate can prove the count is genuinely
+  shape-invariant, rather than assuming it).
