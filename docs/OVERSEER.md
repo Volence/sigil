@@ -242,18 +242,29 @@ share**; `TST` was exactly that, live.
    "aeon tree missing" while the tree is fully present. One was fixed this session
    (`native_object_bank_budget`, sentinelled on `map.toml`, proven both directions).
 
-And **`feat/arity-cli-fixture`** — a CLI-level regression test for const arity, driving
-the built binary via `CARGO_BIN_EXE_sigil` over a committed poison/control pair, taking
-no `AEON_DIR` at all. It exists because the enforcement was covered only at the
-frontend-unit level while aeon invokes the **binary** — which is how a three-day-stale
-shared assembler went unnoticed. Red-first on both arms: the poison arm against the
-enforcement reverted, the control arm against the check made unconditional, because a
-reject-everything compiler satisfies the poison arm and is caught only by the control.
+**`feat/arity-cli-fixture` is LANDED, not queued** — `crates/sigil-cli/tests/const_arity_cli.rs`
+is on master (added by `a24a1b4f`; the branch tip is an ancestor of master, confirmed by
+`git log <branch>` rather than by an empty commit range — see the empty-range trap below).
+It is a CLI-level regression test for const arity, driving the built binary via
+`CARGO_BIN_EXE_sigil` over a committed poison/control pair, taking no `AEON_DIR` at all.
+It exists because the enforcement was covered only at the frontend-unit level while aeon
+invokes the **binary** — which is how a three-day-stale shared assembler went unnoticed.
+Red-first on both arms: the poison arm against the enforcement reverted, the control arm
+against the check made unconditional, because a reject-everything compiler satisfies the
+poison arm and is caught only by the control. It also pins a cross-repo interface: aeon
+fixtures assert on the exact diagnostic wording `array length mismatch: expected N
+element(s), got M`, so rephrasing that diagnostic breaks them.
 
-**Nothing is in flight; no agents are running.** Both parcels above merged at
-`cba0a0bc` and the merged tree is verified green; **master is NOT pushed** — sigil
-`origin/master` is `40f862e2` and local master is far ahead (see the local-only anchor
-warning below).
+*(This paragraph sat under "front of the queue" opening with "And", which reads as a fifth
+queue item. Prose adjacency is not queue membership — state landed/queued in the sentence
+itself, since the next boot's only source is this file.)*
+
+**In flight (2026-08-22, dispatched from master `5c75b5b6`):** two sigil-internal parcels,
+both in isolated worktrees, neither touching the aeon-paired lane —
+`feat/version-provenance` (queue item 1) and `feat/capstone-differential` (queue item 2).
+Both parcels landed earlier merged at `cba0a0bc` and the merged tree is verified green;
+**master is NOT pushed** — sigil `origin/master` is `40f862e2` and local master is 65
+commits ahead (see the local-only anchor warning below).
 
 ## Standing cross-session obligations (2026-08-22)
 
