@@ -86,6 +86,21 @@ Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
   test runtime** via `emp_const_rhs` / `emp_const_literal` — never a copied literal.
 - **Never build in the scratchpad/tmp** — `/tmp` is tmpfs; a cargo build there wedges
   the shell. Set `CARGO_TARGET_DIR` to disk for any out-of-tree build.
+- **The main aeon checkout carries the owner's live editor content edits** (collision
+  bins, regenerated act-pool pages under `games/sonic4/data/`) for hours or days at a
+  time — never gate a green on that tree cleaning up. A strict-gate or landing run
+  that matters points `AEON_DIR` at a CLEAN WORKTREE of a committed aeon SHA, with all
+  four shapes built there first (repin resolves but does not generate). File seeding is
+  RETIRED (`aeon/tools/seed-worktree.sh` is a copies-nothing stub; the OJZ tree and
+  collision tables are committed, generated dirs rebuild via build.sh). What a fresh
+  aeon worktree DOES need: the `.worktrees/sigil` and `skdisasm` symlinks, plus a
+  PAIRED sigil worktree of the same name at `sigil/.worktrees/<name>` — the
+  emp-helper-closure locator hard-asserts that pairing and fails the build without it.
+  Verify the built ROMs against `golden/provenance.toml` (CRC32+size) before trusting
+  the worktree. Mid-brushstroke aeon
+  edits flipping sigil port-gate results is environmental, not signal; the tell is
+  broad `*_port` region-diff failures at embedded addresses plus
+  `repin_pins::pins_rs_is_current` failing identically on sigil master.
 
 ## Queue
 

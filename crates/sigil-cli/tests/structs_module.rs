@@ -81,8 +81,11 @@ fn harvest_emits_the_as_field_offsets_and_sizes() {
         ("EntityScanState_ess_ring_right_idx", 0x00),
         ("EntityScanState_ess_obj_next_x", 0x18),
         ("EntityScanState_len", 0x1A),
-        // band_entry (10)
-        ("band_entry_band_top_cell", 0),
+        // band_entry (10) — T7 re-glue: top widened to a u16 PLANE LINE (renamed
+        // band_top_cell -> band_top_plane), the two 1-bit factor ops packed into
+        // band_factor_ops; RESHAPED NOT RESIZED, so len stays 10 and the tail
+        // field keeps its offset.
+        ("band_entry_band_top_plane", 0),
         ("band_entry_band_phase_offset", 9),
         ("band_entry_len", 10),
         // VdpShadow (19)

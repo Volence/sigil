@@ -150,7 +150,7 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
     // VDP_Shadow_Table cell below lives BEFORE the deleted pair, so it holds. (It had
     // a VDP_Dirty_Mask sibling until the blanket-restore parcel deleted that symbol.)
     // Camera_X/Y now pin-sourced (they carry the −4 too; matches Current_Act_Ptr style).
-    let table: [(&str, u32, u32); 31] = [
+    let table: [(&str, u32, u32); 32] = [
         // The MD Debugger carriers the DEBUG-shape asserts jsr/jmp (the section_port /
         // sprites_port precedent). Shape-invariant pins carried in BOTH shapes: in plain
         // the assert is comptime-gated out and these simply go unreferenced.
@@ -200,6 +200,12 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
         ("Parallax_Deform_Phase_BG", pins::PARALLAX_STATE.plain + 0x02, pins::PARALLAX_STATE.debug + 0x02),
         ("Parallax_V_Deform_Phase_BG", pins::PARALLAX_STATE.plain + 0x04, pins::PARALLAX_STATE.debug + 0x04),
         ("Parallax_Vscroll_Column_Buf", pins::PARALLAX_STATE.plain + 0x34, pins::PARALLAX_STATE.debug + 0x34),
+        // P3 T10: the curve fill's cross-band carry. sonic4 declares no curves, so
+        // CURVE_CARRY_WORDS = 0 and the carry is a ZERO-LENGTH array ALIASING
+        // Parallax_Shadow_Bands at the same VMA — which is exactly what parallax.emp's
+        // `Shadow_Bands - Curve_Carry == 4 * BAND_CURVE_N` link ensure checks (N = 0
+        // here). Same +0x84 as the row below, deliberately, not a typo.
+        ("Parallax_Curve_Carry", pins::PARALLAX_STATE.plain + 0x84, pins::PARALLAX_STATE.debug + 0x84),
         ("Parallax_Shadow_Bands", pins::PARALLAX_STATE.plain + 0x84, pins::PARALLAX_STATE.debug + 0x84),
         ("Parallax_Shadow_Scroll_A", pins::PARALLAX_STATE.plain + 0xD4, pins::PARALLAX_STATE.debug + 0xD4),
         ("Parallax_Shadow_Scroll_B", pins::PARALLAX_STATE.plain + 0xE4, pins::PARALLAX_STATE.debug + 0xE4),
@@ -287,6 +293,22 @@ fn compile_real_file(
         caps_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "synthesized CAP_* block parse errors: {caps_diags:?}"
     );
+    // T6's forcer single-sourcing: `use engine.level.scene_dsl.{parallax_mode_key}` —
+    // the shared comptime template both mode twins splice. Extracted VERBATIM from the
+    // parsed scene_dsl.emp at test runtime (same never-stale rationale as the CAP_*
+    // block above; the fn's free names resolve at the CALL SITE, which this chained
+    // file provides). Only the one item — scene_dsl.emp as a whole is CODE and would
+    // emit bytes into the compared section.
+    let scene_dsl_file = parse_file(&dir.parent().unwrap().join("level/scene_dsl.emp"));
+    let mode_key_fn: Vec<sigil_frontend_emp::ast::Item> = scene_dsl_file
+        .items
+        .into_iter()
+        .filter(|it| matches!(it, sigil_frontend_emp::ast::Item::ComptimeFn(d) if d.name == "parallax_mode_key"))
+        .collect();
+    assert!(
+        !mode_key_fn.is_empty(),
+        "parallax_mode_key not found in scene_dsl.emp — the port shim is stale against the tree"
+    );
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
@@ -298,6 +320,7 @@ fn compile_real_file(
             .chain(z80_bus_file.items)
             .chain(irq_file.items)
             .chain(caps_file.items)
+            .chain(mode_key_fn)
             .chain(main.items)
             .collect(),
         docs: main.docs.clone(),
