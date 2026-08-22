@@ -156,6 +156,31 @@ reject-everything compiler satisfies the poison arm and is caught only by the co
 
 **Nothing is in flight; no agents are running.**
 
+## Standing cross-session obligations (2026-08-22)
+
+The aeon session owes sigil two things, both triggered by sigil work rather than by
+time — **ping them, don't assume they are watching**:
+
+- **On the `game-defines` ship notice:** they re-run T8's three measured contexts
+  (data-binding layout, struct harvest, RAM harvest) against a capability-derived
+  define and confirm all three see it. Cheap, theirs to run.
+- **When the alignment attribute lands:** they migrate the two `offsetof(Scene, …) % 2
+  == 0` ensures to it and retire them. Their `ensure`s are a workaround for the missing
+  language feature, not a fix for the class.
+
+Their side is banked at aeon `1ee8f8e6` (handoff) and `ba189b40` (the `br_ext` unlock
+row, cuttable cold) — both verified reachable from aeon's `origin/master`.
+
+**⚠ Local-only anchors.** Sigil's `origin/master` is `40f862e2` (2026-08-21) while local
+master is far ahead, so **every sigil SHA exchanged with aeon on 2026-08-22 is
+unreachable from origin** — including the arity fixture their unlock row cites, and the
+revision the shared `target/release/sigil` was built from. Aeon recorded those citations
+as local-only deliberately. **When sigil is pushed, whoever acts on one of those rows
+re-verifies reachability rather than trusting the note** — the note was true when
+written and does not stay true by itself. The general form, which composes with the
+SHA-class rule: **a SHA has a class, a path has a time, and a revision has a
+reachability.**
+
 For anything else read newest-first: the dated notes in `docs/superpowers/notes/`
 (start with `2026-08-22-warn-tier-drift-open.md`), then
 `docs/superpowers/notes/campaign-gap-ledger.md`, whose tail carries eleven rows added
