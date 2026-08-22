@@ -62,9 +62,18 @@ capture tap on `encode`'s RESULT).
    pass's seen⊆list direction fail until the row is added.
 6. **`m68k_opcode_sweep.rs`** (fixup round) — all 65,536 opcode words, padded
    with zero extension words: each either fails decode or re-encodes
-   byte-exact to the consumed bytes. 42,783 words decodable, zero exceptions.
-   This is the permanent lock on decoder-legality == encoder-legality that
-   the shared-`EaSet` one-sidedness (item 1) otherwise leaves open.
+   byte-exact to the consumed bytes. 42,774 words decodable, zero exceptions.
+
+   What it proves, exactly: **decoder ⊆ encoder** over the whole word space at
+   zero extension words. No word decodes to an instruction `encode` rejects or
+   spells with different bytes, so a decoder row loosened to a superset of the
+   encoder's row is named by word (MUTANT F). It does **not** close the
+   shared-`EaSet` residual of item 1, and must not be read as doing so: the
+   sweep's oracle is `encode` (`m68k_opcode_sweep.rs:39`), which reads the same
+   `EaSet` constants the decoder reads, so corrupting a constant moves both
+   sides together and the sweep stays green — demonstrated under MUTANT I
+   below. That residual is pinned only by the hand-written negative oracle
+   (`ea_class_rejects.rs`) and the 114-form asl golden corpus.
 7. **Round-trip hardening** (fixup round): out-of-range registers (>7) on the
    encode side now FAIL `roundtrip_check` with the register named (the
    encoder masks them — `Dn(9)` would silently emit `d1`); `decode_exact`
@@ -223,6 +232,31 @@ message must name the register: round-trip MISMATCH:
   encoded:   Instruction { mnemonic: Move, size: W, ops: [Dn(9), Dn(0)] }
   decoded:   Instruction { mnemonic: Move, size: W, ops: [Dn(1), Dn(0)] }
 ```
+
+**MUTANT I — the shared-`EaSet` residual is INVISIBLE to the sweep.** This one
+is recorded as a limit, not a defense: it shows what the opcode sweep cannot
+see. Mutation in `m68k.rs`, one line deleted from `EaSet::ALTERABLE`:
+
+```
+        .without(Self::of(EaClass::Pcd8Xn))
+```
+
+Under it the sweep is **GREEN** (`every_decodable_word_reencodes_to_the_consumed_bytes`
+… ok, 1 passed / 0 failed) — the corrupted constant is read by both sides, so
+decoder and encoder agree on the illegal form and the word re-encodes exactly.
+`clr.w (4,pc,d0.w)` encodes to `42 7B 00 04` and `roundtrip_check` returns
+`Ok(())`, and no gate in the suite covers that form. What DOES move is the
+hand-written negative oracle, one assertion:
+
+```
+tst (d8,pc,xn) must not encode, but produced [4A, 3B, 00, 08]
+```
+
+— and that assertion exists only because `tst_destination_is_data_alterable`
+was added with the TST row fix. Before it the whole sigil-isa suite was
+132 passed / 0 failed under this mutant. The generalisation: a corrupted
+`EaSet` constant is caught only where a hand-written form names the class it
+admits, never by the sweep.
 
 **Strict-gate verification (fix 2)**: with the aeon tree + `SIGIL_STRICT_GATE=1`
 the stream pass runs green; with `AEON_DIR=/nonexistent` it skip-greens; with
