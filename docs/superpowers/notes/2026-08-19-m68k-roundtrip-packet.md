@@ -157,6 +157,21 @@ round-trip DECODE failed: unknown opcode D549: addx -(Ay),-(Ax) is not in sigil'
   bytes: [D5, 49]
 ```
 
+**What Mutant A does and does not establish.** The probe above is a
+hand-written `assert_roundtrip` call, not a shipped gate. Run the mutant
+against the suite and the two tests that go RED —
+`m68k::vocab_tests::alu_ea_rejects_address_register_destination` and
+`ea_class_rejects::non_alterable_modes_cannot_be_written` — are both
+pre-existing on master; **no gate this branch adds moves under Mutant A**.
+
+The general limit, plainly: the categorical defense fires only for forms a
+shape actually emits (the stream pass) or that a hand-written form names (the
+corpus and the negative oracle). A reject-side hole on a form nothing emits is
+invisible to it. The historical claim stands on its own terms — the 2026-08-12
+ROM really did carry `D549`, and an emitted `D549` is exactly what the stream
+pass catches for free — but that is a statement about emitted code, not a
+categorical guarantee over the reject side.
+
 **MUTANT B — aliased opcode family on an emitted form.** Mutation:
 `Mnemonic::Suba => 0b1001,` → `Mnemonic::Suba => 0b1011,` (suba now emits
 cmpa's base word). `all_forms_roundtrip_through_the_decoder` failed:
