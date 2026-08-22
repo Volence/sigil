@@ -2356,9 +2356,12 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   every consumer of the harness gets a lowerable tree instead of each one re-deriving the
   prerequisite; the shell workaround in the lane script is then deleted).
 
-- [source-gate lane, 2026-08-22] **Eleven port tests gate on `$AEON_DIR/s4.bin` existing while
-  reading no ROM byte.** `if !aeon.join("s4.bin").exists() { skip }` is used as a
-  "is there an aeon tree here" sentinel in `native_object_bank_budget.rs`,
+- [source-gate lane, 2026-08-22] **Ten port tests gate on `$AEON_DIR/s4.bin` existing while
+  reading no ROM byte.** (Eleven when found; `native_object_bank_budget.rs` is fixed —
+  it now sentinels on `games/sonic4/map.toml`, the file its tests actually read. It was the
+  one the lane tripped over, which is the only reason it was the one that got fixed.)
+  `if !aeon.join("s4.bin").exists() { skip }` is used as a
+  "is there an aeon tree here" sentinel in
   `error_handler_port.rs` (`vector_labels_resolve_to_emp_ownership`), `keystone_flip_relocation.rs`,
   `native_offcanonical_{placement,full,rom}.rs`, `demo_native_port.rs`, `boot_data_port.rs`,
   `soundbankhead_port.rs`, `vectors_port.rs` and `repin_pins.rs`. The tests behind it are
