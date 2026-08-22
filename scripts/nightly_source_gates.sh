@@ -82,6 +82,9 @@ SOURCE_GATES=(
     diag_assert_vector
     game_debug_port
     m68k_roundtrip_stream
+    # same corpus as the row above, judged by capstone instead of by sigil's own
+    # encoder — source only, no ROM and no golden
+    m68k_capstone_stream
     native_object_bank_budget
     seam2_colink_probe
     seam2_phased_head
