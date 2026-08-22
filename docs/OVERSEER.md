@@ -84,6 +84,52 @@ Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
   explicit paths only — never `git add -u` in this shared checkout — and check the
   branch before every commit.
 
+## The source-gate lane
+
+`scripts/nightly_source_gates.sh`, fired by the `systemd --user` timer
+`sigil-source-gates.timer` at 05:17 daily. It runs the **33 gates whose inputs are aeon
+SOURCE** — the warn-tier corpus and its neighbours — against detached master-tip
+checkouts of *both* repos, at `~/sonic_hacks/.sigil-source-gates` and
+`~/sonic_hacks/.aeon-sigil-gates`. Both live outside their repo roots: a worktree under
+the aeon root double-counts every module in that repo's `tools/emp_helper_closure.py`
+tree scan.
+
+**Why it exists.** These gates read aeon source, but nothing *ran* them against a fresh
+aeon tip except a refreeze — and a refreeze happens only when ROM bytes move. Six
+consecutive zero-byte aeon parcels hid a real `layout.odd-field` finding for a day
+(`docs/superpowers/notes/2026-08-22-warn-tier-drift-open.md`). A trigger keyed to byte
+movement is structurally blind to a source-derived lint set moving, so this one is a
+clock.
+
+- It builds **no aeon ROM**. The region-diff gates, the golden-CRC gates and
+  `pins_rs_is_current` read bytes that exist only after `./build.sh`, and they already
+  have the right trigger — aeon's byte-identity ritual, which fires exactly when bytes
+  move. The exclusion is named in the script, not silent.
+- Exit `1` = a gate failed, `2` = the lane could not run; both `notify-send`. "Could not
+  run" includes fewer gates executing than were named, zero tests executed, and any
+  `skip:` line surviving `SIGIL_STRICT_GATE=1`.
+- `SIGIL_SOURCE_GATES_REF` / `AEON_SOURCE_GATES_REF` put a branch or an old SHA through
+  the real lane. The timer never sets them.
+- **`~/sonic_hacks/.aeon-sigil-gates` is source-only by construction — never point an
+  artifact-dependent run at it.** Each lane run deletes the generated inputs *and* any
+  built ROM or listing, so a full-suite run sharing that tree loses its ROMs mid-flight
+  and reports ~127 `reference missing: …/s4.bin` failures that read exactly like a
+  golden divergence. Build a separate checkout for the artifact gates.
+- The units are committed at `scripts/systemd/` and installed by copying them to
+  `~/.config/systemd/user/` — a `--user` unit lives outside every repo, so an
+  enabled-but-uncommitted timer is invisible to every session that did not install it.
+- Do **not** touch `aeon-effects-gates.{service,timer}`; that lane is aeon's, and it
+  fires at 04:17 so the two do not contend.
+
+**Adjudicating a warn-tier firing.** A new firing goes into `CORPUS_OPEN_FINDINGS`
+(`crates/sigil-cli/tests/warn_tier_corpus.rs`), **not** into `WARN_ID_BASELINE`. The
+baseline admits an id everywhere and any number of times; the register pins
+`(shape, id, file, symbol)` with a count, and requires an owner, an anchor and a kill
+condition per row. Anchors are symbols and paths, never line numbers — a register entry
+outlives what it points at, so a coordinate in one rots. A row leaves the register in
+either direction: fixed, or ruled deliberate and promoted into the baseline citing the
+ruling. Each row's age prints on every lane run.
+
 ## Worktree and environment quirks
 
 - **Worktrees are agent-isolated but the registry is repo-global.** Every session's

@@ -2350,3 +2350,55 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   The search confirms what the suite happened to surface: exactly one consumer walked without a map, and it is on the define-only path this row predicted — a `--report` reaches `shape_defines` and never reaches the placement read of the same file. Red-first both arms: with absence tolerated again, `a_tree_with_no_game_map_fails_naming_the_file` fails `a shape must not walk without its game config: []`; with every tree refused — including a poison whose message carries the very strings the poison arm greps for — ten control arms fail, among them `an_empty_game_map_file_is_enough_to_walk` and `a_malformed_game_map_is_loud` (absence and malformation keep distinct diagnostics).
 
 - [game-defines close-out, 2026-08-22] **The first game-declared `[defines]` row will owe the polarity audit either a twin row in the other game's map or a named exemption.** `audit_game_declared_polarity` charges a game-declared key at least two distinct values across the shipped shapes — the same charge the built-in gate puts on `MAX_RING_BUFFER` (128 sonic4 / 16 demo). A per-game capability constant declared by ONE game only (the motivating `SCANLINE_CAPS`/`BAND_EXT_N` shape) is single-valued by construction and will trip the audit on the day it lands. That is deliberate — a single-valued row IS a blind arm — but it means adoption is not a one-line map edit: the adopter either declares the value in both `games/*/map.toml` (making the size axis real, which is the point of the mechanism) or adds a `GAME_DECLARED_EXEMPT` row stating why the other arm needs no coverage. The audit rejects a reason-less exemption, so the decision cannot be made silently. — OPEN (kill: the first shipped game-declared row lands with one of the two, and `the_shipped_maps_game_declared_rows_are_polarity_covered`'s empty-residue expectation is updated in the same commit) **Merge-time note:** the `ORACLE_DIR` failure this branch observed under strict gate was a property of the branch's own tree — master fixed the default at `53aa3650`, which the branch predates. A defect seen on a branch many commits behind master is re-checked against `origin/master` before it is written down as a gap; a stale tree reproduces defects master has already retired. The standing `ORACLE_DIR` row above is master's and stays OPEN on its own terms — runnable is not current.
+
+- [source-gate lane, 2026-08-22] **`native::ensure_generated` knows about the sound seams and
+  not about the compression vectors, so a never-built aeon checkout cannot lower the sonic4
+  DEBUG shape.** `ensure_generated` (`sigil-harness/src/native.rs`) emits `engine/sound/generated`
+  and stops there. `engine/debug/compression_selftest.emp` embeds five blobs from
+  `engine/debug/generated` and imports `engine.compression_vectors` from the same directory, all
+  produced by aeon's `tools/gen_compression_vectors.py` (which itself needs the vendored
+  `salvador` built). Both directories are gitignored, so on a fresh checkout the shape fails with
+  ten errors — `no module engine.compression_vectors found under the scan root` plus five
+  `[embed.not-found]`. Today this is invisible because every aeon tree anyone points `AEON_DIR`
+  at has had `./build.sh` run in it; it surfaced the moment a lane used a checkout that had not.
+  The source-gate lane works around it in shell (build salvador, run the generator, having first
+  DELETED both directories — they are gitignored, so `checkout --force` leaves whatever the last
+  run left, and a stale generated file is byte-indistinguishable from a correct one). — OPEN
+  (kill: `ensure_generated` shells the generator the same way it calls the seam emitters, so
+  every consumer of the harness gets a lowerable tree instead of each one re-deriving the
+  prerequisite; the shell workaround in the lane script is then deleted).
+
+- [source-gate lane, 2026-08-22] **Ten port tests gate on `$AEON_DIR/s4.bin` existing while
+  reading no ROM byte.** (Eleven when found; `native_object_bank_budget.rs` is fixed —
+  it now sentinels on `games/sonic4/map.toml`, the file its tests actually read. It was the
+  one the lane tripped over, which is the only reason it was the one that got fixed.)
+  `if !aeon.join("s4.bin").exists() { skip }` is used as a
+  "is there an aeon tree here" sentinel in
+  `error_handler_port.rs` (`vector_labels_resolve_to_emp_ownership`), `keystone_flip_relocation.rs`,
+  `native_offcanonical_{placement,full,rom}.rs`, `demo_native_port.rs`, `boot_data_port.rs`,
+  `soundbankhead_port.rs`, `vectors_port.rs` and `repin_pins.rs`. The tests behind it are
+  source-only or golden-only; the sentinel just picks the most conspicuous file in a built tree.
+  Consequence: against a source-only checkout they skip green without `SIGIL_STRICT_GATE`, which
+  is the "a gate that skips reports nothing and reads as coverage" shape. `act_fixture_drift.rs`
+  already does it right, sentinelling on `engine/structs.emp`. — OPEN (kill: each sentinel moves
+  to a source path the test actually reads; mechanical, one line each).
+
+- [source-gate lane, 2026-08-22] **The open-findings register is hand-maintained per shape, and
+  the shape list is not derived from `native::shipped_shapes()`.** A `CORPUS_OPEN_FINDINGS` row
+  enumerates its shapes literally. A NEW shipped shape therefore does not automatically demand a
+  row — the firing appears in it, no row claims it, and the gate goes red naming the shape, which
+  is the safe direction but makes shape addition a multi-row edit. Not fixed because the safe
+  direction is safe and the alternative (a row meaning "all shapes") would silently absorb a new
+  shape's firings, which is the direction that hides things. — OPEN, low priority (kill: a row
+  may spell `sites: AllShapes(1)` only once the gate can prove the count is genuinely
+  shape-invariant, rather than assuming it).
+
+- [source-gate lane, 2026-08-22] **aeon's `tools/gen_compression_vectors.py` exits 0 on
+  failure.** With the vendored `salvador` packer absent it prints
+  `FAIL: salvador binary missing at …` and returns status 0, so any caller that trusts the
+  exit code proceeds with no vectors written and fails much later, at the far less legible
+  `no module engine.compression_vectors found under the scan root`. The source-gate lane
+  therefore checks the OUTPUT FILE rather than the status. aeon's own `build.sh` is immune
+  by accident — it builds salvador immediately before calling the generator. — OPEN, aeon's
+  (kill: the generator's failure path exits nonzero; the lane's output check then becomes
+  belt-and-braces rather than the only thing standing there).

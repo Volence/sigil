@@ -1,7 +1,8 @@
 # The warn-tier lint set drifted — diagnosed
 
-Status: **DIAGNOSED.** Culprit named and mechanism pinned. Two follow-ups remain, one per
-repo. The hazard is latent, not live.
+Status: **CLOSED for the mechanism and for the firing.** Follow-up 1 (the lane) and
+follow-up 3 (aeon's re-alignment) both landed on 2026-08-22; follow-up 2 (the language
+gap) is open and ledgered. See "Resolution" at the foot.
 
 ## The firing
 
@@ -146,13 +147,14 @@ been caught at landing on 08-21 rather than in a boot baseline the next day.
 
 ## Follow-ups
 
-1. **sigil (mine):** ungate the corpus run from refreeze. Red-first proof required — a
-   source-only aeon change must move it.
+1. **sigil (mine): CLOSED 2026-08-22.** Ungate the corpus run from refreeze. Red-first
+   proof required — a source-only aeon change must move it. Landed as
+   `scripts/nightly_source_gates.sh` + `sigil-source-gates.timer`; see "Resolution".
 2. **sigil (mine), language gap:** a struct that wants even-aligned members can only say so
    by hand-counting bytes into a pad, and the pad goes stale silently when a field is
    inserted above it. An alignment attribute or an even-offset assertion would make the
    class impossible rather than merely catchable. Ledger and design.
-3. **aeon (theirs):** re-align the two bridges and state the invariant as
+3. **aeon (theirs): LANDED.** Re-align the two bridges and state the invariant as
    `ensure(offsetof(Scene, sc_mask_raw) % 2 == 0, "...")`. An `@offset 94` assertion was
    proposed here first and **withdrawn** — it pins a hand-maintained magic number that must
    be updated on every legitimate field insertion, which re-arms the exact failure being
@@ -166,3 +168,69 @@ been caught at landing on 08-21 rather than in a boot baseline the next day.
 Do **not** measure any of this against `aeon/.worktrees/defines-verify`: its ROMs match the
 pins but its source is an ancestor's, and these gates read aeon source — a pass there means
 "aeon satisfied this as of an ancestor" while reading as "aeon satisfies this".
+
+## Resolution (2026-08-22)
+
+### The firing is fixed, in aeon, in the form this note asked for
+
+`layout.odd-field` fires **zero** times on the corpus at aeon master `1ee8f8e6`, measured
+with `SIGIL_WARNINGS=full` against a clean detached checkout of that SHA. aeon landed
+`9a718f74` ("the Scene pad went stale — assert even parity instead of recomputing it"),
+merged at `1a794ace`, and it took the `offsetof(Scene, …) % 2 == 0` form recommended above
+rather than the withdrawn `@offset 94` pin — the pad widened `u8 -> u16` off the compiler's
+own measurement, with the two `ensure`s, not the comment, now holding the authority.
+
+**A cross-session correction worth keeping, because it is this note's own pattern again.**
+The finding was reported as still open on the strength of `parcel/scene-even-align-guard`
+having *zero unique commits and an empty diff against master*, read as "a branch name with
+nothing behind it". Those are the signature of a branch that is **already merged**, and the
+same report's own evidence said so: `git merge-base --is-ancestor cd4c8e23 master` returning
+true means `cd4c8e23` **is in** master. A true fact about the wrong object, with enough
+confidence attached to skip the check — the third instance in two days. The cheap
+discriminator, when a branch looks empty: ask whether it is an ancestor of master before
+concluding nothing is behind it, and measure the lint rather than reasoning about the branch.
+
+### The trigger changed: a standing source-gate lane
+
+`scripts/nightly_source_gates.sh`, fired by `sigil-source-gates.timer` at 05:17 daily
+(an hour behind `aeon-effects-gates.timer`, so the two lanes do not contend). Modelled on
+aeon's nightly: detached checkouts of both repos' master tips, both **outside** their repo
+roots, exit `1` on a gate failure and `2` on a lane that could not run, `notify-send` on
+either, `--selftest-fail` for the notification path.
+
+It runs **33 source-only gates** — everything whose inputs are aeon source plus sigil's own
+compilation of it. It deliberately excludes the ~63 region-diff gates, the ~18 golden-CRC
+gates and `pins_rs_is_current`, all of which read bytes that exist only after `./build.sh`.
+Those already have the right trigger — aeon's byte-identity ritual, which fires exactly when
+bytes move. That is the correct trigger for them and the wrong one for these.
+
+Proven red-first against aeon `b1f8a230` — the exact SHA this note recorded the finding at —
+where the full lane exits 1 with `NEWLY FIRING: ["layout.odd-field"]` and 144 of 145 gates
+still passing. So the ruling's counterfactual is now measured, not asserted: with the lane
+running, the finding is caught the night it lands.
+
+### A register for firings the baseline would have blunted
+
+`CORPUS_OPEN_FINDINGS` in `warn_tier_corpus.rs`. The id baseline answers "may this lint fire
+at all on this shape" and that file's own header admits it "does NOT catch growth WITHIN an
+already-firing class" — so an id admitted there is admitted everywhere, any number of times.
+The register pins `(shape, id, file, symbol)` with a per-shape **count**, and carries a
+required owner, tracking anchor and kill condition per row.
+
+The two rows today are the hand-written closure edges the baseline's own comment names the
+cost of: *"a real accidental bare use in sonic4 now hides behind these two."* They no longer
+hide. Measured red-first, each with the id gate staying **green** through it, which is the
+whole claim:
+
+- a bare `use` in a third file → `a registered lint id fired at 5 site(s) NO open-findings
+  row claims`;
+- the same site firing twice → `COUNT MOVED: … pinned 1, measured 2`. Not theoretical: the
+  diagnostic does report the identical tuple twice, so set semantics would have passed it;
+- a registered site adopting a name list → `RESOLVED: … no longer fires (was 1)`.
+
+`layout.odd-field` is **not** in the register, because it does not fire. A register row is
+for a firing that is real and unadjudicated; recording a finding that has been fixed is the
+same class of stale artefact as the pad that started this.
+
+Every row renders in the lane's ordinary output with its age in days. Green-with-a-named-open-item
+is a different object from a silent green, and silence — not redness — was the failure here.

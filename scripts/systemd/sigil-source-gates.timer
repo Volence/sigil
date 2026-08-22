@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the sigil source-gate lane nightly
+
+[Timer]
+OnCalendar=*-*-* 05:17:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

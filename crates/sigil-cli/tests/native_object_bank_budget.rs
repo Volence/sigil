@@ -32,8 +32,15 @@ fn aeon_dir() -> PathBuf {
 fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
+/// The reference tree is present, decided on a file these tests actually READ.
+///
+/// `map.toml` and not `s4.bin`: neither test opens a ROM — both resolve a layout with
+/// sigil and compare the budget cursor against the map's region cap — so sentinelling on
+/// a built ROM asserts a prerequisite that is not one. It also gets the answer wrong in
+/// the expensive direction on a source-only checkout, where the tree is fully present and
+/// the gate reports it missing.
 fn have_aeon(aeon: &Path) -> bool {
-    if aeon.join("s4.bin").exists() {
+    if aeon.join("games/sonic4/map.toml").exists() {
         return true;
     }
     if strict_gate() {
