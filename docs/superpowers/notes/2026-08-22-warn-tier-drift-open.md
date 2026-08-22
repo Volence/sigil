@@ -51,13 +51,31 @@ pad no longer does what it claims. Timeline, from `git log -S` in the aeon tree:
   (layout.odd-field)". The pad was added for this exact lint, and it worked.
 - `37732afe` 2026-08-18 15:06:11 — the sigil baseline adjudication, 80 seconds earlier.
   Consistent: the lint fired, aeon padded, the baseline froze around the fixed state.
-- `ba335e08` 2026-08-21 22:05:08 — P3 Task 12, "left_column_mask is mandatory", inserts
-  `sc_left_col_mask` **above** the pad. Everything after it shifts; 94/96 becomes 119/121.
+- Between that fix and tip, **17 commits** touched `scene_dsl.emp`
+  (`git log 120180ac..b1f8a230 -- engine/level/scene_dsl.emp`), several of them adding
+  struct fields above the bridges: `022b961f` (SceneDeform gains Own()), `a1d66b51`
+  (capability-shaped band records), `59e29b68` (per-layer vertical depth), `ba335e08`
+  (left_column_mask), `806bed57`. The offsets moved 94 → 119, **+25 bytes**.
 
-So T12 silently re-broke a three-day-old fix, and the byte-identity ritual could not see it
-because T12 was zero-byte. The comment's own author predicted the failure mode — "a warning
-that has been explained away in a baseline is not there to catch it" — and what actually
-hid it was a baseline gate not being *run*.
+**What is established: the pad went stale somewhere in that 17-commit window, and no gate
+could see it.** The comment's own author predicted the failure mode — "a warning that has
+been explained away in a baseline is not there to catch it" — and what actually hid it was
+a baseline gate not being *run*.
+
+### RETRACTED: "T12 re-broke it"
+
+An earlier revision named `ba335e08` (P3 Task 12) as the commit that broke the alignment.
+**That attribution is not established and is withdrawn.** It came from
+`git log -S 'sc_left_col_mask'`, which answers *"which commit introduced this field"* — not
+*"which commit broke parity"*. Those are different objects. Evenness is a **parity**
+property, so each insertion flips or preserves it according to its width; across 17 commits
+the offsets may have gone odd → even → odd more than once. Naming the breaking commit
+requires walking parity across all 17, which nobody has done, and the fix does not depend
+on it.
+
+Retracted rather than deleted, so the retraction is as citable as the claim was: a clean
+causal sentence is exactly what gets quoted forward and never re-derived. (Caught by the
+aeon overseer, in the same exchange where this note named the pattern it is an instance of.)
 
 **Severity: latent, not live.** `Scene` is comptime-only and emits nothing, so no shipped
 ROM performs an odd-address word access; all four CRCs held byte-identical across T11-T16,
@@ -98,8 +116,16 @@ directory" and "last commit to this declaration" are different questions;
 SHA-class rule.
 
 Also worth recording: the prime candidate reasoned from construct-adjacency (`3e4e5cfc`,
-capability-selected record shapes) was **wrong**. It was T12. Adjacency of subject matter is
-not evidence.
+capability-selected record shapes) was **wrong**, and so was its replacement (see the
+retraction above). Adjacency of subject matter is not evidence, and neither is "the commit
+that introduced the field named in the diagnostic".
+
+**The pattern all four of today's instances share:** a lookup returns something true about
+the wrong object, and the confidence attached to the answer suppresses the check that would
+catch it. Three were the sigil overseer's (the `b0b85f47..` window, the region-vs-struct
+message form, the T12 attribution) and one the aeon overseer's (dating the freeze from a
+directory-touch). Two of them occurred *after* the pattern had been named in writing, which
+is the argument for making the check mechanical rather than adding another bar to remember.
 
 ## Ruling — the corpus run stops being gated on refreeze
 
@@ -126,8 +152,16 @@ been caught at landing on 08-21 rather than in a boot baseline the next day.
    by hand-counting bytes into a pad, and the pad goes stale silently when a field is
    inserted above it. An alignment attribute or an even-offset assertion would make the
    class impossible rather than merely catchable. Ledger and design.
-3. **aeon (theirs):** re-align the two bridges, preferably via an `@offset` assertion rather
-   than a recomputed pad, so the next insertion fails loudly instead of silently.
+3. **aeon (theirs):** re-align the two bridges and state the invariant as
+   `ensure(offsetof(Scene, sc_mask_raw) % 2 == 0, "...")`. An `@offset 94` assertion was
+   proposed here first and **withdrawn** — it pins a hand-maintained magic number that must
+   be updated on every legitimate field insertion, which re-arms the exact failure being
+   fixed. The `offsetof` form states the property, survives legitimate insertions, and
+   fires only on real parity breakage. House pattern already shipped at
+   `engine/system/replay.emp:96-102` (`% 2` and `% 4` span checks whose messages name the
+   instruction that would fault, not the offset that moved); ~15 more at
+   `sound_constants.emp:673-756`, `parallax.emp:254,309`. Supported end to end:
+   `parser.rs:3884` (`Tok::Percent` → `BinOp::Mod`), folded at `eval/expr.rs:812,836`.
 
 Do **not** measure any of this against `aeon/.worktrees/defines-verify`: its ROMs match the
 pins but its source is an ancestor's, and these gates read aeon source — a pass there means
