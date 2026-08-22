@@ -20,15 +20,20 @@ capture tap on `encode`'s RESULT).
    Independence, stated precisely: the ALIASING structure (which bit patterns
    belong to which family, the dispatch arms, the extended/decimal/exchange
    neighbours) is independently hand-written, so an encoder arm emitting a
-   neighbour word cannot survive. EA LEGALITY, by contrast, is validated
-   against the SAME `EaSet` constants the encoder uses (made `pub(crate)` for
-   this) — one-sided sharing: a use-site error (a family arm passing the wrong
-   row on either side) is caught, but a corruption of the shared constant
-   itself changes both sides together and round-trips green for the trap-word
-   classes. That residual is pinned by the hand-written negative oracle
-   (`ea_class_rejects.rs`) and bounded by the exhaustive opcode-space sweep
-   (`m68k_opcode_sweep.rs`), which forces decoder legality == encoder legality
-   word-by-word.
+   neighbour word cannot survive. EA LEGALITY, by contrast, is SHARED with the
+   encoder on two surfaces, both made `pub(crate)` for this: the `EaSet`
+   constants, and `ea_class` itself (`m68k.rs:1451`, called by the decoder at
+   `m68k_decode.rs:140`). A corruption of either changes both sides together
+   and round-trips green for the trap-word classes.
+
+   The use-site direction is likewise not symmetric. A DECODER arm passing a
+   looser row is caught by the opcode sweep — it names the word the encoder
+   cannot emit (MUTANT F). An ENCODER arm passing a looser row is caught only
+   if the widened form is actually emitted by a shape (the stream pass) or is
+   named by a hand-written form (`ea_class_rejects.rs`, the 114-form asl
+   golden corpus); nothing catches it categorically. Those two hand-written
+   surfaces are the whole pin on the shared-constant residual — see item 6 and
+   MUTANT I.
 2. **`roundtrip_check(inst, bytes)` / `assert_roundtrip(inst)`** (public in
    `m68k_decode`; test-only in usage). Wired into the existing suites:
    - `tests/encode_m68k.rs` — `check()` round-trips every golden-matched form;
@@ -53,10 +58,14 @@ capture tap on `encode`'s RESULT).
    must round-trip. Capture-at-encode was chosen over disassembling the ROM
    image per the spec's recommendation (raw-image disassembly needs code/data
    separation — a tar pit); the tap sees the exact instruction stream with
-   zero heuristics. The stream is a superset of the final ROM's instructions
-   (relaxation-ladder rungs, fixup placeholders, and comptime trial encodes
-   are captured too — all must round-trip regardless, so the superset only
-   widens coverage).
+   zero heuristics. The stream is **neither a superset nor a subset** of the
+   final ROM's instructions. It ADDS trial encodes no ROM byte keeps —
+   relaxation-ladder rungs the ladder discards, fixup placeholders, comptime
+   trial encodes — all of which must round-trip regardless, so those only
+   widen coverage. It OMITS the words the linker lowers or the backend builds
+   by hand (`lower_jmp_jsr_abs`, the relax-ladder rung bytes assembled
+   directly in `sigil-backend-m68k`), which never pass through `encode` and so
+   never reach the tap; that gap is the Banked item below.
 5. **`family_name` / `ALL_FAMILY_NAMES`** in `m68k.rs` — family labels, plus
    `Cond::from_cc`. Coverage gates derive "all families" from the constant,
    never from a measured run. Locking is split: `family_name`'s no-`_` match
@@ -113,7 +122,15 @@ One slice-delimited leniency, documented at `decode_exact`: a 2-byte slice
 linker patches `PcRel8`, and a 2-byte slice cannot hold the word form. In a
 real stream `6x00` still reads as the word form (4 bytes).
 
-## Coverage numbers (2026-08-19 run, all seven shapes, ~4.4s)
+## Coverage numbers — PRINTED EACH RUN, NOT PINNED
+
+These are one observation (2026-08-19 run, all seven shapes, ~4.4s), recorded
+for scale only. They track the aeon engine and go stale by the week — the same
+seven shapes against aeon `1a794ace` (2026-08-22) total 86,401. No test asserts
+any figure here; the gates assert `> 0` per shape plus the structural
+directions below.
+Read a moved number as engine drift, not as a regression, and do not
+re-baseline this table on every touch.
 
 | shape | instructions round-tripped |
 |---|---|
@@ -288,6 +305,15 @@ both it panics `SIGIL_STRICT_GATE set but reference missing:
   corpus round-trip gate, the wired golden/spelling suites, the family-map test.
 - `AEON_DIR=… cargo test -p sigil-harness --test m68k_roundtrip_stream` — the
   full-stream pass (part of the workspace suite CI runs).
+- **Set `AEON_DIR` explicitly; a 0.00s green is not coverage.** `aeon_dir()`
+  (`test_support.rs:328-332`) defaults to `/home/volence/sonic_hacks/aeon` —
+  the owner's live main checkout, which carries uncommitted edits — so a plain
+  workspace run measures a dirty tree rather than a known SHA. In CI, where
+  that path does not exist and `AEON_DIR` is unset, `reference_tree` skips and
+  the headline gate reports green in 0.00s having assembled nothing. Point
+  `AEON_DIR` at a clean worktree of a committed SHA and pair it with
+  `SIGIL_STRICT_GATE=1`, which turns the skip into a failure naming the
+  missing path.
 
 ## Banked / deferred
 
