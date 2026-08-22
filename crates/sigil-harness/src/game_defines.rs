@@ -19,6 +19,12 @@
 //! either way would move ROM bytes with no diff at the losing source. Moving a
 //! value from a built-in row into a game's `[defines]` therefore has to delete
 //! the built-in row in the same change.
+//!
+//! Coverage: a game-declared row is outside the built-in polarity gate's walk
+//! (`tests/shipped_shapes.rs` reads `profile.emp_defines`), so
+//! [`audit_game_declared_polarity`] holds the game rows to the same property —
+//! a toggle walked in both polarities, a value walked at two sizes, or an
+//! exemption naming the reason.
 
 /// Parse the `[defines]` table of a `games/<g>/map.toml` source into define rows.
 ///
@@ -108,6 +114,99 @@ pub fn merge_builtin_and_game(
     Ok(out)
 }
 
+/// Adjudicate the GAME-DECLARED rows of the shipped shapes' merged define envs
+/// against the same polarity property the built-in rows are held to.
+///
+/// `tests/shipped_shapes.rs`'s both-polarities gate reads `profile.emp_defines`
+/// — the BUILT-IN rows only — so a game-declared row is outside that walk. This
+/// is the other half: it walks [`crate::native::shape_defines`] output, subtracts
+/// the built-in keys, and charges the remainder the property that makes a corpus
+/// walk mean anything — that no arm is unreachable by every shape.
+///
+/// The charge mirrors the built-in gate exactly. A key whose observed values are
+/// BOOLEAN-shaped is a toggle and must take both `0` and `1`; any other key is a
+/// value and must take at least two distinct values. A key that can meet neither
+/// is not rejected — it must be NAMED in `exempt` with a reason, so a blind arm
+/// is a recorded decision rather than a silent absence. An exemption for a key no
+/// shape declares is itself an error, so the list cannot outlive its subject.
+///
+/// `shapes` is `(label, merged define env)` per shipped shape; `builtin_keys` is
+/// the union of those shapes' built-in keys. Returns the game-declared keys it
+/// adjudicated, so a caller can assert the walk saw what it expected to.
+pub fn audit_game_declared_polarity(
+    shapes: &[(&str, Vec<(String, i128)>)],
+    builtin_keys: &std::collections::BTreeSet<String>,
+    exempt: &[(&str, &str)],
+) -> Result<std::collections::BTreeSet<String>, String> {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let mut seen: BTreeMap<String, BTreeMap<i128, Vec<String>>> = BTreeMap::new();
+    for (label, defines) in shapes {
+        for (key, val) in defines {
+            if builtin_keys.contains(key) {
+                continue;
+            }
+            seen.entry(key.clone())
+                .or_default()
+                .entry(*val)
+                .or_default()
+                .push((*label).to_string());
+        }
+    }
+
+    for (key, reason) in exempt {
+        if reason.trim().is_empty() {
+            return Err(format!(
+                "the polarity exemption for game-declared define `{key}` carries no \
+                 reason — an exemption records WHY a blind arm is acceptable, so an \
+                 empty one is the silent absence it exists to replace"
+            ));
+        }
+        if !seen.contains_key(*key) {
+            return Err(format!(
+                "the polarity exemption for game-declared define `{key}` is STALE: no \
+                 shipped shape declares that key. Delete the exemption row"
+            ));
+        }
+    }
+
+    for (key, by_value) in &seen {
+        if exempt.iter().any(|(k, _)| k == key) {
+            continue;
+        }
+        let values: Vec<i128> = by_value.keys().copied().collect();
+        let boolean_shaped = values.iter().all(|v| *v == 0 || *v == 1);
+        let covered = if boolean_shaped {
+            values.contains(&0) && values.contains(&1)
+        } else {
+            values.len() >= 2
+        };
+        if covered {
+            continue;
+        }
+        let where_declared: Vec<String> = by_value
+            .iter()
+            .map(|(v, labels)| format!("{v} in [{}]", labels.join(", ")))
+            .collect();
+        let kind = if boolean_shaped {
+            "is boolean-shaped, so it is a TOGGLE and must take both 0 and 1"
+        } else {
+            "must take at least two distinct values"
+        };
+        return Err(format!(
+            "game-declared define `{key}` takes {values:?} across the shipped shapes \
+             ({}) — it {kind}. Pinned to one value it carries a comptime arm no shape \
+             walk reaches, and the built-in polarity gate cannot see it because that \
+             gate reads `profile.emp_defines`. Either declare the other value in a \
+             second game's `[defines]`, or name `{key}` in the polarity exemption list \
+             with the reason its other arm needs no coverage",
+            where_declared.join("; ")
+        ));
+    }
+
+    Ok(seen.keys().cloned().collect::<BTreeSet<String>>())
+}
+
 /// A define key: `[A-Za-z_][A-Za-z0-9_]*` — the shape the comptime define env
 /// and the AS `-D` seam both address.
 fn is_define_ident(s: &str) -> bool {
@@ -159,6 +258,7 @@ fn duplicate_define_key_message(src: &str, origin: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     /// A realistic map.toml body: regions/placement keys plus a `[defines]` table.
     /// The non-defines keys must be invisible to this reader.
@@ -284,5 +384,137 @@ at = 0x0
         assert!(err.contains("games/demo/map.toml"), "error must name the game source: {err}");
         assert!(err.contains("native.rs"), "error must name the built-in source: {err}");
         assert!(err.contains("= 16") && err.contains("= 128"), "error names both values: {err}");
+    }
+
+    // ── audit_game_declared_polarity ──────────────────────────────────────────
+    //
+    // Both directions are asserted for every rule: a reject-everything audit
+    // would satisfy the poison arms and be caught only by the control arms, and
+    // an audit that saw nothing would satisfy the control arms and be caught only
+    // by the poison arms.
+
+    fn builtins(keys: &[&str]) -> BTreeSet<String> {
+        keys.iter().map(|k| k.to_string()).collect()
+    }
+
+    fn shape(label: &str, rows: &[(&str, i128)]) -> (String, Vec<(String, i128)>) {
+        (label.to_string(), rows.iter().map(|(k, v)| (k.to_string(), *v)).collect())
+    }
+
+    fn audit(
+        shapes: &[(String, Vec<(String, i128)>)],
+        builtin: &BTreeSet<String>,
+        exempt: &[(&str, &str)],
+    ) -> Result<BTreeSet<String>, String> {
+        let borrowed: Vec<(&str, Vec<(String, i128)>)> =
+            shapes.iter().map(|(l, d)| (l.as_str(), d.clone())).collect();
+        audit_game_declared_polarity(&borrowed, builtin, exempt)
+    }
+
+    #[test]
+    fn a_game_declared_toggle_pinned_to_one_polarity_is_named() {
+        // POISON: the exact latent — a game map declares a 0/1 row, every shape
+        // that reads that map sees the same value, and the other arm is blind.
+        let shapes = [
+            shape("sonic4 plain", &[("DEBUG", 0), ("FANCY_ARM", 1)]),
+            shape("demo plain", &[("DEBUG", 0)]),
+        ];
+        let err = audit(&shapes, &builtins(&["DEBUG"]), &[]).unwrap_err();
+        assert!(err.contains("FANCY_ARM"), "error must name the key: {err}");
+        assert!(err.contains("TOGGLE"), "error must say it is a toggle: {err}");
+        assert!(err.contains("sonic4 plain"), "error must name where it is declared: {err}");
+        assert!(!err.contains("DEBUG"), "a BUILT-IN key is the other gate's charge: {err}");
+    }
+
+    #[test]
+    fn a_game_declared_toggle_walked_in_both_polarities_passes() {
+        // CONTROL for the toggle rule: the same key at both values is exactly
+        // what the polarity net wants, so it must NOT be charged. This is the arm
+        // a reject-everything audit fails.
+        let shapes = [
+            shape("sonic4 plain", &[("DEBUG", 0), ("FANCY_ARM", 1)]),
+            shape("demo plain", &[("DEBUG", 0), ("FANCY_ARM", 0)]),
+        ];
+        let keys = audit(&shapes, &builtins(&["DEBUG"]), &[]).unwrap();
+        assert_eq!(keys, builtins(&["FANCY_ARM"]));
+    }
+
+    #[test]
+    fn a_game_declared_value_pinned_to_one_size_is_named() {
+        // POISON for the value rule: a non-boolean row is still a comparison a
+        // comptime `if` can branch on, so one size across the corpus is one arm.
+        let shapes = [
+            shape("sonic4 plain", &[("SCANLINE_CAPS", 20)]),
+            shape("demo plain", &[("SCANLINE_CAPS", 20)]),
+        ];
+        let err = audit(&shapes, &BTreeSet::new(), &[]).unwrap_err();
+        assert!(err.contains("SCANLINE_CAPS"), "error must name the key: {err}");
+        assert!(
+            err.contains("at least two distinct values"),
+            "error must say what the value rule is: {err}"
+        );
+    }
+
+    #[test]
+    fn a_game_declared_value_walked_at_two_sizes_passes() {
+        // CONTROL for the value rule — the MAX_RING_BUFFER class the mechanism
+        // exists for, declared per game.
+        let shapes = [
+            shape("sonic4 plain", &[("SCANLINE_CAPS", 20)]),
+            shape("demo plain", &[("SCANLINE_CAPS", 24)]),
+        ];
+        let keys = audit(&shapes, &BTreeSet::new(), &[]).unwrap();
+        assert_eq!(keys, builtins(&["SCANLINE_CAPS"]));
+    }
+
+    #[test]
+    fn no_game_declared_rows_is_an_empty_walk_not_an_error() {
+        // CONTROL for the whole audit: today's state — every shipped map declares
+        // nothing, so the adjudicated key set is empty and nothing is charged.
+        // An audit that charged here would fire on the shipped corpus.
+        let shapes = [
+            shape("sonic4 plain", &[("DEBUG", 1)]),
+            shape("demo plain", &[("DEBUG", 0)]),
+        ];
+        let keys = audit(&shapes, &builtins(&["DEBUG"]), &[]).unwrap();
+        assert!(keys.is_empty(), "{keys:?}");
+    }
+
+    #[test]
+    fn an_exempted_key_is_named_rather_than_absent() {
+        // The escape hatch: a blind arm may stand, but only as a row someone
+        // wrote a reason on.
+        let shapes = [
+            shape("sonic4 plain", &[("FANCY_ARM", 1)]),
+            shape("demo plain", &[]),
+        ];
+        let keys = audit(
+            &shapes,
+            &BTreeSet::new(),
+            &[("FANCY_ARM", "sonic4-only capability; the 0 arm is unreachable by design")],
+        )
+        .unwrap();
+        assert_eq!(keys, builtins(&["FANCY_ARM"]), "an exempt key is still REPORTED: {keys:?}");
+    }
+
+    #[test]
+    fn an_exemption_with_no_reason_is_rejected() {
+        let shapes = [shape("sonic4 plain", &[("FANCY_ARM", 1)])];
+        let err = audit(&shapes, &BTreeSet::new(), &[("FANCY_ARM", "   ")]).unwrap_err();
+        assert!(err.contains("carries no reason"), "{err}");
+    }
+
+    #[test]
+    fn an_exemption_for_a_key_no_shape_declares_is_stale_and_rejected() {
+        // The list cannot outlive its subject: a dropped game row must not leave
+        // a standing waiver behind for the next key of that name.
+        let shapes = [shape("sonic4 plain", &[("SCANLINE_CAPS", 20)])];
+        let err = audit(
+            &shapes,
+            &BTreeSet::new(),
+            &[("SCANLINE_CAPS", "plural"), ("GONE", "was exempt once")],
+        )
+        .unwrap_err();
+        assert!(err.contains("GONE") && err.contains("STALE"), "{err}");
     }
 }

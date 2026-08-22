@@ -396,6 +396,12 @@ fn the_build_binary_prints_the_tally_and_off_silences_it() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(tmp.path().join("engine")).unwrap();
     std::fs::write(tmp.path().join("engine/ram.emp"), "module engine.ram\n").unwrap();
+    // A synthetic tree still owes the game config `shape_defines` reads: a
+    // missing `games/<g>/map.toml` is a MISSING config and fails loud, so this
+    // fixture supplies an empty one — no `[defines]` table, hence no game rows,
+    // which is the state every shipped map is in.
+    std::fs::create_dir_all(tmp.path().join("games/sonic4")).unwrap();
+    std::fs::write(tmp.path().join("games/sonic4/map.toml"), "").unwrap();
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_sigil"));
     cmd.args(["build", "--aeon", tmp.path().to_str().unwrap(), "--native", "--report", "ram"]);
     let warned = String::from_utf8_lossy(&cmd.output().expect("run").stderr).into_owned();

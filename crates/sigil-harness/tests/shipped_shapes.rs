@@ -53,6 +53,14 @@ fn the_shipped_shape_set_is_the_seven_the_byte_bar_builds() {
 /// happens to keep. A toggle pinned to one value across all seven shapes has an arm
 /// no shape walk can reach, and no corpus gate can see into it — so the day a profile
 /// edit collapses one, this fails and names it instead of leaving a silent blind arm.
+///
+/// SCOPE: `profile.emp_defines` is the BUILT-IN rows. A shape's full comptime `-D`
+/// set is `native::shape_defines` — the built-ins merged with the game's own
+/// `games/<g>/map.toml [defines]` rows — and the GAME-DECLARED half is held to the
+/// same property by `game_defines::audit_game_declared_polarity`, walked over both
+/// synthetic maps and the real tree in `tests/game_config_defines.rs`. This gate
+/// stays reference-free (profile literals, no tree) and that gate reads the maps;
+/// between them no row of either origin is unwatched.
 #[test]
 fn every_comptime_toggle_is_walked_in_both_polarities() {
     let shapes = native::shipped_shapes();

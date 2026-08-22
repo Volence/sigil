@@ -1136,16 +1136,32 @@ pub fn shipped_shapes() -> Vec<(&'static str, GameProfile)> {
 ///
 /// A game row whose key matches a built-in row is a loud error in both
 /// directions (neither source silently wins); a duplicated key inside the table
-/// is a loud error naming both rows. A tree with NO `games/<g>/map.toml`
-/// contributes no game rows — the port-test fixtures build synthetic trees with
-/// region-only or absent maps, and a shape with no map declares no game defines.
-/// Any other read failure is loud.
+/// is a loud error naming both rows.
+///
+/// An ABSENT `games/<g>/map.toml` is an ERROR, naming the file. The map is where
+/// a game homes its define rows, so its absence is a missing config rather than
+/// an empty one — tolerating it would return a built-ins-only env and let the
+/// shape walk define-complete but game-row-free, with the eventual symptom
+/// (`unknown name X` at lower time, or an un-gated arm in a corpus walk) pointing
+/// at the `.emp` consumer instead of at the missing file. There is no waiver: a
+/// synthetic fixture tree supplies the file, and a map that EXISTS with no
+/// `[defines]` table contributes no game rows — the byte-neutral state every
+/// shipped map is in today. Any other read failure is loud.
 pub fn shape_defines(profile: &GameProfile, aeon: &Path) -> Result<Vec<(String, i128)>, String> {
     let map_path = profile.map_path(aeon);
     let origin = map_path.display().to_string();
     let game_rows = match std::fs::read_to_string(&map_path) {
         Ok(src) => crate::game_defines::parse_game_defines(&src, &origin)?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(format!(
+                "shape `{}`: no game config at {origin} — a game homes its `[defines]` \
+                 rows there, so a missing or renamed map is a MISSING config, not an \
+                 empty one, and no shape may walk with the built-in rows alone. A \
+                 synthetic fixture tree supplies the file; a map with no `[defines]` \
+                 table declares no game rows, which is what every shipped map does today",
+                profile.name
+            ));
+        }
         Err(e) => return Err(format!("read {origin}: {e}")),
     };
     crate::game_defines::merge_builtin_and_game(&profile.emp_defines, game_rows, &origin)
