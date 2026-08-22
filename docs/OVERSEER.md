@@ -44,8 +44,8 @@ Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — currently **3777 passed / 0 failed / 4 ignored**
-  under `SIGIL_STRICT_GATE=1` against a clean aeon tree (master `a02d26b5`,
+  `AEON_DIR` set to the aeon tree — currently **3779 passed / 0 failed / 4 ignored**
+  under `SIGIL_STRICT_GATE=1` against a clean aeon tree (master `34d887c4`,
   2026-08-22), with **zero `skip:` lines** in the run — check that, not just the
   totals: a reference gate that skips reports nothing and reads as coverage. Never plain
   `cargo test`: without `--release` some gates are impractically slow, without
@@ -111,7 +111,7 @@ The standing sigil-native arc is the **`.emp` language work (Spec 2)** — specs
 `empyrean/docs/SIGIL_*.md`. The whole sound stack is sigil-native, the language round
 + §17 optimization arc + conversion tail are done, and the map drives the build.
 
-**Current state (2026-08-22, master `c4c3acbf`).** Landed today: **const-arity** — a
+**Current state (2026-08-22, master `34d887c4`).** Landed today: **const-arity** — a
 typed comptime `const` literal is now array-arity checked at elaboration (the length
 check lived only in the byte-emission path, which a `const` never reaches, so a
 wrong-shaped constant compiled clean); and the **Oracle listing gate's `ORACLE_DIR`
@@ -146,10 +146,15 @@ share**; `TST` was exactly that, live.
    odd-field finding: today a struct wanting even-aligned members can only say so by
    hand-counting bytes into a pad, and the pad goes stale silently.
 
-**In flight:** `feat/arity-cli-fixture` — a CLI-level regression test for const arity,
-committing the poison and its control beside the check they exercise. It exists because
-the enforcement was covered only at the frontend-unit level while aeon invokes the
-binary, which is how a three-day-stale assembler went unnoticed.
+And **`feat/arity-cli-fixture`** — a CLI-level regression test for const arity, driving
+the built binary via `CARGO_BIN_EXE_sigil` over a committed poison/control pair, taking
+no `AEON_DIR` at all. It exists because the enforcement was covered only at the
+frontend-unit level while aeon invokes the **binary** — which is how a three-day-stale
+shared assembler went unnoticed. Red-first on both arms: the poison arm against the
+enforcement reverted, the control arm against the check made unconditional, because a
+reject-everything compiler satisfies the poison arm and is caught only by the control.
+
+**Nothing is in flight; no agents are running.**
 
 For anything else read newest-first: the dated notes in `docs/superpowers/notes/`
 (start with `2026-08-22-warn-tier-drift-open.md`), then
