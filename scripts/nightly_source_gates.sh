@@ -166,6 +166,26 @@ fi
 [[ -f "$AEON_GATES/engine/debug/generated/compression_vectors.emp" ]] \
     || { note "COULD NOT RUN: gen_compression_vectors.py produced nothing at $AT"; exit 2; }
 
+# THE LANE AUDITS ITS OWN LIST. SOURCE_GATES is hand-maintained, and a hand-maintained
+# list of what to check is the same object as the baseline nobody re-read — a new
+# source-only gate would simply never join the lane, silently. So: every test file that
+# reads the aeon tree must either BE in SOURCE_GATES or DERIVABLY belong to the artifact
+# lane, and "derivably" means it names a built ROM, a listing or the goldens in its own
+# text. Anything else is unclassified and the lane refuses to run rather than quietly
+# under-covering. Zero unclassified today.
+unclassified=()
+while IFS= read -r f; do
+    n=$(basename "$f" .rs)
+    printf '%s\n' "${SOURCE_GATES[@]}" | grep -qx "$n" && continue
+    grep -qE 's4\.bin|s4\.debug\.bin|demo\.bin|demo\.debug\.bin|\.lst|golden' "$f" && continue
+    unclassified+=("$n")
+done < <(grep -rlE 'AEON_DIR|aeon_dir|reference_tree|--aeon' "$SIGIL_GATES"/crates/*/tests/*.rs)
+if (( ${#unclassified[@]} )); then
+    note "COULD NOT RUN: ${#unclassified[@]} aeon-reading gate(s) are neither in SOURCE_GATES \
+nor artifact-dependent — classify each at $AT: ${unclassified[*]}"
+    exit 2
+fi
+
 export AEON_DIR="$AEON_GATES"
 # Strict: a reference path this lane cannot find HARD-FAILS instead of skipping
 # green. A gate that skips reports nothing and reads as coverage.
