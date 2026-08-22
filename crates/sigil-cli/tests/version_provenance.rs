@@ -9,8 +9,20 @@
 //! HEAD-equality one — it is the assertion that goes red if the rerun triggers
 //! in `build.rs` ever stop firing.
 //!
-//! Nothing here needs `AEON_DIR` or an aeon tree; it drives the built binary
-//! and asks git about the checkout the test itself was compiled from.
+//! This file reads no aeon input of any kind — no environment pointer to an
+//! engine tree, no reference tree, no built ROM, no listing, no golden. It
+//! drives the built binary and asks git about the checkout the test itself was
+//! compiled from, and that is its whole input set.
+//!
+//! That is stated in this negative form deliberately. `scripts/nightly_source_gates.sh`
+//! classifies every file under `crates/*/tests/` by grepping for the names of
+//! those aeon inputs, and refuses to run the whole lane if a match is neither in
+//! its `SOURCE_GATES` list nor derivably artifact-dependent. The detector cannot
+//! read English, so a file that names an aeon input only to disclaim it is
+//! indistinguishable from one that uses it — and the cost is not a false
+//! positive on this file, it is the nightly backstop exiting "COULD NOT RUN".
+//! Prose in `crates/*/tests/` should therefore describe aeon inputs by
+//! description rather than by identifier.
 //!
 //! ## Residual gap, named rather than papered over
 //!
@@ -115,14 +127,14 @@ fn version_reports_the_head_of_the_tree_it_was_built_from() {
 /// missed it.
 #[test]
 fn version_reports_the_branch_this_tree_is_on() {
-    let branch = git(&["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_else(|why| {
+    let expected = git(&["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_else(|why| {
         panic!("cannot verify the binary's branch against this tree: {why}")
     });
 
     let stdout = version_stdout("--version");
     assert_eq!(
         field(&stdout, "branch"),
-        branch,
+        expected,
         "reported branch disagrees with this checkout\nfull banner:\n{stdout}"
     );
 }
