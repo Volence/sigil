@@ -92,6 +92,11 @@ clock.
   `skip:` line surviving `SIGIL_STRICT_GATE=1`.
 - `SIGIL_SOURCE_GATES_REF` / `AEON_SOURCE_GATES_REF` put a branch or an old SHA through
   the real lane. The timer never sets them.
+- **`~/sonic_hacks/.aeon-sigil-gates` is source-only by construction — never point an
+  artifact-dependent run at it.** Each lane run deletes the generated inputs *and* any
+  built ROM or listing, so a full-suite run sharing that tree loses its ROMs mid-flight
+  and reports ~127 `reference missing: …/s4.bin` failures that read exactly like a
+  golden divergence. Build a separate checkout for the artifact gates.
 - The units are committed at `scripts/systemd/` and installed by copying them to
   `~/.config/systemd/user/` — a `--user` unit lives outside every repo, so an
   enabled-but-uncommitted timer is invisible to every session that did not install it.

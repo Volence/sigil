@@ -152,6 +152,11 @@ rm -rf "$AEON_GATES/engine/sound/generated" "$AEON_GATES/engine/debug/generated"
 # rather than asserted: a leftover s4.bin from a hand-run build is byte-identical in
 # appearance to a current one, and several port tests treat its mere PRESENCE as
 # "there is an aeon tree here".
+#
+# CONSEQUENCE, and it bites: $AEON_GATES is SOURCE-ONLY BY CONSTRUCTION and must never
+# be pointed at by an artifact-dependent run. This scrub will delete that run's ROMs
+# out from under it mid-suite, and the failures read as 127 golden/region mismatches
+# rather than as a race. Build a separate checkout for artifact gates.
 rm -f "$AEON_GATES"/*.bin "$AEON_GATES"/*.lst "$AEON_GATES"/*.p "$AEON_GATES"/*.h
 
 if [[ ! -x "$AEON_GATES/tools/bin/salvador" ]]; then
