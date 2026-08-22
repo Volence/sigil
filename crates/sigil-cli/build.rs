@@ -201,7 +201,10 @@ fn emit_rerun_triggers(git_dir: &Path, common_dir: &Path) -> String {
 /// Classify the working tree. `--no-optional-locks` keeps a build from taking
 /// the index lock out from under a concurrent git command.
 fn tree_status(manifest_dir: &Path) -> (String, String) {
-    let out = match git(
+    // `git_allowing_empty`, not `git`: a clean tree is exactly the case where
+    // porcelain output is empty, and reading that as a failed probe would
+    // report the healthiest possible state as unknown.
+    let out = match git_allowing_empty(
         manifest_dir,
         &["--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=normal"],
     ) {
@@ -229,9 +232,22 @@ fn tree_status(manifest_dir: &Path) -> (String, String) {
     }
 }
 
-/// Run git in `dir`, returning trimmed stdout. A non-zero exit, unreadable
-/// output, or a missing git binary all become a reason string.
+/// Run git in `dir` for a query whose answer is a value. Empty output means the
+/// probe did not answer, and an empty revision baked into the banner is the
+/// blank-reads-as-fine failure this whole feature exists to avoid, so it is an
+/// error here rather than a value.
 fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
+    let text = git_allowing_empty(dir, args)?;
+    if text.is_empty() {
+        return Err(format!("git {} produced no output", args.join(" ")));
+    }
+    Ok(text)
+}
+
+/// Run git in `dir` for a query whose answer may legitimately be empty. A
+/// non-zero exit, non-UTF-8 output, or a missing git binary all become a reason
+/// string; emptiness does not.
+fn git_allowing_empty(dir: &Path, args: &[&str]) -> Result<String, String> {
     let out = Command::new("git")
         .args(args)
         .current_dir(dir)
@@ -243,9 +259,5 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
         return Err(format!("git {} failed: {first}", args.join(" ")));
     }
     let text = String::from_utf8(out.stdout).map_err(|_| "git output is not UTF-8".to_string())?;
-    let text = text.trim().to_string();
-    if text.is_empty() {
-        return Err(format!("git {} produced no output", args.join(" ")));
-    }
-    Ok(text)
+    Ok(text.trim().to_string())
 }

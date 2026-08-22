@@ -235,6 +235,44 @@ fn the_revision_tag_agrees_with_the_reported_tree_state() {
     }
 }
 
+/// A clean tree is exactly the case where `git status --porcelain` prints
+/// nothing, so a capture that reads empty output as a failed probe reports the
+/// healthiest possible state as `unknown`. That is the inverse of the rule this
+/// feature is built on: loud-on-unmeasurable is a duty owed to states that
+/// genuinely cannot be measured, and turning a measured "clean" into "unknown"
+/// spends the reader's attention on a non-problem until they stop reading it.
+#[test]
+fn an_empty_porcelain_reads_as_clean_not_as_unknown() {
+    let stdout = version_stdout("--version");
+    let tree = field(&stdout, "tree");
+
+    assert!(
+        !tree.contains("produced no output"),
+        "the tree probe treated empty porcelain output as a failure; empty output IS the \
+         clean answer\ntree: {tree}\n{stdout}"
+    );
+
+    // A revision proves git answered at capture time, so a `status` that could
+    // not answer in the same run is not a plausible environment difference.
+    if field(&stdout, "revision") == "unknown" {
+        return;
+    }
+    let porcelain = git(&[
+        "--no-optional-locks",
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=normal",
+    ])
+    .unwrap_or_else(|why| panic!("cannot read this tree's status: {why}"));
+    if porcelain.is_empty() {
+        assert!(
+            !tree.starts_with("unknown"),
+            "this checkout is clean and git answered for the revision, so the tree state had \
+             no reason to be unknown\ntree: {tree}\n{stdout}"
+        );
+    }
+}
+
 /// The banner must disclose which of its claims cargo re-captures and which it
 /// cannot. A witness that admits a limit is a witness; one that silently claims
 /// freshness it cannot back is the defect. Asserting the disclosure keeps it
