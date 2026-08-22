@@ -95,6 +95,136 @@ const WARN_ID_BASELINE: &[(&str, &[&str])] = &[
     ("lean", &["import.no-names"]),
 ];
 
+/// One unadjudicated warn-tier firing, pinned SITE-for-SITE.
+///
+/// WHY THIS EXISTS ALONGSIDE [`WARN_ID_BASELINE`] AND NOT INSIDE IT. The id baseline
+/// answers "may this lint fire at all on this shape", which is deliberately blunt —
+/// this file's own header states it "does NOT catch growth WITHIN an already-firing
+/// class". So an id admitted there is admitted EVERYWHERE, any number of times, and a
+/// genuinely new instance of the same class lands in the crowd its predecessor made.
+/// This register answers the sharper question: exactly WHICH sites, and how MANY
+/// times each. A firing of a registered id anywhere else, or a different number of
+/// times, is a failure.
+///
+/// It is therefore the place an unadjudicated firing goes INSTEAD of the id baseline.
+/// Widening the baseline to silence a firing is the failure mode this whole gate was
+/// installed against; a row here silences nothing — it names the finding, its owner,
+/// and what would remove it, and it goes red the moment the finding changes shape.
+///
+/// EVERY FIELD IS REQUIRED BY THE TYPE. An entry with no owner, no anchor or no kill
+/// condition is a dumping ground with extra steps, so those are not `Option`.
+///
+/// LEAVING THE REGISTER GOES BOTH WAYS. A row is removed when the firing is fixed, and
+/// equally when it is RULED DELIBERATE — in which case the id moves into
+/// [`WARN_ID_BASELINE`] with the ruling cited in the same commit. Either way the gate
+/// fails until the register is updated, so neither exit can happen silently.
+struct OpenFinding {
+    /// The lint id, as the diagnostic carries it.
+    id: &'static str,
+    /// The source file, relative to the aeon tree root. Derived from the diagnostic's
+    /// own `location` field, never scraped out of the message.
+    file: &'static str,
+    /// A SYMBOL the message names — a module path, a field, a proc. Symbolic on
+    /// purpose: a register entry outlives the thing it points at, which is its whole
+    /// job, so a line number or a byte offset in one rots into a confident lie. The
+    /// message must name this symbol for a firing to count as this site.
+    detail: &'static str,
+    /// `(shape, occurrences)` — MEASURED, not typed from a design document. The count
+    /// is carried so that a second firing at the same site is red too: set semantics
+    /// would collapse it into the first and pass, reintroducing within one site the
+    /// growth-blindness this register exists to fix across sites.
+    sites: &'static [(&'static str, usize)],
+    /// Who adjudicates it. Not "someone".
+    owner: &'static str,
+    /// Where the adjudication is tracked. A path or a symbol, never a line number.
+    anchor: &'static str,
+    /// What removes this row.
+    kill: &'static str,
+    /// `YYYY-MM-DD`, taken from the repo's own record of the adjudication. The lane
+    /// renders each row's AGE from this, so an entry left open for months is
+    /// self-evident in ordinary green output rather than resting quietly in a file
+    /// nobody is obliged to open.
+    first_observed: &'static str,
+}
+
+/// The open findings. Empty is a legitimate state and means every warn-tier firing on
+/// the corpus is accounted for by [`CORPUS_LINTS`] and [`WARN_ID_BASELINE`].
+const CORPUS_OPEN_FINDINGS: &[OpenFinding] = &[
+    // The two hand-written closure edges. A bare whole-path `use` is the ONLY way to
+    // pull a zero-emitting guard/witness module into a profile's use closure, so these
+    // two are deliberate and cannot be spelled another way — but the lint cannot tell
+    // them from an accidental bare use, which is why `import.no-names` sits in
+    // WARN_ID_BASELINE's shape rows. That row's own comment names the cost: "a real
+    // accidental bare use in sonic4 now hides behind these two". These entries take
+    // that cost back. A third bare use anywhere in the corpus, or a second one in
+    // either of these files, now fails.
+    OpenFinding {
+        id: "import.no-names",
+        file: "games/sonic4/data/effects/ojz_effects.emp",
+        detail: "games.sonic4.scene_registry",
+        sites: &[
+            ("sonic4 plain", 1),
+            ("sonic4 debug", 1),
+            ("config_a", 1),
+            ("config_b", 1),
+            ("lean", 1),
+        ],
+        owner: "sigil language lane (the spelling); aeon adopts it",
+        anchor: "aeon docs/DEFERRED_WORK.md — the `[import.no-names]` closure-edge gap",
+        kill: "a spelling for the closure-edge idiom lands, the two `use` lines adopt it, \
+               and the lint stops firing here — at which point this row goes red and is \
+               deleted. Widening the baseline instead is the move this register replaces.",
+        first_observed: "2026-08-18",
+    },
+    OpenFinding {
+        id: "import.no-names",
+        file: "games/sonic4/test/ojz_scroll_test.emp",
+        detail: "games.sonic4.scene_equiv_proof",
+        sites: &[
+            ("sonic4 plain", 1),
+            ("sonic4 debug", 1),
+            ("config_a", 1),
+            ("config_b", 1),
+            ("lean", 1),
+        ],
+        owner: "sigil language lane (the spelling); aeon adopts it",
+        anchor: "aeon docs/DEFERRED_WORK.md — the `[import.no-names]` closure-edge gap",
+        kill: "a spelling for the closure-edge idiom lands, the two `use` lines adopt it, \
+               and the lint stops firing here — at which point this row goes red and is \
+               deleted. Widening the baseline instead is the move this register replaces.",
+        first_observed: "2026-08-18",
+    },
+];
+
+/// Days since 1970-01-01 for a `YYYY-MM-DD` date, or `None` if it does not parse.
+///
+/// Proleptic Gregorian, era-based (Howard Hinnant's `days_from_civil`). Written out
+/// rather than pulled in so the register's age line costs the workspace no dependency.
+fn days_from_civil(date: &str) -> Option<i64> {
+    let mut parts = date.split('-');
+    let y: i64 = parts.next()?.parse().ok()?;
+    let m: i64 = parts.next()?.parse().ok()?;
+    let d: i64 = parts.next()?.parse().ok()?;
+    if parts.next().is_some() || !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return None;
+    }
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some(era * 146_097 + doe - 719_468)
+}
+
+/// Today, in days since the epoch, from the system clock.
+fn today_days() -> i64 {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock before the epoch")
+        .as_secs() as i64;
+    secs / 86_400
+}
+
 /// The reference tree, or `None` when it is absent and strict mode is off.
 fn aeon_dir() -> Option<PathBuf> {
     let aeon = PathBuf::from(
@@ -171,6 +301,171 @@ fn warn_tier_lint_ids_match_the_frozen_baseline() {
              Adjudicate each id and update WARN_ID_BASELINE in the same commit."
         );
     }
+}
+
+/// Every [`CORPUS_OPEN_FINDINGS`] row is complete and its date parses.
+///
+/// The type already makes owner / anchor / kill non-`Option`; this is the other half —
+/// a field cannot be discharged by typing `""` into it. A register whose rows can be
+/// blank is the dumping ground it was built to replace.
+#[test]
+fn every_open_finding_is_completely_specified() {
+    for f in CORPUS_OPEN_FINDINGS {
+        let missing: Vec<&str> = [
+            ("id", f.id),
+            ("file", f.file),
+            ("detail", f.detail),
+            ("owner", f.owner),
+            ("anchor", f.anchor),
+            ("kill", f.kill),
+            ("first_observed", f.first_observed),
+        ]
+        .iter()
+        .filter(|(_, v)| v.trim().is_empty())
+        .map(|(k, _)| *k)
+        .collect();
+        assert!(missing.is_empty(), "open finding `{}` @ {}: blank {missing:?}", f.id, f.file);
+        assert!(
+            !f.sites.is_empty(),
+            "open finding `{}` @ {}: no shape sites — an entry that pins nothing gates nothing",
+            f.id,
+            f.file
+        );
+        assert!(
+            f.sites.iter().all(|(_, n)| *n > 0),
+            "open finding `{}` @ {}: a site with zero occurrences is a row that should have \
+             been deleted, not pinned",
+            f.id,
+            f.file
+        );
+        assert!(
+            days_from_civil(f.first_observed).is_some(),
+            "open finding `{}` @ {}: `first_observed` is not a YYYY-MM-DD date: {:?}",
+            f.id,
+            f.file,
+            f.first_observed
+        );
+        // The anchor names a document or a symbol. A line or column in one rots into a
+        // confident lie the moment the file it points at is edited, which is the exact
+        // defect class this register was built after.
+        assert!(
+            !f.anchor.contains(".md:") && !f.anchor.contains(".emp:") && !f.anchor.contains(".rs:"),
+            "open finding `{}` @ {}: the anchor carries a line number ({:?}). Anchor to a \
+             symbol or a path and let a SHA date the claim — an anchor outlives what it \
+             points at, so a coordinate in one is guaranteed to go stale.",
+            f.id,
+            f.file,
+            f.anchor
+        );
+    }
+}
+
+/// THE OPEN-FINDINGS GATE: every registered site fires exactly as registered, and a
+/// registered id fires NOWHERE else.
+///
+/// Four ways to be red, and all four are the point:
+///   - a registered id fires at an UNREGISTERED site (new file, or a symbol no row
+///     names) — the property that makes this strictly stronger than a baseline entry,
+///     which tolerates the id anywhere;
+///   - a registered site fires MORE times than pinned — growth within one site;
+///   - a registered site fires FEWER times than pinned;
+///   - a registered site stops firing entirely — the finding was resolved, or the file
+///     left the shape's closure, and the register must move in the same commit.
+///
+/// The register is RENDERED on every run with each row's age, so the lane's ordinary
+/// green output names its open items instead of leaving them to a file nobody is
+/// obliged to open. Invisibility was the failure this whole parcel is about; a green
+/// that says "two open, 4 days" is a different object from a silent green.
+#[test]
+fn corpus_open_findings_fire_exactly_where_registered() {
+    let Some(aeon) = aeon_dir() else { return };
+    let Some(shapes) = corpus_warnings() else { return };
+    assert!(!shapes.is_empty(), "no shape was lowered — measure before trusting");
+
+    // The rendered register, printed whether or not anything is wrong.
+    let today = today_days();
+    eprintln!("open warn-tier findings: {}", CORPUS_OPEN_FINDINGS.len());
+    for f in CORPUS_OPEN_FINDINGS {
+        let age = days_from_civil(f.first_observed)
+            .map(|d| today - d)
+            .expect("first_observed parses; every_open_finding_is_completely_specified holds it");
+        let leaf = f.file.rsplit('/').next().unwrap_or(f.file);
+        let stale = if age >= 30 { "  <-- open a month or more" } else { "" };
+        eprintln!(
+            "  {} · {leaf} · {} · owner: {} · open {age} days{stale}",
+            f.id, f.detail, f.owner
+        );
+    }
+
+    let registered_ids: BTreeSet<&str> = CORPUS_OPEN_FINDINGS.iter().map(|f| f.id).collect();
+
+    // What the register claims, keyed `(shape, id, file, detail)`.
+    let mut want: std::collections::BTreeMap<(&str, &str, &str, &str), usize> = Default::default();
+    for f in CORPUS_OPEN_FINDINGS {
+        for (shape, n) in f.sites {
+            want.insert((shape, f.id, f.file, f.detail), *n);
+        }
+    }
+
+    let mut got: std::collections::BTreeMap<(&str, &str, &str, &str), usize> = Default::default();
+    let mut unregistered: Vec<String> = Vec::new();
+    let root = format!("{}/", aeon.display());
+    for (label, warnings) in shapes {
+        for w in warnings.iter().filter(|w| registered_ids.contains(w.id.as_str())) {
+            // The file comes from the diagnostic's own `location`, with the `:line:col`
+            // suffix dropped: the file is the stable half of a coordinate and the line
+            // is the half that moves on every edit above it.
+            let loc = w.location.as_deref().unwrap_or("<no location>");
+            let file = loc.rsplitn(3, ':').last().unwrap_or(loc);
+            let rel = file.strip_prefix(&root).unwrap_or(file);
+            // A row claims a firing when it names the same file AND the message names
+            // its symbol. Matching on the symbol keeps two distinct findings in one
+            // file distinguishable without pinning a coordinate.
+            let hit = CORPUS_OPEN_FINDINGS.iter().find(|f| {
+                f.id == w.id
+                    && f.file == rel
+                    && w.message.contains(&format!("`use {}`", f.detail))
+                    && f.sites.iter().any(|(s, _)| s == label)
+            });
+            match hit {
+                Some(f) => *got.entry((label, f.id, f.file, f.detail)).or_default() += 1,
+                None => unregistered.push(format!("[{label}] {rel} :: {}", w.message)),
+            }
+        }
+    }
+
+    assert!(
+        unregistered.is_empty(),
+        "a registered lint id fired at {} site(s) NO open-findings row claims. The id is \
+         admitted in WARN_ID_BASELINE, so the id-set gate stays green and this is the only \
+         thing that sees it — which is the whole reason the register is site-pinned. \
+         Adjudicate each and either fix it or add a CORPUS_OPEN_FINDINGS row (owner, anchor \
+         and kill condition included) in the same commit:\n{}",
+        unregistered.len(),
+        unregistered.join("\n")
+    );
+
+    let mut drift: Vec<String> = Vec::new();
+    for (key, n) in &want {
+        let actual = got.get(key).copied().unwrap_or(0);
+        if actual != *n {
+            let (shape, id, file, detail) = key;
+            drift.push(if actual == 0 {
+                format!(
+                    "  RESOLVED: [{shape}] {id} @ {file} ({detail}) no longer fires (was {n}). \
+                     Delete the row — or, if it was ruled DELIBERATE, move the id into \
+                     WARN_ID_BASELINE citing the ruling. Same commit either way."
+                )
+            } else {
+                format!("  COUNT MOVED: [{shape}] {id} @ {file} ({detail}): pinned {n}, measured {actual}")
+            });
+        }
+    }
+    assert!(
+        drift.is_empty(),
+        "the open-findings register no longer describes the corpus:\n{}",
+        drift.join("\n")
+    );
 }
 
 /// Every SR write in a `DEBUG == 1` shape's item streams carries an author with
