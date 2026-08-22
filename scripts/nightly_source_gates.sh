@@ -55,6 +55,9 @@ SOURCE_GATES=(
     preserves_corpus
     slot_type_corpus
     cfg_blind_spots
+    # per-game [defines]: synthetic maps, plus a reference-gated walk of the shipped
+    # games' own map.toml — source only, no ROM
+    game_config_defines
     # negative probes: doctor an aeon source file, require the compiler to object
     core_negative_probes
     dplc_negative_probes
