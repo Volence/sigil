@@ -402,7 +402,8 @@ Zero failures in every run below.
 | run | passed | failed | ignored | result blocks | wall |
 |---|---|---|---|---|---|
 | master `5c75b5b6`, this tree with the new files held aside | 3810 | **0** | 4 | 333 | — |
-| this branch | 3812 | **0** | 4 | 335 | 101 s |
+| this branch, pre-commit | 3812 | **0** | 4 | 335 | 101 s |
+| this branch at `d38f655b`, clean tree | 3812 | **0** | 4 | 335 | 111 s |
 
 Both with `AEON_DIR=/home/volence/sonic_hacks/.aeon-landing` and
 `SIGIL_STRICT_GATE=1`; `--release --workspace --no-fail-fast`. `+2` is exactly
