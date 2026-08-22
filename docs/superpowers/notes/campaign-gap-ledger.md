@@ -2377,3 +2377,13 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   shape's firings, which is the direction that hides things. — OPEN, low priority (kill: a row
   may spell `sites: AllShapes(1)` only once the gate can prove the count is genuinely
   shape-invariant, rather than assuming it).
+
+- [source-gate lane, 2026-08-22] **aeon's `tools/gen_compression_vectors.py` exits 0 on
+  failure.** With the vendored `salvador` packer absent it prints
+  `FAIL: salvador binary missing at …` and returns status 0, so any caller that trusts the
+  exit code proceeds with no vectors written and fails much later, at the far less legible
+  `no module engine.compression_vectors found under the scan root`. The source-gate lane
+  therefore checks the OUTPUT FILE rather than the status. aeon's own `build.sh` is immune
+  by accident — it builds salvador immediately before calling the generator. — OPEN, aeon's
+  (kill: the generator's failure path exits nonzero; the lane's output check then becomes
+  belt-and-braces rather than the only thing standing there).

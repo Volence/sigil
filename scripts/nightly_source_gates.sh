@@ -163,6 +163,9 @@ if [[ ! -x "$AEON_GATES/tools/bin/salvador" ]]; then
 fi
 ( cd "$AEON_GATES" && python3 tools/gen_compression_vectors.py ) >> "$STATE/prepare.log" 2>&1 \
     || { note "COULD NOT RUN: compression vectors at $AT — see $STATE/prepare.log"; exit 2; }
+# NOT redundant with the `||` above: gen_compression_vectors.py prints `FAIL: …` and
+# exits 0 when the packer is missing, so its exit code cannot be trusted to mean it
+# wrote anything. The output is checked instead of the status.
 [[ -f "$AEON_GATES/engine/debug/generated/compression_vectors.emp" ]] \
     || { note "COULD NOT RUN: gen_compression_vectors.py produced nothing at $AT"; exit 2; }
 
