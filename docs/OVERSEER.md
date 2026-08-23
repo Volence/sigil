@@ -486,7 +486,34 @@ sigil-internal, neither touching `golden/` / `pins.rs` / `repin.toml`:
 - **`feat/field-align`** — LANDED at `6fae4d6a`, see queue item 3 above.
 - **`fix/rom-sentinel-port-tests`** — LANDED at `c75c2ffa`, see queue item 5 above.
 
-**Nothing in flight; no agents running.** Master `c75c2ffa`, pushed. Front of the queue is
+6. **`cargo clippy --workspace --all-targets -- -D warnings` FAILS on master.** One error,
+   pre-existing, surfaced by the README pass (which is docs-only and did not cause it):
+   `crates/sigil-frontend-emp/src/eval/const_arity.rs:153`, `clippy::collapsible_match` —
+   *"this `if` can be collapsed into the outer `match`"*. Reproduced firsthand on master with
+   `cargo clippy -p sigil-frontend-emp --all-targets -- -D warnings`; rustc 1.97.1.
+   Almost certainly a lint that tightened under a toolchain bump rather than a regression.
+   **Why it is queued rather than hand-fixed at the desk:** collapsing a match arm is a
+   control-flow edit in shipping frontend code, and the const-arity enforcement it sits in
+   landed only today — a "one-line" refactor there wants the suite behind it, and the CLI
+   fixture (`const_arity_cli.rs`) pins a diagnostic aeon fixtures assert on by exact text.
+   Small parcel, not a desk edit.
+
+**README, landed** at `a4476e53` (`docs/readme-refresh`), per the owner's relayed directive
+(*"let's quickly have everything update their readmes correctly. Doesn't have to be super in
+depth."*). The finding worth keeping: **every CLI invocation the README documented was
+broken, and none had ever worked as written** — `cargo run -p sigil-cli --` cannot run at all
+(two binaries, no `default-run`), `sigil diff` does not exist, `parse`/`build` had the wrong
+argument shapes, and a generator bin name was misspelled (`gen-snippet-vectors` vs the real
+`gen_snippet_vectors`; the two `sigil-isa` generators ARE hyphenated, so the inconsistency is
+in the tree, not the doc). Also corrected: `sigil-frontend-emp` was described as a *future*
+track while being what the shipped ROM is lowered from; five workspace members were missing
+from the crate table; three named harness gates no longer exist (`assemble_full_rom`,
+`m0_regions`, `m1d_rom`/`m1d_debug_rom` — the last three survive only as names in
+`repin.toml`/`pins.rs` comments); and the claim that the `convsym` deb2 appendix is out of
+scope is false, `sigil build` produces it. **A README's commands are its most-used and
+least-checked content — run them, do not read them.**
+
+**Nothing in flight; no agents running.** Master `a4476e53`, pushed. Front of the queue is
 item 4 (`pad_to(N)`), which is PARKED ON THE OWNER — do not dispatch it, and see the
 autonomy-scope section for why a new language surface is outside this lane's standing
 authority. Everything else in the list above is landed.
