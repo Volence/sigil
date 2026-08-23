@@ -1,11 +1,12 @@
 //! The `repin` staleness guard (D-T10.5) + the acceptance baseline (D-T10.8).
 //!
-//! `pins_rs_is_current` regenerates the pin table IN-MEMORY from the live
-//! listings and compares against the committed `src/pins.rs` — a stale
-//! pins.rs can no longer hide. REFERENCE-DEPENDENT: needs the sibling `aeon`
-//! tree's `s4.lst`/`s4.debug.lst` (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`). Absent, it SKIPS green — unless
-//! `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
+//! `pins_rs_is_current` regenerates the pin table IN-MEMORY from sigil's own
+//! resolve of the sonic4 shape and compares against the committed `src/pins.rs`
+//! — a stale pins.rs can no longer hide. REFERENCE-DEPENDENT and SOURCE-ONLY:
+//! it needs the sibling `aeon` tree's `.emp`/`.asm` sources (`AEON_DIR`, default
+//! `/home/volence/sonic_hacks/aeon`), no built ROM and no assembler listing.
+//! Absent, it SKIPS green — unless `SIGIL_STRICT_GATE=1` makes a missing
+//! reference a hard failure.
 //!
 //! The acceptance tests are HERMETIC: they pin the committed `pins::*`
 //! values against the hand-typed literals the 16 test files carried at the
@@ -13,44 +14,29 @@
 //! generator ever mis-derives a value, the mismatch surfaces HERE first,
 //! named — not as a byte-diff panic three suites later.
 
-use std::path::PathBuf;
-
 use sigil_harness::native;
 use sigil_harness::pins;
 use sigil_harness::repin::{
     diff_pins, load_manifest, render, resolve, strip_provenance, Listing, Provenance,
 };
-
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
-}
-
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
-}
+use sigil_harness::test_support::reference_tree_for_profile;
 
 /// The committed pins.rs must equal an in-memory regeneration from SIGIL'S OWN
 /// resolved layout, modulo the `[provenance]` stamp lines (a rebuild that moves no
 /// pin is not drift).
 ///
-/// RE-POINTED at the sigil-native source (Stage-3 P4c, kill-list row 34): the asl
-/// `.lst` parse is gone; the addresses now come from `native::sigil_native_symbol_
-/// listing` (the fully-resolved symbol table — labels + folded equates incl. MDDBG,
-/// `.emp` locals demangled, section-END markers synthesized). Currency is checkable
-/// again — against sigil's own layout, no asl. REFERENCE-DEPENDENT: needs the sibling
-/// aeon tree (`AEON_DIR`) + `SIGIL_EMIT` (the resolve builds the sound-on shape).
+/// The addresses come from `native::sigil_native_symbol_listing` — sigil's own
+/// fully-resolved symbol table (labels + folded equates incl. MDDBG, `.emp` locals
+/// demangled, section-END markers synthesized), no asl anywhere. REFERENCE-DEPENDENT
+/// on the sibling aeon tree's SOURCE (`AEON_DIR`): the sound-on resolve emits its
+/// generated BINCLUDEs in-process, so no `SIGIL_EMIT` binary is involved.
 #[test]
 fn pins_rs_is_current() {
-    let aeon = aeon_dir();
-    if !aeon.join("s4.bin").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon tree missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon tree not present (set AEON_DIR)");
+    // The listing is sigil's own resolve of the sonic4 shape, so the reference this
+    // needs is that profile's SOURCE — no built ROM and no asl listing.
+    let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(false)) else {
         return;
-    }
+    };
     let (pm, pe) = native::sigil_native_symbol_listing(&aeon, false)
         .unwrap_or_else(|e| panic!("plain resolve: {e}"));
     let (dm, de) = native::sigil_native_symbol_listing(&aeon, true)

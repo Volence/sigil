@@ -20,6 +20,7 @@
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::test_support::reference_tree_for_profile;
 use sigil_harness::{native, pins};
 use sigil_ir::backend::Cpu;
 use sigil_ir::SymbolTable;
@@ -125,14 +126,11 @@ fn soundbankhead_debug_matches_reference() {
 #[test]
 fn soundbankhead_pinned_bootstrap_lands_at_lma_not_vma() {
     let _guard = LOCK.lock().unwrap();
-    let aeon = aeon_root();
-    if !aeon.join("s4.bin").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon tree missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon tree not present (set AEON_DIR)");
+    // No ROM is read here: `resolve_pinned_sections` resolves the sonic4 shape from
+    // source, so the tree this needs is the one that profile's build reads.
+    let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(false)) else {
         return;
-    }
+    };
     for debug in [false, true] {
         let resolved = native::resolve_pinned_sections(&aeon, debug)
             .unwrap_or_else(|e| panic!("resolve_pinned_sections(debug={debug}): {e}"));
