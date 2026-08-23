@@ -288,8 +288,14 @@ fn doctored_cself_sum_diverges_from_reference() {
 /// above-window placement the longer abs.l ones.
 #[test]
 fn retired_fit_lock_stays_silent_and_operands_width_select_past_abs_w() {
-    if !strict_gate() && !aeon_dir().join("s4.debug.bin").exists() {
-        eprintln!("skip: reference ROM missing");
+    // The ported module plus the generated values it `use`s — the two sources this
+    // probe compiles. It opens no ROM: both arms are placement/link-only.
+    if sigil_harness::test_support::reference_tree(&[
+        "engine/debug/compression_selftest.emp",
+        "engine/debug/generated/compression_vectors.emp",
+    ])
+    .is_none()
+    {
         return;
     }
     // Below the window: every CSelf_* label sits under $8000 → abs.w.

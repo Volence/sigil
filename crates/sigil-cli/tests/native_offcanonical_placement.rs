@@ -21,26 +21,7 @@
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test native_offcanonical_placement
 //! ```
 use sigil_harness::native;
-use std::path::{Path, PathBuf};
-
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
-}
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
-}
-fn have_aeon(aeon: &Path) -> bool {
-    if aeon.join("s4.bin").exists() {
-        return true;
-    }
-    if strict_gate() {
-        panic!("SIGIL_STRICT_GATE set but aeon tree missing at {}", aeon.display());
-    }
-    eprintln!("skip: aeon tree not present (set AEON_DIR)");
-    false
-}
+use sigil_harness::test_support::reference_tree_for_profile;
 
 // The frozen build touches the shared engine/sound/generated dir.
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -51,12 +32,11 @@ static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// config_b addresses, not sonic4's.
 #[test]
 fn config_b_frozen_placement_exact() {
-    let aeon = aeon_dir();
-    if !have_aeon(&aeon) {
-        return;
-    }
-    let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let profile = native::config_b_profile();
+    let Some(aeon) = reference_tree_for_profile(&profile) else {
+        return;
+    };
+    let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let mismatches =
         native::frozen_placement_mismatches(&aeon, &profile).unwrap_or_else(|e| panic!("{e}"));
     assert!(
@@ -88,10 +68,9 @@ fn committed_table(profile: &native::GameProfile) -> std::collections::BTreeMap<
 /// sigil's own resolve now carries every boundary address asl once listed, including the
 /// phased z80 idle (ROM LMA `$3d8`, not VMA `$0`) and the synthesized `*_End` markers.
 fn rederives_native(profile: native::GameProfile) {
-    let aeon = aeon_dir();
-    if !have_aeon(&aeon) {
+    let Some(aeon) = reference_tree_for_profile(&profile) else {
         return;
-    }
+    };
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let committed = committed_table(&profile);
     let derived = native::derive_frozen_table(&aeon, &profile).unwrap_or_else(|e| panic!("{e}"));
@@ -144,10 +123,11 @@ fn lean_size_table_rederives_native() {
 /// See `docs/superpowers/notes/2026-08-01-waveb-b0b-ram-packing.md` for the growth
 /// probe that exercised these under a live +2 RAM growth.
 fn ram_packing_invariants(debug: bool) {
-    let aeon = aeon_dir();
-    if !have_aeon(&aeon) {
+    // `resolve_canonical_sections` resolves the sonic4 shape — its profile names the
+    // sources this walk reads.
+    let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(debug)) else {
         return;
-    }
+    };
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let secs = native::resolve_canonical_sections(&aeon, debug).unwrap_or_else(|e| {
         panic!("resolve canonical sections ({}): {e}", if debug { "debug" } else { "plain" })
@@ -216,10 +196,9 @@ fn ram_packing_invariants_debug() {
 /// (Condition-3 control from the S1.2 size-capture handoff, re-scoped for packing.)
 #[test]
 fn config_b_doctored_size_table_breaks_the_build() {
-    let aeon = aeon_dir();
-    if !have_aeon(&aeon) {
+    let Some(aeon) = reference_tree_for_profile(&native::config_b_profile()) else {
         return;
-    }
+    };
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
 
     // The honest baseline: the undoctored chained ROM's anchor matches the golden.

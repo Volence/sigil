@@ -36,6 +36,7 @@ use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_harness::pins;
+use sigil_harness::test_support::reference_tree;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::PathBuf;
@@ -281,11 +282,12 @@ fn dc_l_label_comma_list_doctored_diverges() {
 // ---------------------------------------------------------------------------
 #[test]
 fn vector_labels_resolve_to_error_handler_emp() {
-    let aeon = aeon_dir();
-    if !strict_gate() && !aeon.join("s4.bin").exists() {
-        eprintln!("skip: aeon tree not present");
+    // The two source files this compiles together — no ROM is opened here.
+    let Some(aeon) =
+        reference_tree(&["engine/system/vectors.emp", "engine/debug/error_handler.emp"])
+    else {
         return;
-    }
+    };
     const STUBS: &[&str] = &[
         "BusError", "AddressError", "IllegalInstr", "ZeroDivide", "ChkInstr", "TrapvInstr",
         "PrivilegeViol", "Trace", "Line1010Emu", "Line1111Emu", "ErrorExcept", "ErrorTrap",

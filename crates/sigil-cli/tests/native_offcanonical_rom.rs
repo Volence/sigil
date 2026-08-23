@@ -12,13 +12,9 @@
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test native_offcanonical_rom
 //! ```
 use sigil_harness::native;
+use sigil_harness::test_support::reference_tree_for_profile;
 use std::path::PathBuf;
 
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
-}
 fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
@@ -37,18 +33,6 @@ fn golden(name: &str) -> Option<Vec<u8>> {
         }
     }
 }
-fn have_aeon() -> bool {
-    let a = aeon_dir();
-    if a.join("s4.bin").exists() {
-        return true;
-    }
-    if strict_gate() {
-        panic!("SIGIL_STRICT_GATE set but aeon tree missing at {}", a.display());
-    }
-    eprintln!("skip: aeon tree not present (set AEON_DIR)");
-    false
-}
-
 // The chained build touches the shared engine/sound/generated dir — serialize.
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -75,13 +59,12 @@ fn anchor_end(key: &str) -> usize {
 /// compare over the prefix is the load-bearing assertion. Determinism: a second build is
 /// byte-identical.
 fn anchor_matches(profile: &native::GameProfile, golden_name: &str, key: &str) {
-    if !have_aeon() {
+    let Some(aeon) = reference_tree_for_profile(profile) else {
         return;
-    }
+    };
     let eor = anchor_end(key);
     let Some(g) = golden(golden_name) else { return };
     let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let aeon = aeon_dir();
     let rom = native::build_rom_chained(&aeon, profile).unwrap_or_else(|e| panic!("{}: {e}", profile.name));
     let rom2 = native::build_rom_chained(&aeon, profile).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(rom, rom2, "{}: build non-deterministic", profile.name);

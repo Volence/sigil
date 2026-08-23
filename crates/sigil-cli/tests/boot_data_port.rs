@@ -12,27 +12,13 @@
 //! SIGIL_STRICT_GATE=1 SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test boot_data_port
 //! ```
+use sigil_harness::test_support::reference_tree_for_profile;
 use sigil_harness::{native, pins};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
-}
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
-}
-fn have_aeon(aeon: &Path) -> bool {
-    if aeon.join("s4.bin").exists() {
-        return true;
-    }
-    if strict_gate() {
-        panic!("SIGIL_STRICT_GATE set but aeon tree missing at {}", aeon.display());
-    }
-    eprintln!("skip: aeon tree not present (set AEON_DIR)");
-    false
-}
+/// The golden ROM, from sigil's OWN committed `golden/` directory — not the aeon
+/// tree. Both gates build their shape from aeon source and compare against this, so
+/// the reference tree they need is source-only (see `reference_tree_for_profile`).
 fn golden(name: &str) -> Vec<u8> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sigil-harness/golden").join(name);
     std::fs::read(&p).unwrap_or_else(|e| panic!("read golden {}: {e}", p.display()))
@@ -63,12 +49,12 @@ fn assert_window(shape: &str, rom: &[u8], gold: &[u8], lo: usize, hi: usize) {
 /// silence — proving the idle landed IN the hole and the tail resumed AFTER it.
 #[test]
 fn config_b_boot_data_hole_filled() {
-    let aeon = aeon_dir();
-    if !have_aeon(&aeon) {
+    let profile = native::config_b_profile();
+    let Some(aeon) = reference_tree_for_profile(&profile) else {
         return;
-    }
+    };
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let rom = native::build_rom_chained(&aeon, &native::config_b_profile())
+    let rom = native::build_rom_chained(&aeon, &profile)
         .unwrap_or_else(|e| panic!("build config_b: {e}"));
     let gold = golden("config_b.bin");
     // BootData ($39a) .. BootData_End ($406): head + idle-in-hole + tail, byte-exact.
@@ -93,12 +79,12 @@ fn config_b_boot_data_hole_filled() {
 /// byte-identical to the golden. Pin-sourced so boot-size shifts don't rot this.
 #[test]
 fn s4_boot_data_blob_present() {
-    let aeon = aeon_dir();
-    if !have_aeon(&aeon) {
+    let profile = native::sonic4_profile(false);
+    let Some(aeon) = reference_tree_for_profile(&profile) else {
         return;
-    }
+    };
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let rom = native::build_rom_chained(&aeon, &native::sonic4_profile(false))
+    let rom = native::build_rom_chained(&aeon, &profile)
         .unwrap_or_else(|e| panic!("build s4: {e}"));
     let gold = golden("s4.bin");
     // BootData .. BootData_End: head + blob + tail, byte-exact (pin-sourced).

@@ -102,6 +102,18 @@ SOURCE_GATES=(
 # thing it watches. Those gates have their own trigger: aeon's byte-identity
 # ritual, which fires exactly when bytes move — which is the correct trigger for
 # them and the wrong one for these.
+#
+# A THIRD SHAPE, and the one the two buckets above do not name: gates that read
+# aeon SOURCE ONLY but are ORACLE'D on a committed sigil artifact — the frozen
+# `golden/*.bin` blobs, `golden/provenance.toml`, or `src/pins.rs`. Their inputs
+# would run in this lane; their EXPECTATIONS would not. Between an aeon parcel that
+# legitimately moves bytes and sigil's refreeze of the artifact those gates compare
+# against, they are red by design, so a nightly clock would report a window the
+# refreeze ritual already owns. They stay excluded for that reason — which is a
+# property of the oracle, not of how they detect the reference tree. The audit below
+# classifies them by the artifact they name in their own text, so a file in this
+# shape that stops naming one becomes UNCLASSIFIED and the lane refuses to run: loud,
+# and the safe direction.
 
 note() {
     echo "$(date -Is) $1" >> "$LOG"
