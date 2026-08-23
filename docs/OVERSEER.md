@@ -86,6 +86,17 @@ So:
 that this scope line is where he wants it. It is 48 days old and has never been checked.
 Do not fund work off the broad reading in the meantime.
 
+**A second thing to put to him in the same breath — is PUSHING standing-approved?** The
+2026-08-22 push to `a70e6644` is recorded here and in memory as "owner-approved", and the
+aeon lane independently describes the preceding 80-commit unpushed backlog as **"the owner's
+gate"** — i.e. deliberate, not an oversight. What is banked is an approval attached to *one
+push*; nothing says the gate is lifted permanently. This session pushed again (`560d44da`)
+on the strength of the banked practice — *"push before citing across the fence, and verify
+against `ls-remote`"* — which is an affirmative instruction to push and is also a protocol
+bar, and the push was fast-forward with no history rewritten. Defensible, and disclosed
+rather than assumed: a push is outward-facing, and "approved once" is not "approved
+standing". **Ask before treating it as routine.**
+
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
@@ -122,6 +133,18 @@ Do not fund work off the broad reading in the meantime.
   than bookkeeping: `passed + ignored` equalling the declared count was the *only*
   signal that separated the bogus run from the real one (3857 + 2 = 3859 ≠ 3823; the
   correct re-run gave 3819 + 4 = 3823 exactly). Aggregate greens do not self-attribute.
+  **Second precedent, 2026-08-22, and it is the nastier face: the numbers were EXACTLY
+  RIGHT.** A parcel agent's first suite run came back `3821 / 0 / 4` — the bar of the day,
+  to the test — stamped `branch=worktree-agent-a19f801c9ae459301 head=8884e255`. The work was
+  still uncommitted and the worktree carried its auto-generated branch name, so the run had
+  measured *master*, faithfully, and reported a number that reconciled perfectly against the
+  declared count. Where the first precedent announced itself as suspiciously good news, this
+  one announces nothing at all: a bar-matching green on a parcel that changes no test count
+  is exactly what a correct run looks like. **The stamp is the only thing that caught it**,
+  and it caught it on the `branch=` line, not the totals — which is the argument for stamping
+  branch and head rather than just cwd. The agent renamed the branch, committed, and re-ran.
+  Note the trigger: this is a hazard of the *deliver-on-a-named-branch* workflow itself, since
+  an agent that has not yet renamed its worktree branch is in this state by default.
 - **Port work** follows the port loop (canonical:
   `docs/superpowers/notes/campaign-port-loop.md` — byte gate is step-1 only, then
   modernize/retrospect/back-prop/optimize until dry; dry is panel-adjudicated, not
@@ -361,6 +384,13 @@ share**; `TST` was exactly that, live.
    carry the `field_align` prefix; the 14th is `vars_form_align_on_a_struct_field_is_refused_by_name`,
    so a `grep -c field_align` under-counts by one and looks like a discrepancy that is not there.
    **The bar moves to 3835 / 0 / 4.**
+   **Why error tier and not another warning — and this travels as a POST-MORTEM, not as
+   foresight** *(framing at the aeon lane's explicit request, and they are right that it
+   matters)*: `[layout.odd-field]` **did** fire across the 2026-08-18→08-22 drift and was
+   swallowed by a warning baseline nobody re-read, through six consecutive zero-byte parcels
+   whose CRCs were verified and cited at every landing. A lint that fires into a baseline is
+   not a guard. That lesson was paid for by the lane that MISSED it, not spotted by the lane
+   that saw it — record it that way, because the next person needs to know it is easy to miss.
    Its packet is `docs/superpowers/notes/2026-08-22-field-align-packet.md`; six new
    diagnostic strings are a cross-repo interface (aeon fixtures assert exact text),
    enumerated in its §10.
@@ -391,12 +421,38 @@ share**; `TST` was exactly that, live.
    settled enough that the invisible case is genuinely impossible. Note this argument bites
    `pad_to(N)` too, not just blanket auto-padding — which is why `(align: N)` must stay
    mandatory alongside it rather than becoming redundant once the width is derived.
-5. **The remaining ROM-as-sentinel port tests** — IN FLIGHT on
-   `fix/rom-sentinel-port-tests`. Booked as "ten"; that count has not been re-run since it
-   was written, so the branch owes the enumeration before the fix. They gate on `s4.bin` existing to
-   answer "is there an aeon tree here", so a source-only tree makes them panic
-   "aeon tree missing" while the tree is fully present. One was fixed this session
-   (`native_object_bank_budget`, sentinelled on `map.toml`, proven both directions).
+5. ~~**The remaining ROM-as-sentinel port tests**~~ — **LANDED** at `c75c2ffa`
+   (`fix/rom-sentinel-port-tests`). Eleven files / 35 tests now sentinel on the source they
+   actually read, via `test_support::reference_tree_for_profile` — derived from the
+   `GameProfile` each gate builds (`profile.game_root_rel`, with the `map.toml` sibling by
+   path arithmetic), not a copied path.
+   **The booked count of ten was wrong, and HOW it was wrong is the finding.** The eleventh,
+   `compression_selftest_port`, sentinels on **`s4.debug.bin`** — which an `s4\.bin` regex
+   does not match, so re-running the original enumeration returns ten forever and looks
+   complete. It was found by a third pass enumerating the presence-check **operation**
+   (`.exists()`), which contains no filename at all. Neither of the first two passes was a
+   superset of the other: five targets spell the check inline with no named guard (invisible
+   to an identifier pass), and the name pass also throws false positives it cannot resolve
+   (`golden("s4.bin")` reads *sigil's* golden dir, not aeon's). This is the enumeration-
+   parameter bar with a live instance in this repo — **a count is only as good as the
+   attribute it enumerated over, and re-running the same pass is not a second check.**
+   Classification: **A = 71 files** where the ROM is the subject (untouched), **B = 11 files
+   / 35 tests** (fixed), **C = 2** (ledgered — the tree-root `.exists()` probe shape, and the
+   lane classifier's use-vs-mention weakness, whose kill condition is a declared
+   `ARTIFACT_ORACLE_GATES` array).
+   Proven three directions per test: source-only tree (35 pass, doing real work — one built
+   five ROM shapes in 18s with no ROM in the tree; all 35 panic there on master); absent tree
+   under strict (all 35 FAIL, exit 101, naming the missing path); full built tree (green).
+   **Nothing was added to `SOURCE_GATES`, and the brief's implied reason was wrong** — cost
+   is not the obstacle (all eleven run source-only in ~50s). The real one: each is measured
+   against a *committed sigil artifact* (golden blob, `provenance.toml`, `pins.rs`), so
+   between an aeon parcel that legitimately moves bytes and sigil's refreeze they are red by
+   design. `repin_pins` argues hardest for inclusion (3.72s, wholly source-only now) and is
+   excluded on exactly that ground.
+   Verified at landing: **3835 / 0 / 4**, `3835 + 4 = 3839` = declared, zero `skip:` lines,
+   log stamped `head=c75c2ffa branch=master`, source-gate audit `gates=35 unclassified=0`.
+   The parcel adds no tests, so the bar is unchanged from item 3.
+   Packet: `docs/superpowers/notes/2026-08-22-rom-sentinel-packet.md`.
 
 **`feat/arity-cli-fixture` is LANDED, not queued** — `crates/sigil-cli/tests/const_arity_cli.rs`
 is on master (added by `a24a1b4f`; the branch tip is an ancestor of master, confirmed by
@@ -428,11 +484,12 @@ the tip and how it was verified.
 sigil-internal, neither touching `golden/` / `pins.rs` / `repin.toml`:
 
 - **`feat/field-align`** — LANDED at `6fae4d6a`, see queue item 3 above.
-- **`fix/rom-sentinel-port-tests`** — now queue item 5. The booked count of ten is dispatched as
-  **unverified**, with the enumeration itself as the first deliverable (both a filename grep
-  and a `test_support` caller walk, reconciled, since neither is a superset of the other),
-  and an A/B/C classification so genuinely artifact-dependent tests are left alone rather
-  than "fixed".
+- **`fix/rom-sentinel-port-tests`** — LANDED at `c75c2ffa`, see queue item 5 above.
+
+**Nothing in flight; no agents running.** Master `c75c2ffa`, pushed. Front of the queue is
+item 4 (`pad_to(N)`), which is PARKED ON THE OWNER — do not dispatch it, and see the
+autonomy-scope section for why a new language surface is outside this lane's standing
+authority. Everything else in the list above is landed.
 
 A note on the `?? sigil` in `git status`: it is a self-symlink `sigil -> /home/volence/sonic_hacks/sigil`
 created 2026-08-20, untracked and harmless. It is NOT a stray nested checkout — resolve it
@@ -484,6 +541,20 @@ itself rather than by the local tracking ref, which is the only check that can d
 "pushed" from "looks pushed locally". Reachability from `origin/master` then re-verified
 per SHA: `a24a1b4f` (the arity fixture), `cba0a0bc`, `5c75b5b6`, `9c08f2a5`, `aafe612a`,
 `a70e6644` — all reachable.
+
+**The same class with the sign flipped: a stale CAUTION is a false negative, and it wears
+caution as a costume** *(aeon lane, 2026-08-22, from their own doc)*. Everything above
+guards against a stale "this is reachable". The inverse is a stale **"you cannot cite
+these"** — aeon's handoff carried, as standing hazard #1, that every sigil SHA was
+local-only with `origin/master` at `40f862e2`. Once sigil pushed, that row made their lane
+refuse a perfectly good anchor. **Nothing fails, nobody is told, and the lane looks rigorous
+while being wrong** — which is why this direction outlives the positive one. Retracted on
+their side at aeon `8ccef438`.
+**Checked here, so the next boot does not re-check it:** this document carries **no**
+mirrored row. `grep -n 'local-only\|unpushed\|not pushed'` returns exactly one hit, the
+general two-directions rule immediately below, which is the durable form rather than a
+snapshot. The rule generalises past reachability: **a caution is a claim, and it expires
+like one.**
 
 **The rule that outlives the incident, and it did NOT stay true by itself:** a note saying
 "this is local-only" is true when written and rots on the next push, exactly as a note
