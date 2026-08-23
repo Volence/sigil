@@ -364,6 +364,27 @@ pub fn reference_tree(rels: &[&str]) -> Option<PathBuf> {
     Some(aeon)
 }
 
+/// The guard a PROFILE-DRIVEN gate opens with: `Some(aeon)` when the tree carries the
+/// two files `profile`'s build reads before anything else — its AS residual root
+/// ([`GameProfile::game_root_rel`], `games/<g>/game_root.asm`) and its placement map
+/// ([`GameProfile::map_path`]'s `map.toml`, that root's sibling). Both paths are
+/// DERIVED FROM THE PROFILE the caller goes on to build, so the guard cannot name
+/// inputs the gate does not use.
+///
+/// A built ROM is not one of them. These gates assemble aeon SOURCE and compare
+/// against sigil's own committed goldens, so a source-only checkout — every `.emp`
+/// present, nothing built — is a tree they run fully against; sentinelling on
+/// `s4.bin` reports such a tree missing.
+///
+/// Skip/panic semantics are [`reference_tree`]'s: skip green when a path is absent,
+/// panic naming it under `SIGIL_STRICT_GATE=1`.
+pub fn reference_tree_for_profile(profile: &crate::native::GameProfile) -> Option<PathBuf> {
+    let root = std::path::Path::new(profile.game_root_rel);
+    let map = root.parent().unwrap_or(std::path::Path::new("")).join("map.toml");
+    let map = map.to_str().expect("game_root_rel is UTF-8");
+    reference_tree(&[profile.game_root_rel, map])
+}
+
 // ── 4. The scanline-capability contract seam (Scanline P2 Phase 1) ──────────
 //
 // Phase 1 gated whole blocks of `engine/effects/raster.emp`,
