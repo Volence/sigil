@@ -134,3 +134,41 @@ fn suggest_use_is_none_when_two_modules_export_the_name() {
     let (env, _) = ResolveEnv::build("badniks.plant", &obj, &idx, None);
     assert_eq!(env.suggest_use("Foo"), None);
 }
+
+#[test]
+fn pub_equ_import_binds_the_bare_link_name() {
+    // `pub equ` is a module-visible item like every other `pub` declaration, so
+    // a `use` of it resolves. Unlike the others it binds to the BARE name: a
+    // `pub equ` mints one plain, program-unique link symbol (that is the
+    // construct's cross-seam purpose), and its definition is never renamed to a
+    // module-qualified canonical, so an import must not be either.
+    let (a, _) = parse_str("module mod.a\npub equ WIDTH = $20\n");
+    let (obj, _) = parse_str("module badniks.plant\nuse mod.a.{WIDTH}\nproc init (a0: *u8) {}\n");
+    let idx = ExportIndex::build(&[("mod.a", &a), ("badniks.plant", &obj)]);
+    let (env, diags) = ResolveEnv::build("badniks.plant", &obj, &idx, None);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "importing a `pub equ` must not error, got {diags:?}"
+    );
+    assert_eq!(env.resolve("WIDTH"), Some("WIDTH".to_string()));
+    assert_ne!(env.resolve("WIDTH"), Some(canonical("mod.a", "WIDTH")));
+}
+
+#[test]
+fn private_equ_is_not_exported() {
+    // Control arm for `pub_equ_import_binds_the_bare_link_name`: without `pub`
+    // the equ stays module-private, so the export index does not carry it and
+    // the `use` errors. A change that exported every `equ` passes the arm above
+    // and fails only here.
+    let (a, _) = parse_str("module mod.a\nequ WIDTH = $20\n");
+    let (obj, _) = parse_str("module badniks.plant\nuse mod.a.{WIDTH}\nproc init (a0: *u8) {}\n");
+    let idx = ExportIndex::build(&[("mod.a", &a), ("badniks.plant", &obj)]);
+    assert!(!idx.is_exported("mod.a", "WIDTH"));
+    let (env, diags) = ResolveEnv::build("badniks.plant", &obj, &idx, None);
+    assert!(
+        diags.iter().any(|d| d.level == sigil_span::Level::Error
+            && d.message == "module `mod.a` has no `pub` name `WIDTH`"),
+        "expected the module-visibility rejection, got {diags:?}"
+    );
+    assert_eq!(env.resolve("WIDTH"), None);
+}

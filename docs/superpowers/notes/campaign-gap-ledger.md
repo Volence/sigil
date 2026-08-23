@@ -2580,3 +2580,31 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   Corollary already paid for once today: **a wrong count in a DISPATCH BRIEF is worse than in
   a message**, because an agent has no standing to doubt it and may size a fixture from it.
   The correction had to be chased mid-flight.
+- [pub-equ-export lane, 2026-08-22] **A MODULE-QUALIFIED reference to an imported `pub equ`
+  (`m.a.WIDTH`) does not resolve, even though the bare spelling now does.**
+  `resolve/rename.rs`'s `canonicalize_name` last-dot path splits `mod_path.item`, looks
+  `item` up in the map, and then requires the canonical to be `<module.id>.<item>` so it can
+  `strip_suffix(".item")` and compare module paths. A `pub equ`'s canonical IS the bare
+  `item` — that is the whole point of `ExportIndex::import_target` — so the strip yields
+  `None` and the qualified spelling falls through to `unknown symbol \`m.a.WIDTH\``, measured
+  through the CLI on a program whose bare `WIDTH` builds clean in the same file. Every other
+  imported item accepts both spellings (D-PP.3 added the qualified one deliberately), so
+  `equ` is now the sole item kind where the two spellings disagree — a surprise the author
+  meets as an unknown-symbol error on a name they can see is imported. Latent while the
+  corpus spells equs bare (all 71 shipped declarations are referenced bare or across the
+  `.asm` seam). — OPEN (kill: `canonicalize_name` resolves a qualified spelling whose short
+  name maps to ITSELF by checking `mod_path` against the DEFINING module recorded in the
+  export index, with a gate asserting `m.a.WIDTH` and `WIDTH` fold to the same value)
+
+- [pub-equ-export lane, 2026-08-22] **`cargo fmt --check` cannot serve as a gate on this
+  repo: master is already non-clean, so the signal a formatting gate would carry is
+  unreadable.** Running it over `sigil-frontend-emp` + `sigil-cli` alone reports diffs in
+  `sigil-cli/build.rs` (5 sites), `src/bin/emp_census.rs`, `src/main.rs` (10+ sites) and on
+  down — none of them touched by this branch. **The consequence is the one that matters for
+  review, not for aesthetics:** a parcel cannot use `cargo fmt --check` to prove it left
+  formatting alone, so every author hand-matches surrounding style and every reviewer
+  hand-checks it, which is exactly the class of check a tool should be absorbing. Note this
+  is NOT "the codebase is unformatted" — it is that nobody can tell, because the tool's
+  output is dominated by pre-existing drift. — OPEN (kill: one `cargo fmt` sweep lands as its
+  own no-behaviour commit and `cargo fmt --check` joins the clippy line in the verification
+  bar; until then, do not cite it as evidence of anything)

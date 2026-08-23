@@ -72,8 +72,9 @@ pub fn rename_module(module: &mut Module, map: &HashMap<String, String>) {
         }
         // C1 item 4: a non-`pub` equ's own symbol is mangled through the SAME
         // map that rewrites its references (below), so definition and use stay
-        // in lockstep. A `pub equ` is absent from the map and keeps its plain
-        // name; a plain-int equ passes through unchanged.
+        // in lockstep. A `pub equ` maps to ITSELF — both in its owner and in any
+        // module that imports it — so it keeps its plain cross-seam name on both
+        // sides; a plain-int equ passes through unchanged.
         for eq in &mut sec.equ_syms {
             if let Some(canon) = canonicalize_name(&eq.name, map) {
                 eq.name = canon;
