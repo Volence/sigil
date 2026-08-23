@@ -68,6 +68,12 @@ pub struct ExportIndex {
     by_name: HashMap<String, Vec<String>>,
     /// (module_id, name) exported? — for qualified-reference validation.
     exported: HashSet<(String, String)>,
+    /// (module_id, name) of every exported `pub equ`. A `pub equ` is a PLAIN
+    /// cross-seam link symbol whose name is unique across the whole program
+    /// (`build_program`'s `[equ.collision]` check enforces that), so an importer
+    /// binds the short name to the bare symbol rather than to a module-qualified
+    /// canonical one — see [`ExportIndex::import_target`].
+    equ_exports: HashSet<(String, String)>,
 }
 
 impl ExportIndex {
@@ -75,6 +81,7 @@ impl ExportIndex {
     pub fn build(modules: &[(&str, &ast::File)]) -> Self {
         let mut by_name: HashMap<String, Vec<String>> = HashMap::new();
         let mut exported = HashSet::new();
+        let mut equ_exports = HashSet::new();
         for (id, file) in modules {
             for name in exported_names(file) {
                 // Guard against the same module appearing twice in `modules`:
@@ -86,19 +93,37 @@ impl ExportIndex {
                 }
                 exported.insert(((*id).to_string(), name));
             }
+            for name in pub_equ_names(file) {
+                equ_exports.insert(((*id).to_string(), name));
+            }
         }
-        ExportIndex { by_name, exported }
+        ExportIndex { by_name, exported, equ_exports }
     }
 
     /// Whether `module_id` exports a `pub` top-level name `name`.
     pub fn is_exported(&self, module_id: &str, name: &str) -> bool {
         self.exported.contains(&(module_id.to_string(), name.to_string()))
     }
+
+    /// The symbol an importer must bind the short name `name` to when it comes
+    /// from `module_id`. Ordinary items are renamed to their module-qualified
+    /// [`canonical`] symbol, so two modules' same-named items never collide in
+    /// the flat link table. A `pub equ` is the exception: its definition keeps
+    /// the bare spelling (that IS the construct's `.emp`→`.asm` purpose, and the
+    /// name is program-unique), so an import must bind to the bare name for
+    /// definition and use to meet at link.
+    pub fn import_target(&self, module_id: &str, name: &str) -> String {
+        if self.equ_exports.contains(&(module_id.to_string(), name.to_string())) {
+            name.to_string()
+        } else {
+            canonical(module_id, name)
+        }
+    }
 }
 
 /// The `pub` names of a file (all item kinds that can be referenced across
-/// modules: data/proc/offsets/const/struct/enum/bitfield/newtype). Recurses into
-/// `section {}` bodies so section-nested `pub` items are exported too — without
+/// modules: data/proc/offsets/const/equ/struct/enum/bitfield/newtype). Recurses
+/// into `section {}` bodies so section-nested `pub` items are exported too — without
 /// this a `pub data` inside a section is invisible cross-module (Task 0.5 fix).
 pub fn exported_names(file: &ast::File) -> Vec<String> {
     let mut out = Vec::new();
@@ -155,6 +180,13 @@ fn item_pub_name(item: &ast::Item) -> Option<String> {
         // exports its FIELD/MARK/ALIAS labels instead — handled specially in
         // `collect_exported` (an item can export many names).
         ast::Item::Vars(v) if v.public && v.name.is_some() => v.name.clone(),
+        // A `pub equ` exports its NAME so a consumer's `use m.{NAME}` resolves.
+        // Unlike every sibling above, the imported name binds to the BARE link
+        // symbol (`ExportIndex::import_target`): a `pub equ`'s definition is
+        // never module-qualified, because a still-`.asm` consumer names it
+        // unqualified across the link seam. A non-`pub` equ stays module-private
+        // and carries the owner-mangled `$module$NAME` link name instead.
+        ast::Item::Equ(e) if e.is_pub => Some(e.name.clone()),
         _ => None,
     }
 }
@@ -267,7 +299,7 @@ impl<'a> ResolveEnv<'a> {
         if let Some((pid, pfile)) = prelude {
             if pid != module_id {
                 for name in exported_names(pfile) {
-                    let c = canonical(pid, &name);
+                    let c = index.import_target(pid, &name);
                     map.insert(name, c);
                 }
             }
@@ -357,8 +389,9 @@ fn resolve_use(
                     });
                     continue;
                 }
-                if let Some(prev) = map.insert(n.clone(), canonical(&base, n)) {
-                    if prev != canonical(&base, n) {
+                let target = index.import_target(&base, n);
+                if let Some(prev) = map.insert(n.clone(), target.clone()) {
+                    if prev != target {
                         diags.push(Diagnostic {
                             level: Level::Error,
                             message: format!(
@@ -379,8 +412,9 @@ fn resolve_use(
             for (name, owners) in index.by_name.iter() {
                 if owners.iter().any(|o| o == &base) {
                     matched_any = true;
-                    if let Some(prev) = map.insert(name.clone(), canonical(&base, name)) {
-                        if prev != canonical(&base, name) {
+                    let target = index.import_target(&base, name);
+                    if let Some(prev) = map.insert(name.clone(), target.clone()) {
+                        if prev != target {
                             diags.push(Diagnostic {
                                 level: Level::Error,
                                 message: format!(

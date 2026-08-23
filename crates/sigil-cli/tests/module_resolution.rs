@@ -1994,3 +1994,78 @@ fn cross_module_pub_script_resolves_via_use() {
         "the script image at its packed base"
     );
 }
+
+#[test]
+fn pub_equ_is_importable_and_keeps_its_bare_link_name() {
+    // A `pub equ` is a module-visible item: another `.emp` module may `use` it.
+    // The import binds the short name to the equ's BARE link symbol, not to a
+    // module-qualified canonical one — a `pub equ`'s definition is never
+    // module-qualified (a still-`.asm` consumer names it unqualified across the
+    // seam), so any other binding would mint a dangling reference. The folded
+    // immediate proves the reference reached the definition's value.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "m/a.emp", "module m.a\npub equ WIDTH = $20\n");
+    write(
+        root,
+        "m/b.emp",
+        "module m.b\nuse m.a.{WIDTH}\nproc init (a0: *u8) {\n    move.w #WIDTH, d0\n    rts\n}\n",
+    );
+    let out = root.join("out.bin");
+    let output = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("m/b.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "importing a `pub equ` must compile, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let bytes = std::fs::read(&out).unwrap();
+    assert_eq!(
+        bytes,
+        vec![0x30, 0x3C, 0x00, 0x20, 0x4E, 0x75],
+        "move.w #$0020,d0 + rts — the imported equ folded to its declared value"
+    );
+}
+
+#[test]
+fn private_equ_is_not_importable() {
+    // Control arm for `pub_equ_is_importable_and_keeps_its_bare_link_name`: the
+    // same program with `pub` removed must still be rejected. A change that
+    // exported EVERY `equ` rather than only `pub` ones satisfies that test and
+    // is caught only here.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(root, "m/a.emp", "module m.a\nequ WIDTH = $20\n");
+    write(
+        root,
+        "m/b.emp",
+        "module m.b\nuse m.a.{WIDTH}\nproc init (a0: *u8) {\n    move.w #WIDTH, d0\n    rts\n}\n",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .args([
+            "emp",
+            root.join("m/b.emp").to_str().unwrap(),
+            "--root",
+            root.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "a non-`pub` equ must stay module-private, stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("module `m.a` has no `pub` name `WIDTH`"),
+        "stderr was: {stderr}"
+    );
+}
