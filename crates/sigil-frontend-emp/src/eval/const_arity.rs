@@ -149,16 +149,18 @@ impl Evaluator<'_> {
                     // poisons the byte conversion on the emitting path BEFORE
                     // any length is compared, so the byte count is undefined
                     // there — stay silent rather than invent one.
-                    Value::Str(s) if matches!(**elem, Ty::Prim { width: 1, .. }) => {
-                        if s.is_ascii() && s.len() != *n {
-                            self.error(
-                                span,
-                                format!(
-                                    "array length mismatch: expected {n} element(s), got {}",
-                                    s.len()
-                                ),
-                            );
-                        }
+                    Value::Str(s)
+                        if matches!(**elem, Ty::Prim { width: 1, .. })
+                            && s.is_ascii()
+                            && s.len() != *n =>
+                    {
+                        self.error(
+                            span,
+                            format!(
+                                "array length mismatch: expected {n} element(s), got {}",
+                                s.len()
+                            ),
+                        );
                     }
                     _ => {}
                 }
