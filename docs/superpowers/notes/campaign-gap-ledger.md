@@ -2557,3 +2557,26 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   the intended spelling, or does the language want a first-class alias form?** New surface, so
   it is owner-facing, not a lane call. — OPEN (kill: ruled either way, with the comptime-fn
   idiom written into the spec if it wins).
+
+- [pub-equ report, 2026-08-22] **A LOOSE GREP FOR A CONSTRUCT COUNTS THE COMMENTS THAT TALK
+  ABOUT THE CONSTRUCT — and the miss it causes is not random, it is adjacent.** This lane
+  enumerated `pub equ` in aeon with `git grep -c 'pub equ'` and reported 49 declarations
+  across 3 files to a peer *and into a dispatch brief*. Anchored at line start
+  (`^\s*pub equ`), the truth is **71 across 5**. Two of the three counts were prose-inflated
+  (`error_handler` 46→45), and one was **entirely** prose: `scene_dsl.emp` has *zero*
+  declarations, and its single hit is a comment reading *"the ledger rows the registry
+  publishes as `pub equ`"* — **a comment pointing at the 21 declarations in
+  `scene_registry.emp`, the file the enumeration missed altogether.** The prose hit was not
+  noise; it was a signpost to the omission, read as the thing itself.
+  This is the name-is-not-the-thing family at its most ordinary: the *name of a construct*,
+  appearing in a comment *about* that construct, counted as an instance of it. It is also the
+  enumeration-parameter bar with the alphabet wrong rather than the attribute — and note that
+  re-running the same grep returns 49 forever.
+  **Practice: anchor a construct enumeration at line start, and when a per-file count is 1 or
+  2, read the lines** — a small count is where a comment hides best, because nothing about it
+  looks anomalous. Caught by the aeon lane re-deriving in their own tree, which is the only
+  place it was answerable. — OPEN, informational (kill: n/a; delete when the practice is
+  visibly routine).
+  Corollary already paid for once today: **a wrong count in a DISPATCH BRIEF is worse than in
+  a message**, because an agent has no standing to doubt it and may size a fixture from it.
+  The correction had to be chased mid-flight.
