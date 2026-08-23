@@ -133,13 +133,13 @@ noticed and would otherwise have swallowed, which is a real but bounded win.
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — currently **3835 passed / 0 failed / 4 ignored**
-  under `SIGIL_STRICT_GATE=1` (sigil master `6fae4d6a`, aeon `1ee8f8e6`, 2026-08-22),
+  `AEON_DIR` set to the aeon tree — currently **3839 passed / 0 failed / 4 ignored**
+  under `SIGIL_STRICT_GATE=1` (sigil master `1a984bd2`, aeon `1ee8f8e6`, 2026-08-22),
   with **zero `skip:` lines** in the run — check that, not just the
   totals: a reference gate that skips reports nothing and reads as coverage.
   **Reconcile the total against the tree, not against the last remembered bar:**
   `git grep -c '#\[test\]' HEAD -- '*.rs'` summed gives the declared count, and
-  `passed + ignored` must equal it (3835 + 4 = 3839 here). Baseline arithmetic carried
+  `passed + ignored` must equal it (3839 + 4 = 3843 here). Baseline arithmetic carried
   across branches measured on different reference trees does not reconcile and will
   invent a discrepancy that is not there. Never plain
   `cargo test`: without `--release` some gates are impractically slow, without
@@ -241,6 +241,19 @@ describe those inputs without naming the identifiers, and to say why in the file
 next author does not re-arm it. **Replay the audit against any branch adding a
 `crates/*/tests/*.rs` file** — it costs one loop and the failure is otherwise invisible
 until 05:17.
+**⚠ `gates=N` is NOT a number this script prints — it is a reconstruction, and two lanes
+reconstructed different quantities under the same label** *(caught 2026-08-22, at a landing)*.
+The script emits no `gates=` line at all. This document recorded `gates=35 unclassified=0`
+(the size of the `SOURCE_GATES` array); a parcel agent replaying the same audit reported
+`gates=116 unclassified=0` (the count of `crates/*/tests/*.rs` files the selector SCANS).
+**Both measurements were correct and they are not the same quantity** — on the merged tree:
+`SOURCE_GATES=35 scanned=116 unclassified=0`. Nothing was wrong except the label, which is
+precisely why it survived: two different numbers agreeing on the part that matters look like
+a discrepancy in the part that does not. **The load-bearing figure is `unclassified`** — it
+is the only one the script acts on (non-zero ⇒ exit 2, whole lane dark). When reporting an
+audit replay, name the quantity: `SOURCE_GATES=<n> scanned=<n> unclassified=<n>`, never a
+bare `gates=`.
+
 **Left open, deliberately:** tightening the detector to match code uses rather than any
 occurrence would disarm the trap, but it also loosens what the lane considers
 unclassified, and a genuinely aeon-reading gate escaping silently is the failure this
@@ -519,7 +532,36 @@ sigil-internal, neither touching `golden/` / `pins.rs` / `repin.toml`:
 - **`feat/field-align`** — LANDED at `6fae4d6a`, see queue item 3 above.
 - **`fix/rom-sentinel-port-tests`** — LANDED at `c75c2ffa`, see queue item 5 above.
 
-6. **`cargo clippy --workspace --all-targets -- -D warnings` FAILS on master.** One error,
+6. ~~**`pub equ` does not export**~~ and ~~**clippy fails on master**~~ — both **LANDED** at
+   `1a984bd2` (`fix/pub-equ-export`). Reported by the aeon lane; ruled a **compiler bug, not a
+   spec error**, on a fact neither lane had at report time: `parser.rs:546` accepts `pub` and
+   threads it into `ast::EquDecl::is_pub`, a field whose own doc comment says it means
+   exported, while `item_pub_name()` dropped it. **A modifier that parses and does nothing is
+   worse than one that is rejected**, so §7.5 (*"`pub equ` adds module visibility like every
+   other `pub` item"*, read at empyrean `origin/main`) stands and the compiler moved.
+   **The one-line fix this was dispatched as would have been WORSE THAN THE BUG, and the
+   agent measured that rather than arguing it.** Every other exported item renames to its
+   module-qualified canonical; a `pub equ`'s definition keeps the **bare** name — the
+   construct's purpose. Exporting without changing how imports bind makes `use m.a.{X}`
+   resolve to a symbol nothing defines: applying exactly the specified change yields
+   `unresolved symbol m.a.WIDTH`. Shipped fix also records which exports are equs and binds
+   those to the bare name on the `use{}`, glob **and** prelude paths (all three called
+   `canonical()` directly). Sound only because `build_program`'s `[equ.collision]` check
+   already makes a `pub equ` name program-unique — its own diagnostic states that invariant.
+   `collect_exported` needed no change (the `Vars` special case is for items exporting MANY
+   names; an equ exports one), and `collect_defined` must NOT gain an `Equ` arm — that
+   reintroduces the dangling symbol.
+   **Still open, and worth knowing before writing any new consumer:** a QUALIFIED reference to
+   an imported `pub equ` (`m.a.X`) still fails `unknown symbol` — `canonicalize_name`'s
+   last-dot path assumes the canonical is `<module>.<item>`, which a pub equ's never is.
+   **`equ` is now the only item kind whose bare and qualified spellings disagree.** Bare names
+   and `use{}` imports both work. Ledgered OPEN with a kill condition.
+   Verified at landing: **3839 / 0 / 4**, `3839 + 4 = 3843` = declared, zero `skip:` lines,
+   log stamped `head=1a984bd2 branch=master`, all four new tests present by name, and
+   `cargo clippy --workspace --all-targets -- -D warnings` **now exits 0** — that bar was
+   failing on master before this parcel. **The bar moves to 3839 / 0 / 4.**
+   Packet: `docs/superpowers/notes/2026-08-22-pub-equ-export-packet.md`.
+   *(Superseded queue text, kept for the reasoning:)* clippy failed on master with one error,
    pre-existing, surfaced by the README pass (which is docs-only and did not cause it):
    `crates/sigil-frontend-emp/src/eval/const_arity.rs:153`, `clippy::collapsible_match` —
    *"this `if` can be collapsed into the outer `match`"*. Reproduced firsthand on master with
@@ -546,7 +588,7 @@ from the crate table; three named harness gates no longer exist (`assemble_full_
 scope is false, `sigil build` produces it. **A README's commands are its most-used and
 least-checked content — run them, do not read them.**
 
-**Nothing in flight; no agents running.** Master `a4476e53`, pushed. Front of the queue is
+**Nothing in flight; no agents running.** Master `1a984bd2`, pushed. Front of the queue is
 item 4 (`pad_to(N)`), which is PARKED ON THE OWNER — do not dispatch it, and see the
 autonomy-scope section for why a new language surface is outside this lane's standing
 authority. Everything else in the list above is landed.
