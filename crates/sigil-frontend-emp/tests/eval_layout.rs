@@ -372,3 +372,225 @@ fn offsetof_newtype_cycle_is_diagnosed_not_a_crash() {
         "expected a cyclic-type diagnostic, got {diags:?}"
     );
 }
+
+// ---- `(align: N)` field assertions --------------------------------------
+//
+// The error-tier, per-field, opt-in counterpart to `[layout.odd-field]`. It
+// asserts a PROPERTY of the computed offset, so it survives every legitimate
+// insertion above the field, and it is not a lint — no `@allow` reaches it.
+
+#[test]
+fn field_align_satisfied_is_silent() {
+    // THE CONTROL ARM. head: u16 @0 (2 bytes), so bridge lands at 2, and
+    // 2 % 2 == 0. A check that rejected everything would still pass the
+    // violation test below; only this one refutes it.
+    let src = "module m\nstruct Rec { head: u16, bridge: i16 (align: 2) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "Rec");
+    assert!(diags.is_empty(), "a satisfied (align:) must be silent: {diags:?}");
+    assert_eq!(layout.expect("Rec should lay out").fields[1].offset, 2);
+}
+
+#[test]
+fn field_align_violation_is_an_error() {
+    // THE POISON ARM. head: u8 @0 (1 byte), so bridge lands at 1, and 1 % 2 == 1.
+    let src = "module m\nstruct Rec { head: u8, bridge: i16 (align: 2) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "Rec");
+    // The layout still reports the real offset — the assertion judges it, it
+    // does not move it.
+    assert_eq!(layout.expect("Rec should still lay out").fields[1].offset, 1);
+    assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
+    let d = &diags[0];
+    assert_eq!(d.level, Level::Error, "(align:) must be an ERROR, got {:?}", d.level);
+    // Names the field, the claim, and the live offset.
+    assert!(d.message.contains("field bridge"), "was {:?}", d.message);
+    assert!(d.message.contains("declares (align: 2)"), "was {:?}", d.message);
+    assert!(d.message.contains("but lands at offset 1"), "was {:?}", d.message);
+    // Names the padding delta in both directions: 2 - (1 % 2) to add, 1 % 2 to remove.
+    assert!(d.message.contains("add 1 or remove 1"), "was {:?}", d.message);
+    // Names the INSTRUCTION that would fault, never an offset to pin.
+    assert!(d.message.contains("68000 address error"), "was {:?}", d.message);
+    assert!(d.message.contains("Do not pin an @offset"), "was {:?}", d.message);
+}
+
+#[test]
+fn field_align_error_is_not_silenced_by_the_odd_field_allow() {
+    // `@allow("layout.odd-field")` speaks for the warning tier only. An explicit
+    // (align:) claim is not a lint and the allow must not reach it — the whole
+    // reason the attribute exists is that the warning tier is silenceable.
+    let src =
+        "module m\n@allow(\"layout.odd-field\")\nstruct Rec { head: u8, bridge: i16 (align: 2) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "Rec");
+    let errs: Vec<&Diagnostic> = diags.iter().filter(|d| d.level == Level::Error).collect();
+    assert_eq!(errs.len(), 1, "the allow must not silence (align:): {diags:?}");
+    assert!(errs[0].message.contains("but lands at offset 1"), "was {:?}", errs[0].message);
+}
+
+#[test]
+fn field_align_supersedes_the_odd_field_warning() {
+    // The explicit claim has already judged this field at the tier the author
+    // asked for; the heuristic lint must not double-report the same fault.
+    let src = "module m\nstruct Rec { head: u8, bridge: i16 (align: 2) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "Rec");
+    let odd: Vec<&Diagnostic> = diags.iter().filter(|d| d.message.contains("odd-field")).collect();
+    assert!(odd.is_empty(), "(align:) must supersede the odd-field lint: {diags:?}");
+}
+
+#[test]
+fn field_align_one_is_the_per_field_odd_field_opt_out() {
+    // `(align: 1)` is the identity claim: this word's parity is deliberately not
+    // load-bearing. It silences the lint for THIS field, where the module-scope
+    // allow can only speak for every field at once.
+    let src = "module m\nstruct Rec { head: u8, loose: i16 (align: 1), tail: i16 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "Rec");
+    // loose@1 is exempt; tail@3 is a bare odd word and still warns — proving the
+    // opt-out is per-field and not a module-wide silence.
+    let odd: Vec<&Diagnostic> = diags.iter().filter(|d| d.message.contains("odd-field")).collect();
+    assert_eq!(odd.len(), 1, "expected only tail to warn, got {diags:?}");
+    assert!(odd[0].message.contains("field tail"), "was {:?}", odd[0].message);
+    assert!(
+        diags.iter().all(|d| d.level != Level::Error),
+        "(align: 1) must never error: {diags:?}"
+    );
+}
+
+#[test]
+fn field_align_even_offset_missing_a_wider_alignment_omits_the_cpu_claim() {
+    // head: u16 @0, wide@2. 2 % 4 == 2 — the claim is violated, but 2 is EVEN,
+    // so no 68000 access faults here and the message must not say one would.
+    let src = "module m\nstruct Rec { head: u16, wide: u32 (align: 4) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "Rec");
+    assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
+    let msg = &diags[0].message;
+    assert!(msg.contains("but lands at offset 2"), "was {msg:?}");
+    // add 4 - (2 % 4) = 2, remove 2 % 4 = 2.
+    assert!(msg.contains("add 2 or remove 2"), "was {msg:?}");
+    assert!(!msg.contains("address error"), "must not invent a CPU fault: {msg:?}");
+}
+
+#[test]
+fn field_align_non_power_of_two_is_refused() {
+    let src = "module m\nstruct Rec { head: u8, odd_claim: u16 (align: 3) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "Rec");
+    let errs: Vec<&Diagnostic> = diags.iter().filter(|d| d.level == Level::Error).collect();
+    assert_eq!(errs.len(), 1, "expected exactly one error, got {diags:?}");
+    // Matched on the rule-unique `declares (align:` prefix, not on the trailing
+    // clause alone — `[section.bank]` also refuses non-powers-of-two and a bare
+    // phrase match could be satisfied by an unrelated rule.
+    assert!(errs[0].message.contains("declares (align: 3)"), "was {:?}", errs[0].message);
+    assert!(errs[0].message.contains("must be a power of two"), "was {:?}", errs[0].message);
+    // A malformed alignment is refused, not evaluated — no offset verdict follows.
+    assert!(!errs[0].message.contains("lands at offset"), "was {:?}", errs[0].message);
+}
+
+#[test]
+fn field_align_zero_is_refused_not_a_modulo_by_zero() {
+    let src = "module m\nstruct Rec { head: u8, bad: u16 (align: 0) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "Rec");
+    let errs: Vec<&Diagnostic> = diags.iter().filter(|d| d.level == Level::Error).collect();
+    assert_eq!(errs.len(), 1, "expected exactly one error, got {diags:?}");
+    assert!(errs[0].message.contains("declares (align: 0)"), "was {:?}", errs[0].message);
+    assert!(errs[0].message.contains("must be a power of two"), "was {:?}", errs[0].message);
+}
+
+#[test]
+fn field_align_takes_a_comptime_expression() {
+    // The alignment is an expr, as `@offset` and `(size:)` are — a named
+    // constant is as good as a literal.
+    let src = "module m\nconst WORD = 2\nstruct Rec { head: u8, bridge: i16 (align: WORD) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "Rec");
+    assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
+    assert!(diags[0].message.contains("declares (align: 2)"), "was {:?}", diags[0].message);
+}
+
+#[test]
+fn field_align_and_at_offset_are_independent_assertions() {
+    // bridge lands at 1. `@ 1` is satisfied; `(align: 2)` is not. Each judges the
+    // same computed offset for a different property and reports on its own.
+    let src = "module m\nstruct Rec { head: u8, bridge: i16 @ 1 (align: 2) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "Rec");
+    assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
+    assert!(diags[0].message.contains("but lands at offset 1"), "was {:?}", diags[0].message);
+    assert!(!diags[0].message.contains("asserts"), "the @offset held: {:?}", diags[0].message);
+}
+
+#[test]
+fn field_align_and_a_wrong_at_offset_both_report() {
+    // Two different faults on one field: the snapshot is stale AND the parity
+    // broke. Both are named; neither suppresses the other.
+    let src = "module m\nstruct Rec { head: u8, bridge: i16 @ 99 (align: 2) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "Rec");
+    assert_eq!(diags.len(), 2, "expected both assertions to report, got {diags:?}");
+    assert!(diags.iter().any(|d| d.message.contains("asserts 99")), "got {diags:?}");
+    assert!(diags.iter().any(|d| d.message.contains("but lands at offset 1")), "got {diags:?}");
+}
+
+#[test]
+fn field_align_accepts_either_attribute_order() {
+    // `(align:) @ offset` parses the same as `@ offset (align:)`.
+    let src = "module m\nstruct Rec { head: u8, bridge: i16 (align: 2) @ 1 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "Rec");
+    assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
+    assert!(diags[0].message.contains("but lands at offset 1"), "was {:?}", diags[0].message);
+}
+
+#[test]
+fn vars_form_align_on_a_struct_field_is_refused_by_name() {
+    // `@align(N)` on a `vars` field ADVANCES the allocation cursor. A struct
+    // field never moves, so the spelling is refused with the one that asserts
+    // rather than parsed as an offset expression beginning with an identifier.
+    let src = "module m\nstruct Rec { head: u8, bridge: i16 @align(2) }\n";
+    let (_file, diags) = parse_str(src);
+    assert!(!diags.is_empty(), "expected a parse diagnostic, got none");
+    assert!(
+        diags.iter().any(|d| d.message.contains("asserts its alignment with `(align: N)`")),
+        "expected the spelling to be refused by name, got {diags:?}"
+    );
+}
+
+#[test]
+fn field_align_catches_an_insertion_that_re_parities_a_bridge() {
+    // The motivating shape: a hand-computed pad holding two word bridges even.
+    // head@0 (2) + pad@2 (2) + bridge@4 — satisfied.
+    let ok = "module m\nstruct Sc { head: u16, pad: u16 = 0, bridge: i16 (align: 2) }\n";
+    let (file, diags) = parse_str(ok);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "Sc");
+    assert!(diags.is_empty(), "the padded shape must be silent: {diags:?}");
+
+    // One byte inserted ABOVE the pad, which the pad's hand-computed width knows
+    // nothing about: head@0 (2) + ins@2 (1) + pad@3 (2) + bridge@5. The claim is
+    // on the bridge, not on the pad, so it survives the insertion and fires.
+    let drifted =
+        "module m\nstruct Sc { head: u16, ins: u8, pad: u16 = 0, bridge: i16 (align: 2) }\n";
+    let (file, diags) = parse_str(drifted);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "Sc");
+    let errs: Vec<&Diagnostic> = diags.iter().filter(|d| d.level == Level::Error).collect();
+    assert_eq!(errs.len(), 1, "expected the bridge to fail, got {diags:?}");
+    assert!(errs[0].message.contains("field bridge"), "was {:?}", errs[0].message);
+    assert!(errs[0].message.contains("but lands at offset 5"), "was {:?}", errs[0].message);
+}

@@ -457,6 +457,13 @@ pub struct StructField {
     pub ty: Type,
     /// Explicit byte offset, e.g. the `0x2E` in `@ 0x2E`.
     pub offset: Option<Expr>,
+    /// Asserted alignment of this field's computed offset, e.g. the `2` in
+    /// `(align: 2)`. An error-tier claim about a PROPERTY of the offset, never
+    /// an instruction to move anything: the layout engine still places the
+    /// field at the next free byte and reports a violation. Its presence also
+    /// takes the field out of the `[layout.odd-field]` heuristic lint, which
+    /// the explicit claim supersedes.
+    pub align: Option<Expr>,
     /// Default value, e.g. the `0` in `= 0`.
     pub default: Option<Expr>,
     /// Span of the whole field.

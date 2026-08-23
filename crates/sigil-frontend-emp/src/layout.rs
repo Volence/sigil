@@ -613,6 +613,7 @@ impl<'a> Evaluator<'a> {
         // entry, so no spurious size-mismatch piles on top of the cycle report.
         self.check_struct_size(name, decl, &layout);
         self.check_struct_offsets(name, decl, &layout);
+        self.check_struct_field_align(name, decl, &layout);
         self.check_struct_odd_fields(name, decl, &layout);
         // (b) CHECK-EXPR cycle: a `(size:)`/`@offset` expr above may have called
         // `sizeof`/`offsetof(Self)`, closing the layout cycle and slice-poisoning
@@ -989,6 +990,80 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    /// `(align: N)` field assertions: for every field that carries one, require
+    /// its computed offset to be a multiple of `N`. ERROR tier, and deliberately
+    /// not a lint — this is the tier an author reaches for when the parity of a
+    /// field is load-bearing and the `[layout.odd-field]` warning is too quiet
+    /// to be trusted with it. `@allow("layout.odd-field")` does not reach it.
+    ///
+    /// It asserts a PROPERTY, which is the whole point of preferring it to an
+    /// `@offset` snapshot: parity survives every legitimate insertion above the
+    /// field, whereas a hand-written offset has to be re-derived on each one and
+    /// is therefore a constant that goes stale.
+    ///
+    /// `N` is any comptime expression (as `@offset` and `(size:)` are) that
+    /// evaluates to a power of two. `(align: 1)` is the identity — every offset
+    /// satisfies it — and is the per-FIELD way to declare an intentionally
+    /// unaligned word, where `@allow("layout.odd-field")` can only speak for a
+    /// whole module. A non-power-of-two (including 0 and negatives) is refused
+    /// as a malformed alignment rather than evaluated.
+    ///
+    /// The claim is about this field's offset within THIS struct only. A field
+    /// of struct type asserts where that struct starts; nothing propagates into
+    /// the nested struct's own fields, which carry their own claims.
+    fn check_struct_field_align(&mut self, name: &str, decl: &ast::StructDecl, layout: &Layout) {
+        // A cycle that closed during an earlier check already poisoned our memo
+        // entry — stop rather than pile alignment noise on the cycle report.
+        if self.struct_layout_memo.contains_key(name) {
+            return;
+        }
+        for (field_decl, field_layout) in decl.fields.iter().zip(layout.fields.iter()) {
+            let Some(align_expr) = &field_decl.align else { continue };
+            let Some(align) = self.eval_const_index(align_expr) else { continue };
+            // Same re-entrancy guard as `check_struct_offsets`: a self-referential
+            // alignment expr (e.g. `(align: sizeof(Self))`) may have closed the
+            // layout cycle while it evaluated.
+            if self.struct_layout_memo.contains_key(name) {
+                return;
+            }
+            let span = crate::parser::expr_span(align_expr);
+            if align < 1 || (align & (align - 1)) != 0 {
+                self.error(
+                    span,
+                    format!(
+                        "struct {name}: field {} declares (align: {align}) but an alignment must be a power of two (1, 2, 4, 8, ...)",
+                        field_layout.name
+                    ),
+                );
+                continue;
+            }
+            let computed = field_layout.offset as i128;
+            let slack = computed % align;
+            if slack == 0 {
+                continue;
+            }
+            // The 68000 faults on odd word/long addresses only. Name that
+            // instruction when the offset is actually odd, and stay silent about
+            // hardware when it is not — a wider alignment that a field missed by
+            // an even margin is the author's own claim, not a CPU rule.
+            let hazard = if computed % 2 == 1 {
+                " A word or long access to an odd address is a 68000 address error."
+            } else {
+                ""
+            };
+            self.error(
+                span,
+                format!(
+                    "struct {name}: field {} declares (align: {align}) but lands at offset {computed} \
+                     — add {} or remove {slack} byte(s) of padding above it.{hazard} Do not pin an \
+                     @offset to satisfy this; a hand-written offset is the number that goes stale.",
+                    field_layout.name,
+                    align - slack
+                ),
+            );
+        }
+    }
+
     /// `[layout.odd-field]` (§4.3): a default-on WARNING (not an error — some
     /// Z80-side layouts are legitimately unaligned) for every word/long
     /// (2- or 4-byte) field that lands at an odd byte offset.
@@ -1007,6 +1082,14 @@ impl<'a> Evaluator<'a> {
             return;
         }
         for (field_decl, field_layout) in decl.fields.iter().zip(layout.fields.iter()) {
+            // A field carrying an explicit `(align: N)` is under an error-tier
+            // claim that has already been judged. The heuristic lint has nothing
+            // to add to it: a violation is reported once, at the tier the author
+            // asked for, and `(align: 1)` is a deliberate declaration that this
+            // word's parity is not load-bearing.
+            if field_decl.align.is_some() {
+                continue;
+            }
             if matches!(field_layout.size, 2 | 4) && field_layout.offset % 2 == 1 {
                 // The warning is anchored at the whole field declaration's span
                 // (`field_decl.span`), not just the type or offset token — a
