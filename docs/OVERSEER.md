@@ -59,16 +59,43 @@ region is added. That whole ripple belongs to the aeon-owned lane.
 
 Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
 
+## The autonomy directive — and its scope, which is the part that matters
+
+Every sigil overseer session operates on a banked owner directive: **on assembler
+internals the owner defers to the implementer — make the best technical/design call and
+proceed; checkpoint at milestone boundaries.** Provenance, stated because it is load-bearing
+and was until now unbanked: it lives in this lane's session memory
+(`user-defers-sigil-technical-calls`, written ~2026-07-05, origin session
+`9ff8029c`), recording the owner's own words — the internals are "out of my wheelhouse",
+"make the best decisions". It is a real granting act, not a status field promoted into a
+ruling. But **`git log -S` confirms it has never appeared in any sigil doc**, so until this
+paragraph every cold boot took the whole posture from a memory file no other seat can audit.
+
+**The scope boundary is narrower than "sigil technical calls", and reading it broadly is the
+live risk.** The directive names *technical/design forks and encoding minutiae* — fold-vs-fragment,
+where a shared rule lives — and explicitly reserves **direction and priorities** to the owner.
+So:
+
+- **Inside:** implementation strategy, diagnostic wording, gate design, spelling of an
+  attribute within an existing construct family, which of two sound encodings to use.
+- **OUTSIDE — park it:** a NEW `.emp` language surface, anything needing a spec amendment,
+  anything that changes what the language *is* rather than how sigil implements it. That is
+  direction. `pad_to(N)` (queue item 4) is parked for exactly this reason.
+
+**Owed:** a re-confirmation from the owner, both that the directive still holds at all and
+that this scope line is where he wants it. It is 48 days old and has never been checked.
+Do not fund work off the broad reading in the meantime.
+
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — currently **3821 passed / 0 failed / 4 ignored**
-  under `SIGIL_STRICT_GATE=1` (sigil master `aafe612a`, aeon `1ee8f8e6`, 2026-08-22),
+  `AEON_DIR` set to the aeon tree — currently **3835 passed / 0 failed / 4 ignored**
+  under `SIGIL_STRICT_GATE=1` (sigil master `6fae4d6a`, aeon `1ee8f8e6`, 2026-08-22),
   with **zero `skip:` lines** in the run — check that, not just the
   totals: a reference gate that skips reports nothing and reads as coverage.
   **Reconcile the total against the tree, not against the last remembered bar:**
   `git grep -c '#\[test\]' HEAD -- '*.rs'` summed gives the declared count, and
-  `passed + ignored` must equal it (3821 + 4 = 3825 here). Baseline arithmetic carried
+  `passed + ignored` must equal it (3835 + 4 = 3839 here). Baseline arithmetic carried
   across branches measured on different reference trees does not reconcile and will
   invent a discrepancy that is not there. Never plain
   `cargo test`: without `--release` some gates are impractically slow, without
@@ -307,13 +334,64 @@ share**; `TST` was exactly that, live.
    its tail: `encode_bit`'s bit-number field (152 words, a defect **both halves share**,
    byte-neutral to fix and provably so), the odd `.s` branch displacement latent, and the
    unpinned oracle version.
-3. **An alignment attribute / even-offset assertion** — IN FLIGHT on `feat/field-align`;
-   the class-level fix for the
+3. ~~**An alignment attribute / even-offset assertion**~~ — **LANDED** at `6fae4d6a`
+   (`feat/field-align`). Shipped as `sc_mask_raw: i16 (align: 2)` — error-tier, per-field,
+   opt-in, `N` restricted to powers of two, `(align: 1)` the identity and a per-*field*
+   `[layout.odd-field]` opt-out (finer than the existing module-wide `@allow`).
+   **The spelling is `(align: N)` and NOT `@align(N)`, and this is the parcel's real
+   finding:** `@align(N)` is already taken on `vars` region fields, where it *moves* the
+   allocation cursor (`parser.rs::opt_align` → `lower/regions.rs::align_to`); D2.29 says so
+   outright — *"`vars` regions keep `@align(N)` on fields (reserved space, no bytes) —
+   different mechanism, deliberately different spelling."* One spelling with two opposite
+   meanings (assert vs move) is a worse trap than the one being closed. `(align: N)` instead
+   joins the paren-attribute family, every existing member of which verifies a placement
+   rather than choosing one. `@align(N)` written on a struct field is refused **by name**
+   with a teaching diagnostic, not mis-parsed as an offset expr opening with the identifier
+   `align`.
+   **The auto-padding tier was never an open call, and this overseer was wrong to dispatch
+   it as one.** Spec 2 §4.3 already rules it, verbatim: *"The compiler never inserts
+   alignment or padding — Aeon runs `padding off` globally and hand-pads; an auto-aligning
+   struct would silently break byte-exact ports."* Shipping it is a spec amendment, not a
+   feature. Read the spec before framing settled law as a design question.
+   Verified at landing, not accepted: declared `#[test]` = **3839** on the merged tree,
+   run gave **3835 passed / 0 failed / 4 ignored**, `3835 + 4 = 3839` reconciling exactly;
+   zero `skip:` lines under `SIGIL_STRICT_GATE=1`; log stamped `head=6fae4d6a branch=master
+   AEON_DIR=.aeon-landing@1ee8f8e6`; source-gate self-audit `gates=35 unclassified=0`.
+   Delta vs the old 3821/0/4 bar is exactly +14, the parcel's own tests — note that only 13
+   carry the `field_align` prefix; the 14th is `vars_form_align_on_a_struct_field_is_refused_by_name`,
+   so a `grep -c field_align` under-counts by one and looks like a discrepancy that is not there.
+   **The bar moves to 3835 / 0 / 4.**
+   Its packet is `docs/superpowers/notes/2026-08-22-field-align-packet.md`; six new
+   diagnostic strings are a cross-repo interface (aeon fixtures assert exact text),
+   enumerated in its §10.
+   The superseded queue text, kept because it is still the best statement of WHY: the
+   class-level fix for the
    odd-field finding: today a struct wanting even-aligned members can only say so by
    hand-counting bytes into a pad, and the pad goes stale silently. Aeon's own fix has
    LANDED (`9a718f74`, `ensure(offsetof(Scene, sc_mask_raw) % 2 == 0, …)`), so this now
    has a live subject to retire rather than a hypothetical one.
-4. **The remaining ROM-as-sentinel port tests** — IN FLIGHT on
+4. **`pad_to(N)` — a derived-width struct pad.** PARKED FOR THE OWNER; ratified in
+   principle by this overseer, not built. The `(align: N)` assertion above **guards** the
+   stale constant; it does not remove it. `sc_pad_5D`'s width is still a function of every
+   field above it and a human still re-counts it by hand each time the guard fires. The
+   proposal (packet §4): give structs the `pad(N)` field form that `vars` region bodies
+   already have (`parser.rs::region_field`), plus a `pad_to(N)` sibling whose width the
+   engine computes. **This does not need a §4.3 amendment** — the bytes sit on a line the
+   author wrote, in declaration order; the compiler sizes a declared pad rather than
+   inserting an undeclared one. Nothing appears in a struct lacking such a line, so no
+   existing struct changes size and byte-identity is untouched. It kills the staling
+   constant outright, with `(align: N)` left as the independent proof that the derivation
+   did what was intended. Needs spec text in `empyrean/docs/SIGIL_SPEC2_LANGUAGE.md` first.
+   **The strongest argument for keeping it parked is not the one this overseer led with**
+   (*empyrean lane, 2026-08-22*). "It would be the first construct moving bytes the author
+   did not write" is true but second-order. The real cost: **auto-pad makes the defect class
+   SILENT.** Today a stale hand-counted pad is *detected* — loudly, by the guard. After
+   auto-pad a wrong pad is *absorbed*, the ROM changes size, and nothing notices. That is
+   trading a loud failure for an invisible one, worth doing only once the layout rules are
+   settled enough that the invisible case is genuinely impossible. Note this argument bites
+   `pad_to(N)` too, not just blanket auto-padding — which is why `(align: N)` must stay
+   mandatory alongside it rather than becoming redundant once the width is derived.
+5. **The remaining ROM-as-sentinel port tests** — IN FLIGHT on
    `fix/rom-sentinel-port-tests`. Booked as "ten"; that count has not been re-run since it
    was written, so the branch owes the enumeration before the fix. They gate on `s4.bin` existing to
    answer "is there an aeon tree here", so a source-only tree makes them panic
@@ -349,14 +427,8 @@ the tip and how it was verified.
 **In flight (2026-08-22, dispatched by this session).** Two worktree agents, both
 sigil-internal, neither touching `golden/` / `pins.rs` / `repin.toml`:
 
-- **`feat/field-align`** — queue item 3, the field alignment attribute. Dispatched
-  assert-only (error-tier, per-field, opt-in), with the auto-padding tier priced-and-parked
-  for a ruling rather than shipped: implicit padding would be the first `.emp` construct
-  that moves bytes the author did not write. The load-bearing design datum, taken from
-  aeon's own comment at `origin/master:engine/level/scene_dsl.emp`, is that
-  `[layout.odd-field]` **did fire** on the drift and was swallowed by a warning baseline
-  nobody re-read — so the missing tier is error, not another warning.
-- **`fix/rom-sentinel-port-tests`** — queue item 4. The booked count of ten is dispatched as
+- **`feat/field-align`** — LANDED at `6fae4d6a`, see queue item 3 above.
+- **`fix/rom-sentinel-port-tests`** — now queue item 5. The booked count of ten is dispatched as
   **unverified**, with the enumeration itself as the first deliverable (both a filename grep
   and a `test_support` caller walk, reconciled, since neither is a superset of the other),
   and an A/B/C classification so genuinely artifact-dependent tests are left alone rather
@@ -377,8 +449,16 @@ time — **ping them, don't assume they are watching**:
 - **When the alignment attribute lands:** they migrate the two `offsetof(Scene, …) % 2
   == 0` ensures to it and retire them. Their `ensure`s are a workaround for the missing
   language feature, not a fix for the class. Those ensures now EXIST — aeon landed them
-  at `9a718f74` (merged `1a794ace`), live at `engine/level/scene_dsl.emp:1025,1027` —
-  so this obligation has a concrete subject.
+  at `9a718f74` (merged `1a794ace`), live in `engine/level/scene_dsl.emp` (cited by symbol,
+  not by line: the `:1025,1027` this row carried is exactly the coordinate-rot the protocol
+  bars) — so this obligation has a concrete subject.
+  **TRIGGERED 2026-08-22:** `(align: N)` landed at sigil `6fae4d6a`. The migration is
+  `sc_mask_raw: i16 (align: 2)` / `sc_v_deform_shift_raw: i16 (align: 2)`, deleting both
+  trailing `ensure`s. Two cautions for them: the spelling is **`(align: N)`, not
+  `@align(N)`** — the latter is the `vars`-region cursor-mover and is refused by name on a
+  struct field; and `sc_pad_5D`'s width is still hand-computed after the migration, since
+  the assertion guards the constant rather than deriving it (that is queue item 4,
+  `pad_to(N)`, parked). Push before citing `6fae4d6a` to them — verify against the remote.
 
 **⚠ An empty commit range does not mean an empty branch.** Both overseers read
 `git rev-list --count master..parcel/scene-even-align-guard` = 0, an empty three-dot
