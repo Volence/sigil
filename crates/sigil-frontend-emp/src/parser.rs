@@ -1085,7 +1085,72 @@ impl Parser {
         BitfieldDecl { public, name, repr, fields, span: start.merge(self.prev_span()) }
     }
 
-    /// Parse a `struct Name [(size: expr)] { field: ty [@ offset] [= default], ... }` declaration.
+    /// Parse a struct field's trailing assertion attributes — `@ offset` and
+    /// `(align: expr)` — in either order, returning `(offset, align)`.
+    ///
+    /// Both are ASSERTIONS about the offset the layout engine computes, never
+    /// requests to move it. `(align:)` borrows the paren-attribute spelling of
+    /// `struct Name (size: expr)` and of a map item's `(align: N)`, both of
+    /// which likewise verify a placement instead of choosing one. The `@align(N)`
+    /// of a `vars` field is the opposite mechanism — it advances the allocation
+    /// cursor — so it is refused here by name rather than parsed as an offset
+    /// expression that happens to start with the identifier `align`.
+    fn struct_field_attrs(&mut self) -> (Option<Expr>, Option<Expr>) {
+        let mut offset = None;
+        let mut align = None;
+        loop {
+            if self.at(&Tok::At) {
+                if matches!(self.peek2(), Tok::Ident(s) if s == "align") {
+                    let sp = self.span();
+                    self.bump(); // @
+                    self.bump(); // align
+                    self.diag_at(
+                        sp,
+                        "`@align(N)` reserves space and belongs to a `vars` field; a struct \
+                         field asserts its alignment with `(align: N)`, which moves nothing",
+                    );
+                    if self.eat(&Tok::LParen) {
+                        let e = self.expr();
+                        self.expect(&Tok::RParen, "`)`");
+                        if align.is_none() {
+                            align = Some(e);
+                        }
+                    }
+                    continue;
+                }
+                let sp = self.span();
+                self.bump(); // @
+                let e = self.expr();
+                if offset.is_some() {
+                    self.diag_at(sp, "duplicate `@ offset` on one field");
+                } else {
+                    offset = Some(e);
+                }
+                continue;
+            }
+            if self.at(&Tok::LParen) {
+                let sp = self.span();
+                self.bump(); // (
+                if !self.eat_kw("align") {
+                    let ksp = self.span();
+                    self.diag_at(ksp, "expected `align:` in field attribute list");
+                }
+                self.expect(&Tok::Colon, "`:`");
+                let e = self.expr();
+                self.expect(&Tok::RParen, "`)`");
+                if align.is_some() {
+                    self.diag_at(sp, "duplicate `(align:)` on one field");
+                } else {
+                    align = Some(e);
+                }
+                continue;
+            }
+            break;
+        }
+        (offset, align)
+    }
+
+    /// Parse a `struct Name [(size: expr)] { field: ty [(align: N)] [@ offset] [= default], ... }` declaration.
     fn struct_decl(&mut self, public: bool) -> StructDecl {
         let start = self.span();
         self.bump(); // `struct`
@@ -1109,9 +1174,9 @@ impl Parser {
             let fname = self.expect_ident("field name");
             self.expect(&Tok::Colon, "`:`");
             let fty = self.ty();
-            let offset = if self.eat(&Tok::At) { Some(self.expr()) } else { None };
+            let (offset, align) = self.struct_field_attrs();
             let default = if self.eat(&Tok::Eq) { Some(self.expr()) } else { None };
-            fields.push(StructField { name: fname, ty: fty, offset, default, span: fspan });
+            fields.push(StructField { name: fname, ty: fty, offset, align, default, span: fspan });
             self.skip_newlines();
             if !self.eat(&Tok::Comma) { break; }
             self.skip_newlines();
