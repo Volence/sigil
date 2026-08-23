@@ -18,27 +18,8 @@
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test native_offcanonical_full
 //! ```
 use sigil_harness::native;
+use sigil_harness::test_support::reference_tree_for_profile;
 use std::path::PathBuf;
-
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
-}
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
-}
-fn have_aeon() -> bool {
-    let a = aeon_dir();
-    if a.join("s4.bin").exists() {
-        return true;
-    }
-    if strict_gate() {
-        panic!("SIGIL_STRICT_GATE set but aeon tree missing at {}", a.display());
-    }
-    eprintln!("skip: aeon tree not present (set AEON_DIR)");
-    false
-}
 
 // convsym + the chained build touch shared temp/gen state — serialize the targets.
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -90,11 +71,10 @@ fn size_table(name: &str) -> std::collections::HashMap<String, u32> {
 }
 
 fn run(t: &Target) {
-    if !have_aeon() {
+    let Some(aeon) = reference_tree_for_profile(&t.profile) else {
         return;
-    }
+    };
     let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let aeon = aeon_dir();
     let (eor, want_crc, want_len) = expected(t.name);
 
     // FULL FILE (presence control + size band live inside build_full_file_chained).
@@ -155,11 +135,10 @@ fn run(t: &Target) {
 /// chained listing MUST change what the REAL convsym consumer resolves it to — proving
 /// the spot-check reads the actual packed table, not a cached value.
 fn doctored_control(t: &Target) {
-    if !have_aeon() {
+    let Some(aeon) = reference_tree_for_profile(&t.profile) else {
         return;
-    }
+    };
     let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    let aeon = aeon_dir();
     let native::RomBuild { mut listing, .. } =
         native::build_rom_chained_with_listing(&aeon, &t.profile).unwrap_or_else(|e| panic!("{e}"));
     let probe = t.load_bearing[0];

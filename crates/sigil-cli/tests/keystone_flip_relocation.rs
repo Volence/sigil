@@ -16,24 +16,12 @@
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test keystone_flip_relocation
 //! ```
 use sigil_harness::native;
-use std::path::{Path, PathBuf};
+use sigil_harness::test_support::reference_tree_for_profile;
+use std::path::PathBuf;
 
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".into()))
-}
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
-}
-fn have_aeon(aeon: &Path) -> bool {
-    if aeon.join("s4.bin").exists() {
-        return true;
-    }
-    if strict_gate() {
-        panic!("SIGIL_STRICT_GATE set but aeon tree missing at {}", aeon.display());
-    }
-    eprintln!("skip: aeon tree not present (set AEON_DIR)");
-    false
-}
+/// The golden ROM, from sigil's OWN committed `golden/` directory — not the aeon
+/// tree. Every gate here builds the flipped config_a shape from aeon source and
+/// compares against this, so the reference tree they need is source-only.
 fn golden() -> Vec<u8> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sigil-harness/golden/config_a.bin");
     std::fs::read(&p).unwrap_or_else(|e| panic!("golden config_a.bin: {e}"))
@@ -64,12 +52,11 @@ const DEFORM_DIVERGENT_BYTE: usize = 0x11412; // the byte that went stale (0x12 
 /// Determinism: a second build is identical.
 #[test]
 fn flipped_config_a_anchor_matches_golden() {
-    let aeon = aeon_dir();
-    if !have_aeon(&aeon) {
-        return;
-    }
-    let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let p = native::config_a_keystones_flipped_profile();
+    let Some(aeon) = reference_tree_for_profile(&p) else {
+        return;
+    };
+    let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let rom = native::build_rom_chained(&aeon, &p).unwrap_or_else(|e| panic!("{e}"));
     let rom2 = native::build_rom_chained(&aeon, &p).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(rom, rom2, "flipped config_a: build non-deterministic");
@@ -91,12 +78,11 @@ fn flipped_config_a_anchor_matches_golden() {
 /// positive gate is not passing vacuously over the fold-vs-placement site.
 #[test]
 fn doctored_golden_at_deform_pointer_is_caught() {
-    let aeon = aeon_dir();
-    if !have_aeon(&aeon) {
-        return;
-    }
-    let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let p = native::config_a_keystones_flipped_profile();
+    let Some(aeon) = reference_tree_for_profile(&p) else {
+        return;
+    };
+    let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let rom = native::build_rom_chained(&aeon, &p).unwrap_or_else(|e| panic!("{e}"));
     let mut g = golden();
     g[DEFORM_DIVERGENT_BYTE] ^= 0xFF; // doctor the exact byte that went stale in the bug
@@ -114,12 +100,11 @@ fn doctored_golden_at_deform_pointer_is_caught() {
 /// makes these disagree even while `frozen_placement_mismatches` stays empty.
 #[test]
 fn deform_pointer_equals_placed_label_vma() {
-    let aeon = aeon_dir();
-    if !have_aeon(&aeon) {
-        return;
-    }
-    let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let p = native::config_a_keystones_flipped_profile();
+    let Some(aeon) = reference_tree_for_profile(&p) else {
+        return;
+    };
+    let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let native::RomBuild { rom, listing, .. } =
         native::build_rom_chained_with_listing(&aeon, &p).unwrap_or_else(|e| panic!("{e}"));
     let placed = listing

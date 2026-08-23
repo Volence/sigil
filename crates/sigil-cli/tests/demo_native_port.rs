@@ -24,6 +24,7 @@
 //!   AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test demo_native_port
 //! ```
 use sigil_harness::native;
+use sigil_harness::test_support::reference_tree_for_profile;
 use std::path::PathBuf;
 
 /// The three demo game modules, each `(name, base, len)`. Demo-shape addresses
@@ -36,32 +37,21 @@ const WINDOWS: &[(&str, usize, usize)] = &[
     ("demo_state", 0x10100, 0x72), // GameState_Demo_Init .. GameState_Demo
 ];
 
-fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
-}
-
+/// The committed golden ROMs live in sigil's OWN `golden/` directory, so the aeon
+/// tree this gate needs is source-only: it builds the demo shape from `.emp` and
+/// compares here.
 fn golden_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sigil-harness/golden")
-}
-
-fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
 // The chained build touches shared temp/gen state — serialize plain vs debug.
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn gate(debug: bool, golden_name: &str) {
-    let aeon = aeon_dir();
-    if !aeon.join("s4.bin").exists() {
-        if strict_gate() {
-            panic!("SIGIL_STRICT_GATE set but aeon tree missing at {}", aeon.display());
-        }
-        eprintln!("skip: aeon tree not present (set AEON_DIR)");
+    let profile = native::demo_profile(debug);
+    let Some(aeon) = reference_tree_for_profile(&profile) else {
         return;
-    }
+    };
     let _lk = LOCK.lock().unwrap_or_else(|p| p.into_inner());
 
     // The committed golden ROM (its assembled region is the byte reference).
@@ -70,7 +60,6 @@ fn gate(debug: bool, golden_name: &str) {
 
     // Build the demo ROM through the real frozen chain (native placement of the
     // demo game modules), then byte-compare each module window vs the golden.
-    let profile = native::demo_profile(debug);
     let native::RomBuild { rom, listing, .. } =
         native::build_rom_chained_with_listing(&aeon, &profile).unwrap_or_else(|e| {
             panic!("demo{} chained build: {e}", if debug { "_debug" } else { "" })
