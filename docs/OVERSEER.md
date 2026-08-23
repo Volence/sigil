@@ -446,7 +446,29 @@ share**; `TST` was exactly that, live.
    hand-counting bytes into a pad, and the pad goes stale silently. Aeon's own fix has
    LANDED (`9a718f74`, `ensure(offsetof(Scene, sc_mask_raw) % 2 == 0, …)`), so this now
    has a live subject to retire rather than a hypothetical one.
-4. **`pad_to(N)` — a derived-width struct pad.** PARKED FOR THE OWNER; ratified in
+4. **`pad_to(N)` — a derived-width struct pad.** **RULED ADOPT, 2026-08-22 — but read the
+   provenance before acting on it.** The ruling is the **empyrean overseer's**, made under a
+   delegation from the owner they report in his words (*"Sure I'll go with what your decision
+   is."*). **This lane did not witness that utterance**; it is a peer's report of an owner
+   grant, recorded as such rather than as an owner ruling, and it is reversible by him or by
+   evidence. Verdict: **adopt `pad_to(N)`, and `(align: N)` stays MANDATORY alongside it —
+   never made redundant by the derived width.** The reasoning, which matters more than the
+   verdict: the decisive objection is **silence, not authorship** — auto-derivation converts
+   a *detected* defect class into an *absorbed* one, so the assertion is what makes derivation
+   safe and therefore cannot be derivation's casualty. That argument bites `pad_to(N)` too and
+   not only blanket auto-padding, which is why this is a **pair, not a replacement**.
+   **Falsifier they stated, so it is not a preference:** if keeping both makes the common case
+   actively worse to write — an author supplying an alignment *and* a pad marker where one
+   number used to do — the ergonomics argument wins and the cost should be brought back.
+   **SEQUENCING, and this lane is holding it: SPEC TEXT FIRST.** Not built yet, deliberately.
+   `empyrean/docs/SIGIL_SPEC2_LANGUAGE.md` is the language contract and empyrean's to land;
+   implementing before the text exists means the implementation *defines* the spec, which is
+   the protocol's own "a spec ratifying whatever shipped" failure. Sigil has offered to draft
+   the §4.3 text for them to land.
+   **Scope note that outlives this item:** the ruling authorizes **this construct**, not a
+   general licence to add `.emp` surface. The next one parks the same way — see the autonomy-
+   scope section.
+   *(Superseded framing, kept for the reasoning:)* ratified in
    principle by this overseer, not built. The `(align: N)` assertion above **guards** the
    stale constant; it does not remove it. `sc_pad_5D`'s width is still a function of every
    field above it and a human still re-counts it by hand each time the guard fires. The
