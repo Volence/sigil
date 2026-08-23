@@ -2436,3 +2436,29 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   architecture**, so this technique does not extend to the Z80 backend, which keeps only its
   circular encoder-oracle coverage. — OPEN, informational (kill: n/a; delete when the
   exclusions do).
+
+- [rom-sentinel retirement, 2026-08-22] **Ten test files decide "is the aeon tree here" by
+  probing the tree ROOT.** `if !aeon.exists()` in `contract_closure_corpus` (×2),
+  `dead_save_corpus`, `extra_entry`, `movem_restore_guard_corpus`, `out_verify_corpus`,
+  `parcel_8b_stage_gen_touchers`, `preserves_corpus`, `slot_type_corpus`, `warn_tier_corpus`,
+  `cfg_blind_spots` (×2) — 12 sites. Not the ROM-sentinel defect (all ten run correctly
+  source-only and all ten are in `SOURCE_GATES`), but it is the shape `reference_tree`'s own
+  doc names as the thing it replaces: a root probe passes against an `AEON_DIR` pointed at an
+  empty directory that happens to exist, and the gate then fails later with a worse message
+  than "reference missing: <path>". — OPEN (kill: each converts to
+  `reference_tree(&[<the corpus root it actually scans>])`, proven both ways).
+
+- [rom-sentinel retirement, 2026-08-22] **The nightly lane classifies gates by grepping a
+  file's text, which cannot tell a USE from a MENTION.**
+  `scripts/nightly_source_gates.sh`'s audit accepts a file as artifact-dependent if
+  `s4.bin|s4.debug.bin|demo.bin|demo.debug.bin|.lst|golden` appears anywhere in it — including
+  in a comment that disclaims the identifier. `repin_pins` now classifies partly on `.lst`
+  appearing in explanatory comments; its stale header claiming the test reads `s4.lst` was
+  corrected in this parcel, which removed one such mention. The failure direction is safe (a
+  file that stops matching becomes UNCLASSIFIED and the lane exits 2, loudly), but the
+  classification is not evidence. Related: the two buckets have no name for a gate whose INPUTS
+  are source-only but whose ORACLE is a committed sigil artifact (`golden/*.bin`,
+  `provenance.toml`, `pins.rs`) — eleven gates are now in exactly that shape, and the EXCLUDED
+  comment names it in prose only. — OPEN (kill: an explicit third array, e.g.
+  `ARTIFACT_ORACLE_GATES`, so every gate's bucket is DECLARED rather than inferred from prose;
+  the audit then greps nothing).
