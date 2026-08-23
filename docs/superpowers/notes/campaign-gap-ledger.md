@@ -2530,3 +2530,30 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   own already-run command outranks it.** Note what did NOT need repair: the rename shape and
   the code-comment rule were both correct, so the fix is surgical rather than a retraction —
   check which half of a correction actually moved before discarding the whole claim.
+
+- [pub-equ report, 2026-08-22] **An imported `const`'s initializer failure is reported at the
+  DEFINING file's span, not at the import that caused it.** `pub const X = <label>` fails
+  `unknown name '<label>'` pointed at the definition, because an imported const's initializer
+  is folded to an i64 at the definition site, a Label does not fold, and the clone therefore
+  re-evaluates in the *consumer's* scope. The folding behaviour is arguably working as designed
+  — it is the design doc's own clone-injection trap firing on exactly the shape it warned
+  about — **but the diagnostic points at the innocent file**, and an aeon parcel lost real time
+  to it (their measurement, reported 2026-08-22). The fix shape is to report at, or at least
+  also name, the `use` site that triggered the clone. Deliberately NOT fixed blind: a span
+  change in the import path wants a reproduction first, and the construct has one known
+  victim rather than a pattern. — OPEN (kill: a second independent report, which promotes it
+  from a rough edge to a defect; or a red-first test pinning the diagnostic at the import
+  site). Related: the zero-byte label-alias gap below.
+
+- [pub-equ report, 2026-08-22] **There is no zero-byte label-alias item form.** A module
+  wanting a name that resolves to a `Label` defined in another module has no spelling that
+  emits nothing: `data` mints a ROM label but always emits bytes, `pub const` hits the
+  clone-injection trap above, and `pub equ` hit the export gap (being fixed). Aeon shipped a
+  **`pub comptime fn` returning a `Label`** with the hand fallback passed as a parameter, and
+  reports it turned out to be the better contract anyway — a fn body has no image so nothing
+  can be cloned into the consumer's section, and a comptime fn's free names resolve at the
+  call site, so the fallback must arrive from the caller regardless. That is a real answer, so
+  this row is a language-surface question rather than a blocker: **is the comptime-fn idiom
+  the intended spelling, or does the language want a first-class alias form?** New surface, so
+  it is owner-facing, not a lane call. — OPEN (kill: ruled either way, with the comptime-fn
+  idiom written into the spec if it wins).

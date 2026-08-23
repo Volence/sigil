@@ -577,6 +577,20 @@ time — **ping them, don't assume they are watching**:
   the assertion guards the constant rather than deriving it (that is queue item 4,
   `pad_to(N)`, parked). Push before citing `6fae4d6a` to them — verify against the remote.
 
+**Sigil owes aeon a warning before changing either of these** *(registered 2026-08-22)*:
+
+- **`pub equ` is zero-byte and listing-visible — aeon depends on exactly that.** It reaches
+  the `.lst` and **not** the deb2 appendix; aeon measured it (two added, ROM length
+  unchanged) and is using the property as a reachability witness. So it is a contract, not
+  an implementation detail: if a change would put equates into deb2, tell them **before**
+  it lands rather than letting a ROM length move be their notification.
+- **`[map.order-undeclared]` keys on BYTE-EMITTING sections** (`sigil-harness/src/native.rs`,
+  verified by them firsthand). That scoping is load-bearing for aeon: it let them ship a
+  zero-byte generated section with **no** `order` row, plus a guarantee the build stops by
+  name the moment there is content to place. A row would have been inert *and* unverifiable —
+  a gate that cannot measure its subject. A well-meant "require `order` rows everywhere"
+  tightening would break the honest option; do not take it without talking to them.
+
 **⚠ An empty commit range does not mean an empty branch.** Both overseers read
 `git rev-list --count master..parcel/scene-even-align-guard` = 0, an empty three-dot
 diff, and `--is-ancestor <tip> master` = true as proof the branch held no work. That
