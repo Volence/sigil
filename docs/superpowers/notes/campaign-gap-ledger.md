@@ -2436,3 +2436,35 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   architecture**, so this technique does not extend to the Z80 backend, which keeps only its
   circular encoder-oracle coverage. — OPEN, informational (kill: n/a; delete when the
   exclusions do).
+
+- [field-align, 2026-08-22] **A struct pad's WIDTH is still a hand-computed constant.**
+  `(align: N)` makes a re-parited field loud instead of silent, but the pad above it —
+  `sc_pad_5D: u16 = 0` — still has a width that is a function of every field above it, and a
+  human still widens or narrows it by hand each time the guard fires. The staling constant is
+  guarded, not killed. The shape that kills it without letting the compiler insert bytes the
+  author did not write (which §4.3 forbids, with the byte-exact-port rationale stated): give
+  structs the `pad(N)` field form that `vars` region bodies already have, plus a `pad_to(N)`
+  sibling whose width the engine derives to reach the next multiple of N. The bytes then sit
+  at a site the author wrote — nothing appears in a struct that has no such line in it, so no
+  existing struct can change size and byte identity is untouched — while the number stops
+  being hand-maintained. `(align: N)` remains as the independent proof the derivation did what
+  was intended. — OPEN, needs a ruling + spec text (kill: `pad_to(N)` lands and `Scene`'s
+  `sc_pad_5D` retires with its two `ensure`s).
+
+- [field-align, 2026-08-22] **No whole-struct alignment claim.** `(align: N)` speaks for a
+  field's offset within its struct; there is no way to assert that a struct's own BASE address
+  is N-aligned. Deliberately scoped out rather than half-built: the base is not known at the
+  declaration, so the claim belongs at every placement site — the link-time surface where map
+  items' `(align: N)` congruence asserts already live — not in the layout engine. The natural
+  spelling if it is ever wanted is `struct Name (size: N, align: M)`, since the paren-attribute
+  slot already exists. — OPEN (kill: a link-time congruence assert per placement of the struct,
+  red-first against a deliberately odd placement).
+
+- [field-align, 2026-08-22] **Overlay fields have no error-tier alignment claim.** SST overlay
+  fields are `VarsField`s, which carry the PRESCRIPTIVE `@align(N)`; their only parity check is
+  the `[layout.odd-field]` warning keyed on the window-absolute offset — the same drownable
+  tier the struct-side attribute exists to escape. An overlay field whose parity is load-bearing
+  has nothing better than a warning and a module-scope allow. Wiring `(align: N)` through
+  `VarsField` is the increment, and it must not be confused with the `@align(N)` already on
+  that type. — OPEN (kill: an overlay field carrying `(align: N)` at an odd window-absolute
+  offset errors, red-first).
