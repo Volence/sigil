@@ -24,7 +24,7 @@ Sigil has two tracks.
 | **M1** | Full 68000 backend (A) + full linker (B) + AS 68k front-end fidelity (C) + full-ROM byte-exactness (D) | ✅ complete — the whole assembled ROM byte-identical to `asl`, in both the **plain** and **`__DEBUG__`** shapes |
 
 The M0.5 spike retired the risk in the 68000's irregular effective-address /
-extension-word encoding (the [§5.5 hazards](#the-asl-oracle-discipline)) before M1
+extension-word encoding (the [byte landmines](#the-asl-oracle-discipline)) before M1
 committed to the full backend.
 
 > **What those rows mean today.** Each was earned against a live `asl` reference.
@@ -72,7 +72,7 @@ encoders stay dependency-free and extraction-ready.
 | `sigil-salvador-sys` | Safe wrapper around the vendored `salvador` ZX0 compressor |
 | `sigil-clownlzss-sys` | Safe wrappers around vendored `clownlzss` (Kosinski, Kosinski+, Saxman, Enigma, Comper, Rocket, …) |
 | `sigil-clownnemesis-sys` | Safe wrapper around the vendored `clownnemesis` compressor/decompressor |
-| `sigil-cli` | The `sigil` binary (`build` / `emp` / `parse` / `test`) plus the `emp_census` tool |
+| `sigil-cli` | The `sigil` binary (`build` / `emp` / `parse` / `test`) plus `emp_census`, the `.emp` register-contract census tool |
 | `sigil-harness` | The whole-ROM native build driver, the sound-blob seams, the generated layout pins, the golden provenance chain, and the byte-exactness gates |
 
 ## Build & test
