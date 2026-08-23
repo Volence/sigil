@@ -2493,3 +2493,22 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   comment names it in prose only. — OPEN (kill: an explicit third array, e.g.
   `ARTIFACT_ORACLE_GATES`, so every gate's bucket is DECLARED rather than inferred from prose;
   the audit then greps nothing).
+
+- [oracle rename sweep, 2026-08-22] **A renamed sibling repo turns cross-repo path cites into
+  PLAUSIBLE WRONG FILES, not 404s — and code comments are where they survive.** When
+  `oracle/` (the C++ Exodus port) became `oracle-old/` and the Rust rewrite took the name
+  `oracle/`, every cite of the form `oracle/Devices/...` kept resolving — into a *different
+  real repository*. A dead link announces itself; this hands the reader a file that exists
+  and is wrong. The general shape, from the oracle lane's own rename post-mortem: **renaming
+  A→B while B's old name goes to C breaks C's consumers silently.** Swept here: the live
+  sites are fixed (`sigil-isa/src/m68k_cycles.rs`'s Exodus cite — the load-bearing one, since
+  its DIVS-168-vs-UM-158 adjudication is what a reader would follow it to check — and the
+  M1.b linker spec's `Symbols.cpp` cite). The two remaining occurrences are in DATED packets
+  (`2026-08-04-bprime-3a`, `2026-08-05-bprime-3b`) and are left as point-in-time records; this
+  row is their annotation. The oracle lane found the mirror in their own tree: three
+  `//!` doc comments in `oracle-core` pointing back at the old `oracle/` paths, surviving four
+  days precisely because a doc comment breaks nothing. — OPEN, informational (kill: delete
+  when no `oracle/`-prefixed cite predating the rename survives anywhere in this repo, dated
+  packets included, or when the rename is old enough that nobody reads across it).
+  **Transferable rule: a perishable citation's worst home is a code comment** — no compiler
+  checks it and nobody re-reads one to see whether it still points anywhere true.

@@ -6,7 +6,8 @@
 //!
 //!   * **M68000UM Section 8** (Tables 8-1..8-9) — the vendor's published counts;
 //!     every entry here is that table's number.
-//!   * **Exodus** (`oracle/Devices/M68000/*.h`) — transcribes the same tables per
+//!   * **Exodus** (`oracle-old/Devices/M68000/*.h` — NOT `oracle/`, which is the
+//!     Rust rewrite and a different repository entirely) — transcribes the same tables per
 //!     opcode; used as the per-family cross-check. Its `DIVS` charges a flat 168,
 //!     which DISAGREES with the UM's 158 maximum — see [`instr_cycles`]'s div arm.
 //!   * **oracle-next** (`oracle-core/src/m68000/`), SingleStepTests-validated —
