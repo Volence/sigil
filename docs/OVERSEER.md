@@ -97,6 +97,39 @@ bar, and the push was fast-forward with no history rewritten. Defensible, and di
 rather than assumed: a push is outward-facing, and "approved once" is not "approved
 standing". **Ask before treating it as routine.**
 
+## Dispatch practice — a stated MECHANISM is more dangerous than a stated FACT
+
+*(2026-08-22; the oracle lane's formulation, from an episode this lane caused.)* A brief's
+factual claims compete with the agent's evidence and lose when wrong. A brief's
+**explanations do not compete — they absorb.** An agent that measures something
+inconsistent with its controller's stated mechanism will tend to reconcile the measurement
+to the story rather than report the conflict, and **an agent has almost none of the standing
+a peer overseer has to push back.** So label mechanisms in a brief as hypotheses, and say
+outright that the agent's own command output outranks anything the brief asserts.
+
+**The cheap mechanism, with this lane's measured hit rate.** Every dispatch's deliverable
+section ends with a required line: *"and anything in this brief you concluded was wrong."*
+On 2026-08-22 that produced a correction in **3 of 3** dispatches:
+
+- `feat/field-align` overturned the brief's **central design ruling** — the auto-padding
+  question was already settled by spec §4.3, dispatched as open because the controller had
+  not read the spec.
+- `fix/rom-sentinel-port-tests` refuted the brief's implied **cost** argument for excluding
+  gates from the nightly lane (cost is not the obstacle; committed-artifact oracles are) and
+  corrected the booked count from ten to eleven.
+- `docs/readme-refresh` corrected a flat **factual** error (`SIGIL_BUILD`/`SIGIL_EMIT` do not
+  live in `test_support.rs`) and declined to document an env var the brief implied was
+  required, having verified it is not.
+
+Pair it with an explicit invitation where the brief carries a design position — the
+field-align brief said a contradicting delivery is worth more than a complying one, and got
+the sharpest pushback of the three.
+
+**Honest limits, so this is not read as a solved problem:** n=3, one day, one lane, and all
+three briefs were checkable against a tree, which is the easy case. A self-report line
+cannot surface what the agent never thought to question — it catches conflicts the agent
+noticed and would otherwise have swallowed, which is a real but bounded win.
+
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
