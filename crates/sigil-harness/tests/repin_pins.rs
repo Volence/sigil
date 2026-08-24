@@ -770,14 +770,47 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // content is byte-identical between shapes except the 10 Abs32 page pointers, each
     // shifted by exactly the 0x850 base delta). Its ORIGIN is parallax_configs below —
     // that is the row that actually explains the +2, and it had no pin at all.
-    assert_eq!(pins::OJZ_ACT_POOL.plain_len, 0x2F16);
+    // ojz-section0-paint (2026-08-23): 0x2F16 -> 0x2F0C, -0xA. This is the FIRST row
+    // here to move for a LEVEL-DATA reason rather than an emitter one, so read it
+    // differently from its neighbours: nothing about the pool emitter changed. The owner
+    // repainted a contiguous region of OJZ section 0 (aeon f4946353) and the re-bake
+    // (aeon bc166855) recompressed act_pool pages 4..8; the repainted tiles simply pack
+    // better, so the pool's own content SHRANK. Its bases are untouched (0x12AD8 /
+    // 0x13320) because everything upstream of the pool is unchanged.
+    assert_eq!(pins::OJZ_ACT_POOL.plain_len, 0x2F0C);
     // effects-ramp-op: 0x2F18 -> 0x2F20, +8 more inter-section FILL, still not emitted
     // data. Its origin is the parallax_configs row below, which grew ASYMMETRICALLY
     // (+0x30 plain / +0x24 debug) because OJZ_TestRamp consumed 0xC of pre-existing
     // debug-side slack. The fill after ojz_act_pool absorbs the difference, exactly as
     // the effects-p2-palette +2 did. If this grows without a matching parallax_configs
     // move, check the emitter before re-baselining.
-    assert_eq!(pins::OJZ_ACT_POOL.debug_len, 0x2F20);
+    // ojz-section0-paint: 0x2F20 -> 0x2F10, -0x10. The shapes shed different amounts
+    // (-0xA plain, -0x10 debug) so the debug excess over plain narrows from 0xA to 0x4.
+    // Consistent with every note above: the excess is inter-section placer FILL, not
+    // emitted data, so it absorbs whatever the neighbouring rows leave over.
+    //
+    // THE WHOLE PARCEL RECONCILES, and the arithmetic is worth keeping because it is what
+    // makes the downstream lockstep shift readable rather than alarming. Four regions
+    // changed length:
+    //     SEC_BLOCK_BLOBS  +0x1A8 both shapes  <- the real growth: the repaint created
+    //                                             new unique blocks in section 0
+    //     OJZ_ACT_POOL     -0xA plain / -0x10 debug   (this row)
+    //     ACT_DESCRIPTOR   +0x2 plain
+    //     SEC_LOCAL_MAPS   +0x2 debug
+    //     OJZ_ACT_ASSETS   +0x6 debug
+    // Plain:  +0x1A8 - 0xA + 0x2                     = +0x1A0
+    // Debug:  +0x1A8 - 0x10                          = +0x198, then +0x2 and +0x6 of
+    //         fill step later pins to +0x19A and +0x1A0.
+    // Those are exactly the three downstream deltas the repin reported (+0x1A0, +0x198,
+    // +0x19A), which is why they are NOT the dirty-tree signature they resemble. That
+    // signature is a lockstep base shift with EVERY length unchanged; here five lengths
+    // moved and two moved negative. Confirmed independently by repinning from a clean
+    // checkout of bc166855 and getting byte-identical pins.
+    //
+    // If a future level edit moves this row, expect the same shape: SEC_BLOCK_BLOBS is
+    // the row that explains the magnitude, and this one only records what the pool's
+    // compression gave back.
+    assert_eq!(pins::OJZ_ACT_POOL.debug_len, 0x2F10);
     // parallax_configs gained OJZ_TestGradient (the 96-line dense-tier gate fixture) and
     // OJZ_ShimmerCycle (the Task 8 cycling script): +0x280 plain / +0x28E debug. The
     // shapes differ because the new data CONSUMED 0xE of pre-existing debug-side slack

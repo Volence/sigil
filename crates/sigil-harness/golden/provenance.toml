@@ -8263,3 +8263,57 @@ full_crc = "0dbaa80f"
 full_size = 715010
 anchor_crc = "e4f951d1"
 anchor_end = 0xa3290
+
+[[entry]]
+name = "ojz-section0-paint"
+ab = "bc166855"
+note = "Owner's stranded section-0 paint + collision edit and its bake, landed as aeon f4946353 + bc166855."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "db2266fc"
+full_size = 715358
+anchor_crc = "b61cc3ae"
+anchor_end = 0xa3290
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "3d1d090d"
+full_size = 602055
+anchor_crc = "90de5c52"
+anchor_end = 0x89960
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "c708b114"
+full_size = 96336
+anchor_crc = "0311d26e"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "dec88cc1"
+full_size = 101044
+anchor_crc = "70dfcbcc"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "f5b693e9"
+full_size = 655678
+anchor_crc = "0e861d65"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "c7b9d10d"
+full_size = 699106
+anchor_crc = "befa3259"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "f0175028"
+full_size = 715010
+anchor_crc = "1b71acaa"
+anchor_end = 0xa3290
