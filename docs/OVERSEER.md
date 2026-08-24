@@ -182,9 +182,26 @@ noticed and would otherwise have swallowed, which is a real but bounded win.
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — currently **3839 passed / 0 failed / 4 ignored**
-  under `SIGIL_STRICT_GATE=1` (sigil master `1a984bd2`, aeon `1ee8f8e6`, 2026-08-22),
-  with **zero `skip:` lines** in the run — check that, not just the
+  `AEON_DIR` set to the aeon tree — **3844 passed / 5 failed / 4 ignored** under
+  `SIGIL_STRICT_GATE=1` (sigil master `e36debf8`, aeon master `415e0b6a`, 2026-08-24),
+  with **zero `skip:` lines** in the run.
+  **THE FIVE FAILURES ARE REAL AND ARE NOT SIGIL'S** — recorded as the bar rather than
+  as an aspiration, because a bar nobody can hit is a bar nobody checks against.
+  `act_descriptor_region_matches_reference`, `act_descriptor_debug_region_matches_reference`,
+  `soundbankhead_pinned_bootstrap_lands_at_lma_not_vma`,
+  `act_wrong_base_map_places_the_section_at_a_different_address`,
+  `swapped_sec_fields_produce_different_bytes`. Two messages: `unknown function
+  ojz_act1_act_default` / `ojz_act1_sec_scene`, and `section ojz_effects_editor_act1 has
+  no region in the map`. Cause is aeon-side and verified there: `effects_scenes.emp`
+  declares `module games.sonic4.ojz_effects_editor_act1 in ojz_effects_editor_act1` while
+  `games/sonic4/map.toml` still carries that block as a **RESERVED SLOT** with
+  deliberately no row. Reproduced on UNMODIFIED sigil master (`bc05f446`) in a detached
+  worktree against the same aeon tree, which is the only thing that separates
+  "pre-existing" from "the parcel I am landing". Relayed to the aeon lane 2026-08-24.
+  **The nightly source-gate lane does NOT cover these** — none of the five is in
+  `SOURCE_GATES` (they are artifact-oracle gates, deliberately excluded), so the lane ran
+  green at 05:17 while master was red. That exclusion was correct for byte-divergence red;
+  it is wrong for a HARD ERROR like a missing map region, which no refreeze clears — check that, not just the
   totals: a reference gate that skips reports nothing and reads as coverage.
   **Reconcile the total against the tree, not against the last remembered bar:**
   `git grep -c '#\[test\]' HEAD -- '*.rs'` summed gives the declared count, and
@@ -341,6 +358,20 @@ ruling. Each row's age prints on every lane run.
   test runtime** via `emp_const_rhs` / `emp_const_literal` — never a copied literal.
 - **Never build in the scratchpad/tmp** — `/tmp` is tmpfs; a cargo build there wedges
   the shell. Set `CARGO_TARGET_DIR` to disk for any out-of-tree build.
+- **A LANDING RUN AGAINST THE OWNER'S LIVE AEON TREE PRODUCES PHANTOM FAILURES, and this
+  overseer proved it the expensive way (2026-08-24).** The rule below is not advice. A
+  full-suite landing run pointed at `/home/volence/sonic_hacks/aeon` returned **six**
+  failures where the parcel's own agent had reported five; the extra was
+  `soundbankhead_matches_reference`, and the parcel had touched `seam1.rs` — the sound
+  seam — so the coincidence looked damning. It reproduced twice, including with the test
+  binary run alone. A control at unmodified master showed it passing, which read as
+  attribution. **It was transient**: four consecutive re-runs on the merged tree passed,
+  single-threaded included, and a clean re-run of the whole suite returned the agent's
+  5 exactly. Nothing was wrong with the parcel; the tree had artifacts in flux underneath
+  a run that takes minutes. **The cost was an hour and a nearly-shipped wrong attribution
+  against an agent that had done nothing wrong.** Steady-state disagreement between two
+  runs over the same tree is the tell — re-run before attributing, and prefer a clean
+  worktree of a committed SHA, which is what the next rule already said.
 - **The main aeon checkout carries the owner's live editor content edits** (collision
   bins, regenerated act-pool pages under `games/sonic4/data/`) for hours or days at a
   time — never gate a green on that tree cleaning up. A strict-gate or landing run
@@ -659,10 +690,51 @@ from the crate table; three named harness gates no longer exist (`assemble_full_
 scope is false, `sigil build` produces it. **A README's commands are its most-used and
 least-checked content — run them, do not read them.**
 
-**Nothing in flight; no agents running.** Master `1a984bd2`, pushed. Front of the queue is
-item 4 (`pad_to(N)`), which is PARKED ON THE OWNER — do not dispatch it, and see the
-autonomy-scope section for why a new language surface is outside this lane's standing
-authority. Everything else in the list above is landed.
+**Nothing in flight; no agents running.** Master `e36debf8`, pushed (verified against
+`git ls-remote origin refs/heads/master`, not the tracking ref).
+
+**This paragraph used to say `pad_to(N)` was PARKED ON THE OWNER and must not be
+dispatched. That is no longer true and the contradiction was live for a day** — the
+autonomy-scope section above recorded the owner's `d-6` ruling while this tail still told
+a fresh boot to stop. A cold boot reads the tail. **The ruling governs: the `.emp`
+language is this lane's to design and drive; the obligation is to put a new surface to
+him before it lands, not to wait for him to raise it.**
+
+**LANDED 2026-08-24 — the blank-import spelling (`use base._`).** Queue item `WARN-2`.
+Pulls a module into the use closure while binding none of its names: the closure-edge
+idiom that until now could only be spelled as a bare whole-path `use`, which
+`[import.no-names]` cannot tell from an unfinished import. Owner-agreed spelling, put to
+him with two alternatives (a `require` keyword; an `@allow` opt-out with no new surface)
+and chosen by him. Merged at `4e262006`.
+- **`_` stays an ordinary identifier to the lexer.** It is reserved BY NAME at the two
+  places a module path is written — `use` and the `module` header — so one spelling never
+  carries two meanings, and a module named `_` is impossible rather than merely
+  unreachable. Reserving the token outright would have rippled into expressions and types
+  for no gain: zero standalone `_` identifiers exist in the aeon corpus.
+- **Byte-identical to the bare form, proven red-first** against a reached module that
+  emits, so placement and relocation are in scope. Nothing under `golden/`, `pins.rs` or
+  `repin.toml` moved, so this stayed sigil-internal and needed no aeon-lane sequencing.
+- **The agent's first poison came back GREEN and it caught its own gate, not the guard.**
+  A `use` binds names by TWO independent mechanisms — `resolve::ambient_from_uses` injects
+  comptime names, `resolve::imports` builds the rename map for link names — and a gate on
+  one says nothing about the other. This is the gate-every-consumer bar arriving in the
+  frontend: the brief specified the proof as a single check and was wrong to.
+- **The dispatch brief was wrong about the cross-repo interface.** It asserted aeon
+  fixtures assert this diagnostic's exact text; they do not. `git grep "imports no names"`
+  at aeon `origin/master` returns nothing — the id appears only as prose in four docs. The
+  claim was over-generalised from the `array length mismatch` case, which IS asserted.
+  The wording change is additive anyway, so every existing prefix matcher survives.
+- **Still open, deliberately: aeon has not adopted it.** Sequencing — aeon writing `._`
+  before sigil accepts it breaks their build. The two `CORPUS_OPEN_FINDINGS` rows stay,
+  correctly, and now track the ADOPTION; their `kill` clauses and the register header were
+  rewritten, because both asserted the edges "cannot be spelled another way", which is
+  false as of this parcel.
+- **Ledgered, not done:** `native.rs::synthetic_entry_src` writes ~88 bare `use` lines
+  that are blank imports in every sense, suppressed today by a `SourceId` filter. Adopting
+  `._` there would let that suppression narrow. Adjacent to the golden lane, so not taken
+  incidentally.
+- **Owed to empyrean:** `SIGIL_SPEC2_LANGUAGE.md` documents the `use` grammar and does not
+  carry the fourth suffix. Sigil has offered to draft it; the spec is theirs to land.
 
 A note on the `?? sigil` in `git status`: it is a self-symlink `sigil -> /home/volence/sonic_hacks/sigil`
 created 2026-08-20, untracked and harmless. It is NOT a stray nested checkout — resolve it
