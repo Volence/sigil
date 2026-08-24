@@ -76,26 +76,75 @@ live risk.** The directive names *technical/design forks and encoding minutiae* 
 where a shared rule lives — and explicitly reserves **direction and priorities** to the owner.
 So:
 
-- **Inside:** implementation strategy, diagnostic wording, gate design, spelling of an
-  attribute within an existing construct family, which of two sound encodings to use.
-- **OUTSIDE — park it:** a NEW `.emp` language surface, anything needing a spec amendment,
-  anything that changes what the language *is* rather than how sigil implements it. That is
-  direction. `pad_to(N)` (queue item 4) is parked for exactly this reason.
+**RULED BY THE OWNER, 2026-08-24, in his own words — and it is none of the three options he
+was offered, so read the words rather than a key.** Verbatim: *"The language is yours, but
+let's discuss it first and let me agree or not for the most part"*. Put to him as decision
+`d-3`; recorded as `d-6`.
 
-**Owed:** a re-confirmation from the owner, both that the directive still holds at all and
-that this scope line is where he wants it. It is 48 days old and has never been checked.
-Do not fund work off the broad reading in the meantime.
+**What it means operationally.** The `.emp` language is this lane's to design and drive —
+that is a real grant and is broader than the previous parked reading, which sent every new
+surface to him as a blocker. It is **not** a licence to land language surface silently. The
+shape is **propose, discuss, then land**: sigil does the design work and forms the
+recommendation, puts it to him in plain terms before it lands, and he agrees or not. The
+authority to design sits here; the agreement is his and is genuine, not a notification.
 
-**A second thing to put to him in the same breath — is PUSHING standing-approved?** The
-2026-08-22 push to `a70e6644` is recorded here and in memory as "owner-approved", and the
-aeon lane independently describes the preceding 80-commit unpushed backlog as **"the owner's
-gate"** — i.e. deliberate, not an oversight. What is banked is an approval attached to *one
-push*; nothing says the gate is lifted permanently. This session pushed again (`560d44da`)
-on the strength of the banked practice — *"push before citing across the fence, and verify
-against `ls-remote`"* — which is an affirmative instruction to push and is also a protocol
-bar, and the push was fast-forward with no history rewritten. Defensible, and disclosed
-rather than assumed: a push is outward-facing, and "approved once" is not "approved
-standing". **Ask before treating it as routine.**
+- **Discuss before landing:** anything that adds or changes a word, spelling or construct
+  the game's source will be written in. That is the durable surface — once the game is
+  written using it, it is close to unremovable, which is the whole reason he wants a look.
+- **Just do it:** everything behind that surface. Implementation strategy, diagnostic
+  wording, gate design, which of two sound encodings to use, how the compiler achieves a
+  construct that already exists. This is `d-2` territory and gets a lane-log note if the
+  call is notable, no discussion required.
+- **"For the most part" is load-bearing and cuts toward less ceremony, not more.** He did
+  not ask to approve every spelling. A trivial, obvious or purely-mechanical surface change
+  does not need a round trip; use judgement, and when in doubt spend the one message. What
+  he is buying is a veto on the shape of the language, not a queue of rubber stamps.
+- **Do not convert this into a blocker.** A discussion is a message and an answer, not a
+  `blockedOnOwner` entry with work stopped behind it — park it as a blocker only if it is
+  genuinely holding a landing and he has not answered.
+
+Live consequences of this ruling, both previously stuck: the closure-edge import spelling
+that kills the two `CORPUS_OPEN_FINDINGS` rows is now sigil's to design and put to him, and
+`pad_to(N)` (queue item 4) is sigil's to draft and put to him rather than a thing that waits
+for him to raise it. Neither lands without his nod.
+
+**RE-CONFIRMED BY THE OWNER, 2026-08-24, directly in this lane's session — not relayed.**
+The 48-day-old grant was put to him as decision `d-2` in `docs/decisions.jsonl` and he chose
+**keep it, and tell me the notable calls as they happen**. So the authority is unchanged and
+a fresh boot does NOT need to re-ask it. What is new is the obligation attached to it, below.
+
+**The obligation: a notable call gets written down for him WHEN IT IS MADE.** Before this
+ruling nothing was written down for him at all, which meant the first he heard of an internal
+design choice was when something built on it went wrong. The vehicle is `docs/lane-log.jsonl`
+(`empyrean/contract/LANE_LOG.md`), which is already the owner-facing feed — do not invent a
+second channel. The bar for "notable" is **a choice a reasonable person could have made the
+other way and would care about having made**, not every fork in the road: a spelling that
+will appear across the game's source, a tier decision (error vs warning), a soundness
+trade, an option deliberately refused. Routine implementation strategy stays unwritten;
+logging everything would restore exactly the volume the lane log exists to replace.
+**Write it at the time, not at the landing** — a call reconstructed afterwards is the
+confident-guess-wearing-a-record's-clothes defect that ruling forbids for the log generally.
+The scope line itself (`d-3`) is still open and is the one that gates work.
+
+**Do not fund work off the broad reading of the scope line while `d-3` is open.**
+
+**PUSHING IS STANDING-APPROVED — owner ruling, 2026-08-24, direct in this lane's session.**
+Put to him as decision `d-1` in `docs/decisions.jsonl`; he chose **send finished work up
+whenever it is ready**. So a push needs no per-time approval and a fresh boot must not
+re-ask. The reasoning he was given, which is also the scope: pushing only ever ADDS, and
+until work is at the remote no other lane can reference it at all, so holding it back
+protects nothing and only delays consumers. That is the whole grant — **it authorizes
+fast-forward pushes of finished work, and nothing else.** A history rewrite (force-push,
+rebase or squash of already-pushed commits) is a different act with a different blast
+radius, it is not covered here, and it still goes to him. Verify every push against
+`git ls-remote origin refs/heads/master`, never the local tracking ref, which is the only
+check that distinguishes "pushed" from "looks pushed".
+
+The history this replaces, kept because it is why the question existed: the 2026-08-22 push
+to `a70e6644` was banked as "owner-approved" for that ONE push, and the preceding 80-commit
+unpushed backlog was described by the aeon lane as "the owner's gate", i.e. deliberate. The
+ambiguity was real, and it cost two sessions the same re-derivation before it was asked
+plainly.
 
 ## Dispatch practice — a stated MECHANISM is more dangerous than a stated FACT
 
