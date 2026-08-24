@@ -73,7 +73,7 @@ pub enum SizeSource {
     /// Canonical sonic4 (retired default): the baked lmas ARE asl-correct, so a pinned
     /// resolve reproduces asl and each section's post-relax span is its exact asl size
     /// (the bootstrap). Kept for the asl-witness bootstrap path; the shipped canonical
-    /// build uses `Computed` (§17 Wave-B B-0).
+    /// build uses `Frozen` (§17 Wave-B B-0).
     PinnedBaked,
     /// Off-canonical (demo/Config): the AS residual carries WRONG sonic4 resume orgs,
     /// so ORDER and the org-island ANCHORS come from the FROZEN asl listing table
@@ -86,7 +86,7 @@ pub enum SizeSource {
 /// One off-canonical / canonical target's full driver parameterization.
 pub struct GameProfile {
     pub name: &'static str,
-    /// The AS residual root, relative to the aeon tree (`games/<g>/main.asm`).
+    /// The AS residual root, relative to the aeon tree (`games/<g>/game_root.asm`).
     pub game_root_rel: &'static str,
     /// The game's RAM module id (item #7c). Its region-form `vars` block chains
     /// `game_ram @ after(upper_ram)` onto the engine RAM, so it must be reachable
