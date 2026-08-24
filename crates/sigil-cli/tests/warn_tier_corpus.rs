@@ -158,11 +158,12 @@ struct OpenFinding {
 /// The open findings. Empty is a legitimate state and means every warn-tier firing on
 /// the corpus is accounted for by [`CORPUS_LINTS`] and [`WARN_ID_BASELINE`].
 const CORPUS_OPEN_FINDINGS: &[OpenFinding] = &[
-    // The two hand-written closure edges. A bare whole-path `use` is the ONLY way to
-    // pull a zero-emitting guard/witness module into a profile's use closure, so these
-    // two are deliberate and cannot be spelled another way — but the lint cannot tell
-    // them from an accidental bare use, which is why `import.no-names` sits in
-    // WARN_ID_BASELINE's shape rows. That row's own comment names the cost: "a real
+    // The two hand-written closure edges. Both are deliberate: a whole-path `use` pulls
+    // a zero-emitting guard/witness module into a profile's use closure, and the lint
+    // cannot tell that from an accidental bare use, which is why `import.no-names` sits
+    // in WARN_ID_BASELINE's shape rows. The explicit spelling for the idiom EXISTS —
+    // `use base._` binds no names and the lint is silent on it — so what these rows now
+    // track is the ADOPTION, which is aeon's to make in aeon's tree. That row's own comment names the cost: "a real
     // accidental bare use in sonic4 now hides behind these two". These entries take
     // that cost back. A third bare use anywhere in the corpus, or a second one in
     // either of these files, now fails.
@@ -179,9 +180,9 @@ const CORPUS_OPEN_FINDINGS: &[OpenFinding] = &[
         ],
         owner: "sigil language lane (the spelling); aeon adopts it",
         anchor: "aeon docs/DEFERRED_WORK.md — the `[import.no-names]` closure-edge gap",
-        kill: "a spelling for the closure-edge idiom lands, the two `use` lines adopt it, \
-               and the lint stops firing here — at which point this row goes red and is \
-               deleted. Widening the baseline instead is the move this register replaces.",
+        kill: "the spelling exists (`use base._`); when this `use` line adopts it the lint \
+               stops firing here, at which point this row goes red and is deleted. Widening \
+               the baseline instead is the move this register replaces.",
         first_observed: "2026-08-18",
     },
     OpenFinding {
@@ -197,9 +198,9 @@ const CORPUS_OPEN_FINDINGS: &[OpenFinding] = &[
         ],
         owner: "sigil language lane (the spelling); aeon adopts it",
         anchor: "aeon docs/DEFERRED_WORK.md — the `[import.no-names]` closure-edge gap",
-        kill: "a spelling for the closure-edge idiom lands, the two `use` lines adopt it, \
-               and the lint stops firing here — at which point this row goes red and is \
-               deleted. Widening the baseline instead is the move this register replaces.",
+        kill: "the spelling exists (`use base._`); when this `use` line adopts it the lint \
+               stops firing here, at which point this row goes red and is deleted. Widening \
+               the baseline instead is the move this register replaces.",
         first_observed: "2026-08-18",
     },
 ];
