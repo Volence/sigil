@@ -315,7 +315,7 @@ pub struct EnsureDecl {
     pub span: Span,
 }
 
-/// A `use base.{a, b}` / `use base.*` / `use base` import.
+/// A `use base.{a, b}` / `use base.*` / `use base._` / `use base` import.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UseDecl {
     /// The dotted base path being imported from (or wholly imported).
@@ -331,6 +331,22 @@ pub struct UseDecl {
 pub enum UseNames {
     /// `use base` — import the whole path as one name.
     Whole,
+    /// `use base._` — the BLANK import: pull `base` into the use closure and
+    /// bind none of its names.
+    ///
+    /// Semantically identical to [`UseNames::Whole`] at every stage — same
+    /// closure edge, same elaboration, same emitted bytes. The two differ only
+    /// in what the author said: `Whole` is silent about intent, so
+    /// `[import.no-names]` reads it as an unfinished import and warns; `Blank`
+    /// states the intent, so the lint stays quiet.
+    ///
+    /// The idiom it spells is the only way to reach a module that emits no
+    /// bytes and that nothing calls into — a guard/witness module whose whole
+    /// content is module-level `ensure`s. Such a module elaborates iff it is in
+    /// the profile's use closure, and a selective `use base.{X}` does not put it
+    /// there: a name list injects a clone that re-evaluates in the importing
+    /// scope and never elaborates the callee.
+    Blank,
     /// `use base.*` — glob-import everything under `base`.
     Glob,
     /// `use base.{a, b, c}` — import exactly these names from `base`.

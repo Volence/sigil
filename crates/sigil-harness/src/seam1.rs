@@ -351,7 +351,7 @@ fn use_import_stubs(
                         }
                     }
                 }
-                ast::UseNames::Glob | ast::UseNames::Whole => {}
+                ast::UseNames::Glob | ast::UseNames::Whole | ast::UseNames::Blank => {}
             },
             ast::Item::Section(sec) => use_import_stubs(&sec.items, table, out),
             _ => {}

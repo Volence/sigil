@@ -88,6 +88,59 @@ fn use_list_empty_braces_stays_an_error() {
     );
 }
 
+// ---- the blank import `use base._` ---------------------------------------
+
+#[test]
+fn use_blank_marker_parses_as_its_own_form() {
+    // `._` is a fourth suffix alongside `.*` and `.{…}`, and the marker is NOT a
+    // path segment: the base is everything to its left.
+    let f = ok("module m\nuse games.sonic4.scene_registry._\n");
+    let Item::Use(u) = &f.items[0] else { panic!() };
+    assert_eq!(u.names, UseNames::Blank);
+    assert_eq!(u.base.segments, vec!["games", "sonic4", "scene_registry"]);
+}
+
+#[test]
+fn use_blank_marker_must_end_the_path() {
+    // `use a._.b` is the shape that would give `_` a second meaning. It is
+    // rejected BY NAME, and the rule's message is the only one it gets — a bare
+    // "expected end of line" cascade would name the symptom instead.
+    let (_, diags) = parse_str("module m\nuse engine.gfx._.Draw\n");
+    assert_eq!(
+        diags.len(),
+        1,
+        "the misplaced marker gets exactly its own message: {diags:?}"
+    );
+    assert!(
+        diags[0].message.contains("blank-import marker"),
+        "the diagnostic names the rule: {diags:?}"
+    );
+}
+
+#[test]
+fn use_path_may_not_start_with_the_blank_marker() {
+    // In first position there is no base for the marker to modify, so `use _`
+    // would name a module `_` — which cannot exist.
+    let (_, diags) = parse_str("module m\nuse _\n");
+    assert!(
+        diags.iter().any(|d| d.message.contains("blank-import marker")),
+        "a leading `_` is diagnosed by name: {diags:?}"
+    );
+}
+
+#[test]
+fn a_module_may_not_be_named_with_the_blank_marker() {
+    // The other half of the reservation: a module named `_` would be unreachable
+    // (no `use` could spell it), so it is refused where it is declared.
+    let (_, diags) = parse_str("module engine._\n");
+    assert!(
+        diags.iter().any(|d| d.message.contains("blank-import marker")),
+        "a `_` module segment is diagnosed by name: {diags:?}"
+    );
+    // ... and an identifier that merely CONTAINS `_` is untouched.
+    ok("module engine.sound_driver\n");
+}
+
 #[test]
 fn module_level_attributes() {
     let f = ok("module m\n@as_compat\n@allow(naming.pascal)\nuse engine.gfx.*\n");
