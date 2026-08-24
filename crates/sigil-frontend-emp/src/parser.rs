@@ -495,6 +495,12 @@ impl Parser {
             };
         }
         let path = self.path();
+        // A module named `_` would be unreachable: inside a `use` path `_` is the
+        // blank-import marker, so no `use` could ever name it. Reject it where it
+        // is declared, which is the one place the author can act on.
+        if path.segments.iter().any(|s| s == "_") {
+            self.diag_at(path.span, Self::BLANK_MARKER);
+        }
         let in_section = if self.eat_kw("in") { Some(self.expect_ident("section name")) } else { None };
         // Optional `(cpu: z80, …)` attribute list (T1, §5) — the same
         // `( name: expr, … )` shape a `section` header uses.
@@ -760,17 +766,57 @@ impl Parser {
         self.bump();
     }
 
+    /// The one message every misplaced `_` in a module path gets.
+    ///
+    /// `_` stays an ordinary identifier to the lexer — nothing else in the
+    /// grammar changes meaning — so the reservation is stated here, at the two
+    /// places a module path is written (`use` and the `module` header), and it
+    /// is stated BY NAME. That is what keeps one spelling from carrying two
+    /// meanings: inside a `use` path `_` is the blank marker and nothing else,
+    /// and no module can be named `_` for it to be confused with.
+    const BLANK_MARKER: &'static str =
+        "`_` is the blank-import marker (`use base._`), not a module path segment";
+
     fn use_decl(&mut self) -> UseDecl {
         let start = self.span();
         self.bump(); // `use`
-        // parse dotted path, stopping before `.{` and `.*`
+        // parse dotted path, stopping before `.{`, `.*` and `._`
         let pstart = self.span();
         let mut segments = vec![self.expect_ident("module path")];
+        // `_` is the blank-import marker, never a module path segment. In first
+        // position there is no marker to be — `use _` names a module — so say so
+        // by name rather than letting it resolve to a module that cannot exist
+        // (`module_decl` rejects the same segment at the declaration site).
+        if segments[0] == "_" {
+            self.diag_at(pstart, Self::BLANK_MARKER);
+        }
         let mut base_end = self.prev_span().end;
         let mut names = UseNames::Whole;
         loop {
             if !self.at(&Tok::Dot) { break; }
             match self.peek2().clone() {
+                // The blank import `use base._`: pull `base` into the use closure
+                // and bind none of its names. Matched before the general `Ident`
+                // arm so `_` can never be taken for a path segment.
+                Tok::Ident(s) if s == "_" => {
+                    self.bump();
+                    self.bump(); // `.` `_`
+                    names = UseNames::Blank;
+                    // The marker terminates the path: `use a._.b` and `use a._.*`
+                    // would otherwise fall out as a bare "expected end of line",
+                    // which names the symptom instead of the rule.
+                    if self.at(&Tok::Dot) {
+                        let sp = self.span();
+                        self.diag_at(sp, Self::BLANK_MARKER);
+                        // Swallow the rest of the line so the rule's own message
+                        // is the only one this typo gets: `expect_line_end` would
+                        // otherwise add "expected end of line" on top of it.
+                        while !self.at(&Tok::Newline) && !self.at(&Tok::Eof) {
+                            self.bump();
+                        }
+                    }
+                    break;
+                }
                 Tok::Ident(_) => {
                     self.bump();
                     segments.push(self.expect_ident("name"));

@@ -328,7 +328,10 @@ fn ambient_from_uses(
                     continue; // never inject a module's own items.
                 }
                 match &u.names {
-                    ast::UseNames::Whole => {} // whole-path label import — handled by rename/link.
+                    // Whole-path label import — handled by rename/link. The blank
+                    // import binds nothing at all, and both leave the closure edge
+                    // (`enqueue_uses`) to do the work, so neither injects here.
+                    ast::UseNames::Whole | ast::UseNames::Blank => {}
                     ast::UseNames::Glob => collect_pub_comptime(
                         &base_mod.id,
                         &base_mod.file,

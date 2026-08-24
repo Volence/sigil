@@ -439,14 +439,28 @@ fn resolve_use(
             // and `use base.*` (Glob) put names in scope. A whole-module `use` is
             // therefore a no-op for name resolution — a later `base.Name` reference
             // won't resolve through it — so warn rather than let that be mysterious.
+            //
+            // Binding nothing is sometimes the POINT: the `use` edge alone pulls a
+            // zero-emitting guard module into the profile's use closure, which is
+            // what makes its module-level `ensure`s elaborate. That intent has its
+            // own spelling, `use base._`, and the message names it — the lint reads
+            // a bare `use` as unfinished precisely because it cannot tell the two
+            // apart, and the blank form is how an author says which one this is.
             let _ = module_id;
             diags.push(Diagnostic {
                 level: Level::Warning,
                 message: format!(
-                    "[import.no-names] whole-module `use {base}` imports no names — use `use {base}.{{…}}` or `use {base}.*` to bring names into scope"
+                    "[import.no-names] whole-module `use {base}` imports no names — use `use {base}.{{…}}` or `use {base}.*` to bring names into scope, or `use {base}._` to pull `{base}` into the build while binding nothing"
                 ),
                 primary: u.span,
             });
+        }
+        ast::UseNames::Blank => {
+            // `use base._` — the blank import. It binds no names BY DECLARATION,
+            // so there is nothing to resolve and nothing to warn about: the `use`
+            // edge itself (`enqueue_uses`) is the whole effect, identical to the
+            // `Whole` arm's. Silence here is the only difference between the forms.
+            let _ = (module_id, base);
         }
     }
 }
