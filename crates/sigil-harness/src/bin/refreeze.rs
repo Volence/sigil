@@ -21,6 +21,11 @@
 //! reports the FIXPOINT and appends nothing. So a no-op re-freeze leaves the tree
 //! git-clean — the machinery's own regression test.
 //!
+//! `--freeze` REFUSES unless it can name the aeon revision honestly: `AEON_DIR` must be
+//! set, be a git repository, resolve `HEAD`, and be CLEAN. That revision is recorded in
+//! the appended entry's `aeon_rev`. See [`resolve_aeon_rev`] for why. `--check` takes no
+//! aeon tree and is deliberately unaffected.
+//!
 //! This is the SINGLE place a golden moves: repin (pins) + capture (blobs) + derive
 //! (sizes) + the provenance chain append, in one command. The hand-edited CRC surface
 //! is gone — native_full_rom / native_offcanonical_rom read their expectations FROM
@@ -53,6 +58,79 @@ fn target_sources() -> Vec<(&'static str, &'static str, &'static str)> {
 fn fail(msg: impl AsRef<str>) -> ExitCode {
     eprintln!("refreeze: {}", msg.as_ref());
     ExitCode::from(2)
+}
+
+/// Resolve the aeon revision `--freeze` is about to freeze FROM, or refuse.
+///
+/// Until this existed the freeze path never looked at `AEON_DIR` at all — it passed the
+/// environment through to `capture_goldens.sh`, whose `${AEON_DIR:-/home/volence/…/aeon}`
+/// fallback silently builds against the owner's LIVE working tree, which routinely carries
+/// hours of uncommitted content edits. The existing `--ab`/anchor guard fires on byte
+/// MOVEMENT, so it is blind to this by construction: the wrong tree gets frozen and the
+/// record says nothing about it.
+///
+/// This is not new policy. `docs/OVERSEER.md`'s landing lane already requires freezing from
+/// a clean checkout of a committed SHA; the rule was simply unenforceable. Every refusal
+/// names the variable, the path, and what specifically was wrong.
+///
+/// `--freeze` ONLY. `--check` is documented as "no aeon, no build" and must keep working
+/// with `AEON_DIR` unset — it reads committed blobs and toml and nothing else.
+fn resolve_aeon_rev() -> Result<String, String> {
+    let dir = std::env::var("AEON_DIR").map_err(|_| {
+        "AEON_DIR is not set. --freeze builds the goldens from the aeon tree, so it must \
+         record WHICH tree; unset, capture_goldens.sh would silently fall back to the \
+         owner's live checkout. Set AEON_DIR to a clean checkout of a committed aeon SHA."
+            .to_string()
+    })?;
+    let path = PathBuf::from(&dir);
+    if !path.is_dir() {
+        return Err(format!("AEON_DIR={dir} is not a directory."));
+    }
+
+    let git = |args: &[&str]| -> Result<String, String> {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(&path)
+            .args(args)
+            .output()
+            .map_err(|e| format!("spawn git {args:?} in AEON_DIR={dir}: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "git {} failed in AEON_DIR={dir}: {}",
+                args.join(" "),
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    };
+
+    git(&["rev-parse", "--git-dir"]).map_err(|e| {
+        format!("AEON_DIR={dir} is not a git repository, so its revision cannot be named ({e}).")
+    })?;
+    let rev = git(&["rev-parse", "HEAD"]).map_err(|e| {
+        format!("AEON_DIR={dir}: cannot resolve HEAD, so the freeze cannot name a revision ({e}).")
+    })?;
+    if !provenance::is_full_sha(&rev) {
+        return Err(format!("AEON_DIR={dir}: HEAD resolved to `{rev}`, not a 40-char SHA."));
+    }
+
+    // Dirty means the bytes about to be frozen were built from something that is not any
+    // committed revision, so `aeon_rev` would be a LIE rather than merely absent. Checked
+    // BEFORE the build, since the build itself writes into this tree.
+    let dirty = git(&["status", "--porcelain"])?;
+    if !dirty.is_empty() {
+        let lines: Vec<&str> = dirty.lines().collect();
+        let shown: Vec<&str> = lines.iter().take(10).copied().collect();
+        return Err(format!(
+            "AEON_DIR={dir} is DIRTY at {rev} ({} change(s)); the bytes it builds would not \
+             correspond to any committed revision, so aeon_rev could not name them honestly. \
+             Freeze from a clean checkout of a committed SHA. Changes:\n  {}{}",
+            lines.len(),
+            shown.join("\n  "),
+            if lines.len() > shown.len() { "\n  …" } else { "" }
+        ));
+    }
+    Ok(rev)
 }
 
 /// Parse `EndOfRom` for the two canonical shapes from the freshly-written pins.rs (NOT
@@ -169,6 +247,15 @@ fn do_check(root: &Path) -> ExitCode {
 fn do_freeze(root: &Path, name: &str, ab: &str, note: &str) -> ExitCode {
     let golden = root.join("golden");
 
+    // (0) WHICH TREE. Resolved and vetted before anything is built, both because a refusal
+    // should cost nothing and because the build writes into this tree — after it, "clean"
+    // is no longer a question that can be asked.
+    let aeon_rev = match resolve_aeon_rev() {
+        Ok(r) => r,
+        Err(e) => return fail(format!("refusing to freeze — {e}")),
+    };
+    eprintln!("refreeze: freezing from aeon {aeon_rev} (clean)");
+
     // (1) blobs, (2) size tables, (3) pins — the three regen steps.
     if let Err(e) = run_script(&golden.join("capture_goldens.sh"), &["--write"]) {
         return fail(e);
@@ -223,7 +310,7 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str) -> ExitCode {
         }
     }
 
-    let block = provenance::render_entry(name, ab, note, &fresh);
+    let block = provenance::render_entry(name, ab, &aeon_rev, note, &fresh);
     let mut new_src = src;
     if !new_src.ends_with('\n') {
         new_src.push('\n');
@@ -246,7 +333,10 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str) -> ExitCode {
         }
         return ExitCode::from(2);
     }
-    println!("refreeze: appended entry `{name}` (ab=\"{ab}\"); chain len {}.", chain2.entry.len());
+    println!(
+        "refreeze: appended entry `{name}` (ab=\"{ab}\", aeon_rev={aeon_rev}); chain len {}.",
+        chain2.entry.len()
+    );
     ExitCode::SUCCESS
 }
 

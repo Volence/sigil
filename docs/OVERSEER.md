@@ -265,22 +265,66 @@ done                                                   # then CRC32+size all fou
 `~/sonic_hacks/.aeon-sigil-gates` is never a candidate — it is source-only by construction and
 deletes built ROMs, per the source-gate lane section.
 
-**Ledgered, and it is not the one-afternoon gate it looks like:** no gate witnesses that
-`AEON_DIR` matches the provenance tip, and the reason is structural. `provenance.toml` has **no
-field naming the aeon revision a freeze pairs with** — measured at chain 166, the schema is
-`name` / `ab` / `note` plus the per-target CRC rows, and the aeon SHA appears only inside the
-free-text `ab` and `note` (16 of the 166 entries carry no `note` at all). So the question the
-gate must answer is not queryable: every check of it to date has been a human reading prose.
-The gate therefore has a prerequisite — a structured `aeon_rev` on the entry, written by the
-refreeze and backfilled only where the prose already names one. Write that first, or the gate
-is a regex over English.
+**This is now gated, as of 2026-08-26 — and it was not the one-afternoon gate it looked
+like.** Historically no gate witnessed that `AEON_DIR` matched the provenance tip, because
+`provenance.toml` had **no field naming the aeon revision a freeze pairs with**: at chain 166
+the schema was `name` / `ab` / `note` plus the per-target CRC rows, and the aeon SHA appeared
+only inside the free text of `ab`/`note` (16 of the 166 entries carry no `note` at all). Every
+check of the pairing to date was a human reading prose, and a parcel lost a run to exactly
+that. What shipped:
+
+- **`Entry.aeon_rev`** — a full 40-character SHA (never abbreviated), typed `Option<String>`
+  with `#[serde(default)]`, so the 166 historical entries keep parsing; they are
+  **deliberately not backfilled**, since a prose-derived SHA is a reconstructed record. The
+  `Option` is load-bearing: `None` means the KEY IS ABSENT (an older `refreeze` wrote the
+  entry) while `Some("")` means somebody blanked it, and only the first is legitimate.
+- **`refreeze --freeze` refuses unless it can name the revision honestly** — `AEON_DIR` unset,
+  not a directory, not a git repo, HEAD unresolvable, or the tree **DIRTY** all refuse, before
+  anything is built, each naming the variable, the path and the fault. This is not new policy:
+  the landing lane below already required freezing from a clean checkout of a committed SHA.
+  It was simply unenforceable, and unset silently fell back to the owner's live tree via
+  `capture_goldens.sh`'s `${AEON_DIR:-…/aeon}`. **`--check` is unaffected and still takes no
+  aeon tree.**
+- **`provenance_chain::aeon_dir_matches_the_provenance_tip`** — compares `AEON_DIR`'s HEAD
+  against the tip's `aeon_rev`. **Hard under `SIGIL_STRICT_GATE=1`; a loud `notice:` line
+  otherwise.** Deliberately not hard in both modes: aeon master routinely runs ahead of the
+  frozen tip for byte-neutral reasons (at the time this shipped it was two commits ahead, both
+  documentation-only, and four by the time it was reviewed), so an unconditional assertion
+  would be red on trees that are byte-correct in every way. Strict is where the bar belongs —
+  it *is* the pre-merge run.
+- **AEON-REV-WELL-FORMED** in `provenance::check` — an entry carrying an `aeon_rev` at all must
+  carry a full 40-char SHA, **wherever it sits in the chain**. Hard in every mode.
+- **AEON-REV-MONOTONIC** in `provenance::check` — once any entry names its aeon revision, no
+  later entry may omit it. Hard in every mode. These two are the rules with teeth today.
+
+**⚠ THE BOUNDARY IS DERIVED FROM THE CHAIN, NEVER PINNED TO AN ENTRY NUMBER — and this was a
+real defect caught in review, not a style preference.** The first implementation used a
+`AEON_REV_FROM_ENTRY = 166` constant. The aeon lane refreezes by running sigil's `refreeze` out
+of **sigil master**, so a byte-moving refreeze landing before the field shipped would append a
+field-less entry #167 that was entirely legitimate when written — and the pinned rule then
+turned master red on somebody else's correct work the moment the branch merged. Measured, not
+reasoned: on a chain carrying exactly that entry the pinned form failed **two** tests
+(`provenance_chain_holds` and the pairing gate) while the derived form passes the identical
+file. That is the failure this whole mechanism exists to prevent, aimed at ourselves. If you
+ever find yourself wanting a number here, that is the trap.
+
+**The one tolerance, and its disarm condition:** while the tip carries no `aeon_rev` the
+pairing gate prints a `ratchet:` line and passes *in both modes*. `refreeze` appends nothing
+when nothing moved, so no parcel can force the field onto the tip; failing closed would put
+master red under the full-suite bar indefinitely. **The ratchet disarms permanently at the
+next refreeze that names a revision** — the condition is the field's absence, never an entry
+number. It prints `ratchet:`, never `skip:` — the bar
+below requires zero `skip:` lines and this is not a missing reference.
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
   `AEON_DIR` set to a tree matching the provenance tip (derive it — see the warning above) —
-  **3928 passed / 0 failed / 4 ignored** (3932 declared) under `SIGIL_STRICT_GATE=1`, **zero
+  **3939 passed / 0 failed / 4 ignored** (3943 declared) under `SIGIL_STRICT_GATE=1`, **zero
   `skip:` lines**, exit 0, clippy `-D warnings` exit 0.
-  Last measured at sigil master `243d2d24` against aeon `55ea2557` (chain 166), 2026-08-26, log
-  `~/sonic_hacks/.sigil-verify-243d2d24.log`. **The count is the bar; the pairing is a
+  Last measured on `feat/provenance-aeon-rev` `a2cdfc42` against aeon `55ea2557` (chain 166),
+  2026-08-26, log `~/sonic_hacks/.sigil-agent-a45a-verify.log` (was 3928/3932 at master
+  `243d2d24`; +11 from the `aeon_rev` field, its ten unit tests and the pairing gate).
+  Note the run emits **one `ratchet:` line** — the pairing gate's self-disarming tolerance
+  while the tip carries no `aeon_rev`. That prefix is not `skip:` and does not violate the bar above. **The count is the bar; the pairing is a
   timestamp, not an instruction** — a later freeze moves the aeon SHA and leaves the count
   alone, so reconcile a parcel's delta against `git grep -c '#\[test\]' HEAD -- '*.rs'` and
   read the pairing only as "this number was last seen on that pair".
