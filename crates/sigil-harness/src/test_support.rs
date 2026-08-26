@@ -295,6 +295,245 @@ pub fn game_contract_env(
     env
 }
 
+// ── 1c. The DERIVED game-contract env (reads aeon's own contract) ────────────
+//
+// [`game_contract_env`] above takes HAND-WRITTEN `.emp` source. That is right for
+// a probe that means a SYNTHETIC contract (a malformed stub, a one-member
+// interface, a deliberately unbound hook), and wrong for an oracle that means THE
+// REAL CONTRACT: a hand-written stub is a second, silent copy of
+// `engine/system/game_contract.emp`, and it cannot see a member the engine grew.
+// The ring-sparkle parcel proved the failure mode — aeon added
+// `hook ring_collected` and `rings.emp` gained one `invoke Game.ring_collected`,
+// and `rings_port.rs` (which lowered with NO env at all) died on
+// `[contract.unknown-member]`.
+//
+// Everything below is DERIVED, nothing named twice:
+//
+//   * the interface is aeon's own `engine/system/game_contract.emp`;
+//   * the `implement` is the profile's own manifest, at the path
+//     [`GameProfile::game_root_rel`]'s directory + `config/game.emp` — the
+//     `map_path` / `reference_tree_for_profile` derivation, one file over;
+//   * the manifest's imports (`use games.<g>.constants.{…}`) are followed to
+//     their own files and supplied as the bind ambient, so a binding whose value
+//     is an imported const (`const ENTRY_ID = GS_OJZ_SCROLL_TEST`) folds;
+//   * the parsed manifest's module id is checked against the profile's declared
+//     [`GameProfile::manifest_module`], so a moved/renamed manifest is loud
+//     rather than a quietly different file.
+//
+// SCOPE. This binds MEMBERS, not bodies: the bound procs/hooks live in the game's
+// own modules, which are not in the two-file bind set, so the §4 subcontract check
+// (`bound ⊑ declared`) silently passes here. That check is the WHOLE-PROGRAM
+// build's job (and `contract_closure_corpus.rs` gates it); what an isolated port
+// oracle needs from this env is that every `Game.MEMBER` / `invoke Game.hook` the
+// engine module names RESOLVES, to the same binding the ROM was built with.
+
+/// The engine's contract interface, relative to the aeon tree. ONE declaration
+/// site (`engine/system/game_contract.emp`) — the engine half is not per-game, so
+/// unlike the manifest it has nothing to derive from a profile.
+pub const GAME_CONTRACT_IFACE_REL: &str = "engine/system/game_contract.emp";
+
+/// The profile's game manifest (`games/<g>/config/game.emp`) — the one
+/// `implement Game`. DERIVED from [`GameProfile::game_root_rel`] exactly as
+/// [`GameProfile::map_path`] derives the placement map: the residual root's
+/// directory, one known file inside it.
+pub fn game_manifest_path(
+    aeon: &std::path::Path,
+    profile: &crate::native::GameProfile,
+) -> PathBuf {
+    let root = std::path::Path::new(profile.game_root_rel);
+    let dir = root.parent().unwrap_or(std::path::Path::new(""));
+    aeon.join(dir).join("config/game.emp")
+}
+
+/// Parse an `.emp` file, panicking (naming the path) if it is missing or carries
+/// a parse error. The loudness half of the derived contract: a moved file must
+/// never degrade into an empty env that satisfies nothing.
+fn parse_emp_or_panic(path: &std::path::Path) -> sigil_frontend_emp::ast::File {
+    let src = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("game contract source missing at {}: {e}", path.display()));
+    let (file, diags) = sigil_frontend_emp::parse_str(&src);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "parse errors in {}: {:?}",
+        path.display(),
+        diags
+    );
+    file
+}
+
+/// Every member `interface Game` DECLARES, in declaration order, read out of
+/// aeon's `engine/system/game_contract.emp`.
+///
+/// The DERIVED expectation for the coverage gate: a test asserting the env
+/// carries "every member" must get the member list from the contract itself, or
+/// it is the same hand-kept list one layer up — and the next hook walks past it
+/// exactly as `ring_collected` walked past the stubs.
+pub fn game_contract_declared_members(aeon: &std::path::Path) -> Vec<String> {
+    let path = aeon.join(GAME_CONTRACT_IFACE_REL);
+    let file = parse_emp_or_panic(&path);
+    let members: Vec<String> = file
+        .items
+        .iter()
+        .filter_map(|it| match it {
+            sigil_frontend_emp::ast::Item::Interface(d) if d.name == "Game" => Some(d),
+            _ => None,
+        })
+        .flat_map(|d| d.members.iter().map(|m| m.name.clone()))
+        .collect();
+    assert!(
+        !members.is_empty(),
+        "{} declares no `interface Game` members — the contract moved or the parse \
+         stopped seeing it; an empty member list would make every coverage gate vacuous",
+        path.display()
+    );
+    members
+}
+
+/// The resolved game-contract [`InterfaceEnv`](sigil_frontend_emp::contract::InterfaceEnv)
+/// for `profile`, bound from AEON'S OWN CONTRACT — the derived counterpart to
+/// [`game_contract_env`]'s hand-written stubs. See the section header above.
+///
+/// `defines` is the oracle's build shape (`DEBUG` / `SOUND_DEBUG_HOTKEYS` /
+/// `SOUND_DRIVER_ENABLED` …), consulted by the manifest's comptime-`if` binding
+/// groups exactly as the whole-program build consults it.
+///
+/// Loud on every degenerate outcome: a missing interface or manifest file, a parse
+/// or bind error, a manifest whose module id is not the profile's declared
+/// `manifest_module`, an env with no `Game` interface, and an env binding fewer
+/// members than the interface declares.
+pub fn game_contract_env_from_aeon(
+    aeon: &std::path::Path,
+    profile: &crate::native::GameProfile,
+    defines: &[(String, i128)],
+) -> sigil_frontend_emp::contract::InterfaceEnv {
+    use sigil_frontend_emp::resolve::contract::{bind_with_ambient, ContractModule};
+
+    let iface_path = aeon.join(GAME_CONTRACT_IFACE_REL);
+    let impl_path = game_manifest_path(aeon, profile);
+    let ef = parse_emp_or_panic(&iface_path);
+    let gf = parse_emp_or_panic(&impl_path);
+
+    let eid = ef.module.path.segments.join(".");
+    let gid = gf.module.path.segments.join(".");
+    assert_eq!(
+        gid,
+        profile.manifest_module,
+        "manifest at {} declares module `{gid}`, but profile `{}` names \
+         `{}` — the derivation found the wrong file",
+        impl_path.display(),
+        profile.name,
+        profile.manifest_module
+    );
+
+    // The manifest's own imports, followed to their files: a binding value that
+    // names an imported const (`const ENTRY_ID = GS_OJZ_SCROLL_TEST`) folds only
+    // with those declarations in the bind ambient. Derived from the `use` edges,
+    // so an import the manifest grows is followed by construction.
+    let mut ambient: Vec<sigil_frontend_emp::ast::Item> = Vec::new();
+    for item in &gf.items {
+        let sigil_frontend_emp::ast::Item::Use(u) = item else { continue };
+        // `base` is the module id in every `use` form (`use a.b.c`, `use a.b.c._`,
+        // `use a.b.c.*`, `use a.b.c.{X}`) — the name list is not part of it.
+        let rel: PathBuf =
+            u.base.segments.iter().fold(PathBuf::new(), |p, s| p.join(s.as_str()));
+        let candidate = aeon.join(&rel).with_extension("emp");
+        if candidate.is_file() {
+            ambient.extend(parse_emp_or_panic(&candidate).items);
+        }
+        // A `use` that resolves to no file is NOT an error here: the aeon module
+        // id is not always the on-disk path (`games.sonic4.constants` lives at
+        // `games/sonic4/config/constants.emp`). The bind below is the judge — an
+        // unresolved binding value fails loud there, naming the name.
+    }
+    // Config modules do not sit at their dotted path. Sweep the game's own
+    // `config/` directory, which is where a game's `.emp` declarations live, so
+    // `games.sonic4.constants` is found without naming it.
+    if let Some(cfg_dir) = impl_path.parent() {
+        if let Ok(entries) = std::fs::read_dir(cfg_dir) {
+            let mut paths: Vec<PathBuf> = entries
+                .filter_map(Result::ok)
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|x| x == "emp") && *p != impl_path)
+                .collect();
+            paths.sort();
+            for p in paths {
+                ambient.extend(parse_emp_or_panic(&p).items);
+            }
+        }
+    }
+
+    let mods = [ContractModule { id: &eid, file: &ef }, ContractModule { id: &gid, file: &gf }];
+    let (env, diags) = bind_with_ambient(&mods, defines, &ambient);
+    assert!(
+        diags.iter().all(|d| d.level != sigil_span::Level::Error),
+        "binding {} against {} failed: {diags:?}",
+        impl_path.display(),
+        iface_path.display()
+    );
+
+    let declared = game_contract_declared_members(aeon);
+    let bound = env
+        .interfaces
+        .get("Game")
+        .unwrap_or_else(|| panic!("bind produced no `Game` interface from {}", iface_path.display()));
+    let missing: Vec<&String> =
+        declared.iter().filter(|m| !bound.members.contains_key(*m)).collect();
+    assert!(
+        missing.is_empty(),
+        "the derived env is missing {} of the {} members `interface Game` declares in {}: {missing:?} \
+         — an env that under-covers the contract lets an engine module's `Game.MEMBER` \
+         fail at lower instead of here",
+        missing.len(),
+        declared.len(),
+        iface_path.display()
+    );
+    env
+}
+
+/// Every LINK SYMBOL the resolved `Game` interface binds — each bound hook's and
+/// proc member's target name, sorted. An isolated oracle lowering an engine module
+/// through the derived env emits a real `jsr <symbol>` at every bound `invoke`, so
+/// it must supply an address for each; this is that list, READ OFF THE ENV rather
+/// than hand-kept, so a newly bound hook arrives with it.
+pub fn game_contract_bound_symbols(
+    env: &sigil_frontend_emp::contract::InterfaceEnv,
+) -> Vec<String> {
+    use sigil_frontend_emp::contract::ResolvedMember;
+    let Some(game) = env.interfaces.get("Game") else { return Vec::new() };
+    let mut out: Vec<String> = game
+        .members
+        .values()
+        .filter_map(|m| match m {
+            ResolvedMember::Hook(Some(s)) | ResolvedMember::Proc(s) => Some(s.clone()),
+            _ => None,
+        })
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// One symbol's address, read out of a sigil-canonical aeon LISTING (`s4.lst`) —
+/// the `.bin`'s own sibling from the SAME build, so a symbol's address here and
+/// the operand encoded in the reference ROM cannot disagree.
+///
+/// The listing's symbol table spells one entry per line as `NAME : HEX C |`.
+/// `None` when the listing file is absent (a source-only tree); a PRESENT listing
+/// that does not carry `name` is a hard error naming it — the caller wanted an
+/// address, and a silent zero would encode a wrong operand into a byte gate.
+pub fn listing_symbol_addr(listing: &std::path::Path, name: &str) -> Option<u32> {
+    let text = std::fs::read_to_string(listing).ok()?;
+    let needle = format!(" {name} : ");
+    for line in text.lines() {
+        let Some(rest) = line.strip_prefix(&needle) else { continue };
+        let hex = rest.split_whitespace().next().unwrap_or("");
+        if let Ok(v) = u32::from_str_radix(hex, 16) {
+            return Some(v);
+        }
+    }
+    panic!("listing {} carries no symbol `{name}`", listing.display());
+}
+
 // ── 2. The drift-guard filter ────────────────────────────────────────────────
 
 /// `true` iff `a` is a twin DRIFT GUARD (not a D2.29 `[layout.odd-item]` parity

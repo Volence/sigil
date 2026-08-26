@@ -62,13 +62,18 @@
 //! ```
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
-use sigil_frontend_emp::lower::{lower_module, LowerOptions};
+use sigil_frontend_emp::lower::{lower_module, lower_module_with_contracts, LowerOptions};
 use sigil_harness::pins;
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::PathBuf;
+
+/// The first LMA of the harness-private synthetic groups (the equ blob, the
+/// cross-seam label pins, the outbound consumer) — far above the mapped regions,
+/// one 0x10_0000 stride apart.
+const HARNESS_PRIVATE_LMA_BASE: u32 = 0x0100_0000;
 
 fn aeon_dir() -> PathBuf {
     PathBuf::from(
@@ -256,6 +261,31 @@ fn compile_real_file(
     compile_real_file_with(shape, defines, None)
 }
 
+/// This oracle's build shape, read off the defines it is lowering with — the
+/// `DEBUG` value the caller already supplies, not a second flag to keep in step.
+fn shape_is_debug(ds: &[(String, i128)]) -> bool {
+    ds.iter().find(|(n, _)| n == "DEBUG").is_some_and(|(_, v)| *v != 0)
+}
+
+/// The comptime environment the game manifest's binding groups are resolved
+/// against: the profile's OWN `emp_defines` (what the reference ROM was built
+/// with — `SOUND_DEBUG_HOTKEYS` and friends live only there), with this oracle's
+/// own defines layered on top so a shape/probe variation reaches the manifest too.
+fn contract_defines(
+    profile: &sigil_harness::native::GameProfile,
+    ds: &[(String, i128)],
+) -> Vec<(String, i128)> {
+    let mut out: Vec<(String, i128)> =
+        profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
+    for (n, v) in ds {
+        match out.iter_mut().find(|(o, _)| o == n) {
+            Some(slot) => slot.1 = *v,
+            None => out.push((n.clone(), *v)),
+        }
+    }
+    out
+}
+
 /// `compile_real_file` with the drift-probe equ-override seam exposed.
 fn compile_real_file_with(
     shape: &Shape,
@@ -284,13 +314,27 @@ fn compile_real_file_with(
             ds.push((k.to_string(), v));
         }
     }
+    // rings.emp's `invoke Game.ring_collected` (the collect visual) needs the L1
+    // game-contract env the whole-program build binds. It is DERIVED from aeon's
+    // own `engine/system/game_contract.emp` + sonic4's `implement Game`, never a
+    // stub written here: this oracle compares against the SONIC4 reference ROM,
+    // so the binding must be sonic4's actual one, and a hand-written interface
+    // cannot see a member the engine grows (`ring_collected` is exactly that).
+    let is_debug = shape_is_debug(&ds);
+    let profile = sigil_harness::native::sonic4_profile(is_debug);
+    let env = sigil_harness::test_support::game_contract_env_from_aeon(
+        &aeon,
+        &profile,
+        &contract_defines(&profile, &ds),
+    );
+
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.join("engine/objects")),
         embed_base: None,
         defines: ds,
     };
-    let (module, ldiags) = lower_module(&file, &opts);
+    let (module, ldiags) = lower_module_with_contracts(&file, &opts, &env);
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "rings.emp lower errors: {ldiags:?}"
@@ -305,10 +349,21 @@ fn compile_real_file_with(
         "place_sections errors: {pdiags:?}"
     );
 
-    let mut lma = 0x0100_0000u32;
+    let mut lma = HARNESS_PRIVATE_LMA_BASE;
     let mut groups: Vec<Vec<Section>> = vec![as_constant_equs_with(override_pair)];
     for (name, vma) in shape.labels {
         groups.push(as_label_at(name, *vma));
+    }
+    // The contract's own bound targets (`invoke Game.ring_collected` lowers to
+    // `jsr RingSparkle_Spawn`). The NAMES come from the env, not a list here, and
+    // each address comes from the reference ROM's OWN sibling listing — the same
+    // build, so the operand this oracle encodes and the one in the reference
+    // cannot disagree. A hook the game binds later arrives pinned by construction.
+    let listing = aeon.join(if is_debug { "s4.debug.lst" } else { "s4.lst" });
+    for sym in sigil_harness::test_support::game_contract_bound_symbols(&env) {
+        if let Some(vma) = sigil_harness::test_support::listing_symbol_addr(&listing, &sym) {
+            groups.push(as_label_at(&sym, vma));
+        }
     }
     groups.push(as_outbound_consumer());
     for group in &mut groups {
@@ -439,13 +494,15 @@ fn reference_gate(shape: &Shape, rom_name: &str, debug_define: i128) {
     );
 
     // Outbound bare-name proof: the AS-side `bsr.w RingCollision` fixup
-    // resolves to base + ringcol_off. The consumer is the LAST synthetic
-    // group: equ blob + N labels + consumer.
-    let consumer_lma = 0x0100_0000u32 + (1 + shape.labels.len() as u32) * 0x10_0000;
+    // resolves to base + ringcol_off. The consumer is appended LAST among the
+    // harness-private groups, so it is the one at the highest private LMA —
+    // found by that construction rather than by counting the groups ahead of it
+    // (a count the contract's own bound-symbol pins now vary).
     let consumer = linked
         .sections
         .iter()
-        .find(|s| s.lma == consumer_lma)
+        .filter(|s| s.lma >= HARNESS_PRIVATE_LMA_BASE)
+        .max_by_key(|s| s.lma)
         .expect("linked image must carry the outbound consumer at its harness-private LMA");
     let disp = i16::from_be_bytes([consumer.bytes[2], consumer.bytes[3]]);
     let expected_disp =
