@@ -8587,3 +8587,57 @@ full_crc = "8279a3fe"
 full_size = 715582
 anchor_crc = "350709d7"
 anchor_end = 0xa32a0
+
+[[entry]]
+name = "replay-restamp"
+ab = "aeon b08b35c0: OJZ replay fixture re-stamped, 7 of 27 checkpoint hashes at ticks 1282-1666. Emulator A/B is the headless replay net on the re-stamped DEBUG image: clean end-to-end run, Logic_Tick 1723 over 1721 declared, all 27 checkpoints compared and matched, and the negative control still trips at tick 2 on that same image. Owner ruled prove-then-restamp (d-14); the proof leg reverted the insta-shield on top of current master and both fixtures replayed clean end to end with the control firing, so the shield is the only behavioural change the net sees. Evidence: docs/superpowers/notes/2026-08-26-instashield-replay-proof.md and docs/superpowers/notes/2026-08-26-ojz-fixture-restamp.patch."
+note = "Recorded inputs untouched; only stale checkpoint payloads moved. Fixture stays 272 B and the ROM stays 715582, so EndOfRom does not move and no pin term is owed. Both demo shapes byte-identical. Four shapes rebuilt from a clean detached checkout of the merge SHA with the ROMs deleted first, against a sigil release binary rebuilt at e223e115."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "f5debbf4"
+full_size = 715930
+anchor_crc = "1142c7e4"
+anchor_end = 0xa32a0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "60b8a6a1"
+full_size = 609235
+anchor_crc = "d5666b3a"
+anchor_end = 0x8b340
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "bf2cdb42"
+full_size = 96412
+anchor_crc = "68de59a1"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "62a0019e"
+full_size = 101120
+anchor_crc = "586b0bd6"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "dfa1a504"
+full_size = 655694
+anchor_crc = "224f89f0"
+anchor_end = 0xa014e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "654bcd74"
+full_size = 699672
+anchor_crc = "023e6d5f"
+anchor_end = 0xa11d0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "f8d06cae"
+full_size = 715582
+anchor_crc = "f176bc70"
+anchor_end = 0xa32a0
