@@ -682,6 +682,62 @@ The standing sigil-native arc is the **`.emp` language work (Spec 2)** — specs
 `empyrean/docs/SIGIL_*.md`. The whole sound stack is sigil-native, the language round
 + §17 optimization arc + conversion tail are done, and the map drives the build.
 
+### SIGIL-DECOUPLE — the owner ruled 2026-08-26, in this lane's session: follow aeon's plan
+
+Asked whether to adopt the shape aeon nominated, his answer was to follow it. **The
+authoritative text is aeon's, not a paraphrase here**: `docs/DEFERRED_WORK.md` at aeon
+`822c382a`, verified reachable from their `origin/master` at read time. Four steps in
+order — (1) cut the golden cord, sigil vendors a PINNED aeon source snapshot as its corpus
+and drift detection moves to a nightly non-blocking job; (2) placement authority comes home
+to aeon, anchors declared in `map.toml` and everything else placed fresh; (3) retire
+`repin`/`pins.rs` from the landing path into an internal regression tool over sigil's own
+corpus; (4) archive the byte-identical certification as a dated historical result.
+**Sequencing is theirs and it is step 2 FIRST**, after the showcase — which has landed
+(chain 167).
+
+**What the coupling actually buys, measured before the ruling rather than assumed**, because
+step 4 will want it and because a future session will otherwise re-litigate this from scratch.
+Two families, and only one of them is liveness:
+
+- **The goldens (byte-identity) catch things nothing else does, and they SURVIVE step 1** —
+  they simply describe a pinned corpus. Instance with teeth: the one-sided
+  `Player_SensorPair` push/pop narrowing is a real runtime bug (wrong angle delivered) that
+  left contract closure green, fired no warn tier, and is invisible to every static analysis
+  here because nothing models 68k stack byte lanes; the ROM diverging from the frozen golden
+  was the only signal. Also the `test_emitter` end-anchor error (caught as a window length
+  mismatch) and the `boot.asm` −0xA base slide, which surfaced hardcoded-address fixtures the
+  design-gate census had not listed.
+- **Liveness catches exactly one family: aeon's newest source hitting a sigil capability or
+  measurement gap** — a brick or a mis-measure, never a byte regression. All three 2026-08-26
+  instances are that shape: the missing map region for `ojz_effects_editor_act1`; the `repin`
+  pin defect where the successor's alignment pad entered `ACT_DESCRIPTOR` (0x27C pinned vs
+  0x27A real); and BGROOM-3's `abs.w`, whose real cause was a collision-fallback scratch slot
+  aliasing zero. **That family is already covered without the coupling** — the nightly
+  source-gate lane and `corpus_builds`' brick witness build every shipped shape from live
+  aeon tip and block nothing, which is the same shape step 1's nightly drift job takes.
+- **And the coupling is not a general safety net, so do not price it as one:** the `×26`
+  stride bug sat green because both twins carried the identical wrong shift decomposition
+  (the gate proves twin-agreement, not correctness), and `[layout.odd-field]` drifted four
+  days through six zero-byte parcels whose CRCs were verified at every landing.
+
+**The residual cost, stated so nobody discovers it later:** byte coverage AGES. A construct
+aeon writes after the snapshot has no golden, so mis-placing it surfaces as a brick rather
+than a byte diff, until the snapshot is bumped on sigil's cadence. Aeon stated the matching
+cost to the owner before his yes — assembler regressions surface nightly rather than at the
+next aeon landing.
+
+**The gate this lane holds on step 1, and it is aeon's own sentence rather than an addition:**
+*"Every constraint the frozen tables encode today must be recaptured as an explicit rule
+BEFORE the tables stop being authority, or it silently stops being enforced."* Treat that as a
+precondition with a deliverable, not a caution. **Enumerate by what TOUCHES placement, never
+by what the frozen table lists** (bar 8) — the table is the artifact whose authority is being
+retired, so taking it as the enumeration is the shared-frame failure aimed at ourselves.
+BGROOM-2's leftovers are the same territory and should be read as part of this, not beside it.
+
+**Not started, and two triggers are not this lane's:** the hub declares the project id (it has
+said one word from the owner is enough, the yes being banked at aeon `822c382a`), and step 2 is
+aeon's ROM-RELAYOUT, which their queue holds for the owner's go.
+
 **Current state (2026-08-22, master `8884e255`, pushed — `origin/master` verified equal by
 `git ls-remote origin refs/heads/master`, not by the local tracking ref).** The two parcels
 below merged at `cba0a0bc`, which master has since moved past; read this heading for where
