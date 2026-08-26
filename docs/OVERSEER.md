@@ -248,19 +248,42 @@ git -C <aeon-tree> rev-parse --short HEAD              # must be the SHA that ti
 ```
 
 All four must match on **CRC32 + size** (never SHA1 — the campaign standard) before a run is
-worth anything. `~/sonic_hacks/.sigil-portfix-aeon` is a clean detached worktree at `b08b35c0`
-whose four ROMs match chain entry 165; `~/sonic_hacks/.aeon-landing` is at `94b384a2` and is
-**one freeze behind** as of this writing — which is exactly the kind of sentence that rots, so
-check it rather than believing it.
-**Ledgered:** no gate witnesses that `AEON_DIR` matches the provenance tip. Until one exists
-this is a hand check, and it is the first thing to do at any dispatch or landing.
+worth anything.
+
+**Which reference worktree is current is NOT recorded here, deliberately — ask the disk.** This
+paragraph twice carried a named worktree and a SHA, and both rotted at the next refreeze while
+reading as fact. The candidates are `~/sonic_hacks/.aeon-landing` and
+`~/sonic_hacks/.sigil-portfix-aeon`; which of them pairs with the tip changes every freeze, so
+derive it:
+
+```sh
+for d in ~/sonic_hacks/.aeon-landing ~/sonic_hacks/.sigil-portfix-aeon; do
+  printf '%s %s\n' "$d" "$(git -C "$d" rev-parse --short HEAD)"
+done                                                   # then CRC32+size all four ROMs in it
+```
+
+`~/sonic_hacks/.aeon-sigil-gates` is never a candidate — it is source-only by construction and
+deletes built ROMs, per the source-gate lane section.
+
+**Ledgered, and it is not the one-afternoon gate it looks like:** no gate witnesses that
+`AEON_DIR` matches the provenance tip, and the reason is structural. `provenance.toml` has **no
+field naming the aeon revision a freeze pairs with** — measured at chain 166, the schema is
+`name` / `ab` / `note` plus the per-target CRC rows, and the aeon SHA appears only inside the
+free-text `ab` and `note` (16 of the 166 entries carry no `note` at all). So the question the
+gate must answer is not queryable: every check of it to date has been a human reading prose.
+The gate therefore has a prerequisite — a structured `aeon_rev` on the entry, written by the
+refreeze and backfilled only where the prose already names one. Write that first, or the gate
+is a regex over English.
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to a tree matching the provenance tip (see the warning above) — **3928 passed /
-  0 failed / 4 ignored** (3932 declared) under `SIGIL_STRICT_GATE=1` (sigil master `ffa7bdb8`,
-  aeon `b08b35c0` at `.sigil-portfix-aeon`, 2026-08-26, log
-  `~/sonic_hacks/.sigil-landing-pad-ffa7bdb8.log`), **zero `skip:` lines**, exit 0, clippy
-  `-D warnings` exit 0.
+  `AEON_DIR` set to a tree matching the provenance tip (derive it — see the warning above) —
+  **3928 passed / 0 failed / 4 ignored** (3932 declared) under `SIGIL_STRICT_GATE=1`, **zero
+  `skip:` lines**, exit 0, clippy `-D warnings` exit 0.
+  Last measured at sigil master `243d2d24` against aeon `55ea2557` (chain 166), 2026-08-26, log
+  `~/sonic_hacks/.sigil-verify-243d2d24.log`. **The count is the bar; the pairing is a
+  timestamp, not an instruction** — a later freeze moves the aeon SHA and leaves the count
+  alone, so reconcile a parcel's delta against `git grep -c '#\[test\]' HEAD -- '*.rs'` and
+  read the pairing only as "this number was last seen on that pair".
   **The previously recorded bar of 3881/3885 was 4 LOW and had been for some time** — measured
   at `67575c3c`, master's own sources run 3885/0/4 against 3889 declared, and
   `git grep -c '#\[test\]'` agrees with the run, not with the old note. A parcel's delta is
@@ -339,10 +362,12 @@ this is a hand check, and it is the first thing to do at any dispatch or landing
   gate tolerates trailing fill. `pins.rs` is not to be hand-edited for it.
   With (A) applied: 3846 / 3 / 4 (their run, clean aeon 415e0b6a); the three = the pair on (C)
   and `soundbankhead` on (B) below. Aeon CRCs unchanged in all four shapes.
-  **Also: the reference CRCs in the "reference tree" paragraph above (060401e4 / 0dbaa80f) are
-  the 2026-08-22 tip and are STALE — the provenance tip is now s4 `c7b9d10d` · s4.debug
-  `f0175028` · demo `c708b114` · demo.debug `dec88cc1` at aeon `415e0b6a`. Read the TIP of
-  `golden/provenance.toml`, never a number in this file.**
+  **Also: this correction has itself gone stale twice since it was written, which is the
+  point.** It named a fresher tip in prose; two refreezes later (chains 165 and 166) that
+  tip was wrong again, and a fresher-looking number reads as more trustworthy than the one
+  it replaced. **No CRC is quoted here any more.** Read the TIP of `golden/provenance.toml`,
+  never a number in this file — including a number in this file that presents itself as a
+  correction to another number in this file.
   **Re-split 2026-08-26 with the aeon lane:** the two messages are two owners. `unknown
   function ojz_act1_act_default / ojz_act1_sec_scene` is aeon's (closure of their generated
   module under this harness). `section ojz_effects_editor_act1 has no region in the map`
@@ -604,12 +629,11 @@ aeon-lane sequencing):
 - **`feat/warn-tier-ungate`** — the source-gate lane (see that section above), the
   `CORPUS_OPEN_FINDINGS` register, and `sigil-source-gates.timer`.
 
-**The reference tree for any artifact-dependent run is aeon master, built.** The goldens'
-`provenance.toml` **tip** pins `s4 060401e4/699106 · s4.debug 0dbaa80f/715010 · demo
-c708b114 · demo.debug dec88cc1`, and building all four shapes at aeon `1ee8f8e6`
-reproduces them exactly. `07d19c54`/`445092a7` appear only in the `ab` prose of a
-mid-file historical entry — reading a non-tip entry as the tip cost this session a false
-"corroborated" in a review. `~/sonic_hacks/.aeon-landing` is a built checkout at that
+**The reference tree for any artifact-dependent run is aeon master, built** — at the
+revision the `provenance.toml` **tip** pairs with, derived at read time per the quality-bar
+section, never from a CRC written in this file. A non-tip entry read as the tip once cost this
+session a false "corroborated" in a review, and there are 166 entries to pick the wrong one
+from. `~/sonic_hacks/.aeon-landing` is a built checkout at that
 revision **(it was found ABSENT on 2026-08-26 and re-created as an aeon worktree at
 `415e0b6a`; re-creating one has two lived hazards, from the aeon lane: a fresh checkout gives
 `project.json` a new mtime so `tools/level_staleness.py` hard-fails BEFORE any ROM is emitted —

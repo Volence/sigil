@@ -2818,3 +2818,21 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   owner rules `.emp` language surface. — OPEN (kill: an owner ruling on the construct, or
   a recorded decision that the `vars` `@align(N)` cursor-mover already covers the whole
   need and no struct-side spelling is owed)
+
+- [pair landing chain 166, 2026-08-26] **`provenance.toml` records no AEON REVISION, so
+  "does `AEON_DIR` match the tip?" is not a queryable question** — and that is why the
+  ledgered `AEON_DIR` gate has never been written. Measured at chain 166: the entry schema
+  is `name` / `ab` / `note` plus the per-target `golden`/`full_crc`/`full_size`/
+  `anchor_crc`/`anchor_end` rows; across 166 entries there are 166 `name`, 166 `ab` and
+  only **150** `note`, and the aeon SHA a freeze pairs with appears nowhere except inside
+  the free text of those two prose fields. So every check of the pairing performed to date
+  — including the one this document prescribes at every dispatch and landing — has been a
+  human reading English, and 16 entries do not carry even that. A gate written against the
+  file as it stands is a regex over prose, which is the weakest possible form of the
+  strongest available guard: it would fail open on the 16, and silently on any refreeze
+  whose note phrases the revision differently. The CRC halves are already structured and
+  already checkable; only the pairing is not. **The prerequisite is a schema field, not a
+  gate.** — OPEN (kill: entries gain a structured `aeon_rev`, written by the refreeze path
+  so it cannot be forgotten and backfilled only where the existing prose names one
+  unambiguously; then the gate asserts `AEON_DIR`'s HEAD against the tip's field and fails
+  closed on a missing one)
