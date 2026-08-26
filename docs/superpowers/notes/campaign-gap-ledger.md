@@ -2780,3 +2780,41 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   would have shown as 12-against-11. General form: when offering a commit as evidence
   about a TREE STATE, ask what the commit would look like if the claim were false; if
   the answer is "the same", the artifact is not the witness.
+
+- [pad parcel, 2026-08-26] **The suite has no witness that `AEON_DIR` is the revision the
+  goldens are frozen against.** Dispatched with `.aeon-landing` (aeon `94b384a2`, four
+  shapes present and CRC-verified at dispatch), the suite returned 71 failures that read
+  as a byte-moving regression — `` `Ground_Move_Cap` resolved to 0x10902, expected
+  0x10912``, "assembled prefix diverges from asl at 240 offset(s)". Nothing anywhere in
+  the output said "your reference tree is a different aeon revision". The goldens want
+  aeon `b08b35c0` (`provenance.toml` chain tip: s4 `654bcd74`/699672); `.aeon-landing`
+  carried `b96319e3`/699408. What settled it was re-running the same gate against
+  MASTER'S OWN sources in the same worktree and seeing the identical failure — a
+  differential the parcel had to think to run. The failure mode is expensive in exactly
+  the way a stale baseline is: the numbers are plausible, specific, and about the wrong
+  thing. — OPEN (kill: a gate that reads `golden/provenance.toml`'s chain tip, CRC32s
+  and sizes the four ROMs in `AEON_DIR`, and HARD-FAILS naming both revisions before any
+  byte comparison runs; it must fire before the corpus gates, not alongside them)
+
+- [pad parcel, 2026-08-26] **`crates/sigil-cli/tests/deny_todo.rs` collides with itself
+  under load.** `unique_temp_dir()` keys on pid + `SystemTime::now().as_nanos()`; two
+  threads of one test binary that land on the same nanosecond share a directory, race on
+  `m.emp`, and one `remove_dir_all`s the other's fixture. Observed once at load average
+  23: `deny_todo_leaves_unreachable_alone` failed with a `[todo.present]` diagnostic
+  pointing at `m.emp:4:5` — its own file has `unreachable!` on line 3, so it had read a
+  sibling test's fixture. Green 3/3 on immediate re-run, and green in the branch's own
+  full-suite run. Pre-existing (seen with master's sources); not this parcel's. Rare, but
+  it is a false RED on a gate whose whole job is to be believed. — OPEN (kill: key the
+  directory on an atomic per-process counter, or use one `tempfile::TempDir` per test, so
+  uniqueness does not depend on clock resolution)
+
+- [pad parcel, 2026-08-26] **Language ask: a pad whose width is derived from an
+  ALIGNMENT.** §4.3.1 rules `pad_to(N)` to an absolute offset and says in place that a
+  modulus-derived pad "is a separate construct and needs its own ruling". The aeon corpus
+  motivates it — 26 of 26 `pad(` lines are in `vars` bodies and several carry the comment
+  "keep the following words even-aligned" / "pad to even", i.e. their width is a parity
+  function of the cursor, which is precisely the staling constant `pad_to` exists to
+  kill, in the one coordinate `pad_to` cannot express. Not designed, not proposed — the
+  owner rules `.emp` language surface. — OPEN (kill: an owner ruling on the construct, or
+  a recorded decision that the `vars` `@align(N)` cursor-mover already covers the whole
+  need and no struct-side spelling is owed)
