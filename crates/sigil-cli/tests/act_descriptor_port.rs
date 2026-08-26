@@ -250,6 +250,16 @@ fn compile_real_file(
     let gen = aeon_root().join("games/sonic4/data/generated/ojz/act1");
     let pool_manifest = parse_file(&gen.join("ojz_act_pool_manifest.emp"));
     let block_dicts = parse_file(&gen.join("sec_block_dicts.emp"));
+    // Aurora wave-1 P5 slice 5: act_descriptor.emp `use`s the two editor-scene
+    // binding functions (`ojz_act1_act_default` / `ojz_act1_sec_scene`, `pub
+    // comptime fn`s emitted by tools/effects_gen.py for EVERY act, content or not)
+    // from the generated `games.sonic4.ojz_effects_editor_act1` module. They are
+    // functions, so they cannot ride as link equs like the labels below; the
+    // single-file lower resolves no cross-module `use`, so the generated module's
+    // items ride ambient too. On the `sigil build` path the descriptor's own
+    // whole-path `use` edge carries the module into the closure; here THIS line is
+    // that edge.
+    let effects_scenes = parse_file(&gen.join("effects_scenes.emp"));
     // T7 (world-Y re-glue): act_descriptor now pins its act span against the scene
     // registry's SCENE_ACT_SPAN_Y — synthesized VERBATIM at test runtime
     // (test_support), never stale, never wholesale.
@@ -260,7 +270,7 @@ fn compile_real_file(
         "synthesized SCENE_ACT_SPAN_Y block parse errors: {span_diags:?}"
     );
     let file = with_ambient(
-        vec![structs, constants, pool_manifest, block_dicts, span_file],
+        vec![structs, constants, pool_manifest, block_dicts, effects_scenes, span_file],
         parse_file(&dir.join("act_descriptor.emp")),
     );
 

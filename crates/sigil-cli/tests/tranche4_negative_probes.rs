@@ -375,6 +375,14 @@ fn parse_act_with_structs(act_src: &str, structs_src: &str) -> sigil_frontend_em
         .expect("sec_block_dicts.emp must exist (set AEON_DIR)");
     let (dicts, dd) = parse_str(&dsrc);
     assert!(dd.iter().all(|d| d.level != Level::Error), "sec_block_dicts.emp parse errors: {dd:?}");
+    // Aurora wave-1 P5 slice 5: the two editor-scene binding `pub comptime fn`s
+    // (`ojz_act1_act_default` / `ojz_act1_sec_scene`) act_descriptor.emp `use`s from
+    // the generated ojz_effects_editor_act1 module — functions, so not injectable as
+    // equs; ride the generated module's items ambient like the const modules above.
+    let esrc = std::fs::read_to_string(gen.join("effects_scenes.emp"))
+        .expect("effects_scenes.emp must exist (set AEON_DIR)");
+    let (effects_scenes, ed) = parse_str(&esrc);
+    assert!(ed.iter().all(|d| d.level != Level::Error), "effects_scenes.emp parse errors: {ed:?}");
     // T7 (world-Y re-glue): act_descriptor now pins its act span against the scene
     // registry's SCENE_ACT_SPAN_Y — synthesized VERBATIM at test runtime
     // (test_support), riding ambient like the other cross-module consts here.
@@ -387,6 +395,7 @@ fn parse_act_with_structs(act_src: &str, structs_src: &str) -> sigil_frontend_em
     items.extend(constants.items);
     items.extend(manifest.items);
     items.extend(dicts.items);
+    items.extend(effects_scenes.items);
     items.extend(span_file.items);
     items.extend(act.items);
     sigil_frontend_emp::ast::File { module: act.module, attrs: act.attrs, items, docs: act.docs }
