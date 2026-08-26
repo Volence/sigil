@@ -108,6 +108,28 @@ that kills the two `CORPUS_OPEN_FINDINGS` rows is now sigil's to design and put 
 `pad_to(N)` (queue item 4) is sigil's to draft and put to him rather than a thing that waits
 for him to raise it. Neither lands without his nod.
 
+**`pad(N)` / `pad_to(N)` — RULED YES BY THE OWNER, 2026-08-26, directly in this lane's
+session.** Put to him as `d-12`; his answer was a bare **yes** against the recommendation, so
+the ruling is the **`both`** option: `pad_to(N)` derives the filler width from the next field's
+offset, AND the plain `pad(N)` reserve-N-bytes spelling stays for the case where the count is
+the author's real intention, with a diagnostic that names the mistake and prints the exact line
+to write when the deriving form was clearly meant. Closed as `d-13` (rule 8c supersession).
+`(align: N)` stays mandatory and is not the derivation's casualty — that is §1.3 of the draft
+and the argument the whole design rests on.
+
+**This retires the provenance caveat the draft carries in its own header.** That document
+records its authority as an *empyrean* overseer's ruling made under a delegation reported in
+the owner's words, flagged there as *"this lane did not witness that utterance"*. It is now
+witnessed firsthand here, so the construct no longer stands on a relayed grant. The draft text
+itself is unaffected; only its authority line is.
+
+Sequencing, so nobody lands half of it: the spec text is **empyrean's to land** — sigil does not
+land `.emp` language spec, `SIGIL_SPEC2_LANGUAGE.md` is their file — lifted verbatim from
+`docs/superpowers/notes/2026-08-26-pad-to-spec-draft.md`. **Nothing is implemented**; no crate
+was touched by the parcel that wrote the draft, and `pad_to_cycles` in `t40_cycles.rs` is an
+unrelated cycle-padding construct that shares a prefix and nothing else. Implementation is a
+separate parcel and is this lane's.
+
 **RE-CONFIRMED BY THE OWNER, 2026-08-24, directly in this lane's session — not relayed.**
 The 48-day-old grant was put to him as decision `d-2` in `docs/decisions.jsonl` and he chose
 **keep it, and tell me the notable calls as they happen**. So the authority is unchanged and
