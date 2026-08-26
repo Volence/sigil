@@ -471,23 +471,37 @@ pub fn game_contract_env_from_aeon(
         iface_path.display()
     );
 
-    let declared = game_contract_declared_members(aeon);
-    let bound = env
-        .interfaces
-        .get("Game")
-        .unwrap_or_else(|| panic!("bind produced no `Game` interface from {}", iface_path.display()));
-    let missing: Vec<&String> =
-        declared.iter().filter(|m| !bound.members.contains_key(*m)).collect();
+    assert!(
+        env.interfaces.contains_key("Game"),
+        "bind produced no `Game` interface from {}",
+        iface_path.display()
+    );
+    let missing = game_contract_missing_members(aeon, &env);
     assert!(
         missing.is_empty(),
         "the derived env is missing {} of the {} members `interface Game` declares in {}: {missing:?} \
          — an env that under-covers the contract lets an engine module's `Game.MEMBER` \
          fail at lower instead of here",
         missing.len(),
-        declared.len(),
+        game_contract_declared_members(aeon).len(),
         iface_path.display()
     );
     env
+}
+
+/// The members `interface Game` DECLARES in aeon's contract that `env` does NOT
+/// carry, by name — empty for a complete env.
+///
+/// The coverage predicate, factored out so the gate that proves it non-vacuous
+/// runs the SAME code the env's own assertion runs. Both sides are derived: the
+/// expectation from [`game_contract_declared_members`], the actual from the env.
+pub fn game_contract_missing_members(
+    aeon: &std::path::Path,
+    env: &sigil_frontend_emp::contract::InterfaceEnv,
+) -> Vec<String> {
+    let declared = game_contract_declared_members(aeon);
+    let Some(game) = env.interfaces.get("Game") else { return declared };
+    declared.into_iter().filter(|m| !game.members.contains_key(m)).collect()
 }
 
 /// Every LINK SYMBOL the resolved `Game` interface binds — each bound hook's and
