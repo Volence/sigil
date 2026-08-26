@@ -144,13 +144,13 @@ AEON_DIR=/home/volence/sonic_hacks/.sigil-portfix-aeon SIGIL_STRICT_GATE=1 \
 ```
 
 Log: `~/sonic_hacks/pad-suite.log`, stamped before cargo wrote to it with
-`pwd=/home/volence/sonic_hacks/sigil/.worktrees/pad`, `head=93dbee23`,
+`pwd=/home/volence/sonic_hacks/sigil/.worktrees/pad`, `head=df2ba323`,
 `branch=feat/struct-pad`, `AEON_DIR`, `AEON_HEAD=b08b35c0`.
 
 | | passed | failed | ignored | declared |
 |---|---|---|---|---|
 | master `67575c3c`, **measured in this environment** | 3885 | 0 | 4 | 3889 |
-| `feat/struct-pad` `93dbee23` | **3928** | **0** | **4** | **3932** |
+| `feat/struct-pad` `df2ba323` | **3928** | **0** | **4** | **3932** |
 
 Zero `skip:` lines; zero `error: test failed` lines. `cargo clippy --workspace
 --all-targets -- -D warnings` exits 0.
