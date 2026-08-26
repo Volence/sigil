@@ -302,7 +302,7 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
     let expected = &refrom[base..base + SIZE];
     let section =
         linked.section("act_descriptor").expect("linked image must carry act_descriptor");
-    assert_eq!(section.bytes.len(), SIZE, "act_descriptor must emit exactly 0x274 bytes");
+    assert_eq!(section.bytes.len(), SIZE, "act_descriptor must emit exactly {SIZE:#x} bytes");
     if let Some(i) = (0..SIZE).find(|&i| section.bytes[i] != expected[i]) {
         panic!(
             "act_descriptor ({}) first diff at region offset {i:#x} (item {}): got {:02x?}, expected {:02x?}",

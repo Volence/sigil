@@ -2665,8 +2665,16 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   section exists)
 - [SECTION-ROW parcel, 2026-08-26] **`repin.toml` region ends still name the content-derived
   label** (`scene_registry` `end = "EditorSceneBinding_OJZ_Act1_Sec0"`): the same rot the
-  `order` row just closed. — OPEN, REPIN-END's (kill: `end = "section:<name>"` resolving to
-  the section's LMA in the region reader)
+  `order` row just closed. — CLOSED 2026-08-26 by REPIN-END (`fix/repin-end`,
+  `2026-08-26-repin-end-packet.md`): `end = "section:<name>"` resolves to the named
+  section's OWN end (`lma + image_len`; at `start`, its LMA); `scene_registry` and
+  `act_descriptor` re-spelled
+- [REPIN-END parcel, 2026-08-26] **79 bare-label region ends in `repin.toml` still carry
+  placer pad** (the end-is-next-placement family — boot … player_climb, pads 0x2..0x20;
+  the `repin` bin names every one per run). Their pins are unchanged and their gates green
+  under the align-pad tolerance. — OPEN (kill: convert each to `end = "section:<name>"`
+  when its port gate is next touched — the pin shrinks by its pad and the gate re-proves at
+  the new length; the warning count is the progress meter, reaching 0 retires the tolerance)
 - [SECTION-ROW parcel, 2026-08-26] **`soundbankhead_port.rs:75` `LOCK.lock().unwrap()` poisons
   after the known-red `soundbankhead_pinned_bootstrap_lands_at_lma_not_vma`:** whichever
   sibling draws the lock next fails on `PoisonError` (seen once in two full runs; green

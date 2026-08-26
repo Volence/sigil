@@ -207,7 +207,7 @@ pub const PATH_SWAP: Region = Region { plain_base: 0x118F2, debug_base: 0x120CC,
 /// `OJZ_TestRaster` .. `ObjDef_Static`.
 pub const OJZ_EFFECTS: Region = Region { plain_base: 0x124A0, debug_base: 0x12CE4, plain_len: 0x4E0, debug_len: 0x4DC };
 
-/// `DeformTable_Zero` .. `EditorSceneBinding_OJZ_Act1_Sec0` — gate `SIGIL_EMP_SCENE_REGISTRY`. tests: scene_registry_port
+/// `DeformTable_Zero` .. `section:scene_registry` — gate `SIGIL_EMP_SCENE_REGISTRY`. tests: scene_registry_port
 pub const SCENE_REGISTRY: Region = Region { plain_base: 0x11984, debug_base: 0x121C8, plain_len: 0xACE, debug_len: 0xACE };
 
 /// `Map_TestObj` .. `Map_DustSpindash` — gate `SIGIL_EMP_TEST_MAPPINGS`. tests: test_mappings_port
@@ -243,8 +243,8 @@ pub const ENTITY_DATA: Region = Region { plain_base: 0x129B8, debug_base: 0x1320
 /// `OJZ_Act_Pool_Page0` .. `OJZ_Act1_Descriptor`. tests: ojz_run_a_port
 pub const OJZ_ACT_POOL: Region = Region { plain_base: 0x12B28, debug_base: 0x13370, plain_len: 0x2F0C, debug_len: 0x2F10 };
 
-/// `OJZ_Act1_Descriptor` .. `OJZ_Sec0_Blocks` — gate `SIGIL_EMP_ACT_DESCRIPTOR`. tests: act_descriptor_port
-pub const ACT_DESCRIPTOR: Region = Region { plain_base: 0x15A34, debug_base: 0x16280, plain_len: 0x27C, debug_len: 0x280 };
+/// `OJZ_Act1_Descriptor` .. `section:act_descriptor` — gate `SIGIL_EMP_ACT_DESCRIPTOR`. tests: act_descriptor_port
+pub const ACT_DESCRIPTOR: Region = Region { plain_base: 0x15A34, debug_base: 0x16280, plain_len: 0x27A, debug_len: 0x27A };
 
 /// `OJZ_Sec0_Blocks` .. `OJZ_Sec0_LocalMap`. tests: ojz_run_b_port
 pub const SEC_BLOCK_BLOBS: Region = Region { plain_base: 0x15CB0, debug_base: 0x16500, plain_len: 0xB480, debug_len: 0xB474 };
