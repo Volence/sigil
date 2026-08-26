@@ -2754,3 +2754,29 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   references from its fragments — no such API exists in `sigil-ir`/`sigil-link` today —
   so a rig can assert its synthetic-label set equals what the section actually needs,
   turning both a stale and a missing pin into a failure)
+
+- [aeon paired-landing exchange, 2026-08-26] **The dirty-assembler banner cannot tell
+  a SOURCE-dirty tree from an ARTIFACT-dirty one, and a refreeze structurally dirties
+  the tree it then builds in.** Reported by the aeon lane against their own chain-165
+  landing: `test.sh` warned `dirty at capture — 11 modified, 1 untracked` while every
+  modified path was a golden blob, an off-canonical size table or `provenance.toml`
+  (verified here against `029868e5` — 11 paths, zero source). So the banner's one
+  guaranteed false-positive context is a paired landing, i.e. exactly the operation
+  that runs it most. NOT TAKEN AS A FIX, and the aeon lane withdrew the suggestion in
+  the form they raised it: a banner that learns to stay quiet during a refreeze stays
+  quiet in the case it exists for — a source edit riding along with a refreeze. Narrow
+  it only if it can name the source set EXACTLY (classify each dirty path, warn loudly
+  on any non-artifact one, and say what it suppressed), or not at all. — OPEN (kill:
+  the banner classifies its dirty set and reports the two classes separately, with a
+  test that a source path in a refreeze-shaped dirty set still fires at full volume)
+
+  **Method note, and it is the durable half.** The commit was offered as evidence that
+  no source was dirty, on the reasoning that exact-path staging would have swept a
+  source edit in. That reasoning inverts: exact-path staging (harness invariant 3) is
+  the operation that OMITS an unenumerated dirty file, so the commit reads identically
+  whether the claim is true or false — a witness incapable of failing. What settles it
+  is that TWO INDEPENDENT NUMBERS agree, one of which the committer does not control:
+  the banner counted 11 and the commit carries 11, so a dirty-and-unstaged source file
+  would have shown as 12-against-11. General form: when offering a commit as evidence
+  about a TREE STATE, ask what the commit would look like if the claim were false; if
+  the answer is "the same", the artifact is not the witness.
