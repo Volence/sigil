@@ -80,4 +80,110 @@ logic stays in `native.rs`.
 (B) (pack pure data first) was rejected: it still measures code at a base that is not
 its final one, so it only narrows the window; (A) closes it.
 
-## 3–5. Identity, gates, suite, timing — filled as steps land
+## 2b. Design revision (found while proving identity)
+
+The first cut of (A) — every section, frozen-labeled or not, measured at the walk's
+own bases — built both copies but MOVED CLEAN BYTES (clean crc a35f7c1a, then
+e7928778/699207): the sections OUTSIDE the frozen table (`replay`, `raster`,
+`page_cache`, …) have always measured at the far scratch, and the far slot is what
+reproduces asl's conservative widths for references that touch them (asl encodes a
+forward reference abs.l; at the real sub-$8000 base sigil's relaxer settles abs.w and
+the chained layout packs 2 bytes tighter per site — the file-top "tighter fixpoint
+than asl" note, re-met empirically at `Input_Tick` −6 / `HBlank_Install` +0x10). The
+far scratch for never-pinned sections is therefore load-bearing equilibrium, not an
+accident, and it stays. What shipped:
+
+- `measure_pinned`: measuring rounds go through `resolve_layout_measuring` — exact at
+  the round's own pins, overlap tolerated. The scratch-retry and +0x400/rank spread
+  fallbacks are DELETED (with them, the only substitute bases that could steer a
+  width, and the ~0x400 single-section growth cap: 2500 injected nops — 5000 B — now
+  builds where the old rig could not even measure it).
+- Frozen-labeled sections measure at prov (round 0) then at their packed bases (every
+  later round); never-pinned sections keep the LEGACY `0x70_0000 + k·0x10_0000`
+  scratch (asl-width emulation, byte-identity constraint); phase banks at scratch
+  (vma-addressed, org pads sized for the original position).
+- `img2 == img` is now a true fixed point; ONE checked resolve at the converged bases
+  is the anchor witness, so "grew into a declared anchor" can only name a real
+  anchor overrun. Non-convergence names the width-flipping sites (`file:line`, both
+  encodings) via the per-relaxable lens (`width_flip_report`).
+
+## 3. Identity + behaviour under growth
+
+- clean shadow copy (unmodified `.aeon-landing` sources): `crc=875d591f len=699223` —
+  the provenance-tip identity, reproduced 3×.
+- grown copy (seven `nop`s): builds, `crc=c9d2a96a len=699223`; vs the reference
+  layout exactly 7 symbols move +14 (inside `rings` after the injection) and 932 move
+  +16 (the aligned downstream pack) — `player_sensors` lands at a 16-aligned base
+  where its measured length is its encoded length; no overlap. The +0x10 drift is
+  BELOW `GROWTH_DRIFT_TOLERANCE` (0x1000), so per the §4 design no drift line is
+  emitted for this size of growth; the 5000 B variant emits
+  `[layout.provisional-drift]` for every moved section (`entity_window` `+0x1388`
+  first), each naming the section, head label, both bases, delta, and "refreeze at
+  landing".
+
+## 4. Gates
+
+- `crates/sigil-cli/tests/measure_at_packed_base.rs` (in SOURCE_GATES; zero artifact
+  words by the audit's own regex):
+  - `fourteen_bytes_of_upstream_code_growth_still_builds` — undoctored copy builds
+    (copy mechanism is not the signal), doctored copy builds, images differ.
+  - `parcel_scale_growth_packs_downstream_and_reports_the_drift` — 2500 nops build +
+    drift warnings present.
+  - RED-FIRST: with `native.rs` reverted to the pre-fix version (HEAD~2 at the time),
+    both fail; the 14 B test dies with the exact innocent-overlap message
+    ("packed layout overlaps at its real bases — a run grew into a declared anchor…"),
+    the 5000 B test with the old spread's `span pass (spread round, post-growth)`
+    refusal. Restored → both green.
+- `native.rs` `derived_layout_tests` additions (synthetic, derived expectations):
+  `base_dependent_length_reproduces_provisional_bases_at_frozen_sizes`,
+  `growth_across_the_boundary_places_the_successor_from_the_long_form` (a
+  RelaxAbsSym section straddling $8000: successor placed from the 6 B form),
+  `an_unresolvable_operand_refuses_loud`, `width_flip_report_names_the_relaxing_site`.
+
+## 5. Suite / clippy / timing
+
+- `cargo clippy --workspace --all-targets -- -D warnings`: exit 0.
+- Build-time cost: clean `sigil build --game sonic4` ≈ 1.20 s before the fix,
+  ≈ 1.39 s after (3× each, same machine) — the measuring rounds now lower every
+  relaxable through the tolerant resolve; grown ≈ 1.38 s.
+- Full-suite totals: see the suite log
+  (`target/suite-measure-at-packed-base.log`, stamped pwd/HEAD/branch/aeon SHA).
+
+## Reply to EMP_PITFALLS §11 (what aeon can now un-pin)
+
+§11's mechanism story needs one correction and its rule can be relaxed:
+
+- CORRECTION: the abs.w round was NOT "the provisional address is still unknown" (an
+  unresolved operand is a hard error in sigil's relaxer, and the tables are above
+  $8000 at the provisional pin too). It was the collision-fallback scratch slot
+  wrapping the 24-bit bus (`collision_data` at `0x300_0000` ≡ `0x0`), which only
+  fired once upstream growth made the provisional pins collide — hence "+2/+6 built;
+  +14 did not".
+- UN-PIN: the spelling rule "always write `lea (Table).l, aN` for ROM tables" is no
+  longer needed for build correctness. Unsized `lea` to any label in a FROZEN-labeled
+  section now measures at the section's real base every round; labels in un-frozen
+  sections measure at far scratch, which encodes abs.l — the same width asl picks.
+  Explicit `.l` remains a fine style choice (it documents the 6-byte/cycle cost), but
+  sigil will neither mis-measure nor mis-place an unsized spelling, and the
+  `measure_at_packed_base` gate holds that line red-first.
+- When the placer ever fails to converge, the refusal now names the RELAXING SITE
+  (`file:line`, both encodings) instead of an innocent section pair.
+
+## Deferred (ledger rows, same-commit)
+
+- The legacy far-scratch cursor for never-pinned sections still strides past the
+  24-bit wrap (slot k ≥ 9 aliases; an unlucky alias could under-measure a reference
+  into an un-frozen section the same way §1's fallback did). It survives because the
+  frozen equilibrium — and byte identity — ride on it. Kill condition: pin the
+  un-frozen sections (map rows or a refreeze that names them), then measure them at
+  real bases and delete the cursor.
+- No constructive red test for the walk's 8-round non-convergence exit (a genuine
+  abs.w/abs.l oscillator needs a target that moves DOWN when an encoding grows, which
+  the grow-only pack cannot produce); the diagnostic payload is unit-tested directly.
+
+## Situational note (2026-08-26, from the coordinator)
+
+While this parcel was in flight the aeon lane pushed a refreeze to sigil master
+(79e4e242; new tip s4 6e41952f / s4.debug 7d52827c). This branch deliberately stays
+on its own consistent pair — provenance tip 875d591f/a02d36db + `.aeon-landing`
+058ad606 — and the landing owner re-proves on the merged tree.
