@@ -206,6 +206,11 @@ noticed and would otherwise have swallowed, which is a real but bounded win.
   of the five tests walks the **PinnedBaked/registry** path, and is a SIGIL registry question
   (a registry row, or the test's synthetic entry not reaching the module). Aeon will NOT land
   a map row for it; do not ask them to. Queued here as `FIVE-REG`.
+  **§3.5 confirmed live 2026-08-26:** aurora's first real scene save made `ojz_effects_editor_act1`
+  emit, and `[map.order-undeclared]` named `EditorSceneBinding_OJZ_Act1_Sec0` — the BINDING TABLE,
+  which changes with content. Aeon wrote that label as an interim `order` row (uncommitted, lands
+  through their lane), to be replaced by the `section:ojz_effects_editor_act1` row. Queued as
+  `SECTION-ROW` (S, after the §4 parcel); sigil specs it, aeon lands the map side.
   **The nightly source-gate lane does NOT cover these** — none of the five is in
   `SOURCE_GATES` (they are artifact-oracle gates, deliberately excluded), so the lane ran
   green at 05:17 while master was red. That exclusion was correct for byte-divergence red;
