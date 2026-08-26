@@ -182,15 +182,22 @@ noticed and would otherwise have swallowed, which is a real but bounded win.
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — **3866 passed / 3 failed / 4 ignored** (3873 declared) under
-  `SIGIL_STRICT_GATE=1` (sigil master `e4d96562`, aeon `0e34408d` at `.aeon-landing`, 2026-08-26,
-  log `~/sonic_hacks/.sigil-landing-merged-e4d96562.log`), **zero `skip:` lines**. The three:
-  the `act_descriptor_port` pair on the repin pad-in-pin length (`REPIN-END`, emitted 0x27A vs
-  pinned 0x27C — the assert's message literal says "0x274", stale, cosmetic) and `soundbankhead`
-  (`FIVE-REG`). Known flake: `soundbankhead_matches_reference` can fail with a `PoisonError` when
-  the FIVE-REG sibling panics holding the file's `LOCK` — green standalone; goes away with FIVE-REG.
+  `AEON_DIR` set to the aeon tree — **3869 passed / 1 failed / 4 ignored** (3874 declared) under
+  `SIGIL_STRICT_GATE=1` (sigil master `e0c7244b`, aeon `058ad606` at `.aeon-landing`, 2026-08-26),
+  **zero `skip:` lines**. The one: `soundbankhead_pinned_bootstrap_lands_at_lma_not_vma`
+  (`FIVE-REG`, PinnedBaked/registry path). Its sibling `soundbankhead_matches_reference` can
+  fail with a `PoisonError` when it panics holding the file's `LOCK` — a flake that dies with it.
   *(History 2026-08-24→26: 3844/5/4 → §4 +8 → 3852/5/4 → closure 3854/3/4 → first real scene
-  3852/5/4 → SECTION-ROW +12 → CLOSURE-2 clears two → 3866/3/4.)*
+  3852/5/4 → SECTION-ROW +12 → CLOSURE-2 3866/3/4 → REPIN-END 3869/1/4.)*
+  **REPIN-END landed:** `repin.toml` `start`/`end` accept `section:<name>` (LMA / own
+  `lma + image_len`, one derivation `native::section_end` shared with the `<Base>_End` sites);
+  `act_descriptor` and `scene_registry` ends re-spelled; `ACT_DESCRIPTOR` plain_len 0x27C→0x27A,
+  debug_len 0x280→0x27A, bases unchanged, no other constant moved, `repin --check` a fixed point.
+  A bare `end` that sweeps placer pad is now WARNED per shape by `repin` — **79 region/shape
+  pairs** carry pad by convention (boot … player_climb, 0x2..0x20), green under the align-pad
+  tolerance, ledgered for region-by-region conversion. `scene_registry` was NOT affected (0xACE
+  flush both shapes; the 0xB1C was pre-repoint history).
+
   **CORRECTED 2026-08-26 (aeon's closure agent, reproduced in worktrees; branch verified here as
   2 test files, +20/-1): "cause is aeon-side, the RESERVED SLOT" is WRONG for four of the five.**
   (A) `unknown function ojz_act1_act_default / ojz_act1_sec_scene` is a SIGIL HARNESS gap: the
