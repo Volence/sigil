@@ -7,16 +7,16 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=s4
 # reproduces_golden=s4.bin
-# golden_crc32=6e41952f
-# assembled_anchor=ebb9dac9
+# golden_crc32=b96319e3
+# assembled_anchor=79eb47c7
 # assembled_end=0xa11d0
 # labels=68
-Ani_Sonic 0x283c0
-Ani_Tails 0x284ca
+Ani_Sonic 0x273c0
+Ani_Tails 0x274ca
 AnimateSprite 0x3460
 BG_Init 0x7ce0
 BgAnim_Init 0x7dc0
-BgAnim_Table 0x277a2
+BgAnim_Table 0x267a2
 BootData 0x3a0
 BootData_End 0x1bfe
 BusError 0xa0120
@@ -36,7 +36,7 @@ GameLoop 0x25be
 GameState_OJZScroll_Init 0x9f950
 GetSineCosine 0x28a0
 HBlank_Install 0x2480
-HeightMaps 0x28810
+HeightMaps 0x27810
 InitObjectRAM 0x2d40
 InitSpriteSystem 0x3040
 Init_DMA_Queue 0x1c3a
@@ -44,7 +44,7 @@ Init_SpriteTable 0x1f70
 Level_LoadArt 0x7450
 Load_Object 0x45a0
 Map_Tails 0x5c320
-Map_TestObj 0x277b0
+Map_TestObj 0x267b0
 OJZ_Act1_Descriptor 0x15b54
 OJZ_Act_Pool_Page0 0x12c48
 OJZ_Palette 0x21f20

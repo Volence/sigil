@@ -8479,3 +8479,57 @@ full_crc = "7d52827c"
 full_size = 715308
 anchor_crc = "e670b21a"
 anchor_end = 0xa32a0
+
+[[entry]]
+name = "ojz-bg-roomy"
+ab = "94b384a2"
+note = "Shipped OJZ act-1 background regenerated from the auto-simplified source (owner ruling, aurora d-10): static art 448 -> 320 unique tiles, 128 reserved for animated bands; ROM room before the DAC anchor 13168 -> 17264 B. Demo shapes byte-identical. aeon 94b384a2."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "3cab2063"
+full_size = 715656
+anchor_crc = "f170da73"
+anchor_end = 0xa32a0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "67809d3d"
+full_size = 598609
+anchor_crc = "8b469498"
+anchor_end = 0x88ad0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "bf2cdb42"
+full_size = 96412
+anchor_crc = "68de59a1"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "62a0019e"
+full_size = 101120
+anchor_crc = "586b0bd6"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "daf3b69a"
+full_size = 655694
+anchor_crc = "566ec5b4"
+anchor_end = 0xa014e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "b96319e3"
+full_size = 699408
+anchor_crc = "79eb47c7"
+anchor_end = 0xa11d0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "7be32302"
+full_size = 715308
+anchor_crc = "265b14e3"
+anchor_end = 0xa32a0
