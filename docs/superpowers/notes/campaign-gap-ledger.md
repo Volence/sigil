@@ -2927,3 +2927,25 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   reachability REPORT rather than a gate, since unreachability is legitimate for minutes and
   a defect only if it persists; or `refreeze` warns at freeze time that the named revision is
   unpushed and says it must be pushed unchanged)
+
+- [showcase freeze attempt, 2026-08-26] **THE FREEZE PATH IS EXERCISED BY NOTHING, and it
+  broke on its first real call after a change.** `capture_goldens.sh` / `refreeze --freeze`
+  are the single place a golden moves, and no test in the 3939-test suite runs them: the
+  suite validates `--check` (chain vs committed blobs) and the poison matrix, never the
+  write path. So the `aeon_rev` parcel shipped green with its happy path unexercised, and
+  the first genuine caller hit a DIFFERENT latent defect three steps later — the restore
+  builds reading an off-canonical listing left under a canonical name (`config_a` →
+  `s4.debug.lst`, `config_b`/`lean` → `s4.lst`), fatal under aeon's zero-slack ceiling.
+  Fixed at `8f01b8a0` by clearing both listings and both ROMs before the restore, but the
+  fix itself is **verified by reading**: reproducing it means clobbering the reference tree
+  a paired landing is waiting on, so the validating execution is somebody else's landing.
+  That is the whole gap — the highest-consequence script in the repo is the one whose
+  changes are validated in production, by a peer, under time pressure. Note also that the
+  new refusal behaved correctly throughout and the failure was three steps downstream, so
+  "the guard accepted it" bought no information about the rest of the path.
+  — OPEN (kill: a freeze-path smoke test that runs the real `capture_goldens.sh` +
+  `refreeze --freeze` against a THROWAWAY aeon checkout and a throwaway golden dir,
+  asserting the chain grew by one entry with a well-formed `aeon_rev` and the canonical
+  ROMs are fresh — expensive and aeon-dependent, so nightly rather than in the suite; the
+  bar it must clear is that it would have caught the stale-listing defect, which means it
+  has to run the off-canonical captures too, not just a bare freeze)
