@@ -41,9 +41,8 @@
 //! ```
 
 use sigil_harness::pins;
+use sigil_harness::test_support::{native_section, NativeSection, ACT_DESCRIPTOR_ASSERT_FILES};
 use sigil_frontend_as::{assemble, Options as AsOptions};
-use sigil_frontend_emp::lower::{lower_module, LowerOptions};
-use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
@@ -53,35 +52,6 @@ fn aeon_root() -> PathBuf {
     PathBuf::from(
         std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
     )
-}
-
-fn act_dir() -> PathBuf {
-    aeon_root().join("games/sonic4/data/levels/ojz/act1")
-}
-
-fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
-    let src = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-    let (file, pdiags) = parse_str(&src);
-    assert!(
-        pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "{} parse errors: {pdiags:?}",
-        path.display()
-    );
-    file
-}
-
-/// Prepend ambient dependency modules' items to `main` (the `use`-target seam —
-/// the region test's single-file lower path does not auto-resolve `use`).
-fn with_ambient(
-    ambient: Vec<sigil_frontend_emp::ast::File>,
-    main: sigil_frontend_emp::ast::File,
-) -> sigil_frontend_emp::ast::File {
-    let mut items = Vec::new();
-    for d in ambient {
-        items.extend(d.items);
-    }
-    items.extend(main.items.clone());
-    sigil_frontend_emp::ast::File { module: main.module, attrs: main.attrs, items, docs: main.docs }
 }
 
 fn strict_gate() -> bool {
@@ -148,6 +118,16 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
         ("OJZ_Preset_Sec2", pins::OJZ_PRESET_SEC2.plain, pins::OJZ_PRESET_SEC2.debug),
         ("OJZ_Preset_Sec3", pins::OJZ_PRESET_SEC3.plain, pins::OJZ_PRESET_SEC3.debug),
         ("OJZ_Preset_Plain", pins::OJZ_PRESET_PLAIN.plain, pins::OJZ_PRESET_PLAIN.debug),
+        // Aurora's first authored scene: Sec0's `sec_scene` binds the generated
+        // `ojz_effects_editor_act1` record, one more cross-seam label the closure
+        // now emits. It is the END label of the pinned SCENE_REGISTRY region
+        // (`DeformTable_Zero` .. `EditorSceneBinding_OJZ_Act1_Sec0`, pins.rs), so
+        // its address is that pin's base + length in each shape.
+        (
+            "EditorSceneBinding_OJZ_Act1_Sec0",
+            pins::SCENE_REGISTRY.plain_base + pins::SCENE_REGISTRY.plain_len as u32,
+            pins::SCENE_REGISTRY.debug_base + pins::SCENE_REGISTRY.debug_len as u32,
+        ),
         ("OJZ_Act_Pool_PageTable", pins::OJZ_ACT_POOL_PAGE_TABLE.plain, pins::OJZ_ACT_POOL_PAGE_TABLE.debug),
         // art-streaming-p2-task5: the descriptor's Act.act_sec_local_maps field.
         ("OJZ_Sec_LocalMaps", pins::OJZ_SEC_LOCAL_MAPS.plain, pins::OJZ_SEC_LOCAL_MAPS.debug),
@@ -235,64 +215,20 @@ fn as_outbound_consumer() -> Vec<Section> {
 fn compile_real_file(
     debug: bool,
 ) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
-    let dir = act_dir();
-    // act_descriptor.emp `use engine.structs.{Act, Sec}` + (P5 ownership flip)
-    // `use engine.constants.{SECTION_SIZE_SHIFT, EDGE_CLAMP}` — prepend both the
-    // shared struct module (layout + per-field drift wall) and the engine
-    // constants module (now the sole author of the two engine limits act reads).
-    let structs = parse_file(&aeon_root().join("engine/structs.emp"));
-    let constants = parse_file(&aeon_root().join("engine/system/constants.emp"));
-    // Parcel K3: the pool-page-count manifest + the per-section block-dict lengths
-    // are generated `.emp` const modules act_descriptor.emp `use`s at comptime;
-    // prepend them as ambient (the single-file lower path does not auto-resolve
-    // `use`) so OJZ_ACT_POOL_PAGES / OJZ_ACT_POOL_TILES / OJZ_SEC*_BLOCK_DICT_LEN
-    // resolve locally instead of as injected AS equs.
-    let gen = aeon_root().join("games/sonic4/data/generated/ojz/act1");
-    let pool_manifest = parse_file(&gen.join("ojz_act_pool_manifest.emp"));
-    let block_dicts = parse_file(&gen.join("sec_block_dicts.emp"));
-    // Aurora wave-1 P5 slice 5: act_descriptor.emp `use`s the two editor-scene
-    // binding functions (`ojz_act1_act_default` / `ojz_act1_sec_scene`, `pub
-    // comptime fn`s emitted by tools/effects_gen.py for EVERY act, content or not)
-    // from the generated `games.sonic4.ojz_effects_editor_act1` module. They are
-    // functions, so they cannot ride as link equs like the labels below; the
-    // single-file lower resolves no cross-module `use`, so the generated module's
-    // items ride ambient too. On the `sigil build` path the descriptor's own
-    // whole-path `use` edge carries the module into the closure; here THIS line is
-    // that edge.
-    let effects_scenes = parse_file(&gen.join("effects_scenes.emp"));
-    // T7 (world-Y re-glue): act_descriptor now pins its act span against the scene
-    // registry's SCENE_ACT_SPAN_Y — synthesized VERBATIM at test runtime
-    // (test_support), never stale, never wholesale.
-    let span_src = sigil_harness::test_support::scene_act_span_y_const_src(&aeon_root());
-    let (span_file, span_diags) = sigil_frontend_emp::parse_str(&span_src);
-    assert!(
-        span_diags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "synthesized SCENE_ACT_SPAN_Y block parse errors: {span_diags:?}"
-    );
-    let file = with_ambient(
-        vec![structs, constants, pool_manifest, block_dicts, effects_scenes, span_file],
-        parse_file(&dir.join("act_descriptor.emp")),
-    );
-
-    let opts = LowerOptions {
-        initial_cpu: Cpu::M68000,
-        include_root: Some(dir.clone()),
-        embed_base: None,
-        // engine.constants (an ambient here) computes PAGE_FRAMES_CLAMP from the
-        // STRESS_EVICT build define and comptime-ensures it. The native default
-        // (STRESS_EVICT=0) is now seeded by `lower_module_inner` itself (the one
-        // lowering funnel), so this single-file lower needs no per-port inject.
-        defines: vec![],
-    };
-    let (module, ldiags) = lower_module(&file, &opts);
-    assert!(
-        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "lower errors: {ldiags:?}"
-    );
-    let link_asserts = module.link_asserts;
+    // The descriptor's `use` closure — engine.structs, engine.constants, the
+    // generated pool-manifest / block-dict / effects_scenes modules, the scene
+    // registry and everything THOSE reach (scene_dsl, parallax, the Game contract
+    // bind for `Game.SCANLINE_CAPS`) — is followed by the native build itself, the
+    // one path the ROM is built by. No hand-listed ambient set: a dependency the
+    // descriptor grows is lowered by construction, and its absence reads as the
+    // resolver's own `unknown …` diagnostic.
+    let profile = sigil_harness::native::sonic4_profile(debug);
+    let NativeSection { section, link_asserts } =
+        native_section(&aeon_root(), &profile, "act_descriptor", ACT_DESCRIPTOR_ASSERT_FILES)
+            .unwrap_or_else(|e| panic!("native act_descriptor closure: {e}"));
 
     let map = sigil_link::load_map(&map_toml(debug)).expect("map must load");
-    let mut sections = module.sections;
+    let mut sections = vec![section];
     let pdiags = place_sections(&mut sections, &map);
     assert!(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),

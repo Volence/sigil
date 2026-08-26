@@ -349,71 +349,29 @@ fn structs_src() -> String {
         .expect("engine/structs.emp must exist (set AEON_DIR)")
 }
 
-/// Parse act source with the shared `engine.structs` AND `engine.constants`
-/// modules prepended. act_descriptor.emp `use`s both — `engine.structs.{Act,
-/// Sec}` (it no longer defines the structs locally) and, since the Stage-3 P5
-/// ownership flip, `engine.constants.{SECTION_SIZE_SHIFT, EDGE_CLAMP}` (plain
-/// comptime ints, imported from their sole author). The single-file lower path
-/// resolves no cross-module `use`, so both twins' items ride ambient.
-fn parse_act_with_structs(act_src: &str, structs_src: &str) -> sigil_frontend_emp::ast::File {
-    let (structs, sd) = parse_str(structs_src);
-    assert!(sd.iter().all(|d| d.level != Level::Error), "structs.emp parse errors: {sd:?}");
-    let csrc = std::fs::read_to_string(aeon_dir().join("engine/system/constants.emp"))
-        .expect("engine/system/constants.emp must exist (set AEON_DIR)");
-    let (constants, cd) = parse_str(&csrc);
-    assert!(cd.iter().all(|d| d.level != Level::Error), "constants.emp parse errors: {cd:?}");
-    // Parcel K3: act_descriptor.emp also `use`s the generated pool-manifest +
-    // block-dict const modules (OJZ_ACT_POOL_PAGES/TILES + OJZ_SEC*_BLOCK_DICT_LEN,
-    // comptime ints). The single-file lower resolves no cross-module `use`, so
-    // ride their items ambient too.
-    let gen = aeon_dir().join("games/sonic4/data/generated/ojz/act1");
-    let msrc = std::fs::read_to_string(gen.join("ojz_act_pool_manifest.emp"))
-        .expect("ojz_act_pool_manifest.emp must exist (set AEON_DIR)");
-    let (manifest, md) = parse_str(&msrc);
-    assert!(md.iter().all(|d| d.level != Level::Error), "manifest.emp parse errors: {md:?}");
-    let dsrc = std::fs::read_to_string(gen.join("sec_block_dicts.emp"))
-        .expect("sec_block_dicts.emp must exist (set AEON_DIR)");
-    let (dicts, dd) = parse_str(&dsrc);
-    assert!(dd.iter().all(|d| d.level != Level::Error), "sec_block_dicts.emp parse errors: {dd:?}");
-    // Aurora wave-1 P5 slice 5: the two editor-scene binding `pub comptime fn`s
-    // (`ojz_act1_act_default` / `ojz_act1_sec_scene`) act_descriptor.emp `use`s from
-    // the generated ojz_effects_editor_act1 module — functions, so not injectable as
-    // equs; ride the generated module's items ambient like the const modules above.
-    let esrc = std::fs::read_to_string(gen.join("effects_scenes.emp"))
-        .expect("effects_scenes.emp must exist (set AEON_DIR)");
-    let (effects_scenes, ed) = parse_str(&esrc);
-    assert!(ed.iter().all(|d| d.level != Level::Error), "effects_scenes.emp parse errors: {ed:?}");
-    // T7 (world-Y re-glue): act_descriptor now pins its act span against the scene
-    // registry's SCENE_ACT_SPAN_Y — synthesized VERBATIM at test runtime
-    // (test_support), riding ambient like the other cross-module consts here.
-    let span_src = sigil_harness::test_support::scene_act_span_y_const_src(&aeon_dir());
-    let (span_file, spd) = parse_str(&span_src);
-    assert!(spd.iter().all(|d| d.level != Level::Error), "SCENE_ACT_SPAN_Y shim parse errors: {spd:?}");
-    let (act, ad) = parse_str(act_src);
-    assert!(ad.iter().all(|d| d.level != Level::Error), "act parse errors: {ad:?}");
-    let mut items = structs.items;
-    items.extend(constants.items);
-    items.extend(manifest.items);
-    items.extend(dicts.items);
-    items.extend(effects_scenes.items);
-    items.extend(span_file.items);
-    items.extend(act.items);
-    sigil_frontend_emp::ast::File { module: act.module, attrs: act.attrs, items, docs: act.docs }
-}
+const ACT_REL: &str = "games/sonic4/data/levels/ojz/act1/act_descriptor.emp";
 
-fn place_act_with(act_src: &str, structs_src: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
-    let file = parse_act_with_structs(act_src, structs_src);
-    let (module, ldiags) = lower_module(
-        &file,
-        &LowerOptions {
-            initial_cpu: Cpu::M68000,
-            include_root: Some(aeon_dir()),
-            embed_base: None,
-            defines: vec![],
-        },
-    );
-    assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
-    let map_toml = "fill = 0x00\n\
+/// Compile `act_src` against `structs_src` as `engine.structs` through the native
+/// whole-program closure and place the `act_descriptor` section at `base`.
+///
+/// The two doctored texts ride a shadow aeon tree (`shadow_aeon_tree`), so the
+/// descriptor's whole `use` closure — engine.constants, the generated
+/// pool-manifest / block-dict / effects_scenes modules, the scene registry and
+/// the Game contract bind behind it — is followed by the build itself, exactly
+/// as the ROM is built. Nothing is hand-listed: a dependency the descriptor (or
+/// a generated module it imports) grows is lowered by construction.
+fn place_act_at(act_src: &str, structs_src: &str, base: u32) -> Vec<Section> {
+    let shadow = sigil_harness::test_support::shadow_aeon_tree(
+        &aeon_dir(),
+        &[(ACT_REL, act_src), ("engine/structs.emp", structs_src)],
+    )
+    .unwrap_or_else(|e| panic!("shadow aeon tree: {e}"));
+    let profile = sigil_harness::native::sonic4_profile(false);
+    let sigil_harness::test_support::NativeSection { section, .. } =
+        sigil_harness::test_support::native_section(shadow.root(), &profile, "act_descriptor", &[])
+            .unwrap_or_else(|e| panic!("native act_descriptor closure: {e}"));
+    let map_toml = format!(
+        "fill = 0x00\n\
          \n\
          [[region]]\n\
          name = \"text\"\n\
@@ -423,14 +381,15 @@ fn place_act_with(act_src: &str, structs_src: &str) -> (Vec<Section>, Vec<sigil_
          \n\
          [[region]]\n\
          name = \"act_descriptor\"\n\
-         lma_base = 0x14AE6\n\
+         lma_base = {base:#x}\n\
          size = 0x274\n\
-         kind = \"rom\"\n";
-    let map = sigil_link::load_map(map_toml).expect("map must load");
-    let mut sections = module.sections;
+         kind = \"rom\"\n"
+    );
+    let map = sigil_link::load_map(&map_toml).expect("map must load");
+    let mut sections = vec![section];
     let pdiags = place_sections(&mut sections, &map);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "place errors: {pdiags:?}");
-    (sections, module.link_asserts)
+    sections
 }
 
 /// THE STRUCT-TYPING NEGATIVE: swap two same-width Sec fields in a doctored
@@ -461,7 +420,7 @@ fn swapped_sec_fields_produce_different_bytes() {
     );
     assert_ne!(doctored, structs, "precondition: the swap must apply");
     // The struct literals are NAMED, so they still compile — the bytes move.
-    let (sections, _asserts) = place_act_with(&src, &doctored);
+    let sections = place_act_at(&src, &doctored, 0x14AE6);
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
     // Cross-seam symbols unresolved — compare the SECTION's fixup TARGETS
@@ -501,34 +460,7 @@ fn swapped_sec_fields_produce_different_bytes() {
 #[test]
 fn act_wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = act_src() else { return };
-    let file = parse_act_with_structs(&src, &structs_src());
-    let (module, ldiags) = lower_module(
-        &file,
-        &LowerOptions {
-            initial_cpu: Cpu::M68000,
-            include_root: Some(aeon_dir()),
-            embed_base: None,
-            defines: vec![],
-        },
-    );
-    assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
-    let map_toml = "fill = 0x00\n\
-         \n\
-         [[region]]\n\
-         name = \"text\"\n\
-         lma_base = 0x0000\n\
-         size = 0x10\n\
-         kind = \"rom\"\n\
-         \n\
-         [[region]]\n\
-         name = \"act_descriptor\"\n\
-         lma_base = 0x14AE8\n\
-         size = 0x274\n\
-         kind = \"rom\"\n";
-    let map = sigil_link::load_map(map_toml).expect("map must load");
-    let mut sections = module.sections;
-    let pdiags = place_sections(&mut sections, &map);
-    assert!(pdiags.iter().all(|d| d.level != Level::Error), "place errors: {pdiags:?}");
+    let sections = place_act_at(&src, &structs_src(), 0x14AE8);
     let sec = sections.iter().find(|s| s.name == "act_descriptor").expect("placed section");
     assert_eq!(sec.lma, 0x14AE8, "the placed LMA must track the (doctored) map base");
     assert_ne!(sec.lma, 0x14AE6, "…and therefore differ from the true pin");

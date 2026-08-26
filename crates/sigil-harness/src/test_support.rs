@@ -576,26 +576,6 @@ pub fn bg_layout_size_const_src(aeon: &std::path::Path) -> String {
     format!("module engine.bg_layout\npub const BG_LAYOUT_SIZE = {rhs}\n")
 }
 
-/// A synthesized `.emp` source re-declaring `scene_registry.emp`'s
-/// `pub const SCENE_ACT_SPAN_Y`, for act_descriptor.emp's single-module oracles.
-///
-/// T7 (world-Y re-glue) made act_descriptor pin its act span against the scene
-/// registry's declared value (`use games.sonic4.scene_registry.{SCENE_ACT_SPAN_Y}`) —
-/// the mirror direction is forced, act_descriptor already being the registry's
-/// importer. The single-file lower resolves no cross-module `use`, so this rides
-/// ambient, exactly like `bg_layout_size_const_src` above: the RHS is copied
-/// VERBATIM out of scene_registry.emp at test runtime and folded by sigil's own
-/// evaluator, so a span change reaches these gates by itself and can never bind
-/// stale. scene_registry.emp as a whole is CODE-adjacent (its lowerN tables emit
-/// bytes) and must not ride ambient wholesale.
-pub fn scene_act_span_y_const_src(aeon: &std::path::Path) -> String {
-    let rhs = emp_const_rhs(
-        &aeon.join("games/sonic4/data/effects/scene_registry.emp"),
-        "SCENE_ACT_SPAN_Y",
-    );
-    format!("module games.sonic4.scene_span\npub const SCENE_ACT_SPAN_Y = {rhs}\n")
-}
-
 /// sonic4's declared parallax capability mask, read from its `implement Game`.
 /// The port oracles compare against the sonic4 reference ROM, so this — not a
 /// literal in Rust, and not demo's `0` — is the only binding under which the
@@ -620,6 +600,261 @@ pub fn scanline_caps_contract_env(
         &[],
     )
 }
+
+// ── 5. The whole-path module rig ────────────────────────────────────────────
+//
+// A module's standalone oracle used to concatenate a HAND-LISTED ambient set and
+// lower one synthetic file. That list is a second, silent copy of the module's
+// `use` closure, and it rots the moment a dependency grows: aurora's first real
+// scene gave the generated `effects_scenes.emp` a body that calls
+// `scene_dsl` / `scene_registry` helpers and reads `Game.SCANLINE_CAPS`, and the
+// act rig failed on names the real build resolves without a word.
+//
+// The rig below follows the module's own `use` edges instead, through the SAME
+// native closure the ROM is built by ([`build_emp`](crate::native::build_emp) —
+// manifest scan, helper normalisation, game-contract bind, `build_program`), and
+// slices the one section the oracle gates out of the placed program. A dependency
+// the module grows is followed by construction; one it loses stops being lowered.
+//
+// Doctoring rides a SHADOW TREE: a fresh root holding a COPY of every source the
+// build reads, with the overridden files written doctored. Copies, not symlinks:
+// `Manifest::scan` never descends a symlinked directory, and the lowering sandbox
+// canonicalises every `embed(...)` path and refuses one that resolves outside the
+// root (`[sandbox.path-escape]`), which a symlink back into the real tree does.
+// What is copied is DERIVED, never named: every top-level directory that holds an
+// `.emp` source, then every top-level directory the copied sources `embed(...)`
+// from by a root-relative path; everything else (docs, tools, ROMs) is one symlink
+// the build never opens. Nested checkouts are skipped exactly as the scan skips
+// them, so the copy cannot re-expose a worktree the scan would have hidden.
+
+/// A copied aeon source tree with doctored files — see [`shadow_aeon_tree`].
+/// Removed on drop.
+pub struct ShadowTree {
+    root: PathBuf,
+}
+
+impl ShadowTree {
+    /// The mirror's root: hand it to [`native_section`] as the aeon tree.
+    pub fn root(&self) -> &std::path::Path {
+        &self.root
+    }
+}
+
+impl Drop for ShadowTree {
+    fn drop(&mut self) {
+        // Best effort: a copy that survives is ~20 MB under the system temp dir,
+        // never a correctness problem for the next run (each root is unique per
+        // process + counter).
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+/// Copy the sources of `aeon` into a fresh temp root, replacing each
+/// `(aeon-relative path, contents)` in `overrides` with the doctored text. Every
+/// override must name a file that exists under a copied directory — a typo
+/// cannot doctor nothing.
+pub fn shadow_aeon_tree(
+    aeon: &std::path::Path,
+    overrides: &[(&str, &str)],
+) -> Result<ShadowTree, String> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    fn holds_emp(dir: &std::path::Path) -> bool {
+        let Ok(entries) = std::fs::read_dir(dir) else { return false };
+        for e in entries.flatten() {
+            let p = e.path();
+            let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            if is_dir {
+                if !is_nested_checkout(&p) && holds_emp(&p) {
+                    return true;
+                }
+            } else if p.extension().is_some_and(|x| x == "emp") {
+                return true;
+            }
+        }
+        false
+    }
+
+    // The same two signatures `Manifest::scan` refuses to descend.
+    fn is_nested_checkout(dir: &std::path::Path) -> bool {
+        dir.file_name().is_some_and(|n| n == ".worktrees") || dir.join(".git").exists()
+    }
+
+    fn mirror(
+        src: &std::path::Path,
+        dst: &std::path::Path,
+        aeon: &std::path::Path,
+        overrides: &[(&str, &str)],
+        written: &mut Vec<String>,
+    ) -> Result<(), String> {
+        std::fs::create_dir(dst).map_err(|e| format!("mkdir {}: {e}", dst.display()))?;
+        let entries =
+            std::fs::read_dir(src).map_err(|e| format!("read_dir {}: {e}", src.display()))?;
+        for e in entries.flatten() {
+            let from = e.path();
+            let to = dst.join(e.file_name());
+            let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            if is_dir {
+                if is_nested_checkout(&from) {
+                    continue;
+                }
+                mirror(&from, &to, aeon, overrides, written)?;
+                continue;
+            }
+            let rel = from.strip_prefix(aeon).map_err(|e| e.to_string())?;
+            let rel = rel.to_string_lossy();
+            if let Some((_, text)) = overrides.iter().find(|(r, _)| *r == rel.as_ref()) {
+                std::fs::write(&to, text).map_err(|e| format!("write {}: {e}", to.display()))?;
+                written.push(rel.into_owned());
+            } else {
+                std::fs::copy(&from, &to)
+                    .map_err(|e| format!("copy {} -> {}: {e}", from.display(), to.display()))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The first path segment of every root-relative `embed("…")` under `dir`
+    /// (a module-relative `"../…"` embed stays inside its own copied directory).
+    fn embed_roots(dir: &std::path::Path, out: &mut Vec<String>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for e in entries.flatten() {
+            let p = e.path();
+            if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                embed_roots(&p, out);
+            } else if p.extension().is_some_and(|x| x == "emp") {
+                let Ok(text) = std::fs::read_to_string(&p) else { continue };
+                for tail in text.split("embed(\"").skip(1) {
+                    let Some(path) = tail.split('"').next() else { continue };
+                    let Some(first) = path.split('/').next() else { continue };
+                    if first != ".." && !first.is_empty() && !out.iter().any(|o| o == first) {
+                        out.push(first.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    let root = std::env::temp_dir().join(format!(
+        "sigil-shadow-aeon-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&root).map_err(|e| format!("mkdir {}: {e}", root.display()))?;
+    let tree = ShadowTree { root };
+    let mut written = Vec::new();
+    let mut copied: Vec<std::ffi::OsString> = Vec::new();
+    // Pass 1: every top-level directory holding `.emp` sources, copied.
+    let entries =
+        std::fs::read_dir(aeon).map_err(|e| format!("read_dir {}: {e}", aeon.display()))?;
+    for e in entries.flatten() {
+        let name = e.file_name();
+        if name == ".git" || name == ".worktrees" {
+            continue;
+        }
+        let from = e.path();
+        let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        if is_dir && !is_nested_checkout(&from) && holds_emp(&from) {
+            mirror(&from, &tree.root.join(&name), aeon, overrides, &mut written)?;
+            copied.push(name);
+        }
+    }
+    // Pass 2: every top-level directory the copied sources embed from, copied.
+    let mut roots = Vec::new();
+    for name in &copied {
+        embed_roots(&tree.root.join(name), &mut roots);
+    }
+    for first in roots {
+        let from = aeon.join(&first);
+        if copied.iter().any(|c| *c == *first.as_str()) || !from.is_dir() {
+            continue;
+        }
+        mirror(&from, &tree.root.join(&first), aeon, overrides, &mut written)?;
+        copied.push(first.into());
+    }
+    // Pass 3: everything else is one symlink the build never opens.
+    let entries =
+        std::fs::read_dir(aeon).map_err(|e| format!("read_dir {}: {e}", aeon.display()))?;
+    for e in entries.flatten() {
+        let name = e.file_name();
+        if name == ".git" || name == ".worktrees" || copied.contains(&name) {
+            continue;
+        }
+        let to = tree.root.join(&name);
+        std::os::unix::fs::symlink(e.path(), &to)
+            .map_err(|e| format!("symlink {}: {e}", to.display()))?;
+    }
+    if let Some((rel, _)) = overrides.iter().find(|(r, _)| !written.iter().any(|w| w == r)) {
+        return Err(format!(
+            "override `{rel}` names no file under a copied directory of {} — nothing was doctored",
+            aeon.display()
+        ));
+    }
+    Ok(tree)
+}
+
+/// One section sliced out of a native whole-program build — see [`native_section`].
+pub struct NativeSection {
+    /// The placed section, exactly as [`build_emp`](crate::native::build_emp)
+    /// emitted it (the caller re-places it under its own map).
+    pub section: Section,
+    /// The program's deferred link asserts whose source lies in the files the
+    /// caller named — the subset its own AS-side equ seam can decide.
+    pub link_asserts: Vec<LinkAssert>,
+}
+
+/// Build `profile` natively from `aeon` (a real tree or a [`ShadowTree`] root)
+/// and slice out the one section named `section`. `assert_files` are the
+/// aeon-relative sources whose link asserts ride along; the rest of the
+/// program's asserts reference AS-side labels a single-section oracle never
+/// links, so they are the caller's to exclude by not naming their file.
+///
+/// A missing dependency reads as the resolver's own diagnostic — `unknown
+/// function …`, `unknown name …` — inside the returned `Err`.
+pub fn native_section(
+    aeon: &std::path::Path,
+    profile: &crate::native::GameProfile,
+    section: &str,
+    assert_files: &[&str],
+) -> Result<NativeSection, String> {
+    let program = crate::native::build_emp(aeon, profile)?;
+    let mut hits: Vec<Section> =
+        program.sections.into_iter().filter(|s| s.name == section).collect();
+    if hits.len() != 1 {
+        return Err(format!(
+            "expected exactly one `{section}` section in the {} program, found {}",
+            profile.name,
+            hits.len()
+        ));
+    }
+    let link_asserts = program
+        .link_asserts
+        .into_iter()
+        .filter(|a| {
+            let Some(loc) = program.sources.locate(a.span) else { return false };
+            // `path:line:col` — the path never carries a colon on this tree.
+            let path = loc.rsplitn(3, ':').nth(2).unwrap_or(&loc);
+            std::path::Path::new(path)
+                .strip_prefix(aeon)
+                .map(|rel| assert_files.iter().any(|f| std::path::Path::new(f) == rel))
+                .unwrap_or(false)
+        })
+        .collect();
+    Ok(NativeSection { section: hits.remove(0), link_asserts })
+}
+
+/// The files whose link asserts the act-descriptor oracles decide against their
+/// AS-side seam: the descriptor itself and the modules the old hand-listed rig
+/// carried ambient (each of whose asserts that seam already resolved).
+pub const ACT_DESCRIPTOR_ASSERT_FILES: &[&str] = &[
+    "games/sonic4/data/levels/ojz/act1/act_descriptor.emp",
+    "engine/structs.emp",
+    "engine/system/constants.emp",
+    "games/sonic4/data/generated/ojz/act1/ojz_act_pool_manifest.emp",
+    "games/sonic4/data/generated/ojz/act1/sec_block_dicts.emp",
+    "games/sonic4/data/generated/ojz/act1/effects_scenes.emp",
+];
 
 #[cfg(test)]
 mod tests {
