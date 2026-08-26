@@ -62,17 +62,26 @@ fn main() -> ExitCode {
     // Phase-bank label LMAs (T4): a `phase_bank` region resolves its base to the
     // section's LMA (the placement address), not the phase VMA the symbol listing
     // carries. Empty unless the layout holds a `vma:`-windowed bank (soundbankhead).
+    // Section extents (REPIN-END): the `section:<name>` boundary spelling measures a
+    // region against a section's OWN end (`lma + image_len`), never the successor's base.
     let (plain, debug) = match (
         native::sigil_native_symbol_listing(&aeon, false),
         native::sigil_native_symbol_listing(&aeon, true),
         native::phase_bank_lmas(&aeon, false),
         native::phase_bank_lmas(&aeon, true),
+        native::section_extents(&aeon, false),
+        native::section_extents(&aeon, true),
     ) {
-        (Ok((pm, pe)), Ok((dm, de)), Ok(pl), Ok(dl)) => (
-            Listing::from_symbols(pm, pe, "plain".into()).with_phase_lma(pl),
-            Listing::from_symbols(dm, de, "debug".into()).with_phase_lma(dl),
+        (Ok((pm, pe)), Ok((dm, de)), Ok(pl), Ok(dl), Ok(ps), Ok(ds)) => (
+            Listing::from_symbols(pm, pe, "plain".into()).with_phase_lma(pl).with_sections(ps),
+            Listing::from_symbols(dm, de, "debug".into()).with_phase_lma(dl).with_sections(ds),
         ),
-        (Err(e), ..) | (_, Err(e), ..) | (.., Err(e), _) | (.., Err(e)) => return fail(&e),
+        (Err(e), ..)
+        | (_, Err(e), ..)
+        | (_, _, Err(e), ..)
+        | (_, _, _, Err(e), ..)
+        | (.., Err(e), _)
+        | (.., Err(e)) => return fail(&e),
     };
 
     let manifest_src = match std::fs::read_to_string(MANIFEST_PATH) {
@@ -87,6 +96,9 @@ fn main() -> ExitCode {
         Ok(r) => r,
         Err(e) => return fail(&e),
     };
+    for w in &resolved.warnings {
+        eprintln!("repin: warning: {w}");
+    }
     let prov = Provenance {
         plain_path: "sigil-native canonical resolve".into(),
         debug_path: "sigil-native canonical resolve".into(),

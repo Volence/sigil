@@ -3689,7 +3689,7 @@ pub fn derive_frozen_table(
             .collect();
         match owner.as_slice() {
             [s] => {
-                out.insert(name.clone(), s.lma.wrapping_add(s.image_len()));
+                out.insert(name.clone(), section_end(s));
             }
             [] => {} // reported below
             many => {
@@ -3846,13 +3846,34 @@ pub fn sigil_native_symbol_listing(
         }
         if let Some(base) = s.labels.iter().find(|l| l.offset == 0) {
             let end_name = format!("{}_End", base.name);
-            map.entry(end_name).or_insert_with(|| s.lma.wrapping_add(s.image_len()));
+            map.entry(end_name).or_insert_with(|| section_end(s));
         }
     }
     let end_addr = *map
         .get("EndOfRom")
         .ok_or("sigil_native_symbol_listing: `EndOfRom` absent from the resolved layout")?;
     Ok((map, end_addr))
+}
+
+/// A placed section's one-past-end ROM address: `lma + image_len` — THE derivation
+/// behind every synthesized `<Base>_End` marker and the `section:<name>` region end.
+pub fn section_end(s: &Section) -> u32 {
+    s.lma.wrapping_add(s.image_len())
+}
+
+/// The placed ROM section table for `repin` (REPIN-END): every ROM section's name,
+/// LMA and one-past-end, from the same canonical resolve the symbol listing reads.
+/// A region boundary spelled `section:<name>` measures against THIS — its `end` is
+/// the section's own end, so alignment pad before the successor's head never enters
+/// a pin. Zero-byte sections are listed too (their `end == lma`); a `section:` naming
+/// one measures exactly zero bytes, loudly visible in the pin.
+pub fn section_extents(aeon: &Path, debug: bool) -> Result<Vec<crate::repin::SectionExtent>, String> {
+    let resolved = resolve_canonical_sections(aeon, debug)?;
+    Ok(resolved
+        .iter()
+        .filter(|s| is_rom_section(s))
+        .map(|s| crate::repin::SectionExtent { name: s.name.clone(), lma: s.lma, end: section_end(s) })
+        .collect())
 }
 
 /// Phase-bank label LOAD addresses (T4). For every PHASE-BANK ROM section — a

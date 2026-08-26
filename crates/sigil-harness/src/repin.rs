@@ -38,6 +38,15 @@ pub struct Listing {
     /// phase VMA). Empty unless the layout carries a phase-bank section
     /// (`soundbankhead`); populated via [`Listing::with_phase_lma`].
     phase_lma: HashMap<String, u32>,
+    /// The placed ROM SECTION table (REPIN-END): every byte-carrying section's name,
+    /// LMA and one-past-end (`lma + image_len`, the same derivation that synthesizes
+    /// the `<Base>_End` markers). A region boundary spelled `section:<name>` resolves
+    /// HERE — `start` to the section's LMA, `end` to the section's OWN end — so a
+    /// region can end where its bytes end instead of where the successor's head label
+    /// lands after alignment pad. Also drives the pad-inclusion warning for bare-label
+    /// ends ([`Listing::pad_past_content`]). Empty unless attached via
+    /// [`Listing::with_sections`].
+    sections: Vec<SectionExtent>,
     /// The ROM end address (`EndOfRom`) — the assembled ROM length.
     pub end_addr: u32,
     /// Provenance text (a build description), carried into the generated file's
@@ -52,7 +61,14 @@ impl Listing {
     /// phase-bank LMA map is empty — attach it with [`Listing::with_phase_lma`]
     /// when the layout carries a `vma:`-windowed bank.
     pub fn from_symbols(symbols: HashMap<String, u32>, end_addr: u32, stamp: String) -> Listing {
-        Listing { symbols, phase_lma: HashMap::new(), end_addr, stamp }
+        Listing { symbols, phase_lma: HashMap::new(), sections: Vec::new(), end_addr, stamp }
+    }
+
+    /// Attach the placed section table (REPIN-END, `native::section_extents`). Enables
+    /// the `section:<name>` boundary spelling and the bare-label pad warning.
+    pub fn with_sections(mut self, sections: Vec<SectionExtent>) -> Listing {
+        self.sections = sections;
+        self
     }
 
     /// Attach the phase-bank label LMA map (T4, `native::phase_bank_lmas`). A
@@ -94,10 +110,85 @@ impl Listing {
         self.get(name)
     }
 
+    /// The named section's extent. HARD ERROR naming the section when the listing
+    /// carries no section table (the spelling is unmeasurable without one) or when
+    /// the name matches no section / more than one.
+    fn section(&self, name: &str) -> Result<&SectionExtent, String> {
+        if self.sections.is_empty() {
+            return Err(format!(
+                "`{SECTION_PREFIX}{name}`: the listing carries no section table (attach one \
+                 with `Listing::with_sections`) — the spelling cannot be measured"
+            ));
+        }
+        let hits: Vec<&SectionExtent> = self.sections.iter().filter(|s| s.name == name).collect();
+        match hits.as_slice() {
+            [one] => Ok(one),
+            [] => Err(format!("section `{name}` not found in the resolved layout")),
+            many => Err(format!("section `{name}` names {} sections — ambiguous", many.len())),
+        }
+    }
+
+    /// A region's START boundary: `section:<name>` ⇒ the named section's LMA;
+    /// otherwise the label's placement address ([`placement`]).
+    pub fn region_start(&self, spec: &str) -> Result<u32, String> {
+        match spec.strip_prefix(SECTION_PREFIX) {
+            Some(name) => self.section(name).map(|s| s.lma),
+            None => self.placement(spec),
+        }
+    }
+
+    /// A region's END boundary: `section:<name>` ⇒ the named section's OWN one-past-end
+    /// (`lma + image_len`) — never the successor's base, so alignment pad after the
+    /// section's last byte is not measured into the region; otherwise the label's
+    /// placement address ([`placement`]). A gap between labels is an allotment, not a
+    /// size: a bare label that is the NEXT section's head measures the pad too, which
+    /// [`pad_past_content`] reports.
+    pub fn region_end(&self, spec: &str) -> Result<u32, String> {
+        match spec.strip_prefix(SECTION_PREFIX) {
+            Some(name) => self.section(name).map(|s| s.end),
+            None => self.placement(spec),
+        }
+    }
+
+    /// How many bytes at the tail of `[start, end)` belong to NO section's image — the
+    /// placer pad a bare-label `end` sitting on the successor's head sweeps into a
+    /// region. `Some((last_section, pad))` when the region's last covered byte is
+    /// before `end`; `None` when the tail is inside a section's image or when no
+    /// section overlaps the window (nothing to judge — an empty table is silent, not
+    /// wrong, because a listing without one still measures labels exactly as before).
+    pub fn pad_past_content(&self, start: u32, end: u32) -> Option<(String, u32)> {
+        let mut covered: Option<(&SectionExtent, u32)> = None;
+        for s in &self.sections {
+            if s.lma >= end || s.end <= start {
+                continue;
+            }
+            let reach = s.end.min(end);
+            if covered.map(|(_, c)| reach > c).unwrap_or(true) {
+                covered = Some((s, reach));
+            }
+        }
+        let (last, reach) = covered?;
+        if reach < end { Some((last.name.clone(), end - reach)) } else { None }
+    }
+
     /// Number of parsed (numeric) symbols — provenance/debug aid.
     pub fn symbol_count(&self) -> usize {
         self.symbols.len()
     }
+}
+
+/// The `section:<name>` boundary prefix (REPIN-END) — the same spelling the map's
+/// `order` rows use (parcel SECTION-ROW). Unambiguous: no identifier in either
+/// front-end admits `:`.
+pub const SECTION_PREFIX: &str = "section:";
+
+/// A placed ROM section's extent: `name` is the `module … in <name>` section name,
+/// `lma` its load address, `end` one-past its last image byte (`lma + image_len`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SectionExtent {
+    pub name: String,
+    pub lma: u32,
+    pub end: u32,
 }
 
 // ── The manifest (`repin.toml`, D-T10.2) ────────────────────────────────────
@@ -361,6 +452,10 @@ pub struct Resolved {
     pub regions: Vec<RegionPin>,
     pub symbols: Vec<SymbolPin>,
     pub offsets: Vec<OffsetPin>,
+    /// Loud-but-not-fatal findings (REPIN-END): a bare-label `end` that measures
+    /// placer pad past the region's last section byte, one line per shape, naming
+    /// the region, the label, the section and the pad. The `repin` bin prints them.
+    pub warnings: Vec<String>,
 }
 
 impl Resolved {
@@ -423,6 +518,7 @@ pub fn upper_snake(name: &str) -> String {
 /// symbol/region — never a silent zero (D-T10.2).
 pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolved, String> {
     let mut regions = Vec::new();
+    let mut warnings = Vec::new();
     for r in &m.regions {
         if r.debug_only {
             // Debug-only region (whole-file `ifdef __DEBUG__` twin): the
@@ -510,9 +606,9 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
             continue;
         }
         let plain_base =
-            plain.placement(&r.start).map_err(|e| format!("region `{}` start: {e}", r.name))?;
+            plain.region_start(&r.start).map_err(|e| format!("region `{}` start: {e}", r.name))?;
         let debug_base = debug
-            .placement(&r.start)
+            .region_start(&r.start)
             .map_err(|e| format!("region `{}` start (debug): {e}", r.name))?;
         let (plain_len, debug_len, end_desc) = match (&r.end, r.len) {
             (Some(end), None) => {
@@ -520,9 +616,9 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
                 // fault-handler shape split: ojz_scroll_test ends at ReleaseFault in
                 // plain, BusError in debug — neither exists in the other listing).
                 let debug_end = r.debug_end.as_deref().unwrap_or(end);
-                let pe = plain.placement(end).map_err(|e| format!("region `{}` end: {e}", r.name))?;
+                let pe = plain.region_end(end).map_err(|e| format!("region `{}` end: {e}", r.name))?;
                 let de = debug
-                    .placement(debug_end)
+                    .region_end(debug_end)
                     .map_err(|e| format!("region `{}` end (debug): {e}", r.name))?;
                 if pe < plain_base || de < debug_base {
                     return Err(format!(
@@ -536,6 +632,24 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
                 } else {
                     format!("`{end}`")
                 };
+                // A bare label sitting past the last section byte measures placer pad
+                // into the pin — name it (region, label, section, bytes) per shape.
+                for (shape, listing, spec, lo, hi) in
+                    [("plain", plain, end.as_str(), plain_base, pe), ("debug", debug, debug_end, debug_base, de)]
+                {
+                    if spec.starts_with(SECTION_PREFIX) {
+                        continue;
+                    }
+                    if let Some((sec, pad)) = listing.pad_past_content(lo, hi) {
+                        warnings.push(format!(
+                            "region `{}` ({shape}): end `{spec}` measures {pad:#X} byte(s) of placer pad \
+                             past section `{sec}`'s last byte ({hi:#X} vs {:#X}); the gap between labels is an \
+                             allotment, not a size — spell `end = \"{SECTION_PREFIX}{sec}\"` to pin the content",
+                            r.name,
+                            hi - pad
+                        ));
+                    }
+                }
                 (pe - plain_base, de - debug_base, desc)
             }
             (None, Some(len)) => {
@@ -635,6 +749,7 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
         regions,
         symbols,
         offsets,
+        warnings,
     })
 }
 
@@ -1152,6 +1267,118 @@ len = 0x10
         let debug_no_phase = test_listing(base_syms, 0x62000);
         let resolved = resolve(&manifest, &plain_no_phase, &debug_no_phase).unwrap();
         assert_eq!(resolved.regions[0].plain_base, 0x8000, "no phase map ⇒ base is the plain VMA");
+    }
+
+    /// REPIN-END: a region whose `end` label is the NEXT section's head measures the
+    /// successor's alignment pad into the pin (the ACT_DESCRIPTOR 0x27C-vs-0x27A
+    /// failure); `end = "section:<name>"` measures the owning section's OWN end
+    /// (`lma + image_len`). Expectations are DERIVED from the synthetic section
+    /// geometry, never copied from the live 0x27A.
+    #[test]
+    fn section_end_spelling_measures_the_owning_section_not_the_successor_base() {
+        // A synthetic section table: `desc` carries IMAGE_LEN bytes at LMA; its
+        // successor `blocks` is placed on the next even boundary, 2 bytes past
+        // desc's last byte (the plain-shape act_descriptor geometry; the debug shape
+        // pads 6 — any positive pad exercises the same arithmetic).
+        const LMA: u32 = 0x15A34;
+        const IMAGE_LEN: u32 = 0x28 + 9 * 0x42; // header + 9 Sec records — odd, so pad follows
+        const PAD: u32 = 2;
+        let desc_end = LMA + IMAGE_LEN;
+        let blocks_lma = desc_end + PAD;
+        let sections = vec![
+            SectionExtent { name: "desc".into(), lma: LMA, end: desc_end },
+            SectionExtent { name: "blocks".into(), lma: blocks_lma, end: blocks_lma + 0x100 },
+        ];
+        let syms = &[("Desc_Head", LMA), ("Blocks_Head", blocks_lma)];
+        let plain = test_listing(syms, 0x60000).with_sections(sections.clone());
+        let debug = test_listing(syms, 0x62000).with_sections(sections);
+
+        let manifest = load_manifest(
+            r#"
+[rom]
+end_symbol = "__END__"
+
+[[region]]
+name = "by_section"
+start = "Desc_Head"
+end = "section:desc"
+
+[[region]]
+name = "by_successor_label"
+start = "Desc_Head"
+end = "Blocks_Head"
+
+[[region]]
+name = "start_by_section"
+start = "section:blocks"
+end = "section:blocks"
+"#,
+        )
+        .unwrap();
+        let resolved = resolve(&manifest, &plain, &debug).unwrap();
+
+        // `section:desc` at `end` = the section's own end: exactly IMAGE_LEN, no pad.
+        let by_section = &resolved.regions[0];
+        assert_eq!((by_section.plain_base, by_section.debug_base), (LMA, LMA));
+        assert_eq!(
+            (by_section.plain_len, by_section.debug_len),
+            (IMAGE_LEN, IMAGE_LEN),
+            "`end = section:<name>` must measure lma + image_len of the owning section"
+        );
+        assert_eq!(by_section.end_desc, "`section:desc`");
+
+        // The successor's head label still measures the allotment (labels keep their
+        // meaning unchanged) — and the pad is DETECTED and NAMED, per shape.
+        let by_label = &resolved.regions[1];
+        assert_eq!((by_label.plain_len, by_label.debug_len), (IMAGE_LEN + PAD, IMAGE_LEN + PAD));
+        let pad_warnings: Vec<&String> =
+            resolved.warnings.iter().filter(|w| w.contains("region `by_successor_label`")).collect();
+        assert_eq!(pad_warnings.len(), 2, "one pad warning per shape: {:?}", resolved.warnings);
+        for w in &pad_warnings {
+            assert!(w.contains("`Blocks_Head`") && w.contains("section `desc`") && w.contains("0x2 byte(s)"), "{w}");
+            assert!(w.contains("section:desc"), "the warning names the fix: {w}");
+        }
+        // The `section:` region raised no warning (its end is content, not allotment).
+        assert!(!resolved.warnings.iter().any(|w| w.contains("region `by_section`")), "{:?}", resolved.warnings);
+
+        // `section:<name>` at `start` = the section's LMA; start == end ⇒ the whole
+        // section, derived from the same table.
+        let by_start = &resolved.regions[2];
+        assert_eq!(by_start.plain_base, blocks_lma);
+        assert_eq!(by_start.plain_len, 0x100);
+
+        // LOUD on unmeasurable: an unknown section name, and a listing that carries no
+        // section table at all, both fail NAMING the spelling — never a silent 0.
+        let bad = load_manifest(
+            r#"[rom]
+end_symbol = "__END__"
+[[region]]
+name = "x"
+start = "Desc_Head"
+end = "section:nope"
+"#,
+        )
+        .unwrap();
+        let err = resolve(&bad, &plain, &debug).unwrap_err();
+        assert!(err.contains("region `x` end") && err.contains("section `nope` not found"), "{err}");
+        let no_table = test_listing(syms, 0x60000);
+        let err = resolve(&manifest, &no_table, &no_table).unwrap_err();
+        assert!(err.contains("`section:desc`") && err.contains("no section table"), "{err}");
+        // …and a table-less listing still measures bare labels exactly as before,
+        // silently (no table ⇒ nothing to judge, not a false warning).
+        let labels_only = load_manifest(
+            r#"[rom]
+end_symbol = "__END__"
+[[region]]
+name = "y"
+start = "Desc_Head"
+end = "Blocks_Head"
+"#,
+        )
+        .unwrap();
+        let r = resolve(&labels_only, &no_table, &no_table).unwrap();
+        assert_eq!(r.regions[0].plain_len, IMAGE_LEN + PAD);
+        assert!(r.warnings.is_empty());
     }
 
     #[test]
