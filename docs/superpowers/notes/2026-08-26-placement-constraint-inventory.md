@@ -92,9 +92,40 @@ ledgered. The live instance of the same family cost a landing already: a refreez
 placement the neighbour is no longer where it was, so every one of the 79 is a silent
 mis-measure waiting rather than a warning.
 
-**R7 — the alignment number the old table still supplies: NAMED, NOT LOCATED.** BGROOM-2
-books it and this pass did not find it. Not carried forward as "probably minor" — it is
-unlocated, and an unlocated constraint is the whole subject of this document.
+**R7 — LOCATED, and it is the row that most needs recapturing: alignment is INFERRED FROM
+THE PIN'S OWN ADDRESS.** `native::packed_align_of` returns *the largest power of two
+dividing a section's frozen provisional base* (16, 8, 4, 2, else 1), and
+`packed_chained_base` aligns the packing cursor to it. So the table does not declare
+alignment anywhere — **alignment is a side effect of where a section happened to land**. A
+section frozen at a `%16 == 0` address is thereafter treated as requiring 16; the identical
+section frozen eight bytes earlier requires 8.
+
+**Its own doc comment states the failure mode, and it is not hypothetical:** *"the quantum
+is a property of the frozen PIN, so a repin can change a section's alignment without a line
+of alignment code changing."* Commit `2c49f538` moved the SFX pin from `$5BAE8` (`%16 == 8`,
+quantum 8) to `$5BB10` (`%16 == 0`, quantum 16), silently doubling it and invalidating the
+mod-8 structural pads aeon had built against the old value.
+
+**Why this is the worst row to lose silently.** These are not cosmetic alignments: `seam2`
+bakes ABSOLUTE pointers into emitted blobs (SfxTable cells, `SFX_WIN_*` window pointers, MT
+song-table pointers) against its own prediction of these bases, and a disagreement means the
+pointers are short by the delta and the sound is silent or garbled at runtime **with no other
+symptom**. The `[sound.fold-vs-placement]` gate (`validate_sound_fold`) makes exactly that
+class loud — but it covers **two labels**, `Song_MovingTrucks` and `Sfx_33`. Every other
+section's inferred quantum is unguarded.
+
+**What recapture means here, and it is a question rather than a transcription.** Most of
+these quanta are almost certainly accidents of packing that nothing requires; some are
+load-bearing (aeon built pads against one). Writing them out as declared rules verbatim would
+enshrine every accident as a requirement forever — the opposite of the point. The honest form
+is: each section's alignment is declared as what its CONTENT needs, and anything that only
+ever held by accident is allowed to stop holding, deliberately and once, rather than being
+discovered later by silent audio corruption.
+
+**Live hazard for the re-layout, flagged to aeon:** their parcel moves every island past the
+sound bank, so any moved section whose NEW base has a different largest-power-of-two divisor
+than its old one has its alignment quantum silently changed — the `2c49f538` class, in
+flight, today.
 
 ## R1 is RULED by aeon (2026-08-26), and the check they asked for found a second population
 
