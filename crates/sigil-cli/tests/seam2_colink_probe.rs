@@ -78,35 +78,28 @@ fn lower_head(src: &str) -> (Option<Section>, Vec<sigil_span::Diagnostic>) {
     (sec, ldiags)
 }
 
-/// The current-baseline co-link map: dac banks at $48000/$50000 (as `emit_dac_banks`),
-/// the module carrier in `text`, the probe head phased into the song bank at $5856D.
-const MAP: &str = "\
-fill = 0x00
+/// The co-link map, DERIVED from the live map's layout (`seam2::sound_layout`): dac
+/// banks at the blip/shared bank LMAs (as `emit_dac_banks`), the module carrier in
+/// `text`, the probe head phased into the head bank at the SeqOpcodeTable LMA.
+/// Nothing here is a retyped address, so the probe's bank arithmetic follows a
+/// re-layout instead of quietly testing a bank the game no longer uses.
+fn map_toml() -> String {
+    let l = sigil_harness::seam2::sound_layout(&aeon_dir()).expect("sound_layout");
+    format!(
+        "fill = 0x00\n\n\
+         [[region]]\nname = \"text\"\nlma_base = 0x0000\nsize = 0x10\nkind = \"rom\"\n\n\
+         [[region]]\nname = \"dac_blip_bank\"\nlma_base = 0x{:X}\nsize = 0x8000\nkind = \"rom\"\n\n\
+         [[region]]\nname = \"dac_shared_bank\"\nlma_base = 0x{:X}\nsize = 0x8000\nkind = \"rom\"\n\n\
+         [[region]]\nname = \"probe_head\"\nlma_base = 0x{:X}\nsize = 0x100\nkind = \"rom\"\n",
+        l.dac_blip_lma, l.dac_shared_lma, l.seq_opcode_tab_lma
+    )
+}
 
-[[region]]
-name = \"text\"
-lma_base = 0x0000
-size = 0x10
-kind = \"rom\"
-
-[[region]]
-name = \"dac_blip_bank\"
-lma_base = 0x48000
-size = 0x8000
-kind = \"rom\"
-
-[[region]]
-name = \"dac_shared_bank\"
-lma_base = 0x50000
-size = 0x8000
-kind = \"rom\"
-
-[[region]]
-name = \"probe_head\"
-lma_base = 0x5856D
-size = 0x100
-kind = \"rom\"
-";
+/// `bankid()`'s fold, spelled once: `(lma & $7F8000) >> 15` — the same mask/shift
+/// `seam2::sound_bank_id` and the language builtin use.
+fn bankid(lma: u32) -> u8 {
+    ((lma & 0x7F_8000) >> 15) as u8
+}
 
 /// Co-link `dac_samples.emp` + the probe head; return the linked probe-head bytes.
 fn colink(head_src: &str) -> Result<Vec<u8>, Vec<sigil_span::Diagnostic>> {
@@ -116,7 +109,7 @@ fn colink(head_src: &str) -> Result<Vec<u8>, Vec<sigil_span::Diagnostic>> {
         return Err(ldiags);
     }
     sections.push(head.expect("probe head section"));
-    let map = sigil_link::load_map(MAP).expect("map loads");
+    let map = sigil_link::load_map(&map_toml()).expect("map loads");
     let pd = place_sections(&mut sections, &map);
     assert!(pd.iter().all(|d| d.level != Level::Error), "place_sections: {pd:?}");
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)?;
@@ -136,8 +129,10 @@ fn colink(head_src: &str) -> Result<Vec<u8>, Vec<sigil_span::Diagnostic>> {
 /// wall is about a 2-byte POINTER in a 1-byte cell; a link-folded small int is a
 /// different thing — this probe settles whether `dc.b <link-folded-equ>` is accepted.
 ///
-/// Expected (current baseline): Dac_Kick @ $50000 → BANK $0A, PTR $8000, LEN 1406
-/// ($057E). Dac_Temp_Blip @ $48000 → BANK $09, PTR $8000, LEN 2880 ($0B40).
+/// Expected: Dac_Kick @ the shared bank → BANK bankid(shared), PTR $8000, LEN 1406
+/// ($057E). Dac_Temp_Blip @ the blip bank → BANK bankid(blip), PTR $8000, LEN 2880
+/// ($0B40). The two bank ids are derived from the map layout (they were $0A/$09 at
+/// $50000/$48000; $13/$12 since the 2026-08-26 re-layout).
 #[test]
 fn colink_snd_equs_resolve_cross_module_in_dc_cells() {
     if !strict_gate() {
@@ -161,12 +156,15 @@ section probe_head (cpu: z80, vma: $8000) {
 ";
     let bytes = colink(head).expect("co-linked SND_* equs resolve in dc cells");
     assert_eq!(bytes.len(), 10, "1+2+2 + 1+2+2 = 10 bytes");
+    let l = sigil_harness::seam2::sound_layout(&aeon_dir()).expect("sound_layout");
+    let (kick_bank, blip_bank) = (bankid(l.dac_shared_lma), bankid(l.dac_blip_lma));
+    assert_ne!(kick_bank, blip_bank, "the two banks must differ or the probe cannot tell them apart");
     // kick
-    assert_eq!(bytes[0], 0x0A, "BANK: SND_KICK_BANK (dc.b, link-folded bankid) = $0A ($50000>>15)");
+    assert_eq!(bytes[0], kick_bank, "BANK: SND_KICK_BANK (dc.b, link-folded bankid) = {kick_bank:#04X} ({:#X}>>15)", l.dac_shared_lma);
     assert_eq!(&bytes[1..3], &[0x00, 0x80], "PTR: SND_KICK_PTR (dc.w, link-folded winptr) = $8000 LE");
     assert_eq!(&bytes[3..5], &[0x7E, 0x05], "LEN: SND_KICK_LEN (dc.w equ) = 1406 ($057E) LE");
     // blip
-    assert_eq!(bytes[5], 0x09, "BANK: SND_BLIP_BANK = $09 ($48000>>15)");
+    assert_eq!(bytes[5], blip_bank, "BANK: SND_BLIP_BANK = {blip_bank:#04X} ({:#X}>>15)", l.dac_blip_lma);
     assert_eq!(&bytes[6..8], &[0x00, 0x80], "PTR: SND_BLIP_PTR = $8000 LE");
     assert_eq!(&bytes[8..10], &[0x40, 0x0B], "LEN: SND_BLIP_LEN = 2880 ($0B40) LE");
 }

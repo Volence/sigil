@@ -57,16 +57,35 @@ use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Fragment, Section, SectionPlacement, SymbolTable};
+use sigil_harness::seam2::{sound_layout, SoundLayout};
 use sigil_link::load_map;
 use sigil_span::{Level, SourceId, Span};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-/// The aeon `games/sonic4/data/sound` dir (honors `AEON_DIR`) — the include
-/// root for `mt_bank.emp` (probe (e)). Mirrors `mt_negative_probes.rs`.
+/// The aeon root (honors `AEON_DIR`).
+fn aeon_root() -> PathBuf {
+    PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    )
+}
+
+/// The aeon `games/sonic4/data/sound` dir — the include root for `mt_bank.emp`
+/// (probe (e)). Mirrors `mt_negative_probes.rs`.
 fn sound_dir() -> PathBuf {
-    let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
-    Path::new(&aeon).join("games/sonic4/data/sound")
+    aeon_root().join("games/sonic4/data/sound")
+}
+
+/// The live map's sound layout: every bank address these probes doctor AROUND is
+/// derived from it (the real SFX/MT bases, the sound bank's window), so a
+/// re-layout cannot leave a probe green while testing a bank the game left.
+fn layout() -> SoundLayout {
+    sound_layout(&aeon_root()).expect("sound_layout derives the bank bases from map.toml")
+}
+
+/// The sound bank's window: `[start, top)` = the `sound_bank` anchor + $8000.
+fn sound_bank_window() -> (u32, u32) {
+    let start = layout().sound_tables_z80_lma;
+    (start, start + 0x8000)
 }
 
 /// The `sfx_bank.emp` module dir (`sound/sfx`) — its own `include_root`, under
@@ -157,13 +176,17 @@ fn straddle_doctored_map_base_is_a_loud_bank_boundary_error() {
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
 
-    // Doctored: base $67C00 — the 1864-byte ($748) section ends at $68348,
-    // crossing $68000. `text` region included: the module's top-level `ensure`
-    // opens the lazy zero-byte default `text` carrier (R-T0.3), so it needs a
-    // home too (mirrors `sfx_port.rs::map_toml`). Region sized $800 so the
-    // $748 section fits inside the region window — the straddle we're probing
-    // is the section crossing the $68000 bank boundary, NOT a region overflow.
-    let map = load_map(
+    // Doctored: base = the sound bank's top - $400 — the 1864-byte ($748) section
+    // then ends $348 past the bank top, crossing it. The top is DERIVED from the
+    // live map (anchor + $8000; was $68000 when this probe was written against a
+    // $60000 bank, $A8000 since the 2026-08-26 re-layout). `text` region included:
+    // the module's top-level `ensure` opens the lazy zero-byte default `text`
+    // carrier (R-T0.3), so it needs a home too (mirrors `sfx_port.rs::map_toml`).
+    // Region sized $1000 so the $748 section fits inside the region window — the
+    // straddle we're probing is the section crossing the bank boundary, NOT a
+    // region overflow.
+    let (_, top) = sound_bank_window();
+    let map = load_map(&format!(
         "fill = 0x00\n\
          [[region]]\n\
          name = \"text\"\n\
@@ -173,10 +196,11 @@ fn straddle_doctored_map_base_is_a_loud_bank_boundary_error() {
          \n\
          [[region]]\n\
          name = \"sfx_bank\"\n\
-         lma_base = 0x67C00\n\
+         lma_base = 0x{:X}\n\
          size = 0x1000\n\
          kind = \"rom\"\n",
-    )
+        top - 0x400
+    ))
     .expect("map must load");
 
     let mut sections = module.sections;
@@ -231,8 +255,11 @@ fn wrong_bank_cross_seam_label_fires_the_co_residency_ensure() {
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
 
-    // Real plain base ($63AE8, bank $C) — sized to the $68000 bank top.
-    let map = load_map(
+    // Real plain base (`sound_layout().sfx_bank_lma_plain`, in the sound bank) —
+    // sized to the bank top. Both derived from the live map.
+    let (bank, top) = sound_bank_window();
+    let real = layout().sfx_bank_lma_plain;
+    let map = load_map(&format!(
         "fill = 0x00\n\
          [[region]]\n\
          name = \"text\"\n\
@@ -242,18 +269,22 @@ fn wrong_bank_cross_seam_label_fires_the_co_residency_ensure() {
          \n\
          [[region]]\n\
          name = \"sfx_bank\"\n\
-         lma_base = 0x63AE8\n\
-         size = 0x4518\n\
+         lma_base = 0x{real:X}\n\
+         size = 0x{:X}\n\
          kind = \"rom\"\n",
-    )
+        top - real
+    ))
     .expect("map must load");
 
     let mut sections = module.sections;
     let pdiags = place_sections(&mut sections, &map);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "place_sections: {pdiags:?}");
 
-    // WRONG bank: $58000 (bank $B) instead of the real $60000 (bank $C).
-    let mut cross_seam = as_bank_start_label_at(0x58000);
+    // WRONG bank: the window ABOVE the sound bank (bank id + 1) instead of the real
+    // bank start. Derived, so the mismatch is real at any layout — asserted below.
+    let wrong = bank + 0x8000;
+    assert_ne!((wrong & 0x7F_8000) >> 15, (real & 0x7F_8000) >> 15, "the wrong bank must differ");
+    let mut cross_seam = as_bank_start_label_at(wrong);
     for sec in &mut cross_seam {
         sec.lma = 0x0100_0000;
         sec.placement = SectionPlacement::Pinned;
@@ -446,10 +477,12 @@ fn grown_mt_section_past_the_sfx_base_is_a_loud_overlap_error() {
         return;
     };
 
-    // The joint map: mt_bank @ $60607 (bank window to $68000) and sfx_bank @
-    // $63AE8 — the real Task-5 abutment. `text` carriers for both modules'
-    // zero-byte default sections.
-    let map = load_map(
+    // The joint map: mt_bank and sfx_bank at their REAL plain bases (derived from
+    // the live map — `mt_bank_lma` / `sfx_bank_lma_plain`), both sized to the sound
+    // bank's top. `text` carriers for both modules' zero-byte default sections.
+    let (_, top) = sound_bank_window();
+    let l = layout();
+    let map = load_map(&format!(
         "fill = 0x00\n\
          [[region]]\n\
          name = \"text\"\n\
@@ -459,16 +492,20 @@ fn grown_mt_section_past_the_sfx_base_is_a_loud_overlap_error() {
          \n\
          [[region]]\n\
          name = \"mt_bank\"\n\
-         lma_base = 0x60607\n\
-         size = 0x79F9\n\
+         lma_base = 0x{:X}\n\
+         size = 0x{:X}\n\
          kind = \"rom\"\n\
          \n\
          [[region]]\n\
          name = \"sfx_bank\"\n\
-         lma_base = 0x63AE8\n\
-         size = 0x4518\n\
+         lma_base = 0x{:X}\n\
+         size = 0x{:X}\n\
          kind = \"rom\"\n",
-    )
+        l.mt_bank_lma,
+        top - l.mt_bank_lma,
+        l.sfx_bank_lma_plain,
+        top - l.sfx_bank_lma_plain
+    ))
     .expect("map must load");
 
     // Lower + place mt_bank (DEBUG=0, its real region 0x60607).
@@ -489,10 +526,10 @@ fn grown_mt_section_past_the_sfx_base_is_a_loud_overlap_error() {
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "mt place_sections: {pdiags:?}");
 
     // DOCTOR: grow the `mt_bank` section past the sfx base. Its real DEBUG=0
-    // content ends EXACTLY at $63AE8 (== the sfx base), so ANY positive
-    // padding crosses into sfx_bank's window. $200 bytes puts mt's end at
-    // $63CE8, well inside [$63AE8, $64230) — an unambiguous overlap. This
-    // models a regen that stayed at $60607 but emitted more bytes.
+    // content ends at (or within the alignment pad just under) the sfx base, so
+    // $200 bytes of padding puts mt's end well inside sfx_bank's window — an
+    // unambiguous overlap. This models a regen that stayed at its base but
+    // emitted more bytes.
     let mt_bank = mt_sections
         .iter_mut()
         .find(|s| s.name == "mt_bank")

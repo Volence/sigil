@@ -45,10 +45,18 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::seam2::{sound_layout, SoundLayout};
 use sigil_harness::test_support::{reference_tree, strict_gate};
 use sigil_ir::backend::Cpu;
 use sigil_ir::{LinkAssert, Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
+
+/// The live map's sound layout, read from the aeon root four levels above the
+/// `sound` dir — every bank address this port uses is DERIVED from it.
+fn layout(sound_dir: &Path) -> SoundLayout {
+    let aeon = sound_dir.ancestors().nth(4).expect("games/sonic4/data/sound has an aeon root");
+    sound_layout(aeon).expect("sound_layout derives the MT bank base from map.toml")
+}
 
 /// REFERENCE-DEPENDENT: the module's own directory in aeon's tree — the
 /// `include_root` under which the six `embed("*.bin")` fixtures resolve.
@@ -89,37 +97,46 @@ fn golden(name: &str) -> Option<Vec<u8>> {
 /// carrier (opened by its top-level `ensure`s — R-T0.3's carrier contract;
 /// TWO such carriers land here, one before and one after `mt_bank` in
 /// declaration order, both zero bytes, sharing the region cumulatively per
-/// P5/R7) and the real `mt_bank` region pinned at the R7 LMA, sized to the
-/// bank top ($60000).
-fn map_toml() -> &'static str {
-    "fill = 0x00\n\
-     \n\
-     [[region]]\n\
-     name = \"text\"\n\
-     lma_base = 0x0000\n\
-     size = 0x10\n\
-     kind = \"rom\"\n\
-     \n\
-     [[region]]\n\
-     name = \"mt_bank\"\n\
-     lma_base = 0x58630\n\
-     size = 0x79D8\n\
-     kind = \"rom\"\n"
+/// P5/R7) and the real `mt_bank` region pinned at the LMA `seam2::sound_layout`
+/// derives from the live map (`mt_bank_lma`), sized to the sound bank's top
+/// (anchor + $8000). Nothing retyped: the 2026-08-26 re-layout (`$58630` →
+/// `$A0630`) moved this with the game.
+fn map_toml(sound_dir: &Path) -> String {
+    let l = layout(sound_dir);
+    let top = l.sound_tables_z80_lma + 0x8000;
+    format!(
+        "fill = 0x00\n\
+         \n\
+         [[region]]\n\
+         name = \"text\"\n\
+         lma_base = 0x0000\n\
+         size = 0x10\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"mt_bank\"\n\
+         lma_base = 0x{:X}\n\
+         size = 0x{:X}\n\
+         kind = \"rom\"\n",
+        l.mt_bank_lma,
+        top - l.mt_bank_lma
+    )
 }
 
 /// The synthetic AS-side cross-seam unit: a label `phase`d to the exact VMA
-/// the real `.asm` pins `MovingTrucks_Bank_Start` at ($58000) — the T0
-/// `probe_b` idiom (`ports.rs`), which proved a `bankid("Name")` ensure
-/// resolves against a label defined this way exactly as it would against the
-/// real cross-source symbol.
-fn as_bank_start_label(debug: i128) -> Vec<Section> {
+/// the harness carriers pin `MovingTrucks_Bank_Start` at — the `sound_bank`
+/// anchor (`sound_layout().sound_tables_z80_lma`) — the T0 `probe_b` idiom
+/// (`ports.rs`), which proved a `bankid("Name")` ensure resolves against a label
+/// defined this way exactly as it would against the real cross-source symbol.
+fn as_bank_start_label(sound_dir: &Path, debug: i128) -> Vec<Section> {
     // The bank-start label PLUS the config/sound_ids.asm song-id equs that
     // mt_bank.emp's SONG_MOVINGTRUCKS/SONG_COUNT drift guards read cross-seam
     // (retro-fix batch 2, item 10). SONG_COUNT is shape-dependent (3 debug / 1
     // plain), matching sound_ids.asm's `ifdef __DEBUG__`.
     let song_count = if debug != 0 { 3 } else { 1 };
+    let bank = layout(sound_dir).sound_tables_z80_lma;
     let asm = format!(
-        "cpu 68000\nphase $58000\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSONG_MOVINGTRUCKS = 1\nSONG_COUNT = {song_count}\n"
+        "cpu 68000\nphase ${bank:X}\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSONG_MOVINGTRUCKS = 1\nSONG_COUNT = {song_count}\n"
     );
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (cross-seam label): {d:?}")).sections
@@ -158,7 +175,7 @@ fn compile_real_file(
         "lower errors (embed/ensure): {ldiags:?}"
     );
 
-    let map = sigil_link::load_map(map_toml()).expect("map must load");
+    let map = sigil_link::load_map(&map_toml(dir)).expect("map must load");
     let mut sections = module.sections;
     let pdiags = place_sections(&mut sections, &map);
     assert!(
@@ -167,11 +184,12 @@ fn compile_real_file(
     );
 
     // Append the cross-seam label section at a harness-private LMA — well
-    // clear of both `text` ($0..$10) and `mt_bank` ($58607..$60000) — so it
-    // cannot collide with either map region. Its VMA ($58000, from `phase`)
-    // is what the `bankid()` ensures actually read; its LMA placement here is
-    // an inert harness bookkeeping detail, exactly as in `probe_b`.
-    let mut cross_seam = as_bank_start_label(debug);
+    // clear of both `text` ($0..$10) and `mt_bank` (its bank window) — so it
+    // cannot collide with either map region. Its VMA (the sound_bank anchor,
+    // from `phase`) is what the `bankid()` ensures actually read; its LMA
+    // placement here is an inert harness bookkeeping detail, exactly as in
+    // `probe_b`.
+    let mut cross_seam = as_bank_start_label(dir, debug);
     for sec in &mut cross_seam {
         sec.lma = 0x0100_0000;
         sec.placement = SectionPlacement::Pinned;
@@ -255,9 +273,11 @@ fn mt_bank_region_matches_reference() {
         "the five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"
     );
 
-    let expected = &refrom[0x58630..0x5BB20];
+    let l = layout(&dir);
+    let (lo, hi) = (l.mt_bank_lma as usize, l.sfx_bank_lma_plain as usize);
+    let expected = &refrom[lo..hi];
     let section = linked.section("mt_bank").expect("linked image must carry mt_bank");
-    assert_region_matches(&section.bytes, expected, "mt_bank (DEBUG=0) vs s4.bin[0x58630..0x5BB20]");
+    assert_region_matches(&section.bytes, expected, &format!("mt_bank (DEBUG=0) vs s4.bin[{lo:#X}..{hi:#X}]"));
 }
 
 /// (DEBUG=1) The `mt_bank` section's linked bytes equal
@@ -278,7 +298,9 @@ fn mt_bank_debug_region_matches_reference() {
         "the five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"
     );
 
-    let expected = &refrom[0x58630..0x5D570];
+    let l = layout(&dir);
+    let (lo, hi) = (l.mt_bank_lma as usize, l.sfx_bank_lma_debug as usize);
+    let expected = &refrom[lo..hi];
     let section = linked.section("mt_bank").expect("linked image must carry mt_bank");
-    assert_region_matches(&section.bytes, expected, "mt_bank (DEBUG=1) vs s4.debug.bin[0x58630..0x5D570]");
+    assert_region_matches(&section.bytes, expected, &format!("mt_bank (DEBUG=1) vs s4.debug.bin[{lo:#X}..{hi:#X}]"));
 }
