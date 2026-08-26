@@ -2678,6 +2678,24 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
 - [SECTION-ROW parcel, 2026-08-26] **`soundbankhead_port.rs:75` `LOCK.lock().unwrap()` poisons
   after the known-red `soundbankhead_pinned_bootstrap_lands_at_lma_not_vma`:** whichever
   sibling draws the lock next fails on `PoisonError` (seen once in two full runs; green
-  standalone). Pre-existing on master; not this parcel's file. — OPEN, fix/rig-closure's
-  (kill: the poison vanishes with the known red; or `unwrap_or_else(|p| p.into_inner())`
-  as `native_full_rom.rs` does)
+  standalone). Pre-existing on master; not this parcel's file. — CLOSED by FIVE-REG
+  (`2026-08-26-five-reg-packet.md` §4): the file's `lock()` is `unwrap_or_else(|p|
+  p.into_inner())`; 8/8 repeats with the red still present showed exactly the one red
+- [FIVE-REG parcel, 2026-08-26] **The `SizeSource::PinnedBaked` bootstrap path has no live
+  consumer and cannot place the present tree:** `emp_map_toml` mints one region per REGISTRY
+  `ModuleSpec` pin, and a content-derived section (`ojz_effects_editor_act1`, declared to the
+  map by `section:` row) has no pin by design, so `resolve_pinned_sections` /
+  `derive_canonical_bootstrap_table` / `derive_offcanon --bootstrap-canonical` / the pinned
+  body of `build_native_rom_with_listing` (unreachable: `sonic4_profile` is always Frozen)
+  all stop at `section ... has no region in the map`. `--bootstrap-canonical` was already
+  unavailable since 2026-08-01 (the `objdefs`/org-$11D7E strict overlap, conv-g §7.3); the
+  two `native_chained_resume` proofs on it are `#[ignore]`d (Wave-B B-0). Registry pins
+  (`ModuleSpec::base`/`len`) are read by NOTHING else — the shipped path uses the registry
+  only as its module-reachability list. — OPEN (kill: a retire parcel deletes
+  `SizeSource::PinnedBaked`, `sonic4_pinned_profile`, `assemble_native_all_gates_as_side`,
+  `build_native_emp`, `resolve_pinned_sections`, `emp_map_toml`,
+  `derive_canonical_bootstrap_table`, the `--bootstrap-canonical` flag, the pinned body of
+  `build_native_rom_with_listing`, the two ignored `native_chained_resume` proofs, and
+  `ModuleSpec::region` with the ~12 registry comments that justify a real pin by "the
+  bootstrap READS region bases"; `pins.rs` regions then serve only the port gates and
+  `repin`)
