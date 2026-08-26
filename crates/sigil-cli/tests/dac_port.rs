@@ -47,9 +47,21 @@ use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_ir::backend::Cpu;
+use sigil_harness::seam2::sound_layout;
 use sigil_harness::test_support::reference_tree;
 use sigil_ir::{Expr, Section, SymbolTable};
 use std::path::{Path, PathBuf};
+
+/// The aeon root the sound dir sits under (`games/sonic4/data/sound` is four levels
+/// down) — what `sound_layout` reads the map from.
+fn aeon_root(sound_dir: &Path) -> PathBuf {
+    sound_dir.ancestors().nth(4).expect("games/sonic4/data/sound has an aeon root").to_path_buf()
+}
+
+/// `bankid()`'s fold, spelled once: `(lma & $7F8000) >> 15`.
+fn bankid(lma: u32) -> i64 {
+    ((lma & 0x7F_8000) >> 15) as i64
+}
 
 /// REFERENCE-DEPENDENT: the sources live in the sibling aeon tree. Absent, both
 /// tests SKIP green — unless `SIGIL_STRICT_GATE=1`, which makes absence a
@@ -62,32 +74,37 @@ fn sound_dir() -> Option<PathBuf> {
     .map(|aeon| aeon.join("games/sonic4/data/sound"))
 }
 
-/// The two-bank map, pinned at the CURRENT baseline (aeon's `s4.lst`; NOT the
-/// older aeon-f828406 $50000/$58000 layout). Sections match regions BY NAME;
+/// The two-bank map, at the bank LMAs the live `games/sonic4/map.toml` derives
+/// (`seam2::sound_layout` — the `dac_banks` anchor + one window; NOT retyped, so a
+/// re-layout moves this port with the game). Sections match regions BY NAME;
 /// the top-level `equ`/`ensure` items land in the default `text` section, which
 /// needs its own region (it emits ZERO bytes here — all the SND_* are equs, not
 /// data cells — but `place_sections` still requires a home for it). Region
 /// sizes are the $8000 window per bank; `text` is nominal.
-fn map_toml() -> &'static str {
-    "fill = 0x00\n\
-     \n\
-     [[region]]\n\
-     name = \"text\"\n\
-     lma_base = 0x0000\n\
-     size = 0x10\n\
-     kind = \"rom\"\n\
-     \n\
-     [[region]]\n\
-     name = \"dac_blip_bank\"\n\
-     lma_base = 0x48000\n\
-     size = 0x8000\n\
-     kind = \"rom\"\n\
-     \n\
-     [[region]]\n\
-     name = \"dac_shared_bank\"\n\
-     lma_base = 0x50000\n\
-     size = 0x8000\n\
-     kind = \"rom\"\n"
+fn map_toml(aeon: &Path) -> String {
+    let l = sound_layout(aeon).expect("sound_layout derives the DAC bank LMAs from map.toml");
+    format!(
+        "fill = 0x00\n\
+         \n\
+         [[region]]\n\
+         name = \"text\"\n\
+         lma_base = 0x0000\n\
+         size = 0x10\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"dac_blip_bank\"\n\
+         lma_base = 0x{:X}\n\
+         size = 0x8000\n\
+         kind = \"rom\"\n\
+         \n\
+         [[region]]\n\
+         name = \"dac_shared_bank\"\n\
+         lma_base = 0x{:X}\n\
+         size = 0x8000\n\
+         kind = \"rom\"\n",
+        l.dac_blip_lma, l.dac_shared_lma
+    )
 }
 
 /// Parse → lower (with the sound-dir include-root) → place into the map →
@@ -118,7 +135,7 @@ fn compile_real_file(dir: &Path) -> (Vec<Section>, sigil_link::LinkedImage) {
         "lower errors (embed/ensure): {ldiags:?}"
     );
 
-    let map = sigil_link::load_map(map_toml()).expect("map must load");
+    let map = sigil_link::load_map(&map_toml(&aeon_root(dir))).expect("map must load");
     let mut sections = module.sections;
     let pdiags = place_sections(&mut sections, &map);
     assert!(
@@ -211,21 +228,25 @@ fn snd_equ_values_match_s4lst_baseline() {
     let (resolved, _linked) = compile_real_file(&dir);
     let v = |name: &str| equ_value(&resolved, name);
 
-    // (BANK, PTR, LEN) per sample — the s4.lst pins (current baseline).
-    // BLIP bank $9 (@ $48000); every drum bank $A (@ $50000+). The PTR/LEN
-    // are placement-invariant (window-relative / comptime), unchanged by the
-    // re-baseline; only the BANK ids moved down one bank ($A/$B -> $9/$A).
+    // (BANK, PTR, LEN) per sample. The BANK ids are DERIVED from the live map's
+    // layout (the blip bank is the `dac_banks` anchor, every drum sits in the
+    // shared bank one window above — $9/$A at $48000/$50000, $12/$13 since the
+    // 2026-08-26 re-layout); the PTR/LEN are placement-invariant (window-relative /
+    // comptime) and stay literal.
+    let l = sound_layout(&aeon_root(&dir)).expect("sound_layout");
+    let (blip, drum) = (bankid(l.dac_blip_lma), bankid(l.dac_shared_lma));
+    assert_ne!(blip, drum, "the blip and drum banks must differ or the fold is untestable");
     let expect: &[(&str, i64, i64, i64)] = &[
-        ("SND_BLIP", 0x9, 0x8000, 0xB40),
-        ("SND_KICK", 0xA, 0x8000, 0x57E),
-        ("SND_SNARE", 0xA, 0x857E, 0xEA4),
-        ("SND_HAT", 0xA, 0x9422, 0xF0),
-        ("SND_S3K_SNARE", 0xA, 0x9512, 0xEA4),
-        ("SND_S3K_HITOM", 0xA, 0xA3B6, 0xE8C),
-        ("SND_S3K_MIDTOM", 0xA, 0xB242, 0x1230),
-        ("SND_S3K_LOWTOM", 0xA, 0xC472, 0x15B6),
-        ("SND_S3K_FLOORTOM", 0xA, 0xDA28, 0x1916),
-        ("SND_S3K_KICK", 0xA, 0xF33E, 0x57E),
+        ("SND_BLIP", blip, 0x8000, 0xB40),
+        ("SND_KICK", drum, 0x8000, 0x57E),
+        ("SND_SNARE", drum, 0x857E, 0xEA4),
+        ("SND_HAT", drum, 0x9422, 0xF0),
+        ("SND_S3K_SNARE", drum, 0x9512, 0xEA4),
+        ("SND_S3K_HITOM", drum, 0xA3B6, 0xE8C),
+        ("SND_S3K_MIDTOM", drum, 0xB242, 0x1230),
+        ("SND_S3K_LOWTOM", drum, 0xC472, 0x15B6),
+        ("SND_S3K_FLOORTOM", drum, 0xDA28, 0x1916),
+        ("SND_S3K_KICK", drum, 0xF33E, 0x57E),
     ];
 
     for (base, bank, ptr, len) in expect {

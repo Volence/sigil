@@ -75,9 +75,11 @@ const SFX_LEN_PROBE_OFFSET: u32 = 0x2000;
 /// declared byte-emitting `order`.
 #[derive(Debug)]
 struct BankAnchors {
-    /// `dac_banks` anchor LMA (`$48000`) — the DAC blip bank head / bank island.
+    /// `dac_banks` anchor LMA — the DAC blip bank head / bank island (`$90000` since
+    /// aeon's 2026-08-26 re-layout; `$48000` before it).
     dac_banks: u32,
-    /// `sound_bank` anchor LMA (`$58000`) — the `$8000`-window head bank.
+    /// `sound_bank` anchor LMA — the `$8000`-window head bank (`$A0000` since the
+    /// re-layout; `$58000` before it).
     sound_bank: u32,
     /// `sound_bank`'s window VMA (`$8000`).
     sound_bank_vma: u32,
@@ -138,11 +140,14 @@ fn bank_anchors_from_str(src: &str) -> Result<BankAnchors, String> {
 /// two declared anchors — no field is a hardcoded LMA. Memoized per aeon root.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SoundLayout {
-    /// `dac_blip_bank` LMA — the `dac_banks` anchor (`$48000`).
+    /// `dac_blip_bank` LMA — the `dac_banks` anchor.
     pub dac_blip_lma: u32,
-    /// `dac_shared_bank` LMA — `dac_banks` anchor + the intra-bank align (`$50000`).
+    /// `dac_shared_bank` LMA — `dac_banks` anchor + the intra-bank align.
     pub dac_shared_lma: u32,
-    /// `sound_tables_z80` head LMA — the `sound_bank` anchor (`$58000`), first head.
+    /// `sound_tables_z80` head LMA — the `sound_bank` anchor, first head. (The
+    /// in-bank offsets quoted below are bank-relative facts of the emitted heads;
+    /// the absolute examples date from the `$58000` bank and read `+$48000` since
+    /// aeon's 2026-08-26 re-layout.)
     pub sound_tables_z80_lma: u32,
     /// `movingtrucks_pitchtable` head LMA (`$58357`).
     pub pitchtable_lma: u32,

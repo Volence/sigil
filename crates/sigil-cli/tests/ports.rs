@@ -750,8 +750,22 @@ fn nested_section_with_guards_and_capacity_is_rejected_at_parse_not_silently_dro
 // len) and its `data/sound/dac_samples.asm` `SND_*_BANK/PTR/LEN` equ shape.
 // ---------------------------------------------------------------------------
 
+/// The VMA both T0 probes pin their fixture at. A SYNTHETIC address: these probes
+/// test the `bankid()`/`winptr()` fold mechanism across the .emp<->.asm seam, not
+/// aeon's layout (they read no aeon tree), so the value is arbitrary — it was aeon's
+/// sound-bank LMA when written (`$58000`, bank $B) and aeon has since moved its banks
+/// (`$A0000`, 2026-08-26). Every expected byte below is DERIVED from this one
+/// constant by the fold's own formula, never retyped, so the probes stay
+/// non-vacuous wherever it points.
+const PROBE_BANK_VMA: u32 = 0x58000;
+
+/// `bankid()`'s fold, spelled once: `(vma & $7F8000) >> 15`.
+const fn probe_bankid(vma: u32) -> u32 {
+    (vma & 0x7F_8000) >> 15
+}
+
 /// Probe A (.emp -> .asm): an emp section defines a 6-byte blob pinned at VMA
-/// $58000 plus three `equ` link symbols derived from it (`bankid`, `winptr`,
+/// `PROBE_BANK_VMA` plus three `equ` link symbols derived from it (`bankid`, `winptr`,
 /// and a plain comptime-int length); a Z80 AS source consumes all three via
 /// `db`/`dw`, unresolved at assembly time (deferred fixups), resolved at the
 /// shared link. Mirrors aeon's `DacSampleTable` descriptor field order
@@ -780,13 +794,15 @@ fn probe_a_emp_equ_consumed_by_as_db_dw() {
     // plus equ SND_PROBE_BANK/PTR/LEN derived from it — the .asm consumer
     // references these equ NAMES, never the blob symbol directly (mirrors
     // aeon: the Z80 table reads SND_* constants, not the raw sample label).
-    let emp = "module probe.dac\n\
-               section blob (cpu: m68000, vma: $58000) {\n\
-                 data Dac_Probe: [u8;6] = [$11,$22,$33,$44,$55,$66]\n\
-                 equ SND_PROBE_BANK = bankid(\"Dac_Probe\")\n\
-                 equ SND_PROBE_PTR = winptr(\"Dac_Probe\")\n\
-                 equ SND_PROBE_LEN = 6\n\
-               }\n";
+    let emp = format!(
+        "module probe.dac\n\
+         section blob (cpu: m68000, vma: ${PROBE_BANK_VMA:X}) {{\n\
+           data Dac_Probe: [u8;6] = [$11,$22,$33,$44,$55,$66]\n\
+           equ SND_PROBE_BANK = bankid(\"Dac_Probe\")\n\
+           equ SND_PROBE_PTR = winptr(\"Dac_Probe\")\n\
+           equ SND_PROBE_LEN = 6\n\
+         }}\n"
+    );
     // AS side: a verbatim miniature of dac_sample_tab.asm's descriptor shape.
     let asm = "cpu z80\n\
                DacProbeTab:\n\
@@ -794,13 +810,13 @@ fn probe_a_emp_equ_consumed_by_as_db_dw() {
                \tdw SND_PROBE_PTR\n\
                \tdw SND_PROBE_LEN\n";
 
-    let mut sections = emp_sections(emp);
+    let mut sections = emp_sections(&emp);
     sections.extend(as_sections(asm));
     // Mirror the T4 no-map tail: two independently-lowered/assembled sections
     // each stamp their first section Pinned at lma 0, so place sequentially
     // before resolve_layout/link (R7p.4 colliding-pins guard). LMA is
     // irrelevant to the bankid/winptr fold, which is VMA-derived (the emp
-    // section carries its own explicit `vma: $58000`, untouched by
+    // section carries its own explicit `vma: PROBE_BANK_VMA`, untouched by
     // place_sequential — it only rewrites `lma`/`placement`/`group`).
     sigil_frontend_emp::resolve::place_sequential(&mut sections, 0);
 
@@ -811,11 +827,13 @@ fn probe_a_emp_equ_consumed_by_as_db_dw() {
 
     // The AS consumer lands in the auto-named `sec0` section (mirrors T4).
     let tab = linked.section("sec0").expect("AS consumer section `sec0`");
-    // bank $0B (58000 -> bank 11), ptr $8000 LE = 00 80, len 6 LE = 06 00.
+    // bank = bankid(PROBE_BANK_VMA) ($0B at $58000), ptr $8000 LE = 00 80,
+    // len 6 LE = 06 00 — the bank byte DERIVED from the fixture VMA.
+    let bank = probe_bankid(PROBE_BANK_VMA) as u8;
     assert_eq!(
         tab.bytes,
-        vec![0x0B, 0x00, 0x80, 0x06, 0x00],
-        "DacProbeTab descriptor bytes must be bank=$0B, ptr=$8000 LE, len=6 LE"
+        vec![bank, 0x00, 0x80, 0x06, 0x00],
+        "DacProbeTab descriptor bytes must be bank={bank:#04X}, ptr=$8000 LE, len=6 LE"
     );
 }
 
@@ -863,12 +881,16 @@ mod probe_b {
     fn build(as_label_vma: u32) -> Result<sigil_link::LinkedImage, Vec<sigil_span::Diagnostic>> {
         // AS side: a label pinned at an explicit VMA via `phase`.
         let asm = format!("cpu 68000\nphase ${as_label_vma:X}\nAsProbeLabel:\n\tdc.w 0\n");
-        // emp side: a deferred bankid ensure against that cross-source label.
-        let emp = "module probe.ensure\n\
-                   ensure(bankid(\"AsProbeLabel\") == $B, \"engine-table co-residency\")\n\
-                   data Anchor: u8 = 0\n";
+        // emp side: a deferred bankid ensure against that cross-source label —
+        // the expected bank id DERIVED from PROBE_BANK_VMA by the fold's formula.
+        let emp = format!(
+            "module probe.ensure\n\
+             ensure(bankid(\"AsProbeLabel\") == ${:X}, \"engine-table co-residency\")\n\
+             data Anchor: u8 = 0\n",
+            probe_bankid(PROBE_BANK_VMA)
+        );
 
-        let (file, pdiags) = parse_str(emp);
+        let (file, pdiags) = parse_str(&emp);
         assert!(pdiags.iter().all(|d| d.level != Level::Error), "emp parse: {pdiags:?}");
         let (module, ldiags) =
             lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
@@ -890,11 +912,11 @@ mod probe_b {
         Ok(linked)
     }
 
-    /// (a) the label genuinely lands in bank $B ($58000) -> the ensure holds,
-    /// link succeeds with zero assert diagnostics.
+    /// (a) the label genuinely lands in the probe bank (`PROBE_BANK_VMA`) -> the
+    /// ensure holds, link succeeds with zero assert diagnostics.
     #[test]
     fn label_in_bank_b_link_succeeds() {
-        let result = build(0x58000);
+        let result = build(PROBE_BANK_VMA);
         assert!(result.is_ok(), "expected link to succeed, got: {result:?}");
     }
 
@@ -903,6 +925,7 @@ mod probe_b {
     /// message, "engine-table co-residency".
     #[test]
     fn label_in_wrong_bank_link_fails_with_ensure_message() {
+        assert_ne!(probe_bankid(0x10000), probe_bankid(PROBE_BANK_VMA), "the wrong bank must differ");
         let err = build(0x10000).expect_err("wrong-bank label must fail the deferred ensure");
         assert!(
             err.iter().any(|d| d.message.contains("engine-table co-residency")),

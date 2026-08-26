@@ -1,8 +1,10 @@
 //! seam-2 step-2a — the DAC bank BODY emit, proven against the reference ROM.
 //!
 //! `sigil_harness::seam2::emit_dac_banks` lowers the REAL `dac_samples.emp` and
-//! places its two `bank:` sections at the CURRENT-baseline pins ($48000 blip /
-//! $50000 shared). This gate proves the emitted bank payloads are BYTE-IDENTICAL
+//! places its two `bank:` sections at the map-derived bank LMAs (`seam2::sound_layout`
+//! — the `dac_banks` anchor and the shared bank one window above it; `$90000`/`$98000`
+//! since aeon's 2026-08-26 re-layout, `$48000`/`$50000` before it). The slices below
+//! are DERIVED from that layout, never retyped. This gate proves the emitted bank payloads are BYTE-IDENTICAL
 //! to the corresponding slices of the assembled reference ROM (`aeon/s4.bin`) —
 //! the "twins present, both paths byte-identical" dual proof that must be GREEN
 //! before `dac_samples.asm` can be retired (the Option-A canonicalization: emit
@@ -13,8 +15,7 @@
 //! a later stage wires into the build (behind the mixed_dac_rom gate).
 //!
 //! Distinct from `dac_port.rs`, which is a self-consistency WINDOWED oracle at
-//! the STALE aeon-f828406 layout ($50000/$58000, SND_BLIP_BANK=$A). This gate
-//! uses the CURRENT baseline ($48000/$50000, bank $9/$A — s4.lst / mixed_dac_rom).
+//! a self-consistent synthetic layout. This gate uses the live map's layout.
 //!
 //! ```text
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test seam2_dac_emit
@@ -44,29 +45,32 @@ fn emitted_dac_banks_match_the_reference_rom_slices() {
     assert_eq!(banks.blip.len(), 0xB40, "blip bank length (temp_blip.bin)");
     assert_eq!(banks.shared.len(), 0x78BC, "shared drum bank length (9 .pcm)");
 
+    let l = sigil_harness::seam2::sound_layout(&aeon).expect("sound_layout derives the bank LMAs");
+    let (blip, shared, head) =
+        (l.dac_blip_lma as usize, l.dac_shared_lma as usize, l.sound_tables_z80_lma as usize);
     let rom = std::fs::read(aeon.join("s4.bin")).expect("read reference s4.bin");
-    let blip_ref = &rom[0x48000..0x48000 + banks.blip.len()];
-    let shared_ref = &rom[0x50000..0x50000 + banks.shared.len()];
+    let blip_ref = &rom[blip..blip + banks.blip.len()];
+    let shared_ref = &rom[shared..shared + banks.shared.len()];
 
     assert_eq!(
         banks.blip, blip_ref,
-        "emitted dac_blip_bank must be byte-identical to the reference ROM slice @ $48000"
+        "emitted dac_blip_bank must be byte-identical to the reference ROM slice @ {blip:#X}"
     );
     assert_eq!(
         banks.shared, shared_ref,
-        "emitted dac_shared_bank must be byte-identical to the reference ROM slice @ $50000"
+        "emitted dac_shared_bank must be byte-identical to the reference ROM slice @ {shared:#X}"
     );
 
     // The align-$8000 gaps around the banks are zero pad in the reference — the
     // emit carries no trailing pad (asl's `align $8000` produces it), so the
     // bank payloads end exactly where the reference bytes stop being sample data.
     assert!(
-        rom[0x48000 + banks.blip.len()..0x50000].iter().all(|&b| b == 0),
+        rom[blip + banks.blip.len()..shared].iter().all(|&b| b == 0),
         "the blip→shared gap must be zero pad in the reference"
     );
     assert!(
-        rom[0x50000 + banks.shared.len()..0x58000].iter().all(|&b| b == 0),
-        "the shared→MT gap must be zero pad in the reference"
+        rom[shared + banks.shared.len()..head].iter().all(|&b| b == 0),
+        "the shared→head-bank gap must be zero pad in the reference"
     );
 }
 

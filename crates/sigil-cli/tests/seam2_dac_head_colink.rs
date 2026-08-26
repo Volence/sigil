@@ -83,7 +83,8 @@ fn colinked_dac_head_matches_the_reference_rom_slice_both_shapes() {
 }
 
 /// The banks the SAME co-link produces still match their reference slices — the
-/// co-link does not perturb the bank bodies (they place at $48000/$50000 as before).
+/// co-link does not perturb the bank bodies (they place at the map-derived bank LMAs,
+/// read off `sound_layout`, never retyped).
 #[test]
 fn colink_banks_still_match_reference() {
     if !strict_gate() {
@@ -92,16 +93,19 @@ fn colink_banks_still_match_reference() {
     }
     let aeon = aeon_dir();
     let out = emit_dac_body_and_head(&aeon).expect("emit_dac_body_and_head co-links");
+    let l = sound_layout(&aeon).expect("sound_layout derives the bank LMAs");
+    let (blip, shared) = (l.dac_blip_lma as usize, l.dac_shared_lma as usize);
     let rom = golden("s4.bin");
-    assert_eq!(out.blip, &rom[0x48000..0x48000 + out.blip.len()], "blip bank @ $48000");
-    assert_eq!(out.shared, &rom[0x50000..0x50000 + out.shared.len()], "shared bank @ $50000");
+    assert_eq!(out.blip, &rom[blip..blip + out.blip.len()], "blip bank @ {blip:#X}");
+    assert_eq!(out.shared, &rom[shared..shared + out.shared.len()], "shared bank @ {shared:#X}");
 }
 
 /// t24 NON-VACUITY control (row-91 bar c): a doctored composition — the
-/// `dac_blip_bank` co-linked at `$40000` (bank $8) instead of `$48000` (bank $9)
-/// — must make the head DIVERGE from the golden slice, because `SND_BLIP_BANK`/
-/// `SND_BLIP_PTR` re-fold from the moved bank. The head byte gate is vacuous if a
-/// moved bank still matches.
+/// `dac_blip_bank` co-linked one bank BELOW the map-derived blip bank — must make
+/// the head DIVERGE from the golden slice, because `SND_BLIP_BANK`/`SND_BLIP_PTR`
+/// re-fold from the moved bank. The head byte gate is vacuous if a moved bank still
+/// matches. The real bank is read off `sound_layout`, so the control survives a
+/// re-layout without being retyped.
 #[test]
 fn dac_head_diverges_when_blip_bank_moved() {
     if !strict_gate() {
@@ -109,8 +113,9 @@ fn dac_head_diverges_when_blip_bank_moved() {
         return;
     }
     let aeon = aeon_dir();
+    let moved = sound_layout(&aeon).expect("sound_layout").dac_blip_lma - 0x8000;
     let doctored =
-        emit_dac_body_and_head_doctored(&aeon, Some(0x40000)).expect("doctored co-link");
+        emit_dac_body_and_head_doctored(&aeon, Some(moved)).expect("doctored co-link");
     let rom = golden("s4.bin");
     let lo = sound_layout(&aeon).expect("sound_layout").dac_sample_tab_lma as usize;
     let head_ref = &rom[lo..lo + DAC_SAMPLE_TAB_LEN];

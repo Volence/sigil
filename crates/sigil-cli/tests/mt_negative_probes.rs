@@ -45,17 +45,36 @@ use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
+use sigil_harness::seam2::{sound_layout, SoundLayout};
 use sigil_link::load_map;
 use sigil_span::Level;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+
+/// The aeon root (honors `AEON_DIR`).
+fn aeon_root() -> PathBuf {
+    PathBuf::from(
+        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
+    )
+}
 
 /// Mirrors `mt_port.rs::sound_dir` exactly (kept local per this crate's
 /// house style of small per-file helpers — `sound_migration_negative_probes.rs`
 /// does the same rather than sharing a harness crate).
 fn sound_dir() -> PathBuf {
-    let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
-    Path::new(&aeon).join("games/sonic4/data/sound")
+    aeon_root().join("games/sonic4/data/sound")
+}
+
+/// The live map's sound layout: every bank address these probes doctor AROUND is
+/// derived from it (the real MT base, the sound bank's window), so a re-layout
+/// cannot leave a probe green while testing a bank the game left.
+fn layout() -> SoundLayout {
+    sound_layout(&aeon_root()).expect("sound_layout derives the bank bases from map.toml")
+}
+
+/// The sound bank's window: `[start, top)` = the `sound_bank` anchor + $8000.
+fn sound_bank_window() -> (u32, u32) {
+    let start = layout().sound_tables_z80_lma;
+    (start, start + 0x8000)
 }
 
 fn strict_gate() -> bool {
@@ -129,13 +148,16 @@ fn straddle_doctored_map_base_is_a_loud_bank_boundary_error() {
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
 
-    // Doctored: $67000 instead of the real $60607 — NOT $8000-aligned, and
-    // close enough to the next boundary ($68000) that the 13,537-byte
-    // section (DEBUG=0) straddles it. `text` region included: the module's
-    // top-level `ensure`s open the lazy zero-byte default `text` carrier
-    // (P5/R7 — TWO instances, before and after `mt_bank` in declaration
-    // order), so it needs a home too (mirrors `mt_port.rs::map_toml`).
-    let map = load_map(
+    // Doctored: the sound bank's top - $1000 instead of the real base — NOT
+    // $8000-aligned, and close enough to the boundary that the 13,537-byte
+    // section (DEBUG=0) straddles it. The top is DERIVED from the live map
+    // (anchor + $8000; $68000 when this was written, $A8000 since the 2026-08-26
+    // re-layout). `text` region included: the module's top-level `ensure`s open
+    // the lazy zero-byte default `text` carrier (P5/R7 — TWO instances, before
+    // and after `mt_bank` in declaration order), so it needs a home too (mirrors
+    // `mt_port.rs::map_toml`).
+    let (_, top) = sound_bank_window();
+    let map = load_map(&format!(
         "fill = 0x00\n\
          [[region]]\n\
          name = \"text\"\n\
@@ -145,10 +167,11 @@ fn straddle_doctored_map_base_is_a_loud_bank_boundary_error() {
          \n\
          [[region]]\n\
          name = \"mt_bank\"\n\
-         lma_base = 0x67000\n\
+         lma_base = 0x{:X}\n\
          size = 0x8000\n\
          kind = \"rom\"\n",
-    )
+        top - 0x1000
+    ))
     .expect("map must load");
 
     let mut sections = module.sections;
@@ -201,7 +224,11 @@ fn wrong_bank_cross_seam_label_fires_all_five_co_residency_ensures() {
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
 
-    let map = load_map(
+    // The real MT base (`sound_layout().mt_bank_lma`) sized to the sound bank's
+    // top — both derived from the live map.
+    let (bank, top) = sound_bank_window();
+    let real = layout().mt_bank_lma;
+    let map = load_map(&format!(
         "fill = 0x00\n\
          [[region]]\n\
          name = \"text\"\n\
@@ -211,19 +238,23 @@ fn wrong_bank_cross_seam_label_fires_all_five_co_residency_ensures() {
          \n\
          [[region]]\n\
          name = \"mt_bank\"\n\
-         lma_base = 0x58607\n\
-         size = 0x79F9\n\
+         lma_base = 0x{real:X}\n\
+         size = 0x{:X}\n\
          kind = \"rom\"\n",
-    )
+        top - real
+    ))
     .expect("map must load");
 
     let mut sections = module.sections;
     let pdiags = place_sections(&mut sections, &map);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "place_sections: {pdiags:?}");
 
-    // WRONG bank: $60000 (bank $C) instead of the real $58000 (bank $B, where
-    // mt_bank @ $58607 lands).
-    let mut cross_seam = as_bank_start_label_at(0x60000);
+    // WRONG bank: the window ABOVE the sound bank (bank id + 1) instead of the real
+    // bank start where mt_bank lands. Derived, so the mismatch is real at any
+    // layout — asserted here rather than assumed.
+    let wrong = bank + 0x8000;
+    assert_ne!((wrong & 0x7F_8000) >> 15, (real & 0x7F_8000) >> 15, "the wrong bank must differ");
+    let mut cross_seam = as_bank_start_label_at(wrong);
     for sec in &mut cross_seam {
         sec.lma = 0x0100_0000;
         sec.placement = SectionPlacement::Pinned;
