@@ -182,9 +182,23 @@ noticed and would otherwise have swallowed, which is a real but bounded win.
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — **3854 passed / 3 failed / 4 ignored** (3861 declared) under
-  `SIGIL_STRICT_GATE=1` (sigil master `c72bb419`, aeon `415e0b6a` clean checkout, 2026-08-26),
-  with **zero `skip:` lines** in the run. The three: the `act_descriptor_port` pair on the
+  `AEON_DIR` set to the aeon tree — **3852 passed / 5 failed / 4 ignored** (3861 declared) under
+  `SIGIL_STRICT_GATE=1` (sigil master `ee76f342`, aeon `0e34408d`, 2026-08-26, aeon lane's run
+  at the `ojz-act1-start-scene` refreeze, chain 161; provenance tip s4 `875d591f`/699223 ·
+  s4.debug `a02d36db`/715114 · demo `bf2cdb42` · demo.debug `62a0019e`), with **zero `skip:`
+  lines**. The five: `act_descriptor_port` pair (`REPIN-END`), `soundbankhead` (`FIVE-REG`),
+  and TWO NEW of the CLOSURE-FIX class — tranche4 `act_wrong_base_map_places_the_section_at_a_different_address`
+  and `swapped_sec_fields_produce_different_bytes`: the ambient parse of the generated
+  `effects_scenes.emp` now meets REAL content (`unknown function scene_budget_enforce` /
+  `fold_caps` / `lower5`, `unknown name Game.SCANLINE_CAPS`), so the rig needs
+  `scene_dsl`/`scene_registry` + the Game contract env ambient too, or a whole-path closure
+  instead of item concatenation (`CLOSURE-2`). Aeon landed with that deviation stated rather
+  than hold the owner's authored content on a test-rig gap — correct call. Also from that
+  landing: `repin.toml` `scene_registry` region end is now `EditorSceneBinding_OJZ_Act1_Sec0`
+  (was `OJZ_TestRaster`; the editor block sits inside the old span) with the term added to
+  `repin_pins.rs` — when `SECTION-ROW` lands that end should follow to the section name.
+  *(History: 3844/5/4 at `e36debf8` → §4 +8 tests 3852/5/4 → closure landing 3854/3/4 →
+  first real scene 3852/5/4.)* The three: the `act_descriptor_port` pair on the
   repin pad-in-pin length (`REPIN-END`, emitted 0x27A vs pinned 0x27C — note the assert's
   message text says "0x274", stale literal, cosmetic) and `soundbankhead` (`FIVE-REG`).
   *(History: 3844/5/4 at `e36debf8`; the §4 parcel added 8 tests → 3852/5/4; the closure
