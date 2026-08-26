@@ -43,17 +43,30 @@ use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
 
-/// The resolved game-contract env for the isolated camera oracle (L1 P2):
-/// camera.emp reads `Game.CAMERA_JUMP_LOCK`, which the whole-program bind pass
-/// resolves; here a synthetic interface+implement supplies the same bool. Maps the
-/// legacy 0|1 `jump_lock` selector to the bound bool.
-fn camera_contract_env(jump_lock: i128) -> sigil_frontend_emp::contract::InterfaceEnv {
-    let b = if jump_lock != 0 { "true" } else { "false" };
+/// SYNTHETIC BY INTENT: a one-member `Game` binding `CAMERA_JUMP_LOCK` to a
+/// CHOSEN bool. `jump_lock_off_compiles_without_game_symbols` needs the `false`
+/// arm — the specialisation no shipped game declares — so the binding here is a
+/// probe INPUT, not a restatement of anybody's manifest. The reference gates do
+/// not use it: they bind sonic4's real contract via
+/// [`sonic4_contract_env`].
+fn camera_contract_env(jump_lock: bool) -> sigil_frontend_emp::contract::InterfaceEnv {
+    let b = if jump_lock { "true" } else { "false" };
     sigil_harness::test_support::game_contract_env(
         "module engine.game_contract\npub interface Game {\n    const CAMERA_JUMP_LOCK: bool\n}\n",
         &format!("module games.g.game\npub implement Game {{\n    const CAMERA_JUMP_LOCK = {b}\n}}\n"),
         &[],
     )
+}
+
+/// sonic4's OWN contract, bound from aeon's interface and manifest at the
+/// canonical shape — what the reference gates lower against, since the ROM they
+/// compare to was built with exactly these bindings. Replaces a hardcoded
+/// `jump_lock = 1` that meant "sonic4 declares true" without saying so.
+fn sonic4_contract_env() -> sigil_frontend_emp::contract::InterfaceEnv {
+    let profile = sigil_harness::native::sonic4_profile(false);
+    let defines: Vec<(String, i128)> =
+        profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
+    sigil_harness::test_support::game_contract_env_from_aeon(&aeon_dir(), &profile, &defines)
 }
 
 fn region_base(debug: bool) -> u32 {
@@ -194,7 +207,6 @@ fn parse_file(path: &Path) -> sigil_frontend_emp::ast::File {
 /// equs + cross-seam address labels, one `resolve_layout` -> `link`.
 fn compile_real_file(
     debug: bool,
-    jump_lock: i128,
     doctor: Option<(&str, &str)>,
 ) -> (Vec<Section>, sigil_link::LinkedImage, Vec<sigil_ir::LinkAssert>) {
     let dir = level_dir();
@@ -230,7 +242,7 @@ fn compile_real_file(
         defines: vec![("DEBUG".to_string(), i128::from(debug))],
     };
     let (module, ldiags) =
-        lower_module_with_contracts(&file, &opts, &camera_contract_env(jump_lock));
+        lower_module_with_contracts(&file, &opts, &sonic4_contract_env());
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "camera.emp lower errors: {ldiags:?}"
@@ -323,7 +335,7 @@ fn run(debug: bool) {
         return;
     };
 
-    let (resolved, linked, link_asserts) = compile_real_file(debug, 1, None);
+    let (resolved, linked, link_asserts) = compile_real_file(debug, None);
     assert_drift_guards(&resolved, &link_asserts);
 
     let base = region_base(debug) as usize;
@@ -361,7 +373,7 @@ fn doctored_pstate_jump_fires_its_guard() {
         eprintln!("skip: aeon sources not at {} (set AEON_DIR)", aeon.display());
         return;
     }
-    let (resolved, _, link_asserts) = compile_real_file(false, 1, Some(("PSTATE_JUMP", "9")));
+    let (resolved, _, link_asserts) = compile_real_file(false, Some(("PSTATE_JUMP", "9")));
     let diags = sigil_link::check_link_asserts(&resolved, &SymbolTable::new(), &link_asserts);
     let fired: Vec<_> = diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
     assert!(!fired.is_empty(), "the doctored PSTATE_JUMP truth must fire a drift guard");
@@ -415,7 +427,7 @@ fn jump_lock_off_compiles_without_game_symbols() {
         // STRESS_EVICT-derived const) is now seeded by `lower_module_inner` itself.
         defines: vec![("DEBUG".to_string(), 0)],
     };
-    let (module, ldiags) = lower_module_with_contracts(&file, &opts, &camera_contract_env(0));
+    let (module, ldiags) = lower_module_with_contracts(&file, &opts, &camera_contract_env(false));
     assert!(
         ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "camera.emp (JUMP_LOCK=0) lower errors: {ldiags:?}"
