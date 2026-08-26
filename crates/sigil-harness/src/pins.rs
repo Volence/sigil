@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 97 regions, 408 symbols, 7 offsets
+//! [provenance] 97 regions, 410 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -352,6 +352,12 @@ pub const OJZ_PRESET_SEC3: Pin = Pin { plain: 0x13572, debug: 0x13DB6 };
 
 /// `OJZ_Preset_Plain`. tests: act_descriptor_port
 pub const OJZ_PRESET_PLAIN: Pin = Pin { plain: 0x13598, debug: 0x13DDC };
+
+/// `OJZ_Preset_Depth`. tests: act_descriptor_port
+pub const OJZ_PRESET_DEPTH: Pin = Pin { plain: 0x135BE, debug: 0x13E02 };
+
+/// `EditorSceneBinding_OJZ_Act1_Sec4`. tests: act_descriptor_port
+pub const EDITOR_SCENE_BINDING_OJZ_ACT1_SEC4: Pin = Pin { plain: 0x130E0, debug: 0x13924 };
 
 /// `Effects_InstallPreset`. tests: parallax_port
 pub const EFFECTS_INSTALL_PRESET: Pin = Pin { plain: 0x7400, debug: 0x8624 };

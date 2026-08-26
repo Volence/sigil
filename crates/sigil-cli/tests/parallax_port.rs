@@ -186,7 +186,7 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
         // the third hand-shift of this table killed the literal class — the t24
         // rot rule; the offsets are the block layout this test pins down anyway).
         ("Parallax_State", pins::PARALLAX_STATE.plain, pins::PARALLAX_STATE.debug),
-        ("Parallax_State_End", pins::PARALLAX_STATE.plain + 0xF4, pins::PARALLAX_STATE.debug + 0xF4),
+        ("Parallax_State_End", pins::PARALLAX_STATE.plain + 0x148, pins::PARALLAX_STATE.debug + 0x148), // showcase-effects: 0xF4 + 0x54 (see the Curve_Carry rows)
         ("Parallax_Current_Config", pins::PARALLAX_STATE.plain + 0x28, pins::PARALLAX_STATE.debug + 0x28),
         ("Parallax_Target_Config", pins::PARALLAX_STATE.plain + 0x2C, pins::PARALLAX_STATE.debug + 0x2C),
         ("Parallax_Transition_Frames", pins::PARALLAX_STATE.plain + 0x30, pins::PARALLAX_STATE.debug + 0x30),
@@ -200,15 +200,23 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
         ("Parallax_Deform_Phase_BG", pins::PARALLAX_STATE.plain + 0x02, pins::PARALLAX_STATE.debug + 0x02),
         ("Parallax_V_Deform_Phase_BG", pins::PARALLAX_STATE.plain + 0x04, pins::PARALLAX_STATE.debug + 0x04),
         ("Parallax_Vscroll_Column_Buf", pins::PARALLAX_STATE.plain + 0x34, pins::PARALLAX_STATE.debug + 0x34),
-        // P3 T10: the curve fill's cross-band carry. sonic4 declares no curves, so
-        // CURVE_CARRY_WORDS = 0 and the carry is a ZERO-LENGTH array ALIASING
-        // Parallax_Shadow_Bands at the same VMA — which is exactly what parallax.emp's
-        // `Shadow_Bands - Curve_Carry == 4 * BAND_CURVE_N` link ensure checks (N = 0
-        // here). Same +0x84 as the row below, deliberately, not a typo.
+        // P3 T10: the curve fill's cross-band carry. Until showcase-effects sonic4 declared
+        // no curves, so CURVE_CARRY_WORDS = 0 and the carry was a ZERO-LENGTH array ALIASING
+        // Parallax_Shadow_Bands at the same VMA (+0x84 twice, deliberately).
+        // showcase-effects (2026-08-26, aeon 9dd52471, d-15): BAND_CURVE_N 0 -> 1 and
+        // BAND_CURVE_BYTES 0 -> 10 (engine/ram.emp). The ram.emp mirror this table pins is
+        // now, from +0x84: Curve_Carry [u16; 2] = 4 B, so Shadow_Bands = +0x88 (this is the
+        // `Shadow_Bands - Curve_Carry == 4 * BAND_CURVE_N` ensure, N = 1); Shadow_Bands is
+        // (10 + 0 + 10) x MAX_PARALLAX_BANDS 8 = 160 = 0xA0 B, so Shadow_Scroll_A = +0x128
+        // (the `Shadow_Scroll_A - Shadow_Bands == sizeof(band_record) x 8` ensure — the one
+        // that said "reserves fewer bytes ... = 160" when this table still read +0xD4);
+        // Shadow_Scroll_B = +0x138 (+16); State_End = +0x148, i.e. 82 longs =
+        // 61 + 160/4 + BAND_CURVE_N, which is PARALLAX_STATE_LONGS. Net +0x54 on the block
+        // tail, the same +0x54 every RAM pin from Raster_State on took in the repin.
         ("Parallax_Curve_Carry", pins::PARALLAX_STATE.plain + 0x84, pins::PARALLAX_STATE.debug + 0x84),
-        ("Parallax_Shadow_Bands", pins::PARALLAX_STATE.plain + 0x84, pins::PARALLAX_STATE.debug + 0x84),
-        ("Parallax_Shadow_Scroll_A", pins::PARALLAX_STATE.plain + 0xD4, pins::PARALLAX_STATE.debug + 0xD4),
-        ("Parallax_Shadow_Scroll_B", pins::PARALLAX_STATE.plain + 0xE4, pins::PARALLAX_STATE.debug + 0xE4),
+        ("Parallax_Shadow_Bands", pins::PARALLAX_STATE.plain + 0x88, pins::PARALLAX_STATE.debug + 0x88),
+        ("Parallax_Shadow_Scroll_A", pins::PARALLAX_STATE.plain + 0x128, pins::PARALLAX_STATE.debug + 0x128),
+        ("Parallax_Shadow_Scroll_B", pins::PARALLAX_STATE.plain + 0x138, pins::PARALLAX_STATE.debug + 0x138),
         ("Camera_X", pins::CAMERA_X.plain, pins::CAMERA_X.debug),
         ("Camera_Y", pins::CAMERA_Y.plain, pins::CAMERA_Y.debug),
         // Sourced from pins — this RAM cell rides the tail of the shifting RAM map
