@@ -2667,8 +2667,9 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   label** (`scene_registry` `end = "EditorSceneBinding_OJZ_Act1_Sec0"`): the same rot the
   `order` row just closed. — OPEN, REPIN-END's (kill: `end = "section:<name>"` resolving to
   the section's LMA in the region reader)
-- [SECTION-ROW parcel, 2026-08-26] **`section_row_fixture.rs` doctors the live map from the
-  literal row** and panics by design once aeon migrates map.toml:124 to
-  `"section:ojz_effects_editor_act1"`. — OPEN (kill: retire the three gates in the same
-  landing that consumes the aeon SHA carrying the migration; the seven CRC gates then carry
-  the identity)
+- [SECTION-ROW parcel, 2026-08-26] **`soundbankhead_port.rs:75` `LOCK.lock().unwrap()` poisons
+  after the known-red `soundbankhead_pinned_bootstrap_lands_at_lma_not_vma`:** whichever
+  sibling draws the lock next fails on `PoisonError` (seen once in two full runs; green
+  standalone). Pre-existing on master; not this parcel's file. — OPEN, fix/rig-closure's
+  (kill: the poison vanishes with the known red; or `unwrap_or_else(|p| p.into_inner())`
+  as `native_full_rom.rs` does)

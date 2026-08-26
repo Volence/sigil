@@ -88,12 +88,15 @@ narration): the block's head label is content-derived (whatever `effects_gen.py`
 emits first), so the row keys the SECTION by name; a zero-byte block is inert under
 this row, and the day it emits its bytes land here.
 
-Byte identity of that migration is already proven from the sigil side:
-`section_row_in_the_literal_position_is_byte_identical` builds sonic4 plain + debug
-from a COPY of the aeon tree with exactly that substitution and matches the provenance
-tip (s4 875d591f/699223, s4.debug a02d36db/715114). The day aeon lands the row that
-gate's doctoring arm panics by design (the literal is gone) — retire the three
-`section_row_fixture.rs` gates then; the seven live CRC gates carry the identity.
+Byte identity of that migration is already proven from the sigil side, and the gates
+are DIRECTION-AGNOSTIC: `both_spellings_of_the_section_row_build_the_same_rom` derives
+the head label from the live build's own section table (never a string constant), reads
+whichever spelling the live map currently carries, builds sonic4 plain + debug from a
+COPY of the aeon tree with the OTHER spelling, and asserts live == other == provenance
+tip (s4 875d591f/699223, s4.debug a02d36db/715114). The invariant "the two spellings
+are the same ROM" holds forever, so aeon's landing needs NO action on sigil's suite;
+the only real unmeasurable (neither spelling in the live map, or both) fails loud
+naming the section.
 
 The `repin.toml` `scene_registry` region end (`end = "EditorSceneBinding_OJZ_Act1_Sec0"`,
 its own comment says "when sigil's `section:` order row lands this end should follow
@@ -122,6 +125,8 @@ LMA, the exact analogue of what this parcel does for `order`.
   stamped pwd/HEAD/branch/aeon); restored — 18/18 unit, 3/3 fixture green.
   `zero_byte_section_row_is_inert` and the lexer witness are negative-space tests and
   pass under the sabotage by construction (they assert an absence).
+- The fixture gates keep working when `effects_gen.py` mints a different head label
+  (derived from the build) and after aeon migrates the row (direction-agnostic).
 - Live corpus unchanged: no `section:` row exists in either shipped map, so the parcel
   is a no-op on every shipped shape; the seven CRC gates prove it (see the suite log).
 - aeon landing tree moved 415e0b6a → 0e34408d (tracked files clean before and after);
