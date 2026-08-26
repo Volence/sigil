@@ -807,6 +807,11 @@ time — **ping them, don't assume they are watching**:
   struct field; and `sc_pad_5D`'s width is still hand-computed after the migration, since
   the assertion guards the constant rather than deriving it (that is queue item 4,
   `pad_to(N)`, parked). Push before citing `6fae4d6a` to them — verify against the remote.
+  **CLOSED 2026-08-26:** aeon landed the migration (merge of `parcel/field-align` `1c3dd0cf`,
+  verified reachable from aeon origin/master): both fields carry `(align: 2)`, both `ensure`s
+  are gone, zero-byte on all four shapes. Their follow-up claim that the `@align(N)`-on-a-struct-
+  field refusal had no test was REFUTED: `eval_layout.rs::vars_form_align_on_a_struct_field_is_refused_by_name`
+  asserts on the second half of the message; they grepped the first half.
 
 **Sigil owes aeon a warning before changing either of these** *(registered 2026-08-22)*:
 
