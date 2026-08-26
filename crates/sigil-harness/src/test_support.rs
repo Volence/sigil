@@ -649,14 +649,14 @@ pub fn reference_tree_for_profile(profile: &crate::native::GameProfile) -> Optio
 // lower aborted with `unknown name Game.SCANLINE_CAPS` / `unknown name
 // CAP_ANCHORS`.
 //
-// The fix is the `camera_port` idiom (a synthesized interface + one `implement`)
-// widened by one member, plus a synthesized `pub const CAP_*` block. Both halves
-// are DERIVED FROM THE AEON TREE AT TEST RUNTIME, never copied:
+// Both halves of the fix are DERIVED FROM THE AEON TREE AT TEST RUNTIME, never
+// copied:
 //
-//   * the bound mask is read from `games/sonic4/config/game.emp` — the port
-//     oracles compare against the SONIC4 reference ROM windows, so the binding
-//     must be sonic4's actual declaration or the gate would be measuring a
-//     specialisation the reference never took;
+//   * the contract env is bound from aeon's own interface against sonic4's own
+//     `implement Game` ([`scanline_caps_contract_env`], §1c) — the port oracles
+//     compare against the SONIC4 reference ROM windows, so the binding must be
+//     sonic4's actual declaration or the gate would be measuring a specialisation
+//     the reference never took;
 //   * the bit values are read from `engine/level/scene_dsl.emp`, whose comment
 //     block names those five `pub const CAP_*` lines THE AUTHORITY (two aeon
 //     tools already parse them the same way).
@@ -829,29 +829,22 @@ pub fn bg_layout_size_const_src(aeon: &std::path::Path) -> String {
     format!("module engine.bg_layout\npub const BG_LAYOUT_SIZE = {rhs}\n")
 }
 
-/// sonic4's declared parallax capability mask, read from its `implement Game`.
-/// The port oracles compare against the sonic4 reference ROM, so this — not a
-/// literal in Rust, and not demo's `0` — is the only binding under which the
-/// re-lower can reproduce the reference bytes.
-pub fn sonic4_scanline_caps(aeon: &std::path::Path) -> i128 {
-    emp_const_literal(&aeon.join("games/sonic4/config/game.emp"), "SCANLINE_CAPS")
-}
-
-/// The resolved game-contract env binding `Game.SCANLINE_CAPS` to
-/// [`sonic4_scanline_caps`] — the `camera_port` interface/implement idiom, one
-/// member wide. `u16` matches the member's declared type in
-/// `engine/system/game_contract.emp`.
+/// The resolved game-contract env the raster / parallax / buffers oracles lower
+/// against — sonic4's WHOLE contract via [`game_contract_env_from_aeon`] at the
+/// canonical shape, not a one-member stub.
+///
+/// Named for `Game.SCANLINE_CAPS` because that is the member those modules gate
+/// their blocks on today; the env carries every other member too, so a second
+/// member one of them starts reading resolves instead of aborting the lower. The
+/// mask itself still comes from sonic4's own `implement Game` — now by binding
+/// that file rather than by re-spelling one line of it.
 pub fn scanline_caps_contract_env(
     aeon: &std::path::Path,
 ) -> sigil_frontend_emp::contract::InterfaceEnv {
-    let caps = sonic4_scanline_caps(aeon);
-    game_contract_env(
-        "module engine.game_contract\npub interface Game {\n    const SCANLINE_CAPS: u16\n}\n",
-        &format!(
-            "module games.g.game\npub implement Game {{\n    const SCANLINE_CAPS = ${caps:04X}\n}}\n"
-        ),
-        &[],
-    )
+    let profile = crate::native::sonic4_profile(false);
+    let defines: Vec<(String, i128)> =
+        profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
+    game_contract_env_from_aeon(aeon, &profile, &defines)
 }
 
 // ── 5. The whole-path module rig ────────────────────────────────────────────

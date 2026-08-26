@@ -296,25 +296,18 @@ fn lower_boot(
         ],
     };
     // The game-contract env (L1 P2): boot.emp names `#Game.entry`,
-    // `#Game.ENTRY_ID`, and `invoke Game.boot_hook`. In the whole build the bind
-    // pass resolves these against games.sonic4.game; here a synthetic manifest
-    // supplies the same bindings — ENTRY_ID = 3 (GS_OJZ_SCROLL_TEST, both shapes),
-    // entry = GameState_OJZScroll_Init (the link target the value seam pins), and
-    // an unbound boot_hook (hotkeys OFF → the `invoke` emits nothing).
-    let env = sigil_harness::test_support::game_contract_env(
-        "module engine.game_contract\n\
-         type GameState = proc () clobbers(d0-d7/a0-a6)\n\
-         pub interface Game {\n\
-         \x20   const ENTRY_ID: u8\n\
-         \x20   proc entry: GameState\n\
-         \x20   hook boot_hook () clobbers(d0-d4/a0-a1) = empty\n\
-         }\n",
-        "module games.g.game\n\
-         pub implement Game {\n\
-         \x20   const ENTRY_ID = 3\n\
-         \x20   proc entry = GameState_OJZScroll_Init\n\
-         }\n",
-        &[],
+    // `#Game.ENTRY_ID`, and `invoke Game.boot_hook`. DERIVED from aeon's own
+    // contract and sonic4's own manifest under the canonical shape's defines, so
+    // ENTRY_ID and the entry symbol are read out of the manifest instead of copied
+    // here (a copy the day sonic4 re-points its entry would gate the wrong value),
+    // and boot_hook stays unbound because hotkeys are off in that shape.
+    let profile = sigil_harness::native::sonic4_profile(debug);
+    let contract_defines: Vec<(String, i128)> =
+        profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
+    let env = sigil_harness::test_support::game_contract_env_from_aeon(
+        &aeon_dir(),
+        &profile,
+        &contract_defines,
     );
     let (module, ldiags) = lower_module_with_contracts(&file, &opts, &env);
     assert!(
