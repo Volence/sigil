@@ -182,9 +182,13 @@ noticed and would otherwise have swallowed, which is a real but bounded win.
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — **3844 passed / 5 failed / 4 ignored** under
-  `SIGIL_STRICT_GATE=1` (sigil master `e36debf8`, aeon master `415e0b6a`, 2026-08-24),
-  with **zero `skip:` lines** in the run.
+  `AEON_DIR` set to the aeon tree — **3854 passed / 3 failed / 4 ignored** (3861 declared) under
+  `SIGIL_STRICT_GATE=1` (sigil master `c72bb419`, aeon `415e0b6a` clean checkout, 2026-08-26),
+  with **zero `skip:` lines** in the run. The three: the `act_descriptor_port` pair on the
+  repin pad-in-pin length (`REPIN-END`, emitted 0x27A vs pinned 0x27C — note the assert's
+  message text says "0x274", stale literal, cosmetic) and `soundbankhead` (`FIVE-REG`).
+  *(History: 3844/5/4 at `e36debf8`; the §4 parcel added 8 tests → 3852/5/4; the closure
+  landing cleared two → 3854/3/4.)*
   **THE FIVE FAILURES ARE REAL AND ARE NOT SIGIL'S** — recorded as the bar rather than
   as an aspiration, because a bar nobody can hit is a bar nobody checks against.
   `act_descriptor_region_matches_reference`, `act_descriptor_debug_region_matches_reference`,
