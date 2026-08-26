@@ -123,6 +123,26 @@ the owner's words, flagged there as *"this lane did not witness that utterance"*
 witnessed firsthand here, so the construct no longer stands on a relayed grant. The draft text
 itself is unaffected; only its authority line is.
 
+**The spec text is LANDED and un-DRAFTed at empyrean `2000b5ca03592377ea1881671db53e03ad36f264`**
+(reachable from their `origin/main`, verified here after their push, not from the local tracking
+ref). D2.37 is `(align: N)`, D2.38 is `pad`/`pad_to`, §4.3.1 carries the construct text lifted
+verbatim from this lane's draft. **Cite that SHA from the implementation parcel.**
+
+**What the review of that text bought, and the debt it left here.** The spec had carried, from
+this lane's own field-align packet §10, the claim that the six `(align: N)` diagnostic strings are
+a cross-repo interface aeon fixtures assert on. **They are not: none of the six appears anywhere in
+aeon** — not in the 44-case `tools/emp_expect_fail.py` negative-build lane, not in the poison
+modules, nowhere. Checked here and independently by the hub. It was a name doing a behaviour's
+work, and it would have frozen six strings against a consumer that does not exist while telling
+every reader a gate protected the wording. The producer side is thinner than the spec implied too,
+measured string by string at `db2dacce`: #1 well pinned; #2 only on `must be a power of two` (the
+parenthetical free); #3 only on ``asserts its alignment with `(align: N)` `` (the leading clause
+free); #4, #5 and #6 pinned by nothing in the workspace.
+**Owed by this lane, in the `pad`/`pad_to` parcel:** tests for #4-#6, widen #2/#3 to the full
+strings, and pin the Scope clause (true by construction — the check walks only this struct's own
+fields — but unpinned, and marked as such in the spec). The hub strengthens that clause on a
+message from here once it lands.
+
 Sequencing, so nobody lands half of it: the spec text is **empyrean's to land** — sigil does not
 land `.emp` language spec, `SIGIL_SPEC2_LANGUAGE.md` is their file — lifted verbatim from
 `docs/superpowers/notes/2026-08-26-pad-to-spec-draft.md`. **Nothing is implemented**; no crate
