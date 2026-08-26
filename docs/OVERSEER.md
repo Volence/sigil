@@ -734,6 +734,29 @@ by what the frozen table lists** (bar 8) — the table is the artifact whose aut
 retired, so taking it as the enumeration is the shared-frame failure aimed at ourselves.
 BGROOM-2's leftovers are the same territory and should be read as part of this, not beside it.
 
+**STATE AS OF 2026-08-26 EVENING — a fresh boot inherits exactly this.**
+
+- **The constraint inventory is COMPLETE and pushed**:
+  `docs/superpowers/notes/2026-08-26-placement-constraint-inventory.md`. Eight rows, no
+  row left named-but-unlocated. R7 is the one to read first — alignment is *inferred* from
+  each pin's own address (`native::packed_align_of` = largest power of two dividing the
+  frozen base), so a repin changes a section's alignment with no alignment code changing,
+  and only two labels are guarded against the silent-audio consequence.
+- **Aeon's `parcel/rom-relayout` is IN FLIGHT and holds a sigil branch of the same name.**
+  Their agent, their landing, through the aeon lane. **This lane holds no refreeze until
+  that pair lands**, and owes it a review of the sigil half when they send the pushed SHAs.
+  Their agreed landing requirement includes a per-shape old/new base + old/new quantum
+  table for every moved row, and seam2 predicted-vs-`.lst` bases for every sound label.
+- **Island-order piece (1) LANDED** at `1a03c75c`: the MDDBG blob-end guard is proven to
+  fire, red-first against two mutants. **Piece (2) — the per-shape non-vacuous-arm
+  assertion that closes the fail-open on a missing `ErrorHandlerBlob` label — is QUEUED
+  BEHIND THAT PAIR** because it touches `native.rs`. Bar moved 3939 → 3943 declared.
+- **The 79 pad-sweeping region ends convert before the flip** and are this lane's to
+  sequence; they touch the aeon-owned lane files, so they wait for the pair too.
+- **Ruled jointly with aeon and NOT to be re-opened unilaterally:** when the rules are
+  written, declare each section's alignment as what its CONTENT needs; never transcribe
+  the accidental quanta. Anything that held only by accident stops holding once, visibly.
+
 **Not started, and two triggers are not this lane's:** the hub declares the project id (it has
 said one word from the owner is enough, the yes being banked at aeon `822c382a`), and step 2 is
 aeon's ROM-RELAYOUT, which their queue holds for the owner's go.
