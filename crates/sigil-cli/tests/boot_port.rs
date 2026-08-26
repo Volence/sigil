@@ -78,30 +78,49 @@ fn golden(name: &str) -> Option<Vec<u8>> {
 }
 
 /// The build-floating values boot's imm-links resolve against (Z80 driver
-/// size, game entry contract), FROZEN with provenance at the golden freeze.
+/// size, game entry address). Both come from committed, frozen sources — never
+/// from the live tree.
 ///
-/// These were formerly parsed live from the tree's `s4.lst` — a fragile
-/// dependency once the flip made the tree listing sigil-canonical (any
-/// `sigil build` overwrites it and asl can no longer regenerate it). They
-/// are now pinned to the frozen-golden truth (the declared-sizes doctrine:
-/// frozen, provenance'd). If the Z80 driver or game config changes, re-freeze
-/// the golden ROMs (`native_full_rom` fires) and re-pin here in lockstep.
+/// The tree's `s4.lst` is NOT a usable source: post-flip it is sigil-canonical
+/// (any `sigil build` overwrites it, and asl can no longer regenerate it), so
+/// parsing it would make this gate depend on whatever was built last. Each
+/// value therefore reads a frozen artifact instead:
 ///
-/// Provenance — the values in the frozen goldens (`golden/s4.bin` 414K /
-/// `golden/s4.debug.bin`), matching the asl-canonical `s4.lst`/`s4.debug.lst`
-/// at the freeze commit:
-///   Z80_SOUND_SIZE  plain $1814   debug $1896   (the resident Z80 driver span)
-///   GameState_OJZScroll_Init  plain $7D280 debug $7F064  (the Game.entry link target)
+/// - `Z80_SOUND_SIZE` — the resident Z80 driver span, pinned here against the
+///   frozen goldens (`golden/s4.bin`, `golden/s4.debug.bin`). It is a driver
+///   SIZE, not an address, so it moves only when the Z80 driver itself changes;
+///   a cartridge re-layout leaves it alone. `seam1::BLOB_LEN_{PLAIN,DEBUG}`
+///   holds the same measurement as its own tripwire — see the note on
+///   `seam1_native_link::blob_lengths_are_canonical` for why the two are not
+///   automatically equal (the blob is padded to an even length inside the
+///   `Z80_Sound_Start`/`_End` brackets).
+/// - `GameState_OJZScroll_Init` — read from `pins::OJZ_SCROLL_TEST`, whose
+///   `repin.toml` region declares `start = "GameState_OJZScroll_Init"`. The
+///   pin's base IS this symbol's address by construction, regenerated from the
+///   shipped resolve at every freeze, so there is nothing to re-type here when
+///   the cartridge is re-laid-out.
 ///
-/// L1 P2: `#Game.ENTRY_ID` is now a comptime const (3), folded from the game
-/// contract env — no link symbol; and `#Game.entry`'s link target is
-/// `GameState_OJZScroll_Init` (the game proc), not the retired `Game_Entry` equ.
+/// These are INPUTS to boot's imm-links, not the gate's oracle: the oracle is
+/// the frozen golden ROM window that `run` compares against. A wrong value
+/// emits wrong bytes and the comparison fails — which is what makes reading the
+/// pin safe, and additionally makes this gate an independent alarm on a
+/// mis-derived `OJZ_SCROLL_TEST`.
+///
+/// If the Z80 driver or the game config changes, re-freeze the golden ROMs
+/// (`native_full_rom` fires) and re-pin `Z80_SOUND_SIZE` in lockstep.
+///
+/// `#Game.ENTRY_ID` is a comptime const folded from the game contract env, not
+/// a link symbol; `#Game.entry`'s link target is `GameState_OJZScroll_Init`,
+/// the game proc.
 fn frozen_symbol(debug: bool, name: &str) -> u64 {
     match (name, debug) {
-        ("Z80_SOUND_SIZE", false) => 0x1814,   // sound pkg 4 (blob 6164, already even)
-        ("Z80_SOUND_SIZE", true) => 0x1896,    // sound pkg 4 (blob 6294, already even)
-        ("GameState_OJZScroll_Init", false) => 0xA4320,  // rom-relayout: +0x49D0 (2026-08-26, aeon parcel/rom-relayout — the Z80 banks moved from $48000/$58000 to $90000/$A0000 after the data region, Map_Tails/Map_Knuckles un-exiled back below them; the tail delta is the reserve + bank pad now between the data and the banks; cross-checked against pins::OJZ_SCROLL_TEST.plain_base)  // sfx-flight: +0xC0  // tails-data: +0x20F60 — Map_Tails (132 KB) is exiled to the ROM tail, ahead of the game states  // knuckles-def: +0x226D0 — Map_Knuckles takes the SAME exile, for the same reason, directly behind Tails'
-        ("GameState_OJZScroll_Init", true) => 0xA60F4,   // rom-relayout: +0x49D0, same delta as plain for the same reason (both data ends round to the same $90000 bank boundary); cross-checked against pins::OJZ_SCROLL_TEST.debug_base  // sfx-flight: +0xC0   // tails-data: +0x20F60, same exile as plain  // knuckles-def: +0x226D0, same exile again  // blanket-restore: -0x10, DEBUG ONLY — boot's own region shrank 0x10 in the debug shape (the deleted `ori.l ... VDP_Dirty_Mask` crossed a 16-byte align boundary), and unlike the -0x30 engine-bank slide that shrink is NOT re-absorbed by the org anchor before the ROM tail, so the game states slide with it. The plain value holds: its -0x30 IS absorbed. Cross-checked against pins::OJZ_SCROLL_TEST.debug_base (0xA1724) — the same address derived independently by repin.
+        // The resident Z80 driver span (blob 6164 / 6294 bytes, both already even).
+        ("Z80_SOUND_SIZE", false) => 0x1814,
+        ("Z80_SOUND_SIZE", true) => 0x1896,
+        // `#Game.entry`'s link target. The `ojz_scroll_test` region begins at this
+        // symbol, so its base is the symbol's ROM address.
+        ("GameState_OJZScroll_Init", false) => u64::from(pins::OJZ_SCROLL_TEST.plain_base),
+        ("GameState_OJZScroll_Init", true) => u64::from(pins::OJZ_SCROLL_TEST.debug_base),
         _ => panic!("no frozen value pinned for symbol `{name}` (debug={debug})"),
     }
 }
