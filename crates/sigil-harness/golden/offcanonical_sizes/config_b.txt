@@ -37,14 +37,14 @@ GameLoop 0xd20
 GameState_OJZScroll_Init 0x89e70
 GetSineCosine 0x1000
 HBlank_Install 0xbe0
-HeightMaps 0x2a3c0
+HeightMaps 0x6d9f0
 InitObjectRAM 0x14a4
 InitSpriteSystem 0x17a0
 Init_DMA_Queue 0x442
 Init_SpriteTable 0x770
 Level_LoadArt 0x5c10
 Load_Object 0x2cf0
-Map_Tails 0x46840
+Map_Tails 0x2a3c0
 Map_TestObj 0x2935e
 Map_TestObj_End 0x2938e
 OJZ_Act1_Descriptor 0x166f0
