@@ -146,8 +146,23 @@ accident, and it stays. What shipped:
 - Build-time cost: clean `sigil build --game sonic4` ≈ 1.20 s before the fix,
   ≈ 1.39 s after (3× each, same machine) — the measuring rounds now lower every
   relaxable through the tolerant resolve; grown ≈ 1.38 s.
-- Full-suite totals: see the suite log
-  (`target/suite-measure-at-packed-base.log`, stamped pwd/HEAD/branch/aeon SHA).
+- Full suite (record run, stamped pwd/HEAD/branch/aeon SHA in
+  `target/suite-measure-at-packed-base.log`; HEAD 928514cd, aeon 058ad606, no commits
+  between build and run): exit 0, wall 141 s, **341 `test result:` lines, 3878
+  passed / 0 failed / 4 ignored, zero skips** — 3882 declared `#[test]`s. Bar on
+  master was 3872/0/4 (3876 declared); the +6 are exactly this parcel's tests
+  (`fourteen_bytes_of_upstream_code_growth_still_builds`,
+  `parcel_scale_growth_packs_downstream_and_reports_the_drift`, and the four
+  `derived_layout_tests` additions). No pre-existing test changed status. A first
+  (discarded) run tripped `version_reports_the_head_of_the_tree_it_was_built_from`
+  because a docs-only commit landed mid-run — the suite polices the no-commits
+  invariant itself; the record run is clean.
+- The seven full-image CRC gates, all green against `.aeon-landing` 058ad606:
+  `native_full_sonic4_plain`, `native_full_sonic4_debug`, `config_a_full_file`,
+  `config_b_full_file`, `demo_plain_full_file`, `demo_debug_full_file`,
+  `lean_full_file`. CLI cross-check on the clean shadow copy: s4 875d591f/699223,
+  s4.debug a02d36db/715114, demo bf2cdb42/96412, demo.debug 62a0019e/101120 — the
+  branch's provenance tip exactly.
 
 ## Reply to EMP_PITFALLS §11 (what aeon can now un-pin)
 
