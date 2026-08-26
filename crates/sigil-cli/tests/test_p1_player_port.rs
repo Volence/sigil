@@ -19,9 +19,21 @@
 //! - **vram_bytes HOISTED to objdef.emp** (2nd consumer, row 63) — sonic + the
 //!   retrofitted test_animated share it.
 //!
+//! ## The two rig shapes
+//!
+//! `player_common` lowers ONE file against an ambient set assembled here.
+//! `sonic` does NOT: its comptime closure is followed by the native whole-program
+//! build and the one section is sliced out of it, and its outbound symbol seam is
+//! read from its own `extern("…")` calls. A hand-listed set is a second, silent
+//! copy of what the module already declares, and it rots in both directions —
+//! this one carried three symbols from an era when Sonic had code while missing
+//! the ability module the record grew.
+//!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`). Absent, every test here SKIPS green —
-//! unless `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
+//! `/home/volence/sonic_hacks/aeon`), BUILT — the sonic gates read each shape's
+//! sibling `.lst` for their seam addresses as well as the `.bin` for the window.
+//! Absent, every test here SKIPS green — unless `SIGIL_STRICT_GATE=1` makes a
+//! missing reference a hard failure.
 //!
 //! ```text
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test test_p1_player_port
@@ -221,98 +233,112 @@ fn ref_window(aeon: &Path, rom: &str, base: u32, len: usize) -> Option<Vec<u8>> 
 
 // ─── SONIC region ────────────────────────────────────────────────────────────
 
+/// The files whose link asserts the sonic oracle decides against its own AS-side
+/// seam. `sonic.emp`'s two `ensure`s fold at comptime (they read only constants),
+/// so this names the module under test alone: an assert it grows that DOES reach
+/// link rides along and is checked here, while the rest of the program's asserts
+/// reference labels a single-section oracle never links.
+const SONIC_ASSERT_FILES: &[&str] = &["games/sonic4/player/sonic.emp"];
+
 struct SonicShape {
-    perform_dplc: u32,
-    ability_none: u32,
-    draw_sprite: u32,
-    map_sonic: u32,
-    ani_sonic: u32,
-    dplc_sonic: u32,
-    art_sonic: u32,
-    /// knuckles-def (C4 task 9): `CharDef_Sonic.cd_palette` — the shared CRAM
-    /// line 0 Sonic and Tails both name (a real pointer, not 0, so the roster
-    /// cycle restores it on the way back from Knuckles). It lives in
-    /// knuckles_data, so it is cross-seam from `sonic`.
-    pal_sonic_tails: u32,
+    debug: bool,
+    /// The reference ROM and its sibling sigil-canonical listing — the same
+    /// build, so a seam symbol's address here and the operand encoded in the
+    /// window cannot disagree.
+    rom: &'static str,
+    listing: &'static str,
     base: u32,
     len: usize,
 }
 
 const SONIC_PLAIN: SonicShape = SonicShape {
-    perform_dplc: pins::DPLC.plain_base,
-    ability_none: pins::ABILITY_NONE.plain,
-    draw_sprite: pins::DRAW_SPRITE.plain,
-    map_sonic: pins::MAP_SONIC.plain,
-    ani_sonic: pins::SONIC_ANIMS.plain_base,
-    dplc_sonic: pins::DPLC_SONIC.plain,
-    art_sonic: pins::ART_SONIC.plain,
-    pal_sonic_tails: pins::PAL_SONIC_TAILS.plain,
+    debug: false,
+    rom: "s4.bin",
+    listing: "s4.lst",
     base: pins::SONIC.plain_base,
     len: pins::SONIC.plain_len,
 };
 const SONIC_DEBUG: SonicShape = SonicShape {
-    perform_dplc: pins::DPLC.debug_base,
-    ability_none: pins::ABILITY_NONE.debug,
-    draw_sprite: pins::DRAW_SPRITE.debug,
-    map_sonic: pins::MAP_SONIC.debug,
-    ani_sonic: pins::SONIC_ANIMS.debug_base,
-    dplc_sonic: pins::DPLC_SONIC.debug,
-    art_sonic: pins::ART_SONIC.debug,
-    pal_sonic_tails: pins::PAL_SONIC_TAILS.debug,
+    debug: true,
+    rom: "s4.debug.bin",
+    listing: "s4.debug.lst",
     base: pins::SONIC.debug_base,
     len: pins::SONIC.debug_len,
 };
 
-fn compile_sonic(aeon: &Path, shape: &SonicShape) -> (sigil_link::LinkedImage, usize) {
-    let types = || parse_file(&aeon.join("engine/system/types.emp")).items;
-    let sst = || parse_file(&aeon.join("engine/objects/sst.emp")).items;
-    let constants = || parse_file(&aeon.join("engine/system/constants.emp")).items;
-    let objdef = || parse_file(&aeon.join("engine/objects/objdef.emp")).items;
-    // VRAM_TEST_SONIC's authority (Parcel F: config/constants.asm → `.emp`).
-    let game_consts = || parse_file(&aeon.join("games/sonic4/config/constants.emp")).items;
+/// `sonic.emp`'s OUTBOUND symbol seam, read out of the module's own source: every
+/// `extern("NAME")` it names, first-appearance order, deduplicated. The record is
+/// pure data, so this is its complete cross-seam surface.
+///
+/// Derived rather than listed for the same reason the ambient set is (see
+/// [`compile_sonic`]): a hand list rots in BOTH directions, and this one had —
+/// it still pinned `Perform_DPLC` / `Draw_Sprite` / `Ability_None` from the era
+/// when Sonic had code, and did not pin the ability the record started naming.
+fn sonic_extern_names(aeon: &Path) -> Vec<String> {
+    let path = aeon.join("games/sonic4/player/sonic.emp");
+    let src = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let mut names: Vec<String> = Vec::new();
+    for (i, _) in src.match_indices("extern(\"") {
+        let rest = &src[i + "extern(\"".len()..];
+        let Some(end) = rest.find('"') else { continue };
+        let name = rest[..end].to_string();
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    assert!(!names.is_empty(), "{} names no extern() at all", path.display());
+    names
+}
 
-    let opts = LowerOptions {
-        initial_cpu: Cpu::M68000,
-        include_root: Some(aeon.join("games/sonic4/player")),
-        embed_base: None,
-        defines: vec![],
-    };
+/// The reference listing for `shape`, or `None` (skip green) when it is absent —
+/// the same policy [`ref_window`] applies to the ROM beside it. The seam
+/// addresses come from this file, so a compile without it would link against
+/// nothing; the skip has to happen BEFORE the compile, not after.
+fn ref_listing(aeon: &Path, shape: &SonicShape) -> Option<PathBuf> {
+    let path = aeon.join(shape.listing);
+    if path.is_file() {
+        return Some(path);
+    }
+    if strict_gate() {
+        panic!("SIGIL_STRICT_GATE set but reference missing: {}", path.display());
+    }
+    eprintln!("skip: reference listing not at {} (set AEON_DIR)", path.display());
+    None
+}
 
-    let main = parse_file(&aeon.join("games/sonic4/player/sonic.emp"));
-    let file = with_ambient(
-        vec![
-            types(), sst(), constants(), objdef(), game_consts(),
-            character_def_struct_items(aeon), player_block_struct_items(aeon),
-        ],
-        main,
-    );
-    let (module, ldiags) = lower_module(&file, &opts);
-    assert!(
-        ldiags.iter().all(|d| d.level != sigil_span::Level::Error),
-        "sonic lower errors: {ldiags:?}"
-    );
-    let guards = sigil_harness::test_support::guard_assert_count(&module.link_asserts);
-    let mut sections = module.sections;
+/// Compile the `sonic` region against the reference.
+///
+/// The module's `use` closure — `engine.structs`'s `CharacterDef`, the physics
+/// constants, `games.sonic4.ram`'s `PlayerBlock`/`PHYS_ROW_WORDS`, the game
+/// config's `VRAM_TEST_SONIC`, and `games.sonic4.player_instashield`'s ability
+/// box — is followed by the NATIVE build itself, the one path the ROM is built
+/// by. No hand-listed ambient set: a dependency the record grows is lowered by
+/// construction, and its absence reads as the resolver's own `unknown …`
+/// diagnostic instead of a name that survives as a label into a `u16` field.
+fn compile_sonic(aeon: &Path, shape: &SonicShape, listing: &Path) -> sigil_link::LinkedImage {
+    let profile = sigil_harness::native::sonic4_profile(shape.debug);
+    let sigil_harness::test_support::NativeSection { section, .. } =
+        sigil_harness::test_support::native_section(aeon, &profile, "sonic", SONIC_ASSERT_FILES)
+            .unwrap_or_else(|e| panic!("native sonic closure: {e}"));
 
     let map = sigil_link::load_map(&map_toml("sonic", shape.base, shape.len)).expect("map");
+    let mut sections = vec![section];
     let pdiags = place_sections(&mut sections, &map);
     assert!(
         pdiags.iter().all(|d| d.level != sigil_span::Level::Error),
         "sonic place_sections errors: {pdiags:?}"
     );
 
+    let mut groups: Vec<Vec<Section>> = vec![as_constant_equs()];
+    for name in sonic_extern_names(aeon) {
+        let vma = sigil_harness::test_support::listing_symbol_addr(listing, &name)
+            .unwrap_or_else(|| panic!("listing {} vanished mid-run", listing.display()));
+        groups.push(as_label_at(&name, vma));
+    }
+
     let mut lma = 0x0100_0000u32;
-    for group in [
-        &mut as_constant_equs(),
-        &mut as_label_at("Perform_DPLC", shape.perform_dplc),
-        &mut as_label_at("Ability_None", shape.ability_none),
-        &mut as_label_at("Draw_Sprite", shape.draw_sprite),
-        &mut as_label_at("Map_Sonic", shape.map_sonic),
-        &mut as_label_at("Ani_Sonic", shape.ani_sonic),
-        &mut as_label_at("DPLC_Sonic", shape.dplc_sonic),
-        &mut as_label_at("Art_Sonic", shape.art_sonic),
-        &mut as_label_at("Pal_SonicTails", shape.pal_sonic_tails),
-    ] {
+    for group in &mut groups {
         for sec in group.iter_mut() {
             sec.lma = lma;
             sec.placement = SectionPlacement::Pinned;
@@ -324,9 +350,8 @@ fn compile_sonic(aeon: &Path, shape: &SonicShape) -> (sigil_link::LinkedImage, u
 
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("sonic resolve_layout failed: {d:?}"));
-    let linked = sigil_link::link(&resolved, &SymbolTable::new())
-        .unwrap_or_else(|d| panic!("sonic link failed: {d:?}"));
-    (linked, guards)
+    sigil_link::link(&resolved, &SymbolTable::new())
+        .unwrap_or_else(|d| panic!("sonic link failed: {d:?}"))
 }
 
 fn sonic_region_bytes(linked: &sigil_link::LinkedImage) -> Vec<u8> {
@@ -336,9 +361,10 @@ fn sonic_region_bytes(linked: &sigil_link::LinkedImage) -> Vec<u8> {
 #[test]
 fn p1_sonic_region_matches_reference() {
     let Some(aeon) = ref_sources() else { return };
-    let (linked, _g) = compile_sonic(&aeon, &SONIC_PLAIN);
+    let Some(listing) = ref_listing(&aeon, &SONIC_PLAIN) else { return };
+    let linked = compile_sonic(&aeon, &SONIC_PLAIN, &listing);
     let got = sonic_region_bytes(&linked);
-    if let Some(want) = ref_window(&aeon, "s4.bin", SONIC_PLAIN.base, SONIC_PLAIN.len) {
+    if let Some(want) = ref_window(&aeon, SONIC_PLAIN.rom, SONIC_PLAIN.base, SONIC_PLAIN.len) {
         assert_region_matches(&got, &want, "sonic (plain)");
     }
 }
@@ -346,9 +372,10 @@ fn p1_sonic_region_matches_reference() {
 #[test]
 fn p1_sonic_debug_region_matches_reference() {
     let Some(aeon) = ref_sources() else { return };
-    let (linked, _g) = compile_sonic(&aeon, &SONIC_DEBUG);
+    let Some(listing) = ref_listing(&aeon, &SONIC_DEBUG) else { return };
+    let linked = compile_sonic(&aeon, &SONIC_DEBUG, &listing);
     let got = sonic_region_bytes(&linked);
-    if let Some(want) = ref_window(&aeon, "s4.debug.bin", SONIC_DEBUG.base, SONIC_DEBUG.len) {
+    if let Some(want) = ref_window(&aeon, SONIC_DEBUG.rom, SONIC_DEBUG.base, SONIC_DEBUG.len) {
         assert_region_matches(&got, &want, "sonic (debug)");
     }
 }
@@ -368,31 +395,29 @@ fn act_struct_items(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::Item
 }
 
 /// The `PlayerBlock` record (games/sonic4/config/ram.emp). C1 made the game RAM
-/// module the AUTHOR of the per-slot player layout, and both modules under test
-/// bind to it at comptime — `sonic.emp` sizes PhysTable_Sonic against
-/// `offsetof(PlayerBlock, quadrant)`, `player_common.emp` strides slots by
-/// `sizeof(PlayerBlock)` and checks its PBLK_* displacements the same way — so the
-/// isolated-lowering ambient set has to carry the struct or lowering fails
-/// outright. Filtered to the struct alone: ram.emp's `region`/`vars` items would
-/// drag the whole game RAM map into these single-module compiles.
+/// module the AUTHOR of the per-slot player layout, and `player_common.emp` binds
+/// to it at comptime — it strides slots by `sizeof(PlayerBlock)` and checks its
+/// PBLK_* displacements the same way — so this rig's isolated-lowering ambient set
+/// has to carry the struct or lowering fails outright. Filtered to the struct
+/// alone: ram.emp's `region`/`vars` items would drag the whole game RAM map into
+/// the single-module compile.
 fn player_block_struct_items(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::Item> {
     use sigil_frontend_emp::ast::Item;
     let file = parse_file(&aeon.join("games/sonic4/config/ram.emp"));
     file.items
         .into_iter()
-        // PHYS_ROW_WORDS rides along (character-lens-sweep, 2026-08-13): it is the
-        // shared authority for the physics row's length, used BOTH as each
-        // PhysTable_*'s declared array size and by their drift guards, so a module
-        // carrying a PhysTable cannot lower without it.
+        // PHYS_ROW_WORDS rides along: it is the shared authority for the physics
+        // row's length, used BOTH as each PhysTable_*'s declared array size and by
+        // their drift guards, so a module carrying a PhysTable cannot lower without it.
         .filter(|it| matches!(it, Item::Struct(d) if d.name == "PlayerBlock")
             || matches!(it, Item::Const(d) if d.name == "PHYS_ROW_WORDS"))
         .collect()
 }
 
-/// The `CharacterDef` record (engine/structs.emp). Both `sonic.emp` (which IS a
-/// `CharacterDef` literal now) and `player_common.emp` (which dereferences one
-/// through `Player_Chardef`) `use` it, so the isolated-lowering ambient set has
-/// to carry it or lowering fails outright. Same shape as `act_struct_items`.
+/// The `CharacterDef` record (engine/structs.emp). `player_common.emp`
+/// dereferences one through `Player_Chardef` and `use`s it, so this rig's
+/// isolated-lowering ambient set has to carry it or lowering fails outright. Same
+/// shape as `act_struct_items`.
 fn character_def_struct_items(aeon: &std::path::Path) -> Vec<sigil_frontend_emp::ast::Item> {
     use sigil_frontend_emp::ast::Item;
     let file = parse_file(&aeon.join("engine/structs.emp"));
@@ -812,9 +837,11 @@ fn p1_doctored_reference_diverges() {
 #[test]
 fn p1_sonic_doctored_reference_diverges() {
     let Some(aeon) = ref_sources() else { return };
-    let (linked, _g) = compile_sonic(&aeon, &SONIC_PLAIN);
+    let Some(listing) = ref_listing(&aeon, &SONIC_PLAIN) else { return };
+    let linked = compile_sonic(&aeon, &SONIC_PLAIN, &listing);
     let got = sonic_region_bytes(&linked);
-    let Some(mut want) = ref_window(&aeon, "s4.bin", SONIC_PLAIN.base, SONIC_PLAIN.len) else {
+    let Some(mut want) = ref_window(&aeon, SONIC_PLAIN.rom, SONIC_PLAIN.base, SONIC_PLAIN.len)
+    else {
         return;
     };
     want[0] ^= 0xFF;

@@ -2718,3 +2718,39 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   produce, so the exit is argued-unreachable and its payload (`width_flip_report`) is
   unit-tested directly instead. — OPEN (kill: a synthetic Org/negative-pad construction
   that oscillates for real, or a proof pass that turns the argument into an invariant)
+
+- [PORT-RIG-IMPORTS parcel, 2026-08-26] **16 port rigs still derive their ambient set
+  from a HAND LIST, and the fault class has now fired three times:** rings, the act
+  descriptor, and (this parcel) `test_p1_player_port`'s `compile_sonic`, each when the
+  module under test grew a `use` the rig's vec did not. `compile_sonic` moved to the
+  act-descriptor closure (`native_section` — build the native whole program, slice the
+  one section); the remaining `with_ambient` call sites are 36 across
+  `animate_port` · `children_port` · `collision_port` · `core_port` · `dplc_port` ·
+  `entity_window_port` · `load_object_port` · `rings_port` · `sprites_port` ·
+  `test_objects_port` · `test_g1..g4_objects_port` · `test_mappings_port` ·
+  `test_p2_player_states_port` · `test_p4_player_sensors_port` · `tile_cache_port`.
+  Not converted here: each carries its own extern seam, doctoring hooks and drift-guard
+  counts, so each conversion needs its own red-first + byte-gate re-proof, and a
+  16-rig sweep with one verification pass would be exactly the delivery this parcel
+  refused. NOT ALL ARE CONVERTIBLE: a rig that compiles its module under DOCTORED
+  `-D` defines (`rings_port`'s define matrix) cannot slice a whole-program build,
+  because the program it would slice is the undoctored one — those need a derived
+  closure that still lowers in isolation, which is a different mechanism from
+  `native_section` and does not exist yet. The rigs whose hand list is the POINT
+  (`tranche5_negative_probes`' synthetic stub probes the binder over a define matrix
+  no manifest spans) must not be converted at all. — OPEN (kill: every rig whose
+  module ships in a real program routes through `native_section`; the doctored-define
+  rigs get a `use`-closure ambient builder; `with_ambient` survives only where a
+  deliberate synthetic set is the thing under test, each such site saying so)
+
+- [PORT-RIG-IMPORTS parcel, 2026-08-26] **A port rig's OUTBOUND extern seam rots as
+  silently as its ambient set, and nothing gates it:** `compile_sonic` pinned
+  `Perform_DPLC` / `Draw_Sprite` / `Ability_None` long after `sonic.emp` stopped being
+  code and named none of them, while missing `Ability_InstaShield`, which the record
+  had grown. A stale pin costs nothing visible (an unreferenced synthetic label links
+  clean), so the list drifts until a MISSING one fails — and only then. This parcel
+  derived the sonic seam from the module's own `extern("…")` calls; every other rig
+  still hand-lists its labels. — OPEN (kill: enumerate a section's unresolved symbol
+  references from its fragments — no such API exists in `sigil-ir`/`sigil-link` today —
+  so a rig can assert its synthetic-label set equals what the section actually needs,
+  turning both a stale and a missing pin into a failure)

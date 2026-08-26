@@ -224,6 +224,22 @@ pub struct Evaluator<'a> {
     /// is a plain memo with no cycle machinery; it exists so a shared evaluator
     /// answers repeated queries once.
     data_memo: HashMap<String, crate::value::DataBuf>,
+    /// The breadcrumb into the value [`lower_to_data`](Evaluator::lower_to_data)
+    /// is emitting RIGHT NOW, innermost last: the data item's name, then one
+    /// segment per struct field (`.name`) / array or tuple element (`[i]`)
+    /// descended through. An emission diagnostic renders it so the reader is told
+    /// WHICH field of a 12-field record is wrong instead of being handed the
+    /// record. Empty outside a data-item emission (a `table` row, a `span()`
+    /// probe), where the diagnostics fall back to their un-located wording.
+    pub(crate) emit_path: Vec<String>,
+    /// The literal AST node behind each [`emit_path`](Self::emit_path) segment,
+    /// or `None` where the value did not come from one (a comptime fn returned
+    /// the struct, `import` built it from TOML). Kept in lockstep with
+    /// `emit_path` — one entry pushed per segment either way, so a `None` can
+    /// never let a nested lowering read its GRANDPARENT's literal and narrow a
+    /// span onto the wrong expression. This is what turns a whole-item span into
+    /// the offending field's own.
+    pub(crate) emit_lits: Vec<Option<&'a ast::Expr>>,
     /// The names of structs whose CHECKED LITERAL is currently being constructed,
     /// in reference order (T7). A struct field's `= default` expression can
     /// construct the same struct (`struct A { x: A = A{} }`), which would recurse
@@ -564,6 +580,8 @@ impl<'a> Evaluator<'a> {
             interfaces: HashMap::new(),
             in_progress: Vec::new(),
             data_memo: HashMap::new(),
+            emit_path: Vec::new(),
+            emit_lits: Vec::new(),
             struct_construct_in_progress: Vec::new(),
             refine_check_in_progress: Vec::new(),
             asm_counter: 0,

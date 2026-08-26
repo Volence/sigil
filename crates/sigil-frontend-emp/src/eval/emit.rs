@@ -15,6 +15,25 @@ use crate::layout::{prim_bounds, Ty};
 use crate::value::{Cell, DataBuf, Value};
 use sigil_span::Span;
 
+/// One step of an emission breadcrumb — a struct field by name, or an array /
+/// tuple element by index. See [`Evaluator::emit_path`].
+pub(crate) enum EmitSeg<'s> {
+    /// `.name` — a struct field.
+    Field(&'s str),
+    /// `[i]` — an array or tuple element.
+    Index(usize),
+}
+
+impl EmitSeg<'_> {
+    /// The segment's spelling in a rendered breadcrumb.
+    fn spell(&self) -> String {
+        match self {
+            EmitSeg::Field(n) => format!(".{n}"),
+            EmitSeg::Index(i) => format!("[{i}]"),
+        }
+    }
+}
+
 impl<'a> Evaluator<'a> {
     /// Lower a comptime `value` to a checked, CPU-neutral [`DataBuf`], range-
     /// checking it against `ty` (T7, D-P3.5 / D-P3.3). A [`Poison`](Value::Poison)
@@ -215,8 +234,10 @@ impl<'a> Evaluator<'a> {
             );
         }
         let mut buf = DataBuf::empty();
-        for el in elems {
-            buf = DataBuf::concat(buf, self.lower_to_data(el, elem, span));
+        for (i, el) in elems.iter().enumerate() {
+            let seg = EmitSeg::Index(i);
+            let child = self.emit_child_expr(&seg);
+            buf = DataBuf::concat(buf, self.lower_child(el, elem, span, seg.spell(), child));
         }
         buf
     }
@@ -279,8 +300,10 @@ impl<'a> Evaluator<'a> {
             );
         }
         let mut buf = DataBuf::empty();
-        for (v, t) in vals.iter().zip(elem_tys.iter()) {
-            buf = DataBuf::concat(buf, self.lower_to_data(v, t, span));
+        for (i, (v, t)) in vals.iter().zip(elem_tys.iter()).enumerate() {
+            let seg = EmitSeg::Index(i);
+            let child = self.emit_child_expr(&seg);
+            buf = DataBuf::concat(buf, self.lower_child(v, t, span, seg.spell(), child));
         }
         buf
     }
@@ -335,7 +358,9 @@ impl<'a> Evaluator<'a> {
             // import shape mismatch) lowers silently to nothing past the
             // diagnostic already reported.
             if let Some((_, v)) = fields.iter().find(|(n, _)| n == &fl.name) {
-                buf = DataBuf::concat(buf, self.lower_to_data(v, &fl.ty, span));
+                let seg = EmitSeg::Field(&fl.name);
+                let child = self.emit_child_expr(&seg);
+                buf = DataBuf::concat(buf, self.lower_child(v, &fl.ty, span, seg.spell(), child));
             }
         }
         buf
@@ -503,20 +528,87 @@ impl<'a> Evaluator<'a> {
     }
 
     /// The emission range-check (D-P3.3): if `n` falls outside `lo..=hi`, report
-    /// `[emit.out-of-range]` naming the value and the type. The caller still
-    /// emits its (best-effort) cell so downstream sizes line up.
+    /// `[emit.out-of-range]` naming the value, the type and the offending field.
+    /// The caller still emits its (best-effort) cell so downstream sizes line up.
     fn emit_range_check(&mut self, n: i128, lo: i128, hi: i128, ty_desc: &str, span: Span) {
         if n < lo || n > hi {
-            self.error(span, format!("[emit.out-of-range] {n} does not fit {ty_desc} ({lo}..={hi})"));
+            let at = self.emit_where();
+            self.error(
+                span,
+                format!("[emit.out-of-range] {n} does not fit {ty_desc} ({lo}..={hi}){at}"),
+            );
         }
     }
 
-    /// Report that emission expected an integer value for a scalar-typed field.
+    /// Report that emission expected an integer value for a scalar-typed field,
+    /// naming the field (see [`emit_where`](Self::emit_where)).
     fn emit_expected_int(&mut self, value: &Value, ty: &Ty, span: Span) {
+        let at = self.emit_where();
         self.error(
             span,
-            format!("[emit.type] expected an integer for {}, got {}", ty.describe(), value.type_name()),
+            format!(
+                "[emit.type] expected an integer for {}, got {}{at}",
+                ty.describe(),
+                value.type_name()
+            ),
         );
+    }
+
+    /// The [`emit_path`](Evaluator::emit_path) breadcrumb rendered as a
+    /// diagnostic suffix — `" — in `CharDef_Sonic.cd_ability_wh`"` — or empty
+    /// when there is no path (an emission outside a data item).
+    fn emit_where(&self) -> String {
+        if self.emit_path.is_empty() {
+            return String::new();
+        }
+        let joined = self.emit_path.join("");
+        format!(" — in `{}`", joined.trim_start_matches('.'))
+    }
+
+    /// Lower one CHILD of a composite value: descend into `seg` of the breadcrumb
+    /// (and, when the parent came from a literal, into `child` of its AST), lower
+    /// against `ty`, and pop back out. `child_span` narrows the diagnostic from
+    /// the whole composite to the element that produced it; where no literal
+    /// backs the child it stays the parent's `span`, which is the best location
+    /// that exists.
+    fn lower_child(
+        &mut self,
+        value: &Value,
+        ty: &Ty,
+        span: Span,
+        seg: String,
+        child: Option<&'a ast::Expr>,
+    ) -> DataBuf {
+        let child_span = child.map(crate::parser::expr_span).unwrap_or(span);
+        self.emit_path.push(seg);
+        self.emit_lits.push(child);
+        let buf = self.lower_to_data(value, ty, child_span);
+        self.emit_lits.pop();
+        self.emit_path.pop();
+        buf
+    }
+
+    /// The sub-expression the innermost breadcrumb literal gives for `seg`: a
+    /// [`ast::Expr::StructLit`] field by name, or an
+    /// [`ast::Expr::ArrayLit`]/[`ast::Expr::TupleLit`] element by index. `None`
+    /// when there is no literal at this depth, when it is a different shape than
+    /// the type says (a mismatched annotation — already diagnosed), or when the
+    /// field's value is the [`ast::Expr::Default`] marker, whose span is the
+    /// word `default` and not the value that failed.
+    fn emit_child_expr(&self, seg: &EmitSeg) -> Option<&'a ast::Expr> {
+        let lit = (*self.emit_lits.last()?)?;
+        let child = match (seg, lit) {
+            (EmitSeg::Field(name), ast::Expr::StructLit { fields, .. }) => {
+                fields.iter().find(|(n, _)| n == name).map(|(_, e)| e)
+            }
+            (EmitSeg::Index(i), ast::Expr::ArrayLit { elems, .. })
+            | (EmitSeg::Index(i), ast::Expr::TupleLit { elems, .. }) => elems.get(*i),
+            _ => None,
+        }?;
+        if matches!(child, ast::Expr::Default(_)) {
+            return None;
+        }
+        Some(child)
     }
 
     /// Resolve the `data` item named `name` to a checked [`DataBuf`], memoizing
@@ -651,6 +743,15 @@ impl<'a> Evaluator<'a> {
                 }
             },
         };
-        self.lower_to_data(&value, &ty, decl.span)
+        // Seed the emission breadcrumb at the item: every diagnostic raised
+        // below can then name the exact field/element that produced it, and
+        // narrow its span from `decl.span` (the whole `data` item) to the
+        // initializer sub-expression the value came from.
+        self.emit_path.push(decl.name.clone());
+        self.emit_lits.push(Some(&decl.value));
+        let buf = self.lower_to_data(&value, &ty, decl.span);
+        self.emit_lits.pop();
+        self.emit_path.pop();
+        buf
     }
 }

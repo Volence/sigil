@@ -638,3 +638,130 @@ fn struct_duplicate_field_is_diagnosed() {
         "expected a duplicate-field diagnostic, got {diags:?}"
     );
 }
+
+
+// ---- emission diagnostics locate the offending field, not the item ------
+//
+// An emission refusal used to carry the span of the WHOLE `data` item, so a
+// reader handed `[emit.type] expected an integer for u16, got label` over a
+// 12-field record could not tell which field produced it. These pin both halves
+// of the narrowing: the message names the field, and the span is the field's own
+// value expression.
+
+/// The `[start, end)` of `needle`'s single occurrence in `src`.
+fn only_span_of(src: &str, needle: &str) -> (usize, usize) {
+    let at = src.find(needle).unwrap_or_else(|| panic!("`{needle}` is not in the source"));
+    assert!(
+        src[at + needle.len()..].find(needle).is_none(),
+        "`{needle}` occurs more than once — the span derivation would be ambiguous"
+    );
+    (at, at + needle.len())
+}
+
+#[test]
+fn struct_field_type_error_names_the_field_and_spans_only_it() {
+    // A name that resolves to nothing degrades to a label and lands in a `u16`.
+    // `a` and `c` bracket the bad field, so a diagnostic that widened back to the
+    // record would visibly include them.
+    let src = "module m\n\
+               struct S { a: u16, b: u16, c: u16 }\n\
+               data D: S = S{ a: 1, b: Undeclared_Name, c: 3 }\n";
+    let (_buf, diags) = data(src, "D");
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[emit.type]"))
+        .unwrap_or_else(|| panic!("expected an [emit.type] diagnostic, got {diags:?}"));
+    assert!(
+        hit.message.contains("`D.b`"),
+        "the diagnostic must name the offending field as `D.b`, got {:?}",
+        hit.message
+    );
+    // Derived from the source text, not copied from a run: the span must be
+    // exactly the offending field's VALUE expression.
+    let (start, end) = only_span_of(src, "Undeclared_Name");
+    assert_eq!(
+        (hit.primary.start as usize, hit.primary.end as usize),
+        (start, end),
+        "span must cover only `Undeclared_Name`, got {:?} = {:?}",
+        hit.primary,
+        &src[hit.primary.start as usize..hit.primary.end as usize]
+    );
+}
+
+#[test]
+fn array_element_range_error_names_the_index_and_spans_only_it() {
+    // A generated table reports one diagnostic per bad element; at the table's
+    // own span they are indistinguishable. Index + element span make each
+    // distinct.
+    let src = "module m\ndata T: [i8; 4] = [1, 200, 3, 4]\n";
+    let (_buf, diags) = data(src, "T");
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[emit.out-of-range]"))
+        .unwrap_or_else(|| panic!("expected an [emit.out-of-range] diagnostic, got {diags:?}"));
+    assert!(
+        hit.message.contains("`T[1]`"),
+        "the diagnostic must name the offending element as `T[1]`, got {:?}",
+        hit.message
+    );
+    let (start, end) = only_span_of(src, "200");
+    assert_eq!(
+        (hit.primary.start as usize, hit.primary.end as usize),
+        (start, end),
+        "span must cover only the offending element, got {:?} = {:?}",
+        hit.primary,
+        &src[hit.primary.start as usize..hit.primary.end as usize]
+    );
+}
+
+#[test]
+fn nested_struct_field_error_names_the_whole_path() {
+    let src = "module m\n\
+               struct Inner { deep: u16 }\n\
+               struct Outer { pad: u16, inner: Inner }\n\
+               data D: Outer = Outer{ pad: 1, inner: Inner{ deep: Undeclared_Name } }\n";
+    let (_buf, diags) = data(src, "D");
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[emit.type]"))
+        .unwrap_or_else(|| panic!("expected an [emit.type] diagnostic, got {diags:?}"));
+    assert!(
+        hit.message.contains("`D.inner.deep`"),
+        "a nested field must be named by its full path, got {:?}",
+        hit.message
+    );
+    let (start, end) = only_span_of(src, "Undeclared_Name");
+    assert_eq!(
+        (hit.primary.start as usize, hit.primary.end as usize),
+        (start, end),
+        "span must cover only the innermost value expression"
+    );
+}
+
+#[test]
+fn a_value_from_no_literal_still_names_its_field() {
+    // A struct built by a comptime fn has no literal at the emission site, so
+    // there is no field expression to narrow onto. The breadcrumb still names the
+    // field, and the span must NOT land on a sibling's expression — which a
+    // breadcrumb kept out of lockstep with the literal stack would produce.
+    let src = "module m\n\
+               struct S { a: u16, b: u16 }\n\
+               comptime fn mk() -> S { return S{ a: 1, b: Undeclared_Name } }\n\
+               data D: S = mk()\n";
+    let (_buf, diags) = data(src, "D");
+    let hit = diags
+        .iter()
+        .find(|d| d.message.contains("[emit.type]"))
+        .unwrap_or_else(|| panic!("expected an [emit.type] diagnostic, got {diags:?}"));
+    assert!(
+        hit.message.contains("`D.b`"),
+        "the field must still be named without a literal to narrow onto, got {:?}",
+        hit.message
+    );
+    let (a_start, a_end) = only_span_of(src, "a: 1");
+    assert!(
+        (hit.primary.start as usize) >= a_end || (hit.primary.end as usize) <= a_start,
+        "the span must not land on the sibling field `a`, got {:?}",
+        hit.primary
+    );
+}
