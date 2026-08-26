@@ -198,6 +198,14 @@ noticed and would otherwise have swallowed, which is a real but bounded win.
   deliberately no row. Reproduced on UNMODIFIED sigil master (`bc05f446`) in a detached
   worktree against the same aeon tree, which is the only thing that separates
   "pre-existing" from "the parcel I am landing". Relayed to the aeon lane 2026-08-24.
+  **Re-split 2026-08-26 with the aeon lane:** the two messages are two owners. `unknown
+  function ojz_act1_act_default / ojz_act1_sec_scene` is aeon's (closure of their generated
+  module under this harness). `section ojz_effects_editor_act1 has no region in the map`
+  (`sigil-frontend-emp resolve/mod.rs:849`) cannot arise on the Frozen path `sigil build`
+  takes — `emp_map_frozen` mints a region per present section — so it comes from whichever
+  of the five tests walks the **PinnedBaked/registry** path, and is a SIGIL registry question
+  (a registry row, or the test's synthetic entry not reaching the module). Aeon will NOT land
+  a map row for it; do not ask them to. Queued here as `FIVE-REG`.
   **The nightly source-gate lane does NOT cover these** — none of the five is in
   `SOURCE_GATES` (they are artifact-oracle gates, deliberately excluded), so the lane ran
   green at 05:17 while master was red. That exclusion was correct for byte-divergence red;
