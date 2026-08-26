@@ -429,7 +429,12 @@ c708b114 · demo.debug dec88cc1`, and building all four shapes at aeon `1ee8f8e6
 reproduces them exactly. `07d19c54`/`445092a7` appear only in the `ab` prose of a
 mid-file historical entry — reading a non-tip entry as the tip cost this session a false
 "corroborated" in a review. `~/sonic_hacks/.aeon-landing` is a built checkout at that
-revision; `~/sonic_hacks/.aeon-sigil-gates` is **source-only by construction** and must
+revision **(it was found ABSENT on 2026-08-26 and re-created as an aeon worktree at
+`415e0b6a`; re-creating one has two lived hazards, from the aeon lane: a fresh checkout gives
+`project.json` a new mtime so `tools/level_staleness.py` hard-fails BEFORE any ROM is emitted —
+run `tools/regenerate-level.sh` first and discard its `DONOR_PROVENANCE.json` churn; and `rm -f`
+all four ROMs before EACH build, because a build that stops at the staleness gate leaves
+leftovers whose CRCs match the pins perfectly. Export `AEON_SKDISASM_DIR`)**; `~/sonic_hacks/.aeon-sigil-gates` is **source-only by construction** and must
 never be pointed at an artifact-dependent run.
 
 Previously landed the same day: **const-arity** — a
