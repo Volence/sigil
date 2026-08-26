@@ -547,6 +547,39 @@ pub fn resolve_layout(
     stubs: &SymbolTable,
     dash_a: bool,
 ) -> Result<Vec<Section>, Vec<Diagnostic>> {
+    resolve_layout_impl(sections, stubs, dash_a, true)
+}
+
+/// [`resolve_layout`] as a MEASURING device: the same placement⇄relaxation
+/// fixpoint, the same lowered widths, but the post-fixpoint overlap check (c2) and
+/// the bank no-straddle check (c3) are NOT applied. A layout planner that pins
+/// sections at bases it has not finished deriving needs the exact `image_len` each
+/// section takes AT THOSE BASES — a quantity that is well-defined whether or not the
+/// pinned extents happen to intersect (every label's address is its pin plus its
+/// offset; nothing in width selection reads a neighbour's extent). Refusing the
+/// measurement on overlap forced planners to measure at DISTORTED substitute bases
+/// (a scratch slot, a spread), and a substitute base can select a different width
+/// than the real one — the `player_sensors` catch of 2026-08-26, where twelve
+/// `lea Table, a1` sites measured abs.w at a scratch alias and abs.l at the real
+/// base, 24 bytes the planner never saw.
+///
+/// The result is for MEASURING only: a caller that emits it as an image has skipped
+/// the checks that make an image sound, and must run [`resolve_layout`] on its
+/// final bases.
+pub fn resolve_layout_measuring(
+    sections: &[Section],
+    stubs: &SymbolTable,
+    dash_a: bool,
+) -> Result<Vec<Section>, Vec<Diagnostic>> {
+    resolve_layout_impl(sections, stubs, dash_a, false)
+}
+
+fn resolve_layout_impl(
+    sections: &[Section],
+    stubs: &SymbolTable,
+    dash_a: bool,
+    check_image: bool,
+) -> Result<Vec<Section>, Vec<Diagnostic>> {
     // Defensive: an empty or mis-ordered RelaxLadder is a front-end
     // construction-contract violation. `debug_assert!` catches both in tests; in
     // release we refuse loudly rather than silently mis-lower a zero-rung ladder
@@ -861,8 +894,10 @@ pub fn resolve_layout(
             // by construction (their cursor advances past each predecessor); this
             // catches colliding PINS on any path — single-file, multi-module, or
             // harness — since they all funnel through `resolve_layout`.
-            if let Some(diag) = overlap_diag(&placed, &rungs) {
-                return Err(vec![diag]);
+            if check_image {
+                if let Some(diag) = overlap_diag(&placed, &rungs) {
+                    return Err(vec![diag]);
+                }
             }
 
             // (c3) Bank no-straddle check (R7m.2 / D7.5): every `bank:` section
@@ -870,8 +905,10 @@ pub fn resolve_layout(
             // placement. Over-bank content and straddling pins are loud errors
             // here — same diagnostic channel as the overlap check, discharged
             // structurally rather than via a synthesized LinkAssert row.
-            if let Some(diag) = bank_diag(&placed, &rungs) {
-                return Err(vec![diag]);
+            if check_image {
+                if let Some(diag) = bank_diag(&placed, &rungs) {
+                    return Err(vec![diag]);
+                }
             }
 
             // (c4) equ fold (R-T0.3): the placement⇄relaxation fixpoint has

@@ -13,7 +13,7 @@ use sigil_ir::{
 use sigil_span::{Diagnostic, Level, Span};
 
 mod relax;
-pub use relax::{asl_width_rule, resolve_layout, AbsWidth};
+pub use relax::{asl_width_rule, resolve_layout, resolve_layout_measuring, AbsWidth};
 
 mod map_load;
 pub use map_load::load_map;

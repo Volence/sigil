@@ -51,6 +51,10 @@ SOURCE_GATES=(
     # that no refreeze clears, and this is the one gate whose failure text names it
     # as such (the verdict line below reads that back out).
     corpus_builds
+    # the layout walk under upstream code growth: a doctored copy of the tree must
+    # still build (the 2026-08-26 measure-at-packed-base reproduction) — source only,
+    # judged by the same build entry as the brick witness
+    measure_at_packed_base
     # the warn tier over the real corpus — the gate the ruling is about
     warn_tier_corpus
     # whole-corpus source analyses

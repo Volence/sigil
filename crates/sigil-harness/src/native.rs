@@ -2286,81 +2286,69 @@ fn enforce_inapplicable_allowlist_against(
 // from its asl listing (sonic4: the pinned-resolve spans below; demo/Config: their
 // `.lst` spans). Bases stay COMPUTED — the soundness condition is met.
 
-/// Measure image lengths at `pins`. When the pinned resolve COLLIDES (a section grew
-/// past the allotment its neighbour's pin implies) fall back, in order, to
-///   1. every position-independent (pure-DATA) section at a disjoint scratch slot —
-///      grown data is the everyday case (an authored bg-anim band, a new table), its
-///      own length is exact at any base, and moving it keeps the code sections at their
-///      pins so cross-section CONDITIONAL branches keep their ±32 KB reach; then
-///   2. an ORDER-PRESERVING cumulative spread (+0x400 per ROM section) — relaxable
-///      CODE growth, the only thing the scratch retry cannot separate.
-///
-/// Returns the lengths plus, when a fallback fired, the collision the pinned resolve
-/// reported (`None` = measured at the pins, undistorted).
-///
-/// WHY THE CALLER MUST CARE ABOUT `distorted` (the config_a replay-hash-addrfree catch):
-/// a fallback measurement is not the layout's truth. Section lengths are relaxation-
-/// dependent: the spread moves every section by a rank-proportional amount, so a
-/// section sitting on a relaxation knife-edge measures a DIFFERENT length under the
-/// spread than at its real base (config_a's `boot`: 0x1A2 at the frozen provisional
-/// bases, 0x1A4 at its packed base, 0x1A6 under the 0x100 spread — three answers for
-/// one section); and data at scratch sits outside the `abs.w` range, so CODE that
-/// references a data label in the boot region measures LONGER while that data is at
-/// scratch (the 2026-08-26 derived-layout catch: `player_sensors` +0x18 at declared-
-/// span time). Both fallbacks exist to keep a measuring resolve overlap-free, and both
-/// distort the very quantity being measured. So a fallback-measured `img` may be used
-/// to make PROGRESS, but must never be accepted as the walk's fixpoint witness — the
-/// pack rounds re-pin every labeled section at its packed (real) base and converge
-/// there.
-fn measure_or_spread(
-    sections: &[Section],
-    pins: &[Option<u32>],
-    order: &[usize],
-    what: &str,
-) -> Result<(Vec<u32>, Option<String>), String> {
-    match image_lens_pinned(sections, pins, false) {
-        Ok(v) => Ok((v, None)),
-        Err(collision) => {
-            if let Ok(v) = image_lens_pinned(sections, pins, true) {
-                return Ok((v, Some(collision)));
-            }
-            // Relaxable CODE grew into its neighbour: retry with a small cumulative
-            // per-rank spread (order-preserving) — a MEASURING device only (final bases
-            // come from the pack rounds and re-measure to a fixpoint, so widening it
-            // never moves an unchanged section). The step stays 0x400: it must stay under
-            // the ±32 KB conditional-branch reach (a bigger step pushes cross-section
-            // conditional branches out of range, which is a hard error, not a relaxation).
-            let mut spread = pins.to_vec();
-            for (rank, &i) in order.iter().enumerate() {
-                if let Some(Some(p)) = spread.get_mut(i).map(|s| s.as_mut()) {
-                    *p += 0x400 * rank as u32;
-                }
-            }
-            let v = image_lens_pinned(sections, &spread, true)
-                .map_err(|e| format!("span pass ({what}, post-growth): {e}"))?;
-            Ok((v, Some(collision)))
-        }
-    }
+/// One measuring resolve's full witness: per-section image length, plus the lowered
+/// length of every RELAXABLE fragment (keyed by stable section index, then by the
+/// fragment's position among the section's relaxables, in order) — what the
+/// non-convergence diagnostic reads the width-flipping sites off.
+struct Measured {
+    img: Vec<u32>,
+    /// Per-section `(span, lowered length)` of each relaxable fragment, in order.
+    sites: Vec<Vec<(sigil_span::Span, u32)>>,
 }
 
-/// Per-section image length (exact, relaxables lowered to `Data`) from a resolve where
-/// each ROM section is pinned at `pin_lma[idx]` (falling back to its baked lma). Keyed
-/// by the section's stable index. The unique-name tag makes the read unambiguous (the
-/// tree carries same-named `text`/`sec<lma>` sections); names never affect bytes.
-/// `scratch_data` moves every position-independent section off its pin to a scratch
-/// slot (the collision fallback — see `measure_or_spread` for why the result is then
-/// distorted for the CODE around it).
-fn image_lens_pinned(
+/// Measure every ROM section's image length with each section pinned at
+/// `pin_lma[idx]` — the EXACT length it takes at that base, whether or not the
+/// pinned extents happen to intersect. Section lengths are relaxation-dependent (an
+/// unsized `lea Table, a1` is abs.w when `Table` resolves under `$8000` on the
+/// 24-bit bus, abs.l otherwise; a bare branch is `.s`/`.w` by distance), so the only
+/// base a length is true at is the base the section will occupy — and the measuring
+/// resolve (`resolve_layout_measuring`: the same placement⇄relaxation fixpoint with
+/// the image-soundness checks skipped) makes that base measurable even while a grown
+/// section's extent still runs into its successor's pin: label addresses are pin +
+/// offset regardless of intersection, and the walk's next pack round moves the run
+/// apart by exactly the lengths measured here.
+///
+/// THE CATCH THIS DESIGN REPLACES (2026-08-26, `player_sensors`): the previous rig
+/// measured through the CHECKED resolve, so a colliding measuring layout had to be
+/// re-measured at SUBSTITUTE bases — pure data at a scratch slot, else everything
+/// under a cumulative +0x400/rank spread. A substitute base is a different address,
+/// and a different address can select a different width: the scratch slots
+/// (`0x70_0000 + k·0x10_0000`) wrap the 24-bit bus from k = 9, so `collision_data`
+/// (slot 41 = `0x300_0000`, masked to `0x0` by `asl_width_rule`) looked
+/// abs.w-reachable and twelve `lea` sites in `player_sensors` measured 4 B each
+/// where the real base encodes 6. The walk packed the successor 24 B into the
+/// section, lengths were "stable", and the build refused naming an innocent pair.
+/// Measuring at the round's own pins has no substitute base to lie about — and no
+/// spread step to outgrow (the old rig could not even measure a single section grown
+/// past ~0x400).
+///
+/// A ROM section with NO pin keeps the LEGACY far-scratch slot (`0x70_0000 +
+/// k·0x10_0000`): those are the sections outside the frozen table, and the far slot
+/// is what reproduces asl's conservative widths for references that touch them (asl
+/// encodes a forward reference abs.l; a near base would relax it abs.w and the
+/// chained layout would settle tighter than the golden shapes). The slot arithmetic
+/// is part of the frozen equilibrium the six byte gates prove — its own 24-bit alias
+/// hazard is a ledger row for the next refreeze, not a live measuring input, because
+/// every FROZEN-labeled section now measures at a real base in every round.
+fn measure_pinned(
     sections: &[Section],
     pin_lma: &[Option<u32>],
-    scratch_data: bool,
-) -> Result<Vec<u32>, String> {
+) -> Result<Measured, String> {
+    lens_pinned(sections, pin_lma, true)
+}
+
+/// [`measure_pinned`]'s body, shared with the checked form. `tolerate_overlap`
+/// selects `resolve_layout_measuring` (measuring: exact widths at the given pins,
+/// overlap permitted) vs `resolve_layout` (checked: the image-soundness witness —
+/// the walk runs it once at the converged bases, and `declared_spans_by_index` at
+/// the final ones). The unique-name tag makes the read-back unambiguous (the tree
+/// carries same-named `text`/`sec<lma>` sections); names never affect bytes.
+fn lens_pinned(
+    sections: &[Section],
+    pin_lma: &[Option<u32>],
+    tolerate_overlap: bool,
+) -> Result<Measured, String> {
     let mut tagged: Vec<Section> = sections.to_vec();
-    // ROM sections with NO pin (label-less data blobs whose true base is not yet known)
-    // are pinned at DISJOINT high scratch slots: they are pure DATA, so image_len is
-    // position-independent, and scratch pins keep the resolve overlap-free (a frozen
-    // labeled section and a baked label-less one can otherwise collide — the config_a
-    // sound-tail vs object_test_state case).
     let mut scratch: u32 = 0x0070_0000;
     for (i, s) in tagged.iter_mut().enumerate() {
         s.name = format!("{}\u{0}{i}", s.name);
@@ -2369,22 +2357,8 @@ fn image_lens_pinned(
             // would otherwise ignore it and pack within its group, defeating the pin).
             s.placement = SectionPlacement::Pinned;
             s.group = None;
-            // COLLISION FALLBACK (`scratch_data`): a PURE-DATA section (no relaxable
-            // fragment, no `Org` seek) has ONE image length at every base, so it can
-            // measure at a disjoint scratch slot instead of its pin. That is what lets a
-            // section grow (an authored bg-anim band, an inflated art pool) past the
-            // allotment its neighbour's pin implies without a wide spread, so cross-
-            // section CONDITIONAL branches in the (still pinned) CODE sections keep their
-            // ±32 KB reach. A section with any relaxable fragment stays at its pin so its
-            // branch widths measure correctly; a PHASE BANK stays at its pin because its
-            // content is addressed through its vma. Never the default: code referencing
-            // data labels inside the `abs.w` range measures longer while the data is at
-            // scratch, so this measurement is a progress step, not a fixpoint witness.
-            let is_phase_bank =
-                s.vma_base.map(|v| v != s.lma && v >= 0x8000).unwrap_or(false);
-            let force_scratch = scratch_data && !is_phase_bank && is_position_independent(s);
             match pin_lma.get(i) {
-                Some(Some(p)) if !force_scratch => s.lma = *p,
+                Some(Some(p)) => s.lma = *p,
                 _ => {
                     s.lma = scratch;
                     // keep vma tracking the scratch lma so labels don't leak a stale base
@@ -2397,18 +2371,70 @@ fn image_lens_pinned(
         }
     }
     let stubs = SymbolTable::new();
-    let resolved = sigil_link::resolve_layout(&tagged, &stubs, true).map_err(|d| {
+    let resolved = if tolerate_overlap {
+        sigil_link::resolve_layout_measuring(&tagged, &stubs, true)
+    } else {
+        sigil_link::resolve_layout(&tagged, &stubs, true)
+    }
+    .map_err(|d| {
         format!("span pass: resolve_layout: {} diag(s); first {:?}", d.len(), d.first())
     })?;
     let mut img = vec![0u32; sections.len()];
+    let mut sites = vec![Vec::new(); sections.len()];
     for s in &resolved {
         if let Some(idx) = s.name.rsplit('\u{0}').next().and_then(|t| t.parse::<usize>().ok()) {
             if is_rom_section(s) {
                 img[idx] = s.image_len();
+                // Relaxables lower 1:1 (the resolve maps each fragment to its chosen
+                // candidate in place), so the input's relaxable positions read the
+                // lowered lengths off the same indices.
+                if s.fragments.len() == sections[idx].fragments.len() {
+                    sites[idx] = sections[idx]
+                        .fragments
+                        .iter()
+                        .zip(&s.fragments)
+                        .filter(|(before, _)| is_relaxable(before))
+                        .map(|(before, after)| (fragment_span(before), fragment_len(after)))
+                        .collect();
+                }
             }
         }
     }
-    Ok(img)
+    Ok(Measured { img, sites })
+}
+
+fn is_relaxable(f: &Fragment) -> bool {
+    matches!(f, Fragment::RelaxAbsSym { .. } | Fragment::JmpJsrSym { .. } | Fragment::RelaxLadder { .. })
+}
+
+fn fragment_span(f: &Fragment) -> sigil_span::Span {
+    match f {
+        Fragment::Data(d) => d.span,
+        Fragment::Fill { span, .. }
+        | Fragment::Reserve { span, .. }
+        | Fragment::Org { span, .. }
+        | Fragment::JmpJsrSym { span, .. }
+        | Fragment::RelaxAbsSym { span, .. }
+        | Fragment::RelaxLadder { span, .. } => *span,
+    }
+}
+
+/// The image bytes one LOWERED fragment contributes (a lowered relaxable is `Data`).
+fn fragment_len(f: &Fragment) -> u32 {
+    match f {
+        Fragment::Data(d) => d.bytes.len() as u32,
+        Fragment::Fill { count, .. } => *count,
+        _ => 0,
+    }
+}
+
+/// Per-section image length (exact, relaxables lowered to `Data`) from the CHECKED
+/// resolve at `pin_lma` — the image-soundness witness form of [`measure_pinned`].
+fn image_lens_pinned(
+    sections: &[Section],
+    pin_lma: &[Option<u32>],
+) -> Result<Vec<u32>, String> {
+    lens_pinned(sections, pin_lma, false).map(|m| m.img)
 }
 
 /// The TRUE per-section ROM base, keyed by stable index; `None` for RAM/phase-only
@@ -2426,6 +2452,7 @@ fn true_bases_by_index(
     fixture: bool,
     anchor_addrs: &std::collections::HashSet<u32>,
     warnings: &mut Vec<BuildWarning>,
+    locate: &dyn Fn(sigil_span::Span) -> Option<String>,
 ) -> Result<Vec<Option<u32>>, String> {
     let n = sections.len();
     match src {
@@ -2456,7 +2483,7 @@ fn true_bases_by_index(
                     None => prov[i] = Some(s.lma as i64), // baked fallback (order only)
                 }
             }
-            packed_true_bases(sections, &prov, &labeled, map_order, fixture, anchor_addrs, warnings)
+            packed_true_bases(sections, &prov, &labeled, map_order, fixture, anchor_addrs, warnings, locate)
         }
     }
 }
@@ -2546,6 +2573,7 @@ fn order_rank_of(sec: &Section, rank: &HashMap<&str, usize>) -> Option<usize> {
         .or_else(|| rank.get(crate::map_placement::section_row_key(&sec.name).as_str()).copied())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn packed_true_bases(
     sections: &[Section],
     prov: &[Option<i64>],
@@ -2554,6 +2582,7 @@ fn packed_true_bases(
     fixture: bool,
     anchor_addrs: &std::collections::HashSet<u32>,
     warnings: &mut Vec<BuildWarning>,
+    locate: &dyn Fn(sigil_span::Span) -> Option<String>,
 ) -> Result<Vec<Option<u32>>, String> {
     // ISLANDS ARE THE DECLARED ANCHORS. A section is an org island exactly when its
     // provisional base is a `[[anchor]]` the map declares (object bank / DAC / sound)
@@ -2615,30 +2644,22 @@ fn packed_true_bases(
     // stay protected regardless.
     const GROWTH_DRIFT_TOLERANCE: i64 = 0x1000;
 
-    // Round 0: lengths at the PROVISIONAL bases (labeled sections at prov, label-less
-    // pure-data blobs at scratch — the proven Frozen measuring pins). When a section
-    // GREW, prov pins collide and the resolve fails — retry with a small cumulative
-    // spread (+0x400 per ROM section, order-preserving): big enough to absorb
-    // parcel-scale growth, small enough that cross-section CONDITIONAL branches (no
-    // long form) keep their reach. This spread is a MEASURING device only — final
-    // bases come from the island/contiguity rounds below and re-measure to a
-    // fixpoint, so widening it never moves an unchanged section. Widened 0x40->0x80
-    // for collision_lookup #1 (the fused GetType+GetCollision grows the region by
-    // 0x44, just past the old 0x40 spread — the demo game's tight layout overran it
-    // by 4 bytes). Widened 0x80->0x100 for input-6button (2026-08-02): the full
-    // 6-button burst rewrite (two-pad ext accumulate + per-frame type detect +
-    // unconditional Z80 bracket) grows the controllers region by 0xB0, past the old
-    // 0x80 spread. Widened 0x100->0x400 for art-streaming-p2-task5 (2026-08-08): the
-    // 64-tile art-pool cutover grows ojz_act_pool by 0x33A in ONE section (3 ZX0
-    // pages -> 10 + the local-map island + the 8-byte manifest-v2 stride), past the
-    // old 0x100 adjacent-step. A growth beyond this is a hand ruling.
+    // Round 0: lengths at the PROVISIONAL bases — frozen-labeled sections pinned at
+    // prov, never-pinned sections at the legacy scratch. EXACT for those pins even
+    // when a grown section's extent runs into its successor's stale pin
+    // (`measure_pinned` tolerates overlap), so there is no fallback measurement, no
+    // substitute base that can select a wrong width, and no spread step a large
+    // parcel can outgrow. The pack rounds below move the run apart from these
+    // lengths and re-measure at the packed bases to a fixed point.
     let prov_pins: Vec<Option<u32>> = (0..n)
         .map(|i| if labeled[i] { prov[i].map(|v| v as u32) } else { None })
         .collect();
-    let (mut img, round0_distorted) =
-        measure_or_spread(sections, &prov_pins, &order, "spread round")?;
-    let mut img_distorted = round0_distorted.is_some();
+    let measured = measure_pinned(sections, &prov_pins)
+        .map_err(|e| format!("{e} (provisional round)"))?;
+    let mut img = measured.img;
+    let mut sites = measured.sites;
     let mut prev_islands: Option<Vec<bool>> = None;
+    let mut last_flip: Option<String> = None;
     for _round in 0..8 {
         let mut out: Vec<Option<u32>> = vec![None; n];
         let mut islands = vec![false; n];
@@ -2737,15 +2758,13 @@ fn packed_true_bases(
             }
         }
         prev_islands = Some(islands);
-        // Re-measure with the round-0 pin discipline: LABELED sections at their packed
-        // bases (correct relaxation), label-less pure-data blobs at scratch (position-
-        // independent, and the align-padded pre-bank blob would otherwise collide with
-        // the pinned bank org — the config_a HeightMaps case).
-        // Label-less pure-data blobs AND the phase banks measure at scratch (the
-        // pre-bank blob's baked align-pad is sized for its ORIGINAL position, so at
-        // a shifted packed base its image overshoots the hard bank org until
-        // declared_spans clamps it — the phase_region_mask rule keeps the measuring
-        // resolve overlap-free).
+        // Re-measure with the round-0 pin discipline: FROZEN-LABELED sections at
+        // their packed bases (correct relaxation at the very address each will
+        // occupy), never-pinned sections at the legacy scratch (the asl-width
+        // emulation, unchanged), and the phase banks at scratch too — a bank's
+        // content is addressed through its vma, and the pre-bank blob's baked
+        // align-pad is sized for its ORIGINAL position, so at a shifted packed base
+        // its image overshoots the hard bank org until declared_spans clamps it.
         let bankish: Vec<bool> = sections
             .iter()
             .map(|s| s.vma_base.map(|v| v != s.lma && v >= 0x8000).unwrap_or(false))
@@ -2753,46 +2772,97 @@ fn packed_true_bases(
         let remeasure: Vec<Option<u32>> = (0..n)
             .map(|i| if labeled[i] && !bankish[i] { out[i] } else { None })
             .collect();
-        // The remeasure gets round 0's spread fallback too. Without it a TRANSIENT
-        // overlap is fatal: the walk placed section N+1 from the PREVIOUS round's
-        // length for N, so the moment N measures longer at its packed base it overruns
-        // N+1's pin and `resolve_layout` rejects the whole measuring layout — even
-        // though the very next pack round would have absorbed the growth. Round 0 has
-        // always had this fallback; the remeasure never did, so a length that only
-        // grows once the layout is packed had nowhere to go. config_a is the first
-        // shape to hit it (replay-hash-addrfree, 2026-08-03): its `boot` measures 0x1A2
-        // at the stale frozen bases and 0x1A4 once the packed walk moves the sections
-        // downstream of it by the parcel's +0x40 — a relaxation knife-edge that only
-        // trips after packing.
-        //
-        // A spread-measured result is DISTORTED (see `measure_or_spread`), so it never
-        // counts as the fixpoint: it feeds the next pack round, which re-measures at
-        // real bases. If the walk cannot reach an UNDISTORTED fixpoint it exhausts the
-        // round budget and fails loud below — never silently returns spread-derived
-        // bases.
-        let (img2, distorted) =
-            measure_or_spread(sections, &remeasure, &order, "packed round")?;
+        // Exact at these pins (overlap tolerated — a length that grows only once the
+        // layout is packed, the config_a `boot` knife-edge, simply measures longer
+        // here and the next pack round absorbs it). `img2 == img` therefore means
+        // every section's length was measured at the very base the walk assigns it —
+        // a true fixed point, not a substitute-base plateau.
+        let measured2 = measure_pinned(sections, &remeasure)
+            .map_err(|e| format!("{e} (packed round)"))?;
+        let img2 = measured2.img;
+        let sites2 = measured2.sites;
         if img2 == img {
-            if !img_distorted && distorted.is_none() {
-                warnings.extend(round_drift);
-                return Ok(out);
-            }
-            if let Some(collision) = &distorted {
-                // Lengths are stable, yet the packed bases still collide: the next round
-                // would place every section exactly here again. This is a REAL overlap
-                // of the packed layout — a run grew into a declared anchor (the only
-                // thing the walk holds absolute) — not a relaxation transient.
+            // The fixed point — now prove the image sound with ONE checked resolve at
+            // the same pins. A collision here is REAL: every length is the one
+            // measured at its own base, so the only way two extents intersect is a
+            // run packed up into something the walk holds ABSOLUTE — a declared
+            // anchor (or a phase-bank org). The old rig reached this refusal through
+            // a fallback measurement that could lie about a length, and then named
+            // whatever innocent pair the stale lengths implied.
+            if let Err(collision) = image_lens_pinned(sections, &remeasure) {
                 return Err(format!(
                     "packed layout overlaps at its real bases — a run grew into a declared anchor; \
                      the anchor is hardware-fixed, so this content does not fit and needs a hand ruling \
                      (the map's re-layout parcel, or less content). {collision}"
                 ));
             }
+            warnings.extend(round_drift);
+            return Ok(out);
         }
+        last_flip = Some(width_flip_report(sections, &order, &img, &sites, &img2, &sites2, &remeasure, locate));
         img = img2;
-        img_distorted = distorted.is_some();
+        sites = sites2;
     }
-    Err("packed_true_bases did not converge in 8 rounds (relaxation oscillation) — hand ruling needed".to_string())
+    // Every round re-derived the bases from lengths measured at those very bases and
+    // the lengths still moved: a RELAXING SITE is oscillating (an encoding that is
+    // short at the base its own short form implies and long at the base its long
+    // form implies). Name it — the flip report from the last two rounds — instead of
+    // any pair of sections the transient layout happened to collide.
+    Err(format!(
+        "packed_true_bases did not converge in 8 rounds (relaxation oscillation) — hand ruling needed.{}",
+        last_flip.map(|f| format!(" {f}")).unwrap_or_default()
+    ))
+}
+
+/// The non-convergence diagnostic's payload: for every section whose measured length
+/// differs between two consecutive rounds, the section, the base it was measured at,
+/// both lengths, and the `file:line` of every relaxable site whose lowered width
+/// differs between the rounds (with both widths) — the RELAXING SITE, so the author
+/// sees the `lea`/branch whose encoding depends on where the section lands instead
+/// of an innocent overlapping pair.
+#[allow(clippy::too_many_arguments)]
+fn width_flip_report(
+    sections: &[Section],
+    order: &[usize],
+    img_before: &[u32],
+    sites_before: &[Vec<(sigil_span::Span, u32)>],
+    img_after: &[u32],
+    sites_after: &[Vec<(sigil_span::Span, u32)>],
+    pins: &[Option<u32>],
+    locate: &dyn Fn(sigil_span::Span) -> Option<String>,
+) -> String {
+    let mut lines = Vec::new();
+    for &i in order {
+        if img_before[i] == img_after[i] {
+            continue;
+        }
+        let head = head_label(&sections[i]).map(|l| format!(" (`{l}`)")).unwrap_or_default();
+        let base = pins[i].map(|b| format!("{b:#x}")).unwrap_or_else(|| "scratch".to_string());
+        let mut line = format!(
+            "section `{}`{head} measures {:#x} then {:#x} at base {base}",
+            sections[i].name, img_before[i], img_after[i]
+        );
+        let flips: Vec<String> = sites_before[i]
+            .iter()
+            .zip(&sites_after[i])
+            .filter(|((_, a), (_, b))| a != b)
+            .map(|((span, a), (_, b))| {
+                let at = locate(*span)
+                    .unwrap_or_else(|| format!("source {} @{}", span.source.0, span.start));
+                format!("{at} ({a} B -> {b} B)")
+            })
+            .collect();
+        if !flips.is_empty() {
+            line.push_str("; width-flipping sites: ");
+            line.push_str(&flips.join(", "));
+        }
+        lines.push(line);
+    }
+    if lines.is_empty() {
+        String::new()
+    } else {
+        format!("Sections whose length depends on their base: {}", lines.join(" | "))
+    }
 }
 
 /// The `[layout.provisional-drift]` warning: `sec` packed at `packed`, a delta past
@@ -2842,7 +2912,7 @@ fn declared_spans_by_index(
     // Declared spans measure at the FINAL true_bases — the packed layout is already
     // overlap-free (no scratch fallback: every length here is the real one), and each
     // pure-data span comes from its base-to-next gap.
-    let img = image_lens_pinned(sections, &pin, false).map_err(|e| format!("span pass (declared): {e}"))?;
+    let img = image_lens_pinned(sections, &pin).map_err(|e| format!("span pass (declared): {e}"))?;
     let mut rom: Vec<(usize, u32, u32)> = (0..sections.len())
         .filter_map(|i| true_bases.get(i).and_then(|o| *o).map(|tb| (i, tb, img[i])))
         .collect();
@@ -3104,18 +3174,6 @@ fn is_rom_section(s: &Section) -> bool {
     }
 }
 
-/// A section whose image length is POSITION-INDEPENDENT: every fragment advances the
-/// cursor by its own fixed length (no relaxable / base-dependent fragment, no `Org`
-/// seek). Such a section can be measured at any base — the fixture (stress-art) round-0
-/// measure pins its inflated pure-DATA sections at disjoint scratch slots on this test,
-/// so a section that grew past the conditional-branch reach never forces the code region
-/// apart. A section with any relaxable fragment (a jmp/jsr/branch ladder) is width-
-/// variable and must measure at its real base.
-fn is_position_independent(s: &Section) -> bool {
-    s.fragments
-        .iter()
-        .all(|f| matches!(f, Fragment::Data(_) | Fragment::Fill { .. } | Fragment::Reserve { .. }))
-}
 
 /// FIXTURE-ONLY (stress-art): relocate the stress-GROWABLE OJZ generated sections past the
 /// sound banks so their uniquified inflation extends the ROM TAIL instead of overrunning
@@ -3469,6 +3527,7 @@ pub fn build_rom_chained_with_listing(
         profile.fixture_placement,
         &anchor_addrs,
         &mut warnings,
+        &|span| sources.locate(span),
     )?;
     let spans = declared_spans_by_index(&sections, &true_bases)?;
 
@@ -3577,6 +3636,7 @@ fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Sec
         profile.fixture_placement,
         &anchor_addrs,
         &mut drift_sink,
+        &|_| None,
     )?;
     let spans = declared_spans_by_index(&sections, &true_bases)?;
     let all = apply_declared_chain(sections, &true_bases, &spans);
@@ -4632,8 +4692,8 @@ mod placement_validation_tests {
         let by_name = vec!["section:sec512".to_string(), "Low".to_string()];
         let by_label = vec!["High".to_string(), "Low".to_string()];
         let none = std::collections::HashSet::new();
-        let got = packed_true_bases(&secs, &prov, &labeled, &by_name, false, &none, &mut Vec::new()).unwrap();
-        let want = packed_true_bases(&secs, &prov, &labeled, &by_label, false, &none, &mut Vec::new()).unwrap();
+        let got = packed_true_bases(&secs, &prov, &labeled, &by_name, false, &none, &mut Vec::new(), &|_| None).unwrap();
+        let want = packed_true_bases(&secs, &prov, &labeled, &by_label, false, &none, &mut Vec::new(), &|_| None).unwrap();
         assert_eq!(got[1], Some(0x200), "High (declared first by name) heads the run at its prov");
         assert_eq!(got[0], Some(0x210), "Low (declared second) packs after High");
         assert_eq!(got, want, "a `section:` row ranks exactly as the label row would");
@@ -4688,7 +4748,7 @@ mod placement_validation_tests {
         let prov = vec![Some(0x100i64), Some(0x200i64)];
         let labeled = vec![true, true];
         let order = vec!["High".to_string(), "Low".to_string()];
-        let bases = packed_true_bases(&secs, &prov, &labeled, &order, false, &std::collections::HashSet::new(), &mut Vec::new()).unwrap();
+        let bases = packed_true_bases(&secs, &prov, &labeled, &order, false, &std::collections::HashSet::new(), &mut Vec::new(), &|_| None).unwrap();
         // High is the run head (declared first) → its provisional base 0x200; Low packs
         // right after it at 0x210 — the layout follows the MAP, inverting the prov order.
         assert_eq!(bases[1], Some(0x200), "High (declared first) anchors at its prov");
@@ -4696,7 +4756,7 @@ mod placement_validation_tests {
         // Control: with the map order empty (no drive) the walk falls back to the prov
         // sort — Low@0x100 first, High packs after at 0x110.
         let none: Vec<String> = vec![];
-        let baked = packed_true_bases(&secs, &prov, &labeled, &none, false, &std::collections::HashSet::new(), &mut Vec::new()).unwrap();
+        let baked = packed_true_bases(&secs, &prov, &labeled, &none, false, &std::collections::HashSet::new(), &mut Vec::new(), &|_| None).unwrap();
         assert_eq!(baked[0], Some(0x100), "prov fallback: Low at its prov");
         assert_eq!(baked[1], Some(0x110), "prov fallback: High packs after Low");
     }
@@ -5176,7 +5236,7 @@ mod derived_layout_tests {
     fn walk(grown_len: usize, anchors: &HashSet<u32>) -> (Vec<Option<u32>>, Vec<BuildWarning>) {
         let (secs, prov, labeled, order) = run(grown_len);
         let mut warnings = Vec::new();
-        let bases = packed_true_bases(&secs, &prov, &labeled, &order, false, anchors, &mut warnings)
+        let bases = packed_true_bases(&secs, &prov, &labeled, &order, false, anchors, &mut warnings, &|_| None)
             .unwrap_or_else(|e| panic!("the walk must not refuse pure-data growth: {e}"));
         (bases, warnings)
     }
@@ -5264,9 +5324,9 @@ mod derived_layout_tests {
         let labeled = vec![true; 2];
         let order = vec!["Head".to_string(), "Next".to_string()];
         let mut w = Vec::new();
-        let undeclared = packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w).unwrap();
+        let undeclared = packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w, &|_| None).unwrap();
         assert_eq!(undeclared[1], Some(HEAD + HEAD_LEN as u32), "undeclared gap packs contiguously");
-        let declared = packed_true_bases(&secs, &prov, &labeled, &order, false, &HashSet::from([HEAD, stale_prov]), &mut w).unwrap();
+        let declared = packed_true_bases(&secs, &prov, &labeled, &order, false, &HashSet::from([HEAD, stale_prov]), &mut w, &|_| None).unwrap();
         assert_eq!(declared[1], Some(stale_prov), "a declared anchor stays absolute");
     }
 
@@ -5288,7 +5348,7 @@ mod derived_layout_tests {
             let labeled = vec![true; 3];
             let order = vec!["Head".to_string(), "Grown".to_string(), "Bank".to_string()];
             let mut w = Vec::new();
-            packed_true_bases(&secs, &prov, &labeled, &order, false, &HashSet::from([HEAD, anchor]), &mut w)
+            packed_true_bases(&secs, &prov, &labeled, &order, false, &HashSet::from([HEAD, anchor]), &mut w, &|_| None)
         };
         // Fills the room exactly: builds, and the anchor is where the map says.
         let fits = build(room).unwrap_or_else(|e| panic!("growth that fits must build: {e}"));
@@ -5296,5 +5356,141 @@ mod derived_layout_tests {
         // One byte past the room: refused, and the message says why.
         let err = build(room + 1).expect_err("overrunning a declared anchor must not build");
         assert!(err.contains("declared anchor") && err.contains("overlap"), "{err}");
+    }
+
+    // ── measure-at-packed-base (2026-08-26): a section whose LENGTH DEPENDS ON ITS
+    // BASE — one `lea Table, aN`-shaped relaxable (RelaxAbsSym) whose operand width
+    // is abs.w below $8000 and abs.l above it. Every expectation is DERIVED from the
+    // sizes and the $8000 boundary; no address is copied from a run of the code.
+
+    /// A CODE section holding exactly one RelaxAbsSym (`lea (T).w/.l, a0`): 4 bytes
+    /// when `T` resolves under $8000 on the 24-bit bus, 6 above.
+    fn code_abs(label: &str, lma: u32, target: &str) -> Section {
+        use sigil_ir::{Expr, Fixup, FixupKind, RelaxCandidate};
+        let sym = || Expr::Sym(target.into());
+        let short = RelaxCandidate {
+            bytes: vec![0x41, 0xF8, 0, 0],
+            fixup: Fixup { kind: FixupKind::Abs16Be, offset: 2, target: sym() },
+        };
+        let long = RelaxCandidate {
+            bytes: vec![0x41, 0xF9, 0, 0, 0, 0],
+            fixup: Fixup { kind: FixupKind::Abs32Be, offset: 2, target: sym() },
+        };
+        Section {
+            name: format!("sec_{label}"),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma,
+            labels: vec![Label { name: label.into(), offset: 0 }],
+            fragments: vec![Fragment::RelaxAbsSym { short, long, target: sym(), span: span0() }],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 4,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        }
+    }
+
+    /// The layout that straddles the $8000 boundary: `Wide` fills up to $7FE0, then a
+    /// growable data allotment, then the code, then the data section the code's
+    /// operand targets. At the frozen sizes everything sits below $8000 (abs.w); a
+    /// grown allotment pushes the target past $8000 and the code's own length grows
+    /// from 4 to 6 while it moves.
+    const WIDE_LEN: usize = 0x6FE0; // Wide: [0x1000, 0x7FE0)
+    const ALLOT_PROV: u32 = HEAD + WIDE_LEN as u32; // 0x7FE0
+    const ALLOT: usize = 0x10;
+    const CODE_PROV: u32 = ALLOT_PROV + ALLOT as u32; // 0x7FF0
+    const TARGET_PROV: u32 = CODE_PROV + 4; // 0x7FF4 — the abs.w form's successor slot
+
+    fn boundary_walk(allot_len: usize) -> Result<Vec<Option<u32>>, String> {
+        let secs = vec![
+            data("Wide", HEAD, WIDE_LEN),
+            data("Allot", ALLOT_PROV, allot_len),
+            code_abs("Code", CODE_PROV, "T"),
+            data("T", TARGET_PROV, 0x10),
+        ];
+        let prov: Vec<Option<i64>> = secs.iter().map(|s| Some(s.lma as i64)).collect();
+        let labeled = vec![true; 4];
+        let order =
+            vec!["Wide".to_string(), "Allot".to_string(), "Code".to_string(), "T".to_string()];
+        let mut w = Vec::new();
+        packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w, &|_| None)
+    }
+
+    /// FOLD IDENTITY with a base-dependent length: at the frozen sizes the walk
+    /// reproduces every provisional base, and the target's slot proves the code
+    /// measured its SHORT form (4 B) below the boundary.
+    #[test]
+    fn base_dependent_length_reproduces_provisional_bases_at_frozen_sizes() {
+        let bases = boundary_walk(ALLOT).unwrap_or_else(|e| panic!("frozen sizes must build: {e}"));
+        assert_eq!(
+            bases,
+            vec![Some(HEAD), Some(ALLOT_PROV), Some(CODE_PROV), Some(TARGET_PROV)],
+            "unchanged sizes reproduce the frozen layout"
+        );
+    }
+
+    /// THE FIXED POINT: growth pushes the code past $8000, where its own operand
+    /// widens (4 -> 6 B). The walk must place the target section from the length the
+    /// code has AT ITS PACKED BASE — the derived expectation below is the abs.l
+    /// arithmetic, and the pre-fix substitute-base measurement had no way to see it.
+    #[test]
+    fn growth_across_the_boundary_places_the_successor_from_the_long_form() {
+        let growth: usize = 0x20;
+        let bases = boundary_walk(ALLOT + growth)
+            .unwrap_or_else(|e| panic!("growth across the boundary must build: {e}"));
+        // Derived: Code packs at align16(0x7FE0 + 0x30) = 0x8010 (its prov 0x7FF0 is
+        // 16-aligned); at 0x8010 its operand target is past $8000, so it measures the
+        // LONG form (6 B), and T packs at align4(0x8010 + 6) = 0x8018. The abs.w
+        // arithmetic would put T at 0x8014 — asserting 0x8018 is asserting the walk
+        // measured the code at its packed base.
+        let code = ALLOT_PROV + (ALLOT + growth) as u32; // 0x8010, already 16-aligned
+        assert_eq!(bases[2], Some(code));
+        assert_eq!(bases[3], Some((code + 6).div_ceil(4) * 4), "T is placed from the LONG form");
+    }
+
+    /// LOUD ON UNMEASURABLE: an operand naming a symbol no section defines cannot be
+    /// measured at any base — the walk refuses with the span-pass provenance instead
+    /// of packing from a fabricated length.
+    #[test]
+    fn an_unresolvable_operand_refuses_loud() {
+        let secs =
+            vec![data("Head", HEAD, HEAD_LEN), code_abs("Code", HEAD + HEAD_LEN as u32, "Nowhere")];
+        let prov: Vec<Option<i64>> = secs.iter().map(|s| Some(s.lma as i64)).collect();
+        let labeled = vec![true; 2];
+        let order = vec!["Head".to_string(), "Code".to_string()];
+        let mut w = Vec::new();
+        let err = packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w, &|_| None)
+            .expect_err("an unresolvable operand must not produce a layout");
+        assert!(err.contains("span pass"), "{err}");
+        assert!(err.contains("(provisional round)"), "names the round that failed: {err}");
+    }
+
+    /// The width-flip report (the non-convergence diagnostic's payload) names the
+    /// section, both lengths, the base, and each flipping site as `file:line` with
+    /// both encodings' widths.
+    #[test]
+    fn width_flip_report_names_the_relaxing_site() {
+        use super::width_flip_report;
+        let secs = vec![code_abs("Code", 0x1000, "T")];
+        let order = vec![0usize];
+        let report = width_flip_report(
+            &secs,
+            &order,
+            &[0x4],
+            &[vec![(span0(), 4)]],
+            &[0x6],
+            &[vec![(span0(), 6)]],
+            &[Some(0x1000)],
+            &|_| Some("games/sonic4/player/player_sensors.emp:202:17".to_string()),
+        );
+        for needle in [
+            "`sec_Code`",
+            "(`Code`)",
+            "measures 0x4 then 0x6 at base 0x1000",
+            "games/sonic4/player/player_sensors.emp:202:17 (4 B -> 6 B)",
+        ] {
+            assert!(report.contains(needle), "missing {needle:?} in {report:?}");
+        }
     }
 }

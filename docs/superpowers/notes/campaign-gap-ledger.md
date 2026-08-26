@@ -2699,3 +2699,22 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   `ModuleSpec::region` with the ~12 registry comments that justify a real pin by "the
   bootstrap READS region bases"; `pins.rs` regions then serve only the port gates and
   `repin`)
+
+- [BGROOM-3 measure-at-packed-base, 2026-08-26] **The legacy far-scratch cursor for
+  never-pinned sections still strides past the 24-bit wrap:** `lens_pinned` parks a ROM
+  section with no pin at `0x70_0000 + k·0x10_0000`, and slot k ≥ 9 aliases into the
+  abs.w windows under `asl_width_rule`'s 24-bit mask — the exact class that mis-measured
+  `player_sensors` through the (now deleted) collision fallback. It survives because it
+  is the asl-width emulation for the sections OUTSIDE the frozen table (asl encodes a
+  forward reference abs.l; measuring those at real bases packs the chain tighter than the
+  golden shapes — proven by the a35f7c1a/e7928778 identity breaks in this parcel), so the
+  frozen equilibrium and byte identity ride on it. — OPEN (kill: a refreeze that names
+  the un-frozen sections' bases, or map rows that pin them; then measure them at real
+  bases like every frozen-labeled section and delete the legacy cursor)
+
+- [BGROOM-3 measure-at-packed-base, 2026-08-26] **No constructive red test for the
+  packing walk's 8-round non-convergence exit:** a genuine abs.w/abs.l oscillator needs
+  a target that moves DOWN when an encoding grows, which the grow-only pack cannot
+  produce, so the exit is argued-unreachable and its payload (`width_flip_report`) is
+  unit-tested directly instead. — OPEN (kill: a synthetic Org/negative-pad construction
+  that oscillates for real, or a proof pass that turns the argument into an invariant)
