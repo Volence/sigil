@@ -70,6 +70,24 @@ impl PlacementMap {
     }
 }
 
+/// The namespace prefix of an `order` row that names a SECTION rather than a head label.
+pub const SECTION_ROW_PREFIX: &str = "section:";
+
+/// The section name an `order` row names, when the row is spelled
+/// `"section:<name>"` — the `<name>` of a `module … in <name>` declaration. A plain
+/// row (a head label) yields `None`. The prefix cannot collide with a label: neither
+/// frontend's identifier grammar admits `:` (`.emp`: `[A-Za-z_][A-Za-z0-9_]*`; AS:
+/// alphanumerics, `_`, `.`, `'`), so any row containing `section:` is a section row.
+pub fn section_row(row: &str) -> Option<&str> {
+    row.strip_prefix(SECTION_ROW_PREFIX)
+}
+
+/// The `order` key a section is declared under: its head label when the row is a
+/// label, else its `section:<name>` spelling.
+pub fn section_row_key(name: &str) -> String {
+    format!("{SECTION_ROW_PREFIX}{name}")
+}
+
 fn when_applies(when: Option<&str>, sound_on: bool) -> bool {
     match when {
         None => true,
@@ -122,6 +140,12 @@ struct BudgetDoc {
 pub fn load_placement_map(toml_src: &str) -> Result<PlacementMap, String> {
     let doc: MapDoc =
         toml::from_str(toml_src).map_err(|e| format!("placement map parse error: {e}"))?;
+    // A `section:` row must name something; the bare prefix is a typo, not a row.
+    if let Some(row) = doc.order.iter().find(|r| section_row(r).is_some_and(|n| n.is_empty())) {
+        return Err(format!(
+            "[map.order-section-row-empty] `order` row `{row}` names no section — spell it `section:<name>`"
+        ));
+    }
     Ok(PlacementMap {
         anchors: doc
             .anchor
@@ -185,5 +209,40 @@ ceiling = 0x20000
         assert_eq!(p.anchors_for(true).count(), 2);
         assert_eq!(p.holes_for(false).count(), 1);
         assert_eq!(p.holes_for(true).count(), 0);
+    }
+
+    #[test]
+    fn section_row_is_the_prefixed_spelling_only() {
+        assert_eq!(section_row("section:ojz_effects_editor_act1"), Some("ojz_effects_editor_act1"));
+        assert_eq!(section_row("EditorSceneBinding_OJZ_Act1_Sec0"), None);
+        assert_eq!(section_row_key("x"), "section:x");
+        // A section row round-trips through the loader as a plain string (no struct change).
+        let p = load_placement_map("order = [\"A\", \"section:b\"]\n").unwrap();
+        assert_eq!(p.order, vec!["A", "section:b"]);
+    }
+
+    #[test]
+    fn bare_section_prefix_is_rejected_at_load() {
+        let e = load_placement_map("order = [\"A\", \"section:\"]\n").unwrap_err();
+        assert!(e.contains("map.order-section-row-empty") && e.contains("`section:`"), "{e}");
+    }
+
+    /// The prefix is unambiguous because no label can contain `:` — witnessed on the
+    /// `.emp` lexer (the AS lexer's identifier set is `[A-Za-z0-9_.']`, likewise
+    /// colon-free): `section:foo` lexes as ident, colon, ident, never one identifier.
+    #[test]
+    fn no_label_can_spell_the_section_prefix() {
+        use sigil_frontend_emp::lexer::{lex, Tok};
+        let (toks, errs) = lex("section:foo", sigil_span::SourceId(0));
+        assert!(errs.is_empty(), "{errs:?}");
+        let idents: Vec<&str> = toks
+            .iter()
+            .filter_map(|t| match &t.tok {
+                Tok::Ident(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(idents, ["section", "foo"]);
+        assert!(toks.iter().any(|t| matches!(t.tok, Tok::Colon)));
     }
 }
