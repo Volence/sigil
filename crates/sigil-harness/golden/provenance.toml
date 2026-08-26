@@ -8749,3 +8749,58 @@ full_crc = "bcbda57e"
 full_size = 715742
 anchor_crc = "c8a198c6"
 anchor_end = 0xa32a0
+
+[[entry]]
+name = "rom-relayout"
+ab = "aeon c3f5cbe0 (merge of parcel/rom-relayout) built from a clean detached checkout with sigil 25c1f2a6 release binaries: s4 f81c6811 / s4.debug 090c6f35 / demo 8bd3d11b / demo.debug ec71a5a4, all four shapes exit 0, aeon pytest 1406-1407 passed 0 failed per shape; repin fixpoint (pins.rs unchanged); effects_gates 27 gates OK exit 0 on s4.debug.bin; bganim_room --gate positive margin both shapes (release 24,880 B / debug 22,752 B under a 12,288 B ceiling). Runtime music/DAC/SFX listen owed by the owner (Rust core serves no audio methods)."
+aeon_rev = "c3f5cbe05e35eeb99ca782b62d126b84a67528ff"
+note = "Z80 banks moved after the data region: dac_banks 0x48000->0x90000, sound_bank 0x58000->0xA0000; Map_Tails/Map_Knuckles un-exiled; owner d-28 option 2"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "b4be7c52"
+full_size = 735020
+anchor_crc = "b3e8f9b1"
+anchor_end = 0xa7c70
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "b133c62d"
+full_size = 610361
+anchor_crc = "ce46920b"
+anchor_end = 0x8b6f0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "8bd3d11b"
+full_size = 96372
+anchor_crc = "2d9752e8"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "ec71a5a4"
+full_size = 101080
+anchor_crc = "cd6a09ab"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "8a86dcaf"
+full_size = 674590
+anchor_crc = "931cdc49"
+anchor_end = 0xa4b1e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "f81c6811"
+full_size = 718741
+anchor_crc = "3bb82aad"
+anchor_end = 0xa5ba0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "090c6f35"
+full_size = 734640
+anchor_crc = "d3ab9c89"
+anchor_end = 0xa7c70
