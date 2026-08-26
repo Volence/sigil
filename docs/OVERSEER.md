@@ -445,6 +445,17 @@ below requires zero `skip:` lines and this is not a missing reference.
   sigil fixture gate `both_spellings_of_the_section_row_build_the_same_rom` is direction-agnostic
   and ran 3/3 green against the landed map. `.aeon-landing` moved to `058ad606` (same ROM bytes
   as `0e34408d`).
+- **`aeon_rev` answers WHICH TREE BUILT THESE BYTES — never WHICH PARCEL MOVED THEM.**
+  `name` and `ab` are the attribution; `aeon_rev` is the provenance, and the two point at
+  different commits whenever a freeze is retried on top of a later aeon revision. Chain
+  entry #167 is the first where they diverge by construction: the showcase parcel moved the
+  bytes at aeon `9dd52471`, but two freeze attempts failed on latent defects and the
+  succeeding freeze runs from a zero-byte gate-fix commit stacked above it, which is what
+  `aeon_rev` honestly records. **A reader who takes `aeon_rev` as attribution finds the
+  bytes moving at a commit whose diff moves nothing**, and the record looks self-
+  contradictory while being exactly right. The entry carries the attribution in words for
+  that reason. Do not "simplify" these into one field, and do not backfill one from the
+  other.
 - **Pre-merge:** re-run the suite on the merged tree with `SIGIL_STRICT_GATE=1`, which
   turns reference-tree skips into failures so the port gates cannot silently skip.
 - **A suite log does not name the tree it ran in — stamp it, and prove the landed code
