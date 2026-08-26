@@ -11,6 +11,8 @@
 //!   2. **ANCHOR-MOVE-NEEDS-A/B** — a target whose `anchor_crc` differs from the prior
 //!      entry forces the newer entry to carry a non-empty `ab` A/B-evidence ref. An
 //!      anchor that moved without evidence is a HARD failure.
+//!   3. **AEON-REV-PRESENT** — every entry written since [`AEON_REV_FROM_ENTRY`] names
+//!      the aeon revision its bytes were built from, as a full 40-character SHA.
 //!
 //! [`check`] validates a loaded chain against the committed blobs (the gate, and the
 //! `--check` half of the `refreeze` bin). [`recompute_targets`] rebuilds the per-target
@@ -37,6 +39,15 @@ pub struct Entry {
     /// A/B evidence reference. The root carries the `asl-witness` sentinel; every later
     /// entry that MOVES an anchor must carry a real ref (a design-note / A/B-log path).
     pub ab: String,
+    /// The aeon revision the frozen bytes were built from: a full 40-character SHA, or
+    /// empty on the historical entries that predate the field.
+    ///
+    /// Full, never abbreviated — a short SHA is a coordinate that grows ambiguous as
+    /// history grows, and this field's whole job is to be unambiguous years later.
+    /// `serde(default)` because the entries below [`AEON_REV_FROM_ENTRY`] have no such
+    /// key and must keep parsing.
+    #[serde(default)]
+    pub aeon_rev: String,
     #[serde(default)]
     pub note: String,
     /// target-key -> the golden's frozen CRC set. Keys are stable
@@ -61,6 +72,23 @@ pub struct Target {
 /// The `asl-witness` sentinel: the root's `ab`. Any OTHER entry carrying it (or an empty
 /// `ab`) while moving an anchor is a discipline violation.
 pub const ASL_WITNESS: &str = "asl-witness";
+
+/// The chain length at which [`Entry::aeon_rev`] shipped. Entries NUMBERED above this
+/// (1-based) were written by a refreeze that emits the field, so a missing or malformed
+/// `aeon_rev` there is a HARD violation in every mode.
+///
+/// The 166 entries at or below it predate the field and are exempt by design: the aeon
+/// SHA they pair with exists only inside the free text of `ab`/`note` (and 16 carry no
+/// `note` at all), so backfilling would write a RECONSTRUCTED record into the one file
+/// whose value is that it is not reconstructed. The gap is left visible instead.
+pub const AEON_REV_FROM_ENTRY: usize = 166;
+
+/// Whether a string is a full 40-character lowercase-hex git SHA — the only shape
+/// [`Entry::aeon_rev`] may carry. Abbreviations are rejected rather than normalized:
+/// the emitter always has the full SHA, so a short one means something hand-edited it.
+pub fn is_full_sha(s: &str) -> bool {
+    s.len() == 40 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
 
 impl Chain {
     pub fn tip(&self) -> Result<&Entry, String> {
@@ -155,6 +183,23 @@ pub fn recompute_targets(
 pub fn check(golden_dir: &Path, chain: &Chain) -> Vec<String> {
     let mut errs = Vec::new();
 
+    // (3) AEON-REV-PRESENT — every entry written since the field shipped must name the
+    // aeon revision its bytes were built from, as a full 40-char SHA. Hard in every
+    // mode: `render_entry` emits the field unconditionally and `refreeze --freeze`
+    // refuses to run without an honest value, so an entry that reaches here without one
+    // was hand-edited.
+    for (i, e) in chain.entry.iter().enumerate() {
+        let number = i + 1;
+        if number > AEON_REV_FROM_ENTRY && !is_full_sha(&e.aeon_rev) {
+            errs.push(format!(
+                "entry #{number} `{}`: aeon_rev = \"{}\" is not a full 40-char SHA \
+                 (entries after #{AEON_REV_FROM_ENTRY} must name the aeon revision they \
+                 were frozen from) (aeon-rev-present)",
+                e.name, e.aeon_rev
+            ));
+        }
+    }
+
     // (2) chain discipline: an anchor that differs from the prior entry's same target
     // forces the newer entry to carry a real A/B ref.
     for pair in chain.entry.windows(2) {
@@ -211,12 +256,22 @@ pub fn check(golden_dir: &Path, chain: &Chain) -> Vec<String> {
 /// Render one `[[entry]]` block (append-only text) in the file's house style. Kept as
 /// text rendering (not `toml::to_string` of the whole chain) so appending preserves the
 /// header comments and every existing entry verbatim.
-pub fn render_entry(name: &str, ab: &str, note: &str, targets: &BTreeMap<String, Target>) -> String {
+pub fn render_entry(
+    name: &str,
+    ab: &str,
+    aeon_rev: &str,
+    note: &str,
+    targets: &BTreeMap<String, Target>,
+) -> String {
     use std::fmt::Write;
     let mut s = String::new();
     let _ = writeln!(s, "\n[[entry]]");
     let _ = writeln!(s, "name = \"{name}\"");
     let _ = writeln!(s, "ab = \"{ab}\"");
+    // UNCONDITIONAL, unlike `note`. An entry whose aeon_rev is absent is exactly the
+    // ambiguity this field exists to close, so an empty one is written out visibly and
+    // fails `check`'s aeon-rev-present rule rather than vanishing from the file.
+    let _ = writeln!(s, "aeon_rev = \"{aeon_rev}\"");
     if !note.is_empty() {
         let _ = writeln!(s, "note = \"{note}\"");
     }
@@ -270,8 +325,8 @@ mod tests {
         moved_t.insert("s4".to_string(), t("s4.bin", "bbbb", 10, "2222", 8));
         let chain = Chain {
             entry: vec![
-                Entry { name: "root".into(), ab: ASL_WITNESS.into(), note: String::new(), targets: root_t },
-                Entry { name: "bad".into(), ab: ASL_WITNESS.into(), note: String::new(), targets: moved_t },
+                Entry { name: "root".into(), ab: ASL_WITNESS.into(), aeon_rev: String::new(), note: String::new(), targets: root_t },
+                Entry { name: "bad".into(), ab: ASL_WITNESS.into(), aeon_rev: String::new(), note: String::new(), targets: moved_t },
             ],
         };
         // discipline sweep alone (no blobs) should flag the moved anchor.
@@ -290,8 +345,8 @@ mod tests {
         moved_t.insert("s4".to_string(), t("s4.bin", "bbbb", 10, "2222", 8));
         let chain = Chain {
             entry: vec![
-                Entry { name: "root".into(), ab: ASL_WITNESS.into(), note: String::new(), targets: root_t },
-                Entry { name: "g9".into(), ab: "notes/g9-ab.md".into(), note: String::new(), targets: moved_t },
+                Entry { name: "root".into(), ab: ASL_WITNESS.into(), aeon_rev: String::new(), note: String::new(), targets: root_t },
+                Entry { name: "g9".into(), ab: "notes/g9-ab.md".into(), aeon_rev: String::new(), note: String::new(), targets: moved_t },
             ],
         };
         let errs = check(Path::new("/nonexistent"), &chain);
@@ -306,11 +361,98 @@ mod tests {
     fn render_roundtrips() {
         let mut targets = BTreeMap::new();
         targets.insert("s4".to_string(), t("s4.bin", "7f071417", 412306, "e5765873", 0x5db60));
-        let block = render_entry("p", "ref", "n", &targets);
+        let block = render_entry("p", "ref", SHA_A, "n", &targets);
         // raw deserialize (bypasses parse()'s root-sentinel guard — this is a lone entry).
         let chain: Chain = toml::from_str(&block).unwrap();
         assert_eq!(chain.entry[0].targets["s4"].anchor_end, 0x5db60);
         assert_eq!(chain.entry[0].ab, "ref");
+        assert_eq!(chain.entry[0].aeon_rev, SHA_A);
         assert_eq!(chain.entry[0].targets["s4"].full_crc, "7f071417");
+    }
+
+    // ── aeon_rev ────────────────────────────────────────────────────────────────
+
+    const SHA_A: &str = "55ea25576c7e523a8982d1a4175e1effaccb3570";
+
+    /// Build a chain of `n` entries, the last carrying `tip_rev`. Entry #1 is the root.
+    fn chain_of(n: usize, tip_rev: &str) -> Chain {
+        let mut targets = BTreeMap::new();
+        targets.insert("s4".to_string(), t("s4.bin", "aaaa", 10, "1111", 8));
+        let mut entry = Vec::new();
+        for i in 0..n {
+            entry.push(Entry {
+                name: format!("e{}", i + 1),
+                ab: if i == 0 { ASL_WITNESS.into() } else { "ref".into() },
+                aeon_rev: if i + 1 == n { tip_rev.to_string() } else { String::new() },
+                note: String::new(),
+                targets: targets.clone(),
+            });
+        }
+        Chain { entry }
+    }
+
+    fn aeon_rev_errs(chain: &Chain) -> Vec<String> {
+        check(Path::new("/nonexistent"), chain)
+            .into_iter()
+            .filter(|e| e.contains("aeon-rev-present"))
+            .collect()
+    }
+
+    #[test]
+    fn aeon_rev_defaults_to_empty_for_historical_entries() {
+        // The 166 committed entries carry no `aeon_rev` key at all. serde(default) is
+        // what keeps them parsing; without it every one of them is a parse error.
+        let src = "[[entry]]\nname=\"root\"\nab=\"asl-witness\"\n[entry.targets.s4]\ngolden=\"s4.bin\"\nfull_crc=\"0\"\nfull_size=1\nanchor_crc=\"0\"\nanchor_end=1\n";
+        let chain = parse(src).expect("a keyless historical entry must still parse");
+        assert_eq!(chain.entry[0].aeon_rev, "", "absent key defaults to empty");
+    }
+
+    #[test]
+    fn entry_past_the_cutoff_needs_a_full_sha() {
+        let chain = chain_of(AEON_REV_FROM_ENTRY + 1, "");
+        let errs = aeon_rev_errs(&chain);
+        assert_eq!(errs.len(), 1, "a field-less entry past the cutoff must be flagged: {errs:?}");
+        assert!(
+            errs[0].contains(&format!("entry #{}", AEON_REV_FROM_ENTRY + 1)),
+            "the violation must name the offending entry: {}",
+            errs[0]
+        );
+    }
+
+    #[test]
+    fn entry_past_the_cutoff_rejects_an_abbreviated_sha() {
+        // The emitter always has the full SHA, so a short one means a hand edit.
+        let chain = chain_of(AEON_REV_FROM_ENTRY + 1, &SHA_A[..8]);
+        assert_eq!(
+            aeon_rev_errs(&chain).len(),
+            1,
+            "an abbreviated aeon_rev must be rejected, not normalized"
+        );
+    }
+
+    #[test]
+    fn entry_past_the_cutoff_accepts_a_full_sha() {
+        let chain = chain_of(AEON_REV_FROM_ENTRY + 1, SHA_A);
+        assert!(aeon_rev_errs(&chain).is_empty(), "a full 40-char SHA must satisfy the rule");
+    }
+
+    #[test]
+    fn historical_entries_are_exempt() {
+        // Exactly at the cutoff: 166 entries, none carrying the field — today's file.
+        let chain = chain_of(AEON_REV_FROM_ENTRY, "");
+        assert!(
+            aeon_rev_errs(&chain).is_empty(),
+            "the 166 pre-field entries must not be flagged (no backfill)"
+        );
+    }
+
+    #[test]
+    fn is_full_sha_rejects_near_misses() {
+        assert!(is_full_sha(SHA_A));
+        assert!(!is_full_sha(""), "empty");
+        assert!(!is_full_sha(&SHA_A[..39]), "39 chars");
+        assert!(!is_full_sha(&format!("{SHA_A}0")), "41 chars");
+        assert!(!is_full_sha(&SHA_A.to_uppercase()), "uppercase hex");
+        assert!(!is_full_sha(&"g".repeat(40)), "non-hex");
     }
 }
