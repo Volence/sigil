@@ -8695,3 +8695,57 @@ full_crc = "5a3069d7"
 full_size = 715252
 anchor_crc = "31e18d84"
 anchor_end = 0xa32a0
+
+[[entry]]
+name = "showcase-effects"
+ab = "showcase-effects: bytes moved by aeon 9dd52471 (d-15 showcase: BAND_CURVE_N 0→1 widens band_record engine-wide, BAND_CURVE_BYTES 0→10 moves RAM +84 B, SCANLINE_CAPS $001E→$005E, section 4 binds EditorSceneBinding_OJZ_Act1_Sec4 with OJZ_DepthVSplit; DEBUG animation-room guarantee lowered to 12,094 under d-28-answered); frozen from aeon 893747f7, which adds only the zero-byte post-sigil ceiling gate on top."
+aeon_rev = "893747f706e349f6a9c506f8c8b5ab86da74bd8f"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "bf612819"
+full_size = 716122
+anchor_crc = "68da8978"
+anchor_end = 0xa32a0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "4366f37b"
+full_size = 610359
+anchor_crc = "eb36ff35"
+anchor_end = 0x8b6f0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "8bd3d11b"
+full_size = 96372
+anchor_crc = "2d9752e8"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "ec71a5a4"
+full_size = 101080
+anchor_crc = "cd6a09ab"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "2c5fd1f7"
+full_size = 655694
+anchor_crc = "c59285a0"
+anchor_end = 0xa014e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "a938b7d5"
+full_size = 699845
+anchor_crc = "c848c553"
+anchor_end = 0xa11d0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "bcbda57e"
+full_size = 715742
+anchor_crc = "c8a198c6"
+anchor_end = 0xa32a0
