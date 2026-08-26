@@ -749,14 +749,27 @@ share**; `TST` was exactly that, live.
    withdraws when the neighbouring `(align:)` is itself refused** — the fix-it promises "the
    assertion still proves it" and a refused assertion proves nothing, so firing there is false
    advice, and the lint must evaluate the same expression `check_struct_field_align` does, which
-   without the withdrawal reports an unresolvable name twice. (4) is the one the hub may want as
-   a spec clause; it is behaviour §4.3.1 does not state.
+   without the withdrawal reports an unresolvable name twice.
+   **(4) IS NOW SPEC** — the hub appended it to §4.3.1's lint paragraph in this lane's reasoning
+   and recorded the other three as implementation's, at empyrean `08ce4c1` (verified reachable
+   from their `origin/main` here at read time, and the clause read back rather than taken).
+   D2.38 is marked shipped at `ffa7bdb8`.
    **The owed align debt is CLOSED in the same parcel:** the six `(align: N)` coverage claims
    were re-measured at `67575c3c` rather than taken (all six held); #2 and #3 now assert the
    whole string, #4/#5/#6 gained tests, and §4.3's Scope clause gained
    `field_align_does_not_propagate_into_a_nested_structs_own_fields`, built so the nested struct
    is internally clean and lands at outer offset 1 — a propagating check must report, and must
-   not. **Tell the hub** so their `ALIGN-STRINGS` item can strengthen the D2.37 clause.
+   not. **`ALIGN-STRINGS` is CLOSED**: the hub verified the four test names on this repo's origin
+   and re-grepped aeon for the three pad tags themselves rather than taking the report, then
+   strengthened D2.37's "what actually pins them" clause to say all six strings are pinned
+   (empyrean `08ce4c1`).
+   **§4.3.1 shipped carrying the same false "cross-repo interface" claim D2.37 had just been
+   corrected of** — the sentence rode in on a verbatim lift from this lane's draft. Now fixed to
+   *"these strings are sigil's; no consumer outside sigil asserts them"*, with a parenthetical
+   recording how it happened. **The durable lesson, and the hub named it against itself:** a
+   verbatim lift is reviewed for FIDELITY TO THE SOURCE, and that review cannot see a claim that
+   is false in the source. Both lanes read it twice and neither was reading for truth. When
+   lifting text that carries factual claims, the claims need their own pass.
    **22 poisons, 22 red**, one of which caught a green leak in the parcel's OWN new assertion:
    `final_pad_to_below_the_cursor_names_the_end_of_the_struct` asserted the sentence but not the
    `[layout.pad-overflow]` tag, so a poison left it green while its sibling went red. That is bar
