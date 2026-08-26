@@ -122,37 +122,47 @@ fn soundbankhead_debug_matches_reference() {
     gate(true, "s4.debug.bin");
 }
 
-/// T4 soundness catch — the previously-latent PinnedBaked misplacement (ledger 1966).
-/// A PinnedBaked re-bootstrap places every native section via `emp_map_toml`, which
-/// feeds each region's pinned base straight in as its `lma_base`. When the pin held the
-/// phase VMA ($8000), the soundbankhead bank placed AT $8000 instead of its true $58000
-/// LMA — cosmetic under the shipped `Frozen` key (which packs from the frozen table),
-/// but a genuine misplacement on this path. With the pin now holding the LMA (repin's
-/// `phase_bank` derivation), the pinned bootstrap lands the bank at its load address in
-/// both shapes; the phase VMA survives only as the section's own `vma: $8000`.
+/// T4 soundness catch (ledger 1966) — `pins::SOUNDBANKHEAD`'s base is the bank's LMA
+/// (the placement address), NOT the $8000 phase VMA its labels resolve at. The pin is
+/// what the two byte gates above window the reference ROM by, and what a pin-driven
+/// placement would feed straight in as an `lma_base` (the `emp_map_toml` misplacement
+/// this catch was born from): a base holding the VMA would place the bank at $8000
+/// instead of its true load address.
+///
+/// The expectation is DERIVED, not written: the shipped (Frozen, chained) resolve —
+/// the same resolve `repin` derives the pin from — says where the bank loads and that
+/// it is `vma:`-windowed. The former subject, the PinnedBaked bootstrap resolve
+/// (`resolve_pinned_sections`), places every `.emp` section from the REGISTRY's pins and
+/// so cannot see a byte-emitting section that has no pin by design (the content-derived
+/// `ojz_effects_editor_act1`, declared to the map by its `section:` row); it has no live
+/// consumer (see the FIVE-REG packet), so the probe reads the layout that ships.
 #[test]
-fn soundbankhead_pinned_bootstrap_lands_at_lma_not_vma() {
+fn soundbankhead_pin_is_the_lma_not_the_vma() {
     let _guard = lock();
-    // No ROM is read here: `resolve_pinned_sections` resolves the sonic4 shape from
-    // source, so the tree this needs is the one that profile's build reads.
+    // No ROM is read here: the shipped resolve assembles the sonic4 shape from source,
+    // so the tree this needs is the one that profile's build reads.
     let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(false)) else {
         return;
     };
     for debug in [false, true] {
-        let resolved = native::resolve_pinned_sections(&aeon, debug)
-            .unwrap_or_else(|e| panic!("resolve_pinned_sections(debug={debug}): {e}"));
+        let resolved = native::resolve_canonical_sections(&aeon, debug)
+            .unwrap_or_else(|e| panic!("resolve_canonical_sections(debug={debug}): {e}"));
         let sec = resolved
             .iter()
             .find(|s| s.name == "soundbankhead")
-            .expect("the pinned layout must carry the soundbankhead section");
-        assert_eq!(
-            sec.lma, 0x58000,
-            "phase-bank bank must LOAD at its $58000 LMA on the PinnedBaked path (not the $8000 phase VMA)"
+            .expect("the shipped layout must carry the soundbankhead section");
+        let vma = sec
+            .vma_base
+            .expect("soundbankhead is a phase bank: it declares its own `vma:` window");
+        assert_ne!(
+            vma, sec.lma,
+            "phase bank (debug={debug}): the VMA its labels resolve at must differ from the LMA it loads at"
         );
+        let pin = if debug { pins::SOUNDBANKHEAD.debug_base } else { pins::SOUNDBANKHEAD.plain_base };
         assert_eq!(
-            sec.vma_base,
-            Some(0x8000),
-            "the phase VMA is the section's own `vma: $8000` (labels resolve there); it is not the load address"
+            pin, sec.lma,
+            "pins::SOUNDBANKHEAD base (debug={debug}) must be the bank's LMA {:#x} — where the shipped layout loads it — not its phase VMA {vma:#x}",
+            sec.lma
         );
     }
 }
