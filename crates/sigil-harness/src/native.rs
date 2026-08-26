@@ -5324,9 +5324,9 @@ mod derived_layout_tests {
         let labeled = vec![true; 2];
         let order = vec!["Head".to_string(), "Next".to_string()];
         let mut w = Vec::new();
-        let undeclared = packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w).unwrap();
+        let undeclared = packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w, &|_| None).unwrap();
         assert_eq!(undeclared[1], Some(HEAD + HEAD_LEN as u32), "undeclared gap packs contiguously");
-        let declared = packed_true_bases(&secs, &prov, &labeled, &order, false, &HashSet::from([HEAD, stale_prov]), &mut w).unwrap();
+        let declared = packed_true_bases(&secs, &prov, &labeled, &order, false, &HashSet::from([HEAD, stale_prov]), &mut w, &|_| None).unwrap();
         assert_eq!(declared[1], Some(stale_prov), "a declared anchor stays absolute");
     }
 
@@ -5348,7 +5348,7 @@ mod derived_layout_tests {
             let labeled = vec![true; 3];
             let order = vec!["Head".to_string(), "Grown".to_string(), "Bank".to_string()];
             let mut w = Vec::new();
-            packed_true_bases(&secs, &prov, &labeled, &order, false, &HashSet::from([HEAD, anchor]), &mut w)
+            packed_true_bases(&secs, &prov, &labeled, &order, false, &HashSet::from([HEAD, anchor]), &mut w, &|_| None)
         };
         // Fills the room exactly: builds, and the anchor is where the map says.
         let fits = build(room).unwrap_or_else(|e| panic!("growth that fits must build: {e}"));
@@ -5356,5 +5356,141 @@ mod derived_layout_tests {
         // One byte past the room: refused, and the message says why.
         let err = build(room + 1).expect_err("overrunning a declared anchor must not build");
         assert!(err.contains("declared anchor") && err.contains("overlap"), "{err}");
+    }
+
+    // ── measure-at-packed-base (2026-08-26): a section whose LENGTH DEPENDS ON ITS
+    // BASE — one `lea Table, aN`-shaped relaxable (RelaxAbsSym) whose operand width
+    // is abs.w below $8000 and abs.l above it. Every expectation is DERIVED from the
+    // sizes and the $8000 boundary; no address is copied from a run of the code.
+
+    /// A CODE section holding exactly one RelaxAbsSym (`lea (T).w/.l, a0`): 4 bytes
+    /// when `T` resolves under $8000 on the 24-bit bus, 6 above.
+    fn code_abs(label: &str, lma: u32, target: &str) -> Section {
+        use sigil_ir::{Expr, Fixup, FixupKind, RelaxCandidate};
+        let sym = || Expr::Sym(target.into());
+        let short = RelaxCandidate {
+            bytes: vec![0x41, 0xF8, 0, 0],
+            fixup: Fixup { kind: FixupKind::Abs16Be, offset: 2, target: sym() },
+        };
+        let long = RelaxCandidate {
+            bytes: vec![0x41, 0xF9, 0, 0, 0, 0],
+            fixup: Fixup { kind: FixupKind::Abs32Be, offset: 2, target: sym() },
+        };
+        Section {
+            name: format!("sec_{label}"),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma,
+            labels: vec![Label { name: label.into(), offset: 0 }],
+            fragments: vec![Fragment::RelaxAbsSym { short, long, target: sym(), span: span0() }],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 4,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        }
+    }
+
+    /// The layout that straddles the $8000 boundary: `Wide` fills up to $7FE0, then a
+    /// growable data allotment, then the code, then the data section the code's
+    /// operand targets. At the frozen sizes everything sits below $8000 (abs.w); a
+    /// grown allotment pushes the target past $8000 and the code's own length grows
+    /// from 4 to 6 while it moves.
+    const WIDE_LEN: usize = 0x6FE0; // Wide: [0x1000, 0x7FE0)
+    const ALLOT_PROV: u32 = HEAD + WIDE_LEN as u32; // 0x7FE0
+    const ALLOT: usize = 0x10;
+    const CODE_PROV: u32 = ALLOT_PROV + ALLOT as u32; // 0x7FF0
+    const TARGET_PROV: u32 = CODE_PROV + 4; // 0x7FF4 — the abs.w form's successor slot
+
+    fn boundary_walk(allot_len: usize) -> Result<Vec<Option<u32>>, String> {
+        let secs = vec![
+            data("Wide", HEAD, WIDE_LEN),
+            data("Allot", ALLOT_PROV, allot_len),
+            code_abs("Code", CODE_PROV, "T"),
+            data("T", TARGET_PROV, 0x10),
+        ];
+        let prov: Vec<Option<i64>> = secs.iter().map(|s| Some(s.lma as i64)).collect();
+        let labeled = vec![true; 4];
+        let order =
+            vec!["Wide".to_string(), "Allot".to_string(), "Code".to_string(), "T".to_string()];
+        let mut w = Vec::new();
+        packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w, &|_| None)
+    }
+
+    /// FOLD IDENTITY with a base-dependent length: at the frozen sizes the walk
+    /// reproduces every provisional base, and the target's slot proves the code
+    /// measured its SHORT form (4 B) below the boundary.
+    #[test]
+    fn base_dependent_length_reproduces_provisional_bases_at_frozen_sizes() {
+        let bases = boundary_walk(ALLOT).unwrap_or_else(|e| panic!("frozen sizes must build: {e}"));
+        assert_eq!(
+            bases,
+            vec![Some(HEAD), Some(ALLOT_PROV), Some(CODE_PROV), Some(TARGET_PROV)],
+            "unchanged sizes reproduce the frozen layout"
+        );
+    }
+
+    /// THE FIXED POINT: growth pushes the code past $8000, where its own operand
+    /// widens (4 -> 6 B). The walk must place the target section from the length the
+    /// code has AT ITS PACKED BASE — the derived expectation below is the abs.l
+    /// arithmetic, and the pre-fix substitute-base measurement had no way to see it.
+    #[test]
+    fn growth_across_the_boundary_places_the_successor_from_the_long_form() {
+        let growth: usize = 0x20;
+        let bases = boundary_walk(ALLOT + growth)
+            .unwrap_or_else(|e| panic!("growth across the boundary must build: {e}"));
+        // Derived: Code packs at align16(0x7FE0 + 0x30) = 0x8010 (its prov 0x7FF0 is
+        // 16-aligned); at 0x8010 its operand target is past $8000, so it measures the
+        // LONG form (6 B), and T packs at align4(0x8010 + 6) = 0x8018. The abs.w
+        // arithmetic would put T at 0x8014 — asserting 0x8018 is asserting the walk
+        // measured the code at its packed base.
+        let code = ALLOT_PROV + (ALLOT + growth) as u32; // 0x8010, already 16-aligned
+        assert_eq!(bases[2], Some(code));
+        assert_eq!(bases[3], Some((code + 6).div_ceil(4) * 4), "T is placed from the LONG form");
+    }
+
+    /// LOUD ON UNMEASURABLE: an operand naming a symbol no section defines cannot be
+    /// measured at any base — the walk refuses with the span-pass provenance instead
+    /// of packing from a fabricated length.
+    #[test]
+    fn an_unresolvable_operand_refuses_loud() {
+        let secs =
+            vec![data("Head", HEAD, HEAD_LEN), code_abs("Code", HEAD + HEAD_LEN as u32, "Nowhere")];
+        let prov: Vec<Option<i64>> = secs.iter().map(|s| Some(s.lma as i64)).collect();
+        let labeled = vec![true; 2];
+        let order = vec!["Head".to_string(), "Code".to_string()];
+        let mut w = Vec::new();
+        let err = packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w, &|_| None)
+            .expect_err("an unresolvable operand must not produce a layout");
+        assert!(err.contains("span pass"), "{err}");
+        assert!(err.contains("(provisional round)"), "names the round that failed: {err}");
+    }
+
+    /// The width-flip report (the non-convergence diagnostic's payload) names the
+    /// section, both lengths, the base, and each flipping site as `file:line` with
+    /// both encodings' widths.
+    #[test]
+    fn width_flip_report_names_the_relaxing_site() {
+        use super::width_flip_report;
+        let secs = vec![code_abs("Code", 0x1000, "T")];
+        let order = vec![0usize];
+        let report = width_flip_report(
+            &secs,
+            &order,
+            &[0x4],
+            &[vec![(span0(), 4)]],
+            &[0x6],
+            &[vec![(span0(), 6)]],
+            &[Some(0x1000)],
+            &|_| Some("games/sonic4/player/player_sensors.emp:202:17".to_string()),
+        );
+        for needle in [
+            "`sec_Code`",
+            "(`Code`)",
+            "measures 0x4 then 0x6 at base 0x1000",
+            "games/sonic4/player/player_sensors.emp:202:17 (4 B -> 6 B)",
+        ] {
+            assert!(report.contains(needle), "missing {needle:?} in {report:?}");
+        }
     }
 }
