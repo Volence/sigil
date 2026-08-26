@@ -198,6 +198,28 @@ noticed and would otherwise have swallowed, which is a real but bounded win.
   deliberately no row. Reproduced on UNMODIFIED sigil master (`bc05f446`) in a detached
   worktree against the same aeon tree, which is the only thing that separates
   "pre-existing" from "the parcel I am landing". Relayed to the aeon lane 2026-08-24.
+  **CORRECTED 2026-08-26 (aeon's closure agent, reproduced in worktrees; branch verified here as
+  2 test files, +20/-1): "cause is aeon-side, the RESERVED SLOT" is WRONG for four of the five.**
+  (A) `unknown function ojz_act1_act_default / ojz_act1_sec_scene` is a SIGIL HARNESS gap: the
+  four act tests build the descriptor with single-file `lower_module` + a hand-listed
+  `with_ambient` set that resolves no `use`; every other cross-seam name rides as an AS equ but
+  these two are `pub comptime fn` and cannot. `sigil build` never saw it. Fix on sigil branch
+  `parcel/sigil-red-closure` @ `75802f6a` (worktree `~/sonic_hacks/sigil-wt/sigil-red`, based on
+  `7bc50e41`, local-only): parse the generated `effects_scenes.emp` and ride its items ambient.
+  Queued as `CLOSURE-FIX`, lands after the §4 parcel (shares the landing checkout).
+  (C) UNMASKED by (A): the `act_descriptor_port` pair then fail
+  `section.bytes.len() == pins::ACT_DESCRIPTOR.plain_len` — emitted 0x27A, pinned 0x27C. The
+  805370b1 refreeze put `OJZ_Sec0_Blocks` 2 bytes past the descriptor's end on an alignment
+  boundary and `repin` measures start..next-label, so the SUCCESSOR'S PAD entered the pin.
+  Same "gap between labels is an allotment" family as the bganim 2-byte slot, now in the pin
+  generator. Queued as `REPIN-END`: repin measures the section's own end (preferred) or the
+  gate tolerates trailing fill. `pins.rs` is not to be hand-edited for it.
+  With (A) applied: 3846 / 3 / 4 (their run, clean aeon 415e0b6a); the three = the pair on (C)
+  and `soundbankhead` on (B) below. Aeon CRCs unchanged in all four shapes.
+  **Also: the reference CRCs in the "reference tree" paragraph above (060401e4 / 0dbaa80f) are
+  the 2026-08-22 tip and are STALE — the provenance tip is now s4 `c7b9d10d` · s4.debug
+  `f0175028` · demo `c708b114` · demo.debug `dec88cc1` at aeon `415e0b6a`. Read the TIP of
+  `golden/provenance.toml`, never a number in this file.**
   **Re-split 2026-08-26 with the aeon lane:** the two messages are two owners. `unknown
   function ojz_act1_act_default / ojz_act1_sec_scene` is aeon's (closure of their generated
   module under this harness). `section ojz_effects_editor_act1 has no region in the map`
