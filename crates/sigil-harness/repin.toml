@@ -646,11 +646,14 @@ end = "ObjDef_Static"
 # while scene_registry_port links only scene_registry — 0xB1C pinned vs 0xACE emitted,
 # refused by the align-pad tolerance (the c2 precedent above, one section later).
 # The head label is CONTENT-DERIVED (whatever the generated block emits first — today
-# the section-0 binding table); when sigil's `section:` order row lands this end
-# should follow it to the section name.
+# the section-0 binding table). END REPOINTED AGAIN 2026-08-26 (REPIN-END) to the
+# section's OWN end: `section:scene_registry` = its `lma + image_len`, which no
+# generated successor label can rot. Measured equal to the content-derived label in
+# both shapes (0xACE; the successor's head sits flush, no pad) — a re-spelling, not a
+# re-measure.
 name = "scene_registry"
 start = "DeformTable_Zero"
-end = "EditorSceneBinding_OJZ_Act1_Sec0"
+end = "section:scene_registry"
 gate = "SIGIL_EMP_SCENE_REGISTRY"
 tests = ["scene_registry_port"]
 
@@ -781,10 +784,15 @@ start = "OJZ_Act_Pool_Page0"
 end = "OJZ_Act1_Descriptor"
 tests = ["ojz_run_a_port"]
 
+# END = the section's OWN end (`section:<name>` = its `lma + image_len`, REPIN-END).
+# The descriptor emits 0x28 header + 9 x 0x42 = 0x27A bytes; the successor's head
+# (`OJZ_Sec0_Blocks`) lands after alignment pad (+2 plain / +6 debug), and a pin
+# measured to it fails act_descriptor_port on LENGTH alone with every byte equal.
+# A gap between labels is an allotment, not a size.
 [[region]]
 name = "act_descriptor"
 start = "OJZ_Act1_Descriptor"
-end = "OJZ_Sec0_Blocks"
+end = "section:act_descriptor"
 gate = "SIGIL_EMP_ACT_DESCRIPTOR"
 tests = ["act_descriptor_port"]
 
