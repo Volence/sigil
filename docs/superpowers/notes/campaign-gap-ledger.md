@@ -2657,3 +2657,18 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   (allotment + `0x400` spread) no longer bounds anything:** grown pure data measures at
   scratch and packs downstream with a warning, so the number it computes is stale-but-green.
   — OPEN, aeon's (kill: retire the placer arm or re-point it at the physical pre-DAC slack)
+- [SECTION-ROW parcel, 2026-08-26] **`section:` rows are not shape-gated:**
+  `[map.order-unknown-section]` is checked per build, so a `section:` row naming a section
+  that exists only in some shapes would fail the others. No live case (the four sonic4-map
+  shapes share one section set; demo has its own map). — OPEN (kill: a `when` on order
+  rows, or the union-order rule extended to section rows the day a shape-conditional
+  section exists)
+- [SECTION-ROW parcel, 2026-08-26] **`repin.toml` region ends still name the content-derived
+  label** (`scene_registry` `end = "EditorSceneBinding_OJZ_Act1_Sec0"`): the same rot the
+  `order` row just closed. — OPEN, REPIN-END's (kill: `end = "section:<name>"` resolving to
+  the section's LMA in the region reader)
+- [SECTION-ROW parcel, 2026-08-26] **`section_row_fixture.rs` doctors the live map from the
+  literal row** and panics by design once aeon migrates map.toml:124 to
+  `"section:ojz_effects_editor_act1"`. — OPEN (kill: retire the three gates in the same
+  landing that consumes the aeon SHA carrying the migration; the seven CRC gates then carry
+  the identity)
