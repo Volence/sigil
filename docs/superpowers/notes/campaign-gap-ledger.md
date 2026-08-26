@@ -2836,3 +2836,23 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   so it cannot be forgotten and backfilled only where the existing prose names one
   unambiguously; then the gate asserts `AEON_DIR`'s HEAD against the tip's field and fails
   closed on a missing one)
+  **OWNERSHIP CORRECTED 2026-08-26, by the aeon lane, and they were right.** This row first
+  read as though the schema change were aeon's. It is not: the emitter is **sigil code** —
+  `provenance::render_entry` (`crates/sigil-harness/src/provenance.rs:214`), called from
+  `crates/sigil-harness/src/bin/refreeze.rs:226`. What aeon owns is *running* the refreeze at
+  a landing, not the field. Split ACCEPTED both sides: sigil authors `aeon_rev` on each new
+  entry and takes the consuming gate; aeon commits to always freezing from a clean committed
+  `AEON_DIR` and to re-verifying the field on the first pairing after it ships. Their half is
+  banked in-tree at aeon `docs/DEFERRED_WORK.md` §"Provenance entries carry no aeon revision"
+  (verified here from `origin/master`, not their working tree). **No backfill of the 166
+  historical entries** — a prose-derived SHA is a reconstructed record.
+  **Second finding, from reading the freeze path to size the work, and it stands on its own.**
+  `refreeze.rs` never resolves `AEON_DIR` at all; it passes the environment through to the
+  build subprocess, which falls back to the default aeon path when the variable is unset. So a
+  refreeze run with `AEON_DIR` unset silently freezes against **the owner's live aeon
+  checkout** — the tree this document elsewhere warns carries hours of uncommitted content
+  edits — and records nothing about it. The existing guard is the `--ab`/anchor check, which
+  fires on byte MOVEMENT and is blind to provenance, so this failure is green by construction.
+  Deriving the field forces the freeze path to resolve and vet `AEON_DIR` for the first time,
+  which is the larger half of the value: the gate proves a run used the right tree, the
+  emitter's refusal stops a wrong tree being frozen in the first place.
