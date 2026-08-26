@@ -2390,10 +2390,6 @@ name = "Static_Sprite_DMA"
 tests = ["buffers_port"]
 
 [[symbol]]
-name = "Static_Hscroll_Cell"
-tests = ["buffers_port"]
-
-[[symbol]]
 name = "Static_Hscroll_Line"
 tests = ["buffers_port"]
 
