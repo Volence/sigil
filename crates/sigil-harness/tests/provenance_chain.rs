@@ -5,10 +5,14 @@
 //!       the chain tip (a stale golden or a stale chain entry fails here);
 //!   (2) ANCHOR-MOVE-NEEDS-A/B — an anchor that moved between consecutive entries
 //!       without a real `ab` evidence ref is a HARD failure;
-//!   (3) AEON-REV-PRESENT — every entry written since the `aeon_rev` field shipped names
-//!       the aeon revision its bytes were built from, as a full 40-char SHA.
+//!   (3) AEON-REV-WELL-FORMED — an entry carrying an `aeon_rev` carries a full 40-char
+//!       SHA, wherever it sits;
+//!   (4) AEON-REV-MONOTONIC — once any entry names its aeon revision, no later entry may
+//!       omit it. The boundary is derived from the chain, never pinned to an entry
+//!       number, so a refreeze that lands before the field ships cannot retroactively
+//!       become a violation.
 //!
-//! (1)–(3) need NO aeon tree and NO sigil build — they read only the committed blobs +
+//! (1)–(4) need NO aeon tree and NO sigil build — they read only the committed blobs +
 //! toml, so they run in the plain `cargo test -p sigil-harness` set (unlike the aeon-gated
 //! native_full_rom / native_offcanonical_rom placement gates).
 //!
@@ -108,33 +112,33 @@ fn aeon_dir_matches_the_provenance_tip() {
     // an `aeon_rev` until the next genuinely byte-moving parcel — no parcel can force
     // one. Failing closed here would put master red under the documented pre-merge bar
     // for an indefinite period, which retires the strict gate as a merge tool rather
-    // than strengthening it. The teeth live in `check`'s AEON-REV-PRESENT rule instead:
-    // that one is hard TODAY, in every mode, and makes a field-less entry #167
-    // impossible. So this branch is a ratchet that disarms itself, permanently, at the
-    // next refreeze. Not `skip:` — that sentinel means "reference missing", and the
+    // than strengthening it. The teeth live in `check`'s AEON-REV-WELL-FORMED and
+    // AEON-REV-MONOTONIC rules instead: both are hard TODAY, in every mode. So this
+    // branch is a ratchet that disarms itself, permanently, at the next refreeze that
+    // names a revision. Not `skip:` — that sentinel means "reference missing", and the
     // strict full-suite bar requires zero of those.
-    if number <= provenance::AEON_REV_FROM_ENTRY {
+    //
+    // The condition is the FIELD's absence, never an entry number: a pinned cutoff has a
+    // merge race (see `check`), and reading the tip itself has none.
+    let Some(tip_rev) = tip.aeon_rev.as_deref() else {
         eprintln!(
-            "ratchet: provenance tip `{}` is entry #{number}, at or below the \
-             AEON_REV_FROM_ENTRY={} cutoff, so it carries no aeon_rev and the AEON_DIR \
-             pairing cannot be checked. Historical entries are deliberately not \
-             backfilled. This ratchet disarms at the next byte-moving refreeze, which \
-             writes the field and makes this assertion live.",
-            tip.name,
-            provenance::AEON_REV_FROM_ENTRY
+            "ratchet: provenance tip `{}` (entry #{number}) carries no aeon_rev, so the \
+             AEON_DIR pairing cannot be checked. Entries predating the field are \
+             deliberately not backfilled. This ratchet disarms at the next refreeze that \
+             names a revision, which makes this assertion live permanently.",
+            tip.name
         );
         return;
-    }
+    };
 
-    // Past the cutoff the field is guaranteed well-formed by AEON-REV-PRESENT, which
+    // A present field is guaranteed well-formed by AEON-REV-WELL-FORMED, which
     // `provenance_chain_holds` enforces; assert it rather than assume it, so this gate
     // cannot be the one that reads a malformed value as a pass.
     assert!(
-        provenance::is_full_sha(&tip.aeon_rev),
-        "tip `{}` (entry #{number}) is past the AEON_REV_FROM_ENTRY cutoff but carries \
-         aeon_rev = \"{}\", which is not a full 40-char SHA",
-        tip.name,
-        tip.aeon_rev
+        provenance::is_full_sha(tip_rev),
+        "tip `{}` (entry #{number}) carries aeon_rev = \"{tip_rev}\", which is not a \
+         full 40-char SHA",
+        tip.name
     );
 
     let aeon = test_support::aeon_dir();
@@ -149,7 +153,7 @@ fn aeon_dir_matches_the_provenance_tip() {
         }
     };
 
-    if head == tip.aeon_rev {
+    if head == tip_rev {
         return;
     }
 
@@ -170,9 +174,9 @@ fn aeon_dir_matches_the_provenance_tip() {
          tree are comparisons against a DIFFERENT revision than the record describes. \
          Point AEON_DIR at a clean checkout of {}.",
         aeon.display(),
-        tip.aeon_rev,
+        tip_rev,
         tip.name,
-        tip.aeon_rev
+        tip_rev
     );
     assert!(!test_support::strict_gate(), "{msg}");
     eprintln!("notice: {msg}");

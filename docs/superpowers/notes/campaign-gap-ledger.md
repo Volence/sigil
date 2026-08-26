@@ -2863,9 +2863,10 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   ambiguity being closed. `refreeze --freeze` now resolves and vets `AEON_DIR` before it
   builds anything and refuses on unset / not-a-directory / not-a-repo / unresolvable-HEAD /
   DIRTY, each refusal naming the variable, the path and the fault. `--check` is untouched and
-  still takes no aeon tree. Three consuming rules: AEON-REV-PRESENT in `provenance::check`
-  (hard, every mode, for entries past `AEON_REV_FROM_ENTRY = 166`) and
-  `aeon_dir_matches_the_provenance_tip`.
+  still takes no aeon tree. Consuming rules: AEON-REV-WELL-FORMED (an entry carrying the field
+  carries a full 40-char SHA, wherever it sits) and AEON-REV-MONOTONIC (once any entry names a
+  revision, no later entry may omit it) in `provenance::check`, both hard in every mode, plus
+  the `aeon_dir_matches_the_provenance_tip` pairing gate.
   **Two rulings landed AGAINST the dispatching brief, both on measurement, and the corrections
   are the useful part of this row.** (1) The brief specified the `AEON_DIR`-vs-tip assertion as
   *hard and unconditional in both modes*. It cannot be: at the moment of writing, aeon master
@@ -2879,13 +2880,31 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   brief's own verification bar of `0 failed` under strict — the tip is entry #166 and cannot
   acquire the field until the next byte-moving refreeze, which **no parcel can force** — so it
   would put master red under the documented bar indefinitely and retire the strict gate as a
-  merge tool. The ratchet passes in both modes; the teeth moved to AEON-REV-PRESENT, which is
-  hard TODAY in every mode and makes a field-less entry #167 impossible. The ratchet prints
+  merge tool. The ratchet passes in both modes; the teeth moved to the two `check` rules, hard
+  TODAY in every mode. The ratchet prints
   under `ratchet:`, never `skip:`, because the strict bar requires zero `skip:` lines.
   **No backfill**, as agreed both sides. The 16 note-less entries stay note-less and the
   150 prose SHAs stay prose: a reconstructed record in the one file whose worth is that it is
-  not reconstructed would be a net loss. `AEON_REV_FROM_ENTRY = 166` is where that decision
-  lives, in code, with the reason attached.
+  not reconstructed would be a net loss.
+  **THIRD CORRECTION, from review, and it was a real defect rather than a preference.** The
+  first implementation pinned the boundary at `AEON_REV_FROM_ENTRY = 166`. That has a MERGE
+  RACE: the aeon lane refreezes by running sigil's `refreeze` out of **sigil master**, so a
+  byte-moving refreeze landing before this branch appends a field-less entry #167 that was
+  entirely legitimate when written — and the pinned rule then turns master red on somebody
+  else's correct work, which is precisely the failure this mechanism exists to prevent, aimed
+  at ourselves. The window was open and the lane was active. Fixed by DERIVING the boundary:
+  once any entry carries a valid `aeon_rev`, every later entry must too. Measured both ways on
+  the same poisoned chain — the pinned form failed two tests, the derived form passes.
+  The field was also retyped `Option<String>`, which is strictly stronger than the constant in
+  the case the constant handled worst: key-absent (`None`, an older binary wrote it) is now
+  distinguishable from key-present-but-blank (`Some("")`, a hand edit), so a malformed value is
+  rejected **anywhere in the chain**, not merely past a cutoff.
+  **Accepted residual hole, stated rather than papered over:** deleting `aeon_rev` from *every*
+  entry returns the chain to the legitimate pre-field state and passes. No in-file signal can
+  distinguish "never armed" from "disarmed by deletion"; closing it would mean making a pure-data
+  gate depend on git history. Deleting the field from any *later* entry is still caught by
+  AEON-REV-MONOTONIC, and blanking it is caught by AEON-REV-WELL-FORMED, so every accidental
+  path is covered — only deliberate falsification of an append-only record is not.
   Aeon's half — always freeze from a clean committed `AEON_DIR`, re-verify on the first
   pairing after this ships — is theirs and still open at their `docs/DEFERRED_WORK.md`. The
   emitter's dirty-refusal now enforces the first clause mechanically, so their commitment is

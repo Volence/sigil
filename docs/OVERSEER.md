@@ -273,10 +273,11 @@ only inside the free text of `ab`/`note` (16 of the 166 entries carry no `note` 
 check of the pairing to date was a human reading prose, and a parcel lost a run to exactly
 that. What shipped:
 
-- **`Entry.aeon_rev`** — a full 40-character SHA (never abbreviated). `#[serde(default)]`, so
-  the 166 historical entries keep parsing; they are **deliberately not backfilled**, since a
-  prose-derived SHA is a reconstructed record. `provenance::AEON_REV_FROM_ENTRY = 166` is the
-  cutoff, in code, with the reason attached.
+- **`Entry.aeon_rev`** — a full 40-character SHA (never abbreviated), typed `Option<String>`
+  with `#[serde(default)]`, so the 166 historical entries keep parsing; they are
+  **deliberately not backfilled**, since a prose-derived SHA is a reconstructed record. The
+  `Option` is load-bearing: `None` means the KEY IS ABSENT (an older `refreeze` wrote the
+  entry) while `Some("")` means somebody blanked it, and only the first is legitimate.
 - **`refreeze --freeze` refuses unless it can name the revision honestly** — `AEON_DIR` unset,
   not a directory, not a git repo, HEAD unresolvable, or the tree **DIRTY** all refuse, before
   anything is built, each naming the variable, the path and the fault. This is not new policy:
@@ -288,16 +289,31 @@ that. What shipped:
   against the tip's `aeon_rev`. **Hard under `SIGIL_STRICT_GATE=1`; a loud `notice:` line
   otherwise.** Deliberately not hard in both modes: aeon master routinely runs ahead of the
   frozen tip for byte-neutral reasons (at the time this shipped it was two commits ahead, both
-  documentation-only), so an unconditional assertion would be red on trees that are
-  byte-correct in every way. Strict is where the bar belongs — it *is* the pre-merge run.
-- **AEON-REV-PRESENT** in `provenance::check` — an entry past #166 without a full SHA is a HARD
-  failure in **every** mode. This is the rule with teeth today.
+  documentation-only, and four by the time it was reviewed), so an unconditional assertion
+  would be red on trees that are byte-correct in every way. Strict is where the bar belongs —
+  it *is* the pre-merge run.
+- **AEON-REV-WELL-FORMED** in `provenance::check` — an entry carrying an `aeon_rev` at all must
+  carry a full 40-char SHA, **wherever it sits in the chain**. Hard in every mode.
+- **AEON-REV-MONOTONIC** in `provenance::check` — once any entry names its aeon revision, no
+  later entry may omit it. Hard in every mode. These two are the rules with teeth today.
 
-**The one tolerance, and its disarm condition:** while the tip is entry #166 it carries no
-`aeon_rev`, so the pairing gate prints a `ratchet:` line and passes *in both modes*. `refreeze`
-appends nothing when nothing moved, so no parcel can force the field onto the tip; failing
-closed would put master red under the full-suite bar indefinitely. **The ratchet disarms
-permanently at the next byte-moving refreeze.** It prints `ratchet:`, never `skip:` — the bar
+**⚠ THE BOUNDARY IS DERIVED FROM THE CHAIN, NEVER PINNED TO AN ENTRY NUMBER — and this was a
+real defect caught in review, not a style preference.** The first implementation used a
+`AEON_REV_FROM_ENTRY = 166` constant. The aeon lane refreezes by running sigil's `refreeze` out
+of **sigil master**, so a byte-moving refreeze landing before the field shipped would append a
+field-less entry #167 that was entirely legitimate when written — and the pinned rule then
+turned master red on somebody else's correct work the moment the branch merged. Measured, not
+reasoned: on a chain carrying exactly that entry the pinned form failed **two** tests
+(`provenance_chain_holds` and the pairing gate) while the derived form passes the identical
+file. That is the failure this whole mechanism exists to prevent, aimed at ourselves. If you
+ever find yourself wanting a number here, that is the trap.
+
+**The one tolerance, and its disarm condition:** while the tip carries no `aeon_rev` the
+pairing gate prints a `ratchet:` line and passes *in both modes*. `refreeze` appends nothing
+when nothing moved, so no parcel can force the field onto the tip; failing closed would put
+master red under the full-suite bar indefinitely. **The ratchet disarms permanently at the
+next refreeze that names a revision** — the condition is the field's absence, never an entry
+number. It prints `ratchet:`, never `skip:` — the bar
 below requires zero `skip:` lines and this is not a missing reference.
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
@@ -308,7 +324,7 @@ below requires zero `skip:` lines and this is not a missing reference.
   2026-08-26, log `~/sonic_hacks/.sigil-agent-a45a-verify.log` (was 3928/3932 at master
   `243d2d24`; +7 from the `aeon_rev` field, its six unit tests and the pairing gate).
   Note the run emits **one `ratchet:` line** — the pairing gate's self-disarming tolerance
-  while the tip is entry #166. That prefix is not `skip:` and does not violate the bar above. **The count is the bar; the pairing is a
+  while the tip carries no `aeon_rev`. That prefix is not `skip:` and does not violate the bar above. **The count is the bar; the pairing is a
   timestamp, not an instruction** — a later freeze moves the aeon SHA and leaves the count
   alone, so reconcile a parcel's delta against `git grep -c '#\[test\]' HEAD -- '*.rs'` and
   read the pairing only as "this number was last seen on that pair".

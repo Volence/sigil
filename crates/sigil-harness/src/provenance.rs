@@ -11,8 +11,11 @@
 //!   2. **ANCHOR-MOVE-NEEDS-A/B** — a target whose `anchor_crc` differs from the prior
 //!      entry forces the newer entry to carry a non-empty `ab` A/B-evidence ref. An
 //!      anchor that moved without evidence is a HARD failure.
-//!   3. **AEON-REV-PRESENT** — every entry written since [`AEON_REV_FROM_ENTRY`] names
-//!      the aeon revision its bytes were built from, as a full 40-character SHA.
+//!   3. **AEON-REV-WELL-FORMED** — an entry carrying an `aeon_rev` at all carries a full
+//!      40-character SHA, wherever it sits in the chain.
+//!   4. **AEON-REV-MONOTONIC** — once any entry names the aeon revision its bytes were
+//!      built from, no later entry may omit it. The boundary is DERIVED from the chain,
+//!      never pinned to a number: see [`check`] for the merge race a constant creates.
 //!
 //! [`check`] validates a loaded chain against the committed blobs (the gate, and the
 //! `--check` half of the `refreeze` bin). [`recompute_targets`] rebuilds the per-target
@@ -39,15 +42,20 @@ pub struct Entry {
     /// A/B evidence reference. The root carries the `asl-witness` sentinel; every later
     /// entry that MOVES an anchor must carry a real ref (a design-note / A/B-log path).
     pub ab: String,
-    /// The aeon revision the frozen bytes were built from: a full 40-character SHA, or
-    /// empty on the historical entries that predate the field.
+    /// The aeon revision the frozen bytes were built from: a full 40-character SHA.
+    ///
+    /// `None` means the KEY IS ABSENT — the entry was appended by a `refreeze` that
+    /// predates the field. `Some` means the key is present and, since `render_entry`
+    /// always writes it and `--freeze` refuses without a vetted SHA, should always be a
+    /// valid one; a `Some` that is not is a hand edit and fails [`check`] wherever it
+    /// sits. That distinction is the whole reason this is an `Option` rather than a
+    /// `String` defaulting to empty: "nobody had written it yet" and "somebody blanked
+    /// it" are different facts and only one of them is legitimate.
     ///
     /// Full, never abbreviated — a short SHA is a coordinate that grows ambiguous as
     /// history grows, and this field's whole job is to be unambiguous years later.
-    /// `serde(default)` because the entries below [`AEON_REV_FROM_ENTRY`] have no such
-    /// key and must keep parsing.
     #[serde(default)]
-    pub aeon_rev: String,
+    pub aeon_rev: Option<String>,
     #[serde(default)]
     pub note: String,
     /// target-key -> the golden's frozen CRC set. Keys are stable
@@ -72,16 +80,6 @@ pub struct Target {
 /// The `asl-witness` sentinel: the root's `ab`. Any OTHER entry carrying it (or an empty
 /// `ab`) while moving an anchor is a discipline violation.
 pub const ASL_WITNESS: &str = "asl-witness";
-
-/// The chain length at which [`Entry::aeon_rev`] shipped. Entries NUMBERED above this
-/// (1-based) were written by a refreeze that emits the field, so a missing or malformed
-/// `aeon_rev` there is a HARD violation in every mode.
-///
-/// The 166 entries at or below it predate the field and are exempt by design: the aeon
-/// SHA they pair with exists only inside the free text of `ab`/`note` (and 16 carry no
-/// `note` at all), so backfilling would write a RECONSTRUCTED record into the one file
-/// whose value is that it is not reconstructed. The gap is left visible instead.
-pub const AEON_REV_FROM_ENTRY: usize = 166;
 
 /// Whether a string is a full 40-character lowercase-hex git SHA — the only shape
 /// [`Entry::aeon_rev`] may carry. Abbreviations are rejected rather than normalized:
@@ -183,20 +181,50 @@ pub fn recompute_targets(
 pub fn check(golden_dir: &Path, chain: &Chain) -> Vec<String> {
     let mut errs = Vec::new();
 
-    // (3) AEON-REV-PRESENT — every entry written since the field shipped must name the
-    // aeon revision its bytes were built from, as a full 40-char SHA. Hard in every
-    // mode: `render_entry` emits the field unconditionally and `refreeze --freeze`
-    // refuses to run without an honest value, so an entry that reaches here without one
-    // was hand-edited.
+    // (3) AEON-REV-WELL-FORMED — POSITION-INDEPENDENT. An entry that carries the key at
+    // all must carry a full 40-char SHA. `render_entry` always writes the key and
+    // `--freeze` refuses without a vetted SHA, so a present-but-malformed value can only
+    // be a hand edit, and that is equally wrong at entry #3 or #300.
     for (i, e) in chain.entry.iter().enumerate() {
-        let number = i + 1;
-        if number > AEON_REV_FROM_ENTRY && !is_full_sha(&e.aeon_rev) {
-            errs.push(format!(
-                "entry #{number} `{}`: aeon_rev = \"{}\" is not a full 40-char SHA \
-                 (entries after #{AEON_REV_FROM_ENTRY} must name the aeon revision they \
-                 were frozen from) (aeon-rev-present)",
-                e.name, e.aeon_rev
-            ));
+        if let Some(rev) = &e.aeon_rev {
+            if !is_full_sha(rev) {
+                errs.push(format!(
+                    "entry #{} `{}`: aeon_rev = \"{rev}\" is present but is not a full \
+                     40-char lowercase-hex SHA (aeon-rev-well-formed)",
+                    i + 1,
+                    e.name
+                ));
+            }
+        }
+    }
+
+    // (4) AEON-REV-MONOTONIC — DERIVED, not pinned. Once any entry names its aeon
+    // revision, every later entry must too.
+    //
+    // The boundary is read out of the chain rather than hardcoded, and that is a
+    // correctness property, not a tidiness one. A pinned "entries after #166" constant
+    // has a MERGE RACE: the aeon lane refreezes by running this crate's `refreeze` out
+    // of sigil master, so a byte-moving refreeze landing before the field does appends a
+    // field-less entry #167 that was entirely legitimate when written — and the pinned
+    // rule would then turn master red on somebody else's correct work, which is exactly
+    // the failure this whole module exists to prevent, aimed at ourselves. Derived, that
+    // entry is simply still pre-field and passes, while an entry appended after the
+    // field is armed still cannot drop it.
+    if let Some(first) = chain.entry.iter().position(|e| e.aeon_rev.as_deref().is_some_and(is_full_sha))
+    {
+        let armed = &chain.entry[first];
+        for (i, e) in chain.entry.iter().enumerate().skip(first + 1) {
+            if e.aeon_rev.is_none() {
+                errs.push(format!(
+                    "entry #{} `{}`: no aeon_rev, but entry #{} `{}` already names one — \
+                     once the chain records the aeon revision it cannot stop \
+                     (aeon-rev-monotonic)",
+                    i + 1,
+                    e.name,
+                    first + 1,
+                    armed.name
+                ));
+            }
         }
     }
 
@@ -325,8 +353,8 @@ mod tests {
         moved_t.insert("s4".to_string(), t("s4.bin", "bbbb", 10, "2222", 8));
         let chain = Chain {
             entry: vec![
-                Entry { name: "root".into(), ab: ASL_WITNESS.into(), aeon_rev: String::new(), note: String::new(), targets: root_t },
-                Entry { name: "bad".into(), ab: ASL_WITNESS.into(), aeon_rev: String::new(), note: String::new(), targets: moved_t },
+                Entry { name: "root".into(), ab: ASL_WITNESS.into(), aeon_rev: None, note: String::new(), targets: root_t },
+                Entry { name: "bad".into(), ab: ASL_WITNESS.into(), aeon_rev: None, note: String::new(), targets: moved_t },
             ],
         };
         // discipline sweep alone (no blobs) should flag the moved anchor.
@@ -345,8 +373,8 @@ mod tests {
         moved_t.insert("s4".to_string(), t("s4.bin", "bbbb", 10, "2222", 8));
         let chain = Chain {
             entry: vec![
-                Entry { name: "root".into(), ab: ASL_WITNESS.into(), aeon_rev: String::new(), note: String::new(), targets: root_t },
-                Entry { name: "g9".into(), ab: "notes/g9-ab.md".into(), aeon_rev: String::new(), note: String::new(), targets: moved_t },
+                Entry { name: "root".into(), ab: ASL_WITNESS.into(), aeon_rev: None, note: String::new(), targets: root_t },
+                Entry { name: "g9".into(), ab: "notes/g9-ab.md".into(), aeon_rev: None, note: String::new(), targets: moved_t },
             ],
         };
         let errs = check(Path::new("/nonexistent"), &chain);
@@ -366,84 +394,135 @@ mod tests {
         let chain: Chain = toml::from_str(&block).unwrap();
         assert_eq!(chain.entry[0].targets["s4"].anchor_end, 0x5db60);
         assert_eq!(chain.entry[0].ab, "ref");
-        assert_eq!(chain.entry[0].aeon_rev, SHA_A);
+        assert_eq!(chain.entry[0].aeon_rev.as_deref(), Some(SHA_A));
         assert_eq!(chain.entry[0].targets["s4"].full_crc, "7f071417");
     }
 
     // ── aeon_rev ────────────────────────────────────────────────────────────────
 
     const SHA_A: &str = "55ea25576c7e523a8982d1a4175e1effaccb3570";
+    const SHA_B: &str = "0123456789abcdef0123456789abcdef01234567";
 
-    /// Build a chain of `n` entries, the last carrying `tip_rev`. Entry #1 is the root.
-    fn chain_of(n: usize, tip_rev: &str) -> Chain {
+    /// Build a chain from a list of per-entry `aeon_rev` values. `None` models an entry
+    /// whose KEY IS ABSENT (appended by a refreeze predating the field); `Some` models
+    /// one that carries it. Entry #1 is the root. All targets are identical, so the
+    /// anchor-move rule stays quiet and only the aeon_rev rules can fire.
+    fn chain_with(revs: &[Option<&str>]) -> Chain {
         let mut targets = BTreeMap::new();
         targets.insert("s4".to_string(), t("s4.bin", "aaaa", 10, "1111", 8));
-        let mut entry = Vec::new();
-        for i in 0..n {
-            entry.push(Entry {
+        let entry = revs
+            .iter()
+            .enumerate()
+            .map(|(i, r)| Entry {
                 name: format!("e{}", i + 1),
                 ab: if i == 0 { ASL_WITNESS.into() } else { "ref".into() },
-                aeon_rev: if i + 1 == n { tip_rev.to_string() } else { String::new() },
+                aeon_rev: r.map(|s| s.to_string()),
                 note: String::new(),
                 targets: targets.clone(),
-            });
-        }
+            })
+            .collect();
         Chain { entry }
     }
 
     fn aeon_rev_errs(chain: &Chain) -> Vec<String> {
         check(Path::new("/nonexistent"), chain)
             .into_iter()
-            .filter(|e| e.contains("aeon-rev-present"))
+            .filter(|e| e.contains("aeon-rev-"))
             .collect()
     }
 
     #[test]
-    fn aeon_rev_defaults_to_empty_for_historical_entries() {
+    fn absent_aeon_rev_key_parses_as_none() {
         // The 166 committed entries carry no `aeon_rev` key at all. serde(default) is
-        // what keeps them parsing; without it every one of them is a parse error.
+        // what keeps them parsing; without it every one of them is a parse error. The
+        // value must be None (key absent), NOT Some("") — the two mean different things.
         let src = "[[entry]]\nname=\"root\"\nab=\"asl-witness\"\n[entry.targets.s4]\ngolden=\"s4.bin\"\nfull_crc=\"0\"\nfull_size=1\nanchor_crc=\"0\"\nanchor_end=1\n";
         let chain = parse(src).expect("a keyless historical entry must still parse");
-        assert_eq!(chain.entry[0].aeon_rev, "", "absent key defaults to empty");
+        assert_eq!(chain.entry[0].aeon_rev, None, "absent key must be None, not Some(\"\")");
     }
 
     #[test]
-    fn entry_past_the_cutoff_needs_a_full_sha() {
-        let chain = chain_of(AEON_REV_FROM_ENTRY + 1, "");
-        let errs = aeon_rev_errs(&chain);
-        assert_eq!(errs.len(), 1, "a field-less entry past the cutoff must be flagged: {errs:?}");
-        assert!(
-            errs[0].contains(&format!("entry #{}", AEON_REV_FROM_ENTRY + 1)),
-            "the violation must name the offending entry: {}",
-            errs[0]
-        );
+    fn a_chain_with_no_aeon_rev_anywhere_is_clean() {
+        // Today's file: 166 entries, none carrying the field. No backfill, no violation.
+        let chain = chain_with(&[None, None, None]);
+        assert!(aeon_rev_errs(&chain).is_empty(), "pre-field entries must not be flagged");
     }
 
+    /// THE MERGE-RACE CASE. DO NOT "TIDY" THIS AWAY.
+    ///
+    /// The aeon lane refreezes by running this crate's `refreeze` out of sigil master. A
+    /// byte-moving refreeze that lands BEFORE the aeon_rev field does appends an entry
+    /// with no such key — entirely legitimate when written. A rule pinned to "entries
+    /// after #166" would turn master red on that entry the moment this branch merged.
+    /// The derived rule must let it through, because nothing before it names a revision
+    /// either.
     #[test]
-    fn entry_past_the_cutoff_rejects_an_abbreviated_sha() {
-        // The emitter always has the full SHA, so a short one means a hand edit.
-        let chain = chain_of(AEON_REV_FROM_ENTRY + 1, &SHA_A[..8]);
-        assert_eq!(
-            aeon_rev_errs(&chain).len(),
-            1,
-            "an abbreviated aeon_rev must be rejected, not normalized"
-        );
-    }
-
-    #[test]
-    fn entry_past_the_cutoff_accepts_a_full_sha() {
-        let chain = chain_of(AEON_REV_FROM_ENTRY + 1, SHA_A);
-        assert!(aeon_rev_errs(&chain).is_empty(), "a full 40-char SHA must satisfy the rule");
-    }
-
-    #[test]
-    fn historical_entries_are_exempt() {
-        // Exactly at the cutoff: 166 entries, none carrying the field — today's file.
-        let chain = chain_of(AEON_REV_FROM_ENTRY, "");
+    fn a_pre_field_entry_appended_after_the_tip_is_not_a_violation() {
+        let chain = chain_with(&[None, None, None, None]);
         assert!(
             aeon_rev_errs(&chain).is_empty(),
-            "the 166 pre-field entries must not be flagged (no backfill)"
+            "a pre-field entry appended by an older refreeze must pass — this is the \
+             merge race the derived boundary exists to survive"
         );
+    }
+
+    #[test]
+    fn the_first_entry_to_name_a_revision_needs_nothing_before_it() {
+        // Arming the ratchet is legal at any point: everything before is pre-field.
+        let chain = chain_with(&[None, None, Some(SHA_A)]);
+        assert!(aeon_rev_errs(&chain).is_empty(), "arming the chain must be allowed");
+    }
+
+    #[test]
+    fn an_entry_after_the_first_armed_one_may_not_drop_the_field() {
+        let chain = chain_with(&[None, Some(SHA_A), None]);
+        let errs = aeon_rev_errs(&chain);
+        assert_eq!(errs.len(), 1, "the dropped field must be flagged: {errs:?}");
+        assert!(errs[0].contains("aeon-rev-monotonic"), "wrong rule fired: {}", errs[0]);
+        assert!(errs[0].contains("entry #3"), "must name the offender: {}", errs[0]);
+        assert!(errs[0].contains("entry #2"), "must name the armer: {}", errs[0]);
+    }
+
+    #[test]
+    fn every_entry_after_the_armed_one_is_checked_not_just_the_tip() {
+        let chain = chain_with(&[Some(SHA_A), None, None]);
+        assert_eq!(
+            aeon_rev_errs(&chain).len(),
+            2,
+            "the sweep covers every later entry, not only the last"
+        );
+    }
+
+    #[test]
+    fn a_chain_that_keeps_naming_revisions_is_clean() {
+        let chain = chain_with(&[None, Some(SHA_A), Some(SHA_B), Some(SHA_A)]);
+        assert!(aeon_rev_errs(&chain).is_empty(), "a fully armed chain must be clean");
+    }
+
+    /// Position-INDEPENDENT: a present-but-malformed value is a hand edit and is wrong
+    /// anywhere, including before anything else has armed the chain. The pinned-constant
+    /// form could not say this — it only looked past #166.
+    #[test]
+    fn a_present_but_malformed_aeon_rev_is_flagged_anywhere() {
+        for bad in ["", &SHA_A[..8], &SHA_A.to_uppercase(), &"g".repeat(40)] {
+            let chain = chain_with(&[Some(bad), None]);
+            let errs = aeon_rev_errs(&chain);
+            assert!(
+                errs.iter().any(|e| e.contains("aeon-rev-well-formed")),
+                "aeon_rev = {bad:?} must be rejected wherever it sits, got: {errs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_malformed_value_does_not_arm_the_monotonic_rule() {
+        // Some("") is malformed, so it is not a revision; the entries after it are still
+        // pre-field and must not be dragged into a monotonic violation on top of the
+        // well-formedness one. One fault, one error.
+        let chain = chain_with(&[Some(""), None, None]);
+        let errs = aeon_rev_errs(&chain);
+        assert_eq!(errs.len(), 1, "one fault must produce one error, got: {errs:?}");
+        assert!(errs[0].contains("aeon-rev-well-formed"), "{}", errs[0]);
     }
 
     #[test]
