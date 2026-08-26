@@ -318,11 +318,11 @@ below requires zero `skip:` lines and this is not a missing reference.
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
   `AEON_DIR` set to a tree matching the provenance tip (derive it — see the warning above) —
-  **3935 passed / 0 failed / 4 ignored** (3939 declared) under `SIGIL_STRICT_GATE=1`, **zero
+  **3939 passed / 0 failed / 4 ignored** (3943 declared) under `SIGIL_STRICT_GATE=1`, **zero
   `skip:` lines**, exit 0, clippy `-D warnings` exit 0.
-  Last measured on `feat/provenance-aeon-rev` `f384f415` against aeon `55ea2557` (chain 166),
+  Last measured on `feat/provenance-aeon-rev` `a2cdfc42` against aeon `55ea2557` (chain 166),
   2026-08-26, log `~/sonic_hacks/.sigil-agent-a45a-verify.log` (was 3928/3932 at master
-  `243d2d24`; +7 from the `aeon_rev` field, its six unit tests and the pairing gate).
+  `243d2d24`; +11 from the `aeon_rev` field, its ten unit tests and the pairing gate).
   Note the run emits **one `ratchet:` line** — the pairing gate's self-disarming tolerance
   while the tip carries no `aeon_rev`. That prefix is not `skip:` and does not violate the bar above. **The count is the bar; the pairing is a
   timestamp, not an instruction** — a later freeze moves the aeon SHA and leaves the count
