@@ -2971,6 +2971,15 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   result** — no corpus measurement has been run, and if the ceiling-only middle turns out
   negligible the two-bucket question was the right shape after all. Measure in three, report
   three.
+  **NO LATER SESSION MAY CITE THE THREE BUCKETS AS A RESULT ABOUT A CORPUS** *(oracle's
+  form, adopted here because it is stronger than what this row first said)*. The original
+  wording flagged the prediction and named its falsifier, and then relied on a reader
+  noticing the caveat — which is the exact failure this workspace keeps paying for: a
+  confident three-way split sitting in a boot doc, read by a session that was not present
+  for the caveat, and treated as measured. A caveat asks; a prohibition binds. Until the
+  three figures exist and name the command that produced them, the split is a SHAPE TO
+  MEASURE IN and citing it as a finding about the ROM is a defect regardless of how the
+  sentence around it is worded.
   Oracle's two booked requirements for the dumper, both verified against this tree rather
   than agreed from memory: the dump must carry **branch outcome per execution** (`CycleCost::
   Branch { taken, not_taken, exact }` is outcome-keyed in those words, so a bare per-instruction
