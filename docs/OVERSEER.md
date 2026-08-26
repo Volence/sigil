@@ -666,10 +666,17 @@ ruling. Each row's age prints on every lane run.
   that matters points `AEON_DIR` at a CLEAN WORKTREE of a committed aeon SHA, with all
   four shapes built there first (repin resolves but does not generate). File seeding is
   RETIRED (`aeon/tools/seed-worktree.sh` is a copies-nothing stub; the OJZ tree and
-  collision tables are committed, generated dirs rebuild via build.sh). What a fresh
-  aeon worktree DOES need: the `.worktrees/sigil` and `skdisasm` symlinks, plus a
-  PAIRED sigil worktree of the same name at `sigil/.worktrees/<name>` — the
-  emp-helper-closure locator hard-asserts that pairing and fails the build without it.
+  collision tables are committed, generated dirs rebuild via build.sh). **A fresh aeon
+  reference worktree needs NO `sigil`/`skdisasm` symlinks and no paired sigil worktree
+  — and this paragraph asserted the opposite for some time while the quality-bar section
+  above asserted the truth, so a cold boot could read either.** Settled in the field
+  2026-08-26: the aeon lane rebuilt `.aeon-landing` at `c3f5cbe0` with no symlinks of any
+  kind and all four shapes built and reproduced their chain-168 CRCs exactly. The symlink
+  requirement is real only for a worktree that must resolve the emp-helper closure — an
+  agent's *development* tree — never for a reference checkout that only has to build.
+  Seeding them into a reference tree is actively harmful: it kills `section_row_fixture`'s
+  tree mirror with *"the source path is neither a regular file nor a symlink to a regular
+  file"*, three gates red for a reason unrelated to whatever is under test.
   Verify the built ROMs against `golden/provenance.toml` (CRC32+size) before trusting
   the worktree. Mid-brushstroke aeon
   edits flipping sigil port-gate results is environmental, not signal; the tell is
@@ -1117,8 +1124,95 @@ from the crate table; three named harness gates no longer exist (`assemble_full_
 scope is false, `sigil build` produces it. **A README's commands are its most-used and
 least-checked content — run them, do not read them.**
 
-**Nothing in flight; no agents running.** Master `ffa7bdb8` (the pad landing), pushed —
-verified against `git ls-remote origin refs/heads/master`, not the tracking ref.
+**Nothing in flight; no agents running.** Master `f02fb22b`, pushed — verified against
+`git ls-remote origin refs/heads/master`, not the tracking ref. *(Superseded heading:
+`ffa7bdb8`, the pad landing.)*
+
+### RELAYOUT-REVIEW — LANDED 2026-08-26, and the sweep outranks the parcel
+
+The aeon lane's cartridge re-layout merged here as chain-168 (`6e4f2533`, pairing aeon
+`c3f5cbe0`). Their landing went red at 3941/2 on `boot_port.rs`'s hand-typed
+`GameState_OJZScroll_Init`, which they re-typed. **`d8748933` derives it instead** —
+`pins::OJZ_SCROLL_TEST.plain_base`/`.debug_base`, sound because `repin.toml` declares that
+region's `start = "GameState_OJZScroll_Init"`, so the pin's base IS the symbol's address by
+construction and `repin` regenerates it every freeze. The site stops being a ripple site
+rather than becoming a sixth row in a doctrine. The aeon lane **withdrew their doc-row
+proposal** in favour of this. Suite on the merged tree 3943/0/4 (3947 declared, reconciled),
+zero `skip:`, zero `ratchet:`, clippy `-D warnings` exit 0, log
+`~/sonic_hacks/.sigil-verify-d8748933.log`. Bar unchanged — the parcel adds no tests.
+
+**Deriving does not weaken the gate, and the reasoning is worth keeping:** the value is an
+INPUT to boot's imm-link, not the oracle. The oracle is the frozen golden window, sliced
+from a *different* pin (`pins::BOOT`). A wrong `OJZ_SCROLL_TEST` now emits wrong bytes and
+fails here — so the derivation ADDS an alarm. The old literal was never independent either;
+its own comment said it was copied from the pin.
+
+**THE FINDING OF RECORD is the sweep, not the fix:**
+`docs/superpowers/notes/2026-08-26-hand-typed-rom-address-inventory.md`. Enumerated by the
+PROPERTY (a literal address fed into or compared against shipped output) rather than by the
+five known filenames — which is the enumeration that let this one hide, and a second pass
+over the same five would have agreed with itself (bar 8, aimed at ourselves).
+
+- **Nine region bases across `tranche{2,4,5,6}_negative_probes.rs` are ALREADY STALE** and
+  rotted at some earlier re-layout with nothing noticing. The precise claim, measured and
+  deliberately weaker than the first draft: repointing tranche4 at its current pin leaves
+  all six probes green, so the base is **not load-bearing** for an `assert_ne!` — not
+  "vacuous", not "red and unnoticed". The cost is lost intent and a lying comment, plus
+  proof that **nothing in the tree can tell you when one of these rots.** Queued as
+  `STALE-PROBE-BASES`; convert the `refrom`-slicing ones first, following
+  `core_negative_probes.rs`. `tranche5:240` already uses `pins::GAME_LOOP.plain_len`, so
+  the idiom is in the file.
+- **Rotted independently of any doctrine:** all three off-canonical `assembled_len` values
+  in `native.rs` disagree with their own generated frozen tables (config_b says `0x434d0`,
+  its table `0x8b6f0`); `lib.rs:69 REGION_A_LMA` is a dead ROM-address const whose sibling
+  was already deleted for that reason. Neither has a test reading it, which is why. Queued
+  as `OFFCANON-ROT`.
+- **`Z80_SOUND_SIZE` stays literal, ruled:** a derivation exists (`seam1::BLOB_LEN_*`) but
+  `BLOB_LEN_*` is itself hand-pinned, so it trades two re-type sites for one.
+- **`native_full_rom.rs:180` (`Ground_Move_Cap`) must NOT derive** — the file argues at
+  `:70-75` that `repin` generates pins from the same listing `convsym` consumes, so a
+  pin-derived expectation is circular. The agent listed it, tested the argument, and
+  corrected itself. It is an ORACLE literal needing a doctrine entry, not a derivation.
+
+### CONFIG-B +2 BYTES — ANSWERED 2026-08-26; R7 REFUTED HERE AND NARROWED
+
+`docs/superpowers/notes/2026-08-26-config-b-two-byte-growth.md` (+ an explicitly
+non-gate investigation artifact, `assets/deb2_appendix.py`, wired into no runner).
+
+**The 2 bytes are not in the assembled image at all**, so the overseer's R7 hypothesis —
+that a move silently changed an inferred alignment quantum — is refuted rather than
+unproven. `anchor_end` is `0x8b6f0` in **both** chain 167 and 168 (verified here directly
+in `provenance.toml`), and `EndOfRom` is where `convsym` writes the `de b2` magic, so the
+assembled length did not move and there is no room in the image for a placement pad to have
+acted. The bytes are **one 64 KB chunk-block header in the `deb2` debug-symbol appendix at
+ROM offset `0x93d66`, value `00 0a`** — verified firsthand in `golden/config_b.bin`, and
+the two records immediately following it are `1870`/`21b0`, the in-window halves of
+`DPLC_Sonic` (`0x71870`) and `Art_Sonic` (`0x721b0`), the symbols that moved into a
+`$70000–$7FFFF` window previously holding none. Non-empty chunks 7 → 8, 2 bytes of header
+each. The size model derived for it predicts **all twelve** shipped appendices byte-exactly.
+
+- **Aeon's "44 rows moved, 0 quantum changes" SURVIVES**, re-derived independently from
+  sigil's own tables before comparing. It is a proof rather than a sample because
+  `packed_align_of` is read only in the `labeled[i]` arm plus seam2's two frozen rows
+  (frozen-table rows are the whole population), `derive_frozen_table` writes
+  `s.lma + l.offset` so a base moves by exactly its row's delta, and **all 44 deltas are
+  multiples of 16** — stronger than "the addresses are 16-aligned", which matters because
+  several moved symbols are not (`Art_Tails` %16==10, `GameState_OJZScroll_Init` %16==4).
+- **R7 is ONE-DIRECTIONAL, which narrows the inventory's row:** for a packed section
+  `tb = align_up(running, a)` is divisible by `a` and the refreeze records `tb`, so an
+  inferred quantum **ratchets up and can never silently fall**. The hazard is therefore not
+  "needs 16, silently gets 8"; it is a quantum silently *rising*, inserting pad and
+  invalidating structural pads. **Code-derived, not measured** — flagged as such in the note,
+  and it wants a red-first probe that was deliberately NOT built inside this task (bar 6).
+- **The appendix moves `full_size`, the `$1A4` header field and the checksum while being
+  invisible to every layout-side gate** — which is exactly what made 2 bytes look alarming.
+  The only guard is the coarse `min_appendix..=0x10000` band. `lean` carries no appendix at
+  all. Whether that band is the right bar belongs to the appendix contract's owner.
+- **The `0x2a3c0` exact landing is by construction, not coincidence:** zero symbols below it
+  moved (appendix chunks 00/01 byte-identical), and `Map_Tails`' section took the order slot
+  `HeightMaps` vacated, both taking `align_up(running, 16)` from an unchanged cursor.
+- **TAGGED for foreground:** nothing here is runtime-confirmed; the "debugger-only data"
+  claim is read off the code.
 
 **This paragraph used to say `pad_to(N)` was PARKED ON THE OWNER and must not be
 dispatched. That is no longer true and the contradiction was live for a day** — the
