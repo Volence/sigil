@@ -2958,3 +2958,27 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   next change to it has exactly the same exposure, and the two defects were found by a peer
   under time pressure on a landing, which is the cost this row is about. The kill condition
   stands unchanged.
+
+- [oracle exchange, 2026-08-26] **CYCLE-ASK's shape is settled before the work starts, and
+  the coverage figure is THREE buckets not one.** `CycleCost` (`sigil-isa/src/m68k_cycles.rs`)
+  carries an `exact` flag on both variants, and its own doc comment defines `exact: false` as
+  *"a MAXIMUM over a data-dependent execution — sound as a ceiling, unusable as an equality"*.
+  So a routine can carry `@budget(cycles: N)` while never being able to carry `@cycles_exact`,
+  and the honest coverage split is **exact-modelled / ceiling-only / unmodelled**. A single
+  blended percentage hides the middle bucket, which is the one that decides WHICH checker is
+  supportable: a corpus that is mostly ceiling-only supports a budget checker and not an
+  equality checker. **This is a prediction about what the measurement will find, not a
+  result** — no corpus measurement has been run, and if the ceiling-only middle turns out
+  negligible the two-bucket question was the right shape after all. Measure in three, report
+  three.
+  Oracle's two booked requirements for the dumper, both verified against this tree rather
+  than agreed from memory: the dump must carry **branch outcome per execution** (`CycleCost::
+  Branch { taken, not_taken, exact }` is outcome-keyed in those words, so a bare per-instruction
+  count cannot be compared to it), and the **assertion direction comes from each row's own
+  `exact` flag**, per-row rather than per-run, never from a convention either lane picks.
+  The cycle model is **entirely static** (`cycle_budget.rs` walks the evaluated `CodeBuf` with
+  cost tables plus the shared `Cfg`), so the measurement needs no emulator — which also means
+  it was never exposed to the 2026-08-25 shim hazard. Oracle's earlier objection that the
+  differential was blocked on who supplies the opcode-to-key join is **retracted on their
+  side** and was never banked here; do not inherit it from an older message of theirs.
+  — OPEN (kill: the three figures exist, at which point CYCLE-ASK is writable)
