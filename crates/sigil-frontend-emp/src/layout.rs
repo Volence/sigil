@@ -566,7 +566,9 @@ impl<'a> Evaluator<'a> {
         self.layout_in_progress.push(name.to_string());
         let mut offset = 0usize;
         let mut fields = Vec::with_capacity(decl.fields.len());
-        for field in &decl.fields {
+        let mut pads = decl.pads.iter().peekable();
+        for (i, field) in decl.fields.iter().enumerate() {
+            offset = self.place_pads_before(name, decl, &mut pads, i, offset);
             let ty = self.resolve_type(&field.ty);
             let size = self.size_of_ty(&ty, field.span);
             fields.push(FieldLayout { name: field.name.clone(), offset, ty, size });
@@ -579,6 +581,10 @@ impl<'a> Evaluator<'a> {
                 }
             }
         }
+        // Pads written after the last field: their end offset IS the struct's
+        // total size, which is how §4.3.1 lets the total-size intent be written
+        // in the same coordinate as every other pad target.
+        offset = self.place_pads_before(name, decl, &mut pads, decl.fields.len(), offset);
         // (a) FIELD-TYPE cycle: a deeper recursive call (a field whose type is
         // this struct, directly or transitively) may have closed a cycle back
         // to `name` and already memoized a poisoned (zero-size) layout for it.
@@ -627,6 +633,187 @@ impl<'a> Evaluator<'a> {
         self.layout_in_progress.pop();
         self.struct_layout_memo.insert(name.to_string(), layout.clone());
         layout
+    }
+
+    /// Place every pad marker (§4.3.1) written immediately before `decl.fields[index]`
+    /// — or, when `index == decl.fields.len()`, after the last field — and return
+    /// the cursor they leave behind.
+    ///
+    /// `pads` is a single peekable pass over `decl.pads` in declaration order,
+    /// shared across the whole field walk, so each pad is placed exactly once and
+    /// in source order even when several sit between the same two fields.
+    ///
+    /// A pad occupies bytes but is NOT pushed into the [`Layout`]'s field list: it
+    /// has no name, so it is not a thing any consumer can look up, and its bytes
+    /// show up exactly where they belong — as the gap between one field's end and
+    /// the next field's offset, and in the struct's total `size`.
+    fn place_pads_before(
+        &mut self,
+        name: &str,
+        decl: &'a ast::StructDecl,
+        pads: &mut std::iter::Peekable<std::slice::Iter<'a, ast::StructPad>>,
+        index: usize,
+        mut offset: usize,
+    ) -> usize {
+        while let Some(pad) = pads.next_if(|p| p.before == index) {
+            let width = self.pad_width(name, decl, pad, offset, index);
+            let end = match offset.checked_add(width) {
+                Some(o) => o,
+                None => {
+                    self.error(pad.span, "pad too large to size");
+                    offset
+                }
+            };
+            // `[layout.pad-hand-counted]` — the pad whose width was counted off
+            // the fields above it. The signature is a FIXED-width pad standing
+            // IMMEDIATELY before a field that asserts `(align: N)`: the pad's only
+            // job there is to produce the property the field claims, so its width
+            // is a function of everything above it and goes stale on any edit.
+            // "Immediately" means no other pad intervenes — `pads.peek()` is the
+            // marker after this one, and if it also belongs to `index` then THAT
+            // pad, not this one, is the field's neighbour.
+            if pad.kind == ast::PadKind::Count
+                && pads.peek().is_none_or(|next| next.before != index)
+            {
+                self.check_hand_counted_pad(name, decl, pad, width, end, index);
+            }
+            offset = end;
+        }
+        offset
+    }
+
+    /// The byte width of one pad marker at `cursor` (§4.3.1's derivation rule),
+    /// reporting `[layout.pad-count]` / `[layout.pad-overflow]` where the operand
+    /// cannot yield one.
+    ///
+    /// Both error paths return **0** and let layout continue, so the struct's own
+    /// `(size: N)` assertion still prints its full field-by-field diff instead of
+    /// being suppressed behind the pad's failure.
+    fn pad_width(
+        &mut self,
+        name: &str,
+        decl: &'a ast::StructDecl,
+        pad: &ast::StructPad,
+        cursor: usize,
+        index: usize,
+    ) -> usize {
+        let span = crate::parser::expr_span(&pad.operand);
+        let spelling = pad.kind.spelling();
+        let noun = pad.kind.operand_noun();
+        let mut env = Env::new();
+        let v = self.eval_expr(&pad.operand, &mut env);
+        // A provisional `here()` cannot size a pad any more than it can size an
+        // array (D-H.2) — the specific `[here.provisional]` message, not the
+        // generic non-int one below.
+        if self.reject_if_provisional(&v, span).is_some() {
+            return 0;
+        }
+        let Some(n) = v.as_stored_int() else {
+            // A poisoned operand already reported; anything else is a value that
+            // is not an integer at all, and the count rule is what refuses it.
+            if !matches!(v, Value::Poison) {
+                self.error(
+                    span,
+                    format!(
+                        "[layout.pad-count] struct {name}: {spelling}({}) — a pad {noun} must be a non-negative comptime int",
+                        v.type_name()
+                    ),
+                );
+            }
+            return 0;
+        };
+        if n < 0 {
+            self.error(
+                span,
+                format!(
+                    "[layout.pad-count] struct {name}: {spelling}({n}) — a pad {noun} must be a non-negative comptime int"
+                ),
+            );
+            return 0;
+        }
+        let n = usize::try_from(n).unwrap_or(usize::MAX);
+        match pad.kind {
+            // The width IS the operand.
+            ast::PadKind::Count => n,
+            // The operand is where the pad ENDS. Reaching it already is legal and
+            // inert (width 0): the marker still asserts that the next field begins
+            // at `n`, which is exactly what the author wants to keep saying after
+            // deleting a field above.
+            ast::PadKind::To if n >= cursor => n - cursor,
+            ast::PadKind::To => {
+                let over = cursor - n;
+                // No following field to name when the pad closes the struct.
+                let site = match decl.fields.get(index) {
+                    Some(f) => format!("before field {}", f.name),
+                    None => "at the end of the struct".to_string(),
+                };
+                self.error(
+                    span,
+                    format!(
+                        "[layout.pad-overflow] struct {name}: pad_to({n}) {site}, but the fields \
+                         above it already reach offset {cursor} — over by {over} byte(s). Raise \
+                         the target to {cursor}, or remove {over} byte(s) above it. Do not convert \
+                         this to a hand-counted width; that is the number that goes stale."
+                    ),
+                );
+                0
+            }
+        }
+    }
+
+    /// `[layout.pad-hand-counted]` (§4.3.1): a default-on WARNING on a fixed-width
+    /// `pad(N)` standing immediately before a field that carries `(align: N)`.
+    ///
+    /// The fix-it names the exact `pad_to(...)` line to write, computed from the
+    /// layout rather than restated from the source, so applying it is a rename of
+    /// the coordinate and never a re-derivation the author has to check.
+    ///
+    /// A field whose `(align:)` is malformed — an expression that does not
+    /// evaluate, or a value that is not a nonzero power of two — is left alone. It
+    /// is already failing at the error tier that
+    /// [`check_struct_field_align`](Self::check_struct_field_align) owns, and a
+    /// heuristic warning has nothing to add to a claim that is itself refused —
+    /// the same precedence that makes `(align: N)` supersede `[layout.odd-field]`.
+    /// It would also be false advice: the fix-it promises "the assertion still
+    /// proves it", and a refused assertion proves nothing.
+    fn check_hand_counted_pad(
+        &mut self,
+        name: &str,
+        decl: &'a ast::StructDecl,
+        pad: &ast::StructPad,
+        width: usize,
+        end: usize,
+        index: usize,
+    ) {
+        if self.module_allows_lint("layout.pad-hand-counted") {
+            return;
+        }
+        let Some(field) = decl.fields.get(index) else { return };
+        let Some(align_expr) = &field.align else { return };
+        // Evaluated only to quote it. `check_struct_field_align` evaluates the
+        // same expression for the verdict; a diagnostic raised here would be that
+        // one, said twice, so a dirty evaluation withdraws the warning instead.
+        let mark = self.diags.len();
+        let mut env = Env::new();
+        let v = self.eval_expr(align_expr, &mut env);
+        if self.diags.len() != mark {
+            self.diags.truncate(mark);
+            return;
+        }
+        let Some(align) = v.as_stored_int() else { return };
+        if align < 1 || (align & (align - 1)) != 0 {
+            return;
+        }
+        self.warn(
+            pad.span,
+            format!(
+                "[layout.pad-hand-counted] struct {name}: pad({width}) is followed by field {}, \
+                 which declares (align: {align}) — this width was counted off the fields above it \
+                 and goes stale when any of them changes. Write pad_to({end}) instead; the \
+                 compiler computes the width and the assertion still proves it.",
+                field.name
+            ),
+        );
     }
 
     /// Compute (or fetch the memoized) [`OverlayInfo`] for the SST overlay named

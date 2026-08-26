@@ -1037,3 +1037,90 @@ fn dc_l_label_emits_abs32_symref_fixup() {
     let raw = raw_data_bytes(&module);
     assert_eq!(&raw[4..8], &[0x12, 0x34, 0x56, 0x78], "the int element is a big-endian value cell");
 }
+
+// ---- struct pad markers emit `$00` (§4.3.1) ------------------------------
+//
+// A pad has no name and so no entry in the struct's field list; its bytes are
+// the GAP between one field's end offset and the next field's offset, and the
+// tail between the last field and the struct's total size. These pin that the
+// emitted image agrees with the layout, which is a separate consumer of a pad's
+// width from `sizeof`/`offsetof`.
+
+/// Lower `src`, link it, and return the flattened image bytes.
+fn image(src: &str) -> Vec<u8> {
+    let (file, perrs) = parse_str(src);
+    assert!(perrs.is_empty(), "unexpected parse diagnostics: {perrs:?}");
+    let (module, diags) = lower_module(&file, &LowerOptions { initial_cpu: Cpu::M68000, include_root: None, embed_base: None, defines: vec![] });
+    assert!(diags.is_empty(), "unexpected lowering diagnostics: {diags:?}");
+    let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
+        .expect("resolve_layout");
+    let linked = sigil_link::link(&resolved, &SymbolTable::new()).expect("link");
+    sigil_link::flatten(&linked, 0x00)
+}
+
+#[test]
+fn struct_pad_emits_zero_bytes_between_the_fields() {
+    let bytes = image(
+        "module m\n\
+         struct S { a: u8, pad(2), b: u8 }\n\
+         data D: S = S{ a: $11, b: $22 }\n",
+    );
+    assert_eq!(bytes, vec![0x11, 0x00, 0x00, 0x22]);
+}
+
+#[test]
+fn struct_pad_to_emits_the_derived_zero_run() {
+    // a: u8 reaches 1; `pad_to(4)` derives 3 bytes, so b lands at 4.
+    let bytes = image(
+        "module m\n\
+         struct S { a: u8, pad_to(4), b: u8 }\n\
+         data D: S = S{ a: $11, b: $22 }\n",
+    );
+    assert_eq!(bytes, vec![0x11, 0x00, 0x00, 0x00, 0x22]);
+}
+
+#[test]
+fn a_leading_struct_pad_emits_before_the_first_field() {
+    let bytes = image(
+        "module m\n\
+         struct S { pad(2), a: u8 }\n\
+         data D: S = S{ a: $33 }\n",
+    );
+    assert_eq!(bytes, vec![0x00, 0x00, 0x33]);
+}
+
+#[test]
+fn a_trailing_struct_pad_emits_after_the_last_field() {
+    // The tail run: nothing follows it in the field list, so it is emitted from
+    // the struct's total size rather than from any field's offset.
+    let bytes = image(
+        "module m\n\
+         struct S (size: 4) { a: u16, pad_to(4) }\n\
+         data D: S = S{ a: $1234 }\n",
+    );
+    assert_eq!(bytes, vec![0x12, 0x34, 0x00, 0x00]);
+}
+
+#[test]
+fn struct_pad_bytes_are_identical_under_as_compat() {
+    // `@as_compat` reproduces what the AS original emitted; a pad replaces a
+    // `dc.b 0,0` run and must be byte-for-byte the same run.
+    let body = "struct S { a: u8, pad(2), b: u8 }\n\
+                data D: S = S{ a: $11, b: $22 }\n";
+    let plain = image(&format!("module m\n{body}"));
+    let compat = image(&format!("module m\n@as_compat\n{body}"));
+    assert_eq!(plain, vec![0x11, 0x00, 0x00, 0x22]);
+    assert_eq!(compat, plain, "@as_compat must not change a pad's bytes");
+}
+
+#[test]
+fn a_pad_in_an_array_of_structs_repeats_per_element() {
+    // Each element carries its own pad run — the emission walks the layout once
+    // per struct value, so a pad is not a one-off prefix.
+    let bytes = image(
+        "module m\n\
+         struct S { a: u8, pad(1), b: u8 }\n\
+         data D: [S; 2] = [S{ a: $11, b: $22 }, S{ a: $33, b: $44 }]\n",
+    );
+    assert_eq!(bytes, vec![0x11, 0x00, 0x22, 0x33, 0x00, 0x44]);
+}
