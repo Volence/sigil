@@ -1196,6 +1196,27 @@ impl Parser {
         (offset, align)
     }
 
+    /// Is the cursor on a struct-body pad marker — `pad` or `pad_to` in FIELD
+    /// position, immediately followed by `(`?
+    ///
+    /// The `(` is what makes the word a marker (§4.3.1's contextual rule): a
+    /// field *named* `pad` or `pad_to` opens `ident :` and is untouched, and
+    /// neither identifier is reserved anywhere else. The keyword compare is
+    /// whole-token, so a longer identifier that merely starts with `pad_to` —
+    /// aeon's `pad_to_cycles(...)` — is not a pad marker.
+    fn at_struct_pad(&self) -> Option<PadKind> {
+        if !matches!(self.peek2(), Tok::LParen) {
+            return None;
+        }
+        if self.at_kw("pad_to") {
+            Some(PadKind::To)
+        } else if self.at_kw("pad") {
+            Some(PadKind::Count)
+        } else {
+            None
+        }
+    }
+
     /// Parse a `struct Name [(size: expr)] { field: ty [(align: N)] [@ offset] [= default], ... }` declaration.
     fn struct_decl(&mut self, public: bool) -> StructDecl {
         let start = self.span();
@@ -1213,9 +1234,30 @@ impl Parser {
         } else { None };
         self.expect(&Tok::LBrace, "`{`");
         let mut fields = Vec::new();
+        let mut pads = Vec::new();
         loop {
             self.skip_newlines();
             if self.at(&Tok::RBrace) { break; }
+            if let Some(kind) = self.at_struct_pad() {
+                let pspan = self.span();
+                self.bump(); // `pad` / `pad_to`
+                self.bump(); // `(`
+                let operand = self.expr();
+                self.expect(&Tok::RParen, "`)`");
+                // `before` is the index of the field this pad precedes — the next
+                // one pushed — so a pad last in the body records `fields.len()`.
+                pads.push(StructPad {
+                    before: fields.len(),
+                    kind,
+                    operand,
+                    span: pspan.merge(self.prev_span()),
+                });
+                self.skip_newlines();
+                if !self.eat(&Tok::Comma) { break; }
+                self.skip_newlines();
+                if self.at(&Tok::RBrace) { break; } // trailing comma
+                continue;
+            }
             let fspan = self.span();
             let fname = self.expect_ident("field name");
             self.expect(&Tok::Colon, "`:`");
@@ -1230,7 +1272,7 @@ impl Parser {
         }
         self.skip_newlines();
         self.expect(&Tok::RBrace, "`}`");
-        StructDecl { public, name, size, fields, span: start.merge(self.prev_span()) }
+        StructDecl { public, name, size, fields, pads, span: start.merge(self.prev_span()) }
     }
 
     /// Parse an `offsets Name { Variant: target, ... }` declaration.
@@ -1640,6 +1682,29 @@ impl Parser {
     /// `name: alias(Other)`, or a typed `name: T [@align(N)]`.
     fn region_field(&mut self) -> RegionField {
         let fspan = self.span();
+        // `pad_to(N)` is a STRUCT-body marker (§4.3.1): its target is an offset
+        // within a struct, and a region's coordinate is an address. Refused by
+        // name — the third application of the rule that gave the `vars` cursor's
+        // `@align(N)` and the struct field's `(align: N)` deliberately different
+        // spellings — rather than mis-parsed as a field named `pad_to`. Recovered
+        // as a zero-width pad, the same width `[layout.pad-overflow]` continues
+        // with, so the cursor lands exactly where it would with the line absent
+        // and no second, spurious placement diagnostic follows.
+        if self.at_kw("pad_to") && matches!(self.peek2(), Tok::LParen) {
+            let sp = self.span();
+            self.bump(); // pad_to
+            self.bump(); // (
+            let _ = self.expr();
+            self.expect(&Tok::RParen, "`)`");
+            self.diag_at(
+                sp,
+                "`pad_to(N)` derives its width from a struct-relative offset and belongs to a \
+                 struct body; a `vars` region places at an address — use `pad(N)` for a \
+                 fixed-width run, or `@align(N)` to move the region cursor",
+            );
+            let span = fspan.merge(self.prev_span());
+            return RegionField::Pad { count: Expr::Int(0, span), span };
+        }
         if self.at_kw("pad") {
             self.bump(); // pad
             self.expect(&Tok::LParen, "`(`");

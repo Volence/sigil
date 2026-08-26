@@ -665,3 +665,84 @@ fn dispatch_inline_body_parses_as_body_target() {
     assert!(matches!(&d.members[0].target, DispatchTarget::Body(_)));
     assert!(matches!(&d.members[1].target, DispatchTarget::Label(_)));
 }
+
+// ---- struct pad markers `pad(N)` / `pad_to(N)` (§4.3.1) ------------------
+
+#[test]
+fn struct_pad_markers_parse_as_anonymous_pads() {
+    let f = ok("module m\nstruct S { a: u8, pad(3), b: u8, pad_to(16) }\n");
+    let Item::Struct(s) = &f.items[0] else { panic!("expected a struct") };
+    // Pads are not fields: a pad has no name, so nothing that looks a field up
+    // by name can ever reach one.
+    assert_eq!(s.fields.len(), 2);
+    assert_eq!(s.fields[0].name, "a");
+    assert_eq!(s.fields[1].name, "b");
+    assert_eq!(s.pads.len(), 2);
+    // `before` anchors each pad to the field it precedes; the trailing pad
+    // records `fields.len()`.
+    assert_eq!(s.pads[0].before, 1, "pad(3) stands before field index 1 (`b`)");
+    assert_eq!(s.pads[0].kind, PadKind::Count);
+    assert_eq!(s.pads[1].before, 2, "the trailing pad records fields.len()");
+    assert_eq!(s.pads[1].kind, PadKind::To);
+}
+
+#[test]
+fn a_struct_field_named_pad_or_pad_to_still_parses() {
+    // The contextual rule: `pad`/`pad_to` are markers only when immediately
+    // followed by `(`. Written as a field name they open `ident :` and are
+    // ordinary identifiers, in the same struct as real markers.
+    let f = ok("module m\nstruct S { pad: u8, pad_to: u8, pad(1), b: u8 }\n");
+    let Item::Struct(s) = &f.items[0] else { panic!("expected a struct") };
+    assert_eq!(s.fields.len(), 3);
+    assert_eq!(s.fields[0].name, "pad");
+    assert_eq!(s.fields[1].name, "pad_to");
+    assert_eq!(s.fields[2].name, "b");
+    assert_eq!(s.pads.len(), 1);
+    assert_eq!(s.pads[0].before, 2);
+}
+
+#[test]
+fn pad_to_cycles_is_not_a_pad_marker() {
+    // The prefix collision that must not exist: aeon's Z80 driver writes
+    // `pad_to_cycles(194, ...)`, an unrelated construct sharing a prefix and
+    // nothing else. The keyword compare is whole-token, so this is an ordinary
+    // call in expression position and `pad_to` names nothing here.
+    let f = ok("module m\n\
+                comptime fn pad_to_cycles(n: int) -> int { return n }\n\
+                const N = pad_to_cycles(194)\n");
+    let Item::Const(c) = &f.items[1] else { panic!("expected a const") };
+    assert_eq!(c.name, "N");
+}
+
+#[test]
+fn pad_to_in_a_vars_region_is_refused_by_name() {
+    // `pad_to(N)` targets an offset within a STRUCT; a region places at an
+    // address, and `@align(N)` is the spelling that moves that cursor. Refused
+    // by name rather than mis-parsed as a field called `pad_to` — the same
+    // treatment `@align(N)` gets when it is written on a struct field.
+    let (_f, diags) =
+        parse_str("module m\nvars upper_ram {\n    Flag: u8,\n    pad_to(16),\n}\n");
+    assert!(!diags.is_empty(), "expected a parse diagnostic, got none");
+    assert!(
+        diags.iter().any(|d| d
+            .message
+            .contains("`pad_to(N)` derives its width from a struct-relative offset")),
+        "expected the spelling to be refused by name, got {diags:?}"
+    );
+    assert!(
+        diags.iter().any(|d| d.message.contains("use `pad(N)` for a fixed-width run")),
+        "the refusal must name the region spellings, got {diags:?}"
+    );
+}
+
+#[test]
+fn a_vars_region_keeps_its_own_pad_form() {
+    // v1 leaves `vars` regions alone: `pad(N)` there is unchanged.
+    let f = ok("module m\nvars upper_ram {\n    Flag: u8,\n    pad(3),\n    Next: u8,\n}\n");
+    let Item::Vars(v) = &f.items[0] else { panic!("expected a vars item") };
+    assert!(
+        matches!(v.region_body[1], RegionField::Pad { .. }),
+        "expected a region pad, got {:?}",
+        v.region_body[1]
+    );
+}

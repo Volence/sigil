@@ -352,7 +352,19 @@ impl<'a> Evaluator<'a> {
             }
         }
         let mut buf = DataBuf::empty();
+        // Pad bytes (§4.3.1) are ANONYMOUS, so they are not in `layout.fields` —
+        // they are the gaps between consecutive fields' offsets, and the tail
+        // between the last field's end and the struct's total size. Fill them from
+        // the layout, never from what the fields emitted: a field that lowers to
+        // nothing (a shape mismatch diagnosed above) must not slide the pad, and
+        // the run of `$00` here is byte-for-byte the `dc.b 0,…` a hand-written pad
+        // field emits, which is what keeps `@as_compat` modules byte-identical.
+        let mut cursor = 0usize;
         for fl in &layout.fields {
+            if let Some(gap) = fl.offset.checked_sub(cursor).filter(|g| *g > 0) {
+                buf.push(Cell::Bytes(vec![0u8; gap]));
+            }
+            cursor = fl.offset.saturating_add(fl.size);
             // A field absent from the value (a missing no-default field the
             // checked literal filled with Poison, or — now diagnosed above — an
             // import shape mismatch) lowers silently to nothing past the
@@ -362,6 +374,9 @@ impl<'a> Evaluator<'a> {
                 let child = self.emit_child_expr(&seg);
                 buf = DataBuf::concat(buf, self.lower_child(v, &fl.ty, span, seg.spell(), child));
             }
+        }
+        if let Some(tail) = layout.size.checked_sub(cursor).filter(|t| *t > 0) {
+            buf.push(Cell::Bytes(vec![0u8; tail]));
         }
         buf
     }

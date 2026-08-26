@@ -490,8 +490,11 @@ fn field_align_non_power_of_two_is_refused() {
     // Matched on the rule-unique `declares (align:` prefix, not on the trailing
     // clause alone — `[section.bank]` also refuses non-powers-of-two and a bare
     // phrase match could be satisfied by an unrelated rule.
-    assert!(errs[0].message.contains("declares (align: 3)"), "was {:?}", errs[0].message);
-    assert!(errs[0].message.contains("must be a power of two"), "was {:?}", errs[0].message);
+    assert_eq!(
+        errs[0].message,
+        "struct Rec: field odd_claim declares (align: 3) but an alignment must be a power of two (1, 2, 4, 8, ...)",
+        "the whole string is the contract, parenthetical included"
+    );
     // A malformed alignment is refused, not evaluated — no offset verdict follows.
     assert!(!errs[0].message.contains("lands at offset"), "was {:?}", errs[0].message);
 }
@@ -504,8 +507,11 @@ fn field_align_zero_is_refused_not_a_modulo_by_zero() {
     let (_layout, diags) = layout_struct(&file, "Rec");
     let errs: Vec<&Diagnostic> = diags.iter().filter(|d| d.level == Level::Error).collect();
     assert_eq!(errs.len(), 1, "expected exactly one error, got {diags:?}");
-    assert!(errs[0].message.contains("declares (align: 0)"), "was {:?}", errs[0].message);
-    assert!(errs[0].message.contains("must be a power of two"), "was {:?}", errs[0].message);
+    assert_eq!(
+        errs[0].message,
+        "struct Rec: field bad declares (align: 0) but an alignment must be a power of two (1, 2, 4, 8, ...)",
+        "the whole string is the contract, parenthetical included"
+    );
 }
 
 #[test]
@@ -566,9 +572,80 @@ fn vars_form_align_on_a_struct_field_is_refused_by_name() {
     let (_file, diags) = parse_str(src);
     assert!(!diags.is_empty(), "expected a parse diagnostic, got none");
     assert!(
-        diags.iter().any(|d| d.message.contains("asserts its alignment with `(align: N)`")),
+        diags.iter().any(|d| d.message
+            == "`@align(N)` reserves space and belongs to a `vars` field; a struct field \
+                asserts its alignment with `(align: N)`, which moves nothing"),
         "expected the spelling to be refused by name, got {diags:?}"
     );
+}
+
+#[test]
+fn duplicate_at_offset_on_one_field_is_diagnosed() {
+    // Two `@ offset` snapshots on one field cannot both be the author's claim.
+    // The first is kept and the second refused, so the surviving assertion is the
+    // one the reader sees first.
+    let (_file, diags) = parse_str("module m\nstruct Rec { a: u8 @ 0 @ 1 }\n");
+    assert!(
+        diags.iter().any(|d| d.message == "duplicate `@ offset` on one field"),
+        "expected the duplicate to be refused, got {diags:?}"
+    );
+}
+
+#[test]
+fn duplicate_field_align_on_one_field_is_diagnosed() {
+    let (_file, diags) = parse_str("module m\nstruct Rec { a: u8 (align: 2) (align: 4) }\n");
+    assert!(
+        diags.iter().any(|d| d.message == "duplicate `(align:)` on one field"),
+        "expected the duplicate to be refused, got {diags:?}"
+    );
+}
+
+#[test]
+fn an_unknown_field_attribute_keyword_names_the_one_that_belongs() {
+    // `(align:)` is the only paren attribute a FIELD takes — `(size:)` is the
+    // struct's. The refusal names the keyword that belongs here rather than
+    // reporting a bare syntax error at the colon.
+    let (_file, diags) = parse_str("module m\nstruct Rec { a: u8 (size: 2) }\n");
+    assert!(
+        diags.iter().any(|d| d.message == "expected `align:` in field attribute list"),
+        "expected the field attribute list to name `align:`, got {diags:?}"
+    );
+}
+
+#[test]
+fn field_align_does_not_propagate_into_a_nested_structs_own_fields() {
+    // SCOPE. A field of struct type asserts where the NESTED STRUCT STARTS; the
+    // nested struct's own claims are judged in its own coordinates and nothing
+    // reaches into them from the outer layout.
+    //
+    // Inner is internally clean: bridge@0 satisfies (align: 2). Placed in Outer
+    // at offset 1, its bridge would sit at OUTER offset 1 — odd — so a check that
+    // ever walked into a nested struct with the outer offset would report on
+    // `bridge`. Nothing may.
+    let src = "module m\n\
+               struct Inner { bridge: u16 (align: 2), tail: u8 }\n\
+               struct Outer { head: u8, nest: Inner (align: 1) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "Outer");
+    assert_eq!(layout.expect("Outer should lay out").fields[1].offset, 1, "nest starts at 1");
+    assert!(
+        !diags.iter().any(|d| d.message.contains("bridge")),
+        "a nested struct's own claim must not be re-judged in the outer struct: {diags:?}"
+    );
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+
+    // The other half of the clause: the outer claim IS about where the nested
+    // struct starts. `(align: 2)` on `nest` at offset 1 fails, and names `nest`.
+    let src = "module m\n\
+               struct Inner { bridge: u16 (align: 2), tail: u8 }\n\
+               struct Outer { head: u8, nest: Inner (align: 2) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "Outer");
+    assert_eq!(diags.len(), 1, "expected exactly the outer claim to fail, got {diags:?}");
+    assert!(diags[0].message.contains("field nest"), "was {:?}", diags[0].message);
+    assert!(diags[0].message.contains("but lands at offset 1"), "was {:?}", diags[0].message);
 }
 
 #[test]
@@ -593,4 +670,431 @@ fn field_align_catches_an_insertion_that_re_parities_a_bridge() {
     assert_eq!(errs.len(), 1, "expected the bridge to fail, got {diags:?}");
     assert!(errs[0].message.contains("field bridge"), "was {:?}", errs[0].message);
     assert!(errs[0].message.contains("but lands at offset 5"), "was {:?}", errs[0].message);
+}
+
+// ---- struct pad markers `pad(N)` / `pad_to(N)` (§4.3.1) ------------------
+//
+// Anonymous byte runs between fields. `pad(N)` states a width; `pad_to(N)`
+// states the offset the pad ENDS at and lets the compiler derive the width, so
+// the number in the source is the one the author cares about rather than a
+// count of the fields above it.
+
+#[test]
+fn pad_count_occupies_bytes_and_moves_the_next_field() {
+    // a@0 (1 byte) + pad 3 → b@4, total 5.
+    let src = "module m\nstruct S { a: u8, pad(3), b: u8 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "S");
+    assert!(diags.is_empty(), "a well-formed pad must be silent: {diags:?}");
+    let layout = layout.expect("S should lay out");
+    assert_eq!(layout.fields.len(), 2, "a pad is not a field: {:?}", layout.fields);
+    assert_eq!(layout.fields[1].name, "b");
+    assert_eq!(layout.fields[1].offset, 4);
+    assert_eq!(layout.size, 5);
+}
+
+#[test]
+fn pad_to_derives_the_width_that_lands_the_next_field_on_the_target() {
+    // a@0 (1 byte), so the pad must derive width 4 - 1 = 3 to land b at 4.
+    let src = "module m\nstruct S { a: u8, pad_to(4), b: u16 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "S");
+    assert!(diags.is_empty(), "a satisfiable pad_to must be silent: {diags:?}");
+    let layout = layout.expect("S should lay out");
+    assert_eq!(layout.fields[1].offset, 4, "pad_to(4) must land b at 4");
+    assert_eq!(layout.size, 6, "4 + sizeof(u16)");
+}
+
+#[test]
+fn pad_to_at_the_cursor_is_legal_inert_and_silent() {
+    // THE INERT ARM. a: u16 already reaches 2, so `pad_to(2)` has width 0. It is
+    // still an assertion — it states that b begins at 2 — and making it an error
+    // would fail the construct exactly when the layout is already correct.
+    let src = "module m\nstruct S { a: u16, pad_to(2), b: u16 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "S");
+    assert!(diags.is_empty(), "a zero-width pad_to must be silent: {diags:?}");
+    let layout = layout.expect("S should lay out");
+    assert_eq!(layout.fields[1].offset, 2);
+    assert_eq!(layout.size, 4, "the inert pad must add nothing");
+}
+
+#[test]
+fn pad_to_last_in_the_body_sets_the_struct_total_size() {
+    // With no field after it, the pad's end offset IS the struct's size — the
+    // total-size intent written in the same coordinate as every other pad target.
+    // `(size: 8)` is an independent assertion and agrees, proving the two compose.
+    let src = "module m\nstruct S (size: 8) { a: u16, pad_to(8) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "S");
+    assert!(diags.is_empty(), "the tail pad must satisfy (size: 8) silently: {diags:?}");
+    assert_eq!(layout.expect("S should lay out").size, 8);
+}
+
+#[test]
+fn size_assertion_is_never_satisfied_by_auto_padding_the_tail() {
+    // The counter-arm to the test above: WITHOUT a pad line, `(size: 8)` over a
+    // 2-byte body still fails. `pad_to` supplies a declared pad's width, never a
+    // pad's existence.
+    let src = "module m\nstruct S (size: 8) { a: u16 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "S");
+    assert_eq!(layout.expect("S should lay out").size, 2, "no pad was written, so none exists");
+    assert_eq!(diags.len(), 1, "expected the size mismatch, got {diags:?}");
+    assert!(diags[0].message.contains("declared size 8 but fields total 2"), "was {:?}", diags[0].message);
+}
+
+#[test]
+fn pad_to_below_the_cursor_is_pad_overflow() {
+    // a: u32 reaches 4; `pad_to(2)` is unsatisfiable — no width lands b at 2.
+    let src = "module m\nstruct S { a: u32, pad_to(2), b: u8 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
+    let d = &diags[0];
+    assert_eq!(d.level, Level::Error, "pad-overflow is ERROR tier, got {:?}", d.level);
+    assert!(d.message.contains("[layout.pad-overflow]"), "was {:?}", d.message);
+    // Names the target, the following field, both offsets, and the delta.
+    assert!(d.message.contains("struct S: pad_to(2) before field b"), "was {:?}", d.message);
+    assert!(d.message.contains("already reach offset 4"), "was {:?}", d.message);
+    assert!(d.message.contains("over by 2 byte(s)"), "was {:?}", d.message);
+    // Names a remedy in the same coordinate, and refuses the hand-counted one.
+    assert!(d.message.contains("Raise the target to 4, or remove 2 byte(s) above it"), "was {:?}", d.message);
+    assert!(d.message.contains("Do not convert this to a hand-counted width"), "was {:?}", d.message);
+}
+
+#[test]
+fn final_pad_to_below_the_cursor_names_the_end_of_the_struct() {
+    // The final-pad variant: there is no following field to name.
+    let src = "module m\nstruct S { a: u32, pad_to(2) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
+    assert_eq!(diags[0].level, Level::Error);
+    assert!(diags[0].message.contains("[layout.pad-overflow]"), "was {:?}", diags[0].message);
+    assert!(
+        diags[0].message.contains("struct S: pad_to(2) at the end of the struct"),
+        "was {:?}",
+        diags[0].message
+    );
+    assert!(!diags[0].message.contains("before field"), "was {:?}", diags[0].message);
+}
+
+#[test]
+fn pad_overflow_takes_width_zero_so_the_size_diff_still_prints() {
+    // The recovery rule: the failed pad contributes 0 and layout CONTINUES, so a
+    // `(size: N)` assertion on the same struct prints its own full diff instead
+    // of being suppressed behind the pad error.
+    let src = "module m\nstruct S (size: 99) { a: u32, pad_to(2), b: u8 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "S");
+    // Width 0: b sits immediately after a, and the total is 4 + 1.
+    let layout = layout.expect("S should still lay out");
+    assert_eq!(layout.fields[1].offset, 4, "the failed pad must take width 0");
+    assert_eq!(layout.size, 5);
+    assert_eq!(diags.len(), 2, "expected the pad error AND the size diff, got {diags:?}");
+    assert!(diags.iter().any(|d| d.message.contains("[layout.pad-overflow]")), "got {diags:?}");
+    let size_diag = diags
+        .iter()
+        .find(|d| d.message.contains("declared size 99"))
+        .unwrap_or_else(|| panic!("no size diff in {diags:?}"));
+    // The field-by-field diff, not just a headline.
+    assert!(size_diag.message.contains("a @0"), "was {:?}", size_diag.message);
+    assert!(size_diag.message.contains("b @4"), "was {:?}", size_diag.message);
+    assert!(size_diag.message.contains("5 vs 99"), "was {:?}", size_diag.message);
+}
+
+#[test]
+fn negative_pad_count_is_refused() {
+    let src = "module m\nstruct S { a: u8, pad(-1), b: u8 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "S");
+    assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
+    assert_eq!(diags[0].level, Level::Error);
+    assert!(
+        diags[0].message.contains("[layout.pad-count] struct S: pad(-1) — a pad count must be a non-negative comptime int"),
+        "was {:?}",
+        diags[0].message
+    );
+    // Recovered as width 0, so the rest of the struct still lays out.
+    assert_eq!(layout.expect("S should still lay out").fields[1].offset, 1);
+}
+
+#[test]
+fn negative_pad_to_target_is_refused_and_says_target_not_count() {
+    // Same rule, different noun: `pad_to` takes a TARGET offset, and the message
+    // must call the operand what the author wrote.
+    let src = "module m\nstruct S { a: u8, pad_to(-1), b: u8 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
+    assert!(
+        diags[0].message.contains("[layout.pad-count] struct S: pad_to(-1) — a pad target must be a non-negative comptime int"),
+        "was {:?}",
+        diags[0].message
+    );
+}
+
+#[test]
+fn non_int_pad_operand_is_refused_by_the_pad_count_rule() {
+    let src = "module m\nstruct S { a: u8, pad(\"three\"), b: u8 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
+    assert!(
+        diags[0].message.contains("[layout.pad-count]") && diags[0].message.contains("a pad count must be a non-negative comptime int"),
+        "was {:?}",
+        diags[0].message
+    );
+}
+
+#[test]
+fn pad_operands_are_comptime_expressions() {
+    // As `@offset`, `(size:)` and `(align:)` all are — a named constant is as
+    // good as a literal, in both spellings.
+    let src = "module m\nconst GAP = 3\nconst TOP = 8\n\
+               struct S { a: u8, pad(GAP), b: u8, pad_to(TOP), c: u8 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "S");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let layout = layout.expect("S should lay out");
+    assert_eq!(layout.fields[1].offset, 4, "a@0 + pad(3) → b@4");
+    assert_eq!(layout.fields[2].offset, 8, "b ends at 5, pad_to(8) → c@8");
+    assert_eq!(layout.size, 9);
+}
+
+#[test]
+fn several_pads_between_the_same_two_fields_all_place() {
+    // Each marker is placed once, in source order, and their widths accumulate.
+    let src = "module m\nstruct S { a: u8, pad(2), pad_to(6), b: u8 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "S");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    // a@0 → cursor 1; pad(2) → 3; pad_to(6) → 6.
+    assert_eq!(layout.expect("S should lay out").fields[1].offset, 6);
+}
+
+#[test]
+fn a_leading_pad_places_before_the_first_field() {
+    let src = "module m\nstruct S { pad(2), a: u8 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "S");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let layout = layout.expect("S should lay out");
+    assert_eq!(layout.fields[0].offset, 2);
+    assert_eq!(layout.size, 3);
+}
+
+// ---- `[layout.pad-hand-counted]` ----------------------------------------
+
+#[test]
+fn hand_counted_pad_before_an_aligned_field_warns() {
+    // THE POISON ARM. `pad(1)` exists only to make `bridge` even; its width was
+    // counted off `head` and goes stale the moment anything above changes.
+    let src = "module m\nstruct S { head: u8, pad(1), bridge: i16 (align: 2) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "S");
+    // The lint changes nothing about the layout, and the claim it warns about
+    // is satisfied — this fires on a CORRECT struct, which is the point.
+    assert_eq!(layout.expect("S should lay out").fields[1].offset, 2);
+    assert_eq!(diags.len(), 1, "expected exactly the lint, got {diags:?}");
+    let d = &diags[0];
+    assert_eq!(d.level, Level::Warning, "pad-hand-counted is a WARNING, got {:?}", d.level);
+    assert!(d.message.contains("[layout.pad-hand-counted]"), "was {:?}", d.message);
+    assert!(
+        d.message.contains("struct S: pad(1) is followed by field bridge, which declares (align: 2)"),
+        "was {:?}",
+        d.message
+    );
+    assert!(d.message.contains("goes stale when any of them changes"), "was {:?}", d.message);
+    // The fix-it names the exact replacement line, derived from the layout.
+    assert!(d.message.contains("Write pad_to(2) instead"), "was {:?}", d.message);
+}
+
+#[test]
+fn pad_to_before_an_aligned_field_does_not_warn() {
+    // THE CONTROL ARM. The same struct written with the derived spelling is the
+    // fix the lint asks for, so it must be silent — a lint that fired on both
+    // would be telling the author to make no difference.
+    let src = "module m\nstruct S { head: u8, pad_to(2), bridge: i16 (align: 2) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    assert!(diags.is_empty(), "the derived spelling is the fix: {diags:?}");
+}
+
+#[test]
+fn a_fixed_pad_before_an_unclaimed_field_does_not_warn() {
+    // The signature is the PAIRING. A reserved-bytes run whose neighbour makes no
+    // alignment claim is not evidence of a hand-counted width.
+    let src = "module m\nstruct S { head: u8, pad(1), tail: u8 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn a_trailing_fixed_pad_has_no_following_field_to_pair_with() {
+    let src = "module m\nstruct S { head: u16, bridge: i16 (align: 2), pad(3) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (layout, diags) = layout_struct(&file, "S");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(layout.expect("S should lay out").size, 7);
+}
+
+#[test]
+fn hand_counted_pad_lint_needs_the_aligned_field_to_be_the_next_one() {
+    // "Immediately followed by" means no marker intervenes: with a `pad_to` in
+    // between, the `pad(1)` is not the field's neighbour and nothing warns.
+    let src = "module m\nstruct S { head: u8, pad(1), pad_to(2), bridge: i16 (align: 2) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    assert!(diags.is_empty(), "only the neighbouring pad can pair: {diags:?}");
+}
+
+#[test]
+fn hand_counted_pad_lint_is_silenced_by_its_allow() {
+    // The honest case: a genuine reserved-bytes run that happens to precede an
+    // aligned field.
+    let src = "module m\n@allow(\"layout.pad-hand-counted\")\n\
+               struct S { head: u8, pad(1), bridge: i16 (align: 2) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    assert!(diags.is_empty(), "the allow must silence the lint: {diags:?}");
+}
+
+#[test]
+fn hand_counted_pad_lint_withdraws_from_a_refused_alignment_claim() {
+    // A field whose `(align:)` is itself refused is already failing at the error
+    // tier the author asked for. The heuristic warning has nothing to add, and it
+    // would be false advice: its fix-it promises "the assertion still proves it",
+    // and a refused assertion proves nothing.
+    let src = "module m\nstruct S { head: u8, pad(1), bridge: i16 (align: 3) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    assert_eq!(diags.len(), 1, "expected exactly the alignment error, got {diags:?}");
+    assert!(diags[0].message.contains("declares (align: 3)"), "was {:?}", diags[0].message);
+    assert!(!diags[0].message.contains("pad-hand-counted"), "was {:?}", diags[0].message);
+}
+
+#[test]
+fn hand_counted_pad_lint_does_not_double_report_an_unevaluatable_alignment() {
+    // The lint evaluates the neighbouring `(align:)` expression only to QUOTE it,
+    // and `check_struct_field_align` evaluates the same expression for the
+    // verdict. A diagnostic raised by the quoting pass would be the verdict's own
+    // diagnostic, said twice — so the quoting pass withdraws instead.
+    let src = "module m\nstruct S { head: u8, pad(1), bridge: i16 (align: NOPE) }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    assert_eq!(diags.len(), 1, "the unknown name must be reported once, got {diags:?}");
+    assert!(diags[0].message.contains("NOPE"), "was {:?}", diags[0].message);
+}
+
+// ---- pads vs the other §4.3 mechanisms -----------------------------------
+
+#[test]
+fn pad_bytes_are_exempt_from_the_odd_field_lint() {
+    // A pad is a byte run with no access width, so its size makes no parity
+    // claim. The control arm is the idiom it replaces: a 2-byte pad spelled
+    // `u16` trips the lint purely because of the type its width was borrowed
+    // from — the spurious subject this exemption retires.
+    let padded = "module m\nstruct S { a: u8, pad(2), b: u8 }\n";
+    let (file, diags) = parse_str(padded);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    assert!(diags.is_empty(), "a pad must never trip odd-field: {diags:?}");
+
+    let named = "module m\nstruct S { a: u8, spare: u16, b: u8 }\n";
+    let (file, diags) = parse_str(named);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    assert_eq!(diags.len(), 1, "the named-field spelling still warns: {diags:?}");
+    assert!(diags[0].message.contains("[layout.odd-field]"), "was {:?}", diags[0].message);
+    assert!(diags[0].message.contains("field spare"), "was {:?}", diags[0].message);
+}
+
+#[test]
+fn a_pad_does_not_shift_the_odd_field_lint_off_a_real_field() {
+    // The exemption is about the pad's OWN size, not about the fields after it:
+    // a word pushed odd BY a pad still warns.
+    let src = "module m\nstruct S { a: u16, pad(1), w: u16 }\n";
+    let (file, diags) = parse_str(src);
+    assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
+    let (_layout, diags) = layout_struct(&file, "S");
+    assert_eq!(diags.len(), 1, "expected the odd-field warning, got {diags:?}");
+    assert!(diags[0].message.contains("field w"), "was {:?}", diags[0].message);
+    assert!(diags[0].message.contains("odd offset 3"), "was {:?}", diags[0].message);
+}
+
+#[test]
+fn sizeof_counts_a_pads_bytes() {
+    let src = "module m\nstruct S { a: u8, pad(3), b: u8 }\nconst N = sizeof(S)\n";
+    let (v, diags) = eval(src, "N");
+    assert_eq!(v, Some(int(5)), "1 + 3 + 1");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn offsetof_cannot_name_a_pad() {
+    // A pad is not a field you read, so the language must make reading it
+    // inexpressible: there is no name to pass, and the closest spelling resolves
+    // to nothing.
+    let src = "module m\nstruct S { a: u8, pad(3), b: u8 }\nconst N = offsetof(S, pad)\n";
+    let (v, diags) = eval(src, "N");
+    assert_eq!(v, Some(Value::Poison));
+    assert_eq!(diags.len(), 1, "expected one diagnostic, got {diags:?}");
+    assert!(
+        diags[0].message.contains("offsetof") && diags[0].message.contains("pad"),
+        "was {:?}",
+        diags[0].message
+    );
+}
+
+#[test]
+fn a_field_named_pad_coexists_with_pad_markers() {
+    // `pad` is a marker only when immediately followed by `(`; as a field name it
+    // is an ordinary identifier, and `offsetof` reaches THAT one.
+    let src = "module m\nstruct S { pad: u8, pad(3), b: u8 }\n\
+               const P = offsetof(S, pad)\nconst B = offsetof(S, b)\n";
+    let (v, diags) = eval(src, "P");
+    assert_eq!(v, Some(int(0)));
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let (v, diags) = eval(src, "B");
+    assert_eq!(v, Some(int(4)), "the named field, then the anonymous 3-byte run");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+}
+
+#[test]
+fn a_pad_inside_a_nested_struct_counts_toward_the_outer_layout() {
+    // Every consumer of a pad's width agrees, including the one that reaches it
+    // through `size_of_ty` rather than the pad walk itself.
+    // `lead: u16` keeps the 4-byte nested struct at an even offset, so this test
+    // is about the pad's contribution and not the odd-field lint.
+    let src = "module m\nstruct Inner { a: u8, pad(3) }\n\
+               struct Outer { lead: u16, nest: Inner, tail: u8 }\n\
+               const N = offsetof(Outer, tail)\n";
+    let (v, diags) = eval(src, "N");
+    assert_eq!(v, Some(int(6)), "2 + sizeof(Inner) = 2 + 4");
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
 }

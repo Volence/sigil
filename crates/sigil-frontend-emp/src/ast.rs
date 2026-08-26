@@ -460,7 +460,66 @@ pub struct StructDecl {
     pub size: Option<Expr>,
     /// The struct's fields, in declaration order.
     pub fields: Vec<StructField>,
+    /// The body's anonymous pad markers (§4.3.1), in declaration order, each
+    /// anchored to its position among `fields` by [`StructPad::before`].
+    ///
+    /// Pads are held BESIDE the fields rather than interleaved into one member
+    /// list because a pad has no name: every consumer that looks a field up by
+    /// name — struct literals, `offsetof`, the emitted-shape check, the overlay
+    /// window scan — is asking a question a pad can never answer, and reads the
+    /// field list unchanged. Only the two consumers of a pad's WIDTH (the layout
+    /// walk and the byte emission that follows its offsets) consult this list.
+    pub pads: Vec<StructPad>,
     /// Span of the whole declaration.
+    pub span: Span,
+}
+
+/// Which coordinate a struct-body pad marker's operand is written in (§4.3.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PadKind {
+    /// `pad(N)` — the operand IS the width, in bytes. The intent where the width
+    /// itself is the fact (a run of reserved bytes).
+    Count,
+    /// `pad_to(N)` — the operand is the offset at which the pad ENDS, which is
+    /// identically the offset at which the next declared field starts (and the
+    /// struct's total size when the pad is last). The compiler derives the width,
+    /// so nothing in the source is a hand-counted constant that can go stale.
+    To,
+}
+
+impl PadKind {
+    /// How this marker is spelled in source, for diagnostics.
+    pub fn spelling(self) -> &'static str {
+        match self {
+            PadKind::Count => "pad",
+            PadKind::To => "pad_to",
+        }
+    }
+
+    /// What this marker's operand is called, for diagnostics: a `pad(N)` takes a
+    /// count of bytes, a `pad_to(N)` takes a target offset.
+    pub fn operand_noun(self) -> &'static str {
+        match self {
+            PadKind::Count => "count",
+            PadKind::To => "target",
+        }
+    }
+}
+
+/// An anonymous pad marker between the fields of a [`StructDecl`] (§4.3.1): a
+/// run of `$00` bytes that occupies struct space without being a field anyone
+/// can name or read.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructPad {
+    /// Index into [`StructDecl::fields`] of the field this pad immediately
+    /// precedes; equal to `fields.len()` when the pad is last in the body.
+    pub before: usize,
+    /// Whether the operand is a width (`pad`) or an end offset (`pad_to`).
+    pub kind: PadKind,
+    /// The operand expression — any comptime expression, as `(size:)`,
+    /// `@ offset` and `(align:)` all are.
+    pub operand: Expr,
+    /// Span of the whole marker.
     pub span: Span,
 }
 
