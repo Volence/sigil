@@ -2909,3 +2909,21 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   pairing after this ships — is theirs and still open at their `docs/DEFERRED_WORK.md`. The
   emitter's dirty-refusal now enforces the first clause mechanically, so their commitment is
   a backstop rather than the only guard.
+
+- [aeon_rev parcel, 2026-08-26] **`aeon_rev` can permanently record a revision that never
+  reaches a remote, and nothing detects it.** The field is minted BY MACHINE at freeze time
+  into an APPEND-ONLY file, and a paired landing freezes from a local merge commit before
+  pushing either half — so the sequence "freeze, tidy the aeon commit, push" writes a SHA
+  that will never exist at the remote. No fetch fails, no gate trips, and the entry reads as
+  a perfect record forever. This is the anchor-location rule (*push before you cite*) arriving
+  where the citing party is a program that cannot be told to wait, and it is the same defect
+  the shared-binary row already names: **a revision string alone is not the witness; the
+  witness has to survive the artifact leaving the machine.** Shipped anyway, deliberately —
+  naming an unpushed-but-stable SHA is far better than naming nothing, and the alternative
+  (refusing to freeze until the revision is pushed) inverts the landing order every paired
+  parcel uses. Mitigated today only by telling the freezing lane in prose, which is exactly
+  the weak form this ledger exists to record. — OPEN (kill: the chain check learns to report,
+  without failing, which tip revisions are not reachable from aeon's `origin/master` — a
+  reachability REPORT rather than a gate, since unreachability is legitimate for minutes and
+  a defect only if it persists; or `refreeze` warns at freeze time that the named revision is
+  unpushed and says it must be pushed unchanged)
