@@ -273,10 +273,12 @@ fn mt_bank_region_matches_reference() {
         "the five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"
     );
 
-    let l = layout(&dir);
-    let (lo, hi) = (l.mt_bank_lma as usize, l.sfx_bank_lma_plain as usize);
-    let expected = &refrom[lo..hi];
+    // The window is the SECTION's own length from its derived base (the packer's
+    // mod-8 pad between the MT body and the SFX block is placement, not content).
+    let lo = layout(&dir).mt_bank_lma as usize;
     let section = linked.section("mt_bank").expect("linked image must carry mt_bank");
+    let hi = lo + section.bytes.len();
+    let expected = &refrom[lo..hi];
     assert_region_matches(&section.bytes, expected, &format!("mt_bank (DEBUG=0) vs s4.bin[{lo:#X}..{hi:#X}]"));
 }
 
@@ -298,9 +300,11 @@ fn mt_bank_debug_region_matches_reference() {
         "the five cross-seam co-residency ensures must all PASS (link succeeded): {assert_diags:?}"
     );
 
-    let l = layout(&dir);
-    let (lo, hi) = (l.mt_bank_lma as usize, l.sfx_bank_lma_debug as usize);
-    let expected = &refrom[lo..hi];
+    // The window is the SECTION's own length from its derived base (the packer's
+    // mod-8 pad between the MT body and the SFX block is placement, not content).
+    let lo = layout(&dir).mt_bank_lma as usize;
     let section = linked.section("mt_bank").expect("linked image must carry mt_bank");
+    let hi = lo + section.bytes.len();
+    let expected = &refrom[lo..hi];
     assert_region_matches(&section.bytes, expected, &format!("mt_bank (DEBUG=1) vs s4.debug.bin[{lo:#X}..{hi:#X}]"));
 }
