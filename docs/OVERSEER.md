@@ -182,11 +182,12 @@ noticed and would otherwise have swallowed, which is a real but bounded win.
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — **3870 passed / 0 failed / 4 ignored** (3874 declared) under
-  `SIGIL_STRICT_GATE=1` (sigil master `db710380`, aeon `058ad606` at `.aeon-landing`, 2026-08-26),
+  `AEON_DIR` set to the aeon tree — **3872 passed / 0 failed / 4 ignored** (3876 declared) under
+  `SIGIL_STRICT_GATE=1` (sigil master `4b3f4563`, aeon `058ad606` at `.aeon-landing`, 2026-08-26),
   **zero `skip:` lines**. GREEN for the first time since 2026-08-18.
   *(History 2026-08-24→26: 3844/5/4 → §4 +8 → 3852/5/4 → closure 3854/3/4 → first real scene
-  3852/5/4 → SECTION-ROW +12 → CLOSURE-2 3866/3/4 → REPIN-END 3869/1/4 → FIVE-REG 3870/0/4.)*
+  3852/5/4 → SECTION-ROW +12 → CLOSURE-2 3866/3/4 → REPIN-END 3869/1/4 → FIVE-REG 3870/0/4 →
+  NIGHTLY-GAP 3872/0/4.)*
   **FIVE-REG landed:** the last red was `soundbankhead_pinned_bootstrap_lands_at_lma_not_vma`
   on the **PinnedBaked/registry** path (`build_emp(sonic4_pinned_profile)` → `emp_map_toml`
   mints one region per REGISTRY pin; a content-derived section declared by a `section:` row
