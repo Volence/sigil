@@ -182,12 +182,37 @@ noticed and would otherwise have swallowed, which is a real but bounded win.
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — **3872 passed / 0 failed / 4 ignored** (3876 declared) under
-  `SIGIL_STRICT_GATE=1` (sigil master `4b3f4563`, aeon `058ad606` at `.aeon-landing`, 2026-08-26),
-  **zero `skip:` lines**. GREEN for the first time since 2026-08-18.
-  *(History 2026-08-24→26: 3844/5/4 → §4 +8 → 3852/5/4 → closure 3854/3/4 → first real scene
-  3852/5/4 → SECTION-ROW +12 → CLOSURE-2 3866/3/4 → REPIN-END 3869/1/4 → FIVE-REG 3870/0/4 →
-  NIGHTLY-GAP 3872/0/4.)*
+  `AEON_DIR` set to the aeon tree — **3881 passed / 0 failed / 4 ignored** (3885 declared) under
+  `SIGIL_STRICT_GATE=1` (sigil master `a85adafc`, aeon `94b384a2` at `.aeon-landing`, 2026-08-26,
+  log `~/sonic_hacks/.sigil-landing-merged-a85adafc.log`), **zero `skip:` lines**, exit 0.
+  All four shapes rebuilt there with the merged binary reproduce the chain-163 tip exactly:
+  s4 `b96319e3`/699408 · s4.debug `7be32302`/715308 · demo `bf2cdb42`/96412 · demo.debug
+  `62a0019e`/101120.
+  **⚠ THE REFERENCE CHECKOUT MUST CARRY NO `sigil`/`skdisasm` SYMLINKS.** The aeon main tree
+  has none, and adding them makes `section_row_fixture`'s tree mirror die with
+  *"the source path is neither a regular file nor a symlink to a regular file"* — three gates
+  red for a reason that has nothing to do with the parcel under test. The old worktree-seeding
+  note that says a fresh aeon worktree needs them is STALE; `./build.sh` works without them.
+  Ledgered: the mirror should skip or name a non-regular entry instead of `unwrap`ing.
+  *(History 2026-08-24→26: 3844/5/4 → §4 → 3852/5/4 → closure 3854/3/4 → first real scene
+  3852/5/4 → SECTION-ROW → CLOSURE-2 3866/3/4 → REPIN-END 3869/1/4 → FIVE-REG 3870/0/4 →
+  NIGHTLY-GAP 3872/0/4 → aeon ring-sparkle 3870/2/4 → BGROOM-3 + RINGS-ENV 3881/0/4.)*
+  **BGROOM-3 landed** (`fix/measure-at-packed-base`): every measuring round is exact at its own
+  bases (`resolve_layout_measuring` in sigil-link, fixpoint; scratch/spread fallbacks deleted,
+  which also removes the ~0x400 growth cap — 5000 B of growth now builds with drift warnings),
+  and non-convergence names the width-flipping sites file:line with both encodings. **The aeon
+  lane's reported MECHANISM was refuted while their measurement stood:** not "abs.w because the
+  provisional base is unknown" (an unresolved operand is a hard error) but the collision-fallback
+  scratch slot aliasing zero — `collision_data` at slot 41 = `0x300_0000`, masked to 24 bits by
+  `asl_width_rule` → `0x0`, where `abs.w` is legitimate. Their `lea (X).l` pins are a SUPERSEDED
+  WORKAROUND, not a style rule; they un-pin once the shared binary reports a master containing it.
+  **RINGS-ENV landed** (`fix/rings-contract-env`): the port rigs bind the game's real contract via
+  `test_support::game_contract_env_from_aeon` (interface + the profile's own `config/game.emp`,
+  path derived from `GameProfile::game_root_rel`), replacing hand-written stub strings that could
+  not see a new hook. `game_contract_env_coverage` parses the member COUNT from the contract, so
+  the next hook cannot repeat it. `tranche5_negative_probes` keeps its synthetic stub by intent
+  (it probes the binder over a define matrix no manifest spans); `camera_port` is split.
+
   **FIVE-REG landed:** the last red was `soundbankhead_pinned_bootstrap_lands_at_lma_not_vma`
   on the **PinnedBaked/registry** path (`build_emp(sonic4_pinned_profile)` → `emp_map_toml`
   mints one region per REGISTRY pin; a content-derived section declared by a `section:` row
