@@ -38,6 +38,13 @@ fn strict_gate() -> bool {
 
 static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// Serialise the gates (they share `ensure_generated`'s output dir). Poison-tolerant:
+/// a sibling that panics while holding the lock must fail alone, not take every later
+/// holder down with a `PoisonError` (the `native_full_rom.rs` idiom).
+fn lock() -> std::sync::MutexGuard<'static, ()> {
+    LOCK.lock().unwrap_or_else(|p| p.into_inner())
+}
+
 fn compile(base: u32, len: usize, debug: bool) -> sigil_link::LinkedImage {
     let aeon = aeon_root();
     // EMIT-FIRST: the embedded head .bin are gitignored build artifacts.
@@ -72,7 +79,7 @@ fn compile(base: u32, len: usize, debug: bool) -> sigil_link::LinkedImage {
 }
 
 fn gate(debug: bool, rom_name: &str) {
-    let _guard = LOCK.lock().unwrap();
+    let _guard = lock();
     let rom_path = aeon_root().join(rom_name);
     let Ok(refrom) = std::fs::read(&rom_path) else {
         if strict_gate() {
@@ -125,7 +132,7 @@ fn soundbankhead_debug_matches_reference() {
 /// both shapes; the phase VMA survives only as the section's own `vma: $8000`.
 #[test]
 fn soundbankhead_pinned_bootstrap_lands_at_lma_not_vma() {
-    let _guard = LOCK.lock().unwrap();
+    let _guard = lock();
     // No ROM is read here: `resolve_pinned_sections` resolves the sonic4 shape from
     // source, so the tree this needs is the one that profile's build reads.
     let Some(aeon) = reference_tree_for_profile(&native::sonic4_profile(false)) else {
