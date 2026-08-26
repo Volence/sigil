@@ -2949,3 +2949,12 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   ROMs are fresh — expensive and aeon-dependent, so nightly rather than in the suite; the
   bar it must clear is that it would have caught the stale-listing defect, which means it
   has to run the off-canonical captures too, not just a bare freeze)
+  **PARTIALLY DISCHARGED 2026-08-26, by production rather than by a test.** The showcase
+  pair drove the whole write path end to end — seven captures, the fixed restore, derive,
+  repin, and the chain append — and it surfaced TWO latent defects before succeeding (the
+  stale-listing restore, sigil's, fixed at `8f01b8a0`; the ceiling gate reading a prior
+  build's listing, aeon's, fixed on their side). So the path is now known-good at one
+  revision, which is strictly better than never-run and strictly worse than covered: the
+  next change to it has exactly the same exposure, and the two defects were found by a peer
+  under time pressure on a landing, which is the cost this row is about. The kill condition
+  stands unchanged.

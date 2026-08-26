@@ -445,6 +445,16 @@ below requires zero `skip:` lines and this is not a missing reference.
   sigil fixture gate `both_spellings_of_the_section_row_build_the_same_rom` is direction-agnostic
   and ran 3/3 green against the landed map. `.aeon-landing` moved to `058ad606` (same ROM bytes
   as `0e34408d`).
+- **THE PAIRING GATE IS ARMED — the ratchet disarmed at chain 167 and will not re-arm.**
+  `aeon_dir_matches_the_provenance_tip` is now a live assertion in both modes, and its
+  first real execution was exercised here both directions rather than assumed: pointed at
+  `.aeon-landing` (aeon `893747f7`, the tip's own `aeon_rev`) it passes with **no ratchet
+  line**; pointed at the genuinely stale `~/sonic_hacks/.sigil-portfix-aeon` (aeon
+  `b08b35c0`) it FAILS, naming both revisions, the entry number, the parcel and the exact
+  remedy. That second case is this morning's incident — a real check run against a stale
+  reference tree, returning green — and it is now impossible to have silently. **A stale
+  reference worktree is a hard failure from here, not a thing to notice**, so a run that
+  refuses is telling you `AEON_DIR` is wrong, not that the parcel is.
 - **`aeon_rev` answers WHICH TREE BUILT THESE BYTES — never WHICH PARCEL MOVED THEM.**
   `name` and `ab` are the attribution; `aeon_rev` is the provenance, and the two point at
   different commits whenever a freeze is retried on top of a later aeon revision. Chain
