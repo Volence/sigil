@@ -45,6 +45,12 @@ export CARGO_TARGET_DIR=/home/volence/sonic_hacks/.sigil-source-gates-target
 # listing, or a golden CRC — those need `./build.sh` to have run in the aeon tree
 # and belong to the artifact lane, deliberately not this one (see EXCLUDED below).
 SOURCE_GATES=(
+    # THE BRICK WITNESS: every shipped shape still BUILDS from aeon source, judged by
+    # the build entry `sigil build` reaches, with no byte compared to any committed
+    # artifact. A brick — the compiler refusing the corpus — is a source-only fact
+    # that no refreeze clears, and this is the one gate whose failure text names it
+    # as such (the verdict line below reads that back out).
+    corpus_builds
     # the warn tier over the real corpus — the gate the ruling is about
     warn_tier_corpus
     # whole-corpus source analyses
@@ -73,6 +79,8 @@ SOURCE_GATES=(
     # source-derived drift and derivation gates
     act_fixture_drift
     banked_carrier_drift
+    # the derived-layout invariants, read off the same source resolve the ROM comes from
+    derived_layout
     p5_constants_flip
     parcel_8b_stage_gen_touchers
     seam2_layout_derivation
@@ -97,11 +105,12 @@ SOURCE_GATES=(
 #   - the ~18 golden-CRC gates (boot_port, native_full_rom, the seam2 co-links,
 #     math_port, mt_port, sfx_port, …) compare against
 #     crates/sigil-harness/golden/*.bin and provenance.toml.
-# A source-drift lane that also had to build four ROM shapes would take an order
-# of magnitude longer and would go red on aeon build breakage rather than on the
-# thing it watches. Those gates have their own trigger: aeon's byte-identity
-# ritual, which fires exactly when bytes move — which is the correct trigger for
-# them and the wrong one for these.
+# Those gates have their own trigger: aeon's byte-identity ritual, which fires
+# exactly when bytes move — the correct trigger for a BYTE comparison and the wrong
+# one for these. The lane does still BUILD every shipped shape from source
+# (`corpus_builds`, a few seconds per shape): whether the compiler accepts the corpus
+# is a source fact and is red here on purpose, while whether the bytes match a
+# committed image stays the ritual's question.
 #
 # A THIRD SHAPE, and the one the two buckets above do not name: gates that read
 # aeon SOURCE ONLY but are ORACLE'D on a committed sigil artifact — the frozen
@@ -199,11 +208,23 @@ fi
 # lane, and "derivably" means it names a built ROM, a listing or the goldens in its own
 # text. Anything else is unclassified and the lane refuses to run rather than quietly
 # under-covering. Zero unclassified today.
+#
+# The artifact-lane files are COUNTED, not just skipped, and the count is printed in the
+# verdict line. "Skipped" and "green" are different words for a reason: an artifact gate
+# this lane does not run can be red for two reasons that need two different readers —
+# CRC DRIFT (bytes moved legitimately; the refreeze ritual owns it) or a BUILD BRICK (the
+# compiler refuses the corpus; nobody's ritual clears it). The brick half is what
+# `corpus_builds` measures here, so a verdict naming both numbers cannot be read as
+# "the artifact gates passed".
 unclassified=()
+artifact=()
 while IFS= read -r f; do
     n=$(basename "$f" .rs)
     printf '%s\n' "${SOURCE_GATES[@]}" | grep -qx "$n" && continue
-    grep -qE 's4\.bin|s4\.debug\.bin|demo\.bin|demo\.debug\.bin|\.lst|golden' "$f" && continue
+    if grep -qE 's4\.bin|s4\.debug\.bin|demo\.bin|demo\.debug\.bin|\.lst|golden' "$f"; then
+        artifact+=("$n")
+        continue
+    fi
     unclassified+=("$n")
 done < <(grep -rlE 'AEON_DIR|aeon_dir|reference_tree|--aeon' "$SIGIL_GATES"/crates/*/tests/*.rs)
 if (( ${#unclassified[@]} )); then
@@ -251,9 +272,16 @@ fi
 # nightly rather than resting in a file nobody is obliged to open.
 REGISTER=$(sed -n '/^open warn-tier findings:/,/^test /p' "$OUT" | grep -v '^test ' | head -20)
 
+# The verdict names what was NOT measured alongside what was. `corpus_builds` is the
+# brick witness and it ran in this very invocation (the gate-count check above holds
+# that), so "skipped as artifact-lane" cannot be read as "those gates are green": the one
+# failure class no refreeze clears was measured here; the rest is the refreeze ritual's.
+SKIPPED="${#artifact[@]} aeon-reading gates skipped as artifact-lane (CRC/region oracles \
+against committed artifacts, not measured here; build bricks witnessed by corpus_builds)"
+
 if (( rc == 0 && failed == 0 )); then
     {
-        echo "$(date -Is) OK at $AT ($passed passed, $binaries gates)"
+        echo "$(date -Is) OK at $AT ($passed passed, $binaries gates; $SKIPPED)"
         [[ -n "$REGISTER" ]] && echo "$REGISTER" | sed 's/^/    /'
     } >> "$LOG"
     exit 0
@@ -261,5 +289,11 @@ fi
 
 names=$(awk '/^failures:$/ {f=1; next} /^test result:/ {f=0} f && /^    [a-z]/ {print $1}' "$OUT" \
     | sort -u | tr '\n' ' ')
-note "SOURCE GATES FAILED at $AT — $failed failed / $passed passed: $names (see $OUT)"
+# A brick is named as a brick. The gate's own failure text carries the phrase, and a red
+# that includes it means "the corpus does not build" — a different owner and a different
+# clock from "a lint moved", so the verdict says which.
+kind="SOURCE GATES FAILED"
+grep -q 'shipped shapes do NOT build from aeon source' "$OUT" \
+    && kind="BUILD BRICK (the corpus does not build from source); SOURCE GATES FAILED"
+note "$kind at $AT — $failed failed / $passed passed: $names ($SKIPPED; see $OUT)"
 exit 1
