@@ -888,8 +888,37 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // a whole foreign section. Same lesson as c2: the span measures placement, not content.
     // The scene_registry CONTENT is unchanged by this parcel (it is sonic4 data +0x27
     // elsewhere: the editor block and the map rows; demo shapes byte-identical).
-    assert_eq!(pins::SCENE_REGISTRY.plain_len, 0xACE);  // +0x44 parcel-w: ParallaxConfig_OJZ_Underwater, the anchored fixture. EXACTLY sizeof(parallax_config) 28 + 4 bands x 10 = 68 = 0x44, and shape-invariant because it is data.
-    assert_eq!(pins::SCENE_REGISTRY.debug_len, 0xACE);  // +0x44 parcel-w: same record, same size in both shapes.
+    // showcase-effects (2026-08-26, aeon 9dd52471, owner rulings d-15 / d-28-answered):
+    // 0xACE -> 0xD6C, +0x29E BOTH shapes, and the number is derived, not read off the diff.
+    // BAND_CURVE_N 0 -> 1 widens `band_record` from 10 to 20 B ENGINE-WIDE (parallax.emp),
+    // so every lowered band in the hand registry grows +10 B. The registry holds 20
+    // ParallaxConfig records with 67 bands between them (counted from the listing:
+    // (size - 28) / 20 per record — 4+4+1+1+1+1+5+5+5+5+1+1+1+5+5+5+5+2+5+5); the six
+    // 256-byte deform tables are untouched. 67 x 10 = 670 = 0x29E, exactly. Shape-invariant
+    // because it is data. The section's BASE holds (0x122F4 / 0x12B38): everything upstream
+    // is the object bank, which absorbs the +0x100 engine slide as fill.
+    //   The editor block behind it (`section:ojz_effects_editor_act1`, unpinned) grows
+    // +0xB2 for the same reason plus the parcel's binding: Sec0's 5-band record 0x4E -> 0x80
+    // (+0x32 = 5 x 10) and a NEW 0x80 `EditorSceneBinding_OJZ_Act1_Sec4`. So OJZ_EFFECTS's
+    // base slides 0x29E + 0xB2 = +0x350, and its own LEN grows +0x50 (the 0x2E
+    // `OJZ_DepthVSplit` two-fire VSRAM program ahead of the presets — which is why the
+    // OJZ_Preset_* pins take +0x37E, not +0x350 — plus a 0x26 `OJZ_Preset_Depth` after
+    // them, less 4 B of tail align pad it consumed). 0x350 + 0x50 = +0x3A0 for every game
+    // data row downstream (COLLISION_DATA, ART_SONIC, OJZ_ACT_POOL, ... HEIGHT_MAPS_ROT);
+    // the fixed-base sound bank absorbs it, so ASSEMBLED_LEN / DEBUG_ASSEMBLED_LEN HOLD at
+    // 0xA11D0 / 0xA32A0 (the ROM files still grow — the deb2 appendix past EndOfRom).
+    //   ENGINE side, for the reader chasing the +0x100 family (LOAD_ART..SOUND_API):
+    // PARALLAX len +0x106 BOTH shapes — the curve fill that BAND_CURVE_N gates on, not
+    // DEBUG-fenced — and PRESET's `end-is-next-placement` span reads -0x6 (0xA6 -> 0xA0 /
+    // 0xA2 -> 0x9C) because its base moved +0x106 into alignment pad, the same effect the
+    // raster-cost-model entry records. 0x106 - 0x6 = 0x100, the flat downstream slide; the
+    // object family (ANIMATE and friends above) sits UPSTREAM of parallax and does not move.
+    //   RAM: +0x54 BOTH shapes from Raster_State on. BAND_CURVE_BYTES 0 -> 10 widens the
+    // 8 shadow bands (MAX_PARALLAX_BANDS) inside Parallax_State by 10 each = 80, plus the
+    // 4-byte Parallax_Curve_Carry (4 x BAND_CURVE_N) = 84 = 0x54. Parallax_State's own
+    // base (0xFFFF88A0) holds; PLAYER_1 / DYNAMIC_SLOTS ride it below.
+    assert_eq!(pins::SCENE_REGISTRY.plain_len, 0xD6C);  // +0x29E showcase-effects: 67 bands x 10 B, the band_record widening  // +0x44 parcel-w: ParallaxConfig_OJZ_Underwater, the anchored fixture. EXACTLY sizeof(parallax_config) 28 + 4 bands x 10 = 68 = 0x44, and shape-invariant because it is data.
+    assert_eq!(pins::SCENE_REGISTRY.debug_len, 0xD6C);  // +0x29E showcase-effects: same data, same size in both shapes  // +0x44 parcel-w: same record, same size in both shapes.
 
     // delete-percell-hscroll (2026-08-26, aeon 55ea2557, owner ruling d-29-corrected):
     // BOTH ROM tails HOLD at 0xA11D0 / 0xA32A0 while the engine bank shrinks -0xBC plain /
