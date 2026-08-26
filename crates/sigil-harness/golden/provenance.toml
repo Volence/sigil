@@ -8371,3 +8371,57 @@ full_crc = "a53a4f56"
 full_size = 715086
 anchor_crc = "071cb372"
 anchor_end = 0xa3290
+
+[[entry]]
+name = "ojz-act1-start-scene"
+ab = "0e34408d"
+note = "Aurora's first authored scene (ojz_act1_start, 5 bands + water anchor) bound to act 1 section 0; first emission of ojz_effects_editor_act1, interim order row EditorSceneBinding_OJZ_Act1_Sec0; sonic4 +39 B, demo unchanged; aeon 0e34408d."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "599f62b5"
+full_size = 715462
+anchor_crc = "d9fd13f9"
+anchor_end = 0xa3290
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "e3afeeb7"
+full_size = 602221
+anchor_crc = "10aaea53"
+anchor_end = 0x899a0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "bf2cdb42"
+full_size = 96412
+anchor_crc = "68de59a1"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "62a0019e"
+full_size = 101120
+anchor_crc = "586b0bd6"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "ea5c4fa2"
+full_size = 655678
+anchor_crc = "4c7d89fa"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "875d591f"
+full_size = 699223
+anchor_crc = "49899ab8"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "a02d36db"
+full_size = 715114
+anchor_crc = "6f6c3617"
+anchor_end = 0xa3290

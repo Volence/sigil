@@ -52,7 +52,7 @@ pub const VECTORS: Region = Region { plain_base: 0x0, debug_base: 0x0, plain_len
 pub const HEADER: Region = Region { plain_base: 0x100, debug_base: 0x100, plain_len: 0x100, debug_len: 0x100 };
 
 /// `HeightMaps` .. start + 0x1C480 plain / 0x1C480 debug (literal — no end symbol). tests: collision_data_port
-pub const COLLISION_DATA: Region = Region { plain_base: 0x286A0, debug_base: 0x28EE0, plain_len: 0x1C480, debug_len: 0x1C480 };
+pub const COLLISION_DATA: Region = Region { plain_base: 0x286F0, debug_base: 0x28F30, plain_len: 0x1C480, debug_len: 0x1C480 };
 
 /// `EntryPoint` .. `BootData` — gate `SIGIL_EMP_BOOT`. tests: boot_port
 pub const BOOT: Region = Region { plain_base: 0x200, debug_base: 0x200, plain_len: 0x1A0, debug_len: 0x1A0 };
@@ -205,25 +205,25 @@ pub const TEST_ENEMY: Region = Region { plain_base: 0x118E0, debug_base: 0x11DA4
 pub const PATH_SWAP: Region = Region { plain_base: 0x118F2, debug_base: 0x120CC, plain_len: 0x92, debug_len: 0xFC };
 
 /// `OJZ_TestRaster` .. `ObjDef_Static`.
-pub const OJZ_EFFECTS: Region = Region { plain_base: 0x12452, debug_base: 0x12C96, plain_len: 0x4DE, debug_len: 0x4DA };
+pub const OJZ_EFFECTS: Region = Region { plain_base: 0x124A0, debug_base: 0x12CE4, plain_len: 0x4E0, debug_len: 0x4DC };
 
-/// `DeformTable_Zero` .. `OJZ_TestRaster` — gate `SIGIL_EMP_SCENE_REGISTRY`. tests: scene_registry_port
+/// `DeformTable_Zero` .. `EditorSceneBinding_OJZ_Act1_Sec0` — gate `SIGIL_EMP_SCENE_REGISTRY`. tests: scene_registry_port
 pub const SCENE_REGISTRY: Region = Region { plain_base: 0x11984, debug_base: 0x121C8, plain_len: 0xACE, debug_len: 0xACE };
 
 /// `Map_TestObj` .. `Map_DustSpindash` — gate `SIGIL_EMP_TEST_MAPPINGS`. tests: test_mappings_port
-pub const TEST_MAPPINGS: Region = Region { plain_base: 0x27640, debug_base: 0x27E72, plain_len: 0x30, debug_len: 0x30 };
+pub const TEST_MAPPINGS: Region = Region { plain_base: 0x27690, debug_base: 0x27EC2, plain_len: 0x30, debug_len: 0x30 };
 
 /// `Map_DustSpindash` .. `Map_DustSpindash_End` — gate `SIGIL_EMP_DUST_DATA`.
-pub const DUST_DATA: Region = Region { plain_base: 0x27670, debug_base: 0x27EA2, plain_len: 0xBDA, debug_len: 0xBDA };
+pub const DUST_DATA: Region = Region { plain_base: 0x276C0, debug_base: 0x27EF2, plain_len: 0xBDA, debug_len: 0xBDA };
 
 /// `Ani_Sonic` .. `Ani_Sonic_End` — gate `SIGIL_EMP_SONIC_ANIMS`. tests: sonic_anims_port
-pub const SONIC_ANIMS: Region = Region { plain_base: 0x28250, debug_base: 0x28A7C, plain_len: 0x10A, debug_len: 0x10A };
+pub const SONIC_ANIMS: Region = Region { plain_base: 0x282A0, debug_base: 0x28ACC, plain_len: 0x10A, debug_len: 0x10A };
 
 /// `Ani_Tails` .. `Ani_Tails_End` — gate `SIGIL_EMP_TAILS_ANIMS`. tests: sonic_anims_port
-pub const TAILS_ANIMS: Region = Region { plain_base: 0x2835A, debug_base: 0x28B90, plain_len: 0x1BC, debug_len: 0x1BC };
+pub const TAILS_ANIMS: Region = Region { plain_base: 0x283AA, debug_base: 0x28BE0, plain_len: 0x1BC, debug_len: 0x1BC };
 
 /// `Ani_Knuckles` .. `Ani_Knuckles_End` — gate `SIGIL_EMP_KNUCKLES_ANIMS`. tests: sonic_anims_port
-pub const KNUCKLES_ANIMS: Region = Region { plain_base: 0x28516, debug_base: 0x28D4C, plain_len: 0x16C, debug_len: 0x16C };
+pub const KNUCKLES_ANIMS: Region = Region { plain_base: 0x28566, debug_base: 0x28D9C, plain_len: 0x16C, debug_len: 0x16C };
 
 /// `Map_Tails` .. `Map_Tails_End` — gate `SIGIL_EMP_TAILS_DATA`. tests: collision_data_port
 pub const TAILS_DATA: Region = Region { plain_base: 0x5C320, debug_base: 0x5DD70, plain_len: 0x20F5E, debug_len: 0x20F5E };
@@ -232,34 +232,34 @@ pub const TAILS_DATA: Region = Region { plain_base: 0x5C320, debug_base: 0x5DD70
 pub const KNUCKLES_DATA: Region = Region { plain_base: 0x7D27E, debug_base: 0x7ECCE, plain_len: 0x226C8, debug_len: 0x226C8 };
 
 /// `Ani_Particle` .. `Ani_Particle_End` (debug-only region; plain empty at `Ani_DustSpindash`) — gate `SIGIL_EMP_PARTICLE_ANIMS`. tests: particle_anims_port, test_objects_port
-pub const PARTICLE_ANIMS: Region = Region { plain_base: 0x28682, debug_base: 0x28EB8, plain_len: 0x0, debug_len: 0x8 };
+pub const PARTICLE_ANIMS: Region = Region { plain_base: 0x286D2, debug_base: 0x28F08, plain_len: 0x0, debug_len: 0x8 };
 
 /// `Ani_DustSpindash` .. `Ani_DustSpindash_End` — gate `SIGIL_EMP_DUST_ANIMS`.
-pub const DUST_ANIMS: Region = Region { plain_base: 0x28682, debug_base: 0x28EC0, plain_len: 0x14, debug_len: 0x14 };
+pub const DUST_ANIMS: Region = Region { plain_base: 0x286D2, debug_base: 0x28F10, plain_len: 0x14, debug_len: 0x14 };
 
 /// `OJZ_Sec0_TypeTable` .. `OJZ_Act_Pool_Page0`. tests: ojz_run_a_port
-pub const ENTITY_DATA: Region = Region { plain_base: 0x12968, debug_base: 0x131B0, plain_len: 0x170, debug_len: 0x170 };
+pub const ENTITY_DATA: Region = Region { plain_base: 0x129B8, debug_base: 0x13200, plain_len: 0x170, debug_len: 0x170 };
 
 /// `OJZ_Act_Pool_Page0` .. `OJZ_Act1_Descriptor`. tests: ojz_run_a_port
-pub const OJZ_ACT_POOL: Region = Region { plain_base: 0x12AD8, debug_base: 0x13320, plain_len: 0x2F0C, debug_len: 0x2F10 };
+pub const OJZ_ACT_POOL: Region = Region { plain_base: 0x12B28, debug_base: 0x13370, plain_len: 0x2F0C, debug_len: 0x2F10 };
 
 /// `OJZ_Act1_Descriptor` .. `OJZ_Sec0_Blocks` — gate `SIGIL_EMP_ACT_DESCRIPTOR`. tests: act_descriptor_port
-pub const ACT_DESCRIPTOR: Region = Region { plain_base: 0x159E4, debug_base: 0x16230, plain_len: 0x27C, debug_len: 0x280 };
+pub const ACT_DESCRIPTOR: Region = Region { plain_base: 0x15A34, debug_base: 0x16280, plain_len: 0x27C, debug_len: 0x280 };
 
 /// `OJZ_Sec0_Blocks` .. `OJZ_Sec0_LocalMap`. tests: ojz_run_b_port
-pub const SEC_BLOCK_BLOBS: Region = Region { plain_base: 0x15C60, debug_base: 0x164B0, plain_len: 0xB480, debug_len: 0xB474 };
+pub const SEC_BLOCK_BLOBS: Region = Region { plain_base: 0x15CB0, debug_base: 0x16500, plain_len: 0xB480, debug_len: 0xB474 };
 
 /// `OJZ_Sec0_LocalMap` .. `OJZ_Palette`. tests: ojz_run_b_port
-pub const SEC_LOCAL_MAPS: Region = Region { plain_base: 0x210E0, debug_base: 0x21924, plain_len: 0xCD0, debug_len: 0xCC4 };
+pub const SEC_LOCAL_MAPS: Region = Region { plain_base: 0x21130, debug_base: 0x21974, plain_len: 0xCD0, debug_len: 0xCC4 };
 
 /// `OJZ_Palette` .. `BgAnim_Table`. tests: ojz_run_b_port
-pub const OJZ_ACT_ASSETS: Region = Region { plain_base: 0x21DB0, debug_base: 0x225E8, plain_len: 0x5882, debug_len: 0x5888 };
+pub const OJZ_ACT_ASSETS: Region = Region { plain_base: 0x21E00, debug_base: 0x22638, plain_len: 0x5882, debug_len: 0x5888 };
 
 /// `BgAnim_Table` .. `Map_TestObj`. tests: ojz_run_b_port
-pub const OJZ_BG_ANIM: Region = Region { plain_base: 0x27632, debug_base: 0x27E70, plain_len: 0xE, debug_len: 0x2 };
+pub const OJZ_BG_ANIM: Region = Region { plain_base: 0x27682, debug_base: 0x27EC0, plain_len: 0xE, debug_len: 0x2 };
 
 /// `ObjDef_Static` .. `OJZ_Sec0_TypeTable` — gate `SIGIL_EMP_OBJDEFS`. tests: objdef_port
-pub const OBJDEFS: Region = Region { plain_base: 0x12930, debug_base: 0x13170, plain_len: 0x38, debug_len: 0x40 };
+pub const OBJDEFS: Region = Region { plain_base: 0x12980, debug_base: 0x131C0, plain_len: 0x38, debug_len: 0x40 };
 
 /// `GameState_ObjectTest_Init` .. `GameState_OJZScroll_Init` (debug-only region; plain empty at `GameState_OJZScroll_Init`) — gate `SIGIL_EMP_OBJECT_TEST_STATE`. tests: test_t1_harness_states_port
 pub const OBJECT_TEST_STATE: Region = Region { plain_base: 0x9F950, debug_base: 0xA13A0, plain_len: 0x0, debug_len: 0x384 };
@@ -339,19 +339,19 @@ pub const PLAYER_SENSORS: Region = Region { plain_base: 0x5840, debug_base: 0x69
 // ── Symbols (manifest order) ──
 
 /// `OJZ_Preset_Sec0`. tests: act_descriptor_port
-pub const OJZ_PRESET_SEC0: Pin = Pin { plain: 0x127C4, debug: 0x13008 };
+pub const OJZ_PRESET_SEC0: Pin = Pin { plain: 0x12812, debug: 0x13056 };
 
 /// `OJZ_Preset_Sec1`. tests: act_descriptor_port
-pub const OJZ_PRESET_SEC1: Pin = Pin { plain: 0x127EA, debug: 0x1302E };
+pub const OJZ_PRESET_SEC1: Pin = Pin { plain: 0x12838, debug: 0x1307C };
 
 /// `OJZ_Preset_Sec2`. tests: act_descriptor_port
-pub const OJZ_PRESET_SEC2: Pin = Pin { plain: 0x12810, debug: 0x13054 };
+pub const OJZ_PRESET_SEC2: Pin = Pin { plain: 0x1285E, debug: 0x130A2 };
 
 /// `OJZ_Preset_Sec3`. tests: act_descriptor_port
-pub const OJZ_PRESET_SEC3: Pin = Pin { plain: 0x12836, debug: 0x1307A };
+pub const OJZ_PRESET_SEC3: Pin = Pin { plain: 0x12884, debug: 0x130C8 };
 
 /// `OJZ_Preset_Plain`. tests: act_descriptor_port
-pub const OJZ_PRESET_PLAIN: Pin = Pin { plain: 0x1285C, debug: 0x130A0 };
+pub const OJZ_PRESET_PLAIN: Pin = Pin { plain: 0x128AA, debug: 0x130EE };
 
 /// `Effects_InstallPreset`. tests: parallax_port
 pub const EFFECTS_INSTALL_PRESET: Pin = Pin { plain: 0x73A6, debug: 0x85DA };
@@ -372,16 +372,16 @@ pub const TEST_ENEMY_INIT: u32 = 0x11DA4;
 pub const TEST_PARENT_LABEL: u32 = 0x11F40;
 
 /// `Map_TestObj`. tests: objdef_port
-pub const MAP_TEST_OBJ: Pin = Pin { plain: 0x27640, debug: 0x27E72 };
+pub const MAP_TEST_OBJ: Pin = Pin { plain: 0x27690, debug: 0x27EC2 };
 
 /// `Map_Sonic`. tests: test_g1_objects_port
-pub const MAP_SONIC: Pin = Pin { plain: 0x2A8A0, debug: 0x2B0E0 };
+pub const MAP_SONIC: Pin = Pin { plain: 0x2A8F0, debug: 0x2B130 };
 
 /// `DPLC_Sonic`. tests: test_g1_objects_port
-pub const DPLC_SONIC: Pin = Pin { plain: 0x2C520, debug: 0x2CD60 };
+pub const DPLC_SONIC: Pin = Pin { plain: 0x2C570, debug: 0x2CDB0 };
 
 /// `Art_Sonic`. tests: test_g1_objects_port
-pub const ART_SONIC: Pin = Pin { plain: 0x2CE60, debug: 0x2D6A0 };
+pub const ART_SONIC: Pin = Pin { plain: 0x2CEB0, debug: 0x2D6F0 };
 
 /// `CreateEffect_Normal`. tests: test_g2_objects_port
 pub const CREATE_EFFECT_NORMAL: Pin = Pin { plain: 0x44F6, debug: 0x5366 };
@@ -723,7 +723,7 @@ pub const CAMERA_Y_MAX: Pin = Pin { plain: 0xFFFFAB6A, debug: 0xFFFFABF8 };
 pub const BG_ANIM_LAST_STEP: Pin = Pin { plain: 0xFFFF8CAA, debug: 0xFFFF8CAA };
 
 /// `BgAnim_Table`. tests: bg_anim_port
-pub const BG_ANIM_TABLE: Pin = Pin { plain: 0x27632, debug: 0x27E70 };
+pub const BG_ANIM_TABLE: Pin = Pin { plain: 0x27682, debug: 0x27EC0 };
 
 /// `Camera_X_Biased`. tests: sprites_port
 pub const CAMERA_X_BIASED: Pin = Pin { plain: 0xFFFFA458, debug: 0xFFFFA4E6 };
@@ -951,130 +951,130 @@ pub const SONG_TABLE: Pin = Pin { plain: 0x5BB10, debug: 0x5D550 };
 pub const SONG_PATCH_TABLE: Pin = Pin { plain: 0x5BB14, debug: 0x5D55C };
 
 /// `OJZ_Palette`. tests: act_descriptor_port
-pub const OJZ_PALETTE: Pin = Pin { plain: 0x21DB0, debug: 0x225E8 };
+pub const OJZ_PALETTE: Pin = Pin { plain: 0x21E00, debug: 0x22638 };
 
 /// `OJZ_Act1_BG_Layout`. tests: act_descriptor_port
-pub const OJZ_ACT1_BG_LAYOUT: Pin = Pin { plain: 0x21E30, debug: 0x22668 };
+pub const OJZ_ACT1_BG_LAYOUT: Pin = Pin { plain: 0x21E80, debug: 0x226B8 };
 
 /// `OJZ_Act1_BG_Tiles`. tests: act_descriptor_port
-pub const OJZ_ACT1_BG_TILES: Pin = Pin { plain: 0x23E30, debug: 0x24668 };
+pub const OJZ_ACT1_BG_TILES: Pin = Pin { plain: 0x23E80, debug: 0x246B8 };
 
 /// `ParallaxConfig_OJZ_Default`. tests: act_descriptor_port
 pub const PARALLAX_CONFIG_OJZ_DEFAULT: Pin = Pin { plain: 0x11A84, debug: 0x122C8 };
 
 /// `OJZ_Act_Pool_PageTable`. tests: act_descriptor_port
-pub const OJZ_ACT_POOL_PAGE_TABLE: Pin = Pin { plain: 0x15994, debug: 0x161DC };
+pub const OJZ_ACT_POOL_PAGE_TABLE: Pin = Pin { plain: 0x159E4, debug: 0x1622C };
 
 /// `OJZ_Sec_LocalMaps`. tests: act_descriptor_port
-pub const OJZ_SEC_LOCAL_MAPS: Pin = Pin { plain: 0x21D80, debug: 0x225C4 };
+pub const OJZ_SEC_LOCAL_MAPS: Pin = Pin { plain: 0x21DD0, debug: 0x22614 };
 
 /// `OJZ_Sec0_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC0_BLOCKS: Pin = Pin { plain: 0x15C60, debug: 0x164B0 };
+pub const OJZ_SEC0_BLOCKS: Pin = Pin { plain: 0x15CB0, debug: 0x16500 };
 
 /// `OJZ_Sec1_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC1_BLOCKS: Pin = Pin { plain: 0x17C3A, debug: 0x1848A };
+pub const OJZ_SEC1_BLOCKS: Pin = Pin { plain: 0x17C8A, debug: 0x184DA };
 
 /// `OJZ_Sec2_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC2_BLOCKS: Pin = Pin { plain: 0x18FB6, debug: 0x19806 };
+pub const OJZ_SEC2_BLOCKS: Pin = Pin { plain: 0x19006, debug: 0x19856 };
 
 /// `OJZ_Sec3_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC3_BLOCKS: Pin = Pin { plain: 0x1A74E, debug: 0x1AF9E };
+pub const OJZ_SEC3_BLOCKS: Pin = Pin { plain: 0x1A79E, debug: 0x1AFEE };
 
 /// `OJZ_Sec4_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC4_BLOCKS: Pin = Pin { plain: 0x18FB6, debug: 0x19806 };
+pub const OJZ_SEC4_BLOCKS: Pin = Pin { plain: 0x19006, debug: 0x19856 };
 
 /// `OJZ_Sec5_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC5_BLOCKS: Pin = Pin { plain: 0x1B89A, debug: 0x1C0EA };
+pub const OJZ_SEC5_BLOCKS: Pin = Pin { plain: 0x1B8EA, debug: 0x1C13A };
 
 /// `OJZ_Sec6_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC6_BLOCKS: Pin = Pin { plain: 0x1C6C0, debug: 0x1CF10 };
+pub const OJZ_SEC6_BLOCKS: Pin = Pin { plain: 0x1C710, debug: 0x1CF60 };
 
 /// `OJZ_Sec7_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC7_BLOCKS: Pin = Pin { plain: 0x1E2C0, debug: 0x1EB10 };
+pub const OJZ_SEC7_BLOCKS: Pin = Pin { plain: 0x1E310, debug: 0x1EB60 };
 
 /// `OJZ_Sec8_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC8_BLOCKS: Pin = Pin { plain: 0x1F534, debug: 0x1FD84 };
+pub const OJZ_SEC8_BLOCKS: Pin = Pin { plain: 0x1F584, debug: 0x1FDD4 };
 
 /// `OJZ_Sec0_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC0_OBJECTS: Pin = Pin { plain: 0x1296E, debug: 0x131B6 };
+pub const OJZ_SEC0_OBJECTS: Pin = Pin { plain: 0x129BE, debug: 0x13206 };
 
 /// `OJZ_Sec0_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC0_RINGS: Pin = Pin { plain: 0x12976, debug: 0x131BE };
+pub const OJZ_SEC0_RINGS: Pin = Pin { plain: 0x129C6, debug: 0x1320E };
 
 /// `OJZ_Sec0_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC0_TYPE_TABLE: Pin = Pin { plain: 0x12968, debug: 0x131B0 };
+pub const OJZ_SEC0_TYPE_TABLE: Pin = Pin { plain: 0x129B8, debug: 0x13200 };
 
 /// `OJZ_Sec1_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC1_OBJECTS: Pin = Pin { plain: 0x129A0, debug: 0x131E8 };
+pub const OJZ_SEC1_OBJECTS: Pin = Pin { plain: 0x129F0, debug: 0x13238 };
 
 /// `OJZ_Sec1_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC1_RINGS: Pin = Pin { plain: 0x129B4, debug: 0x131FC };
+pub const OJZ_SEC1_RINGS: Pin = Pin { plain: 0x12A04, debug: 0x1324C };
 
 /// `OJZ_Sec1_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC1_TYPE_TABLE: Pin = Pin { plain: 0x12996, debug: 0x131DE };
+pub const OJZ_SEC1_TYPE_TABLE: Pin = Pin { plain: 0x129E6, debug: 0x1322E };
 
 /// `OJZ_Sec2_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC2_OBJECTS: Pin = Pin { plain: 0x129E6, debug: 0x1322E };
+pub const OJZ_SEC2_OBJECTS: Pin = Pin { plain: 0x12A36, debug: 0x1327E };
 
 /// `OJZ_Sec2_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC2_RINGS: Pin = Pin { plain: 0x129F4, debug: 0x1323C };
+pub const OJZ_SEC2_RINGS: Pin = Pin { plain: 0x12A44, debug: 0x1328C };
 
 /// `OJZ_Sec2_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC2_TYPE_TABLE: Pin = Pin { plain: 0x129DC, debug: 0x13224 };
+pub const OJZ_SEC2_TYPE_TABLE: Pin = Pin { plain: 0x12A2C, debug: 0x13274 };
 
 /// `OJZ_Sec3_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC3_OBJECTS: Pin = Pin { plain: 0x12A2A, debug: 0x13272 };
+pub const OJZ_SEC3_OBJECTS: Pin = Pin { plain: 0x12A7A, debug: 0x132C2 };
 
 /// `OJZ_Sec3_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC3_RINGS: Pin = Pin { plain: 0x12A2C, debug: 0x13274 };
+pub const OJZ_SEC3_RINGS: Pin = Pin { plain: 0x12A7C, debug: 0x132C4 };
 
 /// `OJZ_Sec3_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC3_TYPE_TABLE: Pin = Pin { plain: 0x12A28, debug: 0x13270 };
+pub const OJZ_SEC3_TYPE_TABLE: Pin = Pin { plain: 0x12A78, debug: 0x132C0 };
 
 /// `OJZ_Sec4_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC4_OBJECTS: Pin = Pin { plain: 0x12A32, debug: 0x1327A };
+pub const OJZ_SEC4_OBJECTS: Pin = Pin { plain: 0x12A82, debug: 0x132CA };
 
 /// `OJZ_Sec4_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC4_RINGS: Pin = Pin { plain: 0x12A34, debug: 0x1327C };
+pub const OJZ_SEC4_RINGS: Pin = Pin { plain: 0x12A84, debug: 0x132CC };
 
 /// `OJZ_Sec4_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC4_TYPE_TABLE: Pin = Pin { plain: 0x12A30, debug: 0x13278 };
+pub const OJZ_SEC4_TYPE_TABLE: Pin = Pin { plain: 0x12A80, debug: 0x132C8 };
 
 /// `OJZ_Sec5_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC5_OBJECTS: Pin = Pin { plain: 0x12A6A, debug: 0x132B2 };
+pub const OJZ_SEC5_OBJECTS: Pin = Pin { plain: 0x12ABA, debug: 0x13302 };
 
 /// `OJZ_Sec5_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC5_RINGS: Pin = Pin { plain: 0x12A6C, debug: 0x132B4 };
+pub const OJZ_SEC5_RINGS: Pin = Pin { plain: 0x12ABC, debug: 0x13304 };
 
 /// `OJZ_Sec5_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC5_TYPE_TABLE: Pin = Pin { plain: 0x12A68, debug: 0x132B0 };
+pub const OJZ_SEC5_TYPE_TABLE: Pin = Pin { plain: 0x12AB8, debug: 0x13300 };
 
 /// `OJZ_Sec6_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC6_OBJECTS: Pin = Pin { plain: 0x12A92, debug: 0x132DA };
+pub const OJZ_SEC6_OBJECTS: Pin = Pin { plain: 0x12AE2, debug: 0x1332A };
 
 /// `OJZ_Sec6_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC6_RINGS: Pin = Pin { plain: 0x12A94, debug: 0x132DC };
+pub const OJZ_SEC6_RINGS: Pin = Pin { plain: 0x12AE4, debug: 0x1332C };
 
 /// `OJZ_Sec6_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC6_TYPE_TABLE: Pin = Pin { plain: 0x12A90, debug: 0x132D8 };
+pub const OJZ_SEC6_TYPE_TABLE: Pin = Pin { plain: 0x12AE0, debug: 0x13328 };
 
 /// `OJZ_Sec7_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC7_OBJECTS: Pin = Pin { plain: 0x12A9A, debug: 0x132E2 };
+pub const OJZ_SEC7_OBJECTS: Pin = Pin { plain: 0x12AEA, debug: 0x13332 };
 
 /// `OJZ_Sec7_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC7_RINGS: Pin = Pin { plain: 0x12A9C, debug: 0x132E4 };
+pub const OJZ_SEC7_RINGS: Pin = Pin { plain: 0x12AEC, debug: 0x13334 };
 
 /// `OJZ_Sec7_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC7_TYPE_TABLE: Pin = Pin { plain: 0x12A98, debug: 0x132E0 };
+pub const OJZ_SEC7_TYPE_TABLE: Pin = Pin { plain: 0x12AE8, debug: 0x13330 };
 
 /// `OJZ_Sec8_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC8_OBJECTS: Pin = Pin { plain: 0x12AC2, debug: 0x1330A };
+pub const OJZ_SEC8_OBJECTS: Pin = Pin { plain: 0x12B12, debug: 0x1335A };
 
 /// `OJZ_Sec8_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC8_RINGS: Pin = Pin { plain: 0x12AC4, debug: 0x1330C };
+pub const OJZ_SEC8_RINGS: Pin = Pin { plain: 0x12B14, debug: 0x1335C };
 
 /// `OJZ_Sec8_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC8_TYPE_TABLE: Pin = Pin { plain: 0x12AC0, debug: 0x13308 };
+pub const OJZ_SEC8_TYPE_TABLE: Pin = Pin { plain: 0x12B10, debug: 0x13358 };
 
 /// `BLOCK_INDEX_SIZE`. tests: act_descriptor_port
 pub const BLOCK_INDEX_SIZE: Pin = Pin { plain: 0x400, debug: 0x400 };
@@ -1413,16 +1413,16 @@ pub const PLAYER_SENSOR_WALL_AT: Pin = Pin { plain: 0x5C74, debug: 0x6DA4 };
 pub const COLLISION_GET_TYPE: Pin = Pin { plain: 0x57D0, debug: 0x6900 };
 
 /// `SolidityTable`. tests: test_p4_player_sensors_port
-pub const SOLIDITY_TABLE: Pin = Pin { plain: 0x2A7A0, debug: 0x2AFE0 };
+pub const SOLIDITY_TABLE: Pin = Pin { plain: 0x2A7F0, debug: 0x2B030 };
 
 /// `AngleTable`. tests: test_p4_player_sensors_port
-pub const ANGLE_TABLE: Pin = Pin { plain: 0x2A6A0, debug: 0x2AEE0 };
+pub const ANGLE_TABLE: Pin = Pin { plain: 0x2A6F0, debug: 0x2AF30 };
 
 /// `HeightMaps`. tests: test_p4_player_sensors_port
-pub const HEIGHT_MAPS: Pin = Pin { plain: 0x286A0, debug: 0x28EE0 };
+pub const HEIGHT_MAPS: Pin = Pin { plain: 0x286F0, debug: 0x28F30 };
 
 /// `HeightMapsRot`. tests: test_p4_player_sensors_port
-pub const HEIGHT_MAPS_ROT: Pin = Pin { plain: 0x296A0, debug: 0x29EE0 };
+pub const HEIGHT_MAPS_ROT: Pin = Pin { plain: 0x296F0, debug: 0x29F30 };
 
 /// `Character_ID`. tests: test_p1_player_port
 pub const CHARACTER_ID: Pin = Pin { plain: 0xFFFFB838, debug: 0xFFFFE0CE };
@@ -1452,22 +1452,22 @@ pub const PHYS_TABLE_SONIC: Pin = Pin { plain: 0x11596, debug: 0x116A6 };
 pub const PAL_SONIC_TAILS: Pin = Pin { plain: 0x9F906, debug: 0xA1356 };
 
 /// `OJZ_TestRaster`. tests: act_descriptor_port
-pub const OJZ_TEST_RASTER: Pin = Pin { plain: 0x12452, debug: 0x12C96 };
+pub const OJZ_TEST_RASTER: Pin = Pin { plain: 0x124A0, debug: 0x12CE4 };
 
 /// `OJZ_TestPal`. tests: act_descriptor_port
-pub const OJZ_TEST_PAL: Pin = Pin { plain: 0x12474, debug: 0x12CB8 };
+pub const OJZ_TEST_PAL: Pin = Pin { plain: 0x124C2, debug: 0x12D06 };
 
 /// `OJZ_TestGradient`. tests: act_descriptor_port
-pub const OJZ_TEST_GRADIENT: Pin = Pin { plain: 0x1273E, debug: 0x12F82 };
+pub const OJZ_TEST_GRADIENT: Pin = Pin { plain: 0x1278C, debug: 0x12FD0 };
 
 /// `OJZ_ShimmerCycle`. tests: act_descriptor_port
-pub const OJZ_SHIMMER_CYCLE: Pin = Pin { plain: 0x124D4, debug: 0x12D18 };
+pub const OJZ_SHIMMER_CYCLE: Pin = Pin { plain: 0x12522, debug: 0x12D66 };
 
 /// `OJZ_TestVsram`. tests: act_descriptor_port
-pub const OJZ_TEST_VSRAM: Pin = Pin { plain: 0x1275C, debug: 0x12FA0 };
+pub const OJZ_TEST_VSRAM: Pin = Pin { plain: 0x127AA, debug: 0x12FEE };
 
 /// `OJZ_TestRamp`. tests: act_descriptor_port
-pub const OJZ_TEST_RAMP: Pin = Pin { plain: 0x1277A, debug: 0x12FBE };
+pub const OJZ_TEST_RAMP: Pin = Pin { plain: 0x127C8, debug: 0x1300C };
 
 /// `Raster_Program`. tests: raster_port
 pub const RASTER_PROGRAM: Pin = Pin { plain: 0xFFFF8994, debug: 0xFFFF8994 };

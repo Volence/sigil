@@ -867,6 +867,15 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // parallax data is shape-invariant. That equality is a property worth noticing — if
     // these two ever diverge again, something shape-gated has been added to the parallax
     // library, which is not where it belongs.
+    // ojz-act1-start-scene (2026-08-26): HOLDS at 0xACE/0xACE — but only because the
+    // region's end was repointed OJZ_TestRaster -> EditorSceneBinding_OJZ_Act1_Sec0 in
+    // repin.toml. Aurora's first authored scene made the generated editor-scene block emit
+    // (0x4E B: one 5-band lowered record + the count/binding table) at its reserved map
+    // position, which is INSIDE the old span; measured 0xB1C = 0xACE + 0x4E before the
+    // repoint, and the port test refused it (beyond align-pad tolerance) rather than absorb
+    // a whole foreign section. Same lesson as c2: the span measures placement, not content.
+    // The scene_registry CONTENT is unchanged by this parcel (it is sonic4 data +0x27
+    // elsewhere: the editor block and the map rows; demo shapes byte-identical).
     assert_eq!(pins::SCENE_REGISTRY.plain_len, 0xACE);  // +0x44 parcel-w: ParallaxConfig_OJZ_Underwater, the anchored fixture. EXACTLY sizeof(parallax_config) 28 + 4 bands x 10 = 68 = 0x44, and shape-invariant because it is data.
     assert_eq!(pins::SCENE_REGISTRY.debug_len, 0xACE);  // +0x44 parcel-w: same record, same size in both shapes.
 
