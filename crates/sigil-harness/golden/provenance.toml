@@ -8317,3 +8317,57 @@ full_crc = "f0175028"
 full_size = 715010
 anchor_crc = "1b71acaa"
 anchor_end = 0xa3290
+
+[[entry]]
+name = "parallax-section-precedence"
+ab = "2e13f2b8"
+note = "One parallax-config resolver (section binding > preset ep_parallax > act default) at boot and crossing; +76..78 B every shape; effects gates 27/27; aeon 2e13f2b8."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "22b8c74e"
+full_size = 715434
+anchor_crc = "3a56957b"
+anchor_end = 0xa3290
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "154afa9f"
+full_size = 602131
+anchor_crc = "b6f7d60d"
+anchor_end = 0x89960
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "bf2cdb42"
+full_size = 96412
+anchor_crc = "68de59a1"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "62a0019e"
+full_size = 101120
+anchor_crc = "586b0bd6"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "bbbf2d99"
+full_size = 655678
+anchor_crc = "7965a7c7"
+anchor_end = 0xa013e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "daec8273"
+full_size = 699184
+anchor_crc = "bb38075a"
+anchor_end = 0xa11c0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "a53a4f56"
+full_size = 715086
+anchor_crc = "071cb372"
+anchor_end = 0xa3290

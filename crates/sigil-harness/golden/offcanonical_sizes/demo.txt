@@ -7,13 +7,13 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=demo
 # reproduces_golden=demo.bin
-# golden_crc32=c708b114
-# assembled_anchor=0311d26e
+# golden_crc32=bf2cdb42
+# assembled_anchor=68de59a1
 # assembled_end=0x1121c
 # labels=40
 AnimateSprite 0x1bda
-BG_Init 0x59e0
-BgAnim_Init 0x5ac0
+BG_Init 0x5a00
+BgAnim_Init 0x5ae0
 BootData 0x392
 BootData_End 0x406
 BusError 0x1016c
@@ -32,7 +32,7 @@ InitObjectRAM 0x14c4
 InitSpriteSystem 0x17c0
 Init_DMA_Queue 0x442
 Init_SpriteTable 0x770
-Level_LoadArt 0x5150
+Level_LoadArt 0x5170
 Load_Object 0x2d10
 ObjCodeBase 0x10000
 ObjDef_DemoBox 0x10006
