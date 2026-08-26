@@ -182,13 +182,23 @@ noticed and would otherwise have swallowed, which is a real but bounded win.
 ## Quality bars
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — **3869 passed / 1 failed / 4 ignored** (3874 declared) under
-  `SIGIL_STRICT_GATE=1` (sigil master `e0c7244b`, aeon `058ad606` at `.aeon-landing`, 2026-08-26),
-  **zero `skip:` lines**. The one: `soundbankhead_pinned_bootstrap_lands_at_lma_not_vma`
-  (`FIVE-REG`, PinnedBaked/registry path). Its sibling `soundbankhead_matches_reference` can
-  fail with a `PoisonError` when it panics holding the file's `LOCK` — a flake that dies with it.
+  `AEON_DIR` set to the aeon tree — **3870 passed / 0 failed / 4 ignored** (3874 declared) under
+  `SIGIL_STRICT_GATE=1` (sigil master `db710380`, aeon `058ad606` at `.aeon-landing`, 2026-08-26),
+  **zero `skip:` lines**. GREEN for the first time since 2026-08-18.
   *(History 2026-08-24→26: 3844/5/4 → §4 +8 → 3852/5/4 → closure 3854/3/4 → first real scene
-  3852/5/4 → SECTION-ROW +12 → CLOSURE-2 3866/3/4 → REPIN-END 3869/1/4.)*
+  3852/5/4 → SECTION-ROW +12 → CLOSURE-2 3866/3/4 → REPIN-END 3869/1/4 → FIVE-REG 3870/0/4.)*
+  **FIVE-REG landed:** the last red was `soundbankhead_pinned_bootstrap_lands_at_lma_not_vma`
+  on the **PinnedBaked/registry** path (`build_emp(sonic4_pinned_profile)` → `emp_map_toml`
+  mints one region per REGISTRY pin; a content-derived section declared by a `section:` row
+  has no `pins::Region` by design and `repin` derives pins from the shipped resolve, so that
+  path can never learn it). Every PinnedBaked reference enumerated: two `#[ignore]`d archaeology
+  tests, `derive_offcanon --bootstrap-canonical` (documented unavailable since 2026-08-01), and
+  an unreachable arm behind the Frozen early-return. The catch was RE-HOMED, not deleted:
+  `soundbankhead_pin_is_the_lma_not_the_vma` asserts `pins::SOUNDBANKHEAD` bases == the shipped
+  resolve's lma with a distinct vma present (literals removed, red-first on a sabotaged pin).
+  Test-file `LOCK` is poison-tolerant (3/8 repeats had poisoned a sibling; 8/8 clean after).
+  Ledgered: retire the whole PinnedBaked path (kill list in the gap ledger).
+
   **REPIN-END landed:** `repin.toml` `start`/`end` accept `section:<name>` (LMA / own
   `lma + image_len`, one derivation `native::section_end` shared with the `<Base>_End` sites);
   `act_descriptor` and `scene_registry` ends re-spelled; `ACT_DESCRIPTOR` plain_len 0x27C→0x27A,
