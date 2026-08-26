@@ -777,6 +777,8 @@ fn final_pad_to_below_the_cursor_names_the_end_of_the_struct() {
     assert!(diags.is_empty(), "expected a clean parse, got {diags:?}");
     let (_layout, diags) = layout_struct(&file, "S");
     assert_eq!(diags.len(), 1, "expected exactly one diagnostic, got {diags:?}");
+    assert_eq!(diags[0].level, Level::Error);
+    assert!(diags[0].message.contains("[layout.pad-overflow]"), "was {:?}", diags[0].message);
     assert!(
         diags[0].message.contains("struct S: pad_to(2) at the end of the struct"),
         "was {:?}",
