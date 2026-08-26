@@ -8425,3 +8425,57 @@ full_crc = "a02d36db"
 full_size = 715114
 anchor_crc = "6f6c3617"
 anchor_end = 0xa3290
+
+[[entry]]
+name = "ring-sparkle"
+ab = "77a897eb"
+note = "Ring collect sparkle: generic ring_collected hook (zero-byte for demo) + sonic4 RingSparkle effect object, S3K art/timing; player_sensors probe pointers pinned abs.l (placer measuring trap, sigil BGROOM-3); sonic4 +185/+194 B; aeon 77a897eb."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "7c9f0f8b"
+full_size = 715656
+anchor_crc = "67a2bac1"
+anchor_end = 0xa32a0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "d9319190"
+full_size = 602705
+anchor_crc = "86f40567"
+anchor_end = 0x89ad0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "bf2cdb42"
+full_size = 96412
+anchor_crc = "68de59a1"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "62a0019e"
+full_size = 101120
+anchor_crc = "586b0bd6"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "cf7b5148"
+full_size = 655694
+anchor_crc = "ecdd2547"
+anchor_end = 0xa014e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "6e41952f"
+full_size = 699408
+anchor_crc = "ebb9dac9"
+anchor_end = 0xa11d0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "7d52827c"
+full_size = 715308
+anchor_crc = "e670b21a"
+anchor_end = 0xa32a0

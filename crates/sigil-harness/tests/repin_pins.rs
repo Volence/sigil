@@ -571,8 +571,17 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // the upstream wave.
     assert_eq!(pins::RINGS.plain_base, 0x37F4);  // +0x60 parcel-r1-splice  // +0x20 offscreen-ship-setreg-replay  // +0x40 offscreen-frame-top-ship  // +0x10 parcel-w: same buffers.emp plain-only slide as ANIMATE.  // -0x30 blanket-restore  // -0xE0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x30 defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x30 art-streaming-p2-task3  // +0x20 art-streaming-p2-task4  // +0x20 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x10 character-lens-sweep // -0x10 effects-p3-parcel-c2 (the three legacy per-field installers deleted from the effects modules; every region downstream inherits the slide)
     assert_eq!(pins::RINGS.debug_base, 0x40EE);  // +0x60 parcel-r1-splice  // +0x10 offscreen-ship-setreg-replay  // +0x50 offscreen-frame-top-ship  // +0x40 blanket-restore-r2 (same flat debug slide as ANIMATE; plain holds)  // -0x40 blanket-restore  // +0x10 effects-p2-palette (debug-only upstream align step)  // -0xF0 effects-module-split  // +0xF0 effects-p1-raster  // +0x10 item27: boot-growth slide  // +0x4c defect-batch-8  // +0x10 sst-fold  // +0x80 art-streaming-p2-task2  // +0x40 art-streaming-p2-task3  // +0x10 art-streaming-p2-task4  // +0x30 art-streaming-p2c-t8-t9  // -0x50 wave-f3-f1-f6  // +0x140 sound-pkg1  // -0x60 sound-pkg4  // +0x160 aeon-arctan  // +0x10 replay-hash-layout-proof  // +0x20 character-lens-sweep // +0x10 raster-substrate-byte-moving: buffers.emp grew for the off-screen ship guard's DERIVED palette line (item 4), and the object family sits downstream of buffers. DEBUG only — plain absorbs it in existing alignment slack.
-    assert_eq!(pins::RINGS.plain_len, 0x1B8);   // −6: item 10 DrawRings fold
-    assert_eq!(pins::RINGS.debug_len, 0x214);
+    // ring-sparkle (2026-08-26): +8 BOTH shapes, and the number is the whole story.
+    // RingCollision gained ONE `invoke Game.ring_collected` call site (the generic hook
+    // the sonic4 sparkle object binds; unbound — the demo — it folds to nothing, which is
+    // why both demo shapes stayed byte-identical). Eight bytes is the jsr plus the a3
+    // setup the hook's contract declares, NOT the sparkle itself: the object, its art and
+    // its mappings live in the sonic4 game section, downstream of every pin asserted here.
+    // So a LEN delta on the ENGINE ring module is the correct and only place this parcel
+    // shows up in this file — if a future ring-visual parcel moves more than the call
+    // site, the growth belongs in the game and this literal should not move again.
+    assert_eq!(pins::RINGS.plain_len, 0x1C0);   // +8 ring-sparkle: the Game.ring_collected call site  // −6: item 10 DrawRings fold
+    assert_eq!(pins::RINGS.debug_len, 0x21A);   // +8 ring-sparkle: same call site, same size in both shapes
 
     // core LEN shrank −0xA in c4 (Spawn_Count: InitObjectRAM store −4 + RunObjects
     // moveq+store −6). Bases −0xA in c5 (the boot.asm CROSS_RESET store removal is
