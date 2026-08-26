@@ -143,6 +143,19 @@ capture_config config_b.bin  --config-b  s4.bin        s4.lst
 capture_config lean.bin      --lean      s4.bin        s4.lst
 
 # RESTORE the canonical aeon references clobbered by Config-A/B/lean.
+#
+# The off-canonical captures above leave THEIR listings behind under the canonical
+# names: config_a writes s4.debug.lst, config_b and lean write s4.lst. aeon's
+# build-fatal checks derive over every shape whose listing is PRESENT, so a leftover
+# off-canonical listing is read as the canonical shape's and judged against the
+# canonical shape's budget. Clearing both listings first is what makes the two restore
+# builds order-independent; sequencing them so the survivor happens to be correct would
+# leave the same hazard armed behind a working build.
+#
+# The ROMs go too: a restore build that stops at a fatal check leaves the previous
+# shape's binary in place, and a stale ROM whose CRC matches its pin perfectly is
+# indistinguishable from a fresh one. Absent fails loudly; stale does not fail at all.
+rm -f "$AEON/s4.bin" "$AEON/s4.debug.bin" "$AEON/s4.lst" "$AEON/s4.debug.lst"
 echo ">> restoring canonical aeon s4.bin + s4.debug.bin ..."
 ( cd "$AEON" && SIGIL_EMIT="$SIGIL_EMIT" ./build.sh sonic4 >/dev/null && DEBUG=1 SIGIL_EMIT="$SIGIL_EMIT" ./build.sh sonic4 >/dev/null )
 echo "   restored: $(cd "$AEON" && python3 -c "import zlib;print('s4.bin',f'{zlib.crc32(open(\"s4.bin\",\"rb\").read())&0xffffffff:08x}','/','s4.debug.bin',f'{zlib.crc32(open(\"s4.debug.bin\",\"rb\").read())&0xffffffff:08x}')")"
