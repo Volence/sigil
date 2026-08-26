@@ -170,7 +170,14 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // The intra-region offset holds at 0x2F2 in BOTH shapes — the shape-invariance
     // this row exists to witness is intact — so the pair is RE-DERIVED as base +
     // 0x2F2, not guessed: 0x10610 + 0x2F2 = 0x10902 and 0x10720 + 0x2F2 = 0x10A12.
-    ("Ground_Move_Cap", 0x10902, 0x10A12),
+    // instashield (2026-08-26): +0x10 BOTH shapes, and the equality is the point. The
+    // parcel added `Ability_InstaShield` and one new PlayerV byte; the ability code sits
+    // AHEAD of player_ground, so this unpinned row moves by the player-family growth that
+    // reaches it — the same way the bug005 note above describes. Both shapes moving by the
+    // SAME 0x10 says the growth is not DEBUG-fenced, which is correct: the ability and its
+    // re-arm hooks are shipped code, and only the follower effect object (game section,
+    // downstream) would have been shape-sensitive.
+    ("Ground_Move_Cap", 0x10912, 0x10A22),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)

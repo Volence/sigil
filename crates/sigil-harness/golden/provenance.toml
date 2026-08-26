@@ -8533,3 +8533,57 @@ full_crc = "7be32302"
 full_size = 715308
 anchor_crc = "265b14e3"
 anchor_end = 0xa32a0
+
+[[entry]]
+name = "instashield-and-band"
+ab = "ba83358f"
+note = "Two byte-movers landed together: Sonic's insta-shield (ability + follower flash; hitbox expansion BLOCKED on the damage system) and Aurora's first authored animated background band on the real level (8x4 promoted, 8,238 B, verified animating in VRAM). aeon ba83358f."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "5a4364fd"
+full_size = 715930
+anchor_crc = "d5337243"
+anchor_end = 0xa32a0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "2da7987b"
+full_size = 609235
+anchor_crc = "1117de9d"
+anchor_end = 0x8b340
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "bf2cdb42"
+full_size = 96412
+anchor_crc = "68de59a1"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "62a0019e"
+full_size = 101120
+anchor_crc = "586b0bd6"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "63aff045"
+full_size = 655694
+anchor_crc = "7a534d2c"
+anchor_end = 0xa014e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "20b45fae"
+full_size = 699672
+anchor_crc = "c64fd8f8"
+anchor_end = 0xa11d0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "8279a3fe"
+full_size = 715582
+anchor_crc = "350709d7"
+anchor_end = 0xa32a0
