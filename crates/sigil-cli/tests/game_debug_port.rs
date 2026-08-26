@@ -245,19 +245,19 @@ fn two_module_flip_resolves_debug_music_toggle() {
     let gl_src = std::fs::read_to_string(aeon.join("engine/system/game_loop.emp"))
         .unwrap_or_else(|e| panic!("read game_loop.emp: {e}"));
     let (gl_file, _) = parse_str(&gl_src);
-    // The Config-A hotkeys shape: the game binds `Game.debug_tick` to
-    // Debug_MusicToggle, so game_loop's `invoke Game.debug_tick` lowers to a
-    // `jsr Debug_MusicToggle` — exactly what this test resolves across the seam.
-    let gl_env = sigil_harness::test_support::game_contract_env(
-        "module engine.game_contract\n\
-         pub interface Game {\n\
-         \x20   hook debug_tick () clobbers(d0-d7/a0-a6) = empty\n\
-         }\n",
-        "module games.g.game\n\
-         pub implement Game {\n\
-         \x20   hook debug_tick = Debug_MusicToggle\n\
-         }\n",
-        &[],
+    // The Config-A hotkeys shape: under ITS defines sonic4's own manifest binds
+    // `Game.debug_tick` to Debug_MusicToggle, so game_loop's `invoke
+    // Game.debug_tick` lowers to a `jsr Debug_MusicToggle` — exactly what this
+    // test resolves across the seam. Derived from aeon's contract + that manifest
+    // rather than restated here: the binding under test is then the shape's real
+    // one, and the interface cannot go stale against the engine.
+    let gl_profile = sigil_harness::native::config_a_profile();
+    let gl_defines: Vec<(String, i128)> =
+        gl_profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
+    let gl_env = sigil_harness::test_support::game_contract_env_from_aeon(
+        &aeon,
+        &gl_profile,
+        &gl_defines,
     );
     let (gl_mod, gld) = lower_module_with_contracts(
         &gl_file,

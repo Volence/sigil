@@ -65,6 +65,11 @@ SOURCE_GATES=(
     preserves_corpus
     slot_type_corpus
     cfg_blind_spots
+    # the L1 contract env the isolated port oracles bind: aeon's own
+    # engine/system/game_contract.emp against each shipped game's manifest, with the
+    # member list read out of the interface. Source only — nothing built, nothing
+    # compared to a committed artifact.
+    game_contract_env_coverage
     # per-game [defines]: synthetic maps, plus a reference-gated walk of the shipped
     # games' own map.toml — source only, no ROM
     game_config_defines

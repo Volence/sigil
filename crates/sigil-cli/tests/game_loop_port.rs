@@ -69,18 +69,17 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module_with_contracts, LowerOptions};
 
 /// The game-contract env for the isolated game_loop oracle (L1 P2): game_loop.emp
-/// names `invoke Game.debug_tick`. The whole build binds it against
-/// games.sonic4.game (hotkeys OFF → unbound → the `invoke` emits nothing); here a
-/// synthetic interface + empty implement reproduces that unbound shape.
+/// names `invoke Game.debug_tick`. DERIVED from aeon's own contract and sonic4's
+/// own manifest under the canonical shape's defines — hotkeys OFF, so the hook
+/// binds `= empty` and the `invoke` emits nothing, which is exactly what the
+/// reference ROM this oracle byte-gates against carries. A hand-written stub
+/// would restate the interface here and go stale the day the engine grows a
+/// member game_loop names.
 fn game_loop_contract_env() -> sigil_frontend_emp::contract::InterfaceEnv {
-    sigil_harness::test_support::game_contract_env(
-        "module engine.game_contract\n\
-         pub interface Game {\n\
-         \x20   hook debug_tick () clobbers(d0-d7/a0-a6) = empty\n\
-         }\n",
-        "module games.g.game\npub implement Game {\n}\n",
-        &[],
-    )
+    let profile = sigil_harness::native::sonic4_profile(false);
+    let defines: Vec<(String, i128)> =
+        profile.emp_defines.iter().map(|(n, v)| (n.to_string(), *v)).collect();
+    sigil_harness::test_support::game_contract_env_from_aeon(&aeon_dir(), &profile, &defines)
 }
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
