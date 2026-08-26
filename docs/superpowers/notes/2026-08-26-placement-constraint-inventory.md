@@ -139,6 +139,43 @@ has to come from the moved map, not from the constant in the assertion.
 Agreed there is no game requirement. Sequenced AFTER the re-layout lands and after step 4
 archives the certification it serves, and folded into neither — one byte-mover per branch.
 
+## R8 — the debugger-island order gate ALREADY EXISTS, and the real gap is that it has never fired
+
+Aeon asked (2026-08-26) for a sigil-side rule that the error_handler island is the last
+emitting section, red-first, hard under strict. **Their own `games/sonic4/map.toml` names
+the guard that already does it**, and reading the code rather than the comment shows it is
+both real and *stronger* than the ask:
+`native::check_error_handler_is_last`, called from `append_deb2_appendix` **before** convsym
+is shelled, asserts the appendix starts at **exactly** `ErrorHandlerBlob + ERROR_HANDLER_BLOB_LEN`
+— so a byte placed after the blob fails, and so does a blob that ends short, each with its own
+explanation. It is derived from the blob label and length, never from a constant, and it names
+the mechanism (the two `lea` displacements baked into the vendored blob) and the fix. It is on
+the shipped path: `sigil-cli/src/main.rs:1874` reaches it on every `sigil build`.
+
+**The gap is real but it is a different one: nothing has ever proved it fires.**
+- **No poison exists.** Nothing in the workspace plants a section after the blob, and nothing
+  asserts the violation message. The only non-`native.rs` matches are comments.
+- **The two existing negative controls walk PAST it.** `native_full_rom.rs` (~:351, ~:362)
+  rejects a collapsed listing and an empty one — but both target the appendix **size band**,
+  and because their synthetic listings carry no `ErrorHandlerBlob` label at all, both take
+  this guard's *vacuous* arm on the way through. They exercise the code around it without
+  ever testing it.
+- **It fails OPEN on a missing label**: no `ErrorHandlerBlob` in the listing returns `Ok(())`.
+  That is correct for a shape genuinely without the island and **indistinguishable from a
+  rename or a harvest miss for a shape that has one**, which is the absence-shaped failure
+  our bars name — nothing asserts that the canonical shapes reach the non-vacuous arm.
+
+**So the parcel is smaller and sharper than the ask:** (1) a red-first probe that plants an
+emitting section after the blob and asserts the guard's own wording, matched on phrasing
+unique to this rule; (2) a per-shape assertion that every shape carrying the island reaches
+the NON-vacuous arm, which is what closes the fail-open; (3) only then, if wanted, the strict
+tier. **No new rule should be written** — writing one would add a second, weaker statement of
+a contract that already has a stronger one, and the two would drift.
+
+**Sequencing:** (1) is a new test file and collides with nothing, so it can land now. (2)
+touches `native.rs`, which aeon's in-flight re-layout agent is editing, so it waits for that
+pair to land.
+
 ## What this changes about the sequencing
 
 The tables cease to be authority at **one flip** (R5: the shipped profiles leaving
