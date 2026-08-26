@@ -2608,3 +2608,52 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   output is dominated by pre-existing drift. — OPEN (kill: one `cargo fmt` sweep lands as its
   own no-behaviour commit and `cargo fmt --check` joins the clippy line in the verification
   bar; until then, do not cite it as evidence of anything)
+
+- [derived-layout parcel, 2026-08-26] **The design note's §4 step 1 ("measure every
+  position-independent section at scratch in every profile") is NOT byte-neutral, and the
+  reason is one the note's own argument misses:** a pure-data section's LENGTH is
+  position-independent, but the CODE that references its labels is not — a label in the
+  boot region fits `abs.w`, and at scratch (`0x70_0000+`) it needs `abs.l`, so every code
+  section referencing it measures longer while the data is away (`player_sensors` +0x18 at
+  declared-span time; the `sigil build` failed with a colliding-pins overlap on unchanged
+  content). Landed instead as a COLLISION FALLBACK flagged distorted (`measure_or_spread`:
+  pins → pure data at scratch → spread), so the pack rounds converge at real bases. — CLOSED
+  in this parcel; recorded because the stress fixture had been measuring under exactly this
+  distortion since P2c (its code lengths were never the fixpoint's), and any future "measure
+  at scratch" idea must carry the abs.w argument.
+- [derived-layout parcel, 2026-08-26] **A label-less section's provisional base is its
+  BAKED lma, which is `0` for every `.emp` section the frozen table does not name — and
+  `0x0` is the declared `boot_head` anchor.** "Islands are the declared anchors" applied to
+  the unlabeled arm without a gap guard pinned `replay`, `raster`, `page_cache`,
+  `ojz_effects_editor_act1` … at 0 (the walk then failed at `dma_queue`/`s4lz`). Guarded by
+  keeping `p > running + ANCHOR_GAP` on that arm. — OPEN (kill: `true_bases_by_index` carries
+  `prov[i] = None` for an unnamed section instead of a baked address that aliases a real one,
+  and the unlabeled arm matches on `None`; the `0` sentinel is the same "allotment read as a
+  fact" family as the bganim slot)
+- [derived-layout parcel, 2026-08-26] **`SECTION-ROW` (§3.5) not started:** the
+  content-derived head row `section:<name>` for `ojz_effects_editor_act1`. — OPEN (kill:
+  `order_key_of` helper in `own_rank` + the `validate_placement` rows id, plus the
+  `[map.order-unknown-section]` check; aeon lands the map side)
+- [derived-layout parcel, 2026-08-26] **`FIVE-REG` not touched:** the `section
+  ojz_effects_editor_act1 has no region in the map` message on the PinnedBaked/registry path.
+  This parcel changes nothing on that path (`true_bases_by_index`'s `PinnedBaked` arm ignores
+  the anchor set and the sink), and the five known-red tests keep their status. — OPEN
+- [derived-layout parcel, 2026-08-26] **Option B step 3 (declared alignment quantum)
+  not started:** `packed_align_of` still infers the quantum from the frozen provisional base,
+  and `seam2::frozen_prov` is still a `load_frozen_table` reader. — OPEN (kill: `align` on
+  `map.toml` rows / anchors, read by both; the frozen table then reaches shipped bytes only
+  as round-0 measuring pins for CODE)
+- [derived-layout parcel, 2026-08-26 — AEON LANE] **A clean aeon checkout cannot build
+  canonically on its first try:** `build.sh` runs the pytest lane BEFORE emitting the ROM,
+  and `tools/test_bg_emit.py::TestBgAnimSectionCeiling` fails LOUD without `s4.lst` AND
+  `s4.debug.lst` present (with only `s4.lst` it fails on
+  `BGANIM_PLACER_CEILING = 1026 != 1038`, the min over the shapes that happen to exist).
+  Bootstrapped here with `./build.sh sonic4 --no-lint` + `DEBUG=1 ./build.sh sonic4 --no-lint`
+  (listings only; ROMs discarded), then the canonical four. Note `NO_LINT=1` in the
+  environment is IGNORED (`build.sh:148` resets it; the hatch is the `--no-lint` flag). —
+  OPEN, aeon's (kill: the ceiling test reads listings produced by THIS build, or skips loud
+  with a "bootstrap" reason only when no ROM has ever been emitted in the tree)
+- [derived-layout parcel, 2026-08-26 — AEON LANE] **`tools/bganim_room.py`'s "placer room"
+  (allotment + `0x400` spread) no longer bounds anything:** grown pure data measures at
+  scratch and packs downstream with a warning, so the number it computes is stale-but-green.
+  — OPEN, aeon's (kill: retire the placer arm or re-point it at the physical pre-DAC slack)
