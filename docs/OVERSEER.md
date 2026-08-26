@@ -223,13 +223,50 @@ noticed and would otherwise have swallowed, which is a real but bounded win.
 
 ## Quality bars
 
+**⚠ THE REFERENCE TREE IS WHATEVER `golden/provenance.toml`'s TIP PAIRS WITH — and every
+CRC written into THIS file is a snapshot that a refreeze silently invalidates**
+*(2026-08-26, and this overseer caused it at a dispatch)*. The bar paragraph below used to
+carry four CRCs and an aeon SHA. A refreeze landed at `029868e5` (chain entry 165, paired
+with aeon `b08b35c0`), moving the two s4 goldens — and nothing updated the paragraph, because
+nothing can: a prose CRC has no trigger. The next dispatch verified `.aeon-landing`'s four
+artifacts **against the numbers in this file**, found them matching, and declared the tree
+good. It was a real check with a stale oracle, so it returned green while pointing the parcel
+at the wrong aeon revision; the agent lost a run to **71 failures reading exactly like a
+byte-moving regression** (`Ground_Move_Cap resolved to 0x10902, expected 0x10912`) and settled
+it only by re-running the same gate against master's own sources and getting the identical
+failure. Note the shape: this is the *derived-never-copied* bar (#1) aimed at the reference
+tree rather than at a test expectation, and it is the failure mode this document already warns
+about one section down — *"Read the TIP of `golden/provenance.toml`, never a number in this
+file"* — which did not save the dispatch that wrote it.
+
+**So: derive the reference tree, never read it off a note.** The demo shapes matched through
+the whole incident, so a partial match is not a witness:
+
+```sh
+tail -40 crates/sigil-harness/golden/provenance.toml   # the TIP entry = the four expected CRC32+size
+git -C <aeon-tree> rev-parse --short HEAD              # must be the SHA that tip entry pairs with
+```
+
+All four must match on **CRC32 + size** (never SHA1 — the campaign standard) before a run is
+worth anything. `~/sonic_hacks/.sigil-portfix-aeon` is a clean detached worktree at `b08b35c0`
+whose four ROMs match chain entry 165; `~/sonic_hacks/.aeon-landing` is at `94b384a2` and is
+**one freeze behind** as of this writing — which is exactly the kind of sentence that rots, so
+check it rather than believing it.
+**Ledgered:** no gate witnesses that `AEON_DIR` matches the provenance tip. Until one exists
+this is a hand check, and it is the first thing to do at any dispatch or landing.
+
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to the aeon tree — **3881 passed / 0 failed / 4 ignored** (3885 declared) under
-  `SIGIL_STRICT_GATE=1` (sigil master `a85adafc`, aeon `94b384a2` at `.aeon-landing`, 2026-08-26,
-  log `~/sonic_hacks/.sigil-landing-merged-a85adafc.log`), **zero `skip:` lines**, exit 0.
-  All four shapes rebuilt there with the merged binary reproduce the chain-163 tip exactly:
-  s4 `b96319e3`/699408 · s4.debug `7be32302`/715308 · demo `bf2cdb42`/96412 · demo.debug
-  `62a0019e`/101120.
+  `AEON_DIR` set to a tree matching the provenance tip (see the warning above) — **3928 passed /
+  0 failed / 4 ignored** (3932 declared) under `SIGIL_STRICT_GATE=1` (sigil master `ffa7bdb8`,
+  aeon `b08b35c0` at `.sigil-portfix-aeon`, 2026-08-26, log
+  `~/sonic_hacks/.sigil-landing-pad-ffa7bdb8.log`), **zero `skip:` lines**, exit 0, clippy
+  `-D warnings` exit 0.
+  **The previously recorded bar of 3881/3885 was 4 LOW and had been for some time** — measured
+  at `67575c3c`, master's own sources run 3885/0/4 against 3889 declared, and
+  `git grep -c '#\[test\]'` agrees with the run, not with the old note. A parcel's delta is
+  therefore reconciled against `git grep -c '#\[test\]' HEAD`, never against the number in this
+  paragraph; the pad parcel's +43 matches the declared-count delta exactly, where the stale bar
+  implied +47 and would have manufactured a four-test discrepancy that does not exist.
   **⚠ THE REFERENCE CHECKOUT MUST CARRY NO `sigil`/`skdisasm` SYMLINKS.** The aeon main tree
   has none, and adding them makes `section_row_fixture`'s tree mirror die with
   *"the source path is neither a regular file nor a symlink to a regular file"* — three gates
@@ -683,8 +720,51 @@ share**; `TST` was exactly that, live.
    hand-counting bytes into a pad, and the pad goes stale silently. Aeon's own fix has
    LANDED (`9a718f74`, `ensure(offsetof(Scene, sc_mask_raw) % 2 == 0, …)`), so this now
    has a live subject to retire rather than a hypothetical one.
-4. **`pad_to(N)` — a derived-width struct pad.** **RULED ADOPT, 2026-08-22 — but read the
-   provenance before acting on it.** The ruling is the **empyrean overseer's**, made under a
+4. ~~**`pad_to(N)` — a derived-width struct pad**~~ — **LANDED** at `ffa7bdb8`
+   (`feat/struct-pad`), implementing Spec 2 §4.3.1 / D2.38 at empyrean `2000b5ca`. Both
+   spellings ship per the owner's `both` ruling (`d-13`): `pad_to(N)` derives the filler width
+   from the next field's target offset, `pad(N)` reserves exactly N, and
+   `[layout.pad-hand-counted]` (default-on warning) names the mistake and prints the exact
+   `pad_to` line when a fixed pad stands immediately before a field asserting `(align: N)`.
+   **The design call:** pads are held BESIDE the fields (`StructDecl::pads`, each anchored by
+   the index of the field it precedes), not interleaved into one member list. A pad has no
+   name, so struct literals, `offsetof`, the emitted-shape check, `resolve_bare_window` and the
+   harness's offset harvest all read `fields` unchanged and are correct **by construction**
+   rather than by remembering to filter — and forgetting to filter is silent. Only the two
+   consumers of a pad's WIDTH change: the layout walk, and the emission that follows its
+   offsets. Emission derives the `$00` runs from the layout's offsets, never from what the
+   fields emitted, so a field that lowers to nothing cannot slide the pad.
+   **Byte-identity is by construction too, and worth stating so nobody re-derives it:** a gap
+   between two consecutive fields can ONLY be a pad, because `@ offset` on a struct field is an
+   *assertion* checked against the declaration-order offset (`check_struct_field_offsets`) and
+   never a placement. No corpus struct carries a pad line, so zero ROM bytes moved in all four
+   shapes; nothing under `golden/`, `pins.rs` or `repin.toml` was touched and the parcel stayed
+   sigil-internal.
+   **Four deviations from the spec's literal rendering, all RATIFIED by this overseer** (bar 7 —
+   ruled explicitly, not absorbed): (1) the lint tag is inline in the message, because
+   `sigil_span::Diagnostic` has no code field and every other tagged diagnostic here embeds it —
+   the spec's sentence survives verbatim as a substring; (2) `[layout.pad-count]` tags both
+   spellings, only the noun varying, per the derivation table; (3) the non-int case interpolates
+   the value's type name, a rendering the spec does not spell; (4) **`[layout.pad-hand-counted]`
+   withdraws when the neighbouring `(align:)` is itself refused** — the fix-it promises "the
+   assertion still proves it" and a refused assertion proves nothing, so firing there is false
+   advice, and the lint must evaluate the same expression `check_struct_field_align` does, which
+   without the withdrawal reports an unresolvable name twice. (4) is the one the hub may want as
+   a spec clause; it is behaviour §4.3.1 does not state.
+   **The owed align debt is CLOSED in the same parcel:** the six `(align: N)` coverage claims
+   were re-measured at `67575c3c` rather than taken (all six held); #2 and #3 now assert the
+   whole string, #4/#5/#6 gained tests, and §4.3's Scope clause gained
+   `field_align_does_not_propagate_into_a_nested_structs_own_fields`, built so the nested struct
+   is internally clean and lands at outer offset 1 — a propagating check must report, and must
+   not. **Tell the hub** so their `ALIGN-STRINGS` item can strengthen the D2.37 clause.
+   **22 poisons, 22 red**, one of which caught a green leak in the parcel's OWN new assertion:
+   `final_pad_to_below_the_cursor_names_the_end_of_the_struct` asserted the sentence but not the
+   `[layout.pad-overflow]` tag, so a poison left it green while its sibling went red. That is bar
+   2 firing on the parcel that wrote it.
+   Packet: `docs/superpowers/notes/2026-08-26-pad-packet.md`. **The bar moves to 3928 / 0 / 4.**
+   *(Superseded queue text, kept for the reasoning — NOT a queue item; the ratification
+   history that led to the landing above.)*
+   **RULED ADOPT, 2026-08-22 — but read the provenance before acting on it.** The ruling is the **empyrean overseer's**, made under a
    delegation from the owner they report in his words (*"Sure I'll go with what your decision
    is."*). **This lane did not witness that utterance**; it is a peer's report of an owner
    grant, recorded as such rather than as an owner ruling, and it is reversible by him or by
@@ -847,8 +927,8 @@ from the crate table; three named harness gates no longer exist (`assemble_full_
 scope is false, `sigil build` produces it. **A README's commands are its most-used and
 least-checked content — run them, do not read them.**
 
-**Nothing in flight; no agents running.** Master `e36debf8`, pushed (verified against
-`git ls-remote origin refs/heads/master`, not the tracking ref).
+**Nothing in flight; no agents running.** Master `ffa7bdb8` (the pad landing), pushed —
+verified against `git ls-remote origin refs/heads/master`, not the tracking ref.
 
 **This paragraph used to say `pad_to(N)` was PARKED ON THE OWNER and must not be
 dispatched. That is no longer true and the contradiction was live for a day** — the
