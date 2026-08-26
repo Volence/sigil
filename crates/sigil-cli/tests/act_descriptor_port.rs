@@ -128,6 +128,16 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
             pins::SCENE_REGISTRY.plain_base + pins::SCENE_REGISTRY.plain_len as u32,
             pins::SCENE_REGISTRY.debug_base + pins::SCENE_REGISTRY.debug_len as u32,
         ),
+        // showcase-effects (2026-08-26, aeon 9dd52471, d-15): section 4's `sec_scene` binds
+        // the SECOND generated record (EditorSceneBinding_OJZ_Act1_Sec4, 0x80 B past Sec0
+        // now that band_record is 20 B) and its `sec_effects` names a sixth preset,
+        // OJZ_Preset_Depth (ojz_effects.emp, after OJZ_Preset_Plain). Two new cross-seam
+        // refs, the port-flip rule again: the standalone link said
+        // `unresolved symbol EditorSceneBinding_OJZ_Act1_Sec4 for fixup in section
+        // act_descriptor at offset 324` / `OJZ_Preset_Depth ... offset 356`. Both are
+        // [[symbol]] pins (repin.toml), sourced from the resolve.
+        ("EditorSceneBinding_OJZ_Act1_Sec4", pins::EDITOR_SCENE_BINDING_OJZ_ACT1_SEC4.plain, pins::EDITOR_SCENE_BINDING_OJZ_ACT1_SEC4.debug),
+        ("OJZ_Preset_Depth", pins::OJZ_PRESET_DEPTH.plain, pins::OJZ_PRESET_DEPTH.debug),
         ("OJZ_Act_Pool_PageTable", pins::OJZ_ACT_POOL_PAGE_TABLE.plain, pins::OJZ_ACT_POOL_PAGE_TABLE.debug),
         // art-streaming-p2-task5: the descriptor's Act.act_sec_local_maps field.
         ("OJZ_Sec_LocalMaps", pins::OJZ_SEC_LOCAL_MAPS.plain, pins::OJZ_SEC_LOCAL_MAPS.debug),

@@ -1009,6 +1009,20 @@ tests = ["act_descriptor_port"]
 name = "OJZ_Preset_Plain"
 tests = ["act_descriptor_port"]
 
+# showcase-effects (2026-08-26, aeon 9dd52471): section 4 binds the d-15 curved-horizon
+# scene. act_descriptor.emp now names TWO more cross-seam data operands — the sixth
+# preset (OJZ_Preset_Depth, ojz_effects.emp, placed after the five above) and the
+# generated editor binding for section 4 (EditorSceneBinding_OJZ_Act1_Sec4, the second
+# record of ojz_effects_editor_act1). Pinned so the standalone act_descriptor scope
+# supplies them from the resolve, not from a hand literal that rots at the next slide.
+[[symbol]]
+name = "OJZ_Preset_Depth"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "EditorSceneBinding_OJZ_Act1_Sec4"
+tests = ["act_descriptor_port"]
+
 # Effects P3 Parcel C2 — the crossing's single effects consumer. Replaces the three
 # per-field pins (Palette_LoadSection / Raster_InstallSection /
 # Palette_InstallCycleSection) that `repin` removed when total binding deleted those
