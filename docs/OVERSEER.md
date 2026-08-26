@@ -320,11 +320,20 @@ below requires zero `skip:` lines and this is not a missing reference.
   `AEON_DIR` set to a tree matching the provenance tip (derive it — see the warning above) —
   **3939 passed / 0 failed / 4 ignored** (3943 declared) under `SIGIL_STRICT_GATE=1`, **zero
   `skip:` lines**, exit 0, clippy `-D warnings` exit 0.
-  Last measured on `feat/provenance-aeon-rev` `a2cdfc42` against aeon `55ea2557` (chain 166),
-  2026-08-26, log `~/sonic_hacks/.sigil-agent-a45a-verify.log` (was 3928/3932 at master
-  `243d2d24`; +11 from the `aeon_rev` field, its ten unit tests and the pairing gate).
-  Note the run emits **one `ratchet:` line** — the pairing gate's self-disarming tolerance
-  while the tip carries no `aeon_rev`. That prefix is not `skip:` and does not violate the bar above. **The count is the bar; the pairing is a
+  Last measured at master `8af35e8f` against aeon `893747f7` (chain 167), 2026-08-26, log
+  `~/sonic_hacks/.sigil-verify-8af35e8f.log` (was 3928/3932 before the `aeon_rev` field;
+  +11 from the field, its ten unit tests and the pairing gate).
+  **The run now emits ZERO `ratchet:` lines and that is the correct state** — the pairing
+  gate's self-disarming tolerance ended when chain 167 became the first tip to carry an
+  `aeon_rev`. A `ratchet:` line reappearing means a tip was written without the field, which
+  `check`'s monotonic rule should already have refused; investigate rather than tolerate.
+  **⚠ DO NOT COMMIT WHILE A LANDING RUN IS IN FLIGHT.**
+  `version_reports_the_head_of_the_tree_it_was_built_from` compares the binary's baked-in
+  revision against the checkout's HEAD *at assertion time*, so a commit landed mid-run fails
+  it — the binary is honest, the tree moved. Cost here: one full re-run at a landing. The
+  diagnostic names both causes and the command that separates them, and the log stamp is what
+  makes it legible; without `head=` in the header it reads as a mysterious one-test red.
+  **The count is the bar; the pairing is a
   timestamp, not an instruction** — a later freeze moves the aeon SHA and leaves the count
   alone, so reconcile a parcel's delta against `git grep -c '#\[test\]' HEAD -- '*.rs'` and
   read the pairing only as "this number was last seen on that pair".
