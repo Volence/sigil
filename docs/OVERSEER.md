@@ -326,10 +326,35 @@ consecutive zero-byte aeon parcels hid a real `layout.odd-field` finding for a d
 movement is structurally blind to a source-derived lint set moving, so this one is a
 clock.
 
-- It builds **no aeon ROM**. The region-diff gates, the golden-CRC gates and
-  `pins_rs_is_current` read bytes that exist only after `./build.sh`, and they already
-  have the right trigger — aeon's byte-identity ritual, which fires exactly when bytes
-  move. The exclusion is named in the script, not silent.
+- It compares **no byte against a committed artifact**. The region-diff gates, the
+  golden-CRC gates and `pins_rs_is_current` read a built ROM or compare against sigil's
+  frozen goldens, and they already have the right trigger — aeon's byte-identity ritual,
+  which fires exactly when bytes move. The exclusion is named in the script, not silent,
+  and it is **counted**: the verdict line prints how many aeon-reading gates were skipped
+  as artifact-lane (82 at `a886fd2b`; read the line, not this number) so "skipped" cannot
+  be read as "green".
+- It **does build every shipped shape from source**: `corpus_builds`
+  (`crates/sigil-cli/tests/corpus_builds.rs`) is the lane's **brick witness**. For each
+  shape in `native::shipped_shapes()` — the one table the byte gates enumerate — the entry
+  `sigil build` reaches (`build_rom_chained_with_listing`) must return `Ok` with zero
+  error-level diagnostics; no byte is compared to anything, so a byte-moving aeon parcel
+  leaves it green while a BRICK (`[map.order-undeclared]`, `section … has no region in
+  the map`, colliding pins, an unknown function in a reached module) turns it red naming
+  every bricked shape. The two failure kinds the skipped artifact gates conflate — CRC
+  drift (refreeze owns it) and a brick (nobody's ritual clears it) — are therefore split:
+  the verdict line names `corpus_builds` as the brick witness, and a red whose output
+  carries its phrase is announced as `BUILD BRICK`. Its second test injects the
+  2026-08-26 live brick into a `shadow_aeon_tree` copy (the `section:ojz_effects_editor_act1`
+  map row deleted) and requires the same checker to name the shape and section, so the
+  detector is proven live on every run. Two other `SOURCE_GATES` entries
+  (`m68k_roundtrip_stream`, `m68k_capstone_stream`) also build all seven shapes and would
+  panic on a brick — at the first bricked shape, under a roundtrip test's name; the witness
+  exists so the brick is measured as itself, on every shape, and read back by the verdict.
+- **Every new `crates/*/tests/*.rs` that reads the aeon tree must be classified the day it
+  lands.** `derived_layout` (master `4f303b0d`) was source-only, not in `SOURCE_GATES`, and
+  named no artifact: the audit would have exited 2 — the whole lane dark — at the next
+  05:17. Replaying the audit against the branch is one loop and it is the only thing that
+  sees this before the timer does.
 - Exit `1` = a gate failed, `2` = the lane could not run; both `notify-send`. "Could not
   run" includes fewer gates executing than were named, zero tests executed, and any
   `skip:` line surviving `SIGIL_STRICT_GATE=1`.
