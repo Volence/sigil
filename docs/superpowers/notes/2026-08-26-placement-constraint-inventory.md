@@ -96,6 +96,49 @@ mis-measure waiting rather than a warning.
 books it and this pass did not find it. Not carried forward as "probably minor" — it is
 unlocated, and an unlocated constraint is the whole subject of this document.
 
+## R1 is RULED by aeon (2026-08-26), and the check they asked for found a second population
+
+Their ruling, read off `games/sonic4/map.toml`'s own anchor comments: vectors + header at
+`0x0` are hardware; `ObjCodeBase` requires a **64 KB-aligned** base (`0x10000` itself is a
+kept design choice, not a hardware fact); `dac_banks` / `sound_bank` / the `0x60000`
+`z80_bank` require **`0x8000` alignment** (Z80 `SetBank` latch granularity) plus a derivable,
+co-resident bank id — the specific `0x48000` / `0x50000` / `0x58000` / `0x60000` addresses
+are **not** requirements; the error-handler / MD Debugger island requires **ORDER** (last
+emission), not an address; `EndOfRom` and every other row are packing outcomes. They flagged
+it as read from comments rather than by re-tracing consumers, and named this document's
+touch-enumeration as the check.
+
+**Run, and it finds what a requirement-shaped question cannot: sigil's own fixtures are
+pinned to the addresses aeon just declared non-requirements.** Twenty-one files match the
+four bank literals; after classifying, the genuine consumers are — in `sigil-harness/src`,
+the four the 08-10 audit already names (`seam2.rs`, `native.rs`, `repin.rs`,
+`map_placement.rs`) plus `harness/tests/repin_pins.rs`; and a **second population the audit
+does not reach**, nine files under `crates/sigil-cli/tests` and one under
+`crates/sigil-frontend-emp/tests`: `seam2_dac_emit.rs`, `seam2_dac_head_colink.rs`,
+`seam2_layout_derivation.rs`, `seam2_colink_probe.rs`, `dac_port.rs`,
+`sound_migration_negative_probes.rs`, `sfx_negative_probes.rs`, `mt_negative_probes.rs`,
+`ports.rs`, `z80_resident_cell.rs`.
+Classified OUT as coincidence, so the raw count is not the finding: `eval_typed.rs`
+(16.16 fixed-point arithmetic where `0x60000` is 6.0) and the synthetic
+`lma: 0x60000` unit fixtures in `sigil-ir/src/lib.rs`, `sigil-link/src/lib.rs`,
+`map_load.rs` and `two_section_ab.rs`, which use the address as an arbitrary LMA and are
+independent of the game's layout.
+
+**The hazard inside that second population, and it is bar 2 rather than bookkeeping.**
+Several are NEGATIVE probes whose validity is a fact about bank arithmetic at those exact
+addresses: `ports.rs` independently computes `(0x58000 & 0x7F8000) >> 15 = 0xB` and asserts
+both a right-bank build that must succeed and a wrong-bank build that must fail;
+`sfx_negative_probes.rs` and `mt_negative_probes.rs` plant a cross-seam label at `0x58000`
+*"instead of the real `0x60000`"*. Move the banks and each of those keeps compiling and
+keeps passing while no longer testing what it names — a poison green for the wrong reason.
+**They need their bank ids RE-DERIVED, not their addresses retyped**, and the re-derivation
+has to come from the moved map, not from the constant in the assertion.
+
+## R2 is RULED by aeon: drop the asl-parity scratch, as its own byte-moving parcel
+
+Agreed there is no game requirement. Sequenced AFTER the re-layout lands and after step 4
+archives the certification it serves, and folded into neither — one byte-mover per branch.
+
 ## What this changes about the sequencing
 
 The tables cease to be authority at **one flip** (R5: the shipped profiles leaving
