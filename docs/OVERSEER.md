@@ -206,6 +206,14 @@ noticed and would otherwise have swallowed, which is a real but bounded win.
   scratch slot aliasing zero — `collision_data` at slot 41 = `0x300_0000`, masked to 24 bits by
   `asl_width_rule` → `0x0`, where `abs.w` is legitimate. Their `lea (X).l` pins are a SUPERSEDED
   WORKAROUND, not a style rule; they un-pin once the shared binary reports a master containing it.
+  **CONFIRMED IN THE FIELD 2026-08-26** (aeon `bc95e32e` and its parent): they un-pinned
+  `SolidityTable`/`AngleTable` back to unsized `lea` and all four shapes stayed byte-identical
+  (`b96319e3` / `7be32302` / `bf2cdb42` / `62a0019e`), after verifying the shared binary
+  themselves rather than taking a quoted SHA. Their own finding, kept because it is a trap for
+  the next reader: the THIRD site, `movea.l #{ptable}`, was never a width pin — `({ptable}).l`
+  does not parse in a template arg, so it was always an immediate, and `movea.l`-immediate vs
+  `lea`-abs.l are both 6 bytes but different opcodes, so "finishing" the un-pin moves the CRC at
+  identical size for no gain. It stays `movea.l` with a comment saying why.
   **RINGS-ENV landed** (`fix/rings-contract-env`): the port rigs bind the game's real contract via
   `test_support::game_contract_env_from_aeon` (interface + the profile's own `config/game.emp`,
   path derived from `GameProfile::game_root_rel`), replacing hand-written stub strings that could
