@@ -8641,3 +8641,57 @@ full_crc = "f8d06cae"
 full_size = 715582
 anchor_crc = "f176bc70"
 anchor_end = 0xa32a0
+
+[[entry]]
+name = "delete-percell-hscroll"
+ab = "per-cell HScroll fill/DMA/mode-key deleted in aeon 55ea2557 under owner ruling d-29-corrected; code -204 B DEBUG / -188 B release sonic4, demo +-0 code; every image moves"
+note = "Four canonical shapes rebuilt from a clean detached checkout of the merge SHA (.aeon-landing at 55ea2557) with the ROMs deleted first; CRCs d4986f79/5a3069d7/ee735ae2/77026d79 verified before the freeze against a sigil release binary rebuilt from this branch. ASSEMBLED_LEN holds in both shapes (engine-bank shrink org-anchor absorbed); the ROM files shrink by the deb2 appendix losing the deleted names. STATIC_HSCROLL_CELL pin retired."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "0b89e9e2"
+full_size = 715620
+anchor_crc = "2b89c276"
+anchor_end = 0xa32a0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c3586bb8"
+full_size = 608905
+anchor_crc = "21071e7d"
+anchor_end = 0x8b340
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "ee735ae2"
+full_size = 96354
+anchor_crc = "6503cd8c"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "77026d79"
+full_size = 101062
+anchor_crc = "2cfa3901"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "bb6f3496"
+full_size = 655694
+anchor_crc = "78f16f45"
+anchor_end = 0xa014e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "d4986f79"
+full_size = 699340
+anchor_crc = "8ea1a978"
+anchor_end = 0xa11d0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "5a3069d7"
+full_size = 715252
+anchor_crc = "31e18d84"
+anchor_end = 0xa32a0

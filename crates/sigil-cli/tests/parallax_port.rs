@@ -284,31 +284,22 @@ fn compile_real_file(
     let z80_bus_file = parse_file(&dir.parent().unwrap().join("z80_bus.emp"));
     let irq_file = parse_file(&dir.parent().unwrap().join("irq.emp"));
     // The SYNTHESIZED `CAP_*` block standing in for
-    // `use engine.level.scene_dsl.{CAP_PER_LINE, …}`: a single-module lower has no module
-    // to follow, and the five bit values are read out of scene_dsl.emp at test runtime
-    // (test_support §4) so this gate can never bind a stale mask.
+    // `use engine.level.scene_dsl.{CAP_ANCHORS, …}`: a single-module lower has no module
+    // to follow, and the bit values are read out of scene_dsl.emp at test runtime
+    // (test_support §4) so this gate can never bind a stale mask. (CAP_PER_LINE was
+    // retired with the per-cell HScroll path, aeon 55ea2557 / d-29-corrected; bit 0 is
+    // a hole and the enumerator simply does not find it.)
     let caps_src = sigil_harness::test_support::scene_dsl_cap_consts_src(&aeon_dir());
     let (caps_file, caps_diags) = parse_str(&caps_src);
     assert!(
         caps_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "synthesized CAP_* block parse errors: {caps_diags:?}"
     );
-    // T6's forcer single-sourcing: `use engine.level.scene_dsl.{parallax_mode_key}` —
-    // the shared comptime template both mode twins splice. Extracted VERBATIM from the
-    // parsed scene_dsl.emp at test runtime (same never-stale rationale as the CAP_*
-    // block above; the fn's free names resolve at the CALL SITE, which this chained
-    // file provides). Only the one item — scene_dsl.emp as a whole is CODE and would
-    // emit bytes into the compared section.
-    let scene_dsl_file = parse_file(&dir.parent().unwrap().join("level/scene_dsl.emp"));
-    let mode_key_fn: Vec<sigil_frontend_emp::ast::Item> = scene_dsl_file
-        .items
-        .into_iter()
-        .filter(|it| matches!(it, sigil_frontend_emp::ast::Item::ComptimeFn(d) if d.name == "parallax_mode_key"))
-        .collect();
-    assert!(
-        !mode_key_fn.is_empty(),
-        "parallax_mode_key not found in scene_dsl.emp — the port shim is stale against the tree"
-    );
+    // (Until aeon 55ea2557 this shim also spliced scene_dsl.emp's `parallax_mode_key`
+    // comptime fn, the runtime per-line/per-cell mode key that chose Parallax_Fill_PerCell.
+    // The per-cell fill and the fn went with owner ruling d-29-corrected — one fill, one
+    // DMA length, one hardware mode — so parallax.emp no longer imports it and nothing is
+    // spliced.)
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
@@ -320,7 +311,6 @@ fn compile_real_file(
             .chain(z80_bus_file.items)
             .chain(irq_file.items)
             .chain(caps_file.items)
-            .chain(mode_key_fn)
             .chain(main.items)
             .collect(),
         docs: main.docs.clone(),

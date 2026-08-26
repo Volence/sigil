@@ -132,7 +132,6 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         ("Effects_Offscreen_Entry", pick(pins::EFFECTS_OFFSCREEN_ENTRY)),
         ("Effects_Screen_L", pick(pins::EFFECTS_SCREEN_L)),
         ("Static_Sprite_DMA", pick(pins::STATIC_SPRITE_DMA)),
-        ("Static_Hscroll_Cell", pick(pins::STATIC_HSCROLL_CELL)),
         ("Static_Hscroll_Line", pick(pins::STATIC_HSCROLL_LINE)),
         ("Palette_Dirty", pick(pins::PALETTE_DIRTY)),
         // R1 Task 2: the four snapshot splices in Enqueue_Dirty_Buffers reference this
@@ -190,31 +189,21 @@ fn compile_real_file(
     let consts_file = parse_file(&aeon.join("engine/system/constants.emp"));
     let vdp_file = parse_file(&aeon.join("engine/vdp.emp"));
     // The SYNTHESIZED `CAP_*` block standing in for
-    // `use engine.level.scene_dsl.{CAP_PER_LINE, CAP_ANCHORS}`: a single-module lower has
-    // no module to follow, and the bit values are read out of scene_dsl.emp at test
-    // runtime (test_support §4) so this gate can never bind a stale mask.
+    // `use engine.level.scene_dsl.{CAP_ANCHORS}`: a single-module lower has no module to
+    // follow, and the bit values are read out of scene_dsl.emp at test runtime
+    // (test_support §4) so this gate can never bind a stale mask. (CAP_PER_LINE was
+    // retired with the per-cell HScroll path, aeon 55ea2557 / d-29-corrected; the
+    // enumerator reads whatever bits the tree declares, so nothing here names it.)
     let caps_src = sigil_harness::test_support::scene_dsl_cap_consts_src(&aeon);
     let (caps_file, caps_diags) = parse_str(&caps_src);
     assert!(
         caps_diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "synthesized CAP_* block parse errors: {caps_diags:?}"
     );
-    // T6's forcer single-sourcing: `use engine.level.scene_dsl.{parallax_mode_key}` —
-    // the shared comptime template both mode twins splice. Extracted VERBATIM from the
-    // parsed scene_dsl.emp at test runtime (same never-stale rationale as the CAP_*
-    // block above; the fn's free names resolve at the CALL SITE, which this chained
-    // file provides). Only the one item — scene_dsl.emp as a whole is CODE and would
-    // emit bytes into the compared section.
-    let scene_dsl_file = parse_file(&aeon.join("engine/level/scene_dsl.emp"));
-    let mode_key_fn: Vec<sigil_frontend_emp::ast::Item> = scene_dsl_file
-        .items
-        .into_iter()
-        .filter(|it| matches!(it, sigil_frontend_emp::ast::Item::ComptimeFn(d) if d.name == "parallax_mode_key"))
-        .collect();
-    assert!(
-        !mode_key_fn.is_empty(),
-        "parallax_mode_key not found in scene_dsl.emp — the port shim is stale against the tree"
-    );
+    // (Until aeon 55ea2557 this shim also spliced scene_dsl.emp's `parallax_mode_key`
+    // comptime fn, the runtime per-line/per-cell mode key. The per-cell HScroll path and
+    // the fn went with owner ruling d-29-corrected — one fill, one DMA length, one
+    // hardware mode — so buffers.emp no longer imports it and nothing is spliced.)
     let file = sigil_frontend_emp::ast::File {
         module: main.module.clone(),
         attrs: main.attrs.clone(),
@@ -224,7 +213,6 @@ fn compile_real_file(
             .chain(consts_file.items)
             .chain(vdp_file.items)
             .chain(caps_file.items)
-            .chain(mode_key_fn)
             .chain(main.items)
             .collect(),
         docs: main.docs.clone(),
@@ -236,8 +224,8 @@ fn compile_real_file(
         embed_base: None,
         defines: vec![("DEBUG".to_string(), i128::from(debug))],
     };
-    // The game-contract env: buffers.emp's HScroll fill gates two blocks on
-    // `Game.SCANLINE_CAPS & CAP_PER_LINE` / `CAP_ANCHORS`, which the whole-program bind
+    // The game-contract env: buffers.emp's HScroll fill gates a block on
+    // `Game.SCANLINE_CAPS & CAP_ANCHORS`, which the whole-program bind
     // pass resolves and a single-module lower does not. Bound to SONIC4's declared mask,
     // read from its game.emp — the reference windows below are sonic4-shaped.
     let contracts = sigil_harness::test_support::scanline_caps_contract_env(&aeon);
