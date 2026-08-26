@@ -191,6 +191,61 @@ noticed and would otherwise have swallowed, which is a real but bounded win.
   the FIVE-REG sibling panics holding the file's `LOCK` — green standalone; goes away with FIVE-REG.
   *(History 2026-08-24→26: 3844/5/4 → §4 +8 → 3852/5/4 → closure 3854/3/4 → first real scene
   3852/5/4 → SECTION-ROW +12 → CLOSURE-2 clears two → 3866/3/4.)*
+  **CORRECTED 2026-08-26 (aeon's closure agent, reproduced in worktrees; branch verified here as
+  2 test files, +20/-1): "cause is aeon-side, the RESERVED SLOT" is WRONG for four of the five.**
+  (A) `unknown function ojz_act1_act_default / ojz_act1_sec_scene` is a SIGIL HARNESS gap: the
+  four act tests build the descriptor with single-file `lower_module` + a hand-listed
+  `with_ambient` set that resolves no `use`; every other cross-seam name rides as an AS equ but
+  these two are `pub comptime fn` and cannot. `sigil build` never saw it. Fix on sigil branch
+  `parcel/sigil-red-closure` @ `75802f6a` (worktree `~/sonic_hacks/sigil-wt/sigil-red`, based on
+  `7bc50e41`, local-only): parse the generated `effects_scenes.emp` and ride its items ambient.
+  Queued as `CLOSURE-FIX`, lands after the §4 parcel (shares the landing checkout).
+  (C) UNMASKED by (A): the `act_descriptor_port` pair then fail
+  `section.bytes.len() == pins::ACT_DESCRIPTOR.plain_len` — emitted 0x27A, pinned 0x27C. The
+  805370b1 refreeze put `OJZ_Sec0_Blocks` 2 bytes past the descriptor's end on an alignment
+  boundary and `repin` measures start..next-label, so the SUCCESSOR'S PAD entered the pin.
+  Same "gap between labels is an allotment" family as the bganim 2-byte slot, now in the pin
+  generator. Queued as `REPIN-END`: repin measures the section's own end (preferred) or the
+  gate tolerates trailing fill. `pins.rs` is not to be hand-edited for it.
+  With (A) applied: 3846 / 3 / 4 (their run, clean aeon 415e0b6a); the three = the pair on (C)
+  and `soundbankhead` on (B) below. Aeon CRCs unchanged in all four shapes.
+  **Also: the reference CRCs in the "reference tree" paragraph above (060401e4 / 0dbaa80f) are
+  the 2026-08-22 tip and are STALE — the provenance tip is now s4 `c7b9d10d` · s4.debug
+  `f0175028` · demo `c708b114` · demo.debug `dec88cc1` at aeon `415e0b6a`. Read the TIP of
+  `golden/provenance.toml`, never a number in this file.**
+  **Re-split 2026-08-26 with the aeon lane:** the two messages are two owners. `unknown
+  function ojz_act1_act_default / ojz_act1_sec_scene` is aeon's (closure of their generated
+  module under this harness). `section ojz_effects_editor_act1 has no region in the map`
+  (`sigil-frontend-emp resolve/mod.rs:849`) cannot arise on the Frozen path `sigil build`
+  takes — `emp_map_frozen` mints a region per present section — so it comes from whichever
+  of the five tests walks the **PinnedBaked/registry** path, and is a SIGIL registry question
+  (a registry row, or the test's synthetic entry not reaching the module). Aeon will NOT land
+  a map row for it; do not ask them to. Queued here as `FIVE-REG`.
+  **§3.5 confirmed live 2026-08-26:** aurora's first real scene save made `ojz_effects_editor_act1`
+  emit, and `[map.order-undeclared]` named `EditorSceneBinding_OJZ_Act1_Sec0` — the BINDING TABLE,
+  which changes with content. Aeon wrote that label as an interim `order` row (uncommitted, lands
+  through their lane), to be replaced by the `section:ojz_effects_editor_act1` row. Queued as
+  `SECTION-ROW` (S, after the §4 parcel); sigil specs it, aeon lands the map side.
+  **The nightly source-gate lane does NOT cover these** — none of the five is in
+  `SOURCE_GATES` (they are artifact-oracle gates, deliberately excluded), so the lane ran
+  green at 05:17 while master was red. That exclusion was correct for byte-divergence red;
+  it is wrong for a HARD ERROR like a missing map region, which no refreeze clears — check that, not just the
+  totals: a reference gate that skips reports nothing and reads as coverage.
+  **Reconcile the total against the tree, not against the last remembered bar:**
+  `git grep -c '#\[test\]' HEAD -- '*.rs'` summed gives the declared count, and
+  `passed + ignored` must equal it (3839 + 4 = 3843 here). Baseline arithmetic carried
+  across branches measured on different reference trees does not reconcile and will
+  invent a discrepancy that is not there. Never plain
+  `cargo test`: without `--release` some gates are impractically slow, without
+  `--workspace --no-fail-fast` a wedge or an early failure hides the rest of the
+  result set. Report failures-first with explicit pass/fail counts; never
+  `grep | head` test output (it buries FAILED lines).
+  **SECTION-ROW LANDED both sides 2026-08-26:** sigil `8566f962` (`"section:<name>"` order rows;
+  packet `2026-08-26-section-row-packet.md`), aeon `058ad606` (map.toml:118 now
+  `"section:ojz_effects_editor_act1"`, byte-neutral, verified at aeon origin/master). The
+  sigil fixture gate `both_spellings_of_the_section_row_build_the_same_rom` is direction-agnostic
+  and ran 3/3 green against the landed map. `.aeon-landing` moved to `058ad606` (same ROM bytes
+  as `0e34408d`).
 - **Pre-merge:** re-run the suite on the merged tree with `SIGIL_STRICT_GATE=1`, which
   turns reference-tree skips into failures so the port gates cannot silently skip.
 - **A suite log does not name the tree it ran in — stamp it, and prove the landed code
