@@ -2657,3 +2657,19 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   (allotment + `0x400` spread) no longer bounds anything:** grown pure data measures at
   scratch and packs downstream with a warning, so the number it computes is stale-but-green.
   — OPEN, aeon's (kill: retire the placer arm or re-point it at the physical pre-DAC slack)
+- [SECTION-ROW parcel, 2026-08-26] **`section:` rows are not shape-gated:**
+  `[map.order-unknown-section]` is checked per build, so a `section:` row naming a section
+  that exists only in some shapes would fail the others. No live case (the four sonic4-map
+  shapes share one section set; demo has its own map). — OPEN (kill: a `when` on order
+  rows, or the union-order rule extended to section rows the day a shape-conditional
+  section exists)
+- [SECTION-ROW parcel, 2026-08-26] **`repin.toml` region ends still name the content-derived
+  label** (`scene_registry` `end = "EditorSceneBinding_OJZ_Act1_Sec0"`): the same rot the
+  `order` row just closed. — OPEN, REPIN-END's (kill: `end = "section:<name>"` resolving to
+  the section's LMA in the region reader)
+- [SECTION-ROW parcel, 2026-08-26] **`soundbankhead_port.rs:75` `LOCK.lock().unwrap()` poisons
+  after the known-red `soundbankhead_pinned_bootstrap_lands_at_lma_not_vma`:** whichever
+  sibling draws the lock next fails on `PoisonError` (seen once in two full runs; green
+  standalone). Pre-existing on master; not this parcel's file. — OPEN, fix/rig-closure's
+  (kill: the poison vanishes with the known red; or `unwrap_or_else(|p| p.into_inner())`
+  as `native_full_rom.rs` does)

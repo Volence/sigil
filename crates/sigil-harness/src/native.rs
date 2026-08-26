@@ -2530,6 +2530,22 @@ pub fn packed_chained_base(running: u32, prov: u32) -> u32 {
     running.div_ceil(a) * a
 }
 
+/// The head label of a section — its lowest-offset label — the name an `order` row
+/// spells when it is a label row. `None` for a label-less blob.
+fn head_label(sec: &Section) -> Option<&str> {
+    sec.labels.iter().min_by_key(|l| l.offset).map(|l| l.name.as_str())
+}
+
+/// The `order` row a section is declared by, and its rank: the head label's row when
+/// there is one, else the `section:<name>` row. A section whose head label is CONTENT-
+/// DERIVED (`ojz_effects_editor_act1`, minted by `tools/effects_gen.py`) is authorable
+/// only by the second spelling. `validate_placement` rejects a section declared BOTH ways.
+fn order_rank_of(sec: &Section, rank: &HashMap<&str, usize>) -> Option<usize> {
+    head_label(sec)
+        .and_then(|l| rank.get(l).copied())
+        .or_else(|| rank.get(crate::map_placement::section_row_key(&sec.name).as_str()).copied())
+}
+
 fn packed_true_bases(
     sections: &[Section],
     prov: &[Option<i64>],
@@ -2566,15 +2582,7 @@ fn packed_true_bases(
     // byte — while making the DECLARATION, not the frozen table, the thing that authored it.
     let rank: HashMap<&str, usize> =
         map_order.iter().enumerate().map(|(r, s)| (s.as_str(), r)).collect();
-    let own_rank: Vec<Option<usize>> = (0..n)
-        .map(|i| {
-            sections[i]
-                .labels
-                .iter()
-                .min_by_key(|l| l.offset)
-                .and_then(|l| rank.get(l.name.as_str()).copied())
-        })
-        .collect();
+    let own_rank: Vec<Option<usize>> = (0..n).map(|i| order_rank_of(&sections[i], &rank)).collect();
     // (prov, rank) of every NAMED section, prov-sorted — the ladder an unnamed boundary
     // section reads its inherited rank off (the nearest declared run it sits within).
     let mut named_ladder: Vec<(i64, usize)> =
@@ -3269,18 +3277,17 @@ pub fn validate_placement(
     sound_on: bool,
 ) -> Result<(), String> {
     const ANCHOR_GAP: u32 = 0x400;
-    // ROM sections, lma-sorted, with (stable_id, lma, byte_len, is_phase_bank).
-    let mut rows: Vec<(String, u32, usize, bool)> = resolved
+    // ROM sections, lma-sorted, with (head_label, section_name, lma, byte_len, is_phase_bank).
+    let mut rows: Vec<(String, &str, u32, usize, bool)> = resolved
         .iter()
         .filter(|s| is_rom_section(s))
         .map(|s| {
-            let id =
-                s.labels.iter().min_by_key(|l| l.offset).map(|l| l.name.clone()).unwrap_or_default();
+            let id = head_label(s).unwrap_or_default().to_string();
             let pb = s.vma_base.map(|v| v != s.lma && v >= 0x8000).unwrap_or(false);
-            (id, s.lma, s.image_bytes().len(), pb)
+            (id, s.name.as_str(), s.lma, s.image_bytes().len(), pb)
         })
         .collect();
-    rows.sort_by_key(|r| r.1);
+    rows.sort_by_key(|r| r.2);
 
     // ── Anchors: recover the inferred island set from the resolved layout ──
     //
@@ -3301,7 +3308,7 @@ pub fn validate_placement(
         pmap.anchors_for(sound_on).map(|a| (a.at, a.name.as_str())).collect();
     let mut inferred: std::collections::HashSet<u32> = std::collections::HashSet::new();
     let mut prev_end: Option<u32> = None;
-    for (_, lma, len, pb) in &rows {
+    for (_, _, lma, len, pb) in &rows {
         let is_anchor = prev_end.is_none() || *pb || *lma > prev_end.unwrap() + ANCHOR_GAP;
         if is_anchor {
             inferred.insert(*lma);
@@ -3325,27 +3332,59 @@ pub fn validate_placement(
     // ── Order (K5 DRIVE-CONFIRMATION): every byte-emitting section must be DECLARED in
     //    `order` (completeness — the map drives, so it must name every emitter), and the
     //    resolved byte-emitting sequence must follow the declared positions strictly. ──
+    //
+    //    A row spelled `section:<name>` declares a section by its NAME (the `module … in
+    //    <name>` target) instead of its head label — the only authorable spelling for a
+    //    section whose head label is content-derived. It ranks exactly where the row sits;
+    //    a zero-byte section it names is inert (a reserved slot, authorable before the
+    //    content exists); a name absent from this build, or a section declared both ways,
+    //    is rejected. The `[map.order-undeclared]` text names the head label as before —
+    //    aeon fixtures assert on it.
     if !pmap.order.is_empty() {
         let pos: std::collections::HashMap<&str, usize> =
             pmap.order.iter().enumerate().map(|(i, s)| (s.as_str(), i)).collect();
-        let mut last: Option<(usize, &str)> = None;
-        for (id, _, len, _) in &rows {
-            if id.is_empty() || *len == 0 {
+        for row in &pmap.order {
+            if let Some(name) = crate::map_placement::section_row(row) {
+                if !rows.iter().any(|r| r.1 == name) {
+                    return Err(format!(
+                        "[map.order-unknown-section] `order` row `{row}` names no ROM section in this build — the name is the `module … in <name>` target; fix the spelling or drop the row"
+                    ));
+                }
+            }
+        }
+        for (id, name, _, _, _) in &rows {
+            let key = crate::map_placement::section_row_key(name);
+            if !id.is_empty() && pos.contains_key(id.as_str()) && pos.contains_key(key.as_str()) {
+                return Err(format!(
+                    "[map.order-double-declared] section `{name}` is declared twice in `order` — by its head label `{id}` and by `{key}`; keep exactly one row"
+                ));
+            }
+        }
+        let mut last: Option<(usize, String)> = None;
+        for (id, name, _, len, _) in &rows {
+            if *len == 0 {
                 continue;
             }
-            let Some(&p) = pos.get(id.as_str()) else {
+            // The row this section is declared by: its `section:` row when one exists,
+            // else its head label (a label-less blob is exempt, as before).
+            let key = crate::map_placement::section_row_key(name);
+            let declared_as = if pos.contains_key(key.as_str()) { key } else { id.clone() };
+            if declared_as.is_empty() {
+                continue;
+            }
+            let Some(&p) = pos.get(declared_as.as_str()) else {
                 return Err(format!(
                     "[map.order-undeclared] byte-emitting section `{id}` is not in the declared `order` — the map DRIVES placement now, so every emitter must be declared; add it in its layout position"
                 ));
             };
-            if let Some((lp, lid)) = last {
-                if p <= lp {
+            if let Some((lp, lid)) = &last {
+                if p <= *lp {
                     return Err(format!(
-                        "[map.order-diverged] the resolved layout places `{id}` after `{lid}`, but the declared `order` has `{id}` before it — the packer did not honour the driving order (packer bug)"
+                        "[map.order-diverged] the resolved layout places `{declared_as}` after `{lid}`, but the declared `order` has `{declared_as}` before it — the packer did not honour the driving order (packer bug)"
                     ));
                 }
             }
-            last = Some((p, id.as_str()));
+            last = Some((p, declared_as));
         }
     }
 
@@ -4528,6 +4567,92 @@ mod placement_validation_tests {
         ).unwrap();
         let e = validate_placement(&layout(), &m, false).unwrap_err();
         assert!(e.contains("map.order-undeclared") && e.contains("GameLoop"), "{e}");
+    }
+
+    // ── `section:<name>` rows (parcel SECTION-ROW) ──
+    // `sec()` names a section `sec{lma}`: GameLoop's section is `sec256`, ObjCodeBase's
+    // is `sec65536`. The rows below declare GameLoop by NAME instead of by head label.
+
+    fn anchors() -> &'static str {
+        "[[anchor]]\nname=\"boot_head\"\nat=0x0\n[[anchor]]\nname=\"object_bank\"\nat=0x10000\n"
+    }
+
+    fn map_with_order(order: &str) -> PlacementMap {
+        load_placement_map(&format!("order = [{order}]\n{}", anchors())).unwrap()
+    }
+
+    #[test]
+    fn section_row_satisfies_completeness() {
+        // GameLoop emits bytes and is declared ONLY as `section:sec256` — that row satisfies
+        // `[map.order-undeclared]` (the same map with the row dropped fails, per
+        // `order_undeclared_fires`).
+        let m = map_with_order("\"section:sec256\", \"ObjCodeBase\"");
+        validate_placement(&layout(), &m, false).unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    #[test]
+    fn section_row_ranks_where_it_sits_in_validation() {
+        // The row sits AFTER ObjCodeBase, but the layout places GameLoop before it: the
+        // drive-confirmation must name the row by its `section:` spelling.
+        let m = map_with_order("\"ObjCodeBase\", \"section:sec256\"");
+        let e = validate_placement(&layout(), &m, false).unwrap_err();
+        assert!(e.contains("map.order-diverged") && e.contains("`section:sec256`"), "{e}");
+    }
+
+    #[test]
+    fn section_row_drives_the_packer_rank() {
+        // Twin of `drives_order_by_map_rank`, declared by section NAME: `High` (section
+        // `sec512`) is named `section:sec512` ahead of `Low` — the walk must place High
+        // first at its prov 0x200 and pack Low right after it at 0x210. Control: the
+        // label spelling of the same order gives the same bases (one rank, two spellings).
+        let secs = vec![sec("Low", 0x100, 0x10), sec("High", 0x200, 0x10)];
+        let prov = vec![Some(0x100i64), Some(0x200i64)];
+        let labeled = vec![true, true];
+        let by_name = vec!["section:sec512".to_string(), "Low".to_string()];
+        let by_label = vec!["High".to_string(), "Low".to_string()];
+        let none = std::collections::HashSet::new();
+        let got = packed_true_bases(&secs, &prov, &labeled, &by_name, false, &none, &mut Vec::new()).unwrap();
+        let want = packed_true_bases(&secs, &prov, &labeled, &by_label, false, &none, &mut Vec::new()).unwrap();
+        assert_eq!(got[1], Some(0x200), "High (declared first by name) heads the run at its prov");
+        assert_eq!(got[0], Some(0x210), "Low (declared second) packs after High");
+        assert_eq!(got, want, "a `section:` row ranks exactly as the label row would");
+    }
+
+    #[test]
+    fn zero_byte_section_row_is_inert() {
+        // A zero-byte section (`sec336`, no label, no bytes) declared by `section:` row is a
+        // reserved slot: it trips neither completeness nor divergence, wherever the row sits
+        // — including a position the resolved layout contradicts.
+        let mut secs = layout();
+        secs.push(sec("", 0x150, 0));
+        for order in [
+            "\"GameLoop\", \"section:sec336\", \"ObjCodeBase\"",
+            "\"section:sec336\", \"GameLoop\", \"ObjCodeBase\"",
+            "\"GameLoop\", \"ObjCodeBase\", \"section:sec336\"",
+        ] {
+            let m = map_with_order(order);
+            validate_placement(&secs, &m, false).unwrap_or_else(|e| panic!("order [{order}]: {e}"));
+        }
+    }
+
+    #[test]
+    fn unknown_section_row_fires() {
+        // A `section:` row naming a section absent from the build is a named error, and the
+        // message carries the row as written so the author can find it.
+        let m = map_with_order("\"GameLoop\", \"section:ghost\", \"ObjCodeBase\"");
+        let e = validate_placement(&layout(), &m, false).unwrap_err();
+        assert!(e.contains("map.order-unknown-section") && e.contains("`section:ghost`"), "{e}");
+    }
+
+    #[test]
+    fn double_declared_section_fires() {
+        // GameLoop declared by label AND by `section:sec256`: two rows, one section.
+        let m = map_with_order("\"GameLoop\", \"section:sec256\", \"ObjCodeBase\"");
+        let e = validate_placement(&layout(), &m, false).unwrap_err();
+        assert!(
+            e.contains("map.order-double-declared") && e.contains("`GameLoop`") && e.contains("`section:sec256`"),
+            "{e}"
+        );
     }
 
     /// K5 DRIVE PROOF: the packing walk sequences byte-emitting sections by their MAP RANK,
