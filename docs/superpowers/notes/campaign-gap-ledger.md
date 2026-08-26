@@ -2856,3 +2856,37 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   Deriving the field forces the freeze path to resolve and vet `AEON_DIR` for the first time,
   which is the larger half of the value: the gate proves a run used the right tree, the
   emitter's refusal stops a wrong tree being frozen in the first place.
+  **CLOSED 2026-08-26** on `feat/provenance-aeon-rev` (`89660142` field + emitter, `f384f415`
+  gate). `Entry` carries `aeon_rev` — full 40-char SHA, `#[serde(default)]` so all 166
+  historical entries keep parsing (verified by loading the real file, not by reasoning about
+  serde); `render_entry` emits it UNCONDITIONALLY, unlike `note`, because an empty one is the
+  ambiguity being closed. `refreeze --freeze` now resolves and vets `AEON_DIR` before it
+  builds anything and refuses on unset / not-a-directory / not-a-repo / unresolvable-HEAD /
+  DIRTY, each refusal naming the variable, the path and the fault. `--check` is untouched and
+  still takes no aeon tree. Three consuming rules: AEON-REV-PRESENT in `provenance::check`
+  (hard, every mode, for entries past `AEON_REV_FROM_ENTRY = 166`) and
+  `aeon_dir_matches_the_provenance_tip`.
+  **Two rulings landed AGAINST the dispatching brief, both on measurement, and the corrections
+  are the useful part of this row.** (1) The brief specified the `AEON_DIR`-vs-tip assertion as
+  *hard and unconditional in both modes*. It cannot be: at the moment of writing, aeon master
+  was already **two commits past the frozen tip and both were documentation-only, moving zero
+  bytes** — so an unconditional assertion is red on a tree that is byte-correct in every way,
+  including the owner's default `cargo test` with `AEON_DIR` unset (which resolves his live
+  checkout). Hard under `SIGIL_STRICT_GATE=1`, loud `notice:` otherwise. Strict is the correct
+  home: it IS the pre-merge/landing run, that lane already requires a clean checkout of a
+  committed SHA, and the tip's revision is the only one whose ROMs match these goldens.
+  (2) The brief specified an absent tip field as a FAILURE under strict. That contradicts the
+  brief's own verification bar of `0 failed` under strict — the tip is entry #166 and cannot
+  acquire the field until the next byte-moving refreeze, which **no parcel can force** — so it
+  would put master red under the documented bar indefinitely and retire the strict gate as a
+  merge tool. The ratchet passes in both modes; the teeth moved to AEON-REV-PRESENT, which is
+  hard TODAY in every mode and makes a field-less entry #167 impossible. The ratchet prints
+  under `ratchet:`, never `skip:`, because the strict bar requires zero `skip:` lines.
+  **No backfill**, as agreed both sides. The 16 note-less entries stay note-less and the
+  150 prose SHAs stay prose: a reconstructed record in the one file whose worth is that it is
+  not reconstructed would be a net loss. `AEON_REV_FROM_ENTRY = 166` is where that decision
+  lives, in code, with the reason attached.
+  Aeon's half — always freeze from a clean committed `AEON_DIR`, re-verify on the first
+  pairing after this ships — is theirs and still open at their `docs/DEFERRED_WORK.md`. The
+  emitter's dirty-refusal now enforces the first clause mechanically, so their commitment is
+  a backstop rather than the only guard.
