@@ -255,6 +255,32 @@ Same defect, two triggers, and neither is found by re-reading the section that s
 that stated the precondition**, and it is found by searching for the condition's own wording,
 never by re-reading the resolution.
 
+**TWO GEOMETRIES OF A SUPERSEDED CLAIM, and the adjacent one is worse** *(2026-08-27; the
+distance case is sigil's, the adjacency case and the rule are aeon's, and the pair only
+appeared because each lane described its own file and the accounts did not match)*.
+
+- **Distance.** sigil's `OVERSEER.md` carried the measured correction at line 1013 and the
+  instruction it refutes at line 1332 — **319 lines apart**, verified. A reader who arrives
+  at the instruction never sees the correction, and has no cue that one exists.
+- **Adjacency.** aeon's note **asserted the wrong mechanism affirmatively and retracted it in
+  the very next sentence.** The reader sees both.
+
+**Adjacency is the worse of the two, which is not the intuitive ranking.** Distance at least
+has the excuse that the correction was unreachable. In the adjacent case the reader is shown
+the truth and still takes the error, because **an affirmative sentence reads as the content
+and the qualification after it reads as hedging** — the skim keeps the claim and drops the
+retraction.
+
+**The rule, aeon's, and it is the operational half:** **edit the wrong sentence; do not
+annotate it.** Appending a correction to a wrong sentence leaves the wrong sentence sitting
+there being read. The evidence that annotation does not work is that this particular note
+took **three independent reports of the same measurement** before the sentence itself moved —
+each report added an annotation and the affirmative claim survived all three.
+
+**The tell that you are annotating rather than editing:** the paragraph still contains the
+false statement in a form that could be quoted approvingly. If a reader could lift one
+sentence out of your correction and be wrong, you have not finished.
+
 **The joint sweep, scoped deliberately.** When a parcel moves a set of values, each lane
 sweeps its **own** tree's prose for **those specific values** — bounded by what actually
 moved, rather than an open-ended audit, and each lane sweeping the tree it can actually
