@@ -106,8 +106,9 @@ fn vdp_init_dir() -> PathBuf {
     Path::new(&aeon).join("engine/system")
 }
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 /// The engine-constants twin's guard count, derived from the shared truth list

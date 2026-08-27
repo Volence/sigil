@@ -26,8 +26,9 @@ fn aeon_dir() -> PathBuf {
         std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
     )
 }
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 fn read_ref(aeon: &Path, name: &str) -> Option<Vec<u8>> {
     match std::fs::read(aeon.join(name)) {

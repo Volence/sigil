@@ -94,8 +94,9 @@ fn sfx_dir() -> PathBuf {
     sound_dir().join("sfx")
 }
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 /// The real `sfx_bank.emp` source text, or a strict-gate panic / soft skip if

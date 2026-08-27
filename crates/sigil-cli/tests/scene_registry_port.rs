@@ -34,8 +34,9 @@ use std::path::Path;
 // Per-shape span (objtest-gate: the PLAIN successor changed, so the plain span
 // carries 2 more align-pad bytes than debug).
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 fn gate(debug: bool, rom_name: &str, base: usize) {

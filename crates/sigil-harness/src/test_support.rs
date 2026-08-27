@@ -597,8 +597,60 @@ pub fn aeon_dir() -> PathBuf {
 
 /// `true` when `SIGIL_STRICT_GATE` is set — the pre-merge fidelity run, where a
 /// missing reference is a FAILURE rather than a skip.
+#[track_caller]
 pub fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    let on = std::env::var("SIGIL_STRICT_GATE").is_ok();
+    if on {
+        witness_strict_body(std::panic::Location::caller());
+    }
+    on
+}
+
+/// The environment variable naming the strict-run WITNESS file. When it is set, every
+/// strict-gated decision point that consults [`strict_gate`] AND finds the flag set
+/// appends its own `file:line` here.
+pub const STRICT_WITNESS_VAR: &str = "SIGIL_STRICT_WITNESS";
+
+/// Record that a strict-gated body was reached with the flag ON.
+///
+/// # Why this exists at all
+///
+/// A suite run WITHOUT `SIGIL_STRICT_GATE=1` early-returns every one of these bodies
+/// and is nevertheless fully green — which is precisely how two refreezes landed with
+/// no strict run behind them and a stale constant rode through both. No aggregate the
+/// run produces can tell the two apart: pass counts, exit codes and `ignored` totals
+/// all read identically. The count of lines written here is the one quantity that
+/// cannot: it is STRUCTURALLY ZERO when the flag is unset, because the only call that
+/// writes is one that already observed the flag set.
+///
+/// `refreeze --attest` reads the distinct line count into the provenance chain, and
+/// refuses to record an attestation at zero.
+///
+/// Deliberately a FILE and not a printed marker: libtest captures the stdout and stderr
+/// of PASSING tests, so a marker printed by a passing gate is invisible without
+/// `--nocapture` — the same class of silent inertness this whole mechanism is about.
+/// A file write is outside that capture.
+///
+/// `#[track_caller]` on [`strict_gate`] is what makes the recorded location the TEST'S
+/// call site rather than this module's, so the witness names distinct strict-gated
+/// bodies rather than counting one shared function.
+///
+/// Every failure here is swallowed on purpose: this is instrumentation, and a test
+/// suite must not go red because a witness path was unwritable. The zero-count refusal
+/// in `--attest` is what keeps a silently-unwritten witness from reading as a pass.
+fn witness_strict_body(loc: &std::panic::Location<'_>) {
+    let Ok(path) = std::env::var(STRICT_WITNESS_VAR) else { return };
+    use std::io::Write;
+    // ONE `write_all` of a pre-built line, never `writeln!`. `write_fmt` issues a
+    // separate syscall per format fragment, and with O_APPEND from parallel test threads
+    // and processes those fragments interleave: measured output included
+    // `…dac_head_colink.rs…dac_head_colink.rs::91133`, two sites spliced into one
+    // unparseable line. A single short `write_all` to an O_APPEND descriptor does not
+    // tear, which is what makes the count trustworthy.
+    let line = format!("{}:{}\n", loc.file(), loc.line());
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = f.write_all(line.as_bytes());
+    }
 }
 
 /// The guard every REFERENCE-DEPENDENT test opens with: `Some(aeon)` when the
@@ -1177,6 +1229,48 @@ mod tests {
                  engine/structs.emp — a renamed Act/Sec/DMAEntry/parallax_config field \
                  leaves this blob supplying a DEAD equ that standalone port test oracles \
                  then resolve against nothing (EFX-6)"
+            );
+        }
+    }
+}
+
+
+#[cfg(test)]
+mod strict_witness_tests {
+    /// THE INTERLEAVING REGRESSION. The witness is written from every test thread in
+    /// every test binary at once. The first implementation used `writeln!`, whose
+    /// `write_fmt` issues one syscall per format fragment, and the fragments spliced:
+    /// two distinct call sites arrived as one unparseable line and the distinct-site
+    /// count was garbage. `--attest` turns that count into a chain record, so a torn
+    /// line is a wrong number in provenance.
+    #[test]
+    fn concurrent_writers_never_tear_a_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("witness.txt");
+        std::thread::scope(|s| {
+            for i in 0..16 {
+                let path = path.clone();
+                s.spawn(move || {
+                    for j in 0..64 {
+                        use std::io::Write;
+                        let line = format!("crates/some/long/path/to/a/test_file_{i}.rs:{j}\n");
+                        let mut f = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(&path)
+                            .unwrap();
+                        f.write_all(line.as_bytes()).unwrap();
+                    }
+                });
+            }
+        });
+        let body = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = body.lines().collect();
+        assert_eq!(lines.len(), 16 * 64, "every write must land as exactly one line");
+        for l in &lines {
+            assert!(
+                l.starts_with("crates/some/long/path/to/a/test_file_") && l.matches(".rs:").count() == 1,
+                "torn line: {l:?}"
             );
         }
     }

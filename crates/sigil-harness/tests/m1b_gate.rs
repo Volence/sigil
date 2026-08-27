@@ -58,7 +58,8 @@ fn sp() -> Span { Span { source: SourceId(0), start: 0, end: 0 } }
 /// (the default, e.g. GitHub CI which checks out only this repo). Set
 /// SIGIL_STRICT_GATE=1 for a pre-merge run in an environment that HAS the
 /// references, to turn "missing reference" into a hard failure instead of a skip.
-fn strict_gate() -> bool { std::env::var("SIGIL_STRICT_GATE").is_ok() }
+#[track_caller]
+fn strict_gate() -> bool { sigil_harness::test_support::strict_gate() }
 
 #[test]
 fn header_checksum_reproduces_reference_rom_18e() {

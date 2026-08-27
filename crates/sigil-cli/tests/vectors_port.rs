@@ -46,8 +46,9 @@ fn aeon_dir() -> PathBuf {
         std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
     )
 }
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 const REGION_LEN: usize = pins::VECTORS.plain_len; // 0x100, shape-invariant (fixed region)

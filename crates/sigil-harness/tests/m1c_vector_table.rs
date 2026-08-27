@@ -24,8 +24,9 @@ use sigil_ir::{Cpu, SymbolTable, SymbolValue};
 fn aeon_dir() -> PathBuf {
     PathBuf::from(std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".into()))
 }
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 /// External CODE labels the vector table references but the front-matter includes

@@ -54,8 +54,9 @@ fn aeon_dir() -> PathBuf {
     PathBuf::from(aeon)
 }
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 fn map_toml(debug: bool) -> String {

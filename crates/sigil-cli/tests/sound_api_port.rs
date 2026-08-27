@@ -77,8 +77,9 @@ fn consumer_lma() -> u32 {
     (debug_end + 0xFFF) & !0xFFF
 }
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 /// Per-shape gate geometry (sourced from `sigil_harness::pins` — regenerate

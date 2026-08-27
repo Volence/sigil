@@ -41,8 +41,9 @@ fn aeon_dir() -> PathBuf {
     )
 }
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 /// The engine-constants twin's guard count (test_particle's shared derivation).

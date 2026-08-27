@@ -45,8 +45,9 @@ fn aeon_root() -> PathBuf {
     )
 }
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 /// One `ObjDef` record — the stride between `ObjDef_Static` and `ObjDef_Solid`.

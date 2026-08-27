@@ -31,8 +31,9 @@ fn aeon_root() -> PathBuf {
     )
 }
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 // The emit step touches the shared engine/sound/generated dir.

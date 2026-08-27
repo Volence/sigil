@@ -38,8 +38,9 @@ fn core_dir() -> PathBuf {
     aeon().join("engine/objects")
 }
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 /// The plain-shape cross-seam labels core references (RAM abs.w EAs + the
