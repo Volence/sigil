@@ -13,6 +13,7 @@
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SymbolTable};
 use sigil_span::Level;
@@ -52,8 +53,11 @@ fn constants_src() -> Option<String> {
     }
 }
 
+/// `particle_anims` is a DEBUG-only region — `pins::PARTICLE_ANIMS.plain_len`
+/// is 0, so `s4.bin` carries none of its bytes at any address. The debug ROM is
+/// the only shape a compile of this module can be compared against.
 fn read_reference() -> Option<Vec<u8>> {
-    let path = aeon_dir().join("s4.bin");
+    let path = aeon_dir().join("s4.debug.bin");
     match std::fs::read(&path) {
         Ok(b) => Some(b),
         Err(_) if strict_gate() => panic!("SIGIL_STRICT_GATE set but {} missing", path.display()),
@@ -103,8 +107,9 @@ fn place(constants_src: &str, src: &str, base: &str) -> (Vec<Section>, Vec<sigil
          [[region]]\n\
          name = \"particle_anims\"\n\
          lma_base = {base}\n\
-         size = 0x8\n\
-         kind = \"rom\"\n"
+         size = {size:#x}\n\
+         kind = \"rom\"\n",
+        size = pins::PARTICLE_ANIMS.debug_len
     );
     let map = sigil_link::load_map(&map_toml).expect("map must load");
     let mut sections = module.sections;
@@ -122,9 +127,15 @@ fn link_bytes(sections: &[Section]) -> Vec<u8> {
 }
 
 /// (a) Doctor the CONSTANTS TWIN's `AF_DELETE` $FB -> $FA (the mirror moved
-/// there in tranche-6 step 4): the inline body's despawn byte changes
-/// THROUGH the import, so the linked bytes must DIFFER from the reference
-/// window. FALSIFIED by the port gate (undoctored == reference).
+/// there in tranche-6 step 4): the inline body's despawn byte changes THROUGH
+/// the import, so the linked bytes must DIFFER from the reference window.
+///
+/// The CONTROL arm above the doctored one is what makes this probe non-vacuous
+/// and makes the window address load-bearing: an `assert_ne!` alone is
+/// satisfied by any window that happens not to match, so on its own it says
+/// nothing about *which* window was read. Requiring the UNDOCTORED compile to
+/// byte-MATCH the same window first means a window at the wrong address fails
+/// the control, and the pair can only pass for its own reason.
 #[test]
 fn doctored_af_delete_produces_different_bytes() {
     let Some(src) = real_src() else { return };
@@ -135,11 +146,25 @@ fn doctored_af_delete_produces_different_bytes() {
         constants.contains("pub const AF_DELETE    = $FB"),
         "precondition: the twin spells `pub const AF_DELETE    = $FB`"
     );
+
+    let base = pins::PARTICLE_ANIMS.debug_base as usize;
+    let len = pins::PARTICLE_ANIMS.debug_len;
+    let window = refrom[base..base + len].to_vec();
+
+    let (genuine, _asserts) = place(&constants, &src, &format!("{base:#x}"));
+    assert_eq!(
+        link_bytes(&genuine),
+        window,
+        "control: the UNDOCTORED compile must byte-match s4.debug.bin[{base:#X}..{:#X}] — \
+         if it does not, the window address is wrong and the doctored arm below proves nothing",
+        base + len
+    );
+
     let doctored = constants.replace("pub const AF_DELETE    = $FB", "pub const AF_DELETE    = $FA");
-    let (sections, _asserts) = place(&doctored, &src, "0x309DE");
+    let (sections, _asserts) = place(&doctored, &src, &format!("{base:#x}"));
     assert_ne!(
         link_bytes(&sections),
-        refrom[0x309DE..0x309E6].to_vec(),
+        window,
         "a drifted AF_DELETE const must NOT byte-match the reference"
     );
 }
@@ -149,19 +174,23 @@ fn doctored_af_delete_produces_different_bytes() {
 // deleted (the VdpShadow struct authors the length, harvested into the residual
 // AS; constants.emp's `VDP_Shadow_len` is checked by byte-identity).
 
-/// (c) A wrong-base map moves the section — the placed LMA tracks the map,
-/// not an echo. FALSIFIED by the port gate placing at the true `0x309DE`.
+/// (c) A wrong-base map moves the section — the placed LMA tracks the map, not
+/// an echo. The wrong base is DERIVED from the pinned one (one region-length
+/// past it) so it can never coincide with the real base at a re-layout, and the
+/// `assert_ne!` below can never degrade into comparing a value with itself.
 #[test]
 fn wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_src() else { return };
     let Some(constants) = constants_src() else { return };
-    let (sections, _asserts) = place(&constants, &src, "0x309E6");
+    let real_base = pins::PARTICLE_ANIMS.debug_base;
+    let wrong_base = real_base + pins::PARTICLE_ANIMS.debug_len as u32;
+    let (sections, _asserts) = place(&constants, &src, &format!("{wrong_base:#x}"));
     let sec = sections
         .iter()
         .find(|s| s.name == "particle_anims")
         .expect("placed particle_anims section");
-    assert_eq!(sec.lma, 0x309E6, "the placed LMA must track the (doctored) map base");
-    assert_ne!(sec.lma, 0x309DE, "…and therefore differ from the true pin");
+    assert_eq!(sec.lma, wrong_base, "the placed LMA must track the (doctored) map base");
+    assert_ne!(sec.lma, real_base, "…and therefore differ from the true pin");
 }
 
 // ===========================================================================
@@ -207,7 +236,8 @@ fn place_sonic(src: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
         },
     );
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
-    let map_toml = "fill = 0x00\n\
+    let map_toml = format!(
+        "fill = 0x00\n\
          \n\
          [[region]]\n\
          name = \"text\"\n\
@@ -217,10 +247,13 @@ fn place_sonic(src: &str) -> (Vec<Section>, Vec<sigil_ir::LinkAssert>) {
          \n\
          [[region]]\n\
          name = \"sonic_anims\"\n\
-         lma_base = 0x30970\n\
-         size = 0x6E\n\
-         kind = \"rom\"\n";
-    let map = sigil_link::load_map(map_toml).expect("map must load");
+         lma_base = {base:#x}\n\
+         size = {size:#x}\n\
+         kind = \"rom\"\n",
+        base = pins::SONIC_ANIMS.plain_base,
+        size = pins::SONIC_ANIMS.plain_len,
+    );
+    let map = sigil_link::load_map(&map_toml).expect("map must load");
     let mut sections = module.sections;
     let pdiags = place_sections(&mut sections, &map);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "place errors: {pdiags:?}");
@@ -306,7 +339,13 @@ fn sonic_wrong_base_map_places_the_section_at_a_different_address() {
         },
     );
     assert!(ldiags.iter().all(|d| d.level != Level::Error), "lower errors: {ldiags:?}");
-    let map_toml = "fill = 0x00\n\
+    // The wrong base is DERIVED from the pinned one so it can never coincide
+    // with it at a re-layout — an `assert_ne!` against a hand-typed neighbour
+    // silently becomes a self-comparison the day the region moves onto it.
+    let real_base = pins::SONIC_ANIMS.plain_base;
+    let wrong_base = real_base + 2;
+    let map_toml = format!(
+        "fill = 0x00\n\
          \n\
          [[region]]\n\
          name = \"text\"\n\
@@ -316,16 +355,18 @@ fn sonic_wrong_base_map_places_the_section_at_a_different_address() {
          \n\
          [[region]]\n\
          name = \"sonic_anims\"\n\
-         lma_base = 0x30972\n\
-         size = 0x6E\n\
-         kind = \"rom\"\n";
-    let map = sigil_link::load_map(map_toml).expect("map must load");
+         lma_base = {wrong_base:#x}\n\
+         size = {size:#x}\n\
+         kind = \"rom\"\n",
+        size = pins::SONIC_ANIMS.plain_len,
+    );
+    let map = sigil_link::load_map(&map_toml).expect("map must load");
     let mut sections = module.sections;
     let pdiags = place_sections(&mut sections, &map);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "place errors: {pdiags:?}");
     let sec = sections.iter().find(|s| s.name == "sonic_anims").expect("placed sonic_anims");
-    assert_eq!(sec.lma, 0x30972, "the placed LMA must track the (doctored) map base");
-    assert_ne!(sec.lma, 0x30970, "…and therefore differ from the true pin");
+    assert_eq!(sec.lma, wrong_base, "the placed LMA must track the (doctored) map base");
+    assert_ne!(sec.lma, real_base, "…and therefore differ from the true pin");
 }
 
 // ===========================================================================
@@ -382,8 +423,9 @@ fn place_act_at(act_src: &str, structs_src: &str, base: u32) -> Vec<Section> {
          [[region]]\n\
          name = \"act_descriptor\"\n\
          lma_base = {base:#x}\n\
-         size = 0x274\n\
-         kind = \"rom\"\n"
+         size = {size:#x}\n\
+         kind = \"rom\"\n",
+        size = pins::ACT_DESCRIPTOR.plain_len
     );
     let map = sigil_link::load_map(&map_toml).expect("map must load");
     let mut sections = vec![section];
@@ -420,7 +462,7 @@ fn swapped_sec_fields_produce_different_bytes() {
     );
     assert_ne!(doctored, structs, "precondition: the swap must apply");
     // The struct literals are NAMED, so they still compile — the bytes move.
-    let sections = place_act_at(&src, &doctored, 0x14AE6);
+    let sections = place_act_at(&src, &doctored, pins::ACT_DESCRIPTOR.plain_base);
     let resolved = sigil_link::resolve_layout(&sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("resolve_layout: {d:?}"));
     // Cross-seam symbols unresolved — compare the SECTION's fixup TARGETS
@@ -460,10 +502,12 @@ fn swapped_sec_fields_produce_different_bytes() {
 #[test]
 fn act_wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = act_src() else { return };
-    let sections = place_act_at(&src, &structs_src(), 0x14AE8);
+    let real_base = pins::ACT_DESCRIPTOR.plain_base;
+    let wrong_base = real_base + 2;
+    let sections = place_act_at(&src, &structs_src(), wrong_base);
     let sec = sections.iter().find(|s| s.name == "act_descriptor").expect("placed section");
-    assert_eq!(sec.lma, 0x14AE8, "the placed LMA must track the (doctored) map base");
-    assert_ne!(sec.lma, 0x14AE6, "…and therefore differ from the true pin");
+    assert_eq!(sec.lma, wrong_base, "the placed LMA must track the (doctored) map base");
+    assert_ne!(sec.lma, real_base, "…and therefore differ from the true pin");
 }
 
 // The `act_standalone_twin_pins_fail_loud_on_missing_externs` probe retired with
