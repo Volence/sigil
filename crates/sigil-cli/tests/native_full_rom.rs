@@ -178,7 +178,16 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // SAME 0x10 says the growth is not DEBUG-fenced, which is correct: the ability and its
     // re-arm hooks are shipped code, and only the follower effect object (game section,
     // downstream) would have been shape-sensitive.
-    ("Ground_Move_Cap", 0x10912, 0x10A22),
+    // slope-symmetry (2026-08-27): +2 BOTH shapes, and the intra-region offset GREW.
+    // The parcel's standing-gate magnitude fix (abs then shift, so a slope and its
+    // mirror decide alike) added 2 bytes INSIDE this region, ahead of Ground_Move_Cap
+    // and after `.no_slope` — so unlike instashield, this is not the region sliding
+    // whole. The offset from the region base moves 0x2F2 -> 0x2F4 in BOTH shapes,
+    // which is the shape-invariance this row exists to witness, still intact.
+    // Written as base + offset rather than as two literals: the base is pin-sourced,
+    // so a future slide ahead of this region cannot rot the row, and only a change
+    // INSIDE the region has to be re-derived here — which is the whole tripwire.
+    ("Ground_Move_Cap", pins::P_STATE_GROUND.plain + 0x2F4, pins::P_STATE_GROUND.debug + 0x2F4),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)

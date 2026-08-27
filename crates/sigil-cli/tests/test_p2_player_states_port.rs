@@ -398,8 +398,14 @@ fn compile_region(
 
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
-        include_root: Some(aeon.join("games/sonic4/player")),
-        embed_base: None,
+        // The full build lowers with BOTH the join base and the containment
+        // boundary at the aeon root, so a root-relative `embed("engine/...")`
+        // resolves there. Narrowing `include_root` to the module's own
+        // directory makes the same spelling join onto `games/sonic4/player/`
+        // and miss — a port-harness-only divergence from the real build, not a
+        // property of `embed`. Matches `soundbankhead_port.rs`.
+        include_root: Some(aeon.to_path_buf()),
+        embed_base: Some(aeon.to_path_buf()),
         defines: vec![("SOUND_DRIVER_ENABLED".to_string(), 1)],
     };
 
