@@ -292,13 +292,26 @@ fn every_announced_early_return_carries_the_skip_marker() {
 
     let structural_only = sites.iter().filter(|s| s.structural && !s.lexical).count();
     let lexical_only = sites.iter().filter(|s| s.lexical && !s.structural).count();
-    println!(
-        "skip-marker census: {} announcement site(s) across {files} file(s) all carry {SKIP_MARKER:?} \
-         ({} structural-only, {lexical_only} lexical-only, {} seen by both)",
+    // THE CENSUS MUST NOT REPRODUCE THE MARKER. This line lands in the same log that
+    // the landing bar and `nightly_source_gates.sh` grep for the marker, and a hit
+    // there means "a gate measured nothing" — so echoing the literal here reports this
+    // gate's own success as somebody else's silent skip. It did: interpolating
+    // `{SKIP_MARKER:?}` made the nightly lane exit 2 (COULD NOT RUN, whole lane dark)
+    // on a fully green run, which is precisely the failure this gate exists to prevent.
+    // Describe the marker; never print it.
+    let census = format!(
+        "skip-marker census: {} announcement site(s) across {files} file(s) all carry the \
+         canonical marker ({} structural-only, {lexical_only} lexical-only, {} seen by both)",
         sites.len(),
         structural_only,
         sites.len() - structural_only - lexical_only,
     );
+    assert!(
+        !census.contains(SKIP_MARKER),
+        "this gate's own census line contains the skip marker, so a green run of it \
+         trips the landing bar and takes the nightly lane dark: {census:?}"
+    );
+    println!("{census}");
 }
 
 /// THE TWO ENFORCERS AGREE BY CONSTRUCTION, not by two hand-maintained copies.
