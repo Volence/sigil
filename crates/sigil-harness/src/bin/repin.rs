@@ -3,8 +3,20 @@
 //!
 //! ```text
 //! SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \
-//!   cargo run -p sigil-harness --bin repin -- [--aeon DIR] [--check] [--verbose]
+//!   cargo run -p sigil-harness --bin repin -- \
+//!     [--harness-root DIR] [--aeon DIR] [--check] [--verbose]
 //! ```
+//!
+//! WHICH TREE IT WRITES `src/pins.rs` INTO is never taken from link time. `--harness-root`
+//! names it, and `refreeze` passes it on every invocation so parent and child cannot
+//! resolve different checkouts — the failure that shape prevents is a freeze whose blobs
+//! land in one tree and whose pins land in another, reported as a success. Run by hand
+//! with no root, it derives the tree it was INVOKED in exactly as `refreeze` does. Either
+//! way the tree must carry both markers in
+//! [`sigil_harness::harness_root::ROOT_MARKERS`] or the run is refused by name, and
+//! [`sigil_harness::harness_root::ROOT_OVERRIDE`] names another tree explicitly. There is
+//! no fallback to the tree this binary was compiled in: every run says which tree that
+//! was beside the tree it is operating on, and says so in words when they differ.
 //!
 //! Resolves the canonical pinned layout NATIVELY for both shapes
 //! (`native::sigil_native_symbol_listing` — the fully-resolved symbol table: labels +
@@ -21,13 +33,13 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use sigil_harness::harness_root::{
+    announce_root, resolve_passed_root, ROOT_FLAG, ROOT_OVERRIDE,
+};
 use sigil_harness::native;
 use sigil_harness::repin::{
     diff_pins, load_manifest, render, resolve, strip_provenance, Listing, Provenance,
 };
-
-const MANIFEST_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/repin.toml");
-const PINS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/pins.rs");
 
 fn fail(msg: &str) -> ExitCode {
     eprintln!("repin: {msg}");
@@ -36,18 +48,45 @@ fn fail(msg: &str) -> ExitCode {
 
 fn main() -> ExitCode {
     let mut aeon: Option<PathBuf> = None;
+    let mut harness_root: Option<std::ffi::OsString> = None;
     let mut check = false;
-    let mut args = std::env::args().skip(1);
+    let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
-        match arg.as_str() {
+        match arg.to_string_lossy().as_ref() {
             "--aeon" => match args.next() {
                 Some(dir) => aeon = Some(PathBuf::from(dir)),
                 None => return fail("--aeon needs a directory argument"),
             },
+            root_flag if root_flag == ROOT_FLAG => match args.next() {
+                Some(dir) => harness_root = Some(dir),
+                None => return fail(&format!("{ROOT_FLAG} needs a directory argument")),
+            },
             "--check" => check = true,
-            other => return fail(&format!("unknown argument `{other}` (try --aeon/--check)")),
+            other => {
+                return fail(&format!(
+                    "unknown argument `{other}` (try {ROOT_FLAG}/--aeon/--check)"
+                ))
+            }
         }
     }
+
+    // WHICH TREE, first and unconditionally: everything below reads or writes files under
+    // it, and a wrong answer here is silent in every one of them.
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => return fail(&format!("cannot read the working directory ({e})")),
+    };
+    let root = match resolve_passed_root(
+        harness_root.as_deref(),
+        &cwd,
+        std::env::var_os(ROOT_OVERRIDE).as_deref(),
+    ) {
+        Ok(r) => r,
+        Err(e) => return fail(&e),
+    };
+    announce_root("repin", &root);
+    let manifest_path = root.join("repin.toml");
+    let pins_path = root.join("src/pins.rs");
     let aeon = aeon.unwrap_or_else(|| {
         PathBuf::from(
             std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".into()),
@@ -84,9 +123,9 @@ fn main() -> ExitCode {
         | (.., Err(e)) => return fail(&e),
     };
 
-    let manifest_src = match std::fs::read_to_string(MANIFEST_PATH) {
+    let manifest_src = match std::fs::read_to_string(&manifest_path) {
         Ok(s) => s,
-        Err(e) => return fail(&format!("cannot read {MANIFEST_PATH}: {e}")),
+        Err(e) => return fail(&format!("cannot read {}: {e}", manifest_path.display())),
     };
     let manifest = match load_manifest(&manifest_src) {
         Ok(m) => m,
@@ -107,7 +146,7 @@ fn main() -> ExitCode {
     };
     let generated = render(&resolved, &prov);
 
-    let committed = std::fs::read_to_string(PINS_PATH).unwrap_or_default();
+    let committed = std::fs::read_to_string(&pins_path).unwrap_or_default();
     if strip_provenance(&committed) == strip_provenance(&generated) {
         println!("pins.rs unchanged");
         return ExitCode::SUCCESS;
@@ -140,11 +179,11 @@ fn main() -> ExitCode {
         eprintln!("--check: pins.rs is STALE (run `cargo run -p sigil-harness --bin repin`)");
         return ExitCode::FAILURE;
     }
-    if let Err(e) = std::fs::write(PINS_PATH, &generated) {
-        return fail(&format!("cannot write {PINS_PATH}: {e}"));
+    if let Err(e) = std::fs::write(&pins_path, &generated) {
+        return fail(&format!("cannot write {}: {e}", pins_path.display()));
     }
     println!();
-    println!("wrote {PINS_PATH}");
+    println!("wrote {}", pins_path.display());
     ExitCode::SUCCESS
 }
 
