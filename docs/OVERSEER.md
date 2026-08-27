@@ -1016,9 +1016,12 @@ and running `regenerate-level.sh` prophylactically on a fresh worktree is pure c
 **Reference trees standing as of 2026-08-27, both clean detached aeon worktrees with all
 four shapes built and CRC32+size verified against the committed tip** (read via
 `git show master:…provenance.toml`, not off the working file):
-`~/sonic_hacks/.sigil-ref-ac57991d` (chain 171, master's tip today) and
-`~/sonic_hacks/.sigil-ref-353aaa49` (matches chain 172, usable once
-`parcel/band-ceiling-16-pair` merges). **Derive which one is current from the tip; do not
+`~/sonic_hacks/.sigil-ref-ac57991d` (chain 171) and
+`~/sonic_hacks/.sigil-ref-353aaa49` (chain 172). **Added 2026-08-27:
+`~/sonic_hacks/.aeon-ref-a6a7c23d`, detached at `33d905b8`, all four shapes built and
+CRC32+size verified against the chain-173 tip — kept rather than removed after the run that
+built it, because a four-shape build is the expensive part of any artifact-dependent
+verification and this one matches the CURRENT tip.** **Derive which one is current from the tip; do not
 read that pairing off this paragraph** — the warning at the top of the quality-bar section
 applies to these two names exactly as it applied to every predecessor.
 
