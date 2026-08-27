@@ -58,6 +58,38 @@ pub enum Cost {
     Unknown,
 }
 
+/// The type a span sum is accumulated and returned in.
+///
+/// The width here is a PROOF OBLIGATION, not a preference. [`MAX_SPAN_T_STATES`]
+/// is the largest value [`span_cost`] can ever produce and is computed in this
+/// same type; const evaluation makes arithmetic overflow a COMPILE error, so
+/// narrowing this alias to a type the bound does not fit fails the build rather
+/// than silently re-introducing a ceiling. That is why the sum below adds with a
+/// plain `+` and never saturates, clamps, or checks: the overflow is
+/// unrepresentable, not watched for. A saturating sum would answer 65 535 to a
+/// span that costs more — a number where the model owes either the cost or a
+/// refusal, which is the one thing a cost model must never do.
+pub type TStates = u128;
+
+/// The arithmetic ceiling on a span sum, and the compile-time proof that
+/// [`TStates`] holds it. Two structural facts bound it:
+///
+///   * every [`Cost::Fixed`] payload is a `u16`, so one instruction site
+///     contributes at most `u16::MAX` — a bound on the TYPE, so it survives any
+///     future growth of the table;
+///   * a `&[CodeItem]` is backed by an allocation and Rust caps an allocation at
+///     `isize::MAX` bytes, so the slice holds at most
+///     `isize::MAX / size_of::<CodeItem>()` items, instructions included.
+///
+/// The product is the ceiling. It is not a limit anything refuses at — nothing
+/// can reach it — it is the number the accumulator width is chosen to hold.
+pub const MAX_SPAN_T_STATES: TStates =
+    (isize::MAX as TStates / std::mem::size_of::<CodeItem>() as TStates) * (u16::MAX as TStates);
+
+/// `span_cost`'s result reaches `Value::Int`, which is an `i128`. The conversion
+/// is lossless BY CONSTRUCTION and this is where that is proved.
+const _: () = assert!(MAX_SPAN_T_STATES <= i128::MAX as TStates);
+
 /// Why a span-cost sum could not be produced.
 #[derive(Debug, Clone)]
 pub enum CycleBail {
@@ -191,8 +223,13 @@ pub fn instr_cost(mnemonic: &str, ops: &[CodeOperand]) -> Cost {
 
 /// Sum the T-states of the instructions in `items` (a straight-line span). Labels
 /// are skipped (zero cost). Returns the total, or the FIRST bail encountered.
-pub fn span_cost(items: &[CodeItem]) -> Result<u16, CycleBail> {
-    let mut total: u16 = 0;
+///
+/// The total is EXACT for every input the function can be handed: see
+/// [`TStates`] and [`MAX_SPAN_T_STATES`] for why the accumulator cannot overflow.
+/// Every path out of here is therefore the span's true cost or a named refusal —
+/// there is no third answer.
+pub fn span_cost(items: &[CodeItem]) -> Result<TStates, CycleBail> {
+    let mut total: TStates = 0;
     for it in items {
         let CodeItem::Instr { mnemonic, ops, span, .. } = it else { continue };
         // A return has a cost (the budget walk charges it), but inside a
@@ -202,7 +239,9 @@ pub fn span_cost(items: &[CodeItem]) -> Result<u16, CycleBail> {
             return Err(CycleBail::PathEnd { mnemonic: mnemonic.clone(), span: *span });
         }
         match instr_cost(mnemonic, ops) {
-            Cost::Fixed(n) => total = total.saturating_add(n),
+            // Plain `+`: the width proof above makes an overflow here
+            // unrepresentable, so there is nothing to saturate or check.
+            Cost::Fixed(n) => total += TStates::from(n),
             Cost::Split { .. } => {
                 return Err(CycleBail::AmbiguousBranch {
                     mnemonic: mnemonic.clone(),
@@ -359,6 +398,58 @@ mod tests {
     #[test]
     fn exx_and_nop() {
         assert_eq!(span_cost(&[instr("exx", vec![]), instr("nop", vec![])]).unwrap(), 8);
+    }
+
+    // A span whose TRUE cost passes 65 535 T-states must return that true cost.
+    // The accumulator's own ceiling is not an answer: reporting it would be the
+    // model saying a number where it owes either the sum or a refusal.
+    //
+    // Nothing here is a copied literal. The per-instruction cost comes from
+    // `instr_cost` itself (so a table correction moves the expectation with it),
+    // and the site count is derived from `u16::MAX` — the width being escaped.
+    #[test]
+    fn span_cost_past_65535_t_returns_the_true_sum() {
+        // The dearest fixed form the table prices: `ld a,(ix+0)` at 19 T.
+        let dearest = instr(
+            "ld",
+            vec![a(), CodeOperand::Z80Indexed { reg: crate::value::Z80Index::Ix, disp: 0 }],
+        );
+        let CodeItem::Instr { mnemonic, ops, .. } = &dearest else {
+            unreachable!("the fixture is an instruction")
+        };
+        let per: u16 = match instr_cost(mnemonic, ops) {
+            Cost::Fixed(n) => n,
+            other => panic!("the fixture form must be a FIXED cost to sum; got {other:?}"),
+        };
+        assert!(per > 0, "a zero-cost fixture could never cross any ceiling");
+        // One site past the old u16 ceiling, plus a margin so the excess is
+        // unmistakable rather than a rounding.
+        let sites = (u16::MAX as usize / per as usize) + 64;
+        let items: Vec<CodeItem> = std::iter::repeat_n(dearest.clone(), sites).collect();
+        let expect = TStates::from(per) * sites as TStates;
+        assert!(
+            expect > TStates::from(u16::MAX),
+            "the fixture must actually cross u16::MAX or this test proves nothing; got {expect}"
+        );
+        assert_eq!(span_cost(&items).unwrap(), expect);
+    }
+
+    // The overflow bound is a COMPILE-time fact (`MAX_SPAN_T_STATES` is computed
+    // in `TStates` and const arithmetic overflow is a build error). This checks
+    // the bound is the one documented — the product of the widest single cost and
+    // the most instructions a `&[CodeItem]` can hold — so a later edit that
+    // loosens the derivation is loud here rather than silently unproving the type.
+    #[test]
+    fn max_span_bound_is_derived_from_the_two_structural_limits() {
+        let widest_cost = TStates::from(u16::MAX);
+        let most_items =
+            isize::MAX as TStates / std::mem::size_of::<CodeItem>() as TStates;
+        assert!(most_items > 0, "CodeItem must be a sized non-ZST for the bound to hold");
+        assert_eq!(MAX_SPAN_T_STATES, most_items * widest_cost);
+        assert!(
+            MAX_SPAN_T_STATES > TStates::from(u16::MAX),
+            "a bound at or below u16::MAX would mean the old ceiling was never escaped"
+        );
     }
 
     // label_span carves [start.body .. end) and excludes the labels themselves.

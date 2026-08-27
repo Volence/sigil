@@ -304,6 +304,32 @@ Neither is a wrong number in the shipped corpus today. Both are recorded in
 `campaign-gap-ledger.md` with kill conditions. **Neither was fixed here** — a fix belongs in its
 own parcel with a red-first proof.
 
+> **BOTH ARE FIXED as of `fix/cycle-model-soundness` (2026-08-27).** The two subsections below
+> are kept as the DIAGNOSIS that led to the fix; read them as history, not as a live defect
+> record, and do not re-file either from this text. What landed, and where the two accounts
+> differ from what was actually measured:
+>
+> * **D-1** — `eval_cycles`/`eval_pad_to_cycles` now open with
+>   `Evaluator::require_z80_for_timing`, raising `[cycles.wrong-cpu]` on a 68000 proc and on an
+>   absent `ev.cpu`. It REFUSES rather than dispatching to `m68k_cycles`: that table answers a
+>   weaker question (a third of the shipped 68000 stream is a ceiling — §1 — so an `==`
+>   comparison against a sum of ceilings would assert a cost the machine need not have), and
+>   `pad_to_cycles` has no 68000 pad unit to emit at all. **Two claims below re-derived wrong:**
+>   there are TWO `pad_to_cycles(` sites in `z80_sound_driver.emp`, not one; and the
+>   `dense: true` `jr` never reached the ROM — the 68000 mnemonic table rejected it downstream,
+>   once per emitted pad unit. The `cycles()` and sparse-`pad_to_cycles` halves were exactly as
+>   described: both built CLEAN on a 68000 proc with no diagnostic whatsoever.
+> * **D-2** — `span_cost` accumulates and returns `TStates` (`u128`) with a plain `+`. Overflow
+>   is UNREPRESENTABLE rather than detected: `MAX_SPAN_T_STATES` is computed in that same type
+>   from `Cost::Fixed`'s `u16` payload and Rust's `isize::MAX` allocation cap, and const
+>   arithmetic overflow is a compile error, so the width is checked by the compiler. There is
+>   no limit left to refuse at.
+>
+> **Every measurement in §1–§6 is unaffected and was re-run on the fixed tree**: `cycle_fraction`
+> reads `instr_cost`, never `span_cost` and never the builtins, and all seven shapes reproduce
+> byte-for-byte (canonical 68000 12 215 / 8 170 / 4 040 / 5; Z80 3 040 / 2 216 / 0 / 824;
+> all-shape 68000 70 731 / 46 925 / 23 771 / 35). No number in this note is stale.
+
 ### D-1 (latent, wrong-unit): `cycles(L1, L2)` and `pad_to_cycles(...)` have no CPU guard
 
 `eval::builtins::eval_cycles` calls `z80_cycles::span_cost` **unconditionally**. The evaluator

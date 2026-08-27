@@ -3063,7 +3063,22 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   **Kill:** `eval_cycles`/`eval_pad_to_cycles` refuse on a non-Z80 `ev.cpu` under their own
   diagnostic id, proved red-first by a 68000 proc whose `ensure(cycles(.a, .b) == 8)` over two
   `nop`s fails to build instead of passing.
-  — OPEN
+  — CLOSED (`fix/cycle-model-soundness`). Both builtins now open with
+  `Evaluator::require_z80_for_timing`, which raises `[cycles.wrong-cpu]` on a 68000 proc AND on
+  an absent `ev.cpu`. REFUSAL, not dispatch: `m68k_cycles` answers a strictly weaker question
+  (a third of the shipped 68000 stream prices `Fixed { exact: false }`, a ceiling, almost
+  entirely because operand width is a LINKER-relaxation fact the evaluator runs before), and
+  `cycles()` exists to be compared with `==` — summing ceilings into an equality is the same
+  defect in a new place. `pad_to_cycles` could not dispatch at all: its pad units are the Z80
+  `nop`/`jr` priced from the same table, and `jr` has no 68000 spelling. Six gates in
+  `crates/sigil-frontend-emp/tests/t40_cycles.rs`, all proved red with the guard disabled.
+  Two claims in this row measured WRONG when re-derived: (a) there are TWO `pad_to_cycles(`
+  sites in `z80_sound_driver.emp`, not one (both `dense: true`, still all-Z80, so the
+  zero-exposure finding stands); (b) the dense shape did NOT reach the ROM — the emitted `jr`
+  is caught downstream by "`jr` is not a recognized 68000 mnemonic", once per pad unit (7
+  copies for an 84 T pad), so that half was a diagnostic-quality defect, not a miscompilation.
+  The `cycles()` and SPARSE `pad_to_cycles` halves were exactly as reported: both built CLEAN
+  on a 68000 proc, returning and consuming Z80 T-states with no diagnostic at all.
 
 - [CYCLE-FRACTION, 2026-08-27] **`z80_cycles::span_cost` accumulates in `u16` with
   `saturating_add` — it returns a number where it owes a refusal.** A straight-line span
@@ -3078,7 +3093,19 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   region is the thing that would find it.
   **Kill:** `span_cost` accumulates in `u32`/`u64` and bails (or the type makes overflow
   unrepresentable) instead of saturating, proved red-first over a synthetic span past 65 535 T.
-  — OPEN
+  — CLOSED (`fix/cycle-model-soundness`) by the UNREPRESENTABLE branch, not the bail branch:
+  `span_cost` accumulates and returns `z80_cycles::TStates` (`u128`) with a plain `+`, and
+  `MAX_SPAN_T_STATES` — computed in that same type from the two structural limits
+  (`u16::MAX` per site by `Cost::Fixed`'s payload type, `isize::MAX / size_of::<CodeItem>()`
+  sites by Rust's allocation cap) — makes the width a COMPILER-checked fact, because const
+  arithmetic overflow is a build error. Narrowing the alias to `u64` fails the build with
+  E0080 "attempt to compute 64051194700380387_u64 * 65535_u64, which would overflow", which is
+  the red proof that a merely-wider accumulator would still have been a cliff: `u64` is
+  genuinely insufficient here, ~230x short. A second `const _: () = assert!(…)` proves the
+  result reaches `Value::Int`'s `i128` losslessly. `span_cost` now has no path that returns a
+  number other than the span's true cost. Red proof of the behaviour:
+  `z80_cycles::tests::span_cost_past_65535_t_returns_the_true_sum` failed
+  `left: 65535 / right: 66747` before the change.
 
 - [SKIP-TEXT-HOLE, 2026-08-27] **A source lint over announcement TEXT cannot reach a skip
   that announces nothing.** The zero-skip landing bar and `scripts/nightly_source_gates.sh`

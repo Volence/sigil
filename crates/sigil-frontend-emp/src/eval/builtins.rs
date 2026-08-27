@@ -511,6 +511,72 @@ impl<'a> Evaluator<'a> {
         Value::LinkExpr(shifted)
     }
 
+    /// The CPU wall in front of the two rung-4 timing builtins,
+    /// [`cycles`](Self::eval_cycles) and [`pad_to_cycles`](Self::eval_pad_to_cycles).
+    /// Returns `true` when the enclosing proc is Z80 code and the builtin may
+    /// proceed; otherwise it raises `[cycles.wrong-cpu]` and returns `false`.
+    ///
+    /// Both builtins consult exactly ONE cost table, [`crate::z80_cycles`], whose
+    /// unit is a Zilog T-state at the sound CPU's 3.58 MHz. Nothing in either of
+    /// them is CPU-generic, so on a 68000 proc the honest answer is a refusal:
+    ///
+    ///   * **A number would be in the wrong chip's clock.** `nop` is spelled the
+    ///     same on both machines and the Z80 table prices it at 4 T, so a 68000
+    ///     timing pad measured through here comes back with a plausible-looking
+    ///     count that is a T-state total presented as a 68000-cycle total. A wrong
+    ///     unit that reads right is worse than a bail.
+    ///   * **Dispatching to the 68000 table would not fix it.**
+    ///     [`crate::m68k_cycles`] answers a strictly weaker question: a third of
+    ///     the shipped 68000 instruction stream prices as `Fixed { exact: false }`
+    ///     — an upper bound, overwhelmingly because the operand width is a
+    ///     LINKER-relaxation fact this evaluator runs before. `cycles()` exists to
+    ///     be compared with `==`, and summing ceilings into an equality asserts a
+    ///     cost the machine need not have. That is the same defect in a new place.
+    ///   * **`pad_to_cycles` could not dispatch at all.** Its pad units are the
+    ///     Z80 `nop` (4 T) and `jr` (12 T) priced out of the same table; `jr` is
+    ///     not a 68000 mnemonic, so the dense shape has no 68000 spelling to emit.
+    ///
+    /// A 68000 span model plus a 68000 pad-unit table would be a feature, and it
+    /// can be built later behind this same wall. Until then the wall is the fix,
+    /// because a wrong number is never the fallback.
+    ///
+    /// An ABSENT `ev.cpu` (a raw `asm {}` template with no section CPU in scope)
+    /// refuses too. Defaulting to Z80 there is exactly how a T-state count reaches
+    /// a 68000 stream, and "could not determine" must never render as an answer.
+    fn require_z80_for_timing(&mut self, builtin: &str, span: Span) -> bool {
+        match self.cpu {
+            Some(sigil_ir::backend::Cpu::Z80) => true,
+            Some(sigil_ir::backend::Cpu::M68000) => {
+                self.error(
+                    span,
+                    format!(
+                        "[cycles.wrong-cpu] `{builtin}` measures Z80 T-states and this proc is \
+                         68000 code — `z80_cycles` is the only cost table it reads, so any count \
+                         it returned here would be a T-state at 3.58 MHz reported as a 68000 \
+                         cycle at 7.67 MHz. Some mnemonics (`nop`, for one) are spelled the same \
+                         on both chips, so that wrong number would look right. There is no 68000 \
+                         span model: put the timed region in a `(cpu: z80)` section, or bound \
+                         this proc with `@budget(cycles: N)`, which does dispatch on CPU."
+                    ),
+                );
+                false
+            }
+            None => {
+                self.error(
+                    span,
+                    format!(
+                        "[cycles.wrong-cpu] `{builtin}` measures Z80 T-states and no section CPU \
+                         is in scope here, so there is nothing to measure against — it is valid \
+                         only inside a proc in a `(cpu: z80)` section. Refusing rather than \
+                         assuming Z80: an assumed CPU is how a T-state count ends up denominated \
+                         as a 68000 cycle."
+                    ),
+                );
+                false
+            }
+        }
+    }
+
     /// `cycles(L1, L2)` (rung 4, t40 — `2026-07-29-t40-step0-design.md` §3): the
     /// Z80 T-state cost of the straight-line instruction span `[L1, L2)` in the
     /// enclosing proc body, summed EAGERLY from the partial CodeBuf snapshotted on
@@ -528,6 +594,13 @@ impl<'a> Evaluator<'a> {
     /// (the jp-not-jr hot-path discipline as a compile error); an op off the
     /// timed-region table is `[cycles.unknown-op]`.
     pub(super) fn eval_cycles(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        // FIRST, before the labels are even resolved: this is a Z80-only
+        // measurement (`require_z80_for_timing`). Checking it here keeps the
+        // refusal the ONLY diagnostic a 68000 author sees, instead of trailing it
+        // behind label or table errors that describe a symptom.
+        if !self.require_z80_for_timing("cycles(L1, L2)", span) {
+            return Value::Poison;
+        }
         if args.len() != 2 {
             self.error(span, format!("`cycles` expects 2 label arguments (L1, L2), got {}", args.len()));
             return Value::Poison;
@@ -585,7 +658,11 @@ impl<'a> Evaluator<'a> {
             Err(crate::z80_cycles::CycleBail::UnknownOp { mnemonic, span: isp }) => {
                 self.error(
                     isp,
-                    format!("[cycles.unknown-op] `{mnemonic}` is not in the timed-region T-state table — add it to `z80_cycles` if a timed span legitimately needs it"),
+                    // Reachable ONLY on a Z80 proc now (`require_z80_for_timing`
+                    // runs first), so pointing at the Z80 table is the right
+                    // advice here rather than a misdirection. It says so, because
+                    // this message used to be what a 68000 author was told.
+                    format!("[cycles.unknown-op] `{mnemonic}` is Z80 code this proc's timed-region T-state table does not price — add it to `z80_cycles` if a timed span legitimately needs it"),
                 );
                 Value::Poison
             }
@@ -626,6 +703,14 @@ impl<'a> Evaluator<'a> {
     /// ladder always keeps the 2-byte rung for a zero displacement, so the byte cost
     /// is fixed at 2.
     pub(super) fn eval_pad_to_cycles(&mut self, args: &[ast::Arg], span: Span, env: &mut Env) -> Value {
+        // The pad units and the arithmetic that counts them are both Z80
+        // (`require_z80_for_timing`). Refuse before anything is emitted — the
+        // dense shape would otherwise splice `jr`, which the 68000 assembler then
+        // rejects once per emitted pad unit, describing the splice rather than the
+        // reason for it.
+        if !self.require_z80_for_timing("pad_to_cycles(...)", span) {
+            return Value::Poison;
+        }
         if args.len() != 2 && args.len() != 3 {
             self.error(
                 span,
