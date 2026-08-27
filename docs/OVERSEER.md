@@ -706,6 +706,44 @@ ran the strict suite by hand, it now runs through the tool:
 3. On success it appends `[entry.strict]` → commit `provenance.toml` only. On a red run it
    records `outcome = "failed"`, names the failing tests, and exits 1.
 
+**⚠ A REBASE IS A TREE-MOVE, AND "CLEAN COMMITTED TREE" DOES NOT IMPLY "REBUILT"**
+*(aeon lane, 2026-08-27, caught in their own pre-launch check at the first real attestation)*.
+Step 2's tree can be clean, committed and still carry a harness binary compiled at the
+*previous* HEAD. `version_reports_the_head_of_the_tree_it_was_built_from` then goes red for a
+reason with nothing to do with the freeze — the binary honest, the tree moved. This lane's
+existing warning covers a commit landing mid-run; a rebase reaches the same state from the
+other direction and **before** the run, so the mid-run rule does not catch it. **Rebuild after
+any rebase, then launch.** The whole sigil-side reason to rebase at all is that the freeze's
+parent has fallen behind `origin/master`, which happens whenever sigil lands anything —
+including docs — between freeze and attest.
+
+**And the freeze this needs from sigil is the REF, not the working tree.** The aeon lane
+rebases onto `origin/master` and later pushes to it, so what must not move is that ref:
+sigil holds master **and any parcel branch about to merge into it** — the in-flight merge is
+the tip-move most likely to be forgotten, since it is not a deliberate act at the time it is
+requested. A dirty sigil working tree is harmless to their run; a moved ref is not.
+
+**⚠ THE GENERAL FORM, AND IT INVERTS THE USUAL ADVICE ABOUT BEING SPECIFIC** *(aeon's
+formulation, 2026-08-27)*. **A freeze request asks a lane to suspend a set of FUTURE actions,
+and the requester can only enumerate the ones they know about.** They asked for master; they
+could not ask about a branch they did not know existed, and the holder would not naturally
+count *"let the agent merge when it goes green"* as **doing something** — at the moment of the
+request it is not an act, it is the absence of an intervention. **The party who can enumerate
+the pending actions is never the party making the request.**
+
+So a precise request is the one that fails: *"please hold master"* names what the requester can
+see and implicitly licenses everything else. **The robust form is the vague one:** *"land
+nothing that moves my rebase target, and tell me what that turns out to include."* Both seats
+have a duty here — the requester asks for the OUTCOME rather than the action, and the holder
+enumerates their own pending tip-moves and reports what the freeze turned out to cover.
+
+**Two clocks, and say so IN THE ENTRY.** `[entry.strict].sigil_rev` is the revision the suite
+RAN ON; the freeze's `Assembler:` banner is the revision that PRODUCED the frozen bytes. After
+a rebase these differ **by construction, not by fault**, and a reader comparing them will
+assume something broke. Name both quantities in the entry itself — not only in a lane log,
+which the confused reader does not have open. Same defect shape as the version banner's
+stuck-versus-stale field, found independently in a second instrument the same hour.
+
 **Why the flag is set by the tool and not asked of the operator: that one missing token IS
 the whole defect being closed.** A procedure can be complete in its steps and inert in its
 spelling, and nobody audits a command line for a missing env var.
