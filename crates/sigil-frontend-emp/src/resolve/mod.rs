@@ -86,6 +86,17 @@ fn pub_struct_data_name(item: &ast::Item) -> Option<&str> {
 #[derive(Default)]
 struct ConstFoldCache {
     by_const: HashMap<(String, String), Option<i64>>,
+    /// Error-level diagnostics from probes that failed on a fault in the const's
+    /// own definition ([`ConstFold::Failed`]), accumulated once per `(module,
+    /// const)` because the memo asks each question once. The driver holding this
+    /// cache drains them into its own diagnostic list — see [`take_faults`].
+    ///
+    /// A sink rather than a return value: the fold runs deep inside the ambient
+    /// walk, whose result type is a list of items, and every driver already has a
+    /// single point where it owns the build's `Vec<Diagnostic>`.
+    ///
+    /// [`take_faults`]: ConstFoldCache::take_faults
+    faults: Vec<Diagnostic>,
 }
 
 impl ConstFoldCache {
@@ -94,6 +105,10 @@ impl ConstFoldCache {
     /// The computation is [`fold_const_literal`] verbatim, so the answer for a
     /// given `(module, const)` is exactly what the uncached path produced — the
     /// saving is entirely in not asking the same question again.
+    ///
+    /// A [`ConstFold::Failed`] probe's diagnostics land in the cache's fault sink
+    /// on the ask that computed them, so a fault is reported ONCE however many
+    /// consumers import the const.
     ///
     /// Folding a module's consts EAGERLY as a batch would be faster still (one
     /// evaluator per module rather than one per const), but it is NOT equivalent,
@@ -114,22 +129,76 @@ impl ConstFoldCache {
         if let Some(&hit) = self.by_const.get(&key) {
             return hit;
         }
-        let folded = fold_const_literal(def_file, name, defines, include_root);
+        let folded = match fold_const_literal(def_file, name, defines, include_root) {
+            ConstFold::Literal(n) => Some(n),
+            ConstFold::NotLiteral => None,
+            ConstFold::Failed(faults) => {
+                self.faults.extend(faults);
+                None
+            }
+        };
         self.by_const.insert(key, folded);
         folded
     }
+
+    /// Take the accumulated definition-site fold faults, leaving the sink empty.
+    fn take_faults(&mut self) -> Vec<Diagnostic> {
+        std::mem::take(&mut self.faults)
+    }
+}
+
+/// What the definition-site fold probe learned about one `pub const`.
+///
+/// The three outcomes are DELIBERATELY distinct. A const that simply is not a
+/// foldable literal is an ordinary, expected result and must stay silent; a const
+/// whose evaluation FAILED is a fault the author has to hear about. Collapsing both
+/// into one "no value" answer lets a `const` whose `embed(...)` cannot be read reach
+/// a green build with its error discarded.
+enum ConstFold {
+    /// Clean resolution to a value that fits the [`ast::Expr::Int`] payload.
+    Literal(i64),
+    /// Clean evaluation, but not an `i64` literal — a non-int value, an
+    /// out-of-range magnitude, or a name the probe's narrower scope cannot see.
+    /// Ordinary and silent: the caller keeps the const's original expression and
+    /// the consumer resolves it exactly as it always did.
+    NotLiteral,
+    /// Evaluation raised Error-level diagnostics that do NOT come from the probe's
+    /// narrower scope — a fault in the const's own definition, true for every
+    /// consumer. Carries those diagnostics so the caller can report them.
+    Failed(Vec<Diagnostic>),
+}
+
+/// Whether `d` is the fold probe's OWN scope shortfall rather than a fault in the
+/// const being folded.
+///
+/// The probe evaluates a const against its DEFINING file alone, so a name that
+/// file cannot see — a `use`d sibling const, a comptime fn another module owns, an
+/// interface member (the probe seeds an empty [`crate::contract::InterfaceEnv`]) —
+/// misses. That miss is expected and carries no information: the consumer resolves
+/// the same expression in its own, wider scope. It is also the ONLY class of Error
+/// the shipped corpus's fold probes raise, across every shipped shape — the whole
+/// population is `unknown name` / `unknown function`, which is what makes treating
+/// every OTHER Error as a real fault safe rather than noisy.
+///
+/// Conservative in the loud direction: if either message is ever reworded this
+/// predicate stops matching and those diagnostics start surfacing, which is a
+/// visible failure, not a silent one.
+fn is_probe_scope_shortfall(d: &Diagnostic) -> bool {
+    d.message.starts_with("unknown name `") || d.message.starts_with("unknown function `")
 }
 
 /// Resolve the `pub const` named `name` to an `i64` literal in its DEFINING file's
 /// scope (siblings + `defines` visible), for the injected-clone value fold in
-/// [`collect_pub_comptime`]. Returns `Some(n)` ONLY on a clean resolution: no
-/// Error-level diagnostic, an integer value, and a magnitude that fits `i64` (the
-/// [`ast::Expr::Int`] payload). Any other outcome — an unresolved cross-module
-/// reference `def_file` alone cannot see, a non-int value, an out-of-range
-/// magnitude, a cyclic definition — yields `None` so the caller keeps the const's
-/// original expression (the consumer then resolves it exactly as before). All
-/// diagnostics the probe provokes are discarded: it is a best-effort fold, never a
-/// report site (a real error surfaces at the const's own decl site during lowering).
+/// [`collect_pub_comptime`].
+///
+/// [`ConstFold::Literal`] ONLY on a clean resolution: no Error-level diagnostic, an
+/// integer value, and a magnitude that fits `i64`. A value that resolves cleanly to
+/// something else, and a miss the probe's narrower scope explains
+/// ([`is_probe_scope_shortfall`]), are [`ConstFold::NotLiteral`] — silent, caller
+/// keeps the original expression. Any other Error is [`ConstFold::Failed`], which
+/// the caller reports: the const's definition is broken for every consumer, and
+/// nothing downstream is guaranteed to raise it again (a const nobody demands is
+/// never evaluated a second time).
 ///
 /// Reached only through [`ConstFoldCache::folded`] — every caller wants the memo.
 fn fold_const_literal(
@@ -137,13 +206,22 @@ fn fold_const_literal(
     name: &str,
     defines: &[(String, i128)],
     include_root: Option<&Path>,
-) -> Option<i64> {
+) -> ConstFold {
     let (value, diags) = crate::eval::eval_const_with_root(def_file, name, include_root, defines);
-    if diags.iter().any(|d| d.level == Level::Error) {
-        return None;
+    let errors: Vec<Diagnostic> =
+        diags.into_iter().filter(|d| d.level == Level::Error).collect();
+    if !errors.is_empty() {
+        // An errored evaluation NEVER folds, whatever it left in `value` — a
+        // poisoned partial result is not a literal. Which kind of error it was
+        // decides only whether the author hears about it.
+        let faults: Vec<Diagnostic> =
+            errors.into_iter().filter(|d| !is_probe_scope_shortfall(d)).collect();
+        return if faults.is_empty() { ConstFold::NotLiteral } else { ConstFold::Failed(faults) };
     }
-    let n = value?.as_stored_int()?;
-    i64::try_from(n).ok()
+    match value.and_then(|v| v.as_stored_int()).and_then(|n| i64::try_from(n).ok()) {
+        Some(n) => ConstFold::Literal(n),
+        None => ConstFold::NotLiteral,
+    }
 }
 
 /// Collect the pub comptime-only items directly in `items` AND one level inside
@@ -440,6 +518,10 @@ pub fn build_ram_report(
         rows.append(&mut r);
         diags.append(&mut d);
     }
+
+    // Definition-site fold faults from the ambient prepends above. This path never
+    // lowers the defining modules, so nothing else here would ever raise them.
+    diags.append(&mut folds.borrow_mut().take_faults());
     (rows, diags)
 }
 
@@ -812,6 +894,26 @@ fn build_program_with(
         .map(|&i| (manifest.modules[i].id.as_str(), &manifest.modules[i].file))
         .collect();
     diags.extend(crate::lower::check_single_owner(&reachable_pairs));
+
+    // Definition-site fold faults (`ConstFold::Failed`): a `pub const` whose own
+    // evaluation raised an Error that the probe's narrower scope does not explain.
+    // The caller kept the const's original expression, so the value is still
+    // whatever the consumer's scope computes — the fault has to be said out loud
+    // or it is not said at all: a const no consumer DEMANDS is never evaluated
+    // again, and one that is demanded may resolve to a different, wrong value
+    // there rather than to an error.
+    //
+    // Filtered through `seen_across_modules` for the demanded case: when a
+    // consumer's lowering already reported the identical diagnostic (same level,
+    // message and span — a cloned item keeps its home span), this adds nothing.
+    // So the change is strictly additive, and only where the build was silent.
+    let fold_faults: Vec<Diagnostic> = folds
+        .borrow_mut()
+        .take_faults()
+        .into_iter()
+        .filter(|d| !seen_across_modules.contains(d))
+        .collect();
+    diags.extend(fold_faults);
 
     (sections, link_asserts, diags)
 }
