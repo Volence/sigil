@@ -314,6 +314,49 @@ fn resolve_sigil_rev(root: &Path) -> Result<String, String> {
     Ok(rev)
 }
 
+/// The DECLARED test population: what the built binaries say they will run.
+///
+/// The landing bar has always been "`passed + ignored` equals the declared count", and
+/// until now that comparison lived only in `docs/OVERSEER.md` as prose — a human ran a
+/// grep and compared by eye. Two overseers believed it enforced; nothing in the harness
+/// enforced it. A binary that silently does not run at all takes its whole population
+/// out of the totals, and the remaining suites still report `ok`: another smaller green,
+/// the same shape as the strict-body floor this parcel replaces.
+///
+/// `--list` is used rather than a source grep for the same reason the census is derived
+/// rather than committed: it enumerates what the RUNNER will schedule, so a test that
+/// exists in source but is not collected shows as a difference instead of agreeing by
+/// coincidence. It also cannot be edited into agreement.
+///
+/// LOUD ON UNMEASURABLE: a listing that fails, or enumerates nothing, is an error and
+/// never a zero — a zero would compare equal to a run that executed nothing.
+fn listed_tests(root: &Path) -> Result<usize, String> {
+    let out = Command::new("cargo")
+        .args(["test", "--release", "--workspace", "--", "--list"])
+        .current_dir(root)
+        .output()
+        .map_err(|e| format!("spawn `cargo test -- --list`: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "`cargo test --release --workspace -- --list` exited {}: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    let n = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| l.trim_end().ends_with(": test"))
+        .count();
+    if n == 0 {
+        return Err(
+            "`cargo test -- --list` enumerated ZERO tests. The listing broke; that is not the \
+             same as a workspace with no tests"
+                .to_string(),
+        );
+    }
+    Ok(n)
+}
+
 /// What one strict suite run produced. Every number here is read out of the run; none is
 /// copied from the chain.
 struct RunResult {
@@ -625,6 +668,37 @@ fn do_attest(harness_root: &Path, expect: &[String], log_arg: Option<&str>) -> E
     // exists to capture. Under strict, a missing-reference path panics, so a red run is
     // also the one place the census legitimately disagrees with the witness.
     if run.failed == 0 && run.exit_ok {
+        // THE DECLARED-COUNT RECONCILIATION, moved out of prose. `passed + failed +
+        // ignored` must account for every test the runner says it will schedule; a
+        // binary that silently did not run leaves the rest reporting `ok`.
+        match listed_tests(&root) {
+            Err(e) => return fail(format!(
+                "the run cannot be reconciled against the declared test population, so its \
+                 totals describe an unknown fraction of the suite. {e}"
+            )),
+            Ok(listed) => {
+                let ran = run.passed + run.failed + run.ignored;
+                if ran != listed {
+                    return fail(format!(
+                        "the run accounted for {ran} test(s) ({} passed + {} failed + {} \
+                         ignored) but the binaries declare {listed}. {} test(s) were never \
+                         reported by any `test result:` line — a binary that did not run takes \
+                         its whole population out of the totals while every other suite still \
+                         says `ok`. Nothing was recorded. Log: {}",
+                        run.passed,
+                        run.failed,
+                        run.ignored,
+                        listed.saturating_sub(ran),
+                        log_path.display()
+                    ));
+                }
+                eprintln!(
+                    "refreeze --attest: declared-count reconciliation: {ran} accounted for, \
+                     {listed} declared."
+                );
+            }
+        }
+
         let defects = strict_census::defects(&census, &run.witness);
         if !defects.is_empty() {
             eprintln!("refreeze --attest: {}", strict_census::summary(&census, &run.witness));
