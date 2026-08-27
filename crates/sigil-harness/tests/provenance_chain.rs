@@ -26,7 +26,7 @@
 //! that script's own audit (this file names `golden` throughout) and belongs to the
 //! refreeze ritual's trigger, not the clock's.
 
-use sigil_harness::provenance;
+use sigil_harness::provenance::{self, AppendGate};
 use sigil_harness::test_support;
 use std::path::{Path, PathBuf};
 
@@ -180,4 +180,59 @@ fn aeon_dir_matches_the_provenance_tip() {
     );
     assert!(!test_support::strict_gate(), "{msg}");
     eprintln!("notice: {msg}");
+}
+
+
+/// THE APPEND GATE, exercised against the REAL chain rather than a fixture.
+///
+/// `append_gate`'s rules are unit-tested exhaustively on synthetic chains; this is the
+/// one place they meet `golden/provenance.toml` as it actually is, so a shape the real
+/// file has and no fixture models cannot slip past. It also REPORTS the arming state on
+/// every run, which is the whole point of a self-disarming ratchet: an operator should
+/// never have to open the file to find out whether the rule is in force.
+///
+/// It asserts COHERENCE — that the verdict agrees with the tip's own records — rather
+/// than demanding a particular verdict. `Refused` is a legitimate state for master to be
+/// in: it is exactly the window between a freeze landing and its `--attest`, and failing
+/// here would put master red for a reason that is not a defect. The teeth are in
+/// `provenance_chain_holds` (which enforces rules 5 and 6 on every entry the chain has
+/// been BUILT ON) and in `refreeze --freeze`, which refuses the append itself.
+#[test]
+fn the_append_gate_agrees_with_the_chains_own_records() {
+    let dir = golden_dir();
+    let src = std::fs::read_to_string(dir.join("provenance.toml")).unwrap();
+    let chain = provenance::parse(&src).unwrap();
+    let tip = chain.tip().unwrap();
+    let n = chain.entry.len();
+
+    match provenance::append_gate(&chain) {
+        AppendGate::Ratchet(m) => {
+            // Not `skip:` — the strict full-suite bar requires zero of those, and an
+            // unarmed rule is not a missing reference.
+            assert!(m.starts_with("ratchet:"), "an unarmed rule must say so as a ratchet: {m}");
+            assert!(
+                chain.entry.iter().all(|e| e.strict.is_none()),
+                "the rule reported itself unarmed, but some entry carries a strict record"
+            );
+            eprintln!("{m}");
+        }
+        AppendGate::Allowed => assert!(
+            tip.is_attested(),
+            "the gate allowed an append, but tip `{}` (entry #{n}) records no passing run",
+            tip.name
+        ),
+        AppendGate::NeedsSupersede(m) => {
+            assert!(tip.is_red(), "a supersede was demanded without a red run on the tip: {m}");
+            eprintln!("notice: {m}");
+        }
+        AppendGate::Refused(m) => {
+            assert!(
+                !tip.is_attested() && !tip.is_red(),
+                "the gate refused an append, but tip `{}` (entry #{n}) does record a run",
+                tip.name
+            );
+            // The normal window between a freeze landing and its `--attest`. Loud, not red.
+            eprintln!("notice: {m}");
+        }
+    }
 }

@@ -25,8 +25,9 @@ fn aeon_dir() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("/home/volence/sonic_hacks/aeon"))
 }
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 fn real_src() -> Option<String> {

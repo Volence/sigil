@@ -38,8 +38,9 @@ fn aeon_dir() -> PathBuf {
     )
 }
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 /// Recursively collect `*.emp` files under `dir`, skipping `.worktrees`.

@@ -94,8 +94,9 @@ fn aeon_dir() -> PathBuf {
     )
 }
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 /// Per-shape gate geometry: the region base and the true VMAs of the two

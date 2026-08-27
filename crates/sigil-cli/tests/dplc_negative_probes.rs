@@ -37,8 +37,9 @@ fn dplc_dir() -> PathBuf {
     Path::new(&aeon).join("engine/objects")
 }
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 /// The ambient deps prepended so `Sst.<field>(a0)` resolves — types + sst,

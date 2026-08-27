@@ -35,8 +35,9 @@ fn aeon_root() -> PathBuf {
     )
 }
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 /// EndOfRom seam — the header's `rom_end` reads it, but that cell is patched (and

@@ -15,8 +15,9 @@ use sigil_harness::native;
 use sigil_harness::test_support::reference_tree_for_profile;
 use std::path::PathBuf;
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 fn golden(name: &str) -> Option<Vec<u8>> {
     // The frozen goldens live in the harness crate; the reproduced live artifact is

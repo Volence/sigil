@@ -58,8 +58,9 @@ fn raster_dir() -> PathBuf {
     aeon_dir().join("engine/effects")
 }
 
+#[track_caller]
 fn strict_gate() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 /// The real sources, or a strict-gate panic / soft skip when the sibling tree is absent.

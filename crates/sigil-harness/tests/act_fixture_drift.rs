@@ -16,8 +16,9 @@ use std::path::PathBuf;
 fn aeon_dir() -> PathBuf {
     PathBuf::from(std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".into()))
 }
+#[track_caller]
 fn strict() -> bool {
-    std::env::var("SIGIL_STRICT_GATE").is_ok()
+    sigil_harness::test_support::strict_gate()
 }
 
 /// The struct prefixes the fixture claims to supply.
