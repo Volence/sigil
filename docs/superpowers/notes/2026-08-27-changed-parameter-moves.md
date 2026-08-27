@@ -67,15 +67,48 @@ the output is one-valued.
 
 **9. Read the qualifier printed beside the value.** A timezone offset, a units suffix, a base
 prefix, a scale factor. *(Tonight: `01:40 -0400` reported to a peer as inconsistent with an
-0540Z observation. The disambiguating field was in the same output line and was skipped.)*
+0540Z observation. The disambiguating field was in the same output line and was skipped.
+**Single-lane: sigil's own instance, not independently verified by the aeon lane** — marked
+at their request, since they could not check it and a row that reads as jointly-witnessed
+when it is not is exactly the provenance defect this file's neighbours warn about.)*
 
-**10. Check the exit status, or ask a different way.** A command that fails and a command that
+**10. Reach for a figure the claimant does not control.** *(aeon's, and it is a parameter
+none of the others vary: moves 1, 4 and 6 change **when**, **how** or **which revision** you
+derive a number — this changes **whose hand** derives it.)* When offering an artifact as
+evidence about a state, ask what it would look like **if the claim were false**. If the answer
+is *"the same"*, it is not the witness. Find a number produced by something other than the
+hand making the claim: a tool's own banner, a peer's independent build, a count you did not
+emit.
+
+*Instance where its absence cost a wrong mechanism:* a lane offered a refreeze commit as proof
+that 11 flagged files were all artifacts, reasoning *"if any source file had been dirty it
+would be in that commit, because I staged by enumerated path."* **That runs backwards** —
+exact-path staging is precisely the operation that **omits** an unenumerated dirty file, so
+the commit looks identical whether or not source was dirty. What actually closed it: the
+**banner** said 11 and the **commit** carried 11, where a dirty-unstaged source file would
+have made the banner say 12 against the commit's 11. The observable is a discrepancy between
+two numbers **one of which the claimant did not produce**.
+
+*Instance where its presence did the work:* tonight's four CRCs were credible not because
+their author rebuilt them on the merged tree — a zero-byte parcel yields the same four from a
+stale tree — but because **this lane's reference tree produced the identical set before that
+merge existed**. Same move, used well rather than caught late.
+
+**11. Check the exit status, or ask a different way.** A command that fails and a command that
 finds nothing produce identical output, and only one leaves evidence. **Never add
 `2>/dev/null` to a command whose emptiness you are about to treat as a finding** — and beware
 the emptiness that *agrees with your prior*, which is the hardest case because there is no
 dissonance to trigger a second look.
 
-## The one that generalises the rest
+## The two that generalise the rest
+
+**Ask what the output is ambiguous between.** *(Promoted here at the aeon lane's suggestion:
+it is both move 8 and the test underneath moves 1, 10 and 11.)* A command that ran and found
+nothing, a command that failed, and a command that asked the wrong question all produce the
+same clean answer. `<base>..<branch> = 0` means "no commits" **or** "already merged". An empty
+`git diff` means "identical" **or** "you resolved the pathspec against the wrong directory". A
+count means "everything ran" **or** "fewer things ran". **A result has not been read until you
+know it is one-valued.**
 
 **Assert the evidence against a derived expectation rather than printing it.**
 
@@ -88,7 +121,7 @@ takes 29 to 28, which is above the floor.)*
 
 ## Honest limits
 
-Ten moves, harvested from two repos in one night, several discussed between the two lanes
+Eleven moves, harvested from two repos in one night, several discussed between the two lanes
 before being written — a shared frame by exactly bar 19's mechanism. This list is an aid to
 recall, not evidence that recall is now solved. **The test of whether it works is a future
 session reaching for a move on purpose and saying so**, which is precisely the record bar 21
