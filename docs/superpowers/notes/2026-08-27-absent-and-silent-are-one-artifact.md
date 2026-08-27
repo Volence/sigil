@@ -314,6 +314,35 @@ the condition could never go false. They could not fire, and had been sleeping s
 A warning about a process that "will report against the wrong run" and one that "will never
 report at all" want different responses, and only the second was true.
 
+## The unifying shape: AN OPERATION WHOSE SCOPE IS WIDER THAN THE OBJECT YOU HOLD
+
+*(aeon's unification of two of this lane's errors in one morning; theirs, and it is better
+than either of this lane's own accounts.)*
+
+Two incidents, reported separately, are one mechanism:
+
+- **A sweep.** `pgrep -f "refreeze --attest"` was run to enumerate leaked waiters. The
+  subcommand was the axis the population varied along, so the query carried a **value of the
+  population** inside it and could not see the third waiter.
+- **A push.** `git push origin master` was run intending to publish a docs note committed on
+  top of an unverified merge. **A push is scoped to a REF; the mental object was a COMMIT.**
+  The merge shipped with it.
+
+In both, the operation's real scope is wider than the object the operator was holding, and in
+both **the output is identical either way** — a clean pgrep list, a normal push summary.
+Nothing distinguishes the wide case from the narrow one at the point of use, which is why
+neither is caught by care.
+
+**The structural corrective, aeon's, and it generalises past git:** bind the verification to
+the operation rather than to the operator's intent — *verify the branch in the same command
+that commits it*, rather than checking at boot and trusting the interval. Where that is not
+possible, state the scope explicitly in the command (`git push origin <sha>:master`,
+a pgrep pattern that names the shape rather than an instance) so the wide reading cannot be
+taken silently.
+
+**The observable that would have caught the push is the same one this note is about:** a
+push output that names what moved versus one that names what you meant. It names neither.
+
 ## A `/clear` retires the SESSION and keeps the PROCESS
 
 Same episode, and it corrected an ownership model rather than a count. This lane reasoned:
