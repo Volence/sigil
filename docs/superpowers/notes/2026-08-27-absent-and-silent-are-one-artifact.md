@@ -18,9 +18,22 @@ same artifact:
 2. the check ran and **could not see** the thing it was looking for,
 3. the check **never ran at all**.
 
-Bar 25 named (1) vs (3). The night's harvest says (2) is the larger family and the one that
-survives review, because a check that *cannot see* is still a check: it has a name, a runner,
-a passing result, and a maintainer who believes in it.
+**This note OPERATIONALISES bar 25; it does not supersede or extend it, and the first draft
+of this paragraph was unfair to the bar.** *(aeon's correction, checked here against the bar's
+text at empyrean `origin/main` rather than taken.)* Bar 25 already names both halves
+verbatim — *"the check was weaker than we thought" and "the check never ran" produce
+identical evidence* — i.e. states (2) and (3) are both in the bar. What it does not supply is
+a **test** for telling them from (1). That is the gap this note fills, and saying so plainly
+is a stronger claim than the one the draft made, not a weaker one: a reader who thinks a bar
+has been superseded treats it differently from one who learns its named half was never given
+a discriminator.
+
+Recorded because it is this document's own subject in miniature: **the misdescription was of
+a bar this lane personally endorsed**, and it survived a careful write-up because nothing in
+the note's own evidence could contradict it.
+
+State (2) is the family that survives review, because a check that *cannot see* is still a
+check: it has a name, a runner, a passing result, and a maintainer who believes in it.
 
 ## The five instances
 
@@ -43,7 +56,15 @@ binary, same conditions: `cargo test … --test seam2_dac_emit` → 0 skip-shape
 failing for its entire life**, and every hand-run landing that reported it was reporting on
 an empty page. Note B and C are *independent*: closing B alone would have left the bar blind.
 
-**D. The witness that was a constant.** *(aeon proposed, sigil's agent refuted.)* Offered as
+**D. The witness that was a constant — and it is a DIFFERENT ANIMAL from the other four.**
+*(aeon proposed, sigil's agent refuted; the separation is aeon's own amendment against their
+own instance.)* The other four are **gates**: they have names, runners, maintainers and a
+place in a suite, so the remedy is to fix the gate and the distinguishing test applies
+directly. This one was **an ad-hoc number harvested and offered as evidence in a message**.
+There is no gate to fix. **The remedy is bar 20 — do not assert from an artifact you have not
+tested — and the reason it survived is bar 20's own mechanism: a message has no reader who
+would meet the contradiction.** Read without this distinction, the note wrongly implies
+"instrument a counter" was the fix here; the fix was *do not send that*. Offered as
 a free witness that strict bodies ran: 66 `_port` hits in the strict log. Measured: **43 of
 46 are cargo's own `Running tests/…` lines, printed before any test binary starts**, so the
 flag cannot affect them and a flag-off run reproduces the count. Not a weak witness — a
@@ -69,8 +90,33 @@ The instances that were *closed* were closed the same way, and it is not a bette
   **structurally zero** when the flag is unset. Measured 29, matching an independent static
   count of 29 — two derivations over different enumeration parameters.
 
-**Corollary — prefer an instrument that emits the POPULATION over one that greps an
-artifact.** *(aeon's, from their pytest lane, where a fully green `-q` run prints no gate
+## The second technique: when the failure state cannot be run
+
+*(aeon's amendment, from their sprite-owner design; oracle argued the same call there.)*
+
+The test above works whenever the failure state is **producible** — flag off, one run, done.
+It has **no purchase when the failure state does not exist yet.** Their live case: the hazard
+is *a future emit path forgets to write an owner*. No run today produces it, so no witness can
+be built from one.
+
+The answer there is not a better witness but **making the absence representable**: clear the
+whole ownership array every frame, so a forgotten write surfaces as a visible *unknown*
+instead of last frame's stale-but-valid answer. About two hundred cycles in a debug build to
+convert a silent wrong answer into an honest one.
+
+**So: two techniques, one instinct, different tenses.**
+
+- **Failure state producible** → make your evidence something it cannot emit.
+- **Failure state not producible** → make the absence representable, so a wrong answer cannot
+  masquerade as a right one.
+
+The first is sharper where it applies. The second is the only one available for a hazard that
+does not exist yet — and note that "no gate could have caught this" is usually a claim that
+the *first* technique was unavailable, not that nothing was.
+
+## Corollary — prefer an instrument that emits the POPULATION over one that greps an
+artifact.
+ *(aeon's, from their pytest lane, where a fully green `-q` run prints no gate
 names at all, making bar 25's own corrective (1) unrunnable there.)* Their remedy is
 `pytest --collect-only`; the cargo equivalent is `cargo test --workspace -- --list` — 3954
 ids in 2 s here, agreeing exactly with `git grep -c '#[test]'`. **A log grep can only ever
@@ -95,6 +141,12 @@ looks like) pointed at test existence instead of at constants.
 
 One night, two lanes, five instances, several discussed between us before being written —
 which is a shared frame by exactly the mechanism bar 19 names, and this document is one
-lane's synthesis with a second's request behind it, not two independent findings. The
-strongest evidence it is real is E: the shape closed on the gate written to close it, inside
-an hour, and was caught only by an unrelated fix landing first.
+lane's synthesis with a second's request behind it, not two independent findings.
+
+**But E is not subject to that discount, and calling it corroboration would understate it.**
+*(aeon's reframing.)* Instance E — the lint reporting its own success as somebody else's
+silence — was found by **the mechanism closing on itself inside an hour, with neither lane
+steering**, and caught only because an unrelated fix had landed minutes earlier. That is not
+two derivations agreeing. It is **evidence that the class is dense enough to hit by
+accident**, which is precisely what cannot be obtained by two lanes agreeing with each other
+more carefully.
