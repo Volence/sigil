@@ -165,13 +165,20 @@ pub fn act_sec_field_equs() -> Vec<(&'static str, &'static str)> {
         ("DMAEntry_Reg95", "8"),
         ("DMAEntry_SrcL", "9"),
         ("DMAEntry_Command", "10"),
-        // parallax_config (28 bytes / $1C) — moved to engine.structs at the
+        // parallax_config (30 bytes / $1E) — moved to engine.structs at the
         // tranche-21 buffers port (2nd .emp consumer).
-        ("parallax_config_len", "$1C"),
+        // band-ceiling-16 (2026-08-27): MAX_PARALLAX_BANDS 8 -> 16 forced
+        // `pcfg_layer_mask` (one bit per band) from u8 to u16, and a u16 needs an
+        // EVEN slot. It took $02 — the slot `pcfg_v_factor_fg` held — so the mask's
+        // low byte stays at $03 where the u8 sat and bytes $00..$1B of every shipped
+        // record are byte-identical. `pcfg_v_factor_fg` is not deleted (it is still a
+        // live authoring/schema field, read by both lowerings and scene_equiv_proof's
+        // differ); it moved to the tail at $1C. 29 payload bytes do not round to an
+        // even record, so `pcfg_pad_29` at $1D is the one byte the evenness costs.
+        ("parallax_config_len", "$1E"),
         ("parallax_config_pcfg_band_count", "0"),
         ("parallax_config_pcfg_v_factor_bg", "1"),
-        ("parallax_config_pcfg_v_factor_fg", "2"),
-        ("parallax_config_pcfg_layer_mask", "3"),
+        ("parallax_config_pcfg_layer_mask", "2"),
         ("parallax_config_pcfg_v_center_y", "4"),
         ("parallax_config_pcfg_v_offset", "6"),
         ("parallax_config_pcfg_transition", "8"),
@@ -185,6 +192,10 @@ pub fn act_sec_field_equs() -> Vec<(&'static str, &'static str)> {
         ("parallax_config_pcfg_v_deform_shift_bg", "25"),
         ("parallax_config_pcfg_anchor_dsa", "26"),
         ("parallax_config_pcfg_anchor_dsb", "27"),
+        // band-ceiling-16: the record tail. $1C = 28 is the RESERVED
+        // `pcfg_v_factor_fg` rehomed from $02; $1D = 29 the evenness pad.
+        ("parallax_config_pcfg_v_factor_fg", "28"),
+        ("parallax_config_pcfg_pad_29", "29"),
         ("DMAEntry_len", "14"),
     ]
 }

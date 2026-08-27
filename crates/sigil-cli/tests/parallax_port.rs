@@ -186,37 +186,47 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
         // the third hand-shift of this table killed the literal class — the t24
         // rot rule; the offsets are the block layout this test pins down anyway).
         ("Parallax_State", pins::PARALLAX_STATE.plain, pins::PARALLAX_STATE.debug),
-        ("Parallax_State_End", pins::PARALLAX_STATE.plain + 0x148, pins::PARALLAX_STATE.debug + 0x148), // showcase-effects: 0xF4 + 0x54 (see the Curve_Carry rows)
-        ("Parallax_Current_Config", pins::PARALLAX_STATE.plain + 0x28, pins::PARALLAX_STATE.debug + 0x28),
-        ("Parallax_Target_Config", pins::PARALLAX_STATE.plain + 0x2C, pins::PARALLAX_STATE.debug + 0x2C),
-        ("Parallax_Transition_Frames", pins::PARALLAX_STATE.plain + 0x30, pins::PARALLAX_STATE.debug + 0x30),
-        ("Parallax_Snap_Pending", pins::PARALLAX_STATE.plain + 0x31, pins::PARALLAX_STATE.debug + 0x31),
-        ("Parallax_Prev_Sec_X", pins::PARALLAX_STATE.plain + 0x32, pins::PARALLAX_STATE.debug + 0x32),
-        ("Parallax_Prev_Sec_Y", pins::PARALLAX_STATE.plain + 0x33, pins::PARALLAX_STATE.debug + 0x33),
+        ("Parallax_State_End", pins::PARALLAX_STATE.plain + 0x228, pins::PARALLAX_STATE.debug + 0x228), // band-ceiling-16: 0x148 + 0xE0 (see the Curve_Carry rows)
+        ("Parallax_Current_Config", pins::PARALLAX_STATE.plain + 0x48, pins::PARALLAX_STATE.debug + 0x48),
+        ("Parallax_Target_Config", pins::PARALLAX_STATE.plain + 0x4C, pins::PARALLAX_STATE.debug + 0x4C),
+        ("Parallax_Transition_Frames", pins::PARALLAX_STATE.plain + 0x50, pins::PARALLAX_STATE.debug + 0x50),
+        ("Parallax_Snap_Pending", pins::PARALLAX_STATE.plain + 0x51, pins::PARALLAX_STATE.debug + 0x51),
+        ("Parallax_Prev_Sec_X", pins::PARALLAX_STATE.plain + 0x52, pins::PARALLAX_STATE.debug + 0x52),
+        ("Parallax_Prev_Sec_Y", pins::PARALLAX_STATE.plain + 0x53, pins::PARALLAX_STATE.debug + 0x53),
         ("Parallax_Current_Scroll_A", pins::PARALLAX_STATE.plain + 0x06, pins::PARALLAX_STATE.debug + 0x06),
-        ("Parallax_Current_Scroll_B", pins::PARALLAX_STATE.plain + 0x16, pins::PARALLAX_STATE.debug + 0x16),
-        ("Parallax_Current_Vscroll_BG", pins::PARALLAX_STATE.plain + 0x26, pins::PARALLAX_STATE.debug + 0x26),
+        ("Parallax_Current_Scroll_B", pins::PARALLAX_STATE.plain + 0x26, pins::PARALLAX_STATE.debug + 0x26),
+        ("Parallax_Current_Vscroll_BG", pins::PARALLAX_STATE.plain + 0x46, pins::PARALLAX_STATE.debug + 0x46),
         ("Parallax_Deform_Phase_FG", pins::PARALLAX_STATE.plain, pins::PARALLAX_STATE.debug),
         ("Parallax_Deform_Phase_BG", pins::PARALLAX_STATE.plain + 0x02, pins::PARALLAX_STATE.debug + 0x02),
         ("Parallax_V_Deform_Phase_BG", pins::PARALLAX_STATE.plain + 0x04, pins::PARALLAX_STATE.debug + 0x04),
-        ("Parallax_Vscroll_Column_Buf", pins::PARALLAX_STATE.plain + 0x34, pins::PARALLAX_STATE.debug + 0x34),
+        ("Parallax_Vscroll_Column_Buf", pins::PARALLAX_STATE.plain + 0x54, pins::PARALLAX_STATE.debug + 0x54),
         // P3 T10: the curve fill's cross-band carry. Until showcase-effects sonic4 declared
         // no curves, so CURVE_CARRY_WORDS = 0 and the carry was a ZERO-LENGTH array ALIASING
         // Parallax_Shadow_Bands at the same VMA (+0x84 twice, deliberately).
         // showcase-effects (2026-08-26, aeon 9dd52471, d-15): BAND_CURVE_N 0 -> 1 and
-        // BAND_CURVE_BYTES 0 -> 10 (engine/ram.emp). The ram.emp mirror this table pins is
-        // now, from +0x84: Curve_Carry [u16; 2] = 4 B, so Shadow_Bands = +0x88 (this is the
-        // `Shadow_Bands - Curve_Carry == 4 * BAND_CURVE_N` ensure, N = 1); Shadow_Bands is
-        // (10 + 0 + 10) x MAX_PARALLAX_BANDS 8 = 160 = 0xA0 B, so Shadow_Scroll_A = +0x128
-        // (the `Shadow_Scroll_A - Shadow_Bands == sizeof(band_record) x 8` ensure — the one
-        // that said "reserves fewer bytes ... = 160" when this table still read +0xD4);
-        // Shadow_Scroll_B = +0x138 (+16); State_End = +0x148, i.e. 82 longs =
-        // 61 + 160/4 + BAND_CURVE_N, which is PARALLAX_STATE_LONGS. Net +0x54 on the block
-        // tail, the same +0x54 every RAM pin from Raster_State on took in the repin.
-        ("Parallax_Curve_Carry", pins::PARALLAX_STATE.plain + 0x84, pins::PARALLAX_STATE.debug + 0x84),
-        ("Parallax_Shadow_Bands", pins::PARALLAX_STATE.plain + 0x88, pins::PARALLAX_STATE.debug + 0x88),
-        ("Parallax_Shadow_Scroll_A", pins::PARALLAX_STATE.plain + 0x128, pins::PARALLAX_STATE.debug + 0x128),
-        ("Parallax_Shadow_Scroll_B", pins::PARALLAX_STATE.plain + 0x138, pins::PARALLAX_STATE.debug + 0x138),
+        // BAND_CURVE_BYTES 0 -> 10 (engine/ram.emp), widening a shadow band to
+        // BAND_ENTRY_LEN 10 + BAND_EXT_BYTES 0 + BAND_CURVE_BYTES 10 = 20 B and giving
+        // Curve_Carry its first non-zero length (CURVE_CARRY_WORDS = 10/5 = 2 -> 4 B).
+        // band-ceiling-16 (2026-08-27): MAX_PARALLAX_BANDS 8 -> 16. Three arrays in this
+        // block are ceiling-sized and every offset below is re-derived from ram.emp, not
+        // shifted by hand:
+        //   Current_Scroll_A [u16; 16] = 0x20 B at +0x06, Current_Scroll_B likewise at
+        //   +0x26 -> the ceiling-independent head (3 phase words + those two arrays +
+        //   vscroll word + 2 config longs + 4 transition/section bytes + 80 B column buf)
+        //   runs to +0xA4, where Curve_Carry's 4 B sit (still the
+        //   `Shadow_Bands - Curve_Carry == 4 * BAND_CURVE_N` ensure, N = 1);
+        //   Shadow_Bands = +0xA8, now 20 x 16 = 320 = 0x140 B (the
+        //   `Shadow_Scroll_A - Shadow_Bands == sizeof(band_record) x MAX_PARALLAX_BANDS`
+        //   ensure), so Shadow_Scroll_A = +0x1E8; Shadow_Scroll_B = +0x208 (+0x20, the
+        //   widened array); State_End = +0x228 = 552 B.
+        // Net +0xE0 on the block tail (552 - 328), which is ram.emp's own
+        // `104 + 28 * MAX_PARALLAX_BANDS` stated as 28 x (16 - 8) = 224 = 0xE0. The eight
+        // ceiling-independent rows above (+0x48..+0x54) take the +0x20 of the two widened
+        // Current_Scroll arrays only; the four rows here take the full +0xE0.
+        ("Parallax_Curve_Carry", pins::PARALLAX_STATE.plain + 0xA4, pins::PARALLAX_STATE.debug + 0xA4),
+        ("Parallax_Shadow_Bands", pins::PARALLAX_STATE.plain + 0xA8, pins::PARALLAX_STATE.debug + 0xA8),
+        ("Parallax_Shadow_Scroll_A", pins::PARALLAX_STATE.plain + 0x1E8, pins::PARALLAX_STATE.debug + 0x1E8),
+        ("Parallax_Shadow_Scroll_B", pins::PARALLAX_STATE.plain + 0x208, pins::PARALLAX_STATE.debug + 0x208),
         ("Camera_X", pins::CAMERA_X.plain, pins::CAMERA_X.debug),
         ("Camera_Y", pins::CAMERA_Y.plain, pins::CAMERA_Y.debug),
         // Sourced from pins — this RAM cell rides the tail of the shifting RAM map

@@ -65,10 +65,17 @@ fn harvest_emits_the_as_field_offsets_and_sizes() {
         ("DMAEntry_Reg94", 0),
         ("DMAEntry_Command", 10),
         ("DMAEntry_len", 14),
-        // parallax_config ($1C)
+        // parallax_config ($1E since band-ceiling-16, 2026-08-27 — was $1C).
+        // MAX_PARALLAX_BANDS 8 -> 16 forced the one-bit-per-band
+        // `pcfg_layer_mask` u8 -> u16, which needs an EVEN slot: it took $02
+        // (the reserved `pcfg_v_factor_fg`'s), pushing that field to the tail at
+        // $1C and adding a $1D evenness pad. Everything from $04 through $1B is
+        // untouched, which is why the two spot-checks below still read 0 and 12.
         ("parallax_config_pcfg_band_count", 0),
+        ("parallax_config_pcfg_layer_mask", 2),
         ("parallax_config_pcfg_deform_table_fg", 12),
-        ("parallax_config_len", 0x1C),
+        ("parallax_config_pcfg_v_factor_fg", 0x1C),
+        ("parallax_config_len", 0x1E),
         // Sst ($52 since bug005 — the engine-owned frame_off cache word
         // appended at $50; sprites H1) + the derived tail word
         ("SST_code_addr", 0x00),
