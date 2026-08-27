@@ -507,6 +507,28 @@ below requires zero `skip:` lines and this is not a missing reference.
   branch and head rather than just cwd. The agent renamed the branch, committed, and re-ran.
   Note the trigger: this is a hazard of the *deliver-on-a-named-branch* workflow itself, since
   an agent that has not yet renamed its worktree branch is in this state by default.
+- **GENERAL-GROUNDS DOUBT IS NOT A FINDING — confidence is contagious and that is a
+  defect, not calibration** *(2026-08-26; the aeon lane's own naming of something it did,
+  kept because the honest half is the useful half)*. Having had two of its claims fail in
+  one evening, that lane pre-emptively lowered its confidence in a **third, unrelated,
+  sound** claim — "44 rows moved, 0 quantum changes" — on no evidence about that claim at
+  all, and asked this lane not to spend an agent refuting it. The line was correct, and
+  re-derivation upheld it. The cost of the discount is real and asymmetric: a *raised*
+  doubt sends someone to re-measure something already true, and a lowered one lets a
+  wrong thing through. **Discount a claim on evidence about THAT claim, never on the
+  batting average of the claimant — including when the claimant is you.** The
+  countermeasure is the same one that settled it: re-derive over a **different
+  enumeration parameter** (here, sigil's own frozen tables vs. their measured deltas,
+  each computed before seeing the other's number). Two derivations that share a parameter
+  are one derivation run twice; two that do not are corroboration, and corroboration is
+  what should move a confidence, not mood.
+  **Its companion, from the same episode:** "every delta is a multiple of 16" is
+  **strictly stronger** than "the addresses are 16-aligned", and the non-vacuity is
+  carried entirely by the counterexamples (`Art_Tails` %16==10,
+  `GameState_OJZScroll_Init` %16==4). A reader who skims it as *"well, everything is
+  aligned anyway"* takes a proof for a truism. When a quantified claim's force lives in
+  its counterexamples, state them beside it or the claim decays into a platitude the
+  next time it is read.
 - **Port work** follows the port loop (canonical:
   `docs/superpowers/notes/campaign-port-loop.md` — byte gate is step-1 only, then
   modernize/retrospect/back-prop/optimize until dry; dry is panel-adjudicated, not
