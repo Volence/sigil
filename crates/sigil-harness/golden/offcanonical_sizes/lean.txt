@@ -7,9 +7,9 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=lean
 # reproduces_golden=lean.bin
-# golden_crc32=c59f7c6e
-# assembled_anchor=3055d3a8
-# assembled_end=0xa4bfe
+# golden_crc32=300e4b75
+# assembled_anchor=61aafaa9
+# assembled_end=0xa4c0e
 # labels=68
 Ani_Sonic 0x29ff0
 Ani_Tails 0x2a0fa
@@ -29,10 +29,10 @@ Collision_GetType 0x5790
 Collision_ProbeDown 0x5800
 Dac_Temp_Blip 0x90000
 DeformTable_Zero 0x12314
-EndOfRom 0xa4bfe
+EndOfRom 0xa4c0e
 EntryPoint 0x200
 GameLoop 0x256e
-GameState_OJZScroll_Init 0xa4400
+GameState_OJZScroll_Init 0xa4410
 GetSineCosine 0x2850
 HBlank_Install 0x2430
 HeightMaps 0x6da70
@@ -62,8 +62,8 @@ Plane_Buffer_Reset 0x45d8
 Player_Init 0x10002
 PopulateSpawnedPieceCount 0x4260
 Read_Controllers 0x2460
-ReleaseFault 0xa4bd0
-Replay_OJZ_Fixture 0xa4970
+ReleaseFault 0xa4be0
+Replay_OJZ_Fixture 0xa4980
 RingBuffer_Add 0x37a4
 S4LZ_DecompressDict 0x26e0
 Section_Init 0x5cf4

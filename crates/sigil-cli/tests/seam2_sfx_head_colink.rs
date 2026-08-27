@@ -65,7 +65,13 @@ fn body_window(layout: &SoundLayout, debug: bool) -> (&'static str, usize) {
 }
 
 const SFX_WIN_TAB_LEN: usize = 274; // 137 dense ids ($33..=$BB) × 2 bytes
-const SFX_BODY_LEN: usize = 2046;
+/// The co-linked `sfx_bank` body length, in bytes. A TRIPWIRE: it does not feed the
+/// co-link, it asserts that the emitted body is the size this gate was last taught.
+///
+/// Re-pin it whenever the SFX set changes. It tracks `pins::SFX_BANK_BLOB`'s `plain_len`
+/// exactly (2284 == 0x8EC today), which is the cheap way to check it: if those two
+/// disagree, this constant is stale, not the emitter.
+const SFX_BODY_LEN: usize = 2284;
 
 /// THE HEAD BYTE GATE: the co-linked `SfxBlobWinTab` == the reference ROM slice
 /// at `$5845F`, in BOTH shapes (each vs its own ROM — the head is
@@ -83,7 +89,7 @@ fn colinked_sfx_head_matches_the_reference_rom_slice_both_shapes() {
     for (debug, shape) in [(false, "plain"), (true, "debug")] {
         let out = emit_sfx_body_and_head(&aeon, debug).expect("emit_sfx_body_and_head co-links");
         assert_eq!(out.head.len(), SFX_WIN_TAB_LEN, "SfxBlobWinTab is 137 × 2 = 274 bytes");
-        assert_eq!(out.body.len(), SFX_BODY_LEN, "sfx_bank body is 2046 bytes");
+        assert_eq!(out.body.len(), SFX_BODY_LEN, "sfx_bank body is {SFX_BODY_LEN} bytes");
 
         let rom = golden(if debug { "s4.debug.bin" } else { "s4.bin" });
         let lo = win_lma as usize;

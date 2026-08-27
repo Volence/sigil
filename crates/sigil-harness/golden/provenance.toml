@@ -8912,3 +8912,58 @@ full_crc = "9f9c0126"
 full_size = 735386
 anchor_crc = "5d6321af"
 anchor_end = 0xa7e60
+
+[[entry]]
+name = "sfx-noise-tracked"
+ab = "aeon ac57991d closes B5: the three smpsPSGform $E7 SFX (dash 0xB6, insta-shield 0x42, Knuckles' ground slide 0x7E) get S3K's tone-frequency-TRACKED noise instead of the transcoder's standing v1 fixed white rate 0xE6, so the noise pitch now descends with the channel's own modSet sweep. Sound shapes move (s4 66d2c263 -> f33b157e +16 B; s4.debug 9f9c0126 -> 684554cc +16 B); BOTH demo shapes byte-identical (8bd3d11b / ec71a5a4) because every affected site is inside if SOUND_DRIVER_ENABLED == 1. The ROM delta is entirely this parcel: the same aeon tip also carries parcel/fg-left-edge-fill, which is byte-neutral by construction (it names four bare 327/231 literals as SECTION_H_REACH_PX/SECTION_V_REACH_PX and adds comptime ensures; all four CRCs verified unchanged across that merge alone). Region movement: SFX_BANK_BLOB grows +0x12 as the three blobs regenerate, everything downstream shifts +0x10. The RESIDENT Z80 blob SHRINKS by one byte in both shapes (6164 -> 6163 plain, 6294 -> 6293 debug), which is why BLOB_LEN_PLAIN/BLOB_LEN_DEBUG re-pin to 0x1813 / 0x1813+0x82 -- three sites, the two constants plus the hard-coded second copy in blob_lengths_are_canonical, enumerated by sweeping the literal rather than the constant's definition after the sigil lane caught that the definition sweep misses the duplicate. Z80_SOUND_SIZE does NOT move: both new lengths are ODD and round UP to the same even values already frozen at boot_port (6163 -> 0x1814, 6293 -> 0x1896), corroborated two ways -- aeon's in-bracket align 2, and sigil's own stated round-up-to-even contract. Mechanism, and it is smaller than the booking claimed: the route test moves into Psg_EmitDivisor, which fixes Psg_ApplyMod for free by fall-through and makes Psg_NoteOn correct on the noise route, so Psg_Noise's legacy SFX arm (E6 07 F6 E0) deletes outright at -17 B; net -1 resident byte against the booking's estimate of MORE THAN 40, an error that kept B5 open for 16 days. Verified: pytest 1446 passed / 4 skipped / 49 subtests / 0 failed on the merged tree; all four shapes green from deleted artifacts so their existence witnesses the build ran; the same four CRCs reproduced independently in a clean worktree of ac57991d with no drift env, which is also the proof the re-pin repairs the default build (aeon master was hard-failing emit_sound_blob's size tripwire before it); 9/9 red-first poison cases went red with length-changing mutations under PYTHONDONTWRITEBYTECODE=1. NOT verified: nobody has heard these three sounds. The Rust emulator core serves no audio methods, so the listening pass is the owner's and is outstanding -- and the insta-shield additionally applies its 0x10 header transpose for the first time (the v1 note was a baked mode byte, so transpose was inert), a +16-semitone change in how that sound reads which is S3K-faithful but wants an explicit yes/no."
+aeon_rev = "ac57991d5bf5de8e86bd16cac3443ef93c5e4104"
+note = "B5 closed: tone-tracked noise for the three $E7 SFX; resident blob -1 B"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "88525deb"
+full_size = 735788
+anchor_crc = "484bbde5"
+anchor_end = 0xa7e70
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "b133c62d"
+full_size = 610361
+anchor_crc = "ce46920b"
+anchor_end = 0x8b6f0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "8bd3d11b"
+full_size = 96372
+anchor_crc = "2d9752e8"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "ec71a5a4"
+full_size = 101080
+anchor_crc = "cd6a09ab"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "300e4b75"
+full_size = 674830
+anchor_crc = "61aafaa9"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "f33b157e"
+full_size = 718999
+anchor_crc = "7475864a"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "684554cc"
+full_size = 735402
+anchor_crc = "cf370744"
+anchor_end = 0xa7e70

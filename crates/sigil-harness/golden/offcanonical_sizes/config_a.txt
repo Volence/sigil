@@ -7,9 +7,9 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=config_a
 # reproduces_golden=config_a.bin
-# golden_crc32=8c90db5d
-# assembled_anchor=19735d69
-# assembled_end=0xa7e60
+# golden_crc32=88525deb
+# assembled_anchor=484bbde5
+# assembled_end=0xa7e70
 # labels=86
 Ani_Particle 0x2ac90
 Ani_Particle_End 0x2ac98
@@ -23,7 +23,7 @@ BgAnim_Init 0x9c90
 BgAnim_Table 0x27c10
 BootData 0x3b0
 BootData_End 0x1c8e
-BusError 0xa6db0
+BusError 0xa6dc0
 CSelf_S4LZ_Plain 0xa156
 Camera_Init 0x73a0
 CharDef_Sonic 0x11f00
@@ -37,11 +37,11 @@ CompressionSelfTest 0x9de8
 Dac_Temp_Blip 0x90000
 Debug_MusicToggle 0x6e40
 DeformTable_Zero 0x12b70
-EndOfRom 0xa7e60
+EndOfRom 0xa7e70
 EntryPoint 0x200
 GameLoop 0x267e
-GameState_OJZScroll_Init 0xa61d4
-GameState_ObjectTest_Init 0xa5e50
+GameState_OJZScroll_Init 0xa61e4
+GameState_ObjectTest_Init 0xa5e60
 GetSineCosine 0x2b20
 HBlank_Install 0x2540
 HeightMaps 0x6e2e0
@@ -72,7 +72,7 @@ Plane_Buffer_Reset 0x5464
 Player_Init 0x10002
 PopulateSpawnedPieceCount 0x5040
 Read_Controllers 0x2570
-Replay_OJZ_Fixture 0xa6b50
+Replay_OJZ_Fixture 0xa6b60
 RingBuffer_Add 0x40c0
 S4LZ_DecompressDict 0x28a0
 Section_Init 0x6f10
