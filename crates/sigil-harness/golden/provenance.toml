@@ -9174,3 +9174,58 @@ demo_debug = "7599953e/101113"
 lean = "ceb0c944/674830"
 s4 = "e9e07375/718999"
 s4_debug = "9670be95/735452"
+
+[[entry]]
+name = "slope-symmetry"
+ab = "aeon 9bba8700: standing-gate mirror symmetry (owner ruling d-25-answered, mirrored slopes must behave the same). PState_Ground's standing gate now computes its magnitude as abs_w(d1) THEN asr.w #3, instead of asr then abs, so a slope and its mirror reach the same drift/hold decision; the APPLIED factor is untouched and remains S3K's signed sin asr 3 in d0. Only the decision moves, never the value. s4 e9e07375/718999 -> 34c67ea6/718999 (size +0, the +2 absorbed by existing tail padding), s4.debug 9670be95/735452 -> 406db07d/735454 (+2); BOTH demo shapes byte-identical by cmp (3415e3ef/96372, 7599953e/101113) since games/demo carries no player code. THREE CORRECTIONS TO THE BOOKING, all verified against source rather than forced into its shape: (1) there is no Player_SlopeResist routine in this tree at all - the block is inline in PState_Ground and the S3K name survives only in comments and research docs, so anyone taking the booking literally starts by concluding the code is missing; (2) the booked four angles were the wrong four - $90/$91 are table rows where the two shift forms disagree but they sit inside the ceiling band the block already skips, AND so do their mirrors $70/$6F, so they were never asymmetric in this code. The behaviourally asymmetric set is $10/$11/$EF/$F0, two mirror pairs, and exactly TWO change state: $EF and $F0. Derived independently by the controller from engine/data/sine.bin plus PHYS_SLOPE_STAND_MIN before accepting the correction - sin is +-97 at $10/$F0 and +-103 at $11/$EF, and under the old rule -97 asr 3 = -13 >= threshold $D while +97 asr 3 = +12 < $D. The booking had conflated table rows where the arithmetic differs with angles whose behaviour differs; (3) three characters is a consequence, not the work - all three player characters share one Player_States dispatch, so it is one site changed once. BYTE DIFF WITH ZERO UNEXPLAINED WORDS: s4 603 differing words = 1 header checksum + 31 the slope block itself (0x1067A..0x106BA) + 496 pure +2 relocation slide + 66 words grown by exactly +2 + 6 slid +2 with branch reach shrinking 2 + 3 deb2 appendix. s4.debug 8730 words, same categories, of which 3582 symbol-table words each moved by exactly +1 because a local label was renamed from 11 characters to 12. Listing confirms intent exactly: PState_Ground 0x10620, .no_spindash 0x10652, .no_jump 0x10664 and .slope_factor 0x1068E all UNCHANGED; .no_slope 0x10692 -> 0x10694; everything after slides +2. PINS: 1 pin moved, P_STATE_ROLL plain 0x10782 -> 0x10784 and debug 0x10892 -> 0x10894, +0x2 in BOTH shapes. Pre-agreed with the sigil lane before measuring that pins WOULD move here, both lanes committing to stop if they did not, since a +2 length change that moved no pin would mean an instrument was wrong. The controller's own prediction was directionally right and wrong in detail - it said DEBUG-heavy, and the movement is symmetric across shapes because the plain ROM absorbs the +2 in tail padding without changing total length while its internal addresses still slide. TWO GATES, NEITHER A SUPERSET OF THE OTHER, BOTH BUILD-FATAL: a comptime ensure walking all 256 angles, re-deriving from sine.bin plus PHYS_SLOPE_STAND_MIN plus the block's own two skips, at zero ROM bytes - proven zero by the length delta being exactly the +2 of the instruction; and tools/test_slope_symmetry.py, which parses the block's own instruction ORDER and picks which magnitude rule to test accordingly, so reverting the abs/shift order makes the numeric test red rather than only a structural one. The comptime half explicitly documents in its header what it cannot prove, namely that it cannot read the instructions it guards. Eight red-first proofs, each restored: abs/shift swap named the exact angles, threshold moved, band edge widened, donor sine.bin perturbed AND absent (loud skip naming what is unverified), and four comptime selector and count pins flipped. REPLAY NET: no re-stamp needed, MEASURED - 0 of 27 and 0 of 37 checkpoints stale, with negative-control fired on BOTH fixtures first so the zero is a measurement rather than an instrument manufacturing an absence. The parcel predicted this and named its own falsifier (all-or-nothing per fixture, so one isolated moved checkpoint would falsify the model rather than the prediction); the regime was named and checked rather than assumed - only a grounded standstill at angle $F0 reaches the changed instruction, $EF does not exist in the act table at all, and $F0 exists on 14 plane-A cells all in section 0. TWO S3K ASYMMETRIES FOUND AND DELIBERATELY NOT FIXED, filed as owner decisions d-34 and d-35: the ceiling band is the half-open interval [$60,$A0) so its endpoints $60/$A0 differ from their mirrors (one character closes it, but it is a second divergence at angles the ruling did not name); and the shipped sine table holds 115 one way and 117 the other on rows $13/$6D/$93/$ED, byte-identical to skdisasm so authentic rather than corrupt, with all four landing on the same side of the threshold so no decision turns on them. Both pinned by DERIVED counts in the gate rather than written pairs, so neither can widen silently. VERIFIED: pytest 1473 passed / 8 skipped / 49 subtests / 0 failed across all four canonical builds, delta measured directly as 1462 -> 1473 with --ignore, exactly the 11 added; all four ROMs deleted before every rebuild so existence witnesses the build ran; all four reproduced byte-identical by cmp in a clean detached worktree at 9bba8700, two independent trees; assembler sigil 537869e6 with binary md5 5f325dca996be45f2c9a20c650d38c4b identical before and after every build, which is the pin form the aurora lane established today after a revision pin proved unable to detect a relink of the file it names."
+aeon_rev = "9bba8700d09d3c87bdad3e2e0f13c7389f2da4cc"
+note = "mirrored slopes decide alike: abs before shift, two angles change state, +2 in DEBUG"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "7a905fd5"
+full_size = 735822
+anchor_crc = "a222d3b8"
+anchor_end = 0xa7e70
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "d4bc8933"
+full_size = 610393
+anchor_crc = "9716b0a8"
+anchor_end = 0x8b710
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7599953e"
+full_size = 101113
+anchor_crc = "91a16b91"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "7a0a3b1f"
+full_size = 674830
+anchor_crc = "8fc66db5"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "34c67ea6"
+full_size = 718999
+anchor_crc = "c523e083"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "406db07d"
+full_size = 735454
+anchor_crc = "31a0405f"
+anchor_end = 0xa7e70

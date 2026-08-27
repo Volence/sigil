@@ -1359,7 +1359,7 @@ pub const RAM_START: Pin = Pin { plain: 0xFFFF8000, debug: 0xFFFF8000 };
 pub const P_STATE_GROUND: Pin = Pin { plain: 0x10620, debug: 0x10730 };
 
 /// `PState_Roll`. tests: test_p1_player_port
-pub const P_STATE_ROLL: Pin = Pin { plain: 0x10782, debug: 0x10892 };
+pub const P_STATE_ROLL: Pin = Pin { plain: 0x10784, debug: 0x10894 };
 
 /// `PState_Spindash`. tests: test_p1_player_port
 pub const P_STATE_SPINDASH: Pin = Pin { plain: 0x10E00, debug: 0x10F10 };
