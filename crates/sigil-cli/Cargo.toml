@@ -7,6 +7,12 @@ edition = "2021"
 name = "sigil"
 path = "src/main.rs"
 
+[build-dependencies]
+# `build.rs` asks cargo for this binary's own dependency graph and reads the
+# answer. Feature set matches the workspace's other serde_json consumer so the
+# host artifact is shared rather than compiled a second time.
+serde_json = { version = "1", features = ["preserve_order"] }
+
 [dependencies]
 sigil-frontend-as = { path = "../sigil-frontend-as" }
 sigil-frontend-emp = { path = "../sigil-frontend-emp" }

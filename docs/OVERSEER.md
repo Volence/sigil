@@ -999,9 +999,16 @@ build then provably used one binary, and the directory is the provenance record 
 delete it after the build. Kept for the 2026-08-27 trees at
 `~/sonic_hacks/.sigil-ref-353aaa49-tools/` (`sigil 0.1.0`, built at `4b8347ac`).
 
-Note this is the strongest evidence so far for the `GOLDEN-DIRTY-BANNER` queue item: the
-banner is noisy on every paired landing, and here it carried real signal that only close
-human reading caught.
+Note this is the strongest evidence so far for the `GOLDEN-DIRTY-BANNER` queue item (booked
+under queue item 1): the banner is noisy on every paired landing, and here it carried real
+signal that only close human reading caught.
+
+**And it is the argument AGAINST quieting the banner too far.** The classification landed
+under that queue item makes the warning fire less; the tell in this episode was the banner
+shifting from `(dirty)` to `(revision+dirty)` mid-build, and a closure-aware revision
+comparison would not have shown that shift if the intervening commits missed the closure.
+The corrective that actually covers this case is the pinned tools directory above, not the
+warning — do not let a quieter banner be read as this hazard being closed.
 
 **(3) The `level_staleness.py` hazard's stated MECHANISM is wrong, measured on two fresh
 worktrees.** The note that a fresh checkout gives `project.json` a new mtime so the gate
@@ -1277,10 +1284,58 @@ share**; `TST` was exactly that, live.
    root; an unconditional rerun costs 13.2 s wall / 167 s CPU per invocation to refresh
    one boolean). The banner discloses that limit in place and names the command that
    settles it, and a test asserts the disclosure so it cannot be quietly tidied away.
-   **The consumer side is still open and is where the original incident actually bit:**
-   aeon's build invokes `sigil` without asking what it is. Making the build refuse or warn
-   when the assembler's revision ≠ the tree being assembled is an **aeon-side** parcel.
+   **The consumer side has since landed on aeon's `build.sh`** — it parses `revision:`,
+   `source:` and `tree:`, flags a revision mismatch against `git rev-parse HEAD` in the
+   source dir, flags dirt with the prefix test `[[ "$SIGIL_TREE" == dirty* ]]`, prints a
+   banner and makes it fatal under `SIGIL_VERSION_STRICT=1`.
    Not covered by this witness at all: rustc version and build profile.
+
+   **`VERSION-DIRT-CLASSIFY` / `GOLDEN-DIRTY-BANNER` — the warning fires permanently, so
+   it tells nobody anything. Half fixed on this side; the other half is a consumer
+   negotiation.** Both names are booked HERE; before this they existed only as prose
+   references with no entry to read.
+
+   - **What was wrong, measured rather than assumed.** The revision half keys on the
+     repository tip, so any commit makes the assembler look stale: measured from the
+     binary the aeon lane is using (`fbf60abd`) to master `a7073abe`, **19 commits, of
+     which 5 touch anything the `sigil` binary is compiled from**. The dirt half keys on a
+     count of changed files, which cannot tell a source edit from a note left in a
+     documentation directory — and the recorded noise instance (a modified fixture under
+     the harness package) is a *modified tracked file*, so no reading of the existing
+     `N modified, M untracked` split can classify it. **The discriminating data was not in
+     the banner**; it had to be derived.
+   - **The derivation, and it is cargo's, not a hand-list.** `build.rs` runs
+     `cargo metadata --no-deps`, walks the transitive non-dev path-dependency closure from
+     `sigil-cli`, and narrows each package to what cargo declares it compiles: the whole
+     package directory when it carries a build script (a build script may read any file in
+     it), otherwise the manifest plus the directories of its non-dev targets' `src_path`s.
+     Plus cargo's own fixed workspace inputs (`Cargo.toml`, `Cargo.lock`, `.cargo`,
+     `rust-toolchain*`). Every closure manifest is now a rerun trigger, so the set cannot
+     go stale behind a relink.
+   - **The finding that refutes the obvious model: the closure is ALL 14 workspace
+     packages.** Crate-level membership has zero discriminating power in this repo, so
+     "is this crate in the closure" is not the question — file-level target layout is.
+     `docs/`, lane logs and per-package `tests/` and fixture directories fall outside;
+     that is where the 14-of-19 reduction comes from.
+   - **Landed on this side (interface-safe):** the `tree:` DETAIL now separates the changes
+     in the compiled sources from the rest. The state word is unchanged — every uncommitted
+     change still yields `dirty`, so aeon's prefix test behaves exactly as before.
+   - **NOT landed, needs the aeon conversation first:** narrowing the state word so
+     non-source dirt stops matching `dirty*`, and adding `closure-revision:` /
+     `closure-paths:` fields so the revision half can be compared against the last commit
+     that touched the closure instead of against the tip. Both are cross-repo reads.
+   - **What the classification proves, and the line it must not be read across:** it proves
+     a change *cannot affect this binary*. It does NOT prove *the output did not change* —
+     only a rebuild and a byte compare supports that, and no value derived here may be
+     cited as having measured it. It over-approximates by design (build-script packages
+     widen to a whole directory; a `#[cfg(test)]` body inside a source directory counts),
+     and an underivable closure counts every change as material rather than reporting
+     clean.
+   - **A real bug the measurement caught**, worth keeping because it is the whole failure
+     mode in one character: the status reader trimmed leading whitespace, and `git status
+     --porcelain` renders an unstaged modification with a leading space — so the first
+     entry's path arrived as `argo.lock`, matched no source region, and a genuine edit to a
+     compiled file classified as harmless. A unit test now pins it.
 2. ~~**A Capstone differential as a permanent gate**~~ — **LANDED** at `aafe612a`
    (`feat/capstone-differential`). Two gates: `m68k_capstone_differential` (the 65,536-word
    space, 0.5 s, no aeon dependency, default suite) and `m68k_capstone_stream` (all seven

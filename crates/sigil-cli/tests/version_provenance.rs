@@ -349,4 +349,50 @@ fn the_banner_names_the_rerun_triggers_backing_the_revision() {
         !freshness.contains("cargo tracks none"),
         "a revision was reported while nothing was tracked — that stamp cannot stay true\n{stdout}"
     );
+    assert!(
+        freshness.contains("manifests"),
+        "the closure is derived from the manifests, so a stamp that does not track them \
+         describes a graph that may since have changed shape\n{stdout}"
+    );
+}
+
+/// The `tree:` detail must say WHERE the dirt is, not only how much there is.
+///
+/// A count of modified files cannot separate an edit to a compiled source from
+/// a note left in a documentation directory, and a consumer reading only that
+/// count has to treat both as reasons to distrust the assembler — which is how
+/// a warning ends up on permanently and stops being read. The classification
+/// lives in this line, so this is the assertion that goes red if it is ever
+/// dropped back to a bare count.
+///
+/// Non-vacuous on a clean tree too: `freshness` names the manifests as tracked
+/// only when the closure was actually derived, so a build that could not
+/// classify anything fails here rather than passing quietly.
+#[test]
+fn the_tree_detail_says_where_the_dirt_is() {
+    let stdout = version_stdout("--version");
+    if field(&stdout, "revision").starts_with("unknown") {
+        return;
+    }
+
+    assert!(
+        field(&stdout, "freshness").contains("manifests"),
+        "the closure that backs the classification was not derived, so nothing in this banner \
+         separates a source change from any other change\n{stdout}"
+    );
+
+    let tree = field(&stdout, "tree");
+    let state = tree.split_whitespace().next().unwrap_or_default();
+    if state == "clean" {
+        assert!(
+            tree.contains("no uncommitted changes"),
+            "a clean tree must say so rather than leave the reason blank\n{stdout}"
+        );
+        return;
+    }
+    assert!(
+        tree.contains("in the sources this binary is compiled from"),
+        "a dirty tree must report how much of the dirt reached the sources this binary is \
+         compiled from; got `{tree}`\n{stdout}"
+    );
 }

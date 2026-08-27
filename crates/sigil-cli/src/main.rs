@@ -26,6 +26,13 @@
 
 use std::process;
 
+/// The working-tree classifier `build.rs` reaches by path. It is declared here
+/// under `cfg(test)` so its unit tests run in the normal suite — a build
+/// script's code is otherwise never compiled into any test binary — without
+/// linking a module the shipped executable does not call.
+#[cfg(test)]
+mod tree_class;
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
@@ -133,6 +140,13 @@ fn main() {
 /// the code that is actually linked in. `tree` is a snapshot: no file's mtime
 /// follows working-tree dirtiness, so cargo cannot re-capture it, and the
 /// output says so in place rather than letting a reader assume otherwise.
+///
+/// The `tree` detail also says *where* the dirt is. A bare count of modified
+/// files cannot tell a source edit from a note left in a documentation
+/// directory, so a consumer reading it had to treat both the same way; the
+/// detail now separates the changes this binary is compiled from — a set
+/// derived from cargo's own dependency graph in `build.rs` — from the rest.
+/// The state word itself is unchanged, because a consumer keys on it.
 ///
 /// Every field is a word even when nothing could be determined — an empty
 /// string reads as "clean" to a human and passes a grep for a SHA.
