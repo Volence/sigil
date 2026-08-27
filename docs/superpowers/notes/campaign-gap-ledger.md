@@ -3079,3 +3079,47 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   **Kill:** `span_cost` accumulates in `u32`/`u64` and bails (or the type makes overflow
   unrepresentable) instead of saturating, proved red-first over a synthetic span past 65 535 T.
   — OPEN
+
+- [SKIP-TEXT-HOLE, 2026-08-27] **A source lint over announcement TEXT cannot reach a skip
+  that announces nothing.** The zero-skip landing bar and `scripts/nightly_source_gates.sh`
+  both fail a strict run that emits `skip: `, and `tests/skip_marker_lint.rs` now holds every
+  announced early return in the test tree to that one prefix — closing the 29 sites that said
+  `skipping <gate> …` / `skip <gate> …` and could no-op while clearing the bar. Two detectors
+  run over the union: STRUCTURAL (a print with an early `return` within five lines) and
+  LEXICAL (a print whose text uses skip vocabulary). Measured on the corpus at the time of
+  writing: 166 announcement sites, 135 seen by both detectors, 31 by the lexical one alone,
+  0 by the structural one alone — so neither detector subsumes the other and both are load
+  bearing. What the lint provably does NOT cover:
+  1. **A SILENT early return** — `if !cond() { return; }` with no print at all. This is
+     strictly worse than a mis-spelled skip, because no log grep of any spelling can see it;
+     the gate reports green having measured nothing and leaves no trace in the suite log.
+     A structural scan for such returns over the test tree is noisy (592 `return` tokens
+     inside `#[test]` bodies, the overwhelming majority legitimate loop/closure exits), so
+     separating "exits the gate early" from "exits an inner scope" needs real control-flow
+     analysis, not a line scan.
+  2. **A runtime-composed announcement** — `eprintln!("{}", msg)` where `msg` is built
+     elsewhere. The scanner reads the format literal and cannot follow a value.
+  3. **Announcements outside the scanned scope** — `crates/*/src/**` other than
+     `test_support.rs`. The `src/bin/*` targets legitimately print-and-return on error paths
+     that are not gate skips (21 such sites), so including them would be pure false positives.
+     A helper in some OTHER `src` module that announces-and-returns on a test's behalf would
+     therefore be missed; `test_support.rs` is the only such helper today.
+
+  **NO SILENT GATE EXIT WAS FOUND — this row is about a class, not about known instances,
+  and no later session may cite it as evidence that silent skips exist here.** The sweep
+  that establishes that: every `let Some(x) = helper(…) else { return }` gate exit in the
+  test tree (124 of them, across 25 distinct helpers) was resolved to the helper's body and
+  checked for a strict-aware guard. Every one bottoms out in `reference_tree` /
+  `reference_tree_for_profile` / a local `strict_gate()` panic / `capstone_or_skip` — all of
+  which panic under `SIGIL_STRICT_GATE=1` and announce with the marker otherwise. The three
+  helpers the sweep could not resolve to a guard (`asm_of_stmt`, `pc_ext_offset`, and an
+  inner `helper` in `sigil-isa/tests/support/capstone_diff.rs`) are inner-scope parse
+  returns, not gate exits. So the strict path has no known hole of this shape; what the row
+  records is that nothing STRUCTURALLY prevents the next one, and that the lint above would
+  not see it.
+  — OPEN (kill: (1) is discharged when an early-exit gate cannot be written silently at all —
+  the structural fix is a `skip!()` macro in `test_support` that is the ONLY way a gate exits
+  early, with the lint flipped from "announcements must carry the marker" to "an early return
+  from a `#[test]` body must go through `skip!()`". That is a ~166-site mechanical conversion
+  plus a control-flow-aware lint, and it makes (2) impossible as well. (3) is discharged by
+  extending the scanned scope the moment a second `src`-side test helper announces.)

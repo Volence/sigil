@@ -118,7 +118,7 @@ fn expected_full(key: &str) -> (u32, usize) {
 
 fn gate_on() -> bool {
     if !strict_gate() {
-        eprintln!("skipping section_row_fixture (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: section_row_fixture not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return false;
     }
     true

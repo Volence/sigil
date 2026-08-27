@@ -601,6 +601,26 @@ pub fn strict_gate() -> bool {
     std::env::var("SIGIL_STRICT_GATE").is_ok()
 }
 
+/// THE ONE SPELLING a gate announces an early return with, and the single
+/// definition both enforcers of the zero-skip landing bar read.
+///
+/// A skip line is a gate that measured nothing while reporting green, so the
+/// landing bar fails on any occurrence of this prefix in a strict suite log.
+/// A bar phrased as a literal string is only as wide as the spellings whoever
+/// wrote it happened to guess: `skipping …` announced 29 early returns for
+/// months without matching `skip: `, and every one of them read back as
+/// coverage. So the marker lives HERE, once:
+///
+///   * `tests/skip_marker_lint.rs` holds every announced early return in the
+///     test tree to this prefix, so a new site cannot be written in a spelling
+///     the bar is blind to;
+///   * `scripts/nightly_source_gates.sh` EXTRACTS this constant out of this
+///     file rather than retyping it, and refuses to run if it cannot.
+///
+/// Changing the string here moves both consumers together. Retyping it anywhere
+/// else re-opens the hole.
+pub const SKIP_MARKER: &str = "skip: ";
+
 /// The guard every REFERENCE-DEPENDENT test opens with: `Some(aeon)` when the
 /// tree carries every path in `rels`, `None` — skip green — when it does not.
 ///
