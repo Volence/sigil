@@ -717,29 +717,113 @@ pub fn render_entry(
     use std::fmt::Write;
     let mut s = String::new();
     let _ = writeln!(s, "\n[[entry]]");
-    let _ = writeln!(s, "name = \"{name}\"");
-    let _ = writeln!(s, "ab = \"{ab}\"");
+    let _ = writeln!(s, "name = {}", toml_str(name));
+    let _ = writeln!(s, "ab = {}", toml_str(ab));
     // UNCONDITIONAL, unlike `note`. An entry whose aeon_rev is absent is exactly the
     // ambiguity this field exists to close, so an empty one is written out visibly and
     // fails `check`'s aeon-rev-present rule rather than vanishing from the file.
-    let _ = writeln!(s, "aeon_rev = \"{aeon_rev}\"");
+    let _ = writeln!(s, "aeon_rev = {}", toml_str(aeon_rev));
     if !note.is_empty() {
-        let _ = writeln!(s, "note = \"{note}\"");
+        let _ = writeln!(s, "note = {}", toml_str(note));
     }
     for (key, t) in targets {
+        // The one interpolation that is NOT a string value: a TOML table header, whose
+        // key must be bare. [`fault_in_key`] is what keeps it one, and [`entry_faults`]
+        // runs it before any caller reaches this renderer.
         let _ = writeln!(s, "\n[entry.targets.{key}]");
-        let _ = writeln!(s, "golden = \"{}\"", t.golden);
-        let _ = writeln!(s, "full_crc = \"{}\"", t.full_crc);
+        let _ = writeln!(s, "golden = {}", toml_str(&t.golden));
+        let _ = writeln!(s, "full_crc = {}", toml_str(&t.full_crc));
         let _ = writeln!(s, "full_size = {}", t.full_size);
-        let _ = writeln!(s, "anchor_crc = \"{}\"", t.anchor_crc);
+        let _ = writeln!(s, "anchor_crc = {}", toml_str(&t.anchor_crc));
         let _ = writeln!(s, "anchor_end = {:#x}", t.anchor_end);
     }
     s
 }
 
-/// Escape a value for a TOML basic string. `render_entry`'s own fields are hand-passed
-/// prose that has never carried a quote; these are not — `--supersede-tip` takes its
-/// reason from the command line and a failing test name is whatever libtest printed.
+/// The character class a one-line ledger field cannot show its reader verbatim: any
+/// control character, the raw newline included.
+///
+/// This is the REFUSAL half of the two-layer contract; [`toml_str`] is the other. A
+/// quote or a backslash is escaped, round-trips exactly, and reads correctly in the
+/// file, so it is accepted. A newline does not: TOML would carry it as the two
+/// characters `\n`, and the sentence the ledger shows is then not the sentence its
+/// author wrote. Refusing names the character and its position so the author can fix
+/// their own prose, which is what an escape would silently deny them.
+pub fn fault_in_prose(field: &str, v: &str) -> Option<String> {
+    for (i, c) in v.char_indices() {
+        if c.is_control() {
+            return Some(format!(
+                "{field}: {} at byte {i} cannot appear in a one-line ledger field \
+                 (in `{}`)",
+                name_of_control(c),
+                v.escape_debug()
+            ));
+        }
+    }
+    None
+}
+
+/// Human name for a control character, so a refusal reads as prose rather than as a
+/// codepoint the author has to look up.
+fn name_of_control(c: char) -> String {
+    match c {
+        '\n' => "a newline (U+000A)".to_string(),
+        '\r' => "a carriage return (U+000D)".to_string(),
+        '\t' => "a tab (U+0009)".to_string(),
+        '\0' => "a NUL (U+0000)".to_string(),
+        c => format!("a control character (U+{:04X})", c as u32),
+    }
+}
+
+/// Whether a target key is a TOML BARE key, which is what `[entry.targets.<key>]`
+/// requires. A key outside `A-Za-z0-9_-` would need quoting in the header, and an empty
+/// one has no header at all.
+pub fn fault_in_key(key: &str) -> Option<String> {
+    if key.is_empty() {
+        return Some("target key is empty; `[entry.targets.]` is not a table header".to_string());
+    }
+    for (i, c) in key.char_indices() {
+        if !(c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+            return Some(format!(
+                "target key `{key}`: `{c}` at byte {i} is not allowed in a TOML bare key \
+                 (A-Za-z0-9_-)"
+            ));
+        }
+    }
+    None
+}
+
+/// Every reason an `[[entry]]` built from these values could not be written FAITHFULLY,
+/// gathered before anything touches the file.
+///
+/// Callers refuse on a non-empty result. The point is the ORDER: a caller that checks
+/// here has not yet rendered, not yet appended and not yet written, so the ledger on
+/// disk is untouched and the author still has their sentence to correct.
+pub fn entry_faults(
+    name: &str,
+    ab: &str,
+    aeon_rev: &str,
+    note: &str,
+    targets: &BTreeMap<String, Target>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    out.extend(fault_in_prose("name", name));
+    out.extend(fault_in_prose("ab", ab));
+    out.extend(fault_in_prose("aeon_rev", aeon_rev));
+    out.extend(fault_in_prose("note", note));
+    for (key, t) in targets {
+        out.extend(fault_in_key(key));
+        out.extend(fault_in_prose(&format!("targets.{key}.golden"), &t.golden));
+        out.extend(fault_in_prose(&format!("targets.{key}.full_crc"), &t.full_crc));
+        out.extend(fault_in_prose(&format!("targets.{key}.anchor_crc"), &t.anchor_crc));
+    }
+    out
+}
+
+/// Escape a value for a TOML basic string. EVERY string this module writes goes through
+/// here, with no exception for fields that "only ever hold" a SHA or a filename: the
+/// ledger's prose fields exist to carry human sentences, a sentence may contain a quote,
+/// and a basic string ends at the first unescaped one.
 fn toml_str(v: &str) -> String {
     let mut out = String::with_capacity(v.len() + 2);
     out.push('"');
@@ -814,6 +898,66 @@ pub fn render_superseded(s: &Superseded) -> String {
     let _ = writeln!(out, "by = {}", toml_str(&s.by));
     let _ = writeln!(out, "reason = {}", toml_str(&s.reason));
     out
+}
+
+/// Append `block` to the provenance text `existing` and install the result at `path`.
+///
+/// The ledger is only ever replaced by text that PARSES. Validation runs against the
+/// in-memory result first, and a parse error returns `Err` with the file on disk
+/// untouched — so a run that reports an error always leaves a `provenance.toml` that
+/// still parses. That ordering is the whole contract: an authoritative-looking ledger
+/// that no longer parses fails every later `--check`, `--attest` and byte gate with a
+/// line number for a cause, and the file is the only copy.
+///
+/// The install itself is a write to a sibling temporary followed by a rename, which is
+/// atomic within the directory: an interrupted write cannot leave the ledger truncated.
+/// That is a SEPARATE and smaller guarantee than the one above — a rename installs
+/// whatever it is handed, valid or not, so it protects against interruption and against
+/// nothing else.
+pub fn append_block(path: &Path, existing: &str, block: &str) -> Result<(String, Chain), String> {
+    let mut new_src = existing.to_string();
+    if !new_src.ends_with('\n') {
+        new_src.push('\n');
+    }
+    new_src.push_str(block);
+    let chain = parse(&new_src)?;
+    write_atomic(path, &new_src)?;
+    Ok((new_src, chain))
+}
+
+/// Replace `path`'s contents with `contents` by rename, never by truncation.
+///
+/// The temporary is a SIBLING of the target. A rename is only atomic within one
+/// filesystem, and the one directory guaranteed to share the target's filesystem is its
+/// own. The data is flushed before the rename so the installed name never resolves to
+/// content the kernel has not yet written.
+pub fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
+    use std::io::Write;
+    let dir = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
+    let stem = path
+        .file_name()
+        .ok_or_else(|| format!("{} names no file", path.display()))?
+        .to_string_lossy()
+        .into_owned();
+    let tmp = dir.join(format!(".{stem}.{}.tmp", std::process::id()));
+
+    let install = || -> std::io::Result<()> {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(contents.as_bytes())?;
+        f.sync_all()?;
+        drop(f);
+        std::fs::rename(&tmp, path)
+    };
+    match install() {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(format!("write {}: {e}", path.display()))
+        }
+    }
 }
 
 /// Whether a freshly recomputed target set is IDENTICAL to the current tip — the

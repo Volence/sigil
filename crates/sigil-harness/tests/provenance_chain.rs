@@ -236,3 +236,174 @@ fn the_append_gate_agrees_with_the_chains_own_records() {
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEDGER INTEGRITY
+//
+// The ledger is the ONLY copy of the freeze history, and unlike a bad blob a bad
+// ledger does not look bad: it looks authoritative and fails every later `--check`,
+// `--attest` and byte gate with a line number for a cause. So the bar is not "this
+// one input works" but:
+//
+//     after any refreeze run that reports an error, provenance.toml still parses.
+//
+// These gates hold that line at the append boundary every write goes through.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A/B evidence prose carrying two literal quotes — the shape the field exists to hold,
+/// and the shape a TOML basic string ends at.
+const AB_WITH_QUOTES: &str = r#"("after ~512 frames", "~4,000px of unbroken descent")"#;
+
+const A_SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+
+fn a_target_set() -> std::collections::BTreeMap<String, provenance::Target> {
+    let mut m = std::collections::BTreeMap::new();
+    m.insert(
+        "s4".to_string(),
+        provenance::Target {
+            golden: "s4.bin".into(),
+            full_crc: "deadbeef".into(),
+            full_size: 0x40000,
+            anchor_crc: "feedface".into(),
+            anchor_end: 0x3f000,
+        },
+    );
+    m
+}
+
+/// A tempdir holding a root-only ledger; returns the path and its exact text.
+fn a_seeded_ledger(dir: &Path) -> (PathBuf, String) {
+    let root = provenance::render_entry("root", provenance::ASL_WITNESS, A_SHA, "", &a_target_set());
+    let path = dir.join("provenance.toml");
+    std::fs::write(&path, &root).expect("seed ledger");
+    (path, root)
+}
+
+/// THE INVARIANT. An append that reports an error leaves a ledger that still parses —
+/// and, here, one that is byte-identical to what was there before.
+#[test]
+fn an_erroring_append_leaves_a_ledger_that_still_parses() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (path, before) = a_seeded_ledger(tmp.path());
+
+    // Unterminated basic string: the exact syntactic shape a quote in `--ab` produced.
+    let err = provenance::append_block(&path, &before, "\n[[entry]]\nname = \"broken\n")
+        .expect_err("an unparseable block must not be installed");
+
+    let after = std::fs::read_to_string(&path).expect("read ledger back");
+    if let Err(e) = provenance::parse(&after) {
+        panic!(
+            "INVARIANT VIOLATED: the append reported `{err}` and left a provenance.toml \
+             that no longer parses: {e}"
+        );
+    }
+    assert_eq!(after, before, "a refused append must leave the ledger untouched");
+}
+
+/// The prose fields carry prose. A quote, a backslash and the characters a sentence is
+/// made of survive the round trip through the file byte-for-byte.
+#[test]
+fn ledger_prose_survives_the_quotes_a_human_types() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (path, before) = a_seeded_ledger(tmp.path());
+
+    let note = r#"a backslash \ and a quote " in one note"#;
+    let block =
+        provenance::render_entry("descent-parcel", AB_WITH_QUOTES, A_SHA, note, &a_target_set());
+    let (_, chain) = provenance::append_block(&path, &before, &block)
+        .unwrap_or_else(|e| panic!("prose with a quote broke the ledger: {e}"));
+
+    let tip = chain.tip().expect("tip");
+    assert_eq!(tip.ab, AB_WITH_QUOTES, "`ab` did not round-trip");
+    assert_eq!(tip.note, note, "`note` did not round-trip");
+
+    // And from the bytes actually on disk, not just the in-memory copy.
+    let reread = provenance::parse(&std::fs::read_to_string(&path).expect("read back"))
+        .expect("the installed ledger must parse");
+    let tip = reread.tip().expect("tip");
+    assert_eq!(tip.ab, AB_WITH_QUOTES);
+    assert_eq!(tip.name, "descent-parcel");
+}
+
+/// The refusal half: what the ledger cannot show verbatim is named — the character and
+/// where it is — and what it CAN show is not refused.
+#[test]
+fn unrepresentable_prose_is_refused_by_name() {
+    let two_lines = "first\nsecond";
+    let f = provenance::fault_in_prose("ab", two_lines)
+        .expect("a raw newline in a one-line ledger field must be refused");
+    assert!(f.contains("newline"), "the refusal must NAME the character, got: {f}");
+    let at = two_lines.find('\n').expect("the newline");
+    assert!(f.contains(&format!("byte {at}")), "the refusal must locate it, got: {f}");
+    assert!(f.contains("ab"), "the refusal must name the field, got: {f}");
+
+    // A quote is escapable, round-trips exactly, and reads correctly in the file, so
+    // refusing it would cost the author their sentence for nothing.
+    assert!(
+        provenance::fault_in_prose("ab", AB_WITH_QUOTES).is_none(),
+        "a quote is representable and must not be refused"
+    );
+
+    // And the whole-entry sweep reaches every field, not just `ab`.
+    assert!(
+        !provenance::entry_faults("n", "fine", A_SHA, "a\ttab", &a_target_set()).is_empty(),
+        "entry_faults must reach `note`"
+    );
+    assert!(
+        provenance::entry_faults("n", AB_WITH_QUOTES, A_SHA, "", &a_target_set()).is_empty(),
+        "a faithful entry must not be refused"
+    );
+}
+
+/// A target key becomes a TOML table HEADER, which has no escaping to fall back on.
+#[test]
+fn a_target_key_that_is_not_a_bare_key_is_refused() {
+    assert!(provenance::fault_in_key("s4_debug").is_none());
+    assert!(provenance::fault_in_key("config-a").is_none());
+    for bad in ["", "s4.bin", "a b", "\"q\""] {
+        assert!(
+            provenance::fault_in_key(bad).is_some(),
+            "`{bad}` is not a TOML bare key but was accepted"
+        );
+    }
+}
+
+/// A refusal that rejects the ledger's OWN history would be a new way to break the
+/// freeze, not a fix. Every entry the chain already holds must pass the check that now
+/// stands in front of every new one.
+#[test]
+fn the_refusal_accepts_every_entry_the_chain_already_holds() {
+    let chain = provenance::load(&golden_dir()).expect("load provenance.toml");
+    for (n, e) in chain.entry.iter().enumerate() {
+        let faults = provenance::entry_faults(
+            &e.name,
+            &e.ab,
+            e.aeon_rev.as_deref().unwrap_or(""),
+            &e.note,
+            &e.targets,
+        );
+        assert!(
+            faults.is_empty(),
+            "entry #{} `{}` is already in the ledger but the refusal rejects it: {faults:?}",
+            n + 1,
+            e.name
+        );
+    }
+}
+
+/// The install is a rename, so nothing is left behind for the next reader to trip over.
+#[test]
+fn the_ledger_install_leaves_no_temporary_behind() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (path, before) = a_seeded_ledger(tmp.path());
+    let block = provenance::render_entry("second", "ref", A_SHA, "", &a_target_set());
+    provenance::append_block(&path, &before, &block).expect("append");
+
+    let left: Vec<String> = std::fs::read_dir(tmp.path())
+        .expect("read tempdir")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n != "provenance.toml")
+        .collect();
+    assert!(left.is_empty(), "the install left files behind: {left:?}");
+}
