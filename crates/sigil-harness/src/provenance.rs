@@ -422,6 +422,145 @@ pub fn append_gate(chain: &Chain) -> AppendGate {
     ))
 }
 
+/// Refusing a `--supersede-tip` that has nothing to abandon. Checked BOTH before the
+/// rebuild (so the usage error is free) and again at the append (so the decision is made
+/// against the chain as it actually is when the entry is written).
+pub const SUPERSEDE_WITHOUT_A_RED_RUN: &str =
+    "--supersede-tip was passed, but the tip records no strict run at all. An entry can only \
+     be ABANDONED once `--attest` has recorded that its suite came back RED; otherwise \
+     abandoning is just a way to skip the run, and the ratchet dissolves into a formality.";
+
+pub const SUPERSEDE_OF_A_GREEN_TIP: &str =
+    "--supersede-tip was passed, but the tip's strict run PASSED. A green entry is not being \
+     abandoned; drop the flag.";
+
+/// What a `--freeze` does to the ledger once its regenerated target set is known.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FreezeAction {
+    /// Append nothing. The regenerated goldens reproduce the tip and no abandonment was
+    /// asked for, so there is no new fact to record; the ledger stays byte-identical and
+    /// the tree stays git-clean, which is this machinery's own regression test.
+    Fixpoint,
+    /// Append one ordinary `[[entry]]`, shaped by the plan.
+    Append(AppendPlan),
+    /// The append is refused; the string is the reason, ready to print.
+    Refuse(String),
+}
+
+/// How the `[[entry]]` an [`FreezeAction::Append`] writes differs from a plain one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppendPlan {
+    /// Present when this entry ABANDONS the current tip: the `[entry.superseded]` block
+    /// written onto the tip immediately before the successor's own `[[entry]]`.
+    pub superseded: Option<Superseded>,
+    /// The regenerated goldens are IDENTICAL to the tip's, so the appended entry repeats
+    /// its predecessor's CRC set exactly.
+    ///
+    /// True only together with [`Self::superseded`] — see [`plan_freeze`]: a byte-neutral
+    /// freeze appends nothing unless it is an explicit abandonment.
+    pub byte_neutral: bool,
+    /// The `ratchet:` notice to print before appending — the strict-attestation rule is
+    /// not armed on this chain yet.
+    pub ratchet: Option<String>,
+}
+
+/// Decide what a freeze whose regenerated targets are `fresh` may do to `chain`.
+///
+/// # The fixpoint, and the entry that has to pass it
+///
+/// A re-freeze that reproduces the tip byte-for-byte normally appends nothing: there is
+/// no new bytes-fact to record, and the no-op is the machinery's own regression test.
+///
+/// But an entry does not only turn red for reasons that live in the emitted bytes. A
+/// harness-side defect, a wrong declaration, a check the frozen shapes never satisfied —
+/// each turns the strict suite red, and each is fixed WITHOUT MOVING A BYTE. The
+/// re-freeze then lands on the fixpoint, appends nothing, and the tip stays red; and
+/// `--supersede-tip` never gets consulted, because the fixpoint returns first. The chain
+/// cannot advance past a red entry until some unrelated byte-MOVING parcel happens along,
+/// which blocks every consumer that needs the corpus to move at all.
+///
+/// So an EXPLICIT `--supersede-tip` passes the fixpoint and appends an ordinary entry
+/// whose goldens equal its predecessor's. Not a second kind of record: one `[[entry]]`,
+/// the same fields, read by every existing consumer unchanged — what makes it legible is
+/// its own [`byte_neutral_note`] prose.
+///
+/// Every precondition survives. Without the flag the fixpoint is unchanged. With it, the
+/// same three refusals still apply — a green tip, a tip with no strict run, and a chain
+/// on which the rule has not armed are all refused exactly as they were. This is not a
+/// way to append a duplicate entry on demand; it is the way a RED entry whose fix moved
+/// no bytes gets abandoned.
+pub fn plan_freeze(
+    chain: &Chain,
+    fresh: &BTreeMap<String, Target>,
+    name: &str,
+    supersede: Option<&str>,
+) -> FreezeAction {
+    let byte_neutral = equals_tip(chain, fresh);
+    // THE FIXPOINT, and the one thing that passes it. Consulted before the append gate,
+    // exactly as it always was: a no-op re-freeze proves nothing new and is exempt from a
+    // rule about building ON TOP OF an unproven entry — it must keep working on a tip
+    // that has not been attested yet.
+    if byte_neutral && supersede.is_none() {
+        return FreezeAction::Fixpoint;
+    }
+    match append_gate(chain) {
+        AppendGate::Ratchet(m) => match supersede {
+            Some(_) => FreezeAction::Refuse(SUPERSEDE_WITHOUT_A_RED_RUN.to_string()),
+            None => FreezeAction::Append(AppendPlan {
+                superseded: None,
+                byte_neutral,
+                ratchet: Some(m),
+            }),
+        },
+        AppendGate::Allowed => match supersede {
+            Some(_) => FreezeAction::Refuse(SUPERSEDE_OF_A_GREEN_TIP.to_string()),
+            None => FreezeAction::Append(AppendPlan {
+                superseded: None,
+                byte_neutral,
+                ratchet: None,
+            }),
+        },
+        AppendGate::NeedsSupersede(m) => match supersede {
+            None => FreezeAction::Refuse(m),
+            Some(reason) if reason.trim().is_empty() => {
+                FreezeAction::Refuse("--supersede-tip needs a one-line reason".to_string())
+            }
+            Some(reason) => match fault_in_prose("--supersede-tip", reason) {
+                Some(f) => FreezeAction::Refuse(f),
+                None => FreezeAction::Append(AppendPlan {
+                    superseded: Some(Superseded {
+                        by: name.to_string(),
+                        reason: reason.to_string(),
+                    }),
+                    byte_neutral,
+                    ratchet: None,
+                }),
+            },
+        },
+        AppendGate::Refused(m) => FreezeAction::Refuse(m),
+    }
+}
+
+/// The sentence a BYTE-NEUTRAL abandonment stamps into its own entry's `note`.
+///
+/// The chain carries ONE kind of record, so an entry whose CRC set repeats its
+/// predecessor's has nothing structural to distinguish it — and a reader who finds two
+/// identical target sets in an append-only ledger is owed an answer to "why is this here
+/// twice?". These are the entry's existing fields doing that job: no schema, no second
+/// shape, just prose that says what the repetition is. The operator's own `--note` is
+/// kept verbatim after it.
+pub fn byte_neutral_note(abandoned: &str, author_note: &str) -> String {
+    let head = format!(
+        "goldens byte-identical to `{abandoned}` — this entry exists to abandon it: the fix \
+         for what turned its strict run red moved no bytes."
+    );
+    if author_note.trim().is_empty() {
+        head
+    } else {
+        format!("{head} {author_note}")
+    }
+}
+
 /// The `asl-witness` sentinel: the root's `ab`. Any OTHER entry carrying it (or an empty
 /// `ab`) while moving an anchor is a discipline violation.
 pub const ASL_WITNESS: &str = "asl-witness";
@@ -968,6 +1107,116 @@ pub fn equals_tip(chain: &Chain, fresh: &BTreeMap<String, Target>) -> bool {
         Ok(tip) => &tip.targets == fresh,
         Err(_) => false,
     }
+}
+
+/// What [`freeze_into`] did to the ledger.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Applied {
+    /// Nothing was appended and `provenance.toml` is byte-identical to what it was.
+    Fixpoint { tip: String },
+    /// One `[[entry]]` was appended, and the resulting chain parses and validates.
+    Appended {
+        /// The entry this append abandoned, when it abandoned one.
+        abandoned: Option<String>,
+        /// The appended entry's goldens are identical to its predecessor's. Only ever
+        /// true alongside `abandoned` — see [`plan_freeze`].
+        byte_neutral: bool,
+        chain_len: usize,
+        /// Notices the caller should print (the `ratchet:` line).
+        notices: Vec<String>,
+    },
+}
+
+/// Apply a freeze to the ledger in `golden_dir`: decide, render, append, re-validate.
+///
+/// This is the whole ledger half of `refreeze --freeze` — everything after the
+/// regenerate-and-recompute steps that need an aeon tree. Split out here so the decision
+/// AND its effect on the file can be exercised against a scratch `golden/` with throwaway
+/// blobs, which is the only way the append path gets a gate at all: driving the binary
+/// would rebuild seven ROMs and rewrite the real chain.
+///
+/// `Err` carries a message ready to print, multi-line where a refusal names several
+/// faults. The file on disk is untouched on every refusal.
+pub fn freeze_into(
+    golden_dir: &Path,
+    name: &str,
+    ab: &str,
+    aeon_rev: &str,
+    note: &str,
+    fresh: &BTreeMap<String, Target>,
+    supersede: Option<&str>,
+) -> Result<Applied, String> {
+    let path = golden_dir.join("provenance.toml");
+    let src = std::fs::read_to_string(&path)
+        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    let chain = parse(&src)?;
+    let tip_name = chain.tip()?.name.clone();
+
+    let plan = match plan_freeze(&chain, fresh, name, supersede) {
+        FreezeAction::Fixpoint => return Ok(Applied::Fixpoint { tip: tip_name }),
+        FreezeAction::Refuse(m) => return Err(m),
+        FreezeAction::Append(p) => p,
+    };
+
+    // Discipline pre-check: an anchor that MOVED needs a real A/B ref. Silent on a
+    // byte-neutral append by construction — no anchor moved, so there is no A/B to cite.
+    if ab.trim().is_empty() || ab == ASL_WITNESS {
+        let tip = chain.tip()?;
+        let moved: Vec<&String> = fresh
+            .iter()
+            .filter(|(k, t)| tip.targets.get(*k).map(|p| p.anchor_crc != t.anchor_crc).unwrap_or(true))
+            .map(|(k, _)| k)
+            .collect();
+        if !moved.is_empty() {
+            return Err(format!(
+                "anchor(s) moved {:?} but --ab is empty/sentinel — a byte-changing freeze needs an A/B evidence ref",
+                moved
+            ));
+        }
+    }
+
+    // The entry that repeats its predecessor's CRC set says so in its own prose.
+    let note = if plan.byte_neutral {
+        byte_neutral_note(&tip_name, note)
+    } else {
+        note.to_string()
+    };
+
+    // REFUSE BEFORE THE WRITE. `--ab`, `--note` and `--supersede-tip` are prose typed on
+    // the command line; a value this ledger cannot show verbatim is reported by name and
+    // position while the author still has the sentence to fix, and while the file on
+    // disk is untouched.
+    let faults = entry_faults(name, ab, aeon_rev, &note, fresh);
+    if !faults.is_empty() {
+        let mut m = "--freeze refused, the entry cannot be written faithfully:".to_string();
+        for f in &faults {
+            m.push_str(&format!("\n  {f}"));
+        }
+        return Err(m);
+    }
+
+    // ORDER MATTERS: `[entry.superseded]` attaches to the LAST `[[entry]]` in the file,
+    // so it must be written while the OLD tip is still last — then the successor's own
+    // `[[entry]]` block follows. One append, no surgery, every predecessor untouched.
+    let superseded_block = plan.superseded.as_ref().map(render_superseded).unwrap_or_default();
+    let block = render_entry(name, ab, aeon_rev, &note, fresh);
+    let (_, chain2) = append_block(&path, &src, &format!("{superseded_block}{block}"))
+        .map_err(|e| format!("append entry: {e}"))?;
+
+    let errs = check(golden_dir, &chain2);
+    if !errs.is_empty() {
+        let mut m = format!("appended entry FAILS validation ({}):", errs.len());
+        for e in &errs {
+            m.push_str(&format!("\n  {e}"));
+        }
+        return Err(m);
+    }
+    Ok(Applied::Appended {
+        abandoned: plan.superseded.map(|_| tip_name),
+        byte_neutral: plan.byte_neutral,
+        chain_len: chain2.entry.len(),
+        notices: plan.ratchet.into_iter().collect(),
+    })
 }
 
 #[cfg(test)]
