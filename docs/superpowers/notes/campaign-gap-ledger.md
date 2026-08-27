@@ -3245,7 +3245,28 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   `sites` list on `[entry.strict]` — so the ratchet becomes a set difference across
   attestations and a masked swap is named rather than cancelled out. That is a
   `provenance.toml` schema change, owned by the aeon-paired landing lane, and is why it is
-  ledgered here rather than taken)
+  ledgered here rather than taken. The design, so the next hand does not re-derive it:
+  `[entry.strict]` grows a `sites` list; `--attest` compares its measured population
+  against the previous entry's; a member present there and absent here is a REFUSAL with
+  the same `--retired-strict-gates` exit the count ratchet already carries. That artifact
+  is not hand-maintained to pass — the maintenance act is appending a new attestation,
+  and lowering the expectation means editing a PRIOR committed entry, a visibly different
+  act. What makes it a ratchet rather than a diary is that the shrink FAILS; a chain that
+  records each run's population and compares nothing sees the gate go dark and says
+  nothing)
+
+- [ATTEST-EXPECTED-BODIES, 2026-08-27] **The declared-count reconciliation is enforced but
+  its red path is proven only by construction.** `--attest` now requires
+  `passed + failed + ignored` to equal what `cargo test -- --list` enumerates, closing a
+  bar that until now lived only as prose in `docs/OVERSEER.md` while two overseers
+  believed it enforced. Its green path is exercised by every attest run. Its RED path has
+  no cheap sabotage: making a binary genuinely not run drops it from the listing too, so
+  both sides shrink together and the check stays green. What it actually catches is a
+  `test result:` line missing from the LOG while cargo still exits zero — a capture or
+  parse loss, not a scheduling loss — and that is not something this parcel could stage.
+  — OPEN (kill: a sabotage that removes one result line from a real attest log without
+  changing the run, e.g. a `--log` path the tool reads back after truncation, proving the
+  refusal fires on a run that is otherwise green)
 
 - [ATTEST-EXPECTED-BODIES, 2026-08-27] **Detector B assumes libtest names the test thread,
   and a guard reached off that thread is invisible to it.** The witness's second field is
