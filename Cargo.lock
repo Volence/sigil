@@ -286,6 +286,7 @@ dependencies = [
 name = "sigil-cli"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "sigil-frontend-as",
  "sigil-frontend-emp",
  "sigil-harness",
