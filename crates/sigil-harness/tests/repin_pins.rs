@@ -917,8 +917,32 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // 8 shadow bands (MAX_PARALLAX_BANDS) inside Parallax_State by 10 each = 80, plus the
     // 4-byte Parallax_Curve_Carry (4 x BAND_CURVE_N) = 84 = 0x54. Parallax_State's own
     // base (0xFFFF88A0) holds; PLAYER_1 / DYNAMIC_SLOTS ride it below.
-    assert_eq!(pins::SCENE_REGISTRY.plain_len, 0xD6C);  // +0x29E showcase-effects: 67 bands x 10 B, the band_record widening  // +0x44 parcel-w: ParallaxConfig_OJZ_Underwater, the anchored fixture. EXACTLY sizeof(parallax_config) 28 + 4 bands x 10 = 68 = 0x44, and shape-invariant because it is data.
-    assert_eq!(pins::SCENE_REGISTRY.debug_len, 0xD6C);  // +0x29E showcase-effects: same data, same size in both shapes  // +0x44 parcel-w: same record, same size in both shapes.
+    //
+    // band-ceiling-16 (2026-08-27, aeon 353aaa49, chain 172): MAX_PARALLAX_BANDS 8 -> 16.
+    // The pin that moves in this function is SCENE_REGISTRY's LEN, +0x28 in BOTH shapes,
+    // and the term is derived from the record schema — not read off the repin diff.
+    //   `pcfg_layer_mask` carries ONE BIT PER BAND, so a 16-band ceiling makes it a u16,
+    // and a u16 needs an even slot. It takes $02, which the RESERVED `pcfg_v_factor_fg`
+    // held; that field is kept (it is still authored and still read by both lowerings and
+    // scene_equiv_proof's differ) and rehomed to the tail at $1C, with `pcfg_pad_29` at
+    // $1D as the byte the even-size requirement costs on 29 payload bytes.
+    // sizeof(parallax_config) 28 -> 30, so every lowered record's HEADER grows 2 B.
+    //   The registry holds 20 ParallaxConfig records (the SCENES[0..19] rows in
+    // games/sonic4/data/effects/scene_registry.emp), so 20 x 2 = 40 = 0x28. Nothing else
+    // in the section moves: the band payload is untouched (band_record is still 20 B at
+    // BAND_CURVE_N 1 — this parcel widens the CEILING, not the band), and the six 256-byte
+    // deform tables are untouched. The whole span reconciles to the byte:
+    //   20 headers x 30 = 600, + 67 bands x 20 = 1340, + 6 tables x 256 = 1536 -> 3476 =
+    //   0xD94, against 20 x 28 + 1340 + 1536 = 3436 = 0xD6C before. Shape-invariant
+    // because it is data. (The 67 is the same band count the showcase-effects row above
+    // counted, re-derived here from the records' SceneCfgN arities:
+    // 4+4+1+1+1+1+5+5+5+5+1+1+1+5+5+5+5+2+5+5.)
+    //   RAM, for the reader chasing it (regenerated pins, not asserted here): three
+    // ceiling-sized arrays inside Parallax_State widen, +0xE0 on the block tail
+    // (28 B per band x 8 more bands = 224), i.e. ram.emp's `104 + 28 * MAX_PARALLAX_BANDS`
+    // going 328 -> 552. Parallax_State's base (0xFFFF88A0) holds again.
+    assert_eq!(pins::SCENE_REGISTRY.plain_len, 0xD94);  // +0x28 band-ceiling-16: 20 records x the 2 B header growth (sizeof(parallax_config) 28 -> 30 for the u16 layer_mask); bands and deform tables untouched  // +0x29E showcase-effects: 67 bands x 10 B, the band_record widening  // +0x44 parcel-w: ParallaxConfig_OJZ_Underwater, the anchored fixture. EXACTLY sizeof(parallax_config) 28 + 4 bands x 10 = 68 = 0x44, and shape-invariant because it is data.
+    assert_eq!(pins::SCENE_REGISTRY.debug_len, 0xD94);  // +0x28 band-ceiling-16: same data, same size in both shapes  // +0x29E showcase-effects: same data, same size in both shapes  // +0x44 parcel-w: same record, same size in both shapes.
 
     // delete-percell-hscroll (2026-08-26, aeon 55ea2557, owner ruling d-29-corrected):
     // BOTH ROM tails HOLD at 0xA11D0 / 0xA32A0 while the engine bank shrinks -0xBC plain /

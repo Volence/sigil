@@ -52,7 +52,7 @@ pub const VECTORS: Region = Region { plain_base: 0x0, debug_base: 0x0, plain_len
 pub const HEADER: Region = Region { plain_base: 0x100, debug_base: 0x100, plain_len: 0x100, debug_len: 0x100 };
 
 /// `HeightMaps` .. start + 0x1C480 plain / 0x1C480 debug (literal — no end symbol). tests: collision_data_port
-pub const COLLISION_DATA: Region = Region { plain_base: 0x6DA70, debug_base: 0x6E2D0, plain_len: 0x1C480, debug_len: 0x1C480 };
+pub const COLLISION_DATA: Region = Region { plain_base: 0x6DAA0, debug_base: 0x6E300, plain_len: 0x1C480, debug_len: 0x1C480 };
 
 /// `EntryPoint` .. `BootData` — gate `SIGIL_EMP_BOOT`. tests: boot_port
 pub const BOOT: Region = Region { plain_base: 0x200, debug_base: 0x200, plain_len: 0x1A0, debug_len: 0x1A0 };
@@ -139,16 +139,16 @@ pub const SECTION: Region = Region { plain_base: 0x5CF4, debug_base: 0x6E14, pla
 pub const CAMERA: Region = Region { plain_base: 0x6120, debug_base: 0x72A0, plain_len: 0x1D0, debug_len: 0x1E0 };
 
 /// `Parallax_Init` .. `Raster_Install` — gate `SIGIL_EMP_PARALLAX`. tests: parallax_port
-pub const PARALLAX: Region = Region { plain_base: 0x62F0, debug_base: 0x7480, plain_len: 0x8FE, debug_len: 0x992 };
+pub const PARALLAX: Region = Region { plain_base: 0x62F0, debug_base: 0x7480, plain_len: 0x900, debug_len: 0x994 };
 
 /// `Raster_Install` .. `Palette_LoadPal` — gate `SIGIL_EMP_RASTER`. tests: raster_port
-pub const RASTER: Region = Region { plain_base: 0x6BEE, debug_base: 0x7E12, plain_len: 0x364, debug_len: 0x364 };
+pub const RASTER: Region = Region { plain_base: 0x6BF0, debug_base: 0x7E14, plain_len: 0x364, debug_len: 0x364 };
 
 /// `Palette_LoadPal` .. `Effects_InstallPreset` — gate `SIGIL_EMP_PALETTE`. tests: palette_port
-pub const PALETTE: Region = Region { plain_base: 0x6F52, debug_base: 0x8176, plain_len: 0x4AE, debug_len: 0x4AE };
+pub const PALETTE: Region = Region { plain_base: 0x6F54, debug_base: 0x8178, plain_len: 0x4AE, debug_len: 0x4AE };
 
 /// `Effects_InstallPreset` .. `Level_LoadArt`.
-pub const PRESET: Region = Region { plain_base: 0x7400, debug_base: 0x8624, plain_len: 0xA0, debug_len: 0x9C };
+pub const PRESET: Region = Region { plain_base: 0x7402, debug_base: 0x8626, plain_len: 0x9E, debug_len: 0x9A };
 
 /// `Level_LoadArt` .. `PageIn_Process` — gate `SIGIL_EMP_LOAD_ART`. tests: load_art_port
 pub const LOAD_ART: Region = Region { plain_base: 0x74A0, debug_base: 0x86C0, plain_len: 0xB8, debug_len: 0xB8 };
@@ -205,61 +205,61 @@ pub const TEST_ENEMY: Region = Region { plain_base: 0x12270, debug_base: 0x12744
 pub const PATH_SWAP: Region = Region { plain_base: 0x12282, debug_base: 0x12A6C, plain_len: 0x92, debug_len: 0xFC };
 
 /// `OJZ_TestRaster` .. `ObjDef_Static`.
-pub const OJZ_EFFECTS: Region = Region { plain_base: 0x13180, debug_base: 0x139D4, plain_len: 0x530, debug_len: 0x52C };
+pub const OJZ_EFFECTS: Region = Region { plain_base: 0x131AC, debug_base: 0x13A00, plain_len: 0x534, debug_len: 0x530 };
 
 /// `DeformTable_Zero` .. `section:scene_registry` — gate `SIGIL_EMP_SCENE_REGISTRY`. tests: scene_registry_port
-pub const SCENE_REGISTRY: Region = Region { plain_base: 0x12314, debug_base: 0x12B68, plain_len: 0xD6C, debug_len: 0xD6C };
+pub const SCENE_REGISTRY: Region = Region { plain_base: 0x12314, debug_base: 0x12B68, plain_len: 0xD94, debug_len: 0xD94 };
 
 /// `Map_TestObj` .. `Map_DustSpindash` — gate `SIGIL_EMP_TEST_MAPPINGS`. tests: test_mappings_port
-pub const TEST_MAPPINGS: Region = Region { plain_base: 0x293E0, debug_base: 0x29C2E, plain_len: 0x30, debug_len: 0x30 };
+pub const TEST_MAPPINGS: Region = Region { plain_base: 0x29410, debug_base: 0x29C5E, plain_len: 0x30, debug_len: 0x30 };
 
 /// `Map_DustSpindash` .. `Map_DustSpindash_End` — gate `SIGIL_EMP_DUST_DATA`.
-pub const DUST_DATA: Region = Region { plain_base: 0x29410, debug_base: 0x29C5E, plain_len: 0xBDA, debug_len: 0xBDA };
+pub const DUST_DATA: Region = Region { plain_base: 0x29440, debug_base: 0x29C8E, plain_len: 0xBDA, debug_len: 0xBDA };
 
 /// `Ani_Sonic` .. `Ani_Sonic_End` — gate `SIGIL_EMP_SONIC_ANIMS`. tests: sonic_anims_port
-pub const SONIC_ANIMS: Region = Region { plain_base: 0x29FF0, debug_base: 0x2A838, plain_len: 0x10A, debug_len: 0x10A };
+pub const SONIC_ANIMS: Region = Region { plain_base: 0x2A020, debug_base: 0x2A868, plain_len: 0x10A, debug_len: 0x10A };
 
 /// `Ani_Tails` .. `Ani_Tails_End` — gate `SIGIL_EMP_TAILS_ANIMS`. tests: sonic_anims_port
-pub const TAILS_ANIMS: Region = Region { plain_base: 0x2A0FA, debug_base: 0x2A950, plain_len: 0x1BC, debug_len: 0x1BC };
+pub const TAILS_ANIMS: Region = Region { plain_base: 0x2A12A, debug_base: 0x2A980, plain_len: 0x1BC, debug_len: 0x1BC };
 
 /// `Ani_Knuckles` .. `Ani_Knuckles_End` — gate `SIGIL_EMP_KNUCKLES_ANIMS`. tests: sonic_anims_port
-pub const KNUCKLES_ANIMS: Region = Region { plain_base: 0x2A2B6, debug_base: 0x2AB0C, plain_len: 0x16C, debug_len: 0x16C };
+pub const KNUCKLES_ANIMS: Region = Region { plain_base: 0x2A2E6, debug_base: 0x2AB3C, plain_len: 0x16C, debug_len: 0x16C };
 
 /// `Map_Tails` .. `Map_Tails_End` — gate `SIGIL_EMP_TAILS_DATA`. tests: collision_data_port
-pub const TAILS_DATA: Region = Region { plain_base: 0x2A440, debug_base: 0x2ACA0, plain_len: 0x20F5E, debug_len: 0x20F5E };
+pub const TAILS_DATA: Region = Region { plain_base: 0x2A470, debug_base: 0x2ACD0, plain_len: 0x20F5E, debug_len: 0x20F5E };
 
 /// `Map_Knuckles` .. `Map_Knuckles_End` — gate `SIGIL_EMP_KNUCKLES_DATA`. tests: collision_data_port
-pub const KNUCKLES_DATA: Region = Region { plain_base: 0x4B39E, debug_base: 0x4BBFE, plain_len: 0x226C8, debug_len: 0x226C8 };
+pub const KNUCKLES_DATA: Region = Region { plain_base: 0x4B3CE, debug_base: 0x4BC2E, plain_len: 0x226C8, debug_len: 0x226C8 };
 
 /// `Ani_Particle` .. `Ani_Particle_End` (debug-only region; plain empty at `Ani_DustSpindash`) — gate `SIGIL_EMP_PARTICLE_ANIMS`. tests: particle_anims_port, test_objects_port
-pub const PARTICLE_ANIMS: Region = Region { plain_base: 0x2A422, debug_base: 0x2AC78, plain_len: 0x0, debug_len: 0x8 };
+pub const PARTICLE_ANIMS: Region = Region { plain_base: 0x2A452, debug_base: 0x2ACA8, plain_len: 0x0, debug_len: 0x8 };
 
 /// `Ani_DustSpindash` .. `Ani_DustSpindash_End` — gate `SIGIL_EMP_DUST_ANIMS`.
-pub const DUST_ANIMS: Region = Region { plain_base: 0x2A422, debug_base: 0x2AC80, plain_len: 0x14, debug_len: 0x14 };
+pub const DUST_ANIMS: Region = Region { plain_base: 0x2A452, debug_base: 0x2ACB0, plain_len: 0x14, debug_len: 0x14 };
 
 /// `OJZ_Sec0_TypeTable` .. `OJZ_Act_Pool_Page0`. tests: ojz_run_a_port
-pub const ENTITY_DATA: Region = Region { plain_base: 0x136E8, debug_base: 0x13F40, plain_len: 0x170, debug_len: 0x170 };
+pub const ENTITY_DATA: Region = Region { plain_base: 0x13718, debug_base: 0x13F70, plain_len: 0x170, debug_len: 0x170 };
 
 /// `OJZ_Act_Pool_Page0` .. `OJZ_Act1_Descriptor`. tests: ojz_run_a_port
-pub const OJZ_ACT_POOL: Region = Region { plain_base: 0x13858, debug_base: 0x140B0, plain_len: 0x2F0C, debug_len: 0x2F10 };
+pub const OJZ_ACT_POOL: Region = Region { plain_base: 0x13888, debug_base: 0x140E0, plain_len: 0x2F0C, debug_len: 0x2F10 };
 
 /// `OJZ_Act1_Descriptor` .. `section:act_descriptor` — gate `SIGIL_EMP_ACT_DESCRIPTOR`. tests: act_descriptor_port
-pub const ACT_DESCRIPTOR: Region = Region { plain_base: 0x16764, debug_base: 0x16FC0, plain_len: 0x27A, debug_len: 0x27A };
+pub const ACT_DESCRIPTOR: Region = Region { plain_base: 0x16794, debug_base: 0x16FF0, plain_len: 0x27A, debug_len: 0x27A };
 
 /// `OJZ_Sec0_Blocks` .. `OJZ_Sec0_LocalMap`. tests: ojz_run_b_port
-pub const SEC_BLOCK_BLOBS: Region = Region { plain_base: 0x169E0, debug_base: 0x17240, plain_len: 0xB480, debug_len: 0xB474 };
+pub const SEC_BLOCK_BLOBS: Region = Region { plain_base: 0x16A10, debug_base: 0x17270, plain_len: 0xB480, debug_len: 0xB474 };
 
 /// `OJZ_Sec0_LocalMap` .. `OJZ_Palette`. tests: ojz_run_b_port
-pub const SEC_LOCAL_MAPS: Region = Region { plain_base: 0x21E60, debug_base: 0x226B4, plain_len: 0xCD0, debug_len: 0xCC4 };
+pub const SEC_LOCAL_MAPS: Region = Region { plain_base: 0x21E90, debug_base: 0x226E4, plain_len: 0xCD0, debug_len: 0xCC4 };
 
 /// `OJZ_Palette` .. `BgAnim_Table`. tests: ojz_run_b_port
-pub const OJZ_ACT_ASSETS: Region = Region { plain_base: 0x22B30, debug_base: 0x23378, plain_len: 0x4882, debug_len: 0x4888 };
+pub const OJZ_ACT_ASSETS: Region = Region { plain_base: 0x22B60, debug_base: 0x233A8, plain_len: 0x4882, debug_len: 0x4888 };
 
 /// `BgAnim_Table` .. `Map_TestObj`. tests: ojz_run_b_port
-pub const OJZ_BG_ANIM: Region = Region { plain_base: 0x273B2, debug_base: 0x27C00, plain_len: 0x202E, debug_len: 0x202E };
+pub const OJZ_BG_ANIM: Region = Region { plain_base: 0x273E2, debug_base: 0x27C30, plain_len: 0x202E, debug_len: 0x202E };
 
 /// `ObjDef_Static` .. `OJZ_Sec0_TypeTable` — gate `SIGIL_EMP_OBJDEFS`. tests: objdef_port
-pub const OBJDEFS: Region = Region { plain_base: 0x136B0, debug_base: 0x13F00, plain_len: 0x38, debug_len: 0x40 };
+pub const OBJDEFS: Region = Region { plain_base: 0x136E0, debug_base: 0x13F30, plain_len: 0x38, debug_len: 0x40 };
 
 /// `GameState_ObjectTest_Init` .. `GameState_OJZScroll_Init` (debug-only region; plain empty at `GameState_OJZScroll_Init`) — gate `SIGIL_EMP_OBJECT_TEST_STATE`. tests: test_t1_harness_states_port
 pub const OBJECT_TEST_STATE: Region = Region { plain_base: 0xA4410, debug_base: 0xA5E60, plain_len: 0x0, debug_len: 0x384 };
@@ -339,31 +339,31 @@ pub const PLAYER_SENSORS: Region = Region { plain_base: 0x5800, debug_base: 0x69
 // ── Symbols (manifest order) ──
 
 /// `OJZ_Preset_Sec0`. tests: act_descriptor_port
-pub const OJZ_PRESET_SEC0: Pin = Pin { plain: 0x13520, debug: 0x13D74 };
+pub const OJZ_PRESET_SEC0: Pin = Pin { plain: 0x1354C, debug: 0x13DA0 };
 
 /// `OJZ_Preset_Sec1`. tests: act_descriptor_port
-pub const OJZ_PRESET_SEC1: Pin = Pin { plain: 0x13546, debug: 0x13D9A };
+pub const OJZ_PRESET_SEC1: Pin = Pin { plain: 0x13572, debug: 0x13DC6 };
 
 /// `OJZ_Preset_Sec2`. tests: act_descriptor_port
-pub const OJZ_PRESET_SEC2: Pin = Pin { plain: 0x1356C, debug: 0x13DC0 };
+pub const OJZ_PRESET_SEC2: Pin = Pin { plain: 0x13598, debug: 0x13DEC };
 
 /// `OJZ_Preset_Sec3`. tests: act_descriptor_port
-pub const OJZ_PRESET_SEC3: Pin = Pin { plain: 0x13592, debug: 0x13DE6 };
+pub const OJZ_PRESET_SEC3: Pin = Pin { plain: 0x135BE, debug: 0x13E12 };
 
 /// `OJZ_Preset_Plain`. tests: act_descriptor_port
-pub const OJZ_PRESET_PLAIN: Pin = Pin { plain: 0x135B8, debug: 0x13E0C };
+pub const OJZ_PRESET_PLAIN: Pin = Pin { plain: 0x135E4, debug: 0x13E38 };
 
 /// `OJZ_Preset_Depth`. tests: act_descriptor_port
-pub const OJZ_PRESET_DEPTH: Pin = Pin { plain: 0x135DE, debug: 0x13E32 };
+pub const OJZ_PRESET_DEPTH: Pin = Pin { plain: 0x1360A, debug: 0x13E5E };
 
 /// `EditorSceneBinding_OJZ_Act1_Sec4`. tests: act_descriptor_port
-pub const EDITOR_SCENE_BINDING_OJZ_ACT1_SEC4: Pin = Pin { plain: 0x13100, debug: 0x13954 };
+pub const EDITOR_SCENE_BINDING_OJZ_ACT1_SEC4: Pin = Pin { plain: 0x1312A, debug: 0x1397E };
 
 /// `Effects_InstallPreset`. tests: parallax_port
-pub const EFFECTS_INSTALL_PRESET: Pin = Pin { plain: 0x7400, debug: 0x8624 };
+pub const EFFECTS_INSTALL_PRESET: Pin = Pin { plain: 0x7402, debug: 0x8626 };
 
 /// `Raster_GetChannelBand`. tests: parallax_port
-pub const RASTER_GET_CHANNEL_BAND: Pin = Pin { plain: 0x6EF6, debug: 0x811A };
+pub const RASTER_GET_CHANNEL_BAND: Pin = Pin { plain: 0x6EF8, debug: 0x811C };
 
 /// `TestStatic_Main`. tests: objdef_port
 pub const TEST_STATIC_MAIN: Pin = Pin { plain: 0x12260, debug: 0x12440 };
@@ -378,16 +378,16 @@ pub const TEST_ENEMY_INIT: u32 = 0x12744;
 pub const TEST_PARENT_LABEL: u32 = 0x128E0;
 
 /// `Map_TestObj`. tests: objdef_port
-pub const MAP_TEST_OBJ: Pin = Pin { plain: 0x293E0, debug: 0x29C2E };
+pub const MAP_TEST_OBJ: Pin = Pin { plain: 0x29410, debug: 0x29C5E };
 
 /// `Map_Sonic`. tests: test_g1_objects_port
-pub const MAP_SONIC: Pin = Pin { plain: 0x6FC70, debug: 0x704D0 };
+pub const MAP_SONIC: Pin = Pin { plain: 0x6FCA0, debug: 0x70500 };
 
 /// `DPLC_Sonic`. tests: test_g1_objects_port
-pub const DPLC_SONIC: Pin = Pin { plain: 0x718F0, debug: 0x72150 };
+pub const DPLC_SONIC: Pin = Pin { plain: 0x71920, debug: 0x72180 };
 
 /// `Art_Sonic`. tests: test_g1_objects_port
-pub const ART_SONIC: Pin = Pin { plain: 0x72230, debug: 0x72A90 };
+pub const ART_SONIC: Pin = Pin { plain: 0x72260, debug: 0x72AC0 };
 
 /// `CreateEffect_Normal`. tests: test_g2_objects_port
 pub const CREATE_EFFECT_NORMAL: Pin = Pin { plain: 0x44B6, debug: 0x5316 };
@@ -444,7 +444,7 @@ pub const ERROR_TRAP: u32 = 0xA6F02;
 pub const V_BLANK_HANDLER: Pin = Pin { plain: 0x2250, debug: 0x2320 };
 
 /// `HBlank_Vector_Slot`. tests: hblank_port, m1c_vector_table
-pub const H_BLANK_VECTOR_SLOT: Pin = Pin { plain: 0xFFFFB40A, debug: 0xFFFFB498 };
+pub const H_BLANK_VECTOR_SLOT: Pin = Pin { plain: 0xFFFFB4EA, debug: 0xFFFFB578 };
 
 /// `VDP_Shadow_Table`. tests: vdp_init_port
 pub const VDP_SHADOW_TABLE: Pin = Pin { plain: 0xFFFF800E, debug: 0xFFFF800E };
@@ -456,7 +456,7 @@ pub const BOOT_DATA_VDP_REGS: Pin = Pin { plain: 0x3BA, debug: 0x3BA };
 pub const CTRL_1_HELD: Pin = Pin { plain: 0xFFFF8028, debug: 0xFFFF8028 };
 
 /// `Ctrl_1_Held_Raw`. tests: controllers_port
-pub const CTRL_1_HELD_RAW: Pin = Pin { plain: 0xFFFFB7F8, debug: 0xFFFFB886 };
+pub const CTRL_1_HELD_RAW: Pin = Pin { plain: 0xFFFFB8D8, debug: 0xFFFFB966 };
 
 /// `Ctrl_2_Held`. tests: vblank_port
 pub const CTRL_2_HELD: Pin = Pin { plain: 0xFFFF802A, debug: 0xFFFF802A };
@@ -468,13 +468,13 @@ pub const CTRL_1_EXT_HELD: Pin = Pin { plain: 0xFFFF802E, debug: 0xFFFF802E };
 pub const CTRL_2_EXT_HELD: Pin = Pin { plain: 0xFFFF8030, debug: 0xFFFF8030 };
 
 /// `Ctrl_2_Held_Raw`. tests: vblank_port
-pub const CTRL_2_HELD_RAW: Pin = Pin { plain: 0xFFFFB7F9, debug: 0xFFFFB887 };
+pub const CTRL_2_HELD_RAW: Pin = Pin { plain: 0xFFFFB8D9, debug: 0xFFFFB967 };
 
 /// `Ctrl_1_Ext_Held_Raw`. tests: vblank_port
-pub const CTRL_1_EXT_HELD_RAW: Pin = Pin { plain: 0xFFFFB7FA, debug: 0xFFFFB888 };
+pub const CTRL_1_EXT_HELD_RAW: Pin = Pin { plain: 0xFFFFB8DA, debug: 0xFFFFB968 };
 
 /// `Ctrl_2_Ext_Held_Raw`. tests: vblank_port
-pub const CTRL_2_EXT_HELD_RAW: Pin = Pin { plain: 0xFFFFB7FB, debug: 0xFFFFB889 };
+pub const CTRL_2_EXT_HELD_RAW: Pin = Pin { plain: 0xFFFFB8DB, debug: 0xFFFFB969 };
 
 /// `VSync_Wait`. tests: game_loop_port, load_art_port
 pub const V_SYNC_WAIT: Pin = Pin { plain: 0x2406, debug: 0x24DE };
@@ -489,7 +489,7 @@ pub const GAME_STATE: Pin = Pin { plain: 0xFFFF8008, debug: 0xFFFF8008 };
 pub const INPUT_TICK: Pin = Pin { plain: 0x2590, debug: 0x2674 };
 
 /// `Cache_Left_Col`. tests: collision_lookup_port, section_port
-pub const CACHE_LEFT_COL: Pin = Pin { plain: 0xFFFFABB8, debug: 0xFFFFAC46 };
+pub const CACHE_LEFT_COL: Pin = Pin { plain: 0xFFFFAC98, debug: 0xFFFFAD26 };
 
 /// `Draw_TileColumn`. tests: section_port
 pub const DRAW_TILE_COLUMN: Pin = Pin { plain: 0x45E0, debug: 0x5440 };
@@ -501,40 +501,40 @@ pub const DRAW_TILE_ROW_FROM_CACHE: Pin = Pin { plain: 0x4734, debug: 0x5594 };
 pub const ENTITY_WINDOW_INIT: Pin = Pin { plain: 0x3D22, debug: 0x49E4 };
 
 /// `Section_Plane_Dirty`. tests: section_port
-pub const SECTION_PLANE_DIRTY: Pin = Pin { plain: 0xFFFFAC2C, debug: 0xFFFFACBA };
+pub const SECTION_PLANE_DIRTY: Pin = Pin { plain: 0xFFFFAD0C, debug: 0xFFFFAD9A };
 
 /// `Section_Right_Col_Written`. tests: section_port
-pub const SECTION_RIGHT_COL_WRITTEN: Pin = Pin { plain: 0xFFFFAC2E, debug: 0xFFFFACBC };
+pub const SECTION_RIGHT_COL_WRITTEN: Pin = Pin { plain: 0xFFFFAD0E, debug: 0xFFFFAD9C };
 
 /// `Section_Left_Col_Written`. tests: section_port
-pub const SECTION_LEFT_COL_WRITTEN: Pin = Pin { plain: 0xFFFFAC30, debug: 0xFFFFACBE };
+pub const SECTION_LEFT_COL_WRITTEN: Pin = Pin { plain: 0xFFFFAD10, debug: 0xFFFFAD9E };
 
 /// `Section_Top_Row_Written`. tests: section_port
-pub const SECTION_TOP_ROW_WRITTEN: Pin = Pin { plain: 0xFFFFAC28, debug: 0xFFFFACB6 };
+pub const SECTION_TOP_ROW_WRITTEN: Pin = Pin { plain: 0xFFFFAD08, debug: 0xFFFFAD96 };
 
 /// `Section_Bottom_Row_Written`. tests: section_port
-pub const SECTION_BOTTOM_ROW_WRITTEN: Pin = Pin { plain: 0xFFFFAC2A, debug: 0xFFFFACB8 };
+pub const SECTION_BOTTOM_ROW_WRITTEN: Pin = Pin { plain: 0xFFFFAD0A, debug: 0xFFFFAD98 };
 
 /// `Cache_Head_Col`. tests: section_port
-pub const CACHE_HEAD_COL: Pin = Pin { plain: 0xFFFFABBA, debug: 0xFFFFAC48 };
+pub const CACHE_HEAD_COL: Pin = Pin { plain: 0xFFFFAC9A, debug: 0xFFFFAD28 };
 
 /// `Cache_Top_Row`. tests: section_port
-pub const CACHE_TOP_ROW: Pin = Pin { plain: 0xFFFFABBC, debug: 0xFFFFAC4A };
+pub const CACHE_TOP_ROW: Pin = Pin { plain: 0xFFFFAC9C, debug: 0xFFFFAD2A };
 
 /// `Cache_Bottom_Row`. tests: section_port
-pub const CACHE_BOTTOM_ROW: Pin = Pin { plain: 0xFFFFABBE, debug: 0xFFFFAC4C };
+pub const CACHE_BOTTOM_ROW: Pin = Pin { plain: 0xFFFFAC9E, debug: 0xFFFFAD2C };
 
 /// `Cache_Origin_Col`. tests: section_port
-pub const CACHE_ORIGIN_COL: Pin = Pin { plain: 0xFFFFABC0, debug: 0xFFFFAC4E };
+pub const CACHE_ORIGIN_COL: Pin = Pin { plain: 0xFFFFACA0, debug: 0xFFFFAD2E };
 
 /// `Cache_Origin_Row`. tests: section_port
-pub const CACHE_ORIGIN_ROW: Pin = Pin { plain: 0xFFFFABC2, debug: 0xFFFFAC50 };
+pub const CACHE_ORIGIN_ROW: Pin = Pin { plain: 0xFFFFACA2, debug: 0xFFFFAD30 };
 
 /// `Plane_Buffer_Ptr`. tests: section_port
-pub const PLANE_BUFFER_PTR: Pin = Pin { plain: 0xFFFFAAA4, debug: 0xFFFFAB32 };
+pub const PLANE_BUFFER_PTR: Pin = Pin { plain: 0xFFFFAB84, debug: 0xFFFFAC12 };
 
 /// `Plane_Buffer`. tests: plane_buffer_port
-pub const PLANE_BUFFER_BASE: Pin = Pin { plain: 0xFFFFA4A4, debug: 0xFFFFA532 };
+pub const PLANE_BUFFER_BASE: Pin = Pin { plain: 0xFFFFA584, debug: 0xFFFFA612 };
 
 /// `Tile_Cache_Nametable`. tests: section_port
 pub const TILE_CACHE_NAMETABLE: Pin = Pin { plain: 0xFFFF0000, debug: 0xFFFF0000 };
@@ -549,10 +549,10 @@ pub const FRAME_COUNTER: Pin = Pin { plain: 0xFFFF8002, debug: 0xFFFF8002 };
 pub const LOGIC_TICK: Pin = Pin { plain: 0xFFFF8004, debug: 0xFFFF8004 };
 
 /// `Block_Stage_Keys`. tests: tile_cache_port
-pub const BLOCK_STAGE_KEYS: Pin = Pin { plain: 0xFFFFABE6, debug: 0xFFFFAC74 };
+pub const BLOCK_STAGE_KEYS: Pin = Pin { plain: 0xFFFFACC6, debug: 0xFFFFAD54 };
 
 /// `Block_Stage_Next`. tests: tile_cache_port
-pub const BLOCK_STAGE_NEXT: Pin = Pin { plain: 0xFFFFAC26, debug: 0xFFFFACB4 };
+pub const BLOCK_STAGE_NEXT: Pin = Pin { plain: 0xFFFFAD06, debug: 0xFFFFAD94 };
 
 /// `Block_Stage_Bucket`. tests: tile_cache_port
 pub const BLOCK_STAGE_BUCKET: Pin = Pin { plain: 0xFFFF6842, debug: 0xFFFF6842 };
@@ -564,82 +564,82 @@ pub const BLOCK_STAGE_CHAIN: Pin = Pin { plain: 0xFFFF6942, debug: 0xFFFF6942 };
 pub const BLOCK_STAGE_BUFFERS: Pin = Pin { plain: 0xFFFF3842, debug: 0xFFFF3842 };
 
 /// `Block_Stage_Ptrs`. tests: tile_cache_port
-pub const BLOCK_STAGE_PTRS: Pin = Pin { plain: 0xFFFFB410, debug: 0xFFFFB49E };
+pub const BLOCK_STAGE_PTRS: Pin = Pin { plain: 0xFFFFB4F0, debug: 0xFFFFB57E };
 
 /// `Block_Stage_ZeroPage`. tests: tile_cache_port
-pub const BLOCK_STAGE_ZERO_PAGE: Pin = Pin { plain: 0xFFFFB494, debug: 0xFFFFB522 };
+pub const BLOCK_STAGE_ZERO_PAGE: Pin = Pin { plain: 0xFFFFB574, debug: 0xFFFFB602 };
 
 /// `Cache_Fill_Last_Frame`. tests: tile_cache_port
-pub const CACHE_FILL_LAST_FRAME: Pin = Pin { plain: 0xFFFFABC4, debug: 0xFFFFAC52 };
+pub const CACHE_FILL_LAST_FRAME: Pin = Pin { plain: 0xFFFFACA4, debug: 0xFFFFAD32 };
 
 /// `Cache_Fill_Budget`. tests: tile_cache_port
-pub const CACHE_FILL_BUDGET: Pin = Pin { plain: 0xFFFFABCE, debug: 0xFFFFAC5C };
+pub const CACHE_FILL_BUDGET: Pin = Pin { plain: 0xFFFFACAE, debug: 0xFFFFAD3C };
 
 /// `Cache_Fill_Resume_Col`. tests: tile_cache_port
-pub const CACHE_FILL_RESUME_COL: Pin = Pin { plain: 0xFFFFABC6, debug: 0xFFFFAC54 };
+pub const CACHE_FILL_RESUME_COL: Pin = Pin { plain: 0xFFFFACA6, debug: 0xFFFFAD34 };
 
 /// `Cache_Fill_Resume_Row`. tests: tile_cache_port
-pub const CACHE_FILL_RESUME_ROW: Pin = Pin { plain: 0xFFFFABC8, debug: 0xFFFFAC56 };
+pub const CACHE_FILL_RESUME_ROW: Pin = Pin { plain: 0xFFFFACA8, debug: 0xFFFFAD36 };
 
 /// `Cache_Fill_RowResume_Row`. tests: tile_cache_port
-pub const CACHE_FILL_ROW_RESUME_ROW: Pin = Pin { plain: 0xFFFFABD0, debug: 0xFFFFAC5E };
+pub const CACHE_FILL_ROW_RESUME_ROW: Pin = Pin { plain: 0xFFFFACB0, debug: 0xFFFFAD3E };
 
 /// `Cache_Fill_RowResume_Col`. tests: tile_cache_port
-pub const CACHE_FILL_ROW_RESUME_COL: Pin = Pin { plain: 0xFFFFABD2, debug: 0xFFFFAC60 };
+pub const CACHE_FILL_ROW_RESUME_COL: Pin = Pin { plain: 0xFFFFACB2, debug: 0xFFFFAD40 };
 
 /// `Cache_Fill_Rows_Left`. tests: tile_cache_port
-pub const CACHE_FILL_ROWS_LEFT: Pin = Pin { plain: 0xFFFFABD4, debug: 0xFFFFAC62 };
+pub const CACHE_FILL_ROWS_LEFT: Pin = Pin { plain: 0xFFFFACB4, debug: 0xFFFFAD42 };
 
 /// `Cache_Prev_Cam_Row`. tests: tile_cache_port
-pub const CACHE_PREV_CAM_ROW: Pin = Pin { plain: 0xFFFFABD6, debug: 0xFFFFAC64 };
+pub const CACHE_PREV_CAM_ROW: Pin = Pin { plain: 0xFFFFACB6, debug: 0xFFFFAD44 };
 
 /// `Cache_Prev_Cam_X`. tests: tile_cache_port
-pub const CACHE_PREV_CAM_X: Pin = Pin { plain: 0xFFFFABD8, debug: 0xFFFFAC66 };
+pub const CACHE_PREV_CAM_X: Pin = Pin { plain: 0xFFFFACB8, debug: 0xFFFFAD46 };
 
 /// `Cache_H_Pfx_Dir`. tests: tile_cache_port
-pub const CACHE_H_PFX_DIR: Pin = Pin { plain: 0xFFFFABDA, debug: 0xFFFFAC68 };
+pub const CACHE_H_PFX_DIR: Pin = Pin { plain: 0xFFFFACBA, debug: 0xFFFFAD48 };
 
 /// `Cache_H_Pfx_Accum`. tests: tile_cache_port
-pub const CACHE_H_PFX_ACCUM: Pin = Pin { plain: 0xFFFFABDC, debug: 0xFFFFAC6A };
+pub const CACHE_H_PFX_ACCUM: Pin = Pin { plain: 0xFFFFACBC, debug: 0xFFFFAD4A };
 
 /// `Cache_Pfx_Row_Target`. tests: tile_cache_port
-pub const CACHE_PFX_ROW_TARGET: Pin = Pin { plain: 0xFFFFABDE, debug: 0xFFFFAC6C };
+pub const CACHE_PFX_ROW_TARGET: Pin = Pin { plain: 0xFFFFACBE, debug: 0xFFFFAD4C };
 
 /// `Cache_Pfx_Col_Target`. tests: tile_cache_port
-pub const CACHE_PFX_COL_TARGET: Pin = Pin { plain: 0xFFFFABE0, debug: 0xFFFFAC6E };
+pub const CACHE_PFX_COL_TARGET: Pin = Pin { plain: 0xFFFFACC0, debug: 0xFFFFAD4E };
 
 /// `Cache_Pfx_Skip_Armed`. tests: tile_cache_port
-pub const CACHE_PFX_SKIP_ARMED: Pin = Pin { plain: 0xFFFFABE2, debug: 0xFFFFAC70 };
+pub const CACHE_PFX_SKIP_ARMED: Pin = Pin { plain: 0xFFFFACC2, debug: 0xFFFFAD50 };
 
 /// `Cache_Pfx_Lag_Flag`. tests: tile_cache_port
-pub const CACHE_PFX_LAG_FLAG: Pin = Pin { plain: 0xFFFFABE4, debug: 0xFFFFAC72 };
+pub const CACHE_PFX_LAG_FLAG: Pin = Pin { plain: 0xFFFFACC4, debug: 0xFFFFAD52 };
 
 /// `Block_Stage_Gen`. tests: tile_cache_port
-pub const BLOCK_STAGE_GEN: Pin = Pin { plain: 0xFFFFB3F8, debug: 0xFFFFB486 };
+pub const BLOCK_STAGE_GEN: Pin = Pin { plain: 0xFFFFB4D8, debug: 0xFFFFB566 };
 
 /// `Pfx_Memo_Row`. tests: tile_cache_port
-pub const PFX_MEMO_ROW: Pin = Pin { plain: 0xFFFFB3FA, debug: 0xFFFFB488 };
+pub const PFX_MEMO_ROW: Pin = Pin { plain: 0xFFFFB4DA, debug: 0xFFFFB568 };
 
 /// `Pfx_Memo_L16`. tests: tile_cache_port
-pub const PFX_MEMO_L16: Pin = Pin { plain: 0xFFFFB3FC, debug: 0xFFFFB48A };
+pub const PFX_MEMO_L16: Pin = Pin { plain: 0xFFFFB4DC, debug: 0xFFFFB56A };
 
 /// `Pfx_Memo_H16`. tests: tile_cache_port
-pub const PFX_MEMO_H16: Pin = Pin { plain: 0xFFFFB3FE, debug: 0xFFFFB48C };
+pub const PFX_MEMO_H16: Pin = Pin { plain: 0xFFFFB4DE, debug: 0xFFFFB56C };
 
 /// `Pfx_Memo_Gen`. tests: tile_cache_port
-pub const PFX_MEMO_GEN: Pin = Pin { plain: 0xFFFFB400, debug: 0xFFFFB48E };
+pub const PFX_MEMO_GEN: Pin = Pin { plain: 0xFFFFB4E0, debug: 0xFFFFB56E };
 
 /// `Cs_Memo_Col`. tests: tile_cache_port
-pub const CS_MEMO_COL: Pin = Pin { plain: 0xFFFFB402, debug: 0xFFFFB490 };
+pub const CS_MEMO_COL: Pin = Pin { plain: 0xFFFFB4E2, debug: 0xFFFFB570 };
 
 /// `Cs_Memo_T16`. tests: tile_cache_port
-pub const CS_MEMO_T16: Pin = Pin { plain: 0xFFFFB404, debug: 0xFFFFB492 };
+pub const CS_MEMO_T16: Pin = Pin { plain: 0xFFFFB4E4, debug: 0xFFFFB572 };
 
 /// `Cs_Memo_B16`. tests: tile_cache_port
-pub const CS_MEMO_B16: Pin = Pin { plain: 0xFFFFB406, debug: 0xFFFFB494 };
+pub const CS_MEMO_B16: Pin = Pin { plain: 0xFFFFB4E6, debug: 0xFFFFB574 };
 
 /// `Cs_Memo_Gen`. tests: tile_cache_port
-pub const CS_MEMO_GEN: Pin = Pin { plain: 0xFFFFB408, debug: 0xFFFFB496 };
+pub const CS_MEMO_GEN: Pin = Pin { plain: 0xFFFFB4E8, debug: 0xFFFFB576 };
 
 /// `Pfx_Memo_Mask`. tests: tile_cache_port
 pub const PFX_MEMO_MASK: Pin = Pin { plain: 0xFFFF6998, debug: 0xFFFF6998 };
@@ -663,79 +663,79 @@ pub const CACHE_SPEC_SKIPS: Pin = Pin { plain: 0xFFFF6996, debug: 0xFFFF6996 };
 pub const S4_LZ_DECOMPRESS_DICT: Pin = Pin { plain: 0x26E0, debug: 0x2870 };
 
 /// `Player_1`. tests: collision_port, rings_port
-pub const PLAYER_1: Pin = Pin { plain: 0xFFFF8D68, debug: 0xFFFF8DF6 };
+pub const PLAYER_1: Pin = Pin { plain: 0xFFFF8E48, debug: 0xFFFF8ED6 };
 
 /// `Cheat_Flags`. tests: test_g4_final_objects_port, test_p1_player_port
-pub const CHEAT_FLAGS: Pin = Pin { plain: 0xFFFFB87C, debug: 0xFFFFE112 };
+pub const CHEAT_FLAGS: Pin = Pin { plain: 0xFFFFB95C, debug: 0xFFFFE1F2 };
 
 /// `Dynamic_Slots`. tests: collision_port
-pub const DYNAMIC_SLOTS: Pin = Pin { plain: 0xFFFF8E08, debug: 0xFFFF8E96 };
+pub const DYNAMIC_SLOTS: Pin = Pin { plain: 0xFFFF8EE8, debug: 0xFFFF8F76 };
 
 /// `Ring_Buffer`. tests: rings_port
-pub const RING_BUFFER: Pin = Pin { plain: 0xFFFFAC9A, debug: 0xFFFFAD28 };
+pub const RING_BUFFER: Pin = Pin { plain: 0xFFFFAD7A, debug: 0xFFFFAE08 };
 
 /// `Ring_Count`. tests: rings_port
-pub const RING_COUNT: Pin = Pin { plain: 0xFFFFAF9A, debug: 0xFFFFB028 };
+pub const RING_COUNT: Pin = Pin { plain: 0xFFFFB07A, debug: 0xFFFFB108 };
 
 /// `Ring_HighWater`. tests: rings_port
-pub const RING_HIGH_WATER: Pin = Pin { plain: 0xFFFFAF9B, debug: 0xFFFFB029 };
+pub const RING_HIGH_WATER: Pin = Pin { plain: 0xFFFFB07B, debug: 0xFFFFB109 };
 
 /// `Ring_Add_Dropped`. tests: rings_port
-pub const RING_ADD_DROPPED: Pin = Pin { plain: 0xFFFFAF9C, debug: 0xFFFFB02A };
+pub const RING_ADD_DROPPED: Pin = Pin { plain: 0xFFFFB07C, debug: 0xFFFFB10A };
 
 /// `Ring_Counter`. tests: rings_port
-pub const RING_COUNTER: Pin = Pin { plain: 0xFFFFB006, debug: 0xFFFFB094 };
+pub const RING_COUNTER: Pin = Pin { plain: 0xFFFFB0E6, debug: 0xFFFFB174 };
 
 /// `Ring_Anim_Frame`. tests: rings_port
-pub const RING_ANIM_FRAME: Pin = Pin { plain: 0xFFFFB008, debug: 0xFFFFB096 };
+pub const RING_ANIM_FRAME: Pin = Pin { plain: 0xFFFFB0E8, debug: 0xFFFFB176 };
 
 /// `Ring_Anim_Timer`. tests: rings_port
-pub const RING_ANIM_TIMER: Pin = Pin { plain: 0xFFFFB009, debug: 0xFFFFB097 };
+pub const RING_ANIM_TIMER: Pin = Pin { plain: 0xFFFFB0E9, debug: 0xFFFFB177 };
 
 /// `Camera_X`. tests: rings_port, section_port, camera_port, bg_anim_port
-pub const CAMERA_X: Pin = Pin { plain: 0xFFFFA496, debug: 0xFFFFA524 };
+pub const CAMERA_X: Pin = Pin { plain: 0xFFFFA576, debug: 0xFFFFA604 };
 
 /// `Camera_Y`. tests: rings_port, section_port, camera_port, bg_anim_port
-pub const CAMERA_Y: Pin = Pin { plain: 0xFFFFA49A, debug: 0xFFFFA528 };
+pub const CAMERA_Y: Pin = Pin { plain: 0xFFFFA57A, debug: 0xFFFFA608 };
 
 /// `Camera_Target`. tests: camera_port, test_g4_final_objects_port, test_t1_harness_states_port
-pub const CAMERA_TARGET: Pin = Pin { plain: 0xFFFFABB2, debug: 0xFFFFAC40 };
+pub const CAMERA_TARGET: Pin = Pin { plain: 0xFFFFAC92, debug: 0xFFFFAD20 };
 
 /// `Camera_Curl_Offset`. tests: camera_port, test_p1_player_port
-pub const CAMERA_CURL_OFFSET: Pin = Pin { plain: 0xFFFFABB4, debug: 0xFFFFAC42 };
+pub const CAMERA_CURL_OFFSET: Pin = Pin { plain: 0xFFFFAC94, debug: 0xFFFFAD22 };
 
 /// `Camera_Deadzone_Base`. tests: camera_port
-pub const CAMERA_DEADZONE_BASE: Pin = Pin { plain: 0xFFFFABA8, debug: 0xFFFFAC36 };
+pub const CAMERA_DEADZONE_BASE: Pin = Pin { plain: 0xFFFFAC88, debug: 0xFFFFAD16 };
 
 /// `Camera_Pan_Offset`. tests: camera_port
-pub const CAMERA_PAN_OFFSET: Pin = Pin { plain: 0xFFFFABAC, debug: 0xFFFFAC3A };
+pub const CAMERA_PAN_OFFSET: Pin = Pin { plain: 0xFFFFAC8C, debug: 0xFFFFAD1A };
 
 /// `Camera_Hold_Frames`. tests: camera_port
-pub const CAMERA_HOLD_FRAMES: Pin = Pin { plain: 0xFFFFABB6, debug: 0xFFFFAC44 };
+pub const CAMERA_HOLD_FRAMES: Pin = Pin { plain: 0xFFFFAC96, debug: 0xFFFFAD24 };
 
 /// `Camera_Art_Hold`. tests: camera_port, tile_cache_port
-pub const CAMERA_ART_HOLD: Pin = Pin { plain: 0xFFFFABB7, debug: 0xFFFFAC45 };
+pub const CAMERA_ART_HOLD: Pin = Pin { plain: 0xFFFFAC97, debug: 0xFFFFAD25 };
 
 /// `Dbg_Cam_Clamp_Frames` — debug-shape consumer only (`debug_only`). tests: camera_port
-pub const DBG_CAM_CLAMP_FRAMES: u32 = 0xFFFF8D9C;
+pub const DBG_CAM_CLAMP_FRAMES: u32 = 0xFFFF8E7C;
 
 /// `Camera_X_Max`. tests: camera_port
-pub const CAMERA_X_MAX: Pin = Pin { plain: 0xFFFFABAE, debug: 0xFFFFAC3C };
+pub const CAMERA_X_MAX: Pin = Pin { plain: 0xFFFFAC8E, debug: 0xFFFFAD1C };
 
 /// `Camera_Y_Max`. tests: camera_port
-pub const CAMERA_Y_MAX: Pin = Pin { plain: 0xFFFFABB0, debug: 0xFFFFAC3E };
+pub const CAMERA_Y_MAX: Pin = Pin { plain: 0xFFFFAC90, debug: 0xFFFFAD1E };
 
 /// `BgAnim_LastStep`. tests: bg_anim_port
-pub const BG_ANIM_LAST_STEP: Pin = Pin { plain: 0xFFFF8CFE, debug: 0xFFFF8CFE };
+pub const BG_ANIM_LAST_STEP: Pin = Pin { plain: 0xFFFF8DDE, debug: 0xFFFF8DDE };
 
 /// `BgAnim_Table`. tests: bg_anim_port
-pub const BG_ANIM_TABLE: Pin = Pin { plain: 0x273B2, debug: 0x27C00 };
+pub const BG_ANIM_TABLE: Pin = Pin { plain: 0x273E2, debug: 0x27C30 };
 
 /// `Camera_X_Biased`. tests: sprites_port
-pub const CAMERA_X_BIASED: Pin = Pin { plain: 0xFFFFA49E, debug: 0xFFFFA52C };
+pub const CAMERA_X_BIASED: Pin = Pin { plain: 0xFFFFA57E, debug: 0xFFFFA60C };
 
 /// `Camera_Y_Biased`. tests: sprites_port
-pub const CAMERA_Y_BIASED: Pin = Pin { plain: 0xFFFFA4A0, debug: 0xFFFFA52E };
+pub const CAMERA_Y_BIASED: Pin = Pin { plain: 0xFFFFA580, debug: 0xFFFFA60E };
 
 /// `Collected_MarkRing`. tests: rings_port
 pub const COLLECTED_MARK_RING: Pin = Pin { plain: 0x39E6, debug: 0x438C };
@@ -789,37 +789,37 @@ pub const DMA_BUDGET_REMAINING: Pin = Pin { plain: 0xFFFF8212, debug: 0xFFFF8212
 pub const DMA_ENQ_BYTES_FRAME: Pin = Pin { plain: 0xFFFF8214, debug: 0xFFFF8214 };
 
 /// `Act_Art_Budget`. tests: load_art_port
-pub const ACT_ART_BUDGET: Pin = Pin { plain: 0xFFFFB7F4, debug: 0xFFFFB882 };
+pub const ACT_ART_BUDGET: Pin = Pin { plain: 0xFFFFB8D4, debug: 0xFFFFB962 };
 
 /// `Art_Budget_Remaining`. tests: load_art_port
-pub const ART_BUDGET_REMAINING: Pin = Pin { plain: 0xFFFFB7F6, debug: 0xFFFFB884 };
+pub const ART_BUDGET_REMAINING: Pin = Pin { plain: 0xFFFFB8D6, debug: 0xFFFFB964 };
 
 /// `PageIn_Pool_Pages`. tests: load_art_port
-pub const PAGE_IN_POOL_PAGES: Pin = Pin { plain: 0xFFFFB7E8, debug: 0xFFFFB876 };
+pub const PAGE_IN_POOL_PAGES: Pin = Pin { plain: 0xFFFFB8C8, debug: 0xFFFFB956 };
 
 /// `PageIn_Bulk_Drain`. tests: load_art_port
-pub const PAGE_IN_BULK_DRAIN: Pin = Pin { plain: 0xFFFFB7E3, debug: 0xFFFFB871 };
+pub const PAGE_IN_BULK_DRAIN: Pin = Pin { plain: 0xFFFFB8C3, debug: 0xFFFFB951 };
 
 /// `PageIn_Fully_Resident`. tests: load_art_port
-pub const PAGE_IN_FULLY_RESIDENT: Pin = Pin { plain: 0xFFFFB7EA, debug: 0xFFFFB878 };
+pub const PAGE_IN_FULLY_RESIDENT: Pin = Pin { plain: 0xFFFFB8CA, debug: 0xFFFFB958 };
 
 /// `Block_Stage_Maps`. tests: tile_cache_port
-pub const BLOCK_STAGE_MAPS: Pin = Pin { plain: 0xFFFFB450, debug: 0xFFFFB4DE };
+pub const BLOCK_STAGE_MAPS: Pin = Pin { plain: 0xFFFFB530, debug: 0xFFFFB5BE };
 
 /// `Cache_Cur_LocalMap`. tests: tile_cache_port
-pub const CACHE_CUR_LOCAL_MAP: Pin = Pin { plain: 0xFFFFB490, debug: 0xFFFFB51E };
+pub const CACHE_CUR_LOCAL_MAP: Pin = Pin { plain: 0xFFFFB570, debug: 0xFFFFB5FE };
 
 /// `PageCache_Direct_Map`. tests: load_art_port
-pub const PAGE_CACHE_DIRECT_MAP: Pin = Pin { plain: 0xFFFFB7EB, debug: 0xFFFFB879 };
+pub const PAGE_CACHE_DIRECT_MAP: Pin = Pin { plain: 0xFFFFB8CB, debug: 0xFFFFB959 };
 
 /// `Page_Table`. tests: load_art_port
 pub const PAGE_TABLE: Pin = Pin { plain: 0xFFFF699C, debug: 0xFFFF699C };
 
 /// `Dbg_DMA_Enq_Capped` — debug-shape consumer only (`debug_only`). tests: bg_anim_port, dma_queue_port, dplc_port
-pub const DBG_DMA_ENQ_CAPPED: u32 = 0xFFFF8D72;
+pub const DBG_DMA_ENQ_CAPPED: u32 = 0xFFFF8E52;
 
 /// `DMA_Overflow_Count` — debug-shape consumer only (`debug_only`). tests: dma_queue_port
-pub const DMA_OVERFLOW_COUNT: u32 = 0xFFFF8D70;
+pub const DMA_OVERFLOW_COUNT: u32 = 0xFFFF8E50;
 
 /// `Art_Staging_Buffer`. tests: load_art_port
 pub const ART_STAGING_BUFFER: Pin = Pin { plain: 0xFFFF6B34, debug: 0xFFFF6B34 };
@@ -840,49 +840,49 @@ pub const QUEUE_DMA_IMPORTANT: Pin = Pin { plain: 0x1D62, debug: 0x1E38 };
 pub const QUEUE_DMA_DEFERRABLE: Pin = Pin { plain: 0x1D6C, debug: 0x1E42 };
 
 /// `Object_RAM`. tests: core_port
-pub const OBJECT_RAM: Pin = Pin { plain: 0xFFFF8D68, debug: 0xFFFF8DF6 };
+pub const OBJECT_RAM: Pin = Pin { plain: 0xFFFF8E48, debug: 0xFFFF8ED6 };
 
 /// `System_Slots`. tests: core_port
-pub const SYSTEM_SLOTS: Pin = Pin { plain: 0xFFFF9A88, debug: 0xFFFF9B16 };
+pub const SYSTEM_SLOTS: Pin = Pin { plain: 0xFFFF9B68, debug: 0xFFFF9BF6 };
 
 /// `Effect_Slots`. tests: core_port
-pub const EFFECT_SLOTS: Pin = Pin { plain: 0xFFFF9D08, debug: 0xFFFF9D96 };
+pub const EFFECT_SLOTS: Pin = Pin { plain: 0xFFFF9DE8, debug: 0xFFFF9E76 };
 
 /// `Game_Paused`. tests: core_port
-pub const GAME_PAUSED: Pin = Pin { plain: 0xFFFFA4A2, debug: 0xFFFFA530 };
+pub const GAME_PAUSED: Pin = Pin { plain: 0xFFFFA582, debug: 0xFFFFA610 };
 
 /// `Object_RAM_End`. tests: core_port
-pub const OBJECT_RAM_END: Pin = Pin { plain: 0xFFFFA208, debug: 0xFFFFA296 };
+pub const OBJECT_RAM_END: Pin = Pin { plain: 0xFFFFA2E8, debug: 0xFFFFA376 };
 
 /// `Dynamic_Free_Stack`. tests: core_port
-pub const DYNAMIC_FREE_STACK: Pin = Pin { plain: 0xFFFFA208, debug: 0xFFFFA296 };
+pub const DYNAMIC_FREE_STACK: Pin = Pin { plain: 0xFFFFA2E8, debug: 0xFFFFA376 };
 
 /// `Dynamic_Free_SP`. tests: core_port
-pub const DYNAMIC_FREE_SP: Pin = Pin { plain: 0xFFFFA258, debug: 0xFFFFA2E6 };
+pub const DYNAMIC_FREE_SP: Pin = Pin { plain: 0xFFFFA338, debug: 0xFFFFA3C6 };
 
 /// `Effect_Free_Stack`. tests: core_port
-pub const EFFECT_FREE_STACK: Pin = Pin { plain: 0xFFFFA25A, debug: 0xFFFFA2E8 };
+pub const EFFECT_FREE_STACK: Pin = Pin { plain: 0xFFFFA33A, debug: 0xFFFFA3C8 };
 
 /// `Effect_Free_SP`. tests: core_port
-pub const EFFECT_FREE_SP: Pin = Pin { plain: 0xFFFFA27A, debug: 0xFFFFA308 };
+pub const EFFECT_FREE_SP: Pin = Pin { plain: 0xFFFFA35A, debug: 0xFFFFA3E8 };
 
 /// `Dynamic_Live`. tests: core_port
-pub const DYNAMIC_LIVE: Pin = Pin { plain: 0xFFFFB392, debug: 0xFFFFB420 };
+pub const DYNAMIC_LIVE: Pin = Pin { plain: 0xFFFFB472, debug: 0xFFFFB500 };
 
 /// `Dynamic_Live_Count`. tests: core_port
-pub const DYNAMIC_LIVE_COUNT: Pin = Pin { plain: 0xFFFFB3E2, debug: 0xFFFFB470 };
+pub const DYNAMIC_LIVE_COUNT: Pin = Pin { plain: 0xFFFFB4C2, debug: 0xFFFFB550 };
 
 /// `Dynamic_Live_Dirty`. tests: core_port
-pub const DYNAMIC_LIVE_DIRTY: Pin = Pin { plain: 0xFFFFB3E4, debug: 0xFFFFB472 };
+pub const DYNAMIC_LIVE_DIRTY: Pin = Pin { plain: 0xFFFFB4C4, debug: 0xFFFFB552 };
 
 /// `Dynamic_Live_Walking` — debug-shape consumer only (`debug_only`). tests: core_port, collision_port, entity_window_port
-pub const DYNAMIC_LIVE_WALKING: u32 = 0xFFFFB473;
+pub const DYNAMIC_LIVE_WALKING: u32 = 0xFFFFB553;
 
 /// `Dynamic_Live_Pending`. tests: core_port
-pub const DYNAMIC_LIVE_PENDING: Pin = Pin { plain: 0xFFFFB3E6, debug: 0xFFFFB474 };
+pub const DYNAMIC_LIVE_PENDING: Pin = Pin { plain: 0xFFFFB4C6, debug: 0xFFFFB554 };
 
 /// `Dynamic_Live_Pending_Count`. tests: core_port
-pub const DYNAMIC_LIVE_PENDING_COUNT: Pin = Pin { plain: 0xFFFFB3F6, debug: 0xFFFFB484 };
+pub const DYNAMIC_LIVE_PENDING_COUNT: Pin = Pin { plain: 0xFFFFB4D6, debug: 0xFFFFB564 };
 
 /// `DeleteObject`. tests: animate_port, children_port
 pub const DELETE_OBJECT: Pin = Pin { plain: 0x2DC0, debug: 0x3060 };
@@ -900,28 +900,28 @@ pub const SPRITE_TABLE_DIRTY: Pin = Pin { plain: 0xFFFF8518, debug: 0xFFFF8518 }
 pub const SPRITE_EMIT_ACTIVE: Pin = Pin { plain: 0xFFFF8519, debug: 0xFFFF8519 };
 
 /// `Sprite_Bands`. tests: sprites_port
-pub const SPRITE_BANDS: Pin = Pin { plain: 0xFFFFA27C, debug: 0xFFFFA30A };
+pub const SPRITE_BANDS: Pin = Pin { plain: 0xFFFFA35C, debug: 0xFFFFA3EA };
 
 /// `Sprite_Band_Counts`. tests: sprites_port
-pub const SPRITE_BAND_COUNTS: Pin = Pin { plain: 0xFFFFA47C, debug: 0xFFFFA50A };
+pub const SPRITE_BAND_COUNTS: Pin = Pin { plain: 0xFFFFA55C, debug: 0xFFFFA5EA };
 
 /// `Sprites_Rendered`. tests: sprites_port
-pub const SPRITES_RENDERED: Pin = Pin { plain: 0xFFFFA484, debug: 0xFFFFA512 };
+pub const SPRITES_RENDERED: Pin = Pin { plain: 0xFFFFA564, debug: 0xFFFFA5F2 };
 
 /// `Sprite_Cycle_Counter`. tests: sprites_port
-pub const SPRITE_CYCLE_COUNTER: Pin = Pin { plain: 0xFFFFA486, debug: 0xFFFFA514 };
+pub const SPRITE_CYCLE_COUNTER: Pin = Pin { plain: 0xFFFFA566, debug: 0xFFFFA5F4 };
 
 /// `SpriteMask_Y`. tests: sprites_port
-pub const SPRITE_MASK_Y: Pin = Pin { plain: 0xFFFFA488, debug: 0xFFFFA516 };
+pub const SPRITE_MASK_Y: Pin = Pin { plain: 0xFFFFA568, debug: 0xFFFFA5F6 };
 
 /// `SpriteMask_Height`. tests: sprites_port
-pub const SPRITE_MASK_HEIGHT: Pin = Pin { plain: 0xFFFFA48A, debug: 0xFFFFA518 };
+pub const SPRITE_MASK_HEIGHT: Pin = Pin { plain: 0xFFFFA56A, debug: 0xFFFFA5F8 };
 
 /// `SpriteMask_After_Band`. tests: sprites_port
-pub const SPRITE_MASK_AFTER_BAND: Pin = Pin { plain: 0xFFFFA48C, debug: 0xFFFFA51A };
+pub const SPRITE_MASK_AFTER_BAND: Pin = Pin { plain: 0xFFFFA56C, debug: 0xFFFFA5FA };
 
 /// `Scanline_Band_Sprites`. tests: sprites_port
-pub const SCANLINE_BAND_SPRITES: Pin = Pin { plain: 0xFFFFA48E, debug: 0xFFFFA51C };
+pub const SCANLINE_BAND_SPRITES: Pin = Pin { plain: 0xFFFFA56E, debug: 0xFFFFA5FC };
 
 /// `Sound_PlaySFX`. tests: animate_port
 pub const SOUND_PLAY_SFX: Pin = Pin { plain: 0x7FD4, debug: 0xAD5A };
@@ -939,16 +939,16 @@ pub const DRAW_SPRITE: Pin = Pin { plain: 0x3004, debug: 0x36F4 };
 pub const OBJECT_MOVE: Pin = Pin { plain: 0x2FB2, debug: 0x369C };
 
 /// `Ring_Sfx_Speaker`. tests: sound_api_port
-pub const RING_SFX_SPEAKER: Pin = Pin { plain: 0xFFFFB2D6, debug: 0xFFFFB364 };
+pub const RING_SFX_SPEAKER: Pin = Pin { plain: 0xFFFFB3B6, debug: 0xFFFFB444 };
 
 /// `Sfx_Ring_Buf`. tests: sound_api_port
-pub const SFX_RING_BUF: Pin = Pin { plain: 0xFFFFB2D8, debug: 0xFFFFB366 };
+pub const SFX_RING_BUF: Pin = Pin { plain: 0xFFFFB3B8, debug: 0xFFFFB446 };
 
 /// `Sfx_Ring_Wr`. tests: sound_api_port
-pub const SFX_RING_WR: Pin = Pin { plain: 0xFFFFB2E0, debug: 0xFFFFB36E };
+pub const SFX_RING_WR: Pin = Pin { plain: 0xFFFFB3C0, debug: 0xFFFFB44E };
 
 /// `Sfx_Ring_Rd`. tests: sound_api_port
-pub const SFX_RING_RD: Pin = Pin { plain: 0xFFFFB2E1, debug: 0xFFFFB36F };
+pub const SFX_RING_RD: Pin = Pin { plain: 0xFFFFB3C1, debug: 0xFFFFB44F };
 
 /// `SongTable`. tests: sound_api_port
 pub const SONG_TABLE: Pin = Pin { plain: 0xA3B10, debug: 0xA5550 };
@@ -957,130 +957,130 @@ pub const SONG_TABLE: Pin = Pin { plain: 0xA3B10, debug: 0xA5550 };
 pub const SONG_PATCH_TABLE: Pin = Pin { plain: 0xA3B14, debug: 0xA555C };
 
 /// `OJZ_Palette`. tests: act_descriptor_port
-pub const OJZ_PALETTE: Pin = Pin { plain: 0x22B30, debug: 0x23378 };
+pub const OJZ_PALETTE: Pin = Pin { plain: 0x22B60, debug: 0x233A8 };
 
 /// `OJZ_Act1_BG_Layout`. tests: act_descriptor_port
-pub const OJZ_ACT1_BG_LAYOUT: Pin = Pin { plain: 0x22BB0, debug: 0x233F8 };
+pub const OJZ_ACT1_BG_LAYOUT: Pin = Pin { plain: 0x22BE0, debug: 0x23428 };
 
 /// `OJZ_Act1_BG_Tiles`. tests: act_descriptor_port
-pub const OJZ_ACT1_BG_TILES: Pin = Pin { plain: 0x24BB0, debug: 0x253F8 };
+pub const OJZ_ACT1_BG_TILES: Pin = Pin { plain: 0x24BE0, debug: 0x25428 };
 
 /// `ParallaxConfig_OJZ_Default`. tests: act_descriptor_port
 pub const PARALLAX_CONFIG_OJZ_DEFAULT: Pin = Pin { plain: 0x12414, debug: 0x12C68 };
 
 /// `OJZ_Act_Pool_PageTable`. tests: act_descriptor_port
-pub const OJZ_ACT_POOL_PAGE_TABLE: Pin = Pin { plain: 0x16714, debug: 0x16F6C };
+pub const OJZ_ACT_POOL_PAGE_TABLE: Pin = Pin { plain: 0x16744, debug: 0x16F9C };
 
 /// `OJZ_Sec_LocalMaps`. tests: act_descriptor_port
-pub const OJZ_SEC_LOCAL_MAPS: Pin = Pin { plain: 0x22B00, debug: 0x23354 };
+pub const OJZ_SEC_LOCAL_MAPS: Pin = Pin { plain: 0x22B30, debug: 0x23384 };
 
 /// `OJZ_Sec0_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC0_BLOCKS: Pin = Pin { plain: 0x169E0, debug: 0x17240 };
+pub const OJZ_SEC0_BLOCKS: Pin = Pin { plain: 0x16A10, debug: 0x17270 };
 
 /// `OJZ_Sec1_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC1_BLOCKS: Pin = Pin { plain: 0x189BA, debug: 0x1921A };
+pub const OJZ_SEC1_BLOCKS: Pin = Pin { plain: 0x189EA, debug: 0x1924A };
 
 /// `OJZ_Sec2_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC2_BLOCKS: Pin = Pin { plain: 0x19D36, debug: 0x1A596 };
+pub const OJZ_SEC2_BLOCKS: Pin = Pin { plain: 0x19D66, debug: 0x1A5C6 };
 
 /// `OJZ_Sec3_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC3_BLOCKS: Pin = Pin { plain: 0x1B4CE, debug: 0x1BD2E };
+pub const OJZ_SEC3_BLOCKS: Pin = Pin { plain: 0x1B4FE, debug: 0x1BD5E };
 
 /// `OJZ_Sec4_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC4_BLOCKS: Pin = Pin { plain: 0x19D36, debug: 0x1A596 };
+pub const OJZ_SEC4_BLOCKS: Pin = Pin { plain: 0x19D66, debug: 0x1A5C6 };
 
 /// `OJZ_Sec5_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC5_BLOCKS: Pin = Pin { plain: 0x1C61A, debug: 0x1CE7A };
+pub const OJZ_SEC5_BLOCKS: Pin = Pin { plain: 0x1C64A, debug: 0x1CEAA };
 
 /// `OJZ_Sec6_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC6_BLOCKS: Pin = Pin { plain: 0x1D440, debug: 0x1DCA0 };
+pub const OJZ_SEC6_BLOCKS: Pin = Pin { plain: 0x1D470, debug: 0x1DCD0 };
 
 /// `OJZ_Sec7_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC7_BLOCKS: Pin = Pin { plain: 0x1F040, debug: 0x1F8A0 };
+pub const OJZ_SEC7_BLOCKS: Pin = Pin { plain: 0x1F070, debug: 0x1F8D0 };
 
 /// `OJZ_Sec8_Blocks`. tests: act_descriptor_port
-pub const OJZ_SEC8_BLOCKS: Pin = Pin { plain: 0x202B4, debug: 0x20B14 };
+pub const OJZ_SEC8_BLOCKS: Pin = Pin { plain: 0x202E4, debug: 0x20B44 };
 
 /// `OJZ_Sec0_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC0_OBJECTS: Pin = Pin { plain: 0x136EE, debug: 0x13F46 };
+pub const OJZ_SEC0_OBJECTS: Pin = Pin { plain: 0x1371E, debug: 0x13F76 };
 
 /// `OJZ_Sec0_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC0_RINGS: Pin = Pin { plain: 0x136F6, debug: 0x13F4E };
+pub const OJZ_SEC0_RINGS: Pin = Pin { plain: 0x13726, debug: 0x13F7E };
 
 /// `OJZ_Sec0_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC0_TYPE_TABLE: Pin = Pin { plain: 0x136E8, debug: 0x13F40 };
+pub const OJZ_SEC0_TYPE_TABLE: Pin = Pin { plain: 0x13718, debug: 0x13F70 };
 
 /// `OJZ_Sec1_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC1_OBJECTS: Pin = Pin { plain: 0x13720, debug: 0x13F78 };
+pub const OJZ_SEC1_OBJECTS: Pin = Pin { plain: 0x13750, debug: 0x13FA8 };
 
 /// `OJZ_Sec1_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC1_RINGS: Pin = Pin { plain: 0x13734, debug: 0x13F8C };
+pub const OJZ_SEC1_RINGS: Pin = Pin { plain: 0x13764, debug: 0x13FBC };
 
 /// `OJZ_Sec1_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC1_TYPE_TABLE: Pin = Pin { plain: 0x13716, debug: 0x13F6E };
+pub const OJZ_SEC1_TYPE_TABLE: Pin = Pin { plain: 0x13746, debug: 0x13F9E };
 
 /// `OJZ_Sec2_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC2_OBJECTS: Pin = Pin { plain: 0x13766, debug: 0x13FBE };
+pub const OJZ_SEC2_OBJECTS: Pin = Pin { plain: 0x13796, debug: 0x13FEE };
 
 /// `OJZ_Sec2_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC2_RINGS: Pin = Pin { plain: 0x13774, debug: 0x13FCC };
+pub const OJZ_SEC2_RINGS: Pin = Pin { plain: 0x137A4, debug: 0x13FFC };
 
 /// `OJZ_Sec2_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC2_TYPE_TABLE: Pin = Pin { plain: 0x1375C, debug: 0x13FB4 };
+pub const OJZ_SEC2_TYPE_TABLE: Pin = Pin { plain: 0x1378C, debug: 0x13FE4 };
 
 /// `OJZ_Sec3_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC3_OBJECTS: Pin = Pin { plain: 0x137AA, debug: 0x14002 };
+pub const OJZ_SEC3_OBJECTS: Pin = Pin { plain: 0x137DA, debug: 0x14032 };
 
 /// `OJZ_Sec3_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC3_RINGS: Pin = Pin { plain: 0x137AC, debug: 0x14004 };
+pub const OJZ_SEC3_RINGS: Pin = Pin { plain: 0x137DC, debug: 0x14034 };
 
 /// `OJZ_Sec3_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC3_TYPE_TABLE: Pin = Pin { plain: 0x137A8, debug: 0x14000 };
+pub const OJZ_SEC3_TYPE_TABLE: Pin = Pin { plain: 0x137D8, debug: 0x14030 };
 
 /// `OJZ_Sec4_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC4_OBJECTS: Pin = Pin { plain: 0x137B2, debug: 0x1400A };
+pub const OJZ_SEC4_OBJECTS: Pin = Pin { plain: 0x137E2, debug: 0x1403A };
 
 /// `OJZ_Sec4_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC4_RINGS: Pin = Pin { plain: 0x137B4, debug: 0x1400C };
+pub const OJZ_SEC4_RINGS: Pin = Pin { plain: 0x137E4, debug: 0x1403C };
 
 /// `OJZ_Sec4_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC4_TYPE_TABLE: Pin = Pin { plain: 0x137B0, debug: 0x14008 };
+pub const OJZ_SEC4_TYPE_TABLE: Pin = Pin { plain: 0x137E0, debug: 0x14038 };
 
 /// `OJZ_Sec5_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC5_OBJECTS: Pin = Pin { plain: 0x137EA, debug: 0x14042 };
+pub const OJZ_SEC5_OBJECTS: Pin = Pin { plain: 0x1381A, debug: 0x14072 };
 
 /// `OJZ_Sec5_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC5_RINGS: Pin = Pin { plain: 0x137EC, debug: 0x14044 };
+pub const OJZ_SEC5_RINGS: Pin = Pin { plain: 0x1381C, debug: 0x14074 };
 
 /// `OJZ_Sec5_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC5_TYPE_TABLE: Pin = Pin { plain: 0x137E8, debug: 0x14040 };
+pub const OJZ_SEC5_TYPE_TABLE: Pin = Pin { plain: 0x13818, debug: 0x14070 };
 
 /// `OJZ_Sec6_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC6_OBJECTS: Pin = Pin { plain: 0x13812, debug: 0x1406A };
+pub const OJZ_SEC6_OBJECTS: Pin = Pin { plain: 0x13842, debug: 0x1409A };
 
 /// `OJZ_Sec6_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC6_RINGS: Pin = Pin { plain: 0x13814, debug: 0x1406C };
+pub const OJZ_SEC6_RINGS: Pin = Pin { plain: 0x13844, debug: 0x1409C };
 
 /// `OJZ_Sec6_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC6_TYPE_TABLE: Pin = Pin { plain: 0x13810, debug: 0x14068 };
+pub const OJZ_SEC6_TYPE_TABLE: Pin = Pin { plain: 0x13840, debug: 0x14098 };
 
 /// `OJZ_Sec7_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC7_OBJECTS: Pin = Pin { plain: 0x1381A, debug: 0x14072 };
+pub const OJZ_SEC7_OBJECTS: Pin = Pin { plain: 0x1384A, debug: 0x140A2 };
 
 /// `OJZ_Sec7_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC7_RINGS: Pin = Pin { plain: 0x1381C, debug: 0x14074 };
+pub const OJZ_SEC7_RINGS: Pin = Pin { plain: 0x1384C, debug: 0x140A4 };
 
 /// `OJZ_Sec7_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC7_TYPE_TABLE: Pin = Pin { plain: 0x13818, debug: 0x14070 };
+pub const OJZ_SEC7_TYPE_TABLE: Pin = Pin { plain: 0x13848, debug: 0x140A0 };
 
 /// `OJZ_Sec8_Objects`. tests: act_descriptor_port
-pub const OJZ_SEC8_OBJECTS: Pin = Pin { plain: 0x13842, debug: 0x1409A };
+pub const OJZ_SEC8_OBJECTS: Pin = Pin { plain: 0x13872, debug: 0x140CA };
 
 /// `OJZ_Sec8_Rings`. tests: act_descriptor_port
-pub const OJZ_SEC8_RINGS: Pin = Pin { plain: 0x13844, debug: 0x1409C };
+pub const OJZ_SEC8_RINGS: Pin = Pin { plain: 0x13874, debug: 0x140CC };
 
 /// `OJZ_Sec8_TypeTable`. tests: act_descriptor_port
-pub const OJZ_SEC8_TYPE_TABLE: Pin = Pin { plain: 0x13840, debug: 0x14098 };
+pub const OJZ_SEC8_TYPE_TABLE: Pin = Pin { plain: 0x13870, debug: 0x140C8 };
 
 /// `BLOCK_INDEX_SIZE`. tests: act_descriptor_port
 pub const BLOCK_INDEX_SIZE: Pin = Pin { plain: 0x400, debug: 0x400 };
@@ -1101,43 +1101,43 @@ pub const ACT_LEN: Pin = Pin { plain: 0x28, debug: 0x28 };
 pub const SEC_LEN: Pin = Pin { plain: 0x42, debug: 0x42 };
 
 /// `Camera_Y_Coarse_Prev`. tests: entity_window_port
-pub const CAMERA_Y_COARSE_PREV: Pin = Pin { plain: 0xFFFFB116, debug: 0xFFFFB1A4 };
+pub const CAMERA_Y_COARSE_PREV: Pin = Pin { plain: 0xFFFFB1F6, debug: 0xFFFFB284 };
 
 /// `Current_Act_Ptr`. tests: entity_window_port, section_port
-pub const CURRENT_ACT_PTR: Pin = Pin { plain: 0xFFFFB2D2, debug: 0xFFFFB360 };
+pub const CURRENT_ACT_PTR: Pin = Pin { plain: 0xFFFFB3B2, debug: 0xFFFFB440 };
 
 /// `Entity_Window_Active`. tests: entity_window_port
-pub const ENTITY_WINDOW_ACTIVE: Pin = Pin { plain: 0xFFFFB00A, debug: 0xFFFFB098 };
+pub const ENTITY_WINDOW_ACTIVE: Pin = Pin { plain: 0xFFFFB0EA, debug: 0xFFFFB178 };
 
 /// `Entity_Window_Anchor`. tests: entity_window_port
-pub const ENTITY_WINDOW_ANCHOR: Pin = Pin { plain: 0xFFFFB00C, debug: 0xFFFFB09A };
+pub const ENTITY_WINDOW_ANCHOR: Pin = Pin { plain: 0xFFFFB0EC, debug: 0xFFFFB17A };
 
 /// `Entity_Window_OriginX`. tests: entity_window_port
-pub const ENTITY_WINDOW_ORIGIN_X: Pin = Pin { plain: 0xFFFFB00E, debug: 0xFFFFB09C };
+pub const ENTITY_WINDOW_ORIGIN_X: Pin = Pin { plain: 0xFFFFB0EE, debug: 0xFFFFB17C };
 
 /// `Entity_Window_OriginY`. tests: entity_window_port
-pub const ENTITY_WINDOW_ORIGIN_Y: Pin = Pin { plain: 0xFFFFB010, debug: 0xFFFFB09E };
+pub const ENTITY_WINDOW_ORIGIN_Y: Pin = Pin { plain: 0xFFFFB0F0, debug: 0xFFFFB17E };
 
 /// `Entity_Window_Center_ID`. tests: entity_window_port
-pub const ENTITY_WINDOW_CENTER_ID: Pin = Pin { plain: 0xFFFFB00B, debug: 0xFFFFB099 };
+pub const ENTITY_WINDOW_CENTER_ID: Pin = Pin { plain: 0xFFFFB0EB, debug: 0xFFFFB179 };
 
 /// `Entity_Scan_State`. tests: entity_window_port
-pub const ENTITY_SCAN_STATE: Pin = Pin { plain: 0xFFFFAF9E, debug: 0xFFFFB02C };
+pub const ENTITY_SCAN_STATE: Pin = Pin { plain: 0xFFFFB07E, debug: 0xFFFFB10C };
 
 /// `Entity_Loaded_Masks`. tests: entity_window_port
-pub const ENTITY_LOADED_MASKS: Pin = Pin { plain: 0xFFFFB012, debug: 0xFFFFB0A0 };
+pub const ENTITY_LOADED_MASKS: Pin = Pin { plain: 0xFFFFB0F2, debug: 0xFFFFB180 };
 
 /// `Entity_Mask_Scratch`. tests: entity_window_port
-pub const ENTITY_MASK_SCRATCH: Pin = Pin { plain: 0xFFFFB092, debug: 0xFFFFB120 };
+pub const ENTITY_MASK_SCRATCH: Pin = Pin { plain: 0xFFFFB172, debug: 0xFFFFB200 };
 
 /// `Ring_Collected_Window`. tests: entity_window_port
-pub const RING_COLLECTED_WINDOW: Pin = Pin { plain: 0xFFFFB118, debug: 0xFFFFB1A6 };
+pub const RING_COLLECTED_WINDOW: Pin = Pin { plain: 0xFFFFB1F8, debug: 0xFFFFB286 };
 
 /// `Ring_Collected_Park`. tests: entity_window_port
-pub const RING_COLLECTED_PARK: Pin = Pin { plain: 0xFFFFB24C, debug: 0xFFFFB2DA };
+pub const RING_COLLECTED_PARK: Pin = Pin { plain: 0xFFFFB32C, debug: 0xFFFFB3BA };
 
 /// `Collected_Park_Next`. tests: entity_window_port
-pub const COLLECTED_PARK_NEXT: Pin = Pin { plain: 0xFFFFB2D0, debug: 0xFFFFB35E };
+pub const COLLECTED_PARK_NEXT: Pin = Pin { plain: 0xFFFFB3B0, debug: 0xFFFFB43E };
 
 /// `RingBuffer_Clear`. tests: entity_window_port
 pub const RING_BUFFER_CLEAR: Pin = Pin { plain: 0x381C, debug: 0x4162 };
@@ -1164,31 +1164,31 @@ pub const PALETTE_BUFFER: Pin = Pin { plain: 0xFFFF8216, debug: 0xFFFF8216 };
 pub const HSCROLL_BUFFER: Pin = Pin { plain: 0xFFFF851A, debug: 0xFFFF851A };
 
 /// `Static_Pal_Line0`. tests: buffers_port
-pub const STATIC_PAL_LINE0: Pin = Pin { plain: 0xFFFF8D06, debug: 0xFFFF8D06 };
+pub const STATIC_PAL_LINE0: Pin = Pin { plain: 0xFFFF8DE6, debug: 0xFFFF8DE6 };
 
 /// `Static_Pal_Line1`. tests: buffers_port
-pub const STATIC_PAL_LINE1: Pin = Pin { plain: 0xFFFF8D14, debug: 0xFFFF8D14 };
+pub const STATIC_PAL_LINE1: Pin = Pin { plain: 0xFFFF8DF4, debug: 0xFFFF8DF4 };
 
 /// `Static_Pal_Line2`. tests: buffers_port
-pub const STATIC_PAL_LINE2: Pin = Pin { plain: 0xFFFF8D22, debug: 0xFFFF8D22 };
+pub const STATIC_PAL_LINE2: Pin = Pin { plain: 0xFFFF8E02, debug: 0xFFFF8E02 };
 
 /// `Static_Pal_Line3`. tests: buffers_port
-pub const STATIC_PAL_LINE3: Pin = Pin { plain: 0xFFFF8D3E, debug: 0xFFFF8D3E };
+pub const STATIC_PAL_LINE3: Pin = Pin { plain: 0xFFFF8E1E, debug: 0xFFFF8E1E };
 
 /// `Static_Sprite_DMA`. tests: buffers_port
-pub const STATIC_SPRITE_DMA: Pin = Pin { plain: 0xFFFF8D4C, debug: 0xFFFF8D4C };
+pub const STATIC_SPRITE_DMA: Pin = Pin { plain: 0xFFFF8E2C, debug: 0xFFFF8E2C };
 
 /// `Static_Hscroll_Line`. tests: buffers_port
-pub const STATIC_HSCROLL_LINE: Pin = Pin { plain: 0xFFFF8D5A, debug: 0xFFFF8D5A };
+pub const STATIC_HSCROLL_LINE: Pin = Pin { plain: 0xFFFF8E3A, debug: 0xFFFF8E3A };
 
 /// `Palette_Dirty`. tests: buffers_port, palette_port
 pub const PALETTE_DIRTY: Pin = Pin { plain: 0xFFFF8296, debug: 0xFFFF8296 };
 
 /// `Parallax_Active_Config`. tests: buffers_port
-pub const PARALLAX_ACTIVE_CONFIG: Pin = Pin { plain: 0x63BE, debug: 0x75E2 };
+pub const PARALLAX_ACTIVE_CONFIG: Pin = Pin { plain: 0x63C0, debug: 0x75E4 };
 
 /// `Palette_Ship_Snap`. tests: buffers_port
-pub const PALETTE_SHIP_SNAP: Pin = Pin { plain: 0xFFFFB7FC, debug: 0xFFFFB88A };
+pub const PALETTE_SHIP_SNAP: Pin = Pin { plain: 0xFFFFB8DC, debug: 0xFFFFB96A };
 
 /// `VBlank_Ready`. tests: vblank_port
 pub const V_BLANK_READY: Pin = Pin { plain: 0xFFFF8048, debug: 0xFFFF8048 };
@@ -1233,28 +1233,28 @@ pub const VSCROLL_FACTOR: Pin = Pin { plain: 0xFFFF889C, debug: 0xFFFF889C };
 pub const DMA_BUDGET_DEFAULT: Pin = Pin { plain: 0xFFFF8210, debug: 0xFFFF8210 };
 
 /// `Lag_Frame_Count` — debug-shape consumer only (`debug_only`). tests: vblank_port
-pub const LAG_FRAME_COUNT: u32 = 0xFFFF8D74;
+pub const LAG_FRAME_COUNT: u32 = 0xFFFF8E54;
 
 /// `DMA_Bytes_ThisFrame` — debug-shape consumer only (`debug_only`). tests: vblank_port
-pub const DMA_BYTES_THIS_FRAME: u32 = 0xFFFF8D68;
+pub const DMA_BYTES_THIS_FRAME: u32 = 0xFFFF8E48;
 
 /// `PageIn_InFlight`. tests: game_loop_port
-pub const PAGE_IN_IN_FLIGHT: Pin = Pin { plain: 0xFFFFB7B6, debug: 0xFFFFB844 };
+pub const PAGE_IN_IN_FLIGHT: Pin = Pin { plain: 0xFFFFB896, debug: 0xFFFFB924 };
 
 /// `PageIn_Saved_PC`. tests: game_loop_port
-pub const PAGE_IN_SAVED_PC: Pin = Pin { plain: 0xFFFFB7B0, debug: 0xFFFFB83E };
+pub const PAGE_IN_SAVED_PC: Pin = Pin { plain: 0xFFFFB890, debug: 0xFFFFB91E };
 
 /// `PageIn_BankRegs`. tests: game_loop_port
 pub const PAGE_IN_BANK_REGS: Pin = Pin { plain: 0x772C, debug: 0x8AB4 };
 
 /// `Dbg_PageIn_Preempts` — debug-shape consumer only (`debug_only`). tests: game_loop_port
-pub const DBG_PAGE_IN_PREEMPTS: u32 = 0xFFFF8D8E;
+pub const DBG_PAGE_IN_PREEMPTS: u32 = 0xFFFF8E6E;
 
 /// `ZX0R_Decompress.__end`. tests: game_loop_port
 pub const ZX0R_DECOMPRESS_END: Pin = Pin { plain: 0x2850, debug: 0x2AE8 };
 
 /// `PageIn_Staging_Busy`. tests: game_loop_port, load_art_port
-pub const PAGE_IN_STAGING_BUSY: Pin = Pin { plain: 0xFFFFB7B8, debug: 0xFFFFB846 };
+pub const PAGE_IN_STAGING_BUSY: Pin = Pin { plain: 0xFFFFB898, debug: 0xFFFFB926 };
 
 /// `PageIn_Flush`. tests: load_art_port
 pub const PAGE_IN_FLUSH: Pin = Pin { plain: 0x77F4, debug: 0x8B84 };
@@ -1263,16 +1263,16 @@ pub const PAGE_IN_FLUSH: Pin = Pin { plain: 0x77F4, debug: 0x8B84 };
 pub const PAGE_IN_ENQUEUE: Pin = Pin { plain: 0x77B6, debug: 0x8B46 };
 
 /// `PageIn_Pool_Table`. tests: load_art_port
-pub const PAGE_IN_POOL_TABLE: Pin = Pin { plain: 0xFFFFB7E4, debug: 0xFFFFB872 };
+pub const PAGE_IN_POOL_TABLE: Pin = Pin { plain: 0xFFFFB8C4, debug: 0xFFFFB952 };
 
 /// `PageIn_Queue_Count`. tests: load_art_port
-pub const PAGE_IN_QUEUE_COUNT: Pin = Pin { plain: 0xFFFFB7BA, debug: 0xFFFFB848 };
+pub const PAGE_IN_QUEUE_COUNT: Pin = Pin { plain: 0xFFFFB89A, debug: 0xFFFFB928 };
 
 /// `PageIn_Suspended`. tests: load_art_port
-pub const PAGE_IN_SUSPENDED: Pin = Pin { plain: 0xFFFFB7B7, debug: 0xFFFFB845 };
+pub const PAGE_IN_SUSPENDED: Pin = Pin { plain: 0xFFFFB897, debug: 0xFFFFB925 };
 
 /// `PageIn_Land_Pending`. tests: load_art_port
-pub const PAGE_IN_LAND_PENDING: Pin = Pin { plain: 0xFFFFB7B9, debug: 0xFFFFB847 };
+pub const PAGE_IN_LAND_PENDING: Pin = Pin { plain: 0xFFFFB899, debug: 0xFFFFB927 };
 
 /// `PageCache_Init`. tests: load_art_port
 pub const PAGE_CACHE_INIT: Pin = Pin { plain: 0x7844, debug: 0x8BD4 };
@@ -1293,13 +1293,13 @@ pub const PAGE_CACHE_PATCH_RUN_COL: Pin = Pin { plain: 0x7B22, debug: 0x91BC };
 pub const PAGE_CACHE_AUDIT: Pin = Pin { plain: 0x7D26, debug: 0x953C };
 
 /// `Cache_Art_Stall`. tests: tile_cache_port
-pub const CACHE_ART_STALL: Pin = Pin { plain: 0xFFFFABCA, debug: 0xFFFFAC58 };
+pub const CACHE_ART_STALL: Pin = Pin { plain: 0xFFFFACAA, debug: 0xFFFFAD38 };
 
 /// `Page_Audit_Ticks` — debug-shape consumer only (`debug_only`). tests: tile_cache_port
-pub const PAGE_AUDIT_TICKS: u32 = 0xFFFF8DA2;
+pub const PAGE_AUDIT_TICKS: u32 = 0xFFFF8E82;
 
 /// `Cache_Stall_Watchdog` — debug-shape consumer only (`debug_only`). tests: tile_cache_port
-pub const CACHE_STALL_WATCHDOG: u32 = 0xFFFF8DA0;
+pub const CACHE_STALL_WATCHDOG: u32 = 0xFFFF8E80;
 
 /// `Flush_VDP_Shadow`. tests: vblank_port
 pub const FLUSH_VDP_SHADOW: Pin = Pin { plain: 0x1C12, debug: 0x1C90 };
@@ -1308,7 +1308,7 @@ pub const FLUSH_VDP_SHADOW: Pin = Pin { plain: 0x1C12, debug: 0x1C90 };
 pub const V_INT_DRAW_LEVEL: Pin = Pin { plain: 0x4886, debug: 0x56E6 };
 
 /// `Vscroll_Write`. tests: vblank_port
-pub const VSCROLL_WRITE: Pin = Pin { plain: 0x63D0, debug: 0x75F4 };
+pub const VSCROLL_WRITE: Pin = Pin { plain: 0x63D2, debug: 0x75F6 };
 
 /// `Read_Controllers`. tests: vblank_port
 pub const READ_CONTROLLERS: Pin = Pin { plain: 0x2460, debug: 0x2540 };
@@ -1416,22 +1416,22 @@ pub const PLAYER_SENSOR_WALL_AT: Pin = Pin { plain: 0x5C34, debug: 0x6D54 };
 pub const COLLISION_GET_TYPE: Pin = Pin { plain: 0x5790, debug: 0x68B0 };
 
 /// `SolidityTable`. tests: test_p4_player_sensors_port
-pub const SOLIDITY_TABLE: Pin = Pin { plain: 0x6FB70, debug: 0x703D0 };
+pub const SOLIDITY_TABLE: Pin = Pin { plain: 0x6FBA0, debug: 0x70400 };
 
 /// `AngleTable`. tests: test_p4_player_sensors_port
-pub const ANGLE_TABLE: Pin = Pin { plain: 0x6FA70, debug: 0x702D0 };
+pub const ANGLE_TABLE: Pin = Pin { plain: 0x6FAA0, debug: 0x70300 };
 
 /// `HeightMaps`. tests: test_p4_player_sensors_port
-pub const HEIGHT_MAPS: Pin = Pin { plain: 0x6DA70, debug: 0x6E2D0 };
+pub const HEIGHT_MAPS: Pin = Pin { plain: 0x6DAA0, debug: 0x6E300 };
 
 /// `HeightMapsRot`. tests: test_p4_player_sensors_port
-pub const HEIGHT_MAPS_ROT: Pin = Pin { plain: 0x6EA70, debug: 0x6F2D0 };
+pub const HEIGHT_MAPS_ROT: Pin = Pin { plain: 0x6EAA0, debug: 0x6F300 };
 
 /// `Character_ID`. tests: test_p1_player_port
-pub const CHARACTER_ID: Pin = Pin { plain: 0xFFFFB87E, debug: 0xFFFFE114 };
+pub const CHARACTER_ID: Pin = Pin { plain: 0xFFFFB95E, debug: 0xFFFFE1F4 };
 
 /// `Player_Chardef`. tests: test_p1_player_port
-pub const PLAYER_CHARDEF: Pin = Pin { plain: 0xFFFFB880, debug: 0xFFFFE116 };
+pub const PLAYER_CHARDEF: Pin = Pin { plain: 0xFFFFB960, debug: 0xFFFFE1F6 };
 
 /// `Ability_None`. tests: test_p1_player_port
 pub const ABILITY_NONE: Pin = Pin { plain: 0x11ED8, debug: 0x1205E };
@@ -1452,118 +1452,118 @@ pub const PLAYER_ABILITY: Pin = Pin { plain: 0x11ECE, debug: 0x11FEE };
 pub const PHYS_TABLE_SONIC: Pin = Pin { plain: 0x11E06, debug: 0x11F26 };
 
 /// `Pal_SonicTails`. tests: test_p1_player_port
-pub const PAL_SONIC_TAILS: Pin = Pin { plain: 0x6DA26, debug: 0x6E286 };
+pub const PAL_SONIC_TAILS: Pin = Pin { plain: 0x6DA56, debug: 0x6E2B6 };
 
 /// `OJZ_TestRaster`. tests: act_descriptor_port
-pub const OJZ_TEST_RASTER: Pin = Pin { plain: 0x13180, debug: 0x139D4 };
+pub const OJZ_TEST_RASTER: Pin = Pin { plain: 0x131AC, debug: 0x13A00 };
 
 /// `OJZ_TestPal`. tests: act_descriptor_port
-pub const OJZ_TEST_PAL: Pin = Pin { plain: 0x131A2, debug: 0x139F6 };
+pub const OJZ_TEST_PAL: Pin = Pin { plain: 0x131CE, debug: 0x13A22 };
 
 /// `OJZ_TestGradient`. tests: act_descriptor_port
-pub const OJZ_TEST_GRADIENT: Pin = Pin { plain: 0x1346C, debug: 0x13CC0 };
+pub const OJZ_TEST_GRADIENT: Pin = Pin { plain: 0x13498, debug: 0x13CEC };
 
 /// `OJZ_ShimmerCycle`. tests: act_descriptor_port
-pub const OJZ_SHIMMER_CYCLE: Pin = Pin { plain: 0x13202, debug: 0x13A56 };
+pub const OJZ_SHIMMER_CYCLE: Pin = Pin { plain: 0x1322E, debug: 0x13A82 };
 
 /// `OJZ_TestVsram`. tests: act_descriptor_port
-pub const OJZ_TEST_VSRAM: Pin = Pin { plain: 0x1348A, debug: 0x13CDE };
+pub const OJZ_TEST_VSRAM: Pin = Pin { plain: 0x134B6, debug: 0x13D0A };
 
 /// `OJZ_TestRamp`. tests: act_descriptor_port
-pub const OJZ_TEST_RAMP: Pin = Pin { plain: 0x134A8, debug: 0x13CFC };
+pub const OJZ_TEST_RAMP: Pin = Pin { plain: 0x134D4, debug: 0x13D28 };
 
 /// `Raster_Program`. tests: raster_port
-pub const RASTER_PROGRAM: Pin = Pin { plain: 0xFFFF89E8, debug: 0xFFFF89E8 };
+pub const RASTER_PROGRAM: Pin = Pin { plain: 0xFFFF8AC8, debug: 0xFFFF8AC8 };
 
 /// `Raster_Cursor`. tests: raster_port
-pub const RASTER_CURSOR: Pin = Pin { plain: 0xFFFF89EC, debug: 0xFFFF89EC };
+pub const RASTER_CURSOR: Pin = Pin { plain: 0xFFFF8ACC, debug: 0xFFFF8ACC };
 
 /// `Raster_Pending`. tests: raster_port
-pub const RASTER_PENDING: Pin = Pin { plain: 0xFFFF89F0, debug: 0xFFFF89F0 };
+pub const RASTER_PENDING: Pin = Pin { plain: 0xFFFF8AD0, debug: 0xFFFF8AD0 };
 
 /// `Raster_Buf_A`. tests: raster_port
-pub const RASTER_BUF_A: Pin = Pin { plain: 0xFFFF89F6, debug: 0xFFFF89F6 };
+pub const RASTER_BUF_A: Pin = Pin { plain: 0xFFFF8AD6, debug: 0xFFFF8AD6 };
 
 /// `Raster_Active_Buf`. tests: raster_port
-pub const RASTER_ACTIVE_BUF: Pin = Pin { plain: 0xFFFF8AF6, debug: 0xFFFF8AF6 };
+pub const RASTER_ACTIVE_BUF: Pin = Pin { plain: 0xFFFF8BD6, debug: 0xFFFF8BD6 };
 
 /// `Raster_Buf_B`. tests: raster_port
-pub const RASTER_BUF_B: Pin = Pin { plain: 0xFFFF8A76, debug: 0xFFFF8A76 };
+pub const RASTER_BUF_B: Pin = Pin { plain: 0xFFFF8B56, debug: 0xFFFF8B56 };
 
 /// `Raster_Line`. tests: raster_port
-pub const RASTER_LINE: Pin = Pin { plain: 0xFFFF89F4, debug: 0xFFFF89F4 };
+pub const RASTER_LINE: Pin = Pin { plain: 0xFFFF8AD4, debug: 0xFFFF8AD4 };
 
 /// `Raster_Dense_Lines`. tests: raster_port
-pub const RASTER_DENSE_LINES: Pin = Pin { plain: 0xFFFF8AFA, debug: 0xFFFF8AFA };
+pub const RASTER_DENSE_LINES: Pin = Pin { plain: 0xFFFF8BDA, debug: 0xFFFF8BDA };
 
 /// `Raster_Dense_Cursor`. tests: raster_port
-pub const RASTER_DENSE_CURSOR: Pin = Pin { plain: 0xFFFF8AFC, debug: 0xFFFF8AFC };
+pub const RASTER_DENSE_CURSOR: Pin = Pin { plain: 0xFFFF8BDC, debug: 0xFFFF8BDC };
 
 /// `Raster_Dense_Cmd`. tests: raster_port
-pub const RASTER_DENSE_CMD: Pin = Pin { plain: 0xFFFF8B00, debug: 0xFFFF8B00 };
+pub const RASTER_DENSE_CMD: Pin = Pin { plain: 0xFFFF8BE0, debug: 0xFFFF8BE0 };
 
 /// `Raster_Dense_Mode`. tests: raster_port
-pub const RASTER_DENSE_MODE: Pin = Pin { plain: 0xFFFF8B04, debug: 0xFFFF8B04 };
+pub const RASTER_DENSE_MODE: Pin = Pin { plain: 0xFFFF8BE4, debug: 0xFFFF8BE4 };
 
 /// `Raster_Ramp_Acc`. tests: raster_port
-pub const RASTER_RAMP_ACC: Pin = Pin { plain: 0xFFFF8B06, debug: 0xFFFF8B06 };
+pub const RASTER_RAMP_ACC: Pin = Pin { plain: 0xFFFF8BE6, debug: 0xFFFF8BE6 };
 
 /// `Raster_Ramp_Step`. tests: raster_port
-pub const RASTER_RAMP_STEP: Pin = Pin { plain: 0xFFFF8B0A, debug: 0xFFFF8B0A };
+pub const RASTER_RAMP_STEP: Pin = Pin { plain: 0xFFFF8BEA, debug: 0xFFFF8BEA };
 
 /// `Effects_World_Y`. tests: raster_port
-pub const EFFECTS_WORLD_Y: Pin = Pin { plain: 0xFFFF8B0E, debug: 0xFFFF8B0E };
+pub const EFFECTS_WORLD_Y: Pin = Pin { plain: 0xFFFF8BEE, debug: 0xFFFF8BEE };
 
 /// `Effects_Screen_L`. tests: raster_port, parallax_port, buffers_port
-pub const EFFECTS_SCREEN_L: Pin = Pin { plain: 0xFFFF8B16, debug: 0xFFFF8B16 };
+pub const EFFECTS_SCREEN_L: Pin = Pin { plain: 0xFFFF8BF6, debug: 0xFFFF8BF6 };
 
 /// `Effects_Offscreen_Entry`. tests: raster_port, buffers_port
-pub const EFFECTS_OFFSCREEN_ENTRY: Pin = Pin { plain: 0xFFFF8B1E, debug: 0xFFFF8B1E };
+pub const EFFECTS_OFFSCREEN_ENTRY: Pin = Pin { plain: 0xFFFF8BFE, debug: 0xFFFF8BFE };
 
 /// `Static_Pal_Ship`. tests: raster_port
-pub const STATIC_PAL_SHIP: Pin = Pin { plain: 0xFFFF8D30, debug: 0xFFFF8D30 };
+pub const STATIC_PAL_SHIP: Pin = Pin { plain: 0xFFFF8E10, debug: 0xFFFF8E10 };
 
 /// `Build_DMA_Entry`. tests: raster_port
 pub const BUILD_DMA_ENTRY: Pin = Pin { plain: 0x2020, debug: 0x20F8 };
 
 /// `Raster_Patch_Tab`. tests: raster_port
-pub const RASTER_PATCH_TAB: Pin = Pin { plain: 0xFFFF8B22, debug: 0xFFFF8B22 };
+pub const RASTER_PATCH_TAB: Pin = Pin { plain: 0xFFFF8C02, debug: 0xFFFF8C02 };
 
 /// `Raster_State`. tests: raster_port
-pub const RASTER_STATE: Pin = Pin { plain: 0xFFFF89E8, debug: 0xFFFF89E8 };
+pub const RASTER_STATE: Pin = Pin { plain: 0xFFFF8AC8, debug: 0xFFFF8AC8 };
 
 /// `Raster_State_End`. tests: raster_port
-pub const RASTER_STATE_END: Pin = Pin { plain: 0xFFFF8B26, debug: 0xFFFF8B26 };
+pub const RASTER_STATE_END: Pin = Pin { plain: 0xFFFF8C06, debug: 0xFFFF8C06 };
 
 /// `Pal_Variant_Stage`. tests: raster_port
-pub const PAL_VARIANT_STAGE: Pin = Pin { plain: 0xFFFF8BE6, debug: 0xFFFF8BE6 };
+pub const PAL_VARIANT_STAGE: Pin = Pin { plain: 0xFFFF8CC6, debug: 0xFFFF8CC6 };
 
 /// `Raster_VBlank`. tests: game_loop_port, vblank_port, load_art_port, boot_port
-pub const RASTER_V_BLANK: Pin = Pin { plain: 0x6BF4, debug: 0x7E18 };
+pub const RASTER_V_BLANK: Pin = Pin { plain: 0x6BF6, debug: 0x7E1A };
 
 /// `Palette_Compose`. tests: game_loop_port
-pub const PALETTE_COMPOSE: Pin = Pin { plain: 0x7006, debug: 0x822A };
+pub const PALETTE_COMPOSE: Pin = Pin { plain: 0x7008, debug: 0x822C };
 
 /// `Player_Blocks`. tests: test_p1_player_port
-pub const PLAYER_BLOCKS: Pin = Pin { plain: 0xFFFFB884, debug: 0xFFFFE11A };
+pub const PLAYER_BLOCKS: Pin = Pin { plain: 0xFFFFB964, debug: 0xFFFFE1FA };
 
 /// `Player_Ring_Index`. tests: test_p1_player_port
-pub const PLAYER_RING_INDEX: Pin = Pin { plain: 0xFFFFBC00, debug: 0xFFFFE500 };
+pub const PLAYER_RING_INDEX: Pin = Pin { plain: 0xFFFFBD00, debug: 0xFFFFE600 };
 
 /// `Player_Pos_Ring`. tests: test_p1_player_port
-pub const PLAYER_POS_RING: Pin = Pin { plain: 0xFFFFBA00, debug: 0xFFFFE300 };
+pub const PLAYER_POS_RING: Pin = Pin { plain: 0xFFFFBB00, debug: 0xFFFFE400 };
 
 /// `Player_Stat_Ring`. tests: test_p1_player_port
-pub const PLAYER_STAT_RING: Pin = Pin { plain: 0xFFFFBB00, debug: 0xFFFFE400 };
+pub const PLAYER_STAT_RING: Pin = Pin { plain: 0xFFFFBC00, debug: 0xFFFFE500 };
 
 /// `Player_Death_Pending`. tests: test_p1_player_port
-pub const PLAYER_DEATH_PENDING: Pin = Pin { plain: 0xFFFFB8AC, debug: 0xFFFFE142 };
+pub const PLAYER_DEATH_PENDING: Pin = Pin { plain: 0xFFFFB98C, debug: 0xFFFFE222 };
 
 /// `Player_Bound_Right`. tests: test_p1_player_port
-pub const PLAYER_BOUND_RIGHT: Pin = Pin { plain: 0xFFFFB8AE, debug: 0xFFFFE144 };
+pub const PLAYER_BOUND_RIGHT: Pin = Pin { plain: 0xFFFFB98E, debug: 0xFFFFE224 };
 
 /// `Player_Bound_Bottom`. tests: test_p1_player_port
-pub const PLAYER_BOUND_BOTTOM: Pin = Pin { plain: 0xFFFFB8B0, debug: 0xFFFFE146 };
+pub const PLAYER_BOUND_BOTTOM: Pin = Pin { plain: 0xFFFFB990, debug: 0xFFFFE226 };
 
 /// `DustSpindash_Spawn`. tests: test_p1_player_port
 pub const DUST_SPINDASH_SPAWN: Pin = Pin { plain: 0x12094, debug: 0x12272 };

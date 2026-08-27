@@ -8967,3 +8967,58 @@ full_crc = "684554cc"
 full_size = 735402
 anchor_crc = "cf370744"
 anchor_end = 0xa7e70
+
+[[entry]]
+name = "band-ceiling-16"
+ab = "aeon 353aaa49: MAX_PARALLAX_BANDS 8->16, pcfg_layer_mask u8->u16 at $02, sizeof(parallax_config) 28->30, sc_mask_raw i16->i32. s4 21cc1347/718999 (size +0), s4.debug 9732c56a/735420 (+18), demo 3415e3ef/96372 (+0), demo.debug b6f9759f/101080 (+0); all four reproduced from a clean checkout."
+aeon_rev = "353aaa49d37bd23ee629ef3c6c4096485f10d4bd"
+note = "scenes carry 16 parallax layers; bytes $00..$1B of every shipped config header unchanged"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "c75b7eb2"
+full_size = 735788
+anchor_crc = "9b538833"
+anchor_end = 0xa7e70
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "5244d9e5"
+full_size = 610393
+anchor_crc = "c521cecc"
+anchor_end = 0x8b710
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "b6f9759f"
+full_size = 101080
+anchor_crc = "eebaec30"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "7d740482"
+full_size = 674830
+anchor_crc = "924738c2"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "21cc1347"
+full_size = 718999
+anchor_crc = "59ad82ed"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "9732c56a"
+full_size = 735420
+anchor_crc = "bae229db"
+anchor_end = 0xa7e70
