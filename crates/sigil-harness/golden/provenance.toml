@@ -9098,3 +9098,58 @@ demo_debug = "7599953e/101113"
 lean = "7d740482/674830"
 s4 = "21cc1347/718999"
 s4_debug = "8c01d7ed/735452"
+
+[[entry]]
+name = "fall-cap-15"
+ab = "aeon 4b43bdda: PHYS_FALL_CAP $1000 -> $0F00 (terminal fall 16 -> 15 px/frame), closing the shipped 1px tunnelling hole through a one-cell floor (owner ruling). The constant is now DERIVED, not re-typed: ((1 << COLLISION_CELL_SHIFT) - 1) << 8, i.e. one pixel under the thinnest floor the world can express, so it tracks the cell size instead of restating a number; COLLISION_CELL_SHIFT is 4 and the listing resolves EQU PHYS_FALL_CAP = $00000F00. s4 21cc1347/718999 -> e9e07375/718999 (size +0), s4.debug 8c01d7ed/735452 -> 9670be95/735452 (size +0); BOTH demo shapes BYTE-IDENTICAL (3415e3ef/96372, 7599953e/101113) because games/demo carries no player code and never emits the constant - the engine/game wall, not a miss. Byte-diffed rather than CRC-compared: EXACTLY 7 bytes differ in each moving shape - six immediate high-bytes $10 -> $0F (three clamp sites, PState_AirShared / PState_Fly coast / PState_GlideFall, each cmpi.w + move.w) plus one header-checksum byte. ROM length is unchanged and NOTHING shifts position, so repin --check reports `pins.rs unchanged` - pre-agreed with the sigil lane BEFORE measuring, both lanes committing to stop if any pin moved, since six in-place immediates cannot explain a moved pin. Consumer enumeration corrected the dispatch brief: 6 things touch this value, not 3 - the three clamp sites, the definition, player_common's derived PBOUND_BOTTOM_MARGIN ensure, and games/sonic4/objects/test_player.emp's PRIVATE const TERMINAL_VELOCITY = $1000, which no identifier grep can reach and which is deliberately LEFT at $1000 (its section header calls those S2/S.C.E. reference values, and S.C.E. really does cap at $1000) - so the tunnelling hole remains open for the debug test object, recorded against the existing test_player-as-a-unit booking rather than silently fixed. New gate: ensure((PHYS_FALL_CAP >> 8) < (1 << COLLISION_CELL_SHIFT)), comptime, zero bytes, build-fatal in all four shapes, proven red in BOTH directions (cap re-typed to $1000, and cap left a flat literal while COLLISION_CELL_SHIFT lowered to 3) - the second direction being the one a fixed-literal test goes silently green in. Prose sweep run in four spellings ($1000, 0x1000, 4096, 16px and sixteen-spelled-out) with patterns reported, not just the verdict: 0x1000 and 4096 could not have matched anything real because this codebase spells engine constants with $; three live stale bounds fixed, including two derived figures in player_fly.emp (the after-512-frames figure and the ~4,000px unbroken-descent figure) that nobody had flagged; PHYS_GSP_CAP $1000 and CAM_MAX_*_STEP 16 collisions rejected by name. Replay net needed NO re-stamp: 0 of 27 and 0 of 37 checkpoints stale on both fixtures, with --negative-control fired on BOTH first (REPLAY DESYNC at Logic_Tick 2) so the zero is a measurement and not an instrument manufacturing an absence; the parcel's prediction that ojz_slide_fixture WOULD move was wrong because its 454-tick window runs in fly coast at FLY_COAST_GRAVITY 8 (1/7 g), where the clamp binds at frame 480 rather than 69 - 454 < 480 < 512, right arithmetic applied to the wrong regime. That exposes a real coverage gap, booked: NEITHER fixture ever reaches terminal fall velocity in either mode, and no physics regression test anywhere asserts a Y velocity, fall distance or landing frame, so nothing we own would have caught an error in this constant. Verified: pytest 1461 passed / 9 skipped / 49 subtests / 0 failed, identical across all four canonical builds; all four ROMs deleted before every rebuild so their existence witnesses the build ran; all four reproduced BYTE-IDENTICAL (cmp, not CRC) in a clean detached worktree at 4b43bdda, i.e. two independent trees; assembler held at sigil fbf60abd throughout by standing agreement with the sigil lane, re-measured at every step (target/release/sigil mtime 03:14:00 unmoved). ATTRIBUTION: this aeon tip also carries two provably zero-byte parcels - parcel/no-div-rule (CODING_CONVENTIONS.md + CLAUDE.md only, verified byte-identical on its own merge across all four shapes before this parcel was merged) and the build.sh stale-assembler guard fix (build script only, all four CRCs unchanged across it) - so the entire ROM delta is the fall cap."
+aeon_rev = "4b43bdda39ef6b3491ac63605b171e76f38c6a1d"
+note = "terminal fall 15 px/frame: one pixel under a collision cell, derived not typed; pins unchanged"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "89552375"
+full_size = 735820
+anchor_crc = "89bfd855"
+anchor_end = 0xa7e70
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "0d443903"
+full_size = 610393
+anchor_crc = "97ec44f6"
+anchor_end = 0x8b710
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7599953e"
+full_size = 101113
+anchor_crc = "91a16b91"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "ceb0c944"
+full_size = 674830
+anchor_crc = "ec05b173"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "e9e07375"
+full_size = 718999
+anchor_crc = "c282fd1d"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "9670be95"
+full_size = 735452
+anchor_crc = "01070540"
+anchor_end = 0xa7e70
