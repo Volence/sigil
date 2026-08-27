@@ -3227,3 +3227,54 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   — OPEN (kill: a doc-comment gate refuses a 3+-digit hex literal in a port gate's `//!`
   block, keyed on the file gating at least one `pins::Region` — which closes the class
   including the sites no hand-enumeration found, rather than the ten this row names)
+
+- [ATTEST-EXPECTED-BODIES, 2026-08-27] **The strict-gate census cannot see a gate that is
+  DELETED, only one that goes dark.** `refreeze --attest` now set-diffs the run's witness
+  population against a census derived from the test tree at attest time
+  (`sigil_harness::strict_census`), which catches a declared consultation that never
+  executed (detector A) and a test in a gated file that reached no consultation (detector
+  B). Neither can see the whole test — or the whole gated file — being removed: that edit
+  deletes the expectation in the same stroke as the gate, and both detectors read the same
+  source. The only witness to a deletion is a MEMORY of the previous population.
+  `--attest` carries one — a monotonic ratchet against the last `[entry.strict]`'s
+  `strict_bodies` — but the live chain records ZERO strict runs (measured: `grep -c
+  '^strict_bodies' golden/provenance.toml` = 0), so that ratchet is unarmed and stays so
+  until the first attestation. Even armed it is a COUNT and therefore maskable: retiring
+  gate A while adding gate B in the same parcel holds the number and passes.
+  — OPEN (kill: the chain records the strict-gate POPULATION rather than its size — a
+  `sites` list on `[entry.strict]` — so the ratchet becomes a set difference across
+  attestations and a masked swap is named rather than cancelled out. That is a
+  `provenance.toml` schema change, owned by the aeon-paired landing lane, and is why it is
+  ledgered here rather than taken. The design, so the next hand does not re-derive it:
+  `[entry.strict]` grows a `sites` list; `--attest` compares its measured population
+  against the previous entry's; a member present there and absent here is a REFUSAL with
+  the same `--retired-strict-gates` exit the count ratchet already carries. That artifact
+  is not hand-maintained to pass — the maintenance act is appending a new attestation,
+  and lowering the expectation means editing a PRIOR committed entry, a visibly different
+  act. What makes it a ratchet rather than a diary is that the shrink FAILS; a chain that
+  records each run's population and compares nothing sees the gate go dark and says
+  nothing)
+
+- [ATTEST-EXPECTED-BODIES, 2026-08-27] **The declared-count reconciliation is enforced but
+  its red path is proven only by construction.** `--attest` now requires
+  `passed + failed + ignored` to equal what `cargo test -- --list` enumerates, closing a
+  bar that until now lived only as prose in `docs/OVERSEER.md` while two overseers
+  believed it enforced. Its green path is exercised by every attest run. Its RED path has
+  no cheap sabotage: making a binary genuinely not run drops it from the listing too, so
+  both sides shrink together and the check stays green. What it actually catches is a
+  `test result:` line missing from the LOG while cargo still exits zero — a capture or
+  parse loss, not a scheduling loss — and that is not something this parcel could stage.
+  — OPEN (kill: a sabotage that removes one result line from a real attest log without
+  changing the run, e.g. a `--log` path the tool reads back after truncation, proving the
+  refusal fires on a run that is otherwise green)
+
+- [ATTEST-EXPECTED-BODIES, 2026-08-27] **Detector B assumes libtest names the test thread,
+  and a guard reached off that thread is invisible to it.** The witness's second field is
+  `std::thread::current().name()`, measured to be the test's own name (module path
+  included) under both the default runner and `--test-threads=1`. A guard consulted from a
+  thread the test SPAWNED records `-` instead; the comparison reports that as UNNAMED REACH
+  rather than accepting it, so it cannot pass silently — but detector B is then blind to
+  whichever test it belonged to. No gate in the corpus does this today.
+  — OPEN (kill: either a gate refuses `strict_gate()` inside a `thread::spawn` closure in a
+  gated file, or the witness carries an explicit test identity the guard passes in rather
+  than reading off the runtime)

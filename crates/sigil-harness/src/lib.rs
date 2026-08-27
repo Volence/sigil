@@ -39,6 +39,12 @@ pub mod seam1;
 
 pub mod seam2;
 
+/// The strict-gate CENSUS: the population of `if !strict_gate()` consultations the
+/// test tree declares, derived from source at attest time, plus the set comparison
+/// `refreeze --attest` runs it against the run's witness. Replaces the old
+/// `strict_bodies == 0` floor, which a gate going dark could satisfy.
+pub mod strict_census;
+
 /// The golden provenance chain (`golden/provenance.toml`) — the §17 optimization arc's
 /// re-freeze discipline: tip-match + anchor-move-needs-A/B. Driven by the `refreeze`
 /// bin and the `provenance_chain` gate test.
