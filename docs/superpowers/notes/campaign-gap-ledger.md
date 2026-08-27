@@ -3016,6 +3016,19 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
      that are not gate skips (21 such sites), so including them would be pure false positives.
      A helper in some OTHER `src` module that announces-and-returns on a test's behalf would
      therefore be missed; `test_support.rs` is the only such helper today.
+
+  **NO SILENT GATE EXIT WAS FOUND — this row is about a class, not about known instances,
+  and no later session may cite it as evidence that silent skips exist here.** The sweep
+  that establishes that: every `let Some(x) = helper(…) else { return }` gate exit in the
+  test tree (124 of them, across 25 distinct helpers) was resolved to the helper's body and
+  checked for a strict-aware guard. Every one bottoms out in `reference_tree` /
+  `reference_tree_for_profile` / a local `strict_gate()` panic / `capstone_or_skip` — all of
+  which panic under `SIGIL_STRICT_GATE=1` and announce with the marker otherwise. The three
+  helpers the sweep could not resolve to a guard (`asm_of_stmt`, `pc_ext_offset`, and an
+  inner `helper` in `sigil-isa/tests/support/capstone_diff.rs`) are inner-scope parse
+  returns, not gate exits. So the strict path has no known hole of this shape; what the row
+  records is that nothing STRUCTURALLY prevents the next one, and that the lint above would
+  not see it.
   — OPEN (kill: (1) is discharged when an early-exit gate cannot be written silently at all —
   the structural fix is a `skip!()` macro in `test_support` that is the ONLY way a gate exits
   early, with the lint flipped from "announcements must carry the marker" to "an early return
