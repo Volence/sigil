@@ -143,7 +143,7 @@ kind = \"rom\"
 #[test]
 fn phased_head_cells_resolve_to_resident_vmas_bytes_at_bank_lma() {
     if !strict_gate() {
-        eprintln!("skipping seam2_phased_head (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_phased_head not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     for debug in [false, true] {
@@ -184,7 +184,7 @@ fn phased_head_cells_resolve_to_resident_vmas_bytes_at_bank_lma() {
 #[test]
 fn phased_head_emits_identical_bytes_to_the_windowed_oracle() {
     if !strict_gate() {
-        eprintln!("skipping seam2_phased_head (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_phased_head not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     // Cell resolution is PLACEMENT-INVARIANT: co-linked against the same resident

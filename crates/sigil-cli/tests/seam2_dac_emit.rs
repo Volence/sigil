@@ -35,7 +35,7 @@ fn strict_gate() -> bool {
 #[test]
 fn emitted_dac_banks_match_the_reference_rom_slices() {
     if !strict_gate() {
-        eprintln!("skipping seam2_dac_emit (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_dac_emit not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
@@ -77,7 +77,7 @@ fn emitted_dac_banks_match_the_reference_rom_slices() {
 #[test]
 fn emit_dac_banks_is_deterministic() {
     if !strict_gate() {
-        eprintln!("skipping seam2_dac_emit (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_dac_emit not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();

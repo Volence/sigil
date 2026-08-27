@@ -136,7 +136,7 @@ fn colink(head_src: &str) -> Result<Vec<u8>, Vec<sigil_span::Diagnostic>> {
 #[test]
 fn colink_snd_equs_resolve_cross_module_in_dc_cells() {
     if !strict_gate() {
-        eprintln!("skip seam2_colink_probe (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_colink_probe not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     // The EXACT cell forms dac_sample_tab.emp uses — bare SND_* names in dc cells.
@@ -175,7 +175,7 @@ section probe_head (cpu: z80, vma: $8000) {
 #[test]
 fn colink_cross_module_dot_len_is_unavailable() {
     if !strict_gate() {
-        eprintln!("skip seam2_colink_probe (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_colink_probe not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let head = "\

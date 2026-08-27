@@ -45,7 +45,7 @@ fn golden(name: &str) -> Vec<u8> {
 #[test]
 fn pitchtable_matches_the_reference_rom_slice_both_shapes() {
     if !strict_gate() {
-        eprintln!("skipping seam2_pitchtable (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_pitchtable not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
@@ -77,7 +77,7 @@ fn pitchtable_matches_the_reference_rom_slice_both_shapes() {
 #[test]
 fn pitchtable_diverges_when_source_cell_doctored() {
     if !strict_gate() {
-        eprintln!("skipping seam2_pitchtable (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_pitchtable not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
@@ -95,7 +95,7 @@ fn pitchtable_diverges_when_source_cell_doctored() {
 #[test]
 fn emit_pitchtable_artifacts_writes_reference_bin() {
     if !strict_gate() {
-        eprintln!("skipping seam2_pitchtable (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_pitchtable not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();

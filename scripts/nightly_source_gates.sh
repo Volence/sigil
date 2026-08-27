@@ -106,6 +106,13 @@ SOURCE_GATES=(
     seam2_colink_probe
     seam2_phased_head
     subcommands
+    # THIS LANE'S OWN SKIP CHECK, kept from going blind. The grep below is only as
+    # wide as the spelling it matches on, and 29 announced early returns spelled it
+    # `skipping <gate> …` — invisible to the bar and reading back as coverage. This
+    # gate holds every announcement site in the test tree to the one SKIP_MARKER the
+    # grep derives, so a new site cannot be written in a spelling this lane cannot
+    # see. Source only: it reads sigil's own test sources and builds nothing.
+    skip_marker_lint
 )
 
 # DELIBERATELY EXCLUDED, and why. These read bytes that only exist after a build:
@@ -269,11 +276,29 @@ if (( passed == 0 )); then
     note "COULD NOT RUN: no test executed at $AT — see $OUT"
     exit 2
 fi
-# A `skip:` line is a reference gate that measured nothing while reporting green.
+# A skip line is a reference gate that measured nothing while reporting green.
 # SIGIL_STRICT_GATE should make these impossible; if one appears, the strict path
 # has a hole and the run's green means less than it reads.
-if grep -q 'skip:' "$OUT"; then
-    note "COULD NOT RUN: $(grep -c 'skip:' "$OUT") gate(s) SKIPPED under strict at $AT — see $OUT"
+#
+# THE MARKER IS DERIVED, NOT RETYPED. This grep is only as wide as the spelling
+# it was written with, and a retyped copy drifts away from what the tests emit:
+# 29 announced early returns said `skipping <gate> …`, which this line matched
+# none of, so those gates could no-op and clear the bar. The one definition lives
+# in test_support.rs as SKIP_MARKER; skip_marker_lint holds every announcement
+# site in the test tree to it and refuses a script that goes back to a literal.
+SUPPORT_RS=crates/sigil-harness/src/test_support.rs
+SKIP_MARKER=$(sed -n 's/^pub const SKIP_MARKER: &str = "\(.*\)";$/\1/p' \
+    "$SIGIL_GATES/$SUPPORT_RS")
+# Loud on unmeasurable: an empty marker makes `grep -F` match every line and a
+# wrong one makes it match none. Neither may be rendered as a green run.
+if [[ -z "$SKIP_MARKER" ]]; then
+    note "COULD NOT RUN: SKIP_MARKER not extractable from $SUPPORT_RS at $AT — the \
+skip check has no pattern, so this run cannot say whether a gate skipped"
+    exit 2
+fi
+if grep -qF "$SKIP_MARKER" "$OUT"; then
+    note "COULD NOT RUN: $(grep -cF "$SKIP_MARKER" "$OUT") gate(s) SKIPPED under strict at $AT \
+— see $OUT"
     exit 2
 fi
 

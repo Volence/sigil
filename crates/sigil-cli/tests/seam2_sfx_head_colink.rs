@@ -80,7 +80,7 @@ const SFX_BODY_LEN: usize = 2284;
 #[test]
 fn colinked_sfx_head_matches_the_reference_rom_slice_both_shapes() {
     if !strict_gate() {
-        eprintln!("skipping seam2_sfx_head_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_sfx_head_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
@@ -121,7 +121,7 @@ fn colinked_sfx_head_matches_the_reference_rom_slice_both_shapes() {
 #[test]
 fn sfx_head_diverges_when_block_moved() {
     if !strict_gate() {
-        eprintln!("skipping seam2_sfx_head_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_sfx_head_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
@@ -144,7 +144,7 @@ fn sfx_head_diverges_when_block_moved() {
 #[test]
 fn colink_is_deterministic() {
     if !strict_gate() {
-        eprintln!("skipping seam2_sfx_head_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_sfx_head_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
@@ -162,7 +162,7 @@ fn colink_is_deterministic() {
 #[test]
 fn emit_sfx_artifacts_writes_reference_bins() {
     if !strict_gate() {
-        eprintln!("skipping seam2_sfx_head_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_sfx_head_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();

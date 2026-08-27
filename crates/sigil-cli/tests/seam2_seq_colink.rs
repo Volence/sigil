@@ -45,7 +45,7 @@ fn golden(name: &str) -> Vec<u8> {
 #[test]
 fn colinked_seq_opcode_tab_matches_the_reference_rom_slice_both_shapes() {
     if !strict_gate() {
-        eprintln!("skipping seam2_seq_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_seq_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
@@ -73,7 +73,7 @@ fn colinked_seq_opcode_tab_matches_the_reference_rom_slice_both_shapes() {
 #[test]
 fn plain_and_debug_tables_differ() {
     if !strict_gate() {
-        eprintln!("skipping seam2_seq_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_seq_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
@@ -89,7 +89,7 @@ fn plain_and_debug_tables_differ() {
 #[test]
 fn seq_tab_diverges_when_handler_moved() {
     if !strict_gate() {
-        eprintln!("skipping seam2_seq_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_seq_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
@@ -108,7 +108,7 @@ fn seq_tab_diverges_when_handler_moved() {
 #[test]
 fn emit_seq_artifacts_writes_reference_bins() {
     if !strict_gate() {
-        eprintln!("skipping seam2_seq_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_seq_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();

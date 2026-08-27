@@ -215,10 +215,13 @@ pub proc ZX0R (a0: *u8) clobbers(d0-d7) {\n\
     jmp (a0)\n\
 }\n";
     let (file, perrs) = parse_str(src);
-    // If the context grammar differs, don't hard-fail the suite — but when it
-    // parses, the spliced push MUST be caught.
+    // This escape hatch is NOT strict-gated: a parse error here returns green
+    // whatever `SIGIL_STRICT_GATE` says, so the announcement carries the marker
+    // and the landing bar sees it. Today it never fires — the `with` grammar
+    // parses — and the marker is what turns "it stopped parsing" from a silent
+    // loss of this gate into a red bar.
     if !perrs.is_empty() {
-        eprintln!("context grammar unavailable in this build: {perrs:?}");
+        eprintln!("skip: resumable with-bracket gate — context grammar did not parse: {perrs:?}");
         return;
     }
     let (_m, diags) = lower_module(

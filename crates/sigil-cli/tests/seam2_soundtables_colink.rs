@@ -44,7 +44,7 @@ fn golden(name: &str) -> Vec<u8> {
 #[test]
 fn sound_tables_z80_matches_the_reference_rom_slice_both_shapes() {
     if !strict_gate() {
-        eprintln!("skipping seam2_soundtables_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_soundtables_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
@@ -76,7 +76,7 @@ fn sound_tables_z80_matches_the_reference_rom_slice_both_shapes() {
 #[test]
 fn sound_tables_diverge_when_window_moved() {
     if !strict_gate() {
-        eprintln!("skipping seam2_soundtables_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_soundtables_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
@@ -94,7 +94,7 @@ fn sound_tables_diverge_when_window_moved() {
 #[test]
 fn emit_sound_tables_artifacts_writes_reference_bin() {
     if !strict_gate() {
-        eprintln!("skipping seam2_soundtables_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_soundtables_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();

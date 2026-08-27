@@ -27,7 +27,7 @@ fn strict_gate() -> bool {
 #[test]
 fn sound_layout_derives_the_frozen_addresses() {
     if !strict_gate() {
-        eprintln!("skipping seam2_layout_derivation (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_layout_derivation not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let got = sound_layout(&aeon_dir()).expect("sound_layout derives from map.toml");
@@ -92,7 +92,7 @@ fn doctored_aeon(root: &Path, doctor: impl FnOnce(String) -> String) {
 #[test]
 fn moved_dac_anchor_moves_the_derivation() {
     if !strict_gate() {
-        eprintln!("skipping seam2_layout_derivation (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_layout_derivation not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let real = sound_layout(&aeon_dir()).expect("the real derivation");
@@ -120,7 +120,7 @@ fn moved_dac_anchor_moves_the_derivation() {
 #[test]
 fn reordered_map_order_fails_the_emit_loudly() {
     if !strict_gate() {
-        eprintln!("skipping seam2_layout_derivation (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_layout_derivation not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let tmp = tempfile::tempdir().expect("tempdir");

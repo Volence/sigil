@@ -55,7 +55,7 @@ fn golden(name: &str) -> Vec<u8> {
 #[test]
 fn colinked_dac_head_matches_the_reference_rom_slice_both_shapes() {
     if !strict_gate() {
-        eprintln!("skipping seam2_dac_head_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_dac_head_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
@@ -88,7 +88,7 @@ fn colinked_dac_head_matches_the_reference_rom_slice_both_shapes() {
 #[test]
 fn colink_banks_still_match_reference() {
     if !strict_gate() {
-        eprintln!("skipping seam2_dac_head_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_dac_head_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
@@ -109,7 +109,7 @@ fn colink_banks_still_match_reference() {
 #[test]
 fn dac_head_diverges_when_blip_bank_moved() {
     if !strict_gate() {
-        eprintln!("skipping seam2_dac_head_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_dac_head_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
@@ -130,7 +130,7 @@ fn dac_head_diverges_when_blip_bank_moved() {
 #[test]
 fn colink_is_deterministic() {
     if !strict_gate() {
-        eprintln!("skipping seam2_dac_head_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_dac_head_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
@@ -147,7 +147,7 @@ fn colink_is_deterministic() {
 #[test]
 fn emit_dac_artifacts_writes_reference_bins() {
     if !strict_gate() {
-        eprintln!("skipping seam2_dac_head_colink (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
+        eprintln!("skip: seam2_dac_head_colink not measured (set SIGIL_STRICT_GATE=1 + AEON_DIR)");
         return;
     }
     let aeon = aeon_dir();
