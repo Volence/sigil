@@ -1320,10 +1320,25 @@ share**; `TST` was exactly that, live.
    - **Landed on this side (interface-safe):** the `tree:` DETAIL now separates the changes
      in the compiled sources from the rest. The state word is unchanged — every uncommitted
      change still yields `dirty`, so aeon's prefix test behaves exactly as before.
-   - **NOT landed, needs the aeon conversation first:** narrowing the state word so
-     non-source dirt stops matching `dirty*`, and adding `closure-revision:` /
-     `closure-paths:` fields so the revision half can be compared against the last commit
-     that touched the closure instead of against the tip. Both are cross-repo reads.
+   - **NOT landed, needs the aeon conversation first — written and gated on
+     `feat/version-drift-classify`, second commit, DO NOT MERGE that commit until the
+     conversation happens.** It narrows the state word (non-source dirt reports
+     `clean-sources`, which stops matching their `dirty*` test) and adds three fields:
+     `closure:` (how many packages and paths, or NOT DERIVED and why),
+     `closure-revision:` (the last commit that reached those paths) and `closure-paths:`
+     (the pathspecs themselves, one line, so a consumer needs no cargo of its own).
+     **The consumer-side patch it enables is one line** — replace
+     `_src_head=$(git -C "$SIGIL_SRC" rev-parse HEAD)` with
+     `git -C "$SIGIL_SRC" log -1 --format=%H HEAD -- $SIGIL_CLOSURE_PATHS` and compare it
+     against the binary's `closure-revision:` instead of `revision:`. Their existing `sed`
+     idiom reads the new fields unchanged and ignores what it does not name, so adding
+     them breaks nothing on its own; the state-word narrowing is the half that changes
+     their behaviour.
+   - **Residual on the closure-revision comparison, stated rather than discovered later:**
+     the path list is baked at build time, so after the closure GROWS the binary's list
+     lags. It is still sound as a detector, because the commit that grows the closure must
+     edit a manifest and every manifest is in the closure — but a lane that ignores that
+     first warning is then under-covered until it rebuilds.
    - **What the classification proves, and the line it must not be read across:** it proves
      a change *cannot affect this binary*. It does NOT prove *the output did not change* —
      only a rebuild and a byte compare supports that, and no value derived here may be

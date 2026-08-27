@@ -39,6 +39,10 @@ impl SourcePaths {
         SourcePaths { paths: Vec::new(), derived: false }
     }
 
+    pub fn paths(&self) -> &[String] {
+        &self.paths
+    }
+
     /// Whether a repository-relative path is one this binary is compiled from.
     pub fn covers(&self, rel: &str) -> bool {
         if !self.derived {
@@ -133,30 +137,28 @@ pub fn classify(porcelain: &str, sources: &SourcePaths) -> Counts {
 
 /// The `tree:` state word and its detail.
 ///
-/// The state word is a cross-repository interface: a consumer keys on whether
-/// it begins `dirty`, and a value that stops matching silences their warning
-/// while one that keeps matching leaves it on forever. So every uncommitted
-/// change still yields `dirty` here, and the classification is carried in the
-/// detail beside it, where a reader learns whether the dirt reached anything
-/// this binary is compiled from.
-///
-/// Narrowing the word itself to source changes only is the change that would
-/// make the warning stop firing on unrelated edits, and it is deliberately not
-/// made here — it is the consumer's contract to renegotiate, not this side's to
-/// alter unilaterally.
+/// Three cases a single dirty flag conflates: nothing changed, something changed
+/// that this binary is compiled from, and something changed that it is not. Only
+/// the middle one is a reason to distrust the binary, and only it yields a word
+/// beginning `dirty` — a consumer keys on that prefix, and a warning that fires
+/// on a note left in a documentation directory is a warning nobody reads.
 pub fn state_and_detail(counts: &Counts) -> (String, String) {
     if counts.material() == 0 && counts.outside == 0 {
         return ("clean".to_string(), "no uncommitted changes".to_string());
     }
     let (modified, untracked, outside) = (counts.modified, counts.untracked, counts.outside);
+    if counts.material() == 0 {
+        return (
+            "clean-sources".to_string(),
+            format!(
+                "{outside} uncommitted change(s), none of them in the sources this binary is \
+                 compiled from"
+            ),
+        );
+    }
     let detail = if outside == 0 {
         format!(
             "{modified} modified, {untracked} untracked in the sources this binary is compiled from"
-        )
-    } else if counts.material() == 0 {
-        format!(
-            "{outside} uncommitted change(s), none of them in the sources this binary is \
-             compiled from"
         )
     } else {
         format!(
@@ -247,31 +249,31 @@ mod tests {
         );
     }
 
-    /// The state word is a cross-repository interface. Until the consumer side
-    /// is renegotiated, every uncommitted change keeps yielding `dirty` — the
-    /// classification reaches the reader through the detail, not by silently
-    /// changing what a consumer's prefix test matches.
+    /// The state word is what a consumer keys on: a word beginning `dirty`
+    /// exactly when a compiled source changed, and never otherwise.
     #[test]
-    fn the_state_word_stays_the_consumers_vocabulary() {
+    fn only_a_source_change_yields_a_dirty_state() {
         let (clean, detail) = state_and_detail(&Counts::default());
         assert_eq!(clean, "clean");
         assert!(!detail.is_empty(), "every state carries a reason");
 
         let (outside_only, detail) =
             state_and_detail(&Counts { modified: 0, untracked: 0, outside: 4 });
-        assert_eq!(
-            outside_only, "dirty",
-            "narrowing this word is the consumer's contract to renegotiate, not this side's \
-             to alter"
+        assert!(
+            !outside_only.starts_with("dirty"),
+            "changes outside this binary's sources must not read as dirty; got `{outside_only}`"
         );
         assert!(
             detail.contains('4') && detail.contains("none of them in the sources"),
-            "the detail must carry what the word does not; got `{detail}`"
+            "the state must still report what changed; got `{detail}`"
         );
 
         let (source_change, detail) =
             state_and_detail(&Counts { modified: 1, untracked: 0, outside: 9 });
-        assert_eq!(source_change, "dirty");
+        assert_eq!(
+            source_change, "dirty",
+            "one source change outranks any number of changes outside the sources"
+        );
         assert!(
             detail.contains("1 modified") && detail.contains("9 outside"),
             "a mixed tree must report both sides separately; got `{detail}`"
@@ -290,12 +292,12 @@ mod tests {
         );
     }
 
-    /// Pruning drops the redundant entries without changing what is covered.
+    /// Pruning shortens the printed list without changing what it covers.
     #[test]
     fn pruning_removes_only_paths_an_ancestor_already_covers() {
         let s = sources(&["crates/x", "crates/x/src", "crates/x/src/bin", "crates/y/src"]);
+        assert_eq!(s.paths(), &["crates/x".to_string(), "crates/y/src".to_string()]);
         assert!(s.covers("crates/x/src/bin/tool.rs"));
-        assert!(s.covers("crates/y/src/lib.rs"));
         assert!(!s.covers("crates/y/tests/t.rs"));
     }
 }

@@ -59,15 +59,15 @@
 //!   * inside a source directory, a `#[cfg(test)]` body or a second binary
 //!     counts as material although neither can reach this executable.
 //!
-//! And the limit of the claim: this proves "cannot affect this binary", never
-//! "the output did not change". Only a rebuild and a byte compare supports the
-//! second, and nothing derived here may be read as having measured it.
+//! And the limit of the claim, which the banner states in place: this proves
+//! "cannot affect this binary", never "the output did not change". Only a
+//! rebuild and a byte compare supports the second, and nothing derived here may
+//! be read as having measured it.
 //!
-//! What the classification is allowed to change is the `tree:` DETAIL, which is
-//! free text. The state word beside it is a cross-repository interface — a
-//! consumer keys on whether it begins `dirty` — so it keeps its current
-//! meaning: every uncommitted change still produces `dirty`, and the reader
-//! learns from the detail whether any of it reached a compiled source.
+//! `SIGIL_CLOSURE_PATHS` and `SIGIL_CLOSURE_REVISION` carry the derivation out
+//! to the banner, so a consumer can compare the last commit that reached these
+//! sources instead of the repository tip — which moves on every commit and
+//! therefore says nothing about any binary.
 //!
 //! # What cannot be tracked, and is therefore labelled a snapshot
 //!
@@ -109,6 +109,10 @@ struct Provenance {
     tree_detail: String,
     source_dir: String,
     tracks: String,
+    closure_packages: String,
+    closure_paths: String,
+    closure_note: String,
+    closure_revision: String,
     error: String,
 }
 
@@ -136,6 +140,10 @@ impl Provenance {
             tree_detail: "not determined".into(),
             source_dir: "unknown".into(),
             tracks: tracks.into(),
+            closure_packages: "unknown".into(),
+            closure_paths: "unknown".into(),
+            closure_note: format!("not derived, because the revision probe failed first ({why})"),
+            closure_revision: "unavailable".into(),
             error: why,
         }
     }
@@ -165,6 +173,10 @@ fn main() {
     emit("SIGIL_TREE_DETAIL", &p.tree_detail);
     emit("SIGIL_SOURCE_DIR", &p.source_dir);
     emit("SIGIL_REVISION_TRACKS", &p.tracks);
+    emit("SIGIL_CLOSURE_PACKAGES", &p.closure_packages);
+    emit("SIGIL_CLOSURE_PATHS", &p.closure_paths);
+    emit("SIGIL_CLOSURE_NOTE", &p.closure_note);
+    emit("SIGIL_CLOSURE_REVISION", &p.closure_revision);
     emit("SIGIL_PROVENANCE_ERROR", &p.error);
 }
 
@@ -221,6 +233,30 @@ fn probe(manifest_dir: &Path) -> Provenance {
 
     let (tree_state, tree_detail) = tree_status(manifest_dir, &closure);
 
+    let closure_revision = closure_revision(manifest_dir, &closure);
+    let closure_packages = if closure.error.is_empty() {
+        closure.packages.to_string()
+    } else {
+        "unknown".to_string()
+    };
+    let closure_note = if closure.error.is_empty() {
+        format!(
+            "{} path(s) derived from `cargo metadata --no-deps` at build time",
+            closure.sources.paths().len()
+        )
+    } else {
+        format!(
+            "NOT DERIVED ({}) — every uncommitted change is counted as material and no \
+             closure revision is available",
+            closure.error
+        )
+    };
+    let closure_paths = if closure.sources.paths().is_empty() {
+        "unknown".to_string()
+    } else {
+        closure.sources.paths().join(" ")
+    };
+
     Provenance {
         revision,
         revision_short,
@@ -230,6 +266,10 @@ fn probe(manifest_dir: &Path) -> Provenance {
         tree_detail,
         source_dir,
         tracks,
+        closure_packages,
+        closure_paths,
+        closure_note,
+        closure_revision,
         error: String::new(),
     }
 }
@@ -280,6 +320,8 @@ fn emit_rerun_triggers(git_dir: &Path, common_dir: &Path) -> String {
 struct Closure {
     /// The paths themselves, and the coverage decision over them.
     sources: SourcePaths,
+    /// How many cargo packages the walk reached.
+    packages: usize,
     /// Absolute manifest paths, emitted as rerun triggers so the walk is
     /// re-run when the graph's shape changes.
     manifests: Vec<PathBuf>,
@@ -292,6 +334,7 @@ impl Closure {
     fn undetermined(why: String) -> Self {
         Closure {
             sources: SourcePaths::undetermined(),
+            packages: 0,
             manifests: Vec::new(),
             error: why,
         }
@@ -464,6 +507,7 @@ fn closure(manifest_dir: &Path, repo_root: &str) -> Closure {
 
     Closure {
         sources: SourcePaths::derived(paths),
+        packages: reached.len(),
         manifests,
         error: String::new(),
     }
@@ -511,6 +555,29 @@ fn cargo_metadata(manifest_dir: &Path) -> Result<serde_json::Value, String> {
         Err(_) => run(false)?,
     };
     serde_json::from_slice(&stdout).map_err(|e| format!("cargo metadata is not valid JSON: {e}"))
+}
+
+/// The last commit that touched anything this executable is compiled from. This
+/// is the revision a consumer should compare against, because `revision` moves
+/// on every commit in the repository including ones no compilation can see.
+fn closure_revision(manifest_dir: &Path, closure: &Closure) -> String {
+    if !closure.error.is_empty() {
+        return format!("unavailable — {}", closure.error);
+    }
+    // `:(top)` on every pathspec: git resolves a bare pathspec against the
+    // current directory, and this runs from the crate directory rather than the
+    // repository root, so unprefixed paths would address files that do not
+    // exist and the answer would be a confident wrong revision.
+    let rooted: Vec<String> =
+        closure.sources.paths().iter().map(|p| format!(":(top){p}")).collect();
+    let mut args: Vec<&str> = vec!["log", "-1", "--format=%H", "HEAD", "--"];
+    for path in &rooted {
+        args.push(path);
+    }
+    match git(manifest_dir, &args) {
+        Ok(sha) => sha,
+        Err(why) => format!("unavailable — {why}"),
+    }
 }
 
 /// Read the working tree and hand it to the classifier. `--no-optional-locks`

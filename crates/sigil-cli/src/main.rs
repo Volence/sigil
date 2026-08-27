@@ -141,12 +141,13 @@ fn main() {
 /// follows working-tree dirtiness, so cargo cannot re-capture it, and the
 /// output says so in place rather than letting a reader assume otherwise.
 ///
-/// The `tree` detail also says *where* the dirt is. A bare count of modified
-/// files cannot tell a source edit from a note left in a documentation
-/// directory, so a consumer reading it had to treat both the same way; the
-/// detail now separates the changes this binary is compiled from — a set
-/// derived from cargo's own dependency graph in `build.rs` — from the rest.
-/// The state word itself is unchanged, because a consumer keys on it.
+/// `revision` alone answers a question nobody asked, because it moves on every
+/// commit in the repository — a lane-log line makes an assembler look stale.
+/// `closure-paths` is the set of repository paths cargo compiles this binary
+/// from, derived from cargo's own dependency graph, and `closure-revision` is
+/// the last commit that touched it. Comparing *those* reports only drift that
+/// can reach the executable, and the `tree` state word applies the same set to
+/// the working tree.
 ///
 /// Every field is a word even when nothing could be determined — an empty
 /// string reads as "clean" to a human and passes a grep for a SHA.
@@ -159,15 +160,21 @@ fn run_version() {
     let tree_detail = env!("SIGIL_TREE_DETAIL");
     let source_dir = env!("SIGIL_SOURCE_DIR");
     let tracks = env!("SIGIL_REVISION_TRACKS");
+    let closure_packages = env!("SIGIL_CLOSURE_PACKAGES");
+    let closure_paths = env!("SIGIL_CLOSURE_PATHS");
+    let closure_note = env!("SIGIL_CLOSURE_NOTE");
+    let closure_revision = env!("SIGIL_CLOSURE_REVISION");
     let error = env!("SIGIL_PROVENANCE_ERROR");
 
     // The first line is the greppable one: `<name> <semver> (<revision tag>)`.
-    // The tag carries the tree state so a dirty build cannot be mistaken for
-    // the clean commit it was built near.
+    // The tag names the code this binary is, so it carries `-dirty` exactly
+    // when an uncommitted edit reached that code. Dirt outside those sources
+    // leaves the tag bare: it does not change what this executable is, and the
+    // `tree:` line below reports it in full.
     let tag = match (revision, tree_state) {
         ("unknown", _) => "revision-unknown".to_string(),
         (_, "dirty") => format!("{short}-dirty"),
-        (_, "clean") => short.to_string(),
+        (_, "clean" | "clean-sources") => short.to_string(),
         _ => format!("{short}-tree-unknown"),
     };
     println!("sigil {} ({tag})", env!("CARGO_PKG_VERSION"));
@@ -176,6 +183,7 @@ fn run_version() {
         println!("  revision:  unknown — {error}");
         println!("  tree:      unknown — {tree_detail}");
         println!("  source:    unknown");
+        println!("  closure:   unknown — {closure_note}");
         println!(
             "  freshness: this binary carries NO revision, so nothing here can confirm it \
              matches any source tree. Do not treat it as current."
@@ -188,12 +196,33 @@ fn run_version() {
     println!("  committed: {date}");
     println!("  tree:      {tree_state} at capture — {tree_detail}");
     println!("  source:    {source_dir}");
+    println!("  closure:   {closure_packages} package(s), {closure_note}");
+    println!("  closure-revision: {closure_revision}");
+    println!("  closure-paths: {closure_paths}");
     println!("  freshness: revision is re-captured whenever git HEAD or refs move (cargo tracks {tracks}).");
     println!(
         "             tree state is a build-time snapshot; cargo has no trigger for uncommitted\n\
          \x20            edits, so it may under-report dirt if this binary was relinked without\n\
          \x20            HEAD moving. Compare `revision` against `git rev-parse HEAD` to check\n\
          \x20            this binary against a source tree."
+    );
+    println!(
+        "  drift:     `revision` moves on EVERY commit here, including ones no compilation can\n\
+         \x20            see, so comparing it alone warns permanently and therefore says nothing.\n\
+         \x20            `closure-paths` is what cargo compiles this binary from, walked from\n\
+         \x20            cargo's own dependency graph rather than listed by hand, and\n\
+         \x20            `closure-revision` is the last commit that touched it. To check this\n\
+         \x20            binary against a tree, compare that against\n\
+         \x20            `git log -1 --format=%H HEAD -- <closure-paths>` run at the tree root.\n\
+         \x20            The classification OVER-reports and never under-reports. A package\n\
+         \x20            carrying a build script contributes its whole directory, since a build\n\
+         \x20            script may read any file in it; a `#[cfg(test)]` body or a second binary\n\
+         \x20            inside a source directory counts although neither reaches this\n\
+         \x20            executable; and an underivable closure counts everything. A commit that\n\
+         \x20            adds a package to the graph edits a manifest, which is itself in the\n\
+         \x20            closure, so growth is reported rather than missed.\n\
+         \x20            What this proves is `cannot affect this binary`, never `the output did\n\
+         \x20            not change` — only a rebuild and a byte compare supports the second."
     );
 }
 
