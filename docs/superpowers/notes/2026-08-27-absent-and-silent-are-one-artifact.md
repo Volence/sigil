@@ -288,6 +288,55 @@ reportable only alongside the exact patterns grepped for.** Report the query, no
 verdict; otherwise the sweep is instance (2) — a check that could not see its subject —
 wearing a clean bill of health.
 
+## When the SEARCH TERM is one of the values being swept for
+
+*(2026-08-27, both lanes, on a process sweep — sigil made the error, aeon found the third
+one it hid.)*
+
+Bar 19 says name the parameter each derivation enumerated over and check they differ. This
+is its cheapest and most invisible failure: **enumerating a population by a literal that is
+itself a VARIABLE of that population.**
+
+Instance. Three leaked shell loops were polling for a tool to exit. This lane enumerated them
+with `pgrep -f "refreeze --attest"` and found **two**. The third polled
+`refreeze --freeze` — a different subcommand of the same tool — so the sweep **structurally
+could not see it**, and returned a clean, confident, plausible answer. The subcommand was
+precisely the axis the population varied along, and it had been baked into the query.
+
+The parameter that works is the one that does not name any instance: aeon enumerated the
+**loop condition itself** out of `/proc/<pid>/cmdline` (`grep -o "until ![^;]*;"`), which
+finds every waiter regardless of what it waits for. **Enumerate by the SHAPE of the thing,
+never by the value one instance happens to carry.**
+
+**The self-referential kicker, and it is why all three were immortal:** each loop's own
+command line contains the pattern it polls for, so `pgrep` always matched at least itself and
+the condition could never go false. They could not fire, and had been sleeping since 03:55.
+A warning about a process that "will report against the wrong run" and one that "will never
+report at all" want different responses, and only the second was true.
+
+## A `/clear` retires the SESSION and keeps the PROCESS
+
+Same episode, and it corrected an ownership model rather than a count. This lane reasoned:
+the scratchpad path in those commands names a session that no longer exists, therefore the
+spawning process is gone, therefore these are unowned orphans. **Wrong.** All three were
+children of a **live** `claude` process — a peer's, still running. Clearing a session retires
+the session and leaves the process, so earlier sessions leave children inside the *same*
+process.
+
+**The check is `/proc/<ppid>` and one's own shell ancestry, never a session id embedded in a
+path.** A session id is a name; the parent pid is behaviour.
+
+This lane declined to kill them on the boundary rule — do not reach into another lane's
+processes on your own judgement — and that refusal was correct. But it was correct **for the
+wrong reason**, and the reason is the part that would have travelled: acting on
+"unowned orphans, dead parent" would have been acting on a false model that happened to
+recommend the right move this once.
+
+**What makes the by-PID rule more than ritual, measured in the same minute:** a real
+`cargo test --workspace` belonging to a *third* lane was running at that moment. Any
+pattern-shaped kill aimed at the waiters was one careless regex from taking that lane's
+verification with it.
+
 ## The practical test, for a check you are about to trust
 
 1. **Name the failure state.** What is the world in which this check *should* go red?
