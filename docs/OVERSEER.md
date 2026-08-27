@@ -808,6 +808,65 @@ never compare two numbers whose qualifiers you did not read.
 Cost: a peer spent a reply refuting a phantom, and the report had already been sent as an
 anomaly. Cheap here; the same skip over a base prefix or a units suffix is not.
 
+### TWO AGENT-FACING HAZARDS MEASURED 2026-08-27, both from one reference-tree build
+
+**(1) AN AGENT TOLD TO "RE-DERIVE FROM THE FILE" WILL READ A PATH, AND A PATH IN THIS
+CHECKOUT IS NOT A REVISION.** A reference-tree agent read
+`crates/sigil-harness/golden/provenance.toml` three times over ~10 minutes and saw three
+different files: chain 172 uncommitted (a peer's freeze mid-write), chain 172 committed,
+then chain 171 — because the shared checkout's branch moved between reads. It concluded
+**sigil master had been rewound and chain 172 retracted**, and tagged that for foreground
+relay to the aeon lane. Both halves were false: `521956f9` is alive on two branches and in
+its own worktree, master's reflog runs strictly forward, and `521956f9` was never an
+ancestor of master — so the agent's test (`--is-ancestor 521956f9 HEAD`, HEAD on master)
+could never have been true.
+
+**Every number the agent measured was correct; only its causal story was wrong.** That is
+the take-the-numbers-re-derive-the-cause rule with an agent as the source, and it is why
+the episode cost a retraction message instead of a peer's hour.
+
+The instruction that caused it was **this overseer's**: the brief said the provenance file
+wins over the brief, which is right, and did not say to read it at a revision, which was
+wrong in a checkout whose branch peers move. **Briefs that tell an agent to re-derive from a
+file in the shared checkout must say `git show <rev>:<path>`.** Now standing in this lane's
+dispatches.
+
+**(2) A CONCURRENT `cargo test` RELINKS THE ASSEMBLER UNDERNEATH A MULTI-SHAPE BUILD.**
+`sigil/target/release/sigil` was rebuilt by a parallel workspace test run *between shapes 2
+and 3* of a four-shape build. The only tell was the build's own banner shifting from
+`(dirty)` to `(revision+dirty)`. Undetected it yields **four shapes built by two different
+assemblers, with nothing in the artifacts to reveal it** — and for a freeze, "which
+assembler produced these bytes" is the entire point.
+
+Corrective, which that agent invented and this lane has adopted: **copy the assembler to a
+pinned tools directory and point every shape of a multi-shape build at the copy.** The
+build then provably used one binary, and the directory is the provenance record — do not
+delete it after the build. Kept for the 2026-08-27 trees at
+`~/sonic_hacks/.sigil-ref-353aaa49-tools/` (`sigil 0.1.0`, built at `4b8347ac`).
+
+Note this is the strongest evidence so far for the `GOLDEN-DIRTY-BANNER` queue item: the
+banner is noisy on every paired landing, and here it carried real signal that only close
+human reading caught.
+
+**(3) The `level_staleness.py` hazard's stated MECHANISM is wrong, measured on two fresh
+worktrees.** The note that a fresh checkout gives `project.json` a new mtime so the gate
+hard-fails before any ROM is emitted **did not reproduce**: the gate compares
+newest-mtime(editor sources) `>` newest-mtime(generated tree), and `git worktree add`
+writes every file inside the same second, so `>` is false. It bites an **in-place
+`git checkout`**, which rewrites only changed files and leaves `project.json` newer than an
+untouched generated tree. So "fresh checkout" should read "checkout into an existing tree",
+and running `regenerate-level.sh` prophylactically on a fresh worktree is pure cost plus
+`DONOR_PROVENANCE.json` churn. That note is aeon's; flagged to them, not edited here.
+
+**Reference trees standing as of 2026-08-27, both clean detached aeon worktrees with all
+four shapes built and CRC32+size verified against the committed tip** (read via
+`git show master:…provenance.toml`, not off the working file):
+`~/sonic_hacks/.sigil-ref-ac57991d` (chain 171, master's tip today) and
+`~/sonic_hacks/.sigil-ref-353aaa49` (matches chain 172, usable once
+`parcel/band-ceiling-16-pair` merges). **Derive which one is current from the tip; do not
+read that pairing off this paragraph** — the warning at the top of the quality-bar section
+applies to these two names exactly as it applied to every predecessor.
+
 ## Worktree and environment quirks
 
 - **Worktrees are agent-isolated but the registry is repo-global.** Every session's
