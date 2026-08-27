@@ -102,7 +102,7 @@ fn twin_guards() -> usize {
 
 /// The map: a `text` region for the zero-byte default-section carrier, and
 /// the real `collision_lookup` region pinned at the per-shape reference
-/// base, sized to the 0x24-byte block (plain `$4C02`, debug `$5426`).
+/// base, sized from `pins::COLLISION_LOOKUP` (per-shape base and length).
 fn map_toml(debug: bool) -> String {
     let base = region_base(debug);
     let len = pins::COLLISION_LOOKUP.plain_len;
@@ -353,7 +353,8 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
 
 /// (plain) The `collision_lookup` section's linked bytes equal
 /// the pinned plain window, AND the outbound `bsr.w` consumer's fixup
-/// resolves to the correct per-shape address ($4C02) — the bare-name proof.
+/// resolves to the correct per-shape address
+/// (`pins::COLLISION_LOOKUP.plain_base`) — the bare-name proof.
 #[test]
 fn collision_lookup_region_matches_reference() {
     let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
@@ -394,7 +395,8 @@ fn collision_lookup_region_matches_reference() {
 
 /// (debug) The `collision_lookup` section's linked bytes equal
 /// the pinned debug window, AND the outbound consumer's fixup
-/// resolves to the correct per-shape address ($5426).
+/// resolves to the correct per-shape address
+/// (`pins::COLLISION_LOOKUP.debug_base`).
 #[test]
 fn collision_lookup_debug_region_matches_reference() {
     let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());

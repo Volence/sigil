@@ -47,11 +47,12 @@
 //! sprites.asm, game states); a synthetic `bsr.w RingCollision` consumer
 //! proves the exports surface as bare link symbols at per-shape addresses.
 //!
-//! ## Reference windows (2026-07-10 pins, from the master listings)
-//! (sourced from `sigil_harness::pins` — regenerate via repin)
+//! ## Reference windows
 //!
-//! Plain (map base `$3070`): `s4.bin[0x3070..0x3224]` (0x1B4 bytes).
-//! Debug (map base `$332A`): `s4.debug.bin[0x332A..0x353A]` (0x210 bytes).
+//! Both windows come from `pins::RINGS` at run time — base and length, per
+//! shape (the two lengths differ). The numbers are deliberately not restated
+//! here: a bound copied into prose is executed by nothing, so nothing can go
+//! red when it rots. Regenerate the pins via `repin`.
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, the gates SKIP green — unless
@@ -514,13 +515,15 @@ fn reference_gate(shape: &Shape, rom_name: &str, debug_define: i128) {
     );
 }
 
-/// (plain) the `rings` region == `s4.bin[0x3070..0x3224]` — DEBUG=0.
+/// (plain) the `rings` region == the `s4.bin` window at `pins::RINGS`'s plain
+/// base/len — DEBUG=0.
 #[test]
 fn rings_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin", 0);
 }
 
-/// (debug) the `rings` region == `s4.debug.bin[0x332A..0x353A]` — DEBUG=1,
+/// (debug) the `rings` region == the `s4.debug.bin` window at `pins::RINGS`'s
+/// debug base/len — DEBUG=1,
 /// including the assert construct's DEBUG-shape expansion and its `dc.b`
 /// FSTRING data.
 #[test]

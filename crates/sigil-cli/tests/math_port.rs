@@ -34,9 +34,9 @@
 //! ## No shape define
 //!
 //! Like `hblank.emp`/`controllers.emp`, `math.emp` carries no `DEBUG`
-//! member: the block's CONTENT (24 bytes of code + the 640-byte embedded
-//! sine table = 0x298 bytes total) is byte-identical plain and debug — only
-//! its BASE address shifts (plain `$2464`, debug `$25F6`), so the shape
+//! member: the block's CONTENT (the module's code plus its embedded sine
+//! table; see `pins::MATH` for the length) is byte-identical plain and debug — only
+//! its BASE address shifts (see `pins::MATH`), so the shape
 //! lives entirely in the MAP. `lower_module` runs with an EMPTY `defines`
 //! vec for both shapes.
 //!
@@ -67,8 +67,9 @@
 //! ## Reference windows
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$2464`): `s4.bin[0x2464..0x26FC]` (0x298 bytes).
-//! Debug (map base `$25F6`): `s4.debug.bin[0x25F6..0x288E]` (0x298 bytes).
+//! Both windows come from `pins::MATH` at run time — base and length, per
+//! shape. The numbers are deliberately not restated here: a bound copied into
+//! prose is executed by nothing, so nothing can go red when it rots.
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -144,10 +145,9 @@ fn golden(name: &str) -> Option<Vec<u8>> {
 
 /// The map: a `text` region for the module's zero-byte default-section
 /// carrier, and the real `math` region pinned at the per-shape reference
-/// base, sized to the 0x298-byte block (24 bytes of code + the 640-byte
-/// embedded sine table). Only the region base differs from
-/// `hblank_port.rs`'s map shape: plain `$2464`, debug `$25F6`, both size
-/// `$298`.
+/// base, sized to `pins::MATH`'s length (the module's code plus its embedded
+/// sine table). Only the region base differs from `hblank_port.rs`'s map
+/// shape; both come from `pins::MATH`.
 fn map_toml(debug: bool) -> String {
     let base = region_base(debug);
     let len = pins::MATH.plain_len;
@@ -301,7 +301,8 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-/// (plain) The `math` section's linked bytes equal `s4.bin[0x2464..0x26FC]`,
+/// (plain) The `math` section's linked bytes equal the `s4.bin` window at
+/// `pins::MATH`'s plain base/len,
 /// AND the outbound consumer's fixups resolve to the correct per-shape
 /// addresses — the bare-name proof, for both `GetSineCosine` and
 /// `Sine_Table`.
@@ -318,9 +319,9 @@ fn math_region_matches_reference() {
     let base = region_base(false) as usize;
     let expected = &refrom[base..base + pins::MATH.plain_len];
     let section = linked.section("math").expect("linked image must carry math");
-    assert_region_matches(&section.bytes, expected, "math (plain) vs s4.bin[0x2464..0x26FC]");
+    assert_region_matches(&section.bytes, expected, "math (plain) vs the s4.bin window at pins::MATH");
 
-    // The bare-name proof: `jsr GetSineCosine`'s target ($2464) fits the
+    // The bare-name proof: `jsr GetSineCosine`'s target (`pins::MATH.plain_base`) fits the
     // abs.w range, so the deferred `JmpJsrSym`'s relaxation ladder picks the
     // SHORT form — opcode `4EB8` + a 2-byte abs.w address at bytes [2..4).
     // GetSineCosine is the FIRST proc in the section, so it resolves to the
@@ -346,7 +347,8 @@ fn math_region_matches_reference() {
 }
 
 /// (debug) The `math` section's linked bytes equal
-/// `s4.debug.bin[0x25F6..0x288E]`, AND the outbound consumer's fixups
+/// the `s4.debug.bin` window at `pins::MATH`'s debug base/len, AND the
+/// outbound consumer's fixups
 /// resolve to the correct per-shape addresses.
 #[test]
 fn math_debug_region_matches_reference() {
@@ -361,7 +363,7 @@ fn math_debug_region_matches_reference() {
     let base = region_base(true) as usize;
     let expected = &refrom[base..base + pins::MATH.debug_len];
     let section = linked.section("math").expect("linked image must carry math");
-    assert_region_matches(&section.bytes, expected, "math (debug) vs s4.debug.bin[0x25F6..0x288E]");
+    assert_region_matches(&section.bytes, expected, "math (debug) vs the s4.debug.bin window at pins::MATH");
 
     // $25F6 also fits abs.w — see the plain variant's comment for the byte
     // layout (opcode `4EB8` + 2-byte abs.w address at [2..4), then `dc.l

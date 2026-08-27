@@ -372,7 +372,8 @@ fn reference_gate(shape: &Shape, rom_name: &str, debug_define: i128) {
     );
 }
 
-/// (plain) the `entity_window` region == `s4.bin[0x3388..0x3C76]` — DEBUG=0.
+/// (plain) the `entity_window` region == the `s4.bin` window at
+/// `pins::ENTITY_WINDOW`'s plain base/len — DEBUG=0.
 #[test]
 fn entity_window_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin", 0);

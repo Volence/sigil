@@ -32,10 +32,12 @@
 //! ## Reference windows
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$2A10`): `s4.bin[0x2A10..0x2CF8]` (0x2E8 bytes incl. a
-//! 2-byte align pad). Debug (map base `$2C62`): `s4.debug.bin[0x2C62..0x3390]`
-//! (0x72E bytes). bug005 grew both: DeleteObject's explicit frame_off
-//! tail-word clear (+2 code; sizeof(Sst) $52 is not long-divisible).
+//! Both windows come from `pins::CORE` at run time — base and length, per
+//! shape; the plain window includes a 2-byte align pad, and the two lengths
+//! differ. The numbers are deliberately not restated here: a bound copied into
+//! prose is executed by nothing, so nothing can go red when it rots. bug005
+//! grew both shapes: DeleteObject's explicit frame_off tail-word clear
+//! (+2 code; sizeof(Sst) is not long-divisible).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, the gates SKIP green — unless

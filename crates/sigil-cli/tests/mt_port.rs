@@ -27,8 +27,10 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (`DEBUG=0`): `s4.bin[0x58630..0x5BB20]` (13,544 bytes).
-//! Debug (`DEBUG=1`): `s4.debug.bin[0x58630..0x5D570]` (20,280 bytes).
+//! Both windows are derived at run time by `sound_layout()` from aeon's
+//! `map.toml` — base and length, per shape (the two lengths differ). The
+//! numbers are deliberately not restated here: a bound copied into prose is
+//! executed by nothing, so nothing can go red when it rots.
 //! (Windows slid +0x21/+0x2E at sound-pkg3 v2 (growth + mod-8 pads; pads land in-region so sizes grew +7/+5) 2026-08-10: the banked dac_sample_tab
 //! ahead of this bank grew 90→120 B; region CONTENT unchanged, sizes held.)
 //!
@@ -256,7 +258,8 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-/// (DEBUG=0) The `mt_bank` section's linked bytes equal `s4.bin[0x58630..0x5BB20]`.
+/// (DEBUG=0) The `mt_bank` section's linked bytes equal the `s4.bin` window
+/// the sound layout derives for the plain shape.
 #[test]
 fn mt_bank_region_matches_reference() {
     let Some(dir) = sound_dir() else { return };
@@ -283,7 +286,7 @@ fn mt_bank_region_matches_reference() {
 }
 
 /// (DEBUG=1) The `mt_bank` section's linked bytes equal
-/// `s4.debug.bin[0x58630..0x5D570]`.
+/// the `s4.debug.bin` window the sound layout derives for the debug shape.
 #[test]
 fn mt_bank_debug_region_matches_reference() {
     let Some(dir) = sound_dir() else { return };

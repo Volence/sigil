@@ -15,8 +15,10 @@
 //! ## Reference window
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (`$256B4`): `s4.bin[0x256B4..0x256E4]` (0x30 bytes).
-//! Debug (`$2573C`): `s4.debug.bin[0x2573C..0x2576C]`. Content is shape-invariant.
+//! Both windows come from `pins::TEST_MAPPINGS` at run time — base and length,
+//! per shape; the content is shape-invariant. The numbers are deliberately not
+//! restated here: a bound copied into prose is executed by nothing, so nothing
+//! can go red when it rots.
 //!
 //! ```text
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test test_mappings_port

@@ -26,8 +26,9 @@
 //! ## Reference windows
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$2708`): `s4.bin[0x2708..0x27AC]` (0xA4 bytes).
-//! Debug (map base `$289A`): `s4.debug.bin[0x289A..0x293E]` (0xA4 bytes).
+//! Both windows come from `pins::DPLC` at run time — base and length, per
+//! shape. The numbers are deliberately not restated here: a bound copied into
+//! prose is executed by nothing, so nothing can go red when it rots.
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, the gates SKIP green — unless
@@ -317,13 +318,15 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     );
 }
 
-/// (plain) the `dplc` region == `s4.bin[0x26FC..0x2794]`.
+/// (plain) the `dplc` region == the `s4.bin` window at `pins::DPLC`'s plain
+/// base/len.
 #[test]
 fn dplc_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin");
 }
 
-/// (debug) the `dplc` region == `s4.debug.bin[0x288E..0x2926]`.
+/// (debug) the `dplc` region == the `s4.debug.bin` window at `pins::DPLC`'s
+/// debug base/len.
 #[test]
 fn dplc_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin");

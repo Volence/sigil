@@ -48,8 +48,10 @@
 //! ## Reference windows
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$2CF8`): `s4.bin[0x2CF8..0x3100]` (0x408 bytes).
-//! Debug (map base `$3390`): `s4.debug.bin[0x3390..0x386A]` (0x4DA bytes).
+//! Both windows come from `pins::SPRITES` at run time — base and length, per
+//! shape. The numbers are deliberately not restated here: a bound copied into
+//! prose is executed by nothing, so nothing can go red when it rots.
+//!
 //! Length went shape-DEPENDENT at the bug005-sprites parcel: the H1 staleness
 //! net + the BUG-005 chain-walk are `if DEBUG == 1 {}` blocks with `assert.w`
 //! expansions (rings/core precedent), so the module now takes the `DEBUG`
