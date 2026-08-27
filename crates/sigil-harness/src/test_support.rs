@@ -623,8 +623,29 @@ pub const STRICT_WITNESS_VAR: &str = "SIGIL_STRICT_WITNESS";
 /// cannot: it is STRUCTURALLY ZERO when the flag is unset, because the only call that
 /// writes is one that already observed the flag set.
 ///
-/// `refreeze --attest` reads the distinct line count into the provenance chain, and
-/// refuses to record an attestation at zero.
+/// `refreeze --attest` reads the distinct site count into the provenance chain as
+/// `strict_bodies`, and — because a count can only be READ while a population can be
+/// DIFFED — compares the whole population against the one
+/// [`crate::strict_census`] derives from the test tree. Zero alone is a FLOOR, and a
+/// floor is satisfiable by the very failure the witness exists to catch: a gate going
+/// dark reads back as a smaller green.
+///
+/// # The line format
+///
+/// `file:line<TAB>test-name`, one per reached consultation. Both halves are load-bearing
+/// and they answer different questions:
+///
+///   * `file:line` — WHICH consultation, from `#[track_caller]`, which propagates
+///     through each test file's per-file `strict_gate()` wrapper to the test's own call
+///     site. This is what dedupes into `strict_bodies`.
+///   * the test name — WHICH TEST reached it. libtest names each test's thread after the
+///     test (measured, including under `--test-threads=1`), so this costs nothing and is
+///     the only thing that can see a gate whose guard is deleted while the test
+///     survives: that edit removes the census's `file:line` expectation in the same
+///     stroke, and only the test's absence from the population remains as evidence.
+///     A guard reached off a libtest thread has no name and records
+///     [`crate::strict_census::UNNAMED_THREAD`], which the comparison reports rather
+///     than accepts.
 ///
 /// Deliberately a FILE and not a printed marker: libtest captures the stdout and stderr
 /// of PASSING tests, so a marker printed by a passing gate is invisible without
@@ -647,7 +668,9 @@ fn witness_strict_body(loc: &std::panic::Location<'_>) {
     // `…dac_head_colink.rs…dac_head_colink.rs::91133`, two sites spliced into one
     // unparseable line. A single short `write_all` to an O_APPEND descriptor does not
     // tear, which is what makes the count trustworthy.
-    let line = format!("{}:{}\n", loc.file(), loc.line());
+    let current = std::thread::current();
+    let test = current.name().unwrap_or(crate::strict_census::UNNAMED_THREAD);
+    let line = format!("{}:{}\t{}\n", loc.file(), loc.line(), test);
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = f.write_all(line.as_bytes());
     }

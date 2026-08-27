@@ -42,6 +42,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use sigil_harness::provenance::{self, AppendGate, StrictRun, Superseded, Target};
+use sigil_harness::strict_census;
 
 const HARNESS_ROOT: &str = env!("CARGO_MANIFEST_DIR");
 
@@ -323,6 +324,10 @@ struct RunResult {
     skips: usize,
     failing: Vec<String>,
     strict_bodies: usize,
+    /// The strict-gate POPULATION the run reached, not just its size. A count can only
+    /// be read; a population can be diffed against the census, which is what lets a
+    /// refusal name the gate that went dark instead of reporting a smaller number.
+    witness: strict_census::Witness,
     exit_ok: bool,
 }
 
@@ -363,15 +368,10 @@ fn measure_run(log: &str, witness: &Path) -> RunResult {
     failing.sort();
     failing.dedup();
     // DISTINCT call sites, not total writes: one strict-gated body reached twice is one
-    // body. Absent/unreadable reads as zero, which `--attest` refuses — never as green.
-    let mut sites: Vec<String> = std::fs::read_to_string(witness)
-        .unwrap_or_default()
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect();
-    sites.sort();
-    sites.dedup();
+    // body. Measured: `section_row_fixture.rs`'s shared `gate_on()` helper fires three
+    // times (once per test) and is ONE site. Absent/unreadable reads as an empty
+    // population, which `--attest` refuses — never as green.
+    let w = strict_census::parse_witness(&std::fs::read_to_string(witness).unwrap_or_default());
     RunResult {
         suites,
         passed,
@@ -379,7 +379,8 @@ fn measure_run(log: &str, witness: &Path) -> RunResult {
         ignored,
         skips,
         failing,
-        strict_bodies: sites.len(),
+        strict_bodies: w.sites.len(),
+        witness: w,
         exit_ok: false,
     }
 }
@@ -399,6 +400,13 @@ fn test_ran(log: &str, name: &str) -> bool {
 /// `SIGIL_STRICT_GATE=1` on the child ITSELF: the missing environment variable is the
 /// whole defect this closes, and a recipe that asks an operator to remember it is the
 /// recipe that already failed twice.
+///
+/// What the run must MATCH is derived, not floored. [`strict_census`] reads the
+/// population of strict-gate consultations out of the test tree before the suite starts,
+/// and the run's witness is set-diffed against it afterwards. The old bar —
+/// `strict_bodies != 0` — was satisfiable by the failure it existed to catch: a deleted,
+/// `#[ignore]`d or unguarded gate lands at 28 of 29 and records a pass, so a gate going
+/// dark read back as a smaller green.
 fn do_attest(harness_root: &Path, expect: &[String], log_arg: Option<&str>) -> ExitCode {
     let golden = harness_root.join("golden");
     let root = match sigil_root(harness_root) {
@@ -434,6 +442,27 @@ fn do_attest(harness_root: &Path, expect: &[String], log_arg: Option<&str>) -> E
             tip.name
         ));
     }
+
+    // (0b) THE EXPECTATION, DERIVED. Before the suite runs, because a census that cannot
+    // be taken should cost nothing to find out, and because the tree is pinned clean at
+    // (1) — so what is derived here is what the run will measure.
+    //
+    // This replaces a FLOOR. `strict_bodies == 0` refused only the total absence of the
+    // flag; every partial loss — a gate deleted, `#[ignore]`d, filtered, or stripped of
+    // its guard — landed at 28 out of 29 and recorded a pass. A gate going dark showed
+    // up as a smaller green, which is the one shape a witness must never have.
+    let census = match strict_census::census(&root.join("crates")) {
+        Ok(c) => c,
+        Err(e) => return fail(format!(
+            "refusing to attest — the strict-gate census could not be derived, so there is \
+             nothing to hold the run's witness to. {e}"
+        )),
+    };
+    eprintln!(
+        "refreeze --attest: expecting {} strict-gate site(s) across {} test(s) in the tree",
+        census.sites.len(),
+        census.tests.len()
+    );
 
     // (1) WHICH TREES. Both resolved and vetted before anything expensive runs.
     let sigil_rev = match resolve_sigil_rev(&root) {
@@ -554,9 +583,11 @@ fn do_attest(harness_root: &Path, expect: &[String], log_arg: Option<&str>) -> E
             log_path.display()
         ));
     }
-    // THE VACUITY REFUSAL, and the reason this whole mechanism exists. A suite without
-    // SIGIL_STRICT_GATE=1 early-returns every strict-gated body and is nevertheless
-    // fully green; this is the one number that can tell the two apart.
+    // THE VACUITY REFUSAL — the TOTAL-loss case, kept for its diagnosis rather than for
+    // its coverage. The census comparison below subsumes it (an empty witness is missing
+    // every declared site), but only this branch can say WHY a run reached nothing: the
+    // flag never took effect. Zero on its own was never the bar; a gate going dark
+    // lands at 28 of 29 and clears it, which is the defect the census closes.
     if run.strict_bodies == 0 {
         return fail(format!(
             "the run reached ZERO strict-gated bodies, so `SIGIL_STRICT_GATE=1` did not take \
@@ -583,6 +614,62 @@ fn do_attest(harness_root: &Path, expect: &[String], log_arg: Option<&str>) -> E
              this record could not name. Re-run on a settled checkout."
         ));
     }
+    // THE POPULATION COMPARISON, and the reason `strict_bodies == 0` is no longer the
+    // bar. The census above says WHICH strict-gate consultations this tree declares and
+    // WHICH tests carry them; the witness says which the run actually reached. A set
+    // difference names the gate that went dark. A count could only have said "28".
+    //
+    // Applied on the GREEN path only, deliberately. A red run's coverage is not what an
+    // attestation is about, and its record is the only thing that unlocks a supersede —
+    // refusing to write it would deadlock the chain on exactly the failure the record
+    // exists to capture. Under strict, a missing-reference path panics, so a red run is
+    // also the one place the census legitimately disagrees with the witness.
+    if run.failed == 0 && run.exit_ok {
+        let defects = strict_census::defects(&census, &run.witness);
+        if !defects.is_empty() {
+            eprintln!("refreeze --attest: {}", strict_census::summary(&census, &run.witness));
+            return fail(format!(
+                "the run's strict-gate population does not match the one this tree declares \
+                 ({} difference(s)). The suite was GREEN, which is precisely the state a gate \
+                 going dark produces: a smaller green. Nothing was recorded.\n  {}\nWitness: \
+                 {}\nLog: {}",
+                defects.len(),
+                defects.join("\n  "),
+                witness.display(),
+                log_path.display()
+            ));
+        }
+        eprintln!("refreeze --attest: {}", strict_census::summary(&census, &run.witness));
+
+        // THE MONOTONIC RATCHET, secondary and self-arming. The census cannot see a
+        // whole strict-gated test being DELETED — that edit removes the expectation and
+        // the gate together — so the only witness to it is a MEMORY of the previous
+        // population. The chain has one: the last `[entry.strict]` it recorded.
+        // Measured 2026-08-27: the live chain records ZERO strict runs, so this rule is
+        // not yet in force; it arms itself at the first attestation, in the same
+        // self-disarming shape as the two ratchets already in the tree. Reported as
+        // `ratchet:` and NEVER as `skip:` — this lane's strict bar requires zero `skip:`
+        // lines, and a rule reporting its own dormancy must not spend one.
+        match chain.entry.iter().rev().find_map(|e| e.strict.as_ref()) {
+            None => eprintln!(
+                "refreeze --attest: ratchet: no entry in this chain records a strict run yet, \
+                 so there is no previous population to compare against. It arms permanently \
+                 with this attestation."
+            ),
+            Some(prev) if run.strict_bodies < prev.strict_bodies => {
+                return fail(format!(
+                    "strict_bodies FELL from {} to {} since the last recorded strict run. The \
+                     census above is green, which means the tree no longer DECLARES the missing \
+                     gate(s) either — a whole strict-gated test or file was removed. That may be \
+                     a deliberate retirement, but it is not something an attestation may record \
+                     silently. Nothing was recorded.",
+                    prev.strict_bodies, run.strict_bodies
+                ));
+            }
+            Some(_) => {}
+        }
+    }
+
     let outcome = if run.failed > 0 {
         provenance::OUTCOME_FAILED
     } else if !run.exit_ok {
