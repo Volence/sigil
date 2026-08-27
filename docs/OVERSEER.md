@@ -316,10 +316,16 @@ next refreeze that names a revision** — the condition is the field's absence, 
 number. It prints `ratchet:`, never `skip:` — the bar
 below requires zero `skip:` lines and this is not a missing reference.
 
-- **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
-  `AEON_DIR` set to a tree matching the provenance tip (derive it — see the warning above) —
-  **3943 passed / 0 failed / 4 ignored** (3947 declared) under `SIGIL_STRICT_GATE=1`, **zero
-  `skip:` lines**, exit 0, clippy `-D warnings` exit 0.
+- **Full suite bar:**
+  `SIGIL_STRICT_GATE=1 AEON_DIR=<clean> cargo test --release --workspace --no-fail-fast`,
+  with `AEON_DIR` a tree matching the provenance tip (derive it — see the warning above) —
+  **3943 passed / 0 failed / 4 ignored** (3947 declared), **zero `skip:` lines**, exit 0,
+  clippy `-D warnings` exit 0.
+  **The env vars belong INSIDE the command span, and this paragraph had them outside it
+  until 2026-08-27.** That is not formatting: a reader copies the backticked command and
+  gets the prose-stated requirement only if they read two lines further. It is the exact
+  defect that cost aeon two unverified chains from their own landing lane, found in their
+  file and swept here immediately after.
   Last measured at master `2e284c4d` against aeon `ac57991d` (chain 171), 2026-08-27, by the
   aeon lane's landing run of the seam1 re-pin.
   **This paragraph said `3939 / 3943` for a day while the RELAYOUT-REVIEW section below
@@ -556,7 +562,9 @@ full-suite bar above requires **zero `skip:` lines**. Twenty-seven early-return 
 which reads back as coverage. Measured, not reasoned: `grep -rn 'eprintln!("skipping' crates
 --include='*.rs' | wc -l` = 27 across 9 files, against 146 sites using the `skip:` form.
 Queued as `SKIP-TEXT-HOLE`; the fix is one spelling, and it is the bar that moves, not the
-gates.
+gates. **It is not only the hand-run bar: `scripts/nightly_source_gates.sh` gates on the same
+blind `grep -q 'skip:'` and exits 2 on a hit**, so all 27 are invisible to the automated lane
+as well — whose whole purpose is to notice what a byte-triggered ritual cannot.
 
 **Their hypothesis for the specific incident was WRONG, and the correction matters more than
 the hole.** They proposed the silent skip as the reason a stale `SFX_BODY_LEN` survived chain
@@ -576,11 +584,22 @@ grew that region to `0x8DA` (2266) and left the constant behind, and the asserti
 
 **So the structural finding is: a refreeze can land in this repo without sigil's strict suite
 ever running.** That is what let a pin go stale for a whole chain with nothing red anywhere.
-It is not aeon doing anything wrong — the one-owner landing rule is correct and they ran the
-suite at 171, which is exactly what caught it. What is missing is a requirement that **every**
-paired refreeze clears the full bar before it is pushed, whoever lands it. Queued as
-`REFREEZE-NEEDS-STRICT`. Note the two findings compound: the missing run is why nothing was
-red, and the skip-text hole is why a future run might not be red either.
+Queued as `REFREEZE-NEEDS-STRICT`; aeon has accepted it as a standing commitment banked in
+their own repo.
+
+**CORRECTED the same night, by the aeon lane, and the corrected cause is sharper than the
+one first written here.** This section originally said the landing rule named *who lands* but
+not *that the bar runs*. **That was wrong: their rule did require the full sigil suite.** It
+spelled the command as a bare `cargo test --release --workspace --no-fail-fast` with **no
+`SIGIL_STRICT_GATE=1`** — so a session following it faithfully ran a suite in which every
+`strict_gate()`-guarded port and co-link gate early-returns. The rule was present and the one
+token that gave it force was absent. Fixed on their side at aeon `origin/master`, verified
+here by reading their file at that revision rather than taking the report.
+**The generalisation, and it is why this is banked rather than closed:** a procedure can be
+complete in its steps and inert in its spelling, and the inert version passes every review a
+reader gives it — nobody audits a command line for a missing env var. Note the two findings
+compound: the missing run is why nothing was red, and the skip-text hole is why a future run
+might not be red either.
 
 **Their `+0x10` vs `+0x12` derivation was re-checked here against the pins themselves and
 holds.** `SFX_BANK_BLOB` grew `0x12` while the assembled total moved `0x10`, because the
