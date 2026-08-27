@@ -3296,6 +3296,14 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   one spelling, so any single number here is a confident undercount wearing a measurement's
   clothes (bar 19, invoked on purpose rather than coincided with). Whoever takes this item
   enumerates by what SUPPLIES an inbound label, not by any one of those spellings.
-  — OPEN (kill: membership derived from the same source the values come from, so that a
-  symbol aeon adds either appears without an edit here or is refused BY NAME with the
-  enumeration that missed it; until then every fix is one more hand-added row)
+  **The fix is a SET DIFFERENCE, not a derivation** *(aeon's sharpening of this row's first
+  draft, and it is the better half)*. "Derive membership" is vague enough to be satisfied by
+  a reading; what makes it an assertion is diffing the emitted set against a set derived from
+  the same source the values already come from, **in both directions** — a name the source
+  has and the table lacks, and a name the table has that the source no longer does. Their
+  effects lane shipped the same defect with the polarity flipped: `OK — N gates` printed a
+  count derived from rows that actually appeared, so a gate going dark shrank the number
+  while every printed row said PASS. A set can be diffed; a count can only be read.
+  — OPEN (kill: the two-directional set assertion above, so a symbol aeon adds either
+  appears without an edit here or is refused BY NAME with the enumeration that missed it;
+  until then every fix is one more hand-added row)
