@@ -276,13 +276,13 @@ impl StrictRun {
                     ));
                 }
             }
-            OUTCOME_FAILED => {
-                if self.failed == 0 {
-                    d.push(
-                        "outcome = \"failed\" but failed = 0 — a red run must say what was red"
-                            .to_string(),
-                    );
-                }
+            // Guard rather than a nested `if`: the `_` arm below is a no-op, so a
+            // non-matching guard falls through to exactly the same nothing.
+            OUTCOME_FAILED if self.failed == 0 => {
+                d.push(
+                    "outcome = \"failed\" but failed = 0 — a red run must say what was red"
+                        .to_string(),
+                );
             }
             _ => {}
         }

@@ -791,7 +791,7 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
         AppendGate::NeedsSupersede(m) => match supersede {
             None => return fail(m),
             Some(reason) if reason.trim().is_empty() => {
-                return fail("--supersede-tip needs a one-line reason".to_string())
+                return fail("--supersede-tip needs a one-line reason")
             }
             Some(reason) => {
                 let tip_name = chain.tip().map(|t| t.name.clone()).unwrap_or_default();
