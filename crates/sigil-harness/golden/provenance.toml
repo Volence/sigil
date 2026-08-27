@@ -9076,3 +9076,25 @@ full_crc = "8c01d7ed"
 full_size = 735452
 anchor_crc = "f877d9d5"
 anchor_end = 0xa7e70
+
+[entry.strict]
+outcome = "passed"
+sigil_rev = "8393003bad0642012afd9f7aad3d991ff6abe1dd"
+aeon_rev = "33d905b8740693b952b3d6356e79ecf37a9cddc8"
+strict_bodies = 29
+suites = 348
+passed = 4015
+failed = 0
+ignored = 4
+skips = 0
+ran_at = "unix:1787823164"
+expected_tests = ["sprites_debug_region_matches_reference"]
+
+[entry.strict.goldens]
+config_a = "da04abaf/735820"
+config_b = "5244d9e5/610393"
+demo = "3415e3ef/96372"
+demo_debug = "7599953e/101113"
+lean = "7d740482/674830"
+s4 = "21cc1347/718999"
+s4_debug = "8c01d7ed/735452"
