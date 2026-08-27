@@ -318,11 +318,17 @@ below requires zero `skip:` lines and this is not a missing reference.
 
 - **Full suite bar:** `cargo test --release --workspace --no-fail-fast` with
   `AEON_DIR` set to a tree matching the provenance tip (derive it — see the warning above) —
-  **3939 passed / 0 failed / 4 ignored** (3943 declared) under `SIGIL_STRICT_GATE=1`, **zero
+  **3943 passed / 0 failed / 4 ignored** (3947 declared) under `SIGIL_STRICT_GATE=1`, **zero
   `skip:` lines**, exit 0, clippy `-D warnings` exit 0.
-  Last measured at master `8af35e8f` against aeon `893747f7` (chain 167), 2026-08-26, log
-  `~/sonic_hacks/.sigil-verify-8af35e8f.log` (was 3928/3932 before the `aeon_rev` field;
-  +11 from the field, its ten unit tests and the pairing gate).
+  Last measured at master `2e284c4d` against aeon `ac57991d` (chain 171), 2026-08-27, by the
+  aeon lane's landing run of the seam1 re-pin.
+  **This paragraph said `3939 / 3943` for a day while the RELAYOUT-REVIEW section below
+  recorded `3943 / 3947` from the same tree, and the stale half is the one a cold boot quotes
+  — this overseer quoted it to a peer, who reconciled against `git grep -c '#\[test\]'` and
+  refused it.** That is this document's own trigger-less-prose defect, one section below the
+  paragraph warning about it. **Reconcile against the declaration, never against this
+  sentence:** `git grep -c '#[test]' HEAD -- '*.rs'` summed is the count, and
+  `passed + ignored` must equal it.
   **The run now emits ZERO `ratchet:` lines and that is the correct state** — the pairing
   gate's self-disarming tolerance ended when chain 167 became the first tip to carry an
   `aeon_rev`. A `ratchet:` line reappearing means a tip was written without the field, which
@@ -540,6 +546,48 @@ below requires zero `skip:` lines and this is not a missing reference.
 - Comments describe present-tense function, never change history. Commit with
   explicit paths only — never `git add -u` in this shared checkout — and check the
   branch before every commit.
+
+### THE ZERO-`skip:` BAR CANNOT SEE 27 OF THIS REPO'S SKIPS (2026-08-27)
+
+**Found by the aeon lane, off a stale pin they hit at their chain-171 landing.** The
+full-suite bar above requires **zero `skip:` lines**. Twenty-seven early-return sites across
+**nine** test files announce themselves as `eprintln!("skipping <gate> …")` instead, and
+**`skipping` does not match `skip:`** — so those gates can no-op and still clear the bar,
+which reads back as coverage. Measured, not reasoned: `grep -rn 'eprintln!("skipping' crates
+--include='*.rs' | wc -l` = 27 across 9 files, against 146 sites using the `skip:` form.
+Queued as `SKIP-TEXT-HOLE`; the fix is one spelling, and it is the bar that moves, not the
+gates.
+
+**Their hypothesis for the specific incident was WRONG, and the correction matters more than
+the hole.** They proposed the silent skip as the reason a stale `SFX_BODY_LEN` survived chain
+170. It cannot be: `colinked_sfx_head_matches_the_reference_rom_slice_both_shapes` guards on
+`if !strict_gate()`, and `strict_gate()` is `std::env::var("SIGIL_STRICT_GATE").is_ok()` —
+under the landing bar that test **always runs and must have gone red**. So the skip text is a
+real defect with a different victim, and this one needs its own answer.
+
+**The actual answer, and it is a landing-lane gap rather than a false green: THIS LANE
+PRODUCED NO CHAIN-170 GREEN.** No strict full-suite run was logged at chain 169 (`c8e87ecb`)
+or chain 170 (`174f4300`); the newest suite log on this machine is
+`~/sonic_hacks/.sigil-verify-d8748933.log`, stamped `head=d8748933`, which **predates both**.
+Both chains were refreezes landed through the aeon-owned lane. Verified rather than inferred:
+`SFX_BODY_LEN` was `2046` = `0x7FE` = `SFX_BANK_BLOB.plain_len` **at chain 169**, chain 170
+grew that region to `0x8DA` (2266) and left the constant behind, and the assertion is
+`out.body.len() == SFX_BODY_LEN` — 2266 against 2046, which no strict run survives.
+
+**So the structural finding is: a refreeze can land in this repo without sigil's strict suite
+ever running.** That is what let a pin go stale for a whole chain with nothing red anywhere.
+It is not aeon doing anything wrong — the one-owner landing rule is correct and they ran the
+suite at 171, which is exactly what caught it. What is missing is a requirement that **every**
+paired refreeze clears the full bar before it is pushed, whoever lands it. Queued as
+`REFREEZE-NEEDS-STRICT`. Note the two findings compound: the missing run is why nothing was
+red, and the skip-text hole is why a future run might not be red either.
+
+**Their `+0x10` vs `+0x12` derivation was re-checked here against the pins themselves and
+holds.** `SFX_BANK_BLOB` grew `0x12` while the assembled total moved `0x10`, because the
+16-alignment pad before the next region absorbed 2: `0xA3B20 + 0x8DA = 0xA43FA` (6 to
+`0xA4400`), `0xA3B20 + 0x8EC = 0xA440C` (4 to `0xA4410`). Corroborated over a different
+parameter than their arithmetic — `EPILOGUE` moved `0xA5C80 → 0xA5C90`, exactly `+0x10`.
+
 
 ## The source-gate lane
 
