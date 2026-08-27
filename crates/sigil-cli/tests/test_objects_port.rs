@@ -44,10 +44,10 @@
 //!
 //! INBOUND equs (values): the SST_* struct-equ seam + engine constants +
 //! `ObjCodeBase`. INBOUND labels at true per-shape VMAs (listing symbol
-//! tables, 2026-07-10 pins): `Draw_Sprite` (plain `$2970` / debug `$2C2A`),
-//! `ObjectMove` (`$2922`/`$2BDC`), `AnimateSprite` (`$2D78`/`$3032`) — all
+//! tables): `Draw_Sprite`, `ObjectMove` and `AnimateSprite`, each at the
+//! per-shape VMA its `pins` entry carries — all
 //! abs.w width-selected, so positions are load-bearing — and `Ani_Particle`
-//! (`$309DE`/`$30A46`), the imm32 value.
+//! (per-shape, from `pins`), the imm32 value.
 //!
 //! OUTBOUND: the AS-side consumer shape — `dc.w TestSolid_Init-ObjCodeBase`
 //! (ObjDef_Solid's `objdef` word, `data/objdefs/test_objects.asm`) and

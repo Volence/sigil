@@ -18,7 +18,7 @@
 //! - **`align 2` at item position after an offsets block** — the twin's
 //!   trailing `align 2` pad byte (the 8th byte of the window).
 //! - **Data-region placement** — the block lives PAST `org $10000`
-//!   (plain `$309EC`, debug `$30A54`), so engine-block drift cannot move
+//!   (per-shape, from `pins::PARTICLE_ANIMS`), so engine-block drift cannot move
 //!   it; only data-region drift re-pins.
 //!
 //! ## The cross-seam surface

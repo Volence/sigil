@@ -33,8 +33,10 @@
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$14AE6`): `s4.bin[0x14AE6..0x14D5A]` (0x274 bytes).
-//! Debug (map base `$14B4E`): `s4.debug.bin[0x14B4E..0x14DC2]`.
+//! Both windows come from `pins::ACT_DESCRIPTOR` at run time — base and length,
+//! per shape. The numbers are deliberately not restated here: a bound copied
+//! into prose is executed by nothing, so nothing can go red when it rots.
+//! Regenerate the pins via `repin`.
 //!
 //! ```text
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test act_descriptor_port

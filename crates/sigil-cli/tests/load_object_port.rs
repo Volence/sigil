@@ -6,9 +6,12 @@
 //! pinned addresses, in BOTH build shapes.
 //!
 //! The cleanest region since dplc: NO `assert`, NO `if DEBUG == 1 {}`, so the
-//! length is shape-INVARIANT ($9E both shapes) and the two shapes are byte-
-//! identical (only relative branches, register-indirect EAs, and one
-//! `jsr AllocDynamic` — an absolute-word link ref).
+//! two shapes are byte-identical (only relative branches, register-indirect
+//! EAs, and one `jsr AllocDynamic` — an absolute-word link ref). The per-shape
+//! bases and lengths live in `pins::LOAD_OBJECT.{plain,debug}_{base,len}` —
+//! regenerate via `repin` — and are deliberately not restated here: a bound
+//! copied into prose is executed by nothing, so nothing can go red when it
+//! rots.
 //!
 //! Cross-seam INBOUND: sst.emp's SST_* struct equs + the engine constants twin
 //! (RF_XFLIP/RF_YFLIP/FRAME_PIECE_COUNT), plus the sole external code target,

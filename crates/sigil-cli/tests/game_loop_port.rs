@@ -35,8 +35,8 @@
 //! INBOUND, supplied as synthetic AS-side sections at their true per-shape
 //! VMAs (read from each shape's listing symbol table):
 //!
-//! - `VSync_Wait` (plain `$2262`, debug `$22EC`) and `Sound_DrainSfxRing`
-//!   (plain `$5EB0`, debug `$736E`) — both `jbsr` -> `bsr.w` PC-RELATIVE, so
+//! - `VSync_Wait` and `Sound_DrainSfxRing` (per-shape VMAs in `pins`) — both
+//!   `jbsr` -> `bsr.w` PC-RELATIVE, so
 //!   the positions are load-bearing. (The drain target flips .emp-side when
 //!   sound_api ports later this tranche — the port order is deliberate: this
 //!   gate exercises the .emp->AS direction first.)
@@ -52,8 +52,9 @@
 //! ## Reference windows
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$22FE`): `s4.bin[0x22FE..0x2310]` (0x12 bytes).
-//! Debug (map base `$238C`): `s4.debug.bin[0x238C..0x239E]` (0x12 bytes).
+//! Both windows come from `pins::GAME_LOOP` at run time — base and length, per
+//! shape. The numbers are deliberately not restated here: a bound copied into
+//! prose is executed by nothing, so nothing can go red when it rots.
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, the reference tests SKIP green —
@@ -371,13 +372,15 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     );
 }
 
-/// (plain) `game_loop` bytes == `s4.bin[0x22FE..0x2310]`.
+/// (plain) `game_loop` bytes == the `s4.bin` window at `pins::GAME_LOOP`'s
+/// plain base/len.
 #[test]
 fn game_loop_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin");
 }
 
-/// (debug) `game_loop` bytes == `s4.debug.bin[0x238C..0x239E]`.
+/// (debug) `game_loop` bytes == the `s4.debug.bin` window at
+/// `pins::GAME_LOOP`'s debug base/len.
 #[test]
 fn game_loop_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin");

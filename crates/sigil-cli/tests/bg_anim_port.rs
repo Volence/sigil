@@ -8,8 +8,11 @@
 //! game-emitted BgAnim_Table, queueing wrapped-pair deferrable DMAs.
 //!
 //! ## Shape
-//! SHAPE-INVARIANT length ($A0 both shapes — bg_anim.asm has NO `__DEBUG__`
-//! code, no asserts); only the base shifts.
+//! Both the base and the LENGTH are shape-dependent, so each shape diffs
+//! against its own ROM window. The four numbers live in
+//! `pins::BG_ANIM.{plain,debug}_{base,len}` — regenerate via `repin` — and are
+//! deliberately not restated here: a bound copied into prose is executed by
+//! nothing, so nothing can go red when it rots.
 //!
 //! ## Cross-seam symbols
 //! - RAM (abs.w operands): `BgAnim_LastStep`, `Logic_Tick` (driver-2, low word;

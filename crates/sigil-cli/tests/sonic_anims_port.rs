@@ -16,9 +16,10 @@
 //! ## Reference windows
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$30970`): `s4.bin[0x30970..0x309DE]` (0x6E bytes).
-//! Debug (map base `$309D8`): `s4.debug.bin[0x309D8..0x30A46]`.
-//! Content is shape-invariant.
+//! Both windows come from `pins::SONIC_ANIMS` at run time — base and length,
+//! per shape; the content is shape-invariant. The numbers are deliberately not
+//! restated here: a bound copied into prose is executed by nothing, so nothing
+//! can go red when it rots.
 //!
 //! ```text
 //! SIGIL_STRICT_GATE=1 AEON_DIR=/path/to/aeon cargo test -p sigil-cli --test sonic_anims_port

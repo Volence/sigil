@@ -5,11 +5,13 @@
 //! in `sigil_harness::seam1` (shared with the `emit_sound_blob` bin); this file is
 //! the byte-gate + whole-ROM dual-build proofs.
 //!
-//! Comparands (the reference-ROM blob slice at LMA):
-//!   * plain: `s4.bin[0x3DE..0x3DE+0x181C]` (6172 B)
-//!   * debug: `s4.debug.bin[0x3E2..0x3E2+0x189A]` (6300 B = 6172 + $7E) — the debug
-//!     base is `$3E2` (+4 upstream of BootData), NOT `$3DE`; the design §2.1/OQ-2
-//!     comparand fixed the +$7E SIZE but assumed the base held (corrected here).
+//! Comparands (the reference-ROM blob slice at LMA): for each shape, the
+//! reference ROM window starting at `blob_lma(debug)` and running
+//! `BLOB_LEN_{PLAIN,DEBUG}` bytes. Those two lengths and their delta are pinned
+//! by `blob_lengths_are_canonical`, which is where to read them — restating a
+//! bound here would be executed by nothing, so nothing could go red when it
+//! rots. The two shapes do NOT share a base: the debug base sits +4 upstream of
+//! BootData, which the design §2.1/OQ-2 comparand originally missed.
 //!
 //! REFERENCE-DEPENDENT: the five sound `.emp` sources live in the sibling `aeon`
 //! tree (`AEON_DIR`, default `/home/volence/sonic_hacks/aeon`). Absent, every
@@ -85,7 +87,8 @@ fn assert_blob_matches(blob: &[u8], expected: &[u8], debug: bool, what: &str) {
 // §2.1/2.2/2.3 — the whole-blob byte gate (both shapes) + t24 non-vacuity controls.
 // ===========================================================================
 
-/// (PLAIN) the natively-linked blob == `s4.bin[0x3DE..0x3DE+0x181C]`.
+/// (PLAIN) the natively-linked blob == the `s4.bin` window at `blob_lma(false)`
+/// for `BLOB_LEN_PLAIN` bytes.
 #[test]
 fn native_blob_matches_reference_plain() {
     let Some(aeon) = sound_tree() else { return };
@@ -93,12 +96,14 @@ fn native_blob_matches_reference_plain() {
     let blob = native_sound_blob(&aeon, false).bytes;
     let base = blob_lma(false) as usize;
     let expected = &refrom[base..base + BLOB_LEN_PLAIN];
-    assert_blob_matches(&blob, expected, false, "native blob (plain) vs s4.bin[$3DE..$1BFA]");
+    assert_blob_matches(&blob, expected, false, "native blob (plain) vs the s4.bin window at blob_lma(false)");
 }
 
-/// (DEBUG) the natively-linked blob == `s4.debug.bin[0x3E2..0x3E2+0x189A]` — the
-/// +$7E sequencer growth EMITTED, sfx/fm/psg re-based, the driver's 9 cross-seam
-/// operand bytes derived from the real imports per shape.
+/// (DEBUG) the natively-linked blob == the `s4.debug.bin` window at
+/// `blob_lma(true)` for `BLOB_LEN_DEBUG` bytes — the sequencer growth EMITTED
+/// (its size is the delta asserted by `blob_lengths_are_canonical`), sfx/fm/psg
+/// re-based, the driver's 9 cross-seam operand bytes derived from the real
+/// imports per shape.
 #[test]
 fn native_blob_matches_reference_debug() {
     let Some(aeon) = sound_tree() else { return };
@@ -106,10 +111,11 @@ fn native_blob_matches_reference_debug() {
     let blob = native_sound_blob(&aeon, true).bytes;
     let base = blob_lma(true) as usize;
     let expected = &refrom[base..base + BLOB_LEN_DEBUG];
-    assert_blob_matches(&blob, expected, true, "native blob (debug) vs s4.debug.bin[$3E2..$1C7C]");
+    assert_blob_matches(&blob, expected, true, "native blob (debug) vs the s4.debug.bin window at blob_lma(true)");
 }
 
-/// The debug blob is exactly $7E longer than plain. These constants are a size
+/// The debug blob is longer than plain by the delta this test asserts below —
+/// read it there rather than from prose. These constants are a size
 /// TRIPWIRE, not a placement input — the module bases are derived (see
 /// `module_bases_are_a_gapless_cursor`).
 ///
@@ -119,7 +125,7 @@ fn native_blob_matches_reference_debug() {
 /// length rounded UP to even (it is `boot_port.rs` that pins that value). The pad
 /// is load-bearing — boot walks `a5` through the blob into word-wide VDP reads in
 /// `boot_tail`, so an odd blob address-errors the 68k before the first frame.
-/// Both current lengths are odd (6163 / 6293), hence a 1-byte pad in each shape.
+/// Both current lengths are odd, hence a 1-byte pad in each shape.
 #[test]
 fn blob_lengths_are_canonical() {
     assert_eq!(BLOB_LEN_DEBUG - BLOB_LEN_PLAIN, 0x82, "debug grows +$82 over plain (pkg 4 D7 added a 4 B debug-only operand-0 trap)");

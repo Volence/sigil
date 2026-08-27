@@ -46,11 +46,12 @@
 //! The consumer probe mirrors player_common's bare `jsr AnimateSprite` and
 //! must land on the abs.w encoding (`4EB8 base`) for mixed-build parity.
 //!
-//! ## Reference windows (2026-07-10 pins, from the master listings)
-//! (sourced from `sigil_harness::pins` — regenerate via repin)
+//! ## Reference windows
 //!
-//! Plain (map base `$2D78`): `s4.bin[0x2D78..0x2F0A]` (0x192 bytes).
-//! Debug (map base `$3032`): `s4.debug.bin[0x3032..0x31C4]` (0x192 bytes).
+//! Both windows come from `pins::ANIMATE` at run time — base and length, per
+//! shape. The numbers are deliberately not restated here: a bound copied into
+//! prose is executed by nothing, so nothing can go red when it rots.
+//! Regenerate the pins via `repin`.
 //! Length is shape-INVARIANT (no `__DEBUG__` code in this file).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
@@ -423,13 +424,15 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     );
 }
 
-/// (plain) the `animate` region == `s4.bin[0x2D78..0x2F0A]`.
+/// (plain) the `animate` region == the `s4.bin` window at `pins::ANIMATE`'s
+/// plain base/len.
 #[test]
 fn animate_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin");
 }
 
-/// (debug) the `animate` region == `s4.debug.bin[0x3032..0x31C4]`.
+/// (debug) the `animate` region == the `s4.debug.bin` window at
+/// `pins::ANIMATE`'s debug base/len.
 #[test]
 fn animate_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin");

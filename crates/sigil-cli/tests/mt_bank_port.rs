@@ -1,14 +1,19 @@
 //! Parcel K4 inc-5 Stage 3 (P2 MT probe) — the Moving-Trucks streaming bank body,
 //! region-level byte gate, EMIT-FIRST.
 //!
-//! The BINCLUDE at $58607 in `games/sonic4/main.asm` (the MT body, after the phased
+//! The BINCLUDE in `games/sonic4/main.asm` (the MT body, after the phased
 //! soundBankHead) is now a native `.emp` `embed()` section (`games.sonic4.mt_bank_blob`)
 //! — the P2 path: it embeds the seam-2-emitted three-way split (mt_bank_body +
 //! mt_songtable + mt_songpatchtable, per shape; untouched emit-tool architecture) at
-//! its fixed LMA $58607 (non-phased; the soundBankHead above it is $607 both shapes).
-//! Head label Song_MovingTrucks; SHAPE-DEPENDENT size (debug adds DrumTest + HCZ2):
-//! 0x34E1 plain / 0x4F33 debug. SongTable/SongPatchTable are the last two contiguous
-//! members — native section labels the whole-ROM link resolves for sound_api.emp.
+//! its fixed LMA, non-phased, directly above the soundBankHead. Head label
+//! Song_MovingTrucks; SHAPE-DEPENDENT size (debug adds DrumTest + HCZ2).
+//! SongTable/SongPatchTable are the last two contiguous members — native section
+//! labels the whole-ROM link resolves for sound_api.emp.
+//!
+//! Every address and length above lives in `pins::MT_BANK_BLOB` (and
+//! `pins::SOUNDBANKHEAD` for the head) — regenerate via `repin`. They are
+//! deliberately not restated here: a bound copied into prose is executed by
+//! nothing, so nothing can go red when it rots.
 //!
 //! EMIT-FIRST: the embedded `.bin` are gitignored build artifacts, so the gate runs
 //! `ensure_generated` FIRST, then compares.

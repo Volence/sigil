@@ -10,7 +10,7 @@
 //!
 //! Like `hblank.emp`, `controllers.emp` carries no `DEBUG` member: the
 //! block's CONTENT is byte-identical plain and debug (0x72 bytes in both) —
-//! only its BASE address shifts (plain `$228C`, debug `$231A`), so the shape
+//! only its BASE address shifts (see `pins::CONTROLLERS`), so the shape
 //! lives entirely in the MAP. `lower_module` runs with an EMPTY `defines`
 //! vec for both shapes.
 //!
@@ -88,8 +88,9 @@
 //! ## Reference windows
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$228C`): `s4.bin[0x228C..0x22FE]` (0x72 bytes).
-//! Debug (map base `$231A`): `s4.debug.bin[0x231A..0x238C]` (0x72 bytes).
+//! Both windows come from `pins::CONTROLLERS` at run time — base and length,
+//! per shape. The numbers are deliberately not restated here: a bound copied
+//! into prose is executed by nothing, so nothing can go red when it rots.
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -132,7 +133,8 @@ fn strict_gate() -> bool {
 /// name, chained — the P5/R7 same-named-`text`-chains-cleanly precedent), and
 /// the real `controllers` region pinned at the per-shape reference base,
 /// sized to the 0x72-byte block. Only the region base differs from
-/// `hblank_port.rs`'s map shape: plain `$228C`, debug `$231A`, both size
+/// `hblank_port.rs`'s map shape: the per-shape base and size come from
+/// `pins::CONTROLLERS`, size
 /// `$72`.
 fn map_toml(debug: bool) -> String {
     let base = region_base(debug);
@@ -420,8 +422,10 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
 }
 
 /// (plain) The `controllers` section's linked bytes equal
-/// `s4.bin[0x228C..0x22FE]`, AND the outbound `bsr.w` consumer's fixup
-/// resolves to the correct per-shape address ($228C) — the bare-name proof.
+/// the `s4.bin` window at `pins::CONTROLLERS`'s plain base/len, AND the
+/// outbound `bsr.w` consumer's fixup
+/// resolves to the correct per-shape address (`pins::CONTROLLERS.plain_base`)
+/// — the bare-name proof.
 #[test]
 fn controllers_region_matches_reference() {
     let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
@@ -453,7 +457,7 @@ fn controllers_region_matches_reference() {
     let base = region_base(false) as usize;
     let expected = &refrom[base..base + pins::CONTROLLERS.plain_len];
     let section = linked.section("controllers").expect("linked image must carry controllers");
-    assert_region_matches(&section.bytes, expected, "controllers (plain) vs s4.bin[0x228C..0x22FE]");
+    assert_region_matches(&section.bytes, expected, "controllers (plain) vs the s4.bin window at pins::CONTROLLERS");
 
     // The bare-name proof: `bsr.w Read_Controllers` = opcode `6100` + a
     // 16-bit PC-relative displacement, computed as `target - (consumer.lma +
@@ -476,8 +480,9 @@ fn controllers_region_matches_reference() {
 }
 
 /// (debug) The `controllers` section's linked bytes equal
-/// `s4.debug.bin[0x231A..0x238C]`, AND the outbound consumer's fixup
-/// resolves to the correct per-shape address ($231A).
+/// the `s4.debug.bin` window at `pins::CONTROLLERS`'s debug base/len, AND the
+/// outbound consumer's fixup
+/// resolves to the correct per-shape address (`pins::CONTROLLERS.debug_base`).
 #[test]
 fn controllers_debug_region_matches_reference() {
     let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
@@ -502,7 +507,7 @@ fn controllers_debug_region_matches_reference() {
     let base = region_base(true) as usize;
     let expected = &refrom[base..base + pins::CONTROLLERS.debug_len];
     let section = linked.section("controllers").expect("linked image must carry controllers");
-    assert_region_matches(&section.bytes, expected, "controllers (debug) vs s4.debug.bin[0x231A..0x238C]");
+    assert_region_matches(&section.bytes, expected, "controllers (debug) vs the s4.debug.bin window at pins::CONTROLLERS");
 
     let consumer = linked
         .sections

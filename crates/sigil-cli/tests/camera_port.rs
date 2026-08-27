@@ -8,8 +8,11 @@
 //! continuous-scroll grid clamps.
 //!
 //! ## Shape
-//! SHAPE-INVARIANT length ($16A both shapes — camera.asm has NO `__DEBUG__`
-//! code, no asserts), like section/plane_buffer; only the base shifts.
+//! Both the base and the LENGTH are shape-dependent, so each shape diffs
+//! against its own ROM window. The four numbers live in
+//! `pins::CAMERA.{plain,debug}_{base,len}` — regenerate via `repin` — and are
+//! deliberately not restated here: a bound copied into prose is executed by
+//! nothing, so nothing can go red when it rots.
 //!
 //! ## Game-contract seam
 //! camera.emp takes `-D GAME_CAMERA_JUMP_LOCK` (0|1) — the game_loop.emp

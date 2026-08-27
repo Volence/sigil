@@ -10,9 +10,9 @@
 //! ## No shape define
 //!
 //! Unlike `mt_bank.emp`, this module carries NO `DEBUG` member: the SFX block's
-//! CONTENT is byte-identical plain and debug (1864 bytes = `$748` in both) — only
-//! its BASE address shifts, because it sits after the shape-dependent song tables
-//! (plain `$5BB20` / debug `$5D570`). So the SHAPE lives entirely in the MAP
+//! CONTENT is byte-identical plain and debug — only its BASE address shifts,
+//! because it sits after the shape-dependent song tables. Both bases are derived
+//! at run time from the sound layout. So the SHAPE lives entirely in the MAP
 //! (per-shape `map_toml(debug)` region base, R7), not in the module: `lower` runs
 //! with an EMPTY `defines` vec for both shapes.
 //!
@@ -25,15 +25,18 @@
 //! (the bankid-label idiom, T2 Deviation 2). So the ONLY external symbol this
 //! test must supply is `MovingTrucks_Bank_Start` — via the `mt_port` `phase`-label
 //! technique verbatim: a synthetic AS unit that `phase`s a label to the exact VMA
-//! the real `.asm` head pins it at ($58000, main.asm's `align $8000`), placed at a
+//! the real `.asm` head pins it at (the sound-bank anchor the layout derives,
+//! main.asm's `align $8000`), placed at a
 //! harness-private LMA that cannot collide with the `sfx_bank`/`text` map regions,
 //! then concatenated with the `.emp` sections before ONE `resolve_layout` + `link`
 //! + `check_link_asserts` pass.
 //!
 //! ## Reference windows
 //!
-//! Plain (map base `$5BB20`): `s4.bin[0x5BB20..0x5C31E]` (2046 bytes).
-//! Debug (map base `$5D570`): `s4.debug.bin[0x5D570..0x5DD6E]` (2046 bytes).
+//! Both windows are derived at run time from the sound layout's
+//! `sfx_bank_lma_{plain,debug}` — base and length, per shape. The numbers are
+//! deliberately not restated here: a bound copied into prose is executed by
+//! nothing, so nothing can go red when it rots.
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -246,7 +249,8 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
     }
 }
 
-/// (plain) The `sfx_bank` section's linked bytes equal `s4.bin[0x5BB20..0x5C31E]`.
+/// (plain) The `sfx_bank` section's linked bytes equal the `s4.bin` window at
+/// the layout's `sfx_bank_lma_plain`.
 #[test]
 fn sfx_bank_region_matches_reference() {
     let Some(dir) = sound_dir() else { return };
@@ -270,7 +274,7 @@ fn sfx_bank_region_matches_reference() {
 }
 
 /// (debug) The `sfx_bank` section's linked bytes equal
-/// `s4.debug.bin[0x5D570..0x5DD6E]`.
+/// the `s4.debug.bin` window at the layout's `sfx_bank_lma_debug`.
 #[test]
 fn sfx_bank_debug_region_matches_reference() {
     let Some(dir) = sound_dir() else { return };

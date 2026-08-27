@@ -4,8 +4,12 @@
 //! the `raise_exception` construct + the vendored MD Debugger blob) through the
 //! production parse → lower → place → resolve → link pipeline and asserts the
 //! `error_handler` region's flattened bytes equal the reference ROM window at
-//! `[BusError, EndOfRom)` in BOTH shapes. Length 0x10B0 both shapes (stub table
-//! 0x15A + blob 0xF56) — same size, different base. Both arms are live again since
+//! `[BusError, EndOfRom)` in BOTH shapes. The region is a stub table followed
+//! by the vendored blob; its per-shape bases and lengths live in
+//! `pins::ERROR_HANDLER.{plain,debug}_{base,len}` — regenerate via `repin` —
+//! and are deliberately not restated here: a bound copied into prose is
+//! executed by nothing, so nothing can go red when it rots. Both arms are live
+//! again since
 //! the crash-report ruling (owner-ruled 2026-08-04) put the island back in release.
 //!
 //! The `raise_exception` construct emits `jsr (MDDBG__ErrorHandler).l` / `jmp
@@ -47,7 +51,8 @@ struct Shape {
 
 // BOTH canonical shapes carry the island since the crash-report ruling (owner-ruled
 // 2026-08-04): the MD Debugger + its deb2 symbol table are DIAGNOSTICS and they ship,
-// so `s4.bin` has a real 0x10B0 error_handler region again and the PLAIN arm is back.
+// so `s4.bin` has a real non-empty error_handler region again (see
+// `pins::ERROR_HANDLER.plain_len`) and the PLAIN arm is back.
 // (It was dropped by review item 29 part 4, when plain_len was 0.) The module has no
 // internal `if DEBUG`, so the two arms compile identical CONTENT at different bases —
 // which is exactly what makes the plain arm worth running: it proves the island

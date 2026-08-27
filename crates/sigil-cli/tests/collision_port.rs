@@ -55,8 +55,9 @@
 //! ## Reference windows
 //! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$2F0A`): `s4.bin[0x2F0A..0x3070]` (0x166 bytes).
-//! Debug (map base `$31C4`): `s4.debug.bin[0x31C4..0x332A]` (0x166 bytes).
+//! Both windows come from `pins::COLLISION` at run time — base and length, per
+//! shape. The numbers are deliberately not restated here: a bound copied into
+//! prose is executed by nothing, so nothing can go red when it rots.
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
@@ -414,13 +415,15 @@ fn reference_gate(shape: &Shape, rom_name: &str) {
     );
 }
 
-/// (plain) the `collision` region == `s4.bin[0x2F0A..0x3070]`.
+/// (plain) the `collision` region == the `s4.bin` window at
+/// `pins::COLLISION`'s plain base/len.
 #[test]
 fn collision_region_matches_reference() {
     reference_gate(&PLAIN, "s4.bin");
 }
 
-/// (debug) the `collision` region == `s4.debug.bin[0x31C4..0x332A]`.
+/// (debug) the `collision` region == the `s4.debug.bin` window at
+/// `pins::COLLISION`'s debug base/len.
 #[test]
 fn collision_debug_region_matches_reference() {
     reference_gate(&DEBUG, "s4.debug.bin");
