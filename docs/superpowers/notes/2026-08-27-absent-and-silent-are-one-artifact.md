@@ -230,6 +230,31 @@ is the first. The second is **not writing a fresh one** — re-authoring a hardc
 value later is the identical defect with a newer date, and it will rot on the same clock.
 Point at where the number lives (`pins::SPRITES.{plain,debug}_len`) instead.
 
+**A BOOKING IS PROSE, AND IT FAILS BY INVENTING A BLOCKER.** *(Both lanes hit this the
+same morning, from opposite triggers; aeon's framing and this lane's, kept as a pair because
+one trigger alone reads as carelessness and two read as a mechanism.)*
+
+The prose surface above is mostly about **bounds** — a length, an address. Queue rows and
+booked items are prose too, and they rot in a direction that is worse than a stale number:
+they **invent constraints that no longer exist**, and a constraint nobody can execute is one
+nobody can contradict.
+
+- **sigil's trigger — the item LANDED.** `docs/OVERSEER.md` carried a row saying aeon's
+  `parcel/rom-relayout` was `IN FLIGHT` for a full day after it landed, **twenty lines above
+  the section in the same file recording the landing.** A dispatched agent read the row
+  rather than the section and handed back a retired blocker as its reason for holding. The
+  conclusion happened to be right; the reason was a year of prose out of date.
+  **Rule: when an item lands, the row that BOOKED it is the one that has to move.**
+- **aeon's trigger — the OWNER RULED.** A `DEFERRED_WORK.md` item said *"revisit only on a
+  user ruling"* when the owner had already ruled.
+  **Rule: when the owner rules, grep the bookings for the condition text that ruling
+  discharges.**
+
+Same defect, two triggers, and neither is found by re-reading the section that superseded it
+— the superseding text is correct and reads correctly. **What has to be swept is the row
+that stated the precondition**, and it is found by searching for the condition's own wording,
+never by re-reading the resolution.
+
 **The joint sweep, scoped deliberately.** When a parcel moves a set of values, each lane
 sweeps its **own** tree's prose for **those specific values** — bounded by what actually
 moved, rather than an open-ended audit, and each lane sweeping the tree it can actually
