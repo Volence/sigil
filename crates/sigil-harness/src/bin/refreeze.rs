@@ -436,6 +436,68 @@ fn test_ran(log: &str, name: &str) -> bool {
     })
 }
 
+/// THE MONOTONIC RATCHET, as a decision that can be exercised.
+///
+/// The census is derived from source, so it moves WITH a deletion and cannot see one: an
+/// edit that removes a strict-gated test removes its expectation in the same stroke. The
+/// only artifact that can witness an absence from the tree behind you is one from the
+/// past, and the chain is one — an append-only record of runs that HAPPENED, not a
+/// statement of what should happen. Nothing here is hand-maintained to pass.
+///
+/// That is only worth anything if a shrink FAILS. A chain that records each run's number
+/// and compares nothing is a diary: the gate goes dark, a smaller number lands in a newer
+/// entry, and nobody reads it. So a shrink returns `Err` and NOTHING is recorded.
+///
+/// And a failure with no honest exit is the trap this repo already names. `Superseded` is
+/// the chain's vocabulary for "this was legitimate", and it does not reach here: it
+/// requires the tip to carry a RED strict run, while a retired gate produces a GREEN one.
+/// Leaving no exit would make the honest operator's only move an edit to a PRIOR
+/// committed entry — the forged field. So the exit is an explicit argument: unreachable
+/// by accident, not an edit to anything committed, and it makes the shrink a thing
+/// somebody SAID rather than a thing that quietly happened.
+///
+/// `prev` is the last recorded `strict_bodies` in the chain, or `None` while the rule is
+/// unarmed. Returns the line to report, or the refusal.
+fn strict_bodies_ratchet(
+    prev: Option<usize>,
+    now: usize,
+    retire: Option<&str>,
+) -> Result<String, String> {
+    match (prev, retire) {
+        // Unarmed: no previous run to compare against. Self-disarming, in the same shape
+        // as the two ratchets already in the tree. Reported as `ratchet:`, NEVER as
+        // `skip:` — this lane's strict bar requires zero `skip:` lines, and a rule
+        // reporting its own dormancy must not spend one.
+        (None, None) => Ok(
+            "ratchet: no entry in this chain records a strict run yet, so there is no \
+             previous population to compare against. It arms permanently with this \
+             attestation."
+                .to_string(),
+        ),
+        (None, Some(why)) => Err(format!(
+            "--retired-strict-gates was passed ({why:?}) but no entry in this chain records a \
+             strict run, so there is no previous count for anything to have fallen from."
+        )),
+        (Some(p), None) if now < p => Err(format!(
+            "strict_bodies FELL from {p} to {now} since the last recorded strict run. The \
+             census is green, which means the tree no longer DECLARES the missing gate(s) \
+             either — a whole strict-gated test or file was removed, which no source-derived \
+             census can see. That may be a deliberate retirement, but it is not something an \
+             attestation may record silently. Restore the gate, or say why it is gone: \
+             `--retired-strict-gates \"<one line>\"`. Nothing was recorded."
+        )),
+        (Some(p), Some(why)) if now < p => {
+            Ok(format!("strict_bodies fell {p} -> {now}, ACKNOWLEDGED: {why}"))
+        }
+        (Some(p), Some(why)) => Err(format!(
+            "--retired-strict-gates was passed ({why:?}) but strict_bodies did not fall \
+             ({p} -> {now}). An acknowledgement with nothing to acknowledge trains the reflex \
+             of passing it by default, which retires the ratchet."
+        )),
+        (Some(p), None) => Ok(format!("strict-body ratchet: {p} -> {now}, held.")),
+    }
+}
+
 /// `--attest` — RUN the strict full suite and record it against the chain tip.
 ///
 /// The tool runs the suite itself rather than accepting a log or a hand-written field,
@@ -450,7 +512,12 @@ fn test_ran(log: &str, name: &str) -> bool {
 /// `strict_bodies != 0` — was satisfiable by the failure it existed to catch: a deleted,
 /// `#[ignore]`d or unguarded gate lands at 28 of 29 and records a pass, so a gate going
 /// dark read back as a smaller green.
-fn do_attest(harness_root: &Path, expect: &[String], log_arg: Option<&str>) -> ExitCode {
+fn do_attest(
+    harness_root: &Path,
+    expect: &[String],
+    log_arg: Option<&str>,
+    retire: Option<&str>,
+) -> ExitCode {
     let golden = harness_root.join("golden");
     let root = match sigil_root(harness_root) {
         Ok(r) => r,
@@ -724,23 +791,13 @@ fn do_attest(harness_root: &Path, expect: &[String], log_arg: Option<&str>) -> E
         // self-disarming shape as the two ratchets already in the tree. Reported as
         // `ratchet:` and NEVER as `skip:` — this lane's strict bar requires zero `skip:`
         // lines, and a rule reporting its own dormancy must not spend one.
-        match chain.entry.iter().rev().find_map(|e| e.strict.as_ref()) {
-            None => eprintln!(
-                "refreeze --attest: ratchet: no entry in this chain records a strict run yet, \
-                 so there is no previous population to compare against. It arms permanently \
-                 with this attestation."
-            ),
-            Some(prev) if run.strict_bodies < prev.strict_bodies => {
-                return fail(format!(
-                    "strict_bodies FELL from {} to {} since the last recorded strict run. The \
-                     census above is green, which means the tree no longer DECLARES the missing \
-                     gate(s) either — a whole strict-gated test or file was removed. That may be \
-                     a deliberate retirement, but it is not something an attestation may record \
-                     silently. Nothing was recorded.",
-                    prev.strict_bodies, run.strict_bodies
-                ));
-            }
-            Some(_) => {}
+        match strict_bodies_ratchet(
+            chain.entry.iter().rev().find_map(|e| e.strict.as_ref()).map(|p| p.strict_bodies),
+            run.strict_bodies,
+            retire,
+        ) {
+            Ok(note) => eprintln!("refreeze --attest: {note}"),
+            Err(e) => return fail(e),
         }
     }
 
@@ -1031,6 +1088,7 @@ fn main() -> ExitCode {
     let mut supersede: Option<String> = None;
     let mut expect: Vec<String> = Vec::new();
     let mut log: Option<String> = None;
+    let mut retire: Option<String> = None;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--check" => check = true,
@@ -1050,9 +1108,16 @@ fn main() -> ExitCode {
                 None => return fail("--expect-test needs a test name"),
             },
             "--log" => log = args.next(),
+            "--retired-strict-gates" => match args.next() {
+                Some(r) if !r.trim().is_empty() => retire = Some(r),
+                _ => return fail(
+                    "--retired-strict-gates needs a one-line reason naming what was retired"
+                ),
+            },
             other => return fail(format!(
-                "unknown argument `{other}` (try --check / --attest [--expect-test NAME] / \
-                 --freeze NAME --ab REF [--note N] [--supersede-tip WHY])"
+                "unknown argument `{other}` (try --check / --attest [--expect-test NAME] \
+                 [--retired-strict-gates WHY] / --freeze NAME --ab REF [--note N] \
+                 [--supersede-tip WHY])"
             )),
         }
     }
@@ -1060,10 +1125,13 @@ fn main() -> ExitCode {
         return fail("--attest is its own mode: it runs the suite and records the result");
     }
     if attest {
-        return do_attest(&root, &expect, log.as_deref());
+        return do_attest(&root, &expect, log.as_deref(), retire.as_deref());
     }
     if !expect.is_empty() {
         return fail("--expect-test applies to --attest, which runs the suite");
+    }
+    if retire.is_some() {
+        return fail("--retired-strict-gates applies to --attest, which measures the population");
     }
     match (check, freeze_name) {
         (true, None) => do_check(&root),
@@ -1088,6 +1156,39 @@ test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; fini
 test boot::header_matches ... FAILED
 test result: FAILED. 40 passed; 1 failed; 3 ignored; 0 measured; 0 filtered out; finished in 2.0s
 ";
+
+    /// EVERY BRANCH OF THE RATCHET, reached. The live chain records no strict run, so
+    /// the shrink path cannot be exercised by a real `--attest` today — and a branch
+    /// nothing reaches reads exactly like one that passed, which is this parcel's whole
+    /// subject. So it is reached here instead of left as decoration.
+    #[test]
+    fn the_strict_body_ratchet_fails_on_a_shrink_and_has_a_named_exit() {
+        // Unarmed — reported as `ratchet:`, never `skip:`.
+        let m = strict_bodies_ratchet(None, 29, None).expect("unarmed must not refuse");
+        assert!(m.starts_with("ratchet:"), "{m}");
+        assert!(!m.contains("skip:"), "a dormant rule must not spend a skip line: {m}");
+
+        // Held, and grown — both fine.
+        assert!(strict_bodies_ratchet(Some(29), 29, None).is_ok());
+        assert!(strict_bodies_ratchet(Some(29), 30, None).is_ok());
+
+        // A SHRINK IS A FAILURE, not a diary entry. This is the joint: if this recorded
+        // the new number instead, the chain would be a census with extra steps.
+        let e = strict_bodies_ratchet(Some(29), 28, None)
+            .expect_err("a shrink must refuse, not record the smaller population");
+        assert!(e.contains("FELL from 29 to 28"), "{e}");
+        assert!(e.contains("--retired-strict-gates"), "the refusal must name its exit: {e}");
+
+        // The named exit works, and says so out loud.
+        let m = strict_bodies_ratchet(Some(29), 28, Some("retired the pitchtable co-link gate"))
+            .expect("an acknowledged shrink must be allowed");
+        assert!(m.contains("ACKNOWLEDGED") && m.contains("pitchtable"), "{m}");
+
+        // And it cannot be worn by default: passing it with nothing to acknowledge is a
+        // refusal, because a flag people pass every time is a flag that retires the rule.
+        assert!(strict_bodies_ratchet(Some(29), 29, Some("why")).is_err());
+        assert!(strict_bodies_ratchet(None, 29, Some("why")).is_err());
+    }
 
     fn witness(lines: &[&str]) -> tempfile::NamedTempFile {
         use std::io::Write;
