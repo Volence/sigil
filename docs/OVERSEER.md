@@ -319,7 +319,7 @@ below requires zero `skip:` lines and this is not a missing reference.
 - **Full suite bar:**
   `SIGIL_STRICT_GATE=1 AEON_DIR=<clean> cargo test --release --workspace --no-fail-fast -- --nocapture`,
   with `AEON_DIR` a tree matching the provenance tip (derive it — see the warning above) —
-  **3943 passed / 0 failed / 4 ignored** (3947 declared), **zero `skip:` lines**, exit 0,
+  **3990 passed / 0 failed / 4 ignored** (3994 declared), **zero `skip:` lines**, exit 0,
   clippy `-D warnings` exit 0.
   **The env vars belong INSIDE the command span, and this paragraph had them outside it
   until 2026-08-27.** That is not formatting: a reader copies the backticked command and
@@ -335,9 +335,16 @@ below requires zero `skip:` lines and this is not a missing reference.
   paragraph warning about it. **Reconcile against the declaration, never against this
   sentence:** `git grep -c '#[test]' HEAD -- '*.rs'` summed is the count, and
   `passed + ignored` must equal it.
-  **The run now emits ZERO `ratchet:` lines and that is the correct state** — the pairing
-  gate's self-disarming tolerance ended when chain 167 became the first tip to carry an
-  `aeon_rev`. A `ratchet:` line reappearing means a tip was written without the field, which
+  **The run emits EXACTLY ONE `ratchet:` line and that is the correct state, as of the
+strict-attestation landing (2026-08-27).** It reads *"no entry in this chain records a
+strict run yet … the strict-attestation rule is not yet in force"*, and it disarms
+permanently at the aeon lane's first `refreeze --attest`. Do NOT read it as the old
+`aeon_rev` pairing ratchet returning — that one disarmed at chain 167 and its reappearance
+would still be a defect. **Two self-disarming ratchets now exist and they say different
+things; read the sentence, not the word.** Once the first attestation lands, this count
+returns to zero and any `ratchet:` line is again worth investigating.
+
+*(Superseded: "The run now emits ZERO `ratchet:` lines and that is the correct state")* A `ratchet:` line reappearing means a tip was written without the field, which
   `check`'s monotonic rule should already have refused; investigate rather than tolerate.
   **⚠ DO NOT COMMIT WHILE A LANDING RUN IS IN FLIGHT.**
   `version_reports_the_head_of_the_tree_it_was_built_from` compares the binary's baked-in
@@ -679,6 +686,53 @@ detect a run measuring the wrong tree.
 both real: it keeps the shared `target/release/sigil` from being relinked underneath a
 peer's in-flight A/B — the aeon lane pins that binary for freezes and needs to be told
 before it moves — and it avoids the mid-build assembler swap recorded above.
+
+### THE STRICT-ATTESTATION RATCHET — what the aeon lane must now do (landed 2026-08-27)
+
+`REFREEZE-NEEDS-STRICT`, merged at `729cd642`. A refreeze can no longer be built on top of
+an entry whose strict suite never ran — the defect that let chains 169 and 170 land with no
+strict run behind them and a stale `SFX_BODY_LEN` ride through both.
+
+**The landing ritual gains one step and one SUBSTITUTION.** Where the aeon lane previously
+ran the strict suite by hand, it now runs through the tool:
+
+1. `refreeze --freeze … --ab …` (unchanged), then **commit the freeze** — goldens,
+   `pins.rs`, `provenance.toml`.
+2. On that clean committed tree:
+   `AEON_DIR=<clean checkout of the frozen aeon SHA> cargo run --release -p sigil-harness --bin refreeze -- --attest`
+   This **replaces** the manual `SIGIL_STRICT_GATE=1 … cargo test …`. It runs the same
+   suite, **sets the flag itself**, adds `--nocapture`, and streams to a log it stamps up
+   front. `--expect-test <name>` (repeatable) refuses if a named test did not execute.
+3. On success it appends `[entry.strict]` → commit `provenance.toml` only. On a red run it
+   records `outcome = "failed"`, names the failing tests, and exits 1.
+
+**Why the flag is set by the tool and not asked of the operator: that one missing token IS
+the whole defect being closed.** A procedure can be complete in its steps and inert in its
+spelling, and nobody audits a command line for a missing env var.
+
+**The witness, and why it is not another aggregate.** `strict_bodies` counts the
+strict-gated decision points a run actually reached with the flag on — written only on the
+path that has *already* observed the flag set, so it is **structurally zero** when the flag
+is unset. No pass count, exit code or `ignored` total can make that distinction, because a
+non-strict suite is also fully green. Measured: 29, matching an independent static count of
+`if !strict_gate() { skip; return }` sites — two derivations over different parameters.
+
+**Do NOT substitute a log grep for it.** The aeon lane proposed harvesting `_port` hits from
+the log (66) as a free witness. Refuted: **43 of 46 are cargo's own `Running tests/…` lines,
+printed before any binary starts**, so the flag cannot affect them and a flag-off run
+reproduces the same count. It was a constant wearing a witness's clothes.
+
+**A failed freeze does not deadlock the chain, and this was a real defect in the first
+design.** If a strict run legitimately goes red and the fix moves bytes, the entry can never
+be attested. The next freeze passes `--supersede-tip "<why>"`, naming its successor.
+**Abandonment additionally requires a recorded RED run** — you cannot abandon an entry you
+never tested — which closes the serial-supersession evasion (freeze, abandon, freeze,
+abandon, and the suite never runs again). Residual, stated rather than hidden: an operator
+can still cycle red-run → supersede, but every cycle costs a real strict run that genuinely
+came back red, which is the run the mechanism exists to force.
+
+**Nothing is backfilled.** Entries 1–172 are untouched; a reconstructed record is a
+confident guess wearing a record's clothes.
 
 ## The source-gate lane
 
