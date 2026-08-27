@@ -848,17 +848,10 @@ fn do_attest(
         goldens,
     };
 
-    let mut new_src = src;
-    if !new_src.ends_with('\n') {
-        new_src.push('\n');
-    }
-    new_src.push_str(&provenance::render_strict(&record));
-    if let Err(e) = std::fs::write(golden.join("provenance.toml"), &new_src) {
-        return fail(format!("append [entry.strict]: {e}"));
-    }
-    let chain2 = match provenance::parse(&new_src) {
-        Ok(c) => c,
-        Err(e) => return fail(format!("the appended record does not parse: {e}")),
+    let block = provenance::render_strict(&record);
+    let (_, chain2) = match provenance::append_block(&golden.join("provenance.toml"), &src, &block) {
+        Ok(v) => v,
+        Err(e) => return fail(format!("append [entry.strict]: {e}")),
     };
     let errs = provenance::check(&golden, &chain2);
     if !errs.is_empty() {
@@ -919,6 +912,20 @@ fn do_check(root: &Path) -> ExitCode {
 
 fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&str>) -> ExitCode {
     let golden = root.join("golden");
+
+    // (-2) THE PROSE, CHECKED BEFORE ANYTHING. `--ab`, `--note` and `--supersede-tip` are
+    // sentences typed on the command line, and a sentence the ledger cannot show verbatim
+    // is a usage error: it should cost no aeon tree and no rebuild, and it should name the
+    // character rather than mangle it. Checked AGAIN at the append, over the full entry,
+    // because the derived fields are not known until then.
+    for (flag, v) in [("--freeze", name), ("--ab", ab), ("--note", note)]
+        .into_iter()
+        .chain(supersede.map(|r| ("--supersede-tip", r)))
+    {
+        if let Some(f) = provenance::fault_in_prose(flag, v) {
+            return fail(f);
+        }
+    }
 
     // (-1) THE GATE, CONSULTED FIRST. Two different jobs, and both belong before any
     // work: a MISUSED `--supersede-tip` is a usage error and must cost nothing — not an
@@ -1012,6 +1019,9 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
                 return fail("--supersede-tip needs a one-line reason")
             }
             Some(reason) => {
+                if let Some(f) = provenance::fault_in_prose("--supersede-tip", reason) {
+                    return fail(f);
+                }
                 let tip_name = chain.tip().map(|t| t.name.clone()).unwrap_or_default();
                 eprintln!(
                     "refreeze: ABANDONING tip `{tip_name}` — its strict run was red; this entry \
@@ -1043,24 +1053,28 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
         }
     }
 
-    let block = provenance::render_entry(name, ab, &aeon_rev, note, &fresh);
-    let mut new_src = src;
-    if !new_src.ends_with('\n') {
-        new_src.push('\n');
+    // REFUSE BEFORE THE WRITE. `--ab`, `--note` and `--supersede-tip` are prose typed on
+    // the command line; a value this ledger cannot show verbatim is reported by name and
+    // position while the author still has the sentence to fix, and while the file on
+    // disk is untouched.
+    let faults = provenance::entry_faults(name, ab, &aeon_rev, note, &fresh);
+    if !faults.is_empty() {
+        eprintln!("refreeze: --freeze refused, the entry cannot be written faithfully:");
+        for f in &faults {
+            eprintln!("  {f}");
+        }
+        return ExitCode::from(2);
     }
+
+    let block = provenance::render_entry(name, ab, &aeon_rev, note, &fresh);
     // ORDER MATTERS: `[entry.superseded]` attaches to the LAST `[[entry]]` in the file,
     // so it must be written while the OLD tip is still last — then the successor's own
     // `[[entry]]` block follows. One append, no surgery, every predecessor untouched.
-    new_src.push_str(&superseded_block);
-    new_src.push_str(&block);
-    if let Err(e) = std::fs::write(golden.join("provenance.toml"), &new_src) {
-        return fail(format!("append entry: {e}"));
-    }
-
-    // Re-validate the appended chain against the fresh blobs.
-    let chain2 = match provenance::parse(&new_src) {
-        Ok(c) => c,
-        Err(e) => return fail(e),
+    let append = format!("{superseded_block}{block}");
+    let (_, chain2) = match provenance::append_block(&golden.join("provenance.toml"), &src, &append)
+    {
+        Ok(v) => v,
+        Err(e) => return fail(format!("append entry: {e}")),
     };
     let errs = provenance::check(&golden, &chain2);
     if !errs.is_empty() {
