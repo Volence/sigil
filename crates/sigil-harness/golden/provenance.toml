@@ -9022,3 +9022,58 @@ full_crc = "9732c56a"
 full_size = 735420
 anchor_crc = "bae229db"
 anchor_end = 0xa7e70
+
+[[entry]]
+name = "sprite-owner"
+ab = "aeon fde470a3: DEBUG-only Sprite_Owner[80] stamp. s4.debug 9732c56a->8c01d7ed (+32 B), demo.debug b6f9759f->7599953e (+33 B); s4.bin 21cc1347 and demo.bin 3415e3ef UNCHANGED, cmp-identical to pre-merge baselines. Four independent reproductions of the after-set: agent worktree, main tree under sigil 4b8347ac, main tree under sigil fbf60abd, clean worktree under fbf60abd - the assembler rebuild moved no bytes."
+aeon_rev = "fde470a34a208aca2ae331ae6db2777fa087cc52"
+note = "release shapes byte-identical; runtime witness positive but THIN (3 sprites, mask sentinel unexercised)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "da04abaf"
+full_size = 735820
+anchor_crc = "70cf04c0"
+anchor_end = 0xa7e70
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "5244d9e5"
+full_size = 610393
+anchor_crc = "c521cecc"
+anchor_end = 0x8b710
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7599953e"
+full_size = 101113
+anchor_crc = "91a16b91"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "7d740482"
+full_size = 674830
+anchor_crc = "924738c2"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "21cc1347"
+full_size = 718999
+anchor_crc = "59ad82ed"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "8c01d7ed"
+full_size = 735452
+anchor_crc = "f877d9d5"
+anchor_end = 0xa7e70
