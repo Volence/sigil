@@ -3278,3 +3278,24 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   — OPEN (kill: either a gate refuses `strict_gate()` inside a `thread::spawn` closure in a
   gated file, or the witness carries an explicit test identity the guard passes in rather
   than reading off the runtime)
+
+- [SPRITE-OWNER-SEAM, 2026-08-27] **A port test's inbound-label table has DERIVED values and
+  HAND-MAINTAINED membership, and only membership rots.** Every row is
+  `("Name", pins::SOME_PIN.shape)`, so no address is ever typed — the hand-typed-address
+  inventory's whole subject is absent here and the file reads as fully derived. What is
+  hand-maintained is *which rows exist*. Aeon declaring a new cross-seam symbol therefore
+  bricks whichever port test references it and no other, at a time nothing here controls.
+  `sprites_port`'s `Sprite_Owner` is the second bite: `Static_Sprite_DMA` was hand-added the
+  same way at bug005 H3 and its row carries a comment saying so. Two instances make it a
+  class, and the failure is at least self-describing — the harness names the symbol, the
+  cause and the remedy in one diagnostic.
+  **Deliberately NOT sized, because the sizing is the trap.** Three enumeration parameters
+  over `crates/sigil-cli/tests/` disagree: the literal row shape gives 35 files / 356 rows,
+  a bare `pins::` reference gives 73 files, `as_label_at` call sites give 21 files / 131
+  sites, and the second set is not a superset of the third. The label-supply idiom is not
+  one spelling, so any single number here is a confident undercount wearing a measurement's
+  clothes (bar 19, invoked on purpose rather than coincided with). Whoever takes this item
+  enumerates by what SUPPLIES an inbound label, not by any one of those spellings.
+  — OPEN (kill: membership derived from the same source the values come from, so that a
+  symbol aeon adds either appears without an edit here or is refused BY NAME with the
+  enumeration that missed it; until then every fix is one more hand-added row)
