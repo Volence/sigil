@@ -171,3 +171,120 @@ fn pad_to_cycles_dense_labels_do_not_collide() {
     );
     assert!(e.is_empty(), "expected clean, got {e:?}");
 }
+
+// --- CYCLES-CPU-GUARD: the timing builtins are Z80-only, and say so ---
+
+/// The same driver as [`errs`] with NO `(cpu: z80)` on the section, so the proc is
+/// 68000 code (`LowerOptions::initial_cpu`). Every body here is spelled in 68000
+/// mnemonics — `rts`, not `ret`.
+fn errs_m68k(body: &str) -> Vec<String> {
+    let src = format!(
+        "module m\nsection s (vma: $0) {{\n  proc P() {{\n{body}\n    rts\n  }}\n}}\n"
+    );
+    let (file, perrs) = parse_str(&src);
+    if perrs.iter().any(|d| d.level == Level::Error) {
+        return perrs
+            .iter()
+            .filter(|d| d.level == Level::Error)
+            .map(|d| format!("PARSE: {}", d.message))
+            .collect();
+    }
+    let (_m, ds) = lower_module(
+        &file,
+        &LowerOptions {
+            initial_cpu: Cpu::M68000,
+            include_root: None,
+            embed_base: None,
+            defines: vec![],
+        },
+    );
+    ds.iter().filter(|d| d.level == Level::Error).map(|d| d.message.clone()).collect()
+}
+
+// THE defect: `nop` is spelled the same on both chips and the Z80 table prices it
+// at 4 T, so a 68000 nop pad used to SUCCEED and hand back 8 — a Z80 T-state count
+// at 3.58 MHz presented as this proc's cost at 7.67 MHz. The guard must refuse.
+#[test]
+fn cycles_on_a_68000_proc_refuses() {
+    let e = errs_m68k("    .a:\n    nop\n    nop\n    .b:\n    ensure(cycles(.a, .b) == 8, \"drift\")");
+    assert!(
+        e.iter().any(|m| m.contains("[cycles.wrong-cpu]")),
+        "a 68000 `cycles()` must refuse, got {e:?}"
+    );
+    // And it must NOT be the old misdirection, which sent the author off to grow a
+    // table that was never the problem.
+    assert!(
+        !e.iter().any(|m| m.contains("[cycles.unknown-op]")),
+        "the refusal must name the CPU, not blame the table, got {e:?}"
+    );
+}
+
+// The OTHER half of the defect, and the reason a generic bail was not good enough:
+// a 68000 op the Z80 table has never heard of used to come back as
+// `[cycles.unknown-op] … add it to z80_cycles`, sending the author to grow a table
+// for a chip the code is not running on. The refusal must name the CPU instead.
+#[test]
+fn cycles_on_a_68000_proc_does_not_blame_the_z80_table() {
+    let e = errs_m68k(
+        "    .a:\n    moveq #0, d0\n    .b:\n    ensure(cycles(.a, .b) == 4, \"x\")",
+    );
+    assert!(
+        e.iter().any(|m| m.contains("[cycles.wrong-cpu]")),
+        "expected the CPU refusal, got {e:?}"
+    );
+    // The property is not "never says z80_cycles" — the refusal names that table on
+    // purpose, as the one it reads. It is "never sends the author to GROW it": the
+    // unknown-op advice is correct on a Z80 proc and misdirection on this one.
+    assert!(
+        !e.iter().any(|m| m.contains("[cycles.unknown-op]")),
+        "the table bail must not be what a 68000 author is told, got {e:?}"
+    );
+    assert!(
+        !e.iter().any(|m| m.contains("add it to `z80_cycles`")),
+        "the diagnostic must not send the author to grow the Z80 table, got {e:?}"
+    );
+}
+
+// `pad_to_cycles(dense: true)` EMITS Z80 `jr` — a mnemonic the 68000 does not have.
+// The guard has to stop it before it splices a foreign instruction into the stream.
+#[test]
+fn pad_to_cycles_on_a_68000_proc_refuses() {
+    let e = errs_m68k("    .a:\n    pad_to_cycles(84, 0, dense: true)");
+    assert!(
+        e.iter().any(|m| m.contains("[cycles.wrong-cpu]")),
+        "a 68000 `pad_to_cycles` must refuse, got {e:?}"
+    );
+}
+
+// The sparse shape emits `nop`s, which ARE valid 68000 — but at 4 68000 cycles, not
+// 4 T-states, so the count is still derived in the wrong unit. Same refusal.
+#[test]
+fn pad_to_cycles_sparse_on_a_68000_proc_refuses_too() {
+    let e = errs_m68k("    .a:\n    pad_to_cycles(20, 0)");
+    assert!(
+        e.iter().any(|m| m.contains("[cycles.wrong-cpu]")),
+        "the sparse 68000 pad must refuse as well, got {e:?}"
+    );
+}
+
+// The refusal must be ACTIONABLE, not merely loud: it names the builtin's chip, the
+// proc's chip, and the whole-proc bound that DOES dispatch on CPU.
+#[test]
+fn the_wrong_cpu_refusal_names_the_actual_problem() {
+    let e = errs_m68k("    .a:\n    nop\n    .b:\n    ensure(cycles(.a, .b) == 4, \"x\")");
+    let m = e
+        .iter()
+        .find(|m| m.contains("[cycles.wrong-cpu]"))
+        .unwrap_or_else(|| panic!("no wrong-cpu diagnostic in {e:?}"));
+    for needle in ["Z80", "68000", "@budget(cycles:"] {
+        assert!(m.contains(needle), "the refusal must mention {needle:?}; got {m:?}");
+    }
+}
+
+// POSITIVE CONTROL, and the thing that would catch a guard that refuses everything:
+// the identical span in a `(cpu: z80)` section still measures and still passes.
+#[test]
+fn the_guard_leaves_z80_spans_working() {
+    let e = errs("    .a:\n    nop\n    nop\n    .b:\n    ensure(cycles(.a, .b) == 8, \"drift\")");
+    assert!(e.is_empty(), "the Z80 path must be untouched, got {e:?}");
+}
