@@ -5,6 +5,33 @@ posture, delegation discipline, review bars, peer protocol — lives in
 `empyrean/docs/OVERSEER-PROTOCOL.md`; read it once, then this file for what is
 sigil-specific: the landing-lane division, the worktree/test quirks, and the queue.
 
+## ⚠ ACTIVE HOLD — read this before running anything that builds
+
+**A hold that lives only in a chat message does not survive a `/clear`** *(aurora's)*. An
+announcement reaches the sessions that exist; only a committed artifact reaches the ones that
+do not exist yet. **A committed hold has the opposite failure: it outlives its reason and
+nothing announces that either.** So every row carries its date, who to ask, and what ends it —
+a successor EVALUATES it rather than obeying it, and a row that cannot be evaluated is expired.
+
+| Raised | Artifact | Why | Ends when | Ask |
+|---|---|---|---|---|
+| 2026-08-27T16:32:21Z | `target/release/sigil`, `refreeze`, `repin` | The aeon lane pins these for the byte-neutral supersede freeze of entry 175, AND a second agent of theirs is building four shapes for an unrelated parcel — a relink lands on **two** measurements, not one. Pinned by md5 at raise time: `sigil 85ba502f…`, `refreeze 8cf597eb…`, `repin 37657e41…` | The aeon lane reports that freeze complete. **If that lane is not running, the hold is over** — it cannot be mid-freeze with no session. | aeon overseer |
+
+**Anything that can relink counts**, not just `cargo build --release` — see *Guard the artifact, not the subcommand*. **And it covers COMMITS to master while their attest runs**, not only relinks: a version gate compares the binary's revision against HEAD, so a docs commit reddens their run while relinking nothing. Agents in worktrees with their own `CARGO_TARGET_DIR` are unaffected; this binds the **main checkout**.
+
+**Delete this row in the same commit that announces the lift.**
+
+### A DISCARDED BAD RUN IS A FREE POSITIVE CONTROL FOR THE GOOD ONE THAT REPLACED IT (2026-08-27)
+
+An agent's suite runs before a mid-run correction showed **54 phantom failures**; after the
+correction, a clean set. Rather than simply discarding the bad log, it ran **the same
+failing-name extraction against it** — 54 names came back, proving the query was live, so the
+empty result on the clean run was **a real absence rather than a broken query**.
+
+The absent-instrument problem is normally solved by planting a defect to prove the query
+works. **A run you have just invalidated already contains real instances**, and it is sitting
+there. **Before discarding a bad run, ask what it is now a control FOR.**
+
 ## Boot
 
 > You're the overseer for this repo. Read `docs/OVERSEER.md` first, then
