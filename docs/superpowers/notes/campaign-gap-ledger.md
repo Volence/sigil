@@ -3026,3 +3026,56 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   the same severity the hand-typed-ROM-address inventory records for the stale tranche probe bases.
   — OPEN (kill: the prose states the derivation instead of a value, as `blob_lma`'s first sentence
   already does)
+
+- [CYCLE-FRACTION, 2026-08-27] **The three figures now exist — the row above's kill condition
+  is met.** `docs/superpowers/notes/2026-08-27-cycle-fraction.md` carries them, per processor
+  and combined, under two denominators, measured over all seven `native::shipped_shapes()` at
+  aeon 353aaa49 (the SHA sigil's `band-ceiling-16` refreeze pairs with). Canonical shape
+  `sonic4 debug`, by INSTRUCTION SITE: 68000 66.88 % exact / 33.07 % ceiling / 0.04 %
+  unmodelled; Z80 72.89 % / 0.00 % / 27.11 %; combined 68.08 % / 26.48 % / 5.43 %. By PROC
+  (worst bucket wins): 68000 9.52 % / 90.20 % / 0.28 %; Z80 19.01 % / 0.00 % / 80.99 %. The
+  prediction the row above made was RIGHT that the middle bucket is not negligible and wrong
+  about why: **98 % of the 68000 ceiling is the linker-relaxation ruling, not data
+  dependence** (only 0.65 % of shipped 68000 instructions are genuinely data-dependent), and
+  the Z80 has NO ceiling bucket at all because `z80_cycles::Cost` carries no exactness flag.
+  The command is `AEON_DIR=<clean 353aaa49 worktree> cargo run --release --bin cycle_fraction`.
+  Anyone citing a single blended coverage number for "the cycle model" is averaging a 0.04 %
+  rounding error (68000 refusals) together with a 27 % design boundary (the Z80 demand-subset
+  table) — quote the per-CPU split or quote nothing.
+  — SHIPPED (the measurement; the two defects it found are the two rows below)
+
+- [CYCLE-FRACTION, 2026-08-27] **`cycles(L1, L2)` and `pad_to_cycles(...)` have no CPU guard —
+  a 68000 proc's span is priced with the Z80 T-state table.** `eval::builtins::eval_cycles`
+  calls `crate::z80_cycles::span_cost` unconditionally; there is no `cpu` reference anywhere in
+  `builtins.rs`, even though the evaluator knows the enclosing proc's CPU (`ev.cpu`, set by
+  `eval_proc_body_env`) and the sibling consumer `cycle_budget` dispatches on it properly. Most
+  68000 mnemonics are absent from the Z80 table, so the usual outcome is a loud
+  `[cycles.unknown-op]` — with a misleading "add it to `z80_cycles`" message on a 68000 proc.
+  But the two tables share two spellings that match 68000-shaped operands: `nop`
+  (`Cost::Fixed(4)`) and `assume_some` (`Cost::Fixed(0)`). **A 68000 timing pad made of `nop`s
+  therefore succeeds and returns a number** — 4 per nop, coincidentally the 68000's own count
+  but by the model's own definition a Z80 T-state at 3.58 MHz, not a 68000 cycle at 7.67 MHz.
+  `pad_to_cycles` then sizes a pad against that number, and its `dense: true` shape would emit
+  a Z80 `jr` into a 68000 stream. LIVE EXPOSURE TODAY IS NONE: all 24 builtin call sites are in
+  `(cpu: z80)` modules (18 `z80_sound_driver.emp`, 3 `sound_sequencer.emp`, 3 `sound_fm.emp`)
+  and the one `pad_to_cycles(` is in `z80_sound_driver.emp`. This is a missing guard, not an
+  active miscount — which is exactly why it should be closed while it is still free.
+  **Kill:** `eval_cycles`/`eval_pad_to_cycles` refuse on a non-Z80 `ev.cpu` under their own
+  diagnostic id, proved red-first by a 68000 proc whose `ensure(cycles(.a, .b) == 8)` over two
+  `nop`s fails to build instead of passing.
+  — OPEN
+
+- [CYCLE-FRACTION, 2026-08-27] **`z80_cycles::span_cost` accumulates in `u16` with
+  `saturating_add` — it returns a number where it owes a refusal.** A straight-line span
+  costing more than 65 535 T-states silently reports 65 535. It is the one place in either
+  cost table's consumers where an arithmetic limit yields a value instead of a `CycleBail`,
+  and a `cycles(...)` result feeds `pad_to_cycles`, so a saturated read would size a pad
+  against a clock balance that is not the machine's. HEADROOM IS LARGE: the biggest Z80 proc
+  in the shipped corpus is 167 instruction sites, so a whole-proc straight line bounds at
+  ~3 173 T (167 x the table's dearest 19 T form), ~20x below saturation; the real timed spans
+  are FILL 195 / DRAIN 195 / DRAINING_TAIL 194. Unreachable today, and unreachable by an
+  accident of corpus size rather than by construction — a generated pad or a future timed
+  region is the thing that would find it.
+  **Kill:** `span_cost` accumulates in `u32`/`u64` and bails (or the type makes overflow
+  unrepresentable) instead of saturating, proved red-first over a synthetic span past 65 535 T.
+  — OPEN
