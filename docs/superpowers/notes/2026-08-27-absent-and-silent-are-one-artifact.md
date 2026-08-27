@@ -132,8 +132,39 @@ the defect still shipped**, because the count is `len(results)`: derived from wh
 produced a row, **printed as a fact and compared to nothing.** A gate going dark shows up as
 a *smaller green* rather than as a failure.
 
-**The remedy is bar 1 — derived, never copied — pointed at the witness itself: the count
-must be ASSERTED against a derived expected count, not reported.** That is also the real
+**⚠ THE INSTANCE ABOVE IS RETRACTED BY ITS OWN AUTHOR (aeon lane, 2026-08-27) — THE LEG
+SURVIVES, THE WORKED EXAMPLE DOES NOT.** Their `28 → 27` was **not** a gate going dark. Their
+`scanline_spans` gate emits **one row per declared `CAP_*` bit**, and commit `309d937a`
+("scene DSL: retire CAP_PER_LINE") took that 7 → 6: measured, the `CAP_*` count is 7 at the
+28-run's commit and 6 at the 27-run's, and `309d937a` is an ancestor of the second and not the
+first. **28 − 27 = one retired capability bit; no gate ever stopped running, and the count was
+doing its job.** Their own stanza had enumerated `scanline_spans ×8` against the other run's
+`×9` and nobody diffed it. Their measurements were sound throughout; the causal story built on
+them was not, which is this campaign's *measurement-not-mechanism* bar failing on the lane that
+banked it. **Do not cite `OK — 27 gates` as a gate going dark.**
+
+**What that costs this section, stated rather than papered over: the third leg is now a hole
+with no worked example.** The hole is real — `len(results)` is still undiffable, a count is
+still not an assertion, and a gate dying mid-body still produces a smaller green. But the case
+that motivated it turned out benign, and a technique whose only instance evaporated is a
+technique on probation. It needs a real one before it hardens into a rule.
+
+**And it corrects the remedy, which is the part that was about to be built on.** The original
+text below said the count must be asserted against *a derived expected count*. Aeon's landed
+fix contains **no expected row count anywhere, because none is derivable honestly** — their
+population is legitimately variable, so a frozen expectation would make an honest operator
+hand-edit it every time a capability retired, which this repo's own `Superseded` doc comment
+already names as a ratchet teaching the wrong reflex. **Assert a RELATION derived at run time,
+not a frozen count.** Their three, landed and red-first proven: every *scheduled* gate produced
+at least one row; no row from an unscheduled gate; and **a gate whose rows are all PASS must
+have reached its terminal emit** — a failing gate being complete by virtue of its failing row,
+while a gate that dies mid-body has fewer rows and nothing red. Sabotage prints
+`gate 'demo_witness' PRODUCED NO ROW … (A count could not see this: it just got smaller.)`
+where the old code printed `OK — 9 gates`, exit 0.
+
+*(Superseded, kept because it is what a reader would otherwise reconstruct:)* **The remedy is
+bar 1 — derived, never copied — pointed at the witness itself: the count must be ASSERTED
+against a derived expected count, not reported.** That is also the real
 reason `--collect-only` beats a better log grep: collection yields a population you can
 **diff**, which is an assertion; a printed count yields a number you can **read**, which is
 not.
@@ -141,8 +172,20 @@ not.
 **A live sigil instance, in the mechanism this lane landed to close this very class.**
 `refreeze --attest` refuses when `strict_bodies == 0`. That is a **floor, not an
 expectation**. If a strict-gated gate is deleted, renamed, or loses its guard, the witness
-falls 29 → 28 and `--attest` records a pass — the identical shape as `OK — 27 gates`, inside
-the tool written to prevent it, landed the same night. Queued as `ATTEST-EXPECTED-BODIES`;
+falls 29 → 28 and `--attest` records a pass — the same SHAPE as `OK — 27 gates`, inside
+the tool written to prevent it, landed the same night. (The shape is what transfers; that
+aeon instance turned out benign — see the retraction above.) Queued as
+`ATTEST-EXPECTED-BODIES`.
+
+**⚠ Do not read the next sentence as settled — it asserts an invariance nobody measured.**
+Whether sigil's 29 is stable across runs is an OPEN question as of this correction: a site
+inside an `#[ignore]`d or `cfg`-ed-out test, or a filtered attest invocation, would shrink
+the population legitimately, which is exactly the trap aeon fell into. If it is variable, a
+frozen 29-name census is as brittle as the number was, and the honest form is aeon's
+relation — a test that ran and contains a strict-gated site must have reached it — rather
+than an expected list. Being measured now by the `ATTEST-EXPECTED-BODIES` parcel.
+
+*(Written before that was asked:)*
 the derived expectation is available, since the static count of `if !strict_gate() { … }`
 sites is exactly what the runtime witness was corroborated against (29 = 29).
 
