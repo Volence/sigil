@@ -27,6 +27,11 @@
 //! reports the FIXPOINT and appends nothing. So a no-op re-freeze leaves the tree
 //! git-clean — the machinery's own regression test.
 //!
+//! ONE thing passes the fixpoint: an explicit `--supersede-tip`, which appends an
+//! ordinary entry whose goldens equal its predecessor's, so that a RED tip whose fix
+//! moved no bytes can still be abandoned. Every supersede precondition still gates it.
+//! See [`sigil_harness::provenance::plan_freeze`].
+//!
 //! `--freeze` REFUSES unless it can name the aeon revision honestly: `AEON_DIR` must be
 //! set, be a git repository, resolve `HEAD`, and be CLEAN. That revision is recorded in
 //! the appended entry's `aeon_rev`. See [`resolve_aeon_rev`] for why. `--check` takes no
@@ -54,7 +59,10 @@ use std::process::{Command, ExitCode};
 use sigil_harness::harness_root::{
     announce_root, repin_invocation, resolve_harness_root, ROOT_OVERRIDE,
 };
-use sigil_harness::provenance::{self, AppendGate, StrictRun, Superseded, Target};
+use sigil_harness::provenance::{
+    self, Applied, AppendGate, StrictRun, Target, SUPERSEDE_OF_A_GREEN_TIP,
+    SUPERSEDE_WITHOUT_A_RED_RUN,
+};
 use sigil_harness::strict_census;
 
 /// target-key -> (committed golden blob, off-canonical size-table file or "" for the
@@ -72,18 +80,6 @@ fn target_sources() -> Vec<(&'static str, &'static str, &'static str)> {
         ("lean", "lean.bin", "lean.txt"),
     ]
 }
-
-/// Refusing a `--supersede-tip` that has nothing to abandon. Checked BOTH before the
-/// rebuild (so the usage error is free) and again at the append (so the decision is made
-/// against the chain as it actually is when the entry is written).
-const SUPERSEDE_WITHOUT_A_RED_RUN: &str =
-    "--supersede-tip was passed, but the tip records no strict run at all. An entry can only \
-     be ABANDONED once `--attest` has recorded that its suite came back RED; otherwise \
-     abandoning is just a way to skip the run, and the ratchet dissolves into a formality.";
-
-const SUPERSEDE_OF_A_GREEN_TIP: &str =
-    "--supersede-tip was passed, but the tip's strict run PASSED. A green entry is not being \
-     abandoned; drop the flag.";
 
 fn fail(msg: impl AsRef<str>) -> ExitCode {
     eprintln!("refreeze: {}", msg.as_ref());
@@ -941,9 +937,12 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
     // aeon tree, not a rebuild — and a freeze that is going to be refused at the append
     // should say so before it spends twenty minutes finding out.
     //
-    // It is only a WARNING and not an early refusal, because the rule is about APPENDING:
-    // a byte-neutral re-freeze appends nothing, and that no-op is this machinery's own
-    // regression test — it must keep working on a tip that has not been attested yet.
+    // WITHOUT `--supersede-tip` it is only a WARNING and not an early refusal, because
+    // the rule is about APPENDING: a byte-neutral re-freeze appends nothing, and that
+    // no-op is this machinery's own regression test — it must keep working on a tip that
+    // has not been attested yet. WITH the flag there is no such freeze: an explicit
+    // abandonment appends whether or not the bytes moved, so a gate that will refuse the
+    // append refuses here, before the rebuild, whatever the goldens turn out to be.
     if let Some(c) = std::fs::read_to_string(golden.join("provenance.toml"))
         .ok()
         .and_then(|s| provenance::parse(&s).ok())
@@ -951,7 +950,8 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
         match (provenance::append_gate(&c), supersede) {
             (AppendGate::Ratchet(_), Some(_)) => return fail(SUPERSEDE_WITHOUT_A_RED_RUN),
             (AppendGate::Allowed, Some(_)) => return fail(SUPERSEDE_OF_A_GREEN_TIP),
-            (AppendGate::Refused(m), _) | (AppendGate::NeedsSupersede(m), None) => eprintln!(
+            (AppendGate::Refused(m), Some(_)) => return fail(m),
+            (AppendGate::Refused(m), None) | (AppendGate::NeedsSupersede(m), None) => eprintln!(
                 "refreeze: WARNING — if this freeze moves bytes it will REFUSE to append: {m}"
             ),
             _ => {}
@@ -989,115 +989,44 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
         Err(e) => return fail(e),
     };
 
-    let src = match std::fs::read_to_string(golden.join("provenance.toml")) {
-        Ok(s) => s,
-        Err(e) => return fail(format!("read provenance.toml: {e}")),
-    };
-    let chain = match provenance::parse(&src) {
-        Ok(c) => c,
-        Err(e) => return fail(e),
-    };
-
-    if provenance::equals_tip(&chain, &fresh) {
-        println!("refreeze: FIXPOINT — the regenerated goldens match tip `{}`; nothing appended.", chain.tip().unwrap().name);
-        println!("          (byte-neutral re-freeze; the tree stays git-clean.)");
-        return ExitCode::SUCCESS;
-    }
-
-    // THE STRICT-ATTESTATION GATE. Checked here — after the FIXPOINT branch above and
-    // before the append — because the rule is about building a new entry ON TOP OF an
-    // unproven one. A re-freeze that changes nothing proves nothing new and is exempt.
-    let mut superseded_block = String::new();
-    match provenance::append_gate(&chain) {
-        AppendGate::Ratchet(m) => {
+    // THE LEDGER HALF — decide, render, append, re-validate. Every rule about WHETHER
+    // this entry may be written lives in `provenance::freeze_into`, where it is reachable
+    // by a test that needs neither seven rebuilt ROMs nor the real chain.
+    match provenance::freeze_into(&golden, name, ab, &aeon_rev, note, &fresh, supersede) {
+        Err(m) => fail(m),
+        Ok(Applied::Fixpoint { tip }) => {
+            println!("refreeze: FIXPOINT — the regenerated goldens match tip `{tip}`; nothing appended.");
+            println!("          (byte-neutral re-freeze; the tree stays git-clean.)");
+            ExitCode::SUCCESS
+        }
+        Ok(Applied::Appended { abandoned, byte_neutral, chain_len, notices }) => {
             // `ratchet:`, never `skip:`. This lane's strict bar requires zero `skip:`
             // lines and this is not a missing reference; it is a rule that has not armed.
-            eprintln!("{m}");
-            if supersede.is_some() {
-                return fail(SUPERSEDE_WITHOUT_A_RED_RUN);
+            for n in &notices {
+                eprintln!("{n}");
             }
-        }
-        AppendGate::Allowed => {
-            if supersede.is_some() {
-                return fail(SUPERSEDE_OF_A_GREEN_TIP);
-            }
-        }
-        AppendGate::NeedsSupersede(m) => match supersede {
-            None => return fail(m),
-            Some(reason) if reason.trim().is_empty() => {
-                return fail("--supersede-tip needs a one-line reason")
-            }
-            Some(reason) => {
-                if let Some(f) = provenance::fault_in_prose("--supersede-tip", reason) {
-                    return fail(f);
-                }
-                let tip_name = chain.tip().map(|t| t.name.clone()).unwrap_or_default();
+            if let Some(old) = &abandoned {
                 eprintln!(
-                    "refreeze: ABANDONING tip `{tip_name}` — its strict run was red; this entry \
+                    "refreeze: ABANDONING tip `{old}` — its strict run was red; this entry \
                      `{name}` is recorded as its successor."
                 );
-                superseded_block = provenance::render_superseded(&Superseded {
-                    by: name.to_string(),
-                    reason: reason.to_string(),
-                });
+                if byte_neutral {
+                    println!(
+                        "refreeze: FIXPOINT PASSED — the regenerated goldens are UNCHANGED: \
+                         byte-identical to tip `{old}`."
+                    );
+                    println!(
+                        "          An entry was appended ANYWAY, because --supersede-tip abandons \
+                         `{old}` and the fix that closed it moved no bytes."
+                    );
+                }
             }
-        },
-        AppendGate::Refused(m) => return fail(m),
-    }
-
-    // Discipline pre-check: an anchor that moved needs a real A/B ref.
-    if ab.trim().is_empty() || ab == provenance::ASL_WITNESS {
-        if let Ok(tip) = chain.tip() {
-            let moved: Vec<&String> = fresh
-                .iter()
-                .filter(|(k, t)| tip.targets.get(*k).map(|p| p.anchor_crc != t.anchor_crc).unwrap_or(true))
-                .map(|(k, _)| k)
-                .collect();
-            if !moved.is_empty() {
-                return fail(format!(
-                    "anchor(s) moved {:?} but --ab is empty/sentinel — a byte-changing freeze needs an A/B evidence ref",
-                    moved
-                ));
-            }
+            println!(
+                "refreeze: appended entry `{name}` (ab=\"{ab}\", aeon_rev={aeon_rev}); chain len {chain_len}."
+            );
+            ExitCode::SUCCESS
         }
     }
-
-    // REFUSE BEFORE THE WRITE. `--ab`, `--note` and `--supersede-tip` are prose typed on
-    // the command line; a value this ledger cannot show verbatim is reported by name and
-    // position while the author still has the sentence to fix, and while the file on
-    // disk is untouched.
-    let faults = provenance::entry_faults(name, ab, &aeon_rev, note, &fresh);
-    if !faults.is_empty() {
-        eprintln!("refreeze: --freeze refused, the entry cannot be written faithfully:");
-        for f in &faults {
-            eprintln!("  {f}");
-        }
-        return ExitCode::from(2);
-    }
-
-    let block = provenance::render_entry(name, ab, &aeon_rev, note, &fresh);
-    // ORDER MATTERS: `[entry.superseded]` attaches to the LAST `[[entry]]` in the file,
-    // so it must be written while the OLD tip is still last — then the successor's own
-    // `[[entry]]` block follows. One append, no surgery, every predecessor untouched.
-    let append = format!("{superseded_block}{block}");
-    let (_, chain2) = match provenance::append_block(&golden.join("provenance.toml"), &src, &append)
-    {
-        Ok(v) => v,
-        Err(e) => return fail(format!("append entry: {e}")),
-    };
-    let errs = provenance::check(&golden, &chain2);
-    if !errs.is_empty() {
-        eprintln!("refreeze: appended entry FAILS validation ({}):", errs.len());
-        for e in &errs {
-            eprintln!("  {e}");
-        }
-        return ExitCode::from(2);
-    }
-    println!(
-        "refreeze: appended entry `{name}` (ab=\"{ab}\", aeon_rev={aeon_rev}); chain len {}.",
-        chain2.entry.len()
-    );
-    ExitCode::SUCCESS
 }
 
 fn main() -> ExitCode {
