@@ -90,6 +90,12 @@ SOURCE_GATES=(
     banked_carrier_drift
     # the derived-layout invariants, read off the same source resolve the ROM comes from
     derived_layout
+    # the MD Debugger island's per-shape MEMBERSHIP: the shapes declaring the island are
+    # exactly the shapes whose builds define its blob label, set-diffed in both
+    # directions against an expectation taken from each profile's registry rather than
+    # from the build. Source only — it compiles the corpus and reads symbol NAMES; no
+    # byte is compared to anything committed.
+    error_handler_island_membership
     p5_constants_flip
     parcel_8b_stage_gen_touchers
     seam2_layout_derivation
