@@ -32,6 +32,14 @@
 //! the appended entry's `aeon_rev`. See [`resolve_aeon_rev`] for why. `--check` takes no
 //! aeon tree and is deliberately unaffected.
 //!
+//! WHICH TREE IT WRITES INTO is derived from where it is INVOKED, not from where it was
+//! built: the repository toplevel of the working directory, which for a linked worktree
+//! is that worktree. The tree must carry both markers in [`ROOT_MARKERS`] or the run is
+//! refused by name; [`ROOT_OVERRIDE`] names another tree explicitly and is verified the
+//! same way. Every run prints the tree it was built from beside the tree it is operating
+//! on, so a binary older than the question being asked of it is visible rather than
+//! silently authoritative.
+//!
 //! This is the SINGLE place a golden moves: repin (pins) + capture (blobs) + derive
 //! (sizes) + the provenance chain append, in one command. The hand-edited CRC surface
 //! is gone — native_full_rom / native_offcanonical_rom read their expectations FROM
@@ -44,7 +52,146 @@ use std::process::{Command, ExitCode};
 use sigil_harness::provenance::{self, AppendGate, StrictRun, Superseded, Target};
 use sigil_harness::strict_census;
 
-const HARNESS_ROOT: &str = env!("CARGO_MANIFEST_DIR");
+/// The manifest directory this binary was COMPILED in. DIAGNOSTIC ONLY — it is never a
+/// path this tool operates on, and never a fallback.
+///
+/// A prebuilt binary is a silent snapshot of its source at link time, and it carries that
+/// snapshot in every dimension at once: its paths, its features, its flags, its defaults.
+/// A stale one answers confidently in all of them. Kept here so the tool can say which
+/// tree it was BUILT from beside the tree it is OPERATING on — see [`announce_root`],
+/// which prints both unasked, because the people this protects have no reason to suspect
+/// the binary.
+const BUILT_FROM: &str = env!("CARGO_MANIFEST_DIR");
+
+/// Names an explicit harness root, for the legitimate cross-tree invocation. Verified
+/// exactly like a derived one: set-but-wrong is a refusal, not a licence.
+const ROOT_OVERRIDE: &str = "SIGIL_HARNESS_ROOT";
+
+/// The pair that identifies a sigil harness root. BOTH are required, because either alone
+/// is a weaker claim than "this is the tree whose goldens I may write".
+const ROOT_MARKERS: [&str; 2] = ["golden/provenance.toml", "repin.toml"];
+
+/// Where this crate sits below the repository toplevel.
+const HARNESS_SUBDIR: &str = "crates/sigil-harness";
+
+/// Which markers a candidate directory does NOT carry. Empty means it verifies.
+fn missing_markers(candidate: &Path) -> Vec<&'static str> {
+    ROOT_MARKERS.iter().copied().filter(|m| !candidate.join(m).is_file()).collect()
+}
+
+/// A refusal that names all three facts: what was resolved, where the resolution came
+/// from, and what verification looked for and did not find. A refusal missing any of the
+/// three leaves the operator to guess which tree the tool had in mind.
+fn root_refusal(resolved: &Path, from: &str, missing: &[&str]) -> String {
+    format!(
+        "this is not a sigil harness root, so there is nothing here to operate on.\n  \
+         resolved to:   {}\n  \
+         resolved from: {from}\n  \
+         expected to find, and did not: {}\n\
+         Stand in the tree you mean to operate on, or set {ROOT_OVERRIDE} to its \
+         {HARNESS_SUBDIR} directory. There is deliberately NO fallback to the tree this \
+         binary was built from ({BUILT_FROM}): falling back there is the defect this \
+         refusal exists to prevent, and it would write into that tree while you believed \
+         you were working in this one.",
+        resolved.display(),
+        missing.join(", "),
+    )
+}
+
+/// The harness root to OPERATE on, derived from the invoking tree.
+///
+/// `git rev-parse --show-toplevel` resolves a linked worktree to that worktree, which is
+/// the property the whole derivation rests on: a freeze run from a dedicated worktree
+/// must land in that worktree. Worktree isolation protects the branch pointer and gives
+/// no protection at all to the working tree, so the tool has to derive the tree rather
+/// than carry one from build time.
+///
+/// Verified before it is returned, and refused by name when it does not verify.
+fn resolve_harness_root(
+    cwd: &Path,
+    override_dir: Option<&std::ffi::OsStr>,
+) -> Result<PathBuf, String> {
+    if let Some(dir) = override_dir {
+        // Empty is a mistake, not an unset: an empty path joins the markers against the
+        // working directory, so it could verify by accident from inside a harness tree
+        // and then operate on a relative path.
+        if dir.is_empty() {
+            return Err(format!(
+                "{ROOT_OVERRIDE} is set but empty. Give it the {HARNESS_SUBDIR} directory \
+                 of the tree to operate on, or unset it to derive the tree you are \
+                 standing in."
+            ));
+        }
+        let p = PathBuf::from(dir);
+        let missing = missing_markers(&p);
+        if !missing.is_empty() {
+            return Err(root_refusal(&p, &format!("{ROOT_OVERRIDE}={}", p.display()), &missing));
+        }
+        return Ok(p);
+    }
+
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .map_err(|e| {
+            format!("cannot run git to derive the tree to operate on, from {}: {e}", cwd.display())
+        })?;
+    if !out.status.success() {
+        return Err(format!(
+            "{} is not inside a git repository, so the tree to operate on cannot be \
+             derived. Stand in the tree you mean to operate on, or set {ROOT_OVERRIDE} to \
+             its {HARNESS_SUBDIR} directory.",
+            cwd.display()
+        ));
+    }
+    let top = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
+    let p = top.join(HARNESS_SUBDIR);
+    let missing = missing_markers(&p);
+    if !missing.is_empty() {
+        return Err(root_refusal(
+            &p,
+            &format!("the working directory {} (git toplevel {})", cwd.display(), top.display()),
+            &missing,
+        ));
+    }
+    Ok(p)
+}
+
+/// Say, UNASKED and in words, which tree this binary was built from and which one it is
+/// about to operate on.
+///
+/// Unasked because a diagnostic that must be requested is useless against a stale binary:
+/// nobody runs a check for a problem they do not know they have, and this class presents
+/// as something else entirely — a broken worktree, an unknown argument — never as "the
+/// binary is older than the question you are asking it".
+///
+/// In words because two paths side by side are raw material for a verdict, not a verdict.
+/// A reader who has to notice a difference will not notice it, and the one occasion it
+/// matters is the occasion they are busy.
+///
+/// The comparison is textual. Two spellings of the same directory would be reported as a
+/// difference, which is the harmless direction: a false alarm costs a second look, and a
+/// false all-clear is the failure being prevented.
+fn announce_root(root: &Path) {
+    let operating = root.display().to_string();
+    // Reached as displayed text, never as a path — see the constant's contract.
+    let built = format!("{BUILT_FROM}");
+    if operating == built {
+        eprintln!("refreeze: built from and operating on the same tree: {operating}");
+        return;
+    }
+    eprintln!("refreeze: THIS BINARY WAS BUILT FROM A DIFFERENT TREE THAN IT IS OPERATING ON.");
+    eprintln!("refreeze:   built from:   {BUILT_FROM}");
+    eprintln!("refreeze:   operating on: {operating}");
+    eprintln!(
+        "refreeze: they differ. A prebuilt binary is a snapshot of its source at link \
+         time — its paths, its flags and its defaults all date from when it was built, \
+         not from now. If it predates what you are about to ask it, rebuild it in the \
+         tree above before trusting this run."
+    );
+}
 
 /// target-key -> (committed golden blob, off-canonical size-table file or "" for the
 /// canonical shapes whose EndOfRom lives in pins.rs).
@@ -1092,7 +1239,15 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
 }
 
 fn main() -> ExitCode {
-    let root = PathBuf::from(HARNESS_ROOT);
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => return fail(format!("cannot read the working directory ({e})")),
+    };
+    let root = match resolve_harness_root(&cwd, std::env::var_os(ROOT_OVERRIDE).as_deref()) {
+        Ok(r) => r,
+        Err(e) => return fail(e),
+    };
+    announce_root(&root);
     let mut args = std::env::args().skip(1);
     let mut check = false;
     let mut attest = false;
@@ -1152,6 +1307,199 @@ fn main() -> ExitCode {
         (false, Some(name)) => do_freeze(&root, &name, &ab, &note, supersede.as_deref()),
         (true, Some(_)) => fail("--check and --freeze are mutually exclusive"),
         (false, None) => fail("nothing to do: pass --check, --attest, or --freeze NAME --ab REF"),
+    }
+}
+
+#[cfg(test)]
+mod root_derivation {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// Run a git command in `dir` and insist it worked. An absent or broken git is an
+    /// UNMEASURABLE gate, so it panics: these gates are about what git resolves, and a
+    /// silent pass here would be the one outcome that means nothing.
+    fn git(dir: &Path, args: &[&str]) {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .unwrap_or_else(|e| panic!("git {args:?} could not run in {}: {e} — this gate measures what git resolves, so it cannot be skipped", dir.display()));
+        assert!(
+            out.status.success(),
+            "git {args:?} failed in {}: {}",
+            dir.display(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// A canonical, real directory to build fixtures under, so paths compare against what
+    /// `git rev-parse --show-toplevel` returns without symlink noise.
+    fn base(tmp: &tempfile::TempDir) -> PathBuf {
+        tmp.path().canonicalize().unwrap()
+    }
+
+    /// Plant a repository whose `crates/sigil-harness` carries every marker.
+    fn init_repo(root: &Path) {
+        std::fs::create_dir_all(root).unwrap();
+        git(root, &["init", "-q"]);
+        git(root, &["config", "user.email", "gate@example.invalid"]);
+        git(root, &["config", "user.name", "gate"]);
+        plant_markers(&root.join(HARNESS_SUBDIR));
+        git(root, &["add", HARNESS_SUBDIR]);
+        git(root, &["commit", "-q", "-m", "fixture"]);
+    }
+
+    /// Every marker the constant names, and nothing else — so adding a marker to the
+    /// constant extends these gates instead of quietly leaving them behind.
+    fn plant_markers(harness: &Path) {
+        for m in ROOT_MARKERS {
+            let p = harness.join(m);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, "# fixture\n").unwrap();
+        }
+    }
+
+    /// THE DEFECT, as a gate. A linked worktree must resolve to ITSELF: the freeze that
+    /// prompted this ran from a dedicated worktree and wrote into the shared checkout,
+    /// because the binary carried that checkout's path from link time.
+    #[test]
+    fn a_linked_worktree_resolves_to_itself_not_to_the_checkout_it_was_made_from() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = base(&tmp);
+        let main = base.join("main");
+        init_repo(&main);
+        let wt = base.join("wt");
+        git(&main, &["worktree", "add", "-q", wt.to_str().unwrap()]);
+
+        let got = resolve_harness_root(&wt, None).expect("a worktree carrying the markers resolves");
+        assert_eq!(got, wt.join(HARNESS_SUBDIR));
+        assert_ne!(
+            got,
+            main.join(HARNESS_SUBDIR),
+            "resolving to the checkout the worktree was made from is the whole defect"
+        );
+
+        // And from anywhere INSIDE it, since nobody stands at the toplevel.
+        let deep = wt.join(HARNESS_SUBDIR).join("golden");
+        assert_eq!(resolve_harness_root(&deep, None).unwrap(), wt.join(HARNESS_SUBDIR));
+    }
+
+    /// A tree that is not a harness root is refused BY NAME, carrying all three facts:
+    /// what it resolved to, where it resolved from, and what it looked for and missed.
+    #[test]
+    fn a_tree_without_the_markers_is_refused_with_what_where_and_expected() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = base(&tmp);
+        let repo = base.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        git(&repo, &["init", "-q"]);
+
+        let e = resolve_harness_root(&repo, None)
+            .expect_err("a repository with no harness root must refuse, not guess");
+        let resolved = repo.join(HARNESS_SUBDIR);
+        assert!(e.contains(&resolved.display().to_string()), "must say WHAT it resolved to: {e}");
+        assert!(e.contains(&repo.display().to_string()), "must say WHERE from: {e}");
+        for m in ROOT_MARKERS {
+            assert!(e.contains(m), "must name the marker `{m}` it expected: {e}");
+        }
+
+        // HALF the pair is not a harness root either — that is the point of a pair, and
+        // it is what separates this tree from any other one that happens to have a
+        // `repin.toml`. Each marker is removed in turn, so a marker added to the constant
+        // is exercised here rather than quietly trusted.
+        for absent in ROOT_MARKERS {
+            plant_markers(&resolved);
+            std::fs::remove_file(resolved.join(absent)).unwrap();
+            let e = resolve_harness_root(&repo, None)
+                .expect_err(&format!("half a marker pair must refuse (missing `{absent}`)"));
+            assert!(e.contains(absent), "the refusal must name the missing `{absent}`: {e}");
+        }
+    }
+
+    /// The override is a way to name another tree, not a way to skip the check.
+    #[test]
+    fn an_override_that_does_not_verify_is_refused_and_an_empty_one_too() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = base(&tmp);
+        let elsewhere = base.join("elsewhere/crates/sigil-harness");
+        plant_markers(&elsewhere);
+        let bare = base.join("bare");
+        std::fs::create_dir_all(&bare).unwrap();
+
+        // It works, from a cwd that could never have derived it.
+        let got = resolve_harness_root(&bare, Some(elsewhere.as_os_str()))
+            .expect("a verified override is the legitimate cross-tree invocation");
+        assert_eq!(got, elsewhere);
+
+        // Set but wrong: refused, naming the variable and every missing marker.
+        let e = resolve_harness_root(&bare, Some(bare.as_os_str()))
+            .expect_err("an override pointing at a non-harness tree must refuse");
+        assert!(e.contains(ROOT_OVERRIDE), "the refusal must name the variable: {e}");
+        assert!(e.contains(&bare.display().to_string()), "must say what it resolved to: {e}");
+        for m in ROOT_MARKERS {
+            assert!(e.contains(m), "must name the marker `{m}`: {e}");
+        }
+
+        // Set but empty is a mistake, not an unset: an empty path would join the markers
+        // against the working directory and could verify by accident.
+        let e = resolve_harness_root(&bare, Some(std::ffi::OsStr::new("")))
+            .expect_err("an empty override must refuse rather than resolve relatively");
+        assert!(e.contains(ROOT_OVERRIDE), "{e}");
+    }
+
+    /// NO SILENT FALLBACK. When derivation fails and no override is given, the tool
+    /// refuses. An optional override that defaults to the compile-time constant would
+    /// leave every existing call site on today's behaviour while advertising a fix.
+    #[test]
+    fn derivation_failure_refuses_instead_of_falling_back_to_the_build_tree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = base(&tmp);
+        let e = resolve_harness_root(&base, None)
+            .expect_err("outside any harness tree there is nothing to operate on");
+        assert!(!e.is_empty());
+        assert!(
+            e.contains(&base.display().to_string()),
+            "even the give-up must say where it was standing: {e}"
+        );
+    }
+
+    /// The compile-time manifest directory survives as a DIAGNOSTIC and nothing else: it
+    /// may be declared, discussed in comments, and DISPLAYED — never used as a path. A
+    /// fallback would be written as a path expression, so the shape is the rule.
+    #[test]
+    fn the_compile_time_manifest_dir_is_only_ever_displayed() {
+        let src = include_str!("refreeze.rs");
+        // Split so this gate does not match its own source.
+        let token = concat!("BUILT_", "FROM");
+        let decl = format!("const {token}");
+        let capture = format!("{{{token}}}");
+
+        assert!(
+            src.matches(token).count() >= 2,
+            "nothing to measure: the diagnostic constant is not in this file under the \
+             name this gate knows"
+        );
+        assert!(
+            src.contains(&capture),
+            "the build tree must be PRINTED somewhere, or the diagnostic does not exist"
+        );
+
+        let offenders: Vec<String> = src
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| l.contains(token))
+            .filter(|(_, l)| {
+                let t = l.trim_start();
+                !(t.starts_with("//") || l.contains(&decl) || l.contains(&capture))
+            })
+            .map(|(i, l)| format!("{}: {}", i + 1, l.trim()))
+            .collect();
+        assert!(
+            offenders.is_empty(),
+            "the build tree is reachable as a value here, which is how a fallback gets \
+             written: {offenders:#?}"
+        );
     }
 }
 
