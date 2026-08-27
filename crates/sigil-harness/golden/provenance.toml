@@ -8804,3 +8804,57 @@ full_crc = "090c6f35"
 full_size = 734640
 anchor_crc = "d3ab9c89"
 anchor_end = 0xa7c70
+
+[[entry]]
+name = "effects-lab-hotkey"
+ab = "aeon 65236705 adds Debug_SceneCycleHotkey, a DEBUG-only scene cycler driven by START held + RIGHT/LEFT. DEBUG shape only: s4.debug 090c6f35 -> 6f79f855, +506 B (code +0x110 by DEBUG_ASSEMBLED_LEN, remainder deb2 appendix). Release and BOTH demo shapes byte-identical (f81c6811 / 8bd3d11b / ec71a5a4) by the zero-release-byte idiom; the release label lands on 0xA44EE, an address the appendix already carries for Debug_CharacterHotkey (sigil verified 2052 records, zero duplicate addresses). Frozen from a clean detached checkout of the merge SHA with all four ROMs removed first. Behaviour verified on the pad: one step per press, a 90-frame hold advances exactly one step, LEFT reverses, wrap works both ways, and a frame-exact three-way capture (pre-parcel / unpressed / after cycling 0-14-0) is pixel-identical by sha256."
+aeon_rev = "65236705e1260575d49abd1dd8fc64fdf5b74c22"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "0761f575"
+full_size = 735532
+anchor_crc = "20efb5c9"
+anchor_end = 0xa7d80
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "b133c62d"
+full_size = 610361
+anchor_crc = "ce46920b"
+anchor_end = 0x8b6f0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "8bd3d11b"
+full_size = 96372
+anchor_crc = "2d9752e8"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "ec71a5a4"
+full_size = 101080
+anchor_crc = "cd6a09ab"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "8a86dcaf"
+full_size = 674590
+anchor_crc = "931cdc49"
+anchor_end = 0xa4b1e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "f81c6811"
+full_size = 718741
+anchor_crc = "3bb82aad"
+anchor_end = 0xa5ba0
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "6f79f855"
+full_size = 735146
+anchor_crc = "baba9d23"
+anchor_end = 0xa7d80
