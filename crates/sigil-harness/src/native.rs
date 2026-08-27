@@ -76,8 +76,12 @@ pub enum SizeSource {
     /// build uses `Frozen` (§17 Wave-B B-0).
     PinnedBaked,
     /// Off-canonical (demo/Config): the AS residual carries WRONG sonic4 resume orgs,
-    /// so ORDER and the org-island ANCHORS come from the FROZEN asl listing table
-    /// (label → address); every non-island section's base is then PACKED from live-
+    /// so the frozen asl listing table (label → address) supplies each section's
+    /// PROVISIONAL BASE. It is not the placement authority: since K5 the map's
+    /// `order` list drives the byte-emitting sequence and its `[[anchor]]` entries
+    /// declare the islands, and `validate_placement` confirms both on every build.
+    /// The provisional bases identify which sections ARE islands and feed
+    /// measurement; every non-island section's base is then PACKED from live-
     /// measured sizes (see `packed_true_bases`), so a size-changing `.emp` parcel
     /// shifts downstream sections automatically instead of colliding with stale pins.
     Frozen(HashMap<String, u32>),
