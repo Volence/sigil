@@ -106,14 +106,45 @@ fn a_census_that_cannot_walk_the_tree_refuses_rather_than_finding_nothing() {
         "the refusal must say it could not measure, not merely fail: {e}"
     );
 
-    // And an empty-but-present tree: scanning succeeds, finds nothing, and must still
+    // And an empty-but-present tree: scanning succeeds, finds no FILES, and must still
     // refuse rather than hand back a vacuous expectation.
     let tmp = tempfile::tempdir().expect("tempdir");
     let crates = tmp.path().join("crates");
     std::fs::create_dir_all(crates.join("empty-crate/tests")).expect("mkdir");
     let e = strict_census::census(&crates)
-        .expect_err("a tree with no strict gates in it must refuse, not report zero");
+        .expect_err("a tree with no files in it must refuse, not report zero");
     assert!(e.contains("COULD NOT MEASURE"), "{e}");
+
+    // EACH FLOOR SEPARATELY REACHED. A guard that no reachable input can reach is a
+    // guard that is not there — a sibling lane landed exactly that shape tonight, an
+    // anti-vacuity check sitting behind a condition that was false on every path. The
+    // case above stops at the no-FILES floor, so the no-SITES floor below it is
+    // untested by it; this reaches that one specifically, with a real file present.
+    std::fs::write(
+        crates.join("empty-crate/tests/no_gates.rs"),
+        "#[test]\nfn t() {\n    assert!(true);\n}\n",
+    )
+    .expect("write");
+    let e = strict_census::census(&crates)
+        .expect_err("files present but no strict gates must refuse, not report zero sites");
+    assert!(
+        e.contains("COULD NOT MEASURE") && e.contains("ZERO unconditional"),
+        "the no-sites floor must be the one that fired, not the no-files floor: {e}"
+    );
+
+    // And the classification floor, likewise reached on its own: an idiom the scanner
+    // does not know must REFUSE, not be silently dropped from the expectation.
+    std::fs::write(
+        crates.join("empty-crate/tests/no_gates.rs"),
+        "#[test]\nfn t() {\n    let on = strict_gate();\n    assert!(on);\n}\n",
+    )
+    .expect("write");
+    let e = strict_census::census(&crates)
+        .expect_err("an unclassifiable occurrence must refuse, not be dropped");
+    assert!(
+        e.contains("cannot CLASSIFY"),
+        "the classification floor must be the one that fired: {e}"
+    );
 }
 
 /// The census's two detectors must describe the source they claim to. A scanner can be

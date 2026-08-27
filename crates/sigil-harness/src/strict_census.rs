@@ -34,6 +34,26 @@
 //!   a shared helper (`section_row_fixture.rs`'s `gate_on()` serves three tests through
 //!   ONE site, so A cannot tell that two of the three went dark and B can).
 //!
+//! # Why the expectation is DERIVED and never committed
+//!
+//! A frozen list of names would be as brittle as the number was, for the same reason: the
+//! population is legitimately variable. Retiring a strict-gated gate is an ordinary,
+//! honest act, and a mechanism whose only response to one is "hand-edit the expectation"
+//! teaches the reflex this repo's own `provenance::Superseded` doc argues against — the
+//! honest operator forging a field. Deriving at attest time means a retirement removes
+//! the gate and the expectation in the same edit, with nothing to update by hand. The
+//! price is that the same property makes a DELETION invisible, which is the first
+//! residual below and is why it is ledgered rather than claimed.
+//!
+//! Detector B keys on tests DECLARED in a gated file, not on tests that were SCHEDULED.
+//! That is deliberate, and it is the one place this census can produce a red for an
+//! honest reason: a test that legitimately needs no strict reference, written into a
+//! gated file, has the same signature as a guard someone deleted. From outside the two
+//! are indistinguishable, so the gate ASKS rather than knows — and its exit is a code
+//! change (move the test, or give it its guard), never a field to forge. Measured
+//! 2026-08-27: no gated file carries `#[ignore]` or any `cfg` attribute, and `--attest`
+//! passes no test filter, so declared and scheduled are the same set today.
+//!
 //! # LOUD ON UNMEASURABLE
 //!
 //! A scanner that breaks and finds nothing exits green and is indistinguishable from a
