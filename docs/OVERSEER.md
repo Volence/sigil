@@ -758,6 +758,33 @@ swept their entire in-flight freeze into a commit on their own branch. The two h
 that memory row are not equally load-bearing: the branch check is the one that fails
 silently, the explicit-paths rule is the one that limits the blast radius when it does.
 
+**THE UPSTREAM HALF, and the aeon lane's correction to this section's first framing.**
+As written above this reads as the committer's check failing. That is not the whole defect,
+and putting it all on the committer lets the cheaper fix escape. **A session that repoints a
+shared checkout onto a private branch changes what `git commit` means for every other session
+using that tree — silently, and RETROACTIVELY, invalidating branch checks that were correct
+when they were performed.** No amount of committer-side discipline prevents another lane doing
+that to you; it only bounds the damage.
+
+Two correctives, opposite ends, both load-bearing:
+
+- **Committer side** (this section): never commit to master from the shared tree — use a
+  worktree; and if you commit there anyway, verify the branch inside the same command.
+- **Repointer side** (aeon's, executed 2026-08-27): **never leave a shared checkout on a
+  private branch.** They moved `parcel/band-ceiling-16-pair` into its own worktree at
+  `~/sonic_hacks/.sigil-pair-172` and returned the shared checkout to master, tracked-clean;
+  freezes run that way from here. This repo's protocol already says worktrees are why a shared
+  main tree never matters — repointing the main tree is the one act that makes it matter again.
+
+The repointer prevents this most cheaply and is the only party who knows it is happening.
+
+**Mechanical note for the committer-side rule: use `git worktree add --detach <path> master`,
+not `git worktree add <path> master`.** The second form fails outright when the shared checkout
+is *itself* on master (`'master' is already used by worktree at …`), which is the normal state
+and therefore the state you will hit. Detach, commit, `git push origin HEAD:master`, remove the
+worktree from OUTSIDE it — removing it while your shell is inside deletes your cwd and every
+subsequent command in the chain fails with `Unable to read current working directory`.
+
 **Corollary: do not check out master in the shared tree to get around this.** That yanks the
 branch out from under whichever peer is landing. Commit to master from a throwaway worktree
 (`git worktree add -q <path> master`, cherry-pick, remove) and leave the shared checkout on
