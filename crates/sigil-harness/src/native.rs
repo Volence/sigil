@@ -3610,8 +3610,12 @@ pub fn build_rom_chained_with_listing(
 /// the MD Debugger island, i.e. `debug || crash_report`. Only the `lean` profile ships
 /// the assembled image alone.
 pub fn build_full_file_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, String> {
+    // The axis and the registry are reconciled BEFORE either decision below reads it,
+    // so a shape whose two declarations disagree is refused rather than silently
+    // appendix-less (or appendix-ed against an island it does not place).
+    let island = declares_error_handler_island(profile)?;
     let RomBuild { rom, listing, .. } = build_rom_chained_with_listing(aeon, profile)?;
-    if !(profile.debug || profile.crash_report) {
+    if !island {
         return Ok(rom);
     }
     // Demo (engine-only) packs a smaller appendix than sonic4/config; floor per game.
@@ -3620,7 +3624,7 @@ pub fn build_full_file_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec
     } else {
         SONIC4_APPENDIX_FLOOR
     };
-    append_deb2_appendix(aeon, &rom, &listing, profile.debug, floor)
+    append_deb2_appendix(aeon, &rom, &listing, profile.debug, floor, island)
 }
 
 /// Parcel K5: the profile's declared placement-map `order` (`games/<g>/map.toml`) — the
@@ -4138,15 +4142,17 @@ pub const DEB2_MAGIC: [u8; 2] = [0xDE, 0xB2];
 /// `run_build_native`. This function drives the CANONICAL sonic4 shapes, and both of
 /// those set `crash_report` — so the condition is live-but-always-true here, and the
 /// `lean` profile is the shape that actually takes the no-appendix arm (through
-/// `build_full_file_chained`). Reading the flag off the profile rather than hardcoding
-/// `true` keeps this call site honest if the canonical shapes ever change.
+/// `build_full_file_chained`). Reading the flag through
+/// [`declares_error_handler_island`] rather than hardcoding `true` keeps this call site
+/// honest if the canonical shapes ever change, and carries the same answer into the
+/// blob-label membership check.
 pub fn build_native_full_file(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
+    let island = declares_error_handler_island(&sonic4_profile(debug))?;
     let RomBuild { rom, listing, .. } = build_native_rom_with_listing(aeon, debug)?;
-    let crash_report = sonic4_profile(debug).crash_report;
-    if !(debug || crash_report) {
+    if !island {
         return Ok(rom);
     }
-    append_deb2_appendix(aeon, &rom, &listing, debug, SONIC4_APPENDIX_FLOOR)
+    append_deb2_appendix(aeon, &rom, &listing, debug, SONIC4_APPENDIX_FLOOR, island)
 }
 
 /// The sigil-canonical deb2 appendix size floor for the sonic4/config symbol set
@@ -4160,9 +4166,82 @@ pub const DEMO_APPENDIX_FLOOR: usize = 0x1000;
 /// The label the vendored MD Debugger v2.6 blob is emitted under
 /// (`engine/debug/error_handler.emp`). Present in BOTH canonical shapes since the
 /// crash-report ruling (owner-ruled 2026-08-04), so the blob-end guard below now binds
-/// the SHIPPED release ROM too — it is more load-bearing than it was, not less. Absent
-/// only from the opt-in `lean` profile, where the guard is vacuous.
+/// the SHIPPED release ROM too — it is more load-bearing than it was, not less. The
+/// opt-in `lean` profile is the one shape that carries no island and no such label.
 pub const ERROR_HANDLER_BLOB_LABEL: &str = "ErrorHandlerBlob";
+
+/// The registry module id of the MD Debugger island — the 12 CPU exception-vector
+/// stubs plus the vendored blob ([`ERROR_HANDLER_BLOB_LABEL`] is the blob's label
+/// INSIDE it). [`registry`] pushes this row under `debug || crash_report`.
+pub const ERROR_HANDLER_MODULE_ID: &str = "engine.debug.error_handler";
+
+/// The registry module id of the lean shape's loud-failure fault handler — the `else`
+/// arm of the same [`registry`] split. Exactly one of this and
+/// [`ERROR_HANDLER_MODULE_ID`] is placed in any shape: they are the two arms of one
+/// `if`, and both occupy the same tail placement slot.
+pub const RELEASE_FAULT_MODULE_ID: &str = "engine.system.release_fault";
+
+/// Does `profile` DECLARE the MD Debugger island — i.e. must its build emit
+/// [`ERROR_HANDLER_BLOB_LABEL`]?
+///
+/// THE POINT OF THIS FUNCTION IS THAT IT NEVER READS A LISTING. An expectation
+/// derived from the same build output it is used to judge asserts only that the
+/// output agrees with itself; the whole value of the blob-label check is that its
+/// expectation comes from somewhere the build has not been consulted about yet.
+/// Two such places exist, and this reconciles them rather than picking one:
+///
+///   * THE AXIS — `debug || crash_report` off the [`GameProfile`] literal. The
+///     `crash_report` field documents itself as the crash-report shape switch and is
+///     set per profile by hand; it is also what every OTHER consumer of the axis reads
+///     (the `__MDDBG__` AS define, the `CRASH_REPORT` comptime define, the appendix
+///     decision in `build_full_file_chained`).
+///   * THE REGISTRY — whether `profile.registry` carries [`ERROR_HANDLER_MODULE_ID`].
+///     This is the module list the build is actually handed, so it is upstream of
+///     every section, label and listing row the build produces, and downstream of
+///     nothing the build decides.
+///
+/// They are independent: the axis is a field on a struct literal, the registry is the
+/// result of a gate expression over that field, and a profile may build its registry
+/// from a DIFFERENT `(debug, crash_report)` pair than it stores (`config_b_profile`
+/// and `lean_profile` both call [`registry`] with explicit arguments). So a
+/// disagreement is a real defect and is reported as one — the two-directional half
+/// that a single reading of either source could not give.
+///
+/// The exclusivity check is the second half: the two handlers are the arms of one
+/// `if`, so a registry carrying both or neither has lost the split, and neither
+/// "expected" answer would then mean anything.
+pub fn declares_error_handler_island(profile: &GameProfile) -> Result<bool, String> {
+    let axis = profile.debug || profile.crash_report;
+    let island = profile.registry.iter().any(|m| m.module_id == ERROR_HANDLER_MODULE_ID);
+    let lean_handler = profile.registry.iter().any(|m| m.module_id == RELEASE_FAULT_MODULE_ID);
+    if island == lean_handler {
+        return Err(format!(
+            "shape `{}`: the fault-handler split is EXCLUSIVE — `{ERROR_HANDLER_MODULE_ID}` \
+             and `{RELEASE_FAULT_MODULE_ID}` are the two arms of one `if` in `registry()` \
+             and share the same tail placement slot, but this registry places {}. Whichever \
+             answer this function returned would be meaningless, so it returns none.",
+            profile.name,
+            if island { "BOTH" } else { "NEITHER" },
+        ));
+    }
+    if axis != island {
+        return Err(format!(
+            "shape `{}`: the crash-report AXIS and the REGISTRY disagree about the MD \
+             Debugger island. `debug || crash_report` = {axis} (debug = {}, crash_report = \
+             {}), but the registry {} `{ERROR_HANDLER_MODULE_ID}` and {} \
+             `{RELEASE_FAULT_MODULE_ID}`. These are two independent declarations of one \
+             shape fact — the profile literal and the module list the build is handed — so \
+             a mismatch means one of them was changed alone. Reconcile them before any \
+             gate reads either.",
+            profile.name,
+            profile.debug,
+            profile.crash_report,
+            if island { "PLACES" } else { "omits" },
+            if lean_handler { "places" } else { "omits" },
+        ));
+    }
+    Ok(axis)
+}
 
 /// The length, in bytes, of the vendored MD Debugger v2.6 blob — the opaque
 /// `dc.l` transliteration in `engine/debug/error_handler.emp`, NOT the whole island
@@ -4176,20 +4255,6 @@ pub const ERROR_HANDLER_BLOB_LABEL: &str = "ErrorHandlerBlob";
 /// carries the blob must satisfy `EndOfRom == ErrorHandlerBlob + 0xF56`.
 pub const ERROR_HANDLER_BLOB_LEN: u32 = 0xF56;
 
-/// HARD placement guard: if the built listing carries the MD Debugger blob, the deb2
-/// appendix MUST start at exactly `ErrorHandlerBlob + ERROR_HANDLER_BLOB_LEN`, i.e. the
-/// error_handler island must be the LAST byte-emitting section. `appendix_start` is
-/// `EndOfRom` (the assembled image length; the ROM region is based at 0, the same
-/// identity the positive control below already relies on).
-///
-/// Inert when the blob is absent — the `lean` shape ships no island, and nothing in it
-/// consults a symbol table.
-///
-/// This fails the BUILD rather than warning: the failure it prevents is silent at
-/// runtime (the ROM assembles, boots and crashes correctly — it just prints `<unknown>`
-/// for every Offset/Caller), so a warning would be read past. It is the enforcement
-/// arm of the INVARIANT declared in `games/<g>/map.toml` and documented in
-/// `engine/debug/error_handler.emp`.
 /// The sigil-canonical symbol listing of a `resolve_layout` output — the single
 /// derivation both native drivers (chained + full-file) use.
 ///
@@ -4244,13 +4309,65 @@ fn listing_from_resolved(
     listing
 }
 
+/// HARD placement guard: for a shape that carries the MD Debugger blob, the deb2
+/// appendix MUST start at exactly `ErrorHandlerBlob + ERROR_HANDLER_BLOB_LEN`, i.e. the
+/// error_handler island must be the LAST byte-emitting section. `appendix_start` is
+/// `EndOfRom` (the assembled image length; the ROM region is based at 0, the same
+/// identity the positive control below already relies on).
+///
+/// `expect_island` says whether this shape carries the island AT ALL, and it must come
+/// from somewhere upstream of `listing` — [`declares_error_handler_island`] for a
+/// profile-driven caller. It is what makes the check non-vacuous: a listing WITHOUT the
+/// blob label is a satisfied contract for the `lean` shape and a renamed label, a
+/// re-layout that dropped the island, or a harvest that lost the symbol for every other
+/// shape, and nothing in the listing distinguishes those. So both directions of the
+/// mismatch are refusals — an expected island whose label never appeared, and an
+/// unexpected island whose label did.
+///
+/// This fails the BUILD rather than warning: the failure it prevents is silent at
+/// runtime (the ROM assembles, boots and crashes correctly — it just prints `<unknown>`
+/// for every Offset/Caller), so a warning would be read past. It is the enforcement
+/// arm of the INVARIANT declared in `games/<g>/map.toml` and documented in
+/// `engine/debug/error_handler.emp`.
+///
+/// The per-shape half of the same contract — that the shapes DECLARING the island are
+/// exactly the shapes whose listings define its label — is
+/// `tests/error_handler_island_membership.rs`, because the `lean` shape never reaches
+/// this function (its callers skip the appendix entirely).
 fn check_error_handler_is_last(
     listing: &[sigil_link::ListingSymbol],
     appendix_start: usize,
+    expect_island: bool,
 ) -> Result<(), String> {
     // Same lookup idiom the layout walk uses for `EndOfRom` — match by name.
-    let Some(blob) = listing.iter().find(|l| l.name == ERROR_HANDLER_BLOB_LABEL) else {
-        return Ok(()); // no MD Debugger blob in this shape — invariant is vacuous
+    let found = listing.iter().find(|l| l.name == ERROR_HANDLER_BLOB_LABEL);
+    let blob = match (expect_island, found) {
+        (false, None) => return Ok(()),
+        (true, None) => {
+            return Err(format!(
+                "MDDBG island MEMBERSHIP violated: this shape DECLARES the error_handler \
+                 island, but its listing defines no `{ERROR_HANDLER_BLOB_LABEL}` among \
+                 {} symbol(s), so the blob-end contract has no subject and would have \
+                 passed by having nothing to check. The island is either not placed in \
+                 this shape (a registry or `order` change), its blob label was renamed in \
+                 engine/debug/error_handler.emp, or the listing harvest dropped it. Every \
+                 one of those ships a ROM whose crash screen prints `<unknown>` for every \
+                 Offset/Caller with no other symptom.",
+                listing.len(),
+            ));
+        }
+        (false, Some(b)) => {
+            return Err(format!(
+                "MDDBG island MEMBERSHIP violated: this shape declares NO error_handler \
+                 island, yet its listing defines `{ERROR_HANDLER_BLOB_LABEL}` at {:#x}. \
+                 The island and the lean fault handler are the two arms of one registry \
+                 `if` and share a placement slot, so a shape carrying both has lost the \
+                 split — and the deb2 appendix this shape is not supposed to need would \
+                 land somewhere the blob's baked `lea` displacements do not point.",
+                b.value,
+            ));
+        }
+        (true, Some(b)) => b,
     };
     let expect = blob.value.wrapping_add(ERROR_HANDLER_BLOB_LEN) as usize;
     if appendix_start == expect {
@@ -4281,16 +4398,26 @@ fn check_error_handler_is_last(
 /// Given the assembled ROM + listing, write both to a temp dir, run
 /// `convsym … -output deb2 -a` then `fixheader`, and return the full appended file.
 /// Split out so the t24 doctored-listing negative control can feed a mutated set.
+///
+/// `expect_island` declares whether the shape this (rom, listing) pair came from
+/// carries the MD Debugger island, and is the expectation
+/// [`check_error_handler_is_last`] is judged against. A profile-driven caller derives
+/// it with [`declares_error_handler_island`]; a synthetic probe feeding a listing it
+/// built itself declares what that listing represents. It is a parameter rather than
+/// an assumption because a listing with no blob label is a satisfied contract for one
+/// shape and a silent runtime failure for every other, and this function cannot tell
+/// them apart from the listing.
 pub fn append_deb2_appendix(
     aeon: &Path,
     rom: &[u8],
     listing: &[sigil_link::ListingSymbol],
     debug: bool,
     min_appendix: usize,
+    expect_island: bool,
 ) -> Result<Vec<u8>, String> {
     // PLACEMENT PRECONDITION (checked BEFORE shelling convsym — the contract is about
     // where the appendix will land, so a violation is knowable from the layout alone).
-    check_error_handler_is_last(listing, rom.len())?;
+    check_error_handler_is_last(listing, rom.len(), expect_island)?;
 
     let tools = aeon.join("tools");
     let convsym = tools.join("convsym");
@@ -4833,14 +4960,14 @@ mod error_handler_placement_tests {
     #[test]
     fn blob_last_passes() {
         let end = (0x5E688 + ERROR_HANDLER_BLOB_LEN) as usize;
-        assert!(check_error_handler_is_last(&listing(), end).is_ok());
+        assert!(check_error_handler_is_last(&listing(), end, true).is_ok());
     }
 
     #[test]
     fn section_after_blob_fires() {
         // The shipped bug: the 0x140-byte replay fixture between blob end and EndOfRom.
         let end = (0x5E688 + ERROR_HANDLER_BLOB_LEN) as usize + 0x140;
-        let e = check_error_handler_is_last(&listing(), end).unwrap_err();
+        let e = check_error_handler_is_last(&listing(), end, true).unwrap_err();
         assert!(e.contains("MDDBG blob-end contract VIOLATED"), "{e}");
         assert!(e.contains("+320"), "drift must be reported in bytes: {e}");
         assert!(e.contains("<unknown>"), "must name the silent runtime symptom: {e}");
@@ -4850,16 +4977,37 @@ mod error_handler_placement_tests {
     #[test]
     fn appendix_short_of_blob_end_fires() {
         let end = (0x5E688 + ERROR_HANDLER_BLOB_LEN) as usize - 2;
-        let e = check_error_handler_is_last(&listing(), end).unwrap_err();
+        let e = check_error_handler_is_last(&listing(), end, true).unwrap_err();
         assert!(e.contains("MDDBG blob-end contract VIOLATED") && e.contains("-2"), "{e}");
     }
 
     #[test]
-    fn inert_without_the_blob() {
-        // Release shapes strip the whole debug island — the invariant is vacuous, and
-        // the guard must not fire on an arbitrary EndOfRom.
-        let release = vec![sym("ReleaseFault", 0x5CA40)];
-        assert!(check_error_handler_is_last(&release, 0x5CBAE).is_ok());
+    fn inert_for_a_shape_that_declares_no_island() {
+        // The `lean` shape places the loud-failure handler instead of the island and
+        // consults no symbol table, so the placement contract has no subject and the
+        // guard must not fire on an arbitrary EndOfRom.
+        let lean = vec![sym("ReleaseFault", 0x5CA40)];
+        assert!(check_error_handler_is_last(&lean, 0x5CBAE, false).is_ok());
+    }
+
+    #[test]
+    fn a_declared_island_with_no_blob_label_fires() {
+        // The fail-open the `expect_island` parameter exists to close: the same
+        // islandless listing, under a shape that DOES declare the island, is a renamed
+        // label / dropped island / lost harvest row, not a satisfied contract.
+        let no_blob = vec![sym("ReleaseFault", 0x5CA40)];
+        let e = check_error_handler_is_last(&no_blob, 0x5CBAE, true).unwrap_err();
+        assert!(e.contains("MDDBG island MEMBERSHIP violated"), "{e}");
+        assert!(e.contains("<unknown>"), "must name the silent runtime symptom: {e}");
+    }
+
+    #[test]
+    fn an_undeclared_island_whose_label_appears_fires() {
+        // The other direction: a shape that declares no island whose listing defines
+        // the blob label anyway has lost the registry's exclusive fault-handler split.
+        let e = check_error_handler_is_last(&listing(), 0x5F5DE, false).unwrap_err();
+        assert!(e.contains("MDDBG island MEMBERSHIP violated"), "{e}");
+        assert!(e.contains("0x5e688"), "must name where the unexpected label sits: {e}");
     }
 }
 

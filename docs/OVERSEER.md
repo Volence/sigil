@@ -1194,15 +1194,90 @@ BGROOM-2's leftovers are the same territory and should be read as part of this, 
   each pin's own address (`native::packed_align_of` = largest power of two dividing the
   frozen base), so a repin changes a section's alignment with no alignment code changing,
   and only two labels are guarded against the silent-audio consequence.
-- **Aeon's `parcel/rom-relayout` is IN FLIGHT and holds a sigil branch of the same name.**
-  Their agent, their landing, through the aeon lane. **This lane holds no refreeze until
-  that pair lands**, and owes it a review of the sigil half when they send the pushed SHAs.
-  Their agreed landing requirement includes a per-shape old/new base + old/new quantum
-  table for every moved row, and seam2 predicted-vs-`.lst` bases for every sound label.
+- **Aeon's `parcel/rom-relayout` LANDED 2026-08-26** — merged here as chain-168 (`6e4f2533`,
+  pairing aeon `c3f5cbe0`); see the RELAYOUT-REVIEW section below for the review and the
+  sweep that outranked it. **This row said `IN FLIGHT` for a day after it landed**, twenty
+  lines from the section recording the landing, and a dispatched agent read this row rather
+  than that section and repeated the stale blocker back in its delivery. A booking is prose:
+  nothing executes it, so nothing can contradict it (see the absent-and-silent note's prose
+  section). When an item lands, the row that BOOKED it is the one that has to move.
 - **Island-order piece (1) LANDED** at `1a03c75c`: the MDDBG blob-end guard is proven to
-  fire, red-first against two mutants. **Piece (2) — the per-shape non-vacuous-arm
-  assertion that closes the fail-open on a missing `ErrorHandlerBlob` label — is QUEUED
-  BEHIND THAT PAIR** because it touches `native.rs`. Bar moved 3939 → 3943 declared.
+  fire, red-first against two mutants. Bar moved 3939 → 3943 declared.
+- **Island-order piece (2) is BUILT on `fix/island-non-vacuous-arm`** (`83b6610e`,
+  `2247b0f2`), byte-neutral and touching none of `golden/`, `pins.rs` or `repin.toml`.
+  It **is held from merging, and the reason has been corrected**: the aeon pair it was
+  booked behind has landed, so that blocker is retired. What holds it now is the
+  sprite-owner refreeze in flight in the aeon lane — this parcel changes `native.rs`, which
+  the attest's own gates run through, so merging it mid-freeze would move the harness under
+  a landing and change what that attest measures. Byte-neutrality does not exempt it: the
+  hazard is the measuring instrument moving, not the bytes. Merge when the pair lands.
+  - The fail-open is gone: `check_error_handler_is_last` takes its expectation as an
+    argument and refuses BOTH directions of a mismatch — a declared island whose blob
+    label never appeared, and an undeclared one whose label did.
+  - **The expectation is `native::declares_error_handler_island`, which reads no build
+    output.** It reconciles the profile's `debug || crash_report` axis with whether
+    `profile.registry` carries `engine.debug.error_handler`, and refuses when the two
+    disagree or when the registry has lost the exclusive island/`release_fault` split.
+    The registry is the module list the build is HANDED, so it is upstream of every
+    label the build produces — which is what keeps this off the circular reading, where
+    an expectation taken from the listing would assert only that the listing agrees with
+    itself.
+  - **DEVIATION RATIFIED (bar 7): the dispatch brief was WRONG about where the authority
+    lives, and the agent overturned it with evidence.** The brief nominated `map.toml`'s
+    `order` list as a candidate. It cannot serve: sonic4's `order` is the UNION across all
+    four sonic4-rooted targets and carries **both** `ReleaseFault` and `BusError`
+    consecutively, so it cannot distinguish a shape at all — verified here firsthand at aeon
+    `origin/master`, `games/sonic4/map.toml:143`, and the file's own header says so at :37
+    while :32-33 carries a struck-through superseded ruling saying the opposite. An agent
+    that had complied with the brief would have built a per-shape authority on a
+    shape-invariant list, and the resulting gate would have been green and meaningless.
+    Recorded because the invited-contradiction line in the dispatch is what produced it.
+  - The CLI's appendix decision was a THIRD hand-maintained copy of the axis
+    (`!matches!(opts.target, Lean)`); it reads the reconciled answer now.
+  - **The per-shape set diff is `tests/error_handler_island_membership.rs`**, listed in
+    `scripts/nightly_source_gates.sh` — which is not optional, since that lane audits its
+    own list and refuses to run on an unclassified aeon-reading test file. Census over
+    the seven shapes: **6 carry the island, `lean` is the one that does not**, and the
+    gate fails loud if either bucket empties, because a one-sided population makes half
+    the diff enforce a rule over nothing.
+  - Red-first four ways: two mutants of the guard's match; a standing shadow-tree witness
+    that renames the blob label throughout `error_handler.emp` (the build stays clean —
+    only the name moves, which is exactly the defect the vacuous arm could not see); the
+    reconciliation's three refusals on doctored profiles; and the whole gate driven red
+    over real builds by a stale `ERROR_HANDLER_BLOB_LABEL`, naming all 6 carrying shapes.
+  - **Bar moves +8 declared** (4019 → 4027 on this branch): +2 in
+    `error_handler_island_order`, +2 in `native.rs`'s placement unit tests, +4 new.
+  - Open and deliberately not closed: a change that removes the registry row AND clears
+    `crash_report` together moves both records at once and stays green, correctly — that
+    is a redeclaration of what the shape IS. What is refused is a change to one record
+    alone.
+  - **Strict suite GREEN: 4023 passed / 0 failed / 4 ignored, reconciling exactly
+    against 4027 declared**, `SIGIL_STRICT_GATE=1`, zero skip lines, exit 0.
+  - **BYTE-NEUTRAL, proven rather than argued:** the branch's own `sigil` rebuilt all
+    four shipped ROMs from a clean aeon checkout at the provenance tip and reproduced
+    entry #172's CRC/size for each — s4 `21cc1347`/718999, s4.debug `9732c56a`/735420,
+    demo `3415e3ef`/96372, demo.debug `b6f9759f`/101080.
+
+**THE STRICT RUN NEEDS A PAIRED AEON TREE, and the live one is not it.** A strict
+`--workspace` run with `AEON_DIR` at `sonic_hacks/aeon` returns **58 failures across 41
+binaries** — every `*_debug_region_matches_reference`, the golden full-file/anchor gates,
+`pins_rs_is_current`, and the two provenance gates. None of it is a defect in the branch
+under test: `provenance_chain::aeon_dir_matches_the_provenance_tip` says so in one line,
+naming the tree's revision, the frozen one, and the fix. The recipe that turns the same
+branch from 58 red to 0:
+
+```
+git -C …/aeon worktree add --detach …/.aeon-island-arm <provenance aeon_rev>
+cd …/.aeon-island-arm
+SIGIL_BUILD=<target>/release/sigil SIGIL_EMIT=<target>/release/emit_sound_blob ./build.sh
+#   … and again with DEBUG=1, and again for `./build.sh demo`, both shapes — build.sh
+#   makes ONE shape per invocation and the port gates read all four
+SIGIL_STRICT_GATE=1 AEON_DIR=…/.aeon-island-arm cargo test --release --workspace --no-fail-fast
+```
+
+Read `aeon_dir_matches_the_provenance_tip` FIRST when a strict run comes back with a wall
+of debug-shape byte diffs: it is the one failure that explains the other 57, and the wall
+is otherwise easy to read as a regression in whatever branch happens to be checked out.
 - **The 79 pad-sweeping region ends convert before the flip** and are this lane's to
   sequence; they touch the aeon-owned lane files, so they wait for the pair too.
 - **Ruled jointly with aeon and NOT to be re-opened unilaterally:** when the rules are

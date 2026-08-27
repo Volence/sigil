@@ -1866,12 +1866,23 @@ fn run_build_native(aeon: &std::path::Path, opts: &BuildOpts) {
     // ~29.7 KB is 7.2% of a ROM that is itself 9% of a 4 MB cart. Only the opt-in
     // LEAN shape (no island, faults route at ReleaseFault) writes the assembled ROM
     // verbatim — same length, same header (`emit_rom` already folded the checksum
-    // over exactly these bytes, so no re-fix is needed). `append_deb2_appendix` keeps
-    // its meaning (it always appends); the SHAPE POLICY lives here, at the one call
-    // site that writes a shipped artifact, and mirrors `GameProfile::crash_report`.
-    let crash_report = !matches!(opts.target, BuildTarget::Lean);
-    let full = if debug || crash_report {
-        match native::append_deb2_appendix(aeon, &rom, &listing, debug, floor) {
+    // over exactly these bytes, so no re-fix is needed).
+    //
+    // THE SHAPE ANSWER IS DERIVED, NOT NAMED HERE. Spelling it as a target match
+    // (`!matches!(opts.target, Lean)`) made this a THIRD hand-maintained copy of one
+    // fact, and a copy that a new no-island target would silently fall out of.
+    // `declares_error_handler_island` reconciles the profile's crash-report axis with
+    // the module list its build is handed and refuses when they disagree, so this
+    // site and `append_deb2_appendix`'s blob-label check read the same answer.
+    let island = match native::declares_error_handler_island(&opts.target.label_and_profile().1) {
+        Ok(v) => v,
+        Err(err) => {
+            eprintln!("error: native build ({label}) fault-handler shape: {err}");
+            process::exit(1);
+        }
+    };
+    let full = if island {
+        match native::append_deb2_appendix(aeon, &rom, &listing, debug, floor, island) {
             Ok(bytes) => bytes,
             Err(err) => {
                 eprintln!("error: native build ({label}) appendix: {err}");
