@@ -424,6 +424,45 @@ recommend the right move this once.
 pattern-shaped kill aimed at the waiters was one careless regex from taking that lane's
 verification with it.
 
+### THE RETRACTION, and it is the most useful thing in this note
+
+**Both lanes were wrong, and the independence was real.** A measuring agent refuted the shared
+conclusion with two findings:
+
+1. **The dirt half.** `N modified, M untracked` discriminates a *different axis* than
+   materiality. The very instance that motivated the item — the noise case recorded in this
+   repo's own `OVERSEER.md` — is a **modified tracked file**, i.e. the bucket any
+   "decide differently about the existing counts" rule must treat as material. And `1 modified`
+   is equally consistent with an edit to a docs file. **The *where* was never in the string.**
+2. **The revision half.** `revision:` is a single SHA. No reading of one SHA can say which of
+   19 commits reach the binary.
+
+So the conclusion both lanes reached independently — *the banner already carries the
+discriminating data; the fix is deciding better about what is measured* — **is false in both
+halves**, and it was measured false by an agent explicitly invited to contradict it.
+
+**What this does to the bar above, and it is a correction to how this note read.**
+Bar 19's operational form says: name the parameter each derivation enumerated over, and if they
+differ, the agreement is corroboration rather than echo. That test was **passed** here. The
+parameters genuinely differed (quoting discipline versus classifier design), neither lane raised
+it before writing it down, and the conclusion was still wrong.
+
+**Independent derivation raises confidence; it does not establish truth.** Two correct methods
+applied to the same *unmeasured* question converge on the same plausible answer, and the
+convergence itself supplies no new evidence — it only feels like it does. **Both routes shared
+a premise neither had tested**: that the discriminating information was *in the string*, when
+neither lane had checked the string against the failing case.
+
+**The operational addition:** corroboration is a reason to raise a claim's status from *guess*
+to *worth measuring* — never from *guess* to *established*. Ask what measurement would refute
+the agreed conclusion, and whether either derivation performed it. Here, neither had; both were
+reasoning about the banner, and **the cheap refuting act was to compare the banner's counts
+against the case that motivated the item.**
+
+**The sharpest detail: this note celebrated the convergence as its own clean control, and that
+is the form the error took.** A document about checks that cannot see their subject acquired a
+claim nobody had checked against its subject, filed under the heading for well-tested claims.
+
 ## The practical test, for a check you are about to trust
 
 1. **Name the failure state.** What is the world in which this check *should* go red?
@@ -441,6 +480,10 @@ verification with it.
 One night, two lanes, five instances, several discussed between us before being written —
 which is a shared frame by exactly the mechanism bar 19 names, and this document is one
 lane's synthesis with a second's request behind it, not two independent findings.
+
+**⚠ RETRACTED THE SAME DAY — THE "CLEAN POSITIVE CONTROL" BELOW WAS A CLEAN CONVERGENCE ON A
+FALSE CONCLUSION. Read the retraction after it before the claim.** Kept in full rather than
+deleted, because the episode is worth more than the claim was.
 
 **A second item not subject to the discount, and this one is a clean positive control**
 *(recorded 2026-08-27, later the same day)*. Both lanes independently concluded that the
