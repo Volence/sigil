@@ -16,6 +16,14 @@
 //!   4. **AEON-REV-MONOTONIC** — once any entry names the aeon revision its bytes were
 //!      built from, no later entry may omit it. The boundary is DERIVED from the chain,
 //!      never pinned to a number: see [`check`] for the merge race a constant creates.
+//!   5. **STRICT-ATTEST-WELL-FORMED** — an entry carrying a [`StrictRun`] carries a
+//!      coherent one: real revisions, a NONZERO strict-body count, and golden CRCs that
+//!      match its own targets. An entry marked [`Superseded`] names the entry that
+//!      actually follows it and carries a RED run.
+//!   6. **STRICT-ATTEST-MONOTONIC** — once any entry records a strict run, every entry
+//!      the chain has been BUILT ON must carry a passing one or be superseded. The TIP
+//!      is exempt: its strict run necessarily happens after the freeze that created it.
+//!      Also derived, never pinned — see [`append_gate`].
 //!
 //! [`check`] validates a loaded chain against the committed blobs (the gate, and the
 //! `--check` half of the `refreeze` bin). [`recompute_targets`] rebuilds the per-target
@@ -36,7 +44,7 @@ pub struct Chain {
 
 /// One re-freeze event: a named parcel, its A/B evidence ref, and the per-target CRC
 /// set the goldens hold AFTER it.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Entry {
     pub name: String,
     /// A/B evidence reference. The root carries the `asl-witness` sentinel; every later
@@ -58,6 +66,20 @@ pub struct Entry {
     pub aeon_rev: Option<String>,
     #[serde(default)]
     pub note: String,
+    /// The witness that sigil's STRICT full suite was RUN on the tree carrying this
+    /// entry — written by `refreeze --attest` from a run it performed itself, never by
+    /// hand. `None` means the key is absent: either the entry predates the field, or it
+    /// is the tip and its strict run has not happened yet. See [`StrictRun`].
+    #[serde(default)]
+    pub strict: Option<StrictRun>,
+    /// The THIRD state. An entry whose strict run came back RED can never be attested
+    /// honestly, yet the fix for what turned it red usually MOVES BYTES — so the chain
+    /// must be able to continue past it without either forging a pass or hand-editing
+    /// the file. This records that the entry was abandoned and NAMES THE ENTRY THAT
+    /// REPLACED IT. See [`Superseded`] for why reaching this state costs a real freeze
+    /// and a real red run.
+    #[serde(default)]
+    pub superseded: Option<Superseded>,
     /// target-key -> the golden's frozen CRC set. Keys are stable
     /// (`s4`/`s4_debug`/`demo`/`demo_debug`/`config_a`/`config_b`).
     pub targets: BTreeMap<String, Target>,
@@ -75,6 +97,329 @@ pub struct Target {
     pub anchor_crc: String,
     /// EndOfRom — the anchor window `[0, anchor_end)`.
     pub anchor_end: usize,
+}
+
+/// A run of sigil's STRICT full suite, recorded against the entry whose goldens it
+/// tested. Written ONLY by `refreeze --attest`, from a suite the tool ran itself.
+///
+/// # Why this exists
+///
+/// A refreeze could land here with the strict suite never having run. Chains 169 and
+/// 170 both did: the landing rule named the full suite but spelled it as a bare
+/// `cargo test --release --workspace --no-fail-fast` with no `SIGIL_STRICT_GATE=1`, so
+/// every `strict_gate()`-guarded body early-returned and the run was green and inert.
+/// A stale `SFX_BODY_LEN` rode two chains before chain 171 finally ran strict. Fixed
+/// PROSE cannot close that: nobody audits a command line for a missing environment
+/// variable. This record is the enforcement.
+///
+/// # What makes it honest
+///
+/// A self-emitted attestation is self-certifying by construction, so its whole value is
+/// in carrying things a run that did not happen could not produce. Every field is here
+/// because it answers "could this value be right if the run never happened?" with NO:
+///
+///   * [`Self::strict_bodies`] — THE load-bearing field. Structurally zero without the
+///     flag, and no aggregate pass count can substitute, because a NON-strict suite is
+///     also fully green. This is the single number that separates "ran strict" from
+///     "ran", which is exactly what chains 169/170 could not be asked.
+///   * [`Self::sigil_rev`] / [`Self::aeon_rev`] — tree identity, so an attestation
+///     cannot silently travel to a different pair of trees.
+///   * [`Self::goldens`] — the per-target `crc/size` set recomputed FROM THE BLOBS at
+///     run time, never copied out of the entry. An attestation that outlives its
+///     artifacts stops matching them, and [`check`] fails it when it does.
+///
+/// The first two stop an attestation being REUSED; the third stops it going stale; the
+/// first stops it being VACUOUS.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct StrictRun {
+    /// [`OUTCOME_PASSED`] or [`OUTCOME_FAILED`]. A red run is recorded rather than
+    /// discarded: it is the only thing that unlocks [`Superseded`], so the tool that
+    /// observed the red is the one that authorises the chain to move past it.
+    pub outcome: String,
+    /// The sigil revision the suite RAN ON — HEAD of a clean sigil checkout. Not "the
+    /// commit that introduced this entry": when a sigil-side fix is needed before the
+    /// suite can run at all, the honest subject is the tree that was tested.
+    ///
+    /// Cleanliness is required at attest time for a second reason: the suite contains
+    /// `version_reports_the_head_of_the_tree_it_was_built_from`, which compares the
+    /// binary's baked-in revision against HEAD *at assertion time*. Attesting from a
+    /// committed, unmoving HEAD is what keeps this field and that test agreeing.
+    pub sigil_rev: String,
+    /// HEAD of the `AEON_DIR` the suite ran against — a full 40-char SHA. When the
+    /// entry carries an [`Entry::aeon_rev`], [`check`] requires these to be EQUAL: the
+    /// only aeon tree whose ROMs match these goldens is the one they were frozen from.
+    pub aeon_rev: String,
+    /// Distinct strict-gated decision points that consulted `SIGIL_STRICT_GATE` and
+    /// found it SET, counted by `sigil_harness::test_support::strict_gate`'s witness.
+    /// Zero is not a small number here — it is the signature of a suite that ran
+    /// without the flag, and [`check`] rejects it.
+    pub strict_bodies: usize,
+    /// Test binaries that reported a `test result:` line. Zero means the run could not
+    /// be measured, which is never green.
+    pub suites: usize,
+    pub passed: usize,
+    pub failed: usize,
+    pub ignored: usize,
+    /// `skip:` lines seen in the run. A `skip:` under strict is a gate that reported
+    /// green while measuring nothing, so this number is what the green was worth.
+    /// RECORDED, not refused — see `refreeze`'s `--attest` for why this lane's
+    /// zero-skip bar is reported here rather than enforced here.
+    pub skips: usize,
+    /// When the run finished (RFC-3339-ish, local). Forensic only: unlike every other
+    /// field it cannot be cross-checked, and it is kept solely to correlate the record
+    /// with a suite log.
+    pub ran_at: String,
+    /// On a red run, the failing test names — the aggregate counts alone would leave
+    /// the reason for a [`Superseded`] unnamed.
+    #[serde(default)]
+    pub failing: Vec<String>,
+    /// Tests the operator required to appear in this run (`--expect-test`), verified
+    /// present before the record was written. This is the "the landed code's own test
+    /// name appears in its own green log" discipline, moved out of a human's grep.
+    #[serde(default)]
+    pub expected_tests: Vec<String>,
+    /// target-key -> `"<full_crc>/<full_size>"`, recomputed from the committed blobs at
+    /// run time. CRC32+size is this campaign's identity standard; never SHA1.
+    pub goldens: BTreeMap<String, String>,
+}
+
+/// [`StrictRun::outcome`] for a run that came back green.
+pub const OUTCOME_PASSED: &str = "passed";
+/// [`StrictRun::outcome`] for a run that came back red. The only thing that unlocks
+/// [`Superseded`].
+pub const OUTCOME_FAILED: &str = "failed";
+
+/// The record that an entry was ABANDONED rather than attested, naming the entry that
+/// replaced it.
+///
+/// # Why a third state, and why it is expensive to reach
+///
+/// Two states — attested or not — deadlock the chain on a failed freeze: entry N lands,
+/// its strict run is genuinely RED, and the fix moves bytes. Entry N is now permanently
+/// unattestable, so under a two-state rule the only exits are hand-editing the file or
+/// writing a false attestation: the exact two acts this gate exists to prevent. A
+/// ratchet whose failure mode is "the honest operator must forge a field" teaches the
+/// wrong reflex.
+///
+/// So this state exists — but it must not become the cheap way out, or it retires the
+/// gate. TWO independent costs guard it, and neither can be paid by typing:
+///
+///   1. **A successor must be NAMED**, and [`check`] requires the name to be the very
+///      next entry in the chain. So abandonment is only reachable by actually
+///      performing the next freeze — never as a way to skip attestation on a freeze you
+///      intend to keep.
+///   2. **The abandoned entry must already carry a RED [`StrictRun`]**. Without this,
+///      serial supersession evades the gate completely: freeze, supersede, freeze,
+///      supersede, and the strict suite never runs again. With it, every abandonment
+///      costs a real strict run that genuinely came back red, which is the run the
+///      whole mechanism is trying to force.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Superseded {
+    /// The name of the entry that replaced this one. [`check`] requires it to equal the
+    /// NEXT entry's name — derived from the chain, so it cannot name a fiction.
+    pub by: String,
+    /// Why the entry was abandoned, in one line.
+    pub reason: String,
+}
+
+/// The `ab` sentinel plus the two `outcome` words are the only magic strings here.
+impl StrictRun {
+    /// Every way this record is malformed, judged against the entry it sits on. Empty =
+    /// well-formed. `entry_targets`/`entry_aeon_rev` come from the OWNING entry, which
+    /// is what makes the cross-checks derived rather than copied.
+    pub fn defects(
+        &self,
+        entry_targets: &BTreeMap<String, Target>,
+        entry_aeon_rev: Option<&str>,
+    ) -> Vec<String> {
+        let mut d = Vec::new();
+        if self.outcome != OUTCOME_PASSED && self.outcome != OUTCOME_FAILED {
+            d.push(format!(
+                "outcome = \"{}\" is neither \"{OUTCOME_PASSED}\" nor \"{OUTCOME_FAILED}\"",
+                self.outcome
+            ));
+        }
+        if !is_full_sha(&self.sigil_rev) {
+            d.push(format!("sigil_rev = \"{}\" is not a full 40-char SHA", self.sigil_rev));
+        }
+        if !is_full_sha(&self.aeon_rev) {
+            d.push(format!("aeon_rev = \"{}\" is not a full 40-char SHA", self.aeon_rev));
+        }
+        // THE VACUITY CHECK. A suite run without SIGIL_STRICT_GATE cannot reach a single
+        // strict-gated body, so it cannot produce a nonzero count here however green it
+        // is. Zero therefore means "this attestation is about a run that proved nothing
+        // the strict gate exists to prove" — never "a small run".
+        if self.strict_bodies == 0 {
+            d.push(
+                "strict_bodies = 0 — no strict-gated body executed, which is the signature \
+                 of a suite run WITHOUT SIGIL_STRICT_GATE=1; an attestation of such a run \
+                 is vacuous"
+                    .to_string(),
+            );
+        }
+        // Loud on unmeasurable: a run nobody could count is not a run that passed.
+        if self.suites == 0 {
+            d.push("suites = 0 — no test binary reported a result line".to_string());
+        }
+        if self.passed == 0 {
+            d.push("passed = 0 — no test executed".to_string());
+        }
+        match self.outcome.as_str() {
+            OUTCOME_PASSED => {
+                if self.failed != 0 {
+                    d.push(format!("outcome = \"passed\" but failed = {}", self.failed));
+                }
+                if !self.failing.is_empty() {
+                    d.push(format!(
+                        "outcome = \"passed\" but {} failing test(s) are named",
+                        self.failing.len()
+                    ));
+                }
+            }
+            OUTCOME_FAILED => {
+                if self.failed == 0 {
+                    d.push(
+                        "outcome = \"failed\" but failed = 0 — a red run must say what was red"
+                            .to_string(),
+                    );
+                }
+            }
+            _ => {}
+        }
+        // ANTI-TRAVEL. These CRCs were read from the blobs at run time; the entry's were
+        // read from the blobs at freeze time. They agree exactly when the attestation is
+        // about THIS entry's artifacts.
+        for (key, t) in entry_targets {
+            let want = format!("{}/{}", t.full_crc, t.full_size);
+            match self.goldens.get(key) {
+                None => d.push(format!("goldens has no `{key}`, but the entry freezes one")),
+                Some(got) if *got != want => d.push(format!(
+                    "goldens.{key} = \"{got}\" but the entry freezes \"{want}\" — this \
+                     attestation is about different bytes"
+                )),
+                Some(_) => {}
+            }
+        }
+        for key in self.goldens.keys() {
+            if !entry_targets.contains_key(key) {
+                d.push(format!("goldens names `{key}`, which the entry does not freeze"));
+            }
+        }
+        // PAIRING. The only aeon tree whose ROMs match these goldens is the one they were
+        // frozen from, so a suite run against any other tree is not a test of this entry.
+        if let Some(want) = entry_aeon_rev.filter(|r| is_full_sha(r)) {
+            if self.aeon_rev != want {
+                d.push(format!(
+                    "aeon_rev = \"{}\" but the entry was frozen from \"{want}\" — the suite \
+                     ran against a different aeon tree than these goldens came from",
+                    self.aeon_rev
+                ));
+            }
+        }
+        d
+    }
+
+    /// Well-formed AND green — the state that satisfies the append gate.
+    pub fn is_pass(&self, targets: &BTreeMap<String, Target>, aeon_rev: Option<&str>) -> bool {
+        self.outcome == OUTCOME_PASSED && self.defects(targets, aeon_rev).is_empty()
+    }
+
+    /// Well-formed AND red — the state that unlocks [`Superseded`].
+    pub fn is_red(&self, targets: &BTreeMap<String, Target>, aeon_rev: Option<&str>) -> bool {
+        self.outcome == OUTCOME_FAILED && self.defects(targets, aeon_rev).is_empty()
+    }
+}
+
+impl Entry {
+    /// This entry's strict record, if it carries a well-formed one of EITHER outcome.
+    /// A malformed record is not a record: it must raise its own well-formedness error
+    /// and nothing else, so one fault produces one error.
+    fn sound_strict(&self) -> Option<&StrictRun> {
+        self.strict
+            .as_ref()
+            .filter(|s| s.defects(&self.targets, self.aeon_rev.as_deref()).is_empty())
+    }
+
+    /// The entry has a green strict run recorded against its own goldens.
+    pub fn is_attested(&self) -> bool {
+        self.sound_strict().is_some_and(|s| s.outcome == OUTCOME_PASSED)
+    }
+
+    /// The entry has a red strict run recorded against its own goldens — the
+    /// precondition for abandoning it.
+    pub fn is_red(&self) -> bool {
+        self.sound_strict().is_some_and(|s| s.outcome == OUTCOME_FAILED)
+    }
+}
+
+/// What appending a new entry to this chain is allowed to do — the freeze-time half of
+/// the strict-attestation rule, as a pure function so it can be tested without a build,
+/// an aeon tree or a subprocess.
+///
+/// The boundary is DERIVED from the chain and never pinned to an entry number. That is a
+/// correctness property, not a tidiness one: the aeon lane refreezes by running this
+/// crate's `refreeze` out of sigil master, so a byte-moving refreeze landing before this
+/// field ships appends a legitimate record-less entry that a pinned rule would then turn
+/// red on somebody else's correct work. Derived, such an entry is simply still pre-field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AppendGate {
+    /// No entry carries a strict record yet, so the rule is not in force. Self-disarming:
+    /// it stops being reachable the moment any entry records a run. Reported as
+    /// `ratchet:`, never `skip:` — this lane's strict bar requires zero `skip:` lines and
+    /// this is not a missing reference.
+    Ratchet(String),
+    /// The tip carries a green strict run. Append freely.
+    Allowed,
+    /// The tip's strict run came back RED. Appending is allowed, but only as an explicit
+    /// abandonment that names this new entry as the successor.
+    NeedsSupersede(String),
+    /// The tip carries no strict run at all and the rule is in force.
+    Refused(String),
+}
+
+/// Decide what an append to `chain` may do. See [`AppendGate`].
+pub fn append_gate(chain: &Chain) -> AppendGate {
+    let Ok(tip) = chain.tip() else {
+        return AppendGate::Refused("provenance.toml has no entries".into());
+    };
+    // ARMED once ANY entry records a run of either outcome: that is the proof the
+    // enforcing tool is in use on this chain, and it is read out of the chain rather
+    // than out of a constant.
+    let armer = chain.entry.iter().position(|e| e.sound_strict().is_some());
+    let Some(armer) = armer else {
+        return AppendGate::Ratchet(format!(
+            "ratchet: no entry in this chain records a strict run yet (tip `{}`, entry #{}), \
+             so the strict-attestation rule is not yet in force. It arms permanently at the \
+             first `refreeze --attest`, and from then on a refreeze cannot be built on top \
+             of an entry whose strict suite never ran.",
+            tip.name,
+            chain.entry.len()
+        ));
+    };
+    let armer_name = &chain.entry[armer].name;
+    if tip.is_attested() {
+        return AppendGate::Allowed;
+    }
+    if tip.is_red() {
+        return AppendGate::NeedsSupersede(format!(
+            "the tip `{}` (entry #{}) carries a RED strict run. Appending past it is an \
+             abandonment: re-run with `--supersede-tip \"<why>\"` and this freeze will \
+             record itself as the entry that replaces it.",
+            tip.name,
+            chain.entry.len()
+        ));
+    }
+    AppendGate::Refused(format!(
+        "the tip `{}` (entry #{}) carries no strict run, and entry #{} `{}` already \
+         records one, so the strict-attestation rule is in force. A refreeze must not be \
+         built on top of goldens whose strict suite never ran — that is exactly how chains \
+         169 and 170 landed a stale constant. Run `refreeze --attest` first. If that run \
+         comes back RED, it is recorded as such and `--supersede-tip` becomes available.",
+        tip.name,
+        chain.entry.len(),
+        armer + 1,
+        armer_name
+    ))
 }
 
 /// The `asl-witness` sentinel: the root's `ab`. Any OTHER entry carrying it (or an empty
@@ -228,6 +573,84 @@ pub fn check(golden_dir: &Path, chain: &Chain) -> Vec<String> {
         }
     }
 
+    // (5) STRICT-ATTEST-WELL-FORMED — POSITION-INDEPENDENT, exactly as (3) is. A record
+    // is written only by `refreeze --attest` from a run it performed itself, so a
+    // malformed one can only be a hand edit, and that is equally wrong anywhere in the
+    // chain. The cross-checks are against the OWNING entry's own targets and aeon_rev,
+    // so they are derived rather than copied.
+    for (i, e) in chain.entry.iter().enumerate() {
+        if let Some(st) = &e.strict {
+            for d in st.defects(&e.targets, e.aeon_rev.as_deref()) {
+                errs.push(format!(
+                    "entry #{} `{}`: strict {d} (strict-attest-well-formed)",
+                    i + 1,
+                    e.name
+                ));
+            }
+        }
+        if let Some(sup) = &e.superseded {
+            let n = i + 1;
+            if sup.by.trim().is_empty() {
+                errs.push(format!(
+                    "entry #{n} `{}`: superseded.by is empty — abandoning an entry must NAME \
+                     the entry that replaced it (superseded-well-formed)",
+                    e.name
+                ));
+            }
+            match chain.entry.get(i + 1) {
+                None => errs.push(format!(
+                    "entry #{n} `{}`: is the TIP but claims to be superseded by `{}` — \
+                     nothing follows it (superseded-well-formed)",
+                    e.name, sup.by
+                )),
+                Some(next) if next.name != sup.by => errs.push(format!(
+                    "entry #{n} `{}`: superseded.by = \"{}\" but the entry that actually \
+                     follows it is `{}` (superseded-well-formed)",
+                    e.name, sup.by, next.name
+                )),
+                Some(_) => {}
+            }
+            // THE ANTI-EVASION GUARD. Without it, abandonment is the cheap way out and
+            // the whole ratchet dissolves: freeze, supersede, freeze, supersede, and the
+            // strict suite never runs again. A red run is what makes it expensive.
+            if !e.is_red() {
+                errs.push(format!(
+                    "entry #{n} `{}`: is marked superseded but carries no RED strict run. \
+                     An entry may only be abandoned when its strict suite actually came \
+                     back red and `refreeze --attest` recorded that (superseded-well-formed)",
+                    e.name
+                ));
+            }
+        }
+    }
+
+    // (6) STRICT-ATTEST-MONOTONIC — DERIVED, not pinned, and with ONE exemption: the
+    // TIP. The strict run necessarily happens AFTER a freeze (the freeze is what moves
+    // the goldens the suite then checks), so a tip awaiting its run is the normal state
+    // and gating it would deadlock. Every entry the chain has been BUILT ON must have
+    // been proven, though — that is the rule chains 169 and 170 broke.
+    //
+    // On the merge race a constant would create here, and on why the boundary is read
+    // out of the chain instead, see [`append_gate`].
+    if let Some(armer) = chain.entry.iter().position(|e| e.sound_strict().is_some()) {
+        let last = chain.entry.len().saturating_sub(1);
+        for (i, e) in chain.entry.iter().enumerate().take(last).skip(armer) {
+            if e.is_attested() || e.superseded.is_some() {
+                continue;
+            }
+            errs.push(format!(
+                "entry #{} `{}`: was built on by entry #{} but records no passing strict \
+                 run and is not superseded — entry #{} `{}` already records a run, so the \
+                 rule is in force (strict-attest-monotonic)",
+                i + 1,
+                e.name,
+                i + 2,
+                armer + 1,
+                chain.entry[armer].name
+            ));
+        }
+    }
+
     // (2) chain discipline: an anchor that differs from the prior entry's same target
     // forces the newer entry to carry a real A/B ref.
     for pair in chain.entry.windows(2) {
@@ -314,6 +737,85 @@ pub fn render_entry(
     s
 }
 
+/// Escape a value for a TOML basic string. `render_entry`'s own fields are hand-passed
+/// prose that has never carried a quote; these are not — `--supersede-tip` takes its
+/// reason from the command line and a failing test name is whatever libtest printed.
+fn toml_str(v: &str) -> String {
+    let mut out = String::with_capacity(v.len() + 2);
+    out.push('"');
+    for c in v.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn toml_array(v: &[String]) -> String {
+    let items: Vec<String> = v.iter().map(|s| toml_str(s)).collect();
+    format!("[{}]", items.join(", "))
+}
+
+/// Render the `[entry.strict]` block for the chain's LAST entry.
+///
+/// APPEND-ONLY, like everything else in this file, and that is not a stylistic choice.
+/// In TOML a `[entry.strict]` table written at the end of the file attaches to the last
+/// `[[entry]]` already there — so recording a strict run needs no surgery into the
+/// middle of the file, rewrites no existing entry, and leaves all ~172 predecessors
+/// byte-identical. The same property lets `--freeze --supersede-tip` write
+/// [`render_superseded`] and then a whole new `[[entry]]`, in that order, as one append.
+pub fn render_strict(s: &StrictRun) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    let _ = writeln!(out, "\n[entry.strict]");
+    let _ = writeln!(out, "outcome = {}", toml_str(&s.outcome));
+    let _ = writeln!(out, "sigil_rev = {}", toml_str(&s.sigil_rev));
+    let _ = writeln!(out, "aeon_rev = {}", toml_str(&s.aeon_rev));
+    let _ = writeln!(out, "strict_bodies = {}", s.strict_bodies);
+    let _ = writeln!(out, "suites = {}", s.suites);
+    let _ = writeln!(out, "passed = {}", s.passed);
+    let _ = writeln!(out, "failed = {}", s.failed);
+    let _ = writeln!(out, "ignored = {}", s.ignored);
+    let _ = writeln!(out, "skips = {}", s.skips);
+    let _ = writeln!(out, "ran_at = {}", toml_str(&s.ran_at));
+    if !s.failing.is_empty() {
+        let _ = writeln!(out, "failing = {}", toml_array(&s.failing));
+    }
+    if !s.expected_tests.is_empty() {
+        let _ = writeln!(out, "expected_tests = {}", toml_array(&s.expected_tests));
+    }
+    // A sub-table, so it must follow every scalar key of `[entry.strict]`.
+    let _ = writeln!(out, "\n[entry.strict.goldens]");
+    for (k, v) in &s.goldens {
+        let _ = writeln!(out, "{k} = {}", toml_str(v));
+    }
+    out
+}
+
+/// Render the `[entry.superseded]` block for the chain's LAST entry — written by
+/// `--freeze --supersede-tip` immediately before the successor's own `[[entry]]` block,
+/// which is what makes the successor's name true by construction.
+///
+/// A TABLE rather than a bare key, deliberately: a bare `superseded_by = …` appended at
+/// end-of-file would attach to whatever table happens to be last, which after
+/// [`render_strict`] is `[entry.strict.goldens]` — silently recording the abandonment on
+/// the wrong table.
+pub fn render_superseded(s: &Superseded) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    let _ = writeln!(out, "\n[entry.superseded]");
+    let _ = writeln!(out, "by = {}", toml_str(&s.by));
+    let _ = writeln!(out, "reason = {}", toml_str(&s.reason));
+    out
+}
+
 /// Whether a freshly recomputed target set is IDENTICAL to the current tip — the
 /// fixpoint predicate: a re-freeze that produces the tip again is a no-op (append
 /// nothing).
@@ -353,8 +855,8 @@ mod tests {
         moved_t.insert("s4".to_string(), t("s4.bin", "bbbb", 10, "2222", 8));
         let chain = Chain {
             entry: vec![
-                Entry { name: "root".into(), ab: ASL_WITNESS.into(), aeon_rev: None, note: String::new(), targets: root_t },
-                Entry { name: "bad".into(), ab: ASL_WITNESS.into(), aeon_rev: None, note: String::new(), targets: moved_t },
+                Entry { name: "root".into(), ab: ASL_WITNESS.into(), aeon_rev: None, note: String::new(), strict: None, superseded: None, targets: root_t },
+                Entry { name: "bad".into(), ab: ASL_WITNESS.into(), aeon_rev: None, note: String::new(), strict: None, superseded: None, targets: moved_t },
             ],
         };
         // discipline sweep alone (no blobs) should flag the moved anchor.
@@ -373,8 +875,8 @@ mod tests {
         moved_t.insert("s4".to_string(), t("s4.bin", "bbbb", 10, "2222", 8));
         let chain = Chain {
             entry: vec![
-                Entry { name: "root".into(), ab: ASL_WITNESS.into(), aeon_rev: None, note: String::new(), targets: root_t },
-                Entry { name: "g9".into(), ab: "notes/g9-ab.md".into(), aeon_rev: None, note: String::new(), targets: moved_t },
+                Entry { name: "root".into(), ab: ASL_WITNESS.into(), aeon_rev: None, note: String::new(), strict: None, superseded: None, targets: root_t },
+                Entry { name: "g9".into(), ab: "notes/g9-ab.md".into(), aeon_rev: None, note: String::new(), strict: None, superseded: None, targets: moved_t },
             ],
         };
         let errs = check(Path::new("/nonexistent"), &chain);
@@ -418,6 +920,8 @@ mod tests {
                 ab: if i == 0 { ASL_WITNESS.into() } else { "ref".into() },
                 aeon_rev: r.map(|s| s.to_string()),
                 note: String::new(),
+                strict: None,
+                superseded: None,
                 targets: targets.clone(),
             })
             .collect();
@@ -523,6 +1027,479 @@ mod tests {
         let errs = aeon_rev_errs(&chain);
         assert_eq!(errs.len(), 1, "one fault must produce one error, got: {errs:?}");
         assert!(errs[0].contains("aeon-rev-well-formed"), "{}", errs[0]);
+    }
+
+    // ── strict attestation ──────────────────────────────────────────────────────
+
+    /// A well-formed green record for a chain built by [`chain_with`] — whose single
+    /// target is always `t("s4.bin", "aaaa", 10, "1111", 8)`, so the golden identity is
+    /// DERIVED from that fixture rather than copied from a neighbouring literal.
+    fn run(outcome: &str, aeon: &str) -> StrictRun {
+        let target = t("s4.bin", "aaaa", 10, "1111", 8);
+        let mut goldens = BTreeMap::new();
+        goldens.insert("s4".to_string(), format!("{}/{}", target.full_crc, target.full_size));
+        StrictRun {
+            outcome: outcome.to_string(),
+            sigil_rev: SHA_B.to_string(),
+            aeon_rev: aeon.to_string(),
+            strict_bodies: 137,
+            suites: 41,
+            passed: 3881,
+            failed: if outcome == OUTCOME_FAILED { 2 } else { 0 },
+            ignored: 4,
+            skips: 0,
+            ran_at: "unix:0".into(),
+            failing: if outcome == OUTCOME_FAILED {
+                vec!["a::b".into(), "c::d".into()]
+            } else {
+                vec![]
+            },
+            expected_tests: vec![],
+            goldens,
+        }
+    }
+
+    fn green() -> StrictRun {
+        run(OUTCOME_PASSED, SHA_A)
+    }
+    fn red() -> StrictRun {
+        run(OUTCOME_FAILED, SHA_A)
+    }
+
+    /// A chain whose entries all name `SHA_A` as their aeon_rev, with per-entry strict
+    /// records supplied by the caller.
+    fn attested_chain(records: &[Option<StrictRun>]) -> Chain {
+        let mut chain = chain_with(&vec![Some(SHA_A); records.len()]);
+        for (e, r) in chain.entry.iter_mut().zip(records) {
+            e.strict = r.clone();
+        }
+        chain
+    }
+
+    fn strict_errs(chain: &Chain) -> Vec<String> {
+        check(Path::new("/nonexistent"), chain)
+            .into_iter()
+            .filter(|e| e.contains("strict-attest-") || e.contains("superseded-well-formed"))
+            .collect()
+    }
+
+    #[test]
+    fn absent_strict_key_parses_as_none() {
+        // The ~172 committed entries carry neither key. serde(default) on BOTH is what
+        // keeps them parsing; without it every one of them is a parse error.
+        let src = "[[entry]]\nname=\"root\"\nab=\"asl-witness\"\n[entry.targets.s4]\ngolden=\"s4.bin\"\nfull_crc=\"0\"\nfull_size=1\nanchor_crc=\"0\"\nanchor_end=1\n";
+        let chain = parse(src).expect("a historical entry must still parse");
+        assert_eq!(chain.entry[0].strict, None, "absent strict key must be None");
+        assert_eq!(chain.entry[0].superseded, None, "absent superseded key must be None");
+    }
+
+    #[test]
+    fn a_chain_with_no_strict_record_anywhere_is_clean() {
+        // Today's file: no entry carries a record. No backfill, no violation.
+        let chain = attested_chain(&[None, None, None]);
+        assert!(strict_errs(&chain).is_empty(), "pre-field entries must not be flagged");
+    }
+
+    /// THE MERGE-RACE CASE for this field, and it is LIVE: the aeon lane refreezes by
+    /// running this crate's `refreeze` out of sigil master, and lands paired freezes on
+    /// the same nights this branch is in flight. A refreeze from a revision predating
+    /// this field appends a record-less entry that was entirely legitimate when written.
+    /// Because the tip is exempt and the boundary is derived, it passes.
+    #[test]
+    fn a_pre_field_entry_appended_after_an_attested_tip_is_not_a_violation() {
+        let chain = attested_chain(&[None, Some(green()), None]);
+        assert!(
+            strict_errs(&chain).is_empty(),
+            "an entry appended by an older refreeze on top of an attested tip must pass — \
+             it is the tip, and its strict run has not happened yet"
+        );
+    }
+
+    #[test]
+    fn the_tip_is_exempt_from_the_monotonic_rule() {
+        // The strict run necessarily happens AFTER the freeze that created the tip, so a
+        // tip awaiting its run is the NORMAL state. Gating it would deadlock the chain.
+        let chain = attested_chain(&[Some(green()), Some(green()), None]);
+        assert!(strict_errs(&chain).is_empty(), "the tip may always be awaiting its run");
+    }
+
+    #[test]
+    fn an_entry_that_was_built_on_without_a_strict_run_is_flagged() {
+        // THE INCIDENT SHAPE: entry #2 was refrozen on top of and never ran strict.
+        let chain = attested_chain(&[Some(green()), None, None]);
+        let errs = strict_errs(&chain);
+        assert_eq!(errs.len(), 1, "exactly the built-on entry must be flagged: {errs:?}");
+        assert!(errs[0].contains("strict-attest-monotonic"), "wrong rule: {}", errs[0]);
+        assert!(errs[0].contains("entry #2"), "must name the offender: {}", errs[0]);
+    }
+
+    #[test]
+    fn every_built_on_entry_after_the_armer_is_checked_not_just_the_last() {
+        let chain = attested_chain(&[Some(green()), None, None, None]);
+        assert_eq!(strict_errs(&chain).len(), 2, "entries #2 and #3 are both built on");
+    }
+
+    // ── what makes a record honest ──────────────────────────────────────────────
+
+    /// THE VACUITY CHECK, and the single reason the witness mechanism exists.
+    ///
+    /// A suite run WITHOUT `SIGIL_STRICT_GATE=1` early-returns every `strict_gate()`
+    /// body and is nevertheless fully green — identical pass counts, identical exit
+    /// code. `strict_bodies` is the only quantity that can tell the two apart, because
+    /// the only call that writes a witness line is one that already saw the flag set.
+    /// Zero here is the signature of the run that let chains 169 and 170 through.
+    #[test]
+    fn a_record_of_a_run_that_reached_no_strict_body_is_rejected() {
+        let mut r = green();
+        r.strict_bodies = 0;
+        let chain = attested_chain(&[Some(r)]);
+        let errs = strict_errs(&chain);
+        assert!(
+            errs.iter().any(|e| e.contains("strict_bodies = 0")),
+            "a run with no strict body is vacuous and must be rejected: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn a_vacuous_record_does_not_satisfy_the_append_gate() {
+        // One fault, one consequence: the malformed record raises its own error AND
+        // leaves the tip unattested, rather than silently counting as a pass.
+        let mut r = green();
+        r.strict_bodies = 0;
+        let chain = attested_chain(&[Some(r)]);
+        assert!(!chain.entry[0].is_attested(), "a vacuous record is not an attestation");
+    }
+
+    /// ANTI-TRAVEL. The record's CRCs are read from the BLOBS at run time; the entry's
+    /// were read from the blobs at freeze time. They agree exactly when the attestation
+    /// is about this entry's artifacts, so a record copied onto another entry fails.
+    #[test]
+    fn a_record_whose_goldens_are_not_this_entrys_is_rejected() {
+        let mut r = green();
+        r.goldens.insert("s4".into(), "deadbeef/10".into());
+        let chain = attested_chain(&[Some(r)]);
+        let errs = strict_errs(&chain);
+        assert!(
+            errs.iter().any(|e| e.contains("different bytes")),
+            "an attestation about other bytes must be rejected: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn a_record_missing_a_target_the_entry_freezes_is_rejected() {
+        let mut r = green();
+        r.goldens.clear();
+        let chain = attested_chain(&[Some(r)]);
+        assert!(
+            strict_errs(&chain).iter().any(|e| e.contains("goldens has no `s4`")),
+            "a record that does not cover every frozen target must be rejected"
+        );
+    }
+
+    #[test]
+    fn a_record_naming_a_target_the_entry_does_not_freeze_is_rejected() {
+        let mut r = green();
+        r.goldens.insert("lean".into(), "aaaa/10".into());
+        let chain = attested_chain(&[Some(r)]);
+        assert!(
+            strict_errs(&chain).iter().any(|e| e.contains("does not freeze")),
+            "a record covering a target the entry does not name must be rejected"
+        );
+    }
+
+    /// PAIRING. The only aeon tree whose ROMs match these goldens is the one they were
+    /// frozen from, so a suite run against another revision is not a test of this entry.
+    #[test]
+    fn a_record_of_a_run_against_a_different_aeon_tree_is_rejected() {
+        let chain = attested_chain(&[Some(run(OUTCOME_PASSED, SHA_B))]);
+        let errs = strict_errs(&chain);
+        assert!(
+            errs.iter().any(|e| e.contains("different aeon tree")),
+            "a run against the wrong aeon tree must be rejected: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn an_unmeasurable_run_is_never_green() {
+        for (label, mut r) in [
+            ("suites", green()),
+            ("passed", green()),
+        ] {
+            match label {
+                "suites" => r.suites = 0,
+                _ => r.passed = 0,
+            }
+            let chain = attested_chain(&[Some(r)]);
+            let errs = strict_errs(&chain);
+            assert!(
+                errs.iter().any(|e| e.contains(&format!("{label} = 0"))),
+                "{label} = 0 means the run could not be measured, which is not a pass: {errs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_green_outcome_that_names_failures_is_incoherent() {
+        let mut r = green();
+        r.failed = 3;
+        let chain = attested_chain(&[Some(r)]);
+        assert!(strict_errs(&chain).iter().any(|e| e.contains("but failed = 3")));
+    }
+
+    #[test]
+    fn a_red_outcome_with_nothing_red_is_incoherent() {
+        let mut r = red();
+        r.failed = 0;
+        r.failing.clear();
+        let chain = attested_chain(&[Some(r)]);
+        assert!(strict_errs(&chain).iter().any(|e| e.contains("a red run must say what was red")));
+    }
+
+    #[test]
+    fn a_record_with_a_bad_revision_is_rejected_wherever_it_sits() {
+        for bad in ["", &SHA_A[..8], &SHA_A.to_uppercase(), &"g".repeat(40)] {
+            let mut r = green();
+            r.sigil_rev = bad.to_string();
+            let chain = attested_chain(&[Some(r), None]);
+            assert!(
+                strict_errs(&chain).iter().any(|e| e.contains("sigil_rev")),
+                "sigil_rev = {bad:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn a_malformed_record_does_not_arm_the_monotonic_rule() {
+        // One fault, one error: the entries after a malformed record are still pre-field
+        // and must not be dragged into a monotonic violation on top of the vacuity one.
+        let mut r = green();
+        r.strict_bodies = 0;
+        let chain = attested_chain(&[Some(r), None, None]);
+        let errs = strict_errs(&chain);
+        assert_eq!(errs.len(), 1, "one fault must produce one error, got: {errs:?}");
+        assert!(errs[0].contains("strict_bodies = 0"), "{}", errs[0]);
+    }
+
+    // ── the third state ─────────────────────────────────────────────────────────
+
+    fn sup(by: &str) -> Superseded {
+        Superseded { by: by.into(), reason: "the run was red".into() }
+    }
+
+    #[test]
+    fn a_superseded_entry_satisfies_the_monotonic_rule() {
+        // The deadlock case: entry #1's run was genuinely RED and the fix moved bytes.
+        // Entry #2 replaces it. Nothing here may be red, or the honest operator's only
+        // exits are a hand edit and a forged pass.
+        let mut chain = attested_chain(&[Some(red()), Some(green()), None]);
+        chain.entry[0].superseded = Some(sup(&chain.entry[1].name.clone()));
+        assert!(
+            strict_errs(&chain).is_empty(),
+            "an abandoned entry must not deadlock the chain: {:?}",
+            strict_errs(&chain)
+        );
+    }
+
+    /// THE ANTI-EVASION GUARD. Without it, abandonment is the cheap way out and the
+    /// ratchet dissolves: freeze, supersede, freeze, supersede, and the strict suite
+    /// never runs again. Requiring a RED run means every abandonment costs the very run
+    /// the mechanism is trying to force.
+    #[test]
+    fn an_entry_with_no_red_run_cannot_be_abandoned() {
+        let mut chain = attested_chain(&[None, Some(green()), None]);
+        chain.entry[0].superseded = Some(sup(&chain.entry[1].name.clone()));
+        let errs = strict_errs(&chain);
+        assert!(
+            errs.iter().any(|e| e.contains("carries no RED strict run")),
+            "abandoning without a red run must be refused: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn a_green_entry_cannot_be_abandoned() {
+        let mut chain = attested_chain(&[Some(green()), Some(green()), None]);
+        chain.entry[0].superseded = Some(sup(&chain.entry[1].name.clone()));
+        assert!(strict_errs(&chain).iter().any(|e| e.contains("carries no RED strict run")));
+    }
+
+    /// The successor's name is DERIVED from the chain, not taken on trust — so it cannot
+    /// name a fiction, and abandonment is only reachable by actually performing the next
+    /// freeze.
+    #[test]
+    fn superseded_must_name_the_entry_that_actually_follows() {
+        let mut chain = attested_chain(&[Some(red()), Some(green()), None]);
+        chain.entry[0].superseded = Some(sup("some-other-parcel"));
+        let errs = strict_errs(&chain);
+        assert!(
+            errs.iter().any(|e| e.contains("the entry that actually follows it is `e2`")),
+            "a fictional successor must be rejected: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn the_tip_cannot_be_superseded() {
+        let mut chain = attested_chain(&[Some(green()), Some(red())]);
+        chain.entry[1].superseded = Some(sup("nothing"));
+        assert!(strict_errs(&chain).iter().any(|e| e.contains("nothing follows it")));
+    }
+
+    #[test]
+    fn an_empty_successor_name_is_rejected() {
+        let mut chain = attested_chain(&[Some(red()), Some(green()), None]);
+        chain.entry[0].superseded = Some(sup(""));
+        assert!(strict_errs(&chain).iter().any(|e| e.contains("must NAME the entry")));
+    }
+
+    // ── the append gate ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn the_append_gate_is_a_ratchet_while_no_entry_records_a_run() {
+        let chain = attested_chain(&[None, None, None]);
+        let AppendGate::Ratchet(m) = append_gate(&chain) else {
+            panic!("an unarmed chain must ratchet, got {:?}", append_gate(&chain));
+        };
+        // `ratchet:`, NEVER `skip:` — this lane's strict bar requires zero `skip:` lines
+        // and an unarmed rule is not a missing reference.
+        assert!(m.starts_with("ratchet:"), "must be reported as a ratchet: {m}");
+        assert!(!m.contains("skip:"), "must never use the skip sentinel: {m}");
+    }
+
+    #[test]
+    fn the_append_gate_allows_an_attested_tip() {
+        let chain = attested_chain(&[None, Some(green())]);
+        assert_eq!(append_gate(&chain), AppendGate::Allowed);
+    }
+
+    /// THE ENFORCEMENT. Chains 169 and 170 are exactly this shape: a refreeze appended
+    /// on top of an entry whose strict suite never ran.
+    #[test]
+    fn the_append_gate_refuses_to_build_on_an_entry_whose_suite_never_ran() {
+        let chain = attested_chain(&[Some(green()), None]);
+        let AppendGate::Refused(m) = append_gate(&chain) else {
+            panic!("an armed rule must refuse an unattested tip, got {:?}", append_gate(&chain));
+        };
+        assert!(m.contains("carries no strict run"), "{m}");
+        assert!(m.contains("--attest"), "the refusal must name the way out: {m}");
+    }
+
+    #[test]
+    fn the_append_gate_demands_an_explicit_abandonment_when_the_tip_is_red() {
+        let chain = attested_chain(&[Some(green()), Some(red())]);
+        let AppendGate::NeedsSupersede(m) = append_gate(&chain) else {
+            panic!("a red tip must demand a supersede, got {:?}", append_gate(&chain));
+        };
+        assert!(m.contains("--supersede-tip"), "{m}");
+    }
+
+    /// A red record ARMS the rule too. If only a green one did, a chain that had only
+    /// ever recorded red runs would leave the gate unarmed — a hole exactly where the
+    /// discipline is under most pressure.
+    #[test]
+    fn a_red_record_arms_the_rule() {
+        let chain = attested_chain(&[Some(red()), None]);
+        assert!(
+            matches!(append_gate(&chain), AppendGate::Refused(_)),
+            "a chain that has recorded any run is armed, got {:?}",
+            append_gate(&chain)
+        );
+    }
+
+    // ── rendering: the append-only property ─────────────────────────────────────
+
+    /// THE STRUCTURAL CLAIM this whole design rests on. In TOML a `[entry.strict]` table
+    /// written at the END of the file attaches to the LAST `[[entry]]` already there. So
+    /// recording a run needs no surgery into the middle of the file, rewrites no
+    /// existing entry, and leaves every predecessor byte-identical — the same discipline
+    /// the chain already has for appends.
+    #[test]
+    fn an_appended_strict_table_attaches_to_the_last_entry_and_leaves_the_rest_untouched() {
+        let mut targets = BTreeMap::new();
+        targets.insert("s4".to_string(), t("s4.bin", "aaaa", 10, "1111", 8));
+        let mut src = String::new();
+        src.push_str(&render_entry("root", ASL_WITNESS, SHA_A, "", &targets));
+        src.push_str(&render_entry("second", "ref", SHA_A, "", &targets));
+        let before = parse(&src).expect("two-entry chain parses");
+
+        let appended = format!("{src}{}", render_strict(&green()));
+        let after = parse(&appended).expect("the appended table must still parse");
+
+        assert_eq!(after.entry.len(), 2, "appending must not create an entry");
+        assert_eq!(after.entry[0], before.entry[0], "entry #1 must be untouched");
+        assert_eq!(
+            after.entry[1].strict.as_ref().map(|s| s.strict_bodies),
+            Some(137),
+            "the table must attach to the LAST entry"
+        );
+        assert!(appended.starts_with(&src), "the write must be a pure append");
+    }
+
+    /// And a `[[entry]]` appended afterwards still starts a new entry, so `--attest` and
+    /// a later `--freeze` compose.
+    #[test]
+    fn a_freeze_can_still_append_after_a_strict_table() {
+        let mut targets = BTreeMap::new();
+        targets.insert("s4".to_string(), t("s4.bin", "aaaa", 10, "1111", 8));
+        let mut src = render_entry("root", ASL_WITNESS, SHA_A, "", &targets);
+        src.push_str(&render_strict(&green()));
+        src.push_str(&render_entry("next", "ref", SHA_A, "", &targets));
+        let chain = parse(&src).unwrap();
+        assert_eq!(chain.entry.len(), 2);
+        assert!(chain.entry[0].strict.is_some(), "the record stayed on entry #1");
+        assert!(chain.entry[1].strict.is_none(), "and did not leak onto entry #2");
+    }
+
+    /// `[entry.superseded]` must be written while the OLD tip is still last, and it must
+    /// be a TABLE: a bare `superseded_by = …` appended at end-of-file would attach to
+    /// whatever table happens to be last, which after `render_strict` is
+    /// `[entry.strict.goldens]` — silently recording the abandonment on the wrong table.
+    #[test]
+    fn a_supersede_then_freeze_append_lands_on_the_right_entries() {
+        let mut targets = BTreeMap::new();
+        targets.insert("s4".to_string(), t("s4.bin", "aaaa", 10, "1111", 8));
+        let mut src = render_entry("root", ASL_WITNESS, SHA_A, "", &targets);
+        src.push_str(&render_strict(&red()));
+        src.push_str(&render_superseded(&sup("successor")));
+        src.push_str(&render_entry("successor", "ref", SHA_A, "", &targets));
+        let chain = parse(&src).unwrap();
+        assert_eq!(chain.entry.len(), 2);
+        assert_eq!(chain.entry[0].superseded.as_ref().map(|s| s.by.as_str()), Some("successor"));
+        assert_eq!(chain.entry[1].superseded, None, "the abandonment stayed on the old tip");
+        assert_eq!(chain.entry[1].name, "successor");
+    }
+
+    #[test]
+    fn render_strict_roundtrips_every_field() {
+        let mut r = red();
+        r.expected_tests = vec!["mod::my_new_gate".into()];
+        r.skips = 27;
+        let mut targets = BTreeMap::new();
+        targets.insert("s4".to_string(), t("s4.bin", "aaaa", 10, "1111", 8));
+        // A bare `[entry.strict]` with no `[[entry]]` before it makes `entry` a TABLE
+        // rather than an array and fails to parse outright — the append can only ever
+        // land on a real entry, never float free.
+        assert!(
+            toml::from_str::<Chain>(&render_strict(&r)).is_err(),
+            "a strict table with no entry before it must not parse"
+        );
+        let src = format!("{}{}", render_entry("e", "ref", SHA_A, "", &targets), render_strict(&r));
+        let chain: Chain = toml::from_str(&src).unwrap();
+        assert_eq!(chain.entry[0].strict.as_ref(), Some(&r), "every field must round-trip");
+    }
+
+    /// The reason comes off a command line and a failing test name is whatever libtest
+    /// printed, so both need escaping. `render_entry`'s own fields never have.
+    #[test]
+    fn rendered_values_escape_quotes_and_backslashes() {
+        let s = Superseded {
+            by: "next".into(),
+            reason: r#"red: "SFX_BODY_LEN" != 0x8DA, see C:\logs"#.into(),
+        };
+        let block = render_superseded(&s);
+        let chain: Chain = toml::from_str(&format!(
+            "[[entry]]\nname=\"x\"\nab=\"asl-witness\"\n[entry.targets.s4]\ngolden=\"s4.bin\"\nfull_crc=\"0\"\nfull_size=1\nanchor_crc=\"0\"\nanchor_end=1\n{block}"
+        ))
+        .expect("an unescaped quote would make this unparseable");
+        assert_eq!(chain.entry[0].superseded.as_ref(), Some(&s));
     }
 
     #[test]
