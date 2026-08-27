@@ -98,6 +98,12 @@ struct Tally {
 }
 
 /// Record `name` under `key`, keeping at most six examples.
+/// One unit the timing walk prices: a parsed file, the `-D` define env its lowering
+/// reads, and the ambient declaration env it resolves names against. A registry module
+/// gets the whole-corpus type environment; a seam-1 resident sound module gets none,
+/// matching `lower_one`.
+type TimingUnit<'a> = (&'a EmpFile, &'a [(String, i128)], &'a [Item]);
+
 fn note_example(map: &mut BTreeMap<String, Vec<String>>, key: &str, name: &str) {
     let v = map.entry(key.to_string()).or_default();
     if v.len() < 6 && !v.iter().any(|n| n == name) {
@@ -396,7 +402,7 @@ fn main() {
         // not placed by the registry, so a registry-only walk sees no Z80 code in any
         // sound-on shape. Each carries its own `-D` env (const seam + DEBUG), which is
         // why they ride a separate list rather than the shape's define set.
-        let resident: Vec<(&'static str, EmpFile, Vec<(String, i128)>)> = if profile.sound_on {
+        let resident: Vec<sigil_harness::seam1::ResidentSoundModule> = if profile.sound_on {
             sigil_harness::seam1::resident_sound_modules(&aeon, profile.debug, carriers)
         } else {
             Vec::new()
@@ -405,7 +411,7 @@ fn main() {
         // the whole-corpus type environment (its field operands may name an imported
         // struct); a resident sound module is lowered standalone by seam 1 and gets
         // none, matching `lower_one`.
-        let mut units: Vec<(&EmpFile, &[(String, i128)], &[Item])> =
+        let mut units: Vec<TimingUnit<'_>> =
             walked.iter().map(|f| (*f, &defines[..], &env[..])).collect();
         for (_rel, f, d) in &resident {
             units.push((f, &d[..], &[]));

@@ -652,11 +652,15 @@ pub fn resident_module_bases(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
 /// operand forms are — while [`z80_clobbers_report_doctored`] defines them so its
 /// closure walk resolves every comptime reference. An operand-shape-sensitive
 /// analysis wants `false`; a comptime-completeness-sensitive one wants `true`.
+/// One resident sound module as [`resident_sound_modules`] hands it out: the module's
+/// file name, its parsed AST, and the comptime define bindings its lowering reads.
+pub type ResidentSoundModule = (&'static str, ast::File, Vec<(String, i128)>);
+
 pub fn resident_sound_modules(
     aeon: &Path,
     debug: bool,
     with_banked_carriers: bool,
-) -> Vec<(&'static str, ast::File, Vec<(String, i128)>)> {
+) -> Vec<ResidentSoundModule> {
     file_specs()
         .iter()
         .map(|spec| {
