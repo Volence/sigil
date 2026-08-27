@@ -12,16 +12,20 @@ sigil-frontend-as = { path = "../sigil-frontend-as" }
 # emitter (`seam1` module + the `emit_sound_blob` bin) natively links the five
 # resident sound `.emp` files, so it needs `lower_module` at library scope.
 sigil-frontend-emp = { path = "../sigil-frontend-emp" }
+# The ISA crate owns the 68000 timing tables' `CycleCost` type, which the
+# `cycle_fraction` report binary matches on. Already in the build graph
+# transitively (frontend-emp -> backend-m68k -> isa); named here so a `src/bin`
+# target — which cannot see `[dev-dependencies]` — can reach it.
+sigil-isa = { path = "../sigil-isa" }
 # The `repin` manifest (`repin.toml`) rides the same TOML+serde pair
 # sigil-link's map loader established — no new dependency class.
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 
 [dev-dependencies]
-# The m68k round-trip stream pass (tests/m68k_roundtrip_stream.rs) drives the
-# encoder's capture tap and decode mirror directly.
-sigil-isa = { path = "../sigil-isa" }
-# (sigil-frontend-emp is now a regular dependency — see [dependencies].)
+# (sigil-frontend-emp and sigil-isa are regular dependencies — see
+# [dependencies]. The m68k round-trip stream pass, tests/m68k_roundtrip_stream.rs,
+# reaches the encoder's capture tap and decode mirror through the latter.)
 # The warn-tier collection tests need a real on-disk source file: `SourceIndex`
 # resolves `path:line:col` by READING the file, so a fixture that does not exist
 # would only exercise the degraded (`None`) arm.

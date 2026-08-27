@@ -636,6 +636,47 @@ pub fn resident_module_bases(aeon: &Path, debug: bool) -> Vec<(String, u32)> {
     specs.iter().zip(bases).map(|(s, b)| (s.section.to_string(), b)).collect()
 }
 
+/// The five resident Z80 sound modules — PARSED, each paired with the `-D` env its
+/// own lowering reads: the per-module const seam ([`resolve_consts`]) plus the shape
+/// `DEBUG` flag, and — only when `with_banked_carriers` — the [`banked_carriers`]
+/// equ values.
+///
+/// Handed out because these files are NOT in the placement registry
+/// (`native::registry`): the resident driver is linked by seam 1, so a walk that
+/// enumerates the registry sees ZERO Z80 code in every sound-on shape. Any analysis
+/// that means to describe the shipped Z80 half must read these five.
+///
+/// The two carrier polarities are the two established call sites' envs, and they are
+/// different questions: the blob EMIT ([`lower_one`]) does not define the carriers —
+/// their symbols stay symbolic and resolve at link, which is what the shipped
+/// operand forms are — while [`z80_clobbers_report_doctored`] defines them so its
+/// closure walk resolves every comptime reference. An operand-shape-sensitive
+/// analysis wants `false`; a comptime-completeness-sensitive one wants `true`.
+pub fn resident_sound_modules(
+    aeon: &Path,
+    debug: bool,
+    with_banked_carriers: bool,
+) -> Vec<(&'static str, ast::File, Vec<(String, i128)>)> {
+    file_specs()
+        .iter()
+        .map(|spec| {
+            let (file, _dir) = parse_one(aeon, spec);
+            let mut defines: Vec<(String, i128)> =
+                resolve_consts(aeon, (spec.const_names)(), &[])
+                    .into_iter()
+                    .map(|(n, v)| (n.to_string(), v as i128))
+                    .collect();
+            if with_banked_carriers {
+                for (n, v) in banked_carriers() {
+                    defines.push((n.to_string(), v as i128));
+                }
+            }
+            defines.push(("DEBUG".to_string(), if debug { 1 } else { 0 }));
+            (spec.rel_path, file, defines)
+        })
+        .collect()
+}
+
 /// The flattened standalone blob bytes with an optional single-symbol doctor
 /// (const seam `-D` OR a banked carrier). Used by the byte gate + its t24 controls.
 pub fn native_blob_doctored(aeon: &Path, debug: bool, doctor: Option<(&str, i64)>) -> Vec<u8> {
