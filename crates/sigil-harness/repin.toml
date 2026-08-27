@@ -1954,6 +1954,15 @@ tests = ["sprites_port"]
 name = "Sprite_Cycle_Counter"
 tests = ["sprites_port"]
 
+# SPRITE-OWNER: engine/ram.emp's DEBUG-only [u16; MAX_VDP_SPRITES] owner array,
+# read by sprites.emp's `lea Sprite_Owner, a6` (abs.w, so the VMA is IN the
+# region's bytes). Declared inside `if DEBUG == 1 @shape_divergent`, so it has no
+# plain-shape address at all — `debug_only`, same as the MDDBG__ seams.
+[[symbol]]
+name = "Sprite_Owner"
+debug_only = true
+tests = ["sprites_port"]
+
 [[symbol]]
 name = "SpriteMask_Y"
 tests = ["sprites_port"]

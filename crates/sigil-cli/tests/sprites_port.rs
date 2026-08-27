@@ -13,10 +13,12 @@
 //!   cells (`Sprite_Bands`/`Sprite_Band_Counts`/`Sprites_Rendered`/
 //!   `Sprite_Table_Buffer`/`Sprite_Table_Dirty`/`Sprite_Cycle_Counter`/
 //!   `SpriteMask_{Y,Height,After_Band}`/`Scanline_Band_Sprites` + shared
-//!   `Camera_X`/`Camera_Y`), all abs.w EAs. Ten of them SHIFT +$22 in the
-//!   debug shape (debug RAM inserted ahead), so the region is same-LENGTH
-//!   ($420 both) but the RAM-EA operand bytes DIFFER per shape — each shape
-//!   diffs against its own ROM window with its own VMAs.
+//!   `Camera_X`/`Camera_Y`), all abs.w EAs — plus `Sprite_Owner`, a DEBUG-only
+//!   thirteenth that the plain shape never names. Ten of them SHIFT +$22 in the
+//!   debug shape (debug RAM inserted ahead), so the RAM-EA operand bytes DIFFER
+//!   per shape — each shape diffs against its own ROM window with its own VMAs.
+//!   Region length is shape-dependent too (see the reference-window block below,
+//!   and `pins::SPRITES.{plain,debug}_len`, which is where the numbers live).
 //! - **`data` interleaved between procs** — `CellOffsets_XFlip` (16-byte flip
 //!   width LUT) sits between `Render_Sprites` and `Emit_ObjectPieces`, read
 //!   pc-relative (`lea CellOffsets_XFlip(pc), a0`) by the two X-flipping
@@ -137,6 +139,11 @@ const DEBUG: Shape = Shape {
         ("Camera_Y_Biased", pins::CAMERA_Y_BIASED.debug),
         // bug005 H3: the partial-SAT DMA length patch writes the queue entry.
         ("Static_Sprite_DMA", pins::STATIC_SPRITE_DMA.debug),
+        // SPRITE-OWNER: engine/ram.emp declares Sprite_Owner inside
+        // `if DEBUG == 1 @shape_divergent`, and Render_Sprites holds `lea
+        // Sprite_Owner, a6` for the whole render (abs.w — the VMA is in these
+        // bytes). DEBUG shape only; the plain shape never names it.
+        ("Sprite_Owner", pins::SPRITE_OWNER),
         // DEBUG-only: the H1-staleness + BUG-005 chain-walk assert.w
         // expansions jsr/jmp these (core_port precedent).
         ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
