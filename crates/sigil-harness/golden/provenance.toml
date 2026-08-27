@@ -9229,3 +9229,26 @@ full_crc = "406db07d"
 full_size = 735454
 anchor_crc = "31a0405f"
 anchor_end = 0xa7e70
+
+[entry.strict]
+outcome = "failed"
+sigil_rev = "e671a5b6383f82a20683ca838035e655b2c803c9"
+aeon_rev = "9bba8700d09d3c87bdad3e2e0f13c7389f2da4cc"
+strict_bodies = 29
+suites = 349
+passed = 4037
+failed = 6
+ignored = 4
+skips = 0
+ran_at = "unix:1787834118"
+failing = ["native_full_sonic4_debug", "native_full_sonic4_plain", "p2_ground_debug_region_matches_reference", "p2_ground_doctored_reference_diverges", "p2_ground_region_matches_reference", "p2_ground_undoctored_compile_equals_the_reference_window"]
+expected_tests = ["p1_player_common_region_matches_reference", "p1_player_common_debug_region_matches_reference"]
+
+[entry.strict.goldens]
+config_a = "7a905fd5/735822"
+config_b = "d4bc8933/610393"
+demo = "3415e3ef/96372"
+demo_debug = "7599953e/101113"
+lean = "7a0a3b1f/674830"
+s4 = "34c67ea6/718999"
+s4_debug = "406db07d/735454"
