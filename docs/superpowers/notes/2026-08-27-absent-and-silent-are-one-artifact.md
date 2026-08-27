@@ -207,6 +207,41 @@ showing it.** This is the generator-enumeration rule (see the OFFCANON-ROT note:
 every value from the tool that writes it, rather than pattern-matching what a stale one
 looks like) pointed at test existence instead of at constants.
 
+## The surface neither grep reaches: PROSE
+
+*(aeon's, 2026-08-27, from the sprite-owner freeze; accepted here and recorded as a joint
+commitment rather than an agreement in mail.)*
+
+Bar 14's remedy is to run **both** an identifier grep and a quoted-key grep and reconcile
+them, because neither is a superset of the other. Prose is the population **neither one
+reaches**: a bound asserted in a doc comment, a help string, a docstring, a refusal message,
+a comment naming a length or an address. Nothing executes it, so **no gate can contradict
+it** — and that is the whole difference in consequence. *A stale bound in code eventually
+fails something. A stale bound in prose just teaches.*
+
+Live instance, from the parcel that prompted this: `sprites_port.rs`'s own header asserted
+the sprites region is *"same-LENGTH ($420 both)"*. The aeon parcel made that false, and the
+same file's reference-window block twelve lines below already said `0x408` plain and `0x4DA`
+debug — so the file contradicted itself, in prose, and had done since an earlier parcel.
+Nothing could have caught it: there is no assertion to fail.
+
+**The fix has two halves and the second is the one people skip.** Removing the stale number
+is the first. The second is **not writing a fresh one** — re-authoring a hardcoded bound one
+value later is the identical defect with a newer date, and it will rot on the same clock.
+Point at where the number lives (`pins::SPRITES.{plain,debug}_len`) instead.
+
+**The joint sweep, scoped deliberately.** When a parcel moves a set of values, each lane
+sweeps its **own** tree's prose for **those specific values** — bounded by what actually
+moved, rather than an open-ended audit, and each lane sweeping the tree it can actually
+judge. Sigil takes the pins and lengths it writes terms for; aeon takes their `.emp` headers
+and `docs/`.
+
+**And an empty prose sweep is this note's own shape pointed at the sweep.** Nothing was found
+and the grep never matched anything produce the same artifact, so **an empty result is
+reportable only alongside the exact patterns grepped for.** Report the query, not just the
+verdict; otherwise the sweep is instance (2) — a check that could not see its subject —
+wearing a clean bill of health.
+
 ## The practical test, for a check you are about to trust
 
 1. **Name the failure state.** What is the world in which this check *should* go red?
