@@ -5,6 +5,27 @@ posture, delegation discipline, review bars, peer protocol — lives in
 `empyrean/docs/OVERSEER-PROTOCOL.md`; read it once, then this file for what is
 sigil-specific: the landing-lane division, the worktree/test quirks, and the queue.
 
+## ⚠ ACTIVE HOLD — read this before running anything that builds
+
+**A hold that lives only in a chat message does not survive a `/clear`** *(aurora's, 2026-08-27)*.
+An announcement reaches the sessions that exist; only a committed artifact reaches the sessions
+that do not exist yet. Overnight the console rotates lanes, so a successor boots, reads this repo,
+sees no hold, and builds — honouring every rule it can see.
+
+**A committed hold has the opposite failure: it outlives its reason and nothing announces that
+either.** A stale "you must not" is a false negative wearing caution's costume, and it makes a
+lane refuse something perfectly safe while looking rigorous. So every entry below carries **its
+date, who to ask, and what ends it** — a successor EVALUATES it rather than obeying it, and an
+entry that cannot be evaluated should be treated as expired and deleted.
+
+| Raised | Artifact | Why | Ends when | Ask |
+|---|---|---|---|---|
+| 2026-08-27 ~11:5xZ | `target/release/sigil` and the harness bins beside it (`refreeze`, `repin`, `emit_sound_blob`) | The aeon lane pins these for a paired freeze; relinking mid-freeze moves the instrument under their measurement. Pinned by md5 at raise time: `sigil 5f325dca…`, `refreeze 4e2099ed…`, `repin 9ebc3624…`, `emit_sound_blob 3eba64ce…` | The aeon lane reports its SLOPE-SYMMETRY freeze complete. **If that lane is not running, the hold is over** — it cannot be mid-freeze with no session. | aeon overseer |
+
+**Anything that can relink counts**, not just `cargo build --release` — see *Guard the artifact, not the subcommand* below. Agents in worktrees with their own `CARGO_TARGET_DIR` are unaffected and need no hold; this binds runs in the **main checkout**, which is where a landing legitimately happens.
+
+**Delete the row when the hold lifts, in the same commit that announces the lift.** A row left standing is the stale-caution defect this section exists to prevent.
+
 ## Boot
 
 > You're the overseer for this repo. Read `docs/OVERSEER.md` first, then
