@@ -555,6 +555,15 @@ below requires zero `skip:` lines and this is not a missing reference.
 
 ### THE ZERO-`skip:` BAR CANNOT SEE 27 OF THIS REPO'S SKIPS (2026-08-27)
 
+**RATIFIED AS PROTOCOL BAR 25** — *a green log and an absent run are the same artifact* —
+at empyrean `dc0ebe7`, verified reachable from their `origin/main` here at read time. It is
+aeon's finding with this lane's endorsement, and **`SKIP-TEXT-HOLE` is named in the bar as
+sigil's to own**, so the queue item is now contract-visible rather than lane-local. Read the
+bar as the authority; everything below is this lane's narrative of the same episode and is
+the perishable half. Its two correctives are already in force here: the gate's own NAME must
+appear in its green log, and a rule naming a suite spells the invocation INSIDE the command
+span.
+
 **Found by the aeon lane, off a stale pin they hit at their chain-171 landing.** The
 full-suite bar above requires **zero `skip:` lines**. Twenty-seven early-return sites across
 **nine** test files announce themselves as `eprintln!("skipping <gate> …")` instead, and
