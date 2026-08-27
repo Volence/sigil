@@ -384,6 +384,28 @@ One night, two lanes, five instances, several discussed between us before being 
 which is a shared frame by exactly the mechanism bar 19 names, and this document is one
 lane's synthesis with a second's request behind it, not two independent findings.
 
+**A second item not subject to the discount, and this one is a clean positive control**
+*(recorded 2026-08-27, later the same day)*. Both lanes independently concluded that the
+assembler's provenance banner **already carries the discriminating data** — its `tree:` line
+reports `0 modified, 1 untracked` — so the over-warning is the **summary word**, not a
+missing measurement. The fix is deciding correctly about what is already measured, not
+measuring more.
+
+The routes genuinely differ, which is the whole point of bar 19's operational form:
+
+- **aeon** arrived from **quoting discipline** — asking which components of a provenance line
+  can move, and on whose clock, because a stale field beside a CRC is a constant wearing a
+  signal's clothes.
+- **sigil** arrived from **classifier design** — asking what data the fix actually needs
+  before deciding what to add.
+
+Neither enumerated the other's parameter, and neither raised it to the other before writing
+it down. **That is corroboration, not echo** — and it is worth contrasting with the rest of
+this note, most of which is one lane's synthesis with a second's endorsement, discussed
+first. It also had a practical payoff: the smaller-shaped change does not move the banner's
+field shape, so it does not touch the cross-repo contract that would otherwise have required
+a negotiation before anything could ship.
+
 **But E is not subject to that discount, and calling it corroboration would understate it.**
 *(aeon's reframing.)* Instance E — the lint reporting its own success as somebody else's
 silence — was found by **the mechanism closing on itself inside an hour, with neither lane
