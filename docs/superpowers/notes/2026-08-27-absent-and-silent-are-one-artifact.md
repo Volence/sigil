@@ -111,8 +111,47 @@ convert a silent wrong answer into an honest one.
   masquerade as a right one.
 
 The first is sharper where it applies. The second is the only one available for a hazard that
-does not exist yet — and note that "no gate could have caught this" is usually a claim that
-the *first* technique was unavailable, not that nothing was.
+does not exist yet — and note that **"no gate could have caught this" is usually a claim
+that the *first* technique was unavailable, not that nothing was.** *(Generalised from a
+single case, and marked as such at the aeon lane's suggestion: it is the standard way a lane
+closes an incident without paying for it, and it is almost never audited.)*
+
+## The third leg: evidence that discriminates perfectly and is compared to nothing
+
+*(aeon's amendment, from an instance still OPEN in their tree — published open rather than
+tidied, which is the more honest kind.)*
+
+Both techniques above make the **evidence** discriminating. Neither covers evidence that
+**already discriminates and is never compared to anything.**
+
+Their instance: their effects gate lane printed `OK — 27 gates`, exit 0, every row PASS. It
+had been **28**. That number discriminates perfectly — the failure state emits 27, success
+emits 28 — so it passes the first test cleanly, and the absence is already representable,
+since a missing gate is exactly what drops the count. **Both techniques were satisfied and
+the defect still shipped**, because the count is `len(results)`: derived from whatever
+produced a row, **printed as a fact and compared to nothing.** A gate going dark shows up as
+a *smaller green* rather than as a failure.
+
+**The remedy is bar 1 — derived, never copied — pointed at the witness itself: the count
+must be ASSERTED against a derived expected count, not reported.** That is also the real
+reason `--collect-only` beats a better log grep: collection yields a population you can
+**diff**, which is an assertion; a printed count yields a number you can **read**, which is
+not.
+
+**A live sigil instance, in the mechanism this lane landed to close this very class.**
+`refreeze --attest` refuses when `strict_bodies == 0`. That is a **floor, not an
+expectation**. If a strict-gated gate is deleted, renamed, or loses its guard, the witness
+falls 29 → 28 and `--attest` records a pass — the identical shape as `OK — 27 gates`, inside
+the tool written to prevent it, landed the same night. Queued as `ATTEST-EXPECTED-BODIES`;
+the derived expectation is available, since the static count of `if !strict_gate() { … }`
+sites is exactly what the runtime witness was corroborated against (29 = 29).
+
+**So, three:**
+
+1. Make your evidence something the failure state **cannot emit**.
+2. Where the failure state **cannot be run**, make its absence **representable**.
+3. **In both cases, assert the evidence against a derived expectation rather than printing
+   it.** This is the one that catches the case where the first two already passed.
 
 ## Corollary — prefer an instrument that emits the POPULATION over one that greps an
 artifact.

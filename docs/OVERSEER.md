@@ -984,6 +984,42 @@ four shapes built and CRC32+size verified against the committed tip** (read via
 read that pairing off this paragraph** — the warning at the top of the quality-bar section
 applies to these two names exactly as it applied to every predecessor.
 
+### `git diff -- <path>` IS CWD-RELATIVE AND `git show <rev>:<path>` IS NOT (2026-08-27)
+
+*(aeon's finding, against their own evidence; reproduced firsthand here before banking.)*
+
+Mix the two forms after a `cd` and you get **an empty diff with exit 0 while the blobs
+genuinely differ.** Reproduced in this repo:
+
+```sh
+git diff --stat HEAD~2 HEAD -- docs/superpowers/notes          # 109 lines changed
+cd docs && git diff --stat HEAD~2 HEAD -- docs/superpowers/notes   # EMPTY, exit 0
+cd docs && git diff --stat HEAD~2 HEAD -- ':(top)docs/superpowers/notes'  # 109 again
+```
+
+`git diff`'s pathspec is resolved against the **current directory**; `git show <rev>:<path>`
+is always resolved against the **repository root**. An investigation that enumerates
+something with `git show rev:path` and then diffs with the same string — having `cd`-ed
+somewhere in between, which is an entirely reasonable earlier step — silently compares
+nothing.
+
+**This is bar 16(d) with `cd` as the manufacturing mechanism, and it is nastier than
+`2>/dev/null` or the `eza` alias.** Nothing is suppressed. Nothing errors. The command is
+correct, the shell is correct, the revisions are correct — only the *composition* of two
+path conventions is wrong, and the result is a clean empty answer with a zero exit and
+nothing to be suspicious of.
+
+**The tell aeon nearly missed, and it is the general one:** the conclusion being checked
+happened to be **TRUE**, so the empty diff confirmed what they already believed. It was
+caught only because blob hashes from a different command contradicted it. An empty result
+that agrees with your prior is the hardest possible case — bar 10 (a verdict and its stated
+reason are separately checkable) aimed at your own hand-offered evidence rather than at a
+gate's message.
+
+**Two remedies, use either:** run diffs from the repository root, or prefix the pathspec
+with `:(top)` (verified above to restore the correct output from a subdirectory). Prefer
+`:(top)` in anything scripted, since a script cannot know where it will be invoked from.
+
 ## Worktree and environment quirks
 
 - **Worktrees are agent-isolated but the registry is repo-global.** Every session's
