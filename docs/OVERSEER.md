@@ -1251,6 +1251,43 @@ owner-declares rule above covers where a sweeper looks; this covers the adoption
 at all. As written, Q-28 licenses this again, correctly, on the next lane that tidies up after
 itself.
 
+### `AEON_DIR` IS UNCONDITIONAL IN EVERY BRIEF — the default is the OWNER'S working tree (2026-08-27)
+
+`test_support.rs::aeon_dir` defaults to `/home/volence/sonic_hacks/aeon`, which is the
+owner's live checkout. **So any suite run that does not set `AEON_DIR` reaches the tree he
+is authoring in**, and `sigil build --aeon <tree>` **emits its ROM and listing INTO that
+tree** — not merely reading it.
+
+That happened: a brief here said *"a stable aeon tree, **if needed**"*, an agent ran the
+workspace suite without setting it, and `s4.debug.bin` / `s4.debug.lst` in the owner's tree
+were rewritten by a run neither he nor the aeon lane knew about, while he was testing live.
+His authoring was untouched — no re-bake ran — but the debug ROM he would have loaded had a
+provenance nobody intended.
+
+**`"if needed"` is the whole defect, and it reads as helpful flexibility.** A default that
+points at a person's working directory is one that must be overridden *every* time, and
+every-time is what briefs are bad at. **Set it in the template, not per parcel.**
+
+The same agent's own numbers are the argument: its runs before the correction showed **54
+phantom failures**, its runs after showed a clean set. This document already carried the
+phantom-failure warning; it was not in the artifact that had to carry it. **Knowing a rule
+and encoding it in the instruction that carries it are separate acts.**
+
+### A GREP HIT THAT CONFIRMS WHAT YOU SET OUT TO FIND IS THE ONE YOU LEAST READ THE CONTEXT OF (2026-08-27)
+
+*(aeon's, against their own error.)*
+
+Protocol bar 11 says read the lines around a cited line before accepting what it proves.
+This is sharper: **when the hit confirms your hypothesis, the confirmation is the reason you
+stop reading** — so the risk is highest exactly where the evidence looks best, and **the
+search itself has selected for agreement.**
+
+Instance: that lane grepped a gate's name, read the hit, and reported the gate unarmed. The
+hit was inside a *fast-mode skip banner* — a correct statement about what fast mode omits —
+and the gate runs unconditionally on the canonical build, four lines further down. It went
+into a plan, into a message, and was echoed back as a work item. **It happened on a day whose
+running theme was vacuous gates, which is why the search produced what it was looking for.**
+
 ### GUARD THE ARTIFACT, NOT THE SUBCOMMAND — `target/release/sigil` (2026-08-27)
 
 The aeon lane pins `target/release/sigil` for freezes and A/Bs. The rule everyone was
