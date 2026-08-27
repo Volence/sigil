@@ -1315,11 +1315,32 @@ section, never from a CRC written in this file. A non-tip entry read as the tip 
 session a false "corroborated" in a review, and there are 166 entries to pick the wrong one
 from. `~/sonic_hacks/.aeon-landing` is a built checkout at that
 revision **(it was found ABSENT on 2026-08-26 and re-created as an aeon worktree at
-`415e0b6a`; re-creating one has two lived hazards, from the aeon lane: a fresh checkout gives
-`project.json` a new mtime so `tools/level_staleness.py` hard-fails BEFORE any ROM is emitted —
-run `tools/regenerate-level.sh` first and discard its `DONOR_PROVENANCE.json` churn; and `rm -f`
-all four ROMs before EACH build, because a build that stops at the staleness gate leaves
-leftovers whose CRCs match the pins perfectly. Export `AEON_SKDISASM_DIR`)**; `~/sonic_hacks/.aeon-sigil-gates` is **source-only by construction** and must
+`415e0b6a`. **BUILDING ONE — the corrected recipe; the version this paragraph carried until
+2026-08-27 omitted a fatal step and prescribed an unnecessary one, while the correction to the
+second already sat 300 lines above it in this same file.**
+(a) **`SIGIL_EMIT` is REQUIRED and its absence is fatal, not degraded.** With only
+`SIGIL_BUILD` set, both sonic4 shapes die at `ERROR: seam-1 needs the sigil emit_sound_blob
+binary`, zero ROMs emitted — **and both demo shapes build fine without it**, which is exactly
+the shape the build-all-four rule exists to catch: a half-green reference tree that looks
+built. `cargo build --release --bin emit_sound_blob` and export it.
+(b) `rm -f` all ROMs before EACH build — a build that stops at a gate leaves leftovers whose
+CRCs match the pins perfectly, which is a green that means nothing.
+(c) Export `AEON_SKDISASM_DIR`.
+(d) **Do NOT run `tools/regenerate-level.sh` prophylactically.** The old note said a fresh
+checkout hard-fails `level_staleness.py`; that mechanism is wrong and has now failed to
+reproduce **three times** — see the measured correction earlier in this file, and a third
+instance 2026-08-27 (`ok (generated … >= editor …)`, same-second whole-second compare). It
+bites an in-place `git checkout`, not a `git worktree add`. Run it only if the gate actually
+fires; it rewrites the level tree and churns `DONOR_PROVENANCE.json`.
+(e) Verify the built ROMs by **CRC32 + size against the provenance TIP entry**, deriving the
+tip by parsing the file, never by reading a revision off prose. Note the tip entry pins
+**seven** targets; `build.sh` emits four and the suite produces the other three, so the
+four-ROM check is the right bar but is not the whole entry.
+**⚠ `scripts/nightly_source_gates.sh` has NO audit flag** (`--selftest-fail` is the only
+one), and running it to "check the audit" is NOT read-only: it creates worktrees off `master`
+in the shared checkouts, builds salvador and regenerates compression vectors. To read
+`gates=N unclassified=N` safely, replicate its inline audit block (its own `SOURCE_GATES`
+array plus the classification loop) against your own worktree)**; `~/sonic_hacks/.aeon-sigil-gates` is **source-only by construction** and must
 never be pointed at an artifact-dependent run.
 
 Previously landed the same day: **const-arity** — a
