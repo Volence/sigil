@@ -8,8 +8,11 @@
 //! port, under an SR interrupt mask + Z80 bus hold.
 //!
 //! ## Shape
-//! SHAPE-INVARIANT length ($AE both shapes — bg.asm has NO `__DEBUG__` code,
-//! no asserts); only the base shifts.
+//! Both the base and the LENGTH are shape-dependent, so each shape diffs
+//! against its own ROM window. The four numbers live in
+//! `pins::BG.{plain,debug}_{base,len}` — regenerate via `repin` — and are
+//! deliberately not restated here: a bound copied into prose is executed by
+//! nothing, so nothing can go red when it rots.
 //!
 //! ## Cross-seam symbols
 //! - No RAM labels at all — BG_Init reads only the Act descriptor (via a3)

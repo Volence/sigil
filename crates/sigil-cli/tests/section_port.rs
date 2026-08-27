@@ -8,10 +8,11 @@
 //! the typed VDP command interface.
 //!
 //! ## Shape
-//! SHAPE-INVARIANT length ($3EA both shapes — no `__DEBUG__` code in
-//! section.asm), like sprites/load_object; only the base shifts (plain `$513E`,
-//! debug `$5DC0`), so the shape lives entirely in the MAP + the per-shape
-//! synthetic label VMAs.
+//! Both the base and the LENGTH are shape-dependent, so the shape lives in the
+//! MAP + the per-shape synthetic label VMAs. The four numbers live in
+//! `pins::SECTION.{plain,debug}_{base,len}` — regenerate via `repin` — and are
+//! deliberately not restated here: a bound copied into prose is executed by
+//! nothing, so nothing can go red when it rots.
 //!
 //! ## Cross-seam symbols (synthetic AS-side sections, per-shape VMAs)
 //! - ROM transfer targets: `Draw_TileColumn`/`Draw_TileRow_FromCache`
@@ -55,7 +56,8 @@ fn strict_gate() -> bool {
 }
 
 /// The map: a `text` carrier for the zero-byte default section, and the `section`
-/// region pinned at the per-shape reference base, sized to $3EA (both shapes).
+/// region pinned at the per-shape reference base and the per-shape
+/// `pins::SECTION` length.
 fn map_toml(debug: bool) -> String {
     let base = region_base(debug);
     let len = if debug { pins::SECTION.debug_len } else { pins::SECTION.plain_len };

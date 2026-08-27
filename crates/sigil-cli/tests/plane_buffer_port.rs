@@ -8,9 +8,11 @@
 //! entries to `Plane_Buffer`, `VInt_DrawLevel` drains them to the VDP in VBlank.
 //!
 //! ## Shape
-//! SHAPE-INVARIANT length ($29C both shapes — plane_buffer.asm has NO `__DEBUG__`
-//! code, no asserts), like section/load_object; only the base shifts (plain
-//! `$405E`, debug `$4C28`), driven entirely by the upstream base slide.
+//! Both the base and the LENGTH are shape-dependent, so each shape diffs
+//! against its own ROM window. The four numbers live in
+//! `pins::PLANE_BUFFER.{plain,debug}_{base,len}` — regenerate via `repin` —
+//! and are deliberately not restated here: a bound copied into prose is
+//! executed by nothing, so nothing can go red when it rots.
 //!
 //! ## Cross-seam symbols (synthetic AS-side sections, per-shape VMAs)
 //! - RAM labels (abs operands): the `Plane_Buffer`(_Ptr), `Cache_*`,
@@ -68,8 +70,8 @@ fn strict_gate() -> bool {
 }
 
 /// The map: a `text` carrier for the zero-byte default section, and the
-/// `plane_buffer` region pinned at the per-shape reference base + length
-/// (SHAPE-INVARIANT: $29C both shapes).
+/// `plane_buffer` region pinned at the per-shape reference base + length,
+/// both read from `pins::PLANE_BUFFER` by the helpers below.
 fn map_toml(debug: bool) -> String {
     let base = region_base(debug);
     let len = region_len(debug);
