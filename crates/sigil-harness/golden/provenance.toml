@@ -9022,3 +9022,57 @@ full_crc = "9732c56a"
 full_size = 735420
 anchor_crc = "bae229db"
 anchor_end = 0xa7e70
+
+[[entry]]
+name = "sprite-owner"
+ab = "aeon 33d905b8: DEBUG-only Sprite_Owner [u16; MAX_VDP_SPRITES] recording which SST emitted each SAT entry. Release shapes BYTE-IDENTICAL (s4 21cc1347/718999, demo 3415e3ef/96372); DEBUG s4 9732c56a/735420 -> 8c01d7ed/735452 (+32), demo b6f9759f/101080 -> 7599953e/101113 (+33). The assembled image did NOT grow: EndOfRom 0xA7E70 both builds, 0x50 of new DEBUG code absorbed by pad ahead of object_bank at 0x10000; the +32/+33 is deb2 symbol-table growth alone and no pin measures file length. 74 pin values move, all DEBUG-shape, zero plain: +0x46 x7, +0xA x2, +0x50 x58, +0xA0 x7. Cross-checked by two independent instruments - aeon's .lst-derived delta table and sigil's own source resolver - agreeing on all 74 values and their exact distribution, which matters because repin's generator and pins_rs_is_current's gate share one resolver and cannot cross-check each other."
+aeon_rev = "33d905b8740693b952b3d6356e79ecf37a9cddc8"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "da04abaf"
+full_size = 735820
+anchor_crc = "70cf04c0"
+anchor_end = 0xa7e70
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "5244d9e5"
+full_size = 610393
+anchor_crc = "c521cecc"
+anchor_end = 0x8b710
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7599953e"
+full_size = 101113
+anchor_crc = "91a16b91"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "7d740482"
+full_size = 674830
+anchor_crc = "924738c2"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "21cc1347"
+full_size = 718999
+anchor_crc = "59ad82ed"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "8c01d7ed"
+full_size = 735452
+anchor_crc = "f877d9d5"
+anchor_end = 0xa7e70
