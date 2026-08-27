@@ -3478,7 +3478,13 @@ pub fn validate_placement(
         }
     }
 
-    // ── Holes (data; K2 enforces): the `after` anchor label must resolve ──
+    // ── Holes: the `after` anchor label must resolve ──
+    //
+    // PRESENCE ONLY. This arm proves the hole has a subject; it says nothing about what
+    // occupies the span the hole reserves. That second, `negative` half is
+    // [`hole_interior_faults`], which needs the shape's REGISTRY (to turn `filled_by`'s
+    // module id into the section names allowed inside the hole) and so cannot be reached
+    // from this signature.
     for h in pmap.holes_for(sound_on) {
         let present = resolved.iter().any(|s| s.labels.iter().any(|l| l.name == h.after));
         if !present {
@@ -3489,6 +3495,115 @@ pub fn validate_placement(
         }
     }
     Ok(())
+}
+
+/// THE HOLE'S INTERIOR IS RESERVED: over one shape's resolved layout, every
+/// byte-emitting section that occupies part of a declared `[[hole]]` without being the
+/// module that hole declares as its filler.
+///
+/// A `[[hole]]` is a reserved empty span: it opens at its `after` label, runs to `at`
+/// (the address the post-hole data resumes at), and the module named by `filled_by`
+/// is the one thing allowed inside it. Nothing else in the build looks at `at` or
+/// `filled_by` — `validate_placement`'s hole arm reads `at` only to print it — so a
+/// packed layout that puts any other emitter in that span, or a declaration whose `at`
+/// has drifted away from the layout, produces a ROM whose post-hole data no longer
+/// begins where the map says it does, with no build diagnostic of any kind.
+///
+/// THE PERMITTED SET IS DERIVED, NEVER TRANSCRIBED. `filled_by` is a MODULE id
+/// (`engine.z80_init`); the sections it may occupy come from `registry` — the module
+/// list the build is handed, upstream of every section it goes on to place. So this
+/// cannot drift from the build's own idea of which section belongs to that module.
+///
+/// LOUD WHEN IT CANNOT MEASURE (`Err`), never a silent pass, because a hole check that
+/// passes by finding nothing to check is the exact defect it exists to close:
+///
+/// * `[map.hole-anchor-unresolved]` — the `after` label is in no resolved section (the
+///   hole has no left edge). `validate_placement` refuses this first with
+///   `[map.hole-anchor-missing]`; this arm keeps the function honest when it is driven
+///   directly.
+/// * `[map.hole-anchor-ambiguous]` — the `after` label resolves in more than one
+///   section, so the hole opens at two different addresses.
+/// * `[map.hole-bounds-degenerate]` — `at` is at or before the `after` label, so the
+///   declared interior is empty and nothing inside it can be judged.
+/// * `[map.hole-filler-unknown]` — `filled_by` names no module in this shape's
+///   registry, so the permitted set is empty and every occupant, including the intended
+///   filler, would read as an intruder.
+/// * `[map.hole-filler-absent]` — the filler's sections are all absent from the resolved
+///   layout, so the hole is not filled by the thing that is supposed to fill it.
+///
+/// `Ok(vec![])` over a shape whose `when` gates every hole out is a correct empty
+/// answer, not coverage: a CALLER claiming "no hole is violated" must first establish
+/// that some shape declares a live hole (see the population guard in this function's
+/// gate).
+pub fn hole_interior_faults(
+    resolved: &[Section],
+    pmap: &crate::map_placement::PlacementMap,
+    sound_on: bool,
+    registry: &[ModuleSpec],
+) -> Result<Vec<String>, String> {
+    let mut faults = Vec::new();
+    for h in pmap.holes_for(sound_on) {
+        // ── The hole's left edge: where the `after` label actually resolved ──
+        let mut sites = resolved.iter().filter_map(|s| {
+            s.labels.iter().find(|l| l.name == h.after).map(|l| s.lma + l.offset)
+        });
+        let Some(start) = sites.next() else {
+            return Err(format!(
+                "[map.hole-anchor-unresolved] declared hole after `{}` (at {:#X}) has no left edge — its `after` label is in no resolved section, so the span it reserves cannot be measured and NOTHING about the hole was checked",
+                h.after, h.at
+            ));
+        };
+        if let Some(other) = sites.next() {
+            return Err(format!(
+                "[map.hole-anchor-ambiguous] declared hole after `{}` (at {:#X}) opens at two addresses ({start:#X} and {other:#X}) — one label resolved in more than one section, so the reserved span has no single left edge",
+                h.after, h.at
+            ));
+        }
+        if h.at <= start {
+            return Err(format!(
+                "[map.hole-bounds-degenerate] declared hole after `{}` opens at {start:#X} but declares `at = {:#X}`, which is at or before it — the declared interior is empty, so this hole can never refuse anything and reads as checked while checking nothing",
+                h.after, h.at
+            ));
+        }
+
+        // ── The permitted occupants: the filler module's sections, from the registry ──
+        let permitted: Vec<&str> =
+            registry.iter().filter(|m| m.module_id == h.filled_by).map(|m| m.section).collect();
+        if permitted.is_empty() {
+            return Err(format!(
+                "[map.hole-filler-unknown] declared hole after `{}` (at {:#X}) is filled_by `{}`, which names no module in this shape's registry — the permitted-occupant set is empty, so the intended filler itself would read as an intruder and the answer would be a fault about the wrong thing",
+                h.after, h.at, h.filled_by
+            ));
+        }
+        if !resolved.iter().any(|s| permitted.contains(&s.name.as_str())) {
+            return Err(format!(
+                "[map.hole-filler-absent] declared hole after `{}` (at {:#X}) is filled_by `{}` (section(s) {:?}), and this build placed none of them — the hole's filler is not in the layout, so an empty interior would mean the hole is UNFILLED rather than reserved",
+                h.after, h.at, h.filled_by, permitted
+            ));
+        }
+
+        // ── The occupants: every byte-emitting ROM section overlapping [start, at) ──
+        for s in resolved.iter().filter(|s| is_rom_section(s)) {
+            let len = s.image_bytes().len() as u32;
+            if len == 0 || permitted.contains(&s.name.as_str()) {
+                continue;
+            }
+            let (lo, hi) = (s.lma.max(start), s.lma.saturating_add(len).min(h.at));
+            if lo >= hi {
+                continue;
+            }
+            faults.push(format!(
+                "[map.hole-interior-occupied] the hole declared after `{}` — interior [{start:#X},{:#X}), reserved for `{}` — is occupied at [{lo:#X},{hi:#X}) by byte-emitting section `{}` (head `{}`). Either that section drifted into the reserved span, or the hole's declared `at` no longer matches this layout; either way the post-hole data does not resume at {:#X} the way the map says it does.",
+                h.after,
+                h.at,
+                h.filled_by,
+                s.name,
+                head_label(s).unwrap_or("<label-less>"),
+                h.at,
+            ));
+        }
+    }
+    Ok(faults)
 }
 
 /// An assembled ROM image with the artefacts derived from the same build: the
@@ -4718,7 +4833,7 @@ mod placement_validation_tests {
     //! drive's own guard (the resolved layout must follow the declared sequence). The
     //! `drives_order_by_map_rank` probe below proves the packer consumes the DECLARATION,
     //! not the frozen provisional bases.
-    use super::{packed_true_bases, validate_placement};
+    use super::{hole_interior_faults, packed_true_bases, validate_placement};
     use crate::map_placement::{load_placement_map, PlacementMap};
     use sigil_ir::{Cpu, DataFragment, Fragment, Label, Section, SectionPlacement};
     use sigil_span::Span;
@@ -4940,6 +5055,188 @@ mod placement_validation_tests {
         // sound_off with the phase bank still present → it's an undeclared island (gate excludes it).
         let e = validate_placement(&secs, &m, false).unwrap_err();
         assert!(e.contains("map.undeclared-island") && e.contains("0x58000"), "{e}");
+    }
+
+    // ── The `[[hole]]` half (HOLE-INTERIOR-RESERVED) ────────────────────────────────
+    //
+    // Synthetic geometry modelled on the real one: a head section, then the hole's
+    // filler at the `after` label, then the post-hole section. `sec()` names a section
+    // `sec{lma}`, so the filler at 0x3D0 is section `sec976` — which is the name the
+    // registry rows below bind to the filler MODULE id, exactly as a shipped profile's
+    // registry binds `engine.z80_init` to `z80_idle`.
+
+    /// The filler section's synthetic name (`sec()`'s naming rule at lma 0x3D0).
+    const FILLER_SECTION: &str = "sec976";
+    const FILLER_MODULE: &str = "engine.filler";
+
+    fn filler_registry() -> Vec<super::ModuleSpec> {
+        vec![super::ModuleSpec {
+            module_id: FILLER_MODULE,
+            section: FILLER_SECTION,
+            region: super::DUMMY_REGION,
+        }]
+    }
+
+    /// A map declaring one always-on hole: opens at `Filler`, runs to `at`, filled by
+    /// `FILLER_MODULE`. `at` is a parameter so a probe can move the declared right edge
+    /// without touching the layout.
+    fn hole_map(at: u32) -> PlacementMap {
+        load_placement_map(&format!(
+            "order = [\"Head\", \"Filler\", \"PostHole\"]\n\
+             [[anchor]]\nname=\"boot_head\"\nat=0x0\n\
+             [[hole]]\nafter = \"Filler\"\nat = {at}\nfilled_by = \"{FILLER_MODULE}\"\n",
+        ))
+        .unwrap()
+    }
+
+    /// Head @0x0 (0x3D0 B) — filler @0x3D0 (0x28 B) — post-hole @0x3F8 (0xE B).
+    /// One contiguous run, so the whole layout is a single island at 0x0.
+    fn hole_layout() -> Vec<Section> {
+        vec![sec("Head", 0x0, 0x3D0), sec("Filler", 0x3D0, 0x28), sec("PostHole", 0x3F8, 0xE)]
+    }
+
+    /// THE PIN FOR `[map.hole-anchor-missing]` — the shipped path's only hole check, and
+    /// the one lint in `validate_placement` with no witness of its own. A layout whose
+    /// `after` label is nowhere (the filler section dropped, as a shape gate or a rename
+    /// would drop it) must be refused by name.
+    #[test]
+    fn hole_anchor_missing_fires() {
+        let layout: Vec<Section> =
+            hole_layout().into_iter().filter(|s| s.name != FILLER_SECTION).collect();
+        let m = load_placement_map(&format!(
+            "order = [\"Head\", \"PostHole\"]\n\
+             [[anchor]]\nname=\"boot_head\"\nat=0x0\n\
+             [[hole]]\nafter = \"Filler\"\nat = 0x3F8\nfilled_by = \"{FILLER_MODULE}\"\n",
+        ))
+        .unwrap();
+        let e = validate_placement(&layout, &m, false).unwrap_err();
+        assert!(
+            e.contains("map.hole-anchor-missing") && e.contains("`Filler`") && e.contains("0x3F8"),
+            "{e}"
+        );
+        // CONTROL: the same map over the layout that DOES carry the label passes, so the
+        // red above is the absent label and not the doctored order/anchor set.
+        let full = hole_layout();
+        let m_full = hole_map(0x3F8);
+        validate_placement(&full, &m_full, false).unwrap_or_else(|e| panic!("control: {e}"));
+    }
+
+    /// THE CONTROL: a hole whose interior holds nothing but its declared filler.
+    #[test]
+    fn a_hole_holding_only_its_filler_has_no_faults() {
+        let faults =
+            hole_interior_faults(&hole_layout(), &hole_map(0x3F8), false, &filler_registry())
+                .unwrap_or_else(|e| panic!("{e}"));
+        assert!(faults.is_empty(), "{faults:?}");
+    }
+
+    /// RED-FIRST: a byte-emitting section inside the declared interior is named — the
+    /// probe shape that returned `Ok` before this predicate existed.
+    #[test]
+    fn a_section_inside_the_hole_interior_is_named() {
+        // The hole is declared to run to 0x406, so the post-hole section at 0x3F8 sits
+        // inside it. Nothing about the LAYOUT changes — only the declared right edge.
+        let faults =
+            hole_interior_faults(&hole_layout(), &hole_map(0x406), false, &filler_registry())
+                .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(faults.len(), 1, "one intruder, one fault: {faults:?}");
+        let f = &faults[0];
+        assert!(f.contains("map.hole-interior-occupied"), "{f}");
+        assert!(f.contains("`Filler`"), "the fault must name the hole it is about: {f}");
+        assert!(f.contains("`sec1016`") && f.contains("`PostHole`"), "must name the intruding section and its head label: {f}");
+        assert!(f.contains("[0x3F8,0x406)"), "must name the occupied span, not just the hole: {f}");
+    }
+
+    /// The occupied span is the INTERSECTION, so a section that only partly reaches into
+    /// the hole is reported by the part that is inside it.
+    #[test]
+    fn a_partial_overlap_reports_the_overlapping_bytes_only() {
+        // Declared right edge 0x400: the post-hole section spans [0x3F8,0x406) and only
+        // [0x3F8,0x400) of it is inside.
+        let faults =
+            hole_interior_faults(&hole_layout(), &hole_map(0x400), false, &filler_registry())
+                .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(faults.len(), 1, "{faults:?}");
+        assert!(faults[0].contains("[0x3F8,0x400)"), "{}", faults[0]);
+    }
+
+    /// LOUD WHEN IT CANNOT MEASURE — the `after` label resolves nowhere. Driven directly
+    /// (the shipped path refuses this first with `[map.hole-anchor-missing]`), so the
+    /// function cannot report a clean sheet over a hole it never located.
+    #[test]
+    fn a_hole_whose_after_label_is_absent_cannot_be_measured() {
+        let layout: Vec<Section> =
+            hole_layout().into_iter().filter(|s| s.name != FILLER_SECTION).collect();
+        let e = hole_interior_faults(&layout, &hole_map(0x406), false, &filler_registry())
+            .unwrap_err();
+        assert!(e.contains("map.hole-anchor-unresolved") && e.contains("`Filler`"), "{e}");
+    }
+
+    /// LOUD WHEN IT CANNOT MEASURE — one `after` label defined in two sections has no
+    /// single left edge, so the interior is two different spans.
+    #[test]
+    fn a_hole_whose_after_label_resolves_twice_cannot_be_measured() {
+        let mut layout = hole_layout();
+        layout.push(sec("Filler", 0x1000, 0x10));
+        let e = hole_interior_faults(&layout, &hole_map(0x406), false, &filler_registry())
+            .unwrap_err();
+        assert!(e.contains("map.hole-anchor-ambiguous") && e.contains("0x1000"), "{e}");
+    }
+
+    /// LOUD WHEN IT CANNOT MEASURE — a hole whose `at` is at or before its `after` label
+    /// has an empty interior. That is the vacuous pass this predicate exists to remove,
+    /// so it is a refusal rather than a clean sheet.
+    #[test]
+    fn a_hole_with_no_interior_is_refused_rather_than_passing_empty() {
+        for at in [0x3D0u32, 0x100] {
+            let e = hole_interior_faults(&hole_layout(), &hole_map(at), false, &filler_registry())
+                .unwrap_err();
+            assert!(
+                e.contains("map.hole-bounds-degenerate") && e.contains("0x3D0"),
+                "at={at:#X}: {e}"
+            );
+        }
+    }
+
+    /// LOUD WHEN IT CANNOT MEASURE — `filled_by` naming no module in the shape's registry
+    /// leaves an empty permitted set, under which the intended filler itself reads as an
+    /// intruder and the answer is a fault about the wrong thing.
+    #[test]
+    fn a_hole_whose_filler_module_is_unknown_is_refused() {
+        let e = hole_interior_faults(&hole_layout(), &hole_map(0x406), false, &[]).unwrap_err();
+        assert!(e.contains("map.hole-filler-unknown") && e.contains(FILLER_MODULE), "{e}");
+    }
+
+    /// LOUD WHEN IT CANNOT MEASURE — the filler module is declared but this build placed
+    /// none of its sections, so an empty interior would mean UNFILLED, not reserved.
+    #[test]
+    fn a_hole_whose_filler_is_not_placed_is_refused() {
+        // The `after` label survives on a section that is NOT the filler, so the left edge
+        // still resolves and the refusal is specifically about the missing filler.
+        let layout = vec![sec("Head", 0x0, 0x3D0), sec("Filler", 0x3D0, 0x28)];
+        let registry = vec![super::ModuleSpec {
+            module_id: FILLER_MODULE,
+            section: "a_section_this_build_does_not_place",
+            region: super::DUMMY_REGION,
+        }];
+        let e = hole_interior_faults(&layout, &hole_map(0x406), false, &registry).unwrap_err();
+        assert!(e.contains("map.hole-filler-absent") && e.contains(FILLER_MODULE), "{e}");
+    }
+
+    /// A hole gated out by `when` contributes nothing — and the emptiness is the SHAPE's,
+    /// not the predicate declining to look. The two shapes disagree over one layout.
+    #[test]
+    fn a_shape_gated_hole_is_absent_from_that_shape() {
+        let m = load_placement_map(&format!(
+            "order = [\"Head\", \"Filler\", \"PostHole\"]\n\
+             [[anchor]]\nname=\"boot_head\"\nat=0x0\n\
+             [[hole]]\nafter = \"Filler\"\nat = 0x406\nfilled_by = \"{FILLER_MODULE}\"\nwhen = \"sound_off\"\n",
+        ))
+        .unwrap();
+        let off = hole_interior_faults(&hole_layout(), &m, false, &filler_registry()).unwrap();
+        assert_eq!(off.len(), 1, "sound_off: the hole is live and occupied: {off:?}");
+        let on = hole_interior_faults(&hole_layout(), &m, true, &filler_registry()).unwrap();
+        assert!(on.is_empty(), "sound_on: the shape declares no hole at all: {on:?}");
     }
 }
 

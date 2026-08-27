@@ -36,7 +36,7 @@ comment rests on is **no longer true**.
 | **R6** | "the gap between two labels is an allotment" (79 `repin` region/shape pairs) | `room`, `negative` | `repin`'s bare-`end` **warning** — and `repin` is not on the ROM build path | **NOT asserted — by-reading** |
 | **R7** | A section's alignment quantum (`native::packed_align_of`) | `anchor` (`aligned_to`) | `native::validate_sound_fold` — covers **two labels** | **partially asserted — scope demonstrated, firing by-reading** |
 | **R8** | The error_handler island is the final byte-emitting section | `order`, **`negative`** | `native::check_error_handler_is_last`, called from `append_deb2_appendix` | **already-asserted — demonstrated** |
-| **R9 (new)** | A declared `[[hole]]`'s interior stays empty | **`negative`** | `validate_placement`'s hole loop checks only that `after` resolves | **NOT asserted — demonstrated absent** |
+| **R9 (new)** | A declared `[[hole]]`'s interior stays empty | **`negative`** | `native::hole_interior_faults` — `[map.hole-interior-occupied]`; NOT on the build path | **NOT asserted — predicate written and red on 3 shipped shapes; see `2026-08-27-hole-interior-reserved.md`** |
 
 ---
 
@@ -305,10 +305,15 @@ So the green in the first probe is the check declining to look, not a broken que
 files were deleted after the run — an assertion that today's absence is correct would go
 poison-green the moment the predicate lands.
 
-Note also `[map.hole-anchor-missing]` has **no test anywhere in the workspace**: grepping
-`hole-anchor-missing` across `crates` matches only `native.rs` (positive control: the pattern
-does match, in the one file that emits it). The probe above is the first time it has been
-observed to fire.
+`[map.hole-anchor-missing]` is pinned by `placement_validation_tests::hole_anchor_missing_fires`.
+
+**The predicate now exists and is red on the shipped shapes.**
+`native::hole_interior_faults` implements this row, and all three shapes with a live hole
+(demo plain, demo debug, config_b) fail it: both maps declare `at = 0x3FE` while `boot_tail`
+resumes at `0x3F8`, so 6 bytes of the declared interior are occupied. The declaration is
+stale, not the layout. It is deliberately NOT called from `validate_placement` — wiring it
+before the aeon-side `at` is corrected turns every sound-off build red. Full measurement,
+positive control and the wiring recipe: `2026-08-27-hole-interior-reserved.md`.
 
 ---
 
