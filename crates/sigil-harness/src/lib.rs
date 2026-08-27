@@ -18,6 +18,12 @@
 /// (both depend on `sigil-harness`).
 pub mod test_support;
 
+/// WHICH harness tree a tool writes into — derived from the invoking tree and
+/// handed from a parent tool to its children, never taken from link time. Shared
+/// by `refreeze` and `repin` so a parent and its child cannot resolve to
+/// different checkouts.
+pub mod harness_root;
+
 /// The `repin` pin generator (tranche-10 step 0): listing parsing, the
 /// `repin.toml` manifest, and the `pins.rs` renderer. Driven by the `repin`
 /// bin and the `repin_pins` staleness test.

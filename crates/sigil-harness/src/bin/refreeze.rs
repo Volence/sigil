@@ -32,6 +32,16 @@
 //! the appended entry's `aeon_rev`. See [`resolve_aeon_rev`] for why. `--check` takes no
 //! aeon tree and is deliberately unaffected.
 //!
+//! WHICH TREE IT WRITES INTO is derived from where it is INVOKED, not from where it was
+//! built: the repository toplevel of the working directory, which for a linked worktree
+//! is that worktree. The tree must carry both markers in
+//! [`sigil_harness::harness_root::ROOT_MARKERS`] or the run is refused by name;
+//! [`sigil_harness::harness_root::ROOT_OVERRIDE`] names another tree explicitly and is
+//! verified the same way. Every run prints the tree it was built from beside the tree it
+//! is operating on, so a binary older than the question being asked of it is visible
+//! rather than silently authoritative. Every child tool is TOLD that root — see
+//! [`run_repin`] — so the child cannot resolve a different one.
+//!
 //! This is the SINGLE place a golden moves: repin (pins) + capture (blobs) + derive
 //! (sizes) + the provenance chain append, in one command. The hand-edited CRC surface
 //! is gone — native_full_rom / native_offcanonical_rom read their expectations FROM
@@ -41,10 +51,11 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
+use sigil_harness::harness_root::{
+    announce_root, repin_invocation, resolve_harness_root, ROOT_OVERRIDE,
+};
 use sigil_harness::provenance::{self, AppendGate, StrictRun, Superseded, Target};
 use sigil_harness::strict_census;
-
-const HARNESS_ROOT: &str = env!("CARGO_MANIFEST_DIR");
 
 /// target-key -> (committed golden blob, off-canonical size-table file or "" for the
 /// canonical shapes whose EndOfRom lives in pins.rs).
@@ -219,21 +230,19 @@ fn run_script(script: &Path, args: &[&str]) -> Result<(), String> {
     Ok(())
 }
 
+/// Spawn `repin` against `root`. Both spawning shapes are built by
+/// [`sigil_harness::harness_root::repin_invocation`], which is where the handover of the
+/// root is documented and gated.
 fn run_repin(root: &Path) -> Result<(), String> {
-    // `cargo run` inherits the environment (CARGO_TARGET_DIR / SIGIL_EMIT / AEON_DIR) and
-    // is instant when the binary is already built — robust across the worktree/shared-
-    // target split (a hardcoded release-binary path is not). Override via REPIN_BIN.
-    let status = if let Ok(bin) = std::env::var("REPIN_BIN") {
-        eprintln!("refreeze: running {bin}");
-        Command::new(bin).status()
-    } else {
-        eprintln!("refreeze: running `cargo run --bin repin`");
-        Command::new("cargo")
-            .args(["run", "-q", "-p", "sigil-harness", "--bin", "repin"])
-            .current_dir(root)
-            .status()
-    }
-    .map_err(|e| format!("spawn repin: {e}"))?;
+    let inv = repin_invocation(root, std::env::var_os("REPIN_BIN"));
+    let rendered: Vec<String> =
+        inv.args.iter().map(|a| a.to_string_lossy().into_owned()).collect();
+    eprintln!("refreeze: running {} {}", inv.program.to_string_lossy(), rendered.join(" "));
+    let status = Command::new(&inv.program)
+        .args(&inv.args)
+        .current_dir(&inv.cwd)
+        .status()
+        .map_err(|e| format!("spawn repin: {e}"))?;
     if !status.success() {
         return Err(format!("repin failed ({status})"));
     }
@@ -1092,7 +1101,15 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
 }
 
 fn main() -> ExitCode {
-    let root = PathBuf::from(HARNESS_ROOT);
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => return fail(format!("cannot read the working directory ({e})")),
+    };
+    let root = match resolve_harness_root(&cwd, std::env::var_os(ROOT_OVERRIDE).as_deref()) {
+        Ok(r) => r,
+        Err(e) => return fail(e),
+    };
+    announce_root("refreeze", &root);
     let mut args = std::env::args().skip(1);
     let mut check = false;
     let mut attest = false;
@@ -1152,6 +1169,53 @@ fn main() -> ExitCode {
         (false, Some(name)) => do_freeze(&root, &name, &ab, &note, supersede.as_deref()),
         (true, Some(_)) => fail("--check and --freeze are mutually exclusive"),
         (false, None) => fail("nothing to do: pass --check, --attest, or --freeze NAME --ab REF"),
+    }
+}
+
+#[cfg(test)]
+mod child_handover {
+    /// There is ONE way this tool spawns `repin`, and it is the one that hands over the
+    /// resolved root.
+    ///
+    /// The gate reads the source rather than the behaviour because what it forbids is a
+    /// SECOND spawn appearing later — a shortcut for one shape, an `if` for a special
+    /// case — which no run of the existing path would ever exercise. `REPIN_BIN` is
+    /// singled out because it skips the rebuild unconditionally and is therefore the
+    /// likeliest way a child from another tree gets run.
+    #[test]
+    fn repin_is_spawned_only_through_the_shared_invocation_builder() {
+        let src = include_str!("refreeze.rs");
+        let body = {
+            let start = src.find("fn run_repin(").expect("nothing to measure: run_repin is gone");
+            let rest = &src[start..];
+            let end = rest.find("\n}\n").expect("run_repin has no end");
+            &rest[..end]
+        };
+        assert!(
+            body.contains("repin_invocation(root, std::env::var_os(\"REPIN_BIN\"))"),
+            "the spawn must take its program and arguments from the shared builder, with \
+             the prebuilt-binary override flowing through it: {body}"
+        );
+        assert_eq!(
+            body.matches("Command::new").count(),
+            1,
+            "one spawn, and it is the one built above: {body}"
+        );
+        assert!(
+            body.contains("Command::new(&inv.program)") && body.contains(".args(&inv.args)"),
+            "the spawn must use the built program AND the built arguments — using one \
+             without the other is how the root gets dropped on a shape: {body}"
+        );
+        // Split so this gate does not count its own prose. Measured over the CODE only —
+        // everything above the first test module.
+        let token = concat!("REPIN_", "BIN");
+        let code = &src[..src.find("#[cfg(test)]").expect("no test module marker to cut at")];
+        assert_eq!(
+            code.matches(token).count(),
+            1,
+            "a second reading of the prebuilt-binary override is a second spawning path \
+             in waiting"
+        );
     }
 }
 
