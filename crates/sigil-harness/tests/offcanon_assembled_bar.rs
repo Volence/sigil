@@ -1,20 +1,34 @@
 //! The assembled-bar (`EndOfRom`) agreement gate.
 //!
-//! Three tools write the same ROM address into three checked-in artifacts, from three
-//! different steps of a landing:
+//! One ROM address — the end of the assembled region — is written into three
+//! checked-in artifacts by three tools, at three steps of a landing:
 //!
-//! | artifact | written by | read by |
-//! |---|---|---|
-//! | `golden/offcanonical_sizes/<t>.txt` (`EndOfRom` row + `# assembled_end=` header) | `derive_offcanon` | the profiles' `assembled_len()`, the chainer |
-//! | `golden/provenance.toml` tip `[entry.targets.<t>] anchor_end` | `refreeze` | the golden anchor gates |
-//! | `pins::{DEBUG_,}ASSEMBLED_LEN` | `repin` | the `PinnedBaked` bootstrap profile |
+//! * `derive_offcanon` writes `golden/offcanonical_sizes/<t>.txt`, spelling the
+//!   address TWICE: as the `EndOfRom` row and as the `# assembled_end=` header.
+//! * `repin` writes `pins::{DEBUG_,}ASSEMBLED_LEN`, the canonical shapes' copy.
+//! * `refreeze` writes `golden/provenance.toml`'s per-target `anchor_end` — sourced
+//!   from `pins.rs` for the two canonical shapes, and from the size-table HEADER for
+//!   the five off-canonical ones (`refreeze::authoritative_anchor_ends`).
 //!
-//! Nothing made them agree. A landing that refreezes the chain but skips the
-//! `derive_offcanon` regeneration (or vice versa) left the tree internally
-//! inconsistent with no gate to say so — the defect that let all four off-canonical
-//! `assembled_len` values rot silently, since none of them had a reader either.
+//! That last sourcing is why these tests are careful about what they claim, and the
+//! claim is not uniform across shapes:
 //!
-//! These are SOURCE-ONLY comparisons over checked-in files: no aeon tree, no ROM
+//! * For `s4` / `s4_debug`, comparing the table against `anchor_end` is genuinely
+//!   CROSS-TOOL — `repin`'s pins against `derive_offcanon`'s table.
+//! * For the off-canonical five, `provenance.toml` holds a COPY of the table header
+//!   taken at freeze time, so the comparison is TEMPORAL, not independent: it catches
+//!   a table regenerated or hand-edited since the last freeze, and a freeze taken
+//!   against a different table state. That is a half-done landing either way, which
+//!   is the thing worth catching — but it is not a second witness to the address.
+//!
+//! Neither is circular (no derivation here is checked against itself), and neither is
+//! the whole-ROM check: `native_offcanonical_rom` does that against the golden bytes.
+//!
+//! Nothing previously compared any of these at all, which is how four off-canonical
+//! `assembled_len` values drifted with no gate able to go red — they had no reader
+//! either.
+//!
+//! Every comparison here is SOURCE-ONLY over checked-in files: no aeon tree, no ROM
 //! build, no `AEON_DIR`. They therefore never skip, and a shape that cannot be
 //! measured fails loudly instead of passing quietly.
 
@@ -61,10 +75,10 @@ fn header_assembled_end(stem: &str) -> Result<usize, String> {
 /// THE gate: each shape's profile-visible assembled bar == the provenance chain tip's
 /// `anchor_end` for that shape.
 ///
-/// `assembled_len()` derives from the shape's committed boundary table; `anchor_end`
-/// is written by `refreeze` off the built ROM. They are independent enough that a
-/// half-done landing splits them, and identical by contract, so the equality is the
-/// cheapest statement of "the freeze and the size tables describe the same ROM".
+/// `assembled_len()` reads the shape's committed boundary table live; `anchor_end` was
+/// written at the last freeze. What the equality proves differs by shape — cross-tool
+/// for the canonical pair, freeze-vs-current for the off-canonical five (see the
+/// module header). Both directions of disagreement mean a landing did half its work.
 #[test]
 fn assembled_len_matches_provenance_tip_for_every_shape() {
     let mut bad: Vec<String> = Vec::new();
