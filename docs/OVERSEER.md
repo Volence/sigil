@@ -5,26 +5,6 @@ posture, delegation discipline, review bars, peer protocol — lives in
 `empyrean/docs/OVERSEER-PROTOCOL.md`; read it once, then this file for what is
 sigil-specific: the landing-lane division, the worktree/test quirks, and the queue.
 
-## ⚠ ACTIVE HOLD — read this before running anything that builds
-
-**A hold that lives only in a chat message does not survive a `/clear`** *(aurora's, 2026-08-27)*.
-An announcement reaches the sessions that exist; only a committed artifact reaches the sessions
-that do not exist yet. Overnight the console rotates lanes, so a successor boots, reads this repo,
-sees no hold, and builds — honouring every rule it can see.
-
-**A committed hold has the opposite failure: it outlives its reason and nothing announces that
-either.** A stale "you must not" is a false negative wearing caution's costume. So every row below
-carries **its date, who to ask, and what ends it** — a successor EVALUATES it rather than obeying
-it, and a row that cannot be evaluated should be treated as expired and deleted.
-
-| Raised | Artifact | Why | Ends when | Ask |
-|---|---|---|---|---|
-| 2026-08-27T13:08:59Z | `target/release/sigil`, `refreeze`, `repin` | The aeon lane pins these for the SLOPE-SYMMETRY supersede freeze; relinking mid-freeze moves the instrument under their measurement. Pinned by md5 at raise time: `sigil 85ba502f…`, `refreeze 8cf597eb…`, `repin 37657e41…` | The aeon lane reports that freeze complete. **If that lane is not running, the hold is over** — it cannot be mid-freeze with no session. | aeon overseer |
-
-**Anything that can relink counts**, not just `cargo build --release` — see *Guard the artifact, not the subcommand* below. Agents in worktrees with their own `CARGO_TARGET_DIR` are unaffected; this binds runs in the **main checkout**, which is where a landing legitimately happens.
-
-**This is a FRESH hold, not the earlier one carried across.** The previous one was discharged and its row deleted when that freeze ended; the aeon lane re-requested rather than letting a stale grant ride, on the reasoning that a landing in between invalidates it. **Delete this row in the same commit that announces the lift.**
-
 ## Boot
 
 > You're the overseer for this repo. Read `docs/OVERSEER.md` first, then
@@ -1157,6 +1137,61 @@ instead.
   edits flipping sigil port-gate results is environmental, not signal; the tell is
   broad `*_port` region-diff failures at embedded addresses plus
   `repin_pins::pins_rs_is_current` failing identically on sigil master.
+
+### A RED CHECK SHOULD NAME BOTH ITS FAILURE MODES AND THE COMMAND THAT SEPARATES THEM (2026-08-27)
+
+*(aeon's formulation, from watching one of this repo's gates do it by accident.)*
+
+`version_reports_the_head_of_the_tree_it_was_built_from` went red during a landing and its
+message said: *"Either build.rs did not re-run when HEAD moved (the rerun triggers are the
+fix), or HEAD moved while the suite was running (re-run to distinguish)."* That turned a
+plausible five-minute investigation into **one command**.
+
+**Every two-valued result that cost this workspace real time would have been a non-event with
+a message in that shape** — the empty commit range that reads identically for "no work" and
+"already merged"; an unmodified `pins.rs` that reads identically for "nothing moved" and
+"the tool died before writing"; an absent banner that reads identically for "old binary" and
+"filtered log". In each case the failing artifact was one-valued-looking and two-valued.
+
+So when writing a check: **do not stop at making it fail. Ask what ELSE produces this exact
+failure, and put the discriminator in the message.** A gate that says only *what* is wrong
+delegates the harder half to whoever reads it, usually under time pressure, usually without
+the author's context.
+
+### WHEN YOU GRANT A HOLD, ENUMERATE WHAT THE PROTECTED RUN MEASURES (2026-08-27)
+
+*(aeon's, after this lane granted a hold scoped to the wrong thing.)*
+
+A hold on `target/release/sigil` was granted as *"do not relink"*, because the binary was the
+thing visibly moving. **The protected run also measures repository HEAD** — a check compares
+the binary's baked revision against it — so a plain docs commit trips it while relinking
+nothing. Neither lane had said so, and both had been careful.
+
+**Enumerate what the protected run MEASURES, not what you happen to be about to change.** The
+second list is the one you can see; the first is the one that matters.
+
+**And state the hold's reason in a form that survives being checked.** This lane widened that
+hold on the belief that a commit could leave the other lane with a permanently-recorded red.
+It could not — `refreeze` refuses to record a run whose HEAD moved, returning before any
+outcome is computed. The hold was still worth keeping, for the weaker true reason (it wastes
+their run) rather than the stronger false one. **A rule kept for a reason that will not
+survive checking gets discarded along with the reason.**
+
+### HOLD STATE LIVES IN EXACTLY ONE PLACE — THIS FILE (2026-08-27)
+
+*(aurora's, after making the same class of error three times in an afternoon.)*
+
+A hold that lives only in a message does not survive a `/clear`. But a hold **copied** into
+another lane's doc goes stale the moment this lane lifts it — and so does a *receipt* saying
+it was lifted, and so does a statement that **no** hold is in force. All three are
+present-tense claims about this lane's live state, and abstraction does not help: *"nothing is
+in force"* is exactly as perishable as a hash list and harder to check.
+
+**A fact that can only be correct in one place must live in one place, and every other place
+points at it.** Other lanes carry the PROCEDURE — `git -C ../sigil show origin/master:docs/OVERSEER.md` —
+and no state. **A receipt is the more dangerous artifact than a rule**: a hold announces itself
+as a constraint a reader should evaluate, while a receipt reads as settled history and invites
+no scrutiny at all.
 
 ### GUARD THE ARTIFACT, NOT THE SUBCOMMAND — `target/release/sigil` (2026-08-27)
 
