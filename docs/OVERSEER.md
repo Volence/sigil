@@ -721,6 +721,66 @@ outlives what it points at, so a coordinate in one rots. A row leaves the regist
 either direction: fixed, or ruled deliberate and promoted into the baseline citing the
 ruling. Each row's age prints on every lane run.
 
+### THE SHARED CHECKOUT'S BRANCH MOVES UNDER YOU — verify it IN the committing command (2026-08-27)
+
+**This overseer committed onto the aeon lane's branch four minutes after they put the
+shared main checkout on it.** They switched `~/sonic_hacks/sigil` from master to
+`parcel/band-ceiling-16-pair` at 05:44:42Z to land chain 172; this session committed a
+lane-log entry at 05:48:36Z without re-checking, so it landed on top of their unpushed
+freeze. Repaired: cherry-picked to master (`f50713ed`, pushed, reachability verified),
+their branch `git reset --hard` back to `521956f9` with the tracked tree confirmed clean
+first, checkout left on their branch where they had it. Disclosed to them immediately,
+with the verification commands, because **the owner of a contaminated branch cannot detect
+this themselves.**
+
+**The standing rule already existed and did not fire, which is the finding.** "Check the
+branch before every commit" was banked in this lane's memory precisely because the checkout
+is shared. It failed because the check had been performed — **at boot** — and nothing
+prompted a second one. A peer landing in the shared main checkout **silently changes what
+`git commit` means for every other session using that tree**, and it is invisible: no
+fetch fails, no gate trips, and `git status` looks entirely normal because it is.
+
+This is protocol bar 22's read-time-versus-send-time staleness aimed at a **git ref**
+rather than at a peer's status file. The measured window there was four minutes; the
+measured window here was **also four minutes**, which is not a coincidence — it is how long
+a peer's landing takes.
+
+**Corrective, and it is a mechanism rather than vigilance:** verify the branch in the SAME
+command that commits, never at boot and never in a preceding call.
+
+```sh
+[ "$(git branch --show-current)" = master ] && git add <explicit paths> && git commit -m '…'
+```
+
+**What bounded the damage was the OTHER half of the rule.** The commit used explicit paths,
+so it touched only `docs/lane-log.jsonl` and no file of theirs — `git add -u` would have
+swept their entire in-flight freeze into a commit on their own branch. The two halves of
+that memory row are not equally load-bearing: the branch check is the one that fails
+silently, the explicit-paths rule is the one that limits the blast radius when it does.
+
+**Corollary: do not check out master in the shared tree to get around this.** That yanks the
+branch out from under whichever peer is landing. Commit to master from a throwaway worktree
+(`git worktree add -q <path> master`, cherry-pick, remove) and leave the shared checkout on
+whatever branch its current user put it on.
+
+### A QUALIFIER PRINTED BESIDE A VALUE IS PART OF THE VALUE (2026-08-27)
+
+This session reported a "mystery" to the aeon lane: golden files whose mtimes read
+`01:32-01:40` while the tree demonstrably changed between `05:35Z` and `05:44Z`, which
+looks like a tree changing at a time its own files deny. **There was no mystery. The
+`stat` output printed `-0400` on the same line as the timestamp**, this box is EDT, and
+`01:40 -0400` IS `05:40Z` — squarely inside the window. The disambiguating field was
+already in the output and got skipped.
+
+The transferable form is deliberately not "local and UTC are used side by side here",
+which describes an environment. It is a **reading** failure and it recurs wherever a tool
+prints a qualifier next to a value: a timezone offset, a units suffix, a base prefix, a
+scale factor. **Read the qualifier as part of the value, or convert before comparing** —
+never compare two numbers whose qualifiers you did not read.
+
+Cost: a peer spent a reply refuting a phantom, and the report had already been sent as an
+anomaly. Cheap here; the same skip over a base prefix or a units suffix is not.
+
 ## Worktree and environment quirks
 
 - **Worktrees are agent-isolated but the registry is repo-global.** Every session's
