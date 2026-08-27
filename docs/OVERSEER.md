@@ -1018,7 +1018,17 @@ gate's message.
 
 **Two remedies, use either:** run diffs from the repository root, or prefix the pathspec
 with `:(top)` (verified above to restore the correct output from a subdirectory). Prefer
-`:(top)` in anything scripted, since a script cannot know where it will be invoked from.
+`:(top)` in anything scripted, since a script cannot know which directory *inside the tree*
+it will be invoked from.
+
+**Boundary, stated because the rule above could otherwise make a script worse** *(aeon's
+caveat, and it is right)*: `:(top)` buys **cwd-independence within one tree, not
+location-independence.** A script run from *outside* the repo, or one that walks into a
+worktree, fails differently — `not a git repository`, or a correct pathspec resolved against
+the *wrong* repo — and those failures are **loud**, which makes them the better failure. The
+whole reason to reach for `:(top)` is that the CWD-relative form fails **silently and
+empty**. A script that must also be repo-agnostic wants `git -C <root>` in addition, not
+instead.
 
 ## Worktree and environment quirks
 
