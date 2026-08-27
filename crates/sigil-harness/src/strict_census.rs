@@ -705,6 +705,23 @@ mod tests {
         assert!(d.iter().any(|m| m.contains("DARK GATE") && m.contains("f.rs:10")), "{d:?}");
     }
 
+    /// Every branch of [`defects`] must be REACHABLE, or it reads identically to one
+    /// that passed. `DARK GATE` and `UNGUARDED TEST` are proven by real sabotaged
+    /// `--attest` runs; this one and `UNNAMED REACH` have no natural sabotage, so they
+    /// are reached here instead of left as decoration.
+    #[test]
+    fn a_reached_site_the_census_did_not_predict_is_a_model_failure() {
+        let (c, _) = fixture();
+        let w = parse_witness(
+            "crates/a/tests/f.rs:10\talpha\ncrates/a/tests/f.rs:99\talpha\n",
+        );
+        let d = defects(&c, &w);
+        assert!(
+            d.iter().any(|m| m.starts_with("UNDECLARED SITE") && m.contains("f.rs:99")),
+            "{d:?}"
+        );
+    }
+
     #[test]
     fn a_test_that_lost_its_guard_is_caught_by_detector_b() {
         // The guard is gone from source, so detector A's expectation went with it —
