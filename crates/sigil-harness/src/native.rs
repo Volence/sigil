@@ -218,12 +218,15 @@ impl GameProfile {
     /// resolve; under [`SizeSource::PinnedBaked`] (the bootstrap shape, which has no
     /// table yet) it is the shape's `pins` constant, which `repin` regenerates.
     ///
-    /// It is an INPUT, not an oracle: nothing in the tree checks a derivation against
-    /// it, so sourcing it from the generated artifact cannot make any assertion
-    /// circular — the contrast is `native_full_rom`'s `Ground_Move_Cap` row, which is
-    /// the independent expectation for the convsym resolve path and must stay literal.
-    /// A hand-typed spelling has no independent-witness value here and only opens a
-    /// silent desync window between a re-layout and the re-type, so there is none.
+    /// It is an INPUT, not an oracle. No derivation under test is checked against it:
+    /// `offcanon_assembled_bar` cross-compares it with the provenance chain and the
+    /// table header, which is agreement between artifacts rather than an independent
+    /// expectation for a code path. So sourcing it from the generated artifact makes
+    /// nothing circular — the contrast is `native_full_rom`'s `Ground_Move_Cap` row,
+    /// which IS the independent expectation for the convsym resolve path and must stay
+    /// literal, since `repin` generates the pins from the listing convsym consumes.
+    /// A hand-typed spelling buys no witness here and only opens a silent desync
+    /// window between a re-layout and the re-type, so there is none.
     ///
     /// Absent `EndOfRom` PANICS rather than falling back: a boundary table that lost
     /// its terminus is a regression, and a plausible number returned in its place
