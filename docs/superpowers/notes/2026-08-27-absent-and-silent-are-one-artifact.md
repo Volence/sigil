@@ -236,6 +236,27 @@ moved, rather than an open-ended audit, and each lane sweeping the tree it can a
 judge. Sigil takes the pins and lengths it writes terms for; aeon takes their `.emp` headers
 and `docs/`.
 
+**A second instance, found before the sweep had started, and it was load-bearing.**
+`crates/sigil-harness/repin.toml`'s header states the tool *"resolves every entry against
+BOTH aeon listings (`s4.lst` / `s4.debug.lst`)"*. It does not. `src/bin/repin.rs:68` calls
+`native::sigil_native_symbol_listing`, which calls `resolve_canonical_sections` — it resolves
+aeon **source**, and no `.lst` is opened anywhere in the generator. The sentence describes an
+implementation that has been replaced.
+
+**Why this one is not cosmetic.** Two lanes were about to treat the pin gate as an
+independent check on the pin generator. It is not:
+
+- `repin` (generator) → sigil's native resolver
+- `repin_pins::pins_rs_is_current` (gate) → sigil's native resolver
+
+The gate is generator-versus-file. It catches a hand-edited `pins.rs` and **cannot catch a
+resolver that is wrong, because it asks the resolver.** That is bar 19 — same enumeration
+parameter twice — sitting inside this repo's own pipeline, with the agreement guaranteed by
+construction. The stale prose is what made it look like two instruments. The aeon lane's
+`.lst`-derived measurement is the only outside instrument the pin chain has, which is a much
+larger claim about it than "a helpful cross-check", and it was invisible while that sentence
+stood.
+
 **And an empty prose sweep is this note's own shape pointed at the sweep.** Nothing was found
 and the grep never matched anything produce the same artifact, so **an empty result is
 reportable only alongside the exact patterns grepped for.** Report the query, not just the

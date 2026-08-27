@@ -3307,3 +3307,24 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   — OPEN (kill: the two-directional set assertion above, so a symbol aeon adds either
   appears without an edit here or is refused BY NAME with the enumeration that missed it;
   until then every fix is one more hand-added row)
+
+- [PIN-CHAIN-ONE-INSTRUMENT, 2026-08-27] **The pin generator and the pin gate share one
+  instrument, so the gate cannot witness a resolver defect.** `src/bin/repin.rs:68` and
+  `repin_pins::pins_rs_is_current` both call `native::sigil_native_symbol_listing`
+  (`native.rs:3898` → `resolve_canonical_sections`, aeon SOURCE, no `.lst` anywhere). The
+  gate is therefore generator-versus-file: it catches a hand-edited `pins.rs`, and a wrong
+  resolver produces a regenerated file the gate confirms it agrees with. Bar 19 inside this
+  repo's own pipeline — same enumeration parameter twice, agreement by construction.
+  `repin.toml`'s header still claims the tool resolves against `s4.lst`/`s4.debug.lst`,
+  which is what made the pair look independent; that sentence describes a replaced
+  implementation and is a PROSE bound nothing executes.
+  **What actually witnesses the resolver today is the aeon lane's `.lst`-derived
+  measurement, and it is external to this repo** — measured 936/938 exact against committed
+  `pins.rs` on the pre state, both exceptions the documented `SOUNDBANKHEAD` phase-bank
+  LMA-vs-VMA case. That is a dependency on another lane's instrument, currently unstated
+  anywhere in this tree.
+  — OPEN (kill: either an in-repo second instrument for pin values that does not route
+  through `resolve_canonical_sections`, or — cheaper and honest — the header corrected and
+  the `.lst` dependency written down as a stated external witness rather than left implicit.
+  The header fix waits on the sprite-owner freeze, since `repin.toml` is the aeon lane's to
+  sequence and a refreeze is in flight)
