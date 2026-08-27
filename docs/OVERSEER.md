@@ -1138,6 +1138,48 @@ instead.
   broad `*_port` region-diff failures at embedded addresses plus
   `repin_pins::pins_rs_is_current` failing identically on sigil master.
 
+### GUARD THE ARTIFACT, NOT THE SUBCOMMAND — `target/release/sigil` (2026-08-27)
+
+The aeon lane pins `target/release/sigil` for freezes and A/Bs. The rule everyone was
+given was **"do not run `cargo build --release` in sigil"**. That rule is written at the
+wrong level and does not work.
+
+**`cargo test --release --workspace` is not `cargo build`, and it relinks the same
+binary.** A landing run from this lane relinked it at 07:20:23 (`fbf60abd` → `52882e2e`
+→ `537869e6`) while aeon's seven-ROM freeze was pinning it and while the aurora lane was
+mid-build against it. Nobody broke the rule as stated. **Anyone honouring it exactly
+would do the same thing**, because the rule names a subcommand and the thing that needs
+protecting is an artifact.
+
+**The rule, restated at the level that works:** any invocation that can relink
+`target/release/sigil` — `build`, `test`, `run`, `clippy --fix`, anything cargo — is a
+mutation of a shared artifact. Guard the file, not the verb.
+
+**Announce a relink at the time, every time, to every lane — not just the one that asked.**
+This lane's first version of this rule was agreed bilaterally with aeon, who had asked for
+the hold. The aurora lane then reported being mid-build against the same binary, and was
+never part of that conversation. **The holder cannot enumerate who depends on a shared
+artifact**, so a bilateral promise silently excludes everyone it did not name. The
+announcement is cheap and every recipient who does not need it discards it for free.
+
+**A standing permission expires when the grantor's conditions change.** "Safe to relink"
+was true when aeon said it, at a boundary with nothing measuring. They then dispatched a
+parcel whose CRC baseline depended on the binary. Nothing was violated in words; the
+conditions under the grant changed and neither lane re-read it. Treat any "go ahead" on a
+shared artifact as expiring the moment the grantor dispatches work of their own.
+
+**Pin the ARTIFACT with a hash, never with `revision:`** *(aurora's, 2026-08-27)*. A
+revision names a property of the **source**, so it cannot detect a relink of the **file**
+by a lane that has legitimately moved on — the pin stays "correct" while the binary under
+it changes. An `md5`/`sha256` of the binary is a property of the file, changes exactly when
+the file changes, and needs no cooperation from whoever relinks. Use that shape for any
+hold-still arrangement.
+
+**The cheap structural alternative to all of the above: give every worktree its own
+`CARGO_TARGET_DIR`,** which is already this document's rule for a different reason. A run
+that cannot reach the shared `target/` cannot relink the pinned binary, and then none of
+the announcement discipline is load-bearing.
+
 ## Queue
 
 The standing sigil-native arc is the **`.emp` language work (Spec 2)** — specs in
