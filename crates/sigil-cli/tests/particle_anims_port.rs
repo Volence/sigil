@@ -35,11 +35,15 @@
 //! consumer and asserts the fixup resolves to the per-shape base.
 //!
 //! ## Reference windows
-//! (sourced from `sigil_harness::pins` — regenerate via repin)
 //!
-//! Plain (map base `$309DE`): `s4.bin[0x309DE..0x309E6]` (8 bytes).
-//! Debug (map base `$30A46`): `s4.debug.bin[0x30A46..0x30A4E]` (8 bytes).
-//! Content is shape-invariant (`00 02 | 04 02 02 02 FB | 00`).
+//! Both windows come from `pins::PARTICLE_ANIMS` at run time — base and extent,
+//! per shape — so no address is transcribed here and none can go stale.
+//!
+//! The two shapes do NOT play symmetric roles. `particle_anims` is DEBUG-only:
+//! `plain_len` is 0, so `s4.bin` carries none of these bytes at any address and
+//! the plain arm proves the region is empty rather than byte-matching a window.
+//! The byte gate is the debug arm, against `s4.debug.bin`. Content itself is
+//! shape-invariant (`00 02 | 04 02 02 02 FB | 00`).
 //!
 //! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
 //! `/home/volence/sonic_hacks/aeon`). Absent, tests SKIP green — unless

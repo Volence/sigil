@@ -3123,3 +3123,54 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   from a `#[test]` body must go through `skip!()`". That is a ~166-site mechanical conversion
   plus a control-flow-aware lint, and it makes (2) impossible as well. (3) is discharged by
   extending the scanned scope the moment a second `src`-side test helper announces.)
+- [STALE-PROBE-BASES, 2026-08-27] **The derived-base gate covers `lma_base` and nothing
+  else, and one file's worth of stale region EXTENTS is fixed by hand rather than held.**
+  Converting the nine stale tranche bases to `pins::` turned up a tenth class the
+  inventory note did not enumerate: the region **`size`** beside each base is hand-typed
+  too, and seven of the eight disagreed with their pin — `controllers` `0x72`, `math`
+  `0x298`, `sonic_anims` `0x6E`, `sound_api` `0x1E8`, `act_descriptor` `0x274`,
+  `test_solid` `0xE`, `test_particle` `0x5A`; only `particle_anims`' `0x8` still matched.
+  (The stale literals are named and the pin values are not, deliberately: the pins moved
+  AGAIN between this parcel's first run and its rebase, which is the entry's own point.)
+  All eight are now `pins::*`-sourced, but the next hand-typed one is unguarded,
+  and the reason no gate is armed on them is NOT that a wrong extent is loud.
+  **Measured 2026-08-27, and it refutes the obvious assumption:** a section is NOT clamped
+  to its declared region. `tranche5`'s collision probe declares `game_loop` at `size = 0x16`
+  and the hotkeys-ON body places as `[0x256E, 0x2592)` — `0x24` bytes, well past the region
+  end — with `place_sections` returning **no error diagnostic at all** (the probe asserts
+  exactly that and passes). So an undersized `size` literal does not fail loudly; the
+  section simply extends past the declared extent, and anything that happens to be pinned
+  in the overrun is what makes noise. The probes here stay sound because none of them
+  depends on the extent being exact, but "the region is too small" is a silent condition,
+  not a caught one. A `size`-must-derive rule is still not trivially right: it would have to
+  distinguish "the real extent" from "an extent chosen to be too small on purpose", which is
+  a real shape — the same collision probe uses deliberately-too-small as its mechanism, and
+  its window is insensitive to its own value anywhere in `[0, 0x24)`.
+  — OPEN (kill: either `probe_base_hygiene` grows a companion assertion over region `size`
+  for real-region blocks, with the deliberately-undersized cases marked the way carriers
+  are; or `place_sections` gains the overrun diagnostic whose absence is recorded above,
+  which would make the extent loud and the gate unnecessary — the second is the better fix
+  and is a sigil-link change, not a test change)
+
+- [STALE-PROBE-BASES, 2026-08-27] **`probe_base_hygiene` scans `crates/sigil-cli/tests/`
+  only, and the property it enforces is not confined there.** The gate reads the region-name
+  authority out of `pins.rs` and walks one directory. `crates/sigil-harness/`'s own tests
+  place sections too, and the inventory note's Class-1 sites (`keystone_flip_relocation.rs`,
+  `demo_native_port.rs`, `test_p2_player_states_port.rs`, `native_object_bank_budget.rs`,
+  `test_g4_final_objects_port.rs`) are hand-typed ROM addresses that are NOT map-region
+  bases at all — a `resolve(...)` expectation, a golden slice, a `Shape` field — so the
+  scanner's `name = "X"` / `lma_base` pairing cannot see any of them. The gate closes the
+  shape that rotted; it does not close the class.
+  — OPEN (kill: the scanner's directory list and its pairing rule both widen, or a second
+  gate keyed on the Class-1 shapes; either way the bar is that it names a site the current
+  one cannot see)
+
+- [STALE-PROBE-BASES, 2026-08-27] **Fifteen port-gate `//!` headers still transcribe ROM
+  windows that moved.** The inventory note lists sixteen; `particle_anims_port.rs` is fixed
+  here because this parcel's measurement provably refuted it (its header advertised a PLAIN
+  window `s4.bin[0x309DE..0x309E6]` for a region whose `plain_len` is 0 — the plain arm has
+  never byte-matched anything, and the file's own code returns early on that arm). The fix
+  was to delete the transcription rather than refresh it, since the code beneath already
+  reads `pins`. The remaining fifteen are the same edit and none was measured here.
+  — OPEN (kill: the fifteen headers stop naming addresses, or a doc-comment gate refuses a
+  4+-digit hex literal in a port gate's `//!` block)

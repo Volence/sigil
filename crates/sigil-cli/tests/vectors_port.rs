@@ -320,6 +320,9 @@ fn vector_labels_resolve_to_error_handler_emp() {
         },
     );
     let eh_base = pins::ERROR_HANDLER.debug_base;
+    // synthetic-carrier: `vectors` — the 68000 exception vector table is at
+    // address 0 by hardware definition, so it has no pin to read and no re-layout
+    // can move it. error_handler, the region actually gated here, reads `pins`.
     let map = format!(
         "fill = 0x00\n\n[[region]]\nname = \"vectors\"\nlma_base = 0x0\nsize = 0x100\nkind = \"rom\"\n\n[[region]]\nname = \"error_handler\"\nlma_base = {eh_base:#x}\nsize = {:#x}\nkind = \"rom\"\n",
         pins::ERROR_HANDLER.debug_len

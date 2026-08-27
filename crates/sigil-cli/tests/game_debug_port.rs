@@ -284,6 +284,9 @@ fn two_module_flip_resolves_debug_music_toggle() {
     );
     assert!(gdd.iter().all(|d| d.level != sigil_span::Level::Error), "game_debug lower: {gdd:?}");
 
+    // synthetic-carrier: `game_loop` is parked at an arbitrary harness-private
+    // address so its `jbsr` into game_debug links. Only `game_debug`'s base is
+    // real and reads `pins`; this map is not the cartridge.
     let map = format!(
         "fill = 0x00\n\n[[region]]\nname = \"game_loop\"\nlma_base = 0x800\nsize = 0x80\nkind = \"rom\"\n\n[[region]]\nname = \"game_debug\"\nlma_base = {BASE:#x}\nsize = {REGION_SIZE:#x}\nkind = \"rom\"\n"
     );

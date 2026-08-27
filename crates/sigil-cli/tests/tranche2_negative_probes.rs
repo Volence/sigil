@@ -34,6 +34,7 @@ use sigil_frontend_as::{assemble, Options as AsOptions};
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_frontend_emp::resolve::place_sections;
+use sigil_harness::pins;
 use sigil_ir::backend::Cpu;
 use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use sigil_span::Level;
@@ -73,6 +74,20 @@ fn real_src(file_name: &str) -> Option<String> {
 // controllers.emp maps + cross-seam helpers (mirrors controllers_port.rs)
 // ===========================================================================
 
+/// The region's real plain base and extent, read from `pins` (repin
+/// regenerates them from the build's own listing) so a cartridge re-layout
+/// cannot leave a stale literal behind.
+fn controllers_base() -> u32 {
+    pins::CONTROLLERS.plain_base
+}
+
+/// A base the region is provably NOT at, derived from the real one so it can
+/// never coincide with it — the placement probes need a second, wrong base,
+/// and a hand-typed one could silently become the real base at a re-layout.
+fn controllers_wrong_base() -> u32 {
+    controllers_base() + 6
+}
+
 fn controllers_map_toml(base: &str) -> String {
     format!(
         "fill = 0x00\n\
@@ -86,8 +101,9 @@ fn controllers_map_toml(base: &str) -> String {
          [[region]]\n\
          name = \"controllers\"\n\
          lma_base = {base}\n\
-         size = 0x72\n\
-         kind = \"rom\"\n"
+         size = {size:#x}\n\
+         kind = \"rom\"\n",
+        size = pins::CONTROLLERS.plain_len
     )
 }
 
@@ -266,6 +282,17 @@ fn link_controllers_placed(mut sections: Vec<Section>) -> sigil_link::LinkedImag
 // math.emp maps (mirrors math_port.rs)
 // ===========================================================================
 
+/// `math`'s real plain base and extent — same `pins` sourcing as
+/// `controllers_base`.
+fn math_base() -> u32 {
+    pins::MATH.plain_base
+}
+
+/// A base `math` is provably NOT at, derived from the real one.
+fn math_wrong_base() -> u32 {
+    math_base() + 6
+}
+
 fn math_map_toml(base: &str) -> String {
     format!(
         "fill = 0x00\n\
@@ -279,8 +306,9 @@ fn math_map_toml(base: &str) -> String {
          [[region]]\n\
          name = \"math\"\n\
          lma_base = {base}\n\
-         size = 0x298\n\
-         kind = \"rom\"\n"
+         size = {size:#x}\n\
+         kind = \"rom\"\n",
+        size = pins::MATH.plain_len
     )
 }
 
@@ -332,8 +360,8 @@ fn controllers_doctored_eor_operand_order_produces_different_bytes_than_genuine(
     let doctored = src.replacen("eor.b   d0, d3", "eor.b   d3, d0", 1);
     assert_ne!(src, doctored, "doctoring must actually change the source");
 
-    let genuine_linked = link_controllers_placed(place_controllers(&src, "0x228C"));
-    let doctored_linked = link_controllers_placed(place_controllers(&doctored, "0x228C"));
+    let genuine_linked = link_controllers_placed(place_controllers(&src, &format!("{:#x}", controllers_base())));
+    let doctored_linked = link_controllers_placed(place_controllers(&doctored, &format!("{:#x}", controllers_base())));
 
     let genuine_bytes = &genuine_linked.section("controllers").expect("controllers section").bytes;
     let doctored_bytes = &doctored_linked.section("controllers").expect("controllers section").bytes;
@@ -358,8 +386,8 @@ fn math_doctored_dropped_add_produces_different_bytes_than_genuine() {
     let doctored = src.replacen("add.w   d0, d0\n", "", 1);
     assert_ne!(src, doctored, "doctoring must actually change the source");
 
-    let genuine_linked = link_math_placed(place_math(&src, "0x2464"));
-    let doctored_linked = link_math_placed(place_math(&doctored, "0x2464"));
+    let genuine_linked = link_math_placed(place_math(&src, &format!("{:#x}", math_base())));
+    let doctored_linked = link_math_placed(place_math(&doctored, &format!("{:#x}", math_base())));
 
     let genuine_bytes = &genuine_linked.section("math").expect("math section").bytes;
     let doctored_bytes = &doctored_linked.section("math").expect("math section").bytes;
@@ -389,7 +417,7 @@ fn math_doctored_dropped_add_produces_different_bytes_than_genuine() {
 #[test]
 fn controllers_standalone_compile_without_cross_seam_sections_is_a_loud_missing_symbol_error() {
     let Some(src) = real_src("controllers.emp") else { return };
-    let sections = place_controllers(&src, "0x228C");
+    let sections = place_controllers(&src, &format!("{:#x}", controllers_base()));
     // NO cross-seam sections appended — every one of HW_PORT_1_DATA /
     // HW_PORT_2_DATA / Ctrl_1_Held / Ctrl_2_Held / Ctrl_1_Press_Accum /
     // Ctrl_2_Press_Accum is genuinely absent.
@@ -445,30 +473,38 @@ fn controllers_standalone_compile_without_cross_seam_sections_is_a_loud_missing_
 // Probe (c) — PLACEMENT GENUINENESS
 // ===========================================================================
 
-/// Place the real `controllers.emp` at a WRONG base (`$2292` instead of the
-/// real plain `$228C`) and prove the placed section's bytes, while
-/// internally self-consistent, land at a DIFFERENT VMA than the reference
-/// expects — placement genuinely tracks the map, not an echo/hardcode.
+/// Place the real `controllers.emp` at a WRONG base (the pinned base + 6)
+/// instead of `pins::CONTROLLERS.plain_base`, and prove the placed section's
+/// bytes, while internally self-consistent, land at a DIFFERENT VMA than the
+/// reference expects — placement genuinely tracks the map, not an echo.
 ///
 /// FALSIFIED (restore-real-value): re-ran with the base restored to the real
-/// `0x228C` — the placed section's `lma` equals `0x228C`, so `assert_ne!`
-/// against the wrong-base result would panic on equal values; confirmed by
-/// temporarily placing at the real base twice and observing the (trivially)
-/// equal `lma`s, then reverting to the doctored `0x2292` comparison below.
+/// one — the placed section's `lma` equals it, so `assert_ne!` against the
+/// wrong-base result panics on equal values; confirmed by temporarily placing
+/// at the real base twice and observing the (trivially) equal `lma`s, then
+/// reverting to the wrong-base comparison below.
 #[test]
 fn controllers_wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_src("controllers.emp") else { return };
 
-    let real_sections = place_controllers(&src, "0x228C");
-    let wrong_sections = place_controllers(&src, "0x2292");
+    let real_sections = place_controllers(&src, &format!("{:#x}", controllers_base()));
+    let wrong_sections = place_controllers(&src, &format!("{:#x}", controllers_wrong_base()));
 
     let real_controllers =
         real_sections.iter().find(|s| s.name == "controllers").expect("real controllers section");
     let wrong_controllers =
         wrong_sections.iter().find(|s| s.name == "controllers").expect("wrong controllers section");
 
-    assert_eq!(real_controllers.lma, 0x228C, "the real map must place controllers at $228C");
-    assert_eq!(wrong_controllers.lma, 0x2292, "the doctored map must place controllers at $2292");
+    assert_eq!(
+        real_controllers.lma,
+        controllers_base(),
+        "the real map must place controllers at the pinned base"
+    );
+    assert_eq!(
+        wrong_controllers.lma,
+        controllers_wrong_base(),
+        "the doctored map must place controllers at the wrong base"
+    );
     assert_ne!(
         real_controllers.lma, wrong_controllers.lma,
         "placement must genuinely move with the map base — not be an echo/hardcode"
@@ -486,24 +522,28 @@ fn controllers_wrong_base_map_places_the_section_at_a_different_address() {
     );
 }
 
-/// Place the real `math.emp` at a WRONG base (`$246A` instead of the real
-/// plain `$2464`) — the math analogue of the controllers probe above.
+/// Place the real `math.emp` at a WRONG base (the pinned base + 6) instead of
+/// `pins::MATH.plain_base` — the math analogue of the controllers probe above.
 ///
 /// FALSIFIED (restore-real-value): same technique as the controllers probe —
 /// re-ran at the real base twice and observed trivially-equal `lma`s before
-/// reverting to the doctored `0x246A` comparison.
+/// reverting to the wrong-base comparison.
 #[test]
 fn math_wrong_base_map_places_the_section_at_a_different_address() {
     let Some(src) = real_src("math.emp") else { return };
 
-    let real_sections = place_math(&src, "0x2464");
-    let wrong_sections = place_math(&src, "0x246A");
+    let real_sections = place_math(&src, &format!("{:#x}", math_base()));
+    let wrong_sections = place_math(&src, &format!("{:#x}", math_wrong_base()));
 
     let real_math = real_sections.iter().find(|s| s.name == "math").expect("real math section");
     let wrong_math = wrong_sections.iter().find(|s| s.name == "math").expect("wrong math section");
 
-    assert_eq!(real_math.lma, 0x2464, "the real map must place math at $2464");
-    assert_eq!(wrong_math.lma, 0x246A, "the doctored map must place math at $246A");
+    assert_eq!(real_math.lma, math_base(), "the real map must place math at the pinned base");
+    assert_eq!(
+        wrong_math.lma,
+        math_wrong_base(),
+        "the doctored map must place math at the wrong base"
+    );
     assert_ne!(
         real_math.lma, wrong_math.lma,
         "placement must genuinely move with the map base — not be an echo/hardcode"

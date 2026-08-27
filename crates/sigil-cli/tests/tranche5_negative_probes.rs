@@ -92,9 +92,10 @@ fn lower_and_place(
          \n\
          [[region]]\n\
          name = \"game_loop\"\n\
-         lma_base = 0x22FE\n\
+         lma_base = {base:#x}\n\
          size = {region_size:#x}\n\
-         kind = \"rom\"\n"
+         kind = \"rom\"\n",
+        base = pins::GAME_LOOP.plain_base
     );
     let map = sigil_link::load_map(&map_toml).expect("map must load");
     let mut sections = module.sections;
@@ -128,6 +129,11 @@ fn synthetic_labels(names: &[&str]) -> Vec<sigil_ir::Section> {
 
 const ON_DEFINES: [(&str, i128); 2] = [("SOUND_DRIVER_ENABLED", 1), ("SOUND_DEBUG_HOTKEYS", 0)];
 
+/// The `(SOUND_DRIVER_ENABLED=1, SOUND_DEBUG_HOTKEYS=0)` window: the extent
+/// `engine.inc` gives the emp GameLoop before its gate-else `org` resumes the
+/// AS side. The hotkeys-ON body is larger, which is what probe (b) collides.
+const ON_OFF_WINDOW: u32 = 0x16;
+
 /// (a) A doctored copy misspelling the drain target fails LOUD at
 /// resolve/link — never silent bytes.
 #[test]
@@ -136,7 +142,7 @@ fn misspelled_cross_seam_symbol_is_loud() {
     let doctored = src.replace("Sound_DrainSfxRing", "Sound_DrainSfxRungg");
     assert_ne!(src, doctored, "the probe must actually doctor the source");
 
-    let (mut sections, diags) = lower_and_place(&doctored, &ON_DEFINES, 0x16);  // (1,0) window +4 (I2 addq)
+    let (mut sections, diags) = lower_and_place(&doctored, &ON_DEFINES, ON_OFF_WINDOW);
     assert!(diags.iter().all(|d| d.level != Level::Error), "lower/place: {diags:?}");
     // Supply the CORRECT names only — the doctored reference dangles.
     sections.extend(synthetic_labels(&[
@@ -182,7 +188,7 @@ fn oversize_combo_overlapping_resume_bytes_is_loud() {
     let (mut sections, diags) = lower_and_place(
         &src,
         &[("SOUND_DRIVER_ENABLED", 1), ("SOUND_DEBUG_HOTKEYS", 1)],
-        0x16,  // (1,0) window +4 (I2 addq)
+        ON_OFF_WINDOW,
     );
     assert!(diags.iter().all(|d| d.level != Level::Error), "lower/place: {diags:?}");
     sections.extend(synthetic_labels(&[
@@ -197,12 +203,14 @@ fn oversize_combo_overlapping_resume_bytes_is_loud() {
         "Game_State",
         "Debug_MusicToggle",
     ]));
-    // The AS side resumes at $2314 (engine.inc's gate-else org = base 0x22FE +
-    // the 0x16 (1,0) window) — simulate its first bytes with a pinned carrier
-    // there. (Was $2310 pre-I2; +4 for the Logic_Tick addq.)
+    // The AS side resumes at `engine.inc`'s gate-else org — the region base plus
+    // the (1,0) window — so a pinned carrier there is exactly the first byte the
+    // oversized hotkeys-ON body must not reach. Both halves derive, so the
+    // collision stays adjacent to the real body wherever the cartridge puts it.
+    let resume_lma = pins::GAME_LOOP.plain_base + ON_OFF_WINDOW;
     let mut resume = synthetic_labels(&["S4lz_Decompress"]);
     for sec in &mut resume {
-        sec.lma = 0x2314;
+        sec.lma = resume_lma;
     }
     sections.extend(resume);
 
@@ -217,7 +225,7 @@ fn oversize_combo_overlapping_resume_bytes_is_loud() {
     };
     assert!(
         msgs.iter().any(|m| m.contains("overlap")),
-        "the 0x1A-byte hotkeys-on body must collide loudly with the resume bytes at $2314, \
+        "the hotkeys-on body must collide loudly with the resume bytes at {resume_lma:#X}, \
          and the diagnostic must say so rather than the probe passing on an unrelated \
          unresolved symbol: {msgs:?}"
     );
@@ -254,6 +262,23 @@ fn drain_define_is_load_bearing() {
 }
 
 // ---- sound_api (tranche-5 port #2) ----------------------------------------
+
+/// The one-region map both sound_api probes place into. Base and extent read
+/// `pins` (repin regenerates them from the build's own listing), so neither can
+/// be left behind by a cartridge re-layout.
+fn sound_api_map_toml() -> String {
+    format!(
+        "fill = 0x00\n\
+         \n\
+         [[region]]\n\
+         name = \"sound_api\"\n\
+         lma_base = {base:#x}\n\
+         size = {size:#x}\n\
+         kind = \"rom\"\n",
+        base = pins::SOUND_API.plain_base,
+        size = pins::SOUND_API.plain_len,
+    )
+}
 
 fn sound_api_src() -> Option<String> {
     let path = aeon_dir().join("engine/sound/sound_api.emp");
@@ -440,14 +465,8 @@ fn typed_extern_has_no_mirror_so_a_missing_authority_is_loud() {
                \tdc.l 0\n";
     let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
     let mut sections = module.sections;
-    let map_toml = "fill = 0x00\n\
-                    \n\
-                    [[region]]\n\
-                    name = \"sound_api\"\n\
-                    lma_base = 0x5D8E\n\
-                    size = 0x1E8\n\
-                    kind = \"rom\"\n";
-    let map = sigil_link::load_map(map_toml).expect("map must load");
+    let map_toml = sound_api_map_toml();
+    let map = sigil_link::load_map(&map_toml).expect("map must load");
     let pdiags = place_sections(&mut sections, &map);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "place: {pdiags:?}");
     let mut truth = assemble(asm, &opts)
@@ -496,14 +515,8 @@ fn misspelled_extern_slot_is_loud() {
             return false;
         }
         let mut sections = module.sections;
-        let map_toml = "fill = 0x00\n\
-                        \n\
-                        [[region]]\n\
-                        name = \"sound_api\"\n\
-                        lma_base = 0x5D8E\n\
-                        size = 0x1E8\n\
-                        kind = \"rom\"\n";
-        let map = sigil_link::load_map(map_toml).expect("map must load");
+        let map_toml = sound_api_map_toml();
+        let map = sigil_link::load_map(&map_toml).expect("map must load");
         let pdiags = place_sections(&mut sections, &map);
         if pdiags.iter().any(|d| d.level == Level::Error) {
             return false;
