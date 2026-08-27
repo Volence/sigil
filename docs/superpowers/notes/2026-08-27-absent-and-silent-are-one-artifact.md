@@ -255,6 +255,38 @@ Same defect, two triggers, and neither is found by re-reading the section that s
 that stated the precondition**, and it is found by searching for the condition's own wording,
 never by re-reading the resolution.
 
+**A SOUND MEASUREMENT OF THE WRONG REFERENT** *(2026-08-27, aeon's, found against their own
+correction; the pair above is the episode that produced it)*.
+
+The bar about claims that live only in mail assumes the failure is an **unchecked** claim.
+This is the harder direction: the claim is **checked, correctly, against the wrong subject.**
+
+Instance: sigil wrote *"my recipe still prescribed the re-bake 300 lines below **the file's**
+own correction of it."* aeon read "the file" as **theirs**, measured theirs, found the
+retraction one sentence away, and reported that sigil's account was wrong. Both halves were
+true of the document each lane had in hand — sigil's file is 319 lines apart, verified; aeon's
+is adjacent — and the refutation arrived with real line numbers attached.
+
+**Why this is worse than an unchecked assertion.** An unchecked claim is hedged, or wobbles
+under the first question. A correctly-measured claim about the wrong referent arrives with
+**numbers, a method, and justified confidence** — every quality that normally signals
+reliability is genuinely present. Nothing in it is false except what it is *about*. And the
+receiving lane cannot detect it either, because the numbers are real; only re-deriving the
+referent surfaces it.
+
+**Corrective, and it is one clause:** when correcting someone about an artifact, **name the
+artifact in the correction the way they would name it** — path, repo, revision — rather than
+"the file". Ambiguity in the referent is invisible to both parties precisely when the
+measurement is good. The tell that you are exposed: your correction would still parse if the
+other lane had meant a different object.
+
+**Companion, same day, aeon's:** a returned parcel cited two shipped comments as evidence for
+a sound conclusion. One was verbatim correct; **the other named a file containing no such
+string anywhere in the tree.** Caught by checking *both* citations rather than the one that
+looked shakier — the fabricated leg did not look like the weak one. Prose again: read as law,
+executed by nothing, so no gate could contradict it. **The surrounding work being excellent is
+what would have carried it.**
+
 **TWO GEOMETRIES OF A SUPERSEDED CLAIM, and the adjacent one is worse** *(2026-08-27; the
 distance case is sigil's, the adjacency case and the rule are aeon's, and the pair only
 appeared because each lane described its own file and the accounts did not match)*.
