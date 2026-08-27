@@ -317,7 +317,7 @@ number. It prints `ratchet:`, never `skip:` — the bar
 below requires zero `skip:` lines and this is not a missing reference.
 
 - **Full suite bar:**
-  `SIGIL_STRICT_GATE=1 AEON_DIR=<clean> cargo test --release --workspace --no-fail-fast`,
+  `SIGIL_STRICT_GATE=1 AEON_DIR=<clean> cargo test --release --workspace --no-fail-fast -- --nocapture`,
   with `AEON_DIR` a tree matching the provenance tip (derive it — see the warning above) —
   **3943 passed / 0 failed / 4 ignored** (3947 declared), **zero `skip:` lines**, exit 0,
   clippy `-D warnings` exit 0.
@@ -616,6 +616,69 @@ holds.** `SFX_BANK_BLOB` grew `0x12` while the assembled total moved `0x10`, bec
 `0xA4400`), `0xA3B20 + 0x8EC = 0xA440C` (4 to `0xA4410`). Corroborated over a different
 parameter than their arithmetic — `EPILOGUE` moved `0xA5C80 → 0xA5C90`, exactly `+0x10`.
 
+
+### THE ZERO-`skip:` BAR COULD NOT SEE A SKIP LINE AT ALL (2026-08-27)
+
+**Measured here, one binary, same conditions both ways:**
+
+```sh
+cargo test --release -p sigil-cli --test seam2_dac_emit                 # 0 skip-shaped lines
+cargo test --release -p sigil-cli --test seam2_dac_emit -- --nocapture  # 2
+```
+
+**libtest captures a PASSING test's output.** Every `skip:` line this repo's gates print
+from a test that then passes is swallowed, so the landing bar's "zero `skip:` lines"
+requirement has been **structurally incapable of failing** for its whole life. Every
+hand-run landing that reported it — including two this session — measured nothing. The
+bar command above now carries `-- --nocapture`; that token is the entire fix and it
+belongs INSIDE the command span, per bar 25's corrective (2).
+
+**This compounds with `SKIP-TEXT-HOLE` rather than duplicating it.** That defect was the
+*spelling* (27 sites saying `skipping` where the grep wanted `skip:`); this is *capture*.
+They are independent, and **closing only the spelling would have left the bar blind
+anyway** — which is what the skip-text parcel's own green log did, until it was re-run
+with `--nocapture`. Two blind spots, one artifact, and neither visible from the other.
+
+**The nightly lane was NEVER blind to this half** — `scripts/nightly_source_gates.sh`
+already passes `-- --nocapture` (find it by content near the `cargo test` invocation).
+So the earlier statement that the automated backstop "shares the ritual's blind spot" is
+true for the SPELLING and false for CAPTURE. The automated lane was the sound one; the
+hand-run bar was the blind one. Do not carry the general claim forward — say which half.
+
+### RECONCILE THE TEST COUNT AGAINST `-- --list`, NOT ONLY AGAINST A SOURCE GREP (2026-08-27)
+
+*(aeon's finding, adapted: they hit the same class in pytest, where a fully green `-q` run
+prints no gate names at all, so bar 25's corrective (1) — confirm the gate's name appears
+in its own log — is unrunnable there. Their remedy is `pytest --collect-only`.)*
+
+The cargo equivalent, measured here: **`cargo test --release --workspace -- --list`
+enumerates 3953 test ids in 2 seconds**, and that figure agreed exactly with
+`git grep -c '#[test]'` on the same tree.
+
+Prefer it, and use both. They enumerate over genuinely different parameters — the grep
+reads **source text** (and will count an attribute that is `cfg`-ed out), while `--list`
+enumerates **what the built binaries will actually run**. Agreement between them is
+corroboration in bar 19's sense; agreement of a grep with itself is not.
+
+The deeper reason this is the better instrument: **a log grep can only ever see what a
+passing run chose to print, while collection emits the population.** A gate that silently
+stops being built or run cannot shrink the collected id set without the diff showing it,
+whereas it can vanish from a log with nothing to notice. That is the generator-enumeration
+bar (see the OFFCANON-ROT note) pointed at test existence rather than at constants.
+
+### NEVER SHARE ONE `CARGO_TARGET_DIR` BETWEEN TWO WORKTREES OF THIS REPO (2026-08-27)
+
+Cargo bakes the building worktree's `CARGO_MANIFEST_DIR` into the cached rlib. Point a
+second worktree at the same target dir, then delete or move the first, and the suite
+reports **284 failures that read exactly like golden divergence** — while the log's own
+stamp truthfully names the *correct* tree, so the stamping discipline cannot catch it.
+Sibling of the `.aeon-sigil-gates` hazard, and it defeats the one mechanism that exists to
+detect a run measuring the wrong tree.
+
+**Give every worktree its own target dir** (`.sigil-<name>-target`). Two side benefits,
+both real: it keeps the shared `target/release/sigil` from being relinked underneath a
+peer's in-flight A/B — the aeon lane pins that binary for freezes and needs to be told
+before it moves — and it avoids the mid-build assembler swap recorded above.
 
 ## The source-gate lane
 
