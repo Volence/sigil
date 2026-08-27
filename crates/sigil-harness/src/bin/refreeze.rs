@@ -61,6 +61,18 @@ fn target_sources() -> Vec<(&'static str, &'static str, &'static str)> {
     ]
 }
 
+/// Refusing a `--supersede-tip` that has nothing to abandon. Checked BOTH before the
+/// rebuild (so the usage error is free) and again at the append (so the decision is made
+/// against the chain as it actually is when the entry is written).
+const SUPERSEDE_WITHOUT_A_RED_RUN: &str =
+    "--supersede-tip was passed, but the tip records no strict run at all. An entry can only \
+     be ABANDONED once `--attest` has recorded that its suite came back RED; otherwise \
+     abandoning is just a way to skip the run, and the ratchet dissolves into a formality.";
+
+const SUPERSEDE_OF_A_GREEN_TIP: &str =
+    "--supersede-tip was passed, but the tip's strict run PASSED. A green entry is not being \
+     abandoned; drop the flag.";
+
 fn fail(msg: impl AsRef<str>) -> ExitCode {
     eprintln!("refreeze: {}", msg.as_ref());
     ExitCode::from(2)
@@ -340,7 +352,11 @@ fn measure_run(log: &str, witness: &Path) -> RunResult {
             let name = t.trim_start_matches("test ").trim_end_matches("... FAILED").trim();
             failing.push(name.to_string());
         }
-        if line.contains("skip:") {
+        // BOTH spellings. The landing bar greps `skip:`, and a live sibling parcel found
+        // 27 sites that say `skipping` instead — invisible to that grep while reporting
+        // green. A matcher that inherits the same blind spot would under-count while
+        // still looking like a witness, which is the worst failure mode a count has.
+        if line.contains("skip:") || line.contains("skipping") {
             skips += 1;
         }
     }
@@ -686,6 +702,28 @@ fn do_check(root: &Path) -> ExitCode {
 fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&str>) -> ExitCode {
     let golden = root.join("golden");
 
+    // (-1) THE GATE, CONSULTED FIRST. Two different jobs, and both belong before any
+    // work: a MISUSED `--supersede-tip` is a usage error and must cost nothing — not an
+    // aeon tree, not a rebuild — and a freeze that is going to be refused at the append
+    // should say so before it spends twenty minutes finding out.
+    //
+    // It is only a WARNING and not an early refusal, because the rule is about APPENDING:
+    // a byte-neutral re-freeze appends nothing, and that no-op is this machinery's own
+    // regression test — it must keep working on a tip that has not been attested yet.
+    if let Some(c) = std::fs::read_to_string(golden.join("provenance.toml"))
+        .ok()
+        .and_then(|s| provenance::parse(&s).ok())
+    {
+        match (provenance::append_gate(&c), supersede) {
+            (AppendGate::Ratchet(_), Some(_)) => return fail(SUPERSEDE_WITHOUT_A_RED_RUN),
+            (AppendGate::Allowed, Some(_)) => return fail(SUPERSEDE_OF_A_GREEN_TIP),
+            (AppendGate::Refused(m), _) | (AppendGate::NeedsSupersede(m), None) => eprintln!(
+                "refreeze: WARNING — if this freeze moves bytes it will REFUSE to append: {m}"
+            ),
+            _ => {}
+        }
+    }
+
     // (0) WHICH TREE. Resolved and vetted before anything is built, both because a refusal
     // should cost nothing and because the build writes into this tree — after it, "clean"
     // is no longer a question that can be asked.
@@ -694,25 +732,6 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
         Err(e) => return fail(format!("refusing to freeze — {e}")),
     };
     eprintln!("refreeze: freezing from aeon {aeon_rev} (clean)");
-
-    // EARLY WARNING, not an early refusal. The strict-attestation rule is about
-    // APPENDING, and a byte-neutral re-freeze appends nothing — it is this machinery's
-    // own regression test and must keep working on an unattested tip. But a freeze that
-    // is going to be refused at the append should say so before it spends a full rebuild
-    // finding out.
-    if let Ok(src) = std::fs::read_to_string(golden.join("provenance.toml")) {
-        if let Ok(c) = provenance::parse(&src) {
-            match provenance::append_gate(&c) {
-                AppendGate::Refused(m) => eprintln!(
-                    "refreeze: WARNING — if this freeze moves bytes it will REFUSE to append: {m}"
-                ),
-                AppendGate::NeedsSupersede(m) if supersede.is_none() => eprintln!(
-                    "refreeze: WARNING — if this freeze moves bytes it will REFUSE to append: {m}"
-                ),
-                _ => {}
-            }
-        }
-    }
 
     // (1) blobs, (2) size tables, (3) pins — the three regen steps.
     if let Err(e) = run_script(&golden.join("capture_goldens.sh"), &["--write"]) {
@@ -761,21 +780,12 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
             // lines and this is not a missing reference; it is a rule that has not armed.
             eprintln!("{m}");
             if supersede.is_some() {
-                return fail(
-                    "--supersede-tip was passed, but the tip records no strict run at all. An \
-                     entry can only be ABANDONED once `--attest` has recorded that its suite \
-                     came back red; otherwise abandoning is just a way to skip the run."
-                        .to_string(),
-                );
+                return fail(SUPERSEDE_WITHOUT_A_RED_RUN);
             }
         }
         AppendGate::Allowed => {
             if supersede.is_some() {
-                return fail(
-                    "--supersede-tip was passed, but the tip's strict run PASSED. A green entry \
-                     is not being abandoned; drop the flag."
-                        .to_string(),
-                );
+                return fail(SUPERSEDE_OF_A_GREEN_TIP);
             }
         }
         AppendGate::NeedsSupersede(m) => match supersede {
@@ -911,6 +921,7 @@ mod tests {
 test provenance_chain_holds ... ok
 test aeon_dir_matches_the_provenance_tip ... ok
 skip: reference not at /nowhere/s4.bin (set AEON_DIR)
+note: skipping the oracle cross-check, g++ unavailable
 test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
 test boot::header_matches ... FAILED
@@ -935,7 +946,9 @@ test result: FAILED. 40 passed; 1 failed; 3 ignored; 0 measured; 0 filtered out;
         assert_eq!(r.passed, 42, "2 + 40");
         assert_eq!(r.failed, 1);
         assert_eq!(r.ignored, 4, "1 + 3");
-        assert_eq!(r.skips, 1);
+        // BOTH spellings counted: `skip:` and the `skipping` the landing bar's grep
+        // cannot see.
+        assert_eq!(r.skips, 2, "a `skipping` line is a skip the landing bar's grep misses");
         assert_eq!(r.failing, vec!["boot::header_matches".to_string()]);
     }
 
