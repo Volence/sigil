@@ -951,7 +951,14 @@ tests = ["mt_bank_port"]
 [[region]]
 name = "sfx_bank_blob"
 start = "Sfx_33"
-len = 0x7FE
+# DERIVED, not hand-typed (2026-08-26). This was `len = 0x7FE`, a literal that went stale the
+# moment the SFX set grew 11 -> 15 sounds: the blob emitted 0x8DA while the pin still claimed
+# 0x7FE, and sfx_bank_port failed with "must emit 0x7fe bytes" against a section that was
+# simply bigger. Nothing walls this size — sfx_bank_blob.emp's wall is a base-ALIGNMENT wall
+# (mod 8, so the seam-2 fold and the placed base agree), not a length cap — so the content IS
+# the length and a literal could only ever drift behind it. Spelled the way repin's own
+# warnings tell every other stale region to spell it.
+end = "section:sfx_bank_blob"
 gate = "SIGIL_EMP_SFX"
 tests = ["sfx_bank_port"]
 

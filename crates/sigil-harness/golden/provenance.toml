@@ -8858,3 +8858,57 @@ full_crc = "6f79f855"
 full_size = 735146
 anchor_crc = "baba9d23"
 anchor_end = 0xa7d80
+
+[[entry]]
+name = "knux-instashield-sfx"
+ab = "aeon b56a683b wires four S3K SFX through the existing transcoder: 42 Insta Shield Attack, 4A Grab, 4C Glide Land, 7E Ground Slide. Sound shapes move (s4 f81c6811 -> 66d2c263 +242 B; s4.debug 6f79f855 -> 9f9c0126 +240 B); BOTH demo shapes byte-identical (8bd3d11b / ec71a5a4) because every call site is inside if SOUND_DRIVER_ENABLED == 1. All four ids fall inside the existing 0x33..0xBB key range so SFX_TABLE_LEN stays 137, the win-tab span ensure stays 137, soundbankhead's _sfxwin.len == 0x112 wall is untouched and no banked-carrier VMA moves; the set grew 11 -> 15 at zero cost to the fixed head layout. sTone_17 was unmapped and is aliased to the shipped env 0x0A because S3K's VolEnv_16 and VolEnv_09 are byte-identical - verified here by reading both bodies out of skdisasm's Z80 driver, 21 bytes each including the continuation line and the 81h terminator. The eleven pre-existing blobs re-generate byte-identical after the transcoder changes. Owner listened: grab correct, glide-land correct and confirmed firing by trace (JUMP then GLIDE_LAND caught at Sound_PlaySFX across jump/glide/release/land); insta-shield and ground-slide report as wrong, cause already known and booked - both are cPSG3 sources rerouted to the noise channel at a fixed white rate by the transcoder's standing v1 approximation, which the shipped dash 0xB6 already ships under."
+aeon_rev = "b56a683b8b86e7e04f6d940538089269a22c4def"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "8c90db5d"
+full_size = 735772
+anchor_crc = "19735d69"
+anchor_end = 0xa7e60
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "b133c62d"
+full_size = 610361
+anchor_crc = "ce46920b"
+anchor_end = 0x8b6f0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "8bd3d11b"
+full_size = 96372
+anchor_crc = "2d9752e8"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "ec71a5a4"
+full_size = 101080
+anchor_crc = "cd6a09ab"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "c59f7c6e"
+full_size = 674814
+anchor_crc = "3055d3a8"
+anchor_end = 0xa4bfe
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "66d2c263"
+full_size = 718983
+anchor_crc = "d9e9f0a5"
+anchor_end = 0xa5c80
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "9f9c0126"
+full_size = 735386
+anchor_crc = "5d6321af"
+anchor_end = 0xa7e60
