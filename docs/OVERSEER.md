@@ -1193,6 +1193,64 @@ and no state. **A receipt is the more dangerous artifact than a rule**: a hold a
 as a constraint a reader should evaluate, while a receipt reads as settled history and invites
 no scrutiny at all.
 
+### STANDING ARTIFACTS THIS LANE DEPENDS ON — declared here so a SWEEPING lane can find them
+
+**A declaration only its author reads is not a declaration.** On 2026-08-27 the aeon lane
+swept `~/sonic_hacks/` for merged, detached, branchless worktrees and removed eleven. One was
+this lane's standing reference tree. It was an **aeon** worktree by construction — it holds
+aeon shapes — so it matched every mechanical criterion, and **the only thing that would have
+distinguished it was a line in this file, which a sweep of aeon's worktree list cannot see.**
+*Ownership is not conferred by registration* (aeon's formulation): being in a repo's worktree
+list is a fact about bookkeeping, not about who depends on it.
+
+**THE AEON REFERENCE TREE.** This lane needs one aeon checkout with **all four shapes built**,
+pinned to **the `aeon_rev` of the corpus tip** — the expensive half is the build, not the
+clone. Byte gates point `AEON_DIR` at it; without one, they cannot run at all.
+
+**Do not write its revision here.** Derive it, or this line rots into the trap it exists to
+prevent — the declaration that was here on 2026-08-27 named `33d905b8`, two corpus revisions
+stale, **so a lane that HAD read this file would still have rebuilt the wrong tree and believed
+it had repaired the damage.** A stale declaration sitting on top of a missing one.
+
+```sh
+# the revision the reference tree must be pinned at, always:
+grep -E '^aeon_rev' crates/sigil-harness/golden/provenance.toml | tail -1
+```
+
+**Verify before trusting it**: hash the four built ROMs against the tip entry's recorded
+targets (CRC32 + size). **A tree existing at the right SHA is not a tree whose shapes are
+right.**
+
+### `--force` CONVERTS A LOUD STOP INTO A SILENT LOSS (2026-08-27)
+
+*(aeon's line, against this lane's own sweep.)*
+
+`git worktree remove` refuses when a worktree holds uncommitted work. **`--force` overrides
+precisely that refusal.** This lane removed fourteen worktrees with `--force` without
+inspecting any of them first, and **can no longer establish whether anything was lost, because
+the evidence went with the directories.**
+
+**An unrecoverable unknown is worse than a known loss** — a known loss can be repaired, and
+nothing about an unrecoverable one ever announces itself. Inspect for uncommitted files, and
+for a running process holding the directory (a peer's build died `spawn ./build.sh ENOENT`
+the same afternoon), *before* reaching for `--force`.
+
+### A PIN DIES WITH ITS PARCEL — UNLESS SOMEONE ELSE HAS ADOPTED IT (2026-08-27)
+
+*(aeon's amendment to the hub's Q-28, proposed against their own correct behaviour.)*
+
+Q-28 says a pin created for a parcel dies with the parcel. The aeon lane deleted
+`.aeon-freeze-slope` under exactly that rule and **the rule was being followed correctly** —
+it was their parcel pin and their parcel had finished. **But this lane had adopted it as its
+gates' ground the moment `AEON_DIR` pointed at it, and that transition left no trace in either
+tree.**
+
+**The parcel's owner is structurally the party who cannot see the adoption.** Their bookkeeping
+says *done* and nothing contradicts it. So: **whoever ADOPTS a pin declares it.** The
+owner-declares rule above covers where a sweeper looks; this covers the adoption being recorded
+at all. As written, Q-28 licenses this again, correctly, on the next lane that tidies up after
+itself.
+
 ### GUARD THE ARTIFACT, NOT THE SUBCOMMAND — `target/release/sigil` (2026-08-27)
 
 The aeon lane pins `target/release/sigil` for freezes and A/Bs. The rule everyone was
