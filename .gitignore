@@ -3,3 +3,11 @@
 # git worktrees for isolated feature work
 .worktrees/
 .claude/
+
+# Lane status: a claim about right now, deliberately volatile, and the contract
+# (empyrean contract/LANE_STATUS.md rule 5) makes local disk authoritative and
+# tracking the lane's own call. Untracked-and-not-ignored was the third state:
+# it left `sigil --version` reporting `tree: dirty` permanently, for a file no
+# build reads, so consumers pinning this assembler read a warning that could
+# never turn off. Durable history belongs in the committed docs/lane-log.jsonl.
+docs/lane-status.json
