@@ -215,15 +215,20 @@ pub proc ZX0R (a0: *u8) clobbers(d0-d7) {\n\
     jmp (a0)\n\
 }\n";
     let (file, perrs) = parse_str(src);
-    // This escape hatch is NOT strict-gated: a parse error here returns green
-    // whatever `SIGIL_STRICT_GATE` says, so the announcement carries the marker
-    // and the landing bar sees it. Today it never fires — the `with` grammar
-    // parses — and the marker is what turns "it stopped parsing" from a silent
-    // loss of this gate into a red bar.
-    if !perrs.is_empty() {
-        eprintln!("skip: resumable with-bracket gate — context grammar did not parse: {perrs:?}");
-        return;
-    }
+    // LOUD ON UNMEASURABLE, in every mode. The `context`/`with` grammar this gate
+    // splices through is sigil's OWN parser, compiled into this very test binary —
+    // not a sibling reference tree that a checkout can legitimately lack, which is
+    // the one thing `strict_gate()` exists to tolerate. There is therefore no build
+    // in which this source is expected not to parse, so a parse failure is a parser
+    // regression and it must be red in the ordinary developer run too, not only
+    // under `SIGIL_STRICT_GATE`. Tolerating it would leave the gate unable to tell
+    // "the spliced push was caught" from "the source could not be read" in exactly
+    // the case where the answer matters. Same assertion `lower()` above makes.
+    assert!(
+        perrs.is_empty(),
+        "the `with`/`context` grammar this gate needs no longer parses, so nothing \
+         below measures anything: {perrs:?}"
+    );
     let (_m, diags) = lower_module(
         &file,
         &LowerOptions {

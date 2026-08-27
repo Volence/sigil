@@ -3174,3 +3174,29 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   reads `pins`. The remaining fifteen are the same edit and none was measured here.
   — OPEN (kill: the fifteen headers stop naming addresses, or a doc-comment gate refuses a
   4+-digit hex literal in a port gate's `//!` block)
+
+- [STALE-PROBE-BASES, 2026-08-27] **The moved-window headers, enumerated — and the count
+  depends entirely on the criterion.** The row above says fifteen without naming them, so a
+  parcel inheriting it has to re-find the population before it can start. Mechanical
+  criterion, reproducible from the tree alone: read each `crates/*/tests/*.rs` module
+  header's `## Shape` section, take every `$XXXX`/`0xXXXX` literal in it, and compare
+  against the four values of every `pins::Region` whose doc line names that test. Ten files
+  carry a literal that is not one of their own region's live values:
+  `bg_anim_port.rs` ($A0), `bg_port.rs` ($AE), `camera_port.rs` ($16A),
+  `dma_queue_port.rs` ($302/$306), `load_art_port.rs` ($68/$B2),
+  `plane_buffer_port.rs` ($29C/$405E/$4C28), `s4lz_port.rs` ($FC),
+  `section_port.rs` ($3EA/$513E/$5DC0), `tile_cache_port.rs` ($B8) — plus
+  `parallax_port.rs`, fixed in this parcel, leaving nine.
+  **Two severities, not one.** In `bg_anim`, `bg`, `camera`, `plane_buffer` and `section`
+  the header asserts a SHAPE-INVARIANT length that the pins refute outright
+  (`plain_len != debug_len` in all five) — the parallax defect exactly, a stated invariance
+  contradicted by the authority the code reads. In `dma_queue`, `load_art`, `s4lz` and
+  `tile_cache` the relationship claim is still right and only the transcribed digits rotted.
+  The first group misinforms; the second is merely stale.
+  The mechanical criterion is a floor, not the whole class: it sees only headers that have a
+  `## Shape` heading, and a header naming a window anywhere else in its `//!` block is
+  invisible to it. That is most of the gap between ten and fifteen, and it is why the kill
+  condition below is a gate rather than a fixed list.
+  — OPEN (kill: a doc-comment gate refuses a 3+-digit hex literal in a port gate's `//!`
+  block, keyed on the file gating at least one `pins::Region` — which closes the class
+  including the sites no hand-enumeration found, rather than the ten this row names)

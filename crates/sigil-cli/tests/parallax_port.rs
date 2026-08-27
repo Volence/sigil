@@ -8,9 +8,13 @@
 //! per-column Vscroll.
 //!
 //! ## Shape
-//! SHAPE-INVARIANT length ($556 both shapes — parallax.asm has NO `__DEBUG__`
-//! code, no asserts), like section/plane_buffer; only the base shifts (plain
-//! `$5B02`, debug `$678C`).
+//! Shape-DEPENDENT in BOTH base and length. `pins::PARALLAX` carries all four
+//! values (`plain_base`/`debug_base`, `plain_len`/`debug_len`) and `region_base`
+//! /`region_len` below pick the pair for the shape under test, so no address or
+//! size is written down here — read the pin for today's numbers. The debug shape
+//! is the longer of the two: `Parallax_CheckBoundary` guards the sec_effects
+//! total-binding contract with a `DEBUG == 1` `raise_error`, whose expansion
+//! reaches the `MDDBG__ErrorHandler*` carriers this scope pins in both shapes.
 //!
 //! ## Cross-seam symbols
 //! - RAM labels (abs.w operands): the `Parallax_*` state block, `Camera_X/Y`,
