@@ -2991,3 +2991,38 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   differential was blocked on who supplies the opcode-to-key join is **retracted on their
   side** and was never banked here; do not inherit it from an older message of theirs.
   — OPEN (kill: the three figures exist, at which point CYCLE-ASK is writable)
+
+- **`provenance.toml` is NOT a second witness to the off-canonical assembled bar**
+  (learned closing OFFCANON-ROT, 2026-08-27). `refreeze::authoritative_anchor_ends` sources each
+  target's `anchor_end` from `pins.rs` for `s4`/`s4_debug`, but from the size table's own
+  `# assembled_end=` header for `demo`, `demo_debug`, `config_a`, `config_b` and `lean`. For those
+  five, `provenance.toml` therefore holds a COPY of `derive_offcanon`'s output rather than an
+  independent reading of the built ROM: anything comparing the two proves they have not drifted
+  APART IN TIME, never that either is right. `offcanon_assembled_bar.rs` states this in its header
+  and scopes its claim per shape. The hazard this row holds is a later session reading `anchor_end`
+  as corroboration of the table value it was copied from. The independent statement about those five
+  is the golden byte compare in `native_offcanonical_rom`, which is artifact-dependent and cannot
+  run without a reference tree.
+  — OPEN (kill: refreeze derives every target's `anchor_end` from the ROM it is freezing, making the
+  comparison cross-tool for all seven)
+
+- **`sigil-harness::region_at_lma` is dead, and the module doc claims it is used**
+  (found closing OFFCANON-ROT, 2026-08-27). `REGION_A_LMA` was deleted as an unused duplicate that
+  had drifted off its authority; sweeping the same property one level out, the helper it existed to
+  feed is unused too. `region_at_lma` has zero callers workspace-wide (identifier grep, plus
+  `cargo check --workspace --all-targets` passing with the const removed), while `lib.rs`'s `//!`
+  header still describes it among "the comparison helpers the surviving golden gates use". Left in
+  place rather than deleted — it is `pub` API in a lib crate and OFFCANON-ROT scoped only the
+  constant — but the doc clause is false as written and costs a reader a wrong picture of how the
+  golden gates are wired.
+  — OPEN (kill: a gate calls it, or the function and the doc clause are deleted together)
+
+- **`seam1.rs` prose names three different retired Z80 blob LMAs, none current**
+  (found closing OFFCANON-ROT, 2026-08-27). The module `//!` header names `$3DE` (plain) / `$3E2`
+  (debug) as the resident blob base, and `blob_lma`'s own doc calls those "the old literals, now
+  `$3CE`/`$3D2` via the pins". Measured: `pins::BOOT_HEAD.plain_base + 54` gives `$3D6`, and
+  `BOOT_HEAD.debug_base == plain_base` today, so the header's shape-split is wrong as well as its
+  values. The code beneath derives correctly, so this is lost intent rather than a false green —
+  the same severity the hand-typed-ROM-address inventory records for the stale tranche probe bases.
+  — OPEN (kill: the prose states the derivation instead of a value, as `blob_lma`'s first sentence
+  already does)

@@ -60,18 +60,16 @@ pub mod game_defines;
 
 use sigil_link::LinkedImage;
 
-/// Region A base LMA in the assembled ROM: the resident phase-0 Z80 driver.
-/// Provenance: the retired `golden/windows.toml`, `regen`-derived from the
-/// bracketing 68k anchor label `Z80_Sound_Start`. Slid `0x3EA → 0x3E0` in
-/// phase2.5 c5 (the dead Cold_Boot CROSS_RESET store removed upstream −0xA),
-/// then `0x3E0 → 0x3DE` in the t23 boot clr.w wave (−2 upstream; the Z80
-/// blob content is byte-identical, only its ROM position shifts).
-pub const REGION_A_LMA: u32 = 0x3DE;
-// `REGION_B_LMA` (the phase-`08000h` Moving-Trucks / SFX engine-table bank base)
-// used to live here as a pinned literal. It had no remaining consumers, and the
-// bank base's sole authority is now the `sound_bank` anchor in
-// `games/<g>/map.toml` (read by `seam2::bank_anchors` / `seam2::sound_layout`), so
-// the const was DELETED rather than left as a second, drifting truth.
+// The region base LMAs are NOT constants here. Each has exactly one authority, and a
+// pinned literal beside it is a second, drifting truth — both `REGION_A_LMA` and
+// `REGION_B_LMA` were deleted for that reason, each having drifted off its authority
+// while no consumer remained to notice:
+//   * Region A (the resident phase-0 Z80 driver) — `seam1::blob_lma(debug)`, i.e.
+//     `pins::BOOT_HEAD.<shape>_base + 54` (`Z80_Sound_Start`), so a boot-size shift
+//     cannot rot it and the shape-dependence stays explicit.
+//   * Region B (the phase-`08000h` Moving-Trucks / SFX engine-table bank) — the
+//     `sound_bank` anchor in `games/<g>/map.toml`, read by `seam2::bank_anchors` /
+//     `seam2::sound_layout`.
 
 /// The bytes of the linked section whose LMA equals `lma`. Regions are keyed by
 /// their ROM base address, not by section name — the front-end's auto-section

@@ -168,8 +168,6 @@ pub struct GameProfile {
     /// this would be masking a real placement regression) — the CLI refuses to pair
     /// `--stress-art` with any shipped shape selector.
     pub fixture_placement: bool,
-    /// `EndOfRom` — the assembled-bar length.
-    pub assembled_len: usize,
     /// EXTRA ENTRIES (`sigil build --extra-entry`): modules this build must
     /// EVALUATE although no reachable module `use`s them. Each rides the synthetic
     /// entry's `use` edges alongside the registry, so the module is lowered inside
@@ -211,6 +209,41 @@ impl GameProfile {
     /// hand-kept list.
     pub fn game_module_prefix(&self) -> &'static str {
         self.game_ram_module.rsplit_once('.').map_or(self.game_ram_module, |(p, _)| p)
+    }
+
+    /// `EndOfRom` — this shape's assembled-bar length, DERIVED at every call.
+    ///
+    /// Under [`SizeSource::Frozen`] it is the `EndOfRom` row of the profile's own
+    /// committed boundary table, the table `derive_offcanon` regenerates from a live
+    /// resolve; under [`SizeSource::PinnedBaked`] (the bootstrap shape, which has no
+    /// table yet) it is the shape's `pins` constant, which `repin` regenerates.
+    ///
+    /// It is an INPUT, not an oracle. No derivation under test is checked against it:
+    /// `offcanon_assembled_bar` cross-compares it with the provenance chain and the
+    /// table header, which is agreement between artifacts rather than an independent
+    /// expectation for a code path. So sourcing it from the generated artifact makes
+    /// nothing circular — the contrast is `native_full_rom`'s `Ground_Move_Cap` row,
+    /// which IS the independent expectation for the convsym resolve path and must stay
+    /// literal, since `repin` generates the pins from the listing convsym consumes.
+    /// A hand-typed spelling buys no witness here and only opens a silent desync
+    /// window between a re-layout and the re-type, so there is none.
+    ///
+    /// Absent `EndOfRom` PANICS rather than falling back: a boundary table that lost
+    /// its terminus is a regression, and a plausible number returned in its place
+    /// would hide it.
+    pub fn assembled_len(&self) -> usize {
+        match &self.size_source {
+            SizeSource::Frozen(t) => *t.get("EndOfRom").unwrap_or_else(|| {
+                panic!(
+                    "profile `{}`: its frozen boundary table carries no `EndOfRom` row \
+                     — the assembled bar is unmeasurable, not zero",
+                    self.name
+                )
+            }) as usize,
+            SizeSource::PinnedBaked => {
+                if self.debug { pins::DEBUG_ASSEMBLED_LEN } else { pins::ASSEMBLED_LEN }
+            }
+        }
     }
 
     /// The per-game placement map (`games/<g>/map.toml`), a sibling of `main.asm`
@@ -778,7 +811,6 @@ pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile 
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
         size_source,
         fixture_placement: false,
-        assembled_len: if debug { pins::DEBUG_ASSEMBLED_LEN } else { pins::ASSEMBLED_LEN },
         extra_entries: Vec::new(),
     }
 }
@@ -871,7 +903,6 @@ pub fn demo_profile(debug: bool) -> GameProfile {
             "demo.txt"
         })),
         fixture_placement: false,
-        assembled_len: 0x11224,
         extra_entries: Vec::new(),
     }
 }
@@ -937,7 +968,6 @@ pub fn config_b_profile() -> GameProfile {
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
         size_source: SizeSource::Frozen(load_frozen_table("config_b.txt")),
         fixture_placement: false,
-        assembled_len: 0x434d0,
         extra_entries: Vec::new(),
     }
 }
@@ -997,7 +1027,6 @@ pub fn config_a_profile() -> GameProfile {
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
         size_source: SizeSource::Frozen(load_frozen_table("config_a.txt")),
         fixture_placement: false,
-        assembled_len: 0x5f65a,
         extra_entries: Vec::new(),
     }
 }
@@ -1050,7 +1079,6 @@ pub fn lean_profile() -> GameProfile {
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
         size_source: SizeSource::Frozen(load_frozen_table("lean.txt")),
         fixture_placement: false,
-        assembled_len: pins::ASSEMBLED_LEN,
         extra_entries: Vec::new(),
     }
 }

@@ -120,14 +120,17 @@ fn main() -> std::process::ExitCode {
             }
         };
         let full_crc = native::crc32(&golden);
-        // EOR from the freshly-derived layout itself (`EndOfRom` boundary label) — the
-        // profile's baked assembled_len goes stale the moment a section changes size
-        // (§17 Wave-B B-0); fall back to it only if the label is ever absent.
+        // EOR from the freshly-derived layout itself (`EndOfRom` boundary label). The
+        // fallback is the profile's `assembled_len()`, which reads the SAME label off
+        // the committed table — so the worst case writes the previous derived value,
+        // never a hand-typed one, and panics if even that is absent. `derive_frozen_table`
+        // already errors on any committed boundary label the resolve dropped (`EndOfRom`
+        // is a key of every committed table), so this arm is unreachable today.
         let eor = table
             .iter()
             .find(|(n, _)| n.as_str() == "EndOfRom")
             .map(|(_, a)| *a as usize)
-            .unwrap_or(profile.assembled_len);
+            .unwrap_or_else(|| profile.assembled_len());
         let anchor = native::assembled_anchor_crc(&golden, eor);
 
         let mut out = String::new();
