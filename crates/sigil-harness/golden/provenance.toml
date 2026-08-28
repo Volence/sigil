@@ -9331,3 +9331,57 @@ demo_debug = "7599953e/101113"
 lean = "3a307f1f/674830"
 s4 = "0261de2b/719029"
 s4_debug = "fee02557/735500"
+
+[[entry]]
+name = "band-first-consumer"
+ab = "aeon b42141bc (code 299ca3ba/a3c53831): the FIRST palette band this tree has ever contained - three of them, screen lines 120-147/156-183/192-219 over CRAM $4A, coloured from the act's own ground ramp. Reached deliberately: hold START+UP in the DEBUG shape; default boot untouched. THE PROGRAM'S EMISSION IS DEBUG-GATED after a dormant-scaffold ruling: v1 shipped it into the release ROM behind a zero-byte installer, i.e. data nothing in that shape could install. VERIFIED INDEPENDENTLY by byte-region compare: s4.bin same length 719029, 2241 differing bytes, ALL of them the 2-byte header checksum plus deb2 appendix above the last emitted symbol 0xA5C90 - ZERO emitted release bytes changed. repin corroborates: every moved pin is debug-side. Four canonical shapes from a clean detached worktree, SIGIL_BUILD md5 85ba502f096773780cbbac17b5d77890 re-pinned at the moment of dependence and unchanged: s4 0261de2b->a2acd485 (len unchanged), s4.debug fee02557->ac752821 (735500->735642, +142), both demo shapes byte-identical. lean is the control nobody designed - it is the only sonic4-rooted profile shipping WITHOUT the symbol table and it came back byte-identical, which a leaked payload could not do. EMULATOR WITNESS, and it is the point of the parcel: tools/band_witness.py reads CRAM $4A per scanline on the Rust core - base $026A outside, $0224/$048C/$06AE inside the three bands, base restored in BOTH seams, Raster_Program reads OJZ_BandDemo. Vacuity check passes with three distinct in-band values, so the instrument is not frame-latched. Poison proven. Three earlier instrument designs failed first and are documented. effects_gates exit 0, all 15 gates, on the merged tree. A PREDICTION recorded before the build (aeon 5d2f5c32) came back NO: I assumed a DEBUG-gated trigger implied a DEBUG-gated payload and they are separable."
+aeon_rev = "b42141bc42bb71f20572ec4035dd0ebebce00ee9"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "827fe50a"
+full_size = 736010
+anchor_crc = "66c0a318"
+anchor_end = 0xa7ec0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "117b5347"
+full_size = 610423
+anchor_crc = "a19769aa"
+anchor_end = 0x8b710
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7599953e"
+full_size = 101113
+anchor_crc = "91a16b91"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "3a307f1f"
+full_size = 674830
+anchor_crc = "1e50c88e"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "a2acd485"
+full_size = 719029
+anchor_crc = "94491953"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "ac752821"
+full_size = 735642
+anchor_crc = "1ae493e1"
+anchor_end = 0xa7ec0
