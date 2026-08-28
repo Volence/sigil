@@ -9385,3 +9385,25 @@ full_crc = "ac752821"
 full_size = 735642
 anchor_crc = "1ae493e1"
 anchor_end = 0xa7ec0
+
+[entry.strict]
+outcome = "failed"
+sigil_rev = "6a4cb2851df9841e9f77f5e06f234fda22314ddd"
+aeon_rev = "b42141bc42bb71f20572ec4035dd0ebebce00ee9"
+strict_bodies = 29
+suites = 352
+passed = 4076
+failed = 4
+ignored = 4
+skips = 0
+ran_at = "unix:1787960041"
+failing = ["a_failing_extra_entry_fails_the_build_with_its_message", "an_off_canonical_target_honours_the_flag", "generated_pins_match_the_hand_typed_baseline", "two_extra_entries_compose"]
+
+[entry.strict.goldens]
+config_a = "827fe50a/736010"
+config_b = "117b5347/610423"
+demo = "3415e3ef/96372"
+demo_debug = "7599953e/101113"
+lean = "3a307f1f/674830"
+s4 = "a2acd485/719029"
+s4_debug = "ac752821/735642"
