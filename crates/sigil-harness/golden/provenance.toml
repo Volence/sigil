@@ -9252,3 +9252,61 @@ demo_debug = "7599953e/101113"
 lean = "7a0a3b1f/674830"
 s4 = "34c67ea6/718999"
 s4_debug = "406db07d/735454"
+
+[entry.superseded]
+by = "debug-rings-gate"
+reason = "entry 175 recorded a red strict run whose six failures were all golden staleness from the slope parcel (two whole-file compares plus four p2_ground_* windows reading the golden at pin coordinates); this byte-mover regenerates both the goldens and the pins, which is the state supersession exists for"
+
+[[entry]]
+name = "debug-rings-gate"
+ab = "aeon 55e0858f (code 3b920af2): debug-fly no longer collects rings. RingCollision runs from the level frame loop, outside the player, so Player_Main's debug escape hatch structurally could not suppress it; the gate is at the game-side call site. Runtime gate, not build-time: debug-fly is a cheat that ships in every shape. Four canonical shapes built twice from a clean detached worktree of 55e0858f, assembler md5 85ba502f096773780cbbac17b5d77890 unchanged before and after: s4 34c67ea6/718999 -> 0261de2b/719029 (+30), s4.debug 406db07d/735454 -> fee02557/735500 (+46), demo 3415e3ef/96372 unchanged, demo.debug 7599953e/101113. Both demo shapes byte-identical attributes the movement entirely to sonic4. Length deltas reconcile exactly against the pins: plain ASSEMBLED_LEN unmoved at 0xA5C90, so s4's +30 is deb2 appendix alone (the new local label), while s4.debug is +0x10 assembled plus the same 30 appendix = +46. 19 pins moved, all +0x10, all debug-side. Predecessor s4.debug length taken from the golden blob itself (735454), not from a lane-log arrow."
+aeon_rev = "55e0858f7a6ca468414aeec69418e20f1b00b0dd"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "a1f48e8f"
+full_size = 735868
+anchor_crc = "c31e9d29"
+anchor_end = 0xa7e80
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "93c63d25"
+full_size = 610421
+anchor_crc = "a19769aa"
+anchor_end = 0x8b710
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7599953e"
+full_size = 101113
+anchor_crc = "91a16b91"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "3a307f1f"
+full_size = 674830
+anchor_crc = "1e50c88e"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "0261de2b"
+full_size = 719029
+anchor_crc = "94491953"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "fee02557"
+full_size = 735500
+anchor_crc = "45b1d07b"
+anchor_end = 0xa7e80
