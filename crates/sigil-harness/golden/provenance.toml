@@ -9310,3 +9310,24 @@ full_crc = "fee02557"
 full_size = 735500
 anchor_crc = "45b1d07b"
 anchor_end = 0xa7e80
+
+[entry.strict]
+outcome = "passed"
+sigil_rev = "c84a98c2d7ae58902477d271db3b14cc29be0679"
+aeon_rev = "55e0858f7a6ca468414aeec69418e20f1b00b0dd"
+strict_bodies = 29
+suites = 352
+passed = 4080
+failed = 0
+ignored = 4
+skips = 0
+ran_at = "unix:1787952989"
+
+[entry.strict.goldens]
+config_a = "a1f48e8f/735868"
+config_b = "93c63d25/610421"
+demo = "3415e3ef/96372"
+demo_debug = "7599953e/101113"
+lean = "3a307f1f/674830"
+s4 = "0261de2b/719029"
+s4_debug = "fee02557/735500"
