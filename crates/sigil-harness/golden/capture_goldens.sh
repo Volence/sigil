@@ -30,10 +30,16 @@
 # Usage:
 #   SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \
 #   AEON_DIR=/path/to/aeon ./capture_goldens.sh [--write]
-#     --write  copy each fresh full file into this golden dir as a committed blob.
+#     --write  freeze each fresh full file into this golden dir as a committed blob.
+#
+# Under --write the committed blobs are replaced only once ALL SEVEN have been captured,
+# through the staged commit in atomic_freeze.sh — read its header for exactly what a kill
+# at each point leaves behind, which is the reason the write path is not a bare `cp`.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=atomic_freeze.sh
+source "$HERE/atomic_freeze.sh"
 SIGIL_ROOT="$(cd "$HERE/../../.." && pwd)"
 AEON="${AEON_DIR:-/home/volence/sonic_hacks/aeon}"
 WRITE=0
@@ -90,7 +96,7 @@ capture() {
     [[ "$path" -nt "$marker" ]] || { echo "FAIL: $rom not newer than the pre-build marker (stale-capture guard)"; rm -f "$marker"; exit 1; }
     rm -f "$marker"
     printf "   "; report "$lstp" "$path"
-    if [[ "$WRITE" == "1" ]]; then cp "$path" "$HERE/$golden"; echo "   frozen -> golden/$golden"; fi
+    if [[ "$WRITE" == "1" ]]; then freeze_stage "$path" "$golden"; echo "   staged -> $golden"; fi
 }
 
 # capture_config <golden_name> <--config-a|--config-b> <out_rom> <out_lst>
@@ -108,7 +114,7 @@ capture_config() {
     [[ "$path" -nt "$marker" ]] || { echo "FAIL: $rom not newer than the pre-build marker (stale-capture guard)"; rm -f "$marker"; exit 1; }
     rm -f "$marker"
     printf "   "; report "$lstp" "$path"
-    if [[ "$WRITE" == "1" ]]; then cp "$path" "$HERE/$golden"; echo "   frozen -> golden/$golden"; fi
+    if [[ "$WRITE" == "1" ]]; then freeze_stage "$path" "$golden"; echo "   staged -> $golden"; fi
 }
 
 # The config/lean captures CLOBBER the canonical s4.bin / s4.debug.bin and are
@@ -120,7 +126,21 @@ restore_canonical() {
     ( cd "$AEON" && SIGIL_EMIT="$SIGIL_EMIT" ./build.sh sonic4 >/dev/null 2>&1 \
         && DEBUG=1 SIGIL_EMIT="$SIGIL_EMIT" ./build.sh sonic4 >/dev/null 2>&1 ) || true
 }
-trap restore_canonical EXIT
+
+# The staging area opens BEFORE the first build AND before the restore trap: a leftover
+# from a killed run is a refusal that must cost nothing, neither a capture nor the two
+# restore builds the trap would otherwise spend on a run that never touched the aeon tree.
+[[ "$WRITE" == "1" ]] && freeze_open "$HERE"
+
+# An abort before the commit leaves captures in the staging area that no longer describe
+# a completed set; dropping them keeps the next run from refusing over output nothing
+# wants. `freeze_abandon` declines once the commit loop has begun, which is the one case
+# where the leftover is evidence rather than litter.
+on_exit() {
+    freeze_abandon || true
+    restore_canonical
+}
+trap on_exit EXIT
 
 echo "== Flip Stage 1 golden capture — all seven, fresh-build =="
 echo "   aeon: $AEON  ($(cd "$AEON" && git rev-parse --short HEAD 2>/dev/null || echo '?'))"
@@ -141,6 +161,15 @@ capture_config config_b.bin  --config-b  s4.bin        s4.lst
 # route at ReleaseFault). Also CLOBBERS s4.bin — so it MUST come before the restore
 # below, not after it.
 capture_config lean.bin      --lean      s4.bin        s4.lst
+
+# The set is complete, so the committed blobs are replaced now — before the restore
+# below, which is about the aeon tree and cannot invalidate a capture that already
+# happened. Sequencing it after would discard a good seven-target capture whenever a
+# restore build failed.
+if [[ "$WRITE" == "1" ]]; then
+    freeze_commit
+    echo ">> frozen: the committed goldens are this capture's set"
+fi
 
 # RESTORE the canonical aeon references clobbered by Config-A/B/lean.
 #

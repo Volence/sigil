@@ -190,7 +190,29 @@ the harness clamps.** aeon's first attempt was killed mid-capture holding **five
 goldens**. Recoverable with `git checkout -- .` *in a dedicated worktree*. **In this lane's
 shared checkout the same kill leaves five modified goldens sitting under whatever runs next** —
 and a later `git add -u` would commit them, which is why that command is already barred here.
-**Queued: make the capture atomic** (write to temp, rename) so a kill cannot leave a partial set.
+
+`REFREEZE-PARTIAL-WRITE` — **ADDRESSED on `parcel/refreeze-atomic-capture`, awaiting the
+overseer's landing** (it shares a path with aeon's freeze lane, so it is not self-merged).
+`golden/atomic_freeze.sh` is a staged commit `capture_goldens.sh --write` now writes through:
+every captured ROM lands in `golden/.staging` and the committed blobs are untouched until all
+seven have been captured, at which point the set moves into place with one rename each.
+
+**The guarantee, stated as narrowly as it is true — it is NOT full atomicity.** A kill during
+capture or staging, the multi-minute stretch, leaves the complete old set: no committed blob is
+open for writing at any point there, so none can be truncated. A kill inside the *commit loop*
+still leaves a MIXTURE — seven renames are seven operations — but no truncated blob, and the
+window is milliseconds rather than minutes. That residual is made loud rather than closed: the
+staging area survives such a kill holding exactly the blobs that did NOT land, under a
+`.committing` marker, and the next `--write` refuses over it by name instead of capturing a
+second set on top of a mixture. A leftover WITHOUT that marker is abandoned capture output —
+the committed set is provably the complete old one — and is discarded rather than refused.
+Closing the residual properly wants a `renameat2(RENAME_EXCHANGE)` directory swap; it is
+priced in the parcel's report and is not what tonight wanted.
+
+`crates/sigil-harness/tests/golden_freeze_atomicity.rs` drives the library against stand-in
+blobs, since a gate that could only run inside a real seven-target capture would never run. Two
+of its nine gates are CONTROLS asserting the bare-`cp` path really does leave a mixed set and
+a truncated blob — the staged gates are otherwise assertions never shown capable of failing.
 
 *(The built-from/operating-on warning fired for them and did its job; they discharged it by
 checking that the only two commits since that binary was linked touch `golden/` data and no
