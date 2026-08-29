@@ -56,6 +56,12 @@ pub mod strict_census;
 /// bin and the `provenance_chain` gate test.
 pub mod provenance;
 
+/// Whether the revisions `provenance.toml` records still EXIST in the histories they
+/// name. [`provenance`] checks their SHAPE; this checks that a branch still reaches
+/// them, and distinguishes an object this clone has not fetched from one a rebase
+/// orphaned. Driven by `refreeze --reachability` and the `rev_reachability` gate test.
+pub mod rev_reachability;
+
 /// Flip Stage 1 · S1.1 — the all-gates-ON native whole-ROM driver (the registry
 /// + `build_native_rom`), the seam-2 whole-ROM template generalized to all 53
 /// gates. Consumed by the `native_rom` gate.

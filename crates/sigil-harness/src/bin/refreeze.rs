@@ -4,6 +4,9 @@
 //! # validate the chain vs the committed blobs (no aeon, no build) — the gate:
 //! cargo run -p sigil-harness --bin refreeze -- --check
 //!
+//! # judge every revision the ledger RECORDS against its remote branch — the report:
+//! AEON_DIR=/path/to/aeon cargo run -p sigil-harness --bin refreeze -- --reachability
+//!
 //! # RECORD that the strict full suite ran on the tree carrying the chain tip. Run this
 //! # AFTER the freeze is committed; it runs the suite itself, with SIGIL_STRICT_GATE=1
 //! # set BY THE TOOL:
@@ -37,6 +40,14 @@
 //! the appended entry's `aeon_rev`. See [`resolve_aeon_rev`] for why. `--check` takes no
 //! aeon tree and is deliberately unaffected.
 //!
+//! WHETHER A RECORDED REVISION STILL EXISTS is a separate question from whether it is
+//! well-formed, and it is answered by [`sigil_harness::rev_reachability`]. `--check`
+//! prints the standing report unconditionally and its verdict is unchanged by it;
+//! `--reachability` is the same walk with an exit code; `--attest` runs it over the two
+//! revisions it is about to write, before the suite, so the exposure is nameable while a
+//! push can still close it. See [`do_reachability`] for why the ledger's history is
+//! reported rather than gated.
+//!
 //! WHICH TREE IT WRITES INTO is derived from where it is INVOKED, not from where it was
 //! built: the repository toplevel of the working directory, which for a linked worktree
 //! is that worktree. The tree must carry both markers in
@@ -63,6 +74,7 @@ use sigil_harness::provenance::{
     self, Applied, AppendGate, StrictRun, Target, SUPERSEDE_OF_A_GREEN_TIP,
     SUPERSEDE_WITHOUT_A_RED_RUN,
 };
+use sigil_harness::rev_reachability::{self, GitRevOracle, RevOracle, RevState, UnavailableRepo};
 use sigil_harness::strict_census;
 
 /// target-key -> (committed golden blob, off-canonical size-table file or "" for the
@@ -601,6 +613,38 @@ fn do_attest(
         }
     }
 
+    // (1b) WILL THESE COORDINATES SURVIVE? Both revisions are about to be written into an
+    // append-only ledger as this run's tree identity, and a coordinate is only worth what
+    // the history still reaches. This is the one moment the operator can still fix it, and
+    // it costs nothing: it runs before the suite, so a warning here is acted on for the
+    // price of a push rather than of a twenty-minute re-run.
+    //
+    // A WARNING AND NOT A REFUSAL. `AHEAD OF REMOTE` is the NORMAL state of a freeze
+    // commit that has not been pushed yet, so refusing it would refuse the honest case;
+    // and an unreachable remote must not make attesting impossible. What it can do is
+    // name the exposure, because the exposure is real: a rebase between here and the push
+    // moves the commit, and the record then names a revision nothing reaches.
+    for (label, dir_oracle, rev) in [
+        ("sigil_rev", sigil_oracle(harness_root), sigil_rev.clone()),
+        ("aeon_rev", aeon_oracle(), aeon_rev.clone()),
+    ] {
+        let (state, tip) = rev_reachability::classify(dir_oracle.as_ref(), &rev);
+        match state {
+            RevState::Reachable => {
+                eprintln!("refreeze --attest: {label} {rev} is {}", state.explain(tip.as_ref()));
+            }
+            other => {
+                eprintln!("refreeze --attest: ⚠ {label} {rev} — {}", other.describe(tip.as_ref()));
+                eprintln!(
+                    "refreeze --attest:   this record is about to name that revision as the tree \
+                     the suite ran on. PUSH IT FIRST if you can: a revision already in the \
+                     branch cannot be orphaned by a later rebase, and a rebase between this run \
+                     and the push is exactly how a recorded revision stops existing."
+                );
+            }
+        }
+    }
+
     // (2) The golden identities, READ FROM THE BLOBS — never copied out of the entry.
     let mut goldens = BTreeMap::new();
     for (key, t) in &tip.targets {
@@ -892,6 +936,133 @@ fn do_attest(
     ExitCode::SUCCESS
 }
 
+/// The oracle for SIGIL revisions: this repository, judged against its own remote branch.
+fn sigil_oracle(root: &Path) -> Box<dyn RevOracle> {
+    match sigil_root(root) {
+        Ok(dir) => Box::new(GitRevOracle::at(dir)),
+        Err(e) => Box::new(UnavailableRepo::new(format!(
+            "COULD NOT MEASURE: the sigil repository could not be located from {} ({e}), so no \
+             sigil revision could be judged.",
+            root.display()
+        ))),
+    }
+}
+
+/// The oracle for AEON revisions. `AEON_DIR` is used as a git CLIENT — the remote branch
+/// is read off the wire from it — never as a working tree whose `HEAD` stands in for the
+/// branch. Unset, every aeon revision is `COULD NOT MEASURE` with that one reason, which
+/// is the honest answer and not a pass.
+fn aeon_oracle() -> Box<dyn RevOracle> {
+    match std::env::var("AEON_DIR") {
+        Ok(dir) if PathBuf::from(&dir).is_dir() => Box::new(GitRevOracle::at(dir)),
+        Ok(dir) => Box::new(UnavailableRepo::new(format!(
+            "COULD NOT MEASURE: AEON_DIR={dir} is not a directory, so the aeon history could \
+             not be searched."
+        ))),
+        Err(_) => Box::new(UnavailableRepo::new(
+            "COULD NOT MEASURE: AEON_DIR is not set, so the aeon history could not be searched. \
+             Set it to any clone of the aeon repository to judge the ledger's aeon revisions."
+                .to_string(),
+        )),
+    }
+}
+
+/// Walk the ledger's recorded revisions and report where each one stands.
+///
+/// # Why this is a MODE and not a clause in `--check`
+///
+/// `provenance.toml` is APPEND-ONLY. Its historical entries are facts about runs that
+/// already happened, and a gate cannot require anything of a fact: an entry whose
+/// revision a rebase orphaned cannot be repaired without re-attesting, which would record
+/// a DIFFERENT tree's run under that entry's name — trading a dangling coordinate for a
+/// resolvable wrong one, which is worse for the exact question the field exists to answer.
+/// A hard failure over the whole ledger would therefore be permanently red on facts
+/// nobody can change, and a permanently red gate is a gate that gets switched off or a
+/// ledger that gets hand-edited.
+///
+/// There is also a structural reason no gate over the ledger can be hard: between a
+/// freeze and its push, the recorded revision is legitimately not reachable yet. That
+/// state is distinguished here as `AHEAD OF REMOTE`, but only AFTER the fact — at the
+/// moment of writing, "not pushed yet" and "orphaned" are the same measurement, and the
+/// difference is which of the two the future turns it into.
+///
+/// So the teeth are where the coordinate is WRITTEN — see `--attest`'s durability
+/// pre-flight — and `--check` carries the standing report, unconditionally, so nothing
+/// here can go quiet because nobody ran a mode.
+fn do_reachability(root: &Path) -> ExitCode {
+    let golden = root.join("golden");
+    let chain = match provenance::load(&golden) {
+        Ok(c) => c,
+        Err(e) => return fail(e),
+    };
+    let sigil = sigil_oracle(root);
+    let aeon = aeon_oracle();
+    let result = rev_reachability::audit(&chain, sigil.as_ref(), aeon.as_ref());
+    println!(
+        "refreeze --reachability: {} entrie(s), {} recorded revision(s)",
+        chain.entry.len(),
+        result.findings.len()
+    );
+    print!("{}", result.report());
+
+    let orphans = result.divergent().len();
+    let unmeasured: usize = [rev_reachability::Repo::Sigil, rev_reachability::Repo::Aeon]
+        .into_iter()
+        .map(|r| result.counts_for(r).unmeasured)
+        .sum();
+    let absent: usize = [rev_reachability::Repo::Sigil, rev_reachability::Repo::Aeon]
+        .into_iter()
+        .map(|r| result.counts_for(r).absent)
+        .sum();
+    if unmeasured > 0 {
+        eprintln!(
+            "refreeze --reachability: {unmeasured} revision(s) COULD NOT BE MEASURED — that is \
+             not a pass; the reasons are printed above."
+        );
+        return ExitCode::from(2);
+    }
+    if orphans > 0 || absent > 0 {
+        eprintln!(
+            "refreeze --reachability: {orphans} orphaned and {absent} absent revision(s). An \
+             orphan is PERMANENT and is not repaired by re-attesting — a re-attestation would \
+             record a different tree's run under the same entry's name."
+        );
+        return ExitCode::from(1);
+    }
+    ExitCode::SUCCESS
+}
+
+/// The standing reachability line every `--check` prints, whatever it decides.
+///
+/// NON-FATAL, and deliberately: see [`do_reachability`] for why nothing over an
+/// append-only ledger's history can be a hard gate. It is also UNCONDITIONAL, which is
+/// the other half — a report that has to be asked for goes quiet the moment nobody asks,
+/// which is the same failure as an exception list nobody maintains.
+fn announce_reachability(root: &Path, chain: &provenance::Chain) {
+    let sigil = sigil_oracle(root);
+    let aeon = aeon_oracle();
+    let result = rev_reachability::audit(chain, sigil.as_ref(), aeon.as_ref());
+    for line in result.summary_lines() {
+        println!("refreeze --check: reachability · {line}");
+    }
+    for (text, findings) in result.groups() {
+        println!("refreeze --check: reachability · {} revision(s) — {text}", findings.len());
+        // A repository that could not be asked yields one fact, not one fact per
+        // revision; the count above is the whole of it, and `--reachability` lists the
+        // entries for whoever wants them. Every OTHER state is a per-revision finding and
+        // is named here in full, because that is what the gate's reader has to act on.
+        if matches!(findings[0].state, RevState::CouldNotMeasure(_)) {
+            println!(
+                "refreeze --check: reachability ·   (run `refreeze --reachability` to list them)"
+            );
+            continue;
+        }
+        for f in findings {
+            println!("refreeze --check: reachability ·   {}", f.site());
+        }
+    }
+}
+
 fn do_check(root: &Path) -> ExitCode {
     let golden = root.join("golden");
     let src = match std::fs::read_to_string(golden.join("provenance.toml")) {
@@ -902,6 +1073,7 @@ fn do_check(root: &Path) -> ExitCode {
         Ok(c) => c,
         Err(e) => return fail(e),
     };
+    announce_reachability(root, &chain);
     let errs = provenance::check(&golden, &chain);
     if errs.is_empty() {
         println!("refreeze --check: OK (tip `{}`, chain len {})", chain.tip().unwrap().name, chain.entry.len());
@@ -1041,6 +1213,7 @@ fn main() -> ExitCode {
     announce_root("refreeze", &root);
     let mut args = std::env::args().skip(1);
     let mut check = false;
+    let mut reachability = false;
     let mut attest = false;
     let mut freeze_name: Option<String> = None;
     let mut ab = String::new();
@@ -1052,6 +1225,7 @@ fn main() -> ExitCode {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--check" => check = true,
+            "--reachability" => reachability = true,
             "--attest" => attest = true,
             "--freeze" => match args.next() {
                 Some(n) => freeze_name = Some(n),
@@ -1075,11 +1249,20 @@ fn main() -> ExitCode {
                 ),
             },
             other => return fail(format!(
-                "unknown argument `{other}` (try --check / --attest [--expect-test NAME] \
-                 [--retired-strict-gates WHY] / --freeze NAME --ab REF [--note N] \
-                 [--supersede-tip WHY])"
+                "unknown argument `{other}` (try --check / --reachability / --attest \
+                 [--expect-test NAME] [--retired-strict-gates WHY] / --freeze NAME --ab REF \
+                 [--note N] [--supersede-tip WHY])"
             )),
         }
+    }
+    if reachability && (check || attest || freeze_name.is_some()) {
+        return fail(
+            "--reachability is its own mode: it reads the ledger's recorded revisions and \
+             judges each against its remote branch",
+        );
+    }
+    if reachability {
+        return do_reachability(&root);
     }
     if attest && (check || freeze_name.is_some()) {
         return fail("--attest is its own mode: it runs the suite and records the result");

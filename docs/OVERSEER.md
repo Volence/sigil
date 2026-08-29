@@ -84,6 +84,11 @@ the artifact). Everything below about the VSRAM fix is unchanged and true — **
 A stale chain-number booking is the same unexecuted-prose defect as the rest of this file's
 sweep: nothing runs a chain number, so nothing could contradict it.
 
+**Chain 181's `[entry.strict].sigil_rev` is ORPHANED and is staying that way** — the rebase
+between attest and push moved the freeze commit. It is measured, named and deliberately not
+repaired; see the `PROVENANCE-REV-REACHABILITY` row in the Queue for what it is and why
+re-attesting is refused.
+
 ### CHAIN 182, the left-edge VSRAM fix — BLOCKED ON THE OWNER
 
 aeon ruled it lands **strictly after 180, never sharing a freeze range** (chain 179's
@@ -1099,6 +1104,14 @@ ran the strict suite by hand, it now runs through the tool:
 3. On success it appends `[entry.strict]` → commit `provenance.toml` only. On a red run it
    records `outcome = "failed"`, names the failing tests, and exits 1.
 
+**⚠ PUSH THE FREEZE COMMIT BEFORE STEP 2.** `sigil_rev` names the tree the suite ran on, and
+a commit that has not been pushed is a coordinate a later rebase can delete. Once it is in
+`origin/master` nothing short of a force-push can orphan it. Step 2 now measures this and
+says which state the revision is in — `AHEAD OF REMOTE` means it is still exposed — but it
+does NOT refuse, because being unpushed at that moment is the honest state and refusing it
+would refuse the correct case. Chain 181 is the instance that motivates the step: it was
+attested, then rebased, then pushed, and its `sigil_rev` now reaches nothing.
+
 **⚠ A REBASE IS A TREE-MOVE, AND "CLEAN COMMITTED TREE" DOES NOT IMPLY "REBUILT"**
 *(aeon lane, 2026-08-27, caught in their own pre-launch check at the first real attestation)*.
 Step 2's tree can be clean, committed and still carry a harness binary compiled at the
@@ -1842,6 +1855,71 @@ used to re-read it. Neither number was wrong; neither said which it was.)*
 The standing sigil-native arc is the **`.emp` language work (Spec 2)** — specs in
 `empyrean/docs/SIGIL_*.md`. The whole sound stack is sigil-native, the language round
 + §17 optimization arc + conversion tail are done, and the map drives the build.
+
+### PROVENANCE-REV-REACHABILITY — LANDED. The ledger now judges the revisions it records
+
+`provenance.toml` records `aeon_rev`, `strict.sigil_rev` and `strict.aeon_rev` to give an
+attestation tree identity. Nothing validated that those revisions still EXIST: the only
+check was `is_full_sha` — 40 hex characters — so **a well-formed orphan passed forever**.
+
+`sigil_harness::rev_reachability` judges each recorded revision against its own remote
+branch, read with `git ls-remote` at measurement time. Not a local tracking ref (a cached
+answer that goes stale silently — measured here twice in one session: aeon's `origin/master`
+moved from `ac20c424` to `a0a5acff` to `4d86f5db` while this parcel was being written, and
+the tracking ref in the reference worktree still said `ac20c424`), and not some sibling
+checkout's `HEAD`, which is one working tree's opinion rather than the branch.
+
+**FOUR measured states, not two, because the remedies differ:**
+
+| state | means | remedy |
+|---|---|---|
+| `REACHABLE` | an ancestor of the remote tip | — |
+| `OBJECT ABSENT` | this clone has never seen it | `git fetch`. TRANSIENT |
+| `AHEAD OF REMOTE` | present; the remote tip is its ancestor | `git push`. Not yet a defect |
+| `DIVERGENT` | present; neither reaches the other | **none. PERMANENT** |
+| `COULD NOT MEASURE` | no remote / no `AEON_DIR` / unfetched tip | named, never green |
+
+**`AHEAD OF REMOTE` is the state a three-way split would have missed**, and it is the one
+that matters operationally: between `--freeze` and `git push`, a recorded revision is
+"present but not reachable from the remote branch" — structurally the same sentence as the
+orphan, and a completely different situation. Collapsing them makes the report unreadable
+during the very ritual it is meant to protect.
+
+**Commands.** `refreeze --reachability` walks the whole ledger and exits 1 on an orphan or
+an absent object, 2 on anything unmeasured. `refreeze --check` prints the same walk as a
+standing, NON-FATAL report and its verdict is unchanged by it. `refreeze --attest` runs it
+over the two revisions it is about to write, BEFORE the suite, and warns.
+
+**WHY THE LEDGER IS REPORTED AND NOT GATED — the design call, stated so it is not
+re-litigated as an oversight.** An exception list was rejected: it is a population to
+maintain, and its failure mode is "green because nobody maintained it". A ratchet pinned at
+entry 181 was rejected on two counts — this module's own doctrine rejects pinned boundaries
+twice with a merge-race argument, and more decisively **the ratchet does not work**: entry
+182's freeze commit is legitimately unpushed at `--check` time, so a hard rule over new
+entries turns the gate red during the normal ritual. Nothing over an append-only ledger's
+HISTORY can be a hard gate while chain 181 stands, and re-attesting 181 is refused (it would
+record a different tree's run under 181's name). **So the teeth are at the WRITE site**,
+where the operator can still act, and the report is unconditional so it cannot go quiet.
+
+**THE LIVE INSTANCE — chain 181 `rebake-after-repaint`.** Its `[entry.strict].sigil_rev` is
+`bfbedc11fb52183c08631034a0108be9df01f8bf`, which is **DIVERGENT**: present in the clone,
+not reachable from `origin/master`, and `origin/master` does not reach it. The aeon lane
+rebased between attesting and pushing; the freeze commit that landed is `16b83c63` and the
+two trees differ (`ed5a25ac` vs `7ccd5d3f`), so **no reachable commit carries the tree that
+run happened on**. Verified here from the object database, not taken from a brief.
+
+**IT IS NOT BEING REPAIRED, and that is a ruling rather than a backlog item.** Re-attesting
+would record a DIFFERENT tree's run under entry 181's name — trading a dangling anchor for a
+resolvable wrong one, which is worse for the exact question the field exists to answer. The
+entry stands, the report names it every run, and `--check` stays green.
+
+**THE ONE-LINE RITUAL CHANGE THAT PREVENTS THE NEXT ONE — for the aeon lane.** Push the
+freeze commit BEFORE `--attest`. A revision already in `origin/master` cannot be orphaned by
+a later rebase, so `sigil_rev` names a coordinate that survives. Attesting first records a
+commit that is merely `AHEAD OF REMOTE`, and every rebase between that run and the push is
+another chance to orphan it — which is exactly how 181 happened. **This lane did not make
+that a refusal**: `AHEAD OF REMOTE` is the honest mid-ritual state, and refusing it would
+refuse the correct case. Turning the warning into a refusal is the aeon lane's call to make.
 
 ### SIGIL-DECOUPLE — the owner ruled 2026-08-26, in this lane's session: follow aeon's plan
 
