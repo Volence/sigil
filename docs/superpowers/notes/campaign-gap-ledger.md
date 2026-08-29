@@ -2700,9 +2700,49 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
 - [REPIN-END parcel, 2026-08-26] **79 bare-label region ends in `repin.toml` still carry
   placer pad** (the end-is-next-placement family — boot … player_climb, pads 0x2..0x20;
   the `repin` bin names every one per run). Their pins are unchanged and their gates green
-  under the align-pad tolerance. — OPEN (kill: convert each to `end = "section:<name>"`
-  when its port gate is next touched — the pin shrinks by its pad and the gate re-proves at
-  the new length; the warning count is the progress meter, reaching 0 retires the tolerance)
+  under the align-pad tolerance. — SUPERSEDED 2026-08-29 by R6
+  (`parcel/explicit-region-ends`): **the 79 was an undercount of the population and an
+  overcount of the danger, in different directions.** Re-measured over all 96 regions × 2
+  shapes (183 live pairs): 82 pairs carry pad, not 79 — the missing three are
+  `debug_only` regions (`compression_selftest`, `test_parent`, `test_stress_emitter`)
+  whose arm the pad warning never reached. And a further **58 pairs are
+  neighbour-determined while carrying ZERO pad today** — the end names the successor's
+  head label and merely happens to sit flush — which no warning could see, because zero
+  pad is indistinguishable BY ADDRESS from a region ending at a label it owns. The
+  progress meter this row proposed (warning count → 0) would therefore have reached zero
+  with 58 pairs of the same defect still live. R6 replaces the meter with a DECLARATION
+  (`end_measures`) and a label-ownership discriminator; see the row below for what remains
+- [R6 parcel, 2026-08-29] **80 region/shape pairs still measure a neighbour's placer pad
+  into their pin, now DECLARED (`end_measures = "allotment"`) rather than conventional.**
+  Converting any of them to `end = "section:<name>"` is a one-line edit that SHRINKS the
+  pin by its pad and needs its port gate to re-prove at the new length — out of R6's scope,
+  which was pin-value-neutral by construction. Both remedies are named in the refusal text.
+  The population can only shrink: an undeclared pad, or an undeclared flush end owned by
+  another section, refuses `resolve` outright, and a declaration that is no longer needed
+  in ANY shape fails `region_end_contracts::every_region_end_contract_holds_against_the_live_layout`.
+  — OPEN (kill: each conversion, when that region's port gate is next touched; reaching zero
+  declarations means every pin states its own extent and the frozen tables' placement of the
+  NEIGHBOUR stops being load-bearing for any pin)
+- [R6 parcel, 2026-08-29] **Two regions cannot be spelled `section:<name>` at all, for two
+  different reasons, and both are unfixable from sigil's side.** (1) `objdefs` — its content
+  lives in a section named `text`, of which the plain shape places twenty-odd instances
+  (all but one zero-length); `section:text` is refused as ambiguous, correctly. The section
+  wants a name of its own in aeon's sources. (2) `palette` — its window covers section
+  `palette` in full AND the first 0x2A bytes of section `preset`, ending at
+  `Effects_InstallPreset`, an interior label of `preset`. No section extent describes it,
+  so neither `section:palette` (short by 0x2A) nor `section:preset` (long by 0x86) is
+  correct. It carries no pad, so the strict default accepts it today. — OPEN (kill: aeon
+  names the `objdefs` section; the `palette`/`preset` section boundary is moved to where
+  the region boundary actually is, or the region is split)
+- [R6 parcel, 2026-08-29] **aeon's `[[budget]]` cursor is the same defect one level up.**
+  `games/sonic4/map.toml`'s sole budget (`object_bank`, ceiling 0x20000) checks its used
+  cursor against `cursor = "DeformTable_Zero"` — the head label of the first section PAST
+  the bank, i.e. a NEIGHBOUR's placement standing in for the bank's own extent. Whatever
+  pad sits between the bank's last byte and that head is charged to the bank's usage. The
+  ceiling is generous enough that no decision turns on ~0x10 bytes today, so this is a
+  correctness note, not a live hazard. Sigil cannot fix it: `map.toml` is aeon's file. —
+  OPEN (kill: aeon spells the cursor `section:<name>` — the `order` rows already accept
+  that spelling — or the budget is checked against the bank sections' own extents)
 - [SECTION-ROW parcel, 2026-08-26] **`soundbankhead_port.rs:75` `LOCK.lock().unwrap()` poisons
   after the known-red `soundbankhead_pinned_bootstrap_lands_at_lma_not_vma`:** whichever
   sibling draws the lock next fails on `PoisonError` (seen once in two full runs; green

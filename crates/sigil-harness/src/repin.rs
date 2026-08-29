@@ -47,6 +47,12 @@ pub struct Listing {
     /// ends ([`Listing::pad_past_content`]). Empty unless attached via
     /// [`Listing::with_sections`].
     sections: Vec<SectionExtent>,
+    /// Which ROM section DEFINES each label (parcel R6, `native::section_label_owners`).
+    /// The address cannot tell a region's own end from a successor's head label that
+    /// happens to sit flush against it; ownership can. Empty unless attached via
+    /// [`Listing::with_label_owners`], and an empty map means the check is skipped —
+    /// documented at its one use in `judge_end`.
+    label_owners: HashMap<String, String>,
     /// The ROM end address (`EndOfRom`) — the assembled ROM length.
     pub end_addr: u32,
     /// Provenance text (a build description), carried into the generated file's
@@ -61,7 +67,14 @@ impl Listing {
     /// phase-bank LMA map is empty — attach it with [`Listing::with_phase_lma`]
     /// when the layout carries a `vma:`-windowed bank.
     pub fn from_symbols(symbols: HashMap<String, u32>, end_addr: u32, stamp: String) -> Listing {
-        Listing { symbols, phase_lma: HashMap::new(), sections: Vec::new(), end_addr, stamp }
+        Listing {
+            symbols,
+            phase_lma: HashMap::new(),
+            sections: Vec::new(),
+            label_owners: HashMap::new(),
+            end_addr,
+            stamp,
+        }
     }
 
     /// Attach the placed section table (REPIN-END, `native::section_extents`). Enables
@@ -69,6 +82,20 @@ impl Listing {
     pub fn with_sections(mut self, sections: Vec<SectionExtent>) -> Listing {
         self.sections = sections;
         self
+    }
+
+    /// Attach the label→owning-section map (parcel R6, `native::section_label_owners`).
+    /// Enables the flush-neighbour check in `judge_end`; without it that check is skipped
+    /// and only the pad check runs (exactly the pre-R6 reach).
+    pub fn with_label_owners(mut self, owners: HashMap<String, String>) -> Listing {
+        self.label_owners = owners;
+        self
+    }
+
+    /// The ROM section that DEFINES `name`, when the map is attached and the name is
+    /// unambiguously owned.
+    pub fn label_owner(&self, name: &str) -> Option<&str> {
+        self.label_owners.get(name).map(String::as_str)
     }
 
     /// Attach the phase-bank label LMA map (T4, `native::phase_bank_lmas`). A
@@ -152,11 +179,15 @@ impl Listing {
 
     /// How many bytes at the tail of `[start, end)` belong to NO section's image — the
     /// placer pad a bare-label `end` sitting on the successor's head sweeps into a
-    /// region. `Some((last_section, pad))` when the region's last covered byte is
-    /// before `end`; `None` when the tail is inside a section's image or when no
-    /// section overlaps the window (nothing to judge — an empty table is silent, not
-    /// wrong, because a listing without one still measures labels exactly as before).
-    pub fn pad_past_content(&self, start: u32, end: u32) -> Option<(String, u32)> {
+    /// region. See [`PadVerdict`] for the four outcomes; the one that matters is that
+    /// "no section overlaps the window" is [`PadVerdict::Unmeasurable`], NOT a pass
+    /// (parcel R6, invariant "loud on unmeasurable"). A listing with no section table
+    /// at all is [`PadVerdict::NoTable`] — silent by design, because such a listing
+    /// still measures bare labels exactly as it always did.
+    pub fn pad_past_content(&self, start: u32, end: u32) -> PadVerdict {
+        if self.sections.is_empty() {
+            return PadVerdict::NoTable;
+        }
         let mut covered: Option<(&SectionExtent, u32)> = None;
         for s in &self.sections {
             if s.lma >= end || s.end <= start {
@@ -167,8 +198,14 @@ impl Listing {
                 covered = Some((s, reach));
             }
         }
-        let (last, reach) = covered?;
-        if reach < end { Some((last.name.clone(), end - reach)) } else { None }
+        let Some((last, reach)) = covered else {
+            return PadVerdict::Unmeasurable;
+        };
+        if reach < end {
+            PadVerdict::Pad { section: last.name.clone(), pad: end - reach, content_end: reach }
+        } else {
+            PadVerdict::Exact { section: last.name.clone() }
+        }
     }
 
     /// Number of parsed (numeric) symbols — provenance/debug aid.
@@ -177,10 +214,41 @@ impl Listing {
     }
 }
 
+/// What [`Listing::pad_past_content`] found at the tail of a pinned window (parcel R6).
+///
+/// The split that earns its keep is [`Unmeasurable`](PadVerdict::Unmeasurable) vs
+/// [`Exact`](PadVerdict::Exact): before R6 both returned `None` and read as "fine". A
+/// window that overlaps NO section's image has an unknown width — the resolve cannot say
+/// whether it holds the region's bytes, and rendering that as a pass is the one thing the
+/// R6 gate is forbidden to do.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PadVerdict {
+    /// The window ends exactly at `section`'s last byte — the region's content extent.
+    Exact { section: String },
+    /// `pad` bytes at the tail belong to no section's image; `section` is the region's
+    /// last covered section and `content_end` its one-past-end.
+    Pad { section: String, pad: u32, content_end: u32 },
+    /// A section table is present and NO section overlaps the window — the width cannot
+    /// be judged. Never a pass.
+    Unmeasurable,
+    /// The listing carries no section table; nothing to judge (a table-less listing
+    /// measures bare labels exactly as before). Silent by design.
+    NoTable,
+}
+
 /// The `section:<name>` boundary prefix (REPIN-END) — the same spelling the map's
 /// `order` rows use (parcel SECTION-ROW). Unambiguous: no identifier in either
 /// front-end admits `:`.
 pub const SECTION_PREFIX: &str = "section:";
+
+/// `end_measures = "content"` (parcel R6) — the DEFAULT and the strict contract: the
+/// pinned window holds the region's own section bytes and nothing past them.
+pub const END_MEASURES_CONTENT: &str = "content";
+
+/// `end_measures = "allotment"` (parcel R6) — the OPT-IN contract: the end is wherever
+/// the next placement begins, so the pin's width is the gap to a neighbour rather than
+/// a size of this region's own. Declared, never inferred.
+pub const END_MEASURES_ALLOTMENT: &str = "allotment";
 
 /// A placed ROM section's extent: `name` is the `module … in <name>` section name,
 /// `lma` its load address, `end` one-past its last image byte (`lma + image_len`).
@@ -239,6 +307,27 @@ pub struct RegionSpec {
     /// other shape). Only valid alongside `end`; when absent, debug end = `end`.
     #[serde(default)]
     pub debug_end: Option<String>,
+    /// What the region's END VALUE is a statement ABOUT (parcel R6). Two values:
+    ///
+    /// - `"content"` (the DEFAULT, and the strict one): the window holds this region's
+    ///   own section bytes and nothing past them. Any placer pad between the last
+    ///   content byte and `end` is a HARD ERROR naming the region, the shape, the
+    ///   successor section and the `section:<name>` remedy.
+    /// - `"allotment"`: the end is deliberately "wherever the next placement begins".
+    ///   The pin's WIDTH IS NOT A SIZE — it is the gap to the neighbour, and it moves
+    ///   when the neighbour moves. Declared per region so the dependency is greppable
+    ///   and countable instead of being a convention nobody can see.
+    ///
+    /// No BYTE COUNT is declared, deliberately. The pad is an accident of where the
+    /// successor landed, not a property of this region; writing today's number down
+    /// would enshrine the accident as a requirement (the mistake R7 measured its way
+    /// out of). What is declared is the KIND of contract, which is stable.
+    ///
+    /// Only meaningful with `end` (a `len` region declares its own width) and never
+    /// with a `section:` end (there is nothing to tolerate — the section's own end IS
+    /// the content end).
+    #[serde(default)]
+    pub end_measures: Option<String>,
     #[serde(default)]
     pub len: Option<u32>,
     /// Per-shape DEBUG length override for a literal-`len` region whose debug
@@ -378,6 +467,38 @@ pub fn load_manifest(src: &str) -> Result<Manifest, String> {
                 r.name
             ));
         }
+        // R6: `end_measures` declares WHAT the end value is a statement about.
+        match r.end_measures.as_deref() {
+            None | Some(END_MEASURES_CONTENT) | Some(END_MEASURES_ALLOTMENT) => {}
+            Some(other) => {
+                return Err(format!(
+                    "region `{}`: `end_measures` must be `{END_MEASURES_CONTENT}` (the default — \
+                     the window holds this region's bytes and nothing past them) or \
+                     `{END_MEASURES_ALLOTMENT}` (the end is the next placement; the width is not a \
+                     size), got `{other}`",
+                    r.name
+                ))
+            }
+        }
+        if r.end_measures.is_some() && r.end.is_none() {
+            return Err(format!(
+                "region `{}`: `end_measures` describes an `end` symbol — a `len` region already \
+                 declares its own width",
+                r.name
+            ));
+        }
+        if r.end_measures.as_deref() == Some(END_MEASURES_ALLOTMENT) {
+            for spec in [r.end.as_deref(), r.debug_end.as_deref()].into_iter().flatten() {
+                if spec.starts_with(SECTION_PREFIX) {
+                    return Err(format!(
+                        "region `{}`: `end_measures = \"{END_MEASURES_ALLOTMENT}\"` contradicts \
+                         `end = \"{spec}\"` — a `{SECTION_PREFIX}` end IS the content end, so there \
+                         is no allotment to declare",
+                        r.name
+                    ));
+                }
+            }
+        }
         if r.debug_end.is_some() && (r.debug_only || r.plain_only) {
             return Err(format!(
                 "region `{}`: `debug_end` is for a both-shapes region with a shape-split end; a `debug_only`/`plain_only` region resolves against ONE listing",
@@ -514,6 +635,87 @@ pub fn upper_snake(name: &str) -> String {
     collapsed
 }
 
+/// Judge ONE region/shape window's tail against its declared `end_measures` contract
+/// (parcel R6). `Ok(Some(advisory))` is a non-fatal note; `Err` refuses the resolve.
+///
+/// WHICH INSTRUMENT EACH HALF USES, stated because a gate that asks the same resolver
+/// the pin file asked cannot notice that resolver being wrong (R7's lesson):
+/// - the window `[lo, hi)` comes from the SYMBOL listing (`Listing::region_start` /
+///   `region_end` over `native::sigil_native_symbol_listing`);
+/// - the content extent comes from the SECTION TABLE of the resolved layout the ROM is
+///   emitted from (`native::section_extents` → `resolve_canonical_sections`).
+///
+/// Those are two derivations, so a symbol address that disagrees with the section
+/// geometry is visible here. What NEITHER half can catch is a wrong resolve — both come
+/// from one link of one tree — and this function does not claim to.
+fn judge_end(
+    region: &str,
+    shape: &str,
+    spec: &str,
+    measures: Option<&str>,
+    listing: &Listing,
+    lo: u32,
+    hi: u32,
+) -> Result<Option<String>, String> {
+    let allotment = measures == Some(END_MEASURES_ALLOTMENT);
+    // A `section:` end IS the content end by construction; there is nothing to judge,
+    // and `load_manifest` already refused `allotment` alongside one.
+    if spec.starts_with(SECTION_PREFIX) {
+        return Ok(None);
+    }
+    match listing.pad_past_content(lo, hi) {
+        PadVerdict::NoTable => Ok(None),
+        PadVerdict::Unmeasurable => Err(format!(
+            "region `{region}` ({shape}): end `{spec}` spans {:#X} byte(s) at {lo:#X}..{hi:#X} that \
+             overlap NO placed section — the width cannot be measured, so it is not asserted. A \
+             region whose bytes the section table cannot find is a manifest error, not a pass: \
+             check `start`/`end` name this region's own labels.",
+            hi - lo
+        )),
+        // FLUSH BUT STILL THE NEIGHBOUR'S: zero pad does not mean the end is this
+        // region's own. When the end label is DEFINED in a different section, the value
+        // is the successor's placement and moves with it — the same contract as a padded
+        // end, wearing better clothes. Refuse it undeclared, exactly as the padded case.
+        // Skipped when no ownership map is attached (the pre-R6 reach) or when the name
+        // is ambiguously owned (`native::section_label_owners` drops those, so an
+        // unknown name is never read as a match).
+        PadVerdict::Exact { section }
+            if !allotment
+                && listing.label_owner(spec).is_some_and(|owner| owner != section) =>
+        {
+            let owner = listing.label_owner(spec).unwrap_or_default();
+            Err(format!(
+                "region `{region}` ({shape}): end `{spec}` is defined in section `{owner}`, not in \
+                 `{section}` where this region's bytes end. The window is flush TODAY ({hi:#X}), so \
+                 nothing is mis-measured yet — but the value is the neighbour's placement and moves \
+                 with it. Spell `end = \"{SECTION_PREFIX}{section}\"` to pin this region's own extent \
+                 (the pin does not move), or declare `end_measures = \"{END_MEASURES_ALLOTMENT}\"` if \
+                 the gap to the neighbour really is what this pin means."
+            ))
+        }
+        PadVerdict::Exact { section } if allotment => Ok(Some(format!(
+            "region `{region}` ({shape}): `end_measures = \"{END_MEASURES_ALLOTMENT}\"` but the \
+             window ends exactly at section `{section}`'s last byte — the allotment is zero-width \
+             IN THIS SHAPE. If every shape says so, re-spell `end = \"{SECTION_PREFIX}{section}\"` \
+             and drop the declaration; the pin does not move."
+        ))),
+        PadVerdict::Exact { .. } => Ok(None),
+        PadVerdict::Pad { section, pad, content_end } if allotment => Ok(Some(format!(
+            "region `{region}` ({shape}): declared allotment — end `{spec}` is the next placement, \
+             {pad:#X} byte(s) past section `{section}`'s last byte ({hi:#X} vs {content_end:#X}). \
+             The pin's WIDTH IS NOT A SIZE and moves when the neighbour moves."
+        ))),
+        PadVerdict::Pad { section, pad, content_end } => Err(format!(
+            "region `{region}` ({shape}): end `{spec}` measures {pad:#X} byte(s) of placer pad past \
+             section `{section}`'s last byte ({hi:#X} vs {content_end:#X}); the gap between labels \
+             is an allotment, not a size. Either spell `end = \"{SECTION_PREFIX}{section}\"` to pin \
+             the content (preferred — the pin then states this region's own extent), or declare \
+             `end_measures = \"{END_MEASURES_ALLOTMENT}\"` to say in the manifest that this width is \
+             the gap to a neighbour and not a size."
+        )),
+    }
+}
+
 /// Resolve the manifest against both listings. Every failure names the
 /// symbol/region — never a silent zero (D-T10.2).
 pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolved, String> {
@@ -528,18 +730,34 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
             let plain_base = plain
                 .get(anchor)
                 .map_err(|e| format!("region `{}` plain_anchor: {e}", r.name))?;
-            let debug_base =
-                debug.get(&r.start).map_err(|e| format!("region `{}` start (debug): {e}", r.name))?;
+            let debug_base = debug
+                .region_start(&r.start)
+                .map_err(|e| format!("region `{}` start (debug): {e}", r.name))?;
             let (debug_len, end_desc) = match (&r.end, r.len) {
                 (Some(end), None) => {
+                    // R6: `section:` and the end-contract check reach this arm too. Before
+                    // R6 they did not, and three pad-carrying `debug_only` pairs
+                    // (compression_selftest, test_parent, test_stress_emitter) were the
+                    // only ones in the corpus that no warning could name.
                     let de = debug
-                        .get(end)
+                        .region_end(end)
                         .map_err(|e| format!("region `{}` end (debug): {e}", r.name))?;
                     if de < debug_base {
                         return Err(format!(
                             "region `{}`: end `{end}` precedes start `{}` ({de:#X} < {debug_base:#X})",
                             r.name, r.start
                         ));
+                    }
+                    if let Some(note) = judge_end(
+                        &r.name,
+                        "debug",
+                        end,
+                        r.end_measures.as_deref(),
+                        debug,
+                        debug_base,
+                        de,
+                    )? {
+                        warnings.push(note);
                     }
                     (de - debug_base, format!("`{end}` (debug-only region; plain empty at `{anchor}`)"))
                 }
@@ -571,17 +789,31 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
             let debug_base = debug
                 .get(anchor)
                 .map_err(|e| format!("region `{}` debug_anchor: {e}", r.name))?;
-            let plain_base =
-                plain.get(&r.start).map_err(|e| format!("region `{}` start: {e}", r.name))?;
+            let plain_base = plain
+                .region_start(&r.start)
+                .map_err(|e| format!("region `{}` start: {e}", r.name))?;
             let (plain_len, end_desc) = match (&r.end, r.len) {
                 (Some(end), None) => {
+                    // R6: same reach as the `debug_only` arm above — `section:` ends and
+                    // the end-contract check apply here too.
                     let pe =
-                        plain.get(end).map_err(|e| format!("region `{}` end: {e}", r.name))?;
+                        plain.region_end(end).map_err(|e| format!("region `{}` end: {e}", r.name))?;
                     if pe < plain_base {
                         return Err(format!(
                             "region `{}`: end `{end}` precedes start `{}` ({pe:#X} < {plain_base:#X})",
                             r.name, r.start
                         ));
+                    }
+                    if let Some(note) = judge_end(
+                        &r.name,
+                        "plain",
+                        end,
+                        r.end_measures.as_deref(),
+                        plain,
+                        plain_base,
+                        pe,
+                    )? {
+                        warnings.push(note);
                     }
                     (pe - plain_base, format!("`{end}` (plain-only region; debug empty at `{anchor}`)"))
                 }
@@ -637,17 +869,16 @@ pub fn resolve(m: &Manifest, plain: &Listing, debug: &Listing) -> Result<Resolve
                 for (shape, listing, spec, lo, hi) in
                     [("plain", plain, end.as_str(), plain_base, pe), ("debug", debug, debug_end, debug_base, de)]
                 {
-                    if spec.starts_with(SECTION_PREFIX) {
-                        continue;
-                    }
-                    if let Some((sec, pad)) = listing.pad_past_content(lo, hi) {
-                        warnings.push(format!(
-                            "region `{}` ({shape}): end `{spec}` measures {pad:#X} byte(s) of placer pad \
-                             past section `{sec}`'s last byte ({hi:#X} vs {:#X}); the gap between labels is an \
-                             allotment, not a size — spell `end = \"{SECTION_PREFIX}{sec}\"` to pin the content",
-                            r.name,
-                            hi - pad
-                        ));
+                    if let Some(note) = judge_end(
+                        &r.name,
+                        shape,
+                        spec,
+                        r.end_measures.as_deref(),
+                        listing,
+                        lo,
+                        hi,
+                    )? {
+                        warnings.push(note);
                     }
                 }
                 (pe - plain_base, de - debug_base, desc)
@@ -1307,6 +1538,7 @@ end = "section:desc"
 name = "by_successor_label"
 start = "Desc_Head"
 end = "Blocks_Head"
+end_measures = "allotment"
 
 [[region]]
 name = "start_by_section"
@@ -1328,15 +1560,22 @@ end = "section:blocks"
         assert_eq!(by_section.end_desc, "`section:desc`");
 
         // The successor's head label still measures the allotment (labels keep their
-        // meaning unchanged) — and the pad is DETECTED and NAMED, per shape.
+        // meaning unchanged) — and the pad is DETECTED and NAMED, per shape. R6: the
+        // region must DECLARE `end_measures = "allotment"` to be resolvable at all; the
+        // note then says the width is not a size.
         let by_label = &resolved.regions[1];
         assert_eq!((by_label.plain_len, by_label.debug_len), (IMAGE_LEN + PAD, IMAGE_LEN + PAD));
         let pad_warnings: Vec<&String> =
             resolved.warnings.iter().filter(|w| w.contains("region `by_successor_label`")).collect();
-        assert_eq!(pad_warnings.len(), 2, "one pad warning per shape: {:?}", resolved.warnings);
+        assert_eq!(pad_warnings.len(), 2, "one pad note per shape: {:?}", resolved.warnings);
         for w in &pad_warnings {
-            assert!(w.contains("`Blocks_Head`") && w.contains("section `desc`") && w.contains("0x2 byte(s)"), "{w}");
-            assert!(w.contains("section:desc"), "the warning names the fix: {w}");
+            assert!(
+                w.contains("`Blocks_Head`")
+                    && w.contains("section `desc`")
+                    && w.contains(&format!("{PAD:#X} byte(s)")),
+                "{w}"
+            );
+            assert!(w.contains("WIDTH IS NOT A SIZE"), "the note says what it is not: {w}");
         }
         // The `section:` region raised no warning (its end is content, not allotment).
         assert!(!resolved.warnings.iter().any(|w| w.contains("region `by_section`")), "{:?}", resolved.warnings);
@@ -1379,6 +1618,142 @@ end = "Blocks_Head"
         let r = resolve(&labels_only, &no_table, &no_table).unwrap();
         assert_eq!(r.regions[0].plain_len, IMAGE_LEN + PAD);
         assert!(r.warnings.is_empty());
+    }
+
+    /// R6: what a region's `end` is a statement ABOUT is DECLARED, and the strict
+    /// reading is the default. Four behaviours, every expectation derived from the
+    /// synthetic geometry (`LMA`/`IMAGE_LEN`/`PAD`), never copied off a live pin:
+    ///
+    /// 1. an undeclared bare-label end that sweeps a neighbour's pad REFUSES the
+    ///    resolve, naming region, shape, label, section, both addresses and both fixes;
+    /// 2. `end_measures = "allotment"` accepts the same manifest and says the width is
+    ///    not a size;
+    /// 3. an `allotment` declaration whose pad has gone to zero is an advisory to
+    ///    convert — not a failure, because a shrinking pad is good news;
+    /// 4. a window overlapping NO placed section is UNMEASURABLE and refuses. Before
+    ///    R6 that case returned `None` and read as a pass.
+    #[test]
+    fn end_measures_declares_the_contract_and_the_strict_reading_is_the_default() {
+        const LMA: u32 = 0x8000;
+        const IMAGE_LEN: u32 = 0x37;
+        const PAD: u32 = 9;
+        let a_end = LMA + IMAGE_LEN;
+        let b_lma = a_end + PAD;
+        let sections = vec![
+            SectionExtent { name: "a".into(), lma: LMA, end: a_end },
+            SectionExtent { name: "b".into(), lma: b_lma, end: b_lma + 0x40 },
+        ];
+        let syms = &[("A_Head", LMA), ("B_Head", b_lma), ("Far", b_lma + 0x1000)];
+        let plain = test_listing(syms, 0x60000).with_sections(sections.clone());
+        let debug = test_listing(syms, 0x62000).with_sections(sections);
+
+        // 1. Undeclared pad-sweeping end ⇒ REFUSED, naming everything needed to fix it.
+        let undeclared = load_manifest(
+            "[rom]\nend_symbol = \"__END__\"\n[[region]]\nname = \"r\"\nstart = \"A_Head\"\nend = \"B_Head\"\n",
+        )
+        .unwrap();
+        let err = resolve(&undeclared, &plain, &debug).unwrap_err();
+        for needle in [
+            "region `r` (plain)",
+            "`B_Head`",
+            "section `a`",
+            &format!("{PAD:#X} byte(s)"),
+            &format!("{b_lma:#X} vs {a_end:#X}"),
+            "section:a",
+            "allotment",
+        ] {
+            assert!(err.contains(needle), "refusal must name `{needle}`: {err}");
+        }
+
+        // 2. Declared ⇒ resolves, with a note that the width is not a size.
+        let declared = load_manifest(
+            "[rom]\nend_symbol = \"__END__\"\n[[region]]\nname = \"r\"\nstart = \"A_Head\"\nend = \"B_Head\"\nend_measures = \"allotment\"\n",
+        )
+        .unwrap();
+        let r = resolve(&declared, &plain, &debug).unwrap();
+        assert_eq!((r.regions[0].plain_len, r.regions[0].debug_len), (IMAGE_LEN + PAD, IMAGE_LEN + PAD));
+        assert_eq!(r.warnings.len(), 2, "one note per shape: {:?}", r.warnings);
+        assert!(r.warnings[0].contains("WIDTH IS NOT A SIZE"), "{:?}", r.warnings);
+
+        // 3. A declaration whose pad has gone to zero: advisory to convert, not a
+        //    failure. Modelled by moving `b` flush against `a`.
+        let flush = vec![
+            SectionExtent { name: "a".into(), lma: LMA, end: a_end },
+            SectionExtent { name: "b".into(), lma: a_end, end: a_end + 0x40 },
+        ];
+        let flush_syms = &[("A_Head", LMA), ("B_Head", a_end)];
+        let fp = test_listing(flush_syms, 0x60000).with_sections(flush.clone());
+        let fd = test_listing(flush_syms, 0x62000).with_sections(flush);
+        let r = resolve(&declared, &fp, &fd).unwrap();
+        assert_eq!(r.regions[0].plain_len, IMAGE_LEN, "flush ⇒ the pin is the content");
+        assert!(
+            r.warnings.iter().all(|w| w.contains("zero-width") && w.contains(SECTION_PREFIX)),
+            "a stale allotment advises the conversion: {:?}",
+            r.warnings
+        );
+
+        // 4. LOUD ON UNMEASURABLE: a window overlapping no placed section refuses, and
+        //    the `allotment` declaration does NOT buy it a pass — an undeclared width is
+        //    not a tolerated width.
+        let off_map = load_manifest(
+            "[rom]\nend_symbol = \"__END__\"\n[[region]]\nname = \"ghost\"\nstart = \"Far\"\nend = \"Far\"\nend_measures = \"allotment\"\n",
+        )
+        .unwrap();
+        let err = resolve(&off_map, &plain, &debug).unwrap_err();
+        assert!(
+            err.contains("region `ghost`") && err.contains("overlap NO placed section"),
+            "{err}"
+        );
+
+        // 5. FLUSH IS NOT SAFE: the same manifest as (3) — pad zero in both shapes — is
+        //    REFUSED once the listing knows `B_Head` is defined in section `b` while the
+        //    region's bytes end in `a`. Zero pad hid a dependency the address cannot see.
+        let owners: HashMap<String, String> =
+            [("A_Head".to_string(), "a".to_string()), ("B_Head".to_string(), "b".to_string())]
+                .into_iter()
+                .collect();
+        let flush2 = vec![
+            SectionExtent { name: "a".into(), lma: LMA, end: a_end },
+            SectionExtent { name: "b".into(), lma: a_end, end: a_end + 0x40 },
+        ];
+        let owned_p = test_listing(&[("A_Head", LMA), ("B_Head", a_end)], 0x60000)
+            .with_sections(flush2.clone())
+            .with_label_owners(owners.clone());
+        let owned_d = test_listing(&[("A_Head", LMA), ("B_Head", a_end)], 0x62000)
+            .with_sections(flush2)
+            .with_label_owners(owners);
+        let err = resolve(&undeclared, &owned_p, &owned_d).unwrap_err();
+        assert!(
+            err.contains("is defined in section `b`")
+                && err.contains("not in `a`")
+                && err.contains("flush TODAY")
+                && err.contains("section:a"),
+            "a flush successor-head end must be refused, naming the owner: {err}"
+        );
+        // …and the pad-free geometry alone (no ownership map attached) still passes —
+        // the check is skipped, not silently satisfied, when the map is absent.
+        let no_owner_p = test_listing(&[("A_Head", LMA), ("B_Head", a_end)], 0x60000)
+            .with_sections(vec![
+                SectionExtent { name: "a".into(), lma: LMA, end: a_end },
+                SectionExtent { name: "b".into(), lma: a_end, end: a_end + 0x40 },
+            ]);
+        let no_owner_d = test_listing(&[("A_Head", LMA), ("B_Head", a_end)], 0x62000)
+            .with_sections(vec![
+                SectionExtent { name: "a".into(), lma: LMA, end: a_end },
+                SectionExtent { name: "b".into(), lma: a_end, end: a_end + 0x40 },
+            ]);
+        assert!(resolve(&undeclared, &no_owner_p, &no_owner_d).is_ok());
+
+        // Manifest validation: an unknown word, `end_measures` on a `len` region, and
+        // `allotment` alongside a `section:` end are all refused by name.
+        for (src, needle) in [
+            ("[rom]\nend_symbol = \"__END__\"\n[[region]]\nname = \"r\"\nstart = \"A_Head\"\nend = \"B_Head\"\nend_measures = \"maybe\"\n", "got `maybe`"),
+            ("[rom]\nend_symbol = \"__END__\"\n[[region]]\nname = \"r\"\nstart = \"A_Head\"\nlen = 4\nend_measures = \"allotment\"\n", "already declares its own width"),
+            ("[rom]\nend_symbol = \"__END__\"\n[[region]]\nname = \"r\"\nstart = \"A_Head\"\nend = \"section:a\"\nend_measures = \"allotment\"\n", "no allotment to declare"),
+        ] {
+            let err = load_manifest(src).unwrap_err();
+            assert!(err.contains(needle), "expected `{needle}`: {err}");
+        }
     }
 
     #[test]
