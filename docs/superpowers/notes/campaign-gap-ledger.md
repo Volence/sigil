@@ -2732,14 +2732,17 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   `Frozen`, which `native.rs:769-774` makes unconditional — so the pinned body, the only
   route from an emit entry to a region length, is dead, and the Frozen arm uses
   `emp_map_frozen` (`native.rs:2143`), which reads section names and no `Region`.
-  **The one qualification:** `derive_canonical_bootstrap_table` (`native.rs:835-846`, via
-  `derive_offcanon --bootstrap-canonical`) DOES read region lengths, and it mints a frozen
-  boundary table — placement authority for every later build. It cannot run on the present
-  tree (`emp_map_toml` mints regions only from registry `ModuleSpec`s; `ojz_effects_editor_act1`
-  is content-derived and has none; `place_sections` errors "has no region in the map",
-  `resolve/mod.rs:948-951`, and `build_emp` turns that into `Err`, `native.rs:2146-2153`) —
-  but that is DERIVED FROM THE CODE, not executed here, and it is the path to re-check
-  before any future conversion wave if the PinnedBaked bootstrap is ever revived.
+  **The one qualification is DISCHARGED (2026-08-29, `parcel/retire-pinnedbaked`).** It read:
+  `derive_canonical_bootstrap_table` DOES read region lengths and mints a frozen boundary
+  table — placement authority for every later build — so it was the path to re-check before
+  any future conversion wave if the PinnedBaked bootstrap were ever revived. That parcel
+  deleted `derive_canonical_bootstrap_table`, `emp_map_toml`, `ModuleSpec::len` and
+  `ModuleSpec::region` outright, so there is no bootstrap left to revive and no code path
+  from a region LENGTH to any emitted byte. Measured after the deletion:
+  `pins::<REGION>.{plain,debug}_len` has **203 readers, every one of them in
+  `crates/*/tests/`, and zero outside them** (`repin.rs`'s `plain_len`/`debug_len` are the
+  GENERATOR's own output fields, not reads of a pin). The remaining conversions therefore
+  need no revival re-check — only their own port gate.
   The population can only shrink: an undeclared pad, or an undeclared flush end owned by
   another section, refuses `resolve` outright, and a declaration that is no longer needed
   in ANY shape fails `region_end_contracts::every_region_end_contract_holds_against_the_live_layout`.
@@ -2782,14 +2785,35 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   unavailable since 2026-08-01 (the `objdefs`/org-$11D7E strict overlap, conv-g §7.3); the
   two `native_chained_resume` proofs on it are `#[ignore]`d (Wave-B B-0). Registry pins
   (`ModuleSpec::base`/`len`) are read by NOTHING else — the shipped path uses the registry
-  only as its module-reachability list. — OPEN (kill: a retire parcel deletes
-  `SizeSource::PinnedBaked`, `sonic4_pinned_profile`, `assemble_native_all_gates_as_side`,
-  `build_native_emp`, `resolve_pinned_sections`, `emp_map_toml`,
-  `derive_canonical_bootstrap_table`, the `--bootstrap-canonical` flag, the pinned body of
-  `build_native_rom_with_listing`, the two ignored `native_chained_resume` proofs, and
-  `ModuleSpec::region` with the ~12 registry comments that justify a real pin by "the
-  bootstrap READS region bases"; `pins.rs` regions then serve only the port gates and
-  `repin`)
+  only as its module-reachability list. — **CLOSED 2026-08-29 by `parcel/retire-pinnedbaked`.**
+  The death claim was re-derived from source first, and the kill clause's own list was a
+  hypothesis rather than an inventory — it was right in substance and wrong in two details,
+  both recorded here rather than quietly absorbed:
+  * **The failing section is `player_instashield`, not `ojz_effects_editor_act1`.** The flag
+    was RUN (clean aeon worktree at the goldens' rev, output to a scratch dir so no golden
+    could be written): `place_sections: 3 error(s); first: section `player_instashield` has
+    no region in the map`. The mechanism is the one this row named — a byte-emitting section
+    with no registry `ModuleSpec` gets no region from `emp_map_toml` — but the named example
+    had gone stale, so the row's example was an illustration and not a witness.
+  * **`sonic4_pinned_profile` had one LIVE, non-ignored reader**, not zero:
+    `offcanon_assembled_bar::canonical_pins_agree_with_the_canonical_size_tables` called
+    `sonic4_pinned_profile(debug).assembled_len()`. That call never reached the placement
+    path — under `PinnedBaked`, `assembled_len` just returns `pins::{DEBUG_,}ASSEMBLED_LEN` —
+    so the gate's real subject is pins-vs-table, and it survives reading those two constants
+    directly. Had the kill clause been executed as written, a live gate would have gone with
+    the dead path.
+  Deleted: everything the clause named, plus three symbols it did not — `sonic4_profile_with`
+  (existed only to give the two profiles one body), `DUMMY_REGION` + `ModuleSpec::base`/`len`
+  (die with `region`), and `enforce_inapplicable_allowlist` (the STAGE1-bound wrapper whose
+  only non-test caller was the pinned body; its two negative controls now call
+  `enforce_inapplicable_allowlist_against` with the same allowlist, which is what the wrapper
+  was). `SizeSource` went too: with one variant left it was a single-variant enum generating
+  six `irrefutable_let_patterns`/`unreachable_patterns` warnings, so `GameProfile::size_source`
+  became the plain `frozen_sizes: HashMap<String, u32>`. ZERO BYTES MOVED — `pins.rs` and both
+  canonical size tables are byte-identical, CRC headers included, and the suite ran
+  4156 passed / 0 failed / 2 ignored against a 4156 / 0 / 4 baseline taken on the same tree —
+  the PASSED count is unchanged and the whole population delta is the two deleted `#[ignore]`d
+  proofs
 
 - [BGROOM-3 measure-at-packed-base, 2026-08-26] **The legacy far-scratch cursor for
   never-pinned sections still strides past the 24-bit wrap:** `lens_pinned` parks a ROM
