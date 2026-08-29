@@ -5,7 +5,7 @@ posture, delegation discipline, review bars, peer protocol — lives in
 `empyrean/docs/OVERSEER-PROTOCOL.md`; read it once, then this file for what is
 sigil-specific: the landing-lane division, the worktree/test quirks, and the queue.
 
-## ACTIVE: ANNOUNCE-BEFORE-RELINK (not a freeze) — read this before running anything that builds
+## NO ACTIVE HOLD — read this before running anything that builds
 
 **A hold that lives only in a chat message does not survive a `/clear`** *(aurora's)*. An
 announcement reaches the sessions that exist; only a committed artifact reaches the ones that
@@ -15,52 +15,87 @@ a successor EVALUATES it rather than obeying it, and a row that cannot be evalua
 
 | Raised | Artifact | Why | Ends when | Ask |
 |---|---|---|---|---|
-| 2026-08-29T04:11Z | `target/release/sigil` + `target/release/emit_sound_blob` | aeon dispatched chain 180 (BALL-SEATING, owner's d-36 flush ruling) into a worktree; it regenerates two character mapping blobs, builds all four shapes, and quotes `md5(SIGIL_BUILD)` at both ends as its own detector. | aeon says clear — they will also report whether assembled lengths moved before the repin. | aeon overseer |
+| *(none)* | — | — | — | — |
 
-**THIS IS AN ANNOUNCE, NOT A FREEZE, and the distinction is the point.** aeon stated plainly
-that a relink breaks nothing: their parcel detects it and pays a re-derivation, not a wrong
-answer. So relinking is PERMITTED — what is owed is telling them first, and telling **every**
-lane, not just the one that asked. Do not upgrade this to a freeze because a table row looks
-like one; a needless freeze costs this lane its own ability to build for no protective gain.
-**Verified at raise time:** both binaries still carry the md5s aeon pinned at dispatch —
-`sigil 495986ee…` (revision `b73bf420`, linked 2026-08-28 22:45) and
-`emit_sound_blob 42c1be51…`.
+**LIFTED 2026-08-29 by the aeon lane — and chain 181 will RE-ARM it, on a fresh grant, not
+this one.** They said so explicitly rather than letting the old row carry, which is the
+standing-permission-expires rule working in the right direction for once.
 
-**Worktree work is unaffected and should not be deferred.** An agent with its own
-`CARGO_TARGET_DIR` cannot reach the shared `target/`, so it cannot relink these. This row
-binds the **main checkout** only. Dispatching queue work during it is correct, not a
-violation.
+**THE CHAIN-180 FALSIFIER DISCHARGED — verified here, not taken.** Both lanes pre-agreed that
+BALL-SEATING would move byte values and no pin. It held: `pins.rs` is untouched in the freeze
+commit `fa0e6540` (checked by `git show --stat` on that path, not by their report), both ROM
+sizes are unchanged (719205 / 735818), and `repin --check` reported `pins.rs unchanged`.
+**Record it as a DISCHARGED prediction rather than a green run** — a pre-agreed prediction that
+comes true is worth something only if it is written down that it was agreed first.
 
-**PRE-AGREED FALSIFIER FOR CHAIN 180 — BINDING ON A SUCCESSOR OF THIS LANE.** Both lanes
-committed, **before the measurement**, that BALL-SEATING moves byte values and **no pin**: it
-is a mapping `y_off` change, so assembled lengths should not move. **If a pin moves, that is a
-STOP and a conversation — not a repin.** aeon brings the diff whether or not they can explain
-it. Written here rather than left in the exchange that agreed it, because the whole value of a
-falsifier is that it is fixed in advance, and a successor who meets a moved pin without knowing
-this was pre-agreed will simply repin it and record the surprise as routine. Precedent it was
-taken from: chain entry for aeon `4b43bdda` (PHYS_FALL_CAP), same shape, same commitment, in
-`golden/provenance.toml`.
+**A BETTER FREEZE WITNESS THAN `pins.rs unchanged`, found by the aeon lane in one of THIS
+repo's own artifacts.** `pins.rs unchanged` is an **absence**: it is equally consistent with a
+correct length-neutral parcel and with a build that never ran. `golden/offcanonical_sizes/s4.txt`
+is a **positive** witness — on chain 180 exactly two lines moved, both CRC headers
+(`golden_crc32`, `assembled_anchor`), while `assembled_end=0xa5c90` and every label held.
+Verified here on `fa0e6540`. A table of unmoved labels beside two changed CRCs cannot be
+produced by a build that did not run. **Prefer it to the pin file for length-neutral parcels.**
 
-**And the freshness trap that rides on a length-neutral parcel:** if lengths genuinely do not
-move, `repin --check` reporting `pins.rs unchanged` is consistent with a correct parcel AND
-with a parcel that never rebuilt. `md5(SIGIL_BUILD)` witnesses the assembler, never the ROMs.
-aeon's brief deletes all four ROMs before the verifying rebuild so their existence is the
-witness; expect that in their report, and treat an unchanged pin file without it as unwitnessed.
+### Standing rules — independent of whether a row is active
 
-**QUEUED BEHIND IT: chain 181, the left-edge VSRAM fix** (owner ruled d-40). aeon develops it in
-parallel but lands it **strictly after 180, never in the same freeze range** — chain 179's
-two-movers-in-one-range lesson, applied. It is aeon+sigil paired and touches
-`engine/level/parallax.emp` plus the scene DSL, so **it may move a port surface**; aeon reports
-which before the repin rather than at it. Nothing for this lane to do until they do.
+**Anything that can relink counts**, not just `cargo build --release` — see *Guard the
+artifact, not the subcommand*. `cargo test --release --workspace` relinks the identical file.
+Agents in worktrees with their own `CARGO_TARGET_DIR` are unaffected; a row binds the **main
+checkout**, and dispatching worktree queue work during one is correct, not a violation.
 
-**Anything that can relink counts**, not just `cargo build --release` — see *Guard the artifact, not the subcommand*. `cargo test --release --workspace` relinks the identical file. Agents in worktrees with their own `CARGO_TARGET_DIR` are unaffected; this binds the **main checkout**.
+**The commits-to-master clause attaches to a row only when that row's own *Why* names a run
+that reads HEAD.** A row protecting an *attest* covers commits, because a version gate compares
+the binary's revision against HEAD and a docs commit reddens the run while relinking nothing. A
+row protecting a build-dependent *parcel* does not. Read into the wrong row it silently stops
+this lane landing anything, at no benefit to the asker.
 
-**The commits-to-master clause is NOT part of the row above and must not be read into it.**
-When a row protects an *attest run*, it also covers COMMITS to master, because a version gate
-compares the binary's revision against HEAD and a docs commit reddens the run while relinking
-nothing. **The current row protects a build-dependent parcel, not an attest**, and aeon did not
-ask this lane to stop committing. Committing is free right now. Attach that clause to a row
-only when the row's own *Why* names a run that reads HEAD.
+### KNOWN NEXT: chain 181, the left-edge VSRAM fix — BLOCKED ON THE OWNER
+
+aeon ruled it lands **strictly after 180, never sharing a freeze range** (chain 179's
+two-movers-in-one-range lesson, applied). **It is not a length-neutral parcel and pins WILL
+move**, direction stated before the repin rather than at it: the DEBUG shape grows 4 bytes;
+180 symbols slide +4 in release, and in debug the same 180 slide +4 and a further 282 slide
++16 as the region crosses a 16-byte placement boundary. It also touches
+`engine/level/parallax.emp` and the scene DSL, so **it may move a port surface** — aeon reports
+which before the repin.
+
+**Currently stopped on the owner**: its cost came out materially larger than the decision card
+he ruled on described, and aeon stopped rather than landed. A fresh prediction and a fresh
+falsifier come with it when it unblocks; **the relink row re-arms at that point, not now.**
+
+### TWO `refreeze` DEFECTS THE CHAIN-180 FREEZE PAID FOR (2026-08-29, aeon's findings)
+
+Both are in this lane's crate and both bite the freeze ritual, which is aeon's to run and
+this lane's to fix.
+
+**1. `refreeze` has NO `--harness-root`; `repin` does. Verified here** — zero occurrences of
+`harness-root` in `src/bin/refreeze.rs`, two in `src/bin/repin.rs`. So the tool that *writes
+goldens* cannot be aimed by flag while the safer one can, and aiming a prebuilt `refreeze` at a
+dedicated worktree needs `SIGIL_HARNESS_ROOT` (`harness_root.rs::ROOT_OVERRIDE`) **plus**
+`SIGIL_BUILD`, since the build path defaults to `<root>/target/release/sigil` which a fresh
+worktree does not have. Without the override it operates on the tree it was **compiled** in —
+the shared checkout — which is exactly what the dedicated-worktree rule exists to prevent. The
+danger is that nothing fails: it works, on the wrong tree. **Queued: give `refreeze` the flag.**
+
+**2. `refreeze` outlives a 10-minute foreground cap, and `timeout 1800` does not help because
+the harness clamps.** aeon's first attempt was killed mid-capture holding **five half-written
+goldens**. Recoverable with `git checkout -- .` *in a dedicated worktree*. **In this lane's
+shared checkout the same kill leaves five modified goldens sitting under whatever runs next** —
+and a later `git add -u` would commit them, which is why that command is already barred here.
+**Queued: make the capture atomic** (write to temp, rename) so a kill cannot leave a partial set.
+
+*(The built-from/operating-on warning fired for them and did its job; they discharged it by
+checking that the only two commits since that binary was linked touch `golden/` data and no
+Rust source, rather than rebuilding. Correct, and the check is per-run, never a remembered
+result.)*
+
+**A shell hazard from the same run, theirs, and it lands on this lane's habits too:**
+`cmd | tail; echo $?` reports **tail's** status, not `cmd`'s. They nearly recorded a
+`repin --check` verdict from an exit code measuring the wrong process — on the single number the
+falsifier turned on. This document already bars `grep | head` on test output for hiding FAILED
+lines; **the same pipe hides the exit code**, which is worse because it looks like a check.
+Verify a push or a gate by a **positive artifact** (`git ls-remote` against the remote, the
+named test in the log), never by an exit code read through a pipe.
 
 ### History — PRIOR rows, already lifted. Not the row above.
 
