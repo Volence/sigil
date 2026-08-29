@@ -2638,11 +2638,19 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   ojz_effects_editor_act1 has no region in the map` message on the PinnedBaked/registry path.
   This parcel changes nothing on that path (`true_bases_by_index`'s `PinnedBaked` arm ignores
   the anchor set and the sink), and the five known-red tests keep their status. — OPEN
-- [derived-layout parcel, 2026-08-26] **Option B step 3 (declared alignment quantum)
-  not started:** `packed_align_of` still infers the quantum from the frozen provisional base,
-  and `seam2::frozen_prov` is still a `load_frozen_table` reader. — OPEN (kill: `align` on
-  `map.toml` rows / anchors, read by both; the frozen table then reaches shipped bytes only
-  as round-0 measuring pins for CODE)
+- [derived-layout parcel, 2026-08-26] **Option B step 3 (declared alignment quantum):**
+  `packed_align_of` still infers the quantum from the frozen provisional base, and
+  `seam2::frozen_prov` is still a `load_frozen_table` reader. — **HALF CLOSED
+  2026-08-29** (`parcel/declare-section-alignment`): the DECLARATION now exists and is
+  gated — `section_align::DECLARED` states each section's REQUIRED alignment with its
+  source, and `native::validate_declared_alignment` / `validate_resolved_alignment`
+  refuse a build that violates one or that leaves a section undeclared, on every shape.
+  Byte-neutral: no consumer reads the declaration for PLACEMENT yet. Remaining (kill):
+  make `packed_true_bases` align to `required_for(section)` and delete `packed_align_of`
+  + `seam2::frozen_prov` — that is byte-MOVING (most sections require 2 and receive 16
+  today) and needs a paired aeon+sigil freeze. Note the declaration deliberately lives in
+  sigil, not on `map.toml` rows: the map is aeon's file and this had to land byte-neutral
+  in one repo; if it later moves to `map.toml`, `section_align` becomes the reader.
 - [derived-layout parcel, 2026-08-26 — AEON LANE] **A clean aeon checkout cannot build
   canonically on its first try:** `build.sh` runs the pytest lane BEFORE emitting the ROM,
   and `tools/test_bg_emit.py::TestBgAnimSectionCeiling` fails LOUD without `s4.lst` AND
