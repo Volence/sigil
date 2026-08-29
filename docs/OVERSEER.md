@@ -74,7 +74,17 @@ the binary's revision against HEAD and a docs commit reddens the run while relin
 row protecting a build-dependent *parcel* does not. Read into the wrong row it silently stops
 this lane landing anything, at no benefit to the asker.
 
-### KNOWN NEXT: chain 181, the left-edge VSRAM fix — BLOCKED ON THE OWNER
+### CHAIN NUMBERS: 181 IS THE COLLISION RE-BAKE; THE VSRAM FIX MOVED TO 182 (2026-08-29)
+
+Corrected in place because the booking below was written when the VSRAM fix was next in line
+and has been wrong since aeon queued the re-bake ahead of it. **Chain 181 = the collision
+re-bake** carrying the owner's 574-cell repaint into the generated tree (aeon's master was red
+on two collision gates until it merged; the repaint was in the source of truth and absent from
+the artifact). Everything below about the VSRAM fix is unchanged and true — **it is chain 182**.
+A stale chain-number booking is the same unexecuted-prose defect as the rest of this file's
+sweep: nothing runs a chain number, so nothing could contradict it.
+
+### CHAIN 182, the left-edge VSRAM fix — BLOCKED ON THE OWNER
 
 aeon ruled it lands **strictly after 180, never sharing a freeze range** (chain 179's
 two-movers-in-one-range lesson, applied). **It is not a length-neutral parcel and pins WILL
