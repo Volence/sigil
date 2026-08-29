@@ -141,6 +141,20 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
         // [[symbol]] pins (repin.toml), sourced from the resolve.
         ("EditorSceneBinding_OJZ_Act1_Sec4", pins::EDITOR_SCENE_BINDING_OJZ_ACT1_SEC4.plain, pins::EDITOR_SCENE_BINDING_OJZ_ACT1_SEC4.debug),
         ("OJZ_Preset_Depth", pins::OJZ_PRESET_DEPTH.plain, pins::OJZ_PRESET_DEPTH.debug),
+        // editor-raster-preset (2026-08-29, aeon e99a2ca7): Debug_BandDemoHotkey became a
+        // CYCLE, and its `.raster_table` second entry is a dc.l to
+        // `EditorRaster_OJZ_Act1_authored_probe` — the first EDITOR-authored raster program,
+        // lowered from games/sonic4/data/editor/effects/presets/authored_probe.json into
+        // ojz_effects_editor_act1. One more cross-seam ref this standalone scope must supply;
+        // the port-flip rule, and build.sh does not warn about it. The strict suite on the
+        // attest is what caught it, which is where the ritual expects to catch it: the
+        // diagnostic was "link assertion condition references symbol(s)
+        // `EditorRaster_OJZ_Act1_authored_probe` not defined in this link". A [[symbol]] pin
+        // (repin.toml), sourced from the resolve rather than a hand literal that rots at the
+        // next slide — note the pin lands at 0x1323C/0x13A80, which is exactly where
+        // OJZ_EFFECTS used to start, because the new program is emitted immediately ahead of
+        // it and pushed that whole region +0x4E.
+        ("EditorRaster_OJZ_Act1_authored_probe", pins::EDITOR_RASTER_OJZ_ACT1_AUTHORED_PROBE.plain, pins::EDITOR_RASTER_OJZ_ACT1_AUTHORED_PROBE.debug),
         ("OJZ_Act_Pool_PageTable", pins::OJZ_ACT_POOL_PAGE_TABLE.plain, pins::OJZ_ACT_POOL_PAGE_TABLE.debug),
         // art-streaming-p2-task5: the descriptor's Act.act_sec_local_maps field.
         ("OJZ_Sec_LocalMaps", pins::OJZ_SEC_LOCAL_MAPS.plain, pins::OJZ_SEC_LOCAL_MAPS.debug),

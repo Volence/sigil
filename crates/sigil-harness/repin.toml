@@ -1030,6 +1030,18 @@ tests = ["act_descriptor_port"]
 name = "EditorSceneBinding_OJZ_Act1_Sec4"
 tests = ["act_descriptor_port"]
 
+# editor-raster-preset (2026-08-29, aeon e99a2ca7): the effects lab's raster chord became a
+# CYCLE, and its .raster_table's second entry is `EditorRaster_OJZ_Act1_authored_probe` — the
+# first EDITOR-authored raster program, lowered by tools/effects_gen.py from
+# games/sonic4/data/editor/effects/presets/authored_probe.json into ojz_effects_editor_act1.
+# That dc.l is a new cross-seam ref, so the standalone act_descriptor scope must supply it or
+# its link assert fails with "references symbol(s) ... not defined in this link". The
+# port-flip rule again, and build.sh still does not warn about it — the strict suite is what
+# caught this, on the attest, exactly where the ritual expects to catch it.
+[[symbol]]
+name = "EditorRaster_OJZ_Act1_authored_probe"
+tests = ["act_descriptor_port"]
+
 # Effects P3 Parcel C2 — the crossing's single effects consumer. Replaces the three
 # per-field pins (Palette_LoadSection / Raster_InstallSection /
 # Palette_InstallCycleSection) that `repin` removed when total binding deleted those
