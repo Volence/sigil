@@ -144,6 +144,29 @@ explains — this one reached a queue row, a hub ruling, and a dispatch order in
 peer's numbers; re-derive the cause. And note which check settled it: not a closer reading of
 the source, but **running the binary in two directories and looking at what it said**.
 
+**HOW THE WRONG MECHANISM WAS PRODUCED — the aeon lane's own diagnosis, banked because it is
+the reusable half and it is not "they were careless"** *(aeon `1506cf43`, verified reachable at
+their `origin/master` before citing)*. Chain 180's freeze ran with the cwd **and**
+`SIGIL_HARNESS_ROOT` pointed at the **same worktree**. The two candidate causes — *resolves from
+the cwd* and *resolves from the override* — were therefore held equal **by construction**, so
+that run could not discriminate between them at all. The variable that got credited was the one
+that had been deliberately set, which is the one anybody credits.
+
+**That is bar 5 arriving on a causal story instead of on a number, and that is why it was not
+recognised.** Bar 5 is written about *a suspiciously clean constant across varied inputs* — a
+measurement. Here the inputs only looked varied and the output was an *explanation*, so nothing
+about it pattern-matched to the bar that covers it. **Read bar 5 as covering mechanisms too:
+before crediting a cause, ask which run could have distinguished it from its rival, and whether
+that run was ever made.** The two-directory `--check` above is the command that separates them,
+takes seconds, and was never run by either lane until the retraction.
+
+**The operational form, agreed with aeon and adopted here: report the measurement, and flag the
+cause as the softer half, explicitly, every time.** The asymmetry is not in how carefully each
+is checked — it is in **how far each travels unchecked**. A count sits there being a count; a
+mechanism travels *as a fact and gets built on*. This one reached a queue row in this file, a
+hub ruling, and an authorized fix inside a day, while the counts it rode in on stayed exactly
+what they were.
+
 **2. `refreeze` outlives a 10-minute foreground cap, and `timeout 1800` does not help because
 the harness clamps.** aeon's first attempt was killed mid-capture holding **five half-written
 goldens**. Recoverable with `git checkout -- .` *in a dedicated worktree*. **In this lane's
