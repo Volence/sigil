@@ -9946,3 +9946,62 @@ demo_debug = "fdedb6e4/101113"
 lean = "f954fe89/674830"
 s4 = "c9255279/719235"
 s4_debug = "10916c8c/736095"
+
+[entry.superseded]
+by = "band-drift-attested"
+reason = "Entry 184 recorded a RED strict run and is abandoned rather than amended, because an entry is frozen once it records one. Both failures were the port-flip rule, not regressions, and neither moved a ROM byte: parallax_region_matches_reference and its debug twin, each failing because a link assertion in parallax.emp references Parallax_Drift_Acc, the new drift accumulator, which nothing defines when that module is compiled standalone. Fixed at sigil 9e4fc8ad by supplying it in parallax_port's cross-seam EQU table at a derived offset, plus the hand-maintained table-length annotation. This successor carries identical goldens by construction and exists so the passing strict run has an entry it can legally attest."
+
+[[entry]]
+name = "band-drift-attested"
+ab = "chain 184 successor: goldens byte-identical to entry 184 by construction. Three shapes unchanged against entry 183 - s4 c9255279/719235, s4.debug 10916c8c/736095, demo 3415e3ef/96372 - and demo.debug alone at fdedb6e4/101113, all verified on the merged aeon tree at 1aa2b242 from a clean detached checkout with the ROMs deleted first. Assembler sigil 765c31fca91d, md5 504b0c0ad887424b39334ae123e44b75 unchanged across every build. Effects gate lane OK exit 0, all 15 scheduled gates a complete row set."
+aeon_rev = "1aa2b24217e955fb53507ef5cf20304b6c54184e"
+note = "goldens byte-identical to `band-drift` — this entry exists to abandon it: the fix for what turned its strict run red moved no bytes. supersedes the red 184; no ROM bytes moved between them"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "3be8a771"
+full_size = 736463
+anchor_crc = "f680676a"
+anchor_end = 0xa7f40
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c9436a9f"
+full_size = 611253
+anchor_crc = "c37afca2"
+anchor_end = 0x8b980
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "fdedb6e4"
+full_size = 101113
+anchor_crc = "91a16b91"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "f954fe89"
+full_size = 674830
+anchor_crc = "4123ae0d"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "c9255279"
+full_size = 719235
+anchor_crc = "f21178b5"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "10916c8c"
+full_size = 736095
+anchor_crc = "cf2cd05d"
+anchor_end = 0xa7f40
