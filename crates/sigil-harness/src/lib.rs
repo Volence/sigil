@@ -56,6 +56,12 @@ pub mod strict_census;
 /// bin and the `provenance_chain` gate test.
 pub mod provenance;
 
+/// Which of `refreeze --freeze`'s four regeneration steps completed, so that a run
+/// killed in one of the three joints BETWEEN them is nameable afterwards instead of
+/// leaving fresh artifacts beside stale ones that all parse. Driven by the `refreeze`
+/// bin and the `freeze_step_gap` gate test.
+pub mod freeze_journal;
+
 /// Whether the revisions `provenance.toml` records still EXIST in the histories they
 /// name. [`provenance`] checks their SHAPE; this checks that a branch still reaches
 /// them, and distinguishes an object this clone has not fetched from one a rebase

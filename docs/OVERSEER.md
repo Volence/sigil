@@ -232,6 +232,52 @@ lines; **the same pipe hides the exit code**, which is worse because it looks li
 Verify a push or a gate by a **positive artifact** (`git ls-remote` against the remote, the
 named test in the log), never by an exit code read through a pipe.
 
+`REFREEZE-STEP-GAP` — **ADDRESSED on `parcel/freeze-step-gap`, awaiting the overseer's
+landing** (held behind the same freeze lane as the row above). The staged capture closed the
+half-write *inside* step 1; this closes nothing, and deliberately — it makes the three joints
+BETWEEN `--freeze`'s four steps (capture → sizes → pins → ledger) self-describing.
+
+**Why the joints are the worse exposure.** A half-written blob is obviously damaged. A run
+killed between two steps leaves every artifact individually well-formed: fresh goldens beside a
+size table, a `pins.rs` and a `provenance.toml` that all parse and all describe the PREVIOUS
+freeze. And for a byte-neutral `--supersede-tip` freeze killed at the last joint, the tree is
+**byte-identical to one where the freeze never ran** — no CRC moved, so `--check` sees nothing,
+and the entry that should have been appended is simply absent.
+
+**The mechanism is a completion journal, not a transaction.** `crates/sigil-harness/src/
+freeze_journal.rs` writes `golden/.freeze-journal` (git-ignored) before step 1, records each
+step as it completes, and removes it only when the run finishes — its ABSENCE is the only
+statement that a freeze completed. `--check` and `--attest` REFUSE over a leftover and print
+which artifacts are fresh, which are stale, the interrupted command verbatim, and the exact
+`git checkout` naming only the paths that moved. **`--freeze` does NOT refuse**: it announces
+the leftover and replaces it, because that run regenerates every artifact the leftover names,
+so a refusal there would obstruct the recovery. Nothing here can fire on a completed run.
+
+**Full staging across all four steps was considered and rejected on evidence, not cost.** The
+step graph is not what it looks like: `repin` reads `repin.toml` and a native resolve of the
+aeon tree only — it consumes NOTHING from steps 1 or 2 — but `derive_offcanon` DOES open each
+golden blob, for the `golden_crc32` / `assembled_anchor` header of every size table. So staging
+the goldens would require teaching a third tool a staged-golden-dir override whose misuse
+writes a plausible-but-wrong provenance stamp — the exact defect class this row exists to
+prevent. And it would not buy atomicity: the commit becomes 15 renames plus a ledger append,
+a *wider* mixed window than today's 7.
+
+**The honest guarantee.** The inconsistent state is unchanged; what changes is that it is
+nameable. A kill can still leave fresh artifacts beside stale ones — and a kill in the instant
+between a step returning and its record being written leaves the journal UNDERSTATING progress,
+which calls a fresh artifact stale (conservative: recovery regenerates it either way). An
+unreadable journal is `COULD NOT MEASURE`, never "completed". Residual holes, both stated in
+the module: a `capture_goldens.sh --write` run BY HAND outside `refreeze` is unjournaled and
+still silent, and a `SIGIL_KILL -9` between the last record and the removal leaves a
+completed-run journal, which is reported as a note rather than a fault.
+
+`crates/sigil-harness/tests/freeze_step_gap.rs` — 20 gates, **one per joint** rather than one
+over the set, since the three leave different wreckage. Three of them are CONTROLS asserting
+the unjournaled sequence really does leave a mixed set with **no residue of any kind** to read.
+Expectations come from the disk: what the journal calls fresh is checked against which
+artifacts actually hold new bytes, so a mis-attributed step table fails these gates instead of
+defining them.
+
 ### History — PRIOR rows, already lifted. Not the row above.
 
 **LIFTED 2026-08-28T21:34:58Z** *(the chain-176 freeze hold — a different row, now closed;
