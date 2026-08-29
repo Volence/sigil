@@ -5,7 +5,7 @@ posture, delegation discipline, review bars, peer protocol — lives in
 `empyrean/docs/OVERSEER-PROTOCOL.md`; read it once, then this file for what is
 sigil-specific: the landing-lane division, the worktree/test quirks, and the queue.
 
-## NO ACTIVE HOLD — read this before running anything that builds
+## ACTIVE: ANNOUNCE-BEFORE-RELINK (not a freeze) — read this before running anything that builds
 
 **A hold that lives only in a chat message does not survive a `/clear`** *(aurora's)*. An
 announcement reaches the sessions that exist; only a committed artifact reaches the ones that
@@ -15,11 +15,35 @@ a successor EVALUATES it rather than obeying it, and a row that cannot be evalua
 
 | Raised | Artifact | Why | Ends when | Ask |
 |---|---|---|---|---|
-| *(none)* | — | — | — | — |
+| 2026-08-29T04:11Z | `target/release/sigil` + `target/release/emit_sound_blob` | aeon dispatched chain 180 (BALL-SEATING, owner's d-36 flush ruling) into a worktree; it regenerates two character mapping blobs, builds all four shapes, and quotes `md5(SIGIL_BUILD)` at both ends as its own detector. | aeon says clear — they will also report whether assembled lengths moved before the repin. | aeon overseer |
 
-**Anything that can relink counts**, not just `cargo build --release` — see *Guard the artifact, not the subcommand*. **And it covers COMMITS to master while their attest runs**, not only relinks: a version gate compares the binary's revision against HEAD, so a docs commit reddens their run while relinking nothing. Agents in worktrees with their own `CARGO_TARGET_DIR` are unaffected; this binds the **main checkout**.
+**THIS IS AN ANNOUNCE, NOT A FREEZE, and the distinction is the point.** aeon stated plainly
+that a relink breaks nothing: their parcel detects it and pays a re-derivation, not a wrong
+answer. So relinking is PERMITTED — what is owed is telling them first, and telling **every**
+lane, not just the one that asked. Do not upgrade this to a freeze because a table row looks
+like one; a needless freeze costs this lane its own ability to build for no protective gain.
+**Verified at raise time:** both binaries still carry the md5s aeon pinned at dispatch —
+`sigil 495986ee…` (revision `b73bf420`, linked 2026-08-28 22:45) and
+`emit_sound_blob 42c1be51…`.
 
-**LIFTED 2026-08-28T21:34:58Z.** The aeon lane reported the freeze wave complete: ONE freeze,
+**Worktree work is unaffected and should not be deferred.** An agent with its own
+`CARGO_TARGET_DIR` cannot reach the shared `target/`, so it cannot relink these. This row
+binds the **main checkout** only. Dispatching queue work during it is correct, not a
+violation.
+
+**Anything that can relink counts**, not just `cargo build --release` — see *Guard the artifact, not the subcommand*. `cargo test --release --workspace` relinks the identical file. Agents in worktrees with their own `CARGO_TARGET_DIR` are unaffected; this binds the **main checkout**.
+
+**The commits-to-master clause is NOT part of the row above and must not be read into it.**
+When a row protects an *attest run*, it also covers COMMITS to master, because a version gate
+compares the binary's revision against HEAD and a docs commit reddens the run while relinking
+nothing. **The current row protects a build-dependent parcel, not an attest**, and aeon did not
+ask this lane to stop committing. Committing is free right now. Attach that clause to a row
+only when the row's own *Why* names a run that reads HEAD.
+
+### History — PRIOR rows, already lifted. Not the row above.
+
+**LIFTED 2026-08-28T21:34:58Z** *(the chain-176 freeze hold — a different row, now closed;
+kept for the precedent, not because anything is in force).* The aeon lane reported the freeze wave complete: ONE freeze,
 chain 176 (`debug-rings-gate`, aeon_rev `55e0858f`, sigil `c84a98c2` on `origin/master`), and
 four zero-byte parcels after it. The three binaries were still at their raise-time md5s when the
 hold came off — `sigil 85ba502f…`, `refreeze 8cf597eb…`, `repin 37657e41…` — so the hold did the
