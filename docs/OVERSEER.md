@@ -31,6 +31,28 @@ like one; a needless freeze costs this lane its own ability to build for no prot
 binds the **main checkout** only. Dispatching queue work during it is correct, not a
 violation.
 
+**PRE-AGREED FALSIFIER FOR CHAIN 180 — BINDING ON A SUCCESSOR OF THIS LANE.** Both lanes
+committed, **before the measurement**, that BALL-SEATING moves byte values and **no pin**: it
+is a mapping `y_off` change, so assembled lengths should not move. **If a pin moves, that is a
+STOP and a conversation — not a repin.** aeon brings the diff whether or not they can explain
+it. Written here rather than left in the exchange that agreed it, because the whole value of a
+falsifier is that it is fixed in advance, and a successor who meets a moved pin without knowing
+this was pre-agreed will simply repin it and record the surprise as routine. Precedent it was
+taken from: chain entry for aeon `4b43bdda` (PHYS_FALL_CAP), same shape, same commitment, in
+`golden/provenance.toml`.
+
+**And the freshness trap that rides on a length-neutral parcel:** if lengths genuinely do not
+move, `repin --check` reporting `pins.rs unchanged` is consistent with a correct parcel AND
+with a parcel that never rebuilt. `md5(SIGIL_BUILD)` witnesses the assembler, never the ROMs.
+aeon's brief deletes all four ROMs before the verifying rebuild so their existence is the
+witness; expect that in their report, and treat an unchanged pin file without it as unwitnessed.
+
+**QUEUED BEHIND IT: chain 181, the left-edge VSRAM fix** (owner ruled d-40). aeon develops it in
+parallel but lands it **strictly after 180, never in the same freeze range** — chain 179's
+two-movers-in-one-range lesson, applied. It is aeon+sigil paired and touches
+`engine/level/parallax.emp` plus the scene DSL, so **it may move a port surface**; aeon reports
+which before the repin rather than at it. Nothing for this lane to do until they do.
+
 **Anything that can relink counts**, not just `cargo build --release` — see *Guard the artifact, not the subcommand*. `cargo test --release --workspace` relinks the identical file. Agents in worktrees with their own `CARGO_TARGET_DIR` are unaffected; this binds the **main checkout**.
 
 **The commits-to-master clause is NOT part of the row above and must not be read into it.**
