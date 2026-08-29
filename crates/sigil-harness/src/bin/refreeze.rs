@@ -67,6 +67,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
+use sigil_harness::freeze_journal;
 use sigil_harness::harness_root::{
     announce_root, repin_invocation, resolve_harness_root, ROOT_OVERRIDE,
 };
@@ -221,6 +222,49 @@ fn authoritative_anchor_ends(root: &Path) -> Result<BTreeMap<String, usize>, Str
 
 fn golden_map() -> BTreeMap<String, String> {
     target_sources().into_iter().map(|(k, g, _)| (k.to_string(), g.to_string())).collect()
+}
+
+/// The refusal a reader owes when a previous `--freeze` did not finish in this tree, or
+/// `None` when none did.
+///
+/// A journal recording all four steps is NOT a fault: the run finished and only the
+/// removal was missed, so every artifact agrees with the ledger. That distinction is what
+/// keeps this from being a way to refuse a correct run — the only remaining trigger is a
+/// tree whose artifacts genuinely came from two different freezes.
+fn interrupted_freeze(root: &Path) -> Option<String> {
+    let l = freeze_journal::read(root)?;
+    if l.completed() {
+        eprintln!("refreeze: {}", l.completed_note());
+        return None;
+    }
+    Some(l.report())
+}
+
+/// This invocation, spelled so it can be pasted back verbatim.
+///
+/// "Restore the goldens" is not a recovery instruction at three in the morning. The
+/// journal records the command that was interrupted, and the report prints it — with the
+/// resolved root passed explicitly, so the re-run does not depend on standing in the same
+/// directory, and with the environment the freeze cannot run without.
+fn invocation(root: &Path) -> String {
+    use sigil_harness::freeze_journal::sh_quote;
+    let mut parts: Vec<String> = Vec::new();
+    parts.push(format!("{ROOT_OVERRIDE}={}", sh_quote(&root.display().to_string())));
+    // The prebuilt-`repin` override is deliberately NOT carried across. It skips the
+    // child's rebuild, so a recovery command that propagated it would re-run the freeze
+    // through whatever binary happened to be on disk; the recovery is the normal path.
+    for k in ["AEON_DIR", "SIGIL_EMIT", "SIGIL_BUILD"] {
+        if let Ok(v) = std::env::var(k) {
+            parts.push(format!("{k}={}", sh_quote(&v)));
+        }
+    }
+    let program = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .or_else(|_| std::env::args().next().ok_or(()))
+        .unwrap_or_else(|_| "refreeze".to_string());
+    parts.push(sh_quote(&program));
+    parts.extend(std::env::args().skip(1).map(|a| sh_quote(&a)));
+    parts.join(" ")
 }
 
 /// Run one regeneration script, inheriting the environment (SIGIL_EMIT / SIGIL_BUILD /
@@ -540,6 +584,14 @@ fn do_attest(
         Ok(r) => r,
         Err(e) => return fail(e),
     };
+
+    // (-1) An interrupted freeze, before the suite. `--attest` records that the strict
+    // run happened on the tree carrying the tip, and a tree whose artifacts came from two
+    // different runs is not that tree. Consulted first because the suite costs twenty
+    // minutes and the answer does not change over them.
+    if let Some(e) = interrupted_freeze(harness_root) {
+        return fail(e);
+    }
 
     // (0) The blobs in this tree must BE the tip. Attesting a tree whose goldens do not
     // match the entry would record a run about different bytes than the entry names.
@@ -1065,6 +1117,17 @@ fn announce_reachability(root: &Path, chain: &provenance::Chain) {
 
 fn do_check(root: &Path) -> ExitCode {
     let golden = root.join("golden");
+
+    // An interrupted freeze BEFORE the chain, because it changes what a chain verdict
+    // means. `--check` compares the ledger against the committed blobs; when a killed run
+    // left the two describing different captures, "violation" is a true statement about
+    // the wrong subject — it reads as a corrupt ledger and sends the reader to repair the
+    // thing that is correct. It also catches the case the chain comparison structurally
+    // cannot: a byte-neutral freeze killed at the last joint moves no CRC at all.
+    if let Some(e) = interrupted_freeze(root) {
+        return fail(e);
+    }
+
     let src = match std::fs::read_to_string(golden.join("provenance.toml")) {
         Ok(s) => s,
         Err(e) => return fail(format!("read provenance.toml: {e}")),
@@ -1139,37 +1202,111 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
     };
     eprintln!("refreeze: freezing from aeon {aeon_rev} (clean)");
 
+    // (0.5) THE JOURNAL. Opened after the tree is known — it records which one — and
+    // before the first step, because every step from here on writes an artifact whose
+    // freshness a later reader has no other way to establish. Removed only when the run
+    // finishes; see [`sigil_harness::freeze_journal`] for why the three joints between
+    // the steps are a wider exposure than the capture they follow.
+    //
+    // A leftover from a killed run is ANNOUNCED and then replaced, never refused: this
+    // run regenerates every artifact the leftover names, so it IS the recovery, and a
+    // refusal here would obstruct the fix while giving the mechanism a way to fire on a
+    // correct freeze. Announced rather than silently overwritten, because the leftover is
+    // the only account of what the killed run left, and it is about to be gone.
+    if let Some(l) = freeze_journal::read(root) {
+        if l.completed() {
+            eprintln!("refreeze: {}", l.completed_note());
+        } else {
+            eprintln!("refreeze: {}", l.report());
+            eprintln!(
+                "refreeze: PROCEEDING — this freeze regenerates every artifact above, so it is \
+                 the recovery; the journal is replaced."
+            );
+        }
+    }
+    let mut journal = match freeze_journal::open(root, &aeon_rev, &invocation(root)) {
+        Ok(j) => j,
+        Err(e) => return fail(e),
+    };
+    match freeze_steps(root, &golden, &mut journal, name, ab, &aeon_rev, note, supersede) {
+        // The journal STAYS on a failure, which is the same state a kill leaves; the
+        // report goes out now as well, while whoever ran this is still watching.
+        Err(e) => {
+            eprintln!("refreeze: {}", journal.state_report());
+            fail(e)
+        }
+        Ok(()) => match journal.close() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => fail(e),
+        },
+    }
+}
+
+/// The four regeneration steps, each recorded as it completes.
+///
+/// Split out from [`do_freeze`] so that every step runs through [`journal_step`] and none
+/// can be added beside them: a step whose completion is not recorded makes the journal
+/// understate what a kill left fresh, and an unrecorded LAST step makes a finished run
+/// look interrupted. The `step_journal` gates read this body for exactly that.
+#[allow(clippy::too_many_arguments)]
+fn freeze_steps(
+    root: &Path,
+    golden: &Path,
+    journal: &mut freeze_journal::Journal,
+    name: &str,
+    ab: &str,
+    aeon_rev: &str,
+    note: &str,
+    supersede: Option<&str>,
+) -> Result<(), String> {
     // (1) blobs, (2) size tables, (3) pins — the three regen steps.
-    if let Err(e) = run_script(&golden.join("capture_goldens.sh"), &["--write"]) {
-        return fail(e);
-    }
-    if let Err(e) = run_script(&golden.join("derive_offcanonical_sizes.sh"), &[]) {
-        return fail(e);
-    }
-    if let Err(e) = run_repin(root) {
-        return fail(e);
-    }
+    journal_step(journal, freeze_journal::STEP_CAPTURE, || {
+        run_script(&golden.join("capture_goldens.sh"), &["--write"])
+    })?;
+    journal_step(journal, freeze_journal::STEP_SIZES, || {
+        run_script(&golden.join("derive_offcanonical_sizes.sh"), &[])
+    })?;
+    journal_step(journal, freeze_journal::STEP_PINS, || run_repin(root))?;
 
     // Recompute the tip set from the FRESH blobs + FRESH anchor_ends.
-    let ends = match authoritative_anchor_ends(root) {
-        Ok(m) => m,
-        Err(e) => return fail(e),
-    };
+    let ends = authoritative_anchor_ends(root)?;
     let gmap = golden_map();
-    let fresh: BTreeMap<String, Target> = match provenance::recompute_targets(&golden, &gmap, &ends) {
-        Ok(t) => t,
-        Err(e) => return fail(e),
-    };
+    let fresh: BTreeMap<String, Target> = provenance::recompute_targets(golden, &gmap, &ends)?;
 
     // THE LEDGER HALF — decide, render, append, re-validate. Every rule about WHETHER
     // this entry may be written lives in `provenance::freeze_into`, where it is reachable
     // by a test that needs neither seven rebuilt ROMs nor the real chain.
-    match provenance::freeze_into(&golden, name, ab, &aeon_rev, note, &fresh, supersede) {
-        Err(m) => fail(m),
+    journal_step(journal, freeze_journal::STEP_LEDGER, || {
+        report_ledger_half(golden, name, ab, aeon_rev, note, &fresh, supersede)
+    })
+}
+
+/// Run one step and record its completion. The record is written AFTER the step returns,
+/// so an interruption understates progress rather than overstating it.
+fn journal_step(
+    journal: &mut freeze_journal::Journal,
+    key: &'static str,
+    step: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    step()?;
+    journal.record(key)
+}
+
+fn report_ledger_half(
+    golden: &Path,
+    name: &str,
+    ab: &str,
+    aeon_rev: &str,
+    note: &str,
+    fresh: &BTreeMap<String, Target>,
+    supersede: Option<&str>,
+) -> Result<(), String> {
+    match provenance::freeze_into(golden, name, ab, aeon_rev, note, fresh, supersede) {
+        Err(m) => Err(m),
         Ok(Applied::Fixpoint { tip }) => {
             println!("refreeze: FIXPOINT — the regenerated goldens match tip `{tip}`; nothing appended.");
             println!("          (byte-neutral re-freeze; the tree stays git-clean.)");
-            ExitCode::SUCCESS
+            Ok(())
         }
         Ok(Applied::Appended { abandoned, byte_neutral, chain_len, notices }) => {
             // `ratchet:`, never `skip:`. This lane's strict bar requires zero `skip:`
@@ -1196,7 +1333,7 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
             println!(
                 "refreeze: appended entry `{name}` (ab=\"{ab}\", aeon_rev={aeon_rev}); chain len {chain_len}."
             );
-            ExitCode::SUCCESS
+            Ok(())
         }
     }
 }
@@ -1327,6 +1464,134 @@ mod child_handover {
             1,
             "a second reading of the prebuilt-binary override is a second spawning path \
              in waiting"
+        );
+    }
+}
+
+#[cfg(test)]
+mod step_journal {
+    use sigil_harness::freeze_journal::{
+        STEPS, STEP_CAPTURE, STEP_LEDGER, STEP_PINS, STEP_SIZES,
+    };
+    use sigil_harness::harness_root::ROOT_MARKERS;
+
+    fn body(name: &str) -> &'static str {
+        let src = include_str!("refreeze.rs");
+        let start = src.find(name).unwrap_or_else(|| panic!("nothing to measure: {name} is gone"));
+        let rest = &src[start..];
+        let end = rest.find("\n}\n").unwrap_or_else(|| panic!("{name} has no end"));
+        &rest[..end]
+    }
+
+    /// EVERY STEP IS RECORDED, and the gate reads the source because what it forbids is a
+    /// step appearing BESIDE the four — a fifth regeneration, or one of these moved out of
+    /// the wrapper — which no run of the existing path would exercise. An unrecorded step
+    /// makes the journal understate what a kill left fresh; an unrecorded LAST step makes a
+    /// finished run look interrupted, which is the refusal-on-a-correct-run failure.
+    #[test]
+    fn every_regeneration_step_runs_through_the_journal_wrapper() {
+        let b = body("fn freeze_steps(");
+        assert_eq!(
+            b.matches("journal_step(").count(),
+            STEPS.len(),
+            "one wrapper per step, and no step outside one: {b}"
+        );
+        for key in [STEP_CAPTURE, STEP_SIZES, STEP_PINS, STEP_LEDGER] {
+            assert_eq!(
+                b.matches(&format!("STEP_{}", key.to_uppercase())).count(),
+                1,
+                "step `{key}` must be recorded exactly once: {b}"
+            );
+        }
+        // Every piece of work sits INSIDE a wrapper, checked by POSITION rather than by
+        // line: the calls span lines, and a line-wise reading would pass a step hoisted
+        // above a wrapper that then called nothing.
+        let mut events: Vec<(usize, &str)> = Vec::new();
+        for tok in ["journal_step(", "run_script(", "run_repin(", "report_ledger_half("] {
+            let mut from = 0;
+            while let Some(i) = b[from..].find(tok) {
+                events.push((from + i, tok));
+                from += i + tok.len();
+            }
+        }
+        events.sort_by_key(|(i, _)| *i);
+        let shape: Vec<&str> = events
+            .iter()
+            .map(|(_, t)| if *t == "journal_step(" { "wrap" } else { "work" })
+            .collect();
+        let want: Vec<&str> = (0..STEPS.len()).flat_map(|_| ["wrap", "work"]).collect();
+        assert_eq!(
+            shape, want,
+            "each step must be one wrapper immediately followed by its work — anything \
+             else is work whose completion is never recorded: {events:?}"
+        );
+    }
+
+    /// THE ARTIFACT LISTS ARE THE RECOVERY INSTRUCTION, so they are checked against the
+    /// tables the tool actually reads and writes rather than left as a hand-kept copy. A
+    /// list that drifts names the wrong file at three in the morning.
+    #[test]
+    fn each_step_claims_exactly_the_artifacts_the_tool_reads_and_writes() {
+        let capture: Vec<String> = super::target_sources()
+            .iter()
+            .map(|(_, golden, _)| format!("golden/{golden}"))
+            .collect();
+        assert_eq!(
+            STEPS[0].produces.iter().map(|p| p.to_string()).collect::<Vec<_>>(),
+            capture,
+            "the capture writes one blob per target"
+        );
+
+        let sizes: Vec<String> = super::target_sources()
+            .iter()
+            .map(|(key, _, _)| format!("golden/offcanonical_sizes/{key}.txt"))
+            .collect();
+        assert_eq!(
+            STEPS[1].produces.iter().map(|p| p.to_string()).collect::<Vec<_>>(),
+            sizes,
+            "the derivation writes one table per target"
+        );
+        // The five that `authoritative_anchor_ends` reads back must be among them, under
+        // the exact filenames it opens.
+        for (_, _, size_file) in super::target_sources().iter().filter(|(_, _, f)| !f.is_empty()) {
+            let want = format!("golden/offcanonical_sizes/{size_file}");
+            assert!(STEPS[1].produces.contains(&want.as_str()), "{want} is not claimed");
+        }
+
+        // `pins.rs` is the path `repin` writes and `authoritative_anchor_ends` reads.
+        assert_eq!(STEPS[2].produces, &["src/pins.rs"][..]);
+        assert!(body("fn authoritative_anchor_ends(").contains("join(\"src/pins.rs\")"));
+
+        // The ledger is one of the two markers that identify a harness root, so its
+        // spelling is not this file's to choose.
+        assert_eq!(STEPS[3].produces, &[ROOT_MARKERS[0]][..]);
+    }
+
+    /// The two modes that PRONOUNCE on a tree consult the journal first. `--check` is the
+    /// gate the strict suite runs and `--attest` records that the suite ran on the tree
+    /// carrying the tip; either one speaking over a tree whose artifacts came from two
+    /// different freezes is answering about a subject that does not exist.
+    #[test]
+    fn the_modes_that_judge_the_tree_consult_the_journal() {
+        for f in ["fn do_check(", "fn do_attest("] {
+            assert!(
+                body(f).contains("interrupted_freeze("),
+                "{f} must refuse over an interrupted freeze"
+            );
+        }
+        // `--freeze` must NOT refuse: it is the recovery, and a refusal there obstructs
+        // the fix. It must still READ the leftover, because replacing it silently
+        // destroys the only account of what the killed run left behind.
+        let freeze = body("fn do_freeze(");
+        assert!(
+            !freeze.contains("interrupted_freeze("),
+            "the freeze regenerates every artifact a leftover names, so it replaces the \
+             journal rather than refusing over one"
+        );
+        assert!(
+            freeze.contains("freeze_journal::read(") && freeze.contains("l.report()"),
+            "a leftover must be printed before it is replaced, or the account of the \
+             killed run is destroyed by its own recovery"
         );
     }
 }

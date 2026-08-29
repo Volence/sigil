@@ -18,5 +18,12 @@ docs/lane-status.json
 # checkout for a later `git add` to sweep up.
 crates/sigil-harness/golden/.staging/
 
+# The freeze's completion journal (crates/sigil-harness/src/freeze_journal.rs). It is a
+# claim about a run in flight — present only while `refreeze --freeze` is running or
+# after one was killed — so it is never durable history, and ignoring it keeps a killed
+# run from leaving an untracked file for a later `git add` to sweep into a commit. Its
+# ABSENCE is what says a freeze completed; `refreeze --check` refuses while it is here.
+crates/sigil-harness/golden/.freeze-journal
+
 # dedicated landing-verification target dir — never share target/ between worktrees
 /.target-land/
