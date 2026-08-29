@@ -186,6 +186,53 @@ fails at `$85AD`, with *"keep the ensure with it."* Taken without that line, the
 have been invisible to every instrument either lane has.
 
 
+### THE PROGRESS METER WAS THE DEFECT'S OWN BLIND SPOT (2026-08-29, R6's finding — bank 58, not 82)
+
+The REPIN-END parcel left a population of regions borrowing a neighbour's padding, **warned and
+ledgered**, and the warning became the progress meter. **That warning is an ADDRESS comparison.**
+A successor's head label sitting *flush* against a region's last byte is, by address, identical to
+a label the region owns. So the meter counted only the padded cases: **82 visible, 58 invisible,
+real population 140.**
+
+**This is the vacuity class arriving on the one artifact nobody audits: the burndown.** Every
+other instance today was a gate that could not fail. This is a gate that could not fail *at
+counting the thing it was created to drain* — the meter would have read zero with 58 live. **When
+a check is promoted to a progress meter, re-derive the population by what DETERMINES the value,
+never by what the check reports** (bar 8 aimed at your own burndown).
+
+**The discriminator that fixed it is a second, independent derivation**: `native::section_label_owners`
+answers *which section DEFINES the end label*, which an address cannot. Ambiguous ownership
+(`text`, ~20 instances) is **dropped, never attributed** — an unresolvable owner is not a match.
+
+**And the related history correction, which sharpens the remedy:** the `ACT_DESCRIPTOR` incident
+was **not** silent. The port gate fired — it failed on length with every content byte matching.
+The failure was **misattribution**, not absence. That is why R6's remedy is a message that NAMES
+the neighbour rather than another comparison; a louder comparison would have reproduced the
+original confusion.
+
+### A PIN LENGTH IS SIGIL-SIDE; A PIN BASE IS NOT (2026-08-29, enumerated not assumed)
+
+Sequencing fact for the remaining ~80 end conversions. **A pin BASE reaches emitted bytes**:
+`seam1.rs:51` computes `blob_lma() = pins::BOOT_HEAD.{plain,debug}_base + 54`, and `seam1.rs:565`
+assigns `sec.lma = blob_lma(debug) + cursor`. **A pin LENGTH does not**, on any live path: the only
+non-test consumer is `ModuleSpec::len` (`native.rs:301`) → `emp_map_toml` → `build_emp`, reachable
+only under `SizeSource::PinnedBaked`, and `build_native_rom_with_listing` (`native.rs:4113-4115`)
+returns early to the chained builder because `sonic4_profile` constructs `SizeSource::Frozen`
+unconditionally.
+
+**So an `end` re-spelling can only move a length, never a base** (`repin.rs:840-843` derives bases
+from `start`; `:884` derives lengths as `end − base`) — **the 80 conversions need no paired freeze.**
+
+**The revival condition, recorded because it is the thing a successor re-derives wrongly:**
+`derive_canonical_bootstrap_table` (`native.rs:835-846`) *does* read region lengths and mints a
+frozen boundary table — a wrong length there reaches bytes one step removed. It is currently
+unreachable **by derivation, not by execution**, and that distinction is the agent's own and is
+kept. **If the PinnedBaked bootstrap is ever revived, re-check this before touching a length.**
+
+**Provenance worth keeping: the general form was asserted from the specific case measured**, and
+the agent said so in those words when challenged. The narrowed claim is the one banked.
+
+
 ### CHAIN NUMBERS: 181 IS THE COLLISION RE-BAKE; THE VSRAM FIX MOVED TO 182 (2026-08-29)
 
 Corrected in place because the booking below was written when the VSRAM fix was next in line
