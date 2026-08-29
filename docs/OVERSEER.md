@@ -74,6 +74,83 @@ the binary's revision against HEAD and a docs commit reddens the run while relin
 row protecting a build-dependent *parcel* does not. Read into the wrong row it silently stops
 this lane landing anything, at no benefit to the asker.
 
+### A COMMIT TO THIS MASTER CAN REDDEN A PAIRED ATTEST WITHOUT MOVING A BYTE (2026-08-29)
+
+**The bound, so a successor can evaluate it rather than obey it:** while the aeon lane is between
+`--freeze` and `--attest`, a commit to sigil `master` — **including a docs-only one** — can turn
+their run red, because the version gate compares the built binary's revision against HEAD. It
+relinks nothing and changes no byte; the redness is the gate doing its job on a moved HEAD.
+
+**Therefore: hold ALL commits here, prose included, from the moment a paired freeze starts until
+its two SHAs arrive.** It costs nothing — `docs/lane-status.json` is git-ignored, so the lane can
+keep saying what it is doing without moving HEAD.
+
+**Evaluate it, do not inherit it.** The row is dead the moment no paired attest is running. The
+condition is checkable in one message to the aeon lane, and this lane must not let it decay into
+a habit of never committing while aeon is awake.
+
+**How it was nearly violated, which is why it is written as a bound.** This overseer was about to
+commit tonight's rulings while chain 182's attest was in flight, holding **three** true
+clearances — standing push approval, no active hold row, zero bytes — every one of which answers
+*"may I commit?"* and none of which answers *"may I commit while someone else's run is reading my
+HEAD?"*. **A permission is scoped to the hazards its author was thinking about.** The tell: every
+clearance checked was about this lane's own rules and none was about the peer's.
+
+### THE AUTHOR OF A CONSTRAINT IS NOT EXEMPT FROM IT (2026-08-29)
+
+Distinct from the volatile-pointer class, and this lane's own instance. This overseer wrote the
+aeon lane a rule about not moving ground under a peer, and then did not check whether the rule
+just written bound this lane. **Rehearsal is not protection; writing the rule is the highest-risk
+moment rather than the safest** *(aeon's formulation, six instances across the two lanes in one
+night, every one produced by a session actively holding the relevant rule)*.
+
+### BORROWING `--git-dir` BORROWS THAT REPO'S INDEX — A FALSE POSITIVE THAT ARRIVES ON CUE (2026-08-29)
+
+`git --git-dir=<other>/.git --work-tree=<copy> diff --stat <rev>` **does not compare the copy
+against the revision.** It uses `<other>`'s index, so another checkout's staged deletions are
+reported as properties of the tree being examined. Measured: it named three band-parcel files as
+deleted from a reference copy in which all three were present and byte-identical.
+
+**What made it dangerous was the timing, not the error.** It arrived inside a peer warning that
+predicted exactly that poisoning, so the wrong answer was the expected one. Had it been believed,
+a clean reference would have been discarded and rebuilt for a defect that did not exist.
+
+**The instrument that settled it uses no git plumbing at all:** `[ -e ]` on the path, then
+`hash-object` on the file against `rev-parse <rev>:<path>`, over every tracked path. 1,203 paths,
+0 differing. **Prefer a content witness to a cleverer comparison** — the same conclusion this file
+already reached about `level_staleness.py`.
+
+**Two smaller traps from the same ten minutes, both this lane's:**
+
+- **`pgrep -f '<pattern>'` MATCHES THE SHELL RUNNING THE CHECK.** A wait loop built on it never
+  exits, and a liveness probe reports RUNNING forever — this overseer read "still running" three
+  times off a suite that had finished nearly an hour earlier. Filter by `/proc/<pid>/cwd` and
+  `cmdline`, or check the log's mtime. *(Same family as the aeon lane's `pgrep … | head -1`
+  capturing a transient wrapper, reported the same night.)*
+- **`git ls-tree` escapes non-ASCII names** (`docs/research/parallax-\302\2474.6.md`), so an
+  existence test over its output checks filenames that never existed. Use `-z` and read NUL-safely.
+
+### LANDING RECORD — `parcel/freeze-step-gap`, merged `ec870c3e`, pushed (2026-08-29)
+
+Landed **under a hub ruling made in the owner's place**, not under his direct word, and that is
+recorded here so it can be reversed cheaply. Authority verified at a committed revision before
+acting: empyrean `3de429d`, reachable from their `origin/main`, transcribing the owner's
+*"if anything's confused you can make decisions/fable can. goodnight!"* and *"(you're the
+director/overseer)"*, scoped by the hub's own line to *"wherever a lane is blocked on a
+decision."* **This lane did not witness the utterance.**
+
+**Gate, with its own positive control rather than a green log:** 4,139 passed / 0 failed / 4
+ignored over 358 test binaries on the merged tree; the parcel's own 20 gates named in the log by
+`freeze_step_gap`; and — because `SIGIL_STRICT_GATE` only makes a *missing* reference fatal —
+the strict path was proved live by pointing `AEON_DIR` at an empty directory and watching
+`vblank_port` fail by name, then passing against the real reference. **A green run whose new
+gates never executed is the artifact this bar exists to refuse.**
+
+**Reference tree:** an exclusive `cp -a` of `.aeon-land-182` (detached at aeon `e99a2ca7`), never
+aeon's shared checkout — which is deliberately behind `origin/master` pending the owner's `d-44`
+and must not be read for artifacts or contract facts. Verified before use: 1,203 tracked paths
+byte-identical to `e99a2ca7`, four ROM CRCs matching ledger entry 183.
+
 ### CHAIN NUMBERS: 181 IS THE COLLISION RE-BAKE; THE VSRAM FIX MOVED TO 182 (2026-08-29)
 
 Corrected in place because the booking below was written when the VSRAM fix was next in line
