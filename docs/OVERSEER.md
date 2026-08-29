@@ -1368,6 +1368,42 @@ hold-still arrangement.
 that cannot reach the shared `target/` cannot relink the pinned binary, and then none of
 the announcement discipline is load-bearing.
 
+**THE ANNOUNCEMENT NAMES EVERY BINARY THE BUILD PRODUCES, DERIVED BY A COMMAND — NEVER A
+HAND-PICKED LIST** *(2026-08-29; the aeon lane raised it, this lane ruled the shape)*.
+`cargo build --release` relinks the whole workspace, so an announcement that names only the
+binary someone happened to ask about leaves every other consumer with an unpinned input.
+
+**The hand-list failed on its first outing, and it failed in the worst available way.** The
+lifted hold above names three binaries by md5 — `sigil`, `refreeze`, `repin` — chosen by hand
+at raise time. The one it omits is `emit_sound_blob`, and that is the only one of the four
+that is a **hard build input**: it writes `z80_sound_blob.bin` / `z80_sound_blob_debug.bin`,
+its own header declares the output byte-deterministic from the tracked `.emp` sources **and
+the sigil toolchain version**, and aeon's `build.sh` invokes it as an ARTIFACT step that dies
+loudly without it. So a silent relink of it can move ROM bytes by a path that never touches
+`sigil`, and the resulting ROM is internally consistent and self-certifying. A hand-list that
+drops the load-bearing member is not a list with a gap — it is evidence that hand-selection
+cannot see load-bearingness, which is why extending it to four would have repeated the
+mechanism rather than fixed it.
+
+**The rule: emit an md5 for every executable in `target/release/`, from the command, at the
+relink.** Nothing is choosing, so a new binary cannot be silently absent.
+
+```sh
+find target/release -maxdepth 1 -type f -executable -printf '%p\n' | sort | xargs md5sum
+```
+
+Twelve lines today. Twelve is cheap; picking the subset by hand is the step that failed.
+
+**n=2, and the prior instance was banked in the consumer's own tree before either lane
+looked.** aeon's `build.sh` carries an ASSEMBLER PROVENANCE banner recording that
+`target/release/sigil` "sat three days behind while aeon builds invoked it, and nothing in
+the pipeline was capable of noticing", with the reason stated outright one line above: *a
+stale assembler and a current one emit byte-identical ROMs whenever the SOURCE has not
+changed, so every artifact check we have is silent on which binary produced it.* That lane's
+own framing of finding it is the useful sentence and is worth more than the second data
+point: **we had seen this before and did not reach for it.** A prior instance sitting
+unretrieved in one's own file is its own finding.
+
 ## Queue
 
 The standing sigil-native arc is the **`.emp` language work (Spec 2)** — specs in
