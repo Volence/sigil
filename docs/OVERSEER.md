@@ -130,6 +130,74 @@ already reached about `level_staleness.py`.
 - **`git ls-tree` escapes non-ASCII names** (`docs/research/parallax-\302\2474.6.md`), so an
   existence test over its output checks filenames that never existed. Use `-z` and read NUL-safely.
 
+### A BOOKED KILL LIST IS A HYPOTHESIS, AND ITS EXAMPLE ROTS SEPARATELY FROM ITS RULE (2026-08-29)
+
+`parcel/retire-pinnedbaked`, merged `5babb3ea`, pushed. The `SizeSource::PinnedBaked`
+placement path is gone: 854 lines deleted, `pins.rs` and `golden/` diffs empty, `repin.toml`
+touched on 37 lines of which **0 are non-comment**, suite 4156/0/2 on the merged tree against
+a 4156/0/4 baseline — passed count unchanged, the whole delta being the two deleted
+`#[ignore]`d proofs.
+
+**The finding is not the deletion. It is that the booking would have deleted a live gate.**
+The FIVE-REG ledger row enumerated eleven symbols to remove. One of them,
+`sonic4_pinned_profile`, had since acquired a live, non-ignored caller —
+`canonical_pins_agree_with_the_canonical_size_tables`, the ONLY place `pins.rs` and the
+canonical size tables are checked against each other. Executed verbatim, the clause deletes
+that gate and the suite goes green with one fewer instrument. The row was **correct when
+written**; nothing executes a ledger row, so nothing could tell it when it stopped being.
+
+**The dispatch instruction that saved it is the reusable part**, and it is one sentence:
+*treat the kill clause as a HYPOTHESIS, not as authority; step 1 is to re-derive the death
+claim from source.* Booked work lists are the same PROSE-BOUND class as a stale comment, with
+one aggravating difference — **a stale comment misinforms, a stale booking is executed.**
+
+**AND THE EXAMPLE ROTS ON A DIFFERENT CLOCK FROM THE RULE.** The row said the bootstrap cannot
+place the present tree because `ojz_effects_editor_act1` is content-derived and has no region.
+Running the flag rather than citing the row gives:
+`section 'player_instashield' has no region in the map`. **The mechanism was right and the
+witness was stale.** This is worth separating from ordinary drift, because of how it fails: a
+reader who checks the named example finds it does not hold and concludes the RULE is wrong,
+when only the illustration had moved. A document can be right about the rule and wrong about
+the evidence it offers for it. **Cite mechanisms in bookings; re-measure witnesses at use.**
+
+**What the parcel buys downstream, and it is the reason to have done it first.** Region
+LENGTHS now have **no reader outside `crates/*/tests/`** — `derive_canonical_bootstrap_table`,
+`emp_map_toml`, `ModuleSpec::len` and `::region` are all gone. That discharges the written
+revival condition standing over the R6 region-end conversion wave (~80 pairs): there is no
+bootstrap left to revive, and no path from a region length to an emitted byte. The wave now
+needs nothing but each region's own port gate.
+
+### `AEON_DIR` NEEDS A PROVISIONED WORKTREE, NOT A BARE ONE — AND THE FAILURE LOOKS REAL (2026-08-29)
+
+**Correcting this file's own standing advice.** "Use a plain detached worktree at the goldens'
+SHA" is necessary and NOT sufficient. Verified firsthand on `.aeon-pinnedbaked` at
+`def98ee5`: it carries **15 gitignored artifacts** that `git worktree add --detach` does not
+produce — the seven reference ROMs (`s4`, `s4.debug`, `demo`, `demo.debug`, `config_a`,
+`config_b`, `lean`), `s4.lst` / `s4.debug.lst`, the generated `engine/{debug,sound}/generated/`
+trees, and `tools/salvador` built plus its compression vectors.
+
+**Without them the suite reports ~200 failures that read exactly like golden divergence** —
+the same signature as the shared-`CARGO_TARGET_DIR` trap, and equally unfalsifiable from the
+log alone. Two provisioning rules that keep it honest:
+
+- **The reference ROMs may be copied from sigil's own goldens** — but verify all seven
+  CRC32+size against the provenance tail first, which proves they are that revision's
+  artifacts. Non-circular: they are not built by the tree under test.
+- **Generate the `.lst` files from master's sigil BEFORE editing anything**, so the same fixed
+  oracle serves the baseline run and the post-change run.
+
+### A BACKGROUND WRAPPER REPORTS EXIT 0 FOR A COMMAND THAT NEVER RAN (2026-08-29)
+
+`… > $DIR/landing.log 2>&1` with `$DIR` not yet existing fails in the SHELL, before cargo is
+reached — and the harness still reported **"completed (exit code 0)"**. A landing run that
+never happened, announced as green. Caught only because the log was inspected rather than the
+exit status believed.
+
+**Therefore: `mkdir -p` the target dir in the same command, and never read a background
+wrapper's exit code as the run's verdict.** Put the real one IN the log
+(`echo "CARGO_EXIT=$?"`) and grep for it. Same family as *a suite log does not name its tree*:
+the trustworthy witness is inside the artifact, not in the thing reporting on it.
+
 ### LANDING RECORD — `parcel/freeze-step-gap`, merged `ec870c3e`, pushed (2026-08-29)
 
 Landed **under a hub ruling made in the owner's place**, not under his direct word, and that is
