@@ -155,7 +155,7 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
     // VDP_Shadow_Table cell below lives BEFORE the deleted pair, so it holds. (It had
     // a VDP_Dirty_Mask sibling until the blanket-restore parcel deleted that symbol.)
     // Camera_X/Y now pin-sourced (they carry the −4 too; matches Current_Act_Ptr style).
-    let table: [(&str, u32, u32); 32] = [
+    let table: [(&str, u32, u32); 33] = [
         // The MD Debugger carriers the DEBUG-shape asserts jsr/jmp (the section_port /
         // sprites_port precedent). Shape-invariant pins carried in BOTH shapes: in plain
         // the assert is comptime-gated out and these simply go unreferenced.
@@ -228,6 +228,17 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
         // `104 + 28 * MAX_PARALLAX_BANDS` stated as 28 x (16 - 8) = 224 = 0xE0. The eight
         // ceiling-independent rows above (+0x48..+0x54) take the +0x20 of the two widened
         // Current_Scroll arrays only; the four rows here take the full +0xE0.
+        // band-drift (2026-08-29, aeon 1aa2b242): the drift accumulator, a new cross-seam
+        // ref parallax.emp's own guards name. It ships at BAND_DRIFT_N = 0, so
+        // DRIFT_ACC_LONGS = 0 and this is a ZERO-LENGTH array — which is why it ALIASES
+        // Curve_Carry at +0xA4 rather than taking space, exactly the arrangement the
+        // paragraph above records Curve_Carry itself having had before showcase-effects
+        // gave it a non-zero length. State_End is UNCHANGED at +0x228 and pins.rs did not
+        // move, which is the corroboration that the length really is zero.
+        // Offset DERIVED from both built listings, not carried: Parallax_State FFFF88A0 and
+        // Parallax_Drift_Acc FFFF8944 in s4.lst AND s4.debug.lst — identical in both shapes,
+        // so one offset serves both columns.
+        ("Parallax_Drift_Acc", pins::PARALLAX_STATE.plain + 0xA4, pins::PARALLAX_STATE.debug + 0xA4),
         ("Parallax_Curve_Carry", pins::PARALLAX_STATE.plain + 0xA4, pins::PARALLAX_STATE.debug + 0xA4),
         ("Parallax_Shadow_Bands", pins::PARALLAX_STATE.plain + 0xA8, pins::PARALLAX_STATE.debug + 0xA8),
         ("Parallax_Shadow_Scroll_A", pins::PARALLAX_STATE.plain + 0x1E8, pins::PARALLAX_STATE.debug + 0x1E8),
