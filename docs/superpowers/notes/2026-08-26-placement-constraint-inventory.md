@@ -92,6 +92,82 @@ ledgered. The live instance of the same family cost a landing already: a refreez
 placement the neighbour is no longer where it was, so every one of the 79 is a silent
 mis-measure waiting rather than a warning.
 
+### R6 IS RECAPTURED (2026-08-29, `parcel/explicit-region-ends`) — byte- and PIN-neutral
+
+**The row's own number was wrong in both directions, and the measurement is the finding.**
+This row said 79. Re-measured over the whole manifest — all 96 `[[region]]`s × 2 shapes,
+183 live region/shape pairs, classified by WHAT DETERMINES THE END VALUE rather than by
+what the file's syntax looks like:
+
+| what the end value is determined by | pairs |
+|---|---|
+| a neighbour's placement, **carrying pad today** | **82** |
+| a neighbour's placement, **flush today** (zero pad) | **58** |
+| a label the region owns | 19 |
+| declared: `len` literal (18) or `section:<name>` (6) | 24 |
+
+**Two corrections follow, and the second is the important one.**
+
+1. **82, not 79.** The three the earlier scan could not see are `debug_only` regions —
+   `compression_selftest`, `test_parent`, `test_stress_emitter`. `resolve`'s
+   `debug_only`/`plain_only` arms resolved their ends through `Listing::get` rather than
+   `region_end`, so neither the `section:` spelling nor the pad warning reached them. They
+   were not tolerated; they were invisible. Both arms now route through `region_end` and
+   are judged like any other region.
+
+2. **The 58 flush pairs were never counted, and the meter this row proposed would have
+   read ZERO with all of them still live.** The REPIN-END ledger row made the warning
+   count the progress meter. But the warning is an ADDRESS comparison, and by address a
+   successor's head label sitting flush against a region's last byte is indistinguishable
+   from a label the region owns. Those 58 pairs are the identical defect — the value is
+   the neighbour's placement and moves with it — carrying zero pad at this freeze.
+   `native::section_label_owners` supplies the discriminator the address cannot: which
+   section DEFINES the end label. A flush end owned by another section is now refused
+   exactly as a padded one is.
+
+**What is declared, and why it is not a number.** Each region says what its `end` is a
+statement ABOUT: `end = "section:<name>"` (its own extent), a literal `len` (a fixed-size
+blob), or `end_measures = "allotment"` (the end IS the next placement; the width is not a
+size). The DEFAULT is strict — a region that says nothing asserts its window holds its own
+bytes and nothing past them — so the population can only shrink. **No byte count is
+declared, deliberately**: the pad is a property of where the successor landed, not of this
+region, and writing today's number into the manifest would enshrine an accident as a
+requirement. That is the mistake R7 measured its way out of, in the same file, three days
+earlier.
+
+**Landed byte- and pin-neutral.** 34 regions converted to `section:<name>` — every one
+whose end was flush in every live shape, so the pin value does not move. `pins.rs` changed
+**34 doc-comment lines and zero constants**; `repin --check` is a fixed point. The 80
+remaining pad-carrying pairs each got a one-word declaration, not a conversion: converting
+them SHRINKS the pin by its pad, which their port gates must re-prove at the new length —
+ledgered, one per gate touch.
+
+**Gates, and which instrument each uses.** `crates/sigil-harness/tests/region_end_contracts.rs`,
+two tests, plus the existing `repin_pins::pins_rs_is_current` which now inherits the check:
+
+| half | asserts | instrument |
+|---|---|---|
+| `every_region_end_contract_holds_against_the_live_layout` | the live manifest resolves (so no region is undeclared) AND no declaration is stale in every shape | window from the SYMBOL listing; content extent from the SECTION TABLE of the resolved layout the ROM is emitted from |
+| `deleting_an_allotment_declaration_refuses_the_live_manifest` | for EVERY declared region, removing that one line makes the real corpus refuse, naming the region, its section and both remedies | same pair — red-first, permanently, ~50 refusals per run |
+
+The two halves read two derivations of one resolve (`sigil_native_symbol_listing` vs
+`section_extents`/`section_label_owners`), so a symbol address disagreeing with the section
+geometry is visible. **Neither can catch a wrong resolve** — both come from one link of one
+tree — and the file says so rather than implying otherwise.
+
+**Loud on unmeasurable.** `pad_past_content` returned `None` both when a window ended at
+its content and when NO section overlapped it. Those are now distinct (`PadVerdict`), and
+the second REFUSES. A window whose bytes the section table cannot find had been rendering
+as a pass.
+
+**What R6 does NOT close** — three rows in `campaign-gap-ledger.md`: the 80 declared
+allotments (one conversion per port-gate touch); `objdefs` (its section is named `text`,
+of which ~20 instances are placed, so `section:text` is correctly refused as ambiguous) and
+`palette` (its window straddles the `palette`/`preset` section boundary, so no section
+extent describes it) — both need an aeon-side change; and aeon's `[[budget]]` cursor
+(`DeformTable_Zero`, a neighbour's head label standing in for the object bank's own
+extent), which is the same defect one level up in a file sigil does not own.
+
 **R7 — LOCATED, and it is the row that most needs recapturing: alignment is INFERRED FROM
 THE PIN'S OWN ADDRESS, AND THE INFERENCE IS CAPPED AT 16.** `native::packed_align_of` returns
 *the largest power of two **from the set {16, 8, 4, 2, 1}** dividing a section's frozen

@@ -19,6 +19,33 @@
 #     (+ mixed_dac_rom's ASSEMBLED_LEN twins)
 # Every value was cross-checked against both listings before ratifying the
 # start/end symbols below.
+#
+# ── WHAT A REGION'S `end` IS A STATEMENT ABOUT (parcel R6) ──────────────────
+# A region pins `end - start`. If `end` names a label the region does not own —
+# overwhelmingly the NEXT section's head — the pin measures the gap to a
+# neighbour, not this region's size, and the placer's pad between them enters
+# the pin. Three spellings, and the strict one is the DEFAULT:
+#
+#   end = "section:<name>"      this region's OWN extent (`lma + image_len`).
+#                              Prefer this. It cannot absorb a neighbour's pad
+#                              and it does not rot when a head label is renamed.
+#   len = 0x...                a fixed-size blob: the LENGTH is the invariant
+#                              and the end floats.
+#   end = "Label"              (nothing else said) the window holds this
+#                              region's bytes and NOTHING past them. `resolve`
+#                              REFUSES if it sweeps pad, and refuses too if the
+#                              label is defined in another section — flush today
+#                              is still the neighbour's placement tomorrow.
+#   end_measures = "allotment" the end IS the next placement, deliberately. The
+#                              pin's WIDTH IS NOT A SIZE; it moves when the
+#                              neighbour moves. No byte count is written down —
+#                              the pad is an accident of where the successor
+#                              landed, not a property of this region.
+#
+# 80 region/shape pairs declare `allotment` today. Each is convertible with a
+# one-line edit that SHRINKS its pin by its pad, so its port gate must re-prove
+# at the new length — do it when that gate is next touched. Gates:
+# `tests/region_end_contracts.rs`.
 
 [rom]
 # The listing END-line address per shape — the assembled (pre-convsym) ROM
