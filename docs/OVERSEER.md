@@ -306,6 +306,46 @@ if any other process could have rebuilt them. Where the binaries are byte-neutra
 is pinned the CRCs are identical either way, so the conclusion survives — but it survives on
 *that* argument, not on exclusivity. Make agents state which.
 
+### STATE A RULE AS A BOUND, NOT AS A PROCEDURE (2026-08-29, aeon's formulation)
+
+*"A rule stated as a **procedure** invites the reader to run it further than it goes; a rule
+stated as a **bound** cannot be over-run."*
+
+The chain-181 false R7 in one sentence: **the aeon lane executed this lane's procedure
+correctly, past its cap.** *"The largest power of two dividing the frozen base"* is a
+procedure — you can run it to 32, 64, 128, and nothing in the wording stops you.
+*"`packed_align_of` only distinguishes residues mod 16"* (`2026-08-26-config-b-two-byte-growth.md:182`)
+is a bound, and **the false conclusion is unreachable from it.** Both sentences describe the
+same function; only one of them can be over-run.
+
+**This subsumes the parenthetical lesson rather than sitting beside it.** A buried qualifier is
+what a procedure-shaped rule needs in order to be correct — the cap had to be bolted on because
+the headline stated a method instead of a limit. State the bound and there is no qualifier left
+to bury, nothing for a summary to drop, and no hop at which the meaning can decay. **The fix for
+"my qualifier got dropped" is usually to stop needing one.**
+
+Applies well past this instance: prefer *"never exceeds N"* to *"computed by doing X"*, and
+*"only these five values occur"* to *"derived from the address"*. Where a procedure genuinely
+must be given (someone has to reimplement it), give the bound FIRST and the procedure after.
+
+### AN ENUMERATION THAT COMES BACK MOSTLY CLEAN IS A RESULT, NOT A NULL (2026-08-29)
+
+Same episode, the other half. One bad restatement of R7 was found by a peer; sweeping the
+population **by what touches the value** (bar 8) found five more, **all correct**. The
+conclusion — *one bad summary, not systemic drift* — is a finding, and it is the one that
+governed what happened next.
+
+**The failure mode this prevents is over-correction.** Had the sweep not run, the reasonable
+response to "your doc misled me" is to distrust the whole document, re-audit everything, and
+warn other lanes off it. That would have been wrong, expensive, and would have spent the
+credibility of five accurate sites to pay for one inaccurate one. **Report the clean count out
+loud** — "five other sites, all correct" is what makes "fix this one line" the proportionate
+answer instead of a doc-wide rewrite.
+
+**And it cuts the other way too:** a sweep that comes back mostly *dirty* converts a
+one-line fix into a class problem, which is equally a result. Either way the number is the
+deliverable. What is never acceptable is fixing the reported instance and not looking.
+
 ### A CHECK CAN BE VACUOUS BY CONSTRUCTION IN THE ENVIRONMENT IT RUNS IN (2026-08-29, aeon's)
 
 `aeon/tools/level_staleness.py` asks whether the generated tree is current by comparing
