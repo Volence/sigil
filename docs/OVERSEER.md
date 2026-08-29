@@ -222,6 +222,37 @@ The absent-instrument problem is normally solved by planting a defect to prove t
 works. **A run you have just invalidated already contains real instances**, and it is sitting
 there. **Before discarding a bad run, ask what it is now a control FOR.**
 
+
+### A CHECK CAN BE VACUOUS BY CONSTRUCTION IN THE ENVIRONMENT IT RUNS IN (2026-08-29, aeon's)
+
+`aeon/tools/level_staleness.py` asks whether the generated tree is current by comparing
+`newest mtime(editor sources) > newest mtime(generated tree)`. **In a fresh worktree every file
+is written within the same second, so the comparison is false by construction and the check
+passes on any tree, current or stale.** It answers a question about a *filesystem* when the
+claim is about *content*. Found by the aeon lane the same night their master went red with a
+clean `git status` and a stale generated half — the exact condition the tool exists to detect.
+
+**The discriminator, and it is one question: what input would make this fail?** If the answer
+depends on a property of the *environment* rather than of the *subject* — mtimes, ordering,
+whether a directory happens to be fresh — the check is measuring the harness. This is bar 2's
+absent-instrument problem one level out: bar 2 catches a matcher that matches the wrong thing;
+this catches a comparison that cannot be false where it runs.
+
+**The fix shape is a content witness**: re-run the producer into a scratch location and compare
+byte-for-byte against the committed artifact. Identical proves currency; different names the
+stale files. It cannot pass vacuously. Aeon has made that a required, separately-reported line
+on their re-bake parcel — *"the bake ran"* and *"the bake is current"* are two claims and only
+the second failed.
+
+**This lane has open instances of the same class, and they should be read together rather than
+as unrelated tidying:** `CENSUS-EATS-PARSE-ERRORS` (a file it cannot parse silently shortens an
+authoritative list — a failure rendered as a shorter clean answer), `PIN-CHAIN-ONE-INSTRUMENT`
+(the tool that writes the address file and the check that guards it ask the same resolver, so
+the check cannot notice that resolver being wrong — vacuity by shared instrument rather than by
+environment), and `REPIN-VERBOSE-GHOST` / `PROSE-BOUND-SWEEP` (prose asserting behaviour nothing
+executes). **Ask the discriminator question of each before fixing any of them**, and prefer the
+content-witness shape to a cleverer comparison.
+
 ## Boot
 
 > You're the overseer for this repo. Read `docs/OVERSEER.md` first, then
