@@ -153,6 +153,64 @@ sound bank, so any moved section whose NEW base has a different largest-power-of
 than its old one has its alignment quantum silently changed — the `2c49f538` class, in
 flight, today.
 
+### R7 IS RECAPTURED (2026-08-29, `parcel/declare-section-alignment`) — byte-neutral
+
+**What now exists.** `crates/sigil-harness/src/section_align.rs` declares, per ROM section
+keyed by HEAD LABEL, the alignment that section **requires** and the **source** the
+requirement comes from. 107 rows, covering every section that carries a frozen provisional
+base in any shipped shape (86) plus every section that appears in a shipped resolved layout
+without one (21). Two always-on halves in `native.rs` check it inside
+`build_rom_chained_with_listing` — the entry `sigil build` reaches — so every build of every
+shape runs both:
+
+| half | when | against | loud on absent declaration |
+|---|---|---|---|
+| `validate_declared_alignment` | before the packing walk (`true_bases_by_index`, Frozen arm) | each pinned section's **frozen provisional base** | yes — `[layout.undeclared-alignment]`, naming the section, its base, and the quantum the inference would have given it |
+| `validate_resolved_alignment` | after `resolve_layout`, beside `validate_placement` | each section's **resolved LMA** | yes — `[layout.alignment-violated]` / `[layout.undeclared-alignment]` |
+
+Witness: `crates/sigil-cli/tests/section_alignment_declared.rs` (7 shipped shapes green;
+red-first witness doctors the `Sfx_33` frozen row `+4` and asserts the refusal names the
+section, the requirement, the source and the residue) plus
+`native::declared_alignment_tests` (7 unit tests) and `section_align::tests` (4).
+
+**The row's own headline was still not quite right, and the measurement says so.** This row
+called for "declared == what the inference produces". **That scalar does not exist.**
+Measured across the seven shipped shapes: **38 of the 86 pinned sections infer a DIFFERENT
+quantum in different shapes.** `Ani_Tails` infers 16 in `config_a`/`config_b`/`s4_debug` and
+2 in `s4`/`lean`; `Collected_Init` infers all four of 2, 4, 8, 16. A per-(section, shape)
+table that did hold the equality would be a mechanical re-encoding of the frozen tables —
+an expectation copied off the pin it is checking. So what is declared is the REQUIREMENT,
+and the checks are divisibility, not equality.
+
+**That is not a weaker check.** For every `r ∈ {2,4,8,16}` — everything the inference can
+express — `r | prov` and `r | packed_align_of(prov)` are **equivalent** (`packed_align_of`
+returns the largest element of `{16,8,4,2}` dividing `prov`; a power of two `≥ r` dividing a
+multiple of `r`). Checking the provisional base directly also stays meaningful above the cap,
+and needs no second copy of the walk's island classification.
+
+**And it answers the cap question with numbers.** *No section requires 32.* Sections whose
+frozen base is divisible by 32+ are divisible by wildly different powers in different shapes
+(`BG_Init`: 16, 32, 512; `Tile_Cache_GetTile`: 16, 32, 64, 256, 2048) — coincidence, not
+requirement. **Three sections require more than 16, and the cap hides every one of them**:
+`Dac_Temp_Blip` and `SoundTablesZ80_Head` require `$8000` (one Z80 `SetBank` window;
+`packed_align_of($90000)` = 16), and `ObjCodeBase` requires `$10000` (R1's ruling below;
+`packed_align_of($10000)` = 16). All three are held at declared `[[anchor]]` addresses today,
+so the inference never runs on them — which is exactly why the requirement had to be written
+down before the anchors become the only authority.
+
+**Everything else declares 2** — the 68000 word rule — because nothing in aeon's sources asks
+for more. The wider quanta those sections receive today are slack the inference hands out. At
+the flip, `align_up(running, required)` replaces `align_up(running, packed_align_of(prov))`
+and bytes WILL move for them; that is the flip's paired freeze, not this parcel's.
+
+**A consequence worth pricing.** With the requirement written down, the `2c49f538` class is no
+longer dangerous where the requirement is 2: a refreeze silently moving such a section's
+inferred quantum 16 → 8 is a genuine non-event, and the gate stays silent by design. It is
+dangerous only where a real requirement exists — and there the gate fires, on every shape,
+by name. What remains uncovered is a NEW section arriving with a real requirement nobody
+declares: the completeness half refuses the build until someone writes a row, but it cannot
+know the row is right. That is a review obligation, not a mechanism.
+
 ## R1 is RULED by aeon (2026-08-26), and the check they asked for found a second population
 
 Their ruling, read off `games/sonic4/map.toml`'s own anchor comments: vectors + header at
