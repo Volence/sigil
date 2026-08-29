@@ -2834,3 +2834,32 @@ For live next-work, read newest-first: the most recent dated `HANDOFF`/packet no
 in `docs/superpowers/notes/`, then `docs/superpowers/notes/campaign-gap-ledger.md`
 for banked nice-to-haves. Keep this section's "current state" paragraph fresh when
 landing an arc — a stale queue snapshot misleads the next boot more than no snapshot.
+
+### THE EXPLICIT-PATH `git add` RULE PAID OFF FOR REAL (2026-08-29, this lane's near-miss)
+
+**A `cd` into a sibling repo persisted across a compound command**, so a `git add docs/OVERSEER.md`
+and a `git commit` intended for sigil executed **inside the aeon checkout** — the owner's live
+tree, carrying **76 modified files** at that moment (his editor content plus another lane's
+agent output) and one untracked file.
+
+**Nothing happened, and the reason is the rule this file already bars.** `git add <explicit path>`
+matched a file that was unmodified there, so nothing staged and the commit refused with *"no
+changes added to commit"*. **`git add -A` or `git add -u` would have staged 76 files of somebody
+else's uncommitted work and committed them to their master** — the exact incident that got
+`git add -u` barred here in the first place, arriving from a direction nobody had modelled: not
+carelessness inside your own tree, but *precision inside the wrong one*.
+
+**Two things worth keeping.**
+
+**1. The dangerous ingredient was the `cd`, not the `git`.** A compound command that changes
+directory leaves the shell there for the *next* call. Every safety rule downstream — verify the
+branch, enumerate the paths — was followed, and all of them were answered by the wrong
+repository, confidently. `git branch --show-current` would have said `master`, truthfully, about
+aeon. **Prefer `git -C <path>` to `cd`, and pass absolute paths to file-editing scripts**, so a
+stale working directory cannot silently re-target a correct command.
+
+**2. The lane that had spent the night cataloguing wrong-tree failures committed one.** The
+refreeze retraction, the shared-`AEON_DIR` collision, the poisoned `target/`, the tracking-ref
+rule — all four are *"the operation was right and the tree was wrong"*, and this is the fifth,
+authored by the session banking the other four. **Knowing the class does not confer immunity;
+only a mechanism does**, which is the same conclusion the protocol reached about typed SHAs.
