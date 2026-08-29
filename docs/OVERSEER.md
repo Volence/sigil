@@ -223,6 +223,41 @@ works. **A run you have just invalidated already contains real instances**, and 
 there. **Before discarding a bad run, ask what it is now a control FOR.**
 
 
+### NEVER POINT TWO CONCURRENT AGENTS AT ONE `AEON_DIR` (2026-08-29, this lane's own error)
+
+The documented rule is *never share one `CARGO_TARGET_DIR` between two worktrees*. **The aeon
+reference tree needs the same rule and did not have it.** Two agents were dispatched within
+three minutes of each other, each with its own worktree and its own target dir — and both with
+`AEON_DIR=/home/volence/sonic_hacks/.aeon-hole-wire`. **Builds WRITE into that tree**
+(`build.sh` produces `s4.bin`, `demo.bin`, …, and rebuilds `rm`-first), so one agent's build
+transiently deletes the ROMs the other agent's strict gates read.
+
+It surfaced as one failure in an otherwise clean 4090-test run:
+`SIGIL_STRICT_GATE set but reference missing: …/.aeon-hole-wire/demo.bin`, green on a re-run
+seconds later. **The gate was right both times**; the tree moved underneath it.
+
+**Two things about it that generalise past the fix.**
+
+**1. The perturbation is not one-directional, so "it passed on a re-run" is not the end of it.**
+A shared tree can make a result look green as easily as red — a gate that should have refused
+can find a stale ROM from the other agent's build and pass. Red is the *visible* face of this
+hazard and green is the invisible one, so a single re-run resolves the instance and says nothing
+about the class. **Ask which artifacts a measurement depended on, not just whether it repeats.**
+
+**2. The reporting agent attributed it to "a peer lane" and that was wrong.** The observation
+was exact — a build running, the ROM briefly absent — and the cause was *the controller's own
+second agent*. This is the same measurement-vs-mechanism split as the `refreeze` retraction
+above, arriving twice in one night from opposite directions: there a peer's mechanism was
+wrong, here an agent's was. **An agent has no way to see its controller's other dispatches**,
+so it will reach for the only actor it knows about. The fix is on the dispatching side, not the
+reporting side.
+
+**The rule: one dedicated aeon reference worktree PER AGENT, named for that agent**, created by
+the controller before dispatch, and stated in the brief as exclusively theirs. Cheap — a
+detached worktree is seconds and the disk is not scarce. `AEON_DIR` is already unconditional in
+every brief; **"unconditional" was doing the work of "exclusive" and those are different
+claims.**
+
 ### A CHECK CAN BE VACUOUS BY CONSTRUCTION IN THE ENVIRONMENT IT RUNS IN (2026-08-29, aeon's)
 
 `aeon/tools/level_staleness.py` asks whether the generated tree is current by comparing
