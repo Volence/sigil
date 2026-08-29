@@ -9486,3 +9486,58 @@ demo_debug = "7599953e/101113"
 lean = "cb0572ea/674830"
 s4 = "974d2764/719049"
 s4_debug = "e1f02631/735662"
+
+[[entry]]
+name = "tilt-and-instashield"
+ab = "aeon 4ba7cb92: two byte-movers in one chain, plus one byte-neutral parcel between them. (1) Sprite tilt e1efd36f/13cf0b59 - Sonic now selects tilted art with the ground angle; the art was already in the ROM and only the code choosing it was missing. Merged 110 bytes against a brief that estimated ~50, and its gate fixture was refreshed at e1f412ed after the merge moved the anim tables. This chain is where those bytes are first certified: sigil chain 178 pinned aeon_rev b12c0141, two commits short of the tilt. (2) Insta-shield jump gate 30dff86c/e689e341 - the ability fired from ANY airborne frame, so walking or rolling off a ledge and pressing jump produced an insta-shield out of an uncurled falling frame. S3K refuses it everywhere but a real jump, verified firsthand at skdisasm sonic3k.asm:23369-23370 where Sonic_JumpHeight opens tst.b jumping(a0) / beq, and Sonic_ShieldMoves has exactly one reference site below it. 16 bytes, gated in the hook rather than the call site so Tails and Knuckles are untouched. No new RAM: player_state already encodes S3K jumping, verified by enumerating WRITERS not readers - PSTATE_JUMP has exactly three (player_ground.emp:1047, player_climb.emp:380, and the insta-shield own roll-jump cancel) and PSTATE_ROLLJUMP exactly one. (3) Between them, byte-neutral 706100a4 - the left_column_mask guard family verified Factor0Lock against plane B only; now five halves each naming its plane, including a curve hole the agent found outside its brief. Byte identity independently witnessed: the controller rebuilt from a clean worktree and matched builds taken before that parcel existed. BYTE ACCOUNTING for the insta-shield, run to ground rather than assumed: +14 B of code entirely absorbed inside object_bank with nothing after CharDef_Sonic moving, and the remaining growth is the deb2 appendix gaining one new local label. No relaxation cascade. FOUR SHAPES at aeon 4ba7cb92, built from a clean detached worktree with the ROMs deleted first so existence proves freshness: s4 a20bfa2a/719205, s4.debug bcf682b5/735818, demo 3415e3ef/96372, demo.debug 7599953e/101113. Both demo shapes byte-identical to chain 178, which is the negative control - nothing outside sonic4 moved. ASSEMBLER: sigil b73bf420e90c, md5 495986ee66a4e1e87c2e831a2a3a7de0, relinked for this freeze from a checkout the sigil lane fast-forwarded first; a relink one minute earlier would have baked 4eca7d93, two commits short of chain 178 own freeze and attestation, and would have been GREEN because the version gate compares the baked revision against HEAD at assertion time. The same four shapes built with the previous binary 914846bf are byte-identical to these, so a 35-commit assembler bump moved nothing. REPLAY NET: green before and after, and it does NOT move under the insta-shield fix - every airborne press in both recordings was already made out of a real jump, so the net is structurally blind to this behaviour, which is why the parcel carries its own gate: tools/instashield_gate.py executes the routine own ROM bytes over 6912 state/flag combinations against the S3K model, red-first at 762 disagreements on the pre-fix ROM, wired build-fatally into build.sh."
+aeon_rev = "4ba7cb92d2a3fbbe4203dd701c1611b36628d36a"
+note = "One freeze covers the tilt bytes uncertified since e1f412ed plus the insta-shield; folded rather than run twice."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "9dc0972f"
+full_size = 736186
+anchor_crc = "f4f274a1"
+anchor_end = 0xa7ec0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "886437ee"
+full_size = 610727
+anchor_crc = "6327f55a"
+anchor_end = 0x8b790
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7599953e"
+full_size = 101113
+anchor_crc = "91a16b91"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "e730ee12"
+full_size = 674830
+anchor_crc = "1c956ca8"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "a20bfa2a"
+full_size = 719205
+anchor_crc = "21e401d1"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "bcf682b5"
+full_size = 735818
+anchor_crc = "297c4220"
+anchor_end = 0xa7ec0
