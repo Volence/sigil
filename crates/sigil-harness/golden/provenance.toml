@@ -9637,3 +9637,57 @@ demo_debug = "7599953e/101113"
 lean = "4282fb6a/674830"
 s4 = "711cc4ff/719205"
 s4_debug = "5785610a/735818"
+
+[[entry]]
+name = "rebake-after-repaint"
+ab = "aeon 544e6e57 (code ccc356c7 + 9ea082c7 on fix/rebake-after-repaint; 544e6e57 is the merge and is the tree state these ROMs were built from, NOT the code anchor. Master has since advanced by docs-only commits which are deliberately NOT in this freeze, because aeon_rev names what the ROM was built from): THE OWNER'S FLOOR FIX ACTUALLY REACHES THE ROM. Chain 180's sibling defect and this overseer's: fde35b2f repainted 574 collision cells in the EDITOR tree and was committed without running the canonical build, so the fix was real in the source of truth and ABSENT FROM THE ARTIFACT - he was told it was done and his ROM still had the 1-px holes at every world X = 15 (mod 16). Two collision tests were the only thing that noticed, and build.sh gates the pytest lane build-fatally, so NO ROM built on master at all until this landed. THE CURRENCY WITNESS, which is the durable half and which the sigil lane asked for by name: a freeze checks AEON_DIR is clean and committed, and CLEAN SAYS NOTHING ABOUT WHETHER THE GENERATED HALF MATCHES ITS SOURCE. tools/level_staleness.py cannot close that gap - it compares newest mtime(editor sources) against newest mtime(generated tree), and a fresh worktree writes every file within the same second, so the comparison is false by construction and passes on any tree, current or stale. Instead: rm -rf tools/.cache AND --no-cache, cold full recompute, byte-compare against the committed tree. GREEN, with only DONOR_PROVENANCE.json differing and only in its own self-referential fields. It cannot pass vacuously - the identical command before the bake named seven changed artifacts. THE 74 VIOLATIONS RECONCILED: they were never in the committed tree. Both trees' EDITOR halves are byte-identical (md5 ab6255d0); only the generated halves differed - the main checkout held a pre-repaint bake of newer content, the committed tree an older bake of older content. Post-bake 0 rule-A and 0 rule-B over 9 sections, 18 planes, 1446 non-air cells, 11506 floor pixels, at the same 1446-cell population that measures 74 unbaked. The now-vacuous test is DELETED per its own written instruction with coverage NAMED rather than assumed: its outcome is superseded and strengthened by the zero-baseline gate, which measures the real generated tree the ROM consumes rather than simulating the fix in memory; its MECHANISM (rp.analyse) is covered only on fix/repaint-preserve-crossover, WHICH IS UNMERGED, so that function is unguarded on master and is a soft hold on the file until it lands. collision_baseline.json is now [] - a strict zero-violation ratchet. FOUR SHAPES from a clean detached checkout of the merge with the ROMs deleted first so existence proves freshness: s4 711cc4ff/719205, s4.debug a9676c6b/735818, demo 3415e3ef/96372, demo.debug 7599953e/101113. Predecessor chain 180 was s4 711cc4ff and s4.debug 5785610a; s4's crc is coincidentally unchanged in the table above and is corrected here - the measured new value is 06d2ccf6. BOTH sonic4 lengths UNCHANGED; both demo shapes byte-identical to chain 180, which is the negative control proving nothing outside sonic4 moved. ASSEMBLER sigil b73bf420e90c md5 495986ee66a4e1e87c2e831a2a3a7de0 and emit_sound_blob md5 42c1be5175088bbf130da8f77af38d53, re-taken at both ends and unchanged. PINS MOVED, PREDICTED BEFORE MEASURING and recorded with the sigil lane in advance - the inverted falsifier for this chain was that an UNCHANGED pins.rs would be the surprise, because a +406 growth ahead of a fixed anchor that moved no pin would mean the growth is not where we think or the pin set is blind to that region. 36 entries changed, 22 pins and 14 regions, and the field is FOUR-TIERED rather than uniform: 21 at +0x190 plain / +0x1A0 debug, 8 at +0x196 / +0x196, 6 at +0x190 / +0x198, plus OJZ_ACT_ASSETS growing its DEBUG LENGTH by 8 (0x4888 -> 0x4890) with its plain length unchanged. The field is reported from a census rather than from refreeze's tail, because chain 179's prose was written from the tail and described a three-tiered field as uniform. THE DEBUG +8 IS PADDING AND NOT A SECOND MOVER, discriminated BEFORE the freeze on the sigil lane's insistence, because afterwards the attribution is gone: the region content is BYTE-IDENTICAL at 0x4882 bytes in both shapes (exactly plain_len), and only the trailing zero fill grows, 6 bytes to 14. So the chain-179 shape - two movers in one range - is killed rather than assumed away. AND IT IS THE BORING ANSWER, WHICH IS THE CORRECT ONE: 8 bytes of alignment padding at an UNCHANGED quantum of 16, caused by the region's base moving +0x198, which is not a multiple of 16. Old base 0x23498 + 0x4882 content ends at 0x27D1A, pads to 0x27D20, fill 6. New base 0x23630 + the same 0x4882 ends at 0x27EB2, pads to 0x27EC0, fill 14. Both fills fall out of one constant quantum and a base moved by an amount not congruent to 0 mod 16; the independently measured 6 -> 14 lands on it exactly. RECORDED BECAUSE THIS LANE BRIEFLY GOT IT WRONG IN THE OTHER DIRECTION AND THE ERROR IS INSTRUCTIVE: the raw largest power of two dividing BgAnim_Table's address does move, 32 at 0x27D20 to 64 at 0x27EC0, and this lane wrote that up as sigil's R7 hazard firing in a real freeze - a repin silently changing a section's inferred alignment. IT IS NOT. native::packed_align_of (crates/sigil-harness/src/native.rs:2575) CAPS AT 16 - it returns the first of [16,8,4,2] that divides the base, so both addresses yield 16 and the quantum never moved. Verified firsthand here by reading the function rather than by taking the correction. The reason this lane reasoned wrongly is worth more than the arithmetic, and it took two corrections to state properly. The sigil lane first said their R7 row OMITTED the cap; they then walked that back to BURIED, which is truer and more useful, and verified here firsthand at their 49bb5ceb^ rather than taken from either message. Their placement-constraint inventory reads 'the largest power of two dividing a section's frozen provisional base' and then '(16, 8, 4, 2, else 1)' in a PARENTHETICAL IMMEDIATELY AFTER - so the correct information was present, and the headline sentence simply contradicted it. THE HEADLINE IS WHAT ANSWERS THE READER, so nobody reaches the parenthetical: it has already told you what the function does. That is this workspace's own bar - a qualifier printed beside a value is part of the value - turned on the document citing it. AND THE PROPAGATION IS THE SHARPER HALF, measured here and not in either lane's account: sigil's OWN OVERSEER.md restates the same rule as 'largest power of two dividing the frozen base' with NO parenthetical at all. So the inventory buried the cap and the summary of the inventory DROPPED it - which is how a buried qualifier becomes a missing one, one restatement later, with nothing in between to notice. Nothing executes either document, so nothing could contradict them; the same defect both lanes spent the night sweeping for, sitting in the artifacts being cited as authority. A FALSE DEMONSTRATION OF R7 WOULD HAVE BEEN WORSE THAN NO DEMONSTRATION: it makes a real-but-unobserved hazard look proven-live, and the next reader prices it as measured rather than as theorised. What survives, and is sigil's to carry: R7's hazard is real but BOUNDED - the inferred quantum ranges over {1,2,4,8,16} and cannot exceed 16, so an over-align costs at most 15 bytes per section rather than an unbounded amount. And the dangerous direction - inferred alignment silently going DOWN, the 2c49f538 SFX precedent the function's own doc comment records - is untested and is NOT exercised by anything in this chain. THE RESERVE SHRANK AND NO CRC SHOWS IT, which is the sigil lane's question and the most useful thing to come out of this chain: absorbed-by-slack means a bounded reserve got smaller, invisibly, and it fails hard rather than gradually when it runs out. Measured with tools/bganim_room.py on both canonical listings: s4 24656 B free -> 24256 (-400), s4.debug 22416 -> 22000 (-416), plus 8238 B the section already holds in both. It is the SAME reserve EFFECTS-W1 budgets against - DATA_GROWTH_RESERVE 0x4000, whose map comment names it two 8 KB BG-animation bands per act - and that project row is stale twice over: it cites the anchor as 0x48000, which the 2026-08-26 re-layout moved to 0x90000, and its debug figure of 15152 B is ~6.8 KB low against the measured 22416. Stale in the FAVOURABLE direction, which is why nothing ever surfaced it - a pessimistic stale number gets corrected the moment someone hits the wall, an optimistic one sits forever because nothing fails against it. The corrected framing is NOT that two bands now fit: free space is not the binding constraint, the reserve floor is, and bganim_room.py --gate fails in build.sh when room drops below 16384 B, so two 8 KB bands would leave 5616 B and trip it. They fail the reserve GATE, not on space, and the remedy is a ruled anchor move rather than a hard limit. sprite_tilt_gate's fixture was re-stamped by the byte move and verified here as SIX addr fields and ZERO bytes fields, deltas +416/+400 in two groups, pure relocation with precedent at e1f412ed. Full pytest lane 1570 passed / 0 failed / 8 skipped; the collision gate is 25 passed on the merged tree. TAGGED and unresolved, and it is the only question the owner actually asked: zero violations is a claim about the DATA, not the game. No emulator ran. Whether the floor holds under a player is unverified. The owner's own working copy still holds the stale pre-repaint derived tree and will keep failing this gate until it takes this branch."
+aeon_rev = "544e6e57263348fbc2f2fd6faed03e98f26d1020"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "b7f4e5bd"
+full_size = 736186
+anchor_crc = "e1e25d08"
+anchor_end = 0xa7ec0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "f5994258"
+full_size = 611143
+anchor_crc = "a88e6bf3"
+anchor_end = 0x8b930
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7599953e"
+full_size = 101113
+anchor_crc = "91a16b91"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "92aaa2b4"
+full_size = 674830
+anchor_crc = "b642a1e6"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "06d2ccf6"
+full_size = 719205
+anchor_crc = "9e13f3b6"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "a9676c6b"
+full_size = 735818
+anchor_crc = "767a2f35"
+anchor_end = 0xa7ec0
