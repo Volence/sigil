@@ -10026,3 +10026,58 @@ demo_debug = "fdedb6e4/101113"
 lean = "f954fe89/674830"
 s4 = "c9255279/719235"
 s4_debug = "10916c8c/736095"
+
+[[entry]]
+name = "fg-left-edge-borrow"
+ab = "chain 186: the left-edge fix, ruled in by the owner after he ran both ROMs side by side. Four shapes from a clean detached aeon worktree at def98ee5, all four ROMs deleted before the build. TWO SHAPES MOVE: s4 c9255279/719235 -> 6e746bb9/719235 and s4.debug 10916c8c/736095 -> 839bafaf/736095, BOTH AT IDENTICAL LENGTHS - the borrow adds a 4-byte write to Parallax_Step5_Vscroll and the preset region absorbs it, so Level_LoadArt sits at the same address in both trees. Both demo shapes unchanged at 3415e3ef/96372 and 7599953e-successor fdedb6e4/101113. NOTE FOR THE READER: a CRC change at an unchanged length is the repin trigger and is easy to read as unremarkable - 29 pins were stale before this freeze, 26 of them outside parallax entirely, and this freeze's repin step is what clears them. s4.debug 839bafaf is the exact ROM the owner looked at when he ruled. Assembler sigil 765c31fca91d, md5 504b0c0ad887424b39334ae123e44b75 identical before the first build and after the last. Suites 1640-1642 passed / 0 failed / 4-6 skipped per shape. Effects gate lane OK exit 0, all 15 scheduled gates a complete row set."
+aeon_rev = "def98ee5d6fad568b022780caa6060cd70aa39e6"
+note = "owner ruled after running both ROMs; the right-edge price is accepted and recorded as a design rule in EFFECTS_CONSUMER_CONTRACT 2.1b"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "39f3f765"
+full_size = 736463
+anchor_crc = "3eccc7d1"
+anchor_end = 0xa7f40
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "6c21739d"
+full_size = 611253
+anchor_crc = "172fdab0"
+anchor_end = 0x8b980
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "fdedb6e4"
+full_size = 101113
+anchor_crc = "91a16b91"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "fa81802d"
+full_size = 674830
+anchor_crc = "d02daec5"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "6e746bb9"
+full_size = 719235
+anchor_crc = "c44a97fa"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "839bafaf"
+full_size = 736095
+anchor_crc = "603ee725"
+anchor_end = 0xa7f40
