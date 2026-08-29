@@ -31,16 +31,38 @@ use sigil_harness::native;
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
-/// A poison whose guard is the raster program's one-band-per-program count, named by
+/// A poison whose guard is the band walk's per-CRAM-entry nesting refusal, named by
 /// PATH (the on-disk spelling a lane or an author reaches for) — with the fragment
 /// aeon's `CASES` table pins for it.
-const POISON_TWO_RESTORES_PATH: &str = "games/sonic4/test/poison/poison_two_restores.emp";
-const POISON_TWO_RESTORES_FRAGMENT: &str = "one band per program";
+///
+/// Chosen against three properties, none of which is "it fails", because a fixture
+/// picked only for failing is the vacuous shape this file exists to avoid:
+///
+/// 1. **Exactly one error.** Two of the cases below assert `[Error]` count == 1, so a
+///    COUNT-2 poison would redden them for a reason unrelated to the flag. That rules
+///    out `poison_band_orphan_restore` / `poison_band_span_mismatch` / `poison_band_h2_sh`.
+/// 2. **A fragment unique to ONE guard.** `"carries no band id"` appears in three
+///    separate poisons, so it cannot witness which rule fired — the matcher-collision
+///    the poison bar names. This fragment appears in exactly two files: this poison and
+///    the guard that emits it (`engine/effects/raster_dsl.emp`).
+/// 3. **Load-bearing for the OTHER lane.** aeon's own header calls this "the fixture
+///    that matters most to P2a" — a two-band program that must still be refused while
+///    two others now build. A fixture its owner depends on is the one least likely to
+///    be quietly re-aimed.
+const POISON_NESTED_PATH: &str = "games/sonic4/test/poison/poison_band_nested.emp";
+const POISON_NESTED_FRAGMENT: &str = "two bands are live on CRAM entry";
 
 /// A second poison, named by dotted MODULE ID (the other accepted spelling), whose
 /// guard is the direct-`SetReg($8Axx)` refusal.
 const POISON_DIRECT_8A_ID: &str = "games.sonic4.test.poison.poison_direct_8a";
 const POISON_DIRECT_8A_FRAGMENT: &str = "detonates the relative-arm chain";
+
+/// Names that must resolve to NOTHING, one in each accepted spelling. Constants rather
+/// than literals so `every_aeon_fixture_this_file_names_still_resolves` can assert their
+/// ABSENCE against the same strings this file's cases pass in — a second copy could drift
+/// from the first and the drift would be invisible.
+const MISSING_EXTRA_ENTRY_ID: &str = "games.sonic4.test.poison.no_such_poison";
+const MISSING_EXTRA_ENTRY_PATH: &str = "games/sonic4/test/poison/gone.emp";
 
 /// A PURE-COMPTIME module (consts + `ensure`s, no `data`/`proc`/`section`) that is
 /// outside the sonic4 profile's `use` closure and whose guards HOLD. The passing
@@ -68,6 +90,52 @@ fn aeon_dir() -> Option<PathBuf> {
         return None;
     }
     Some(aeon)
+}
+
+/// EVERY aeon path this file names still resolves — and the one that must NOT resolve
+/// still does not.
+///
+/// This is a source-DRIFT check, and it exists because of a measured two-parcel latency.
+/// A zero-byte aeon parcel renamed `poison_two_restores.emp` out from under three cases
+/// here; nothing noticed, because the only thing that reads these paths is a full
+/// build, and a full build only runs when a freeze moves bytes. The break surfaced two
+/// parcels later inside an unrelated byte-mover's attestation, where it read as that
+/// parcel's fault and was not.
+///
+/// This case costs no build: it is a `Path::exists` sweep. It cannot tell you a fixture
+/// still fires the guard it used to — only the cases above do that — but it turns a
+/// rename from "red inside someone else's landing, attributed wrongly" into "red here,
+/// naming the file, the morning after".
+///
+/// BOTH DIRECTIONS, because a one-sided version decays. The absent-by-design argument
+/// to `a_missing_extra_entry_errors_loudly` is asserted ABSENT: if someone ever creates
+/// `poison/gone.emp`, that case silently stops testing the unresolvable-name path while
+/// continuing to pass, which is the exact vacuity this file is built to refuse.
+#[test]
+fn every_aeon_fixture_this_file_names_still_resolves() {
+    let Some(aeon) = aeon_dir() else { return };
+
+    for path in [POISON_NESTED_PATH] {
+        assert!(
+            aeon.join(path).is_file(),
+            "`{path}` is named by this file but does not exist under {}. An aeon parcel \
+             has renamed, moved or deleted it. Do NOT simply re-point at the new name: \
+             check the replacement's own header for its EXPECTED FRAGMENT and its error \
+             COUNT first, because a renamed poison is often also a re-aimed one.",
+            aeon.display()
+        );
+    }
+
+    for absent in [MISSING_EXTRA_ENTRY_PATH] {
+        assert!(
+            !aeon.join(absent).exists(),
+            "`{absent}` is asserted ABSENT by this file — `a_missing_extra_entry_errors_loudly` \
+             uses it to prove an unresolvable name is a loud error. It now EXISTS under {}, so \
+             that case has stopped testing what it claims while still passing. Pick another \
+             name that does not exist.",
+            aeon.display()
+        );
+    }
 }
 
 /// The native builds touch the shared `engine/sound/generated` dir — serialize.
@@ -120,10 +188,10 @@ fn a_failing_extra_entry_fails_the_build_with_its_message() {
          means anything:\n{clean_text}"
     );
 
-    let (out, text) = build_with(&aeon, &[POISON_TWO_RESTORES_PATH]);
+    let (out, text) = build_with(&aeon, &[POISON_NESTED_PATH]);
     assert!(!out.status.success(), "expected a nonzero exit; output:\n{text}");
     assert!(
-        text.contains(POISON_TWO_RESTORES_FRAGMENT),
+        text.contains(POISON_NESTED_FRAGMENT),
         "the guard's own message must reach the report; output:\n{text}"
     );
     assert_eq!(
@@ -142,10 +210,10 @@ fn a_failing_extra_entry_fails_the_build_with_its_message() {
 #[test]
 fn an_off_canonical_target_honours_the_flag() {
     let Some(aeon) = aeon_dir() else { return };
-    let (out, text) = build_target_with(&aeon, &["--config-b"], &[POISON_TWO_RESTORES_PATH]);
+    let (out, text) = build_target_with(&aeon, &["--config-b"], &[POISON_NESTED_PATH]);
     assert!(!out.status.success(), "expected a nonzero exit; output:\n{text}");
     assert!(
-        text.contains(POISON_TWO_RESTORES_FRAGMENT),
+        text.contains(POISON_NESTED_FRAGMENT),
         "the guard's own message must reach the report; output:\n{text}"
     );
     assert_eq!(text.matches("[Error]").count(), 1, "output:\n{text}");
@@ -157,9 +225,9 @@ fn an_off_canonical_target_honours_the_flag() {
 #[test]
 fn two_extra_entries_compose() {
     let Some(aeon) = aeon_dir() else { return };
-    let (out, text) = build_with(&aeon, &[POISON_TWO_RESTORES_PATH, POISON_DIRECT_8A_ID]);
+    let (out, text) = build_with(&aeon, &[POISON_NESTED_PATH, POISON_DIRECT_8A_ID]);
     assert!(!out.status.success(), "expected a nonzero exit; output:\n{text}");
-    assert!(text.contains(POISON_TWO_RESTORES_FRAGMENT), "output:\n{text}");
+    assert!(text.contains(POISON_NESTED_FRAGMENT), "output:\n{text}");
     assert!(text.contains(POISON_DIRECT_8A_FRAGMENT), "output:\n{text}");
     assert_eq!(
         text.matches("[Error]").count(),
@@ -176,7 +244,7 @@ fn two_extra_entries_compose() {
 fn a_missing_extra_entry_errors_loudly() {
     let Some(aeon) = aeon_dir() else { return };
 
-    for arg in ["games.sonic4.test.poison.no_such_poison", "games/sonic4/test/poison/gone.emp"] {
+    for arg in [MISSING_EXTRA_ENTRY_ID, MISSING_EXTRA_ENTRY_PATH] {
         let (out, text) = build_with(&aeon, &[arg]);
         assert!(!out.status.success(), "`{arg}`: expected a nonzero exit; output:\n{text}");
         assert!(text.contains(arg), "`{arg}`: the error must name the argument; output:\n{text}");
