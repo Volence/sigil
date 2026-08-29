@@ -396,6 +396,22 @@ refused to**, which would have guarded a hazard that did not exist and bricked a
 measurable fact, not a judgement.** Keep the refusal from arriving ahead of the practice it
 enforces.
 
+**GATED FURTHER 2026-08-29 at aeon `04fcac05`** (verified reachable at their `origin/master`),
+after this lane objected that the condition was REMEMBERED rather than measured. Their
+withdrawal, their words: *"I claimed the property that would have made it safe, and the claim
+was the only thing supplying it."* Warnings go to stderr and nothing durable records that one
+fired, so checking the condition needs somebody to count three chains **and recall** whether any
+warned. **The refusal now does not flip at all until the ledger can answer the question by
+query** — until `ATTEST-RECORDS-REACHABILITY` lands. Their rule: *do not flip the refusal on a
+count anyone had to remember.* Push-before-attest stands regardless; it prevents rather than
+detects.
+
+**The deciding instance was live in this suite tonight:** the aeon session was rotated **while
+holding exactly that class of state** — the mapping write nearly happened twice and the
+no-re-attest reasoning nearly died with the context holding it, avoided only because the fresh
+session verified firsthand at boot. **A remembered condition is a population of one, kept in the
+place that gets cleared.**
+
 **⚠ THE CONDITION IS CURRENTLY REMEMBERED, NOT DERIVED — and that is the weak joint.** Checking
 it today means a human counting three chains and recalling whether a warning fired, across
 sessions that get rotated mid-flight (aeon's was, tonight, holding exactly this kind of state).
