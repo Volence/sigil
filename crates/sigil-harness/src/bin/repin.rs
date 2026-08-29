@@ -110,15 +110,25 @@ fn main() -> ExitCode {
         native::phase_bank_lmas(&aeon, true),
         native::section_extents(&aeon, false),
         native::section_extents(&aeon, true),
+        native::section_label_owners(&aeon, false),
+        native::section_label_owners(&aeon, true),
     ) {
-        (Ok((pm, pe)), Ok((dm, de)), Ok(pl), Ok(dl), Ok(ps), Ok(ds)) => (
-            Listing::from_symbols(pm, pe, "plain".into()).with_phase_lma(pl).with_sections(ps),
-            Listing::from_symbols(dm, de, "debug".into()).with_phase_lma(dl).with_sections(ds),
+        (Ok((pm, pe)), Ok((dm, de)), Ok(pl), Ok(dl), Ok(ps), Ok(ds), Ok(po), Ok(do_)) => (
+            Listing::from_symbols(pm, pe, "plain".into())
+                .with_phase_lma(pl)
+                .with_sections(ps)
+                .with_label_owners(po),
+            Listing::from_symbols(dm, de, "debug".into())
+                .with_phase_lma(dl)
+                .with_sections(ds)
+                .with_label_owners(do_),
         ),
         (Err(e), ..)
         | (_, Err(e), ..)
         | (_, _, Err(e), ..)
         | (_, _, _, Err(e), ..)
+        | (_, _, _, _, Err(e), ..)
+        | (_, _, _, _, _, Err(e), ..)
         | (.., Err(e), _)
         | (.., Err(e)) => return fail(&e),
     };

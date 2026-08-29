@@ -4268,6 +4268,54 @@ pub fn section_extents(aeon: &Path, debug: bool) -> Result<Vec<crate::repin::Sec
 ///
 /// Non-phase sections contribute nothing (their `vma == lma`, so the plain VMA listing
 /// already IS the LMA). Empty for a program with no phase-bank section.
+/// Which ROM SECTION DEFINES each label (parcel R6): `label name → section name`, plus
+/// each section's synthesized `<Base>_End` marker attributed to the section it measures.
+///
+/// This is the discriminator the ADDRESS cannot supply. A region whose `end` names the
+/// successor's head label and whose window happens to sit flush against its own content
+/// today measures ZERO pad — indistinguishable, by address alone, from a region ending at
+/// a label it owns. The two are not the same contract: the first moves when the neighbour
+/// moves. Ownership settles it, and it is read from the same resolve the section table is.
+///
+/// A name defined in more than one section (`text` carries twenty-odd zero-length
+/// instances) is DROPPED rather than attributed to an arbitrary one — an ambiguous
+/// ownership is no ownership, and the caller must treat it as unknown, never as a match.
+pub fn section_label_owners(aeon: &Path, debug: bool) -> Result<HashMap<String, String>, String> {
+    let resolved = resolve_canonical_sections(aeon, debug)?;
+    let mut owners: HashMap<String, String> = HashMap::new();
+    let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let note = |owners: &mut HashMap<String, String>,
+                    ambiguous: &mut std::collections::HashSet<String>,
+                    name: String,
+                    sec: &str| {
+        match owners.entry(name) {
+            std::collections::hash_map::Entry::Occupied(e) => {
+                if e.get() != sec {
+                    ambiguous.insert(e.key().clone());
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(sec.to_string());
+            }
+        }
+    };
+    for s in &resolved {
+        if !is_rom_section(s) {
+            continue;
+        }
+        for lab in &s.labels {
+            note(&mut owners, &mut ambiguous, lab.name.clone(), &s.name);
+        }
+        if let Some(base) = s.labels.iter().find(|l| l.offset == 0) {
+            note(&mut owners, &mut ambiguous, format!("{}_End", base.name), &s.name);
+        }
+    }
+    for name in ambiguous {
+        owners.remove(&name);
+    }
+    Ok(owners)
+}
+
 pub fn phase_bank_lmas(aeon: &Path, debug: bool) -> Result<HashMap<String, u32>, String> {
     let resolved = resolve_canonical_sections(aeon, debug)?;
     let mut out = HashMap::new();

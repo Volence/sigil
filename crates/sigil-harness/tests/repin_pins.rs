@@ -47,8 +47,17 @@ fn pins_rs_is_current() {
     // Section extents (REPIN-END): the `section:<name>` boundary spelling.
     let ps = native::section_extents(&aeon, false).unwrap_or_else(|e| panic!("plain sections: {e}"));
     let ds = native::section_extents(&aeon, true).unwrap_or_else(|e| panic!("debug sections: {e}"));
-    let plain = Listing::from_symbols(pm, pe, "plain".into()).with_phase_lma(pl).with_sections(ps);
-    let debug = Listing::from_symbols(dm, de, "debug".into()).with_phase_lma(dl).with_sections(ds);
+    // Label→section ownership (R6): the flush-neighbour end check.
+    let po = native::section_label_owners(&aeon, false).unwrap_or_else(|e| panic!("plain owners: {e}"));
+    let do_ = native::section_label_owners(&aeon, true).unwrap_or_else(|e| panic!("debug owners: {e}"));
+    let plain = Listing::from_symbols(pm, pe, "plain".into())
+        .with_phase_lma(pl)
+        .with_sections(ps)
+        .with_label_owners(po);
+    let debug = Listing::from_symbols(dm, de, "debug".into())
+        .with_phase_lma(dl)
+        .with_sections(ds)
+        .with_label_owners(do_);
     let manifest = load_manifest(include_str!("../repin.toml")).expect("repin.toml must load");
     let resolved = resolve(&manifest, &plain, &debug).unwrap_or_else(|e| panic!("resolve: {e}"));
     let prov = Provenance {
