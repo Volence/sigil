@@ -3199,7 +3199,7 @@ fn phase_region_mask(sections: &[Section], true_bases: &[Option<u32>]) -> Vec<bo
 
 /// True for an image-bearing ROM section (VMA below the RAM/phase floor), as opposed
 /// to a RAM/phase section that never participates in ROM layout.
-fn is_rom_section(s: &Section) -> bool {
+pub fn is_rom_section(s: &Section) -> bool {
     match s.vma_base {
         Some(v) => v < 0x00F0_0000,
         None => true,
