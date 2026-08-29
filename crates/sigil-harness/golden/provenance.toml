@@ -9712,3 +9712,58 @@ demo_debug = "7599953e/101113"
 lean = "92aaa2b4/674830"
 s4 = "06d2ccf6/719205"
 s4_debug = "a9676c6b/735818"
+
+[[entry]]
+name = "editor-raster-preset"
+ab = "chain 182: the first editor-authored raster band reaches the ROM. Four shapes from a clean detached aeon worktree at e99a2ca7, all four ROMs deleted before the build so existence proves freshness. s4 06d2ccf6/719205 -> c9255279/719235 (+30 B); s4.debug a9676c6b/735818 -> 10916c8c/736095 (+277 B); demo 3415e3ef/96372 and demo.debug 7599953e/101113 both byte-identical, the negative control. Release moves because the generated pub data is unconditional while only the install path is DEBUG-gated; the program itself is 78 B at 1323C..1328A and downstream labels shift 80 B in both sonic4 shapes, so neither delta equals the program size. Assembler sigil 765c31fca91d, md5 504b0c0ad887424b39334ae123e44b75 identical before the first build and after the last, and zero commits touch the assembler crates since its link time. Suites 1640-1641 passed / 0 failed / 5-6 skipped per shape, reconciling exactly against master's 1632/1634 as the parcel's 8 new tests with one skipping in the demo shape. Effects gate lane OK, exit 0, all 15 scheduled gates produced a complete row set."
+aeon_rev = "e99a2ca769eb397e0951d1fd24264dbb17661fec"
+note = "gap against 16.2a accepted and ruled: gate apparatus, never gate authored content on a build shape"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "0833dec1"
+full_size = 736463
+anchor_crc = "f680676a"
+anchor_end = 0xa7f40
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c9436a9f"
+full_size = 611253
+anchor_crc = "c37afca2"
+anchor_end = 0x8b980
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7599953e"
+full_size = 101113
+anchor_crc = "91a16b91"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "f954fe89"
+full_size = 674830
+anchor_crc = "4123ae0d"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "c9255279"
+full_size = 719235
+anchor_crc = "f21178b5"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "10916c8c"
+full_size = 736095
+anchor_crc = "cf2cd05d"
+anchor_end = 0xa7f40
