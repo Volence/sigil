@@ -36,6 +36,31 @@ is a **positive** witness — on chain 180 exactly two lines moved, both CRC hea
 Verified here on `fa0e6540`. A table of unmoved labels beside two changed CRCs cannot be
 produced by a build that did not run. **Prefer it to the pin file for length-neutral parcels.**
 
+**Its two limits, stated by the aeon lane while it was fresh so it is not adopted wider than
+it earns.** (1) It witnesses that a build **ran and produced these labels**; it is **silent on
+which source that build used**, so it **composes with the assembler md5 rather than replacing
+it**. (2) It is a positive witness **only for a length-neutral parcel**. On chain 181 — debug
++4 bytes, 282 symbols sliding +16 — that table moving is *expected*, and it reverts to
+something to reconcile rather than something that proves anything.
+
+### A PAIRED LANDING CITES TWO SHAs THAT ANSWER DIFFERENT QUESTIONS — LABEL WHICH IS WHICH (2026-08-29)
+
+A freeze lands as a pair: the commit carrying the **goldens and the `pins.rs` evidence**, and
+the commit carrying the **attestation**. They are not interchangeable and the tip is the wrong
+default. Instance: chain 180 was handed here as *"sigil `6b3ef068` (freeze ball-seating + attest)"*
+— one SHA doing the work of two claims. `6b3ef068` is the attest; the goldens are in
+`fa0e6540`. A reader who `--stat`s the cited SHA finds no goldens in it and concludes the
+freeze is empty.
+
+**The form: `freeze fa0e6540 · attested 6b3ef068`.**
+
+**And the half this lane owes: I went to `fa0e6540` because that is where the data was, and
+never said the citation had been wrong.** A silent correction costs the sender nothing and
+teaches nobody — the citation form stays broken, and the next reader without the instinct to
+go looking pays the full price. **When you route around a bad citation, say that you did.**
+The verification was right; the silence was the defect, and it was the aeon lane that had to
+raise it against their own message for it to surface at all.
+
 ### Standing rules — independent of whether a row is active
 
 **Anything that can relink counts**, not just `cargo build --release` — see *Guard the
