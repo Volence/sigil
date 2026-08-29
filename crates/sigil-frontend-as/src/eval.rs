@@ -44,7 +44,7 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
 }
 
 /// Like [`run`] but FORCES the final label-relocation deferral pass even when the module
-/// converges poison-free. For a CHAINED build (the harness's `SizeSource::Frozen`
+/// converges poison-free. For a CHAINED build (the harness's frozen-table
 /// placement moves sections after assembly), every `dc.l`/`dc.w`/… that references a
 /// section LABEL must stay symbolic so the linker relocates it against the label's placed
 /// base — otherwise a poison-free residual (config_a) bakes a stale this-pass VMA (the

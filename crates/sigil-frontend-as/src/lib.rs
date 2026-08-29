@@ -71,7 +71,7 @@ pub fn assemble_root(root: &Path, opts: &Options) -> Result<Module, Vec<Diagnost
 }
 
 /// Like [`assemble_root`] but keeps section-label references SYMBOLIC through the final
-/// pass so a later relocation (the harness's chained `SizeSource::Frozen` placement)
+/// pass so a later relocation (the harness's chained placement)
 /// resolves them against each label's placed base. Use for a build whose sections will
 /// MOVE after assembly; a pinned build must use [`assemble_root`] (byte-for-byte asl).
 pub fn assemble_root_relocating(root: &Path, opts: &Options) -> Result<Module, Vec<Diagnostic>> {

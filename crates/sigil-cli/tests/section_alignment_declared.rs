@@ -93,9 +93,7 @@ fn a_repin_that_breaks_a_declared_alignment_is_refused_by_name() {
         .unwrap_or_else(|| panic!("`{PROBE}` must be declared for this witness to mean anything"));
     assert_eq!(declared.required, 8, "this witness is written against a mod-8 requirement");
 
-    let native::SizeSource::Frozen(t) = &mut profile.size_source else {
-        panic!("the sonic4 profile must be a frozen-table target for this witness");
-    };
+    let t = &mut profile.frozen_sizes;
     let before = *t.get(PROBE).unwrap_or_else(|| panic!("`{PROBE}` not in the frozen table"));
     assert!(before.is_multiple_of(8), "control: the shipped pin {before:#x} already satisfies 8");
     t.insert(PROBE.to_string(), before + 4);

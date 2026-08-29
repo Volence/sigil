@@ -754,10 +754,8 @@ tests = ["sonic_anims_port"]
 # sonic_anims, placed right after it per map.toml `order`. Section-END anchor
 # rather than the next head: the successor (`Ani_Particle`) is DEBUG-only, so a
 # head anchor would need a per-shape end for a region whose own span is
-# shape-invariant. Pinned rather than left on DUMMY_REGION because the
-# `sonic4_pinned_profile` bootstrap READS region bases, and a placeholder collapses
-# the section onto base 0 where it collides with `vectors` — the exact failure
-# `characters` hit before chain 89 gave it a real pin.
+# shape-invariant. It carries a region because `sonic_anims_port` windows the
+# reference ROM by this pin.
 [[region]]
 name = "tails_anims"
 start = "Ani_Tails"
@@ -2823,10 +2821,8 @@ tests = ["test_p1_player_port"]
 # tails (C1 task 6) — the Tails character RECORD (CharDef_Tails +
 # PhysTable_Tails), the exact peer of `sonic` and placed right after it per
 # map.toml `order`, so the two records sit together and the roster that indexes
-# them follows. Pure data; no procs. Pinned rather than left on DUMMY_REGION for
-# the reason `characters` and `tails_anims` carry real pins: the
-# `sonic4_pinned_profile` bootstrap READS region bases, and a placeholder
-# collapses the section onto base 0 where it collides with `vectors`.
+# them follows. Pure data; no procs. It carries a region because
+# `test_p1_player_port` windows the reference ROM by this pin.
 [[region]]
 name = "tails"
 start = "CharDef_Tails"
@@ -2838,10 +2834,8 @@ tests = ["test_p1_player_port"]
 # PhysTable_Knuckles), the third peer of `sonic` / `tails` and placed right after
 # them per map.toml `order`, which is why `tails`' end anchor moves from
 # CharacterDefs to this head. Pure data; no procs — his ability is still
-# Ability_None until the glide lands. Pinned rather than left on DUMMY_REGION for
-# the reason `tails` / `characters` / `tails_anims` all carry real pins: the
-# `sonic4_pinned_profile` bootstrap READS region bases, and a placeholder
-# collapses the section onto base 0 where it collides with `vectors`.
+# Ability_None until the glide lands. It carries a region because
+# `test_p1_player_port` windows the reference ROM by this pin.
 [[region]]
 name = "knuckles"
 start = "CharDef_Knuckles"
@@ -2864,12 +2858,9 @@ tests = ["test_p1_player_port"]
 # tails_appendage (character-dispatch C1) — Tails' twin tails as their own child
 # object: the reconcile the character switch calls, the effect-pool spawn, and the
 # per-frame parent copy + DPLC + draw. Tails-owned GAME content, so it sits with
-# the character records rather than among the test objects. Pinned rather than
-# left on DUMMY_REGION for the reason `tails` / `characters` / `player_fly` all
-# carry real pins: the `sonic4_pinned_profile` bootstrap READS region bases, and
-# a placeholder collapses the section onto base 0 where it collides with
-# `vectors`. End anchor moved TestStatic_Main -> DustPuff_Spawn when the dust
-# objects took the slot after it (dust-effect Task 4).
+# the character records rather than among the test objects. It carries a region
+# because `test_p1_player_port` windows the reference ROM by this pin. Its end
+# anchor is DustPuff_Spawn, the head of the dust objects placed after it.
 [[region]]
 name = "tails_appendage"
 start = "TailsAppendage_Refresh"
@@ -2929,10 +2920,8 @@ tests = ["test_p2_player_states_port"]
 # player_fly (character-dispatch C2) — Tails' flight: PSTATE_FLY's body plus the
 # AbilityHook that enters it. The fourth player state file and the last player
 # CODE before the character records, so its end anchor is CharDef_Sonic, which
-# player_spindash's used to be. Pinned rather than left on DUMMY_REGION for the
-# reason `tails` / `characters` / `tails_anims` all carry real pins: the
-# `sonic4_pinned_profile` bootstrap READS region bases, and a placeholder
-# collapses the section onto base 0 where it collides with `vectors`.
+# player_spindash's used to be. It carries a region because
+# `test_p2_player_states_port` windows the reference ROM by this pin.
 [[region]]
 name = "player_fly"
 start = "PState_Fly"
@@ -2945,8 +2934,8 @@ tests = ["test_p2_player_states_port"]
 # PSTATE_GLIDE/GLIDEFALL/SLIDE plus Ability_KnuxGlide, the AbilityHook that enters
 # them. The fifth player state file and the last player CODE before the character
 # records, so its end anchor is CharDef_Sonic, which player_fly's used to be.
-# Pinned rather than DUMMY_REGION for the same reason player_fly is (the
-# sonic4_pinned_profile bootstrap reads region bases).
+# It carries a region for the same reason player_fly does: `test_p2_player_states_port`
+# windows the reference ROM by this pin.
 [[region]]
 name = "player_glide"
 start = "PState_Glide"

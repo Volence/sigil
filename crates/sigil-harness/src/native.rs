@@ -35,13 +35,11 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use sigil_frontend_as::{assemble_root, assemble_root_relocating, Options as AsOptions};
+use sigil_frontend_as::{assemble_root_relocating, Options as AsOptions};
 use sigil_frontend_emp::lower::LowerOptions;
 use sigil_frontend_emp::resolve::{self, place_sections};
 use sigil_ir::{Cpu, Fragment, Module, Section, SectionPlacement, SymbolTable};
-use sigil_link::LinkedImage;
 
-use crate::pins::{self, Region};
 use crate::{seam1, seam2};
 
 /// Format EVERY build error, one per line, instead of only the first.
@@ -65,27 +63,6 @@ fn fmt_diag_list(errs: &[&sigil_span::Diagnostic]) -> String {
 // the OBJDEFS `text` guard, the drift-guard allowlist, sound-on). The three off-canonical
 // targets (demo plain/debug, Config-A, Config-B) reuse the SAME chainer + split-golden
 // machinery through a `GameProfile` that carries every sonic4-hardcoding as data.
-
-/// Where a target's declared per-region SIZES come from (the load-bearing S1.2 finding:
-/// the chainer must reserve each section's exact asl span or relaxation settles at a
-/// different fixpoint — see the S1.2 chainer note).
-pub enum SizeSource {
-    /// Canonical sonic4 (retired default): the baked lmas ARE asl-correct, so a pinned
-    /// resolve reproduces asl and each section's post-relax span is its exact asl size
-    /// (the bootstrap). Kept for the asl-witness bootstrap path; the shipped canonical
-    /// build uses `Frozen` (§17 Wave-B B-0).
-    PinnedBaked,
-    /// Off-canonical (demo/Config): the AS residual carries WRONG sonic4 resume orgs,
-    /// so the frozen asl listing table (label → address) supplies each section's
-    /// PROVISIONAL BASE. It is not the placement authority: since K5 the map's
-    /// `order` list drives the byte-emitting sequence and its `[[anchor]]` entries
-    /// declare the islands, and `validate_placement` confirms both on every build.
-    /// The provisional bases identify which sections ARE islands and feed
-    /// measurement; every non-island section's base is then PACKED from live-
-    /// measured sizes (see `packed_true_bases`), so a size-changing `.emp` parcel
-    /// shifts downstream sections automatically instead of colliding with stale pins.
-    Frozen(HashMap<String, u32>),
-}
 
 /// One off-canonical / canonical target's full driver parameterization.
 pub struct GameProfile {
@@ -160,7 +137,20 @@ pub struct GameProfile {
     pub require_one_text: bool,
     /// The inapplicable-drift-guard allowlist (t24 both-directions), per target.
     pub inapplicable_guards: Vec<(&'static str, &'static str)>,
-    pub size_source: SizeSource,
+    /// The target's committed boundary table (label → address), the source of every
+    /// section's declared per-region SIZE — the load-bearing S1.2 finding: the chainer
+    /// must reserve each section's exact asl span or relaxation settles at a different
+    /// fixpoint (see the S1.2 chainer note).
+    ///
+    /// The AS residual carries WRONG sonic4 resume orgs, so this table supplies each
+    /// section's PROVISIONAL BASE. It is not the placement authority: since K5 the map's
+    /// `order` list drives the byte-emitting sequence and its `[[anchor]]` entries
+    /// declare the islands, and `validate_placement` confirms both on every build.
+    /// The provisional bases identify which sections ARE islands and feed
+    /// measurement; every non-island section's base is then PACKED from live-
+    /// measured sizes (see `packed_true_bases`), so a size-changing `.emp` parcel
+    /// shifts downstream sections automatically instead of colliding with stale pins.
+    pub frozen_sizes: HashMap<String, u32>,
     /// FIXTURE-ONLY derived placement (Art-streaming P2c Task 11 stress-art). When true,
     /// `packed_true_bases` packs every non-island section GREEDILY from live-measured sizes
     /// with NO frozen provisional-base overrun check and NO island-reclassification guard —
@@ -217,10 +207,8 @@ impl GameProfile {
 
     /// `EndOfRom` — this shape's assembled-bar length, DERIVED at every call.
     ///
-    /// Under [`SizeSource::Frozen`] it is the `EndOfRom` row of the profile's own
-    /// committed boundary table, the table `derive_offcanon` regenerates from a live
-    /// resolve; under [`SizeSource::PinnedBaked`] (the bootstrap shape, which has no
-    /// table yet) it is the shape's `pins` constant, which `repin` regenerates.
+    /// It is the `EndOfRom` row of the profile's own committed boundary table, the
+    /// table `derive_offcanon` regenerates from a live resolve.
     ///
     /// It is an INPUT, not an oracle. No derivation under test is checked against it:
     /// `offcanon_assembled_bar` cross-compares it with the provenance chain and the
@@ -236,18 +224,13 @@ impl GameProfile {
     /// its terminus is a regression, and a plausible number returned in its place
     /// would hide it.
     pub fn assembled_len(&self) -> usize {
-        match &self.size_source {
-            SizeSource::Frozen(t) => *t.get("EndOfRom").unwrap_or_else(|| {
-                panic!(
-                    "profile `{}`: its frozen boundary table carries no `EndOfRom` row \
-                     — the assembled bar is unmeasurable, not zero",
-                    self.name
-                )
-            }) as usize,
-            SizeSource::PinnedBaked => {
-                if self.debug { pins::DEBUG_ASSEMBLED_LEN } else { pins::ASSEMBLED_LEN }
-            }
-        }
+        *self.frozen_sizes.get("EndOfRom").unwrap_or_else(|| {
+            panic!(
+                "profile `{}`: its frozen boundary table carries no `EndOfRom` row \
+                 — the assembled bar is unmeasurable, not zero",
+                self.name
+            )
+        }) as usize
     }
 
     /// The per-game placement map (`games/<g>/map.toml`), a sibling of `main.asm`
@@ -284,22 +267,17 @@ pub fn load_frozen_table(name: &str) -> HashMap<String, u32> {
 }
 
 /// One natively-placed `.emp` module: its dotted id (for the synthetic entry's
-/// `use` edge + `build_program` reachability), its declared section name (the
-/// `module … in <section>` name; `"text"` for a defaulted module), and its
-/// placement region (per-shape base + len from `pins`).
+/// `use` edge + `build_program` reachability) and its declared section name (the
+/// `module … in <section>` name; `"text"` for a defaulted module).
+///
+/// A row carries no placement address. Every target chains: the chainer packs each
+/// section from its live-measured size in the map's declared
+/// `order`, so the registry is the module-REACHABILITY list and nothing else. Where
+/// a section's ROM address is needed as an oracle — the port gates' reference
+/// windows, `repin`'s regeneration — it comes from `pins`, not from here.
 pub struct ModuleSpec {
     pub module_id: &'static str,
     pub section: &'static str,
-    pub region: Region,
-}
-
-impl ModuleSpec {
-    fn base(&self, debug: bool) -> u32 {
-        if debug { self.region.debug_base } else { self.region.plain_base }
-    }
-    fn len(&self, debug: bool) -> usize {
-        if debug { self.region.debug_len } else { self.region.plain_len }
-    }
 }
 
 /// THE REGISTRY — the code/data `.emp` modules Stage 1 places natively.
@@ -324,99 +302,89 @@ impl ModuleSpec {
 /// `else`. Both canonical shapes set `crash_report`, so both carry the island.
 pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
     macro_rules! m {
-        ($id:literal, $sec:literal, $region:expr) => {
-            ModuleSpec { module_id: $id, section: $sec, region: $region }
+        ($id:literal, $sec:literal) => {
+            ModuleSpec { module_id: $id, section: $sec }
         };
     }
     let mut specs = vec![
         // ── Engine system ──
-        m!("engine.system.vectors", "vectors", pins::VECTORS),
+        m!("engine.system.vectors", "vectors"),
         // Parcel K4: the $100-$1FF ROM header is native (was header.inc's gameHeader
         // macro). Game-specific (games.sonic4.header / games.demo.header); the
         // strings are typed `[u8; N]` (the width guard). Boundary key Checksum ($18E).
-        m!("games.sonic4.header", "header", pins::HEADER),
-        m!("engine.boot", "boot", pins::BOOT),
+        m!("games.sonic4.header", "header"),
+        m!("engine.boot", "boot"),
         // Parcel K2 — boot_data ports to `.emp` as TWO sections (the $3FE map
         // hole: the engine.z80_init idle packs between them in the no-sound
         // shapes; the resident driver blob rides `boot_head` in sound-on). Two
-        // ModuleSpecs, one per section — the pinned bootstrap's emp_map_toml maps
-        // one region per spec; the Frozen (shipped) path packs both from the
-        // frozen BootData/BootData_End pins.
-        m!("engine.boot_data", "boot_head", pins::BOOT_HEAD),
-        m!("engine.boot_data", "boot_tail", pins::BOOT_TAIL),
-        m!("engine.vdp_init", "vdp_init", pins::VDP_INIT),
-        m!("engine.dma_queue", "dma_queue", pins::DMA_QUEUE),
-        m!("engine.buffers", "buffers", pins::BUFFERS),
-        m!("engine.vblank", "vblank", pins::VBLANK),
-        m!("engine.hblank", "hblank", pins::HBLANK),
-        m!("engine.controllers", "controllers", pins::CONTROLLERS),
-        m!("engine.game_loop", "game_loop", pins::GAME_LOOP),
+        // ModuleSpecs, one per section; the chainer packs both from the frozen
+        // BootData/BootData_End boundary rows.
+        m!("engine.boot_data", "boot_head"),
+        m!("engine.boot_data", "boot_tail"),
+        m!("engine.vdp_init", "vdp_init"),
+        m!("engine.dma_queue", "dma_queue"),
+        m!("engine.buffers", "buffers"),
+        m!("engine.vblank", "vblank"),
+        m!("engine.hblank", "hblank"),
+        m!("engine.controllers", "controllers"),
+        m!("engine.game_loop", "game_loop"),
         // Parcel I3 (2026-08-02) — the demo record/replay module (engine.replay:
         // Input_Tick + Replay_Hash), placed between game_loop and s4lz per the
         // map.toml order. Engine-agnostic (demo gets it via the engine.* filter).
-        m!("engine.replay", "replay", pins::REPLAY),
+        m!("engine.replay", "replay"),
         // ── Engine compression ──
-        m!("engine.s4lz", "s4lz", pins::S4LZ),
+        m!("engine.s4lz", "s4lz"),
         // engine.zx0 DELETED (aeon F-6): the blocking ZX0 decoder moved into
         // engine.compression_selftest (its sole consumer, DEBUG-only) — release
         // ships the streaming decoders only.
         // Art-streaming P2a — the resumable stack-flat ZX0 decoder (zx0_resume.emp).
-        m!("engine.zx0_resume", "zx0_resume", pins::ZX0_RESUME),
-        m!("engine.math", "math", pins::MATH),
+        m!("engine.zx0_resume", "zx0_resume"),
+        m!("engine.math", "math"),
         // ── Engine objects ──
         // Parcel K4 inc-6: the object-code-bank base (ObjCodeBase + the offset-0 safety
         // rts) — was engine.inc's `org $10000 / ObjCodeBase: rts`. Native so the org
         // retires. Placed at $10000 by the object_bank anchor. Engine-agnostic (demo too).
-        m!("engine.objects.objcodebase", "objcodebase", pins::OBJCODEBASE),
-        m!("engine.objects.dplc", "dplc", pins::DPLC),
-        m!("engine.objects.core", "core", pins::CORE),
-        m!("engine.objects.sprites", "sprites", pins::SPRITES),
-        m!("engine.objects.animate", "animate", pins::ANIMATE),
-        m!("engine.objects.collision", "collision", pins::COLLISION),
-        m!("engine.objects.rings", "rings", pins::RINGS),
-        m!("engine.objects.entity_window", "entity_window", pins::ENTITY_WINDOW),
-        m!("engine.objects.children", "children", pins::CHILDREN),
-        m!("engine.objects.load_object", "load_object", pins::LOAD_OBJECT),
+        m!("engine.objects.objcodebase", "objcodebase"),
+        m!("engine.objects.dplc", "dplc"),
+        m!("engine.objects.core", "core"),
+        m!("engine.objects.sprites", "sprites"),
+        m!("engine.objects.animate", "animate"),
+        m!("engine.objects.collision", "collision"),
+        m!("engine.objects.rings", "rings"),
+        m!("engine.objects.entity_window", "entity_window"),
+        m!("engine.objects.children", "children"),
+        m!("engine.objects.load_object", "load_object"),
         // ── Engine level ──
-        m!("engine.plane_buffer", "plane_buffer", pins::PLANE_BUFFER),
-        m!("engine.tile_cache", "tile_cache", pins::TILE_CACHE),
-        m!("engine.collision_lookup", "collision_lookup", pins::COLLISION_LOOKUP),
-        m!("engine.section", "section", pins::SECTION),
-        m!("engine.camera", "camera", pins::CAMERA),
-        m!("engine.parallax", "parallax", pins::PARALLAX),
+        m!("engine.plane_buffer", "plane_buffer"),
+        m!("engine.tile_cache", "tile_cache"),
+        m!("engine.collision_lookup", "collision_lookup"),
+        m!("engine.section", "section"),
+        m!("engine.camera", "camera"),
+        m!("engine.parallax", "parallax"),
         // Effects P1 module split: the sparse raster dispatcher and the per-section
         // palette load, moved out of engine.hblank / engine.buffers into the effects
         // suite's own modules. Placed between parallax and load_art per map `order`.
-        m!("engine.effects.raster", "raster", pins::RASTER),
-        m!("engine.effects.palette", "palette", pins::PALETTE),
+        m!("engine.effects.raster", "raster"),
+        m!("engine.effects.palette", "palette"),
         // Effects P3 Parcel C2 — preset.emp: the EffectsPreset struct plus
         // Effects_InstallPreset, the single total-binding installer that replaced the
         // three per-field consumers at the section crossing.
-        //
-        // Real pin, not DUMMY_REGION, for the reason the `characters` / `tails` rows
-        // above give: every shipped profile is SizeSource::Frozen and never reads
-        // base/len, but the `sonic4_pinned_profile` bootstrap DOES, and a placeholder
-        // collapses the section onto base 0 where it collides with `vectors`. Its
-        // absence here is what `soundbankhead_pinned_bootstrap_lands_at_lma_not_vma`
-        // caught, as "section `preset` has no region in the map" — the module only
-        // started EMITTING when Effects_InstallPreset was written, so it needed a
-        // registry row that a struct-and-constructor module had not.
-        m!("engine.effects.preset", "preset", pins::PRESET),
-        m!("engine.load_art", "load_art", pins::LOAD_ART),
+        m!("engine.effects.preset", "preset"),
+        m!("engine.load_art", "load_art"),
         // Art-streaming P2a — the VBlank-bookmark page-in dispatcher (page_in.emp),
         // placed between load_art and bg per map.toml `order`. Engine-agnostic
         // (demo gets it too; its DEBUG self-test scaffold is HAS_ACT_ART_POOL-gated).
-        m!("engine.page_in", "page_in", pins::PAGE_IN),
+        m!("engine.page_in", "page_in"),
         // Art-streaming P2b Task 6 — the VRAM page-frame residency cache
         // (page_cache.emp), placed between page_in and bg per map.toml `order`.
         // Engine-agnostic (demo links it too; tile_cache/page_in/load_art call
         // PageCache_* cross-seam). Shape-DEPENDENT length: PageCache_Audit and the
         // Ref/Unref/AllocFrame DEBUG asserts are DEBUG-only.
-        m!("engine.page_cache", "page_cache", pins::PAGE_CACHE),
-        m!("engine.bg", "bg", pins::BG),
-        m!("engine.bg_anim", "bg_anim", pins::BG_ANIM),
+        m!("engine.page_cache", "page_cache"),
+        m!("engine.bg", "bg"),
+        m!("engine.bg_anim", "bg_anim"),
         // ── Engine debug / sound caller ──
-        m!("engine.sound_api", "sound_api", pins::SOUND_API),
+        m!("engine.sound_api", "sound_api"),
         // Review item 29 part 4 (the MDDBG strip): null_interrupt.emp is DELETED
         // (its tolerant `rte` had had no vector referencer since item 27's ruling).
         // The tail placement slot it used to hold is now the FAULT-HANDLER slot,
@@ -426,60 +394,43 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // `EndOfRom:` label + the `if … error` guards. Zero-length section placed
         // LAST (boundary key EndOfRom, already frozen in all six tables). The plane
         // wall is a comptime ensure; EndOfRom evenness/4MB are link-time asserts.
-        m!("engine.epilogue", "epilogue", pins::EPILOGUE),
+        m!("engine.epilogue", "epilogue"),
         // ── Game player ──
         // player_common fully flipped (conv-d #49): player_common.asm deleted. The
         // module owns the PlayerV overlay + PPHYS_*/macro templates (state files
         // import by `use`); camera.emp late-binds the one _pl_state offset it
         // link-exports as an `equ`.
-        m!("games.sonic4.player_common", "player_common", pins::PLAYER_COMMON),
-        m!("games.sonic4.player_sensors", "player_sensors", pins::PLAYER_SENSORS),
-        m!("games.sonic4.player_ground", "player_ground", pins::PLAYER_GROUND),
-        m!("games.sonic4.player_air", "player_air", pins::PLAYER_AIR),
-        m!("games.sonic4.player_spindash", "player_spindash", pins::PLAYER_SPINDASH),
+        m!("games.sonic4.player_common", "player_common"),
+        m!("games.sonic4.player_sensors", "player_sensors"),
+        m!("games.sonic4.player_ground", "player_ground"),
+        m!("games.sonic4.player_air", "player_air"),
+        m!("games.sonic4.player_spindash", "player_spindash"),
         // Character-dispatch C2: Tails' flight (player_fly.emp) — PSTATE_FLY's
         // body plus Ability_TailsFlight, the AbilityHook CharDef_Tails points at.
         // The fourth player STATE file, so it sits with the other three and ahead
         // of the character records per map.toml `order`; it is also the last
         // player code before them, which is why `player_spindash`'s end anchor
         // moves from CharDef_Sonic to PState_Fly.
-        //
-        // Real pin, not DUMMY_REGION — same reason as `tails` / `characters` /
-        // `tails_anims`: every shipped profile is a `SizeSource::Frozen` target
-        // that never reads base/len, but the `sonic4_pinned_profile` bootstrap
-        // DOES, and the placeholder collapses the section onto base 0 where it
-        // collides with `vectors` (failure chain 89).
-        m!("games.sonic4.player_fly", "player_fly", pins::PLAYER_FLY),
+        m!("games.sonic4.player_fly", "player_fly"),
         // Character-dispatch C4 Task 10: Knuckles' glide/slide (player_glide.emp) —
         // PSTATE_GLIDE/GLIDEFALL/SLIDE plus Ability_KnuxGlide, the AbilityHook
         // CharDef_Knuckles points at. The FIFTH player STATE file, placed right after
         // player_fly and ahead of the character records per map.toml `order` (which
-        // moves player_fly's end anchor from CharDef_Sonic to PState_Glide). Real pin
-        // (placeholder values, controller re-pins at merge), not DUMMY_REGION — same
-        // reason as `player_fly`: every shipped profile is a `SizeSource::Frozen` target
-        // that never reads base/len, but the `sonic4_pinned_profile` bootstrap DOES.
-        m!("games.sonic4.player_glide", "player_glide", pins::PLAYER_GLIDE),
+        // moves player_fly's end anchor from CharDef_Sonic to PState_Glide).
+        m!("games.sonic4.player_glide", "player_glide"),
         // Character-dispatch C4 Task 11: Knuckles' wall climb + ledge pull-up
         // (player_climb.emp) — PSTATE_CLIMB/LEDGE plus the glide wall-catch. The sixth
         // player STATE file, placed right after player_glide per map.toml `order`
-        // (player_glide's end anchor moves to Climb_WallDist). Placeholder pin, controller
-        // re-pins at merge (same bootstrap reason as player_glide).
-        m!("games.sonic4.player_climb", "player_climb", pins::PLAYER_CLIMB),
-        m!("games.sonic4.sonic", "sonic", pins::SONIC),
+        // (player_glide's end anchor moves to Climb_WallDist).
+        m!("games.sonic4.player_climb", "player_climb"),
+        m!("games.sonic4.sonic", "sonic"),
         // Character-dispatch C1 task 6: the Tails character RECORD (tails.emp) —
         // CharDef_Tails + PhysTable_Tails, pure data, the exact peer of `sonic`
         // and placed right after it per map.toml `order`. This is what makes
         // CHAR_TAILS a real roster row instead of a stub aimed at CharDef_Sonic;
         // the sprite data it points at (Map_/DPLC_/Art_Tails, Ani_Tails) landed in
         // task 5 as `tails_data` / `tails_anims`.
-        //
-        // Real pin, not DUMMY_REGION — same reason as `characters` / `tails_anims`
-        // / `tails_data`: every shipped profile is a `SizeSource::Frozen` target
-        // that never reads base/len, but the `sonic4_pinned_profile` bootstrap DOES,
-        // and the placeholder collapses the section onto base 0 where it collides
-        // with `vectors` (the soundbankhead_port PinnedBaked probe — failure chain
-        // 89).
-        m!("games.sonic4.tails", "tails", pins::TAILS),
+        m!("games.sonic4.tails", "tails"),
         // Character-dispatch C4 task 9: the Knuckles character RECORD
         // (knuckles.emp) — CharDef_Knuckles + PhysTable_Knuckles, the third peer
         // of `sonic` / `tails`, placed right after them per map.toml `order`
@@ -488,52 +439,31 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // CHAR_KNUCKLES at the Sonic record, so every CHAR_* id now resolves to
         // its own complete record. His `cd_ability` is still Ability_None —
         // glide/climb are tasks 10-11 — but his art, mappings, animations, boxes,
-        // physics row and PALETTE are his own. Real pin, not DUMMY_REGION, for
-        // the reason `tails` carries one (failure chain 89).
-        m!("games.sonic4.knuckles", "knuckles", pins::KNUCKLES),
+        // physics row and PALETTE are his own.
+        m!("games.sonic4.knuckles", "knuckles"),
         // The character ROSTER (characters.emp): the CharacterDefs table, the
         // character-agnostic asset/art loaders (Player_InitAssets / Player_LoadArt),
         // the AbilityHook type and Ability_None. A PEER of `sonic` (and of the coming
         // `tails`/`knuckles` records), deliberately NOT part of `player_common` —
         // player_common owns the shared player FRAME, this owns the roster the frame
         // dispatches through. Placed right after `sonic` per map.toml `order`.
-        //
-        // Every profile that links this module (canonical plain/debug, config_a/
-        // config_b, lean) is a `SizeSource::Frozen` target, so the chainer sizes and
-        // places the section live from the frozen table + the map order and the
-        // region base/len are never read there. The `sonic4_pinned_profile`
-        // bootstrap DOES read them, which is why this carries a real pin rather than
-        // DUMMY_REGION: the placeholder collapsed the section onto base 0, where it
-        // collided with `vectors` and made `resolve_pinned_sections` unusable
-        // (soundbankhead_port's PinnedBaked probe). The pin exists because
-        // repin.toml declares a `characters` region — the debt that comment named.
-        m!("games.sonic4.characters", "characters", pins::CHARACTERS),
+        m!("games.sonic4.characters", "characters"),
         // Character-dispatch C1: Tails' twin tails (tails_appendage.emp) — the
         // appendage CHILD OBJECT (its reconcile, its effect-pool spawn, and the
         // per-frame parent copy + own DPLC stream + draw). Tails-owned GAME
         // content, so it is placed with the character records rather than among
         // the test objects, and being the last player-side content before them it
         // takes the slot `characters`' end anchor used to name (TestStatic_Main).
-        //
-        // Real pin, not DUMMY_REGION — same reason as `tails` / `characters` /
-        // `player_fly`: every shipped profile is a `SizeSource::Frozen` target
-        // that never reads base/len, but the `sonic4_pinned_profile` bootstrap
-        // DOES, and the placeholder collapses the section onto base 0 where it
-        // collides with `vectors` (failure chain 89).
-        m!("games.sonic4.tails_appendage", "tails_appendage", pins::TAILS_APPENDAGE),
+        m!("games.sonic4.tails_appendage", "tails_appendage"),
         // Dust-effect Task 4: the skid dust. dust_puff.emp is the fire-and-forget
         // puff object (world-coord spawn + animate/draw Main — resident art, so
         // it queues no DMA in its whole life); dust_spindash.emp carries
         // Dust_Tick, the per-frame skid cadence Player_Display calls (Task 5
         // adds the charge-dust follower to the same section). Player-side game
         // content, placed right after tails_appendage per map.toml `order` —
-        // tails_appendage's end anchor moves to DustPuff_Spawn. Real pins, not
-        // DUMMY_REGION — same reason as `tails_appendage` (the
-        // `sonic4_pinned_profile` bootstrap reads region bases; a placeholder
-        // collapses the section onto base 0 where it collides with `vectors`,
-        // failure chain 89).
-        m!("games.sonic4.dust_puff", "dust_puff", pins::DUST_PUFF),
-        m!("games.sonic4.dust_spindash", "dust_spindash", pins::DUST_SPINDASH),
+        // tails_appendage's end anchor moves to DustPuff_Spawn.
+        m!("games.sonic4.dust_puff", "dust_puff"),
+        m!("games.sonic4.dust_spindash", "dust_spindash"),
         // ── Game objects ──
         // test_player + test_enemy fully flipped (conv-d #48/#47): both .asm deleted.
         // test_player.emp owns TPlayerV; test_animated.emp owns DplcV; STUB_FLOOR_Y
@@ -541,15 +471,15 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // objtest-gate (2026-08-05): the eight scene-only test objects moved to
         // the DEBUG-only block below. test_static + test_solid STAY — the shipped
         // OJZ entity data places both (Sec0/1/2), so they are live PLAIN content.
-        m!("games.sonic4.test_static", "test_static", pins::TEST_STATIC),
-        m!("games.sonic4.test_solid", "test_solid", pins::TEST_SOLID),
-        m!("games.sonic4.path_swap", "path_swap", pins::PATH_SWAP),
+        m!("games.sonic4.test_static", "test_static"),
+        m!("games.sonic4.test_solid", "test_solid"),
+        m!("games.sonic4.path_swap", "path_swap"),
         // ── Game data ──
         // OBJDEFS: `module … .test_objects` has NO `in <section>`, so its
         // `pub data` lands in the default `"text"` section (verified: the only
         // reachable non-empty `"text"` producer — the sound data modules are
         // unreachable from this set).
-        m!("games.sonic4.data.objdefs.test_objects", "text", pins::OBJDEFS),
+        m!("games.sonic4.data.objdefs.test_objects", "text"),
         // The OJZ parallax block (conv-g): 6 deform tables + 20 parallax_config
         // records. RE-HOMED 2026-08-18 by scanline-P1: the block is no longer hand-authored
         // in games.sonic4.parallax_configs (deleted) — it is LOWERED from authored scenes
@@ -557,50 +487,39 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // games.sonic4.scene_registry emits). Same bytes at the same address: the migration
         // returned all four shapes to their pre-migration crcs and the 0xACE block at
         // $121C8 is byte-equal, so this row is a RENAME, not a re-measure.
-        m!("games.sonic4.scene_registry", "scene_registry", pins::SCENE_REGISTRY),
+        m!("games.sonic4.scene_registry", "scene_registry"),
         // Effects P3 Parcel C2 — the game-side effects library, carved out of
         // configs.emp's bottom half (gate fixtures, the five starter palette variants,
-        // and the five OJZ presets). Same real-pin reasoning as the rows above: the
-        // pinned bootstrap reads base/len even though every shipped Frozen profile does
-        // not. Its absence, like `preset`'s, surfaced only through
-        // soundbankhead_port's PinnedBaked probe.
-        m!("games.sonic4.ojz_effects", "ojz_effects", pins::OJZ_EFFECTS),
+        // and the five OJZ presets).
+        m!("games.sonic4.ojz_effects", "ojz_effects"),
         // test_mappings (conv-h #35): the test-object sprite mapping index
         // (Map_TestObj word-offset table + 3 frame records), authored via the
         // `offsets` construct in games.sonic4.data.mappings.test_mappings.
-        m!("games.sonic4.test_mappings", "test_mappings", pins::TEST_MAPPINGS),
+        m!("games.sonic4.test_mappings", "test_mappings"),
         // Dust sprite data (dust_data.emp, dust-effect Task 3): mappings x2, the
         // charge DPLC, and the 88-tile art blob whose tail 16 tiles are the
         // resident puff block. Placed right after test_mappings per map.toml
         // `order` (2816 B of art fits the data region's headroom, so unlike
-        // Tails' 132 KB it needs no ROM-tail exile). Real pin, not DUMMY_REGION —
-        // same reason as `tails_data`: the `sonic4_pinned_profile` bootstrap
-        // reads region bases, and a placeholder collapses the section onto base 0
-        // where it collides with `vectors` (failure chain 89).
-        m!("games.sonic4.dust_data", "dust_data", pins::DUST_DATA),
-        m!("games.sonic4.sonic_anims", "sonic_anims", pins::SONIC_ANIMS),
+        // Tails' 132 KB it needs no ROM-tail exile).
+        m!("games.sonic4.dust_data", "dust_data"),
+        m!("games.sonic4.sonic_anims", "sonic_anims"),
         // Character-dispatch C1 task 5: the Tails animation scripts
         // (tails_anims.emp) — `Ani_Tails` + `Ani_TailsAppendage`, both indexed by
         // the shared ANIM_* ids. A peer of `sonic_anims`, placed right after it
-        // per map.toml `order`. Carries a REAL pin, not DUMMY_REGION: every shipped
-        // profile is `SizeSource::Frozen` and never reads base/len, but the
-        // `sonic4_pinned_profile` bootstrap does, and a placeholder collapses the
-        // section onto base 0 where it collides with `vectors` (soundbankhead_port's
-        // PinnedBaked probe) — the `characters` failure chain 89 root-caused.
-        m!("games.sonic4.tails_anims", "tails_anims", pins::TAILS_ANIMS),
+        // per map.toml `order`.
+        m!("games.sonic4.tails_anims", "tails_anims"),
         // Character-dispatch C4 task 9: the Knuckles animation scripts
         // (knuckles_anims.emp) — `Ani_Knuckles` on the shared ANIM_* ids, the
         // third peer of sonic_anims / tails_anims and placed right after them per
-        // map.toml `order`. Real pin, not DUMMY_REGION (failure chain 89).
-        m!("games.sonic4.knuckles_anims", "knuckles_anims", pins::KNUCKLES_ANIMS),
+        // map.toml `order`.
+        m!("games.sonic4.knuckles_anims", "knuckles_anims"),
         // particle_anims: DEBUG-only below (sole consumer test_particle is).
         // Dust animation scripts (dust_anims.emp, dust-effect Task 3): the charge
         // loop + the puff one-shot. Sits right after particle_anims per map.toml
         // `order` (union; in plain, where Ani_Particle is absent, it follows
         // tails_anims directly). BOTH shapes — the dust objects are shipped
-        // content, unlike the debug-only particle scripts. Real pin, not
-        // DUMMY_REGION — same reason as `tails_anims` (failure chain 89).
-        m!("games.sonic4.dust_anims", "dust_anims", pins::DUST_ANIMS),
+        // content, unlike the debug-only particle scripts.
+        m!("games.sonic4.dust_anims", "dust_anims"),
         // Parcel K3 run A: the OJZ act1 interior island HEAD — the contiguous run
         // BEFORE the descriptor. Two native `.emp` sections (both generator-emitted):
         //   entity_data  — the 9-section type tables / object placements / ring lists
@@ -609,11 +528,11 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         //   ojz_act_pool — 3 ZX0 page embeds + the OJZ_Act_Pool_PageTable
         // With these + the descriptor + the run-B tail native, act_descriptor.asm is
         // DELETED (the OJZ block is fully `.emp`).
-        m!("games.sonic4.ojz_entity_data_act1", "entity_data", pins::ENTITY_DATA),
-        m!("games.sonic4.ojz_act_pool_act1", "ojz_act_pool", pins::OJZ_ACT_POOL),
+        m!("games.sonic4.ojz_entity_data_act1", "entity_data"),
+        m!("games.sonic4.ojz_act_pool_act1", "ojz_act_pool"),
         // act_descriptor (kill row 93): the OJZ act1 descriptor table; the body/
         // section table places here.
-        m!("games.sonic4.act_descriptor_ojz_act1", "act_descriptor", pins::ACT_DESCRIPTOR),
+        m!("games.sonic4.act_descriptor_ojz_act1", "act_descriptor"),
         // Parcel K3 run B: the OJZ act1 interior island TAIL — the contiguous run
         // after the descriptor. Three native `.emp` sections (the generators emit
         // #32/#28; the palette/BG BINCLUDEs dissolved into act_assets.emp), placed
@@ -621,16 +540,16 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         //   sec_block_blobs — OJZ_Sec{0..8}_Blocks (Sec4=Sec2 dedup equ), 8 embeds
         //   ojz_act_assets  — OJZ_Palette / BGND_Palette / OJZ_Act1_BG_{Layout,Tiles}
         //   ojz_bg_anim     — BgAnim_Table (disabled stub) + BgAnim_Banks
-        m!("games.sonic4.ojz_sec_block_blobs_act1", "sec_block_blobs", pins::SEC_BLOCK_BLOBS),
+        m!("games.sonic4.ojz_sec_block_blobs_act1", "sec_block_blobs"),
         // art-streaming-p2-task5 — per-section local->global tile-index tables
         // (sec_local_maps.emp), placed after the block blobs per map.toml `order`.
-        m!("games.sonic4.ojz_sec_local_maps_act1", "sec_local_maps", pins::SEC_LOCAL_MAPS),
-        m!("games.sonic4.ojz_act_assets_act1", "ojz_act_assets", pins::OJZ_ACT_ASSETS),
-        m!("games.sonic4.ojz_bg_anim_act1", "ojz_bg_anim", pins::OJZ_BG_ANIM),
+        m!("games.sonic4.ojz_sec_local_maps_act1", "sec_local_maps"),
+        m!("games.sonic4.ojz_act_assets_act1", "ojz_act_assets"),
+        m!("games.sonic4.ojz_bg_anim_act1", "ojz_bg_anim"),
         // Parcel K4: the global collision + Sonic character data (HeightMaps ..
         // Art_Sonic), was the flat BINCLUDE island at the tail of main.asm's
         // gameDataIncludes. Native `embed()` section; boundary key HeightMaps.
-        m!("games.sonic4.collision_data", "collision_data", pins::COLLISION_DATA),
+        m!("games.sonic4.collision_data", "collision_data"),
         // Character-dispatch C1 task 5: the Tails sprite data (tails_data.emp) —
         // body + twin-tail appendage mappings/DPLC/art, a PEER of the Sonic trio
         // that rides `collision_data`, hence this registry slot. Its map.toml
@@ -640,9 +559,7 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // the map drives placement (K5).
         // Nothing consumes it yet (the roster still points CHAR_TAILS at the Sonic
         // record); it is the data half of the character split, landed first.
-        // Real pin, same reason as `tails_anims` above: the PinnedBaked bootstrap
-        // reads region bases, and DUMMY_REGION collapses the section onto 0.
-        m!("games.sonic4.tails_data", "tails_data", pins::TAILS_DATA),
+        m!("games.sonic4.tails_data", "tails_data"),
         // Character-dispatch C4 task 9: the Knuckles sprite data
         // (knuckles_data.emp) — mappings/DPLC/art plus the two CRAM line-0
         // palettes the per-character palette swap reads. Registry slot beside
@@ -651,38 +568,34 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // Art_Sonic and the $48000 dac_banks anchor. Unlike Tails, Knuckles could
         // NOT be brought into our palette order by an index permutation — his art
         // uses an S3K colour our line 0 lacks — which is why this module ships a
-        // palette at all. Real pin, same reason as `tails_data`.
-        m!("games.sonic4.knuckles_data", "knuckles_data", pins::KNUCKLES_DATA),
+        // palette at all.
+        m!("games.sonic4.knuckles_data", "knuckles_data"),
         // Parcel K4 inc-5 Stage 2 (P2 DAC probe): the DAC sample banks are native —
         // dac_banks.emp embeds the seam-2 dac_blip_bank.bin @ $48000 + dac_shared_bank.bin
         // @ $50000 (the .bin ensure_generated emits). Sound-ON ONLY: filtered out of the
         // sound-off config_b (demo_registry already excludes it via the engine.* filter).
-        m!("games.sonic4.dac_banks", "dac_banks", pins::DAC_BANKS),
+        m!("games.sonic4.dac_banks", "dac_banks"),
         // Parcel K4 inc-5 Stage 3 (P2 MT probe): the Moving-Trucks streaming bank body
         // is native — mt_bank_blob.emp embeds the seam-2 mt_bank{,_debug}.bin @ $58607
         // (after the phased soundBankHead; non-phased LMA labels). Sound-ON only.
-        m!("games.sonic4.mt_bank_blob", "mt_bank_blob", pins::MT_BANK_BLOB),
+        m!("games.sonic4.mt_bank_blob", "mt_bank_blob"),
         // Parcel K4 inc-5 Stage 4 (P2 SFX probe): the SFX block is native —
         // sfx_bank_blob.emp embeds the seam-2 sfx_bank{,_debug}.bin after the MT body
         // (non-phased LMA; no cross-seam labels). Sound-ON only.
-        m!("games.sonic4.sfx_bank_blob", "sfx_bank_blob", pins::SFX_BANK_BLOB),
+        m!("games.sonic4.sfx_bank_blob", "sfx_bank_blob"),
         // Parcel K4 inc-5 Stage 4b (P2 soundBankHead probe): the engine-table bank HEAD
         // is native — soundbankhead.emp places the 5 heads as a PHASE-BANK section (vma
         // $8000, lma $58000). Was the soundBankHead macro (sound_bank.inc, deleted). The
         // FIRST native phase-bank section (the bank-anchor rule: labeled $8000-window
         // head, hard org, never repacks). Sound-ON only.
-        m!("games.sonic4.soundbankhead", "soundbankhead", pins::SOUNDBANKHEAD),
+        m!("games.sonic4.soundbankhead", "soundbankhead"),
         // ── Game test states ──
         // object_test_state: DEBUG-only below (owner ruling 2026-08-05 — a
         // harness you drive is equipment, and equipment does not ship).
-        m!("games.sonic4.ojz_scroll_test", "ojz_scroll_test", pins::OJZ_SCROLL_TEST),
+        m!("games.sonic4.ojz_scroll_test", "ojz_scroll_test"),
     ];
     if debug {
-        specs.push(m!(
-            "engine.compression_selftest",
-            "compression_selftest",
-            pins::COMPRESSION_SELFTEST
-        ));
+        specs.push(m!("engine.compression_selftest", "compression_selftest"));
         // objtest-gate (owner ruling 2026-08-05): the object-test scene and its
         // eight scene-only objects are DEBUG equipment (same idiom as
         // COMPRESSION_SELFTEST — no in-file gate, registry-only inclusion; each
@@ -690,16 +603,16 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // them). TestStatic/TestSolid/Map_TestObj/objdefs(Static,Solid)/TestArt
         // remain unconditional above: shipped OJZ entity data and the release
         // debug-fly marker consume them.
-        specs.push(m!("games.sonic4.test_player", "test_player", pins::TEST_PLAYER));
-        specs.push(m!("games.sonic4.test_enemy", "test_enemy", pins::TEST_ENEMY));
-        specs.push(m!("games.sonic4.test_animated", "test_animated", pins::TEST_ANIMATED));
-        specs.push(m!("games.sonic4.test_particle", "test_particle", pins::TEST_PARTICLE));
-        specs.push(m!("games.sonic4.test_emitter", "test_emitter", pins::TEST_EMITTER));
-        specs.push(m!("games.sonic4.test_parent", "test_parent", pins::TEST_PARENT));
-        specs.push(m!("games.sonic4.test_stress_emitter", "test_stress_emitter", pins::TEST_STRESS_EMITTER));
-        specs.push(m!("games.sonic4.test_churn", "test_churn", pins::TEST_CHURN));
-        specs.push(m!("games.sonic4.particle_anims", "particle_anims", pins::PARTICLE_ANIMS));
-        specs.push(m!("games.sonic4.object_test_state", "object_test_state", pins::OBJECT_TEST_STATE));
+        specs.push(m!("games.sonic4.test_player", "test_player"));
+        specs.push(m!("games.sonic4.test_enemy", "test_enemy"));
+        specs.push(m!("games.sonic4.test_animated", "test_animated"));
+        specs.push(m!("games.sonic4.test_particle", "test_particle"));
+        specs.push(m!("games.sonic4.test_emitter", "test_emitter"));
+        specs.push(m!("games.sonic4.test_parent", "test_parent"));
+        specs.push(m!("games.sonic4.test_stress_emitter", "test_stress_emitter"));
+        specs.push(m!("games.sonic4.test_churn", "test_churn"));
+        specs.push(m!("games.sonic4.particle_anims", "particle_anims"));
+        specs.push(m!("games.sonic4.object_test_state", "object_test_state"));
     }
     if debug || crash_report {
         // The error_handler island (the 12 per-class CPU exception stubs + the
@@ -708,32 +621,30 @@ pub fn registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
         // to be reportable. Only the opt-in `lean` profile (crash_report = false)
         // omits it. Placed at its map-order slot (BusError), which must remain the
         // FINAL byte-emitting section (see `append_deb2_appendix`'s blob-end guard).
-        specs.push(m!("engine.debug.error_handler", "error_handler", pins::ERROR_HANDLER));
+        specs.push(m!("engine.debug.error_handler", "error_handler"));
     } else {
         // The LEAN loud-failure handler (46 B: mask, display off, red backdrop,
         // freeze). It replaces the absent error_handler island as every fault
         // vector's target in the lean shape, at the same tail placement slot.
-        // LEAN-ONLY — so it appears in NEITHER canonical listing, which is why its
-        // `repin` region is gone (repin can only resolve the canonical plain+debug
-        // listings). DUMMY_REGION: lean is a `SizeSource::Frozen` target, so the
-        // chainer sizes and places it live from `lean.txt` + map.toml `order`, and
-        // the region base/len are never read.
-        specs.push(m!("engine.system.release_fault", "release_fault", DUMMY_REGION));
+        // LEAN-ONLY — so it appears in NEITHER canonical listing, which is why it
+        // has no `repin` region (repin can only resolve the canonical plain+debug
+        // listings). The chainer sizes and places it live from `lean.txt` + map.toml
+        // `order`.
+        specs.push(m!("engine.system.release_fault", "release_fault"));
     }
     // I4: the OJZ replay fixture — pushed last in the REGISTRY, but map.toml's `order`
     // places it after all gameplay content and BEFORE the fault-handler island, which
     // the MDDBG blob-end contract requires to be the final byte-emitting section (see
     // `check_error_handler_is_last`). Re-recording (content+size change) therefore still
     // shifts zero gameplay addresses; it moves only the fault handler + EndOfRom/appendix.
-    specs.push(m!("games.sonic4.replay_fixture", "replay_fixture", pins::REPLAY_FIXTURE));
+    specs.push(m!("games.sonic4.replay_fixture", "replay_fixture"));
     specs
 }
 
 /// The engine-only registry (demo): the `engine.*` modules of the sonic4 registry,
 /// minus `engine.sound_api` (demo is sound-OFF → the sound-caller `.asm`/`.emp` is
-/// not in the demo layout at all). The region bases/lens are sonic4-shape and are
-/// IGNORED under `SizeSource::Frozen` (the chainer sources demo sizes from the frozen
-/// listing table); only the module id + section name are load-bearing.
+/// not in the demo layout at all). The chainer sources demo sizes from the frozen
+/// listing table.
 ///
 /// OWNER-RULED 2026-08-04: the demo's RELEASE shape CARRIES the debugger — no new
 /// exclusion. `engine.debug.error_handler` is an `engine.*` module, so it rides the
@@ -746,20 +657,19 @@ fn demo_registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
     // The Z80 idle places natively in the no-sound demo (kill row 55); `z80_init`
     // is not in the shared `registry()` (sound-on shapes must not place it), so add
     // it here explicitly.
-    r.push(ModuleSpec { module_id: "engine.z80_init", section: "z80_idle", region: DUMMY_REGION });
+    r.push(ModuleSpec { module_id: "engine.z80_init", section: "z80_idle" });
     // The demo GAME modules (Parcel H-demo): the object-code-bank island the demo
     // main.asm holes out. `demo_data` lands its `pub data` in the named `demo_data`
     // section (not the default `text`), so the require_one_text guard stays off.
-    // The regions are DUMMY_REGION — cosmetic under Frozen (the chainer packs from
-    // the frozen demo tables' DemoBox_Main/ObjDef_DemoBox/GameState_Demo_Init
-    // anchors); only the module id + section name are load-bearing.
-    r.push(ModuleSpec { module_id: "games.demo.demo_box", section: "demo_box", region: DUMMY_REGION });
-    r.push(ModuleSpec { module_id: "games.demo.data.demo_data", section: "demo_data", region: DUMMY_REGION });
-    r.push(ModuleSpec { module_id: "games.demo.demo_state", section: "demo_state", region: DUMMY_REGION });
+    // The chainer packs them from the frozen demo tables'
+    // DemoBox_Main/ObjDef_DemoBox/GameState_Demo_Init anchors.
+    r.push(ModuleSpec { module_id: "games.demo.demo_box", section: "demo_box" });
+    r.push(ModuleSpec { module_id: "games.demo.data.demo_data", section: "demo_data" });
+    r.push(ModuleSpec { module_id: "games.demo.demo_state", section: "demo_state" });
     // Parcel K4: the demo's $100-$1FF ROM header is native too (games.demo.header;
     // the shared engine.inc no longer invokes the gameHeader macro). Boundary key
-    // Checksum→GameHeader, base $100 (cosmetic pin under Frozen).
-    r.push(ModuleSpec { module_id: "games.demo.header", section: "header", region: pins::HEADER });
+    // Checksum→GameHeader.
+    r.push(ModuleSpec { module_id: "games.demo.header", section: "header" });
     r
 }
 
@@ -767,16 +677,6 @@ fn demo_registry(debug: bool, crash_report: bool) -> Vec<ModuleSpec> {
 /// GameProfile refactor: `native_rom` / `native_declared_chain` / `native_full_rom`
 /// build through this and must stay byte-green.
 pub fn sonic4_profile(debug: bool) -> GameProfile {
-    sonic4_profile_with(
-        SizeSource::Frozen(load_frozen_table(if debug { "s4_debug.txt" } else { "s4.txt" })),
-        debug,
-    )
-}
-
-/// The canonical literal with an explicit placement source — the shared body of
-/// `sonic4_profile` (Frozen, the shipped shape) and `sonic4_pinned_profile` (the
-/// PinnedBaked bootstrap, which must not touch the table file it exists to mint).
-pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile {
     GameProfile {
         name: if debug { "sonic4_debug" } else { "sonic4" },
         game_root_rel: "games/sonic4/game_root.asm",
@@ -813,55 +713,14 @@ pub fn sonic4_profile_with(size_source: SizeSource, debug: bool) -> GameProfile 
         ],
         require_one_text: true,
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
-        size_source,
+        frozen_sizes: load_frozen_table(if debug {
+            "s4_debug.txt"
+        } else {
+            "s4.txt"
+        }),
         fixture_placement: false,
         extra_entries: Vec::new(),
     }
-}
-
-/// CANONICAL sonic4 at PINNED-BAKED placement — the BOOTSTRAP profile. Exists for
-/// exactly one job: deriving the canonical frozen tables (`s4.txt` / `s4_debug.txt`)
-/// from the committed pins layout the first time (and for any deliberate re-bootstrap
-/// off a pinned resolve). Every shipped canonical build uses `sonic4_profile` (Frozen).
-pub fn sonic4_pinned_profile(debug: bool) -> GameProfile {
-    sonic4_profile_with(SizeSource::PinnedBaked, debug)
-}
-
-/// §17 Wave-B B-0 BOOTSTRAP: derive the canonical boundary table (one head label per
-/// ROM section, at `lma + offset`, plus `EndOfRom`) from the PINNED canonical resolve —
-/// the committed pins layout is the provisional-base authority the packing walk needs.
-/// Runs against unchanged sources; thereafter `derive_frozen_table` (over the Frozen
-/// profile) refreshes the committed table like any other target's.
-pub fn derive_canonical_bootstrap_table(
-    aeon: &Path,
-    debug: bool,
-) -> Result<std::collections::BTreeMap<String, u32>, String> {
-    let profile = sonic4_pinned_profile(debug);
-    ensure_generated(aeon);
-    let as_side = assemble_as_side(aeon, &profile)?;
-    let mut sections: Vec<Section> = as_side.sections;
-    sections.extend(build_emp(aeon, &profile)?.sections);
-    let stubs = SymbolTable::new();
-    let resolved = sigil_link::resolve_layout(&sections, &stubs, true)
-        .map_err(|d| format!("bootstrap resolve_layout: {} diag(s); first {:?}", d.len(), d.first()))?;
-    let mut out = std::collections::BTreeMap::new();
-    for sec in &resolved {
-        if !is_rom_section(sec) {
-            continue;
-        }
-        if let Some(head) = sec.labels.iter().min_by_key(|l| l.offset) {
-            out.insert(head.name.clone(), sec.lma.wrapping_add(head.offset));
-        }
-        for l in &sec.labels {
-            if l.name == "EndOfRom" {
-                out.insert(l.name.clone(), sec.lma.wrapping_add(l.offset));
-            }
-        }
-    }
-    if !out.contains_key("EndOfRom") {
-        return Err("bootstrap: EndOfRom label absent from the pinned resolve".into());
-    }
-    Ok(out)
 }
 
 /// DEMO (plain / debug) — engine-only registry, sound OFF, sizes from the frozen
@@ -901,22 +760,15 @@ pub fn demo_profile(debug: bool) -> GameProfile {
         ],
         require_one_text: false,
         inapplicable_guards: DEMO_INAPPLICABLE_GUARDS.to_vec(),
-        size_source: SizeSource::Frozen(load_frozen_table(if debug {
+        frozen_sizes: load_frozen_table(if debug {
             "demo_debug.txt"
         } else {
             "demo.txt"
-        })),
+        }),
         fixture_placement: false,
         extra_entries: Vec::new(),
     }
 }
-
-/// A cosmetic region for the Config-A off-canonical debug modules (game_debug /
-/// sound_debug): their placement base/len are IGNORED under `SizeSource::Frozen`
-/// (the chainer computes them from the config listing), so only the id + section name
-/// are load-bearing.
-const DUMMY_REGION: Region =
-    Region { plain_base: 0, debug_base: 0, plain_len: 1, debug_len: 1 };
 
 /// CONFIG-B (off-canonical no-sound): sonic4 game, SOUND_DRIVER_ENABLED OFF, plain.
 /// Registry = the sonic4 set MINUS `engine.sound_api` (no sound caller) PLUS the Z80
@@ -939,7 +791,6 @@ pub fn config_b_profile() -> GameProfile {
     registry.push(ModuleSpec {
         module_id: "engine.z80_init",
         section: "z80_idle",
-        region: DUMMY_REGION,
     });
     GameProfile {
         name: "config_b",
@@ -970,7 +821,7 @@ pub fn config_b_profile() -> GameProfile {
         ],
         require_one_text: true,
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
-        size_source: SizeSource::Frozen(load_frozen_table("config_b.txt")),
+        frozen_sizes: load_frozen_table("config_b.txt"),
         fixture_placement: false,
         extra_entries: Vec::new(),
     }
@@ -994,12 +845,10 @@ pub fn config_a_profile() -> GameProfile {
     registry.push(ModuleSpec {
         module_id: "games.sonic4.game_debug",
         section: "game_debug",
-        region: DUMMY_REGION,
     });
     registry.push(ModuleSpec {
         module_id: "engine.debug.sound_debug",
         section: "sound_debug",
-        region: DUMMY_REGION,
     });
     GameProfile {
         name: "config_a",
@@ -1029,7 +878,7 @@ pub fn config_a_profile() -> GameProfile {
         ],
         require_one_text: true,
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
-        size_source: SizeSource::Frozen(load_frozen_table("config_a.txt")),
+        frozen_sizes: load_frozen_table("config_a.txt"),
         fixture_placement: false,
         extra_entries: Vec::new(),
     }
@@ -1081,7 +930,7 @@ pub fn lean_profile() -> GameProfile {
         ],
         require_one_text: true,
         inapplicable_guards: STAGE1_INAPPLICABLE_GUARDS.to_vec(),
-        size_source: SizeSource::Frozen(load_frozen_table("lean.txt")),
+        frozen_sizes: load_frozen_table("lean.txt"),
         fixture_placement: false,
         extra_entries: Vec::new(),
     }
@@ -1674,14 +1523,9 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
         include_root: Some(aeon.to_path_buf()),
         guarded_defines,
     };
-    // A CHAINED build (`SizeSource::Frozen`) moves sections after assembly, so its
-    // residual AS must keep section-label references SYMBOLIC to relocate (the row-94
-    // parallax pointer); a PinnedBaked build never moves and stays byte-for-byte asl.
-    let assemble = |root: &Path, opts: &AsOptions| match profile.size_source {
-        SizeSource::Frozen(_) => assemble_root_relocating(root, opts),
-        SizeSource::PinnedBaked => assemble_root(root, opts),
-    };
-    assemble(&root, &opts).map_err(|d| {
+    // Every build CHAINS: sections move after assembly, so the residual AS must keep
+    // section-label references SYMBOLIC to relocate (the row-94 parallax pointer).
+    assemble_root_relocating(&root, &opts).map_err(|d| {
         format!(
             "assemble (native AS side, {}): {} diagnostics; first: {:?}",
             profile.name,
@@ -1689,35 +1533,6 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
             d.first()
         )
     })
-}
-
-/// Back-compat wrapper: the canonical sonic4 AS side at the STAGE-1 PINNED shape
-/// (baked lmas intact, non-relocating). The pinned-era proofs (native_chained_resume,
-/// the bootstrap derivation) consume this; the SHIPPED canonical build is
-/// `build_rom_chained_with_listing(sonic4_profile(..))` (Frozen, packed).
-pub fn assemble_native_all_gates_as_side(aeon: &Path, debug: bool) -> Result<Module, String> {
-    assemble_as_side(aeon, &sonic4_pinned_profile(debug))
-}
-
-/// Build the placement map (one region per registry section) for `place_sections`.
-/// A defaulted-module `"text"` section is mapped to the OBJDEFS geometry (the
-/// only reachable non-empty `"text"` producer); every empty comptime `"text"`
-/// section packs there contributing zero bytes.
-fn emp_map_toml(specs: &[ModuleSpec], debug: bool) -> String {
-    let mut out = String::from("fill = 0x00\n");
-    for s in specs {
-        // Region size must be at least 1 for the map loader; a zero-len region
-        // (COMPRESSION_SELFTEST plain) hosts only an empty section, so a nominal
-        // size is byte-neutral.
-        let size = s.len(debug).max(1);
-        out.push_str(&format!(
-            "\n[[region]]\nname = \"{}\"\nlma_base = {:#x}\nsize = {:#x}\nkind = \"rom\"\n",
-            s.section,
-            s.base(debug),
-            size,
-        ));
-    }
-    out
 }
 
 /// The FROZEN-source emp placement map: one nominal region per DISTINCT section name
@@ -1987,19 +1802,12 @@ pub struct EmpProgram {
     pub sources: sigil_frontend_emp::resolve::manifest::SourceIndex,
 }
 
-/// Back-compat wrapper: build the canonical sonic4 emp set (the Stage-1 shape).
-pub fn build_native_emp(aeon: &Path, debug: bool) -> Result<EmpProgram, String> {
-    // The Stage-1 PINNED shape (see assemble_native_all_gates_as_side).
-    build_emp(aeon, &sonic4_pinned_profile(debug))
-}
-
 /// Natively lower + place every registry `.emp` module for `profile`. Returns the
 /// placed sections, the whole program's deferred link asserts (drift guards), and
-/// every reportable non-error diagnostic the lowering produced. Under
-/// `SizeSource::Frozen` the placement map bases are COSMETIC (the chainer recomputes
-/// every base from the frozen table), so a nominal one-region-per-section map suffices.
+/// every reportable non-error diagnostic the lowering produced. The placement map
+/// bases are COSMETIC (the chainer recomputes every base from the frozen table), so a
+/// nominal one-region-per-section map suffices.
 pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, String> {
-    let debug = profile.debug;
     let specs = &profile.registry;
 
     let (mut manifest, mdiags) = resolve::manifest::Manifest::scan(aeon);
@@ -2136,12 +1944,9 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
         }
     }
 
-    let map_toml = match &profile.size_source {
-        SizeSource::PinnedBaked => emp_map_toml(specs, debug),
-        // The chainer recomputes every base from the frozen table, so the emp
-        // placement map only needs one (cosmetic) region per DISTINCT section name.
-        SizeSource::Frozen(_) => emp_map_frozen(&sections),
-    };
+    // The chainer recomputes every base from the frozen table, so the emp
+    // placement map only needs one (cosmetic) region per DISTINCT section name.
+    let map_toml = emp_map_frozen(&sections);
     let map = sigil_link::load_map(&map_toml).map_err(|e| format!("emp map load: {e}"))?;
     let place_diags = place_sections(&mut sections, &map);
     let perr: Vec<_> = place_diags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
@@ -2227,18 +2032,10 @@ const STAGE1_INAPPLICABLE_GUARDS: &[(&str, &str)] = &[];
 const DEMO_INAPPLICABLE_GUARDS: &[(&str, &str)] = &[];
 
 /// Enforce that the observed inapplicable (Poison-unresolvable) drift guards are
-/// EXACTLY [`STAGE1_INAPPLICABLE_GUARDS`] — both directions (§t24). `inapplicable`
-/// are the "not defined in this link" diagnostics; `link_asserts` supplies each
-/// guard's own message (its `.emp` site) via span match.
-fn enforce_inapplicable_allowlist(
-    inapplicable: &[&sigil_span::Diagnostic],
-    link_asserts: &[sigil_ir::LinkAssert],
-) -> Result<(), String> {
-    enforce_inapplicable_allowlist_against(inapplicable, link_asserts, STAGE1_INAPPLICABLE_GUARDS)
-}
-
-/// As [`enforce_inapplicable_allowlist`] but against a caller-supplied allowlist (the
-/// per-profile set — demo/Config each home a different twin subset). Both directions.
+/// EXACTLY the caller-supplied allowlist — both directions (§t24). Each profile homes
+/// its own set ([`GameProfile::inapplicable_guards`]; demo/Config each home a different
+/// twin subset). `inapplicable` are the "not defined in this link" diagnostics;
+/// `link_asserts` supplies each guard's own message (its `.emp` site) via span match.
 fn enforce_inapplicable_allowlist_against(
     inapplicable: &[&sigil_span::Diagnostic],
     link_asserts: &[sigil_ir::LinkAssert],
@@ -2300,8 +2097,8 @@ fn enforce_inapplicable_allowlist_against(
 
 // ── Flip Stage 2 · S1.2 — THE DECLARED-ORDER, COMPUTED-BASE CHAINER ──
 //
-// The generalization of `native_chained_resume`'s proof into a first-class placement
-// authority. It computes EVERY section's ROM base by chaining in a DECLARED ORDER;
+// THE placement authority. It computes EVERY section's ROM base by chaining in a
+// DECLARED ORDER;
 // the baked `org`/resume-org literals are discarded for chained sections (proving
 // them redundant — the Stage-2 unblock). Only genuine fixed anchors (the object bank
 // `org $10000`, the phased sound banks) keep a declared base.
@@ -2470,8 +2267,7 @@ fn image_lens_pinned(
 }
 
 /// The TRUE per-section ROM base, keyed by stable index; `None` for RAM/phase-only
-/// sections. For `PinnedBaked` (canonical bootstrap) the baked lma IS asl-correct so the
-/// true base is the baked lma. For `Frozen` (the shipped path) the baked resume orgs are
+/// sections. The baked resume orgs are
 /// WRONG sonic4 values, so each section's provisional base is `frozen[L] − offset[L]` for
 /// a contained frozen label `L` (a label-less DATA blob derives by CONTIGUITY from its
 /// frozen neighbour; a hard-org PHASE BANK keeps its baked =asl org) — and `packed_true_
@@ -2479,7 +2275,7 @@ fn image_lens_pinned(
 /// the sequence; the frozen provisional bases give only anchors + alignment + measurement).
 fn true_bases_by_index(
     sections: &[Section],
-    src: &SizeSource,
+    table: &HashMap<String, u32>,
     map_order: &[String],
     fixture: bool,
     anchor_addrs: &std::collections::HashSet<u32>,
@@ -2487,41 +2283,33 @@ fn true_bases_by_index(
     locate: &dyn Fn(sigil_span::Span) -> Option<String>,
 ) -> Result<Vec<Option<u32>>, String> {
     let n = sections.len();
-    match src {
-        SizeSource::PinnedBaked => Ok(sections
-            .iter()
-            .map(|s| if is_rom_section(s) { Some(s.lma) } else { None })
-            .collect()),
-        SizeSource::Frozen(table) => {
-            // Provisional base + labeled flag per ROM section.
-            let mut prov = vec![None; n];
-            let mut labeled = vec![false; n];
-            for (i, s) in sections.iter().enumerate() {
-                if !is_rom_section(s) {
-                    continue;
-                }
-                let mut base: Option<i64> = None;
-                for l in &s.labels {
-                    if let Some(&a) = table.get(&l.name) {
-                        let b = a as i64 - l.offset as i64;
-                        base = Some(base.map_or(b, |x: i64| x.min(b)));
-                    }
-                }
-                match base {
-                    Some(b) => {
-                        prov[i] = Some(b);
-                        labeled[i] = true;
-                    }
-                    None => prov[i] = Some(s.lma as i64), // baked fallback (order only)
-                }
+    // Provisional base + labeled flag per ROM section.
+    let mut prov = vec![None; n];
+    let mut labeled = vec![false; n];
+    for (i, s) in sections.iter().enumerate() {
+        if !is_rom_section(s) {
+            continue;
+        }
+        let mut base: Option<i64> = None;
+        for l in &s.labels {
+            if let Some(&a) = table.get(&l.name) {
+                let b = a as i64 - l.offset as i64;
+                base = Some(base.map_or(b, |x: i64| x.min(b)));
             }
-            // ALWAYS-ON, before the walk consumes a single inferred quantum: every
-            // pinned section's DECLARED alignment requirement, against the very
-            // provisional base `packed_align_of` would read.
-            validate_declared_alignment(sections, &prov, &labeled)?;
-            packed_true_bases(sections, &prov, &labeled, map_order, fixture, anchor_addrs, warnings, locate)
+        }
+        match base {
+            Some(b) => {
+                prov[i] = Some(b);
+                labeled[i] = true;
+            }
+            None => prov[i] = Some(s.lma as i64), // baked fallback (order only)
         }
     }
+    // ALWAYS-ON, before the walk consumes a single inferred quantum: every
+    // pinned section's DECLARED alignment requirement, against the very
+    // provisional base `packed_align_of` would read.
+    validate_declared_alignment(sections, &prov, &labeled)?;
+    packed_true_bases(sections, &prov, &labeled, map_order, fixture, anchor_addrs, warnings, locate)
 }
 
 /// The §17 Wave-B B-0 packing walk (the rows-6/58 partial realization): the MAP's
@@ -2768,7 +2556,7 @@ fn packed_true_bases(
     // (the label-less boot blobs, the `EndOfRom` terminus) rides the rank of the nearest
     // preceding named section by prov, then prov, then its stable index — a pure
     // measurement-cache role (it emits no bytes, so its slot never moves a byte). With
-    // `map_order` empty (the PinnedBaked bootstrap / a region-only fixture) every section
+    // `map_order` empty (a region-only fixture) every section
     // is unranked and this degenerates to the provisional-base sort (the pre-K5 order).
     //
     // WHY THIS IS FOLD-IDENTICAL: for every shipped shape the byte-emitting sections'
@@ -3392,8 +3180,8 @@ pub fn build_native_rom_chained(aeon: &Path, debug: bool) -> Result<Vec<u8>, Str
 }
 
 /// Build the whole native ROM for `profile` with every base COMPUTED by declared-order
-/// chaining. The DECLARED ORDER + SIZES come from the profile's `SizeSource`: canonical
-/// sonic4 from the baked (asl-correct) lmas; demo/Config from the frozen listing table.
+/// chaining. The DECLARED ORDER + SIZES come from the map's `order` and the profile's
+/// `frozen_sizes` table.
 /// Genuine org anchors (object bank, phase-address sound banks) keep their declared
 /// base; every other section is `Chained` with its lma zeroed (base computed).
 pub fn build_rom_chained(aeon: &Path, profile: &GameProfile) -> Result<Vec<u8>, String> {
@@ -3829,7 +3617,7 @@ pub fn build_rom_chained_with_listing(
     // the CLI banner through the same path as every other warning.
     let true_bases = true_bases_by_index(
         &sections,
-        &profile.size_source,
+        &profile.frozen_sizes,
         &pmap.order,
         profile.fixture_placement,
         &anchor_addrs,
@@ -3927,9 +3715,6 @@ fn placement_map(aeon: &Path, profile: &GameProfile) -> Result<crate::map_placem
 /// emit). The shared substrate for the placement gate and the P4a LMA-correct
 /// size-table derivation: both read `section.lma + label.offset` off these sections.
 fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Section>, String> {
-    if matches!(profile.size_source, SizeSource::PinnedBaked) {
-        return Err("resolve_frozen_sections: profile is not a chained (Frozen) target".into());
-    }
     if profile.sound_on {
         ensure_generated(aeon);
     }
@@ -3946,7 +3731,7 @@ fn resolve_frozen_sections(aeon: &Path, profile: &GameProfile) -> Result<Vec<Sec
     let mut drift_sink = Vec::new();
     let true_bases = true_bases_by_index(
         &sections,
-        &profile.size_source,
+        &profile.frozen_sizes,
         &pmap.order,
         profile.fixture_placement,
         &anchor_addrs,
@@ -3977,10 +3762,7 @@ pub fn frozen_placement_mismatches(
     aeon: &Path,
     profile: &GameProfile,
 ) -> Result<Vec<(String, u32, u32)>, String> {
-    let table = match &profile.size_source {
-        SizeSource::Frozen(t) => t.clone(),
-        _ => return Err("frozen_placement_mismatches: profile is not a Frozen target".into()),
-    };
+    let table = profile.frozen_sizes.clone();
     let resolved = resolve_frozen_sections(aeon, profile)?;
     let mut rows: Vec<(String, u32, u32)> = Vec::new();
     for s in &resolved {
@@ -4022,7 +3804,7 @@ pub fn frozen_placement_mismatches(
 /// keys (the boundary set the chainer needs); every one must be found or the derivation
 /// fails loud (a vanished boundary label is a real regression, not a silent drop).
 ///
-/// The derivation bootstraps off the committed table (the profile's `SizeSource::Frozen`
+/// The derivation bootstraps off the committed table (the profile's `frozen_sizes`
 /// pins the labeled sections to place them), then reads the resolved positions back —
 /// so for a byte-correct build it REPRODUCES the committed addresses exactly. That
 /// fixpoint IS the proof: sigil's own resolve is now the authority; nothing parses asl.
@@ -4030,10 +3812,8 @@ pub fn derive_frozen_table(
     aeon: &Path,
     profile: &GameProfile,
 ) -> Result<std::collections::BTreeMap<String, u32>, String> {
-    let want: std::collections::HashSet<String> = match &profile.size_source {
-        SizeSource::Frozen(t) => t.keys().cloned().collect(),
-        _ => return Err("derive_frozen_table: profile is not a Frozen target".into()),
-    };
+    let want: std::collections::HashSet<String> =
+        profile.frozen_sizes.keys().cloned().collect();
     let resolved = resolve_frozen_sections(aeon, profile)?;
     let mut out: std::collections::BTreeMap<String, u32> = std::collections::BTreeMap::new();
     for s in &resolved {
@@ -4105,73 +3885,14 @@ pub fn build_native_rom(aeon: &Path, debug: bool) -> Result<Vec<u8>, String> {
 /// listing is the sigil-canonical debug symbol set — NOT a byte-imitation of asl's
 /// name set (Option A: the `.emp` names are the source names going forward).
 pub fn build_native_rom_with_listing(aeon: &Path, debug: bool) -> Result<RomBuild, String> {
-    // §17 Wave-B B-0: canonical placement is COMPUTED (packed from live sizes over the
-    // pins-derived order/anchors), so the canonical build routes through the chained
-    // driver — one placement authority for all six targets. The pinned body below it
-    // remains only for the PinnedBaked bootstrap path.
-    if matches!(sonic4_profile(debug).size_source, SizeSource::Frozen(_)) {
-        return build_rom_chained_with_listing(aeon, &sonic4_profile(debug));
-    }
-    ensure_generated(aeon);
-
-    let as_side = assemble_native_all_gates_as_side(aeon, debug)?;
-    let EmpProgram { sections: emp_sections, link_asserts, mut warnings, sources } =
-        build_native_emp(aeon, debug)?;
-
-    let mut sections = as_side.sections;
-    sections.extend(emp_sections);
-
-    let stubs = SymbolTable::new();
-    let resolved = sigil_link::resolve_layout(&sections, &stubs, true)
-        .map_err(|d| format!("resolve_layout: {} diag(s); first: {:?}", d.len(), d.first()))?;
-
-    let listing = listing_from_resolved(&resolved, &stubs);
-
-    // Drift-guard ensures. In the ALL-GATES native build every engine `.asm` twin
-    // is gated off, so a guard of the form `ensure(extern("X") == X_mirror)` whose
-    // constant `X` is homed ONLY in a now-skipped twin cannot resolve — it folds to
-    // Poison ("references symbol(s) `X` not defined in this link"), NOT a drift
-    // failure. Those guards are INAPPLICABLE here (the twin they compare against is
-    // gone — the Stage-2 "guard retires with its twin" state, reached early because
-    // Stage 1 flips all gates); the whole-ROM byte gate is the authoritative drift
-    // oracle for every USED constant. A genuine drift FAILURE folds to a Value(0)
-    // and carries the guard's OWN message — those stay HARD failures.
-    let adiags = sigil_link::check_link_asserts(&resolved, &stubs, &link_asserts);
-    // The link tier's own warn-tier diagnostics (`[layout.odd-item]`) join the
-    // build's warnings — same rule as the chained driver.
-    warnings.extend(collect_warnings(&sources, &[&adiags], None));
-    let (inapplicable, real): (Vec<_>, Vec<_>) = adiags
-        .iter()
-        .filter(|d| d.level == sigil_span::Level::Error)
-        .partition(|d| d.message.contains("not defined in this link"));
-    if !real.is_empty() {
-        return Err(format!(
-            "drift-guard ensure(s) FIRED (real drift): {} error(s); first: {:?}",
-            real.len(),
-            real.first()
-        ));
-    }
-    enforce_inapplicable_allowlist(&inapplicable, &link_asserts)?;
-
-    let linked: LinkedImage = sigil_link::link(&resolved, &stubs)
-        .map_err(|d| format!("link: {} diag(s); first: {:?}", d.len(), d.first()))?;
-
-    // K5: the region geometry + budget are the per-game map's (`games/sonic4/map.toml`);
-    // sigil.map.toml retired. This PinnedBaked path is the canonical bootstrap only (the
-    // shipped Frozen builds route through `build_rom_chained_with_listing` above).
-    let map_path = sonic4_profile(debug).map_path(aeon);
-    let map_src = std::fs::read_to_string(&map_path)
-        .map_err(|e| format!("read {}: {e}", map_path.display()))?;
-    let map = sigil_link::load_map(&map_src).map_err(|e| format!("load {}: {e}", map_path.display()))?;
-    let pmap = crate::map_placement::load_placement_map(&map_src)
-        .map_err(|e| format!("placement {}: {e}", map_path.display()))?;
-    check_object_bank_budget(&resolved, &map, &pmap)?;
-    let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("emit_rom: {e}"))?;
-    Ok(RomBuild { rom, listing, warnings })
+    // Canonical placement is COMPUTED (packed from live sizes over the map's declared
+    // order/anchors), so the canonical build routes through the chained driver — one
+    // placement authority for all seven targets.
+    build_rom_chained_with_listing(aeon, &sonic4_profile(debug))
 }
 
 /// Build the sigil-native SYMBOL LISTING for one shape (Stage-3 P4c: the `pins.rs`
-/// source that replaces parsing asl's `.lst`). Resolves the canonical pinned layout,
+/// source that replaces parsing asl's `.lst`). Resolves the canonical layout,
 /// dumps the fully-resolved symbol table (labels + folded equates — incl. the
 /// `MDDBG__*` link-external-base table), DEMANGLES the `.emp` locals (`$module$Parent$
 /// local` → `Parent.local`, matching the deb2 appendix) so a dotted-local offset spec
@@ -4259,12 +3980,11 @@ pub fn section_extents(aeon: &Path, debug: bool) -> Result<Vec<crate::repin::Sec
 ///
 /// repin pins a `phase_bank` region's base to this LMA, so the emitted `Region` base
 /// is uniformly the PLACEMENT address in every shape — the same meaning a non-phase
-/// region's base already has (there `vma == lma`). This makes the PinnedBaked
-/// misplacement UNREPRESENTABLE: `emp_map_toml` feeds `Region::plain_base` straight in
-/// as a region's `lma_base`, so a base that held the phase VMA ($8000) would place the
-/// bank at $8000 instead of its true $58000 LMA. With the base holding the LMA there is
-/// no VMA in the pin to be mistaken for a load address. The phase VMA stays the SOLE
-/// property of the section's own `vma:` declaration in the `.emp`.
+/// region's base already has (there `vma == lma`). Every consumer of a region base
+/// (the port gates' reference windows, `repin`'s own re-derivation) therefore reads a
+/// LOAD address and never has to ask which of the two a phase bank's pin holds. The
+/// phase VMA stays the SOLE property of the section's own `vma:` declaration in the
+/// `.emp`.
 ///
 /// Non-phase sections contribute nothing (their `vma == lma`, so the plain VMA listing
 /// already IS the LMA). Empty for a program with no phase-bank section.
@@ -4345,24 +4065,9 @@ pub fn project_memory_map(aeon: &Path) -> Result<sigil_ir::map::MemoryMap, Strin
 
 /// Resolve the SHIPPED canonical layout (the packed chained placement) into its final
 /// ROM sections — the substrate `pins.rs` regeneration and the object-bank budget gate
-/// read addresses off. Post B-0 this is the chained resolve over `sonic4_profile`.
+/// read addresses off — the chained resolve over `sonic4_profile`.
 pub fn resolve_canonical_sections(aeon: &Path, debug: bool) -> Result<Vec<Section>, String> {
     resolve_frozen_sections(aeon, &sonic4_profile(debug))
-}
-
-/// Resolve the canonical PINNED layout into its final ROM sections (assemble all-gates-on
-/// AS side + place every emp module at its pin + `resolve_layout`) — the Stage-1
-/// bootstrap shape (`derive_offcanon --bootstrap-canonical`); the SHIPPED layout is
-/// `resolve_canonical_sections`.
-pub fn resolve_pinned_sections(aeon: &Path, debug: bool) -> Result<Vec<Section>, String> {
-    ensure_generated(aeon);
-    let as_side = assemble_native_all_gates_as_side(aeon, debug)?;
-    let mut sections = as_side.sections;
-    sections.extend(build_native_emp(aeon, debug)?.sections);
-    let stubs = SymbolTable::new();
-    sigil_link::resolve_layout(&sections, &stubs, true).map_err(|d| {
-        format!("resolve_pinned_sections: resolve_layout: {} diag(s); first: {:?}", d.len(), d.first())
-    })
 }
 
 /// The object code bank's used cursor = the resolved LMA of the map-declared budget
@@ -4889,7 +4594,7 @@ mod allowlist_tests {
     //! extern or a new twin-parity guard) AND a STALE allowlist (an entry that no
     //! longer folds to Poison), so the native gates can never silently vacate a guard.
     use super::{
-        enforce_inapplicable_allowlist, enforce_inapplicable_allowlist_against,
+        enforce_inapplicable_allowlist_against,
         STAGE1_INAPPLICABLE_GUARDS,
     };
     use sigil_ir::{Expr, LinkAssert, MsgPart};
@@ -4934,7 +4639,9 @@ mod allowlist_tests {
         // Post the bg/camera flip STAGE1_INAPPLICABLE_GUARDS is empty; the
         // enforcement asserts NO Poison drift guard exists → OK on an empty set.
         assert!(STAGE1_INAPPLICABLE_GUARDS.is_empty(), "the allowlist retired to empty");
-        assert!(enforce_inapplicable_allowlist(&[], &[]).is_ok());
+        assert!(
+            enforce_inapplicable_allowlist_against(&[], &[], STAGE1_INAPPLICABLE_GUARDS).is_ok()
+        );
     }
 
     #[test]
@@ -4944,7 +4651,9 @@ mod allowlist_tests {
         // ruling, not a silent vacation).
         let (ds, as_) = build(&[("SOME_NEW_TWIN_CONST", "camera.emp")]);
         let refs: Vec<&Diagnostic> = ds.iter().collect();
-        let err = enforce_inapplicable_allowlist(&refs, &as_).unwrap_err();
+        let err =
+            enforce_inapplicable_allowlist_against(&refs, &as_, STAGE1_INAPPLICABLE_GUARDS)
+                .unwrap_err();
         assert!(err.contains("NOT in the allowlist"), "got: {err}");
     }
 
@@ -5404,7 +5113,6 @@ mod placement_validation_tests {
         vec![super::ModuleSpec {
             module_id: FILLER_MODULE,
             section: FILLER_SECTION,
-            region: super::DUMMY_REGION,
         }]
     }
 
@@ -5550,7 +5258,6 @@ mod placement_validation_tests {
         let registry = vec![super::ModuleSpec {
             module_id: FILLER_MODULE,
             section: "a_section_this_build_does_not_place",
-            region: super::DUMMY_REGION,
         }];
         let e = hole_interior_faults(&layout, &hole_map(0x406), false, &registry).unwrap_err();
         assert!(e.contains("map.hole-filler-absent") && e.contains(FILLER_MODULE), "{e}");
@@ -5638,7 +5345,6 @@ mod placement_validation_tests {
         let registry = vec![super::ModuleSpec {
             module_id: FILLER_MODULE,
             section: "a_section_this_build_does_not_place",
-            region: super::DUMMY_REGION,
         }];
         let e =
             validate_placement(&hole_layout(), &hole_map(0x406), false, &registry).unwrap_err();

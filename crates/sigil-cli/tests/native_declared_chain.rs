@@ -1,10 +1,8 @@
 //! Flip Stage 2 · S1.2 — THE DECLARED-ORDER, COMPUTED-BASE CHAINER GATE.
 //!
-//! `native_chained_resume` proved that re-tagging the exactly-abutting sections as
-//! `Chained` reproduces asl — but it left every non-abutting section PINNED at its
-//! baked lma, so most of the layout still leaned on baked addresses. This gate proves
-//! the FULL generalization (`native::build_native_rom_chained`): EVERY section's base
-//! is computed by declared-order chaining, with only the genuine org anchors (object
+//! This gate proves that no section's ROM address is read back from a baked `org`:
+//! EVERY base is computed by declared-order chaining
+//! (`native::build_native_rom_chained`), with only the genuine org anchors (object
 //! bank, phased sound banks) keeping a declared base.
 //!
 //! THE REFINEMENT IT LOCKS IN: pure content-size chaining does NOT reproduce asl — the

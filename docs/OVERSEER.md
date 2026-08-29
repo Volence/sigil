@@ -223,11 +223,13 @@ unconditionally.
 **So an `end` re-spelling can only move a length, never a base** (`repin.rs:840-843` derives bases
 from `start`; `:884` derives lengths as `end − base`) — **the 80 conversions need no paired freeze.**
 
-**The revival condition, recorded because it is the thing a successor re-derives wrongly:**
-`derive_canonical_bootstrap_table` (`native.rs:835-846`) *does* read region lengths and mints a
-frozen boundary table — a wrong length there reaches bytes one step removed. It is currently
-unreachable **by derivation, not by execution**, and that distinction is the agent's own and is
-kept. **If the PinnedBaked bootstrap is ever revived, re-check this before touching a length.**
+**The revival condition is GONE (2026-08-29, `parcel/retire-pinnedbaked`).** It used to read:
+`derive_canonical_bootstrap_table` *does* read region lengths and mints a frozen boundary table,
+so a wrong length there reaches bytes one step removed — re-check it if the PinnedBaked bootstrap
+is ever revived. That parcel deleted the bootstrap, `derive_canonical_bootstrap_table`,
+`emp_map_toml` and `ModuleSpec::len`/`region`, so nothing outside `crates/*/tests/` reads a region
+LENGTH at all (203 readers, all in tests, measured after the deletion). **A conversion now needs
+only its own port gate to pass; there is no bootstrap left to guard against.**
 
 **Provenance worth keeping: the general form was asserted from the specific case measured**, and
 the agent said so in those words when challenged. The narrowed claim is the one banked.

@@ -125,18 +125,12 @@ fn soundbankhead_debug_matches_reference() {
 
 /// T4 soundness catch (ledger 1966) — `pins::SOUNDBANKHEAD`'s base is the bank's LMA
 /// (the placement address), NOT the $8000 phase VMA its labels resolve at. The pin is
-/// what the two byte gates above window the reference ROM by, and what a pin-driven
-/// placement would feed straight in as an `lma_base` (the `emp_map_toml` misplacement
-/// this catch was born from): a base holding the VMA would place the bank at $8000
-/// instead of its true load address.
+/// what the two byte gates above window the reference ROM by: a base holding the VMA
+/// would window at $8000 instead of the bank's true load address.
 ///
-/// The expectation is DERIVED, not written: the shipped (Frozen, chained) resolve —
-/// the same resolve `repin` derives the pin from — says where the bank loads and that
-/// it is `vma:`-windowed. The former subject, the PinnedBaked bootstrap resolve
-/// (`resolve_pinned_sections`), places every `.emp` section from the REGISTRY's pins and
-/// so cannot see a byte-emitting section that has no pin by design (the content-derived
-/// `ojz_effects_editor_act1`, declared to the map by its `section:` row); it has no live
-/// consumer (see the FIVE-REG packet), so the probe reads the layout that ships.
+/// The expectation is DERIVED, not written: the shipped chained resolve — the same
+/// resolve `repin` derives the pin from — says where the bank loads and that it is
+/// `vma:`-windowed. So the probe reads the layout that ships.
 #[test]
 fn soundbankhead_pin_is_the_lma_not_the_vma() {
     let _guard = lock();
