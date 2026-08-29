@@ -117,9 +117,9 @@ impl Listing {
     }
 
     /// The PLACEMENT address of a REGION boundary symbol `name` — the address the
-    /// region's base/end pins to (T4). A region's base must be the section's LOAD
-    /// address, so a PinnedBaked re-bootstrap (which feeds it straight in as
-    /// `lma_base`) places the bytes where they belong.
+    /// region's base/end pins to (T4). A region's base is the section's LOAD address,
+    /// so every consumer of a pin (a port gate windowing the reference ROM, `repin`'s
+    /// own re-derivation) reads the address the bytes are actually at.
     ///
     /// PHASE-BANK AUTO-DETECTION: if `name` is a phase-bank section label (present in
     /// [`with_phase_lma`], populated ONLY for `vma:`-windowed banks whose labels
@@ -1445,9 +1445,9 @@ per_shape = true
     /// address), NOT the phase VMA the symbol listing carries. Auto-detected: the
     /// region's start being a phase-bank label (present in the phase-LMA map) IS the
     /// signal — no manifest flag, so `repin.toml` stays frozen and the rule can't go
-    /// stale. The soundness catch: a PinnedBaked re-bootstrap feeds `Region::plain_base`
-    /// into `emp_map_toml` as the bank's `lma_base`, so a base holding the phase VMA
-    /// ($8000) would place the bank there instead of its true LMA ($58000).
+    /// stale. The soundness catch: a base holding the phase VMA ($8000) would name a
+    /// ROM window at $8000 rather than the bank's true LMA ($58000), so every pin
+    /// consumer would read the wrong bytes.
     #[test]
     fn phase_bank_region_pins_the_lma_not_the_vma() {
         // The listing resolves the phase-bank head label at its VMA ($8000 window),

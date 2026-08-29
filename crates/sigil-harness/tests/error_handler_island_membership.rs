@@ -300,20 +300,17 @@ fn the_declared_answer_refuses_a_profile_whose_two_records_disagree() {
          that stops making sense; got: {e}"
     );
 
-    // Both arms placed: the split is gone the other way. The second arm is minted off
-    // the island's OWN spec, which is also the truth it models — the two handlers share
-    // one placement slot.
+    // Both arms placed: the split is gone the other way. The control first proves the
+    // island IS in this profile's registry, so the pushed second arm is what breaks the
+    // split rather than an empty registry passing for one.
     let mut both_arms = native::sonic4_profile(false);
-    let slot = both_arms
-        .registry
-        .iter()
-        .find(|m| m.module_id == native::ERROR_HANDLER_MODULE_ID)
-        .expect("control: the island is in this profile's registry")
-        .region;
+    assert!(
+        both_arms.registry.iter().any(|m| m.module_id == native::ERROR_HANDLER_MODULE_ID),
+        "control: the island is in this profile's registry"
+    );
     both_arms.registry.push(native::ModuleSpec {
         module_id: native::RELEASE_FAULT_MODULE_ID,
         section: "release_fault",
-        region: slot,
     });
     let e = native::declares_error_handler_island(&both_arms)
         .expect_err("a registry placing both fault handlers has lost the split");

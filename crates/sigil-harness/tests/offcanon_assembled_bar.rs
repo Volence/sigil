@@ -35,6 +35,7 @@
 use std::path::PathBuf;
 
 use sigil_harness::native::{self, GameProfile};
+use sigil_harness::pins;
 use sigil_harness::provenance;
 
 fn golden_dir() -> PathBuf {
@@ -137,13 +138,14 @@ fn size_table_header_agrees_with_its_endofrom_row() {
 
 /// `repin`'s canonical pins and `derive_offcanon`'s canonical tables are the two
 /// generated descriptions of the SAME shape, produced by different tools at different
-/// steps. The `PinnedBaked` bootstrap profile reads the pins and the shipped profile
-/// reads the table, so a landing that repins without re-deriving would hand the two
-/// paths different layouts. This is the only place they meet.
+/// steps: `repin` writes `pins::{DEBUG_,}ASSEMBLED_LEN` off the build's own listing,
+/// `derive_offcanon` writes the table's `EndOfRom` off a live resolve. A landing that
+/// repins without re-deriving (or the reverse) leaves the two artifacts describing
+/// different layouts. This is the only place they meet.
 #[test]
 fn canonical_pins_agree_with_the_canonical_size_tables() {
     for debug in [false, true] {
-        let pinned = native::sonic4_pinned_profile(debug).assembled_len();
+        let pinned = if debug { pins::DEBUG_ASSEMBLED_LEN } else { pins::ASSEMBLED_LEN };
         let frozen = native::sonic4_profile(debug).assembled_len();
         assert_eq!(
             pinned, frozen,

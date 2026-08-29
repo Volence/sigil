@@ -1,7 +1,7 @@
 //! Flip Stage 2 · S1.2 — THE FROZEN-CHAINER PLACEMENT GATE (off-canonical).
 //!
 //! The GameProfile + frozen-table chainer (`native::build_rom_chained` under
-//! `SizeSource::Frozen`) computes every off-canonical section's ROM base from the
+//! the frozen boundary table) computes every off-canonical section's ROM base from the
 //! committed listing table (`golden/offcanonical_sizes/*.txt`) instead of the baked
 //! sonic4 resume orgs. This gate proves the PLACEMENT half of that mechanism on
 //! Config-B (sonic4, sound-off): the chainer builds end-to-end (no overlap, no drift
@@ -57,10 +57,7 @@ fn config_b_frozen_placement_exact() {
 
 /// The committed table's label→address map (comment lines stripped) for `<stem>.txt`.
 fn committed_table(profile: &native::GameProfile) -> std::collections::BTreeMap<String, u32> {
-    match &profile.size_source {
-        native::SizeSource::Frozen(t) => t.iter().map(|(k, v)| (k.clone(), *v)).collect(),
-        _ => panic!("{}: not a Frozen profile", profile.name),
-    }
+    profile.frozen_sizes.iter().map(|(k, v)| (k.clone(), *v)).collect()
 }
 
 /// For each off-canonical target: the LMA-native derivation reproduces the committed
@@ -241,9 +238,7 @@ fn config_b_doctored_size_table_breaks_the_build() {
     // bank at the table address, so the ROM MUST diverge (or fail to resolve).
     let mut profile = native::config_b_profile();
     let probe = "ObjCodeBase";
-    if let native::SizeSource::Frozen(t) = &mut profile.size_source {
-        *t.get_mut(probe).unwrap_or_else(|| panic!("{probe} not in table")) += 2;
-    }
+    *profile.frozen_sizes.get_mut(probe).unwrap_or_else(|| panic!("{probe} not in table")) += 2;
     match native::build_rom_chained(&aeon, &profile) {
         Err(_) => { /* a resolve failure is a loud catch — acceptable */ }
         Ok(doctored) => {
@@ -311,7 +306,8 @@ fn config_b_doctored_size_table_breaks_the_build() {
                 .len() as u32
         })
         .sum();
-    if let native::SizeSource::Frozen(t) = &inert_profile.size_source {
+    {
+        let t = &inert_profile.frozen_sizes;
         let head = *t.get(inert).unwrap_or_else(|| panic!("{inert} not in table"));
         let prev = *t.get(inert_pred_end).unwrap_or_else(|| panic!("{inert_pred_end} not in table"));
         assert_eq!(
@@ -331,9 +327,12 @@ fn config_b_doctored_size_table_breaks_the_build() {
     // packing must anyway ignore. (Found at objtest-gate: the re-abutted
     // HeightMaps sits 2-aligned now, where the pre-defect-batch value was
     // 16-aligned and +2 happened to DOWNGRADE — inert by accident.)
-    let mut delta = 0u32;
-    if let native::SizeSource::Frozen(t) = &mut inert_profile.size_source {
-        let e = t.get_mut(inert).unwrap_or_else(|| panic!("{inert} not in table"));
+    let delta;
+    {
+        let e = inert_profile
+            .frozen_sizes
+            .get_mut(inert)
+            .unwrap_or_else(|| panic!("{inert} not in table"));
         let align = (1u32..=16).filter(|a| a.is_power_of_two() && *e % a == 0).max().unwrap();
         delta = 2 * align;
         *e += delta;

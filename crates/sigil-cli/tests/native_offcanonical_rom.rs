@@ -3,7 +3,7 @@
 //! Completes the 6×2 matrix beyond canonical sonic4 (`native_rom` + `native_full_rom`):
 //! demo (plain/debug), config_a, config_b. Each proves the ASSEMBLED ANCHOR
 //! `[0, EndOfRom)` header-neutral == the frozen golden's prefix — the drift-stable
-//! PRIMARY-class bar. The chained driver (`build_rom_chained` under `SizeSource::Frozen`)
+//! PRIMARY-class bar. The chained driver (`build_rom_chained`)
 //! computes every base from the committed listing table; the parallax `:=` capability
 //! and the internal-bank-align recompute close the two pre-flip blockers.
 //!
