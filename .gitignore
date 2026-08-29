@@ -17,3 +17,6 @@ docs/lane-status.json
 # ignored here so a killed capture cannot leave untracked `.bin` files in a shared
 # checkout for a later `git add` to sweep up.
 crates/sigil-harness/golden/.staging/
+
+# dedicated landing-verification target dir — never share target/ between worktrees
+/.target-land/
