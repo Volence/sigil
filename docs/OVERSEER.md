@@ -88,19 +88,61 @@ which before the repin.
 he ruled on described, and aeon stopped rather than landed. A fresh prediction and a fresh
 falsifier come with it when it unblocks; **the relink row re-arms at that point, not now.**
 
-### TWO `refreeze` DEFECTS THE CHAIN-180 FREEZE PAID FOR (2026-08-29, aeon's findings)
+### ONE `refreeze` DEFECT THE CHAIN-180 FREEZE PAID FOR — the other was retracted (2026-08-29)
 
-Both are in this lane's crate and both bite the freeze ritual, which is aeon's to run and
-this lane's to fix.
+Reported as two by the aeon lane. One is real and is this lane's to fix; the other was a
+correct measurement with a wrong cause attached, refuted here the same morning and left
+standing below as the retraction, because a finding that is quietly deleted teaches nobody
+and the wrong mechanism had already reached a hub ruling and a dispatch order.
 
-**1. `refreeze` has NO `--harness-root`; `repin` does. Verified here** — zero occurrences of
-`harness-root` in `src/bin/refreeze.rs`, two in `src/bin/repin.rs`. So the tool that *writes
-goldens* cannot be aimed by flag while the safer one can, and aiming a prebuilt `refreeze` at a
-dedicated worktree needs `SIGIL_HARNESS_ROOT` (`harness_root.rs::ROOT_OVERRIDE`) **plus**
-`SIGIL_BUILD`, since the build path defaults to `<root>/target/release/sigil` which a fresh
-worktree does not have. Without the override it operates on the tree it was **compiled** in —
-the shared checkout — which is exactly what the dedicated-worktree rule exists to prevent. The
-danger is that nothing fails: it works, on the wrong tree. **Queued: give `refreeze` the flag.**
+**1. RETRACTED 2026-08-29 — the grep was right, the mechanism was wrong, and the queued fix
+would have made things worse.** What was banked here: *"Without the override it operates on the
+tree it was compiled in — the shared checkout ... nothing fails: it works, on the wrong tree.
+Queued: give `refreeze` the flag."* That is false. `refreeze` resolves its root **from the
+current working directory** — `main` calls `resolve_harness_root(&cwd, ROOT_OVERRIDE)`
+(`src/bin/refreeze.rs:1037`), which runs `git rev-parse --show-toplevel` and resolves a linked
+worktree to that worktree. Its own module doc says so in as many words: *"WHICH TREE IT WRITES
+INTO is derived from where it is INVOKED, not from where it was built."*
+
+**Verified behaviourally, not by re-reading the source** — the same prebuilt binary
+(`target/release/refreeze`, md5 `05a1f3c0501c94638d53bfa5620503b5`), `--check` only, from two
+working directories:
+
+| cwd | operates on | chain it read |
+|---|---|---|
+| the shared checkout | `sigil/crates/sigil-harness` | tip `ball-seating`, len 180 |
+| `.worktrees/lane-c` | `lane-c/crates/sigil-harness` | tip `migmask`, len 51 |
+
+It read a *different tree's* provenance chain purely from where it was standing, and printed
+`THIS BINARY WAS BUILT FROM A DIFFERENT TREE THAN IT IS OPERATING ON` with both paths. So the
+failure mode banked above — silent, wrong-tree — is the one thing it is loud about.
+
+**Why the grep misled.** `--harness-root` is absent from `refreeze` and present in `repin`
+because that flag is the **parent→child protocol**, not a safety feature one tool lacks:
+`refreeze` *derives* the root and *passes* it to `repin` via `harness_root::ROOT_FLAG` (see
+`root_args` / `repin_invocation`) precisely so the child cannot resolve a different one. Adding
+the flag to `refreeze` would be adding a way to tell the parent something it already knows.
+
+**And the fallback nearly landed tonight was actively dangerous:** making `refreeze` refuse when
+`SIGIL_HARNESS_ROOT` is unset would break the *normal, correct* invocation — standing in the
+tree you mean to freeze — and would have bricked an unattended aeon freeze at 3am for a hazard
+that does not exist.
+
+**What survives from the report, in its true and narrower form.** `SIGIL_BUILD` does default to
+`<root>/target/release/sigil`, which a fresh worktree does not have — so aiming a prebuilt
+`refreeze` at a dedicated worktree does need it set. That is **friction, not a silent hazard**:
+`capture_goldens.sh:52` tests `-x` and exits by name (`ERROR: sigil build binary not at …`).
+Separately, the *aeon-side* tree — the one the hub's ordering rationale was actually about — is
+already enforced hard: `resolve_aeon_rev` refuses `--freeze` unless `AEON_DIR` is set, is a git
+repo, resolves `HEAD`, and is **clean**. The two trees are different questions and only the
+sigil-side one was ever in doubt.
+
+**The lesson, which is the part worth keeping.** This is *a peer's measurement vs their
+mechanism*: aeon's grep counts were exactly right and reproduced here, and the causal story
+attached to them was not. A mechanism travels further and faster than a count, because it
+explains — this one reached a queue row, a hub ruling, and a dispatch order inside a day. Take a
+peer's numbers; re-derive the cause. And note which check settled it: not a closer reading of
+the source, but **running the binary in two directories and looking at what it said**.
 
 **2. `refreeze` outlives a 10-minute foreground cap, and `timeout 1800` does not help because
 the harness clamps.** aeon's first attempt was killed mid-capture holding **five half-written
