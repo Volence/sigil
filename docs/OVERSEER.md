@@ -1404,6 +1404,52 @@ own framing of finding it is the useful sentence and is worth more than the seco
 point: **we had seen this before and did not reach for it.** A prior instance sitting
 unretrieved in one's own file is its own finding.
 
+### TWO PARCELS INSIDE ONE A/B RANGE CANNOT BE SEPARATED BY DIFFERENCING ITS ENDS (2026-08-29)
+
+Chain 179 carried the tilt AND the insta-shield between its endpoints. Both lanes
+differenced 178→179 — the aeon lane to write the freeze's description, this lane to check
+it — and **neither could attribute a byte to either parcel, because both were inside the
+range.** Neither lane reached for the third revision, and the disagreement that followed
+was entirely an artifact of that.
+
+The resolving form is a revision BETWEEN them (`e1f412ed`, tilt-landed and shield-not):
+
+```
+CharacterDefs   b12c0141      e1f412ed        4ba7cb92
+plain           0x11EA0  →   0x11F10 (+0x70) →  0x11F20 (+0x10)   = +0x80
+debug           0x11FC0  →   0x12030 (+0x70) →  0x12030 (+0x00)   = +0x70
+```
+
+Endpoints verified here against this repo's own committed `pins.rs` at `13a6d3c8^` and
+`13a6d3c8`; the middle column is the aeon lane's measurement.
+
+**Before differencing an A/B range, count the byte-movers inside it.** More than one and the
+delta is a sum you cannot decompose — every per-parcel attribution drawn from it is a guess
+wearing arithmetic's clothes.
+
+### A PIN FIELD MEASURES WHERE PINS ARE, NOT WHERE CODE IS (2026-08-29)
+
+This lane measured that the insta-shield's `0x10` never enters the **debug** pin field —
+correct, and reported to aeon as a question rather than a mechanism, which was the right
+call. But it was **framed** as "the debug shape never receives the insta-shield's bytes",
+which is a claim about the ROM inferred from the pin field. The bytes are there: aeon's gate
+decodes the debug ROM's own bytes and runs 6,912 executions with `PSTATE_JUMP` /
+`PSTATE_ROLLJUMP` firing, and the routine's immediate neighbours move `+14` in debug. The
+growth propagates locally and is absorbed by slack before the next pin; plain has less slack
+and alignment rounds `14` up to `0x10`.
+
+**Slack between a section and the next pin makes the pin field blind to local growth**, so an
+absence in that field is an absence in the INSTRUMENT. Same class as bar 16(d) — a failing
+lookup tells you about the tree you ran it in, never about the object — arriving on a
+positive, quantitative instrument instead of an empty grep, which is what made it hard to
+see. When the pin field says nothing moved, the available witnesses are the listing symbol,
+the neighbours, and a gate that decodes the ROM.
+
+*(Also settled: `14` and `16` were both right and named different quantities — `16` is the
+gate block, which is what plain's tier-3 delta measures; `14` is the routine's net growth,
+48 → 62 bytes, the fix also letting `d1` carry the state byte into the roll-jump cancel that
+used to re-read it. Neither number was wrong; neither said which it was.)*
+
 ## Queue
 
 The standing sigil-native arc is the **`.emp` language work (Spec 2)** — specs in
