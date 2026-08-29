@@ -93,8 +93,10 @@ placement the neighbour is no longer where it was, so every one of the 79 is a s
 mis-measure waiting rather than a warning.
 
 **R7 — LOCATED, and it is the row that most needs recapturing: alignment is INFERRED FROM
-THE PIN'S OWN ADDRESS.** `native::packed_align_of` returns *the largest power of two
-dividing a section's frozen provisional base* (16, 8, 4, 2, else 1), and
+THE PIN'S OWN ADDRESS, AND THE INFERENCE IS CAPPED AT 16.** `native::packed_align_of` returns
+*the largest power of two **from the set {16, 8, 4, 2, 1}** dividing a section's frozen
+provisional base* — it walks `[16, 8, 4, 2]` and returns 1 otherwise, so **an address divisible
+by 32, 64 or more still infers exactly 16**, and
 `packed_chained_base` aligns the packing cursor to it. So the table does not declare
 alignment anywhere — **alignment is a side effect of where a section happened to land**. A
 section frozen at a `%16 == 0` address is thereafter treated as requiring 16; the identical
@@ -113,6 +115,30 @@ pointers are short by the delta and the sound is silent or garbled at runtime **
 symptom**. The `[sound.fold-vs-placement]` gate (`validate_sound_fold`) makes exactly that
 class loud — but it covers **two labels**, `Song_MovingTrucks` and `Sfx_33`. Every other
 section's inferred quantum is unguarded.
+
+**⚠ THE CAP IS LOAD-BEARING AND THIS ROW BURIED IT — corrected 2026-08-29 after it misled a
+peer at a live freeze.** The original headline read *"the largest power of two dividing a
+section's frozen provisional base"* with `(16, 8, 4, 2, else 1)` in a **parenthetical**. The
+aeon lane, reasoning from the headline during chain 181, computed `BgAnim_Table` moving
+`0x27D20 → 0x27EC0` as an inferred alignment of **32 → 64** and was about to record *"R7 fired"*
+in the freeze prose. It did not fire: `packed_align_of` returns **16 for both**. The real cause
+was ordinary quantum-16 padding — the region's base moved `+0x198`, which is not a multiple of
+16, so the trailing fill went 6 → 14 and the length grew 8. Both fills reproduce exactly from an
+unchanged quantum, and the region's `0x4882` of content was byte-identical.
+
+**The defect in this row was not omission — it was placement.** The cap WAS stated, in a
+parenthetical, next to a summary sentence that contradicted it. **A qualifier in a parenthetical
+loses to the sentence it qualifies**, which is this file's own *"a qualifier printed beside a
+value is part of the value"* lesson turned on its author. A reader who takes the headline gets a
+wrong model and never reaches the parenthetical, because the headline already answered them.
+
+**Two consequences for how this row should be priced.** (1) **The ratchet has a ceiling**: the
+inferred quantum ranges over {1,2,4,8,16} only, so a silent over-align costs at most 15 bytes per
+section — bounded, and materially smaller than an unbounded reading suggests when weighing it
+against the `DATA_GROWTH_RESERVE` budget. (2) **The dangerous direction is still the DOWNWARD
+one** — a base landing on `%8` where something needed 16, the `2c49f538` SFX precedent below —
+and it remains unexercised. Chain 181 is **not** evidence about it in either direction, and must
+not be cited as though it were.
 
 **What recapture means here, and it is a question rather than a transcription.** Most of
 these quanta are almost certainly accidents of packing that nothing requires; some are
