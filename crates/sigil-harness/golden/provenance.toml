@@ -9407,3 +9407,61 @@ demo_debug = "7599953e/101113"
 lean = "3a307f1f/674830"
 s4 = "a2acd485/719029"
 s4_debug = "ac752821/735642"
+
+[entry.superseded]
+by = "glide-angle-resolution"
+reason = "entry 177's strict run was red on four tests: one was a repin_pins ledger term I owed at freeze time and have since written, and three were crates/sigil-cli/tests/extra_entry.rs naming poison_two_restores.emp, which aeon's zero-byte P2a parcel renamed - a break that reached master with nothing in the ritual able to notice, since a zero-byte parcel triggers no attest. The sigil lane repaired extra_entry.rs at 06e1e376 (re-pointed to poison_band_nested.emp, plus a build-free existence sweep in both directions so it cannot recur). Neither cause is an engine defect and neither moved bytes, which is exactly the byte-neutral abandonment this flag exists for."
+
+[[entry]]
+name = "glide-angle-resolution"
+ab = "aeon b12c0141 (code e51858c2): Glide_Collide substitutes the down cardinal for an ODD probe angle between Collision_ProbeDown and the write to angle(a0) - 8 bytes, matching S3K's Sonic_CheckFloor (sonic3k.asm:19890-19893, d2 pre-set 0 at :19879). THE BUG WAS ORDINARY FLOOR: attrs $01 and $03, the bulk floor of OJZ act 1, are S&K shape-255 full blocks carrying angle $FF, so every glide landing on normal ground installed a bad angle. Jump on the first grounded frame and PState_Ground runs its jump check before the floor pair, projecting through $FF for a phantom -36 leftward kick on flat ground; Air_Collide's decay then cycles $FF/$01 forever. Confined to Knuckles: Glide_Collide's only callers are PState_Glide/PState_GlideFall via CharDef_Knuckles.cd_ability, asserted by the gate. Four shapes from a clean detached worktree of the merge SHA, SIGIL_BUILD md5 85ba502f096773780cbbac17b5d77890 re-pinned at the moment of dependence and unchanged before and after: s4 a2acd485->974d2764 (719029->719049), s4.debug ac752821->e1f02631 (735642->735662), demo 3415e3ef and demo.debug 7599953e BOTH BYTE-IDENTICAL - the witness that nothing outside Knuckles moved. Gate tools/test_glide_angle_resolution.py, 5 tests in build.sh's build-fatal pytest lane, red-first proven (deleting the three instructions fails 2/5 naming the sentinel and the decay-termination cases), expectations DERIVED - the substituted 0 parsed out of sonic3k.asm at test time, the decay step out of player_air.emp, the population out of the interned tables, refusing to pass on an empty population. Honest limit stated in its docstring: source+data gate, not runtime. The divergence half is BLOCKED and booked for the owner - it would reject every glide landing on a genuine 45-degree slope, which is behaviour on correctly-labelled terrain."
+aeon_rev = "b12c0141360c35d9839769ebaa6a081f5ef4b306"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "f0ea5784"
+full_size = 736030
+anchor_crc = "42c99b97"
+anchor_end = 0xa7ec0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "dc433d38"
+full_size = 610443
+anchor_crc = "690572df"
+anchor_end = 0x8b710
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7599953e"
+full_size = 101113
+anchor_crc = "91a16b91"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "cb0572ea"
+full_size = 674830
+anchor_crc = "68130fd9"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "974d2764"
+full_size = 719049
+anchor_crc = "fd8037f5"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "e1f02631"
+full_size = 735662
+anchor_crc = "0c41056a"
+anchor_end = 0xa7ec0
