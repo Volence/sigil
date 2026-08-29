@@ -3199,7 +3199,7 @@ fn phase_region_mask(sections: &[Section], true_bases: &[Option<u32>]) -> Vec<bo
 
 /// True for an image-bearing ROM section (VMA below the RAM/phase floor), as opposed
 /// to a RAM/phase section that never participates in ROM layout.
-fn is_rom_section(s: &Section) -> bool {
+pub fn is_rom_section(s: &Section) -> bool {
     match s.vma_base {
         Some(v) => v < 0x00F0_0000,
         None => true,
@@ -3361,10 +3361,20 @@ fn validate_sound_fold(
     Ok(())
 }
 
+/// The post-resolve placement contract: the resolved layout against the shape's
+/// declared `map.toml` — island anchors, the driving `order`, and both halves of every
+/// `[[hole]]` (its `after` anchor is present, and its reserved interior is empty but for
+/// the module `filled_by` names).
+///
+/// `registry` is the shape's module list — the same `profile.registry` the build places
+/// from. The hole's interior half needs it to turn `filled_by`'s MODULE id into the set
+/// of section names permitted inside the reserved span; taking that set from the
+/// resolved layout instead would assert only that the layout agrees with itself.
 pub fn validate_placement(
     resolved: &[Section],
     pmap: &crate::map_placement::PlacementMap,
     sound_on: bool,
+    registry: &[ModuleSpec],
 ) -> Result<(), String> {
     const ANCHOR_GAP: u32 = 0x400;
     // ROM sections, lma-sorted, with (head_label, section_name, lma, byte_len, is_phase_bank).
@@ -3478,13 +3488,12 @@ pub fn validate_placement(
         }
     }
 
-    // ── Holes: the `after` anchor label must resolve ──
+    // ── Holes, first half: the `after` anchor label must resolve ──
     //
-    // PRESENCE ONLY. This arm proves the hole has a subject; it says nothing about what
-    // occupies the span the hole reserves. That second, `negative` half is
-    // [`hole_interior_faults`], which needs the shape's REGISTRY (to turn `filled_by`'s
-    // module id into the section names allowed inside the hole) and so cannot be reached
-    // from this signature.
+    // PRESENCE. This arm proves the hole has a subject, and it runs first so a hole with
+    // no left edge is refused by the name aeon fixtures assert on
+    // (`[map.hole-anchor-missing]`) rather than by the interior half's own
+    // `[map.hole-anchor-unresolved]`.
     for h in pmap.holes_for(sound_on) {
         let present = resolved.iter().any(|s| s.labels.iter().any(|l| l.name == h.after));
         if !present {
@@ -3493,6 +3502,18 @@ pub fn validate_placement(
                 h.after, h.at
             ));
         }
+    }
+
+    // ── Holes, second half: the reserved interior is empty but for its filler ──
+    //
+    // The `negative` half — see [`hole_interior_faults`], which owns the derivation and
+    // the five refusals it makes instead of a silent pass. Every fault it finds is a
+    // placement violation, so they are reported together rather than one at a time: a
+    // stale `at` that swallows three sections is one declaration to correct, and a
+    // caller shown only the first would fix it three times.
+    let faults = hole_interior_faults(resolved, pmap, sound_on, registry)?;
+    if !faults.is_empty() {
+        return Err(faults.join("\n"));
     }
     Ok(())
 }
@@ -3503,11 +3524,14 @@ pub fn validate_placement(
 ///
 /// A `[[hole]]` is a reserved empty span: it opens at its `after` label, runs to `at`
 /// (the address the post-hole data resumes at), and the module named by `filled_by`
-/// is the one thing allowed inside it. Nothing else in the build looks at `at` or
-/// `filled_by` — `validate_placement`'s hole arm reads `at` only to print it — so a
-/// packed layout that puts any other emitter in that span, or a declaration whose `at`
-/// has drifted away from the layout, produces a ROM whose post-hole data no longer
-/// begins where the map says it does, with no build diagnostic of any kind.
+/// is the one thing allowed inside it. This is the only reader of `at` as a BOUND and
+/// the only reader of `filled_by` at all, so without it a packed layout that puts
+/// another emitter in that span, or a declaration whose `at` has drifted away from the
+/// layout, produces a ROM whose post-hole data no longer begins where the map says it
+/// does, with no build diagnostic of any kind.
+///
+/// [`validate_placement`] calls this on the shipped ROM build path, so its faults are
+/// build errors.
 ///
 /// THE PERMITTED SET IS DERIVED, NEVER TRANSCRIBED. `filled_by` is a MODULE id
 /// (`engine.z80_init`); the sections it may occupy come from `registry` — the module
@@ -3518,8 +3542,9 @@ pub fn validate_placement(
 /// passes by finding nothing to check is the exact defect it exists to close:
 ///
 /// * `[map.hole-anchor-unresolved]` — the `after` label is in no resolved section (the
-///   hole has no left edge). `validate_placement` refuses this first with
-///   `[map.hole-anchor-missing]`; this arm keeps the function honest when it is driven
+///   hole has no left edge). This is the one tag the shipped path cannot reach:
+///   `validate_placement`'s presence arm refuses the same layout first, by name, with
+///   `[map.hole-anchor-missing]`. It keeps the function honest when it is driven
 ///   directly.
 /// * `[map.hole-anchor-ambiguous]` — the `after` label resolves in more than one
 ///   section, so the hole opens at two different addresses.
@@ -3714,7 +3739,7 @@ pub fn build_rom_chained_with_listing(
     // every byte-emitting section is declared (completeness) and the resolved layout honours
     // the declared sequence + island anchors + hole (a bug in the drive, or a section the map
     // omits, fails loud). Its regions drive emit_rom + the object-bank budget.
-    validate_placement(&resolved, &pmap, profile.sound_on)?;
+    validate_placement(&resolved, &pmap, profile.sound_on, &profile.registry)?;
     validate_sound_fold(aeon, &resolved, profile)?;
     check_object_bank_budget(&resolved, &map, &pmap)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))?;
@@ -4871,7 +4896,7 @@ mod placement_validation_tests {
 
     #[test]
     fn correct_map_passes() {
-        assert!(validate_placement(&layout(), &good_map(), false).is_ok());
+        assert!(validate_placement(&layout(), &good_map(), false, &[]).is_ok());
     }
 
     #[test]
@@ -4880,7 +4905,7 @@ mod placement_validation_tests {
         let m = load_placement_map(
             "order = [\"GameLoop\", \"ObjCodeBase\"]\n[[anchor]]\nname=\"boot_head\"\nat=0x0\n",
         ).unwrap();
-        let e = validate_placement(&layout(), &m, false).unwrap_err();
+        let e = validate_placement(&layout(), &m, false, &[]).unwrap_err();
         assert!(e.contains("map.undeclared-island") && e.contains("0x10000"), "{e}");
     }
 
@@ -4893,7 +4918,7 @@ mod placement_validation_tests {
              [[anchor]]\nname=\"object_bank\"\nat=0x10000\n\
              [[anchor]]\nname=\"ghost\"\nat=0x99999\n",
         ).unwrap();
-        let e = validate_placement(&layout(), &m, false).unwrap_err();
+        let e = validate_placement(&layout(), &m, false, &[]).unwrap_err();
         assert!(e.contains("map.anchor-absent") && e.contains("0x99999"), "{e}");
     }
 
@@ -4907,7 +4932,7 @@ mod placement_validation_tests {
              [[anchor]]\nname=\"boot_head\"\nat=0x0\n\
              [[anchor]]\nname=\"object_bank\"\nat=0x10000\n",
         ).unwrap();
-        let e = validate_placement(&layout(), &m, false).unwrap_err();
+        let e = validate_placement(&layout(), &m, false, &[]).unwrap_err();
         assert!(e.contains("map.order-diverged"), "{e}");
     }
 
@@ -4920,7 +4945,7 @@ mod placement_validation_tests {
              [[anchor]]\nname=\"boot_head\"\nat=0x0\n\
              [[anchor]]\nname=\"object_bank\"\nat=0x10000\n",
         ).unwrap();
-        let e = validate_placement(&layout(), &m, false).unwrap_err();
+        let e = validate_placement(&layout(), &m, false, &[]).unwrap_err();
         assert!(e.contains("map.order-undeclared") && e.contains("GameLoop"), "{e}");
     }
 
@@ -4942,7 +4967,7 @@ mod placement_validation_tests {
         // `[map.order-undeclared]` (the same map with the row dropped fails, per
         // `order_undeclared_fires`).
         let m = map_with_order("\"section:sec256\", \"ObjCodeBase\"");
-        validate_placement(&layout(), &m, false).unwrap_or_else(|e| panic!("{e}"));
+        validate_placement(&layout(), &m, false, &[]).unwrap_or_else(|e| panic!("{e}"));
     }
 
     #[test]
@@ -4950,7 +4975,7 @@ mod placement_validation_tests {
         // The row sits AFTER ObjCodeBase, but the layout places GameLoop before it: the
         // drive-confirmation must name the row by its `section:` spelling.
         let m = map_with_order("\"ObjCodeBase\", \"section:sec256\"");
-        let e = validate_placement(&layout(), &m, false).unwrap_err();
+        let e = validate_placement(&layout(), &m, false, &[]).unwrap_err();
         assert!(e.contains("map.order-diverged") && e.contains("`section:sec256`"), "{e}");
     }
 
@@ -4986,7 +5011,7 @@ mod placement_validation_tests {
             "\"GameLoop\", \"ObjCodeBase\", \"section:sec336\"",
         ] {
             let m = map_with_order(order);
-            validate_placement(&secs, &m, false).unwrap_or_else(|e| panic!("order [{order}]: {e}"));
+            validate_placement(&secs, &m, false, &[]).unwrap_or_else(|e| panic!("order [{order}]: {e}"));
         }
     }
 
@@ -4995,7 +5020,7 @@ mod placement_validation_tests {
         // A `section:` row naming a section absent from the build is a named error, and the
         // message carries the row as written so the author can find it.
         let m = map_with_order("\"GameLoop\", \"section:ghost\", \"ObjCodeBase\"");
-        let e = validate_placement(&layout(), &m, false).unwrap_err();
+        let e = validate_placement(&layout(), &m, false, &[]).unwrap_err();
         assert!(e.contains("map.order-unknown-section") && e.contains("`section:ghost`"), "{e}");
     }
 
@@ -5003,7 +5028,7 @@ mod placement_validation_tests {
     fn double_declared_section_fires() {
         // GameLoop declared by label AND by `section:sec256`: two rows, one section.
         let m = map_with_order("\"GameLoop\", \"section:sec256\", \"ObjCodeBase\"");
-        let e = validate_placement(&layout(), &m, false).unwrap_err();
+        let e = validate_placement(&layout(), &m, false, &[]).unwrap_err();
         assert!(
             e.contains("map.order-double-declared") && e.contains("`GameLoop`") && e.contains("`section:sec256`"),
             "{e}"
@@ -5051,9 +5076,9 @@ mod placement_validation_tests {
              [[anchor]]\nname=\"sound_bank\"\nat=0x58000\nvma=0x8000\nwhen=\"sound_on\"\n",
         ).unwrap();
         // sound_on: the phase-bank island is declared → ok.
-        assert!(validate_placement(&secs, &m, true).is_ok());
+        assert!(validate_placement(&secs, &m, true, &[]).is_ok());
         // sound_off with the phase bank still present → it's an undeclared island (gate excludes it).
-        let e = validate_placement(&secs, &m, false).unwrap_err();
+        let e = validate_placement(&secs, &m, false, &[]).unwrap_err();
         assert!(e.contains("map.undeclared-island") && e.contains("0x58000"), "{e}");
     }
 
@@ -5095,10 +5120,11 @@ mod placement_validation_tests {
         vec![sec("Head", 0x0, 0x3D0), sec("Filler", 0x3D0, 0x28), sec("PostHole", 0x3F8, 0xE)]
     }
 
-    /// THE PIN FOR `[map.hole-anchor-missing]` — the shipped path's only hole check, and
-    /// the one lint in `validate_placement` with no witness of its own. A layout whose
-    /// `after` label is nowhere (the filler section dropped, as a shape gate or a rename
-    /// would drop it) must be refused by name.
+    /// THE PIN FOR `[map.hole-anchor-missing]` — the presence half of the shipped path's
+    /// hole arm. A layout whose `after` label is nowhere (the filler section dropped, as
+    /// a shape gate or a rename would drop it) must be refused by name, and by THIS name
+    /// rather than the interior half's `[map.hole-anchor-unresolved]`, which the same
+    /// layout would otherwise reach.
     #[test]
     fn hole_anchor_missing_fires() {
         let layout: Vec<Section> =
@@ -5109,7 +5135,7 @@ mod placement_validation_tests {
              [[hole]]\nafter = \"Filler\"\nat = 0x3F8\nfilled_by = \"{FILLER_MODULE}\"\n",
         ))
         .unwrap();
-        let e = validate_placement(&layout, &m, false).unwrap_err();
+        let e = validate_placement(&layout, &m, false, &filler_registry()).unwrap_err();
         assert!(
             e.contains("map.hole-anchor-missing") && e.contains("`Filler`") && e.contains("0x3F8"),
             "{e}"
@@ -5118,7 +5144,8 @@ mod placement_validation_tests {
         // red above is the absent label and not the doctored order/anchor set.
         let full = hole_layout();
         let m_full = hole_map(0x3F8);
-        validate_placement(&full, &m_full, false).unwrap_or_else(|e| panic!("control: {e}"));
+        validate_placement(&full, &m_full, false, &filler_registry())
+            .unwrap_or_else(|e| panic!("control: {e}"));
     }
 
     /// THE CONTROL: a hole whose interior holds nothing but its declared filler.
@@ -5237,6 +5264,98 @@ mod placement_validation_tests {
         assert_eq!(off.len(), 1, "sound_off: the hole is live and occupied: {off:?}");
         let on = hole_interior_faults(&hole_layout(), &m, true, &filler_registry()).unwrap();
         assert!(on.is_empty(), "sound_on: the shape declares no hole at all: {on:?}");
+    }
+
+    // ── THROUGH `validate_placement` — the shipped ROM build path ────────────────────
+    //
+    // The predicate above is reached from the build, so each of its answers must be a
+    // BUILD error. Four of its five refusals are reachable here; the fifth,
+    // `[map.hole-anchor-unresolved]`, is shadowed by the presence arm that runs first
+    // (`hole_anchor_missing_fires` pins that shadowing), so it is deliberately absent.
+
+    /// A byte-emitting section inside the declared interior fails the build.
+    #[test]
+    fn the_build_path_refuses_an_occupied_hole_interior() {
+        let e = validate_placement(&hole_layout(), &hole_map(0x406), false, &filler_registry())
+            .unwrap_err();
+        assert!(e.contains("map.hole-interior-occupied"), "{e}");
+        assert!(e.contains("`PostHole`") && e.contains("[0x3F8,0x406)"), "{e}");
+        // CONTROL: the identical layout under the declaration that matches it passes, so
+        // the red is the declared right edge and not the fixture.
+        validate_placement(&hole_layout(), &hole_map(0x3F8), false, &filler_registry())
+            .unwrap_or_else(|e| panic!("control: {e}"));
+    }
+
+    /// EVERY occupant is reported, not the first — a stale `at` that swallows two
+    /// sections is one declaration to correct, and a caller shown one name fixes it twice.
+    #[test]
+    fn the_build_path_names_every_occupant_of_one_hole() {
+        // `hole_layout` ends at 0x406; a second post-hole section abuts it, and a right
+        // edge past both puts both inside. Both bounds are read off the fixture.
+        let mut layout = hole_layout();
+        layout.push(sec("Trailer", 0x406, 0x8));
+        let end = 0x406 + 0x8;
+        let m = load_placement_map(&format!(
+            "order = [\"Head\", \"Filler\", \"PostHole\", \"Trailer\"]\n\
+             [[anchor]]\nname=\"boot_head\"\nat=0x0\n\
+             [[hole]]\nafter = \"Filler\"\nat = {end}\nfilled_by = \"{FILLER_MODULE}\"\n",
+        ))
+        .unwrap();
+        let e = validate_placement(&layout, &m, false, &filler_registry()).unwrap_err();
+        assert!(e.contains("`PostHole`") && e.contains("`Trailer`"), "both occupants: {e}");
+        assert_eq!(e.lines().count(), 2, "one line per occupant: {e}");
+    }
+
+    /// LOUD ON UNMEASURABLE, through the build path: a hole whose declared interior is
+    /// empty would read as checked while checking nothing.
+    #[test]
+    fn the_build_path_refuses_a_degenerate_hole() {
+        let e = validate_placement(&hole_layout(), &hole_map(0x3D0), false, &filler_registry())
+            .unwrap_err();
+        assert!(e.contains("map.hole-bounds-degenerate"), "{e}");
+    }
+
+    /// LOUD ON UNMEASURABLE, through the build path: a `filled_by` naming no module in
+    /// the shape's registry leaves nothing permitted, so the answer would be a fault
+    /// about the wrong thing. An EMPTY registry is the shape of that mistake.
+    #[test]
+    fn the_build_path_refuses_an_unknown_filler_module() {
+        let e = validate_placement(&hole_layout(), &hole_map(0x406), false, &[]).unwrap_err();
+        assert!(e.contains("map.hole-filler-unknown") && e.contains(FILLER_MODULE), "{e}");
+    }
+
+    /// LOUD ON UNMEASURABLE, through the build path: the filler module is known but this
+    /// build placed none of its sections, so the interior is UNFILLED, not reserved. The
+    /// `after` label still resolves, so the presence arm passes and this is the refusal.
+    #[test]
+    fn the_build_path_refuses_a_filler_the_build_did_not_place() {
+        let registry = vec![super::ModuleSpec {
+            module_id: FILLER_MODULE,
+            section: "a_section_this_build_does_not_place",
+            region: super::DUMMY_REGION,
+        }];
+        let e =
+            validate_placement(&hole_layout(), &hole_map(0x406), false, &registry).unwrap_err();
+        assert!(e.contains("map.hole-filler-absent") && e.contains(FILLER_MODULE), "{e}");
+    }
+
+    /// LOUD ON UNMEASURABLE, through the build path: one `after` label defined in two
+    /// sections gives the hole two left edges. The presence arm is satisfied by either,
+    /// so only the interior half can catch it.
+    #[test]
+    fn the_build_path_refuses_an_ambiguous_hole_anchor() {
+        let mut layout = hole_layout();
+        layout.push(sec("Filler", 0x1000, 0x10));
+        // No `order` (the duplicate head label is not the subject here) and the second
+        // island declared, so the refusal is the ambiguity and not a map-completeness lint.
+        let m = load_placement_map(&format!(
+            "[[anchor]]\nname=\"boot_head\"\nat=0x0\n\
+             [[anchor]]\nname=\"second\"\nat=0x1000\n\
+             [[hole]]\nafter = \"Filler\"\nat = 0x406\nfilled_by = \"{FILLER_MODULE}\"\n",
+        ))
+        .unwrap();
+        let e = validate_placement(&layout, &m, false, &filler_registry()).unwrap_err();
+        assert!(e.contains("map.hole-anchor-ambiguous") && e.contains("0x1000"), "{e}");
     }
 }
 

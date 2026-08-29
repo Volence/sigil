@@ -36,7 +36,7 @@ comment rests on is **no longer true**.
 | **R6** | "the gap between two labels is an allotment" (79 `repin` region/shape pairs) | `room`, `negative` | `repin`'s bare-`end` **warning** — and `repin` is not on the ROM build path | **NOT asserted — by-reading** |
 | **R7** | A section's alignment quantum (`native::packed_align_of`) | `anchor` (`aligned_to`) | `native::validate_sound_fold` — covers **two labels** | **partially asserted — scope demonstrated, firing by-reading** |
 | **R8** | The error_handler island is the final byte-emitting section | `order`, **`negative`** | `native::check_error_handler_is_last`, called from `append_deb2_appendix` | **already-asserted — demonstrated** |
-| **R9 (new)** | A declared `[[hole]]`'s interior stays empty | **`negative`** | `native::hole_interior_faults` — `[map.hole-interior-occupied]`; NOT on the build path | **NOT asserted — predicate written and red on 3 shipped shapes; see `2026-08-27-hole-interior-reserved.md`** |
+| **R9 (new)** | A declared `[[hole]]`'s interior stays empty | **`negative`** | `native::hole_interior_faults`, called from `validate_placement` — `[map.hole-interior-occupied]` | **ASSERTED on the build path over demo plain / demo debug / config_b; see `2026-08-27-hole-interior-reserved.md`** |
 
 ---
 
@@ -49,13 +49,16 @@ share a fate:
 - **R8 — "nothing after the error_handler blob."** **ASSERTED AND PROVEN TO FIRE.** Do not
   build a second rule for this; the inventory's own recommendation ("no new rule should be
   written") stands and its three asks have since been closed in-tree.
-- **R9 — "nothing inside the declared hole."** **NOT ASSERTED AT ALL.** The inventory has no
-  row for this; it was found by this re-check. `validate_placement`'s entire hole handling is
-  a *presence* check on the anchor label. A packed layout that fills the hole passes green.
+- **R9 — "nothing inside the declared hole."** **ASSERTED — closed by this re-check.** The
+  inventory had no row for it. When it was found, `validate_placement`'s entire hole handling
+  was a *presence* check on the anchor label and a packed layout that filled the hole passed
+  green; `hole_interior_faults` now runs from that same function, so it is a build error.
+  Section R9 below records the state at the time of the finding.
 - **R6 — "the region between these two labels is the first one's, not a shared allotment."**
   NOT asserted; warned in a tool that never runs during a ROM build.
 
-Two of the three negatives are unguarded. **This is the finding the handover most needs.**
+One of the three negatives is still unguarded (R6). R9 was unguarded when this re-check
+found it and has since been wired. **This is the finding the handover most needs.**
 
 ---
 
@@ -275,9 +278,13 @@ directions of the membership mismatch are refusals:
 `error_handler_island_membership.rs` adds the per-shape set-diff over `native::shipped_shapes`.
 Landing commits: `1a03c75c`, `83b6610e`, `2247b0f2`, merge `9d9e164d`.
 
-### R9 (new) — a declared hole's interior. **NOT asserted; demonstrated absent.**
+### R9 (new) — a declared hole's interior. **Unasserted when found; wired since.**
 
-`validate_placement`'s entire hole handling is:
+*The state below is the one this re-check measured. `validate_placement` now calls
+`hole_interior_faults` after the presence arm — see the closing paragraph of this
+section and `2026-08-27-hole-interior-reserved.md`.*
+
+`validate_placement`'s hole handling at the time of the finding was:
 
 ```rust
 for h in pmap.holes_for(sound_on) {
@@ -290,8 +297,8 @@ for h in pmap.holes_for(sound_on) {
 }
 ```
 
-`h.at` is read only to *print*. Nothing checks that `[end of the `after` section, h.at)` is
-free. The comment defers to K2 (*"Holes (data; K2 enforces)"*) — but K2's enforcement is the
+`h.at` was read only to *print*. Nothing checked that `[end of the `after` section, h.at)`
+was free. The comment defers to K2 (*"Holes (data; K2 enforces)"*) — but K2's enforcement is the
 `filled_by` module overlaying the hole, i.e. it makes the hole *filled by the right thing*
 under the current layout, not *reserved against a different one*.
 
@@ -307,13 +314,16 @@ poison-green the moment the predicate lands.
 
 `[map.hole-anchor-missing]` is pinned by `placement_validation_tests::hole_anchor_missing_fires`.
 
-**The predicate now exists and is red on the shipped shapes.**
-`native::hole_interior_faults` implements this row, and all three shapes with a live hole
-(demo plain, demo debug, config_b) fail it: both maps declare `at = 0x3FE` while `boot_tail`
-resumes at `0x3F8`, so 6 bytes of the declared interior are occupied. The declaration is
-stale, not the layout. It is deliberately NOT called from `validate_placement` — wiring it
-before the aeon-side `at` is corrected turns every sound-off build red. Full measurement,
-positive control and the wiring recipe: `2026-08-27-hole-interior-reserved.md`.
+**The predicate exists and gates the build.** `native::hole_interior_faults` implements
+this row and `validate_placement` calls it, so on `build_rom_chained_with_listing` — and
+therefore on `sigil build` — an occupied interior is a build error. It is live over the
+three shapes with a live hole (demo plain, demo debug, config_b) and says nothing about the
+four that gate theirs out with `when = "sound_off"`.
+
+The declaration those three used to fail on was aeon's, not the layout's: both maps declared
+`at = 0x3FE` while `boot_tail` resumes at `0x3F8`. Aeon corrected it, and the maps declare
+`at = 0x3F8` from `03ed1f1c`. Full measurement, both directions of the control, and the
+shapes the gate is silent about: `2026-08-27-hole-interior-reserved.md`.
 
 ---
 
@@ -366,9 +376,9 @@ pin that goes stale silently.
   hole's `at`
 - **relation** — `within`
 - **value** — occupied by nothing but the module named in that hole's `filled_by`
-- **because** — the only guard today checks that the `after` label exists; a packed layout that
-  places any other emitter in the hole passes green, and the boot-region data that resumes at
-  `at` is then displaced with no diagnostic.
+- **because** — the presence guard alone checks only that the `after` label exists; without
+  the interior half a packed layout that places any other emitter in the hole passes green,
+  and the boot-region data that resumes at `at` is then displaced with no diagnostic.
 
 ### `REGION_END_IS_OWN_SECTION` (R6) — **negative / room**
 - **subject** — each `repin.toml` region's `end` spec
