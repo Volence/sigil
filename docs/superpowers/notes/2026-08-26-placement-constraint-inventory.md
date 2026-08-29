@@ -211,6 +211,79 @@ by name. What remains uncovered is a NEW section arriving with a real requiremen
 declares: the completeness half refuses the build until someone writes a row, but it cannot
 know the row is right. That is a review obligation, not a mechanism.
 
+#### How the fourteen non-`2` rows were enumerated — LEADS FIRST, THEN ONE SWEEP
+
+**Stated plainly because the number is a floor and the method is what prices it.** The rows
+declaring more than 2 were found by FOLLOWING LEADS, not by sweeping what touches a section's
+base. The leads were: the brief's own pointer to `Sfx_33`; `packed_align_of`'s doc comment;
+**this document's R1 ruling** (which handed over `ObjCodeBase` 64 KB, `dac_banks` / `sound_bank`
+`$8000`); `map.toml`'s BANK PLACEMENT RULE comment; one `align` keyword grep over `map.toml`
+and the `.emp` corpus; one `ensure(` grep **scoped to `games/sonic4/data/sound/`**; and
+`mt_bank.emp`'s `MT_TAIL_PAD` comment. 104 of the 107 rows therefore declare **2 by rule**,
+not by measurement.
+
+**The sweep that should have run first, run afterwards: `ensure(` over the WHOLE corpus,
+filtered to mask/modulo/align shapes.** Its complete yield of constraints on a ROM SECTION
+BASE:
+
+| site | constraint | effect on the table |
+|---|---|---|
+| `engine/system/epilogue.emp:29` | `(extern("EndOfRom") & 1) == 0` | **confirms** the `EndOfRom` row's 2 from source — it was not a default |
+| `games/sonic4/data/sound/sfx_bank_blob.emp:55` | `(winptr(Sfx_33) & 7) == 0` | already held |
+
+Everything else the sweep returned is a constraint on something that is **not** a ROM section
+base: Z80 RAM addresses (`SND_RING_BASE`, `SND_SFX_BASE`, both `& $FF`), a work-RAM window
+(`Player_1 & $FFFF8000`), struct offsets and blob lengths (`% 2`, `% 4`), or `bankid()` /
+`winptr()` **consumers** that compute a value rather than assert one.
+
+**So the sweep raised the count by zero and upgraded one row from rule to source.** What it
+CANNOT reach, and what keeps the count a floor: a requirement implicit in an INSTRUCTION with
+no comptime wall beside it. Aeon's own sources contain a documented near-miss of exactly that
+shape — `engine/sound/z80_sound_driver.emp:1034` records a 256-byte page-aligned optimisation
+NOT TAKEN because `ensure((DacSampleTable & $FF) == 0)` fails today. Had it been taken without
+that `ensure`, a 256-byte requirement would exist with nothing in the corpus naming it, and
+this table would declare 2 and pass green.
+
+#### THE SPAN CLASS — asked about specifically, and the design is NOT blocked on it
+
+The question put to this parcel: the VDP's 68k→VRAM DMA source must not cross a **128 KB**
+boundary (the source counter's low 16 words wrap), which is a NON-CROSSING constraint on a
+SPAN, not a quantum on a base — and a table of alignments cannot express it. Measured:
+
+1. **Does the constraint exist in this corpus? YES, and it is load-bearing.**
+   `engine/objects/dplc.emp:57` — "a landing whose ROM source straddles a `$20000` boundary is
+   SPLIT into two entries by QueueDMA"; character art totals ~354 KB, "i.e. ~2.7 x 128 KB, so
+   at least two boundary-straddling entries exist by construction."
+
+2. **Are the frozen tables the only thing keeping it true? NO — and that is the finding.**
+   It is kept true **structurally at runtime**. `engine/system/dma_queue.emp`'s shared
+   `.transfer` core computes the crossing arithmetically from the ACTUAL source word address
+   (`moveq #0,d0 / sub.w d3,d0 / sub.w d1,d0 / blo .split`) and splits the transfer into two
+   queue entries at the boundary. No placement can make a transfer read wrong data, because no
+   placement is consulted — the check is on the address the transfer actually carries. The
+   hypothesis that the frozen tables are silently holding this up is **false for this corpus**.
+
+3. **Therefore NOT "BLOCKED on the declaration's expressiveness" — the surfaces are already
+   correctly factored.** A span constraint does not belong in `section_align` and does not need
+   to be bent into one, because the span surface ALREADY EXISTS and is separate:
+   `map.toml`'s `[[budget]] region / ceiling / cursor`, gated by
+   `native::check_object_bank_budget` → `map.check_budget`. The object bank's
+   `ceiling = 0x20000` **is** a declared, enforced 128 KB span constraint today. Bank
+   co-residency — `ensure(bankid(X) == bankid("MovingTrucks_Bank_Start"))` for six labels in
+   `mt_bank.emp` / `sfx_bank.emp` — is the other span-class constraint, and it is folded
+   against real addresses by the seam-2 emitters (`emit_mt_bank_at` takes `mt_bank_lma` and
+   `bank_start` for exactly that fold). Verified by signature and by the module's own comment;
+   NOT proven red-first here.
+
+**The one real gap this turned up, and it is a different failure mode than the question
+assumed.** `.split_reject` needs **two** free Important slots or it rejects **both halves** of
+a split transfer. `DPLC_ENTRY_RESERVE = 2` is sized from total art volume, with aeon's own
+note reading "Two is the floor, not a comfortable margin." **How many transfers straddle a
+boundary in a given frame is a function of where art lands — placement — and nothing in sigil
+checks it.** The consequence is a DROPPED transfer (carry set: a missing or late art update),
+not wrong data — a visual glitch, not corruption. That is a queue **slot-budget** gap, not an
+alignment gap and not a correctness gap, and it is the item to sequence.
+
 ## R1 is RULED by aeon (2026-08-26), and the check they asked for found a second population
 
 Their ruling, read off `games/sonic4/map.toml`'s own anchor comments: vectors + header at

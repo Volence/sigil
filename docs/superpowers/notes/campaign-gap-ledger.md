@@ -2651,6 +2651,26 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   today) and needs a paired aeon+sigil freeze. Note the declaration deliberately lives in
   sigil, not on `map.toml` rows: the map is aeon's file and this had to land byte-neutral
   in one repo; if it later moves to `map.toml`, `section_align` becomes the reader.
+- [declare-section-alignment parcel, 2026-08-29] **The DMA 128 KB split's SLOT budget is
+  placement-sensitive and unchecked.** CORRECTNESS is not at risk and the frozen tables are
+  not holding it up: `engine/system/dma_queue.emp`'s `.transfer` computes the crossing from
+  the ACTUAL source address and splits, so no placement can make a transfer read wrong data.
+  But `.split_reject` needs TWO free Important slots or it rejects BOTH halves, and
+  `DPLC_ENTRY_RESERVE = 2` is sized from total art volume ("Two is the floor, not a
+  comfortable margin", `engine/objects/dplc.emp:57`). How many transfers straddle a boundary
+  in one frame depends on where art lands, and nothing in sigil measures it. Symptom is a
+  DROPPED transfer (a missing/late art update), not corruption. — OPEN (kill: count
+  boundary-straddling Important sources per shape from the resolved layout and gate against
+  `DMA_IMPORTANT_SLOTS - DPLC_ENTRY_RESERVE`; a SPAN check, so it belongs on the
+  `[[budget]]` surface, NOT in `section_align`)
+- [declare-section-alignment parcel, 2026-08-29] **`section_align`'s 104 `2` rows are a rule,
+  not a measurement.** A corpus-wide `ensure(` sweep found no ROM-section-base requirement
+  the table misses (and confirmed `EndOfRom`'s 2 from `epilogue.emp:29`), but it cannot reach
+  a requirement implicit in an INSTRUCTION with no comptime wall beside it. Aeon records a
+  near-miss of that shape at `engine/sound/z80_sound_driver.emp:1034`: a 256-byte page-aligned
+  form NOT TAKEN because its `ensure` fails today. — OPEN (kill: a `.emp` lint that flags a
+  base-residue assumption in code with no `ensure` beside it; until then the count is a floor
+  and a new row's value is a review obligation)
 - [derived-layout parcel, 2026-08-26 — AEON LANE] **A clean aeon checkout cannot build
   canonically on its first try:** `build.sh` runs the pytest lane BEFORE emitting the ROM,
   and `tools/test_bg_emit.py::TestBgAnimSectionCeiling` fails LOUD without `s4.lst` AND
