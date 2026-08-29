@@ -9789,3 +9789,62 @@ demo_debug = "7599953e/101113"
 lean = "f954fe89/674830"
 s4 = "c9255279/719235"
 s4_debug = "10916c8c/736095"
+
+[entry.superseded]
+by = "editor-raster-preset-attested"
+reason = "Entry 182 recorded a RED strict run and is abandoned rather than amended, because an entry is frozen once it records one. The three failures were the ritual working, not regressions, and none of them moved a ROM byte: two act_descriptor_port link asserts wanting the new cross-seam symbol EditorRaster_OJZ_Act1_authored_probe supplied to the standalone scope, and the repin_pins hand-typed baseline demanding its per-parcel term for DEBUG_ASSEMBLED_LEN 0xA7EC0 to 0xA7F40. Both fixed at sigil 7b61010a, which touches only repin.toml, pins.rs and two test files. This successor carries identical goldens by construction and exists so the passing strict run has an entry it can legally attest."
+
+[[entry]]
+name = "editor-raster-preset-attested"
+ab = "chain 182 successor: goldens byte-identical to entry 182 by construction. s4 c9255279/719235, s4.debug 10916c8c/736095, demo 3415e3ef/96372, demo.debug 7599953e/101113, all four verified independently on the merged aeon tree at e99a2ca7 from a clean detached checkout with the ROMs deleted first. Assembler sigil 765c31fca91d, md5 504b0c0ad887424b39334ae123e44b75 unchanged across every build. Effects gate lane OK exit 0, all 15 scheduled gates produced a complete row set."
+aeon_rev = "e99a2ca769eb397e0951d1fd24264dbb17661fec"
+note = "goldens byte-identical to `editor-raster-preset` — this entry exists to abandon it: the fix for what turned its strict run red moved no bytes. supersedes the red 182; no ROM bytes moved between them"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "0833dec1"
+full_size = 736463
+anchor_crc = "f680676a"
+anchor_end = 0xa7f40
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c9436a9f"
+full_size = 611253
+anchor_crc = "c37afca2"
+anchor_end = 0x8b980
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7599953e"
+full_size = 101113
+anchor_crc = "91a16b91"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "f954fe89"
+full_size = 674830
+anchor_crc = "4123ae0d"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "c9255279"
+full_size = 719235
+anchor_crc = "f21178b5"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "10916c8c"
+full_size = 736095
+anchor_crc = "cf2cd05d"
+anchor_end = 0xa7f40
