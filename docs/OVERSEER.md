@@ -373,6 +373,56 @@ answer instead of a doc-wide rewrite.
 one-line fix into a class problem, which is equally a result. Either way the number is the
 deliverable. What is never acceptable is fixing the reported instance and not looking.
 
+### PUSH-BEFORE-ATTEST: ritual NOW, refusal ON A CONDITION (aeon's ruling, 2026-08-29)
+
+**A revision already in `origin/master` cannot be orphaned by a later rebase.** So pushing the
+freeze commit *before* `refreeze --attest` **removes** the orphaned-`sigil_rev` failure mode
+rather than detecting it. Chain 181 is the instance that lacked it. **The aeon lane adopted it
+as ritual from chain 182 onward** — it costs one `git push` in an order they were performing
+anyway.
+
+**`AHEAD OF REMOTE` at attest time stays a WARNING, and the refusal has a condition rather than
+a date.** Their reasoning, which is this lane's own precedent turned around: making it a refusal
+today would refuse a state that is *currently normal*, in the middle of an unattended overnight
+freeze — **exactly the shape of the `SIGIL_HARNESS_ROOT` refusal this lane was told to build and
+refused to**, which would have guarded a hazard that did not exist and bricked a 3am freeze.
+
+> **The condition: when three consecutive chains have attested with the freeze already pushed
+> and the warning has not fired once, `AHEAD OF REMOTE` has stopped being a normal state and
+> should become a refusal. If it fires inside that window, the window restarts and we find out
+> why.**
+
+**A refusal is safe exactly when the state it refuses has stopped being normal — and that is a
+measurable fact, not a judgement.** Keep the refusal from arriving ahead of the practice it
+enforces.
+
+**⚠ THE CONDITION IS CURRENTLY REMEMBERED, NOT DERIVED — and that is the weak joint.** Checking
+it today means a human counting three chains and recalling whether a warning fired, across
+sessions that get rotated mid-flight (aeon's was, tonight, holding exactly this kind of state).
+**Queued here as `ATTEST-RECORDS-REACHABILITY`:** have `--attest` *record* the state it observed
+into the entry, so "three consecutive clean chains" becomes computable from the ledger by the
+same walk that reports orphans. That converts a condition somebody must remember into one the
+tool can answer — the same preference that killed the exception list.
+
+### READ THE REMOTE, NOT THE TRACKING REF — the shared-machine rule arriving on a REF (2026-08-29)
+
+Measured during the reachability parcel: **aeon's `origin/master` moved four times inside one
+parcel** (`ac20c424 → a0a5acff → 4d86f5db → 734ab392`, and twice more after) while this lane's
+prepared reference worktree's tracking ref still read the first. **An implementation that
+trusted the tracking ref would have judged the whole ledger against a twenty-minute-old branch
+and reported confidently.**
+
+`git ls-remote` names **the remote**. A tracking ref names **whenever you last fetched**. Only
+the first is what *"reachable from origin"* means, and **the two produce identical-looking
+output**, which is why the reachability check tests this explicitly
+(`the_git_oracle_reads_the_remote_rather_than_the_local_tracking_ref` moves the origin behind
+the clone's back and asserts the tool answers `COULD NOT MEASURE … git fetch` rather than
+trusting the stale ref).
+
+This is the *shared-machine* rule — already banked here for **directories**, where reading a
+sibling's working tree silently measures somebody's mid-edit state — arriving on a **ref**. Same
+failure, same silence, different object: **a path is not a state, and neither is a ref.**
+
 ### A CHECK CAN BE VACUOUS BY CONSTRUCTION IN THE ENVIRONMENT IT RUNS IN (2026-08-29, aeon's)
 
 `aeon/tools/level_staleness.py` asks whether the generated tree is current by comparing
