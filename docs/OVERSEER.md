@@ -1622,7 +1622,7 @@ owner-declares rule above covers where a sweeper looks; this covers the adoption
 at all. As written, Q-28 licenses this again, correctly, on the next lane that tidies up after
 itself.
 
-### `AEON_DIR` IS UNCONDITIONAL IN EVERY BRIEF — the default is the OWNER'S working tree (2026-08-27)
+### `AEON_DIR` IN EVERY BRIEF: UNCONDITIONAL, **EXCLUSIVE**, AND **PREPARED** — three claims (2026-08-27, widened 2026-08-29)
 
 `test_support.rs::aeon_dir` defaults to `/home/volence/sonic_hacks/aeon`, which is the
 owner's live checkout. **So any suite run that does not set `AEON_DIR` reaches the tree he
@@ -1638,6 +1638,38 @@ provenance nobody intended.
 **`"if needed"` is the whole defect, and it reads as helpful flexibility.** A default that
 points at a person's working directory is one that must be overridden *every* time, and
 every-time is what briefs are bad at. **Set it in the template, not per parcel.**
+
+**WIDENED 2026-08-29, after this rule was followed and still produced a collision.** Setting
+`AEON_DIR` unconditionally is necessary and is not sufficient. Both of that night's briefs set
+it — and both set it to **the same tree**, which was **bare**. Two further claims were being
+relied on and neither was stated:
+
+- **EXCLUSIVE.** `build.sh` writes into the tree and rebuilds `rm`-first, so two agents sharing
+  one `AEON_DIR` transiently delete each other's reference ROMs. It surfaced as one failure in
+  an otherwise clean 4090-test run (`SIGIL_STRICT_GATE set but reference missing: …/demo.bin`),
+  green on a re-run seconds later. **The gate was right both times; the tree moved under it.**
+- **PREPARED.** A fresh `git worktree add --detach` of aeon is **source with no reference
+  ROMs** — measured: 213 failures on first contact, every one `reference missing`, and
+  `engine/debug/generated/` absent so `demo debug` could not even resolve. So a bare tree is
+  not a reference tree; it is a **build job**, and the agent has no choice but to write into
+  the thing the brief calls a reference. **The collision was designed in at dispatch, not
+  stumbled into at run time**, and a mid-run instruction of mine not to rebuild the tree was
+  already unfollowable when it arrived.
+
+**The template line, therefore:** prepare one tree per agent yourself (detached at the
+provenance `aeon_rev`, all four shapes built), then say in the brief **which** it is —
+prepared-and-exclusive, or bare-and-yours-to-build. The agent cannot tell by looking.
+
+**And the reading lesson, which outlives the fix:** *a path is not a state.* `AEON_DIR` names
+a location; every claim that matters is about the **condition** of what is there. This is the
+bound-vs-procedure rule one level up — the brief stated a *value to set* where what it needed
+was a *property to hold*.
+
+**Watch the perturbation direction, too.** A shared tree can manufacture a false **green** as
+easily as a false red — a gate that should have refused finding a stale ROM another agent
+built. Red is this hazard's visible face and green is its invisible one, so *"it passed on a
+re-run"* closes the instance and says nothing about the class. Make agents state which
+artifacts a measurement depended on, not merely whether it repeats.
 
 The same agent's own numbers are the argument: its runs before the correction showed **54
 phantom failures**, its runs after showed a clean set. This document already carried the
