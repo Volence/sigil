@@ -2515,6 +2515,10 @@ fn true_bases_by_index(
                     None => prov[i] = Some(s.lma as i64), // baked fallback (order only)
                 }
             }
+            // ALWAYS-ON, before the walk consumes a single inferred quantum: every
+            // pinned section's DECLARED alignment requirement, against the very
+            // provisional base `packed_align_of` would read.
+            validate_declared_alignment(sections, &prov, &labeled)?;
             packed_true_bases(sections, &prov, &labeled, map_order, fixture, anchor_addrs, warnings, locate)
         }
     }
@@ -2587,6 +2591,137 @@ pub fn packed_align_of(prov: u32) -> u32 {
 pub fn packed_chained_base(running: u32, prov: u32) -> u32 {
     let a = packed_align_of(prov);
     running.div_ceil(a) * a
+}
+
+/// THE DECLARATION GATE, first half — every pinned ROM section's DECLARED alignment
+/// requirement (`crate::section_align`) against the frozen provisional base
+/// [`packed_align_of`] is about to infer that section's quantum from.
+///
+/// R7 of the placement-constraint inventory. The frozen tables are scheduled to stop
+/// being placement authority, and the alignment quantum is the one constraint they
+/// encode that is INVISIBLE in them — it is not a column, it is a residue of an
+/// address. Recapturing it as a declaration before the flip is the whole point; after
+/// the flip, `required` is what the packer reads and `packed_align_of` is deleted.
+///
+/// WHY THIS CHECKS `required | prov` AND NOT `required | packed_align_of(prov)`: the two
+/// are EQUIVALENT for every `required ∈ {2,4,8,16}` — `packed_align_of` returns the
+/// largest element of `{16,8,4,2}` dividing `prov`, so `required | prov` forces that
+/// element to be a multiple of `required`, and `inferred | prov` holds by construction
+/// in the other direction. Checking `prov` directly stays meaningful for the two
+/// sections whose requirement is `$8000` (the Z80 bank windows), where the mod-16 cap
+/// makes the inference unable to express the requirement at all. It also needs no copy
+/// of the walk's island classification — a second copy of that arithmetic is the bug,
+/// not the fix.
+///
+/// LOUD ON UNMEASURABLE: a pinned section with no declaration is a REFUSAL naming the
+/// section, its provisional base, and the quantum the inference would have handed it.
+/// It is never rendered as 1, never as 0, and never as a pass — an undeclared section
+/// is precisely the one whose constraint would vanish silently at the flip.
+///
+/// A label-less blob is out of scope by construction: it has no frozen provisional base,
+/// so the inference never runs on it (it packs by contiguity from its neighbour), and it
+/// has no head label to declare under. `validate_resolved_alignment` still measures the
+/// base it actually lands on.
+fn validate_declared_alignment(
+    sections: &[Section],
+    prov: &[Option<i64>],
+    labeled: &[bool],
+) -> Result<(), String> {
+    let mut faults: Vec<String> = Vec::new();
+    for (i, s) in sections.iter().enumerate() {
+        if !is_rom_section(s) || !labeled[i] {
+            continue;
+        }
+        let p = prov[i].unwrap();
+        let Some(head) = head_label(s) else { continue };
+        let Some(decl) = crate::section_align::required_for(head) else {
+            faults.push(format!(
+                "section `{}` (head label `{head}`, frozen provisional base {p:#x}) has NO \
+                 declared alignment in `sigil_harness::section_align::DECLARED`. Its \
+                 placement quantum is being inferred as {} from where the pin happens to \
+                 sit, which stops being enforced the moment the frozen tables stop being \
+                 placement authority. Add one row naming the alignment the section \
+                 REQUIRES and the source that requires it — not the number the current \
+                 layout happens to give it",
+                s.name,
+                packed_align_of(p as u32)
+            ));
+            continue;
+        };
+        if p < 0 || !(p as u64).is_multiple_of(decl.required as u64) {
+            faults.push(format!(
+                "section `{}` (head label `{head}`) declares alignment {} — {} — but its \
+                 frozen provisional base is {p:#x}, which is not a multiple of {} \
+                 (base % {} = {}). The packing walk would place it at a base the \
+                 requirement forbids. Fix the pin or the declaration, whichever is wrong; \
+                 do NOT weaken the declaration to match the pin",
+                s.name,
+                decl.required,
+                decl.why,
+                decl.required,
+                decl.required,
+                p.rem_euclid(decl.required as i64)
+            ));
+        }
+    }
+    if faults.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "[layout.undeclared-alignment] {} section(s):\n  - {}",
+        faults.len(),
+        faults.join("\n  - ")
+    ))
+}
+
+/// THE DECLARATION GATE, second half — every ROM section's declared alignment against
+/// the base it ACTUALLY LANDS ON in the resolved layout.
+///
+/// The independent instrument. The first half reads the frozen table, the same artifact
+/// `packed_align_of` reads; asking one resolver to check itself proves nothing about the
+/// resolver. This half measures the resolved layout the ROM is emitted from, which is
+/// produced by the packing walk plus `declared_spans` plus `resolve_layout` — so it
+/// covers every section the walk places by a rule OTHER than the inference: a declared
+/// `[[anchor]]` island, a phase-bank hard org, the zero-byte-marker cap-at-2 path, and
+/// the label-less contiguity blobs that have no pin at all.
+///
+/// It is also the half that reads identically after the flip: `lma % required == 0` says
+/// the same thing whether the base came from an inferred quantum or a declared one.
+pub fn validate_resolved_alignment(resolved: &[Section]) -> Result<(), String> {
+    let mut faults: Vec<String> = Vec::new();
+    for s in resolved.iter().filter(|s| is_rom_section(s)) {
+        let Some(head) = head_label(s) else { continue };
+        let Some(decl) = crate::section_align::required_for(head) else {
+            faults.push(format!(
+                "section `{}` (head label `{head}`, resolved base {:#x}) has NO declared \
+                 alignment in `sigil_harness::section_align::DECLARED` — add one row \
+                 naming the alignment it REQUIRES and the source that requires it",
+                s.name, s.lma
+            ));
+            continue;
+        };
+        if !s.lma.is_multiple_of(decl.required) {
+            faults.push(format!(
+                "section `{}` (head label `{head}`) declares alignment {} — {} — but the \
+                 resolved layout places it at {:#x} (base % {} = {})",
+                s.name,
+                decl.required,
+                decl.why,
+                s.lma,
+                decl.required,
+                s.lma % decl.required
+            ));
+        }
+    }
+    if faults.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "[layout.alignment-violated] {} section(s) placed at a base their declared \
+         alignment forbids:\n  - {}",
+        faults.len(),
+        faults.join("\n  - ")
+    ))
 }
 
 /// The head label of a section — its lowest-offset label — the name an `order` row
@@ -3740,6 +3875,10 @@ pub fn build_rom_chained_with_listing(
     // the declared sequence + island anchors + hole (a bug in the drive, or a section the map
     // omits, fails loud). Its regions drive emit_rom + the object-bank budget.
     validate_placement(&resolved, &pmap, profile.sound_on, &profile.registry)?;
+    // R7: the declared per-section alignment against the base each section ACTUALLY
+    // lands on — the independent half (the pre-walk half read the frozen table, which
+    // is the same artifact the inference reads).
+    validate_resolved_alignment(&resolved)?;
     validate_sound_fold(aeon, &resolved, profile)?;
     check_object_bank_budget(&resolved, &map, &pmap)?;
     let rom = sigil_link::emit_rom(&linked, &map).map_err(|e| format!("declared-chain: emit_rom: {e}"))?;
@@ -4769,6 +4908,125 @@ mod allowlist_tests {
         let synthetic: &[(&str, &str)] = &[("SYNTHETIC_TWIN_CONST", "twin.emp")];
         let err = enforce_inapplicable_allowlist_against(&[], &[], synthetic).unwrap_err();
         assert!(err.contains("STALE"), "got: {err}");
+    }
+}
+
+#[cfg(test)]
+mod declared_alignment_tests {
+    //! R7 — the DECLARED per-section alignment gate, both halves.
+    //!
+    //! The expectations here are derived from `section_align::DECLARED`'s own rows and
+    //! from the arithmetic in the doc comments, never from a measurement of the current
+    //! layout: `Sfx_33` is declared 8 because aeon's `ensure((winptr(Sfx_33) & 7) == 0)`
+    //! says 8, so a base ≡ 4 (mod 8) must be refused whatever the frozen table holds.
+    use super::{validate_declared_alignment, validate_resolved_alignment};
+    use sigil_ir::{Cpu, DataFragment, Fragment, Label, Section, SectionPlacement};
+    use sigil_span::Span;
+
+    fn span0() -> Span {
+        Span { source: sigil_span::SourceId(0), start: 0, end: 0 }
+    }
+
+    /// One ROM section with a single head label at offset 0.
+    fn sec(name: &str, label: &str, lma: u32) -> Section {
+        Section {
+            name: name.into(),
+            cpu: Cpu::M68000,
+            vma_base: None,
+            lma,
+            labels: vec![Label { name: label.into(), offset: 0 }],
+            fragments: vec![Fragment::Data(DataFragment {
+                bytes: vec![0u8; 0x10],
+                fixups: vec![],
+                span: span0(),
+            })],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0x10,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_pinned_section_with_no_declaration_is_refused_by_name() {
+        let secs = vec![sec("mystery", "NoSuchHeadLabelAnywhere", 0x1000)];
+        let e = validate_declared_alignment(&secs, &[Some(0x1000)], &[true]).unwrap_err();
+        assert!(e.contains("[layout.undeclared-alignment]"), "{e}");
+        assert!(e.contains("NoSuchHeadLabelAnywhere"), "{e}");
+        assert!(e.contains("has NO declared alignment"), "{e}");
+        // The absent declaration is never rendered as a number.
+        assert!(!e.contains("declares alignment"), "an absent row must not read as a value: {e}");
+    }
+
+    /// The absent declaration must never be rendered as a pass — the same section
+    /// passes only once a declaration exists for it.
+    #[test]
+    fn a_declared_section_at_a_conforming_base_passes() {
+        let secs = vec![sec("sfx_bank_blob", "Sfx_33", 0xA3B20)];
+        validate_declared_alignment(&secs, &[Some(0xA3B20)], &[true]).unwrap();
+        validate_resolved_alignment(&secs).unwrap();
+    }
+
+    /// `Sfx_33` declares 8 (aeon's mod-8 fold wall). A pin four bytes off is refused,
+    /// naming the requirement, its source, and the residue.
+    #[test]
+    fn a_pin_that_violates_the_declaration_is_refused_with_the_residue() {
+        let secs = vec![sec("sfx_bank_blob", "Sfx_33", 0xA3B24)];
+        let e = validate_declared_alignment(&secs, &[Some(0xA3B24)], &[true]).unwrap_err();
+        assert!(e.contains("[layout.undeclared-alignment]"), "{e}");
+        assert!(e.contains("declares alignment 8"), "{e}");
+        assert!(e.contains("sfx_bank_blob.emp"), "source not named: {e}");
+        assert!(e.contains("base % 8 = 4"), "residue not named: {e}");
+    }
+
+    /// The resolved half is independent of the frozen table: it refuses the same
+    /// violation measured on the layout the ROM is emitted from.
+    #[test]
+    fn a_resolved_base_that_violates_the_declaration_is_refused() {
+        let secs = vec![sec("sfx_bank_blob", "Sfx_33", 0xA3B24)];
+        let e = validate_resolved_alignment(&secs).unwrap_err();
+        assert!(e.contains("[layout.alignment-violated]"), "{e}");
+        assert!(e.contains("base % 8 = 4"), "{e}");
+    }
+
+    /// The Z80 bank window is a requirement the inference CANNOT express — a
+    /// `$8000`-aligned base infers a quantum of 16, so the pre-walk half must read the
+    /// provisional base itself rather than the inferred quantum.
+    #[test]
+    fn the_bank_window_requirement_is_checked_beyond_the_mod_16_cap() {
+        assert_eq!(super::packed_align_of(0x90000), 16);
+        let ok = vec![sec("dac_banks", "Dac_Temp_Blip", 0x90000)];
+        validate_declared_alignment(&ok, &[Some(0x90000)], &[true]).unwrap();
+        let bad = vec![sec("dac_banks", "Dac_Temp_Blip", 0x90010)];
+        let e = validate_declared_alignment(&bad, &[Some(0x90010)], &[true]).unwrap_err();
+        assert!(e.contains("declares alignment 32768"), "{e}");
+        assert!(e.contains("base % 32768 = 16"), "{e}");
+    }
+
+    /// An UNPINNED section (no frozen provisional base) is out of the pre-walk half's
+    /// scope by construction — the inference never runs on it — but the resolved half
+    /// still measures the base it lands on.
+    #[test]
+    fn an_unpinned_section_is_skipped_before_the_walk_and_measured_after_it() {
+        let secs = vec![sec("palette", "Palette_LoadPal", 0x2001)];
+        validate_declared_alignment(&secs, &[Some(0x2001)], &[false]).unwrap();
+        let e = validate_resolved_alignment(&secs).unwrap_err();
+        assert!(e.contains("Palette_LoadPal"), "{e}");
+        assert!(e.contains("base % 2 = 1"), "{e}");
+    }
+
+    /// Every fault in one run, so a report names all of them rather than the first.
+    #[test]
+    fn every_faulting_section_is_named_in_one_report() {
+        let secs = vec![
+            sec("sfx_bank_blob", "Sfx_33", 0xA3B24),
+            sec("mystery", "NoSuchHeadLabelAnywhere", 0x1000),
+        ];
+        let e = validate_declared_alignment(&secs, &[Some(0xA3B24), Some(0x1000)], &[true, true])
+            .unwrap_err();
+        assert!(e.contains("2 section(s)"), "{e}");
+        assert!(e.contains("Sfx_33") && e.contains("NoSuchHeadLabelAnywhere"), "{e}");
     }
 }
 

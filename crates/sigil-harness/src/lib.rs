@@ -82,6 +82,13 @@ pub mod map_placement;
 /// built-in `emp_defines` rows (conflict = loud error, neither source wins).
 pub mod game_defines;
 
+/// The per-section DECLARED alignment requirement, with the source each requirement
+/// comes from — the explicit rule that replaces inferring a section's quantum from
+/// where it happens to sit in a frozen address table. Read by
+/// `native::validate_declared_alignment` (against each section's frozen provisional
+/// base) and `native::validate_resolved_alignment` (against the resolved layout).
+pub mod section_align;
+
 use sigil_link::LinkedImage;
 
 // The region base LMAs are NOT constants here. Each has exactly one authority, and a
