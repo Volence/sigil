@@ -11,3 +11,9 @@
 # build reads, so consumers pinning this assembler read a warning that could
 # never turn off. Durable history belongs in the committed docs/lane-log.jsonl.
 docs/lane-status.json
+
+# The golden freeze's staging area (golden/atomic_freeze.sh). A leftover one is
+# announced by the next `capture_goldens.sh --write`, which refuses over it; it is
+# ignored here so a killed capture cannot leave untracked `.bin` files in a shared
+# checkout for a later `git add` to sweep up.
+crates/sigil-harness/golden/.staging/
