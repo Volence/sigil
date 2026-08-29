@@ -160,6 +160,14 @@ before crediting a cause, ask which run could have distinguished it from its riv
 that run was ever made.** The two-directory `--check` above is the command that separates them,
 takes seconds, and was never run by either lane until the retraction.
 
+**STATUS, so a successor does not cite this back to empyrean as contract.** This is adopted
+**lane-locally, here, now**; the shared protocol's bar 5 is **unchanged**. The generalization is
+queued at empyrean as **Q-35** in their pending-protocol-bars list and lands with their next
+batch, per the owner's 2026-08-22 ruling that how-we-work notes batch rather than trickle. So:
+follow it in this lane, and **do not tell another lane "bar 5 says"** until empyrean's file
+actually says it. Re-check Q-35's state before citing it outward — a queued bar and a landed
+one read identically in prose, which is the whole reason this paragraph exists.
+
 **The operational form, agreed with aeon and adopted here: report the measurement, and flag the
 cause as the softer half, explicitly, every time.** The asymmetry is not in how carefully each
 is checked — it is in **how far each travels unchecked**. A count sits there being a count; a
