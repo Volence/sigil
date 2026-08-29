@@ -2717,6 +2717,29 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   Converting any of them to `end = "section:<name>"` is a one-line edit that SHRINKS the
   pin by its pad and needs its port gate to re-prove at the new length — out of R6's scope,
   which was pin-value-neutral by construction. Both remedies are named in the refusal text.
+  **What a conversion can and cannot reach, enumerated 2026-08-29 because it prices the
+  sequencing.** A conversion moves ONLY a `*_len`: `repin.rs:840-843` derives both bases
+  from `start` (`region_start`) and `repin.rs:884` derives both lens as `end - base`, so
+  the `end` spelling cannot touch a base. That distinction is load-bearing, because BASES
+  ARE READ ON THE EMIT PATH and lengths are not: `seam1.rs:51` reads
+  `pins::BOOT_HEAD.{plain,debug}_base` and `seam1.rs:565` assigns
+  `sec.lma = blob_lma(debug) + cursor` — a genuinely emitted LMA. Region LENGTHS have
+  exactly two non-test readers: `native.rs:301` (`ModuleSpec::len`, sole caller
+  `emp_map_toml` at `native.rs:1712`, sole caller `build_emp` at `native.rs:2140` under
+  `SizeSource::PinnedBaked` ONLY) and `native.rs:919` (a literal in `DUMMY_REGION`). The
+  emit entry `sigil build` → `main.rs:1839` → `build_native_rom_with_listing`
+  (`native.rs:4107`) returns at `native.rs:4113-4115` whenever `sonic4_profile`'s source is
+  `Frozen`, which `native.rs:769-774` makes unconditional — so the pinned body, the only
+  route from an emit entry to a region length, is dead, and the Frozen arm uses
+  `emp_map_frozen` (`native.rs:2143`), which reads section names and no `Region`.
+  **The one qualification:** `derive_canonical_bootstrap_table` (`native.rs:835-846`, via
+  `derive_offcanon --bootstrap-canonical`) DOES read region lengths, and it mints a frozen
+  boundary table — placement authority for every later build. It cannot run on the present
+  tree (`emp_map_toml` mints regions only from registry `ModuleSpec`s; `ojz_effects_editor_act1`
+  is content-derived and has none; `place_sections` errors "has no region in the map",
+  `resolve/mod.rs:948-951`, and `build_emp` turns that into `Err`, `native.rs:2146-2153`) —
+  but that is DERIVED FROM THE CODE, not executed here, and it is the path to re-check
+  before any future conversion wave if the PinnedBaked bootstrap is ever revived.
   The population can only shrink: an undeclared pad, or an undeclared flush end owned by
   another section, refuses `resolve` outright, and a declaration that is no longer needed
   in ANY shape fails `region_end_contracts::every_region_end_contract_holds_against_the_live_layout`.
