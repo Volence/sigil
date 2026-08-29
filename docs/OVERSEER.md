@@ -268,6 +268,44 @@ detached worktree is seconds and the disk is not scarce. `AEON_DIR` is already u
 every brief; **"unconditional" was doing the work of "exclusive" and those are different
 claims.**
 
+### A FRESH AEON WORKTREE IS SOURCE-ONLY — THE STRICT SUITE IS UNREACHABLE ON IT (2026-08-29)
+
+Root cause of the shared-`AEON_DIR` collision above, and the more useful half. A
+`git worktree add --detach` of aeon gives you **source with no reference ROMs**. The strict
+suite reads `s4.bin` / `s4.debug.bin` / `demo.bin` / `demo.debug.bin` **from that tree**, and
+`engine/debug/generated/` does not exist either, so `demo debug` cannot even resolve. Measured:
+a first strict run on a freshly-created reference worktree returned **213 failures, every one
+`SIGIL_STRICT_GATE set but reference missing`**. After building the four shapes, the same binary
+over the same source returned exactly **4081 / 0 / 4**.
+
+**So handing an agent a bare worktree does not hand it a reference tree — it hands it a
+build job**, and the agent has no choice but to write into the thing the brief calls a
+reference. Two agents given the same bare tree therefore *must* collide; the collision was
+designed in at dispatch, not stumbled into at run time.
+
+**Practice, and it is the controller's work rather than the agent's:**
+
+1. **Prepare the tree once, before dispatching**: create the detached worktree at the
+   provenance `aeon_rev` and build all four shapes in it yourself.
+2. **Then give each agent its OWN copy** (`cp -a` of the prepared tree, or its own prepared
+   worktree). A prepared tree is ~51 MB per the agent that measured it; disk is not the scarce
+   thing here.
+3. **Say in the brief which it is** — prepared-and-exclusive, or bare-and-yours-to-build. The
+   agent cannot tell by looking, and "do not rebuild the aeon tree" is an impossible
+   instruction against a bare one. That instruction was issued here mid-run and was already
+   unfollowable when it arrived.
+
+**The generalisation worth keeping: `AEON_DIR` names a path, and a path is not a state.** Every
+brief in this file has said `AEON_DIR` is unconditional. None has ever said what must be TRUE of
+the tree it points at. Unconditional, exclusive, and *prepared* are three different claims, and
+the briefs have been making the first while relying on all three.
+
+**Corollary for reading agent evidence:** an agent that had to build its own references cannot
+offer "I deleted the ROMs first, so their existence proves my build ran" as a freshness witness
+if any other process could have rebuilt them. Where the binaries are byte-neutral and the source
+is pinned the CRCs are identical either way, so the conclusion survives — but it survives on
+*that* argument, not on exclusivity. Make agents state which.
+
 ### A CHECK CAN BE VACUOUS BY CONSTRUCTION IN THE ENVIRONMENT IT RUNS IN (2026-08-29, aeon's)
 
 `aeon/tools/level_staleness.py` asks whether the generated tree is current by comparing
