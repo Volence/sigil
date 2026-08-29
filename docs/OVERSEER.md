@@ -1806,9 +1806,23 @@ BGROOM-2's leftovers are the same territory and should be read as part of this, 
 - **The constraint inventory is COMPLETE and pushed**:
   `docs/superpowers/notes/2026-08-26-placement-constraint-inventory.md`. Eight rows, no
   row left named-but-unlocated. R7 is the one to read first — alignment is *inferred* from
-  each pin's own address (`native::packed_align_of` = largest power of two dividing the
-  frozen base), so a repin changes a section's alignment with no alignment code changing,
-  and only two labels are guarded against the silent-audio consequence.
+  each pin's own address, **capped at 16**: `native::packed_align_of` returns the largest
+  power of two **in {16, 8, 4, 2, 1}** dividing the frozen base, so it distinguishes only
+  residues mod 16 and an address divisible by 32 or 64 still infers exactly 16. A repin can
+  therefore change a section's alignment with no alignment code changing — bounded, but real
+  — and only two labels are guarded against the silent-audio consequence.
+  **This sentence was WRONG until 2026-08-29 and it is how the error travelled.** It read
+  *"largest power of two dividing the frozen base"* with **no cap at all**, while the
+  inventory it summarises had the cap present but buried in a parenthetical behind a
+  contradicting headline. **Buried in the source, dropped in the summary, one hop apart, with
+  nothing in between able to notice** — and the summary is what a reader of another lane's
+  docs reaches first, so the dropped version is the one that propagated. The aeon lane
+  reasoned faithfully from it during chain 181 and was about to record a false "R7 fired" in
+  a permanent ledger; they found this line. Enumerated the rest at the same time (bar 8, by
+  what touches the value, not by what defines it): five other doc restatements of the rule,
+  all correct — `2026-08-27-constraint-recheck.md:217` and
+  `2026-08-26-config-b-two-byte-growth.md:182` both state the mod-16 bound explicitly. So
+  this was one bad summary, not systemic drift.
 - **Aeon's `parcel/rom-relayout` LANDED 2026-08-26** — merged here as chain-168 (`6e4f2533`,
   pairing aeon `c3f5cbe0`); see the RELAYOUT-REVIEW section below for the review and the
   sweep that outranked it. **This row said `IN FLIGHT` for a day after it landed**, twenty
