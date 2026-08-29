@@ -9562,3 +9562,57 @@ demo_debug = "7599953e/101113"
 lean = "e730ee12/674830"
 s4 = "a20bfa2a/719205"
 s4_debug = "bcf682b5/735818"
+
+[[entry]]
+name = "ball-seating"
+ab = "aeon 03ed1f1c (code d2e6f802 plus the review correction b8d4c406; 03ed1f1c is the merge and is the tree state these ROMs were built from, NOT the code anchor): all three characters rolling balls seat flush on the ground, per owner ruling d-36. Tails ball art comes down 1 px and Knuckles goes up 1 px, applied in games/sonic4/data/characters_staging/gen_characters.py so a regenerate cannot silently revert it; Sonic is untouched. THE NUMBER CHANGED AT REVIEW AND THAT IS THE POINT OF THIS ENTRY. Knuckles was first derived at -2 from max(lowest opaque art row), which on frame $96 is a SINGLE pixel, a dreadlock tip. Seating that pixel puts the 8-px-wide ball body at +13 on all five frames, i.e. floating 1 px, which is exactly the symptom the owner had reported on Tails and would have shipped on Knuckles across every frame of the spin. Caught by measuring row WIDTH rather than row position: all five Knuckles ball frames carry an 8-px run at +15, so the body is uniform across the cycle and -1 seats every one of them, leaving the stray 1 px into the floor where nothing can see it. The agent own conclusion that no rigid shift could seat all five was retracted on that measurement. derive_ball_shift and the gate now share one body rule - a row is body if its longest contiguous run is at least half the run of the row above, spurs skipped, then max over the cycle. The half is geometric rather than fitted: near the bottom of a convex silhouette the coarsest adjacent-row ratio is sqrt(0.5/1.5) = 0.577, rounded down; scored against all 14 candidate rows BEFORE adoption, 13 genuine accepted at 0.533 to 1.333 and 1 stray rejected at 0.125. GATE tools/test_ball_seating.py in build.sh build-fatal pytest lane, red-first TWICE - once perturbing the shift, and once reverting the STATISTIC, which reproduces the defect that nearly shipped and is the poison that matters. Five unmeasurable paths fail loudly rather than green. Expectations derived from source (radius from constants.emp, frame set from the .emp Roll row, pixels from the shipped blobs) and the gate decoder is independent of the generator one, so two decoders must agree. BYTE ACCOUNTING: 24 bytes differ across the two mapping blobs and nothing else - Tails 9 (3 frames x bbox y_min, bbox y_max, piece y_off) and Knuckles 15 (5 frames x the same three), verified here by byte-diffing both blobs at cb469857 against 03ed1f1c. Both blob lengths unchanged. PINS DID NOT MOVE and that was PRE-AGREED AS A FALSIFIER WITH THE SIGIL LANE BEFORE MEASURING, both lanes committing to stop and talk rather than repin if any pin moved: repin --check reports pins.rs unchanged, exit 0, against the clean tree. A mapping y_off change moves byte values in place and shifts nothing. FOUR SHAPES built at 03ed1f1c from a clean detached worktree with all four ROMs deleted first so existence proves freshness, since on a length-neutral parcel a matching CRC cannot witness that the build ran: s4 711cc4ff/719205, s4.debug 5785610a/735818, demo 3415e3ef/96372, demo.debug 7599953e/101113. Predecessor chain 179 was s4 a20bfa2a/719205 and s4.debug bcf682b5/735818, so both sonic4 lengths are UNCHANGED and only values moved. Both demo shapes are byte-identical to chain 179, which is the negative control - nothing outside sonic4 moved. ASSEMBLER sigil b73bf420e90c, md5 495986ee66a4e1e87c2e831a2a3a7de0 and emit_sound_blob md5 42c1be5175088bbf130da8f77af38d53, both re-taken at the start and the end of the verifying run and unchanged, with the build banner reading clean at capture. BOOKED NOT FIXED: Sonic frame $9A floats 1 px by the body - a 6-px run one row high, genuinely a shorter ball rather than a stray - so our Sonic is flush was only ever true as an average over his five frames. It comes from tools/convert_s2_mappings.py, a different converter, and is a separate row. Tails twin-tails appendage was deliberately not shifted: its roll frames are drawn at one of four runtime orientations picked from the parent velocity angle, half of them with both axes flipped, so a uniform mapping-space shift would move half of them the wrong way on screen. Runtime confirmation that the balls read as planted is a foreground item and has not been done."
+aeon_rev = "03ed1f1c23c535e601aab95f10a2d37a7afa471e"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "e4c93b0f"
+full_size = 736186
+anchor_crc = "bd2d7ea6"
+anchor_end = 0xa7ec0
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "eadb8f46"
+full_size = 610727
+anchor_crc = "9d1c08be"
+anchor_end = 0x8b790
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "7599953e"
+full_size = 101113
+anchor_crc = "91a16b91"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "4282fb6a"
+full_size = 674830
+anchor_crc = "59285317"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "711cc4ff"
+full_size = 719205
+anchor_crc = "9320f170"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "5785610a"
+full_size = 735818
+anchor_crc = "60a34827"
+anchor_end = 0xa7ec0
