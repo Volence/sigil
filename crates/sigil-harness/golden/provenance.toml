@@ -9869,3 +9869,58 @@ demo_debug = "7599953e/101113"
 lean = "f954fe89/674830"
 s4 = "c9255279/719235"
 s4_debug = "10916c8c/736095"
+
+[[entry]]
+name = "band-drift"
+ab = "chain 184: backgrounds that drift on their own, mechanism whole and capability OFF (BAND_DRIFT_N = 0). Four shapes from a clean detached aeon worktree at 1aa2b242, all four ROMs deleted before the build so existence proves freshness. THREE SHAPES UNCHANGED against entry 183: s4 c9255279/719235, s4.debug 10916c8c/736095, demo 3415e3ef/96372. ONE MOVES: demo.debug 7599953e -> fdedb6e4, length identical at 101113. Byte distribution verified rather than asserted: 771 bytes differ, exactly 2 below EndOfRom 0x1121C (the header checksum at 0x18E-0x18F) and 769 at or above it, the deb2 appendix gaining one symbol Parallax_Drift_Acc. No executable byte moved. OBSERVATION LEFT DELIBERATELY UNEXPLAINED, at the sigil lane's request and recorded as their question: s4.debug carries the same new symbol and does not move at all, while demo.debug moves 769 appendix bytes for it. Numbers given, no mechanism offered. Assembler sigil 765c31fca91d, md5 504b0c0ad887424b39334ae123e44b75 identical before the first build and after the last. Suites 1640-1641 passed / 0 failed / 5-6 skipped per shape; emp_expect_fail 48/48, up from 45/45 for three new poison fixtures. Effects gate lane OK exit 0, all 15 scheduled gates a complete row set (29 rows, up one because scanline_spans emits per declared CAP_ bit and CAP_BAND_DRIFT is new). The capability flip is BLOCKED on a paired sigil edit: with the block live the contract-closure gate hard-fails with a GONE row, Parallax_Update @ Decode_Factor_B :: d2, baseline in the sigil repo. Also fixed in this parcel: tools/parallax_cost_probe.py measured half-stride fixtures, BE_SIZE 10 against a record that has been 20 since 2026-08-26, so [parallax.cost_model] was stale by up to 13.7 percent."
+aeon_rev = "1aa2b24217e955fb53507ef5cf20304b6c54184e"
+note = "first chain frozen through the interrupt-safe journal; capability ships OFF pending the paired sigil edit"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "3be8a771"
+full_size = 736463
+anchor_crc = "f680676a"
+anchor_end = 0xa7f40
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c9436a9f"
+full_size = 611253
+anchor_crc = "c37afca2"
+anchor_end = 0x8b980
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3415e3ef"
+full_size = 96372
+anchor_crc = "3d1c58be"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "fdedb6e4"
+full_size = 101113
+anchor_crc = "91a16b91"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "f954fe89"
+full_size = 674830
+anchor_crc = "4123ae0d"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "c9255279"
+full_size = 719235
+anchor_crc = "f21178b5"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "10916c8c"
+full_size = 736095
+anchor_crc = "cf2cd05d"
+anchor_end = 0xa7f40
