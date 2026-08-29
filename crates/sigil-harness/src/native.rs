@@ -4954,7 +4954,9 @@ mod declared_alignment_tests {
         let e = validate_declared_alignment(&secs, &[Some(0x1000)], &[true]).unwrap_err();
         assert!(e.contains("[layout.undeclared-alignment]"), "{e}");
         assert!(e.contains("NoSuchHeadLabelAnywhere"), "{e}");
-        assert!(e.contains("NO \\\n") || e.contains("has NO"), "{e}");
+        assert!(e.contains("has NO declared alignment"), "{e}");
+        // The absent declaration is never rendered as a number.
+        assert!(!e.contains("declares alignment"), "an absent row must not read as a value: {e}");
     }
 
     /// The absent declaration must never be rendered as a pass — the same section
