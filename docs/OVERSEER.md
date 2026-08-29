@@ -151,6 +151,41 @@ aeon's shared checkout — which is deliberately behind `origin/master` pending 
 and must not be read for artifacts or contract facts. Verified before use: 1,203 tracked paths
 byte-identical to `e99a2ca7`, four ROM CRCs matching ledger entry 183.
 
+### A NUMBER DERIVED FROM A REAL MEASUREMENT OF THE WRONG QUANTITY (2026-08-29, aeon's sharpening of this lane's finding)
+
+**Worse than unexecuted prose, because it survives the check that catches unexecuted prose.** A
+comment saying *"two is the floor"* reads as measured, and it IS measured — the derivation behind
+it is `~354 KB of character art ≈ 2.7 × 128 KB, so at least two boundary-straddling entries exist
+by construction`. **That is an argument about total ART VOLUME. It bounds EXISTENCE somewhere in
+the ROM. The reserve has to cover how many can want a slot in ONE FRAME**, which the derivation
+says nothing about. A lower bound on a different quantity, wearing the grammar of a floor on this
+one.
+
+**Why the prose sweep cannot catch it.** `PROSE-BOUND-SWEEP` looks for claims nothing executes.
+This claim has evidence, arithmetic, and a source; asking *"is this backed by a measurement?"*
+returns yes. **The question that catches it is "a measurement OF WHAT?"** — does the quantity
+measured govern the decision the number is guarding?
+
+**And the operational half, which is aeon's:** the closing condition is a measurement (count
+straddling Important enqueues per frame on a real run), **with an explicit *do not raise the
+reserve without it*** — raising an unmeasured number trades a possible drop for a certain cost.
+**A wrong bound is not repaired by making it bigger.**
+
+### WRITE THE `ensure` IN THE SAME COMMIT AS THE OPTIMISATION THAT DEPENDS ON IT (2026-08-29)
+
+Adopted with aeon, and it is the discipline the alignment declaration's residual rests on. Any
+optimisation depending on a base's low bits (a page-aligned index, a mask instead of a divide, a
+`bankid()` assumption) must land with its `ensure` in the **same commit** — not as belt-and-braces
+but because **the `ensure` is the only artifact that makes the requirement legible outside the
+routine.** Without it the requirement exists solely inside an instruction encoding, `section_align`
+declares the 68000 floor of 2, and the gate is green over a real constraint.
+
+**The live near-miss, verified in aeon's source by both lanes:** `z80_sound_driver.emp:1034`
+records a 256-byte page-aligned form **declined** because `ensure((DacSampleTable & $FF) == 0)`
+fails at `$85AD`, with *"keep the ensure with it."* Taken without that line, the requirement would
+have been invisible to every instrument either lane has.
+
+
 ### CHAIN NUMBERS: 181 IS THE COLLISION RE-BAKE; THE VSRAM FIX MOVED TO 182 (2026-08-29)
 
 Corrected in place because the booking below was written when the VSRAM fix was next in line
