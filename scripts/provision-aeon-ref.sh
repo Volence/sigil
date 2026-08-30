@@ -104,6 +104,42 @@ REF_TARGET="${REF_TARGET:-$SIGIL_ROOT/../.sigil-ref-target}"
 mkdir -p "$REF_TARGET" "$W/engine/sound/generated"
 ( cd "$SIGIL_ROOT" && CARGO_TARGET_DIR="$REF_TARGET" cargo build --release --bin emit_sound_blob )
 
+# 6. THE LISTINGS, and they are NOT optional. Several port gates resolve a
+#    cross-region symbol by looking it up in s4.lst / s4.debug.lst
+#    (`listing_symbol_addr`). A MISSING listing does not error there: the lookup
+#    returns None, no label is pushed, and the failure surfaces much later as
+#    `unresolved symbol <X> for fixup in section <Y>` in a test that has nothing
+#    to do with listings. That reads exactly like a real regression in whatever
+#    parcel you happen to be holding, and it cost this lane a false attribution
+#    and three needless reverts before the cause was found.
+#
+#    Building them is also the STRONGEST control available: a ROM built here from
+#    the pinned source must match the golden CRC32 byte for byte.
+echo "==> building both shapes to emit the listings (and to control the ROMs)"
+( cd "$W" && SIGIL_BUILD="$SIGIL_ROOT/target/release/sigil" \
+    SIGIL_EMIT="$REF_TARGET/release/emit_sound_blob" NO_LINT=1 ./build.sh >/dev/null 2>&1 )
+( cd "$W" && DEBUG=1 SIGIL_BUILD="$SIGIL_ROOT/target/release/sigil" \
+    SIGIL_EMIT="$REF_TARGET/release/emit_sound_blob" NO_LINT=1 ./build.sh >/dev/null 2>&1 )
+for l in s4.lst s4.debug.lst; do
+  [ -s "$W/$l" ] || { echo "ERROR: $l was not produced; port gates will fail misleadingly" >&2; exit 1; }
+done
+python3 - "$GOLDEN" "$W" <<'PY2'
+import re, sys, zlib, pathlib
+golden, w = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+last = (golden / "provenance.toml").read_text().split('[[entry]]')[-1]
+m = re.search(r'\[entry\.strict\.goldens\](.*?)(\n\[|\Z)', last, re.S)
+exp = {k: (c, int(s)) for k, c, s in re.findall(r'(\w+)\s*=\s*"([0-9a-f]{8})/(\d+)"', m.group(1))}
+bad = 0
+for key, fn in (("s4", "s4.bin"), ("s4_debug", "s4.debug.bin")):
+    d = (w / fn).read_bytes()
+    got = format(zlib.crc32(d) & 0xffffffff, '08x')
+    ok = key in exp and got == exp[key][0] and len(d) == exp[key][1]
+    print(f"    REBUILD CONTROL {fn:16} {got}/{len(d)} {'MATCHES THE GOLDEN' if ok else 'DIFFERS'}")
+    bad += 0 if ok else 1
+if bad:
+    raise SystemExit("a rebuilt ROM does not match its golden; this tree is NOT the pinned revision")
+PY2
+
 cat <<EOF
 
 Provisioned. NOW PROVE IT, because "no errors" is not a witness:

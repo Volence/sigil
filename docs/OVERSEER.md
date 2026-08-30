@@ -380,6 +380,60 @@ has any reader outside tests. The 82 warning lines cover these 50 regions across
 remember the meter is an ADDRESS comparison and is blind to the flush cases, so **do not treat
 the warning list as the whole population** without the `section_label_owners` derivation.
 
+### THE R6 CONVERSIONS LANDED AT 45, AND THE THREE REFUSALS ARE THE FINDING (2026-08-30)
+
+45 of the 50 regions converted from `end_measures = "allotment"` to `end = "section:<name>"`.
+Suite **4156 passed / 0 failed / 2 ignored over 357 binaries**, matching the master baseline
+exactly. **The falsifier stated before the parcel HELD at every repin: across 1186 pin fields,
+every change was a LENGTH, every length SHRANK, and no BASE moved.** That is the property that
+makes this parcel sigil-internal and not a paired freeze.
+
+**The five that did not convert, and why each refusal is a different mechanism:**
+
+- **`objdefs`, `dust_spindash`, `player_climb`** — the last byte belongs to a DIFFERENT section
+  (`text`, `ring_sparkle`, `player_instashield`). `objdefs` is the ambiguous-owner case R6
+  already ruled: an unresolvable owner is dropped, never attributed.
+- **`entity_window` and `children`** — a **shared-anchor contract asserted in a PORT TEST, not
+  in the manifest.** `children_port` requires `entity_window` to end exactly where `children`
+  begins and `children` exactly where `load_object` begins. Their end IS deliberately the next
+  placement, so the width is a true allotment rather than an accident.
+
+**THE DISCRIMINATOR I SHIPPED WAS INSUFFICIENT AND THIS IS THE REUSABLE PART.** "Does the
+region's own section own the last byte?" answers *can this region name its own end*. It does NOT
+answer *is this end deliberate*. Deliberateness lived in an assertion in a test file, where no
+manifest-level derivation could see it. **Ownership and intent are two questions and only one of
+them is visible in the placement data.**
+
+### A PROVISIONING GAP THAT PRESENTS AS A REGRESSION IN WHATEVER YOU ARE HOLDING (2026-08-30)
+
+**My own script, published as proved, was missing the listings** — the step this file's recipe
+had named in words (*"generate the `.lst` files from master's sigil BEFORE editing anything"*)
+and which I then did not implement.
+
+**How it fails, and it is nasty.** Several port gates resolve a cross-region symbol through
+`listing_symbol_addr(s4.lst, sym)`. A missing listing does not error: the lookup returns `None`,
+no label is pushed, and the failure surfaces later as `unresolved symbol RingSparkle_Spawn for
+fixup in section rings` — **in a test with nothing to do with listings, and reading exactly like
+a regression in the parcel you happen to be holding.** It cost a false attribution and three
+needless reverts: `rings` was reverted for a defect it did not have, and `entity_window` and
+`children` were reverted against a poisoned run before being re-tested properly.
+
+**THE WITNESS I PUBLISHED IS NECESSARY AND NOT SUFFICIENT.** `repin --check` printing
+`pins.rs unchanged` passed on the tree that had NO listings at all. It witnesses that placement
+resolves; it is silent on every artifact the gates read afterwards. **A witness earns only the
+scope of what it touches** — the same limit the aeon lane put on the off-canonical table, now
+demonstrated against my own instrument.
+
+**The stronger control, now in the script:** build both shapes in the provisioned tree and check
+the freshly built ROM against the golden CRC32. Both matched at `def98ee5`. A rebuild landing on
+the frozen CRC cannot be produced by a wrongly provisioned tree, and unlike `pins.rs unchanged`
+it exercises the listings, the generated trees and the sound blob on the way.
+
+**And the process lesson, which is the one I keep re-learning tonight: I had no BASELINE run.**
+With no measurement of this tree before the parcel, every failure was attributable to the parcel
+by default. One clean run on the unconverted tree would have shown `rings` red before I touched
+anything.
+
 ### `AEON_DIR` NEEDS A PROVISIONED WORKTREE, NOT A BARE ONE — AND THE FAILURE LOOKS REAL (2026-08-29)
 
 **Correcting this file's own standing advice.** "Use a plain detached worktree at the goldens'
