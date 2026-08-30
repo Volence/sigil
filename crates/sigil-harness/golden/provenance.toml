@@ -10572,3 +10572,62 @@ demo_debug = "932f496f/101359"
 lean = "454a546c/674830"
 s4 = "5a25a0d4/719355"
 s4_debug = "1131b2bf/736357"
+
+[entry.superseded]
+by = "vertical-bob-attested"
+reason = "entry 192 went RED and can never be attested: 4174 passed / 2 failed, and both failures were ONE RENAME. Item 7 claimed the bob byte from pcfg_pad_29, so sizeof(parallax_config) stayed 30 and no record moved - a rename rather than a growth. The supply fixture caught it in BOTH directions: fixture_covers_every_field_the_structs_declare found parallax_config_pcfg_bob declared but not carried, and sec_field_equ_names_match_the_harvest found parallax_config_pcfg_pad_29 supplied but no longer existing. A rename is precisely what a ONE-directional check passes silently, because the field count never moves and every assertion still has something to point at - that is an addition detector versus a rename detector. Fixed at sigil cd157827, verified red-then-green on a stashed tree rather than accepting a green that could not have been red. NEITHER failure was a baseline artefact: they read struct field DECLARATIONS, not goldens, so the re-baseline could not absorb them and they survived it - aurora's bar, a diff surviving a self-generated baseline is very hard to argue away. THIRD instance in one day of a parcel whose real risk was a NAME rather than a byte, after DPLC_ADDRESSABLE_TILES in collision_data_port and Logic_Tick/Sine_Table in parallax_port. What was green while this was broken: four ROM shapes, byte-identical builds under TWO DIFFERENT assemblers, 1790 python tests, six comptime ensures, and a +40 ROM delta accounted for by two independent derivations agreeing to the byte. All of it blind. Booked as a standing checklist in aeon CODING_CONVENTIONS.md at 25731dfa."
+
+[[entry]]
+name = "vertical-bob-attested"
+ab = "aeon 25731dfa: re-freeze of chain 192's content with entry 192 abandoned red. NO ROM BYTES MOVE from 192 - predicted before building on the grounds that git diff --name-only 8c75722b..25731dfa is exactly one file, CODING_CONVENTIONS.md, a docs file that emits nothing. Content unchanged from 192: EFFECTS-W1 item 7, the vertical bob - a scene-level term on the existing Step-5 vscroll, one packed byte per scene claimed from pcfg_pad_29 so sizeof stays 30 and all twenty shipped records emit the byte they already emitted; phase from Logic_Tick, amplitude from the existing Sine_Table via lea + indexed read with an ARITHMETIC shift because the wave is signed; no multiply. 40 code bytes absorbed by slack - EndOfRom UNMOVED, ROM files +26 each and that +26 is deb2 appendix for one new label. The 40 is accounted for by construction TWO independent ways that share no source: summing the fourteen inserted instructions' 68000 encodings gives exactly 40 with no listing, no baseline and no build involved; and the listing's own label span v_pack 0x6852 to v_bob_none 0x687A is 0x28 = 40. Both agree with the +40 length delta parallax_port reported against the pre-parcel baseline (plain 2322->2362, debug 2470->2510). That account is what explains the delta - the re-baselined run is merely CONSISTENT with it and confirms nothing, because a re-baseline cannot distinguish an artefact from a real defect it has just absorbed. Toolchain nameable: assembler 474a5c03 clean, crc32 669ed658, checksum-verified before use and write-protected; emit_sound_blob pinned by crc32 ed35eae7. NOT VERIFIED: nothing has been seen in motion - no scene authors a bob, so not one instruction of the bobbing path has executed with a non-zero byte behind it, and four green shapes are evidence about the assembler rather than about the feature."
+aeon_rev = "25731dfabf9f2120f878adbd2e027cbdf20fd373"
+note = "goldens byte-identical to `vertical-bob` — this entry exists to abandon it: the fix for what turned its strict run red moved no bytes. supersedes 192; same content, clean attest"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "a7ed4e81"
+full_size = 736725
+anchor_crc = "1450a942"
+anchor_end = 0xa7f40
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "dc997981"
+full_size = 611439
+anchor_crc = "14cb8f18"
+anchor_end = 0x8b9b0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "aca8c043"
+full_size = 96476
+anchor_crc = "1c2b8356"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "932f496f"
+full_size = 101359
+anchor_crc = "b72ccfbe"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "454a546c"
+full_size = 674830
+anchor_crc = "8ce47e87"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "5a25a0d4"
+full_size = 719355
+anchor_crc = "d06c42b3"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "1131b2bf"
+full_size = 736357
+anchor_crc = "c697982c"
+anchor_end = 0xa7f40
