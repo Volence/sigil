@@ -2645,7 +2645,10 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   gated — `section_align::DECLARED` states each section's REQUIRED alignment with its
   source, and `native::validate_declared_alignment` / `validate_resolved_alignment`
   refuse a build that violates one or that leaves a section undeclared, on every shape.
-  Byte-neutral: no consumer reads the declaration for PLACEMENT yet. Remaining (kill):
+  Byte-neutral: no consumer reads the declaration for PLACEMENT yet. — **FLIP WRITTEN
+  2026-08-30** on `parcel/alignment-flip` (proven on its branch + a trial freeze; lands only
+  through the paired aeon+sigil freeze — see `2026-08-30-alignment-flip-packet.md`). What the
+  kill said (kept for the record):
   make `packed_true_bases` align to `required_for(section)` and delete `packed_align_of`
   + `seam2::frozen_prov` — that is byte-MOVING (most sections require 2 and receive 16
   today) and needs a paired aeon+sigil freeze. Note the declaration deliberately lives in
@@ -3443,3 +3446,21 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   the `.lst` dependency written down as a stated external witness rather than left implicit.
   The header fix waits on the sprite-owner freeze, since `repin.toml` is the aeon lane's to
   sequence and a refreeze is in flight)
+- [alignment-flip parcel, 2026-08-30] **`validate_sound_fold` has no witness that makes it
+  FIRE.** The always-on seam2-vs-walk gate is green on every sound-on shape, and its message
+  is exercised nowhere; a doctored `sound_layout` (or a doctored declaration for `Sfx_33`
+  only on one side) would be the red-first. — OPEN (kill: one integration test that makes
+  `[sound.fold-vs-placement]` fire by name)
+- [alignment-flip parcel, 2026-08-30] **`ring_sparkle` has no `repin.toml` region.** The
+  `dust_spindash` allotment used to sweep `dust_puff` + `ring_sparkle` up to `TestStatic_Main`;
+  re-spelled as its own extent, nothing pins `ring_sparkle`'s bytes. — OPEN (kill: a
+  `ring_sparkle` region with a `section:` end, gated like its neighbours)
+- [alignment-flip parcel, 2026-08-30] **`section:<name>` cannot address a section whose NAME
+  the layout holds twice** (`text` names both the `ObjDef_Static` section and a label-less
+  blob), so `objdefs` had to take `len = 0x34`. The head label is unique by construction
+  (the same argument `section_align` makes). — OPEN (kill: a `head:<label>` boundary
+  spelling, or unique section names)
+- [alignment-flip parcel, 2026-08-30] **A map `[[hole]]`'s `at` is shape-invariant only by
+  accident.** With declared alignment the sound-off idle ends at 0x3F0 plain / 0x3F4 demo
+  debug; one `at` per map is a lower bound, not the resume address. aeon's row. — OPEN
+  (kill: per-shape rows, or `at` documented as the interior's right edge only)
