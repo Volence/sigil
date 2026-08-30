@@ -23,6 +23,68 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// What can be said about `DRIFT_RECORD_READER` in the environment this test is running in.
+///
+/// Queue row `SEAM-GATE-DEAD-CLAUSE`. The predecessor of this function was one expression —
+/// `reader.is_empty() || Path::new(&reader).exists() || reader.starts_with('/')` — whose
+/// **third clause made the second dead**: every absolute path passed, existing or not. So a
+/// `DRIFT_RECORD_READER` naming a reader that had been moved or deleted kept this gate green,
+/// which is exactly the silent non-measurement the whole drift lane exists to refuse. The
+/// test's name said the seam was empty, its doc comment said the reader was empty, and its
+/// body asserted neither; three descriptions of three different properties.
+///
+/// The third clause was not a mistake to delete, which is why this is a four-way verdict and
+/// not a tightened one-liner. A fresh checkout and CI have no provisioned reference tree, so
+/// requiring the reader to EXIST would redden them for an absence that is correct there. That
+/// is a real trade, and the resolution is the one this lane applied to the drift report's
+/// tree-state fold the same hour: **name the unprovable case rather than passing it.**
+enum SeamVerdict {
+    /// No reader configured. The seam is genuinely a seam.
+    Empty,
+    /// The reader is there and is a file. The strongest answer this gate can give.
+    Present,
+    /// The reference tree is not provisioned here, so nothing can be concluded. NOT a pass.
+    Unprovable(String),
+    /// The tree IS provisioned and the reader is missing from it, or the path is unusable.
+    Broken(String),
+}
+
+fn seam_verdict(reader: &str) -> SeamVerdict {
+    if reader.is_empty() {
+        return SeamVerdict::Empty;
+    }
+    let p = Path::new(reader);
+    if !p.is_absolute() {
+        // A relative reader is resolved against whatever directory the nightly job happens
+        // to run from, so it is unusable however the tree is provisioned. This is the
+        // "half-configured" case the original message named and never actually caught.
+        return SeamVerdict::Broken(format!(
+            "DRIFT_RECORD_READER = `{reader}` is a RELATIVE path. The nightly job's working \
+             directory is not guaranteed, so this names nothing runnable; an unusable reader \
+             must be empty rather than half-configured."
+        ));
+    }
+    if p.is_file() {
+        return SeamVerdict::Present;
+    }
+    // Absolute and absent. Which of the two very different reasons is it? The containing
+    // directory separates them, and this is the distinction the dead clause erased.
+    match p.parent() {
+        Some(dir) if dir.is_dir() => SeamVerdict::Broken(format!(
+            "DRIFT_RECORD_READER = `{reader}` does not exist, but its directory `{}` DOES. \
+             The reference tree is provisioned and the reader is missing from it, so the \
+             nightly job would report NOTHING MEASURED every night with nothing to say why.",
+            dir.display()
+        )),
+        _ => SeamVerdict::Unprovable(format!(
+            "DRIFT_RECORD_READER = `{reader}` is absent and so is its directory, which is what \
+             an unprovisioned reference tree looks like (a fresh checkout, or CI). This gate \
+             cannot distinguish a correct configuration from a broken one here, so it asserts \
+             NOTHING rather than passing."
+        )),
+    }
+}
+
 /// The `observe` arguments, with the engine-revision flag assembled rather than
 /// written. See the call site for why the literal must not appear in this file.
 fn observe_args(ledger: &Path) -> Vec<String> {
@@ -171,11 +233,17 @@ fn the_record_seam_is_empty_and_absence_is_not_a_pass() {
         .trim()
         .trim_matches('"')
         .to_string();
-    assert!(
-        reader.is_empty() || Path::new(&reader).exists() || reader.starts_with('/'),
-        "DRIFT_RECORD_READER = `{reader}` names nothing runnable; an unusable reader must \
-         be empty rather than half-configured"
-    );
+    match seam_verdict(&reader) {
+        SeamVerdict::Empty | SeamVerdict::Present => {}
+        // NAMED, NOT PASSED. The reference tree is not provisioned here, so this gate
+        // cannot tell a correct configuration from a broken one — and it says so on
+        // stdout rather than going green. See `seam_verdict` for why this is not an
+        // assertion.
+        SeamVerdict::Unprovable(why) => {
+            println!("COULD NOT MEASURE the record seam: {why}");
+        }
+        SeamVerdict::Broken(why) => panic!("{why}"),
+    }
 
     let ledger = std::env::temp_dir().join(format!("sigil_drift_seam_{}.jsonl", std::process::id()));
     let _ = std::fs::remove_file(&ledger);
@@ -223,6 +291,71 @@ fn the_record_seam_is_empty_and_absence_is_not_a_pass() {
 /// of the job across everything executable, and require each one to be a document or
 /// the job's own runner unit. A future parcel that wires the job into a test binary, a
 /// build script or the source-gate lane's list trips this.
+#[test]
+fn the_seam_verdict_separates_absent_from_broken() {
+    // THE CASE THE DEAD CLAUSE ERASED, and the reason this test exists. Both of these are
+    // absolute paths that do not exist; the predecessor expression passed BOTH because
+    // `starts_with('/')` was true of both. They are opposite situations.
+    let base = std::env::temp_dir().join(format!("sigil_seam_probe_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).expect("COULD NOT MEASURE: no temp dir");
+
+    let missing_from_a_real_dir = base.join("drift_record.py");
+    match seam_verdict(&missing_from_a_real_dir.display().to_string()) {
+        SeamVerdict::Broken(why) => {
+            assert!(
+                why.contains("directory") && why.contains("DOES"),
+                "a provisioned tree missing its reader must say so: {why}"
+            );
+        }
+        other => panic!(
+            "a reader missing from a directory that EXISTS is broken, not tolerable (got {})",
+            verdict_name(&other)
+        ),
+    }
+
+    let no_tree_at_all = base.join("not-provisioned").join("drift_record.py");
+    match seam_verdict(&no_tree_at_all.display().to_string()) {
+        SeamVerdict::Unprovable(why) => {
+            assert!(
+                why.contains("asserts") && why.contains("NOTHING"),
+                "an unprovisioned tree must say it concluded nothing: {why}"
+            );
+        }
+        other => panic!(
+            "an unprovisioned reference tree is unprovable, not a pass and not a failure \
+             (got {})",
+            verdict_name(&other)
+        ),
+    }
+
+    // The two ends, so the verdict is not merely good at its middle.
+    assert!(matches!(seam_verdict(""), SeamVerdict::Empty));
+    let real = base.join("real.py");
+    std::fs::write(&real, "#\n").expect("COULD NOT MEASURE: could not write probe");
+    assert!(matches!(
+        seam_verdict(&real.display().to_string()),
+        SeamVerdict::Present
+    ));
+    // A relative reader is unusable however the tree is provisioned — the "half-configured"
+    // case the original message named and never caught, because it never reached the check.
+    assert!(matches!(
+        seam_verdict("tools/drift_record.py"),
+        SeamVerdict::Broken(_)
+    ));
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+fn verdict_name(v: &SeamVerdict) -> &'static str {
+    match v {
+        SeamVerdict::Empty => "Empty",
+        SeamVerdict::Present => "Present",
+        SeamVerdict::Unprovable(_) => "Unprovable",
+        SeamVerdict::Broken(_) => "Broken",
+    }
+}
+
 #[test]
 fn no_landing_path_invokes_the_drift_job() {
     let ws = workspace();
