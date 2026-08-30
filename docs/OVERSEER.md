@@ -167,6 +167,84 @@ revival condition standing over the R6 region-end conversion wave (~80 pairs): t
 bootstrap left to revive, and no path from a region length to an emitted byte. The wave now
 needs nothing but each region's own port gate.
 
+### A HAND-WRITTEN "RERUN THESE TESTS" HINT THAT NOTHING CHECKS — 190 of 412 (2026-08-29)
+
+`repin.toml`'s per-symbol `tests = [...]` is read in exactly ONE place —
+`repin.rs:167-186` — and only after a pin has already been found to have drifted. It feeds a
+printed line:
+
+    rerun hint (affected binaries first, full workspace once at the end):
+      dma_queue_port
+
+**That is its whole behaviour.** It gates nothing, selects nothing that runs, and does not
+affect `pins.rs` generation. Nothing fails if it is incomplete, so it **cannot be wrong out
+loud**.
+
+**Measured:** 190 of the 412 symbol rows carrying a `tests` list omit at least one test binary
+that carries the label. *Honest bound: the sweep matches a quoted symbol name anywhere under
+`crates/sigil-cli/tests/`, so it is an UPPER bound and some hits will be comments or unrelated
+uses. The mechanism and the `DMA_Overflow_Count` instance below are source-confirmed; the 190
+is not.*
+
+**The source-confirmed instance.** `DMA_Overflow_Count` declares `tests = ["dma_queue_port"]`
+(`repin.toml:1888`) while three tests carry its label row off the one shared pins constant —
+`dma_queue_port:139`, `dplc_port:471`, `bg_anim_port:404`. All three lower
+`engine/system/dma_queue.emp` through a real `flip_lower_and_place`, verified by reading the
+enclosing block rather than the grep line.
+
+**The cost is deferred and lands on a person.** When such a pin drifts, repin names one binary
+while three are affected; someone reruns the one, sees green, and two stale port tests are
+never examined. The consuming lane's own words for why this reaches them: *"a rerun hint naming
+one binary is read as a complete instruction, not as a hint."*
+
+**Same unexecuted-prose class as the comment and stale-booking sweeps, arriving on the one
+artifact shaped like help rather than like a claim.** Booked as `REPIN-TESTS-HINT-UNDERLISTED`.
+
+### A CONTROL SAYS YOUR MODEL AND THE WORLD DISAGREE — NOT WHICH ONE IS WRONG (2026-08-29, aeon's formulation of their own error)
+
+Found in the same exchange and worth more than the row. The aeon lane predicted
+`DMA_Overflow_Count`'s single-test row should be red or wrong, ran the control, and found it
+green. They concluded *the field must answer a different question* — when the truth was *the
+field has no teeth*. They took the committed row as the fixed point **because it was committed,
+shipped and green, which are the three properties an unfalsifiable field has for free.**
+
+The step neither lane had run is the cheap one: **grep for what CONSUMES the field.** A
+precedent is only evidence if something could have contradicted it.
+
+**And the direction cuts against a bar both our files carry.** The
+*convenient-result-is-a-trigger* instinct did NOT apply: the satisfying answer was the true
+one, and deference to a committed artifact is what nearly lost it. **Suspicion of one's own
+cleverness is not a general-purpose instrument** — it can be pointed the wrong way, and here it
+was.
+
+### THE PORT HARNESS DOES NOT RESOLVE RAM SYMBOLS BY REGION — enumerated for the next cross-seam parcel (2026-08-29)
+
+Answering the question chains 182 and 184 each discovered at `--attest`, after the freeze was
+committed and pushed. **Every cross-seam address symbol is HAND-LISTED by name** in each port
+test's `addr_labels()` as a `Vec<(&str, u32)>`, and each row becomes its own synthetic one-byte
+section — `cpu 68000 / phase $VMA / <name>: / dc.b 0` — pinned at a per-shape VMA from `pins::`.
+**A name absent from that table is an unresolved external.** New names in an existing region get
+nothing for free; symbol WIDTH is irrelevant, since the carrier emits `dc.b 0` whatever the real
+type is.
+
+**Three sites per new symbol:** a `[[symbol]]` block in `repin.toml`; a `pins.rs` constant that
+repin resolves from aeon's listings (`debug_only = true` yields a bare `pub const NAME: u32`,
+not a `Pin`, and belongs in the `if debug { }` branch); and a table row in **every** consuming
+test.
+
+**The enumeration that matters is which tests LOWER the module, not which tests name the
+symbol.** Measured:
+
+| module | tests that lower it |
+|---|---|
+| `engine/system/dma_queue.emp` | `dma_queue_port`, `dplc_port`, `bg_anim_port` |
+| `engine/system/vblank.emp` | `vblank_port`, `game_loop_port`, `load_art_port` |
+
+**Sequencing:** `repin.toml` rows can be written in advance; `pins.rs` VALUES cannot, because
+repin resolves them out of aeon's listings — so the parcel must build and emit listings first.
+A parcel that also GROWS a lowered routine hits region byte gates in every lowerer, not merely
+unresolved externals — a byte-gate re-prove, not a table row.
+
 ### `AEON_DIR` NEEDS A PROVISIONED WORKTREE, NOT A BARE ONE — AND THE FAILURE LOOKS REAL (2026-08-29)
 
 **Correcting this file's own standing advice.** "Use a plain detached worktree at the goldens'
@@ -2196,6 +2274,21 @@ used to re-read it. Neither number was wrong; neither said which it was.)*
 The standing sigil-native arc is the **`.emp` language work (Spec 2)** — specs in
 `empyrean/docs/SIGIL_*.md`. The whole sound stack is sigil-native, the language round
 + §17 optimization arc + conversion tail are done, and the map drives the build.
+
+### REPIN-TESTS-HINT-UNDERLISTED — a hint nothing can contradict, 190 of 412
+
+`repin.toml`'s per-symbol `tests = [...]` feeds one printed rerun hint after a pin drifts
+(`repin.rs:167-186`) and nothing else. It gates nothing, so an incomplete list cannot fail.
+**190 of 412 rows omit at least one consuming test binary** — upper bound; mechanism and the
+`DMA_Overflow_Count` instance are source-confirmed, the count is a name-anywhere grep and needs
+narrowing to actual `addr_labels` rows before it is quoted as fact.
+
+**The fix is not editing 190 rows by hand** — that is a population to maintain whose failure
+mode is "green because nobody maintained it", which this file rejects twice elsewhere. Prefer
+deriving the list, or gating it: the consuming set is mechanically discoverable (which tests
+lower the module / carry the label), so the honest shape is a check that the declared list
+matches the derived one, or dropping the field for a derived hint. Full detail and the two
+method findings are in the dated section above.
 
 ### PROVENANCE-REV-REACHABILITY — LANDED. The ledger now judges the revisions it records
 
