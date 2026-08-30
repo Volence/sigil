@@ -3605,6 +3605,15 @@ is not run against the parser is unexecuted prose with a repair's confidence att
 family as the rerun hint nothing checks and the booking nothing executes, except that this one
 was authored **as a correctness act**, which is exactly the moment the check gets skipped.
 
+**CLOSED FORWARD, NOT REPAIRED (2026-08-30).** `d-16-answered` is appended: a conforming re-file
+of `d-16` under the amended 8c, supplying `name` on each of the three options and rule 8d's
+`answered` block (`by: hub`, `chose: remove`, `said: null` — the hub ruled, so there are no owner
+words to quote). Question, options and recommendation are reproduced from `d-16` unchanged.
+**The three malformed lines stay exactly as written** — verified append-only, one line added and
+zero removed — and remain on the do-not-repair list above. Both instruments agree the ledger is
+now **17 lines / 14 parse / 3 rejected**. The ruling taken in the owner's place is now visible to
+the person it was made for, which is the whole point of it being reversible.
+
 **Operationally, from here: `tools/decisions_reader_audit.py` runs before any decision entry is
 appended, not after.** The tool existing changes nothing on its own; what closes this is running
 it at the write site, which is the same conclusion this file reached about `refreeze`'s teeth
