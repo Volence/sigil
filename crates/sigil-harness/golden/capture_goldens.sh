@@ -31,10 +31,41 @@
 #   SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \
 #   AEON_DIR=/path/to/aeon ./capture_goldens.sh [--write]
 #     --write  freeze each fresh full file into this golden dir as a committed blob.
+#              REFUSED unless SIGIL_GOLDEN_WRITE says which kind of write this is; see
+#              THE WRITE GATE below. Without --write nothing is replaced: the script
+#              captures and reports CRCs, which is what most hand runs actually want.
 #
 # Under --write the committed blobs are replaced only once ALL SEVEN have been captured,
 # through the staged commit in atomic_freeze.sh — read its header for exactly what a kill
 # at each point leaves behind, which is the reason the write path is not a bare `cp`.
+#
+# THE WRITE GATE. The committed goldens are the measuring instrument every byte gate and
+# every paired freeze reads. `refreeze --freeze` moves them through a ritual that leaves a
+# completion journal and a provenance entry naming the parcel and the aeon revision they
+# were built from; THIS SCRIPT run by hand moves the same bytes and leaves neither. The
+# two are one flag apart, so the hand form is refused unless the operator says in the
+# environment which one it is:
+#
+#   SIGIL_GOLDEN_WRITE=refreeze      set by `refreeze` on the child it spawns.
+#   SIGIL_GOLDEN_WRITE=unjournalled  the operator's own acknowledgement. Recorded, before
+#                                    anything is built, in THE HAND-WRITE TRACE below.
+#
+# Nothing here stops an operator from spelling `refreeze` by hand: no shell gate can tell
+# a forged caller from a real one. What it does is make the silent path a deliberate act
+# instead of a slip of one flag, and give the deliberate act somewhere to leave a mark.
+#
+# THE HAND-WRITE TRACE is `.unjournalled-write` beside the blobs. Every acknowledged hand
+# write appends to it, and if it cannot be appended to, the run is REFUSED — the whole
+# point of the acknowledgement is the record, so a write that cannot be recorded does not
+# happen. Every --write run prints it when it is present, so a later freeze reports the
+# hand writes this checkout's goldens carry. It is untracked and it is never removed by a
+# later journalled freeze: the record of a hand write outlives the blobs it wrote, and
+# only a person can say it has been accounted for.
+#
+# ITS ABSENCE PROVES NOTHING, and must not be read as "no hand write happened". It is
+# checkout-local and untracked, so a fresh clone starts without one; a hand write in
+# another checkout leaves nothing here; and a forged `refreeze` leaves nothing anywhere.
+# It is evidence when present, and silence otherwise.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -44,6 +75,87 @@ SIGIL_ROOT="$(cd "$HERE/../../.." && pwd)"
 AEON="${AEON_DIR:-/home/volence/sonic_hacks/aeon}"
 WRITE=0
 [[ "${1:-}" == "--write" ]] && WRITE=1
+
+# The hand-write trace: one file beside the blobs, appended to by every acknowledged hand
+# write. See THE HAND-WRITE TRACE in the header for what its presence and its absence each
+# mean.
+UNJOURNALLED_TRACE="$HERE/.unjournalled-write"
+
+# trace_line <text> — append one stamped line. Returns non-zero if it cannot be written,
+# which the caller turns into a refusal rather than an unrecorded write.
+trace_line() {
+    printf '%s  %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >> "$UNJOURNALLED_TRACE"
+}
+
+# who <field> <command...> — a record field, or the field named as unresolved. A field
+# that renders empty when its command is missing reads as "nobody", which is a stronger
+# claim than the record is entitled to make.
+who() {
+    local label="$1"; shift
+    local v; v="$("$@" 2>/dev/null)" || v=""
+    printf '%s=%s' "$label" "${v:-<unresolved>}"
+}
+
+# THE WRITE GATE, consulted before AEON_DIR and SIGIL_EMIT. It is about intent rather than
+# environment, so it costs nothing to ask first — and asking first is what makes it
+# provable without a provisioned aeon tree and without a single ROM being built.
+if [[ "$WRITE" == "1" ]]; then
+    case "${SIGIL_GOLDEN_WRITE:-}" in
+    refreeze)
+        ;;
+    unjournalled)
+        # Recorded BEFORE anything is built. A run killed later then leaves a line for a
+        # write that never landed, which overstates; the alternative understates, and
+        # under-reporting a golden write is the defect this gate exists to close.
+        if ! trace_line "started    $(who user id -un)  $(who host uname -n)  $(who sigil git -C "$HERE" rev-parse --short HEAD)  cwd=$PWD  AEON_DIR=${AEON_DIR:-<unset>}"; then
+            echo "ERROR: cannot record this hand write in $UNJOURNALLED_TRACE." >&2
+            echo "       An acknowledged hand write is allowed BECAUSE it is recorded, so a" >&2
+            echo "       write that cannot be recorded does not happen. Fix the path (a" >&2
+            echo "       read-only golden directory is the usual cause) and re-run." >&2
+            exit 1
+        fi
+        echo ">> UNJOURNALLED WRITE acknowledged — recorded in $UNJOURNALLED_TRACE"
+        ;;
+    *)
+        cat >&2 <<GATE
+ERROR: refusing an unjournalled golden write.
+
+  --write replaces the committed golden blobs in
+    $HERE
+  and those blobs are the measuring instrument every byte gate and every paired freeze
+  reads. Moved from here, they move with no journal and no provenance entry: nothing in
+  the tree records that the bar moved, or which aeon revision it was built from.
+
+  THE JOURNALLED PATH runs this script for you, then the size tables, then the pins, then
+  the provenance append — and records each step as it completes:
+
+    SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \\
+    SIGIL_BUILD=<sigil>/target/release/sigil \\
+    AEON_DIR=<clean checkout of a committed aeon SHA> \\
+      cargo run -p sigil-harness --bin refreeze -- \\
+        --freeze <parcel-name> --ab <A/B-evidence-ref>
+
+  TO CAPTURE AND COMPARE WITHOUT MOVING ANYTHING, drop --write. The CRCs are printed
+  either way; only --write replaces a blob.
+
+  TO WRITE THE GOLDENS BY HAND ANYWAY, say so. The run is then recorded in
+  $UNJOURNALLED_TRACE:
+
+    SIGIL_GOLDEN_WRITE=unjournalled ./capture_goldens.sh --write
+GATE
+        exit 1
+        ;;
+    esac
+    # Printed on EVERY write run, journalled or not: a freeze should say what hand writes
+    # the goldens it is about to replace were carrying.
+    if [[ -e "$UNJOURNALLED_TRACE" ]]; then
+        echo ">> NOTE: this checkout's goldens carry hand writes recorded in $UNJOURNALLED_TRACE:"
+        sed 's/^/     /' "$UNJOURNALLED_TRACE" || true
+        echo "   A journalled freeze does not remove that file. Remove it by hand once the"
+        echo "   writes above are accounted for."
+    fi
+fi
+
 [[ -d "$AEON" ]] || { echo "ERROR: AEON_DIR not a dir: $AEON"; exit 1; }
 if [[ -z "${SIGIL_EMIT:-}" || ! -x "${SIGIL_EMIT:-}" ]]; then
     echo "ERROR: set SIGIL_EMIT to <sigil>/target/release/emit_sound_blob (sound-on builds need it)."
@@ -169,6 +281,11 @@ capture_config lean.bin      --lean      s4.bin        s4.lst
 if [[ "$WRITE" == "1" ]]; then
     freeze_commit
     echo ">> frozen: the committed goldens are this capture's set"
+    # The second half of a hand write's record, written where the blobs actually moved.
+    # The `started` line above says one was attempted; this one says one landed.
+    if [[ "${SIGIL_GOLDEN_WRITE:-}" == "unjournalled" ]]; then
+        trace_line "committed  the seven committed goldens are this hand run's capture" || true
+    fi
 fi
 
 # RESTORE the canonical aeon references clobbered by Config-A/B/lean.
