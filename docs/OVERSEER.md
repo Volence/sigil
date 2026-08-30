@@ -335,6 +335,51 @@ re-examine. Note this is the mirror of *a stated MECHANISM absorbs rather than c
 the controller's story overrode the agent's evidence; here the responder's confidence overrode
 the reporter's own doubt.
 
+### R6 PROVISIONING IS DONE AND THE POPULATION IS ENUMERATED (2026-08-30)
+
+`scripts/provision-aeon-ref.sh` replaces the paragraph nobody should re-derive under time
+pressure. Reference tree at aeon `def98ee5` (the `aeon_rev` pinned by the provenance tail,
+verified reachable from `origin/master` with `ls-remote`, never a tracking ref), living
+OUTSIDE both repos at `../.aeon-r6` so it cannot pollute either git status.
+
+**The positive witness is `repin --check` printing `pins.rs unchanged`, and it passed — twice,
+the second time by running the script's own printed instruction rather than trusting that the
+instruction was right.** A wrongly provisioned tree CANNOT reproduce the pinned revision's
+placement, so an unchanged pin file is a positive result, not an absence. All four reference
+ROMs verified by CRC32+size against the provenance tail before use.
+
+**What the ~200-failure trap actually looks like, measured rather than quoted:** it does NOT
+present as divergence. The gate named its own missing inputs — `no module
+`engine.compression_vectors`` plus five `[embed.not-found]` lines pointing at
+`engine/debug/generated/`. Honest, once you run one targeted test instead of the whole suite.
+The three generation steps the real `build.sh` uses are salvador (`make -C tools/salvador`),
+`tools/gen_compression_vectors.py`, and `emit_sound_blob` for the sound tree; `repin` resolves
+sound-ON and names `SIGIL_EMIT` itself when it is unset.
+
+**THE POPULATION IS 50, NOT 51 AND NOT ~80 — and I got it wrong twice on the way here.** The
+board said "~80". A `grep -c` said 51 and was published as a correction. The structured parse
+says **50**: the 51st hit is `repin.toml:39`, a line in the manifest's own header COMMENT
+explaining the syntax. **Counting a documentation line as a member of the population it
+documents** is the same unexecuted-prose family as the rest of this file's sweep, arriving on
+my own correction of a stale number. The reusable form: **a `grep -c` counts a spelling, not a
+population; parse the structure when the number is going to be quoted.**
+
+**The 50 split by what the last byte belongs to, which decides the work:**
+
+- **47 straightforward** — the region's own section owns the last byte, so `end =
+  "section:<name>"` is a pure re-spelling. Gaps run 2 to 32 bytes.
+- **3 need care** — the last byte belongs to a DIFFERENT section: `objdefs` → `text`,
+  `dust_spindash` → `ring_sparkle`, `player_climb` → `player_instashield`. `objdefs` → `text`
+  is the ambiguous-ownership case R6 already ruled on: **an unresolvable owner is dropped,
+  never attributed.**
+
+**Sequencing note for whoever converts:** a conversion SHRINKS a pin length by the gap, so
+`pins.rs` changes and `repin --check` goes red until repin rewrites it. That is expected and is
+NOT a paired freeze: a pin length reaches no emitted byte, and since `5babb3ea` no region length
+has any reader outside tests. The 82 warning lines cover these 50 regions across both shapes;
+remember the meter is an ADDRESS comparison and is blind to the flush cases, so **do not treat
+the warning list as the whole population** without the `section_label_owners` derivation.
+
 ### `AEON_DIR` NEEDS A PROVISIONED WORKTREE, NOT A BARE ONE — AND THE FAILURE LOOKS REAL (2026-08-29)
 
 **Correcting this file's own standing advice.** "Use a plain detached worktree at the goldens'
