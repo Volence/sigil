@@ -161,6 +161,34 @@ on every run rather than letting a reader assume durability. If step 4's answer 
 defensible months from now, the ledger wants a committed home; that is a decision, not an
 oversight, and it is unmade.
 
+### A BASELINE CAN MOVE UNDER AN IN-FLIGHT AGENT, AND ITS REPORT WILL BE SELF-CONSISTENT AND STALE (2026-08-30)
+
+**Live instance, caught before it landed.** An agent was dispatched with the four golden CRCs
+written into its brief as *"the current goldens, which you should match"*, and told to report
+BLOCKED if the bytes moved. While it worked, the aeon lane froze chain 189 and **two of those four
+goldens moved** (`s4 6e2f9b22 -> 63451f96`, `s4.debug 6516fc68 -> 3aa7cb12`).
+
+**Nothing about the agent's run becomes wrong, and that is exactly the hazard.** Its worktree
+branched before the freeze, `provision-aeon-ref.sh` defaults to the aeon revision pinned by the LAST
+entry of ITS `provenance.toml` — the pre-freeze one — so it builds the old revision, compares against
+the old goldens, and correctly reports a match. **Self-consistent, correctly derived, and citing
+numbers that are no longer current.** There is no failing check anywhere in that chain: not in the
+agent, not in the wrapper, not in the goldens.
+
+**So byte-neutrality proven against a baseline is a claim about THAT baseline, not about master.**
+The parcel changes no bytes, so it *should* reproduce the new goldens at the new aeon revision — but
+that is an INFERENCE, and the whole point of a byte gate is that inference is what it replaces.
+
+**The rule: when the baseline moves under an in-flight agent, the merge is not a merge.** Merge
+master into the branch and **re-run the four-shape build against the NEW goldens at the NEW aeon
+revision** before landing. This is the one case where "re-verify on the merged tree" is load-bearing
+rather than ceremony — normally it re-proves a combination nobody changed; here the baseline
+genuinely moved, and the agent structurally could not see it.
+
+**Do not fix this by messaging the agent mid-flight.** Its fixed baseline is what makes its report a
+clean byte-neutrality proof; moving the target underneath it buys a re-run and loses the control.
+The correction belongs at the merge, which is the controller's job and not the agent's.
+
 ### THE DRIFT KEY MISSES ON DOCS-ONLY COMMITS — RULED: KEEP THE KEY, MAKE THE MISS NAME ITSELF (2026-08-30)
 
 **The engine lane found it in their own half and refused to patch it**, correctly, because the fix
