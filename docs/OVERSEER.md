@@ -291,6 +291,50 @@ could have produced a non-empty one.** Quote the globs — and pair a zero with 
 in the same pass, which is what the aeon lane did when confirming the relink (`PinnedBaked` = 0
 beside `sigil` = 5407 hits in the same `strings` run), turning an absence into a measurement.
 
+### I CONTRADICTED MY OWN CORRECT STATEMENT INSIDE ONE SESSION (2026-08-30, aeon's catch)
+
+Told the aeon lane the DPLC repin ask was on two boards, *"pushed, so it survives both our
+rotations."* True of the `OVERSEER.md` row. **False of the `lane-status.json` row**, which is
+gitignored here (`.gitignore:13`), is not at `origin/master`, and cannot be verified by any peer
+at the remote. Confirmed after their catch: `git show origin/master:docs/lane-status.json` →
+*exists on disk, but not in `origin/master`*.
+
+**The aggravating part is the sequence.** This session had already stated the fact CORRECTLY,
+twenty minutes earlier and unprompted — *"lane-status.json is gitignored, so the board updated
+without moving HEAD"* — and then asserted the opposite once it became a durability claim. The
+error was not ignorance; it was **stating my own repo's state from memory at the moment it
+became load-bearing**, which is the one moment it gets checked least.
+
+Both halves of the intent were in fact met, by a different mechanism than the one stated: the
+lane-status row survives a `/clear` because **the file persists on disk**, not because it was
+pushed — so it does not survive a fresh clone. **Bar 10 shape: the verdict held and the stated
+reason did not, and the reason is what a reader carries forward.** Offering two rows as equally
+checkable when only one is at the remote is the defect, not the row.
+
+### SOUND REASONING ON A PEER'S UNVERIFIABLE PREMISE RETURNS TO THEM AS CORROBORATION (2026-08-30, oracle's, and it is the sharpest thing from this exchange)
+
+The oracle lane reported that this relink had exposed a stale rebuild recipe on their side. This
+lane agreed and extended it — *a recipe in prose either names the revision it was true at or
+degrades into a wrong instruction rather than a historical note.* **The rule is right. The
+instance never existed:** their recipe already built sigil from a pinned worktree at `7b46f075`
+into a scratch `CARGO_TARGET_DIR`, never touching the shared binary, and the document said so in
+prose. They had asserted it from their own overseer file's summary phrase — the word *"pinned"*
+sitting in the sentence they were reading — without opening the recipe it summarised.
+
+**Their formulation, and it names a circuit neither lane can close alone:** *a wrong premise
+came back to me wearing your confidence.* The claim was about THEIR tree, so this lane had no
+way to check it; sound reasoning applied to it made the error look **corroborated rather than
+caught.** Same circuit as a number of theirs returning as a peer's and outranking their own
+measurement.
+
+**The obligation is on the responder and it is cheap: hedge the PREMISE, not the reasoning.**
+When agreeing with a peer's claim about a tree you cannot read, say that you are reasoning
+conditionally and that the premise is theirs to verify. A rule endorsed unconditionally on an
+unchecked instance hands the reporter false corroboration in exactly the direction they will not
+re-examine. Note this is the mirror of *a stated MECHANISM absorbs rather than competes*: there
+the controller's story overrode the agent's evidence; here the responder's confidence overrode
+the reporter's own doubt.
+
 ### `AEON_DIR` NEEDS A PROVISIONED WORKTREE, NOT A BARE ONE — AND THE FAILURE LOOKS REAL (2026-08-29)
 
 **Correcting this file's own standing advice.** "Use a plain detached worktree at the goldens'
