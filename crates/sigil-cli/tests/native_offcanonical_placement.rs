@@ -184,15 +184,16 @@ fn ram_packing_invariants_debug() {
     ram_packing_invariants(true);
 }
 
-/// t24 — the table's TWO authorities under packed placement (Wave-B B-0):
-/// (a) an ISLAND ANCHOR is load-bearing — doctoring `ObjCodeBase` (+2) MUST move the
-///     ROM (or fail to resolve): a corrupted anchor cannot be silently absorbed;
-/// (b) a CONTIGUOUS entry is deliberately INERT — doctoring `HeightMaps` (+2) MUST
-///     leave the ROM byte-identical (bases repack from live sizes; a stale contiguous
-///     address is exactly what the packing walk immunizes against).
+/// t24 — the frozen table is NOT a placement input for either kind of row:
+/// (a) an ISLAND row doctored (+2) stops being an island (islands are map anchors) and
+///     the section packs to its DECLARED alignment, which for the object bank is the
+///     same 0x10000 — the ROM stays byte-identical;
+/// (b) a CONTIGUOUS entry is INERT — doctoring it (+2) leaves the ROM byte-identical
+///     (bases repack from live sizes; a stale contiguous address is exactly what the
+///     packing walk immunizes against).
 /// (Condition-3 control from the S1.2 size-capture handoff, re-scoped for packing.)
 #[test]
-fn config_b_doctored_size_table_breaks_the_build() {
+fn config_b_doctored_size_table_moves_no_bytes() {
     let Some(aeon) = reference_tree_for_profile(&native::config_b_profile()) else {
         return;
     };
@@ -234,23 +235,26 @@ fn config_b_doctored_size_table_breaks_the_build() {
         "control: undoctored config_b anchor must match the golden"
     );
 
-    // (a) Doctor an ISLAND ANCHOR (+2) and rebuild. The packing walk anchors the object
-    // bank at the table address, so the ROM MUST diverge (or fail to resolve).
+    // (a) Doctor the ISLAND ANCHOR's frozen row (+2) and rebuild. The frozen row is not
+    // the anchor authority: an island is a section whose provisional base IS a map
+    // `[[anchor]]`, so the doctored 0x10002 is no anchor at all and the object bank packs
+    // as a chained section — to `align_up(running, 0x10000)`, its declared alignment
+    // (`section_align::OBJ_BANK_64K`), which is 0x10000 again. The ROM MUST be
+    // byte-identical: neither the island's address nor its alignment came from the
+    // table. (That the map anchor itself is load-bearing — held absolute, overrun
+    // refused — is `native::derived_layout_tests::growth_into_a_declared_anchor_still_fails_loud`
+    // and `stale_provisional_gap_is_an_island_only_when_declared`.)
     let mut profile = native::config_b_profile();
     let probe = "ObjCodeBase";
     *profile.frozen_sizes.get_mut(probe).unwrap_or_else(|| panic!("{probe} not in table")) += 2;
-    match native::build_rom_chained(&aeon, &profile) {
-        Err(_) => { /* a resolve failure is a loud catch — acceptable */ }
-        Ok(doctored) => {
-            let diverges = doctored.len() != base.len()
-                || (0..eor.min(doctored.len())).any(|i| !header(i) && doctored[i] != golden[i]);
-            assert!(
-                diverges,
-                "t24: doctoring the island anchor `{probe}`+2 left the ROM byte-identical to \
-                 the golden — the anchor authority is NOT load-bearing (the gate would be vacuous)"
-            );
-        }
-    }
+    let doctored = native::build_rom_chained(&aeon, &profile)
+        .unwrap_or_else(|e| panic!("a doctored island row must still build (the map anchors, the declaration aligns): {e}"));
+    assert!(
+        doctored.len() == base.len()
+            && (0..eor).all(|i| header(i) || doctored[i] == golden[i]),
+        "doctoring the island row `{probe}`+2 moved the ROM — the frozen table is still a \
+         placement input for the object bank (its anchor is the map's, its alignment the declaration's)"
+    );
 
     // (b) Doctor a CONTIGUOUS entry (+2): packing must ignore it — byte-identical build.
     //
