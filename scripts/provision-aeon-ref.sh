@@ -31,11 +31,26 @@ m = re.findall(r'aeon_rev = "([0-9a-f]{40})"', last)
 print(m[0] if m else "", end="")
 PY
 }
-REV="${2:-$(pinned_rev)}"
+PINNED="$(pinned_rev)"
+REV="${2:-$PINNED}"
 [ -n "$REV" ] || { echo "ERROR: no aeon_rev in the provenance tail and none given" >&2; exit 1; }
+
+# WHETHER THE GOLDEN CONTROL APPLIES IS DERIVED FROM THE REVISION, not from a flag.
+# The control in step 6 asserts that a ROM built here matches the frozen golden, which
+# is only a control at the PINNED revision: at any other revision the goldens describe
+# different source and a difference is the expected outcome, not a fault. Deriving it
+# means no caller can silence a real failure by passing an opt-out, and the nightly
+# drift job — which provisions at the engine lane's LIVE TIP on purpose — is not
+# refused for being what it is.
+if [ "$REV" = "$PINNED" ]; then
+  CONTROL=required
+else
+  CONTROL=not-applicable
+fi
 
 echo "==> reference tree : $W"
 echo "==> aeon revision  : $REV"
+echo "==> golden control : $CONTROL (pinned revision is ${PINNED:-none})"
 
 # 1. The revision must be REACHABLE FROM THE REMOTE, read with ls-remote at
 #    measurement time. A local tracking ref is a cached answer that goes stale
@@ -101,6 +116,11 @@ fi
 #    consumed by other lanes and moving it is a broadcast-worthy act.
 echo "==> emit_sound_blob + engine/sound/generated"
 REF_TARGET="${REF_TARGET:-$SIGIL_ROOT/../.sigil-ref-target}"
+# The assembler that runs is a BUILD INPUT this repo does not pin: it comes from the
+# environment. SIGIL_BIN lets a caller name the binary it actually wants judged —
+# the nightly drift job builds its own into a dedicated target dir and hands it here,
+# rather than picking up whatever a shared checkout last relinked.
+SIGIL_BIN="${SIGIL_BIN:-$SIGIL_ROOT/target/release/sigil}"
 mkdir -p "$REF_TARGET" "$W/engine/sound/generated"
 ( cd "$SIGIL_ROOT" && CARGO_TARGET_DIR="$REF_TARGET" cargo build --release --bin emit_sound_blob )
 
@@ -113,19 +133,22 @@ mkdir -p "$REF_TARGET" "$W/engine/sound/generated"
 #    parcel you happen to be holding, and it cost this lane a false attribution
 #    and three needless reverts before the cause was found.
 #
-#    Building them is also the STRONGEST control available: a ROM built here from
-#    the pinned source must match the golden CRC32 byte for byte.
+#    At the PINNED revision, building them is also the STRONGEST control available: a
+#    ROM built here from the pinned source must match the golden CRC32 byte for byte.
+#    At any OTHER revision that comparison is not a control and its failure is not a
+#    fault — the goldens describe different source — so the CRCs are printed as data
+#    and nothing is asserted. Which of the two applies is derived from $REV above.
 echo "==> building both shapes to emit the listings (and to control the ROMs)"
-( cd "$W" && SIGIL_BUILD="$SIGIL_ROOT/target/release/sigil" \
+( cd "$W" && SIGIL_BUILD="$SIGIL_BIN" \
     SIGIL_EMIT="$REF_TARGET/release/emit_sound_blob" NO_LINT=1 ./build.sh >/dev/null 2>&1 )
-( cd "$W" && DEBUG=1 SIGIL_BUILD="$SIGIL_ROOT/target/release/sigil" \
+( cd "$W" && DEBUG=1 SIGIL_BUILD="$SIGIL_BIN" \
     SIGIL_EMIT="$REF_TARGET/release/emit_sound_blob" NO_LINT=1 ./build.sh >/dev/null 2>&1 )
 for l in s4.lst s4.debug.lst; do
   [ -s "$W/$l" ] || { echo "ERROR: $l was not produced; port gates will fail misleadingly" >&2; exit 1; }
 done
-python3 - "$GOLDEN" "$W" <<'PY2'
+python3 - "$GOLDEN" "$W" "$CONTROL" <<'PY2'
 import re, sys, zlib, pathlib
-golden, w = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+golden, w, control = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3]
 last = (golden / "provenance.toml").read_text().split('[[entry]]')[-1]
 m = re.search(r'\[entry\.strict\.goldens\](.*?)(\n\[|\Z)', last, re.S)
 exp = {k: (c, int(s)) for k, c, s in re.findall(r'(\w+)\s*=\s*"([0-9a-f]{8})/(\d+)"', m.group(1))}
@@ -134,6 +157,11 @@ for key, fn in (("s4", "s4.bin"), ("s4_debug", "s4.debug.bin")):
     d = (w / fn).read_bytes()
     got = format(zlib.crc32(d) & 0xffffffff, '08x')
     ok = key in exp and got == exp[key][0] and len(d) == exp[key][1]
+    if control != "required":
+        # Not a control at this revision: the goldens describe other source. The CRCs
+        # are DATA here, and the line says so rather than reading as a verdict.
+        print(f"    BUILT (no control at this revision) {fn:16} {got}/{len(d)}")
+        continue
     print(f"    REBUILD CONTROL {fn:16} {got}/{len(d)} {'MATCHES THE GOLDEN' if ok else 'DIFFERS'}")
     bad += 0 if ok else 1
 if bad:

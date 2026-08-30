@@ -43,6 +43,124 @@ it**. (2) It is a positive witness **only for a length-neutral parcel**. On chai
 +4 bytes, 282 symbols sliding +16 — that table moving is *expected*, and it reverts to
 something to reconcile rather than something that proves anything.
 
+### AEON-REF-DRIFT-NIGHTLY — THE HARNESS IS BUILT AND THE RECORD SEAM IS DELIBERATELY EMPTY (2026-08-30)
+
+SIGIL-DECOUPLE step 1's job exists: `scripts/nightly_ref_drift.sh`, fired by
+`scripts/systemd/sigil-ref-drift.timer` at 07:17, with `scripts/drift_report.py` (the state
+machine), `scripts/drift_paths_sweep.py` (the reference-path sweep) and
+`scripts/drift-nightly.conf` (N). `docs/DRIFT_RECORD_SEAM.md` is the contract with the aeon
+lane. `crates/sigil-cli/tests/drift_nightly_harness.rs` is what makes the workspace suite run
+the two selftests and assert the lane's structural properties.
+
+**IT MEASURES NOTHING YET, ON PURPOSE.** `DRIFT_RECORD_READER` is empty until the aeon lane
+lands its committed CRCs, so every run reports `STATUS: NOTHING MEASURED` and exits 2. That is
+the honest state and it is not a pass: no chain is credited, N does not move, and the count
+lines print `— nothing measured` rather than `0`. **Do not seed a record from a sigil build to
+make the lane green.** A drift job whose expectations it generated itself is the vacuous gate
+this project exists to retire, and the harness has no path to one — every expectation enters
+through the reader command and nowhere else.
+
+**A CHAIN IS A DISTINCT REVISION PAIR, NOT A NIGHT.** The provenance chain counts one entry per
+paired landing (186 today), which is the unit the N ruling was about. Five nights on one pair
+are one chain's worth of evidence, so the report keys on the pair and a repeated night adds
+nothing. Derived from the chain's own definition rather than chosen.
+
+**THE REPORT REFUSES TO RENDER QUIET AS A VERDICT, AND THAT IS THE DELIVERABLE.** `N reached,
+quiet` and `N reached, verdict` are separate states. A red settles the question in ONE
+observation and N is irrelevant to it; quiet accumulates and never concludes. The refusal is
+checkable rather than habitual: `FORBIDDEN_ON_QUIET` lists the readings a person would
+otherwise take away from a page of clean rows, no quiet rendering may contain any of them, and
+the scan is whitespace-normalised so a line break cannot smuggle one past.
+
+**THIS CONTRADICTS ONE SENTENCE OF AEON'S PLAN, AND THE PLAN'S OWN PARAGRAPH IS THE ARGUMENT.**
+Their §3 bullet reads *"Engine stays byte-clean while nothing blocks on it → the gate was
+spent, and step 4 says so with evidence."* Two sentences earlier the same section says the two
+hypotheses *"reads as the gate is spent"* and *"reads equally as the gate is why the engine is
+clean"* cannot be distinguished from inside. Removing the blocking removes one mechanism by
+which the gate could be causing the cleanliness, so quiet-under-non-blocking is **better**
+evidence than quiet-under-blocking — but it is not self-executing, because the deterrent half
+of the gate survives: the paired freeze still runs at every chain landing and people still
+know a divergence would be found. **The tool therefore presents the observation and its
+confounder and leaves the weighing to the owner.** That is a design call, not a re-ruling: if
+he wants the tool to draw the conclusion at N, that is one edit to the quiet branch.
+
+**N LIVES IN CONFIG AND HAS NO DEFAULT ANYWHERE.** `DRIFT_CHAIN_TARGET_N=5` in
+`scripts/drift-nightly.conf`, overridable for one run with `SIGIL_DRIFT_N`, and the report
+always names which of the two the value came from. `drift_report.py report` requires `--n` and
+the shell refuses to run when the config does not set it — proven by making each refusal fire.
+Overturning N costs an edit, not a parcel.
+
+**A SUB-DECISION THE N RULING DID NOT SETTLE, AND THE REPORT SHOWS BOTH RATHER THAN PICKING.**
+A chain in which the ASSEMBLER did not move says nothing about the assembler. Five aeon-only
+chains would reach N while carrying no evidence about the question step 4 asks. So the report
+counts `quiet` and `quiet AND evidence-bearing` separately, evaluates N against the second, and
+renders `N REACHED ON THE WEAK POPULATION ONLY` as its own state when the two disagree. **Which
+population N counts is the owner's to say.**
+
+**THE FOUR CASES, AND THE ONE CONSTRAINT THEY PUT ON AEON'S FORMAT.** Exact pair hit with
+different bytes is the unambiguous defect. A pair miss with an engine-revision hit is the
+assembler moving bytes under identical engine source — **the red step 4 actually needs**. An
+engine-revision miss is unverified, because no expectation existed. Both missing is
+unattributable and the job says so instead of picking. **This only works if the record does not
+mint an entry for a pair from the build that pair is about to be judged against**; if it did,
+case 2 collapses into a self-authored expectation and assembler drift becomes invisible. That
+is the one property of their format this job cannot check for itself.
+
+**THE KEY IS THE ASSEMBLER, NOT SIGIL'S HEAD.** `SIGIL_BUILD`/`SIGIL_EMIT` come from the
+environment and `SIGIL_EMIT` writes `engine/sound/generated`, so a clean tracked tree at a fixed
+engine revision can build a different ROM with no cause visible in the tree. The job asks
+`sigil --version` and records three things: `revision` (linked), `closure-revision` (the last
+commit touching what cargo compiles this binary from), and the tree state. **`closure-revision`
+is the better key component** — `revision` moves on every commit including ones no compilation
+can see, so keying on it manufactures case-2 misses that carry no evidence. A `dirty` tree
+makes the key non-identifying and the job never advances N on one.
+
+**THE 192-PATH SWEEP IS BUILT AND THE MEASURED NUMBER IS 115 AT 425 SITES.** Across the 139
+sigil sources that read the reference tree, 115 distinct paths are named, every one of them
+resolves at the engine lane's live tip today, and the one path asserted ABSENT still is. The
+`extra_entry.rs` narrow version stays where it is: this sweep is a `stat` check and cannot tell
+you a fixture still fires the guard it used to. Which files are swept is EXTRACTED from
+`nightly_source_gates.sh` rather than retyped, because that script already classifies files by
+the same question. Sweeping every source instead costs precision that matters — 8 misses of
+which 7 are synthetic fixtures a test writes into its own temp tree.
+
+**TWO THINGS FOUND WHILE BUILDING IT, BOTH WORTH MORE THAN THE HARNESS.**
+
+1. **`nightly_source_gates.sh`'s classifier matches `--aeon` as a SUBSTRING.** Any test file
+   naming a `--aeon…`-prefixed flag — in code OR in a comment — is classified as
+   reference-reading, found in neither the gate list nor the artifact bucket, and **the whole
+   source-gate lane then refuses to run**. This gate reads only sigil's own scripts and would
+   have darkened that lane over a flag spelling; it now assembles the flag rather than writing
+   it. The classifier is one spelling axis wide in the other direction too, and this is the
+   first case of it being over-wide rather than under-wide.
+2. **`provision-aeon-ref.sh` hard-refused at any revision but the pinned one.** Its step-6
+   rebuild control asserts a built ROM matches the frozen golden — a real control at the pinned
+   revision and a guaranteed failure at a live tip, where the goldens describe other source.
+   The drift job provisions at the live tip by definition. The control is now **derived from the
+   revision** rather than gated by a flag: `required` when the revision is the pinned one,
+   `not-applicable` otherwise, with the CRCs printed as data. A flag would have been an opt-out
+   somebody could aim at the pinned case.
+
+**WHY IT IS A SECOND SCRIPT AND NOT A SECTION OF THE SOURCE-GATE LANE.** That lane's checkout is
+source-only by construction: it deletes `*.bin` and `*.lst` out of its reference tree on every
+run, and its own header warns that an artifact-dependent run sharing that tree loses its ROMs
+mid-suite and reads as ~127 golden mismatches. This job builds ROMs and compares CRCs. Two
+lanes, two checkouts, two cadences — 07:17 here, two hours behind the gate lane, because this
+one compiles the assembler and both ROM shapes and takes worktree locks in both repositories.
+
+**THE RUNNER, HONESTLY.** The workspace suite runs the two selftests and the structural
+assertions every landing (`drift_nightly_harness.rs`). The JOB itself is operator-run until
+somebody installs the timer: the units are committed, `scripts/systemd/README.md` carries the
+three-command install, and **nothing installs them automatically** — a `systemd --user` unit
+lives outside every repo. Until `systemctl --user enable --now sigil-ref-drift.timer` is run,
+this lane accumulates nothing.
+
+**THE LEDGER IS MACHINE-LOCAL.** It lives under `$XDG_STATE_HOME/sigil-ref-drift/`, outside
+every repo, so the accumulated evidence does not survive this machine — and the report says so
+on every run rather than letting a reader assume durability. If step 4's answer has to be
+defensible months from now, the ledger wants a committed home; that is a decision, not an
+oversight, and it is unmade.
+
 ### A PAIRED LANDING CITES TWO SHAs THAT ANSWER DIFFERENT QUESTIONS — LABEL WHICH IS WHICH (2026-08-29)
 
 A freeze lands as a pair: the commit carrying the **goldens and the `pins.rs` evidence**, and

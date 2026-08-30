@@ -637,6 +637,58 @@ def _selftest_body(failures):
         except ReaderUnavailable:
             check("a missing reader raises", True)
 
+    block("the four cases, against a throwaway reader")
+    # A TEST DOUBLE, written into a temp dir and deleted with it. It exists to prove
+    # the classifier is live — a matcher whose silence has never been contradicted
+    # proves nothing — and it is deliberately not a file anything could configure as
+    # the real reader. The real expectations are the aeon lane's and enter only
+    # through DRIFT_RECORD_READER.
+    with tempfile.TemporaryDirectory() as d:
+        AEON_KNOWN = "e" * 40
+        SIGIL_KNOWN = "5" * 40
+        reader = os.path.join(d, "reader.sh")
+        with open(reader, "w") as f:
+            f.write(
+                "#!/bin/sh\n"
+                "case \"$1\" in\n"
+                "  shapes) echo s4; exit 0;;\n"
+                f"  lookup) [ \"$2\" = {AEON_KNOWN} ] && [ \"$3\" = {SIGIL_KNOWN} ] "
+                "&& { echo 's4 aaaaaaaa 100'; exit 0; }; exit 3;;\n"
+                f"  lookup-aeon) [ \"$2\" = {AEON_KNOWN} ] "
+                f"&& {{ echo '{SIGIL_KNOWN} s4 aaaaaaaa 100'; exit 0; }}; exit 3;;\n"
+                f"  has-sigil) [ \"$2\" = {SIGIL_KNOWN} ] && exit 0; exit 3;;\n"
+                "esac\nexit 2\n"
+            )
+        os.chmod(reader, 0o755)
+        cmd = [reader]
+
+        def verdict(aeon, sigil, crc):
+            shapes, _ = classify(cmd, aeon, sigil, {"s4": (crc, 100)})
+            return shapes["s4"]["verdict"]
+
+        check("case 1: same pair, same bytes -> quiet",
+              verdict(AEON_KNOWN, SIGIL_KNOWN, "aaaaaaaa") == V_QUIET)
+        check("case 1: same pair, different bytes -> the unambiguous defect",
+              verdict(AEON_KNOWN, SIGIL_KNOWN, "bbbbbbbb") == V_DRIFT_SAME_PAIR)
+        check("case 2: sigil moved, bytes held -> quiet AND evidence-bearing",
+              verdict(AEON_KNOWN, "9" * 40, "aaaaaaaa") == V_QUIET_SIGIL_MOVED)
+        check("case 2: sigil moved, bytes moved -> the red step 4 needs",
+              verdict(AEON_KNOWN, "9" * 40, "bbbbbbbb") == V_DRIFT_SIGIL_MOVED)
+        check("case 3: aeon moved -> unverified, not a red and not quiet",
+              verdict("f" * 40, SIGIL_KNOWN, "bbbbbbbb") == V_UNVERIFIED_AEON_MOVED)
+        check("case 4: both moved -> unattributable, and the job does not pick",
+              verdict("f" * 40, "9" * 40, "bbbbbbbb") == V_UNATTRIBUTABLE)
+        shapes, _ = classify(cmd, "f" * 40, "9" * 40, {"s4": ("bbbbbbbb", 100)})
+        check("case 4 says so in words", "not attributable" in shapes["s4"]["why"])
+        check("case 3 and 4 never advance N",
+              observation_state(shapes, "clean") == S_UNVERIFIED)
+        shapes, notes = classify(cmd, AEON_KNOWN, SIGIL_KNOWN,
+                                 {"s4": ("aaaaaaaa", 100), "demo": ("cccccccc", 50)})
+        check("a shape the record does not cover is unmeasured, not quiet",
+              shapes["demo"]["verdict"] == V_UNMEASURED)
+        check("a shape outside the record is NAMED",
+              any("does not cover" in n for n in notes))
+
     block("state: N has no default anywhere")
     p = subprocess.run([sys.executable, os.path.abspath(__file__), "report",
                         "--ledger", "/dev/null"], capture_output=True, text=True)
