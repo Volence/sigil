@@ -1864,9 +1864,25 @@ shared goldens is exactly the collision this rule prevents.
 If a sigil-internal change would ripple into those files, message the aeon overseer
 (find it via `ListAgents`; address by repo, not session name) and let that session
 sequence the landing. A byte-changing parcel ripples past `pins.rs` into
-`engine.inc` / `mixed_dac_rom.rs` / `repin_pins.rs` — the repin tool auto-updates
-only `pins.rs`; the rest are hand-edited, and `repin.toml` changes only when a
-region is added. That whole ripple belongs to the aeon-owned lane.
+`pins.rs`, and `repin.toml` changes only when a region is added. That ripple
+belongs to the aeon-owned lane.
+
+**CORRECTED 2026-08-30 — this row named three hand-edit sites and TWO NO LONGER
+EXIST.** It read *"ripples past `pins.rs` into `engine.inc` / `mixed_dac_rom.rs` /
+`repin_pins.rs` — the rest are hand-edited."* Measured: `mixed_dac_rom.rs` was
+**deleted** in `5279a064` (*"retire the AS-reassembly oracle family + delete the
+twin-inclusive harness machinery"*), and **`engine.inc` was never tracked in this
+repo at all**, nor is it in aeon's tree today. `repin` writes exactly one file —
+`crates/sigil-harness/src/bin/repin.rs:89` resolves `root.join("src/pins.rs")` and
+`:192` is its only write. The surviving `repin_pins.rs` is
+`crates/sigil-harness/**tests**/repin_pins.rs`, a **currency gate**
+(`pins_rs_is_current`), not a file anybody edits by hand.
+
+**The direction of the error is over-pricing, which is why it survived.** A doctrine
+that says a parcel costs five hand-edits when it costs one makes byte-movers look
+more expensive than they are, and an over-estimate never fails loudly — it just
+makes work get deferred. The row outlived its subject: **the same flip-stage work
+that retired the AS twin machinery deleted the files this row exists to protect.**
 
 Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
 
