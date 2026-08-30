@@ -3521,3 +3521,73 @@ refreeze retraction, the shared-`AEON_DIR` collision, the poisoned `target/`, th
 rule — all four are *"the operation was right and the tree was wrong"*, and this is the fifth,
 authored by the session banking the other four. **Knowing the class does not confer immunity;
 only a mechanism does**, which is the same conclusion the protocol reached about typed SHAs.
+
+## Decision-card reader audit — sigil's ledger is NOT clean (2026-08-30)
+
+**3 of 16 lines in `docs/decisions.jsonl` do not render on the owner's Dominion console.**
+The number was unmeasured before today, and "unmeasured" was being carried as if it were zero.
+
+**Listed, not fixed.** Rule 8 forbids rewriting a ledger line and rule 8d states nothing is
+rewritten, so this section records the defect and changes no byte of `docs/decisions.jsonl`.
+
+### The measurement
+
+`tools/decisions_reader_audit.py` transcribes `parseDecisions`/`parseEntry` from dominion
+`server/src/decisions.ts` at `796bc1e`, plus the timestamp rule it imports from
+`contractTime.ts`. Run it as `python3 tools/decisions_reader_audit.py docs/decisions.jsonl`.
+
+```
+lines: 16 total / 13 parse / 3 rejected
+
+reasons:
+     3  options[0] is missing "name"
+
+rejected lines:
+  line 14  d-14  - options[0] is missing "name"
+  line 15  d-15  - options[0] is missing "name"
+  line 16  d-16  - options[0] is missing "name"
+```
+
+**Lines 1-13 (`d-1` through `d-13`) all parse.** The defect is confined to one decision.
+
+**The histogram undercounts the defect at field level.** `parseOptions` validates the list as a
+whole and returns on the first failing member, so it names `options[0]` and stops. In fact **all
+three options of all three lines lack `name`** — nine missing fields, reported as three. A
+per-line count is what the console drops on, so three is the number that matters, but a lane
+reading the histogram as a repair list would fix a third of it.
+
+### THE 8c TRAP IS REAL HERE, AND IT COMPOUNDED TWICE
+
+Rule 8c closes a decision by **appending** a restatement carrying the same question, options and
+recommendation with `supersedes` set. **A faithful closure of a card that does not itself parse
+reproduces the defect verbatim and creates a second rejected line.**
+
+Sigil's ledger is that trap running twice:
+
+| line | id | supersedes | options missing `name` |
+|---|---|---|---|
+| 14 | `d-14` | — | 0, 1, 2 |
+| 15 | `d-15` | `d-14` | 0, 1, 2 |
+| 16 | `d-16` | `d-15` | 0, 1, 2 |
+
+**One malformed entry became three rejected lines by being closed correctly.** Fidelity is the
+mechanism: 8c asks the closing entry to restate the original, and an entry that restates a
+missing field is missing it too.
+
+**The blast radius is the whole question, not one card.** `resolveSupersedes` only ever sees
+entries that parsed, so a rejected superseding entry leaves the earlier one standing — but here
+the earlier one is rejected as well. **`d-14`, `d-15` and `d-16` are the same embed-path question
+(`EMBED-BASE-SKEW`), and none of the three reaches the owner's console.** The decision and both
+of its closures are invisible there; the ledger on disk is the only record.
+
+### What this changes about writing a decision
+
+**A decision entry is not durable until it parses.** The ledger is append-only and the console is
+where the owner reads it, so a line that fails the reader is committed history nobody sees, and
+8c will faithfully copy the failure forward every time that decision is restated. **Run the audit
+before appending a closure**, so a restatement does not inherit a defect from the entry it
+supersedes.
+
+**Nothing in this repo runs this tool automatically.** It is operator-run: no CI job, no nightly
+gate, no test invokes it. `.github/workflows/ci.yml` and `scripts/nightly_source_gates.sh` do not
+reference it, and wiring it is an open call, not a done thing.
