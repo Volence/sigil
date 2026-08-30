@@ -10472,3 +10472,25 @@ full_crc = "eadd7175"
 full_size = 736331
 anchor_crc = "b28802ef"
 anchor_end = 0xa7f40
+
+[entry.strict]
+outcome = "passed"
+sigil_rev = "a8b3adcf24bc310a02362ae3ce7b2af84b41c265"
+aeon_rev = "9e754036c614e42510a2b438b6f6e1c3954da96b"
+strict_bodies = 29
+suites = 363
+passed = 4175
+failed = 0
+ignored = 2
+skips = 0
+ran_at = "unix:1788096974"
+expected_tests = ["act_descriptor_region_matches_reference"]
+
+[entry.strict.goldens]
+config_a = "3c510af9/736699"
+config_b = "c10fa715/611413"
+demo = "9223a60d/96450"
+demo_debug = "d30c3636/101333"
+lean = "20554b7f/674830"
+s4 = "36adb158/719329"
+s4_debug = "eadd7175/736331"
