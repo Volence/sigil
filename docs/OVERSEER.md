@@ -410,6 +410,59 @@ durable language surface.
 
 **From here every closure carries `answered`.**
 
+### R2 IS GATED ON A NUMBER ONLY THE OWNER CAN SET (2026-08-30, aeon's ruling, read out of their plan)
+
+The hub pushed R2 as the next SIGIL-DECOUPLE step once R6 landed. **It is not startable**, and
+the reason is stronger than "step 4 has not happened yet".
+
+Aeon settled it from `docs/superpowers/plans/2026-08-27-sigil-decouple-steps-1-4.md` §3, quoting
+their own text rather than recalling it: *"So step 4 is gated on data from step 1, not on a
+decision. N is unset deliberately; the owner sets it, and it is the one number in this plan
+neither lane should choose."* Step 1's nightly non-blocking drift job is the instrument that
+produces step 4's answer — run it for N chains, and either the engine stays byte-clean while
+nothing blocks on it (the gate was spent) or reds appear that a landing would have caught (the
+gate was load-bearing and earns a promotion instead of a retirement). §3's reason: *"Neither lane
+can distinguish those from inside, and step 4 must not be written from either lane's intuition."*
+
+**So step 4 is not merely undone, it is UNANSWERABLE until step 1 has run N chains, and N is the
+owner's number.** Neither lane opens this by working harder. The unblocking move is to get N set,
+which is why this is an owner decision and not a backlog row. **Aeon files that card, not this
+lane** — they hold the plan and the firsthand text, and `DECISIONS.md` gives one cross-lane
+blocker exactly one card, filed by the lane holding the measurement. Do not file a second.
+
+**The method note worth keeping.** This lane's inventory row stated R2's gate correctly, and this
+lane still could not settle it — the row is a summary of aeon's text, and a sequencing clause read
+two hops from its source is exactly where a plan rots. Asking the party who owns the plan cost one
+message and returned the governing sentence. **A booked sequencing clause is a hypothesis; the
+lane that wrote the plan is the instrument.**
+
+### THE FAR-SCRATCH SLOTS ALIAS ACROSS THE 24-BIT BUS, AND IT BEARS ON R2's TRADE (2026-08-30)
+
+R2's inventory row prices the choice as two-sided: keeping the far-scratch means the assembler goes
+on emulating a toolchain nobody runs, dropping it moves bytes. **There is a third term the row does
+not carry**, found in `native.rs`'s own header while grounding a dispatch.
+
+Never-pinned ROM sections measure at `0x70_0000 + k*0x10_0000` (`native.rs::lens_pinned`). Those
+slots **wrap the 24-bit bus from k = 9**, verified here by arithmetic rather than taken from the
+comment: k=9 gives `0x0100_0000`, masked to `0x00_0000`; k=41 gives `0x0300_0000`, also masked to
+`0x00_0000`. `asl_width_rule` (`crates/sigil-ir/src/width.rs:34`, confirmed to exist as code and
+not only as a name in comments) masks its argument to 24 bits and returns `W` for `a <= 0x7FFF`,
+so **an aliased slot looks abs.w-reachable when the real base is not**. That is the exact shape of
+the `player_sensors` catch the header records: twelve `lea` sites measured 4 B each where the real
+base encodes 6.
+
+**What is settled and what is not.** The header states the hazard is not a live measuring input
+*because every FROZEN-labeled section now measures at a real base in every round*, and books it as
+a ledger row for the next refreeze. That reasoning covers frozen sections. **It does not, on its
+face, cover the never-pinned ones, which are precisely the sections that still take a scratch
+slot.** Whether any never-pinned section reaches k >= 9 today is NOT measured here — the inventory
+row names three (`replay`, `raster`, `page_cache`) behind an ellipsis, and an ellipsis is not a
+count. **Do not quote a population from that row; derive it.**
+
+**Why it matters for R2:** if the answer is yes, dropping the far-scratch stops being a pure
+taste trade between two defensible options and starts also retiring a live width-selection hazard,
+which is a correctness argument and outranks both. Settle the count before R2 is priced.
+
 ### THE R6 CONVERSIONS LANDED AT 45, AND THE THREE REFUSALS ARE THE FINDING (2026-08-30)
 
 45 of the 50 regions converted from `end_measures = "allotment"` to `end = "section:<name>"`.
