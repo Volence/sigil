@@ -219,7 +219,9 @@ name = "math"
 start = "GetSineCosine"
 end = "section:math"
 gate = "SIGIL_EMP_MATH"
-tests = ["math_port"]
+# parallax_port derives Sine_Table as this region's base + SINE_TABLE_OFF, so a drift here
+# moves its expectation too.
+tests = ["math_port", "parallax_port"]
 
 [[region]]
 name = "dplc"
@@ -1435,7 +1437,7 @@ tests = ["tile_cache_port"]
 # cross-seam RAM label, so pin-source it (t24 rule: never hand-shift a RAM VMA).
 [[symbol]]
 name = "Logic_Tick"
-tests = ["game_loop_port", "bg_anim_port", "tile_cache_port"]
+tests = ["game_loop_port", "bg_anim_port", "tile_cache_port", "parallax_port"]
 
 [[symbol]]
 name = "Block_Stage_Keys"

@@ -155,7 +155,7 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
     // VDP_Shadow_Table cell below lives BEFORE the deleted pair, so it holds. (It had
     // a VDP_Dirty_Mask sibling until the blanket-restore parcel deleted that symbol.)
     // Camera_X/Y now pin-sourced (they carry the −4 too; matches Current_Act_Ptr style).
-    let table: [(&str, u32, u32); 33] = [
+    let table: [(&str, u32, u32); 35] = [
         // The MD Debugger carriers the DEBUG-shape asserts jsr/jmp (the section_port /
         // sprites_port precedent). Shape-invariant pins carried in BOTH shapes: in plain
         // the assert is comptime-gated out and these simply go unreferenced.
@@ -271,6 +271,36 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
         // documents the bank the latch is derived from and costs nothing.
         ("Effects_Screen_L", pins::EFFECTS_SCREEN_L.plain, pins::EFFECTS_SCREEN_L.debug),
         ("Raster_GetChannelBand", pins::RASTER_GET_CHANNEL_BAND.plain, pins::RASTER_GET_CHANNEL_BAND.debug),
+        // Item 7, the vertical-bob overlay: TWO new cross-seam references, and they are
+        // declared DIFFERENTLY on purpose. The test is not "does a pin exist" but "is this
+        // address invariant" — pin what is absolute, derive what is derived.
+        //
+        //   Logic_Tick   RAM. 0xFFFF8004 in BOTH shapes, which is the tell: RAM does not
+        //                move when ROM grows, so an absolute pin is the honest form and
+        //                stays true across every byte-mover. Sourced from pins per the t24
+        //                rule (never hand-shift a RAM VMA) — it already rides the shifting
+        //                RAM map, having slid +4 in I2 behind Frame_Counter.
+        ("Logic_Tick", pins::LOGIC_TICK.plain, pins::LOGIC_TICK.debug),
+        //   Sine_Table   ROM data, and therefore NOT given an absolute pin. It is DERIVED
+        //                as the math section's base plus a module-internal distance:
+        //                SINE_TABLE_OFF (0x18) is the 24-byte code body of GetSineCosine,
+        //                which is the first proc in the section (math_port.rs:328 proves
+        //                that offset from both built listings). The offset is a fact about
+        //                math.emp's own layout and survives every parcel that moves where
+        //                the section lands; an absolute pin would be a derived quantity
+        //                minted as an independent one, needing a repin each time anything
+        //                upstream grew — chain 190 moved 204/207 symbols at +32 and would
+        //                have invalidated it silently.
+        //                Base is the REGION base, not GET_SINE_COSINE: numerically equal
+        //                today, but that equality holds only because GetSineCosine happens
+        //                to be first, and SINE_TABLE_OFF is defined from the section base.
+        //                Derivation checked against the item-7 build: 0x2850 + 0x18 = 0x2868,
+        //                which is where the aeon lane measured Sine_Table.
+        (
+            "Sine_Table",
+            pins::MATH.plain_base + pins::SINE_TABLE_OFF as u32,
+            pins::MATH.debug_base + pins::SINE_TABLE_OFF as u32,
+        ),
     ];
     let mut out = Vec::new();
     for (i, (name, plain, dbg)) in table.iter().enumerate() {
