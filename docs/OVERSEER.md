@@ -969,6 +969,50 @@ raise it against their own message for it to surface at all.
 
 ### Standing rules — independent of whether a row is active
 
+**`ls <path>` IS A BROKEN EXISTENCE PROBE IN THIS WORKSPACE — AND IT FAILS ONLY IN THE SPELLING
+USED FOR PROBING** *(2026-08-30; aeon found it, verified independently here).* `ls` is aliased to
+`eza --color=always --group-directories-first --icons`. **`--icons` takes an OPTIONAL value**, so a
+bare path argument is consumed as that value:
+
+```
+$ ls /etc/hostname ; echo $?
+error: invalid value '/etc/hostname' for '--icons [<WHEN>]'   -> 2
+```
+
+**It is exit 2 for a file that EXISTS**, so `ls "$F" >/dev/null 2>&1 && echo PRESENT || echo ABSENT`
+prints ABSENT for everything. It has **zero discriminating power**: verified here, an existing file
+and `/definitely/not/here` produce the identical answer.
+
+**THE SPELLING IS THE TRAP, and this is the part that makes it dangerous rather than merely
+annoying.** Measured here:
+
+| spelling | result |
+|---|---|
+| `ls <path>` | **BROKEN** — path eaten by `--icons` |
+| `ls -l <path>` | works — `-l` is not consumed, path lands as positional |
+| `ls -la <path>` | works |
+
+So the **listing** idiom is fine and the **existence-probe** idiom is broken. The failure
+concentrates in exactly the use where the answer is a yes/no you act on, and it is invisible to
+anyone who habitually types `ls -l`. That is why it survived: this lane used `ls -l` all day and
+never saw it.
+
+**BLAST RADIUS, measured not assumed:** the alias is interactive-shell only — a `#!/usr/bin/env
+bash` script does **not** inherit it (tested), and a sweep of `scripts/` and `golden/*.sh` finds no
+bare-`ls` existence probe. **The exposure is agent-issued shell commands**, which is every Bash tool
+call any lane makes, and therefore every ad-hoc probe in every dispatch.
+
+**USE `[ -f ]` / `[ -d ]`, or `/usr/bin/ls`, or `stat`. Never bare `ls` for existence.**
+
+**THE GENERAL RULE, which is the one worth carrying** *(aeon's formulation)*: **when a cheap probe
+reports ABSENT or FAILED, confirm the probe can report the POSITIVE case at all — run it against
+something you know exists.** Theirs could not. This is the third instance today of the shell
+answering a different question than the one asked, and **in all three the wrong answer pointed the
+reassuring way**: a `tee` pipeline's exit status reporting success for a failed suite, a blank
+`PIPESTATUS` in zsh, and now a probe that says "absent" — which for a freeze journal reads as
+*completed*. The direction is not a coincidence to note in passing; it is the reason these survive.
+
+
 **`git status` IS NOT "the state of this tree", AND IT IS BLINDEST EXACTLY WHERE THIS REPO KEEPS
 ITS MECHANISMS** *(2026-08-30; aeon's formulation, from an error we made in both directions).*
 `git status` reports **tracked, non-ignored divergence**. Everything deliberately excluded from
