@@ -969,6 +969,50 @@ raise it against their own message for it to surface at all.
 
 ### Standing rules — independent of whether a row is active
 
+**PINNING: THE TEST IS NOT "DOES A PIN EXIST", IT IS "DOES THIS ADDRESS MOVE WHEN THE ROM GROWS"**
+*(2026-08-30, ruled for `parallax_port`'s two new cross-seam refs).*
+
+Two new references, two different answers, and the reason is the rule:
+
+- **`Logic_Tick` → an absolute pin row.** `LOGIC_TICK` is `0xFFFF8004` in **both** shapes
+  (`pins.rs:555`). Identical plain and debug means a **RAM** address, and RAM does not move when
+  ROM grows. Absolute is the honest representation. Already consumed by `game_loop_port`,
+  `bg_anim_port`, `tile_cache_port`.
+- **`Sine_Table` → `base + pins::SINE_TABLE_OFF`. Do NOT mint an absolute pin.** It is ROM data and
+  moves with everything upstream. `math_port.rs:328` derives it as *section base + the 24-byte code
+  body* — `SINE_TABLE_OFF` is a **module-internal distance**, invariant under every parcel that
+  shifts where the module lands. An absolute pin would be **a derived quantity minted as an
+  independent one**, needing a repin every time anything upstream grew — as chain 190 just did to
+  204/207 symbols at `+32`. Two absolute pins for one table can drift; a base plus an offset cannot.
+
+**The third argument, which is decisive under this file's own measurements:** `repin.toml`'s
+per-symbol `tests` list is under-listed in **190 of 412** rows and gates nothing, so an incomplete
+list cannot fail. **Every new absolute pin is another row that can go stale silently.** A derived
+reference adds none.
+
+**THE GENERAL FORM, and it is the day's recurring defect in a new domain:** replace a **presence**
+check with a **behaviour** check. *"A pin exists"* is presence; *"the address is invariant"* is
+behaviour. The aeon agent reached the identical shape from the language side — ***"declared locally"
+is not the test; "folds from literals" is*** — and this file has hit it three other ways today
+(a filename read as a classification, a mechanism assumed absent because `git status` could not see
+it, a probe whose success and failure were the same answer).
+
+**Two `.emp` facts measured by that agent, verified here at their sites:**
+1. **PC-relative INDEXED addressing carries an 8-bit displacement** — `lower/code.rs:1461` raises
+   `displacement out of range for (d8,An,Xn)`, and the backend builds the form as `Pcd8Xn` with a
+   `PcRelDisp8` fixup (`sigil-backend-m68k/src/lib.rs:275-293`). Copying `math.emp`'s
+   `Sine_Table(pc,dN.w)` across a 20 KB gap is a **hard link failure, not a slow path**. That is the
+   ISA's brief extension word, not a sigil limitation.
+2. **A `pub const` whose initializer calls a module-private `comptime fn` folds at its DEFINITION
+   site against its own file alone.** If the expression names an imported constant, the importer
+   receives the raw expression and fails `unknown function <the private fn>` (`eval/call.rs:238`) —
+   **reported at the importer's `use`, pointing into the defining file.** 69 errors, none true about
+   the cause. **An error whose location is a different file from its cause is the worst shape a
+   diagnostic can take.** NOT yet booked as new work: `tests/const_fold_diagnostics.rs:206` already
+   carries a case ending *"module owns (`unknown function`). Same rule, same silence."* — read that
+   first and book only the remainder, per the grep-before-booking bar.
+
+
 **A DELETED WORKTREE LEAVES EXECUTABLE TEST BINARIES BEHIND IN A SHARED `target/`, AND THEY FAIL
 FOREVER AS SOMEONE ELSE'S REGRESSION** *(2026-08-30; realised instance of this file's own
 never-share-a-target rule, diagnosed here off aeon's red attest).*
