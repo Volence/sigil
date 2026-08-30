@@ -245,6 +245,52 @@ repin resolves them out of aeon's listings — so the parcel must build and emit
 A parcel that also GROWS a lowered routine hits region byte gates in every lowerer, not merely
 unresolved externals — a byte-gate re-prove, not a table row.
 
+### A PEER'S DERIVATION DIED WITH ITS SESSION — AND THE ONLY SURVIVOR IS THE FALSIFIER (2026-08-30)
+
+The aeon session that produced a freeze prediction for `parcel/dplc-entry-instrument` was
+cleared mid-thread; the successor inherited the same socket and name and **does not hold the
+conversation**. It grepped its own tree for every part of the derivation and found nothing —
+it was never banked, and it died with that context. This is `BANK-TWO-FRAMINGS` happening to
+somebody else, in real time, on the same night that row was written.
+
+**What was reported to this lane, recorded as an UNVERIFIED REPORT from a session that no
+longer exists — not as an aeon finding, and not as a measurement of this lane's.** DEBUG shape,
+vblank site: **+$60 (96 B) measured against +$5A (90 B) derived** from instruction encodings
+(three sub-queue blocks at 30 bytes each); the re-stamped fixture moved `refresh_addr`
+16036 → 16132, with the cut's byte string differing in exactly one displacement field
+(`3ea4` → `3f04`), i.e. pure displacement, no instruction change. The 6-byte gap was flagged by
+its author as unaccounted-for rather than smoothed. **Nothing here is re-derived by this lane
+and none of it should be cited as aeon's.**
+
+**The successor's refusal is the correct one and is worth copying:** it declined to reconstruct
+the derivation from this lane's paraphrase and hand it back as its own, because *a lane's own
+reasoning, quoted back to it by a peer, is not a record.* A summary re-imported as a finding
+launders provenance in the direction nobody checks. It banked the thread at aeon `35f33786`
+with every number marked as this lane's report.
+
+**What actually survives a rotation is the FALSIFIER, because it is a rule and not a number:**
+*any plain-shape movement at all indicts the parcel, not the harness* — the whole `DMA_Peak_*`
+block sits inside `if DEBUG == 1 {` and is comptime-elided, so the plain shape must be
+byte-identical. Cheap, and re-runnable by anyone with no context at all.
+
+**The general form, which is the part to carry:** when a session is about to end, a derivation
+is the perishable half and a falsifier is the durable half. Bank the falsifier first. A number
+without its derivation is an orphan a successor cannot defend; a falsifier without its
+derivation is still a working instrument.
+
+### A BROKEN COMMAND THAT RETURNS THE RIGHT ANSWER (2026-08-30, seraph's, and it generalises)
+
+`grep -rani "sigil" --include=*.rs …` with the glob **unquoted under zsh** makes grep never run,
+and returns a clean empty result **indistinguishable from a true negative**. The seraph lane hit
+this while establishing it consumes nothing sigil-built; the conclusion was right and the
+command was broken, which is the combination that never gets caught.
+
+Same family as this file's *background wrapper reports exit 0 for a command that never ran* and
+*a check can be vacuous by construction*: **an empty result is only evidence if the instrument
+could have produced a non-empty one.** Quote the globs — and pair a zero with a positive control
+in the same pass, which is what the aeon lane did when confirming the relink (`PinnedBaked` = 0
+beside `sigil` = 5407 hits in the same `strings` run), turning an absence into a measurement.
+
 ### `AEON_DIR` NEEDS A PROVISIONED WORKTREE, NOT A BARE ONE — AND THE FAILURE LOOKS REAL (2026-08-29)
 
 **Correcting this file's own standing advice.** "Use a plain detached worktree at the goldens'
@@ -2289,6 +2335,24 @@ deriving the list, or gating it: the consuming set is mechanically discoverable 
 lower the module / carry the label), so the honest shape is a check that the declared list
 matches the derived one, or dropping the field for a derived hint. Full detail and the two
 method findings are in the dated section above.
+
+### DPLC-ENTRY-INSTRUMENT REPIN — an ask that must outlive both sessions
+
+`parcel/dplc-entry-instrument` (parked on aeon, 621 insertions across `dplc.emp`, `ram.emp`,
+`dma_queue.emp`, `vblank.emp`) is the only live byte-mover on that lane and is the CANDIDATE
+owner of the +$60-shaped delta above — flagged as candidate, explicitly **not** attribution, by
+the session that flagged it. When it moves:
+
+- four cross-seam symbols need the three-site treatment (`repin.toml`, `pins.rs`, addr_labels)
+  documented above, with **full** `tests` lists: `DMA_Split_Reject_Count` →
+  `dma_queue_port, dplc_port, bg_anim_port`; each `DMA_Peak_*` → `vblank_port, game_loop_port,
+  load_art_port`;
+- `game_loop_port` and `load_art_port` additionally face region byte gates, DEBUG shape only,
+  because the parcel grows `VInt_Level` itself — a byte-gate re-prove, not a table row;
+- run the plain-shape falsifier FIRST; it is one command and it indicts the parcel or clears it.
+
+Written here rather than left in a thread because both sessions that held it were rotated the
+same night.
 
 ### PROVENANCE-REV-REACHABILITY — LANDED. The ledger now judges the revisions it records
 
