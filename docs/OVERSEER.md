@@ -353,6 +353,41 @@ is built out of **right numbers taken from the party being checked**, which is w
 review: every value in it verifies. The test is not "is this figure correct" but **"whose artifact
 is it, and would the checker be re-reading its own claim."**
 
+### I SENT THE OWNER A CRITICAL DESKTOP POPUP BY RUNNING A SCRIPT TO SEE WHAT IT DID (2026-08-30)
+
+**Mine, and the timing is not ambiguous.** Diagnosing the dark source-gate lane, I ran
+`bash scripts/nightly_source_gates.sh` twice. My terminal showed **no output and exit 0** both
+times, so I read it as inconclusive and moved on. It was neither: `note()` at
+`nightly_source_gates.sh:149-151` writes one line to `$LOG` and calls
+**`notify-send -u critical`** — and **nothing to stdout at all**. The owner got a critical popup as
+he was going to bed. It cites `sigil b55b104f / aeon 56c807ff`; `b55b104f` is my own commit from
+`05:01:33` and I ran the script at about `05:03`. There is no other candidate.
+
+**THE CLASS: running a script to see what it does is not a read-only act.** I applied read-only
+caution to the repo — no commits, no edits — and none to the *side effects*, because the terminal
+told me nothing happened. **A silent terminal is evidence about stdout and about nothing else.**
+Before running an unfamiliar script, grep it for `notify-send`, `zenity`, `kdialog`, `mail`, `curl`,
+`systemctl` — the outputs that do not come back to you. The check is one grep and I did it *after*.
+
+**A second-order note worth as much:** the `2>/dev/null || true` on that line means the notification
+cannot fail visibly either, so even the popup's *sending* is unobservable from the caller.
+
+### AND THE POPUP IS THE SAFE DIRECTION — DO NOT SILENCE THE TIMER (2026-08-30)
+
+`sigil-source-gates.timer` **is installed and active** (contradicting this board's earlier "the timer
+is uninstalled", which was about `sigil-ref-drift.timer` — two timers, one of them live). It fires
+nightly at 05:17 EDT, the lane is genuinely unclassified, so **it will pop up again tonight.**
+
+**The tempting fix is to mask the timer until the classification lands. Do not.** The lane produces
+no coverage while it is refusing, so masking loses nothing *today* — and that is exactly what makes
+it dangerous: it converts a failure that is **urgent and self-limiting** (it hurts, so it gets fixed)
+into one that is **important and permanent** (nothing hurts, so nothing prompts the fix). This
+board's own two-urgencies rule, aimed at itself. A critical popup on the owner's desktop is this
+lane failing **loudly**, which is the behaviour it was built to have.
+
+**So the remedy is the classification, not the notification.** The popup stops when the lane runs,
+and not one minute before.
+
 ### THE STATUS CURL RUNS AFTER **EVERY** WRITE — now contract, and my slip is its second instance (2026-08-30)
 
 `contract/LANE_STATUS.md` at empyrean `97c4f72`, verified reachable from `origin/main` and read
