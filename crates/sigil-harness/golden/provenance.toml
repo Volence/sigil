@@ -10730,3 +10730,62 @@ demo_debug = "932f496f/101359"
 lean = "334978d3/674830"
 s4 = "1a08dba8/719387"
 s4_debug = "667361ff/736391"
+
+[entry.superseded]
+by = "d34-ceiling-band"
+reason = "entry 194's strict run was red on four tests that were two harness pins of sigil's own (COLLISION_DATA's hand-typed length, act_descriptor_port's missing seam symbol for step 6's EditorRaster_OJZ_Act1_ojz_sec5_showcase); both re-derived at sigil 9437c15f without moving a byte, strict 4177 passed / 0 failed on the 194 tip"
+
+[[entry]]
+name = "d34-ceiling-band"
+ab = "aeon 027ec162: d-34, ruled FIX by the owner (empyrean 7a1717f, 'd-34 I think we fix') - the ceiling-angle band closed at both spellings (PState_Ground and PState_Roll in player_ground.emp): cmpi.b #$C0 -> #$C1, the skipped band is [$61,$9F] and $60 / $A0 receive the slope factor like each other. Three bytes changed in place per s4 shape (header checksum + two immediates), no address moves, listing diff empty; four shapes 1802/1802/1803/1803 passed 0 failed; demo shapes byte-identical to chain 194. Supersedes chain 194, whose goldens carry forward unchanged for demo and move 3 bytes for s4/s4.debug."
+aeon_rev = "027ec1620dd977bf7b8ee47cbafe2b2197059092"
+note = "d-34 closed ceiling band, 3 bytes in place; supersedes red 194 (harness pins re-derived at sigil 9437c15f)"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "80f9c672"
+full_size = 736759
+anchor_crc = "20a25fb5"
+anchor_end = 0xa7f40
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "61512d30"
+full_size = 614991
+anchor_crc = "7045957b"
+anchor_end = 0x8c770
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "aca8c043"
+full_size = 96476
+anchor_crc = "1c2b8356"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "932f496f"
+full_size = 101359
+anchor_crc = "b72ccfbe"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "4d3f718f"
+full_size = 674830
+anchor_crc = "a888772a"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "fdd1cf81"
+full_size = 719387
+anchor_crc = "0d5e378f"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "0f6b1359"
+full_size = 736391
+anchor_crc = "4c491fc5"
+anchor_end = 0xa7f40
