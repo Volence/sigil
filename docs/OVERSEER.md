@@ -410,6 +410,154 @@ durable language surface.
 
 **From here every closure carries `answered`.**
 
+### A POISON MUST RESEMBLE THE FAILURE REALITY PRODUCES (2026-08-30, aurora's measurement)
+
+This lane booked *"poison by making the path absent"* as the discriminator between an absent-input
+failure that is silent and one that is loud. **Aurora measured that this finds the LEAST:**
+
+| scenario | misdirected rows |
+|---|---|
+| reference tree **absent** | **0** of 306 |
+| reference tree **present but empty** | **43** |
+
+**The generalisation is bigger than paths. Deleting a thing is a CLEANER break than the world
+delivers.** Real failures are partial — a half-clone, a wrong path, a stale mount, the case on
+someone else's machine — and **a partial break is what routes a failure into the wrong
+vocabulary.** A total break is loud and honest: the lookup fails at the top and names itself. A
+partial one lets a lookup return a plausible nothing and surface the error somewhere unrelated.
+
+That is the mechanism of this file's own loud-elsewhere instance: the listing was **missing from a
+tree that otherwise existed and worked**. Had the whole reference tree been gone, the failure
+would have named itself in the first line.
+
+**So a poison designed for a clean absence tests a failure mode the system will rarely meet.**
+Design the poison against the *partial* state, and run both — the total-absence run is still worth
+having as the control that proves the poison is reaching anything at all.
+
+### A COUNT CAN BE WRONG BY POPULATION OR BY UNIT, AND THIS FILE ONLY CARRIED THE FIRST (2026-08-30)
+
+This file already says **a `grep -c` counts a spelling, not a population**. Aurora's O11 landing
+supplies the other half: **even when the population is right, the UNIT can answer a different
+question.**
+
+Measured there: **one literal gated 51 rows.** So a count of literals measures **editing effort**;
+a count of rows gated measures **coverage exposure**. Both are real populations of real things.
+Only one prices the risk.
+
+**This lane's own instance, published to the hub before the correction arrived:** the
+`/home/volence` sweep here gave **322 occurrences / 181 files / 129 test-or-harness**, and the row
+was scoped by those figures — including a caveat that *"129 is not 129 unknowns"*, which was
+reasoning carefully **in the wrong unit**. The numbers stand for sizing an edit and are worthless
+for pricing exposure; re-measure by rows gated before anyone prices that row.
+
+**And a third shape neither count reaches: a WALK-UP PATH FINDER looks converted and still opens
+the real tree.** No source read catches it — only an fs-level trace with the override pointed at an
+absent directory. Check `SIGIL_ROOT` derivation in `scripts/` first.
+
+### URGENT AND IMPORTANT ARE NOT A RANKING — THE TWO ABSENT-INPUT CLASSES (2026-08-30)
+
+Sigil contributed a fourth class to the suite's baked-absolute-path audit, and it came back from
+the hub as a **fix ordering with a justification this lane did not write**. Both halves are worth
+keeping: the class, and the correction of the rule made from it.
+
+**The fourth class — BAKED-AND-LOUD-ELSEWHERE.** The suite's audit sorted absent-input failures
+into baked-and-silent, baked-and-loud, and legitimate coupling. This repo has one that is none of
+them: `listing_symbol_addr(s4.lst, sym)` on a missing listing **returns `None` rather than
+erroring**, no label is pushed, and the failure surfaces as `unresolved symbol RingSparkle_Spawn
+for fixup in section rings` — in a test with nothing to do with listings. **A sweep hunting for
+green-when-absent cannot find it: it is red, loudly, in the wrong place.** Measured cost here: one
+false attribution and three needless reverts.
+
+**The ordering that came back, and why its stated reason is wrong.** It was banked as *loud-in-the-
+wrong-place before silent-green, because a misdirected failure costs reverts while a silent pass
+costs nothing until trusted.* **The final clause is false. A green test in a suite is trusted
+immediately and by construction** — that is what a suite is for. There is no interval in which a
+silent pass sits un-relied-upon; every reader counts it as coverage the moment it is in the run.
+
+**The two classes have different URGENCIES and ranking them by seriousness inverts the durable
+risk:**
+
+- **Loud-in-the-wrong-place is URGENT and SELF-LIMITING.** It costs reverts now, to whoever holds
+  an unrelated parcel — and because it hurts, it gets fixed. This one was fixed within hours.
+- **Silent-green is IMPORTANT and NEVER SELF-CORRECTS.** Its cost is invisible and unbounded, and
+  **precisely because nothing hurts, nothing ever raises it.** It is the class that survives for
+  years, and this file's own sweep is full of them: a rerun hint nothing checks, a gate defeasible
+  by build order, a control comparing an artifact to a copy of itself.
+
+**So the correct form: fix loud-in-the-wrong-place first because it is cheap and bleeding, not
+because it is more serious.** A reader who takes the ordering as a seriousness ranking concludes
+silent-green is the lesser defect — **which is the exact reading that lets it keep living, and is
+therefore the mechanism by which it lives.**
+
+**The process note, this lane's own.** A comparative remark of mine returned from a peer as a
+settled priority ordering with a justification attached that I would not have written, on an
+instance no lane outside sigil could check. That is the corroboration circuit this file already
+names, running on my own contribution — **and the obligation is on the party who can check it to
+say so**, which here is me.
+
+### THREE WRONG DIAGNOSES OF ONE RED, AND THE STRUCTURAL CAUSE UNDER ALL THREE (2026-08-30)
+
+**CORRECTION OF RECORD. Merge commit `2a53cbaf` and the lane-log entry of 03:34:57Z both state
+that the aeon clamps parcel introduced `Cache_Fill_Resume_Col`. That is WRONG.** Those artifacts
+are pushed and are not being rewritten; this section is the correction they point at.
+
+**What actually happened, measured with correct quoting over both `section.emp` and
+`plane_buffer.emp`:**
+
+| commit | lines added carrying the symbol |
+|---|---|
+| `839d600d` — the d-45 canopy fix | **7** |
+| `d3b3ab5a` (clamps) | **0** |
+| `9ba11115` (clamps) | **0** |
+
+The pickaxe over `def98ee5..ec6a4791` names `839d600d` and nothing else. It is an **ancestor of
+the clamps merge** — already on master when that branch was cut — with **56 commits between the
+two merges and no attest among them.**
+
+**The three diagnoses, and note that each is a correct measurement wrongly scoped:**
+
+1. **aeon: "latent condition exposed."** Read the endpoints as equal (4 before, 4 after) — but
+   both counts were the *after* count, taken through the broken shell read below.
+2. **This lane: "the clamps parcel introduced it."** Read the endpoints as unequal (0 → 7) and
+   attributed the difference to the parcel being frozen. **The endpoints are right; the
+   attribution is not.** An endpoint measurement is a fact about a SPAN and about no commit
+   inside it.
+3. **The agent's own output contained the answer and neither of us read it as one.** It ran
+   `git log -S`, got `839d600d` back, wrote *"which is inside the span"* — and then concluded
+   *"the parcel added"*. **The commit that settles the question was printed and passed over,**
+   because it arrived as corroborating detail rather than as the subject.
+
+**THE STRUCTURAL CAUSE, and it is aeon's — it outlives all three diagnoses: ATTEST DEBT ACCRUES
+SILENTLY AND IS CHARGED TO A STRANGER.** A freeze attributes every strict failure to the parcel
+being frozen, because that is the only parcel it knows about. The longer the gap between attests,
+the more of someone else's debt the next freezer inherits — and **the natural reading of the red,
+by every party including the lane that caused it, is that the current parcel did it.** Nothing in
+the tooling can partition that population.
+
+**The remedy, aeon's, cheap and structural: run `freeze_preflight.sh` at the START of a parcel,
+not only before its freeze.** Red before you touch anything means the debt is not yours and the
+diagnosis begins elsewhere. It partitions the population before the question can be framed
+wrongly, which is why it beats "remember to run step two".
+
+### `git show $rev:path` IS SILENTLY BROKEN IN ZSH AND RETURNS A PLAUSIBLE ZERO (2026-08-30)
+
+`git show $rev:engine/level/section.emp` — unbraced — parses `$rev:e` as zsh's **history
+modifier** for "extension", so git receives `ngine/level/section.emp`, dies with *"ambiguous
+argument"*, and a piped `grep -c` prints **`0`**. Not an error: a plausible count.
+
+**Four instances in one night across two lanes** — three of aeon's loops and one of this lane's —
+and one of them produced the "4 before and 4 after" reading that became diagnosis 1.
+
+**This lane's instance is the instructive one because the trap was a SECOND defect on top.** The
+loop carried `2>/dev/null`, so the fatal error was discarded and the fabricated zero stood alone.
+It appeared to refute this lane's own agent and was nearly sent to aeon as such. **Suppression did
+not hide an error; it destroyed the only artifact that could have corrected the reading** — the
+exact clause this file already carries, met while breaking it.
+
+**Correctives:** brace both sides (`"${rev}:${path}"`), or `git cat-file -e` first; and never
+`2>/dev/null` a command whose emptiness you are about to treat as a finding. **The braced re-run
+is where every number in the table above comes from.**
+
 ### R2 IS GATED ON A NUMBER ONLY THE OWNER CAN SET (2026-08-30, aeon's ruling, read out of their plan)
 
 The hub pushed R2 as the next SIGIL-DECOUPLE step once R6 landed. **It is not startable**, and
