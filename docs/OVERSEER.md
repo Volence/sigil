@@ -410,6 +410,69 @@ durable language surface.
 
 **From here every closure carries `answered`.**
 
+### THREE WRONG DIAGNOSES OF ONE RED, AND THE STRUCTURAL CAUSE UNDER ALL THREE (2026-08-30)
+
+**CORRECTION OF RECORD. Merge commit `2a53cbaf` and the lane-log entry of 03:34:57Z both state
+that the aeon clamps parcel introduced `Cache_Fill_Resume_Col`. That is WRONG.** Those artifacts
+are pushed and are not being rewritten; this section is the correction they point at.
+
+**What actually happened, measured with correct quoting over both `section.emp` and
+`plane_buffer.emp`:**
+
+| commit | lines added carrying the symbol |
+|---|---|
+| `839d600d` — the d-45 canopy fix | **7** |
+| `d3b3ab5a` (clamps) | **0** |
+| `9ba11115` (clamps) | **0** |
+
+The pickaxe over `def98ee5..ec6a4791` names `839d600d` and nothing else. It is an **ancestor of
+the clamps merge** — already on master when that branch was cut — with **56 commits between the
+two merges and no attest among them.**
+
+**The three diagnoses, and note that each is a correct measurement wrongly scoped:**
+
+1. **aeon: "latent condition exposed."** Read the endpoints as equal (4 before, 4 after) — but
+   both counts were the *after* count, taken through the broken shell read below.
+2. **This lane: "the clamps parcel introduced it."** Read the endpoints as unequal (0 → 7) and
+   attributed the difference to the parcel being frozen. **The endpoints are right; the
+   attribution is not.** An endpoint measurement is a fact about a SPAN and about no commit
+   inside it.
+3. **The agent's own output contained the answer and neither of us read it as one.** It ran
+   `git log -S`, got `839d600d` back, wrote *"which is inside the span"* — and then concluded
+   *"the parcel added"*. **The commit that settles the question was printed and passed over,**
+   because it arrived as corroborating detail rather than as the subject.
+
+**THE STRUCTURAL CAUSE, and it is aeon's — it outlives all three diagnoses: ATTEST DEBT ACCRUES
+SILENTLY AND IS CHARGED TO A STRANGER.** A freeze attributes every strict failure to the parcel
+being frozen, because that is the only parcel it knows about. The longer the gap between attests,
+the more of someone else's debt the next freezer inherits — and **the natural reading of the red,
+by every party including the lane that caused it, is that the current parcel did it.** Nothing in
+the tooling can partition that population.
+
+**The remedy, aeon's, cheap and structural: run `freeze_preflight.sh` at the START of a parcel,
+not only before its freeze.** Red before you touch anything means the debt is not yours and the
+diagnosis begins elsewhere. It partitions the population before the question can be framed
+wrongly, which is why it beats "remember to run step two".
+
+### `git show $rev:path` IS SILENTLY BROKEN IN ZSH AND RETURNS A PLAUSIBLE ZERO (2026-08-30)
+
+`git show $rev:engine/level/section.emp` — unbraced — parses `$rev:e` as zsh's **history
+modifier** for "extension", so git receives `ngine/level/section.emp`, dies with *"ambiguous
+argument"*, and a piped `grep -c` prints **`0`**. Not an error: a plausible count.
+
+**Four instances in one night across two lanes** — three of aeon's loops and one of this lane's —
+and one of them produced the "4 before and 4 after" reading that became diagnosis 1.
+
+**This lane's instance is the instructive one because the trap was a SECOND defect on top.** The
+loop carried `2>/dev/null`, so the fatal error was discarded and the fabricated zero stood alone.
+It appeared to refute this lane's own agent and was nearly sent to aeon as such. **Suppression did
+not hide an error; it destroyed the only artifact that could have corrected the reading** — the
+exact clause this file already carries, met while breaking it.
+
+**Correctives:** brace both sides (`"${rev}:${path}"`), or `git cat-file -e` first; and never
+`2>/dev/null` a command whose emptiness you are about to treat as a finding. **The braced re-run
+is where every number in the table above comes from.**
+
 ### R2 IS GATED ON A NUMBER ONLY THE OWNER CAN SET (2026-08-30, aeon's ruling, read out of their plan)
 
 The hub pushed R2 as the next SIGIL-DECOUPLE step once R6 landed. **It is not startable**, and
