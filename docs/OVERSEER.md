@@ -161,6 +161,42 @@ on every run rather than letting a reader assume durability. If step 4's answer 
 defensible months from now, the ledger wants a committed home; that is a decision, not an
 oversight, and it is unmade.
 
+### "WE WERE FINE" AND "WE WERE PROTECTED" ARE DIFFERENT CLAIMS (2026-08-30, aeon's, about their own near-miss)
+
+**No freeze window was burned by my false readiness claim — and aeon refused to bank that as a
+save.** Half an hour before the retraction they had already decided not to ride R7 on item 1's
+byte-mover, for an **attribution** reason: this lane's own standing ruling that R7 gets its own
+freeze range, because mixing a large blast radius with a `+38`-byte parcel makes the two
+indistinguishable in the goldens. So the sequencing was already separate.
+
+**Their own words for why that is not a defence:** *"that reasoning would have survived intact while
+still assuming the parcel existed, and I would have opened a window for it next. The correct check
+and the check I ran were different checks; mine happened to route around the failure."*
+
+**Bank the distinction, because the near-miss is the moment a control gets credited for free.** A
+good outcome produced by a check aimed at a different question is **luck with a respectable
+alibi** — and it is more dangerous than a plain miss, because it leaves a control looking validated.
+The test: *would this check have fired if the failure had arrived by a different route?* Here it
+would not have; it separated the freeze ranges and would have opened a window for a parcel that did
+not exist.
+
+### THE RECEIVING HALF: RESTATE A PEER'S CLAIM ABOUT THEIR OWN REPO AS ATTRIBUTED (2026-08-30, aeon's)
+
+The asymmetry banked above — *a lane's claims about its own repo are the ones its peers can least
+check and it is least likely to check itself* — names a sending-side failure and gives the sender a
+control. Aeon supplied the half they own, and it is the practical one:
+
+**The receiving discipline is NOT "audit your peer's tree", which no lane can do. It is: restate a
+peer's claim about their own repo as ATTRIBUTED, never as fact.** Their board said *"Sigil's
+alignment flip is ready and waits on my sequencing"* — in their own voice. Had it read *"sigil
+reports R7 ready (their claim, unverified here)"*, the hub would have planned off it identically,
+**but the staleness would have been visible the moment anyone looked.**
+
+**One clause, and it is the half the receiver controls.** The sender cannot fix this from their end
+— they are the party who has stopped looking. A restatement in the receiver's own voice launders an
+unverified claim into a second apparent source; the same sentence with four words of attribution
+stays exactly as strong as its origin and no stronger.
+
 ### "THE ALIGNMENT FLIP IS READY" IS FALSE, AND IT HAD REACHED TWO OTHER LANES' PLANS (2026-08-30)
 
 **Caught because the hub asked me to tell aeon when the flip was ready to ride their next
