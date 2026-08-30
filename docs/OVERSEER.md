@@ -4980,3 +4980,38 @@ reconstructed afterwards. `docs/decisions.jsonl` has the same shape.
 loud), and a suite-side check that every `.jsonl` under `docs/` parses line-by-line, so it is
 caught at the next landing rather than by the next reader. **Worth raising suite-wide — nothing
 about this is sigil-specific.**
+
+### MY OWN CEILING ROW NAMED THE SECOND-TIGHTEST SYMBOL (2026-08-30, re-measured under a live byte-mover)
+
+`SOUND-PLAYSFX-AT-THE-CEILING` has been sent to the engine lane more than once reading
+*"`Sound_PlaySFX` now sits at `0x8024`, `0x24` past the `abs.w` ceiling."* That is true and it
+re-measures clean — verified firsthand in **two trees at different revisions** (`aeon`
+`4b27835f`, `.aeon-chain189` `3f143178`), not relayed:
+
+```
+(0) 1287/7FE0 :  $engine.sound_api$asm17$wait_z80:
+(0) 1288/8000 :  SoundTablesZ80_Head:      <-- EXACTLY on the ceiling. Margin: 0 bytes.
+(0) 1289/8024 :  Sound_PlaySFX:            <-- margin: 36 bytes
+```
+
+**`SoundTablesZ80_Head` is at `0x8000` exactly, one line above the symbol the row names.** So
+the binding constraint in this region has **zero** slack and the row has been quoting the
+second-tightest symbol as though it were the tightest. A **one-byte** shrink moves it under;
+`Sound_PlaySFX` needs 37.
+
+**The direction had never been stated either, and it is half the value.** Growth is the SAFE
+direction: a parcel adding bytes before this region moves both symbols further above `0x8000`
+with every encoding unchanged. Only a **shrink** is dangerous. The engine lane's +38 step 5 is
+therefore likely a non-event — worth saying to them explicitly, because a warning that omits
+the direction costs the recipient a derivation under time pressure and reads as alarm.
+
+**How it survived: measured once, restated since.** Every re-send was a faithful copy of a true
+sentence about the wrong symbol, and no re-send re-measured. This is the perishable-precedent
+rule arriving on a row this lane authored and repeatedly transmitted — the narrative aged while
+the row kept its confident shape, and the only thing that caught it was re-deriving the number
+before relaying it to a lane with a byte-mover in flight.
+
+**The falsifier, one command, and it belongs in the row rather than in a session:**
+`grep -nE "SoundTablesZ80_Head|Sound_PlaySFX" s4.lst` — at `8000` or above is clear, below means
+every `abs.w`/`abs.l` decision in the neighbourhood has flipped and a measured byte delta is not
+the whole story.
