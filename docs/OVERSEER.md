@@ -2221,58 +2221,59 @@ property of a gate, it is a property of a gate **under a named configuration**. 
 configuration or the claim is one qualifier wide of true. This lane's own `A QUALIFIER PRINTED BESIDE
 A VALUE IS PART OF THE VALUE` row is the same rule arriving at a different surface.
 
-### AN INTERRUPTED FREEZE IS INDISTINGUISHABLE FROM SOMEONE EDITING GOLDENS TO PASS A GATE (2026-08-30)
+### RETRACTED WITHIN THE HOUR: I BOOKED A DESIGN FOR A MECHANISM THIS TOOL ALREADY HAD (2026-08-30)
 
-*(aeon's incident, disclosed before this lane could discover it; verified here rather than taken.)*
+**The section that stood here was wrong and is retracted in full.** It claimed that an interrupted
+freeze leaves no marker, that regenerated goldens with untouched pins are indistinguishable from a
+hand-edit made to force a red gate green, and it set a "design bar" for a breadcrumb booked as
+unstarted. **Every element of that already exists in `refreeze`, and has since `f157a685`
+(2026-08-29 22:23), written by an earlier session of this lane.** Measured, not recalled:
 
-Their first chain-190 freeze was killed by a 10-minute foreground cap. **Measured in this tree, not
-accepted from the report:** exactly five modified files, all golden blobs — `config_a.bin`,
-`config_b.bin`, `lean.bin`, `s4.bin`, `s4.debug.bin` — with **`pins.rs` and `provenance.toml`
-untouched**. So stage 1 (`capture_goldens.sh --write`) completed and stages 2/3
-(`derive_offcanonical_sizes`, `repin`) never ran. **The tool behaved correctly: nothing was
-recorded, so nothing false was minted.** The freeze is incomplete rather than half-recorded, which
-is the better of the two ways to be interrupted, and that is a property of the design rather than
-of the luck of where the kill landed.
+- **`crates/sigil-harness/src/freeze_journal.rs`** — journal at `golden/.freeze-journal`, opened
+  before the first step, each step recorded. Its own header: *"Its ABSENCE is the only statement
+  that a freeze completed."* It was **present in this tree the entire time I was designing its
+  replacement**, carrying `started`, `root`, `aeon_rev 2e976223` and the full paste-able recovery
+  command.
+- **`do_attest` consults it FIRST** (refreeze.rs:657), deliberately before the twenty-minute suite,
+  because the answer does not change over them.
+- **`do_check` consults it BEFORE the chain comparison** (refreeze.rs:1192), with reasoning sharper
+  than mine: a killed run makes "violation" *a true statement about the wrong subject*, and the
+  journal catches what the chain comparison **structurally cannot** — a byte-neutral freeze killed
+  at the last joint moves no CRC at all.
+- **The hand-edit hole I described as open is closed at the write site.** `capture_goldens.sh`
+  **refuses** an unjournalled golden write; a deliberate hand write requires
+  `SIGIL_GOLDEN_WRITE=unjournalled` as explicit acknowledgement and leaves a trace in
+  `golden/.unjournalled-write`. So the two cases I called indistinguishable are separated by
+  construction, and the dishonest one cannot occur silently at all.
 
-**THEIR FRAMING — "there is no marker saying a freeze was interrupted" — UNDERSTATES IT, AND THE
-STRONGER VERSION IS THE REASON TO ACT.** The gap is not that a reader cannot tell *why* the tree is
-dirty. It is that **regenerated goldens with no pin regeneration and no ledger entry is byte-for-byte
-the same tree-state a person would produce by hand-editing goldens until a red gate went green.**
-Both are "modified `golden/*.bin`, everything else clean". That is this file's own
-*maintenance-act-is-the-vulnerability* shape arriving at the freeze: the legitimate recovery action
-and the illegitimate one are indistinguishable **from the artifact**, so the honest operator is
-denied a way to prove they were honest.
+**HOW BOTH OF US GOT IT WRONG, WHICH IS THE ONLY PART WORTH KEEPING.** The aeon lane said "there is
+no marker in the tree". I amplified it into a banked finding, a design bar and a queue row —
+**without opening my own tool.** The journal is at `.gitignore:26`, deliberately, because it is
+machine-local state rather than tracked content. **So `git status` cannot show it, and `git status`
+is what both of us used as the oracle.** Two experienced readers, independently, inside one hour,
+reached "the mechanism does not exist" from a command that was structurally incapable of reporting
+it.
 
-**What that implies for the design, and it is NOT "print a warning".** A breadcrumb worth having has
-to be *checkable by a later run*, not merely readable by a person:
+**THE GENUINE FINDING, AND IT IS NARROWER AND BETTER THAN THE ONE I RETRACTED: the mechanism is
+sound and its DISCOVERABILITY is not.** Nothing needs building. What is wrong is that the state
+lives where the habitual command cannot see it, and neither this board nor anything else says so.
+**The oracle for "is a freeze mid-flight or interrupted" is `refreeze --check`, never `git
+status`.** That sentence is the whole remedy, and it belongs where a reader is already standing.
 
-- Written at freeze **start**, cleared on **successful completion**, so its presence means "a freeze
-  began and did not finish" and its absence means "no freeze is mid-flight".
-- Carrying enough identity to be falsifiable — which `AEON_DIR` and revision, which stage, when —
-  so that a stale marker from last week cannot launder today's dirt.
-- **Consumed by `--attest` and `--check`**, which today refuse on dirtiness with no idea why the
-  tree is dirty. The valuable output is the *distinction*: `this dirt is an interrupted freeze
-  started at T against rev R` versus `unexplained golden modification` — the second of which is the
-  one worth alarming about, and today both are the same sentence.
-- Marker absent + goldens modified must stay **loud**, not silent. The point is to make the
-  honest case *provable*, never to give the dishonest case a story to hide behind. A breadcrumb
-  anyone can write by hand buys nothing.
+**THE CLASS, and this lane now has FOUR instances: I verify claims about other people's trees and
+assert claims about my own.** I spent the morning re-deriving a peer's file classifications,
+auditing a peer's authorization against committed sources, and refusing a peer's measurement until I
+had the mechanism — then took a peer's claim **about my own repository** and published it without
+running one command. **The rule "audit the convenient direction" has a blind spot: a claim that
+gives you work to do does not feel convenient, so it does not trigger the audit** — and this one
+handed me a parcel, which felt like diligence. Convenience is not the only thing that suppresses a
+check; *anything that makes the claim feel already-settled* does, and a peer's confident report
+about your own tool is exactly that.
 
-Booked as `PARTIAL-FREEZE-BREADCRUMB`. Sigil-internal (`refreeze` is this lane's), not started —
-they raised it explicitly *without* asking for it mid-parcel, which was the right call.
-
-**AND THE OPERATIONAL RULE THIS INCIDENT MAKES CONCRETE: DO NOT BUILD WHILE A PEER'S FREEZE IS
-RUNNING IN THIS TREE.** Their re-run is live in this working tree as this is written. A `cargo
-build` touching the shared target would relink `refreeze`/`sigil` **underneath a running freeze** —
-which is the exact hazard this lane lectured the aeon lane about at 11:00 today, pointed the other
-way. Source edits and `docs/` commits are safe; building is not. Bank the finding now, build later.
-
-**THE EXPLICIT-PATH `git add` RULE PAID OFF A SECOND TIME (n=2).** Two commits landed during the
-window in which five golden blobs sat modified in this tree by another lane's process. Both touched
-`docs/` only — verified with `git log --name-only -- crates/sigil-harness/golden/`, which returns
-nothing across today's commits. A `git add -u` or `git commit -a` at either moment would have
-committed another lane's half-finished freeze artifacts into this lane's history, under a message
-about something else entirely, and the blobs would have looked deliberate.
+**PRACTICAL BAR, cheap enough that there is no excuse: before booking ANY row that adds a
+capability, grep the crate for it.** One command. `PARTIAL-FREEZE-BREADCRUMB` is retired as
+already-shipped rather than done, and this retraction is left standing rather than deleted, because
+a design bar quietly disappearing would read as the work having landed.
 
 ### THE ASSEMBLER THAT CORRESPONDS TO NO COMMIT — ruled REBUILD, with the prediction banked first (2026-08-30)
 
