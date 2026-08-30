@@ -969,6 +969,62 @@ raise it against their own message for it to surface at all.
 
 ### Standing rules — independent of whether a row is active
 
+**THE DAY'S DOMINANT DEFECT: A TRUE SENTENCE DOING A BIGGER SENTENCE'S WORK** *(2026-08-30, four
+instances between this lane and aeon, no false statement among them).*
+
+Not one participant said anything untrue. Every instance was an **accurate narrow claim read as a
+broad guarantee**, and there is no lie anywhere in the chain to catch:
+
+| said | true of | read as |
+|---|---|---|
+| *"zero-byte, needs nothing from you"* | **bytes** | names too — a new cross-seam `ensure` broke `collision_data_port` |
+| *"I am not building while your freeze runs"* | **builds** | nothing will move — eleven docs commits moved HEAD under an attest |
+| *"the build refuses it"* | **`FAST == 0`** | every build — the gate is skipped in the authoring loop |
+| *"Part A deletes the wall"* | its own scope | the whole wall |
+
+**Why it is worse than an error: nothing is falsifiable.** A wrong claim loses to evidence. A
+correct-but-narrow claim **agrees** with every check you run, because it is true — the check
+confirms the narrow reading and the reader keeps the broad one. Both parties leave with different
+sentences and identical confidence.
+
+**THE TWO HABITS, one per side of the exchange:**
+- **Speaking: state the scope beside the claim.** *"I am not building"* → *"I will not build; I will
+  still commit docs, which moves HEAD."* The scope costs one clause and is the whole content.
+- **Reading: when a peer's sentence resolves a worry of yours, ask what it actually covers.** The
+  relief is the tell. A sentence that settles your concern is the one you will not interrogate.
+
+**The reader's half is not the smaller half** *(aeon's, about their own side)*: they ran an attest
+against a tree they do not own **without asking what would hold still**, having been told
+accurately what this lane would refrain from. The writer under-scoped; the reader over-read. Same
+pattern, two roles, neither one junior.
+
+### CHAIN 191 ATTESTED GREEN — AND THREE CORRECT REFUSALS ARE THE RESULT WORTH RECORDING
+
+Verified here from `golden/provenance.toml` rather than from the report: entry **191**
+`preset-sec5-split-attested`, **4175 passed / 0 failed / 2 ignored**, 363 suites, `sigil_rev
+a8b3adcf`, `aeon_rev 9e754036`. `refreeze --check` → `OK (chain len 191)`. Reachability **44/44, 0
+AHEAD OF REMOTE, 0 DIVERGENT** — bar entry 181's `strict.sigil_rev`, which stands unrepaired by
+ruling and was untouched.
+
+**The zero `AHEAD OF REMOTE` is this lane's push-before-attest rule paying out.** Both coordinates
+were ancestors of `origin/master` **before the suite ran**, so neither can be orphaned by a later
+rebase — the exact failure that left 181 dangling, now unreachable through this path.
+
+**THE PROPERTY WORTH KEEPING IS THE THREE REFUSALS, NOT THE GREEN.** Getting there took: a
+10-minute harness cap `SIGTERM`-ing the first freeze; the first attest going **red on 38** and
+recording `failed`; the second **refusing** because HEAD moved beneath it. **Nothing false was ever
+written at any point.** A design producing three correct refusals in a row under genuine adversity
+is doing better work than one that greens on the first try — and the mid-run HEAD move was caught
+**twice through independent instruments** (the `version_reports_the_head…` test asserting binary and
+tree agree, and the attest refusing to name a tree it could not identify). **There is no path where
+a mixed-revision run gets attested quietly.**
+
+**And it is the first mechanism today whose failure mode points toward ALARM.** The `tee` exit
+status, the blank `PIPESTATUS`, the `ls` probe and the artifact substitution all fail **green**.
+This one fails red, twice. That difference is what separates a designed check from an incidental
+one.
+
+
 **CHAIN 191 — THE SECOND BANKED PREDICTION ALSO HELD, AND THE RESULT IS STRONGER THAN THE ONE
 PREDICTED** *(2026-08-30; recorded here because the standing prohibition requires an outcome, not
 because it is interesting).*
