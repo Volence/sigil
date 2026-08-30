@@ -1145,7 +1145,18 @@ fn publicize_helper_comptime(manifest: &mut resolve::manifest::Manifest, helpers
 /// Emit every generated BINCLUDE the DAC + MT + SFX + resident-blob AS arms read
 /// (identical to `seam2_sfx_rom`'s `ensure_generated`). The sound stack is native;
 /// the `.bin`s are how those native bytes enter the AS-assembled residual.
+///
+/// The output directory is INSIDE `aeon`, so this is a WRITE into the reference
+/// tree. It refuses up front when that tree is not there
+/// ([`seam2::require_reference_tree`]) rather than creating the path and failing
+/// afterwards: a manufactured `$AEON_DIR` root turns every root-probing skip guard
+/// in the suite into a run against an empty tree, which makes an absent-tree run
+/// behave differently the second time than the first. Each emitter re-checks the
+/// same precondition, so the `emit_sound_blob` binary and direct callers get the
+/// refusal too.
 pub fn ensure_generated(aeon: &Path) {
+    seam2::require_reference_tree(aeon)
+        .unwrap_or_else(|e| panic!("ensure_generated writes into the reference tree: {e}"));
     let gen = aeon.join("engine/sound/generated");
     seam1::emit_sound_blob(aeon, &gen).unwrap_or_else(|e| panic!("emit_sound_blob (blob): {e}"));
     seam2::emit_dac_artifacts(aeon, &gen).unwrap_or_else(|e| panic!("emit_dac_artifacts: {e}"));

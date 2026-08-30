@@ -276,6 +276,30 @@ racing any concurrent build"). One module states the rule and a neighbour breaks
 unconditionally. **Remedy is byte-adjacent — `emit_sound_blob` produces the sound blob — so it is
 sequenced with the aeon lane, not taken solo.**
 
+**CLOSED, AND BYTE-NEUTRAL — the answer aeon was waiting on before rebasing a byte-mover.**
+`docs/superpowers/notes/2026-08-30-reference-tree-write-guard.md`. **All SEVEN emitters carried
+the shape, not just the first** — enumerated, not assumed. Each now calls
+`seam2::require_reference_tree(aeon)` before it creates anything, and moves its `create_dir_all`
+to AFTER the bytes exist, so a failing emit leaves nothing behind even inside a present tree. The
+guard's probe (`SOUND_PLACEMENT_MAP_REL`) is the same constant `bank_anchors` reads, so the
+precondition and the input it guards cannot name different files. All four shapes rebuilt:
+`s4.bin 6e2f9b22/719315`, `s4.debug.bin 6516fc68/736315`, `demo.bin 9223a60d/96450`,
+`demo.debug.bin d30c3636/101333` — **all four MATCH THE GOLDEN**. Nothing in `golden/`,
+`pins.rs` or `repin.toml` touched.
+
+**The three-state instability is gone**, re-measured the same way: absent-pristine, the same
+command again, and after a delete now read identically, because nothing conjures the root
+between runs. The gate is `crates/sigil-harness/tests/reference_tree_write_guard.rs`, run by
+every `cargo test --workspace` (so by `scripts/landing-run.sh`), never skipping because it needs
+no reference tree — and its emitter set is PARSED OUT OF `ensure_generated`'s own body, so an
+eighth emitter added there and not to the gate fails by name rather than shrinking the coverage
+silently. It reports UNMEASURABLE rather than green when it cannot establish that it ran.
+
+**Still open, and NOT this lane's to take:** whether `ensure_generated` should write into the
+reference tree at all, and the hardcoded `AEON_DIR` default itself (93 `.rs` files / 113
+non-comment occurrences; 29 of the 127 literal-or-helper files can reach the write). Enumerated
+with a recommendation and blast radius in the note; deliberately unchanged.
+
 ### A PUBLISHED COUNT OF MINE DOES NOT REPRODUCE — `322/181/129` IS RETIRED, NOT RESTATED (2026-08-30)
 
 This board published **322/181/129** as the size of the home-paths exposure. Under measurement it

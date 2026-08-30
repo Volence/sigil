@@ -85,11 +85,43 @@ struct BankAnchors {
     sound_bank_vma: u32,
 }
 
-/// Parse the two seam-2 anchors from `games/sonic4/map.toml` and check the emit's
-/// lay-down order is a subsequence of the map's declared `order`. Reuses the
+/// The seam placement authority, aeon-relative: every sound artifact's LMA derives
+/// from this map's `dac_banks` / `sound_bank` anchors. [`bank_anchors`] READS it and
+/// [`require_reference_tree`] PROBES it, both through this one constant, so the
+/// emitters' precondition and the emitters' first input can never name different
+/// files.
+pub const SOUND_PLACEMENT_MAP_REL: &str = "games/sonic4/map.toml";
+
+/// The precondition every sound emitter checks before it creates anything: `aeon`
+/// must carry [`SOUND_PLACEMENT_MAP_REL`], the map the emit derives its placement
+/// from. `Ok(())` when it does; otherwise an error NAMING the absent path, with
+/// nothing created.
+///
+/// The order matters as much as the check. An emitter's output directory lives
+/// UNDER `aeon`, so creating it inside a tree that is not there manufactures that
+/// tree's root — and the suite's reference guards probe roots (`if !aeon.exists()`).
+/// A root conjured by one row flips every such guard from "skip" to "run against an
+/// empty tree", so a run's second pass measures a different tree than its first.
+/// Validating first keeps a missing reference tree a stable, self-describing
+/// condition instead of a mutation of the thing under test.
+pub fn require_reference_tree(aeon: &Path) -> Result<(), String> {
+    if aeon.join(SOUND_PLACEMENT_MAP_REL).is_file() {
+        return Ok(());
+    }
+    Err(format!(
+        "reference tree not at {} (no {SOUND_PLACEMENT_MAP_REL}) — set AEON_DIR to an aeon \
+         checkout. Nothing was created: a sound emitter writes UNDER this tree, and creating a \
+         directory inside an absent tree makes the tree's root exist, which turns every \
+         root-probing skip guard in the suite into a run against an empty tree.",
+        aeon.display()
+    ))
+}
+
+/// Parse the two seam-2 anchors from [`SOUND_PLACEMENT_MAP_REL`] and check the
+/// emit's lay-down order is a subsequence of the map's declared `order`. Reuses the
 /// harness's map reader ([`load_placement_map`]) — no second map engine.
 fn bank_anchors(aeon: &Path) -> Result<BankAnchors, String> {
-    let path = aeon.join("games/sonic4/map.toml");
+    let path = aeon.join(SOUND_PLACEMENT_MAP_REL);
     let src = std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
     bank_anchors_from_str(&src)
 }
@@ -581,8 +613,9 @@ fn emit_dac_body_and_head_at(
 /// is shape-INVARIANT (one blip + one shared + one head, no `-D`/`__DEBUG__`), so —
 /// unlike the resident blob — there is NO `_debug` variant.
 pub fn emit_dac_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    require_reference_tree(aeon)?;
     let out = emit_dac_body_and_head(aeon)?;
+    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let write = |name: &str, bytes: &[u8]| -> Result<(), String> {
         let p = out_dir.join(name);
         std::fs::write(&p, bytes).map_err(|e| format!("write {}: {e}", p.display()))
@@ -891,8 +924,9 @@ pub fn emit_sound_tables_z80_doctored(
 /// Emit the seam-2 sound-tables build input to `out_dir`: `sound_tables_z80.bin`
 /// (shape-invariant — one file serves both shapes).
 pub fn emit_sound_tables_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    require_reference_tree(aeon)?;
     let bytes = emit_sound_tables_z80(aeon)?;
+    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let p = out_dir.join("sound_tables_z80.bin");
     std::fs::write(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
     Ok(())
@@ -985,8 +1019,9 @@ pub fn emit_pitchtable_doctored(aeon: &Path, doctor: bool) -> Result<Vec<u8>, St
 /// Emit the seam-2 pitch-table build input to `out_dir`:
 /// `movingtrucks_pitchtable.bin` (shape-invariant — one file serves both shapes).
 pub fn emit_pitchtable_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    require_reference_tree(aeon)?;
     let bytes = emit_pitchtable(aeon)?;
+    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let p = out_dir.join("movingtrucks_pitchtable.bin");
     std::fs::write(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
     Ok(())
@@ -996,9 +1031,13 @@ pub fn emit_pitchtable_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), Stri
 /// `seq_opcode_tab{,_debug}.bin` (the 64-byte jump table, shape-dependent — the
 /// resident handlers re-base in the debug shape).
 pub fn emit_seq_opcode_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    require_reference_tree(aeon)?;
+    let mut artifacts = Vec::new();
     for (debug, name) in [(false, "seq_opcode_tab.bin"), (true, "seq_opcode_tab_debug.bin")] {
-        let bytes = emit_seq_opcode_tab(aeon, debug)?;
+        artifacts.push((name, emit_seq_opcode_tab(aeon, debug)?));
+    }
+    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    for (name, bytes) in artifacts {
         let p = out_dir.join(name);
         std::fs::write(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
     }
@@ -1014,16 +1053,20 @@ pub fn emit_seq_opcode_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), Stri
 /// reads `SfxTable` — `sound_sfx.emp`'s `SfxBlobWinTab` reads are native (its
 /// address is a seam-1 banked carrier at $845F, unchanged by this unit).
 pub fn emit_sfx_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    require_reference_tree(aeon)?;
+    let mut artifacts = Vec::new();
     for (debug, body_name, head_name) in [
         (false, "sfx_bank.bin", "sfx_blob_win_tab.bin"),
         (true, "sfx_bank_debug.bin", "sfx_blob_win_tab_debug.bin"),
     ] {
         let out = emit_sfx_body_and_head(aeon, debug)?;
-        let body_path = out_dir.join(body_name);
-        std::fs::write(&body_path, &out.body).map_err(|e| format!("write {}: {e}", body_path.display()))?;
-        let head_path = out_dir.join(head_name);
-        std::fs::write(&head_path, &out.head).map_err(|e| format!("write {}: {e}", head_path.display()))?;
+        artifacts.push((body_name, out.body));
+        artifacts.push((head_name, out.head));
+    }
+    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    for (name, bytes) in artifacts {
+        let p = out_dir.join(name);
+        std::fs::write(&p, &bytes).map_err(|e| format!("write {}: {e}", p.display()))?;
     }
     Ok(())
 }
@@ -1157,7 +1200,8 @@ fn emit_mt_bank_at(
 /// whole-ROM link resolves — no emitted equ artifact. SHAPE-DEPENDENT (the two songs
 /// the debug build adds), so each artifact has a `_debug` variant.
 pub fn emit_mt_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    require_reference_tree(aeon)?;
+    let mut artifacts: Vec<(&str, Vec<u8>)> = Vec::new();
     for (debug, body_name, st_name, spt_name) in [
         (false, "mt_bank_body.bin", "mt_songtable.bin", "mt_songpatchtable.bin"),
         (true, "mt_bank_body_debug.bin", "mt_songtable_debug.bin", "mt_songpatchtable_debug.bin"),
@@ -1185,9 +1229,13 @@ pub fn emit_mt_artifacts(aeon: &Path, out_dir: &Path) -> Result<(), String> {
         for (name, data) in
             [(body_name, body), (st_name, songtable), (spt_name, songpatchtable)]
         {
-            let path = out_dir.join(name);
-            std::fs::write(&path, data).map_err(|e| format!("write {}: {e}", path.display()))?;
+            artifacts.push((name, data.to_vec()));
         }
+    }
+    std::fs::create_dir_all(out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
+    for (name, data) in artifacts {
+        let path = out_dir.join(name);
+        std::fs::write(&path, &data).map_err(|e| format!("write {}: {e}", path.display()))?;
     }
     Ok(())
 }
