@@ -119,12 +119,14 @@ fn section_value_equs() -> Vec<Section> {
     sigil_harness::test_support::assemble_equ_pairs(&pairs)
 }
 
-/// The 19 cross-seam ADDRESS symbols — RAM labels + ROM transfer targets — each
+/// The cross-seam ADDRESS symbols — RAM labels + ROM transfer targets — each
 /// a `phase`d one-byte carrier at its true per-shape VMA (label position is
 /// load-bearing: abs.w/abs.l width selection and PC-rel disp both read it).
+/// The count lives in the array type, not in this prose: a bound restated here
+/// is executed by nothing, so nothing goes red when it rots.
 fn section_addr_labels(debug: bool) -> Vec<Section> {
     let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
-    let table: [(&str, u32); 21] = [
+    let table: [(&str, u32); 23] = [
         // DEBUG-only: the blanket-restore parcel's IPL>=6 assert on
         // Section_RedrawPlanes' two autoincrement excursions expands to
         // jsr/jmp these (sprites_port/core_port precedent). Shape-invariant
@@ -149,6 +151,13 @@ fn section_addr_labels(debug: bool) -> Vec<Section> {
         ("Cache_Bottom_Row", pick(pins::CACHE_BOTTOM_ROW)),
         ("Cache_Origin_Col", pick(pins::CACHE_ORIGIN_COL)),
         ("Cache_Origin_Row", pick(pins::CACHE_ORIGIN_ROW)),
+        // Tile_Cache_Fill's partial-column / partial-row resume slots ($FFFF =
+        // none pending). Section_UpdateColumns' four loops read them to stop at a
+        // declared-but-not-filled column or row, so they are cross-seam RAM labels
+        // of this module in BOTH shapes; a shape that does not reference one simply
+        // leaves the carrier unused, the way the MDDBG entries above do in plain.
+        ("Cache_Fill_Resume_Col", pick(pins::CACHE_FILL_RESUME_COL)),
+        ("Cache_Fill_RowResume_Row", pick(pins::CACHE_FILL_ROW_RESUME_ROW)),
         ("Plane_Buffer_Ptr", pick(pins::PLANE_BUFFER_PTR)),
         ("Tile_Cache_Nametable", pick(pins::TILE_CACHE_NAMETABLE)),
     ];
