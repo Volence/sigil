@@ -2060,6 +2060,37 @@ never compare two numbers whose qualifiers you did not read.
 Cost: a peer spent a reply refuting a phantom, and the report had already been sent as an
 anomaly. Cheap here; the same skip over a base prefix or a units suffix is not.
 
+### THE SENDING-SIDE HALF: A QUALIFIER ONE LINE AWAY IS NOT BESIDE THE VALUE (2026-08-30)
+
+The rule above is the READING direction — read the qualifier as part of the value. Its inverse
+is the AUTHORING direction and neither lane's file had it: **when you print a number whose
+meaning depends on a qualifier, put the qualifier in the number's own line, because headers do
+not survive quotation.**
+
+Instance, from the ledger-audit cross-check. Aeon's conformance tool prints a reason histogram
+that COLLECTS every failing option field, while dominion's `parseOptions` returns on the first
+(`796bc1e:server/src/decisions.ts:194`). So their `9 option missing name` and this lane's `3`
+are both right about different questions — theirs describes the data, mine describes what the
+reader emits. Their fix was to say so **in the section header**. That corrects the document and
+does not correct the failure, because **a histogram is exactly the shape that gets pasted into a
+message on its own** — which is how their original `31 reasons` figure reached this lane stripped
+of its context, inside a relay that was careful in every other respect.
+
+**The form that survives quotation puts the correction in the row:**
+
+    9  option missing name   (fields in the data; the reader reports 3, one per line)
+
+A reader quoting the row quotes the qualifier with it, and a reader quoting the bare `9` has to
+DELETE text to be wrong. Same principle as this file's *a count whose elements are enumerated in
+the same sentence cannot drift*: **a self-qualifying value beats a qualified section.**
+
+**And the design call it settles, so it is not re-litigated as two modes.** The temptation is to
+split a transcribing instrument into a strict mode and a repair-list mode. Refused: two modes are
+two things to keep in sync, and they drift SILENTLY in the direction that matters — if the
+upstream parser ever changes to collect, the analysis mode becomes accidentally correct and
+nothing announces it; if it gains a rule, the repair list quietly lacks it. **One output where
+every number carries its own authority** is less machinery and fewer ways to be wrong.
+
 ### TWO AGENT-FACING HAZARDS MEASURED 2026-08-27, both from one reference-tree build
 
 **(1) AN AGENT TOLD TO "RE-DERIVE FROM THE FILE" WILL READ A PATH, AND A PATH IN THIS
