@@ -174,7 +174,9 @@ pub fn act_sec_field_equs() -> Vec<(&'static str, &'static str)> {
         // record are byte-identical. `pcfg_v_factor_fg` is not deleted (it is still a
         // live authoring/schema field, read by both lowerings and scene_equiv_proof's
         // differ); it moved to the tail at $1C. 29 payload bytes do not round to an
-        // even record, so `pcfg_pad_29` at $1D is the one byte the evenness costs.
+        // even record, so $1D is the one byte the evenness costs; `pcfg_bob` occupies
+        // it and carries the vertical-bob selector, so the byte is spent rather than
+        // reserved and `sizeof(parallax_config)` stays 30.
         ("parallax_config_len", "$1E"),
         ("parallax_config_pcfg_band_count", "0"),
         ("parallax_config_pcfg_v_factor_bg", "1"),
@@ -192,10 +194,11 @@ pub fn act_sec_field_equs() -> Vec<(&'static str, &'static str)> {
         ("parallax_config_pcfg_v_deform_shift_bg", "25"),
         ("parallax_config_pcfg_anchor_dsa", "26"),
         ("parallax_config_pcfg_anchor_dsb", "27"),
-        // band-ceiling-16: the record tail. $1C = 28 is the RESERVED
-        // `pcfg_v_factor_fg` rehomed from $02; $1D = 29 the evenness pad.
+        // The record tail. $1C = 28 is the RESERVED `pcfg_v_factor_fg` rehomed from
+        // $02; $1D = 29 is `pcfg_bob`, the byte the even-size requirement costs, now
+        // carrying the vertical-bob selector.
         ("parallax_config_pcfg_v_factor_fg", "28"),
-        ("parallax_config_pcfg_pad_29", "29"),
+        ("parallax_config_pcfg_bob", "29"),
         ("DMAEntry_len", "14"),
     ]
 }

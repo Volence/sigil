@@ -933,8 +933,9 @@ fn generated_pins_match_the_hand_typed_baseline() {
     //   `pcfg_layer_mask` carries ONE BIT PER BAND, so a 16-band ceiling makes it a u16,
     // and a u16 needs an even slot. It takes $02, which the RESERVED `pcfg_v_factor_fg`
     // held; that field is kept (it is still authored and still read by both lowerings and
-    // scene_equiv_proof's differ) and rehomed to the tail at $1C, with `pcfg_pad_29` at
-    // $1D as the byte the even-size requirement costs on 29 payload bytes.
+    // scene_equiv_proof's differ) and rehomed to the tail at $1C, with $1D as the byte
+    // the even-size requirement costs on 29 payload bytes. The name in that slot is not
+    // load-bearing for this derivation, which is about the SLOT.
     // sizeof(parallax_config) 28 -> 30, so every lowered record's HEADER grows 2 B.
     //   The registry holds 20 ParallaxConfig records (the SCENES[0..19] rows in
     // games/sonic4/data/effects/scene_registry.emp), so 20 x 2 = 40 = 0x28. Nothing else
