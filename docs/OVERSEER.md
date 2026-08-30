@@ -969,6 +969,27 @@ raise it against their own message for it to surface at all.
 
 ### Standing rules — independent of whether a row is active
 
+**`git status` IS NOT "the state of this tree", AND IT IS BLINDEST EXACTLY WHERE THIS REPO KEEPS
+ITS MECHANISMS** *(2026-08-30; aeon's formulation, from an error we made in both directions).*
+`git status` reports **tracked, non-ignored divergence**. Everything deliberately excluded from
+version control is invisible to it **by construction** — and machine-local state is precisely the
+category a `.gitignore` exists to hold. So the reflexive "what is going on in this tree" command
+is structurally incapable of reporting interruption markers, journals, caches and staging dirs,
+which is where this repo puts its safety mechanisms. Two overseers independently concluded a
+mechanism did not exist, inside one hour, from this command.
+
+**Consequences that are cheap and non-negotiable:**
+
+- **The oracle for "is a freeze in flight or interrupted" is `refreeze --check`, NEVER `git
+  status`.** The journal is `golden/.freeze-journal` (`.gitignore:26`); its **absence** is the only
+  statement that a freeze completed.
+- When asking *does this tree carry X*, and X is machine-local, use `git status --ignored
+  --untracked-files=all` or ask the tool that owns X. A bare `git status` answers a narrower
+  question than the one being asked, and answers it confidently.
+- **Before booking any row that adds a capability, grep the crate for it.** One command. A design
+  bar written for an existing mechanism is worse than no row, because it looks like new work.
+
+
 **Anything that can relink counts**, not just `cargo build --release` — see *Guard the
 artifact, not the subcommand*. `cargo test --release --workspace` relinks the identical file.
 Agents in worktrees with their own `CARGO_TARGET_DIR` are unaffected; a row binds the **main
