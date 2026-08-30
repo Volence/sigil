@@ -981,8 +981,17 @@ mechanism did not exist, inside one hour, from this command.
 **Consequences that are cheap and non-negotiable:**
 
 - **The oracle for "is a freeze in flight or interrupted" is `refreeze --check`, NEVER `git
-  status`.** The journal is `golden/.freeze-journal` (`.gitignore:26`); its **absence** is the only
-  statement that a freeze completed.
+  status` AND NEVER A DIRECT `ls`.** The journal is `golden/.freeze-journal` (`.gitignore:26`).
+  Its absence means "completed" **only when read through `--check`** — a mistyped path, a relative
+  path under a reset cwd, or a wrong root all return "absent" too, and **a rule whose correct use
+  is indistinguishable from its incorrect use is one `ls` away from being wrong** *(aeon's
+  formulation, 2026-08-30, from a sample of theirs that returned ABSENT mid-freeze)*.
+  **There is no race behind that sample** — settled here rather than assumed: `open` writes the
+  file once (`freeze_journal.rs:178`), `record` **appends** (`OpenOptions::append(true)`, `:194`)
+  so nothing unlinks mid-run, and `close` removes it only after every step is recorded and refuses
+  otherwise. Confirmed empirically under a live freeze: 40/40 presence samples, **one inode**
+  (`53101851`), mtime unchanged since `open`. The mechanism cannot produce a transient absence;
+  a direct filesystem read can produce a wrong answer for other reasons, which is the point.
 - When asking *does this tree carry X*, and X is machine-local, use `git status --ignored
   --untracked-files=all` or ask the tool that owns X. A bare `git status` answers a narrower
   question than the one being asked, and answers it confidently.
