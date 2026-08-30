@@ -5978,7 +5978,7 @@ mod derived_layout_tests {
         assert_eq!(w.level, sigil_span::Level::Warning);
         assert!(w.location.is_none(), "a layout drift has no source line");
         assert!(w.message.starts_with("[layout.provisional-drift]"), "{}", w.message);
-        assert!(w.message.contains("`Tail`"), "names the drifted section's head label: {}", w.message);
+        assert!(w.message.contains(&format!("`{L_TAIL}`")), "names the drifted section's head label: {}", w.message);
         assert!(w.message.contains(&format!("delta {:+#x}", growth)), "carries the delta: {}", w.message);
     }
 
@@ -5991,8 +5991,8 @@ mod derived_layout_tests {
         let w = provisional_drift_warning(&sec, packed, TAIL_PROV as i64);
         for needle in [
             "[layout.provisional-drift]",
-            "`sec_Tail`",
-            "`Tail`",
+            &format!("`sec_{L_TAIL}`"),
+            &format!("`{L_TAIL}`"),
             &format!("{packed:#x}"),
             &format!("{:#x}", TAIL_PROV),
             "delta +0x2000",
@@ -6186,8 +6186,8 @@ mod derived_layout_tests {
             &|_| Some("games/sonic4/player/player_sensors.emp:202:17".to_string()),
         );
         for needle in [
-            "`sec_Code`",
-            "(`Code`)",
+            &format!("`sec_{L_CODE}`"),
+            &format!("(`{L_CODE}`)"),
             "measures 0x4 then 0x6 at base 0x1000",
             "games/sonic4/player/player_sensors.emp:202:17 (4 B -> 6 B)",
         ] {
