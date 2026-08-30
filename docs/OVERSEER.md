@@ -2199,6 +2199,79 @@ ninety minutes, both of which landed on this lane's in-flight work. Boot-time is
 read anybody performs unless you make yourself perform another; re-read when a peer cites
 a bar you don't recognise, before dispatching a wave, and at any landing.
 
+### THE ASSEMBLER THAT CORRESPONDS TO NO COMMIT — ruled REBUILD, with the prediction banked first (2026-08-30)
+
+The aeon lane merged step 5 (their master `9cdf32d8`, parcel merge `14de0893`) and measured all of
+it with `target/release/sigil` reporting **`d5967f87-dirty`**, mtime 05:40:26. They stopped and
+asked rather than freezing, which is the whole reason this went well.
+
+**RULED: rebuild. Do not freeze against it.** The argument is **unnameable**, not *old*.
+`d5967f87` is a real commit here (05:37:03) and an ancestor of the tip — that part is fine. The
+`-dirty` suffix means uncommitted changes existed in this tree at 05:40, and the tree has moved 21
+commits since, so **that delta is unrecoverable**: the binary corresponds to no state anyone can
+reconstruct. This lane's own drift-key doctrine already says a dirty tree is non-identifying, and
+their `ASSEMBLER-IDENTITY-UNRECORDED` row lands on the same answer independently.
+
+**The rebuild's byte risk was MEASURED, not asserted.** Across `d5967f87..d6dab4ca`, **zero commits
+touch any codegen crate** (`sigil-backend-m68k/src`, `sigil-backend-z80/src`, `sigil-ir/src`,
+`sigil-isa/src`, `sigil-link/src`, `sigil-frontend-emp/src`, `sigil-frontend-as/src`,
+`sigil-s4lz/src`). Six touch anything cargo compiles; five are tests, harness bins and scripts.
+**Exactly one touches non-test source in the `sigil` binary's own closure: `1c7fe7f9`,
+`crates/sigil-cli/src/tree_class.rs`** — the self-reporting path, not the emission path.
+
+**THE PREDICTION, BANKED BEFORE THE BUILD AND STILL UNRESOLVED AS THIS IS WRITTEN.** A rebuild
+leaves `36adb158`/719329, `eadd7175`/736331, `9223a60d`/96450, `d30c3636`/101333 unchanged.
+Recorded on their side at aeon `c18a3d56`, with the grounds **re-derived there** rather than taken
+from this lane's message.
+
+**FORBIDDEN READING, stated as a prohibition because a caveat would not survive:** this entry is a
+PREDICTION. **Nobody may read it as a result.** If no later text records the measured outcome
+against it, the outcome was never measured — an unresolved banked prediction looks like evidence,
+reads as settled, and nothing in it says it was never checked. **Whoever resolves it MUST write the
+outcome here.** (Their line, adopted; they wrote it unprompted.)
+
+**Why it is worth one build — the asymmetry, which is the actual argument.** If the CRCs hold:
+freeze proceeds, their step-5 deltas stand, and the record gains a nameable toolchain. If they
+move: an emission-affecting change exists in **no commit**, every step-5 number came from an
+assembler nobody can rebuild — and **freezing against the on-disk binary makes that case
+permanently undetectable.** The check is possible only before the freeze, never after.
+
+**THE EXPORT PATH — `/home/volence/sonic_hacks/.sigil-freeze-bin/sigil-<rev>`.** Build, verify
+`--version` reports a clean revision with **no `-dirty`**, then copy out and `chmod a-w`. If it
+still reports dirty, nothing is copied and the peer gets a message, not a binary.
+**A dedicated `CARGO_TARGET_DIR` is NOT sufficient and this is the trap worth naming:** it fixes
+*sharing* and leaves *relinking* exactly where it was, because cargo overwrites its own output —
+the next build here would silently replace the binary under a peer's freeze. Same defect, smaller
+blast radius, and it reads as solved. A revision-named, write-protected copy is a difference in
+kind. Guard the artifact, not the subcommand; and the revision in the filename means a stale
+reference **names itself** instead of resolving to whatever is newest.
+
+**MTIME-WATCHING IS THE WEAKER CLAIM.** The aeon lane held `target/release/sigil`'s mtime at
+05:40:26 across their run — the right control, and it rules out a relink *during* the measurement.
+It shows a relink **did not happen**, never that one **could not**. Their own `fine != protected`
+arriving at their evidence rather than their process; they conceded it, then would have taken the
+dedicated-target fix and called it solved.
+
+**THE PARKED CASE IS ALREADY DECIDED, at aeon `0c201a60`, written while nothing was pressing.** If
+this lane is parked, **aeon does not freeze against the dirty binary — it holds indefinitely.** A
+freeze is permanent and an unfrozen merge is not; nothing is blocked behind it, so "we need to
+freeze to keep moving" is false; and the asymmetry does not decay with waiting. They also wrote the
+forbidden reading into it: *"aeon eventually froze against it, so it must have been fine"* is not
+available as an inference, and any future entry frozen against `d5967f87-dirty` was taken
+**against** that decision and owes its own recorded reasoning. **Consequence for a successor here:
+a rotation of this lane cannot cause a bad freeze.**
+
+**STILL OWED BY THIS LANE:** confirm independently that the new `use` edge in `ojz_effects.emp` ->
+`games.sonic4.ojz_effects_editor_act1` does not silently break a `*_port` test. They asked
+explicitly that their own word not be taken — their build cannot see that failure mode.
+
+**NAMES ARE NOT BEHAVIOUR — n=3 in one day, and none caught by the claimant.** `emit_sound_blob`,
+`seam2` and `test_support` were each misfiled **by name** and each corrected by someone other than
+the person who filed them. The claimant is structurally the worst-placed person to notice, because
+the name is what they already believe. Remedy: answer *what does this file do* from its **call
+sites**, and re-derive a peer's classification **especially when it agrees with you** — which is
+what the aeon lane did to the classification above before accepting it.
+
 ## Landing-lane division — THE rule for this repo
 
 The aeon↔sigil landing lane has **one owner, and it is the aeon overseer** (owner
