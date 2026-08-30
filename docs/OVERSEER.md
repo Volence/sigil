@@ -2828,18 +2828,43 @@ clock.
 - Do **not** touch `aeon-effects-gates.{service,timer}`; that lane is aeon's, and it
   fires at 04:17 so the two do not contend.
 
-**⚠ The lane's self-audit reads PROSE, and a doc comment can take the whole lane down.**
-Before running, the script classifies every `crates/*/tests/*.rs` matching
-`AEON_DIR|aeon_dir|reference_tree|--aeon` as either in `SOURCE_GATES` or derivably
-artifact-dependent, and exits `2` — the entire nightly backstop dark, reporting nothing —
-if any file is neither. That grep cannot tell a *use* from a *mention*: a new test whose
-header says "takes no `AEON_DIR`" matches on the disclaimer and is unclassifiable by
-construction. Caught on `feat/version-provenance` before landing (replaying the audit gave
-`unclassified=1 [version_provenance]` at the first delivery, `0` after); the fix was to
-describe those inputs without naming the identifiers, and to say why in the file so the
-next author does not re-arm it. **Replay the audit against any branch adding a
-`crates/*/tests/*.rs` file** — it costs one loop and the failure is otherwise invisible
-until 05:17.
+**⚠ The lane's self-audit reads PROSE, and a doc comment used to take the whole lane
+down.** Before running, the script classifies every `crates/*/tests/*.rs` matching
+`AEON_DIR|aeon_dir|reference_tree|--aeon`, and exits `2` — the entire nightly backstop
+dark, reporting nothing — if any file lands in none of its buckets. That grep cannot tell
+a *use* from a *mention*: a test whose header says "takes no `AEON_DIR`" matches on the
+disclaimer. Caught on `feat/version-provenance` before landing (replaying the audit gave
+`unclassified=1 [version_provenance]` at the first delivery, `0` after); the fix there was
+to describe those inputs without naming the identifiers, and to say why in the file so the
+next author does not re-arm it — **still the right thing to do in a new file**, because a
+file that stays out of the selected population needs no bucket at all.
+
+**The buckets are now THREE, and the third is derived** (`fix/source-gate-third-bucket`,
+2026-08-30 — see `docs/superpowers/notes/2026-08-30-source-gate-third-bucket.md`). A file
+that names the reference tree without ever OBTAINING one is bucketed `no-reference`,
+counted in the verdict, and is not a defect: this lane has nothing to run for it and the
+workspace suite already runs it on every invocation. Membership is decided per file, from
+content — *does it call an accessor that yields the tree, or read the environment variable
+itself?* — and the accessor set is closed over `test_support.rs`'s own public functions
+from the one that reads that variable, so a new accessor spelled there joins the rule with
+no edit to the script. **It is not a roster**: the fifth file in this shape
+(`reference_tree_named_write`, landed by a concurrent branch mid-parcel) was classified
+correctly with no change to the rule. The question is asked only *after* the two
+established ones, so it can speak for a file that used to fall through and for no other.
+A rule that cannot be derived **refuses** — an unreadable `test_support.rs`, an
+unextractable variable name, an empty accessor set each exit `2` naming what could not be
+measured, because an empty accessor set would otherwise make every file look like it reads
+nothing and the lane would go green over a population it never classified.
+
+**`--audit` is the read-only way to ask.** It runs the classification alone against the
+checkout the script lives in (or `$2`), creates no worktree, builds nothing, and never
+reaches `note`, so it sends no notification. `crates/sigil-harness/tests/source_gate_classification.rs`
+invokes it on every `cargo test --workspace`, which is what `scripts/landing-run.sh` and CI
+run — so **a landing run now fails on an unclassified file**, and the second test there
+reconciles the four bucket sizes against the scanned population so a classifier that
+silently dropped files cannot report `unclassified=0` and be believed. Replaying the audit
+by hand against a branch is still worth one loop; it is no longer the only thing that
+looks.
 **⚠ `gates=N` is NOT a number this script prints — it is a reconstruction, and two lanes
 reconstructed different quantities under the same label** *(caught 2026-08-22, at a landing)*.
 The script emits no `gates=` line at all. This document recorded `gates=35 unclassified=0`
@@ -2853,11 +2878,22 @@ is the only one the script acts on (non-zero ⇒ exit 2, whole lane dark). When 
 audit replay, name the quantity: `SOURCE_GATES=<n> scanned=<n> unclassified=<n>`, never a
 bare `gates=`.
 
-**Left open, deliberately:** tightening the detector to match code uses rather than any
-occurrence would disarm the trap, but it also loosens what the lane considers
-unclassified, and a genuinely aeon-reading gate escaping silently is the failure this
-audit exists to prevent. Soundness-reducing, so it is not a parcel-local call — it needs
-its own ruling.
+**Left open, deliberately:** the SELECTOR is still any occurrence, and that is the safe
+direction — narrowing it to code uses would let a genuinely aeon-reading gate escape the
+audit entirely, which is the failure the audit exists to prevent. The third bucket does
+not narrow it: every file the selector matches is still classified, and the ones that read
+nothing are answered rather than dropped.
+
+**Also left open, and it is the bigger question:** `SOURCE_GATES` is still a hand-kept run
+list, and the three files that darkened the lane alongside `reference_tree_write_guard`
+were genuine source gates nobody had added. The derived rule already computes the property
+that decides it — *reads the tree, names no committed artifact* — so the lane could DERIVE
+its run list and a new source-only gate would join automatically instead of refusing.
+**That is not a parcel-local call.** It trades a refusal for an auto-enrolment: strictly
+better than dark, but a third-shape gate (source inputs, oracle'd on a golden or on
+`pins.rs`) that stopped naming its artifact would then join and be red through every
+refreeze window, and nightly criticals nobody can clear are how a lane gets ignored. It
+needs its own ruling; the mechanism to implement it is in place either way.
 
 **Adjudicating a warn-tier firing.** A new firing goes into `CORPUS_OPEN_FINDINGS`
 (`crates/sigil-cli/tests/warn_tier_corpus.rs`), **not** into `WARN_ID_BASELINE`. The
@@ -3866,12 +3902,15 @@ fires; it rewrites the level tree and churns `DONOR_PROVENANCE.json`.
 tip by parsing the file, never by reading a revision off prose. Note the tip entry pins
 **seven** targets; `build.sh` emits four and the suite produces the other three, so the
 four-ROM check is the right bar but is not the whole entry.
-**⚠ `scripts/nightly_source_gates.sh` has NO audit flag** (`--selftest-fail` is the only
-one), and running it to "check the audit" is NOT read-only: it creates worktrees off `master`
-in the shared checkouts, builds salvador and regenerates compression vectors. To read
-`gates=N unclassified=N` safely, replicate its inline audit block (its own `SOURCE_GATES`
-array plus the classification loop) against your own worktree)**; `~/sonic_hacks/.aeon-sigil-gates` is **source-only by construction** and must
-never be pointed at an artifact-dependent run.
+**⚠ `scripts/nightly_source_gates.sh --audit` is the read-only way in, and the ONLY one.**
+Running the script bare to "check the audit" is not read-only — it creates worktrees off
+`master` in the shared checkouts, builds salvador, regenerates compression vectors, and
+`note()` sends the owner a **critical desktop popup** with nothing on stdout to tell you it
+did. `--audit` runs the classification alone against the checkout it lives in (or `$2`),
+touches nothing, and never reaches `note`; it prints
+`SOURCE_GATES=<n> scanned=<n> source=<n> artifact=<n> no-reference=<n> unclassified=<n>`
+and exits `2` when the load-bearing figure is non-zero. `~/sonic_hacks/.aeon-sigil-gates`
+is **source-only by construction** and must never be pointed at an artifact-dependent run.
 
 Previously landed the same day: **const-arity** — a
 typed comptime `const` literal is now array-arity checked at elaboration (the length
