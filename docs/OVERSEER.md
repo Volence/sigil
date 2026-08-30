@@ -2221,6 +2221,59 @@ property of a gate, it is a property of a gate **under a named configuration**. 
 configuration or the claim is one qualifier wide of true. This lane's own `A QUALIFIER PRINTED BESIDE
 A VALUE IS PART OF THE VALUE` row is the same rule arriving at a different surface.
 
+### AN INTERRUPTED FREEZE IS INDISTINGUISHABLE FROM SOMEONE EDITING GOLDENS TO PASS A GATE (2026-08-30)
+
+*(aeon's incident, disclosed before this lane could discover it; verified here rather than taken.)*
+
+Their first chain-190 freeze was killed by a 10-minute foreground cap. **Measured in this tree, not
+accepted from the report:** exactly five modified files, all golden blobs — `config_a.bin`,
+`config_b.bin`, `lean.bin`, `s4.bin`, `s4.debug.bin` — with **`pins.rs` and `provenance.toml`
+untouched**. So stage 1 (`capture_goldens.sh --write`) completed and stages 2/3
+(`derive_offcanonical_sizes`, `repin`) never ran. **The tool behaved correctly: nothing was
+recorded, so nothing false was minted.** The freeze is incomplete rather than half-recorded, which
+is the better of the two ways to be interrupted, and that is a property of the design rather than
+of the luck of where the kill landed.
+
+**THEIR FRAMING — "there is no marker saying a freeze was interrupted" — UNDERSTATES IT, AND THE
+STRONGER VERSION IS THE REASON TO ACT.** The gap is not that a reader cannot tell *why* the tree is
+dirty. It is that **regenerated goldens with no pin regeneration and no ledger entry is byte-for-byte
+the same tree-state a person would produce by hand-editing goldens until a red gate went green.**
+Both are "modified `golden/*.bin`, everything else clean". That is this file's own
+*maintenance-act-is-the-vulnerability* shape arriving at the freeze: the legitimate recovery action
+and the illegitimate one are indistinguishable **from the artifact**, so the honest operator is
+denied a way to prove they were honest.
+
+**What that implies for the design, and it is NOT "print a warning".** A breadcrumb worth having has
+to be *checkable by a later run*, not merely readable by a person:
+
+- Written at freeze **start**, cleared on **successful completion**, so its presence means "a freeze
+  began and did not finish" and its absence means "no freeze is mid-flight".
+- Carrying enough identity to be falsifiable — which `AEON_DIR` and revision, which stage, when —
+  so that a stale marker from last week cannot launder today's dirt.
+- **Consumed by `--attest` and `--check`**, which today refuse on dirtiness with no idea why the
+  tree is dirty. The valuable output is the *distinction*: `this dirt is an interrupted freeze
+  started at T against rev R` versus `unexplained golden modification` — the second of which is the
+  one worth alarming about, and today both are the same sentence.
+- Marker absent + goldens modified must stay **loud**, not silent. The point is to make the
+  honest case *provable*, never to give the dishonest case a story to hide behind. A breadcrumb
+  anyone can write by hand buys nothing.
+
+Booked as `PARTIAL-FREEZE-BREADCRUMB`. Sigil-internal (`refreeze` is this lane's), not started —
+they raised it explicitly *without* asking for it mid-parcel, which was the right call.
+
+**AND THE OPERATIONAL RULE THIS INCIDENT MAKES CONCRETE: DO NOT BUILD WHILE A PEER'S FREEZE IS
+RUNNING IN THIS TREE.** Their re-run is live in this working tree as this is written. A `cargo
+build` touching the shared target would relink `refreeze`/`sigil` **underneath a running freeze** —
+which is the exact hazard this lane lectured the aeon lane about at 11:00 today, pointed the other
+way. Source edits and `docs/` commits are safe; building is not. Bank the finding now, build later.
+
+**THE EXPLICIT-PATH `git add` RULE PAID OFF A SECOND TIME (n=2).** Two commits landed during the
+window in which five golden blobs sat modified in this tree by another lane's process. Both touched
+`docs/` only — verified with `git log --name-only -- crates/sigil-harness/golden/`, which returns
+nothing across today's commits. A `git add -u` or `git commit -a` at either moment would have
+committed another lane's half-finished freeze artifacts into this lane's history, under a message
+about something else entirely, and the blobs would have looked deliberate.
+
 ### THE ASSEMBLER THAT CORRESPONDS TO NO COMMIT — ruled REBUILD, with the prediction banked first (2026-08-30)
 
 The aeon lane merged step 5 (their master `9cdf32d8`, parcel merge `14de0893`) and measured all of
