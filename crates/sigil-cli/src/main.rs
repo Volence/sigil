@@ -859,6 +859,19 @@ fn run_build(args: &[String]) {
         }
     };
     let aeon_path = std::path::Path::new(&opts.aeon);
+
+    // A native build emits the sound artifacts INTO this tree
+    // (`native::ensure_generated`), and that write's precondition
+    // (`seam2::require_named_reference_tree`) asks the tree to have been NAMED rather
+    // than resolved from a hardcoded fallback. `--aeon` names it — aeon's `build.sh`
+    // runs `sigil build --aeon . --native` from the tree it is building — so the
+    // argument is published as this process's `AEON_DIR`. One rule then covers every
+    // writing process, and the argv caller is not an exception to it. Set before any
+    // build work, while the process is still single-threaded.
+    if std::env::var_os("AEON_DIR").is_none() {
+        std::env::set_var("AEON_DIR", aeon_path);
+    }
+
     match opts.report {
         Some(ReportKind::Ram) => run_ram_report(aeon_path, &opts.target),
         Some(ReportKind::Contracts) => run_contract_report(aeon_path, &opts.target),

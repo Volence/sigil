@@ -16,8 +16,9 @@
 //!
 //! WHAT THE EXPECTATION IS DERIVED FROM — never a pin, never one measurement. The
 //! set of emitters under test is PARSED OUT OF `ensure_generated`'s own body in
-//! `src/native.rs`. Adding an eighth emitter there and not here fails this gate by
-//! name; it cannot be covered six-sevenths and read as green.
+//! `src/native.rs` (see `common`, shared with `reference_tree_named_write`). Adding
+//! an eighth emitter there and not here fails this gate by name; it cannot be
+//! covered six-sevenths and read as green.
 //!
 //! HOW IT TELLS "NOTHING WAS CREATED" FROM "NOTHING RAN" — the two look identical
 //! from the filesystem, and the second is the cheaper accident. Three separate
@@ -33,6 +34,8 @@
 //!
 //! It needs no reference tree of its own and therefore never skips: it runs in
 //! every `cargo test --workspace`, which is what `scripts/landing-run.sh` invokes.
+
+mod common;
 
 use std::path::{Path, PathBuf};
 
@@ -52,63 +55,6 @@ const EXERCISED: &[(&str, Emitter)] = &[
     ("emit_pitchtable_artifacts", sigil_harness::seam2::emit_pitchtable_artifacts),
 ];
 
-/// The harness source `ensure_generated` lives in, resolved from the crate root
-/// baked in at compile time.
-fn native_rs() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native.rs")
-}
-
-/// The emitter names `ensure_generated` calls, read from its body. Every call in it
-/// is spelled `seam1::emit_…(` / `seam2::emit_…(`, so the scan is over that shape
-/// rather than over a list somebody maintains twice.
-fn emitters_named_by_ensure_generated() -> Vec<String> {
-    let path = native_rs();
-    let src = std::fs::read_to_string(&path).unwrap_or_else(|e| {
-        panic!(
-            "UNMEASURABLE: cannot read {} to derive the emitter set: {e}. This gate asserts a \
-             property of every emitter `ensure_generated` drives; without its source it does not \
-             know what it is asserting over and must not report green.",
-            path.display()
-        )
-    });
-
-    let body = src
-        .split_once("pub fn ensure_generated(aeon: &Path) {")
-        .map(|(_, rest)| rest)
-        .unwrap_or_else(|| {
-            panic!(
-                "UNMEASURABLE: no `pub fn ensure_generated(aeon: &Path) {{` in {}. The function \
-                 this gate derives its emitter set from was renamed or re-signed; re-point the \
-                 scan rather than letting it find nothing.",
-                path.display()
-            )
-        });
-    // The body ends at the first line that closes it at column 0.
-    let body = body.split_once("\n}").map(|(b, _)| b).unwrap_or(body);
-
-    let mut found = Vec::new();
-    for seam in ["seam1::", "seam2::"] {
-        let mut rest = body;
-        while let Some(i) = rest.find(seam) {
-            let after = &rest[i + seam.len()..];
-            let name: String =
-                after.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
-            if name.starts_with("emit_") && !found.contains(&name) {
-                found.push(name);
-            }
-            rest = after;
-        }
-    }
-    if found.is_empty() {
-        panic!(
-            "UNMEASURABLE: parsed 0 emitters out of `ensure_generated` in {}. A zero here reads \
-             exactly like a clean run over nothing, so it is a failure, not a pass.",
-            path.display()
-        );
-    }
-    found
-}
-
 /// A path under the temp dir that this process has NOT created and no other run can
 /// collide with. It is the stand-in for an `AEON_DIR` pointed somewhere absent.
 fn absent_reference_tree(tag: &str) -> PathBuf {
@@ -125,25 +71,12 @@ fn absent_reference_tree(tag: &str) -> PathBuf {
 /// there, and each refuses by NAMING the tree.
 #[test]
 fn no_emitter_creates_anything_under_an_absent_reference_tree() {
-    let declared = emitters_named_by_ensure_generated();
+    let declared = common::emitters_named_by_ensure_generated();
 
     // Coverage, both directions, before anything runs: an emitter `ensure_generated`
     // drives with no arm here would go untested while the gate read green.
-    for name in &declared {
-        assert!(
-            EXERCISED.iter().any(|(n, _)| n == name),
-            "`ensure_generated` drives `{name}`, which this gate does not exercise. Its writes \
-             into the reference tree are unmeasured — add it to EXERCISED. (derived from {})",
-            native_rs().display()
-        );
-    }
-    for (name, _) in EXERCISED {
-        assert!(
-            declared.iter().any(|d| d == name),
-            "EXERCISED lists `{name}`, which `ensure_generated` no longer drives. Drop the arm \
-             or re-point the scan; a stale arm makes the coverage count read higher than it is."
-        );
-    }
+    let names: Vec<&str> = EXERCISED.iter().map(|(n, _)| *n).collect();
+    common::reconcile_arms(&declared, &names);
 
     let mut ran = 0usize;
     let mut offenders = Vec::new();

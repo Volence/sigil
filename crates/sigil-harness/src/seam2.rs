@@ -92,19 +92,63 @@ struct BankAnchors {
 /// files.
 pub const SOUND_PLACEMENT_MAP_REL: &str = "games/sonic4/map.toml";
 
-/// The precondition every sound emitter checks before it creates anything: `aeon`
-/// must carry [`SOUND_PLACEMENT_MAP_REL`], the map the emit derives its placement
-/// from. `Ok(())` when it does; otherwise an error NAMING the absent path, with
-/// nothing created.
+/// A write into the reference tree requires that tree to have been NAMED: `Ok(())`
+/// when `AEON_DIR` is set, otherwise an error naming the variable, the hardcoded
+/// fallback it would have resolved to, and the path the write was aimed at.
 ///
-/// The order matters as much as the check. An emitter's output directory lives
-/// UNDER `aeon`, so creating it inside a tree that is not there manufactures that
+/// The argument is invisibility, not damage. Unset, [`crate::test_support::aeon_dir`]
+/// resolves to [`crate::test_support::LIVE_TREE_FALLBACK`] — a working checkout
+/// somebody else is editing — and `engine/sound/generated/` is gitignored there, so
+/// a write into it leaves no trace in `git status` and no record of which process
+/// produced the bytes a later read picks up. A fallback to a live tree is
+/// structurally incapable of announcing its own failure; a refusal names the caller's
+/// own site and is fixed by exporting one variable.
+///
+/// Reads keep the fallback. This is the write side only, which is why the check sits
+/// in the emitters' shared precondition rather than in the resolver.
+///
+/// A caller that names the tree on its own command line rather than through the
+/// environment declares it by setting `AEON_DIR` from that argument before it emits.
+/// Both such callers are the ones aeon's `build.sh` drives with `--aeon .`: the
+/// `emit_sound_blob` binary, and `sigil build`, whose native path reaches
+/// [`crate::native::ensure_generated`]. This precondition therefore holds for every
+/// writing process without the argv path becoming an exception to it.
+pub fn require_named_reference_tree(aeon: &Path) -> Result<(), String> {
+    if std::env::var_os("AEON_DIR").is_some() {
+        return Ok(());
+    }
+    Err(format!(
+        "AEON_DIR is not set, so the reference tree written into is one nobody named. Unset, it \
+         resolves to the hardcoded fallback {} — the live aeon working checkout — whose \
+         engine/sound/generated/ is gitignored, so a write there leaves no trace in `git status` \
+         and nothing records which process produced the bytes a later read picks up. Set AEON_DIR \
+         to a reference tree you provisioned (scripts/provision-aeon-ref.sh). Nothing was created. \
+         Refused write target: {}",
+        crate::test_support::LIVE_TREE_FALLBACK,
+        aeon.display()
+    ))
+}
+
+/// The precondition every sound emitter checks before it creates anything: the tree
+/// must be NAMED ([`require_named_reference_tree`]) and `aeon` must carry
+/// [`SOUND_PLACEMENT_MAP_REL`], the map the emit derives its placement from.
+/// `Ok(())` when both hold; otherwise an error NAMING the absent path, with nothing
+/// created.
+///
+/// The naming check runs FIRST. Reversed, an unset `AEON_DIR` would have the content
+/// probe consult the live checkout, find a complete tree there, and pass — the write
+/// would proceed into exactly the tree the check exists to keep it out of.
+///
+/// The same is true of WHEN the emitter creates its output directory, and it is the
+/// other half of why this is a precondition rather than a late check. That directory
+/// lives UNDER `aeon`, so creating it inside a tree that is not there manufactures that
 /// tree's root — and the suite's reference guards probe roots (`if !aeon.exists()`).
 /// A root conjured by one row flips every such guard from "skip" to "run against an
 /// empty tree", so a run's second pass measures a different tree than its first.
 /// Validating first keeps a missing reference tree a stable, self-describing
 /// condition instead of a mutation of the thing under test.
 pub fn require_reference_tree(aeon: &Path) -> Result<(), String> {
+    require_named_reference_tree(aeon)?;
     if aeon.join(SOUND_PLACEMENT_MAP_REL).is_file() {
         return Ok(());
     }
