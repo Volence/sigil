@@ -10102,3 +10102,58 @@ demo_debug = "fdedb6e4/101113"
 lean = "fa81802d/674830"
 s4 = "6e746bb9/719235"
 s4_debug = "839bafaf/736095"
+
+[[entry]]
+name = "scroll-and-section-clamps"
+ab = "aeon docs/captures/2026-08-30-scroll-clamp/ — BG V-scroll measured -46 unclamped vs 0 clamped after motion; 361 purple px from the art's bottom edge in screen rows 0-15 on master, zero clamped; four shapes canonical 1660 passed / 0 failed; 16 of 16 effects gates OK"
+aeon_rev = "ec6a4791db346ec8c6672632109f85415b873e49"
+note = "parallax BG V-scroll clamp + Section_RedrawPlanes head clamp; +80 sonic4 / +78 demo"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "35e22aa2"
+full_size = 736683
+anchor_crc = "36097fc8"
+anchor_end = 0xa7f40
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "ef7d67e9"
+full_size = 611347
+anchor_crc = "b9fd1ea0"
+anchor_end = 0x8b980
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "9223a60d"
+full_size = 96450
+anchor_crc = "ae34bd08"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d30c3636"
+full_size = 101333
+anchor_crc = "c87d9594"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "468f3cc6"
+full_size = 674830
+anchor_crc = "6220c786"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "6e2f9b22"
+full_size = 719315
+anchor_crc = "67d5e628"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "6516fc68"
+full_size = 736315
+anchor_crc = "259ad674"
+anchor_end = 0xa7f40
