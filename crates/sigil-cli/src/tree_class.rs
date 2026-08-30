@@ -140,8 +140,17 @@ pub fn classify(porcelain: &str, sources: &SourcePaths) -> Counts {
 /// Three cases a single dirty flag conflates: nothing changed, something changed
 /// that this binary is compiled from, and something changed that it is not. Only
 /// the middle one is a reason to distrust the binary, and only it yields a word
-/// beginning `dirty` — a consumer keys on that prefix, and a warning that fires
-/// on a note left in a documentation directory is a warning nobody reads.
+/// beginning `dirty`, and a warning that fires on a note left in a documentation
+/// directory is a warning nobody reads.
+///
+/// A CONSUMER MUST NOT KEY ON THE `dirty` PREFIX. That test fails OPEN: any word
+/// this vocabulary does not yet contain — a state added later, a typo, an empty
+/// capture — does not begin `dirty` and so reads as trustworthy. The correct shape
+/// is a POSITIVE match on the trusted words with everything else treated as
+/// suspect, which fails CLOSED. The vocabulary is this function's to define
+/// (`clean`, `clean-sources`, `dirty`, `unknown` — pinned by
+/// `version_provenance.rs`); the fail-safe direction is the consumer's to keep, and
+/// a consumer enumerating the trusted words must be told when a word is added.
 pub fn state_and_detail(counts: &Counts) -> (String, String) {
     if counts.material() == 0 && counts.outside == 0 {
         return ("clean".to_string(), "no uncommitted changes".to_string());
@@ -249,8 +258,10 @@ mod tests {
         );
     }
 
-    /// The state word is what a consumer keys on: a word beginning `dirty`
-    /// exactly when a compiled source changed, and never otherwise.
+    /// A word beginning `dirty` exactly when a compiled source changed, and never
+    /// otherwise. This pins the producer's half; a consumer positively matches the
+    /// trusted words rather than keying on this prefix, because the prefix test
+    /// fails open on any word added after the consumer was written.
     #[test]
     fn only_a_source_change_yields_a_dirty_state() {
         let (clean, detail) = state_and_detail(&Counts::default());

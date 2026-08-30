@@ -426,6 +426,45 @@ this is a layout shift rather than an artefact of how either of us read the file
 `0x18E-0x18F` **does not move between shapes**, while all thirty-eight other addresses shift by the
 identical amount. A read artefact would have displaced it too.
 
+### MY CONTRACT ADVISED A FAIL-OPEN KEY, AND THE ONLY CONSUMER WAS RIGHT TO IGNORE IT (2026-08-30)
+
+`tree_class.rs` told consumers of the `tree:` state word that *"a consumer keys on that prefix"* —
+i.e. treat a word beginning `dirty` as untrustworthy. **That test fails OPEN.** Any word the
+vocabulary does not yet contain — a state added later, a typo, an empty capture — does not begin
+`dirty` and therefore reads as **trustworthy**. Aeon declined the advice and wrote a **positive match
+on the trusted words with everything else treated as suspect**, which fails CLOSED. Theirs is
+correct and mine was the defect; **corrected at the source, both the doc comment and the test's**.
+
+**The division that came out of it, and it is the reusable part:** *the vocabulary is the producer's
+to define; the fail-safe direction is the consumer's to keep.* A producer should not tell a consumer
+which direction to fail — it does not bear the cost of being wrong. What it owes instead is
+**notification when the vocabulary grows**, because a fail-closed consumer enumerating trusted words
+goes noisy (never silent) when a word is added, and that is the trade it chose.
+
+**And the escalation makes it more than noise, which I could not see from my side.** `build.sh:342`
+turns the same flag into `exit 1` under `SIGIL_VERSION_STRICT=1`. So on a **correct** tree — sources
+clean, only docs uncommitted — STRICT does not warn, it **refuses the build**. Latent (nothing sets
+STRICT in-tree; verified) but documented as the escalation, so it is armed for whoever turns it on
+first. **A refusal that fires on correct work trains a route-around, and the route-around here is
+"stop setting STRICT"** — permanently disabling a check whose whole justification is that a stale
+assembler emits a byte-identical ROM, so no CRC, pin or golden downstream can catch it. The
+route-around is permanent; the memory of why is not.
+
+### "THE COST WAS NEVER THE READING" (2026-08-30, aeon's sharpening, and it is about me)
+
+I diagnosed my stale row as *worrying about the wrong direction*. Aeon's sharper version: **my row
+asserted a property of THEIR consumer that their consumer does not have, and then gated a merge on
+the conclusion.** That is tonight's receiving-side attribution bar arriving as a **plan** rather than
+as a claim — a booking that reasons about a peer's file without reading it, and then blocks work on
+the result.
+
+**Their closing line is the one to keep: reading the consumer took one `sed` *because the consumer
+was in a repo I already had checked out*. The cost was never the reading.** So cost is not the
+explanation, and neither is access. What actually happened is that I did not experience their
+behaviour as something requiring a check — **I had a model of it, and a model does not announce
+itself as a model.** That is the same completion-signal failure one level out: the question felt
+answered, so no question was asked.
+
 ### FOURTH INSTANCE: A TERM WITHOUT ITS DEFINITION — and why prose is the WORSE case, not the equal one (2026-08-30, aeon's instance)
 
 **Aeon's, within the hour, and it cost a peer a wrong conclusion.** Their ledger entry used the word
