@@ -725,8 +725,11 @@ pub fn native_blob_doctored(aeon: &Path, debug: bool, doctor: Option<(&str, i64)
 /// longer emitted — the banked seq table is native and resolves those VMAs in-link,
 /// and no AS consumer of them survives; kill-list row 92.)
 pub fn emit_sound_blob(aeon: &Path, out_dir: &Path) -> Result<(), String> {
+    // Before anything is created: `out_dir` lives under `aeon` in every build, so an
+    // eager mkdir inside an absent reference tree would manufacture that tree's root
+    // and flip the suite's root-probing skip guards. Validate, then read, then create.
+    crate::seam2::require_reference_tree(aeon)?;
     let out_dir: PathBuf = out_dir.to_path_buf();
-    std::fs::create_dir_all(&out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
 
     // Before any bytes: the hand-written banked-head VMAs must still agree with
     // the derivation. They are baked into the operand bytes emitted below, so a
@@ -767,6 +770,7 @@ pub fn emit_sound_blob(aeon: &Path, out_dir: &Path) -> Result<(), String> {
     check_len("plain", plain.bytes.len(), BLOB_LEN_PLAIN, "BLOB_LEN_PLAIN")?;
     check_len("debug", debug.bytes.len(), BLOB_LEN_DEBUG, "BLOB_LEN_DEBUG")?;
 
+    std::fs::create_dir_all(&out_dir).map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
     let write = |name: &str, bytes: &[u8]| -> Result<(), String> {
         let p = out_dir.join(name);
         std::fs::write(&p, bytes).map_err(|e| format!("write {}: {e}", p.display()))

@@ -248,6 +248,14 @@ analysis gate mutating the tree it is reading is worth a look on its own terms;
 this reason ("generating one would be a WRITE into `AEON_DIR`, racing any concurrent
 build"), while `ensure_generated` does it unconditionally.
 
+**CLOSED.** All seven emitters carried the same shape, not just the first. Each now checks
+`seam2::require_reference_tree` before it creates anything and creates its output directory
+only after the bytes exist, so an absent tree stays absent and the three states read the
+same. Byte-neutral on all four shapes. See
+`docs/superpowers/notes/2026-08-30-reference-tree-write-guard.md`, whose gate
+(`crates/sigil-harness/tests/reference_tree_write_guard.rs`) holds the property with an
+emitter set parsed out of `ensure_generated` itself.
+
 ## Rows gated, and why it is a different unit from the literal count
 
 Three quantities, three units. They are not interchangeable and only the third prices risk.
@@ -278,9 +286,14 @@ rows-that-change-behaviour (398). It should be re-derived before anything prices
 - **Nine scenarios, not all of them.** Correction (2) says which rows misdirect depends on
   which part is missing, and the union here already exceeds every single scenario by 2x.
   A tenth scenario would likely add rows.
-- **The `AEON_DIR` write is untriaged.** Whether `ensure_generated` should write into the
-  reference tree at all is a design question for the aeon-owned landing lane, and the
-  remedy would ripple into files this lane does not own.
+- **The `AEON_DIR` write ORDERING is closed; the write itself is not.** The emitters no
+  longer create anything before validating, and that landed byte-neutral without touching
+  `golden/`, `pins.rs` or `repin.toml`. Whether `ensure_generated` should write into the
+  reference tree AT ALL — rather than into a caller-supplied directory — remains a design
+  question for the aeon-owned landing lane.
+- **The hardcoded `AEON_DIR` default is enumerated, not changed.** 93 `.rs` files / 113
+  non-comment occurrences; 29 of the 127 files that resolve `AEON_DIR` by literal or helper
+  can reach the write. Recommendation and blast radius in the write-guard note.
 - **No runtime confirmation.** Nothing here was checked against an emulator, and nothing
   here needs one.
 
