@@ -2199,6 +2199,28 @@ ninety minutes, both of which landed on this lane's in-flight work. Boot-time is
 read anybody performs unless you make yourself perform another; re-read when a peer cites
 a bar you don't recognise, before dispatching a wave, and at any landing.
 
+### A GATE THE CANONICAL BUILD RUNS AND THE LOOP AUTHORS LIVE IN DOES NOT (2026-08-30, aeon's, found by aurora)
+
+Carried here because it is this repo's own recurring defect wearing someone else's clothes, and
+because it was disclosed unprompted against the discloser's interest.
+
+The aeon lane told this lane, unqualified, that their **`build.sh` refuses on `effects_seam_gate`**.
+Aurora checked and it is true only of `FAST == 0`: under `FAST=1` the gate is **skipped, and the FAST
+banner lists it among the skipped lanes**. They verified it in their own `build.sh` after aurora's
+message and corrected it here.
+
+**`FAST=1` is the loop an author actually lives in**, so the accurate statement is that the gate
+protects the canonical build and not the edit-run cycle where the mistake gets made. That is the
+same shape as this lane's own morning finding — *the net everyone pictures as watching is downstream
+of something that mostly is not running* — and they walked into it **while repeating that lesson
+back to this lane**, which is the part worth keeping. Knowing the failure mode by name does not
+confer immunity to it; only checking the specific instance does.
+
+**The general form, for any gate this lane cites in a brief:** *"the build refuses it"* is not a
+property of a gate, it is a property of a gate **under a named configuration**. State the
+configuration or the claim is one qualifier wide of true. This lane's own `A QUALIFIER PRINTED BESIDE
+A VALUE IS PART OF THE VALUE` row is the same rule arriving at a different surface.
+
 ### THE ASSEMBLER THAT CORRESPONDS TO NO COMMIT — ruled REBUILD, with the prediction banked first (2026-08-30)
 
 The aeon lane merged step 5 (their master `9cdf32d8`, parcel merge `14de0893`) and measured all of
@@ -2224,8 +2246,31 @@ leaves `36adb158`/719329, `eadd7175`/736331, `9223a60d`/96450, `d30c3636`/101333
 Recorded on their side at aeon `c18a3d56`, with the grounds **re-derived there** rather than taken
 from this lane's message.
 
-**FORBIDDEN READING, stated as a prohibition because a caveat would not survive:** this entry is a
-PREDICTION. **Nobody may read it as a result.** If no later text records the measured outcome
+**RESOLVED 2026-08-30, and the outcome is recorded here because the prohibition below demanded it.
+THE PREDICTION HELD.** All four CRCs unchanged under `474a5c03`: `36adb158`/719329,
+`eadd7175`/736331, `9223a60d`/96450, `d30c3636`/101333. So the dirty binary was emitting the same
+bytes a nameable one does, the freeze proceeds on a toolchain that names a commit, and the aeon
+lane's step-5 deltas stand exactly as measured. Their run: fresh detached worktree at `0c201a60`,
+`git status --porcelain` empty, all four artifacts deleted first so their existence witnesses the
+build, 1774/6/0 on both sonic4 shapes and 1775/5/0 on both demo shapes. They verified the handed-over
+binary by `crc32 669ed658` + `size 7756904` before using it rather than trusting the path.
+
+**WHY THE RESULT IS ATTRIBUTABLE AND NOT MERELY CONSISTENT — their control, checked before building
+rather than after.** `git diff --name-only 14de0893..master` on their side was `docs/DEFERRED_WORK.md`
+and `docs/lane-log.jsonl` **only**, so the assembler was the sole free variable across the comparison.
+Had a CRC moved, there was nothing else it could have been. A held prediction with an uncontrolled
+variable would have been worth much less, and the control was established in advance.
+
+**What the exercise actually bought, stated honestly so it is not oversold:** it bought
+*attributability*, not new bytes. Nothing changed and nothing was broken; the value is that the
+permanent record now names a toolchain anyone can rebuild, and that the one chance to detect an
+emission-affecting change existing in no commit was taken rather than skipped. A held prediction is
+the cheap outcome. It was worth one build because the other outcome was undetectable afterwards.
+
+**FORBIDDEN READING, stated as a prohibition because a caveat would not survive:** this entry WAS a
+PREDICTION when written, and the paragraph above is its recorded outcome. **Nobody may read the
+prediction as a result** — read the resolution line, which is dated and names the run that produced
+it. If no later text records the measured outcome
 against it, the outcome was never measured — an unresolved banked prediction looks like evidence,
 reads as settled, and nothing in it says it was never checked. **Whoever resolves it MUST write the
 outcome here.** (Their line, adopted; they wrote it unprompted.)
