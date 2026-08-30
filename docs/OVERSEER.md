@@ -380,6 +380,36 @@ has any reader outside tests. The 82 warning lines cover these 50 regions across
 remember the meter is an ADDRESS comparison and is blind to the flush cases, so **do not treat
 the warning list as the whole population** without the `section_label_owners` derivation.
 
+### DECISIONS CLOSED OUT OF SHAPE — DO NOT REPAIR (listed once, per DECISIONS.md rule 8d)
+
+Rule 8d (`answered` on the closing entry) is in force from **2026-08-30T01:58:05Z**, empyrean
+`df8939b`, verified reachable before this list was written. The rule grandfathers everything
+appended earlier and says so in as many words: *"Nothing in 8d is an instruction to touch an
+existing line."* **These are listed, not fixed.**
+
+**Closures out of shape — `d-4`, `d-5`, `d-6`, `d-8`, `d-10`, `d-12`, `d-13`, `d-16`.** Each
+carries `supersedes` and the identical question/options/recommend that 8c requires, and none
+carries `answered`, because the field did not exist when they were written. Every one of them is
+settled the rule-9 way — the blocker was dropped — and `blockedOnOwner` is currently empty, so
+none of them renders as an open card.
+
+**`d-15` is NOT in that list and must not be counted as a closure.** It supersedes `d-14` for a
+SCHEMA defect while the question stayed open: `d-14` carried a `state` field the contract does
+not define, a `refs.commits` key it does not list, and a `refs.queue` id (`EMBED-BASE-RULE`) that
+existed nowhere. The re-file changed nothing about the question, the options or the
+recommendation. **A supersede is not evidence of an answer** — `supersedes` marks replacement,
+and replacement has at least two causes. Counting every superseding entry as a closure would
+record `d-14` as a question the owner decided, which he never saw.
+
+The closure of `d-15` is **`d-16`**, appended 2026-08-30T01:14:44Z — 43 minutes before 8d came
+into force, which is why it is on the grandfathered list rather than being the rule's first
+customer. Its content, for anyone reading the record without the `answered` field to key on:
+ruled by the **hub in the owner's place**, reversible, option **`remove`**; the `bless` option
+was explicitly NOT ruled and stays reserved to the owner under `d-6`, because it would add
+durable language surface.
+
+**From here every closure carries `answered`.**
+
 ### THE R6 CONVERSIONS LANDED AT 45, AND THE THREE REFUSALS ARE THE FINDING (2026-08-30)
 
 45 of the 50 regions converted from `end_measures = "allotment"` to `end = "section:<name>"`.
