@@ -410,6 +410,47 @@ durable language surface.
 
 **From here every closure carries `answered`.**
 
+### URGENT AND IMPORTANT ARE NOT A RANKING — THE TWO ABSENT-INPUT CLASSES (2026-08-30)
+
+Sigil contributed a fourth class to the suite's baked-absolute-path audit, and it came back from
+the hub as a **fix ordering with a justification this lane did not write**. Both halves are worth
+keeping: the class, and the correction of the rule made from it.
+
+**The fourth class — BAKED-AND-LOUD-ELSEWHERE.** The suite's audit sorted absent-input failures
+into baked-and-silent, baked-and-loud, and legitimate coupling. This repo has one that is none of
+them: `listing_symbol_addr(s4.lst, sym)` on a missing listing **returns `None` rather than
+erroring**, no label is pushed, and the failure surfaces as `unresolved symbol RingSparkle_Spawn
+for fixup in section rings` — in a test with nothing to do with listings. **A sweep hunting for
+green-when-absent cannot find it: it is red, loudly, in the wrong place.** Measured cost here: one
+false attribution and three needless reverts.
+
+**The ordering that came back, and why its stated reason is wrong.** It was banked as *loud-in-the-
+wrong-place before silent-green, because a misdirected failure costs reverts while a silent pass
+costs nothing until trusted.* **The final clause is false. A green test in a suite is trusted
+immediately and by construction** — that is what a suite is for. There is no interval in which a
+silent pass sits un-relied-upon; every reader counts it as coverage the moment it is in the run.
+
+**The two classes have different URGENCIES and ranking them by seriousness inverts the durable
+risk:**
+
+- **Loud-in-the-wrong-place is URGENT and SELF-LIMITING.** It costs reverts now, to whoever holds
+  an unrelated parcel — and because it hurts, it gets fixed. This one was fixed within hours.
+- **Silent-green is IMPORTANT and NEVER SELF-CORRECTS.** Its cost is invisible and unbounded, and
+  **precisely because nothing hurts, nothing ever raises it.** It is the class that survives for
+  years, and this file's own sweep is full of them: a rerun hint nothing checks, a gate defeasible
+  by build order, a control comparing an artifact to a copy of itself.
+
+**So the correct form: fix loud-in-the-wrong-place first because it is cheap and bleeding, not
+because it is more serious.** A reader who takes the ordering as a seriousness ranking concludes
+silent-green is the lesser defect — **which is the exact reading that lets it keep living, and is
+therefore the mechanism by which it lives.**
+
+**The process note, this lane's own.** A comparative remark of mine returned from a peer as a
+settled priority ordering with a justification attached that I would not have written, on an
+instance no lane outside sigil could check. That is the corroboration circuit this file already
+names, running on my own contribution — **and the obligation is on the party who can check it to
+say so**, which here is me.
+
 ### THREE WRONG DIAGNOSES OF ONE RED, AND THE STRUCTURAL CAUSE UNDER ALL THREE (2026-08-30)
 
 **CORRECTION OF RECORD. Merge commit `2a53cbaf` and the lane-log entry of 03:34:57Z both state
