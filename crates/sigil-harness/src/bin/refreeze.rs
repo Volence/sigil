@@ -269,11 +269,20 @@ fn invocation(root: &Path) -> String {
 
 /// Run one regeneration script, inheriting the environment (SIGIL_EMIT / SIGIL_BUILD /
 /// AEON_DIR flow through). A nonzero exit aborts the freeze.
+/// The variable by which this tool tells `golden/capture_goldens.sh` that its `--write` is
+/// a step of the journalled ritual and not a hand run. The script refuses `--write`
+/// without it; see THE WRITE GATE in its header for what the two accepted values mean.
+///
+/// Every script run through [`run_script`] is a step of `--freeze`, so the claim is true
+/// of all of them, and the one that reads it is the one that replaces the golden blobs.
+const GOLDEN_WRITE_CALLER: (&str, &str) = ("SIGIL_GOLDEN_WRITE", "refreeze");
+
 fn run_script(script: &Path, args: &[&str]) -> Result<(), String> {
     eprintln!("refreeze: running {} {}", script.display(), args.join(" "));
     let status = Command::new("bash")
         .arg(script)
         .args(args)
+        .env(GOLDEN_WRITE_CALLER.0, GOLDEN_WRITE_CALLER.1)
         .status()
         .map_err(|e| format!("spawn {}: {e}", script.display()))?;
     if !status.success() {
