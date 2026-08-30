@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 97 regions, 413 symbols, 7 offsets
+//! [provenance] 97 regions, 414 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,8 +51,8 @@ pub const VECTORS: Region = Region { plain_base: 0x0, debug_base: 0x0, plain_len
 /// `GameHeader` .. `section:header`. tests: header_port
 pub const HEADER: Region = Region { plain_base: 0x100, debug_base: 0x100, plain_len: 0x100, debug_len: 0x100 };
 
-/// `HeightMaps` .. start + 0x1C480 plain / 0x1C480 debug (literal — no end symbol). tests: collision_data_port
-pub const COLLISION_DATA: Region = Region { plain_base: 0x6DD70, debug_base: 0x6E630, plain_len: 0x1C480, debug_len: 0x1C480 };
+/// `HeightMaps` .. `section:collision_data`. tests: collision_data_port
+pub const COLLISION_DATA: Region = Region { plain_base: 0x6DD70, debug_base: 0x6E630, plain_len: 0x1D204, debug_len: 0x1D204 };
 
 /// `EntryPoint` .. `section:boot` — gate `SIGIL_EMP_BOOT`. tests: boot_port
 pub const BOOT: Region = Region { plain_base: 0x200, debug_base: 0x200, plain_len: 0x198, debug_len: 0x1A0 };
@@ -364,6 +364,9 @@ pub const OJZ_PRESET_SEC5: Pin = Pin { plain: 0x1374C, debug: 0x13FEE };
 
 /// `EditorRaster_OJZ_Act1_authored_probe`. tests: act_descriptor_port
 pub const EDITOR_RASTER_OJZ_ACT1_AUTHORED_PROBE: Pin = Pin { plain: 0x1324C, debug: 0x13A80 };
+
+/// `EditorRaster_OJZ_Act1_ojz_sec5_showcase`. tests: act_descriptor_port
+pub const EDITOR_RASTER_OJZ_ACT1_OJZ_SEC5_SHOWCASE: Pin = Pin { plain: 0x1329A, debug: 0x13ACE };
 
 /// `Effects_InstallPreset`. tests: parallax_port
 pub const EFFECTS_INSTALL_PRESET: Pin = Pin { plain: 0x7480, debug: 0x8854 };

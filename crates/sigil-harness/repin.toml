@@ -77,13 +77,23 @@ end = "section:header"
 tests = ["header_port"]
 
 # Parcel K4 — the collision/character data island (HeightMaps .. Art_Sonic end).
-# No gate: no AS twin (the BINCLUDEs were deleted from main.asm). Literal len (the
-# blobs are fixed-size, shape-invariant); the next placement is $8000-aligned pad
-# to the DAC bank, so no end label sits at the island's true end.
+# No gate: no AS twin (the BINCLUDEs were deleted from main.asm). The next placement
+# is $8000-aligned pad to the DAC bank, so no end LABEL sits at the island's true end
+# — which is why this carried a literal `len` from K4 until chain 194. That literal
+# rotted the first time a blob changed size: aeon's DPLC-entry re-cut (2026-08-30,
+# chain 194) grew Art_Sonic 97,472 -> 101,056 and shrank DPLC_Sonic 2,368 -> 2,244
+# (+3,460 B net), repin did not move a literal, and collision_data_port went red on
+# its own pin ("must emit 0x1c480 bytes: left 119300, right 115840") with zero ROM
+# bytes involved. Now REPIN-END: `section:collision_data` measures the section's OWN
+# extent (`lma + image_len`), which for this seven-embed section with no fill and no
+# inter-blob pad IS the content length (119300 = 0x1D204 today, the sum of the seven
+# .bin sizes; the port gate re-proves the equality by emitting the section and
+# comparing its byte count to the pin). It moves when the blobs move and never again
+# needs a hand-typed number; the $8000 pad to Dac_Temp_Blip stays out of it.
 [[region]]
 name = "collision_data"
 start = "HeightMaps"
-len = 0x1C480
+end = "section:collision_data"
 tests = ["collision_data_port"]
 
 [[region]]
@@ -1082,6 +1092,19 @@ tests = ["act_descriptor_port"]
 # caught this, on the attest, exactly where the ritual expects to catch it.
 [[symbol]]
 name = "EditorRaster_OJZ_Act1_authored_probe"
+tests = ["act_descriptor_port"]
+
+# EFFECTS-W1 item 1 step 6 (2026-08-30, aeon c9a462be): section 5's sidecar binds a raster
+# preset, so the generated ojz_effects_editor_act1 (effects_scenes.emp) now emits a SECOND
+# authored raster program, `EditorRaster_OJZ_Act1_ojz_sec5_showcase` (one band, 32..80,
+# stream_cram), and ojz_effects.emp's OJZ_Preset_Sec5 reaches it through
+# `ojz_act1_sec_raster(sec: 5, hand: Raster_Program_None)`. That is one more cross-seam
+# dc.l the standalone act_descriptor scope must supply — the port-flip rule, third instance
+# in that scope, and build.sh still does not warn about it. Chain 194's strict attest said
+# "link assertion condition references symbol(s) `EditorRaster_OJZ_Act1_ojz_sec5_showcase`
+# not defined in this link". Sourced from the resolve like its siblings, never a literal.
+[[symbol]]
+name = "EditorRaster_OJZ_Act1_ojz_sec5_showcase"
 tests = ["act_descriptor_port"]
 
 # Effects P3 Parcel C2 — the crossing's single effects consumer. Replaces the three

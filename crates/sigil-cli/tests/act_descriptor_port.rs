@@ -160,6 +160,19 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
         // OJZ_EFFECTS used to start, because the new program is emitted immediately ahead of
         // it and pushed that whole region +0x4E.
         ("EditorRaster_OJZ_Act1_authored_probe", pins::EDITOR_RASTER_OJZ_ACT1_AUTHORED_PROBE.plain, pins::EDITOR_RASTER_OJZ_ACT1_AUTHORED_PROBE.debug),
+        // EFFECTS-W1 item 1 step 6 (2026-08-30, aeon c9a462be): section 5's sidecar binds a
+        // raster preset, so the generated ojz_effects_editor_act1 (effects_scenes.emp) emits a
+        // SECOND authored raster program, `EditorRaster_OJZ_Act1_ojz_sec5_showcase` (one
+        // stream_cram band, rows 32..80), and OJZ_Preset_Sec5 (ojz_effects.emp) reaches it
+        // through `ojz_act1_sec_raster(sec: 5, hand: Raster_Program_None)`. One more
+        // cross-seam dc.l this standalone scope must supply — the port-flip rule, third
+        // instance in this table, and build.sh still does not warn about it. Chain 194's
+        // strict attest caught it: "link assertion condition references symbol(s)
+        // `EditorRaster_OJZ_Act1_ojz_sec5_showcase` not defined in this link". A [[symbol]]
+        // pin (repin.toml), sourced from the resolve — it lands 0x4E past authored_probe
+        // (0x1329A/0x13ACE), the previous program's exact length, because the generator
+        // emits the two programs back to back.
+        ("EditorRaster_OJZ_Act1_ojz_sec5_showcase", pins::EDITOR_RASTER_OJZ_ACT1_OJZ_SEC5_SHOWCASE.plain, pins::EDITOR_RASTER_OJZ_ACT1_OJZ_SEC5_SHOWCASE.debug),
         ("OJZ_Act_Pool_PageTable", pins::OJZ_ACT_POOL_PAGE_TABLE.plain, pins::OJZ_ACT_POOL_PAGE_TABLE.debug),
         // art-streaming-p2-task5: the descriptor's Act.act_sec_local_maps field.
         ("OJZ_Sec_LocalMaps", pins::OJZ_SEC_LOCAL_MAPS.plain, pins::OJZ_SEC_LOCAL_MAPS.debug),
