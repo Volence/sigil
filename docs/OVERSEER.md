@@ -2060,6 +2060,45 @@ never compare two numbers whose qualifiers you did not read.
 Cost: a peer spent a reply refuting a phantom, and the report had already been sent as an
 anomaly. Cheap here; the same skip over a base prefix or a units suffix is not.
 
+### A CHECK WHOSE SUBJECT IS NOT YET IN PLAY RETURNS CLEAN, AND CLEAN CARRIES NO TELL (2026-08-30)
+
+Three instances from one night, two of them this lane's, and they are one class:
+
+- **Boot frames on a scroll clamp** *(aeon's, and it nearly passed their own parcel as inert)*.
+  Two ROMs compared byte-identical at boot, **zero differing pixels** — because the background
+  V-scroll is still 0 there and the divergence only exists once the parallax step has run. A
+  reviewer comparing boot frames concludes the clamp does nothing. It broke only when they
+  stopped comparing pictures and read `Vscroll_Factor` out of memory in both ROMs.
+- **`d-15`, this lane's**: a schema repair checked against the contract prose, which it satisfied,
+  while the reader that decides whether the card renders was never run.
+- **`repin --check` printing `pins.rs unchanged`** on a reference tree with no listings at all,
+  recorded above. It witnesses that placement resolves and is silent on every artifact the gates
+  read afterwards.
+
+**The common form: a clean result does not distinguish *the property holds* from *the property
+was not yet in play*.** That is bar 16(d)'s absence surface arriving on a POSITIVE artifact — a
+page of passes rather than an empty output — which is what makes it harder to suspect.
+
+**The corrective is one question, asked of the witness rather than of the subject: does this
+instrument TOUCH the thing I am claiming about?** Boot frames do not touch a scroll value that is
+still zero. Contract prose does not touch a parser. A pin file does not touch a listing. **Where
+the answer is no, the run is not weak evidence — it is no evidence, and it should be reported as
+"not exercised" rather than as a pass.**
+
+### A GATE DEFEASIBLE BY BUILD ORDER ALONE IS A FALSE GREEN WITH NO TELL (2026-08-30, aeon's)
+
+`tools/demo_specialization_witness.py` reads `s4.debug.lst` **and** `demo.debug.lst`. A build
+order that leaves either listing stale means nothing ever sees both fresh — all four shapes went
+green before the pin was updated, and it surfaced only on the next build. The remedy applied
+there was to re-run ending on `DEBUG=1 ./build.sh` so both debug listings are current.
+
+**Why it is banked here rather than left as aeon's:** this lane's freeze runs lean on gates of
+exactly that shape — multi-artifact readers whose inputs are produced by separate build
+invocations. **A gate that can be defeated by ordering has no failing mode to observe**, so it
+cannot be caught by making it fail; only by enumerating its inputs and asking which invocation
+produces each. **Sweep sigil's own multi-listing gates for the same pattern rather than assuming
+it is specific to that script.**
+
 ### THE SENDING-SIDE HALF: A QUALIFIER ONE LINE AWAY IS NOT BESIDE THE VALUE (2026-08-30)
 
 The rule above is the READING direction — read the qualifier as part of the value. Its inverse
