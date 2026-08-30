@@ -161,6 +161,25 @@ on every run rather than letting a reader assume durability. If step 4's answer 
 defensible months from now, the ledger wants a committed home; that is a decision, not an
 oversight, and it is unmade.
 
+### A FINISHED QUEUE ROW HAS NO STATE WORD — IT LEAVES THE QUEUE (2026-08-30, my own, forty minutes after reading the warning)
+
+`lane-status.json`'s `state` vocabulary is exactly `doing | next | open | blocked`. There is no
+`done` and no `closed`. **One bad enum in one row rejects the WHOLE file**, so every true thing in
+it is lost and the owner's card for this lane goes dark — silently to the writer, because nothing
+in the write path complains.
+
+I did it anyway, with `closed`, having read the boot doc's warning about three lanes writing
+`done` in three days less than an hour earlier. **Knowing the vocabulary is not what protects you;
+running the verify curl is** — it named the row, the value and the legal set in one line, and it is
+the only step in the sequence that could have caught it.
+
+**The modelling error under the typo, which is the part worth keeping.** I reached for a state word
+because I was thinking of the queue as a RECORD of what this lane did. It is not: it is the list of
+things a fresh session could pick up. A finished item is therefore not a row in a terminal state —
+**it is not a row.** It leaves, and its findings live in `lane-log.jsonl` and in this file, which
+are the append-only records built for exactly that. A queue that accumulates completed rows is
+telling a reader to choose between items that cannot be chosen.
+
 ### THE HOME-PATHS CLASSIFICATION IS MEASURED — AND THE BUCKETS ARE BEHAVIOURS, NOT POPULATIONS (2026-08-30)
 
 `docs/superpowers/notes/2026-08-30-absolute-path-classify.md`, merged `8a377311`. Nine poison
