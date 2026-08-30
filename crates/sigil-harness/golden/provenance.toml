@@ -10259,3 +10259,58 @@ demo_debug = "d30c3636/101333"
 lean = "468f3cc6/674830"
 s4 = "6e2f9b22/719315"
 s4_debug = "6516fc68/736315"
+
+[[entry]]
+name = "replay-restamp-all-ten"
+ab = "aeon 3f143178 — d-49 ruled all_ten (hub, in the owner's place, reversible on read-back). Both replay fixtures restamped: ojz_fixture 10 of 27 checkpoints (37 bytes across ten 4-byte payloads; three positions coincided), ojz_slide_fixture 1 of 37 (1 byte, because 1D->0D differs in one byte). Lengths invariant, input streams untouched, no repin needed — payloads only. THE NET NOW RUNS GREEN END TO END for the first time since chain 181: both fixtures PASS at exit 0 on the new ROM, and the negative control STILL TRIPS on it, so the green is not vacuous. Method in the mandated order: negative control FIRST on both fixtures, then dry run, then restamp, then plain run. ATTRIBUTION IS CLEAN AND MEASURED: the editor bins that also changed since ec6a4791 landed at 838f3129 (00:37) and my 03:11 build with them present reproduced chain 188's golden 6516fc68 exactly, so they moved zero bytes and the restamp is the sole cause. Toolchain confirmed baseline-equivalent BEFORE any byte moved (fresh sigil at f6d6903b reproduced 6516fc68). Four shapes exit 0 on the merged tree: s4 6e2f9b22->63451f96 (719315, length unchanged), s4.debug 6516fc68->3aa7cb12 (736315, length unchanged), demo 9223a60d and demo.debug d30c3636 BOTH UNCHANGED — the demo shapes carry no fixture, which is why they must not move. Tool suite 1718 passed / 3 skipped / 56 subtests, 0 failed. Effects-gate ritual NOT required: no path in engine/effects, engine/level/bg_anim.emp or engine/system/buffers.emp moved since ec6a4791 — checked, not assumed."
+aeon_rev = "3f14317886b343a6b94e4ac93ae06c7585e53ae5"
+note = "the replay net is green end to end for the first time since chain 181"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "7e5de0fb"
+full_size = 736683
+anchor_crc = "a0630c92"
+anchor_end = 0xa7f40
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "afb7e59a"
+full_size = 611347
+anchor_crc = "2f976dfa"
+anchor_end = 0x8b980
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "9223a60d"
+full_size = 96450
+anchor_crc = "ae34bd08"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d30c3636"
+full_size = 101333
+anchor_crc = "c87d9594"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "b1478c40"
+full_size = 674830
+anchor_crc = "c45a286b"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "63451f96"
+full_size = 719315
+anchor_crc = "f1bf9572"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "3aa7cb12"
+full_size = 736315
+anchor_crc = "b3f0a52e"
+anchor_end = 0xa7f40
