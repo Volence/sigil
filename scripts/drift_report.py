@@ -56,6 +56,56 @@ V_UNMEASURED = "unmeasured"                        # not built, or not covered b
 
 DRIFT_VERDICTS = {V_DRIFT_SAME_PAIR, V_DRIFT_SIGIL_MOVED}
 QUIET_VERDICTS = {V_QUIET, V_QUIET_SIGIL_MOVED}
+UNVERIFIED_VERDICTS = {V_UNVERIFIED_AEON_MOVED, V_UNATTRIBUTABLE, V_RECORD_DISAGREES}
+
+# Which tree states make the key IDENTIFYING — i.e. let a chain count toward N.
+#
+# `clean-sources` is deliberately ABSENT, and this is the one line in this file that a
+# reader is most likely to think is a bug. It is not. The state means uncommitted changes
+# exist but none in the closure this binary compiles from, so the binary IS reproducible
+# from `closure-revision` and there is a real argument that the key is identifying.
+# Admitting it here would advance N on those nights.
+#
+# That argument is NOT this job's to accept. Making `clean-sources` identifying errs
+# toward MORE chains counting as evidence, which is the bias this record exists to resist
+# in a decision about retiring a safety check; the aeon lane's `DRIFT-KEY-CLOSURE-REV` is
+# parked on exactly that ground, it is booked as the owner's, and it touches d-48. So the
+# set stays narrow and the REPORT names what it is declining to count, rather than the
+# state disappearing into an undifferentiated bucket.
+IDENTIFYING_TREE_STATES = frozenset({"clean"})
+
+
+def tree_state_disqualifies(tree_state):
+    """Does this tree state stop a chain counting toward N?
+
+    A `dirty` tree makes the key non-identifying: the bytes correspond to no committed
+    revision, so a match against a record entry cannot be attributed to one either. Any
+    state this job does not recognise disqualifies for the same reason — an unknown word
+    is not evidence of cleanliness.
+    """
+    return tree_state not in IDENTIFYING_TREE_STATES
+
+
+def unverified_cause(o):
+    """Why is one observation UNVERIFIED? TWO different causes share that one state word.
+
+    Returns `(cause, tree_state)`, where cause is `no-expectation` (nothing declared what
+    these bytes should be, so the chain could never have counted) or `tree-state` (every
+    shape hit a real expectation AND matched it, and the only thing between this chain and
+    QUIET is a tree state this job declines to treat as identifying).
+
+    They are rendered apart because they are not the same event and the operator's next
+    move differs: the first waits on the record, the second is this lane's own working
+    copy and clears by committing. Folding them together is what let `clean-sources`
+    nights look like ordinary unverified nights for as long as they did.
+    """
+    verdicts = {s.get("verdict") for s in (o.get("shapes") or {}).values()}
+    if verdicts & UNVERIFIED_VERDICTS:
+        return ("no-expectation", None)
+    ts = o.get("sigil_tree_state", "unknown")
+    if tree_state_disqualifies(ts):
+        return ("tree-state", ts)
+    return ("no-expectation", None)
 
 # Observation states, worst first. A red dominates because it settles the question;
 # an unmeasured shape outranks quiet because quiet must never absorb it.
@@ -251,11 +301,9 @@ def observation_state(shapes, tree_state):
         return S_DRIFT
     if V_UNMEASURED in verdicts:
         return S_NOTHING_MEASURED
-    if verdicts & {V_UNVERIFIED_AEON_MOVED, V_UNATTRIBUTABLE, V_RECORD_DISAGREES}:
+    if verdicts & UNVERIFIED_VERDICTS:
         return S_UNVERIFIED
-    # A dirty tree makes the key non-identifying: the bytes correspond to no committed
-    # revision, so a match against a record entry cannot be attributed to one either.
-    if tree_state != "clean":
+    if tree_state_disqualifies(tree_state):
         return S_UNVERIFIED
     return S_QUIET
 
@@ -321,6 +369,10 @@ def render(obs, bad_lines, n, n_source, ledger_path):
         chains.setdefault(k, []).append(o)
 
     quiet, quiet_evidence, red, unverified, unmeasured = [], [], [], [], []
+    # Chains held back by a NON-IDENTIFYING TREE STATE rather than by a missing
+    # expectation, keyed by the state word so the report names it instead of folding it
+    # into the unverified count.
+    by_tree_state = {}
     for k, group in chains.items():
         st = worst([o.get("state", S_NOTHING_MEASURED) for o in group])
         if st == S_DRIFT:
@@ -329,6 +381,11 @@ def render(obs, bad_lines, n, n_source, ledger_path):
             unmeasured.append((k, group))
         elif st == S_UNVERIFIED:
             unverified.append((k, group))
+            for o in group:
+                cause, ts = unverified_cause(o)
+                if cause == "tree-state":
+                    by_tree_state.setdefault(ts, []).append(k)
+                    break
         else:
             quiet.append((k, group))
             if any(s.get("verdict") == V_QUIET_SIGIL_MOVED
@@ -346,10 +403,33 @@ def render(obs, bad_lines, n, n_source, ledger_path):
     w(f"  quiet AND evidence-bearing ............ {zero(len(quiet_evidence))}"
       "   (the assembler moved and the bytes did not)")
     w(f"  unverified ............................ {zero(len(unverified))}"
-      "   (no expectation existed; N unmoved)")
+      "   (N unmoved; see the causes below)")
     w(f"  NOTHING MEASURED ...................... {len(unmeasured)}"
       "   (named, never counted as clean)")
     w("")
+
+    if by_tree_state:
+        held = sum(len(v) for v in by_tree_state.values())
+        w("HELD BACK BY TREE STATE, NOT BY A MISSING EXPECTATION")
+        for ts in sorted(by_tree_state):
+            ks = by_tree_state[ts]
+            w("  " + (ts + " ").ljust(40, ".") + f" {len(ks)} chain(s)")
+            for k in ks[-5:]:
+                w(f"    aeon {k[0][:8]} / sigil {k[1][:8]}")
+        w(f"  These {held} chain(s) HIT a real expectation and MATCHED it. They are not")
+        w("  counted, because this job does not treat these tree states as identifying —")
+        w("  which is a DELIBERATE and CONTESTED narrowness, not a measurement. Whether")
+        w("  `clean-sources` should count is the owner's call, parked as aeon's")
+        w("  DRIFT-KEY-CLOSURE-REV and touching d-48; admitting it here would err toward")
+        w("  more chains counting as evidence, in a decision about retiring a safety check.")
+        w("  WHAT THIS LINE EXISTS TO PREVENT: without it these nights are indistinguishable")
+        w("  from nights with nothing to say, and the watch reads healthy while N cannot move.")
+        w("")
+        w("  AND THIS IS NOT THE ONLY SILENT CAUSE. A non-advancing N now has MORE THAN ONE,")
+        w("  and they compound rather than alternate: this one, and the record's key missing")
+        w("  on docs-only commits (aeon's measurement — four consecutive misses on a tree")
+        w("  whose ROM never moved). Read a flat N as EITHER, and never as an engine result.")
+        w("")
 
     k_evidence = len(quiet_evidence)
     k_quiet = len(quiet)
@@ -480,14 +560,14 @@ def cmd_report(a):
 _CLOCK = [0]
 
 
-def _obs(aeon, sigil, state, shapes=None, note=None):
+def _obs(aeon, sigil, state, shapes=None, note=None, tree_state="clean"):
     # Each fixture observation gets its OWN timestamp. Nights are what a naive counter
     # would count, so a fixture that shares one timestamp cannot tell a per-night
     # counter apart from a per-chain one.
     _CLOCK[0] += 1
     o = {"observed_at": f"2026-09-01T05:17:{_CLOCK[0]:02d}Z",
          "aeon_rev": aeon, "sigil_closure_rev": sigil, "sigil_linked_rev": sigil,
-         "sigil_tree_state": "clean", "state": state, "shapes": shapes or {},
+         "sigil_tree_state": tree_state, "state": state, "shapes": shapes or {},
          "expectation_source": "selftest"}
     if note:
         o["note"] = note
@@ -613,6 +693,54 @@ def _selftest_body(failures):
           observation_state(quiet_shape, "dirty") == S_UNVERIFIED)
     check("a red outranks an unmeasured shape",
           observation_state({**mixed, **drift_shape}, "clean") == S_DRIFT)
+
+    block("state: a non-identifying tree state NAMES ITSELF instead of going quiet about it")
+    # THE FAILURE THIS EXISTS FOR, and it is the shape reality produces rather than a
+    # contrived one: on any night this lane has uncommitted DOCS — most of a working
+    # session — the tree is `clean-sources`, every shape hits its expectation and MATCHES,
+    # and the chain is still not counted. Before this block the report folded that into an
+    # `unverified` line reading "no expectation existed", which is FALSE for this cause:
+    # the expectation existed and was met. The night was then indistinguishable from a
+    # night with nothing to say.
+    check("clean-sources is NOT identifying — the counting is unchanged",
+          observation_state(quiet_shape, "clean-sources") == S_UNVERIFIED)
+    check("an unrecognised tree state disqualifies too",
+          observation_state(quiet_shape, "probably-clean") == S_UNVERIFIED)
+    check("clean is still the one identifying state",
+          observation_state(quiet_shape, "clean") == S_QUIET)
+    check("the cause is the TREE STATE, not a missing expectation",
+          unverified_cause(_obs("c" * 40, "9" * 40, S_UNVERIFIED, quiet_shape,
+                                tree_state="clean-sources")) == ("tree-state", "clean-sources"))
+    check("a genuinely missing expectation is still called that",
+          unverified_cause(_obs("c" * 40, "9" * 40, S_UNVERIFIED,
+                                {"s4": {"verdict": V_UNVERIFIED_AEON_MOVED}},
+                                tree_state="clean-sources"))[0] == "no-expectation")
+
+    held = [_obs("c" * 40, "9" * 40, S_UNVERIFIED, quiet_shape, tree_state="clean-sources")]
+    text, state = render(held, [], 5, "selftest", "/dev/null")
+    check("the report NAMES the state it is declining to count",
+          "clean-sources" in text)
+    check("the report says the expectation was HIT, not missing",
+          "HIT a real expectation and MATCHED it" in text)
+    check("the report does not blame a missing expectation for this cause",
+          "no expectation existed" not in text)
+    check("the report says the narrowness is contested, not measured",
+          "DELIBERATE and CONTESTED" in text)
+    check("the report names whose call it is",
+          "d-48" in text and "owner" in text)
+    check("the report states the compounding — more than one silent cause",
+          "MORE THAN ONE" in text and "docs-only commits" in text)
+    check("a held-back chain still exits UNVERIFIED, never quiet",
+          STATE_EXIT[state] == EXIT_UNVERIFIED)
+    for phrase in FORBIDDEN_ON_QUIET:
+        check(f"a held-back rendering never renders `{phrase}`", phrase not in norm(text))
+
+    # The naming must not appear when nothing was held back — a banner that prints
+    # unconditionally teaches a reader to skip it, and would claim a cause that did not fire.
+    text_clean, _ = render([_obs("d" * 40, "8" * 40, S_QUIET, quiet_shape)],
+                           [], 5, "selftest", "/dev/null")
+    check("no tree-state banner when nothing was held back",
+          "HELD BACK BY TREE STATE" not in text_clean)
 
     block("state: unreadable ledger lines are named, not dropped silently")
     text, _ = render(at_n, [3, 7], 5, "selftest", "/dev/null")
