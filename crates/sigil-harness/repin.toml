@@ -95,8 +95,7 @@ tests = ["collision_data_port"]
 # length: debug +4 (the `__DEBUG__` bsr.w CompressionSelfTest).
 name = "boot"
 start = "EntryPoint"
-end = "BootData"
-end_measures = "allotment"
+end = "section:boot"
 gate = "SIGIL_EMP_BOOT"
 tests = ["boot_port"]
 
@@ -108,8 +107,7 @@ tests = ["boot_port"]
 # tail's head (BootData_PostBlob).
 name = "boot_head"
 start = "BootData"
-end = "BootData_PostBlob"
-end_measures = "allotment"
+end = "section:boot_head"
 tests = ["boot_data_port"]
 
 [[region]]
@@ -125,8 +123,7 @@ tests = ["boot_data_port"]
 [[region]]
 name = "vdp_init"
 start = "VDP_Shadow_Init"
-end = "Init_DMA_Queue"
-end_measures = "allotment"
+end = "section:vdp_init"
 gate = "SIGIL_EMP_VDP_INIT"
 tests = ["vdp_init_port"]
 
@@ -137,8 +134,7 @@ tests = ["vdp_init_port"]
 # `ifdef __DEBUG__` overflow-count bump in the enqueue's .full arm (+4).
 name = "dma_queue"
 start = "Init_DMA_Queue"
-end = "Init_SpriteTable"
-end_measures = "allotment"
+end = "section:dma_queue"
 gate = "SIGIL_EMP_DMA_QUEUE"
 tests = ["dma_queue_port"]
 
@@ -148,8 +144,7 @@ tests = ["dma_queue_port"]
 # (buffers.asm has no ifdef arms).
 name = "buffers"
 start = "Init_SpriteTable"
-end = "VBlank_Handler"
-end_measures = "allotment"
+end = "section:buffers"
 gate = "SIGIL_EMP_BUFFERS"
 tests = ["buffers_port"]
 
@@ -160,8 +155,7 @@ tests = ["buffers_port"]
 # VSync_Wait's DMA_Bytes_ThisFrame clear (+4).
 name = "vblank"
 start = "VBlank_Handler"
-end = "HBlank_Install"
-end_measures = "allotment"
+end = "section:vblank"
 gate = "SIGIL_EMP_VBLANK"
 tests = ["vblank_port"]
 
@@ -176,16 +170,14 @@ tests = ["hblank_port", "m1c_vector_table"]
 [[region]]
 name = "controllers"
 start = "Read_Controllers"
-end = "GameLoop"
-end_measures = "allotment"
+end = "section:controllers"
 gate = "SIGIL_EMP_CONTROLLERS"
 tests = ["controllers_port"]
 
 [[region]]
 name = "game_loop"
 start = "GameLoop"
-end = "Input_Tick"
-end_measures = "allotment"
+end = "section:game_loop"
 gate = "SIGIL_EMP_GAME_LOOP"
 tests = ["game_loop_port", "load_art_port"]
 
@@ -197,8 +189,7 @@ tests = ["game_loop_port", "load_art_port"]
 # section slides by its span. end = the next placement, S4LZ_DecompressDict.
 name = "replay"
 start = "Input_Tick"
-end = "S4LZ_DecompressDict"
-end_measures = "allotment"
+end = "section:replay"
 tests = ["game_loop_port"]
 
 [[region]]
@@ -221,22 +212,19 @@ tests = ["s4lz_port"]
 # GetSineCosine. Shape-INVARIANT (no ifdef arms).
 name = "zx0_resume"
 start = "ZX0R_Decompress"
-end = "GetSineCosine"
-end_measures = "allotment"
+end = "section:zx0_resume"
 
 [[region]]
 name = "math"
 start = "GetSineCosine"
-end = "Perform_DPLC"
-end_measures = "allotment"
+end = "section:math"
 gate = "SIGIL_EMP_MATH"
 tests = ["math_port"]
 
 [[region]]
 name = "dplc"
 start = "Perform_DPLC"
-end = "InitObjectRAM"
-end_measures = "allotment"
+end = "section:dplc"
 gate = "SIGIL_EMP_DPLC"
 tests = ["dplc_port"]
 
@@ -245,8 +233,7 @@ tests = ["dplc_port"]
 # the Debug_AssertObjLoop proc (rings precedent).
 name = "core"
 start = "InitObjectRAM"
-end = "InitSpriteSystem"
-end_measures = "allotment"
+end = "section:core"
 gate = "SIGIL_EMP_CORE"
 tests = ["core_port"]
 
@@ -255,8 +242,7 @@ tests = ["core_port"]
 # slides with core's debug surplus. Downstream neighbour of core.
 name = "sprites"
 start = "InitSpriteSystem"
-end = "AnimateSprite"
-end_measures = "allotment"
+end = "section:sprites"
 gate = "SIGIL_EMP_SPRITES"
 tests = ["sprites_port"]
 
@@ -279,8 +265,7 @@ tests = ["collision_port"]
 # Shape-DEPENDENT length (the debug-only assert block) — the campaign's first.
 name = "rings"
 start = "RingBuffer_Add"
-end = "Collected_Init"
-end_measures = "allotment"
+end = "section:rings"
 gate = "SIGIL_EMP_RINGS"
 tests = ["rings_port"]
 
@@ -336,8 +321,7 @@ tests = ["load_object_port", "entity_window_port"]
 # load_object precedent). Plain $405E..$42FA = $29C bytes.
 name = "plane_buffer"
 start = "Plane_Buffer_Reset"
-end = "Tile_Cache_GetTile"
-end_measures = "allotment"
+end = "section:plane_buffer"
 gate = "SIGIL_EMP_PLANE_BUFFER"
 tests = ["plane_buffer_port"]
 
@@ -349,16 +333,14 @@ tests = ["plane_buffer_port"]
 # placement, the load_object precedent).
 name = "tile_cache"
 start = "Tile_Cache_GetTile"
-end = "Collision_GetType"
-end_measures = "allotment"
+end = "section:tile_cache"
 gate = "SIGIL_EMP_TILE_CACHE"
 tests = ["tile_cache_port"]
 
 [[region]]
 name = "collision_lookup"
 start = "Collision_GetType"
-end = "Collision_ProbeDown"
-end_measures = "allotment"
+end = "section:collision_lookup"
 gate = "SIGIL_EMP_COLLISION_LOOKUP"
 tests = ["collision_lookup_port"]
 
@@ -368,8 +350,7 @@ tests = ["collision_lookup_port"]
 # the load_object precedent). Plain $513E..$5528 = $3EA bytes.
 name = "section"
 start = "Section_Init"
-end = "Camera_Init"
-end_measures = "allotment"
+end = "section:section"
 gate = "SIGIL_EMP_SECTION"
 tests = ["section_port"]
 
@@ -379,8 +360,7 @@ tests = ["section_port"]
 # the load_object precedent). Shape-invariant length.
 name = "camera"
 start = "Camera_Init"
-end = "Parallax_Init"
-end_measures = "allotment"
+end = "section:camera"
 gate = "SIGIL_EMP_CAMERA"
 tests = ["camera_port"]
 
@@ -390,8 +370,7 @@ tests = ["camera_port"]
 # Level_LoadArt (F-6: Art_Decompress moved into compression_selftest).
 name = "parallax"
 start = "Parallax_Init"
-end = "Raster_Install"
-end_measures = "allotment"
+end = "section:parallax"
 gate = "SIGIL_EMP_PARALLAX"
 tests = ["parallax_port"]
 
@@ -441,8 +420,7 @@ tests = ["palette_port"]
 # is what caught the omission: "section `preset` has no region in the map".
 name = "preset"
 start = "Effects_InstallPreset"
-end = "Level_LoadArt"
-end_measures = "allotment"
+end = "section:preset"
 
 [[region]]
 # Tranche 20 — level art loader (Level_LoadArt paged pool load; the blocking
@@ -451,8 +429,7 @@ end_measures = "allotment"
 # surplus is the .drop_page RaiseError expansion.
 name = "load_art"
 start = "Level_LoadArt"
-end = "PageIn_Process"
-end_measures = "allotment"
+end = "section:load_art"
 gate = "SIGIL_EMP_LOAD_ART"
 tests = ["load_art_port"]
 
@@ -463,8 +440,7 @@ tests = ["load_art_port"]
 # decode + blocking verify + raise_error) is absent from the plain shape.
 name = "page_in"
 start = "PageIn_Process"
-end = "PageCache_Init"
-end_measures = "allotment"
+end = "section:page_in"
 
 [[region]]
 # Art-streaming P2b Task 6 — the VRAM page-frame residency cache (page_cache.emp).
@@ -473,16 +449,14 @@ end_measures = "allotment"
 # DEBUG asserts are absent from the plain shape.
 name = "page_cache"
 start = "PageCache_Init"
-end = "BG_Init"
-end_measures = "allotment"
+end = "section:page_cache"
 
 [[region]]
 # Tranche 19 — Plane B background load (BG_Init, §2 A.5). End is the next
 # placement: bg_anim.asm's BgAnim_Init. Shape-invariant length.
 name = "bg"
 start = "BG_Init"
-end = "BgAnim_Init"
-end_measures = "allotment"
+end = "section:bg"
 gate = "SIGIL_EMP_BG"
 tests = ["bg_port"]
 
@@ -516,8 +490,7 @@ tests = ["bg_anim_port"]
 # org arm).
 name = "compression_selftest"
 start = "CompressionSelfTest"
-end = "Sound_PostByte"
-end_measures = "allotment"
+end = "section:compression_selftest"
 debug_only = true
 plain_anchor = "Sound_PostByte"
 gate = "SIGIL_EMP_COMPRESSION_SELFTEST"
@@ -544,10 +517,7 @@ tests = ["sound_api_port"]
 [[region]]
 name = "test_solid"
 start = "TestSolid_Init"
-end = "ObjDef_PathSwap"
-# objtest-gate (2026-08-05): plain end = next surviving placement; debug keeps the old neighbour
-debug_end = "TestParticle"
-end_measures = "allotment"
+end = "section:test_solid"
 gate = "SIGIL_EMP_TEST_OBJECTS"
 tests = ["test_objects_port"]
 
@@ -566,10 +536,7 @@ tests = ["test_objects_port"]
 [[region]]
 name = "test_static"
 start = "TestStatic_Main"
-end = "TestSolid_Init"
-# objtest-gate (2026-08-05): plain end = next surviving placement; debug keeps the old neighbour
-debug_end = "TestAnimated"
-end_measures = "allotment"
+end = "section:test_static"
 gate = "SIGIL_EMP_TEST_STATIC"
 tests = ["test_g1_objects_port"]
 
@@ -600,9 +567,8 @@ tests = ["test_g2_objects_port"]
 [[region]]
 name = "test_stress_emitter"
 start = "TestStressEmitter"
-end = "TestChurnObj"
+end = "section:test_stress_emitter"
 # objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
-end_measures = "allotment"
 debug_only = true
 plain_anchor = "ObjDef_PathSwap"
 gate = "SIGIL_EMP_TEST_STRESS_EMITTER"
@@ -626,9 +592,8 @@ tests = ["test_g2_objects_port"]
 [[region]]
 name = "test_parent"
 start = "TestChildPart"
-end = "TestStressEmitter"
+end = "section:test_parent"
 # objtest-gate (2026-08-05): DEBUG-only module (registry if-debug); plain carries zero bytes
-end_measures = "allotment"
 debug_only = true
 plain_anchor = "ObjDef_PathSwap"
 gate = "SIGIL_EMP_TEST_PARENT"
@@ -663,8 +628,7 @@ tests = ["test_g4_final_objects_port"]
 [[region]]
 name = "path_swap"
 start = "ObjDef_PathSwap"
-end = "DeformTable_Zero"
-end_measures = "allotment"
+end = "section:path_swap"
 gate = "SIGIL_EMP_PATH_SWAP"
 tests = ["test_g4_final_objects_port"]
 
@@ -691,8 +655,7 @@ tests = ["test_g4_final_objects_port"]
 [[region]]
 name = "ojz_effects"
 start = "OJZ_TestRaster"
-end = "ObjDef_Static"
-end_measures = "allotment"
+end = "section:ojz_effects"
 
 [[region]]
 # RENAMED from "parallax_configs" 2026-08-18 (scanline-P1). The block is no longer
@@ -841,8 +804,7 @@ tests = ["ojz_run_a_port"]
 [[region]]
 name = "ojz_act_pool"
 start = "OJZ_Act_Pool_Page0"
-end = "OJZ_Act1_Descriptor"
-end_measures = "allotment"
+end = "section:ojz_act_pool"
 tests = ["ojz_run_a_port"]
 
 # END = the section's OWN end (`section:<name>` = its `lma + image_len`, REPIN-END).
@@ -864,8 +826,7 @@ tests = ["act_descriptor_port"]
 [[region]]
 name = "sec_block_blobs"
 start = "OJZ_Sec0_Blocks"
-end = "OJZ_Sec0_LocalMap"
-end_measures = "allotment"
+end = "section:sec_block_blobs"
 tests = ["ojz_run_b_port"]
 
 # art-streaming-p2-task5 — the per-section local->global tile-index tables
@@ -874,15 +835,13 @@ tests = ["ojz_run_b_port"]
 [[region]]
 name = "sec_local_maps"
 start = "OJZ_Sec0_LocalMap"
-end = "OJZ_Palette"
-end_measures = "allotment"
+end = "section:sec_local_maps"
 tests = ["ojz_run_b_port"]
 
 [[region]]
 name = "ojz_act_assets"
 start = "OJZ_Palette"
-end = "BgAnim_Table"
-end_measures = "allotment"
+end = "section:ojz_act_assets"
 tests = ["ojz_run_b_port"]
 
 [[region]]
@@ -924,8 +883,7 @@ tests = ["test_t1_harness_states_port"]
 [[region]]
 name = "ojz_scroll_test"
 start = "GameState_OJZScroll_Init"
-end = "Replay_OJZ_Fixture"
-end_measures = "allotment"
+end = "section:ojz_scroll_test"
 gate = "SIGIL_EMP_OJZ_SCROLL_TEST"
 tests = ["test_t1_harness_states_port"]
 
@@ -2800,8 +2758,7 @@ tests = ["m1d_rom", "m1d_debug_rom"]
 [[region]]
 name = "player_common"
 start = "Player_Init"
-end = "PState_Ground"
-end_measures = "allotment"
+end = "section:player_common"
 gate = "SIGIL_EMP_PLAYER_COMMON"
 tests = ["test_p1_player_port"]
 
@@ -2813,8 +2770,7 @@ tests = ["test_p1_player_port"]
 [[region]]
 name = "sonic"
 start = "CharDef_Sonic"
-end = "CharDef_Tails"
-end_measures = "allotment"
+end = "section:sonic"
 gate = "SIGIL_EMP_SONIC"
 tests = ["test_p1_player_port"]
 
@@ -2839,8 +2795,7 @@ tests = ["test_p1_player_port"]
 [[region]]
 name = "knuckles"
 start = "CharDef_Knuckles"
-end = "CharacterDefs"
-end_measures = "allotment"
+end = "section:knuckles"
 gate = "SIGIL_EMP_KNUCKLES"
 tests = ["test_p1_player_port"]
 
@@ -2897,16 +2852,14 @@ gate = "SIGIL_EMP_DUST_SPINDASH"
 [[region]]
 name = "player_ground"
 start = "PState_Ground"
-end = "PState_Air"
-end_measures = "allotment"
+end = "section:player_ground"
 gate = "SIGIL_EMP_PLAYER_GROUND"
 tests = ["test_p2_player_states_port"]
 
 [[region]]
 name = "player_air"
 start = "PState_Air"
-end = "PState_Spindash"
-end_measures = "allotment"
+end = "section:player_air"
 gate = "SIGIL_EMP_PLAYER_AIR"
 tests = ["test_p2_player_states_port"]
 
@@ -2925,8 +2878,7 @@ tests = ["test_p2_player_states_port"]
 [[region]]
 name = "player_fly"
 start = "PState_Fly"
-end = "PState_Glide"
-end_measures = "allotment"
+end = "section:player_fly"
 gate = "SIGIL_EMP_PLAYER_FLY"
 tests = ["test_p2_player_states_port"]
 
@@ -2939,8 +2891,7 @@ tests = ["test_p2_player_states_port"]
 [[region]]
 name = "player_glide"
 start = "PState_Glide"
-end = "Climb_WallDist"
-end_measures = "allotment"
+end = "section:player_glide"
 gate = "SIGIL_EMP_PLAYER_GLIDE"
 tests = ["test_p2_player_states_port"]
 
