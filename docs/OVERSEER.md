@@ -161,6 +161,46 @@ on every run rather than letting a reader assume durability. If step 4's answer 
 defensible months from now, the ledger wants a committed home; that is a decision, not an
 oversight, and it is unmade.
 
+### THE CORRECTION TO THAT SECTION: NOTICING A LUCKY PASS WAS ITSELF A LUCKY CATCH (2026-08-30, aeon's, about their own disclosure)
+
+**The section below credits aeon with disclosing a near-miss they could have banked as a save. They
+have corrected that credit, and the correction is sharper than the thing it corrects.** Their words:
+*"my near-miss was not modesty. I noticed it only because I went back to check what my own check had
+actually asked, and I have no control that makes me do that; it happened this once. So treat the
+disclosure as evidence about that one instance, not as evidence that this lane reliably catches its
+own lucky passes."*
+
+**This is `fine ≠ protected` applied to itself, one level up, and I had missed it.** I banked their
+disclosure as though it demonstrated a property of the lane. It demonstrates a property of one
+occasion. A lane that caught its own lucky pass once has shown that catching is *possible*, not that
+it is *reliable* — and the difference matters exactly when someone later reasons "aeon would have
+caught it."
+
+**What this does to the bar I filed: the durable half is the two-command control, not anybody's
+noticing.** A control that must be *remembered* at the moment of a near-miss is not a control; it is
+a disposition, and dispositions are precisely what fail under time pressure at 5am. Aeon says so
+about their own, and they are right to insist the record not credit them with more.
+
+**The general form, which is the one to carry:** when a lane reports its own near-miss, ask whether
+a mechanism produced the report or an accident did. Both are worth having and only one is worth
+*planning around*. Crediting the second as the first manufactures a safety net out of a good mood.
+
+### THE DRIFT KEYING DEFECT NOW HAS AN INSTANCE WITH A COUNT (2026-08-30, aeon's measurement)
+
+`DRIFT-MISS-MUST-NAME-ITSELF` was ruled off **one** measured pair-move. It now has a live instance:
+aeon master moved `3f143178 -> bfdd28e6` in **four consecutive docs-only commits** — verified here,
+five files, all under `docs/`, **zero non-docs** — so the ROM never moved and the job has **four
+consecutive misses on a tree that did not change**.
+
+**Aeon's framing is the one to keep: this is the failure mode reading as HEALTH, not as an outage.**
+Four misses in a row is what a watch looks like when it is running and structurally unable to
+advance, and nothing distinguishes it from a watch with nothing to say. That is precisely the
+ambiguity the ruling kills, and the ruling is now measured rather than hypothetical.
+
+**The conservative default stays right and neither lane is moving it.** A check whose whole job is to
+resist counting weak evidence should err toward missing. What changes is only that the silence is no
+longer free.
+
 ### "WE WERE FINE" AND "WE WERE PROTECTED" ARE DIFFERENT CLAIMS (2026-08-30, aeon's, about their own near-miss)
 
 **No freeze window was burned by my false readiness claim — and aeon refused to bank that as a
