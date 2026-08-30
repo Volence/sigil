@@ -161,6 +161,73 @@ on every run rather than letting a reader assume durability. If step 4's answer 
 defensible months from now, the ledger wants a committed home; that is a decision, not an
 oversight, and it is unmade.
 
+### A BOOKED ROW IS PROSE WITH A PROMISE ATTACHED, AND PROSE DOES NOT RUN — `scripts/landing-run.sh` (2026-08-30)
+
+**The incident.** This board already carried the row *landing runs use a dedicated
+`CARGO_TARGET_DIR`; the shared `target/` is poisoned by other checkouts* — it is two sections
+below, dated 2026-08-27, and it prescribes exactly the right fix. The 2026-08-30 landing of
+`cc2e71bc` + `8acee94a` + `ec4c368d` was then done with the shared directory anyway and
+produced **36 failures across four crates**, every one a `read <file>: No such file or
+directory` on a file demonstrably present, because cargo bakes the building worktree's
+`CARGO_MANIFEST_DIR` into the cached rlib. All 36 cleared against a clean directory. The lane
+log's own words for it: *"My own booked row predicted that failure and prescribed the fix;
+nothing executes a booked row."*
+
+**The diagnosis is NOT the target directory.** A better-worded row would have failed the same
+way. The gap is that a landing run has **six** preconditions, each invisible when omitted, and
+the only thing holding them together was an operator's memory. The evidence that this was
+never working: **26 ad-hoc `.sigil-*-target` directories** exist under `~/sonic_hacks/`, each
+one a different session hand-rolling the same rule.
+
+**The remedy is a wrapper that a landing run cannot omit the steps of.** `scripts/landing-run.sh`
+carries all six as one command: a dedicated on-disk target dir (never tmpfs); a **refusal** —
+not a warning — when pointed at any checkout's default `target/` **or** at a dedicated dir a
+different checkout already built into (an ownership marker, which is the half that catches two
+worktrees sharing one private dir); `SIGIL_STRICT_GATE=1` inside the command span; `AEON_DIR` /
+`SIGIL_BUILD` / `SIGIL_EMIT` resolved once, refused early **by name**, and passed explicitly to
+the child; a log stamped with pwd, HEAD, branch, the reference tree **and its HEAD**, and the
+UTC start; `CARGO_EXIT=` written from `PIPESTATUS[0]`; failures-first with **every** failing
+name; a `skip:`/`skipping` count; and reconciliation against a caller-stated `--baseline`
+printing `baseline + N new = observed`.
+
+**Two things it refuses that the brief for it did not ask for, both because the run is
+otherwise red for a reason that is not the code's.** A reference tree missing any of the four
+built ROMs is refused for a full run (the port and golden gates read them directly, and
+`build.sh` makes one shape per invocation, so half-built is the common shape). And a run given
+a cargo filter without `--scoped` is refused, because a partial run recorded as a landing is
+the same class of error one level up.
+
+**WHAT IT DOES NOT DO, and this is the honest limit.** It reduces the omission surface from
+"remember six things" to "remember one thing." **It does not make omission impossible, because
+someone can still not run it.** Nothing invokes it but a human — no timer, no hook, and no gate
+inside the suite notices a landing that bypassed it. Two follow-ups that would genuinely close
+that, neither built:
+
+- **A suite-side test** comparing each test binary's baked `env!("CARGO_MANIFEST_DIR")` against
+  the tree the run is standing in. That turns the shared-target class from 36 confusing
+  missing-file reads into one named failure **regardless of who ran the suite or how** — the
+  only proposal here that does not depend on the operator. It costs a test-count change, so it
+  ripples into every stated baseline and wants its own parcel.
+- **Folding the target-dir and environment refusals into `refreeze --attest`**, which already
+  runs the suite, already sets the strict flag, and already stamps its log — so the freeze path
+  and the landing path would share one set of preconditions instead of two.
+
+**RELATION TO `refreeze --attest`, which is NOT superseded and does not supersede this.**
+`--attest` covers requirements 3 and 5 already, and better, for the freeze path. It is not
+usable as a general landing runner because it is bound to the provenance chain: it refuses once
+the tip records a strict run, requires the chain to hold, and appends `[entry.strict]` to
+`provenance.toml`. **A merge that moves no ROM bytes has no chain entry to attest**, and that is
+the run the wrapper is for. Where both apply, `--attest` is the one that leaves a record.
+
+**A measured correction to the recipe this file repeats.** The suite does **not** read
+`SIGIL_EMIT` or `SIGIL_BUILD` — `native.rs` emits the sound blob in-process, and the only Rust
+readers are `repin`, `derive_offcanon`, `refreeze` and `capture_goldens.sh`. CI runs the whole
+workspace with neither set. Those two variables are needed to **build the reference tree**, not
+to run the suite against it, which is why the wrapper defaults them into its own target dir and
+builds them rather than demanding them. (A `docs/readme-refresh` parcel reached the same finding
+on 2026-08-22 and declined to document the variable as required; the recipe blocks in this file
+still imply it is.)
+
 ### A PAIRED LANDING CITES TWO SHAs THAT ANSWER DIFFERENT QUESTIONS — LABEL WHICH IS WHICH (2026-08-29)
 
 A freeze lands as a pair: the commit carrying the **goldens and the `pins.rs` evidence**, and
@@ -1696,7 +1763,9 @@ next refreeze that names a revision** — the condition is the field's absence, 
 number. It prints `ratchet:`, never `skip:` — the bar
 below requires zero `skip:` lines and this is not a missing reference.
 
-- **Full suite bar:**
+- **Full suite bar** — run it as `scripts/landing-run.sh --baseline <N> --aeon <clean>`, which
+  carries every requirement below inside one command span and REFUSES rather than degrading
+  when one is missing. The hand-spelled equivalent, which is what the wrapper runs:
   `SIGIL_STRICT_GATE=1 AEON_DIR=<clean> cargo test --release --workspace --no-fail-fast -- --nocapture`,
   with `AEON_DIR` a tree matching the provenance tip (derive it — see the warning above) —
   **3990 passed / 0 failed / 4 ignored** (3994 declared), **zero `skip:` lines**, exit 0,
@@ -2061,6 +2130,12 @@ reports **284 failures that read exactly like golden divergence** — while the 
 stamp truthfully names the *correct* tree, so the stamping discipline cannot catch it.
 Sibling of the `.aeon-sigil-gates` hazard, and it defeats the one mechanism that exists to
 detect a run measuring the wrong tree.
+
+**THIS ROW WAS BOOKED AND THEN VIOLATED ON 2026-08-30, COSTING 36 FALSE FAILURES.** It is
+correct and it was not enough: a row is prose with a promise attached, and prose does not run.
+For a landing run, use `scripts/landing-run.sh`, which REFUSES a shared or default `target/`
+instead of asking you to remember this paragraph — see the wrapper's section above for what it
+still cannot prevent.
 
 **Give every worktree its own target dir** (`.sigil-<name>-target`). Two side benefits,
 both real: it keeps the shared `target/release/sigil` from being relinked underneath a
