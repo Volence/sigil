@@ -57,6 +57,15 @@ SOURCE_GATES=(
     measure_at_packed_base
     # the warn tier over the real corpus — the gate the ruling is about
     warn_tier_corpus
+    # the suite's own account of how much of itself it did not measure. Source-only in
+    # the strictest sense: it reads sigil's own test sources to DERIVE the
+    # reference-dependent population and never opens a ROM, a listing or a golden.
+    # It is listed here rather than left to fall through because a file naming the
+    # reference tree that is in neither SOURCE_GATES nor the artifact bucket is
+    # UNCLASSIFIED, and an unclassified file makes this whole lane refuse to run —
+    # so adding the gate without adding this line would have darkened the lane
+    # nightly, over a file whose entire purpose is to stop things being silent.
+    reference_dependence_is_named
     # whole-corpus source analyses
     contract_closure_corpus
     dead_save_corpus
