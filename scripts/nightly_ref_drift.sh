@@ -71,6 +71,35 @@ if [[ ${1:-} == --selftest-fail ]]; then
     exit 2
 fi
 
+# ── REFUSE AN ARGUMENT THIS SCRIPT DOES NOT KNOW, BEFORE ANY SIDE EFFECT ─────────
+# This job is a WRITER: it provisions a reference worktree, builds both ROM shapes,
+# relinks the assembler, and appends to the ledger. Until this gate existed, exactly one
+# flag was recognised and EVERY other argument fell through into that full run — so a
+# mistyped or guessed flag did not fail, it silently started the whole job.
+#
+# It is not hypothetical and it is not a stranger's mistake: this lane's own overseer ran
+# `--selftest` here, on the reasonable guess that a script with `--selftest-fail` also had
+# the passing half, and started a real nightly run to find out. Nothing announced it. The
+# same class is already booked twice on this board (`DERIVE-OFFCANON-UNGATED`, the bare
+# command writes; `FLAG-SUBSTRING-CLASSIFIER`, a flag spelling reclassifying a file).
+#
+# There is deliberately NO dry-run flag invented here. Adding one would be a new surface
+# on a guess about what a caller wants; refusing by name is the whole fix, and the refusal
+# says outright that no such mode exists so the next reader does not guess a third time.
+if [[ $# -gt 0 ]]; then
+    echo "nightly_ref_drift.sh: refusing unrecognised argument: $1" >&2
+    echo "" >&2
+    echo "This script takes NO arguments in normal use. Running it bare performs the" >&2
+    echo "full nightly job, which WRITES: it provisions a reference worktree, builds" >&2
+    echo "both ROM shapes, relinks the assembler, and appends to the ledger." >&2
+    echo "" >&2
+    echo "The only flag it accepts is --selftest-fail, which exercises the notification" >&2
+    echo "path and runs nothing else. THERE IS NO DRY-RUN OR --selftest MODE." >&2
+    echo "To exercise the state machine without building anything, run instead:" >&2
+    echo "    python3 scripts/drift_report.py selftest" >&2
+    exit 64
+fi
+
 # ── N, read at RUN TIME ──────────────────────────────────────────────────────────
 # N is the owner's number, ruled provisionally by the hub in his place. It lives in a
 # config file so overturning it costs an edit, never a source change and never a
