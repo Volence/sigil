@@ -10708,3 +10708,25 @@ full_crc = "667361ff"
 full_size = 736391
 anchor_crc = "22a25256"
 anchor_end = 0xa7f40
+
+[entry.strict]
+outcome = "failed"
+sigil_rev = "424feb39f71b4ae85ff05c1bb492ccf0593feadb"
+aeon_rev = "e6405428a33ed8e9bba2f594b857d70181819473"
+strict_bodies = 29
+suites = 363
+passed = 4173
+failed = 4
+ignored = 2
+skips = 0
+ran_at = "unix:1788109217"
+failing = ["act_descriptor_debug_region_matches_reference", "act_descriptor_region_matches_reference", "collision_data_debug_matches_reference", "collision_data_matches_reference"]
+
+[entry.strict.goldens]
+config_a = "d5574d26/736759"
+config_b = "a14a0f37/614991"
+demo = "aca8c043/96476"
+demo_debug = "932f496f/101359"
+lean = "334978d3/674830"
+s4 = "1a08dba8/719387"
+s4_debug = "667361ff/736391"
