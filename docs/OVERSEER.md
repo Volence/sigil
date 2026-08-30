@@ -672,7 +672,8 @@ that does not exist.
 **What survives from the report, in its true and narrower form.** `SIGIL_BUILD` does default to
 `<root>/target/release/sigil`, which a fresh worktree does not have — so aiming a prebuilt
 `refreeze` at a dedicated worktree does need it set. That is **friction, not a silent hazard**:
-`capture_goldens.sh:52` tests `-x` and exits by name (`ERROR: sigil build binary not at …`).
+`capture_goldens.sh` tests `-x` and exits by name (`ERROR: sigil build binary not at …`) — cited
+by its message rather than its line, which moves.
 Separately, the *aeon-side* tree — the one the hub's ordering rationale was actually about — is
 already enforced hard: `resolve_aeon_rev` refuses `--freeze` unless `AEON_DIR` is set, is a git
 repo, resolves `HEAD`, and is **clean**. The two trees are different questions and only the
@@ -793,9 +794,33 @@ nameable. A kill can still leave fresh artifacts beside stale ones — and a kil
 between a step returning and its record being written leaves the journal UNDERSTATING progress,
 which calls a fresh artifact stale (conservative: recovery regenerates it either way). An
 unreadable journal is `COULD NOT MEASURE`, never "completed". Residual holes, both stated in
-the module: a `capture_goldens.sh --write` run BY HAND outside `refreeze` is unjournaled and
-still silent, and a `SIGIL_KILL -9` between the last record and the removal leaves a
-completed-run journal, which is reported as a note rather than a fault.
+the module: a `capture_goldens.sh --write` run BY HAND outside `refreeze` is unjournaled, and a
+`SIGIL_KILL -9` between the last record and the removal leaves a completed-run journal, which
+is reported as a note rather than a fault.
+
+`GOLDEN-HAND-WRITE` — the first of those two, **ADDRESSED on `parcel/capture-write-journalled`,
+HELD from merging.** The script's own WRITE GATE refuses `--write` unless `SIGIL_GOLDEN_WRITE`
+says which kind of write it is: `refreeze`, which the tool sets on the child it spawns, or
+`unjournalled`, the operator's acknowledgement — which appends to `golden/.unjournalled-write`
+before anything is built and is REFUSED if that record cannot be written. The refusal names the
+journalled command, names the no-write capture most hand runs actually want, and names the
+override; it is consulted before `AEON_DIR` and `SIGIL_EMIT`, so it costs nothing and is
+provable without a provisioned aeon tree. No shell gate can tell a forged caller from a real
+one, and the trace's ABSENCE proves nothing — it is checkout-local and untracked. What closes
+is the one-flag slip, not the possibility.
+
+**Why it is held.** It changes the measuring instrument a paired freeze runs through, so
+merging it while an aeon byte-moving parcel is out would move the instrument under someone
+else's landing. Byte-neutrality does not exempt it; the precedent is
+`fix/island-non-vacuous-arm`, held for this reason and no other. The merge is the hub's to
+sequence with the aeon lane.
+
+`crates/sigil-harness/tests/golden_write_gate.rs` — 6 gates, and half of them are the half that
+gets skipped: a COMPLETE seven-target `--write` running to `freeze_commit` under the journalled
+caller's environment, because a gate proven only on its refusal is indistinguishable from one
+that refuses the ritual too. The plumbing gate never names the variable — it runs `refreeze`
+far enough to spawn its capture step, diffs the child's environment against a control child
+given the same inputs, and runs the REAL script under what `refreeze` added.
 
 `crates/sigil-harness/tests/freeze_step_gap.rs` — 20 gates, **one per joint** rather than one
 over the set, since the three leave different wreckage. Three of them are CONTROLS asserting

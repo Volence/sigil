@@ -44,8 +44,11 @@
 //! WHAT IT STILL DOES NOT SEE, named rather than left for a reader to discover:
 //!
 //!   * `golden/capture_goldens.sh --write` run BY HAND, outside `refreeze`, writes fresh
-//!     goldens with no journal. That is a deliberate manual act rather than an
-//!     interrupted ritual, and it is as silent as it ever was.
+//!     goldens that no journal describes. That is a deliberate manual act rather than an
+//!     interrupted ritual, and it is not this module's to record — the script's own WRITE
+//!     GATE refuses it unless the operator acknowledges it, and an acknowledged one
+//!     records itself in `golden/.unjournalled-write`. So a hand write is still outside
+//!     this journal; it is no longer silent.
 //!   * A kill in the instant between the LAST record and the removal leaves a journal
 //!     recording a finished run. Nothing is inconsistent there, so it is reported as a
 //!     note and discarded — see [`Leftover::completed`].
