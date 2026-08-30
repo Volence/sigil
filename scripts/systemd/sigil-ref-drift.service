@@ -1,0 +1,13 @@
+[Unit]
+Description=sigil aeon-reference drift job (non-blocking; the instrument SIGIL-DECOUPLE step 4 reads)
+
+[Service]
+Type=oneshot
+ExecStart=/home/volence/sonic_hacks/sigil/scripts/nightly_ref_drift.sh
+# The job's exit codes are REPORTING codes, not failures of this unit: 1 is drift
+# observed, 2 is nothing measured, 3 is an unverified change. All three are results,
+# and the job has already notified with the wording that distinguishes them.
+SuccessExitStatus=0 1 2 3
+# This covers what the job cannot reach: a missing or non-executable script, a kill,
+# an OOM. A runner that fails silently is the vacuous-gate pattern one level up.
+ExecStopPost=-/usr/bin/env bash -c 'case "$EXIT_STATUS" in 0|1|2|3) ;; *) notify-send -u critical "sigil ref drift" "job runner exited $EXIT_STATUS ($SERVICE_RESULT)";; esac'

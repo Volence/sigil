@@ -1,0 +1,6 @@
+# Paths sigil tests assert are ABSENT from the reference tree.
+# Each row: <path> <the sigil file that asserts the absence>.
+# The sweep checks BOTH directions: a listed path that starts existing is drift, and a
+# row whose naming file no longer names the path is a stale allowlist row and is
+# reported as such. An allowlist nothing checks is the next thing to rot.
+games/sonic4/test/poison/gone.emp crates/sigil-cli/tests/extra_entry.rs
