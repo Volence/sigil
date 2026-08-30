@@ -58,8 +58,8 @@ fn sound_layout_derives_the_frozen_addresses() {
         // the walk's own native::packed_chained_base rather than assuming a contiguous
         // pack. Nothing upstream of seq_opcode_tab_lma moved in either step.
         mt_bank_lma: 0xA0630,
-        sfx_bank_lma_plain: 0xA3B20,
-        sfx_bank_lma_debug: 0xA5570,
+        sfx_bank_lma_plain: 0xA3B18,
+        sfx_bank_lma_debug: 0xA5568,
     };
     assert_eq!(got, want, "map-derived seam-2 placement drifted from the frozen chain-22 addresses");
 }

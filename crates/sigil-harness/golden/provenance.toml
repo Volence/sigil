@@ -10653,3 +10653,58 @@ demo_debug = "932f496f/101359"
 lean = "454a546c/674830"
 s4 = "5a25a0d4/719355"
 s4_debug = "1131b2bf/736357"
+
+[[entry]]
+name = "alignment-flip-trial"
+ab = "docs/superpowers/notes/2026-08-30-alignment-flip-packet.md section 5: pre/post CRC32+size of all seven shapes, measured by building them"
+aeon_rev = "5823ea777fa36c9985c66fb527da118b68b3c785"
+note = "TRIAL FREEZE - NOT FOR MERGE: aeon trial rev 5823ea77 (local, unpushed) carries [[hole]] at=0x3F0 in both maps + the sprite-tilt/insta-shield fixture re-stamps the flipped layout requires"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "ebbe8e04"
+full_size = 736663
+anchor_crc = "fc7144ad"
+anchor_end = 0xa7f34
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "4c52b46a"
+full_size = 611301
+anchor_crc = "48d5cd8c"
+anchor_end = 0x8b934
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "30a31d81"
+full_size = 96458
+anchor_crc = "a9763013"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "51056291"
+full_size = 101323
+anchor_crc = "992c305a"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "c347e317"
+full_size = 674816
+anchor_crc = "6830d43c"
+anchor_end = 0xa4c00
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "0f0153cb"
+full_size = 719293
+anchor_crc = "10f7a0c6"
+anchor_end = 0xa5c82
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "512b42a4"
+full_size = 736311
+anchor_crc = "008862e9"
+anchor_end = 0xa7f34
