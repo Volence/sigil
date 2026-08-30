@@ -58,11 +58,23 @@ fn wall_ambient(aeon: &Path) -> Vec<sigil_frontend_emp::ast::Item> {
     use sigil_frontend_emp::ast::Item;
     let mut items = parse_file(&aeon.join("engine/system/constants.emp")).items;
     items.extend(parse_file(&aeon.join("games/sonic4/config/constants.emp")).items);
+    // The comptime fns are named individually because the rest of the module emits
+    // bytes. `Item::Const` is admitted WHOLESALE instead, on the same reasoning the
+    // doc comment above gives for the two constants modules: a `pub const` is a
+    // compile-time value and emits nothing, so it cannot disturb the window being
+    // compared. Naming consts individually would leave this filter one edit behind
+    // aeon forever — which is exactly how it broke: EFFECTS-W1's DPLC ceiling added
+    // `DPLC_ADDRESSABLE_TILES` to collision_data.emp's `ensure`, all four ROM shapes
+    // built green, and only this standalone scope could see the name was missing.
+    // A ZERO-BYTE CLAIM IS A CLAIM ABOUT BYTES AND SAYS NOTHING ABOUT NAMES.
     items.extend(
         parse_file(&aeon.join("engine/objects/dplc.emp"))
             .items
             .into_iter()
-            .filter(|it| matches!(it, Item::ComptimeFn(d) if d.name == "dplc_peak_tiles" || d.name == "dplc_peak_entries")),
+            .filter(|it| {
+                matches!(it, Item::ComptimeFn(d) if d.name == "dplc_peak_tiles" || d.name == "dplc_peak_entries")
+                    || matches!(it, Item::Const(_))
+            }),
     );
     items
 }
