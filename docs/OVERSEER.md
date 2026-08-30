@@ -3580,6 +3580,36 @@ the earlier one is rejected as well. **`d-14`, `d-15` and `d-16` are the same em
 (`EMBED-BASE-SKEW`), and none of the three reaches the owner's console.** The decision and both
 of its closures are invisible there; the ledger on disk is the only record.
 
+
+### THE SHARPEST HALF: `d-15` WAS A DELIBERATE SCHEMA REPAIR THAT STILL DID NOT CONFORM
+
+The audit agent could not see this, because it needed this file's own record of *why* `d-15`
+exists. `d-15` is not an ordinary 8c closure. It was filed **specifically to fix a schema
+defect**: `d-14` carried a `state` field the contract does not define, a `refs.commits` key it
+does not list, and a `refs.queue` id that existed nowhere. Confirmed against the ledger — `d-15`
+does drop `state` (line 14 top-level keys carry `state`; lines 15 and 16 carry `supersedes`
+instead). **It was a real repair and it worked on the fields it aimed at.**
+
+**And it still does not render, because every option is still missing `name`.**
+
+That is the finding, and it is a stronger one than the compounding. The repair was made against
+the **contract prose**, which a person reads, rather than against the **reader**, which is what
+actually decides whether the owner ever sees the card. Nothing in the loop could report the
+difference: the contract text was satisfied, the entry looked conformant to its author, and the
+only party able to refute it was a TypeScript function in another repo that nobody ran.
+
+**The reusable form, and it is this file's standing class arriving on a fix rather than on a
+stale comment:** *conforming to the written rule and conforming to the implementation that
+enforces it are two different claims, and only one of them has a consumer.* A schema repair that
+is not run against the parser is unexecuted prose with a repair's confidence attached — the same
+family as the rerun hint nothing checks and the booking nothing executes, except that this one
+was authored **as a correctness act**, which is exactly the moment the check gets skipped.
+
+**Operationally, from here: `tools/decisions_reader_audit.py` runs before any decision entry is
+appended, not after.** The tool existing changes nothing on its own; what closes this is running
+it at the write site, which is the same conclusion this file reached about `refreeze`'s teeth
+being at the write site rather than over the history.
+
 ### What this changes about writing a decision
 
 **A decision entry is not durable until it parses.** The ledger is append-only and the console is
