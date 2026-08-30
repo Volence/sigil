@@ -372,6 +372,35 @@ Before running an unfamiliar script, grep it for `notify-send`, `zenity`, `kdial
 **A second-order note worth as much:** the `2>/dev/null || true` on that line means the notification
 cannot fail visibly either, so even the popup's *sending* is unobservable from the caller.
 
+### THE SIDE-EFFECT SURFACE IS EXACTLY TWO FILES, AND THEY SHARE ONE DEFECT (2026-08-30, swept after the incident)
+
+**Swept rather than assumed**, so the bar above stops being an anecdote and becomes a mapped surface.
+Across `scripts/*.sh`, `scripts/*.py` and `golden/*.sh`, grepping for `notify-send`, `zenity`,
+`kdialog`, `systemctl`, `mail`, `curl`, `xdg-open`: **two files, both `notify-send`, nothing else.**
+
+- `scripts/nightly_source_gates.sh:149` — `notify-send -u critical`
+- `scripts/nightly_ref_drift.sh:50` — `notify-send -u normal`
+
+**Both carry the identical `note()`:** `echo "$(date -Is) $1" >> "$LOG"` then `notify-send … 2>/dev/null || true`.
+The `echo` goes to a **file**, not stdout. So **neither script can tell an interactive caller that
+anything happened** — which is the whole mechanism of the incident above, and it is duplicated, not
+unique to the one I ran.
+
+**THE FIX, one line in each, and it is not a notification change:** `note()` should also write to
+**stderr**. An unattended run is unaffected (stderr goes to the journal), an interactive run finally
+sees what it just did, and the desktop notification keeps its current behaviour untouched. This is
+strictly additive — it removes the silence, not the loudness, which is the direction this board's
+two-urgencies rule requires.
+
+**Not applied yet, deliberately:** an agent is concurrently working inside
+`nightly_source_gates.sh`, and splitting a two-line change across two moments to avoid a merge
+conflict buys nothing. Both halves land together once that file is free.
+
+**The generalisation worth more than the fix:** a diagnostic that reports **only** to a log and a
+human's screen has no channel back to its caller, so *every* caller is structurally unable to
+observe it. Look for that shape wherever a script exists to tell a person something — the reporting
+path is the one nobody tests, because testing it means paging someone.
+
 ### AND THE POPUP IS THE SAFE DIRECTION — DO NOT SILENCE THE TIMER (2026-08-30)
 
 `sigil-source-gates.timer` **is installed and active** (contradicting this board's earlier "the timer
