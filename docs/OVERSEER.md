@@ -1265,7 +1265,9 @@ Only one prices the risk.
 
 **This lane's own instance, published to the hub before the correction arrived:** the
 `/home/volence` sweep here gave **322 occurrences / 181 files / 129 test-or-harness**, and the row
-was scoped by those figures — including a caveat that *"129 is not 129 unknowns"*, which was
+was scoped by those figures **[RETIRED 2026-08-30: `322/181/129` reproduces under NONE of the four
+units later measured — 110 literals, 319 call sites, 466 rows-in-file, 398 rows-gated. Do not quote
+them for sizing either; the sentence below saying they "stand for sizing an edit" is superseded.]** — including a caveat that *"129 is not 129 unknowns"*, which was
 reasoning carefully **in the wrong unit**. The numbers stand for sizing an edit and are worthless
 for pricing exposure; re-measure by rows gated before anyone prices that row.
 
@@ -4060,9 +4062,29 @@ share**; `TST` was exactly that, live.
    - **Landed on this side (interface-safe):** the `tree:` DETAIL now separates the changes
      in the compiled sources from the rest. The state word is unchanged — every uncommitted
      change still yields `dirty`, so aeon's prefix test behaves exactly as before.
-   - **NOT landed, needs the aeon conversation first — written and gated on
-     `feat/version-drift-classify`, second commit, DO NOT MERGE that commit until the
-     conversation happens.** It narrows the state word (non-source dirt reports
+   - **THIS ROW IS STALE IN THREE WAYS — corrected 2026-08-30 by applying the
+     restated-vs-referenced rule to this board. It read: *"NOT landed, needs the aeon
+     conversation first — written and gated on `feat/version-drift-classify`, second
+     commit, DO NOT MERGE that commit until the conversation happens."***
+     **(1) THE POINTER.** "second commit" is an ordinal, which silently re-points as a
+     branch grows — a DO-NOT-MERGE aimed at a moving target. The commit is
+     **`9d71d8f4`**; say the SHA.
+     **(2) IT IS MERGED.** `9d71d8f4` is an ancestor of `origin/master`, landed via
+     `d7f3f632`, and `closure-revision` ships at `main.rs:200`. The branch is **0 ahead
+     of master** — the behind-and-zero-ahead spelling of *done* that reads as *pending*,
+     which this board booked as a trap the same night and then contained an instance of.
+     **(3) THE RISK IS STATED BACKWARDS, and this is the half worth keeping.** The row
+     feared that narrowing the state word would **stop matching aeon's `dirty*` test**,
+     i.e. a MISSED warning. Aeon's `build.sh:307-310` does the opposite:
+     `case "$SIGIL_TREE" in clean|clean\ *) ;; *) …dirty ;; esac` — a **positive match on
+     `clean`, defaulting everything unrecognised to dirty**, with their own comment saying
+     so. `clean-sources` has a hyphen, not a space, so it falls to the catch-all and is
+     treated as **dirty**. The real consequence is therefore a **FALSE staleness warning,
+     not a missed one** — noisy, and in the safe direction. Not firing today (`tree: clean`
+     on a clean checkout); it fires whenever sigil carries non-source dirt, which is most of
+     a working session. **The row worried about the one direction their code cannot fail
+     in.** Checking the consumer rather than reasoning about the producer is what separated
+     these. It narrows the state word (non-source dirt reports
      `clean-sources`, which stops matching their `dirty*` test) and adds three fields:
      `closure:` (how many packages and paths, or NOT DERIVED and why),
      `closure-revision:` (the last commit that reached those paths) and `closure-paths:`
