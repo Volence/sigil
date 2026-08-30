@@ -426,6 +426,54 @@ this is a layout shift rather than an artefact of how either of us read the file
 `0x18E-0x18F` **does not move between shapes**, while all thirty-eight other addresses shift by the
 identical amount. A read artefact would have displaced it too.
 
+### I GREW THE VOCABULARY AND DID NOT TELL MY OWN CONSUMER (2026-08-30)
+
+**The obligation I wrote for aeon two hours ago, broken by me, in my own repo, before I wrote it.**
+`drift_report.py:258` reads `if tree_state != "clean":` and treats anything else as a **non-identifying
+key that never advances N**. I later added `clean-sources` to the vocabulary. So on any night this
+lane has uncommitted **documentation** — which is most of a working session — the nightly drift job
+observes, declines to count it, and **N silently does not move.**
+
+**And it is wrong on the merits, not merely strict.** `clean-sources` means uncommitted changes exist
+and **none of them are in the compiled closure**, so the binary IS reproducible from
+`closure-revision` and the key IS identifying. The check discards valid evidence.
+
+**This is the SECOND independent mechanism by which N fails to advance while the watch looks
+healthy** — the first being aeon's docs-only-commit key miss. Neither is a break; both are silent.
+That is precisely the class `DRIFT-MISS-MUST-NAME-ITSELF` was ruled over, arriving again on my own
+side rather than theirs.
+
+**Not fixed tonight, deliberately, and the reason is a real divergence rather than caution.** Aeon's
+`drift_record.py:359` derives its own tree state and maps `clean-sources` → **`dirty`** (their
+substring test is `"clean at capture"`, which the hyphenated word misses), and their
+`TREE_STATES` frozenset admits only `{clean, dirty, unknown}`. So if I make `clean-sources`
+identifying on my side, my ledger counts a chain their record calls dirty. The two subjects differ —
+mine is an observation, theirs is a minted entry — but the semantics want settling **between the
+lanes**, not patched at 06:00 by whichever of us noticed. **The minimal correct move is my own
+standing ruling: make the state NAME itself in the report rather than folding into
+"non-identifying".** Booked.
+
+### THE PREMISE I BRIEFED WAS WRONG FOR THREE OF FOUR FILES, AND THE AGENT MEASURED IT (2026-08-30)
+
+I briefed the source-gate parcel on the claim that all four unclassified files were **prose false
+positives** — matching the reference-tree detector on comments while reading no tree. **True for two
+of them; false for three.** Pointed at an absent tree under `SIGIL_STRICT_GATE=1`, where a missing
+reference panics instead of skipping, `hole_interior_reserved` (0/3), `section_alignment_declared`
+(1/2) and `region_end_contracts` (0/2) all **FAIL, naming the missing path.** They are genuine source
+gates nobody classified the day they landed. Only the two `reference_tree_*` gates obtain nothing.
+
+**How I got it wrong is the reusable half.** The previous agent reported, accurately, that *"both
+reference-tree gates match the detector on prose"* — a statement about **two** files. I wrote a brief
+asserting it of **all four**, because the four arrived as one list and the explanation for two felt
+like the explanation for the set. **A cause established for part of a population is not a cause for
+the population**, and a list is exactly the shape that hides the join. The one command that separates
+them existed the whole time and I did not run it before briefing.
+
+**The agent was right not to report BLOCKED**, and right to flag that classifying three of them is
+enumeration-as-invocation rather than a derivation. The derived rule still answers the shape I
+actually identified, and it proved itself a rule rather than a roster: the concurrent branch landed a
+fifth file mid-parcel and it classified correctly **with no edit**.
+
 ### MY CONTRACT ADVISED A FAIL-OPEN KEY, AND THE ONLY CONSUMER WAS RIGHT TO IGNORE IT (2026-08-30)
 
 `tree_class.rs` told consumers of the `tree:` state word that *"a consumer keys on that prefix"* —
