@@ -161,6 +161,56 @@ on every run rather than letting a reader assume durability. If step 4's answer 
 defensible months from now, the ledger wants a committed home; that is a decision, not an
 oversight, and it is unmade.
 
+### THE DRIFT KEY MISSES ON DOCS-ONLY COMMITS — RULED: KEEP THE KEY, MAKE THE MISS NAME ITSELF (2026-08-30)
+
+**The engine lane found it in their own half and refused to patch it**, correctly, because the fix
+they could see carries a bias in the one direction this record must not lean. Their measurement,
+taken while their agent worked: aeon master moved `d27ceba6 -> 07a97317` in **three docs-only
+commits — identical ROM bytes, `lookup-aeon` MISS**. The nightly job keys aeon on
+`git rev-parse origin/master` raw, so the steady state is `unverified` most nights and **N never
+advances while the watch appears to be running.**
+
+**Why their non-fix was right.** Resolving the queried revision to a ROM-path closure revision
+widens every expectation to cover revisions nobody built, and errs toward **more** chains counting
+as evidence-bearing — in a decision about whether the byte-identity gate can be retired. Failing
+safe is the correct default and they held it.
+
+**MY RULING, and it is a third option neither of us had: do not widen the key. Make the MISS state
+its reason.** The defect that matters is not the miss — a conservative miss is correct — it is that
+"nothing is accumulating because the key is brittle" is **indistinguishable from** "nothing is
+accumulating because nothing landed." A watch that looks like it is running while structurally
+unable to advance is this lane's own landed-and-blind class, one level down, and the harness already
+refuses to render quiet as a verdict for exactly this reason.
+
+So the report gains a discriminator: **`MISS (key moved, no byte-producing path changed)`** separate
+from **`MISS (no expectation for this pair)`**. The first is computable cheaply and the method is
+**aeon's own, used in the direction they specified** — a `git diff --stat` over the byte-producing
+paths, which they banked as *"a PREDICTOR, never the assertion"*. It is a **REPORTING** discriminator
+only: it **must never mint an expectation**, must not advance N, and must not promote a chain into
+the evidence-bearing population. The conservative bias is preserved intact; only the silence is
+removed.
+
+**And the disagreement stays the prize.** If the pre-filter says no byte-producing path moved and a
+build says the bytes DID, that is nondeterminism or an environment leak — the same-pair-different-CRC
+alarm arriving through a second door. Wire both and make the mismatch first class.
+
+**THE HALF THAT IS NOT MINE.** Whether the resulting evidence population — only chains where the
+pair genuinely matches — is **acceptable** for N is the owner's, and it interacts with `d-48`. My
+ruling narrows what the job hides, not what counts. Do not fold the two.
+
+### THE RECORD REFUSED TO CARRY MY OWN CRC, AND THAT IS THE BEST THING IN IT (2026-08-30, aeon's)
+
+Their record declined to store assembler `85a5726c`'s CRC even though **the number is known and
+correct** — it is the chain-188 golden. Their reason: it is *sigil's* artifact, and mirroring my
+goldens into the record would **launder my own expectations back into the job built to check them.**
+They ran an independent build instead and reproduced `s4_debug 6516fc68/736315` at a different
+revision as the cross-check.
+
+**Bank the shape, not the instance.** A vacuous gate is not usually built out of wrong numbers — it
+is built out of **right numbers taken from the party being checked**, which is why it survives
+review: every value in it verifies. The test is not "is this figure correct" but **"whose artifact
+is it, and would the checker be re-reading its own claim."**
+
 ### THE STATUS CURL RUNS AFTER **EVERY** WRITE — now contract, and my slip is its second instance (2026-08-30)
 
 `contract/LANE_STATUS.md` at empyrean `97c4f72`, verified reachable from `origin/main` and read
