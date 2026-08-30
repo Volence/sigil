@@ -102,9 +102,17 @@ Proven red-first by breaking the derivation and restoring it:
   `UNMEASURABLE: no reference-tree environment variable is extractable …`, exit 2;
 - drop `pub` from `aeon_dir` (empty closure) →
   `UNMEASURABLE: no reference-tree accessor is derivable … so every file would falsely
-  look like it reads nothing`, exit 2.
+  look like it reads nothing`, exit 2;
+- cut the closure's iteration bound to one, forcing non-convergence →
+  `UNMEASURABLE: … did not reach a fixed point — a truncated closure is short accessors,
+  and each one it is short makes some file look like it reads nothing`, exit 2.
 
-Both restored with `git checkout --` and the audit re-run green.
+Each restored and the audit re-run green. The third of these was a hole found in review
+rather than by the brief: the loop originally capped at five rounds and **returned the
+partial set**, which is wrong in the quiet direction — a closure short an accessor makes
+some file that reads the tree look like it reads nothing, i.e. moves it into the bucket
+this lane does not run. A bound that truncates silently is a smaller version of the
+vacuous gate the whole lane exists to prevent.
 
 ## The runner, and why the lane stayed dark
 

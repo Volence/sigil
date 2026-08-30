@@ -192,6 +192,11 @@ reference_env_var() {
 # Comment-only lines are stripped first. A doc comment showing a caller how to open a
 # gate contains a call to the accessor, and attributing it to the function it happens to
 # sit above manufactures accessors that nothing calls.
+#
+# The iteration bound is generous (the live chain is three deep) and NOT a silent cap:
+# reaching it without a fixed point returns nonzero. A truncated closure is short some
+# accessors, and every accessor it is short makes some file look like it reads nothing —
+# the one direction in which being wrong is quiet.
 accessor_closure() {
     local src=$1 stripped acc more pat i
     stripped=$(sed 's@^[[:space:]]*//.*@@' "$src")
@@ -205,8 +210,8 @@ accessor_closure() {
     acc=$(awk "$scan"'
         /env::var\("AEON[A-Z0-9_]*"\)/ { if (name != "" && pub) print name }
     ' <<< "$stripped" | sort -u)
-    for i in 1 2 3 4 5; do
-        [[ -n $acc ]] || break
+    [[ -n $acc ]] || { printf '%s\n' "$acc"; return 0; }
+    for i in $(seq 1 12); do
         pat=$(paste -sd'|' <<< "$acc")
         more=$(awk -v pat="$pat" "$scan"'
             {
@@ -215,10 +220,13 @@ accessor_closure() {
             }
         ' <<< "$stripped" | sort -u)
         more=$(printf '%s\n%s\n' "$acc" "$more" | sort -u)
-        [[ $more == "$acc" ]] && break
+        if [[ $more == "$acc" ]]; then
+            printf '%s\n' "$acc"
+            return 0
+        fi
         acc=$more
     done
-    printf '%s\n' "$acc"
+    return 1
 }
 
 # THE CLASSIFIER, one definition with two callers: `--audit` (read-only, and what the
@@ -244,7 +252,12 @@ names it"
 $SUPPORT_RS in $tree — half the read rule has no pattern"
         return 2
     }
-    accessors=$(accessor_closure "$src")
+    accessors=$(accessor_closure "$src") || {
+        CLS_REFUSAL="the reference-tree accessor set over $SUPPORT_RS in $tree did not \
+reach a fixed point — a truncated closure is short accessors, and each one it is short \
+makes some file look like it reads nothing"
+        return 2
+    }
     [[ -n $accessors ]] || {
         CLS_REFUSAL="no reference-tree accessor is derivable from $SUPPORT_RS in $tree \
 — the read rule has no pattern, so every file would falsely look like it reads nothing"
