@@ -161,6 +161,70 @@ on every run rather than letting a reader assume durability. If step 4's answer 
 defensible months from now, the ledger wants a committed home; that is a decision, not an
 oversight, and it is unmade.
 
+### THE HOME-PATHS CLASSIFICATION IS MEASURED — AND THE BUCKETS ARE BEHAVIOURS, NOT POPULATIONS (2026-08-30)
+
+`docs/superpowers/notes/2026-08-30-absolute-path-classify.md`, merged `8a377311`. Nine poison
+scenarios, per-scenario never aggregate, all six of aurora's method corrections applied.
+
+**THE RESULT THAT CHANGES HOW THIS IS FIXED.** There is ONE reference-dependent population of
+**398 rows**, and which of the four things a row does — names the input, misdirects, goes
+silent, or fails on purpose — is a property of the **(row, missing-part) PAIR**, not of the row.
+Of the 61 rows that misdirect somewhere, **all 61 are silent somewhere else**; of the 184 that
+name the input somewhere, **all 184 are silent somewhere else**; 31 both misdirect under one
+poison tree and name the input under another. **A per-row fix list therefore cannot be derived
+from any single run**, which is a stronger claim than "run more scenarios" and is the thing to
+carry into the fix parcel.
+
+**Aurora's correction (1) reproduces sharply, in the direction they said.** Absent tree: **0
+misdirected, 0 failed, exit 0**. Source-only: the same. The scenarios that find anything are the
+PARTIAL ones — roms-only 29, no-games-data 28, markers 13 — and **no single scenario finds more
+than 29 of the 61**. Deleting the input really does find the least.
+
+**AND THE ORDINARY SUITE IS GREEN WITH NO REFERENCE TREE AT ALL — by design, with one guard.**
+`if !aeon.exists()` skips in ordinary mode and panics under `SIGIL_STRICT_GATE` (392 rows silent
+ordinary / 398 failing strict). That is the designed shape, so do NOT read the 392 as broken
+rows. Read it as: **the only thing standing between "no reference tree" and a green suite is the
+strict gate, and the strict gate runs at landings.** That is this lane's own silent-green class —
+IMPORTANT and non-self-correcting — sitting in the guard rather than in the rows.
+
+### THE SUITE WRITES INTO `AEON_DIR`, AND THE WRITE FLIPS OTHER ROWS' GUARDS MID-RUN (2026-08-30)
+
+Found while reconciling a scenario that would not reproduce; mechanism re-derived at source here
+rather than taken from the report. `seam1::emit_sound_blob` (`seam1.rs:729`) opens with
+`create_dir_all(&out_dir)` **as its first statement, before it reads anything**, and
+`native::ensure_generated` (`native.rs:1149`) points it at `$AEON_DIR/engine/sound/generated`. So
+the suite mkdirs inside a tree that does not exist, then panics on the missing source.
+
+**The consequence is not cosmetic.** `contract_closure_corpus`'s guard probes the **ROOT**
+(`if !aeon.exists()`). Once another row has mkdir'd a path under it the root exists, the guard
+stops skipping, the corpus walk finds zero files, and the floor fires. Measured both directions
+on one command: pristine absent **0 failed exit 0** -> after the suite's own mkdir **53 failed
+exit 101** -> directory deleted **0 failed exit 0**.
+
+**Two things follow, and the second is the general one.** The `absent` scenario is **not stable
+across repeated runs in one session** — its second run is a different scenario, which is exactly
+the shape that makes a poison result irreproducible for the next person. And a read-side analysis
+gate is mutating the tree it reads, **while `contract_closure_corpus`'s own doc comment declines
+to do that very thing for that very reason** ("generating one would be a WRITE into `AEON_DIR`,
+racing any concurrent build"). One module states the rule and a neighbour breaks it
+unconditionally. **Remedy is byte-adjacent — `emit_sound_blob` produces the sound blob — so it is
+sequenced with the aeon lane, not taken solo.**
+
+### A PUBLISHED COUNT OF MINE DOES NOT REPRODUCE — `322/181/129` IS RETIRED, NOT RESTATED (2026-08-30)
+
+This board published **322/181/129** as the size of the home-paths exposure. Under measurement it
+**does not reproduce under any of the four units that were actually checked**: 110 non-comment
+path literals, 319 helper call sites, 466 rows living in an aeon-reading file, 398 rows whose
+behaviour actually changes. **Do not quote 322/181/129 again**, and do not quietly substitute one
+of the four for it either — the replacement numbers are the agent's measurement and are recorded
+as theirs.
+
+**The unit rule that survives this, which is aurora's correction (3) landing on my own figure.**
+Literal counts measure **editing effort**; rows gated measure **coverage exposure**. One file here
+carries 2 literals and gates 28 rows. The two are not interchangeable and the risk must be priced
+in **rows gated (398)**. This is the second time this lane has shipped a count that was defensible
+by population and wrong by unit; the first is booked two sections down.
+
 ### A BOOKED ROW IS PROSE WITH A PROMISE ATTACHED, AND PROSE DOES NOT RUN — `scripts/landing-run.sh` (2026-08-30)
 
 **The incident.** This board already carried the row *landing runs use a dedicated
