@@ -1054,6 +1054,22 @@ tests = ["act_descriptor_port"]
 name = "EditorSceneBinding_OJZ_Act1_Sec4"
 tests = ["act_descriptor_port"]
 
+# EFFECTS-W1 item 1 step 5 (2026-08-30, aeon 2e976223): section 5 stopped sharing
+# OJZ_Preset_Plain and took a preset of its own, so act_descriptor.emp names a SEVENTH
+# preset cross-seam. Pinned for the same reason as the six above — the standalone
+# act_descriptor scope must resolve it rather than link against a hand literal.
+#
+# Why the SPLIT existed at all, since a future reader will ask why section 5 is special:
+# Sec.sec_effects is a per-section POINTER to a shared record, and the raster chooser is
+# keyed on a SECTION INDEX. Threading ojz_act1_sec_raster(sec: 5) into the record that
+# sections 6-8 also point at would have given all four the same band. Section 5 was the
+# owner's pick (ruled in his place, empyrean e874427) because it is the first Plain
+# section whose raster channel is Raster_Program_None — section 4 would have evicted the
+# d-15 showcase pinned directly above.
+[[symbol]]
+name = "OJZ_Preset_Sec5"
+tests = ["act_descriptor_port"]
+
 # editor-raster-preset (2026-08-29, aeon e99a2ca7): the effects lab's raster chord became a
 # CYCLE, and its .raster_table's second entry is `EditorRaster_OJZ_Act1_authored_probe` — the
 # first EDITOR-authored raster program, lowered by tools/effects_gen.py from

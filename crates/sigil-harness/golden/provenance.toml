@@ -10335,3 +10335,58 @@ demo_debug = "d30c3636/101333"
 lean = "b1478c40/674830"
 s4 = "63451f96/719315"
 s4_debug = "3aa7cb12/736315"
+
+[[entry]]
+name = "preset-sec5-split"
+ab = "aeon 2e976223: EFFECTS-W1 item 1 step 5 - OJZ_Preset_Sec5, a byte-twin of OJZ_Preset_Plain whose raster: resolves through the generated chooser ojz_act1_sec_raster(sec: 5, hand: Raster_Program_None), so section 5 can carry an editor-authored raster band without dragging sections 6-8 along. Section 5 was ruled in the owner's place (empyrean e874427, verified reachable); its falsifier - 38 bytes and evicts nothing - did NOT fire: symbol diff is exactly 1 added and 0 removed in both shapes, nothing evicted, the d-15 showcase on section 4 untouched. '+38' IS THREE NUMBERS and each gate wants a different one: the record is +38 (= struct EffectsPreset size 38); the ojz_effects [[region]] span is 1320->1358 release / 1430->1468 debug, +38 both, start UNMOVED at OJZ_TestRaster 01329A/013ACE, far past the row's <16-byte align-pad tolerance so it re-measures rather than passing on tolerance; the next section head ObjDef_Static moves +32; the ASSEMBLED IMAGE DOES NOT GROW AT ALL - EndOfRom 0A5C90/0A7F40 unchanged - because the 16-byte-aligned section carried tail pad (release 14 B, debug 12 B), the record ate 6 of it, and the +32 downstream stops dead at 090000 (Dac_Temp_Blip) where slack ahead of the Z80 banks absorbs it; the ROM FILES grow only +14/+16 as deb2 appendix for the one new symbol. 204 release / 207 debug symbols at +32, one at +38, rest +0. Sound tables unmoved: SoundTablesZ80_Head still at 8000 exactly (margin ZERO - a one-byte SHRINK upstream would re-encode that neighbourhood; this parcel GROWS and lands ~77 KB downstream, so it cannot reach it). s4 63451f96/719315 -> 36adb158/719329; s4.debug 3aa7cb12/736315 -> eadd7175/736331; BOTH demo shapes byte-identical since games/demo carries no effects data. ALSO RIDING, PROVEN ZERO-BYTE IN COMBINATION: the 12-bit DPLC tile_start ceiling becomes a machine check - the obvious blob-side guard CANNOT FAIL (the stored field IS 12 bits, so every possible input satisfies it; the overflow happens in the producer and the wrapped legal-looking index is what lands on disk), so the guard is on the art sheet, art tiles <= DPLC_ADDRESSABLE_TILES, six per-sheet ensures plus tools/test_dplc_tile_start.py enumerating modules so a seventh character cannot arrive without one; 4095 spelled nowhere, derived from DPLC_TILE_START_BITS; the rider named the wrong character - Knuckles has FOUR tiles of headroom, Tails 461, Sonic 1050. Its zero-byte claim was proven IN COMBINATION with the byte-mover (combined CRCs identical to step-5-alone), which neither branch could show alone. TOOLCHAIN, NAMEABLE BY RULING: assembler sigil 474a5c03 (clean, no -dirty), crc32 669ed658 size 7756904, verified by checksum before use and write-protected; emit_sound_blob has NO --version so it is pinned by crc32 ed35eae7 size 5242928, copied out and write-protected for this run. The prior measurement used d5967f87-dirty; sigil banked a falsifiable prediction that a rebuild would leave all four CRCs unchanged, and IT HELD - re-verified with 14de0893..master established BEFORE the build as docs-only, so the assembler was the sole free variable. VERIFIED: 1774 passed / 6 skipped / 0 failed on both sonic4 shapes, 1775/5/0 both demo; emp_expect_fail 49/49; all four artifacts DELETED before every rebuild so their existence witnesses the build ran. NOT VERIFIED: nothing seen in motion - step 5 puts nothing on screen by construction, and effects_seam_gate runs only under FAST==0 so the refusal is absent from the authoring loop where its own failure occurs (booked, not fixed)."
+aeon_rev = "2e9762237aeae8b3c779f3428bbb6555058ae4ae"
+note = "step 5: section 5 owns its preset"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "3c510af9"
+full_size = 736699
+anchor_crc = "2c06e26b"
+anchor_end = 0xa7f40
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "c10fa715"
+full_size = 611413
+anchor_crc = "673fb223"
+anchor_end = 0x8b9b0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "9223a60d"
+full_size = 96450
+anchor_crc = "ae34bd08"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d30c3636"
+full_size = 101333
+anchor_crc = "c87d9594"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "20554b7f"
+full_size = 674830
+anchor_crc = "77ddcfdf"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "36adb158"
+full_size = 719329
+anchor_crc = "ab3015c8"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "eadd7175"
+full_size = 736331
+anchor_crc = "b28802ef"
+anchor_end = 0xa7f40

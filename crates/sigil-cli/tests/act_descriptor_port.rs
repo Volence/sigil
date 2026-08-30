@@ -121,6 +121,11 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
         ("OJZ_Preset_Sec2", pins::OJZ_PRESET_SEC2.plain, pins::OJZ_PRESET_SEC2.debug),
         ("OJZ_Preset_Sec3", pins::OJZ_PRESET_SEC3.plain, pins::OJZ_PRESET_SEC3.debug),
         ("OJZ_Preset_Plain", pins::OJZ_PRESET_PLAIN.plain, pins::OJZ_PRESET_PLAIN.debug),
+        // EFFECTS-W1 item 1 step 5: section 5 left the shared Plain record and took its
+        // own, so this scope must supply a seventh preset. The split is what MAKES the
+        // per-section raster binding possible — the chooser is keyed on section index, and
+        // threading it into a record sections 6-8 also point at would band all of them.
+        ("OJZ_Preset_Sec5", pins::OJZ_PRESET_SEC5.plain, pins::OJZ_PRESET_SEC5.debug),
         // Aurora's first authored scene: Sec0's `sec_scene` binds the generated
         // `ojz_effects_editor_act1` record, one more cross-seam label the closure
         // now emits. It is the END label of the pinned SCENE_REGISTRY region
