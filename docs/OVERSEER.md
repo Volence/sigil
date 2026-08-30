@@ -376,9 +376,17 @@ cannot fail visibly either, so even the popup's *sending* is unobservable from t
 
 **Aeon volunteered the complete byte accounting unprompted; re-derived here rather than accepted.**
 Between the chain-188 candidate `e38295d2` and chain-189 `39c34fd2`, `s4.bin` differs in **exactly 40
-bytes**, and the structure is theirs exactly: the header checksum word, **nine** 4-byte payloads, and
-**two** single bytes — the two fixtures' checkpoint 0, one byte each because only the high byte moved
-(`1D375066` → `0D375066`). `2 + 36 + 2 = 40`.
+bytes**: the header checksum word, **nine** 4-byte payloads, and **two** single bytes, each the
+checkpoint 0 of an embedded fixture, one byte because only the high byte moved
+(`1D375066` → `0D375066`).
+
+**The grouping is `2 + 1 + 36 + 1`, NOT `2 + 36 + 2` — corrected by aeon, verified here.** The two
+single bytes **are not a pair**. They are one checkpoint 0 in **each of the two** embedded fixtures,
+standing and slide, distinguishable by their trailing field: `0xA4996` carries `003F` and `0xA4AA6`
+carries `083F` (read directly from the blob). Writing them as a trailing `+ 2` reads as one two-byte
+quantity; they are **two independent one-byte movers in two different fixtures**, which is also why
+oracle reports `1 of 37` on the slide fixture and `10 of 27` on the standing one. Same forty bytes,
+different object — an arithmetically correct sum that described the wrong structure.
 
 **So chain 189 is a PURE FIXTURE RE-RECORD.** Nothing that reasons about 188→189 may treat it as
 carrying behaviour, and the golden CRC movement (`6e2f9b22 → 63451f96`, `6516fc68 → 3aa7cb12`) is
@@ -391,7 +399,10 @@ entirely fixture payload plus the checksum that follows from it.
 | `s4.bin` (plain) | 40 | `0xA4A2C…0xA4A83` | `0xA4996`, `0xA4AA6` |
 | `s4.debug.bin` (debug) | 40 | `0xA6CDC…0xA6D33` | `0xA6C46`, `0xA6D56` |
 
-**A constant `0x22B0` separates them — same structure, different shape.**
+**A constant `0x22B0` separates them — same structure, different shape.** Aeon's confirmation that
+this is a layout shift rather than an artefact of how either of us read the file: the checksum word at
+`0x18E-0x18F` **does not move between shapes**, while all thirty-eight other addresses shift by the
+identical amount. A read artefact would have displaced it too.
 
 ### THE THIRD INSTANCE ARRIVED INSIDE THE MESSAGE THAT NAMED THE DISEASE (2026-08-30)
 
@@ -407,6 +418,15 @@ measured the plain shape, got `0xA4A2C…` / `0xA4996` / `0xA4AA6`, and had a di
 one: their figures are the **debug** shape and are exactly right for it. **A byte address without its
 shape is precisely a CRC without its baseline** — the number never changes and quietly stops
 describing the thing the reader has open.
+
+**AND THE REASON IT MUST BE MECHANICAL RATHER THAN CAREFUL — aeon's, and it is the load-bearing
+half.** They did not lack the shape: *"I read `s4.debug.bin` deliberately, knew which blob I was
+hashing, and simply did not carry it into the sentence."* So **the failure is not ignorance of the
+baseline; it is that a measurement feels COMPLETE to its author the moment the number is right.** A
+rule that asks for care cannot catch this, because **care is exactly what the author already believes
+they exercised** — they did the careful part, which is getting the number right, and the sentence
+felt finished. That is why "say what it was measured against" has to be a mechanical clause attached
+to the figure, not a standard of diligence.
 
 **Which is why the widened form is the one to keep, and mine was too narrow.** I wrote it about CRCs
 and baselines. It is not about CRCs. Three instances in one evening — a CRC without its freeze, a
