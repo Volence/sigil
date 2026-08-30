@@ -392,6 +392,42 @@ fn an_ordinary_step_failure_leaves_the_journal_standing() {
 
 // ── The two states that must NOT read as a fault ────────────────────────────
 
+/// The header the journal WRITES must send its reader to `refreeze --check`, and must not
+/// present the file's absence as self-authoritative.
+///
+/// This is pinned because the wording drifted the other way once and cost a peer overseer a
+/// wrong conclusion. The old text read *"Its ABSENCE is the only statement that a freeze
+/// completed"*, which is true of the MECHANISM and false as an instruction: a direct `ls` or
+/// `test -f` reports MISSING for a mistyped path, a relative path under a different cwd, or
+/// the wrong root — none distinguishable from the success the reader takes it for. Two
+/// overseers read the tree with their eyes inside one hour on 2026-08-30 and both concluded a
+/// mechanism that was present did not exist.
+///
+/// The assertion is a poison rather than a prose match: it names the RETIRED phrasing, so a
+/// revert fails by name instead of failing on formatting.
+#[test]
+fn the_journal_header_sends_the_reader_to_check_and_never_to_ls() {
+    let t = Tree::seeded();
+    freeze_journal::open(&t.root, &"0".repeat(40), &t.command()).expect("open");
+    let header = std::fs::read_to_string(freeze_journal::path(&t.root)).expect("read journal");
+
+    assert!(
+        header.contains("refreeze --check"),
+        "the journal must name the command that is the authority on its meaning; header was:\n{header}"
+    );
+    assert!(
+        !header.contains("ABSENCE is the only statement"),
+        "RETIRED WORDING IS BACK. That sentence reads as an instruction to inspect the file \
+         directly, and a direct read cannot tell a completed freeze from a mistyped path. Say \
+         what `--check` is for instead; header was:\n{header}"
+    );
+    assert!(
+        header.contains("DO NOT READ THIS FILE'S PRESENCE DIRECTLY"),
+        "the header must refuse direct inspection explicitly, not merely omit the invitation; \
+         header was:\n{header}"
+    );
+}
+
 /// A COMPLETED run leaves nothing. This is the gate that keeps the mechanism from being a
 /// new way to refuse a correct freeze: with every step recorded, the journal is removed
 /// and the tree is indistinguishable from one that never ran a freeze.

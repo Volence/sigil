@@ -158,8 +158,11 @@ pub fn open(root: &Path, aeon_rev: &str, command: &str) -> Result<Journal, Strin
     let file = path(root);
     let mut text = String::new();
     text.push_str("# A `refreeze --freeze` is IN FLIGHT in this tree, or was killed part-way.\n");
-    text.push_str("# Its ABSENCE is the only statement that a freeze completed. Read it with\n");
-    text.push_str("# `refreeze --check`, which refuses while it is here.\n");
+    text.push_str("# DO NOT READ THIS FILE'S PRESENCE DIRECTLY. Run `refreeze --check`, which is\n");
+    text.push_str("# the only authority on whether a freeze completed; it refuses while this is\n");
+    text.push_str("# here. A direct `ls`/`test -f` reports MISSING for a mistyped path, a relative\n");
+    text.push_str("# path under a different cwd, or the wrong root -- indistinguishable from the\n");
+    text.push_str("# success it would be read as.\n");
     let _ = writeln!(text, "version {FORMAT_VERSION}");
     let _ = writeln!(text, "started {}", now_secs());
     let _ = writeln!(text, "root {}", one_line(&root.display().to_string()));

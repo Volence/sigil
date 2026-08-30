@@ -2515,7 +2515,7 @@ unstarted. **Every element of that already exists in `refreeze`, and has since `
 (2026-08-29 22:23), written by an earlier session of this lane.** Measured, not recalled:
 
 - **`crates/sigil-harness/src/freeze_journal.rs`** — journal at `golden/.freeze-journal`, opened
-  before the first step, each step recorded. Its own header: *"Its ABSENCE is the only statement
+  before the first step, each step recorded. Its header then read *"Its ABSENCE is the only statement
   that a freeze completed."* It was **present in this tree the entire time I was designing its
   replacement**, carrying `started`, `root`, `aeon_rev 2e976223` and the full paste-able recovery
   command.
@@ -2538,6 +2538,15 @@ machine-local state rather than tracked content. **So `git status` cannot show i
 is what both of us used as the oracle.** Two experienced readers, independently, inside one hour,
 reached "the mechanism does not exist" from a command that was structurally incapable of reporting
 it.
+
+**THE WORDING IS NOW FIXED AND PINNED (2026-08-30).** `freeze_journal::open` no longer says
+absence is self-authoritative; it says **`DO NOT READ THIS FILE'S PRESENCE DIRECTLY`**, names
+`refreeze --check` as the only authority, and states the failure it is guarding — a direct
+`ls`/`test -f` reports MISSING for a mistyped path, a relative path under a different cwd, or the
+wrong root, none distinguishable from success. `the_journal_header_sends_the_reader_to_check_and_never_to_ls`
+(`tests/freeze_step_gap.rs`) pins it as a **poison that names the retired phrasing**, so a revert
+fails by name rather than on formatting. **Proven red before green:** restoring the old sentence
+fails the gate with `RETIRED WORDING IS BACK`; restoring the fix returns 21/21.
 
 **THE GENUINE FINDING, AND IT IS NARROWER AND BETTER THAN THE ONE I RETRACTED: the mechanism is
 sound and its DISCOVERABILITY is not.** Nothing needs building. What is wrong is that the state
