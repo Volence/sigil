@@ -10390,3 +10390,26 @@ full_crc = "eadd7175"
 full_size = 736331
 anchor_crc = "b28802ef"
 anchor_end = 0xa7f40
+
+[entry.strict]
+outcome = "failed"
+sigil_rev = "89136d65d1190c8ed27495ba45823887ed561fc8"
+aeon_rev = "2e9762237aeae8b3c779f3428bbb6555058ae4ae"
+strict_bodies = 29
+suites = 363
+passed = 4137
+failed = 38
+ignored = 2
+skips = 0
+ran_at = "unix:1788092685"
+failing = ["collision_data_debug_matches_reference", "collision_data_matches_reference", "comper_synthetic_round_trip", "compress_matches_reference_salvador_cli_output", "compress_round_trip_is_not_truncated", "compressed_size_stays_within_bound", "edge_both_extended_matches_python", "edge_boundary_offset_510_matches_python", "edge_boundary_offset_512_matches_python", "edge_empty_matches_python", "edge_odd1_matches_python", "enigma_round_trip_level_select_2p", "golden_comper", "golden_enigma", "golden_kosinski", "golden_kosplus", "golden_nemesis", "golden_rocket", "golden_saxman_with_header", "golden_saxman_without_header", "kosinski_moduled_rejects_module_size_over_0x1000", "kosinski_moduled_round_trip_sand_particles", "kosinski_moduled_round_trip_ship_propeller", "kosinski_round_trip_oozprimary", "kosinski_round_trip_specstag", "kosplus_synthetic_round_trip", "payload_744_dict_matches_python", "payload_744_plain_matches_python", "rocket_synthetic_round_trip", "round_trip_numbers", "round_trip_seal", "saxman_synthetic_round_trip", "shield_block_768_dict1536_matches_python", "shield_block_768_dict2304_matches_python", "shield_block_768_dict768_matches_python", "shield_block_768_plain_matches_python", "tile_delta_5tiles_matches_python"]
+expected_tests = ["act_descriptor_region_matches_reference"]
+
+[entry.strict.goldens]
+config_a = "3c510af9/736699"
+config_b = "c10fa715/611413"
+demo = "9223a60d/96450"
+demo_debug = "d30c3636/101333"
+lean = "20554b7f/674830"
+s4 = "36adb158/719329"
+s4_debug = "eadd7175/736331"
