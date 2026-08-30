@@ -90,6 +90,22 @@ SOURCE_GATES=(
     banked_carrier_drift
     # the derived-layout invariants, read off the same source resolve the ROM comes from
     derived_layout
+    # the placement contract's `[[hole]]` half over each shipped shape's own map.toml and
+    # the real resolve, in both directions: every live hole holds nothing but its filler,
+    # and a hole whose right edge is widened past the post-hole data (in memory, never in
+    # the aeon tree) is refused by name. Source only — the oracle is the map's own
+    # declarations, so no refreeze clears or colours it.
+    hole_interior_reserved
+    # every shipped shape's every section satisfies the alignment `section_align.rs`
+    # DECLARES for it, judged before the packing walk and again against the base the
+    # section actually lands on. Source only — the requirement is declared in sigil
+    # source, not measured off a frozen base.
+    section_alignment_declared
+    # each `[[region]]`'s declared END CONTRACT against the live layout: a region whose
+    # `end` is a label it does not own must say so, and the strict reading is the default.
+    # Source only — what is compared is the KIND of contract, which is stable across
+    # refreezes; no byte count is declared and no built ROM or assembler listing is read.
+    region_end_contracts
     # the MD Debugger island's per-shape MEMBERSHIP: the shapes declaring the island are
     # exactly the shapes whose builds define its blob label, set-diffed in both
     # directions against an expectation taken from each profile's registry rather than
@@ -145,6 +161,142 @@ SOURCE_GATES=(
 # classifies them by the artifact they name in their own text, so a file in this
 # shape that stops naming one becomes UNCLASSIFIED and the lane refuses to run: loud,
 # and the safe direction.
+#
+# AND A FOURTH, WHICH IS NOT A LANE AT ALL: a file that names the reference tree without
+# ever OBTAINING one. The detector below matches an IDENTIFIER, and an identifier appears
+# in the file that explains it as readily as in the file that calls it — a gate whose
+# whole subject is what happens when `$AEON_DIR` is absent says `$AEON_DIR` on every
+# other line while pointing every call at a path that does not exist. Such a file is
+# neither a source gate nor artifact-dependent: this lane has nothing to run for it, and
+# the ordinary workspace suite already runs it on every invocation, with no reference
+# tree needed. It is bucketed as `no-reference`, counted in the verdict, and NOT a
+# defect. The membership is DERIVED per file by `classify` below — never a roster, whose
+# failure mode is a file that reads the tree being waved through because someone typed
+# its name.
+
+SUPPORT_RS=crates/sigil-harness/src/test_support.rs
+
+# The environment variable that names the reference tree, read out of the harness that
+# reads it rather than retyped here. A second spelling of a constant is a second thing to
+# keep in step, and this lane has already been bitten once by exactly that (SKIP_MARKER).
+reference_env_var() {
+    sed 's@^[[:space:]]*//.*@@' "$1" \
+        | sed -n 's/.*env::var("\(AEON[A-Z0-9_]*\)").*/\1/p' | sort -u | head -1
+}
+
+# THE ACCESSORS THAT YIELD THE REFERENCE TREE, derived from the harness by closure and
+# never listed. Seed: the public function of test_support.rs that reads the environment
+# variable above. Step: any public function of that file whose body calls one already in
+# the set. A new accessor spelled there joins this set with no edit to this script.
+#
+# Comment-only lines are stripped first. A doc comment showing a caller how to open a
+# gate contains a call to the accessor, and attributing it to the function it happens to
+# sit above manufactures accessors that nothing calls.
+#
+# The iteration bound is generous (the live chain is three deep) and NOT a silent cap:
+# reaching it without a fixed point returns nonzero. A truncated closure is short some
+# accessors, and every accessor it is short makes some file look like it reads nothing —
+# the one direction in which being wrong is quiet.
+#
+# THE DOMAIN IS THIS ONE FILE, and that is a known edge rather than an oversight. A test
+# reaching the tree through a shared helper module — `crates/*/tests/<dir>/mod.rs`, which
+# the selector's own glob does not scan either — would call nothing this closure knows and
+# would bucket as no-reference. Not live: no such module names the tree today, checkable
+# with `grep -lE '<the selector pattern>' crates/*/tests/*/mod.rs`. If it ever fires, widen
+# this closure to those modules — the same fixed point over one more file set.
+accessor_closure() {
+    local src=$1 stripped acc more pat i
+    stripped=$(sed 's@^[[:space:]]*//.*@@' "$src")
+    local scan='
+        /^[[:space:]]*(pub )?fn / {
+            name = $0; pub = ($0 ~ /pub fn /)
+            sub(/^[[:space:]]*(pub )?fn /, "", name); sub(/[(<].*/, "", name)
+            next
+        }
+    '
+    acc=$(awk "$scan"'
+        /env::var\("AEON[A-Z0-9_]*"\)/ { if (name != "" && pub) print name }
+    ' <<< "$stripped" | sort -u)
+    [[ -n $acc ]] || { printf '%s\n' "$acc"; return 0; }
+    for i in $(seq 1 12); do
+        pat=$(paste -sd'|' <<< "$acc")
+        more=$(awk -v pat="$pat" "$scan"'
+            {
+                if (name != "" && pub && $0 ~ ("(^|[^A-Za-z0-9_])(" pat ")[ \t]*\\("))
+                    print name
+            }
+        ' <<< "$stripped" | sort -u)
+        more=$(printf '%s\n%s\n' "$acc" "$more" | sort -u)
+        if [[ $more == "$acc" ]]; then
+            printf '%s\n' "$acc"
+            return 0
+        fi
+        acc=$more
+    done
+    return 1
+}
+
+# THE CLASSIFIER, one definition with two callers: `--audit` (read-only, and what the
+# workspace suite runs) and the nightly run below. Sets CLS_* and returns 0; on anything
+# it cannot MEASURE it sets CLS_REFUSAL and returns 2, so neither caller can render an
+# unanswerable question as an empty bucket. That direction is the whole point: an empty
+# accessor set would make every file look like it reads nothing, and the lane would go
+# green over a population it never classified.
+classify() {
+    local tree=$1 f n src var accessors obtains scanned=0
+    CLS_SOURCE=(); CLS_ARTIFACT=(); CLS_NOREF=(); CLS_UNCLASSIFIED=()
+    CLS_SCANNED=0; CLS_REFUSAL=""
+    src="$tree/$SUPPORT_RS"
+    [[ -r $src ]] || {
+        CLS_REFUSAL="$SUPPORT_RS is unreadable in $tree — the reference-tree rule is \
+derived from it, so this run cannot tell a file that READS the tree from one that only \
+names it"
+        return 2
+    }
+    var=$(reference_env_var "$src")
+    [[ -n $var ]] || {
+        CLS_REFUSAL="no reference-tree environment variable is extractable from \
+$SUPPORT_RS in $tree — half the read rule has no pattern"
+        return 2
+    }
+    accessors=$(accessor_closure "$src") || {
+        CLS_REFUSAL="the reference-tree accessor set over $SUPPORT_RS in $tree did not \
+reach a fixed point — a truncated closure is short accessors, and each one it is short \
+makes some file look like it reads nothing"
+        return 2
+    }
+    [[ -n $accessors ]] || {
+        CLS_REFUSAL="no reference-tree accessor is derivable from $SUPPORT_RS in $tree \
+— the read rule has no pattern, so every file would falsely look like it reads nothing"
+        return 2
+    }
+    obtains="(^|[^A-Za-z0-9_])($(paste -sd'|' <<< "$accessors"))[[:space:]]*\("
+    while IFS= read -r f; do
+        scanned=$((scanned + 1))
+        n=$(basename "$f" .rs)
+        # Asked in this order on purpose. The two established buckets answer first and
+        # unchanged, so the new question can only ever speak for a file that used to fall
+        # through to UNCLASSIFIED — a rule that re-bucketed a file already bucketed
+        # correctly would be a regression, and this ordering makes that impossible rather
+        # than merely unobserved.
+        if printf '%s\n' "${SOURCE_GATES[@]}" | grep -qx "$n"; then
+            CLS_SOURCE+=("$n")
+        elif grep -qE 's4\.bin|s4\.debug\.bin|demo\.bin|demo\.debug\.bin|\.lst|golden' "$f"; then
+            CLS_ARTIFACT+=("$n")
+        elif ! grep -qE "$obtains" "$f" && ! grep -qF "env::var(\"$var\")" "$f"; then
+            CLS_NOREF+=("$n")
+        else
+            CLS_UNCLASSIFIED+=("$n")
+        fi
+    done < <(grep -rlE 'AEON_DIR|aeon_dir|reference_tree|--aeon' "$tree"/crates/*/tests/*.rs)
+    (( scanned )) || {
+        CLS_REFUSAL="the detector matched no test file under $tree/crates/*/tests — a \
+classification over an empty population is not a classification"
+        return 2
+    }
+    CLS_SCANNED=$scanned
+    return 0
+}
 
 note() {
     echo "$(date -Is) $1" >> "$LOG"
@@ -154,6 +306,36 @@ note() {
 if [[ ${1:-} == --selftest-fail ]]; then
     note "SELFTEST: the failure-notification path works"
     exit 1
+fi
+
+# --audit runs ONLY the classification, against the checkout this script lives in (or a
+# tree named as $2), and is READ-ONLY: no worktree is created or moved, nothing is built,
+# and `note` is not reached, so it sends no desktop notification. Exit 0 when every
+# aeon-reading test file is classified, 2 when one is not or when the rule itself cannot
+# be derived.
+#
+# It exists because the only other way to ask this question is to run the whole lane,
+# which creates worktrees off master in two shared checkouts, builds, and notifies the
+# owner with nothing on stdout to say it did — so the question went unasked, and the files
+# that darkened this lane sat unclassified until a 05:17 popup reported it.
+# `crates/sigil-harness/tests/source_gate_classification.rs` runs this flag on every
+# `cargo test --workspace`, which is what puts the question in front of a landing run
+# instead of in front of the owner's lock screen.
+if [[ ${1:-} == --audit ]]; then
+    AUDIT_TREE=${2:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+    if ! classify "$AUDIT_TREE"; then
+        echo "UNMEASURABLE: $CLS_REFUSAL"
+        exit 2
+    fi
+    echo "tree=$AUDIT_TREE"
+    echo "SOURCE_GATES=${#SOURCE_GATES[@]} scanned=$CLS_SCANNED source=${#CLS_SOURCE[@]} \
+artifact=${#CLS_ARTIFACT[@]} no-reference=${#CLS_NOREF[@]} unclassified=${#CLS_UNCLASSIFIED[@]}"
+    (( ${#CLS_NOREF[@]} )) && echo "no-reference: ${CLS_NOREF[*]}"
+    if (( ${#CLS_UNCLASSIFIED[@]} )); then
+        echo "unclassified: ${CLS_UNCLASSIFIED[*]}"
+        exit 2
+    fi
+    exit 0
 fi
 
 for d in "$SIGIL_MAIN" "$AEON_MAIN"; do
@@ -225,11 +407,12 @@ fi
 
 # THE LANE AUDITS ITS OWN LIST. SOURCE_GATES is hand-maintained, and a hand-maintained
 # list of what to check is the same object as the baseline nobody re-read — a new
-# source-only gate would simply never join the lane, silently. So: every test file that
-# reads the aeon tree must either BE in SOURCE_GATES or DERIVABLY belong to the artifact
-# lane, and "derivably" means it names a built ROM, a listing or the goldens in its own
-# text. Anything else is unclassified and the lane refuses to run rather than quietly
-# under-covering. Zero unclassified today.
+# source-only gate would simply never join the lane, silently. So every test file the
+# detector matches must land in one of three buckets, each decided from the file's own
+# content: IN SOURCE_GATES (this lane runs it), ARTIFACT-DEPENDENT (it names a built ROM,
+# a listing or the goldens), or NO-REFERENCE (it obtains no tree at all, so this lane has
+# nothing to run for it). Anything else is unclassified and the lane refuses to run
+# rather than quietly under-covering. Zero unclassified today.
 #
 # The artifact-lane files are COUNTED, not just skipped, and the count is printed in the
 # verdict line. "Skipped" and "green" are different words for a reason: an artifact gate
@@ -237,23 +420,19 @@ fi
 # CRC DRIFT (bytes moved legitimately; the refreeze ritual owns it) or a BUILD BRICK (the
 # compiler refuses the corpus; nobody's ritual clears it). The brick half is what
 # `corpus_builds` measures here, so a verdict naming both numbers cannot be read as
-# "the artifact gates passed".
-unclassified=()
-artifact=()
-while IFS= read -r f; do
-    n=$(basename "$f" .rs)
-    printf '%s\n' "${SOURCE_GATES[@]}" | grep -qx "$n" && continue
-    if grep -qE 's4\.bin|s4\.debug\.bin|demo\.bin|demo\.debug\.bin|\.lst|golden' "$f"; then
-        artifact+=("$n")
-        continue
-    fi
-    unclassified+=("$n")
-done < <(grep -rlE 'AEON_DIR|aeon_dir|reference_tree|--aeon' "$SIGIL_GATES"/crates/*/tests/*.rs)
-if (( ${#unclassified[@]} )); then
-    note "COULD NOT RUN: ${#unclassified[@]} aeon-reading gate(s) are neither in SOURCE_GATES \
-nor artifact-dependent — classify each at $AT: ${unclassified[*]}"
+# "the artifact gates passed". The no-reference files are counted for the same reason: a
+# bucket whose size is never printed is a bucket nobody can notice growing.
+if ! classify "$SIGIL_GATES"; then
+    note "COULD NOT RUN: $CLS_REFUSAL at $AT"
     exit 2
 fi
+if (( ${#CLS_UNCLASSIFIED[@]} )); then
+    note "COULD NOT RUN: ${#CLS_UNCLASSIFIED[@]} aeon-reading gate(s) are in none of the \
+three buckets — each reads the reference tree, is not in SOURCE_GATES, and names no \
+built artifact. Classify each at $AT: ${CLS_UNCLASSIFIED[*]}"
+    exit 2
+fi
+artifact=("${CLS_ARTIFACT[@]}")
 
 export AEON_DIR="$AEON_GATES"
 # Strict: a reference path this lane cannot find HARD-FAILS instead of skipping
@@ -317,7 +496,8 @@ REGISTER=$(sed -n '/^open warn-tier findings:/,/^test /p' "$OUT" | grep -v '^tes
 # that), so "skipped as artifact-lane" cannot be read as "those gates are green": the one
 # failure class no refreeze clears was measured here; the rest is the refreeze ritual's.
 SKIPPED="${#artifact[@]} aeon-reading gates skipped as artifact-lane (CRC/region oracles \
-against committed artifacts, not measured here; build bricks witnessed by corpus_builds)"
+against committed artifacts, not measured here; build bricks witnessed by corpus_builds); \
+${#CLS_NOREF[@]} no-reference (name the tree, obtain none — the workspace suite runs them)"
 
 if (( rc == 0 && failed == 0 )); then
     {
