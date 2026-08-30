@@ -569,6 +569,16 @@ exactly — but they price editing, not coverage.
 `build.sh` with **`AEON_DIR` deliberately unset**, so the byte proof and the "aeon's build is
 unaffected" proof are the same run. Nothing in `golden/`, `pins.rs` or `repin.toml` touched.
 
+**THOSE CRCs ARE THE PRE-CHAIN-189 GOLDENS AND THE FIGURES ARE NOT WRONG — THEY ARE UNDATED.**
+They were measured against the baseline standing at the time, and matched it. Chain 189's freeze then
+moved two of them (`s4 6e2f9b22 -> 63451f96`, `s4.debug 6516fc68 -> 3aa7cb12`). **RE-PROVED against the
+post-freeze baseline at aeon `3f143178`, merge `f7b20982`: all four rebuilt and MATCHED —
+`s4 63451f96/719315`, `s4.debug 3aa7cb12/736315`, `demo 9223a60d/96450`, `demo.debug d30c3636/101333`.**
+So the parcel is byte-neutral against BOTH baselines, and the claim above should be read with its date
+rather than corrected. **A CRC in a note is a measurement, not a property** — it needs the baseline it
+was taken against, or it silently becomes a false claim the day somebody freezes.
+
+
 **AND A SECOND, FOUND WHILE LANDING THIS: `scripts/nightly_source_gates.sh` IS ALREADY
 REFUSING TO RUN.** Its self-audit classifies every `crates/*/tests/*.rs` matching
 `AEON_DIR|aeon_dir|reference_tree|--aeon` as SOURCE_GATES-listed or derivably
@@ -625,6 +635,16 @@ precondition and the input it guards cannot name different files. All four shape
 `s4.bin 6e2f9b22/719315`, `s4.debug.bin 6516fc68/736315`, `demo.bin 9223a60d/96450`,
 `demo.debug.bin d30c3636/101333` — **all four MATCH THE GOLDEN**. Nothing in `golden/`,
 `pins.rs` or `repin.toml` touched.
+
+**THOSE CRCs ARE THE PRE-CHAIN-189 GOLDENS AND THE FIGURES ARE NOT WRONG — THEY ARE UNDATED.**
+They were measured against the baseline standing at the time, and matched it. Chain 189's freeze then
+moved two of them (`s4 6e2f9b22 -> 63451f96`, `s4.debug 6516fc68 -> 3aa7cb12`). **RE-PROVED against the
+post-freeze baseline at aeon `3f143178`, merge `f7b20982`: all four rebuilt and MATCHED —
+`s4 63451f96/719315`, `s4.debug 3aa7cb12/736315`, `demo 9223a60d/96450`, `demo.debug d30c3636/101333`.**
+So the parcel is byte-neutral against BOTH baselines, and the claim above should be read with its date
+rather than corrected. **A CRC in a note is a measurement, not a property** — it needs the baseline it
+was taken against, or it silently becomes a false claim the day somebody freezes.
+
 
 **The three-state instability is gone**, re-measured the same way: absent-pristine, the same
 command again, and after a delete now read identically, because nothing conjures the root

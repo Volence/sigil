@@ -200,6 +200,12 @@ aeon's own `build.sh` runs them:
 | `demo.bin` | `9223a60d`/96450 | `9223a60d`/96450 | MATCHES THE GOLDEN |
 | `demo.debug.bin` | `d30c3636`/101333 | `d30c3636`/101333 | MATCHES THE GOLDEN |
 
+**Baseline note.** These are the **pre-chain-189** goldens; they were correct against the baseline
+standing when this ran. The freeze then moved two of them. Re-proved post-freeze at aeon `3f143178`
+(merge `f7b20982`): all four rebuilt and matched — `s4 63451f96/719315`, `s4.debug 3aa7cb12/736315`,
+`demo 9223a60d/96450`, `demo.debug d30c3636/101333`. Byte-neutral against both baselines.
+
+
 **BYTE-NEUTRAL, all four.** Nothing in `golden/`, `pins.rs` or `repin.toml` is touched.
 
 That run is doing double duty: it is the byte proof AND the proof that the refusal leaves
