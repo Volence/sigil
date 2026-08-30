@@ -372,6 +372,47 @@ Before running an unfamiliar script, grep it for `notify-send`, `zenity`, `kdial
 **A second-order note worth as much:** the `2>/dev/null || true` on that line means the notification
 cannot fail visibly either, so even the popup's *sending* is unobservable from the caller.
 
+### CHAIN 188 -> 189 IS 40 BYTES AND CARRIES NO ENGINE CODE — re-derived here on BOTH shapes (2026-08-30)
+
+**Aeon volunteered the complete byte accounting unprompted; re-derived here rather than accepted.**
+Between the chain-188 candidate `e38295d2` and chain-189 `39c34fd2`, `s4.bin` differs in **exactly 40
+bytes**, and the structure is theirs exactly: the header checksum word, **nine** 4-byte payloads, and
+**two** single bytes — the two fixtures' checkpoint 0, one byte each because only the high byte moved
+(`1D375066` → `0D375066`). `2 + 36 + 2 = 40`.
+
+**So chain 189 is a PURE FIXTURE RE-RECORD.** Nothing that reasons about 188→189 may treat it as
+carrying behaviour, and the golden CRC movement (`6e2f9b22 → 63451f96`, `6516fc68 → 3aa7cb12`) is
+entirely fixture payload plus the checksum that follows from it.
+
+**Measured on both shapes, which is what makes the addresses usable:**
+
+| shape | differing bytes | payload run | the two singles |
+|---|---|---|---|
+| `s4.bin` (plain) | 40 | `0xA4A2C…0xA4A83` | `0xA4996`, `0xA4AA6` |
+| `s4.debug.bin` (debug) | 40 | `0xA6CDC…0xA6D33` | `0xA6C46`, `0xA6D56` |
+
+**A constant `0x22B0` separates them — same structure, different shape.**
+
+### THE THIRD INSTANCE ARRIVED INSIDE THE MESSAGE THAT NAMED THE DISEASE (2026-08-30)
+
+Aeon widened this lane's CRC finding into the better form: **a measurement recorded without the thing
+it was taken against decays into a false claim, and the decay is SILENT because the number itself
+never changes.** Their own instance: they wrote *"zero Skill calls of any kind"* about their own
+transcript, present tense, no clock on it, and **their own next action falsified it eight seconds
+later**.
+
+**And the same message carried a third instance, harmlessly, while describing the disease.** They
+quoted the byte addresses `0xA6CDC…0xA6D33` / `0xA6C46` / `0xA6D56` **without naming the shape**. I
+measured the plain shape, got `0xA4A2C…` / `0xA4996` / `0xA4AA6`, and had a disagreement that was not
+one: their figures are the **debug** shape and are exactly right for it. **A byte address without its
+shape is precisely a CRC without its baseline** — the number never changes and quietly stops
+describing the thing the reader has open.
+
+**Which is why the widened form is the one to keep, and mine was too narrow.** I wrote it about CRCs
+and baselines. It is not about CRCs. Three instances in one evening — a CRC without its freeze, a
+self-observation without its clock, an address without its shape — and **the general rule costs one
+clause: say what it was measured against, every time.**
+
 ### THE SIDE-EFFECT SURFACE IS EXACTLY TWO FILES, AND THEY SHARE ONE DEFECT (2026-08-30, swept after the incident)
 
 **Swept rather than assumed**, so the bar above stops being an anecdote and becomes a mapped surface.
