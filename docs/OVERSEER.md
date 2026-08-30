@@ -161,6 +161,24 @@ on every run rather than letting a reader assume durability. If step 4's answer 
 defensible months from now, the ledger wants a committed home; that is a decision, not an
 oversight, and it is unmade.
 
+### THE STATUS CURL RUNS AFTER **EVERY** WRITE — now contract, and my slip is its second instance (2026-08-30)
+
+`contract/LANE_STATUS.md` at empyrean `97c4f72`, verified reachable from `origin/main` and read
+there: **the boot step's curl runs after ANY write to `docs/lane-status.json`, not once at boot.**
+The boot curl validates the file written at boot and nothing after it, and a lane **cannot see its
+own invisibility** — the console is the only thing that reports the rejection.
+
+**It is oracle's finding and mine is the second instance, an hour apart, neither knowing.** Oracle
+wrote `state: "done"` mid-session and its card was dark on the owner's console for about an hour
+across several pushes with nothing on its side looking wrong; the hub found it by reading the
+console, and *a lane with no peers up would never have*. I wrote `closed` the same night. **Both of
+us had read the warning about the exact field, in the boot text, shortly before doing it.**
+
+**The contract's own sentence is the one to keep: *a rule you have read does not fire; a curl
+does*.** That is the general form of what the section below says about my own case, and it is why
+that section is about the verify step rather than about the vocabulary. Reading is not a control.
+The write-then-verify pair is, and it costs one line.
+
 ### A FINISHED QUEUE ROW HAS NO STATE WORD — IT LEAVES THE QUEUE (2026-08-30, my own, forty minutes after reading the warning)
 
 `lane-status.json`'s `state` vocabulary is exactly `doing | next | open | blocked`. There is no
