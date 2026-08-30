@@ -1,78 +1,52 @@
 //! DECLARED SECTION ALIGNMENT — the alignment each ROM section REQUIRES, stated as a
-//! reviewed fact with its source, instead of inferred from where the section happens to
-//! sit in a frozen address table.
+//! reviewed fact with its source. This table is the packing walk's ONLY alignment
+//! input: `native::packed_chained_base` rounds a chained section's base up to the row
+//! declared for its head label, and `seam2::sound_layout` predicts the two sound blobs'
+//! bases through the same function with the same labels.
 //!
-//! ── WHY THIS EXISTS ──
+//! ── WHY A DECLARATION AND NOT A MEASUREMENT ──
 //!
-//! `native::packed_align_of` derives a section's packing quantum from its FROZEN
-//! PROVISIONAL BASE: the largest power of two in `{16, 8, 4, 2}` that divides it, else
-//! 1. Stated as a bound rather than as a procedure: **it only distinguishes residues mod
-//! 16** — a base divisible by 32 or by 65536 infers exactly 16, the same as a base
-//! divisible by 16 alone.
-//!
-//! That makes alignment a SIDE EFFECT of where a section landed at the last refreeze,
-//! not a property of the section. The function's own doc comment records the incident:
-//! commit `2c49f538` moved the SFX pin from `$5BAE8` (`%16 == 8`, quantum 8) to `$5BB10`
-//! (`%16 == 0`, quantum 16) and silently doubled the requirement, invalidating the mod-8
-//! structural pads aeon had built against the old value. The frozen tables are scheduled
-//! to stop being placement authority, and every constraint they encode today must be
-//! recaptured as an explicit rule BEFORE that happens or it silently stops being
-//! enforced. This table is that recapture for the alignment constraint.
+//! Alignment is a property of a SECTION — what its content requires of its base — and
+//! not of where the section happens to sit in an address table. A quantum read off a
+//! frozen address is a side effect of the last refreeze: the largest power of two that
+//! happens to divide the address, which an aligned base then divides by construction,
+//! so it can only ratchet up and never fall. Commit `2c49f538` records the shape of
+//! that class: an SFX pin moved from `$5BAE8` (`%16 == 8`) to `$5BB10` (`%16 == 0`)
+//! and the quantum read off it doubled with no alignment code changing, invalidating
+//! the mod-8 structural pads aeon had built against the old value. A declared quantum
+//! cannot ratchet: a repin changes no row here.
 //!
 //! ── WHAT IS DECLARED, AND WHAT IS DELIBERATELY NOT ──
 //!
-//! A row declares the alignment the section REQUIRES — the property that outlives the
-//! frozen tables — and names the source the requirement comes from. It does NOT declare
-//! the quantum today's inference happens to produce. Those are different objects, and
-//! the difference is measured, not assumed:
+//! A row declares the alignment the section REQUIRES and names the source the
+//! requirement comes from. It does NOT transcribe a quantum measured off any layout —
+//! a row whose only justification is "it is 16 today" is a packing accident enshrined
+//! as a requirement. The measured evidence that the two objects differ: across the
+//! seven shipped shapes, a residue-of-address reading gave 38 of the 86 pinned sections
+//! a DIFFERENT quantum in different shapes (`Ani_Tails` 16 in `config_a`/`config_b`/
+//! `s4_debug` and 2 in `s4`/`lean`; `Collected_Init` all four of 2, 4, 8 and 16), and a
+//! base divisible by 32 or more in one shape is divisible by a different power in the
+//! next (`BG_Init`: 16, 32, 512; `Tile_Cache_GetTile`: 16, 32, 64, 256, 2048) — which
+//! is what coincidence looks like.
 //!
-//!   * Across the seven shipped shapes, **38 of the 86 pinned sections infer a DIFFERENT
-//!     quantum in different shapes** — `Ani_Tails` infers 16 in `config_a`/`config_b`/
-//!     `s4_debug` and 2 in `s4`/`lean`; `Collected_Init` (`entity_window`) infers all four
-//!     of 2, 4, 8 and 16 depending on the shape. A per-section scalar that "equals what
-//!     `packed_align_of` infers" therefore does not exist. A per-(section, shape) table
-//!     that did would be a mechanical re-encoding of the frozen tables themselves —
-//!     an expectation copied from the pin it is checking, which asserts nothing.
-//!
-//!   * The inferred quantum is not a requirement in the other direction either. No
-//!     section's REQUIREMENT exceeds 16 by way of a residue the cap hides: the sections
-//!     whose frozen base is divisible by 32 or more are divisible by wildly different
-//!     powers in different shapes (`BG_Init`: 16, 32, 512; `Tile_Cache_GetTile`: 16, 32,
-//!     64, 256, 2048), which is what coincidence looks like. The three sections that DO
-//!     require more than 16 require **`$8000`** (the two Z80 bank heads, one `SetBank`
-//!     window) and **`$10000`** (`ObjCodeBase`, aeon's R1 ruling) — never 32, and the cap
-//!     hides all three completely (`packed_align_of($90000)` and `packed_align_of($10000)`
-//!     are both 16). All three are held at declared `[[anchor]]` addresses, so the
-//!     inference is never applied to them; the requirements are recorded here so they
-//!     survive the flip.
+//! The three sections that require more than 16 require **`$8000`** (the two Z80 bank
+//! heads, one `SetBank` window) and **`$10000`** (`ObjCodeBase`, aeon's R1 ruling) —
+//! never 32. All three are held at declared `[[anchor]]` addresses, so the walk never
+//! rounds them; the rows exist so `validate_resolved_alignment` measures the anchors
+//! against what the sections actually need.
 //!
 //! ── HOW THE REQUIREMENT IS CHECKED ── (`native::validate_declared_alignment`,
 //! `native::validate_resolved_alignment`)
 //!
-//! For every pinned ROM section: `required` divides the section's FROZEN PROVISIONAL
-//! BASE, and `required` divides the section's RESOLVED LMA in the built layout.
+//! Before the walk: every ROM section with a head label HAS a row — pinned or not,
+//! because a section no frozen table names packs by the same declaration as one that
+//! is. An undeclared section is refused by name, never given 1, 2, 16, or a pass; the
+//! walk refuses it again on its own if reached another way.
 //!
-//! The first of those subsumes the inference-facing check without re-deriving the
-//! packer's island classification. Proof, for `r ∈ {2,4,8,16}`: `packed_align_of(p)`
-//! returns the largest element of `{16,8,4,2}` dividing `p`, so `r | p` implies that
-//! element is `≥ r` and (being a power of two) a multiple of `r`, i.e. `r | inferred`;
-//! and conversely `inferred | p` always, so `r | inferred` implies `r | p`. The two
-//! statements are EQUIVALENT for every requirement the inference can express, and
-//! `r | p` additionally stays meaningful for `r > 16`, where the inference cannot.
-//!
-//! The second is measured against a different artifact — the resolved layout the ROM is
-//! emitted from — and so is not a restatement of the first: it also covers the sections
-//! the packer places by a rule OTHER than `packed_align_of` (declared anchors, phase
-//! banks, the zero-byte-marker cap-at-2 path, label-less contiguity blobs), and it is
-//! the assertion that reads identically after the frozen tables are retired.
-//!
-//! ── AFTER THE FLIP ──
-//!
-//! `required` becomes the packer's input: `align_up(running, required_for(section))`
-//! replaces `align_up(running, packed_align_of(prov))`, and `packed_align_of` is
-//! deleted along with the provisional bases it reads. That WILL move bytes — most
-//! sections require 2 and are being handed 16 today — which is the flip's own paired
-//! freeze, not this table's.
+//! After `resolve_layout`: `required` divides every section's RESOLVED LMA. The walk
+//! honours the declaration by construction for the sections it rounds, so this half is
+//! the independent instrument for the ones it does not: declared `[[anchor]]` islands,
+//! phase-bank hard orgs, and the label-less contiguity blobs.
 //!
 //! ── THE KEY IS THE HEAD LABEL ──
 //!
@@ -91,7 +65,7 @@ pub struct AlignDecl {
     pub required: u32,
     /// Where the requirement comes from. Never a pin, never a measurement of the
     /// current layout — a row whose only justification is "it is 16 today" is exactly
-    /// the inference this table replaces.
+    /// a packing accident enshrined as a requirement.
     pub why: &'static str,
 }
 
@@ -137,13 +111,12 @@ const fn d(label: &'static str, required: u32, why: &'static str) -> AlignDecl {
     AlignDecl { label, required, why }
 }
 
-/// THE DECLARATION. One row per ROM section that carries a frozen provisional base in
-/// any shipped shape — i.e. every section whose placement the inference decides.
+/// THE DECLARATION. One row per ROM section that carries a head label in any shipped
+/// shape — every section the packing walk rounds, and every anchored one it measures.
 ///
 /// A section that is NOT here is not silently defaulted: the gate refuses the build and
-/// names the section, its provisional base, and the quantum the inference would have
-/// given it, so the fix is one reviewed line with a source rather than a number copied
-/// off the layout.
+/// names the section and its head label, so the fix is one reviewed line with a source
+/// rather than a number copied off the layout.
 ///
 /// No count is written here. The list is the count.
 pub const DECLARED: &[AlignDecl] = &[
@@ -178,6 +151,9 @@ pub const DECLARED: &[AlignDecl] = &[
     d("Debug_MusicToggle", 2, WORD),           // game_debug
     d("DeformTable_Zero", 2, WORD),            // scene_registry
     d("DemoBox_Main", 2, WORD),                // demo_box
+    // The zero-byte terminus. Its address IS the end of the emitted image, so its
+    // alignment must be the 68000 minimum: anything wider would open a fill gap between
+    // the last byte and the marker that names it.
     d("EndOfRom", 2, WORD),                    // epilogue (zero-byte terminus)
     d("EntryPoint", 2, WORD),                  // boot
     d("GameHeader", 2, WORD),                  // header
@@ -238,11 +214,10 @@ pub const DECLARED: &[AlignDecl] = &[
     d("Vectors", 2, WORD),                     // vectors
     d("Z80_IdleProgram", 2, WORD),             // z80_idle
     // ── Sections no frozen table names in any shipped shape ──
-    // These carry NO provisional base, so the inference never runs on them: the walk
-    // packs them by contiguity from their neighbour. They are declared anyway because
-    // the 68000 word rule binds them exactly as hard, and after the flip they are placed
-    // by the same declaration as everything else. `validate_resolved_alignment` is what
-    // measures them today.
+    // These carry NO provisional base, so they enter the walk as contiguity blobs; the
+    // walk still rounds each one up to its declaration here, because the 68000 word
+    // rule binds them exactly as hard as the pinned sections. The frozen tables say
+    // nothing about which sections need a row.
     d("Ability_InstaShield", 2, WORD),         // player_instashield
     d("Ani_DustSpindash", 2, WORD),            // dust_anims
     d("Ani_Knuckles", 2, WORD),                // knuckles_anims
