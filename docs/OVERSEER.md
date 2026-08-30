@@ -969,6 +969,57 @@ raise it against their own message for it to surface at all.
 
 ### Standing rules — independent of whether a row is active
 
+**R7 FLIP — THE JUSTIFYING CLAIM IS NOW MEASURED, AND IT WAS PROSE UNTIL TODAY (2026-08-30)**
+
+`section_align.rs`'s own header says the flip *"WILL move bytes — most sections require 2 and are
+being handed 16 today"*. That sentence is a **prose claim in a doc comment**, and it is the whole
+justification for a large byte-mover. Measured, from the **committed** frozen tables
+(`golden/offcanonical_sizes/*.txt`, read via `load_frozen_table` from `CARGO_MANIFEST_DIR` — **no
+reference tree needed**, which is why this cost nothing) against the 107 rows of `DECLARED`:
+
+| shape | declared sections found | handed MORE than declared | declaring 2, handed 16 |
+|---|---|---|---|
+| `s4` | 65 | **54 (83%)** | 42 |
+| `s4_debug` | 76 | **69 (90%)** | 49 |
+| `config_a` | 78 | **71 (91%)** | 55 |
+| `config_b` | 61 | **53 (86%)** | 45 |
+| `lean` | 65 | **53 (81%)** | 41 |
+| `demo` | 37 | **31 (83%)** | 25 |
+| `demo_debug` | 38 | **33 (86%)** | 22 |
+
+**The claim holds and is stronger than stated: 81–91% of declared sections are over-aligned by the
+inference, and the dominant case is exactly the one named — declares 2, handed 16.**
+
+**⚠ WHAT IS NOT MEASURED, AND I NEARLY REPORTED IT AS IF IT WERE.** A first pass summed
+`inferred − declared` per section and printed *"842 bytes"*. **That number is meaningless**: it sums
+*quantum differences*, not pad. The pad a section actually receives is `(−running) mod a`, anywhere
+in `0..a−1` depending on where the cursor lands — so the saving is **bounded above** by
+`Σ(a−1)` and could be zero if every cursor already happened to be aligned. **The byte effect of the
+flip is UNMEASURED and can only be measured by running it.** Report the counts; do not quote a
+byte figure until the flip produces one.
+
+**THE HAZARD, RESTATED FROM THE CODE RATHER THAN THE INVENTORY.** `packed_align_of` (`native.rs:2378`)
+returns the largest of `16,8,4,2` dividing `prov`. The refreeze then records the **aligned** base as
+the next `prov`, and an aligned base is divisible by its own quantum — so **the inferred quantum can
+only ratchet UP, never down, and it does so silently**. That is the narrowed R7 the CONFIG-B note
+left as *code-derived, not measured*: not "needs 16, gets 8", but a quantum rising, inserting pad
+nobody declared and invalidating structural pads. **The declaration table is the fix precisely
+because a declared quantum cannot ratchet.**
+
+**STATE OF THE PARCEL: writable, and the precondition really did land.** `DECLARED` carries **107
+rows**, `required_for` is live, and `section_alignment_declared.rs` already gates it **with a
+red-first witness** that doctors `Sfx_33`'s frozen row by +4 and requires the build to refuse by
+name. What remains is the flip itself — `align_up(running, required_for(section))` replacing
+`align_up(running, packed_align_of(prov))`, deleting `packed_align_of` and the provisional bases it
+reads. **Its own paired freeze, never riding another parcel's range** (the chain-179 lesson).
+
+**A COUNTING SLIP OF MY OWN, WORTH ONE LINE:** my first count of the table said **2 rows**. I had
+grepped `required:`, which matches the struct field and the constructor — not the data. The rows are
+`d("…")` and there are 107. **A grep for a field name counts declarations of the shape, not
+instances of it**, and it under-reported by fifty-fold in the direction that would have made me
+report the flip as unwritable.
+
+
 **A RE-BASELINE DOES NOT EXPLAIN A GREEN — IT MANUFACTURES ONE, AND THE TWO LOOK IDENTICAL**
 *(2026-08-30; aurora's, put to the aeon lane BEFORE the confirming run, and it bears directly on
 this lane because the baselines are ours).*
