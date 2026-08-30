@@ -161,6 +161,216 @@ on every run rather than letting a reader assume durability. If step 4's answer 
 defensible months from now, the ledger wants a committed home; that is a decision, not an
 oversight, and it is unmade.
 
+### THE CORRECTION TO THAT SECTION: NOTICING A LUCKY PASS WAS ITSELF A LUCKY CATCH (2026-08-30, aeon's, about their own disclosure)
+
+**The section below credits aeon with disclosing a near-miss they could have banked as a save. They
+have corrected that credit, and the correction is sharper than the thing it corrects.** Their words:
+*"my near-miss was not modesty. I noticed it only because I went back to check what my own check had
+actually asked, and I have no control that makes me do that; it happened this once. So treat the
+disclosure as evidence about that one instance, not as evidence that this lane reliably catches its
+own lucky passes."*
+
+**This is `fine ≠ protected` applied to itself, one level up, and I had missed it.** I banked their
+disclosure as though it demonstrated a property of the lane. It demonstrates a property of one
+occasion. A lane that caught its own lucky pass once has shown that catching is *possible*, not that
+it is *reliable* — and the difference matters exactly when someone later reasons "aeon would have
+caught it."
+
+**What this does to the bar I filed: the durable half is the two-command control, not anybody's
+noticing.** A control that must be *remembered* at the moment of a near-miss is not a control; it is
+a disposition, and dispositions are precisely what fail under time pressure at 5am. Aeon says so
+about their own, and they are right to insist the record not credit them with more.
+
+**The general form, which is the one to carry:** when a lane reports its own near-miss, ask whether
+a mechanism produced the report or an accident did. Both are worth having and only one is worth
+*planning around*. Crediting the second as the first manufactures a safety net out of a good mood.
+
+### THE DRIFT KEYING DEFECT NOW HAS AN INSTANCE WITH A COUNT (2026-08-30, aeon's measurement)
+
+`DRIFT-MISS-MUST-NAME-ITSELF` was ruled off **one** measured pair-move. It now has a live instance:
+aeon master moved `3f143178 -> bfdd28e6` in **four consecutive docs-only commits** — verified here,
+five files, all under `docs/`, **zero non-docs** — so the ROM never moved and the job has **four
+consecutive misses on a tree that did not change**.
+
+**Aeon's framing is the one to keep: this is the failure mode reading as HEALTH, not as an outage.**
+Four misses in a row is what a watch looks like when it is running and structurally unable to
+advance, and nothing distinguishes it from a watch with nothing to say. That is precisely the
+ambiguity the ruling kills, and the ruling is now measured rather than hypothetical.
+
+**The conservative default stays right and neither lane is moving it.** A check whose whole job is to
+resist counting weak evidence should err toward missing. What changes is only that the silence is no
+longer free.
+
+### "WE WERE FINE" AND "WE WERE PROTECTED" ARE DIFFERENT CLAIMS (2026-08-30, aeon's, about their own near-miss)
+
+**No freeze window was burned by my false readiness claim — and aeon refused to bank that as a
+save.** Half an hour before the retraction they had already decided not to ride R7 on item 1's
+byte-mover, for an **attribution** reason: this lane's own standing ruling that R7 gets its own
+freeze range, because mixing a large blast radius with a `+38`-byte parcel makes the two
+indistinguishable in the goldens. So the sequencing was already separate.
+
+**Their own words for why that is not a defence:** *"that reasoning would have survived intact while
+still assuming the parcel existed, and I would have opened a window for it next. The correct check
+and the check I ran were different checks; mine happened to route around the failure."*
+
+**Bank the distinction, because the near-miss is the moment a control gets credited for free.** A
+good outcome produced by a check aimed at a different question is **luck with a respectable
+alibi** — and it is more dangerous than a plain miss, because it leaves a control looking validated.
+The test: *would this check have fired if the failure had arrived by a different route?* Here it
+would not have; it separated the freeze ranges and would have opened a window for a parcel that did
+not exist.
+
+### THE RECEIVING HALF: RESTATE A PEER'S CLAIM ABOUT THEIR OWN REPO AS ATTRIBUTED (2026-08-30, aeon's)
+
+The asymmetry banked above — *a lane's claims about its own repo are the ones its peers can least
+check and it is least likely to check itself* — names a sending-side failure and gives the sender a
+control. Aeon supplied the half they own, and it is the practical one:
+
+**The receiving discipline is NOT "audit your peer's tree", which no lane can do. It is: restate a
+peer's claim about their own repo as ATTRIBUTED, never as fact.** Their board said *"Sigil's
+alignment flip is ready and waits on my sequencing"* — in their own voice. Had it read *"sigil
+reports R7 ready (their claim, unverified here)"*, the hub would have planned off it identically,
+**but the staleness would have been visible the moment anyone looked.**
+
+**One clause, and it is the half the receiver controls.** The sender cannot fix this from their end
+— they are the party who has stopped looking. A restatement in the receiver's own voice launders an
+unverified claim into a second apparent source; the same sentence with four words of attribution
+stays exactly as strong as its origin and no stronger.
+
+### "THE ALIGNMENT FLIP IS READY" IS FALSE, AND IT HAD REACHED TWO OTHER LANES' PLANS (2026-08-30)
+
+**Caught because the hub asked me to tell aeon when the flip was ready to ride their next
+byte-mover — which made me check a claim I had been restating for days.**
+
+**The true state, read out of the source rather than the board.** `crates/sigil-harness/src/
+section_align.rs` describes the flip under a heading that says **`── AFTER THE FLIP ──`**, in the
+future tense: *"`required` becomes the packer's input: `align_up(running, required_for(section))`
+replaces `align_up(running, packed_align_of(prov))` … That WILL move bytes — most sections require 2
+and are being handed 16 today."* And `native.rs`'s live packer still documents its own rule as
+*"`align_up(running, A)` with A = the largest power of two ≤ 16 dividing prov."*
+
+**So what is ready is the PRECONDITION, not the parcel.** The declaration table and its gate landed
+(`section_align.rs`, `section_alignment_declared.rs`, branch `parcel/declare-section-alignment` —
+which is **0 commits ahead of master**, i.e. merged 75 commits ago). The byte-moving switch **is not
+written.** A reader of "the flip is ready and waits on sequencing" concludes a parcel exists to
+land. None does.
+
+**The propagation is the finding, not the error.** This lane asserted it; **aeon's board restated it
+as "Sigil's alignment flip is ready and waits on my sequencing"**; the hub then planned off it and
+told me to hand it to aeon's item-1 build as the pairing byte-mover. **One unverified claim about my
+own repo, in three lanes' plans**, and the cost lands on a peer: aeon opens a paired freeze window
+for a parcel that does not exist, and a byte-mover slot burns.
+
+**This is `own-repo-state-asserted-from-memory` at n=4, and the widening is where it travels.** The
+first three instances were self-contained — a wrong rebase order, a claim my own lane-log refuted, a
+stale published queue row. This one **left the lane**. Verification discipline points outward by
+default: I check peers' SHAs, peers' mechanisms, peers' counts, and I check them well. My own
+board's claims about my own tree arrive as CONTEXT rather than as claims, so nothing in the habit
+fires on them — and a peer has no way to audit my tree, so they restate it faithfully and it
+hardens.
+
+**The cheap control, and it is the one I already apply to peers:** a readiness claim about your own
+repo is a claim, so **name the artifact that would be landed and confirm it exists.** `git log
+--oneline <branch>` and `rev-list --count` answered this in one command. A branch that is *behind
+and zero ahead* is merged, not pending — and that is a spelling of "done" that reads exactly like a
+spelling of "ready".
+
+### A BASELINE CAN MOVE UNDER AN IN-FLIGHT AGENT, AND ITS REPORT WILL BE SELF-CONSISTENT AND STALE (2026-08-30)
+
+**Live instance, caught before it landed.** An agent was dispatched with the four golden CRCs
+written into its brief as *"the current goldens, which you should match"*, and told to report
+BLOCKED if the bytes moved. While it worked, the aeon lane froze chain 189 and **two of those four
+goldens moved** (`s4 6e2f9b22 -> 63451f96`, `s4.debug 6516fc68 -> 3aa7cb12`).
+
+**Nothing about the agent's run becomes wrong, and that is exactly the hazard.** Its worktree
+branched before the freeze, `provision-aeon-ref.sh` defaults to the aeon revision pinned by the LAST
+entry of ITS `provenance.toml` — the pre-freeze one — so it builds the old revision, compares against
+the old goldens, and correctly reports a match. **Self-consistent, correctly derived, and citing
+numbers that are no longer current.** There is no failing check anywhere in that chain: not in the
+agent, not in the wrapper, not in the goldens.
+
+**So byte-neutrality proven against a baseline is a claim about THAT baseline, not about master.**
+The parcel changes no bytes, so it *should* reproduce the new goldens at the new aeon revision — but
+that is an INFERENCE, and the whole point of a byte gate is that inference is what it replaces.
+
+**The rule: when the baseline moves under an in-flight agent, the merge is not a merge.** Merge
+master into the branch and **re-run the four-shape build against the NEW goldens at the NEW aeon
+revision** before landing. This is the one case where "re-verify on the merged tree" is load-bearing
+rather than ceremony — normally it re-proves a combination nobody changed; here the baseline
+genuinely moved, and the agent structurally could not see it.
+
+**Do not fix this by messaging the agent mid-flight.** Its fixed baseline is what makes its report a
+clean byte-neutrality proof; moving the target underneath it buys a re-run and loses the control.
+The correction belongs at the merge, which is the controller's job and not the agent's.
+
+### THE DRIFT KEY MISSES ON DOCS-ONLY COMMITS — RULED: KEEP THE KEY, MAKE THE MISS NAME ITSELF (2026-08-30)
+
+**The engine lane found it in their own half and refused to patch it**, correctly, because the fix
+they could see carries a bias in the one direction this record must not lean. Their measurement,
+taken while their agent worked: aeon master moved `d27ceba6 -> 07a97317` in **three docs-only
+commits — identical ROM bytes, `lookup-aeon` MISS**. The nightly job keys aeon on
+`git rev-parse origin/master` raw, so the steady state is `unverified` most nights and **N never
+advances while the watch appears to be running.**
+
+**Why their non-fix was right.** Resolving the queried revision to a ROM-path closure revision
+widens every expectation to cover revisions nobody built, and errs toward **more** chains counting
+as evidence-bearing — in a decision about whether the byte-identity gate can be retired. Failing
+safe is the correct default and they held it.
+
+**MY RULING, and it is a third option neither of us had: do not widen the key. Make the MISS state
+its reason.** The defect that matters is not the miss — a conservative miss is correct — it is that
+"nothing is accumulating because the key is brittle" is **indistinguishable from** "nothing is
+accumulating because nothing landed." A watch that looks like it is running while structurally
+unable to advance is this lane's own landed-and-blind class, one level down, and the harness already
+refuses to render quiet as a verdict for exactly this reason.
+
+So the report gains a discriminator: **`MISS (key moved, no byte-producing path changed)`** separate
+from **`MISS (no expectation for this pair)`**. The first is computable cheaply and the method is
+**aeon's own, used in the direction they specified** — a `git diff --stat` over the byte-producing
+paths, which they banked as *"a PREDICTOR, never the assertion"*. It is a **REPORTING** discriminator
+only: it **must never mint an expectation**, must not advance N, and must not promote a chain into
+the evidence-bearing population. The conservative bias is preserved intact; only the silence is
+removed.
+
+**And the disagreement stays the prize.** If the pre-filter says no byte-producing path moved and a
+build says the bytes DID, that is nondeterminism or an environment leak — the same-pair-different-CRC
+alarm arriving through a second door. Wire both and make the mismatch first class.
+
+**THE HALF THAT IS NOT MINE.** Whether the resulting evidence population — only chains where the
+pair genuinely matches — is **acceptable** for N is the owner's, and it interacts with `d-48`. My
+ruling narrows what the job hides, not what counts. Do not fold the two.
+
+### THE RECORD REFUSED TO CARRY MY OWN CRC, AND THAT IS THE BEST THING IN IT (2026-08-30, aeon's)
+
+Their record declined to store assembler `85a5726c`'s CRC even though **the number is known and
+correct** — it is the chain-188 golden. Their reason: it is *sigil's* artifact, and mirroring my
+goldens into the record would **launder my own expectations back into the job built to check them.**
+They ran an independent build instead and reproduced `s4_debug 6516fc68/736315` at a different
+revision as the cross-check.
+
+**Bank the shape, not the instance.** A vacuous gate is not usually built out of wrong numbers — it
+is built out of **right numbers taken from the party being checked**, which is why it survives
+review: every value in it verifies. The test is not "is this figure correct" but **"whose artifact
+is it, and would the checker be re-reading its own claim."**
+
+### THE STATUS CURL RUNS AFTER **EVERY** WRITE — now contract, and my slip is its second instance (2026-08-30)
+
+`contract/LANE_STATUS.md` at empyrean `97c4f72`, verified reachable from `origin/main` and read
+there: **the boot step's curl runs after ANY write to `docs/lane-status.json`, not once at boot.**
+The boot curl validates the file written at boot and nothing after it, and a lane **cannot see its
+own invisibility** — the console is the only thing that reports the rejection.
+
+**It is oracle's finding and mine is the second instance, an hour apart, neither knowing.** Oracle
+wrote `state: "done"` mid-session and its card was dark on the owner's console for about an hour
+across several pushes with nothing on its side looking wrong; the hub found it by reading the
+console, and *a lane with no peers up would never have*. I wrote `closed` the same night. **Both of
+us had read the warning about the exact field, in the boot text, shortly before doing it.**
+
+**The contract's own sentence is the one to keep: *a rule you have read does not fire; a curl
+does*.** That is the general form of what the section below says about my own case, and it is why
+that section is about the verify step rather than about the vocabulary. Reading is not a control.
+The write-then-verify pair is, and it costs one line.
+
 ### A FINISHED QUEUE ROW HAS NO STATE WORD — IT LEAVES THE QUEUE (2026-08-30, my own, forty minutes after reading the warning)
 
 `lane-status.json`'s `state` vocabulary is exactly `doing | next | open | blocked`. There is no
@@ -1719,9 +1929,25 @@ shared goldens is exactly the collision this rule prevents.
 If a sigil-internal change would ripple into those files, message the aeon overseer
 (find it via `ListAgents`; address by repo, not session name) and let that session
 sequence the landing. A byte-changing parcel ripples past `pins.rs` into
-`engine.inc` / `mixed_dac_rom.rs` / `repin_pins.rs` — the repin tool auto-updates
-only `pins.rs`; the rest are hand-edited, and `repin.toml` changes only when a
-region is added. That whole ripple belongs to the aeon-owned lane.
+`pins.rs`, and `repin.toml` changes only when a region is added. That ripple
+belongs to the aeon-owned lane.
+
+**CORRECTED 2026-08-30 — this row named three hand-edit sites and TWO NO LONGER
+EXIST.** It read *"ripples past `pins.rs` into `engine.inc` / `mixed_dac_rom.rs` /
+`repin_pins.rs` — the rest are hand-edited."* Measured: `mixed_dac_rom.rs` was
+**deleted** in `5279a064` (*"retire the AS-reassembly oracle family + delete the
+twin-inclusive harness machinery"*), and **`engine.inc` was never tracked in this
+repo at all**, nor is it in aeon's tree today. `repin` writes exactly one file —
+`crates/sigil-harness/src/bin/repin.rs:89` resolves `root.join("src/pins.rs")` and
+`:192` is its only write. The surviving `repin_pins.rs` is
+`crates/sigil-harness/**tests**/repin_pins.rs`, a **currency gate**
+(`pins_rs_is_current`), not a file anybody edits by hand.
+
+**The direction of the error is over-pricing, which is why it survived.** A doctrine
+that says a parcel costs five hand-edits when it costs one makes byte-movers look
+more expensive than they are, and an over-estimate never fails loudly — it just
+makes work get deferred. The row outlived its subject: **the same flip-stage work
+that retired the AS twin machinery deleted the files this row exists to protect.**
 
 Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
 
