@@ -600,12 +600,54 @@ pub fn guard_assert_count(asserts: &[LinkAssert]) -> usize {
 /// different paths.
 pub const LIVE_TREE_FALLBACK: &str = "/home/volence/sonic_hacks/aeon";
 
+/// The line printed, once per process, when a READ falls back to the live checkout.
+///
+/// Pure so it can be pinned by a test: the two properties that matter are that it NAMES
+/// the tree, and that it cannot be miscounted as a skip. It deliberately contains neither
+/// `skip:` nor `skipping` — `scripts/landing-run.sh:369` and `refreeze.rs:533` both count
+/// those spellings, and a fallback notice is not a skipped test.
+pub fn live_tree_fallback_notice() -> String {
+    format!(
+        "reference-tree: AEON_DIR is unset, so every reference-dependent result in this run \
+         was measured against {LIVE_TREE_FALLBACK} — the LIVE aeon working checkout. That tree \
+         is outside this repository and its revision can change under a run without notice, so \
+         a pass or a failure here is attributable to whatever it happened to contain. Set \
+         AEON_DIR to a provisioned tree (scripts/provision-aeon-ref.sh) to make the result name \
+         its own subject."
+    )
+}
+
+/// `true` when a read would fall back rather than use a tree somebody named.
+pub fn aeon_dir_is_unnamed() -> bool {
+    std::env::var("AEON_DIR").is_err()
+}
+
 /// The aeon reference tree: `AEON_DIR`, or [`LIVE_TREE_FALLBACK`].
 ///
 /// The fallback serves READS only. A write into the reference tree requires
 /// `AEON_DIR` to name it — see [`crate::seam2::require_named_reference_tree`].
+///
+/// **A FALLING-BACK READ ANNOUNCES ITSELF.** `d-17` closed the WRITE side: a write refuses
+/// and names the tree it refused. The read side stayed silent, and that asymmetry was
+/// measured on 2026-08-30 — a control run bare resolved its oracle to the owner's live
+/// checkout and was correct only because his working tree happened to sit at the revision
+/// under test. Had he checked out anything else, the same command would have produced a
+/// false red or a false green with identical output. The consequence worth naming: **the
+/// owner's working directory is load-bearing for a verification he does not know he is
+/// participating in**, and nothing linked the two ends.
+///
+/// Announced ONCE per process (261 call sites; per-call would be noise), on stderr, beside
+/// the `skip:` lines a reader already scans. Whether a bare read should REFUSE rather than
+/// announce is `d-18` and is the owner's; naming the subject needs no ruling.
 pub fn aeon_dir() -> PathBuf {
-    PathBuf::from(std::env::var("AEON_DIR").unwrap_or_else(|_| LIVE_TREE_FALLBACK.to_string()))
+    match std::env::var("AEON_DIR") {
+        Ok(named) => PathBuf::from(named),
+        Err(_) => {
+            static ANNOUNCED: std::sync::Once = std::sync::Once::new();
+            ANNOUNCED.call_once(|| eprintln!("{}", live_tree_fallback_notice()));
+            PathBuf::from(LIVE_TREE_FALLBACK)
+        }
+    }
 }
 
 /// `true` when `SIGIL_STRICT_GATE` is set — the pre-merge fidelity run, where a
@@ -1271,6 +1313,39 @@ mod tests {
     /// VALUES against the harvest and that the harvest's fields are all COVERED by
     /// the fixture, but neither direction catches a name the fixture still supplies
     /// that the live structs no longer declare. This is that missing direction.
+        /// A read that falls back to the owner's live checkout must NAME it, and must not be
+    /// countable as a skipped test.
+    ///
+    /// `d-17` closed the write side: a write into an unnamed reference tree refuses and
+    /// prints the path it refused. The read side stayed silent until 2026-08-30, when a
+    /// control run bare resolved its oracle to the live checkout and was right only because
+    /// that working tree happened to sit at the revision under test. The failure this pins
+    /// is not "the fallback exists" — it is "the fallback is invisible in the output", which
+    /// makes a result unattributable after the fact.
+    ///
+    /// Pinned on the pure notice rather than on captured stderr: the announcement fires once
+    /// per PROCESS, so a stderr assertion would pass or fail on test ordering.
+    #[test]
+    fn a_falling_back_read_names_the_tree_and_is_not_a_skip() {
+        let notice = super::live_tree_fallback_notice();
+
+        assert!(
+            notice.contains(super::LIVE_TREE_FALLBACK),
+            "the notice must name the tree the result is attributable to; got: {notice}"
+        );
+        assert!(
+            notice.contains("AEON_DIR"),
+            "the notice must name the variable that fixes it; got: {notice}"
+        );
+        // The landing bar counts BOTH spellings (scripts/landing-run.sh:369,
+        // refreeze.rs:533). A fallback notice is not a skipped test, and a notice that
+        // inflated the skip count would trade one silent wrong number for another.
+        assert!(
+            !notice.contains("skip:") && !notice.contains("skipping"),
+            "the notice must not be countable as a skip; got: {notice}"
+        );
+    }
+
     #[test]
     fn sec_field_equ_names_match_the_harvest() {
         let Some(aeon) = reference_tree(&["engine/structs.emp"]) else { return };
