@@ -193,6 +193,8 @@ run pointed at a PRESENT live tree, which is what the default makes easy.
 
 ### Recommendation, with its blast radius
 
+**TAKEN 2026-08-30 (d-17), narrow option only** — `2026-08-30-aeon-dir-write-requires-naming.md`. Byte-neutral on all four shapes. The measured write-reaching population is 34 source files, and it includes the `sigil` CLI, which the syntactic closure below could not see.
+
 **Recommended (not taken here — sequencing is the controller's).** Retire the hardcoded
 default from the write-reaching population FIRST, not from all 93 sites at once: make
 `AEON_DIR` REQUIRED on any path that reaches `ensure_generated`, and leave the read-only
