@@ -172,6 +172,62 @@ fn resolve_aeon_rev() -> Result<String, String> {
     Ok(rev)
 }
 
+/// Re-read `AEON_DIR`'s HEAD and refuse if it has MOVED since the freeze named it.
+///
+/// Queue row `E1-REFREEZE-REREADS-AEON-DIR`, and it was the worst finding of the freeze-path
+/// sweep because every downstream gate stays GREEN through it. [`resolve_aeon_rev`] runs ONCE,
+/// before step 1. The four steps that follow — `capture_goldens.sh`, `derive_offcanonical_sizes.sh`,
+/// `repin`, and the ledger half — each resolve `$AEON_DIR` again, independently, from the
+/// environment at their own runtime, over a run that outlives any short attention span. Move
+/// that tree mid-freeze and the result is **blobs from revision N, size tables and pins from
+/// N+1, and a ledger entry recording N** — a silent mixed-revision freeze under a confident
+/// provenance line. Step 4 derives from steps 1-3's own outputs rather than from the tree, so
+/// nothing downstream can notice.
+///
+/// **This is a HEAD re-read and deliberately NOT a cleanliness re-check.** `resolve_aeon_rev`'s
+/// dirty check cannot simply be moved later or repeated here: the freeze's own build WRITES
+/// into that tree, so after step 1 "is it clean?" is guaranteed to be false and would refuse
+/// every correct freeze. HEAD is the coordinate that must hold still, and it is untouched by
+/// the build — which is what makes it the checkable half.
+///
+/// Cheap by construction: one `git rev-parse HEAD` between steps, against a run that rebuilds
+/// four ROMs.
+fn aeon_head_unmoved(expected: &str, after: &str) -> Result<(), String> {
+    let dir = std::env::var("AEON_DIR").map_err(|_| {
+        format!(
+            "AEON_DIR became unset during the freeze (after {after}). It was set when this \
+             freeze named its revision, so the steps after this point would resolve a \
+             DIFFERENT tree than the one being recorded."
+        )
+    })?;
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(&dir)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .map_err(|e| format!("spawn git rev-parse HEAD in AEON_DIR={dir} (after {after}): {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "AEON_DIR={dir}: cannot re-read HEAD after {after}, so this freeze can no longer \
+             prove which revision its remaining steps are building from: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    let now = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if now != expected {
+        return Err(format!(
+            "AEON_DIR={dir} MOVED DURING THE FREEZE: it was {expected} when this run named its \
+             revision and is {now} after {after}. The artifacts already written came from \
+             {expected} and everything after this point would come from {now}, while the ledger \
+             would record {expected} — a mixed-revision freeze that every downstream gate reads \
+             as green, because step 4 derives from steps 1-3's outputs rather than from the tree. \
+             Refusing. Re-run the whole freeze against a tree nobody else is moving; the journal \
+             names what this run already wrote."
+        ));
+    }
+    Ok(())
+}
+
 /// Parse `EndOfRom` for the two canonical shapes from the freshly-written pins.rs (NOT
 /// the compile-time constant — a fresh repin may have moved it).
 fn parse_pins_end(pins_src: &str, name: &str) -> Result<usize, String> {
@@ -1269,13 +1325,24 @@ fn freeze_steps(
     supersede: Option<&str>,
 ) -> Result<(), String> {
     // (1) blobs, (2) size tables, (3) pins — the three regen steps.
+    //
+    // AEON_DIR's HEAD is re-read BETWEEN every pair of steps (`E1-REFREEZE-REREADS-AEON-DIR`).
+    // Each of these steps resolves `$AEON_DIR` independently at its own runtime, so without
+    // this the tree can move underneath a long run and yield blobs from one revision, pins
+    // from another, and a ledger recording a third — with every downstream gate green. See
+    // [`aeon_head_unmoved`] for why this is a HEAD check and not a repeat of the dirty check.
     journal_step(journal, freeze_journal::STEP_CAPTURE, || {
         run_script(&golden.join("capture_goldens.sh"), &["--write"])
     })?;
+    aeon_head_unmoved(aeon_rev, "the golden capture (step 1)")?;
+
     journal_step(journal, freeze_journal::STEP_SIZES, || {
         run_script(&golden.join("derive_offcanonical_sizes.sh"), &[])
     })?;
+    aeon_head_unmoved(aeon_rev, "the off-canonical size tables (step 2)")?;
+
     journal_step(journal, freeze_journal::STEP_PINS, || run_repin(root))?;
+    aeon_head_unmoved(aeon_rev, "the pin regeneration (step 3)")?;
 
     // Recompute the tip set from the FRESH blobs + FRESH anchor_ends.
     let ends = authoritative_anchor_ends(root)?;

@@ -609,6 +609,72 @@ mod root_derivation {
              written: {offenders:#?}"
         );
 
+        // Every regeneration step is followed by a re-read of the reference tree's HEAD.
+        //
+        // Queue row `E1-REFREEZE-REREADS-AEON-DIR`. The freeze resolves the aeon revision ONCE,
+        // then each step resolves `$AEON_DIR` again independently at its own runtime. If the
+        // tree moves mid-run the freeze writes blobs from one revision, pins from another, and
+        // a ledger recording a third — and NOTHING downstream notices, because the ledger half
+        // derives from steps 1-3's own outputs rather than from the tree. So the check cannot
+        // be a gate on the artifacts; it has to be on the source's shape.
+        //
+        // Asserted in ORDER rather than by count: three calls placed anywhere would satisfy a
+        // count while leaving a step unguarded, and the gap between two steps is exactly where
+        // the tree moves.
+        {
+            let src = include_str!("bin/refreeze.rs");
+            // Bounded to the FUNCTION, not to end-of-file. Taking the rest of the file
+            // swallows refreeze's own `mod tests`, which names all four step constants for
+            // its own gates — they are not call sites, they have no guard after them, and
+            // scanning them reported two phantom unguarded steps on a correctly guarded
+            // body. `\nfn ` is the next top-level item.
+            let body = src
+                .split_once("fn freeze_steps(")
+                .map(|(_, rest)| rest.split("\nfn ").next().unwrap_or(rest))
+                .expect("nothing to measure: refreeze has no freeze_steps");
+            let regen = ["STEP_CAPTURE", "STEP_SIZES", "STEP_PINS"];
+            let mut pending: Option<&str> = None;
+            let mut unguarded: Vec<String> = Vec::new();
+            for line in body.lines() {
+                let t = line.trim_start();
+                if t.starts_with("//") {
+                    continue;
+                }
+                if line.contains("aeon_head_unmoved(") {
+                    pending = None;
+                    continue;
+                }
+                if line.contains("journal_step(") {
+                    // A new step opened while the previous one was still unguarded.
+                    if let Some(prev) = pending.take() {
+                        unguarded.push(prev.to_string());
+                    }
+                }
+                if let Some(step) = regen.iter().find(|s| line.contains(**s)) {
+                    pending = Some(step);
+                }
+            }
+            if let Some(last) = pending {
+                unguarded.push(last.to_string());
+            }
+            // Positive control: a body that named no steps would report every step guarded.
+            let named = regen.iter().filter(|s| body.contains(**s)).count();
+            assert_eq!(
+                named,
+                regen.len(),
+                "nothing to measure: freeze_steps names {named} of {} regeneration steps, so \
+                 this gate's silence would say nothing about whether they are guarded",
+                regen.len()
+            );
+            assert!(
+                unguarded.is_empty(),
+                "every regeneration step must be followed by aeon_head_unmoved() before the \
+                 next one — the reference tree can move between steps and the resulting \
+                 mixed-revision freeze is green to every downstream gate. Unguarded: \
+                 {unguarded:#?}"
+            );
+        }
+
         // Neither tool may carry a compile-time path of its own. The macro is the only
         // way to spell one, so its absence is the whole proof.
         let macro_token = concat!("CARGO_MANIFEST", "_DIR");

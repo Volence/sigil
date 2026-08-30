@@ -5015,3 +5015,43 @@ before relaying it to a lane with a byte-mover in flight.
 `grep -nE "SoundTablesZ80_Head|Sound_PlaySFX" s4.lst` — at `8000` or above is clear, below means
 every `abs.w`/`abs.l` decision in the neighbourhood has flipped and a measured byte delta is not
 the whole story.
+
+### MY OWN VERIFICATION RUN WAS A BAR-25 ARTIFACT (2026-08-30, caught by the bar within minutes of reading it)
+
+Protocol bar 25 — *a green log and an absent run are the same artifact* — landed in the shared
+protocol at empyrean `dc0ebe7` while this session was running. Re-reading the protocol mid-session
+(which this file already requires at any landing) surfaced it, and it fired on **this lane's own
+verification run, in the same hour**.
+
+**What happened.** The full-workspace run for tonight's four landings was invoked as
+`cargo test --workspace --no-fail-fast 2>&1 | tail -120`, in the background. It reported **exit
+code 0**. Reading the artifact against bar 25's corrective — *does the gate's NAME appear in the
+run's own log?* — the answer was **no, for all three** of the gates that run was supposed to
+witness, the aggregate came to **5 tests across 15 binaries** (against a suite of thousands), and
+the `skip:` count was **zero** in a tree where skips are routine.
+
+**Two independent defects, and each alone is enough to void the evidence.**
+
+1. **`| tail -120` truncated the artifact**, so the log cannot witness a run that did happen.
+2. **`exit 0` was `tail`'s status, not cargo's.** A pipeline's exit code is its LAST stage. So the
+   number that read as "the suite passed" was reporting that a text filter had successfully
+   printed some lines.
+
+**This lane already documents the fix, and did not apply it.** `scripts/landing-run.sh` was built
+in this same repo, this same week, and its own booking in this file names `CARGO_EXIT=` written
+from `PIPESTATUS[0]` as one of its six preconditions — beside *failures-first with every failing
+name* and *a `skip:` count*. The wrapper exists precisely so a landing cannot omit these, and the
+run that was verifying four landings **did not go through it**. The booked row predicted the
+failure and prescribed the fix; nothing executes a booked row. That sentence is already in this
+file about the target directory, and it has now cost the same lane twice in one week.
+
+**The part worth keeping.** The wrong conclusion here was available and comfortable: *exit 0, no
+failures printed, therefore green*. Nothing in the artifact objected, and every number in it was
+real. What separated it from a genuine pass was a question the bar supplies and habit does not —
+**not "did it pass?" but "could this log have witnessed a failure?"** Bar 25's corrective (1) is
+exactly that question, and it took one reading to convert a comfortable green into a void run.
+
+**Standing consequence for this lane:** a verification run whose result will be reported as
+evidence goes through `scripts/landing-run.sh`, or, when a scoped run is genuinely wanted, is
+invoked with output to a file and the exit taken from `PIPESTATUS[0]` — never through a pipe whose
+last stage is a text filter.
