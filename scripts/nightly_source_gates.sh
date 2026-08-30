@@ -294,12 +294,13 @@ fi
 # aeon-reading test file is classified, 2 when one is not or when the rule itself cannot
 # be derived.
 #
-# It exists because the only previous way to ask this question was to run the whole lane,
-# which creates worktrees off master in two shared checkouts and notifies the owner —
-# so nobody asked it, and the four files that darkened this lane sat unclassified until
-# a 05:17 popup reported it. `crates/sigil-harness/tests/source_gate_classification.rs`
-# runs this flag on every `cargo test --workspace`, which is what puts the question in
-# front of a landing run instead of in front of the owner's lock screen.
+# It exists because the only other way to ask this question is to run the whole lane,
+# which creates worktrees off master in two shared checkouts, builds, and notifies the
+# owner with nothing on stdout to say it did — so the question went unasked, and the files
+# that darkened this lane sat unclassified until a 05:17 popup reported it.
+# `crates/sigil-harness/tests/source_gate_classification.rs` runs this flag on every
+# `cargo test --workspace`, which is what puts the question in front of a landing run
+# instead of in front of the owner's lock screen.
 if [[ ${1:-} == --audit ]]; then
     AUDIT_TREE=${2:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
     if ! classify "$AUDIT_TREE"; then

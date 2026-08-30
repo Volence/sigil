@@ -3906,8 +3906,10 @@ four-ROM check is the right bar but is not the whole entry.
 Running the script bare to "check the audit" is not read-only — it creates worktrees off
 `master` in the shared checkouts, builds salvador, regenerates compression vectors, and
 `note()` sends the owner a **critical desktop popup** with nothing on stdout to tell you it
-did. `--audit` runs the classification alone against the checkout it lives in (or `$2`),
-touches nothing, and never reaches `note`; it prints
+did. `--audit` runs the classification alone against the checkout it lives in (or `$2`) — no
+worktree created or moved, nothing built, no repo touched, and it never reaches `note`, so
+it cannot page anybody (the script's `mkdir -p` of its own state directory still runs at
+the top; that is the whole write surface). It prints
 `SOURCE_GATES=<n> scanned=<n> source=<n> artifact=<n> no-reference=<n> unclassified=<n>`
 and exits `2` when the load-bearing figure is non-zero. `~/sonic_hacks/.aeon-sigil-gates`
 is **source-only by construction** and must never be pointed at an artifact-dependent run.
