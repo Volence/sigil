@@ -10631,3 +10631,25 @@ full_crc = "1131b2bf"
 full_size = 736357
 anchor_crc = "c697982c"
 anchor_end = 0xa7f40
+
+[entry.strict]
+outcome = "passed"
+sigil_rev = "06936bff89c2024812bc903885d2311b19e04f72"
+aeon_rev = "25731dfabf9f2120f878adbd2e027cbdf20fd373"
+strict_bodies = 29
+suites = 363
+passed = 4176
+failed = 0
+ignored = 2
+skips = 0
+ran_at = "unix:1788100983"
+expected_tests = ["parallax_region_matches_reference"]
+
+[entry.strict.goldens]
+config_a = "a7ed4e81/736725"
+config_b = "dc997981/611439"
+demo = "aca8c043/96476"
+demo_debug = "932f496f/101359"
+lean = "454a546c/674830"
+s4 = "5a25a0d4/719355"
+s4_debug = "1131b2bf/736357"
