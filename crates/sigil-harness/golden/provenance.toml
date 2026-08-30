@@ -10653,3 +10653,58 @@ demo_debug = "932f496f/101359"
 lean = "454a546c/674830"
 s4 = "5a25a0d4/719355"
 s4_debug = "1131b2bf/736357"
+
+[[entry]]
+name = "dplc-entry-recut"
+ab = "aeon e6405428: DPLC entry-budget breach paid (d-47 targeted) - sonic.bin re-cut on the optimizer's output, peak DPLC entries AND slots 13 -> 10 = DMA_IMPORTANT_SLOTS - DPLC_ENTRY_RESERVE in both canonical shapes, slot count NOT raised; art 97472 -> 101056 B, DPLC table 2368 -> 2244 B, ROM files unchanged in size (719387 / 736391). Independently verified on the merged tree (docs/superpowers/2026-08-30-dplc-entry-recut-verification.md): peaks from an independent parser, producer byte-identical with and without --entry-cap, red-first proven (4 failed on a one-byte flip), four shapes 1801/1801/1802/1802 passed 0 failed; demo shapes byte-identical to chain 193 (aca8c043 / 932f496f). Rides with it, ROM-neutral: step 6 of EFFECTS-W1 item 1 measured SEEN on screen (five CRAM samples, A/B byte-identical, control black)."
+aeon_rev = "e6405428a33ed8e9bba2f594b857d70181819473"
+note = "DPLC re-cut 13 -> 10 slots + step-6 band seen; both s4 shapes move at unchanged size, demo unchanged"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "d5574d26"
+full_size = 736759
+anchor_crc = "4e491226"
+anchor_end = 0xa7f40
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "a14a0f37"
+full_size = 614991
+anchor_crc = "b6e0ec93"
+anchor_end = 0x8c770
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "aca8c043"
+full_size = 96476
+anchor_crc = "1c2b8356"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "932f496f"
+full_size = 101359
+anchor_crc = "b72ccfbe"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "334978d3"
+full_size = 674830
+anchor_crc = "e14e0c62"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "1a08dba8"
+full_size = 719387
+anchor_crc = "8869d900"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "667361ff"
+full_size = 736391
+anchor_crc = "22a25256"
+anchor_end = 0xa7f40
