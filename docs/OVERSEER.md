@@ -206,6 +206,53 @@ rows. Read it as: **the only thing standing between "no reference tree" and a gr
 strict gate, and the strict gate runs at landings.** That is this lane's own silent-green class —
 IMPORTANT and non-self-correcting — sitting in the guard rather than in the rows.
 
+### THE `generated/` GROUP SPLIT LOOKS LIKE A WRITER RECORD AND IS NOT ONE (2026-08-30, aeon's control, re-verified here)
+
+**Written down because it will be rediscovered.** `aeon/engine/sound/generated/` carries a
+**9 `volence:uucp` / 10 `volence:volence` split at one identical timestamp**. That is exactly the
+shape of a writer discriminator, and the next person to go looking for "who wrote these" will find
+it and conclude something.
+
+**It is not a discriminator, and this is settled by a CONTROL rather than by reasoning.** The aeon
+lane ran a build whose writer is known — theirs — and **the split survived completely unchanged,
+9/10 before and 9/10 after**, while all 19 mtimes moved to `03:39:52`. Both halves re-verified
+here directly rather than taken from their report. Group ownership is fixed **at creation** and
+preserved by in-place rewrites, so it records a file's **FIRST** writer and says nothing whatever
+about its most recent one.
+
+**One refinement, measured here, and it sharpens their point rather than softening it.** The
+directory is **not setgid** (`drwxr-xr-x volence:uucp`), so a new file takes the *creating
+process's primary group* rather than inheriting the directory's. The split therefore does record
+something real — that two processes with different primary groups each created part of this set at
+some point — it simply cannot answer the only question anybody asks it. A loose thread nobody needs
+today: `uucp` as a primary group is unusual and unexplained.
+
+**The general shape, which is the reason this is a section and not a footnote.** A candidate record
+that is *sitting right there and looks probative* is more dangerous than no record at all, because
+it converts "we cannot know" into a confident wrong answer. The move that settled it was cheap and
+is the one to copy: **exercise the candidate record with a KNOWN writer and see whether it moves.**
+An artifact that does not move under a known cause is not evidence about that cause.
+
+### THE `AEON_DIR` LIVE-TREE DEFAULT: REFUSE — BUT ARGUE IT ON INVISIBILITY, NOT ON CORRUPTION (2026-08-30)
+
+**The deflating half first, because the recommendation must not carry a scarier framing than the
+evidence supports.** Aeon's build **regenerates all nineteen blobs unconditionally** — one
+`DEBUG=1 ./build.sh` moved every mtime, verified here. So an aeon build is **self-healing against a
+foreign write**, and the hazard is NOT "their tree is silently corrupted". It is the narrower
+*"a process that READS those blobs without regenerating first gets whatever last wrote them."*
+**Price the recommendation on that**, not on the raw 93 files / 113 occurrences.
+
+**And no contamination occurred.** Aeon snapshotted all 19, rebuilt, and compared: byte-identical,
+with `s4.debug.bin` reproducing at `6516fc68` — the figure they had already published tonight. They
+checked *because* they had published it, which is the right trigger.
+
+**The recommendation stands at REFUSE anyway, and the argument changes.** A fallback to a hardcoded
+live checkout is the option that is **structurally incapable of announcing its own failure**, and
+the gitignore removes the last surface where a reader could notice. A refusal turns every unset-env
+caller into a named error at its own call site — loud, local, fixed in a minute. **Put it to the
+owner as an invisibility argument, never as an imminent-corruption story.** The scarier framing is
+also the falsifiable one, and it would deserve to lose.
+
 ### THE SUITE WRITES INTO `AEON_DIR`, AND THE WRITE FLIPS OTHER ROWS' GUARDS MID-RUN (2026-08-30)
 
 Found while reconciling a scenario that would not reproduce; mechanism re-derived at source here
