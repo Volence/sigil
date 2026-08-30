@@ -10549,3 +10549,26 @@ full_crc = "1131b2bf"
 full_size = 736357
 anchor_crc = "c697982c"
 anchor_end = 0xa7f40
+
+[entry.strict]
+outcome = "failed"
+sigil_rev = "1b7f6cb80ffe2c5ddfb379ae9eb5cf21bbc11986"
+aeon_rev = "8c75722b9bf6a58116c61dbfcd4b068ade6520ee"
+strict_bodies = 29
+suites = 363
+passed = 4174
+failed = 2
+ignored = 2
+skips = 0
+ran_at = "unix:1788099544"
+failing = ["fixture_covers_every_field_the_structs_declare", "test_support::tests::sec_field_equ_names_match_the_harvest"]
+expected_tests = ["parallax_region_matches_reference"]
+
+[entry.strict.goldens]
+config_a = "a7ed4e81/736725"
+config_b = "dc997981/611439"
+demo = "aca8c043/96476"
+demo_debug = "932f496f/101359"
+lean = "454a546c/674830"
+s4 = "5a25a0d4/719355"
+s4_debug = "1131b2bf/736357"
