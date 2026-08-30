@@ -5091,3 +5091,47 @@ NOT killed before sending). All three were reasoning about a mechanism, in the r
 most reliable. The lesson is not *be more careful*: it is that **a prescription is not verified
 until it has been run in the environment it prescribes for**, and that the register which makes a
 mechanism claim feel obvious is the same one that makes it go unrun.
+
+### THE SUITE IS A WRITER, AND THAT MUST BE STATED WHEN ASKING FOR A TREE (2026-08-30)
+
+**`FULL-SUITE-UNVERIFIED-AGAINST-A-NAMED-TREE`, and the brokered-resource shape it produced.**
+
+Tonight's full-workspace run bare (`AEON_DIR` unset) produced **56 failures: 4119 passed / 56
+failed / 2 ignored across 363 binaries, `CARGO_EXIT=101`**. **55 of the 56 are `d-17`'s
+`ensure_generated` refusal firing correctly** — plus `PoisonError` cascades from those panics —
+and one was this lane's own E1 gate scanning to end-of-file (fixed, `b6090ff1`). **That refusal is
+the measurement that matters: the workspace suite WRITES into whatever `AEON_DIR` names.**
+
+**So there is no read-only mode of a full-suite run, and a request for a reference tree must say
+so.** This lane asked the aeon lane to point `AEON_DIR` at `.aeon-chain189` in the same message
+that reported the 55 write-refusals — having measured the writer property and not drawn the
+conclusion. Aeon refused and was right twice over: **oracle had a live read on those exact bytes**
+(mid-copy, verifying four chain-189 listings against hashes issued before this run existed), so a
+writer would have landed under a reader mid-verification, and oracle's copy could have come back
+*matching* while being a different artifact from the one attested — with nothing in their pipeline
+able to say so.
+
+**The undetectability is the load-bearing half.** The tree is gitignored for build output, so a
+suite writing `engine/sound/generated/` there leaves `git status --porcelain` **empty**. The
+holder would re-check, see a clean tree at the right revision, and conclude nothing happened.
+This is this lane's own absolute-path finding — an invisible write into a checkout nobody named —
+arriving one seam over and pointed at the lane that found it.
+
+**The brokered-request rule, which is the durable output.** The hub then offered to obtain the
+same tree on this lane's behalf, describing the run as shareable *read-only*. The broker could not
+have known it writes; **the requesting lane could, and did.** So: **when a lane asks for a
+resource — directly or through a hub — it states what its run WRITES, not what it needs.** A
+broker's "read-only" is an assumption unless the requester supplied it, and by the time it is
+corrected the resource has already changed hands.
+
+**What was actually protecting this: a rule applied for the wrong reason.** The only thing that
+produced the question was this file's *never point two concurrent runs at one `AEON_DIR`* — which
+is about collision, not about writers-under-readers. **Asking for the wrong reason got the right
+outcome, and asking is a disposition rather than a mechanism.** Record it as luck, not as care.
+
+**The remedy needed no peer at all:** `scripts/provision-aeon-ref.sh <path>` at the pinned
+revision. `/home/volence/sonic_hacks/.aeon-ref-sigil-dc`, both rebuild controls matching the
+goldens (`63451f96/719315`, `3aa7cb12/736315`), and **`repin --check` → `pins.rs unchanged`**,
+which is the positive witness that the tree reproduces `3f143178`'s placement rather than merely
+building without errors. Provision rather than borrow: a tree you provision is one whose revision
+you chose and whose writes are yours.
