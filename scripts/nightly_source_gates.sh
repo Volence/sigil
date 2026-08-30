@@ -283,6 +283,24 @@ makes some file look like it reads nothing"
     while IFS= read -r f; do
         scanned=$((scanned + 1))
         n=$(basename "$f" .rs)
+        # PROSE IS NOT A CALL. The read test below runs against the file with comment-only
+        # lines removed, exactly as `reference_env_var` and `accessor_closure` already do
+        # when deriving the rule from the harness — and for the reason stated there: a doc
+        # comment showing a caller how to open a gate CONTAINS a call to the accessor.
+        #
+        # Without this, a pure unit gate whose header says `let Some(aeon) = aeon_dir()` as
+        # an illustration — or one whose prose merely mentions `env::var("AEON_DIR")` — is
+        # classified as reference-reading, lands in neither bucket, and MAKES THE WHOLE LANE
+        # REFUSE TO RUN. Both reproduced against a controlled tree before this was written.
+        #
+        # The artifact test above is deliberately NOT decommented, and that asymmetry is
+        # measured rather than assumed: SIX files in this tree (`dac_port`,
+        # `diag_assert_vector`, `game_debug_port`, `native_object_bank_budget`,
+        # `banked_carrier_drift`, `subcommands`) match the artifact pattern ONLY in prose.
+        # Decommenting there would push all six out of the artifact bucket and into exactly
+        # the refusal this change exists to prevent. Blast radius of the change that WAS
+        # made: zero — no file in this tree currently reads the tree by comment alone.
+        decommented=$(sed 's@^[[:space:]]*//.*@@' "$f")
         # Asked in this order on purpose. The two established buckets answer first and
         # unchanged, so the new question can only ever speak for a file that used to fall
         # through to UNCLASSIFIED — a rule that re-bucketed a file already bucketed
@@ -292,7 +310,8 @@ makes some file look like it reads nothing"
             CLS_SOURCE+=("$n")
         elif grep -qE 's4\.bin|s4\.debug\.bin|demo\.bin|demo\.debug\.bin|\.lst|golden' "$f"; then
             CLS_ARTIFACT+=("$n")
-        elif ! grep -qE "$obtains" "$f" && ! grep -qF "env::var(\"$var\")" "$f"; then
+        elif ! grep -qE "$obtains" <<< "$decommented" \
+             && ! grep -qF "env::var(\"$var\")" <<< "$decommented"; then
             CLS_NOREF+=("$n")
         else
             CLS_UNCLASSIFIED+=("$n")
