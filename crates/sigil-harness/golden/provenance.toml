@@ -10179,3 +10179,62 @@ demo_debug = "d30c3636/101333"
 lean = "468f3cc6/674830"
 s4 = "6e2f9b22/719315"
 s4_debug = "6516fc68/736315"
+
+[entry.superseded]
+by = "scroll-and-section-clamps-superseding"
+reason = "chain 187 recorded RED and can never be attested: 8 strict failures, 7 of them Cache_Fill_Resume_Col / Cache_Fill_RowResume_Row unresolved standalone. Measured afterwards: those references were added by 839d600d (the d-45 canopy fix, merged 42cb5781), NOT by this parcel, whose two commits add zero - 56 unattested commits of debt landed on the next lane to freeze. Compositions supplied by sigil 2a53cbaf; preflight CLEAR before this run."
+
+[[entry]]
+name = "scroll-and-section-clamps-superseding"
+ab = "aeon docs/captures/2026-08-30-scroll-clamp/ — BG V-scroll -46 unclamped vs 0 clamped after motion, 361 purple px from the art's bottom edge in screen rows 0-15 on master and zero clamped; four shapes canonical 1660 passed / 0 failed; 16 of 16 effects gates OK; freeze_preflight.sh CLEAR (0 port failures) before freezing"
+aeon_rev = "ec6a4791db346ec8c6672632109f85415b873e49"
+note = "goldens byte-identical to `scroll-and-section-clamps` — this entry exists to abandon it: the fix for what turned its strict run red moved no bytes. supersedes the RED chain 187; same aeon bytes, sigil test compositions added"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "35e22aa2"
+full_size = 736683
+anchor_crc = "36097fc8"
+anchor_end = 0xa7f40
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "ef7d67e9"
+full_size = 611347
+anchor_crc = "b9fd1ea0"
+anchor_end = 0x8b980
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "9223a60d"
+full_size = 96450
+anchor_crc = "ae34bd08"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "d30c3636"
+full_size = 101333
+anchor_crc = "c87d9594"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "468f3cc6"
+full_size = 674830
+anchor_crc = "6220c786"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "6e2f9b22"
+full_size = 719315
+anchor_crc = "67d5e628"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "6516fc68"
+full_size = 736315
+anchor_crc = "259ad674"
+anchor_end = 0xa7f40
