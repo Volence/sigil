@@ -969,6 +969,44 @@ raise it against their own message for it to surface at all.
 
 ### Standing rules — independent of whether a row is active
 
+**A DELETED WORKTREE LEAVES EXECUTABLE TEST BINARIES BEHIND IN A SHARED `target/`, AND THEY FAIL
+FOREVER AS SOMEONE ELSE'S REGRESSION** *(2026-08-30; realised instance of this file's own
+never-share-a-target rule, diagnosed here off aeon's red attest).*
+
+Chain 190's `--attest` came back **4137 passed / 38 failed**. Two were aeon's real break. **The
+other 36 were orphans of mine, and the match is exact rather than approximate.**
+
+`target/release/deps/` still holds test binaries built **2026-08-26 16:13** whose
+`env!("CARGO_MANIFEST_DIR")` is baked to
+`/home/volence/sonic_hacks/sigil/.worktrees/pair-showcase/crates/…`. **That worktree is gone** and is
+not registered. The binaries survived it, kept their absolute paths, and fail on every fixture read.
+Run directly, they produce **exactly 36 failures** — 18 clownlzss, 13 s4lz, 1 salvador, 3
+clownnemesis, 1 rewind_regression — which is `38 − 2` on the nose.
+
+**The fixtures were never missing:** `crates/sigil-frontend-emp/tests/vectors/s4lz/` is 25 tracked
+and 25 on disk. The failure names a crate and a file that are both fine, which is why it reads as a
+fixture regression and sends the reader to the wrong place entirely.
+
+**WHAT THIS ADDS TO THE EXISTING RULE.** *Never share one `CARGO_TARGET_DIR` between two worktrees*
+was already here. The new half is that **the damage OUTLIVES the worktree**: removing the worktree
+does not clean what it left in the shared target dir, nothing ever will, and the orphans keep
+running. Four days later they cost a peer a red attest they had no way to diagnose from their side —
+the evidence lives entirely in this repo's build directory.
+
+- **Provision agent worktrees with their own `CARGO_TARGET_DIR`** — already the rule; this is what
+  it costs when it lapses.
+- **When retiring a worktree, the artifacts are part of the cleanup.** A `git worktree remove` is
+  half the job while a shared target dir exists.
+- **Reading a "file not found" from a test: check the BINARY's baked path before checking the
+  file.** `strings <test-bin> | grep CARGO_MANIFEST_DIR`-shaped lookup settles in one command
+  whether you are debugging your tree or someone's ghost.
+
+**UNRESOLVED AND MORE IMPORTANT THAN THE CLEANUP: what RUNS them.** Nothing in `scripts/` or the
+harness bins globs `target/*/deps` — grepped, no hits — and cargo should not run a binary belonging
+to no current target. **Until that is known, `cargo clean` fixes this instance and the next deleted
+worktree recreates it.** Do not close this on the cleanup.
+
+
 **`ls <path>` IS A BROKEN EXISTENCE PROBE IN THIS WORKSPACE — AND IT FAILS ONLY IN THE SPELLING
 USED FOR PROBING** *(2026-08-30; aeon found it, verified independently here).* `ls` is aliased to
 `eza --color=always --group-directories-first --icons`. **`--icons` takes an OPTIONAL value**, so a
