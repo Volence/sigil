@@ -4908,3 +4908,75 @@ supersedes.
 **Nothing in this repo runs this tool automatically.** It is operator-run: no CI job, no nightly
 gate, no test invokes it. `.github/workflows/ci.yml` and `scripts/nightly_source_gates.sh` do not
 reference it, and wiring it is an open call, not a done thing.
+
+### I RAN A WRITER TO SEE WHAT A FLAG DID, AND THE FLAG DID NOT EXIST (2026-08-30)
+
+**The incident.** `bash scripts/nightly_ref_drift.sh --selftest`, on the reasonable guess that a
+script advertising `--selftest-fail` also had the passing half. It does not. It recognised that
+one flag and **every other argument fell through into the full run** — provision a reference
+worktree, build both ROM shapes, relink the assembler, append to the ledger. Killed inside two
+minutes. Fixed at `25291a36`: unrecognised arguments refuse by name before any side effect,
+exit 64, and the message says outright that no dry-run mode exists.
+
+**Verified afterwards rather than assumed, and this is the part worth copying.** No ledger entry
+was minted (`ledger.jsonl` absent); nothing under `.aeon-ref-drift` was newer than the run;
+`target/release/sigil` still had mtime 05:40:26 and `emit_sound_blob` 04:06:26. That last check
+was the load-bearing one: **the aeon lane had two builds live at that moment exporting
+`/home/volence/sonic_hacks/sigil/target/release/sigil` as their `SIGIL_BUILD`.** A relink under
+them would have produced ROM bytes from an assembler they did not name, and **nothing in either
+lane would have reported it** — no gate compares a build's bytes against the identity of the
+binary that produced them.
+
+**The generalisation, and it is not "read the flags first."** The window was bounded by
+**timing**, not by any control. Twenty minutes earlier the same command would have done real and
+invisible damage. So this is `fine ≠ protected` at the shared-artifact seam: the disposition that
+saved it (killing it fast, then checking) is not a mechanism, and a successor should not plan
+around a lane noticing.
+
+**Two design calls inside the fix, both deliberate.** (1) **No `--selftest` flag was invented.**
+Adding one would be new surface designed off my own wrong guess; refusing by name is the whole
+fix. (2) The refusal **names the absence of a dry-run mode**, because the defect was not a typo —
+it was a reader inferring a mode from a sibling flag's spelling, and the next reader will infer
+the same thing unless told.
+
+**Class, already on this board twice.** `DERIVE-OFFCANON-UNGATED` (*the bare command writes*) and
+`FLAG-SUBSTRING-CLASSIFIER` (*a flag spelling reclassifying a file*). It caught the session that
+booked both. A booked row is prose, and prose does not run — the same sentence this file already
+carries about `landing-run.sh`, arriving on its author.
+
+### A GATE WHOSE NAME ASSERTS WHAT ITS BODY STOPPED CHECKING (2026-08-30)
+
+Found by reconciling a passing test against my own board rather than by reading the test.
+`drift_nightly_harness.rs`'s `the_record_seam_is_empty_and_absence_is_not_a_pass` asserts
+`reader.is_empty() || Path::new(&reader).exists() || reader.starts_with('/')`. **The third clause
+makes the second dead**: any absolute path passes, existing or not — simulated and confirmed. So
+`DRIFT_RECORD_READER` could name a vanished reader and this gate stays green.
+
+**Its prose is false as well as its logic weak**, which is the tell that made it findable: the doc
+comment says *"until they exist the config's reader is empty"*, and the reader has been **set**
+since `3d3d6485`. The name, the comment and the body now describe three different properties.
+
+**Do not simply delete the third clause.** It is probably deliberate — tightening makes the
+workspace suite depend on a provisioned reference tree, which fails on a fresh checkout and in CI.
+That is a real trade wanting a ruling. The likely honest shape is the remedy this lane applied to
+the tree-state fold the same hour: **assert existence where the tree is provisioned, and NAME the
+unprovable case rather than passing it.**
+
+### AN APPEND-ONLY RECORD THAT SILENTLY MERGES TWO RECORDS (2026-08-30)
+
+`docs/lane-log.jsonl` had **no trailing newline**, so an ordinary
+`f.write(json.dumps(...) + "\n")` append concatenated a new object onto the previous one and
+produced a single unparseable line. Caught only because the file was read back and raised a
+`JSONDecodeError`; repaired by `raw_decode`-splitting line 79, both records recovered, all 81
+lines revalidated.
+
+**The defect is the write pattern, not the one file.** That append is correct only if the file
+already ends in a newline and nothing enforces it. The failure is silent, and it **destroys the
+previous session's record** as well as mangling the new one — in files both contracts declare
+append-only and never-backfilled, so the damage is exactly the kind that cannot be honestly
+reconstructed afterwards. `docs/decisions.jsonl` has the same shape.
+
+**Fix wants two halves:** check the last byte before appending (or validate-after-write and fail
+loud), and a suite-side check that every `.jsonl` under `docs/` parses line-by-line, so it is
+caught at the next landing rather than by the next reader. **Worth raising suite-wide — nothing
+about this is sigil-specific.**
