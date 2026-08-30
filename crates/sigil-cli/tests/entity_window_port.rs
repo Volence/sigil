@@ -442,6 +442,13 @@ fn section_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
         ("Cache_Bottom_Row", pick(pins::CACHE_BOTTOM_ROW)),
         ("Cache_Origin_Col", pick(pins::CACHE_ORIGIN_COL)),
         ("Cache_Origin_Row", pick(pins::CACHE_ORIGIN_ROW)),
+        // Tile_Cache_Fill's partial-column / partial-row resume slots ($FFFF =
+        // none pending), read by Section_UpdateColumns' four loops.
+        // Shape-independent entries: both shapes carry the carriers, so the
+        // co-link composition does not depend on which side of an `if DEBUG` a
+        // reference sits on.
+        ("Cache_Fill_Resume_Col", pick(pins::CACHE_FILL_RESUME_COL)),
+        ("Cache_Fill_RowResume_Row", pick(pins::CACHE_FILL_ROW_RESUME_ROW)),
         ("Plane_Buffer_Ptr", pick(pins::PLANE_BUFFER_PTR)),
         ("Tile_Cache_Nametable", pick(pins::TILE_CACHE_NAMETABLE)),
     ]

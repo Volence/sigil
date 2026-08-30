@@ -138,7 +138,7 @@ fn plane_buffer_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
 /// VMA (label position is load-bearing: abs.w/abs.l width selection reads it).
 fn plane_buffer_addr_labels(debug: bool) -> Vec<Section> {
     let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
-    let table: [(&str, u32); 13] = [
+    let table: [(&str, u32); 15] = [
         // DEBUG-only: the blanket-restore parcel's IPL>=6 assert on VInt_DrawLevel's
         // autoincrement excursion expands to jsr/jmp these (sprites_port precedent).
         // Shape-invariant pins; in plain the assert is comptime-gated out and the
@@ -153,6 +153,15 @@ fn plane_buffer_addr_labels(debug: bool) -> Vec<Section> {
         ("Cache_Bottom_Row", pick(pins::CACHE_BOTTOM_ROW)),
         ("Cache_Origin_Col", pick(pins::CACHE_ORIGIN_COL)),
         ("Cache_Origin_Row", pick(pins::CACHE_ORIGIN_ROW)),
+        // Tile_Cache_Fill's partial-column / partial-row resume slots ($FFFF =
+        // none pending). Draw_TileColumn's and Draw_TileRow_FromCache's DEBUG
+        // asserts read them to refuse a declared-but-not-filled column or row.
+        // Carried in BOTH shapes: the plain shape comptime-gates the asserts out
+        // and leaves the carriers unused, the way the MDDBG entries above do, so
+        // the composition does not depend on which side of an `if DEBUG` a
+        // reference happens to sit on.
+        ("Cache_Fill_Resume_Col", pick(pins::CACHE_FILL_RESUME_COL)),
+        ("Cache_Fill_RowResume_Row", pick(pins::CACHE_FILL_ROW_RESUME_ROW)),
         ("Tile_Cache_Nametable", pick(pins::TILE_CACHE_NAMETABLE)),
         ("Section_Right_Col_Written", pick(pins::SECTION_RIGHT_COL_WRITTEN)),
         ("Current_Act_Ptr", pick(pins::CURRENT_ACT_PTR)),
@@ -469,6 +478,11 @@ fn flip_labels(debug: bool) -> Vec<(&'static str, u32)> {
         ("Cache_Bottom_Row", pick(pins::CACHE_BOTTOM_ROW)),
         ("Cache_Origin_Col", pick(pins::CACHE_ORIGIN_COL)),
         ("Cache_Origin_Row", pick(pins::CACHE_ORIGIN_ROW)),
+        // Read by both flipped modules — section.emp's four UpdateColumns loops
+        // and plane_buffer.emp's DEBUG Draw_Tile* asserts. Carried in both shapes
+        // so the co-link composition is shape-independent.
+        ("Cache_Fill_Resume_Col", pick(pins::CACHE_FILL_RESUME_COL)),
+        ("Cache_Fill_RowResume_Row", pick(pins::CACHE_FILL_ROW_RESUME_ROW)),
         ("Plane_Buffer_Ptr", pick(pins::PLANE_BUFFER_PTR)),
         ("Tile_Cache_Nametable", pick(pins::TILE_CACHE_NAMETABLE)),
     ];
