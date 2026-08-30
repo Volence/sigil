@@ -1045,10 +1045,40 @@ the evidence lives entirely in this repo's build directory.
   file.** `strings <test-bin> | grep CARGO_MANIFEST_DIR`-shaped lookup settles in one command
   whether you are debugging your tree or someone's ghost.
 
-**UNRESOLVED AND MORE IMPORTANT THAN THE CLEANUP: what RUNS them.** Nothing in `scripts/` or the
-harness bins globs `target/*/deps` — grepped, no hits — and cargo should not run a binary belonging
-to no current target. **Until that is known, `cargo clean` fixes this instance and the next deleted
-worktree recreates it.** Do not close this on the cleanup.
+**RESOLVED 2026-08-30 — AND IT IS NOT "ORPHANS LYING AROUND", IT IS ARTIFACT SUBSTITUTION.**
+**Cargo's unit hash is CHECKOUT-INDEPENDENT: two git worktrees of the same repo produce the SAME
+artifact filename, so sharing a target dir means they OVERWRITE each other.** Proven in three steps,
+all from artifacts already on disk:
+
+1. **Aeon's attest log names what cargo ran** (`target/attest/suite-1788092685.log`, 350 `Running`
+   lines). **Cargo ran the ORPHAN hashes** — `byte_exact-2fd3176…`, `-616b732…`, `-30dbc34…`,
+   `-e9c9f90…`, `rewind_regression-fcce4d9…` — and **did NOT run** the correctly-baked
+   `byte_exact-ef6422c…` / `-06c0a28…` at all.
+2. So the orphan was not an extra binary being swept up; it **was** the artifact cargo considered
+   current for that target.
+3. **After deletion cargo rebuilt at the IDENTICAL hashes** — `2fd3176ae0f05cd2` and
+   `616b732b3e4e4307` are back, same names, now baked at the correct paths. **Same input hash from a
+   different checkout is the whole mechanism.**
+
+**The full sequence:** a worktree builds → writes `deps/<name>-<hash>` with **its own absolute
+`CARGO_MANIFEST_DIR` baked in** → the main checkout's next build sees a matching fingerprint (same
+sources) and **does not rebuild** → it runs a binary compiled against another checkout's paths →
+delete that worktree and the artifact stays *"fresh"* forever while pointing at nothing.
+
+**CONSEQUENCES THAT CHANGE THE EXISTING RULE:**
+- *"Never share one `CARGO_TARGET_DIR` between two worktrees"* was already here as a **conflict**
+  rule. It is really a **correctness** rule: the main checkout's own test binary gets **replaced**,
+  and the replacement is invisible because the filename is identical.
+- **`cargo clean` is not the fix and neither was my sweep.** Both restore today. The fix is that
+  every worktree carries its own `CARGO_TARGET_DIR`, without exception.
+- **It is silent while both checkouts exist** — the substituted binary passes, because the sources
+  match. It only surfaces when the other checkout is *deleted*, which can be days later and in
+  another lane's run.
+
+**SWEEP GAP CLOSED (my earlier one was too narrow — it looked only at `.worktrees/`):**
+`.claude/worktrees/` → **0** artifacts baked there; sibling `/home/volence/sonic_hacks/.sigil-*`
+checkouts → **0**. So the ~24 agent worktrees and every sibling checkout are correctly isolated, and
+the three `.worktrees/` entries were the only offenders.
 
 
 **`ls <path>` IS A BROKEN EXISTENCE PROBE IN THIS WORKSPACE — AND IT FAILS ONLY IN THE SPELLING
