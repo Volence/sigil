@@ -10494,3 +10494,58 @@ demo_debug = "d30c3636/101333"
 lean = "20554b7f/674830"
 s4 = "36adb158/719329"
 s4_debug = "eadd7175/736331"
+
+[[entry]]
+name = "vertical-bob"
+ab = "aeon 8c75722b: EFFECTS-W1 item 7, the vertical bob - a scene-level term on the existing Step-5 vscroll so the whole background sways over time. One packed byte per scene, (amp_shift << 4) | period_shift, the WHOLE BYTE 0 as the no-bob sentinel; phase from Logic_Tick (the update counter, deliberately NOT the VBlank count - a bob paced to wall clock would be the only parallax animation that desynchronises from the H-deform wave on a dropped frame); amplitude from the existing 320-word Sine_Table via lea + indexed word read, scaled with an ARITHMETIC shift because the wave is signed. No multiply anywhere; amplitude and period are both shift counts. Placed at .v_pack BEFORE the clamp, so one insertion bobs the snap, the CAP_TRANSITIONS lerp and the locked path alike and reaches Step 4a's band rotation and Step 5b's per-column base rather than only the whole-plane VSRAM word. THE BYTE IT COSTS WAS ALREADY THERE: claimed from pcfg_pad_29, so sizeof(parallax_config) stays 30, no band array shifts, all twenty shipped records emit the byte they already emitted - ZERO config bytes. BOUNDS ARE DERIVED, NOT CHOSEN: amplitude floor = smallest shift whose peak-to-peak travel fits the seam-free Plane-B window (VSCROLL_BG_MAX origins), ceiling = largest shift the sine table survives, period ceiling = where the cycle still closes against a 16-bit tick; six comptime ensures state them, including one that fires if the no-bob sentinel is ever overtaken by the legal ladder. MEASURED both shapes: 40 code bytes absorbed by slack, EndOfRom UNMOVED (0A5C90 / 0A7F40), ROM files +26 each and that +26 is deb2 appendix for ONE new label (v_bob_none). NO [[region]] span moves; boot_head, ObjCodeBase, dac_banks, sound_bank, Art_Sonic all +0. SoundTablesZ80_Head still at 8000 exactly. The parallax region itself grows exactly +40 in both shapes (plain 2322->2362, debug 2470->2510), which is what parallax_port measured as a length mismatch before this freeze re-baselined it. TWO NEW CROSS-SEAM NAMES, and this is the parcel's real risk rather than its bytes: Logic_Tick (MEASURED failing parallax_port with 'unresolved symbolic absolute operand ... not defined in this link') and Sine_Table (predicted, never surfaced because the resolver stops at the first). Sigil supplied both at c77dfb5c - Logic_Tick as a plain absolute row from pins::LOGIC_TICK because it is RAM at FFFF8004, identical in both shapes and therefore genuinely invariant; Sine_Table as pins::MATH.plain_base + pins::SINE_TABLE_OFF rather than a new absolute pin, because it is ROM data that moves with everything upstream of it. That derivation lands on 0x2850 + 0x18 = 0x2868, equal to the address this lane measured independently in the built listing. THE RULE, sigil's, and it generalises past pins: not 'does a pin exist' but 'is the address invariant'. VERIFIED: all four shapes green on the merged tree, 1790 passed / 6 skipped / 0 failed; four ROMs byte-identical to the authoring agent's build under a DIFFERENT assembler (theirs d5967f87-dirty, this one 474a5c03), which is a free re-confirmation of the rebuild prediction on an unrelated parcel; artifacts deleted before every build so their existence witnesses the run. NOT VERIFIED, and it is the first thing the owner should hear: NOTHING HAS BEEN SEEN IN MOTION. No emulator was run and no scene authors a bob, so not one instruction of the bobbing path has executed with a non-zero byte behind it. The comptime ensures and source assertions prove the bytes are what was intended; they say nothing about whether a bob bobs, and four green shapes are evidence about the assembler rather than about the feature."
+aeon_rev = "8c75722b9bf6a58116c61dbfcd4b068ade6520ee"
+note = "item 7: the background sways"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "a7ed4e81"
+full_size = 736725
+anchor_crc = "1450a942"
+anchor_end = 0xa7f40
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "dc997981"
+full_size = 611439
+anchor_crc = "14cb8f18"
+anchor_end = 0x8b9b0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "aca8c043"
+full_size = 96476
+anchor_crc = "1c2b8356"
+anchor_end = 0x1121c
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "932f496f"
+full_size = 101359
+anchor_crc = "b72ccfbe"
+anchor_end = 0x1121c
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "454a546c"
+full_size = 674830
+anchor_crc = "8ce47e87"
+anchor_end = 0xa4c0e
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "5a25a0d4"
+full_size = 719355
+anchor_crc = "d06c42b3"
+anchor_end = 0xa5c90
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "1131b2bf"
+full_size = 736357
+anchor_crc = "c697982c"
+anchor_end = 0xa7f40
