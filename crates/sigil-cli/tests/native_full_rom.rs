@@ -200,7 +200,11 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // sites, not read off this label's resolved address — the row stays UNPINNED
     // so it remains an independent check of the convsym resolve path, and pinning
     // it to `Ground_Move_Cap` would make the assertion circular.
-    ("Ground_Move_Cap", pins::P_STATE_GROUND.plain + 0x2F8, pins::P_STATE_GROUND.debug + 0x2F4),
+    // PLAIN offset 0x2F4: the two `jsr Sound_PlaySFX` sites ahead of this label encode
+    // `abs.w` in the plain shape, where Sound_PlaySFX sits below $8000 (0x7FBC); the
+    // debug shape's Sound_PlaySFX is above $8000, so its sites stay `abs.l` and its
+    // offset differs by those 4 bytes.
+    ("Ground_Move_Cap", pins::P_STATE_GROUND.plain + 0x2F4, pins::P_STATE_GROUND.debug + 0x2F4),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)
