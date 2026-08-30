@@ -410,6 +410,50 @@ durable language surface.
 
 **From here every closure carries `answered`.**
 
+### A POISON MUST RESEMBLE THE FAILURE REALITY PRODUCES (2026-08-30, aurora's measurement)
+
+This lane booked *"poison by making the path absent"* as the discriminator between an absent-input
+failure that is silent and one that is loud. **Aurora measured that this finds the LEAST:**
+
+| scenario | misdirected rows |
+|---|---|
+| reference tree **absent** | **0** of 306 |
+| reference tree **present but empty** | **43** |
+
+**The generalisation is bigger than paths. Deleting a thing is a CLEANER break than the world
+delivers.** Real failures are partial — a half-clone, a wrong path, a stale mount, the case on
+someone else's machine — and **a partial break is what routes a failure into the wrong
+vocabulary.** A total break is loud and honest: the lookup fails at the top and names itself. A
+partial one lets a lookup return a plausible nothing and surface the error somewhere unrelated.
+
+That is the mechanism of this file's own loud-elsewhere instance: the listing was **missing from a
+tree that otherwise existed and worked**. Had the whole reference tree been gone, the failure
+would have named itself in the first line.
+
+**So a poison designed for a clean absence tests a failure mode the system will rarely meet.**
+Design the poison against the *partial* state, and run both — the total-absence run is still worth
+having as the control that proves the poison is reaching anything at all.
+
+### A COUNT CAN BE WRONG BY POPULATION OR BY UNIT, AND THIS FILE ONLY CARRIED THE FIRST (2026-08-30)
+
+This file already says **a `grep -c` counts a spelling, not a population**. Aurora's O11 landing
+supplies the other half: **even when the population is right, the UNIT can answer a different
+question.**
+
+Measured there: **one literal gated 51 rows.** So a count of literals measures **editing effort**;
+a count of rows gated measures **coverage exposure**. Both are real populations of real things.
+Only one prices the risk.
+
+**This lane's own instance, published to the hub before the correction arrived:** the
+`/home/volence` sweep here gave **322 occurrences / 181 files / 129 test-or-harness**, and the row
+was scoped by those figures — including a caveat that *"129 is not 129 unknowns"*, which was
+reasoning carefully **in the wrong unit**. The numbers stand for sizing an edit and are worthless
+for pricing exposure; re-measure by rows gated before anyone prices that row.
+
+**And a third shape neither count reaches: a WALK-UP PATH FINDER looks converted and still opens
+the real tree.** No source read catches it — only an fs-level trace with the override pointed at an
+absent directory. Check `SIGIL_ROOT` derivation in `scripts/` first.
+
 ### URGENT AND IMPORTANT ARE NOT A RANKING — THE TWO ABSENT-INPUT CLASSES (2026-08-30)
 
 Sigil contributed a fourth class to the suite's baked-absolute-path audit, and it came back from
