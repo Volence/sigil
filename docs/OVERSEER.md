@@ -2247,6 +2247,46 @@ cannot be caught by making it fail; only by enumerating its inputs and asking wh
 produces each. **Sweep sigil's own multi-listing gates for the same pattern rather than assuming
 it is specific to that script.**
 
+#### THE SWEEP, RUN — `docs/superpowers/notes/2026-08-30-build-order-gate-sweep.md` (2026-08-30)
+
+360 carriers enumerated by the PRODUCT, not by the name: 123 read a build product, 84 read two
+or more, 70 cross an invocation boundary, **14 are exposed**. Read the note for each one; four
+results belong here because they change how this file's own witnesses should be read.
+
+**aeon's exact defect is absent from sigil, and for a stateable reason.** The asl `.lst` parse
+was retired from `repin` at Stage-3 P4c: it now resolves BOTH shapes in one process from source
+and opens no listing file. The only two `listing_symbol_addr` call sites in the tree pair a
+listing with the ROM from its own invocation. **No gate in sigil reads two listings.**
+
+**The worst instance is a PRODUCER, not a gate.** `refreeze --freeze` calls `resolve_aeon_rev`
+**once**, before step 1, and its four steps then re-read `$AEON_DIR` independently across a run
+this file already records as outliving a ten-minute cap. A tree that moves mid-freeze yields
+blobs from rev N, tables and pins from rev N+1, and a ledger naming rev N — and every downstream
+gate is green, because step 4 derives its numbers from steps 1-3's OUTPUTS rather than from the
+tree. **The remedy is a HEAD re-read, not a cleanliness re-check**: `git status --porcelain`
+after step 3 would fire on the build's own writes, which is why the check is early;
+`git rev-parse HEAD` would not.
+
+**`refreeze --check` cannot be red about a stale tree, and it is quoted as a landing witness.**
+Its two products are steps 1 and 4 of one freeze, and step 4 computes its CRCs from step 1's
+bytes. Tip-match is a tautology over one invocation's own output. A tree where nobody has run
+anything for months is permanently green. Correct for what it claims; not a freshness witness.
+
+**The better witness this file already nominates has no gate behind it.** The section above
+prefers `golden/offcanonical_sizes/s4.txt` to `pins.rs` for length-neutral parcels, on the
+strength of its two CRC header lines. `derive_offcanon` writes `# golden_crc32=` and
+`# assembled_anchor=` from the committed blob's bytes — and **grepped with a positive control,
+both have zero readers anywhere in the workspace.** The repo's best freeze witness is checked by
+a human reading a diff. Asserting it in `offcanon_assembled_bar` is two comparisons and lands
+green today (verified 7/7 on the committed blobs at `9fd6607d`).
+
+**And one witness in this file's own recipe is circular.** `provision-aeon-ref.sh` copies the
+golden ROMs into the reference tree at `:76`, builds at `:118-122`, then prints
+`REBUILD CONTROL … MATCHES THE GOLDEN` by comparing the files it placed against the goldens they
+came from. It cannot distinguish a real rebuild from its own copy; the listing check beside it is
+`[ -s ]`, i.e. presence. `capture_goldens.sh` carries the fix — an mtime marker — in the same
+repo, and it is the only freshness assertion in the tree apart from its twin.
+
 ### THE SENDING-SIDE HALF: A QUALIFIER ONE LINE AWAY IS NOT BESIDE THE VALUE (2026-08-30)
 
 The rule above is the READING direction — read the qualifier as part of the value. Its inverse
