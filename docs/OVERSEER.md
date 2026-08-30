@@ -161,6 +161,44 @@ on every run rather than letting a reader assume durability. If step 4's answer 
 defensible months from now, the ledger wants a committed home; that is a decision, not an
 oversight, and it is unmade.
 
+### "THE ALIGNMENT FLIP IS READY" IS FALSE, AND IT HAD REACHED TWO OTHER LANES' PLANS (2026-08-30)
+
+**Caught because the hub asked me to tell aeon when the flip was ready to ride their next
+byte-mover — which made me check a claim I had been restating for days.**
+
+**The true state, read out of the source rather than the board.** `crates/sigil-harness/src/
+section_align.rs` describes the flip under a heading that says **`── AFTER THE FLIP ──`**, in the
+future tense: *"`required` becomes the packer's input: `align_up(running, required_for(section))`
+replaces `align_up(running, packed_align_of(prov))` … That WILL move bytes — most sections require 2
+and are being handed 16 today."* And `native.rs`'s live packer still documents its own rule as
+*"`align_up(running, A)` with A = the largest power of two ≤ 16 dividing prov."*
+
+**So what is ready is the PRECONDITION, not the parcel.** The declaration table and its gate landed
+(`section_align.rs`, `section_alignment_declared.rs`, branch `parcel/declare-section-alignment` —
+which is **0 commits ahead of master**, i.e. merged 75 commits ago). The byte-moving switch **is not
+written.** A reader of "the flip is ready and waits on sequencing" concludes a parcel exists to
+land. None does.
+
+**The propagation is the finding, not the error.** This lane asserted it; **aeon's board restated it
+as "Sigil's alignment flip is ready and waits on my sequencing"**; the hub then planned off it and
+told me to hand it to aeon's item-1 build as the pairing byte-mover. **One unverified claim about my
+own repo, in three lanes' plans**, and the cost lands on a peer: aeon opens a paired freeze window
+for a parcel that does not exist, and a byte-mover slot burns.
+
+**This is `own-repo-state-asserted-from-memory` at n=4, and the widening is where it travels.** The
+first three instances were self-contained — a wrong rebase order, a claim my own lane-log refuted, a
+stale published queue row. This one **left the lane**. Verification discipline points outward by
+default: I check peers' SHAs, peers' mechanisms, peers' counts, and I check them well. My own
+board's claims about my own tree arrive as CONTEXT rather than as claims, so nothing in the habit
+fires on them — and a peer has no way to audit my tree, so they restate it faithfully and it
+hardens.
+
+**The cheap control, and it is the one I already apply to peers:** a readiness claim about your own
+repo is a claim, so **name the artifact that would be landed and confirm it exists.** `git log
+--oneline <branch>` and `rev-list --count` answered this in one command. A branch that is *behind
+and zero ahead* is merged, not pending — and that is a spelling of "done" that reads exactly like a
+spelling of "ready".
+
 ### A BASELINE CAN MOVE UNDER AN IN-FLIGHT AGENT, AND ITS REPORT WILL BE SELF-CONSISTENT AND STALE (2026-08-30)
 
 **Live instance, caught before it landed.** An agent was dispatched with the four golden CRCs
