@@ -197,6 +197,13 @@ reference_env_var() {
 # reaching it without a fixed point returns nonzero. A truncated closure is short some
 # accessors, and every accessor it is short makes some file look like it reads nothing —
 # the one direction in which being wrong is quiet.
+#
+# THE DOMAIN IS THIS ONE FILE, and that is a known edge rather than an oversight. A test
+# reaching the tree through a shared helper module — `crates/*/tests/<dir>/mod.rs`, which
+# the selector's own glob does not scan either — would call nothing this closure knows and
+# would bucket as no-reference. Not live: no such module names the tree today, checkable
+# with `grep -lE '<the selector pattern>' crates/*/tests/*/mod.rs`. If it ever fires, widen
+# this closure to those modules — the same fixed point over one more file set.
 accessor_closure() {
     local src=$1 stripped acc more pat i
     stripped=$(sed 's@^[[:space:]]*//.*@@' "$src")

@@ -36,8 +36,11 @@ panic rather than a skip:
 | `reference_tree_write_guard` | ok, 2 passed, 0.00s | obtains nothing |
 | `reference_tree_named_write` (the fifth) | ok, 1 passed, 0.00s | obtains nothing |
 
-Against a real provisioned tree all five are green (3.92s / 11.03s / 35.01s / 0.00s /
-0.00s), so the failures above are the guard firing, not a defect.
+Against a real provisioned tree (`scripts/provision-aeon-ref.sh`, witnessed by
+`repin --check` → `pins.rs unchanged`) the first four are green in 3.92s / 11.03s / 35.01s
+/ 0.00s, and the fifth is green in the full strict suite, so the failures above are the
+guard firing rather than a defect. The two zeroes are the tell on their own: a gate that
+builds a shape cannot finish in no time.
 
 **Three of the five were genuine source gates nobody had classified the day they landed** —
 the exact obligation this document's lane section already names. They are oracle'd on
@@ -151,16 +154,22 @@ out of `~/.local/state/sigil-source-gates/nightly.log`:
 2026-08-30T05:28:08-04:00 OK at sigil c3808d41 / aeon 07430004 (181 passed, 44 gates;
 85 aeon-reading gates skipped as artifact-lane (…); 2 no-reference (name the tree, obtain
 none — the workspace suite runs them))
+2026-08-30T05:35:50-04:00 OK at sigil a7e36cef / aeon 12e70353 (181 passed, 44 gates; …)
 ```
 
-Exit 0. 84 seconds wall (05:26:44 → 05:28:08; uptime at the start of the parcel `up 4 days,
-21:14`). From the lane's own `gates.log`, aggregate and not a tail: **44 `test result:`
-lines for 44 named gates, 181 passed / 0 failed / 1 ignored, zero `skip:` lines** under
+Exit 0 both times. 84s and 86s wall (05:26:44→05:28:08, 05:34:24→05:35:50; uptime at the
+start of the parcel `up 4 days, 21:14`). **Two different aeon master tips**, because aeon
+moved between the runs — so the green is not a property of one engine revision.
+
+From the lane's own `gates.log`, aggregate and not a tail: **44 `test result:` lines for 44
+named gates, 181 passed / 0 failed / 1 ignored, zero `skip:` lines** under
 `SIGIL_STRICT_GATE=1`. The three newly-classified gates are present in it by name
 (`Running tests/hole_interior_reserved.rs`, `section_alignment_declared.rs`,
 `region_end_contracts.rs`) — a green log that does not contain the parcel's own tests is a
 green log about other code — and they are green against aeon's **live master**, not only
-against the pinned revision.
+against the pinned revision the goldens describe. That is the empirical answer to the
+question that decides their bucket: they are not red-by-design at a moving tip, so they are
+not the excluded artifact-oracle shape.
 
 The two open warn-tier findings the verdict prints (`import.no-names`, 12 days) are the
 register doing its job and are not this parcel's.
@@ -175,6 +184,25 @@ SELFTEST: …`). `/usr/bin/notify-send` was not touched, and the stub directory 
 afterwards. **The timer was not masked, disabled or softened** — the ruling stands: the
 lane yields no coverage while it refuses, so silencing it would trade an urgent
 self-limiting failure for a permanent invisible one. The popup stops because the lane runs.
+
+## A residual, named rather than discovered later
+
+The accessor closure's domain is `test_support.rs`. A test that reached the tree through a
+**shared test-helper module** — `crates/*/tests/<dir>/mod.rs`, which the selector's
+`crates/*/tests/*.rs` glob does not scan either — would call no accessor this rule knows
+and would be bucketed `no-reference`: mis-bucketed, in the quiet direction.
+
+**It is not live, and that is checkable in one command rather than argued:**
+
+```
+grep -lE 'AEON_DIR|aeon_dir|reference_tree|--aeon' crates/*/tests/*/mod.rs
+```
+
+Empty today, across all five such modules (`sigil-harness/tests/common`, and four under
+`sigil-isa/tests`). The fix if it ever fires is to widen the closure's domain to those
+modules — the same fixed point over one more file set, so a helper that wraps an accessor
+becomes an accessor and its callers classify correctly. Deliberately not built on
+speculation: an untested mechanism guarding nothing is its own hazard.
 
 ## Left open
 

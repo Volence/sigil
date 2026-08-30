@@ -2876,7 +2876,9 @@ precisely why it survived: two different numbers agreeing on the part that matte
 a discrepancy in the part that does not. **The load-bearing figure is `unclassified`** — it
 is the only one the script acts on (non-zero ⇒ exit 2, whole lane dark). When reporting an
 audit replay, name the quantity: `SOURCE_GATES=<n> scanned=<n> unclassified=<n>`, never a
-bare `gates=`.
+bare `gates=`. **`--audit` now prints that line itself**, labels and all, so a replay has
+no reconstruction step left to get the label wrong in — paste its output rather than
+re-deriving a number.
 
 **Left open, deliberately:** the SELECTOR is still any occurrence, and that is the safe
 direction — narrowing it to code uses would let a genuinely aeon-reading gate escape the
