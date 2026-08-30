@@ -372,6 +372,28 @@ Before running an unfamiliar script, grep it for `notify-send`, `zenity`, `kdial
 **A second-order note worth as much:** the `2>/dev/null || true` on that line means the notification
 cannot fail visibly either, so even the popup's *sending* is unobservable from the caller.
 
+### A PROCESS IS NOT A PEER'S JUST BECAUSE YOU DID NOT SPAWN IT (2026-08-30, small, and it resolved in one command)
+
+An agent reported a **possible ownership conflict**: a `landing-run.sh` it had not started, carrying
+`--expect-test every_selected_test_file_is_classified`, which reads exactly like the classifier work
+it had just reported as standing. It attributed the process to *"a different session (`3c4425d4`)"*
+and — correctly — **refused to conclude**, writing *"an agent's name is not evidence of its
+behaviour… treat this as check-before-assigning, not as it's-handled."* That is bar 16 applied by an
+agent to its own inference, which is the right instinct.
+
+**It was my own dispatched agent.** `3c4425d4` is this session's scratchpad UUID, and the process's
+`--log` path contains it. One `pgrep -af` printed the full argv with that path in it, and the
+question was closed.
+
+**The reusable half:** an unfamiliar process's **own argv answers who owns it** — log paths, target
+dirs and reference trees are all stamped with the session or agent that made them, precisely because
+this lane provisions per-agent. Ask the process, not the process table. The cost of not asking is a
+double-assignment or a wrongly-deprioritised parcel, and the check is one command.
+
+**Worth noting the agent lost nothing by being wrong**, because it reported an observation with its
+limit stated rather than a conclusion. A wrong flag that names what it does not know costs one
+command; a wrong conclusion costs a parcel.
+
 ### CHAIN 188 -> 189 IS 40 BYTES AND CARRIES NO ENGINE CODE — re-derived here on BOTH shapes (2026-08-30)
 
 **Aeon volunteered the complete byte accounting unprompted; re-derived here rather than accepted.**
