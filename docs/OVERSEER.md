@@ -520,12 +520,77 @@ foreign write**, and the hazard is NOT "their tree is silently corrupted". It is
 with `s4.debug.bin` reproducing at `6516fc68` — the figure they had already published tonight. They
 checked *because* they had published it, which is the right trigger.
 
+**IMPLEMENTED on the write side, 2026-08-30** — see the section above; the argument shipped as
+written here, and the invisibility framing is what the refusal text says.
+
 **The recommendation stands at REFUSE anyway, and the argument changes.** A fallback to a hardcoded
 live checkout is the option that is **structurally incapable of announcing its own failure**, and
 the gitignore removes the last surface where a reader could notice. A refusal turns every unset-env
 caller into a named error at its own call site — loud, local, fixed in a minute. **Put it to the
 owner as an invisibility argument, never as an imminent-corruption story.** The scarier framing is
 also the falsifiable one, and it would deserve to lose.
+
+### THE LIVE-TREE DEFAULT IS CLOSED ON THE WRITE SIDE — AND THE `sigil` CLI WAS IN THE POPULATION (2026-08-30)
+
+**d-17 is implemented, narrow, and byte-neutral.**
+`docs/superpowers/notes/2026-08-30-aeon-dir-write-requires-naming.md`. A write into the
+reference tree now refuses unless `AEON_DIR` NAMED it: `seam2::require_named_reference_tree`
+sits FIRST in `require_reference_tree`, the shared precondition of all seven emitters and of
+`ensure_generated`'s own entry. Order is load-bearing — reversed, an unset `AEON_DIR` sends
+the content probe to the live checkout, finds a complete tree, passes, and the write proceeds
+into exactly the tree the check exists to keep it out of. The refusal names the variable,
+`test_support::LIVE_TREE_FALLBACK` (now a constant, so fallback and refusal cannot drift), and
+the target path, and it argues INVISIBILITY — gitignored artifacts, no `git status` trace, no
+record of the writer — never corruption. Read-only rows keep the fallback; the wide option
+stays unshipped.
+
+**The catch that made the parcel safe, and it came from measuring rather than grepping.** The
+`sigil` CLI is itself write-reaching: `run_build_native` -> `native::build_*` ->
+`ensure_generated`, 234 fs-level writes into the tree in one workspace run. **Nothing in
+`sigil-cli/src` mentions `ensure_generated`, `seam1`, `seam2` or any generated filename**, so
+a name-match closure over harness sources cannot see it — and it is the binary aeon's
+`build.sh:620` drives. Unhandled, the refusal would have broken **every aeon build**, in a
+repo this lane does not own. Both argv-driven callers (`sigil build --aeon`,
+`emit_sound_blob --aeon`) now publish that argument as their own `AEON_DIR` before emitting,
+so one rule covers every writing process and argv is not an exception. `refreeze --freeze`
+already refused on unset `AEON_DIR` for the same reason; this generalises that precedent.
+
+**The method, because it is reusable.** An `LD_PRELOAD` write interposer (control-proved with
+a `touch`/`rm` first) plus a temporary probe at the precondition, over ONE strict workspace
+run: **2938 writes into the tree, every one of them into `engine/sound/generated`, zero
+elsewhere**; 33 executables and 68 rows enter the precondition, and every fs-level writer is
+among them. That is what licenses a single check at one choke point to cover the whole write
+population. Resolved to sources it is **34 files, not the syntactically-estimated 29** — the
+extra ones are the two binaries. **The literal counts DO reproduce** — 93/113 and 127 both,
+exactly — but they price editing, not coverage.
+
+**Byte-neutral on all four shapes** — `s4.bin 6e2f9b22/719315`, `s4.debug.bin 6516fc68/736315`,
+`demo.bin 9223a60d/96450`, `demo.debug.bin d30c3636/101333` — and that build ran aeon's
+`build.sh` with **`AEON_DIR` deliberately unset**, so the byte proof and the "aeon's build is
+unaffected" proof are the same run. Nothing in `golden/`, `pins.rs` or `repin.toml` touched.
+
+**AND A SECOND, FOUND WHILE LANDING THIS: `scripts/nightly_source_gates.sh` IS ALREADY
+REFUSING TO RUN.** Its self-audit classifies every `crates/*/tests/*.rs` matching
+`AEON_DIR|aeon_dir|reference_tree|--aeon` as SOURCE_GATES-listed or derivably
+artifact-dependent, and exits 2 on anything else. Reproduced: **5 unclassified, 4 of them
+already on master** — `hole_interior_reserved`, `section_alignment_declared`,
+`region_end_contracts`, `reference_tree_write_guard`; the fifth is this parcel's
+`reference_tree_named_write`. Both reference-tree gates match on PROSE explaining what
+`AEON_DIR` is — the false-positive shape this board already predicted — and neither reads a
+reference tree, so neither belongs in `SOURCE_GATES` and neither is artifact-dependent. The
+classifier wants a third, DERIVED bucket (no `aeon_dir()` / `reference_tree(` call, no
+`AEON_DIR` env read), not a longer hand list. **Nothing in `cargo test` sees this**, which is
+why it has stood since yesterday. Reported, not taken — most of the pile is not this parcel's
+and the fix is a nightly lane's contract change needing its own red-first proof.
+
+**STILL OPEN, AND IT IS A HOLE, NOT A NICETY.** `scripts/landing-run.sh:207` resolves
+`${AEON_ARG:-${AEON_DIR:-/home/volence/sonic_hacks/aeon}}` and then EXPORTS it — so a landing
+run invoked with neither `--aeon` nor `AEON_DIR` hands the suite the live checkout and the new
+precondition passes. Same literal in `golden/capture_goldens.sh:75` and
+`golden/derive_offcanonical_sizes.sh:25`. The wrapper is better than the Rust fallback because
+it PRINTS the tree it chose, but it still selects it silently. Closing it changes the runner's
+contract for every lane and one of the three files is inside aeon-owned `golden/`, so it is
+**reported and deliberately not taken**.
 
 ### THE SUITE WRITES INTO `AEON_DIR`, AND THE WRITE FLIPS OTHER ROWS' GUARDS MID-RUN (2026-08-30)
 

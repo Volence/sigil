@@ -588,11 +588,21 @@ pub fn guard_assert_count(asserts: &[LinkAssert]) -> usize {
 
 // ── 3. The REFERENCE-DEPENDENT guard ────────────────────────────────────────
 
-/// The aeon reference tree: `AEON_DIR`, or the workspace default.
+/// The reference tree [`aeon_dir`] names when `AEON_DIR` is not set: the owner's
+/// LIVE aeon working checkout.
+///
+/// It is a constant rather than a literal at the resolution site because the write
+/// precondition ([`crate::seam2::require_named_reference_tree`]) names it in its
+/// refusal. The fallback and the refusal that describes it therefore cannot name
+/// different paths.
+pub const LIVE_TREE_FALLBACK: &str = "/home/volence/sonic_hacks/aeon";
+
+/// The aeon reference tree: `AEON_DIR`, or [`LIVE_TREE_FALLBACK`].
+///
+/// The fallback serves READS only. A write into the reference tree requires
+/// `AEON_DIR` to name it — see [`crate::seam2::require_named_reference_tree`].
 pub fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
+    PathBuf::from(std::env::var("AEON_DIR").unwrap_or_else(|_| LIVE_TREE_FALLBACK.to_string()))
 }
 
 /// `true` when `SIGIL_STRICT_GATE` is set — the pre-merge fidelity run, where a

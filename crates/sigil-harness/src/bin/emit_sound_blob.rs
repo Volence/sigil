@@ -49,6 +49,18 @@ fn main() {
     let aeon_path = Path::new(&aeon);
     let out_path = Path::new(&out_dir);
 
+    // This binary is handed its reference tree on the command line — aeon's own
+    // `build.sh` runs it as `--aeon . --out-dir engine/sound/generated` from the tree
+    // it is building. The emitters' write precondition
+    // (`seam2::require_named_reference_tree`) asks that the tree a write goes into be
+    // NAMED rather than resolved from a hardcoded fallback, and `--aeon` names it, so
+    // the argument is published as this process's `AEON_DIR`. One rule covers every
+    // writing process; the argv caller is not an exception to it. Set before any
+    // emitter runs, while the process is still single-threaded.
+    if std::env::var_os("AEON_DIR").is_none() {
+        std::env::set_var("AEON_DIR", aeon_path);
+    }
+
     if let Err(err) = sigil_harness::seam1::emit_sound_blob(aeon_path, out_path) {
         eprintln!("error: emit_sound_blob (seam-1 resident blob) failed: {err}");
         process::exit(1);

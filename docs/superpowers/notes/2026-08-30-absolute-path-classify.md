@@ -291,6 +291,7 @@ rows-that-change-behaviour (398). It should be re-derived before anything prices
   `golden/`, `pins.rs` or `repin.toml`. Whether `ensure_generated` should write into the
   reference tree AT ALL — rather than into a caller-supplied directory — remains a design
   question for the aeon-owned landing lane.
+- **The hardcoded `AEON_DIR` default is CLOSED ON THE WRITE SIDE** (d-17, 2026-08-30, `2026-08-30-aeon-dir-write-requires-naming.md`); the read-only fallback is unchanged.
 - **The hardcoded `AEON_DIR` default is enumerated, not changed.** 93 `.rs` files / 113
   non-comment occurrences; 29 of the 127 files that resolve `AEON_DIR` by literal or helper
   can reach the write. Recommendation and blast radius in the write-guard note.
