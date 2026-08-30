@@ -43,6 +43,46 @@ it**. (2) It is a positive witness **only for a length-neutral parcel**. On chai
 +4 bytes, 282 symbols sliding +16 — that table moving is *expected*, and it reverts to
 something to reconcile rather than something that proves anything.
 
+### CHAINS 194 AND 195 ARRIVED FROM THE AEON LANE — verified here, with three practices worth keeping (2026-08-30)
+
+**What arrived.** Chain 194 (`424feb39` freeze, `47d821ca` attest **RED** 4173/4/2) and chain 195
+(`cffdb56c` freeze, `1ebfbcca` attest PASSED 4177/0/2, `pins.rs` untouched in the freeze, verified by
+`git show --stat` not by their report), both landed through the aeon lane per the landing-lane
+division below. The four reds were **this repo's own port-harness pins**, zero ROM bytes: a
+hand-typed `COLLISION_DATA` length from Parcel K4 that could not follow Sonic's re-cut art, and a
+seam-table row `act_descriptor_port` lacked for a new cross-seam program. Their fix `a20cb953`
+(merged `9437c15f`) derives both.
+
+**1. A peer's harness fix is REVIEWED here even though it LANDS there — and the review re-derives,
+it does not re-read.** `0x1D204` was reproduced from the seven embeds' blob sizes at the aeon
+revision (`git cat-file -s`, sum 119300), never from the pin; the listing's extent agreed; the new
+symbol pin is its sibling `+0x4E` in both shapes. The reds were the 194 attest record itself, which
+is better red-first evidence than a log. The one gap — 4179 ran vs 4178 by `git grep -F '#[test]'`
+— is the documented grep-vs-`--list` gap and was named as such rather than waved through or
+escalated. **The hub assigned the LANDING to this lane and retracted on the citation** (this file,
+"Landing-lane division"); the ownership rule is committed text, and the right answer to a
+misassignment is the line number, not compliance.
+
+**2. HOLD YOUR OWN MASTER PUSHES DURING A PEER'S `--attest` → `git push` WINDOW.** Chain 181's
+`sigil_rev` was orphaned by a rebase between attest and push. A push from this lane in that window
+forces exactly that rebase on the peer. So from the moment aeon reported their freeze running to
+the moment `1ebfbcca` was on `origin/master` (17:29Z–17:45Z), this lane committed nothing to master
+and said so to them, and they said when it ended. Standing-permission-to-push does not override it:
+the grant covers finished work, and a push that damages a peer's in-flight record is not finished
+work.
+
+**3. "DID YOUR AGENT KILL MY PROCESS?" IS ANSWERED BY GREPPING THE TRANSCRIPT, NOT BY ASKING THE
+AGENT.** Aeon's freeze died twice inside the window this lane's R7 agent was alive. Checked: the
+agent's full transcript for `pkill|killall|kill -N|kill <pid>|xargs kill|TaskStop` (only my own
+message text and the deferred-tool list), its scratch scripts, this repo's freeze tooling for
+`kill|flock` (none), `earlyoom`'s journal (active, `-m 6,3 -s 8,4`, no kill line, mem avail ~68%),
+and the agent's own refreeze, which had COMPLETED (`refreeze --check: OK`), not died. Two
+discriminators handed over for their third run: the child's exit status (137 SIGKILL vs 143
+SIGTERM) and whether the killed invocation was a foreground tool call inside a harness timeout.
+Their third run survived; the working hypothesis is the task harness, filed by them, unproven.
+Swap on this box was at 19 of 23 GB during it — not the cause today, but a number to watch when
+three lanes build at once.
+
 ### AEON-REF-DRIFT-NIGHTLY — THE HARNESS IS BUILT AND THE RECORD SEAM IS DELIBERATELY EMPTY (2026-08-30)
 
 SIGIL-DECOUPLE step 1's job exists: `scripts/nightly_ref_drift.sh`, fired by
