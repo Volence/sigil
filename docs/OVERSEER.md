@@ -5055,3 +5055,39 @@ exactly that question, and it took one reading to convert a comfortable green in
 evidence goes through `scripts/landing-run.sh`, or, when a scoped run is genuinely wanted, is
 invoked with output to a file and the exit taken from `PIPESTATUS[0]` — never through a pipe whose
 last stage is a text filter.
+
+### THE REMEDY FOR THE SILENT-EXIT BUG HAD ITS OWN SILENT-EXIT HOLE (2026-08-30)
+
+One hour after banking *take the exit from `PIPESTATUS[0]`, never from a pipe whose last stage is
+a text filter*, this lane pasted that prescription into its own shell and got `REPIN_EXIT=` —
+blank. Measured:
+
+```
+$ true | false
+bash-style PIPESTATUS[0]=[]
+zsh-style  pipestatus[1]=[0]  pipestatus[2]=[]
+```
+
+**`PIPESTATUS` is bash. This session's shell is zsh, which spells it `pipestatus`, lowercase and
+1-indexed, and silently expands the bash name to an empty string.** So the remedy fails in the
+same DIRECTION as the bug it fixes: an empty string is not a failure to any casual check, so the
+fix for a silent green produces its own silent green.
+
+**Scope, checked rather than assumed.** `scripts/landing-run.sh` is `#!/usr/bin/env bash`, so its
+`PIPESTATUS[0]` is correct and needs no change. **The exposure is ad-hoc commands typed into a zsh
+session — which is exactly where the original `tail -120` error was made.** The remedy was right
+for the wrapper and wrong for the place the mistake actually happens, which is the worst possible
+split because the wrapper is the half that already could not fail.
+
+**The durable form is simpler than either spelling: DO NOT PIPE THE RUN.**
+`cargo test … > log 2>&1` then `$?` has no pipeline, no portability question, and no truncation.
+Reach for `pipestatus`/`PIPESTATUS` only when a filter must be inline, and then know the shell.
+
+**Why this is worth a section rather than a fix.** It was relayed to a peer as advice before it
+was run. Three claims died to execution in this session — a peer's snapshot comparison, this
+lane's `set -euo pipefail` assertion about a contract's heal line (which was WRONG and was killed
+before sending), and this one (which was RIGHT in general and wrong in the environment, and was
+NOT killed before sending). All three were reasoning about a mechanism, in the register that feels
+most reliable. The lesson is not *be more careful*: it is that **a prescription is not verified
+until it has been run in the environment it prescribes for**, and that the register which makes a
+mechanism claim feel obvious is the same one that makes it go unrun.
