@@ -10963,3 +10963,58 @@ demo_debug = "51056291/101323"
 lean = "71ae6ed4/674816"
 s4 = "f403f461/719347"
 s4_debug = "50545389/736354"
+
+[[entry]]
+name = "item5-cycles-variants"
+ab = "aeon 445a5856 (item 5) + 73b07a4f (the poison re-purpose), chain 198. An authored preset document's cycle script and variant slots now reach the ROM through the real constructors. Four shapes rebuilt on the merged tree against sigil 079cec97: s4 719440/DF76DE71 (+93 vs 719347), s4.debug 736454/0D6D1175 (+100 vs 736354), demo 96458/30A31D81 and demo.debug 101323/51056291 BYTE-IDENTICAL to chain 197 - a negative control on TWO axes, since it holds across the compiler change as well as across the parcel. Release +93 = 62 bytes of new content (a 46-byte preset record, an 8-byte cycle script, an 8-byte variant, measured from listing spans; Art_Sonic shifts 0x7242A->0x72468, exactly $3E in both shapes) + 31 bytes of deb2 appendix; debug +100 = 62 + 4 (the dc.l table row) + 34 appendix. Appendix figures are DERIVED arithmetic on measured EndOfRom and file sizes, labelled as derived because the prefix-packed appendix could not be confirmed a second way. Byte golden tools/editor_palette_golden.py has two independent arms - a decode arm reading each record out of the ROM at the listing's addresses and comparing field-by-field against the JSON including the period-1 lowering, and a twin arm holding the document byte-for-byte against OJZ_ShimmerCycle and Variant_Water_Deep - with three red-first proofs that go red independently. Four generator refusals proven red-first with the mutation shown on disk, including period < 2 naming the AUTHOR's number. Tool suite 1883 passed / 0 failed / 6 skipped. Also in this chain: the unit-fold poison re-purposed onto sigil's cross-type refusal, so the tree now requires sigil 6a8b3ecd or later."
+aeon_rev = "73b07a4f3ae375b994de3822a13fbcab647c830a"
+note = "item 5: authored cycles and variants reach the ROM; poison re-purposed onto the cross-type refusal"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "1de56842"
+full_size = 736806
+anchor_crc = "234ea90c"
+anchor_end = 0xa7f38
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "2507bcd4"
+full_size = 614997
+anchor_crc = "42adb0e9"
+anchor_end = 0x8c724
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "30a31d81"
+full_size = 96458
+anchor_crc = "a9763013"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "51056291"
+full_size = 101323
+anchor_crc = "992c305a"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "a4cfb6f5"
+full_size = 674816
+anchor_crc = "4c86840d"
+anchor_end = 0xa4c00
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "df76de71"
+full_size = 719440
+anchor_crc = "f5a0aa5b"
+anchor_end = 0xa5c82
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "0d6d1175"
+full_size = 736454
+anchor_crc = "45832185"
+anchor_end = 0xa7f38
