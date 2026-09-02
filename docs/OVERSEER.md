@@ -447,6 +447,28 @@ because those read struct field *declarations* rather than goldens, so the subje
 generate their expectation. Aurora's bar: **a diff surviving a self-generated baseline is very hard
 to argue away.** One absorbed, one survived, same run.
 
+## The drift watch's timer — the unit name and how to switch it off
+
+Written here so the owner can turn it off without asking anyone, and so a successor does
+not have to reconstruct the unit name from the scripts.
+
+```sh
+systemctl --user status  sigil-ref-drift.timer     # is it armed, and when does it next fire
+systemctl --user disable --now sigil-ref-drift.timer   # off, immediately and across reboots
+systemctl --user enable  --now sigil-ref-drift.timer   # on
+journalctl --user -u sigil-ref-drift.service -n 50     # what the last firing said
+```
+
+The unit files are committed at `scripts/systemd/`; a `--user` unit lives outside every
+repo, so **installing them is a copy to `~/.config/systemd/user/` and nothing in any repo
+can tell you whether that happened** — ask `systemctl`, never a doc. The job's own record
+is `~/.local/state/sigil-ref-drift/observations.jsonl` (append-only) with its run log
+beside it at `nightly.log`.
+
+**As of this writing the timer is NOT installed and NOT enabled** (`systemctl --user
+list-unit-files` shows only `sigil-source-gates` and `aeon-effects-gates`). That is a
+snapshot, not a property — ask the command.
+
 ## Boot
 
 > You're the overseer for this repo. Read `docs/OVERSEER.md` first, then
