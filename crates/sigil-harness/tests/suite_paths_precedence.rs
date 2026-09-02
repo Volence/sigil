@@ -488,6 +488,31 @@ fn the_step_3_derivation_is_proven_from_a_linked_worktree() {
         "CARGO_MANIFEST_DIR"
     )));
     let walked = walked_suite_root();
+
+    // WHICH SHAPE THIS RUN EXERCISED, said out loud. The production anchor is a crate
+    // subdirectory, so git answers `../../.git` when this binary was compiled in a plain
+    // checkout and an absolute path when it was compiled in a linked worktree. Both must
+    // work, and only one of them is exercised HERE — the other is covered unconditionally
+    // by `step_3_survives_every_shape_git_rev_parse_can_answer`.
+    //
+    // Printing it is the cheap fix for how the third shape survived: this row was green in
+    // every agent worktree for as long as it existed, and its output never said that the
+    // configuration it had checked was the easy one.
+    let raw = Command::new("git")
+        .args(["rev-parse", "--git-common-dir"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| "<git did not answer>".to_string());
+    println!(
+        "production anchor {} -> git --git-common-dir answers `{raw}` ({}); the other shapes are \
+         covered by step_3_survives_every_shape_git_rev_parse_can_answer",
+        env!("CARGO_MANIFEST_DIR"),
+        if raw.starts_with('/') { "absolute — a linked worktree" } else { "RELATIVE — a plain checkout" }
+    );
+
     match (live, walked) {
         (Ok(l), Some(w)) => assert_eq!(
             l, w,
