@@ -16,9 +16,34 @@
 # an unchanged pin file is a POSITIVE result rather than an absence. Run it at the
 # end (this script tells you the exact command) and do not trust the tree until it
 # passes.
+#
+# AND THIS FILE MISSED ITS OWN ARGUMENT ON THE ONE INPUT IT CHOOSES ITSELF. Every
+# paragraph above is about not trusting an absence, and the assembler — the program
+# that produces every byte this script then controls — was picked with
+# `${SIGIL_BIN:-$SIGIL_ROOT/target/release/sigil}`: whatever a shared checkout last
+# relinked. On 2026-09-02 that certified a byte-neutrality proof against a PRE-MERGE
+# compiler and printed four `MATCHES THE GOLDEN` lines doing it. The tool is now
+# resolved and PROVED to correspond to this tree before anything else happens, in
+# `scripts/lib/sigil_tool.sh`, which carries the reasoning.
 set -euo pipefail
 
 SIGIL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# ── STEP 0. THE ASSEMBLER, BEFORE ANYTHING ELSE ──────────────────────────────────
+# First, because it is the one input this script cannot re-derive later and because a
+# run with the wrong tool is worthless however well the rest goes — and because
+# refusing here touches no peer's repository: no fetch, no worktree, nothing written.
+# `sigil_tool_resolve` builds the tool from THIS tree when SIGIL_BIN is unset (never
+# the shared target/release/sigil), honours an explicitly pinned one, heads the log
+# with its --version self-report, and proves it corresponds to this tree.
+#
+# REF_TARGET is hoisted here from step 5 because the tool is built into it. Its
+# default is unchanged.
+REF_TARGET="${REF_TARGET:-$SIGIL_ROOT/../.sigil-ref-target}"
+mkdir -p "$REF_TARGET"
+# shellcheck source=lib/sigil_tool.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/sigil_tool.sh"
+sigil_tool_resolve "$SIGIL_ROOT" "$REF_TARGET"
 
 # ── THE AEON REPOSITORY, AND WHY `$SIGIL_ROOT/../aeon` WAS WRONG ─────────────────────
 # SIGIL_ROOT is this script's own directory's parent, which is correct for the sigil
@@ -141,13 +166,10 @@ fi
 #    target/release/sigil as a side effect of provisioning: that artifact is
 #    consumed by other lanes and moving it is a broadcast-worthy act.
 echo "==> emit_sound_blob + engine/sound/generated"
-REF_TARGET="${REF_TARGET:-$SIGIL_ROOT/../.sigil-ref-target}"
-# The assembler that runs is a BUILD INPUT this repo does not pin: it comes from the
-# environment. SIGIL_BIN lets a caller name the binary it actually wants judged —
-# the nightly drift job builds its own into a dedicated target dir and hands it here,
-# rather than picking up whatever a shared checkout last relinked.
-SIGIL_BIN="${SIGIL_BIN:-$SIGIL_ROOT/target/release/sigil}"
-mkdir -p "$REF_TARGET" "$W/engine/sound/generated"
+# The assembler is NOT chosen here any more. It was resolved and proved against this
+# tree in step 0, before this run touched anything, and $SIGIL_BIN below is that
+# binary. REF_TARGET was hoisted there with it.
+mkdir -p "$W/engine/sound/generated"
 ( cd "$SIGIL_ROOT" && CARGO_TARGET_DIR="$REF_TARGET" cargo build --release --bin emit_sound_blob )
 
 # 6. THE LISTINGS, and they are NOT optional. Several port gates resolve a
@@ -207,4 +229,9 @@ Provisioned. NOW PROVE IT, because "no errors" is not a witness:
 Expect the burndown warnings, then "pins.rs unchanged". That line is the positive
 witness that this tree reproduces $REV's placement. Anything else means the
 provisioning is wrong, NOT that the pins have drifted.
+
+Built by: $SIGIL_BIN
+Its full --version self-report heads this log. Quote it, not this line, when the
+measurement is written up: a result is only about the compiler that produced it, and
+a CRC cannot say which one that was.
 EOF
