@@ -45,17 +45,37 @@ const CHILD_VAR: &str = "SIGIL_BARE_RUN_CHILD";
 
 /// THE CHILD. It is reference-dependent on purpose: it opens with the same guard every
 /// port gate opens with, so what this file measures is the real path and not a mock of it.
+/// THE WITNESS TOKENS the parent matches on. Deliberately NOT spelled in skip vocabulary,
+/// and `tests/skip_marker_lint.rs` is what made that explicit — it flagged an earlier
+/// `"CHILD skipped"` here under its lexical detector.
+///
+/// The lint is right, and the fix is not a rewording to get past it. A `skip:`-shaped line
+/// announces that a SUITE ROW measured nothing, and `scripts/landing-run.sh` and
+/// `refreeze.rs` count those out of a run's log. These lines are neither: they are a child
+/// process reporting to its parent, which asserts on them. Spelling them like skips would
+/// put a skip in the log of a run that skipped nothing — the same wrong number the marker
+/// discipline exists to prevent, pointing the other way.
+///
+/// Nothing is lost by not announcing a skip here: when the guard returns `None` it is
+/// `test_support::reference_tree` that has already printed the canonical
+/// `skip: reference ROM not at …` line, and the parent asserts on that path too.
+const WITNESS_RAN: &str = "CHILD-WITNESS guard yielded a tree";
+const WITNESS_NO_TREE: &str = "CHILD-WITNESS guard yielded no tree";
+
+/// THE CHILD. It is reference-dependent on purpose: it opens with the same guard every
+/// port gate opens with, so what this file measures is the real path and not a mock of it.
 #[test]
 fn the_child_opens_a_reference_dependent_gate() {
     if std::env::var_os(CHILD_VAR).is_none() {
-        // In the parent this row is inert; `a_bare_run_refuses_and_a_declared_partial_run_
-        // says_its_size` is what drives it.
-        println!("parent: this row runs only in the child");
+        // Inert in the parent, and SILENT: an announcement here would be an early return
+        // that says something, which is the shape the skip-marker lint holds to one
+        // spelling. This row announces nothing because it did nothing.
+        // `a_bare_run_refuses_and_a_declared_partial_run_says_its_size` is what drives it.
         return;
     }
     match sigil_harness::test_support::reference_tree(&["engine"]) {
-        Some(aeon) => println!("CHILD ran against {}", aeon.display()),
-        None => println!("CHILD skipped"),
+        Some(aeon) => println!("{WITNESS_RAN} {}", aeon.display()),
+        None => println!("{WITNESS_NO_TREE}"),
     }
 }
 
@@ -143,7 +163,7 @@ fn a_bare_run_refuses_and_a_declared_partial_run_says_its_size() {
     let (ok, partial) = run_child(&[(ALLOW_PARTIAL_VAR, Some("1"))]);
     assert!(ok, "a declared partial run must pass — that is what declaring it is for.\n{partial}");
     assert!(
-        partial.contains("CHILD skipped"),
+        partial.contains(WITNESS_NO_TREE),
         "the partial run must leave the reference-dependent row UNMEASURED. It reported \
          otherwise, which means it found a tree — and a partial run that quietly measures \
          against the live checkout is the behaviour the refusal exists to prevent.\n{partial}"
