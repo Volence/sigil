@@ -3637,3 +3637,20 @@ and the 31-file difference was files whose private helper carried a name of its 
 in `crates/*/tests/*.rs` to the resolver, with `test_support.rs`, `seam2.rs`, the CLI's
 argv publication and the artifact-writing tools as the derived exceptions rather than a typed
 roster. The same file already proves the shape works)
+
+### A doc comment that enumerates cases is a claim with no gate behind it (2026-09-02)
+`derive_suite_root_from`'s comment listed TWO output shapes of `git rev-parse
+--git-common-dir` and there are three; the missing one (`../../.git`, from a crate
+subdirectory of a plain checkout) is the shape production uses, and it took the merged suite
+red in six rows. Fixed with `--path-format=absolute` and an enumerating test
+(`step_3_survives_every_shape_git_rev_parse_can_answer`), so the case list is now executed
+rather than asserted in prose.
+The generalisable half: this repo has other comments that enumerate cases nothing checks —
+`test_support.rs` on which precedence steps can answer, `nightly_source_gates.sh` on the four
+buckets a file can land in, `strict_census.rs` on its two detectors. Each is a list a reader
+trusts and no runner reads.
+— OPEN (kill: no single gate closes this class. The cheap, repeatable move is the one this
+parcel ended up making — where a comment enumerates N cases that a function must survive,
+write the row that iterates them and reports what each case actually produced, so an
+unlisted case is a red row instead of a missing sentence. Worth doing at the next touch of
+each site rather than as a sweep)

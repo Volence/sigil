@@ -904,3 +904,129 @@ The row now prints both quantities on every run, per the amendment:
 ```
 step-3 bed: wrong method -> Some("…/suite/repo/nested"); bed's suite root -> …/suite; RETURNED SOURCE -> …/suite
 ```
+
+---
+
+# THE MERGED TREE WENT RED, and the bed could not have caught it
+
+Merged master `c58475ac`, strict gate, reference tree `.aeon-ref-196` at `5944dad5`: 4192
+passed, **6 failed**, 2 ignored, exit 101
+(`/home/volence/sonic_hacks/.sigil-reverify-suite.log`). All six were mine. The fix is
+`b7ef591a`; this section is what it cost and why the gates in this packet did not stop it.
+
+## The bug
+
+`git rev-parse --git-common-dir` has **three** output shapes. `derive_suite_root_from`
+handled two, and its doc comment enumerated two — *"relative (`.git`) when git answers from a
+checkout's own root, absolute from a worktree"*. Reproduced here directly, in a scratch repo,
+before touching anything:
+
+```
+anchored at a plain checkout's ROOT      ->  .git                                relative
+anchored at a plain checkout's SUBDIR    ->  ../../.git                          relative, WITH `..`
+anchored anywhere in a linked WORKTREE   ->  /home/volence/sonic_hacks/sigil/.git   absolute
+```
+
+**The missing shape is the one production uses.** `CARGO_MANIFEST_DIR` is always a crate
+subdirectory. `Path::parent()` trims components *lexically* and does not canonicalise, so
+`here.join("../../.git")` followed by two `parent()` calls yields `<crate>/..` — a path whose
+`aeon/` sits one directory from where the walk was looking. Step 3 refused, and the merged
+log carries the bogus path verbatim in every failure:
+
+```
+/home/volence/sonic_hacks/sigil/crates/sigil-harness/.. is this repository's parent but holds
+no aeon/ + empyrean/ — it is not a suite root
+```
+
+## Why every gate in this packet was green
+
+**Because I developed and swept in an agent worktree, where git returns the absolute form.**
+The suite normally runs from the main checkout, where it does not. Both of my step-3 rows
+were, in hindsight, aimed at the working configuration:
+
+* the bed row anchors at the bed's worktree **root** — absolute, shape 3, the easy one. The
+  bed was right about worktrees and silent about subdirectories, and the anchor being a root
+  rather than a crate subdirectory was never a decision I made, only one I never noticed
+  making;
+* the production-half assertion *does* anchor at `CARGO_MANIFEST_DIR` and **would** have
+  caught it — it is in fact the row that named the bug on master. It just never ran in a
+  plain checkout, because no sigil agent ever compiles in one.
+
+So the suite proved step 3 in the two configurations where it worked and in none where it did
+not. **This is the contract clause's own warning, inverted.** The clause worried about a row
+that proves nothing outside a worktree; what I shipped was a resolver that *works* only
+inside one. Building the bed to satisfy the clause is what fixed my attention on worktrees and
+took it off the plain checkout — the amendment was right and following it was not sufficient.
+
+The lesson is narrower and more useful than "test more configurations": **a doc comment that
+enumerates cases is a claim with no gate behind it.** Mine listed two of three and was wrong
+from the day it was written; nothing could go red when it was.
+
+## The fix
+
+`--path-format=absolute`, which makes the third shape disappear. Already this repo's own
+idiom — `crates/sigil-cli/build.rs:283` resolves its git dirs exactly that way — and in git
+since 2.31 (2021); this box runs 2.55.0. **Not** canonicalising the joined path and **not**
+special-casing `..`: both are this code guessing at what git meant, when git can be asked.
+
+A non-absolute answer is now a **refusal** rather than a join. Joining is what silently
+produced a lexically-wrong path; a git that stops honouring the flag should stop this
+resolver loudly instead of moving the walk one directory sideways.
+
+## The row
+
+`step_3_survives_every_shape_git_rev_parse_can_answer` does not pick a configuration — it
+**enumerates** the four anchors a caller can hand the resolver, reports what git answered at
+each, and requires one suite root from all four:
+
+```
+shape [plain checkout ROOT] -> .git
+shape [plain checkout CRATE SUBDIR (what CARGO_MANIFEST_DIR names)] -> ../../.git
+shape [linked worktree ROOT] -> /tmp/…/suite/repo/.git
+shape [linked worktree CRATE SUBDIR] -> /tmp/…/suite/repo/.git
+```
+
+A control asserts the shapes genuinely differ before the equality is asserted — if git
+answered identically everywhere, agreement would prove nothing, which is precisely how the
+missing shape survived review. So a shape nobody thought of is now a failing row rather than a
+sentence missing from a doc comment.
+
+**Red-first needed no poison.** The row fails on the unfixed resolver, at exactly the
+crate-subdir anchor, quoting the same lexical path the merged suite log carries:
+
+> `step 3 REFUSED at the 'plain checkout CRATE SUBDIR (what CARGO_MANIFEST_DIR names)' anchor. anchor: …/suite/repo/crates/sigil-harness · git answered: ../../.git · error: …/suite/repo/crates/sigil-harness/.. is this repository's parent but holds no aeon/ + empyrean/ — it is not a suite root`
+
+The production-half row now also **prints which shape it exercised** — anchor, git's raw
+answer, and whether that answer is absolute (worktree) or relative (plain checkout) — and
+names the row covering the shapes it did not. A green whose output does not say which of
+several configurations it checked is the same artifact as a green that checked only the easy
+one.
+
+## All six failures, one cause — confirmed, not assumed
+
+The coordinator flagged that `a_bare_run_refuses_and_a_declared_partial_run_says_its_size`
+failed on a *different* assertion ("the refusal must say it DECLINED a tree it could have
+used") and asked whether that was a second bug. It is not, and the mechanism is worth stating:
+with step 3 refusing, `aeon_checkout()` returns `Err`, so `aeon_dir()` reaches
+`no_named_reference_tree(&refusal, None)` — `derived` is `None`, so `bare_run_refusal` emits
+"Nothing was derived either." instead of "This run DECLINED to use …". Same root, different
+branch of the message.
+
+Established by experiment rather than reasoning: with `derived_suite_root()` stubbed to return
+the exact error the merged log shows, the failing set is
+`a_bare_run_refuses_and_a_declared_partial_run_says_its_size`,
+`a_write_into_the_reference_tree_refuses_unless_aeon_dir_named_it` (×2 binaries),
+`the_child_opens_a_reference_dependent_gate` and
+`the_resolver_follows_the_contract_precedence` — five of the six. The sixth,
+`the_step_3_derivation_is_proven_from_a_linked_worktree`, is not reachable by that stub because
+it calls `derive_suite_root_from` directly; the merged log shows it failing on its production
+half with the same lexical path, and its **bed half printed a fully correct pair and passed**
+— the clearest single illustration in this whole arc that a bed proves the shape you built it
+in.
+
+After the fix, every affected binary is green: `suite_paths_precedence` 3/3,
+`bare_run_refuses` 3/3, `reference_tree_named_write` 1/1, `reference_tree_write_guard` 2/2,
+`source_gate_classification` 3/3, `skip_marker_lint` 2/2, harness lib 189/189 — 203 tests, 0
+failures. One gate behaved exactly as designed throughout: the write-guard's `UNMEASURABLE`
+arm refused to assert against an unresolvable default rather than passing vacuously, which is
+why that failure names the cause instead of a symptom.
