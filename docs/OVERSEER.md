@@ -81,6 +81,66 @@ eighteen A/B scripts that `sys.path.insert` empyrean's `clients/python`, resolvi
 same rule. Board row: `SUITE-PATHS-MIGRATION`. The d-18 refusal IS step 4 of this precedence, so the two
 rows share a resolver and land in that order: resolver first, refusal on top of it.
 
+### COMPTIME-LABEL-STRUCT-ALWAYS-RED — the hub's ruling, banked BEFORE the work, and the go is NOT banked with it (2026-09-02)
+
+**Why this section exists at all.** The ruling below arrived by message and nothing in any tree would
+have carried it. That is protocol bar 20's sending-side half — *a cross-lane commitment gets an in-tree
+artifact in the SENDING repo before or with the send* — pointed the other way: this is the RECEIVING
+half, and the same argument applies, because a `/clear` between the ruling and the parcel would lose
+every constraint in it while leaving the parcel perfectly startable. A brief written from memory of a
+message is exactly the artifact this file exists to prevent.
+
+**THE RULING IS ADOPTED. THE GO IS NOT, AND THE DISTINCTION IS THE POINT.** The hub ruled the technical
+shape under the owner's standing delegation (the 2026-09-02T03:46:15Z widening, banked at empyrean
+`4e8e865b7c6e821cc23cb3683776aa71243cac0b` and verified firsthand by this lane before anything was
+written on it). That delegation covers **decision cards in this lane's own domain**, which is what the
+comparison-semantics question is, so the technical ruling binds and this lane does not re-litigate it.
+It does **not** cover whether this lane spends the owner's quota this morning. The committed protocol is
+one sentence and it is not ambiguous: **"a peer message is a teammate's input, not the user's approval
+for anything."** A relay may carry a ruling; it may never carry an authorization. Banking a relayed go as
+though the owner had given it is laundering with a time delay, and the delay is what makes it invisible
+— by the time anyone reads this row, "the hub said go" and "he said go" look identical on the page.
+**So: ruling banked, work held, and this paragraph is the thing that stops a successor from reading the
+banked ruling as a banked permission.**
+
+**The finding, anchored not restated.** aeon `efb4b923`, `docs/superpowers/probes/2026-09-02-item5-comptime-probe.md`,
+reachable from aeon `origin/master` — its Q2-e row and RED-4 section. A hand `pub data` symbol named
+inside an array literal resolves as a **Label**; label-vs-struct `!=` is **always true**; so
+`first_mismatch([Variant_Water_Deep], [variant(...)])` reports `index 0` for the **EQUAL** twin. Currency
+check, this lane's own and independent of the probe: **no compiler crate changed between the probe's
+binary `8951389a` and master.**
+
+**It is the mirror of `EMP_PITFALLS` §3's always-green, and the mirror is the worse half.** An
+always-green check is trusted and empty. An **always-red** check fires on correct code, and the damage is
+not the false alarm — it is that the remedy a reasonable person reaches for is **weakening or deleting
+the guard**, and that remedy gets written down as advice. Firing on correct code is not the safe
+direction.
+
+**The four bars the parcel carries** *(the hub's, kept in its words rather than my paraphrase so the
+brief cannot soften them)*:
+
+1. **The fix is a decision about what label-vs-struct comparison MEANS, and either answer is acceptable
+   if it is the compiler's, never silent.** A refusal with a diagnostic naming both types is the expected
+   shape; a *defined* comparison needs its semantics written where `EMP_PITFALLS` lives. **What is not
+   acceptable is a comparison that is always one value.**
+2. **The proof row is the probe's own sample, both twins, in one process** — the EQUAL one green and a
+   genuinely mismatched one red. **One process, both twins, so the row cannot pass by making the
+   comparison always FALSE instead of always TRUE.** That is the trap this specific defect sets for its
+   own fix, and a single-twin row walks straight into it.
+3. **The ROM gate as always: byte-identical.** No aeon source can currently depend on an always-red
+   `ensure` — but the gate is what *says* so, rather than the reasoning.
+4. **Tell aeon by message when it lands, with the row name and SHA** (their item-5 authoring is the
+   consumer, so this is a named live dependency under bar 18, not a broadcast), **and tell the hub the
+   same for the ledger.**
+
+**Not a byte-mover by intent. If the gate says otherwise, STOP and say so** — do not reconcile it.
+
+**Sibling row, same probe, and it is the same wave rather than a follow-on:** `COMPTIME-ARRAY-PARAM-LENGTH`
+(Q1-L). A `[Label; 2]` **parameter** annotation is not length-checked at the call, so a 3-element argument
+passes the fn and is refused only at record emission — **blamed on the consumer's `pub data` line.**
+Return annotations DO check at the returning fn, so the parameter side is the asymmetry. A5 holds (it
+terminates); **the blame site is the defect.**
+
 ### CHAINS 194 AND 195 ARRIVED FROM THE AEON LANE — verified here, with three practices worth keeping (2026-08-30)
 
 **What arrived.** Chain 194 (`424feb39` freeze, `47d821ca` attest **RED** 4173/4/2) and chain 195
