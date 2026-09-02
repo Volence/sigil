@@ -161,11 +161,15 @@ Full census of every `jmp`/`jsr` absolute operand in each ROM (`absw_census.py`)
 
 **Two corrections to the row, both measured:**
 
-1. **In the plain family (`s4`, `lean`, `config_b`, both demos) there is NO abs.l side at all**
-   in ROM range above the ceiling. Nothing there can flip on a shrink. The exposure is
-   **growth**: 58 bytes (golden) / 68 bytes (live) of upstream growth pushes `Sound_PlaySFX`
-   over `0x8000` and widens eleven sites by 2 bytes each. *"Growth is the safe direction; only
-   a shrink is dangerous"* is **backwards for this shape today.**
+1. **In the plain family (`s4`, `lean`, `config_b`, both demos) there is no abs.l target anywhere
+   near the ceiling.** Stated precisely, because the table says less than the sentence would if
+   left loose: the band `[0x8000, 0x10000)` is **empty of abs.l targets** in all five plain
+   shapes; the nearest abs.l targets are the three at `0x10002` and above (the object bank), i.e.
+   **~32 KB past the ceiling**. A shrink cannot pull those under `0x8000` by any realistic
+   amount, so **the shrink direction has no exposure in the plain family**. The exposure is
+   **growth**: 58 bytes (golden) / 68 bytes (live) of upstream growth pushes `Sound_PlaySFX` over
+   `0x8000` and widens eleven sites by 2 bytes each. *"Growth is the safe direction; only a
+   shrink is dangerous"* is **backwards for this shape today.**
 2. **The binding symbol is not `Sound_PlaySFX` or `SoundTablesZ80_Head`.** In the debug family
    it is `Raster_Install`, and the tightest margin in the whole set is **26 bytes** (`s4.debug`
    golden). `SoundTablesZ80_Head` at `0x8000` is a *Z80 section VMA* (`vma: $8000`), in a
