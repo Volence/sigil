@@ -231,7 +231,12 @@ AT="aeon ${AEON_SHA:0:8} / sigil ${SIGIL_CLOSURE:0:8} (linked ${SIGIL_LINKED:0:8
 # provisioning at a live tip is a supported shape rather than a refusal.
 BUILD_START=$(date +%s)
 rm -f "$DRIFT_AEON_TREE"/*.bin "$DRIFT_AEON_TREE"/*.lst 2>/dev/null
+# REF_BUILD_DEMO=1: this job declares four shapes in DRIFT_SHAPES and must therefore
+# BUILD four. A copied golden cannot exhibit drift, and an unmeasured shape pins the
+# verdict at NOTHING MEASURED however clean the rest is, so without this the job's best
+# possible night was NOTHING MEASURED and QUIET was unreachable.
 SIGIL_BIN="$SIGIL_BIN" REF_TARGET="$CARGO_TARGET_DIR" AEON_REPO="$AEON_MAIN" \
+    REF_BUILD_DEMO=1 \
     "$SIGIL_DRIFT/scripts/provision-aeon-ref.sh" "$DRIFT_AEON_TREE" "$AEON_SHA" \
     > "$STATE/provision.log" 2>&1
 PROVISION_RC=$?
