@@ -9,8 +9,35 @@ itself measures nothing, and that is the failure this whole project exists to re
 The record is the **aeon lane's** artifact (their plan's §2 item 1: *"the aeon-committed
 expected CRCs step 1's nightly job reads. Not merely a file: which shapes, at what
 cadence, and what a mismatch means when the assembler has legitimately moved"*). This
-document defines only the **protocol** between the job and that record — the format,
-storage and cadence stay entirely on their side of the seam.
+document defines only the **protocol** between the job and that record — the format and
+storage stay entirely on their side of the seam.
+
+## The append cadence — a REQUIREMENT, and this document did not have one
+
+**One entry per landing, appended by the aeon lane: the four shapes with size, CRC and the
+aeon revision.** Accepted by that lane 2026-09-02 as a requirement rather than a
+recommendation, via their `tools/drift_record.py measure` verb, which emits a candidate
+entry for review instead of writing one.
+
+**Why it is stated here at all.** Everything above defines how to ASK the record a
+question; nothing said how answers get into it. So there was no cadence, and with both
+coordinates moving constantly a record with no cadence can only fall behind. Measured the
+day this was written: the record held **two** entries, both hand-measured, at a single
+sigil revision already well behind. The job was working perfectly and correctly reporting
+that it could not attribute anything — which is the honest answer and a useless one. A
+seam that specifies only the read side produces exactly that.
+
+**The cadence is nearly free because a landing already does the work.** A freeze measures
+all four shapes at a known `(aeon_rev, sigil_rev)` pair; that *is* an entry. The record
+then holds the coordinates the job looks up first, and a night on which nothing moved can
+finally come back QUIET rather than "cannot say".
+
+**And the caveat travels with the requirement, because the entry count will look like
+coverage and is not.** A record built only from freezes contains **only agreements** — a
+freeze's pair is by construction one where the bytes matched. That is fine for the lookup
+the job performs, which asks what a given pair should produce. It means the record can
+never hold a known-bad expectation, so **the number of entries is never evidence of
+coverage breadth**, and nobody should later read a long record as a well-exercised one.
 
 ## The reader protocol
 
