@@ -134,8 +134,12 @@ fn comparisons_yield_bool() {
     ok("1 == 1.0", Value::Bool(true)); // numeric promotion
     ok("1 == 2", Value::Bool(false));
     ok("2 != 3", Value::Bool(true));
-    ok("1 == \"x\"", Value::Bool(false)); // cross-kind structural: not equal
-    ok("1 != \"x\"", Value::Bool(true));
+    // Cross-kind equality REFUSES rather than answering (D-EQ.1). No int is any
+    // string, so both spellings were stuck at a constant, and `!=` at `true` is
+    // the shape that silently makes a guard always-red. Both polarities refuse,
+    // and the refusal names both operands.
+    poison_with("1 == \"x\"", "[eq.cross-type] `==` not defined for int and string");
+    poison_with("1 != \"x\"", "[eq.cross-type] `!=` not defined for int and string");
 }
 
 #[test]

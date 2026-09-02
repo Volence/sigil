@@ -306,6 +306,73 @@ work is real. It goes wrong later, when the row is prose and *"the hub said go"*
 indistinguishable to a session reading it cold. **That is why the banked ruling carries its own
 disclaimer in its text** rather than relying on anyone remembering the provenance.
 
+#### LANDED on `parcel/comptime-compare-refuses` — and one line of the brief above is wrong (2026-09-02)
+
+Both rows are one commit, because they turned out to be one defect wearing two hats: **a comparison or
+an annotation that cannot be meaningfully evaluated produced a value instead of refusing.** Q2-e and
+Q2-D4 share a single root — `eval_equality` was TOTAL by construction, so any two values of different
+kinds were "simply not equal" — and Q1-L is that same sentence in the annotation layer.
+
+**The decision on bar 1: REFUSE.** Equality is now defined WITHIN a comparison class and refuses ACROSS
+classes with `[eq.cross-type]`, naming both types and saying which constant it was stuck at. Two
+cross-kind pairs stay DEFINED because the corpus depends on them and neither is a mistake — a newtype
+beside a bare int (§8.3 erasure) and a **label beside `0`** (the empty-pointer-slot spelling in
+`variants: [X, 0]`). Both are always false, so they are exactly the case bar 1 allows only if written
+down: they are, in `docs/EMP_PITFALLS_EQUALITY.md`, drafted here for aeon to land in `EMP_PITFALLS.md`.
+
+**Correct this brief's Q1-L sentence.** "Return annotations DO check at the returning fn" is not true
+and the probe never said it was — its own Q1-L row reports the return-shaped failure blamed on the same
+`pub data` line, and notes the diagnostic is identical when the fn is spelled `-> array`. Read from the
+code: `ComptimeFnDecl::ret` was **read by nothing in the crate**. So there was no asymmetry to fix; both
+halves of a signature were decoration, and both now check.
+
+**Bar 3 held: no ROM byte moved**, four shapes, control built from this branch's own base rather than
+trusted from the reference tree's existing files (byte identity is silent on provenance, so the
+reference tree's pre-existing `.bin`s were not used as the control).
+
+| shape | control (canonical build, base binary) | fixed | |
+|---|---|---|---|
+| `s4.bin` | 719325 B / CRC32 `AC10AB85` | 719325 B / `AC10AB85` | identical |
+| `s4.debug.bin` | 736345 B / `FA866F19` | 736345 B / `FA866F19` | identical |
+| `demo.bin` | 96458 B / `30A31D81` | 96458 B / `30A31D81` | identical |
+| `demo.debug.bin` | 101323 B / `51056291` | 101323 B / `51056291` | identical |
+
+**How the fixed shapes were built, and why it is not a weaker gate.** The canonical path stops in
+`emp_expect_fail` — a SOURCE gate that runs before any assembly — on ONE row of 51 (below), so the fixed
+four shapes were built through `build.sh <game> -nl`, the documented `NO_LINT` hatch for exactly those
+source gates. Everything from the sound-blob emit through the assembly and every post-build gate
+(`effects_seam_gate`, `bganim_room`, `dplc_straddle`, `sprite_tilt_gate`, `instashield_gate`) still ran.
+The control was built CANONICALLY and the fixed build with the hatch, and the four ROMs are
+byte-identical across that difference — a stronger result than a like-for-like pair, because a match
+under two different paths cannot happen if EITHER the hatch or the fix had moved a byte.
+
+**The always-TRUE direction is the one that leaves no artifact, and it is proven here rather than
+assumed.** The first five mutations covered always-FALSE twice and always-TRUE never. A refusal
+decaying to `false` reddens the builds that depend on it; a refusal decaying to `true` makes every
+cross-type guard PASS, and **a guard that passes leaves no artifact anywhere** — nothing downstream can
+report a defect whose whole signature is silence. Mutation F forces `==` to answer `true` (and `!=`
+`false`) instead of refusing: **seven rows red across three test binaries**, every one because its
+`find`/`any` for `[eq.cross-type]` came up EMPTY (`got []`). No row survived, so there is no hole to
+close — including the case that worried the hub most, a cross-type pair whose operands are
+*equal-looking*, which `cross_newtype_equality_refuses_naming_both_types` already exercises with
+`Angle(10) == Pos(10)`. Why the rows have that property is now written in the test file's own banner:
+they assert the PRESENCE of a refusal, never an expected bool, and that is what makes them fire on the
+silent direction. The aeon lane's poison-fixture tripwire on the same direction is a genuinely
+independent second instrument (different tree, different mechanism, fires in their build) — but the
+primary detector for a sigil regression lives in sigil's suite, not in a peer's fixture we neither run
+nor see.
+
+**The census, and the one row it moved.** The four-shape build doubles as the corpus census for the new
+refusal: `emp_expect_fail` reports **50 / 51**. No shipping module compares across classes. The single
+row is `tri unit fold`, whose poison fixture states in its own header that it pins `() == int` comparing
+FALSE rather than erroring — the one place in the tree that deliberately depends on the old totality. It
+still fails with exactly 1 `[Error]`; only the message changed, from the fixture's differential
+`TAIL_IF_UNIT_FOLD` text to `[eq.cross-type] == not defined for unit and int`. That is `EMP_PITFALLS` §1's
+unit fold now being caught by the COMPILER, at the comparison, with no known-good twin required — an
+earlier and stronger catch surface than the ensure it replaces. Nothing fires on a correct tree: the
+guards this poison protects (`engine/level/parallax_dsl.emp:108-117`) compare int to int on the shipped
+generator. The three aeon-side edits are enumerated at the end of `docs/EMP_PITFALLS_EQUALITY.md`.
+
 ### CHAINS 194 AND 195 ARRIVED FROM THE AEON LANE — verified here, with three practices worth keeping (2026-08-30)
 
 **What arrived.** Chain 194 (`424feb39` freeze, `47d821ca` attest **RED** 4173/4/2) and chain 195

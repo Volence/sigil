@@ -15,16 +15,16 @@ impl<'a> Evaluator<'a> {
     /// a non-int, non-typed operand (a `Float`, `Bool`, `Str`, …) is a plain type
     /// error.
     pub(super) fn eval_typed_binary(&mut self, op: BinOp, lhs: Value, rhs: Value, span: Span) -> Value {
-        // `==`/`!=` are TOTAL (D-P2.3, `eval_equality`): they never error on a
-        // type mismatch. T5's routing sends any op with a `Typed` operand here
-        // first, which silently narrowed that contract — `Angle(5) == true` began
-        // erroring. When a `Typed` operand is NOT numerically comparable to the
-        // other (a non-int, non-same-type-`Typed` operand — e.g. `== true`, or a
-        // cross-type `Angle(5) == Pos(..)`), fall back to structural (in)equality
-        // rather than the width-aware numeric path (which would error). Same-type
+        // `==`/`!=` do not belong on the width-aware numeric path when the two
+        // operands are not numerically comparable: a `Typed` beside a `Bool`, or
+        // a cross-newtype `Angle(5) == Pos(..)`, would report `[cross-type mix]`,
+        // a diagnostic about ARITHMETIC that says nothing useful about a
+        // comparison. Send those to `eval_equality`, which owns the equality
+        // contract (D-EQ.1) and refuses them as `[eq.cross-type]` — naming both
+        // types and saying which constant the comparison was stuck at. Same-type
         // `Typed == Typed` and `Typed`-vs-int coercion still take the numeric path.
         if matches!(op, BinOp::Eq | BinOp::Ne) && !typed_eq_is_numeric(&lhs, &rhs) {
-            return self.eval_equality(op, &lhs, &rhs);
+            return self.eval_equality(op, &lhs, &rhs, span);
         }
         let (tl, nl, tr, nr) = match (lhs, rhs) {
             (Value::Typed { ty: tl, val: vl }, Value::Typed { ty: tr, val: vr }) => {

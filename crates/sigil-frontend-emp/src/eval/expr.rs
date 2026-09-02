@@ -781,7 +781,7 @@ impl<'a> Evaluator<'a> {
             }
             BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => self.eval_bitwise(op, lhs, rhs, span),
             BinOp::Shl | BinOp::Shr => self.eval_shift(op, lhs, rhs, span),
-            BinOp::Eq | BinOp::Ne => self.eval_equality(op, &lhs, &rhs),
+            BinOp::Eq | BinOp::Ne => self.eval_equality(op, &lhs, &rhs, span),
             BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => self.eval_ordering(op, lhs, rhs, span),
             BinOp::Concat => self.eval_concat(lhs, rhs, span),
             // Short-circuit operators were dispatched above.
@@ -885,11 +885,49 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    /// Structural equality `== !=` (D-P2.3), always yielding a `Bool`. Numeric
-    /// `Int`/`Float` compare by value; distinct non-numeric kinds are simply
-    /// not equal (so `==` is total and never spuriously errors — genuine type
-    /// mismatches are the type checker's job in a later plan).
-    pub(super) fn eval_equality(&self, op: BinOp, lhs: &Value, rhs: &Value) -> Value {
+    /// Structural equality `== !=` (D-P2.3), yielding a `Bool` for operands that
+    /// share a COMPARISON CLASS and refusing `[eq.cross-type]` for operands that
+    /// do not (D-EQ.1).
+    ///
+    /// Equality used to be TOTAL: any two values of different kinds were "simply
+    /// not equal". That reads as permissive but it is the opposite — it turns a
+    /// mistake into a CONSTANT. `Variant_Water_Deep != variant(shift_r: 1)` (a
+    /// `pub data` label beside the struct it names) is true no matter what either
+    /// side holds, so a guard built on it is always red; `variant(..) ==
+    /// cycle_channel(..)` (two different struct types) is false no matter what,
+    /// so a typo'd constructor reads as a mismatch instead of a type error. Both
+    /// were measured live (aeon `docs/superpowers/probes/2026-09-02-item5-comptime-probe.md`,
+    /// Q2-e and Q2-D4). A comparison whose answer the operand KINDS already decide
+    /// is not a comparison, and the one thing it must not do is answer.
+    ///
+    /// So: comparison is defined WITHIN a class and refuses ACROSS classes, where
+    /// two values share a class when some pair of values of those kinds could be
+    /// equal. Unequal-but-meaningful stays a plain `false` — a different array
+    /// length, a different enum variant, a `label` beside the `0` that spells an
+    /// empty slot (see [`eq_compatible`] for the full rule and the two deliberate
+    /// cross-kind coercions).
+    ///
+    /// A refusal with a `unit` operand also carries [`UNIT_FOLD_HINT`], because
+    /// that is the one operand kind whose most likely origin the compiler can
+    /// name (§1's silent fold) — see the constant for why the hint is derived
+    /// here rather than written at each guard.
+    pub(super) fn eval_equality(&mut self, op: BinOp, lhs: &Value, rhs: &Value, span: Span) -> Value {
+        if let Err((a, b)) = eq_compatible(lhs, rhs) {
+            let always = if op == BinOp::Eq { "false" } else { "true" };
+            let mut msg = format!(
+                "[eq.cross-type] `{}` not defined for {a} and {b} — no value of one \
+                 can equal a value of the other, so this comparison is always {always}; \
+                 compare same-typed values (or their fields)",
+                binop_symbol(op)
+            );
+            // `Unit == Unit` shares a class and never reaches here, so on this
+            // path "either operand is unit" already means "exactly one is".
+            if matches!(lhs, Value::Unit) || matches!(rhs, Value::Unit) {
+                msg.push_str(UNIT_FOLD_HINT);
+            }
+            self.error(span, msg);
+            return Value::Poison;
+        }
         let eq = values_equal(lhs, rhs);
         Value::Bool(if op == BinOp::Ne { !eq } else { eq })
     }
@@ -1235,6 +1273,163 @@ fn values_equal(a: &Value, b: &Value) -> bool {
         (Value::Float(x), Value::Float(y)) => x == y,
         (Value::Int(x), Value::Float(y)) | (Value::Float(y), Value::Int(x)) => (*x as f64) == *y,
         _ => a == b,
+    }
+}
+
+/// Appended to an `[eq.cross-type]` refusal when one operand is [`Value::Unit`].
+///
+/// A `unit` in value position almost always arrives the same way: an `if` used
+/// as a value whose taken branch yields nothing — a block-tail `if` with no
+/// `else`, or one nested in another's `else` — folds to `()` with NO diagnostic
+/// of its own (the `.emp` pitfall catalogue's §1). That fold is a LANGUAGE fact,
+/// so naming it is this compiler's job; the hint mentions no engine, game or
+/// data structure and would not belong here if it did.
+///
+/// WHY THE HINT IS DERIVED HERE AND NOT WRITTEN AT EACH GUARD. The guards that
+/// catch a unit fold are ordinary value comparisons — `T[0] == -16` and its
+/// siblings — and they compare like-to-like on every healthy tree. They reach
+/// this refusal ONLY in the broken case, which is precisely the moment their
+/// author's hand-written advice was meant to be read. Attaching the guidance to
+/// the refusal keeps it for every such guard that exists and hands it to every
+/// one not yet written, instead of maintaining a population of hand-sited
+/// copies.
+///
+/// IT IS A HINT, NOT A DIAGNOSIS, and the wording holds that line: `unit` has
+/// other sources (an empty `else`, a statement used as a value, a fn falling off
+/// its end), and this code has established only the operand's KIND, never its
+/// provenance. It cannot become noise — it rides on a refusal, which is already
+/// an error.
+const UNIT_FOLD_HINT: &str = ". One operand is `unit`, which is a value nothing \
+    produced deliberately: a LIKELY cause is an `if` in value position whose taken \
+    branch yields nothing, which folds to `()` silently (see the `.emp` pitfalls, \
+    §1 — the silent unit fold). Check what produced the `unit` side; `unit` has \
+    other sources, so treat this as a lead rather than the answer";
+
+/// Whether `==`/`!=` is DEFINED on this operand pair (D-EQ.1), and if not, the
+/// two type descriptions the `[eq.cross-type]` refusal names.
+///
+/// The rule: a pair is comparable when some pair of values of those kinds could
+/// come out equal. That keeps every meaningful `false` — two arrays of different
+/// lengths, two variants of one enum, two same-typed structs holding different
+/// fields — and refuses only the comparisons the KINDS have already decided.
+///
+/// Two cross-kind pairs stay DEFINED on purpose, because both are load-bearing
+/// spellings and neither is a mistake:
+///
+/// * **number vs number** — `Int`/`Float` interconvert, and a `Typed` (a newtype
+///   or `fixed<>` value) beside a bare `Int` compares by its stored int, exactly
+///   as `Angle(5) == 5` has always meant §8.3's erasure. Two DIFFERENT newtypes
+///   do not: `Angle(10) == Pos(10)` is the cross-type mistake, not a comparison.
+/// * **label vs int** — `0` is how `.emp` spells an absent symbol in a pointer
+///   slot (`variants: [Variant_Water_Deep, 0]`), so `slot == 0` is the ordinary
+///   emptiness test and must answer `false` for a real label rather than refuse.
+///   This is the one coercion the corpus depends on; it is written down in
+///   `docs/EMP_PITFALLS_EQUALITY.md` for the aeon-side pitfalls doc.
+///
+/// Aggregates recurse, so `[Variant_Water_Deep] == [variant(..)]` refuses at the
+/// element the same way `first_mismatch` does when it compares them one by one.
+/// Recursion only descends where both sides line up (equal lengths, the same
+/// enum variant, a shared struct field name); where they do not, the values are
+/// meaningfully unequal and there is nothing to refuse.
+fn eq_compatible(a: &Value, b: &Value) -> Result<(), (String, String)> {
+    let bad = || Err((eq_type_desc(a), eq_type_desc(b)));
+    match (a, b) {
+        // An already-reported subexpression never provokes a second diagnostic.
+        (Value::Poison, _) | (_, Value::Poison) => Ok(()),
+        // The number class, including the two documented coercions.
+        (Value::Int(_) | Value::Float(_), Value::Int(_) | Value::Float(_)) => Ok(()),
+        (Value::Typed { val, .. }, Value::Int(_)) | (Value::Int(_), Value::Typed { val, .. }) => {
+            // `Typed` erases to its stored int (§8.3) — but only when it HAS one.
+            if val.as_stored_int().is_some() {
+                Ok(())
+            } else {
+                bad()
+            }
+        }
+        (Value::Typed { ty: t1, val: v1 }, Value::Typed { ty: t2, val: v2 }) => {
+            if t1 == t2 {
+                eq_compatible(v1, v2)
+            } else {
+                bad()
+            }
+        }
+        // The null-symbol spelling: a label beside `0`.
+        (Value::Label(_), Value::Int(_)) | (Value::Int(_), Value::Label(_)) => Ok(()),
+        // Aggregates: same shape recurses, different shape is a plain `false`.
+        (Value::Array(xs), Value::Array(ys)) | (Value::Tuple(xs), Value::Tuple(ys)) => {
+            if xs.len() != ys.len() {
+                return Ok(());
+            }
+            for (x, y) in xs.iter().zip(ys) {
+                eq_compatible(x, y)?;
+            }
+            Ok(())
+        }
+        (
+            Value::Struct { ty_name: n1, fields: f1 },
+            Value::Struct { ty_name: n2, fields: f2 },
+        ) => {
+            if n1 != n2 {
+                return bad();
+            }
+            for (name, x) in f1 {
+                if let Some((_, y)) = f2.iter().find(|(n, _)| n == name) {
+                    eq_compatible(x, y)?;
+                }
+            }
+            Ok(())
+        }
+        (
+            Value::Enum { ty_name: n1, variant: v1, payload: p1 },
+            Value::Enum { ty_name: n2, variant: v2, payload: p2 },
+        ) => {
+            if n1 != n2 {
+                return bad();
+            }
+            // A different variant of the same enum is meaningfully unequal.
+            if v1 != v2 || p1.len() != p2.len() {
+                return Ok(());
+            }
+            for (x, y) in p1.iter().zip(p2) {
+                eq_compatible(x, y)?;
+            }
+            Ok(())
+        }
+        // Every remaining class compares only with itself.
+        (Value::Bool(_), Value::Bool(_))
+        | (Value::Str(_), Value::Str(_))
+        | (Value::Range { .. }, Value::Range { .. })
+        | (Value::Label(_), Value::Label(_))
+        | (Value::Unit, Value::Unit)
+        | (Value::Lambda { .. }, Value::Lambda { .. })
+        | (Value::FnRef(_), Value::FnRef(_))
+        | (Value::Data(_), Value::Data(_))
+        | (Value::Code(_), Value::Code(_))
+        | (Value::Width(_), Value::Width(_))
+        | (Value::Cc(_), Value::Cc(_))
+        | (Value::Reg(_), Value::Reg(_))
+        | (Value::Z80Reg(_), Value::Z80Reg(_))
+        | (Value::LinkExpr(_), Value::LinkExpr(_)) => Ok(()),
+        _ => bad(),
+    }
+}
+
+/// The operand description the `[eq.cross-type]` refusal prints. Nominal types
+/// carry their NAME — naming both sides is the whole value of the diagnostic,
+/// and `struct` beside `struct` would say nothing.
+fn eq_type_desc(v: &Value) -> String {
+    match v {
+        Value::Struct { ty_name, .. } => format!("struct `{ty_name}`"),
+        Value::Enum { ty_name, .. } => format!("enum `{ty_name}`"),
+        Value::Typed { ty, .. } => match &**ty {
+            crate::layout::Ty::Newtype(n) => format!("newtype `{n}`"),
+            crate::layout::Ty::Fixed { i, f } => format!("`fixed<{i},{f}>`"),
+            // Every other `Ty` a `Typed` can carry is an unnamed scalar; the
+            // value's own kind word is the most it can say.
+            _ => v.type_name().to_string(),
+        },
+        Value::Label(name) => format!("label `{name}`"),
+        other => other.type_name().to_string(),
     }
 }
 

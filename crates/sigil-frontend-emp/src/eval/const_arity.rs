@@ -192,6 +192,87 @@ impl Evaluator<'_> {
             _ => {}
         }
     }
+
+    /// The SIGNATURE half of the same contract (D-EQ.2): walk a value bound by a
+    /// `comptime fn` signature — an argument against its parameter's annotation,
+    /// or a returned value against `-> T` — reporting every array position whose
+    /// element count disagrees with the declared length, AT THE SIGNATURE'S OWN
+    /// SITE. `what` names the thing being checked (``parameter `hand` of
+    /// `probe_variants_pair` ``) so one diagnostic identifies both the fn and the
+    /// slot.
+    ///
+    /// WHY THIS EXISTS. A `comptime fn` signature annotation used to constrain
+    /// nothing at all — [`ComptimeFnDecl::ret`](crate::ast::ComptimeFnDecl::ret)
+    /// was never read, and a parameter's type was consulted only for a `where`
+    /// refinement and for the Reg/Label class check. So `fn f(v: [Label; 2])`
+    /// accepted a three-element array and reported `v.len == 3`, and the wrong
+    /// length surfaced only later, when the record built from it was emitted —
+    /// with the error blamed on the CONSUMER's `pub data` line, a site whose
+    /// author wrote nothing wrong (measured in aeon
+    /// `docs/superpowers/probes/2026-09-02-item5-comptime-probe.md`, Q1-L). An
+    /// annotation that never checks is the same defect as a comparison that never
+    /// refuses: it looks like a contract and holds nobody to it.
+    ///
+    /// WHY IT WALKS THE **AST** TYPE AND NOT A RESOLVED [`Ty`]. `Label` and `Reg`
+    /// are comptime-only classes with no data layout, so `[Label; 2]` — the exact
+    /// annotation this was built for — cannot be resolved to a `Ty` at all. The
+    /// walk therefore reads lengths straight off the annotation and never asks
+    /// what the ELEMENT type is, which keeps it to the scope its `const` sibling
+    /// declares: array LENGTH only, nothing about element types.
+    ///
+    /// It reports only where both sides genuinely line up — a declared `[T; N]`
+    /// against an actual array. A value of some other shape says nothing about
+    /// arity (the fn's parameters stay loosely typed, as they always were), so it
+    /// passes silently rather than inventing a second, weaker type check here.
+    pub(super) fn walk_sig_arity(&mut self, value: &Value, ty: &ast::Type, span: Span, what: &str) {
+        if matches!(value, Value::Poison) {
+            return;
+        }
+        match ty {
+            ast::Type::Array(elem, len_expr) => {
+                let Value::Array(elems) = value else { return };
+                // `eval_const_index` is the shared "an annotation's length must be
+                // a comptime integer" gate, and it is LOUD when the expression is
+                // not one — an unmeasurable length reports there, never silently
+                // here.
+                let Some(n) = self.eval_const_index(len_expr) else { return };
+                if n >= 0 && elems.len() as i128 != n {
+                    self.error(
+                        span,
+                        format!(
+                            "array length mismatch: expected {n} element(s), got {} — {what} is \
+                             declared with a fixed length",
+                            elems.len()
+                        ),
+                    );
+                }
+                for el in elems {
+                    self.walk_sig_arity(el, elem, span, what);
+                }
+            }
+            ast::Type::Tuple(elem_tys) => {
+                let Value::Tuple(vals) = value else { return };
+                for (v, t) in vals.iter().zip(elem_tys.iter()) {
+                    self.walk_sig_arity(v, t, span, what);
+                }
+            }
+            ast::Type::Refined(inner, ..) => self.walk_sig_arity(value, inner, span, what),
+            _ => {}
+        }
+    }
+}
+
+/// Whether an AST annotation spells a fixed-length array anywhere
+/// [`walk_sig_arity`](Evaluator::walk_sig_arity) would descend. Consulted before
+/// the walk so the overwhelming majority of signatures — no array in sight —
+/// cost one `matches!` and no evaluation.
+pub(super) fn ast_ty_has_array(ty: &ast::Type) -> bool {
+    match ty {
+        ast::Type::Array(..) => true,
+        ast::Type::Tuple(elems) => elems.iter().any(ast_ty_has_array),
+        ast::Type::Refined(inner, ..) => ast_ty_has_array(inner),
+        _ => false,
+    }
 }
 
 /// Whether `ty` can contain an array anywhere reachable by [`walk_arity`]'s
