@@ -105,3 +105,53 @@ fn the_bucket_counts_reconcile_against_the_scanned_population() {
     let sum = source + get("artifact") + get("no-reference") + get("unclassified");
     assert_eq!(sum, scanned, "the buckets hold {sum} of {scanned} scanned files — the classification lost some:\n{text}");
 }
+
+/// THE LANE'S DERIVED ACCESSOR SET IS THE ONE THE HARNESS DECLARES.
+///
+/// The two established gates above are loud in one direction only. An accessor set that
+/// comes back EMPTY makes the lane refuse, and they catch it. An accessor set that is
+/// merely SHORT does not: every accessor it is missing makes some test file look like it
+/// reads nothing, that file buckets as `no-reference`, and the lane runs green over a
+/// population it never covered. Nothing inside the script can see this, because a short
+/// closure is self-consistently short.
+///
+/// So the closure's answer is compared against the declaration that already exists for the
+/// same fact — `sigil_harness::reference_dependence::GUARDS`, the guard set the
+/// reference-dependence gate derives its population with. One declaration, two consumers,
+/// and neither is a roster typed into this file: a new path-yielding accessor in
+/// `test_support.rs` fails here until `GUARDS` names it, and an accessor the closure stops
+/// reaching fails here in the same breath.
+#[test]
+fn the_derived_accessor_set_is_the_declared_guard_set() {
+    let (ok, text) = audit();
+    assert!(ok, "the audit could not classify this tree, so it published no accessor set:\n{text}");
+
+    let line = text
+        .lines()
+        .find_map(|l| l.strip_prefix("accessors:"))
+        .unwrap_or_else(|| {
+            panic!(
+                "the audit printed no `accessors:` line, so the closure's answer cannot be \
+                 checked at all — and an unchecked closure is exactly the silent direction this \
+                 gate exists for:\n{text}"
+            )
+        });
+    let mut derived: Vec<&str> = line.split_whitespace().collect();
+    derived.sort_unstable();
+
+    // The guards are spelled with their opening paren (they are grep needles); the script
+    // publishes bare names. Strip, do not retype.
+    let mut declared: Vec<&str> = sigil_harness::reference_dependence::GUARDS
+        .iter()
+        .map(|g| g.trim_end_matches('('))
+        .collect();
+    declared.sort_unstable();
+
+    assert_eq!(
+        derived, declared,
+        "the source-gate lane derives its reference-tree accessors from test_support.rs by \
+         closure, and the harness declares the same set as GUARDS. They disagree. Whichever \
+         side is short, some test file that reads the reference tree is about to be classified \
+         as reading nothing — which the lane reports as green coverage.\n{text}"
+    );
+}

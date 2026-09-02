@@ -18,6 +18,11 @@
 /// (both depend on `sigil-harness`).
 pub mod test_support;
 
+/// WHICH test binaries ask the reference tree a question, derived from source so no
+/// consumer types a number. Read by the gate that makes a run say how much of itself it
+/// did not measure, and by the bare-run refusal that names the same population.
+pub mod reference_dependence;
+
 /// WHICH harness tree a tool writes into — derived from the invoking tree and
 /// handed from a parent tool to its children, never taken from link time. Shared
 /// by `refreeze` and `repin` so a parent and its child cannot resolve to
