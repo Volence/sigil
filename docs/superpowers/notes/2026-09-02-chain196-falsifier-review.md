@@ -141,6 +141,38 @@ The general lesson, theirs and worth carrying: **a whole-image scan defending a 
 about code will always carry flags that need individual excuses, and every excuse is a
 place to be wrong.** Bound the population to the subject and the excuses disappear.
 
+## The landing run's test-count reconciliation, checked against this lane's own branch
+
+The aeon lane's landing run reports 4182 passed / 0 failed / 2 ignored across 363
+binaries, reconciling as 4177 + 5 new, and they summed `test result:` across all 363
+independently rather than taking the wrapper's figure. The "+5" is a claim about THIS
+lane's branch, so it is this lane's to check rather than accept.
+
+It reconciles, but not as a bare +5: `parcel/alignment-flip-195` adds **six** `#[test]`
+and removes **one**, for a net of five. A net that contains a removal is exactly the
+shape in which a reconciliation can hide a lost guard, so the removal was chased.
+
+The removed test is `a_pin_that_violates_the_declaration_is_refused_with_the_residue`,
+which asserted that a pin four bytes off its declared alignment is REFUSED with
+`[layout.undeclared-alignment] … base % 8 = 4`. It is not a lost guard for two
+independent reasons:
+
+- `validate_declared_alignment`'s signature changed from three arguments
+  (sections, pins, flags) to one (sections), because the parcel's whole subject is
+  that the packing walk reads `required_for(head label)` and no longer reads the
+  pin residue. The old test exercised an API that no longer exists.
+- The assertion was deliberately INVERTED, not dropped. Its replacement,
+  `a_doctored_pin_residue_does_not_move_a_packed_section`, doctors `Sfx_33`'s frozen
+  pin by +4 and requires the build to go through, the section not to move, and the ROM
+  to be byte-identical. And it names the removed test's own behaviour as its falsifier
+  in its doc comment: "run against [the pre-flip packer], the doctored build is refused
+  with `[layout.undeclared-alignment] … base % 8 = 4` and the `Ok` arm below is never
+  reached."
+
+So the retired assertion survives as the new test's documented falsifier, which is the
+right shape for a guard whose meaning a parcel reverses. The `[layout.undeclared-alignment]`
+diagnostic is still asserted in three places on the branch, the same as on master.
+
 ## A ledger row this raises on the sigil side
 
 The aeon lane observed that the pre-flip binary did not REFUSE the `at = 0x3F0` hole
