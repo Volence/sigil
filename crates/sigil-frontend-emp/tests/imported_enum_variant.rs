@@ -191,6 +191,31 @@ data D: u16 = wrap(m: Mask.Accept)
     assert_eq!(v, 0x2222, "the same-module call must still bind `Accept`");
 }
 
+/// Row 10 — the SECOND consumer, and the row the aeon corpus produced when a
+/// fix that taught only the argument-class check was tried. Here the wrapper
+/// MATCHES on its parameter instead of handing it to an imported fn, so when the
+/// probe's missing name reaches the body it is `match` that speaks:
+///
+///   match on non-enum value (label) is unsupported
+///
+/// Same root, next site. A fix aimed at whichever check happens to refuse the
+/// value passes rows 1-3 and fails here; only turning the label fallback OFF in
+/// the probe answers both, because then no consumer ever meets the value.
+#[test]
+fn the_wrapper_may_match_on_the_parameter_itself() {
+    let b = "\
+module b
+use a.*
+pub comptime fn wrap(m: Mask) -> int {
+    return match m { Undeclared => $1111, Accept => $2222 }
+}
+pub const K: u16 = wrap(m: Mask.Accept)
+";
+    let (v, errs) = entry_word(&[("a.emp", HOME), ("b.emp", b), ("c.emp", CONSUMER)]);
+    assert!(errs.is_empty(), "unexpected errors: {errs:?}");
+    assert_eq!(v, 0x2222, "the bound argument must be `Accept`, not `Undeclared`");
+}
+
 // ---- over-fire guards ---------------------------------------------------
 
 /// Row 6 — a GENUINE label passed where the parameter is an imported enum must
