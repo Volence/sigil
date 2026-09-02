@@ -805,8 +805,24 @@ returns to zero and any `ratchet:` line is again worth investigating.
   Ledgered: the mirror should skip or name a non-regular entry instead of `unwrap`ing.
 
   **Reconcile the total against the tree, not against the last remembered bar:**
-  `git grep -c '#\[test\]' HEAD -- '*.rs'` summed gives the declared count, and
-  `passed + ignored` must equal it (3839 + 4 = 3843 here). Baseline arithmetic carried
+  `git grep -c '#\[test\]' HEAD -- '*.rs'` summed approximates the declared count, and
+  `passed + ignored` should land on it.
+  **⚠ IT IS AN APPROXIMATION, NOT AN IDENTITY, AND THIS PARAGRAPH CLAIMED THE IDENTITY**
+  *(measured 2026-09-02)*. The grep counts LINES, so a `#[test]` inside a `macro_rules!`
+  body is counted once however many times the macro is invoked.
+  `crates/sigil-harness/tests/freeze_step_gap.rs` is the instance and currently the only
+  one (`git grep -ln 'macro_rules' HEAD -- '*/tests/*.rs'` returns exactly it): grep says
+  **12**, the binary runs **21**, a 9-test undercount in one file.
+  **And the residual is NOT explained, which is the honest state:** master's summed grep
+  is 4233 while the item-5 branch measured 4230 passed + 2 ignored against a branch grep of
+  4231 — a net discrepancy of 1, not 9, so something over-counts by 8 that this lane has
+  not identified. Do not report the difference as "the macro file" until that is measured;
+  one known error and an unexplained offset is two findings, not one.
+  **What it is still good for, and why it stays:** it caught the wrong-tree landing run
+  (3857 + 2 = 3859 against a declared 3823), and an error of single digits does not hide a
+  36-test gap. Use it as a coarse tripwire — a difference of a few is unexplained
+  bookkeeping, a difference of tens is a different tree. **The exact number is what the
+  suite reports; the grep never overrides it.** Baseline arithmetic carried
   across branches measured on different reference trees does not reconcile and will
   invent a discrepancy that is not there. Never plain
   `cargo test`: without `--release` some gates are impractically slow, without
