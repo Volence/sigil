@@ -3443,3 +3443,25 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   the `.lst` dependency written down as a stated external witness rather than left implicit.
   The header fix waits on the sprite-owner freeze, since `repin.toml` is the aeon lane's to
   sequence and a refreeze is in flight)
+
+### Comptime array/label typing (2026-09-02) — two findings from aeon's item-5 probe, both live on master
+Source: aeon `efb4b923` `docs/superpowers/probes/2026-09-02-item5-comptime-probe.md` (Q1-L,
+RED-4, Q2-D3/D4). The probe ran sigil `8951389a`; between it and master no compiler crate
+changed (only `sigil-harness` and one port test), so the findings are current, not discounted.
+- **`[Label; N]` parameter annotations are not length-checked at the call.** A 3-element
+  argument passes a `[Label; 2]` fn and is refused only at record emission, and the blame lands
+  on the consumer's `pub data` line rather than the call. A5 holds (it terminates); the blame
+  site is the defect. Return annotations DO check (`array length mismatch: expected 2 ... got 3`
+  at the returning fn), so the parameter side is the asymmetry.
+  — OPEN (kill: the parameter annotation checks the argument's length at the call and names the
+  call span; red-first with the probe's own 3-element case)
+- **A data label inside an array literal compares against a struct as always-unequal, silently.**
+  A hand `pub data` twin cannot be named bare in an ensure (`unknown name`); inside an array
+  literal it resolves as a Label, label-vs-struct `!=` is always true, so
+  `first_mismatch([Variant_Water_Deep], [variant(...)]) == -1` fires "index 0" for the EQUAL twin.
+  The always-red mirror of the EMP_PITFALLS §3 always-green trap, and just as useless. Related:
+  cross-type `variant(...) == cycle_channel(...)` is not refused, it evaluates false.
+  — OPEN (kill, in this order: label-vs-struct and cross-type struct `==`/`!=` become type
+  errors at comptime with both operand types named, so an always-red guard cannot be written;
+  whether the array-literal position should resolve a `pub data` symbol as its value rather
+  than its address is a separate language call, to propose to the owner in his own words)
