@@ -315,6 +315,16 @@ impl<'a> Evaluator<'a> {
                     }
                 }
             }
+            // D-EQ.2: a `[T; N]` parameter annotation is a LENGTH CONTRACT, and it
+            // is checked here, at the call, naming the fn and the parameter. It
+            // used to constrain nothing — a three-element array bound happily
+            // to a `[Label; 2]` param and the mismatch surfaced only when some
+            // later record was emitted, blamed on the consumer that supplied none
+            // of it. See `walk_sig_arity` for why the walk reads the AST type.
+            if super::const_arity::ast_ty_has_array(ptype) {
+                let what = format!("parameter `{pname}` of `{}`", decl.name);
+                self.walk_sig_arity(&v, ptype, call_span, &what);
+            }
             fenv.define(pname.clone(), v, false);
         }
         // A comptime-fn body IS a comptime-mutable context (D-P2.5): `comptime
@@ -322,9 +332,19 @@ impl<'a> Evaluator<'a> {
         // enters (and always restores) that context around the body.
         let flow = self.exec_comptime_scoped(&decl.body, &mut fenv);
         self.call_stack.pop();
-        match flow {
+        let result = match flow {
             Flow::Return(v) | Flow::Normal(v) => v,
+        };
+        // D-EQ.2, the return half: `-> [T; N]` is checked at the fn that returned
+        // the wrong-length array, not at whoever eventually emits it. The
+        // annotation was previously read by NOTHING in the crate.
+        if let Some(ret_ty) = &decl.ret {
+            if super::const_arity::ast_ty_has_array(ret_ty) {
+                let what = format!("the return type of `{}`", decl.name);
+                self.walk_sig_arity(&result, ret_ty, decl.span, &what);
+            }
         }
+        result
     }
 
     /// Apply a callable [`Value`] to already-evaluated arguments (D2.12): a

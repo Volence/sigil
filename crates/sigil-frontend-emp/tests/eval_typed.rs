@@ -122,33 +122,64 @@ fn cross_type_ordering_is_an_error() {
 }
 
 #[test]
-fn cross_type_equality_is_total_not_an_error() {
-    // Regression (T8 review, Minor 1): `==`/`!=` are TOTAL — they never error on
-    // a type mismatch. T5's routing sent any op with a `Typed` operand to the
-    // width-aware numeric path, which erroneously reported `[cross-type mix]`
-    // for `Angle == Pos`. Distinct nominal types are simply unequal.
+fn cross_newtype_equality_refuses_naming_both_types() {
+    // These two rows used to pin `==`/`!=` as TOTAL: `Angle(10) == Pos(10)` was
+    // `Bool(false)` with no diagnostic, because T5's routing had briefly reported
+    // `[cross-type mix]` — an ARITHMETIC diagnostic — and falling back to
+    // structural equality was the cheap way to stop that. Totality is the wrong
+    // repair (D-EQ.1): no `Angle` can ever equal a `Pos`, so the comparison is
+    // stuck at `false` and a guard written on it can only ever say one thing.
+    // The right diagnostic is an EQUALITY one that names both nominal types;
+    // `[cross-type mix]` staying out of the way is still pinned, by its absence.
     let src = "module m\nnewtype Angle = u8\nnewtype Pos = u8\n\
                const N = Angle(10) == Pos(10)\n";
     let (v, diags) = eval(src, "N");
-    assert_eq!(v, Some(Value::Bool(false)));
-    assert!(diags.is_empty(), "`==` is total, expected no diagnostics, got {diags:?}");
+    assert_eq!(v, Some(Value::Poison), "a refused comparison yields poison, not a value");
+    let msg = diags
+        .iter()
+        .find(|d| d.message.contains("[eq.cross-type]"))
+        .unwrap_or_else(|| panic!("expected an `[eq.cross-type]` refusal, got {diags:?}"));
+    assert!(
+        msg.message.contains("newtype `Angle`") && msg.message.contains("newtype `Pos`"),
+        "the refusal must name both nominal types, got {msg:?}"
+    );
+    assert!(
+        !diags.iter().any(|d| d.message.contains("[cross-type mix]")),
+        "equality must not borrow the arithmetic diagnostic: {diags:?}"
+    );
+
+    // The comparison that IS defined still answers, both ways — a newtype beside
+    // a bare int compares by its stored value (§8.3), and beside its own type it
+    // discriminates. Without these the row could not tell a correct refusal from
+    // an `==` that had simply stopped working.
+    for (expr, want) in [("Angle(10) == Angle(10)", true), ("Angle(10) == Angle(11)", false)] {
+        let src = format!("module m\nnewtype Angle = u8\nconst N = {expr}\n");
+        let (v, diags) = eval(&src, "N");
+        assert_eq!(v, Some(Value::Bool(want)), "{expr}");
+        assert!(diags.is_empty(), "{expr} must be clean, got {diags:?}");
+    }
 }
 
 #[test]
-fn typed_equality_against_bool_is_total_not_an_error() {
-    // Regression (T8 review, Minor 1): `Angle(5) == true` must be `Bool(false)`
-    // with no diagnostic, not the `` `==` not defined for typed and bool `` error
-    // T5's routing introduced.
-    let src = "module m\nnewtype Angle = u8\nconst N = Angle(5) == true\n";
-    let (v, diags) = eval(src, "N");
-    assert_eq!(v, Some(Value::Bool(false)));
-    assert!(diags.is_empty(), "`==` is total, expected no diagnostics, got {diags:?}");
-
-    // And `!=` is its negation: `Angle(5) != true` → true.
-    let src = "module m\nnewtype Angle = u8\nconst N = Angle(5) != true\n";
-    let (v, diags) = eval(src, "N");
-    assert_eq!(v, Some(Value::Bool(true)));
-    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+fn typed_equality_against_bool_refuses() {
+    // Same reversal as the row above, for a `Typed` beside a `Bool`: no `Angle`
+    // is ever `true`, so answering `false` dresses a mistake as a result. It
+    // refuses in BOTH polarities — `!=` was the one stuck at `true`, which is the
+    // shape that silently turns a guard into an always-red one.
+    for (op, always) in [("==", "always false"), ("!=", "always true")] {
+        let src = format!("module m\nnewtype Angle = u8\nconst N = Angle(5) {op} true\n");
+        let (v, diags) = eval(&src, "N");
+        assert_eq!(v, Some(Value::Poison), "`{op}` against a bool must refuse");
+        let msg = diags
+            .iter()
+            .find(|d| d.message.contains("[eq.cross-type]"))
+            .unwrap_or_else(|| panic!("expected an `[eq.cross-type]` refusal for `{op}`, got {diags:?}"));
+        assert!(
+            msg.message.contains("newtype `Angle`") && msg.message.contains("bool"),
+            "the refusal must name both operands, got {msg:?}"
+        );
+        assert!(msg.message.contains(always), "the refusal must say which constant: {msg:?}");
+    }
 }
 
 #[test]
