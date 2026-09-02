@@ -331,6 +331,7 @@ dependencies = [
  "sigil-backend-z80",
  "sigil-clownlzss-sys",
  "sigil-clownnemesis-sys",
+ "sigil-harness",
  "sigil-ir",
  "sigil-link",
  "sigil-s4lz",

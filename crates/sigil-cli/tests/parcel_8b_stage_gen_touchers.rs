@@ -116,9 +116,7 @@ fn touchers_in_file(src: &str, sym: &str) -> Vec<Option<String>> {
 
 #[test]
 fn block_stage_keys_has_exactly_three_touchers() {
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
+    let aeon = sigil_harness::test_support::aeon_dir();
     if !aeon.exists() {
         if std::env::var("SIGIL_STRICT_GATE").is_ok() {
             panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());

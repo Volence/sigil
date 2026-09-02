@@ -308,9 +308,7 @@ fn bucket_row(label: &str, t: &Tally) -> String {
 }
 
 fn main() {
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
+    let aeon = sigil_harness::test_support::aeon_dir();
     if !aeon.exists() {
         eprintln!("error: no aeon tree at {} (set AEON_DIR)", aeon.display());
         std::process::exit(2);

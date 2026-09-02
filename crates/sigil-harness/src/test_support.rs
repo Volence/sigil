@@ -591,63 +591,480 @@ pub fn guard_assert_count(asserts: &[LinkAssert]) -> usize {
 
 // ── 3. The REFERENCE-DEPENDENT guard ────────────────────────────────────────
 
-/// The reference tree [`aeon_dir`] names when `AEON_DIR` is not set: the owner's
-/// LIVE aeon working checkout.
-///
-/// It is a constant rather than a literal at the resolution site because the write
-/// precondition ([`crate::seam2::require_named_reference_tree`]) names it in its
-/// refusal. The fallback and the refusal that describes it therefore cannot name
-/// different paths.
-pub const LIVE_TREE_FALLBACK: &str = "/home/volence/sonic_hacks/aeon";
+// THE SUITE-PATHS RESOLVER. `empyrean` `contract/SUITE_PATHS.md` (ratified 2026-09-02,
+// read here at `origin/main` = 82982b7ff3c057f347d538fcf61b7c62b18ee813) fixes ONE
+// precedence for every resolver in the suite, and this is sigil's implementation of it.
+//
+// The contract resolves a CHECKOUT. Sigil's byte and port gates need a REFERENCE TREE.
+// Those are two questions and this file keeps them two functions:
+//
+//   * [`aeon_checkout`] answers the contract's question in full — steps 1→4, for any
+//     caller that legitimately wants the live sibling checkout;
+//   * [`aeon_dir`] answers sigil's — and only steps 1 and 2 are acceptable answers to
+//     it, because step 3 derives the owner's LIVE working checkout, whose revision moves
+//     under a run. A measurement against a tree nobody named is attributable to whatever
+//     that tree happened to contain.
+//
+// THE `env::var("AEON_DIR")` SPELLING BELOW IS LOAD-BEARING AND MUST STAY IN THIS FILE,
+// INSIDE A PUBLIC FUNCTION. `scripts/nightly_source_gates.sh` derives both halves of its
+// classifier from this source: `reference_env_var` extracts the variable name by matching
+// that literal, and `accessor_closure` seeds on the PUBLIC function containing it and then
+// closes over every public function of this file that calls one already in the set. A
+// resolver moved to another module, a variable name reached through a constant, or a step
+// 1 buried in a private helper leaves that derivation with no seed — and the lane then
+// either refuses to run or, worse, classifies every routed test file as reading nothing.
 
-/// The line printed, once per process, when a READ falls back to the live checkout.
+/// The environment variable that names an aeon CHECKOUT — precedence step 1.
 ///
-/// Pure so it can be pinned by a test: the two properties that matter are that it NAMES
-/// the tree, and that it cannot be miscounted as a skip. It deliberately contains neither
-/// `skip:` nor `skipping` — `scripts/landing-run.sh:369` and `refreeze.rs:533` both count
-/// those spellings, and a fallback notice is not a skipped test.
-pub fn live_tree_fallback_notice() -> String {
+/// The contract makes `<TOOL>_DIR` the suite-wide checkout spelling and ratifies this
+/// one because it was already the de-facto contract (100 sigil files, 60 aurora files,
+/// sigil's CI and its landing wrapper).
+pub const AEON_DIR_VAR: &str = "AEON_DIR";
+
+/// The environment variable that names the SUITE ROOT — precedence step 2.
+///
+/// Suite-level and therefore deliberately un-branded: a suite fact carrying one tool's
+/// name is how the same sentence ends up in five repos drifting independently.
+pub const SUITE_ROOT_VAR: &str = "EMPYREAN_SUITE_ROOT";
+
+/// aeon's directory name under the suite root.
+pub const AEON_REPO_DIR: &str = "aeon";
+
+/// Every sibling a directory must hold to BE the suite root.
+///
+/// The same marker set aeon's own `tools/suite_paths.py` uses, and for the reason it
+/// gives: `empyrean` is the suite contract repo and `aeon` the engine, so a directory
+/// holding both is the suite root by definition. Two resolvers answering the same
+/// question must not answer it differently.
+pub const SUITE_ROOT_MARKERS: [&str; 2] = [AEON_REPO_DIR, "empyrean"];
+
+/// Which precedence step of `contract/SUITE_PATHS.md` produced an answer.
+///
+/// An enum and not a string: the one consumer that must branch on it — whether the
+/// answer is a tree SOMEBODY NAMED — is a decision, and a decision taken by matching
+/// prose is a decision that changes when the prose is reworded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathStep {
+    /// Step 1: the explicit checkout variable [`AEON_DIR_VAR`].
+    CheckoutVar,
+    /// Step 2: [`SUITE_ROOT_VAR`] joined with [`AEON_REPO_DIR`].
+    SuiteRootVar,
+    /// Step 3: derived from THIS repo's own location.
+    Derived,
+}
+
+impl PathStep {
+    /// The step's number in the contract's precedence list.
+    pub fn number(self) -> u8 {
+        match self {
+            PathStep::CheckoutVar => 1,
+            PathStep::SuiteRootVar => 2,
+            PathStep::Derived => 3,
+        }
+    }
+
+    /// How the step answered, in one clause, for the line a resolver owes its reader.
+    pub fn describe(self) -> &'static str {
+        match self {
+            PathStep::CheckoutVar => "named by AEON_DIR",
+            PathStep::SuiteRootVar => "named by EMPYREAN_SUITE_ROOT",
+            PathStep::Derived => "DERIVED from this checkout's own location — nobody named it",
+        }
+    }
+
+    /// `true` when the answer is a tree somebody NAMED, and therefore a tree a
+    /// reference-dependent measurement may be attributed to.
+    ///
+    /// Step 3 is excluded on purpose. It derives `<suite root>/aeon`, the owner's live
+    /// working checkout: its revision changes under a run without notice, so a pass or a
+    /// failure measured against it is attributable to whatever it happened to contain
+    /// rather than to the code under test.
+    pub fn names_a_reference_tree(self) -> bool {
+        !matches!(self, PathStep::Derived)
+    }
+}
+
+/// A resolved aeon checkout and the precedence step that produced it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedCheckout {
+    /// The directory.
+    pub path: PathBuf,
+    /// Which step answered.
+    pub step: PathStep,
+}
+
+impl ResolvedCheckout {
+    /// The line a resolver owes its reader before doing work: the resolved path and the
+    /// step that produced it.
+    ///
+    /// It carries neither `skip:` nor `skipping`. `scripts/landing-run.sh` and
+    /// `refreeze.rs` both count those spellings out of a run's log, and a resolution
+    /// notice is not a skipped test; a notice that inflated the skip count would trade
+    /// one wrong number for another.
+    pub fn announcement(&self) -> String {
+        format!(
+            "reference-tree: {} (SUITE_PATHS step {} — {})",
+            self.path.display(),
+            self.step.number(),
+            self.step.describe()
+        )
+    }
+}
+
+/// `true` when every marker in [`SUITE_ROOT_MARKERS`] is a directory under `p`.
+fn is_suite_root(p: &std::path::Path) -> bool {
+    SUITE_ROOT_MARKERS.iter().all(|m| p.join(m).is_dir())
+}
+
+/// The suite root derived from THIS repo's own location — the resolver's step 3.
+///
+/// `git rev-parse --git-common-dir`, NEVER `--show-toplevel`. From a git worktree — and
+/// every sigil agent runs in one, under `.claude/worktrees/<name>/` — `--show-toplevel`
+/// answers the worktree, whose parent chain does not reach the suite root, so a resolver
+/// built on it derives a wrong answer confidently. `--git-common-dir` answers the MAIN
+/// checkout's `.git` from a worktree and from the checkout alike, and its parent is this
+/// repo's root either way.
+///
+/// Run from `CARGO_MANIFEST_DIR`, fixed at compile time, so the derivation is about the
+/// checkout this code was BUILT from rather than whatever directory a test process
+/// happens to have as its cwd.
+///
+/// Cached: the answer cannot change within a process (the manifest dir is a compile-time
+/// constant) and ~100 test binaries would otherwise each pay a subprocess per call.
+fn derived_suite_root() -> Result<PathBuf, String> {
+    static ROOT: std::sync::OnceLock<Result<PathBuf, String>> = std::sync::OnceLock::new();
+    ROOT.get_or_init(|| derive_suite_root_from(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))))
+        .clone()
+}
+
+/// The step-3 mechanism itself, over an arbitrary directory inside a checkout.
+///
+/// Separated from [`derived_suite_root`] for one reason, and it is the contract's, not a
+/// convenience: *"the step-3 proof runs from a linked worktree, or says in the run's own
+/// output that it did not"* (`SUITE_PATHS.md`, added 2026-09-02 from aurora's O68). The
+/// property step 3 exists for is only observable from a LINKED WORKTREE — in a plain
+/// checkout `--git-common-dir` and `--show-toplevel` agree, so an assertion made there
+/// proves nothing.
+///
+/// A test asserting against the process's own location can only prove the property when the
+/// suite itself happens to be running from a worktree, and a row that proves its property
+/// only from certain checkouts is a row that reads green from the others. So the mechanism
+/// takes a directory, and `suite_paths_precedence` hands it one inside a linked worktree it
+/// builds itself — the same assertion wherever `cargo test` is invoked from.
+pub fn derive_suite_root_from(here: &std::path::Path) -> Result<PathBuf, String> {
+    let out = std::process::Command::new("git")
+        .args(["rev-parse", "--git-common-dir"])
+        .current_dir(here)
+        .output()
+        .map_err(|e| {
+            format!("`git rev-parse --git-common-dir` in {} could not run: {e}", here.display())
+        })?;
+    if !out.status.success() {
+        return Err(format!(
+            "`git rev-parse --git-common-dir` in {} exited {}: {}",
+            here.display(),
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    // Relative (`.git`) when git answers from a checkout's own root, absolute from a
+    // worktree. `join` on an absolute path yields that path, so one line covers both.
+    let common = here.join(String::from_utf8_lossy(&out.stdout).trim());
+    let repo_root = common
+        .parent()
+        .ok_or_else(|| format!("{} has no parent, so it names no repository root", common.display()))?;
+    let root = repo_root.parent().ok_or_else(|| {
+        format!("{} has no parent, so it hangs off no suite root", repo_root.display())
+    })?;
+    if !is_suite_root(root) {
+        return Err(format!(
+            "{} is this repository's parent but holds no {} — it is not a suite root",
+            root.display(),
+            SUITE_ROOT_MARKERS.map(|m| format!("{m}/")).join(" + ")
+        ));
+    }
+    Ok(root.to_path_buf())
+}
+
+/// The contract's precedence from STEP 2 onward, given what step 1 already reported.
+///
+/// Step 1 lives in its two public callers rather than here, and that is deliberate on
+/// both counts. [`aeon_checkout`] consults the checkout variable; [`unnamed_default_tree`]
+/// deliberately does not, because its whole question is what a run resolves to when
+/// nobody names a tree. And `scripts/nightly_source_gates.sh` derives its accessor set by
+/// closure from the PUBLIC function of this file that reads `AEON_DIR`: a step 1 buried in
+/// a private helper leaves that derivation with no seed, and the lane then classifies
+/// every routed test file as reading nothing — quietly, which is the one direction in
+/// which being wrong is invisible.
+fn resolve_from_step_2(mut tried: Vec<String>) -> Result<ResolvedCheckout, String> {
+    let markers = SUITE_ROOT_MARKERS.map(|m| format!("{m}/")).join(" + ");
+
+    // ── Step 2: the suite root variable.
+    match std::env::var(SUITE_ROOT_VAR) {
+        Ok(v) if !v.is_empty() => {
+            let root = PathBuf::from(&v);
+            if !is_suite_root(&root) {
+                return Err(format!(
+                    "{SUITE_ROOT_VAR}={v} is not a suite root: a suite root holds {markers}. Set \
+                     but wrong is a hard error at its own step, not a null that lets a derivation \
+                     answer in its place."
+                ));
+            }
+            let path = root.join(AEON_REPO_DIR);
+            if !path.is_dir() {
+                return Err(format!(
+                    "{SUITE_ROOT_VAR}={v} holds {markers} but {} is not a directory",
+                    path.display()
+                ));
+            }
+            return Ok(ResolvedCheckout { path, step: PathStep::SuiteRootVar });
+        }
+        Ok(_) => tried.push(format!("{SUITE_ROOT_VAR} is set to the empty string")),
+        Err(_) => tried.push(format!("{SUITE_ROOT_VAR} is unset")),
+    }
+
+    // ── Step 3: derivation from this repo's own location.
+    match derived_suite_root() {
+        Ok(root) => {
+            let path = root.join(AEON_REPO_DIR);
+            if path.is_dir() {
+                return Ok(ResolvedCheckout { path, step: PathStep::Derived });
+            }
+            tried.push(format!(
+                "derived the suite root {} from this checkout's own location, and {} is not a \
+                 directory",
+                root.display(),
+                path.display()
+            ));
+        }
+        // A derivation is not a variable, so a derivation that does not answer is not a
+        // "set but wrong" hard error — it falls to step 4, which names why.
+        Err(why) => tried.push(format!("derivation from this checkout's own location: {why}")),
+    }
+
+    // ── Step 4: refuse, naming what was looked for and where.
+    Err(format!(
+        "no aeon checkout could be resolved. {}. Set {AEON_DIR_VAR} to an aeon checkout, or \
+         {SUITE_ROOT_VAR} to the directory holding {markers}.",
+        tried.join("; ")
+    ))
+}
+
+/// The aeon CHECKOUT, by the contract's full precedence, and the step that answered.
+///
+/// This is the answer for a caller that legitimately wants the live sibling checkout —
+/// something reading aeon SOURCE at whatever revision the tree currently holds. A caller
+/// that needs a tree a RESULT can be attributed to wants [`aeon_dir`] instead, which
+/// refuses step 3's answer.
+pub fn aeon_checkout() -> Result<ResolvedCheckout, String> {
+    // ── Step 1: the explicit checkout variable.
+    match std::env::var("AEON_DIR") {
+        Ok(v) if !v.is_empty() => {
+            let path = PathBuf::from(&v);
+            if !path.is_dir() {
+                // SET BUT WRONG IS A HARD ERROR AT THIS STEP, never a null that lets step
+                // 2 run. A wrong value is evidence of a wrong environment, and a
+                // fall-through would answer with a different tree than the one the
+                // operator asked for while reporting success.
+                //
+                // "Wrong" is exactly "not a directory", and no wider. A tree's CONTENTS
+                // are [`reference_tree`]'s question, asked per gate against the paths that
+                // gate actually reads; answering it here would replace those precise
+                // messages with a blunt one and would refuse the empty stand-in trees the
+                // write-guard gates deliberately point this variable at.
+                return Err(format!(
+                    "{AEON_DIR_VAR}={v} does not name a directory. A checkout variable that \
+                     is set but wrong is a hard error at its own step (SUITE_PATHS, \
+                     'Precedence, the same in every resolver'), not a null that lets \
+                     {SUITE_ROOT_VAR} or a derivation answer in its place — falling through \
+                     would measure against a tree nobody asked for and call it a pass."
+                ));
+            }
+            Ok(ResolvedCheckout { path, step: PathStep::CheckoutVar })
+        }
+        Ok(_) => resolve_from_step_2(vec![format!("{AEON_DIR_VAR} is set to the empty string")]),
+        Err(_) => resolve_from_step_2(vec![format!("{AEON_DIR_VAR} is unset")]),
+    }
+}
+
+/// The checkout a run resolves to when NOBODY names one: the contract's precedence with
+/// step 1 skipped.
+///
+/// This is what a guard that must refuse to touch the live tree compares against —
+/// resolved, never spelled, so it keeps working when the suite moves (SUITE_PATHS, "What
+/// a resolver owes its reader"). [`crate::seam2::require_named_reference_tree`] is that
+/// guard.
+pub fn unnamed_default_tree() -> Result<ResolvedCheckout, String> {
+    resolve_from_step_2(vec![format!(
+        "{AEON_DIR_VAR} deliberately not consulted — this is the tree a run resolves to when \
+         nobody names one"
+    )])
+}
+
+/// `true` when a read would resolve a tree nobody named rather than one somebody did.
+pub fn aeon_dir_is_unnamed() -> bool {
+    !matches!(aeon_checkout(), Ok(c) if c.step.names_a_reference_tree())
+}
+
+/// The aeon REFERENCE tree — the tree every byte and port gate measures against.
+///
+/// Steps 1 and 2 of the contract's precedence are the acceptable answers. A step-3
+/// derivation is NOT a reference tree: it resolves the owner's live working checkout,
+/// whose revision moves under a run.
+///
+/// **A READ AGAINST A TREE NOBODY NAMED ANNOUNCES ITSELF.** `d-17` closed the WRITE side:
+/// a write refuses and names the tree it refused. The read side stayed silent, and that
+/// asymmetry was measured on 2026-08-30 — a control run bare resolved its oracle to the
+/// owner's live checkout and was correct only because his working tree happened to sit at
+/// the revision under test. Had he checked out anything else, the same command would have
+/// produced a false red or a false green with identical output. The consequence worth
+/// naming: **the owner's working directory is load-bearing for a verification he does not
+/// know he is participating in**, and nothing linked the two ends.
+///
+/// Announced ONCE per process (261 call sites; per-call would be noise), on stderr, beside
+/// the `skip:` lines a reader already scans.
+///
+/// **AND A BARE RUN NOW STOPS.** `d-18`, ruled `refuse` by the hub on 2026-09-02 under the
+/// owner's widened delegation (`docs/OVERSEER.md`, R4; empyrean `4e8e865b`), against this
+/// lane's own recommendation of say-only. The hub's reason is the better one: *a run that
+/// prints how much it skipped still exits 0*, and a silent green is the class never
+/// dropped, because a green is trusted the moment it is in the run. The parcel-1
+/// announcement above is what that costs measured in one transcript — two passes, exit 0,
+/// and the subject of the measurement was whatever the owner's working tree happened to
+/// contain.
+///
+/// So when steps 1 and 2 do not answer, this panics with a message naming both variables,
+/// the derived path it declined to use and why, and the opt-in. [`ALLOW_PARTIAL_VAR`]
+/// takes the partial run instead: reference-dependent rows skip against
+/// [`NO_REFERENCE_TREE`], and the banner says how many binaries that is.
+pub fn aeon_dir() -> PathBuf {
+    match aeon_checkout() {
+        Ok(r) if r.step.names_a_reference_tree() => {
+            announce_once(r.announcement());
+            r.path
+        }
+        // Step 3 answered, or nothing did. Both are the same fact for a gate: nobody named
+        // a tree this result could be attributed to.
+        Ok(r) => no_named_reference_tree(&r.announcement(), Some(&r)),
+        Err(refusal) => no_named_reference_tree(&refusal, None),
+    }
+}
+
+/// One line per process on stderr, beside the `skip:` lines a reader already scans.
+fn announce_once(line: String) {
+    static ANNOUNCED: std::sync::Once = std::sync::Once::new();
+    ANNOUNCED.call_once(|| eprintln!("{line}"));
+}
+
+/// The environment variable that opts a run in to running WITHOUT a named reference tree.
+///
+/// The ruling's shape: the refusal is the default and the partial run is explicit, because
+/// the person who set this variable knows what the run does not cover and the person
+/// reading its green does not.
+pub const ALLOW_PARTIAL_VAR: &str = "SIGIL_ALLOW_PARTIAL";
+
+/// The stand-in path a PARTIAL run resolves to.
+///
+/// Deliberately absent and deliberately self-describing. Every reference-dependent gate
+/// opens with [`reference_tree`], which reports a missing path by name, so this spelling is
+/// what a reader sees in each of those `skip:` lines — the reason for the skip is carried
+/// by the path itself rather than inferred from a banner scrolled past hundreds of lines
+/// earlier. Returning the DERIVED live checkout here instead would make the partial run
+/// silently measure against it, which is the thing being refused.
+pub const NO_REFERENCE_TREE: &str = "/nonexistent/SIGIL_ALLOW_PARTIAL-no-reference-tree-was-named";
+
+/// The message a bare run stops with.
+///
+/// Pure so a test can pin it without arranging the environment that produces it. Four
+/// things have to be in it and each is asserted: both variables that would have answered,
+/// the path step 3 derived and DECLINED (so the reader is not left wondering whether the
+/// resolver simply failed), and the opt-in spelling. It carries neither `skip:` nor
+/// `skipping` — `scripts/landing-run.sh:369` and `refreeze.rs:533` count those out of a
+/// run's log, and this refusal is a FAILURE, not a skipped test; counting it as a skip
+/// would let the very run that stopped report a skip total instead of a stop.
+///
+/// `context` is what the resolver itself said: its step-3 answer, or its step-4 refusal.
+pub fn bare_run_refusal(context: &str, derived: Option<&ResolvedCheckout>) -> String {
+    let declined = match derived {
+        Some(r) => format!(
+            "This run DECLINED to use {}, which step 3 derived from this checkout's own \
+             location: it is a working checkout outside this repository, its revision changes \
+             under a run without notice, and a result measured against it would be attributable \
+             to whatever it happened to contain rather than to the code under test.",
+            r.path.display()
+        ),
+        None => "Nothing was derived either.".to_string(),
+    };
     format!(
-        "reference-tree: AEON_DIR is unset, so every reference-dependent result in this run \
-         was measured against {LIVE_TREE_FALLBACK} — the LIVE aeon working checkout. That tree \
-         is outside this repository and its revision can change under a run without notice, so \
-         a pass or a failure here is attributable to whatever it happened to contain. Set \
-         AEON_DIR to a provisioned tree (scripts/provision-aeon-ref.sh) to make the result name \
-         its own subject."
+        "NO REFERENCE TREE IS NAMED, so this run can measure nothing it could attribute, and \
+         STOPS. {declined}\n\nThe resolver's own answer: {context}\n\nEither name a provisioned \
+         tree — {AEON_DIR_VAR}=<aeon checkout> (scripts/provision-aeon-ref.sh), or \
+         {SUITE_ROOT_VAR}=<the directory holding the suite> — or declare a partial run with \
+         {ALLOW_PARTIAL_VAR}=1, in which case every reference-dependent row is left unmeasured \
+         and the run says how many. Ruled d-18 (docs/OVERSEER.md, 2026-09-02): a run that only \
+         PRINTS how much it did not measure still exits 0, and a green is trusted the moment it \
+         is in the run."
     )
 }
 
-/// `true` when a read would fall back rather than use a tree somebody named.
-pub fn aeon_dir_is_unnamed() -> bool {
-    std::env::var("AEON_DIR").is_err()
+/// The `d-18` decision point: nobody named a reference tree, so either stop or take the
+/// declared partial run.
+///
+/// `context` is what the resolver said — its step-3 answer, or its step-4 refusal.
+fn no_named_reference_tree(context: &str, derived: Option<&ResolvedCheckout>) -> PathBuf {
+    let partial = std::env::var_os(ALLOW_PARTIAL_VAR).is_some_and(|v| !v.is_empty());
+    // `SIGIL_STRICT_GATE` is read directly rather than through `strict_gate()`. That
+    // accessor RECORDS every reached consultation into the strict witness, and
+    // `strict_census` diffs that population against the one it derives from the test tree;
+    // a consultation from inside the resolver is not a strict-gated test body and would
+    // enter the census as a site with no counterpart.
+    let strict = std::env::var_os("SIGIL_STRICT_GATE").is_some();
+
+    if partial && strict {
+        panic!(
+            "{ALLOW_PARTIAL_VAR} and SIGIL_STRICT_GATE are both set and no reference tree is \
+             named. A strict run is the one that may not skip a gate, so it cannot also be the \
+             partial one; the two flags describe opposite runs and the resolver will not pick \
+             between them. Name a tree with {AEON_DIR_VAR}, or drop one flag.\n{context}"
+        );
+    }
+
+    if !partial {
+        panic!("{}", bare_run_refusal(context, derived));
+    }
+
+    announce_once(partial_run_banner(context));
+    PathBuf::from(NO_REFERENCE_TREE)
 }
 
-/// The aeon reference tree: `AEON_DIR`, or [`LIVE_TREE_FALLBACK`].
+/// The banner a declared partial run prints once, carrying the DERIVED size of what it is
+/// not measuring.
 ///
-/// The fallback serves READS only. A write into the reference tree requires
-/// `AEON_DIR` to name it — see [`crate::seam2::require_named_reference_tree`].
-///
-/// **A FALLING-BACK READ ANNOUNCES ITSELF.** `d-17` closed the WRITE side: a write refuses
-/// and names the tree it refused. The read side stayed silent, and that asymmetry was
-/// measured on 2026-08-30 — a control run bare resolved its oracle to the owner's live
-/// checkout and was correct only because his working tree happened to sit at the revision
-/// under test. Had he checked out anything else, the same command would have produced a
-/// false red or a false green with identical output. The consequence worth naming: **the
-/// owner's working directory is load-bearing for a verification he does not know he is
-/// participating in**, and nothing linked the two ends.
-///
-/// Announced ONCE per process (261 call sites; per-call would be noise), on stderr, beside
-/// the `skip:` lines a reader already scans. Whether a bare read should REFUSE rather than
-/// announce is `d-18` and is the owner's; naming the subject needs no ruling.
-pub fn aeon_dir() -> PathBuf {
-    match std::env::var("AEON_DIR") {
-        Ok(named) => PathBuf::from(named),
-        Err(_) => {
-            static ANNOUNCED: std::sync::Once = std::sync::Once::new();
-            ANNOUNCED.call_once(|| eprintln!("{}", live_tree_fallback_notice()));
-            PathBuf::from(LIVE_TREE_FALLBACK)
-        }
-    }
+/// The count comes from [`crate::reference_dependence`], the same walk
+/// `reference_dependence_is_named` reports with — one derivation, two consumers, and no
+/// number typed anywhere. A derivation that came back below its own floor would render an
+/// unmeasured suite as a small one, so it says so instead of printing a number it cannot
+/// stand behind.
+pub fn partial_run_banner(context: &str) -> String {
+    let ws = crate::reference_dependence::workspace_root();
+    let gated = crate::reference_dependence::reference_dependent_binaries(&ws);
+    let size = if gated.len() > crate::reference_dependence::FLOOR {
+        format!("{} test binaries are reference-dependent and", gated.len())
+    } else {
+        format!(
+            "the derivation of how many test binaries are reference-dependent returned only {} \
+             and COULD NOT BE ESTABLISHED (floor {}), so the size below is unknown rather than \
+             small —",
+            gated.len(),
+            crate::reference_dependence::FLOOR
+        )
+    };
+    format!(
+        "PARTIAL RUN ({ALLOW_PARTIAL_VAR} is set). No reference tree is named, so {size} every \
+         row in them is left UNMEASURED. A green result from this run does NOT mean those rows \
+         passed — it means they were not run. Name a tree with {AEON_DIR_VAR} to measure them.\
+         \n{context}"
+    )
 }
 
 /// `true` when `SIGIL_STRICT_GATE` is set — the pre-merge fidelity run, where a
@@ -1313,36 +1730,90 @@ mod tests {
     /// VALUES against the harvest and that the harvest's fields are all COVERED by
     /// the fixture, but neither direction catches a name the fixture still supplies
     /// that the live structs no longer declare. This is that missing direction.
-        /// A read that falls back to the owner's live checkout must NAME it, and must not be
-    /// countable as a skipped test.
+    /// A read with no reference tree NAMED stops with a message a reader can act on, and
+    /// that message is not countable as a skipped test.
     ///
     /// `d-17` closed the write side: a write into an unnamed reference tree refuses and
     /// prints the path it refused. The read side stayed silent until 2026-08-30, when a
     /// control run bare resolved its oracle to the live checkout and was right only because
-    /// that working tree happened to sit at the revision under test. The failure this pins
-    /// is not "the fallback exists" — it is "the fallback is invisible in the output", which
-    /// makes a result unattributable after the fact.
+    /// that working tree happened to sit at the revision under test. `d-18` closed the rest
+    /// of it: the read side now stops rather than announcing, because a run that only says
+    /// how much it skipped still exits 0.
     ///
-    /// Pinned on the pure notice rather than on captured stderr: the announcement fires once
-    /// per PROCESS, so a stderr assertion would pass or fail on test ordering.
+    /// Pinned on the pure message rather than on a captured panic: the refusal fires from
+    /// whichever test reaches the resolver first, so an output assertion would pass or fail
+    /// on test ordering. The behaviour that the refusal actually FIRES is a subprocess gate,
+    /// `crates/sigil-harness/tests/bare_run_refuses.rs`.
     #[test]
-    fn a_falling_back_read_names_the_tree_and_is_not_a_skip() {
-        let notice = super::live_tree_fallback_notice();
+    fn a_read_with_no_named_tree_refuses_by_name_and_is_not_a_skip() {
+        // A resolved value the assertions below can check the message against, built here
+        // rather than read out of the environment: the message's job is to name whatever
+        // was resolved, and a test that resolved it for real would assert a different
+        // sentence on every box.
+        let resolved = super::ResolvedCheckout {
+            path: std::path::PathBuf::from("/a/derived/aeon"),
+            step: super::PathStep::Derived,
+        };
+        let notice = super::bare_run_refusal(&resolved.announcement(), Some(&resolved));
 
         assert!(
-            notice.contains(super::LIVE_TREE_FALLBACK),
-            "the notice must name the tree the result is attributable to; got: {notice}"
+            notice.contains("/a/derived/aeon"),
+            "the refusal must name the tree it DECLINED, or a reader cannot tell a refusal to \
+             use the live checkout from a resolver that simply failed; got: {notice}"
         );
         assert!(
-            notice.contains("AEON_DIR"),
-            "the notice must name the variable that fixes it; got: {notice}"
+            notice.contains("step 3"),
+            "the refusal must say which precedence step answered, so the fix is readable from \
+             the message; got: {notice}"
         );
+        for name in [super::AEON_DIR_VAR, super::SUITE_ROOT_VAR, super::ALLOW_PARTIAL_VAR] {
+            assert!(
+                notice.contains(name),
+                "the refusal must name `{name}` — the variables that would have answered and \
+                 the opt-in that takes the partial run are the whole of what a reader can do \
+                 about it; got: {notice}"
+            );
+        }
         // The landing bar counts BOTH spellings (scripts/landing-run.sh:369,
-        // refreeze.rs:533). A fallback notice is not a skipped test, and a notice that
-        // inflated the skip count would trade one silent wrong number for another.
+        // refreeze.rs:533). This refusal is a FAILURE, not a skipped test: counting it as a
+        // skip would let the run that STOPPED report a skip total instead of a stop.
         assert!(
             !notice.contains("skip:") && !notice.contains("skipping"),
-            "the notice must not be countable as a skip; got: {notice}"
+            "the refusal must not be countable as a skip; got: {notice}"
+        );
+    }
+
+    /// The declared partial run says how big the hole is, and says so from a DERIVED count.
+    ///
+    /// The ruling's other half. A partial run that printed no size is the say-nothing
+    /// behaviour d-18 replaced; one that printed a number it could not stand behind would
+    /// be worse, so the banner reports an unestablished derivation as unknown rather than
+    /// as small.
+    #[test]
+    fn the_partial_run_banner_carries_a_derived_size() {
+        let banner = super::partial_run_banner("(resolver context)");
+        let gated = crate::reference_dependence::reference_dependent_binaries(
+            &crate::reference_dependence::workspace_root(),
+        );
+        assert!(
+            gated.len() > crate::reference_dependence::FLOOR,
+            "COULD NOT MEASURE: the reference-dependent derivation found only {}, below its own \
+             floor, so this test cannot say what the banner should carry",
+            gated.len()
+        );
+        assert!(
+            banner.contains(&gated.len().to_string()),
+            "the banner must carry the DERIVED count of what went unmeasured ({}); got: {banner}",
+            gated.len()
+        );
+        assert!(
+            banner.contains(super::ALLOW_PARTIAL_VAR) && banner.contains(super::AEON_DIR_VAR),
+            "the banner must name the flag that produced this run and the one that ends it; \
+             got: {banner}"
+        );
+        assert!(
+            !banner.contains("skip:") && !banner.contains("skipping"),
+            "the banner is one line about a whole run, not a skipped test; got: {banner}"
         );
     }
 

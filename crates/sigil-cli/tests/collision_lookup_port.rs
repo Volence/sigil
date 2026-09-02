@@ -56,8 +56,8 @@
 //! Plain: the `s4.bin` window at `pins::COLLISION_LOOKUP`'s plain base/len.
 //! Debug: the `s4.debug.bin` window at `pins::COLLISION_LOOKUP`'s debug base/len.
 //!
-//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, or
+//! `EMPYREAN_SUITE_ROOT`). Absent, both tests SKIP green — unless
 //! `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
 //!
 //! ```text
@@ -84,7 +84,7 @@ fn region_base(debug: bool) -> u32 {
 /// (the prior five were `engine/system/` or sound data).
 fn collision_lookup_dir() -> PathBuf {
     let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     Path::new(&aeon).join("engine/level")
 }
 
@@ -357,7 +357,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
 /// (`pins::COLLISION_LOOKUP.plain_base`) — the bare-name proof.
 #[test]
 fn collision_lookup_region_matches_reference() {
-    let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    let aeon = sigil_harness::test_support::aeon_dir();
     let rom_path = Path::new(&aeon).join("s4.bin");
     let Ok(refrom) = std::fs::read(&rom_path) else {
         if strict_gate() {
@@ -399,7 +399,7 @@ fn collision_lookup_region_matches_reference() {
 /// (`pins::COLLISION_LOOKUP.debug_base`).
 #[test]
 fn collision_lookup_debug_region_matches_reference() {
-    let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    let aeon = sigil_harness::test_support::aeon_dir();
     let rom_path = Path::new(&aeon).join("s4.debug.bin");
     let Ok(refrom) = std::fs::read(&rom_path) else {
         if strict_gate() {

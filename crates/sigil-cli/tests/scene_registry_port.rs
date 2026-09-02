@@ -42,7 +42,7 @@ fn strict_gate() -> bool {
 fn gate(debug: bool, rom_name: &str, base: usize) {
     let region_len: usize = if debug { pins::SCENE_REGISTRY.debug_len } else { pins::SCENE_REGISTRY.plain_len };
     let aeon_dir =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     let aeon = Path::new(&aeon_dir);
     let rom_path = aeon.join(rom_name);
     let Ok(refrom) = std::fs::read(&rom_path) else {

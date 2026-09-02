@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 /// The `dplc.emp` module's own directory (honors `AEON_DIR`).
 fn dplc_dir() -> PathBuf {
     let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     Path::new(&aeon).join("engine/objects")
 }
 
@@ -45,9 +45,7 @@ fn strict_gate() -> bool {
 /// The ambient deps prepended so `Sst.<field>(a0)` resolves — types + sst,
 /// under dplc.emp's module header (the ambient-injection technique).
 fn dplc_with_ambient(dplc_src: &str) -> sigil_frontend_emp::ast::File {
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
+    let aeon = sigil_harness::test_support::aeon_dir();
     let read = |p: PathBuf| {
         let s = std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
         let (f, d) = parse_str(&s);

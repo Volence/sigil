@@ -26,9 +26,7 @@ use sigil_span::Level;
 use std::path::PathBuf;
 
 fn aeon_dir() -> PathBuf {
-    std::env::var("AEON_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/home/volence/sonic_hacks/aeon"))
+    sigil_harness::test_support::aeon_dir()
 }
 
 #[track_caller]

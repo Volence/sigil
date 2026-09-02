@@ -34,8 +34,8 @@
 //! (Windows slid +0x21/+0x2E at sound-pkg3 v2 (growth + mod-8 pads; pads land in-region so sizes grew +7/+5) 2026-08-10: the banked dac_sample_tab
 //! ahead of this bank grew 90→120 B; region CONTENT unchanged, sizes held.)
 //!
-//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, or
+//! `EMPYREAN_SUITE_ROOT`). Absent, both tests SKIP green — unless
 //! `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure (mirrors the
 //! `sigil-harness` `m1d_rom.rs`/`mixed_dac_rom.rs` gate idiom).
 //!

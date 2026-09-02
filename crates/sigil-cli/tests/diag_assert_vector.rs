@@ -35,9 +35,7 @@ use std::path::PathBuf;
 /// the default checkout path. The AS reference reads the REAL debugger.asm from
 /// here, so a relocated tree / CI without it is handled by the skip guard below.
 fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
+    sigil_harness::test_support::aeon_dir()
 }
 
 #[track_caller]

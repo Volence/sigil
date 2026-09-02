@@ -359,9 +359,7 @@ fn struct_field_displacement_over_spliced_base_matches_as() {
 
 #[test]
 fn coords_module_emits_zero_bytes() {
-    let aeon = std::path::PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
+    let aeon = sigil_harness::test_support::aeon_dir();
     let path = aeon.join("engine/coords.emp");
     let Ok(src) = std::fs::read_to_string(&path) else {
         if std::env::var("SIGIL_STRICT_GATE").is_ok() {

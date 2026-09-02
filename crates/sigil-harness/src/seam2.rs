@@ -93,16 +93,20 @@ struct BankAnchors {
 pub const SOUND_PLACEMENT_MAP_REL: &str = "games/sonic4/map.toml";
 
 /// A write into the reference tree requires that tree to have been NAMED: `Ok(())`
-/// when `AEON_DIR` is set, otherwise an error naming the variable, the hardcoded
-/// fallback it would have resolved to, and the path the write was aimed at.
+/// when `AEON_DIR` is set, otherwise an error naming the variable, the default the
+/// resolver would have answered with, and the path the write was aimed at.
 ///
-/// The argument is invisibility, not damage. Unset, [`crate::test_support::aeon_dir`]
-/// resolves to [`crate::test_support::LIVE_TREE_FALLBACK`] — a working checkout
-/// somebody else is editing — and `engine/sound/generated/` is gitignored there, so
-/// a write into it leaves no trace in `git status` and no record of which process
-/// produced the bytes a later read picks up. A fallback to a live tree is
-/// structurally incapable of announcing its own failure; a refusal names the caller's
-/// own site and is fixed by exporting one variable.
+/// The default is RESOLVED, never spelled ([`crate::test_support::unnamed_default_tree`]),
+/// so this refusal and the tree it is about cannot name different paths and the guard
+/// keeps working when the suite moves — `contract/SUITE_PATHS.md`, "What a resolver owes
+/// its reader".
+///
+/// The argument is invisibility, not damage. Unnamed, [`crate::test_support::aeon_dir`]
+/// derives `<suite root>/aeon` — a working checkout somebody else is editing — and
+/// `engine/sound/generated/` is gitignored there, so a write into it leaves no trace in
+/// `git status` and no record of which process produced the bytes a later read picks up.
+/// A fall-back to a live tree is structurally incapable of announcing its own failure; a
+/// refusal names the caller's own site and is fixed by exporting one variable.
 ///
 /// Reads keep the fallback. This is the write side only, which is why the check sits
 /// in the emitters' shared precondition rather than in the resolver.
@@ -117,14 +121,20 @@ pub fn require_named_reference_tree(aeon: &Path) -> Result<(), String> {
     if std::env::var_os("AEON_DIR").is_some() {
         return Ok(());
     }
+    // The refusal must say what it is protecting, and a resolver that cannot answer must
+    // not render as an empty clause: an unresolvable default is reported as the refusal
+    // the resolver itself gave.
+    let default = match crate::test_support::unnamed_default_tree() {
+        Ok(c) => c.path.display().to_string(),
+        Err(refusal) => format!("no tree at all ({refusal})"),
+    };
     Err(format!(
         "AEON_DIR is not set, so the reference tree written into is one nobody named. Unset, it \
-         resolves to the hardcoded fallback {} — the live aeon working checkout — whose \
+         resolves to {default} — the live aeon working checkout — whose \
          engine/sound/generated/ is gitignored, so a write there leaves no trace in `git status` \
          and nothing records which process produced the bytes a later read picks up. Set AEON_DIR \
          to a reference tree you provisioned (scripts/provision-aeon-ref.sh). Nothing was created. \
          Refused write target: {}",
-        crate::test_support::LIVE_TREE_FALLBACK,
         aeon.display()
     ))
 }

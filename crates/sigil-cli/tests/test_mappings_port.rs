@@ -39,9 +39,7 @@ fn region_base(debug: bool) -> u32 {
 }
 
 fn aeon_root() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
+    sigil_harness::test_support::aeon_dir()
 }
 
 fn mappings_dir() -> PathBuf {
@@ -138,7 +136,7 @@ fn compile_real_file(debug: bool) -> sigil_link::LinkedImage {
 
 fn gate(debug: bool, rom_name: &str, base: usize) {
     let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     let rom_path = Path::new(&aeon).join(rom_name);
     let Ok(refrom) = std::fs::read(&rom_path) else {
         if strict_gate() {

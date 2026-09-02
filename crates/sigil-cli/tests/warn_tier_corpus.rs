@@ -236,9 +236,7 @@ fn today_days() -> i64 {
 
 /// The reference tree, or `None` when it is absent and strict mode is off.
 fn aeon_dir() -> Option<PathBuf> {
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
+    let aeon = sigil_harness::test_support::aeon_dir();
     if !aeon.exists() {
         if std::env::var("SIGIL_STRICT_GATE").is_ok() {
             panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());

@@ -3587,3 +3587,53 @@ Parcel `parcel/scripts-name-their-tree`; contract `contract/SUITE_PATHS.md` at e
   a ledger row and then checking its own sentence against the tree. The row claimed the config was
   now in the population; one `grep` said otherwise. A claim about one's own work, written minutes
   earlier, still needs the command.
+
+### SUITE_PATHS resolver (2026-09-02) — three things the migration deliberately left standing
+Parcels `parcel/suite-paths-resolver` and `parcel/d18-refuse-bare-run`, packet
+`docs/superpowers/notes/2026-09-02-suite-paths-resolver.md`. Contract: empyrean
+`contract/SUITE_PATHS.md` at `origin/main` `82982b7f`.
+- **Six `env::var("AEON_DIR")` reads in the artifact-WRITING tools did not route through the
+  resolver.** `refreeze.rs` (×4), `derive_offcanon.rs`, `emit_sound_blob.rs` each read step 1
+  and refuse if it is unset — no suite-root step, no derivation. That is stricter than the
+  contract's precedence and it is deliberate: a refreeze that DERIVED its reference tree is
+  the exact failure the whole reference-tree arc exists to close, and a step-2 or step-3
+  answer would let one happen. Recorded so a later reader finds a decision rather than an
+  omission.
+  — NOT A GAP by design (kill: only if the contract is ever read as requiring all four steps
+  everywhere, in which case these want an explicit "step 1 only" resolver entry point rather
+  than a private `env::var`, so the restriction is named instead of implied)
+- **The source-gate classifier cannot see a reach through `ResolvedCheckout.path`.**
+  `scripts/nightly_source_gates.sh`'s accessor closure now narrows to members whose signature
+  returns a path, which is what excludes `aeon_checkout` — a function that answers "which
+  checkout" rather than yielding a tree. A caller that takes `aeon_checkout()`'s answer apart
+  and joins onto `.path` therefore reaches the tree through a dropped member and would bucket
+  `no-reference`. One file does that today and it is a `SOURCE_GATES` member, so it never
+  reaches the question.
+  — OPEN (kill: `source_gate_classification::the_derived_accessor_set_is_the_declared_guard_set`
+  makes a NEW path-yielding accessor red, but nothing makes a new `.path` REACH red. The cheap
+  close is a second published pattern — the struct field, not just the accessor names — held to
+  the same declaration; the honest alternative is `ResolvedCheckout.path` becoming private with
+  a named consumer method, so the reach has a spelling the closure can see)
+- **`test_support::aeon_dir_is_unnamed()` has no consumers.** It predates this parcel and was
+  re-expressed against the resolver rather than deleted, because a public predicate answering
+  "did anybody name a tree" is the natural thing for a script-facing caller to want and the
+  d-18 work may yet grow one.
+  — OPEN (kill: either a consumer, or its deletion; an accessor nothing calls is a claim
+  nothing tests, and it currently rides the classifier's closure into the published accessor
+  set's neighbourhood for free)
+
+### A private AEON_DIR read bypasses both d-18 halves (2026-09-02)
+Found while reconciling the derived reference-dependent population (packet
+`2026-09-02-suite-paths-resolver.md`). `reference_dependent_binaries()` is a substring match
+for `aeon_dir(` / `reference_tree(` / `reference_tree_for_profile(` over a file's whole text,
+and the bare-run refusal lives inside `aeon_dir()`. A test that writes
+`std::env::var("AEON_DIR").unwrap_or_else(...)` itself therefore does BOTH of: escape the
+not-measured population count, and escape the refusal — so it silently measures against the
+live checkout, which is the exact state d-18 closed. Reachable by writing eight words, and
+the routing this parcel did is what made today's count accurate rather than any property of
+the predicate. Measured: on master 124 files named `AEON_DIR` while 99 matched the predicate,
+and the 31-file difference was files whose private helper carried a name of its own.
+— OPEN (kill: a lint in the shape of `skip_marker_lint` — hold every `env::var("AEON_DIR")`
+in `crates/*/tests/*.rs` to the resolver, with `test_support.rs`, `seam2.rs`, the CLI's
+argv publication and the artifact-writing tools as the derived exceptions rather than a typed
+roster. The same file already proves the shape works)

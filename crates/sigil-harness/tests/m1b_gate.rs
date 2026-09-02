@@ -33,7 +33,7 @@ use sigil_ir::{Cpu, DataFragment, Expr, Fixup, FixupKind, Fragment, Label, Secti
 use sigil_span::{SourceId, Span};
 
 fn aeon_dir() -> PathBuf {
-    PathBuf::from(std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".into()))
+    sigil_harness::test_support::aeon_dir()
 }
 /// The C++ `Symbols.cpp` this gate compiles against lives in the LEGACY Exodus
 /// port (`oracle-old`), not in `oracle` — that path now holds the ground-up Rust

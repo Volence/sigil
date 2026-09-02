@@ -37,64 +37,33 @@
 //! returns zero would report a perfectly measured suite, which is this file's own failure mode
 //! arriving one level up.
 
-use std::path::{Path, PathBuf};
-
-/// The guards every reference-dependent gate opens with. Both live in `test_support`, and a
-/// file that calls either is asking the reference tree a question.
-const GUARDS: [&str; 3] = ["reference_tree(", "reference_tree_for_profile(", "aeon_dir("];
-
-fn workspace() -> PathBuf {
-    // `CARGO_MANIFEST_DIR` is `crates/sigil-cli`; the workspace is two levels up.
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop();
-    p.pop();
-    p
-}
-
-/// Every test binary whose body asks the reference tree a question, derived from source.
-fn reference_dependent_binaries(ws: &Path) -> Vec<String> {
-    let mut out = Vec::new();
-    for crate_dir in std::fs::read_dir(ws.join("crates")).into_iter().flatten().flatten() {
-        let tests = crate_dir.path().join("tests");
-        for e in std::fs::read_dir(&tests).into_iter().flatten().flatten() {
-            let p = e.path();
-            if p.extension().and_then(|s| s.to_str()) != Some("rs") {
-                continue;
-            }
-            // This gate names the guards in order to look for them, so it would otherwise
-            // find itself and inflate the population by one.
-            let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
-            if name == "reference_dependence_is_named" {
-                continue;
-            }
-            let Ok(text) = std::fs::read_to_string(&p) else { continue };
-            if GUARDS.iter().any(|g| text.contains(g)) {
-                out.push(name);
-            }
-        }
-    }
-    out.sort();
-    out
-}
+use sigil_harness::reference_dependence::{reference_dependent_binaries, workspace_root, FLOOR};
 
 #[test]
 fn the_suite_names_the_measurement_it_did_not_take() {
-    let ws = workspace();
+    let ws = workspace_root();
     let gated = reference_dependent_binaries(&ws);
 
     // POSITIVE CONTROL. A derivation that finds nothing would report a fully measured suite
-    // — the exact reading this gate exists to prevent — and it would do so silently. The
-    // floor is deliberately far below the measured population (40 binaries on 2026-08-30) so
-    // ordinary churn never trips it, while a broken walk cannot pass.
+    // — the exact reading this gate exists to prevent — and it would do so silently.
     assert!(
-        gated.len() > 20,
+        gated.len() > FLOOR,
         "COULD NOT MEASURE: the reference-dependent derivation found only {} test \
          binaries, so its answer says nothing about how much of the suite is gated. \
          A zero here would render an unmeasured suite as a fully measured one.",
         gated.len()
     );
 
-    let aeon = sigil_harness::test_support::aeon_dir();
+    // The RESOLVER is consulted rather than `aeon_dir()`: this gate's whole subject is the
+    // state where no reference tree was named, and `aeon_dir()` is the function that acts
+    // on that state. Asking it here would make the gate a consumer of the behaviour it
+    // reports on.
+    let aeon = match sigil_harness::test_support::aeon_checkout() {
+        Ok(c) if c.step.names_a_reference_tree() => c.path,
+        // Nobody named a tree: the state below, whether the resolver derived one or
+        // refused outright.
+        _ => std::path::PathBuf::from("(no reference tree was named)"),
+    };
     let strict = std::env::var("SIGIL_STRICT_GATE").is_ok();
 
     if aeon.is_dir() {

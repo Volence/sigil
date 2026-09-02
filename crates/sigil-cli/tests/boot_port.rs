@@ -29,8 +29,8 @@
 //!   ImmSigned8 deferral) and the hotkeys (1,1) shape (the gameBootHook
 //!   drift matrix against the REAL game.asm expansion).
 //!
-//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`). Absent, the gates SKIP green — unless
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, or
+//! `EMPYREAN_SUITE_ROOT`). Absent, the gates SKIP green — unless
 //! `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
 
 use sigil_frontend_as::{assemble, Options as AsOptions};
@@ -52,7 +52,7 @@ fn region_len(debug: bool) -> usize {
 
 fn aeon_dir() -> PathBuf {
     let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     PathBuf::from(aeon)
 }
 

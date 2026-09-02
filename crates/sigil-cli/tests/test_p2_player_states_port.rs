@@ -9,7 +9,7 @@
 //! mirrors) and dispatch back through the Player_States offset table.
 //!
 //! REFERENCE-DEPENDENT: the sources and the reference ROMs live in the sibling
-//! `aeon` tree (`AEON_DIR`, default `/home/volence/sonic_hacks/aeon`). Absent,
+//! `aeon` tree (`AEON_DIR`, or `EMPYREAN_SUITE_ROOT`). Absent,
 //! every test here SKIPS green — unless `SIGIL_STRICT_GATE=1` makes a missing
 //! reference a hard failure.
 

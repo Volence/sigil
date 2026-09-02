@@ -1,6 +1,6 @@
 //! A WRITE INTO THE REFERENCE TREE REFUSES UNLESS `AEON_DIR` NAMED IT.
 //!
-//! `test_support::aeon_dir` falls back to a hardcoded path — the owner's LIVE aeon
+//! `test_support::aeon_dir` derives `<suite root>/aeon` — the owner's LIVE aeon
 //! working checkout — when `AEON_DIR` is unset, and every sound emitter
 //! `native::ensure_generated` drives writes INSIDE the tree it resolves. The hazard
 //! is invisibility, not damage: aeon's build regenerates those artifacts
@@ -17,8 +17,9 @@
 //!   * the emitter set is PARSED OUT OF `ensure_generated`'s own body (shared with
 //!     `reference_tree_write_guard` via `common`), so an eighth emitter added there
 //!     and not here fails by name rather than shrinking the coverage silently;
-//!   * the path the refusal must name is `test_support::LIVE_TREE_FALLBACK`, the
-//!     same constant `aeon_dir` falls back to, so the two cannot drift apart;
+//!   * the path the refusal must name is `test_support::unnamed_default_tree()`, the
+//!     same resolution `aeon_dir` performs when nobody names a tree, so the two cannot
+//!     drift apart and neither is a literal;
 //!   * the ORDERING — naming checked before the tree's contents are probed — is
 //!     read off `seam2::SOUND_PLACEMENT_MAP_REL`: the unset-env refusal must NOT
 //!     mention it (the content probe never ran), and the named-env refusal MUST
@@ -117,7 +118,20 @@ fn child_with_aeon_dir_removed() {
 
     let aeon = PathBuf::from(std::env::var(DIR_VAR).expect("parent hands the child its scratch tree"));
     let out_dir = aeon.join("engine/sound/generated");
-    let fallback = sigil_harness::test_support::LIVE_TREE_FALLBACK;
+    // The default the refusal must name is RESOLVED by the same resolver the refusal
+    // consults, so the two cannot name different paths. Unresolvable is UNMEASURABLE, not
+    // an empty expectation that any refusal would satisfy.
+    let fallback = sigil_harness::test_support::unnamed_default_tree()
+        .unwrap_or_else(|e| {
+            panic!(
+                "UNMEASURABLE: with AEON_DIR removed the resolver names no default tree ({e}), so \
+                 there is no path this gate can require the refusal to name."
+            )
+        })
+        .path
+        .display()
+        .to_string();
+    let fallback = fallback.as_str();
 
     for (name, emit) in EXERCISED {
         let err = match emit(&aeon, &out_dir) {

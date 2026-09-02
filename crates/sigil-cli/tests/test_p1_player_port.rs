@@ -29,8 +29,8 @@
 //! this one carried three symbols from an era when Sonic had code while missing
 //! the ability module the record grew.
 //!
-//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`), BUILT — the sonic gates read each shape's
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, or
+//! `EMPYREAN_SUITE_ROOT`), BUILT — the sonic gates read each shape's
 //! sibling `.lst` for their seam addresses as well as the `.bin` for the window.
 //! Absent, every test here SKIPS green — unless `SIGIL_STRICT_GATE=1` makes a
 //! missing reference a hard failure.

@@ -307,9 +307,7 @@ fn is_computed_dispatch_op(o: &CodeOperand) -> bool {
 /// wiring's assumptions must be re-checked against.
 #[test]
 fn corpus_computed_dispatch_census_is_six_sites_five_procs() {
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
+    let aeon = sigil_harness::test_support::aeon_dir();
     if !aeon.exists() {
         if std::env::var("SIGIL_STRICT_GATE").is_ok() {
             panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
@@ -436,9 +434,7 @@ fn tripwire_message(hits: &[String]) -> String {
 /// enumeration.
 #[test]
 fn no_out_declaring_proc_carries_a_targets_dispatch() {
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
+    let aeon = sigil_harness::test_support::aeon_dir();
     if !aeon.exists() {
         if std::env::var("SIGIL_STRICT_GATE").is_ok() {
             panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());

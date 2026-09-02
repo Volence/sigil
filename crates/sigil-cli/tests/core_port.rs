@@ -39,8 +39,8 @@
 //! grew both shapes: DeleteObject's explicit frame_off tail-word clear
 //! (+2 code; sizeof(Sst) is not long-divisible).
 //!
-//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`). Absent, the gates SKIP green — unless
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, or
+//! `EMPYREAN_SUITE_ROOT`). Absent, the gates SKIP green — unless
 //! `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
 //!
 //! ```text
@@ -57,9 +57,7 @@ use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::PathBuf;
 
 fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
+    sigil_harness::test_support::aeon_dir()
 }
 
 #[track_caller]

@@ -12,8 +12,8 @@ use sigil_harness::native::harvest_engine_constants;
 use sigil_ir::backend::Cpu;
 use std::path::Path;
 
-fn aeon() -> String {
-    std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string())
+fn aeon() -> std::path::PathBuf {
+    sigil_harness::test_support::aeon_dir()
 }
 
 #[track_caller]

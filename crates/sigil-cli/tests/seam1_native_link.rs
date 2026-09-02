@@ -14,7 +14,7 @@
 //! BootData, which the design §2.1/OQ-2 comparand originally missed.
 //!
 //! REFERENCE-DEPENDENT: the five sound `.emp` sources live in the sibling `aeon`
-//! tree (`AEON_DIR`, default `/home/volence/sonic_hacks/aeon`). Absent, every
+//! tree (`AEON_DIR`, or `EMPYREAN_SUITE_ROOT`). Absent, every
 //! test that links the blob SKIPS green — unless `SIGIL_STRICT_GATE=1` makes a
 //! missing reference a hard failure, so the pre-merge run cannot skip the byte
 //! gate. `blob_lengths_are_canonical` is reference-free and always runs.

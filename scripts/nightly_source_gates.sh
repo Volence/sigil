@@ -98,6 +98,15 @@ SOURCE_GATES=(
     # so adding the gate without adding this line would have darkened the lane
     # nightly, over a file whose entire purpose is to stop things being silent.
     reference_dependence_is_named
+    # the d-18 refusal: a run nobody gave a reference tree STOPS, and a declared partial
+    # run says how much it left alone. Here for the same reason as the row above, and it
+    # is the same shape: it reads sigil's own test sources to derive the not-measured
+    # size and never opens a file in any aeon tree — every child it spawns is aimed at a
+    # scrubbed environment or at this repo's own directory. It calls `reference_tree`,
+    # though, and the classifier below is a static one: it cannot tell a call aimed at a
+    # fixture from a call aimed at a real tree, so the file would otherwise be
+    # UNCLASSIFIED and darken this whole lane.
+    bare_run_refuses
     # whole-corpus source analyses
     contract_closure_corpus
     dead_save_corpus
@@ -245,12 +254,35 @@ reference_env_var() {
 # would bucket as no-reference. Not live: no such module names the tree today, checkable
 # with `grep -lE '<the selector pattern>' crates/*/tests/*/mod.rs`. If it ever fires, widen
 # this closure to those modules — the same fixed point over one more file set.
+#
+# THE CLOSURE IS WIDER THAN THE ANSWER, and the last step narrows it. Since the SUITE_PATHS
+# resolver landed, the function that READS the variable is not the function that YIELDS a
+# reference tree: `aeon_checkout` answers "which checkout" and hands back a step and a path
+# for a caller to judge, while `aeon_dir` is the one that commits to a tree a gate will
+# measure against. The seed has to be the reader (that is the only anchor derivable from
+# source), so the closure necessarily passes through the resolver — and emitting the
+# resolver as an accessor makes every file that merely ASKS which checkout would be
+# resolved, such as the resolver's own precedence gate, look like a file that reads aeon.
+#
+# So the final set keeps only members whose signature returns a PATH. That is read off the
+# source like everything else here, and it is exactly the distinction above: a function
+# handing back a `PathBuf` is handing back a tree to read, and one handing back a verdict
+# is not.
+#
+# THE HOLE THIS LEAVES, stated: a caller that takes `aeon_checkout()`'s answer apart and
+# joins onto its `.path` reaches the tree through a member this filter drops. One file does
+# that today and it is a `SOURCE_GATES` member, so it never reaches this question. What
+# keeps the hole from widening quietly is not this script:
+# `crates/sigil-harness/tests/source_gate_classification.rs` holds the published set to the
+# guard names `sigil_harness::reference_dependence::GUARDS` declares, so a new
+# path-yielding accessor — or an existing one dropping out — is a red test rather than a
+# silently smaller answer.
 accessor_closure() {
     local src=$1 stripped acc more pat i
     stripped=$(sed 's@^[[:space:]]*//.*@@' "$src")
     local scan='
         /^[[:space:]]*(pub )?fn / {
-            name = $0; pub = ($0 ~ /pub fn /)
+            name = $0; pub = ($0 ~ /pub fn /); yields = ($0 ~ /PathBuf/)
             sub(/^[[:space:]]*(pub )?fn /, "", name); sub(/[(<].*/, "", name)
             next
         }
@@ -269,7 +301,12 @@ accessor_closure() {
         ' <<< "$stripped" | sort -u)
         more=$(printf '%s\n%s\n' "$acc" "$more" | sort -u)
         if [[ $more == "$acc" ]]; then
-            printf '%s\n' "$acc"
+            # The narrowing, and it is the LAST step on purpose: the closure has to walk
+            # through the non-yielding members to reach the yielding ones.
+            awk -v pat="$(paste -sd'|' <<< "$acc")" "$scan"'
+                END { for (n in out) print n }
+                { if (name != "" && pub && yields && name ~ ("^(" pat ")$")) out[name] = 1 }
+            ' <<< "$stripped" | sort -u
             return 0
         fi
         acc=$more
@@ -286,7 +323,7 @@ accessor_closure() {
 classify() {
     local tree=$1 f n src var accessors obtains scanned=0
     CLS_SOURCE=(); CLS_ARTIFACT=(); CLS_NOREF=(); CLS_UNCLASSIFIED=()
-    CLS_SCANNED=0; CLS_REFUSAL=""
+    CLS_SCANNED=0; CLS_REFUSAL=""; CLS_ACCESSORS=""
     src="$tree/$SUPPORT_RS"
     [[ -r $src ]] || {
         CLS_REFUSAL="$SUPPORT_RS is unreadable in $tree — the reference-tree rule is \
@@ -306,6 +343,14 @@ reach a fixed point — a truncated closure is short accessors, and each one it 
 makes some file look like it reads nothing"
         return 2
     }
+    # PUBLISHED, not just consumed. An EMPTY closure refuses below and is loud; a
+    # closure that is merely SHORT is not — every accessor it misses makes some file
+    # look like it reads nothing, and that file then buckets as `no-reference` and is
+    # waved through. Nothing in this script can see that from the inside, because a
+    # short closure is self-consistently short. So the set is published and
+    # `crates/sigil-harness/tests/source_gate_classification.rs` holds it to the guard
+    # names `sigil_harness::reference_dependence::GUARDS` declares.
+    CLS_ACCESSORS=$(tr '\n' ' ' <<< "$accessors")
     [[ -n $accessors ]] || {
         CLS_REFUSAL="no reference-tree accessor is derivable from $SUPPORT_RS in $tree \
 — the read rule has no pattern, so every file would falsely look like it reads nothing"
@@ -388,6 +433,7 @@ if [[ ${1:-} == --audit ]]; then
         exit 2
     fi
     echo "tree=$AUDIT_TREE"
+    echo "accessors: $CLS_ACCESSORS"
     echo "SOURCE_GATES=${#SOURCE_GATES[@]} scanned=$CLS_SCANNED source=${#CLS_SOURCE[@]} \
 artifact=${#CLS_ARTIFACT[@]} no-reference=${#CLS_NOREF[@]} unclassified=${#CLS_UNCLASSIFIED[@]}"
     (( ${#CLS_NOREF[@]} )) && echo "no-reference: ${CLS_NOREF[*]}"

@@ -25,9 +25,7 @@ fn placement_map() -> map_placement::PlacementMap {
 }
 
 fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
+    sigil_harness::test_support::aeon_dir()
 }
 #[track_caller]
 fn strict_gate() -> bool {

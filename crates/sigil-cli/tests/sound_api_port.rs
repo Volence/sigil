@@ -35,8 +35,8 @@
 //! Debug: the `s4.debug.bin` window at `pins::SOUND_API`'s debug base/len (—
 //! per-shape as of retro-fix batch 2; the debug song-id + SFX-ring asserts).
 //!
-//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, or
+//! `EMPYREAN_SUITE_ROOT`). Absent, both tests SKIP green — unless
 //! `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
 //!
 //! ```text
@@ -53,9 +53,7 @@ use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::PathBuf;
 
 fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
+    sigil_harness::test_support::aeon_dir()
 }
 
 /// Harness-private LMA for the synthetic outbound consumer (the `bsr.w Sound_PlaySFX`
