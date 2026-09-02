@@ -141,6 +141,29 @@ passes the fn and is refused only at record emission — **blamed on the consume
 Return annotations DO check at the returning fn, so the parameter side is the asymmetry. A5 holds (it
 terminates); **the blame site is the defect.**
 
+#### LANDED on `parcel/comptime-compare-refuses` — and one line of the brief above is wrong (2026-09-02)
+
+Both rows are one commit, because they turned out to be one defect wearing two hats: **a comparison or
+an annotation that cannot be meaningfully evaluated produced a value instead of refusing.** Q2-e and
+Q2-D4 share a single root — `eval_equality` was TOTAL by construction, so any two values of different
+kinds were "simply not equal" — and Q1-L is that same sentence in the annotation layer.
+
+**The decision on bar 1: REFUSE.** Equality is now defined WITHIN a comparison class and refuses ACROSS
+classes with `[eq.cross-type]`, naming both types and saying which constant it was stuck at. Two
+cross-kind pairs stay DEFINED because the corpus depends on them and neither is a mistake — a newtype
+beside a bare int (§8.3 erasure) and a **label beside `0`** (the empty-pointer-slot spelling in
+`variants: [X, 0]`). Both are always false, so they are exactly the case bar 1 allows only if written
+down: they are, in `docs/EMP_PITFALLS_EQUALITY.md`, drafted here for aeon to land in `EMP_PITFALLS.md`.
+
+**Correct this brief's Q1-L sentence.** "Return annotations DO check at the returning fn" is not true
+and the probe never said it was — its own Q1-L row reports the return-shaped failure blamed on the same
+`pub data` line, and notes the diagnostic is identical when the fn is spelled `-> array`. Read from the
+code: `ComptimeFnDecl::ret` was **read by nothing in the crate**. So there was no asymmetry to fix; both
+halves of a signature were decoration, and both now check.
+
+**Bar 3 held: no ROM byte moved**, four shapes, control built from this branch's own base rather than
+trusted from the reference tree's existing files.
+
 ### CHAINS 194 AND 195 ARRIVED FROM THE AEON LANE — verified here, with three practices worth keeping (2026-08-30)
 
 **What arrived.** Chain 194 (`424feb39` freeze, `47d821ca` attest **RED** 4173/4/2) and chain 195
