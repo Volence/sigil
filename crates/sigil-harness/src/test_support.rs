@@ -901,23 +901,6 @@ pub fn unnamed_default_tree() -> Result<ResolvedCheckout, String> {
     )])
 }
 
-/// The line printed, once per process, when a READ resolves a tree nobody named.
-///
-/// Pure so it can be pinned by a test. Three properties matter: it NAMES the tree and the
-/// step that produced it, it names the variable that fixes it, and it cannot be miscounted
-/// as a skip — it contains neither `skip:` nor `skipping`, both of which
-/// `scripts/landing-run.sh:369` and `refreeze.rs:533` count out of a run's log.
-pub fn unnamed_reference_notice(resolved: &ResolvedCheckout) -> String {
-    format!(
-        "{} — nobody NAMED a reference tree, so every reference-dependent result in this run was \
-         measured against a checkout this run derived. That tree is outside this repository and \
-         its revision can change under a run without notice, so a pass or a failure here is \
-         attributable to whatever it happened to contain. Set {AEON_DIR_VAR} to a provisioned \
-         tree (scripts/provision-aeon-ref.sh) to make the result name its own subject.",
-        resolved.announcement()
-    )
-}
-
 /// `true` when a read would resolve a tree nobody named rather than one somebody did.
 pub fn aeon_dir_is_unnamed() -> bool {
     !matches!(aeon_checkout(), Ok(c) if c.step.names_a_reference_tree())
@@ -941,21 +924,147 @@ pub fn aeon_dir_is_unnamed() -> bool {
 /// Announced ONCE per process (261 call sites; per-call would be noise), on stderr, beside
 /// the `skip:` lines a reader already scans.
 ///
-/// A step-4 refusal — no checkout resolvable at all — panics here, because there is no
-/// path to return and a guess is the one answer this contract forbids.
+/// **AND A BARE RUN NOW STOPS.** `d-18`, ruled `refuse` by the hub on 2026-09-02 under the
+/// owner's widened delegation (`docs/OVERSEER.md`, R4; empyrean `4e8e865b`), against this
+/// lane's own recommendation of say-only. The hub's reason is the better one: *a run that
+/// prints how much it skipped still exits 0*, and a silent green is the class never
+/// dropped, because a green is trusted the moment it is in the run. The parcel-1
+/// announcement above is what that costs measured in one transcript — two passes, exit 0,
+/// and the subject of the measurement was whatever the owner's working tree happened to
+/// contain.
+///
+/// So when steps 1 and 2 do not answer, this panics with a message naming both variables,
+/// the derived path it declined to use and why, and the opt-in. [`ALLOW_PARTIAL_VAR`]
+/// takes the partial run instead: reference-dependent rows skip against
+/// [`NO_REFERENCE_TREE`], and the banner says how many binaries that is.
 pub fn aeon_dir() -> PathBuf {
-    let resolved = match aeon_checkout() {
-        Ok(r) => r,
-        Err(refusal) => panic!("{refusal}"),
-    };
+    match aeon_checkout() {
+        Ok(r) if r.step.names_a_reference_tree() => {
+            announce_once(r.announcement());
+            r.path
+        }
+        // Step 3 answered, or nothing did. Both are the same fact for a gate: nobody named
+        // a tree this result could be attributed to.
+        Ok(r) => no_named_reference_tree(&r.announcement(), Some(&r)),
+        Err(refusal) => no_named_reference_tree(&refusal, None),
+    }
+}
+
+/// One line per process on stderr, beside the `skip:` lines a reader already scans.
+fn announce_once(line: String) {
     static ANNOUNCED: std::sync::Once = std::sync::Once::new();
-    let line = if resolved.step.names_a_reference_tree() {
-        resolved.announcement()
-    } else {
-        unnamed_reference_notice(&resolved)
-    };
     ANNOUNCED.call_once(|| eprintln!("{line}"));
-    resolved.path
+}
+
+/// The environment variable that opts a run in to running WITHOUT a named reference tree.
+///
+/// The ruling's shape: the refusal is the default and the partial run is explicit, because
+/// the person who set this variable knows what the run does not cover and the person
+/// reading its green does not.
+pub const ALLOW_PARTIAL_VAR: &str = "SIGIL_ALLOW_PARTIAL";
+
+/// The stand-in path a PARTIAL run resolves to.
+///
+/// Deliberately absent and deliberately self-describing. Every reference-dependent gate
+/// opens with [`reference_tree`], which reports a missing path by name, so this spelling is
+/// what a reader sees in each of those `skip:` lines — the reason for the skip is carried
+/// by the path itself rather than inferred from a banner scrolled past hundreds of lines
+/// earlier. Returning the DERIVED live checkout here instead would make the partial run
+/// silently measure against it, which is the thing being refused.
+pub const NO_REFERENCE_TREE: &str = "/nonexistent/SIGIL_ALLOW_PARTIAL-no-reference-tree-was-named";
+
+/// The message a bare run stops with.
+///
+/// Pure so a test can pin it without arranging the environment that produces it. Four
+/// things have to be in it and each is asserted: both variables that would have answered,
+/// the path step 3 derived and DECLINED (so the reader is not left wondering whether the
+/// resolver simply failed), and the opt-in spelling. It carries neither `skip:` nor
+/// `skipping` — `scripts/landing-run.sh:369` and `refreeze.rs:533` count those out of a
+/// run's log, and this refusal is a FAILURE, not a skipped test; counting it as a skip
+/// would let the very run that stopped report a skip total instead of a stop.
+///
+/// `context` is what the resolver itself said: its step-3 answer, or its step-4 refusal.
+pub fn bare_run_refusal(context: &str, derived: Option<&ResolvedCheckout>) -> String {
+    let declined = match derived {
+        Some(r) => format!(
+            "This run DECLINED to use {}, which step 3 derived from this checkout's own \
+             location: it is a working checkout outside this repository, its revision changes \
+             under a run without notice, and a result measured against it would be attributable \
+             to whatever it happened to contain rather than to the code under test.",
+            r.path.display()
+        ),
+        None => "Nothing was derived either.".to_string(),
+    };
+    format!(
+        "NO REFERENCE TREE IS NAMED, so this run can measure nothing it could attribute, and \
+         STOPS. {declined}\n\nThe resolver's own answer: {context}\n\nEither name a provisioned \
+         tree — {AEON_DIR_VAR}=<aeon checkout> (scripts/provision-aeon-ref.sh), or \
+         {SUITE_ROOT_VAR}=<the directory holding the suite> — or declare a partial run with \
+         {ALLOW_PARTIAL_VAR}=1, in which case every reference-dependent row is left unmeasured \
+         and the run says how many. Ruled d-18 (docs/OVERSEER.md, 2026-09-02): a run that only \
+         PRINTS how much it did not measure still exits 0, and a green is trusted the moment it \
+         is in the run."
+    )
+}
+
+/// The `d-18` decision point: nobody named a reference tree, so either stop or take the
+/// declared partial run.
+///
+/// `context` is what the resolver said — its step-3 answer, or its step-4 refusal.
+fn no_named_reference_tree(context: &str, derived: Option<&ResolvedCheckout>) -> PathBuf {
+    let partial = std::env::var_os(ALLOW_PARTIAL_VAR).is_some_and(|v| !v.is_empty());
+    // `SIGIL_STRICT_GATE` is read directly rather than through `strict_gate()`. That
+    // accessor RECORDS every reached consultation into the strict witness, and
+    // `strict_census` diffs that population against the one it derives from the test tree;
+    // a consultation from inside the resolver is not a strict-gated test body and would
+    // enter the census as a site with no counterpart.
+    let strict = std::env::var_os("SIGIL_STRICT_GATE").is_some();
+
+    if partial && strict {
+        panic!(
+            "{ALLOW_PARTIAL_VAR} and SIGIL_STRICT_GATE are both set and no reference tree is \
+             named. A strict run is the one that may not skip a gate, so it cannot also be the \
+             partial one; the two flags describe opposite runs and the resolver will not pick \
+             between them. Name a tree with {AEON_DIR_VAR}, or drop one flag.\n{context}"
+        );
+    }
+
+    if !partial {
+        panic!("{}", bare_run_refusal(context, derived));
+    }
+
+    announce_once(partial_run_banner(context));
+    PathBuf::from(NO_REFERENCE_TREE)
+}
+
+/// The banner a declared partial run prints once, carrying the DERIVED size of what it is
+/// not measuring.
+///
+/// The count comes from [`crate::reference_dependence`], the same walk
+/// `reference_dependence_is_named` reports with — one derivation, two consumers, and no
+/// number typed anywhere. A derivation that came back below its own floor would render an
+/// unmeasured suite as a small one, so it says so instead of printing a number it cannot
+/// stand behind.
+pub fn partial_run_banner(context: &str) -> String {
+    let ws = crate::reference_dependence::workspace_root();
+    let gated = crate::reference_dependence::reference_dependent_binaries(&ws);
+    let size = if gated.len() > crate::reference_dependence::FLOOR {
+        format!("{} test binaries are reference-dependent and", gated.len())
+    } else {
+        format!(
+            "the derivation of how many test binaries are reference-dependent returned only {} \
+             and COULD NOT BE ESTABLISHED (floor {}), so the size below is unknown rather than \
+             small —",
+            gated.len(),
+            crate::reference_dependence::FLOOR
+        )
+    };
+    format!(
+        "PARTIAL RUN ({ALLOW_PARTIAL_VAR} is set). No reference tree is named, so {size} every \
+         row in them is left UNMEASURED. A green result from this run does NOT mean those rows \
+         passed — it means they were not run. Name a tree with {AEON_DIR_VAR} to measure them.\
+         \n{context}"
+    )
 }
 
 /// `true` when `SIGIL_STRICT_GATE` is set — the pre-merge fidelity run, where a
@@ -1621,49 +1730,90 @@ mod tests {
     /// VALUES against the harvest and that the harvest's fields are all COVERED by
     /// the fixture, but neither direction catches a name the fixture still supplies
     /// that the live structs no longer declare. This is that missing direction.
-        /// A read that falls back to the owner's live checkout must NAME it, and must not be
-    /// countable as a skipped test.
+    /// A read with no reference tree NAMED stops with a message a reader can act on, and
+    /// that message is not countable as a skipped test.
     ///
     /// `d-17` closed the write side: a write into an unnamed reference tree refuses and
     /// prints the path it refused. The read side stayed silent until 2026-08-30, when a
     /// control run bare resolved its oracle to the live checkout and was right only because
-    /// that working tree happened to sit at the revision under test. The failure this pins
-    /// is not "the fallback exists" — it is "the fallback is invisible in the output", which
-    /// makes a result unattributable after the fact.
+    /// that working tree happened to sit at the revision under test. `d-18` closed the rest
+    /// of it: the read side now stops rather than announcing, because a run that only says
+    /// how much it skipped still exits 0.
     ///
-    /// Pinned on the pure notice rather than on captured stderr: the announcement fires once
-    /// per PROCESS, so a stderr assertion would pass or fail on test ordering.
+    /// Pinned on the pure message rather than on a captured panic: the refusal fires from
+    /// whichever test reaches the resolver first, so an output assertion would pass or fail
+    /// on test ordering. The behaviour that the refusal actually FIRES is a subprocess gate,
+    /// `crates/sigil-harness/tests/bare_run_refuses.rs`.
     #[test]
-    fn a_falling_back_read_names_the_tree_and_is_not_a_skip() {
-        // A resolved value the assertion below can check the notice against, built here
-        // rather than read out of the environment: the notice's job is to name whatever
+    fn a_read_with_no_named_tree_refuses_by_name_and_is_not_a_skip() {
+        // A resolved value the assertions below can check the message against, built here
+        // rather than read out of the environment: the message's job is to name whatever
         // was resolved, and a test that resolved it for real would assert a different
         // sentence on every box.
         let resolved = super::ResolvedCheckout {
             path: std::path::PathBuf::from("/a/derived/aeon"),
             step: super::PathStep::Derived,
         };
-        let notice = super::unnamed_reference_notice(&resolved);
+        let notice = super::bare_run_refusal(&resolved.announcement(), Some(&resolved));
 
         assert!(
             notice.contains("/a/derived/aeon"),
-            "the notice must name the tree the result is attributable to; got: {notice}"
+            "the refusal must name the tree it DECLINED, or a reader cannot tell a refusal to \
+             use the live checkout from a resolver that simply failed; got: {notice}"
         );
         assert!(
             notice.contains("step 3"),
-            "the notice must say which precedence step answered, so the fix is readable from \
+            "the refusal must say which precedence step answered, so the fix is readable from \
              the message; got: {notice}"
         );
-        assert!(
-            notice.contains("AEON_DIR"),
-            "the notice must name the variable that fixes it; got: {notice}"
-        );
+        for name in [super::AEON_DIR_VAR, super::SUITE_ROOT_VAR, super::ALLOW_PARTIAL_VAR] {
+            assert!(
+                notice.contains(name),
+                "the refusal must name `{name}` — the variables that would have answered and \
+                 the opt-in that takes the partial run are the whole of what a reader can do \
+                 about it; got: {notice}"
+            );
+        }
         // The landing bar counts BOTH spellings (scripts/landing-run.sh:369,
-        // refreeze.rs:533). A fallback notice is not a skipped test, and a notice that
-        // inflated the skip count would trade one silent wrong number for another.
+        // refreeze.rs:533). This refusal is a FAILURE, not a skipped test: counting it as a
+        // skip would let the run that STOPPED report a skip total instead of a stop.
         assert!(
             !notice.contains("skip:") && !notice.contains("skipping"),
-            "the notice must not be countable as a skip; got: {notice}"
+            "the refusal must not be countable as a skip; got: {notice}"
+        );
+    }
+
+    /// The declared partial run says how big the hole is, and says so from a DERIVED count.
+    ///
+    /// The ruling's other half. A partial run that printed no size is the say-nothing
+    /// behaviour d-18 replaced; one that printed a number it could not stand behind would
+    /// be worse, so the banner reports an unestablished derivation as unknown rather than
+    /// as small.
+    #[test]
+    fn the_partial_run_banner_carries_a_derived_size() {
+        let banner = super::partial_run_banner("(resolver context)");
+        let gated = crate::reference_dependence::reference_dependent_binaries(
+            &crate::reference_dependence::workspace_root(),
+        );
+        assert!(
+            gated.len() > crate::reference_dependence::FLOOR,
+            "COULD NOT MEASURE: the reference-dependent derivation found only {}, below its own \
+             floor, so this test cannot say what the banner should carry",
+            gated.len()
+        );
+        assert!(
+            banner.contains(&gated.len().to_string()),
+            "the banner must carry the DERIVED count of what went unmeasured ({}); got: {banner}",
+            gated.len()
+        );
+        assert!(
+            banner.contains(super::ALLOW_PARTIAL_VAR) && banner.contains(super::AEON_DIR_VAR),
+            "the banner must name the flag that produced this run and the one that ends it; \
+             got: {banner}"
+        );
+        assert!(
+            !banner.contains("skip:") && !banner.contains("skipping"),
+            "the banner is one line about a whole run, not a skipped test; got: {banner}"
         );
     }
 

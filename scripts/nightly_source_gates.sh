@@ -66,6 +66,15 @@ SOURCE_GATES=(
     # so adding the gate without adding this line would have darkened the lane
     # nightly, over a file whose entire purpose is to stop things being silent.
     reference_dependence_is_named
+    # the d-18 refusal: a run nobody gave a reference tree STOPS, and a declared partial
+    # run says how much it left alone. Here for the same reason as the row above, and it
+    # is the same shape: it reads sigil's own test sources to derive the not-measured
+    # size and never opens a file in any aeon tree — every child it spawns is aimed at a
+    # scrubbed environment or at this repo's own directory. It calls `reference_tree`,
+    # though, and the classifier below is a static one: it cannot tell a call aimed at a
+    # fixture from a call aimed at a real tree, so the file would otherwise be
+    # UNCLASSIFIED and darken this whole lane.
+    bare_run_refuses
     # whole-corpus source analyses
     contract_closure_corpus
     dead_save_corpus
