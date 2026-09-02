@@ -3654,3 +3654,19 @@ parcel ended up making — where a comment enumerates N cases that a function mu
 write the row that iterates them and reports what each case actually produced, so an
 unlisted case is a red row instead of a missing sentence. Worth doing at the next touch of
 each site rather than as a sweep)
+
+### A subprocess gate double-counts its own failure in a log grep (2026-09-02)
+Measured on `/home/volence/sonic_hacks/.sigil-reverify-suite.log`: the merged tree's "6
+failures" is 5 distinct rows. `reference_tree_named_write`'s parent embeds the failing
+child's whole libtest output in its panic message, so both the `... FAILED` name line and the
+`test result: FAILED. 0 passed; 1 failed` line appear twice, and either counting method picks
+up the duplicate. Three gates in this tree spawn children of themselves
+(`reference_tree_named_write`, `bare_run_refuses`, `suite_paths_precedence`), so the
+over-count is one per failing subprocess gate. Same family as the skip-line counting the
+landing bar guards, opposite direction: a skip miscount reads as more coverage, this reads as
+more breakage - which is the safer way to be wrong, and is why it is booked rather than
+urgent.
+— OPEN (kill: the failure-name extraction in `scripts/landing-run.sh` and `refreeze.rs`
+counts DISTINCT names, or the child's output is indented/prefixed by the parent before being
+embedded so a line-anchored grep cannot match it. The second is cheaper and keeps the child's
+assertions readable, which is the reason the embedding exists)

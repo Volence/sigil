@@ -1030,3 +1030,23 @@ After the fix, every affected binary is green: `suite_paths_precedence` 3/3,
 failures. One gate behaved exactly as designed throughout: the write-guard's `UNMEASURABLE`
 arm refused to assert against an unresolvable default rather than passing vacuously, which is
 why that failure names the cause instead of a symptom.
+
+## One correction to the failure COUNT: five distinct rows, not six
+
+Checked against the log's line numbers rather than taken from the name list. Both occurrences
+of `a_write_into_the_reference_tree_refuses_unless_aeon_dir_named_it ... FAILED` (lines 5797
+and 5808) fall inside the `reference_tree_named_write` section (5794-5832);
+`reference_tree_write_guard` (5832-5933) reports `2 passed; 0 failed`. The second line is the
+CHILD process's own libtest output, which that gate's parent embeds verbatim in its panic
+message so the child's assertions are readable.
+
+So the failing set is **five distinct rows**, and the same doubling applies to the
+`test result:` lines — the child's `FAILED. 0 passed; 1 failed` is inside the parent's panic
+text too, so a summed count picks it up as well.
+
+This is not a quibble about arithmetic; it is a property of every subprocess gate in this
+tree, and this parcel added three more of them (`bare_run_refuses`, `suite_paths_precedence`,
+and the pre-existing `reference_tree_named_write`). **A log-grep failure count over this
+suite over-counts by one per failing subprocess gate**, in the same family as the skip-line
+counting the landing bar already has to be careful about — with the difference that a skip
+miscount reads as more coverage while this one reads as more breakage. Booked.
