@@ -10887,3 +10887,58 @@ demo_debug = "51056291/101323"
 lean = "0373dec8/674816"
 s4 = "ac10ab85/719325"
 s4_debug = "fa866f19/736345"
+
+[[entry]]
+name = "left-edge-perscene"
+ab = "aeon 9de3c757 (chain 197): the column-19 borrow becomes a per-scene choice. Four shapes rebuilt on the merged tree: s4 719347/F403F461 (+22 vs 719325), s4.debug 736354/50545389 (+9 vs 736345), demo 96458/30A31D81 and demo.debug 101323/51056291 BYTE-IDENTICAL to the pre-parcel reference (demo sets SCANLINE_CAPS=0 so the per-column span elides). +10 of each sonic4 delta is code in the cap_per_col_vsram_fill span (70->80 bytes, decoding as and.w #$F,d3 / tst.b $19(a0) / bmi.s); the remainder is the compressed deb2 table absorbing one new local label, +12 release and -1 debug. 18 of 20 parallax records byte-identical; the two that move differ by one byte each at offset $19 (Perspective_Subtle $02->$82, Perspective $00->$80). Control build with the mechanism present and NO scene declining differs from the final ROM in exactly 3 bytes of 719347 (header checksum plus those two record bytes), so the default is inert at the data level; it is NOT byte-identical to master and cannot be, because the runtime gate is 10 bytes of new code and no zero-code encoding of a data-driven per-scene choice exists - stated as a shortfall, not explained away. Tool suite 1832 passed / 0 failed / 3 skipped on all four shapes, build-fatal."
+aeon_rev = "8dd28114d534a5d045dd40a037020bed411a03d6"
+note = "d-50 perscene: scenes 13 and 14 decline the column-19 borrow"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "1335897b"
+full_size = 736698
+anchor_crc = "08abed2f"
+anchor_end = 0xa7f34
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "ce46aaa3"
+full_size = 614839
+anchor_crc = "d348c484"
+anchor_end = 0x8c6e6
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "30a31d81"
+full_size = 96458
+anchor_crc = "a9763013"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "51056291"
+full_size = 101323
+anchor_crc = "992c305a"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "71ae6ed4"
+full_size = 674816
+anchor_crc = "f3cf7b7c"
+anchor_end = 0xa4c00
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "f403f461"
+full_size = 719347
+anchor_crc = "bbf380ca"
+anchor_end = 0xa5c82
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "50545389"
+full_size = 736354
+anchor_crc = "95720109"
+anchor_end = 0xa7f34

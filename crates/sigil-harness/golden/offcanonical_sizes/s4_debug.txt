@@ -7,21 +7,21 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=s4_debug
 # reproduces_golden=s4.debug.bin
-# golden_crc32=fa866f19
-# assembled_anchor=a095fbe0
+# golden_crc32=50545389
+# assembled_anchor=95720109
 # assembled_end=0xa7f34
 # labels=80
 Ani_Particle 0x2af64
 Ani_Sonic 0x2ab32
 Ani_Tails 0x2ac3c
 AnimateSprite 0x3be6
-BG_Init 0x9c12
-BgAnim_Init 0x9d46
+BG_Init 0x9c1c
+BgAnim_Init 0x9d50
 BgAnim_Table 0x27efa
 BootData 0x3a0
 BootData_End 0x1c7a
 BusError 0xa6e84
-CSelf_S4LZ_Plain 0xa20c
+CSelf_S4LZ_Plain 0xa216
 Camera_Init 0x7438
 CharDef_Sonic 0x11f72
 CharDef_Tails 0x11fa8
@@ -30,7 +30,7 @@ Checksum 0x18e
 Collected_Init 0x42ca
 Collision_GetType 0x6964
 Collision_ProbeDown 0x69cc
-CompressionSelfTest 0x9e9e
+CompressionSelfTest 0x9ea8
 Dac_Temp_Blip 0x90000
 DeformTable_Zero 0x12bb0
 EndOfRom 0xa7f34
@@ -45,7 +45,7 @@ InitObjectRAM 0x2f72
 InitSpriteSystem 0x36b2
 Init_DMA_Queue 0x1d0a
 Init_SpriteTable 0x2042
-Level_LoadArt 0x8886
+Level_LoadArt 0x8890
 Load_Object 0x53c2
 Map_Tails 0x2af80
 Map_TestObj 0x29f28
@@ -74,7 +74,7 @@ Section_Init 0x6ec0
 Sfx_33 0xa5568
 Song_MovingTrucks 0xa0630
 SoundTablesZ80_Head 0xa0000
-Sound_PostByte 0xac80
+Sound_PostByte 0xac8a
 TailsAppendage_Refresh 0x120c4
 TestAnimated 0x124a2
 TestChildPart 0x128a6

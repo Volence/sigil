@@ -7,15 +7,15 @@
 # post-flip golden re-baseline these re-derive from sigil (nothing requires asl).
 # target=s4
 # reproduces_golden=s4.bin
-# golden_crc32=ac10ab85
-# assembled_anchor=09cfd32a
+# golden_crc32=f403f461
+# assembled_anchor=bbf380ca
 # assembled_end=0xa5c82
 # labels=68
 Ani_Sonic 0x2a27a
 Ani_Tails 0x2a384
 AnimateSprite 0x33d2
-BG_Init 0x7d24
-BgAnim_Init 0x7df8
+BG_Init 0x7d2e
+BgAnim_Init 0x7e02
 BgAnim_Table 0x27642
 BootData 0x398
 BootData_End 0x1bf0
@@ -41,7 +41,7 @@ InitObjectRAM 0x2cc0
 InitSpriteSystem 0x2fb8
 Init_DMA_Queue 0x1c2a
 Init_SpriteTable 0x1f56
-Level_LoadArt 0x749a
+Level_LoadArt 0x74a4
 Load_Object 0x44fe
 Map_Tails 0x2a6c0
 Map_TestObj 0x29670
@@ -70,7 +70,7 @@ Section_Init 0x5c8a
 Sfx_33 0xa3b18
 Song_MovingTrucks 0xa0630
 SoundTablesZ80_Head 0xa0000
-Sound_PostByte 0x7e96
+Sound_PostByte 0x7ea0
 TailsAppendage_Refresh 0x11f3c
 TestSolid_Init 0x122c2
 TestStatic_Main 0x122be
