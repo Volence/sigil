@@ -162,7 +162,35 @@ code: `ComptimeFnDecl::ret` was **read by nothing in the crate**. So there was n
 halves of a signature were decoration, and both now check.
 
 **Bar 3 held: no ROM byte moved**, four shapes, control built from this branch's own base rather than
-trusted from the reference tree's existing files.
+trusted from the reference tree's existing files (byte identity is silent on provenance, so the
+reference tree's pre-existing `.bin`s were not used as the control).
+
+| shape | control (canonical build, base binary) | fixed | |
+|---|---|---|---|
+| `s4.bin` | 719325 B / CRC32 `AC10AB85` | 719325 B / `AC10AB85` | identical |
+| `s4.debug.bin` | 736345 B / `FA866F19` | 736345 B / `FA866F19` | identical |
+| `demo.bin` | 96458 B / `30A31D81` | 96458 B / `30A31D81` | identical |
+| `demo.debug.bin` | 101323 B / `51056291` | 101323 B / `51056291` | identical |
+
+**How the fixed shapes were built, and why it is not a weaker gate.** The canonical path stops in
+`emp_expect_fail` — a SOURCE gate that runs before any assembly — on ONE row of 51 (below), so the fixed
+four shapes were built through `build.sh <game> -nl`, the documented `NO_LINT` hatch for exactly those
+source gates. Everything from the sound-blob emit through the assembly and every post-build gate
+(`effects_seam_gate`, `bganim_room`, `dplc_straddle`, `sprite_tilt_gate`, `instashield_gate`) still ran.
+The control was built CANONICALLY and the fixed build with the hatch, and the four ROMs are
+byte-identical across that difference — a stronger result than a like-for-like pair, because a match
+under two different paths cannot happen if EITHER the hatch or the fix had moved a byte.
+
+**The census, and the one row it moved.** The four-shape build doubles as the corpus census for the new
+refusal: `emp_expect_fail` reports **50 / 51**. No shipping module compares across classes. The single
+row is `tri unit fold`, whose poison fixture states in its own header that it pins `() == int` comparing
+FALSE rather than erroring — the one place in the tree that deliberately depends on the old totality. It
+still fails with exactly 1 `[Error]`; only the message changed, from the fixture's differential
+`TAIL_IF_UNIT_FOLD` text to `[eq.cross-type] == not defined for unit and int`. That is `EMP_PITFALLS` §1's
+unit fold now being caught by the COMPILER, at the comparison, with no known-good twin required — an
+earlier and stronger catch surface than the ensure it replaces. Nothing fires on a correct tree: the
+guards this poison protects (`engine/level/parallax_dsl.emp:108-117`) compare int to int on the shipped
+generator. The three aeon-side edits are enumerated at the end of `docs/EMP_PITFALLS_EQUALITY.md`.
 
 ### CHAINS 194 AND 195 ARRIVED FROM THE AEON LANE — verified here, with three practices worth keeping (2026-08-30)
 
