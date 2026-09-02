@@ -571,3 +571,155 @@ fires, which is what makes "nested" a measured requirement rather than a stylist
 > `assertion 'left != right' failed: UNMEASURABLE: on this bed --show-toplevel's parent IS the suite root, so the wrong method would give the right answer and passing proves nothing. The worktree must be nested inside the repo, not beside the suite root. / left: Some(".../suite") / right: Some(".../suite")`
 
 Both poisons were reverted and the file re-run green.
+
+---
+
+# The red-first audit: both ways a poison goes green while proving nothing
+
+A red-first proof can be worthless in two ways, and the second was found by another lane
+reproducing the first:
+
+1. **the patch never landed** — the run executed the original file;
+2. **the patch landed and the runner executed a CACHED ARTIFACT built from the old source**
+   (their case was Python's `__pycache__`).
+
+Applied-but-green is a runner defect to fix before claiming the gate, never a pass. Every
+row this parcel claims is sorted below against both, including the ones claimed before the
+rule reached me — a rule applied only forward leaves the existing proofs resting on the
+method it just condemned.
+
+## Mechanism 1: did the patch land?
+
+Structurally, for all twelve. Every poison was a Python script that `assert`s its anchor
+text is present in the file before writing and prints `poisoned <name>` after; a poison whose
+anchor had moved aborts instead of silently writing nothing. Two were additionally confirmed
+by grepping the file back (`grep -n 'if false && partial && strict'` before the Q4 run).
+
+## Mechanism 2: could a prebuilt artifact have answered?
+
+**Sigil's exposure is the prebuilt binary passed by path.** `SIGIL_EMIT` in this session's
+environment names `.sigil-target-resolver/release/emit_sound_blob`, built before the parcel
+started. **No row below has its subject inside it, or inside any other prebuilt artifact.**
+Enumerated rather than asserted:
+
+| Test binary | What it executes | Prebuilt artifact consumed |
+|---|---|---|
+| `suite_paths_precedence` | the linked harness library, `std::env::current_exe()` (itself), `git` | none |
+| `bare_run_refuses` | the linked harness library, `current_exe()`, sigil's own test SOURCES | none |
+| `source_gate_classification` | `bash scripts/nightly_source_gates.sh --audit`, which reads `test_support.rs` as TEXT | none — `--audit` is read-only and builds nothing, by its own contract in that file |
+
+`SIGIL_EMIT` was used once in this parcel, for the `repin --check` provisioning witness, which
+is not a red-first proof. The two gates that do reach an emitter —
+`reference_tree_named_write` and `reference_tree_write_guard` — call
+`sigil_harness::seam1::emit_sound_blob` as a **linked library function**, not the binary, and
+neither was poisoned here.
+
+`current_exe()` is the one place the cached-artifact mechanism could bite in this file: a
+subprocess gate re-runs the test binary, so a cargo that did not rebuild would re-run the
+pre-mutation build. Cargo rebuilds the library the tests link and relinks the binary, and the
+discipline of checking that is what Q4 below records.
+
+## The sorting
+
+**Class A — went RED on the poison.** A red cannot be produced by a mutation that did not
+take effect, nor by a stale artifact built from the un-poisoned source: both would run the
+original code, which passes. Sound by construction.
+
+| Row | Poison |
+|---|---|
+| P1 | step 1 set-but-wrong falls through to step 2 |
+| P2 | the derivation uses `--show-toplevel` |
+| P3 | step 2 set-but-wrong falls through to the derivation |
+| P4 | `unnamed_default_tree` consults step 1 |
+| P5 | the resolver's env read moved into a private helper (subject is the shell classifier, no build at all) |
+| P6 | the accessor closure drops one accessor (same — shell over source text) |
+| Q1 | say-only: announce, then return the derived tree |
+| Q2 | the partial run answers with the derived checkout |
+| Q3 | the banner drops the derived size |
+| R1 | the derivation uses `--show-toplevel` (the bed row) |
+| R2 | the bed's worktree moved beside the suite root (the control) |
+| the `Drop` proof | an assertion forced to fail after the bed exists |
+
+**Class B — printed `ok` on the poison, and was only established by a later red.** One row,
+**Q4**, and it is written up in full above. What matters for this audit is the order in which
+it was diagnosed: the green was **not** attributed to the matcher until a rebuild had been
+forced (`touch crates/sigil-harness/src/lib.rs`, then observing the `Compiling sigil-harness`
+line) and the run had come back green a second time from a build that provably postdated the
+mutation. Only then was the assertion tightened, and only then did the same poison produce a
+red. Mechanism 2 was the first hypothesis, not an afterthought.
+
+One honest correction to a reading of that transcript: the second Q4 invocation reported
+`Finished … in 0.02s` with no `Compiling` line, which is the stale-artifact signature — but
+the *first* invocation had already built, and its build output was filtered away by the grep.
+So no staleness incident actually occurred. The point stands that it could not have been
+known from that run alone, which is why the rebuild was forced rather than assumed.
+
+## Cleanup, confirmed rather than asserted
+
+The clause says the bed's worktree is "removed after". Checked on the path that matters:
+
+* `git worktree list` in this checkout — whose registry IS
+  `/home/volence/sonic_hacks/sigil`'s, since a linked worktree shares the common repo —
+  reads **39 entries** after a green run and **39 after a failing one**, all of them real
+  lanes and agents. The bed's `git worktree add` runs inside the bed's OWN repository, so it
+  never registers in the real checkout.
+* Scratch directories: with an assertion forced to fail *after* the bed exists, the run
+  FAILED and left **zero** `/tmp/sigil-suite-paths-*` directories. Cleanup is an
+  `impl Drop for Scratch`, so it runs on unwind.
+
+**That cleanup was a real finding, not a formality.** Before it, this file swept with a
+`remove_dir_all` at the end of the test — a line a failing assertion never reaches. Sixty-eight
+directories had survived this parcel's own red-first runs, two of them beds carrying a git
+repository, and the precedence row had been leaking four fixtures per invocation since it was
+written. The same defect the concurrent lane hit as 43 registered worktrees, arriving here in
+the shape this file happened to have.
+
+## The contract paragraphs, by SHA
+
+The step-3 clause landed and was sharpened three times after this parcel's brief was written,
+so each paragraph is cited where this lane's work meets it:
+
+| empyrean SHA | Paragraph | Where it lands here |
+|---|---|---|
+| `08dd3f6` | the bullet itself — the proof runs from a linked worktree or says it did not | `the_step_3_derivation_is_proven_from_a_linked_worktree` |
+| `9c86639` | the worktree must be NESTED, credited to the concurrent scripts lane on this work | the bed's `<repo>/nested/wt`, and the control that refuses a bed where the wrong method would be right |
+| `923cfd4`, `9d21bf9` | aurora's addition: the bed runs the resolver ANCHORED at the bed, not the main copy with a different cwd | `derive_suite_root_from(anchor)` and the call against the bed's path |
+| `3865ad4` | assert INSIDE the bed that the wrong and right derivations disagree there | the `assert_ne!` that reports UNMEASURABLE rather than skipping |
+| `2eaadd8`, `f17940b` | the compiled-language form, with this lane's shape quoted as the worked example | the whole row |
+
+**On the compiled-language reading.** The clause's literal words are that the bed runs the
+worktree's *copy* of the resolver, which maps onto a runtime module load — aurora's
+`sibling-root.mjs` is loaded from a path. Rust has one compiled copy and no runtime load, so
+the faithful translation of the intent — measure the real walk against a bed where the wrong
+method is demonstrably wrong — is to invoke the extracted walk with the bed as its anchor,
+not to compile the crate inside the bed. That reading is now contract text (`2eaadd8`), with
+this shape quoted as the worked example for a compiled lane (`f17940b`), so it is cited here
+rather than flagged as a deviation.
+
+Worth recording why the sharpening was needed twice, because sigil had the identical
+exposure: aurora's resolver runs `git` with `cwd: AURORA_ROOT`, its own computed anchor, so a
+bed that only changes directory runs git in the MAIN checkout and passes having measured the
+main-checkout case under a worktree-shaped name. Sigil's `derived_suite_root()` had the same
+pattern — `.current_dir(here)` with `here = env!("CARGO_MANIFEST_DIR")`, a compile-time
+constant, additionally cached in a `OnceLock`. **A cwd-only bed was provably inert here, not
+merely weak**, which is why the walk had to become parameterizable before any bed could
+prove anything.
+
+## The two arms, and what each one claims
+
+The step-3 row makes two different claims and the packet should not blur them:
+
+* **the bed arm** — `derive_suite_root_from(<the bed's nested worktree>)`. Invariant to where
+  `cargo test` was invoked from, because the bed is constructed by the test. **This is the row
+  that must always run and always mean something**, and it is what the contract requires.
+* **the ambient arm** (`ambient_worktree_check`) — the same walk against
+  `env!("CARGO_MANIFEST_DIR")`, the anchor `derived_suite_root()` actually deploys behind, in
+  whatever checkout this binary was compiled in. It reaches something the bed cannot: the real
+  deployed anchor. But it can only ASSERT when the ambient run happens to be in a linked
+  worktree, so it is explicitly secondary, and each of its three unmeasurable cases prints a
+  line saying which check was skipped and that the bed still proved the walk — so a reader is
+  never left thinking step 3 went unmeasured when it did not.
+
+Production behaviour is unchanged by the split: `derived_suite_root()` is
+`derive_suite_root_from(env!("CARGO_MANIFEST_DIR"))` with the same `OnceLock` and the same
+doc reasoning for the anchor.
