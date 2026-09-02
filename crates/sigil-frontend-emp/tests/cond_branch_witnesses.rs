@@ -42,6 +42,14 @@
 //!    expectation is built from (1) and (2), and the test asks whether lowering the
 //!    spelling reproduces it.
 //!
+//! The one thing (1)–(3) do not supply is which condition each *spelling* names —
+//! and that deliberately does not come from the table under test either. It comes
+//! from the 68000 mnemonic's own meaning, which is fixed by the ISA and not by
+//! this repository: `bge` branches on greater-or-equal, so it must select the
+//! `Ge` the `Cond` enum defines; `bmi` branches on minus, so `Mi`; and so on. Each
+//! `assert_spelling` call below states that pairing as its own premise. If the
+//! table under test disagrees with the ISA, the test is what says so.
+//!
 //! The displacement itself comes from the `Disp` operand contract in the same
 //! file: *"the already-resolved displacement … measured from `instruction_address
 //! + 2`"*. Every fixture uses one fixed shape so that number is arithmetic and not
