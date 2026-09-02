@@ -43,9 +43,7 @@ fn region_len(debug: bool) -> usize {
 }
 
 fn aeon_dir() -> PathBuf {
-    let aeon =
-        sigil_harness::test_support::aeon_dir();
-    PathBuf::from(aeon)
+    sigil_harness::test_support::aeon_dir()
 }
 
 fn level_dir() -> PathBuf {

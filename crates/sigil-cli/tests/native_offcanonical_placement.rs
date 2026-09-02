@@ -337,7 +337,8 @@ fn config_b_doctored_size_table_moves_no_bytes() {
             .frozen_sizes
             .get_mut(inert)
             .unwrap_or_else(|| panic!("{inert} not in table"));
-        let align = (1u32..=16).filter(|a| a.is_power_of_two() && *e % a == 0).max().unwrap();
+        let align =
+            (1u32..=16).filter(|a| a.is_power_of_two() && (*e).is_multiple_of(*a)).max().unwrap();
         delta = 2 * align;
         *e += delta;
     }

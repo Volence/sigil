@@ -49,9 +49,7 @@ use sigil_span::Level;
 use std::path::PathBuf;
 
 fn aeon_dir() -> PathBuf {
-    let aeon =
-        sigil_harness::test_support::aeon_dir();
-    PathBuf::from(aeon)
+    sigil_harness::test_support::aeon_dir()
 }
 
 fn raster_dir() -> PathBuf {

@@ -109,6 +109,12 @@ fn aeon_dir() -> Option<PathBuf> {
 /// to `a_missing_extra_entry_errors_loudly` is asserted ABSENT: if someone ever creates
 /// `poison/gone.emp`, that case silently stops testing the unresolvable-name path while
 /// continuing to pass, which is the exact vacuity this file is built to refuse.
+// The two loops below each walk a ONE-ELEMENT array today, and that is deliberate: each
+// array is this file's declared SET of aeon fixtures in that direction, present and
+// absent. Collapsing either to a `let` would turn the next fixture added from one more
+// row into a restructure of the assertion around it, and the header above is explicitly
+// about keeping both directions as sets.
+#[allow(clippy::single_element_loop)]
 #[test]
 fn every_aeon_fixture_this_file_names_still_resolves() {
     let Some(aeon) = aeon_dir() else { return };

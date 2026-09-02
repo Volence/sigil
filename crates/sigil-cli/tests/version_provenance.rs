@@ -704,7 +704,7 @@ fn targets_not_in_this_binary() -> (Vec<String>, Vec<String>) {
                 if let Ok(dir) = rel(src.parent().expect("a source path has a directory")) {
                     dirs.push(dir);
                 }
-            } else if kinds.iter().any(|k| *k == "bin")
+            } else if kinds.contains(&"bin")
                 && !(this_package && target["name"].as_str() == Some("sigil"))
             {
                 if let Ok(file) = rel(&src) {

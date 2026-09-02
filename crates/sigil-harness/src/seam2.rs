@@ -118,7 +118,10 @@ pub const SOUND_PLACEMENT_MAP_REL: &str = "games/sonic4/map.toml";
 /// [`crate::native::ensure_generated`]. This precondition therefore holds for every
 /// writing process without the argv path becoming an exception to it.
 pub fn require_named_reference_tree(aeon: &Path) -> Result<(), String> {
-    if std::env::var_os("AEON_DIR").is_some() {
+    // Through the published predicate rather than a private read of the variable, so the
+    // gate that asserts this precondition is in force asserts THIS function rather than
+    // its own second opinion of what the precondition is.
+    if crate::test_support::checkout_var_is_set() {
         return Ok(());
     }
     // The refusal must say what it is protecting, and a resolver that cannot answer must

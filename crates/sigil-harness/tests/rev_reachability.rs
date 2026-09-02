@@ -78,7 +78,7 @@ impl RevOracle for FakeRepo {
 /// A distinct, well-formed 40-char lowercase-hex SHA per letter. Constructed here rather
 /// than copied from anywhere, so no assertion below is pinned to a revision that exists.
 fn sha(tag: char) -> String {
-    std::iter::repeat(tag).take(40).collect()
+    std::iter::repeat_n(tag, 40).collect()
 }
 
 // ---------------------------------------------------------------------------

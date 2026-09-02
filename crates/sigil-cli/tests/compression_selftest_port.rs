@@ -37,9 +37,7 @@ use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
 
 fn aeon_dir() -> PathBuf {
-    let aeon =
-        sigil_harness::test_support::aeon_dir();
-    PathBuf::from(aeon)
+    sigil_harness::test_support::aeon_dir()
 }
 
 #[track_caller]

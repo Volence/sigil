@@ -618,7 +618,7 @@ fn no_landing_path_invokes_the_drift_job() {
             "scripts/systemd/sigil-ref-drift.service",
             "scripts/systemd/sigil-ref-drift.timer",
         ];
-        if LANE_FILES.iter().any(|f| rel.as_str() == *f)
+        if LANE_FILES.contains(&rel.as_str())
             || rel.ends_with("tests/drift_nightly_harness.rs")
         {
             continue;

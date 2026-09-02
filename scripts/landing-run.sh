@@ -91,6 +91,26 @@
 #   reference-tree ARTIFACTS reported instead of required, and stamps the verdict as
 #   PARTIAL so no reader can mistake it for a landing.
 #
+#   THE SUITE HAS A SECOND, DIFFERENT OPT-IN, AND IT IS NOT THIS SCRIPT'S. Step 4 above is
+#   a refusal the TEST SUITE raises (d-18): a bare `cargo test` that resolves no reference
+#   tree stops rather than passing green over the reference-dependent rows it silently did
+#   not run. The spelling that takes that partial run deliberately is the environment
+#   variable `SIGIL_ALLOW_PARTIAL=1`, which leaves every reference-dependent row unmeasured
+#   and prints how many binaries that is. It is named here because the refusal a reader
+#   meets outside this wrapper names it, and a landing wrapper that never mentioned it
+#   would send them looking for a flag this script does not have.
+#
+#   A LANDING RUN NEVER TAKES IT. `SIGIL_ALLOW_PARTIAL` is REMOVED from the child's
+#   environment in the command span below (`env -u`, not an empty assignment: the child
+#   then does not carry the variable at all, so this does not depend on how a consumer
+#   reads an empty value). An operator who exported it for an earlier bare run cannot
+#   carry it into a landing. The two do not compose: this script resolves a tree and
+#   passes it explicitly, so the suite's refusal is unreachable here anyway — removing the
+#   variable makes that a fact about the environment the child gets rather than a fact
+#   about the path taken to build it. `--scoped` is NOT that opt-in and does not set it: a
+#   scoped run still requires a real reference tree, and only relaxes which of its built
+#   ROMs must be present.
+#
 # EXIT CODES
 #   0  the suite ran, passed, and reconciled against the stated baseline
 #   1  the suite FAILED (red tests, or cargo exited nonzero)
@@ -377,7 +397,12 @@ CARGO_ARGS+=(-- --nocapture)
     echo "# SIGIL_EMIT     $SIGIL_EMIT_RESOLVED ($EMIT_ORIGIN)"
     echo "# scoped         $( ((SCOPED)) && echo 'YES — this is a PARTIAL run, not a landing' || echo 'no (full workspace)')"
     echo "# baseline       ${BASELINE:-<none stated>}"
-    echo "# command        SIGIL_STRICT_GATE=1 cargo ${CARGO_ARGS[*]}"
+    # The suite's own partial-run opt-in, stamped as CLEARED rather than left to be
+    # assumed: the log has to be answerable about whether the reference-dependent rows
+    # were measured, and "the variable was not set in my shell" is not something a
+    # later reader of this file can check.
+    echo "# allow-partial  removed from the child (was: ${SIGIL_ALLOW_PARTIAL:-<unset>})"
+    echo "# command        SIGIL_STRICT_GATE=1 env -u SIGIL_ALLOW_PARTIAL cargo ${CARGO_ARGS[*]}"
     echo
 } > "$LOG" || die "cannot stamp the log $LOG"
 
@@ -392,7 +417,7 @@ CARGO_TARGET_DIR="$TARGET" \
 AEON_DIR="$AEON" \
 SIGIL_BUILD="$SIGIL_BUILD_RESOLVED" \
 SIGIL_EMIT="$SIGIL_EMIT_RESOLVED" \
-    cargo "${CARGO_ARGS[@]}" 2>&1 | tee -a "$LOG"
+    env -u SIGIL_ALLOW_PARTIAL cargo "${CARGO_ARGS[@]}" 2>&1 | tee -a "$LOG"
 # PIPESTATUS[0], never `$?`. With `tee` in the pipeline `$?` is tee's status, and a
 # wrapper reporting a trailing command's code as the run's verdict is the exact defect
 # this line exists to close.

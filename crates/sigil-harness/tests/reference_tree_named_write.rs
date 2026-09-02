@@ -110,10 +110,17 @@ fn child_with_aeon_dir_removed() {
     let names: Vec<&str> = EXERCISED.iter().map(|(n, _)| *n).collect();
     common::reconcile_arms(&declared, &names);
 
+    // Through the guard's OWN predicate, never a private read of the variable. Two
+    // reasons, and the second is why this file spells no environment variable of its own
+    // anywhere: a second opinion of what the precondition is can disagree with the guard
+    // (it would, the moment EMPYREAN_SUITE_ROOT were exported), and a private read here
+    // is the eight-word bypass `reference_env_read_is_routed` exists to keep out of the
+    // test tree.
     assert!(
-        std::env::var_os("AEON_DIR").is_none(),
-        "UNMEASURABLE: the child was started with AEON_DIR still set, so the property it exists \
-         to assert was never in force."
+        !sigil_harness::test_support::checkout_var_is_set(),
+        "UNMEASURABLE: the child was started with {} still set, so the property it exists \
+         to assert was never in force.",
+        sigil_harness::test_support::AEON_DIR_VAR
     );
 
     let aeon = PathBuf::from(std::env::var(DIR_VAR).expect("parent hands the child its scratch tree"));
@@ -207,11 +214,22 @@ fn child_with_aeon_dir_set() {
     let aeon = PathBuf::from(std::env::var(DIR_VAR).expect("parent hands the child its scratch tree"));
     let out_dir = aeon.join("engine/sound/generated");
 
+    // Through the RESOLVER, for the reason the sibling arm gives, and it asserts more than
+    // the raw variable did: not merely that the variable holds this path, but that step 1
+    // is the step that answers with it — which is what the emitters downstream will see.
+    let resolved = sigil_harness::test_support::aeon_checkout().unwrap_or_else(|e| {
+        panic!(
+            "UNMEASURABLE: the child's environment resolves no checkout at all ({e}), so a \
+             refusal here would not distinguish the two checks."
+        )
+    });
     assert_eq!(
-        std::env::var_os("AEON_DIR").map(PathBuf::from),
-        Some(aeon.clone()),
-        "UNMEASURABLE: the child's AEON_DIR does not name the tree under test, so a refusal here \
-         would not distinguish the two checks."
+        (resolved.step, resolved.path.clone()),
+        (sigil_harness::test_support::PathStep::CheckoutVar, aeon.clone()),
+        "UNMEASURABLE: the child resolves {} at step {}, not the tree under test at step 1, so a \
+         refusal here would not distinguish the two checks.",
+        resolved.path.display(),
+        resolved.step.number()
     );
 
     for (name, emit) in EXERCISED {
@@ -299,10 +317,13 @@ fn run_child(mode: &str, dir: &Path) -> String {
     let exe = std::env::current_exe().expect("the test binary knows its own path");
     let mut cmd = Command::new(&exe);
     cmd.arg("--nocapture").arg("--test-threads=1").env(CHILD_VAR, mode).env(DIR_VAR, dir);
+    // The variable is NAMED, never spelled: one constant, so a rename cannot leave the
+    // child's environment and the guard it exercises talking about different variables.
+    let aeon_dir_var = sigil_harness::test_support::AEON_DIR_VAR;
     if mode == "named" {
-        cmd.env("AEON_DIR", dir);
+        cmd.env(aeon_dir_var, dir);
     } else {
-        cmd.env_remove("AEON_DIR");
+        cmd.env_remove(aeon_dir_var);
     }
     let out = cmd.output().unwrap_or_else(|e| {
         panic!("UNMEASURABLE: could not run {} in `{mode}` mode: {e}", exe.display())

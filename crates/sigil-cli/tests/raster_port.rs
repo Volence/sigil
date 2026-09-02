@@ -62,9 +62,7 @@ use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::PathBuf;
 
 pub fn aeon_dir() -> PathBuf {
-    let aeon =
-        sigil_harness::test_support::aeon_dir();
-    PathBuf::from(aeon)
+    sigil_harness::test_support::aeon_dir()
 }
 
 fn raster_dir() -> PathBuf {

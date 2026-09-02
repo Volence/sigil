@@ -940,6 +940,25 @@ pub fn aeon_dir_is_unnamed() -> bool {
     !matches!(aeon_checkout(), Ok(c) if c.step.names_a_reference_tree())
 }
 
+/// `true` when precedence step 1's checkout variable is set at all.
+///
+/// Deliberately NARROWER than [`aeon_dir_is_unnamed`], and the two are not
+/// interchangeable: this one asks only whether the CHECKOUT VARIABLE was set, ignoring
+/// step 2 and the derivation entirely. That is the precondition
+/// [`crate::seam2::require_named_reference_tree`] holds a write to — a write refuses
+/// unless the operator named the tree by that variable — and it is published here so the
+/// guard and every gate asserting the guard's precondition consult ONE function. Asserted
+/// separately, the guard's `AEON_DIR` and a gate's own idea of "nobody named a tree"
+/// disagree the moment [`SUITE_ROOT_VAR`] is exported: the guard still refuses and the
+/// gate reads the environment as named, so the gate fails on a correct tree.
+///
+/// Emptiness is not consulted, and that is the guard's rule rather than an oversight: an
+/// operator who exported the variable at all has named something, and an empty value is
+/// [`aeon_checkout`]'s to reject with a message that can say why.
+pub fn checkout_var_is_set() -> bool {
+    std::env::var_os(AEON_DIR_VAR).is_some()
+}
+
 /// The aeon REFERENCE tree — the tree every byte and port gate measures against.
 ///
 /// Steps 1 and 2 of the contract's precedence are the acceptable answers. A step-3
