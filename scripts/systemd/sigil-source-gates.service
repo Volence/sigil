@@ -3,7 +3,13 @@ Description=sigil aeon-source-derived gate lane (the standing check that replace
 
 [Service]
 Type=oneshot
-ExecStart=/home/volence/sonic_hacks/sigil/scripts/nightly_source_gates.sh
+# `%h` is systemd's own home-directory substitution, expanded at unit load. See the sibling
+# sigil-ref-drift.service for the full reasoning: the literal /home/<user> made this unit
+# machine- and user-specific, in the one file that fires the scripts enforcing the
+# no-hardcoded-path rule. What remains assumed is that the suite lives at ~/sonic_hacks,
+# which cannot be resolved away because systemd requires an absolute ExecStart.
+ExecStartPre=/usr/bin/env bash -c 'test -x "%h/sonic_hacks/sigil/scripts/nightly_source_gates.sh" || { echo "sigil-source-gates: %h/sonic_hacks/sigil/scripts/nightly_source_gates.sh is not an executable file — this unit assumes the suite is at ~/sonic_hacks; edit ExecStart/ExecStartPre or move the checkout" >&2; exit 1; }'
+ExecStart=%h/sonic_hacks/sigil/scripts/nightly_source_gates.sh
 # The script is loud on its own failures. This covers the ones it cannot reach:
 # a missing or non-executable script, a kill, an OOM. A runner that fails
 # silently is the vacuous-gate pattern the lane exists to prevent, one level up.

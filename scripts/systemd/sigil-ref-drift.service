@@ -3,7 +3,17 @@ Description=sigil aeon-reference drift job (non-blocking; the instrument SIGIL-D
 
 [Service]
 Type=oneshot
-ExecStart=/home/volence/sonic_hacks/sigil/scripts/nightly_ref_drift.sh
+# `%h` is systemd's own home-directory substitution, expanded at unit load. The literal
+# /home/<user> that stood here made this unit machine- AND user-specific, in a file whose
+# whole purpose is to fire scripts that refuse to hardcode a path — the rule enforced
+# everywhere downstream and broken at the one place nothing checks it.
+#
+# WHAT IS STILL ASSUMED, said rather than glossed: the suite lives at ~/sonic_hacks. That
+# cannot be resolved away here — systemd requires an absolute ExecStart, so something must
+# name a path before any resolver can run. The script resolves the suite root properly
+# once it is found; this line only has to find the script.
+ExecStartPre=/usr/bin/env bash -c 'test -x "%h/sonic_hacks/sigil/scripts/nightly_ref_drift.sh" || { echo "sigil-ref-drift: %h/sonic_hacks/sigil/scripts/nightly_ref_drift.sh is not an executable file — this unit assumes the suite is at ~/sonic_hacks; edit ExecStart/ExecStartPre or move the checkout" >&2; exit 1; }'
+ExecStart=%h/sonic_hacks/sigil/scripts/nightly_ref_drift.sh
 # The job's exit codes are REPORTING codes, not failures of this unit: 1 is drift
 # observed, 2 is nothing measured, 3 is an unverified change. All three are results,
 # and the job has already notified with the wording that distinguishes them.
