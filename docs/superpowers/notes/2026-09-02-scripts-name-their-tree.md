@@ -425,42 +425,96 @@ about what the timers run until it lands.** After landing:
 
 ---
 
-## 7. Suite
+## 7. Suite — the full workspace sweep
 
-Held at the coordinator's instruction: the engine lane is running a golden freeze on this
-machine and a release workspace sweep alongside their ROM builds is the load that has
-produced a killed freeze twice before. Everything else in this note was completed first.
+Run at the coordinator's go, on the branch as built, on the base it was built on — **no
+rebase onto the new master and no repointing at a chain-196 reference tree**; the merged-tree
+re-verify is a separate run and is the overseer's.
 
-Targeted single-binary runs that were made (all green, real output):
+```
+SIGIL_STRICT_GATE=1 AEON_DIR=/home/volence/sonic_hacks/.aeon-ref-scripts \
+  cargo test --release --workspace --no-fail-fast 2>&1 | tee <target>/suite.log
+```
 
-| target | result |
+**Environment printed from inside the shell that ran cargo**, not asserted from outside it.
+The shared `sigil/target/release` holds pre-flip binaries, and anything built through them
+silently produces chain-195 bytes, so the wrapper both stamps the value and REFUSES if it
+ever resolves under `sigil/target`:
+
+```
+# pwd               …/worktrees/agent-aa6511bccbb851b48
+# HEAD              9ff15885febbc9e3719f956fc07ee005f62a049c
+# branch            parcel/scripts-name-their-tree
+# dirty             clean
+# CARGO_TARGET_DIR  /home/volence/sonic_hacks/.sigil-target-scripts
+# SIGIL_STRICT_GATE 1
+# AEON_DIR          /home/volence/sonic_hacks/.aeon-ref-scripts
+# aeon ref HEAD     027ec1620dd977bf7b8ee47cbafe2b2197059092
+# shared target on PATH of this build? no
+# started (UTC)     2026-09-02T09:12:00Z
+```
+
+### Result
+
+| | |
 |---|---|
-| `sigil-harness --test scripts_name_their_tree` | 7 passed; 0 failed; 0 ignored |
-| `sigil-harness --test golden_write_gate` | 6 passed; 0 failed; 0 ignored |
-| `sigil-harness --test source_gate_classification` | 2 passed; 0 failed; 0 ignored |
-| `sigil-harness --test golden_freeze_atomicity` | 9 passed; 0 failed; 0 ignored |
-| `sigil-harness --test reference_tree_write_guard` | 2 passed; 0 failed; 0 ignored |
-| `sigil-harness --test reference_tree_named_write` | 1 passed; 0 failed; 0 ignored |
-| `sigil-harness --test skip_marker_lint` | 2 passed; 0 failed; 0 ignored |
-| `sigil-harness --test harness_root_handover` | 4 passed; 0 failed; 0 ignored |
-| `sigil-harness --test strict_census_lint` | 5 passed; 0 failed; 0 ignored |
-| `sigil-cli --test drift_nightly_harness` (after the §2b amendment) | 7 passed; 0 failed; 0 ignored |
+| **passed** | **4184** |
+| **failed** | **0** |
+| **ignored** | 2 |
+| **exit code** | **`CARGO_EXIT=0`** |
+| test binaries | 366 |
+| failing test names | none |
+| skip lines (`skip:` or `skipping`) | **0** |
 
-`scripts/nightly_source_gates.sh --audit` after every change: `scanned=132 source=44
-artifact=85 no-reference=3 unclassified=0`, `rc=0` — the lane still classifies this tree.
+**The run reached its own end.** `CARGO_EXIT=0` is present in the log — checked explicitly,
+because a run that vanished and a run that passed trail identically, and two runs died
+without an exit status on this machine the same day. The exit code is taken from
+`PIPESTATUS[0]`, not `$?`, which with `tee` in the pipeline would report tee's status.
 
-`golden_write_gate` is the one that matters most for the capture-script change: it runs the
-shipped script from a COPY planted outside the repo, which is the branch where the include
-is unreachable and only step 1 applies.
+The two ignored are pre-existing and self-describing:
 
-`bash -n` passes on all nine touched shell/conf files. **`shellcheck` is not installed on
-this machine** (`which shellcheck` → not found), so no lint beyond `bash -n` was run.
+- `sigil_diff_reports_byte_identity` — *"reads the aeon source tree; run with `--ignored`"*
+- `secondary_pin_classes_match_the_hand_typed_baseline` — *"RETIRED by Wave-B B-0 (packed
+  placement): this test asserts literal pin VALUES"*
 
-The reference tree was provisioned at the pinned `027ec162` and PROVEN, before the hold:
-both rebuild controls matched the frozen images (`s4.bin fdd1cf81/719387`,
+### Ran versus declared — reconciled to zero
+
+The naive comparison shows a gap, and the gap is fully accounted for rather than waved at a
+known-issue note:
+
+```
+ran (passed + failed + ignored)        = 4186
+declared (git grep -c -F '#[test]')    = 4185     difference +1
+```
+
+Every one of the 4185 counted lines was classified, and the residue is zero:
+
+| | count | what it is |
+|---|---|---|
+| `#[test]` lines binding directly to a test fn | 4173 | ordinary tests |
+| lines that are PROSE or a string literal | 8 | `strict_census.rs` doc comments and `raw.starts_with("#[test]")`; `strict_census_lint.rs` fixtures. Counted by grep, compile to nothing |
+| lines inside the `per_joint!` macro body | 3 | `freeze_step_gap.rs:47,51,55` — expand to **12** running tests (3 joints × 4) |
+| a real test whose `#[ignore = "…"]` reason is a MULTI-LINE string | 1 | `repin_pins.rs:1162`, which is the second ignored test above |
+
+`4173 + 12 + 1 = 4186` — **exactly the number that ran, nothing unexplained.** Equivalently,
+the naive count is off by `−8 prose +9 macro expansion = +1`.
+
+**None of this is mine.** The macro, the prose mentions and the multi-line ignore all predate
+this branch; the reconciliation is recorded because a `+1` that is merely *believed* to be
+the campaign's documented grep-vs-`--list` gap is an assumption, and it took one script to
+turn it into an accounting.
+
+### Other checks
+
+`bash -n` passes on all ten touched shell/conf files. **`shellcheck` is not installed on this
+machine** (`which shellcheck` → not found), so no lint beyond `bash -n` was run.
+
+`scripts/nightly_source_gates.sh --audit`: `scanned=132 source=44 artifact=85
+no-reference=3 unclassified=0`, `rc=0`.
+
+The reference tree was provisioned at the pinned `027ec162` and PROVEN before the run: both
+rebuild controls matched the frozen images (`s4.bin fdd1cf81/719387`,
 `s4.debug.bin 0f6b1359/736391`) and `repin --check` ended `pins.rs unchanged`.
-
----
 
 ## 8. Two findings about the METHOD, not the code
 
