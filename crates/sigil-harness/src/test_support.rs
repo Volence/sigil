@@ -733,42 +733,57 @@ fn is_suite_root(p: &std::path::Path) -> bool {
 /// constant) and ~100 test binaries would otherwise each pay a subprocess per call.
 fn derived_suite_root() -> Result<PathBuf, String> {
     static ROOT: std::sync::OnceLock<Result<PathBuf, String>> = std::sync::OnceLock::new();
-    ROOT.get_or_init(|| {
-        let here = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let out = std::process::Command::new("git")
-            .args(["rev-parse", "--git-common-dir"])
-            .current_dir(here)
-            .output()
-            .map_err(|e| {
-                format!("`git rev-parse --git-common-dir` in {} could not run: {e}", here.display())
-            })?;
-        if !out.status.success() {
-            return Err(format!(
-                "`git rev-parse --git-common-dir` in {} exited {}: {}",
-                here.display(),
-                out.status,
-                String::from_utf8_lossy(&out.stderr).trim()
-            ));
-        }
-        // Relative (`.git`) when git answers from a checkout's own root, absolute from a
-        // worktree. `join` on an absolute path yields that path, so one line covers both.
-        let common = here.join(String::from_utf8_lossy(&out.stdout).trim());
-        let repo_root = common.parent().ok_or_else(|| {
-            format!("{} has no parent, so it names no repository root", common.display())
+    ROOT.get_or_init(|| derive_suite_root_from(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))))
+        .clone()
+}
+
+/// The step-3 mechanism itself, over an arbitrary directory inside a checkout.
+///
+/// Separated from [`derived_suite_root`] for one reason, and it is the contract's, not a
+/// convenience: *"the step-3 proof runs from a linked worktree, or says in the run's own
+/// output that it did not"* (`SUITE_PATHS.md`, added 2026-09-02 from aurora's O68). The
+/// property step 3 exists for is only observable from a LINKED WORKTREE — in a plain
+/// checkout `--git-common-dir` and `--show-toplevel` agree, so an assertion made there
+/// proves nothing.
+///
+/// A test asserting against the process's own location can only prove the property when the
+/// suite itself happens to be running from a worktree, and a row that proves its property
+/// only from certain checkouts is a row that reads green from the others. So the mechanism
+/// takes a directory, and `suite_paths_precedence` hands it one inside a linked worktree it
+/// builds itself — the same assertion wherever `cargo test` is invoked from.
+pub fn derive_suite_root_from(here: &std::path::Path) -> Result<PathBuf, String> {
+    let out = std::process::Command::new("git")
+        .args(["rev-parse", "--git-common-dir"])
+        .current_dir(here)
+        .output()
+        .map_err(|e| {
+            format!("`git rev-parse --git-common-dir` in {} could not run: {e}", here.display())
         })?;
-        let root = repo_root.parent().ok_or_else(|| {
-            format!("{} has no parent, so it hangs off no suite root", repo_root.display())
-        })?;
-        if !is_suite_root(root) {
-            return Err(format!(
-                "{} is this repository's parent but holds no {} — it is not a suite root",
-                root.display(),
-                SUITE_ROOT_MARKERS.map(|m| format!("{m}/")).join(" + ")
-            ));
-        }
-        Ok(root.to_path_buf())
-    })
-    .clone()
+    if !out.status.success() {
+        return Err(format!(
+            "`git rev-parse --git-common-dir` in {} exited {}: {}",
+            here.display(),
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    // Relative (`.git`) when git answers from a checkout's own root, absolute from a
+    // worktree. `join` on an absolute path yields that path, so one line covers both.
+    let common = here.join(String::from_utf8_lossy(&out.stdout).trim());
+    let repo_root = common
+        .parent()
+        .ok_or_else(|| format!("{} has no parent, so it names no repository root", common.display()))?;
+    let root = repo_root.parent().ok_or_else(|| {
+        format!("{} has no parent, so it hangs off no suite root", repo_root.display())
+    })?;
+    if !is_suite_root(root) {
+        return Err(format!(
+            "{} is this repository's parent but holds no {} — it is not a suite root",
+            root.display(),
+            SUITE_ROOT_MARKERS.map(|m| format!("{m}/")).join(" + ")
+        ));
+    }
+    Ok(root.to_path_buf())
 }
 
 /// The contract's precedence from STEP 2 onward, given what step 1 already reported.

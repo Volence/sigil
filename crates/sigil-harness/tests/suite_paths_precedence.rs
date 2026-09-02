@@ -255,37 +255,10 @@ fn the_resolver_follows_the_contract_precedence() {
          suite root; they disagree, so at least one is answering about the wrong tree"
     );
 
-    // ── `--show-toplevel` LIES FROM A WORKTREE, which is why the contract forbids it.
-    let toplevel = Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim().to_string()));
-    match toplevel {
-        Some(top) if top.parent() != Some(walked.as_path()) => {
-            // A worktree: `--show-toplevel` answers the worktree, whose parent is not the
-            // suite root. A resolver built on it derives a confidently wrong answer.
-            let wrong = top.parent().map(|p| p.join(AEON_REPO_DIR));
-            assert_ne!(
-                Some(path.clone()),
-                wrong,
-                "the resolver answered with the path `--show-toplevel` would have produced. From \
-                 a worktree that command names the worktree, not the checkout, so the derivation \
-                 must use `--git-common-dir`."
-            );
-        }
-        Some(_) => println!(
-            "NOT MEASURED: this run is not in a git worktree, so `--show-toplevel` and \
-             `--git-common-dir` agree here and the distinction the contract draws cannot be \
-             exercised. The assertion above still holds the derivation to an independent walk."
-        ),
-        None => println!(
-            "NOT MEASURED: `git rev-parse --show-toplevel` did not run, so the worktree \
-             distinction could not be exercised in this environment."
-        ),
-    }
+    // ── THE STEP-3 PROOF, FROM A LINKED WORKTREE THIS TEST BUILDS. See
+    // `the_step_3_derivation_is_proven_from_a_linked_worktree` below; it is a separate row
+    // so its own failure names the property rather than arriving as one more assertion in
+    // a long precedence walk.
 
     // ── STEP 4: refuse, naming everything consulted. Forced by taking `git` off PATH, so
     // the derivation genuinely cannot run — no test hook in the resolver's own path.
@@ -312,4 +285,171 @@ fn the_resolver_follows_the_contract_precedence() {
     );
     assert_ne!(path, named, "the unnamed default must not be the tree AEON_DIR names");
     assert_eq!(path, walked.join(AEON_REPO_DIR), "the unnamed default is step 3's answer here");
+}
+
+/// THE STEP-3 PROOF, MADE FROM A LINKED WORKTREE THIS TEST BUILDS ITSELF.
+///
+/// `contract/SUITE_PATHS.md`, "What a resolver owes its reader", amended 2026-09-02 from
+/// aurora's O68 which they found on their own merged resolver:
+///
+/// > **The step-3 proof runs from a linked worktree, or says in the run's own output that
+/// > it did not.** The property step 3 is written for, `--git-common-dir` answering where
+/// > `--show-toplevel` answers wrongly, is only observable from a linked worktree; in the
+/// > main checkout the two agree, so a test asserting it there proves nothing, and a test
+/// > that skips there is honest but never runs where the suite normally runs.
+///
+/// This row's first version had exactly the shape the clause forbids: it asked whether the
+/// TEST PROCESS happened to be running from a worktree, asserted the property if so, and
+/// printed `NOT MEASURED` otherwise. Every sigil agent runs in a worktree, so it passed for
+/// whoever wrote it and would have gone quiet the moment the suite ran from
+/// `/home/volence/sonic_hacks/sigil` — where the landing run and the nightly lane run it. A
+/// green log and an absent run are the same artifact.
+///
+/// So the bed is built here and the assertion is the same wherever `cargo test` is invoked
+/// from:
+///
+/// ```text
+/// <scratch>/suite/            <- a suite root by the marker rule
+///   aeon/                     <- the sibling the resolver must reach
+///   empyrean/
+///   repo/                     <- a real git repo, standing in for this checkout
+///     nested/wt/              <- a LINKED worktree, `git worktree add`
+/// ```
+///
+/// **The worktree is NESTED INSIDE the repo, and that is the load-bearing detail.** From a
+/// worktree that happens to sit beside the suite root, `--show-toplevel` plus a sibling join
+/// lands on the right answer by accident and a test built on that bed passes for the wrong
+/// reason. Nested, the wrong method resolves under `nested/` and finds nothing — so the two
+/// methods give different answers and the assertion has something to bite on. (The same
+/// shape the concurrent scripts lane measured for its own resolver; two halves of one
+/// contract should not disagree about what proves it.)
+///
+/// If the bed cannot be built — no `git`, no writable scratch, a git too old for
+/// `worktree add` — this row PRINTS why and does not assert. That is the clause's own
+/// escape, and it is a printed line rather than an `ignored` for the reason the clause
+/// gives.
+#[test]
+fn the_step_3_derivation_is_proven_from_a_linked_worktree() {
+    if std::env::var_os(CHILD_VAR).is_some() {
+        return; // the children run the resolver, not this row
+    }
+    let bed = scratch("worktree-bed");
+
+    let suite = bed.join("suite");
+    let repo = suite.join("repo");
+    for d in [&suite.join(AEON_REPO_DIR), &suite.join("empyrean"), &repo] {
+        std::fs::create_dir_all(d).expect("create the bed");
+    }
+
+    // A real repository with a commit: `git worktree add` needs a ref to check out.
+    let git = |args: &[&str], cwd: &std::path::Path| -> Result<String, String> {
+        let out = Command::new("git")
+            .args(args)
+            // A bed must not inherit the developer's identity, hooks or templates.
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .env("GIT_AUTHOR_NAME", "sigil-test")
+            .env("GIT_AUTHOR_EMAIL", "sigil-test@invalid")
+            .env("GIT_COMMITTER_NAME", "sigil-test")
+            .env("GIT_COMMITTER_EMAIL", "sigil-test@invalid")
+            .current_dir(cwd)
+            .output()
+            .map_err(|e| format!("`git {}` could not run: {e}", args.join(" ")))?;
+        if !out.status.success() {
+            return Err(format!(
+                "`git {}` exited {}: {}",
+                args.join(" "),
+                out.status,
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    };
+
+    let built = (|| -> Result<PathBuf, String> {
+        git(&["init", "-q", "-b", "main", "."], &repo)?;
+        std::fs::write(repo.join("seed"), b"bed\n").map_err(|e| format!("write seed: {e}"))?;
+        git(&["add", "seed"], &repo)?;
+        git(&["commit", "-q", "-m", "bed"], &repo)?;
+        // NESTED, not beside: see the doc comment. `nested/` itself is created by git.
+        let wt = repo.join("nested").join("wt");
+        git(&["worktree", "add", "-q", "-b", "bed-wt", "nested/wt"], &repo)?;
+        Ok(wt)
+    })();
+
+    let wt = match built {
+        Ok(wt) => wt,
+        Err(why) => {
+            // The clause's escape, printed rather than silent.
+            println!(
+                "NOT MEASURED: could not build the linked-worktree bed, so the step-3 property \
+                 was not exercised in this run — {why}. Everything else in this file still ran; \
+                 what is missing is the one assertion that separates `--git-common-dir` from \
+                 `--show-toplevel`."
+            );
+            let _ = std::fs::remove_dir_all(&bed);
+            return;
+        }
+    };
+
+    // THE CONTROL, and without it the assertion below could pass on a bed where the two
+    // methods happen to agree — which is the defect the amendment is about.
+    let toplevel = git(&["rev-parse", "--show-toplevel"], &wt)
+        .map(PathBuf::from)
+        .expect("the bed's worktree answers --show-toplevel");
+    let wrong_root = toplevel.parent().map(|p| p.to_path_buf());
+    assert_ne!(
+        wrong_root.as_deref(),
+        Some(suite.as_path()),
+        "UNMEASURABLE: on this bed `--show-toplevel`'s parent IS the suite root, so the wrong \
+         method would give the right answer and passing proves nothing. The worktree must be \
+         nested inside the repo, not beside the suite root."
+    );
+
+    // THE PROPERTY: the resolver's own step-3 mechanism, run from inside that worktree,
+    // reaches the suite root that the repo hangs off — not the one `--show-toplevel` implies.
+    let derived = sigil_harness::test_support::derive_suite_root_from(&wt);
+    let derived = derived.unwrap_or_else(|e| {
+        panic!(
+            "step 3 could not derive a suite root from the linked worktree {} — {e}. This is the \
+             shape every sigil agent runs in, so a derivation that fails here fails in ordinary \
+             use.",
+            wt.display()
+        )
+    });
+    assert_eq!(
+        derived, suite,
+        "step 3 derived the wrong suite root from a LINKED, NESTED worktree. `--show-toplevel` \
+         there answers {} — the worktree — whose parent is {:?}; only `--git-common-dir`, which \
+         answers the main checkout's `.git` from a worktree and from the checkout alike, reaches \
+         the repository this code belongs to.",
+        toplevel.display(),
+        wrong_root
+    );
+
+    // And the same mechanism is what PRODUCTION uses: `derived_suite_root()` is this
+    // function called with the crate's compile-time manifest directory. Asserted rather
+    // than assumed, because a helper proven in isolation and a production path that calls
+    // something else is the classic way a gate ends up measuring nothing.
+    let live = sigil_harness::test_support::derive_suite_root_from(std::path::Path::new(env!(
+        "CARGO_MANIFEST_DIR"
+    )));
+    let walked = walked_suite_root();
+    match (live, walked) {
+        (Ok(l), Some(w)) => assert_eq!(
+            l, w,
+            "the mechanism proven on the bed, applied to this crate's own location, disagrees \
+             with an independent marker walk — so the bed proved a function the production path \
+             does not behave like"
+        ),
+        (Err(e), _) => panic!("step 3 cannot derive from this crate's own location: {e}"),
+        (_, None) => panic!(
+            "UNMEASURABLE: no ancestor of this crate holds the suite markers, so the production \
+             half of this row has no independent expectation to check against"
+        ),
+    }
+
+    // `git worktree add` registers the worktree in the repo's admin dir; removing the tree
+    // alone leaves a stale entry, so the whole bed goes.
+    let _ = std::fs::remove_dir_all(&bed);
 }
