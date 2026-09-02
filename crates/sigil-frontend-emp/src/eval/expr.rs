@@ -1331,6 +1331,26 @@ const UNIT_FOLD_HINT: &str = ". One operand is `unit`, which is a value nothing 
 /// Recursion only descends where both sides line up (equal lengths, the same
 /// enum variant, a shared struct field name); where they do not, the values are
 /// meaningfully unequal and there is nothing to refuse.
+/// **THE PAIR IS RETURNED IN SOURCE ORDER — lhs first — AND A CROSS-REPO GATE
+/// DEPENDS ON THAT. DO NOT NORMALISE, SORT, OR CANONICALISE IT.**
+///
+/// The refusal renders as `not defined for {a} and {b}`, so `a` is always the
+/// left operand as written. aeon's `emp_expect_fail` row for
+/// `poison_tail_if_unit_fold.emp` pins the fragment
+/// `[eq.cross-type] `==` not defined for unit and int`, which is only stable
+/// while the operand kinds appear in that order. Swapping them is not a
+/// cosmetic change there: aeon measured it (2026-09-02, their `1d72ef71`) and
+/// the row goes red reporting `for int and unit`.
+///
+/// **This ordering is sigil's commitment to keep** (agreed with the aeon lane
+/// 2026-09-02; their side records it attributed and dated, and their poison
+/// carries the warning at the ensure itself). Nothing in aeon's tree can enforce
+/// it and nothing here is obliged to preserve it by accident, which is exactly
+/// why it is written at the line where the change would be made rather than in a
+/// doc: whoever tidies this into a canonical order will be looking here, and the
+/// resulting failure points at the refusal rather than at the swap that caused
+/// it. If this ordering must change, tell the aeon lane first — do not discover
+/// it through their red.
 fn eq_compatible(a: &Value, b: &Value) -> Result<(), (String, String)> {
     let bad = || Err((eq_type_desc(a), eq_type_desc(b)));
     match (a, b) {
