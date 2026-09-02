@@ -227,6 +227,36 @@ A REAL CASE-2 OBSERVATION, produced by accident tonight and recorded here becaus
 
 ## ABSW-CEILING-INVARIANT
 
+> **SUPERSEDED 2026-09-02 — this row was wrong THREE WAYS AT ONCE, and it had already been
+> corrected once for a rotted coordinate. Being wrong a second time in a new way means the FORM
+> is wrong, not the value. The measurement now lives in a command with the artifact it was read
+> from; the corrected derivation is in
+> `docs/superpowers/notes/2026-09-02-pinned-corpus-coverage.md` §3.2-3.3.**
+>
+> Re-derived from `.sigil-ref-197-mine/s4.lst`, built at aeon `8dd28114`, against
+> **`s4.bin` len 719347 crc32 `F403F461`** — the artifact is named because this row rotted twice
+> by carrying a snapshot without its source.
+>
+> 1. **The safe direction is BACKWARDS for the family that binds.** `Sound_PlaySFX` is at
+>    `0x7FC6`, **below** the ceiling, so it is reached by `abs.w` and it is **growth** that
+>    pushes it over, not shrink. Margin 58 bytes (`0x8000 - 0x7FC6 = 0x3A`).
+> 2. **The binding symbol is `Raster_Install`** in the debug family, tightest margin 26 bytes —
+>    not `Sound_PlaySFX` and not `SoundTablesZ80_Head`.
+> 3. **The anchor this row named reads the right number for the wrong reason.**
+>    `SoundTablesZ80_Head` belongs to `section sound_tables_z80 (cpu: z80, vma: $8000)`
+>    (`engine/sound/sound_tables_z80.emp:26`) — a **Z80** address space, unrelated to the 68000
+>    `abs.w` rule. It nonetheless appears at `0x8000` in the 68000 listing because a **second,
+>    m68000 section is declared at the same VMA**:
+>    `section soundbankhead (cpu: m68000, vma: $8000)`
+>    (`games/sonic4/data/sound/soundbankhead.emp:51`). **Two numbering schemes landing on one
+>    number** is exactly what makes it a plausible and wrong witness.
+>
+> **A correction of my own, recorded because it travelled:** relaying (3) I flattened it to
+> *"it does not appear in the 68000 listing at all"*. **That is false** — it is there, twice,
+> at `0x8000`. The agent's wording (*"reads the right number for the wrong reason"*) was precise
+> and my compression made it wrong. The claim reached the hub in the flattened form and was
+> corrected there.
+
 `state: open` · `size: XS` · `blockedBy: None`
 
 THE INVARIANT (cannot go stale): the sound region butts against the abs.w ceiling at 0x8000 with ZERO slack on the tightest symbol, so a parcel that SHRINKS code upstream of it flips abs.w/abs.l encodings at every call site in the neighbourhood - and that shows up as an UNRELATED test failure in a region nobody edited. GROWTH IS THE SAFE DIRECTION; only a shrink is dangerous. THE COORDINATE LIVES IN A COMMAND, NOT IN THIS ROW: grep -nE 'SoundTablesZ80_Head|Sound_PlaySFX' s4.lst - at 0x8000 or above is clear, below means the encodings have flipped and a measured byte delta is not the whole story. WHY IT IS WRITTEN THIS WAY (aeon's formulation, and it is the finding): this row previously named Sound_PlaySFX at 0x8024 as the binding constraint. The SHAPE was right and the COORDINATE rotted - SoundTablesZ80_Head sits at 0x8000 exactly, margin zero, one line above it. Measured once, restated since, re-sent to a peer more than once. Both lanes were caught by that same pattern in one day, so the rule is: name the invariant in the row and the coordinate in a command. SNAPSHOT 2026-08-30, already superseded in principle by the command above: 8000 / 8024, 14 actual transfer sites (jbsr/jsr/jbra/jmp) against 36 total name occurrences - two answers to two different questions, not a disagreement. AEON STEP 5 IS CLEARED and not by the direction argument: OJZ_Preset_Plain is at 0x136D2, ~77KB DOWNSTREAM of the boundary, so its +38 moves neither symbol at all. Their measurement.
