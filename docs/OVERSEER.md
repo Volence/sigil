@@ -1041,6 +1041,30 @@ ruling. Each row's age prints on every lane run.
   test runtime** via `emp_const_rhs` / `emp_const_literal` — never a copied literal.
 - **Never build in the scratchpad/tmp** — `/tmp` is tmpfs; a cargo build there wedges
   the shell. Set `CARGO_TARGET_DIR` to disk for any out-of-tree build.
+- **⚠ ANY ad-hoc cargo command in this checkout RELINKS `target/release/sigil`, which is
+  the assembler another lane's freeze may be mid-ritual with** *(2026-09-02, found by the
+  aeon lane at chain 198; caused here)*. Measured: `target/release/sigil` went
+  `956da96a…`/`079cec97` → `4ca83f71…`/`dd5eaad2` at 12:28:24 local, **inside** a freeze
+  window, and the binary that produced entry 198's goldens no longer exists — it was
+  overwritten in place and is recoverable only by rebuilding at its revision.
+  **THE VARIABLE IS THE TARGET DIR, NOT THE VERB, AND THAT IS WHY THE FIRST TWO FIXES
+  MISSED.** `sigil_tool.sh` stops `provision-aeon-ref.sh` reading or writing the shared
+  binary, and `landing-run.sh` sets its own `CARGO_TARGET_DIR` — so **the two commands
+  anyone thinks to guard are the only two that were never the problem.** The aeon lane
+  first attributed this to `cargo test --release --workspace`; the landing run is
+  precisely the invocation that CANNOT do it. What does it is the casual one:
+  `cargo test -p sigil-cli --test <x>`, `cargo run --bin repin`, `cargo build --bin
+  emit_sound_blob`. Testing a package builds that package's bins, so a targeted test of
+  `sigil-cli` relinks `sigil`.
+  **So: while any lane holds a freeze, pass `CARGO_TARGET_DIR` on every cargo command in
+  this checkout, not only on the scripted ones** — and note the relink is invisible from
+  here, since nothing in the output mentions the shared file. Only the far lane's md5 pin
+  catches it. A guard keyed to a command name will keep missing this; the honest fix is a
+  non-default target dir by default in this tree.
+  **The saving grace was an accident and should not be read as safety:** the relink is
+  what made the paired re-freeze's byte control non-vacuous. Both lanes were one step from
+  reasoning that a rebuild was pointless "because the binary cannot have changed" — a
+  SOURCE argument about an ARTIFACT, which is the exact thing an md5 pin exists to refuse.
 - **A LANDING RUN AGAINST THE OWNER'S LIVE AEON TREE PRODUCES PHANTOM FAILURES, and this
   overseer proved it the expensive way (2026-08-24).** The rule below is not advice. A
   full-suite landing run pointed at `/home/volence/sonic_hacks/aeon` returned **six**
