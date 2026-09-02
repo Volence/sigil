@@ -11121,3 +11121,62 @@ demo_debug = "51056291/101323"
 lean = "a4cfb6f5/674816"
 s4 = "df76de71/719440"
 s4_debug = "0d6d1175/736454"
+
+[entry.superseded]
+by = "tails-jump-gate"
+reason = "abandoned: strict run red on one test that was sigil's own drift guard firing on a comment in their own provisioner, not on this parcel; fixed by them at sigil ddea6956 and their suite green at 4232/0/2; entry 200 replaces it; item 5's ROM bytes were proven identical either way (FIXPOINT PASSED, seven goldens byte-identical)"
+
+[[entry]]
+name = "tails-jump-gate"
+ab = "aeon 8876459e, chain 200. Tails' flight refuses a ledge walk-off: the ruled came-from-a-jump gate on Ability_TailsFlight tests PSTATE_JUMP/PSTATE_ROLLJUMP at the top of the hook, ahead of the release-cap test because that is Tails_JumpHeight's own order, and a refusal writes nothing - no fly_fuel, no fly_thrust, no state change. Knuckles deliberately untouched and the call site untouched, because changing it would move all three abilities at once, which the ruling refuses. Four shapes rebuilt on the MERGED tree, not branch-side: s4 719460/864AD7E9 (+20), s4.debug 736472/AB5820B1 (+18), demo 96458/30A31D81 and demo.debug 101323/51056291 BYTE-IDENTICAL to chain 199 - the negative control, since this is sonic4 player code and demo must not move. Code is +16; the remainder is deb2 appendix for the new labels. Red-first at two levels with the mutation shown on disk: a ROM-level sweep against master's own s4.debug.bin had 3556 of 5888 executions disagreeing pre-fix and none after, and the pytest arm was proven red by mutating the committed fixture and re-decoding it from disk. Tool suite 1907 passed / 0 failed / 5 skipped, up from 1883. THE REPLAY NET CANNOT MOVE and this was established structurally rather than by running it: Character_ID is boot-zero and its only writer in the tree is Debug_CharacterHotkey, which stands down for both INPUT_PLAYBACK and INPUT_RECORD and is inside if DEBUG == 1, so no fixture can seat CharDef_Tails - no re-record, so the owner's d-14 call is not triggered. Also corrects player_fly.emp's stale justification: the 'we have no jumping bit' premise is false, player_state discriminates on its own."
+aeon_rev = "8876459ef3154678bf99b4c25604c9c0897acfe4"
+note = "Tails' flight stops converting any fall into indefinite flight"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "1f805f92"
+full_size = 736824
+anchor_crc = "6935adf5"
+anchor_end = 0xa7f38
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "738e0c3f"
+full_size = 615031
+anchor_crc = "faf6d381"
+anchor_end = 0x8c734
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "30a31d81"
+full_size = 96458
+anchor_crc = "a9763013"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "51056291"
+full_size = 101323
+anchor_crc = "992c305a"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "f1d06059"
+full_size = 674816
+anchor_crc = "76e98196"
+anchor_end = 0xa4c00
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "864ad7e9"
+full_size = 719460
+anchor_crc = "e1ffe2a3"
+anchor_end = 0xa5c82
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "ab5820b1"
+full_size = 736472
+anchor_crc = "b8eff0c6"
+anchor_end = 0xa7f38
