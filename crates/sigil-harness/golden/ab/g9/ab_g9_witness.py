@@ -12,7 +12,9 @@ usage: ab_g9_witness.py <rom> <bp_addr_hex> <label>   (SKIP_RELOAD flow)
 """
 import asyncio, json, os, sys
 
-sys.path.insert(0, "/home/volence/sonic_hacks/empyrean/clients/python")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from suite_paths import add_empyrean_clients  # noqa: E402
+add_empyrean_clients()
 from aether import BusClient
 
 ROM, BP, LABEL = sys.argv[1], int(sys.argv[2], 16), sys.argv[3]

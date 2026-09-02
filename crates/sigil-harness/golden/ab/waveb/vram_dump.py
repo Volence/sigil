@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Dump full VRAM at quantum anchor 244 for one ROM (argv: OLD|NEW). No breakpoints."""
 import asyncio, os, sys
-sys.path.insert(0, "/home/volence/sonic_hacks/empyrean/clients/python")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from suite_paths import add_empyrean_clients  # noqa: E402
+add_empyrean_clients()
 from aether import BusClient
 OUT = os.path.dirname(os.path.abspath(__file__))
 ROMS = {"OLD": f"{OUT}/s4_OLD.bin", "NEW": f"{OUT}/s4_NEW.bin"}

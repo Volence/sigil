@@ -5,7 +5,9 @@ classify the diff (expected: moved return-address bytes in the stack region belo
 SSP 0xFFFF00). Saves <NAME>.render340.ram.bin and <NAME>.soak576.ram.bin.
 usage: ab_wavec_ramdiff.py <rom> <OLD|NEW>"""
 import asyncio, os, sys, zlib
-sys.path.insert(0, "/home/volence/sonic_hacks/empyrean/clients/python")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from suite_paths import add_empyrean_clients  # noqa: E402
+add_empyrean_clients()
 from aether import BusClient
 OUT = os.path.dirname(os.path.abspath(__file__))
 ROM, NAME = sys.argv[1], sys.argv[2]

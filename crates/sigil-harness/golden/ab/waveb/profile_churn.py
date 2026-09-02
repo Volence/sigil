@@ -9,13 +9,15 @@ usage: profile_drive.py <rom> <label> [extra_hold_button]
 """
 import asyncio, json, os, sys
 
-sys.path.insert(0, "/home/volence/sonic_hacks/empyrean/clients/python")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from suite_paths import add_empyrean_clients, debug_listing  # noqa: E402
+add_empyrean_clients()
 from aether import BusClient
 
 ROM = sys.argv[1]
 LABEL = sys.argv[2]
 EXTRA = sys.argv[3:] if len(sys.argv) > 3 else []
-LST = "/home/volence/sonic_hacks/aeon/s4.debug.lst"
+LST = debug_listing()
 CAMERA_X, LAG = 0xFFA140, 0xFF89F8  # s4.debug shape
 OUT = os.path.dirname(os.path.abspath(__file__))
 

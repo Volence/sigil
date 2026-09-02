@@ -3,7 +3,9 @@
 vsram/regs state_hash + Camera_X, to reconcile the screenshot diff against the
 render-input identity. usage: ab_wavec_vcheck.py <rom> <OLD|NEW>"""
 import asyncio, os, sys, json
-sys.path.insert(0, "/home/volence/sonic_hacks/empyrean/clients/python")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from suite_paths import add_empyrean_clients  # noqa: E402
+add_empyrean_clients()
 from aether import BusClient
 OUT = os.path.dirname(os.path.abspath(__file__)); ROM, NAME = sys.argv[1], sys.argv[2]
 CAMERA_X, FRAME_COUNTER = 0xFFA140, 0xFF8002
