@@ -23,6 +23,12 @@ sigil-span = { path = "../sigil-span" }
 
 [dev-dependencies]
 tempfile = "3"
+# `tests/m68k_cond_parity.rs` derives its expected encodings from the ISA's own
+# `Cond` discriminants rather than transcribing them, so it needs the enum. A
+# DEV-dependency only: `tests/crate_graph.rs` and `tests/version_provenance.rs`
+# both filter by dependency kind, so this adds no edge to the shipping binary's
+# graph and no edge the (c) contamination safeguard is about.
+sigil-backend-m68k = { path = "../sigil-backend-m68k" }
 # The closure gate re-derives this binary's dependency graph from cargo at test
 # time and holds the banner to it.
 serde_json = { version = "1", features = ["preserve_order"] }
