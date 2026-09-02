@@ -224,8 +224,18 @@ echo "==> building both shapes to emit the listings (and to control the ROMs)"
 #     step 3 — because the port gates compare a branch's lowering against the frozen
 #     artifact. Building them there would replace the reference with the subject.
 #   * The DRIFT job wants them BUILT, because a copied golden cannot exhibit drift.
-#     `nightly_ref_drift.sh` measures only files whose mtime post-dates its build start,
-#     precisely so a copy can never be read as a build.
+#     That job measures only files whose mtime post-dates its build start, precisely so a
+#     copy can never be read as a build.
+#
+# THE DRIFT JOB IS DELIBERATELY NOT NAMED IN THIS FILE, and re-adding its filename will
+# turn a landing red. `no_landing_path_invokes_the_drift_job` asserts the job is reachable
+# only from its own timer, and it matches on the NAME because it cannot tell a comment from
+# an invocation — a rule that guessed from the directory instead would let a real wiring
+# through. That test caught this very comment, which is the gate working: the property it
+# protects (nothing executable can reach the job, so the job can block nothing) is what
+# makes the job safe to leave running unattended. Adding this file to the test's lane-file
+# exemption would be the wrong repair twice over: it is a SHARED provisioner that landing
+# runs also call, so exempting it would blind the gate to a real wiring here forever.
 #
 # WITHOUT THIS FLAG THE DRIFT JOB COULD NEVER REPORT A CLEAN NIGHT. Its config declares
 # four shapes; only two were ever built; `drift_report.py::observation_state` returns
