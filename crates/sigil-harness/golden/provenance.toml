@@ -11099,3 +11099,25 @@ full_crc = "0d6d1175"
 full_size = 736454
 anchor_crc = "45832185"
 anchor_end = 0xa7f38
+
+[entry.strict]
+outcome = "failed"
+sigil_rev = "baa9bb034fe7fb78fb3096d7c53ab4f73e4bf3db"
+aeon_rev = "73b07a4f3ae375b994de3822a13fbcab647c830a"
+strict_bodies = 29
+suites = 372
+passed = 4231
+failed = 1
+ignored = 2
+skips = 0
+ran_at = "unix:1788373307"
+failing = ["no_landing_path_invokes_the_drift_job"]
+
+[entry.strict.goldens]
+config_a = "1de56842/736806"
+config_b = "2507bcd4/614997"
+demo = "30a31d81/96458"
+demo_debug = "51056291/101323"
+lean = "a4cfb6f5/674816"
+s4 = "df76de71/719440"
+s4_debug = "0d6d1175/736454"
