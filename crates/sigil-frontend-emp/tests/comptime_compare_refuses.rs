@@ -222,6 +222,99 @@ fn meaningful_inequality_never_refuses() {
 }
 
 // =============================================================================
+// The `unit` hint — the refusal keeps the diagnosis the guards used to carry
+// =============================================================================
+
+/// A fold-shaped fixture: `tail_if` is the pitfall catalogue's §1 shape — an `if`
+/// in value position whose taken branch yields nothing — so `FOLDED` is `()` with
+/// no diagnostic anywhere. `SOLID` is the same intent written as a flat
+/// accumulator, which is the documented way out.
+const FOLD: &str = "\
+module m
+comptime fn tail_if(n: int) -> int {
+    return if n == 1 { 1 }
+}
+comptime fn solid(n: int) -> int {
+    comptime var acc = 0
+    if n == 1 { acc = 1 }
+    return acc
+}
+const FOLDED = tail_if(n: 0)
+const SOLID  = solid(n: 0)
+";
+
+fn fold_with(guards: &str) -> Vec<String> {
+    errors(&format!("{FOLD}{guards}\n"))
+}
+
+#[test]
+fn a_unit_operand_carries_the_fold_hint_in_both_orders() {
+    // A guard like `T[0] == -16` compares int to int on every healthy tree and
+    // reaches the refusal ONLY once a fold has happened — which is exactly when
+    // its author's hand-written "a `()` here means the unit fold is back" advice
+    // was meant to be read. The refusal has to carry that advice itself, or the
+    // person meeting it never sees guidance written for that precise moment.
+    //
+    // BOTH ORDERS, because an asymmetry here is the same shape as the signature
+    // defect this file already fixes: a check wired on one side only.
+    for guard in [
+        "ensure(FOLDED == 0, \"U1 folded twin\")",
+        "ensure(0 == FOLDED, \"U2 folded twin, operands swapped\")",
+    ] {
+        let diags = fold_with(guard);
+        let d = diags
+            .iter()
+            .find(|m| m.contains("[eq.cross-type]"))
+            .unwrap_or_else(|| panic!("a folded `()` beside an int must refuse: {diags:?}"));
+        assert!(
+            d.contains("unit"),
+            "the refusal must name the unit operand, got {d:?}"
+        );
+        assert!(
+            d.contains("folds to `()` silently") && d.contains("§1"),
+            "the refusal must carry the fold hint, got {d:?}"
+        );
+        // It is a lead, not a verdict — the compiler has established the operand's
+        // KIND, never its provenance, and the wording must not overclaim.
+        assert!(
+            d.contains("LIKELY cause") && d.contains("other sources"),
+            "the hint must read as a lead, not a diagnosis, got {d:?}"
+        );
+    }
+
+    // The other twin, in this same process: the flat-accumulator spelling yields
+    // a real int, so the identical guard compares in-class and passes silently.
+    // Without this leg, a hint that attached to every comparison would look the
+    // same from the rows above.
+    let solid = fold_with("ensure(SOLID == 0, \"U3 accumulator twin rejected\")");
+    assert!(solid.is_empty(), "the non-folded twin must pass cleanly, got {solid:?}");
+}
+
+#[test]
+fn the_fold_hint_does_not_attach_to_other_cross_type_refusals() {
+    // The hint is keyed to a `unit` operand. Every other refusal — the two this
+    // file's earlier rows exercise — must stay free of it, or the guidance
+    // becomes noise attached to comparisons it cannot explain.
+    let struct_vs_struct = probe_with(
+        "ensure(variant(shift_r: 1, shift_g: 1) == cycle_channel(line: 2, first: 8, count: 4, period: 8), \
+         \"N1\")",
+    );
+    let label_vs_struct = probe_with(
+        "ensure(first_mismatch([Variant_Water_Deep], [variant(shift_r: 1, shift_g: 1)]) == -1, \"N2\")",
+    );
+    for diags in [struct_vs_struct, label_vs_struct] {
+        let d = diags
+            .iter()
+            .find(|m| m.contains("[eq.cross-type]"))
+            .unwrap_or_else(|| panic!("expected a refusal to inspect, got {diags:?}"));
+        assert!(
+            !d.contains("§1") && !d.contains("LIKELY cause"),
+            "a refusal with no `unit` operand must not carry the fold hint, got {d:?}"
+        );
+    }
+}
+
+// =============================================================================
 // Q1-L — a `[T; N]` signature annotation is a length contract
 // =============================================================================
 

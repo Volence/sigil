@@ -906,18 +906,26 @@ impl<'a> Evaluator<'a> {
     /// length, a different enum variant, a `label` beside the `0` that spells an
     /// empty slot (see [`eq_compatible`] for the full rule and the two deliberate
     /// cross-kind coercions).
+    ///
+    /// A refusal with a `unit` operand also carries [`UNIT_FOLD_HINT`], because
+    /// that is the one operand kind whose most likely origin the compiler can
+    /// name (§1's silent fold) — see the constant for why the hint is derived
+    /// here rather than written at each guard.
     pub(super) fn eval_equality(&mut self, op: BinOp, lhs: &Value, rhs: &Value, span: Span) -> Value {
         if let Err((a, b)) = eq_compatible(lhs, rhs) {
             let always = if op == BinOp::Eq { "false" } else { "true" };
-            self.error(
-                span,
-                format!(
-                    "[eq.cross-type] `{}` not defined for {a} and {b} — no value of one \
-                     can equal a value of the other, so this comparison is always {always}; \
-                     compare same-typed values (or their fields)",
-                    binop_symbol(op)
-                ),
+            let mut msg = format!(
+                "[eq.cross-type] `{}` not defined for {a} and {b} — no value of one \
+                 can equal a value of the other, so this comparison is always {always}; \
+                 compare same-typed values (or their fields)",
+                binop_symbol(op)
             );
+            // `Unit == Unit` shares a class and never reaches here, so on this
+            // path "either operand is unit" already means "exactly one is".
+            if matches!(lhs, Value::Unit) || matches!(rhs, Value::Unit) {
+                msg.push_str(UNIT_FOLD_HINT);
+            }
+            self.error(span, msg);
             return Value::Poison;
         }
         let eq = values_equal(lhs, rhs);
@@ -1267,6 +1275,35 @@ fn values_equal(a: &Value, b: &Value) -> bool {
         _ => a == b,
     }
 }
+
+/// Appended to an `[eq.cross-type]` refusal when one operand is [`Value::Unit`].
+///
+/// A `unit` in value position almost always arrives the same way: an `if` used
+/// as a value whose taken branch yields nothing — a block-tail `if` with no
+/// `else`, or one nested in another's `else` — folds to `()` with NO diagnostic
+/// of its own (the `.emp` pitfall catalogue's §1). That fold is a LANGUAGE fact,
+/// so naming it is this compiler's job; the hint mentions no engine, game or
+/// data structure and would not belong here if it did.
+///
+/// WHY THE HINT IS DERIVED HERE AND NOT WRITTEN AT EACH GUARD. The guards that
+/// catch a unit fold are ordinary value comparisons — `T[0] == -16` and its
+/// siblings — and they compare like-to-like on every healthy tree. They reach
+/// this refusal ONLY in the broken case, which is precisely the moment their
+/// author's hand-written advice was meant to be read. Attaching the guidance to
+/// the refusal keeps it for every such guard that exists and hands it to every
+/// one not yet written, instead of maintaining a population of hand-sited
+/// copies.
+///
+/// IT IS A HINT, NOT A DIAGNOSIS, and the wording holds that line: `unit` has
+/// other sources (an empty `else`, a statement used as a value, a fn falling off
+/// its end), and this code has established only the operand's KIND, never its
+/// provenance. It cannot become noise — it rides on a refusal, which is already
+/// an error.
+const UNIT_FOLD_HINT: &str = ". One operand is `unit`, which is a value nothing \
+    produced deliberately: a LIKELY cause is an `if` in value position whose taken \
+    branch yields nothing, which folds to `()` silently (see the `.emp` pitfalls, \
+    §1 — the silent unit fold). Check what produced the `unit` side; `unit` has \
+    other sources, so treat this as a lead rather than the answer";
 
 /// Whether `==`/`!=` is DEFINED on this operand pair (D-EQ.1), and if not, the
 /// two type descriptions the `[eq.cross-type]` refusal names.

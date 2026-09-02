@@ -81,6 +81,33 @@ they are recorded here because that is the condition of making it:
    which is §8.3's erasure and predates this change. Two DIFFERENT newtypes do NOT compare —
    `Angle(10) == Pos(10)` is the cross-type mistake and now refuses, naming both.
 
+### A `unit` operand gets §1's guidance attached to the refusal
+
+The guards that catch §1's silent unit fold — `TriPin[0] == -16` and its siblings in
+`engine/level/parallax_dsl.emp` — compare int to int on every healthy tree. They reach a
+cross-type refusal ONLY once a fold has actually happened, which is exactly the moment
+their author's hand-written *"a `()` here means the block-tail-if unit fold is back"* was
+meant to be read. So the refusal carries that guidance itself:
+
+```
+[Error] [eq.cross-type] `==` not defined for unit and int — no value of one can equal a
+        value of the other, so this comparison is always false; compare same-typed values
+        (or their fields). One operand is `unit`, which is a value nothing produced
+        deliberately: a LIKELY cause is an `if` in value position whose taken branch yields
+        nothing, which folds to `()` silently (see the `.emp` pitfalls, §1 — the silent unit
+        fold). Check what produced the `unit` side; `unit` has other sources, so treat this
+        as a lead rather than the answer.
+```
+
+It fires in **both operand orders** (`unit == int` and `int == unit`), it attaches to no
+other refusal, and it is deliberately a LEAD rather than a verdict: the compiler has
+established the operand's KIND and nothing about its provenance, and `unit` has other
+sources (an empty `else`, a statement used as a value, a fn falling off its end). It cannot
+become noise, because it rides on a refusal, which is already an error.
+
+**So no aeon-side guidance needs re-siting.** Every guard that could meet a fold keeps its
+diagnosis for free, including the ones nobody has written yet.
+
 ### The shape to reach for instead
 
 Unchanged from the probe's Q2-f, and it is now the ONLY shape that works rather than merely
@@ -179,14 +206,15 @@ still goes red — with a better message.
 
 ## What aeon needs to change, and it is all one small commit
 
-1. **`tools/emp_expect_fail.py:485`** — the `tri unit fold` row's expected fragment. The
-   `[Error]` count stays **1**. Suggested fragment: `` [eq.cross-type] `==` not defined for unit and int ``.
-2. **`games/sonic4/test/poison/poison_tail_if_unit_fold.emp`** header — its stated retirement
-   condition ("if P[0] just became a number, sigil fixed the fold") is now ambiguous, because
-   there are two ways this module can stop producing its old message and only one of them means
-   the fold is fixed. Restate it: *the fold is fixed when this module builds CLEAN; a
-   `[eq.cross-type]` diagnostic means the fold is still there and sigil is naming it.*
-3. **`EMP_PITFALLS.md` §1** — add a line that the unit fold is now caught directly by
-   `[eq.cross-type]` wherever a folded `()` meets a number, so the differential-twin `ensure`
-   is a belt-and-braces measure rather than the only surface.
-4. **Land §12 and §13 above.**
+1. **`games/sonic4/test/poison/poison_tail_if_unit_fold.emp` and its
+   `tools/emp_expect_fail.py:485` row — AEON'S CALL, not a fragment patch.** This fix deletes
+   the property that poison exists to pin (`() == int` comparing FALSE rather than erroring),
+   so the fixture wants rewriting or retiring, which is the owning lane's decision. It is left
+   FAILING on the sigil branch on purpose; the two land as a pair. The count reasoning still
+   holds and the retirement signal survives: a real block-tail-if fix yields **0** errors and
+   fails the count, while this change yields **1** with different text.
+2. **`EMP_PITFALLS.md` §1** — add a line that the unit fold is now caught directly by
+   `[eq.cross-type]` wherever a folded `()` meets a value of another kind, carrying §1's own
+   guidance in the diagnostic, so a differential-twin `ensure` is a belt-and-braces measure
+   rather than the only surface.
+3. **Land §12 and §13 above.** No guidance needs re-siting — the compiler carries it.
