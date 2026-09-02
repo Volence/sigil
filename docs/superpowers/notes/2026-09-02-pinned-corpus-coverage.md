@@ -435,6 +435,35 @@ aeon-effects-gates.{service,timer}   sigil-source-gates.{service,timer}
 (`docs/OVERSEER-ROW-HISTORY.md:216`) says so and says why it cannot self-install; the parcel
 note names it as a live prerequisite of (b). The measurement confirms both, today.
 
+**And the ledger is harder evidence than the timer list.** `$XDG_STATE_HOME/sigil-ref-drift/`
+exists and holds three log files — **and no ledger, record or database of any kind**:
+
+```
+$ /usr/bin/ls -a /home/volence/.local/state/sigil-ref-drift
+.  ..  build.log  nightly.log  provision.log
+$ cat .../nightly.log
+2026-08-29T22:39:37 SELFTEST: the notification path works
+2026-08-29T22:39:46 COULD NOT RUN: N is not a positive integer (got '0' from SIGIL_DRIFT_N …)
+2026-08-29T22:39:46 COULD NOT RUN: N is not a positive integer (got 'abc' …)
+2026-08-29T22:39:52 COULD NOT RUN: N is not a positive integer (got 'unset' …)
+Preparing worktree (detached HEAD 3ad7ed02)
+HEAD is now at 3ad7ed02 …
+HEAD is now at 3ad7ed02 …
+2026-08-30T06:05:47 SELFTEST: the notification path works
+2026-09-02T04:24:39 COULD NOT RUN: the aeon checkout could not be resolved (see stderr)
+```
+
+**Nine lines, of which two are selftests and four are `COULD NOT RUN`. Zero observations.**
+Positive control for the grep: `SELFTEST` matches 2, so the file is being read; the count of
+lines matching `OBSERVED|MATCH|CASE|verdict|entry` is **0**.
+
+**The observer has never observed anything, in its entire lifetime.** That is a stronger and
+worse statement than "the timer is not installed", and it changes how H-10 should be read: the
+mechanism nominated to absorb this whole parcel's accepted cost has not been demonstrated to work
+end-to-end even once. Note also the last line — **today, 2026-09-02T04:24**, something did invoke
+it and it died at *checkout resolution*, which is H-9(a)'s mechanism arriving in the observer's
+own log.
+
 **Why this is worse than a scheduling detail.** The pinned corpus's accepted cost is *"assembler
 regressions surface nightly rather than at the next aeon landing."* If the nightly never runs,
 the cost is not deferred detection — it is **no detection**, and the loss lands on a class that
@@ -700,9 +729,12 @@ measurements, each with a named blocker:
 1. **`FREEZE-THE-LISTINGS` (H-2) is a hard prerequisite**, not a nice-to-have: a missing listing
    fails open at `listing_symbol_addr` and surfaces as unrelated divergence.
 2. **`DRIFT-TIMER-NOT-INSTALLED` (H-3) must be discharged BEFORE the cutover, and H-10 discharged
-   with it.** A non-blocking observer that does not run converts a deferred cost into an absent
-   control; one that runs against a frozen record converts it into a one-row table. Together they
-   are the whole compensating control for a corpus that turns over 11 `.emp` files a week.
+   with it — and the bar is a real observation in the ledger, not an installed unit.** The ledger
+   holds nine lines, two selftests, four `COULD NOT RUN`, and **zero observations, ever**. A
+   non-blocking observer that does not run converts a deferred cost into an absent control; one
+   that runs against a frozen record converts it into a one-row table. Together they are the
+   *whole* compensating control for a corpus that turns over 11 `.emp` files a week, and neither
+   half has been shown to work once.
 3. **The generated-artifact question (H-4) needs a stated answer before anything is vendored** —
    vendor-vs-regenerate is the difference between a self-referential expectation and a corpus
    that is not actually pinned.
@@ -728,6 +760,6 @@ branch's to make.
 **The pinned corpus is NOT shown to exercise what the live corpus exercised.** It transfers the
 placement-constraint axis intact (9/9), the shape axis intact (7/7) and roughly half the gate
 families verbatim — but **four families die and three degrade**, and the two mechanisms meant to
-absorb that loss (the nightly observer, the drift record) are respectively **not installed** and
-**structurally frozen by the same change**. Eleven holes are open. **The vendoring half should
-not start.**
+absorb that loss (the nightly observer, the drift record) are respectively **not installed — and
+its ledger records zero observations in its lifetime** — and **structurally frozen by the same
+change**. Eleven holes are open. **The vendoring half should not start.**
