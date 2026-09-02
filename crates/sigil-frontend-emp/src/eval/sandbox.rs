@@ -32,6 +32,29 @@ pub(crate) struct CaptureEdge {
     pub len: u64,
 }
 
+
+/// Join a relative `candidate` onto `base` LEXICALLY — no filesystem access, so a
+/// missing file still reaches the caller's own diagnostic. `..` pops; popping past
+/// the filesystem root is `None`, which is the only structurally impossible join.
+/// Containment against the sandbox root is the CALLER's check, deliberately: `base`
+/// may legitimately be narrower than the root, so this function cannot judge escape.
+fn join_lexical(base: &Path, candidate: &Path) -> Option<PathBuf> {
+    let mut out = base.to_path_buf();
+    for comp in candidate.components() {
+        match comp {
+            Component::ParentDir => {
+                if !out.pop() {
+                    return None;
+                }
+            }
+            Component::CurDir => {}
+            Component::Normal(seg) => out.push(seg),
+            Component::RootDir | Component::Prefix(_) => {}
+        }
+    }
+    Some(out)
+}
+
 impl<'a> Evaluator<'a> {
     /// Set the sandbox's hard containment BOUNDARY (Task 1). The
     /// [`layout::eval_data_with_root`](crate::layout::eval_data_with_root) seam
@@ -94,36 +117,61 @@ impl<'a> Evaluator<'a> {
         // itself (every pre-existing caller's behavior, unchanged) when unset.
         // Canonicalized the same way `root` is, for the same starts_with parity
         // reason; falls back to the given base if it cannot be canonicalized.
+        // ── THE TRANSITION RULE (EMBED-BASE-SKEW step 1) ────────────────────
+        // Repo-root-relative is the CONVENTION; module-relative is tolerated and
+        // announced. The aeon tree carries both spellings — `math.emp` writes
+        // `embed("../data/sine.bin")` while every other embed is root-relative —
+        // and sigil used to paper over that with a caller-side exception naming
+        // one module. A rule that applies to every module retires the exception
+        // and, unlike the two-state design it replaces, lets the two repos move
+        // INDEPENDENTLY: this tolerant middle state is valid whether or not the
+        // engine has re-spelled anything yet.
+        //
+        // Root first, then the caller's narrower base, and a file that exists
+        // under NEITHER falls back to the root-relative lexical path so the
+        // missing-file diagnostic names the spelling authors should be writing.
         let base = match &self.embed_base {
             Some(b) => std::fs::canonicalize(b).unwrap_or_else(|_| b.clone()),
             None => root.clone(),
         };
-        // Join `candidate` onto `base` LEXICALLY (no filesystem access —
-        // `embed`'s "missing file" case must still hit this path cleanly).
-        // Unlike `root`, `base` is NOT the escape boundary — a `..` may pop
-        // ABOVE `base` (that's the whole point when `base` is narrower than
-        // `root`); the loop below only refuses popping past the filesystem
-        // root entirely (`resolved.pop()` returning `false`). The BOUNDARY
-        // check against `root` happens once, after the full join, below.
-        let mut resolved = base;
-        for comp in candidate.components() {
-            match comp {
-                Component::ParentDir => {
-                    if !resolved.pop() {
-                        self.error(
-                            span,
-                            "[sandbox.path-escape] embed/import path must stay within the source directory",
-                        );
-                        return None;
-                    }
+        let root_try = join_lexical(&root, candidate);
+        let base_try = join_lexical(&base, candidate);
+        let usable = |p: &Option<PathBuf>| {
+            p.as_ref().is_some_and(|q| q.starts_with(&root) && q.exists())
+        };
+        let mut resolved = if usable(&root_try) {
+            root_try.clone().expect("checked usable")
+        } else if usable(&base_try) && base != root {
+            // Announced, not silent: the whole point of a transition rule is that
+            // somebody can see how much is left to transition. Naming the path
+            // rather than only the module makes the fix mechanical for the reader.
+            self.warn(
+                span,
+                format!(
+                    "[embed.module-relative] `{path}` resolved relative to this module's \
+                     own directory, not the project root. Both spellings work today; the \
+                     project-root one is the convention and the fallback will be removed. \
+                     Re-spell it relative to the root."
+                ),
+            );
+            base_try.clone().expect("checked usable")
+        } else {
+            // Neither exists. Prefer the ROOT-relative lexical result so the
+            // read error that follows quotes the target convention; fall back to
+            // the base join only when the root join popped past the filesystem
+            // root, which is the one case root_try is None.
+            match root_try.clone().or_else(|| base_try.clone()) {
+                Some(p) => p,
+                None => {
+                    self.error(
+                        span,
+                        "[sandbox.path-escape] embed/import path must stay within the source directory",
+                    );
+                    return None;
                 }
-                Component::CurDir => {}
-                Component::Normal(seg) => resolved.push(seg),
-                // `candidate` was already checked non-absolute, so `RootDir`/
-                // `Prefix` components cannot appear.
-                Component::RootDir | Component::Prefix(_) => {}
             }
-        }
+        };
+        let _ = &mut resolved;
         if !resolved.starts_with(&root) {
             self.error(
                 span,

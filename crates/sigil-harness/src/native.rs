@@ -1922,13 +1922,25 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
 
     // OPEN program: the `.emp` engine references AS-residual symbols (RAM labels,
     // proc seams) resolved only in the joint link — defer them, don't error here.
-    // Per-module embed_base reconciles the aeon tree's two `embed(...)` path
-    // conventions: math.emp is module-relative (`"../data/sine.bin"`), everything
-    // else here is repo-root-relative (object_test_state's blobs).
-    let aeon_root = aeon.to_path_buf();
-    let math_dir = aeon.join("engine/system");
-    let embed_base_for = move |id: &str| -> Option<std::path::PathBuf> {
-        if id == "engine.math" { Some(math_dir.clone()) } else { Some(aeon_root.clone()) }
+    // Per-module embed_base is now a UNIFORM RULE, not a named exception. It hands
+    // every module its OWN directory as the FALLBACK base; the resolver tries the
+    // project root first and only falls back here, warning `[embed.module-relative]`
+    // when it does. This retires `if id == "engine.math"`, which existed because the
+    // aeon tree carries two `embed(...)` spellings — math.emp writes
+    // `"../data/sine.bin"` while everything else is root-relative.
+    //
+    // A rule beats the exception for a reason beyond tidiness: it lets the two repos
+    // move INDEPENDENTLY. The exception made the halves lockstep — re-spell math.emp
+    // while it stood and the path resolved under engine/system and failed. A tolerant
+    // middle state is valid before, during and after the engine's re-spelling, so
+    // neither lane has to sequence around the other.
+    let embed_base_for = |id: &str| -> Option<std::path::PathBuf> {
+        manifest
+            .by_id
+            .get(id)
+            .and_then(|&i| manifest.modules.get(i))
+            .and_then(|m| m.path.parent())
+            .map(|d| d.to_path_buf())
     };
     let (mut sections, link_asserts, bdiags) =
         resolve::build_program_open_embed(&manifest, &entry_id, None, &opts, &embed_base_for);

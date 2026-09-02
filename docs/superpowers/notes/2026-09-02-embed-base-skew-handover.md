@@ -32,7 +32,28 @@ One module's spelling changes and the exception dies with it:
 - **sigil:** delete the `if id == "engine.math"` branch, leaving `Some(aeon_root.clone())` for
   every module.
 
-## THE HALVES ARE NOT INDEPENDENTLY VALID — land them together
+## CORRECTION: THE LOCKSTEP WAS AN ARTEFACT OF MY OWN TWO-STATE DESIGN
+
+**The section below is wrong and is kept so the reasoning is visible.** It concluded "neither
+side can go first", which held only because I had posited exactly two states: the exception, or
+its absence. The hub's three-step shape dissolves it by adding a **tolerant middle state** —
+resolve root-relative first, fall back to module-relative, announce the fallback — and every step
+is then independently valid. Step 1 landed 2026-09-02 and is byte-neutral. *A lockstep that comes
+from the design rather than from the problem disappears when the design does; check for a middle
+state before declaring two halves inseparable.*
+
+**The three steps as ruled:**
+1. **sigil, DONE:** uniform transition rule for every module, no named exception. `pins.rs
+   unchanged` and the whole-ROM golden gates pass, so no byte moved — measured, not assumed. The
+   fallback fires on exactly the two known sites and says so: `embed.module-relative 2`, at
+   `math.emp:37` and `:164`, each with file and line.
+2. **aeon, whenever it fits:** re-spell those two to `engine/data/...`. Works under either sigil,
+   so it is an ordinary landing with aeon's own goldens. **This is the handover.**
+3. **sigil, after step 2 is on aeon's origin/master:** delete the fallback. A build at that tip
+   with it removed proves no module-relative embed remains — and the warning count is the
+   progress meter until then.
+
+## (SUPERSEDED) THE HALVES ARE NOT INDEPENDENTLY VALID — land them together
 
 This is the part that would bite silently, and it is sharper now than it was a day ago because
 landings are no longer paired:
