@@ -160,7 +160,13 @@ pub const D1C_BASELINE: &[(&str, &str, &str)] = &[
     ("PState_Spindash", "Player_SensorFloor", "d0"),
     ("PState_Spindash", "Player_SensorFloor", "d1"),
     ("Parallax_Update", "Decode_Factor_A", "d2"),
-    ("Parallax_Update", "Decode_Factor_B", "d2"),
+    // MOVED TO `D1C_DEMO_EXTRA` 2026-09-02, paired with aeon's band-drift ADOPTION
+    // (EFFECTS-W1 item 3, aeon branch `parcel/drift-on`). The `Decode_Factor_B` row
+    // stopped being shape-INVARIANT the moment one shipped game declared
+    // `CAP_BAND_DRIFT` and the other did not — see that constant for the whole
+    // adjudication. The `Decode_Factor_A` twin above stays here, and the asymmetry is
+    // real rather than an oversight: nothing was inserted after THAT call, so it fires
+    // on every shape.
     ("TestPlayer_Main", "Player_SensorFloor", "d0"),
     ("TestPlayer_Main", "Player_SensorFloor", "d2"),
     // DOCUMENTED FP (edge-blind close) — see calls.rs::destroys_value.
@@ -180,23 +186,84 @@ pub const D1C_DEBUG_EXTRA: &[(&str, &str, &str)] = &[
     ("Input_Tick", "Replay_Hash", "d0"),
 ];
 
-/// The D1c baseline for a shape: invariant rows, plus the debug-family addition.
+/// The D1c rows that only the DEMO game produces — a SECOND family axis, added
+/// 2026-09-02 alongside aeon's band-drift adoption (EFFECTS-W1 item 3).
+///
+/// **Why a game axis exists at all, stated as the measurement rather than as a
+/// rule.** Both shipped games compile the same `engine/level/parallax.emp`, but
+/// `Parallax_Update` carries a body gated on `Game.SCANLINE_CAPS & CAP_BAND_DRIFT`.
+/// sonic4 declares that bit (`$00DE`) and demo does not (`0`), so the two games
+/// assemble DIFFERENT instruction streams for one proc — exactly the condition
+/// [`D1C_DEBUG_EXTRA`] exists for, one axis over.
+///
+/// **The row, adjudicated.** `Parallax_Update @ Decode_Factor_B :: d2`. With the
+/// capability declared, the first instruction after `jbsr Decode_Factor_B` is
+/// `add.w (a4), d2` — folding the band's drift accumulator into the scroll word —
+/// and d2 is that callee's declared OUTPUT, so the close reads it as the produced
+/// value and does not fire. With the capability clear that instruction is elided,
+/// the next d2 read is further down, and the coarse walk classifies d2 as a held
+/// value across the call and fires. Demo is therefore the shape that keeps the pin.
+///
+/// **What this is NOT.** It is not coverage lost on sonic4. There is no
+/// held-across-the-call value at that site under the capability, so the row's
+/// absence there is the analysis agreeing with the proc contract, not a narrowed
+/// close. GONE is normally the loud direction (the same closure feeds
+/// `find_dead_saves`), which is why the row was MOVED with a reason written at it
+/// rather than deleted or the test widened.
+///
+/// **Predicted before it was measured**, in aeon
+/// `docs/benchmarks/scanline-p4/BAND-DRIFT.md` §6 (2026-08-29, off a staged
+/// instrument build) — which named this file as the thing that must move with the
+/// adoption. What §6 did NOT foresee is that the answer is a SPLIT and not a
+/// deletion: it was measured on a sonic4-only instrument, so it never saw demo's
+/// arm. Deleting the row outright builds sonic4 green and fails both demo shapes
+/// with the same row as a NEW firing — which is how this axis was found.
+pub const D1C_DEMO_EXTRA: &[(&str, &str, &str)] = &[
+    ("Parallax_Update", "Decode_Factor_B", "d2"),
+];
+
+/// The D1c baseline for a shape: invariant rows, plus the per-family additions.
+///
+/// TWO family axes, and they are independent: the DEBUG family assembles
+/// debug-gated code the plain shapes never see, and the DEMO game assembles a
+/// capability-gated arm sonic4's shapes never see. A shape can be both.
 ///
 /// `[proc.out-unverified]` needs no such split — measured shape by shape, it
 /// fires the SAME set on every one of the seven targets, so
 /// [`OUT_UNVERIFIED_BASELINE`] is flat. The count is not restated here: the array
 /// is the one authority, and a number written down twice is the fork this
 /// module's preamble exists to prevent.
-pub fn d1c_baseline(debug_family: bool) -> Vec<(&'static str, &'static str, &'static str)> {
+pub fn d1c_baseline(
+    debug_family: bool,
+    demo_family: bool,
+) -> Vec<(&'static str, &'static str, &'static str)> {
     let mut rows: Vec<_> = D1C_BASELINE.to_vec();
     if debug_family {
         rows.extend_from_slice(D1C_DEBUG_EXTRA);
+    }
+    if demo_family {
+        rows.extend_from_slice(D1C_DEMO_EXTRA);
     }
     // Sorted, so the combined baseline stays comparable to the analysis's own
     // sort order — appending the debug rows after the invariant ones would
     // otherwise foreclose an order pin for the debug family.
     rows.sort_unstable();
     rows
+}
+
+/// Is this profile the DEMO game, for [`d1c_baseline`]'s second axis?
+///
+/// KEYED ON THE MANIFEST MODULE, NOT ON `name`. The axis is really "which game's
+/// `Game.SCANLINE_CAPS` does this shape compile against", and the manifest module
+/// is the thing that declares it. `name` would be wrong by construction: the
+/// `config_a` / `config_b` / `lean` / `stress_*` profiles carry their own names
+/// and sonic4's manifest, so a name test would have to enumerate them and would
+/// silently mis-classify the next one someone adds.
+///
+/// One key, in one place, called by both gates — the same anti-fork rule this
+/// module's preamble states for the baselines themselves.
+pub fn is_demo_family(profile: &crate::native::GameProfile) -> bool {
+    profile.manifest_module == "games.demo.game"
 }
 
 /// A baseline comparison result. Empty `added` and `removed` is the pass.
@@ -285,10 +352,10 @@ pub fn diff_inout_unverified(got: &[(String, String)]) -> BaselineDiff {
 
 /// Diff the corpus's `[call.live-clobbered]` firings against the frozen baseline
 /// for that shape's family.
-pub fn diff_d1c(got: &[(String, String, String)], debug_family: bool) -> BaselineDiff {
+pub fn diff_d1c(got: &[(String, String, String)], profile: &crate::native::GameProfile) -> BaselineDiff {
     diff_multiset(
         got.iter().map(|(p, c, r)| format!("{p} @ {c} :: {r}")).collect(),
-        d1c_baseline(debug_family)
+        d1c_baseline(profile.debug, is_demo_family(profile))
             .iter()
             .map(|(p, c, r)| format!("{p} @ {c} :: {r}"))
             .collect(),

@@ -1518,7 +1518,9 @@ section s (cpu: m68000) {
 /// family assembles debug-gated code the plain family never sees), and a
 /// define-free walk would see neither arm of any gated `if`. Walking every shape
 /// under its own profile is what makes this pin a statement about shipped code —
-/// and it is what exercises `d1c_baseline(true)`, which no define-free gate can
+/// and it is what exercises `d1c_baseline`'s DEBUG arm — and, since 2026-09-02, its
+/// DEMO arm too (`D1C_DEMO_EXTRA`, a capability-gated body one shipped game declares
+/// and the other does not) — which no define-free gate can
 /// reach.
 ///
 /// RATCHET, both directions: a firing outside the baseline is a new violation; a
@@ -1535,7 +1537,7 @@ fn contract_baselines_hold_for_every_shipped_shape() {
             .iter()
             .map(|f| (f.proc.clone(), f.callee.clone(), f.reg.clone()))
             .collect();
-        let d = contract_baseline::diff_d1c(&d1c, profile.debug);
+        let d = contract_baseline::diff_d1c(&d1c, &profile);
         assert!(
             d.is_clean(),
             "shape `{label}`: {}",

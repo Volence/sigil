@@ -1229,7 +1229,10 @@ fn run_contract_gate(aeon: &std::path::Path, target: &BuildTarget) {
         .collect();
     // D1c is shape-dependent: the debug family assembles code the plain family
     // never sees, so the pin is per-family (measured 20 plain / 25 debug).
-    let d = bl::diff_d1c(&d1c_got, target.label_and_profile().1.debug);
+    // The profile, not two bools: `diff_d1c` derives BOTH family axes from it
+    // (debug, and which game's `Game.SCANLINE_CAPS` this shape compiles against),
+    // so neither gate carries its own copy of the classification.
+    let d = bl::diff_d1c(&d1c_got, &target.label_and_profile().1);
     if !d.is_clean() {
         eprintln!("error: {}", bl::adjudication_message("[call.live-clobbered] (D1c)", &d));
         let spans: Vec<(String, sigil_span::Span)> = report
