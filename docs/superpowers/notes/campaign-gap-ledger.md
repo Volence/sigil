@@ -3499,3 +3499,19 @@ Parcels `parcel/suite-paths-resolver` and `parcel/d18-refuse-bare-run`, packet
   — OPEN (kill: either a consumer, or its deletion; an accessor nothing calls is a claim
   nothing tests, and it currently rides the classifier's closure into the published accessor
   set's neighbourhood for free)
+
+### A private AEON_DIR read bypasses both d-18 halves (2026-09-02)
+Found while reconciling the derived reference-dependent population (packet
+`2026-09-02-suite-paths-resolver.md`). `reference_dependent_binaries()` is a substring match
+for `aeon_dir(` / `reference_tree(` / `reference_tree_for_profile(` over a file's whole text,
+and the bare-run refusal lives inside `aeon_dir()`. A test that writes
+`std::env::var("AEON_DIR").unwrap_or_else(...)` itself therefore does BOTH of: escape the
+not-measured population count, and escape the refusal — so it silently measures against the
+live checkout, which is the exact state d-18 closed. Reachable by writing eight words, and
+the routing this parcel did is what made today's count accurate rather than any property of
+the predicate. Measured: on master 124 files named `AEON_DIR` while 99 matched the predicate,
+and the 31-file difference was files whose private helper carried a name of its own.
+— OPEN (kill: a lint in the shape of `skip_marker_lint` — hold every `env::var("AEON_DIR")`
+in `crates/*/tests/*.rs` to the resolver, with `test_support.rs`, `seam2.rs`, the CLI's
+argv publication and the artifact-writing tools as the derived exceptions rather than a typed
+roster. The same file already proves the shape works)

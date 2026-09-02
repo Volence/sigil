@@ -215,12 +215,48 @@ harness, with `GUARDS` and `FLOOR` as declarations. Parcel 2's refusal reads the
 walk — the ruling asks the partial run to print a derived not-measured count, and a second
 derivation would be a second thing to keep in step.
 
-**A finding worth foregrounding.** Routing the private copies raised the derived population
-from **40 test binaries to 125**. Those 85 files were reference-dependent all along; the
-derivation could not see them because each spelled the environment read itself instead of
-calling a guard. The gate that exists to say how much of the suite went unmeasured was
-itself under-reporting by a factor of three, and nothing could have noticed — the
-under-count was in the same direction as a green.
+**A finding worth foregrounding — and a WRONG CAUSE I attached to it first, corrected
+below.** Routing the private copies raised the derived population from **98 test binaries to
+126**: 31 files under `crates/*/tests/*.rs` named `AEON_DIR` on master while being invisible
+to the derivation, and 28 of them became visible. The gate that exists to say how much of
+the suite went unmeasured was itself under-reporting by about a quarter, in the same
+direction as a green.
+
+The first version of this paragraph said "40 to 125", and attributed the gap to the private
+literals. **Both halves were wrong, and the reconciliation is worth more than the headline.**
+
+*The 40 was never a measurement.* It is a number in a comment in
+`reference_dependence_is_named.rs` — "the measured population (40 binaries on 2026-08-30)",
+written to justify `FLOOR`. Measured at `526fdd0e`, the very commit that introduced the
+derivation and carries that comment, the predicate already matched **99** files. The 40 never
+described what the code computed. That it sat inside a gate whose stated purpose is to reject
+copied expectations is the sharpest part of this: the one number a reader would use to judge
+the floor was itself the defect the file exists to prevent. (`FLOOR = 20` is still sound — it
+is far below 98, not just below 40 — but its written justification cited a figure that was
+never right.)
+
+*The private literals were not what hid them.* Name the predicate exactly:
+`reference_dependent_binaries()` is `text.contains(g)` over each file's WHOLE text, comments
+included, for `g` in `"reference_tree("`, `"reference_tree_for_profile("`, `"aeon_dir("`. On
+master most private helpers were themselves *named* `aeon_dir`, so their definition and every
+call site contained `aeon_dir(` — the predicate saw them regardless of the literal in the
+fallback. Measured on master, `crates/*/tests/*.rs`: 124 files mention `AEON_DIR`, 99 match
+the predicate (98 after the gate excludes itself), and the three guards contribute
+`aeon_dir(` 66, `reference_tree(` 22, `reference_tree_for_profile(` 17.
+
+So the 31 genuinely-invisible files are the ones whose private helper carried a DIFFERENT
+name — `collision_lookup_dir()`, `vdp_init_dir()`, `sonic_anims_port`'s inline read — or that
+inlined `std::env::var("AEON_DIR")` with no helper at all. The real cause is **a local
+accessor spelled with a local name**, not a hardcoded fallback path. That distinction matters
+for whoever reads this next, because the two suggest opposite fixes.
+
+*Is the predicate's narrowness a second blindness?* Yes, and it is still live. It is a
+substring match, so it over-counts a file that only mentions a guard in prose, and it
+under-counts any file that reaches the tree by a name it invented. Routing made today's count
+accurate by removing the second case, not by improving the predicate. The residual hole is
+booked in the gap ledger: after parcel 2, a file that reads `env::var("AEON_DIR")` privately
+bypasses BOTH the population count and the bare-run refusal, and would silently measure
+against the live checkout — the exact state d-18 closed, reachable by writing eight words.
 
 `reference_dependence_is_named` also now consults `aeon_checkout()` rather than
 `aeon_dir()`. Its whole subject is the state where no tree was named, and `aeon_dir()` is
@@ -723,3 +759,148 @@ The step-3 row makes two different claims and the packet should not blur them:
 Production behaviour is unchanged by the split: `derived_suite_root()` is
 `derive_suite_root_from(env!("CARGO_MANIFEST_DIR"))` with the same `OnceLock` and the same
 doc reasoning for the anchor.
+
+---
+
+# The sweeps, and the plant
+
+## Environment, confirmed rather than assumed
+
+The shared `/home/volence/sonic_hacks/sigil/target/release` holds pre-flip binaries; anything
+built through it silently produces chain-195 bytes. Both variables were re-echoed in the
+sweep shell rather than trusted to have survived, and the log's first line records them:
+
+```
+CARGO_TARGET_DIR=/home/volence/sonic_hacks/.sigil-target-resolver SIGIL_EMIT=/home/volence/sonic_hacks/.sigil-target-resolver/release/emit_sound_blob AEON_DIR=/home/volence/sonic_hacks/.aeon-ref-resolver
+```
+
+Each log is also stamped with `branch=`, `head=` and `pwd=` on its second line and grepped
+for its own parcel's test name, so a run from the wrong tree cannot read as this one's.
+
+## Results
+
+| | parcel 1 | parcel 2 |
+|---|---|---|
+| head | `47424f41` | `327c36f2` |
+| passed | **4180** | **4184** |
+| failed | **0** | **0** |
+| ignored | 2 | 2 |
+| exit | **0** | **0** |
+| `skip:`/`skipping` lines | **0** | **0** |
+| `--list` total | — | 4186 |
+
+Zero skips is the expected shape under `SIGIL_STRICT_GATE=1`: the strict gate turns a missing
+reference into a failure, so a skip in this log would itself be the defect.
+
+## The ran-versus-declared reconciliation closes exactly
+
+My earlier declared figure of **4185** was a loose grep, and it was wrong in two directions
+that nearly cancelled. Both parcels now reconcile to the unit:
+
+```
+parcel 1:  4173 strict #[test] attribute lines  + 9  =  4182  =  4180 passed + 2 ignored
+parcel 2:  4177 strict #[test] attribute lines  + 9  =  4186  =  4184 passed + 2 ignored
+                                                              =  4186 from `cargo test -- --list`
+```
+
+The two corrections, named rather than waved:
+
+* **−8, grep false positives.** `git grep -c '#[test]'` counts the literal wherever it
+  appears, including prose and string fixtures. Eight such lines exist, all in
+  `crates/sigil-harness/src/strict_census.rs` (a module whose subject IS counting `#[test]`)
+  and `crates/sigil-harness/tests/strict_census_lint.rs` (whose fixtures are Rust source in
+  string literals). Matching only lines that are the attribute and nothing else drops them.
+* **+9, macro-generated tests.** `crates/sigil-harness/tests/freeze_step_gap.rs` defines
+  `macro_rules! per_joint!` with **three** `#[test]` attributes in its body and invokes it
+  **four** times: twelve tests from three grep-visible lines. That binary's `--list` line
+  reads `21 tests` against 12 literal `#[test]` lines in the file, which is the +9 exactly.
+
+`--list` equals `passed + ignored` on parcel 2, so nothing was filtered out of the run
+either.
+
+## Parcel 2 went RED first, and the lint was right
+
+The first parcel-2 sweep was **4183 passed / 1 failed / 2 ignored, exit 101**. One failure:
+
+**`every_announced_early_return_carries_the_skip_marker`** (`tests/skip_marker_lint.rs`)
+
+```
+2 announced early return(s) do not start with the canonical marker "skip: ".
+The landing bar and scripts/nightly_source_gates.sh both match on that prefix, so a site
+spelled any other way can no-op and still clear the zero-skip bar.
+  …/crates/sigil-harness/tests/bare_run_refuses.rs:53  [early-return within the structural window]
+      "parent: this row runs only in the child"
+  …/crates/sigil-harness/tests/bare_run_refuses.rs:58  [skip vocabulary]
+      "CHILD skipped"
+```
+
+Both sites are mine, from parcel 2's own gate, and the lint caught them the first time the
+whole suite ran — which is the argument for running it.
+
+**The fix is not a rewording to clear the bar, and the distinction is the point.** A
+`skip:`-shaped line announces that a SUITE ROW measured nothing; `landing-run.sh:369` and
+`refreeze.rs:533` count those out of a log. Neither site is that:
+
+* line 53 is a row that does nothing in the parent process, so it should say nothing — it is
+  now a silent `return`;
+* line 58 is a CHILD process reporting to its parent, which asserts on the token. Spelling it
+  `skip: …` would put a skip in the log of a run that skipped nothing — the same wrong number
+  the marker discipline exists to prevent, pointing the other way. The tokens are now named
+  constants (`CHILD-WITNESS guard yielded a tree` / `…yielded no tree`) that the parent
+  matches on.
+
+Nothing is lost by the child not announcing a skip: when the guard returns `None` it is
+`test_support::reference_tree` that has already printed the canonical
+`skip: reference ROM not at …` line, and the parent asserts on that path too. My `println!`
+was a redundant second announcement of a skip the harness had already announced correctly.
+
+Re-run after the fix: **4184 / 0 / 2, exit 0, 0 skip lines.** (The single `skip`-matching line
+in the red log was the failure message itself quoting the marker, not a skipped row — so that
+run's true skip count was 0 as well.)
+
+## The plant — both directions run, and the coordinator's prediction is CONFIRMED but not for free
+
+`contract/SUITE_PATHS.md` paragraph 4 as amended at empyrean `8dfb07f`: report the pair AND
+the returned source, and a returned source naming the main checkout fails regardless of its
+pair. Two plants, `git diff --stat` clean before each.
+
+**Plant A — the returned-path assertion neutered, the disagreement pair left intact.**
+The prediction was that this goes GREEN, proving the returned-path assertion is the
+load-bearing one. It does:
+
+```
+PLANT: pair = wrong(Some("…/suite/repo/nested")) vs right(…/suite); returned source = …/suite
+test the_step_3_derivation_is_proven_from_a_linked_worktree ... ok
+test result: ok. 2 passed; 0 failed
+```
+
+Every path in that pair is correct, and the row proves nothing. Aurora's sentence, reproduced
+in sigil's shape.
+
+**Plant B — the resolver made to ignore the anchor it is handed** (`let here =
+Path::new(env!("CARGO_MANIFEST_DIR"))` shadowing the argument), which is sigil's analogue of
+"executing the main copy". RED, and the failure names the main checkout:
+
+```
+assertion `left == right` failed: step 3 derived the wrong suite root from a LINKED, NESTED worktree.
+  left: "/home/volence/sonic_hacks"
+ right: "/tmp/sigil-suite-paths-worktree-bed-…/suite"
+```
+
+**The reading, stated plainly because a contract line is waiting on it.** The coordinator's
+prediction — that a parameterised anchor is immune by construction — holds, and Plant B is
+the evidence: there is no cwd to ignore, so the only way to make the resolver "stand
+elsewhere" is to make it discard its argument, and the row catches that by name. But Plant A
+shows the immunity is **not** structural on its own: it comes from the returned-path
+assertion, not from the parameterisation. Neuter that one assertion and the row is exactly
+the convincing artifact aurora describes, on the same bed, with the same correct pair. So the
+sigil-shaped statement of paragraph 4 is: *parameterising the anchor removes the cwd trap,
+and asserting the RETURNED value against the bed is what makes the row mean anything* — the
+second half is load-bearing in a compiled lane too, and should not be dropped on the grounds
+that the first half is present.
+
+The row now prints both quantities on every run, per the amendment:
+
+```
+step-3 bed: wrong method -> Some("…/suite/repo/nested"); bed's suite root -> …/suite; RETURNED SOURCE -> …/suite
+```
