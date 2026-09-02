@@ -1057,9 +1057,26 @@ ruling. Each row's age prints on every lane run.
   test runtime** via `emp_const_rhs` / `emp_const_literal` — never a copied literal.
 - **Never build in the scratchpad/tmp** — `/tmp` is tmpfs; a cargo build there wedges
   the shell. Set `CARGO_TARGET_DIR` to disk for any out-of-tree build.
-- **⚠ ANY ad-hoc cargo command in this checkout RELINKS `target/release/sigil`, which is
-  the assembler another lane's freeze may be mid-ritual with** *(2026-09-02, found by the
-  aeon lane at chain 198; caused here)*. Measured: `target/release/sigil` went
+- **⚠ ANY cargo command that lands in this checkout RELINKS `target/release/sigil`, which
+  is the assembler another lane's freeze may be mid-ritual with** *(2026-09-02, found by the
+  aeon lane at chain 198; caused here)*.
+  **WIDENED THE SAME DAY, AND THE FIRST WORDING WOULD HAVE MISSED THE WORST CASE.** This
+  bullet said *"ad-hoc"*, which reads as a rule about careless one-off commands. It is not:
+  aeon's `tools/freeze_preflight.sh` — a COMMITTED TOOL in a sibling repo, documented as the
+  mandatory ritual before `refreeze --freeze` — derives its sigil tree from its own location
+  (`SIGIL="${SIGIL_DIR:-$(dirname "$(dirname "$HERE")")/sigil}"`, verified here at aeon
+  `origin/master`), `cd`s into **this shared checkout**, and runs `cargo test --release -p
+  sigil-harness` and `-p sigil-cli` with no `CARGO_TARGET_DIR`. It relinks on every
+  invocation, by design, and **somebody obeying the "ad-hoc" wording perfectly still relinks,
+  because they are not running an ad-hoc command.** A rule scoped to the careless case does
+  not bind the ritual, and the ritual is the thing that runs on a schedule.
+  **Its second half is worse than the relink and is the reason to read this bullet twice: a
+  tool that resolves the tree from ITS OWN LOCATION tests whatever is at that path, not the
+  thing it was invoked about.** That pre-flight has never tested the tree it gates —
+  measured, not inferred: the new cross-seam symbol appears 0 times in this checkout's
+  `pins.rs` and once in the landing tree, so every red it produced was a true report about
+  the wrong subject. **"The gate was skipped" and "the gate ran and could not see the
+  subject" produce identical evidence**, and the first is the story everyone reaches for. Measured: `target/release/sigil` went
   `956da96a…`/`079cec97` → `4ca83f71…`/`dd5eaad2` at 12:28:24 local, **inside** a freeze
   window, and the binary that produced entry 198's goldens no longer exists — it was
   overwritten in place and is recoverable only by rebuilding at its revision.
