@@ -1102,3 +1102,253 @@ histogram over moved sections (declared quantum, pin-residue quantum) -> count:
    walk's refusal of an undeclared section IS the function's `None` arm.
 7. Nothing else in the brief was contradicted by command output. The scope boundary (point
    3) held without needing the BLOCKED exit.
+
+## 12. Chain-195 re-baseline and handover for chain 196
+
+Sections 0–11 are the chain-193 account (sigil master 5a25a0d4-era, aeon 25731dfa). Chain
+194 (red) and 195 (`d34-ceiling-band`, aeon `027ec1620dd977bf7b8ee47cbafe2b2197059092`,
+sigil master `036800fd`) landed underneath it, so the parcel was re-done at 195 on
+`parcel/alignment-flip-195` / `trial/alignment-flip-freeze-195` (worktree
+`.claude/worktrees/agent-ae9148ef5f647aadf`; ref tree `.aeon-ref-r7b`, never `.aeon-ref-r7`).
+The code half (`e2517405`, `62733604`) is the same flip as §1; everything below is what 195
+changed in the numbers, the hand sites, and the aeon-side edits. No emulator was used; the
+runtime item stays TAGGED (§12.9).
+
+### 12.1 Seven shapes, pre → post (pre == the chain-195 goldens)
+
+`pre` is `provenance.toml` entry `d34-ceiling-band` verbatim (its `full_crc`/`full_size`
+lines: config_a 10746–47, config_b 10753–54, demo 10760–61, demo_debug 10767–68, lean
+10774–75, s4 10781–82, s4_debug 10788–89), reproduced by `measure-shapes.sh` from the
+pre-flip binary at the ref tree's `027ec162`. `post` is the same script from the flip binary
+at `cb4b3f5a` (`sigil --version`: revision cb4b3f5a, clean) against the ref tree at
+`fbe89918` (§12.5), run twice — the inherited `measure-post-195/` and a fresh
+`measure-post-195b/` (log header `sigil_head=cb4b3f5a aeon_head=fbe89918
+at=2026-09-02T03:27:56Z`), identical CRC32/size on all seven (`zlib.crc32`).
+
+| shape | pre (chain 195) | post | Δ size | EndOfRom pre → post |
+|---|---|---|---|---|
+| s4 | fdd1cf81/719387 | ac10ab85/719325 | −62 | 0xA5C90 → 0xA5C82 (−14) |
+| s4_debug | 0f6b1359/736391 | fa866f19/736345 | −46 | 0xA7F40 → 0xA7F34 (−12) |
+| demo | aca8c043/96476 | 30a31d81/96458 | −18 | 0x1121C → 0x1121A (−2) |
+| demo_debug | 932f496f/101359 | 51056291/101323 | −36 | 0x1121C → 0x1121A (−2) |
+| config_a | 80f9c672/736759 | 819634c2/736697 | −62 | 0xA7F40 → 0xA7F34 (−12) |
+| config_b | 61512d30/614991 | 46e2f38b/614839 | −152 | 0x8C770 → 0x8C6E6 (−138) |
+| lean | 4d3f718f/674830 | 0373dec8/674816 | −14 | 0xA4C0E → 0xA4C00 (−14) |
+
+The demo shapes' post CRCs are UNCHANGED from §0 (the demo game did not move between 193
+and 195); the five sonic4-derived shapes moved with their baselines. The file Δ and the
+EndOfRom Δ differ per shape (s4 −62 vs −14, config_b −152 vs −138): the remainder sits in
+the deb2 appendix past `EndOfRom`, whose length follows the symbol addresses it encodes.
+Observed arithmetic only; the appendix encoding was not re-derived here (ledgered, §12.10).
+Per-shape declared-label tables (every head label, pre/post/delta/declared/quantum) are in
+`.sigil-r7-target/compare-195.md` (regenerable: §8a with the `-195` dirs); the s4 and
+s4_debug slides read exactly as §9 (Sound_PostByte −0x98 plain / −0x80 debug, engine bank
+org-anchor absorbed at $10000).
+
+### 12.2 The abs.w ceiling falsifier at 195, both sonic4 shapes
+
+Byte-scanned in the seven `measure-*-195` ROMs (`4EB9 0000 xxxx` → `4EB8 xxxx`, `4EF9` →
+`4EF8`, plus `lea`/`pea` forms — none of those), listings for the addresses:
+
+| shape | Sound_PlaySFX pre → post | crossed | sites re-encoded abs.l → abs.w |
+|---|---|---|---|
+| s4 | 0x8054 → **0x7FBC** | yes | 9 `jsr` + 2 `jmp` = **11** (`ps_checkfull` 0x807E→0x7FE6, `ps_drop` 0x8094→0x7FFC, `ps_ret` 0x8098→**0x8000**: no absolute references to those three) |
+| lean | 0x8054 → **0x7FBC** | yes | 9 `jsr` + 2 `jmp` = 11 (same code) |
+| s4_debug | 0xAF8A → 0xAF0A | no | Sound_PlaySFX: 0. **But `Raster_Install` 0x8042 → 0x7FDC crosses**, and `Debug_BandDemoHotkey`'s two `jbra Raster_Install` (ojz_scroll_test.emp:1698/1709, DEBUG-only) re-encode `jmp` abs.l → abs.w: **2 sites, −4 B** |
+| config_a | 0xB09A → 0xAFE2 | no | `Raster_Install` 0x8152 → 0x80B4 stays above: 0 |
+
+`SoundTablesZ80_Head` is 0x8000 (VMA) in every sound-on shape, pre and post. §4 counted 9
+`jsr` and named the insta-shield's `jmp`; the definitive count is 11 (the second `jmp` is a
+tail call in the same bank) — and §4's debug row "above" was true of Sound_PlaySFX and
+FALSE of the shape: the debug crossing is a different label. The falsifier as specified
+(one label) cannot see that; the general check is "every head label with pre ≥ 0x8000 and
+post < 0x8000, per shape, with its absolute-reference count" (ledgered, §12.10). The two
+`abs.w` `jsr` sites in `[PState_Ground, Ground_Move_Cap)` put `Ground_Move_Cap` at
+`P_STATE_GROUND.plain + 0x2F4` (was +0x2F8) and leave debug at +0x2F4 (site 5, §12.6).
+
+### 12.3 §3 cross-check at 195 (the sound-off hole)
+
+| shape | BootData | idle (40 B) | BootData_PostBlob pre → post | BootData_End pre → post |
+|---|---|---|---|---|
+| demo | 0x392 | 0x3C8..0x3F0 | 0x3F8 → 0x3F0 | 0x406 → 0x3FE |
+| demo_debug | 0x396 | 0x3CC..0x3F4 | 0x3F8 → 0x3F4 | 0x406 → 0x402 |
+| config_b | 0x392 | 0x3C8..0x3F0 | 0x3F8 → 0x3F0 | 0x406 → 0x3FE |
+
+§3's per-shape resume addresses (0x3F0 plain / 0x3F4 demo debug) hold at 195 unchanged; the
+`at = 0x3F0` lower-bound row is still what both maps need. The idle's `code_end` is 0x28 in
+every listing. `boot_data_port.rs`'s comment/window start is **0x392** (the chain-193 site
+3 text and the inherited draft said "$39a"; the symbol table, the compare tables and
+0x392 + 0x36 = 0x3C8 all say 0x392 — corrected in `16720845`).
+
+### 12.4 Landing runs
+
+`scripts/landing-run.sh --baseline 4177 --aeon /home/volence/sonic_hacks/.aeon-ref-r7b
+--target /home/volence/sonic_hacks/.sigil-r7-target --expect-test <7 names>` with
+`SIGIL_BUILD`/`SIGIL_EMIT` exported (SIGIL_STRICT_GATE=1, full workspace, `--no-fail-fast`,
+`--nocapture`); expect-tests: `declared_chain_plain`, `declared_chain_debug`,
+`both_spellings_of_the_section_row_build_the_same_rom`, `config_b_boot_data_hole_filled`,
+`config_b_doctored_size_table_moves_no_bytes`,
+`every_region_end_contract_holds_against_the_live_layout`,
+`generated_pins_match_the_hand_typed_baseline` — every one present by name (`test <name>
+... ok`) in every run. Reference in every run: `.aeon-ref-r7b @ fbe89918
+(trial/alignment-flip-hole-195, clean)`, all four ROMs present. Logs
+`.sigil-r7-target/landing-195-{1-parcel,2-trial,3-trial}.log` (+ `.verdict`).
+
+| # | tree | passed | failed | ignored | skip | exit | wall clock (UTC) | note |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `parcel/alignment-flip-195` content @ cb4b3f5a (pre-freeze) | 4016 | 166 | 2 | 0 | 1 | 03:40:14 → 03:43:53 | 156 unique names, ALL bucket A |
+| 2 | `trial/alignment-flip-freeze-195` @ 8106bbe1† (freeze + 5 hand sites) | 4182 | 0 | 2 | 0 | 0 | 04:08:09 → 04:11:34 | **GREEN** |
+| 3 | **trial @ 8c45f07d†** (comment-only re-tag of site 4) | **4182** | **0** | **2** | **0** | **0** | 04:13:33 → 04:16:52 | **GREEN**, code-final tip |
+
+† The log stamps are the pre-rebase SHAs: after run 3 the three trial-only commits were
+rebased onto the commit that adds this section (docs only, no `.rs`/golden change — `git diff
+--stat` between the two trial tips is these two notes), so the run-3 tree IS the pushed trial
+tip's tree minus this text. Cite the trial commits by subject, not SHA.
+
+Runs 2–4 of §7 collapse to one here because sites 1, 2, 3, 5 were already on the parcel
+branch (`33bfcfb8`, `16720845`) before the freeze; only site 4 followed it. The three
+`panicked` lines in the green logs are `#[should_panic]` tests
+(`override_of_unknown_constant_panics`, `ensure_generated_refuses_before_it_touches_an_absent_tree`,
+`compress_panics_on_error`).
+
+**Run 1 classification.** 166 FAILED lines, 156 unique names; every one bucket **A** (its
+subject is a frozen artifact): 111 `*_region_matches_reference` / `*_matches_reference` /
+`*_undoctored_compile_equals_the_reference_window` / `*_regions_match_reference`; 16 =
+`{config_a,config_b,demo_debug,demo_plain,lean}_{anchor_matches_golden,full_file}` +
+`{config_a,config_b,demo_debug,demo,lean}_size_table_rederives_native` +
+`flipped_config_a_anchor_matches_golden` (§7 wrote "×7" for these — the s4 pair is named
+`native_full_sonic4_*` / `native_rom_*`, counted next); 29 read one by one:
+`a_doctored_indexed_mode_changes_the_bytes`, `aeon_dir_matches_the_provenance_tip`
+(fbe89918 vs the tip's 027ec162), `a_passing_extra_entry_moves_no_bytes`,
+`both_spellings_of_the_section_row_build_the_same_rom`,
+`colinked_sfx_head_matches_the_reference_rom_slice_both_shapes`,
+`config_b_boot_data_hole_filled`, `config_b_doctored_size_table_moves_no_bytes`,
+`config_b_frozen_placement_exact`, `deb2_appendix_negative_controls`,
+`declared_chain_{debug,plain}`, `deform_pointer_equals_placed_label_vma`,
+`demo_{debug,plain}_game_modules_match_golden`, `doctored_af_delete_produces_different_bytes`,
+`doctored_golden_at_deform_pointer_is_caught`, `native_full_sonic4_{debug,plain}`,
+`native_rom_{debug,plain}`, `objdefs_match_reference_{debug,plain}`, `pins_rs_is_current`
+(268 changed pins), `s4_boot_data_blob_present`, `two_module_ownership_flip_{debug,plain}`,
+`two_module_tail_call_flip_{debug,plain}`, `vector_table_matches_reference_rom_first_256_bytes`.
+**Bucket B: 0.** Set difference vs §7 run 1: only-193 =
+`config_b_doctored_size_table_breaks_the_build` (renamed),
+`every_region_end_contract_holds_against_the_live_layout`,
+`sound_layout_derives_the_frozen_addresses` (both pass pre-freeze now — repin.toml and the
+seam2 literals are on the parcel branch); only-195 = the renamed
+`config_b_doctored_size_table_moves_no_bytes`.
+
+**Reconciliation.** `git grep -o -e '#\[test\]' HEAD -- '*.rs' | wc -l` = 4183 on the trial
+tip, 4178 at master `036800fd` (= the attested `cffdb56c`); executed 4182 + 2 = 4184 vs the
+chain-195 attest's 4177 + 2 = 4179: **+5 both**, all in `crates/sigil-harness/src/native.rs`
+(+6 walk tests, −1 `a_pin_that_violates_the_declaration_is_refused_with_the_residue`). The
+constant +1 between attr count and executed count is the pre-existing macro-instantiated
+test §11.5 records. `strict_bodies` is not re-attested here (the attest is chain 196's).
+
+### 12.5 The trial freeze and the aeon-side edits
+
+`refreeze --freeze alignment-flip-trial-195 --ab "…" --note "TRIAL — NOT FOR MERGE: …"`,
+AEON_DIR = `.aeon-ref-r7b @ fbe89918`, 03:45:05 → 04:00:37 UTC, committed as `TRIAL freeze: alignment-flip-trial-195 (aeon
+fbe89918) - NOT FOR MERGE, never cherry-pick`:
+provenance entry #196 `alignment-flip-trial-195`, aeon_rev
+`fbe89918347c580aa1598687b3491940ee1b0ab6`, seven `full_crc/full_size` EQUAL §12.1's post
+column (config_a 819634c2/736697, config_b 46e2f38b/614839, demo 30a31d81/96458,
+demo_debug 51056291/101323, lean 0373dec8/674816, s4 ac10ab85/719325, s4_debug
+fa866f19/736345); `refreeze --check`: OK, chain len 196; DIVERGENT rows: #181 (sigil
+bfbedc11, pre-existing) and #196 (aeon fbe89918, by construction — unreachable from aeon
+`origin/master`). `pins.rs` regenerated: 268 pins changed (§7 counted 267 before its repin.toml re-spelling;
+here `33bfcfb8` precedes the freeze, so `DUST_SPINDASH.len` is inside the 268).
+
+Aeon side, ref tree `.aeon-ref-r7b` branch `trial/alignment-flip-hole-195` =
+`027ec162` + two TRIAL commits (never pushed; the aeon lane re-does them on its own branch):
+
+```
+3d943138  games/demo/map.toml:    [[hole]] after="Z80_IdleProgram"  at = 0x3F8 -> at = 0x3F0
+          games/sonic4/map.toml:  same row, at = 0x3F8 -> 0x3F0 (+ MEASURED comment 0x3C8..0x3F0)
+fbe89918  tools/fixtures/sprite_tilt_cut.json   <- python3 tools/sprite_tilt_gate.py --emit-fixture
+          tools/fixtures/instashield_cut.json   <- python3 tools/instashield_gate.py --write-fixture
+```
+
+both fixture files re-stamped by aeon's OWN gates against the post-flip ROMs (build logs
+`.sigil-r7-target/fixtures-195*.log`: the gates' "wrote" lines, then "byte-identical" ×12 and
+`build.sh` exit 0 on plain and DEBUG=1). instashield_cut.json: plain cut 64 → 62 B (ends
+`4ef87fbc4e75`), stubs 007FBC Sound_PlaySFX / 0103E6 Player_SetState / 01163C
+InstaShield_Spawn, window 71166..71228; debug 71454..71516, stubs 00AF0A / 0104AA / 01175C.
+sprite_tilt_cut.json: Ani_Knuckles 173376/175608, Ani_Sonic 172666/174898, Ani_Tails
+172932/175164, refresh 13630/15990 (plain/debug). Sequence for the lane: aeon commit(s) →
+`SIGIL_BUILD=… SIGIL_EMIT=… AEON_DIR=<that tree> refreeze --freeze <chain-196 name>` on
+sigil → the five hand sites (§12.6, values already on the branches) → landing run → attest.
+
+### 12.6 The five hand sites, 195 values
+
+1. `crates/sigil-harness/repin.toml` — as §7 (`entity_window`/`children`/`dust_spindash`
+   `end = "section:<name>"`, `objdefs` `len = 0x34`); `33bfcfb8`, parcel branch.
+2. `crates/sigil-cli/tests/seam2_layout_derivation.rs` — `sfx_bank_lma_plain` 0xA3B20 →
+   **0xA3B18**, `sfx_bank_lma_debug` 0xA5570 → **0xA5568** (Sfx_33 −8 both); `16720845`.
+3. `crates/sigil-cli/tests/boot_data_port.rs` — window `0x39a..0x406` → **`0x392..0x3fe`**,
+   idle `0x3c8..0x3f0`, tail byte at `0x3f0`; `16720845`.
+4. `crates/sigil-harness/tests/repin_pins.rs` — **13 assert lines / 15 pin fields** in the
+   live `generated_pins_match_the_hand_typed_baseline` (§7 said 14), each tagged
+   `alignment-flip` with its one reason; every old literal equalled the 036800fd `pins.rs`,
+   so no STALE-CATCHUP term exists: BOOT_DATA.plain 0x3A0→0x398; ANIMATE/RINGS bases −0x3E
+   plain / −0x2E debug; CORE base −0x30 / −0x1E and **CORE.debug_len 0x742→0x740** (the
+   `jbsr Draw_Sprite` in `RunObjects_Frozen` relaxes bsr.w→bsr.s once the 0xE core→sprites
+   pad is gone — verified in the s4_debug listings); DPLC base −0x2C / −0x1A; DELETE_OBJECT
+   −0x30 / −0x1E; ASSEMBLED_LEN 0xA5C90→0xA5C82; DEBUG_ASSEMBLED_LEN 0xA7F40→0xA7F34 (its
+   −0xC = Sfx_33 −8, game −4, the two `jmp Raster_Install` −4, replay_fixture's own align
+   +4). Trial branch only (the two `trial: repin_pins …` commits): the values are the freeze's. The RETIRED
+   `#[ignore]` `secondary_pin_classes_match_the_hand_typed_baseline` was left alone — its 8
+   literals (SOUND_API 0x7A9E/0xA330, MDDBG_* 0x5_E8F2/0x5_F6B8, PLAYER_1, DYNAMIC_SLOTS,
+   RINGCOL_OFF.debug) were already behind master's `pins.rs` before this parcel (ledgered).
+5. `crates/sigil-cli/tests/native_full_rom.rs` — `Ground_Move_Cap` plain `+0x2F8` → **`+0x2F4`**,
+   debug `+0x2F4` unchanged; `16720845`.
+
+### 12.7 Branches and the split point
+
+`parcel/alignment-flip-195` = code + tests + packet, ends at the commit that adds this
+section; `trial/alignment-flip-freeze-195` = that tip + `TRIAL freeze` (goldens, size tables,
+pins.rs, provenance #196) + the site-4 baseline. The split point is the parcel tip: the first
+trial-only commit is the freeze, because a freeze regenerates artifacts the aeon lane's own
+freeze will regenerate against ITS aeon revision (the goldens would be byte-identical, the
+`aeon_rev` would not), and site 4 asserts the freeze's `pins.rs`. Nothing on the trial
+branch is cherry-pickable into a landing; the parcel branch is.
+
+### 12.8 What was wrong in THIS brief
+
+1. **"baseline 4177 passed + 2 ignored" as the landing-run baseline** — `landing-run.sh`
+   reconciles `PASSED − BASELINE` (ignored excluded; §7 used 4176 for a 4176 + 2 attest), so
+   the baseline is **4177**, not 4179. Passing 4179 would have reported a −3 delta on a green
+   run.
+2. **"Sound_PlaySFX LMA for BOTH sonic4 shapes" as the falsifier** — the debug shape's
+   ceiling crossing is `Raster_Install` (0x8042 → 0x7FDC, 2 `jmp` sites), which a
+   Sound_PlaySFX-only probe reports as "no crossing". Also the number is a VMA (§4); in the
+   engine bank VMA == LMA, so the figure stands, but the wording does not generalise.
+3. **§7 site 4 "14 literals"** — 13 assert lines (15 pin fields) in the live test; the
+   RETIRED test's stale literals are a separate, pre-existing fact.
+4. **§7 "`*_anchor_matches_golden` ×7, `*_full_file` ×7, `*_size_table_rederives_native`
+   ×7"** — 5 + 5 + 5 + `flipped_config_a_anchor_matches_golden`; the s4 pair is spelled
+   `native_full_sonic4_*` / `native_rom_*`.
+5. **The inherited draft's `boot_data_port.rs` window "$39a"** — BootData is at 0x392 in
+   config_b (§12.3); the draft's window start hid 8 bytes of the head from the compare.
+6. **`measure-shapes.sh` as a one-call step** — seven builds through `build.sh` (each
+   ≈ 1 min 50 s with aeon's in-build tool tests) plus two canonical restores exceed a 10-minute
+   tool timeout; the restore of `s4.debug.bin` had to be finished as a separate call.
+7. Master moved during the work, docs-only: `036800fd` → `80dc87d5` (three notes/ledger
+   commits, no `.rs`/golden change). The chain-195 baseline is intact; the ledger append in
+   this branch will need a trivial tail merge.
+8. Nothing else in the brief was contradicted by command output; no BLOCKED exit was
+   needed.
+
+### 12.9 Open / TAGGED
+
+* TAGGED for the controller (no emulator here): a sound-on boot of post-flip `s4.bin`
+  (ac10ab85/719325) that plays an SFX exercises the 11 `abs.w`-re-encoded `Sound_PlaySFX`
+  sites; a DEBUG boot that fires `Debug_BandDemoHotkey` exercises the two re-encoded
+  `jmp Raster_Install`.
+* The hole row's per-shape semantics (0x3F0 vs 0x3F4) — still the aeon lane's call (§3).
+* The chain-196 attest (`strict_bodies` ratchet, 29 at 195) is the lane's; not run here.
+
+### 12.10 Ledgered this round
+
+`campaign-gap-ledger.md`, `[alignment-flip parcel, 2026-09-02]`: the one-label ceiling
+falsifier; the RETIRED baseline's stale literals; the deb2-appendix share of the file delta;
+`rewrite-baseline.py` handling only the `.field` assert form.
