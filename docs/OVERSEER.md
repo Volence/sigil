@@ -181,6 +181,22 @@ The control was built CANONICALLY and the fixed build with the hatch, and the fo
 byte-identical across that difference — a stronger result than a like-for-like pair, because a match
 under two different paths cannot happen if EITHER the hatch or the fix had moved a byte.
 
+**The always-TRUE direction is the one that leaves no artifact, and it is proven here rather than
+assumed.** The first five mutations covered always-FALSE twice and always-TRUE never. A refusal
+decaying to `false` reddens the builds that depend on it; a refusal decaying to `true` makes every
+cross-type guard PASS, and **a guard that passes leaves no artifact anywhere** — nothing downstream can
+report a defect whose whole signature is silence. Mutation F forces `==` to answer `true` (and `!=`
+`false`) instead of refusing: **seven rows red across three test binaries**, every one because its
+`find`/`any` for `[eq.cross-type]` came up EMPTY (`got []`). No row survived, so there is no hole to
+close — including the case that worried the hub most, a cross-type pair whose operands are
+*equal-looking*, which `cross_newtype_equality_refuses_naming_both_types` already exercises with
+`Angle(10) == Pos(10)`. Why the rows have that property is now written in the test file's own banner:
+they assert the PRESENCE of a refusal, never an expected bool, and that is what makes them fire on the
+silent direction. The aeon lane's poison-fixture tripwire on the same direction is a genuinely
+independent second instrument (different tree, different mechanism, fires in their build) — but the
+primary detector for a sigil regression lives in sigil's suite, not in a peer's fixture we neither run
+nor see.
+
 **The census, and the one row it moved.** The four-shape build doubles as the corpus census for the new
 refusal: `emp_expect_fail` reports **50 / 51**. No shipping module compares across classes. The single
 row is `tri unit fold`, whose poison fixture states in its own header that it pins `() == int` comparing

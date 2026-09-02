@@ -27,6 +27,17 @@
 //! here therefore runs BOTH twins IN ONE PROCESS: the equal twin must stay
 //! green and a genuinely mismatched twin must go red, in the same test body. A
 //! row that only exercises one polarity proves nothing about this family.
+//!
+//! AND WHY THEY ASSERT A REFUSAL RATHER THAN A BOOL. The two regression
+//! directions are not equally dangerous. A refusal that decayed back to FALSE
+//! reddens the builds that depend on it — the `parallax_dsl` fold guards fire,
+//! and the failure is written down. A refusal that decayed to TRUE makes every
+//! cross-type guard PASS, and a guard that passes leaves no artifact anywhere:
+//! nothing downstream can report a defect whose whole signature is silence.
+//! Asserting the PRESENCE of `[eq.cross-type]` (rather than an expected `false`)
+//! is what makes these rows catch that direction — an always-true equality
+//! leaves every `find`/`any` here empty, so the rows redden by construction
+//! rather than by a bool that happened to be pinned the useful way round.
 use sigil_frontend_emp::lower::{lower_module, LowerOptions};
 use sigil_frontend_emp::parse_str;
 use sigil_ir::backend::Cpu;
