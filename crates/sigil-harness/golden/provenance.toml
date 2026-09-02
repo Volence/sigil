@@ -10865,3 +10865,25 @@ full_crc = "fa866f19"
 full_size = 736345
 anchor_crc = "a095fbe0"
 anchor_end = 0xa7f34
+
+[entry.strict]
+outcome = "passed"
+sigil_rev = "9cf6de845d199bdc8185fda3434b2b72ef4923a6"
+aeon_rev = "5944dad504862231568e04105f02614e379e9ff2"
+strict_bodies = 29
+suites = 363
+passed = 4182
+failed = 0
+ignored = 2
+skips = 0
+ran_at = "unix:1788339225"
+expected_tests = ["declared_chain_plain", "declared_chain_debug", "both_spellings_of_the_section_row_build_the_same_rom", "config_b_boot_data_hole_filled", "config_b_doctored_size_table_moves_no_bytes", "every_region_end_contract_holds_against_the_live_layout", "generated_pins_match_the_hand_typed_baseline"]
+
+[entry.strict.goldens]
+config_a = "819634c2/736697"
+config_b = "46e2f38b/614839"
+demo = "30a31d81/96458"
+demo_debug = "51056291/101323"
+lean = "0373dec8/674816"
+s4 = "ac10ab85/719325"
+s4_debug = "fa866f19/736345"
