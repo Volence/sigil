@@ -52,13 +52,14 @@ fn sound_layout_derives_the_frozen_addresses() {
         //   * sfx-flight added the $BA/$BB SFX, widening SfxBlobWinTab by 4 bytes and
         //     re-rounding DacHeadPad 3 -> 7, so the head grew 8 and everything after
         //     it followed. seq_opcode_tab and dac_sample_tab are +4 from that alone.
-        // The SFX bases are ALIGNED values, not sums: the packing walk rounds this
-        // section's base up to 16 (see native::packed_align_of), and since 113f3006
-        // sound_layout predicts that rather than assuming a contiguous pack. Nothing
-        // upstream of seq_opcode_tab_lma moved in either step.
+        // The MT and SFX bases are ALIGNED values, not sums: the packing walk rounds
+        // each section's base up to its DECLARED alignment (8 for both, aeon's mod-8
+        // fold wall — section_align::DECLARED), and sound_layout predicts that through
+        // the walk's own native::packed_chained_base rather than assuming a contiguous
+        // pack. Nothing upstream of seq_opcode_tab_lma moved in either step.
         mt_bank_lma: 0xA0630,
-        sfx_bank_lma_plain: 0xA3B20,
-        sfx_bank_lma_debug: 0xA5570,
+        sfx_bank_lma_plain: 0xA3B18,
+        sfx_bank_lma_debug: 0xA5568,
     };
     assert_eq!(got, want, "map-derived seam-2 placement drifted from the frozen chain-22 addresses");
 }

@@ -2283,7 +2283,8 @@ fn image_lens_pinned(
 /// a contained frozen label `L` (a label-less DATA blob derives by CONTIGUITY from its
 /// frozen neighbour; a hard-org PHASE BANK keeps its baked =asl org) — and `packed_true_
 /// bases` walks those provisional bases in the MAP's declared `order` (K5: the map drives
-/// the sequence; the frozen provisional bases give only anchors + alignment + measurement).
+/// the sequence; the frozen provisional bases give only anchors + measurement pins — the
+/// alignment each section packs to is its `crate::section_align` declaration).
 fn true_bases_by_index(
     sections: &[Section],
     table: &HashMap<String, u32>,
@@ -2316,19 +2317,21 @@ fn true_bases_by_index(
             None => prov[i] = Some(s.lma as i64), // baked fallback (order only)
         }
     }
-    // ALWAYS-ON, before the walk consumes a single inferred quantum: every
-    // pinned section's DECLARED alignment requirement, against the very
-    // provisional base `packed_align_of` would read.
-    validate_declared_alignment(sections, &prov, &labeled)?;
+    // ALWAYS-ON, before the walk reads a single declaration: every ROM section that
+    // carries a head label is declared in `crate::section_align`, so the walk is never
+    // asked to place a section it has no alignment input for — and every such section
+    // is named in ONE report rather than at the first one the walk reaches.
+    validate_declared_alignment(sections)?;
     packed_true_bases(sections, &prov, &labeled, map_order, fixture, anchor_addrs, warnings, locate)
 }
 
 /// The §17 Wave-B B-0 packing walk (the rows-6/58 partial realization): the MAP's
 /// declared `order` gives the section sequence (K5 — the map DRIVES; see the sort below);
-/// the provisional bases give the org-island ANCHORS and per-section ALIGNMENT; every
-/// other ROM section's base is PACKED from live-measured image lengths, so a size-changing
-/// parcel shifts its contiguous run downstream instead of colliding with stale pins. Rules
-/// per section (walked in the map-driven order):
+/// the provisional bases give the org-island ANCHORS; each section's ALIGNMENT is its
+/// `crate::section_align` declaration; every other ROM section's base is PACKED from
+/// live-measured image lengths, so a size-changing parcel shifts its contiguous run
+/// downstream instead of colliding with stale pins. Rules per section (walked in the
+/// map-driven order):
 ///   - ISLAND (a DECLARED `[[anchor]]`, or the run head): absolute at prov; a packed
 ///     run that overflows past an island's base fails loud at the final
 ///     `resolve_layout` overlap check. A stale prov gap at a non-anchor is an
@@ -2336,11 +2339,11 @@ fn true_bases_by_index(
 ///   - PHASE BANK (vma ≥ 0x8000, vma ≠ lma) head, and label-less blobs inside its
 ///     hard-org run: absolute at prov (the sound banks never pack).
 ///   - label-less non-phase blob: contiguity from its neighbour (the Frozen
-///     boot-region Z80-idle rule, unchanged).
-///   - everything else: `align_up(running, A)` with A = the largest power of two
-///     ≤ 16 dividing prov — at unchanged sizes this reproduces prov exactly (the
-///     fold-identity the six golden gates prove), and under growth it re-derives the
-///     alignment pad the provisional layout implies.
+///     boot-region Z80-idle rule).
+///   - everything else — every section with a head label, whether or not a frozen
+///     table names it: `align_up(running, required_for(head label))`
+///     ([`packed_chained_base`]). The declaration is the ONLY alignment input; a
+///     section with no declaration is refused by name, never given a default.
 ///
 /// Image lengths are relaxation-dependent (branch widths move with distance), so the
 /// walk iterates measure → pack to a fixpoint (≤ 8 rounds; round 0 measures pure data
@@ -2353,113 +2356,76 @@ fn true_bases_by_index(
 /// K5 — WHAT THE FROZEN TABLE STILL CARRIES (the demoted measurement-cache role): the
 /// `order` AUTHORITY is now `map_order`, not the frozen provisional bases. The frozen
 /// table survives ONLY as: (1) each section's provisional BASE — the org-island anchor
-/// positions, the packed-section alignment, and the round-0 measurement pins; (2) the
-/// boundary keys the size derivation (`derive_frozen_table`) reads back. It no longer
-/// AUTHORS the sequence — reordering the map reorders the layout; a byte-emitting section
-/// the map omits fails loud at the post-resolve `validate_placement`.
-/// THE PACKING WALK'S ALIGNMENT RULE — the largest power of two in {16,8,4,2} that
-/// divides a chained section's FROZEN PROVISIONAL BASE.
+/// positions and the round-0 measurement pins; (2) the boundary keys the size derivation
+/// (`derive_frozen_table`) reads back. It authors neither the sequence (reordering the
+/// map reorders the layout; a byte-emitting section the map omits fails loud at the
+/// post-resolve `validate_placement`) nor any section's alignment.
+/// THE PACKING WALK'S ALIGNMENT RULE — the base a chained section headed by `head_label`
+/// packs to when the running cursor arrives at `running`: `running` rounded up to the
+/// alignment `crate::section_align` DECLARES for that section.
 ///
-/// Lifted out of `packed_true_bases`' body (where it was a local closure) to become
-/// the SINGLE authority, because `seam2::sound_layout` has to predict the very same
-/// base: it bakes ABSOLUTE pointers into emitted blobs (the SfxTable cells, the
-/// `SFX_WIN_*` window pointers, the MT song-table pointers) against its own
-/// derivation, and if that derivation and this walk disagree the pointers are short
-/// by the difference and the sound goes silent at runtime. A second copy of this
+/// The SINGLE authority for that arithmetic, because `seam2::sound_layout` has to
+/// predict the very same base: it bakes ABSOLUTE pointers into emitted blobs (the
+/// SfxTable cells, the `SFX_WIN_*` window pointers, the MT song-table pointers) against
+/// its own derivation, and if that derivation and this walk disagree the pointers are
+/// short by the difference and the sound goes silent at runtime. A second copy of this
 /// arithmetic is the bug, not the fix — that is the lesson of the three unmaintained
-/// copies of the sound-bank addresses (commit 2c49f538).
+/// copies of the sound-bank addresses (commit 2c49f538). Both callers pass the section's
+/// HEAD LABEL and nothing else, so neither can hand it a quantum of its own.
 ///
-/// A WARNING THIS SIGNATURE CANNOT ENFORCE: the quantum is a property of the frozen
-/// PIN, so a repin can change a section's alignment without a line of alignment code
-/// changing. Not hypothetical — 2c49f538 moved the SFX pin from $5BAE8 (%16 == 8,
-/// quantum 8) to $5BB10 (%16 == 0, quantum 16), silently doubling it and
-/// invalidating the mod-8 structural pads aeon had built against the old value. The
-/// always-on `validate_sound_fold` gate exists to make that class loud.
-pub fn packed_align_of(prov: u32) -> u32 {
-    for a in [16u32, 8, 4, 2] {
-        if prov.is_multiple_of(a) {
-            return a;
-        }
-    }
-    1
+/// The alignment is a property of the SECTION, stated with its source in
+/// `section_align::DECLARED`, never of where the section happened to land at the last
+/// refreeze — so a repin cannot change it, in either direction. The always-on
+/// `validate_sound_fold` gate still compares prediction against placement for the two
+/// sound blobs, because agreement between two readers of one declaration is a claim
+/// about the readers, not the declaration.
+///
+/// LOUD ON UNMEASURABLE: a head label with no declaration is a refusal naming it. It is
+/// never rendered as 1, never as 2, never as 16, and never as a pass — the declaration is
+/// the only alignment input there is.
+pub fn packed_chained_base(running: u32, head_label: &str) -> Result<u32, String> {
+    let Some(decl) = crate::section_align::required_for(head_label) else {
+        return Err(format!(
+            "[layout.undeclared-alignment] section headed by `{head_label}` has NO declared \
+             alignment in `sigil_harness::section_align::DECLARED`, and the packing walk \
+             has no other alignment input for it. Add one row naming the alignment the \
+             section REQUIRES and the source that requires it — not the number the \
+             current layout happens to give it"
+        ));
+    };
+    let a = decl.required;
+    Ok(running.div_ceil(a) * a)
 }
 
-/// The base the packing walk gives a chained section whose frozen provisional base
-/// is `prov`, when the running cursor arrives at `running`. The prediction half of
-/// [`packed_align_of`]; mirrors the apply site in `packed_true_bases` exactly.
-pub fn packed_chained_base(running: u32, prov: u32) -> u32 {
-    let a = packed_align_of(prov);
-    running.div_ceil(a) * a
-}
-
-/// THE DECLARATION GATE, first half — every pinned ROM section's DECLARED alignment
-/// requirement (`crate::section_align`) against the frozen provisional base
-/// [`packed_align_of`] is about to infer that section's quantum from.
+/// THE DECLARATION GATE, first half — every ROM section that carries a head label has a
+/// declared alignment in `crate::section_align`, checked BEFORE the packing walk so the
+/// report names every undeclared section at once.
 ///
-/// R7 of the placement-constraint inventory. The frozen tables are scheduled to stop
-/// being placement authority, and the alignment quantum is the one constraint they
-/// encode that is INVISIBLE in them — it is not a column, it is a residue of an
-/// address. Recapturing it as a declaration before the flip is the whole point; after
-/// the flip, `required` is what the packer reads and `packed_align_of` is deleted.
+/// R7 of the placement-constraint inventory. The declaration is the walk's only
+/// alignment input ([`packed_chained_base`]), so a section without one is a section the
+/// walk cannot place — the walk refuses it too, at the first such section it reaches;
+/// this pass exists so the refusal is one reviewed list rather than one name per build.
 ///
-/// WHY THIS CHECKS `required | prov` AND NOT `required | packed_align_of(prov)`: the two
-/// are EQUIVALENT for every `required ∈ {2,4,8,16}` — `packed_align_of` returns the
-/// largest element of `{16,8,4,2}` dividing `prov`, so `required | prov` forces that
-/// element to be a multiple of `required`, and `inferred | prov` holds by construction
-/// in the other direction. Checking `prov` directly stays meaningful for the two
-/// sections whose requirement is `$8000` (the Z80 bank windows), where the mod-16 cap
-/// makes the inference unable to express the requirement at all. It also needs no copy
-/// of the walk's island classification — a second copy of that arithmetic is the bug,
-/// not the fix.
+/// Scope is EVERY ROM section with a head label, pinned or not: a section no frozen
+/// table names packs by the same declaration as one that is, so the frozen tables say
+/// nothing about which sections need a row. A label-less blob has nothing to declare
+/// under and packs by contiguity; `validate_resolved_alignment` still measures the base
+/// it lands on.
 ///
-/// LOUD ON UNMEASURABLE: a pinned section with no declaration is a REFUSAL naming the
-/// section, its provisional base, and the quantum the inference would have handed it.
-/// It is never rendered as 1, never as 0, and never as a pass — an undeclared section
-/// is precisely the one whose constraint would vanish silently at the flip.
-///
-/// A label-less blob is out of scope by construction: it has no frozen provisional base,
-/// so the inference never runs on it (it packs by contiguity from its neighbour), and it
-/// has no head label to declare under. `validate_resolved_alignment` still measures the
-/// base it actually lands on.
-fn validate_declared_alignment(
-    sections: &[Section],
-    prov: &[Option<i64>],
-    labeled: &[bool],
-) -> Result<(), String> {
+/// LOUD ON UNMEASURABLE: an undeclared section is a REFUSAL naming the section and its
+/// head label. It is never rendered as a number and never as a pass.
+fn validate_declared_alignment(sections: &[Section]) -> Result<(), String> {
     let mut faults: Vec<String> = Vec::new();
-    for (i, s) in sections.iter().enumerate() {
-        if !is_rom_section(s) || !labeled[i] {
-            continue;
-        }
-        let p = prov[i].unwrap();
+    for s in sections.iter().filter(|s| is_rom_section(s)) {
         let Some(head) = head_label(s) else { continue };
-        let Some(decl) = crate::section_align::required_for(head) else {
+        if crate::section_align::required_for(head).is_none() {
             faults.push(format!(
-                "section `{}` (head label `{head}`, frozen provisional base {p:#x}) has NO \
-                 declared alignment in `sigil_harness::section_align::DECLARED`. Its \
-                 placement quantum is being inferred as {} from where the pin happens to \
-                 sit, which stops being enforced the moment the frozen tables stop being \
-                 placement authority. Add one row naming the alignment the section \
+                "section `{}` (head label `{head}`) has NO declared alignment in \
+                 `sigil_harness::section_align::DECLARED`. The packing walk has no other \
+                 alignment input for it. Add one row naming the alignment the section \
                  REQUIRES and the source that requires it — not the number the current \
                  layout happens to give it",
-                s.name,
-                packed_align_of(p as u32)
-            ));
-            continue;
-        };
-        if p < 0 || !(p as u64).is_multiple_of(decl.required as u64) {
-            faults.push(format!(
-                "section `{}` (head label `{head}`) declares alignment {} — {} — but its \
-                 frozen provisional base is {p:#x}, which is not a multiple of {} \
-                 (base % {} = {}). The packing walk would place it at a base the \
-                 requirement forbids. Fix the pin or the declaration, whichever is wrong; \
-                 do NOT weaken the declaration to match the pin",
-                s.name,
-                decl.required,
-                decl.why,
-                decl.required,
-                decl.required,
-                p.rem_euclid(decl.required as i64)
+                s.name
             ));
         }
     }
@@ -2476,16 +2442,15 @@ fn validate_declared_alignment(
 /// THE DECLARATION GATE, second half — every ROM section's declared alignment against
 /// the base it ACTUALLY LANDS ON in the resolved layout.
 ///
-/// The independent instrument. The first half reads the frozen table, the same artifact
-/// `packed_align_of` reads; asking one resolver to check itself proves nothing about the
-/// resolver. This half measures the resolved layout the ROM is emitted from, which is
-/// produced by the packing walk plus `declared_spans` plus `resolve_layout` — so it
-/// covers every section the walk places by a rule OTHER than the inference: a declared
-/// `[[anchor]]` island, a phase-bank hard org, the zero-byte-marker cap-at-2 path, and
-/// the label-less contiguity blobs that have no pin at all.
+/// The independent instrument. The packing walk packs a chained section to its
+/// declaration by construction, so asking the walk whether it honoured the declaration
+/// proves nothing; this half measures the resolved layout the ROM is emitted from, which
+/// is produced by the packing walk plus `declared_spans` plus `resolve_layout` — so it
+/// covers every section the walk places by a rule OTHER than the declaration: a declared
+/// `[[anchor]]` island, a phase-bank hard org, and the label-less contiguity blobs.
 ///
-/// It is also the half that reads identically after the flip: `lma % required == 0` says
-/// the same thing whether the base came from an inferred quantum or a declared one.
+/// `lma % required == 0` is a statement about the artifact, not about which rule
+/// produced it.
 pub fn validate_resolved_alignment(resolved: &[Section]) -> Result<(), String> {
     let mut faults: Vec<String> = Vec::new();
     for s in resolved.iter().filter(|s| is_rom_section(s)) {
@@ -2664,14 +2629,20 @@ fn packed_true_bases(
                         p
                     }
                     Some(r) => {
-                        // A ZERO-BYTE marker section (the EndOfRom terminus class) must not
-                        // inherit a spurious wide alignment from its cached provisional base:
-                        // its address is DEFINED by the end of the emitted image, and an
-                        // inferred align-16 (i4: the enclosed replay fixture) opens a fill
-                        // gap the assembled-bar completeness guard rightly rejects. Cap
-                        // markers at the 68k minimum (2); emitters keep the inference.
-                        let a = if img[i] == 0 { 2 } else { packed_align_of(p as u32) as i64 };
-                        let packed = (r + a - 1) / a * a;
+                        // The DECLARED alignment is the only input, through the one
+                        // function `seam2::sound_layout` predicts with. A zero-byte marker
+                        // (the EndOfRom terminus) gets no special case: its address is
+                        // defined by the end of the emitted image, and its declaration says
+                        // 2 for exactly that reason, so a wider quantum cannot reach it and
+                        // open a fill gap the assembled-bar completeness guard would reject.
+                        let head = head_label(&sections[i]).ok_or_else(|| {
+                            format!(
+                                "section `{}` is pinned by a frozen label but has no head \
+                                 label to read a declared alignment under",
+                                sections[i].name
+                            )
+                        })?;
+                        let packed = packed_chained_base(r as u32, head)? as i64;
                         // A downstream run that overran its frozen provisional base by more
                         // than the tolerance is REPORTED, not refused: the frozen table is
                         // stale against real content, and the refreeze at landing is the
@@ -2697,7 +2668,14 @@ fn packed_true_bases(
                         islands[i] = true;
                         p
                     }
-                    Some(r) => r, // contiguity from the neighbour
+                    // Contiguity from the neighbour — rounded up to the section's declared
+                    // alignment when it has a head label to declare under (a section no
+                    // frozen table names packs by the same declaration as one that is);
+                    // a label-less blob has none and packs flush.
+                    Some(r) => match head_label(&sections[i]) {
+                        Some(head) => packed_chained_base(r as u32, head)? as i64,
+                        None => r,
+                    },
                     None => {
                         islands[i] = true;
                         p
@@ -3273,21 +3251,19 @@ fn validate_sound_fold(
     {
         let Some(actual) = placed(label) else { continue }; // not in this shape
         if actual != predicted {
-            let quantum = packed_align_of(load_frozen_table(
-                if profile.debug { "s4_debug.txt" } else { "s4.txt" },
-            )
-            .get(label)
-            .copied()
-            .unwrap_or(0));
+            let quantum = crate::section_align::required_for(label)
+                .map(|d| d.required.to_string())
+                .unwrap_or_else(|| "<UNDECLARED>".to_string());
             return Err(format!(
                 "[sound.fold-vs-placement] seam-2 folded absolute pointers against \
                  `{label}` = {predicted:#x} but the chainer placed it at {actual:#x} \
                  (delta {:+}). Every pointer cell in that blob is off by the same \
                  amount, so the sound would be silent or garbled at runtime with no \
-                 other symptom. The chainer aligns this section's base to {quantum} \
-                 (the largest power of two dividing its frozen provisional base — see \
-                 native::packed_align_of); seam2::sound_layout must predict the same \
-                 base. Fix the prediction, not the pin.",
+                 other symptom. The chainer aligns this section's base to its DECLARED \
+                 alignment {quantum} (sigil_harness::section_align) through \
+                 native::packed_chained_base; seam2::sound_layout must reach the same \
+                 base through the same function with the same head label. Fix the \
+                 prediction, not the declaration.",
                 actual as i64 - predicted as i64
             ));
         }
@@ -3675,8 +3651,8 @@ pub fn build_rom_chained_with_listing(
     // omits, fails loud). Its regions drive emit_rom + the object-bank budget.
     validate_placement(&resolved, &pmap, profile.sound_on, &profile.registry)?;
     // R7: the declared per-section alignment against the base each section ACTUALLY
-    // lands on — the independent half (the pre-walk half read the frozen table, which
-    // is the same artifact the inference reads).
+    // lands on — the independent instrument for the sections the walk places by a rule
+    // other than the declaration (anchors, phase banks, label-less blobs).
     validate_resolved_alignment(&resolved)?;
     validate_sound_fold(aeon, &resolved, profile)?;
     check_object_bank_budget(&resolved, &map, &pmap)?;
@@ -4717,14 +4693,15 @@ mod declared_alignment_tests {
     }
 
     #[test]
-    fn a_pinned_section_with_no_declaration_is_refused_by_name() {
+    fn a_section_with_no_declaration_is_refused_by_name_before_the_walk() {
         let secs = vec![sec("mystery", "NoSuchHeadLabelAnywhere", 0x1000)];
-        let e = validate_declared_alignment(&secs, &[Some(0x1000)], &[true]).unwrap_err();
+        let e = validate_declared_alignment(&secs).unwrap_err();
         assert!(e.contains("[layout.undeclared-alignment]"), "{e}");
         assert!(e.contains("NoSuchHeadLabelAnywhere"), "{e}");
         assert!(e.contains("has NO declared alignment"), "{e}");
         // The absent declaration is never rendered as a number.
         assert!(!e.contains("declares alignment"), "an absent row must not read as a value: {e}");
+        assert!(!e.contains("inferred"), "there is no inference to quote: {e}");
     }
 
     /// The absent declaration must never be rendered as a pass — the same section
@@ -4732,69 +4709,89 @@ mod declared_alignment_tests {
     #[test]
     fn a_declared_section_at_a_conforming_base_passes() {
         let secs = vec![sec("sfx_bank_blob", "Sfx_33", 0xA3B20)];
-        validate_declared_alignment(&secs, &[Some(0xA3B20)], &[true]).unwrap();
+        validate_declared_alignment(&secs).unwrap();
         validate_resolved_alignment(&secs).unwrap();
     }
 
-    /// `Sfx_33` declares 8 (aeon's mod-8 fold wall). A pin four bytes off is refused,
-    /// naming the requirement, its source, and the residue.
+    /// The pre-walk half is about DECLARATION, not position: the frozen provisional base
+    /// is not an alignment input, so a section whose pin sits four bytes off its
+    /// requirement passes this half (the walk rounds it to the declaration) — and the
+    /// resolved half is what refuses a base the ROM would actually be emitted at.
     #[test]
-    fn a_pin_that_violates_the_declaration_is_refused_with_the_residue() {
+    fn a_resolved_base_that_violates_the_declaration_is_refused() {
         let secs = vec![sec("sfx_bank_blob", "Sfx_33", 0xA3B24)];
-        let e = validate_declared_alignment(&secs, &[Some(0xA3B24)], &[true]).unwrap_err();
-        assert!(e.contains("[layout.undeclared-alignment]"), "{e}");
+        validate_declared_alignment(&secs).unwrap();
+        let e = validate_resolved_alignment(&secs).unwrap_err();
+        assert!(e.contains("[layout.alignment-violated]"), "{e}");
         assert!(e.contains("declares alignment 8"), "{e}");
         assert!(e.contains("sfx_bank_blob.emp"), "source not named: {e}");
         assert!(e.contains("base % 8 = 4"), "residue not named: {e}");
     }
 
-    /// The resolved half is independent of the frozen table: it refuses the same
-    /// violation measured on the layout the ROM is emitted from.
+    /// The Z80 bank window (`$8000`) is a requirement the walk never rounds to — the
+    /// bank heads are declared anchors, held absolute — so the resolved half is the only
+    /// instrument on it, and it must read the requirement itself, not a capped quantum.
     #[test]
-    fn a_resolved_base_that_violates_the_declaration_is_refused() {
-        let secs = vec![sec("sfx_bank_blob", "Sfx_33", 0xA3B24)];
-        let e = validate_resolved_alignment(&secs).unwrap_err();
-        assert!(e.contains("[layout.alignment-violated]"), "{e}");
-        assert!(e.contains("base % 8 = 4"), "{e}");
-    }
-
-    /// The Z80 bank window is a requirement the inference CANNOT express — a
-    /// `$8000`-aligned base infers a quantum of 16, so the pre-walk half must read the
-    /// provisional base itself rather than the inferred quantum.
-    #[test]
-    fn the_bank_window_requirement_is_checked_beyond_the_mod_16_cap() {
-        assert_eq!(super::packed_align_of(0x90000), 16);
+    fn the_bank_window_requirement_is_measured_on_the_resolved_anchor() {
         let ok = vec![sec("dac_banks", "Dac_Temp_Blip", 0x90000)];
-        validate_declared_alignment(&ok, &[Some(0x90000)], &[true]).unwrap();
+        validate_resolved_alignment(&ok).unwrap();
         let bad = vec![sec("dac_banks", "Dac_Temp_Blip", 0x90010)];
-        let e = validate_declared_alignment(&bad, &[Some(0x90010)], &[true]).unwrap_err();
+        let e = validate_resolved_alignment(&bad).unwrap_err();
         assert!(e.contains("declares alignment 32768"), "{e}");
         assert!(e.contains("base % 32768 = 16"), "{e}");
     }
 
-    /// An UNPINNED section (no frozen provisional base) is out of the pre-walk half's
-    /// scope by construction — the inference never runs on it — but the resolved half
-    /// still measures the base it lands on.
+    /// A section no frozen table names is in the pre-walk half's scope exactly like a
+    /// pinned one: the walk rounds it to its declaration too, so it needs a row. An
+    /// undeclared one is refused; a declared one at a bad resolved base is refused by
+    /// the resolved half.
     #[test]
-    fn an_unpinned_section_is_skipped_before_the_walk_and_measured_after_it() {
+    fn an_unpinned_section_needs_a_declaration_and_is_measured_after_the_walk() {
+        let undeclared = vec![sec("mystery", "NoSuchHeadLabelAnywhere", 0x2000)];
+        let e = validate_declared_alignment(&undeclared).unwrap_err();
+        assert!(e.contains("NoSuchHeadLabelAnywhere"), "{e}");
         let secs = vec![sec("palette", "Palette_LoadPal", 0x2001)];
-        validate_declared_alignment(&secs, &[Some(0x2001)], &[false]).unwrap();
+        validate_declared_alignment(&secs).unwrap();
         let e = validate_resolved_alignment(&secs).unwrap_err();
         assert!(e.contains("Palette_LoadPal"), "{e}");
         assert!(e.contains("base % 2 = 1"), "{e}");
+    }
+
+    /// A label-less blob has nothing to declare under: both halves skip it.
+    #[test]
+    fn a_label_less_blob_is_out_of_both_halves_scope() {
+        let mut blob = sec("boot_blob", "unused", 0x3D6);
+        blob.labels.clear();
+        validate_declared_alignment(std::slice::from_ref(&blob)).unwrap();
+        validate_resolved_alignment(std::slice::from_ref(&blob)).unwrap();
     }
 
     /// Every fault in one run, so a report names all of them rather than the first.
     #[test]
     fn every_faulting_section_is_named_in_one_report() {
         let secs = vec![
-            sec("sfx_bank_blob", "Sfx_33", 0xA3B24),
-            sec("mystery", "NoSuchHeadLabelAnywhere", 0x1000),
+            sec("mystery_a", "NoSuchHeadLabelAnywhere", 0x1000),
+            sec("mystery_b", "NorThisOne", 0x2000),
         ];
-        let e = validate_declared_alignment(&secs, &[Some(0xA3B24), Some(0x1000)], &[true, true])
-            .unwrap_err();
+        let e = validate_declared_alignment(&secs).unwrap_err();
         assert!(e.contains("2 section(s)"), "{e}");
-        assert!(e.contains("Sfx_33") && e.contains("NoSuchHeadLabelAnywhere"), "{e}");
+        assert!(e.contains("NoSuchHeadLabelAnywhere") && e.contains("NorThisOne"), "{e}");
+    }
+
+    /// `packed_chained_base` is the walk's alignment rule and seam2's prediction: its
+    /// output is a function of the running cursor and the DECLARATION for the head label,
+    /// and nothing else. Expectations are the declared rows (8 for `Sfx_33`, 2 for a WORD
+    /// section, `$8000` for a bank head) applied to a cursor chosen off every quantum.
+    #[test]
+    fn packed_chained_base_rounds_to_the_declared_alignment_only() {
+        use super::packed_chained_base;
+        assert_eq!(packed_chained_base(0x1011, "Sfx_33").unwrap(), 0x1018);
+        assert_eq!(packed_chained_base(0x1011, "GameLoop").unwrap(), 0x1012);
+        assert_eq!(packed_chained_base(0x1011, "Dac_Temp_Blip").unwrap(), 0x8000);
+        assert_eq!(packed_chained_base(0x1018, "Sfx_33").unwrap(), 0x1018, "already aligned: unmoved");
+        let e = packed_chained_base(0x1011, "NoSuchHeadLabelAnywhere").unwrap_err();
+        assert!(e.contains("[layout.undeclared-alignment]"), "{e}");
+        assert!(e.contains("NoSuchHeadLabelAnywhere"), "{e}");
     }
 }
 
@@ -5005,17 +5002,22 @@ mod placement_validation_tests {
         assert!(e.contains("map.order-diverged") && e.contains("`section:sec256`"), "{e}");
     }
 
+    // Real `section_align::DECLARED` rows (WORD, alignment 2): the walk refuses an
+    // undeclared head label, so the two packer-rank probes below use these.
+    const L_LOW: &str = "GameLoop";
+    const L_HIGH: &str = "Section_Init";
+
     #[test]
     fn section_row_drives_the_packer_rank() {
         // Twin of `drives_order_by_map_rank`, declared by section NAME: `High` (section
         // `sec512`) is named `section:sec512` ahead of `Low` — the walk must place High
         // first at its prov 0x200 and pack Low right after it at 0x210. Control: the
         // label spelling of the same order gives the same bases (one rank, two spellings).
-        let secs = vec![sec("Low", 0x100, 0x10), sec("High", 0x200, 0x10)];
+        let secs = vec![sec(L_LOW, 0x100, 0x10), sec(L_HIGH, 0x200, 0x10)];
         let prov = vec![Some(0x100i64), Some(0x200i64)];
         let labeled = vec![true, true];
-        let by_name = vec!["section:sec512".to_string(), "Low".to_string()];
-        let by_label = vec!["High".to_string(), "Low".to_string()];
+        let by_name = vec!["section:sec512".to_string(), L_LOW.to_string()];
+        let by_label = vec![L_HIGH.to_string(), L_LOW.to_string()];
         let none = std::collections::HashSet::new();
         let got = packed_true_bases(&secs, &prov, &labeled, &by_name, false, &none, &mut Vec::new(), &|_| None).unwrap();
         let want = packed_true_bases(&secs, &prov, &labeled, &by_label, false, &none, &mut Vec::new(), &|_| None).unwrap();
@@ -5069,10 +5071,10 @@ mod placement_validation_tests {
     /// sequence. Under the pre-K5 prov sort the bases would have been Low@0x100, High@0x200.
     #[test]
     fn drives_order_by_map_rank() {
-        let secs = vec![sec("Low", 0x100, 0x10), sec("High", 0x200, 0x10)];
+        let secs = vec![sec(L_LOW, 0x100, 0x10), sec(L_HIGH, 0x200, 0x10)];
         let prov = vec![Some(0x100i64), Some(0x200i64)];
         let labeled = vec![true, true];
-        let order = vec!["High".to_string(), "Low".to_string()];
+        let order = vec![L_HIGH.to_string(), L_LOW.to_string()];
         let bases = packed_true_bases(&secs, &prov, &labeled, &order, false, &std::collections::HashSet::new(), &mut Vec::new(), &|_| None).unwrap();
         // High is the run head (declared first) → its provisional base 0x200; Low packs
         // right after it at 0x210 — the layout follows the MAP, inverting the prov order.
@@ -5842,13 +5844,13 @@ mod derived_layout_tests {
 
     fn run(grown_len: usize) -> (Vec<Section>, Vec<Option<i64>>, Vec<bool>, Vec<String>) {
         let secs = vec![
-            data("Head", HEAD, HEAD_LEN),
-            data("Grown", GROWN_PROV, grown_len),
-            data("Tail", TAIL_PROV, TAIL_LEN),
+            data(L_HEAD, HEAD, HEAD_LEN),
+            data(L_GROWN, GROWN_PROV, grown_len),
+            data(L_TAIL, TAIL_PROV, TAIL_LEN),
         ];
         let prov = secs.iter().map(|s| Some(s.lma as i64)).collect();
         let labeled = vec![true; 3];
-        let order = vec!["Head".to_string(), "Grown".to_string(), "Tail".to_string()];
+        let order = vec![L_HEAD.to_string(), L_GROWN.to_string(), L_TAIL.to_string()];
         (secs, prov, labeled, order)
     }
 
@@ -5867,6 +5869,86 @@ mod derived_layout_tests {
 
     fn messages(w: &[BuildWarning]) -> Vec<&str> {
         w.iter().map(|w| w.message.as_str()).collect()
+    }
+
+    // The fixtures' head labels are REAL rows of `section_align::DECLARED` (all WORD,
+    // alignment 2) because the walk's only alignment input is the declaration and it
+    // refuses a head label that has none. The constants keep each section's ROLE in the
+    // fixture readable; the value is only what lets the walk place it.
+    const L_HEAD: &str = "Vectors";
+    const L_GROWN: &str = "GameHeader";
+    const L_TAIL: &str = "EntryPoint";
+    const L_NEXT: &str = "BootData";
+    const L_BANK: &str = "BootData_PostBlob";
+    const L_WIDE: &str = "Vectors";
+    const L_ALLOT: &str = "GameHeader";
+    const L_CODE: &str = "EntryPoint";
+    const L_T: &str = "BootData";
+
+    /// THE ALIGNMENT INPUT IS THE DECLARATION, NOT THE PIN'S RESIDUE. `Sfx_33` declares 8
+    /// (aeon's mod-8 fold wall) and `GameLoop` declares 2 (the 68000 word rule); both are
+    /// pinned here at a 16-aligned provisional base, the residue a pin-reading walk would
+    /// turn into a quantum of 16 and a base of 0x1020. After a 0x11-byte head the cursor
+    /// is 0x1011, so — derived from the rows and nothing else — `Sfx_33` packs at 0x1018
+    /// and `GameLoop` at 0x1012.
+    #[test]
+    fn the_walk_packs_to_the_declared_alignment_not_the_pin_residue() {
+        for (label, want) in [("Sfx_33", 0x1018u32), ("GameLoop", 0x1012)] {
+            let secs = vec![data(L_HEAD, HEAD, 0x11), data(label, 0x1020, 0x10)];
+            let prov: Vec<Option<i64>> = secs.iter().map(|s| Some(s.lma as i64)).collect();
+            let labeled = vec![true; 2];
+            let order = vec![L_HEAD.to_string(), label.to_string()];
+            let mut w = Vec::new();
+            let bases =
+                packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w, &|_| None)
+                    .unwrap_or_else(|e| panic!("{e}"));
+            assert_eq!(bases[1], Some(want), "`{label}` packs to its declaration, not its pin's residue");
+        }
+    }
+
+    /// A section no frozen table names (unpinned: no frozen row, baked lma 0) packs by
+    /// contiguity ROUNDED to its declaration — the same rule as a pinned section, so the
+    /// frozen tables do not decide which sections the declaration binds.
+    #[test]
+    fn an_unpinned_section_packs_to_its_declaration_too() {
+        let secs = vec![data(L_HEAD, HEAD, 0x11), data("Sfx_33", 0, 0x10)];
+        let prov = vec![Some(HEAD as i64), Some(0)];
+        let labeled = vec![true, false];
+        let order = vec![L_HEAD.to_string(), "Sfx_33".to_string()];
+        let mut w = Vec::new();
+        let bases = packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w, &|_| None)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(bases[1], Some(0x1018), "unpinned `Sfx_33` rounds the contiguity cursor to 8");
+    }
+
+    /// LOUD ON UNMEASURABLE, in the walk itself: a chained section whose head label has
+    /// no declaration is refused by the walk, never handed 1, 2 or 16.
+    #[test]
+    fn an_undeclared_head_label_is_refused_by_the_walk_itself() {
+        let secs = vec![data(L_HEAD, HEAD, HEAD_LEN), data("NoSuchHeadLabelAnywhere", 0x1010, 0x10)];
+        let prov: Vec<Option<i64>> = secs.iter().map(|s| Some(s.lma as i64)).collect();
+        let labeled = vec![true; 2];
+        let order = vec![L_HEAD.to_string(), "NoSuchHeadLabelAnywhere".to_string()];
+        let mut w = Vec::new();
+        let e = packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w, &|_| None)
+            .expect_err("an undeclared section must not be placed");
+        assert!(e.contains("[layout.undeclared-alignment]"), "{e}");
+        assert!(e.contains("NoSuchHeadLabelAnywhere"), "{e}");
+    }
+
+    /// THE ZERO-BYTE TERMINUS lands exactly at the image end by its own declaration (2),
+    /// with no special case in the walk: after an 0x12-byte head the cursor is 0x1012 and
+    /// `EndOfRom` packs there, not at the 16-aligned 0x1020 its pin sits at.
+    #[test]
+    fn the_zero_byte_terminus_packs_to_the_image_end_by_declaration() {
+        let secs = vec![data(L_HEAD, HEAD, 0x12), data("EndOfRom", 0x1020, 0)];
+        let prov: Vec<Option<i64>> = secs.iter().map(|s| Some(s.lma as i64)).collect();
+        let labeled = vec![true; 2];
+        let order = vec![L_HEAD.to_string(), "EndOfRom".to_string()];
+        let mut w = Vec::new();
+        let bases = packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w, &|_| None)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(bases[1], Some(0x1012), "the terminus names the image end, with no fill gap");
     }
 
     /// (ii) FOLD IDENTITY: at unchanged sizes every base reproduces its provisional and
@@ -5896,7 +5978,7 @@ mod derived_layout_tests {
         assert_eq!(w.level, sigil_span::Level::Warning);
         assert!(w.location.is_none(), "a layout drift has no source line");
         assert!(w.message.starts_with("[layout.provisional-drift]"), "{}", w.message);
-        assert!(w.message.contains("`Tail`"), "names the drifted section's head label: {}", w.message);
+        assert!(w.message.contains(&format!("`{L_TAIL}`")), "names the drifted section's head label: {}", w.message);
         assert!(w.message.contains(&format!("delta {:+#x}", growth)), "carries the delta: {}", w.message);
     }
 
@@ -5904,13 +5986,13 @@ mod derived_layout_tests {
     /// what a landing needs to refreeze without a diff hunt.
     #[test]
     fn drift_warning_names_section_and_delta() {
-        let sec = data("Tail", TAIL_PROV, TAIL_LEN);
+        let sec = data(L_TAIL, TAIL_PROV, TAIL_LEN);
         let packed = TAIL_PROV as i64 + 0x2000;
         let w = provisional_drift_warning(&sec, packed, TAIL_PROV as i64);
         for needle in [
             "[layout.provisional-drift]",
-            "`sec_Tail`",
-            "`Tail`",
+            &format!("`sec_{L_TAIL}`"),
+            &format!("`{L_TAIL}`"),
             &format!("{packed:#x}"),
             &format!("{:#x}", TAIL_PROV),
             "delta +0x2000",
@@ -5938,10 +6020,10 @@ mod derived_layout_tests {
     #[test]
     fn stale_provisional_gap_is_an_island_only_when_declared() {
         let stale_prov: u32 = 0x2000; // > HEAD + HEAD_LEN + ANCHOR_GAP (0x400)
-        let secs = vec![data("Head", HEAD, HEAD_LEN), data("Next", stale_prov, 0x10)];
+        let secs = vec![data(L_HEAD, HEAD, HEAD_LEN), data(L_NEXT, stale_prov, 0x10)];
         let prov: Vec<Option<i64>> = secs.iter().map(|s| Some(s.lma as i64)).collect();
         let labeled = vec![true; 2];
-        let order = vec!["Head".to_string(), "Next".to_string()];
+        let order = vec![L_HEAD.to_string(), L_NEXT.to_string()];
         let mut w = Vec::new();
         let undeclared = packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w, &|_| None).unwrap();
         assert_eq!(undeclared[1], Some(HEAD + HEAD_LEN as u32), "undeclared gap packs contiguously");
@@ -5959,13 +6041,13 @@ mod derived_layout_tests {
         let room = (anchor - GROWN_PROV) as usize; // what fits between Grown's base and the anchor
         let build = |grown_len: usize| {
             let secs = vec![
-                data("Head", HEAD, HEAD_LEN),
-                data("Grown", GROWN_PROV, grown_len),
-                data("Bank", anchor, 0x10),
+                data(L_HEAD, HEAD, HEAD_LEN),
+                data(L_GROWN, GROWN_PROV, grown_len),
+                data(L_BANK, anchor, 0x10),
             ];
             let prov: Vec<Option<i64>> = secs.iter().map(|s| Some(s.lma as i64)).collect();
             let labeled = vec![true; 3];
-            let order = vec!["Head".to_string(), "Grown".to_string(), "Bank".to_string()];
+            let order = vec![L_HEAD.to_string(), L_GROWN.to_string(), L_BANK.to_string()];
             let mut w = Vec::new();
             packed_true_bases(&secs, &prov, &labeled, &order, false, &HashSet::from([HEAD, anchor]), &mut w, &|_| None)
         };
@@ -6023,15 +6105,15 @@ mod derived_layout_tests {
 
     fn boundary_walk(allot_len: usize) -> Result<Vec<Option<u32>>, String> {
         let secs = vec![
-            data("Wide", HEAD, WIDE_LEN),
-            data("Allot", ALLOT_PROV, allot_len),
-            code_abs("Code", CODE_PROV, "T"),
-            data("T", TARGET_PROV, 0x10),
+            data(L_WIDE, HEAD, WIDE_LEN),
+            data(L_ALLOT, ALLOT_PROV, allot_len),
+            code_abs(L_CODE, CODE_PROV, L_T),
+            data(L_T, TARGET_PROV, 0x10),
         ];
         let prov: Vec<Option<i64>> = secs.iter().map(|s| Some(s.lma as i64)).collect();
         let labeled = vec![true; 4];
         let order =
-            vec!["Wide".to_string(), "Allot".to_string(), "Code".to_string(), "T".to_string()];
+            vec![L_WIDE.to_string(), L_ALLOT.to_string(), L_CODE.to_string(), L_T.to_string()];
         let mut w = Vec::new();
         packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w, &|_| None)
     }
@@ -6058,14 +6140,14 @@ mod derived_layout_tests {
         let growth: usize = 0x20;
         let bases = boundary_walk(ALLOT + growth)
             .unwrap_or_else(|e| panic!("growth across the boundary must build: {e}"));
-        // Derived: Code packs at align16(0x7FE0 + 0x30) = 0x8010 (its prov 0x7FF0 is
-        // 16-aligned); at 0x8010 its operand target is past $8000, so it measures the
-        // LONG form (6 B), and T packs at align4(0x8010 + 6) = 0x8018. The abs.w
-        // arithmetic would put T at 0x8014 — asserting 0x8018 is asserting the walk
+        // Derived: Code packs at align2(0x7FE0 + 0x30) = 0x8010 (its declaration is the
+        // 68000 word rule); at 0x8010 its operand target is past $8000, so it measures
+        // the LONG form (6 B), and T packs at align2(0x8010 + 6) = 0x8016. The abs.w
+        // arithmetic would put T at 0x8014 — asserting 0x8016 is asserting the walk
         // measured the code at its packed base.
-        let code = ALLOT_PROV + (ALLOT + growth) as u32; // 0x8010, already 16-aligned
+        let code = ALLOT_PROV + (ALLOT + growth) as u32; // 0x8010, already even
         assert_eq!(bases[2], Some(code));
-        assert_eq!(bases[3], Some((code + 6).div_ceil(4) * 4), "T is placed from the LONG form");
+        assert_eq!(bases[3], Some((code + 6).div_ceil(2) * 2), "T is placed from the LONG form");
     }
 
     /// LOUD ON UNMEASURABLE: an operand naming a symbol no section defines cannot be
@@ -6074,10 +6156,10 @@ mod derived_layout_tests {
     #[test]
     fn an_unresolvable_operand_refuses_loud() {
         let secs =
-            vec![data("Head", HEAD, HEAD_LEN), code_abs("Code", HEAD + HEAD_LEN as u32, "Nowhere")];
+            vec![data(L_HEAD, HEAD, HEAD_LEN), code_abs(L_CODE, HEAD + HEAD_LEN as u32, "Nowhere")];
         let prov: Vec<Option<i64>> = secs.iter().map(|s| Some(s.lma as i64)).collect();
         let labeled = vec![true; 2];
-        let order = vec!["Head".to_string(), "Code".to_string()];
+        let order = vec![L_HEAD.to_string(), L_CODE.to_string()];
         let mut w = Vec::new();
         let err = packed_true_bases(&secs, &prov, &labeled, &order, false, &head_only(), &mut w, &|_| None)
             .expect_err("an unresolvable operand must not produce a layout");
@@ -6091,7 +6173,7 @@ mod derived_layout_tests {
     #[test]
     fn width_flip_report_names_the_relaxing_site() {
         use super::width_flip_report;
-        let secs = vec![code_abs("Code", 0x1000, "T")];
+        let secs = vec![code_abs(L_CODE, 0x1000, L_T)];
         let order = vec![0usize];
         let report = width_flip_report(
             &secs,
@@ -6104,8 +6186,8 @@ mod derived_layout_tests {
             &|_| Some("games/sonic4/player/player_sensors.emp:202:17".to_string()),
         );
         for needle in [
-            "`sec_Code`",
-            "(`Code`)",
+            &format!("`sec_{L_CODE}`"),
+            &format!("(`{L_CODE}`)"),
             "measures 0x4 then 0x6 at base 0x1000",
             "games/sonic4/player/player_sensors.emp:202:17 (4 B -> 6 B)",
         ] {

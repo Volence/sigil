@@ -2645,7 +2645,10 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   gated — `section_align::DECLARED` states each section's REQUIRED alignment with its
   source, and `native::validate_declared_alignment` / `validate_resolved_alignment`
   refuse a build that violates one or that leaves a section undeclared, on every shape.
-  Byte-neutral: no consumer reads the declaration for PLACEMENT yet. Remaining (kill):
+  Byte-neutral: no consumer reads the declaration for PLACEMENT yet. — **FLIP WRITTEN
+  2026-08-30** on `parcel/alignment-flip` (proven on its branch + a trial freeze; lands only
+  through the paired aeon+sigil freeze — see `2026-08-30-alignment-flip-packet.md`). What the
+  kill said (kept for the record):
   make `packed_true_bases` align to `required_for(section)` and delete `packed_align_of`
   + `seam2::frozen_prov` — that is byte-MOVING (most sections require 2 and receive 16
   today) and needs a paired aeon+sigil freeze. Note the declaration deliberately lives in
@@ -3443,6 +3446,50 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   the `.lst` dependency written down as a stated external witness rather than left implicit.
   The header fix waits on the sprite-owner freeze, since `repin.toml` is the aeon lane's to
   sequence and a refreeze is in flight)
+- [alignment-flip parcel, 2026-08-30] **`validate_sound_fold` has no witness that makes it
+  FIRE.** The always-on seam2-vs-walk gate is green on every sound-on shape, and its message
+  is exercised nowhere; a doctored `sound_layout` (or a doctored declaration for `Sfx_33`
+  only on one side) would be the red-first. — OPEN (kill: one integration test that makes
+  `[sound.fold-vs-placement]` fire by name)
+- [alignment-flip parcel, 2026-08-30] **`ring_sparkle` has no `repin.toml` region.** The
+  `dust_spindash` allotment used to sweep `dust_puff` + `ring_sparkle` up to `TestStatic_Main`;
+  re-spelled as its own extent, nothing pins `ring_sparkle`'s bytes. — OPEN (kill: a
+  `ring_sparkle` region with a `section:` end, gated like its neighbours)
+- [alignment-flip parcel, 2026-08-30] **`section:<name>` cannot address a section whose NAME
+  the layout holds twice** (`text` names both the `ObjDef_Static` section and a label-less
+  blob), so `objdefs` had to take `len = 0x34`. The head label is unique by construction
+  (the same argument `section_align` makes). — OPEN (kill: a `head:<label>` boundary
+  spelling, or unique section names)
+- [alignment-flip parcel, 2026-08-30] **A map `[[hole]]`'s `at` is shape-invariant only by
+  accident.** With declared alignment the sound-off idle ends at 0x3F0 plain / 0x3F4 demo
+  debug; one `at` per map is a lower bound, not the resume address. aeon's row. — OPEN
+  (kill: per-shape rows, or `at` documented as the interior's right edge only)
+- [alignment-flip parcel, 2026-09-02] **The abs.w ceiling falsifier is one label wide.** §4/§12.2
+  of the packet probe `Sound_PlaySFX`; the s4_debug shape's real crossing at chain 195 is
+  `Raster_Install` (0x8042 → 0x7FDC, two `jbra` sites re-encoded jmp abs.l → abs.w), which the
+  probe reports as "above". The general check is per shape: every head label with pre ≥ 0x8000
+  and post < 0x8000 (or the reverse), each with its absolute-reference count from the ROM
+  bytes. — OPEN (kill: `compare-layouts.py` emits that set and the byte-scan count for each
+  crossing label, so a future slide cannot hide a re-encoding behind the wrong label)
+- [alignment-flip parcel, 2026-09-02] **`repin_pins.rs`'s RETIRED `#[ignore]` baseline is
+  stale.** `secondary_pin_classes_match_the_hand_typed_baseline` still asserts 8 literals that
+  were behind `pins.rs` before this parcel (SOUND_API 0x7A9E vs 0x7F2E at 036800fd, MDDBG_*
+  0x5_E8F2 vs 0xA6FEA, PLAYER_1, DYNAMIC_SLOTS, RINGCOL_OFF.debug); ignored, so it bites
+  nothing, and its history narration is the only thing keeping it. — OPEN (kill: delete the
+  test, or re-arm it under a shape-diff gate with derived expectations)
+- [alignment-flip parcel, 2026-09-02] **File-size delta ≠ EndOfRom delta, unexplained
+  share in the deb2 appendix.** At 195: s4 −62 file vs −14 EndOfRom, config_b −152 vs −138,
+  s4_debug −46 vs −12; the remainder is past `EndOfRom` in the appendix, whose length
+  therefore depends on the addresses it encodes. Arithmetic only; the encoding rule was not
+  re-derived. — OPEN (kill: one sentence in the appendix writer's doc naming what makes its
+  length address-dependent, and a test that predicts the appendix delta from the label
+  slide)
+- [alignment-flip parcel, 2026-09-02] **`rewrite-baseline.py` handles only the `.field`
+  assert form.** `assert_eq!(pins::X, pins::Pin { plain, debug })` lines (BOOT_DATA,
+  DELETE_OBJECT) and the scalar `ASSEMBLED_LEN` lines were re-stamped by hand; the
+  script's generic NOTE also cannot carry the per-literal reason the baseline style demands.
+  — OPEN (kill: the script emits a per-literal `old -> new` list and refuses to write a tag
+  without a reason argument)
 
 ### Comptime array/label typing (2026-09-02) — two findings from aeon's item-5 probe, both live on master
 Source: aeon `efb4b923` `docs/superpowers/probes/2026-09-02-item5-comptime-probe.md` (Q1-L,

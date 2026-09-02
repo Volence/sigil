@@ -288,8 +288,7 @@ tests = ["rings_port"]
 # construct.
 name = "entity_window"
 start = "Collected_Init"
-end = "PopulateSpawnedPieceCount"
-end_measures = "allotment"
+end = "section:entity_window"
 gate = "SIGIL_EMP_ENTITY_WINDOW"
 tests = ["entity_window_port"]
 
@@ -307,8 +306,7 @@ tests = ["entity_window_port"]
 # TABLES stay game-side (.asm) — this region is code only.
 name = "children"
 start = "PopulateSpawnedPieceCount"
-end = "Load_Object"
-end_measures = "allotment"
+end = "section:children"
 gate = "SIGIL_EMP_CHILDREN"
 tests = ["children_port"]
 
@@ -862,15 +860,15 @@ start = "BgAnim_Table"
 end = "section:ojz_bg_anim"
 tests = ["ojz_run_b_port"]
 
-# The objdef DATA region (t14): the four ObjDef_* archetype templates emitted
-# by games/sonic4/data/objdefs/test_objects.{asm,emp}. End = the first symbol
-# of the next include (entity_data.asm). Distinct gate from the object-CODE
-# bank's SIGIL_EMP_TEST_OBJECTS (test_solid/test_particle).
+# The objdef DATA region (t14): the ObjDef_* archetype templates emitted by
+# games/sonic4/data/objdefs/test_objects.{asm,emp} — two 26-byte ObjDef records,
+# shape-invariant, so the LENGTH is the invariant. (`section:text` is not usable:
+# the resolved layout names a label-less blob `text` as well.) Distinct gate from
+# the object-CODE bank's SIGIL_EMP_TEST_OBJECTS (test_solid/test_particle).
 [[region]]
 name = "objdefs"
 start = "ObjDef_Static"
-end = "OJZ_Sec0_TypeTable"
-end_measures = "allotment"
+len = 0x34
 gate = "SIGIL_EMP_OBJDEFS"
 tests = ["objdef_port"]
 
@@ -2878,13 +2876,11 @@ gate = "SIGIL_EMP_DUST_PUFF"
 
 # dust_spindash (dust-effect Task 4) — Dust_Tick, the per-frame skid-dust
 # cadence called from Player_Display (Task 5 adds the charge-dust follower to
-# this same section). end-is-next-placement (TestStatic_Main is live PLAIN
-# content, both shapes).
+# this same section). The region is the section's own extent.
 [[region]]
 name = "dust_spindash"
 start = "Dust_Tick"
-end = "TestStatic_Main"
-end_measures = "allotment"
+end = "section:dust_spindash"
 gate = "SIGIL_EMP_DUST_SPINDASH"
 
 # P2+P3 (tranche 35) — the player state machines. Three per-file object-bank
