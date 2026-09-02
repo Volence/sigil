@@ -3466,23 +3466,36 @@ changed (only `sigil-harness` and one port test), so the findings are current, n
   whether the array-literal position should resolve a `pub data` symbol as its value rather
   than its address is a separate language call, to propose to the owner in his own words)
 
-### Suite-paths migration (2026-09-02) — three residuals the shell half could not close
+### Suite-paths migration (2026-09-02) — one residual, one CLOSED, one not-a-defect
 Parcel `parcel/scripts-name-their-tree`; contract `contract/SUITE_PATHS.md` at empyrean
 `f222f371`; packet `docs/superpowers/notes/2026-09-02-scripts-name-their-tree.md`.
-- **`scripts/drift-nightly.conf`'s `DRIFT_RECORD_READER` is still a home literal, held there
-  by a gate.** `crates/sigil-cli/tests/drift_nightly_harness.rs::the_record_seam_is_empty_and_absence_is_not_a_pass`
-  reads that key as RAW TEXT and judges it absolute-or-empty, so the `${EMPYREAN_SUITE_ROOT}/…`
-  spelling `DRIFT_AEON_TREE` now uses reads to it as the half-configured case and fails. The
-  two ways to make it green without touching that gate — blanking the key, or moving the path
-  under another name — both clear the gate by defeating its subject (that no expectation is
-  configured from inside this repository), so neither was taken.
-  — OPEN (kill: one line in that gate expands `${…}` against the resolved root before judging,
-  or accepts a root-relative spelling; red-first by pointing the key at a moved reader)
-- **The conf is outside the new lint's population, because prose is not a call.** It names the
-  include in a comment but sources no entry point, so `scripts_name_their_tree::no_resolver_caller_regrows_a_home_literal`
-  does not judge it — which is why the literal above needs a ledger row rather than a red test.
-  — OPEN (closes with the row above; the conf enters the population the moment it uses the
-  resolver, which is what the fix makes it do)
+- **`scripts/drift-nightly.conf`'s `DRIFT_RECORD_READER` was a home literal held there by a
+  gate.** `the_record_seam_is_empty_and_absence_is_not_a_pass` read that key as RAW TEXT and
+  judged it absolute-or-empty, so the `${EMPYREAN_SUITE_ROOT}/…` spelling would have read to
+  it as the half-configured case. The two ways to go green without touching the gate —
+  blanking the key, or moving the path under another name — both clear it by defeating its
+  subject, so neither was taken and the item was escalated instead.
+  — **CLOSED** (hub ruling 2026-09-02: a `${VAR}/…` value IS genuinely configured, only not
+  literal, so teaching the gate the spelling does not soften its subject. Amended in
+  `crates/sigil-cli/tests/drift_nightly_harness.rs`: the exporter set is derived from
+  `nightly_ref_drift.sh`, and an unexported variable, a variable set to nothing, and an
+  unrooted remainder are each Broken by name — three red-first rows in the packet)
+- **A file can CONSUME a resolution without CALLING a resolver, and an entry-point-only lint
+  population never sees it.** `drift-nightly.conf` is sourced by the job after the job has
+  resolved and exported the root, and expands it: it holds a resolved path and calls nothing.
+  Found by checking a ledger row rather than banking it — the row as first written claimed
+  routing the conf had brought it into the population, and it had not. That blind spot is how
+  the conf's literal survived the first pass of this very parcel.
+  — **CLOSED** (`calls_the_resolver` also matches a file that expands a variable the resolver
+  ANNOUNCES under a literal name, derived from the resolver's own announce calls; expansion
+  syntax required so prose is not swept in. Red-first: a literal planted in the conf is now
+  named at `drift-nightly.conf:11`)
+- **The lint's population is runnable files only (`.sh`, `.py`, `.conf`), so a DOCUMENT
+  naming a resolved path is judged by nothing.** Deliberate — this parcel's own packet quotes
+  refusals full of the literal it is about, and judging prose by a resolver's standard would
+  make the rule unusable.
+  — OPEN (kill: nothing cheap, and probably nothing wanted. Recorded so a later sweep reads
+  the lint's silence about a `.md` as a scope statement rather than a clean bill)
 - **The two `systemd` units' `ExecStart` lines stay absolute, deliberately.** A unit has no
   run-time resolver, and `%h` only trades a full literal for a home-relative one that is equally
   wrong when the suite moves. The unit is the ENTRY point, and the script it names resolves

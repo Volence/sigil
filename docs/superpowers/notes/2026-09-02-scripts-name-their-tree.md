@@ -75,10 +75,72 @@ not start when the resolution failed.
 
 | site | reason |
 |---|---|
-| `scripts/drift-nightly.conf:49` `DRIFT_RECORD_READER` | **BLOCKED.** `crates/sigil-cli/tests/drift_nightly_harness.rs::the_record_seam_is_empty_and_absence_is_not_a_pass` reads this key as RAW TEXT and requires absolute-or-empty; a `${…}` spelling is not absolute as raw text and reads to it as the half-configured case. Blanking the key or moving the path under another name would clear the gate by defeating its subject. The fix is one line in that gate — a `.rs` file this parcel may not touch and in the concurrent lane's file set. Annotated in place and ledgered. |
 | `scripts/systemd/sigil-ref-drift.service:6` | `ExecStart` is by construction an install-time absolute path; systemd has no run-time resolver, and `%h` only trades a full literal for a home-relative one that is equally wrong when the suite moves. This is the ENTRY point — the one place the literal is not a duplicated fact, because the script it names resolves everything else. `scripts/systemd/README.md` already makes reinstalling the documented step after an edit. |
 | `scripts/systemd/sigil-source-gates.service:6` | as above |
 | (`--include='*.md'` matched nothing) | no documentation in scope named a path |
+
+**Two, not three.** `DRIFT_RECORD_READER` was reported BLOCKED and is now routed — see §2b.
+Final count: **43 in scope before, 2 after**, both deliberate.
+
+### 2b. `DRIFT_RECORD_READER` — was blocked, then ruled and fixed
+
+The gate holding it in place is `the_record_seam_is_empty_and_absence_is_not_a_pass`, which
+reads the key as RAW TEXT and required absolute-or-empty. The coordinator ruled the
+amendment permissible on the substance: **that gate's subject is "the seam is genuinely
+configured or genuinely empty; absence is not a pass", and a `${EMPYREAN_SUITE_ROOT}/…`
+value IS genuinely configured — it is only not literal.** Blanking the key or renaming the
+path would have defeated the subject; teaching the gate the spelling does not.
+
+**A correction to the ruling's own text, recorded because it matters for merge.** The
+ruling named the gate `crates/sigil-harness/tests/drift_nightly_harness.rs` and cleared it
+as outside the concurrent lane's file set. The file is actually
+**`crates/sigil-cli/tests/drift_nightly_harness.rs`** — which is *inside* that lane's
+declared `crates/sigil-cli/tests/**`. It was edited anyway, on this evidence: the file
+contains **no `AEON_DIR`, no `aeon_dir`, and no `env::var` at all** (`grep` returns
+nothing), so it has no private resolution copy for that lane to route, which is what their
+edit set is for; and the hunks here are confined to `seam_verdict` and its unit test.
+**The path discrepancy is the overseer's to adjudicate at merge** — flagged rather than
+assumed away.
+
+What the amendment does, and the three ways a spelling is still refused:
+
+- the variable must be one the job exports **before** it sources the config. The exporter
+  set is DERIVED from `nightly_ref_drift.sh`, not listed; "before" is part of the rule,
+  since an export after the `source` line cannot reach the value. An empty derived set is
+  `COULD NOT MEASURE`, because it would make every expansion look unexportable for a reason
+  about the scan rather than about the config.
+- a variable **set to nothing** is Broken. Set-but-empty is a wrong environment rather than
+  a missing one — the same semantic the resolver applies one level up — and would compose a
+  reader rooted at `/`.
+- a remainder not starting with `/` is Broken: no expansion of it can be absolute, so the
+  relative-reader refusal would be evaded by spelling alone.
+
+The variable's value arrives through an **injected lookup**, not `std::env::var` inside the
+verdict. The three failure modes are properties of the value, and reaching them by mutating
+this process's environment would make one case's setup visible to every other test in the
+binary — shared state inside a gate about configuration being unambiguous.
+
+**No coverage was traded away.** The live value now reports `Unprovable` here and says why;
+the literal reported `Unprovable` too in an unprovisioned checkout, because
+`.aeon-ref-drift` does not exist on a fresh tree. Named, not passed, in both.
+
+Red-first, all three, each mutant reaching a different verdict class than the rule requires:
+
+| mutation | the failing assertion's own wording |
+|---|---|
+| the exporter check is disabled | `a reader expanding a variable no exporter sets names nothing runnable, so it is broken, not tolerable (got Unprovable)` |
+| set-but-empty is treated as a value | ``a reader whose variable is set to nothing would be rooted at `/`, which is broken, not tolerable (got Unprovable)`` |
+| the rooted-remainder check is disabled | `a reader whose remainder is not rooted cannot expand to an absolute path, which is the relative case under another spelling (got Unprovable)` |
+
+**A process finding worth the record.** The first red-first run of these three proved
+nothing for two of them, and said `ok` while doing it. The script restored between
+mutations with `git checkout --`, but the amendment was **not yet committed**, so the first
+restore reverted the work itself; mutations B and C then found no anchor to patch and ran
+the *original* file, which passes. Only case A was real. The tell was available and ignored:
+a mutation that patches nothing prints no error, and `ok` from a gate you just broke is a
+result to distrust, not to bank. Fixed by committing the amendment first and re-running —
+the three rows above are from that run. This is the same shape as the memory note *a
+convenient result is a trigger*.
 
 ---
 
@@ -110,6 +172,35 @@ give the SAME answer, so a bed shaped that way would pass with the wrong code.
 | 5 | `step_four_refuses_naming_every_variable_and_every_path` | the contract's "refusals name the variable(s) consulted and the path(s) tried" | the `consulted EMPYREAN_SUITE_ROOT` line is dropped (both halves) | `the refusal has no line saying it CONSULTED `EMPYREAN_SUITE_ROOT`. Naming it only in the closing advice tells a reader what to set, not what was already looked at:` |
 | 6 | `the_announce_is_not_counted_as_a_skipped_gate` | the two spellings `landing-run.sh:369` counts | announce adopts one of them | ``the resolver's own output contains `skipping`, which the landing bar counts as a gate that measured nothing:`` |
 | 7 | `no_resolver_caller_regrows_a_home_literal` | population = entry points read out of the include × runnable files that name one | a literal planted in `capture_goldens.sh` | `1 file(s) that use the resolver still name one person's home directory…` naming `capture_goldens.sh:21` |
+
+Three more in `crates/sigil-cli/tests/drift_nightly_harness.rs::the_seam_verdict_separates_absent_from_broken`,
+covering the config spelling the same parcel introduced — table in §2b.
+
+### Gate 7 was widened a second time, and again by checking a claim instead of banking it
+
+Writing this parcel's ledger row produced the sentence *"routing the conf brought it into
+the lint's population."* Checking it — `grep 'suite_resolve_\|suite_paths_' scripts/drift-nightly.conf`
+→ **no match** — showed the opposite. The conf names no entry point, so an
+entry-point-only population never judged it, **which is exactly how the literal this parcel
+removed from it survived the first pass.**
+
+A file does not have to CALL a resolver to consume one: the conf is sourced by the job after
+the job has resolved and exported the root, and expands it. `calls_the_resolver` now also
+matches a file that expands a variable the resolver ANNOUNCES under a literal name, with the
+variable derived from the resolver's own `suite_paths_announce` calls rather than retyped.
+Expansion syntax (`${NAME`) is required, so prose naming the variable is not swept in. An
+empty announced set is `COULD NOT MEASURE`, for the same reason the empty entry-point set is.
+
+Red-first, with a pre-check that the mutation actually changed the file (`git diff --stat`
+→ `1 insertion`) before trusting the run:
+
+```
+1 file(s) that use the resolver still name one person's home directory…
+  scripts/drift-nightly.conf:11: # STALE_READER=/home/volence/…/drift_record.py
+```
+
+That is **three** population defects found in one lint by red-first, all of the same shape:
+the population looked right and could not reach a file it was supposed to judge.
 
 ### Two gates were WRONG when first written, and the red-first pass is what said so
 
@@ -256,14 +347,29 @@ other and are gated as agreeing by gates 1–5 above (every case asserts both ha
 
 ### Deviations from the brief, with evidence
 
-- **The brief said `repin --check` prints "four `declared allotment` warnings"; it printed
-  ten** (five regions × two shapes: `entity_window`, `children`, `objdefs`,
-  `dust_spindash`, `player_climb`). The witness that matters — `pins.rs unchanged` — did
-  print, as the last line. Recorded rather than waved through: the count in the brief is
-  stale, not the tree.
+- **`repin --check` warning count: two measurements disagree, and the disagreement is
+  UNRESOLVED — not resolved in this parcel's favour.** This run printed **ten**
+  `declared allotment` warnings (five regions × two shapes: `entity_window`, `children`,
+  `objdefs`, `dust_spindash`, `player_climb`) from the tree provisioned here. The brief said
+  four; the coordinator re-checked that source and it is **not** a truncated tail —
+  `grep -c 'declared allotment'` over the whole provisioning log of the **other** reference
+  tree returns 4 (`dust_spindash` and `player_climb`, plain and debug). Both trees are at
+  the same engine revision `027ec162`.
+  So this is not a stale number in the brief. It is **two `repin --check` runs against the
+  same revision warning about different region sets**, which is a determinism question; and
+  since `repin.toml`'s own header says ~80 region/shape pairs declare `allotment` today,
+  **both 4 and 10 are small subsets and the selection is unexplained by either of us.**
+  NOT CHASED — out of this parcel's scope, and the machine belongs to the engine lane's
+  freeze. Recorded here so the next reader inherits the open question rather than one
+  lane's number. `pins.rs unchanged` printed last, and that is the witness that mattered.
 - **`provision-aeon-ref.sh` had a second literal the brief did not list**, the default
   worktree path `$SIGIL_ROOT/../.aeon-ref`, wrong from a linked worktree in exactly the way
   `../aeon` was. Routed to `$(suite_resolve_root)/.aeon-ref`.
+  **`../aeon` did not merely *look* wrong — it KILLED this parcel's own first provisioning
+  run**, before a line of the parcel was written: `SIGIL_ROOT` from a linked worktree is
+  `<sigil>/.claude/worktrees/<agent>`, so `../aeon` named a directory that does not exist.
+  Every sigil agent runs in a linked worktree, so that spelling was failing for the majority
+  of its callers. Measured on this session, not supposed about someone else's.
 - **`scripts/corpus_bytediff.sh:17` was not on the brief's list.** The enumeration found it;
   it is a resolver site (`MASTER_DIR` is precisely step 3's answer) and is routed.
 - **The provisioning script's own first run failed here**, at
@@ -274,7 +380,14 @@ other and are gated as agreeing by gates 1–5 above (every case asserts both ha
 
 ### BLOCKED
 
-- `DRIFT_RECORD_READER` (section 2). Stopped on that item, recorded, continued.
+- **None outstanding.** `DRIFT_RECORD_READER` was reported blocked, ruled on by the
+  coordinator, and closed here (§2b). The escape hatch worked as intended: stopped on the
+  item, recorded exactly why, continued with the rest, and the item was unblocked by
+  someone with the authority to weigh the gate's subject rather than by this lane deciding
+  its own exception.
+- **One flag left open for the overseer**, not blocking: the ruling named the wrong crate
+  for the gate it cleared (§2b). The edit was made on stated evidence; the ownership call
+  is theirs.
 
 ### TAGGED for the controller — nothing here was attempted
 
@@ -328,7 +441,10 @@ Targeted single-binary runs that were made (all green, real output):
 | `sigil-harness --test skip_marker_lint` | 2 passed; 0 failed; 0 ignored |
 | `sigil-harness --test harness_root_handover` | 4 passed; 0 failed; 0 ignored |
 | `sigil-harness --test strict_census_lint` | 5 passed; 0 failed; 0 ignored |
-| `sigil-cli --test drift_nightly_harness` | 7 passed; 0 failed; 0 ignored |
+| `sigil-cli --test drift_nightly_harness` (after the §2b amendment) | 7 passed; 0 failed; 0 ignored |
+
+`scripts/nightly_source_gates.sh --audit` after every change: `scanned=132 source=44
+artifact=85 no-reference=3 unclassified=0`, `rc=0` — the lane still classifies this tree.
 
 `golden_write_gate` is the one that matters most for the capture-script change: it runs the
 shipped script from a COPY planted outside the repo, which is the branch where the include
