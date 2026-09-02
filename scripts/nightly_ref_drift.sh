@@ -51,9 +51,17 @@ note() {
 # NOTHING MEASURED still gets written down. A night that could not measure is a fact
 # about the instrument, and leaving it out of the ledger would let the record of
 # quiet nights read as continuous coverage.
+# The reader is passed HERE TOO. Omitting it made this path report "no drift record is
+# configured (DRIFT_RECORD_READER is empty)" whenever anything went wrong — a fabricated
+# reason on a sound verdict, and it went into the ledger's first record on 2026-09-02
+# while the config did set the reader. The failing path is exactly the one whose stated
+# reason gets read, so it is the last place that can afford to describe itself wrongly.
 record_unmeasured() {
+    local reader=()
+    [[ -n ${DRIFT_RECORD_READER:-} ]] && reader=(--record-reader "$DRIFT_RECORD_READER")
     python3 "$HERE/drift_report.py" observe \
         --ledger "$DRIFT_LEDGER" \
+        "${reader[@]}" \
         --aeon-rev "${AEON_SHA:-unknown}" \
         --sigil-linked-rev "${SIGIL_LINKED:-unknown}" \
         --sigil-closure-rev "${SIGIL_CLOSURE:-unknown}" \
@@ -114,12 +122,27 @@ fi
 source "$HERE/lib/suite_paths.sh" \
     || { note "COULD NOT RUN: cannot source $HERE/lib/suite_paths.sh, so no tree can be named"; exit 2; }
 
-SUITE_ROOT=$(suite_resolve_root) \
-    || { note "COULD NOT RUN: the suite root could not be resolved (see stderr)"; exit 2; }
-SIGIL_MAIN=$(suite_resolve_checkout sigil SIGIL_DIR) \
-    || { note "COULD NOT RUN: the sigil checkout could not be resolved (see stderr)"; exit 2; }
-AEON_MAIN=$(suite_resolve_checkout aeon AEON_DIR) \
-    || { note "COULD NOT RUN: the aeon checkout could not be resolved (see stderr)"; exit 2; }
+# "(see stderr)" USED TO POINT AT NOTHING. These refusals name the variable, the path
+# tried and the fault — on stderr, which only the systemd unit captures, and the unit is
+# not installed, so every invocation to date has been a hand run whose reason went to a
+# terminal nobody kept. The log then carried four unexplainable COULD NOT RUNs, one of
+# which (2026-09-02T04:24) cost a session a rebuild to re-derive. The refusal now goes
+# into the log with the note, so the artifact carries its own reason.
+resolve_or_die() {           # resolve_or_die <var-to-set> <what> <fn> [args…]
+    local __var=$1 what=$2; shift 2
+    local err out rc
+    err=$(mktemp); out=$("$@" 2>"$err"); rc=$?
+    if (( rc != 0 )); then
+        sed 's/^/    /' "$err" >> "$LOG"
+        note "COULD NOT RUN: $what could not be resolved — $(tr '\n' ' ' < "$err" | cut -c1-300)"
+        rm -f "$err"; exit 2
+    fi
+    rm -f "$err"; printf -v "$__var" '%s' "$out"
+}
+
+resolve_or_die SUITE_ROOT "the suite root"     suite_resolve_root
+resolve_or_die SIGIL_MAIN "the sigil checkout" suite_resolve_checkout sigil SIGIL_DIR
+resolve_or_die AEON_MAIN  "the aeon checkout"  suite_resolve_checkout aeon  AEON_DIR
 
 # This job's OWN scratch trees, hanging off the resolved suite root. Never the
 # source-gate lane's checkout (scrubbed source-only), never a peer's live working tree
