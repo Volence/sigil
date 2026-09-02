@@ -219,4 +219,18 @@ fn strict_and_partial_together_are_refused() {
         out.contains(ALLOW_PARTIAL_VAR) && out.contains("SIGIL_STRICT_GATE"),
         "the refusal must name both flags, since the fix is to drop one of them.\n{out}"
     );
+    // WHICH refusal fired, and this line is load-bearing. Measured, not assumed: with the
+    // resolver's combined check removed, the child still failed — `reference_tree` reached
+    // the absent partial-run path and the pre-existing strict assertion refused it by path.
+    // The run does stop either way, but the message a reader gets is
+    // "SIGIL_STRICT_GATE set but reference missing: /nonexistent/…", which names a symptom
+    // and leaves the contradiction between the two flags to be inferred. The assertions
+    // above could not tell the two apart, so they passed over the removed check.
+    assert!(
+        out.contains("describe opposite runs"),
+        "the run stopped, but not with the resolver's own refusal — so what this gate measured \
+         is that SOMETHING failed downstream of the contradiction rather than that the \
+         contradiction itself was caught. A reader of that failure is told a path is missing, \
+         not that the two flags they set cannot both hold.\n{out}"
+    );
 }

@@ -302,3 +302,184 @@ subject of the measurement was whatever the owner's working tree happened to con
 in `tests/cfg_blind_spots.rs`, which reach the reference tree. The harness depends on that
 crate, so the edge closes a cycle **through a dev-dependency**, which cargo resolves — the
 harness's own build does not see it. Verified by a clean `cargo test --workspace --no-run`.
+
+---
+
+# Parcel 2 — `parcel/d18-refuse-bare-run`, stacked on parcel 1
+
+## The ruling, and the reason it carries
+
+`d-18` was answered **`refuse`** by the hub on 2026-09-02 under the owner's widened
+delegation (`docs/OVERSEER.md` R4; the delegation banked at empyrean `4e8e865b`), against
+this card's own `say_only` recommendation. The hub's reason is the better one, and every
+message this parcel prints carries it:
+
+> a run that prints how much it skipped **still exits 0**, and a silent green is the class
+> never dropped, because a green is trusted the moment it is in the run.
+
+Parcel 1's bare transcript is that argument in four lines — two passes, exit 0, and the
+subject of the measurement was whatever the owner's working tree happened to contain.
+
+## Where the refusal lives, and why there
+
+In `aeon_dir()`'s step-3/step-4 path — the same call sites parcel 1's announcement already
+covered — and not in a gate. One gate refusing would leave every other reference-dependent
+row measuring against the derived tree, which is the state being refused; the resolver is the
+only place that sees all of them.
+
+| Environment | Behaviour |
+|---|---|
+| `AEON_DIR` or `EMPYREAN_SUITE_ROOT` names a tree | runs; one announcement line naming path and step |
+| nothing named | **panics**, naming both variables, the derived path it DECLINED and why, and the opt-in |
+| `SIGIL_ALLOW_PARTIAL=1`, nothing named | reference rows skip against `NO_REFERENCE_TREE`; the run prints the derived not-measured size |
+| `SIGIL_ALLOW_PARTIAL=1` **and** `SIGIL_STRICT_GATE=1`, nothing named | refused by name — the two flags describe opposite runs |
+
+Four decisions inside that are worth stating rather than leaving to be read off the diff.
+
+**The partial run answers with an absent path, not the derived one.** `NO_REFERENCE_TREE` is
+`/nonexistent/SIGIL_ALLOW_PARTIAL-no-reference-tree-was-named`. Handing back the derived live
+checkout would make the "partial" run quietly measure against it — the thing being refused,
+wearing the opt-in as cover. Absent *and* self-describing means the reason travels **with**
+each skip —
+`skip: reference ROM not at /nonexistent/SIGIL_ALLOW_PARTIAL-no-reference-tree-was-named/s4.bin`
+— rather than living in a banner a reader scrolled past six hundred lines earlier.
+
+**Strict and partial together are refused rather than ordered.** Strict is the run that may
+not skip a gate; it cannot also be the partial one. Measured, not assumed: with the combined
+check removed the child still fails, because `reference_tree` reaches the absent path and the
+pre-existing strict assertion refuses it — but the message a reader gets is
+`SIGIL_STRICT_GATE set but reference missing: /nonexistent/…`, which names a symptom and
+leaves the contradiction to be inferred. See the Q4 note below; that is why the gate pins
+*which* refusal fired.
+
+**`SIGIL_STRICT_GATE` is read directly here, not through `strict_gate()`.** That accessor
+RECORDS every reached consultation into the strict witness, and `strict_census` diffs that
+population against the one it derives from the test tree; a consultation from inside the
+resolver is not a strict-gated test body and would enter the census as a site with no
+counterpart.
+
+**The refusal is not countable as a skip.** It carries neither `skip:` nor `skipping`, the
+two spellings `scripts/landing-run.sh:369` and `refreeze.rs:533` count out of a run's log. A
+stop that registered as a skip would be reported by the very run it stopped. It surfaces as
+`test … FAILED`, which both readers already count as a failure.
+
+**The not-measured count is derived, never typed.** `partial_run_banner` reads
+`reference_dependence::reference_dependent_binaries` — the same walk
+`reference_dependence_is_named` reports with. A derivation that came back below its own floor
+prints "COULD NOT BE ESTABLISHED … unknown rather than small" rather than a number it cannot
+stand behind.
+
+## Interactions checked
+
+* **`reference_dependence_is_named`** — the gate that names the population. It consults
+  `aeon_checkout()` (parcel 1), not `aeon_dir()`, so the refusal does not stop the one gate
+  whose job is to explain the situation. Had it kept calling `aeon_dir()`, parcel 2 would
+  have silenced it.
+* **`strict_gate()`** — a missing reference was already a failure there. The refusal now
+  fires earlier and names the cause instead of the symptom; a strict run always sets
+  `AEON_DIR`, so this path is not reached in a landing.
+* **`scripts/landing-run.sh:369`'s skip counting** — unchanged. Partial-run skips are real
+  skips and count; the refusal is a failure and does not.
+* **`repin` and `cycle_fraction`** (routed in parcel 1) — a bare `repin` now refuses instead
+  of silently reading the live checkout. That is the correct outcome for a tool that
+  regenerates `pins.rs`, and every documented invocation
+  (`scripts/provision-aeon-ref.sh:179` and the proof command it prints) already names
+  `AEON_DIR`.
+* **`sigil build --aeon .`** — `main.rs:871` publishes the argument as `AEON_DIR` before any
+  build work, so aeon's own `build.sh` is unaffected.
+
+## The gate, and the red-first proof of each direction
+
+`crates/sigil-harness/tests/bare_run_refuses.rs`, run by
+`cargo test -p sigil-harness --test bare_run_refuses` and by the workspace suite. Three
+directions in subprocesses of the file itself — which is reference-dependent, so the subject
+is the real path and not a mock of it. The parent refuses to believe a child that produced no
+libtest result line, because a child that never started looks exactly like one that ran and
+stayed quiet.
+
+**The third direction is not a formality.** Without a "named tree runs normally" arm, a
+refusal that fired unconditionally — from a resolver broken in any way at all — would satisfy
+the other two, and this file would report `d-18` implemented when what it had measured is
+that nothing works.
+
+| Poison | Failing assertion, verbatim |
+|---|---|
+| **Q1 — say-only**: the rejected alternative, announce then return the derived tree | `a bare run with no reference tree named PASSED. That is the whole defect d-18 closed: the run measured nothing it could attribute and reported success.` — with the child's own line `CHILD ran against /home/volence/sonic_hacks/aeon` underneath it |
+| **Q2 — the partial run answers with the derived checkout** instead of the absent path | `the partial run must leave the reference-dependent row UNMEASURED. It reported otherwise, which means it found a tree — and a partial run that quietly measures against the live checkout is the behaviour the refusal exists to prevent.` |
+| **Q3 — the banner drops the derived size** | `the banner must carry the DERIVED count of what went unmeasured (126); got: PARTIAL RUN (SIGIL_ALLOW_PARTIAL is set). No reference tree is named, so some test binaries are reference-dependent and …` |
+| **Q4 — the strict+partial check removed** | `the run stopped, but not with the resolver's own refusal — so what this gate measured is that SOMETHING failed downstream of the contradiction rather than that the contradiction itself was caught. A reader of that failure is told a path is missing, not that the two flags they set cannot both hold.` |
+
+### Q4 is worth reading twice: the first version of that gate came back GREEN
+
+The first `strict_and_partial_together_are_refused` asserted only that the child failed and
+that both flag names appeared in its output. With the resolver's combined check removed it
+still passed — the run *does* stop either way, via `reference_tree`'s pre-existing strict
+assertion, and both flag names appear (one in the partial banner, one in that assertion). A
+rebuild was forced first, to rule out a stale artifact rather than assume the matcher; it
+stayed green, so the matcher was the problem. The assertion now pins the resolver's own
+wording, and why that matters is recorded in the test beside it: the two failures stop the
+same run and tell the reader different things.
+
+## What a run says now
+
+Bare — `AEON_DIR`, `EMPYREAN_SUITE_ROOT`, `SIGIL_STRICT_GATE` and `SIGIL_ALLOW_PARTIAL` all
+unset, `cargo test -p sigil-cli --test header_port`:
+
+```
+thread 'demo_header_matches_reference' panicked at crates/sigil-harness/src/test_support.rs:1018:9:
+NO REFERENCE TREE IS NAMED, so this run can measure nothing it could attribute, and STOPS. This run DECLINED to use /home/volence/sonic_hacks/aeon, which step 3 derived from this checkout's own location: it is a working checkout outside this repository, its revision changes under a run without notice, and a result measured against it would be attributable to whatever it happened to contain rather than to the code under test.
+
+The resolver's own answer: reference-tree: /home/volence/sonic_hacks/aeon (SUITE_PATHS step 3 — DERIVED from this checkout's own location — nobody named it)
+
+Either name a provisioned tree — AEON_DIR=<aeon checkout> (scripts/provision-aeon-ref.sh), or EMPYREAN_SUITE_ROOT=<the directory holding the suite> — or declare a partial run with SIGIL_ALLOW_PARTIAL=1, in which case every reference-dependent row is left unmeasured and the run says how many. Ruled d-18 (docs/OVERSEER.md, 2026-09-02): a run that only PRINTS how much it did not measure still exits 0, and a green is trusted the moment it is in the run.
+
+failures:
+    demo_header_matches_reference
+    sonic4_header_matches_reference
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+Declared partial — the same environment plus `SIGIL_ALLOW_PARTIAL=1`:
+
+```
+running 2 tests
+PARTIAL RUN (SIGIL_ALLOW_PARTIAL is set). No reference tree is named, so 126 test binaries are reference-dependent and every row in them is left UNMEASURED. A green result from this run does NOT mean those rows passed — it means they were not run. Name a tree with AEON_DIR to measure them.
+reference-tree: /home/volence/sonic_hacks/aeon (SUITE_PATHS step 3 — DERIVED from this checkout's own location — nobody named it)
+skip: reference ROM not at /nonexistent/SIGIL_ALLOW_PARTIAL-no-reference-tree-was-named/s4.bin (set AEON_DIR)
+skip: reference ROM not at /nonexistent/SIGIL_ALLOW_PARTIAL-no-reference-tree-was-named/demo.bin (set AEON_DIR)
+test sonic4_header_matches_reference ... ok
+test demo_header_matches_reference ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+## One classifier consequence, handled the way this lane already handles it
+
+`bare_run_refuses` calls `reference_tree(` — in a child, with a scrubbed environment, aimed
+at a path that does not exist — so the static classifier reads it as reference-reading, and it
+landed UNCLASSIFIED, which makes the nightly lane refuse to run. It is added to `SOURCE_GATES`
+with a comment saying exactly why, which is the treatment `reference_dependence_is_named`
+already has in that file for the identical reason: a file that reads sigil's own test sources,
+opens nothing in any aeon tree, and cannot be told apart from a real reader by a static grep.
+Audit after: `SOURCE_GATES=46 scanned=134 source=45 artifact=85 no-reference=4
+unclassified=0`.
+
+## Hand-off to `parcel/scripts-name-their-tree`
+
+`scripts/landing-run.sh` belongs to the concurrent agent and was **not touched** by either
+parcel. One item for them, if their branch is still open:
+
+* the wrapper's help/usage text does not describe what a bare run does. It now **stops**
+  rather than measuring against the derived checkout, and `SIGIL_ALLOW_PARTIAL=1` is the
+  declared partial run. If that text is being rewritten anyway for the suite-paths work, this
+  is the line to add. Nothing breaks without it — `landing-run.sh` always sets `AEON_DIR`, so
+  its own path is unaffected; the gap is documentation for someone invoking the suite by
+  hand.
+
+## Booked in the gap ledger
+
+Three entries appended to `docs/superpowers/notes/campaign-gap-ledger.md`: the six
+`env::var("AEON_DIR")` reads in the artifact-writing tools that deliberately did not route
+(recorded as a decision, not an omission); the classifier's blind spot for a reach through
+`ResolvedCheckout.path`; and `aeon_dir_is_unnamed()`, which has no consumers.
