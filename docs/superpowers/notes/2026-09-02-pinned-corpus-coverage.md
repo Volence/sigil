@@ -652,6 +652,67 @@ and a correction to the `OVERSEER.md` paragraph whose argument depends on them b
 
 ---
 
+### H-12 — **seven 68000 condition-branch spellings reach sigil ONLY because aeon writes them. The pin makes the corpus their permanent sole witness.** ← not predicted; this is the row that answers "which synthetic fixtures does step 1(a) owe"
+**Re-derived here in full, because the delegated pass's stated mechanism was wrong** (see the
+corrections below). `cond_sweep.py` over **271 synthetic texts** — the 212 `crates/*/tests/*.rs`
+files carrying none of the three reference guards, plus the `#[cfg(test)]` **tail** of each of
+the 59 `crates/*/src/**.rs` that has one, sliced at the marker so implementation text cannot
+masquerade as a test witness:
+
+| spelling | synthetic witnesses | | positive control | synthetic witnesses |
+|---|---|---|---|---|
+| `bge` | **0** | | `beq` | 24 |
+| `bgt` | **0** | | `bra` | 41 |
+| `ble` | **0** | | `bne` | 21 |
+| `blt` | **0** | | `bsr` | 18 |
+| `bmi` | **0** | | `bcs` | 5 |
+| `bls` | **0** | | `bpl` | 5 |
+| `bcc` | **0** (its single regex hit is a **comment**, `crates/sigil-frontend-as/src/eval.rs:5328`) | | `bhi` | 3 |
+| | | | `blo` | 2 |
+
+Eight controls spanning 2–41 files, so an empty result is an **absence**, not a broken query.
+
+**Why they still work today:** aeon writes them constantly. **36 of 193** `.emp` files in
+`.aeon-ref-196` use one of the seven; `bmi` alone appears in **22**. Every one of those files
+rides a port gate and the whole-ROM byte gate, so a wrong entry in the table would go red.
+
+**The table is duplicated with no parity gate.** There are two independent copies:
+`crates/sigil-frontend-emp/src/lower/code.rs:1661 m68k_cond` and
+`crates/sigil-frontend-as/src/eval.rs:4796 m68k_cond`. **Only the AS copy is unit-tested**
+(`eval.rs:5361 m68k_cond_parses_all_16_condition_codes`). Nothing compares the two. So the
+`.emp` copy — the one the shipping front end uses — is verified for these seven spellings
+*exclusively* by aeon source that happens to contain them.
+
+**Why this is a step-1 row rather than a pre-existing-gap row.** Pinning does not *remove* the
+witness: the frozen corpus still holds those 36 files and still byte-compares. What it does is
+make the corpus their **permanent and sole** witness, at the exact moment the plan says the
+corpus is to be supplemented by *"synthetic per-feature fixtures."* **This row names seven of the
+fixtures that supplement owes**, and they are trivial: one lowering test per spelling asserting
+the emitted condition nibble, plus one parity test that walks both `m68k_cond` copies over the
+same input set. Fully possible against a frozen snapshot; independent of it, in fact.
+
+**Two corrections I made to the delegated pass, recorded because the mechanism matters more than
+the number** (*"take the numbers, re-derive the cause"*):
+
+1. **Its stated structural cause was wrong.** It argued from *"`lower/code.rs` has no
+   `#[cfg(test)]` module at all"*. True — but `parser.rs` has none either (verified: both 0).
+   The `sigil-frontend-emp` crate simply does not use inline unit tests; it has **124 synthetic
+   files under `tests/`**. The absence of a `cfg(test)` block in one `src` file is therefore not
+   evidence of anything. **The evidence is the spelling sweep, and only the spelling sweep.**
+2. **Its `supmode` row is wrong.** It reported the AS directive `supmode`
+   (`frontend-as/src/eval.rs:1966`) as having *zero* synthetic witnesses and living only in three
+   lines of aeon `.asm`. In fact `crates/sigil-harness/m1c_root.asm:16` — an **in-repo fixture**
+   — carries `supmode on`, driven by `crates/sigil-harness/tests/m1c_vector_table.rs:102`. The
+   surviving, much narrower claim is that **`supmode off` is never exercised**. Not carried as a
+   hole.
+
+Its other NONE rows (`math.cos`/`as.cos`, `comptime while`, AS `binclude`, six Z80 spellings
+`rlca rla rra daa cpl ccf`) are unexercised **everywhere including aeon**, so they are dead
+features rather than corpus-coupled coverage. **Not carried as holes** — pinning changes nothing
+about them. They are worth a ledger row, not a gate.
+
+---
+
 ## 8. WHAT I COULD NOT CLASSIFY — explicit unknowns
 
 1. **What "vendor a pinned aeon source snapshot" means concretely.** *Narrowed, not closed.*
@@ -667,11 +728,22 @@ and a correction to the `OVERSEER.md` paragraph whose argument depends on them b
 3. **Whether the goldens are re-frozen at the pin, and whether anyone has noticed what that does
    to the rebuild control.** See H-7. **Unknown whether it has been noticed** — I found no
    document raising it.
-4. **What the `.emp` construct coverage differential actually is.** §1 shows the language
-   frontend is 124/125 synthetic, which is strong evidence that construct coverage does not
-   depend on the corpus — but *"a construct with a synthetic test"* and *"a construct whose
-   interaction with real placement is only ever seen in the corpus"* are different claims and I
-   did not separate them. **Stated as an unknown rather than resolved by the encouraging ratio.**
+4. ~~**What the `.emp` construct coverage differential actually is.**~~ **ANSWERED — see H-12.**
+   The differential was run: the `.emp` item layer (26 declaration openers), the statement/asm
+   layer, all proc-signature clauses, all 10 attributes, the builtin set, the whole 68000 opcode
+   space (exhaustively — `m68k_opcode_sweep.rs` re-encodes all 65 536 words, with
+   `m68k_capstone_differential.rs` as an independent oracle), the Z80 encoder, and every
+   relaxation candidate kind (`JmpJsrSym`, `RelaxAbsSym`, `RelaxLadder`, `asl_width_rule`) all
+   carry synthetic witnesses. **The differential's one real yield is H-12** — seven condition
+   spellings — plus two categories deliberately *not* carried as holes: constructs unexercised
+   everywhere (dead features), and two gates that are corpus-only *by construction*
+   (`m68k_roundtrip_stream.rs`, whole-ROM byte identity) and cannot be made synthetic.
+   **Residual unknown from the method, and it is real:** a witness was counted by the construct's
+   *spelling* appearing in a synthetic text, so a test that drives a construct by building AST/IR
+   in Rust without writing the spelling reads as a false NONE. Every NONE row was hand-inspected
+   and two were corrected (H-12's corrections); the ~120 high-scoring rows were **not**
+   hand-inspected, so some of those may be comment-only hits — which is exactly what `bcc` turned
+   out to be.
 5. **Whether `[layout.provisional-drift]`, `check_object_bank_budget` against a real cursor, and
    `validate_sound_fold`'s firing are exercised by any run.** The 08-27 recheck listed all three
    as never exercised and built no ROM either. **Still unknown here** — this pass built nothing.
@@ -714,10 +786,16 @@ while the units keep firing on the old schedule.
 | — DIES | 4 families: F3, F4, F8, F9 |
 | — unaffected | 1 family: F11 |
 | *(the per-family binary counts in §6.2 sum to 152, not 136: several binaries sit in two families — `m1b_gate` in F3 and F11, `provenance_chain` in F8 and F10, `extra_entry` in F7 and F8, `game_contract_env_coverage` in F5 and F8, `repin_pins`/`region_end_contracts` in F8. **The families are a classification, not a partition, and no binary total should be quoted from them.**)* | |
-| **HOLES** | **11** (H-1 with three sub-holes, H-2 … H-11) |
+| **Language / ISA / linker constructs enumerated (H-12 differential)** | the 26 `.emp` declaration openers, the stmt+asm layer, 8 proc-sig clauses, 10 attributes, the builtin set, the full 68000 opcode space, the Z80 encoder, 4 relaxation candidate kinds |
+| — synthetically witnessed | all but the rows below |
+| — **corpus-only and CLOSEABLE by a fixture** | **7** (the condition spellings, H-12) |
+| — corpus-only *by construction*, not closeable | 2 (`m68k_roundtrip_stream.rs`; whole-ROM byte identity) |
+| — unexercised everywhere, so not corpus-coupled | 6+ (`math.cos`/`as.cos`, `comptime while`, AS `binclude`, six Z80 spellings) |
+| **HOLES** | **12** (H-1 with three sub-holes, H-2 … H-12) |
 | — predicted | **1** (H-1 — and it landed differently: the static decision is WITNESSED, §3.3; the dynamic crossing is the hole) |
-| — **not predicted** | **10** (H-2 … H-11) |
-| **Explicit unknowns** | 7 |
+| — **not predicted** | **11** (H-2 … H-12) |
+| **Explicit unknowns** | 6 open (unknown #4 answered by H-12, with a residual method caveat) |
+| **Delegated claims re-derived by hand** | 6 (4 in §6.2, 2 in H-12) — **2 of the 6 required correction** |
 | **Corpus-dependent test binaries** | 127 by guard-string / 136 including the 9 that read the tree without one, of 339 (40%) |
 | **of those, naming a BUILT artifact** | 91 |
 | aeon `.emp` files in tree / added in last 30 days | 192 / **82 (43%)** |
@@ -766,4 +844,9 @@ placement-constraint axis intact (9/9), the shape axis intact (7/7) and roughly 
 families verbatim — but **four families die and three degrade**, and the two mechanisms meant to
 absorb that loss (the nightly observer, the drift record) are respectively **not installed — and
 its ledger records zero observations in its lifetime** — and **structurally frozen by the same
-change**. Eleven holes are open. **The vendoring half should not start.**
+change**. Twelve holes are open. **The vendoring half should not start.**
+
+**The one hole that is cheap to close first, and closing it is pure profit either way:** H-12's
+seven condition-branch fixtures plus a parity test between the two `m68k_cond` copies. It needs
+no aeon tree, no decision, and no sequencing — and it is the only row in this file that is
+*already* an instance of what step 1(a) promised to build.
