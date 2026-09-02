@@ -6,9 +6,20 @@
 # manifest edit + regenerate — the tool never re-pins a NEW region into
 # existence on its own.
 #
-# `tests` lists name the test BINARIES that consume the pin — printed as the
-# rerun hint when the pin moves. (dplc_port/core_port are tranche 10's
-# to-be-written binaries; their regions are pinned ahead per the handoff.)
+# `tests` IS NO LONGER READ BY ANYTHING. Do not maintain it, and do not add it to a
+# new row. It used to name the test BINARIES that consume a pin, printed as the rerun
+# hint when the pin moved — and that hint was its only reader, so an incomplete list
+# could not fail. Measured 2026-09-02: 176 of the 386 rows carrying a pin constant
+# omitted at least one binary that references it; `Map_TestObj` declared `objdef_port`
+# while five binaries read `MAP_TEST_OBJ`. The hint is now DERIVED at print time from
+# which `crates/*/tests/*.rs` actually reference the constant, so it cannot be short.
+# Proved on a real pin move: doctoring MAP_TEST_OBJ emitted all five binaries where
+# the declared list named one.
+#
+# The rows are left in place rather than deleted in the same breath — removing 412
+# `tests` lines is a mechanical no-op diff and belongs on its own. Deleting them is
+# the correct end state precisely because a field nobody reads and nobody maintains
+# will otherwise be read by a future author as a record of something.
 #
 # Inventory transcribed 2026-07-10 from the hand-typed pins in:
 #   sigil-cli tests: rings_port collision_port collision_lookup_port

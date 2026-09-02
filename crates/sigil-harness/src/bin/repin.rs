@@ -162,20 +162,21 @@ fn main() -> ExitCode {
 
     // ── drift: the D-T10.4 review surface ──
     let changes = diff_pins(&committed, &generated);
-    let tests_by_const = resolved.tests_by_const();
-    let mut rerun: Vec<&str> = Vec::new();
+    // THE RERUN HINT IS DERIVED FROM WHAT ACTUALLY REFERENCES EACH CONSTANT, not from
+    // `repin.toml`'s `tests` lists. Those lists gate nothing — this hint was their only
+    // reader — so an incomplete one could never fail, and measured 2026-09-02, **176 of the
+    // 386 symbol rows carrying a pin constant omitted at least one test binary that
+    // references it**. The most-omitted were `load_art_port` (41 rows), `game_loop_port`
+    // (33) and `repin_pins` (31): a pin moves, the hint names three binaries, and the
+    // fourth one that reads it is not mentioned. Hand-correcting 176 rows would have
+    // produced a population whose failure mode is "wrong because nobody maintained it",
+    // which is the shape this repo rejects elsewhere; deriving deletes the population.
+    let rerun = derive_rerun(&root, &changes);
     println!("{} pin(s) changed:", changes.len());
     for c in &changes {
         let old = c.old.as_deref().unwrap_or("(new)");
         let new = c.new.as_deref().unwrap_or("(removed)");
         println!("  {}: {old} → {new}{}", c.name, delta_suffix(c.old.as_deref(), c.new.as_deref()));
-        if let Some(tests) = tests_by_const.get(&c.name) {
-            for t in tests {
-                if !rerun.contains(&t.as_str()) {
-                    rerun.push(t);
-                }
-            }
-        }
     }
     if !rerun.is_empty() {
         println!();
@@ -198,6 +199,63 @@ fn main() -> ExitCode {
 /// ` (Δ …)` for single-value numeric pins where a delta is meaningful; empty
 /// for added/removed pins and multi-field initializers whose field counts
 /// differ.
+/// Which test binaries actually reference the constants whose pins moved.
+///
+/// Derived by reading every `crates/*/tests/*.rs` and asking which of them contain the
+/// constant's own name. That is a coarse instrument on purpose: it OVER-reports (a
+/// mention in a comment counts) and never under-reports, which is the safe direction for
+/// a hint whose job is "do not forget to run this". A declared list had the opposite
+/// error mode.
+///
+/// It returns binary names, which is what `cargo test --test <name>` takes.
+fn derive_rerun(root: &std::path::Path, changes: &[sigil_harness::repin::PinChange]) -> Vec<String> {
+    let mut files: Vec<(String, String)> = Vec::new();
+    let crates_dir = root.join("..");
+    if let Ok(entries) = std::fs::read_dir(&crates_dir) {
+        for e in entries.flatten() {
+            let tests = e.path().join("tests");
+            if !tests.is_dir() {
+                continue;
+            }
+            if let Ok(rs) = std::fs::read_dir(&tests) {
+                for f in rs.flatten() {
+                    let p = f.path();
+                    if p.extension().and_then(|x| x.to_str()) != Some("rs") {
+                        continue;
+                    }
+                    let Some(stem) = p.file_stem().and_then(|x| x.to_str()) else { continue };
+                    if let Ok(text) = std::fs::read_to_string(&p) {
+                        files.push((stem.to_string(), text));
+                    }
+                }
+            }
+        }
+    }
+    // AN EMPTY SWEEP IS REPORTED, NEVER PRINTED AS AN EMPTY HINT. The walk assumes `root`
+    // is `crates/sigil-harness`, so a `--harness-root` elsewhere finds no test files —
+    // and an empty derived hint is indistinguishable from "no test reads these pins",
+    // which would read as reassurance. This workspace has hundreds of test files; a count
+    // of zero means the walk missed them.
+    if files.is_empty() {
+        eprintln!(
+            "repin: warning: no `crates/*/tests/*.rs` found under {} — the rerun hint below \
+             is DERIVED from those files, so it is not a claim that nothing reads these pins",
+            crates_dir.display()
+        );
+        return Vec::new();
+    }
+    let mut out: Vec<String> = Vec::new();
+    for c in changes {
+        for (stem, text) in &files {
+            if text.contains(&c.name) && !out.contains(stem) {
+                out.push(stem.clone());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 fn delta_suffix(old: Option<&str>, new: Option<&str>) -> String {
     let (Some(old), Some(new)) = (old, new) else { return String::new() };
     let nums = |s: &str| -> Vec<i64> {
