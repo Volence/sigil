@@ -438,6 +438,29 @@ pub struct Evaluator<'a> {
     /// `unknown name`. A COUNTER (not a bool) so nested value positions restore
     /// correctly.
     label_ctx: u32,
+    /// Every name the D-PP.3 label fallback minted a
+    /// [`Value::Label`](crate::value::Value::Label) for — a name this evaluation
+    /// could not resolve any other way, kept because it MIGHT be a link symbol.
+    ///
+    /// The fallback is the one place the evaluator answers a lookup miss with a
+    /// value instead of a diagnostic, so it is the one place the miss stops being
+    /// visible downstream. Recording the name lets a later refusal say WHY the
+    /// value was a label: because the name was unknown here, not because the
+    /// author wrote a label. See [`scope_attributable`](Self::scope_attributable).
+    fallback_labels: std::collections::HashSet<String>,
+    /// Spans of Error diagnostics this evaluation raised ABOUT a value that the
+    /// D-PP.3 fallback minted (a name in [`fallback_labels`](Self::fallback_labels)).
+    ///
+    /// Such an error says nothing about the source: it says this evaluator's scope
+    /// was too narrow to resolve the name, and a wider scope would not have raised
+    /// it. That distinction is invisible in the message — a label-class refusal
+    /// names the PARAMETER's type, never the missing symbol — so it is recorded
+    /// here, at the site that knows, rather than pattern-matched out of the text
+    /// later. Read only by [`resolve::fold_const_literal`], whose whole job is to
+    /// separate its own scope shortfalls from real faults in a const's definition.
+    ///
+    /// [`resolve::fold_const_literal`]: crate::resolve
+    scope_attributable: Vec<Span>,
     /// The partial CodeBuf items lowered SO FAR in the enclosing proc/asm body,
     /// snapshotted while evaluating a body-position `ensure` guard (rung 4, t40).
     /// `cycles(L1, L2)` reads this to sum the T-states of the `[L1, L2)` label
@@ -604,6 +627,8 @@ impl<'a> Evaluator<'a> {
             reg_pointee_struct: HashMap::new(),
             cpu: None,
             label_ctx: 0,
+            fallback_labels: std::collections::HashSet::new(),
+            scope_attributable: Vec::new(),
             cycle_scope: None,
             imm_ctx: 0,
             imported_item_types: HashMap::new(),
@@ -648,6 +673,30 @@ impl<'a> Evaluator<'a> {
     /// label where a symbol reference is meaningful.
     pub(super) fn label_ctx_active(&self) -> bool {
         self.label_ctx > 0
+    }
+
+    /// Mint a D-PP.3 fallback label for `name` and record that it WAS a fallback
+    /// — the name resolved to nothing this evaluator knows, and became a label
+    /// only because a deferred link symbol is the remaining possibility. The one
+    /// call site per fallback return in [`eval_path`](Self::eval_path), so the
+    /// record cannot drift from the minting.
+    pub(super) fn fallback_label(&mut self, name: String) -> Value {
+        self.fallback_labels.insert(name.clone());
+        Value::Label(name)
+    }
+
+    /// Record that the Error just raised at `span` was raised ABOUT a value the
+    /// D-PP.3 fallback minted, when `v` is such a value — so the diagnostic
+    /// carries this evaluator's scope shortfall, not a fault in the source.
+    ///
+    /// Call it beside the `self.error(..)` that refused the value, with the SAME
+    /// span, so the two cannot disagree about which diagnostic is meant.
+    pub(super) fn note_scope_attributable(&mut self, v: &Value, span: Span) {
+        if let Value::Label(name) = v {
+            if self.fallback_labels.contains(name) {
+                self.scope_attributable.push(span);
+            }
+        }
     }
 
     /// Record a name that failed to resolve to a usable value: a lookup miss
@@ -1642,6 +1691,27 @@ pub fn eval_const_with_root_and_contracts(
     defines: &[(String, i128)],
     contracts: &crate::contract::InterfaceEnv,
 ) -> (Option<Value>, Vec<Diagnostic>) {
+    let (v, diags, _) = eval_const_probe(file, name, include_root, defines, contracts);
+    (v, diags)
+}
+
+/// [`eval_const_with_root_and_contracts`] plus the spans of the Error
+/// diagnostics this evaluation raised about a value the D-PP.3 label fallback
+/// minted — see [`Evaluator::scope_attributable`].
+///
+/// For a caller evaluating a const in a KNOWN-NARROW scope, which the resolver's
+/// definition-site fold probe is: those diagnostics are its own shortfall, not
+/// something a reader of the source could act on, and the message text does not
+/// say so. Everything else is identical to
+/// [`eval_const_with_root_and_contracts`], which is this function ignoring the
+/// third value.
+pub fn eval_const_probe(
+    file: &crate::ast::File,
+    name: &str,
+    include_root: Option<&std::path::Path>,
+    defines: &[(String, i128)],
+    contracts: &crate::contract::InterfaceEnv,
+) -> (Option<Value>, Vec<Diagnostic>, Vec<Span>) {
     // Run on a dedicated thread with a large stack so the native call stack has
     // headroom for [`MAX_CALL_DEPTH`] comptime frames (D-P2.16): the depth bound,
     // not a native stack overflow, is what stops runaway recursion.
@@ -1653,7 +1723,7 @@ pub fn eval_const_with_root_and_contracts(
             ev.set_include_root(root.to_path_buf());
         }
         if let Some(v) = ev.defines.get(name).copied() {
-            return (Some(Value::Int(v)), ev.diags);
+            return (Some(Value::Int(v)), ev.diags, ev.scope_attributable);
         }
         if !ev.consts.contains_key(name) && !ev.equs.contains_key(name) {
             // Message unchanged for the pure-const-absent case (existing
@@ -1661,10 +1731,10 @@ pub fn eval_const_with_root_and_contracts(
             // into the same lookup rather than earning a separate entry point,
             // since it resolves through the identical `resolve_const` path.
             ev.error(file.module.span, format!("no const named `{name}`"));
-            return (None, ev.diags);
+            return (None, ev.diags, ev.scope_attributable);
         }
         let value = ev.resolve_const(name, file.module.span);
-        (Some(value), ev.diags)
+        (Some(value), ev.diags, ev.scope_attributable)
     })
 }
 
