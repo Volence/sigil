@@ -380,8 +380,24 @@ reading a stale bytecode cache; (4) this one — mutation applied, file on disk 
 the binary that ran was built from other source.** One indistinguishable artifact: a green
 run over a change you can see in the tree. Invariant 8(c) catches all four.
 
-**Ledgered as a tool fix:** `provision-aeon-ref.sh` should refuse, or at minimum print the
-resolved `SIGIL_BIN` and its `--version`, rather than defaulting into a shared artifact.
+**LANDED as a tool fix** (`fix/provision-pins-its-tool`, `scripts/lib/sigil_tool.sh`), and it
+refuses rather than merely printing. `provision-aeon-ref.sh` resolves the assembler at step 0,
+before any fetch, worktree or write, so a refusal touches no peer repository. With `SIGIL_BIN`
+unset it now **builds** the tool from the invoking tree into `REF_TARGET` — the shared
+`target/release/sigil` is never read and never written — because building removes the class
+where a check only detects it, and a require-`SIGIL_BIN` shape would have broken the aeon
+lane's zero-environment invocation. The log is headed by the binary's own `--version`, verbatim.
+
+**The correspondence check is `closure-revision`, NOT `revision` vs `rev-parse HEAD`,** and the
+trap is worth keeping written down: `revision` moves on every commit here including ones no
+compilation can see. Measured on this branch — the `.sigil-land-197` binary is the correct
+compiler for the tree and reports `6a8b3ecd` against a HEAD of `40171000`, so the naive
+comparison fires on a correct binary. Always-red is not the safe direction. What the derived
+form proves is *"cannot have affected this binary"*, never *"the output did not change"*.
+
+**`SIGIL_BIN_CLOSURE` is the hatch for the legitimate off-tree run** (the base-compiler arm of
+an A/B) and is not a silencer: it must equal what the binary reports, so a wrong sha still
+refuses and a right one puts the sha in the log.
 
 ### Standing rules — independent of whether a row is active
 
