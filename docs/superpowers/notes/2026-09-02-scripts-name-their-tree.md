@@ -3,7 +3,9 @@
 Parcel branch `parcel/scripts-name-their-tree`, off master `9a2f40c6`.
 
 **The contract.** `contract/SUITE_PATHS.md`, empyrean `origin/main` at
-`f222f37148da88c19f9ef0f0fc789f7e5274a061` (recorded at read time, 2026-09-02).
+`f222f37148da88c19f9ef0f0fc789f7e5274a061` (recorded at read time, 2026-09-02). It has since
+gained a clause on the step-3 proof shape, which this parcel already satisfied — **§9** has
+the SHAs, all re-verified at write time rather than relayed.
 `docs/OVERSEER.md` R7 (line 76) is this lane's migration list; R4 (line 55) is the d-18
 refusal that sits on top of the same resolver. Board rows `SUITE-PATHS-MIGRATION` and
 `LANDING-RUN-DEFEATS-THE-NEW-GUARD`.
@@ -48,9 +50,9 @@ not start when the resolution failed.
 
 `grep -rn '/home/volence' scripts crates/sigil-harness/golden --include='*.sh'
 --include='*.py' --include='*.conf' --include='*.service' --include='*.timer'
---include='*.md'` — 43 hits before, 4 after.
+--include='*.md'` — **43 hits before, 2 after**, both deliberate.
 
-### Routed (39)
+### Routed (41)
 
 | site | was | now |
 |---|---|---|
@@ -71,7 +73,7 @@ not start when the resolution failed.
 | 18 × `golden/ab/*/*.py` `sys.path.insert` | `<literal>/empyrean/clients/python` | `suite_paths.add_empyrean_clients()` |
 | 6 × `golden/ab/*/*.py` `LST` | `<literal>/aeon/s4.debug.lst` | `suite_paths.debug_listing()` (2 of the 6 had no env override at all) |
 
-### Left, with reason (4)
+### Left, with reason (2)
 
 | site | reason |
 |---|---|
@@ -91,16 +93,25 @@ configured or genuinely empty; absence is not a pass", and a `${EMPYREAN_SUITE_R
 value IS genuinely configured — it is only not literal.** Blanking the key or renaming the
 path would have defeated the subject; teaching the gate the spelling does not.
 
-**A correction to the ruling's own text, recorded because it matters for merge.** The
-ruling named the gate `crates/sigil-harness/tests/drift_nightly_harness.rs` and cleared it
-as outside the concurrent lane's file set. The file is actually
-**`crates/sigil-cli/tests/drift_nightly_harness.rs`** — which is *inside* that lane's
-declared `crates/sigil-cli/tests/**`. It was edited anyway, on this evidence: the file
-contains **no `AEON_DIR`, no `aeon_dir`, and no `env::var` at all** (`grep` returns
-nothing), so it has no private resolution copy for that lane to route, which is what their
-edit set is for; and the hunks here are confined to `seam_verdict` and its unit test.
-**The path discrepancy is the overseer's to adjudicate at merge** — flagged rather than
-assumed away.
+**An ownership question was raised and is now SETTLED.** The ruling named the gate
+`crates/sigil-harness/tests/drift_nightly_harness.rs` and cleared it as outside the
+concurrent lane's file set. The file is actually
+**`crates/sigil-cli/tests/drift_nightly_harness.rs`** — *inside* that lane's declared
+`crates/sigil-cli/tests/**`. That was flagged before the edit was reported rather than
+assumed away, on this lane's own evidence: the file contains **no `AEON_DIR`, no
+`aeon_dir`, and no `env::var` at all**, so it holds no private resolution copy for that lane
+to route, and the hunks here are confined to `seam_verdict` and its unit test.
+
+The hub then checked rather than conceded, and the substance survived the error: the other
+lane's **actual** routing population is the files under `crates/sigil-cli/tests` carrying
+`env::var("AEON_DIR")`, and this file is not one of them. Re-measured here at write time —
+`grep -rl 'env::var("AEON_DIR")' crates/sigil-cli/tests/*.rs | wc -l` → **85**, and the seam
+gate is **not** among them. The edit stands; the glob was drawn wider than the work.
+
+Worth keeping as method rather than trivia: **refusing to treat this lane's own evidence as
+the authorization is what surfaced the error at all.** Had the evidence been read as
+permission, the edit would have been identical and the wrong glob would still be in the
+coordinator's model of who owns what.
 
 What the amendment does, and the three ways a spelling is still refused:
 
@@ -132,15 +143,8 @@ Red-first, all three, each mutant reaching a different verdict class than the ru
 | set-but-empty is treated as a value | ``a reader whose variable is set to nothing would be rooted at `/`, which is broken, not tolerable (got Unprovable)`` |
 | the rooted-remainder check is disabled | `a reader whose remainder is not rooted cannot expand to an absolute path, which is the relative case under another spelling (got Unprovable)` |
 
-**A process finding worth the record.** The first red-first run of these three proved
-nothing for two of them, and said `ok` while doing it. The script restored between
-mutations with `git checkout --`, but the amendment was **not yet committed**, so the first
-restore reverted the work itself; mutations B and C then found no anchor to patch and ran
-the *original* file, which passes. Only case A was real. The tell was available and ignored:
-a mutation that patches nothing prints no error, and `ok` from a gate you just broke is a
-result to distrust, not to bank. Fixed by committing the amendment first and re-running —
-the three rows above are from that run. This is the same shape as the memory note *a
-convenient result is a trigger*.
+See §8 for how the first attempt at these three rows nearly went into this packet as a
+pass.
 
 ---
 
@@ -380,14 +384,13 @@ other and are gated as agreeing by gates 1–5 above (every case asserts both ha
 
 ### BLOCKED
 
-- **None outstanding.** `DRIFT_RECORD_READER` was reported blocked, ruled on by the
+- **None, and none outstanding.** `DRIFT_RECORD_READER` was reported blocked, ruled on by the
   coordinator, and closed here (§2b). The escape hatch worked as intended: stopped on the
-  item, recorded exactly why, continued with the rest, and the item was unblocked by
-  someone with the authority to weigh the gate's subject rather than by this lane deciding
-  its own exception.
-- **One flag left open for the overseer**, not blocking: the ruling named the wrong crate
-  for the gate it cleared (§2b). The edit was made on stated evidence; the ownership call
-  is theirs.
+  item, recorded exactly why, continued with the rest, and the item was unblocked by someone
+  with the authority to weigh the gate's subject rather than by this lane deciding its own
+  exception.
+- The crate-path flag raised alongside it is also settled (§2b): checked by the hub, glob
+  wider than the work, edit stands.
 
 ### TAGGED for the controller — nothing here was attempted
 
@@ -456,3 +459,144 @@ this machine** (`which shellcheck` → not found), so no lint beyond `bash -n` w
 The reference tree was provisioned at the pinned `027ec162` and PROVEN, before the hold:
 both rebuild controls matched the frozen images (`s4.bin fdd1cf81/719387`,
 `s4.debug.bin 0f6b1359/736391`) and `repin --check` ended `pins.rs unchanged`.
+
+---
+
+## 8. Two findings about the METHOD, not the code
+
+Both came out of this parcel by accident, both are about how a proof can be false while
+reading green, and the hub has taken both as standing rules. They are here in full because
+the interesting part of each is the moment it nearly got away.
+
+### 8a. A mutation that fails to apply is indistinguishable from a correctly restored baseline
+
+**What happened.** The three red-first proofs for the seam amendment (§2b) ran from a script
+that mutated the gate, ran the one test, and restored with `git checkout -- <file>` between
+cases. Case A went red. Cases B and C printed `ok`.
+
+**What I nearly did.** I had a ready explanation for `ok` — the same explanation that had
+been *correct* twice already that hour, since gates 5 and 7 had genuinely been too weak and
+had genuinely printed `ok` under a real mutation. So a third and fourth `ok` looked like
+more of the same class of finding, and I was one step from writing "cases B and C reveal the
+verdict is insensitive to those inputs" into this packet. That would have been a fabricated
+finding on top of an unrun test.
+
+**What was actually true.** The amendment was **not committed yet**. The first
+`git checkout --` therefore did not restore a baseline — it *deleted the work*. Mutations B
+and C then searched a file that no longer contained their anchors, replaced nothing, wrote
+the file back unchanged, and ran the **original** gate, which passes because it is the
+original gate. Only case A ever tested anything.
+
+**Why it is invisible.** Both my mutation scripts used `str.replace`, which returns the
+input unchanged when the anchor is absent, and writes it back without complaint. A
+no-op mutation and a correct restore produce byte-identical files, so the *only* difference
+between "the rule survived being broken" and "the rule was never broken" is a `git diff` I
+had not run. Nothing in the output distinguishes them: both print `ok`.
+
+**Why the invariant did not catch it.** The bar says *prove it red-first*. It does not say
+*prove the mutation applied*, and a red-first proof is only worth the mutation actually
+landing. Every proof of this shape has the hole, mine and anyone else's.
+
+**The fix**, now used in this parcel's later red-first runs: assert the mutation changed the
+file before believing the run. The conf lint proof (§3) opens with
+
+```
+### PRE-CHECK: the mutation must actually change the file, or the run proves nothing
+ scripts/drift-nightly.conf | 1 +
+ 1 file changed, 1 insertion(+)
+```
+
+and only then runs the gate. A `1 insertion` line before a red is a proof; a red with no
+such line is an anecdote.
+
+**Retroactive audit of this parcel under the new rule.** Asked of every red-first claim in
+this note, since a rule that only applies going forward would leave the existing rows
+resting on the method it just condemned:
+
+- Gates 1, 2, 3, 4, 6 (§3) each went **red**. A mutation that did not apply cannot produce a
+  red, so the mutation demonstrably landed in all five. Sound.
+- Gates 5 and 7 (§3) printed `ok`, which is the ambiguous outcome — but each was
+  **independently confirmed afterwards**: the assertion was tightened, the same class of
+  mutation was re-run, and it then went red (§2b table's siblings, and the
+  `capture_goldens.sh:21` row). A weakness diagnosed from an `ok` and then reproduced as a
+  red is established by the red, not by the `ok`. Sound, by the second measurement rather
+  than the first.
+- The seam amendment's three (§2b): first run unsound and discarded; re-run after committing
+  the amendment, all three red, and each mutant lands in a *different* verdict class than the
+  rule requires, which is a second signal that the mutation bit.
+- The conf lint proof (§3): carries the pre-check. Sound.
+
+So no row in this packet rests on an unapplied mutation. The audit is recorded because
+"I checked the old ones too" is exactly the claim a reader cannot verify from a rule change
+alone.
+
+### 8b. A derived population must be derived from the CONSUMPTION relation, not the call relation
+
+Gate 7's population was wrong three times, each time in the same direction — it looked
+principled and could not reach a file it existed to judge:
+
+1. **Hand-written** would have gone stale at the twenty-fifth caller. Never shipped; the
+   brief forbade it.
+2. **"Sources the include by path"** missed both capture scripts, because they hold the
+   include's path in a variable first *precisely so they can check whether it is reachable*.
+   Caught by a planted literal that stayed green.
+3. **"Names an entry point"** missed `drift-nightly.conf`, because the conf never calls
+   anything: it is *sourced by the job after the job has resolved and exported the root*, and
+   expands it.
+
+The third is the general lesson and the other two are its special cases. **A file does not
+have to CALL a resolver to CONSUME one.** The conf holds a fully resolved path and names no
+function, so any population built on the call relation is blind to it by construction — and
+that blindness is not hypothetical: **it is how the conf's own home literal survived this
+parcel's first pass**, when the parcel's whole subject was removing home literals from files
+that consume resolutions.
+
+The population now matches the consumption relation: entry points named, the Python module
+imported, **or a variable the resolver announces under a literal name being expanded**, with
+the variable read out of the resolver's own `suite_paths_announce` calls. Expansion syntax
+(`${NAME`) is required so prose is not swept in, and an empty announced set is
+`COULD NOT MEASURE` — otherwise a scan failure would silently return the population to the
+shape that missed the conf.
+
+**How it was found is the part worth keeping.** Not by testing, and not by review: by
+**writing the ledger row and then checking its own sentence.** The row said "routing the conf
+brought it into the lint's population." One `grep` said otherwise. The claim was mine, about
+my own work, written minutes earlier, and it was wrong — which is the memory note *own repo
+state asserted from memory* arriving in a new costume, and the reason the row is now a
+`CLOSED` with a red-first proof instead of a plausible sentence.
+
+---
+
+## 9. Contract SHAs, re-read at write time
+
+| what | SHA | checked |
+|---|---|---|
+| contract as this parcel was built against | `f222f37148da88c19f9ef0f0fc789f7e5274a061` | reachable from `origin/main` |
+| contract clause on the step-3 proof shape | `08dd3f6` | **reachable**, verified here |
+| tip the hub named as "identical at" | `f96fbf6` | reachable |
+| **empyrean `origin/main` at this write** | **`889062f0f3c8f09e30ef7bb60ba739074566694b`** | fetched and read here |
+
+The tip had already moved past the one the hub named — expected, and the reason the check is
+worth doing rather than the relay worth trusting (*a peer's status is a snapshot*). What
+matters is settled independently of it: `git diff 08dd3f6 origin/main -- contract/SUITE_PATHS.md`
+is **empty**, so the clause this gate answers to is byte-identical at the live tip.
+
+**The new clause** (added 2026-09-02 from aurora's O68, found on their own merged resolver):
+the step-3 proof runs from a linked worktree, or says in the run's own output that it did
+not — because in the main checkout `--show-toplevel` and `--git-common-dir` agree, so a test
+asserting the property there proves nothing, and a test that skips there never runs where the
+suite normally runs.
+
+**Already satisfied, before the clause existed** (§3): the bed builds a real repo, an engine
+checkout beside it, and a linked worktree **nested inside** the checkout, then runs the
+resolver with `current_dir` inside that worktree under `env_clear()`. So the property is
+proved wherever `cargo test` is invoked from, with no skip and no vacuity. The nesting is the
+load-bearing part and was chosen for the reason the clause gives: a worktree that happens to
+sit *beside* the suite root hands the wrong method the right answer by accident.
+
+**The one thing the clause asked for that this did not do**: remove the worktree after. Forty-
+three beds had accumulated under the target directory, each a `git worktree` registration in a
+repository that exists only while the scratch tree does. `impl Drop for Bed` now removes it,
+on a panic as well; nothing is lost, because every assertion here quotes the subprocess's
+whole merged output, so the evidence is in the panic message rather than on disk. Verified: a
+full green run now leaves **zero**.

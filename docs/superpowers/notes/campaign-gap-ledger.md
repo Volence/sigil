@@ -3502,3 +3502,41 @@ Parcel `parcel/scripts-name-their-tree`; contract `contract/SUITE_PATHS.md` at e
   everything else, so this is the one place the literal is not a duplicated fact.
   — NOT A DEFECT (recorded so a later sweep does not re-open it; `scripts/systemd/README.md`
   already makes reinstalling the documented step after any edit)
+
+### Red-first has a hole the bar does not name (2026-09-02) — found in `parcel/scripts-name-their-tree`
+- **A mutation that FAILS TO APPLY is indistinguishable from a correctly restored baseline, and
+  both print `ok`.** Three red-first proofs ran from a script that mutated a gate, ran it, and
+  restored with `git checkout --`. The amendment under test was not committed yet, so the first
+  restore deleted the work; the next two mutations found no anchor, `str.replace` returned the
+  input unchanged, and they ran the ORIGINAL gate, which passes. Two of three proofs were
+  vacuous and read green. It was nearly banked as a finding — two genuinely-too-weak gates had
+  printed `ok` under real mutations the same hour, so a third and fourth `ok` looked like more
+  of the same class.
+  — **CLOSED as a practice** (every red-first run asserts the mutation changed the file —
+  `git diff --stat` showing an insertion — BEFORE the gate is run; a red with no such line is an
+  anecdote. Commit before mutating, so a restore restores rather than reverts. Retroactive audit
+  of the parcel is in that packet's §8a: rows that went red are sound by construction, the two
+  that printed `ok` were each re-established by a later red)
+- **The standing bar says "prove it red-first" and does not say "prove the mutation applied",**
+  so every red-first proof commissioned under it has this hole, not only this parcel's.
+  — OPEN (kill: the pre-check is in the dispatch invariant block; this row closes when a parcel
+  dispatched under the amended bar shows the pre-check in its packet)
+
+### A derived population must follow the CONSUMPTION relation (2026-09-02) — same parcel
+- **A file does not have to CALL a resolver to CONSUME one.** One lint's population was wrong
+  three times in the same direction — it looked principled and could not reach a file it existed
+  to judge: hand-written (stale by construction), "sources the include by path" (missed the two
+  callers that hold the path in a variable so they can check reachability), "names an entry
+  point" (missed a config that is SOURCED after the job exported the resolved root and merely
+  expands it). The third is the general case; the evidence that makes it land is that the
+  blindness is how that config's own home literal survived the first pass of the parcel whose
+  whole subject was removing home literals.
+  — **CLOSED for this lint** (population = entry points named, module imported, OR a variable the
+  resolver ANNOUNCES under a literal name being expanded, derived from the resolver's own announce
+  calls; red-first at `drift-nightly.conf:11`). **OPEN as a review question for every other
+  derived population in this repo**: ask what CONSUMES the value, not what calls the producer —
+  the same question the `control says you disagree` note asks
+- **How it was found is the transferable part**: not by testing and not by review, but by writing
+  a ledger row and then checking its own sentence against the tree. The row claimed the config was
+  now in the population; one `grep` said otherwise. A claim about one's own work, written minutes
+  earlier, still needs the command.
