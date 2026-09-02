@@ -11040,3 +11040,62 @@ demo_debug = "51056291/101323"
 lean = "a4cfb6f5/674816"
 s4 = "df76de71/719440"
 s4_debug = "0d6d1175/736454"
+
+[entry.superseded]
+by = "item5-cross-seam-composition"
+reason = "abandoned: strict run red on three harness-composition failures that moved no ROM byte; entry 199 replaces it; the two corrections to 198's own prose (its byte decomposition double-counts 62 bytes; the +4 is identified not inferred), the withdrawn cause of its red, and the lost-binary gap are in aeon docs/superpowers/2026-09-02-chain198-abandoned-and-its-two-corrections.md at aeon 39a974e4"
+
+[[entry]]
+name = "item5-cross-seam-composition"
+ab = "aeon 73b07a4f (unchanged from 198 - this chain moves NO aeon byte) + sigil's harness composition for item 5: two cross-seam [[symbol]] rows in repin.toml, two pins.rs constants resolved from the listings, two act_descriptor_port label rows, and the per-parcel ledger term for DEBUG_ASSEMBLED_LEN 0xA7F34->0xA7F38. Fixes exactly the three tests 198's strict run named. THE BYTE CONTROL WAS REAL RATHER THAN CEREMONIAL AND COULD HAVE FAILED: all four canonical shapes were REBUILT from a fresh clean worktree with the ROMs deleted first so existence proves freshness, and all four came back byte-identical to 198 - s4 719440/DF76DE71, s4.debug 736454/0D6D1175, demo 96458/30A31D81, demo.debug 101323/51056291. That mattered because the shared assembler binary was relinked mid-chain (md5 956da96a->4ca83f71, 079cec97->dd5eaad2), so these ROMs were produced by a DIFFERENT binary than 198's; had nothing been rebuilt the goldens would have matched by construction and the check could not have failed. Independently reproduced a second time by the sigil lane's drift observer at a LATER aeon revision (2986456c) with a different compiler and its golden comparison derived not-applicable, all four identical. Correcting 198's prose, which is frozen: the deb2 appendix begins at exactly EndOfRom (magic deb20402, no padding), so release +93 = 0 assembled + 93 appendix and debug +100 = 4 assembled + 96 appendix; the parcel's 62 content bytes ship in both shapes but are org-anchor absorbed at 0x90000 and never reach the file end, so 198's '62 + 31' and '62 + 4 + 34' double-count them, and its own held s4 anchor_end 0xa5c82 is the refutation. The +4 is the third dc.l row of Debug_BandDemoHotkey's .raster_table, span 0xA6886..0xA688E -> 0xA6886..0xA6892, the added longword reading 00013A96 in the image which is EditorRaster_OJZ_Act1_ojz_sec3_shimmer's own address. Pre-flight CLEAR against the tree being frozen, which is itself new: freeze_preflight resolved its subject from its own location and had been testing the shared main checkout, fixed at aeon 1127080d."
+aeon_rev = "73b07a4f3ae375b994de3822a13fbcab647c830a"
+note = "goldens byte-identical to `item5-cycles-variants` — this entry exists to abandon it: the fix for what turned its strict run red moved no bytes. item 5 certified: the harness composition 198 owed, with a four-shape rebuild as a control that could have failed"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "1de56842"
+full_size = 736806
+anchor_crc = "234ea90c"
+anchor_end = 0xa7f38
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "2507bcd4"
+full_size = 614997
+anchor_crc = "42adb0e9"
+anchor_end = 0x8c724
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "30a31d81"
+full_size = 96458
+anchor_crc = "a9763013"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "51056291"
+full_size = 101323
+anchor_crc = "992c305a"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "a4cfb6f5"
+full_size = 674816
+anchor_crc = "4c86840d"
+anchor_end = 0xa4c00
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "df76de71"
+full_size = 719440
+anchor_crc = "f5a0aa5b"
+anchor_end = 0xa5c82
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "0d6d1175"
+full_size = 736454
+anchor_crc = "45832185"
+anchor_end = 0xa7f38
