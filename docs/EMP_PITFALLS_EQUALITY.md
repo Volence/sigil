@@ -138,3 +138,55 @@ looks like.
 
 **Rule:** spell the length when you mean it. `-> [Label; 2]` is now worth writing, because
 it fails at the fn that broke it instead of at whoever eventually emitted the result.
+
+---
+
+# The rest of the hand-off: one expect-fail row moves, and it moves in aeon's favour
+
+Building all four shapes against the fixed compiler is also the CORPUS CENSUS for the new
+refusal, and it came back with exactly one hit. `emp_expect_fail` reports **50 / 51** — every
+other poison keeps its expected diagnostic, and no shipping module compares across classes at
+all. The one row is `tri unit fold`
+(`games/sonic4/test/poison/poison_tail_if_unit_fold.emp`, listed in
+`tools/emp_expect_fail.py:485`), and it did not break: **its wording changed, because sigil now
+names the disease directly.**
+
+That fixture's header says what it pins, in its own words:
+
+> What CAN be pinned, and is pinned here, is that `() == int` compares FALSE rather than
+> erroring, so a sample-pinning ensure catches a unit fold loudly.
+
+So it is the one place in the tree that deliberately DEPENDS on the old totality. With the
+refusal it still fails — still exactly 1 `[Error]`, still caught — but the message is now
+
+```
+[Error] [eq.cross-type] `==` not defined for unit and int — no value of one can equal a value
+        of the other, so this comparison is always false; compare same-typed values (or their fields)
+```
+
+instead of the differential `TAIL_IF_UNIT_FOLD: ... folded P[0] to ()` text the row greps for.
+
+**Read that as an upgrade, not a regression.** §1's unit fold used to be catchable only
+INDIRECTLY — you had to write a differential `ensure` against a known-good twin and read `()`
+out of the interpolated message. It is now caught at the comparison, by the compiler, naming
+`unit`, with no twin required. The catch surface got stronger and moved earlier.
+
+**Nothing fires on a correct tree.** The real consumers this poison exists to protect — the
+`TriPin` guards at `engine/level/parallax_dsl.emp:108-117` — compare `TriPin[0] == -16`, and on
+the shipped generator `TriPin[0]` is an int. Int-vs-int is in-class and answers exactly as
+before. Only a tree where the fold has actually regressed produces a `unit`, and then the guard
+still goes red — with a better message.
+
+## What aeon needs to change, and it is all one small commit
+
+1. **`tools/emp_expect_fail.py:485`** — the `tri unit fold` row's expected fragment. The
+   `[Error]` count stays **1**. Suggested fragment: `` [eq.cross-type] `==` not defined for unit and int ``.
+2. **`games/sonic4/test/poison/poison_tail_if_unit_fold.emp`** header — its stated retirement
+   condition ("if P[0] just became a number, sigil fixed the fold") is now ambiguous, because
+   there are two ways this module can stop producing its old message and only one of them means
+   the fold is fixed. Restate it: *the fold is fixed when this module builds CLEAN; a
+   `[eq.cross-type]` diagnostic means the fold is still there and sigil is naming it.*
+3. **`EMP_PITFALLS.md` §1** — add a line that the unit fold is now caught directly by
+   `[eq.cross-type]` wherever a folded `()` meets a number, so the differential-twin `ensure`
+   is a belt-and-braces measure rather than the only surface.
+4. **Land §12 and §13 above.**
