@@ -160,7 +160,7 @@ pub fn resolve_passed_root(
         return Err(root_refusal(&p, &format!("{ROOT_FLAG} {}", p.display()), &missing));
     }
     if let Some(env_dir) = override_dir {
-        if !env_dir.is_empty() && PathBuf::from(env_dir) != p {
+        if !env_dir.is_empty() && Path::new(env_dir) != p.as_path() {
             return Err(format!(
                 "{ROOT_FLAG} and {ROOT_OVERRIDE} name different trees, so one of them is \
                  about to be ignored.\n  \
@@ -169,7 +169,7 @@ pub fn resolve_passed_root(
                  Which tree this run belongs to is exactly the question this tool refuses \
                  to answer by guessing. Unset {ROOT_OVERRIDE}, or make it match.",
                 p.display(),
-                PathBuf::from(env_dir).display(),
+                Path::new(env_dir).display(),
             ));
         }
     }
@@ -243,6 +243,13 @@ pub fn repin_invocation(root: &Path, repin_bin: Option<std::ffi::OsString>) -> R
 pub fn announce_root(tool: &str, root: &Path) {
     let operating = root.display().to_string();
     // Reached as displayed text, never as a path — see the constant's contract.
+    //
+    // `format!` LOOKS redundant and clippy says so, but it is the shape this module is
+    // held to: `the_compile_time_manifest_dir_is_only_ever_displayed` refuses any line
+    // that names the constant outside a `{...}` capture, because a bare value is how a
+    // fallback to the build tree gets written. Comparing against the constant directly
+    // would silence the lint and defeat the gate, so the lint is what gives way.
+    #[allow(clippy::useless_format)]
     let built = format!("{BUILT_FROM}");
     if operating == built {
         eprintln!("{tool}: built from and operating on the same tree: {operating}");
@@ -422,6 +429,12 @@ mod root_derivation {
     /// way to pass is to honour what was passed. A child that derived from its own cwd
     /// answers with the second; a child that fell back to its compile-time constant
     /// answers with the third.
+    // `format!("{BUILT_FROM}")` below is deliberate and clippy's `useless_format` is
+    // silenced for it: `the_compile_time_manifest_dir_is_only_ever_displayed` refuses any
+    // line reaching the constant outside a `{...}` capture, and that rule binds this gate
+    // too — a test allowed to hold the build tree as a value is a test that could be
+    // rewritten into the fallback the rule exists to prevent.
+    #[allow(clippy::useless_format)]
     #[test]
     fn a_told_root_wins_over_the_childs_own_surroundings() {
         let tmp = tempfile::tempdir().unwrap();

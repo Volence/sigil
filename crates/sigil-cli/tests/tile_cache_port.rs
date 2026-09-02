@@ -566,9 +566,7 @@ fn tile_cache_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
 }
 
 fn two_module_flip(debug: bool, rom_name: &str) {
-    let aeon =
-        sigil_harness::test_support::aeon_dir();
-    let aeon = PathBuf::from(aeon);
+    let aeon = sigil_harness::test_support::aeon_dir();
     let Ok(refrom) = std::fs::read(aeon.join(rom_name)) else {
         if strict_gate() {
             panic!("SIGIL_STRICT_GATE set but reference missing: {rom_name}");
