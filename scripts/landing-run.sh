@@ -204,7 +204,41 @@ printf '%s\n' "$ROOT" > "$OWNER_FILE" || die "cannot write the ownership marker 
 # ---------------------------------------------------------------------------------------
 # (4) The reference environment: resolved ONCE, refused BY NAME, passed EXPLICITLY.
 # ---------------------------------------------------------------------------------------
-AEON=$(abspath "${AEON_ARG:-${AEON_DIR:-/home/volence/sonic_hacks/aeon}}")
+# `--aeon <path>` is STEP 1 by another spelling — the operator naming the tree on this
+# command line is at least as explicit as the environment doing it, and it is checked
+# here rather than handed to the include so the refusal can name the flag.
+#
+# Absent the flag, the include implements the whole precedence and ANNOUNCES which step
+# answered. There is no home literal left in this line: the predecessor's default sent a
+# run that named no tree at the owner's live checkout, which is mid-edit, carries his
+# content edits, and is not at the provenance tip — a green from it is a green about
+# something nobody chose.
+# shellcheck source=lib/suite_paths.sh
+source "$ROOT/scripts/lib/suite_paths.sh" \
+    || die "cannot source $ROOT/scripts/lib/suite_paths.sh — the reference tree cannot be
+       resolved without it, and guessing is what this script exists to stop."
+
+if [[ -n $AEON_ARG ]]; then
+    AEON=$(abspath "$AEON_ARG")
+    AEON_STEP="1: explicit --aeon"
+    suite_paths_announce AEON_DIR "$AEON" 1 "explicit --aeon"
+else
+    # The include's own announce goes to stderr; its refusal names every variable
+    # consulted and every path tried, which is exactly refusal (4)'s bar, so it is let
+    # through verbatim rather than re-worded into something less specific.
+    AEON=$(suite_resolve_checkout aeon AEON_DIR) \
+        || die "the reference tree could not be resolved (see the refusal above).
+       Pass --aeon <path to a built aeon checkout>, or export AEON_DIR."
+    AEON=$(abspath "$AEON")
+    # Which step answered is on stderr from the include and repeated into the log stamp
+    # below, so the run's own record says how the tree was named. Re-derived rather than
+    # captured because the announce is stderr and the path is stdout; the two spellings
+    # agree by construction (both come from the same variables the include read).
+    if [[ -n ${AEON_DIR:-} ]]; then AEON_STEP="1: explicit AEON_DIR"
+    elif [[ -n ${EMPYREAN_SUITE_ROOT:-} ]]; then AEON_STEP="2: EMPYREAN_SUITE_ROOT/aeon"
+    else AEON_STEP="3: sibling of this checkout via git --git-common-dir"
+    fi
+fi
 [[ -d $AEON ]] || die "AEON_DIR resolves to $AEON, which is not a directory.
        Pass --aeon <path to a built aeon checkout>, or export AEON_DIR."
 [[ -f $AEON/build.sh ]] || die "AEON_DIR resolves to $AEON, which has no build.sh — that is
@@ -310,7 +344,7 @@ CARGO_ARGS+=(-- --nocapture)
     echo "# sigil HEAD     $HEAD_SHA"
     echo "# sigil branch   $BRANCH ($DIRTY)"
     echo "# main checkout  $MAIN"
-    echo "# AEON_DIR       $AEON"
+    echo "# AEON_DIR       $AEON (step $AEON_STEP)"
     echo "# aeon HEAD      $AEON_HEAD"
     echo "# aeon branch    $AEON_BRANCH ($AEON_DIRTY)"
     echo "# aeon ROMs      $ROM_STATE"
