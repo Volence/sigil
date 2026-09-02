@@ -13,8 +13,16 @@ set -u
 
 # This worktree (where this script lives).
 WORKTREE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# Pristine master checkout — the main checkout this worktree was created from.
-MASTER_DIR="/home/volence/sonic_hacks/sigil"
+# Pristine master checkout — the main checkout this worktree was created from, which is
+# exactly what step 3 of contract/SUITE_PATHS.md derives: `git rev-parse --git-common-dir`
+# answers with the MAIN checkout's `.git` from a linked worktree, and its parent is the
+# main checkout. An explicit SIGIL_DIR still wins, and a refusal names both variables.
+# shellcheck source=lib/suite_paths.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/suite_paths.sh" || {
+    echo "FATAL: cannot source scripts/lib/suite_paths.sh, so master cannot be named" >&2
+    exit 1
+}
+MASTER_DIR="$(suite_resolve_checkout sigil SIGIL_DIR)" || exit $?
 
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT

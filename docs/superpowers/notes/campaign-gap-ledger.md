@@ -3465,3 +3465,27 @@ changed (only `sigil-harness` and one port test), so the findings are current, n
   errors at comptime with both operand types named, so an always-red guard cannot be written;
   whether the array-literal position should resolve a `pub data` symbol as its value rather
   than its address is a separate language call, to propose to the owner in his own words)
+
+### Suite-paths migration (2026-09-02) — three residuals the shell half could not close
+Parcel `parcel/scripts-name-their-tree`; contract `contract/SUITE_PATHS.md` at empyrean
+`f222f371`; packet `docs/superpowers/notes/2026-09-02-scripts-name-their-tree.md`.
+- **`scripts/drift-nightly.conf`'s `DRIFT_RECORD_READER` is still a home literal, held there
+  by a gate.** `crates/sigil-cli/tests/drift_nightly_harness.rs::the_record_seam_is_empty_and_absence_is_not_a_pass`
+  reads that key as RAW TEXT and judges it absolute-or-empty, so the `${EMPYREAN_SUITE_ROOT}/…`
+  spelling `DRIFT_AEON_TREE` now uses reads to it as the half-configured case and fails. The
+  two ways to make it green without touching that gate — blanking the key, or moving the path
+  under another name — both clear the gate by defeating its subject (that no expectation is
+  configured from inside this repository), so neither was taken.
+  — OPEN (kill: one line in that gate expands `${…}` against the resolved root before judging,
+  or accepts a root-relative spelling; red-first by pointing the key at a moved reader)
+- **The conf is outside the new lint's population, because prose is not a call.** It names the
+  include in a comment but sources no entry point, so `scripts_name_their_tree::no_resolver_caller_regrows_a_home_literal`
+  does not judge it — which is why the literal above needs a ledger row rather than a red test.
+  — OPEN (closes with the row above; the conf enters the population the moment it uses the
+  resolver, which is what the fix makes it do)
+- **The two `systemd` units' `ExecStart` lines stay absolute, deliberately.** A unit has no
+  run-time resolver, and `%h` only trades a full literal for a home-relative one that is equally
+  wrong when the suite moves. The unit is the ENTRY point, and the script it names resolves
+  everything else, so this is the one place the literal is not a duplicated fact.
+  — NOT A DEFECT (recorded so a later sweep does not re-open it; `scripts/systemd/README.md`
+  already makes reinstalling the documented step after any edit)
