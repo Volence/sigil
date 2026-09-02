@@ -71,6 +71,26 @@
 #   scripts/landing-run.sh --baseline 4156 --aeon ~/sonic_hacks/.aeon-landing
 #   scripts/landing-run.sh --scoped -- -p sigil-span        # a deliberately partial run
 #
+# WHICH REFERENCE TREE A BARE RUN USES — there is no longer a built-in answer.
+#   A run that names no tree does NOT fall back to a live checkout. It resolves one by the
+#   suite-paths contract, in this order, and PRINTS which step answered before doing any
+#   work, so the log says how the tree was chosen rather than leaving it to be assumed:
+#
+#     1. `--aeon <path>`, or the AEON_DIR environment variable
+#     2. EMPYREAN_SUITE_ROOT joined with `aeon`
+#     3. the sibling derived from THIS checkout's own `git rev-parse --git-common-dir`
+#     4. otherwise it REFUSES, naming every variable it consulted and every path it tried
+#
+#   A variable that is set but does NOT name an aeon checkout is a hard error at its own
+#   step, not a null that lets the next step run: a wrong value means a wrong environment,
+#   and resolving around it would leave that variable wrong for everything downstream.
+#   The implementation is scripts/lib/suite_paths.sh, shared with the nightly lanes.
+#
+#   THE OPT-IN FOR A DELIBERATELY PARTIAL RUN IS `--scoped`, and it is the only one this
+#   script has. It does not make a missing reference tree acceptable — it makes the
+#   reference-tree ARTIFACTS reported instead of required, and stamps the verdict as
+#   PARTIAL so no reader can mistake it for a landing.
+#
 # EXIT CODES
 #   0  the suite ran, passed, and reconciled against the stated baseline
 #   1  the suite FAILED (red tests, or cargo exited nonzero)
@@ -121,7 +141,11 @@ while (( $# )); do
         # reader can mistake it for a landing.
         --scoped)   SCOPED=1; shift ;;
         --)         shift; CARGO_EXTRA=("$@"); break ;;
-        -h|--help)  sed -n '2,80p' "$0"; exit 0 ;;
+        # The header, to wherever it actually ends. This was `sed -n '2,80p'`, and a hard
+        # line number is a help text that silently truncates the moment the header grows —
+        # which it just did. The end of the header is a fact about the file, so it is read
+        # from the file.
+        -h|--help)  awk '/^set -uo pipefail/ { exit } NR > 1' "$0"; exit 0 ;;
         *)          die "unknown argument \`$1\` (try --help)" ;;
     esac
 done
