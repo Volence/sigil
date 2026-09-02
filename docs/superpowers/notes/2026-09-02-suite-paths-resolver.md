@@ -233,6 +233,7 @@ describe.
 | Gate | Runner | Expectation derived from |
 |---|---|---|
 | `the_resolver_follows_the_contract_precedence` | `cargo test -p sigil-harness --test suite_paths_precedence` (workspace suite; classified `no-reference` for the nightly lane) | the contract's precedence; step-3 expectation from an INDEPENDENT marker walk, not the resolver's own git call; fixtures are directories the test creates |
+| `the_step_3_derivation_is_proven_from_a_linked_worktree` | same binary | the contract's 2026-09-02 worktree clause; the bed is a git repo the test builds, so the assertion does not depend on where `cargo test` was invoked from — see the amendment section at the end |
 | `the_derived_accessor_set_is_the_declared_guard_set` | `cargo test -p sigil-harness --test source_gate_classification` (workspace suite) | `sigil_harness::reference_dependence::GUARDS`, the same declaration the population walk uses |
 
 Every case below was made to fail on purpose and the failing assertion's own wording is
@@ -483,3 +484,90 @@ Three entries appended to `docs/superpowers/notes/campaign-gap-ledger.md`: the s
 `env::var("AEON_DIR")` reads in the artifact-writing tools that deliberately did not route
 (recorded as a decision, not an omission); the classifier's blind spot for a reach through
 `ResolvedCheckout.path`; and `aeon_dir_is_unnamed()`, which has no consumers.
+
+---
+
+# The contract moved mid-parcel, and it landed on this lane's step-3 row
+
+`contract/SUITE_PATHS.md` gained a fourth bullet under "What a resolver owes its reader"
+on 2026-09-02, from **aurora's O68**, which they found on their own already-merged
+resolver. Read at `empyrean` `08dd3f6` (reachable from `origin/main`; byte-identical at the
+then-current tip `f96fbf6`):
+
+> **The step-3 proof runs from a linked worktree, or says in the run's own output that it
+> did not.** The property step 3 is written for, `--git-common-dir` answering where
+> `--show-toplevel` answers wrongly, is only observable from a linked worktree; in the main
+> checkout the two agree, so a test asserting it there proves nothing, and a test that skips
+> there is honest but never runs where the suite normally runs. […] Every lane with a
+> resolver has this shape to check, not only the one that found it.
+
+**This lane's first version had exactly the shape the clause forbids**, and it is worth
+being precise about how it passed. It asked whether the TEST PROCESS happened to be running
+in a worktree, asserted the property if so, and printed `NOT MEASURED` otherwise. Every
+sigil agent runs in a linked worktree under `.claude/worktrees/`, so it asserted for whoever
+wrote it — and would have printed `NOT MEASURED` from
+`/home/volence/sonic_hacks/sigil`, which is where the landing run and the nightly source
+lane actually invoke the suite. The row would have been live only in the one place it was
+never needed.
+
+## The bed
+
+`the_step_3_derivation_is_proven_from_a_linked_worktree` in
+`crates/sigil-harness/tests/suite_paths_precedence.rs` now builds its own:
+
+```
+<scratch>/suite/            <- a suite root by the marker rule
+  aeon/                     <- the sibling the resolver must reach
+  empyrean/
+  repo/                     <- a real git repo (init, one commit)
+    nested/wt/              <- a LINKED worktree, `git worktree add`, removed after
+```
+
+**Nested inside the repo, not beside the suite root, and that is load-bearing** — the
+refinement the concurrent scripts lane measured for its own resolver rather than assuming,
+matched here so the two halves of one contract do not disagree about what proves it. From a
+worktree that happens to sit beside the suite root, `--show-toplevel` plus a sibling join
+lands on the right answer *by accident*, and a test built on that bed passes for the wrong
+reason.
+
+Three properties, and the row asserts all three:
+
+1. **a control before the property** — on this bed the two methods must actually disagree,
+   or the assertion has nothing to bite on and is reported UNMEASURABLE;
+2. **the property** — `derive_suite_root_from(<the nested worktree>)` reaches the suite root
+   the repo hangs off;
+3. **the production half** — the same function, applied to this crate's own compile-time
+   location, agrees with an independent marker walk. Without this, a helper proven on a bed
+   and a production path that calls something else is the classic way a gate ends up
+   measuring nothing.
+
+`derived_suite_root()` is now one line: `derive_suite_root_from(CARGO_MANIFEST_DIR)`, cached.
+The mechanism became a function over a directory precisely so the proof could be made
+somewhere the process is not.
+
+**Why a directory argument rather than a subprocess with a different cwd.** This resolver's
+step 3 does not read cwd at all — it runs git from `env!("CARGO_MANIFEST_DIR")`, the calling
+repo's own location fixed at compile time, which is the contract's phrase and is more robust
+than cwd (a test process's cwd is a cargo convention; a subprocess's is whatever it
+inherited). A cwd-driven bed would therefore have proved nothing about this implementation.
+The directory argument is the equivalent, and it needs no subprocess to be deterministic.
+
+An unbuildable bed — no `git`, no writable scratch, a git too old for `worktree add` —
+PRINTS its reason into the run's output and does not assert. That is the clause's own
+escape, taken as a printed line rather than an `ignored`, because a green log and an absent
+run are the same artifact.
+
+## Red-first, both halves
+
+**R1 — the derivation switched to `--show-toplevel`.** The row fails on its own bed, naming
+the bed's own paths — which is the evidence that it no longer depends on where the suite was
+invoked from:
+
+> `step 3 could not derive a suite root from the linked worktree /tmp/sigil-suite-paths-worktree-bed-…/suite/repo/nested/wt — /tmp/sigil-suite-paths-worktree-bed-…/suite/repo/nested is this repository's parent but holds no aeon/ + empyrean/ — it is not a suite root. This is the shape every sigil agent runs in, so a derivation that fails here fails in ordinary use.`
+
+**R2 — the bed's worktree moved beside the suite root** instead of nested. The control
+fires, which is what makes "nested" a measured requirement rather than a stylistic one:
+
+> `assertion 'left != right' failed: UNMEASURABLE: on this bed --show-toplevel's parent IS the suite root, so the wrong method would give the right answer and passing proves nothing. The worktree must be nested inside the repo, not beside the suite root. / left: Some(".../suite") / right: Some(".../suite")`
+
+Both poisons were reverted and the file re-run green.
