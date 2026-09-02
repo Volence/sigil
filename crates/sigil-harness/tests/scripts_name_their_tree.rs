@@ -109,6 +109,19 @@ struct Bed {
     root: PathBuf,
 }
 
+/// The bed is REMOVED AFTER, including on a panic — `contract/SUITE_PATHS.md` asks for the
+/// temporary worktree to be cleaned up, and a bed left behind is a `git worktree` registration
+/// in a repository that no longer exists once the scratch tree is swept.
+///
+/// Nothing is lost by removing it on failure: every assertion in this file quotes the
+/// subprocess's whole merged output, so the evidence is in the panic message rather than on
+/// disk.
+impl Drop for Bed {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
 impl Bed {
     /// `with_engine` false builds the step-4 bed: a suite root with no engine checkout in
     /// it, which is the state a refusal is supposed to describe.
