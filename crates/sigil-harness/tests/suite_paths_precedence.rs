@@ -451,6 +451,25 @@ fn the_step_3_derivation_is_proven_from_a_linked_worktree() {
             wt.display()
         )
     });
+    // REPORT THE PAIR *AND* THE RETURNED SOURCE, per `contract/SUITE_PATHS.md` paragraph 4
+    // (empyrean `8dfb07f`, from aurora finding it on their own merged O68 work). The pair
+    // alone is the trap: a run that never executed the resolver from the bed still prints a
+    // pair in which every path is correct — the wrong method wrong at the temp worktree, the
+    // resolver answering a true suite root — because the pair only establishes that the bed
+    // is a place where the wrong method is wrong. It says nothing about whether the resolver
+    // was standing there. The RETURNED SOURCE is what says that, and the assertion below is
+    // what makes it load-bearing rather than decorative.
+    //
+    // Measured here, not inherited: with that assertion neutered and the pair left intact,
+    // this row goes GREEN and prints a fully correct pair. With the resolver made to ignore
+    // the anchor it is handed, it goes RED with `left: /home/volence/sonic_hacks` — the main
+    // checkout — which is the failure paragraph 4 requires regardless of the pair.
+    println!(
+        "step-3 bed: wrong method -> {:?}; bed's suite root -> {}; RETURNED SOURCE -> {}",
+        wrong_root,
+        suite.display(),
+        derived.display()
+    );
     assert_eq!(
         derived, suite,
         "step 3 derived the wrong suite root from a LINKED, NESTED worktree. `--show-toplevel` \
