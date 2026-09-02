@@ -1,0 +1,224 @@
+# shellcheck shell=bash
+# sigil_tool.sh — choose the assembler a provisioning run will judge, and prove it
+# corresponds to the tree it is being provisioned from.
+#
+# ── WHY THIS FILE EXISTS ─────────────────────────────────────────────────────────
+# provision-aeon-ref.sh's own header argues that "no errors" is not a witness, and
+# names the positive witness it wants instead. It then chose its single most
+# important build input — the assembler — with
+#
+#     SIGIL_BIN="${SIGIL_BIN:-$SIGIL_ROOT/target/release/sigil}"
+#
+# which is whatever a SHARED checkout last relinked: not the revision being
+# provisioned for, and not necessarily related to the change under test.
+#
+# On 2026-09-02 that default handed a three-parcel byte-neutrality proof a PRE-MERGE
+# compiler, and the run's four `REBUILD CONTROL ... MATCHES THE GOLDEN` lines
+# certified a build containing NONE of the three parcels. A second run of the same
+# lane reached a binary four days old. FOUR MATCHING CRCs ARE EQUALLY CONSISTENT
+# WITH "byte-neutral parcel" AND "the fix was never in the build" — and on a
+# byte-neutral parcel those are the only two worlds there are, so the control cannot
+# separate them. What separated them was a count that came out RIGHT when it had
+# been predicted to come out WRONG: 51/51 where the merged compiler must give 50/51.
+#
+# The three-line discriminator, if you ever need to see the class again:
+#     module d
+#     ensure(1 != "x", "cross-type compare answered instead of refusing")
+# A pre-merge binary prints `built: 0 bytes` and exits 0; a merged one refuses with
+# `[eq.cross-type]`. Nothing in the provisioning log distinguished them.
+#
+# ── THE PIN SHAPE, AND WHY IT IS "BUILD IT" RATHER THAN "REQUIRE IT" ─────────────
+# Three shapes were available: require SIGIL_BIN, default-but-verify, or build one.
+#
+#   * REQUIRE would make the ordinary correct invocation start refusing. The aeon
+#     lane runs this script with no environment at all; a refusal-by-default lands
+#     on them at whatever hour they next provision, for a variable they have never
+#     had to set. This lane has already retracted one queued "make it refuse unless
+#     told" fix for exactly that reason.
+#   * DEFAULT-BUT-VERIFY keeps a default whose only defence is a check. The check is
+#     the thing under budget pressure, and the default it guards is a shared
+#     artifact other lanes relink on purpose.
+#   * BUILD removes the class instead of detecting it. The binary is compiled from
+#     THIS tree, including its uncommitted edits, into the reference target dir this
+#     script already builds `emit_sound_blob` into — so it cannot be stale, cannot be
+#     a peer's, and cannot be silently substituted. The shared
+#     `target/release/sigil` is never read and never written.
+#
+# So: SIGIL_BIN unset builds one; SIGIL_BIN set is honoured, because a caller that
+# names a binary is stating an intent this script has no standing to override — the
+# nightly drift job builds its own at a published revision and hands it here. Both
+# paths then go through the SAME correspondence check, because a self-built artifact
+# is not self-evidently the one we just built: sibling worktrees share this target
+# dir by default, so the build and the use are two events with a gap between them.
+#
+# ── THE CORRESPONDENCE CHECK, AND THE TRAP IN IT ─────────────────────────────────
+# NOT `revision:` against `git rev-parse HEAD`. The binary's own `--version` says why
+# in its `drift:` block: `revision` moves on EVERY commit here, including ones no
+# compilation can see, so comparing it alone warns PERMANENTLY and therefore says
+# nothing. As of this writing HEAD is four docs commits ahead of the last commit that
+# could touch a compiler, so that comparison would fire right now, on a correct
+# binary. A check that fires on correct code is not the safe direction: it trains
+# people to weaken it, and the weakening gets written down as advice.
+#
+# The derived form the binary itself prescribes is used instead:
+#     closure-revision   ==   git log -1 --format=%H HEAD -- <closure-paths>
+# where `closure-paths` is what cargo actually compiles the binary from, walked from
+# cargo's own dependency graph rather than listed by hand and reported BY THE BINARY.
+#
+# WHAT IT PROVES AND WHAT IT DOES NOT. It over-reports and never under-reports: a
+# pass means later commits in this tree CANNOT have affected this binary. It is not
+# a claim that the output would be identical — only a rebuild and a byte compare
+# supports that. The refusal message says so rather than overclaiming.
+#
+# WHAT IS DELIBERATELY NOT GATED:
+#   * `source:` — the directory the binary was built from. A perfectly correct
+#     binary is routinely built somewhere else (a landing worktree, the freeze bin);
+#     gating on it would refuse correct runs. Printed, never asserted.
+#   * `tree:` dirty/clean. A parcel under measurement is often dirty on purpose, and
+#     a self-built binary inherits that dirt by design. Printed, never asserted.
+#
+# ── THE DECLARED-MISMATCH HATCH, AND WHY IT CANNOT BE USED AS AN OFF SWITCH ──────
+# One legitimate run pairs an OLD binary with a CURRENT tree: the base-compiler arm
+# of an A/B, where the old compiler is the control. Refusing it would be the
+# always-red failure again. `SIGIL_BIN_CLOSURE` is the hatch, and it is not a
+# silencer: its value must be the 40-hex closure revision the binary ACTUALLY
+# reports. Set it wrong and the run still refuses; set it right and the log carries
+# the sha you deliberately measured with. It converts a silent mismatch into a
+# declared one, and the declaration is itself checked.
+#
+# ── SOURCED OR EXECUTED ──────────────────────────────────────────────────────────
+# suite_paths.sh is sourced-never-executed; this one is both, on purpose. A gate
+# whose only demonstration is a full provisioning run is a gate nobody re-proves,
+# and the two halves that matter — a wrong binary refuses, a correct binary proceeds
+# silently — must both be runnable in a second:
+#     scripts/lib/sigil_tool.sh <sigil-root> <ref-target>
+
+# ── the refusal ──────────────────────────────────────────────────────────────────
+# Terminal by design: every later step of provisioning is worthless once the tool is
+# wrong, and a warning here is a line somebody reads after the fact.
+sigil_tool_refuse() {
+    printf '\nERROR: %s\n' "$1" >&2
+    shift
+    local line
+    for line in "$@"; do printf '       %s\n' "$line" >&2; done
+    exit 1
+}
+
+# sigil_tool_resolve <sigil-root> <ref-target>
+#
+# Sets SIGIL_BIN to a binary that has been proved to correspond to <sigil-root>, and
+# heads the log with that binary's own --version self-report. Refuses, loudly and
+# before any side effect, if it cannot.
+sigil_tool_resolve() {
+    local root="$1" ref_target="$2" origin
+
+    if [ -n "${SIGIL_BIN:-}" ]; then
+        origin="pinned by the caller (SIGIL_BIN)"
+        [ -f "$SIGIL_BIN" ] || sigil_tool_refuse \
+            "SIGIL_BIN names a file that does not exist: $SIGIL_BIN" \
+            "Nothing is guessed in its place. The default this script used to fall back to" \
+            "is the defect it now refuses to repeat."
+        [ -x "$SIGIL_BIN" ] || sigil_tool_refuse \
+            "SIGIL_BIN is not executable: $SIGIL_BIN"
+    else
+        # NEVER $root/target/release/sigil. That path is a shared artifact other
+        # lanes relink deliberately, and from a linked worktree it does not even
+        # name the tree the binary would have come from.
+        origin="built by this run from $root"
+        echo "==> no SIGIL_BIN given; building the assembler from this tree"
+        ( cd "$root" && CARGO_TARGET_DIR="$ref_target" cargo build --release --bin sigil ) \
+            || sigil_tool_refuse \
+                "the assembler did not build from $root" \
+                "Provisioning cannot continue: every later step runs this binary."
+        SIGIL_BIN="$ref_target/release/sigil"
+        [ -x "$SIGIL_BIN" ] || sigil_tool_refuse \
+            "cargo reported success but $SIGIL_BIN is not there"
+    fi
+
+    # ── the self-report, verbatim, at the head of the log ────────────────────────
+    # Provenance belongs in the artifact, not in the operator's memory. A run whose
+    # header does not name the revision under test did not measure it, and nothing
+    # else in the log can say so afterwards.
+    local version_out
+    version_out="$("$SIGIL_BIN" --version 2>&1)" || sigil_tool_refuse \
+        "$SIGIL_BIN cannot report its version, so this run has no honest provenance" \
+        "$(printf '%s' "$version_out" | head -3 | tr '\n' ' ')"
+
+    echo
+    echo "==> THE ASSEMBLER THIS RUN WILL JUDGE — $origin"
+    echo "    $SIGIL_BIN"
+    printf '%s\n' "$version_out" | sed 's/^/    | /'
+    echo
+
+    # ── the correspondence check ─────────────────────────────────────────────────
+    local closure_rev closure_paths tree_rev
+    closure_rev="$(printf '%s\n' "$version_out" \
+        | sed -n 's/^  closure-revision: *\([0-9a-f]\{40\}\).*$/\1/p')"
+    closure_paths="$(printf '%s\n' "$version_out" | sed -n 's/^  closure-paths: //p')"
+
+    # A binary too old to state what it was compiled from cannot be checked at all,
+    # and "cannot be checked" is not "is fine". This is a refusal on an
+    # unverifiable binary, not on a correct one.
+    [ -n "$closure_rev" ] && [ -n "$closure_paths" ] || sigil_tool_refuse \
+        "$SIGIL_BIN does not self-report a closure revision and closure paths" \
+        "It predates the provenance banner, so nothing can say which tree it came from." \
+        "Rebuild it, or run with SIGIL_BIN unset and let this script build one."
+
+    local -a paths
+    read -r -a paths <<< "$closure_paths"
+    tree_rev="$(git -C "$root" log -1 --format=%H HEAD -- "${paths[@]}" 2>/dev/null)" \
+        || tree_rev=""
+    [ -n "$tree_rev" ] || sigil_tool_refuse \
+        "cannot derive this tree's closure revision at $root" \
+        "Asked: git log -1 --format=%H HEAD -- <the ${#paths[@]} paths the binary names>" \
+        "Either $root is not a git checkout, or the binary names paths this tree" \
+        "has never had — both mean the two cannot be compared, so neither is assumed."
+
+    if [ "$closure_rev" = "$tree_rev" ]; then
+        # Silent-by-design on the correct case beyond this one line: the check must
+        # cost a correct run nothing, or it becomes the thing people delete.
+        echo "==> tool closure ${closure_rev:0:8} == this tree's closure at HEAD — no commit here can have affected it"
+        echo "    (that is 'cannot have affected', not 'the output is identical'; only a rebuild and a byte compare says the second)"
+    elif [ -n "${SIGIL_BIN_CLOSURE:-}" ] && [ "$SIGIL_BIN_CLOSURE" = "$closure_rev" ]; then
+        echo "==> tool closure ${closure_rev:0:8} DIFFERS from this tree's ${tree_rev:0:8}, and SIGIL_BIN_CLOSURE declares exactly that"
+        echo "    Accepted as a deliberate off-tree measurement. The sha is in this log because you had to type it."
+    else
+        # A WRONG declaration is its own diagnosis, and a distinct one: it means the
+        # caller believed something specific about this binary that is not true.
+        local declared="(SIGIL_BIN_CLOSURE is unset — no off-tree measurement was declared.)"
+        if [ -n "${SIGIL_BIN_CLOSURE:-}" ]; then
+            declared="SIGIL_BIN_CLOSURE says $SIGIL_BIN_CLOSURE, which is NOT what this binary reports. A declaration is checked, not trusted."
+        fi
+        sigil_tool_refuse \
+            "the assembler does not correspond to the tree being provisioned. REFUSING." \
+            "" \
+            "  binary      $SIGIL_BIN" \
+            "  its closure $closure_rev" \
+            "  this tree   $tree_rev   (git log -1 HEAD -- <closure-paths> at $root)" \
+            "" \
+            "A commit that this binary could not have seen has touched the sources it is" \
+            "compiled from. This over-reports and never under-reports: it proves 'cannot" \
+            "have been affected', so a mismatch is not proof the output differs — but a" \
+            "control built by an unknown compiler is not a control, and four matching CRCs" \
+            "cannot tell a byte-neutral parcel from a compiler that never had the parcel." \
+            "" \
+            "  * to measure THIS tree: unset SIGIL_BIN and let this script build the tool," \
+            "    or point SIGIL_BIN at a binary built from it;" \
+            "  * to measure with an OFF-TREE compiler on purpose (the base arm of an A/B):" \
+            "        SIGIL_BIN_CLOSURE=$closure_rev" \
+            "    which is checked against the binary, not trusted — a wrong sha still refuses." \
+            "" \
+            "  $declared"
+    fi
+}
+
+# ── executed directly: the gate on its own, so both halves stay cheap to prove ───
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    set -euo pipefail
+    if [ $# -lt 1 ]; then
+        echo "usage: sigil_tool.sh <sigil-root> [<ref-target>]" >&2
+        exit 2
+    fi
+    sigil_tool_resolve "$1" "${2:-$1/../.sigil-ref-target}"
+    echo "==> resolved: $SIGIL_BIN"
+fi
