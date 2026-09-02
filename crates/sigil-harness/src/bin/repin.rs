@@ -88,9 +88,7 @@ fn main() -> ExitCode {
     let manifest_path = root.join("repin.toml");
     let pins_path = root.join("src/pins.rs");
     let aeon = aeon.unwrap_or_else(|| {
-        PathBuf::from(
-            std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".into()),
-        )
+        sigil_harness::test_support::aeon_dir()
     });
     if std::env::var("SIGIL_EMIT").map(|v| v.is_empty()).unwrap_or(true) {
         return fail("set SIGIL_EMIT to <sigil>/target/release/emit_sound_blob (the resolve builds sound-on).");

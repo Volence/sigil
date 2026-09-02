@@ -51,9 +51,7 @@ use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::{Path, PathBuf};
 
 fn aeon_root() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
+    sigil_harness::test_support::aeon_dir()
 }
 
 #[track_caller]
@@ -331,7 +329,7 @@ fn assert_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
 }
 
 fn gate(debug: bool, rom_name: &str, base: usize) {
-    let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    let aeon = sigil_harness::test_support::aeon_dir();
     let rom_path = Path::new(&aeon).join(rom_name);
     let Ok(refrom) = std::fs::read(&rom_path) else {
         if strict_gate() {

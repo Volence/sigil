@@ -38,7 +38,7 @@ use std::path::{Path, PathBuf};
 
 fn aeon_dir() -> PathBuf {
     let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     PathBuf::from(aeon)
 }
 

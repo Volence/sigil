@@ -38,8 +38,8 @@
 //!   (or resolve wrong). Install must land at the region base, Uninstall at
 //!   `base + HBLANK_UNINSTALL_OFF`.
 //!
-//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, or
+//! `EMPYREAN_SUITE_ROOT`). Absent, both tests SKIP green — unless
 //! `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure (mirrors the
 //! `sfx_port.rs` gate idiom).
 //!
@@ -60,7 +60,7 @@ use std::path::{Path, PathBuf};
 /// but `include_root` is still set for parity with every other port template.
 fn hblank_dir() -> PathBuf {
     let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     Path::new(&aeon).join("engine/system")
 }
 
@@ -293,7 +293,7 @@ fn assert_outbound(linked: &sigil_link::LinkedImage, base: u32) {
 /// AND both `pub proc` names export at the correct per-shape addresses.
 #[test]
 fn hblank_region_matches_reference() {
-    let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    let aeon = sigil_harness::test_support::aeon_dir();
     let rom_path = Path::new(&aeon).join("s4.bin");
     let Ok(refrom) = std::fs::read(&rom_path) else {
         if strict_gate() {
@@ -316,7 +316,7 @@ fn hblank_region_matches_reference() {
 /// AND both `pub proc` names export at the correct per-shape addresses.
 #[test]
 fn hblank_debug_region_matches_reference() {
-    let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    let aeon = sigil_harness::test_support::aeon_dir();
     let rom_path = Path::new(&aeon).join("s4.debug.bin");
     let Ok(refrom) = std::fs::read(&rom_path) else {
         if strict_gate() {

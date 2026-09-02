@@ -38,8 +38,8 @@
 //! deliberately not restated here: a bound copied into prose is executed by
 //! nothing, so nothing can go red when it rots.
 //!
-//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, or
+//! `EMPYREAN_SUITE_ROOT`). Absent, both tests SKIP green — unless
 //! `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure (mirrors the
 //! `mt_port.rs` gate idiom).
 //!

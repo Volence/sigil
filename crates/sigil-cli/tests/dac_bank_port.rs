@@ -26,9 +26,7 @@ use sigil_ir::SymbolTable;
 use std::path::PathBuf;
 
 fn aeon_root() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
+    sigil_harness::test_support::aeon_dir()
 }
 
 #[track_caller]

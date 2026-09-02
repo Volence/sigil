@@ -46,7 +46,7 @@ use std::path::{Path, PathBuf};
 /// The `hblank.emp` module's own directory (honors `AEON_DIR`).
 fn hblank_dir() -> PathBuf {
     let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     Path::new(&aeon).join("engine/system")
 }
 

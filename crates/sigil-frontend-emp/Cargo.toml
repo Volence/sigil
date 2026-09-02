@@ -18,4 +18,10 @@ toml = { version = "0.8", features = ["preserve_order"] }
 
 [dev-dependencies]
 sigil-link = { path = "../sigil-link" }
+# The two corpus censuses in `tests/cfg_blind_spots.rs` reach the reference tree,
+# and `contract/SUITE_PATHS.md` puts ONE resolver behind every such reach — a
+# private copy of the precedence is a second thing to keep in step. The harness
+# depends on this crate, so this edge closes a cycle THROUGH A DEV-DEPENDENCY,
+# which cargo resolves: the harness's own build does not see it.
+sigil-harness = { path = "../sigil-harness" }
 tempfile = "3"

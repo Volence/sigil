@@ -45,8 +45,8 @@
 //! The byte gate is the debug arm, against `s4.debug.bin`. Content itself is
 //! shape-invariant (`00 02 | 04 02 02 02 FB | 00`).
 //!
-//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`). Absent, tests SKIP green — unless
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, or
+//! `EMPYREAN_SUITE_ROOT`). Absent, tests SKIP green — unless
 //! `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
 //!
 //! ```text
@@ -74,7 +74,7 @@ fn region_base(debug: bool) -> u32 {
 
 fn anims_dir() -> PathBuf {
     let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     Path::new(&aeon).join("games/sonic4/data/animations")
 }
 
@@ -222,7 +222,7 @@ fn assert_drift_guard(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert
 }
 
 fn gate(debug: bool, rom_name: &str, base: usize) {
-    let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    let aeon = sigil_harness::test_support::aeon_dir();
     let rom_path = Path::new(&aeon).join(rom_name);
     let Ok(refrom) = std::fs::read(&rom_path) else {
         if strict_gate() {

@@ -44,7 +44,7 @@ fn region_base(debug: bool) -> u32 {
 
 fn anims_dir() -> PathBuf {
     let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     Path::new(&aeon).join("games/sonic4/data/animations")
 }
 
@@ -145,7 +145,7 @@ fn compile_real_file(
     // row-3 consolidation) — plain `lower_module` never resolves cross-module
     // `use`, so the twin's items ride in front (the ambient technique).
     let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     let csrc = std::fs::read_to_string(Path::new(&aeon).join("engine/system/constants.emp"))
         .unwrap_or_else(|e| panic!("cannot read constants.emp: {e}"));
     let (cfile, cdiags) = parse_str(&csrc);
@@ -240,7 +240,7 @@ fn assert_drift_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAsser
 }
 
 fn gate(debug: bool, rom_name: &str, base: usize) {
-    let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    let aeon = sigil_harness::test_support::aeon_dir();
     let rom_path = Path::new(&aeon).join(rom_name);
     let Ok(refrom) = std::fs::read(&rom_path) else {
         if strict_gate() {
@@ -317,7 +317,7 @@ fn rep_helper_compiles_and_repeats() {
     let (file, pdiags) = parse_str(&src);
     assert!(pdiags.iter().all(|d| d.level != sigil_span::Level::Error), "{pdiags:?}");
     let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     let csrc =
         std::fs::read_to_string(Path::new(&aeon).join("engine/system/constants.emp")).unwrap();
     let (cfile, cdiags) = parse_str(&csrc);

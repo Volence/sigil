@@ -64,9 +64,7 @@ use std::path::PathBuf;
 
 /// The aeon root (honors `AEON_DIR`).
 fn aeon_root() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
+    sigil_harness::test_support::aeon_dir()
 }
 
 /// The aeon `games/sonic4/data/sound` dir — the include root for `mt_bank.emp`

@@ -26,9 +26,7 @@ use sigil_ir::backend::Cpu;
 use std::path::PathBuf;
 
 fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
+    sigil_harness::test_support::aeon_dir()
 }
 
 fn read_aeon(rel: &str) -> Option<String> {

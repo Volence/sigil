@@ -56,8 +56,8 @@
 //! shape. The numbers are deliberately not restated here: a bound copied into
 //! prose is executed by nothing, so nothing can go red when it rots.
 //!
-//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`). Absent, the reference tests SKIP green —
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, or
+//! `EMPYREAN_SUITE_ROOT`). Absent, the reference tests SKIP green —
 //! unless `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
 //! The combo matrix only needs the aeon SOURCE files (game_loop.asm +
 //! config/game.asm), not the built ROMs.
@@ -90,9 +90,7 @@ use sigil_ir::{Section, SectionPlacement, SymbolTable};
 use std::path::PathBuf;
 
 fn aeon_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
+    sigil_harness::test_support::aeon_dir()
 }
 
 #[track_caller]

@@ -30,9 +30,7 @@ const LEN: usize = 0x100;
 const PATCHED: &[std::ops::Range<usize>] = &[0x8E..0x90, 0xA4..0xA8];
 
 fn aeon_root() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
+    sigil_harness::test_support::aeon_dir()
 }
 
 #[track_caller]

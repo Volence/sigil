@@ -6,7 +6,7 @@
 //! `test_objects.emp` consumer byte-gated against the AS macro.
 //!
 //! REFERENCE-DEPENDENT: the ambient `.emp` sources live in the sibling aeon tree
-//! (`AEON_DIR`, default `/home/volence/sonic_hacks/aeon`). Absent, the tests that
+//! (`AEON_DIR`, or `EMPYREAN_SUITE_ROOT`). Absent, the tests that
 //! read them SKIP green — unless `SIGIL_STRICT_GATE=1` makes a missing reference a
 //! hard failure, so the pre-merge run cannot skip a gate. The inline-lowering test
 //! is reference-free and always runs.

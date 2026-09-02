@@ -22,8 +22,8 @@
 //! - **The `.particle_desc` descriptor blob**: `dc.w TestParticle - ObjCodeBase`
 //!   resolves the effect child's bank offset across the seam.
 //!
-//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`). Absent, every test here SKIPS green —
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, or
+//! `EMPYREAN_SUITE_ROOT`). Absent, every test here SKIPS green —
 //! unless `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
 //!
 //! ```text

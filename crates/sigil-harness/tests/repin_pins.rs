@@ -3,8 +3,8 @@
 //! `pins_rs_is_current` regenerates the pin table IN-MEMORY from sigil's own
 //! resolve of the sonic4 shape and compares against the committed `src/pins.rs`
 //! — a stale pins.rs can no longer hide. REFERENCE-DEPENDENT and SOURCE-ONLY:
-//! it needs the sibling `aeon` tree's `.emp`/`.asm` sources (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`), no built ROM and no assembler listing.
+//! it needs the sibling `aeon` tree's `.emp`/`.asm` sources (`AEON_DIR`, or
+//! `EMPYREAN_SUITE_ROOT`), no built ROM and no assembler listing.
 //! Absent, it SKIPS green — unless `SIGIL_STRICT_GATE=1` makes a missing
 //! reference a hard failure.
 //!

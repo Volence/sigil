@@ -80,8 +80,8 @@
 //! (Addresses/length are pin-sourced — never hand-typed here; a byte-moving
 //! parcel re-books them via `repin` and this prose stays true.)
 //!
-//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, or
+//! `EMPYREAN_SUITE_ROOT`). Absent, both tests SKIP green — unless
 //! `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
 //!
 //! ```text
@@ -102,7 +102,7 @@ use std::path::{Path, PathBuf};
 /// port template.
 fn vdp_init_dir() -> PathBuf {
     let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     Path::new(&aeon).join("engine/system")
 }
 
@@ -440,7 +440,7 @@ fn assert_outbound_consumer(linked: &sigil_link::LinkedImage, init: i64, flush: 
 /// per-shape proc addresses.
 #[test]
 fn vdp_init_region_matches_reference() {
-    let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    let aeon = sigil_harness::test_support::aeon_dir();
     let rom_path = Path::new(&aeon).join("s4.bin");
     let Ok(refrom) = std::fs::read(&rom_path) else {
         if strict_gate() {
@@ -466,7 +466,7 @@ fn vdp_init_region_matches_reference() {
 /// per-shape proc addresses.
 #[test]
 fn vdp_init_debug_region_matches_reference() {
-    let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    let aeon = sigil_harness::test_support::aeon_dir();
     let rom_path = Path::new(&aeon).join("s4.debug.bin");
     let Ok(refrom) = std::fs::read(&rom_path) else {
         if strict_gate() {

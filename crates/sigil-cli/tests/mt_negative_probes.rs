@@ -52,9 +52,7 @@ use std::path::PathBuf;
 
 /// The aeon root (honors `AEON_DIR`).
 fn aeon_root() -> PathBuf {
-    PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    )
+    sigil_harness::test_support::aeon_dir()
 }
 
 /// Mirrors `mt_port.rs::sound_dir` exactly (kept local per this crate's

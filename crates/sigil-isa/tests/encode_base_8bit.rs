@@ -1,7 +1,7 @@
 //! Golden encode vectors for the base (unprefixed) 8-bit load / ALU / inc-dec forms.
 //!
 //! Every expected byte string was produced by `tools/asl -cpu 68000 -q -L -U` on a
-//! `cpu z80 / phase 0` snippet (ground truth: /home/volence/sonic_hacks/aeon). See the
+//! `cpu z80 / phase 0` snippet (ground truth: the aeon checkout `AEON_DIR` names). See the
 //! reference table in the Plan 2 / Task 3 section.
 use sigil_isa::z80::{encode, Instruction, Mnemonic, Operand, Reg8};
 

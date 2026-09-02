@@ -46,7 +46,7 @@ fn region_base(debug: bool) -> u32 {
 
 fn section_dir() -> PathBuf {
     let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     Path::new(&aeon).join("engine/level")
 }
 
@@ -343,7 +343,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
 
 fn run(debug: bool) {
     let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     let rom_name = if debug { "s4.debug.bin" } else { "s4.bin" };
     let rom_path = Path::new(&aeon).join(rom_name);
     let Ok(refrom) = std::fs::read(&rom_path) else {

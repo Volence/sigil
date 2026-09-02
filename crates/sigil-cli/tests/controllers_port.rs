@@ -92,8 +92,8 @@
 //! per shape. The numbers are deliberately not restated here: a bound copied
 //! into prose is executed by nothing, so nothing can go red when it rots.
 //!
-//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, default
-//! `/home/volence/sonic_hacks/aeon`). Absent, both tests SKIP green — unless
+//! REFERENCE-DEPENDENT: needs the sibling `aeon` tree (`AEON_DIR`, or
+//! `EMPYREAN_SUITE_ROOT`). Absent, both tests SKIP green — unless
 //! `SIGIL_STRICT_GATE=1` makes a missing reference a hard failure.
 //!
 //! ```text
@@ -119,7 +119,7 @@ fn region_base(debug: bool) -> u32 {
 /// port template.
 fn controllers_dir() -> PathBuf {
     let aeon =
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+        sigil_harness::test_support::aeon_dir();
     Path::new(&aeon).join("engine/system")
 }
 
@@ -428,7 +428,7 @@ fn assert_region_matches(candidate: &[u8], expected: &[u8], what: &str) {
 /// — the bare-name proof.
 #[test]
 fn controllers_region_matches_reference() {
-    let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    let aeon = sigil_harness::test_support::aeon_dir();
     let rom_path = Path::new(&aeon).join("s4.bin");
     let Ok(refrom) = std::fs::read(&rom_path) else {
         if strict_gate() {
@@ -485,7 +485,7 @@ fn controllers_region_matches_reference() {
 /// resolves to the correct per-shape address (`pins::CONTROLLERS.debug_base`).
 #[test]
 fn controllers_debug_region_matches_reference() {
-    let aeon = std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string());
+    let aeon = sigil_harness::test_support::aeon_dir();
     let rom_path = Path::new(&aeon).join("s4.debug.bin");
     let Ok(refrom) = std::fs::read(&rom_path) else {
         if strict_gate() {

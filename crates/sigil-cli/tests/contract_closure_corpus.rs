@@ -65,9 +65,7 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
 /// standard strict invocation (`SIGIL_STRICT_GATE=1 cargo test --workspace`, no
 /// `AEON_DIR`) leaves it — never actually runs in the gate it exists for.
 fn aeon_dir() -> Option<PathBuf> {
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
+    let aeon = sigil_harness::test_support::aeon_dir();
     if !aeon.exists() {
         if std::env::var("SIGIL_STRICT_GATE").is_ok() {
             panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
@@ -1239,9 +1237,7 @@ fn corpus_context_requirements_are_satisfied_the_error_gate() {
 /// the REPORT renders the same surface, so a pasted report carries the evidence.
 #[test]
 fn the_contracts_report_is_wired_and_carries_the_targets_defines() {
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
+    let aeon = sigil_harness::test_support::aeon_dir();
     if !aeon.exists() {
         if std::env::var("SIGIL_STRICT_GATE").is_ok() {
             panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());

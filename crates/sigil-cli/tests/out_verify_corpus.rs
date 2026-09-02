@@ -34,9 +34,7 @@ fn emp_files(dir: &Path, out: &mut Vec<PathBuf>) {
 /// sibling aeon tree; under `SIGIL_STRICT_GATE` a missing reference hard-fails so
 /// these gates actually run under the standard strict invocation.
 fn corpus_report() -> Option<ContractReport> {
-    let aeon = PathBuf::from(
-        std::env::var("AEON_DIR").unwrap_or_else(|_| "/home/volence/sonic_hacks/aeon".to_string()),
-    );
+    let aeon = sigil_harness::test_support::aeon_dir();
     if !aeon.exists() {
         if std::env::var("SIGIL_STRICT_GATE").is_ok() {
             panic!("SIGIL_STRICT_GATE set but reference tree missing: {}", aeon.display());
