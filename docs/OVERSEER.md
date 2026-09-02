@@ -505,18 +505,45 @@ worth anything.
 
 **Which reference worktree is current is NOT recorded here, deliberately — ask the disk.** This
 paragraph twice carried a named worktree and a SHA, and both rotted at the next refreeze while
-reading as fact. The candidates are `~/sonic_hacks/.aeon-landing` and
-`~/sonic_hacks/.sigil-portfix-aeon`; which of them pairs with the tip changes every freeze, so
-derive it:
+reading as fact.
+
+**AND THEN IT ROTTED A THIRD TIME, IN THE FIELD IT KEPT.** The fix for the rotting SHA was to
+name the CANDIDATES instead — `.aeon-landing` and `.sigil-portfix-aeon` — which is a smaller
+coordinate but a coordinate all the same. Measured 2026-09-02: **both were gone**, while the tree
+this lane was actually using (`.sigil-ref-197-mine`, sitting at the provenance tip's own
+`aeon_rev`) appeared nowhere in this paragraph. A cold session following it got an empty answer
+from a list of two dead names. *Dropping the revision and keeping the names treated the SHA as the
+perishable part; the name was perishable on the same clock.*
+
+**So derive by PROPERTY, not by name.** A reference tree is *a worktree of aeon whose HEAD is the
+provenance tip's `aeon_rev`* — that sentence is the definition, and this finds every tree matching
+it however anyone chose to name it:
 
 ```sh
-for d in ~/sonic_hacks/.aeon-landing ~/sonic_hacks/.sigil-portfix-aeon; do
-  printf '%s %s\n' "$d" "$(git -C "$d" rev-parse --short HEAD)"
-done                                                   # then CRC32+size all four ROMs in it
+TIP=$(grep -E '^aeon_rev' crates/sigil-harness/golden/provenance.toml | tail -1 | sed 's/.*"\(.*\)"/\1/')
+MAIN=$(git -C ../aeon rev-parse --path-format=absolute --git-common-dir | xargs dirname)
+git -C ../aeon worktree list --porcelain \
+  | awk '/^worktree /{w=$2} /^HEAD /{if ($2=="'"$TIP"'") print w}' \
+  | grep -v "^$MAIN\$" | grep -v '/\.claude/worktrees/'
 ```
 
+**The two exclusions are not tidying and were found by running the command as written.** Without
+them it returns the OWNER'S LIVE CHECKOUT (which is at the tip whenever he has not moved, and is
+the one tree every rule here forbids as a reference — he authors in it, `sigil build` writes into
+it) and agent worktrees under `.claude/worktrees/`, which are somebody's in-flight development
+trees. The first draft of this block had neither exclusion and would have pointed a cold session
+straight at his tree. *A derivation is not automatically safer than a list; it just fails
+differently, and it has to be run before it is written down.*
+
+It can still return more than one, and that is correct rather than ambiguous: **the disambiguator
+is the artifact, not the name** — CRC32+size all four ROMs against the tip entry and take the tree
+that matches. A tree at the right revision whose shapes are wrong is not a reference tree (an
+in-flight one mid-rebuild will have three of four), which is why the revision alone was never
+sufficient.
+
 `~/sonic_hacks/.aeon-sigil-gates` is never a candidate — it is source-only by construction and
-deletes built ROMs, per the source-gate lane section.
+deletes built ROMs, per the source-gate lane section. It will not appear above anyway unless it
+happens to sit at the tip, which is the point of deriving rather than listing.
 
 **This is now gated, as of 2026-08-26 — and it was not the one-afternoon gate it looked
 like.** Historically no gate witnessed that `AEON_DIR` matched the provenance tip, because
