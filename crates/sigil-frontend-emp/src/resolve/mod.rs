@@ -180,6 +180,15 @@ enum ConstFold {
 /// population is `unknown name` / `unknown function`, which is what makes treating
 /// every OTHER Error as a real fault safe rather than noisy.
 ///
+/// That "only class" holds because the probe runs with the D-PP.3 label fallback
+/// OFF ([`crate::eval::eval_const_in_partial_scope`]). With the fallback ON, a
+/// miss inside a call argument becomes a `Value::Label` instead of a diagnostic,
+/// and whatever downstream check then refuses that label reports a message with
+/// no missing symbol in it — a shortfall this predicate cannot recognise, in an
+/// open-ended set of wordings that grows with every new check on a value. The
+/// fallback is off precisely so this predicate keeps facing one small, closed
+/// population.
+///
 /// Conservative in the loud direction: if either message is ever reworded this
 /// predicate stops matching and those diagnostics start surfacing, which is a
 /// visible failure, not a silent one.
@@ -207,7 +216,17 @@ fn fold_const_literal(
     defines: &[(String, i128)],
     include_root: Option<&Path>,
 ) -> ConstFold {
-    let (value, diags) = crate::eval::eval_const_with_root(def_file, name, include_root, defines);
+    // PARTIAL SCOPE: `def_file` alone, without the defining module's own `use`
+    // imports, so the D-PP.3 label fallback would be inferring a link symbol from
+    // a name that is only missing because of how this probe is scoped. Off here —
+    // see `eval_const_in_partial_scope`.
+    let (value, diags) = crate::eval::eval_const_in_partial_scope(
+        def_file,
+        name,
+        include_root,
+        defines,
+        &crate::contract::InterfaceEnv::empty(),
+    );
     let errors: Vec<Diagnostic> =
         diags.into_iter().filter(|d| d.level == Level::Error).collect();
     if !errors.is_empty() {

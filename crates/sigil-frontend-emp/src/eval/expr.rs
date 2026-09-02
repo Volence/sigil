@@ -402,7 +402,7 @@ impl<'a> Evaluator<'a> {
                     // same-named const shadows the label interpretation (D-PP.3
                     // precedence). Registers win earlier still, in `eval_call_arg`.
                     if self.label_ctx_active() {
-                        return Value::Label(name.to_string());
+                        return self.fallback_label(name.to_string(), path.span);
                     }
                     self.note_unresolved_name(name.to_string(), path.span);
                     self.error(path.span, format!("unknown name `{name}`"));
@@ -612,7 +612,7 @@ impl<'a> Evaluator<'a> {
         // form `"pitcher_plant.init"` is (both resolve through the same
         // `canonicalize_name` module-suffix rule). Confined to `label_ctx`.
         if self.label_ctx_active() {
-            return Value::Label(full);
+            return self.fallback_label(full, path.span);
         }
         self.note_unresolved_name(full.clone(), path.span);
         self.error(path.span, format!("unknown name `{full}`"));

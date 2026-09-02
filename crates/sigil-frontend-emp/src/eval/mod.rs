@@ -438,6 +438,28 @@ pub struct Evaluator<'a> {
     /// `unknown name`. A COUNTER (not a bool) so nested value positions restore
     /// correctly.
     label_ctx: u32,
+    /// This evaluation runs in a KNOWN-INCOMPLETE scope, so the D-PP.3 label
+    /// fallback is not a sound inference here and is turned off.
+    ///
+    /// The fallback reads "a name I cannot resolve, in value position, is a
+    /// deferred link symbol". That holds in a scope which really does know
+    /// everything else — a lowering pass over an ambient-prepended module. It does
+    /// NOT hold in the resolver's definition-site fold probe, which evaluates a
+    /// const against its defining FILE alone: there, the module's own `use`
+    /// imports are missing, so an imported `Enum.Variant` (or const, or fn) is
+    /// unresolvable for a reason that has nothing to do with link symbols, and
+    /// calling it a label states something false about the source.
+    ///
+    /// With this set, such a name yields [`Value::Poison`] — the evaluator's
+    /// existing "I do not know", whose whole contract (D-P2.9) is to propagate
+    /// silently and never cascade. Every downstream consumer of the value already
+    /// honours it: the argument-class check skips a `Poison` argument, `match`
+    /// returns `Poison` for a `Poison` scrutinee, arithmetic stays silent. So the
+    /// probe stops manufacturing diagnostics about its own missing names without
+    /// any consumer needing to be taught about the case — and a const holding a
+    /// `Poison` does not fold, which is the correct answer anyway: the consumer
+    /// re-evaluates the original expression in its own, complete scope.
+    partial_scope: bool,
     /// The partial CodeBuf items lowered SO FAR in the enclosing proc/asm body,
     /// snapshotted while evaluating a body-position `ensure` guard (rung 4, t40).
     /// `cycles(L1, L2)` reads this to sum the T-states of the `[L1, L2)` label
@@ -604,6 +626,7 @@ impl<'a> Evaluator<'a> {
             reg_pointee_struct: HashMap::new(),
             cpu: None,
             label_ctx: 0,
+            partial_scope: false,
             cycle_scope: None,
             imm_ctx: 0,
             imported_item_types: HashMap::new(),
@@ -648,6 +671,19 @@ impl<'a> Evaluator<'a> {
     /// label where a symbol reference is meaningful.
     pub(super) fn label_ctx_active(&self) -> bool {
         self.label_ctx > 0
+    }
+
+    /// The D-PP.3 label fallback's answer for `name`, which depends on whether
+    /// this evaluation's scope is complete — see
+    /// [`partial_scope`](Self::partial_scope). The one call site per fallback
+    /// return in [`eval_path`](Self::eval_path), so the two returns cannot drift
+    /// apart on the question.
+    pub(super) fn fallback_label(&mut self, name: String, span: Span) -> Value {
+        if self.partial_scope {
+            self.note_unresolved_name(name, span);
+            return Value::Poison;
+        }
+        Value::Label(name)
     }
 
     /// Record a name that failed to resolve to a usable value: a lookup miss
@@ -1642,11 +1678,44 @@ pub fn eval_const_with_root_and_contracts(
     defines: &[(String, i128)],
     contracts: &crate::contract::InterfaceEnv,
 ) -> (Option<Value>, Vec<Diagnostic>) {
+    eval_const_scoped(file, name, include_root, defines, contracts, false)
+}
+
+/// [`eval_const_with_root_and_contracts`] for a caller whose scope is KNOWN
+/// INCOMPLETE — the resolver's definition-site fold probe, which evaluates a
+/// const against its defining FILE alone, without the module's own `use`
+/// imports.
+///
+/// The one behavioural difference is that the D-PP.3 label fallback is off: a
+/// name this scope cannot resolve yields `Poison` rather than a link symbol,
+/// because in a scope missing the module's imports "unresolvable" does not imply
+/// "link symbol". See [`Evaluator::partial_scope`] for the whole argument.
+pub fn eval_const_in_partial_scope(
+    file: &crate::ast::File,
+    name: &str,
+    include_root: Option<&std::path::Path>,
+    defines: &[(String, i128)],
+    contracts: &crate::contract::InterfaceEnv,
+) -> (Option<Value>, Vec<Diagnostic>) {
+    eval_const_scoped(file, name, include_root, defines, contracts, true)
+}
+
+/// The shared body of the two entry points above; `partial_scope` is the only
+/// axis between them.
+fn eval_const_scoped(
+    file: &crate::ast::File,
+    name: &str,
+    include_root: Option<&std::path::Path>,
+    defines: &[(String, i128)],
+    contracts: &crate::contract::InterfaceEnv,
+    partial_scope: bool,
+) -> (Option<Value>, Vec<Diagnostic>) {
     // Run on a dedicated thread with a large stack so the native call stack has
     // headroom for [`MAX_CALL_DEPTH`] comptime frames (D-P2.16): the depth bound,
     // not a native stack overflow, is what stops runaway recursion.
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
+        ev.partial_scope = partial_scope;
         ev.seed_defines(defines);
         ev.seed_interfaces(contracts);
         if let Some(root) = include_root {
