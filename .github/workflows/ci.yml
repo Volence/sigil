@@ -13,14 +13,37 @@ jobs:
       #
       # CI checks out only this repo. Every REFERENCE-DEPENDENT test — anything
       # compiling sources out of the sibling aeon tree, plus the m1b_gate
-      # checksum/s4budget/Oracle gates — self-skips here via
-      # `sigil_harness::test_support::reference_tree`. AEON_DIR is pointed at a
-      # path that cannot exist so the skip is what CI exercises, rather than
-      # depending on the runner not happening to have the default path.
+      # checksum/s4budget/Oracle gates — is left UNMEASURED here.
+      #
+      # CI IS A DECLARED PARTIAL RUN, and `SIGIL_ALLOW_PARTIAL=1` below is how it
+      # says so. That is the `d-18` opt-in: without it, a run that resolves no
+      # reference tree STOPS rather than passing green over the rows it did not
+      # run. With it, those rows skip against a self-describing absent path and
+      # the harness prints, once, how many test binaries it left alone — a number
+      # it DERIVES from this repo's own test sources rather than one anybody typed.
+      #
+      # WHY THERE IS NO LONGER AN `AEON_DIR` SENTINEL. This step used to point
+      # AEON_DIR at `/nonexistent/aeon-not-checked-out-in-ci` to mean "no tree
+      # here". Under the SUITE_PATHS precedence a checkout variable that is SET BUT
+      # WRONG is a hard error at its own step — deliberately, because a wrong value
+      # is evidence of a wrong environment and resolving around it would measure
+      # against a tree nobody asked for. So the sentinel stopped meaning "absent"
+      # and started meaning "misconfigured", and on 2026-09-02 it turned every
+      # reference-dependent row in CI into a failure. Absence is now spelled the
+      # way the precedence spells it: the variable is not set.
+      #
+      # Unset, the resolver can reach only its own derivation (step 3) or its
+      # refusal (step 4), and `aeon_dir` refuses a step-3 derivation as a reference
+      # tree by design — a tree nobody named cannot be what a result is attributed
+      # to. So both land in the partial path, and that is true whatever the runner's
+      # filesystem happens to hold: no sibling checkout can quietly become CI's
+      # oracle. The one spelling that COULD is an explicit AEON_DIR or
+      # EMPYREAN_SUITE_ROOT, neither of which this workflow sets — and if one ever
+      # appeared, the skip count below would fall to zero and the next step fails.
       #
       # That skip set is LARGE and it is NOT self-announcing: a runtime skip
-      # returns early and the harness counts it as a PASS. Roughly 350 of ~3,700
-      # tests skip here, and every build-and-compare golden gate is among them —
+      # returns early and the harness counts it as a PASS. Roughly 400 rows skip
+      # here, and every build-and-compare golden gate is among them —
       # each `native_offcanonical_rom` anchor compare, all `native_offcanonical_full`,
       # the placement gates, `native_full_rom`, both `native_rom`, `pins_rs_is_current`,
       # `m1b_gate`, `m1c_vector_table`, and the `seam1_native_link` set.
@@ -30,6 +53,8 @@ jobs:
       # pass. The byte gate runs pre-merge locally with SIGIL_STRICT_GATE=1 in an
       # env that HAS the sibling aeon/oracle repos; under that flag the same guard
       # PANICS instead of skipping, so a green CI can never stand in for it.
+      # SIGIL_STRICT_GATE and SIGIL_ALLOW_PARTIAL describe opposite runs and the
+      # resolver refuses both at once, which is why this workflow sets only one.
       #
       # `refreeze --check` is not that gate either — it reads the committed
       # golden blobs and recomputes their CRCs, so it compares two committed files
@@ -40,7 +65,7 @@ jobs:
       # of showing up as "still green".
       - name: test
         env:
-          AEON_DIR: /nonexistent/aeon-not-checked-out-in-ci
+          SIGIL_ALLOW_PARTIAL: "1"
         run: |
           # pipefail is mandatory: without it the pipeline reports `tee`'s exit
           # status and a failing suite reads as green. That exact shape (an
@@ -71,10 +96,16 @@ jobs:
           echo "the sibling aeon checkout, which turns every skip above into a panic."
           # A count of zero means the skip mechanism itself broke (or the reporter
           # stopped matching), which would silently restore the false reassurance
-          # this step exists to remove.
+          # this step exists to remove. It is also what catches an AEON_DIR or
+          # EMPYREAN_SUITE_ROOT arriving in this workflow's environment: that is the
+          # only way CI could start measuring against a tree, and it shows up here
+          # as the skips disappearing rather than as a quietly bigger green.
           if [ "${total}" -eq 0 ]; then
             echo "ERROR: expected reference-dependent skips in CI and found none —"
-            echo "either AEON_DIR resolved to a real tree, or the skip reporting broke."
+            echo "either a reference tree was named (AEON_DIR / EMPYREAN_SUITE_ROOT),"
+            echo "or the skip reporting broke. CI is a DECLARED PARTIAL run"
+            echo "(SIGIL_ALLOW_PARTIAL=1); with a real tree named it is not, and this"
+            echo "workflow would be claiming evidence it has no way to produce."
             exit 1
           fi
 
