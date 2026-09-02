@@ -631,6 +631,26 @@ Three coupled facts:
    unreachable in production — **while still passing in the selftest doubles** (~`:805-812`).
    The tool cannot report its own narrowing.
 
+**MEASURED 2026-09-02, AFTER THE PAIRED FREEZE ENDED — and fact 3 above is INVERTED.** With the
+observer now the only net, this was worth measuring rather than reasoning about.
+
+*What is reachable in production:* cases 3 and 4 are, and today's ledger proves it — both rows
+this job has ever written are `unattributable-both-moved`. Fact 3 named exactly those two
+verdicts as the ones that become unreachable; they are the ones that actually fire. **What is
+unreachable is the QUIET-bearing half, cases 1 and 2** — the only verdicts that advance N. So
+the narrowing is real and it is the opposite way round: the job cannot reach the states that
+would let it ever conclude anything.
+
+*And the cause is not code.* Exercised through the real CLI against a stand-in reader holding an
+entry at the job's own coordinates: true CRCs give `QUIET` and exit **0**; one nibble of injected
+drift gives `DRIFT` and exit **1**, flagging `drift-same-pair` on the perturbed shape while the
+untouched shape stays `quiet` in the same run. The reporting path works, discriminates per shape,
+and returns the contract's codes. **The blind spot is entirely the record's emptiness** — two
+hand-typed entries at coordinates the job never asks about — which is what the append cadence now
+required of the aeon lane closes. `drift_report.py selftest` already gates the state machine and
+passes all four cases, so no new gate is warranted here; what was missing was an entry, not a
+check.
+
 This is the same class as H-5 and it lands on the mechanism that is supposed to *replace* what
 H-1c loses. Combined with H-3 (the timer is not installed at all), the compensating control for
 step 1 is currently: not running, and — if it were — pointed at a record that can hold one row.
