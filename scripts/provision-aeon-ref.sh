@@ -114,8 +114,29 @@ fi
 
 # 2. The worktree itself. NEVER use ../aeon's live tree: it is a peer's working
 #    directory and may be mid-edit or deliberately behind its own remote.
+#    AN EXISTING TREE IS NOT A TREE AT $REV. "Leaving it alone" checked that the
+#    directory existed and nothing else, so every run after the first measured whatever
+#    revision the tree was first created at while the CALLER recorded $REV as the
+#    revision measured. The reachability check above ran against $REV and passed —
+#    on a revision the run then did not use, which is what made it look right.
+#    Observed 2026-09-02: the drift ledger's first record named aeon_rev 73b07a4f
+#    while this tree sat at ddaef90c, 123 commits behind. Had the build succeeded,
+#    a real drift observation would have been filed under a revision it was never
+#    taken at — the one falsehood this instrument exists to not produce.
 if [ -d "$W" ]; then
-  echo "==> worktree exists, leaving it alone"
+  have=$(git -C "$W" rev-parse HEAD 2>/dev/null || true)
+  want=$(git -C "$AEON_REPO" rev-parse "$REV")
+  if [ "$have" = "$want" ]; then
+    echo "==> worktree exists at the requested revision, leaving it alone"
+  elif [ -n "$(git -C "$W" status --porcelain 2>/dev/null)" ]; then
+    echo "ERROR: $W is at ${have:-an unreadable HEAD}, not $want, and has uncommitted" >&2
+    echo "       changes. Refusing to move it: a measurement here would be filed under" >&2
+    echo "       a revision it was not taken at. Inspect it, then remove it or commit." >&2
+    exit 1
+  else
+    echo "==> worktree is at ${have:-unknown}, re-pointing it to $want"
+    git -C "$W" checkout --force --detach "$want"
+  fi
 else
   git -C "$AEON_REPO" worktree add --detach "$W" "$REV"
 fi
@@ -187,10 +208,23 @@ mkdir -p "$W/engine/sound/generated"
 #    fault — the goldens describe different source — so the CRCs are printed as data
 #    and nothing is asserted. Which of the two applies is derived from $REV above.
 echo "==> building both shapes to emit the listings (and to control the ROMs)"
-( cd "$W" && SIGIL_BUILD="$SIGIL_BIN" \
-    SIGIL_EMIT="$REF_TARGET/release/emit_sound_blob" NO_LINT=1 ./build.sh >/dev/null 2>&1 )
-( cd "$W" && DEBUG=1 SIGIL_BUILD="$SIGIL_BIN" \
-    SIGIL_EMIT="$REF_TARGET/release/emit_sound_blob" NO_LINT=1 ./build.sh >/dev/null 2>&1 )
+# The build's output is KEPT. `>/dev/null 2>&1` under `set -e` meant a failed build
+# produced an exit code and no evidence whatsoever: the caller reported "provisioning
+# exited 1" and the reason was gone. Observed 2026-09-02 — the reason turned out to be
+# a stale tree failing a poison whose wording had moved, and recovering it took a
+# by-hand rebuild that this redirection existed to make necessary. Suppression does not
+# hide an error, it destroys the artifact that would have explained it.
+for shape_env in "" "DEBUG=1"; do
+  build_log="$W/.provision-build${shape_env:+-debug}.log"
+  if ! ( cd "$W" && env $shape_env SIGIL_BUILD="$SIGIL_BIN" \
+        SIGIL_EMIT="$REF_TARGET/release/emit_sound_blob" NO_LINT=1 ./build.sh ) \
+        > "$build_log" 2>&1; then
+    echo "ERROR: ./build.sh ${shape_env:-plain} failed in $W; its last 40 lines:" >&2
+    tail -40 "$build_log" >&2
+    echo "(full output: $build_log)" >&2
+    exit 1
+  fi
+done
 for l in s4.lst s4.debug.lst; do
   [ -s "$W/$l" ] || { echo "ERROR: $l was not produced; port gates will fail misleadingly" >&2; exit 1; }
 done
