@@ -249,18 +249,25 @@ data D: u16 = wrap(m: Mask.Nope)
 
 /// Row 9 — the fold probe's `Failed` net must keep catching a REAL fault in a
 /// const's own definition, in the very same const that also mints a fallback
-/// label. Silencing the probe wholesale whenever it minted one would lose this.
+/// label. Silencing the probe wholesale whenever it minted one — the coarse
+/// alternative to this parcel's fix — would lose exactly this.
+///
+/// `NEVER_READ` is the load-bearing detail. The glob import makes the resolver
+/// FOLD it (so the probe runs), and nothing demands its value, so no consumer
+/// ever evaluates it a second time: the probe is the only thing that can report
+/// its fault, and the row goes quiet the moment the probe is silenced.
 #[test]
 fn a_real_definition_fault_is_still_reported_beside_a_fallback_label() {
     let b = "\
 module b
 use a.*
 pub comptime fn label_word(l: Label) -> int { return $0007 }
-pub const K: u16 = label_word(Handler) + (1 / 0)
+pub const K: u16 = 0
+pub const NEVER_READ = label_word(Handler) + (1 / 0)
 ";
     let (_, errs) = entry_word(&[("a.emp", HOME), ("b.emp", b), ("c.emp", CONSUMER)]);
     assert!(
-        errs.iter().any(|e| e.contains("divide by zero") || e.contains("division by zero")),
+        errs.iter().any(|e| e.contains("division by zero")),
         "the const's own fault must still be reported; errors were {errs:?}"
     );
 }
