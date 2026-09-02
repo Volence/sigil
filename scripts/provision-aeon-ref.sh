@@ -19,9 +19,35 @@
 set -euo pipefail
 
 SIGIL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-AEON_REPO="${AEON_REPO:-$(cd "$SIGIL_ROOT/../aeon" && pwd)}"
+
+# ── THE AEON REPOSITORY, AND WHY `$SIGIL_ROOT/../aeon` WAS WRONG ─────────────────────
+# SIGIL_ROOT is this script's own directory's parent, which is correct for the sigil
+# checkout and NOT correct as a base for a sibling: run from a linked worktree it is
+# `<sigil>/.claude/worktrees/<agent>`, so `../aeon` names
+# `<sigil>/.claude/worktrees/aeon`, which does not exist. Every sigil agent runs in a
+# linked worktree, so that spelling failed for the majority of its callers — measured
+# here, not supposed: this parcel's own first provisioning run died on it.
+#
+# `git rev-parse --git-common-dir` answers with the MAIN checkout's `.git` from a linked
+# worktree and from the main checkout alike, which is the fact a sibling derivation
+# needs; `scripts/lib/suite_paths.sh` is the one implementation, and it accepts an
+# explicit AEON_DIR ahead of any derivation.
+#
+# AEON_REPO IS KEPT as this script's spelling of step 1 — the drift lane passes it, and
+# contract/SUITE_PATHS.md lets an alias live during the transition provided the ratified
+# name is documented. It is fed into the include so a set-but-wrong AEON_REPO is a hard
+# error here exactly as a set-but-wrong AEON_DIR is everywhere else, rather than a `cd`
+# failure whose message names no variable.
+# shellcheck source=lib/suite_paths.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/suite_paths.sh"
+AEON_DIR="${AEON_REPO:-${AEON_DIR:-}}"
+AEON_REPO="$(suite_resolve_checkout aeon AEON_DIR)"
+
 GOLDEN="$SIGIL_ROOT/crates/sigil-harness/golden"
-W="${1:-$SIGIL_ROOT/../.aeon-ref}"
+# The reference tree this script CREATES. Not a checkout yet, so it hangs off the
+# resolved suite root rather than off SIGIL_ROOT, which lies from a worktree in exactly
+# the same way `../aeon` did.
+W="${1:-$(suite_resolve_root)/.aeon-ref}"
 
 pinned_rev() {
   python3 - "$GOLDEN/provenance.toml" <<'PY'
