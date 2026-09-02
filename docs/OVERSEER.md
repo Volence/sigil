@@ -1092,6 +1092,15 @@ ruling. Each row's age prints on every lane run.
   invocation, by design, and **somebody obeying the "ad-hoc" wording perfectly still relinks,
   because they are not running an ad-hoc command.** A rule scoped to the careless case does
   not bind the ritual, and the ritual is the thing that runs on a schedule.
+  **AND THE RELINK DESTROYS EVIDENCE, NOT JUST STATE: a freeze's assembler can cease to
+  exist.** `target/release/sigil` is a single path, so a relink OVERWRITES IN PLACE — the
+  binary that produced a frozen entry's goldens is simply gone, and the entry then names an
+  assembler nobody can re-instantiate by inspection. Instance: chain 198's goldens were built
+  by sigil `079cec97` (md5 `956da96a78171ff99aa6fef229d59812`, the aeon lane's measurement),
+  overwritten the same afternoon; recoverable only by rebuilding at that revision. **A
+  provenance record can therefore go un-reproducible without anything editing it**, which is
+  the one failure mode a frozen artifact is supposed to be immune to. The class belongs here
+  rather than in the ledger, because a ledger reader meets it one entry too late.
   **Its second half is worse than the relink and is the reason to read this bullet twice: a
   tool that resolves the tree from ITS OWN LOCATION tests whatever is at that path, not the
   thing it was invoked about.** That pre-flight has never tested the tree it gates —
