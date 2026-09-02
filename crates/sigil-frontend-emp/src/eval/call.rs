@@ -466,24 +466,13 @@ impl<'a> Evaluator<'a> {
         // Label class (D-PP.3), symmetric to the register check.
         let param_is_label = param_type_is_label(pty);
         match (matches!(v, Value::Label(_)), param_is_label) {
-            (true, false) => {
-                self.error(
-                    span,
-                    format!(
-                        "a label is not a valid `{}` argument — only a `Label` parameter accepts a label",
-                        type_display(pty)
-                    ),
-                );
-                // The refusal is right about what it was handed, and says so
-                // whatever this scope can see. But a label that the D-PP.3
-                // fallback minted is a label only BECAUSE the name resolved to
-                // nothing here — an imported `Enum.Variant` in a scope missing
-                // the enum takes exactly this shape — and the message names the
-                // parameter's type, never the missing symbol, so no reader
-                // downstream can tell the two apart from the text. Record which
-                // it was, at the site that knows.
-                self.note_scope_attributable(v, span);
-            }
+            (true, false) => self.error(
+                span,
+                format!(
+                    "a label is not a valid `{}` argument — only a `Label` parameter accepts a label",
+                    type_display(pty)
+                ),
+            ),
             (false, true) => self.error(
                 span,
                 format!("expected a label (a `Label` argument), got {}", v.type_name()),

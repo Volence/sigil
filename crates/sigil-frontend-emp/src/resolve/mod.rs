@@ -175,26 +175,25 @@ enum ConstFold {
 /// file cannot see — a `use`d sibling const, a comptime fn another module owns, an
 /// interface member (the probe seeds an empty [`crate::contract::InterfaceEnv`]) —
 /// misses. That miss is expected and carries no information: the consumer resolves
-/// the same expression in its own, wider scope.
+/// the same expression in its own, wider scope. It is also the ONLY class of Error
+/// the shipped corpus's fold probes raise, across every shipped shape — the whole
+/// population is `unknown name` / `unknown function`, which is what makes treating
+/// every OTHER Error as a real fault safe rather than noisy.
 ///
-/// A miss that reaches the author as an `unknown name` / `unknown function` says
-/// so in its own text, and this predicate reads it there. A miss inside a CALL
-/// ARGUMENT does not: the D-PP.3 label fallback answers it with a
-/// `Value::Label` rather than a diagnostic, and the parameter-class check then
-/// refuses that label naming the PARAMETER's type — a message with no missing
-/// symbol in it to match on. Those diagnostics are identified by SPAN instead,
-/// at the evaluator site that minted the label
-/// ([`crate::eval::eval_const_probe`]'s third value), so no wording has to
-/// carry the distinction. This predicate covers the textual half; `spans` the
-/// other.
+/// That "only class" holds because the probe runs with the D-PP.3 label fallback
+/// OFF ([`crate::eval::eval_const_in_partial_scope`]). With the fallback ON, a
+/// miss inside a call argument becomes a `Value::Label` instead of a diagnostic,
+/// and whatever downstream check then refuses that label reports a message with
+/// no missing symbol in it — a shortfall this predicate cannot recognise, in an
+/// open-ended set of wordings that grows with every new check on a value. The
+/// fallback is off precisely so this predicate keeps facing one small, closed
+/// population.
 ///
 /// Conservative in the loud direction: if either message is ever reworded this
 /// predicate stops matching and those diagnostics start surfacing, which is a
 /// visible failure, not a silent one.
-fn is_probe_scope_shortfall(d: &Diagnostic, spans: &[sigil_span::Span]) -> bool {
-    d.message.starts_with("unknown name `")
-        || d.message.starts_with("unknown function `")
-        || spans.contains(&d.primary)
+fn is_probe_scope_shortfall(d: &Diagnostic) -> bool {
+    d.message.starts_with("unknown name `") || d.message.starts_with("unknown function `")
 }
 
 /// Resolve the `pub const` named `name` to an `i64` literal in its DEFINING file's
@@ -217,7 +216,11 @@ fn fold_const_literal(
     defines: &[(String, i128)],
     include_root: Option<&Path>,
 ) -> ConstFold {
-    let (value, diags, shortfall_spans) = crate::eval::eval_const_probe(
+    // PARTIAL SCOPE: `def_file` alone, without the defining module's own `use`
+    // imports, so the D-PP.3 label fallback would be inferring a link symbol from
+    // a name that is only missing because of how this probe is scoped. Off here —
+    // see `eval_const_in_partial_scope`.
+    let (value, diags) = crate::eval::eval_const_in_partial_scope(
         def_file,
         name,
         include_root,
@@ -230,10 +233,8 @@ fn fold_const_literal(
         // An errored evaluation NEVER folds, whatever it left in `value` — a
         // poisoned partial result is not a literal. Which kind of error it was
         // decides only whether the author hears about it.
-        let faults: Vec<Diagnostic> = errors
-            .into_iter()
-            .filter(|d| !is_probe_scope_shortfall(d, &shortfall_spans))
-            .collect();
+        let faults: Vec<Diagnostic> =
+            errors.into_iter().filter(|d| !is_probe_scope_shortfall(d)).collect();
         return if faults.is_empty() { ConstFold::NotLiteral } else { ConstFold::Failed(faults) };
     }
     match value.and_then(|v| v.as_stored_int()).and_then(|n| i64::try_from(n).ok()) {

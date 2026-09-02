@@ -438,29 +438,28 @@ pub struct Evaluator<'a> {
     /// `unknown name`. A COUNTER (not a bool) so nested value positions restore
     /// correctly.
     label_ctx: u32,
-    /// Every name the D-PP.3 label fallback minted a
-    /// [`Value::Label`](crate::value::Value::Label) for — a name this evaluation
-    /// could not resolve any other way, kept because it MIGHT be a link symbol.
+    /// This evaluation runs in a KNOWN-INCOMPLETE scope, so the D-PP.3 label
+    /// fallback is not a sound inference here and is turned off.
     ///
-    /// The fallback is the one place the evaluator answers a lookup miss with a
-    /// value instead of a diagnostic, so it is the one place the miss stops being
-    /// visible downstream. Recording the name lets a later refusal say WHY the
-    /// value was a label: because the name was unknown here, not because the
-    /// author wrote a label. See [`scope_attributable`](Self::scope_attributable).
-    fallback_labels: std::collections::HashSet<String>,
-    /// Spans of Error diagnostics this evaluation raised ABOUT a value that the
-    /// D-PP.3 fallback minted (a name in [`fallback_labels`](Self::fallback_labels)).
+    /// The fallback reads "a name I cannot resolve, in value position, is a
+    /// deferred link symbol". That holds in a scope which really does know
+    /// everything else — a lowering pass over an ambient-prepended module. It does
+    /// NOT hold in the resolver's definition-site fold probe, which evaluates a
+    /// const against its defining FILE alone: there, the module's own `use`
+    /// imports are missing, so an imported `Enum.Variant` (or const, or fn) is
+    /// unresolvable for a reason that has nothing to do with link symbols, and
+    /// calling it a label states something false about the source.
     ///
-    /// Such an error says nothing about the source: it says this evaluator's scope
-    /// was too narrow to resolve the name, and a wider scope would not have raised
-    /// it. That distinction is invisible in the message — a label-class refusal
-    /// names the PARAMETER's type, never the missing symbol — so it is recorded
-    /// here, at the site that knows, rather than pattern-matched out of the text
-    /// later. Read only by [`resolve::fold_const_literal`], whose whole job is to
-    /// separate its own scope shortfalls from real faults in a const's definition.
-    ///
-    /// [`resolve::fold_const_literal`]: crate::resolve
-    scope_attributable: Vec<Span>,
+    /// With this set, such a name yields [`Value::Poison`] — the evaluator's
+    /// existing "I do not know", whose whole contract (D-P2.9) is to propagate
+    /// silently and never cascade. Every downstream consumer of the value already
+    /// honours it: the argument-class check skips a `Poison` argument, `match`
+    /// returns `Poison` for a `Poison` scrutinee, arithmetic stays silent. So the
+    /// probe stops manufacturing diagnostics about its own missing names without
+    /// any consumer needing to be taught about the case — and a const holding a
+    /// `Poison` does not fold, which is the correct answer anyway: the consumer
+    /// re-evaluates the original expression in its own, complete scope.
+    partial_scope: bool,
     /// The partial CodeBuf items lowered SO FAR in the enclosing proc/asm body,
     /// snapshotted while evaluating a body-position `ensure` guard (rung 4, t40).
     /// `cycles(L1, L2)` reads this to sum the T-states of the `[L1, L2)` label
@@ -627,8 +626,7 @@ impl<'a> Evaluator<'a> {
             reg_pointee_struct: HashMap::new(),
             cpu: None,
             label_ctx: 0,
-            fallback_labels: std::collections::HashSet::new(),
-            scope_attributable: Vec::new(),
+            partial_scope: false,
             cycle_scope: None,
             imm_ctx: 0,
             imported_item_types: HashMap::new(),
@@ -675,28 +673,17 @@ impl<'a> Evaluator<'a> {
         self.label_ctx > 0
     }
 
-    /// Mint a D-PP.3 fallback label for `name` and record that it WAS a fallback
-    /// — the name resolved to nothing this evaluator knows, and became a label
-    /// only because a deferred link symbol is the remaining possibility. The one
-    /// call site per fallback return in [`eval_path`](Self::eval_path), so the
-    /// record cannot drift from the minting.
-    pub(super) fn fallback_label(&mut self, name: String) -> Value {
-        self.fallback_labels.insert(name.clone());
-        Value::Label(name)
-    }
-
-    /// Record that the Error just raised at `span` was raised ABOUT a value the
-    /// D-PP.3 fallback minted, when `v` is such a value — so the diagnostic
-    /// carries this evaluator's scope shortfall, not a fault in the source.
-    ///
-    /// Call it beside the `self.error(..)` that refused the value, with the SAME
-    /// span, so the two cannot disagree about which diagnostic is meant.
-    pub(super) fn note_scope_attributable(&mut self, v: &Value, span: Span) {
-        if let Value::Label(name) = v {
-            if self.fallback_labels.contains(name) {
-                self.scope_attributable.push(span);
-            }
+    /// The D-PP.3 label fallback's answer for `name`, which depends on whether
+    /// this evaluation's scope is complete — see
+    /// [`partial_scope`](Self::partial_scope). The one call site per fallback
+    /// return in [`eval_path`](Self::eval_path), so the two returns cannot drift
+    /// apart on the question.
+    pub(super) fn fallback_label(&mut self, name: String, span: Span) -> Value {
+        if self.partial_scope {
+            self.note_unresolved_name(name, span);
+            return Value::Poison;
         }
+        Value::Label(name)
     }
 
     /// Record a name that failed to resolve to a usable value: a lookup miss
@@ -1691,39 +1678,51 @@ pub fn eval_const_with_root_and_contracts(
     defines: &[(String, i128)],
     contracts: &crate::contract::InterfaceEnv,
 ) -> (Option<Value>, Vec<Diagnostic>) {
-    let (v, diags, _) = eval_const_probe(file, name, include_root, defines, contracts);
-    (v, diags)
+    eval_const_scoped(file, name, include_root, defines, contracts, false)
 }
 
-/// [`eval_const_with_root_and_contracts`] plus the spans of the Error
-/// diagnostics this evaluation raised about a value the D-PP.3 label fallback
-/// minted — see [`Evaluator::scope_attributable`].
+/// [`eval_const_with_root_and_contracts`] for a caller whose scope is KNOWN
+/// INCOMPLETE — the resolver's definition-site fold probe, which evaluates a
+/// const against its defining FILE alone, without the module's own `use`
+/// imports.
 ///
-/// For a caller evaluating a const in a KNOWN-NARROW scope, which the resolver's
-/// definition-site fold probe is: those diagnostics are its own shortfall, not
-/// something a reader of the source could act on, and the message text does not
-/// say so. Everything else is identical to
-/// [`eval_const_with_root_and_contracts`], which is this function ignoring the
-/// third value.
-pub fn eval_const_probe(
+/// The one behavioural difference is that the D-PP.3 label fallback is off: a
+/// name this scope cannot resolve yields `Poison` rather than a link symbol,
+/// because in a scope missing the module's imports "unresolvable" does not imply
+/// "link symbol". See [`Evaluator::partial_scope`] for the whole argument.
+pub fn eval_const_in_partial_scope(
     file: &crate::ast::File,
     name: &str,
     include_root: Option<&std::path::Path>,
     defines: &[(String, i128)],
     contracts: &crate::contract::InterfaceEnv,
-) -> (Option<Value>, Vec<Diagnostic>, Vec<Span>) {
+) -> (Option<Value>, Vec<Diagnostic>) {
+    eval_const_scoped(file, name, include_root, defines, contracts, true)
+}
+
+/// The shared body of the two entry points above; `partial_scope` is the only
+/// axis between them.
+fn eval_const_scoped(
+    file: &crate::ast::File,
+    name: &str,
+    include_root: Option<&std::path::Path>,
+    defines: &[(String, i128)],
+    contracts: &crate::contract::InterfaceEnv,
+    partial_scope: bool,
+) -> (Option<Value>, Vec<Diagnostic>) {
     // Run on a dedicated thread with a large stack so the native call stack has
     // headroom for [`MAX_CALL_DEPTH`] comptime frames (D-P2.16): the depth bound,
     // not a native stack overflow, is what stops runaway recursion.
     run_on_eval_stack(|| {
         let mut ev = Evaluator::with_file(file);
+        ev.partial_scope = partial_scope;
         ev.seed_defines(defines);
         ev.seed_interfaces(contracts);
         if let Some(root) = include_root {
             ev.set_include_root(root.to_path_buf());
         }
         if let Some(v) = ev.defines.get(name).copied() {
-            return (Some(Value::Int(v)), ev.diags, ev.scope_attributable);
+            return (Some(Value::Int(v)), ev.diags);
         }
         if !ev.consts.contains_key(name) && !ev.equs.contains_key(name) {
             // Message unchanged for the pure-const-absent case (existing
@@ -1731,10 +1730,10 @@ pub fn eval_const_probe(
             // into the same lookup rather than earning a separate entry point,
             // since it resolves through the identical `resolve_const` path.
             ev.error(file.module.span, format!("no const named `{name}`"));
-            return (None, ev.diags, ev.scope_attributable);
+            return (None, ev.diags);
         }
         let value = ev.resolve_const(name, file.module.span);
-        (Some(value), ev.diags, ev.scope_attributable)
+        (Some(value), ev.diags)
     })
 }
 
