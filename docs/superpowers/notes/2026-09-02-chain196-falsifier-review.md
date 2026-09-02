@@ -173,6 +173,38 @@ So the retired assertion survives as the new test's documented falsifier, which 
 right shape for a guard whose meaning a parcel reverses. The `[layout.undeclared-alignment]`
 diagnostic is still asserted in three places on the branch, the same as on master.
 
+## Merge readiness, measured rather than assumed
+
+Mapped before the engine lane's attest landed, so the merge is a decision and not a
+discovery. All four previews are `git merge-tree --write-tree` against current tips.
+
+| merge | result |
+|---|---|
+| master + `parcel/alignment-flip-195` | ONE conflict: `campaign-gap-ledger.md` |
+| master + `parcel/scripts-name-their-tree` | clean |
+| master + `parcel/suite-paths-resolver` | clean |
+| the two agent branches against each other | clean *(at current tips; the resolver agent is still committing, so re-check)* |
+
+The single conflict is append-versus-append on the ledger's tail: master's two comptime
+rows against the parcel's alignment-flip rows, both landing after the same base tail.
+The resolution is to keep both blocks; there is nothing to reconcile.
+
+**Site 4 needs no hand edit, and the reason is worth stating because I was carrying it as
+an open task.** The handover said the site-4 values live on `trial/alignment-flip-freeze-195`
+and that the merge would need them asserted against the engine lane's regenerated pins.
+Measured: `parcel/alignment-flip-195` touches NEITHER `crates/sigil-harness/src/pins.rs`
+NOR `crates/sigil-harness/tests/repin_pins.rs` — both are byte-identical to the merge base
+`036800fd`. `land/alignment-flip-196` carries the trial's 13 post-flip assertion values and
+a regenerated `pins.rs` (272 lines). So a merge of the parcel onto a post-flip master takes
+master's side for both files by construction: site 4 asserts the engine lane's pins with no
+edit and no conflict. The check after the merge is therefore a confirmation, not a repair.
+
+Two path corrections found while banking that check, both in this lane's own notes rather
+than in the code: `repin_pins.rs` is `crates/sigil-harness/tests/repin_pins.rs`, not under
+`src/`; and `mixed_dac_rom` is an identifier appearing across `repin.toml`, `pins.rs`,
+`seam2.rs` and four `sigil-cli` tests — there is no file of that name. A note that names a
+path is a claim about the tree, and these two had aged.
+
 ## A ledger row this raises on the sigil side
 
 The aeon lane observed that the pre-flip binary did not REFUSE the `at = 0x3F0` hole
