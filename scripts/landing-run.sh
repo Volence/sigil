@@ -100,13 +100,16 @@
 #   meets outside this wrapper names it, and a landing wrapper that never mentioned it
 #   would send them looking for a flag this script does not have.
 #
-#   A LANDING RUN NEVER TAKES IT. `SIGIL_ALLOW_PARTIAL` is cleared in the command span
-#   below, so an operator who exported it for an earlier bare run cannot carry it into a
-#   landing. The two do not compose: this script resolves a tree and passes it explicitly,
-#   so the suite's refusal is unreachable here anyway — clearing it makes that a fact about
-#   the environment the child gets rather than a fact about the path taken to build it.
-#   `--scoped` is NOT that opt-in and does not set it: a scoped run still requires a real
-#   reference tree, and only relaxes which of its built ROMs must be present.
+#   A LANDING RUN NEVER TAKES IT. `SIGIL_ALLOW_PARTIAL` is REMOVED from the child's
+#   environment in the command span below (`env -u`, not an empty assignment: the child
+#   then does not carry the variable at all, so this does not depend on how a consumer
+#   reads an empty value). An operator who exported it for an earlier bare run cannot
+#   carry it into a landing. The two do not compose: this script resolves a tree and
+#   passes it explicitly, so the suite's refusal is unreachable here anyway — removing the
+#   variable makes that a fact about the environment the child gets rather than a fact
+#   about the path taken to build it. `--scoped` is NOT that opt-in and does not set it: a
+#   scoped run still requires a real reference tree, and only relaxes which of its built
+#   ROMs must be present.
 #
 # EXIT CODES
 #   0  the suite ran, passed, and reconciled against the stated baseline
@@ -398,8 +401,8 @@ CARGO_ARGS+=(-- --nocapture)
     # assumed: the log has to be answerable about whether the reference-dependent rows
     # were measured, and "the variable was not set in my shell" is not something a
     # later reader of this file can check.
-    echo "# allow-partial  cleared for the child (was: ${SIGIL_ALLOW_PARTIAL:-<unset>})"
-    echo "# command        SIGIL_STRICT_GATE=1 SIGIL_ALLOW_PARTIAL= cargo ${CARGO_ARGS[*]}"
+    echo "# allow-partial  removed from the child (was: ${SIGIL_ALLOW_PARTIAL:-<unset>})"
+    echo "# command        SIGIL_STRICT_GATE=1 env -u SIGIL_ALLOW_PARTIAL cargo ${CARGO_ARGS[*]}"
     echo
 } > "$LOG" || die "cannot stamp the log $LOG"
 
@@ -412,10 +415,9 @@ say "(tail it: tail -f $LOG)"
 SIGIL_STRICT_GATE=1 \
 CARGO_TARGET_DIR="$TARGET" \
 AEON_DIR="$AEON" \
-SIGIL_ALLOW_PARTIAL= \
 SIGIL_BUILD="$SIGIL_BUILD_RESOLVED" \
 SIGIL_EMIT="$SIGIL_EMIT_RESOLVED" \
-    cargo "${CARGO_ARGS[@]}" 2>&1 | tee -a "$LOG"
+    env -u SIGIL_ALLOW_PARTIAL cargo "${CARGO_ARGS[@]}" 2>&1 | tee -a "$LOG"
 # PIPESTATUS[0], never `$?`. With `tee` in the pipeline `$?` is tee's status, and a
 # wrapper reporting a trailing command's code as the run's verdict is the exact defect
 # this line exists to close.
