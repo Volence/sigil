@@ -48,15 +48,43 @@ use sigil_harness::test_support::{
 /// Selects the child body. Absent, this binary is the parent.
 const CHILD_VAR: &str = "SIGIL_SUITE_PATHS_CHILD";
 
-/// A directory this process created that no concurrent run can collide with.
-fn scratch(tag: &str) -> PathBuf {
+/// A directory this process created that no concurrent run can collide with, REMOVED AFTER
+/// — including on a panic, which is the case that matters.
+///
+/// `contract/SUITE_PATHS.md` asks the step-3 bed's temporary worktree to be removed after,
+/// and the same discipline is owed by every fixture here. Measured rather than assumed: an
+/// earlier version of this file swept its directories with a `remove_dir_all` at the end of
+/// the test, which a failing assertion never reaches — 68 directories survived this
+/// parcel's own red-first runs, two of them beds carrying a git repository. A `Drop` runs on
+/// unwind, so the sweep happens on the path where it was previously skipped.
+///
+/// Nothing is lost by removing a bed on failure: every assertion here quotes the paths it is
+/// about into its own message, so the evidence is in the panic text and not on disk.
+struct Scratch {
+    path: PathBuf,
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+impl Scratch {
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+fn scratch(tag: &str) -> Scratch {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock is after the epoch")
         .as_nanos();
-    let p = std::env::temp_dir().join(format!("sigil-suite-paths-{tag}-{}-{nanos}", std::process::id()));
-    std::fs::create_dir_all(&p).expect("create the scratch directory");
-    p
+    let path =
+        std::env::temp_dir().join(format!("sigil-suite-paths-{tag}-{}-{nanos}", std::process::id()));
+    std::fs::create_dir_all(&path).expect("create the scratch directory");
+    Scratch { path }
 }
 
 /// The suite root found WITHOUT the resolver's mechanism: a marker walk up from this
@@ -167,10 +195,10 @@ fn err_case(mode: &'static str, env: Vec<(&'static str, Option<String>)>) -> Str
 
 /// A directory that IS a suite root by the marker rule, built here so no assertion in
 /// this file depends on any real checkout's contents.
-fn fake_suite_root(tag: &str) -> PathBuf {
+fn fake_suite_root(tag: &str) -> Scratch {
     let root = scratch(tag);
     for m in SUITE_ROOT_MARKERS {
-        std::fs::create_dir_all(root.join(m)).expect("create a marker directory");
+        std::fs::create_dir_all(root.path().join(m)).expect("create a marker directory");
     }
     root
 }
@@ -185,8 +213,10 @@ fn the_resolver_follows_the_contract_precedence() {
     let s = |p: &Path| Some(p.display().to_string());
 
     // ── STEP 1: the explicit checkout variable wins, ahead of a valid suite root.
-    let named = scratch("named");
-    let root_a = fake_suite_root("root-a");
+    let named_dir = scratch("named");
+    let named = named_dir.path().to_path_buf();
+    let root_a_dir = fake_suite_root("root-a");
+    let root_a = root_a_dir.path().to_path_buf();
     let (step, path) = ok_case(
         "resolve",
         vec![(AEON_DIR_VAR, s(&named)), (SUITE_ROOT_VAR, s(&root_a))],
@@ -216,7 +246,8 @@ fn the_resolver_follows_the_contract_precedence() {
     );
 
     // ── STEP 2: the suite root answers when the checkout variable does not.
-    let root_b = fake_suite_root("root-b");
+    let root_b_dir = fake_suite_root("root-b");
+    let root_b = root_b_dir.path().to_path_buf();
     let (step, path) = ok_case("resolve", vec![(SUITE_ROOT_VAR, s(&root_b))]);
     assert_eq!(step, 2, "with AEON_DIR unset and a valid suite root, step 2 must answer");
     assert_eq!(
@@ -227,7 +258,8 @@ fn the_resolver_follows_the_contract_precedence() {
 
     // ── STEP 2 SET BUT WRONG: a directory that is not a suite root is a hard error, and
     // must not fall through to the derivation — which on this box WOULD have answered.
-    let not_a_root = scratch("not-a-root");
+    let not_a_root_dir = scratch("not-a-root");
+    let not_a_root = not_a_root_dir.path().to_path_buf();
     let err = err_case("resolve", vec![(SUITE_ROOT_VAR, s(&not_a_root))]);
     assert!(
         err.contains(SUITE_ROOT_VAR) && err.contains(&not_a_root.display().to_string()),
@@ -335,7 +367,7 @@ fn the_step_3_derivation_is_proven_from_a_linked_worktree() {
     }
     let bed = scratch("worktree-bed");
 
-    let suite = bed.join("suite");
+    let suite = bed.path().join("suite");
     let repo = suite.join("repo");
     for d in [&suite.join(AEON_REPO_DIR), &suite.join("empyrean"), &repo] {
         std::fs::create_dir_all(d).expect("create the bed");
@@ -371,9 +403,12 @@ fn the_step_3_derivation_is_proven_from_a_linked_worktree() {
         std::fs::write(repo.join("seed"), b"bed\n").map_err(|e| format!("write seed: {e}"))?;
         git(&["add", "seed"], &repo)?;
         git(&["commit", "-q", "-m", "bed"], &repo)?;
-        // NESTED, not beside: see the doc comment. `nested/` itself is created by git.
+        // NESTED, not beside: see the doc comment. `--detach` so the bed leaves no branch
+        // behind either — the same shape the concurrent scripts lane planted for its own
+        // resolver, matched rather than reinvented.
         let wt = repo.join("nested").join("wt");
-        git(&["worktree", "add", "-q", "-b", "bed-wt", "nested/wt"], &repo)?;
+        std::fs::create_dir_all(repo.join("nested")).map_err(|e| format!("mkdir nested: {e}"))?;
+        git(&["worktree", "add", "-q", "--detach", "nested/wt"], &repo)?;
         Ok(wt)
     })();
 
@@ -387,8 +422,7 @@ fn the_step_3_derivation_is_proven_from_a_linked_worktree() {
                  what is missing is the one assertion that separates `--git-common-dir` from \
                  `--show-toplevel`."
             );
-            let _ = std::fs::remove_dir_all(&bed);
-            return;
+            return; // `Scratch`'s Drop sweeps the bed, worktree registration and all
         }
     };
 
@@ -449,7 +483,65 @@ fn the_step_3_derivation_is_proven_from_a_linked_worktree() {
         ),
     }
 
-    // `git worktree add` registers the worktree in the repo's admin dir; removing the tree
-    // alone leaves a stale entry, so the whole bed goes.
-    let _ = std::fs::remove_dir_all(&bed);
+    ambient_worktree_check(&walked_suite_root());
+}
+
+/// THE SECONDARY CHECK: the same property against the REAL DEPLOYED ANCHOR.
+///
+/// The bed above is the row that must always run and always mean something — it is
+/// invariant to where `cargo test` was invoked from. This one is the opposite trade and is
+/// kept for what only it can reach: `derived_suite_root()`'s production anchor,
+/// `env!("CARGO_MANIFEST_DIR")`, in whatever checkout this binary was actually compiled in.
+/// The bed proves the walk; this proves the anchor the walk is deployed behind.
+///
+/// It can therefore only assert when the ambient run happens to be in a linked worktree,
+/// which is exactly why it is SECONDARY. When it cannot, it prints why — and the printed
+/// line says which of the two checks was skipped, so a reader is not left thinking the
+/// step-3 property went unmeasured when the bed measured it.
+fn ambient_worktree_check(walked: &Option<PathBuf>) {
+    let Some(walked) = walked else {
+        println!(
+            "NOT MEASURED (secondary only): no ancestor of this crate holds the suite markers, so \
+             the deployed anchor has no independent expectation here. The bed above still proved \
+             the step-3 walk."
+        );
+        return;
+    };
+    let toplevel = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim().to_string()));
+    let Some(top) = toplevel else {
+        println!(
+            "NOT MEASURED (secondary only): `git rev-parse --show-toplevel` did not run against \
+             this crate's own location. The bed above still proved the step-3 walk."
+        );
+        return;
+    };
+    if top.parent() == Some(walked.as_path()) {
+        println!(
+            "NOT MEASURED (secondary only): this binary was compiled in a plain checkout, where \
+             `--show-toplevel` and `--git-common-dir` agree, so the deployed anchor cannot \
+             exercise the distinction here. The bed above proved it on a bed that can, which is \
+             why that row and not this one is the contract's requirement."
+        );
+        return;
+    }
+    // Compiled inside a linked worktree — the shape every sigil agent runs in. The
+    // deployed derivation must reach the checkout's suite root, not the worktree's parent.
+    let live = sigil_harness::test_support::derive_suite_root_from(std::path::Path::new(env!(
+        "CARGO_MANIFEST_DIR"
+    )))
+    .expect("the deployed anchor derives a suite root");
+    assert_eq!(
+        &live, walked,
+        "compiled inside a linked worktree, the deployed anchor derived the wrong suite root. \
+         `--show-toplevel` answers {} there, whose parent is {:?} — only `--git-common-dir` \
+         reaches the checkout this code belongs to.",
+        top.display(),
+        top.parent()
+    );
 }
