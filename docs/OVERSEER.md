@@ -43,6 +43,44 @@ it**. (2) It is a positive witness **only for a length-neutral parcel**. On chai
 +4 bytes, 282 symbols sliding +16 — that table moving is *expected*, and it reverts to
 something to reconcile rather than something that proves anything.
 
+### d-18 IS ANSWERED — REFUSE BARE, OPT IN TO PARTIAL — AND THE SUITE-PATHS CONTRACT NOW NAMES THE RESOLVER (2026-09-02)
+
+**Where the authority is, because this ruling did not come from the owner's mouth to this lane.** On
+2026-09-02T03:46:15Z the owner widened the hub's standing delegation to the open decision cards, in his
+own words to the hub session (*"Feel free to make some decisions in the direction yyou generally know I want
+to go for this project. If you cvan't tell refer them to me but you're an expert as well. Best of best no
+shortcuts right?"*). The hub took nine rulings under it and banked them with those words at empyrean
+`4e8e865b7c6e821cc23cb3683776aa71243cac0b`, `docs/OVERSEER.md`. **Verified here before anything was
+written: the SHA is reachable from `origin/main`, `git log -S 'Best of best no shortcuts'` returns exactly
+that commit, and the entry quotes him.** That is what makes this a delegated decision rather than a relayed
+one; a relay would still be waiting on him. He reviews the list, and any ruling is one word to reverse —
+so the closure below is append-only and reversible by one more append.
+
+**R4, d-18: `refuse`.** Against this card's own recommendation (`say_only`), and the hub's reason is
+better than mine was: a run that prints how much it skipped **still exits 0**, and the booked rule is
+that a silent green is the class never dropped, because a green is trusted the moment it is in the run.
+Shape ruled: a bare run without the reference tree **stops** with an error naming the variable consulted
+and the path tried; an explicit opt-in of this lane's naming (`SIGIL_ALLOW_PARTIAL=1` or equivalent) runs
+the partial suite and prints the derived not-measured count plus the disclaimer. The card's five-lanes-told
+cost is the hub's and was paid in its 03:46Z messages. Closed in `docs/decisions.jsonl` under rule 8d
+(`answered.by: hub`, `chose: refuse`, the empyrean SHA in `detail`); blocker dropped from `lane-status.json`
+per rule 9. **Not a byte-mover. Sequenced after the chain-196 handover**, paired with
+LANDING-RUN-DEFEATS-THE-NEW-GUARD, because both change what a runner does when nobody named the tree.
+Board row: `D18-REFUSE-BARE-RUN`.
+
+**R7: `contract/SUITE_PATHS.md` (same commit) is the resolver contract.** `AEON_DIR` ratified as the
+checkout spelling (already ours); `EMPYREAN_SUITE_ROOT` is the suite-root name; precedence explicit var >
+suite-root var > derived via `git rev-parse --git-common-dir` (never `--show-toplevel`, which lies from a
+worktree) > **refuse by name**; a variable that is set but wrong is a hard error, not a null that lets the
+next step run. This lane's migration items, load-bearing first and at our own pace, none on the effects
+critical path: `test_support.rs` `LIVE_TREE_FALLBACK`; the 99 `sigil-cli/tests` private copies routed
+through `aeon_dir()`; the three nightly scripts and `drift-nightly.conf` (the only sites a timer runs with
+no override — `sigil-source-gates.timer` is active); then `landing-run.sh` / `capture_goldens.sh` /
+`derive_offcanonical_sizes.sh` one line each (the latter two live in aeon-coordinated `golden/`); then the
+eighteen A/B scripts that `sys.path.insert` empyrean's `clients/python`, resolving `EMPYREAN_DIR` by the
+same rule. Board row: `SUITE-PATHS-MIGRATION`. The d-18 refusal IS step 4 of this precedence, so the two
+rows share a resolver and land in that order: resolver first, refusal on top of it.
+
 ### CHAINS 194 AND 195 ARRIVED FROM THE AEON LANE — verified here, with three practices worth keeping (2026-08-30)
 
 **What arrived.** Chain 194 (`424feb39` freeze, `47d821ca` attest **RED** 4173/4/2) and chain 195
