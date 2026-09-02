@@ -199,6 +199,16 @@ a regenerated `pins.rs` (272 lines). So a merge of the parcel onto a post-flip m
 master's side for both files by construction: site 4 asserts the engine lane's pins with no
 edit and no conflict. The check after the merge is therefore a confirmation, not a repair.
 
+**OUTCOME, recorded so this section is a closed record and not a standing task.** The
+engine lane attested chain 196 at sigil `4e0f7f96` (freeze `9cf6de84`) and landed the
+parcel themselves: `443d1544` merged `parcel/alignment-flip-195` (`23ee52f0`) as the first
+commit of their landing branch, resolving the ledger tail parcel-rows-then-this-lane's-section
+— both blocks present on `origin/master`, verified here. `23ee52f0` and `9a2f40c6` are both
+ancestors of `4e0f7f96`. So there was nothing left for this lane to merge, and site 4 came
+out green in the attest under its own name, `generated_pins_match_the_hand_typed_baseline`:
+the prediction above — that the merge takes the engine lane's side for both paired files by
+construction — held, and the confirmation cost nothing because it was mapped first.
+
 Two path corrections found while banking that check, both in this lane's own notes rather
 than in the code: `repin_pins.rs` is `crates/sigil-harness/tests/repin_pins.rs`, not under
 `src/`; and `mixed_dac_rom` is an identifier appearing across `repin.toml`, `pins.rs`,
