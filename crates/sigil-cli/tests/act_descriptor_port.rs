@@ -171,6 +171,21 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
         // (0x1329A/0x13ACE), the previous program's exact length, because the generator
         // emits the two programs back to back.
         ("EditorRaster_OJZ_Act1_ojz_sec5_showcase", pins::EDITOR_RASTER_OJZ_ACT1_OJZ_SEC5_SHOWCASE.plain, pins::EDITOR_RASTER_OJZ_ACT1_OJZ_SEC5_SHOWCASE.debug),
+        // EFFECTS-W1 item 5 (2026-09-02, aeon 73b07a4f, chain 198): section 3's sidecar
+        // binds a shimmer preset carrying BOTH a raster program and a colour cycle, so
+        // the generated ojz_effects_editor_act1 emits TWO cross-seam labels where every
+        // earlier instance in this table emitted one. `EditorCycle_*` is a new symbol
+        // FAMILY here — the four rows above are all raster — which is why the pair has to
+        // arrive together rather than as a fourth instance of the same shape.
+        // The port-flip rule, fourth and fifth instances, and build.sh still does not
+        // warn: chain 198's strict attest caught both, "link assertion condition
+        // references symbol(s) `EditorRaster_OJZ_Act1_ojz_sec3_shimmer` not defined in
+        // this link" and the same for the cycle. Both are [[symbol]] pins (repin.toml),
+        // sourced from the resolve. They land 0x5C apart in BOTH shapes (0x1324C/0x132A8
+        // plain, 0x13A96/0x13AF2 debug), the raster program's own length, because the
+        // generator emits the cycle immediately after the raster it belongs to.
+        ("EditorRaster_OJZ_Act1_ojz_sec3_shimmer", pins::EDITOR_RASTER_OJZ_ACT1_OJZ_SEC3_SHIMMER.plain, pins::EDITOR_RASTER_OJZ_ACT1_OJZ_SEC3_SHIMMER.debug),
+        ("EditorCycle_OJZ_Act1_ojz_sec3_shimmer", pins::EDITOR_CYCLE_OJZ_ACT1_OJZ_SEC3_SHIMMER.plain, pins::EDITOR_CYCLE_OJZ_ACT1_OJZ_SEC3_SHIMMER.debug),
         ("OJZ_Act_Pool_PageTable", pins::OJZ_ACT_POOL_PAGE_TABLE.plain, pins::OJZ_ACT_POOL_PAGE_TABLE.debug),
         // art-streaming-p2-task5: the descriptor's Act.act_sec_local_maps field.
         ("OJZ_Sec_LocalMaps", pins::OJZ_SEC_LOCAL_MAPS.plain, pins::OJZ_SEC_LOCAL_MAPS.debug),

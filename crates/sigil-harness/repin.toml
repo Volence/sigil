@@ -1105,6 +1105,29 @@ tests = ["act_descriptor_port"]
 name = "EditorRaster_OJZ_Act1_ojz_sec5_showcase"
 tests = ["act_descriptor_port"]
 
+# EFFECTS-W1 item 5 (2026-09-02, aeon 73b07a4f, chain 198): section 3's sidecar binds a
+# shimmer preset that carries BOTH a raster program and a colour cycle, so the generated
+# ojz_effects_editor_act1 emits two new cross-seam labels rather than one —
+# `EditorRaster_OJZ_Act1_ojz_sec3_shimmer` and `EditorCycle_OJZ_Act1_ojz_sec3_shimmer`.
+# The cycle half is the first EditorCycle_* symbol this scope has had to supply; every
+# earlier instance in this file was raster-only, which is why the pair arrives together.
+# Chain 198's strict attest is what caught them, in the shape the ritual expects: "link
+# assertion condition references symbol(s) `EditorRaster_OJZ_Act1_ojz_sec3_shimmer` not
+# defined in this link", and the same for the cycle. Sourced from the resolve like their
+# siblings, never a literal that rots at the next slide.
+#
+# `tests` is DERIVED rather than copied from the neighbour above: both existing
+# EditorRaster_* pins are consumed by act_descriptor_port and nothing else (git grep over
+# crates/*/tests/*.rs), and chain 198's attest failed exactly those two test bodies and no
+# others. Two enumerations over different parameters, same answer.
+[[symbol]]
+name = "EditorRaster_OJZ_Act1_ojz_sec3_shimmer"
+tests = ["act_descriptor_port"]
+
+[[symbol]]
+name = "EditorCycle_OJZ_Act1_ojz_sec3_shimmer"
+tests = ["act_descriptor_port"]
+
 # Effects P3 Parcel C2 — the crossing's single effects consumer. Replaces the three
 # per-field pins (Palette_LoadSection / Raster_InstallSection /
 # Palette_InstallCycleSection) that `repin` removed when total binding deleted those
