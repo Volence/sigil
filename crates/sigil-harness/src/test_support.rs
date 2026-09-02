@@ -718,12 +718,14 @@ fn is_suite_root(p: &std::path::Path) -> bool {
 
 /// The suite root derived from THIS repo's own location — the resolver's step 3.
 ///
-/// `git rev-parse --git-common-dir`, NEVER `--show-toplevel`. From a git worktree — and
-/// every sigil agent runs in one, under `.claude/worktrees/<name>/` — `--show-toplevel`
-/// answers the worktree, whose parent chain does not reach the suite root, so a resolver
-/// built on it derives a wrong answer confidently. `--git-common-dir` answers the MAIN
-/// checkout's `.git` from a worktree and from the checkout alike, and its parent is this
-/// repo's root either way.
+/// `git rev-parse --path-format=absolute --git-common-dir`, NEVER `--show-toplevel`. From a
+/// git worktree — and every sigil agent runs in one, under `.claude/worktrees/<name>/` —
+/// `--show-toplevel` answers the worktree, whose parent chain does not reach the suite root,
+/// so a resolver built on it derives a wrong answer confidently. `--git-common-dir` answers
+/// the MAIN checkout's `.git` from a worktree and from the checkout alike, and its parent is
+/// this repo's root either way — but only once `--path-format=absolute` has settled WHICH OF
+/// THREE SHAPES it answers in. See the comment on that flag in the body; the shapes are
+/// enumerated by a test rather than by this sentence, because this sentence had two of them.
 ///
 /// Run from `CARGO_MANIFEST_DIR`, fixed at compile time, so the derivation is about the
 /// checkout this code was BUILT from rather than whatever directory a test process
@@ -752,8 +754,32 @@ fn derived_suite_root() -> Result<PathBuf, String> {
 /// takes a directory, and `suite_paths_precedence` hands it one inside a linked worktree it
 /// builds itself — the same assertion wherever `cargo test` is invoked from.
 pub fn derive_suite_root_from(here: &std::path::Path) -> Result<PathBuf, String> {
+    // `--path-format=absolute` IS LOAD-BEARING, and its absence was a live bug.
+    //
+    // `git rev-parse --git-common-dir` has THREE output shapes, not two:
+    //
+    //     anchored at a plain checkout's ROOT      -> `.git`            relative
+    //     anchored at a plain checkout's SUBDIR    -> `../../.git`      relative, with `..`
+    //     anchored anywhere in a linked WORKTREE   -> `/abs/path/.git`  absolute
+    //
+    // The middle one is the one production uses: `CARGO_MANIFEST_DIR` is always a crate
+    // subdirectory. `Path::parent()` trims components LEXICALLY and does not canonicalise,
+    // so joining `../../.git` and taking two parents yields `<crate>/..` — a path whose
+    // `aeon/` sits one directory away from the tree being looked for. Step 3 then refused,
+    // in the main checkout only, which is where the landing run and the nightly lane
+    // invoke this suite.
+    //
+    // Asking git for the shape we want is the fix; canonicalising the joined path or
+    // special-casing `..` would be this code guessing at what git meant. The flag is
+    // already this repo's idiom — `crates/sigil-cli/build.rs` resolves its git dirs the
+    // same way — and it has been in git since 2.31 (2021).
+    //
+    // `tests/suite_paths_precedence.rs::step_3_survives_every_shape_git_rev_parse_can_answer`
+    // enumerates all four anchors a caller can hand this function and requires one answer
+    // from all of them, so a shape nobody thought of is a failing row rather than a
+    // sentence missing from this comment — which is how the third shape was lost.
     let out = std::process::Command::new("git")
-        .args(["rev-parse", "--git-common-dir"])
+        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
         .current_dir(here)
         .output()
         .map_err(|e| {
@@ -761,15 +787,23 @@ pub fn derive_suite_root_from(here: &std::path::Path) -> Result<PathBuf, String>
         })?;
     if !out.status.success() {
         return Err(format!(
-            "`git rev-parse --git-common-dir` in {} exited {}: {}",
+            "`git rev-parse --path-format=absolute --git-common-dir` in {} exited {}: {}",
             here.display(),
             out.status,
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    // Relative (`.git`) when git answers from a checkout's own root, absolute from a
-    // worktree. `join` on an absolute path yields that path, so one line covers both.
-    let common = here.join(String::from_utf8_lossy(&out.stdout).trim());
+    let answered = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let common = std::path::Path::new(&answered);
+    // REFUSE a relative answer rather than joining it. Joining is what silently produced a
+    // lexically-wrong path last time; a git that stopped honouring the flag should stop
+    // this resolver loudly instead of moving the walk one directory sideways.
+    if !common.is_absolute() {
+        return Err(format!(
+            "`git rev-parse --path-format=absolute --git-common-dir` in {} answered `{answered}`,              which is not an absolute path. This resolver will not join a relative answer onto              its anchor: a relative answer carrying `..` is trimmed lexically by Path::parent()              rather than canonicalised, which lands the walk beside the tree it is looking for              instead of refusing.",
+            here.display()
+        ));
+    }
     let repo_root = common
         .parent()
         .ok_or_else(|| format!("{} has no parent, so it names no repository root", common.display()))?;

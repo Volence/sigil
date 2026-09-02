@@ -564,3 +564,155 @@ fn ambient_worktree_check(walked: &Option<PathBuf>) {
         top.parent()
     );
 }
+
+/// EVERY SHAPE `git rev-parse --git-common-dir` CAN ANSWER, and step 3 must survive all of
+/// them.
+///
+/// ## The bug this row exists for
+///
+/// The first version of `derive_suite_root_from` carried a doc comment enumerating TWO
+/// shapes — "relative (`.git`) when git answers from a checkout's own root, absolute from a
+/// worktree" — and there are three. Anchored at a SUBDIRECTORY of a plain checkout, git
+/// answers `../../.git`: relative, and carrying `..`. `Path::parent()` trims components
+/// lexically without canonicalising, so two `parent()` calls on
+/// `<crate>/../../.git` yield `<crate>/..`, whose `aeon/` sits one directory
+/// away from where the walk was looking. Step 3 then refused, and every row downstream of
+/// it failed.
+///
+/// `CARGO_MANIFEST_DIR` is ALWAYS a crate subdirectory, so the missing shape is the one
+/// production uses — in the main checkout, which is where the landing run and the nightly
+/// lane invoke this suite.
+///
+/// ## Why the existing rows did not catch it, and why this one is shaped as it is
+///
+/// `the_step_3_derivation_is_proven_from_a_linked_worktree` plants a bed and anchors at the
+/// worktree's ROOT, where git answers absolutely — the shape that worked. And
+/// `ambient_worktree_check` does anchor at `CARGO_MANIFEST_DIR`, which would have caught
+/// this — but only when compiled in a plain checkout, and every sigil agent compiles in a
+/// linked worktree. Between them the suite proved step 3 in the two configurations where it
+/// worked and in none where it did not. **The contract clause's own warning, inverted: it
+/// worried about a row that proves nothing outside a worktree; this was a resolver that
+/// worked only inside one.**
+///
+/// So this row does not pick a configuration. It ENUMERATES them — the four anchors a
+/// caller can plausibly hand the resolver — and requires one answer from all four. A shape
+/// nobody thought of is then a failing row rather than a sentence missing from a doc
+/// comment, which is exactly how the original was lost.
+///
+/// A control asserts the shapes are genuinely DIFFERENT before the equality is asserted:
+/// if git answered identically everywhere, agreement would prove nothing.
+#[test]
+fn step_3_survives_every_shape_git_rev_parse_can_answer() {
+    let bed = scratch("shapes");
+    let suite = bed.path().join("suite");
+    let repo = suite.join("repo");
+    // The crate subdirectory at the real relative depth: `crates/<crate>`, which is what
+    // `CARGO_MANIFEST_DIR` names.
+    let crate_dir = repo.join("crates").join("sigil-harness");
+    for d in [&suite.join(AEON_REPO_DIR), &suite.join("empyrean"), &crate_dir] {
+        std::fs::create_dir_all(d).expect("create the bed");
+    }
+
+    let git = |args: &[&str], cwd: &std::path::Path| -> Result<String, String> {
+        let out = Command::new("git")
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .env("GIT_AUTHOR_NAME", "sigil-test")
+            .env("GIT_AUTHOR_EMAIL", "sigil-test@invalid")
+            .env("GIT_COMMITTER_NAME", "sigil-test")
+            .env("GIT_COMMITTER_EMAIL", "sigil-test@invalid")
+            .current_dir(cwd)
+            .output()
+            .map_err(|e| format!("`git {}` could not run: {e}", args.join(" ")))?;
+        if !out.status.success() {
+            return Err(format!(
+                "`git {}` exited {}: {}",
+                args.join(" "),
+                out.status,
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    };
+
+    let built = (|| -> Result<PathBuf, String> {
+        git(&["init", "-q", "-b", "main", "."], &repo)?;
+        std::fs::write(repo.join("seed"), b"bed\n").map_err(|e| format!("write seed: {e}"))?;
+        git(&["add", "-A"], &repo)?;
+        git(&["commit", "-q", "-m", "bed"], &repo)?;
+        let wt = repo.join("nested").join("wt");
+        std::fs::create_dir_all(repo.join("nested")).map_err(|e| format!("mkdir nested: {e}"))?;
+        git(&["worktree", "add", "-q", "--detach", "nested/wt"], &repo)?;
+        std::fs::create_dir_all(wt.join("crates").join("sigil-harness"))
+            .map_err(|e| format!("mkdir in worktree: {e}"))?;
+        Ok(wt)
+    })();
+
+    let wt = match built {
+        Err(why) => {
+            println!(
+                "NOT MEASURED: could not build the shapes bed, so step 3 was exercised against \
+                 none of the four anchors in this run — {why}."
+            );
+            return;
+        }
+        Ok(wt) => wt,
+    };
+
+    // THE FOUR ANCHORS. `CARGO_MANIFEST_DIR` is a crate subdirectory, so rows 2 and 4 are
+    // the production ones; rows 1 and 3 are what a caller standing at a checkout root gets.
+    let anchors: [(&str, PathBuf); 4] = [
+        ("plain checkout ROOT", repo.clone()),
+        ("plain checkout CRATE SUBDIR (what CARGO_MANIFEST_DIR names)", crate_dir.clone()),
+        ("linked worktree ROOT", wt.clone()),
+        ("linked worktree CRATE SUBDIR", wt.join("crates").join("sigil-harness")),
+    ];
+
+    // The raw shapes, reported so the run's output carries what git actually said. This is
+    // the evidence a reader needs when a future git changes one of them.
+    let mut shapes = Vec::new();
+    for (name, anchor) in &anchors {
+        let raw = git(&["rev-parse", "--git-common-dir"], anchor)
+            .unwrap_or_else(|e| panic!("UNMEASURABLE: git could not answer at {name}: {e}"));
+        println!("shape [{name}] -> {raw}");
+        shapes.push(raw);
+    }
+
+    // THE CONTROL. If git answered identically at every anchor, the equality below would
+    // hold for a resolver that ignored the difference, and this row would prove nothing —
+    // which is precisely how the missing third shape survived review.
+    let distinct: std::collections::BTreeSet<&String> = shapes.iter().collect();
+    assert!(
+        distinct.len() > 1,
+        "UNMEASURABLE: `git rev-parse --git-common-dir` answered the same string at all four \
+         anchors ({:?}), so this bed cannot tell a resolver that handles every shape from one \
+         that handles a single shape.",
+        shapes
+    );
+
+    // THE PROPERTY: one suite root from all four, whatever git said.
+    for ((name, anchor), raw) in anchors.iter().zip(&shapes) {
+        let got = sigil_harness::test_support::derive_suite_root_from(anchor);
+        let got = got.unwrap_or_else(|e| {
+            panic!(
+                "step 3 REFUSED at the `{name}` anchor.\n  anchor: {}\n  git answered: {raw}\n  \
+                 error: {e}\nEvery anchor a caller can hand this resolver must reach the same \
+                 suite root; `CARGO_MANIFEST_DIR` is a crate subdirectory, so a shape that fails \
+                 here fails in production.",
+                anchor.display()
+            )
+        });
+        assert_eq!(
+            got,
+            suite,
+            "step 3 derived the WRONG suite root at the `{name}` anchor.\n  anchor: {}\n  git \
+             answered: {raw}\n  derived: {}\n  expected: {}\nA relative answer carrying `..` is \
+             trimmed LEXICALLY by Path::parent(), not canonicalised, so the walk lands beside \
+             the tree it was looking for.",
+            anchor.display(),
+            got.display(),
+            suite.display()
+        );
+    }
+}
