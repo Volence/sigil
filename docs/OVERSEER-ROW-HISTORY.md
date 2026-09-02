@@ -259,6 +259,42 @@ A REAL CASE-2 OBSERVATION, produced by accident tonight and recorded here becaus
 
 `state: open` · `size: XS` · `blockedBy: None`
 
+> **RE-VERIFIED 2026-09-02 ACROSS A GOLDEN MOVE, and the supersede above is confirmed rather
+> than merely asserted.** The header block was measured against chain 197's goldens; chain 198
+> replaced every one of them. Re-measured on the CURRENT goldens by decoding the four absolute
+> transfer encodings (`4EB8`/`4EB9` `jsr`, `4EF8`/`4EF9` `jmp`) out of each ROM:
+>
+> | shape | crc32 | max `abs.w` | slack to `0x8000` | `abs.l` in `[0x8000,0x10000)` |
+> |---|---|---|---|---|
+> | `s4` | `df76de71` | `0x7FC6` | **58 B** | none |
+> | `lean` | `a4cfb6f5` | `0x7FC6` | 58 B | none |
+> | `config_b` | `2507bcd4` | `0x6592` | 6766 B | none |
+> | `demo` | `30a31d81` | `0x2D1C` | 21220 B | none |
+> | `demo.debug` | `51056291` | `0x3B58` | 17576 B | none |
+> | **`s4.debug`** | `0d6d1175` | `0x7FE6` | **26 B** | **14, min `0x82EE`** |
+> | **`config_a`** | `1de56842` | `0x78CE` | 1842 B | **17, min `0x80BE`** |
+>
+> **Every CRC changed and not one margin did.** The finding is a property of the layout rather
+> than of one build, which is what the two earlier rots could not establish. Each boundary
+> address lands on a named symbol, so the opcode scan found transfer sites and not
+> opcode-shaped data: `0x7FC6` is `Sound_PlaySFX`, `0x7FE6` is `Raster_Install`, `0x82EE` is
+> `Raster_GetChannelBand`.
+>
+> **The derivation is a file now, not a sentence:** `docs/superpowers/probes/absw_ceiling.py`,
+> run against whichever ROMs you care about (`python3 docs/superpowers/probes/absw_ceiling.py
+> crates/sigil-harness/golden/*.bin`). That is the fourth attempt at keeping this measurement
+> current, and the first that cannot go stale without failing to run — the three before it were
+> a stored number, a re-stored number, and a grep against the wrong address space.
+>
+> **THE TEXT BELOW THIS LINE IS THE SUPERSEDED ROW, KEPT AS HISTORY. Do not act on it.** It is
+> left in place because deleting it would erase what was believed, but it was still readable as
+> live guidance under a `state: open` line, which is how a corrected row keeps giving the
+> original advice. Both of its operational sentences are now measurably wrong: the direction is
+> inverted (the plain family has NO `abs.l` target within 32 KB of the ceiling, so shrink has no
+> exposure and GROWTH is what pushes `Sound_PlaySFX` over), and its command fires on the healthy
+> state (`Sound_PlaySFX` sits at `0x7FC6`, *below* `0x8000`, so "below means the encodings have
+> flipped" reports a flip on every correct build).
+
 THE INVARIANT (cannot go stale): the sound region butts against the abs.w ceiling at 0x8000 with ZERO slack on the tightest symbol, so a parcel that SHRINKS code upstream of it flips abs.w/abs.l encodings at every call site in the neighbourhood - and that shows up as an UNRELATED test failure in a region nobody edited. GROWTH IS THE SAFE DIRECTION; only a shrink is dangerous. THE COORDINATE LIVES IN A COMMAND, NOT IN THIS ROW: grep -nE 'SoundTablesZ80_Head|Sound_PlaySFX' s4.lst - at 0x8000 or above is clear, below means the encodings have flipped and a measured byte delta is not the whole story. WHY IT IS WRITTEN THIS WAY (aeon's formulation, and it is the finding): this row previously named Sound_PlaySFX at 0x8024 as the binding constraint. The SHAPE was right and the COORDINATE rotted - SoundTablesZ80_Head sits at 0x8000 exactly, margin zero, one line above it. Measured once, restated since, re-sent to a peer more than once. Both lanes were caught by that same pattern in one day, so the rule is: name the invariant in the row and the coordinate in a command. SNAPSHOT 2026-08-30, already superseded in principle by the command above: 8000 / 8024, 14 actual transfer sites (jbsr/jsr/jbra/jmp) against 36 total name occurrences - two answers to two different questions, not a disagreement. AEON STEP 5 IS CLEARED and not by the direction argument: OJZ_Preset_Plain is at 0x136D2, ~77KB DOWNSTREAM of the boundary, so its +38 moves neither symbol at all. Their measurement.
 
 ## AGENT-COPIED-A-WORKTREE

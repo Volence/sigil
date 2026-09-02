@@ -214,12 +214,42 @@ echo "==> building both shapes to emit the listings (and to control the ROMs)"
 # a stale tree failing a poison whose wording had moved, and recovering it took a
 # by-hand rebuild that this redirection existed to make necessary. Suppression does not
 # hide an error, it destroys the artifact that would have explained it.
-for shape_env in "" "DEBUG=1"; do
-  build_log="$W/.provision-build${shape_env:+-debug}.log"
+# WHICH SHAPES GET BUILT, and why it is a choice rather than "all of them".
+# The two s4 shapes are always built: the listings they emit are what `repin` resolves
+# against, so no caller can skip them. The two DEMO shapes are opt-in via
+# REF_BUILD_DEMO=1 because the two callers want genuinely different things and the
+# difference is not a preference:
+#
+#   * A LANDING run wants the demo REFERENCE ROMs — the frozen goldens copied in at
+#     step 3 — because the port gates compare a branch's lowering against the frozen
+#     artifact. Building them there would replace the reference with the subject.
+#   * The DRIFT job wants them BUILT, because a copied golden cannot exhibit drift.
+#     `nightly_ref_drift.sh` measures only files whose mtime post-dates its build start,
+#     precisely so a copy can never be read as a build.
+#
+# WITHOUT THIS FLAG THE DRIFT JOB COULD NEVER REPORT A CLEAN NIGHT. Its config declares
+# four shapes; only two were ever built; `drift_report.py::observation_state` returns
+# NOTHING MEASURED if ANY shape is unmeasured — deliberately, so quiet can never absorb
+# an unmeasured shape — so its best possible verdict was NOTHING MEASURED, forever. A
+# green nobody has ever seen is worse than a red: nobody investigates a state they have
+# never been shown. The ranking in drift_report.py is right and is untouched; the defect
+# was here, in a provisioner that built fewer shapes than its caller declared.
+SHAPE_ENVS=("" "DEBUG=1")
+SHAPE_ARGS_LIST=("" "")
+if [ "${REF_BUILD_DEMO:-0}" = "1" ]; then
+  SHAPE_ENVS+=("" "DEBUG=1")
+  SHAPE_ARGS_LIST+=("demo" "demo")
+  echo "==> REF_BUILD_DEMO=1: the two demo shapes are built too, not copied"
+fi
+for i in "${!SHAPE_ENVS[@]}"; do
+  shape_env="${SHAPE_ENVS[$i]}"
+  shape_arg="${SHAPE_ARGS_LIST[$i]}"
+  tag="${shape_arg:-sonic4}${shape_env:+-debug}"
+  build_log="$W/.provision-build-$tag.log"
   if ! ( cd "$W" && env $shape_env SIGIL_BUILD="$SIGIL_BIN" \
-        SIGIL_EMIT="$REF_TARGET/release/emit_sound_blob" NO_LINT=1 ./build.sh ) \
+        SIGIL_EMIT="$REF_TARGET/release/emit_sound_blob" NO_LINT=1 ./build.sh $shape_arg ) \
         > "$build_log" 2>&1; then
-    echo "ERROR: ./build.sh ${shape_env:-plain} failed in $W; its last 40 lines:" >&2
+    echo "ERROR: ./build.sh $shape_arg ${shape_env:-plain} failed in $W; its last 40 lines:" >&2
     tail -40 "$build_log" >&2
     echo "(full output: $build_log)" >&2
     exit 1

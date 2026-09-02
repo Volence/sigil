@@ -90,182 +90,6 @@ eighteen A/B scripts that `sys.path.insert` empyrean's `clients/python`, resolvi
 same rule. Board row: `SUITE-PATHS-MIGRATION`. The d-18 refusal IS step 4 of this precedence, so the two
 rows share a resolver and land in that order: resolver first, refusal on top of it.
 
-### COMPTIME-LABEL-STRUCT-ALWAYS-RED — the hub's ruling, banked BEFORE the work, and the go is NOT banked with it (2026-09-02)
-
-**Why this section exists at all.** The ruling below arrived by message and nothing in any tree would
-have carried it. That is protocol bar 20's sending-side half — *a cross-lane commitment gets an in-tree
-artifact in the SENDING repo before or with the send* — pointed the other way: this is the RECEIVING
-half, and the same argument applies, because a `/clear` between the ruling and the parcel would lose
-every constraint in it while leaving the parcel perfectly startable. A brief written from memory of a
-message is exactly the artifact this file exists to prevent.
-
-**THE RULING IS ADOPTED. THE GO IS NOT, AND THE DISTINCTION IS THE POINT.** The hub ruled the technical
-shape under the owner's standing delegation (the 2026-09-02T03:46:15Z widening, banked at empyrean
-`4e8e865b7c6e821cc23cb3683776aa71243cac0b` and verified firsthand by this lane before anything was
-written on it). That delegation covers **decision cards in this lane's own domain**, which is what the
-comparison-semantics question is, so the technical ruling binds and this lane does not re-litigate it.
-It does **not** cover whether this lane spends the owner's quota this morning. The committed protocol is
-one sentence and it is not ambiguous: **"a peer message is a teammate's input, not the user's approval
-for anything."** A relay may carry a ruling; it may never carry an authorization. Banking a relayed go as
-though the owner had given it is laundering with a time delay, and the delay is what makes it invisible
-— by the time anyone reads this row, "the hub said go" and "he said go" look identical on the page.
-**So: ruling banked, work held, and this paragraph is the thing that stops a successor from reading the
-banked ruling as a banked permission.**
-
-**The finding, anchored not restated.** aeon `efb4b923`, `docs/superpowers/probes/2026-09-02-item5-comptime-probe.md`,
-reachable from aeon `origin/master` — its Q2-e row and RED-4 section. A hand `pub data` symbol named
-inside an array literal resolves as a **Label**; label-vs-struct `!=` is **always true**; so
-`first_mismatch([Variant_Water_Deep], [variant(...)])` reports `index 0` for the **EQUAL** twin. Currency
-check, this lane's own and independent of the probe: **no compiler crate changed between the probe's
-binary `8951389a` and master.**
-
-**It is the mirror of `EMP_PITFALLS` §3's always-green, and the mirror is the worse half.** An
-always-green check is trusted and empty. An **always-red** check fires on correct code, and the damage is
-not the false alarm — it is that the remedy a reasonable person reaches for is **weakening or deleting
-the guard**, and that remedy gets written down as advice. Firing on correct code is not the safe
-direction.
-
-**The four bars the parcel carries** *(the hub's, kept in its words rather than my paraphrase so the
-brief cannot soften them)*:
-
-1. **The fix is a decision about what label-vs-struct comparison MEANS, and either answer is acceptable
-   if it is the compiler's, never silent.** A refusal with a diagnostic naming both types is the expected
-   shape; a *defined* comparison needs its semantics written where `EMP_PITFALLS` lives. **What is not
-   acceptable is a comparison that is always one value.**
-2. **The proof row is the probe's own sample, both twins, in one process** — the EQUAL one green and a
-   genuinely mismatched one red. **One process, both twins, so the row cannot pass by making the
-   comparison always FALSE instead of always TRUE.** That is the trap this specific defect sets for its
-   own fix, and a single-twin row walks straight into it.
-3. **The ROM gate as always: byte-identical.** No aeon source can currently depend on an always-red
-   `ensure` — but the gate is what *says* so, rather than the reasoning.
-4. **Tell aeon by message when it lands, with the row name and SHA** (their item-5 authoring is the
-   consumer, so this is a named live dependency under bar 18, not a broadcast), **and tell the hub the
-   same for the ledger.**
-
-**Not a byte-mover by intent. If the gate says otherwise, STOP and say so** — do not reconcile it.
-
-**Sibling row, same probe, and it is the same wave rather than a follow-on:** `COMPTIME-ARRAY-PARAM-LENGTH`
-(Q1-L). A `[Label; 2]` **parameter** annotation is not length-checked at the call, so a 3-element argument
-passes the fn and is refused only at record emission — **blamed on the consumer's `pub data` line.**
-Return annotations DO check at the returning fn, so the parameter side is the asymmetry. A5 holds (it
-terminates); **the blame site is the defect.**
-
-### I GOT CONFIRMATION AND REFUTATION BACKWARDS, IN A SENTENCE A PEER THEN BANKED IN THEIR TREE (2026-09-02, aeon's catch, and it is a REPEAT)
-
-**Uncommitted when written; lands with the pair.**
-
-**What I said, and it is wrong:** *"a clean completion REFUTES the harness story rather than merely not
-confirming it."* The aeon lane found it persuasive and **banked it in their landing lane and their session
-memory in my words**, before the run.
-
-**Work it through, because the error is not subtle once written out.** The hypothesis is *harness background
-tasks get reclaimed; detached work survives.* Its prediction is *a detached freeze survives.* **It survived.**
-That is a **CONFIRMATION, and a weak one at n=1.** The observation that would have **refuted** it is a
-**detached death** — which is exactly what my own later sentence said (*"if it dies, that reading is worth
-more, because it settles the mechanism instead of merely not raising it"*). **The two sentences are
-inconsistent and I wrote both, hours apart, in the same session.**
-
-What a clean run *does* refute is a **different, competing** story — that the freeze is intrinsically fragile,
-or that memory pressure kills it. That is probably what the sentence was reaching for. It is not what it said,
-and the peer could not have known that from the words.
-
-**THIS IS A REPEAT OF A CLASS ALREADY IN THIS FILE** — *"I CONTRADICTED MY OWN CORRECT STATEMENT INSIDE ONE
-SESSION (2026-08-30, aeon's catch)"*. Same failure, same finder, five days later. So the honest reading is not
-"a slip"; it is that **holding the correct form of a rule does not stop you emitting the wrong form of it**,
-and the rule needs a mechanism rather than familiarity. The mechanism here is cheap and specific: **before
-calling any result a refutation, say what observation the hypothesis FORBIDS.** If the result you got is one
-the hypothesis *predicted*, the word is confirmation, whatever it feels like.
-
-**AND THE AGGRAVATING FEATURE, which is the reason it is worth a section: the error was CONVENIENT and it
-travelled.** A clean freeze plus "this refutes the mechanism" reads as a day's problem closed. It was banked
-by a peer, in my phrasing, **before the run** — so it was positioned to be quoted **after** a clean result as
-though the result had established something stronger than it did. Nothing in either tree would have caught
-it; it lived in mail, which is the artifact class with no reader (protocol bar 20). It was caught only
-because the peer re-derived a claim they had already accepted, after it came out the convenient way.
-
-**THE HONEST STATE OF THE MECHANISM, replacing anything cheerier:** three observations, all consistent, none
-decisive. (1) Two freezes died as harness background tasks. (2) A waiter died while its detached build lived
-— reproduced by a lane that did not form the hypothesis, which is the enumeration-parameter difference that
-makes it corroboration rather than echo. (3) This freeze ran detached to completion, `finished=0`. All three
-are consistent with child-lifecycle **and** with intermittent death that happened not to fire. **The
-discriminating run is a detached death, and we have not had one.**
-
-### THE PYTHON BYTECODE CACHE IS A THIRD WAY A RED-FIRST PROOF GOES VACUOUS — AND THIS TREE'S EXPOSURE IS CURRENTLY NIL (2026-09-02, aurora's finding, enumerated here)
-
-**Uncommitted when written; lands with the comptime pair.**
-
-**The hazard** *(aurora's, on their own red-first proof; their measurement, relayed by the hub, anchored at
-aurora master `0bc48156` `scripts/check-python-resolver.mjs` — not verified firsthand here, so treat the
-mechanism as theirs and the enumeration below as mine)*: **Python invalidates its bytecode cache on
-`(mtime, size)`.** So a planted mutation that preserves both runs **as the module's OLD self**, and the gate
-reports green over a mutation that is genuinely on disk. `-B` and `PYTHONDONTWRITEBYTECODE` **do not help** —
-they stop the cache being *written*, not being *read*. What works is a per-run `PYTHONPYCACHEPREFIX` at a
-fresh temp dir, **plus the runner COUNTING the bytecode files it wrote and refusing when there are none** —
-because "compiled from source" printed as prose survived deleting the fix, which is the prose-is-not-a-check
-defect wearing a reassurance.
-
-**THIS IS THE THIRD DISTINCT MECHANISM FOR ONE FAILURE, and the three share nothing but their artifact.**
-(1) The `git checkout --` restore on a dirty tree, which reverts the prover's own uncommitted subject so
-mutations 2 and 3 patch a file already restored (this lane's, 2026-09-02, two of three proofs vacuous).
-(2) An unapplied patch — the mutation never landed at all. (3) This one: **the mutation lands, the file on
-disk is genuinely changed, and the runner executes a cached older compilation of it.** Three causes, one
-indistinguishable output: **a green run over a mutation you can see in the file.** That is why invariant 8(c)
-says applied-but-still-green is a **runner defect to fix**, never a pass — it is now the only clause that
-catches mechanism (3), and it was written before anyone knew (3) existed.
-
-**THIS TREE'S EXPOSURE, enumerated rather than assumed, and it is a RESULT rather than a null.** 27 tracked
-`.py` files. Several are invoked as instruments (`scripts/drift_report.py` via `nightly_ref_drift.sh`,
-`scripts/drift_paths_sweep.py`, `tools/decisions_reader_audit.py`, the `golden/ab/*.py` runners). **None is
-used as a red-first BED**: `git grep -l 'red-first\|mutation\|mutate' -- '*.py'` is empty, and the one
-plausible candidate — `drift_report.py selftest` — **constructs its states in memory** (`cmd_selftest` →
-`_selftest_body` → `render(...)` against `/dev/null`) and patches no file on disk, so it has nothing to
-stale-cache. **Today's proofs are all clear for a structural reason rather than by luck: every mutation in
-both parcels was Rust, which cargo recompiles.**
-
-**THE TRIGGER, which is the part worth keeping, because the exposure is nil TODAY and the population is 27:**
-the moment anyone writes a red-first proof that **mutates a `.py` file on disk and re-runs it**, this applies
-in full. A booked "we are clear" would rot silently the first time that happens. So the rule is conditional,
-not a clearance: **any red-first proof whose subject is Python sets `PYTHONPYCACHEPREFIX` to a fresh
-per-run temp dir and counts the bytecode files written, refusing on zero.**
-
-**One method note from doing the enumeration.** Grepping `def selftest` came back empty and the verb is
-real — it is dispatched through argparse (`sub.add_parser("selftest")`, handler `cmd_selftest`). Reading
-that empty grep as absence would have produced a confident report of a nightly script advising a command
-that does not exist. **A failing lookup tells you about the query, not about the object**; the fix was to
-read the dispatch rather than to trust the name.
-
-### THE RECOMMENDED DETACH PATTERN HAS A HOLE IN THE MIDDLE: THE WATCHER IS WHAT GETS TAKEN (2026-09-02, aeon's, on a mechanism this lane proposed)
-
-**Uncommitted when written; lands with the comptime pair.** Master is parked behind the aeon lane's freeze.
-
-**The finding, and it is a correction to advice THIS LANE gave them.** This lane handed aeon the
-`nohup … &` + `finished=<exit code>` form so a long freeze would survive whatever was killing it, and so a
-death would carry a number instead of an anecdote. Aeon then armed a `run_in_background` Bash task whose
-only job was to **wait** for that build's `finished=` line. **The harness reclaimed the waiter** (reported
-`killed` / `was stopped`, and nobody stopped it) **while the detached build survived** — `pgrep -x sigil`
-found the assembler alive and its log still growing.
-
-**So: detach the work, but do NOT then watch it with a harness background task.** The watcher is exactly
-the thing that gets taken, which means the recommended pattern was two-thirds right and its last third
-reintroduced the failure it was designed to route around. Poll by hand, or read the artifact.
-
-**The rule under it, which is the durable half: the ARTIFACT question survives, the PROCESS question keeps
-being answered wrongly.** *"Did the log get its `finished=` line"* is answerable at any later time by
-anyone. *"Is the process alive"* is a question about a thing the harness may reclaim out from under both
-the asker and the answer. Prefer the artifact.
-
-**And the small confirmation nobody designed** *(aeon's own reading, stated against their interest)*: the
-waiter carried **no** exit stamp, and it produced exactly the truncated artifact this lane predicted for an
-unstamped death — **a kill and a completion were indistinguishable by looking at it.** That is the whole
-argument for the stamp, arriving as a free control on the one process that lacked one.
-
-**What it establishes and what it does not** *(their framing, kept because the discipline is the point)*: a
-**third** data point for the child-lifecycle mechanism, and the **first from a lane that did not form the
-hypothesis** — different repo, different workload, different reason for the process to exist, which is the
-enumeration-parameter difference that makes corroboration rather than echo. It is **not** the freeze test:
-a build surviving does not prove a five-minute `--attest` survives, and nothing yet distinguishes 137 from
-143 because nothing died that carried a stamp.
-
 ### THE TEST THAT TURNED THE HOLD INTO A START — "is there an owner decision under this, AND IS IT THIS QUESTION" (2026-09-02)
 
 **Uncommitted when written; commits with the comptime landing.** Master is parked at `cdd330ff` behind
@@ -273,7 +97,9 @@ the aeon lane's freeze window and this lane said so to two peers in writing, so 
 than the word being quietly broken. It survives a `/clear` on disk in the meantime.
 
 **The sequence, because the shape repeats and the first half looks like obstruction.** The hub sent a
-`go` on `COMPTIME-LABEL-STRUCT-ALWAYS-RED` under the owner's delegation. This lane **held** it: adopted
+`go` on `COMPTIME-LABEL-STRUCT-ALWAYS-RED` (that parcel landed; its ruling section is now in
+`docs/OVERSEER-LOG.md` and its surviving rule is in *Rules banked from closed findings* above)
+under the owner's delegation. This lane **held** it: adopted
 the technical ruling, refused the authorization, and banked the ruling with a paragraph saying the go was
 deliberately not banked with it (`cdd330ff`). The hub then produced **the owner's own words at the commit
 that carries them** — empyrean `63c85ae`, reachable from `origin/main`, verified here with `git grep` at
@@ -315,89 +141,55 @@ work is real. It goes wrong later, when the row is prose and *"the hub said go"*
 indistinguishable to a session reading it cold. **That is why the banked ruling carries its own
 disclaimer in its text** rather than relying on anyone remembering the provenance.
 
-#### LANDED on `parcel/comptime-compare-refuses` — and one line of the brief above is wrong (2026-09-02)
+### Rules banked from closed findings — the narrative is in `docs/OVERSEER-LOG.md`, 2026-09-02
 
-Both rows are one commit, because they turned out to be one defect wearing two hats: **a comparison or
-an annotation that cannot be meaningfully evaluated produced a value instead of refusing.** Q2-e and
-Q2-D4 share a single root — `eval_equality` was TOTAL by construction, so any two values of different
-kinds were "simply not equal" — and Q1-L is that same sentence in the annotation layer.
+Each of these was a dated section here until the boot read went over its byte bound. **The
+rule is what survives; the episode that earned it is in the log** under its original
+heading, verbatim. When a rule and its narrative disagree, the rule wins.
 
-**The decision on bar 1: REFUSE.** Equality is now defined WITHIN a comparison class and refuses ACROSS
-classes with `[eq.cross-type]`, naming both types and saying which constant it was stuck at. Two
-cross-kind pairs stay DEFINED because the corpus depends on them and neither is a mistake — a newtype
-beside a bare int (§8.3 erasure) and a **label beside `0`** (the empty-pointer-slot spelling in
-`variants: [X, 0]`). Both are always false, so they are exactly the case bar 1 allows only if written
-down: they are, in `docs/EMP_PITFALLS_EQUALITY.md`, drafted here for aeon to land in `EMP_PITFALLS.md`.
-
-**Correct this brief's Q1-L sentence.** "Return annotations DO check at the returning fn" is not true
-and the probe never said it was — its own Q1-L row reports the return-shaped failure blamed on the same
-`pub data` line, and notes the diagnostic is identical when the fn is spelled `-> array`. Read from the
-code: `ComptimeFnDecl::ret` was **read by nothing in the crate**. So there was no asymmetry to fix; both
-halves of a signature were decoration, and both now check.
-
-**Bar 3 held: no ROM byte moved**, four shapes, control built from this branch's own base rather than
-trusted from the reference tree's existing files (byte identity is silent on provenance, so the
-reference tree's pre-existing `.bin`s were not used as the control).
-
-| shape | control (canonical build, base binary) | fixed | |
-|---|---|---|---|
-| `s4.bin` | 719325 B / CRC32 `AC10AB85` | 719325 B / `AC10AB85` | identical |
-| `s4.debug.bin` | 736345 B / `FA866F19` | 736345 B / `FA866F19` | identical |
-| `demo.bin` | 96458 B / `30A31D81` | 96458 B / `30A31D81` | identical |
-| `demo.debug.bin` | 101323 B / `51056291` | 101323 B / `51056291` | identical |
-
-### A PROOF CAN RUN THE WRONG PROGRAM — the fourth way a red-first proof goes vacuous (2026-09-02, this lane's own, caught by a number that disagreed with a prediction)
-
-**The mechanism, read from the script rather than remembered.**
-`scripts/provision-aeon-ref.sh:149` is
-`SIGIL_BIN="${SIGIL_BIN:-$SIGIL_ROOT/target/release/sigil}"` — unset, it silently selects
-**whatever was last built in the main tree**, a shared artifact other lanes relink. A
-control can therefore certify a compiler containing **none of the change under test**, and
-the result is indistinguishable from a real one: four matching CRCs are equally consistent
-with *"byte-neutral parcel"* and *"the fix was never in the build"*. Instance: the
-comptime-compare landing was first measured at `cdd330ff` (pre-merge), and a second run
-reached `.sigil-ref-target/release/sigil` at `c230e37e`, four days old.
-
-**What caught it was not the CRCs — it was a count that came out RIGHT when it was
-supposed to come out WRONG.** `emp_expect_fail` reported **51/51** where the merged
-compiler must give **50/51**, the `tri unit fold` poison being a known casualty of the fix.
-A prediction that the run must FAIL somewhere is the only instrument that separates the two
-worlds; agreement everywhere is what the wrong program produces.
-
-**THE CORRECTIVE, three parts, and the third is the one usually skipped:**
-
-1. **Pin the tool** — pass `SIGIL_BUILD=`/`SIGIL_BIN=` at the binary the parcel built;
-   never let the default resolve.
-2. **Head the log with the tool's own `--version` self-report** (`feat/version-provenance`,
-   `9c08f2a5`: revision, branch, tree state, source dir). A run whose header does not name
-   the revision under test did not measure it, and nothing else in the log can say so.
-3. **State in the brief what the run MUST FAIL.** A gate list with no predicted red cannot
-   detect this class at all.
-
-**Fourth of four, and they share only their output.** (1) `git checkout --` restoring a
-dirty tree under the prover's own subject; (2) a mutation that never applied; (3) Python
-reading a stale bytecode cache; (4) this one — mutation applied, file on disk correct, **and
-the binary that ran was built from other source.** One indistinguishable artifact: a green
-run over a change you can see in the tree. Invariant 8(c) catches all four.
-
-**LANDED as a tool fix** (`fix/provision-pins-its-tool`, `scripts/lib/sigil_tool.sh`), and it
-refuses rather than merely printing. `provision-aeon-ref.sh` resolves the assembler at step 0,
-before any fetch, worktree or write, so a refusal touches no peer repository. With `SIGIL_BIN`
-unset it now **builds** the tool from the invoking tree into `REF_TARGET` — the shared
-`target/release/sigil` is never read and never written — because building removes the class
-where a check only detects it, and a require-`SIGIL_BIN` shape would have broken the aeon
-lane's zero-environment invocation. The log is headed by the binary's own `--version`, verbatim.
-
-**The correspondence check is `closure-revision`, NOT `revision` vs `rev-parse HEAD`,** and the
-trap is worth keeping written down: `revision` moves on every commit here including ones no
-compilation can see. Measured on this branch — the `.sigil-land-197` binary is the correct
-compiler for the tree and reports `6a8b3ecd` against a HEAD of `40171000`, so the naive
-comparison fires on a correct binary. Always-red is not the safe direction. What the derived
-form proves is *"cannot have affected this binary"*, never *"the output did not change"*.
-
-**`SIGIL_BIN_CLOSURE` is the hatch for the legitimate off-tree run** (the base-compiler arm of
-an A/B) and is not a silencer: it must equal what the binary reports, so a wrong sha still
-refuses and a right one puts the sha in the log.
+- **A RED-FIRST PROOF HAS FOUR KNOWN WAYS TO GO VACUOUS, and they share one artifact: a
+  green run over a change you can see in the tree.** (1) `git checkout --` restoring a
+  dirty tree, so later mutations patch an already-restored file; (2) a mutation that never
+  applied; (3) Python reading a stale bytecode cache — invalidated on `(mtime, size)`, so a
+  size-preserving edit runs the module's OLD self, and `-B`/`PYTHONDONTWRITEBYTECODE` do
+  NOT help because they stop the cache being written, not read; (4) the binary that ran was
+  built from other source. **So a proof must show the mutation LANDED and must state what
+  the run MUST FAIL.** Invariant 8(c) — applied-but-still-green is a runner defect, never a
+  pass — is the only clause that catches all four, and it was written before (3) was known.
+  *Python subjects specifically:* set `PYTHONPYCACHEPREFIX` to a fresh per-run temp dir AND
+  have the runner count the bytecode files it wrote, refusing on zero. This tree's `.py`
+  exposure was nil when measured (27 tracked files, none used as a red-first bed) — that is
+  a conditional clearance, not a standing one, and it expires the first time anyone mutates
+  a `.py` file on disk and re-runs it.
+- **PIN THE TOOL, AND MAKE THE LOG NAME IT.** `SIGIL_BIN`/`SIGIL_BUILD` left to default
+  select whatever a shared checkout last relinked, which once certified a byte-neutrality
+  proof against a pre-merge compiler while printing four `MATCHES THE GOLDEN` lines. Pass
+  the binary the parcel built, head the log with the tool's own `--version`, and state the
+  predicted red. **The correspondence check is `closure-revision`, never `revision` vs
+  `git rev-parse HEAD`** — `revision` moves on every commit including ones no compilation
+  can see, so the naive form fires on a correct binary, and always-red is not the safe
+  direction. `SIGIL_BIN_CLOSURE` is the hatch for a legitimate off-tree run and is not a
+  silencer: it must equal what the binary reports.
+- **BEFORE CALLING ANY RESULT A REFUTATION, SAY WHAT OBSERVATION THE HYPOTHESIS FORBIDS.**
+  If the result you got is one the hypothesis PREDICTED, the word is confirmation, whatever
+  it feels like. Earned by getting it backwards in a sentence a peer then banked in their
+  own tree, in this lane's phrasing, before the run — a convenient error that travelled.
+- **DETACH THE WORK, BUT DO NOT WATCH IT WITH A HARNESS BACKGROUND TASK: the watcher is
+  what gets reclaimed.** Prefer the ARTIFACT question (*did the log get its `finished=`
+  line*), which anyone can answer later, over the PROCESS question (*is it alive*), which
+  the harness can answer wrongly out from under both asker and answer. **And never poll a
+  pattern the poller's own command line contains** — `pgrep -f <script>` matches the waiter
+  itself and waits forever, which is indistinguishable from a job still running. Cost half
+  an hour on a critical path once, in each of two lanes, on one day.
+- **`==` REFUSES ACROSS COMPARISON CLASSES** (`[eq.cross-type]`, naming both types and the
+  constant it stuck at) and is defined WITHIN one. Two cross-kind pairs stay DEFINED because
+  the corpus depends on them and neither is a mistake: a newtype beside a bare int (§8.3
+  erasure) and a label beside `0` (the empty-pointer-slot spelling). Both are always false,
+  which is exactly the case that must be written down — it is in
+  `docs/EMP_PITFALLS_EQUALITY.md`. **The principle, which outlives the parcel: a comparison
+  or an annotation that cannot be meaningfully evaluated must REFUSE rather than produce a
+  value, and an always-RED check is worse than an always-green one** — it fires on correct
+  code, and the remedy a reasonable person reaches for is deleting the guard.
 
 ### Standing rules — independent of whether a row is active
 
@@ -446,6 +238,28 @@ theory.** The same re-baseline that absorbed the `+40` **failed to absorb** the 
 because those read struct field *declarations* rather than goldens, so the subject could not
 generate their expectation. Aurora's bar: **a diff surviving a self-generated baseline is very hard
 to argue away.** One absorbed, one survived, same run.
+
+## The drift watch's timer — the unit name and how to switch it off
+
+Written here so the owner can turn it off without asking anyone, and so a successor does
+not have to reconstruct the unit name from the scripts.
+
+```sh
+systemctl --user status  sigil-ref-drift.timer     # is it armed, and when does it next fire
+systemctl --user disable --now sigil-ref-drift.timer   # off, immediately and across reboots
+systemctl --user enable  --now sigil-ref-drift.timer   # on
+journalctl --user -u sigil-ref-drift.service -n 50     # what the last firing said
+```
+
+The unit files are committed at `scripts/systemd/`; a `--user` unit lives outside every
+repo, so **installing them is a copy to `~/.config/systemd/user/` and nothing in any repo
+can tell you whether that happened** — ask `systemctl`, never a doc. The job's own record
+is `~/.local/state/sigil-ref-drift/observations.jsonl` (append-only) with its run log
+beside it at `nightly.log`.
+
+**As of this writing the timer is NOT installed and NOT enabled** (`systemctl --user
+list-unit-files` shows only `sigil-source-gates` and `aeon-effects-gates`). That is a
+snapshot, not a property — ask the command.
 
 ## Boot
 
@@ -691,18 +505,45 @@ worth anything.
 
 **Which reference worktree is current is NOT recorded here, deliberately — ask the disk.** This
 paragraph twice carried a named worktree and a SHA, and both rotted at the next refreeze while
-reading as fact. The candidates are `~/sonic_hacks/.aeon-landing` and
-`~/sonic_hacks/.sigil-portfix-aeon`; which of them pairs with the tip changes every freeze, so
-derive it:
+reading as fact.
+
+**AND THEN IT ROTTED A THIRD TIME, IN THE FIELD IT KEPT.** The fix for the rotting SHA was to
+name the CANDIDATES instead — `.aeon-landing` and `.sigil-portfix-aeon` — which is a smaller
+coordinate but a coordinate all the same. Measured 2026-09-02: **both were gone**, while the tree
+this lane was actually using (`.sigil-ref-197-mine`, sitting at the provenance tip's own
+`aeon_rev`) appeared nowhere in this paragraph. A cold session following it got an empty answer
+from a list of two dead names. *Dropping the revision and keeping the names treated the SHA as the
+perishable part; the name was perishable on the same clock.*
+
+**So derive by PROPERTY, not by name.** A reference tree is *a worktree of aeon whose HEAD is the
+provenance tip's `aeon_rev`* — that sentence is the definition, and this finds every tree matching
+it however anyone chose to name it:
 
 ```sh
-for d in ~/sonic_hacks/.aeon-landing ~/sonic_hacks/.sigil-portfix-aeon; do
-  printf '%s %s\n' "$d" "$(git -C "$d" rev-parse --short HEAD)"
-done                                                   # then CRC32+size all four ROMs in it
+TIP=$(grep -E '^aeon_rev' crates/sigil-harness/golden/provenance.toml | tail -1 | sed 's/.*"\(.*\)"/\1/')
+MAIN=$(git -C ../aeon rev-parse --path-format=absolute --git-common-dir | xargs dirname)
+git -C ../aeon worktree list --porcelain \
+  | awk '/^worktree /{w=$2} /^HEAD /{if ($2=="'"$TIP"'") print w}' \
+  | grep -v "^$MAIN\$" | grep -v '/\.claude/worktrees/'
 ```
 
+**The two exclusions are not tidying and were found by running the command as written.** Without
+them it returns the OWNER'S LIVE CHECKOUT (which is at the tip whenever he has not moved, and is
+the one tree every rule here forbids as a reference — he authors in it, `sigil build` writes into
+it) and agent worktrees under `.claude/worktrees/`, which are somebody's in-flight development
+trees. The first draft of this block had neither exclusion and would have pointed a cold session
+straight at his tree. *A derivation is not automatically safer than a list; it just fails
+differently, and it has to be run before it is written down.*
+
+It can still return more than one, and that is correct rather than ambiguous: **the disambiguator
+is the artifact, not the name** — CRC32+size all four ROMs against the tip entry and take the tree
+that matches. A tree at the right revision whose shapes are wrong is not a reference tree (an
+in-flight one mid-rebuild will have three of four), which is why the revision alone was never
+sufficient.
+
 `~/sonic_hacks/.aeon-sigil-gates` is never a candidate — it is source-only by construction and
-deletes built ROMs, per the source-gate lane section.
+deletes built ROMs, per the source-gate lane section. It will not appear above anyway unless it
+happens to sit at the tip, which is the point of deriving rather than listing.
 
 **This is now gated, as of 2026-08-26 — and it was not the one-afternoon gate it looked
 like.** Historically no gate witnessed that `AEON_DIR` matched the provenance tip, because
@@ -805,8 +646,24 @@ returns to zero and any `ratchet:` line is again worth investigating.
   Ledgered: the mirror should skip or name a non-regular entry instead of `unwrap`ing.
 
   **Reconcile the total against the tree, not against the last remembered bar:**
-  `git grep -c '#\[test\]' HEAD -- '*.rs'` summed gives the declared count, and
-  `passed + ignored` must equal it (3839 + 4 = 3843 here). Baseline arithmetic carried
+  `git grep -c '#\[test\]' HEAD -- '*.rs'` summed approximates the declared count, and
+  `passed + ignored` should land on it.
+  **⚠ IT IS AN APPROXIMATION, NOT AN IDENTITY, AND THIS PARAGRAPH CLAIMED THE IDENTITY**
+  *(measured 2026-09-02)*. The grep counts LINES, so a `#[test]` inside a `macro_rules!`
+  body is counted once however many times the macro is invoked.
+  `crates/sigil-harness/tests/freeze_step_gap.rs` is the instance and currently the only
+  one (`git grep -ln 'macro_rules' HEAD -- '*/tests/*.rs'` returns exactly it): grep says
+  **12**, the binary runs **21**, a 9-test undercount in one file.
+  **And the residual is NOT explained, which is the honest state:** master's summed grep
+  is 4233 while the item-5 branch measured 4230 passed + 2 ignored against a branch grep of
+  4231 — a net discrepancy of 1, not 9, so something over-counts by 8 that this lane has
+  not identified. Do not report the difference as "the macro file" until that is measured;
+  one known error and an unexplained offset is two findings, not one.
+  **What it is still good for, and why it stays:** it caught the wrong-tree landing run
+  (3857 + 2 = 3859 against a declared 3823), and an error of single digits does not hide a
+  36-test gap. Use it as a coarse tripwire — a difference of a few is unexplained
+  bookkeeping, a difference of tens is a different tree. **The exact number is what the
+  suite reports; the grep never overrides it.** Baseline arithmetic carried
   across branches measured on different reference trees does not reconcile and will
   invent a discrepancy that is not there. Never plain
   `cargo test`: without `--release` some gates are impractically slow, without
@@ -1041,9 +898,35 @@ ruling. Each row's age prints on every lane run.
   test runtime** via `emp_const_rhs` / `emp_const_literal` — never a copied literal.
 - **Never build in the scratchpad/tmp** — `/tmp` is tmpfs; a cargo build there wedges
   the shell. Set `CARGO_TARGET_DIR` to disk for any out-of-tree build.
-- **⚠ ANY ad-hoc cargo command in this checkout RELINKS `target/release/sigil`, which is
-  the assembler another lane's freeze may be mid-ritual with** *(2026-09-02, found by the
-  aeon lane at chain 198; caused here)*. Measured: `target/release/sigil` went
+- **⚠ ANY cargo command that lands in this checkout RELINKS `target/release/sigil`, which
+  is the assembler another lane's freeze may be mid-ritual with** *(2026-09-02, found by the
+  aeon lane at chain 198; caused here)*.
+  **WIDENED THE SAME DAY, AND THE FIRST WORDING WOULD HAVE MISSED THE WORST CASE.** This
+  bullet said *"ad-hoc"*, which reads as a rule about careless one-off commands. It is not:
+  aeon's `tools/freeze_preflight.sh` — a COMMITTED TOOL in a sibling repo, documented as the
+  mandatory ritual before `refreeze --freeze` — derives its sigil tree from its own location
+  (`SIGIL="${SIGIL_DIR:-$(dirname "$(dirname "$HERE")")/sigil}"`, verified here at aeon
+  `origin/master`), `cd`s into **this shared checkout**, and runs `cargo test --release -p
+  sigil-harness` and `-p sigil-cli` with no `CARGO_TARGET_DIR`. It relinks on every
+  invocation, by design, and **somebody obeying the "ad-hoc" wording perfectly still relinks,
+  because they are not running an ad-hoc command.** A rule scoped to the careless case does
+  not bind the ritual, and the ritual is the thing that runs on a schedule.
+  **AND THE RELINK DESTROYS EVIDENCE, NOT JUST STATE: a freeze's assembler can cease to
+  exist.** `target/release/sigil` is a single path, so a relink OVERWRITES IN PLACE — the
+  binary that produced a frozen entry's goldens is simply gone, and the entry then names an
+  assembler nobody can re-instantiate by inspection. Instance: chain 198's goldens were built
+  by sigil `079cec97` (md5 `956da96a78171ff99aa6fef229d59812`, the aeon lane's measurement),
+  overwritten the same afternoon; recoverable only by rebuilding at that revision. **A
+  provenance record can therefore go un-reproducible without anything editing it**, which is
+  the one failure mode a frozen artifact is supposed to be immune to. The class belongs here
+  rather than in the ledger, because a ledger reader meets it one entry too late.
+  **Its second half is worse than the relink and is the reason to read this bullet twice: a
+  tool that resolves the tree from ITS OWN LOCATION tests whatever is at that path, not the
+  thing it was invoked about.** That pre-flight has never tested the tree it gates —
+  measured, not inferred: the new cross-seam symbol appears 0 times in this checkout's
+  `pins.rs` and once in the landing tree, so every red it produced was a true report about
+  the wrong subject. **"The gate was skipped" and "the gate ran and could not see the
+  subject" produce identical evidence**, and the first is the story everyone reaches for. Measured: `target/release/sigil` went
   `956da96a…`/`079cec97` → `4ca83f71…`/`dd5eaad2` at 12:28:24 local, **inside** a freeze
   window, and the binary that produced entry 198's goldens no longer exists — it was
   overwritten in place and is recoverable only by rebuilding at its revision.
