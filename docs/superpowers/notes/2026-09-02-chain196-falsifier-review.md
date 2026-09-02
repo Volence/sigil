@@ -73,8 +73,10 @@ Their attribution is right in kind. The bytes there are plainly a data table of
 ascending 16-bit values in pairs — pre-flip `0xA9700` reads
 `9218 4E6A 92BE 4E78 9346 4E86 936C 4E99 93EC 4EA7 9458 4EB6 94FE 4EC4 ...`, with the
 ascending series passing straight through the `4EB8`/`4EF8` range. Post-flip the table
-sits at a different offset and one entry pair happens to read as `jmp ($8xxx).w`. It is
-a coincidence in data, not an instruction, and it is harmless.
+sits at a different offset and one entry pair happens to read as `jsr ($9542).w` (the
+aeon lane's post-flip measurement; this lane only had the pre-flip side and predicted
+the encoding class wrongly as a `jmp`). It is a coincidence in data, not an
+instruction, and it is harmless.
 
 But the sentence "Pre-existing, not created" holds for the `FFFE` flag and not for this
 one, and the difference matters because the falsifier's whole claim is a statement about
@@ -106,6 +108,38 @@ Either that, or reconcile the two deltas by name.
 
 Neither finding contradicts the flip. They bear on what the evidence proves, not on
 whether the flip is sound, and the first is a wording repair plus one attribution.
+
+## Both findings closed by the aeon lane (their `5944dad5`)
+
+They checked rather than took both, and closed gap 2 the better way — by bounding the
+scan rather than by excusing names. Word-aligned, three bands: emitted code
+`[0x200, ErrorHandlerBlob)`, the vendored MD Debugger blob up to `EndOfRom`, and the
+deb2 appendix past it, with this lane's chain-195 goldens as the pre side.
+
+| band | s4 pre -> post | s4_debug pre -> post |
+|---|---|---|
+| code region | 97 -> 108 (+11) | 154 -> 156 (+2) |
+| blob + appendix | 2 -> 1 | 1 -> 2 |
+| whole image | 99 -> 109 | 155 -> 158 |
+
+The band decomposition reproduces this lane's independent whole-image pre-flip totals
+(97+2 = 99, 154+1 = 155) and their own earlier post-flip totals (108+1 = 109,
+156+2 = 158) exactly, so the -1/+1 of finding 2 is fully accounted: it is entirely the
+blob-and-appendix band, and `0xA970A` is the +1. Flagged operands >= `0x8000` in the
+code region: **zero, pre AND post, both shapes**. Because it holds on the pre side too,
+that is a property of the region rather than a lucky post-flip reading — a stronger
+claim than the one this note asked for. Their separate observation that the vendored
+blob is `0xF56` bytes in both shapes pre and post is its own evidence the island's
+content is untouched.
+
+Gap 1 was worse than one mis-attributed flag: the "pre-existing, not created" sentence
+was true of `$FFFE` and written as though it covered both, and the prose counted five
+flags then resolved four — one cause, which was never looking at the appendix flag.
+Corrected in their note's section 4 and kept as a record rather than quietly patched.
+
+The general lesson, theirs and worth carrying: **a whole-image scan defending a claim
+about code will always carry flags that need individual excuses, and every excuse is a
+place to be wrong.** Bound the population to the subject and the excuses disappear.
 
 ## A ledger row this raises on the sigil side
 
