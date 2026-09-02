@@ -10810,3 +10810,58 @@ demo_debug = "932f496f/101359"
 lean = "4d3f718f/674830"
 s4 = "fdd1cf81/719387"
 s4_debug = "0f6b1359/736391"
+
+[[entry]]
+name = "alignment-flip"
+ab = "aeon@5944dad5 - both replay fixtures passed on the post-flip s4.bin (Replay_Done=$FF, Input_Source back to LIVE, no fault); Sound_PlaySFX reached 5x, one caught and attributed at Player_Jump's jsr ($7FBC).w @0x10AC2 (return 0x10AC6, d0=$62); Raster_Install hit once per Debug_BandDemoHotkey branch in s4.debug.bin (START+UP install, START+DOWN off). Falsifier bounded to the emitted code region [0x200,ErrorHandlerBlob), chain-195 goldens as the pre side: abs.w encodings 97->108 in s4 (+11) and 154->156 in s4_debug (+2), exactly the converted sites, and ZERO operands >= $8000 in that region pre AND post in both shapes. The flagged operands all lie in the vendored MD Debugger blob or the deb2 appendix; of those, $FFFE is pre-existing (pre-flip 0xA71FC -> post 0xA71F0) but 0xA970A is NEW, created by the shrink re-aligning an ascending 16-bit appendix table, data either way (sigil review be676684 caught this; corrected in the note's section 4). Pre-flip binary on this same tree reproduces the chain-195 golden fdd1cf81/719387, so the aeon-side edits move no bytes alone. docs/superpowers/notes/2026-09-02-chain196-runtime-evidence.md"
+aeon_rev = "5944dad504862231568e04105f02614e379e9ff2"
+note = "chain 196, the alignment flip: sigil's packing walk uses required_for(head label) instead of packed_align_of; aeon side is both games' sound-off hole row 0x3F8->0x3F0 plus the sprite-tilt and insta-shield fixture re-stamps. Seven shapes shrink (s4 -62, s4_debug -46, demo -18, demo_debug -36, config_a -62, config_b -152, lean -14)."
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "819634c2"
+full_size = 736697
+anchor_crc = "cbc13d1f"
+anchor_end = 0xa7f34
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "46e2f38b"
+full_size = 614839
+anchor_crc = "c82bf573"
+anchor_end = 0x8c6e6
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "30a31d81"
+full_size = 96458
+anchor_crc = "a9763013"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "51056291"
+full_size = 101323
+anchor_crc = "992c305a"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "0373dec8"
+full_size = 674816
+anchor_crc = "ab5bd557"
+anchor_end = 0xa4c00
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "ac10ab85"
+full_size = 719325
+anchor_crc = "09cfd32a"
+anchor_end = 0xa5c82
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "fa866f19"
+full_size = 736345
+anchor_crc = "a095fbe0"
+anchor_end = 0xa7f34
