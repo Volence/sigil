@@ -141,6 +141,171 @@ passes the fn and is refused only at record emission — **blamed on the consume
 Return annotations DO check at the returning fn, so the parameter side is the asymmetry. A5 holds (it
 terminates); **the blame site is the defect.**
 
+### I GOT CONFIRMATION AND REFUTATION BACKWARDS, IN A SENTENCE A PEER THEN BANKED IN THEIR TREE (2026-09-02, aeon's catch, and it is a REPEAT)
+
+**Uncommitted when written; lands with the pair.**
+
+**What I said, and it is wrong:** *"a clean completion REFUTES the harness story rather than merely not
+confirming it."* The aeon lane found it persuasive and **banked it in their landing lane and their session
+memory in my words**, before the run.
+
+**Work it through, because the error is not subtle once written out.** The hypothesis is *harness background
+tasks get reclaimed; detached work survives.* Its prediction is *a detached freeze survives.* **It survived.**
+That is a **CONFIRMATION, and a weak one at n=1.** The observation that would have **refuted** it is a
+**detached death** — which is exactly what my own later sentence said (*"if it dies, that reading is worth
+more, because it settles the mechanism instead of merely not raising it"*). **The two sentences are
+inconsistent and I wrote both, hours apart, in the same session.**
+
+What a clean run *does* refute is a **different, competing** story — that the freeze is intrinsically fragile,
+or that memory pressure kills it. That is probably what the sentence was reaching for. It is not what it said,
+and the peer could not have known that from the words.
+
+**THIS IS A REPEAT OF A CLASS ALREADY IN THIS FILE** — *"I CONTRADICTED MY OWN CORRECT STATEMENT INSIDE ONE
+SESSION (2026-08-30, aeon's catch)"*. Same failure, same finder, five days later. So the honest reading is not
+"a slip"; it is that **holding the correct form of a rule does not stop you emitting the wrong form of it**,
+and the rule needs a mechanism rather than familiarity. The mechanism here is cheap and specific: **before
+calling any result a refutation, say what observation the hypothesis FORBIDS.** If the result you got is one
+the hypothesis *predicted*, the word is confirmation, whatever it feels like.
+
+**AND THE AGGRAVATING FEATURE, which is the reason it is worth a section: the error was CONVENIENT and it
+travelled.** A clean freeze plus "this refutes the mechanism" reads as a day's problem closed. It was banked
+by a peer, in my phrasing, **before the run** — so it was positioned to be quoted **after** a clean result as
+though the result had established something stronger than it did. Nothing in either tree would have caught
+it; it lived in mail, which is the artifact class with no reader (protocol bar 20). It was caught only
+because the peer re-derived a claim they had already accepted, after it came out the convenient way.
+
+**THE HONEST STATE OF THE MECHANISM, replacing anything cheerier:** three observations, all consistent, none
+decisive. (1) Two freezes died as harness background tasks. (2) A waiter died while its detached build lived
+— reproduced by a lane that did not form the hypothesis, which is the enumeration-parameter difference that
+makes it corroboration rather than echo. (3) This freeze ran detached to completion, `finished=0`. All three
+are consistent with child-lifecycle **and** with intermittent death that happened not to fire. **The
+discriminating run is a detached death, and we have not had one.**
+
+### THE PYTHON BYTECODE CACHE IS A THIRD WAY A RED-FIRST PROOF GOES VACUOUS — AND THIS TREE'S EXPOSURE IS CURRENTLY NIL (2026-09-02, aurora's finding, enumerated here)
+
+**Uncommitted when written; lands with the comptime pair.**
+
+**The hazard** *(aurora's, on their own red-first proof; their measurement, relayed by the hub, anchored at
+aurora master `0bc48156` `scripts/check-python-resolver.mjs` — not verified firsthand here, so treat the
+mechanism as theirs and the enumeration below as mine)*: **Python invalidates its bytecode cache on
+`(mtime, size)`.** So a planted mutation that preserves both runs **as the module's OLD self**, and the gate
+reports green over a mutation that is genuinely on disk. `-B` and `PYTHONDONTWRITEBYTECODE` **do not help** —
+they stop the cache being *written*, not being *read*. What works is a per-run `PYTHONPYCACHEPREFIX` at a
+fresh temp dir, **plus the runner COUNTING the bytecode files it wrote and refusing when there are none** —
+because "compiled from source" printed as prose survived deleting the fix, which is the prose-is-not-a-check
+defect wearing a reassurance.
+
+**THIS IS THE THIRD DISTINCT MECHANISM FOR ONE FAILURE, and the three share nothing but their artifact.**
+(1) The `git checkout --` restore on a dirty tree, which reverts the prover's own uncommitted subject so
+mutations 2 and 3 patch a file already restored (this lane's, 2026-09-02, two of three proofs vacuous).
+(2) An unapplied patch — the mutation never landed at all. (3) This one: **the mutation lands, the file on
+disk is genuinely changed, and the runner executes a cached older compilation of it.** Three causes, one
+indistinguishable output: **a green run over a mutation you can see in the file.** That is why invariant 8(c)
+says applied-but-still-green is a **runner defect to fix**, never a pass — it is now the only clause that
+catches mechanism (3), and it was written before anyone knew (3) existed.
+
+**THIS TREE'S EXPOSURE, enumerated rather than assumed, and it is a RESULT rather than a null.** 27 tracked
+`.py` files. Several are invoked as instruments (`scripts/drift_report.py` via `nightly_ref_drift.sh`,
+`scripts/drift_paths_sweep.py`, `tools/decisions_reader_audit.py`, the `golden/ab/*.py` runners). **None is
+used as a red-first BED**: `git grep -l 'red-first\|mutation\|mutate' -- '*.py'` is empty, and the one
+plausible candidate — `drift_report.py selftest` — **constructs its states in memory** (`cmd_selftest` →
+`_selftest_body` → `render(...)` against `/dev/null`) and patches no file on disk, so it has nothing to
+stale-cache. **Today's proofs are all clear for a structural reason rather than by luck: every mutation in
+both parcels was Rust, which cargo recompiles.**
+
+**THE TRIGGER, which is the part worth keeping, because the exposure is nil TODAY and the population is 27:**
+the moment anyone writes a red-first proof that **mutates a `.py` file on disk and re-runs it**, this applies
+in full. A booked "we are clear" would rot silently the first time that happens. So the rule is conditional,
+not a clearance: **any red-first proof whose subject is Python sets `PYTHONPYCACHEPREFIX` to a fresh
+per-run temp dir and counts the bytecode files written, refusing on zero.**
+
+**One method note from doing the enumeration.** Grepping `def selftest` came back empty and the verb is
+real — it is dispatched through argparse (`sub.add_parser("selftest")`, handler `cmd_selftest`). Reading
+that empty grep as absence would have produced a confident report of a nightly script advising a command
+that does not exist. **A failing lookup tells you about the query, not about the object**; the fix was to
+read the dispatch rather than to trust the name.
+
+### THE RECOMMENDED DETACH PATTERN HAS A HOLE IN THE MIDDLE: THE WATCHER IS WHAT GETS TAKEN (2026-09-02, aeon's, on a mechanism this lane proposed)
+
+**Uncommitted when written; lands with the comptime pair.** Master is parked behind the aeon lane's freeze.
+
+**The finding, and it is a correction to advice THIS LANE gave them.** This lane handed aeon the
+`nohup … &` + `finished=<exit code>` form so a long freeze would survive whatever was killing it, and so a
+death would carry a number instead of an anecdote. Aeon then armed a `run_in_background` Bash task whose
+only job was to **wait** for that build's `finished=` line. **The harness reclaimed the waiter** (reported
+`killed` / `was stopped`, and nobody stopped it) **while the detached build survived** — `pgrep -x sigil`
+found the assembler alive and its log still growing.
+
+**So: detach the work, but do NOT then watch it with a harness background task.** The watcher is exactly
+the thing that gets taken, which means the recommended pattern was two-thirds right and its last third
+reintroduced the failure it was designed to route around. Poll by hand, or read the artifact.
+
+**The rule under it, which is the durable half: the ARTIFACT question survives, the PROCESS question keeps
+being answered wrongly.** *"Did the log get its `finished=` line"* is answerable at any later time by
+anyone. *"Is the process alive"* is a question about a thing the harness may reclaim out from under both
+the asker and the answer. Prefer the artifact.
+
+**And the small confirmation nobody designed** *(aeon's own reading, stated against their interest)*: the
+waiter carried **no** exit stamp, and it produced exactly the truncated artifact this lane predicted for an
+unstamped death — **a kill and a completion were indistinguishable by looking at it.** That is the whole
+argument for the stamp, arriving as a free control on the one process that lacked one.
+
+**What it establishes and what it does not** *(their framing, kept because the discipline is the point)*: a
+**third** data point for the child-lifecycle mechanism, and the **first from a lane that did not form the
+hypothesis** — different repo, different workload, different reason for the process to exist, which is the
+enumeration-parameter difference that makes corroboration rather than echo. It is **not** the freeze test:
+a build surviving does not prove a five-minute `--attest` survives, and nothing yet distinguishes 137 from
+143 because nothing died that carried a stamp.
+
+### THE TEST THAT TURNED THE HOLD INTO A START — "is there an owner decision under this, AND IS IT THIS QUESTION" (2026-09-02)
+
+**Uncommitted when written; commits with the comptime landing.** Master is parked at `cdd330ff` behind
+the aeon lane's freeze window and this lane said so to two peers in writing, so the file waits rather
+than the word being quietly broken. It survives a `/clear` on disk in the meantime.
+
+**The sequence, because the shape repeats and the first half looks like obstruction.** The hub sent a
+`go` on `COMPTIME-LABEL-STRUCT-ALWAYS-RED` under the owner's delegation. This lane **held** it: adopted
+the technical ruling, refused the authorization, and banked the ruling with a paragraph saying the go was
+deliberately not banked with it (`cdd330ff`). The hub then produced **the owner's own words at the commit
+that carries them** — empyrean `63c85ae`, reachable from `origin/main`, verified here with `git grep` at
+that revision and **read in its surrounding page rather than at the matched line**: *"I'd like us to
+please continue our drive for the Raster/parallax effects, wave 1 project so we continue going through
+it"*, re-arming the 2026-08-30 brief (*"(you're the director/overseer)"*, *"Yes sigil go"*) and the
+07:27:51Z scope correction, which names sigil among the pushed lanes. **On that artifact the same test
+comes out yes, and this lane started.**
+
+**THE TEST, and it is the durable part: not "did the hub speak" but "is there an owner decision under
+this, and is it THIS question."** Two clauses, and the second is the one that does the work. The first is
+usually easy and usually satisfied. The second is where a general authorization gets silently stretched
+over a parcel it never contemplated.
+
+**The hub named the gap itself, which is why the exchange was cheap:** *he authorised the project lanes,
+sigil named, continuously through EFFECTS-W1; he did not name this parcel.* Exactly right. **So the thing
+to verify was the JOIN, not the endpoints** — and it was verified firsthand, not taken: aeon's probe doc
+`efb4b923` is **titled** "Item 5 comptime probe", item 5 is an EFFECTS-W1 item, therefore the always-red
+comparison sits on the project's path rather than in this lane's own backlog. **Which parcel inside an
+authorised project is the director's call, and that is the part the delegation genuinely covers.**
+
+**Why the hold was right even though it ended in a start, stated so a successor does not read it as
+friction that wasted an hour.** The two messages are not the same claim wearing different confidence. The
+first offered the hub's own go; the second offered the owner's words, their location, and the search
+command to find them. **A relay of his ruling is his ruling; a ruling made in his place is the hub's** —
+legitimate for decision cards, and not his word on whether a lane runs. The distinction cost one exchange
+and produced a better artifact than compliance would have: the hub has since said it will state every
+push as *the owner artifact, the link to this question, and the gap* rather than the conclusion alone.
+
+**The aeon lane drew the same line against its own earlier case, unprompted and against its own
+interest**, and their discrimination is the sharpest available: their d-50 ruling was *already the
+owner's*, quoted in the card, so the hub was **sequencing his decision, not substituting for it**; this
+one had no prior owner ruling underneath it. Same hub, same delegation, different answers — which is the
+evidence that the test discriminates rather than merely licensing whatever one wants to do.
+
+**The failure mode this prevents is a TIME-DELAYED one, which is why a rule is needed and vigilance is
+not.** Nothing goes wrong at the moment a relayed go is accepted; everyone acts in good faith and the
+work is real. It goes wrong later, when the row is prose and *"the hub said go"* and *"he said go"* are
+indistinguishable to a session reading it cold. **That is why the banked ruling carries its own
+disclaimer in its text** rather than relying on anyone remembering the provenance.
+
 ### CHAINS 194 AND 195 ARRIVED FROM THE AEON LANE — verified here, with three practices worth keeping (2026-08-30)
 
 **What arrived.** Chain 194 (`424feb39` freeze, `47d821ca` attest **RED** 4173/4/2) and chain 195
