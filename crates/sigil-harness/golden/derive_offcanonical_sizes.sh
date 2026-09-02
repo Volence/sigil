@@ -22,7 +22,36 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SIGIL_ROOT="$(cd "$HERE/../../.." && pwd)"
-AEON="${AEON_DIR:-/home/volence/sonic_hacks/aeon}"
+
+# ── THE REFERENCE TREE ───────────────────────────────────────────────────────────────
+# `scripts/lib/suite_paths.sh` implements the one precedence (contract/SUITE_PATHS.md):
+# explicit AEON_DIR, then EMPYREAN_SUITE_ROOT/aeon, then the sibling derived from this
+# checkout's own `git --git-common-dir`, then a refusal that names all of them. The
+# include's path is computed from $0's directory, never from $PWD — this script is run
+# from the directory it lives in.
+#
+# WHEN THE INCLUDE IS NOT REACHABLE, this script is a COPY planted outside the repo. Only
+# step 1 is available there; a copy that names no checkout is refused rather than sent to
+# a live working tree by a literal nobody chose.
+SUITE_PATHS="$SIGIL_ROOT/scripts/lib/suite_paths.sh"
+if [[ -r "$SUITE_PATHS" ]]; then
+    # shellcheck source=../../../scripts/lib/suite_paths.sh
+    source "$SUITE_PATHS"
+    AEON=$(suite_resolve_checkout aeon AEON_DIR) || exit $?
+elif [[ -n "${AEON_DIR:-}" ]]; then
+    AEON="${AEON_DIR}"
+    printf '# AEON_DIR=%s (step 1: explicit AEON_DIR; %s is not reachable from this copy)\n' \
+        "$AEON" "$SUITE_PATHS" >&2
+else
+    printf 'suite-paths: REFUSING — cannot locate the aeon checkout.\n' >&2
+    printf '       consulted  AEON_DIR              (unset)\n' >&2
+    printf '       tried      %s   (not readable, so the full precedence is unavailable)\n' "$SUITE_PATHS" >&2
+    printf '       Export AEON_DIR to the aeon checkout. This does NOT fall back to a live\n' >&2
+    printf '       working tree: a derivation against a tree nobody named is one nobody can\n' >&2
+    printf '       reproduce.\n' >&2
+    exit 3
+fi
+
 [[ -d "$AEON" ]] || { echo "ERROR: AEON_DIR not a dir: $AEON"; exit 1; }
 if [[ -z "${SIGIL_EMIT:-}" || ! -x "${SIGIL_EMIT:-}" ]]; then
     echo "ERROR: set SIGIL_EMIT to <sigil>/target/release/emit_sound_blob (sound-on builds need it)."

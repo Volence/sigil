@@ -28,17 +28,49 @@
 # --selftest-fail exercises the notification path without running anything.
 set -uo pipefail
 
-SIGIL_MAIN=/home/volence/sonic_hacks/sigil
-AEON_MAIN=/home/volence/sonic_hacks/aeon
-SIGIL_GATES=/home/volence/sonic_hacks/.sigil-source-gates
-AEON_GATES=/home/volence/sonic_hacks/.aeon-sigil-gates
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE=${XDG_STATE_HOME:-$HOME/.local/state}/sigil-source-gates
 LOG="$STATE/nightly.log"
 mkdir -p "$STATE"
 
-# On disk, never under /tmp: /tmp is tmpfs here and a cargo build there wedges
-# the shell.
-export CARGO_TARGET_DIR=/home/volence/sonic_hacks/.sigil-source-gates-target
+# ── WHERE THE TREES ARE, read at RUN TIME ────────────────────────────────────────
+# Five home literals stood here. contract/SUITE_PATHS.md rules one precedence for every
+# resolver in the suite — explicit <TOOL>_DIR, then EMPYREAN_SUITE_ROOT joined with the
+# repo name, then the sibling derived from this checkout's own `git --git-common-dir`
+# (never `--show-toplevel`, which answers wrongly from a worktree), then a refusal that
+# names all of them — and scripts/lib/suite_paths.sh is the one implementation of it.
+# This lane and the drift lane are the only sites a timer runs with NO override at all,
+# which is exactly why they must not carry a path one person's machine happens to have.
+#
+# THE TWO ARGUMENT-ONLY PATHS ARE EXEMPT, and that is not a softening. `--selftest-fail`
+# exists to prove the notification path in an environment where the rest does not work,
+# and `--audit` is read-only, derives its own tree from this file's location, and is run
+# by `crates/sigil-harness/tests/source_gate_classification.rs` on every workspace test
+# run — including in a checkout with no engine sibling, where requiring one would turn a
+# correct absence into a red suite. Neither reaches the variables below; the sentinels
+# make that structural rather than assumed, and read as a name if one ever does.
+SIGIL_MAIN='<unresolved: an argument-only path took no reference tree>'
+AEON_MAIN="$SIGIL_MAIN"
+SIGIL_GATES="$SIGIL_MAIN"
+AEON_GATES="$SIGIL_MAIN"
+if [[ ${1:-} != --selftest-fail && ${1:-} != --audit ]]; then
+    # shellcheck source=lib/suite_paths.sh
+    source "$HERE/lib/suite_paths.sh" || {
+        echo "COULD NOT RUN: cannot source $HERE/lib/suite_paths.sh, so no tree can be named" >&2
+        exit 2
+    }
+    SUITE_ROOT=$(suite_resolve_root) || exit 2
+    SIGIL_MAIN=$(suite_resolve_checkout sigil SIGIL_DIR) || exit 2
+    AEON_MAIN=$(suite_resolve_checkout aeon AEON_DIR) || exit 2
+    # This lane's own detached checkouts, outside both repo roots (see the header for
+    # why outside). Not checkouts of anything until the lane creates them, so they are
+    # joined onto the resolved root rather than resolved as repos.
+    SIGIL_GATES="$SUITE_ROOT/.sigil-source-gates"
+    AEON_GATES="$SUITE_ROOT/.aeon-sigil-gates"
+    # On disk, never under /tmp: /tmp is tmpfs here and a cargo build there wedges
+    # the shell.
+    export CARGO_TARGET_DIR="$SUITE_ROOT/.sigil-source-gates-target"
+fi
 
 # THE GATES THIS LANE RUNS: every sigil test binary whose inputs are aeon SOURCE
 # plus sigil's own compilation of it. Nothing here reads a built aeon ROM, a

@@ -72,7 +72,11 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=atomic_freeze.sh
 source "$HERE/atomic_freeze.sh"
 SIGIL_ROOT="$(cd "$HERE/../../.." && pwd)"
-AEON="${AEON_DIR:-/home/volence/sonic_hacks/aeon}"
+# The reference tree is resolved BELOW, after the write gate — see THE WRITE GATE. Its
+# path comes from `scripts/lib/suite_paths.sh`, computed from $0's own directory rather
+# than from $PWD, because this script is invoked from the directory it lives in and by
+# `refreeze` from elsewhere.
+SUITE_PATHS="$SIGIL_ROOT/scripts/lib/suite_paths.sh"
 WRITE=0
 [[ "${1:-}" == "--write" ]] && WRITE=1
 
@@ -154,6 +158,35 @@ GATE
         echo "   A journalled freeze does not remove that file. Remove it by hand once the"
         echo "   writes above are accounted for."
     fi
+fi
+
+# ── THE REFERENCE TREE, resolved here and not at the top ─────────────────────────────
+# AFTER the write gate on purpose: the gate is about intent, it costs nothing to ask, and
+# asking it first is what makes it provable in a tree with no aeon provisioned at all.
+# Resolving above would let a wrong environment refuse ahead of a wrong intent, and the
+# intent refusal is the one a reader needs.
+#
+# WHEN THE INCLUDE IS NOT REACHABLE, this script is a COPY planted outside the repo — the
+# stand-in bed `golden_write_gate.rs` builds is exactly that. Only step 1 is available
+# there, because steps 2 and 3 are about a suite this copy is not standing in; so the
+# checkout must be named explicitly, and a copy that names nothing is refused rather than
+# guessed at. No home literal in either branch.
+if [[ -r "$SUITE_PATHS" ]]; then
+    # shellcheck source=../../../scripts/lib/suite_paths.sh
+    source "$SUITE_PATHS"
+    AEON=$(suite_resolve_checkout aeon AEON_DIR) || exit $?
+elif [[ -n "${AEON_DIR:-}" ]]; then
+    AEON="${AEON_DIR}"
+    printf '# AEON_DIR=%s (step 1: explicit AEON_DIR; %s is not reachable from this copy)\n' \
+        "$AEON" "$SUITE_PATHS" >&2
+else
+    printf 'suite-paths: REFUSING — cannot locate the aeon checkout.\n' >&2
+    printf '       consulted  AEON_DIR              (unset)\n' >&2
+    printf '       tried      %s   (not readable, so the full precedence is unavailable)\n' "$SUITE_PATHS" >&2
+    printf '       Export AEON_DIR to the aeon checkout. This does NOT fall back to a live\n' >&2
+    printf '       working tree: a capture against a tree nobody named is a capture nobody\n' >&2
+    printf '       can reproduce.\n' >&2
+    exit 3
 fi
 
 [[ -d "$AEON" ]] || { echo "ERROR: AEON_DIR not a dir: $AEON"; exit 1; }

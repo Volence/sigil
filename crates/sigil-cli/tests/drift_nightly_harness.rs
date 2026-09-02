@@ -49,10 +49,56 @@ enum SeamVerdict {
     Broken(String),
 }
 
-fn seam_verdict(reader: &str) -> SeamVerdict {
-    if reader.is_empty() {
-        return SeamVerdict::Empty;
+/// The variable names `nightly_ref_drift.sh` EXPORTS before it sources the config.
+///
+/// Derived from the job, never listed here. The config is sourced, not parsed — its own
+/// header says so — so a `${VAR}/…` value is resolved at run time by whatever the job put
+/// in the environment first, and the set of things it put there is a fact about the job.
+/// A retyped copy of that set is a second thing to keep in step, which is the defect this
+/// lane has already been bitten by twice.
+///
+/// "Before" is load-bearing: an export that happens AFTER the `source` line cannot reach
+/// the value, so ordering is part of the rule and not an incidental detail of the scan.
+fn exported_before_config(script: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for line in script.lines() {
+        let t = line.trim();
+        if t.starts_with("source ") && t.contains("CONF") {
+            break;
+        }
+        if let Some(rest) = t.strip_prefix("export ") {
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || *c == '_')
+                .collect();
+            if !name.is_empty() && rest[name.len()..].starts_with('=') {
+                names.push(name);
+            }
+        }
     }
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// `${NAME}` or `${NAME:?msg}` / `${NAME:-default}` opening a value, split into the
+/// variable's name and everything after the closing brace.
+fn shell_var_prefix(value: &str) -> Option<(String, String)> {
+    let inner_start = value.strip_prefix("${")?;
+    let close = inner_start.find('}')?;
+    let inner = &inner_start[..close];
+    let name: String = inner
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect();
+    if name.is_empty() {
+        return None;
+    }
+    Some((name, inner_start[close + 1..].to_string()))
+}
+
+/// The verdict on a value that is already a concrete path.
+fn literal_verdict(reader: &str) -> SeamVerdict {
     let p = Path::new(reader);
     if !p.is_absolute() {
         // A relative reader is resolved against whatever directory the nightly job happens
@@ -83,6 +129,96 @@ fn seam_verdict(reader: &str) -> SeamVerdict {
              NOTHING rather than passing."
         )),
     }
+}
+
+/// THE VERDICT, over both spellings a configured reader may take.
+///
+/// WHY A SECOND SPELLING EXISTS AT ALL. The config's paths used to be written out in full,
+/// which meant the suite's location was recorded in this file as well as wherever the job
+/// resolved it — the same fact in two places, and the copy with no way to notice it had
+/// gone wrong. The job now resolves the root once and exports it, and the config names the
+/// part that is genuinely its own.
+///
+/// WHAT THAT DOES AND DOES NOT CHANGE HERE. This gate's subject is unchanged: the seam is
+/// either genuinely configured or genuinely empty, and absence is not a pass. A
+/// `${VAR}/…` value IS genuinely configured — it is only not literal — so accepting it
+/// does not soften the subject. What WOULD soften it is accepting a spelling that cannot
+/// name anything, so all three ways for one to fail are refused by name:
+///
+///   * the variable is not one the job exports before sourcing the config, so nothing will
+///     ever replace it;
+///   * the variable is set to nothing, which is a wrong environment rather than a missing
+///     one and would compose a path rooted at `/`;
+///   * the remainder does not start with `/`, so no expansion could produce an absolute
+///     path and the relative-reader refusal would be evaded by spelling.
+///
+/// The variable's VALUE arrives through `lookup` rather than being read from the process
+/// environment inside here. The three failure modes above are properties of the value, and
+/// reaching them by mutating this process's environment would make one case's setup visible
+/// to every other test in this binary — a shared-state defect in a gate about configuration
+/// being unambiguous.
+fn seam_verdict_with(
+    reader: &str,
+    exported: &[String],
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> SeamVerdict {
+    if reader.is_empty() {
+        return SeamVerdict::Empty;
+    }
+    let Some((var, rest)) = shell_var_prefix(reader) else {
+        return literal_verdict(reader);
+    };
+
+    if !exported.iter().any(|e| e == &var) {
+        return SeamVerdict::Broken(format!(
+            "DRIFT_RECORD_READER = `{reader}` expands `{var}`, which the nightly job does \
+             NOT export before it sources the config. Nothing will replace it, so this \
+             names nothing runnable. The job exports: {exported:?}"
+        ));
+    }
+    if !rest.starts_with('/') {
+        return SeamVerdict::Broken(format!(
+            "DRIFT_RECORD_READER = `{reader}` continues `{rest}` after `{var}`, which does \
+             not start with `/`, so no expansion of it can produce an absolute path and the \
+             relative-reader refusal would be evaded by spelling alone."
+        ));
+    }
+    match lookup(&var) {
+        Some(v) if v.is_empty() => SeamVerdict::Broken(format!(
+            "DRIFT_RECORD_READER = `{reader}` expands `{var}`, which is set to NOTHING in \
+             this environment. A variable that is set but empty is a wrong environment, not \
+             a missing one, and it would compose a reader rooted at `/`."
+        )),
+        Some(v) => literal_verdict(&format!("{v}{rest}")),
+        // The job resolves and exports the root at run time; nothing has here. That is what
+        // an unprovisioned environment looks like, and it is NAMED rather than passed —
+        // the same treatment the absent-tree case gets above.
+        None => SeamVerdict::Unprovable(format!(
+            "DRIFT_RECORD_READER = `{reader}` expands `{var}`, which the nightly job resolves \
+             and exports at run time and which nothing has set here. This gate cannot \
+             distinguish a correct configuration from a broken one without it, so it asserts \
+             NOTHING rather than passing."
+        )),
+    }
+}
+
+/// The exporter set, read out of the job. Loud when it comes back empty: an empty set
+/// would make EVERY `${VAR}/…` spelling look unexportable, which is a refusal this gate
+/// would then hand out for a reason that is about its own scan rather than about the
+/// config.
+fn exported_names() -> Vec<String> {
+    let names = exported_before_config(&read(&workspace(), "scripts/nightly_ref_drift.sh"));
+    assert!(
+        !names.is_empty(),
+        "COULD NOT MEASURE: no variable is exported before the config is sourced in \
+         scripts/nightly_ref_drift.sh, so this gate cannot tell a usable expansion from an \
+         unusable one and would refuse both"
+    );
+    names
+}
+
+fn seam_verdict(reader: &str) -> SeamVerdict {
+    seam_verdict_with(reader, &exported_names(), &|v| std::env::var(v).ok())
 }
 
 /// The `observe` arguments, with the engine-revision flag assembled rather than
@@ -341,6 +477,82 @@ fn the_seam_verdict_separates_absent_from_broken() {
     // case the original message named and never caught, because it never reached the check.
     assert!(matches!(
         seam_verdict("tools/drift_record.py"),
+        SeamVerdict::Broken(_)
+    ));
+
+    // ── THE EXPANDED SPELLING, and the three ways it can fail ───────────────────────
+    // Accepting `${VAR}/…` is what lets the config stop recording the suite's location a
+    // second time. It must not become a way to be configured-looking and unrunnable, so
+    // each failure mode is asserted here rather than left to the one live value's luck.
+    let exported = exported_names();
+    let probe = exported[0].clone();
+    let unset = |_: &str| None;
+
+    // 1. A VARIABLE NOBODY EXPORTS. Nothing will ever replace it.
+    match seam_verdict_with(
+        "${NOT_EXPORTED_BY_ANY_LANE}/tools/drift_record.py",
+        &exported,
+        &unset,
+    ) {
+        SeamVerdict::Broken(why) => assert!(
+            why.contains("does NOT export") && why.contains("NOT_EXPORTED_BY_ANY_LANE"),
+            "an unexportable variable must be named as such: {why}"
+        ),
+        other => panic!(
+            "a reader expanding a variable no exporter sets names nothing runnable, so it is \
+             broken, not tolerable (got {})",
+            verdict_name(&other)
+        ),
+    }
+
+    // 2. A VARIABLE SET TO NOTHING. Set but empty is a wrong environment, not a missing
+    //    one, and it would compose a reader rooted at `/`.
+    match seam_verdict_with(
+        &format!("${{{probe}}}/tools/drift_record.py"),
+        &exported,
+        &|_| Some(String::new()),
+    ) {
+        SeamVerdict::Broken(why) => assert!(
+            why.contains("set to NOTHING"),
+            "a variable set to nothing must be named as a wrong environment: {why}"
+        ),
+        other => panic!(
+            "a reader whose variable is set to nothing would be rooted at `/`, which is \
+             broken, not tolerable (got {})",
+            verdict_name(&other)
+        ),
+    }
+
+    // 3. A REMAINDER THAT IS NOT ROOTED. No expansion of it can be absolute, so the
+    //    relative-reader refusal above would be evaded by spelling alone.
+    match seam_verdict_with(
+        &format!("${{{probe}}}tools/drift_record.py"),
+        &exported,
+        &|_| Some("/somewhere".to_string()),
+    ) {
+        SeamVerdict::Broken(why) => assert!(
+            why.contains("not start with"),
+            "an unrooted remainder must be named as such: {why}"
+        ),
+        other => panic!(
+            "a reader whose remainder is not rooted cannot expand to an absolute path, which \
+             is the relative case under another spelling (got {})",
+            verdict_name(&other)
+        ),
+    }
+
+    // AND THE POSITIVE HALF: a well-formed expansion is judged by the path it composes,
+    // not waved through for being well-formed. Both ends, against the bed above.
+    assert!(matches!(
+        seam_verdict_with(&format!("${{{probe}}}/real.py"), &exported, &|_| Some(
+            base.display().to_string()
+        )),
+        SeamVerdict::Present
+    ));
+    assert!(matches!(
+        seam_verdict_with(&format!("${{{probe}}}/drift_record.py"), &exported, &|_| Some(
+            base.display().to_string()
+        )),
         SeamVerdict::Broken(_)
     ));
 

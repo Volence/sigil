@@ -71,6 +71,26 @@
 #   scripts/landing-run.sh --baseline 4156 --aeon ~/sonic_hacks/.aeon-landing
 #   scripts/landing-run.sh --scoped -- -p sigil-span        # a deliberately partial run
 #
+# WHICH REFERENCE TREE A BARE RUN USES — there is no longer a built-in answer.
+#   A run that names no tree does NOT fall back to a live checkout. It resolves one by the
+#   suite-paths contract, in this order, and PRINTS which step answered before doing any
+#   work, so the log says how the tree was chosen rather than leaving it to be assumed:
+#
+#     1. `--aeon <path>`, or the AEON_DIR environment variable
+#     2. EMPYREAN_SUITE_ROOT joined with `aeon`
+#     3. the sibling derived from THIS checkout's own `git rev-parse --git-common-dir`
+#     4. otherwise it REFUSES, naming every variable it consulted and every path it tried
+#
+#   A variable that is set but does NOT name an aeon checkout is a hard error at its own
+#   step, not a null that lets the next step run: a wrong value means a wrong environment,
+#   and resolving around it would leave that variable wrong for everything downstream.
+#   The implementation is scripts/lib/suite_paths.sh, shared with the nightly lanes.
+#
+#   THE OPT-IN FOR A DELIBERATELY PARTIAL RUN IS `--scoped`, and it is the only one this
+#   script has. It does not make a missing reference tree acceptable — it makes the
+#   reference-tree ARTIFACTS reported instead of required, and stamps the verdict as
+#   PARTIAL so no reader can mistake it for a landing.
+#
 # EXIT CODES
 #   0  the suite ran, passed, and reconciled against the stated baseline
 #   1  the suite FAILED (red tests, or cargo exited nonzero)
@@ -121,7 +141,11 @@ while (( $# )); do
         # reader can mistake it for a landing.
         --scoped)   SCOPED=1; shift ;;
         --)         shift; CARGO_EXTRA=("$@"); break ;;
-        -h|--help)  sed -n '2,80p' "$0"; exit 0 ;;
+        # The header, to wherever it actually ends. This was `sed -n '2,80p'`, and a hard
+        # line number is a help text that silently truncates the moment the header grows —
+        # which it just did. The end of the header is a fact about the file, so it is read
+        # from the file.
+        -h|--help)  awk '/^set -uo pipefail/ { exit } NR > 1' "$0"; exit 0 ;;
         *)          die "unknown argument \`$1\` (try --help)" ;;
     esac
 done
@@ -204,7 +228,41 @@ printf '%s\n' "$ROOT" > "$OWNER_FILE" || die "cannot write the ownership marker 
 # ---------------------------------------------------------------------------------------
 # (4) The reference environment: resolved ONCE, refused BY NAME, passed EXPLICITLY.
 # ---------------------------------------------------------------------------------------
-AEON=$(abspath "${AEON_ARG:-${AEON_DIR:-/home/volence/sonic_hacks/aeon}}")
+# `--aeon <path>` is STEP 1 by another spelling — the operator naming the tree on this
+# command line is at least as explicit as the environment doing it, and it is checked
+# here rather than handed to the include so the refusal can name the flag.
+#
+# Absent the flag, the include implements the whole precedence and ANNOUNCES which step
+# answered. There is no home literal left in this line: the predecessor's default sent a
+# run that named no tree at the owner's live checkout, which is mid-edit, carries his
+# content edits, and is not at the provenance tip — a green from it is a green about
+# something nobody chose.
+# shellcheck source=lib/suite_paths.sh
+source "$ROOT/scripts/lib/suite_paths.sh" \
+    || die "cannot source $ROOT/scripts/lib/suite_paths.sh — the reference tree cannot be
+       resolved without it, and guessing is what this script exists to stop."
+
+if [[ -n $AEON_ARG ]]; then
+    AEON=$(abspath "$AEON_ARG")
+    AEON_STEP="1: explicit --aeon"
+    suite_paths_announce AEON_DIR "$AEON" 1 "explicit --aeon"
+else
+    # The include's own announce goes to stderr; its refusal names every variable
+    # consulted and every path tried, which is exactly refusal (4)'s bar, so it is let
+    # through verbatim rather than re-worded into something less specific.
+    AEON=$(suite_resolve_checkout aeon AEON_DIR) \
+        || die "the reference tree could not be resolved (see the refusal above).
+       Pass --aeon <path to a built aeon checkout>, or export AEON_DIR."
+    AEON=$(abspath "$AEON")
+    # Which step answered is on stderr from the include and repeated into the log stamp
+    # below, so the run's own record says how the tree was named. Re-derived rather than
+    # captured because the announce is stderr and the path is stdout; the two spellings
+    # agree by construction (both come from the same variables the include read).
+    if [[ -n ${AEON_DIR:-} ]]; then AEON_STEP="1: explicit AEON_DIR"
+    elif [[ -n ${EMPYREAN_SUITE_ROOT:-} ]]; then AEON_STEP="2: EMPYREAN_SUITE_ROOT/aeon"
+    else AEON_STEP="3: sibling of this checkout via git --git-common-dir"
+    fi
+fi
 [[ -d $AEON ]] || die "AEON_DIR resolves to $AEON, which is not a directory.
        Pass --aeon <path to a built aeon checkout>, or export AEON_DIR."
 [[ -f $AEON/build.sh ]] || die "AEON_DIR resolves to $AEON, which has no build.sh — that is
@@ -310,7 +368,7 @@ CARGO_ARGS+=(-- --nocapture)
     echo "# sigil HEAD     $HEAD_SHA"
     echo "# sigil branch   $BRANCH ($DIRTY)"
     echo "# main checkout  $MAIN"
-    echo "# AEON_DIR       $AEON"
+    echo "# AEON_DIR       $AEON (step $AEON_STEP)"
     echo "# aeon HEAD      $AEON_HEAD"
     echo "# aeon branch    $AEON_BRANCH ($AEON_DIRTY)"
     echo "# aeon ROMs      $ROM_STATE"

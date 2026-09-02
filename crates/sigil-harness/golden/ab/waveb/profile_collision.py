@@ -21,12 +21,14 @@ usage: SKIP_RELOAD=1 profile_collision.py <rom> <label>
 """
 import asyncio, json, os, sys
 
-sys.path.insert(0, "/home/volence/sonic_hacks/empyrean/clients/python")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from suite_paths import add_empyrean_clients, debug_listing  # noqa: E402
+add_empyrean_clients()
 from aether import BusClient
 
 ROM = sys.argv[1]
 LABEL = sys.argv[2]
-LST = os.environ.get("PROFILE_LST", "/home/volence/sonic_hacks/aeon/s4.debug.lst")
+LST = debug_listing()
 OUT = os.path.dirname(os.path.abspath(__file__))
 
 # s4.debug shape RAM addresses

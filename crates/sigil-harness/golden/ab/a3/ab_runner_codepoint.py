@@ -5,7 +5,9 @@ Frame_Counter reaches the target, so OLD and NEW are captured at the identical
 PC AND identical Frame_Counter."""
 import asyncio, json, os, sys, zlib
 
-sys.path.insert(0, "/home/volence/sonic_hacks/empyrean/clients/python")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from suite_paths import add_empyrean_clients  # noqa: E402
+add_empyrean_clients()
 from aether import BusClient
 
 OUT = os.path.dirname(os.path.abspath(__file__))

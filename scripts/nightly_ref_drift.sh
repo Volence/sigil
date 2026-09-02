@@ -34,17 +34,14 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SIGIL_MAIN=/home/volence/sonic_hacks/sigil
-AEON_MAIN=/home/volence/sonic_hacks/aeon
-# This job's OWN checkouts. Never the source-gate lane's (scrubbed source-only), never
-# a peer's live working tree (mid-edit, and the owner authors in the aeon main tree).
-SIGIL_DRIFT=/home/volence/sonic_hacks/.sigil-ref-drift
 STATE=${XDG_STATE_HOME:-$HOME/.local/state}/sigil-ref-drift
 LOG="$STATE/nightly.log"
 mkdir -p "$STATE"
 
-# On disk, never under /tmp: /tmp is tmpfs here and a cargo build there wedges the shell.
-export CARGO_TARGET_DIR=/home/volence/sonic_hacks/.sigil-ref-drift-target
+# The checkouts and scratch trees are resolved BELOW, after the argument gate, through
+# scripts/lib/suite_paths.sh. They were four home literals here; this lane and the
+# source-gate lane are the only sites a timer runs with NO override at all, which is
+# exactly why they must not carry a path one person's machine happens to have.
 
 note() {
     echo "$(date -Is) $1" >> "$LOG"
@@ -99,6 +96,42 @@ if [[ $# -gt 0 ]]; then
     echo "    python3 scripts/drift_report.py selftest" >&2
     exit 64
 fi
+
+# ── WHERE THE TREES ARE, read at RUN TIME ────────────────────────────────────────
+# contract/SUITE_PATHS.md, one precedence for every resolver: explicit <TOOL>_DIR, then
+# EMPYREAN_SUITE_ROOT joined with the repo name, then the sibling derived from this
+# checkout's own `git --git-common-dir`, then a refusal that names all of them.
+#
+# AFTER the argument gate above on purpose: `--selftest-fail` and the unrecognised-flag
+# refusal exist to be reachable in any environment, and making them depend on a
+# resolvable suite would be a precondition on the two paths whose whole job is to work
+# when the rest does not.
+#
+# A refusal here is COULD NOT RUN (exit 2), never a quiet default. This lane and the
+# source-gate lane are the only sites a timer runs with no override, so a wrong guess
+# here is a wrong guess nobody is present to see.
+# shellcheck source=lib/suite_paths.sh
+source "$HERE/lib/suite_paths.sh" \
+    || { note "COULD NOT RUN: cannot source $HERE/lib/suite_paths.sh, so no tree can be named"; exit 2; }
+
+SUITE_ROOT=$(suite_resolve_root) \
+    || { note "COULD NOT RUN: the suite root could not be resolved (see stderr)"; exit 2; }
+SIGIL_MAIN=$(suite_resolve_checkout sigil SIGIL_DIR) \
+    || { note "COULD NOT RUN: the sigil checkout could not be resolved (see stderr)"; exit 2; }
+AEON_MAIN=$(suite_resolve_checkout aeon AEON_DIR) \
+    || { note "COULD NOT RUN: the aeon checkout could not be resolved (see stderr)"; exit 2; }
+
+# This job's OWN scratch trees, hanging off the resolved suite root. Never the
+# source-gate lane's checkout (scrubbed source-only), never a peer's live working tree
+# (mid-edit, and the owner authors in the aeon main tree). These are not checkouts of
+# anything, so they are joined onto the root rather than resolved as repos.
+SIGIL_DRIFT="$SUITE_ROOT/.sigil-ref-drift"
+# On disk, never under /tmp: /tmp is tmpfs here and a cargo build there wedges the shell.
+export CARGO_TARGET_DIR="$SUITE_ROOT/.sigil-ref-drift-target"
+# The config's own tree path is expressed against this, exported so the config — which is
+# SOURCED, not parsed — can expand it at run time instead of carrying a second copy of
+# the same fact.
+export EMPYREAN_SUITE_ROOT="$SUITE_ROOT"
 
 # ── N, read at RUN TIME ──────────────────────────────────────────────────────────
 # N is the owner's number, ruled provisionally by the hub in his place. It lives in a

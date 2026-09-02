@@ -3512,3 +3512,78 @@ changed (only `sigil-harness` and one port test), so the findings are current, n
   errors at comptime with both operand types named, so an always-red guard cannot be written;
   whether the array-literal position should resolve a `pub data` symbol as its value rather
   than its address is a separate language call, to propose to the owner in his own words)
+
+### Suite-paths migration (2026-09-02) — one residual, one CLOSED, one not-a-defect
+Parcel `parcel/scripts-name-their-tree`; contract `contract/SUITE_PATHS.md` at empyrean
+`f222f371`; packet `docs/superpowers/notes/2026-09-02-scripts-name-their-tree.md`.
+- **`scripts/drift-nightly.conf`'s `DRIFT_RECORD_READER` was a home literal held there by a
+  gate.** `the_record_seam_is_empty_and_absence_is_not_a_pass` read that key as RAW TEXT and
+  judged it absolute-or-empty, so the `${EMPYREAN_SUITE_ROOT}/…` spelling would have read to
+  it as the half-configured case. The two ways to go green without touching the gate —
+  blanking the key, or moving the path under another name — both clear it by defeating its
+  subject, so neither was taken and the item was escalated instead.
+  — **CLOSED** (hub ruling 2026-09-02: a `${VAR}/…` value IS genuinely configured, only not
+  literal, so teaching the gate the spelling does not soften its subject. Amended in
+  `crates/sigil-cli/tests/drift_nightly_harness.rs`: the exporter set is derived from
+  `nightly_ref_drift.sh`, and an unexported variable, a variable set to nothing, and an
+  unrooted remainder are each Broken by name — three red-first rows in the packet)
+- **A file can CONSUME a resolution without CALLING a resolver, and an entry-point-only lint
+  population never sees it.** `drift-nightly.conf` is sourced by the job after the job has
+  resolved and exported the root, and expands it: it holds a resolved path and calls nothing.
+  Found by checking a ledger row rather than banking it — the row as first written claimed
+  routing the conf had brought it into the population, and it had not. That blind spot is how
+  the conf's literal survived the first pass of this very parcel.
+  — **CLOSED** (`calls_the_resolver` also matches a file that expands a variable the resolver
+  ANNOUNCES under a literal name, derived from the resolver's own announce calls; expansion
+  syntax required so prose is not swept in. Red-first: a literal planted in the conf is now
+  named at `drift-nightly.conf:11`)
+- **The lint's population is runnable files only (`.sh`, `.py`, `.conf`), so a DOCUMENT
+  naming a resolved path is judged by nothing.** Deliberate — this parcel's own packet quotes
+  refusals full of the literal it is about, and judging prose by a resolver's standard would
+  make the rule unusable.
+  — OPEN (kill: nothing cheap, and probably nothing wanted. Recorded so a later sweep reads
+  the lint's silence about a `.md` as a scope statement rather than a clean bill)
+- **The two `systemd` units' `ExecStart` lines stay absolute, deliberately.** A unit has no
+  run-time resolver, and `%h` only trades a full literal for a home-relative one that is equally
+  wrong when the suite moves. The unit is the ENTRY point, and the script it names resolves
+  everything else, so this is the one place the literal is not a duplicated fact.
+  — NOT A DEFECT (recorded so a later sweep does not re-open it; `scripts/systemd/README.md`
+  already makes reinstalling the documented step after any edit)
+
+### Red-first has a hole the bar does not name (2026-09-02) — found in `parcel/scripts-name-their-tree`
+- **A mutation that FAILS TO APPLY is indistinguishable from a correctly restored baseline, and
+  both print `ok`.** Three red-first proofs ran from a script that mutated a gate, ran it, and
+  restored with `git checkout --`. The amendment under test was not committed yet, so the first
+  restore deleted the work; the next two mutations found no anchor, `str.replace` returned the
+  input unchanged, and they ran the ORIGINAL gate, which passes. Two of three proofs were
+  vacuous and read green. It was nearly banked as a finding — two genuinely-too-weak gates had
+  printed `ok` under real mutations the same hour, so a third and fourth `ok` looked like more
+  of the same class.
+  — **CLOSED as a practice** (every red-first run asserts the mutation changed the file —
+  `git diff --stat` showing an insertion — BEFORE the gate is run; a red with no such line is an
+  anecdote. Commit before mutating, so a restore restores rather than reverts. Retroactive audit
+  of the parcel is in that packet's §8a: rows that went red are sound by construction, the two
+  that printed `ok` were each re-established by a later red)
+- **The standing bar says "prove it red-first" and does not say "prove the mutation applied",**
+  so every red-first proof commissioned under it has this hole, not only this parcel's.
+  — OPEN (kill: the pre-check is in the dispatch invariant block; this row closes when a parcel
+  dispatched under the amended bar shows the pre-check in its packet)
+
+### A derived population must follow the CONSUMPTION relation (2026-09-02) — same parcel
+- **A file does not have to CALL a resolver to CONSUME one.** One lint's population was wrong
+  three times in the same direction — it looked principled and could not reach a file it existed
+  to judge: hand-written (stale by construction), "sources the include by path" (missed the two
+  callers that hold the path in a variable so they can check reachability), "names an entry
+  point" (missed a config that is SOURCED after the job exported the resolved root and merely
+  expands it). The third is the general case; the evidence that makes it land is that the
+  blindness is how that config's own home literal survived the first pass of the parcel whose
+  whole subject was removing home literals.
+  — **CLOSED for this lint** (population = entry points named, module imported, OR a variable the
+  resolver ANNOUNCES under a literal name being expanded, derived from the resolver's own announce
+  calls; red-first at `drift-nightly.conf:11`). **OPEN as a review question for every other
+  derived population in this repo**: ask what CONSUMES the value, not what calls the producer —
+  the same question the `control says you disagree` note asks
+- **How it was found is the transferable part**: not by testing and not by review, but by writing
+  a ledger row and then checking its own sentence against the tree. The row claimed the config was
+  now in the population; one `grep` said otherwise. A claim about one's own work, written minutes
+  earlier, still needs the command.
