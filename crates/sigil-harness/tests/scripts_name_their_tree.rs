@@ -551,6 +551,13 @@ fn no_resolver_caller_regrows_a_home_literal() {
          the caller population is derived from almost nothing: {entries:?}",
         entries.len()
     );
+    let announced = announced_variables();
+    assert!(
+        !announced.is_empty(),
+        "COULD NOT MEASURE: the resolver announces no variable under a literal name, so a \
+         file that consumes a resolution without calling anything — a sourced config — \
+         cannot be reached by this population at all"
+    );
 
     let me = Path::new(file!()).file_name().map(|n| n.to_owned());
     let mut callers = Vec::new();
@@ -566,7 +573,7 @@ fn no_resolver_caller_regrows_a_home_literal() {
             continue;
         }
         let Ok(text) = std::fs::read_to_string(f) else { continue };
-        if !calls_the_resolver(&text, &entries) {
+        if !calls_the_resolver(&text, &entries, &announced) {
             continue;
         }
         callers.push(f.clone());
@@ -618,10 +625,39 @@ fn resolver_entry_points() -> Vec<String> {
     names
 }
 
-/// A file REACHES the resolver, as opposed to discussing it: it names one of the
-/// resolver's entry points, or imports the Python module by name.
-fn calls_the_resolver(text: &str, entries: &[String]) -> bool {
+/// The variables the resolver ANNOUNCES under a literal name, read out of the resolver.
+///
+/// Today that is the suite-root variable. A file does not have to call a function to
+/// consume a resolution: `scripts/drift-nightly.conf` is SOURCED by the job after the job
+/// has resolved and exported the root, and expands it. That file holds a resolved path and
+/// calls nothing, so an entry-point-only population would never judge it — which is exactly
+/// how the literal this parcel removed from it sat there in the first place.
+fn announced_variables() -> Vec<String> {
+    let text = std::fs::read_to_string(shell_include())
+        .unwrap_or_else(|e| panic!("COULD NOT MEASURE: read the resolver: {e}"));
+    let mut names: Vec<String> = text
+        .lines()
+        .filter_map(|l| {
+            let rest = l.trim().strip_prefix("suite_paths_announce ")?;
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || *c == '_')
+                .collect();
+            (name.len() > 1).then_some(name)
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// A file REACHES the resolver, as opposed to discussing it: it names one of the resolver's
+/// entry points, imports the Python module by name, or EXPANDS a variable the resolver
+/// announces — the third being how a sourced config consumes a resolution without calling
+/// anything. Expansion syntax is required, so prose naming the variable is not swept in.
+fn calls_the_resolver(text: &str, entries: &[String], announced: &[String]) -> bool {
     entries.iter().any(|e| text.contains(e.as_str()))
+        || announced.iter().any(|v| text.contains(&format!("${{{v}")))
         || text.lines().any(|l| {
             let t = l.trim();
             t.starts_with("from suite_paths ") || t.starts_with("import suite_paths")
