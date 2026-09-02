@@ -5358,3 +5358,270 @@ unit fold now being caught by the COMPILER, at the comparison, with no known-goo
 earlier and stronger catch surface than the ensure it replaces. Nothing fires on a correct tree: the
 guards this poison protects (`engine/level/parallax_dsl.emp:108-117`) compare int to int on the shipped
 generator. The three aeon-side edits are enumerated at the end of `docs/EMP_PITFALLS_EQUALITY.md`.
+
+### MOVED FROM THE BOOT READ 2026-09-02T17:5xZ — six closed sections, verbatim
+
+Moved when `docs/OVERSEER.md` went over its 100,000 B bound (107,555 B at sigil 4a534724).
+Each section is byte-identical to what stood in the boot doc; the LIVE rules they carried were
+rewritten into that file's "Rules banked from closed findings" section, which points back here.
+Original line spans in the boot doc at 4a534724: 93-152, 153-192, 193-236, 237-268, 318-348, 349-401.
+
+### COMPTIME-LABEL-STRUCT-ALWAYS-RED — the hub's ruling, banked BEFORE the work, and the go is NOT banked with it (2026-09-02)
+
+**Why this section exists at all.** The ruling below arrived by message and nothing in any tree would
+have carried it. That is protocol bar 20's sending-side half — *a cross-lane commitment gets an in-tree
+artifact in the SENDING repo before or with the send* — pointed the other way: this is the RECEIVING
+half, and the same argument applies, because a `/clear` between the ruling and the parcel would lose
+every constraint in it while leaving the parcel perfectly startable. A brief written from memory of a
+message is exactly the artifact this file exists to prevent.
+
+**THE RULING IS ADOPTED. THE GO IS NOT, AND THE DISTINCTION IS THE POINT.** The hub ruled the technical
+shape under the owner's standing delegation (the 2026-09-02T03:46:15Z widening, banked at empyrean
+`4e8e865b7c6e821cc23cb3683776aa71243cac0b` and verified firsthand by this lane before anything was
+written on it). That delegation covers **decision cards in this lane's own domain**, which is what the
+comparison-semantics question is, so the technical ruling binds and this lane does not re-litigate it.
+It does **not** cover whether this lane spends the owner's quota this morning. The committed protocol is
+one sentence and it is not ambiguous: **"a peer message is a teammate's input, not the user's approval
+for anything."** A relay may carry a ruling; it may never carry an authorization. Banking a relayed go as
+though the owner had given it is laundering with a time delay, and the delay is what makes it invisible
+— by the time anyone reads this row, "the hub said go" and "he said go" look identical on the page.
+**So: ruling banked, work held, and this paragraph is the thing that stops a successor from reading the
+banked ruling as a banked permission.**
+
+**The finding, anchored not restated.** aeon `efb4b923`, `docs/superpowers/probes/2026-09-02-item5-comptime-probe.md`,
+reachable from aeon `origin/master` — its Q2-e row and RED-4 section. A hand `pub data` symbol named
+inside an array literal resolves as a **Label**; label-vs-struct `!=` is **always true**; so
+`first_mismatch([Variant_Water_Deep], [variant(...)])` reports `index 0` for the **EQUAL** twin. Currency
+check, this lane's own and independent of the probe: **no compiler crate changed between the probe's
+binary `8951389a` and master.**
+
+**It is the mirror of `EMP_PITFALLS` §3's always-green, and the mirror is the worse half.** An
+always-green check is trusted and empty. An **always-red** check fires on correct code, and the damage is
+not the false alarm — it is that the remedy a reasonable person reaches for is **weakening or deleting
+the guard**, and that remedy gets written down as advice. Firing on correct code is not the safe
+direction.
+
+**The four bars the parcel carries** *(the hub's, kept in its words rather than my paraphrase so the
+brief cannot soften them)*:
+
+1. **The fix is a decision about what label-vs-struct comparison MEANS, and either answer is acceptable
+   if it is the compiler's, never silent.** A refusal with a diagnostic naming both types is the expected
+   shape; a *defined* comparison needs its semantics written where `EMP_PITFALLS` lives. **What is not
+   acceptable is a comparison that is always one value.**
+2. **The proof row is the probe's own sample, both twins, in one process** — the EQUAL one green and a
+   genuinely mismatched one red. **One process, both twins, so the row cannot pass by making the
+   comparison always FALSE instead of always TRUE.** That is the trap this specific defect sets for its
+   own fix, and a single-twin row walks straight into it.
+3. **The ROM gate as always: byte-identical.** No aeon source can currently depend on an always-red
+   `ensure` — but the gate is what *says* so, rather than the reasoning.
+4. **Tell aeon by message when it lands, with the row name and SHA** (their item-5 authoring is the
+   consumer, so this is a named live dependency under bar 18, not a broadcast), **and tell the hub the
+   same for the ledger.**
+
+**Not a byte-mover by intent. If the gate says otherwise, STOP and say so** — do not reconcile it.
+
+**Sibling row, same probe, and it is the same wave rather than a follow-on:** `COMPTIME-ARRAY-PARAM-LENGTH`
+(Q1-L). A `[Label; 2]` **parameter** annotation is not length-checked at the call, so a 3-element argument
+passes the fn and is refused only at record emission — **blamed on the consumer's `pub data` line.**
+Return annotations DO check at the returning fn, so the parameter side is the asymmetry. A5 holds (it
+terminates); **the blame site is the defect.**
+
+### I GOT CONFIRMATION AND REFUTATION BACKWARDS, IN A SENTENCE A PEER THEN BANKED IN THEIR TREE (2026-09-02, aeon's catch, and it is a REPEAT)
+
+**Uncommitted when written; lands with the pair.**
+
+**What I said, and it is wrong:** *"a clean completion REFUTES the harness story rather than merely not
+confirming it."* The aeon lane found it persuasive and **banked it in their landing lane and their session
+memory in my words**, before the run.
+
+**Work it through, because the error is not subtle once written out.** The hypothesis is *harness background
+tasks get reclaimed; detached work survives.* Its prediction is *a detached freeze survives.* **It survived.**
+That is a **CONFIRMATION, and a weak one at n=1.** The observation that would have **refuted** it is a
+**detached death** — which is exactly what my own later sentence said (*"if it dies, that reading is worth
+more, because it settles the mechanism instead of merely not raising it"*). **The two sentences are
+inconsistent and I wrote both, hours apart, in the same session.**
+
+What a clean run *does* refute is a **different, competing** story — that the freeze is intrinsically fragile,
+or that memory pressure kills it. That is probably what the sentence was reaching for. It is not what it said,
+and the peer could not have known that from the words.
+
+**THIS IS A REPEAT OF A CLASS ALREADY IN THIS FILE** — *"I CONTRADICTED MY OWN CORRECT STATEMENT INSIDE ONE
+SESSION (2026-08-30, aeon's catch)"*. Same failure, same finder, five days later. So the honest reading is not
+"a slip"; it is that **holding the correct form of a rule does not stop you emitting the wrong form of it**,
+and the rule needs a mechanism rather than familiarity. The mechanism here is cheap and specific: **before
+calling any result a refutation, say what observation the hypothesis FORBIDS.** If the result you got is one
+the hypothesis *predicted*, the word is confirmation, whatever it feels like.
+
+**AND THE AGGRAVATING FEATURE, which is the reason it is worth a section: the error was CONVENIENT and it
+travelled.** A clean freeze plus "this refutes the mechanism" reads as a day's problem closed. It was banked
+by a peer, in my phrasing, **before the run** — so it was positioned to be quoted **after** a clean result as
+though the result had established something stronger than it did. Nothing in either tree would have caught
+it; it lived in mail, which is the artifact class with no reader (protocol bar 20). It was caught only
+because the peer re-derived a claim they had already accepted, after it came out the convenient way.
+
+**THE HONEST STATE OF THE MECHANISM, replacing anything cheerier:** three observations, all consistent, none
+decisive. (1) Two freezes died as harness background tasks. (2) A waiter died while its detached build lived
+— reproduced by a lane that did not form the hypothesis, which is the enumeration-parameter difference that
+makes it corroboration rather than echo. (3) This freeze ran detached to completion, `finished=0`. All three
+are consistent with child-lifecycle **and** with intermittent death that happened not to fire. **The
+discriminating run is a detached death, and we have not had one.**
+
+### THE PYTHON BYTECODE CACHE IS A THIRD WAY A RED-FIRST PROOF GOES VACUOUS — AND THIS TREE'S EXPOSURE IS CURRENTLY NIL (2026-09-02, aurora's finding, enumerated here)
+
+**Uncommitted when written; lands with the comptime pair.**
+
+**The hazard** *(aurora's, on their own red-first proof; their measurement, relayed by the hub, anchored at
+aurora master `0bc48156` `scripts/check-python-resolver.mjs` — not verified firsthand here, so treat the
+mechanism as theirs and the enumeration below as mine)*: **Python invalidates its bytecode cache on
+`(mtime, size)`.** So a planted mutation that preserves both runs **as the module's OLD self**, and the gate
+reports green over a mutation that is genuinely on disk. `-B` and `PYTHONDONTWRITEBYTECODE` **do not help** —
+they stop the cache being *written*, not being *read*. What works is a per-run `PYTHONPYCACHEPREFIX` at a
+fresh temp dir, **plus the runner COUNTING the bytecode files it wrote and refusing when there are none** —
+because "compiled from source" printed as prose survived deleting the fix, which is the prose-is-not-a-check
+defect wearing a reassurance.
+
+**THIS IS THE THIRD DISTINCT MECHANISM FOR ONE FAILURE, and the three share nothing but their artifact.**
+(1) The `git checkout --` restore on a dirty tree, which reverts the prover's own uncommitted subject so
+mutations 2 and 3 patch a file already restored (this lane's, 2026-09-02, two of three proofs vacuous).
+(2) An unapplied patch — the mutation never landed at all. (3) This one: **the mutation lands, the file on
+disk is genuinely changed, and the runner executes a cached older compilation of it.** Three causes, one
+indistinguishable output: **a green run over a mutation you can see in the file.** That is why invariant 8(c)
+says applied-but-still-green is a **runner defect to fix**, never a pass — it is now the only clause that
+catches mechanism (3), and it was written before anyone knew (3) existed.
+
+**THIS TREE'S EXPOSURE, enumerated rather than assumed, and it is a RESULT rather than a null.** 27 tracked
+`.py` files. Several are invoked as instruments (`scripts/drift_report.py` via `nightly_ref_drift.sh`,
+`scripts/drift_paths_sweep.py`, `tools/decisions_reader_audit.py`, the `golden/ab/*.py` runners). **None is
+used as a red-first BED**: `git grep -l 'red-first\|mutation\|mutate' -- '*.py'` is empty, and the one
+plausible candidate — `drift_report.py selftest` — **constructs its states in memory** (`cmd_selftest` →
+`_selftest_body` → `render(...)` against `/dev/null`) and patches no file on disk, so it has nothing to
+stale-cache. **Today's proofs are all clear for a structural reason rather than by luck: every mutation in
+both parcels was Rust, which cargo recompiles.**
+
+**THE TRIGGER, which is the part worth keeping, because the exposure is nil TODAY and the population is 27:**
+the moment anyone writes a red-first proof that **mutates a `.py` file on disk and re-runs it**, this applies
+in full. A booked "we are clear" would rot silently the first time that happens. So the rule is conditional,
+not a clearance: **any red-first proof whose subject is Python sets `PYTHONPYCACHEPREFIX` to a fresh
+per-run temp dir and counts the bytecode files written, refusing on zero.**
+
+**One method note from doing the enumeration.** Grepping `def selftest` came back empty and the verb is
+real — it is dispatched through argparse (`sub.add_parser("selftest")`, handler `cmd_selftest`). Reading
+that empty grep as absence would have produced a confident report of a nightly script advising a command
+that does not exist. **A failing lookup tells you about the query, not about the object**; the fix was to
+read the dispatch rather than to trust the name.
+
+### THE RECOMMENDED DETACH PATTERN HAS A HOLE IN THE MIDDLE: THE WATCHER IS WHAT GETS TAKEN (2026-09-02, aeon's, on a mechanism this lane proposed)
+
+**Uncommitted when written; lands with the comptime pair.** Master is parked behind the aeon lane's freeze.
+
+**The finding, and it is a correction to advice THIS LANE gave them.** This lane handed aeon the
+`nohup … &` + `finished=<exit code>` form so a long freeze would survive whatever was killing it, and so a
+death would carry a number instead of an anecdote. Aeon then armed a `run_in_background` Bash task whose
+only job was to **wait** for that build's `finished=` line. **The harness reclaimed the waiter** (reported
+`killed` / `was stopped`, and nobody stopped it) **while the detached build survived** — `pgrep -x sigil`
+found the assembler alive and its log still growing.
+
+**So: detach the work, but do NOT then watch it with a harness background task.** The watcher is exactly
+the thing that gets taken, which means the recommended pattern was two-thirds right and its last third
+reintroduced the failure it was designed to route around. Poll by hand, or read the artifact.
+
+**The rule under it, which is the durable half: the ARTIFACT question survives, the PROCESS question keeps
+being answered wrongly.** *"Did the log get its `finished=` line"* is answerable at any later time by
+anyone. *"Is the process alive"* is a question about a thing the harness may reclaim out from under both
+the asker and the answer. Prefer the artifact.
+
+**And the small confirmation nobody designed** *(aeon's own reading, stated against their interest)*: the
+waiter carried **no** exit stamp, and it produced exactly the truncated artifact this lane predicted for an
+unstamped death — **a kill and a completion were indistinguishable by looking at it.** That is the whole
+argument for the stamp, arriving as a free control on the one process that lacked one.
+
+**What it establishes and what it does not** *(their framing, kept because the discipline is the point)*: a
+**third** data point for the child-lifecycle mechanism, and the **first from a lane that did not form the
+hypothesis** — different repo, different workload, different reason for the process to exist, which is the
+enumeration-parameter difference that makes corroboration rather than echo. It is **not** the freeze test:
+a build surviving does not prove a five-minute `--attest` survives, and nothing yet distinguishes 137 from
+143 because nothing died that carried a stamp.
+
+#### LANDED on `parcel/comptime-compare-refuses` — and one line of the brief above is wrong (2026-09-02)
+
+Both rows are one commit, because they turned out to be one defect wearing two hats: **a comparison or
+an annotation that cannot be meaningfully evaluated produced a value instead of refusing.** Q2-e and
+Q2-D4 share a single root — `eval_equality` was TOTAL by construction, so any two values of different
+kinds were "simply not equal" — and Q1-L is that same sentence in the annotation layer.
+
+**The decision on bar 1: REFUSE.** Equality is now defined WITHIN a comparison class and refuses ACROSS
+classes with `[eq.cross-type]`, naming both types and saying which constant it was stuck at. Two
+cross-kind pairs stay DEFINED because the corpus depends on them and neither is a mistake — a newtype
+beside a bare int (§8.3 erasure) and a **label beside `0`** (the empty-pointer-slot spelling in
+`variants: [X, 0]`). Both are always false, so they are exactly the case bar 1 allows only if written
+down: they are, in `docs/EMP_PITFALLS_EQUALITY.md`, drafted here for aeon to land in `EMP_PITFALLS.md`.
+
+**Correct this brief's Q1-L sentence.** "Return annotations DO check at the returning fn" is not true
+and the probe never said it was — its own Q1-L row reports the return-shaped failure blamed on the same
+`pub data` line, and notes the diagnostic is identical when the fn is spelled `-> array`. Read from the
+code: `ComptimeFnDecl::ret` was **read by nothing in the crate**. So there was no asymmetry to fix; both
+halves of a signature were decoration, and both now check.
+
+**Bar 3 held: no ROM byte moved**, four shapes, control built from this branch's own base rather than
+trusted from the reference tree's existing files (byte identity is silent on provenance, so the
+reference tree's pre-existing `.bin`s were not used as the control).
+
+| shape | control (canonical build, base binary) | fixed | |
+|---|---|---|---|
+| `s4.bin` | 719325 B / CRC32 `AC10AB85` | 719325 B / `AC10AB85` | identical |
+| `s4.debug.bin` | 736345 B / `FA866F19` | 736345 B / `FA866F19` | identical |
+| `demo.bin` | 96458 B / `30A31D81` | 96458 B / `30A31D81` | identical |
+| `demo.debug.bin` | 101323 B / `51056291` | 101323 B / `51056291` | identical |
+
+### A PROOF CAN RUN THE WRONG PROGRAM — the fourth way a red-first proof goes vacuous (2026-09-02, this lane's own, caught by a number that disagreed with a prediction)
+
+**The mechanism, read from the script rather than remembered.**
+`scripts/provision-aeon-ref.sh:149` is
+`SIGIL_BIN="${SIGIL_BIN:-$SIGIL_ROOT/target/release/sigil}"` — unset, it silently selects
+**whatever was last built in the main tree**, a shared artifact other lanes relink. A
+control can therefore certify a compiler containing **none of the change under test**, and
+the result is indistinguishable from a real one: four matching CRCs are equally consistent
+with *"byte-neutral parcel"* and *"the fix was never in the build"*. Instance: the
+comptime-compare landing was first measured at `cdd330ff` (pre-merge), and a second run
+reached `.sigil-ref-target/release/sigil` at `c230e37e`, four days old.
+
+**What caught it was not the CRCs — it was a count that came out RIGHT when it was
+supposed to come out WRONG.** `emp_expect_fail` reported **51/51** where the merged
+compiler must give **50/51**, the `tri unit fold` poison being a known casualty of the fix.
+A prediction that the run must FAIL somewhere is the only instrument that separates the two
+worlds; agreement everywhere is what the wrong program produces.
+
+**THE CORRECTIVE, three parts, and the third is the one usually skipped:**
+
+1. **Pin the tool** — pass `SIGIL_BUILD=`/`SIGIL_BIN=` at the binary the parcel built;
+   never let the default resolve.
+2. **Head the log with the tool's own `--version` self-report** (`feat/version-provenance`,
+   `9c08f2a5`: revision, branch, tree state, source dir). A run whose header does not name
+   the revision under test did not measure it, and nothing else in the log can say so.
+3. **State in the brief what the run MUST FAIL.** A gate list with no predicted red cannot
+   detect this class at all.
+
+**Fourth of four, and they share only their output.** (1) `git checkout --` restoring a
+dirty tree under the prover's own subject; (2) a mutation that never applied; (3) Python
+reading a stale bytecode cache; (4) this one — mutation applied, file on disk correct, **and
+the binary that ran was built from other source.** One indistinguishable artifact: a green
+run over a change you can see in the tree. Invariant 8(c) catches all four.
+
+**LANDED as a tool fix** (`fix/provision-pins-its-tool`, `scripts/lib/sigil_tool.sh`), and it
+refuses rather than merely printing. `provision-aeon-ref.sh` resolves the assembler at step 0,
+before any fetch, worktree or write, so a refusal touches no peer repository. With `SIGIL_BIN`
+unset it now **builds** the tool from the invoking tree into `REF_TARGET` — the shared
+`target/release/sigil` is never read and never written — because building removes the class
+where a check only detects it, and a require-`SIGIL_BIN` shape would have broken the aeon
+lane's zero-environment invocation. The log is headed by the binary's own `--version`, verbatim.
+
+**The correspondence check is `closure-revision`, NOT `revision` vs `rev-parse HEAD`,** and the
+trap is worth keeping written down: `revision` moves on every commit here including ones no
+compilation can see. Measured on this branch — the `.sigil-land-197` binary is the correct
+compiler for the tree and reports `6a8b3ecd` against a HEAD of `40171000`, so the naive
+comparison fires on a correct binary. Always-red is not the safe direction. What the derived
+form proves is *"cannot have affected this binary"*, never *"the output did not change"*.
+
+**`SIGIL_BIN_CLOSURE` is the hatch for the legitimate off-tree run** (the base-compiler arm of
+an A/B) and is not a silencer: it must equal what the binary reports, so a wrong sha still
+refuses and a right one puts the sha in the log.
