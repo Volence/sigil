@@ -30,7 +30,7 @@
 //!   * SETTING them for a child process (`Command::env` / `env_remove`) — that is how the
 //!     precedence gates and the write guards arrange the environment they measure;
 //!   * asking the harness a QUESTION about them — `checkout_var_is_set`,
-//!     `aeon_dir_is_unnamed`, `aeon_checkout` — which is the door.
+//!     `aeon_checkout` — which is the door.
 //!
 //! ## What it is derived from
 //!
@@ -364,7 +364,7 @@ fn no_test_reads_a_reference_tree_variable_for_itself() {
          read resolves the owner's live working checkout, whose revision moves under a run — the \
          state the refusal exists to end, reached by not using the door.\n\nUse the door: \
          `test_support::aeon_dir` for a tree to measure against, `aeon_checkout` for the \
-         checkout and the step that answered, `checkout_var_is_set` / `aeon_dir_is_unnamed` \
+         checkout and the step that answered, `checkout_var_is_set` \
          for a question about the environment. Setting the variable on a CHILD \
          (`Command::env` / `env_remove`) is not a read and is unaffected.\n\nThe accessor \
          names above are written WITHOUT their parentheses on purpose: \

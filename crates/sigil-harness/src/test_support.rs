@@ -935,16 +935,15 @@ pub fn unnamed_default_tree() -> Result<ResolvedCheckout, String> {
     )])
 }
 
-/// `true` when a read would resolve a tree nobody named rather than one somebody did.
-pub fn aeon_dir_is_unnamed() -> bool {
-    !matches!(aeon_checkout(), Ok(c) if c.step.names_a_reference_tree())
-}
-
 /// `true` when precedence step 1's checkout variable is set at all.
 ///
-/// Deliberately NARROWER than [`aeon_dir_is_unnamed`], and the two are not
-/// interchangeable: this one asks only whether the CHECKOUT VARIABLE was set, ignoring
-/// step 2 and the derivation entirely. That is the precondition
+/// Deliberately NARROW: it asks only whether the CHECKOUT VARIABLE was set, ignoring
+/// step 2 and the derivation entirely. (It had a broader sibling, `aeon_dir_is_unnamed`,
+/// answering "would a read resolve a tree nobody named" — deleted 2026-09-03 with no
+/// caller ever written. A published predicate nothing calls is a claim nothing tests, and
+/// this one sat in the sanctioned-accessor set the routing guard advertises, so it was
+/// reachable API surface with no behaviour behind it. `aeon_checkout().step` answers the
+/// broader question directly for anyone who needs it.) That is the precondition
 /// [`crate::seam2::require_named_reference_tree`] holds a write to — a write refuses
 /// unless the operator named the tree by that variable — and it is published here so the
 /// guard and every gate asserting the guard's precondition consult ONE function. Asserted

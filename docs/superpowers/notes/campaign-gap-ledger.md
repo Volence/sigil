@@ -3640,9 +3640,16 @@ Parcels `parcel/suite-paths-resolver` and `parcel/d18-refuse-bare-run`, packet
   re-expressed against the resolver rather than deleted, because a public predicate answering
   "did anybody name a tree" is the natural thing for a script-facing caller to want and the
   d-18 work may yet grow one.
-  — OPEN (kill: either a consumer, or its deletion; an accessor nothing calls is a claim
-  nothing tests, and it currently rides the classifier's closure into the published accessor
-  set's neighbourhood for free)
+  — **CLOSED 2026-09-03 by deletion, which was the honest half of the kill.** Measured
+  first, so the choice was not arbitrary: of the three doors the routing guard advertises,
+  `aeon_checkout` had 6 code consumers, `checkout_var_is_set` had 2, and this had 0 — the only
+  one of the three with none. Deleted, along with both places that advertised it (the guard's
+  module doc and its violation message), because a published predicate nothing calls is a claim
+  nothing tests AND it was named in the sanctioned-accessor set, so it was reachable API surface
+  with no behaviour behind it. `aeon_checkout().step` answers the broader question directly for
+  the first caller who wants it. The sibling's doc keeps one sentence of the history rather than
+  a dangling `[...]` link, since a deleted item in a doc link is a worse artifact than a
+  named absence.
 
 ### A private AEON_DIR read bypasses both d-18 halves (2026-09-02)
 Found while reconciling the derived reference-dependent population (packet
@@ -3655,10 +3662,17 @@ live checkout, which is the exact state d-18 closed. Reachable by writing eight 
 the routing this parcel did is what made today's count accurate rather than any property of
 the predicate. Measured: on master 124 files named `AEON_DIR` while 99 matched the predicate,
 and the 31-file difference was files whose private helper carried a name of its own.
-— OPEN (kill: a lint in the shape of `skip_marker_lint` — hold every `env::var("AEON_DIR")`
-in `crates/*/tests/*.rs` to the resolver, with `test_support.rs`, `seam2.rs`, the CLI's
-argv publication and the artifact-writing tools as the derived exceptions rather than a typed
-roster. The same file already proves the shape works)
+— **CLOSED, and it was already closed when this row was written down.**
+`crates/sigil-harness/tests/reference_env_read_is_routed.rs` is exactly the described lint and
+went further than the kill asked: the sanctioned readers are identified BY LOCATION
+(`crates/sigil-harness/src/`) so there is no roster and no baseline whose remedy is a hand
+edit; the variable names are read back out of `test_support.rs` from the published constants
+rather than typed; setting a variable on a child process is correctly not a read; and it
+carries its own synthetic-violation and commented-out controls so a green cannot mean
+"nothing was examined". Verified 2026-09-03: passes, and the population it scans has zero
+violations. The row's own measurement is also superseded — it recorded 124 files naming the
+variable against 99 matching the predicate, a 31-file gap; today it is 127 and 127, gap zero,
+closed by the routing work rather than by anything here.
 
 ### A doc comment that enumerates cases is a claim with no gate behind it (2026-09-02)
 `derive_suite_root_from`'s comment listed TWO output shapes of `git rev-parse
