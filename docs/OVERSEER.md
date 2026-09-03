@@ -1104,6 +1104,58 @@ The standing sigil-native arc is the **`.emp` language work (Spec 2)** — specs
 `empyrean/docs/SIGIL_*.md`. The whole sound stack is sigil-native, the language round
 + §17 optimization arc + conversion tail are done, and the map drives the build.
 
+### SIGIL-AS-REPLACEMENT — active on the owner's own words; source locations LANDED
+
+Project row: empyrean `contract/projects.json`, `state: active`, lanes `["sigil","empyrean"]` —
+**verified from the pushed object, not a peer's working tree**: the hub first cited `02e8881`
+while it was local-only and it is now reachable from their `origin/main`. Owner artifact is
+empyrean `17d0776`, `docs/OVERSEER.md:46`, 2026-09-03T04:24:58Z, naming this lane and this
+project as the overnight fallback *"as long as other agents aren't waiting on them for
+anything"* — the condition re-derived here over `/api/suite`, 0 queue rows blocked on sigil.
+
+**LANDED at master `7538fced`:** every AS diagnostic carries `file(line)`. 237 before, 237
+after, locations 0 → 237. Note: `docs/superpowers/notes/2026-09-03-as-source-map.md`.
+
+**RULED HERE — the two diagnostic dialects STAY, and the split is deliberate.** `.emp` renders
+`path:line:col:`; the AS surface renders `file(line):`. This is a divergence inside one binary
+and it was flagged rather than committed silently. Ruled under the autonomy directive's
+just-do-it clause, which names *diagnostic wording* explicitly, and logged because a reasonable
+person could rule it the other way: **a compatibility surface's job is to be the thing it is
+compatible with.** A user moving off AS reads the same shape in the same place, which is the
+adoption argument the whole project rests on; `.emp` is a modern language and keeps the shape
+modern tooling parses. **The failure mode this ruling is written to prevent is not the split —
+it is an UNDOCUMENTED split**, which reads as a bug to the next person and gets "fixed" into
+one dialect by someone who cannot tell which was intended.
+
+**RULED HERE — `@as_compat` must fold case; whether `.emp` proper does is PARKED for the owner.**
+Same shape as `d-22` (nameless labels) and settled the same way, by evidence rather than taste:
+the canonical community disassembly writes `CPU 68000`, `EQU`, `STRUCT` in capitals, so the
+corpus is unassemblable without folding. **115 of 237 diagnostics trace to case sensitivity** —
+62 + 30 `$`-hex, 20 uppercase `EQU`, 2 `STRUCT`/`ENDSTRUCT`, 1 the `CPU` line. The `.emp` half
+is a language-surface call and is **not** ruled here.
+
+**⚠ THE ROOT IS WORSE THAN CASE AND MUST NOT BE FOLDED INTO IT.** `initial_cpu` defaults to
+`Z80` (`lib.rs:29`, honest for the Z80-only M0 build), the directive table matches `"cpu"` lower
+case only (`eval.rs:1956`), and under `Cpu::Z80` a `$` lexes as `Tok::Dollar` — the program
+counter — rather than a hex prefix (`lexer.rs:75`). So a 68000 disassembly assembles **as Z80**.
+Case folding fixes this corpus *because s2disasm happens to carry a `CPU` line at all*. A 68000
+source with no `cpu` directive still silently assembles as Z80, and **that is a separate defect
+with its own fix** (the CLI's default for a general-purpose assembler is not the M0 build's
+default). Booked separately so folding case does not look like it closed both.
+
+**NEXT PARCEL — case folding, and its count WILL move.** Pre-declare the movement: a parcel that
+fixes 115 of 237 diagnostics and reports 237 is the thing to investigate. The count moving is
+the deliverable here, exactly inverted from the source-map parcel where holding at 237 was.
+Expect new diagnostics to appear behind the fixed ones — a corpus that has been assembling as
+the wrong processor has never had its 68000 path exercised at all.
+
+**BOOKED — `landing-run.sh` does not run clippy.** See the lane-log entry at `526ae99e`. Two
+lint errors stood on master and the wrapper printed `RESULT GREEN` over them, because the bar
+lists `clippy -D warnings exit 0` and the script contains no clippy invocation. Hand-running it
+is the same maintenance model that failed, so the fix is wiring it into the wrapper's own
+command span with its exit code in the verdict block — **and `--all-targets`**, since one of the
+two errors was reachable only through test targets.
+
 ### PER-PARCEL-TERM-FEED-CUT — the hand-typed baseline's maintenance model lost its feed at the 199 cut
 
 *(Full measurement, the file-vs-assembled trap, and the open ruling:
