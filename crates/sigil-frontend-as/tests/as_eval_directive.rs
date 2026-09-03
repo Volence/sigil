@@ -26,6 +26,10 @@ use sigil_frontend_as::{assemble, Options};
 /// indented `dc.b eval&$FF` presents as head `dc.b` with `eval` in the second
 /// token; read as the label-column form it assigns a symbol named `dc.b` and
 /// emits NOTHING — no bytes, no diagnostic, exit 0.
+///
+/// Its mutation is the removal of the `name_in_label_field` guard in
+/// `exec_one`, not the removal of `eval` support: a build with no `eval` at all
+/// also refuses this line, for the unrelated reason that `i` is not a mnemonic.
 #[test]
 fn indented_colonless_eval_is_an_instruction_not_an_assignment() {
     let src = "        cpu 68000\n        phase 0\n        i\teval 5\n        dc.b 1\n";
@@ -76,9 +80,14 @@ fn eval_operand_form_needs_exactly_a_name_and_a_value() {
     ] {
         let err = assemble(src, &Options::default())
             .expect_err("a non-two-operand `eval` must be refused, never accepted quietly");
+        // The DIRECTIVE's own diagnostic, quoting the spelling the author wrote.
+        // Matching merely on "`eval`" would also match the
+        // ``eval` is not a recognized 68000 mnemonic`` a build with no `eval`
+        // support at all emits, which is the state this gate exists to catch.
         assert!(
-            err.iter().any(|d| d.message.contains("`eval`")),
-            "the diagnostic must quote the spelling the author wrote, got: {err:?}"
+            err.iter()
+                .any(|d| d.message.contains("`eval` directive expects")),
+            "expected the `eval` directive's own arity diagnostic, got: {err:?}"
         );
     }
 }
