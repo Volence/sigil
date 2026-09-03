@@ -1,81 +1,113 @@
-# `align` inside a `phase`: our rule contradicts asl on an identical source
+# `align` is a truncating round-up on the SIGNED PC — the phase was never the rule
 
-2026-09-03 · established by the overseer from a dead agent's surviving probes ·
-**not yet fixed, and the fix is a byte-mover**
+2026-09-03 · opened by the overseer from two dead agents' surviving probes ·
+**settled and fixed on `parcel/as-align-in-phase`**
 
 Two agents died to a 529 within the same overload event. Neither committed. This
 note exists because the finding below was established from what they left on
 disk, and an unbanked finding is one rotation from gone.
 
-## The contradiction
+## The answer
 
-`crates/sigil-frontend-as/src/eval.rs`, `align_inside_a_phase_advances_a_full_extra_block`,
-asserts `image(src) == [0xB2, 0x00]` — `L = $B200` — for this source:
-
-```
-cpu 68000
-padding off
-phase $B000
-ds.b 5
-align 256
-L:	dc.w L
-dephase
-```
-
-The probe `p1.asm` is that source character for character. asl 1.42 Beta Bld 212
-under the corpus flags (`-xx -n -q -A -L -U -i .`) answers:
+`align n` in asl 1.42 Bld 212 does not round the address up. It computes the
+aligned target on the **low 32 bits of the PC read as a signed `i32`**, with C's
+truncating remainder, and advances by the unsigned 32-bit difference:
 
 ```
-       4/    B000 :                     	ds.b	5
-       5/    B005 :                     	align	256
-       6/    B100 : B100                L:	dc.w	L
+t32   = (int32) (pc + n - 1)
+a32   = t32 - (t32 % n)          // C '%': the remainder takes the DIVIDEND's sign
+delta = (uint32) (a32 - (int32) pc)
+pc'   = pc + delta               // added to the WIDE pc, so it can exceed 32 bits
 ```
 
-and its symbol table carries `L : B100 C`.
+A **non-negative** low half — every ROM address — gets the plain round-up, and an
+already-aligned PC does not move. A **negative** low half — every `$FFFF….` 68k
+RAM address — rounds toward zero instead of down, so it usually lands one block
+high and an already-aligned address advances a full `n`.
 
-**`asl` says `$B100`. We say `$B200`. The setups are comparable — this is not a
-probe-shape disagreement, which was the live alternative and is now closed.**
+**`phase` has nothing to do with it.** `phase $B000` + `ds.b 5` + `align 256`
+gives `$B100`, exactly as the unphased form does; `org $FFFFB000` + `align 256`
+gives `$FFFFB100` with no phase in sight. The regime is the sign of the PC.
 
-Two further probes agree that the rule is a plain round-up of the **logical**
-(phased) address, with no extra block:
+31 listing rows, the probe sources, and a runner are committed under
+`docs/superpowers/probes/2026-09-03-align/` (`RESULTS.md` carries the table).
+Every row is reproduced by `sigil_ir::asl_align_pad`, which is now the single
+implementation both front-ends call.
 
-| probe | phase | before `align 256` | asl's answer |
-|---|---|---|---|
-| `p1` | `$B000` | `$B005` after `ds.b 5` | **`$B100`** |
-| `p2` | `$B040` | `$B045` after `ds.b 5` | **`$B100`** |
-| `p3` | `$B040` | `$B040`, no reserve | **`$B100`** |
+## The July probe was right; only its condition was lost
 
-## What our rule claims, and where it came from
+`directive_align`'s doc comment recorded a 2026-07-08 live probe as a table of
+four results — `$B000→$B100`, `$B005→$B200`, `$B026→$B200`, `$B100→$B200` — and
+generalised them to "inside a phase, asl advances by `round_up(pos + n, n)`".
 
-The test's own comment: *"asl 1.42 Bld 212 (live-probed 2026-07-08): ALIGN inside
-a `phase` (padding off) advances by `round_up(pos + n, n)` — ALWAYS at least a
-full `n` beyond `pos`."* Same tool version, opposite answer. The July probe is not
-reproducible from the note, so **what differed about it is unknown** — flags are
-the first candidate, since `-U` was not yet standard practice here and a parcel's
-whole premise was later found to be an artifact of omitting it.
+**All four rows reproduce today, on RAM addresses:**
 
-## Why no gate here can see this
+```
+$FFFFB000  n=256  -> FFFFB100        $FFFFB026  n=256  -> FFFFB200
+$FFFFB005  n=256  -> FFFFB200        $FFFFB100  n=256  -> FFFFB200
+```
 
-The comment says the rule *"places Aeon's `Player_Pos_Ring` one 256-block higher
-than a naive align would"* — so it decides shipped addresses, and
-`engine/debug/debugger.asm` is in aeon's build path with 21 `align` occurrences.
+July measured aeon's phased `$FFFF….` game-RAM block and wrote the addresses
+down by their low half. What was lost between the probe and the comment is that
+those were negative PCs. The rule was attributed to `disp != 0` instead, and the
+regression test then transcribed it into a `phase $B000` source — a *positive*
+PC, where it does not hold and where asl answers `$B100`.
 
-**Aeon's four shapes reproduce the frozen goldens exactly, and that is not
-evidence.** The goldens were produced by this implementation. A wrong rule is
-carried identically by both sides of every byte comparison and they agree
-perfectly. This is the class the `×26` stride bug sat in: a byte gate proves twin
-agreement, never correctness. `asl` is the only admissible oracle.
+The generalisation is wrong on both sides: `round_up(pos + n, n)` disagrees with
+asl on **20 of the 31** measured rows, including 5 of the 11 RAM rows (it
+overshoots `$FFFFB001` and `$FFFFB101`, and misses every non-power-of-two `n`).
+It happened to be right on the four rows July took.
 
-## Open, and why this note stops short of a fix
+So this was never "we were simply wrong" — it is a **dropped condition**, the
+charitable hypothesis, confirmed. The measurement was sound and is preserved in
+the new tests.
 
-- **The general rule is not established, only this case.** A dying agent's last
-  line proposed `trunc_div(pc + n - 1, n) * n` on a **signed** PC — C truncating
-  division rounding toward zero, overshooting a block for negative addresses —
-  and said it was about to try to break it. **That is an unfalsified candidate,
-  not a finding.** All three probes above are positive addresses and do not
-  discriminate it.
-- **The fix is a byte-mover for aeon**, so it lands through the aeon overseer's
-  lane, not this one. It must not be shaped to preserve the CRCs: matching bytes
-  produced by the wrong rule is preserving the defect to satisfy a gate.
-- The parked `parcel/as-reserve-materialise` (`68386152`) waits on this — one of
-  the five expectations it correctly reddens is the very test above.
+Two hypotheses that were checked and are dead:
+
+- **A different asl binary.** Both Linux-x86_64 builds in the workspace answer
+  `$B100` on `p1`: `s2disasm` (flamewing, `x86_64-Linux`) and `s1disasm`/
+  `skdisasm`/`sonic_hack` (upstream, `x86_64-unknown-linux`), both self-reporting
+  1.42 Beta Bld 212. The binary is not the variable.
+- **Probe-shape / flag drift.** The corpus flags reproduce the disagreement on a
+  character-for-character identical source. Nothing about `-U` is involved.
+
+## What changed
+
+- `crates/sigil-ir/src/align.rs` — new. `asl_align_pad(pc, n)`, the one rule,
+  with the 31 measured rows as its gate.
+- `crates/sigil-frontend-as/src/eval.rs` — `directive_align` calls it. `disp`
+  now decides only the KIND of pad (a phased RAM region reserves; a ROM section
+  emits a real `$00` fill), not the arithmetic.
+- `crates/sigil-frontend-emp/src/lower/regions.rs` — `align_to` calls it. It had
+  carried a second copy of the rule, documented as mirroring the first; the two
+  copies encoded a rule neither of them held.
+
+`.emp`'s own top-level `align N` item (`emit_align_pad`, D2.29) is deliberately
+NOT changed. It is a language feature with its own link-time congruence assert,
+not an asl transliteration, and its sections are ROM where the two rules
+coincide. Aeon has one `@align` (`Player_Pos_Ring`) and ten `align` items, all
+`align 2` or `align $8000`.
+
+Two asl behaviours remain unmodelled, both outside the corpus and both recorded
+at the function: asl truncates `n` to a 16-bit `Word` (`align -256` acts as
+`align $FF00`; `align 0` aborts asl with SIGFPE), and asl carries the PC wider
+than 32 bits, so an align off the top of the space lands at `$1_0000_0000` where
+sigil wraps to `$0000_0000`.
+
+## Why no gate could see this
+
+Aeon's four shapes reproduce the frozen goldens exactly, and that was never
+evidence: the goldens were produced by this implementation, so a wrong rule is
+carried identically by both sides of every byte comparison. This is the class the
+`×26` stride bug sat in. `asl` is the only admissible oracle, and the CRCs below
+are reported as a consequence, never as an argument.
+
+What kept the defect invisible in practice is that aeon never exercises the two
+cases where the wrong rule and the right one differ: its `.asm` sources carry no
+`phase` at all (so `directive_align` always took its *correct* non-phase branch),
+and `regions.rs`'s single `@align(256)` sits at a RAM cursor whose low byte is
+not `$01` — the only offset at which the two rules disagree for `n = 256`.
+
+## Measured impact
+
+<!-- filled in below once the suite and the four builds have run -->
