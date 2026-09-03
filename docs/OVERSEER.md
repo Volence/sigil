@@ -139,6 +139,16 @@ Each of these was a dated section here until the boot read went over its byte bo
 rule is what survives; the episode that earned it is in the log** under its original
 heading, verbatim. When a rule and its narrative disagree, the rule wins.
 
+- **A LOSSLESSNESS PROOF CERTIFIES THAT NO TEXT WAS LOST AND NOTHING ABOUT WHETHER THE
+  SURVIVING TEXT STILL PARSES** *(2026-09-03, found by the agent that split this file, and it
+  is the failure its own proof could not see)*. A set-difference over lines is blind to a
+  **dangling reference**: when a paragraph moves to the log, a sentence left behind whose
+  antecedent went with it survives the proof intact — every line accounted for, and the head
+  simultaneously lossless and less legible. Instance: *"`"if needed"` is the whole defect"*
+  passed cleanly while the episode defining *"if needed"* had moved. **Reading every seam is a
+  separate step from the proof**, and it is the step that finds this class. Generalises past
+  document splits: any mechanical completeness check answers the question it enumerates and
+  silently declines the one it does not.
 - **A RED-FIRST PROOF HAS FOUR KNOWN WAYS TO GO VACUOUS, and they share one artifact: a
   green run over a change you can see in the tree.** (1) `git checkout --` restoring a
   dirty tree, so later mutations patch an already-restored file; (2) a mutation that never
@@ -1065,6 +1075,29 @@ Case folding fixes this corpus *because s2disasm happens to carry a `CPU` line a
 source with no `cpu` directive still silently assembles as Z80, and **that is a separate defect
 with its own fix** (the CLI's default for a general-purpose assembler is not the M0 build's
 default). Booked separately so folding case does not look like it closed both.
+
+**RULED — AS-DEFAULT-CPU is REFUSE BY NAME.** A source with no `cpu` directive is a hard error
+naming what was not declared and printing the line to write; never a silent default of any
+processor. Grounds are this lane's own `d-18` R4: a run that reports what it skipped **still
+exits 0**, and a silent green is the class we never drop. Amended from the hub's first form at
+empyrean `802fdee` (reachable from `origin/main`, verified here), which set the acceptance as
+*"whatever asl does, measured with your golden harness"* — **an oracle that does not exist in
+two independent ways**: the harness family was deleted at `5279a064` (9,262 lines, 18 files),
+and no `asl`/`asw` binary exists on this machine (`command -v` empty; the only hit anywhere is
+a Windows `asw.exe` in the legacy `sonic_hack/` tree). Pinning AS as a dependency of the
+project that exists to replace it is a real cost and is the **owner's** alternative, not taken.
+
+**⚠ `git grep asl` IN THIS REPO RETURNS THE 68000 SHIFT MNEMONIC, NOT THE ASSEMBLER.** Hits in
+five crates, every one `"asl" => Asl` beside `"asr"`/`"lsl"`/`"lsr"`. In an assembler's source,
+grepping the name of an assembler returns an instruction, and the listing reads as *"the oracle
+is right there."* `Command::new` is what converts the name into behaviour; it comes back empty.
+
+**⚠ THE CASE FOLD IS IN AEON'S SHIPPING BUILD PATH — fold DIRECTIVES AND MNEMONICS ONLY, NEVER
+SYMBOLS.** `sigil-frontend-as` is not a compatibility side-car: aeon's `build.sh:7` routes the
+residual `.asm` DATA through it and three files still go that way (`engine/debug/debugger.asm`,
+both `game_root.asm`). So this parcel can move aeon bytes and must prove it did not. Symbols
+are deliberately case-sensitive (`lib.rs:31`, *"Names are case-sensitive"*) and `.emp` shares
+its symbol namespace with those files — folding symbol case would collide the two.
 
 **NEXT PARCEL — case folding, and its count WILL move.** Pre-declare the movement: a parcel that
 fixes 115 of 237 diagnostics and reports 237 is the thing to investigate. The count moving is
