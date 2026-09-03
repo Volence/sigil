@@ -10793,4 +10793,281 @@ C:\n";
         );
         assert_eq!(linked_image(src), vec![3, 0, 1, 2, 0]);
     }
+
+    // ── irp / irpc / ARGCOUNT ───────────────────────────────────────────────
+    //
+    // Every expectation below is a byte column read off a real `asl` listing,
+    // produced by `s1disasm/build_tools/Linux-x86_64/asl` (md5
+    // 61e672562465725a8c102288a7da9098 — S1 ships upstream AS, S2 ships the
+    // flamewing fork and they are NOT the same build) invoked the way the
+    // corpus's own build invokes it: `-xx -n -q -A -L -U -E -i .`.
+
+    /// `irpc` walks characters, `irp` walks top-level comma groups, and the
+    /// loop variable is pasted as TEXT — into a string literal included. asl,
+    /// probe `p1.asm`:
+    ///
+    /// ```text
+    ///    6/    1000 : 3C41 3E     dc.b "<A>"
+    ///    6/    1003 : 3C42 3E     dc.b "<B>"
+    ///    6/    1006 : 3C43 3E     dc.b "<C>"
+    ///   10/    1009 : 0B          dc.b 11
+    ///   10/    100A : 16          dc.b 22
+    ///   10/    100B : 21          dc.b 33
+    /// ```
+    #[test]
+    fn irpc_walks_characters_and_irp_walks_comma_groups() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "	irpc c,\"ABC\"\n	dc.b \"<c>\"\n	endm\n",
+            "	irp v,11,22,33\n	dc.b v\n	endm\n",
+        );
+        assert_eq!(
+            image(src),
+            vec![b'<', b'A', b'>', b'<', b'B', b'>', b'<', b'C', b'>', 11, 22, 33]
+        );
+    }
+
+    /// Both spellings close on `endm` AND on `endr`. asl, probe `p8.asm` case
+    /// 8e and `p9.asm` case 9e:
+    ///
+    /// ```text
+    ///   39/    102E : 7B51 7D     dc.b "{Q}"
+    ///   39/    1031 : 7B52 7D     dc.b "{R}"
+    ///   29/    1031 : 04          dc.b 4
+    ///   29/    1032 : 05          dc.b 5
+    /// ```
+    #[test]
+    fn irp_and_irpc_close_on_either_endm_or_endr() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "	irpc c,\"QR\"\n	dc.b \"{c}\"\n	endr\n",
+            "	irp v,4,5\n	dc.b v\n	endr\n",
+        );
+        assert_eq!(image(src), vec![b'{', b'Q', b'}', b'{', b'R', b'}', 4, 5]);
+    }
+
+    /// **An empty list is ONE EMPTY iteration, not none** — for both spellings.
+    /// This is the rule `s2.macrosetup.asm(301)`'s `if ARGCOUNT>0` guard exists
+    /// to stop, and the rule S1's `demoinput ,	$8C` lines depend on: `irpc
+    /// btn,"buttons"` with an empty `buttons` runs the `switch` once against an
+    /// empty character and matches no `case`. asl, probe `p6.asm` case 6a and
+    /// `p7.asm` case 7a:
+    ///
+    /// ```text
+    ///    7/    1002 : 11          dc.b $11        ← irp v, (one iteration)
+    ///    7/    1002 : 3C3E        dc.b "<>"       ← irpc c,"" (one iteration)
+    /// ```
+    #[test]
+    fn an_empty_list_is_one_empty_iteration_not_zero() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "	irp v,\n	dc.b $11\n	endm\n",
+            "	irpc c,\"\"\n	dc.b \"<c>\"\n	endm\n",
+            "	irp v,,\n	dc.b $22\n	endm\n",
+        );
+        assert_eq!(image(src), vec![0x11, b'<', b'>', 0x22, 0x22]);
+    }
+
+    /// The loop variable obeys the macro-parameter boundary rule and is
+    /// CASE-SENSITIVE under `-U`: `"c"` and `_c_` take the value, `xcx` does
+    /// not, and `Cv` answers only to its own spelling. asl, probe `p6.asm` case
+    /// 6g and `p7.asm` case 7f:
+    ///
+    /// ```text
+    ///   38/    1016 : 4141 7863 785F 415F     dc.b "A", 'A', "xcx", "_A_"
+    ///   33/    102A : 3C41 3E3C 6376 3E       dc.b "<A><cv>"
+    /// ```
+    #[test]
+    fn loop_variable_obeys_the_boundary_rule_and_is_case_sensitive() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "	irpc c,\"A\"\n	dc.b \"c\", \"xcx\", \"_c_\"\n	endm\n",
+            "	irpc Cv,\"B\"\n	dc.b \"<Cv><cv>\"\n	endm\n",
+        );
+        let mut want: Vec<u8> = b"Axcx_A_".to_vec();
+        want.extend_from_slice(b"<B><cv>");
+        assert_eq!(image(src), want);
+    }
+
+    /// `irp`'s items are the SOURCE TEXT the author wrote — never re-rendered
+    /// from tokens, which would print `$FF` as `255`. asl, probe `p8.asm` case
+    /// 8b:
+    ///
+    /// ```text
+    ///   16/    100F : 5B31 2B32 5D     dc.b "[1+2]"
+    ///   16/    1014 : 5B24 4646 5D     dc.b "[$FF]"
+    /// ```
+    ///
+    /// `irpc`'s operand, by contrast, is EVALUATED: a `set` string resolves, an
+    /// integer renders in decimal and is then walked digit by digit (case 8a,
+    /// `irpc c,1+2` is one iteration of `3`).
+    #[test]
+    fn irp_items_are_raw_text_while_irpc_evaluates_its_operand() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "	irp v,1+2,$FF\n	dc.b \"[v]\"\n	endm\n",
+            "sstr	set \"PQ\"\n",
+            "	irpc c,sstr\n	dc.b \"c\"\n	endm\n",
+            "	irpc c,1+2\n	dc.b \"<c>\"\n	endm\n",
+        );
+        let mut want: Vec<u8> = b"[1+2][$FF]".to_vec();
+        want.extend_from_slice(b"PQ");
+        want.extend_from_slice(b"<3>");
+        assert_eq!(image(src), want);
+    }
+
+    /// A loop nested inside a macro is substituted ONCE where it is entered and
+    /// then replayed, exactly as `rept`/`while` are: a `shift` in the body
+    /// advances the frame without changing the body's own text, and the frame
+    /// HAS advanced by the line after the loop. asl, probe `p8.asm` cases 8c
+    /// and 8d:
+    ///
+    /// ```text
+    ///   25/    101B : 5807        dc.b "X",7
+    ///   25/    101D : 5907        dc.b "Y",7
+    ///   35/    1021 : 7031 01     dc.b "p1",1
+    ///   35/    1024 : 7031 02     dc.b "p1",2
+    ///   35/    1027 : 7031 03     dc.b "p1",3
+    /// ```
+    #[test]
+    fn a_macro_nested_loop_substitutes_once_and_a_shift_inside_it_does_not_retext() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "mm	macro pp,qq\n	irpc c,\"pp\"\n	dc.b \"c\",qq\n	endm\n	endm\n",
+            "	mm XY,7\n",
+            "sh	macro aa\n	irp v,1,2,3\n	dc.b \"aa\",v\n	shift\n	endm\n	endm\n",
+            "	sh p1,p2,p3\n",
+        );
+        assert_eq!(
+            image(src),
+            vec![b'X', 7, b'Y', 7, b'p', b'1', 1, b'p', b'1', 2, b'p', b'1', 3]
+        );
+    }
+
+    /// `ARGCOUNT` before any shift is the number of argument groups the call
+    /// WROTE, and an empty operand field is 0 rather than one empty group. asl,
+    /// probe `p5.asm`:
+    ///
+    /// ```text
+    ///    8/    1002 : 0000        dc.w 0      ← `ac`
+    ///   12/    100A : 0002        dc.w 2      ← `ac ,`
+    ///   14/    100E : 0002        dc.w 2      ← `ac 1,`
+    ///   18/    1016 : 0003        dc.w 3      ← `ac 1,,3`
+    /// ```
+    #[test]
+    fn argcount_counts_written_argument_groups_and_an_empty_field_is_zero() {
+        let head = "	cpu 68000\n	padding off\n	phase 0\nac	macro\n	dc.b ARGCOUNT\n	endm\n";
+        assert_eq!(image(&format!("{head}	ac\n")), vec![0]);
+        assert_eq!(image(&format!("{head}	ac ,\n")), vec![2]);
+        assert_eq!(image(&format!("{head}	ac 1,\n")), vec![2]);
+        assert_eq!(image(&format!("{head}	ac ,1\n")), vec![2]);
+        assert_eq!(image(&format!("{head}	ac 1,,3\n")), vec![3]);
+        assert_eq!(image(&format!("{head}	ac 1,2,3\n")), vec![3]);
+    }
+
+    /// **After a shift `ARGCOUNT` answers from the PARAMETER list, not the
+    /// argument list** — so a one-parameter macro called with three arguments
+    /// drops 3 → 0 → -1 → -2 rather than counting its arguments down, and the
+    /// decrement stops once `max(parameters, arguments)` shifts have happened.
+    /// asl, probes `p3.asm` and `p4.asm`, five `dc.w ARGCOUNT` per row:
+    ///
+    /// ```text
+    ///   one  pp        / one 11,22,33          3, 0, -1, -2, -2
+    ///   three q1,q2,q3 / three 11               1, 2,  1,  0,  0
+    ///   three q1,q2,q3 / three 11,22,33,44,55   5, 2,  1,  0, -1
+    /// ```
+    #[test]
+    fn argcount_after_a_shift_counts_parameters_down_and_stops_when_exhausted() {
+        let body = "	dc.w ARGCOUNT\n	shift\n	dc.w ARGCOUNT\n	shift\n	dc.w ARGCOUNT\n	shift\n	dc.w ARGCOUNT\n	shift\n	dc.w ARGCOUNT\n";
+        let head = format!(
+            "	cpu 68000\n	padding off\n	phase 0\none	macro pp\n{body}	endm\nthree	macro q1,q2,q3\n{body}	endm\n"
+        );
+        let w = |v: &[i16]| -> Vec<u8> {
+            v.iter().flat_map(|n| (*n as u16).to_be_bytes()).collect()
+        };
+        assert_eq!(image(&format!("{head}	one 11,22,33\n")), w(&[3, 0, -1, -2, -2]));
+        assert_eq!(image(&format!("{head}	one 11\n")), w(&[1, 0, 0, 0, 0]));
+        assert_eq!(image(&format!("{head}	one\n")), w(&[0, 0, 0, 0, 0]));
+        assert_eq!(image(&format!("{head}	three 11,22,33\n")), w(&[3, 2, 1, 0, 0]));
+        assert_eq!(image(&format!("{head}	three 11\n")), w(&[1, 2, 1, 0, 0]));
+        assert_eq!(
+            image(&format!("{head}	three 11,22,33,44,55\n")),
+            w(&[5, 2, 1, 0, -1])
+        );
+    }
+
+    /// `ARGCOUNT` is a SUBSTITUTION, not a symbol: it pastes its digits into the
+    /// body text, folds case, obeys the boundary rule — and YIELDS to a
+    /// parameter declared with that name. asl, probe `p9.asm` cases 9a and 9b:
+    ///
+    /// ```text
+    ///    9/    1002 : 315B 325D 2032 ...     dc.b "1[2] 2[xARGCOUNTx] 3[_2_] 4[2] 5[2]"
+    ///   15/    1027 : 5B7A 7A5D              dc.b "[zz]"
+    /// ```
+    #[test]
+    fn argcount_substitutes_like_allargs_and_a_parameter_of_that_name_wins() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "ac2	macro pp\n",
+            "	dc.b \"1[ARGCOUNT] 2[xARGCOUNTx] 3[_ARGCOUNT_] 4[argcount] 5[ArgCount]\"\n",
+            "	endm\n",
+            "	ac2 7,8\n",
+            "ac3	macro ARGCOUNT\n	dc.b \"[ARGCOUNT]\"\n	endm\n",
+            "	ac3 zz\n",
+        );
+        let mut want: Vec<u8> = b"1[2] 2[xARGCOUNTx] 3[_2_] 4[2] 5[2]".to_vec();
+        want.extend_from_slice(b"[zz]");
+        assert_eq!(image(src), want);
+    }
+
+    /// The whole `jmpTos` chain S2 builds out of these three constructs at once:
+    /// a zero-parameter macro relaying `ALLARGS`, a `shift` in the frame above
+    /// it, `if ARGCOUNT>0` as the guard, and `irp op,ALLARGS` inside it. The
+    /// guard is what stops the empty case from running the loop once over an
+    /// empty item and defining a nameless label — so the two calls below must
+    /// emit DIFFERENT things, and the empty one must emit nothing from the loop.
+    #[test]
+    fn argcount_guards_an_irp_over_a_relayed_allargs() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "inner	macro\n	if ARGCOUNT>0\n	irp op,ALLARGS\n	dc.b \"<op>\"\n	endm\n	endif\n	endm\n",
+            "outer	macro UseNop\n	shift\n	inner ALLARGS\n	endm\n",
+            "top	macro\n	outer 1,ALLARGS\n	endm\n",
+            "	dc.b $AA\n",
+            "	top zz1,zz2\n",
+            "	dc.b $BB\n",
+            "	top\n",
+            "	dc.b $CC\n",
+        );
+        let mut want: Vec<u8> = vec![0xAA];
+        want.extend_from_slice(b"<zz1><zz2>");
+        want.push(0xBB);
+        want.push(0xCC);
+        assert_eq!(image(src), want);
+    }
+
+    /// A head with no comma at all is asl's error #1110 and the body is SKIPPED,
+    /// not run (probe `p9.asm` cases 9c/9d) — the block must still be stepped
+    /// over as a block, or the lines after it desynchronise.
+    #[test]
+    fn an_irp_head_without_a_list_diagnoses_and_skips_its_body() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "	dc.b $AA\n",
+            "	irp v\n	dc.b $11\n	endm\n",
+            "	irpc c\n	dc.b $22\n	endm\n",
+            "	dc.b $BB\n",
+        );
+        let m = run(src, &Options::default());
+        let diags = match &m {
+            Ok(_) => panic!("a list-less irp head must diagnose"),
+            Err(f) => f.clone(),
+        };
+        assert_eq!(diags.len(), 2, "one per head: {diags:?}");
+        // The body did not run and the lines around it still line up.
+        assert!(
+            diags.iter().all(|d| d.message.contains("loop variable")),
+            "{diags:?}"
+        );
+    }
 }
