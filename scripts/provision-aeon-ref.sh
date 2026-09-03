@@ -149,8 +149,28 @@ python3 - "$GOLDEN" "$W" <<'PY'
 import re, sys, zlib, shutil, pathlib
 golden, w = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 last = (golden / "provenance.toml").read_text().split('[[entry]]')[-1]
-m = re.search(r'\[entry\.strict\.goldens\](.*?)(\n\[|\Z)', last, re.S)
-exp = {k: (c, int(s)) for k, c, s in re.findall(r'(\w+)\s*=\s*"([0-9a-f]{8})/(\d+)"', m.group(1))}
+# THE FREEZE AND THE ATTEST WRITE DIFFERENT BLOCKS, and reading the wrong one is
+# how this crashed with a bare AttributeError on a legitimate tip. `--freeze`
+# writes `[entry.targets.<shape>]` (full_crc / full_size); `--attest` LATER adds
+# `[entry.strict.goldens]` (shape = "crc/size"). A tip that is frozen but not yet
+# attested — the normal state between the two rituals, and exactly what chain 200
+# was — has the first and not the second. Prefer targets, fall back to strict, and
+# refuse BY NAME rather than letting `m.group(1)` raise on None.
+rows = re.findall(
+    r'\[entry\.targets\.(\w+)\].*?full_crc = "([0-9a-f]{8})".*?full_size = (\d+)',
+    last, re.S)
+if rows:
+    exp = {k: (c, int(sz)) for k, c, sz in rows}
+else:
+    m = re.search(r'\[entry\.strict\.goldens\](.*?)(\n\[|\Z)', last, re.S)
+    if m is None:
+        raise SystemExit(
+            "provision: the provenance tail carries NEITHER `[entry.targets.*]` (written by "
+            "--freeze) NOR `[entry.strict.goldens]` (written by --attest), so this entry "
+            "names no expected ROMs and there is nothing to place or verify. That is a "
+            "malformed tip, not a missing tool — inspect golden/provenance.toml's last entry.")
+    exp = {k: (c, int(s)) for k, c, s in
+           re.findall(r'(\w+)\s*=\s*"([0-9a-f]{8})/(\d+)"', m.group(1))}
 names = {"s4": "s4.bin", "s4_debug": "s4.debug.bin",
          "demo": "demo.bin", "demo_debug": "demo.debug.bin"}
 bad = 0
@@ -272,8 +292,21 @@ python3 - "$GOLDEN" "$W" "$CONTROL" <<'PY2'
 import re, sys, zlib, pathlib
 golden, w, control = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3]
 last = (golden / "provenance.toml").read_text().split('[[entry]]')[-1]
-m = re.search(r'\[entry\.strict\.goldens\](.*?)(\n\[|\Z)', last, re.S)
-exp = {k: (c, int(s)) for k, c, s in re.findall(r'(\w+)\s*=\s*"([0-9a-f]{8})/(\d+)"', m.group(1))}
+# Same freeze-vs-attest split as step 3: `[entry.targets.*]` is written by --freeze and
+# is always present; `[entry.strict.goldens]` only appears once --attest has run. Reading
+# only the second crashed on a frozen-but-unattested tip.
+rows = re.findall(
+    r'\[entry\.targets\.(\w+)\].*?full_crc = "([0-9a-f]{8})".*?full_size = (\d+)',
+    last, re.S)
+if rows:
+    exp = {k: (c, int(sz)) for k, c, sz in rows}
+else:
+    m = re.search(r'\[entry\.strict\.goldens\](.*?)(\n\[|\Z)', last, re.S)
+    if m is None:
+        raise SystemExit("provision: the provenance tail names no expected ROMs "
+                         "(neither [entry.targets.*] nor [entry.strict.goldens])")
+    exp = {k: (c, int(sz)) for k, c, sz in
+           re.findall(r'(\w+)\s*=\s*"([0-9a-f]{8})/(\d+)"', m.group(1))}
 bad = 0
 for key, fn in (("s4", "s4.bin"), ("s4_debug", "s4.debug.bin")):
     d = (w / fn).read_bytes()
