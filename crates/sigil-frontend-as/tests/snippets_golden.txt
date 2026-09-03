@@ -1495,3 +1495,155 @@ m:	macro	arg
 	m	#1
 --- bytes ---
 5B 23 31 5D
+=== t6_eval_label_column ===
+        cpu 68000
+        phase 0
+i       eval 5
+        dc.b i
+i       eval i+3
+        dc.b i
+--- bytes ---
+05 08
+=== t6_eval_operand_column ===
+        cpu 68000
+        phase 0
+        eval j,10
+        dc.b j
+        eval j,j*2
+        dc.b j
+--- bytes ---
+0A 14
+=== t6_eval_colon_label ===
+        cpu 68000
+        phase 0
+k:      eval 7
+        dc.b k
+--- bytes ---
+07
+=== t6_eval_under_z80 ===
+        cpu z80
+        phase 0
+i       eval 5
+        db i
+        eval j,9
+        db j
+        set 3,a
+--- bytes ---
+05 09 CB DF
+=== t6_eval_and_set_are_one_class ===
+        cpu 68000
+        phase 0
+b       set 3
+b       eval 4
+        dc.b b
+        eval b,b+1
+        dc.b b
+--- bytes ---
+04 05
+=== t6_eval_case_folded ===
+        cpu 68000
+        phase 0
+g       EVAL 5
+        dc.b g
+        Eval h,6
+        dc.b h
+--- bytes ---
+05 06
+=== t6_eval_macro_local_cursor ===
+        cpu 68000
+        phase 0
+m       macro
+.v      eval 3
+        dc.b .v
+.v      eval .v+1
+        dc.b .v
+        endm
+        m
+        m
+--- bytes ---
+03 04 03 04
+=== t6_eval_rept_cursor ===
+        cpu 68000
+        phase 0
+n       eval 0
+        rept 4
+        eval n,n+2
+        dc.b n
+        endr
+--- bytes ---
+02 04 06 08
+=== t6_eval_while_cursor ===
+        cpu 68000
+        phase 0
+w       eval 0
+        while w<4
+        dc.b w
+        eval w,w+1
+        endm
+--- bytes ---
+00 01 02 03
+=== t6_eval_is_an_ordinary_symbol_name ===
+        cpu 68000
+        phase 0
+        dc.b $09
+eval    dc.b $03
+        dc.b eval&$FF
+        dc.b set&$FF
+set:    dc.b $05
+--- bytes ---
+09 03 01 04 05
+=== t6_eval_string_valued ===
+        cpu 68000
+        phase 0
+        padding off
+d       eval "hi"
+        dc.b d
+--- bytes ---
+68 69
+=== t6_eval_smps_voice_accumulators ===
+        cpu 68000
+        phase 0
+SourceSMPS2ASM  = 0
+smpsVcFeedback macro val
+vcFeedback eval val
+        endm
+smpsVcAlgorithm macro val
+vcAlgorithm eval val
+        endm
+smpsVcUnusedBits macro val,d1r1
+vcUnusedBits eval val
+        if ("d1r1"<>"")
+                eval vcD1R1Unk,d1r1<<5
+        else
+                eval vcD1R1Unk,0
+        endif
+        endm
+smpsVcDetune macro op1,op2,op3,op4
+        eval vcDT1,op1
+        eval vcDT2,op2
+        eval vcDT3,op3
+        eval vcDT4,op4
+        endm
+smpsVcTotalLevel macro op1,op2,op3,op4
+        eval vcTL1,op1
+        eval vcTL2,op2
+        eval vcTL3,op3
+        eval vcTL4,op4
+        dc.b (vcUnusedBits<<6)+(vcFeedback<<3)+vcAlgorithm
+        if SourceSMPS2ASM==0
+                eval vcTLMask4,((vcAlgorithm==7)<<7)
+                eval vcTLMask1,128
+        else
+                eval vcTLMask4,0
+                eval vcTLMask1,0
+        endif
+        dc.b (vcDT4<<4),(vcDT3<<4),(vcDT2<<4),(vcDT1<<4)
+        dc.b vcTL4|vcTLMask4,vcTL1|vcTLMask1,vcD1R1Unk
+        endm
+        smpsVcAlgorithm     $00
+        smpsVcFeedback      $01
+        smpsVcUnusedBits    $00
+        smpsVcDetune        $00, $03, $07, $00
+        smpsVcTotalLevel    $00, $13, $2D, $24
+--- bytes ---
+08 00 70 30 00 24 80 00
