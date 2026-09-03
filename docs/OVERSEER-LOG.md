@@ -5625,3 +5625,173 @@ form proves is *"cannot have affected this binary"*, never *"the output did not 
 **`SIGIL_BIN_CLOSURE` is the hatch for the legitimate off-tree run** (the base-compiler arm of
 an A/B) and is not a silencer: it must equal what the binary reports, so a wrong sha still
 refuses and a right one puts the sha in the log.
+
+### MOVED FROM THE BOOT READ 2026-09-03 — eleven closed paragraphs, verbatim
+
+Moved when `docs/OVERSEER.md` stood at **1,423 lines / 104,225 B** against the protocol's
+about-900-line / 100 KB bound (sigil master `2a4a9504`). Every block below is byte-identical to
+what stood in the boot doc, under the section named in its own locator, and every block is a
+whole blank-line-delimited paragraph — nothing was rewrapped, so a set-difference over non-blank
+lines proves the split lossless. Each of these paragraphs was **closed history sitting around a
+live rule**; the rule itself stays in `docs/OVERSEER.md`.
+
+Four rules were rewritten into present-tense form in the boot doc rather than left leaning on a
+paragraph that moved here, and the before/after of each is:
+
+- **Landing-lane division.** Before: *"A byte-changing parcel ripples past `pins.rs` into
+  `pins.rs`, and `repin.toml` changes only when a region is added."* After: a sentence naming
+  `repin`'s single write site, `repin.toml`'s add-a-region trigger, and
+  `crates/sigil-harness/tests/repin_pins.rs` as a currency gate rather than a hand-edit site,
+  with `mixed_dac_rom.rs` / `engine.inc` recorded as absent from this tree. The old sentence was
+  garbled by an earlier edit (it named `pins.rs` as both source and destination); the facts it
+  should have carried were only in the correction paragraph that now sits below.
+- **Dispatch practice.** Before: *"On 2026-08-22 that produced a correction in **3 of 3**
+  dispatches:"* After: the same sentence ending in a full stop, the colon's three dated instances
+  being the block moved here.
+- **Quality bars, the pairing gate.** Before: *"**This is now gated, as of 2026-08-26 — and it
+  was not the one-afternoon gate it looked like.** … a parcel lost a run to exactly that. What
+  shipped:"* After: *"**The `AEON_DIR`-matches-the-provenance-tip pairing is gated, as of
+  2026-08-26.** What shipped:"* — the historical account of why no gate existed before it is the
+  block moved here.
+- **`AEON_DIR` in every brief.** Before: *"**`"if needed"` is the whole defect, and it reads as
+  helpful flexibility.**"* After: *"**Writing the tree into a brief as conditional — *"a stable
+  aeon tree, if needed"* — is the whole defect, and it reads as helpful flexibility.**"* — the
+  quoted phrase's antecedent was the episode paragraph that moved here, so the rule was made
+  self-contained rather than left pointing at text a boot reader no longer sees.
+
+---
+
+*(original `docs/OVERSEER.md` lines 110–112, under: THE TEST THAT TURNED THE HOLD INTO A START — "is there an owner decision under this, AND IS IT THIS QUESTION" (2026-09-02))*
+
+**Uncommitted when written; commits with the comptime landing.** Master is parked at `cdd330ff` behind
+the aeon lane's freeze window and this lane said so to two peers in writing, so the file waits rather
+than the word being quietly broken. It survives a `/clear` on disk in the meantime.
+
+---
+
+*(original `docs/OVERSEER.md` lines 114–125, under: THE TEST THAT TURNED THE HOLD INTO A START — "is there an owner decision under this, AND IS IT THIS QUESTION" (2026-09-02))*
+
+**The sequence, because the shape repeats and the first half looks like obstruction.** The hub sent a
+`go` on `COMPTIME-LABEL-STRUCT-ALWAYS-RED` (that parcel landed; its ruling section is now in
+`docs/OVERSEER-LOG.md` and its surviving rule is in *Rules banked from closed findings* above)
+under the owner's delegation. This lane **held** it: adopted
+the technical ruling, refused the authorization, and banked the ruling with a paragraph saying the go was
+deliberately not banked with it (`cdd330ff`). The hub then produced **the owner's own words at the commit
+that carries them** — empyrean `63c85ae`, reachable from `origin/main`, verified here with `git grep` at
+that revision and **read in its surrounding page rather than at the matched line**: *"I'd like us to
+please continue our drive for the Raster/parallax effects, wave 1 project so we continue going through
+it"*, re-arming the 2026-08-30 brief (*"(you're the director/overseer)"*, *"Yes sigil go"*) and the
+07:27:51Z scope correction, which names sigil among the pushed lanes. **On that artifact the same test
+comes out yes, and this lane started.**
+
+---
+
+*(original `docs/OVERSEER.md` lines 147–151, under: THE TEST THAT TURNED THE HOLD INTO A START — "is there an owner decision under this, AND IS IT THIS QUESTION" (2026-09-02))*
+
+**The aeon lane drew the same line against its own earlier case, unprompted and against its own
+interest**, and their discrimination is the sharpest available: their d-50 ruling was *already the
+owner's*, quoted in the card, so the hub was **sequencing his decision, not substituting for it**; this
+one had no prior owner ruling underneath it. Same hub, same delegation, different answers — which is the
+evidence that the test discriminates rather than merely licensing whatever one wants to do.
+
+---
+
+*(original `docs/OVERSEER.md` lines 275–281, under: The drift watch's timer — the unit name and how to switch it off)*
+
+**That sentence used to say the timer was NOT installed and NOT enabled, and it was wrong by
+2026-09-03** — `systemctl --user list-unit-files` shows `sigil-ref-drift.timer` **enabled**,
+alongside `sigil-source-gates` and `aeon-effects-gates`. It rotted inside a paragraph whose own
+last clause said it was a snapshot and to ask the command, which is the whole lesson: **a
+warning attached to a fact does not stop the fact rotting, and the reader who trusts the fact
+is the one who did not run the command the warning names.** Ask `systemctl`; do not read a
+state off this page.
+
+---
+
+*(original `docs/OVERSEER.md` lines 346–361, under: Landing-lane division — THE rule for this repo)*
+
+**CORRECTED 2026-08-30 — this row named three hand-edit sites and TWO NO LONGER
+EXIST.** It read *"ripples past `pins.rs` into `engine.inc` / `mixed_dac_rom.rs` /
+`repin_pins.rs` — the rest are hand-edited."* Measured: `mixed_dac_rom.rs` was
+**deleted** in `5279a064` (*"retire the AS-reassembly oracle family + delete the
+twin-inclusive harness machinery"*), and **`engine.inc` was never tracked in this
+repo at all**, nor is it in aeon's tree today. `repin` writes exactly one file —
+`crates/sigil-harness/src/bin/repin.rs:89` resolves `root.join("src/pins.rs")` and
+`:192` is its only write. The surviving `repin_pins.rs` is
+`crates/sigil-harness/**tests**/repin_pins.rs`, a **currency gate**
+(`pins_rs_is_current`), not a file anybody edits by hand.
+
+**The direction of the error is over-pricing, which is why it survived.** A doctrine
+that says a parcel costs five hand-edits when it costs one makes byte-movers look
+more expensive than they are, and an over-estimate never fails loudly — it just
+makes work get deferred. The row outlived its subject: **the same flip-stage work
+that retired the AS twin machinery deleted the files this row exists to protect.**
+
+---
+
+*(original `docs/OVERSEER.md` lines 423–427, under: The autonomy directive — and its scope, which is the part that matters)*
+
+**This retires the provenance caveat the draft carries in its own header.** That document
+records its authority as an *empyrean* overseer's ruling made under a delegation reported in
+the owner's words, flagged there as *"this lane did not witness that utterance"*. It is now
+witnessed firsthand here, so the construct no longer stands on a relayed grant. The draft text
+itself is unaffected; only its authority line is.
+
+---
+
+*(original `docs/OVERSEER.md` lines 502–510, under: Dispatch practice — a stated MECHANISM is more dangerous than a stated FACT)*
+
+- `feat/field-align` overturned the brief's **central design ruling** — the auto-padding
+  question was already settled by spec §4.3, dispatched as open because the controller had
+  not read the spec.
+- `fix/rom-sentinel-port-tests` refuted the brief's implied **cost** argument for excluding
+  gates from the nightly lane (cost is not the obstacle; committed-artifact oracles are) and
+  corrected the booked count from ten to eleven.
+- `docs/readme-refresh` corrected a flat **factual** error (`SIGIL_BUILD`/`SIGIL_EMIT` do not
+  live in `test_support.rs`) and declined to document an env var the brief implied was
+  required, having verified it is not.
+
+---
+
+*(original `docs/OVERSEER.md` lines 541–547, under: Quality bars)*
+
+**AND THEN IT ROTTED A THIRD TIME, IN THE FIELD IT KEPT.** The fix for the rotting SHA was to
+name the CANDIDATES instead — `.aeon-landing` and `.sigil-portfix-aeon` — which is a smaller
+coordinate but a coordinate all the same. Measured 2026-09-02: **both were gone**, while the tree
+this lane was actually using (`.sigil-ref-197-mine`, sitting at the provenance tip's own
+`aeon_rev`) appeared nowhere in this paragraph. A cold session following it got an empty answer
+from a list of two dead names. *Dropping the revision and keeping the names treated the SHA as the
+perishable part; the name was perishable on the same clock.*
+
+---
+
+*(original `docs/OVERSEER.md` lines 579–585, under: Quality bars)*
+
+**This is now gated, as of 2026-08-26 — and it was not the one-afternoon gate it looked
+like.** Historically no gate witnessed that `AEON_DIR` matched the provenance tip, because
+`provenance.toml` had **no field naming the aeon revision a freeze pairs with**: at chain 166
+the schema was `name` / `ab` / `note` plus the per-target CRC rows, and the aeon SHA appeared
+only inside the free text of `ab`/`note` (16 of the 166 entries carry no `note` at all). Every
+check of the pairing to date was a human reading prose, and a parcel lost a run to exactly
+that. What shipped:
+
+---
+
+*(original `docs/OVERSEER.md` lines 1054–1058, under: `AEON_DIR` IN EVERY BRIEF: UNCONDITIONAL, **EXCLUSIVE**, AND **PREPARED** — three claims (2026-08-27, widened 2026-08-29))*
+
+That happened: a brief here said *"a stable aeon tree, **if needed**"*, an agent ran the
+workspace suite without setting it, and `s4.debug.bin` / `s4.debug.lst` in the owner's tree
+were rewritten by a run neither he nor the aeon lane knew about, while he was testing live.
+His authoring was untouched — no re-bake ran — but the debug ROM he would have loaded had a
+provenance nobody intended.
+
+---
+
+*(original `docs/OVERSEER.md` lines 1396–1400, under: Standing cross-session obligations (2026-08-22))*
+
+**Checked here, so the next boot does not re-check it:** this document carries **no**
+mirrored row. `grep -n 'local-only\|unpushed\|not pushed'` returns exactly one hit, the
+general two-directions rule immediately below, which is the durable form rather than a
+snapshot. The rule generalises past reachability: **a caution is a claim, and it expires
+like one.**
+
