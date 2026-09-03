@@ -1070,8 +1070,7 @@ is a language-surface call and is **not** ruled here.
 **⚠ THE ROOT IS WORSE THAN CASE AND MUST NOT BE FOLDED INTO IT.** `initial_cpu` defaults to
 `Z80` (`Options`' default, honest for the Z80-only M0 build), `dispatch`'s directive match takes
 `"cpu"` lower case only, and under `Cpu::Z80` the lexer's `b'$'` arm yields `Tok::Dollar` — the
-program counter — not a hex prefix. So a 68000 disassembly assembles **as Z80**. Cited by symbol:
-every line number this paragraph carried had rotted within a day.
+program counter — not a hex prefix. So a 68000 disassembly assembles **as Z80**.
 Case folding fixes this corpus *because s2disasm happens to carry a `CPU` line at all*. A 68000
 source with no `cpu` directive still silently assembles as Z80, and **that is a separate defect
 with its own fix** (the CLI's default for a general-purpose assembler is not the M0 build's
