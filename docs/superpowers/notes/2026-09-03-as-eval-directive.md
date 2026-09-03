@@ -8,7 +8,7 @@ part of the row as written.
 
 | | |
 |---|---|
-| sigil | branch `parcel/as-eval`, rebased onto master `5f3884a4` (branched at `ed06da77`) |
+| sigil | branch `parcel/as-eval`, rebased onto master `0e7e36ad` (branched at `ed06da77`) |
 | S1 corpus | `s1disasm` `f6ece657`, detached worktree, entry `sonic.asm`, `sigil sonic.asm` from the corpus root |
 | S2 corpus | `s2disasm` `e45ebf3`, detached worktree, entry `s2.asm` |
 | oracle | `s1disasm/build_tools/Linux-x86_64/asl`, md5 `61e672562465725a8c102288a7da9098`, `-xx -n -q -A -L -U -E -i .` |
@@ -201,7 +201,7 @@ Red-first, both mutations applied from disk and shown applied:
 | mutation | `as_eval_directive` | `asl_snippets` |
 |---|---|---|
 | none | 5 passed, 0 failed | ok |
-| **M1** `eval.rs` reverted to master `5f3884a4` (13+/56−) | **3 FAILED**, 2 passed | **FAILED** |
+| **M1** `eval.rs` reverted to master (13+/56−) | **3 FAILED**, 2 passed | **FAILED** |
 | **M2** the `name_in_label_field` guard deleted (1+/3−) | **3 FAILED**, 2 passed | **FAILED** |
 
 Every test reddens under at least one mutation; the two that survive M1 are the
@@ -239,12 +239,17 @@ soundness question rather than a count.
 
 ## Verification
 
-Rebased onto master `5f3884a4` — the alignment parcel (`1dd98a75`) also edits
-`eval.rs`, in `directive_align` and its test block, and the rebase was clean with
-no conflict. Every measurement above is the POST-rebase one, and the alignment
-parcel moves neither corpus: master `5f3884a4` still reads 9,739 and 13,109.
+Rebased twice while this ran, ending on master `0e7e36ad`. The alignment parcel
+(`1dd98a75`) also edits `eval.rs`, in `directive_align` and its test block; both
+rebases were clean with no conflict. Every measurement above is the POST-rebase
+one, and the alignment parcel moves neither corpus: master still reads 9,739 and
+13,109, re-measured with a binary built from it.
 
-| | master `5f3884a4` | `parcel/as-eval` |
+The baseline row below was measured at `5f3884a4`; the only master commit after
+it, `0e7e36ad`, changes two `.md` files and no code, so it cannot move a suite
+count. The parcel row is the run at the final tip `faa97a7e`.
+
+| | master | `parcel/as-eval` @ `faa97a7e` |
 |---|---|---|
 | suites | 376 | 377 |
 | passed | 4,319 | **4,324** |
