@@ -110,7 +110,16 @@ fn image_final_size(sec: &Section, rungs: &[usize]) -> u32 {
     for (fi, frag) in sec.fragments.iter().enumerate() {
         match frag {
             Fragment::Org { target, .. } => cursor = *target,
-            Fragment::Reserve { .. } => {} // address-only: no image bytes
+            // Advances the write cursor without EXTENDING the image: a
+            // reservation with bytes after it inside one section is materialised
+            // by whatever writes next (so those bytes reach `max_extent` through
+            // the arm below), while a trailing one — or a section that is nothing
+            // but reservations — places nothing. Mirrors `Section::image_bytes`;
+            // see its note for the asl+p2bin rule this is.
+            Fragment::Reserve { count, .. } => {
+                cursor += *count;
+                continue;
+            }
             other => cursor += frag_len(other, rungs[fi]),
         }
         if cursor > max_extent {

@@ -10140,9 +10140,10 @@ C:\n";
     /// ```
     ///
     /// `$101 → $105` is the reservation, and `dc.b $33` at `$105` is the proof
-    /// it happened once. The assertion is on the LABEL the reservation places
-    /// rather than on image bytes, because what a reservation does to the IMAGE
-    /// is a separate rule with its own divergence — see the parcel note.
+    /// it happened once. The section is address-only after the `ds`, so the
+    /// assertion is on the LABEL the reservation places, not on image bytes —
+    /// see `a_reservation_fills_like_p2bin_and_trims_like_p2bin` for what the
+    /// image does around a reservation.
     #[test]
     fn bang_forces_the_builtin_past_a_macro_of_that_name() {
         let head = concat!(
@@ -10159,6 +10160,64 @@ C:\n";
                 "the `!` line must reach the builtin once, not re-enter `ds`: {line:?}"
             );
         }
+    }
+
+    /// `ds` reserves address space, and asl reserves by leaving a GAP in the
+    /// object file which `p2bin` then FILLS for anything that follows it in the
+    /// image. Three shapes, all against asl 1.42 + p2bin on the same source with
+    /// a `ds` macro shadowing the builtin (`!ds.ATTRIBUTE ALLARGS`):
+    ///
+    /// ```text
+    ///   bytes after it:  11 00 00 00 00 22 00 00 00 00 00 00 33 00 00 00 00 00 00 00 00 44 00 00 00 16
+    ///   trailing:        11 22
+    ///   phased RAM:      11 00 00 00 00 00 00 00 00 22
+    /// ```
+    ///
+    /// The first is the one that used to diverge: the reservation placed no byte
+    /// AND left the write cursor alone, so everything after it packed short of
+    /// its own address — a 20-byte-short image at exit 0 with no diagnostic,
+    /// while the trailing label still resolved to $16. The cursor now advances
+    /// and the image grows only where something writes, which is both halves of
+    /// p2bin's rule at once: the gap fills, a trailing reservation is trimmed,
+    /// and a section that is nothing but reservations (Aeon's phased `$FFFF….`
+    /// RAM regions) still places no byte.
+    #[test]
+    fn a_reservation_fills_like_p2bin_and_trims_like_p2bin() {
+        let head = concat!(
+            "\tcpu 68000\n\tpadding off\n\torg 0\n",
+            "ds macro\n\t!ds.ATTRIBUTE ALLARGS\n\tendm\n",
+        );
+        // Bytes after a reservation: the gap fills, and the trailing `dc.l Here`
+        // reads back the same $16 the label has.
+        assert_eq!(
+            linked_image(&format!(
+                "{head}\tdc.b $11\n\tds.b 4\n\tdc.b $22\n\tds.w 3\n\tdc.b $33\n\
+                 \tds.l 2\n\tdc.b $44\nHere:\n\tdc.l Here\n"
+            )),
+            vec![
+                0x11, 0, 0, 0, 0, 0x22, 0, 0, 0, 0, 0, 0, 0x33, 0, 0, 0, 0, 0, 0, 0, 0, 0x44,
+                0x00, 0x00, 0x00, 0x16,
+            ]
+        );
+        // Trailing reservation: nothing writes past it, so p2bin trims it.
+        assert_eq!(
+            linked_image(&format!("{head}\tdc.b $11\n\tdc.b $22\n\tds.b 4\nTail:\n")),
+            vec![0x11, 0x22]
+        );
+        // A phased RAM block between two ROM bytes: the reservations place no
+        // image byte of their own, and `flatten`'s inter-section gap fill stands
+        // in for p2bin's.
+        assert_eq!(
+            linked_image(concat!(
+                "\tcpu 68000\n\tpadding off\n\torg 0\n",
+                "\tdc.b $11\n",
+                "\tphase $FFFF0000\n",
+                "A:\tds.b 4\nB:\tds.w 2\n",
+                "\tdephase\n",
+                "\tdc.b $22\n",
+            )),
+            vec![0x11, 0, 0, 0, 0, 0, 0, 0, 0, 0x22]
+        );
     }
 
     /// The other half of the escape, and the reason it exists: a user macro

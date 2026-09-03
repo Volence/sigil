@@ -151,7 +151,9 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
                     frag_img_off += d.bytes.len() as u32;
                 }
                 Fragment::Fill { count, .. } => frag_img_off += *count,
-                Fragment::Reserve { .. } => {} // no image bytes
+                // Advances the write cursor without placing a byte, mirroring
+                // `Section::image_bytes` — see its note for the asl+p2bin rule.
+                Fragment::Reserve { count, .. } => frag_img_off += *count,
                 Fragment::Org { target, .. } => frag_img_off = *target,
                 Fragment::JmpJsrSym { .. } => {
                     unreachable!("JmpJsrSym must be lowered by resolve_layout before link")
