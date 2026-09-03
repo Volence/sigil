@@ -94,23 +94,37 @@ fn final_size(sec: &Section, rungs: &[usize]) -> u32 {
 }
 
 /// The section's final IMAGE extent under the current rungs — the byte count
-/// `link()`/`flatten` actually place at the LMA, which is `final_size` MINUS the
-/// address-only `Reserve` (`ds`) span. Mirrors the `link` cursor replay
-/// (lib.rs): `Data`/`Fill` advance the image cursor, `Org` seeks it, and
-/// `Reserve` is a no-op (RAM `ds` reserves VMA/PC space but emits no image
-/// bytes). A section that is ALL `Reserve` (Aeon's phased `$FFFF0000+` RAM
-/// blocks, whose VMA base is disp'd into RAM while their LMA anchors at the
-/// physical counter) has an image extent of 0 here even though `final_size`
-/// (VMA span) is large — so the overlap check must key on THIS, not
-/// `final_size`, to match what `flatten` places (a reserve-only section
-/// contributes no bytes and can neither clobber nor be clobbered).
+/// `link()`/`flatten` actually place at the LMA. Mirrors the `link` cursor
+/// replay (lib.rs): `Data`/`Fill` advance the image cursor, `Org` seeks it, and
+/// `Reserve` advances it WITHOUT extending the image on its own.
+///
+/// That last arm is the whole difference from `final_size`, and it cuts both
+/// ways. A reservation with something after it inside the section is part of
+/// the image: the write that follows fills the gap, and its bytes reach
+/// `max_extent` through the ordinary arm, so the extent spans the reserved
+/// range. A TRAILING reservation is not: nothing writes past it, `p2bin` trims
+/// it, and so does this. A section that is ALL `Reserve` (Aeon's phased
+/// `$FFFF0000+` RAM blocks, whose VMA base is disp'd into RAM while their LMA
+/// anchors at the physical counter) therefore has an image extent of 0 here
+/// even though `final_size` (VMA span) is large — which is why the overlap
+/// check keys on THIS, not `final_size`: it must match what `flatten` places,
+/// in both directions.
 fn image_final_size(sec: &Section, rungs: &[usize]) -> u32 {
     let mut cursor: u32 = 0;
     let mut max_extent: u32 = 0;
     for (fi, frag) in sec.fragments.iter().enumerate() {
         match frag {
             Fragment::Org { target, .. } => cursor = *target,
-            Fragment::Reserve { .. } => {} // address-only: no image bytes
+            // Advances the write cursor without EXTENDING the image: a
+            // reservation with bytes after it inside one section is materialised
+            // by whatever writes next (so those bytes reach `max_extent` through
+            // the arm below), while a trailing one — or a section that is nothing
+            // but reservations — places nothing. Mirrors `Section::image_bytes`;
+            // see its note for the asl+p2bin rule this is.
+            Fragment::Reserve { count, .. } => {
+                cursor += *count;
+                continue;
+            }
             other => cursor += frag_len(other, rungs[fi]),
         }
         if cursor > max_extent {
@@ -243,13 +257,17 @@ fn bank_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
 /// The R7p.4 overlap check: after the joint fixpoint converges, return the first
 /// pair of NON-EMPTY placed sections whose `[lma, lma + image_final_size)` ranges
 /// intersect, as an `Error` diagnostic naming BOTH sections and both hex extents.
-/// Emptiness and the range width key on the IMAGE extent (`image_final_size`,
-/// which drops the address-only `ds`/`Reserve` span), NOT the VMA `final_size`:
-/// `flatten`/`flatten_checked` place only image bytes, so a reserve-only section
-/// (Aeon's phased `$FFFF0000+` RAM blocks — VMA in RAM, LMA at the physical
-/// counter, zero image bytes) places nothing and can neither clobber nor be
-/// clobbered. Using `final_size` here spuriously collided such a RAM block's
-/// LMA-0 anchor with the ROM reset section.
+/// Emptiness and the range width key on the IMAGE extent (`image_final_size`),
+/// NOT the VMA `final_size`: `flatten`/`flatten_checked` place only image bytes,
+/// so a reserve-only section (Aeon's phased `$FFFF0000+` RAM blocks — VMA in
+/// RAM, LMA at the physical counter, zero image bytes) places nothing and can
+/// neither clobber nor be clobbered. Using `final_size` here spuriously collided
+/// such a RAM block's LMA-0 anchor with the ROM reset section.
+///
+/// A reservation with bytes after it in the same section is the other side of
+/// that: the gap it opens is filled and therefore placed, so it belongs to the
+/// extent, and a pin landing inside it is a real collision this must name —
+/// `a_reservation_inside_a_section_counts_toward_its_overlap_extent`.
 fn overlap_diag(placed: &[Section], rungs: &[Vec<usize>]) -> Option<Diagnostic> {
     // Collect (start, end, name, span) for every non-empty section, then scan
     // every pair. O(n²), but n is the section count (small), and this runs once

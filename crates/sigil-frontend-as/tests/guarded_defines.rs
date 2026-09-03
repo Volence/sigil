@@ -77,9 +77,13 @@ fn guarded_define_folds_identically_to_in_file_equate() {
     // clamps to $C1; 1<<3 = $08; if 96>90 → $AA (the `if K > 90` comptime guard
     // fired on the injected value); then the `ds.b 96` reserved gap advanced the
     // location counter (After-Gap = 96 = $60, so the reserve read the injected K);
-    // dc.w 96 = $00 $60. The reserved gap is a Space fragment, not materialized
-    // bytes, so the emitted section is the 3 prefix + 3 tail bytes.
-    assert_eq!(b, vec![0xC1, 0x08, 0xAA, 0x60, 0x00, 0x60], "fold bytes: {b:x?}");
+    // dc.w 96 = $00 $60. The gap advances the write cursor too, so what follows
+    // it fills the reserved range: 3 prefix bytes, 96 bytes of zero fill, 3 tail
+    // bytes — 102 in all, which is what asl+p2bin give for the same source.
+    let mut expected = vec![0xC1, 0x08, 0xAA];
+    expected.extend(std::iter::repeat_n(0u8, 96));
+    expected.extend([0x60, 0x00, 0x60]);
+    assert_eq!(b, expected, "fold bytes: {b:x?}");
 }
 
 #[test]

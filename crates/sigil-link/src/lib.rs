@@ -151,7 +151,9 @@ pub fn link(sections: &[Section], stubs: &SymbolTable) -> Result<LinkedImage, Ve
                     frag_img_off += d.bytes.len() as u32;
                 }
                 Fragment::Fill { count, .. } => frag_img_off += *count,
-                Fragment::Reserve { .. } => {} // no image bytes
+                // Advances the write cursor without placing a byte, mirroring
+                // `Section::image_bytes` — see its note for the asl+p2bin rule.
+                Fragment::Reserve { count, .. } => frag_img_off += *count,
                 Fragment::Org { target, .. } => frag_img_off = *target,
                 Fragment::JmpJsrSym { .. } => {
                     unreachable!("JmpJsrSym must be lowered by resolve_layout before link")
@@ -849,6 +851,52 @@ mod tests {
             bank: None,
             equ_syms: Vec::new(),
         }
+    }
+
+    /// `link`'s fixup-offset replay must advance over a `Reserve` exactly as
+    /// `Section::image_bytes` does, or a patch after a reservation lands on the
+    /// wrong byte. This is pinned at the IR level on purpose: written as AS
+    /// source, a same-section label is FOLDED by the front end and the line
+    /// carries no fixup at all, so a source-level fixture cannot reach this walk
+    /// — and a mutation reverting it read green through one.
+    ///
+    /// One section: `$11`, a 4-byte reservation, then a long that patches to
+    /// `T`. asl+p2bin place the patched long at image offset 5, behind four
+    /// bytes of gap fill.
+    #[test]
+    fn a_fixup_after_a_reservation_lands_behind_the_gap() {
+        let sec = Section {
+            name: "s".into(),
+            cpu: Cpu::M68000,
+            vma_base: Some(0),
+            lma: 0,
+            labels: vec![],
+            fragments: vec![
+                Fragment::Data(DataFragment { bytes: vec![0x11], fixups: vec![], span: span() }),
+                Fragment::Reserve { count: 4, span: span() },
+                Fragment::Data(DataFragment {
+                    bytes: vec![0, 0, 0, 0],
+                    fixups: vec![Fixup {
+                        kind: FixupKind::Abs32Be,
+                        offset: 0,
+                        target: Expr::Sym("T".into()),
+                    }],
+                    span: span(),
+                }),
+            ],
+            placement: SectionPlacement::Pinned,
+            reserved_span: 0,
+            group: None,
+            bank: None,
+            equ_syms: Vec::new(),
+        };
+        let mut syms = SymbolTable::new();
+        syms.define("T", SymbolValue::Int(0x1122_3344));
+        let linked = link(&[sec], &syms).expect("link");
+        assert_eq!(
+            linked.sections[0].bytes,
+            vec![0x11, 0x00, 0x00, 0x00, 0x00, 0x11, 0x22, 0x33, 0x44]
+        );
     }
 
     #[test]

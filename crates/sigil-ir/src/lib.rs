@@ -401,7 +401,18 @@ impl Section {
                     }
                     cursor = end;
                 }
-                Fragment::Reserve { .. } => {}
+                // asl reserves by leaving a GAP in the object file and `p2bin`
+                // fills that gap for anything that follows it in the image, so
+                // the write cursor advances while `out` does not: a reservation
+                // with bytes after it inside one section materialises as zero
+                // fill (the `resize(end, 0)` the next `Data`/`Fill` performs),
+                // and a trailing one — or a section that is nothing but
+                // reservations, which is what Aeon's phased `$FFFF….` RAM
+                // regions are — still places no byte at all. Both halves are
+                // asl+p2bin byte-for-byte; leaving the cursor alone was not,
+                // and packed everything after a reservation short of its own
+                // address with nothing said about it.
+                Fragment::Reserve { count, .. } => cursor += *count as usize,
                 Fragment::Org { target, fill, .. } => {
                     let t = *target as usize;
                     if t > out.len() {
