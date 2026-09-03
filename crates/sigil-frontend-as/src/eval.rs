@@ -1749,8 +1749,15 @@ impl Asm {
             // guard makes progress and terminates. Treating it as a PC label
             // instead froze `.__pos` at the current address, so the loop never
             // found its end marker (infinite-loop → unbounded label emission).
-            let is_set_kw =
-                matches!(b.first().map(|t| &t.tok), Some(Tok::Ident(s)) if fold_kw(s) == "set");
+            // `eval` is asl's processor-neutral spelling of the same directive:
+            // on a Z80 `set` is a real instruction (`set 3,a` ⇒ `CB DF`), so the
+            // disassemblies reach for `eval` instead. asl accepts both under
+            // both CPUs and they name ONE symbol class — `b set 3` followed by
+            // `b eval 4` reassigns without complaint, and `a equ 1` followed by
+            // `a eval 2` raises the same `#2030 constants cannot be redefined as
+            // variables` that `a set 2` does.
+            let is_set_kw = matches!(b.first().map(|t| &t.tok),
+                Some(Tok::Ident(s)) if matches!(&*fold_kw(s), "set" | "eval"));
             let is_coloneq = matches!(b.first().map(|t| &t.tok), Some(Tok::Punct(Punct::ColonEq)));
             if (is_set_kw || is_coloneq) && b.len() >= 2 {
                 let span = b[0].span;
@@ -1876,8 +1883,26 @@ impl Asm {
         // only a recognized mnemonic under Z80). `:=` lexes as the single
         // `ColonEq` token (see `token::Punct::ColonEq`), never as `Colon`
         // then `Eq`, so it can never be confused with a `name:` colon-label.
-        let is_set_kw =
-            matches!(body.get(1).map(|t| &t.tok), Some(Tok::Ident(s)) if fold_kw(s) == "set");
+        // `eval` is the same directive under asl's processor-neutral name (see
+        // the colon-label arm above): `vcFeedback eval val` in the SMPS include
+        // binds `vcFeedback` exactly as `vcFeedback set val` would. It carries
+        // no CPU gate because `eval` is not a mnemonic on any supported target.
+        //
+        // COLUMN-GATED, because without a colon the name must sit in asl's LABEL
+        // field. asl reads an INDENTED `\ti\teval 5` as an instruction named `i`
+        // (`#1200 unknown instruction`) while the column-0 `i eval 5` assigns,
+        // and the decorative-colon spelling `\ti:\teval 5` assigns at any
+        // indentation — which is why the colon arm above carries no such gate.
+        //
+        // Ungated, this arm fires on the OPERAND: `set` and `eval` are ordinary
+        // symbol names to asl (`eval` as a label, then `dc.b eval&$ff`, emits
+        // its low byte), and an indented `dc.b eval&$ff` presents here as head
+        // `dc.b` with `eval` in `body[1]` — assigning a symbol named `dc.b` and
+        // emitting nothing at all, silently.
+        let name_in_label_field = body[0].span.start == line.base;
+        let is_set_kw = name_in_label_field
+            && matches!(body.get(1).map(|t| &t.tok),
+                Some(Tok::Ident(s)) if matches!(&*fold_kw(s), "set" | "eval"));
         let is_coloneq = matches!(
             body.get(1).map(|t| &t.tok),
             Some(Tok::Punct(Punct::ColonEq))
@@ -1907,7 +1932,14 @@ impl Asm {
             // label was already stripped above, so any remaining head on such a
             // line is an instruction regardless of column. Head token column =
             // `span.start - line.base` (see lex_line: span.start = base + col).
-            if self.state.cpu == Cpu::M68000 {
+            // `eval` takes the same column rule on EVERY cpu, not just the
+            // 68000: asl accepts an indented `eval j,9` under `CPU Z80` (`=9H`
+            // in the listing) and still reads a column-0 `eval j,10` as a label
+            // named `eval` followed by `#1200 unknown instruction J,10`. Under
+            // Z80 an unrecognized indented head is bound as a label instead of
+            // diagnosed, so without this the operand-form `eval` would bind the
+            // word `eval` and assign nothing.
+            if self.state.cpu == Cpu::M68000 || fold_kw(&head) == "eval" {
                 let indented = body[0].span.start > line.base;
                 if parsed.label_colon.is_some() || indented {
                     self.dispatch(&head, &body[1..], body[0].span);
@@ -2704,7 +2736,16 @@ impl Asm {
             // Verified against asl: `set .c, 0` assigns `.c = 0` exactly like
             // `.c set 0`. Gated to 68000 so the Z80 `set BIT,(ix+d)` bit
             // instruction (same head word) still routes to Z80 lowering below.
-            "set" if self.state.cpu == Cpu::M68000 => self.directive_set_comma(rest, span),
+            "set" if self.state.cpu == Cpu::M68000 => {
+                self.directive_set_comma("set", rest, span)
+            }
+            // `eval NAME, VALUE` — asl's processor-neutral spelling of the same
+            // directive, and the one the disassemblies use precisely because
+            // `set` is a Z80 bit instruction. UNGATED: `eval` is a mnemonic on
+            // no supported target, so `eval j,9` under `CPU Z80` is the
+            // directive there too (asl-verified). `sound/_smps2asm_inc.asm`
+            // writes this form 68 times.
+            "eval" => self.directive_set_comma("eval", rest, span),
             "error" => {
                 let m = self.interp_string(rest);
                 self.err(span, m);
@@ -3160,13 +3201,15 @@ impl Asm {
         }
     }
 
-    /// `set NAME, VALUE` — the comma-operand form of SET (see the dispatch
-    /// arm). Splits the first top-level comma into the target symbol name and
-    /// the value expression, then reuses `directive_set`.
-    fn directive_set_comma(&mut self, rest: &[Token], span: Span) {
+    /// `set NAME, VALUE` / `eval NAME, VALUE` — the comma-operand form of SET
+    /// (see the dispatch arms). Splits the first top-level comma into the
+    /// target symbol name and the value expression, then reuses
+    /// `directive_set`. `kw` is the spelling the line actually used, so a
+    /// diagnostic quotes the word the author wrote.
+    fn directive_set_comma(&mut self, kw: &str, rest: &[Token], span: Span) {
         let groups = split_top_commas(rest);
         if groups.len() != 2 {
-            self.err(span, "`set` directive expects `NAME, value`");
+            self.err(span, format!("`{kw}` directive expects `NAME, value`"));
             return;
         }
         let name = match groups[0] {
@@ -3174,7 +3217,7 @@ impl Asm {
                 tok: Tok::Ident(s), ..
             }] => s.clone(),
             _ => {
-                self.err(span, "`set` directive target must be a bare symbol");
+                self.err(span, format!("`{kw}` directive target must be a bare symbol"));
                 return;
             }
         };
@@ -6282,7 +6325,7 @@ fn scan_dot_labels(body: &[SrcLine]) -> std::collections::BTreeSet<String> {
             || next.starts_with('=')
             || matches!(
                 &*fold_kw(next.split_whitespace().next().unwrap_or("")),
-                "equ" | "set"
+                "equ" | "set" | "eval"
             )
         {
             continue;
