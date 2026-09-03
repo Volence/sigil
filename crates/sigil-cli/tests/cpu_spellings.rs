@@ -226,24 +226,35 @@ fn every_accepted_spelling_selects_the_target_the_table_names() {
 
 /// The refusal names the fault and prints the remedy, and the remedy is the
 /// table — not a transcription of it that can drift out of date.
+///
+/// Read from the refusal's OWN line, not from stderr as a whole. A unit whose
+/// only `cpu` line was refused has also declared nothing, so `CPU_UNDECLARED`
+/// is reported alongside — and that text names `cpu 68000` and `cpu z80` itself.
+/// Searching the whole stream would find two of the four spellings no matter
+/// what this refusal said.
 #[test]
 fn the_refusal_lists_every_accepted_line() {
     let run = assemble(&format!("\tcpu z180\n{}", body_for(Cpu::Z80)));
     assert!(!run.ok, "precondition: `z180` is refused. stderr:\n{}", run.stderr);
 
+    let line = run
+        .stderr
+        .lines()
+        .find(|l| l.contains("unsupported processor"))
+        .unwrap_or_else(|| panic!("no refusal line for `z180`. stderr:\n{}", run.stderr));
+
     for (spelling, _) in CPU_SPELLINGS {
         assert!(
-            run.stderr.contains(&format!("`cpu {spelling}`")),
+            line.contains(&format!("`cpu {spelling}`")),
             "the refusal must print `cpu {spelling}` as a line the reader can \
-             write — every accepted spelling, listed from the table. stderr:\n{}",
-            run.stderr
+             write — every accepted spelling, listed from the table. \
+             refusal:\n{line}"
         );
     }
     assert!(
-        run.stderr.contains(&unsupported_cpu("z180")),
+        line.contains(&unsupported_cpu("z180")),
         "the shipped refusal text must be the one the constructor builds. \
-         stderr:\n{}",
-        run.stderr
+         refusal:\n{line}"
     );
 }
 
