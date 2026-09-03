@@ -123,8 +123,20 @@ fn math_include_root(aeon: &Path) -> PathBuf {
 /// one level to `engine/`, then descends to `engine/data/sine.bin` — the
 /// final resolved path is checked against `math_include_root`'s boundary
 /// and passes (it's a descendant of `engine/`).
+/// `math.emp`'s `embed(...)` base — the PROJECT ROOT, like every other module.
+///
+/// It was `math_dir(aeon)` while the aeon tree spelled these paths module-relative
+/// (`embed("../data/sine.bin")`), which needed a base inside `engine/` to climb out of.
+/// The engine re-spelled them root-relative at aeon bbe74e4f (EMBED-BASE-SKEW step 2),
+/// so a module-scoped base now resolves `engine/data/sine.bin` to
+/// `<aeon>/engine/system/engine/data/sine.bin` and the read fails one level deep.
+///
+/// Worth keeping the note: this is the standalone-port harness, and the FULL ROM build
+/// was clean throughout — it resolves against the root already. A report of this doubled
+/// path was filed as a misattribution by both lanes on the strength of that clean build.
+/// Both readings were right about their own caller; only this one passes a narrower base.
 fn math_embed_base(aeon: &Path) -> PathBuf {
-    math_dir(aeon)
+    aeon.to_path_buf()
 }
 
 /// The frozen reference ROMs (harness `golden/`), NOT the live tree `s4.bin`

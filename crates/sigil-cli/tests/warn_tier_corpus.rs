@@ -57,17 +57,6 @@ const CORPUS_LINTS: &[&str] = &[
     // `engine.compression_selftest`, and `games.demo.constants`. Retiring those is
     // engine work; this row is the standing record that they are unevaluated.
     "module.unreachable",
-    // ADJUDICATED 2026-09-02 as a TRANSITIONAL class with a dated exit, not an open
-    // finding to live with. The aeon tree carries two `embed(...)` spellings; sigil now
-    // resolves project-root-relative first and falls back to module-relative, announcing
-    // the fallback. This id IS that announcement, so it firing is the transition being
-    // visible rather than a defect — and it is admitted here only because the two sites
-    // are ALSO pinned in `CORPUS_OPEN_FINDINGS` below, which is what keeps a third one
-    // from hiding behind these two. Admitting it to this list alone would be the move
-    // this file exists to prevent.
-    // KILL: step 3 of EMBED-BASE-SKEW deletes the fallback once aeon re-spells
-    // math.emp:37,164; the lint goes with it and this row is deleted, not widened.
-    "embed.module-relative",
     "module.path-mismatch",
     "proc.clobber-undeclared",
     "proc.out-unwritten",
@@ -213,52 +202,6 @@ const CORPUS_OPEN_FINDINGS: &[OpenFinding] = &[
                stops firing here, at which point this row goes red and is deleted. Widening \
                the baseline instead is the move this register replaces.",
         first_observed: "2026-08-18",
-    },
-    // EMBED-BASE-SKEW's two transitional sites, MEASURED per shape 2026-09-02 (each
-    // fires once in each of the seven shipped shapes; the pair is why the tally is 2).
-    // Registered rather than left to the id list so a THIRD module-relative embed
-    // anywhere, or a second in either of these two, is red.
-    OpenFinding {
-        id: "embed.module-relative",
-        file: "engine/system/math.emp",
-        detail: "../data/sine.bin",
-        sites: &[
-            ("sonic4 plain", 1),
-            ("sonic4 debug", 1),
-            ("demo plain", 1),
-            ("demo debug", 1),
-            ("config_a", 1),
-            ("config_b", 1),
-            ("lean", 1),
-        ],
-        owner: "aeon (the spelling is in their tree); sigil removes the fallback after",
-        anchor: "sigil docs/superpowers/notes/2026-09-02-embed-base-skew-handover.md \
-                 \u{2014} step 2 is the re-spelling, step 3 the removal",
-        kill: "aeon re-spells this embed to `engine/data/sine.bin`; the lint stops firing \
-               here, this row goes red and is deleted. When BOTH rows are gone the \
-               fallback itself is deleted (step 3) and the id leaves CORPUS_LINTS.",
-        first_observed: "2026-09-02",
-    },
-    OpenFinding {
-        id: "embed.module-relative",
-        file: "engine/system/math.emp",
-        detail: "../data/arctan.bin",
-        sites: &[
-            ("sonic4 plain", 1),
-            ("sonic4 debug", 1),
-            ("demo plain", 1),
-            ("demo debug", 1),
-            ("config_a", 1),
-            ("config_b", 1),
-            ("lean", 1),
-        ],
-        owner: "aeon (the spelling is in their tree); sigil removes the fallback after",
-        anchor: "sigil docs/superpowers/notes/2026-09-02-embed-base-skew-handover.md \
-                 \u{2014} step 2 is the re-spelling, step 3 the removal",
-        kill: "aeon re-spells this embed to `engine/data/arctan.bin`; the lint stops \
-               firing here, this row goes red and is deleted. When BOTH rows are gone \
-               the fallback itself is deleted (step 3) and the id leaves CORPUS_LINTS.",
-        first_observed: "2026-09-02",
     },
 ];
 

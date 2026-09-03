@@ -1922,26 +1922,15 @@ pub fn build_emp(aeon: &Path, profile: &GameProfile) -> Result<EmpProgram, Strin
 
     // OPEN program: the `.emp` engine references AS-residual symbols (RAM labels,
     // proc seams) resolved only in the joint link — defer them, don't error here.
-    // Per-module embed_base is now a UNIFORM RULE, not a named exception. It hands
-    // every module its OWN directory as the FALLBACK base; the resolver tries the
-    // project root first and only falls back here, warning `[embed.module-relative]`
-    // when it does. This retires `if id == "engine.math"`, which existed because the
-    // aeon tree carries two `embed(...)` spellings — math.emp writes
-    // `"../data/sine.bin"` while everything else is root-relative.
-    //
-    // A rule beats the exception for a reason beyond tidiness: it lets the two repos
-    // move INDEPENDENTLY. The exception made the halves lockstep — re-spell math.emp
-    // while it stood and the path resolved under engine/system and failed. A tolerant
-    // middle state is valid before, during and after the engine's re-spelling, so
-    // neither lane has to sequence around the other.
-    let embed_base_for = |id: &str| -> Option<std::path::PathBuf> {
-        manifest
-            .by_id
-            .get(id)
-            .and_then(|&i| manifest.modules.get(i))
-            .and_then(|m| m.path.parent())
-            .map(|d| d.to_path_buf())
-    };
+    // Every module's `embed(...)` resolves against the PROJECT ROOT — one convention,
+    // no per-module base and no named exception. This is the end state of
+    // EMBED-BASE-SKEW: the aeon tree briefly carried two spellings, sigil tolerated the
+    // module-relative one behind a warning while the engine re-spelled math.emp, and with
+    // the corpus advanced past that landing the tolerance is retired. Handing each module
+    // its own directory (the transition shape) is WRONG once the fallback is gone: a
+    // root-relative path would then join onto the module dir and resolve one level deep.
+    let aeon_root = aeon.to_path_buf();
+    let embed_base_for = move |_id: &str| -> Option<std::path::PathBuf> { Some(aeon_root.clone()) };
     let (mut sections, link_asserts, bdiags) =
         resolve::build_program_open_embed(&manifest, &entry_id, None, &opts, &embed_base_for);
     let berr: Vec<_> = bdiags.iter().filter(|d| d.level == sigil_span::Level::Error).collect();
