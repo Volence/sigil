@@ -1263,8 +1263,16 @@ impl Asm {
             Some(s) => s,
             None => return String::new(),
         };
+        self.interp_text(&raw)
+    }
+
+    /// Fold every `\{expr}` sequence in `raw` to the expression's decimal value.
+    /// A sequence whose expression does not resolve is left verbatim, so a later
+    /// pass (or a diagnostic at the use site) still sees the original text.
+    /// Idempotent on text that carries no `\{`.
+    fn interp_text(&mut self, raw: &str) -> String {
         let mut out = String::new();
-        let mut cur = raw.as_str();
+        let mut cur = raw;
         while let Some(pos) = cur.find("\\{") {
             out.push_str(&cur[..pos]);
             let after = &cur[pos + 2..];
@@ -1302,6 +1310,113 @@ impl Asm {
                 end: 0,
             },
         )
+    }
+
+    /// AS symbol-name composition: a `{expr}` group written OUTSIDE a string
+    /// literal and outside a comment is replaced by the expression's value
+    /// rendered as text, and the result is pasted into the surrounding
+    /// identifier — `zone_id_{cur_str}` with `cur_str := "3"` names `zone_id_3`.
+    /// The group may sit anywhere in the name (leading, interior, trailing),
+    /// several may appear in one name, and it composes on the DEFINING side too
+    /// (`zone_id_{cur_str} = $55` defines `zone_id_3`) (asl-verified).
+    ///
+    /// A string-valued expression pastes its characters; an integer pastes its
+    /// decimal digits. Text inside a `"…"`/`'…'` literal is NOT composed — `dc.b
+    /// "brace {cur}"` emits the eight characters `brace {cur}` (asl-verified) —
+    /// and a `;` ends the scan, so a brace in a trailing comment is inert. The
+    /// literal-skipping rule is the lexer's own (an unescaped closing quote ends
+    /// the literal), which also lets the closing `}` be found across a literal
+    /// that itself contains one (`{"\{n}"}`).
+    ///
+    /// Returns `None` when the line needs no rewriting, so the common line pays
+    /// only a `{` scan. A group whose expression does not resolve is diagnosed
+    /// and left verbatim: it must not silently paste a truncated name.
+    fn subst_name_braces(&mut self, line: &SrcLine) -> Option<SrcLine> {
+        if !line.text.contains('{') {
+            return None;
+        }
+        let text = line.text.clone();
+        let bytes = text.as_bytes();
+        let mut out = String::with_capacity(text.len());
+        let mut i = 0usize;
+        let mut changed = false;
+        while i < bytes.len() {
+            match bytes[i] {
+                b';' => {
+                    out.push_str(&text[i..]);
+                    break;
+                }
+                q @ (b'"' | b'\'') => {
+                    let start = i;
+                    i += 1;
+                    while i < bytes.len() && bytes[i] != q {
+                        i += 1;
+                    }
+                    i = (i + 1).min(bytes.len());
+                    out.push_str(&text[start..i]);
+                }
+                b'{' => match brace_group_end(bytes, i) {
+                    Some(end) => {
+                        let inner = text[i + 1..end].to_string();
+                        match self.eval_name_brace(&inner, line) {
+                            Some(v) => {
+                                out.push_str(&v);
+                                changed = true;
+                            }
+                            None => {
+                                self.err(
+                                    Span {
+                                        source: line.source,
+                                        start: line.base,
+                                        end: line.base,
+                                    },
+                                    format!("`{{{inner}}}` in a symbol name did not resolve"),
+                                );
+                                out.push_str(&text[i..=end]);
+                            }
+                        }
+                        i = end + 1;
+                    }
+                    None => {
+                        out.push_str(&text[i..]);
+                        break;
+                    }
+                },
+                _ => {
+                    let start = i;
+                    i += 1;
+                    while i < bytes.len() && !matches!(bytes[i], b';' | b'"' | b'\'' | b'{') {
+                        i += 1;
+                    }
+                    out.push_str(&text[start..i]);
+                }
+            }
+        }
+        changed.then(|| SrcLine {
+            text: out,
+            base: line.base,
+            source: line.source,
+        })
+    }
+
+    /// Render one `{…}` group's contents as the text AS pastes into the name:
+    /// a string expression contributes its characters (with any `\{…}` inside a
+    /// literal folded first, so `{"\{n}"}` composes), an integer expression its
+    /// decimal digits. `None` when neither shape resolves.
+    fn eval_name_brace(&mut self, inner: &str, line: &SrcLine) -> Option<String> {
+        let toks = lex_line(inner, self.state.cpu, line.source, line.base).ok()?;
+        if toks.is_empty() {
+            return None;
+        }
+        if let Some(s) = self.eval_str(&toks) {
+            return Some(self.interp_text(&s));
+        }
+        let span = Span {
+            source: line.source,
+            start: line.base,
+            end: line.base,
+        };
+        self.eval_all(&toks, span).map(|v| v.to_string())
     }
 
     /// `include "path"`: read a file relative to `include_root`, exec its lines
@@ -1423,6 +1538,12 @@ impl Asm {
     }
 
     fn exec_one(&mut self, line: &SrcLine) {
+        // `{expr}` groups compose symbol names (see `subst_name_braces`), so they
+        // are resolved into plain text before the line is lexed — the lexer
+        // swallows a `{…}` group without emitting a token (it is a macro-param
+        // attribute there), which would otherwise truncate the composed name.
+        let composed = self.subst_name_braces(line);
+        let line = composed.as_ref().unwrap_or(line);
         let toks = match lex_line(&line.text, self.state.cpu, line.source, line.base) {
             Ok(t) => t,
             Err(d) => {
@@ -2369,6 +2490,12 @@ impl Asm {
         // (neither map written), so `strlen()`/`substr()` on it could not
         // resolve. The int XOR string invariant per pass still holds.
         if let Some(s) = self.eval_str(rest) {
+            // `\{expr}` folds where the string is BOUND, not where it is read:
+            // `s := "\{n}"` with `n := 3` binds `s` to `"3"` for good, and a
+            // later `n := 42` leaves `s` alone (asl-verified). Folding here also
+            // makes `strlen(s)` see the rendered text rather than the source
+            // spelling.
+            let s = self.interp_text(&s);
             self.str_env.insert(q, s);
             return;
         }
@@ -2500,6 +2627,10 @@ impl Asm {
         // shadowing the counterpart would be un-probed asl semantics, so it is
         // deliberately NOT done here.
         if let Some(s) = self.eval_str(rest) {
+            // `\{expr}` folds where the string is BOUND, not where it is read
+            // (asl-verified): `s := "\{n}"` captures `n`'s value at this
+            // assignment, and a later reassignment of `n` does not reach `s`.
+            let s = self.interp_text(&s);
             self.str_env.insert(q, s);
             return;
         }
@@ -4537,6 +4668,35 @@ impl Asm {
 }
 
 // ── free helpers ────────────────────────────────────────────────────────────
+
+/// Index of the `}` closing the `{` at `open` in `bytes`, or `None` if the group
+/// is unterminated. Nested `{…}` groups are matched by depth, and a `"…"`/`'…'`
+/// literal inside the group is skipped whole — so `{"\{n}"}` closes on its LAST
+/// `}`, not on the one that belongs to the interpolation inside the literal.
+fn brace_group_end(bytes: &[u8], open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut i = open;
+    while i < bytes.len() {
+        match bytes[i] {
+            q @ (b'"' | b'\'') => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != q {
+                    i += 1;
+                }
+            }
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
 
 /// Split source text into `SrcLine`s (each with its byte offset within `source`).
 /// Used for both the root source and included files; `source` is the [`SourceId`]
@@ -7394,5 +7554,137 @@ C:\n";
         assert_eq!(split_dot_suffix(""), None);
         // A trailing dot-DIGIT is not a size suffix.
         assert_eq!(split_dot_suffix("foo.1"), None);
+    }
+
+    /// AS symbol-name composition. Every expected value below is READ OFF an
+    /// `asl -L` listing of the same source (AS V1.42 Beta Bld 212,
+    /// `s2disasm/build_tools/Linux-x86_64/asl`), never off sigil's own output:
+    ///
+    /// ```text
+    ///   7/     100 : 0055                	dc.w zone_id_{cur_str}
+    ///   9/     104 : =$77                 zone_id_{cur_str}b = $77
+    ///  10/     104 : 0077                	dc.w zone_id_3b
+    ///  11/     106 : 0055                	dc.w zone_id_{cur}
+    /// ```
+    ///
+    /// so: the group takes a string-valued symbol OR an integer one, it composes
+    /// on the DEFINING side as well as in an operand, and an integer contributes
+    /// its decimal digits.
+    #[test]
+    fn name_brace_composes_a_symbol_name_from_a_string_or_an_integer() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "cur := 3\n",
+            "cur_str := \"3\"\n",
+            "zone_id_3 = $55\n",
+            "	dc.w zone_id_{cur_str}\n",
+            "	dc.w zone_id_{cur}\n",
+            "zone_id_{cur_str}b = $77\n",
+            "	dc.w zone_id_3b\n",
+        );
+        assert_eq!(image(src), vec![0x00, 0x55, 0x00, 0x55, 0x00, 0x77]);
+    }
+
+    /// A group may lead the name, sit inside it, hold a full expression, and
+    /// several may compose one name. asl listing of the same four lines:
+    ///
+    /// ```text
+    ///   8/     100 : 0022                	dc.w {"n"}{cur}
+    ///   9/     102 : 0055                	dc.w zone_id_{cur}_x
+    ///  10/     104 : 0066                	dc.w xx{cur+0}
+    /// ```
+    #[test]
+    fn name_brace_composes_at_any_position_and_from_an_expression() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "cur := 3\n",
+            "n3 = $22\n",
+            "zone_id_3_x = $55\n",
+            "xx3 = $66\n",
+            "	dc.w {\"n\"}{cur}\n",
+            "	dc.w zone_id_{cur}_x\n",
+            "	dc.w xx{cur+0}\n",
+        );
+        assert_eq!(image(src), vec![0x00, 0x22, 0x00, 0x55, 0x00, 0x66]);
+    }
+
+    /// Composition stops at a string literal and at a comment. asl emits the
+    /// braces as literal text — listing row for `dc.b "brace {cur} in string"`:
+    ///
+    /// ```text
+    ///  11/     106 : 6272 6163 6520 7B63 7572 7D20 696E 2073 7472 696E 67
+    /// ```
+    ///
+    /// (`7B 63 75 72 7D` is `{cur}` itself), and a trailing `; … {` comment — the
+    /// shape `s2.asm`'s `; struct blockMapElement {` has — must not be scanned.
+    #[test]
+    fn name_brace_is_inert_inside_a_string_literal_and_in_a_comment() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "cur := 3\n",
+            "	dc.b \"brace {cur} in string\"\n",
+            "	dc.b $99	; struct blockMapElement {\n",
+        );
+        let mut want: Vec<u8> = b"brace {cur} in string".to_vec();
+        want.push(0x99);
+        assert_eq!(image(src), want);
+    }
+
+    /// A `{…}` group whose expression does not resolve is a hard error, never a
+    /// silently truncated name: without the group the line would read
+    /// `zone_id_`, a DIFFERENT symbol that may well exist.
+    #[test]
+    fn name_brace_that_does_not_resolve_is_diagnosed() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "zone_id_ = $11\n",
+            "	dc.w zone_id_{nosuch}\n",
+        );
+        let diags = run(src, &Options::default())
+            .expect_err("an unresolvable `{…}` name group must fail the assembly");
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.message.contains("`{nosuch}` in a symbol name did not resolve")),
+            "expected the name-composition diagnostic, got: {:?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    /// `\{expr}` in a string folds where the string is BOUND, not where it is
+    /// read: `s` keeps the digit `3` across the later `n := 42`. asl listing —
+    /// the `="3"` on the assignment row is asl showing the value it stored:
+    ///
+    /// ```text
+    ///   4/     100 : ="3"                 s := "\{n}"
+    ///   6/     102 : 33                  	dc.b s
+    ///   7/     103 : =$2A                 n := 42
+    ///   8/     103 : 33                  	dc.b s
+    /// ```
+    #[test]
+    fn string_set_folds_interpolation_at_binding_time() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "n := 3\n",
+            "s := \"\\{n}\"\n",
+            "	dc.b s\n",
+            "n := 42\n",
+            "	dc.b s\n",
+        );
+        assert_eq!(image(src), vec![0x33, 0x33]);
+    }
+
+    /// The closing `}` is found across a string literal that contains one, so a
+    /// bound string may itself be composed into a name — the shape
+    /// `s2.macros.asm`'s `zoneanimcount_{"\{zoneanimcur}"}` uses.
+    #[test]
+    fn name_brace_closes_across_a_literal_holding_a_brace() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "k := 7\n",
+            "count_7 = $44\n",
+            "	dc.w count_{\"\\{k}\"}\n",
+        );
+        assert_eq!(image(src), vec![0x00, 0x44]);
     }
 }
