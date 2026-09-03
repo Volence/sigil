@@ -1098,14 +1098,26 @@ default). Booked separately so folding case does not look like it closed both.
 naming what was not declared and printing the line to write; never a silent default of any
 processor. Grounds are this lane's own `d-18` R4: a run that reports what it skipped **still
 exits 0**, and a silent green is the class we never drop. Amends the hub's first form (empyrean
-`802fdee`), whose acceptance named an asl oracle this workspace does not have — episode in
-`docs/OVERSEER-LOG.md`, 2026-09-03. **Pinning AS as a dependency of the project that exists to
-replace it is a real cost and is the OWNER'S alternative, not taken.**
+`802fdee`), whose acceptance named an asl oracle — episode in `docs/OVERSEER-LOG.md`,
+2026-09-03. The RULING stands on the `d-18` grounds above and needs no oracle. **Pinning AS as a
+dependency of the project that exists to replace it is a real cost and is the OWNER'S
+alternative, not taken.**
 
-**⚠ `git grep asl` IN THIS REPO RETURNS THE 68000 SHIFT MNEMONIC, NOT THE ASSEMBLER.** Hits in
-five crates, every one `"asl" => Asl` beside `"asr"`/`"lsl"`/`"lsr"`. In an assembler's source,
-grepping the name of an assembler returns an instruction, and the listing reads as *"the oracle
-is right there."* `Command::new` is what converts the name into behaviour; it comes back empty.
+**⚠ THE ORACLE EXISTS, AND THIS PARAGRAPH SAID IT DID NOT — corrected 2026-09-03 after four
+parcels had been run without it.** A working **`asl` 1.42 Beta Bld 212** is committed in the
+corpus repo at `s2disasm/build_tools/Linux-x86_64/asl` (with `as.msg` beside it, and `p2bin` /
+`saxman`). It runs. It is a **differential oracle for the entire AS-replacement project** — the
+name-composition parcel used `asl -L` for every expected value in every new test, which is why
+that delivery could quote listings instead of asserting semantics. **Use it.**
+
+**How the false claim was produced, because the mechanism is the reusable part.** `git grep asl`
+was run **in the sigil repo**, where it returns the 68000 shift mnemonic — hits in five crates,
+every one `"asl" => Asl` beside `"asr"`/`"lsl"`/`"lsr"` — so the honest local conclusion was *no
+oracle in THIS tree*. That then hardened into *"an asl oracle this workspace does not have"*, a
+claim about `~/sonic_hacks/` entire, and sat in the boot read as fact. It is this file's own
+banked rule aimed at itself: **a failing lookup tells you about the tree you ran it in, never
+about the object** — and the oracle was one directory over, inside the very corpus the project
+is about. An absence leaves nothing to be suspicious of, which is why it survived four parcels.
 
 **⚠ THE CASE FOLD IS IN AEON'S SHIPPING BUILD PATH — fold DIRECTIVES AND MNEMONICS ONLY, NEVER
 SYMBOLS.** `sigil-frontend-as` is not a compatibility side-car: aeon's `build.sh` routes the
