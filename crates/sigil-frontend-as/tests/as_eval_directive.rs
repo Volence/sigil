@@ -14,7 +14,7 @@ use sigil_frontend_as::{assemble, Options};
 /// LABEL field, i.e. at column 0:
 ///
 /// ```text
-///        3/       0 :                     	i	eval 5
+///        3/       0 :                         i    eval 5
 /// > > > d1.asm(3):2: error #1200: unknown instruction
 /// ```
 ///
