@@ -1,9 +1,22 @@
-# The per-parcel-term convention lost its feed when the freeze pairing was cut
+# Two artifacts stopped being fed when the freeze pairing was cut, and neither said so
 
-**Found 2026-09-03, working the chain-201 pin-advance tail. It is the finding under the
-last red, and it is larger than the red.**
+**Found 2026-09-03, working the chain-201 pin-advance tail. The first instance is the
+finding under the last red. The second is worse, because nothing is red about it and this
+lane's own queue row was telling a successor to WAIT for something that cannot arrive.**
 
-## The convention
+**The class, stated first because it is the durable part.** The paired aeon↔sigil freeze was
+not just a ritual; it was the **feed** for artifacts in both trees. When the owner cut it at
+chain 199, the ritual stopped and the artifacts stayed — still present, still read, still
+looking maintained, with nothing left writing to them. **A feed that stops leaves exactly
+the same artifact as a feed that is running and has nothing to say.** Neither instance below
+was detectable by looking at the thing itself; both needed someone to ask *who writes this,
+and did they.*
+
+---
+
+## Instance 1 — the per-parcel-term convention
+
+### The convention
 
 `crates/sigil-harness/tests/repin_pins.rs` asserts literal pin values against a
 hand-typed baseline. Its standing rule — visible in every comment block in that file — is
@@ -12,7 +25,7 @@ the repin diff**. That discipline is real and it works: it caught `SCENE_REGISTR
 and forced the band-drift term to be derived (67 bands × 4 = 0x10C) before the new value
 was written down.
 
-## What fed it, and what happened to the feed
+### What fed it, and what happened to the feed
 
 The convention was fed by the **paired aeon↔sigil freeze**. Every aeon byte-mover came
 through a freeze, each freeze produced a provenance entry, and each entry's term was
@@ -28,7 +41,7 @@ because no corpus advance happened between the cut and tonight. The first advanc
 cut is the first time the gap is observable, and it arrives as nine chains with no term
 behind any of them.
 
-## The state, measured rather than assumed
+### The state, measured rather than assumed
 
 - `DEBUG_ASSEMBLED_LEN` wants `0xA7F38`; the advanced corpus resolves `0xA81FC`. `+0x2C4`.
 - The plain total **HOLDS** at `0xA5C82`.
@@ -44,7 +57,7 @@ behind any of them.
   1632 bytes wrong while reading as nine measured numbers — the chain-198 conflation one
   level out. They declined to hand them over for exactly that reason, correctly.
 
-## What is being done
+### What is being done
 
 Aeon offered, and this lane accepted, a rebuild of the nine chains to read `EndOfRom` from
 each listing — terms **measured at each chain** rather than back-derived from the total the
@@ -57,7 +70,7 @@ themselves, that their merge commits now carry the four shape sizes, the CRCs, a
 `EndOfRom` for a debug byte-mover. Chains 200-212 are the only span that will ever need
 archaeology, because they are the span between the owner's cut and that fix.
 
-## The open question, which the rebuild does NOT answer
+### The open question, which the rebuild does NOT answer
 
 **Should this baseline exist in its current shape at all?** Its sibling,
 `secondary_pin_classes_match_the_hand_typed_baseline`, was already RETIRED with the
@@ -77,3 +90,73 @@ record-keeping restores a per-chain feed good enough to keep it (likely, and che
 assertion moves to a form that does not need a population maintained by hand — which is
 `SIGIL-DECOUPLE` step 3's territory, *"retire `repin`/`pins.rs` from the landing path into an
 internal regression tool"*. Read the two together; they are one question.
+
+---
+
+## Instance 2 — the drift record, and a queue row telling a successor to wait for nothing
+
+**This lane's `lane-status.json` carried, for days, the row:** *"SIGIL-DECOUPLE: nothing
+startable until the nightly watch has run a few times — first firing 07:17 tomorrow. Its
+accumulated record is what step 4 reads."*
+
+**Every clause of that is either wrong or beside the point.** Measured 2026-09-03:
+
+- **The timer is installed, enabled, and has NEVER FIRED.** `systemctl --user
+  list-unit-files` shows `sigil-ref-drift.timer` **enabled**; `list-timers` shows `LAST
+  PASSED` blank and the next fire at 07:17. *(`docs/OVERSEER.md` said "the timer is NOT
+  installed and NOT enabled" — stale, in a paragraph that warns in its own last sentence
+  that it is a snapshot and to ask the command. Corrected in the same commit as this note.)*
+- **The three observations on disk are hand runs, all 2026-09-02.** One is `NOTHING
+  MEASURED` (no reader configured). The other two return
+  **`unattributable-both-moved` on all four shapes.**
+- **THE JOB CANNOT ACCUMULATE A RECORD. It is built so that it cannot.** From the reader's
+  own header: the nightly *"holds NO expectation of its own and is built so it cannot
+  acquire one: every expectation enters through the single command named by
+  `DRIFT_RECORD_READER`"*. The record is `aeon/tools/drift_record.jsonl`, and aeon's
+  `docs/DRIFT_RECORD.md:153` spells the update as a **manual** act: *"fill the placeholders,
+  append to tools/drift_record.jsonl, COMMIT."*
+- **The record holds 2 entries**, at aeon `ec6a4791` and `d27ceba6`, both far behind aeon's
+  tip. This lane's own lane-log recorded *"tools/drift_record.jsonl still two lines"* on
+  2026-09-02 and it is still two lines. The verdicts follow mechanically: with neither
+  coordinate in the record, `drift_report.py` returns `V_UNATTRIBUTABLE`
+  (*"both coordinates moved; cause not derivable"*) — correct behaviour, and **not
+  evidence**.
+
+**So the 07:17 firing will produce another `unattributable-both-moved`, and so will every
+firing after it, until a human appends entries.** Waiting accumulates observations; it does
+not accumulate a record. The row promised a successor that time alone would unblock
+`SIGIL-DECOUPLE` step 4, and time alone will never unblock it.
+
+**The verdict vocabulary is where the value is, and it says which entries are worth having.**
+`drift_report.py` defines six per-shape verdicts; the one step 4 actually needs is
+**`quiet-sigil-moved`** — *aeon rev known, assembler moved, bytes held*. That is the verdict
+that says byte-for-byte checking could be retired, and **it is only reachable when the aeon
+revision is IN the record.** `unverified-aeon-moved` and `unattributable-both-moved` are the
+two ways of having no evidence, and they are what an unfed record returns forever.
+
+**The ask this generates** (aeon's, since the record lives in their tree): append an entry at
+a recent revision, and keep appending on some cadence, or step 4 has no input. Cheap per
+entry; the point is that it is a **scheduled** act now that the freeze no longer implies it.
+
+---
+
+## What the two instances share, and the check that finds the next one
+
+Both artifacts were fed by the freeze pairing as a side effect. Both survived the cut intact.
+Both kept being read as though maintained. **In neither case did the artifact change** — the
+baseline still held its terms, the record still held its two entries — which is exactly why
+nothing surfaced: *a stale artifact and a current one are the same bytes until something asks
+what should have been added.*
+
+The general check, and it is one question rather than a discipline:
+
+> **For every artifact this lane trusts, name the act that last wrote to it, and say whether
+> that act is still scheduled.** Not "is it current" — an artifact cannot tell you that — but
+> **"what puts things in here, and did it run."**
+
+Applied tonight it found two in one sitting, and both had been quietly broken since the 199
+cut. The candidates worth walking next, in this lane: the golden corpus (fed by refreeze —
+which still runs, so likely fine), `repin.toml`'s per-symbol `tests` hints (hand-kept, and
+already booked as `REPIN-TESTS-HINT-UNDERLISTED` for exactly this reason), the
+`CORPUS_OPEN_FINDINGS` register (fed by warn-tier firings, still live), and `SOURCE_GATES`
+(hand-kept run list, already flagged in `OVERSEER.md` as wanting derivation).

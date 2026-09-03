@@ -257,9 +257,25 @@ can tell you whether that happened** — ask `systemctl`, never a doc. The job's
 is `~/.local/state/sigil-ref-drift/observations.jsonl` (append-only) with its run log
 beside it at `nightly.log`.
 
-**As of this writing the timer is NOT installed and NOT enabled** (`systemctl --user
-list-unit-files` shows only `sigil-source-gates` and `aeon-effects-gates`). That is a
-snapshot, not a property — ask the command.
+**That sentence used to say the timer was NOT installed and NOT enabled, and it was wrong by
+2026-09-03** — `systemctl --user list-unit-files` shows `sigil-ref-drift.timer` **enabled**,
+alongside `sigil-source-gates` and `aeon-effects-gates`. It rotted inside a paragraph whose own
+last clause said it was a snapshot and to ask the command, which is the whole lesson: **a
+warning attached to a fact does not stop the fact rotting, and the reader who trusts the fact
+is the one who did not run the command the warning names.** Ask `systemctl`; do not read a
+state off this page.
+
+**⚠ AND ARMED IS NOT THE SAME AS PRODUCING EVIDENCE — the more important half.** The job
+**cannot accumulate a record**; it is built so it cannot (*"holds NO expectation of its own
+and is built so it cannot acquire one"*). Expectations enter only through
+`aeon/tools/drift_record.jsonl`, which aeon's `docs/DRIFT_RECORD.md` updates by a **manual**
+append-and-commit. That record has held **two** entries, both at old aeon revisions, since at
+least 2026-09-02 — so every firing against a moved aeon returns `unattributable-both-moved`,
+which is correct behaviour and is **not evidence**. The verdict `SIGIL-DECOUPLE` step 4 needs
+is `quiet-sigil-moved`, and it is unreachable unless the aeon revision is IN the record.
+**Waiting for the nightly to "build up a record" therefore accumulates nothing** — a queue row
+in this lane promised exactly that for days. Full measurement:
+`docs/superpowers/notes/2026-09-03-per-parcel-term-feed-cut.md`, instance 2.
 
 ## Boot
 
