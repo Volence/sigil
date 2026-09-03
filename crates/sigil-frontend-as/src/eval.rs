@@ -8532,10 +8532,10 @@ C:\n";
     /// scope, and is a real symbol there — readable both bare and qualified.
     ///
     /// ```text
-    ///    8/    1000 : (MACRO)              	mset
+    ///    8/    1000 : (MACRO)                mset
     ///    8/    1000 : =$7                  .v      :=      7
-    ///    9/    1000 : 07                  	dc.b	.v
-    ///   10/    1001 : 07                  	dc.b	Base.v
+    ///    9/    1000 : 07                     dc.b    .v
+    ///   10/    1001 : 07                     dc.b    Base.v
     ///
     ///    Base.v :                         7 - |
     /// ```
@@ -8558,13 +8558,13 @@ C:\n";
     /// syntactic form, not value kind.
     ///
     /// ```text
-    ///   10/    1000 : (MACRO)              	mform
+    ///   10/    1000 : (MACRO)                mform
     ///   10/    1000 : =$3                  .eqs    =       3
     ///   10/    1000 : =$4                  .sets   set     4
     ///   10/    1000 : =$5                  .asn    :=      5
-    ///   11/    1000 : 03                  	dc.b	.eqs
-    ///   12/    1001 : 04                  	dc.b	.sets
-    ///   13/    1002 : 05                  	dc.b	.asn
+    ///   11/    1000 : 03                     dc.b    .eqs
+    ///   12/    1001 : 04                     dc.b    .sets
+    ///   13/    1002 : 05                     dc.b    .asn
     ///
     ///    Base.asn :                       5 - |  Base.eqs :                       3 - |
     /// ```
@@ -8591,11 +8591,11 @@ C:\n";
     /// enclosing expansion's.
     ///
     /// ```text
-    ///   12/    1000 : (MACRO)              	outer
+    ///   12/    1000 : (MACRO)                outer
     ///   12/    1000 :  (MACRO-2)                   inner
     ///   12/    1000 : =$5                  .v      :=      5
     ///   12/    1000 : 05                          dc.b    .v
-    ///   13/    1001 : 05                  	dc.b	.v
+    ///   13/    1001 : 05                     dc.b    .v
     ///
     ///    Base.v :                         5 - |
     /// ```
@@ -8622,11 +8622,11 @@ C:\n";
     /// caller-qualified symbol at all.
     ///
     /// ```text
-    ///   10/    1000 : (MACRO)              	mlab
+    ///   10/    1000 : (MACRO)                mlab
     ///   10/    1000 : 6702                        beq.s   .done
     ///   10/    1002 : 4E71                        nop
     ///   10/    1004 :                     .done:
-    ///   11/    1004 : (MACRO)              	mlab
+    ///   11/    1004 : (MACRO)                mlab
     ///   11/    1004 : 6702                        beq.s   .done
     ///   11/    1006 : 4E71                        nop
     ///   11/    1008 :                     .done:
@@ -8678,10 +8678,10 @@ C:\n";
     /// macro work at all.
     ///
     /// ```text
-    ///    9/    1000 : (MACRO)              	mref
+    ///    9/    1000 : (MACRO)                mref
     ///    9/    1000 : 6704                        beq.s   .tgt
     ///    9/    1002 : 4E71                        nop
-    ///   10/    1004 : 4E71                	nop
+    ///   10/    1004 : 4E71                   nop
     ///   11/    1006 :                     .tgt:
     ///
     ///    Base.tgt :                    1006 C |
@@ -8713,12 +8713,12 @@ C:\n";
     /// branch is `6704`, six bytes forward to the body's:
     ///
     /// ```text
-    ///   12/       0 : (MACRO)              	mown
+    ///   12/       0 : (MACRO)                mown
     ///   12/       0 : 6704                        beq.s   .tgt
     ///   12/       2 : 4E71                        nop
     ///   12/       4 : 4E71                        nop
     ///   12/       6 :                     .tgt:
-    ///   13/       6 : 0008                	dc.w	Later
+    ///   13/       6 : 0008                   dc.w    Later
     /// ```
     ///
     /// asl reaches that row on a two-pass assembly. On a ONE-pass assembly of
@@ -8754,7 +8754,7 @@ C:\n";
     /// earlier.
     ///
     /// ```text
-    ///   13/    1002 : (MACRO)              	mback
+    ///   13/    1002 : (MACRO)                mback
     ///   13/    1002 : 4E71                        nop
     ///   13/    1004 :                     .tgt:
     ///   13/    1004 : 4E71                        nop
@@ -8785,20 +8785,20 @@ C:\n";
     /// scope, and separate entry expansions read and reassign them.
     ///
     /// ```text
-    ///   14/       0 : (MACRO)              	zot	4
+    ///   14/       0 : (MACRO)                zot     4
     ///   14/       0 : =$0                  .tab    :=      *
     ///   14/       0 : =$4                  .cnt    :=      4
-    ///   15/       0 : (MACRO)              	zte	$11
+    ///   15/       0 : (MACRO)                zte     $11
     ///   15/       0 : 04                          dc.b    .cnt
     ///   15/       1 : 11                          dc.b    $11
     ///   15/       2 : =$5                  .cnt    :=      .cnt+1
-    ///   16/       2 : (MACRO)              	zte	$22
+    ///   16/       2 : (MACRO)                zte     $22
     ///   16/       2 : 05                          dc.b    .cnt
     ///   16/       3 : 22                          dc.b    $22
     ///   16/       4 : =$6                  .cnt    :=      .cnt+1
-    ///   17/       4 : 06                  	dc.b	.cnt
-    ///   18/       5 : 06                  	dc.b	Table.cnt
-    ///   19/       6 : 0000                	dc.w	.tab
+    ///   17/       4 : 06                     dc.b    .cnt
+    ///   18/       5 : 06                     dc.b    Table.cnt
+    ///   19/       6 : 0000                   dc.w    .tab
     /// ```
     #[test]
     fn a_table_macros_counters_carry_across_separate_entry_expansions() {
@@ -8833,7 +8833,7 @@ C:\n";
     /// whole nest.
     ///
     /// ```text
-    ///   15/       0 : (MACRO)              	zte	$11,$22,$33
+    ///   15/       0 : (MACRO)                zte     $11,$22,$33
     ///   15/       0 : 00                              dc.b        .cnt
     ///   15/       1 : 11                              dc.b        $11
     ///   15/       2 : =$1                  .cnt    :=      .cnt+1
@@ -8845,7 +8845,7 @@ C:\n";
     ///   15/       4 : 02                              dc.b        .cnt
     ///   15/       5 : 33                              dc.b        $33
     ///   15/       6 : =$3                  .cnt    :=      .cnt+1
-    ///   16/       6 : 03                  	dc.b	.cnt
+    ///   16/       6 : 03                     dc.b    .cnt
     /// ```
     #[test]
     fn a_recursive_shift_macro_accumulates_in_the_scope_outside_the_nest() {
@@ -8882,13 +8882,13 @@ C:\n";
     ///
     /// ```text
     ///   14/       2 :                     .done:
-    ///   15/       2 : (MACRO)              	mcond	0
+    ///   15/       2 : (MACRO)                mcond   0
     ///   15/       2 : 67FE                        beq.s   .done
     ///   15/       6 : =>FALSE                      if 0
     ///   15/       6 :                     .done:
     ///
     ///   14/       2 :                     .done:
-    ///   15/       2 : (MACRO)              	mcond	1
+    ///   15/       2 : (MACRO)                mcond   1
     ///   15/       2 : 6704                        beq.s   .done
     ///   15/       6 : =>TRUE                       if 1
     ///   15/       8 :                     .done:
@@ -8955,7 +8955,7 @@ C:\n";
     /// label and the value is its address:
     ///
     /// ```text
-    ///   15/       0 : (MACRO)              	outer
+    ///   15/       0 : (MACRO)                outer
     ///   15/       2 :                     .val:
     ///   15/       4 :  (MACRO-2)                   sp      1,.val
     ///   15/       4 : 0002                        dc.w    .val
@@ -8996,7 +8996,7 @@ C:\n";
     /// caller's symbol.
     ///
     /// ```text
-    ///   10/       0 : (MACRO)              	sp	1,.val
+    ///   10/       0 : (MACRO)                sp      1,.val
     ///   10/       0 :                             shift
     ///   10/       0 : 5A                          dc.b    .val
     ///
@@ -9010,7 +9010,7 @@ C:\n";
     ///
     /// ```text
     ///   12/       2 :                     .val:
-    ///   14/       4 : (MACRO)              	sp	1,.val
+    ///   14/       4 : (MACRO)                sp      1,.val
     ///   14/       4 :                             shift
     ///   14/       4 : 0002                        dc.w    .val
     ///   14/       6 : 4E71                        nop
