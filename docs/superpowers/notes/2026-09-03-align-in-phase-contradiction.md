@@ -110,4 +110,70 @@ not `$01` — the only offset at which the two rules disagree for `n = 256`.
 
 ## Measured impact
 
-<!-- filled in below once the suite and the four builds have run -->
+**Suite** — `cargo test --workspace --no-fail-fast`, `AEON_DIR=/home/volence/sonic_hacks/.aeon-as-fold`
+(detached at aeon `4f5ad5a1`), sigil `b1f0cc06` on `parcel/as-align-in-phase`,
+started 17:39:17 finished 17:52:43: **4319 passed, 0 failed, 2 ignored, runner
+exit 0.** Nothing redded that needed adjudicating. The one test that encoded the
+wrong rule was rewritten before this run; a run at the fix-only commit reddened
+only it.
+
+(A first run of the same command reported 371 failures and was DISCARDED, not
+adjudicated: `AEON_DIR` was unset and every one was the d-18 refusal to measure
+against an unnamed reference tree. A second was discarded for being compiled
+across an edit.)
+
+**Aeon's four shapes — BYTE-IDENTICAL, and the CRCs are a consequence, not the
+argument.** Each ROM was deleted before its build so a failed build could not
+present a stale artifact as an identical CRC (the first attempt did exactly that:
+two shapes exited 1 for want of `SIGIL_EMIT` and their untouched files compared
+equal). All four then built exit 0 from nothing:
+
+| shape | CRC32 | size | vs frozen baseline |
+|---|---|---:|---|
+| `s4.bin` | `14ee2440` | 719700 | identical, 0 differing bytes |
+| `s4.debug.bin` | `142294b3` | 737683 | identical, 0 differing bytes |
+| `demo.bin` | `0c456778` | 96474 | identical, 0 differing bytes |
+| `demo.debug.bin` | `2e603d53` | 101339 | identical, 0 differing bytes |
+
+**Why it is byte-neutral, measured rather than assumed.** Aeon reaches the rule
+at exactly two kinds of site and neither lands on a disagreeing address:
+
+- The three `.asm` sources (`games/*/game_root.asm`, `engine/debug/debugger.asm`)
+  contain **no `phase` at all**, so `directive_align` always took its non-phase
+  branch — which was already the correct rule. `debugger.asm`'s 21 `!align`s are
+  all `align 2` at ROM addresses.
+- `regions.rs`'s single `@align(256)` (`Player_Pos_Ring`) sits at a RAM cursor
+  whose low byte is `$1A` (plain) and `$50` (debug) — and for `n = 256` the old
+  rule and the true one differ **only** when the low byte is exactly `$01`
+  (510 of 65536 RAM addresses differ across all `n`; 1 in 256 for `n = 256`).
+
+The overshoot itself is live and shipped, so this was never a dead rule:
+
+```
+s4.lst        2324/FFFFBA18 : Player_Bound_Bottom:     (u16, cursor -> $FFFFBA1A)
+              2325/FFFFBC00 : Player_Pos_Ring:         naive round-up: $FFFFBB00
+s4.debug.lst  2765/FFFFE34E : Player_Bound_Bottom:     (u16, cursor -> $FFFFE350)
+              2766/FFFFE500 : Player_Pos_Ring:         naive round-up: $FFFFE400
+```
+
+`demo` has no `@align` and no `Player_Pos_Ring` at all.
+
+**What this did NOT do:** nothing under `crates/sigil-harness/golden/`,
+`src/pins.rs` or `repin.toml` was touched. There was no byte movement to
+reconcile, and re-freezing is not this parcel's act in any case.
+
+## Left open
+
+- `parcel/as-reserve-materialise` (`68386152`) is unblocked. It conflicts with
+  master in 5 hunks of `crates/sigil-frontend-as/src/eval.rs`, all comment
+  reflow, and **the same 5 hunks conflict against plain master** — this parcel
+  neither adds nor removes any. Its blocked expectation is now three tests, and
+  the branch's own p2bin witness (258 bytes ending `b1 00` at `$100`) is exactly
+  what the phased-ROM one should assert once a reservation materialises. Landing
+  it is a separate parcel.
+- `.emp`'s top-level `align N` item (`emit_align_pad`) still rounds up plainly.
+  Correct for every ROM section, which is all aeon has; a `vars`-side use would
+  need the shared rule, and its link-time congruence assert would hold either way
+  (asl's result is always a multiple of `n`).
+- Two asl corners left unmodelled on purpose, recorded at `asl_align_pad`: `n`
+  truncated to a `Word`, and a PC that leaves the 32-bit space.
