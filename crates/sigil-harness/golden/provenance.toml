@@ -11180,3 +11180,25 @@ full_crc = "ab5820b1"
 full_size = 736472
 anchor_crc = "b8eff0c6"
 anchor_end = 0xa7f38
+
+[entry.strict]
+outcome = "failed"
+sigil_rev = "64bc7158d622c1eea7ca7e4667ed0415f06e8c6b"
+aeon_rev = "8876459ef3154678bf99b4c25604c9c0897acfe4"
+strict_bodies = 30
+suites = 372
+passed = 4220
+failed = 12
+ignored = 2
+skips = 0
+ran_at = "unix:1788406754"
+failing = ["a_contributing_extra_entry_is_refused", "a_failing_extra_entry_fails_the_build_with_its_message", "a_missing_extra_entry_errors_loudly", "an_off_canonical_target_honours_the_flag", "contract_baselines_hold_for_every_shipped_shape", "p1_sonic_debug_region_matches_reference", "p1_sonic_doctored_reference_diverges", "p1_sonic_region_matches_reference", "rings_debug_region_matches_reference", "rings_region_matches_reference", "the_cli_writes_the_same_rom_with_a_passing_extra_entry", "two_extra_entries_compose"]
+
+[entry.strict.goldens]
+config_a = "1f805f92/736824"
+config_b = "738e0c3f/615031"
+demo = "30a31d81/96458"
+demo_debug = "51056291/101323"
+lean = "f1d06059/674816"
+s4 = "864ad7e9/719460"
+s4_debug = "ab5820b1/736472"
