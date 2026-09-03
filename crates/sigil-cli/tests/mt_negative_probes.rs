@@ -104,7 +104,7 @@ fn as_bank_start_label_at(vma: u32) -> Vec<Section> {
     // matching the sole caller below. These resolve+PASS, so only the wrong-bank
     // co-residency ensures fire.
     let asm = format!("cpu 68000\nphase ${vma:X}\nMovingTrucks_Bank_Start:\n\tdc.w 0\nSONG_MOVINGTRUCKS = 1\nSONG_COUNT = 1\n");
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (cross-seam label): {d:?}")).sections
 }
 

@@ -233,7 +233,7 @@ fn as_ctrl_ram_labels(debug: bool) -> Vec<Section> {
         // (0xFFFFB78A / 0xFFFFB818).
         if debug { pins::CTRL_1_HELD_RAW.debug } else { pins::CTRL_1_HELD_RAW.plain }
     );
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (ctrl ram labels): {d:?}")).sections
 }
 
@@ -248,7 +248,7 @@ fn as_outbound_consumer() -> Vec<Section> {
                Consumer:\n\
                \tbsr.w   Read_Controllers\n\
                \trts\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}")).sections
 }
 

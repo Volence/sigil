@@ -250,7 +250,7 @@ fn addr_labels(debug: bool) -> Vec<Section> {
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
-        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
         let mut secs = assemble(&asm, &opts)
             .unwrap_or_else(|d| panic!("AS assemble ({name}): {d:?}"))
             .sections;

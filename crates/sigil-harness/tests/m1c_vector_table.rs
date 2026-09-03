@@ -158,7 +158,7 @@ fn vector_table_matches_reference_rom_first_256_bytes() {
         .expect("harvest ram addresses"),
     );
     let opts = Options {
-        initial_cpu: Cpu::M68000,
+        initial_cpu: Some(Cpu::M68000),
         defines,
         include_root: Some(aeon.clone()),
         guarded_defines,

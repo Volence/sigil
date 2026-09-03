@@ -98,7 +98,7 @@ fn cross_seam_labels() -> Vec<Section> {
         ("HBlank_Vector_Slot", pins::H_BLANK_VECTOR_SLOT.plain),
         ("VDP_Shadow_Table", pins::VDP_SHADOW_TABLE.plain),
     ];
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let mut out = Vec::new();
     for (i, (name, vma)) in labels.iter().enumerate() {
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");

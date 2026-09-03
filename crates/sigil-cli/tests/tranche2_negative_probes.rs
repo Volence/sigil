@@ -172,7 +172,7 @@ fn as_ctrl_ram_labels() -> Vec<Section> {
         sigil_harness::pins::CTRL_1_HELD.plain,
         sigil_harness::pins::CTRL_1_HELD_RAW.plain
     );
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (ctrl ram labels): {d:?}")).sections
 }
 

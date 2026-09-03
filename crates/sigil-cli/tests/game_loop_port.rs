@@ -218,7 +218,7 @@ fn compile_emp(
              {name}:\n\
              \tdc.b 0\n"
         );
-        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
         let mut secs = assemble(&asm, &opts)
             .unwrap_or_else(|d| panic!("AS assemble (synthetic {name}): {d:?}"))
             .sections;
@@ -243,7 +243,7 @@ fn compile_emp(
                    phase $8000\n\
                    Consumer:\n\
                    \tbra.w   GameLoop\n";
-        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
         let mut secs = assemble(asm, &opts)
             .unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}"))
             .sections;
@@ -593,7 +593,7 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
-        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
         let mut secs = assemble(&asm, &opts)
             .unwrap_or_else(|d| panic!("AS assemble ({name}): {d:?}"))
             .sections;

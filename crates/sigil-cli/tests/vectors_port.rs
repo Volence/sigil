@@ -102,7 +102,7 @@ fn carriers(targets: &[(&str, u32)], start_lma: u32) -> Vec<Section> {
     let mut lma = start_lma;
     for (name, vma) in targets {
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
-        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
         let mut secs = assemble(&asm, &opts)
             .unwrap_or_else(|d| panic!("AS assemble (carrier {name}): {d:?}"))
             .sections;

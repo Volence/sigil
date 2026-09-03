@@ -112,7 +112,7 @@ fn cross_seam_labels(debug: bool) -> Vec<Section> {
         ("HBlank_Vector_Slot", slot),
         ("VDP_Shadow_Table", pins::VDP_SHADOW_TABLE.plain),
     ];
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let mut out = Vec::new();
     for (i, (name, vma)) in labels.iter().enumerate() {
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
@@ -142,7 +142,7 @@ fn as_outbound_consumer() -> Vec<Section> {
                Consumer:\n\
                \tdc.l HBlank_Install\n\
                \tdc.l HBlank_Uninstall\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}")).sections
 }
 

@@ -189,13 +189,13 @@ fn as_truth_equs() -> Vec<Section> {
                ObjCodeBase = $10000\n\
                Stub:\n\
                \tdc.w 0\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (truth equs): {d:?}")).sections
 }
 
 fn as_label_at(name: &str, vma: u32) -> Vec<Section> {
     let asm = format!("cpu 68000\nphase ${vma:X}\n{name}:\n\tdc.b 0\n");
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (synthetic {name}): {d:?}")).sections
 }
 
@@ -249,7 +249,7 @@ fn word_imm_link_range_violation_is_loud_on_both_frontends() {
     );
     let huge = {
         let asm = "cpu 68000\nHuge = $12345\nStub:\n\tdc.w 0\n";
-        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
         assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble: {d:?}")).sections
     };
     let outcome = link_with_truths(sections, &asserts, vec![huge]);
@@ -262,12 +262,12 @@ fn word_imm_link_range_violation_is_loud_on_both_frontends() {
     // is equally loud (parity by construction — both are Value16Be).
     let consumer = {
         let asm = "cpu 68000\nConsumer:\n\tdc.w Huge-Base\n";
-        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
         assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble: {d:?}")).sections
     };
     let truths = {
         let asm = "cpu 68000\nHuge = $23456\nBase = $1\nStub:\n\tdc.w 0\n";
-        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
         assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble: {d:?}")).sections
     };
     let mut sections = Vec::new();
@@ -299,7 +299,7 @@ fn misspelled_objroutine_target_dangles_while_control_resolves() {
 
     let consumer = |target: &str| -> Vec<Section> {
         let asm = format!("cpu 68000\nConsumer:\n\tdc.w {target}-ObjCodeBase\n");
-        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
         assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble: {d:?}")).sections
     };
 

@@ -1529,7 +1529,7 @@ pub fn assemble_as_side(aeon: &Path, profile: &GameProfile) -> Result<Module, St
         defines.push(("__MDDBG__".to_string(), 1));
     }
     let opts = AsOptions {
-        initial_cpu: Cpu::M68000,
+        initial_cpu: Some(Cpu::M68000),
         defines,
         include_root: Some(aeon.to_path_buf()),
         guarded_defines,

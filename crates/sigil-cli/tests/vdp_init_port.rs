@@ -181,7 +181,7 @@ fn as_vdp_ram_labels() -> Vec<Section> {
          \tds.b 19\n",
         pins::VDP_SHADOW_TABLE.plain
     );
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (vdp ram labels): {d:?}")).sections
 }
 
@@ -201,7 +201,7 @@ fn as_bootdata_label(debug: bool) -> Vec<Section> {
          BootData_VDPRegs:\n\
          \tdc.b 0\n"
     );
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (bootdata label): {d:?}")).sections
 }
 
@@ -217,7 +217,7 @@ fn as_mddbg_labels() -> Vec<Section> {
         ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
         ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
     ];
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
@@ -244,7 +244,7 @@ fn as_outbound_consumer() -> Vec<Section> {
                \tbsr.w   VDP_Shadow_Init\n\
                \tbsr.w   Flush_VDP_Shadow\n\
                \trts\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}")).sections
 }
 

@@ -37,7 +37,7 @@ use sigil_span::Level;
 /// standalone, and flatten — the AS-parity reference bytes. Mirrors
 /// `ports.rs::as_reference`.
 fn as_reference(asm: &str) -> Vec<u8> {
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let module = assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble failed: {d:?}"));
     let linked = sigil_link::link(&module.sections, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("AS link failed: {d:?}"));

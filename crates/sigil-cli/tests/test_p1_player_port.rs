@@ -144,7 +144,7 @@ fn as_constant_equs() -> Vec<Section> {
 /// One synthetic AS-side label phased at `vma`.
 fn as_label_at(name: &str, vma: u32) -> Vec<Section> {
     let asm = format!("cpu 68000\nphase ${vma:X}\n{name}:\n\tdc.b 0\n");
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts)
         .unwrap_or_else(|d| panic!("AS assemble (synthetic {name}): {d:?}"))
         .sections

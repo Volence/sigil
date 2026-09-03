@@ -109,7 +109,7 @@ fn as_queue_dma_labels() -> Vec<Section> {
         ("QueueDMA_Deferrable", pins::QUEUE_DMA_DEFERRABLE.plain),
     ] {
         let asm = format!("cpu 68000\nphase ${vma:X}\n{name}:\n\tdc.b 0\n");
-        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
         secs.extend(
             assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble ({name}): {d:?}")).sections,
         );

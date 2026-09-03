@@ -16,6 +16,16 @@ fn default_supmode(_cpu: Cpu) -> bool {
     false
 }
 
+/// The CPU the state runs on while NOTHING has declared one yet.
+///
+/// It is provisional, never a target choice: the moment the unit reaches a
+/// CPU-dependent construct (any emitted byte) with [`AsmState::cpu_declared`]
+/// still false, the front-end refuses the whole unit, so no accepted output is
+/// ever encoded against this value. It is `Z80` only because that is what the
+/// old silent default was — keeping it there means the ONLY behavioural change
+/// is the refusal itself.
+const PROVISIONAL_CPU: Cpu = Cpu::Z80;
+
 /// The assembler-state unit and the `save`/`restore` stack.
 ///
 /// **`padding`/`supmode` semantics (asl 1.42 Bld 212, live-probe-verified — see
@@ -41,6 +51,15 @@ fn default_supmode(_cpu: Cpu) -> bool {
 #[derive(Clone, Debug)]
 pub struct AsmState {
     pub cpu: Cpu,
+    /// Whether a CPU was ever DECLARED for this assembly unit — by the caller
+    /// (`Options::initial_cpu = Some(..)`) or by a `cpu` directive anywhere in
+    /// the unit, root or included file.
+    ///
+    /// A one-way latch, and deliberately NOT part of the `save`/`restore`
+    /// snapshot: declaring a processor is a property of the unit, not a scoped
+    /// piece of assembler state, so a `save`/`restore` pair cannot un-declare
+    /// it and `restore` re-applying a saved CPU is not itself a declaration.
+    pub cpu_declared: bool,
     /// Phase displacement: `$`/labels report `physical + disp`. `phase addr` sets
     /// `disp = addr - physical_at_phase`; `dephase` sets `disp = 0`. Zero when not
     /// phased. NOT saved/restored (asl treats phase as its own balanced pair).
@@ -60,15 +79,31 @@ struct Saved {
 }
 
 impl AsmState {
-    /// New state with `initial_cpu`, no phase, CPU defaults (padding on, supmode off).
-    pub fn new(initial_cpu: Cpu) -> Self {
+    /// New state, no phase, CPU defaults (padding on, supmode off).
+    ///
+    /// `initial_cpu` is `Some(c)` when the CALLER declares the processor and
+    /// `None` when it does not. `None` does not mean "pick one" — it runs on
+    /// [`PROVISIONAL_CPU`] with [`cpu_declared`](AsmState::cpu_declared) false,
+    /// which the front-end turns into a refusal at the first CPU-dependent
+    /// construct.
+    pub fn new(initial_cpu: Option<Cpu>) -> Self {
+        let cpu = initial_cpu.unwrap_or(PROVISIONAL_CPU);
         AsmState {
-            cpu: initial_cpu,
+            cpu,
+            cpu_declared: initial_cpu.is_some(),
             disp: 0,
-            padding: default_padding(initial_cpu),
-            supmode: default_supmode(initial_cpu),
+            padding: default_padding(cpu),
+            supmode: default_supmode(cpu),
             saved: Vec::new(),
         }
+    }
+
+    /// The `cpu` **directive**: [`set_cpu`](AsmState::set_cpu), and latch the
+    /// unit as having DECLARED its processor. Only a real declaration calls
+    /// this — `restore` re-applies a CPU without declaring one.
+    pub fn declare_cpu(&mut self, cpu: Cpu) {
+        self.cpu_declared = true;
+        self.set_cpu(cpu);
     }
 
     /// The `cpu` **directive**: set the CPU and reset `padding`/`supmode` to that
@@ -112,7 +147,7 @@ mod tests {
     #[test]
     fn cpu_directive_resets_padding_even_to_same_cpu() {
         // Probe d: `padding off; cpu 68000` -> padding ON.
-        let mut s = AsmState::new(Cpu::M68000);
+        let mut s = AsmState::new(Some(Cpu::M68000));
         s.padding = false;
         s.set_cpu(Cpu::M68000); // same CPU, still resets
         assert!(s.padding, "the cpu directive resets padding unconditionally");
@@ -122,7 +157,7 @@ mod tests {
     fn restore_with_cpu_change_resets_padding_to_default() {
         // Probe t14: `padding off; save; cpu z80; restore` -> padding ON (the
         // restore switches z80->68000, an actual change, so padding resets ON).
-        let mut s = AsmState::new(Cpu::M68000);
+        let mut s = AsmState::new(Some(Cpu::M68000));
         s.padding = false;
         s.save(); // saves cpu = 68000
         s.set_cpu(Cpu::Z80); // switch to z80 (resets padding to z80 default)
@@ -134,7 +169,7 @@ mod tests {
     #[test]
     fn restore_same_cpu_preserves_padding_and_never_restores_saved() {
         // Probe t12: `padding off; save; restore` -> stays OFF (no cpu change).
-        let mut s = AsmState::new(Cpu::M68000);
+        let mut s = AsmState::new(Some(Cpu::M68000));
         s.padding = false;
         s.save();
         s.restore().unwrap();
@@ -142,7 +177,7 @@ mod tests {
 
         // Probe b: `padding off; save; padding on; restore` -> ON (the saved OFF
         // is NOT brought back; the post-save value survives).
-        let mut s = AsmState::new(Cpu::M68000);
+        let mut s = AsmState::new(Some(Cpu::M68000));
         s.padding = false;
         s.save();
         s.padding = true;
@@ -154,7 +189,7 @@ mod tests {
     fn restore_does_not_touch_phase_displacement() {
         // asl truth: phase/dephase is a separate mechanism; `restore` leaves the
         // displacement exactly as `dephase` (or a live `phase`) left it.
-        let mut s = AsmState::new(Cpu::M68000);
+        let mut s = AsmState::new(Some(Cpu::M68000));
         s.save();
         s.disp = 0x1234; // as if `phase` set a displacement after the save
         s.restore().unwrap();
@@ -163,7 +198,29 @@ mod tests {
 
     #[test]
     fn restore_without_save_is_an_error() {
-        let mut s = AsmState::new(Cpu::Z80);
+        let mut s = AsmState::new(Some(Cpu::Z80));
         assert!(s.restore().is_err());
+    }
+
+    #[test]
+    fn caller_declaring_the_cpu_counts_as_declared() {
+        assert!(AsmState::new(Some(Cpu::M68000)).cpu_declared);
+        assert!(AsmState::new(Some(Cpu::Z80)).cpu_declared);
+        assert!(!AsmState::new(None).cpu_declared);
+    }
+
+    #[test]
+    fn only_a_declaration_latches_declared() {
+        // `set_cpu` is the mechanical state change (`restore` uses it); it is
+        // NOT a declaration. `declare_cpu` is, and the latch is one-way.
+        let mut s = AsmState::new(None);
+        s.set_cpu(Cpu::M68000);
+        assert!(!s.cpu_declared, "restore-style set_cpu must not declare");
+        s.declare_cpu(Cpu::M68000);
+        assert!(s.cpu_declared);
+        s.save();
+        s.set_cpu(Cpu::Z80);
+        s.restore().unwrap();
+        assert!(s.cpu_declared, "save/restore cannot un-declare the unit");
     }
 }

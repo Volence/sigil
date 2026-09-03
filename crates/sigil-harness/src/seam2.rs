@@ -782,7 +782,7 @@ fn emit_sfx_body_and_head_at(
     );
     let mut carriers = assemble(
         &carrier_asm,
-        &AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() },
+        &AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() },
     )
     .map_err(|d| format!("carrier assemble: {d:?}"))?
     .sections;
@@ -1188,7 +1188,7 @@ fn emit_mt_bank_at(
     );
     let mut carriers = assemble(
         &carrier_asm,
-        &AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() },
+        &AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() },
     )
     .map_err(|d| format!("carrier assemble: {d:?}"))?
     .sections;

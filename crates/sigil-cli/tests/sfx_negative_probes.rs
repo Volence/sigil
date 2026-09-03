@@ -134,7 +134,7 @@ fn as_bank_start_label_at(vma: u32) -> Vec<Section> {
     // drift guards (sfx_bank is the derived authority now), so no id-count carrier
     // is needed — only the wrong-bank co-residency ensure fires.
     let asm = format!("cpu 68000\nphase ${vma:X}\nMovingTrucks_Bank_Start:\n\tdc.w 0\n");
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (cross-seam label): {d:?}")).sections
 }
 

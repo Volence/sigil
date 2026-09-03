@@ -48,7 +48,7 @@ fn emp_link(emp: &str) -> LinkedImage {
 }
 
 fn as_link(asm: &str) -> LinkedImage {
-    let opts = Options { initial_cpu: Cpu::M68000, ..Options::default() };
+    let opts = Options { initial_cpu: Some(Cpu::M68000), ..Options::default() };
     let module = assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble failed: {d:?}"));
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("AS resolve_layout failed: {d:?}"));

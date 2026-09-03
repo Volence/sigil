@@ -47,7 +47,7 @@ ArtA:   dc.b $AA
 ArtB:   dc.b $BB
 ArtC:   dc.b $CC
 ";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let m = assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble: {d:?}"));
     linked_all(&m)
 }

@@ -130,7 +130,7 @@ fn bg_addr_labels() -> Vec<Section> {
         ("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER),
         ("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER),
     ];
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");

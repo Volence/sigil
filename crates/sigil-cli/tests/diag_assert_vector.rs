@@ -119,7 +119,7 @@ phase 0\n\
 Test:\n\
 {site}\n"
     );
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let m = assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble `{site}`: {d:#?}"));
     linked(&m, &SymbolTable::new())
 }

@@ -230,7 +230,7 @@ pub fn assemble_equ_pairs(pairs: &[(&str, &str)]) -> Vec<Section> {
         asm.push('\n');
     }
     asm.push_str("Stub:\n\tdc.w 0\n");
-    let opts = Options { initial_cpu: Cpu::M68000, ..Options::default() };
+    let opts = Options { initial_cpu: Some(Cpu::M68000), ..Options::default() };
     assemble(&asm, &opts)
         .unwrap_or_else(|d| panic!("AS assemble (equ pairs): {d:?}"))
         .sections

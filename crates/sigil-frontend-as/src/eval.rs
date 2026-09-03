@@ -350,6 +350,20 @@ fn one_pass_with_defer(
     asm.known_labels = seed_labels.clone();
     asm.label_ref_equs = seed_label_ref_equs.clone();
     asm.process(root_name, src);
+    // The end-of-unit half of the no-declared-processor refusal. `emit` catches
+    // a unit that PRODUCES bytes without a declaration, which is where the
+    // silent-wrong-target damage is; this catches the rest — a unit that
+    // declares nothing and emits nothing still had every `$` in it lexed
+    // against a processor nobody named, and its `equ` values carry that
+    // decision out to whoever consumes them.
+    //
+    // Scoped to the UNIT: `asm.state` is one state threaded through the root and
+    // every file it `include`s, so a `cpu` line anywhere in the unit satisfies
+    // this, and an included file of its own carries no obligation.
+    if !asm.state.cpu_declared {
+        let span = Span { source: sigil_span::SourceId(0), start: 0, end: 0 };
+        asm.refuse_undeclared_cpu(span);
+    }
     // Task B1 (seam re-eval): a source consisting ONLY of `equ`s (no section
     // ever opens) would otherwise strand `pending_equ_syms` — force a carrier
     // section open so `finish()` never silently drops them.
@@ -359,6 +373,16 @@ fn one_pass_with_defer(
     let (mut module, mut diags) = asm.builder.finish();
     dedup_section_names(&mut module.sections);
     diags.append(&mut asm.diags);
+    // Report the refusal FIRST. Everything else an undeclared unit produces is a
+    // consequence of it: under the provisional processor a `$` lexes as the
+    // program counter rather than a hex prefix, so a 68000 source mis-parses from
+    // line 1 and the real cause arrives after a screen of its own symptoms. It is
+    // raised where it is DETECTED (at the first emitted byte, or at the end of the
+    // unit) and read where it EXPLAINS.
+    if let Some(pos) = diags.iter().position(|d| d.message == crate::CPU_UNDECLARED) {
+        let d = diags.remove(pos);
+        diags.insert(0, d);
+    }
     PassOutput {
         module,
         env: asm.env,
@@ -452,6 +476,11 @@ struct Asm {
     visited: std::collections::BTreeSet<std::path::PathBuf>,
     include_root: Option<std::path::PathBuf>,
     aborted: bool,
+    /// Whether this pass already raised [`crate::CPU_UNDECLARED`]. One refusal
+    /// per pass: the condition is a property of the whole unit, so repeating it
+    /// per emit site would say the same thing hundreds of times. Its own flag
+    /// rather than a reuse of `aborted`, which `fatal` also sets.
+    cpu_refused: bool,
     /// Operand symbols that folded to Poison this pass (name + site span). On an
     /// intermediate pass these are just not-yet-resolved forward refs; on the
     /// CONVERGED pass the env is final, so any entry here is genuinely undefined
@@ -566,6 +595,7 @@ impl Asm {
             visited: std::collections::BTreeSet::new(),
             include_root: opts.include_root.clone(),
             aborted: false,
+            cpu_refused: false,
             poison_refs: Vec::new(),
             while_budget: GLOBAL_WHILE_CAP,
             pending_equ_syms: Vec::new(),
@@ -2188,7 +2218,10 @@ impl Asm {
         // `padding off` at main.asm:3 therefore survives only until the first
         // subsequent `cpu` directive / cpu-changing `restore` (boot.asm's z80
         // load blocks), after which padding is ON for the rest of the ROM.
-        self.state.set_cpu(cpu);
+        // `declare_cpu`, not `set_cpu`: this is the unit DECLARING its processor,
+        // which is what lifts the `CPU_UNDECLARED` refusal. `restore` re-applies a
+        // saved CPU through `set_cpu` and declares nothing.
+        self.state.declare_cpu(cpu);
         self.close_section();
     }
 
@@ -4255,9 +4288,31 @@ impl Asm {
     }
 
     fn emit(&mut self, bytes: &[u8], fixups: Vec<Fixup>, span: Span) {
+        // The one place bytes enter the module, so the one place that can ask
+        // whether the unit ever said what processor they are for. Every encoded
+        // byte is a CPU-dependent decision; producing one against a processor
+        // nobody named is the silent failure this refuses.
+        if !self.state.cpu_declared {
+            self.refuse_undeclared_cpu(span);
+            return;
+        }
         // The builder advances its own section cursor (the single source of
         // truth read back via `current_offset()`); the front-end keeps none.
         self.builder.emit_data(bytes, fixups, span);
+    }
+
+    /// Raise [`CPU_UNDECLARED`] once and abort the pass.
+    ///
+    /// Aborting matters as much as the diagnostic. Under the provisional
+    /// processor a source written for the other one mis-lexes from its first
+    /// line, so continuing buries the one true error under a screenful of
+    /// consequences of it.
+    fn refuse_undeclared_cpu(&mut self, span: Span) {
+        if !self.cpu_refused {
+            self.cpu_refused = true;
+            self.err(span, crate::CPU_UNDECLARED);
+        }
+        self.aborted = true;
     }
 
     /// Capture `<name> macro [params] … endm`. Returns the index past `endm`.
@@ -5658,7 +5713,7 @@ mod tests {
         // at offset 2, target = 8, disp = 8 - 2 = 6.
         let src = "    cpu 68000\n    phase 0\n    move.w (8,pc),d0\n";
         let opts = Options {
-            initial_cpu: Cpu::M68000,
+            initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
@@ -5679,7 +5734,7 @@ mod tests {
         // literal `8` is a TARGET address; disp = 8 - ext-word-VMA(2) = 6).
         let src = "    cpu 68000\n    phase 0\n    move.w (8,pc,d0.w),d1\n";
         let opts = Options {
-            initial_cpu: Cpu::M68000,
+            initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
@@ -5701,7 +5756,7 @@ mod tests {
         //   divs.w d0,d1      = 83 C0
         //   divs.w ($1234).w,d0 = 81 F8 12 34
         let src = "    cpu 68000\n    divs.w d4,d2\n    divs.w #10,d2\n    divs.w d0,d1\n    divs.w ($1234).w,d0\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None, guarded_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
@@ -5719,7 +5774,7 @@ mod tests {
         //   divu.w d4,d2 = 84 C4
         //   divu.w d3,d5 = 8A C3
         let src = "    cpu 68000\n    divu.w d4,d2\n    divu.w d3,d5\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None, guarded_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], };
         let m = run(src, &opts).expect("assemble");
         let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect("resolve_layout");
@@ -5735,7 +5790,7 @@ mod tests {
         // [0,$7FFF]∪[$FF8000,$FFFFFF]. `$1234` ≤ $7FFF → abs.w: `30 38 12 34`.
         let src = "    cpu 68000\n    move.w $1234,d0\n";
         let opts = Options {
-            initial_cpu: Cpu::M68000,
+            initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
@@ -5755,7 +5810,7 @@ mod tests {
         // error, just with a size-suffix diagnostic instead of a scope one.
         let src = "    cpu 68000\n    bra Target\nTarget:\n    rts\n";
         let opts = Options {
-            initial_cpu: Cpu::M68000,
+            initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
@@ -5778,7 +5833,7 @@ mod tests {
         // bare `.loop` (which the linker would never find).
         let src = "    cpu 68000\n    phase 0\nStart:\n    bra.w .loop\n.loop:\n    rts\n";
         let opts = Options {
-            initial_cpu: Cpu::M68000,
+            initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
@@ -5802,7 +5857,7 @@ mod tests {
         // pass-through. See the width-selection block in `lower_m68k`.
         let src = "    cpu 68000\n    phase 0\nLbl:\n    jmp Lbl\n";
         let opts = Options {
-            initial_cpu: Cpu::M68000,
+            initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
@@ -5824,7 +5879,7 @@ mod tests {
         // `move` has no default size and no suffix here — must error, not guess.
         let src = "    cpu 68000\n    move d0,d1\n";
         let opts = Options {
-            initial_cpu: Cpu::M68000,
+            initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
@@ -5877,7 +5932,7 @@ mod tests {
     fn ifdef_gates_emission_by_define_set() {
         let src = "        cpu z80\n        phase 0\n        db 1\n        ifdef __DEBUG__\n        db 0FFh\n        endif\n        ifdef SOUND_DRIVER_ENABLED\n        db 2\n        endif\n";
         let opts = Options {
-            initial_cpu: Cpu::Z80,
+            initial_cpu: Some(Cpu::Z80),
             defines: vec![("SOUND_DRIVER_ENABLED".into(), 1)],
             include_root: None,
             guarded_defines: vec![],
@@ -5926,7 +5981,7 @@ mod tests {
         // for real: `rts` = 4E75.
         let src = "    cpu 68000\n    rts\n";
         let opts = Options {
-            initial_cpu: Cpu::M68000,
+            initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
@@ -5947,7 +6002,7 @@ mod tests {
         // lowers: `move.w d0,d1` = 3200.
         let src = "    cpu 68000\nStart:\n    move.w d0,d1\n";
         let opts = Options {
-            initial_cpu: Cpu::M68000,
+            initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
@@ -5968,7 +6023,7 @@ mod tests {
         // even though line.text starts at column 0.
         let src = "    cpu 68000\nFoo: rts\n";
         let opts = Options {
-            initial_cpu: Cpu::M68000,
+            initial_cpu: Some(Cpu::M68000),
             defines: vec![],
             include_root: None,
             guarded_defines: vec![],
@@ -7037,7 +7092,7 @@ C:\n";
         // No `GetSineCosine` anywhere in this source — exactly the shape a
         // real cross-seam `.emp` proc call takes from the AS side.
         let src = "    cpu 68000\nConsumer:\n    jsr GetSineCosine\n    rts\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None, guarded_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], };
         let m = run(src, &opts).unwrap_or_else(|d| {
             panic!("expected a deferred compile, not a hard error: {d:?}")
         });
@@ -7056,7 +7111,7 @@ C:\n";
         // section that DOES define the target — the end-to-end proof (mirrors
         // `math_port.rs`'s outbound-consumer harness pattern).
         let src = "    cpu 68000\nConsumer:\n    jsr GetSineCosine\n    rts\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None, guarded_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], };
         let m = run(src, &opts).expect("deferred compile must succeed");
 
         let target_src = "    cpu 68000\n    phase $2468\nGetSineCosine:\n    rts\n";
@@ -7087,7 +7142,7 @@ C:\n";
         // Same source/expectation as
         // `m68k_jmp_jsr_bare_symbol_selects_width_in_front_end`, but for jsr.
         let src = "    cpu 68000\n    phase 0\nLbl:\n    jsr Lbl\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None, guarded_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], };
         let m = run(src, &opts).expect("assemble");
         assert!(
             matches!(m.sections[0].fragments[0], sigil_ir::Fragment::Data(_)),
@@ -7110,7 +7165,7 @@ C:\n";
         // (which named the symbol) to this link-time arm, so the link-time
         // wording must be at least as good.
         let src = "    cpu 68000\nConsumer:\n    jsr TotallyUndefined\n    rts\n";
-        let opts = Options { initial_cpu: Cpu::M68000, defines: vec![], include_root: None, guarded_defines: vec![], };
+        let opts = Options { initial_cpu: Some(Cpu::M68000), defines: vec![], include_root: None, guarded_defines: vec![], };
         let m = run(src, &opts).expect("deferred compile must succeed (front-end no longer errors)");
         let err = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
             .expect_err("a target defined nowhere must still fail at resolve_layout");

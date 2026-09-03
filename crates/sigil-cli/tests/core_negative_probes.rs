@@ -136,7 +136,7 @@ fn cross_seam_groups() -> Vec<Vec<Section>> {
         vec![sigil_harness::test_support::as_engine_constants_and_sst_equs()];
     for (name, vma) in PLAIN_LABELS {
         let asm = format!("cpu 68000\nphase ${vma:X}\n{name}:\n\tdc.b 0\n");
-        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
         groups.push(
             assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble ({name}): {d:?}")).sections,
         );

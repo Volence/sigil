@@ -196,7 +196,7 @@ fn as_constant_equs_with(override_pair: Option<(&str, &str)>) -> Vec<Section> {
 /// must resolve to the real per-shape addresses).
 fn as_label_at(name: &str, vma: u32) -> Vec<Section> {
     let asm = format!("cpu 68000\nphase ${vma:X}\n{name}:\n\tdc.b 0\n");
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (synthetic {name}): {d:?}")).sections
 }
 
@@ -209,7 +209,7 @@ fn as_outbound_consumer() -> Vec<Section> {
                \tjsr     RunObjects\n\
                \tjsr     DeleteObject\n\
                \trts\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}")).sections
 }
 

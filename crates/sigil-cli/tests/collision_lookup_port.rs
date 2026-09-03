@@ -160,7 +160,7 @@ fn as_cache_ram_labels(debug: bool) -> Vec<Section> {
          Cache_Origin_Row:\n\
          \tdc.w 0\n"
     );
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (cache ram labels): {d:?}")).sections
 }
 
@@ -181,7 +181,7 @@ fn as_collision_array_label(debug: bool) -> Vec<Section> {
          Tile_Cache_Collision:\n\
          \tdc.b 0\n"
     );
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (collision array label): {d:?}")).sections
 }
 
@@ -194,7 +194,7 @@ fn as_outbound_consumer() -> Vec<Section> {
                Consumer:\n\
                \tbsr.w   Collision_GetType\n\
                \trts\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}")).sections
 }
 
