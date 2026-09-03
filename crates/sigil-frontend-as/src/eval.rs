@@ -443,6 +443,19 @@ struct Asm {
     /// assigned before it is read (probe p1/p4).
     str_env: std::collections::HashMap<String, String>,
     scope: Option<String>,
+    /// The scope in force where the OUTERMOST macro expansion currently on the
+    /// stack was invoked — the nearest scope that is not itself an expansion.
+    /// `None` outside any expansion, where [`Self::scope`] is already that scope.
+    ///
+    /// A `.`-local bound by `equ`/`=`/`set`/`:=` inside an expansion lands HERE,
+    /// and expansion nesting is transparent to it: an inner macro's `.v := 5`
+    /// under `Base:` lists as `Base.v : 5`, not as anything belonging to the
+    /// outer expansion, and `dc.b .v` reads `05` both inside the outer body and
+    /// after the whole nest returns.
+    outer_scope: Option<String>,
+    /// [`scan_dot_labels`] per macro name. The body is fixed once captured, so
+    /// the set is too; `capture_macro` drops the entry when a name is redefined.
+    dot_label_cache: std::collections::BTreeMap<String, std::rc::Rc<std::collections::BTreeSet<String>>>,
     in_section: bool,
     /// Continuous physical location counter (asl-faithful): the real ROM byte
     /// offset of the CURRENTLY-OPEN section's start. The live physical position is
@@ -595,6 +608,8 @@ impl Asm {
             env: SymbolTable::new(),
             str_env: std::collections::HashMap::new(),
             scope: None,
+            outer_scope: None,
+            dot_label_cache: std::collections::BTreeMap::new(),
             in_section: false,
             phys_base: 0,
             diags: Vec::new(),
@@ -662,9 +677,61 @@ impl Asm {
         self.here() as i32 as i64
     }
 
+    /// The scope a value-BINDING `.`-local takes inside a macro expansion: the
+    /// nearest scope that is not an expansion. Outside a macro this is just the
+    /// current scope.
+    /// Where there is no enclosing global label at all, the scope is the EMPTY
+    /// one rather than "no scope". `qualify` already writes such a name under its
+    /// own bare spelling (`.v`), and AS resolves it: a macro whose body carries
+    /// `.v := 7` and `.lb:`/`beq.s .lb` in a file with no label above it lists
+    /// `67FC` and `dc.b .v` reads `07`. Handing the empty scope through makes the
+    /// READER build the same key the writer used, instead of refusing for want of
+    /// a scope name.
+    fn real_scope(&self) -> Option<&str> {
+        let s = if self.macro_frames.is_empty() {
+            self.scope.as_deref()
+        } else {
+            self.outer_scope.as_deref()
+        };
+        Some(s.unwrap_or(""))
+    }
+
+    /// The scope a `.`-local REFERENCE resolves in, and the whole resolution
+    /// rule in one place.
+    ///
+    /// A name the innermost expansion's body defines as a PLAIN LABEL belongs to
+    /// that expansion; every other `.`-local belongs to the caller's real scope.
+    /// The set is [`scan_dot_labels`] of the body, computed before the body runs,
+    /// so a name's scope is a property of the MACRO, not of where in the body the
+    /// reference happens to sit.
+    ///
+    /// That is what forecloses the wrong-label fall-through. A rule of the shape
+    /// "look in the expansion, and if that misses fall back to the caller" makes
+    /// a macro's own forward branch to `.done` reach a caller's `.done` whenever
+    /// the expansion has not defined its own yet — a missing-label error turning
+    /// into a branch to the wrong address. asl does exactly that, and it is not
+    /// even self-consistent about it: `mown` (body `beq.s .tgt` … `.tgt:`) called
+    /// under a `Base:` that also carries `.tgt:` assembles `67FE`, the CALLER's
+    /// label, in a single-pass file (`d1.asm`), and `6704`, its OWN, the moment
+    /// an unrelated forward reference elsewhere forces a second pass
+    /// (`d2.asm` — same construction, `2 passes`). Under this rule the body's own
+    /// definition wins in both, because the expansion owns the name for the whole
+    /// expansion or does not own it at all. There is no lookup order to lose a
+    /// race in, and no pass on which the answer differs.
+    ///
+    /// A body that does NOT define the name still reaches the caller, which is
+    /// asl's behaviour and is load-bearing: `mref` (body `beq.s .tgt`, no
+    /// definition) under `Base:` with a later `.tgt:` assembles `6704`, and
+    /// `Base.tgt : 1006 C` is in the symbol table.
+    fn dot_scope(&self, name: &str) -> Option<&str> {
+        match self.macro_frames.last() {
+            Some(f) if !f.dot_labels.contains(name) => self.real_scope(),
+            _ => Some(self.scope.as_deref().unwrap_or("")),
+        }
+    }
+
     fn fold(&self, e: &Expr) -> Fold {
         let here = self.here_i64();
-        let scope = self.scope.clone();
         let env = &self.env;
         e.fold(&|name| {
             // `$` is resolved to the current PC here in the front-end: any
@@ -673,7 +740,7 @@ impl Asm {
             if name == "$" {
                 Some(here)
             } else {
-                env.resolve(name, scope.as_deref())
+                env.resolve(name, self.dot_scope(name))
             }
         })
     }
@@ -708,7 +775,7 @@ impl Asm {
             match e {
                 Expr::Int(_) => {}
                 Expr::Sym(name) => {
-                    if name != "$" && this.env.resolve(name, this.scope.as_deref()).is_none() {
+                    if name != "$" && this.env.resolve(name, this.dot_scope(name)).is_none() {
                         out.push(name.clone());
                     }
                 }
@@ -887,7 +954,7 @@ impl Asm {
                 let v = if name == "$" {
                     self.here_i64()
                 } else {
-                    self.env.resolve(name, self.scope.as_deref())?
+                    self.env.resolve(name, self.dot_scope(name))?
                 };
                 Some((v as f64, rest))
             }
@@ -1020,14 +1087,12 @@ impl Asm {
     }
 
     /// Resolve a bare identifier reference to its string value, if it names a
-    /// string-valued `set` symbol. Key-building mirrors `SymbolTable::resolve`:
-    /// `.foo` → `"{scope}.foo"` (needs a scope), `A.b`/`foo` → verbatim.
+    /// string-valued `set` symbol. `.foo` → `"{scope}.foo"`, `A.b`/`foo` →
+    /// verbatim, with the scope chosen by [`Self::dot_scope`].
     fn resolve_str(&self, name: &str) -> Option<String> {
-        let key = if let Some(local) = name.strip_prefix('.') {
-            format!("{}.{}", self.scope.as_deref()?, local)
-        } else {
-            name.to_string()
-        };
+        // The same key `directive_set` wrote, built by the same function, so a
+        // reader can never disagree with its writer about where a name lives.
+        let key = qualify(name, self.dot_scope(name));
         self.str_env.get(&key).cloned()
     }
 
@@ -2186,7 +2251,7 @@ impl Asm {
     }
 
     fn cond_defined(&self, arg_toks: &[Token]) -> bool {
-        matches!(arg_toks.first().map(|t| &t.tok), Some(Tok::Ident(n)) if self.env.resolve(n, self.scope.as_deref()).is_some())
+        matches!(arg_toks.first().map(|t| &t.tok), Some(Tok::Ident(n)) if self.env.resolve(n, self.dot_scope(n)).is_some())
     }
 
     /// `if MOMCPUNAME="Z80"` / `<lhs>="str"` / `"a"="a"` / `"a"<>"b"` string
@@ -2526,8 +2591,10 @@ impl Asm {
     fn directive_equate(&mut self, name: &str, rest: &[Token], span: Span) {
         // An equate is not a label: qualify a local `.foo` against the current
         // scope (so `ld a,.foo` resolves) but do NOT open a scope. `qualify`
-        // leaves non-dotted global names unchanged.
-        let q = qualify(name, self.scope.as_deref());
+        // leaves non-dotted global names unchanged. Inside a macro expansion the
+        // scope is the CALLER's ([`Self::real_scope`]) — asl `-U`, `.eqs = 3`
+        // inside a macro under `Base:` lists as `Base.eqs : 3`.
+        let q = qualify(name, self.real_scope());
         // The P5 no-silent-shadowing guard: a guarded `.emp`-owned constant may
         // NOT be re-authored in the residual AS. An in-file `=`/`equ` of such a
         // name fails LOUD (never silently prefers either side) — the structural
@@ -2673,7 +2740,12 @@ impl Asm {
     /// grow a single-assignment redefinition diagnostic (see that function's
     /// doc), and `set`/`:=` must keep permitting redefinition when it does.
     fn directive_set(&mut self, name: &str, rest: &[Token], span: Span) {
-        let q = qualify(name, self.scope.as_deref());
+        // A `.`-local `set` inside a macro expansion binds in the CALLER's scope,
+        // not the expansion's, and macro nesting is transparent to it
+        // ([`Self::real_scope`]). This is what carries `zoneOrderedTable`'s
+        // `.cur_zone_str` / `.zone_entries_left` across to the separate
+        // `zoneTableEntry` expansions that read and reassign them.
+        let q = qualify(name, self.real_scope());
         // asl: `set` may bind a STRING (`.__str set "BUS ERROR"`,
         // `.__str set substr(.__str,0,.__pos)`). Detect the string shape via
         // `eval_str` (literal / substr / lowstring / string-symbol copy) BEFORE
@@ -4200,7 +4272,7 @@ impl Asm {
     fn qualify_expr(&self, e: &Expr) -> Expr {
         match e {
             Expr::Sym(name) if name.starts_with('.') => {
-                Expr::Sym(qualify(name, self.scope.as_deref()))
+                Expr::Sym(qualify(name, self.dot_scope(name)))
             }
             Expr::Binary { op, lhs, rhs } => Expr::Binary {
                 op: *op,
@@ -4575,6 +4647,7 @@ impl Asm {
             .iter()
             .map(|l| self.subst_frame(l).unwrap_or_else(|| l.clone()))
             .collect();
+        self.dot_label_cache.remove(&name);
         self.macros.insert(name, (params, body));
         end + 1
     }
@@ -4633,7 +4706,7 @@ impl Asm {
     /// into `__FSTRING_PushArgument` this way (probe `probe_argkind` 2026-07-05).
     /// A label / int-local keeps the qualified NAME, resolved via the symbol table
     /// (e.g. `aabb_axis_test`'s `.next_object` arg). Latent until __DEBUG__ (T5).
-    fn bind_macro_arg(&self, v: String, caller_scope: Option<&str>) -> String {
+    fn bind_macro_arg(&self, v: String) -> String {
         if is_bare_local(&v) {
             if let Some(s) = self.resolve_str(&v) {
                 // Quoted so it re-lexes as one `Tok::Str`. Assumes the value has
@@ -4642,7 +4715,7 @@ impl Asm {
                 // quote would produce a broken literal (none occurs in aeon).
                 return format!("\"{s}\"");
             }
-            return qualify(&v, caller_scope);
+            return qualify(&v, self.dot_scope(&v));
         }
         v
     }
@@ -4746,6 +4819,9 @@ impl Asm {
         // (`aabb_axis_test …,.next_object,…`) names a label in the CALLER's scope
         // — asl evaluates arguments in the caller context — so it must be
         // qualified here, before substitution, not against the expansion scope.
+        // Every `bind_macro_arg` below therefore runs while `self` still describes
+        // the caller, and [`Self::dot_scope`] picks the caller's expansion or its
+        // real scope by the same rule a reference written in the caller would get.
         let caller_scope = self.scope.clone();
         // An OMITTED argument binds to the EMPTY STRING, not "left unsubstituted"
         // (asl-verified): the Aeon parallax macros gate optional fields on
@@ -4764,9 +4840,15 @@ impl Asm {
         for p in &params {
             let supplied = keyword.get(p).cloned().or_else(|| pos_iter.next());
             filled.push(supplied.is_some());
-            let v = self.bind_macro_arg(supplied.unwrap_or_default(), caller_scope.as_deref());
+            let v = self.bind_macro_arg(supplied.unwrap_or_default());
             bound.push(v);
         }
+        // Surplus positional arguments — the ones the parameter list could not
+        // hold — get the SAME binding as the ones it could. They reach the body
+        // only through `ALLARGS`, but that is a text the body can consume as a
+        // symbol reference, so an argument's meaning cannot depend on which side
+        // of the parameter count it fell.
+        let surplus: Vec<String> = pos_iter.map(|v| self.bind_macro_arg(v)).collect();
         // The argument groups `ALLARGS` walks: every supplied parameter slot in
         // PARAMETER order (so a keyword call shifts in the order the callee
         // declared, asl-verified — probe `p4.asm` case 4b, `kw k2=aa,k1=bb` on
@@ -4780,7 +4862,7 @@ impl Asm {
             .filter(|(_, f)| **f)
             .map(|(v, _)| v.clone())
             .collect();
-        all.extend(pos_iter);
+        all.extend(surplus);
         // A `.`-local written LITERALLY in this macro body is scoped to the
         // EXPANSION, not the caller's global label (asl-verified, T4 probe
         // P1/P3): two expansions of one macro in a single global scope each own a
@@ -4799,6 +4881,21 @@ impl Asm {
         // defines a NON-dotted global label meant to become the outer scope
         // afterwards, would diverge — aeon does neither.
         self.macro_expansion_seq += 1;
+        let dot_labels = match self.dot_label_cache.get(name) {
+            Some(set) => set.clone(),
+            None => {
+                let set = std::rc::Rc::new(scan_dot_labels(&body));
+                self.dot_label_cache.insert(name.to_string(), set.clone());
+                set
+            }
+        };
+        // The outermost expansion on the stack records the scope it was invoked
+        // from; every expansion nested inside it keeps that same real scope, so a
+        // value-binding `.`-local reaches out through the whole nest in one step.
+        let outer_scope = self.outer_scope.clone();
+        if self.macro_frames.is_empty() {
+            self.outer_scope = caller_scope.clone();
+        }
         self.scope = Some(format!(" macro#{}", self.macro_expansion_seq));
         self.macro_depth += 1;
         self.macro_frames.push(MacroFrame {
@@ -4809,11 +4906,13 @@ impl Asm {
             shifted: 0,
             attribute: attribute.map(str::to_string),
             suspend: 0,
+            dot_labels,
         });
         self.exec(&body);
         self.macro_frames.pop();
         self.macro_depth -= 1;
         self.scope = caller_scope;
+        self.outer_scope = outer_scope;
     }
 }
 
@@ -4860,6 +4959,10 @@ struct MacroFrame {
     /// `shift` each time, while probe `p3.asm` case 3a shows the frame HAS
     /// advanced twice once the loop exits — `post<|23,24>`).
     suspend: usize,
+    /// The `.`-local names this macro's body defines as PLAIN LABELS. Those
+    /// belong to the EXPANSION; every other `.`-local a body line mentions
+    /// belongs to the caller's real scope. See [`scan_dot_labels`].
+    dot_labels: std::rc::Rc<std::collections::BTreeSet<String>>,
 }
 
 impl MacroFrame {
@@ -5614,6 +5717,81 @@ fn is_mem_dest(op: &M68kOperand) -> bool {
     )
 }
 
+/// The `.`-local names a macro body defines as PLAIN LABELS — a `.name:` or a
+/// column-0 `.name` carrying an instruction — as opposed to the `.name equ`,
+/// `.name =`, `.name set` and `.name :=` forms, which BIND A VALUE.
+///
+/// AS scopes the two differently inside a macro expansion, and the difference is
+/// syntactic, not value-kind (`asl -U`, the corpus's own flags):
+///
+/// * a plain label is private to the expansion and never enters the symbol
+///   table — `mlab` twice under `Base:` gives `6702` in both expansions and
+///   `dc.w .done-Base` after them is `error #1010: symbol undefined`;
+/// * every value-binding form lands in the CALLER's scope and IS a symbol —
+///   `.eq equ 3` / `.lb label *` / `.asn := 5` in a macro under `Base:` list as
+///   `Base.eq : 3`, `Base.lb : 1000 C`, `Base.asn : 5`.
+///
+/// So this set is the whole difference: a `.`-local in this set resolves against
+/// the expansion, everything else against the caller. It is computed from the
+/// body ONCE, before the body runs, which is what makes the answer independent of
+/// where in the body the reference sits — see [`Asm::dot_scope`].
+///
+/// A macro DEFINED inside this body owns its own labels, so those lines are
+/// skipped; `rept`/`while`/`irp`/`irpc` are counted while skipping because they
+/// close with `endm` too.
+fn scan_dot_labels(body: &[SrcLine]) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    let mut nested = 0usize;
+    for line in body {
+        let text = line.text.as_str();
+        let mut words = text.split_whitespace();
+        let w0 = words.next().unwrap_or("");
+        let w1 = words.next().unwrap_or("");
+        let macro_head = fold_kw(w1) == "macro" || fold_kw(w0) == "macro";
+        if nested > 0 {
+            if macro_head || matches!(&*fold_kw(w0), "rept" | "while" | "irp" | "irpc") {
+                nested += 1;
+            } else if fold_kw(w0) == "endm" {
+                nested -= 1;
+            }
+            continue;
+        }
+        if macro_head {
+            nested = 1;
+            continue;
+        }
+        // A label field sits at column 0 — AS's column rule, the same test
+        // `exec_one` applies to a bare (colon-less) head.
+        let Some(rest) = text.strip_prefix('.') else {
+            continue;
+        };
+        let len = rest
+            .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .unwrap_or(rest.len());
+        if len == 0 {
+            continue;
+        }
+        let (name, tail) = rest.split_at(len);
+        // `:=` is ONE token, so the decorative-colon strip must not bite it.
+        let tail = if tail.starts_with(":=") {
+            tail
+        } else {
+            tail.strip_prefix(':').unwrap_or(tail)
+        };
+        let next = tail.trim_start();
+        let binds = next.starts_with(":=")
+            || next.starts_with('=')
+            || matches!(
+                &*fold_kw(next.split_whitespace().next().unwrap_or("")),
+                "equ" | "set"
+            );
+        if !binds {
+            out.insert(format!(".{name}"));
+        }
+    }
+    out
+}
+
 /// Qualify a name: `.local` → `Scope.local` (if scope); else unchanged.
 fn qualify(name: &str, scope: Option<&str>) -> String {
     if name.starts_with('.') {
@@ -5692,6 +5870,17 @@ mod tests {
     use crate::Options;
     use sigil_ir::backend::Cpu;
     use sigil_ir::Module;
+
+    /// Assemble AND LINK, so branch displacements to labels are the RESOLVED
+    /// bytes rather than the front-end's unapplied-fixup placeholders. Every
+    /// listing row that pins a `beq.s` target needs this rather than [`image`].
+    fn linked_image(src: &str) -> Vec<u8> {
+        let m = run(src, &Options::default()).expect("assemble");
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .expect("resolve_layout");
+        let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
+        sigil_link::flatten(&linked, 0x00)
+    }
 
     fn image(src: &str) -> Vec<u8> {
         let m = run(src, &Options::default()).expect("assemble");
@@ -8316,5 +8505,382 @@ C:\n";
             image(&format!("{head}{body}	kw aa,k2=bb\n")),
             b"E<aa,k2=bb>S<bb>".to_vec()
         );
+    }
+
+    // ── `.`-local scope inside a macro expansion ────────────────────────────
+    //
+    // Every expected value below is an `asl -L` row from AS V1.42 Beta Bld 212
+    // (`s2disasm/build_tools/Linux-x86_64/asl`) run with the Sonic 2 build's own
+    // flags, `-xx -n -q -A -L -U -i .` — `-U` above all, which forces the
+    // case-sensitive namespace this front-end implements.
+
+    /// A `.`-local bound by `:=` inside a macro expansion lands in the CALLER's
+    /// scope, and is a real symbol there — readable both bare and qualified.
+    ///
+    /// ```text
+    ///    8/    1000 : (MACRO)              	mset
+    ///    8/    1000 : =$7                  .v      :=      7
+    ///    9/    1000 : 07                  	dc.b	.v
+    ///   10/    1001 : 07                  	dc.b	Base.v
+    ///
+    ///    Base.v :                         7 - |
+    /// ```
+    #[test]
+    fn a_dot_local_set_inside_a_macro_binds_in_the_callers_scope() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "mset macro\n",
+            ".v := 7\n",
+            "	endm\n",
+            "Base:\n",
+            "	mset\n",
+            "	dc.b .v\n",
+            "	dc.b Base.v\n",
+        );
+        assert_eq!(image(src), vec![0x07, 0x07]);
+    }
+
+    /// `equ`, `=` and `set` bind the same way `:=` does — the split is
+    /// syntactic form, not value kind.
+    ///
+    /// ```text
+    ///   10/    1000 : (MACRO)              	mform
+    ///   10/    1000 : =$3                  .eqs    =       3
+    ///   10/    1000 : =$4                  .sets   set     4
+    ///   10/    1000 : =$5                  .asn    :=      5
+    ///   11/    1000 : 03                  	dc.b	.eqs
+    ///   12/    1001 : 04                  	dc.b	.sets
+    ///   13/    1002 : 05                  	dc.b	.asn
+    ///
+    ///    Base.asn :                       5 - |  Base.eqs :                       3 - |
+    /// ```
+    #[test]
+    fn every_value_binding_form_of_a_dot_local_reaches_the_callers_scope() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "mform macro\n",
+            ".eqs = 3\n",
+            ".sets set 4\n",
+            ".asn := 5\n",
+            "	endm\n",
+            "Base:\n",
+            "	mform\n",
+            "	dc.b .eqs\n",
+            "	dc.b .sets\n",
+            "	dc.b .asn\n",
+        );
+        assert_eq!(image(src), vec![0x03, 0x04, 0x05]);
+    }
+
+    /// Expansion nesting is TRANSPARENT to a value-binding `.`-local: an inner
+    /// macro's `:=` reaches the outermost caller's scope in one step, not the
+    /// enclosing expansion's.
+    ///
+    /// ```text
+    ///   12/    1000 : (MACRO)              	outer
+    ///   12/    1000 :  (MACRO-2)                   inner
+    ///   12/    1000 : =$5                  .v      :=      5
+    ///   12/    1000 : 05                          dc.b    .v
+    ///   13/    1001 : 05                  	dc.b	.v
+    ///
+    ///    Base.v :                         5 - |
+    /// ```
+    #[test]
+    fn a_nested_expansions_dot_local_set_reaches_the_outermost_callers_scope() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "inner macro\n",
+            ".v := 5\n",
+            "	endm\n",
+            "outer macro\n",
+            "	inner\n",
+            "	dc.b .v\n",
+            "	endm\n",
+            "Base:\n",
+            "	outer\n",
+            "	dc.b .v\n",
+        );
+        assert_eq!(image(src), vec![0x05, 0x05]);
+    }
+
+    /// A `.`-local written as a PLAIN LABEL is private to its expansion: two
+    /// expansions in one scope each bind their own, and the name is not a
+    /// caller-qualified symbol at all.
+    ///
+    /// ```text
+    ///   10/    1000 : (MACRO)              	mlab
+    ///   10/    1000 : 6702                        beq.s   .done
+    ///   10/    1002 : 4E71                        nop
+    ///   10/    1004 :                     .done:
+    ///   11/    1004 : (MACRO)              	mlab
+    ///   11/    1004 : 6702                        beq.s   .done
+    ///   11/    1006 : 4E71                        nop
+    ///   11/    1008 :                     .done:
+    ///  > > > b1.asm(12):7: error #1010: symbol undefined
+    ///  > > > .done
+    ///  > > >  dc.w .done-Base
+    /// ```
+    #[test]
+    fn a_dot_local_plain_label_belongs_to_its_own_expansion() {
+        let head = "	cpu 68000\n	padding off\n	phase 0\n";
+        let body = concat!(
+            "mlab macro\n",
+            "	beq.s .done\n",
+            "	nop\n",
+            ".done:\n",
+            "	endm\n",
+            "Base:\n",
+            "	mlab\n",
+            "	mlab\n",
+        );
+        assert_eq!(
+            linked_image(&format!("{head}{body}")),
+            vec![0x67, 0x02, 0x4E, 0x71, 0x67, 0x02, 0x4E, 0x71]
+        );
+        // …and the caller cannot see it, which is what makes the two expansions
+        // legal rather than a double definition. asl says the same, by name:
+        // `error #1010: symbol undefined` on `.done`, with no `Base.done` in the
+        // symbol table. Here the caller-qualified name is what dangles.
+        let m = run(
+            &format!("{head}{body}	dc.w .done-Base\n"),
+            &Options::default(),
+        )
+        .expect("assemble");
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .expect("resolve_layout");
+        let err = format!(
+            "{:?}",
+            sigil_link::link(&resolved, &sigil_ir::SymbolTable::new())
+                .expect_err("a macro-body `.`-local label must not be visible to the caller")
+        );
+        assert!(
+            err.contains("Base.done"),
+            "expected `Base.done` to dangle, got {err}"
+        );
+    }
+
+    /// A body that does NOT define the name reaches the CALLER's label — this is
+    /// the half of the rule that makes a caller-scope reference from inside a
+    /// macro work at all.
+    ///
+    /// ```text
+    ///    9/    1000 : (MACRO)              	mref
+    ///    9/    1000 : 6704                        beq.s   .tgt
+    ///    9/    1002 : 4E71                        nop
+    ///   10/    1004 : 4E71                	nop
+    ///   11/    1006 :                     .tgt:
+    ///
+    ///    Base.tgt :                    1006 C |
+    /// ```
+    #[test]
+    fn a_macro_body_reaches_a_dot_local_label_only_the_caller_defines() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "mref macro\n",
+            "	beq.s .tgt\n",
+            "	nop\n",
+            "	endm\n",
+            "Base:\n",
+            "	mref\n",
+            "	nop\n",
+            ".tgt:\n",
+            "	nop\n",
+        );
+        assert_eq!(
+            linked_image(src),
+            vec![0x67, 0x04, 0x4E, 0x71, 0x4E, 0x71, 0x4E, 0x71]
+        );
+    }
+
+    /// An expansion owns a name it defines for the WHOLE expansion, so a forward
+    /// branch to it cannot fall through to a same-named label in the caller.
+    ///
+    /// The caller defines `.tgt` at 0 and the body defines its own at 6; the
+    /// branch is `6704`, six bytes forward to the body's:
+    ///
+    /// ```text
+    ///   12/       0 : (MACRO)              	mown
+    ///   12/       0 : 6704                        beq.s   .tgt
+    ///   12/       2 : 4E71                        nop
+    ///   12/       4 : 4E71                        nop
+    ///   12/       6 :                     .tgt:
+    ///   13/       6 : 0008                	dc.w	Later
+    /// ```
+    ///
+    /// asl reaches that row on a two-pass assembly. On a ONE-pass assembly of
+    /// the same construction — the identical file with the `dc.w Later` forward
+    /// reference removed — asl instead emits `67FE`, the CALLER's label, because
+    /// its lookup is order-dependent and the body's own definition had not been
+    /// reached yet. Scoping the name to the expansion for the whole expansion is
+    /// what removes that difference; see [`Asm::dot_scope`].
+    #[test]
+    fn an_expansion_owns_a_dot_local_it_defines_for_the_whole_expansion() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "mown macro\n",
+            "	beq.s .tgt\n",
+            "	nop\n",
+            "	nop\n",
+            ".tgt:\n",
+            "	endm\n",
+            "Base:\n",
+            ".tgt:\n",
+            "	mown\n",
+            "	dc.w Later\n",
+            "Later:\n",
+        );
+        assert_eq!(
+            linked_image(src),
+            vec![0x67, 0x04, 0x4E, 0x71, 0x4E, 0x71, 0x00, 0x08]
+        );
+    }
+
+    /// The backward direction of the same rule: a reference AFTER the body's own
+    /// definition binds the body's, with the caller's `.tgt` sitting two bytes
+    /// earlier.
+    ///
+    /// ```text
+    ///   13/    1002 : (MACRO)              	mback
+    ///   13/    1002 : 4E71                        nop
+    ///   13/    1004 :                     .tgt:
+    ///   13/    1004 : 4E71                        nop
+    ///   13/    1006 : 67FC                        beq.s   .tgt
+    /// ```
+    #[test]
+    fn a_backward_reference_binds_the_expansions_own_label() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "mback macro\n",
+            "	nop\n",
+            ".tgt:\n",
+            "	nop\n",
+            "	beq.s .tgt\n",
+            "	endm\n",
+            "Base:\n",
+            ".tgt:\n",
+            "	nop\n",
+            "	mback\n",
+        );
+        assert_eq!(
+            linked_image(src),
+            vec![0x4E, 0x71, 0x4E, 0x71, 0x4E, 0x71, 0x67, 0xFC]
+        );
+    }
+
+    /// The live corpus shape: a table macro seeds counters in the caller's
+    /// scope, and separate entry expansions read and reassign them.
+    ///
+    /// ```text
+    ///   14/       0 : (MACRO)              	zot	4
+    ///   14/       0 : =$0                  .tab    :=      *
+    ///   14/       0 : =$4                  .cnt    :=      4
+    ///   15/       0 : (MACRO)              	zte	$11
+    ///   15/       0 : 04                          dc.b    .cnt
+    ///   15/       1 : 11                          dc.b    $11
+    ///   15/       2 : =$5                  .cnt    :=      .cnt+1
+    ///   16/       2 : (MACRO)              	zte	$22
+    ///   16/       2 : 05                          dc.b    .cnt
+    ///   16/       3 : 22                          dc.b    $22
+    ///   16/       4 : =$6                  .cnt    :=      .cnt+1
+    ///   17/       4 : 06                  	dc.b	.cnt
+    ///   18/       5 : 06                  	dc.b	Table.cnt
+    ///   19/       6 : 0000                	dc.w	.tab
+    /// ```
+    #[test]
+    fn a_table_macros_counters_carry_across_separate_entry_expansions() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "zot macro len\n",
+            ".tab := *\n",
+            ".cnt := len\n",
+            "	endm\n",
+            "zte macro v\n",
+            "	dc.b .cnt\n",
+            "	dc.b v\n",
+            ".cnt := .cnt+1\n",
+            "	endm\n",
+            "Table:\n",
+            "	zot 4\n",
+            "	zte $11\n",
+            "	zte $22\n",
+            "	dc.b .cnt\n",
+            "	dc.b Table.cnt\n",
+            "	dc.w .tab\n",
+        );
+        assert_eq!(
+            image(src),
+            vec![0x04, 0x11, 0x05, 0x22, 0x06, 0x06, 0x00, 0x00]
+        );
+    }
+
+    /// And with `shift` driving a recursive expansion — the shape
+    /// `zoneTableEntry` is: each recursion is a NEW expansion whose caller is
+    /// the previous expansion, and the counter still lands one scope outside the
+    /// whole nest.
+    ///
+    /// ```text
+    ///   15/       0 : (MACRO)              	zte	$11,$22,$33
+    ///   15/       0 : 00                              dc.b        .cnt
+    ///   15/       1 : 11                              dc.b        $11
+    ///   15/       2 : =$1                  .cnt    :=      .cnt+1
+    ///   15/       2 :  (MACRO-2)                       zte $22,$33
+    ///   15/       2 : 01                              dc.b        .cnt
+    ///   15/       3 : 22                              dc.b        $22
+    ///   15/       4 : =$2                  .cnt    :=      .cnt+1
+    ///   15/       4 :   (MACRO-3)                      zte $33
+    ///   15/       4 : 02                              dc.b        .cnt
+    ///   15/       5 : 33                              dc.b        $33
+    ///   15/       6 : =$3                  .cnt    :=      .cnt+1
+    ///   16/       6 : 03                  	dc.b	.cnt
+    /// ```
+    #[test]
+    fn a_recursive_shift_macro_accumulates_in_the_scope_outside_the_nest() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "zte macro value\n",
+            "	if \"value\"<>\"\"\n",
+            "	dc.b .cnt\n",
+            "	dc.b value\n",
+            ".cnt := .cnt+1\n",
+            "	shift\n",
+            "	zte ALLARGS\n",
+            "	endif\n",
+            "	endm\n",
+            "Table:\n",
+            ".cnt := 0\n",
+            "	zte $11,$22,$33\n",
+            "	dc.b .cnt\n",
+        );
+        assert_eq!(
+            image(src),
+            vec![0x00, 0x11, 0x01, 0x22, 0x02, 0x33, 0x03]
+        );
+    }
+
+    /// A SURPLUS positional argument — one the parameter list could not hold —
+    /// is qualified exactly like a bound one, so a bare `.`-local passed past
+    /// the last parameter and read back through `ALLARGS` still names the
+    /// caller's symbol.
+    ///
+    /// ```text
+    ///   10/       0 : (MACRO)              	sp	1,.val
+    ///   10/       0 :                             shift
+    ///   10/       0 : 5A                          dc.b    .val
+    ///
+    ///    Base.val :                      5A - |
+    /// ```
+    #[test]
+    fn a_surplus_positional_dot_local_argument_is_qualified_like_a_bound_one() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "sp macro p1\n",
+            "	shift\n",
+            "	dc.b ALLARGS\n",
+            "	endm\n",
+            "Base:\n",
+            ".val := $5A\n",
+            "	sp 1,.val\n",
+        );
+        assert_eq!(image(src), vec![0x5A]);
     }
 }
