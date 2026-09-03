@@ -165,11 +165,19 @@ fixup-offset replay, `image_final_size`): the write cursor advances, the image
 grows only where something writes. That is both halves of p2bin at once — the gap
 fills, a trailing reservation is trimmed, a pure-reserve section places nothing —
 and it was implemented, measured, and is byte-for-byte asl+p2bin on all four
-probe shapes with all four Aeon ROMs still identical. It is on
-`parcel/as-reserve-materialise` and NOT here, because it reddens five suite
-expectations that encode the packed model, and one of them —
-`align_inside_a_phase_advances_a_full_extra_block` — cannot be rewritten without
-first settling a second, independent question:
+probe shapes with all four Aeon ROMs still identical.
+
+**LANDED — see `2026-09-03-reserve-materialises.md`.** It was parked on
+`parcel/as-reserve-materialise` behind the align question below; that question
+is settled (`cb4521d9`, shared rule in `sigil-ir/src/align.rs`) and the fix is
+rebased and merged. Seven expectations encoded the packed model, not five, and
+none of them is the `align_inside_a_phase_advances_a_full_extra_block` named
+below — the align parcel had already rewritten that test, under the name
+`align_inside_a_phase_at_a_rom_address_is_a_plain_roundup`, so what remained was
+its image expectation rather than its rule. Chasing the one mutation that stayed
+green also turned up a missed-collision hole in the overlap check, now gated.
+
+The question it was parked on, kept for the record:
 
 > **`align` inside a `phase` does NOT advance a full extra block, per asl 1.42
 > Bld 212 under `-xx -n -q -A -L -U -i .`.** Three probes, plain round-up of the
@@ -248,7 +256,7 @@ changed in the other direction.
 | `AS-MACRO-ARGCOUNT-IRP` | 272 | `s2.macros.asm:289` (`irpc`) |
 | `AS-INSN2OP-DISP-OPERAND` | 162 | `insn2op`'s `1+y` arms |
 | `AS-ENUM-DIRECTIVE` | 40 + 31 | 40 unresolved `objoff_XX` consumers at `macrosetup:224`/`:227` plus 31 at the three `enum` lines. **Renamed from `AS-ATTRIBUTE-BANG-ADDI`, which named the wrong cause.** |
-| `AS-RESERVE-IMAGE-GAP` | 0 | the p2bin gap fill. Implemented and measured on `parcel/as-reserve-materialise`; blocked on the align-in-phase question above |
+| `AS-RESERVE-IMAGE-GAP` | 0 | the p2bin gap fill. LANDED — `2026-09-03-reserve-materialises.md`. Zero is the count it will always carry: both corpora exit in the front end before `link` runs, so a diagnostic count cannot see an image rule |
 | `AS-ALIGN-IN-PHASE-ROUNDUP` | 0 | three probes say plain logical round-up, not `+n`. Flagged, not changed |
 | `AS-DS-BARE-ATTRIBUTE` | 0 | `ATTRIBUTE` unsubstituted on an unsuffixed invocation, so bare `ds` errors. Loud; no corpus or Aeon reach |
 
