@@ -71,8 +71,13 @@ Split-baseline notes (what the drift from `9bacc93` required in Sigil, not just
 a re-pin): the engine/game split moved the ROM header fields into `equ` string
 symbols read via `strlen()`/`substr()` (front-end had to resolve a STRING `equ`,
 not just `set`), and it re-expressed game RAM as a phased `align 256` block
-(front-end had to reproduce asl's in-phase ALIGN = `round_up(pos + n, n)`, a full
-extra `n`). The `m1c_root.asm` bounded fixture's include paths were retargeted to
+(front-end had to reproduce asl's ALIGN, which is not a round-up: it rounds on
+the SIGNED low 32 bits with truncating division, so a `$FFFF….` RAM address
+rounds toward zero and usually lands a block high — see
+`docs/superpowers/notes/2026-09-03-align-in-phase-contradiction.md`. The
+`round_up(pos + n, n)` this sentence used to give was a generalisation from four
+correct RAM measurements whose negative sign was dropped in transcription; it
+disagrees with asl on 20 of 31 measured rows and moved no golden byte). The `m1c_root.asm` bounded fixture's include paths were retargeted to
 `engine/` + `games/sonic4/config/`, and the two resident interrupt vectors
 (HBlank/VBlank) shifted `+0x114`.
 
