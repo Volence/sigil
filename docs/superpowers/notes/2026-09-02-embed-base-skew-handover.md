@@ -1,5 +1,32 @@
 # EMBED-BASE-SKEW — parcel brief for the engine lane
 
+> **CLOSED 2026-09-03. Both halves are landed and the corpus carries them.** Verified here
+> rather than inferred from the commits: (1) aeon's half is in the PINNED corpus —
+> `.aeon-ref-201` (aeon `4f5ad5a1`, the provenance tip's own `aeon_rev`) has
+> `engine/system/math.emp` spelling `embed("engine/data/sine.bin")` /
+> `embed("engine/data/arctan.bin")`, root-relative; (2) sigil's half is gone — both
+> `embed_base_for` closures in `crates/sigil-harness/src/native.rs` now read
+> `|_id: &str| Some(aeon_root.clone())` with no `engine.math` branch, at `fb649ae9`; (3) the
+> two `CORPUS_OPEN_FINDINGS` rows this note predicted would fire are gone from
+> `warn_tier_corpus.rs` and the suite is green on them.
+>
+> **The lane-status row saying this was BLOCKED on the corpus advancing was stale when
+> read.** The corpus advanced at chain 201 and the row did not move with it. That is this
+> lane's own board-rows-assert-from-one-observation defect, caught by checking the three
+> conditions instead of working the row — which is the whole reason the rule is to verify a
+> row's premise before spending anything on it.
+>
+> **One consumer of the old convention survived both halves and stayed red for a day:**
+> `tranche2_negative_probes.rs` still passed the module directory as `embed_base`, so the
+> two math probes died on a doubled `engine/system/engine/data/...` path. Fixed at
+> `923e3de5`. The population was then enumerated rather than assumed — eleven callers set
+> `embed_base` to something other than `None`, nine already pass the aeon root, one is a
+> self-contained tempdir fixture, and that probe was the single outlier. **The fix landing at
+> the producer is not the property holding at the consumers**, and the consuming end is
+> always the population to enumerate.
+>
+> Kept whole below because the CORRECTION section is the useful part of it.
+
 **Trigger: hand this over once the engine lane's item 3 lands** (hub, 2026-09-02; watch their
 lane-log). Written ahead so the handover is a message rather than an investigation.
 

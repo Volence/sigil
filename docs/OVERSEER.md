@@ -1073,6 +1073,37 @@ The standing sigil-native arc is the **`.emp` language work (Spec 2)** — specs
 `empyrean/docs/SIGIL_*.md`. The whole sound stack is sigil-native, the language round
 + §17 optimization arc + conversion tail are done, and the map drives the build.
 
+### PER-PARCEL-TERM-FEED-CUT — the hand-typed baseline's maintenance model lost its feed at the 199 cut
+
+*(Full measurement, the file-vs-assembled trap, and the open ruling:
+`docs/superpowers/notes/2026-09-03-per-parcel-term-feed-cut.md`. Live summary:)*
+
+`repin_pins.rs` asserts literal pins against a hand-typed baseline whose standing rule is
+**one schema-derived term per parcel**. That rule was fed by the paired freeze — each aeon
+byte-mover produced an entry and its term got measured at its own landing. **The owner cut
+the pairing at 199, and nothing announced that the feed stopped**; the baseline kept reading
+as maintained because no corpus advance happened until chain 201, which then crossed **nine**
+aeon chains at once (`8876459e..4f5ad5a1`).
+
+- **Live state:** `DEBUG_ASSEMBLED_LEN` wants `0xA7F38`, the advanced corpus resolves
+  `0xA81FC` (`+0x2C4`); plain HOLDS at `0xA5C82`. Suite is 4231 / 1 / 2 — that assert is the
+  only red. `SCENE_REGISTRY`'s band-drift term IS closed and derived (`0xD94 -> 0xEA0`).
+- **Aeon does not hold the terms** (they checked: no debug figure in any of the ten merge
+  commits for the span, lane-log carries prose deltas not a series, ledger stops at 199).
+  They are rebuilding the nine to read `EndOfRom` per chain. One-time: their merge commits now
+  carry the four sizes, the CRCs and `EndOfRom`, so 200-212 is the only span needing this.
+- **⚠ FILE SIZE IS NOT ASSEMBLED LENGTH and the gap is large.** `file = assembled + appendix`;
+  measured here, `assembled=0xa81fc + appendix=0xbf97 = 737683` exactly. Their file span is
+  `+0x924` against assembled `+0x2C4` — **0x660 of appendix**. Taking file deltas as terms
+  gives a baseline 1632 B wrong that reads as nine measured numbers. This is chain 198's
+  conflation one level out; they declined to hand them over for that reason, correctly.
+- **DO NOT RETIRE THE ASSERT TO CLEAR THE RED.** Its sibling
+  `secondary_pin_classes_match_the_hand_typed_baseline` was retired on reasoning that applies
+  to this one word for word, which makes the move look pre-blessed. Retiring a check *while it
+  is red, because it is red* is bar 9 with the causation hidden — the tell is that the
+  conclusion requires work from nobody. It earned its keep twice on 2026-09-03. It goes to a
+  ruling with numbers, read together with SIGIL-DECOUPLE step 3, whose territory this is.
+
 ### REPIN-TESTS-HINT-UNDERLISTED — a hint nothing can contradict, 190 of 412
 
 `repin.toml`'s per-symbol `tests = [...]` feeds one printed rerun hint after a pin drifts
