@@ -6128,6 +6128,22 @@ mod tests {
         sigil_link::flatten(&linked, 0x00)
     }
 
+    /// Whether the source assembles AND LINKS. An unresolved symbol survives
+    /// the front end as a deferred fixup, so it is the LINK that refuses it —
+    /// `run` alone returns `Ok` and would make an absent-symbol assertion
+    /// vacuous.
+    fn links(src: &str) -> bool {
+        let Ok(m) = run(src, &Options::default()) else {
+            return false;
+        };
+        let Ok(resolved) =
+            sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+        else {
+            return false;
+        };
+        sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).is_ok()
+    }
+
     fn image(src: &str) -> Vec<u8> {
         let m = run(src, &Options::default()).expect("assemble");
         m.sections
@@ -7524,6 +7540,258 @@ C:\n";
     }
 
     // ── T9.2: `.ATTRIBUTE` macro-suffix + `!name` escape + `while … endm` ──
+
+    // ── `{INTLABEL}` / `__LABEL__` / the `label` directive ──────────────────
+    //
+    // Ground truth for every expected value below is an `asl -L` listing (AS
+    // V1.42 Beta Bld 212), invoked with the Sonic 2 build's own flags minus the
+    // two that only redirect output: `asl -xx -n -q -A -L -U -i .`. `-U` forces
+    // case-sensitivity and every row carries it.
+
+    /// The head of a `{INTLABEL}` source, shared by the probes below so a test
+    /// body reads as the macro under test rather than as boilerplate.
+    fn intlabel_src(body: &str) -> String {
+        format!("\tcpu 68000\n\tpadding off\n\torg $1000\n{body}")
+    }
+
+    #[test]
+    fn intlabel_capture_leaves_the_label_to_the_macro_to_place() {
+        // The capture SUPPRESSES the ordinary label definition. `sup` declares
+        // the group and drops the capture, so `LabA` is defined nowhere and is
+        // absent from asl's symbol table; `nosup` is identical but for the
+        // group, and `LabB` lists as `1002 C`:
+        //
+        // ```text
+        //   10/ 1000 : (MACRO)              LabA:	sup
+        //   10/ 1000 : 4E71                        nop
+        //   11/ 1002 : (MACRO)              LabB:	nosup
+        //   11/ 1002 : 4E71                        nop
+        //   12/ 1004 : 1002                	dc.w LabB
+        // ```
+        let defs = "sup macro {INTLABEL}\n\tnop\n\tendm\nnosup macro\n\tnop\n\tendm\n";
+        let src = intlabel_src(&format!("{defs}LabA:\tsup\nLabB:\tnosup\n\tdc.w LabB\n"));
+        assert_eq!(image(&src), vec![0x4E, 0x71, 0x4E, 0x71, 0x10, 0x02]);
+        // The dropped capture is not merely unplaced — the name does not exist.
+        let bad = intlabel_src(&format!("{defs}LabA:\tsup\nLabB:\tnosup\n\tdc.w LabA\n"));
+        assert!(
+            !links(&bad),
+            "a capture the body never places must leave no symbol behind"
+        );
+        // The control: the same reference to the macro that does NOT declare the
+        // group links, so the refusal above is the capture and not the shape.
+        let ok = intlabel_src(&format!("{defs}LabA:\tsup\nLabB:\tnosup\n\tdc.w LabB\n"));
+        assert!(links(&ok));
+    }
+
+    #[test]
+    fn intlabel_consumes_no_argument_position_wherever_it_is_written() {
+        // `{INTLABEL}` declares a capture, not a slot. Three macros differing
+        // only in where the group sits bind `pp`/`qq` identically from `11,22`
+        // (`0B16` three times):
+        //
+        // ```text
+        //   13/ 1000 : (MACRO)              L1:	m 11,22
+        //   13/ 1000 : 0B16                        dc.b 11,22
+        //   14/ 1002 : (MACRO)              L2:	n 11,22
+        //   14/ 1002 : 0B16                        dc.b 11,22
+        //   15/ 1004 : (MACRO)              L3:	o 11,22
+        //   15/ 1004 : 0B16                        dc.b 11,22
+        // ```
+        let defs = "m macro {INTLABEL},pp,qq\n\tdc.b pp,qq\n\tendm\n\
+                    n macro pp,{INTLABEL},qq\n\tdc.b pp,qq\n\tendm\n\
+                    o macro pp,qq,{INTLABEL}\n\tdc.b pp,qq\n\tendm\n";
+        let src = intlabel_src(&format!("{defs}L1:\tm 11,22\nL2:\tn 11,22\nL3:\to 11,22\n"));
+        assert_eq!(image(&src), vec![11, 22, 11, 22, 11, 22]);
+    }
+
+    #[test]
+    fn label_directive_binds_any_expression_as_an_address() {
+        // `label` takes an expression, not just the PC, and tolerates the
+        // decorative colon exactly as `equ` does:
+        //
+        // ```text
+        //    4/ 1000 : =$1000               A	label *
+        //    5/ 1000 : =$2000               B	label $2000
+        //    6/ 1000 : =$1004               C:	label *+4
+        //    7/ 1000 : 4E71                	nop
+        //    8/ 1002 : =$1002               D	label *
+        //    9/ 1002 : 1000 2000 1004      	dc.w A,B,C,D
+        // ```
+        let src = intlabel_src(
+            "A\tlabel *\nB\tlabel $2000\nC:\tlabel *+4\n\tnop\nD\tlabel *\n\tdc.w A,B,C,D\n",
+        );
+        assert_eq!(
+            image(&src),
+            vec![0x4E, 0x71, 0x10, 0x00, 0x20, 0x00, 0x10, 0x04, 0x10, 0x02]
+        );
+    }
+
+    #[test]
+    fn label_star_inside_an_expansion_defines_the_callers_symbol() {
+        // The corpus's `offsetTable`, whole. `__LABEL__` substitutes to the
+        // caller's `Table`, the `:=` binds the caller's `current_offset_table`,
+        // and `label *` places `Table` where the body chose:
+        //
+        // ```text
+        //    8/ 1000 : (MACRO)              Table:	offsetTable
+        //    8/ 1000 : =$1000               current_offset_table := Table
+        //    8/ 1000 : =$1000               Table label *
+        //    9/ 1000 : 0002                	dc.w Target-Table
+        //   11/ 1002 : 4E71                	nop
+        //   12/ 1004 : 1000                	dc.w current_offset_table
+        // ```
+        let src = intlabel_src(
+            "offsetTable macro {INTLABEL}\ncurrent_offset_table := __LABEL__\n__LABEL__ label *\n\tendm\n\
+             Table:\toffsetTable\n\tdc.w Target-Table\nTarget:\n\tnop\n\tdc.w current_offset_table\n",
+        );
+        assert_eq!(image(&src), vec![0x00, 0x02, 0x4E, 0x71, 0x10, 0x00]);
+    }
+
+    #[test]
+    fn label_composes_the_name_the_capture_is_pasted_into() {
+        // The capture pastes into a surrounding name, in every position the
+        // corpus writes: as a suffix inside a string, as an interior segment of
+        // a colon label, and as a prefix of one:
+        //
+        // ```text
+        //   11/ 1000 : =$1000               Tbl label *
+        //   11/ 1000 : 7A6F 6E65 616E              dc.b "zoneanimcount_Tbl"
+        //   11/ 1011 : =$1011               Prefix_Tbl: label *
+        //   11/ 1011 : 4E71                        nop
+        //   11/ 1013 : =$1013               Tbl_End label *
+        //   12/ 1013 : 1000 1011 1013      	dc.w Tbl,Prefix_Tbl,Tbl_End
+        // ```
+        let src = intlabel_src(
+            "comp macro {INTLABEL}\n__LABEL__ label *\n\tdc.b \"zoneanimcount___LABEL__\"\n\
+             Prefix___LABEL__: label *\n\tnop\n__LABEL___End label *\n\tendm\n\
+             Tbl:\tcomp\n\tdc.w Tbl,Prefix_Tbl,Tbl_End\n",
+        );
+        let mut want = b"zoneanimcount_Tbl".to_vec();
+        want.extend_from_slice(&[0x4E, 0x71, 0x10, 0x00, 0x10, 0x11, 0x10, 0x13]);
+        assert_eq!(image(&src), want);
+    }
+
+    #[test]
+    fn an_absent_invocation_label_captures_the_empty_text() {
+        // A `{INTLABEL}` macro invoked with no label binds the EMPTY text, which
+        // is what makes the corpus's `if "__LABEL__"<>""` guard a guard. The
+        // bare `label *` on the untaken side is neither an error nor a
+        // definition — asl lists it and moves on:
+        //
+        // ```text
+        //   10/ 1000 : 5B46 6F6F 5D                dc.b "[Foo]"
+        //   10/ 1005 : =>TRUE                       if "Foo"<>""
+        //   10/ 1005 : =$1005               Foo label *
+        //   11/ 1005 : 5B5D                        dc.b "[]"
+        //   11/ 1007 : =>FALSE                      if ""<>""
+        //   11/ 1007 :                      label *
+        //   12/ 1007 : 1005                	dc.w Foo
+        // ```
+        let src = intlabel_src(
+            "m macro {INTLABEL}\n\tdc.b \"[__LABEL__]\"\n\tif \"__LABEL__\"<>\"\"\n\
+             __LABEL__ label *\n\tendif\n\tendm\n\
+             Foo:\tm\n\tm\n\tdc.w Foo\n",
+        );
+        let mut want = b"[Foo][]".to_vec();
+        want.extend_from_slice(&[0x10, 0x05]);
+        assert_eq!(image(&src), want);
+    }
+
+    /// The nine-position boundary matrix, run once per candidate kind. An
+    /// ALPHANUMERIC abutting an edge that could continue an identifier blocks
+    /// the substitution; `_` is an identifier character but not alphanumeric, so
+    /// it never blocks. `ALLARGS` answers the same way as a parameter.
+    ///
+    /// ```text
+    ///   10/ 1000 : dc.b "1[_Zz] 2[1pp] 3[Xpp] 4[.Zz] 5[ppX] 6[pp1] 7[Zz_] 8[(Zz)] 9[__Zz__] A[Foo_Zz_Bar] B[xALLARGSx] C[_Zz_]"
+    /// ```
+    #[test]
+    fn an_alphanumeric_blocks_a_substitution_and_an_underscore_does_not() {
+        let src = intlabel_src(
+            "pm macro pp\n\tdc.b \"1[_pp] 2[1pp] 3[Xpp] 4[.pp] 5[ppX] 6[pp1] 7[pp_] 8[(pp)] \
+             9[__pp__] A[Foo_pp_Bar] B[xALLARGSx] C[_ALLARGS_]\"\n\tendm\n\tpm Zz\n",
+        );
+        assert_eq!(
+            String::from_utf8(image(&src)).unwrap(),
+            "1[_Zz] 2[1pp] 3[Xpp] 4[.Zz] 5[ppX] 6[pp1] 7[Zz_] 8[(Zz)] 9[__Zz__] \
+             A[Foo_Zz_Bar] B[xALLARGSx] C[_Zz_]"
+        );
+    }
+
+    /// The same matrix for the capture, which answers identically — position by
+    /// position — even though its own name begins and ends with `_`.
+    ///
+    /// ```text
+    ///   11/ 1065 : dc.b "1[_Qq] 2[1__LABEL__] 3[X__LABEL__] 4[.Qq] 5[__LABEL__X] 6[__LABEL__1] 7[Qq_] 8[(Qq)] A[Foo_Qq_Bar]"
+    /// ```
+    #[test]
+    fn the_captured_label_obeys_the_same_boundary_rule_as_a_parameter() {
+        let src = intlabel_src(
+            "lm macro {INTLABEL}\n\tdc.b \"1[___LABEL__] 2[1__LABEL__] 3[X__LABEL__] 4[.__LABEL__] \
+             5[__LABEL__X] 6[__LABEL__1] 7[__LABEL___] 8[(__LABEL__)] A[Foo___LABEL___Bar]\"\n\tendm\n\
+             Qq:\tlm\n",
+        );
+        assert_eq!(
+            String::from_utf8(image(&src)).unwrap(),
+            "1[_Qq] 2[1__LABEL__] 3[X__LABEL__] 4[.Qq] 5[__LABEL__X] 6[__LABEL__1] 7[Qq_] \
+             8[(Qq)] A[Foo_Qq_Bar]"
+        );
+    }
+
+    #[test]
+    fn a_label_opened_scope_outlives_the_expansion_that_opened_it() {
+        // `outer` passes its capture on to `inner`, which places it. The scope
+        // that `label` opens is the CALLER's, it survives two expansion returns,
+        // and `.cnt := 7` written in `outer`'s body after the nested call lands
+        // in it — read back at top level as `Tbl.cnt`. A colon-less invocation
+        // label is captured, and so is a dotted one, with its dot:
+        //
+        // ```text
+        //   16/ 1000 : (MACRO)              Tbl	outer 3
+        //   16/ 1000 :  (MACRO-2)           Tbl inner 3
+        //   16/ 1000 : =$1000               Tbl label *
+        //   16/ 1000 : 03                          dc.b 3
+        //   16/ 1001 : =$7                  .cnt := 7
+        //   17/ 1001 : 1000                	dc.w Tbl
+        //   18/ 1003 : 07                  	dc.b Tbl.cnt
+        //   19/ 1004 : (MACRO)              .loc	dot
+        //   19/ 1004 : 4E71                        nop
+        //   19/ 1006 : =$1006               .loc label *
+        //   20/ 1006 : 1006                	dc.w .loc
+        // ```
+        let src = intlabel_src(
+            "inner macro aa,{INTLABEL}\n__LABEL__ label *\n\tdc.b aa\n\tendm\n\
+             outer macro aa,{INTLABEL}\n__LABEL__ inner aa\n.cnt := 7\n\tendm\n\
+             dot macro {INTLABEL}\n\tnop\n__LABEL__ label *\n\tendm\n\
+             Tbl\touter 3\n\tdc.w Tbl\n\tdc.b Tbl.cnt\n.loc\tdot\n\tdc.w .loc\n",
+        );
+        assert_eq!(
+            image(&src),
+            vec![0x03, 0x10, 0x00, 0x07, 0x4E, 0x71, 0x10, 0x06]
+        );
+    }
+
+    #[test]
+    fn the_capture_declaration_and_its_reference_both_fold_case() {
+        // `{intlabel}` declares the capture and `__label__` reads it, under `-U`
+        // — they are AS keywords, and a keyword folds where a parameter name
+        // does not. A macro that does NOT declare the group leaves `__LABEL__`
+        // as the nine ordinary characters it is written with:
+        //
+        // ```text
+        //   10/ 1000 : 3C41 613E 3C41              dc.b "<Aa><Aa>"
+        //   11/ 1008 : 3C5F 5F4C 4142              dc.b "<__LABEL__>"
+        // ```
+        let src = intlabel_src(
+            "lo macro {intlabel}\n\tdc.b \"<__LABEL__><__label__>\"\n\tendm\n\
+             nd macro pp\n\tdc.b \"<__LABEL__>\"\n\tendm\n\
+             Aa:\tlo\n\tnd 1\n",
+        );
+        assert_eq!(
+            String::from_utf8(image(&src)).unwrap(),
+            "<Aa><Aa><__LABEL__>"
+        );
+    }
 
     #[test]
     fn split_attribute_suffix_strips_known_suffixes_only() {
