@@ -5832,3 +5832,281 @@ name is derivable from first principles and cannot be wrong about what AS would 
 where a guess can. The alternative — obtaining and pinning AS as a build-time dependency of the
 project whose premise is replacing it — is a real cost and a decision rather than a task; it
 goes to the owner with both measurements beside it.
+
+
+## 2026-09-03 — BOOT-READ CUT: five closed sections moved here verbatim
+
+The boot read passed its 100,000 B bound. Per the owner's 2026-09-02T18:20:19Z ruling,
+clause 2 — *"over the bound, move history out in one cut and carry on"* — history moves and
+no rule is shaved. Each section below is **verbatim**, under its original line span in
+`docs/OVERSEER.md`. The rules they carried remain in the head, compacted, each pointing here.
+
+### [cut] original lines 86-123 — d-18 answered, and the suite-paths resolver contract
+
+### d-18 IS ANSWERED — REFUSE BARE, OPT IN TO PARTIAL — AND THE SUITE-PATHS CONTRACT NOW NAMES THE RESOLVER (2026-09-02)
+
+**Where the authority is, because this ruling did not come from the owner's mouth to this lane.** On
+2026-09-02T03:46:15Z the owner widened the hub's standing delegation to the open decision cards, in his
+own words to the hub session (*"Feel free to make some decisions in the direction yyou generally know I want
+to go for this project. If you cvan't tell refer them to me but you're an expert as well. Best of best no
+shortcuts right?"*). The hub took nine rulings under it and banked them with those words at empyrean
+`4e8e865b7c6e821cc23cb3683776aa71243cac0b`, `docs/OVERSEER.md`. **Verified here before anything was
+written: the SHA is reachable from `origin/main`, `git log -S 'Best of best no shortcuts'` returns exactly
+that commit, and the entry quotes him.** That is what makes this a delegated decision rather than a relayed
+one; a relay would still be waiting on him. He reviews the list, and any ruling is one word to reverse —
+so the closure below is append-only and reversible by one more append.
+
+**R4, d-18: `refuse`.** Against this card's own recommendation (`say_only`), and the hub's reason is
+better than mine was: a run that prints how much it skipped **still exits 0**, and the booked rule is
+that a silent green is the class never dropped, because a green is trusted the moment it is in the run.
+Shape ruled: a bare run without the reference tree **stops** with an error naming the variable consulted
+and the path tried; an explicit opt-in of this lane's naming (`SIGIL_ALLOW_PARTIAL=1` or equivalent) runs
+the partial suite and prints the derived not-measured count plus the disclaimer. The card's five-lanes-told
+cost is the hub's and was paid in its 03:46Z messages. Closed in `docs/decisions.jsonl` under rule 8d
+(`answered.by: hub`, `chose: refuse`, the empyrean SHA in `detail`); blocker dropped from `lane-status.json`
+per rule 9. **Not a byte-mover. Sequenced after the chain-196 handover**, paired with
+LANDING-RUN-DEFEATS-THE-NEW-GUARD, because both change what a runner does when nobody named the tree.
+Board row: `D18-REFUSE-BARE-RUN`.
+
+**R7: `contract/SUITE_PATHS.md` (same commit) is the resolver contract.** `AEON_DIR` ratified as the
+checkout spelling (already ours); `EMPYREAN_SUITE_ROOT` is the suite-root name; precedence explicit var >
+suite-root var > derived via `git rev-parse --git-common-dir` (never `--show-toplevel`, which lies from a
+worktree) > **refuse by name**; a variable that is set but wrong is a hard error, not a null that lets the
+next step run. This lane's migration items, load-bearing first and at our own pace, none on the effects
+critical path: `test_support.rs` `LIVE_TREE_FALLBACK`; the 99 `sigil-cli/tests` private copies routed
+through `aeon_dir()`; the three nightly scripts and `drift-nightly.conf` (the only sites a timer runs with
+no override — `sigil-source-gates.timer` is active); then `landing-run.sh` / `capture_goldens.sh` /
+`derive_offcanonical_sizes.sh` one line each (the latter two live in aeon-coordinated `golden/`); then the
+eighteen A/B scripts that `sys.path.insert` empyrean's `clients/python`, resolving `EMPYREAN_DIR` by the
+same rule. Board row: `SUITE-PATHS-MIGRATION`. The d-18 refusal IS step 4 of this precedence, so the two
+rows share a resolver and land in that order: resolver first, refusal on top of it.
+
+### [cut] original lines 124-151 — The test that turned the hold into a start
+
+### THE TEST THAT TURNED THE HOLD INTO A START — "is there an owner decision under this, AND IS IT THIS QUESTION" (2026-09-02)
+
+**THE TEST, and it is the durable part: not "did the hub speak" but "is there an owner decision under
+this, and is it THIS question."** Two clauses, and the second is the one that does the work. The first is
+usually easy and usually satisfied. The second is where a general authorization gets silently stretched
+over a parcel it never contemplated.
+
+**The hub named the gap itself, which is why the exchange was cheap:** *he authorised the project lanes,
+sigil named, continuously through EFFECTS-W1; he did not name this parcel.* Exactly right. **So the thing
+to verify was the JOIN, not the endpoints** — and it was verified firsthand, not taken: aeon's probe doc
+`efb4b923` is **titled** "Item 5 comptime probe", item 5 is an EFFECTS-W1 item, therefore the always-red
+comparison sits on the project's path rather than in this lane's own backlog. **Which parcel inside an
+authorised project is the director's call, and that is the part the delegation genuinely covers.**
+
+**Why the hold was right even though it ended in a start, stated so a successor does not read it as
+friction that wasted an hour.** The two messages are not the same claim wearing different confidence. The
+first offered the hub's own go; the second offered the owner's words, their location, and the search
+command to find them. **A relay of his ruling is his ruling; a ruling made in his place is the hub's** —
+legitimate for decision cards, and not his word on whether a lane runs. The distinction cost one exchange
+and produced a better artifact than compliance would have: the hub has since said it will state every
+push as *the owner artifact, the link to this question, and the gap* rather than the conclusion alone.
+
+**The failure mode this prevents is a TIME-DELAYED one, which is why a rule is needed and vigilance is
+not.** Nothing goes wrong at the moment a relayed go is accepted; everyone acts in good faith and the
+work is real. It goes wrong later, when the row is prose and *"the hub said go"* and *"he said go"* are
+indistinguishable to a session reading it cold. **That is why the banked ruling carries its own
+disclaimer in its text** rather than relying on anyone remembering the provenance.
+
+### [cut] original lines 466-488 — Dispatch practice — a stated mechanism is more dangerous than a stated fact
+
+## Dispatch practice — a stated MECHANISM is more dangerous than a stated FACT
+
+*(2026-08-22; the oracle lane's formulation, from an episode this lane caused.)* A brief's
+factual claims compete with the agent's evidence and lose when wrong. A brief's
+**explanations do not compete — they absorb.** An agent that measures something
+inconsistent with its controller's stated mechanism will tend to reconcile the measurement
+to the story rather than report the conflict, and **an agent has almost none of the standing
+a peer overseer has to push back.** So label mechanisms in a brief as hypotheses, and say
+outright that the agent's own command output outranks anything the brief asserts.
+
+**The cheap mechanism, with this lane's measured hit rate.** Every dispatch's deliverable
+section ends with a required line: *"and anything in this brief you concluded was wrong."*
+On 2026-08-22 that produced a correction in **3 of 3** dispatches.
+
+Pair it with an explicit invitation where the brief carries a design position — the
+field-align brief said a contradicting delivery is worth more than a complying one, and got
+the sharpest pushback of the three.
+
+**Honest limits, so this is not read as a solved problem:** n=3, one day, one lane, and all
+three briefs were checkable against a tree, which is the easy case. A self-report line
+cannot surface what the agent never thought to question — it catches conflicts the agent
+noticed and would otherwise have swallowed, which is a real but bounded win.
+
+### [cut] original lines 1038-1086 — `AEON_DIR` in every brief — unconditional, exclusive, prepared
+
+### `AEON_DIR` IN EVERY BRIEF: UNCONDITIONAL, **EXCLUSIVE**, AND **PREPARED** — three claims (2026-08-27, widened 2026-08-29)
+
+`test_support.rs::aeon_dir` defaults to `/home/volence/sonic_hacks/aeon`, which is the
+owner's live checkout. **So any suite run that does not set `AEON_DIR` reaches the tree he
+is authoring in**, and `sigil build --aeon <tree>` **emits its ROM and listing INTO that
+tree** — not merely reading it.
+
+**Writing the tree into a brief as conditional — *"a stable aeon tree, if needed"* — is the
+whole defect, and it reads as helpful flexibility.** A default that
+points at a person's working directory is one that must be overridden *every* time, and
+every-time is what briefs are bad at. **Set it in the template, not per parcel.**
+
+**WIDENED 2026-08-29, after this rule was followed and still produced a collision.** Setting
+`AEON_DIR` unconditionally is necessary and is not sufficient. Both of that night's briefs set
+it — and both set it to **the same tree**, which was **bare**. Two further claims were being
+relied on and neither was stated:
+
+- **EXCLUSIVE.** `build.sh` writes into the tree and rebuilds `rm`-first, so two agents sharing
+  one `AEON_DIR` transiently delete each other's reference ROMs. It surfaced as one failure in
+  an otherwise clean 4090-test run (`SIGIL_STRICT_GATE set but reference missing: …/demo.bin`),
+  green on a re-run seconds later. **The gate was right both times; the tree moved under it.**
+- **PREPARED.** A fresh `git worktree add --detach` of aeon is **source with no reference
+  ROMs** — measured: 213 failures on first contact, every one `reference missing`, and
+  `engine/debug/generated/` absent so `demo debug` could not even resolve. So a bare tree is
+  not a reference tree; it is a **build job**, and the agent has no choice but to write into
+  the thing the brief calls a reference. **The collision was designed in at dispatch, not
+  stumbled into at run time**, and a mid-run instruction of mine not to rebuild the tree was
+  already unfollowable when it arrived.
+
+**The template line, therefore:** prepare one tree per agent yourself (detached at the
+provenance `aeon_rev`, all four shapes built), then say in the brief **which** it is —
+prepared-and-exclusive, or bare-and-yours-to-build. The agent cannot tell by looking.
+
+**And the reading lesson, which outlives the fix:** *a path is not a state.* `AEON_DIR` names
+a location; every claim that matters is about the **condition** of what is there. This is the
+bound-vs-procedure rule one level up — the brief stated a *value to set* where what it needed
+was a *property to hold*.
+
+**Watch the perturbation direction, too.** A shared tree can manufacture a false **green** as
+easily as a false red — a gate that should have refused finding a stale ROM another agent
+built. Red is this hazard's visible face and green is its invisible one, so *"it passed on a
+re-run"* closes the instance and says nothing about the class. Make agents state which
+artifacts a measurement depended on, not merely whether it repeats.
+
+The same agent's own numbers are the argument: its runs before the correction showed **54
+phantom failures**, its runs after showed a clean set. This document already carried the
+phantom-failure warning; it was not in the artifact that had to carry it. **Knowing a rule
+and encoding it in the instruction that carries it are separate acts.**
+
+### [cut] original lines 1205-1256 — PER-PARCEL-TERM-FEED-CUT — the hand-typed baseline and the 199 feed cut
+
+### PER-PARCEL-TERM-FEED-CUT — the hand-typed baseline's maintenance model lost its feed at the 199 cut
+
+*(Full measurement, the file-vs-assembled trap, and the open ruling:
+`docs/superpowers/notes/2026-09-03-per-parcel-term-feed-cut.md`. Live summary:)*
+
+`repin_pins.rs` asserts literal pins against a hand-typed baseline whose standing rule is
+**one schema-derived term per parcel**. That rule was fed by the paired freeze — each aeon
+byte-mover produced an entry and its term got measured at its own landing. **The owner cut
+the pairing at 199, and nothing announced that the feed stopped**; the baseline kept reading
+as maintained because no corpus advance happened until chain 201, which then crossed **nine**
+aeon chains at once (`8876459e..4f5ad5a1`).
+
+- **THE RED IS CLOSED, AND THIS BULLET SAID IT WAS LIVE FOR THE NEXT SESSION'S WHOLE BOOT.**
+  `ea95bc18` advanced `DEBUG_ASSEMBLED_LEN` `0xA7F38 -> 0xA81FC` and it is the LAST COMMIT OF
+  THE SESSION THAT WROTE THIS BULLET — the fix and the stale description of it are minutes
+  apart. Plain holds at `0xA5C82`; `SCENE_REGISTRY`'s band-drift term is closed and derived
+  (`0xD94 -> 0xEA0`). **The advance was derived, not baked**, which is the only reason it
+  counts: thirteen canonical DEBUG points rebuilt across `8876459e..4f5ad5a1`, two non-zero
+  terms (`+0x1E0` chain 202, `+0xE4` chain 206) and ten measured HOLDs, with both self-checks
+  — endpoints reproduce, `0x1E0 + 0xE4 = 0x2C4` — stated BEFORE the series arrived. Compare
+  the re-baseline rule in the standing section: a green whose expectation the subject
+  generated proves reproducibility, never correctness. This one has an account that does not
+  pass through the subject.
+- **⚠ HOW THIS ROW ROTTED, because the mechanism matters more than the correction.** A stale
+  suite figure here (`4231 / 1 / 2 — that assert is the only red`) was read at boot on
+  2026-09-03, believed, and **written into a dispatch brief as a fact about the tree**, telling
+  an agent a pre-existing red existed. It did not. The agent measured `0 failed` and said so;
+  had it instead reconciled its own count to the phantom baseline the brief asserted, a real
+  regression of one test would have looked exactly like the expected state. **A brief's
+  explanations absorb rather than compete** — that hazard is already booked in the dispatch
+  section, and this is it arriving through the controller's own documentation rather than
+  through a mechanism paragraph. The general form is the memory rule *own repo state asserted
+  from memory*: every verification rule in this file points outward, at peers and at agents,
+  and this lane's own committed state is the one claim that gets asserted as context instead
+  of checked as a claim. **A "live state" bullet is a snapshot wearing the grammar of a
+  standing fact.** Derive the suite figure at the time you need it; never quote one from here.
+- **Aeon does not hold the terms** (they checked: no debug figure in any of the ten merge
+  commits for the span, lane-log carries prose deltas not a series, ledger stops at 199).
+  They are rebuilding the nine to read `EndOfRom` per chain. One-time: their merge commits now
+  carry the four sizes, the CRCs and `EndOfRom`, so 200-212 is the only span needing this.
+- **⚠ FILE SIZE IS NOT ASSEMBLED LENGTH and the gap is large.** `file = assembled + appendix`;
+  measured here, `assembled=0xa81fc + appendix=0xbf97 = 737683` exactly. Their file span is
+  `+0x924` against assembled `+0x2C4` — **0x660 of appendix**. Taking file deltas as terms
+  gives a baseline 1632 B wrong that reads as nine measured numbers. This is chain 198's
+  conflation one level out; they declined to hand them over for that reason, correctly.
+- **DO NOT RETIRE THE ASSERT TO CLEAR THE RED.** Its sibling
+  `secondary_pin_classes_match_the_hand_typed_baseline` was retired on reasoning that applies
+  to this one word for word, which makes the move look pre-blessed. Retiring a check *while it
+  is red, because it is red* is bar 9 with the causation hidden — the tell is that the
+  conclusion requires work from nobody. It earned its keep twice on 2026-09-03. It goes to a
+  ruling with numbers, read together with SIGIL-DECOUPLE step 3, whose territory this is.
+
+### [cut] original lines 886-935 — The relink episode — the variable is the target dir, not the verb
+
+- **⚠ ANY cargo command that lands in this checkout RELINKS `target/release/sigil`, which
+  is the assembler another lane's freeze may be mid-ritual with** *(2026-09-02, found by the
+  aeon lane at chain 198; caused here)*.
+  **WIDENED THE SAME DAY, AND THE FIRST WORDING WOULD HAVE MISSED THE WORST CASE.** This
+  bullet said *"ad-hoc"*, which reads as a rule about careless one-off commands. It is not:
+  aeon's `tools/freeze_preflight.sh` — a COMMITTED TOOL in a sibling repo, documented as the
+  mandatory ritual before `refreeze --freeze` — derives its sigil tree from its own location
+  (`SIGIL="${SIGIL_DIR:-$(dirname "$(dirname "$HERE")")/sigil}"`, verified here at aeon
+  `origin/master`), `cd`s into **this shared checkout**, and runs `cargo test --release -p
+  sigil-harness` and `-p sigil-cli` with no `CARGO_TARGET_DIR`. It relinks on every
+  invocation, by design, and **somebody obeying the "ad-hoc" wording perfectly still relinks,
+  because they are not running an ad-hoc command.** A rule scoped to the careless case does
+  not bind the ritual, and the ritual is the thing that runs on a schedule.
+  **AND THE RELINK DESTROYS EVIDENCE, NOT JUST STATE: a freeze's assembler can cease to
+  exist.** `target/release/sigil` is a single path, so a relink OVERWRITES IN PLACE — the
+  binary that produced a frozen entry's goldens is simply gone, and the entry then names an
+  assembler nobody can re-instantiate by inspection. Instance: chain 198's goldens were built
+  by sigil `079cec97` (md5 `956da96a78171ff99aa6fef229d59812`, the aeon lane's measurement),
+  overwritten the same afternoon; recoverable only by rebuilding at that revision. **A
+  provenance record can therefore go un-reproducible without anything editing it**, which is
+  the one failure mode a frozen artifact is supposed to be immune to. The class belongs here
+  rather than in the ledger, because a ledger reader meets it one entry too late.
+  **Its second half is worse than the relink and is the reason to read this bullet twice: a
+  tool that resolves the tree from ITS OWN LOCATION tests whatever is at that path, not the
+  thing it was invoked about.** That pre-flight has never tested the tree it gates —
+  measured, not inferred: the new cross-seam symbol appears 0 times in this checkout's
+  `pins.rs` and once in the landing tree, so every red it produced was a true report about
+  the wrong subject. **"The gate was skipped" and "the gate ran and could not see the
+  subject" produce identical evidence**, and the first is the story everyone reaches for. Measured: `target/release/sigil` went
+  `956da96a…`/`079cec97` → `4ca83f71…`/`dd5eaad2` at 12:28:24 local, **inside** a freeze
+  window, and the binary that produced entry 198's goldens no longer exists — it was
+  overwritten in place and is recoverable only by rebuilding at its revision.
+  **THE VARIABLE IS THE TARGET DIR, NOT THE VERB, AND THAT IS WHY THE FIRST TWO FIXES
+  MISSED.** `sigil_tool.sh` stops `provision-aeon-ref.sh` reading or writing the shared
+  binary, and `landing-run.sh` sets its own `CARGO_TARGET_DIR` — so **the two commands
+  anyone thinks to guard are the only two that were never the problem.** The aeon lane
+  first attributed this to `cargo test --release --workspace`; the landing run is
+  precisely the invocation that CANNOT do it. What does it is the casual one:
+  `cargo test -p sigil-cli --test <x>`, `cargo run --bin repin`, `cargo build --bin
+  emit_sound_blob`. Testing a package builds that package's bins, so a targeted test of
+  `sigil-cli` relinks `sigil`.
+  **So: while any lane holds a freeze, pass `CARGO_TARGET_DIR` on every cargo command in
+  this checkout, not only on the scripted ones** — and note the relink is invisible from
+  here, since nothing in the output mentions the shared file. Only the far lane's md5 pin
+  catches it. A guard keyed to a command name will keep missing this; the honest fix is a
+  non-default target dir by default in this tree.
+  **The saving grace was an accident and should not be read as safety:** the relink is
+  what made the paired re-freeze's byte control non-vacuous. Both lanes were one step from
+  reasoning that a rebuild was pointless "because the binary cannot have changed" — a
+  SOURCE argument about an ARTIFACT, which is the exact thing an md5 pin exists to refuse.
+
+### [cut] original lines 936-949 — A landing run against the owner's live aeon tree produces phantom failures
+
+- **A LANDING RUN AGAINST THE OWNER'S LIVE AEON TREE PRODUCES PHANTOM FAILURES, and this
+  overseer proved it the expensive way (2026-08-24).** The rule below is not advice. A
+  full-suite landing run pointed at `/home/volence/sonic_hacks/aeon` returned **six**
+  failures where the parcel's own agent had reported five; the extra was
+  `soundbankhead_matches_reference`, and the parcel had touched `seam1.rs` — the sound
+  seam — so the coincidence looked damning. It reproduced twice, including with the test
+  binary run alone. A control at unmodified master showed it passing, which read as
+  attribution. **It was transient**: four consecutive re-runs on the merged tree passed,
+  single-threaded included, and a clean re-run of the whole suite returned the agent's
+  5 exactly. Nothing was wrong with the parcel; the tree had artifacts in flux underneath
+  a run that takes minutes. **The cost was an hour and a nearly-shipped wrong attribution
+  against an agent that had done nothing wrong.** Steady-state disagreement between two
+  runs over the same tree is the tell — re-run before attributing, and prefer a clean
+  worktree of a committed SHA, which is what the next rule already said.
