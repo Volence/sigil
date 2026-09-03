@@ -477,6 +477,61 @@ evidence step 4 is supposed to weigh does not survive this machine.
 *Closing action:* not a fixture — install the timer and prove one observation lands, **before**
 the vendoring half, not after.
 
+#### H-3 UPDATE 2026-09-03 — the closing action is satisfied IN THE LETTER, and the hole is worse
+
+**The timer is now installed and enabled, and observations do land.** Both halves of the
+measurement above have flipped, and neither flip discharges the hole:
+
+```
+$ systemctl --user list-unit-files | grep sigil-ref-drift
+sigil-ref-drift.service   static
+sigil-ref-drift.timer     enabled   enabled
+$ systemctl --user list-timers sigil-ref-drift.timer
+NEXT  Thu 2026-09-03 07:17:00 EDT   LEFT 6h   LAST PASSED (blank)
+$ wc -l ~/.local/state/sigil-ref-drift/observations.jsonl
+3
+```
+
+So *"the observer has never observed anything in its entire lifetime"* is **no longer true** —
+and note **why the original read it that way**: it grepped `nightly.log`, and
+`observations.jsonl` **did not exist yet**. The ledger the row said was absent is now present.
+The timer has still **never fired** (`LAST PASSED` blank); all three entries are hand runs from
+2026-09-02.
+
+**And here is the part that makes the letter/spirit gap matter.** Of the three: one is `NOTHING
+MEASURED` (no reader configured), and **the other two return `unattributable-both-moved` on all
+four shapes.** Not one observation carries a verdict step 4 could weigh, and none ever will
+under present conditions:
+
+- `drift_report.py` defines six per-shape verdicts. The one step 4 needs is
+  **`quiet-sigil-moved`** — *aeon rev known, assembler moved, bytes held.* It is reachable
+  **only** when the aeon revision is IN the expectation record.
+- The job **cannot put it there.** Its reader's own header: it *"holds NO expectation of its own
+  and is built so it cannot acquire one"*. Expectations enter solely through
+  `aeon/tools/drift_record.jsonl`, whose update aeon's `docs/DRIFT_RECORD.md:153` spells as a
+  **manual** append-and-commit.
+- **That record holds 2 entries** (aeon `ec6a4791`, `d27ceba6`), both far behind aeon's tip, and
+  this lane's own lane-log recorded *"still two lines"* on 2026-09-02 — still two lines today.
+
+**So the closing action needs restating, because "prove one observation lands" is now a test
+this hole PASSES while being unfixed.** The correct bar is: **prove one observation lands
+carrying `quiet-sigil-moved`** — i.e. against an aeon revision the record actually holds. That
+demands a fed record, which is aeon's act and is now asked for in writing (2026-09-03, priority
+stated below their effects work).
+
+**Why the original bar was passable-while-broken is itself the finding**, and it generalises
+past this row: *"prove the mechanism runs"* and *"prove the mechanism can produce the answer it
+exists for"* are different bars, and the first is the one that gets written because it is the
+one that is easy to check. A run that executes, exits clean, appends a row, and is structurally
+incapable of ever concluding anything is indistinguishable — in a log, in a timer listing, in a
+row count — from one that works. See
+`docs/superpowers/notes/2026-09-03-per-parcel-term-feed-cut.md` for the class this belongs to:
+the drift record is one of three artifacts that stopped being fed when the freeze pairing was
+cut at chain 199, and none of the three could say so.
+
+**Machine-locality is UNCHANGED and still a hole.** `observations.jsonl` still lives under
+`$XDG_STATE_HOME`, so the evidence step 4 weighs still does not survive this machine.
+
 ### H-4 — **the pinned corpus is not hermetic, and part of it is SIGIL'S OWN OUTPUT.** ← not predicted
 `provision-aeon-ref.sh` documents what a bare aeon worktree lacks (`:4-8`: *"WITHOUT THEM THE
 SUITE REPORTS ~200 FAILURES THAT READ EXACTLY LIKE GOLDEN DIVERGENCE"*). Three ingredients, and
