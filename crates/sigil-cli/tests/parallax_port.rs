@@ -57,6 +57,49 @@ fn level_dir() -> PathBuf {
     aeon_dir().join("engine/level")
 }
 
+/// The reference build's listing for a shape — the `.bin`'s own sibling from the
+/// same build, so a symbol's address read here and the operand encoded in the
+/// reference ROM window cannot disagree.
+fn listing_path(debug: bool) -> PathBuf {
+    aeon_dir().join(if debug { "s4.debug.lst" } else { "s4.lst" })
+}
+
+/// One `Parallax_*` RAM symbol's VMA in both shapes, read out of the reference
+/// listings.
+///
+/// **These addresses are not written down in this file, and the block's layout is
+/// why.** `engine/ram.emp` sizes the parallax state block from capability
+/// constants — `MAX_PARALLAX_BANDS` and the four `BAND_*` tails — so a capability
+/// flip resizes three arrays at once and moves every symbol below them. A
+/// transcribed offset is wrong from that moment, and nothing in a transcription
+/// says so: it links, it resolves, and it encodes a wrong `abs.w` operand into a
+/// byte gate. The listing is regenerated with the reference tree, so it cannot
+/// carry yesterday's layout.
+///
+/// This does **not** make [`assert_drift_guards`] vacuous by the back door, and
+/// the distinction matters. Those guards are `parallax.emp`'s own `ensure`s; with
+/// the addresses derived from the same build the guards describe, they pass by
+/// construction and are a PRECONDITION here, not evidence — aeon's build is where
+/// they do their work. This scope's oracle is the region byte diff against the
+/// reference ROM, and that is what checks the derivation: an address derived
+/// wrongly changes the operand bytes and fails the diff.
+///
+/// A missing listing REFUSES by name rather than falling back to a guess.
+fn ram_block_vma(name: &'static str) -> (&'static str, u32, u32) {
+    let read = |debug: bool| {
+        let path = listing_path(debug);
+        sigil_harness::test_support::listing_symbol_addr(&path, name).unwrap_or_else(|| {
+            panic!(
+                "no listing at {} — this gate derives every `Parallax_*` RAM address from \
+                 the listing beside the reference ROM, so a source-only checkout cannot \
+                 serve it. Point AEON_DIR at a tree with all four shapes built.",
+                path.display()
+            )
+        })
+    };
+    (name, read(false), read(true))
+}
+
 #[track_caller]
 fn strict_gate() -> bool {
     sigil_harness::test_support::strict_gate()
@@ -185,62 +228,39 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
             pins::EFFECTS_INSTALL_PRESET.plain,
             pins::EFFECTS_INSTALL_PRESET.debug,
         ),
-        // Pin-sourced base + ram.emp-mirror intra-block offsets (input-6button:
-        // the third hand-shift of this table killed the literal class — the t24
-        // rot rule; the offsets are the block layout this test pins down anyway).
-        ("Parallax_State", pins::PARALLAX_STATE.plain, pins::PARALLAX_STATE.debug),
-        ("Parallax_State_End", pins::PARALLAX_STATE.plain + 0x228, pins::PARALLAX_STATE.debug + 0x228), // band-ceiling-16: 0x148 + 0xE0 (see the Curve_Carry rows)
-        ("Parallax_Current_Config", pins::PARALLAX_STATE.plain + 0x48, pins::PARALLAX_STATE.debug + 0x48),
-        ("Parallax_Target_Config", pins::PARALLAX_STATE.plain + 0x4C, pins::PARALLAX_STATE.debug + 0x4C),
-        ("Parallax_Transition_Frames", pins::PARALLAX_STATE.plain + 0x50, pins::PARALLAX_STATE.debug + 0x50),
-        ("Parallax_Snap_Pending", pins::PARALLAX_STATE.plain + 0x51, pins::PARALLAX_STATE.debug + 0x51),
-        ("Parallax_Prev_Sec_X", pins::PARALLAX_STATE.plain + 0x52, pins::PARALLAX_STATE.debug + 0x52),
-        ("Parallax_Prev_Sec_Y", pins::PARALLAX_STATE.plain + 0x53, pins::PARALLAX_STATE.debug + 0x53),
-        ("Parallax_Current_Scroll_A", pins::PARALLAX_STATE.plain + 0x06, pins::PARALLAX_STATE.debug + 0x06),
-        ("Parallax_Current_Scroll_B", pins::PARALLAX_STATE.plain + 0x26, pins::PARALLAX_STATE.debug + 0x26),
-        ("Parallax_Current_Vscroll_BG", pins::PARALLAX_STATE.plain + 0x46, pins::PARALLAX_STATE.debug + 0x46),
-        ("Parallax_Deform_Phase_FG", pins::PARALLAX_STATE.plain, pins::PARALLAX_STATE.debug),
-        ("Parallax_Deform_Phase_BG", pins::PARALLAX_STATE.plain + 0x02, pins::PARALLAX_STATE.debug + 0x02),
-        ("Parallax_V_Deform_Phase_BG", pins::PARALLAX_STATE.plain + 0x04, pins::PARALLAX_STATE.debug + 0x04),
-        ("Parallax_Vscroll_Column_Buf", pins::PARALLAX_STATE.plain + 0x54, pins::PARALLAX_STATE.debug + 0x54),
-        // P3 T10: the curve fill's cross-band carry. Until showcase-effects sonic4 declared
-        // no curves, so CURVE_CARRY_WORDS = 0 and the carry was a ZERO-LENGTH array ALIASING
-        // Parallax_Shadow_Bands at the same VMA (+0x84 twice, deliberately).
-        // showcase-effects (2026-08-26, aeon 9dd52471, d-15): BAND_CURVE_N 0 -> 1 and
-        // BAND_CURVE_BYTES 0 -> 10 (engine/ram.emp), widening a shadow band to
-        // BAND_ENTRY_LEN 10 + BAND_EXT_BYTES 0 + BAND_CURVE_BYTES 10 = 20 B and giving
-        // Curve_Carry its first non-zero length (CURVE_CARRY_WORDS = 10/5 = 2 -> 4 B).
-        // band-ceiling-16 (2026-08-27): MAX_PARALLAX_BANDS 8 -> 16. Three arrays in this
-        // block are ceiling-sized and every offset below is re-derived from ram.emp, not
-        // shifted by hand:
-        //   Current_Scroll_A [u16; 16] = 0x20 B at +0x06, Current_Scroll_B likewise at
-        //   +0x26 -> the ceiling-independent head (3 phase words + those two arrays +
-        //   vscroll word + 2 config longs + 4 transition/section bytes + 80 B column buf)
-        //   runs to +0xA4, where Curve_Carry's 4 B sit (still the
-        //   `Shadow_Bands - Curve_Carry == 4 * BAND_CURVE_N` ensure, N = 1);
-        //   Shadow_Bands = +0xA8, now 20 x 16 = 320 = 0x140 B (the
-        //   `Shadow_Scroll_A - Shadow_Bands == sizeof(band_record) x MAX_PARALLAX_BANDS`
-        //   ensure), so Shadow_Scroll_A = +0x1E8; Shadow_Scroll_B = +0x208 (+0x20, the
-        //   widened array); State_End = +0x228 = 552 B.
-        // Net +0xE0 on the block tail (552 - 328), which is ram.emp's own
-        // `104 + 28 * MAX_PARALLAX_BANDS` stated as 28 x (16 - 8) = 224 = 0xE0. The eight
-        // ceiling-independent rows above (+0x48..+0x54) take the +0x20 of the two widened
-        // Current_Scroll arrays only; the four rows here take the full +0xE0.
-        // band-drift (2026-08-29, aeon 1aa2b242): the drift accumulator, a new cross-seam
-        // ref parallax.emp's own guards name. It ships at BAND_DRIFT_N = 0, so
-        // DRIFT_ACC_LONGS = 0 and this is a ZERO-LENGTH array — which is why it ALIASES
-        // Curve_Carry at +0xA4 rather than taking space, exactly the arrangement the
-        // paragraph above records Curve_Carry itself having had before showcase-effects
-        // gave it a non-zero length. State_End is UNCHANGED at +0x228 and pins.rs did not
-        // move, which is the corroboration that the length really is zero.
-        // Offset DERIVED from both built listings, not carried: Parallax_State FFFF88A0 and
-        // Parallax_Drift_Acc FFFF8944 in s4.lst AND s4.debug.lst — identical in both shapes,
-        // so one offset serves both columns.
-        ("Parallax_Drift_Acc", pins::PARALLAX_STATE.plain + 0xA4, pins::PARALLAX_STATE.debug + 0xA4),
-        ("Parallax_Curve_Carry", pins::PARALLAX_STATE.plain + 0xA4, pins::PARALLAX_STATE.debug + 0xA4),
-        ("Parallax_Shadow_Bands", pins::PARALLAX_STATE.plain + 0xA8, pins::PARALLAX_STATE.debug + 0xA8),
-        ("Parallax_Shadow_Scroll_A", pins::PARALLAX_STATE.plain + 0x1E8, pins::PARALLAX_STATE.debug + 0x1E8),
-        ("Parallax_Shadow_Scroll_B", pins::PARALLAX_STATE.plain + 0x208, pins::PARALLAX_STATE.debug + 0x208),
+        // The `Parallax_*` RAM state block, every address read from the reference
+        // build's own listing — see `ram_block_vma`, which carries the reason. The
+        // block is capability-sized in `engine/ram.emp`
+        // (`104 + (28 + 4 * BAND_DRIFT_N) * MAX_PARALLAX_BANDS` at the shipped set),
+        // so its interior is not a constant this file can hold; three of its arrays
+        // resize together and the symbols below them all move.
+        //
+        // `parallax.emp` pins the last three by ADJACENT-SYMBOL DIFFERENCE
+        // (`Curve_Carry - Drift_Acc`, `Shadow_Bands - Curve_Carry`,
+        // `Shadow_Scroll_A - Shadow_Bands`) so a short reservation names itself, and
+        // `ram.emp` records that inserting a field between any two of those three
+        // breaks the pin it splits. Deriving the addresses keeps this scope agreeing
+        // with that layout by construction instead of by transcription.
+        ram_block_vma("Parallax_State"),
+        ram_block_vma("Parallax_State_End"),
+        ram_block_vma("Parallax_Current_Config"),
+        ram_block_vma("Parallax_Target_Config"),
+        ram_block_vma("Parallax_Transition_Frames"),
+        ram_block_vma("Parallax_Snap_Pending"),
+        ram_block_vma("Parallax_Prev_Sec_X"),
+        ram_block_vma("Parallax_Prev_Sec_Y"),
+        ram_block_vma("Parallax_Current_Scroll_A"),
+        ram_block_vma("Parallax_Current_Scroll_B"),
+        ram_block_vma("Parallax_Current_Vscroll_BG"),
+        ram_block_vma("Parallax_Deform_Phase_FG"),
+        ram_block_vma("Parallax_Deform_Phase_BG"),
+        ram_block_vma("Parallax_V_Deform_Phase_BG"),
+        ram_block_vma("Parallax_Vscroll_Column_Buf"),
+        ram_block_vma("Parallax_Drift_Acc"),
+        ram_block_vma("Parallax_Curve_Carry"),
+        ram_block_vma("Parallax_Shadow_Bands"),
+        ram_block_vma("Parallax_Shadow_Scroll_A"),
+        ram_block_vma("Parallax_Shadow_Scroll_B"),
         ("Camera_X", pins::CAMERA_X.plain, pins::CAMERA_X.debug),
         ("Camera_Y", pins::CAMERA_Y.plain, pins::CAMERA_Y.debug),
         // Sourced from pins — this RAM cell rides the tail of the shifting RAM map
