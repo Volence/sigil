@@ -601,17 +601,30 @@ below requires zero `skip:` lines and this is not a missing reference.
   paragraph warning about it. **Reconcile against the declaration, never against this
   sentence:** `git grep -c '#[test]' HEAD -- '*.rs'` summed is the count, and
   `passed + ignored` must equal it.
-  **The run emits EXACTLY ONE `ratchet:` line and that is the correct state, as of the
-strict-attestation landing (2026-08-27).** It reads *"no entry in this chain records a
-strict run yet … the strict-attestation rule is not yet in force"*, and it disarms
-permanently at the aeon lane's first `refreeze --attest`. Do NOT read it as the old
-`aeon_rev` pairing ratchet returning — that one disarmed at chain 167 and its reappearance
-would still be a defect. **Two self-disarming ratchets now exist and they say different
-things; read the sentence, not the word.** Once the first attestation lands, this count
-returns to zero and any `ratchet:` line is again worth investigating.
+  **DERIVE the expected `ratchet:` count from the chain; do not read a number off this
+  page.** This paragraph has now carried three different fixed counts (zero, then exactly
+  one, then zero again), each true when written, and a fixed count here is the
+  snapshot-in-standing-fact-grammar defect this file warns about elsewhere. The rule that
+  does not rot:
 
-*(Superseded: "The run now emits ZERO `ratchet:` lines and that is the correct state")* A `ratchet:` line reappearing means a tip was written without the field, which
-  `check`'s monotonic rule should already have refused; investigate rather than tolerate.
+  ```sh
+  # does any entry record a strict run? if yes, the strict-attestation ratchet is disarmed
+  grep -c '^\[entry\.strict\]' crates/sigil-harness/golden/provenance.toml
+  ```
+
+  Non-zero means the strict-attestation rule is IN FORCE and the expected `ratchet:` count
+  is **zero** — any line is then worth investigating. Zero means no entry records a strict
+  run yet, the rule is not in force, and the run emits **exactly one** ratchet line reading
+  *"no entry in this chain records a strict run yet"*. **Measured 2026-09-03: the chain
+  carries `[entry.strict]` tables with `sigil_rev` set, so the attestation has landed and a
+  strict landing run correctly emits ZERO ratchet lines** — observed on the shift parcel's
+  own run (376 suites, 4273/0/2, zero `skip:`, zero `ratchet:`).
+
+  Two self-disarming ratchets exist and they say different things, so **read the sentence,
+  not the word.** The old `aeon_rev` pairing ratchet disarmed at chain 167 and its
+  reappearance would still be a defect: a `ratchet:` line about a missing `aeon_rev` means
+  a tip was written without the field, which `check`'s monotonic rule should already have
+  refused. Investigate rather than tolerate.
   **⚠ DO NOT COMMIT WHILE A LANDING RUN IS IN FLIGHT.**
   `version_reports_the_head_of_the_tree_it_was_built_from` compares the binary's baked-in
   revision against the checkout's HEAD *at assertion time*, so a commit landed mid-run fails
