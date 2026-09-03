@@ -4635,6 +4635,20 @@ impl Asm {
             })
             .collect();
         let end = self.find_block_end(lines, start);
+        // An UNCLOSED definition. `find_block_end` answers with the last line it
+        // scanned, so a head on that line leaves nothing between head and end and
+        // the body slice would be inverted. Say so instead: the alternative is a
+        // panic, and the way this is reached is not a malformed source file but a
+        // pasted expansion-scope name — see [`Asm::bind_macro_arg`].
+        if end <= start {
+            let span = Span {
+                source: lines[start].source,
+                start: lines[start].base,
+                end: lines[start].base,
+            };
+            self.err(span, format!("macro `{name}` definition has no `endm`"));
+            return lines.len();
+        }
         // A macro DEFINED inside an expanding macro body captures text the
         // enclosing expansion has already substituted — including its
         // `ALLARGS`, frozen at the shift state in force here. The inner macro
@@ -8930,6 +8944,52 @@ C:\n";
         );
     }
 
+    /// The expansion scope's name is deliberately unspellable — a leading space
+    /// and a `#`, so no source label can alias it — which also means it cannot
+    /// survive being PASTED into body text. A `.`-local argument passed from
+    /// inside an expansion is qualified against that name, and if the callee then
+    /// puts it back into a line through `ALLARGS`, the line reads
+    /// `dc.w  macro#1.val` and its second token is the `macro` keyword.
+    ///
+    /// asl has no such limit — the argument names the caller expansion's private
+    /// label and the value is its address:
+    ///
+    /// ```text
+    ///   15/       0 : (MACRO)              	outer
+    ///   15/       2 :                     .val:
+    ///   15/       4 :  (MACRO-2)                   sp      1,.val
+    ///   15/       4 : 0002                        dc.w    .val
+    /// ```
+    ///
+    /// What is pinned here is only that the shape is LOUD. It reached
+    /// `capture_macro` as a definition with nothing after it, and a body slice
+    /// running backwards is a panic, which is the one outcome a front-end may not
+    /// have.
+    #[test]
+    fn a_pasted_expansion_scope_name_is_refused_rather_than_panicking() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "sp macro p1\n",
+            "	shift\n",
+            "	dc.w ALLARGS\n",
+            "	endm\n",
+            "outer macro\n",
+            "	nop\n",
+            ".val:\n",
+            "	nop\n",
+            "	sp 1,.val\n",
+            "	endm\n",
+            "Base:\n",
+            "	outer\n",
+        );
+        let diags = run(src, &Options::default()).expect_err("must diagnose, not panic");
+        assert!(
+            diags.iter().any(|d| d.message.contains("has no `endm`")),
+            "expected the unclosed-definition refusal, got {:?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
     /// A SURPLUS positional argument — one the parameter list could not hold —
     /// is qualified exactly like a bound one, so a bare `.`-local passed past
     /// the last parameter and read back through `ALLARGS` still names the
@@ -8942,6 +9002,22 @@ C:\n";
     ///
     ///    Base.val :                      5A - |
     /// ```
+    ///
+    /// The sharp version is a callee whose own body declares the same name. The
+    /// argument still means the CALLER's label — asl evaluates it in the caller's
+    /// context — so nothing the callee's body says can be allowed to reinterpret
+    /// it, and the only place that can be settled is where the argument is bound:
+    ///
+    /// ```text
+    ///   12/       2 :                     .val:
+    ///   14/       4 : (MACRO)              	sp	1,.val
+    ///   14/       4 :                             shift
+    ///   14/       4 : 0002                        dc.w    .val
+    ///   14/       6 : 4E71                        nop
+    ///   14/       8 :                     .val:
+    /// ```
+    ///
+    /// `0002` is the caller's, two bytes in, not the callee's at eight.
     #[test]
     fn a_surplus_positional_dot_local_argument_is_qualified_like_a_bound_one() {
         let src = concat!(
@@ -8955,5 +9031,24 @@ C:\n";
             "	sp 1,.val\n",
         );
         assert_eq!(image(src), vec![0x5A]);
+
+        let shadowed = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "sp macro p1\n",
+            "	shift\n",
+            "	dc.w ALLARGS\n",
+            "	nop\n",
+            ".val:\n",
+            "	endm\n",
+            "Base:\n",
+            "	nop\n",
+            ".val:\n",
+            "	nop\n",
+            "	sp 1,.val\n",
+        );
+        assert_eq!(
+            linked_image(shadowed),
+            vec![0x4E, 0x71, 0x4E, 0x71, 0x00, 0x02, 0x4E, 0x71]
+        );
     }
 }
