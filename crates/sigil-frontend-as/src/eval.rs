@@ -6144,6 +6144,19 @@ mod tests {
         sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).is_ok()
     }
 
+    /// The offset a named label occupies in the assembled module's sections, or
+    /// `None` where no section carries it. This is the linker's own view of a
+    /// label — `image`/`linked_image` cannot see it, because a front-end fold
+    /// can produce the same bytes from a constant of equal value.
+    fn section_label(src: &str, name: &str) -> Option<u32> {
+        let m = run(src, &Options::default()).expect("assemble");
+        m.sections
+            .iter()
+            .flat_map(|s| s.labels.iter())
+            .find(|l| l.name == name)
+            .map(|l| l.offset)
+    }
+
     fn image(src: &str) -> Vec<u8> {
         let m = run(src, &Options::default()).expect("assemble");
         m.sections
@@ -7815,6 +7828,17 @@ C:\n";
             linked_image(&src)[0x1000..],
             [0x60, 0x00, 0x00, 0x02, 0x4E, 0x71, 0x10, 0x04]
         );
+        // The bytes above do not by themselves prove the symbol is PLACED: the
+        // front end folds `Dest` out of its own env on the converged pass, so a
+        // `label` that bound only a constant would produce them too. What
+        // separates the two is whether the SECTION carries the label, which is
+        // what the linker's own symbol table is built from and what the
+        // relaxation deferral reads. Assert it against the plain-label twin, so
+        // the expected offset is derived from the equivalent program rather than
+        // copied from the row above.
+        let twin = intlabel_src("\tbra.w Dest\nDest:\n\tnop\n\tdc.w Dest\n");
+        assert_eq!(section_label(&src, "Dest"), section_label(&twin, "Dest"));
+        assert_eq!(section_label(&src, "Dest"), Some(4));
     }
 
     #[test]
