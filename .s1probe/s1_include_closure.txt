@@ -1,0 +1,444 @@
+sonic.asm
+MacroSetup.asm
+Macros.asm
+_Constants.asm
+_Variables.asm
+s1.sounddriver.ram.asm
+_maps/_MapMacros.asm
+_inc/Queue Sound Routines.asm
+_inc/PauseGame.asm
+_inc/Decompression/Nemesis Decompression.asm
+_inc/Decompression/Enigma Decompression.asm
+_inc/Decompression/Kosinski Decompression.asm
+_inc/PaletteCycle.asm
+_inc/Palette Fading.asm
+_inc/Palette Index.asm
+_incObj/sub RandomNumber.asm
+_incObj/sub CalcSine.asm
+_incObj/sub CalcSqrt.asm
+_incObj/sub CalcAngle.asm
+_inc/LZWaterFeatures.asm
+_inc/MoveSonicInDemo.asm
+demodata/Unused Demo.asm
+_inc/Oscillatory Routines.asm
+demodata/Intro - GHZ.asm
+demodata/Intro - MZ.asm
+demodata/Intro - SYZ.asm
+demodata/Intro - Special Stage.asm
+_inc/Special Stage Background & Palette Cycle.asm
+_incObj/80, 81 Continue Screen Elements and Sonic.asm
+_anim/Continue Screen Sonic.asm
+_maps/Continue Screen.asm
+_incObj/87, 88, 89 Ending Sequence Sonic, Emeralds, Logo.asm
+_anim/Ending Sequence Sonic.asm
+_maps/Ending Sequence Sonic.asm
+_maps/Ending Sequence Emeralds.asm
+_maps/Ending Sequence STH.asm
+_incObj/8B, 8C Try Again, End Eggman, End Emeralds.asm
+_anim/Try Again & End Eggman.asm
+_maps/Try Again & End Eggman.asm
+demodata/Ending - GHZ1.asm
+demodata/Ending - MZ.asm
+demodata/Ending - SYZ.asm
+demodata/Ending - LZ.asm
+demodata/Ending - SLZ.asm
+demodata/Ending - SBZ1.asm
+demodata/Ending - SBZ2.asm
+demodata/Ending - GHZ2.asm
+_inc/LevelSizeLoad & BgScrollSpeed.asm
+_inc/LevelSizeArray.asm
+_inc/DeformLayers (REV00).asm
+_inc/ScrollHoriz & ScrollVertical.asm
+_inc/Level Drawing (REV00).asm
+_inc/DeformLayers (REV01).asm
+_inc/Level Drawing (REV01).asm
+_inc/LevelLayoutLoad.asm
+_inc/DynamicLevelEvents.asm
+_incObj/11 GHZ Bridge.asm
+_incObj/sub PlatformObject & SlopeObject.asm
+_incObj/sub ExitPlatform.asm
+_maps/Bridge.asm
+_incObj/15 Swinging Platforms.asm
+_incObj/sub MvSonicOnPtfm.asm
+_maps/Swinging Platforms (GHZ).asm
+_maps/Swinging Platforms (SLZ).asm
+_incObj/17 GHZ Spiked Pole Helix.asm
+_maps/Spiked Pole Helix.asm
+_incObj/18 Platforms.asm
+_maps/Platforms (unused).asm
+_maps/Platforms (GHZ).asm
+_maps/Platforms (SYZ).asm
+_maps/Platforms (SLZ).asm
+_incObj/19 Unused - Blank.asm
+_maps/GHZ Ball.asm
+_incObj/1A, 53 Collapsing Ledges and Floors.asm
+_maps/Collapsing Ledge.asm
+_maps/Collapsing Floors.asm
+_incObj/1C GHZ, SYZ Scenery.asm
+_maps/Scenery.asm
+_incObj/1D Unused - Switch.asm
+_maps/Unused Switch.asm
+_incObj/2A SBZ Small Door.asm
+_anim/SBZ Small Door.asm
+_maps/SBZ Small Door.asm
+_incObj/sub SolidWall.asm
+_incObj/1E, 20 Badnik - Ball Hog and Cannonball.asm
+_incObj/24 Unused - Small Explosion.asm
+_incObj/27, 3F Explosions.asm
+_anim/Ball Hog.asm
+_maps/Ball Hog.asm
+_maps/Unused Explosion.asm
+_maps/Explosions.asm
+_incObj/28, 29 Animals and Points.asm
+_maps/Animals 1.asm
+_maps/Animals 2.asm
+_maps/Animals 3.asm
+_maps/Points.asm
+_incObj/1F Badnik - Crabmeat.asm
+_anim/Crabmeat.asm
+_maps/Crabmeat.asm
+_incObj/22, 23 Badnik - Buzz Bomber and Missile.asm
+_anim/Buzz Bomber.asm
+_anim/Buzz Bomber Missile.asm
+_maps/Buzz Bomber.asm
+_maps/Buzz Bomber Missile.asm
+_incObj/25, 37 Rings.asm
+_incObj/4B, 7C Giant Ring and Flash.asm
+_anim/Rings.asm
+_maps/Rings (REV00).asm
+_maps/Rings (REV01).asm
+_maps/Giant Ring.asm
+_maps/Ring Flash.asm
+_incObj/26, 2E Monitors and Power-Ups.asm
+_anim/Monitor.asm
+_maps/Monitor.asm
+_incObj/0E, 0F Title Screen - Sonic, Press Start, TM.asm
+_anim/Title Screen Sonic.asm
+_anim/Press Start and TM.asm
+_incObj/sub AnimateSprite.asm
+_maps/Press Start and TM.asm
+_maps/Title Screen Sonic.asm
+_incObj/2B Badnik - Chopper.asm
+_anim/Chopper.asm
+_maps/Chopper.asm
+_incObj/2C Badnik - Jaws.asm
+_anim/Jaws.asm
+_maps/Jaws.asm
+_incObj/2D Badnik - Burrobot.asm
+_anim/Burrobot.asm
+_maps/Burrobot.asm
+_incObj/2F, 35 MZ Large Grassy Platforms and Burning Grass.asm
+_anim/Burning Grass.asm
+_maps/MZ Large Grassy Platforms.asm
+_maps/Fireballs.asm
+_incObj/30 MZ Large Green Glass Blocks.asm
+_maps/MZ Large Green Glass Blocks.asm
+_incObj/31 MZ Chained Stompers.asm
+_incObj/45 Unused - MZ Sideways Stomper.asm
+_maps/Chained Stompers.asm
+_maps/Sideways Stomper.asm
+_incObj/32 Button.asm
+_maps/Button.asm
+_incObj/33 MZ, LZ Pushable Blocks.asm
+_maps/Pushable Blocks.asm
+_incObj/34 Title Cards.asm
+_incObj/39 Game Over.asm
+_incObj/3A Got Through Card.asm
+_inc/LevelOrder.asm
+_incObj/7E, 7F Special Stage Results and Chaos Emeralds.asm
+_maps/Title Cards.asm
+_maps/Game Over.asm
+_maps/SS Result Chaos Emeralds.asm
+_incObj/36 Spikes.asm
+_maps/Spikes.asm
+_incObj/3B GHZ Purple Rock.asm
+_incObj/49 GHZ Waterfall Sound.asm
+_maps/Purple Rock.asm
+_incObj/3C GHZ, SLZ Smashable Wall.asm
+_incObj/sub SmashObject.asm
+_maps/Smashable Walls.asm
+_inc/ExecuteObjects.asm
+_inc/Object Pointers.asm
+_incObj/sub ObjectFall & SpeedToPos.asm
+_incObj/sub DisplaySprite.asm
+_incObj/sub DeleteObject.asm
+_inc/BuildSprites.asm
+_incObj/sub ChkObjectVisible.asm
+_inc/ObjPosLoad.asm
+_incObj/sub FindFreeObj.asm
+_incObj/41 Springs.asm
+_anim/Springs.asm
+_maps/Springs.asm
+_incObj/42 Badnik - Newtron.asm
+_anim/Newtron.asm
+_maps/Newtron.asm
+_incObj/43 Badnik - Roller.asm
+_anim/Roller.asm
+_maps/Roller.asm
+_incObj/44 GHZ Edge Walls.asm
+_maps/GHZ Edge Walls.asm
+_incObj/13, 14 MZ, SLZ Fire Balls and Maker.asm
+_anim/Fireballs.asm
+_incObj/6D SBZ Flamethrower.asm
+_anim/Flamethrower.asm
+_maps/Flamethrower.asm
+_incObj/46 MZ Bricks.asm
+_maps/MZ Bricks.asm
+_incObj/12 SYZ Search Light.asm
+_maps/Light.asm
+_incObj/47 SYZ Bumper.asm
+_anim/Bumper.asm
+_maps/Bumper.asm
+_incObj/0D Signpost.asm
+_anim/Signpost.asm
+_maps/Signpost.asm
+_incObj/4C, 4D MZ Lava Geyser and Maker.asm
+_incObj/4E MZ Wall of Lava.asm
+_incObj/54 MZ Invisible Lava Tag.asm
+_maps/Lava Tag.asm
+_anim/Lava Geyser.asm
+_anim/Wall of Lava.asm
+_maps/Lava Geyser.asm
+_maps/Wall of Lava.asm
+_incObj/40 Badnik - Moto Bug.asm
+_incObj/sub RememberState.asm
+_anim/Moto Bug.asm
+_maps/Moto Bug.asm
+_incObj/4F Unused - Blank.asm
+_incObj/50 Badnik - Yadrin.asm
+_anim/Yadrin.asm
+_maps/Yadrin.asm
+_incObj/sub SolidObject.asm
+_incObj/51 MZ Smashable Green Block.asm
+_maps/Smashable Green Block.asm
+_incObj/52 Moving Blocks.asm
+_maps/Moving Blocks (MZ and SBZ).asm
+_maps/Moving Blocks (LZ).asm
+_incObj/55 Badnik - Basaran.asm
+_anim/Basaran.asm
+_maps/Basaran.asm
+_incObj/56 SYZ, SLZ Floating Blocks and LZ Doors.asm
+_maps/Floating Blocks and Doors.asm
+_incObj/57 SYZ, LZ Spiked Ball and Chain.asm
+_maps/Spiked Ball and Chain (SYZ).asm
+_maps/Spiked Ball and Chain (LZ).asm
+_incObj/58 SYZ Big Spiked Ball.asm
+_maps/Big Spiked Ball.asm
+_incObj/59 SLZ Elevators.asm
+_maps/SLZ Elevators.asm
+_incObj/5A SLZ Circling Platform.asm
+_maps/SLZ Circling Platform.asm
+_incObj/5B SLZ Staircase.asm
+_maps/Staircase.asm
+_incObj/5C SLZ Foreground Pylon.asm
+_maps/Pylon.asm
+_incObj/1B LZ Water Surface.asm
+_maps/Water Surface.asm
+_incObj/0B LZ Pole that Breaks.asm
+_maps/Pole that Breaks.asm
+_incObj/0C LZ Flapping Door.asm
+_anim/Flapping Door.asm
+_maps/Flapping Door.asm
+_incObj/71 Invisible Solid Barriers.asm
+_maps/Invisible Barriers.asm
+_incObj/5D SLZ Fan.asm
+_maps/Fan.asm
+_incObj/5E SLZ Seesaw.asm
+_maps/Seesaw.asm
+_maps/Seesaw Ball.asm
+_incObj/5F Badnik - Walking Bomb.asm
+_anim/Bomb Enemy.asm
+_maps/Bomb Enemy.asm
+_incObj/60 Badnik - Orbinaut.asm
+_anim/Orbinaut.asm
+_maps/Orbinaut.asm
+_incObj/16 LZ Harpoon.asm
+_anim/Harpoon.asm
+_maps/Harpoon.asm
+_incObj/61 LZ Blocks.asm
+_maps/LZ Blocks.asm
+_incObj/62 LZ Gargoyle.asm
+_maps/Gargoyle.asm
+_incObj/63 LZ Conveyor.asm
+_maps/LZ Conveyor.asm
+_incObj/64 LZ Air Bubbles.asm
+_anim/Bubbles.asm
+_maps/Bubbles.asm
+_incObj/65 LZ Waterfalls.asm
+_anim/Waterfalls.asm
+_maps/Waterfalls.asm
+_incObj/01 Sonic.asm
+_anim/Sonic.asm
+_incObj/0A LZ Drowning Countdown.asm
+_incObj/sub ResumeMusic.asm
+_anim/Drowning Countdown.asm
+_maps/Drowning Countdown.asm
+_incObj/38 Shield and Invincibility.asm
+_incObj/4A Unused - Special Stage Entry.asm
+_incObj/08 LZ Water Splash.asm
+_anim/Shield and Invincibility.asm
+_maps/Shield and Invincibility.asm
+_anim/Special Stage Entry (Unused).asm
+_maps/Special Stage Entry (Unused).asm
+_anim/Water Splash.asm
+_maps/Water Splash.asm
+_incObj/Sonic AnglePos.asm
+_incObj/sub FindNearestTile & FindFloor & FindWall.asm
+_inc/ConvertCollisionArray (Unused).asm
+_incObj/Sonic Collision.asm
+_incObj/sub ObjFloorDist.asm
+_incObj/66 SBZ Rotating Junction.asm
+_maps/Rotating Junction.asm
+_incObj/67 SBZ Running Disc.asm
+_maps/Running Disc.asm
+_incObj/68 SBZ Conveyor Belt.asm
+_incObj/69 SBZ Spinning Platforms and Trapdoors.asm
+_anim/SBZ Spinning Platforms.asm
+_maps/Trapdoor.asm
+_maps/SBZ Spinning Platforms.asm
+_incObj/6A SBZ Saws and Pizza Cutters.asm
+_maps/Saws and Pizza Cutters.asm
+_incObj/6B SBZ Stomper and Sliding Door.asm
+_maps/SBZ Stomper and Door.asm
+_incObj/6C SBZ Vanishing Platforms.asm
+_anim/SBZ Vanishing Platforms.asm
+_maps/SBZ Vanishing Platforms.asm
+_incObj/6E SBZ Electrocuter.asm
+_anim/Electrocuter.asm
+_maps/Electrocuter.asm
+_incObj/6F SBZ Spin Platform Conveyor.asm
+_anim/SBZ Spin Platform Conveyor.asm
+_incObj/70 SBZ Girder Block.asm
+_maps/Girder Block.asm
+_incObj/72 SBZ Teleporter.asm
+_incObj/78 Badnik - Caterkiller.asm
+_maps/Caterkiller.asm
+_incObj/79 Lamppost.asm
+_maps/Lamppost.asm
+_incObj/7D Hidden Bonuses.asm
+_maps/Hidden Bonuses.asm
+_incObj/8A Credits and Sonic Team Presents.asm
+_maps/Credits.asm
+_incObj/3D, 48 Boss - GHZ Main and Wrecking Ball.asm
+_incObj/sub BossDefeated & BossMove.asm
+_anim/Eggman.asm
+_maps/Eggman.asm
+_maps/Boss Items.asm
+_incObj/77 Boss - LZ Main.asm
+_incObj/73, 74 Boss - MZ Main and Fire.asm
+_incObj/7A, 7B Boss - SLZ Main and Spike Balls.asm
+_maps/SLZ Boss Spikeball.asm
+_incObj/75, 76 Boss - SYZ Main and Blocks.asm
+_maps/SYZ Boss Blocks.asm
+_incObj/82, 83 SBZ Eggman Cutscene and Crumbling Floor.asm
+_anim/Eggman - Scrap Brain 2 & Final.asm
+_maps/Eggman - Scrap Brain 2.asm
+_maps/SBZ Eggman's Crumbling Floor.asm
+_incObj/85,84,86 Boss - FZ Main, Cylinders, and Plasma Balls.asm
+_anim/FZ Eggman in Ship.asm
+_maps/FZ Damaged Eggmobile.asm
+_maps/FZ Eggmobile Legs.asm
+_maps/FZ Eggman's Cylinders.asm
+_anim/Plasma Ball Launcher.asm
+_maps/Plasma Ball Launcher.asm
+_anim/Plasma Balls.asm
+_maps/Plasma Balls.asm
+_incObj/3E Prison Capsule.asm
+_anim/Prison Capsule.asm
+_maps/Prison Capsule.asm
+_incObj/Sonic ReactToItem.asm
+_inc/Special Stage Loading & Drawing.asm
+_inc/Special Stage Mappings & VRAM Pointers.asm
+_maps/SS Shared Block.asm
+_maps/SS Glass Block.asm
+_maps/SS UP Block.asm
+_maps/SS DOWN Block.asm
+_maps/SS Chaos Emeralds.asm
+_incObj/09 Sonic in Special Stage.asm
+_incObj/10 Unused - Blank.asm
+_inc/AnimateLevelGfx.asm
+_incObj/21 HUD.asm
+_maps/HUD.asm
+_incObj/sub AddPoints.asm
+_inc/HUD Update.asm
+_incObj/DebugMode.asm
+_inc/LevelHeaders.asm
+_inc/Pattern Load Cues.asm
+_maps/Sonic.asm
+_maps/Sonic - Dynamic Gfx Script.asm
+_maps/SS Walls.asm
+s1.sounddriver.asm
+sound/z80.asm
+sound/dac/dpcm/generated/kick.inc
+sound/dac/dpcm/generated/snare.inc
+sound/dac/dpcm/generated/timpani.inc
+sound/_smps2asm_inc.asm
+sound/music/Mus81 - GHZ.asm
+sound/music/Mus82 - LZ.asm
+sound/music/Mus83 - MZ.asm
+sound/music/Mus84 - SLZ.asm
+sound/music/Mus85 - SYZ.asm
+sound/music/Mus86 - SBZ.asm
+sound/music/Mus87 - Invincibility.asm
+sound/music/Mus88 - Extra Life.asm
+sound/music/Mus89 - Special Stage.asm
+sound/music/Mus8A - Title Screen.asm
+sound/music/Mus8B - Ending.asm
+sound/music/Mus8C - Boss.asm
+sound/music/Mus8D - FZ.asm
+sound/music/Mus8E - Sonic Got Through.asm
+sound/music/Mus8F - Game Over.asm
+sound/music/Mus90 - Continue Screen.asm
+sound/music/Mus91 - Credits.asm
+sound/music/Mus92 - Drowning.asm
+sound/music/Mus93 - Get Emerald.asm
+sound/sfx/SndA0 - Jump.asm
+sound/sfx/SndA1 - Lamppost.asm
+sound/sfx/SndA2.asm
+sound/sfx/SndA3 - Death.asm
+sound/sfx/SndA4 - Skid.asm
+sound/sfx/SndA5.asm
+sound/sfx/SndA6 - Hit Spikes.asm
+sound/sfx/SndA7 - Push Block.asm
+sound/sfx/SndA8 - SS Goal.asm
+sound/sfx/SndA9 - SS Item.asm
+sound/sfx/SndAA - Splash.asm
+sound/sfx/SndAB.asm
+sound/sfx/SndAC - Hit Boss.asm
+sound/sfx/SndAD - Get Bubble.asm
+sound/sfx/SndAE - Fireball.asm
+sound/sfx/SndAF - Shield.asm
+sound/sfx/SndB0 - Saw.asm
+sound/sfx/SndB1 - Electric.asm
+sound/sfx/SndB2 - Drown Death.asm
+sound/sfx/SndB3 - Flamethrower.asm
+sound/sfx/SndB4 - Bumper.asm
+sound/sfx/SndB5 - Ring.asm
+sound/sfx/SndB6 - Spikes Move.asm
+sound/sfx/SndB7 - Rumbling.asm
+sound/sfx/SndB8.asm
+sound/sfx/SndB9 - Collapse.asm
+sound/sfx/SndBA - SS Glass.asm
+sound/sfx/SndBB - Door.asm
+sound/sfx/SndBC - Teleport.asm
+sound/sfx/SndBD - ChainStomp.asm
+sound/sfx/SndBE - Roll.asm
+sound/sfx/SndBF - Get Continue.asm
+sound/sfx/SndC0 - Basaran Flap.asm
+sound/sfx/SndC1 - Break Item.asm
+sound/sfx/SndC2 - Drown Warning.asm
+sound/sfx/SndC3 - Giant Ring.asm
+sound/sfx/SndC4 - Bomb.asm
+sound/sfx/SndC5 - Cash Register.asm
+sound/sfx/SndC6 - Ring Loss.asm
+sound/sfx/SndC7 - Chain Rising.asm
+sound/sfx/SndC8 - Burning.asm
+sound/sfx/SndC9 - Hidden Bonus.asm
+sound/sfx/SndCA - Enter SS.asm
+sound/sfx/SndCB - Wall Smash.asm
+sound/sfx/SndCC - Spring.asm
+sound/sfx/SndCD - Switch.asm
+sound/sfx/SndCE - Ring Left Speaker.asm
+sound/sfx/SndCF - Signpost.asm
+sound/sfx/SndD0 - Waterfall.asm
+sound/dac/pcm/generated/sega.inc
