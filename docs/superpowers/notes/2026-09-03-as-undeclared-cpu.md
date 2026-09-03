@@ -119,6 +119,13 @@ the wrong reason. Mutation C was then re-run against the fixed gate and was red.
   its own row so the attribution survives. This parcel does make its fix
   obvious — one arm in `directive_cpu`'s `fold_kw` match, alongside `z80` — but
   it is not implemented here.
+
+  **CLOSED** by `parcel/as-cpu-variant-spellings` —
+  `docs/superpowers/notes/2026-09-03-as-cpu-variant-spellings.md`. Not by one
+  arm: the same match discarded a numeric spelling's VALUE, so `cpu 6502` and
+  `cpu 68020` selected the 68000, emitted bytes and exited 0. The accepted
+  spellings are a table now, and `z80undoc` earned its row on a measurement —
+  the undocumented instructions sigil does not encode are refused by name.
 - **The pre-declaration `$` window.** A unit that declares LATE (code before its
   `cpu` line) has that code lexed against the provisional processor. The
   refusal does not fire, because the unit does declare. `emit` cannot see this:

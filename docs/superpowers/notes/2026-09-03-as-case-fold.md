@@ -146,8 +146,12 @@ is red under the mutation that removes ITS OWN mechanism.
 
 ## Booked, not done
 
-- `z80undoc` (and the rest of AS's CPU-name set) — one line in `directive_cpu`, and it is what
-  keeps `s2.sounddriver.asm` on the wrong processor today.
+- ~~`z80undoc` (and the rest of AS's CPU-name set) — one line in `directive_cpu`, and it is what
+  keeps `s2.sounddriver.asm` on the wrong processor today.~~ **DONE** —
+  `2026-09-03-as-cpu-variant-spellings.md`. It was not one line, and "the rest of AS's CPU-name
+  set" is the wrong shape for the answer: a spelling is accepted only when it names an
+  instruction set sigil encodes, so the set stays four. The same match was silently reading
+  every NUMERIC spelling as `68000` (`cpu 6502` → exit 0, 68000 bytes).
 - `bchg`/`exg`/`roxl` and the eleven unimplemented AS directives above.
 - The macro-body block-nesting gap at `s2.macrosetup.asm:62`.
 - Register-name folding — argued against above; the hazard is a label named `A0`.
