@@ -9868,9 +9868,9 @@ C:\n";
     /// and 0. asl:
     ///
     /// ```text
-    ///        2/       0 : 0006 8000           	dc.l MOMCPU        ; cpu 68000
-    ///        2/       0 : 80 00               	dw MOMCPU          ; cpu z80
-    ///        2/       0 : 0100                	dc.b TRUE,FALSE
+    ///        2/       0 : 0006 8000                   dc.l MOMCPU        ; cpu 68000
+    ///        2/       0 : 80 00                       dw MOMCPU          ; cpu z80
+    ///        2/       0 : 0100                        dc.b TRUE,FALSE
     /// ```
     ///
     /// A builtin outranks the symbol table: asl refuses `TRUE = 7` and
@@ -9899,11 +9899,11 @@ C:\n";
     /// said about it. asl:
     ///
     /// ```text
-    ///        3/       0 : =>TRUE               	if notZ80(MOMCPU)
-    ///        4/       0 : 11                  		dc.b $11
-    ///        5/       1 : =>FALSE              	else
-    ///        8/       1 : =>TRUE               	if TRUE
-    ///        9/       1 : 33                  		dc.b $33
+    ///        3/       0 : =>TRUE                      if notZ80(MOMCPU)
+    ///        4/       0 : 11                                  dc.b $11
+    ///        5/       1 : =>FALSE                     else
+    ///        8/       1 : =>TRUE                      if TRUE
+    ///        9/       1 : 33                                  dc.b $33
     /// ```
     #[test]
     fn momcpu_and_true_select_the_arm_asl_selects() {
@@ -9947,12 +9947,12 @@ C:\n";
     /// so `dc.b $55` stays inside the false block and the file is two bytes:
     ///
     /// ```text
-    ///        3/       1 : =>FALSE              	if 0
-    ///        4/       1 :                     		if ($)&1
-    ///        6/       1 : [4]                  		endif
-    ///        7/       1 :                     		dc.b $55
-    ///        8/       1 : [3]                  	endif
-    ///        9/       1 : 22                  	dc.b $22
+    ///        3/       1 : =>FALSE                     if 0
+    ///        4/       1 :                                     if ($)&1
+    ///        6/       1 : [4]                                 endif
+    ///        7/       1 :                                     dc.b $55
+    ///        8/       1 : [3]                         endif
+    ///        9/       1 : 22                          dc.b $22
     /// ```
     ///
     /// Lose the head and the inner `endif` pops the OUTER frame instead: the
@@ -9989,14 +9989,14 @@ C:\n";
     /// Parentheses around a string expression are transparent. asl:
     ///
     /// ```text
-    ///        2/       0 : 03                  	dc.b strlen(("abc"))
-    ///        3/       1 : 03                  	dc.b strlen((("abc")))
-    ///        4/       2 : 02                  	dc.b strstr(("hello"),("ll"))
-    ///        5/       3 : 02                  	dc.b strlen(substr(("hello"),0,2))
-    ///        6/       4 : 04                  	dc.b strlen(lowstring(("ABCD")))
-    ///        7/       5 : 00                  	dc.b (("he"))<>"he"
-    ///        8/       6 : 01                  	dc.b ("he")<>("hf")
-    ///        9/       7 : 02                  	dc.b strlen(( "ab" ))
+    ///        2/       0 : 03                          dc.b strlen(("abc"))
+    ///        3/       1 : 03                          dc.b strlen((("abc")))
+    ///        4/       2 : 02                          dc.b strstr(("hello"),("ll"))
+    ///        5/       3 : 02                          dc.b strlen(substr(("hello"),0,2))
+    ///        6/       4 : 04                          dc.b strlen(lowstring(("ABCD")))
+    ///        7/       5 : 00                          dc.b (("he"))<>"he"
+    ///        8/       6 : 01                          dc.b ("he")<>("hf")
+    ///        9/       7 : 02                          dc.b strlen(( "ab" ))
     /// ```
     #[test]
     fn parentheses_around_a_string_expression_are_transparent() {
@@ -10021,11 +10021,11 @@ C:\n";
     /// hands its own `strlen` a `("0(")`. asl:
     ///
     /// ```text
-    ///        5/       0 : 03                  	dc.b slen("abc")
-    ///        6/       1 : 00                  	dc.b chkop("0(a0)","0(")
-    ///        7/       2 : 01                  	dc.b chkop("d0","0(")
-    ///        8/       3 : 02                  	dc.b strlen("0(")
-    ///        9/       4 : 00                  	dc.b sub2("hello",2)<>"he"
+    ///        5/       0 : 03                          dc.b slen("abc")
+    ///        6/       1 : 00                          dc.b chkop("0(a0)","0(")
+    ///        7/       2 : 01                          dc.b chkop("d0","0(")
+    ///        8/       3 : 02                          dc.b strlen("0(")
+    ///        9/       4 : 00                          dc.b sub2("hello",2)<>"he"
     /// ```
     #[test]
     fn function_parameters_reach_the_string_builtins() {
