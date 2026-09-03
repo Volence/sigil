@@ -40,7 +40,23 @@ struct SrcLine {
 }
 
 /// Collected macro definitions: name → (params, body lines).
-type MacroTable = std::collections::BTreeMap<String, (Vec<String>, Vec<SrcLine>)>;
+type MacroTable = std::collections::BTreeMap<String, MacroDef>;
+
+/// One captured macro definition.
+#[derive(Clone)]
+struct MacroDef {
+    /// Declared parameter names, in order. A `{INTLABEL}` group is NOT one of
+    /// them: it declares a capture, not a slot, and consumes no argument
+    /// position wherever it is written (asl-verified — `m macro {INTLABEL},pp,qq`,
+    /// `n macro pp,{INTLABEL},qq` and `o macro pp,qq,{INTLABEL}` all bind
+    /// `pp`/`qq` from `11,22`). The lexer already swallows the whole `{…}` group
+    /// without emitting a token, so the list below is right by construction.
+    params: Vec<String>,
+    body: Vec<SrcLine>,
+    /// Whether the parameter list carries a `{INTLABEL}` group, which makes the
+    /// invocation line's label the macro's to place rather than the assembler's.
+    int_label: bool,
+}
 /// Collected function definitions: name → (params, body tokens).
 type FunctionTable = std::collections::BTreeMap<String, (Vec<String>, Vec<Token>)>;
 
@@ -477,6 +493,11 @@ struct Asm {
     sources: sigil_span::SourceMap,
     functions: FunctionTable,
     macros: MacroTable,
+    /// The label written on the line of a `{INTLABEL}` macro invocation, parked
+    /// between [`Asm::exec_one`] recognising it and [`Asm::expand_macro_inner`]
+    /// binding it to `__LABEL__`. Set only on the step immediately before the
+    /// expansion it belongs to, and taken there.
+    pending_int_label: Option<String>,
     macro_depth: usize,
     /// One entry per macro expansion currently on the stack, innermost last.
     /// Parameter / `ALLARGS` / `.ATTRIBUTE` substitution reads the INNERMOST
@@ -617,6 +638,7 @@ impl Asm {
             sources: sigil_span::SourceMap::new(),
             functions: std::collections::BTreeMap::new(),
             macros: std::collections::BTreeMap::new(),
+            pending_int_label: None,
             macro_depth: 0,
             macro_frames: Vec::new(),
             macro_expansion_seq: 0,
@@ -1674,7 +1696,29 @@ impl Asm {
                 self.directive_set(&name, &b[1..], span);
                 return;
             }
-            self.define_label(&name);
+            // `NAME: label expr` — the same decorative-colon shape as the
+            // equate forms above, and the corpus writes it
+            // (`Obj28_Properties___LABEL__: label *`). Intercepted here so the
+            // name is bound ONCE, by the directive, with the directive's value.
+            let is_label_kw =
+                matches!(b.first().map(|t| &t.tok), Some(Tok::Ident(s)) if fold_kw(s) == "label");
+            if is_label_kw && b.len() >= 2 {
+                let span = b[0].span;
+                self.directive_label(&name, &b[1..], span);
+                return;
+            }
+            // `NAME: mac` where `mac` declares `{INTLABEL}`: the label belongs
+            // to the MACRO, which places it (or does not). Defining it here as
+            // well would put it at the invocation address on top of wherever the
+            // body puts it. asl defines NOTHING for a capture the body drops —
+            // `LabA: sup` on a `{INTLABEL}` macro whose body is a bare `nop`
+            // leaves `LabA` out of the symbol table entirely, while `LabB:` on
+            // an otherwise identical macro without the group lists as `1002 C`.
+            if self.head_takes_int_label(b) {
+                self.pending_int_label = Some(name);
+            } else {
+                self.define_label(&name);
+            }
         }
         let mut body = parsed.tokens;
         // `!name` builtin escape (T9.2, asl-verified): a leading `!` forces
@@ -1733,6 +1777,15 @@ impl Asm {
             self.directive_set(&head, &body[2..], body[0].span);
             return;
         }
+        // `name label <expr>` — AS's address-symbol form, the colon-less twin of
+        // the arm in the colon path above. Same reason for the early intercept as
+        // `=`/`equ`/`set`: the head is the symbol NAME, not a mnemonic.
+        if matches!(body.get(1).map(|t| &t.tok), Some(Tok::Ident(s)) if fold_kw(s) == "label")
+            && body.len() >= 3
+        {
+            self.directive_label(&head, &body[2..], body[0].span);
+            return;
+        }
         if !is_op_keyword(&head)
             && !is_mnemonic(&head)
             && !self.macros.contains_key(&head)
@@ -1752,7 +1805,15 @@ impl Asm {
                     return;
                 }
             }
-            self.define_label(&head);
+            // The colon-less twin of the `{INTLABEL}` arm above. Both spellings
+            // reach the capture (asl: `Tbl outer 3` with no colon binds
+            // `__LABEL__` to `Tbl`), and the substituted nested form
+            // `__LABEL__ inner aa` arrives here as exactly this shape.
+            if self.head_takes_int_label(&body[1..]) {
+                self.pending_int_label = Some(head.clone());
+            } else {
+                self.define_label(&head);
+            }
             if body.len() == 1 {
                 return;
             }
@@ -2308,6 +2369,77 @@ impl Asm {
             && split_attribute_suffix(head).is_some_and(|(base, _)| self.macros.contains_key(base))
     }
 
+    /// Whether the first token of `toks` names a macro whose parameter list
+    /// carries `{INTLABEL}` — i.e. whether a label written on this line is the
+    /// macro's to place rather than a location label at the invocation address.
+    ///
+    /// The `.ATTRIBUTE`-suffix spelling counts: the capture is a property of the
+    /// definition, and a suffixed call expands the same body.
+    fn head_takes_int_label(&self, toks: &[Token]) -> bool {
+        let Some(Token { tok: Tok::Ident(name), .. }) = toks.first() else {
+            return false;
+        };
+        let def = self.macros.get(name).or_else(|| {
+            split_attribute_suffix(name).and_then(|(base, _)| self.macros.get(base))
+        });
+        def.is_some_and(|m| m.int_label)
+    }
+
+    /// AS's `label` directive: bind `name` to an expression, as an ADDRESS.
+    ///
+    /// It is neither `equ` nor a plain label. Its VALUE is any expression
+    /// (`A label *`, `B label $2000`, `C: label *+4` list as `1000`, `2000`,
+    /// `1004`), and unlike `equ` the symbol carries the code segment — every one
+    /// of those rows ends `C` in asl's table, where a `:=` row ends `-`. And
+    /// unlike a plain label inside a macro body it is EXPORTED to the caller: it
+    /// is the whole reason the corpus's `{INTLABEL}` macros can define the
+    /// caller's table head from inside their own expansion.
+    ///
+    /// It also OPENS the scope it names, in the caller — `Table label *` inside
+    /// an expansion makes a later `.cnt` read back as `Table.cnt` at top level.
+    /// Where the expression is the current PC, which is every corpus and every
+    /// probe use (`label *` on 68000, `label $` on Z80), that is exactly
+    /// [`Self::define_label`] and it is reused whole, so the symbol relocates
+    /// with its section like any other label. A value that is NOT the PC cannot
+    /// be a placed label, so it binds as a scope-opening constant.
+    fn directive_label(&mut self, name: &str, rest: &[Token], span: Span) {
+        let Some(v) = self.eval_all(rest, span) else {
+            self.err(span, "label needs a value");
+            return;
+        };
+        self.open_section_if_needed();
+        // A `.`-local `label` qualifies against the CALLER's real scope, not the
+        // expansion's — it is a value-binding form, and those all land in the
+        // caller (see [`Self::real_scope`]). A global one OPENS its scope there.
+        let qualified = if name.starts_with('.') {
+            qualify(name, self.real_scope())
+        } else {
+            self.open_scope(name);
+            name.to_string()
+        };
+        self.env.define(&qualified, SymbolValue::Int(v));
+        self.known_labels.insert(qualified.clone());
+        // Only a PC-valued `label` is a PLACED label the linker can relocate.
+        // Any other value is a constant that happens to be typed as an address,
+        // and handing it to the builder would claim a position for it here.
+        if v == self.here_i64() {
+            self.builder.define_label(&qualified);
+        }
+    }
+
+    /// Open `name` as the local-label scope, in the CALLER's frame of reference.
+    ///
+    /// Inside an expansion the real scope is [`Self::outer_scope`] — `self.scope`
+    /// holds the expansion's own unspellable name — so writing `self.scope` there
+    /// would be undone the moment the expansion returns.
+    fn open_scope(&mut self, name: &str) {
+        if self.macro_frames.is_empty() {
+            self.scope = Some(name.to_string());
+        } else {
+            self.outer_scope = Some(name.to_string());
+        }
+    }
+
     fn dispatch(&mut self, head: &str, rest: &[Token], span: Span) {
         if let Some((base, suffix)) = split_attribute_suffix(head) {
             if !self.macros.contains_key(head) && self.macros.contains_key(base) {
@@ -2323,6 +2455,17 @@ impl Asm {
             "phase" => self.directive_phase(rest, span),
             "dephase" => self.directive_dephase(),
             "org" => self.directive_org(rest, span),
+            // A `label` line with NO name. Every named spelling is intercepted
+            // in `exec_one` before dispatch, so reaching here means the name
+            // field was empty — which is what `__LABEL__ label *` becomes in a
+            // `{INTLABEL}` macro invoked without a label. asl lists the line and
+            // defines nothing, with no diagnostic:
+            //
+            // ```text
+            //   12/ 1007 : =>FALSE                      if ""<>""
+            //   12/ 1007 :                      label *
+            // ```
+            "label" => {}
             "save" => self.state.save(),
             "restore" => {
                 if let Err(m) = self.state.restore() {
@@ -4662,7 +4805,8 @@ impl Asm {
             .map(|l| self.subst_frame(l).unwrap_or_else(|| l.clone()))
             .collect();
         self.dot_label_cache.remove(&name);
-        self.macros.insert(name, (params, body));
+        let int_label = head_declares_int_label(&head.text);
+        self.macros.insert(name, MacroDef { params, body, int_label });
         end + 1
     }
 
@@ -4759,6 +4903,7 @@ impl Asm {
             text,
             f.attribute.as_deref(),
             &f.all_args(),
+            f.int_label.as_deref(),
             &f.params,
             &f.bound,
         ))
@@ -4802,10 +4947,19 @@ impl Asm {
             );
             return;
         }
-        let (params, body) = match self.macros.get(name) {
+        let MacroDef { params, body, int_label } = match self.macros.get(name) {
             Some(m) => m.clone(),
             None => return,
         };
+        // The label written on the INVOCATION line, consumed here. `exec_one`
+        // parks it rather than defining it when the head names a `{INTLABEL}`
+        // macro; a macro that does not declare the capture never sees one, and
+        // one that does but was invoked bare gets the EMPTY text — which is what
+        // makes the corpus's `if "__LABEL__"<>""` guard in `rsttarget` a guard
+        // at all (asl: `dc.b "[]"`, `if ""<>""` FALSE, and the bare `label *`
+        // that follows defines nothing and is not an error).
+        let captured = self.pending_int_label.take();
+        let int_label = int_label.then(|| captured.unwrap_or_default());
         let all_args = render_tokens(arg_toks);
         let groups = split_top_commas(arg_toks);
         let mut keyword: std::collections::BTreeMap<String, String> =
@@ -4907,7 +5061,8 @@ impl Asm {
         // from; every expansion nested inside it keeps that same real scope, so a
         // value-binding `.`-local reaches out through the whole nest in one step.
         let outer_scope = self.outer_scope.clone();
-        if self.macro_frames.is_empty() {
+        let outermost = self.macro_frames.is_empty();
+        if outermost {
             self.outer_scope = caller_scope.clone();
         }
         self.scope = Some(format!(" macro#{}", self.macro_expansion_seq));
@@ -4921,16 +5076,73 @@ impl Asm {
             attribute: attribute.map(str::to_string),
             suspend: 0,
             dot_labels,
+            int_label,
         });
         self.exec(&body);
         self.macro_frames.pop();
         self.macro_depth -= 1;
-        self.scope = caller_scope;
-        self.outer_scope = outer_scope;
+        // A `label` directive inside the body opens the CALLER's scope, and the
+        // scope it opened OUTLIVES the expansion — that is what carries
+        // `zoneOrderedTable`'s `.zone_table_name` and every `Table.cnt` read
+        // after the call. The real scope lives in `outer_scope` while an
+        // expansion is running, so the outermost frame hands it back as
+        // `self.scope` on the way out instead of restoring the stale entry
+        // scope, and a nested frame leaves `outer_scope` alone rather than
+        // restoring over a change an inner body made. asl, `Tbl outer 3` where
+        // `outer` calls `inner` and `inner` writes `__LABEL__ label *`:
+        //
+        // ```text
+        //   17/ 1000 : =$1000               Tbl label *
+        //   17/ 100E : =$7                  .cnt := 7
+        //   19/ 1019 : 07                  	dc.b Tbl.cnt
+        // ```
+        if outermost {
+            self.scope = self.outer_scope.clone();
+            self.outer_scope = outer_scope;
+        } else {
+            self.scope = caller_scope;
+        }
     }
 }
 
 // ── free helpers ────────────────────────────────────────────────────────────
+
+/// Whether a `NAME macro …` head declares the internal-label capture.
+///
+/// AS writes it as a brace group in the parameter list, and the group is a
+/// KEYWORD, so it folds even under `-U` (asl: `lo macro {intlabel}` under
+/// `Aa:` emits `lo=<Aa> <Aa>` for `"lo=<__LABEL__> <__label__>"`). Declaring it
+/// twice is not an error and means what declaring it once means.
+///
+/// The scan stops at a `;` so a brace inside a trailing comment is inert, and it
+/// reads the raw head text because the lexer swallows a `{…}` group without
+/// emitting a token — which is also why the group never reaches the parameter
+/// list as a phantom slot.
+fn head_declares_int_label(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b';' => return false,
+            b'{' => {
+                let start = i + 1;
+                let mut j = start;
+                while j < bytes.len() && bytes[j] != b'}' {
+                    j += 1;
+                }
+                if j >= bytes.len() {
+                    return false;
+                }
+                if text[start..j].trim().eq_ignore_ascii_case("intlabel") {
+                    return true;
+                }
+                i = j + 1;
+            }
+            _ => i += 1,
+        }
+    }
+    false
+}
 
 /// The binding one macro expansion substitutes into its body, and the state
 /// `shift` mutates.
@@ -4977,6 +5189,19 @@ struct MacroFrame {
     /// belong to the EXPANSION; every other `.`-local a body line mentions
     /// belongs to the caller's real scope. See [`scan_dot_labels`].
     dot_labels: std::rc::Rc<std::collections::BTreeSet<String>>,
+    /// The invocation line's label text, for a macro whose parameter list
+    /// carries `{INTLABEL}`. `None` where the macro does not declare the
+    /// capture, and then `__LABEL__` is not a substitution at all but ordinary
+    /// text (asl-verified: `m macro pp` emitting `"L=<__LABEL__>"` under
+    /// `Lab1: m 11` emits the nine characters `__LABEL__`).
+    ///
+    /// `shift` does not touch it — it is not an argument. asl, `sm macro
+    /// {INTLABEL},pp` called `Lb2: sm 5,6` with a `shift` first:
+    ///
+    /// ```text
+    ///   12/ 100B : 3C36 3E20 3C4C     dc.b "<6> <Lb2> <>"
+    /// ```
+    int_label: Option<String>,
 }
 
 impl MacroFrame {
@@ -7320,13 +7545,23 @@ C:\n";
     }
 
     #[test]
-    fn attribute_substitutes_inside_a_string_literal_too() {
-        // `.ATTRIBUTE` is a plain (unbounded) text substitution — like
-        // `ALLARGS` — so it also reaches inside a quoted string in the macro
-        // body, not just a bare mnemonic. "x.ATTRIBUTEy" -> "x.wy" (4 chars);
-        // without substitution it would stay "x.ATTRIBUTEy" (12 chars).
-        let src = "        cpu 68000\n        padding off\n        phase 0\nfoo     macro\n        dc.b strlen(\"x.ATTRIBUTEy\")\n        endm\n        foo.w\n";
-        assert_eq!(image(src), vec![4]);
+    fn attribute_substitutes_inside_a_string_literal_but_not_before_a_letter() {
+        // `.ATTRIBUTE` reaches inside a quoted string, and it is NOT unbounded:
+        // an alphanumeric immediately after it blocks the match, exactly as it
+        // does for `ALLARGS` and for a parameter. Only the LEADING check is
+        // skipped, and only because `.` cannot continue an identifier — which is
+        // what keeps the glued-mnemonic use (`move.ATTRIBUTE`) working.
+        //
+        // asl `-xx -n -q -A -L -U -i .`, one `foo.w` expansion:
+        //
+        // ```text
+        //    8/ 1000 : 0C          dc.b strlen("x.ATTRIBUTEy")
+        //    8/ 1001 : 05          dc.b strlen("x.w y")
+        // ```
+        //
+        // Twelve characters unsubstituted, then five substituted.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nfoo     macro\n        dc.b strlen(\"x.ATTRIBUTEy\")\n        dc.b strlen(\"x.ATTRIBUTE y\")\n        endm\n        foo.w\n";
+        assert_eq!(image(src), vec![12, 5]);
     }
 
     #[test]
