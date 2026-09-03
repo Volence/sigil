@@ -15,8 +15,48 @@ pub fn lex_line(
     source: SourceId,
     base: u32,
 ) -> Result<Vec<Token>, Diagnostic> {
-    let bytes = line.as_bytes();
+    let (toks, err) = lex_line_recover(line, cpu, source, base);
+    match err {
+        Some(d) => Err(d),
+        None => Ok(toks),
+    }
+}
+
+/// Tokenise as much of one logical line as lexes cleanly, and report the first
+/// malformed token separately instead of discarding everything before it.
+///
+/// A malformed token is almost always in the OPERAND — `if ($)&1`, `dc.b $` —
+/// while the token that decides what the line *is* sits at the head. Callers
+/// that only need the head (block-structure scanning: which lines open and
+/// close an `if`/`macro`/`rept`) must still see it, because a head lost to an
+/// operand's lex error desynchronises the block nesting: the matching closer
+/// then pops the WRONG frame, and the block is cut short at a line that is not
+/// its end. For a conditional that surfaces as an orphaned `endif`; for a
+/// `macro` it silently TRUNCATES the body, which changes emitted bytes with no
+/// diagnostic at all.
+///
+/// [`lex_line`] keeps the all-or-nothing contract for every caller that needs a
+/// complete token stream to mean anything (instruction lowering, expression
+/// evaluation).
+pub fn lex_line_recover(
+    line: &str,
+    cpu: Cpu,
+    source: SourceId,
+    base: u32,
+) -> (Vec<Token>, Option<Diagnostic>) {
     let mut out = Vec::new();
+    let err = lex_into(line, cpu, source, base, &mut out).err();
+    (out, err)
+}
+
+fn lex_into(
+    line: &str,
+    cpu: Cpu,
+    source: SourceId,
+    base: u32,
+    out: &mut Vec<Token>,
+) -> Result<(), Diagnostic> {
+    let bytes = line.as_bytes();
     let mut i = 0usize;
     let span_at = |start: usize, end: usize| Span {
         source,
@@ -228,7 +268,7 @@ pub fn lex_line(
             }
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 fn is_ident_start(c: u8) -> bool {
@@ -285,7 +325,7 @@ fn punct(b: &[u8]) -> Option<(Punct, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::lex_line;
+    use super::{lex_line, lex_line_recover};
     use crate::token::{Punct, Tok};
     use sigil_ir::backend::Cpu;
     use sigil_span::SourceId;
@@ -444,5 +484,27 @@ mod tests {
                 Tok::Int(64),
             ]
         );
+    }
+
+    /// A malformed token in the OPERAND does not take the head with it: the
+    /// tokens before the failure come back, and the diagnostic comes back
+    /// beside them rather than instead of them. Block-structure scanning
+    /// routes on that head, and asl counts a nested `if`/`endif` inside a
+    /// branch whose expression it never evaluates.
+    #[test]
+    fn lex_line_recover_keeps_the_head_before_a_bad_operand() {
+        let (toks, err) = lex_line_recover("	if ($)&1", Cpu::M68000, SourceId(0), 0);
+        assert_eq!(
+            toks.iter().map(|t| t.tok.clone()).collect::<Vec<_>>(),
+            vec![Tok::Ident("if".into()), Tok::Punct(Punct::LParen)]
+        );
+        assert_eq!(
+            err.map(|d| d.message),
+            Some("`$` with no hex digits".to_string())
+        );
+        // A clean line reports no error and lexes whole, exactly as before.
+        let (toks, err) = lex_line_recover("	if 1", Cpu::M68000, SourceId(0), 0);
+        assert!(err.is_none());
+        assert_eq!(toks.len(), 2);
     }
 }
