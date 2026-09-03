@@ -10848,7 +10848,7 @@ C:\n";
 
     /// **An empty list is ONE EMPTY iteration, not none** — for both spellings.
     /// This is the rule `s2.macrosetup.asm(301)`'s `if ARGCOUNT>0` guard exists
-    /// to stop, and the rule S1's `demoinput ,	$8C` lines depend on: `irpc
+    /// to stop, and the rule S1's `demoinput ,    $8C` lines depend on: `irpc
     /// btn,"buttons"` with an empty `buttons` runs the `switch` once against an
     /// empty character and matches no `case`. asl, probe `p6.asm` case 6a and
     /// `p7.asm` case 7a:
