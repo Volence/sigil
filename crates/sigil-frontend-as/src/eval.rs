@@ -6469,6 +6469,33 @@ mod tests {
             .unwrap_or_default()
     }
 
+    /// The image bytes a leading `ds.l 1` contributes before anything that
+    /// follows it in the same section. A reservation advances the write cursor,
+    /// so the next thing to write fills the gap rather than packing over it,
+    /// and every offset into such a section is measured from here.
+    const DS_L_1_GAP: usize = 4;
+
+    /// Assert an image the way `p2bin` reports one for a `ds`-then-emit shape:
+    /// a reservation advances the write cursor, so the gap it opens is filled
+    /// by whatever writes next and the image spans the whole reserved range.
+    /// These images run to tens of kilobytes for a RAM-side probe, so the
+    /// assertion is total size, the trailing bytes, and zero everywhere else —
+    /// which for these shapes is the entire rest of the image.
+    ///
+    /// The expected pairs are read off `p2bin`'s own output, not off sigil's:
+    /// `asl -xx -n -q -A -L -U -i .` then `p2bin <probe>.p <probe>.bin`.
+    fn assert_p2bin_image(src: &str, size: usize, tail: &[u8]) {
+        let img = image(src);
+        assert_eq!(img.len(), size, "image size (p2bin's is {size})");
+        let split = size - tail.len();
+        assert_eq!(&img[split..], tail, "image tail at offset {split:#x}");
+        assert!(
+            img[..split].iter().all(|&b| b == 0),
+            "the reservation's gap fills with zero: byte {:?} is not",
+            img[..split].iter().position(|&b| b != 0)
+        );
+    }
+
     /// Address-register-destination ALU hygiene (effects-P2 corruption fix,
     /// 2026-08-12). End-to-end: `add/sub dN,aM` must FAIL to assemble (they alias
     /// ADDX/SUBX — `D549`-style silent memory corruption), matching this file's
@@ -7768,10 +7795,12 @@ C:\n";
         //        5/    B005 :          align 256
         //        6/    B100 : B100     L: dc.w L
         //
-        // $B100, not $B200. The 5 `ds.b` bytes and the align pad are reserve
-        // (no image); only the trailing `dc.w L` is image, carrying L's low word.
+        // $B100, not $B200. The `ds.b` and the align pad open a gap, and the
+        // trailing `dc.w L` fills it: `p2bin p1.p p1.bin` is 258 bytes, zero
+        // everywhere but `B1 00` at offset $100 — L's low word at L's own
+        // offset from the phase base.
         let src = "        cpu 68000\n        padding off\n        phase $B000\n        ds.b 5\n        align 256\nL:      dc.w L\n        dephase\n";
-        assert_eq!(image(src), vec![0xB1, 0x00]);
+        assert_p2bin_image(src, 258, &[0xB1, 0x00]);
     }
 
     #[test]
@@ -7789,8 +7818,12 @@ C:\n";
         // This is the block that puts Aeon's `Player_Pos_Ring` above the naive
         // boundary — the real content of the 2026-07-08 probe, whose four rows
         // were all RAM addresses recorded by their low half.
+        //
+        // `p2bin p9.p p9.bin` is 45,570 bytes ($B202), zero but for `B2 00` at
+        // offset $B200 — the reservation's gap, filled by the `dc.w` that
+        // follows it, at L's own offset from the phase base.
         let src = "        cpu 68000\n        padding off\n        phase $FFFF0000\n        ds.b $B02A\n        align 256\nL:      dc.w L&$FFFF\n        dephase\n";
-        assert_eq!(image(src), vec![0xB2, 0x00]);
+        assert_p2bin_image(src, 0xB202, &[0xB2, 0x00]);
     }
 
     #[test]
@@ -7805,10 +7838,14 @@ C:\n";
         //   p12   4/    B000 :            ds.b  $2A
         //         5/    B02A :            align 2
         //         6/    B02A : B02A       M: dc.w M
+        //
+        // `p2bin` on the two: 45,102 bytes ending `B0 2C` at $B02C, and 44
+        // bytes ending `B0 2A` at $2A. The two extra bytes the RAM side costs
+        // are visible in the image size, not only in the label.
         let ram = "        cpu 68000\n        padding off\n        phase $FFFF0000\n        ds.b $B02A\n        align 2\nM:      dc.w M&$FFFF\n        dephase\n";
-        assert_eq!(image(ram), vec![0xB0, 0x2C]);
+        assert_p2bin_image(ram, 0xB02E, &[0xB0, 0x2C]);
         let rom = "        cpu 68000\n        padding off\n        phase $B000\n        ds.b $2A\n        align 2\nM:      dc.w M\n        dephase\n";
-        assert_eq!(image(rom), vec![0xB0, 0x2A]);
+        assert_p2bin_image(rom, 0x2C, &[0xB0, 0x2A]);
     }
 
     #[test]
@@ -8500,12 +8537,16 @@ C:\n";
         RamPtr: ds.l 1\n\
         \tmove.l #CrossSeamOnly, (RamPtr).w\n";
         let m = run(src, &Options::default()).expect("assemble (must defer, not hard-error)");
-        // opcode word + 4-byte imm32 fixup hole + 2-byte abs.w dest ext word.
+        // `RamPtr: ds.l 1` opens a four-byte gap that the instruction after it
+        // fills, then the instruction itself: opcode word + 4-byte imm32 fixup
+        // hole + 2-byte abs.w dest ext word. asl+p2bin on this source give 12
+        // bytes, `00 00 00 00` then `21FC …`.
         let bytes = m.sections.iter().find(|s| !s.image_bytes().is_empty()).map(|s| s.image_bytes());
         assert_eq!(
             bytes.as_deref().map(|b| b.len()),
-            Some(8),
-            "move.l #imm,(abs).w must encode to 8 bytes (opcode + imm32 + abs.w ext word)"
+            Some(DS_L_1_GAP + 8),
+            "move.l #imm,(abs).w must encode to 8 bytes (opcode + imm32 + abs.w ext word), \
+             behind the four-byte gap `ds.l 1` opens"
         );
     }
 
@@ -8599,13 +8640,32 @@ C:\n";
             .find(|s| !s.image_bytes().is_empty())
             .map(|s| s.image_bytes())
             .expect("resolved section");
-        // Opcode word (bytes 0..2) and the abs.w dest ext word (bytes 6..8)
-        // must match byte-for-byte; only the imm32 hole (2..6) legitimately
-        // differs (0 placeholder vs the resolved $1234).
-        assert_eq!(&bytes_deferred[0..2], &bytes_resolved[0..2], "opcode word must match");
-        assert_eq!(&bytes_deferred[6..8], &bytes_resolved[6..8], "abs.w dest ext word must match");
-        assert_eq!(&bytes_deferred[2..6], &[0, 0, 0, 0], "deferred imm32 hole is the zero placeholder");
-        assert_eq!(&bytes_resolved[2..6], &[0x00, 0x00, 0x12, 0x34], "resolved control's imm32");
+        // Both sources open with `RamPtr: ds.l 1`, whose four-byte gap the
+        // instruction fills, so the instruction starts at `DS_L_1_GAP` and
+        // every offset below is measured from there. asl+p2bin on the resolved
+        // source give 12 bytes: `00 00 00 00 21 FC 00 00 12 34 00 00`.
+        let g = DS_L_1_GAP;
+        assert_eq!(&bytes_deferred[..g], &[0, 0, 0, 0], "the `ds.l 1` gap fills with zero");
+        assert_eq!(&bytes_resolved[..g], &[0, 0, 0, 0], "the `ds.l 1` gap fills with zero");
+        // Opcode word and the abs.w dest ext word must match byte-for-byte;
+        // only the imm32 hole legitimately differs (0 placeholder vs the
+        // resolved $1234).
+        assert_eq!(&bytes_deferred[g..g + 2], &bytes_resolved[g..g + 2], "opcode word must match");
+        assert_eq!(
+            &bytes_deferred[g + 6..g + 8],
+            &bytes_resolved[g + 6..g + 8],
+            "abs.w dest ext word must match"
+        );
+        assert_eq!(
+            &bytes_deferred[g + 2..g + 6],
+            &[0, 0, 0, 0],
+            "deferred imm32 hole is the zero placeholder"
+        );
+        assert_eq!(
+            &bytes_resolved[g + 2..g + 6],
+            &[0x00, 0x00, 0x12, 0x34],
+            "resolved control's imm32"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -8797,11 +8857,13 @@ C:\n";
             image(&format!("{head}Acc SET $05\n        DC.B Acc\nAcc SET $06\n        DC.B Acc\n")),
             vec![0x05, 0x06]
         );
-        // DS.B reserves — asserted through the PC it advances (a reservation
-        // emits no bytes of its own, so the image alone cannot see it).
+        // DS.B reserves. It advances the PC by its count AND opens a gap the
+        // following `DC.B` fills, so the image carries both facts: `After` is
+        // $03, and it sits at offset 3 behind two bytes of gap fill. asl+p2bin
+        // on the same source give the same four bytes.
         assert_eq!(
             image(&format!("{head}        DC.B $01\n        DS.B 2\nAfter:\n        DC.B After\n")),
-            vec![0x01, 0x03],
+            vec![0x01, 0x00, 0x00, 0x03],
             "DS.B must fold and advance the PC by its count"
         );
         // ORG moves the PC; the folded keyword is what makes the label agree.
