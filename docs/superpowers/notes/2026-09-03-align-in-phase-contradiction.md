@@ -181,3 +181,9 @@ reconcile, and re-freezing is not this parcel's act in any case.
   (asl's result is always a multiple of `n`).
 - Two asl corners left unmodelled on purpose, recorded at `asl_align_pad`: `n`
   truncated to a `Word`, and a PC that leaves the 32-bit space.
+- `crates/sigil-harness/golden/PROVENANCE.md:74` still describes the split
+  baseline as needing "asl's in-phase ALIGN = `round_up(pos + n, n)`, a full
+  extra `n`". The sentence is stale in the same way the code comment was — the
+  extra `n` is real but conditional on the RAM address, not on the phase. Left
+  untouched deliberately: the frozen record is the overseer's to amend, and no
+  golden byte moved.
