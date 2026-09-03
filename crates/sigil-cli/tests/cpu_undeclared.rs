@@ -169,10 +169,36 @@ fn a_byteless_undeclared_unit_is_still_refused() {
         "the refusal is a property of the unit and is stated exactly once: {:?}",
         diags.iter().map(|d| &d.message).collect::<Vec<_>>()
     );
+}
+
+/// The refusal is reported FIRST, ahead of the diagnostics it explains.
+///
+/// `FOO equ $10` is the shape that makes this testable: with no processor
+/// declared the unit runs on the provisional one, where `$` lexes as the
+/// program counter rather than a hex prefix, so the line mis-parses and raises
+/// its own diagnostic before the end of the unit is reached. That mis-parse is
+/// a SYMPTOM of the missing declaration, and a reader who meets it first is
+/// being handed the consequence instead of the cause — which is exactly how
+/// this class of failure stayed invisible.
+#[test]
+fn the_refusal_is_reported_before_the_diagnostics_it_explains() {
+    let diags = sigil_frontend_as::assemble("FOO equ $10\n", &Options::default())
+        .expect_err("nothing declared it: this must be refused");
+
+    // The precondition that keeps the ordering assertion from being vacuous: a
+    // lone diagnostic is trivially first. If the cascade ever stops happening,
+    // this fails loudly rather than passing for the wrong reason.
+    assert!(
+        diags.len() >= 2,
+        "this gate needs a diagnostic for the refusal to be ordered AHEAD of; \
+         got only: {:?}",
+        diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+    );
     assert_eq!(
         diags.first().map(|d| d.message.as_str()),
         Some(CPU_UNDECLARED),
         "the refusal must be reported FIRST — every other diagnostic an \
-         undeclared unit produces is a consequence of it"
+         undeclared unit produces is a consequence of it. Got: {:?}",
+        diags.iter().map(|d| &d.message).collect::<Vec<_>>()
     );
 }
