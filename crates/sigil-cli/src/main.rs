@@ -84,16 +84,13 @@ fn main() {
         }
     };
 
-    let src = match std::fs::read_to_string(&input) {
-        Ok(text) => text,
-        Err(err) => {
-            eprintln!("error: cannot read {input}: {err}");
-            process::exit(1);
-        }
-    };
-
+    // `assemble_root` rather than `assemble`: it sets `include_root` to the source file's
+    // own parent, which is where an `include` is written relative to. `assemble` leaves it
+    // unset and the paths then resolve against whatever directory the command was run
+    // from — so `sigil path/to/root.asm` failed for everyone who did not first `cd` into
+    // the project, with `cannot include` lines naming files that are plainly there.
     let opts = sigil_frontend_as::Options::default();
-    let module = match sigil_frontend_as::assemble(&src, &opts) {
+    let module = match sigil_frontend_as::assemble_root(std::path::Path::new(&input), &opts) {
         Ok(m) => m,
         Err(diags) => {
             for d in &diags {
