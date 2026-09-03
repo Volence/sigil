@@ -7794,6 +7794,30 @@ C:\n";
     }
 
     #[test]
+    fn a_label_placed_capture_is_a_relocatable_symbol_the_linker_can_reach() {
+        // `label` at the PC produces a PLACED label, not a constant that happens
+        // to equal the PC. The difference is invisible to a backward `dc.w`,
+        // which the front end folds in-pass — it shows in a fixup the front end
+        // DEFERS and the linker resolves from the section's symbol table. A
+        // `bra.w` to a capture the macro places is exactly that shape:
+        //
+        // ```text
+        //    8/ 1000 : 6000 0002           	bra.w Dest
+        //    9/ 1004 : (MACRO)              Dest	mk
+        //    9/ 1004 : =$1004               Dest label *
+        //    9/ 1004 : 4E71                        nop
+        //   10/ 1006 : 1004                	dc.w Dest
+        // ```
+        let src = intlabel_src(
+            "mk macro {INTLABEL}\n__LABEL__ label *\n\tnop\n\tendm\n\tbra.w Dest\nDest\tmk\n\tdc.w Dest\n",
+        );
+        assert_eq!(
+            linked_image(&src)[0x1000..],
+            [0x60, 0x00, 0x00, 0x02, 0x4E, 0x71, 0x10, 0x04]
+        );
+    }
+
+    #[test]
     fn split_attribute_suffix_strips_known_suffixes_only() {
         use super::split_attribute_suffix;
         assert_eq!(split_attribute_suffix("foo.w"), Some(("foo", ".w")));
