@@ -14,7 +14,7 @@ flags minus the two that only redirect output: `asl -xx -n -q -A -L -U -i .`
 (the build adds `-E` to send errors to a log and `-c` for a shared header;
 `common.lua:773`). **`-U` forces case-sensitivity** and every row below carries
 it. Every rule is stated with the row that establishes it, and every expected
-value in the eleven tests is such a row.
+value in the twelve tests is such a row.
 
 ## The three constructs
 
@@ -197,14 +197,25 @@ expansion that opened it**:
 ```
 
 Two frames deep, and `.cnt` — written in `outer`'s body AFTER the nested call —
-still lands in `Tbl`. That is what `zoneOrderedTable`'s `.zone_table_name`
-depends on, and it is why the expansion exit now hands the real scope BACK
-rather than restoring the one it entered with. A colon-less invocation label is
-captured, and so is a dotted one, with its dot.
+still lands in `Tbl`. A colon-less invocation label is captured, and so is a
+dotted one, with its dot.
 
-Only a PC-valued `label` is a placed label. Sigil reuses the ordinary label path
-for it so the symbol relocates with its section; any other value binds as a
-scope-opening constant, which no corpus or aeon site writes.
+Both halves of that are load-bearing for `zoneOrderedTable`. Inside the
+expansion, `label` has to open the scope the CALLER sees, or the six
+`.zone_*` accumulators bound on the lines below it land in the expansion's own
+unspellable scope. After it returns, the scope has to still be open, because the
+sibling `zoneTableEntry` reads those same accumulators from top level on every
+later row of the table. Until this parcel that scope came from sigil defining
+the column-0 label on the invocation line — the very definition `{INTLABEL}`
+suppresses — so implementing the capture without moving the scope with it would
+have taken the accumulators out from under the table.
+
+Only a PC-valued `label` is a PLACED label, and only that case is handed to the
+builder, so the symbol relocates with its section like any other label. Any
+other value binds the name and opens the scope but claims no position, because
+it has none to claim. It does not reuse the plain-label path wholesale: that
+path qualifies a `.`-local against the EXPANSION and opens the expansion's
+scope, which are both the opposite of what a value-binding form does.
 
 ## The design, and the one thing it is not
 
@@ -242,13 +253,19 @@ The fall is 5,381 and it is almost all one class — `label` read as a mnemonic:
 | `` `…` is not a recognized 68000 mnemonic `` (`mappings/MapMacros.asm`) | 4,568 | **0** |
 | `` `…` is not a recognized 68000 mnemonic `` (`s2.macros.asm`) | 801 | 273 |
 | `` `…` is not a recognized 68000 mnemonic `` (`s2.asm`) | 512 | 255 |
-| `operand … out of range` (`s2.asm`, 25 spellings) | 91 | 67 |
+| `operand … out of range` (`s2.asm`; 91 distinct spellings, 24 of them fall to zero) | 91 | 67 |
 | `unknown directive or mnemonic `…`` (`s2.sounddriver.asm`) | 14 | 10 |
 | **every other class** (135 of them) | — | **unchanged, to the count** |
 
-**No class rose and no new class appeared.** The unresolved-symbol SETS were
-compared sorted, not just their sizes: **zero newly unresolved, and zero newly
-resolved** — the block never was an unresolved-symbol problem.
+**No class rose and no new class appeared.** Every one of the 21,003 before-rows
+and 15,622 after-rows parses into the table above, so there is no unclassified
+remainder hiding a rise. The unresolved-symbol SETS were compared sorted, not
+just their sizes: **zero newly unresolved, and zero newly resolved** — the block
+never was an unresolved-symbol problem.
+
+The sixth parcel's own sites are the ones a scope change would break first, and
+they held: `s2.macros.asm:191`, `:197`, `:208` and `:227` — `zoneTableEntry`'s
+`!org` and `shift`, 1,315 diagnostics before that parcel — are still at zero.
 
 Per line, every site of the three spellings went to zero: `MapMacros.asm:13`
 and `:21` (1,774 each), `s2.macros.asm:157` — the anchor — 492, `MapMacros.asm:63`
@@ -256,9 +273,12 @@ and `:71` (398 each), `MapMacros.asm:3` 224, `s2.asm:88688` 59, `:48390` 39,
 `:3895`/`:3900` 33 each, `:83542`/`:83543` 24 each, `s2.macros.asm:168` 23,
 `s2.asm:90909` 22, `:24369` 12, `s2.macros.asm:239` 11, `s2.asm:88195` 11,
 `:90910` 9, `:86228` 9, `:87676` 6, `s2.sounddriver.asm:285` 4,
-`s2.macros.asm:109` 2. The largest remaining single site is
-`s2.macros.asm:289` (272), which is `irpc` — a different unimplemented
-construct.
+`s2.macros.asm:109` 2.
+
+The three largest remaining sites are all in `s2.macrosetup.asm` and none is
+this row: `:104` (996, `strlen(): could not evaluate string builtin`), `:59` and
+`:62` (749 each, `` `$` with no hex digits `` — the Z80 `$` PC spelling reached
+under 68000). The largest in `s2.macros.asm` is `:289` (272), which is `irpc`.
 
 `mappings/MapMacros.asm` is a FIFTH file carrying these spellings; the
 dispatching brief named four, and that file alone is 85% of the fall.
@@ -290,15 +310,19 @@ unresolved-symbol set comparison mattered even though it came back empty.
 
 ## Verification
 
-* Eleven tests, every expected value a listing row quoted at the test.
-* Twelve mutations, each shown applied from disk by a `git diff --stat` naming
+* Twelve tests, every expected value a listing row quoted at the test. One
+  existing test changed value rather than being added — the `.ATTRIBUTE` string
+  row above.
+* Thirteen mutations, each shown applied from disk by a `git diff --stat` naming
   the file, each restored from the COMMITTED baseline between runs, each redding
   a named set: defining the captured label anyway; substituting `__LABEL__`
   without the declaration; restoring the underscore-blocks boundary; dropping
   either boundary half; removing either `label` intercept; restoring the entry
   scope on the way out; making the declaration case-sensitive; making the
   built-in names case-sensitive; letting the `{…}` group reach the parameter
-  list; and dropping the builder label.
+  list; dropping the builder label; and taking the parked capture AFTER the
+  recursion cap's early return instead of before it — which reds with the
+  literal wrong answer, `captured <D>` where asl runs the guard FALSE.
 * **The last of those was applied and stayed GREEN across the whole crate**, and
   chasing it found real uncovered ground rather than a false alarm. Neither
   `image` nor `linked_image` can see the difference: the front end folds the
