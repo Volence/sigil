@@ -21,9 +21,10 @@
 //! report is BOTH wrong and detectably out of range.
 //!
 //! The assertions are about the CLI PROCESS rather than about the front-end library.
-//! `Diagnostic::primary` always carried a span and `SourceMap::location` always
-//! resolved one; what was missing was a map with the spliced files in it and a
-//! renderer that used it, and only running the shipped command exercises both.
+//! A located diagnostic needs three things at once — a span, a map holding the
+//! spliced file that span indexes into, and a renderer that consults it — and a
+//! library-level test can hold the first two while the shipped command still prints
+//! nothing. Only running the command exercises all three.
 
 use std::process::Command;
 
