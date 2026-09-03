@@ -1303,10 +1303,10 @@ impl Asm {
                 // rather than the includer's. `self.source` follows the file being
                 // executed and is restored on the way out, so the includer's
                 // remaining lines report the includer again.
-                let id = self.sources.add_named(path.display().to_string(), text.clone());
+                let id = self.sources.add_named(path.display().to_string(), text);
                 let outer = self.source;
                 self.source = id;
-                let lines = split_src_lines(&text, id);
+                let lines = split_src_lines(self.sources.text(id), id);
                 self.exec(&lines);
                 self.source = outer;
             }
