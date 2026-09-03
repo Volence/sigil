@@ -14,6 +14,21 @@ sigil-specific: the landing-lane division, the worktree/test quirks, and the que
 > *"the section above/below"* about a dated section that has moved; those resolve in the log,
 > which carries every entry under its original line span.
 
+## STANDING: REPORT TO THE HUB WHENEVER YOU FINISH OR STOP (owner, 2026-09-03)
+
+**Owner ruling, all lanes.** Verified here firsthand rather than taken from the relay:
+`f04afe3` is reachable from empyrean `origin/main` and
+`git -C ../empyrean show f04afe3:docs/OVERSEER.md | grep -n 'loosk like aeon'` returns it at
+line 55. His words: *"tell the agents any time theyy finish work or stop to report to you
+please, loosk like aeon's stopped right now"*.
+
+**Send the hub (`empyrean-01`) one message whenever anything leaves this lane with nothing
+running** — a landing, a boundary, a block, an owner question, a dispatched agent returning.
+Say what landed (**SHA from git output, never typed from memory**) or why you stopped, and what
+you need. **Going quiet without a message is the state he named**, and note what prompted it:
+he could see a lane had stopped and could not see why. `lane-status.json` is not a substitute —
+it is a pull, and this ruling is a push.
+
 ## NO ACTIVE HOLD — read this before running anything that builds
 
 **A hold that lives only in a chat message does not survive a `/clear`** *(aurora's)*. An
