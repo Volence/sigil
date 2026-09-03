@@ -581,6 +581,30 @@ next refreeze that names a revision** — the condition is the field's absence, 
 number. It prints `ratchet:`, never `skip:` — the bar
 below requires zero `skip:` lines and this is not a missing reference.
 
+- **HOW LONG THE STRICT LANDING RUN TAKES, AND WHY THE NUMBER MATTERS.** The harness caps a
+  foreground `Bash` call at ten minutes, and **a capped run is a KILLED run whose log still
+  aggregates clean** — no `FAILED` lines, a plausible total, and nothing saying it stopped
+  early. So the gate closest to that cap is the one that can silently turn into a green.
+
+  **Do not read a duration off this page — every run stamps its own.** `landing-run.sh` writes
+  `# started (UTC)` before cargo and `# finished (UTC)` after it (`:428`), so any log answers
+  this for the tree and box it actually ran on:
+
+  ```sh
+  grep -E 'started \(UTC\)|finished \(UTC\)' "$LOG"
+  ```
+
+  **Measured 2026-09-03 across three independent runs on an otherwise busy box: 3m40s, 3m56s,
+  4m03s** — about 2.5× headroom under the cap, comfortable today and not guaranteed on a
+  loaded machine or a larger suite. Treat that as a snapshot with a known direction of travel:
+  the suite only grows.
+
+  **The completeness check is POSITIVE, and log-stamping does not provide it.** A stamp answers
+  *which tree*; it does not answer *whether the run finished*. Assert the **suite count** and the
+  runner's **own exit line** (`CARGO_EXIT`), never infer a pass from the absence of failures —
+  those two are what separate "everything passed" from "it was killed a third of the way in",
+  and an aggregate total is equally consistent with both.
+
 - **Full suite bar** — run it as `scripts/landing-run.sh --baseline <N> --aeon <clean>`, which
   carries every requirement below inside one command span and REFUSES rather than degrading
   when one is missing. The hand-spelled equivalent, which is what the wrapper runs:
