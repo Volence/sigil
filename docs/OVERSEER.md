@@ -1068,9 +1068,10 @@ corpus is unassemblable without folding. **115 of 237 diagnostics trace to case 
 is a language-surface call and is **not** ruled here.
 
 **⚠ THE ROOT IS WORSE THAN CASE AND MUST NOT BE FOLDED INTO IT.** `initial_cpu` defaults to
-`Z80` (`lib.rs:29`, honest for the Z80-only M0 build), the directive table matches `"cpu"` lower
-case only (`eval.rs:1956`), and under `Cpu::Z80` a `$` lexes as `Tok::Dollar` — the program
-counter — rather than a hex prefix (`lexer.rs:75`). So a 68000 disassembly assembles **as Z80**.
+`Z80` (`Options`' default, honest for the Z80-only M0 build), `dispatch`'s directive match takes
+`"cpu"` lower case only, and under `Cpu::Z80` the lexer's `b'$'` arm yields `Tok::Dollar` — the
+program counter — not a hex prefix. So a 68000 disassembly assembles **as Z80**. Cited by symbol:
+every line number this paragraph carried had rotted within a day.
 Case folding fixes this corpus *because s2disasm happens to carry a `CPU` line at all*. A 68000
 source with no `cpu` directive still silently assembles as Z80, and **that is a separate defect
 with its own fix** (the CLI's default for a general-purpose assembler is not the M0 build's
@@ -1090,7 +1091,7 @@ grepping the name of an assembler returns an instruction, and the listing reads 
 is right there."* `Command::new` is what converts the name into behaviour; it comes back empty.
 
 **⚠ THE CASE FOLD IS IN AEON'S SHIPPING BUILD PATH — fold DIRECTIVES AND MNEMONICS ONLY, NEVER
-SYMBOLS.** `sigil-frontend-as` is not a compatibility side-car: aeon's `build.sh:7` routes the
+SYMBOLS.** `sigil-frontend-as` is not a compatibility side-car: aeon's `build.sh` routes the
 residual `.asm` DATA through it and three files still go that way (`engine/debug/debugger.asm`,
 both `game_root.asm`). So this parcel can move aeon bytes and must prove it did not. Symbols
 are deliberately case-sensitive (`lib.rs:31`, *"Names are case-sensitive"*) and `.emp` shares
