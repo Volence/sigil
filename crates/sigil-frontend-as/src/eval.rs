@@ -5774,9 +5774,9 @@ fn scan_dot_labels(body: &[SrcLine]) -> std::collections::BTreeSet<String> {
             nested = 1;
             continue;
         }
-        // A label field sits at column 0 — AS's column rule, the same test
-        // `exec_one` applies to a bare (colon-less) head.
-        let Some(rest) = text.strip_prefix('.') else {
+        let trimmed = text.trim_start();
+        let indented = trimmed.len() != text.len();
+        let Some(rest) = trimmed.strip_prefix('.') else {
             continue;
         };
         let len = rest
@@ -5786,20 +5786,27 @@ fn scan_dot_labels(body: &[SrcLine]) -> std::collections::BTreeSet<String> {
             continue;
         }
         let (name, tail) = rest.split_at(len);
-        // `:=` is ONE token, so the decorative-colon strip must not bite it.
-        let tail = if tail.starts_with(":=") {
-            tail
-        } else {
-            tail.strip_prefix(':').unwrap_or(tail)
-        };
+        // `:=` is ONE token, so the colon strip must not bite it.
+        let colon = tail.starts_with(':') && !tail.starts_with(":=");
+        let tail = if colon { &tail[1..] } else { tail };
         let next = tail.trim_start();
-        let binds = next.starts_with(":=")
+        // A value binding, in any of its spellings — including the decorative
+        // colon `exec_one` also tolerates (`.__pos: set …`).
+        if next.starts_with(":=")
             || next.starts_with('=')
             || matches!(
                 &*fold_kw(next.split_whitespace().next().unwrap_or("")),
                 "equ" | "set"
-            );
-        if !binds {
+            )
+        {
+            continue;
+        }
+        // The two label shapes `exec_one` accepts, and only those: a COLON label
+        // at any indentation (`parse_line_tokens` peels it wherever it sits —
+        // aeon's `assert` macro writes its `\t.skip:` indented), and a bare one
+        // at column 0 (AS's column rule, where an indented head is an
+        // instruction instead).
+        if colon || !indented {
             out.insert(format!(".{name}"));
         }
     }
@@ -8740,6 +8747,45 @@ C:\n";
             "Base:\n",
             ".tgt:\n",
             "	mown\n",
+            "	dc.w Later\n",
+            "Later:\n",
+        );
+        assert_eq!(
+            linked_image(src),
+            vec![0x67, 0x04, 0x4E, 0x71, 0x4E, 0x71, 0x00, 0x08]
+        );
+    }
+
+    /// A colon label is a label wherever it sits. AS's column rule only decides
+    /// the COLON-LESS head, so a macro body may indent its `.`-locals and still
+    /// own them — aeon's `assert` macro writes `\t.skip:` that way, and the
+    /// engine's whole assert family branches to it.
+    ///
+    /// ```text
+    ///   11/       0 :                     .skip:
+    ///   12/       0 : (MACRO)                mind
+    ///   12/       0 : 6704                        beq.s   .skip
+    ///   12/       2 : 4E71                        nop
+    ///   12/       4 : 4E71                        nop
+    ///   12/       6 :                             .skip:
+    ///   13/       6 : 0008                   dc.w    Later
+    /// ```
+    ///
+    /// `6704` is the body's own, four bytes forward, with the caller's `.skip`
+    /// sitting at zero.
+    #[test]
+    fn an_indented_colon_label_is_still_the_expansions_own() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "mind macro\n",
+            "	beq.s .skip\n",
+            "	nop\n",
+            "	nop\n",
+            "	.skip:\n",
+            "	endm\n",
+            "Base:\n",
+            ".skip:\n",
+            "	mind\n",
             "	dc.w Later\n",
             "Later:\n",
         );
