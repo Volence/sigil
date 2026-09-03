@@ -147,23 +147,35 @@ applies — which is exactly why the glued-mnemonic use works:
 
 `move.ATTRIBUTE` and `x.ATTRIBUTE` both substitute; `.ATTRIBUTEx` does not. The
 frontend's comment argued from `move.ATTRIBUTE` that the match must be unbounded
-in BOTH directions; the row says only the leading half follows, and the trailing
-half is the ordinary rule. A test asserted the unbounded reading directly —
-`strlen("x.ATTRIBUTEy")` = 4 — and asl says twelve:
+in BOTH directions. Only the leading half follows; the trailing half is the
+ordinary rule. Asserted directly — `strlen("x.ATTRIBUTEy")` — asl says twelve:
 
 ```text
    8/ 1000 : 0C          dc.b strlen("x.ATTRIBUTEy")
    8/ 1001 : 05          dc.b strlen("x.ATTRIBUTE y")
 ```
 
-That test now carries asl's answer. **Under `-U` the three built-ins fold case
+**Under `-U` the three built-ins fold case
 and a parameter name does not** (`cm macro Pp` called `cm.w Zz`:
 `a[Zz] b[pp] c[PP] d[Zz] e[Zz] f[.w]` for `a[Pp] b[pp] c[PP] d[allargs]
 e[ALLARGS] f[.attribute]`), so the fold follows the keyword/symbol split rather
 than the flag.
 
-Because the boundary rule is now uniform and `__LABEL__` obeys it, the capture
-needed no special case in the substituter beyond being a fourth candidate.
+Because the boundary rule is uniform and `__LABEL__` obeys it, the capture needs
+no special case in the substituter beyond being a fourth candidate.
+
+It also lands on the right side of the OTHER text layer. A `{expr}` name
+composition group is resolved after the frame substitution, so a capture pasted
+into a name that also carries a group composes with it:
+
+```text
+   8/ 1000 : (MACRO)              Qq:	cmp
+   8/ 1000 : =$9                  zzz_{n}_Qq = 9
+   9/ 1000 : 09                  	dc.b zzz_3_Qq
+```
+
+The capture pastes first and the group evaluates into the result, not the other
+way round.
 
 ## `label`
 
@@ -205,10 +217,11 @@ expansion, `label` has to open the scope the CALLER sees, or the six
 `.zone_*` accumulators bound on the lines below it land in the expansion's own
 unspellable scope. After it returns, the scope has to still be open, because the
 sibling `zoneTableEntry` reads those same accumulators from top level on every
-later row of the table. Until this parcel that scope came from sigil defining
-the column-0 label on the invocation line — the very definition `{INTLABEL}`
-suppresses — so implementing the capture without moving the scope with it would
-have taken the accumulators out from under the table.
+later row of the table. The scope cannot come from defining the column-0 label
+on the invocation line, because that definition is exactly what the capture
+suppresses — so the directive has to open it, and the expansion has to hand it
+back out. A capture implemented without moving the scope with it takes the
+accumulators out from under the table.
 
 Only a PC-valued `label` is a PLACED label, and only that case is handed to the
 builder, so the symbol relocates with its section like any other label. Any
@@ -277,8 +290,8 @@ and `:71` (398 each), `MapMacros.asm:3` 224, `s2.asm:88688` 59, `:48390` 39,
 
 The three largest remaining sites are all in `s2.macrosetup.asm` and none is
 this row: `:104` (996, `strlen(): could not evaluate string builtin`), `:59` and
-`:62` (749 each, `` `$` with no hex digits `` — the Z80 `$` PC spelling reached
-under 68000). The largest in `s2.macros.asm` is `:289` (272), which is `irpc`.
+`:62` (749 each, `` `$` with no hex digits ``, on `if ($)&1`). The largest in
+`s2.macros.asm` is `:289` (272), which is `irpc`.
 
 `mappings/MapMacros.asm` is a FIFTH file carrying these spellings; the
 dispatching brief named four, and that file alone is 85% of the fall.
@@ -305,7 +318,36 @@ nothing said anything. asl and sigil now agree:
   13/ 1002 : 0000 0002           	dc.w emerald_hill_zone,wood_zone
 ```
 
-A diagnostic count is not a measure of this half. It is the reason the
+### The boundary rule is a defect on its own, and also silent
+
+Seven of the sites the boundary rule moves in the corpus are ORDINARY
+parameters, with no `{INTLABEL}` anywhere near them — `palptr macro ptr,lineno`
+writing `bytesToLcnt(ptr_End-ptr)` (41 invocations), `TeleportTableEntry macro
+addressA,addressB` writing `.sizeA := addressA_End-addressA` (17), and
+`zoneAnimals macro first,second` writing `Obj28_Properties_first`. Between them
+they exercise BOTH halves of the rule with no capture involved: `ptr_End` needs
+the trailing `_` not to block, `Obj28_Properties_first` needs the leading one
+not to. Reduced to one file:
+
+```text
+  10/ 1004 : (MACRO)              	palptr Pal_SEGA
+  10/ 1004 : 0004                        dc.w (Pal_SEGA_End-Pal_SEGA)
+```
+
+asl `0004`; sigil before, `unresolved target expression (dangling symbol(s)
+`ptr_End`) for fixup`; sigil after, `00 04`. The corpus run never shows it,
+because that refusal is the LINKER's and `sigil s2.asm` on this corpus stops at
+the front end — which is why `ptr_End` and `addressA_End` appear zero times in
+both diagnostic dumps.
+
+Of the 34 sites the rule moves across `s2disasm/**/*.asm`, 27 are the capture's
+own composition idiom and 7 are these. None of the 34 is in aeon: a scan of
+every macro body in `.aeon-as-fold` finds **zero** sites where the new rule
+substitutes and the old did not, so the four-shape byte-identity below is a
+regression gate for everything else in this parcel and NOT evidence for the
+boundary rule. The corpus is the evidence for that.
+
+A diagnostic count is not a measure of either silent half. It is the reason the
 unresolved-symbol set comparison mattered even though it came back empty.
 
 ## Verification
@@ -323,7 +365,8 @@ unresolved-symbol set comparison mattered even though it came back empty.
   list; dropping the builder label; and taking the parked capture AFTER the
   recursion cap's early return instead of before it — which reds with the
   literal wrong answer, `captured <D>` where asl runs the guard FALSE.
-* **The last of those was applied and stayed GREEN across the whole crate**, and
+* **The builder-label mutation was applied and stayed GREEN across the whole
+  crate**, and
   chasing it found real uncovered ground rather than a false alarm. Neither
   `image` nor `linked_image` can see the difference: the front end folds the
   symbol out of its own env on the converged pass, so a `label` binding only a
@@ -334,17 +377,28 @@ unresolved-symbol set comparison mattered even though it came back empty.
   expected offset is derived from the equivalent program rather than copied.
 * aeon four shapes rebuilt from `/home/volence/sonic_hacks/.aeon-as-fold`
   (detached at aeon `4f5ad5a1`), all four artifacts DELETED first, one shape per
-  invocation, under `SIGIL_VERSION_STRICT=1`.
-* Full suite via `scripts/landing-run.sh`, against master's own run in its own
-  worktree and its own target directory.
-* `cargo clippy --release --workspace --all-targets -- -D warnings`.
+  invocation, all exit 0 under `SIGIL_VERSION_STRICT=1`, every log stamped
+  `Assembler: sigil 788648db5759 (clean at capture)`. CRC32+size unchanged on
+  every shape: s4 `14ee2440`/719700, s4.debug `142294b3`/737683, demo
+  `0c456778`/96474, demo.debug `2e603d53`/101339. mtimes moved on all four.
+  aeon writes none of the three spellings anywhere in the tree.
+* Full suite, `scripts/landing-run.sh` against that same reference tree, from
+  this worktree at `788648db`: **376 suites, 4302 passed, 0 failed, 2 ignored**,
+  `CARGO_EXIT=0`, GREEN. The same wrapper at master `6446259c` in its own
+  worktree and its own target directory: 376 suites, **4290 passed**, 0 failed,
+  2 ignored, `CARGO_EXIT=0`. The difference is 12, which is the count of
+  `#[test]` this branch adds. Each of the thirteen touched test names appears in
+  the branch log as `... ok`, and the log carries the run's pwd, HEAD, branch and
+  reference tree above cargo's first byte.
+* `cargo clippy --release --workspace --all-targets -- -D warnings`, exit 0.
 
 ## What stays open
 
 ### `irpc`
 
-`s2.macros.asm:289` (272 diagnostics) is now the largest single site. It is a
-character-iteration loop (`irpc btn,"buttons"`), unrelated to this parcel.
+`s2.macros.asm:289` (272 diagnostics) is now the largest single site in that
+file. It is a character-iteration loop (`irpc btn,"buttons"`), unrelated to this
+parcel.
 
 ### The plain-label export row
 
