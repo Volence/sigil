@@ -11202,3 +11202,62 @@ demo_debug = "51056291/101323"
 lean = "f1d06059/674816"
 s4 = "864ad7e9/719460"
 s4_debug = "ab5820b1/736472"
+
+[entry.superseded]
+by = "corpus-pin-advance"
+reason = "abandoned: entry 200 pinned aeon 8876459e while sigil's D1c baseline had already moved to expect the band-drift adoption (sigil 3fabac20 vs c27335d6, 16 minutes apart), so the pinned tree cannot satisfy the contract gate and its strict run is red by construction — a SIGIL BOOKKEEPING COLLISION, not a defect in aeon and not an engine regression"
+
+[[entry]]
+name = "corpus-pin-advance"
+ab = "sigil-side corpus pin advance at aeon 4f5ad5a1, no aeon parcel and no aeon byte attributable to it"
+aeon_rev = "4f5ad5a146b799c13aedabbba9da23fce370b63c"
+note = "advances the pin nine chains so the corpus satisfies sigil's own D1c baseline again; aeon confirmed no collision and does not freeze into this chain post-cut"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "b9574a32"
+full_size = 738015
+anchor_crc = "6cc06c5c"
+anchor_end = 0xa81fc
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "46dc1eda"
+full_size = 615905
+anchor_crc = "0492a150"
+anchor_end = 0x8c9ac
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "0c456778"
+full_size = 96474
+anchor_crc = "016fad0d"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "2e603d53"
+full_size = 101339
+anchor_crc = "dca4edc9"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "6678ba60"
+full_size = 674816
+anchor_crc = "896e5736"
+anchor_end = 0xa4c00
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "14ee2440"
+full_size = 719700
+anchor_crc = "6c637a60"
+anchor_end = 0xa5c82
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "142294b3"
+full_size = 737683
+anchor_crc = "ad1f2441"
+anchor_end = 0xa81fc
