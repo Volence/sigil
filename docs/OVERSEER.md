@@ -1060,7 +1060,9 @@ modern tooling parses. **The failure mode this ruling is written to prevent is n
 it is an UNDOCUMENTED split**, which reads as a bug to the next person and gets "fixed" into
 one dialect by someone who cannot tell which was intended.
 
-**RULED HERE — `@as_compat` must fold case; whether `.emp` proper does is PARKED for the owner.**
+**RULED HERE — the AS FRONTEND must fold case; whether `.emp` proper does is PARKED for the owner.**
+*(This ruling said `@as_compat` until 2026-09-03. Wrong surface: `@as_compat` is an `.emp` module
+attribute and the name appears nowhere in `sigil-frontend-as`. The subject is the frontend crate.)*
 Same shape as `d-22` (nameless labels) and settled the same way, by evidence rather than taste:
 the canonical community disassembly writes `CPU 68000`, `EQU`, `STRUCT` in capitals, so the
 corpus is unassemblable without folding. **115 of 237 diagnostics trace to case sensitivity** —
