@@ -4935,6 +4935,12 @@ impl Asm {
     }
 
     fn expand_macro_inner(&mut self, name: &str, arg_toks: &[Token], attribute: Option<&str>) {
+        // TAKEN FIRST, before any early return. `exec_one` parks the invocation
+        // line's label here and this is the only consumer; a return that left it
+        // parked would hand one call's label to the NEXT expansion, which is a
+        // wrong symbol rather than a missing one. Both early returns below are
+        // reachable — the recursion cap fires on the corpus's own `zoneTableEntry`.
+        let captured = self.pending_int_label.take();
         if self.macro_depth >= EXPAND_CAP {
             let span = arg_toks.first().map(|t| t.span).unwrap_or(Span {
                 source: self.source,
@@ -4951,14 +4957,11 @@ impl Asm {
             Some(m) => m.clone(),
             None => return,
         };
-        // The label written on the INVOCATION line, consumed here. `exec_one`
-        // parks it rather than defining it when the head names a `{INTLABEL}`
-        // macro; a macro that does not declare the capture never sees one, and
-        // one that does but was invoked bare gets the EMPTY text — which is what
-        // makes the corpus's `if "__LABEL__"<>""` guard in `rsttarget` a guard
-        // at all (asl: `dc.b "[]"`, `if ""<>""` FALSE, and the bare `label *`
-        // that follows defines nothing and is not an error).
-        let captured = self.pending_int_label.take();
+        // A macro that does not declare the capture never sees a label; one that
+        // does but was invoked bare gets the EMPTY text — which is what makes the
+        // corpus's `if "__LABEL__"<>""` guard in `rsttarget` a guard at all
+        // (asl: `dc.b "[]"`, `if ""<>""` FALSE, and the bare `label *` that
+        // follows defines nothing and is not an error).
         let int_label = int_label.then(|| captured.unwrap_or_default());
         let all_args = render_tokens(arg_toks);
         let groups = split_top_commas(arg_toks);
@@ -7839,6 +7842,43 @@ C:\n";
         let twin = intlabel_src("\tbra.w Dest\nDest:\n\tnop\n\tdc.w Dest\n");
         assert_eq!(section_label(&src, "Dest"), section_label(&twin, "Dest"));
         assert_eq!(section_label(&src, "Dest"), Some(4));
+    }
+
+    #[test]
+    fn a_capture_the_recursion_cap_refused_is_not_handed_to_the_next_call() {
+        // The capture is parked between `exec_one` recognising it and
+        // `expand_macro_inner` binding it, so EVERY path out of that function has
+        // to consume it. The runaway is the path that does not reach the
+        // binding: the deepest `D deep` parks a capture the refused expansion
+        // never takes, and an UNLABELLED `q` afterwards would then read `D` — a
+        // wrong symbol, not a missing one. asl runs the guard FALSE, so the
+        // `error` inside it never fires:
+        //
+        // ```text
+        //   12/ 1000 : (MACRO)              D       deep
+        //   13/ 1000 : (MACRO)              	q
+        //   13/ 1000 : =>FALSE                      if ""<>""
+        //   13/ 1000 :                                 error "captured <>"
+        // ```
+        //
+        // The runaway itself is diagnosed here (sigil caps the nest where asl
+        // silently stops), so the assertion is on the diagnostic SET: the cap,
+        // and nothing about a capture.
+        let src = intlabel_src(
+            "deep macro {INTLABEL}\nD\tdeep\n\tendm\n\
+             q macro {INTLABEL}\n\tif \"__LABEL__\"<>\"\"\n\terror \"captured <__LABEL__>\"\n\tendif\n\tendm\n\
+             \tdeep\n\tq\n",
+        );
+        let diags = run(&src, &Options::default()).expect_err("the runaway is diagnosed");
+        let messages: Vec<&str> = diags.iter().map(|d| d.message.as_str()).collect();
+        assert!(
+            messages.iter().any(|m| m.contains("expansion too deep")),
+            "expected the runaway to be diagnosed, got {messages:?}"
+        );
+        assert!(
+            !messages.iter().any(|m| m.contains("captured")),
+            "the refused expansion's capture reached the next call: {messages:?}"
+        );
     }
 
     #[test]
