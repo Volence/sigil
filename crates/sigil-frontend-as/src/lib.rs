@@ -57,7 +57,13 @@ instead.";
 
 /// Assembly options: the seeded symbol environment + the CPU active before any
 /// `cpu` directive.
-#[derive(Clone, Debug)]
+///
+/// `Default` is derived, and that is now load-bearing rather than incidental:
+/// every field's default is its type's own, so the default carries no
+/// assumption about the target at all. It used to hand back `Cpu::Z80`, which
+/// is how a 68000 source with no `cpu` line assembled silently as a Z80
+/// program.
+#[derive(Clone, Debug, Default)]
 pub struct Options {
     /// The processor the CALLER declares for this assembly unit, active before
     /// the first `cpu` directive — or `None` when the caller declares nothing
@@ -94,16 +100,6 @@ pub struct Options {
     pub include_root: Option<std::path::PathBuf>,
 }
 
-impl Default for Options {
-    fn default() -> Self {
-        Options {
-            initial_cpu: None,
-            defines: Vec::new(),
-            guarded_defines: Vec::new(),
-            include_root: None,
-        }
-    }
-}
 
 /// Assemble a single source string into an unlinked [`Module`] (sections carry
 /// labels + symbolic fixups; the linker resolves addresses). Returns every
