@@ -1,6 +1,6 @@
 //! eval: the driver — line loop, directive dispatch, instruction lowering, emit.
 
-use crate::expand::{render_tokens, replace_word, split_call_args, split_top_commas};
+use crate::expand::{render_tokens, split_call_args, split_top_commas, substitute_frame};
 use crate::lexer::lex_line;
 use crate::operands::{parse_operands, OperandAtom};
 use crate::parser::parse_line_tokens;
@@ -4614,7 +4614,7 @@ impl Asm {
     /// under this rule.
     ///
     /// `.ATTRIBUTE` is substituted with a plain (unbounded) literal-text
-    /// replace, the same way `ALLARGS` is — NOT `replace_word`'s
+    /// match, the same way `ALLARGS` is — NOT the parameters'
     /// identifier-boundary match, because `.ATTRIBUTE` is deliberately used
     /// glued onto a mnemonic (`move.ATTRIBUTE`, one lexed ident) as well as
     /// standalone in a string; a boundary check keyed on `is_alphanumeric`
@@ -4658,20 +4658,23 @@ impl Asm {
     /// every `if`/`switch`/`rept`/`while` head), [`Self::def_function`],
     /// [`Self::capture_macro`], [`Self::capture_struct`] and
     /// [`Self::parse_struct_field`].
+    ///
+    /// One pass, no rescanning: what a binding pastes in is the caller's text
+    /// and stays it, even when that text spells another of this expansion's
+    /// parameter names. [`substitute_frame`] carries the rule and asl's row for
+    /// it.
     fn subst_frame_text(&self, text: &str) -> Option<String> {
         let f = self.macro_frames.last()?;
         if f.suspend > 0 {
             return None;
         }
-        let mut out = text.to_string();
-        if let Some(suffix) = &f.attribute {
-            out = out.replace(".ATTRIBUTE", suffix);
-        }
-        out = out.replace("ALLARGS", &f.all_args());
-        for (p, a) in f.params.iter().zip(f.bound.iter()) {
-            out = replace_word(&out, p, a);
-        }
-        Some(out)
+        Some(substitute_frame(
+            text,
+            f.attribute.as_deref(),
+            &f.all_args(),
+            &f.params,
+            &f.bound,
+        ))
     }
 
     /// [`Self::subst_frame_text`] lifted to a whole line, preserving its span
@@ -7905,9 +7908,14 @@ C:\n";
 
     // ── `shift`: the variadic macro argument walk ───────────────────────────
     //
-    // Every expected value below is read off an `asl -L` listing row
+    // Every expected value below is read off an `asl -L -U` listing row
     // (AS V1.42 Beta Bld 212, `s2disasm/build_tools/Linux-x86_64/asl`), quoted
-    // in each test. The probe sources are recorded in
+    // in each test. `-U` is the invocation: it sets asl's `CASESENSITIVE` to 1,
+    // which is the namespace this front-end implements and the flag every asl
+    // oracle in this repo passes. Without it asl folds every identifier —
+    // including each macro argument's value at bind time — and the rows below
+    // come back upper-cased, describing a different assembler. The probe
+    // sources are recorded in
     // `docs/superpowers/notes/2026-09-03-as-shift-macro-argument-walk.md`.
 
     /// The shape both corpus uses have: guard on the first argument, emit,
@@ -7955,16 +7963,13 @@ C:\n";
     /// asl listing, `zb aa,bb,cc,dd` on params `b1,b2,b3` (`strlen` of the
     /// substituted `ALLARGS` after each shift):
     /// ```text
-    ///   32/  7 : 0B     dc.b strlen("aa,bb,cc,dd")
-    ///   32/  8 : 08     dc.b strlen("BB,CC,DD")
-    ///   32/  9 : 05     dc.b strlen("CC,DD")
-    ///   32/  A : 02     dc.b strlen("DD")
-    ///   32/  B : 00     dc.b strlen("")
-    ///   32/  C : 00     dc.b strlen("")
+    ///   41/  0 : 0B     dc.b strlen("aa,bb,cc,dd")
+    ///   41/  1 : 08     dc.b strlen("bb,cc,dd")
+    ///   41/  2 : 05     dc.b strlen("cc,dd")
+    ///   41/  3 : 02     dc.b strlen("dd")
+    ///   41/  4 : 00     dc.b strlen("")
+    ///   41/  5 : 00     dc.b strlen("")
     /// ```
-    /// asl renders the post-shift groups upper-cased because it is running
-    /// case-insensitive; sigil preserves the argument text as written, which
-    /// the lengths above are blind to.
     #[test]
     fn shift_drops_one_leading_group_from_allargs() {
         let src = concat!(
@@ -8067,10 +8072,10 @@ C:\n";
     /// asl listing, `zd aaa,bbbb,ccccc` on param `d1`, a `rept 2` whose body
     /// shifts and emits `strlen(ALLARGS)`, then one emission after the loop:
     /// ```text
-    ///   55/ 12 : 0E     dc.b strlen("aaa,bbbb,ccccc")
-    ///   55/ 13 : 0E     dc.b strlen("aaa,bbbb,ccccc")
-    ///   55/ 14 : 0E     dc.b strlen("aaa,bbbb,ccccc")
-    ///   55/ 15 : 05     dc.b strlen("CCCCC")
+    ///   42/  6 : 0E     dc.b strlen("aaa,bbbb,ccccc")
+    ///   42/  7 : 0E     dc.b strlen("aaa,bbbb,ccccc")
+    ///   42/  8 : 0E     dc.b strlen("aaa,bbbb,ccccc")
+    ///   42/  9 : 05     dc.b strlen("ccccc")
     /// ```
     #[test]
     fn a_shift_inside_a_rept_body_advances_the_frame_but_not_the_body_text() {
@@ -8094,10 +8099,10 @@ C:\n";
     ///
     /// asl listing, `eout aaaa,bbbbb` calling `ein qq,rrr` (which shifts):
     /// ```text
-    ///   67/ 16 : 0A                  dc.b strlen("aaaa,bbbbb")
-    ///   67/ 17 : (MACRO-2)            ein qq,rrr
-    ///   67/ 17 : 03                  dc.b strlen("RRR")
-    ///   67/ 18 : 0A                  dc.b strlen("aaaa,bbbbb")
+    ///   43/  A : 0A                  dc.b strlen("aaaa,bbbbb")
+    ///   43/  B : (MACRO-2)            ein qq,rrr
+    ///   43/  B : 03                  dc.b strlen("rrr")
+    ///   43/  C : 0A                  dc.b strlen("aaaa,bbbbb")
     /// ```
     #[test]
     fn an_inner_expansions_shift_leaves_the_outer_frame_alone() {
@@ -8125,8 +8130,8 @@ C:\n";
     /// asl listing, `zf aa,bbb,cccc` shifting once, then defining `zfin` whose
     /// body reads `ALLARGS`, then calling `zfin zzzzz`:
     /// ```text
-    ///   77/ 19 : (MACRO-2)   zfin zzzzz
-    ///   77/ 19 : 08          dc.b strlen("BBB,CCCC")
+    ///   44/  D : (MACRO-2)   zfin zzzzz
+    ///   44/  D : 08          dc.b strlen("bbb,cccc")
     /// ```
     /// `08` is the OUTER post-shift `ALLARGS` (`bbb,cccc`), not the inner
     /// call's `zzzzz` (which would be 5).
@@ -8160,6 +8165,156 @@ C:\n";
                 .any(|d| d.message.contains("`shift` outside a macro expansion")),
             "expected the outside-a-macro refusal, got {:?}",
             diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    /// Argument text carries its case through a `shift` and into emitted bytes.
+    ///
+    /// asl `-U` — the case-sensitive invocation this front-end is the
+    /// compatible surface for, and the one every `asl` oracle in this repo runs
+    /// — applies no case transformation to a macro argument at any point, so
+    /// what the caller wrote is what lands in the data:
+    ///
+    /// ```text
+    ///   11/ 1000 : (MACRO)              	ws	aa, bb , cc
+    ///   11/ 1000 : 453C 6161 2C62              dc.b    "E<aa,bb,cc>"
+    ///   11/ 100B : 533C 6262 2C63              dc.b    "S<bb,cc>"
+    /// ```
+    ///
+    /// The row also pins the rendering: `ALLARGS` before a shift is the
+    /// invocation's argument run with the separators normalized (the written
+    /// `aa, bb , cc` renders `aa,bb,cc`), and after a shift it is the surviving
+    /// groups rejoined.
+    #[test]
+    fn shift_carries_argument_case_into_emitted_bytes() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "ws macro pp,qq\n",
+            "	dc.b \"E<ALLARGS>\"\n",
+            "	shift\n",
+            "	dc.b \"S<ALLARGS>\"\n",
+            "	endm\n",
+            "	ws aa, bb , cc\n",
+        );
+        assert_eq!(image(src), b"E<aa,bb,cc>S<bb,cc>".to_vec());
+    }
+
+    /// A post-shift `ALLARGS` that composes a symbol NAME resolves the symbol
+    /// the caller spelled, case for case — the silent-wrong-answer direction,
+    /// since a folded spelling would be a DIFFERENT symbol in this front-end's
+    /// case-sensitive namespace and would resolve to a different value rather
+    /// than fail.
+    ///
+    /// asl `-U`, `Mix_Ss equ $77` and `pick zz,Ss` on param `qq`, shifting once:
+    ///
+    /// ```text
+    ///    9/    0 : (MACRO)              	pick	zz,Ss
+    ///    9/    0 : 0077                        dc.w    Mix_{"Ss"}
+    /// ```
+    ///
+    /// and the folded spelling names nothing, rather than the same symbol:
+    ///
+    /// ```text
+    ///    9/    0 : (MACRO)              	pick	zz,SS
+    ///  > > > n7.asm(9) pick(2):17: error #1010: symbol undefined
+    ///  > > >         dc.w    Mix_{"SS"}
+    /// ```
+    #[test]
+    fn a_composed_name_from_a_post_shift_allargs_keeps_the_arguments_case() {
+        let head = "	cpu 68000\n	padding off\n	phase 0\nMix_Ss equ $77\n";
+        let body = concat!(
+            "pick macro qq\n",
+            "	shift\n",
+            "	dc.w Mix_{\"ALLARGS\"}\n",
+            "	endm\n",
+        );
+        assert_eq!(image(&format!("{head}{body}	pick zz,Ss\n")), vec![0x00, 0x77]);
+        // The folded spelling composes a name nothing declares, so it survives
+        // the front-end as an unresolved reference rather than folding onto
+        // `Mix_Ss` and quietly assembling to $77.
+        let m = run(&format!("{head}{body}	pick zz,SS\n"), &Options::default())
+            .expect("the folded call still lowers");
+        let targets: Vec<String> = m.sections[0]
+            .fragments
+            .iter()
+            .flat_map(|f| match f {
+                sigil_ir::Fragment::Data(d) => {
+                    d.fixups.iter().map(|x| format!("{:?}", x.target)).collect()
+                }
+                _ => Vec::new(),
+            })
+            .collect();
+        assert_eq!(targets, vec![r#"Sym("Mix_SS")"#.to_string()]);
+    }
+
+    /// What a binding pastes in is the caller's text and stays it. A macro
+    /// argument whose text happens to spell one of the callee's own parameter
+    /// names must NOT be substituted a second time — AS resolves a body's
+    /// parameter references to placeholders when the macro is captured, so text
+    /// arriving at expansion time is inert.
+    ///
+    /// asl `-U`, `mm macro pp,qq` — the first call passes `qq` as a value, the
+    /// second passes `pp`:
+    ///
+    /// ```text
+    ///   11/ 1000 : (MACRO)              	mm	qq,zz
+    ///   11/ 1000 : 453C 7171 2C7A              dc.b    "E<qq,zz>"
+    ///   11/ 1008 : 533C 7A7A 3E                dc.b    "S<zz>"
+    ///   12/ 100D : (MACRO)              	mm	xx,pp,yy
+    ///   12/ 100D : 453C 7878 2C70              dc.b    "E<xx,pp,yy>"
+    ///   12/ 1018 : 533C 7070 2C79              dc.b    "S<pp,yy>"
+    /// ```
+    #[test]
+    fn pasted_argument_text_is_not_rescanned_for_parameter_names() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "mm macro pp,qq\n",
+            "	dc.b \"E<ALLARGS>\"\n",
+            "	shift\n",
+            "	dc.b \"S<ALLARGS>\"\n",
+            "	endm\n",
+            "	mm qq,zz\n",
+            "	mm xx,pp,yy\n",
+        );
+        assert_eq!(
+            image(src),
+            b"E<qq,zz>S<zz>E<xx,pp,yy>S<pp,yy>".to_vec()
+        );
+    }
+
+    /// A keyword call's `ALLARGS` before any shift is the invocation text as
+    /// WRITTEN — keyword syntax, written order and all — while after a shift it
+    /// is the supplied slots rejoined in PARAMETER order. The two renderings
+    /// therefore disagree here, and asl `-U` matches the written text:
+    ///
+    /// ```text
+    ///   11/ 1000 : (MACRO)              	kw	k2=aa,k1=bb
+    ///   11/ 1000 : 453C 6B32 3D61              dc.b    "E<k2=aa,k1=bb>"
+    ///   11/ 100E : 533C 6161 3E                dc.b    "S<aa>"
+    ///   13/ 1021 : (MACRO)              	kw	aa,k2=bb
+    ///   13/ 1021 : 453C 6161 2C6B              dc.b    "E<aa,k2=bb>"
+    ///   13/ 102C : 533C 6262 3E                dc.b    "S<bb>"
+    /// ```
+    ///
+    /// `S<aa>` is the value bound to `k2`, the callee's second parameter — not
+    /// the second group the caller wrote.
+    #[test]
+    fn a_keyword_calls_allargs_is_written_text_before_a_shift_and_parameter_order_after() {
+        let head = "	cpu 68000\n	padding off\n	phase 0\n";
+        let body = concat!(
+            "kw macro k1,k2\n",
+            "	dc.b \"E<ALLARGS>\"\n",
+            "	shift\n",
+            "	dc.b \"S<ALLARGS>\"\n",
+            "	endm\n",
+        );
+        assert_eq!(
+            image(&format!("{head}{body}	kw k2=aa,k1=bb\n")),
+            b"E<k2=aa,k1=bb>S<aa>".to_vec()
+        );
+        assert_eq!(
+            image(&format!("{head}{body}	kw aa,k2=bb\n")),
+            b"E<aa,k2=bb>S<bb>".to_vec()
         );
     }
 }

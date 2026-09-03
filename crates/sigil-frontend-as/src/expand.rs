@@ -76,33 +76,85 @@ fn punct_str(p: Punct) -> &'static str {
     }
 }
 
-/// Whole-word text replace (identifier boundaries), for positional macro params.
-pub(crate) fn replace_word(text: &str, word: &str, repl: &str) -> String {
-    if word.is_empty() {
-        return text.to_string();
-    }
-    let mut out = String::new();
-    let mut rest = text;
-    while let Some(pos) = rest.find(word) {
-        let before = &rest[..pos];
-        let after = &rest[pos + word.len()..];
-        let ok_before = before
+/// Substitute one macro expansion's bindings into a body line's text in a
+/// SINGLE left-to-right pass, so no substituted text is ever rescanned.
+///
+/// The single pass is the whole point, and it is what AS's storage model gives
+/// for free: AS resolves a body's parameter references to `\001\00N`
+/// placeholders when the macro is CAPTURED, so text pasted in at expansion time
+/// is inert — it contains no placeholders and cannot acquire any. Substituting
+/// by successive whole-text replaces does not have that property: a value
+/// pasted for one name is still in the buffer when the next name is scanned for,
+/// so an argument whose text happens to spell a parameter name gets rewritten a
+/// second time. asl `-U`, `mm macro pp,qq` called `mm qq,zz`, emitting
+/// `"E<ALLARGS>"`:
+///
+/// ```text
+///   11/ 1000 : (MACRO)              	mm	qq,zz
+///   11/ 1000 : 453C 7171 2C7A              dc.b    "E<qq,zz>"
+/// ```
+///
+/// The argument text is `qq,zz` — the `qq` stays the identifier the caller
+/// wrote, even though `qq` is also this expansion's second parameter.
+///
+/// At each source position the candidates are tried in AS's own precedence —
+/// `.ATTRIBUTE`, then `ALLARGS`, then the parameters in declaration order — and
+/// the first that matches consumes its source text. `.ATTRIBUTE` and `ALLARGS`
+/// match anywhere, with no boundary condition; a parameter name matches only on
+/// identifier boundaries, which is what lets a guard on `"param"` collapse to
+/// `""` for an empty binding. An empty parameter name never matches.
+pub(crate) fn substitute_frame(
+    text: &str,
+    attribute: Option<&str>,
+    all_args: &str,
+    params: &[String],
+    bound: &[String],
+) -> String {
+    const ATTRIBUTE: &str = ".ATTRIBUTE";
+    const ALLARGS: &str = "ALLARGS";
+
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0usize;
+    'outer: while i < bytes.len() {
+        let rest = &text[i..];
+        if attribute.is_some() && rest.starts_with(ATTRIBUTE) {
+            out.push_str(attribute.unwrap_or_default());
+            i += ATTRIBUTE.len();
+            continue;
+        }
+        if rest.starts_with(ALLARGS) {
+            out.push_str(all_args);
+            i += ALLARGS.len();
+            continue;
+        }
+        // A parameter name is whole-word: the character before it in the SOURCE
+        // and the one after it must both be non-identifier.
+        let prev_is_ident = text[..i]
             .chars()
             .last()
-            .is_none_or(|c| !c.is_alphanumeric() && c != '_');
-        let ok_after = after
-            .chars()
-            .next()
-            .is_none_or(|c| !c.is_alphanumeric() && c != '_');
-        out.push_str(before);
-        if ok_before && ok_after {
-            out.push_str(repl);
-        } else {
-            out.push_str(word);
+            .is_some_and(|c| c.is_alphanumeric() || c == '_');
+        if !prev_is_ident {
+            for (p, a) in params.iter().zip(bound.iter()) {
+                if p.is_empty() || !rest.starts_with(p.as_str()) {
+                    continue;
+                }
+                let after_is_ident = rest[p.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_');
+                if after_is_ident {
+                    continue;
+                }
+                out.push_str(a);
+                i += p.len();
+                continue 'outer;
+            }
         }
-        rest = after;
+        let c = rest.chars().next().unwrap_or_default();
+        out.push(c);
+        i += c.len_utf8();
     }
-    out.push_str(rest);
     out
 }
 
