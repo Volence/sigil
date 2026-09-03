@@ -51,9 +51,9 @@
 //! table under test disagrees with the ISA, the test is what says so.
 //!
 //! The displacement itself comes from the `Disp` operand contract in the same
-//! file: *"the already-resolved displacement … measured from `instruction_address
-//! + 2`"*. Every fixture uses one fixed shape so that number is arithmetic and not
-//! a lookup:
+//! file: *"the already-resolved displacement … measured from
+//! `instruction_address + 2`"*. Every fixture uses one fixed shape so that
+//! number is arithmetic and not a lookup:
 //!
 //! ```text
 //! proc p() {

@@ -126,7 +126,7 @@ impl<'a> Evaluator<'a> {
             Some(b) => std::fs::canonicalize(b).unwrap_or_else(|_| b.clone()),
             None => root.clone(),
         };
-        let Some(mut resolved) = join_lexical(&base, candidate) else {
+        let Some(resolved) = join_lexical(&base, candidate) else {
             self.error(
                 span,
                 "[sandbox.path-escape] embed/import path must stay within the source directory",
