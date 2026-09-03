@@ -140,8 +140,12 @@ at exactly two kinds of site and neither lands on a disagreeing address:
 
 - The three `.asm` sources (`games/*/game_root.asm`, `engine/debug/debugger.asm`)
   contain **no `phase` at all**, so `directive_align` always took its non-phase
-  branch — which was already the correct rule. `debugger.asm`'s 21 `!align`s are
-  all `align 2` at ROM addresses.
+  branch — which was already the correct rule. `debugger.asm` has **10** `!align`
+  directives, every one `!align 2`, all at ROM addresses. (The brief said 21 —
+  that is `grep -ci align`, which also counts `_eh_align_offset` and the
+  `.__align_flag` `set` lines; and it named the file as carrying `align`
+  occurrences in a tree where its 0 hits for a whitespace-delimited `align`
+  had already misled one search.)
 - `regions.rs`'s single `@align(256)` (`Player_Pos_Ring`) sits at a RAM cursor
   whose low byte is `$1A` (plain) and `$50` (debug) — and for `n = 256` the old
   rule and the true one differ **only** when the low byte is exactly `$01`
