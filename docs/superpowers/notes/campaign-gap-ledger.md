@@ -1208,6 +1208,28 @@ symbol-table diff vs the AS reference is the sharp diagnostic. Gaps found:
   lands: `Collision_GetType` d3 (sensor-register convention, site-commented) + the row-1023 license
   cases. Lint NOT built here — the Phase-2.5 slot stands; Parcel B was the D1c-derived set only, no
   corpus-wide tidy (that is the lint's structured job).
+  — **MEASURED CORPUS-WIDE 2026-09-02, and the number changes what this row is.** Running
+  `declared_clobbers ∖ closure.effective[proc].regs` over every shipped shape: **76 of 387 procs on
+  sonic4 plain, 62 on sonic4 debug** carry at least one unexercised declared clobber — not the 4 the
+  Parcel-B D1c-derived subset found, because that subset was never the corpus. Sample-validated
+  against source rather than trusted: `Air_CeilingBump` declares `clobbers(d0-d7/a1-a2)` — ten
+  registers — while its body writes only `d0` (`dist_to_fix(d0)`) and calls one proc whose effective
+  set adds nothing. A true positive, and exactly the pessimism the row names: every caller must
+  assume ten registers destroyed.
+  **SO THE LINT IS NOT THE HOUR IT LOOKS LIKE, and the reason is worth recording before someone
+  picks it up expecting one.** Landing `[proc.clobber-unexercised]` observe-only would add ~76
+  warn-tier firings needing per-row adjudication under the register discipline. And the TIGHTENING
+  half is not byte-gate-neutral even though it is byte-neutral: every caller-side analysis
+  (dead-save, D1c held-value, hoist fuel) consumes the DECLARED set, so narrowing 76 contracts
+  moves D1c firings — the frozen baseline aeon's contract closure gate builds against. That makes
+  it a paired-landing-shaped parcel in a world that no longer pairs, which is a sequencing question
+  and not a lint question.
+  **What is now known and was not:** the population (76/62), that it is genuine rather than an
+  artifact of a narrow closure, and that the machinery needs one additive change — `ContractReport`
+  exposing its `nodes` map, since `closure.effective` is public and `declared_clobbers` is not, so
+  the two halves of the comparison are not currently reachable together from outside. Measured with
+  that field added and then REVERTED: an unused `pub` field is the kind of thing this ledger exists
+  to catch, so it lands with the lint or not at all.
 
 - **8b prefetch-memo gen-wrap ABA → direct-$FFFF-kill simplification** (overseer-parked 2026-07-22).
   The 8b scan memoize keys on a 16-bit `Block_Stage_Gen` bumped per staging claim + invalidate. A
