@@ -188,6 +188,103 @@ fn colliding_pins_are_a_loud_link_error() {
     );
 }
 
+/// (c2) The overlap check keys on the IMAGE extent, and a reservation is part of
+/// that extent whenever something writes after it in the same section. `alpha`
+/// is `$11`, a 4-byte `ds`, then `$22`: the reservation opens a gap the `$22`
+/// fills, so alpha's image runs `[0x100, 0x106)` — six bytes, not two.
+///
+/// This is the pair the check exists to catch and the reason the extent must
+/// count the gap. `beta` is pinned at `$104`, inside the gap. An extent that
+/// stops at the last byte WRITTEN rather than the last byte PLACED reports
+/// alpha as `[0x100, 0x102)`, finds no intersection, and lets `flatten` lay
+/// beta's bytes over alpha's reserved range with nothing said about it — the
+/// silent-clobber shape, arriving through the check built to refuse it.
+#[test]
+fn a_reservation_inside_a_section_counts_toward_its_overlap_extent() {
+    let with_gap = |name: &str, lma: u32| Section {
+        name: name.into(),
+        cpu: Cpu::M68000,
+        vma_base: None,
+        lma,
+        labels: vec![],
+        fragments: vec![
+            Fragment::Data(DataFragment { bytes: vec![0x11], fixups: vec![], span: sp() }),
+            Fragment::Reserve { count: 4, span: sp() },
+            Fragment::Data(DataFragment { bytes: vec![0x22], fixups: vec![], span: sp() }),
+        ],
+        placement: SectionPlacement::Pinned,
+        reserved_span: 6,
+        group: None,
+        bank: None,
+        equ_syms: Vec::new(),
+    };
+    let beta = Section {
+        name: "beta".into(),
+        cpu: Cpu::M68000,
+        vma_base: None,
+        lma: 0x104,
+        labels: vec![],
+        fragments: vec![Fragment::Data(DataFragment {
+            bytes: vec![0x55, 0x66],
+            fixups: vec![],
+            span: sp(),
+        })],
+        placement: SectionPlacement::Pinned,
+        reserved_span: 2,
+        group: None,
+        bank: None,
+        equ_syms: Vec::new(),
+    };
+    let err = sigil_link::resolve_layout(
+        &[with_gap("alpha", 0x100), beta],
+        &SymbolTable::new(),
+        true,
+    )
+    .expect_err("a pin landing inside another section's reserved gap must be refused");
+    assert!(
+        err.iter().any(|d| d.message.contains("alpha")
+            && d.message.contains("beta")
+            && d.message.contains("0x106")),
+        "the overlap must name both sections and alpha's full six-byte image extent \
+         ending at 0x106, got: {err:?}"
+    );
+
+    // The control, which keeps the assertion from passing on an unrelated
+    // refusal: the same alpha with beta moved clear of the gap places fine, and
+    // the reservation shows up in the flattened image as the fill it is.
+    let mut clear = beta_at(0x106);
+    clear.name = "beta".into();
+    let out = sigil_link::resolve_layout(&[with_gap("alpha", 0x100), clear], &SymbolTable::new(), true)
+        .expect("a pin past the gap does not overlap");
+    let linked = sigil_link::link(&out, &SymbolTable::new()).expect("link");
+    assert_eq!(
+        sigil_link::flatten(&linked, 0x00)[0x100..],
+        [0x11, 0x00, 0x00, 0x00, 0x00, 0x22, 0x55, 0x66],
+        "alpha's gap fills, and beta follows it at 0x106"
+    );
+}
+
+/// A two-byte `Pinned` data section at `lma`, for the control above.
+fn beta_at(lma: u32) -> Section {
+    Section {
+        name: "beta".into(),
+        cpu: Cpu::M68000,
+        vma_base: None,
+        lma,
+        labels: vec![],
+        fragments: vec![Fragment::Data(DataFragment {
+            bytes: vec![0x55, 0x66],
+            fixups: vec![],
+            span: sp(),
+        })],
+        placement: SectionPlacement::Pinned,
+        reserved_span: 2,
+        group: None,
+        bank: None,
+        equ_syms: Vec::new(),
+    }
+}
+
 /// (d) FIXPOINT interaction: growth caused BY re-placement. A jmp whose target
 /// address only crosses the abs.w→abs.l boundary AFTER its section is moved by an
 /// earlier chained growth. Convergence must land BOTH effects: the earlier jmp
