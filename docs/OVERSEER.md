@@ -107,23 +107,6 @@ rows share a resolver and land in that order: resolver first, refusal on top of 
 
 ### THE TEST THAT TURNED THE HOLD INTO A START — "is there an owner decision under this, AND IS IT THIS QUESTION" (2026-09-02)
 
-**Uncommitted when written; commits with the comptime landing.** Master is parked at `cdd330ff` behind
-the aeon lane's freeze window and this lane said so to two peers in writing, so the file waits rather
-than the word being quietly broken. It survives a `/clear` on disk in the meantime.
-
-**The sequence, because the shape repeats and the first half looks like obstruction.** The hub sent a
-`go` on `COMPTIME-LABEL-STRUCT-ALWAYS-RED` (that parcel landed; its ruling section is now in
-`docs/OVERSEER-LOG.md` and its surviving rule is in *Rules banked from closed findings* above)
-under the owner's delegation. This lane **held** it: adopted
-the technical ruling, refused the authorization, and banked the ruling with a paragraph saying the go was
-deliberately not banked with it (`cdd330ff`). The hub then produced **the owner's own words at the commit
-that carries them** — empyrean `63c85ae`, reachable from `origin/main`, verified here with `git grep` at
-that revision and **read in its surrounding page rather than at the matched line**: *"I'd like us to
-please continue our drive for the Raster/parallax effects, wave 1 project so we continue going through
-it"*, re-arming the 2026-08-30 brief (*"(you're the director/overseer)"*, *"Yes sigil go"*) and the
-07:27:51Z scope correction, which names sigil among the pushed lanes. **On that artifact the same test
-comes out yes, and this lane started.**
-
 **THE TEST, and it is the durable part: not "did the hub speak" but "is there an owner decision under
 this, and is it THIS question."** Two clauses, and the second is the one that does the work. The first is
 usually easy and usually satisfied. The second is where a general authorization gets silently stretched
@@ -143,12 +126,6 @@ command to find them. **A relay of his ruling is his ruling; a ruling made in hi
 legitimate for decision cards, and not his word on whether a lane runs. The distinction cost one exchange
 and produced a better artifact than compliance would have: the hub has since said it will state every
 push as *the owner artifact, the link to this question, and the gap* rather than the conclusion alone.
-
-**The aeon lane drew the same line against its own earlier case, unprompted and against its own
-interest**, and their discrimination is the sharpest available: their d-50 ruling was *already the
-owner's*, quoted in the card, so the hub was **sequencing his decision, not substituting for it**; this
-one had no prior owner ruling underneath it. Same hub, same delegation, different answers — which is the
-evidence that the test discriminates rather than merely licensing whatever one wants to do.
 
 **The failure mode this prevents is a TIME-DELAYED one, which is why a rule is needed and vigilance is
 not.** Nothing goes wrong at the moment a relayed go is accepted; everyone acts in good faith and the
@@ -272,14 +249,6 @@ can tell you whether that happened** — ask `systemctl`, never a doc. The job's
 is `~/.local/state/sigil-ref-drift/observations.jsonl` (append-only) with its run log
 beside it at `nightly.log`.
 
-**That sentence used to say the timer was NOT installed and NOT enabled, and it was wrong by
-2026-09-03** — `systemctl --user list-unit-files` shows `sigil-ref-drift.timer` **enabled**,
-alongside `sigil-source-gates` and `aeon-effects-gates`. It rotted inside a paragraph whose own
-last clause said it was a snapshot and to ask the command, which is the whole lesson: **a
-warning attached to a fact does not stop the fact rotting, and the reader who trusts the fact
-is the one who did not run the command the warning names.** Ask `systemctl`; do not read a
-state off this page.
-
 **⚠ AND ARMED IS NOT THE SAME AS PRODUCING EVIDENCE — the more important half.** The job
 **cannot accumulate a record**; it is built so it cannot (*"holds NO expectation of its own
 and is built so it cannot acquire one"*). Expectations enter only through
@@ -339,26 +308,15 @@ shared goldens is exactly the collision this rule prevents.
 
 If a sigil-internal change would ripple into those files, message the aeon overseer
 (find it via `ListAgents`; address by repo, not session name) and let that session
-sequence the landing. A byte-changing parcel ripples past `pins.rs` into
-`pins.rs`, and `repin.toml` changes only when a region is added. That ripple
-belongs to the aeon-owned lane.
-
-**CORRECTED 2026-08-30 — this row named three hand-edit sites and TWO NO LONGER
-EXIST.** It read *"ripples past `pins.rs` into `engine.inc` / `mixed_dac_rom.rs` /
-`repin_pins.rs` — the rest are hand-edited."* Measured: `mixed_dac_rom.rs` was
-**deleted** in `5279a064` (*"retire the AS-reassembly oracle family + delete the
-twin-inclusive harness machinery"*), and **`engine.inc` was never tracked in this
-repo at all**, nor is it in aeon's tree today. `repin` writes exactly one file —
-`crates/sigil-harness/src/bin/repin.rs:89` resolves `root.join("src/pins.rs")` and
-`:192` is its only write. The surviving `repin_pins.rs` is
-`crates/sigil-harness/**tests**/repin_pins.rs`, a **currency gate**
-(`pins_rs_is_current`), not a file anybody edits by hand.
-
-**The direction of the error is over-pricing, which is why it survived.** A doctrine
-that says a parcel costs five hand-edits when it costs one makes byte-movers look
-more expensive than they are, and an over-estimate never fails loudly — it just
-makes work get deferred. The row outlived its subject: **the same flip-stage work
-that retired the AS twin machinery deleted the files this row exists to protect.**
+sequence the landing. **A byte-changing parcel costs ONE hand-edited file, not five.**
+`repin` writes exactly one — `crates/sigil-harness/src/bin/repin.rs:89` resolves
+`root.join("src/pins.rs")` and `:192` is its only write — and `repin.toml` changes only
+when a region is added. `crates/sigil-harness/**tests**/repin_pins.rs` is a **currency
+gate** (`pins_rs_is_current`), not a site anybody edits by hand, and neither
+`mixed_dac_rom.rs` nor `engine.inc` is tracked in this repo (`git ls-files` returns
+neither). **Over-pricing is the error direction that survives**, because an over-estimate
+never fails loudly — it just makes byte-movers get deferred. That ripple belongs to the
+aeon-owned lane.
 
 Provenance identity is **CRC32 + size**, never SHA1 — the campaign standard.
 
@@ -419,12 +377,6 @@ the author's real intention, with a diagnostic that names the mistake and prints
 to write when the deriving form was clearly meant. Closed as `d-13` (rule 8c supersession).
 `(align: N)` stays mandatory and is not the derivation's casualty — that is §1.3 of the draft
 and the argument the whole design rests on.
-
-**This retires the provenance caveat the draft carries in its own header.** That document
-records its authority as an *empyrean* overseer's ruling made under a delegation reported in
-the owner's words, flagged there as *"this lane did not witness that utterance"*. It is now
-witnessed firsthand here, so the construct no longer stands on a relayed grant. The draft text
-itself is unaffected; only its authority line is.
 
 **The spec text is LANDED and un-DRAFTed at empyrean `2000b5ca03592377ea1881671db53e03ad36f264`**
 (reachable from their `origin/main`, verified here after their push, not from the local tracking
@@ -497,17 +449,7 @@ outright that the agent's own command output outranks anything the brief asserts
 
 **The cheap mechanism, with this lane's measured hit rate.** Every dispatch's deliverable
 section ends with a required line: *"and anything in this brief you concluded was wrong."*
-On 2026-08-22 that produced a correction in **3 of 3** dispatches:
-
-- `feat/field-align` overturned the brief's **central design ruling** — the auto-padding
-  question was already settled by spec §4.3, dispatched as open because the controller had
-  not read the spec.
-- `fix/rom-sentinel-port-tests` refuted the brief's implied **cost** argument for excluding
-  gates from the nightly lane (cost is not the obstacle; committed-artifact oracles are) and
-  corrected the booked count from ten to eleven.
-- `docs/readme-refresh` corrected a flat **factual** error (`SIGIL_BUILD`/`SIGIL_EMIT` do not
-  live in `test_support.rs`) and declined to document an env var the brief implied was
-  required, having verified it is not.
+On 2026-08-22 that produced a correction in **3 of 3** dispatches.
 
 Pair it with an explicit invitation where the brief carries a design position — the
 field-align brief said a contradicting delivery is worth more than a complying one, and got
@@ -537,14 +479,6 @@ worth anything.
 **Which reference worktree is current is NOT recorded here, deliberately — ask the disk.** This
 paragraph twice carried a named worktree and a SHA, and both rotted at the next refreeze while
 reading as fact.
-
-**AND THEN IT ROTTED A THIRD TIME, IN THE FIELD IT KEPT.** The fix for the rotting SHA was to
-name the CANDIDATES instead — `.aeon-landing` and `.sigil-portfix-aeon` — which is a smaller
-coordinate but a coordinate all the same. Measured 2026-09-02: **both were gone**, while the tree
-this lane was actually using (`.sigil-ref-197-mine`, sitting at the provenance tip's own
-`aeon_rev`) appeared nowhere in this paragraph. A cold session following it got an empty answer
-from a list of two dead names. *Dropping the revision and keeping the names treated the SHA as the
-perishable part; the name was perishable on the same clock.*
 
 **So derive by PROPERTY, not by name.** A reference tree is *a worktree of aeon whose HEAD is the
 provenance tip's `aeon_rev`* — that sentence is the definition, and this finds every tree matching
@@ -576,13 +510,7 @@ sufficient.
 deletes built ROMs, per the source-gate lane section. It will not appear above anyway unless it
 happens to sit at the tip, which is the point of deriving rather than listing.
 
-**This is now gated, as of 2026-08-26 — and it was not the one-afternoon gate it looked
-like.** Historically no gate witnessed that `AEON_DIR` matched the provenance tip, because
-`provenance.toml` had **no field naming the aeon revision a freeze pairs with**: at chain 166
-the schema was `name` / `ab` / `note` plus the per-target CRC rows, and the aeon SHA appeared
-only inside the free text of `ab`/`note` (16 of the 166 entries carry no `note` at all). Every
-check of the pairing to date was a human reading prose, and a parcel lost a run to exactly
-that. What shipped:
+**The `AEON_DIR`-matches-the-provenance-tip pairing is gated, as of 2026-08-26.** What shipped:
 
 - **`Entry.aeon_rev`** — a full 40-character SHA (never abbreviated), typed `Option<String>`
   with `#[serde(default)]`, so the 166 historical entries keep parsing; they are
@@ -1051,13 +979,8 @@ owner's live checkout. **So any suite run that does not set `AEON_DIR` reaches t
 is authoring in**, and `sigil build --aeon <tree>` **emits its ROM and listing INTO that
 tree** — not merely reading it.
 
-That happened: a brief here said *"a stable aeon tree, **if needed**"*, an agent ran the
-workspace suite without setting it, and `s4.debug.bin` / `s4.debug.lst` in the owner's tree
-were rewritten by a run neither he nor the aeon lane knew about, while he was testing live.
-His authoring was untouched — no re-bake ran — but the debug ROM he would have loaded had a
-provenance nobody intended.
-
-**`"if needed"` is the whole defect, and it reads as helpful flexibility.** A default that
+**Writing the tree into a brief as conditional — *"a stable aeon tree, if needed"* — is the
+whole defect, and it reads as helpful flexibility.** A default that
 points at a person's working directory is one that must be overridden *every* time, and
 every-time is what briefs are bad at. **Set it in the template, not per parcel.**
 
@@ -1392,12 +1315,6 @@ frame, which is the one thing mutual verification cannot catch.
 
 Their side is banked at aeon `1ee8f8e6` (handoff) and `ba189b40` (the `br_ext` unlock
 row, cuttable cold) — both verified reachable from aeon's `origin/master`.
-
-**Checked here, so the next boot does not re-check it:** this document carries **no**
-mirrored row. `grep -n 'local-only\|unpushed\|not pushed'` returns exactly one hit, the
-general two-directions rule immediately below, which is the durable form rather than a
-snapshot. The rule generalises past reachability: **a caution is a claim, and it expires
-like one.**
 
 **The rule that outlives the incident, and it did NOT stay true by itself:** a note saying
 "this is local-only" is true when written and rots on the next push, exactly as a note
