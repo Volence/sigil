@@ -98,64 +98,118 @@ fn punct_str(p: Punct) -> &'static str {
 /// wrote, even though `qq` is also this expansion's second parameter.
 ///
 /// At each source position the candidates are tried in AS's own precedence —
-/// `.ATTRIBUTE`, then `ALLARGS`, then the parameters in declaration order — and
-/// the first that matches consumes its source text. `.ATTRIBUTE` and `ALLARGS`
-/// match anywhere, with no boundary condition; a parameter name matches only on
-/// identifier boundaries, which is what lets a guard on `"param"` collapse to
-/// `""` for an empty binding. An empty parameter name never matches.
+/// `.ATTRIBUTE`, then `ALLARGS`, then `__LABEL__`, then the parameters in
+/// declaration order — and the first that matches consumes its source text.
+/// Every one of them obeys the SAME boundary rule ([`boundary_ok`]); an empty
+/// parameter name never matches.
+///
+/// The three built-in names FOLD CASE and a parameter name does not, under `-U`
+/// (asl-verified, one expansion of `cm macro Pp` called `cm.w Zz`):
+///
+/// ```text
+///    7/ 1000 : 615B 5A7A 5D20     dc.b "a[Zz] b[pp] c[PP] d[Zz] e[Zz] f[.w]"
+/// ```
+///
+/// — source `a[Pp] b[pp] c[PP] d[allargs] e[ALLARGS] f[.attribute]`. The
+/// parameter answers only to the spelling it was declared with; `allargs` and
+/// `.attribute` answer to any.
 pub(crate) fn substitute_frame(
     text: &str,
     attribute: Option<&str>,
     all_args: &str,
+    int_label: Option<&str>,
     params: &[String],
     bound: &[String],
 ) -> String {
     const ATTRIBUTE: &str = ".ATTRIBUTE";
     const ALLARGS: &str = "ALLARGS";
+    const LABEL: &str = "__LABEL__";
 
     let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
     let mut i = 0usize;
     'outer: while i < bytes.len() {
         let rest = &text[i..];
-        if attribute.is_some() && rest.starts_with(ATTRIBUTE) {
-            out.push_str(attribute.unwrap_or_default());
-            i += ATTRIBUTE.len();
-            continue;
-        }
-        if rest.starts_with(ALLARGS) {
-            out.push_str(all_args);
-            i += ALLARGS.len();
-            continue;
-        }
-        // A parameter name is whole-word: the character before it in the SOURCE
-        // and the one after it must both be non-identifier.
-        let prev_is_ident = text[..i]
-            .chars()
-            .last()
-            .is_some_and(|c| c.is_alphanumeric() || c == '_');
-        if !prev_is_ident {
-            for (p, a) in params.iter().zip(bound.iter()) {
-                if p.is_empty() || !rest.starts_with(p.as_str()) {
-                    continue;
-                }
-                let after_is_ident = rest[p.len()..]
-                    .chars()
-                    .next()
-                    .is_some_and(|c| c.is_alphanumeric() || c == '_');
-                if after_is_ident {
-                    continue;
-                }
-                out.push_str(a);
-                i += p.len();
-                continue 'outer;
+        for (name, value) in [
+            (ATTRIBUTE, attribute),
+            (ALLARGS, Some(all_args)),
+            (LABEL, int_label),
+        ] {
+            let Some(value) = value else { continue };
+            if !folded_match(rest, name) || !boundary_ok(text, i, name) {
+                continue;
             }
+            out.push_str(value);
+            i += name.len();
+            continue 'outer;
+        }
+        for (p, a) in params.iter().zip(bound.iter()) {
+            if p.is_empty() || !rest.starts_with(p.as_str()) || !boundary_ok(text, i, p) {
+                continue;
+            }
+            out.push_str(a);
+            i += p.len();
+            continue 'outer;
         }
         let c = rest.chars().next().unwrap_or_default();
         out.push(c);
         i += c.len_utf8();
     }
     out
+}
+
+/// Whether `rest` begins with `name`, comparing ASCII case-insensitively. The
+/// three built-in substitution names are AS KEYWORDS, and a keyword folds even
+/// under `-U` — which is why `{intlabel}` declares the capture and `__label__`
+/// reads it back.
+fn folded_match(rest: &str, name: &str) -> bool {
+    rest.len() >= name.len() && rest.as_bytes()[..name.len()].eq_ignore_ascii_case(name.as_bytes())
+}
+
+/// AS's boundary rule for a substituted name, measured rather than assumed.
+///
+/// A candidate at byte `i` is rejected when an ALPHANUMERIC character abuts an
+/// edge of it that could continue an identifier. Two halves, each independent:
+///
+/// * the character BEFORE, when `name` starts with an identifier character;
+/// * the character AFTER, when `name` ends with one.
+///
+/// `_` is an identifier character but NOT alphanumeric, so it never blocks. That
+/// asymmetry is the whole rule, and it is what makes the corpus's `{INTLABEL}`
+/// idiom work at all: `__LABEL___End` composes because the trailing `_` does not
+/// block, while `xx__LABEL__` stays verbatim because `x` does. One expansion of
+/// `pm macro pp` called `pm Zz`, and one of `lm macro {INTLABEL}` under `Qq:`,
+/// give the same nine answers:
+///
+/// ```text
+///   10/ 1000 : 315B 5F5A 7A5D  dc.b "1[_Zz] 2[1pp] 3[Xpp] 4[.Zz] 5[ppX] 6[pp1] 7[Zz_] 8[(Zz)] 9[__Zz__]"
+///   11/ 1042 : 315B 5F51 715D  dc.b "1[_Qq] 2[1__LABEL__] 3[X__LABEL__] 4[.Qq] 5[__LABEL__X] 6[__LABEL__1] 7[Qq_] 8[(Qq)]"
+/// ```
+///
+/// `ALLARGS` answers identically (`xALLARGSx` verbatim, `_ALLARGS_` → `_Zz_`).
+/// `.ATTRIBUTE` differs ONLY through the per-edge test: it begins with `.`,
+/// which cannot continue an identifier, so no leading check applies and the
+/// glued-mnemonic use survives — `move.ATTRIBUTE` → `move.w` and
+/// `x.ATTRIBUTE` → `x.w`, while `.ATTRIBUTEx` stays verbatim:
+///
+/// ```text
+///    8/ 1002 : 505B 6D6F 7665  dc.b "P[move.w] Q[x.w] R[.ATTRIBUTEx]"
+/// ```
+fn boundary_ok(text: &str, i: usize, name: &str) -> bool {
+    if name.chars().next().is_some_and(is_ident_char)
+        && text[..i].chars().next_back().is_some_and(char::is_alphanumeric)
+    {
+        return false;
+    }
+    if name.chars().next_back().is_some_and(is_ident_char)
+        && text[i + name.len()..]
+            .chars()
+            .next()
+            .is_some_and(char::is_alphanumeric)
+    {
+        return false;
+    }
+    true
 }
 
 /// Given `toks` with a `(` at index `lparen`, split the argument groups by

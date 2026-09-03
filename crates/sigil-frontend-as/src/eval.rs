@@ -40,7 +40,23 @@ struct SrcLine {
 }
 
 /// Collected macro definitions: name → (params, body lines).
-type MacroTable = std::collections::BTreeMap<String, (Vec<String>, Vec<SrcLine>)>;
+type MacroTable = std::collections::BTreeMap<String, MacroDef>;
+
+/// One captured macro definition.
+#[derive(Clone)]
+struct MacroDef {
+    /// Declared parameter names, in order. A `{INTLABEL}` group is NOT one of
+    /// them: it declares a capture, not a slot, and consumes no argument
+    /// position wherever it is written (asl-verified — `m macro {INTLABEL},pp,qq`,
+    /// `n macro pp,{INTLABEL},qq` and `o macro pp,qq,{INTLABEL}` all bind
+    /// `pp`/`qq` from `11,22`). The lexer already swallows the whole `{…}` group
+    /// without emitting a token, so the list below is right by construction.
+    params: Vec<String>,
+    body: Vec<SrcLine>,
+    /// Whether the parameter list carries a `{INTLABEL}` group, which makes the
+    /// invocation line's label the macro's to place rather than the assembler's.
+    int_label: bool,
+}
 /// Collected function definitions: name → (params, body tokens).
 type FunctionTable = std::collections::BTreeMap<String, (Vec<String>, Vec<Token>)>;
 
@@ -477,6 +493,11 @@ struct Asm {
     sources: sigil_span::SourceMap,
     functions: FunctionTable,
     macros: MacroTable,
+    /// The label written on the line of a `{INTLABEL}` macro invocation, parked
+    /// between [`Asm::exec_one`] recognising it and [`Asm::expand_macro_inner`]
+    /// binding it to `__LABEL__`. Set only on the step immediately before the
+    /// expansion it belongs to, and taken there.
+    pending_int_label: Option<String>,
     macro_depth: usize,
     /// One entry per macro expansion currently on the stack, innermost last.
     /// Parameter / `ALLARGS` / `.ATTRIBUTE` substitution reads the INNERMOST
@@ -617,6 +638,7 @@ impl Asm {
             sources: sigil_span::SourceMap::new(),
             functions: std::collections::BTreeMap::new(),
             macros: std::collections::BTreeMap::new(),
+            pending_int_label: None,
             macro_depth: 0,
             macro_frames: Vec::new(),
             macro_expansion_seq: 0,
@@ -1674,7 +1696,29 @@ impl Asm {
                 self.directive_set(&name, &b[1..], span);
                 return;
             }
-            self.define_label(&name);
+            // `NAME: label expr` — the same decorative-colon shape as the
+            // equate forms above, and the corpus writes it
+            // (`Obj28_Properties___LABEL__: label *`). Intercepted here so the
+            // name is bound ONCE, by the directive, with the directive's value.
+            let is_label_kw =
+                matches!(b.first().map(|t| &t.tok), Some(Tok::Ident(s)) if fold_kw(s) == "label");
+            if is_label_kw && b.len() >= 2 {
+                let span = b[0].span;
+                self.directive_label(&name, &b[1..], span);
+                return;
+            }
+            // `NAME: mac` where `mac` declares `{INTLABEL}`: the label belongs
+            // to the MACRO, which places it (or does not). Defining it here as
+            // well would put it at the invocation address on top of wherever the
+            // body puts it. asl defines NOTHING for a capture the body drops —
+            // `LabA: sup` on a `{INTLABEL}` macro whose body is a bare `nop`
+            // leaves `LabA` out of the symbol table entirely, while `LabB:` on
+            // an otherwise identical macro without the group lists as `1002 C`.
+            if self.head_takes_int_label(b) {
+                self.pending_int_label = Some(name);
+            } else {
+                self.define_label(&name);
+            }
         }
         let mut body = parsed.tokens;
         // `!name` builtin escape (T9.2, asl-verified): a leading `!` forces
@@ -1733,6 +1777,15 @@ impl Asm {
             self.directive_set(&head, &body[2..], body[0].span);
             return;
         }
+        // `name label <expr>` — AS's address-symbol form, the colon-less twin of
+        // the arm in the colon path above. Same reason for the early intercept as
+        // `=`/`equ`/`set`: the head is the symbol NAME, not a mnemonic.
+        if matches!(body.get(1).map(|t| &t.tok), Some(Tok::Ident(s)) if fold_kw(s) == "label")
+            && body.len() >= 3
+        {
+            self.directive_label(&head, &body[2..], body[0].span);
+            return;
+        }
         if !is_op_keyword(&head)
             && !is_mnemonic(&head)
             && !self.macros.contains_key(&head)
@@ -1752,7 +1805,15 @@ impl Asm {
                     return;
                 }
             }
-            self.define_label(&head);
+            // The colon-less twin of the `{INTLABEL}` arm above. Both spellings
+            // reach the capture (asl: `Tbl outer 3` with no colon binds
+            // `__LABEL__` to `Tbl`), and the substituted nested form
+            // `__LABEL__ inner aa` arrives here as exactly this shape.
+            if self.head_takes_int_label(&body[1..]) {
+                self.pending_int_label = Some(head.clone());
+            } else {
+                self.define_label(&head);
+            }
             if body.len() == 1 {
                 return;
             }
@@ -2308,6 +2369,77 @@ impl Asm {
             && split_attribute_suffix(head).is_some_and(|(base, _)| self.macros.contains_key(base))
     }
 
+    /// Whether the first token of `toks` names a macro whose parameter list
+    /// carries `{INTLABEL}` — i.e. whether a label written on this line is the
+    /// macro's to place rather than a location label at the invocation address.
+    ///
+    /// The `.ATTRIBUTE`-suffix spelling counts: the capture is a property of the
+    /// definition, and a suffixed call expands the same body.
+    fn head_takes_int_label(&self, toks: &[Token]) -> bool {
+        let Some(Token { tok: Tok::Ident(name), .. }) = toks.first() else {
+            return false;
+        };
+        let def = self.macros.get(name).or_else(|| {
+            split_attribute_suffix(name).and_then(|(base, _)| self.macros.get(base))
+        });
+        def.is_some_and(|m| m.int_label)
+    }
+
+    /// AS's `label` directive: bind `name` to an expression, as an ADDRESS.
+    ///
+    /// It is neither `equ` nor a plain label. Its VALUE is any expression
+    /// (`A label *`, `B label $2000`, `C: label *+4` list as `1000`, `2000`,
+    /// `1004`), and unlike `equ` the symbol carries the code segment — every one
+    /// of those rows ends `C` in asl's table, where a `:=` row ends `-`. And
+    /// unlike a plain label inside a macro body it is EXPORTED to the caller: it
+    /// is the whole reason the corpus's `{INTLABEL}` macros can define the
+    /// caller's table head from inside their own expansion.
+    ///
+    /// It also OPENS the scope it names, in the caller — `Table label *` inside
+    /// an expansion makes a later `.cnt` read back as `Table.cnt` at top level.
+    /// Where the expression is the current PC, which is every corpus and every
+    /// probe use (`label *` on 68000, `label $` on Z80), that is exactly
+    /// [`Self::define_label`] and it is reused whole, so the symbol relocates
+    /// with its section like any other label. A value that is NOT the PC cannot
+    /// be a placed label, so it binds as a scope-opening constant.
+    fn directive_label(&mut self, name: &str, rest: &[Token], span: Span) {
+        let Some(v) = self.eval_all(rest, span) else {
+            self.err(span, "label needs a value");
+            return;
+        };
+        self.open_section_if_needed();
+        // A `.`-local `label` qualifies against the CALLER's real scope, not the
+        // expansion's — it is a value-binding form, and those all land in the
+        // caller (see [`Self::real_scope`]). A global one OPENS its scope there.
+        let qualified = if name.starts_with('.') {
+            qualify(name, self.real_scope())
+        } else {
+            self.open_scope(name);
+            name.to_string()
+        };
+        self.env.define(&qualified, SymbolValue::Int(v));
+        self.known_labels.insert(qualified.clone());
+        // Only a PC-valued `label` is a PLACED label the linker can relocate.
+        // Any other value is a constant that happens to be typed as an address,
+        // and handing it to the builder would claim a position for it here.
+        if v == self.here_i64() {
+            self.builder.define_label(&qualified);
+        }
+    }
+
+    /// Open `name` as the local-label scope, in the CALLER's frame of reference.
+    ///
+    /// Inside an expansion the real scope is [`Self::outer_scope`] — `self.scope`
+    /// holds the expansion's own unspellable name — so writing `self.scope` there
+    /// would be undone the moment the expansion returns.
+    fn open_scope(&mut self, name: &str) {
+        if self.macro_frames.is_empty() {
+            self.scope = Some(name.to_string());
+        } else {
+            self.outer_scope = Some(name.to_string());
+        }
+    }
+
     fn dispatch(&mut self, head: &str, rest: &[Token], span: Span) {
         if let Some((base, suffix)) = split_attribute_suffix(head) {
             if !self.macros.contains_key(head) && self.macros.contains_key(base) {
@@ -2323,6 +2455,17 @@ impl Asm {
             "phase" => self.directive_phase(rest, span),
             "dephase" => self.directive_dephase(),
             "org" => self.directive_org(rest, span),
+            // A `label` line with NO name. Every named spelling is intercepted
+            // in `exec_one` before dispatch, so reaching here means the name
+            // field was empty — which is what `__LABEL__ label *` becomes in a
+            // `{INTLABEL}` macro invoked without a label. asl lists the line and
+            // defines nothing, with no diagnostic:
+            //
+            // ```text
+            //   12/ 1007 : =>FALSE                      if ""<>""
+            //   12/ 1007 :                      label *
+            // ```
+            "label" => {}
             "save" => self.state.save(),
             "restore" => {
                 if let Err(m) = self.state.restore() {
@@ -4662,7 +4805,8 @@ impl Asm {
             .map(|l| self.subst_frame(l).unwrap_or_else(|| l.clone()))
             .collect();
         self.dot_label_cache.remove(&name);
-        self.macros.insert(name, (params, body));
+        let int_label = head_declares_int_label(&head.text);
+        self.macros.insert(name, MacroDef { params, body, int_label });
         end + 1
     }
 
@@ -4759,6 +4903,7 @@ impl Asm {
             text,
             f.attribute.as_deref(),
             &f.all_args(),
+            f.int_label.as_deref(),
             &f.params,
             &f.bound,
         ))
@@ -4790,6 +4935,12 @@ impl Asm {
     }
 
     fn expand_macro_inner(&mut self, name: &str, arg_toks: &[Token], attribute: Option<&str>) {
+        // TAKEN FIRST, before any early return. `exec_one` parks the invocation
+        // line's label here and this is the only consumer; a return that left it
+        // parked would hand one call's label to the NEXT expansion, which is a
+        // wrong symbol rather than a missing one. Both early returns below are
+        // reachable — the recursion cap fires on the corpus's own `zoneTableEntry`.
+        let captured = self.pending_int_label.take();
         if self.macro_depth >= EXPAND_CAP {
             let span = arg_toks.first().map(|t| t.span).unwrap_or(Span {
                 source: self.source,
@@ -4802,10 +4953,16 @@ impl Asm {
             );
             return;
         }
-        let (params, body) = match self.macros.get(name) {
+        let MacroDef { params, body, int_label } = match self.macros.get(name) {
             Some(m) => m.clone(),
             None => return,
         };
+        // A macro that does not declare the capture never sees a label; one that
+        // does but was invoked bare gets the EMPTY text — which is what makes the
+        // corpus's `if "__LABEL__"<>""` guard in `rsttarget` a guard at all
+        // (asl: `dc.b "[]"`, `if ""<>""` FALSE, and the bare `label *` that
+        // follows defines nothing and is not an error).
+        let int_label = int_label.then(|| captured.unwrap_or_default());
         let all_args = render_tokens(arg_toks);
         let groups = split_top_commas(arg_toks);
         let mut keyword: std::collections::BTreeMap<String, String> =
@@ -4907,7 +5064,8 @@ impl Asm {
         // from; every expansion nested inside it keeps that same real scope, so a
         // value-binding `.`-local reaches out through the whole nest in one step.
         let outer_scope = self.outer_scope.clone();
-        if self.macro_frames.is_empty() {
+        let outermost = self.macro_frames.is_empty();
+        if outermost {
             self.outer_scope = caller_scope.clone();
         }
         self.scope = Some(format!(" macro#{}", self.macro_expansion_seq));
@@ -4921,16 +5079,73 @@ impl Asm {
             attribute: attribute.map(str::to_string),
             suspend: 0,
             dot_labels,
+            int_label,
         });
         self.exec(&body);
         self.macro_frames.pop();
         self.macro_depth -= 1;
-        self.scope = caller_scope;
-        self.outer_scope = outer_scope;
+        // A `label` directive inside the body opens the CALLER's scope, and the
+        // scope it opened OUTLIVES the expansion — that is what carries
+        // `zoneOrderedTable`'s `.zone_table_name` and every `Table.cnt` read
+        // after the call. The real scope lives in `outer_scope` while an
+        // expansion is running, so the outermost frame hands it back as
+        // `self.scope` on the way out instead of restoring the stale entry
+        // scope, and a nested frame leaves `outer_scope` alone rather than
+        // restoring over a change an inner body made. asl, `Tbl outer 3` where
+        // `outer` calls `inner` and `inner` writes `__LABEL__ label *`:
+        //
+        // ```text
+        //   17/ 1000 : =$1000               Tbl label *
+        //   17/ 100E : =$7                  .cnt := 7
+        //   19/ 1019 : 07                  	dc.b Tbl.cnt
+        // ```
+        if outermost {
+            self.scope = self.outer_scope.clone();
+            self.outer_scope = outer_scope;
+        } else {
+            self.scope = caller_scope;
+        }
     }
 }
 
 // ── free helpers ────────────────────────────────────────────────────────────
+
+/// Whether a `NAME macro …` head declares the internal-label capture.
+///
+/// AS writes it as a brace group in the parameter list, and the group is a
+/// KEYWORD, so it folds even under `-U` (asl: `lo macro {intlabel}` under
+/// `Aa:` emits `lo=<Aa> <Aa>` for `"lo=<__LABEL__> <__label__>"`). Declaring it
+/// twice is not an error and means what declaring it once means.
+///
+/// The scan stops at a `;` so a brace inside a trailing comment is inert, and it
+/// reads the raw head text because the lexer swallows a `{…}` group without
+/// emitting a token — which is also why the group never reaches the parameter
+/// list as a phantom slot.
+fn head_declares_int_label(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b';' => return false,
+            b'{' => {
+                let start = i + 1;
+                let mut j = start;
+                while j < bytes.len() && bytes[j] != b'}' {
+                    j += 1;
+                }
+                if j >= bytes.len() {
+                    return false;
+                }
+                if text[start..j].trim().eq_ignore_ascii_case("intlabel") {
+                    return true;
+                }
+                i = j + 1;
+            }
+            _ => i += 1,
+        }
+    }
+    false
+}
 
 /// The binding one macro expansion substitutes into its body, and the state
 /// `shift` mutates.
@@ -4977,6 +5192,19 @@ struct MacroFrame {
     /// belong to the EXPANSION; every other `.`-local a body line mentions
     /// belongs to the caller's real scope. See [`scan_dot_labels`].
     dot_labels: std::rc::Rc<std::collections::BTreeSet<String>>,
+    /// The invocation line's label text, for a macro whose parameter list
+    /// carries `{INTLABEL}`. `None` where the macro does not declare the
+    /// capture, and then `__LABEL__` is not a substitution at all but ordinary
+    /// text (asl-verified: `m macro pp` emitting `"L=<__LABEL__>"` under
+    /// `Lab1: m 11` emits the nine characters `__LABEL__`).
+    ///
+    /// `shift` does not touch it — it is not an argument. asl, `sm macro
+    /// {INTLABEL},pp` called `Lb2: sm 5,6` with a `shift` first:
+    ///
+    /// ```text
+    ///   12/ 100B : 3C36 3E20 3C4C     dc.b "<6> <Lb2> <>"
+    /// ```
+    int_label: Option<String>,
 }
 
 impl MacroFrame {
@@ -5901,6 +6129,35 @@ mod tests {
             .expect("resolve_layout");
         let linked = sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).expect("link");
         sigil_link::flatten(&linked, 0x00)
+    }
+
+    /// Whether the source assembles AND LINKS. An unresolved symbol survives
+    /// the front end as a deferred fixup, so it is the LINK that refuses it —
+    /// `run` alone returns `Ok` and would make an absent-symbol assertion
+    /// vacuous.
+    fn links(src: &str) -> bool {
+        let Ok(m) = run(src, &Options::default()) else {
+            return false;
+        };
+        let Ok(resolved) =
+            sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+        else {
+            return false;
+        };
+        sigil_link::link(&resolved, &sigil_ir::SymbolTable::new()).is_ok()
+    }
+
+    /// The offset a named label occupies in the assembled module's sections, or
+    /// `None` where no section carries it. This is the linker's own view of a
+    /// label — `image`/`linked_image` cannot see it, because a front-end fold
+    /// can produce the same bytes from a constant of equal value.
+    fn section_label(src: &str, name: &str) -> Option<u32> {
+        let m = run(src, &Options::default()).expect("assemble");
+        m.sections
+            .iter()
+            .flat_map(|s| s.labels.iter())
+            .find(|l| l.name == name)
+            .map(|l| l.offset)
     }
 
     fn image(src: &str) -> Vec<u8> {
@@ -7300,6 +7557,330 @@ C:\n";
 
     // ── T9.2: `.ATTRIBUTE` macro-suffix + `!name` escape + `while … endm` ──
 
+    // ── `{INTLABEL}` / `__LABEL__` / the `label` directive ──────────────────
+    //
+    // Ground truth for every expected value below is an `asl -L` listing (AS
+    // V1.42 Beta Bld 212), invoked with the Sonic 2 build's own flags minus the
+    // two that only redirect output: `asl -xx -n -q -A -L -U -i .`. `-U` forces
+    // case-sensitivity and every row carries it.
+
+    /// The head of a `{INTLABEL}` source, shared by the probes below so a test
+    /// body reads as the macro under test rather than as boilerplate.
+    fn intlabel_src(body: &str) -> String {
+        format!("\tcpu 68000\n\tpadding off\n\torg $1000\n{body}")
+    }
+
+    #[test]
+    fn intlabel_capture_leaves_the_label_to_the_macro_to_place() {
+        // The capture SUPPRESSES the ordinary label definition. `sup` declares
+        // the group and drops the capture, so `LabA` is defined nowhere and is
+        // absent from asl's symbol table; `nosup` is identical but for the
+        // group, and `LabB` lists as `1002 C`:
+        //
+        // ```text
+        //   10/ 1000 : (MACRO)              LabA:	sup
+        //   10/ 1000 : 4E71                        nop
+        //   11/ 1002 : (MACRO)              LabB:	nosup
+        //   11/ 1002 : 4E71                        nop
+        //   12/ 1004 : 1002                	dc.w LabB
+        // ```
+        let defs = "sup macro {INTLABEL}\n\tnop\n\tendm\nnosup macro\n\tnop\n\tendm\n";
+        let src = intlabel_src(&format!("{defs}LabA:\tsup\nLabB:\tnosup\n\tdc.w LabB\n"));
+        assert_eq!(image(&src), vec![0x4E, 0x71, 0x4E, 0x71, 0x10, 0x02]);
+        // The dropped capture is not merely unplaced — the name does not exist.
+        let bad = intlabel_src(&format!("{defs}LabA:\tsup\nLabB:\tnosup\n\tdc.w LabA\n"));
+        assert!(
+            !links(&bad),
+            "a capture the body never places must leave no symbol behind"
+        );
+        // The control: the same reference to the macro that does NOT declare the
+        // group links, so the refusal above is the capture and not the shape.
+        let ok = intlabel_src(&format!("{defs}LabA:\tsup\nLabB:\tnosup\n\tdc.w LabB\n"));
+        assert!(links(&ok));
+    }
+
+    #[test]
+    fn intlabel_consumes_no_argument_position_wherever_it_is_written() {
+        // `{INTLABEL}` declares a capture, not a slot. Three macros differing
+        // only in where the group sits bind `pp`/`qq` identically from `11,22`
+        // (`0B16` three times):
+        //
+        // ```text
+        //   13/ 1000 : (MACRO)              L1:	m 11,22
+        //   13/ 1000 : 0B16                        dc.b 11,22
+        //   14/ 1002 : (MACRO)              L2:	n 11,22
+        //   14/ 1002 : 0B16                        dc.b 11,22
+        //   15/ 1004 : (MACRO)              L3:	o 11,22
+        //   15/ 1004 : 0B16                        dc.b 11,22
+        // ```
+        let defs = "m macro {INTLABEL},pp,qq\n\tdc.b pp,qq\n\tendm\n\
+                    n macro pp,{INTLABEL},qq\n\tdc.b pp,qq\n\tendm\n\
+                    o macro pp,qq,{INTLABEL}\n\tdc.b pp,qq\n\tendm\n";
+        let src = intlabel_src(&format!("{defs}L1:\tm 11,22\nL2:\tn 11,22\nL3:\to 11,22\n"));
+        assert_eq!(image(&src), vec![11, 22, 11, 22, 11, 22]);
+    }
+
+    #[test]
+    fn label_directive_binds_any_expression_as_an_address() {
+        // `label` takes an expression, not just the PC, and tolerates the
+        // decorative colon exactly as `equ` does:
+        //
+        // ```text
+        //    4/ 1000 : =$1000               A	label *
+        //    5/ 1000 : =$2000               B	label $2000
+        //    6/ 1000 : =$1004               C:	label *+4
+        //    7/ 1000 : 4E71                	nop
+        //    8/ 1002 : =$1002               D	label *
+        //    9/ 1002 : 1000 2000 1004      	dc.w A,B,C,D
+        // ```
+        let src = intlabel_src(
+            "A\tlabel *\nB\tlabel $2000\nC:\tlabel *+4\n\tnop\nD\tlabel *\n\tdc.w A,B,C,D\n",
+        );
+        assert_eq!(
+            image(&src),
+            vec![0x4E, 0x71, 0x10, 0x00, 0x20, 0x00, 0x10, 0x04, 0x10, 0x02]
+        );
+    }
+
+    #[test]
+    fn label_star_inside_an_expansion_defines_the_callers_symbol() {
+        // The corpus's `offsetTable`, whole. `__LABEL__` substitutes to the
+        // caller's `Table`, the `:=` binds the caller's `current_offset_table`,
+        // and `label *` places `Table` where the body chose:
+        //
+        // ```text
+        //    8/ 1000 : (MACRO)              Table:	offsetTable
+        //    8/ 1000 : =$1000               current_offset_table := Table
+        //    8/ 1000 : =$1000               Table label *
+        //    9/ 1000 : 0002                	dc.w Target-Table
+        //   11/ 1002 : 4E71                	nop
+        //   12/ 1004 : 1000                	dc.w current_offset_table
+        // ```
+        let src = intlabel_src(
+            "offsetTable macro {INTLABEL}\ncurrent_offset_table := __LABEL__\n__LABEL__ label *\n\tendm\n\
+             Table:\toffsetTable\n\tdc.w Target-Table\nTarget:\n\tnop\n\tdc.w current_offset_table\n",
+        );
+        assert_eq!(image(&src), vec![0x00, 0x02, 0x4E, 0x71, 0x10, 0x00]);
+    }
+
+    #[test]
+    fn label_composes_the_name_the_capture_is_pasted_into() {
+        // The capture pastes into a surrounding name, in every position the
+        // corpus writes: as a suffix inside a string, as an interior segment of
+        // a colon label, and as a prefix of one:
+        //
+        // ```text
+        //   11/ 1000 : =$1000               Tbl label *
+        //   11/ 1000 : 7A6F 6E65 616E              dc.b "zoneanimcount_Tbl"
+        //   11/ 1011 : =$1011               Prefix_Tbl: label *
+        //   11/ 1011 : 4E71                        nop
+        //   11/ 1013 : =$1013               Tbl_End label *
+        //   12/ 1013 : 1000 1011 1013      	dc.w Tbl,Prefix_Tbl,Tbl_End
+        // ```
+        let src = intlabel_src(
+            "comp macro {INTLABEL}\n__LABEL__ label *\n\tdc.b \"zoneanimcount___LABEL__\"\n\
+             Prefix___LABEL__: label *\n\tnop\n__LABEL___End label *\n\tendm\n\
+             Tbl:\tcomp\n\tdc.w Tbl,Prefix_Tbl,Tbl_End\n",
+        );
+        let mut want = b"zoneanimcount_Tbl".to_vec();
+        want.extend_from_slice(&[0x4E, 0x71, 0x10, 0x00, 0x10, 0x11, 0x10, 0x13]);
+        assert_eq!(image(&src), want);
+    }
+
+    #[test]
+    fn an_absent_invocation_label_captures_the_empty_text() {
+        // A `{INTLABEL}` macro invoked with no label binds the EMPTY text, which
+        // is what makes the corpus's `if "__LABEL__"<>""` guard a guard. The
+        // bare `label *` on the untaken side is neither an error nor a
+        // definition — asl lists it and moves on:
+        //
+        // ```text
+        //   10/ 1000 : 5B46 6F6F 5D                dc.b "[Foo]"
+        //   10/ 1005 : =>TRUE                       if "Foo"<>""
+        //   10/ 1005 : =$1005               Foo label *
+        //   11/ 1005 : 5B5D                        dc.b "[]"
+        //   11/ 1007 : =>FALSE                      if ""<>""
+        //   11/ 1007 :                      label *
+        //   12/ 1007 : 1005                	dc.w Foo
+        // ```
+        let src = intlabel_src(
+            "m macro {INTLABEL}\n\tdc.b \"[__LABEL__]\"\n\tif \"__LABEL__\"<>\"\"\n\
+             __LABEL__ label *\n\tendif\n\tendm\n\
+             Foo:\tm\n\tm\n\tdc.w Foo\n",
+        );
+        let mut want = b"[Foo][]".to_vec();
+        want.extend_from_slice(&[0x10, 0x05]);
+        assert_eq!(image(&src), want);
+    }
+
+    /// The nine-position boundary matrix, run once per candidate kind. An
+    /// ALPHANUMERIC abutting an edge that could continue an identifier blocks
+    /// the substitution; `_` is an identifier character but not alphanumeric, so
+    /// it never blocks. `ALLARGS` answers the same way as a parameter.
+    ///
+    /// ```text
+    ///   10/ 1000 : dc.b "1[_Zz] 2[1pp] 3[Xpp] 4[.Zz] 5[ppX] 6[pp1] 7[Zz_] 8[(Zz)] 9[__Zz__] A[Foo_Zz_Bar] B[xALLARGSx] C[_Zz_]"
+    /// ```
+    #[test]
+    fn an_alphanumeric_blocks_a_substitution_and_an_underscore_does_not() {
+        let src = intlabel_src(
+            "pm macro pp\n\tdc.b \"1[_pp] 2[1pp] 3[Xpp] 4[.pp] 5[ppX] 6[pp1] 7[pp_] 8[(pp)] \
+             9[__pp__] A[Foo_pp_Bar] B[xALLARGSx] C[_ALLARGS_]\"\n\tendm\n\tpm Zz\n",
+        );
+        assert_eq!(
+            String::from_utf8(image(&src)).unwrap(),
+            "1[_Zz] 2[1pp] 3[Xpp] 4[.Zz] 5[ppX] 6[pp1] 7[Zz_] 8[(Zz)] 9[__Zz__] \
+             A[Foo_Zz_Bar] B[xALLARGSx] C[_Zz_]"
+        );
+    }
+
+    /// The same matrix for the capture, which answers identically — position by
+    /// position — even though its own name begins and ends with `_`.
+    ///
+    /// ```text
+    ///   11/ 1065 : dc.b "1[_Qq] 2[1__LABEL__] 3[X__LABEL__] 4[.Qq] 5[__LABEL__X] 6[__LABEL__1] 7[Qq_] 8[(Qq)] A[Foo_Qq_Bar]"
+    /// ```
+    #[test]
+    fn the_captured_label_obeys_the_same_boundary_rule_as_a_parameter() {
+        let src = intlabel_src(
+            "lm macro {INTLABEL}\n\tdc.b \"1[___LABEL__] 2[1__LABEL__] 3[X__LABEL__] 4[.__LABEL__] \
+             5[__LABEL__X] 6[__LABEL__1] 7[__LABEL___] 8[(__LABEL__)] A[Foo___LABEL___Bar]\"\n\tendm\n\
+             Qq:\tlm\n",
+        );
+        assert_eq!(
+            String::from_utf8(image(&src)).unwrap(),
+            "1[_Qq] 2[1__LABEL__] 3[X__LABEL__] 4[.Qq] 5[__LABEL__X] 6[__LABEL__1] 7[Qq_] \
+             8[(Qq)] A[Foo_Qq_Bar]"
+        );
+    }
+
+    #[test]
+    fn a_label_opened_scope_outlives_the_expansion_that_opened_it() {
+        // `outer` passes its capture on to `inner`, which places it. The scope
+        // that `label` opens is the CALLER's, it survives two expansion returns,
+        // and `.cnt := 7` written in `outer`'s body after the nested call lands
+        // in it — read back at top level as `Tbl.cnt`. A colon-less invocation
+        // label is captured, and so is a dotted one, with its dot:
+        //
+        // ```text
+        //   16/ 1000 : (MACRO)              Tbl	outer 3
+        //   16/ 1000 :  (MACRO-2)           Tbl inner 3
+        //   16/ 1000 : =$1000               Tbl label *
+        //   16/ 1000 : 03                          dc.b 3
+        //   16/ 1001 : =$7                  .cnt := 7
+        //   17/ 1001 : 1000                	dc.w Tbl
+        //   18/ 1003 : 07                  	dc.b Tbl.cnt
+        //   19/ 1004 : (MACRO)              .loc	dot
+        //   19/ 1004 : 4E71                        nop
+        //   19/ 1006 : =$1006               .loc label *
+        //   20/ 1006 : 1006                	dc.w .loc
+        // ```
+        let src = intlabel_src(
+            "inner macro aa,{INTLABEL}\n__LABEL__ label *\n\tdc.b aa\n\tendm\n\
+             outer macro aa,{INTLABEL}\n__LABEL__ inner aa\n.cnt := 7\n\tendm\n\
+             dot macro {INTLABEL}\n\tnop\n__LABEL__ label *\n\tendm\n\
+             Tbl\touter 3\n\tdc.w Tbl\n\tdc.b Tbl.cnt\n.loc\tdot\n\tdc.w .loc\n",
+        );
+        assert_eq!(
+            image(&src),
+            vec![0x03, 0x10, 0x00, 0x07, 0x4E, 0x71, 0x10, 0x06]
+        );
+    }
+
+    #[test]
+    fn the_capture_declaration_and_its_reference_both_fold_case() {
+        // `{intlabel}` declares the capture and `__label__` reads it, under `-U`
+        // — they are AS keywords, and a keyword folds where a parameter name
+        // does not. A macro that does NOT declare the group leaves `__LABEL__`
+        // as the nine ordinary characters it is written with:
+        //
+        // ```text
+        //   10/ 1000 : 3C41 613E 3C41              dc.b "<Aa><Aa>"
+        //   11/ 1008 : 3C5F 5F4C 4142              dc.b "<__LABEL__>"
+        // ```
+        let src = intlabel_src(
+            "lo macro {intlabel}\n\tdc.b \"<__LABEL__><__label__>\"\n\tendm\n\
+             nd macro pp\n\tdc.b \"<__LABEL__>\"\n\tendm\n\
+             Aa:\tlo\n\tnd 1\n",
+        );
+        assert_eq!(
+            String::from_utf8(image(&src)).unwrap(),
+            "<Aa><Aa><__LABEL__>"
+        );
+    }
+
+    #[test]
+    fn a_label_placed_capture_is_a_relocatable_symbol_the_linker_can_reach() {
+        // `label` at the PC produces a PLACED label, not a constant that happens
+        // to equal the PC. The difference is invisible to a backward `dc.w`,
+        // which the front end folds in-pass — it shows in a fixup the front end
+        // DEFERS and the linker resolves from the section's symbol table. A
+        // `bra.w` to a capture the macro places is exactly that shape:
+        //
+        // ```text
+        //    8/ 1000 : 6000 0002           	bra.w Dest
+        //    9/ 1004 : (MACRO)              Dest	mk
+        //    9/ 1004 : =$1004               Dest label *
+        //    9/ 1004 : 4E71                        nop
+        //   10/ 1006 : 1004                	dc.w Dest
+        // ```
+        let src = intlabel_src(
+            "mk macro {INTLABEL}\n__LABEL__ label *\n\tnop\n\tendm\n\tbra.w Dest\nDest\tmk\n\tdc.w Dest\n",
+        );
+        assert_eq!(
+            linked_image(&src)[0x1000..],
+            [0x60, 0x00, 0x00, 0x02, 0x4E, 0x71, 0x10, 0x04]
+        );
+        // The bytes above do not by themselves prove the symbol is PLACED: the
+        // front end folds `Dest` out of its own env on the converged pass, so a
+        // `label` that bound only a constant would produce them too. What
+        // separates the two is whether the SECTION carries the label, which is
+        // what the linker's own symbol table is built from and what the
+        // relaxation deferral reads. Assert it against the plain-label twin, so
+        // the expected offset is derived from the equivalent program rather than
+        // copied from the row above.
+        let twin = intlabel_src("\tbra.w Dest\nDest:\n\tnop\n\tdc.w Dest\n");
+        assert_eq!(section_label(&src, "Dest"), section_label(&twin, "Dest"));
+        assert_eq!(section_label(&src, "Dest"), Some(4));
+    }
+
+    #[test]
+    fn a_capture_the_recursion_cap_refused_is_not_handed_to_the_next_call() {
+        // The capture is parked between `exec_one` recognising it and
+        // `expand_macro_inner` binding it, so EVERY path out of that function has
+        // to consume it. The runaway is the path that does not reach the
+        // binding: the deepest `D deep` parks a capture the refused expansion
+        // never takes, and an UNLABELLED `q` afterwards would then read `D` — a
+        // wrong symbol, not a missing one. asl runs the guard FALSE, so the
+        // `error` inside it never fires:
+        //
+        // ```text
+        //   12/ 1000 : (MACRO)              D       deep
+        //   13/ 1000 : (MACRO)              	q
+        //   13/ 1000 : =>FALSE                      if ""<>""
+        //   13/ 1000 :                                 error "captured <>"
+        // ```
+        //
+        // The runaway itself is diagnosed here (sigil caps the nest where asl
+        // silently stops), so the assertion is on the diagnostic SET: the cap,
+        // and nothing about a capture.
+        let src = intlabel_src(
+            "deep macro {INTLABEL}\nD\tdeep\n\tendm\n\
+             q macro {INTLABEL}\n\tif \"__LABEL__\"<>\"\"\n\terror \"captured <__LABEL__>\"\n\tendif\n\tendm\n\
+             \tdeep\n\tq\n",
+        );
+        let diags = run(&src, &Options::default()).expect_err("the runaway is diagnosed");
+        let messages: Vec<&str> = diags.iter().map(|d| d.message.as_str()).collect();
+        assert!(
+            messages.iter().any(|m| m.contains("expansion too deep")),
+            "expected the runaway to be diagnosed, got {messages:?}"
+        );
+        assert!(
+            !messages.iter().any(|m| m.contains("captured")),
+            "the refused expansion's capture reached the next call: {messages:?}"
+        );
+    }
+
     #[test]
     fn split_attribute_suffix_strips_known_suffixes_only() {
         use super::split_attribute_suffix;
@@ -7320,13 +7901,23 @@ C:\n";
     }
 
     #[test]
-    fn attribute_substitutes_inside_a_string_literal_too() {
-        // `.ATTRIBUTE` is a plain (unbounded) text substitution — like
-        // `ALLARGS` — so it also reaches inside a quoted string in the macro
-        // body, not just a bare mnemonic. "x.ATTRIBUTEy" -> "x.wy" (4 chars);
-        // without substitution it would stay "x.ATTRIBUTEy" (12 chars).
-        let src = "        cpu 68000\n        padding off\n        phase 0\nfoo     macro\n        dc.b strlen(\"x.ATTRIBUTEy\")\n        endm\n        foo.w\n";
-        assert_eq!(image(src), vec![4]);
+    fn attribute_substitutes_inside_a_string_literal_but_not_before_a_letter() {
+        // `.ATTRIBUTE` reaches inside a quoted string, and it is NOT unbounded:
+        // an alphanumeric immediately after it blocks the match, exactly as it
+        // does for `ALLARGS` and for a parameter. Only the LEADING check is
+        // skipped, and only because `.` cannot continue an identifier — which is
+        // what keeps the glued-mnemonic use (`move.ATTRIBUTE`) working.
+        //
+        // asl `-xx -n -q -A -L -U -i .`, one `foo.w` expansion:
+        //
+        // ```text
+        //    8/ 1000 : 0C          dc.b strlen("x.ATTRIBUTEy")
+        //    8/ 1001 : 05          dc.b strlen("x.w y")
+        // ```
+        //
+        // Twelve characters unsubstituted, then five substituted.
+        let src = "        cpu 68000\n        padding off\n        phase 0\nfoo     macro\n        dc.b strlen(\"x.ATTRIBUTEy\")\n        dc.b strlen(\"x.ATTRIBUTE y\")\n        endm\n        foo.w\n";
+        assert_eq!(image(src), vec![12, 5]);
     }
 
     #[test]
