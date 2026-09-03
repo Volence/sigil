@@ -7902,4 +7902,264 @@ C:\n";
         );
         assert_eq!(image(src), vec![0x00, 0x44]);
     }
+
+    // ── `shift`: the variadic macro argument walk ───────────────────────────
+    //
+    // Every expected value below is read off an `asl -L` listing row
+    // (AS V1.42 Beta Bld 212, `s2disasm/build_tools/Linux-x86_64/asl`), quoted
+    // in each test. The probe sources are recorded in
+    // `docs/superpowers/notes/2026-09-03-as-shift-macro-argument-walk.md`.
+
+    /// The shape both corpus uses have: guard on the first argument, emit,
+    /// `shift` past what was consumed, re-invoke with `ALLARGS`. The recursion
+    /// terminates when `ALLARGS` runs dry and the guard sees an unbound
+    /// parameter.
+    ///
+    /// asl listing, `cp 1,2,3,4,5,6` on params `a1,a2`:
+    /// ```text
+    ///   16/  0 : (MACRO)     cp 1,2,3,4,5,6
+    ///   16/  0 : 01            dc.b 1
+    ///   16/  1 : 02            dc.b 2
+    ///   16/  2 : (MACRO-2)     cp 3,4,5,6
+    ///   16/  2 : 03            dc.b 3
+    ///   16/  3 : 04            dc.b 4
+    ///   16/  4 : (MACRO-3)     cp 5,6
+    ///   16/  4 : 05            dc.b 5
+    ///   16/  5 : 06            dc.b 6
+    ///   16/  6 : (MACRO-4)     cp
+    ///   16/  6 : FF            dc.b $FF
+    /// ```
+    #[test]
+    fn shift_drives_the_variadic_argument_walk() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "cp macro a1,a2\n",
+            "	if \"a1\"<>\"\"\n",
+            "	dc.b a1\n",
+            "	dc.b a2\n",
+            "	shift\n",
+            "	shift\n",
+            "	cp ALLARGS\n",
+            "	else\n",
+            "	dc.b $FF\n",
+            "	endif\n",
+            "	endm\n",
+            "	cp 1,2,3,4,5,6\n",
+        );
+        assert_eq!(image(src), vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0xFF]);
+    }
+
+    /// `ALLARGS` loses its leading group per shift, down to empty, and a shift
+    /// past exhaustion leaves it empty rather than erroring.
+    ///
+    /// asl listing, `zb aa,bb,cc,dd` on params `b1,b2,b3` (`strlen` of the
+    /// substituted `ALLARGS` after each shift):
+    /// ```text
+    ///   32/  7 : 0B     dc.b strlen("aa,bb,cc,dd")
+    ///   32/  8 : 08     dc.b strlen("BB,CC,DD")
+    ///   32/  9 : 05     dc.b strlen("CC,DD")
+    ///   32/  A : 02     dc.b strlen("DD")
+    ///   32/  B : 00     dc.b strlen("")
+    ///   32/  C : 00     dc.b strlen("")
+    /// ```
+    /// asl renders the post-shift groups upper-cased because it is running
+    /// case-insensitive; sigil preserves the argument text as written, which
+    /// the lengths above are blind to.
+    #[test]
+    fn shift_drops_one_leading_group_from_allargs() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "zb macro b1,b2,b3\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	shift\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	shift\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	shift\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	shift\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	shift\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	endm\n",
+            "	zb aa,bb,cc,dd\n",
+        );
+        assert_eq!(image(src), vec![0x0B, 0x08, 0x05, 0x02, 0x00, 0x00]);
+    }
+
+    /// Parameters slide left one argument per shift, and the vacated tail slot
+    /// becomes empty.
+    ///
+    /// asl listing, `zc 1,2,3` on params `c1,c2,c3` — emitting `c1`,`c3`, then
+    /// after a shift `c1`,`c2`, then after another `c1`:
+    /// ```text
+    ///   44/  D : 01     dc.b 1
+    ///   44/  E : 03     dc.b 3
+    ///   44/  F : 02     dc.b 2
+    ///   44/ 10 : 03     dc.b 3
+    ///   44/ 11 : 03     dc.b 3
+    /// ```
+    #[test]
+    fn shift_walks_the_parameters_one_argument_at_a_time() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "zc macro c1,c2,c3\n",
+            "	dc.b c1\n",
+            "	dc.b c3\n",
+            "	shift\n",
+            "	dc.b c1\n",
+            "	dc.b c2\n",
+            "	shift\n",
+            "	dc.b c1\n",
+            "	endm\n",
+            "	zc 1,2,3\n",
+        );
+        assert_eq!(image(src), vec![0x01, 0x03, 0x02, 0x03, 0x03]);
+    }
+
+    /// The parameter vector is not a window that slides along the argument
+    /// list: it holds one slot per DECLARED parameter and empty-fills behind
+    /// the shift, so with two parameters and four arguments the third and
+    /// fourth arguments never reach a parameter at all — even though `ALLARGS`
+    /// still carries them.
+    ///
+    /// asl listing, `pw 5,6,7,8` on params `q1,q2`, emitting `q1` after each
+    /// shift — the third emission has no operand left and asl diagnoses it:
+    /// ```text
+    ///   24/  3 : 05                  dc.b 5
+    ///   24/  4 : 06                  dc.b 6
+    ///   > > > p5.asm(24) PW(5):14: error: invalid symbol name
+    ///   24/  5 :                     dc.b
+    /// ```
+    #[test]
+    fn shift_empty_fills_the_parameter_vector_rather_than_rewindowing() {
+        let head = "	cpu 68000\n	padding off\n	phase 0\n";
+        let body = concat!(
+            "pw macro q1,q2\n",
+            "	dc.b q1\n",
+            "	shift\n",
+            "	dc.b q1\n",
+            "	shift\n",
+            "	dc.b q1\n",
+            "	endm\n",
+        );
+        // Two shifts exhaust a two-parameter vector: `q1` is empty, not `7`.
+        assert!(
+            run(&format!("{head}{body}	pw 5,6,7,8\n"), &Options::default()).is_err(),
+            "the third argument must not reach `q1` after two shifts"
+        );
+        // Control: one shift stays within the parameter count and assembles.
+        let one_shift = concat!(
+            "pw macro q1,q2\n",
+            "	dc.b q1\n",
+            "	shift\n",
+            "	dc.b q1\n",
+            "	endm\n",
+            "	pw 5,6,7,8\n",
+        );
+        assert_eq!(image(&format!("{head}{one_shift}")), vec![0x05, 0x06]);
+    }
+
+    /// A `rept` body is substituted once, where the loop is entered, and
+    /// replayed: a `shift` inside it advances the frame — visible after the
+    /// loop — without rewriting the body's own text.
+    ///
+    /// asl listing, `zd aaa,bbbb,ccccc` on param `d1`, a `rept 2` whose body
+    /// shifts and emits `strlen(ALLARGS)`, then one emission after the loop:
+    /// ```text
+    ///   55/ 12 : 0E     dc.b strlen("aaa,bbbb,ccccc")
+    ///   55/ 13 : 0E     dc.b strlen("aaa,bbbb,ccccc")
+    ///   55/ 14 : 0E     dc.b strlen("aaa,bbbb,ccccc")
+    ///   55/ 15 : 05     dc.b strlen("CCCCC")
+    /// ```
+    #[test]
+    fn a_shift_inside_a_rept_body_advances_the_frame_but_not_the_body_text() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "zd macro d1\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	rept 2\n",
+            "	shift\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	endm\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	endm\n",
+            "	zd aaa,bbbb,ccccc\n",
+        );
+        assert_eq!(image(src), vec![0x0E, 0x0E, 0x0E, 0x05]);
+    }
+
+    /// Shift state belongs to one expansion. An inner macro's shift consumes
+    /// the inner call's arguments and leaves the caller's binding intact.
+    ///
+    /// asl listing, `eout aaaa,bbbbb` calling `ein qq,rrr` (which shifts):
+    /// ```text
+    ///   67/ 16 : 0A                  dc.b strlen("aaaa,bbbbb")
+    ///   67/ 17 : (MACRO-2)            ein qq,rrr
+    ///   67/ 17 : 03                  dc.b strlen("RRR")
+    ///   67/ 18 : 0A                  dc.b strlen("aaaa,bbbbb")
+    /// ```
+    #[test]
+    fn an_inner_expansions_shift_leaves_the_outer_frame_alone() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "ein macro e1\n",
+            "	shift\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	endm\n",
+            "eout macro e2\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	ein qq,rrr\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	endm\n",
+            "	eout aaaa,bbbbb\n",
+        );
+        assert_eq!(image(src), vec![0x0A, 0x03, 0x0A]);
+    }
+
+    /// A macro DEFINED inside an expanding body captures text the enclosing
+    /// expansion has already substituted, `ALLARGS` included and frozen at the
+    /// shift state in force at capture. Its own invocation arguments do not
+    /// rebind it.
+    ///
+    /// asl listing, `zf aa,bbb,cccc` shifting once, then defining `zfin` whose
+    /// body reads `ALLARGS`, then calling `zfin zzzzz`:
+    /// ```text
+    ///   77/ 19 : (MACRO-2)   zfin zzzzz
+    ///   77/ 19 : 08          dc.b strlen("BBB,CCCC")
+    /// ```
+    /// `08` is the OUTER post-shift `ALLARGS` (`bbb,cccc`), not the inner
+    /// call's `zzzzz` (which would be 5).
+    #[test]
+    fn a_macro_defined_inside_an_expansion_freezes_the_outer_allargs() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "zf macro f1\n",
+            "	shift\n",
+            "zfin macro g1\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	endm\n",
+            "	zfin zzzzz\n",
+            "	endm\n",
+            "	zf aa,bbb,cccc\n",
+        );
+        assert_eq!(image(src), vec![0x08]);
+    }
+
+    /// `shift` needs an expansion to shift. asl reports it through its
+    /// not-in-a-macro check (`p4.asm(6): error: EXITM not called from within
+    /// macro` for a bare `shift` at top level); sigil names the directive that
+    /// was written.
+    #[test]
+    fn shift_outside_a_macro_expansion_is_an_error() {
+        let src = "	cpu 68000\n	padding off\n	phase 0\n	shift\n";
+        let diags = run(src, &Options::default()).expect_err("bare `shift` must diagnose");
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.message.contains("`shift` outside a macro expansion")),
+            "expected the outside-a-macro refusal, got {:?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
 }
