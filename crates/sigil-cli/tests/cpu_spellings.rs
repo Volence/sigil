@@ -143,20 +143,23 @@ fn the_same_source_under_an_accepted_spelling_assembles() {
 /// Every spelling in the table lands on the target the table names it for, and
 /// on no other.
 ///
-/// Two halves, and the second is what gives the first its meaning. Byte-identity
-/// against the first spelling recorded for that target proves an alias is the
-/// SAME processor rather than merely an accepted word — that is what makes
-/// `68008` and `z80undoc` aliases and not new targets. But a spelling mapped to
-/// the wrong target would satisfy that half on its own: the body under test is
-/// chosen from the table's own claim, so a wrong claim picks a body that agrees
-/// with it. The discriminator is the other target's body, which must be REFUSED
-/// under this spelling. `move.w` does not assemble on a Z80 and `ld` is not a
-/// 68000 mnemonic, so the pair of outcomes identifies the processor rather than
-/// restating the table.
+/// Byte-identity against the first spelling recorded for that target proves an
+/// alias is the SAME processor rather than merely an accepted word — that is
+/// what makes `68008` and `z80undoc` aliases and not new targets. The other
+/// target's body must be REFUSED under this spelling: `move.w` does not assemble
+/// on a Z80 and `ld` is not a 68000 mnemonic, so the pair of outcomes says which
+/// processor was actually selected.
 ///
-/// Derived from `CPU_SPELLINGS` throughout: a row added without a lowering
-/// behind it, or pointed at the wrong target, fails here rather than in a
-/// corpus months later.
+/// **What this cannot check, and what does.** `directive_cpu` resolves through
+/// the same table these expectations are derived from, so a row pointed at the
+/// WRONG target is self-consistent here: the body chosen for the claimed target
+/// is exactly the body that claim makes assemble. A table cannot audit itself.
+/// The gates that pin `z80undoc` to the Z80 independently of the table are the
+/// two whose expectations come from the Z80 ISA —
+/// `the_undocumented_forms_z80undoc_adds_are_refused_and_emit_nothing`'s control
+/// and `a_mid_unit_switch_to_z80undoc_assembles_both_halves`. What this test
+/// catches is the table and the lowering DISAGREEING: a spelling special-cased
+/// somewhere on the way to a target other than the one its row names.
 #[test]
 fn every_accepted_spelling_selects_the_target_the_table_names() {
     assert!(
