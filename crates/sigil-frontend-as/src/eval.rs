@@ -1782,18 +1782,66 @@ impl Asm {
             }
         }
         let mut body = parsed.tokens;
-        // `!name` builtin escape (T9.2, asl-verified): a leading `!` forces
-        // AS's builtin directive `name` over any same-named user macro —
-        // `!error "msg"` / `!align N`. Core carries no macro that shadows a
-        // builtin, so the escape reduces to: strip the `!` and dispatch
-        // exactly as `name args…` would. (This is unrelated to `!` as the
-        // bitwise-or operator — that only ever appears mid-expression,
-        // inside an already-consumed head's operand tokens, never as the
-        // line's very first token, so there is no ambiguity to resolve.)
-        if matches!(body.first().map(|t| &t.tok), Some(Tok::Punct(Punct::Bang))) {
+        // `!name` builtin escape: a leading `!` resolves `name` against AS's
+        // BUILTIN table only, and a user macro of that name is not consulted at
+        // all. asl 1.42 Bld 212, `-xx -n -q -A -L -U -i .`:
+        //
+        // ```text
+        //    4/     100 :                     ds macro
+        //    5/     100 :                     	!ds.ATTRIBUTE ALLARGS
+        //   10/     101 : (MACRO)              	ds.b	4
+        //   10/     101 :                             !ds.b 4
+        //   11/     105 : 33                  	dc.b	$33
+        // ```
+        //
+        // — a `ds` macro whose own body says `!ds.ATTRIBUTE` expands ONCE and
+        // reserves 4 bytes ($101 → $105); the `!` line does not re-enter the
+        // macro. The bypass is unconditional, not a fallback: a `!` on a name
+        // that is ONLY a user macro is an error, never an invocation
+        // (`!mym` on `mym macro` ⇒ `error #1200: unknown instruction MYM`),
+        // and so is a `!` on a name that is nothing at all (`!frobnicate` ⇒
+        // the same #1200). The `!` must be glued to the name: `! ds.b 3` with
+        // a space is `#1200` on an empty mnemonic.
+        //
+        // Recorded rather than merely stripped, because "strip and dispatch as
+        // `name args…`" is wrong exactly where the escape is needed — it is
+        // what turned the corpus's own `ds` macro into unbounded self-recursion.
+        // (This is unrelated to `!` as the bitwise-or operator — that only ever
+        // appears mid-expression, inside an already-consumed head's operand
+        // tokens, never as the line's very first token, so there is no ambiguity
+        // to resolve.)
+        let bang_span = match body.first() {
+            Some(Token { tok: Tok::Punct(Punct::Bang), span }) => Some(*span),
+            _ => None,
+        };
+        if bang_span.is_some() {
             body = body[1..].to_vec();
         }
         if body.is_empty() {
+            return;
+        }
+        // A forced-builtin line is a directive/mnemonic line by construction:
+        // asl resolves the name in the builtin table and nowhere else, so none
+        // of the equate/`set`/`label`/bare-label interpretations below can
+        // apply, and the column rule that distinguishes a bare label from an
+        // instruction has nothing to decide.
+        if let Some(bang) = bang_span {
+            // The `!` is a PREFIX of the name, not a separate word: asl reads
+            // `! ds.b 3` as an empty mnemonic and reports `#1200`, on the same
+            // line where `!ds.b 3` reserves three bytes. Refused here rather
+            // than accepted quietly, so sigil does not assemble a spelling asl
+            // refuses. Spans are `line.base + column` (see `lex_line`), so
+            // adjacency is `bang.end == name.start`.
+            if bang.end != body[0].span.start {
+                self.err(bang, "`!` must be written against the name it forces");
+                return;
+            }
+            let Tok::Ident(head) = &body[0].tok else {
+                self.err(body[0].span, "`!` must be followed by a directive or mnemonic name");
+                return;
+            };
+            let (head, span) = (head.clone(), body[0].span);
+            self.dispatch_builtin(&head, &body[1..], span);
             return;
         }
         let head = match &body[0].tok {
@@ -2561,6 +2609,59 @@ impl Asm {
                 return;
             }
         }
+        self.dispatch_resolved(head, rest, span, false);
+    }
+
+    /// `!name args…` — the [forced-builtin escape](Self::exec_one). Same body
+    /// as [`Self::dispatch`] with every macro consultation removed: neither the
+    /// `.ATTRIBUTE`-suffix expansion above nor the invocation arm below is
+    /// reachable, so a name that is only a macro falls through to the
+    /// mnemonic/unknown arms and is reported, which is asl's `#1200`.
+    fn dispatch_builtin(&mut self, head: &str, rest: &[Token], span: Span) {
+        self.dispatch_resolved(head, rest, span, true);
+    }
+
+    /// The shared body of [`Self::dispatch`] and [`Self::dispatch_builtin`].
+    /// `forced_builtin` suppresses the one macro-invocation arm below; the
+    /// `.ATTRIBUTE` arm is in `dispatch` alone and so is already absent here.
+    fn dispatch_resolved(
+        &mut self,
+        head: &str,
+        rest: &[Token],
+        span: Span,
+        forced_builtin: bool,
+    ) {
+        // A USER MACRO BEATS EVERY BUILTIN OF THE SAME NAME — directives and
+        // mnemonics alike — and `!` is the only escape. asl, with a `org` macro
+        // and a `move` macro in scope:
+        //
+        // ```text
+        //   10/     100 : 11                  	dc.b	$11
+        //   11/     101 : (MACRO)              	org	$200
+        //   11/     101 : EE                          dc.b    $EE
+        //   12/     102 : 22                  	dc.b	$22
+        //   13/     103 : (MACRO)              	move.w	#1,d0
+        //   13/     103 : DD                          dc.b    $DD
+        //   14/     104 : 44                  	dc.b	$44
+        //   15/     300 :                     	!org	$300
+        //   16/     300 : 55                  	dc.b	$55
+        // ```
+        //
+        // `org $200` moves the counter by ONE byte (the macro's `dc.b $EE`),
+        // not to $200; `move.w` emits `DD`; only `!org $300` reaches the
+        // builtin. Checked HERE, ahead of the keyword table, because the
+        // keyword arms below would otherwise silently win: `s2.macrosetup.asm`
+        // redefines `org` (forward-only, padding-counting) and `align` (as
+        // `cnop 0,n`, i.e. through that same `org`), and running asl's builtins
+        // for those two is running a different program with no diagnostic.
+        //
+        // The mnemonic side of the rule was already right — `lower_instruction`
+        // sits at the bottom of the match — and so was the `.ATTRIBUTE`-suffix
+        // side, which `dispatch` resolves before calling here.
+        if !forced_builtin && self.macros.contains_key(head) {
+            self.expand_macro(head, rest);
+            return;
+        }
         // The DIRECTIVE/MNEMONIC name folds (`fold_kw`); `head` itself stays
         // raw and is what every macro lookup and every symbol-defining arm
         // below uses, so a macro or label named `Foo` is never rewritten.
@@ -2630,7 +2731,13 @@ impl Asm {
             // block scanning, not dispatch).
             "end" => {}
             "shift" => self.directive_shift(span),
-            _ if self.macros.contains_key(head) => self.expand_macro(head, rest),
+            // Unreachable for a plain dispatch (the precedence check at the top
+            // of this function has already expanded it) and correctly dead for a
+            // forced-builtin one; kept as the explicit statement that a macro
+            // never reaches the mnemonic arm below.
+            _ if !forced_builtin && self.macros.contains_key(head) => {
+                self.expand_macro(head, rest)
+            }
             // `is_mnemonic` only recognizes Z80 mnemonics; under `cpu 68000` the
             // m68k dispatch (lower_m68k) is still a stub (M1.C T4/T5), so any
             // non-directive head is routed there rather than misreported as
@@ -9939,6 +10046,184 @@ C:\n";
             "	dc.b 1\n	myeven\n	dc.b $22\n",
         );
         assert_eq!(linked_image(src), vec![0x01, 0x00, 0x22]);
+    }
+
+    /// `!name` resolves against the BUILTIN table only. The corpus's own `ds`
+    /// macro (`s2.macrosetup.asm:66`) is defined in terms of the builtin it
+    /// shadows, so a `!` that merely strips and re-dispatches re-enters the
+    /// macro forever. asl expands it exactly once and reserves four bytes:
+    ///
+    /// ```text
+    ///        4/     100 :                     ds macro
+    ///        5/     100 :                             !ds.ATTRIBUTE ALLARGS
+    ///        6/     100 :                             endm
+    ///       10/     100 : 11                          dc.b    $11
+    ///       10/     101 : (MACRO)                     ds.b    4
+    ///       10/     101 :                             !ds.b 4
+    ///       11/     105 : 33                          dc.b    $33
+    /// ```
+    ///
+    /// `$101 → $105` is the reservation, and `dc.b $33` at `$105` is the proof
+    /// it happened once. The assertion is on the LABEL the reservation places
+    /// rather than on image bytes, because what a reservation does to the IMAGE
+    /// is a separate rule with its own divergence — see the parcel note.
+    #[test]
+    fn bang_forces_the_builtin_past_a_macro_of_that_name() {
+        let head = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "ds macro\n	!ds.ATTRIBUTE ALLARGS\n	endm\n",
+        );
+        // asl's own widths for the three suffixes, read off the same probe:
+        // `ds.b 4` spans 4 bytes, `ds.w 3` spans 6, `ds.l 2` spans 8.
+        for (line, span) in [("	ds.b 4\n", 4), ("	ds.w 3\n", 6), ("	ds.l 2\n", 8)] {
+            let src = format!("{head}	dc.b $11\n{line}After:\n");
+            assert_eq!(
+                section_label(&src, "After"),
+                Some(1 + span),
+                "the `!` line must reach the builtin once, not re-enter `ds`: {line:?}"
+            );
+        }
+    }
+
+    /// The other half of the escape, and the reason it exists: a user macro
+    /// BEATS the builtin of the same name, for a directive and for a mnemonic
+    /// alike. asl, with `org` and `move` macros in scope:
+    ///
+    /// ```text
+    ///       10/     100 : 11                          dc.b    $11
+    ///       11/     101 : (MACRO)                     org     $200
+    ///       11/     101 : EE                          dc.b    $EE
+    ///       12/     102 : 22                          dc.b    $22
+    ///       13/     103 : (MACRO)                     move.w  #1,d0
+    ///       13/     103 : DD                          dc.b    $DD
+    ///       14/     104 : 44                          dc.b    $44
+    ///       15/     300 :                             !org    $300
+    ///       16/     300 : 55                          dc.b    $55
+    /// ```
+    ///
+    /// `org $200` advances by the macro's single byte instead of seeking to
+    /// $200, and only the `!` line seeks. Getting this backwards is silent:
+    /// `s2.macrosetup.asm` redefines `org` (forward-only, padding-counting) and
+    /// `align` (as `cnop 0,n`, through that same `org`), so a builtin that wins
+    /// runs a different program and says nothing.
+    #[test]
+    fn a_user_macro_shadows_the_builtin_of_the_same_name() {
+        let head = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "org macro address\n	dc.b $EE\n	endm\n",
+            "move macro\n	dc.b $DD\n	endm\n",
+        );
+        assert_eq!(
+            linked_image(&format!("{head}	dc.b $11\n	org $200\n	dc.b $22\n")),
+            vec![0x11, 0xEE, 0x22],
+            "the `org` MACRO runs; the builtin would have sought to $200"
+        );
+        assert_eq!(
+            linked_image(&format!("{head}	dc.b $11\n	move.w #1,d0\n	dc.b $44\n")),
+            vec![0x11, 0xDD, 0x44],
+            "a macro shadows a MNEMONIC too, `.w` attribute and all"
+        );
+        // And the `!` line is the one that reaches the builtin: seeking to $300
+        // from $101 leaves 511 bytes of gap-fill ahead of the `$55`.
+        let forced = linked_image(&format!("{head}	dc.b $11\n	!org $300\n	dc.b $55\n"));
+        assert_eq!(forced.len(), 0x301);
+        assert_eq!(forced[0], 0x11);
+        assert_eq!(forced[0x300], 0x55);
+    }
+
+    /// The bypass is not a fallback. asl resolves the name after `!` in the
+    /// builtin table and NOWHERE else, so a name that is only a user macro is
+    /// an error rather than an invocation — and so is a name that is nothing:
+    ///
+    /// ```text
+    ///       15/     10F : (MACRO)                     mym
+    ///       15/     10F : AA                          dc.b    $AA
+    /// > > > p3.asm(16):3: error #1200: unknown instruction
+    /// > > > MYM
+    /// > > >  !mym                     ; bang on a user macro that is not a builtin
+    ///       16/     110 :                             !mym
+    ///       17/     110 : 44                          dc.b    $44
+    /// ```
+    ///
+    /// The unsuffixed `mym` on line 15 emits `AA`; the `!mym` on line 16 emits
+    /// nothing and is diagnosed.
+    #[test]
+    fn bang_never_falls_back_to_a_user_macro() {
+        let head = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "mym macro\n	dc.b $AA\n	endm\n",
+        );
+        assert_eq!(
+            linked_image(&format!("{head}	mym\n	dc.b $44\n")),
+            vec![0xAA, 0x44],
+            "without the `!` the macro is what runs"
+        );
+        assert!(
+            run(&format!("{head}	!mym\n	dc.b $44\n"), &Options::default()).is_err(),
+            "`!mym` names no builtin: asl says #1200, and so must this"
+        );
+        assert!(
+            run(
+                "	cpu 68000\n	padding off\n	phase 0\n	!frobnicate 1\n",
+                &Options::default()
+            )
+            .is_err(),
+            "`!` on a name that is nothing at all is the same #1200"
+        );
+    }
+
+    /// The escape composes with a colon label and with a shadowed non-`ds`
+    /// builtin, and the `!` must be GLUED to the name — a space makes the `!`
+    /// itself the mnemonic, which is nothing:
+    ///
+    /// ```text
+    ///        8/     101 :                     Lbl:    !ds.b   3
+    ///        9/     104 : 22                          dc.b    $22
+    /// > > > p5.asm(10):3: error #1200: unknown instruction
+    /// > > >  ! ds.b   3               ; bang separated by a space
+    ///       12/     106 : (MACRO)                     align   4
+    ///       12/     106 : EE                          dc.b    $EE
+    ///       13/     107 : 44                          dc.b    $44
+    ///       14/     108 :                             !align  4
+    ///       15/     108 : 55                          dc.b    $55
+    /// ```
+    #[test]
+    fn bang_composes_with_a_label_and_binds_tightly() {
+        let head = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "align macro\n	dc.b $EE\n	endm\n",
+        );
+        // Line 12 vs 14: the bare name runs the macro (`EE`), the `!` name runs
+        // the builtin. `align 4` at an offset already a multiple of 4 is a no-op
+        // there, so the builtin contributes nothing and `$55` follows `$44`.
+        assert_eq!(
+            linked_image(&format!("{head}	dc.b $44\n	!align 4\n	dc.b $55\n")),
+            vec![0x44, 0x00, 0x00, 0x00, 0x55],
+            "`!align` must reach the builtin, not emit the macro's $EE"
+        );
+        assert_eq!(
+            linked_image(&format!("{head}	dc.b $44\n	align 4\n	dc.b $55\n")),
+            vec![0x44, 0xEE, 0x55],
+            "without the `!` the macro is still what runs"
+        );
+        // A colon label on the same line as the escape.
+        let labelled = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "ds macro\n	!ds.ATTRIBUTE ALLARGS\n	endm\n",
+            "	dc.b $11\n",
+            "Lbl:	!ds.b 3\n",
+            "After:\n",
+        );
+        assert_eq!(section_label(labelled, "Lbl"), Some(1));
+        assert_eq!(section_label(labelled, "After"), Some(4));
+        assert!(
+            run(
+                "	cpu 68000\n	padding off\n	phase 0\n	! align 4\n",
+                &Options::default()
+            )
+            .is_err(),
+            "`! name` with a space is #1200 on an empty mnemonic, not the builtin"
+        );
     }
 
     /// A line whose OPERAND does not lex still has a head, and block nesting
