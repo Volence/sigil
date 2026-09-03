@@ -120,3 +120,24 @@ folds to 102 bytes rather than 6, and the fold IDENTITY it exists to prove is
 untouched either way.
 
 Clippy `--release --workspace --all-targets -- -D warnings`: exit 0.
+
+### The runs
+
+Both are `scripts/landing-run.sh`, same reference tree (`.aeon-eval-ref` at
+`4f5ad5a1`, all four ROMs present), each in its own on-disk target directory.
+
+| | tree | suites | passed | failed | ignored | exit |
+|---|---|---|---|---|---|---|
+| master baseline | `.sigil-reserve-base` @ `60320df4` | 377 | 4,324 | 0 | 2 | 0 |
+| this parcel | `.sigil-reserve-land` @ `dd41c8ff` | 377 | 4,327 | 0 | 2 | 0 |
+
+`4,324 baseline + 3 new = 4,327`, and the three are the three gates above —
+each named to `--expect-test`, so a green log that did not run them would have
+been refused rather than believed.
+
+One earlier attempt read `FAILED — 1 test red` on
+`version_reports_the_head_of_the_tree_it_was_built_from`. The cause was a commit
+landing while that run was in flight: the binary was baked at `7b9bae69` and the
+checkout reached `dd41c8ff` under it. The gate's own message names that case and
+says to re-run to distinguish it from a build.rs trigger failure; the re-run at
+a stable tip is the row above. Do not commit into a landing run.
