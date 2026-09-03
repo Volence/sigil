@@ -3,13 +3,45 @@
 Flags: `-xx -n -q -A -L -U -i .` (the corpus flags).
 Runner: `./run.sh <probe>`; single-case sweeps: `./gen_org.sh <org-expr> <n>`.
 
-Both Linux-x86_64 asl builds present in this workspace were checked on `p1`
-and agree, so the binary is not the variable:
+## Which binary, and why that is written down here
 
-| build | banner | `p1` answer |
+A version string is not a binary identity. Two DIFFERENT Linux-x86_64 asl builds
+sit in this workspace and both self-report `AS V1.42 Beta [Bld 212]`:
+
+| build | banner | md5 |
 |---|---|---|
-| `s2disasm/build_tools/Linux-x86_64` (flamewing, `x86_64-Linux`) | 1.42 Beta Bld 212 | `$B100` |
-| `s1disasm/build_tools/Linux-x86_64` (upstream, `x86_64-unknown-linux`) | 1.42 Beta Bld 212 | `$B100` |
+| `s2disasm/build_tools/Linux-x86_64/asl` — flamewing fork | `(x86_64-Linux)`, `(C) 2022-2024 flamewing` | `0dee1f98e6480a4783d27ffd8b90896f` |
+| `s1disasm/build_tools/Linux-x86_64/asl` — upstream | `(x86_64-unknown-linux)`, MPC821 additions | `61e672562465725a8c102288a7da9098` |
+
+`skdisasm` and `sonic_hack` carry the same upstream binary (`61e672…`).
+
+**They AGREE on every row that discriminates the rule**, so the fork is not the
+variable behind the July/September disagreement. Run `./gen_org_both.sh <org> <n>`
+to reproduce; the sweep taken 2026-09-03:
+
+```
+$0000B000    n=256    s2/flamewing=B000         s1/upstream=B000         agree
+$0000B02A    n=256    s2/flamewing=B100         s1/upstream=B100         agree
+$0000B02A    n=100    s2/flamewing=B02C         s1/upstream=B02C         agree
+$0000B02A    n=2      s2/flamewing=B02A         s1/upstream=B02A         agree
+$7FFFB02A    n=256    s2/flamewing=7FFFB100     s1/upstream=7FFFB100     agree
+$FFFFB000    n=256    s2/flamewing=FFFFB100     s1/upstream=FFFFB100     agree
+$FFFFB001    n=256    s2/flamewing=FFFFB100     s1/upstream=FFFFB100     agree
+$FFFFB002    n=256    s2/flamewing=FFFFB200     s1/upstream=FFFFB200     agree
+$FFFFB005    n=256    s2/flamewing=FFFFB200     s1/upstream=FFFFB200     agree
+$FFFFB026    n=256    s2/flamewing=FFFFB200     s1/upstream=FFFFB200     agree
+$FFFFB100    n=256    s2/flamewing=FFFFB200     s1/upstream=FFFFB200     agree
+$FFFFB102    n=256    s2/flamewing=FFFFB300     s1/upstream=FFFFB300     agree
+$FFFFB02A    n=100    s2/flamewing=FFFFB0B4     s1/upstream=FFFFB0B4     agree
+$FFFFB02A    n=2      s2/flamewing=FFFFB02C     s1/upstream=FFFFB02C     agree
+$FFFFFF00    n=256    s2/flamewing=100000000    s1/upstream=100000000    agree
+$80000000    n=256    s2/flamewing=80000100     s1/upstream=80000100     agree
+```
+
+`p1` (the source the July test transcribes) also answers `$B100` under both.
+
+Every listing row below was taken with the flamewing build `0dee1f98…`, and the
+four rows the 2026-07-08 note recorded were re-taken under BOTH.
 
 ## The rule
 
@@ -89,3 +121,23 @@ fine, but isolate anyway so nothing is an ordering artifact):
 
 Every row above is reproduced by the formula, including the two that exceed 32
 bits: the delta is an unsigned-32 difference but is added to a wide PC.
+
+## The four rows the 2026-07-08 note recorded
+
+The July comment lists `$B000→$B100`, `$B005→$B200`, `$B026→$B200`,
+`$B100→$B200` and calls the regime "inside a `phase`". All four reproduce today
+as RAM addresses under both binaries, and none of them reproduces at the
+positive `phase $B000` the regression test transcribed them to:
+
+```
+$FFFFB000    n=256    s2/flamewing=FFFFB100     s1/upstream=FFFFB100
+$FFFFB005    n=256    s2/flamewing=FFFFB200     s1/upstream=FFFFB200
+$FFFFB026    n=256    s2/flamewing=FFFFB200     s1/upstream=FFFFB200
+$FFFFB100    n=256    s2/flamewing=FFFFB200     s1/upstream=FFFFB200
+```
+
+July measured correctly and recorded the addresses by their low half. What was
+lost is that they were negative PCs — not that they were phased.
+
+The rule generalised from them, `round_up(pos + n, n)`, is wrong on both sides:
+it disagrees with asl on 20 of the 31 rows here, including 5 of the 11 RAM rows.
