@@ -465,6 +465,18 @@ struct Asm {
     functions: FunctionTable,
     macros: MacroTable,
     macro_depth: usize,
+    /// One entry per macro expansion currently on the stack, innermost last.
+    /// Parameter / `ALLARGS` / `.ATTRIBUTE` substitution reads the INNERMOST
+    /// frame at the moment a body line's text is consumed, which is what makes
+    /// `shift` observable: the directive mutates the frame, and every body line
+    /// reached afterwards is substituted against the mutated binding.
+    ///
+    /// Only the innermost frame is consulted. An outer expansion's parameters
+    /// are already baked into anything an inner expansion can see: a nested
+    /// `macro` definition captures text the outer frame has substituted (see
+    /// [`Self::capture_macro`]), and a nested invocation's argument tokens are
+    /// substituted on the invoking line before dispatch.
+    macro_frames: Vec<MacroFrame>,
     /// Monotonic per-pass counter identifying each macro EXPANSION. A `.`-local
     /// label defined inside a macro body is scoped to its expansion (asl-verified
     /// — `docs/superpowers/notes/2026-07-04-m1d-t4-macro-local-scope-probes.md`),
@@ -591,6 +603,7 @@ impl Asm {
             functions: std::collections::BTreeMap::new(),
             macros: std::collections::BTreeMap::new(),
             macro_depth: 0,
+            macro_frames: Vec::new(),
             macro_expansion_seq: 0,
             visited: std::collections::BTreeSet::new(),
             include_root: opts.include_root.clone(),
@@ -1133,6 +1146,8 @@ impl Asm {
     /// except the LAST, which is the body expression. (In aeon every function has
     /// exactly one formal, but this handles any arity.)
     fn def_function(&mut self, line: &SrcLine) {
+        let substituted = self.subst_frame(line);
+        let line = substituted.as_ref().unwrap_or(line);
         let toks = match lex_line(&line.text, self.state.cpu, line.source, line.base) {
             Ok(t) => t,
             Err(d) => {
@@ -1538,6 +1553,11 @@ impl Asm {
     }
 
     fn exec_one(&mut self, line: &SrcLine) {
+        // Macro parameters / `ALLARGS` resolve BEFORE `{…}` name composition:
+        // a brace group may be written around a parameter, and AS pastes the
+        // parameter text first, then evaluates the group.
+        let substituted = self.subst_frame(line);
+        let line = substituted.as_ref().unwrap_or(line);
         // `{expr}` groups compose symbol names (see `subst_name_braces`), so they
         // are resolved into plain text before the line is lexed — the lexer
         // swallows a `{…}` group without emitting a token (it is a macro-param
@@ -1696,7 +1716,9 @@ impl Asm {
     ///  4. a bare label followed by an Ident ⇒ that following Ident (e.g. `Tab db 0`).
     ///  5. otherwise ⇒ the leading name.
     fn dispatch_head(&self, line: &SrcLine) -> Option<(String, usize, Vec<Token>)> {
-        let toks = lex_line(&line.text, self.state.cpu, line.source, line.base).ok()?;
+        let substituted = self.subst_frame_text(&line.text);
+        let text = substituted.as_deref().unwrap_or(&line.text);
+        let toks = lex_line(text, self.state.cpu, line.source, line.base).ok()?;
         if toks.is_empty() {
             return None;
         }
@@ -1932,11 +1954,44 @@ impl Asm {
             }
         };
         let end = self.find_block_end(lines, start);
-        let body = &lines[start + 1..end];
+        let captured = self.capture_loop_body(&lines[start + 1..end]);
+        let body: &[SrcLine] = captured.as_deref().unwrap_or(&lines[start + 1..end]);
         for _ in 0..n {
             self.exec(body);
         }
+        self.release_loop_body(captured.is_some());
         end + 1
+    }
+
+    /// Materialize a `rept`/`while` body against the innermost expansion and
+    /// suspend that expansion's substitution for the replay, matching AS: the
+    /// loop body is substituted ONCE where the loop is entered, and a `shift`
+    /// inside it advances the frame without changing the body's own text
+    /// (asl-verified — see [`MacroFrame::suspend`]). Returns `None` when there
+    /// is nothing to substitute, so the caller replays the source lines
+    /// directly.
+    fn capture_loop_body(&mut self, body: &[SrcLine]) -> Option<Vec<SrcLine>> {
+        if !self.frame_substitutes() {
+            return None;
+        }
+        let captured: Vec<SrcLine> = body
+            .iter()
+            .map(|l| self.subst_frame(l).unwrap_or_else(|| l.clone()))
+            .collect();
+        if let Some(f) = self.macro_frames.last_mut() {
+            f.suspend += 1;
+        }
+        Some(captured)
+    }
+
+    /// Undo [`Self::capture_loop_body`]'s suspension. `captured` is whether that
+    /// call actually suspended one.
+    fn release_loop_body(&mut self, captured: bool) {
+        if captured {
+            if let Some(f) = self.macro_frames.last_mut() {
+                f.suspend -= 1;
+            }
+        }
     }
 
     /// Handle `while (cond) … endm` (T9.2, asl-verified — NOT `endw`: asl
@@ -1952,7 +2007,8 @@ impl Asm {
     fn exec_while(&mut self, lines: &[SrcLine], start: usize) -> usize {
         let (_, arg_toks, span) = self.line_kw_args(&lines[start]);
         let end = self.find_block_end(lines, start);
-        let body = &lines[start + 1..end];
+        let captured = self.capture_loop_body(&lines[start + 1..end]);
+        let body: &[SrcLine] = captured.as_deref().unwrap_or(&lines[start + 1..end]);
         let mut iterations = 0usize;
         loop {
             if self.aborted {
@@ -1986,6 +2042,7 @@ impl Asm {
                 }
             }
         }
+        self.release_loop_body(captured.is_some());
         end + 1
     }
 
@@ -1994,8 +2051,10 @@ impl Asm {
     /// index past `endstruct`. (Mirrors `capture_macro`: name at `toks[0]`,
     /// `struct` at `toks[1]`.)
     fn capture_struct(&mut self, lines: &[SrcLine], start: usize) -> usize {
+        let head = self.subst_frame(&lines[start]);
+        let head = head.as_ref().unwrap_or(&lines[start]);
         let toks = lex_line(
-            &lines[start].text,
+            &head.text,
             self.state.cpu,
             lines[start].source,
             lines[start].base,
@@ -2071,6 +2130,8 @@ impl Asm {
     /// Parse a `<field> ds.b|ds.w|ds.l <count>` struct-member line.
     /// Returns `(field, width, count)`, or None for a blank/comment line.
     fn parse_struct_field(&mut self, line: &SrcLine) -> Option<(String, i64, i64)> {
+        let substituted = self.subst_frame(line);
+        let line = substituted.as_ref().unwrap_or(line);
         let toks = lex_line(&line.text, self.state.cpu, line.source, line.base).ok()?;
         if toks.is_empty() {
             return None;
@@ -2246,6 +2307,7 @@ impl Asm {
             // the `endif`/`endm`/`endr`/`endcase` block closers (handled in
             // block scanning, not dispatch).
             "end" => {}
+            "shift" => self.directive_shift(span),
             _ if self.macros.contains_key(head) => self.expand_macro(head, rest),
             // `is_mnemonic` only recognizes Z80 mnemonics; under `cpu 68000` the
             // m68k dispatch (lower_m68k) is still a stub (M1.C T4/T5), so any
@@ -4455,8 +4517,10 @@ impl Asm {
 
     /// Capture `<name> macro [params] … endm`. Returns the index past `endm`.
     fn capture_macro(&mut self, lines: &[SrcLine], start: usize) -> usize {
+        let head = self.subst_frame(&lines[start]);
+        let head = head.as_ref().unwrap_or(&lines[start]);
         let toks = lex_line(
-            &lines[start].text,
+            &head.text,
             self.state.cpu,
             lines[start].source,
             lines[start].base,
@@ -4499,7 +4563,18 @@ impl Asm {
             })
             .collect();
         let end = self.find_block_end(lines, start);
-        let body: Vec<SrcLine> = lines[start + 1..end].to_vec();
+        // A macro DEFINED inside an expanding macro body captures text the
+        // enclosing expansion has already substituted — including its
+        // `ALLARGS`, frozen at the shift state in force here. The inner macro
+        // therefore carries the OUTER call's arguments for the rest of the
+        // assembly, and its own invocation arguments do not rebind them
+        // (asl-verified: probe `p3.asm` case 3e defines `inner2` after a
+        // `shift` in `de 61,62,63`, and `inner2 51,52` emits `in<51|62,63>` —
+        // the outer's post-shift `ALLARGS`, not the inner's `51,52`).
+        let body: Vec<SrcLine> = lines[start + 1..end]
+            .iter()
+            .map(|l| self.subst_frame(l).unwrap_or_else(|| l.clone()))
+            .collect();
         self.macros.insert(name, (params, body));
         end + 1
     }
@@ -4572,6 +4647,58 @@ impl Asm {
         v
     }
 
+    /// Substitute the innermost expansion's `.ATTRIBUTE`, `ALLARGS` and
+    /// parameters into a body line's text, or `None` when there is no
+    /// expansion to substitute from (root source) or the innermost one is
+    /// suspended (a `rept`/`while` body already substituted at loop entry).
+    ///
+    /// Called wherever a line's text is CONSUMED rather than merely carried, so
+    /// that the binding in force is the one at the moment the line is reached:
+    /// [`Self::exec_one`], [`Self::dispatch_head`] (hence every block scan and
+    /// every `if`/`switch`/`rept`/`while` head), [`Self::def_function`],
+    /// [`Self::capture_macro`], [`Self::capture_struct`] and
+    /// [`Self::parse_struct_field`].
+    fn subst_frame_text(&self, text: &str) -> Option<String> {
+        let f = self.macro_frames.last()?;
+        if f.suspend > 0 {
+            return None;
+        }
+        let mut out = text.to_string();
+        if let Some(suffix) = &f.attribute {
+            out = out.replace(".ATTRIBUTE", suffix);
+        }
+        out = out.replace("ALLARGS", &f.all_args());
+        for (p, a) in f.params.iter().zip(f.bound.iter()) {
+            out = replace_word(&out, p, a);
+        }
+        Some(out)
+    }
+
+    /// [`Self::subst_frame_text`] lifted to a whole line, preserving its span
+    /// anchor so diagnostics still point at the macro body.
+    fn subst_frame(&self, line: &SrcLine) -> Option<SrcLine> {
+        let text = self.subst_frame_text(&line.text)?;
+        Some(SrcLine { text, base: line.base, source: line.source })
+    }
+
+    /// Whether a body line reached now would be substituted — the test
+    /// `rept`/`while` use to decide between replaying borrowed source lines and
+    /// materializing a substituted copy.
+    fn frame_substitutes(&self) -> bool {
+        self.macro_frames.last().is_some_and(|f| f.suspend == 0)
+    }
+
+    /// AS's `shift`: drop the innermost expansion's first argument. Outside a
+    /// macro it is an error — asl reports it as `EXITM not called from within
+    /// macro` (probe `p4.asm` case 4a), sharing its not-in-a-macro check; the
+    /// wording here names the directive that was actually written.
+    fn directive_shift(&mut self, span: Span) {
+        match self.macro_frames.last_mut() {
+            Some(f) => f.shift(),
+            None => self.err(span, "`shift` outside a macro expansion"),
+        }
+    }
+
     fn expand_macro_inner(&mut self, name: &str, arg_toks: &[Token], attribute: Option<&str>) {
         if self.macro_depth >= EXPAND_CAP {
             let span = arg_toks.first().map(|t| t.span).unwrap_or(Span {
@@ -4623,24 +4750,34 @@ impl Asm {
         // (`P_VFG := vFactorFg` → `P_VFG := ` on the empty branch, never taken).
         // `replace_word` treats `"` as a word boundary, so an empty binding also
         // collapses `"param"` → `""`, making the guard compare true.
-        let mut arg_values: Vec<(String, String)> = Vec::with_capacity(params.len());
+        let mut bound: Vec<String> = Vec::with_capacity(params.len());
+        // `filled` tracks which parameter slots an argument was actually
+        // written for, as opposed to the empty default. `ALLARGS` after a
+        // `shift` renders the arguments that were SUPPLIED, so an unsupplied
+        // trailing parameter must not contribute an empty group to it
+        // (asl-verified: probe `p4.asm` case 4e, `mp aa` on params `n1,n2,n3`,
+        // shifts to `s[][][][]` — an empty `ALLARGS`, not `,`).
+        let mut filled: Vec<bool> = Vec::with_capacity(params.len());
         for p in &params {
-            let v = keyword.get(p).cloned().or_else(|| pos_iter.next()).unwrap_or_default();
-            let bound = self.bind_macro_arg(v, caller_scope.as_deref());
-            arg_values.push((p.clone(), bound));
+            let supplied = keyword.get(p).cloned().or_else(|| pos_iter.next());
+            filled.push(supplied.is_some());
+            let v = self.bind_macro_arg(supplied.unwrap_or_default(), caller_scope.as_deref());
+            bound.push(v);
         }
-        let mut expanded = Vec::new();
-        for l in &body {
-            let mut text = l.text.clone();
-            if let Some(suffix) = attribute {
-                text = text.replace(".ATTRIBUTE", suffix);
-            }
-            text = text.replace("ALLARGS", &all_args);
-            for (p, a) in &arg_values {
-                text = replace_word(&text, p, a);
-            }
-            expanded.push(SrcLine { text, base: l.base, source: l.source });
-        }
+        // The argument groups `ALLARGS` walks: every supplied parameter slot in
+        // PARAMETER order (so a keyword call shifts in the order the callee
+        // declared, asl-verified — probe `p4.asm` case 4b, `kw k2=aa,k1=bb` on
+        // params `k1,k2` shifts to `ALLARGS` = `aa`, the value bound to `k2`),
+        // then any surplus positional arguments the parameter list could not
+        // hold (probe `p4.asm` case 4d, one parameter and three arguments
+        // shifts to `bb,cc`).
+        let mut all: Vec<String> = bound
+            .iter()
+            .zip(filled.iter())
+            .filter(|(_, f)| **f)
+            .map(|(v, _)| v.clone())
+            .collect();
+        all.extend(pos_iter);
         // A `.`-local written LITERALLY in this macro body is scoped to the
         // EXPANSION, not the caller's global label (asl-verified, T4 probe
         // P1/P3): two expansions of one macro in a single global scope each own a
@@ -4661,13 +4798,90 @@ impl Asm {
         self.macro_expansion_seq += 1;
         self.scope = Some(format!(" macro#{}", self.macro_expansion_seq));
         self.macro_depth += 1;
-        self.exec(&expanded);
+        self.macro_frames.push(MacroFrame {
+            params,
+            bound,
+            all,
+            all_raw: all_args,
+            shifted: 0,
+            attribute: attribute.map(str::to_string),
+            suspend: 0,
+        });
+        self.exec(&body);
+        self.macro_frames.pop();
         self.macro_depth -= 1;
         self.scope = caller_scope;
     }
 }
 
 // ── free helpers ────────────────────────────────────────────────────────────
+
+/// The binding one macro expansion substitutes into its body, and the state
+/// `shift` mutates.
+///
+/// AS keeps TWO vectors, and `shift` advances both (asl-verified, probe `p2.asm`
+/// case 2a — `zt 1,2,3,4` on params `pp,qq,rr` lists
+/// `<1|2|3|1,2,3,4>` → `<2|3||2,3,4>` → `<3|||3,4>` → `<|||4>` → `<|||>`):
+///
+/// * [`Self::bound`] — one slot per declared parameter, filled left-to-right at
+///   entry and shifted left with EMPTY fill. It is not a window onto the
+///   argument list: with three parameters and four arguments the fourth
+///   argument never reaches the third parameter (`<2|3||…>`, third slot empty
+///   while `ALLARGS` still holds `4`).
+/// * [`Self::all`] — the argument groups, shifted left with no refill, which
+///   is what `ALLARGS` renders after a shift.
+///
+/// A shift past exhaustion is a no-op (the fifth row above repeats the fourth).
+struct MacroFrame {
+    /// Declared parameter names, in order; parallel to [`Self::bound`].
+    params: Vec<String>,
+    /// Current value of each parameter. Shifts left, empty-filled.
+    bound: Vec<String>,
+    /// Argument groups still in scope for `ALLARGS`. Shifts left, no refill.
+    all: Vec<String>,
+    /// `ALLARGS` before any shift: the invocation's argument text rendered as a
+    /// whole, not a re-join of [`Self::all`]. The two agree on every argument
+    /// shape, but rendering the token run once is what the byte-exact
+    /// `%<…>`-string substitution in aeon's debugger macros already depends on,
+    /// so the whole-run rendering stays the source of truth while it is intact.
+    all_raw: String,
+    /// How many times this expansion has shifted.
+    shifted: usize,
+    /// `.ATTRIBUTE` text for a `.b`/`.w`/`.l`/`.s`-suffixed invocation.
+    attribute: Option<String>,
+    /// Nonzero while a `rept`/`while` body captured from this frame replays.
+    /// AS substitutes such a body ONCE, where the loop is entered, and replays
+    /// the substituted text — so a `shift` inside the body still advances the
+    /// frame but does not change the body's own text (asl-verified: probe
+    /// `p2.asm` case 2f shows `<21|21,22,23,24>` on every iteration despite a
+    /// `shift` each time, while probe `p3.asm` case 3a shows the frame HAS
+    /// advanced twice once the loop exits — `post<|23,24>`).
+    suspend: usize,
+}
+
+impl MacroFrame {
+    /// `ALLARGS` for the current shift state.
+    fn all_args(&self) -> String {
+        if self.shifted == 0 {
+            self.all_raw.clone()
+        } else {
+            self.all.join(",")
+        }
+    }
+
+    /// Drop the first argument: parameters slide left and the vacated tail slot
+    /// becomes empty; `ALLARGS` loses its leading group. Exhausted is stable.
+    fn shift(&mut self) {
+        if !self.bound.is_empty() {
+            self.bound.remove(0);
+            self.bound.push(String::new());
+        }
+        if !self.all.is_empty() {
+            self.all.remove(0);
+        }
+        self.shifted += 1;
+    }
+}
 
 /// Index of the `}` closing the `{` at `open` in `bytes`, or `None` if the group
 /// is unterminated. Nested `{…}` groups are matched by depth, and a `"…"`/`'…'`
@@ -4822,6 +5036,7 @@ fn is_op_keyword(s: &str) -> bool {
             | "rept"
             | "endr"
             | "endm"
+            | "shift"
             | "macro"
             | "struct"
             | "endstruct"
@@ -7686,5 +7901,265 @@ C:\n";
             "	dc.w count_{\"\\{k}\"}\n",
         );
         assert_eq!(image(src), vec![0x00, 0x44]);
+    }
+
+    // ── `shift`: the variadic macro argument walk ───────────────────────────
+    //
+    // Every expected value below is read off an `asl -L` listing row
+    // (AS V1.42 Beta Bld 212, `s2disasm/build_tools/Linux-x86_64/asl`), quoted
+    // in each test. The probe sources are recorded in
+    // `docs/superpowers/notes/2026-09-03-as-shift-macro-argument-walk.md`.
+
+    /// The shape both corpus uses have: guard on the first argument, emit,
+    /// `shift` past what was consumed, re-invoke with `ALLARGS`. The recursion
+    /// terminates when `ALLARGS` runs dry and the guard sees an unbound
+    /// parameter.
+    ///
+    /// asl listing, `cp 1,2,3,4,5,6` on params `a1,a2`:
+    /// ```text
+    ///   16/  0 : (MACRO)     cp 1,2,3,4,5,6
+    ///   16/  0 : 01            dc.b 1
+    ///   16/  1 : 02            dc.b 2
+    ///   16/  2 : (MACRO-2)     cp 3,4,5,6
+    ///   16/  2 : 03            dc.b 3
+    ///   16/  3 : 04            dc.b 4
+    ///   16/  4 : (MACRO-3)     cp 5,6
+    ///   16/  4 : 05            dc.b 5
+    ///   16/  5 : 06            dc.b 6
+    ///   16/  6 : (MACRO-4)     cp
+    ///   16/  6 : FF            dc.b $FF
+    /// ```
+    #[test]
+    fn shift_drives_the_variadic_argument_walk() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "cp macro a1,a2\n",
+            "	if \"a1\"<>\"\"\n",
+            "	dc.b a1\n",
+            "	dc.b a2\n",
+            "	shift\n",
+            "	shift\n",
+            "	cp ALLARGS\n",
+            "	else\n",
+            "	dc.b $FF\n",
+            "	endif\n",
+            "	endm\n",
+            "	cp 1,2,3,4,5,6\n",
+        );
+        assert_eq!(image(src), vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0xFF]);
+    }
+
+    /// `ALLARGS` loses its leading group per shift, down to empty, and a shift
+    /// past exhaustion leaves it empty rather than erroring.
+    ///
+    /// asl listing, `zb aa,bb,cc,dd` on params `b1,b2,b3` (`strlen` of the
+    /// substituted `ALLARGS` after each shift):
+    /// ```text
+    ///   32/  7 : 0B     dc.b strlen("aa,bb,cc,dd")
+    ///   32/  8 : 08     dc.b strlen("BB,CC,DD")
+    ///   32/  9 : 05     dc.b strlen("CC,DD")
+    ///   32/  A : 02     dc.b strlen("DD")
+    ///   32/  B : 00     dc.b strlen("")
+    ///   32/  C : 00     dc.b strlen("")
+    /// ```
+    /// asl renders the post-shift groups upper-cased because it is running
+    /// case-insensitive; sigil preserves the argument text as written, which
+    /// the lengths above are blind to.
+    #[test]
+    fn shift_drops_one_leading_group_from_allargs() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "zb macro b1,b2,b3\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	shift\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	shift\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	shift\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	shift\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	shift\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	endm\n",
+            "	zb aa,bb,cc,dd\n",
+        );
+        assert_eq!(image(src), vec![0x0B, 0x08, 0x05, 0x02, 0x00, 0x00]);
+    }
+
+    /// Parameters slide left one argument per shift, and the vacated tail slot
+    /// becomes empty.
+    ///
+    /// asl listing, `zc 1,2,3` on params `c1,c2,c3` — emitting `c1`,`c3`, then
+    /// after a shift `c1`,`c2`, then after another `c1`:
+    /// ```text
+    ///   44/  D : 01     dc.b 1
+    ///   44/  E : 03     dc.b 3
+    ///   44/  F : 02     dc.b 2
+    ///   44/ 10 : 03     dc.b 3
+    ///   44/ 11 : 03     dc.b 3
+    /// ```
+    #[test]
+    fn shift_walks_the_parameters_one_argument_at_a_time() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "zc macro c1,c2,c3\n",
+            "	dc.b c1\n",
+            "	dc.b c3\n",
+            "	shift\n",
+            "	dc.b c1\n",
+            "	dc.b c2\n",
+            "	shift\n",
+            "	dc.b c1\n",
+            "	endm\n",
+            "	zc 1,2,3\n",
+        );
+        assert_eq!(image(src), vec![0x01, 0x03, 0x02, 0x03, 0x03]);
+    }
+
+    /// The parameter vector is not a window that slides along the argument
+    /// list: it holds one slot per DECLARED parameter and empty-fills behind
+    /// the shift, so with two parameters and four arguments the third and
+    /// fourth arguments never reach a parameter at all — even though `ALLARGS`
+    /// still carries them.
+    ///
+    /// asl listing, `pw 5,6,7,8` on params `q1,q2`, emitting `q1` after each
+    /// shift — the third emission has no operand left and asl diagnoses it:
+    /// ```text
+    ///   24/  3 : 05                  dc.b 5
+    ///   24/  4 : 06                  dc.b 6
+    ///   > > > p5.asm(24) PW(5):14: error: invalid symbol name
+    ///   24/  5 :                     dc.b
+    /// ```
+    #[test]
+    fn shift_empty_fills_the_parameter_vector_rather_than_rewindowing() {
+        let head = "	cpu 68000\n	padding off\n	phase 0\n";
+        let body = concat!(
+            "pw macro q1,q2\n",
+            "	dc.b q1\n",
+            "	shift\n",
+            "	dc.b q1\n",
+            "	shift\n",
+            "	dc.b q1\n",
+            "	endm\n",
+        );
+        // Two shifts exhaust a two-parameter vector: `q1` is empty, not `7`.
+        assert!(
+            run(&format!("{head}{body}	pw 5,6,7,8\n"), &Options::default()).is_err(),
+            "the third argument must not reach `q1` after two shifts"
+        );
+        // Control: one shift stays within the parameter count and assembles.
+        let one_shift = concat!(
+            "pw macro q1,q2\n",
+            "	dc.b q1\n",
+            "	shift\n",
+            "	dc.b q1\n",
+            "	endm\n",
+            "	pw 5,6,7,8\n",
+        );
+        assert_eq!(image(&format!("{head}{one_shift}")), vec![0x05, 0x06]);
+    }
+
+    /// A `rept` body is substituted once, where the loop is entered, and
+    /// replayed: a `shift` inside it advances the frame — visible after the
+    /// loop — without rewriting the body's own text.
+    ///
+    /// asl listing, `zd aaa,bbbb,ccccc` on param `d1`, a `rept 2` whose body
+    /// shifts and emits `strlen(ALLARGS)`, then one emission after the loop:
+    /// ```text
+    ///   55/ 12 : 0E     dc.b strlen("aaa,bbbb,ccccc")
+    ///   55/ 13 : 0E     dc.b strlen("aaa,bbbb,ccccc")
+    ///   55/ 14 : 0E     dc.b strlen("aaa,bbbb,ccccc")
+    ///   55/ 15 : 05     dc.b strlen("CCCCC")
+    /// ```
+    #[test]
+    fn a_shift_inside_a_rept_body_advances_the_frame_but_not_the_body_text() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "zd macro d1\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	rept 2\n",
+            "	shift\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	endm\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	endm\n",
+            "	zd aaa,bbbb,ccccc\n",
+        );
+        assert_eq!(image(src), vec![0x0E, 0x0E, 0x0E, 0x05]);
+    }
+
+    /// Shift state belongs to one expansion. An inner macro's shift consumes
+    /// the inner call's arguments and leaves the caller's binding intact.
+    ///
+    /// asl listing, `eout aaaa,bbbbb` calling `ein qq,rrr` (which shifts):
+    /// ```text
+    ///   67/ 16 : 0A                  dc.b strlen("aaaa,bbbbb")
+    ///   67/ 17 : (MACRO-2)            ein qq,rrr
+    ///   67/ 17 : 03                  dc.b strlen("RRR")
+    ///   67/ 18 : 0A                  dc.b strlen("aaaa,bbbbb")
+    /// ```
+    #[test]
+    fn an_inner_expansions_shift_leaves_the_outer_frame_alone() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "ein macro e1\n",
+            "	shift\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	endm\n",
+            "eout macro e2\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	ein qq,rrr\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	endm\n",
+            "	eout aaaa,bbbbb\n",
+        );
+        assert_eq!(image(src), vec![0x0A, 0x03, 0x0A]);
+    }
+
+    /// A macro DEFINED inside an expanding body captures text the enclosing
+    /// expansion has already substituted, `ALLARGS` included and frozen at the
+    /// shift state in force at capture. Its own invocation arguments do not
+    /// rebind it.
+    ///
+    /// asl listing, `zf aa,bbb,cccc` shifting once, then defining `zfin` whose
+    /// body reads `ALLARGS`, then calling `zfin zzzzz`:
+    /// ```text
+    ///   77/ 19 : (MACRO-2)   zfin zzzzz
+    ///   77/ 19 : 08          dc.b strlen("BBB,CCCC")
+    /// ```
+    /// `08` is the OUTER post-shift `ALLARGS` (`bbb,cccc`), not the inner
+    /// call's `zzzzz` (which would be 5).
+    #[test]
+    fn a_macro_defined_inside_an_expansion_freezes_the_outer_allargs() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "zf macro f1\n",
+            "	shift\n",
+            "zfin macro g1\n",
+            "	dc.b strlen(\"ALLARGS\")\n",
+            "	endm\n",
+            "	zfin zzzzz\n",
+            "	endm\n",
+            "	zf aa,bbb,cccc\n",
+        );
+        assert_eq!(image(src), vec![0x08]);
+    }
+
+    /// `shift` needs an expansion to shift. asl reports it through its
+    /// not-in-a-macro check (`p4.asm(6): error: EXITM not called from within
+    /// macro` for a bare `shift` at top level); sigil names the directive that
+    /// was written.
+    #[test]
+    fn shift_outside_a_macro_expansion_is_an_error() {
+        let src = "	cpu 68000\n	padding off\n	phase 0\n	shift\n";
+        let diags = run(src, &Options::default()).expect_err("bare `shift` must diagnose");
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.message.contains("`shift` outside a macro expansion")),
+            "expected the outside-a-macro refusal, got {:?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
     }
 }
