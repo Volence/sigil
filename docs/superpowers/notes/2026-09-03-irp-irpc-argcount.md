@@ -211,6 +211,20 @@ before, 291 after, **zero in either direction**.
 The 41 `cannot include` rows are the gitignored generated sound data, absent from
 the live `s2disasm` too (it has never been built). Constant across the pair.
 
+### No new diagnostic SITE, in either corpus
+
+A class table can hide a rise as a count on a line that was already red, so the
+`file(line)` sets were compared too, both directions:
+
+| | sites before | sites after | now clean | **NEW** |
+|---|---:|---:|---:|---:|
+| S1 | 615 | 609 | 6 | **0** |
+| S2 | 8600 | 8588 | 12 | **0** |
+
+The six S1 sites are the three loop heads and the three `endm` lines stranded by
+them; the twelve S2 sites are the same shape. Every count that rose rose on a line
+that was already diagnosing.
+
 ## The silent half — what was done to look
 
 A loop that expands wrongly emits **wrong bytes rather than a complaint**, and
@@ -311,6 +325,26 @@ a feature. Booked with the probe so the next reader measures rather than inherit
   `s4 14ee2440/719700`, `s4.debug 142294b3/737683`, `demo 0c456778/96474`,
   `demo.debug 2e603d53/101339`.
 - `cargo clippy --release --workspace --all-targets -- -D warnings` — exit 0.
+- Corpus figures re-derived with the final committed binary and identical to the
+  measurement above, line for line.
+
+### The suite baseline, derived rather than taken
+
+Master `e91f649f`: **378 suites / 4,329 passed / 0 failed / 2 ignored**, CARGO_EXIT
+0 — measured in a detached worktree of that SHA, matching the figure the lane was
+given.
+
+**It did not match on the first attempt, and the reason is worth recording.** Run
+CONCURRENTLY with this branch's landing run, master returned 4,328 passed and one
+red: `deny_todo_promotes_to_error`, which spawns `sigil emp … --deny-todo` and
+saw the build succeed. Alone it is green 3 times out of 3, and the full suite
+alone reconciles at 4,329/0. This branch's run was green for that test even under
+the same concurrency.
+
+**The mechanism is NOT established here and should not be banked from this note as
+"a flake".** What was measured is: one failure under two simultaneous full-suite
+runs, and zero failures in four subsequent isolated runs of the same tree. The
+falsifier is one command — run the full suite twice concurrently on master.
 
 ## Booked, not done
 
