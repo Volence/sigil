@@ -1123,7 +1123,7 @@ impl Asm {
                 return;
             }
         };
-        if !matches!(toks.get(1).map(|t| &t.tok), Some(Tok::Ident(s)) if s == "function") {
+        if !matches!(toks.get(1).map(|t| &t.tok), Some(Tok::Ident(s)) if fold_kw(s) == "function") {
             self.err(span, "function needs the `function` keyword");
             return;
         }
@@ -1413,7 +1413,8 @@ impl Asm {
             // the value rather than emitting a stray location label.
             let b = &parsed.tokens;
             let is_eq = matches!(b.first().map(|t| &t.tok), Some(Tok::Punct(Punct::Eq)));
-            let is_equ = matches!(b.first().map(|t| &t.tok), Some(Tok::Ident(s)) if s == "equ");
+            let is_equ =
+                matches!(b.first().map(|t| &t.tok), Some(Tok::Ident(s)) if fold_kw(s) == "equ");
             if (is_eq || is_equ) && b.len() >= 2 {
                 let span = b[0].span;
                 self.directive_equate(&name, &b[1..], span);
@@ -1429,7 +1430,8 @@ impl Asm {
             // guard makes progress and terminates. Treating it as a PC label
             // instead froze `.__pos` at the current address, so the loop never
             // found its end marker (infinite-loop → unbounded label emission).
-            let is_set_kw = matches!(b.first().map(|t| &t.tok), Some(Tok::Ident(s)) if s == "set");
+            let is_set_kw =
+                matches!(b.first().map(|t| &t.tok), Some(Tok::Ident(s)) if fold_kw(s) == "set");
             let is_coloneq = matches!(b.first().map(|t| &t.tok), Some(Tok::Punct(Punct::ColonEq)));
             if (is_set_kw || is_coloneq) && b.len() >= 2 {
                 let span = b[0].span;
@@ -1471,7 +1473,7 @@ impl Asm {
         // defines a stray label `hex` then dispatches `equ` as an instruction,
         // and `dec equ $90` is worse still — `dec` IS a Z80 mnemonic, so the
         // whole line routes to instruction lowering and errors under 68000.
-        if matches!(body.get(1).map(|t| &t.tok), Some(Tok::Ident(s)) if s == "equ") {
+        if matches!(body.get(1).map(|t| &t.tok), Some(Tok::Ident(s)) if fold_kw(s) == "equ") {
             self.directive_equate(&head, &body[2..], body[0].span);
             return;
         }
@@ -1485,7 +1487,8 @@ impl Asm {
         // only a recognized mnemonic under Z80). `:=` lexes as the single
         // `ColonEq` token (see `token::Punct::ColonEq`), never as `Colon`
         // then `Eq`, so it can never be confused with a `name:` colon-label.
-        let is_set_kw = matches!(body.get(1).map(|t| &t.tok), Some(Tok::Ident(s)) if s == "set");
+        let is_set_kw =
+            matches!(body.get(1).map(|t| &t.tok), Some(Tok::Ident(s)) if fold_kw(s) == "set");
         let is_coloneq = matches!(
             body.get(1).map(|t| &t.tok),
             Some(Tok::Punct(Punct::ColonEq))
@@ -1566,20 +1569,36 @@ impl Asm {
                 None
             }
         });
-        if matches!(second, Some("macro") | Some("struct") | Some("function")) {
-            return Some((second.unwrap().to_string(), 1, body));
+        // The definition keywords fold, and the FOLDED spelling is what is
+        // returned: every consumer of this keyword (`exec`'s block routing,
+        // `find_block_end`/`closers_for`, `exec_if`'s arm collection) matches
+        // it against lower-case literals.
+        let second_kw = second.map(fold_kw);
+        if matches!(second_kw.as_deref(), Some("macro" | "struct" | "function")) {
+            return Some((second_kw.unwrap().into_owned(), 1, body));
         }
+        // A macro INVOCATION returns the macro's name exactly as written: a
+        // macro name is a symbol, and folding it here would both mis-resolve
+        // the invocation and let a macro named `While`/`If` masquerade as a
+        // block opener in `exec`.
         if self.macros.contains_key(&name) {
             return Some((name, 0, body));
         }
-        if is_op_keyword(&name) || is_mnemonic(&name) {
-            return Some((name, 0, body));
+        if is_keyword(&name) {
+            return Some((fold_kw(&name).into_owned(), 0, body));
         }
         if let Some(Token {
             tok: Tok::Ident(s), ..
         }) = body.get(1)
         {
-            return Some((s.clone(), 1, body));
+            // Folded only when it really is a keyword — `Tab DB 0` routes as
+            // `db`, while `Tab SomeMacro 0` keeps the macro's own spelling.
+            let kw = if is_keyword(s) {
+                fold_kw(s).into_owned()
+            } else {
+                s.clone()
+            };
+            return Some((kw, 1, body));
         }
         Some((name, 0, body))
     }
@@ -1920,7 +1939,7 @@ impl Asm {
                         tok: Tok::Ident(s), ..
                     },
                     _,
-                )) if matches!(s.as_str(), "ds.b" | "ds.w" | "ds.l") => {
+                )) if matches!(fold_kw(s).as_ref(), "ds.b" | "ds.w" | "ds.l") => {
                     (String::new(), parsed.tokens.clone())
                 }
                 Some((
@@ -1933,9 +1952,12 @@ impl Asm {
             }
         };
         let width = match rest.first().map(|t| &t.tok) {
-            Some(Tok::Ident(w)) if w == "ds.b" => 1,
-            Some(Tok::Ident(w)) if w == "ds.w" => 2,
-            Some(Tok::Ident(w)) if w == "ds.l" => 4,
+            Some(Tok::Ident(w)) => match fold_kw(w).as_ref() {
+                "ds.b" => 1,
+                "ds.w" => 2,
+                "ds.l" => 4,
+                _ => return None,
+            },
             _ => return None,
         };
         let span = rest[0].span;
@@ -2016,7 +2038,10 @@ impl Asm {
                 return;
             }
         }
-        match head {
+        // The DIRECTIVE/MNEMONIC name folds (`fold_kw`); `head` itself stays
+        // raw and is what every macro lookup and every symbol-defining arm
+        // below uses, so a macro or label named `Foo` is never rewritten.
+        match fold_kw(head).as_ref() {
             "cpu" => self.directive_cpu(rest, span),
             "phase" => self.directive_phase(rest, span),
             "dephase" => self.directive_dephase(),
@@ -2058,20 +2083,18 @@ impl Asm {
                 let _ = self.interp_string(rest);
             }
             "include" => self.directive_include(rest, span),
-            // Matched by exact case, not lowercased: this front-end never
-            // case-folds identifiers (see `is_op_keyword`/`lex_line` — every
-            // other directive here is matched against the exact spelling
-            // real Aeon source uses, e.g. lowercase `include`/`org`). Real
-            // source spells this directive uppercase at all 43 call sites
-            // (`grep -rn BINCLUDE aeon/games aeon/engine`), never `binclude`.
-            "BINCLUDE" => self.directive_binclude(rest, span),
+            // Real Aeon source spells this directive uppercase at all 43 call
+            // sites (`grep -rn BINCLUDE aeon/games aeon/engine`); the AS
+            // surface accepts either spelling like any other directive, so the
+            // arm is written in the folded (lower-case) form.
+            "binclude" => self.directive_binclude(rest, span),
             // `END` (asl's end-of-source / entry-point directive). Emits no
             // bytes — bare `END` and `END <entrypoint>` are both emission
             // no-ops (probe: 2026-07-04-m1d-t2-abs-ea-end-probes.md). Aeon's
-            // only use is the bare `END` at main.asm:446. Exact-case like
-            // `BINCLUDE`; does not collide with the `endif`/`endm`/`endr`/
-            // `endcase` block closers (handled in block scanning, not dispatch).
-            "end" | "END" => {}
+            // only use is the bare `END` at main.asm:446. Does not collide with
+            // the `endif`/`endm`/`endr`/`endcase` block closers (handled in
+            // block scanning, not dispatch).
+            "end" => {}
             _ if self.macros.contains_key(head) => self.expand_macro(head, rest),
             // `is_mnemonic` only recognizes Z80 mnemonics; under `cpu 68000` the
             // m68k dispatch (lower_m68k) is still a stub (M1.C T4/T5), so any
@@ -2146,7 +2169,13 @@ impl Asm {
                 return;
             }
         };
-        let cpu = match name.as_str() {
+        // The processor NAME folds with the directive that carries it — real
+        // sources write `CPU Z80` / `cpu z80` interchangeably, and getting this
+        // wrong is not a diagnostic but a silent change of target: under
+        // `Cpu::Z80` a `$` lexes as the program counter rather than a hex
+        // prefix, so an unrecognized `CPU 68000` line leaves a 68000 source
+        // assembling as a Z80 program.
+        let cpu = match fold_kw(&name).as_ref() {
             "z80" => Cpu::Z80,
             "68000" | "68008" => Cpu::M68000,
             other => {
@@ -4514,9 +4543,40 @@ fn split_src_lines(text: &str, source: SourceId) -> Vec<SrcLine> {
     lines
 }
 
+/// The canonical (lower-case) spelling of a DIRECTIVE or MNEMONIC keyword.
+///
+/// AS matches its own directive and instruction keywords without regard to
+/// case, so real-world sources spell them however the author liked
+/// (`CPU 68000`, `EQU`, `STRUCT`, `move.W`). Symbols are a different question
+/// and are deliberately NOT folded here: `lib.rs` documents them as
+/// case-sensitive and `.emp` shares this symbol namespace, so folding a name
+/// would merge two distinct `.emp` symbols. The fold therefore lives at each
+/// site that DECIDES "is this identifier a keyword", never on `Tok::Ident`
+/// itself and never on any path that goes on to define or resolve a name.
+///
+/// Borrowing when the input is already lower case keeps the hot path (every
+/// line of every pass reaches `is_op_keyword`/`is_mnemonic`) allocation-free.
+fn fold_kw(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.bytes().any(|b| b.is_ascii_uppercase()) {
+        std::borrow::Cow::Owned(s.to_ascii_lowercase())
+    } else {
+        std::borrow::Cow::Borrowed(s)
+    }
+}
+
+/// Whether `s` names a keyword this front end recognizes at all — a directive
+/// (`is_op_keyword`) or an instruction (`is_mnemonic`). Used by `dispatch_head`
+/// to decide whether the folded or the RAW spelling of a head is the one to
+/// hand downstream: a keyword is returned folded (so block scanning matches
+/// against lower-case literals), anything else — a macro name, a label — is
+/// returned exactly as written.
+fn is_keyword(s: &str) -> bool {
+    is_op_keyword(s) || is_mnemonic(s)
+}
+
 fn is_op_keyword(s: &str) -> bool {
     matches!(
-        s,
+        fold_kw(s).as_ref(),
         "cpu"
             | "phase"
             | "dephase"
@@ -4545,7 +4605,7 @@ fn is_op_keyword(s: &str) -> bool {
             | "endstruct"
             | "function"
             | "include"
-            | "BINCLUDE"
+            | "binclude"
             | "error"
             | "fatal"
             | "message"
@@ -4567,7 +4627,7 @@ fn is_op_keyword(s: &str) -> bool {
 /// keyed per-opener rather than a single flat set: `while`/`macro` (and
 /// optionally `rept`) all share the literal `endm` closer in real AS).
 fn closers_for(s: &str) -> &'static [&'static str] {
-    match s {
+    match fold_kw(s).as_ref() {
         "if" | "ifdef" | "ifndef" => &["endif"],
         "rept" => &["endr", "endm"],
         "while" => &["endm"],
@@ -4589,15 +4649,15 @@ fn closers_for(s: &str) -> &'static [&'static str] {
 /// a literal entry in `self.macros` — a real mnemonic like `move`/`clr` is
 /// never in that map, so `move.w`/`clr.b` etc. keep going through the normal
 /// mnemonic-suffix path untouched.
-fn split_attribute_suffix(s: &str) -> Option<(&str, &'static str)> {
-    if let Some(b) = s.strip_suffix(".b") {
-        Some((b, ".b"))
-    } else if let Some(b) = s.strip_suffix(".w") {
-        Some((b, ".w"))
-    } else if let Some(b) = s.strip_suffix(".l") {
-        Some((b, ".l"))
-    } else if let Some(b) = s.strip_suffix(".s") {
-        Some((b, ".s"))
+/// Recognition of the suffix is case-insensitive (`Foo.W` invokes the same
+/// macro as `foo.w` does), but the suffix TEXT handed back is a slice of the
+/// caller's own string rather than a canonical literal: `.ATTRIBUTE` is a
+/// verbatim textual substitution into the macro body, so the body must see the
+/// spelling the call site wrote.
+fn split_attribute_suffix(s: &str) -> Option<(&str, &str)> {
+    let (base, c) = split_dot_suffix(s)?;
+    if matches!(c, b'b' | b'w' | b'l' | b's') {
+        Some((base, &s[base.len()..]))
     } else {
         None
     }
@@ -4656,7 +4716,7 @@ fn is_mnemonic(s: &str) -> bool {
 
 fn mnemonic(s: &str) -> Option<Mnemonic> {
     use Mnemonic::*;
-    Some(match s {
+    Some(match fold_kw(s).as_ref() {
         "nop" => Nop,
         "ld" => Ld,
         "add" => Add,
@@ -4753,18 +4813,41 @@ fn reg16(w: &str) -> Option<Reg16> {
 /// Split a 68k mnemonic token on a trailing `.b`/`.w`/`.l`/`.s` size suffix.
 /// Returns the bare base mnemonic and the parsed size (`None` if no suffix —
 /// the caller falls back to `m68k_default_size`, or errors if that's also `None`).
+/// The suffix match is case-insensitive (`move.W` is the same instruction as
+/// `move.w` to AS) but the returned BASE is a slice of the caller's own string,
+/// so the base keeps its original spelling and `m68k_mnemonic` folds it itself.
 fn split_mnemonic_and_size(s: &str) -> (&str, Option<M68kSize>) {
-    if let Some(b) = s.strip_suffix(".b") {
-        (b, Some(M68kSize::B))
-    } else if let Some(b) = s.strip_suffix(".w") {
-        (b, Some(M68kSize::W))
-    } else if let Some(b) = s.strip_suffix(".l") {
-        (b, Some(M68kSize::L))
-    } else if let Some(b) = s.strip_suffix(".s") {
-        (b, Some(M68kSize::S))
-    } else {
-        (s, None)
+    if let Some((base, c)) = split_dot_suffix(s) {
+        let size = match c {
+            b'b' => Some(M68kSize::B),
+            b'w' => Some(M68kSize::W),
+            b'l' => Some(M68kSize::L),
+            b's' => Some(M68kSize::S),
+            _ => None,
+        };
+        if let Some(size) = size {
+            return (base, Some(size));
+        }
     }
+    (s, None)
+}
+
+/// Split `s` on a trailing `.<letter>`, returning the base slice and the
+/// LOWER-CASED suffix letter. Shared by the two suffix splitters so both agree
+/// on what a suffix is. Returns `None` when the last two bytes are not a dot
+/// followed by an ASCII letter (identifiers are ASCII here — `is_ident_tail`
+/// admits no multi-byte character — but the char-boundary check keeps the
+/// slicing sound regardless).
+fn split_dot_suffix(s: &str) -> Option<(&str, u8)> {
+    let n = s.len();
+    if n < 2 || !s.is_char_boundary(n - 2) {
+        return None;
+    }
+    let tail = s.as_bytes();
+    if tail[n - 2] != b'.' || !tail[n - 1].is_ascii_alphabetic() {
+        return None;
+    }
+    Some((&s[..n - 2], tail[n - 1].to_ascii_lowercase()))
 }
 
 /// The T4/T5/T5b/T5c in-scope 68000 mnemonic table: straight-line
@@ -4777,7 +4860,7 @@ fn split_mnemonic_and_size(s: &str) -> (&str, Option<M68kSize>) {
 /// are now in scope too; nothing 68000 the Aeon source uses remains deferred.
 fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
     use M68kMnemonic::*;
-    Some(match base {
+    Some(match fold_kw(base).as_ref() {
         "move" => Move,
         "movea" => Movea,
         "add" => Add,
@@ -5153,7 +5236,7 @@ fn is_bare_local(v: &str) -> bool {
 }
 
 fn on_off(rest: &[Token]) -> bool {
-    !matches!(rest.first().map(|t| &t.tok), Some(Tok::Ident(w)) if w == "off")
+    !matches!(rest.first().map(|t| &t.tok), Some(Tok::Ident(w)) if fold_kw(w) == "off")
 }
 
 fn paren(p: Punct, span: Span) -> Token {
@@ -7040,5 +7123,214 @@ C:\n";
             "expected a loud resolve_layout error naming `TotallyUndefined` with the \
              cross-seam steer, got: {err:?}"
         );
+    }
+
+    // ---- case folding: directives and mnemonics fold, symbols never do ----
+
+    /// The one that decides the target processor, and the one whose failure is
+    /// silent rather than loud: `Options::default()` starts on the Z80, where
+    /// `$` lexes as the program counter instead of a hex prefix. An unfolded
+    /// `CPU 68000` therefore does not produce a diagnostic — it leaves a 68000
+    /// source assembling as a Z80 program. The witness is a 68000 encoding:
+    /// `moveq #0,d0` is `70 00`, and there is no Z80 reading of that line.
+    #[test]
+    fn uppercase_cpu_directive_selects_the_68000() {
+        assert_eq!(
+            image("        CPU 68000\n        padding off\n        phase 0\n        moveq #0,d0\n"),
+            vec![0x70, 0x00],
+            "`CPU 68000` in capitals must select the 68000"
+        );
+        // `CPU Z80` folds in the same place: the operand is as much part of the
+        // directive as the keyword is. `ld a,0` is `3E 00` on the Z80.
+        assert_eq!(
+            image("        CPU Z80\n        ld a,0\n"),
+            vec![0x3E, 0x00],
+            "`CPU Z80` in capitals must select the Z80"
+        );
+        // And `$` must now lex as a hex prefix, which it does not under Z80.
+        assert_eq!(
+            image("        CPU 68000\n        padding off\n        phase 0\n        dc.b $AB\n"),
+            vec![0xAB],
+            "under a folded `CPU 68000`, `$AB` is a hex literal, not the PC"
+        );
+    }
+
+    /// THE GUARD ON THE CONSTRAINT. Symbols are documented case-sensitive
+    /// (`lib.rs`) and `.emp` shares this namespace, so a fold that reached the
+    /// symbol table would silently merge two distinct names. Two symbols
+    /// differing only in case must stay two symbols with their own values —
+    /// asserted on the EMITTED BYTES, so it holds regardless of how the
+    /// environment happens to be keyed internally.
+    #[test]
+    fn symbols_differing_only_in_case_stay_distinct() {
+        let head = "        cpu 68000\n        padding off\n        phase 0\n";
+        assert_eq!(
+            image(&format!("{head}Foo equ $11\nFOO equ $22\nfoo equ $33\n        dc.b Foo,FOO,foo\n")),
+            vec![0x11, 0x22, 0x33],
+            "`Foo`/`FOO`/`foo` must be three distinct symbols"
+        );
+        // Labels too, not just equates — and a label whose spelling collides
+        // with a directive keyword in the other case must still be a label.
+        assert_eq!(
+            image(&format!(
+                "{head}Bar:\n        dc.b $01\nBAR:\n        dc.b $02\n        dc.b Bar,BAR\n"
+            )),
+            vec![0x01, 0x02, 0x00, 0x01],
+            "`Bar` and `BAR` must be distinct labels at distinct addresses"
+        );
+    }
+
+    /// Directive keywords fold wherever they are recognized, and the sites are
+    /// several: `dispatch`'s arms, the `<name> EQU <v>` intercept in `exec_one`,
+    /// the same intercept behind a decorative colon-label, and the `.b`/`.w`/
+    /// `.l` operand-size suffixes. Each row here is a DIFFERENT recognition
+    /// site — folding one of them is not folding the others.
+    #[test]
+    fn directive_keywords_fold_at_every_recognition_site() {
+        let head = "        CPU 68000\n        PADDING OFF\n        PHASE 0\n";
+        // dispatch arms: DC.B / DC.W / DC.L, and `PADDING OFF` above (an
+        // ON/OFF operand — an unfolded `OFF` reads as `on` and would insert an
+        // alignment pad before the DC.W below).
+        assert_eq!(
+            image(&format!("{head}        DC.B $01\n        DC.W $0203\n")),
+            vec![0x01, 0x02, 0x03],
+            "DC.B/DC.W/PADDING OFF must all fold"
+        );
+        // `<name> EQU <v>` — the exec_one intercept, not a dispatch arm.
+        assert_eq!(
+            image(&format!("{head}Val EQU $2A\n        DC.B Val\n")),
+            vec![0x2A]
+        );
+        // The same intercept behind a decorative colon-label: a SEPARATE site
+        // in `exec_one`, reached only when the line carries `NAME:`.
+        assert_eq!(
+            image(&format!("{head}Val:    EQU $2B\n        DC.B Val\n")),
+            vec![0x2B]
+        );
+        // SET, both spellings of the site.
+        assert_eq!(
+            image(&format!("{head}Acc SET $05\n        DC.B Acc\nAcc SET $06\n        DC.B Acc\n")),
+            vec![0x05, 0x06]
+        );
+        // DS.B reserves — asserted through the PC it advances (a reservation
+        // emits no bytes of its own, so the image alone cannot see it).
+        assert_eq!(
+            image(&format!("{head}        DC.B $01\n        DS.B 2\nAfter:\n        DC.B After\n")),
+            vec![0x01, 0x03],
+            "DS.B must fold and advance the PC by its count"
+        );
+        // ORG moves the PC; the folded keyword is what makes the label agree.
+        assert_eq!(
+            image(&format!("{head}        ORG $10\nHere:\n        DC.B Here\n")),
+            vec![0x10],
+            "ORG must fold"
+        );
+    }
+
+    /// Block-structure keywords are recognized in `dispatch_head`/`closers_for`
+    /// — the block-SCANNING layer, which never reaches `dispatch` at all. An
+    /// unfolded `IF`/`ENDIF` does not error; it silently fails to open a block,
+    /// so the wrong arm assembles. Assert on which arm's bytes came out.
+    #[test]
+    fn block_keywords_fold_in_the_scanning_layer() {
+        let head = "        CPU 68000\n        PADDING OFF\n        PHASE 0\n";
+        assert_eq!(
+            image(&format!("{head}        IF 1\n        DC.B $AA\n        ELSE\n        DC.B $BB\n        ENDIF\n")),
+            vec![0xAA],
+            "IF/ELSE/ENDIF must fold — the taken arm is the `1` arm"
+        );
+        assert_eq!(
+            image(&format!("{head}        IF 0\n        DC.B $AA\n        ELSE\n        DC.B $BB\n        ENDIF\n")),
+            vec![0xBB]
+        );
+        assert_eq!(
+            image(&format!("{head}        REPT 3\n        DC.B $77\n        ENDR\n")),
+            vec![0x77, 0x77, 0x77],
+            "REPT/ENDR must fold"
+        );
+        // STRUCT/ENDSTRUCT — the corpus spells these in capitals, and the
+        // member offsets they define are what the rest of the file indexes by.
+        assert_eq!(
+            image(&format!(
+                "{head}Rec STRUCT\nfirst   DS.B 1\nsecond  DS.W 1\n        ENDSTRUCT\n        DC.B Rec_first,Rec_second,Rec_len\n"
+            )),
+            vec![0x00, 0x01, 0x03],
+            "STRUCT/ENDSTRUCT and their DS.* member widths must fold"
+        );
+        // MACRO/ENDM, and an invocation whose macro NAME keeps its own case.
+        assert_eq!(
+            image(&format!("{head}Emit MACRO v\n        DC.B v\n        ENDM\n        Emit $5A\n")),
+            vec![0x5A],
+            "MACRO/ENDM must fold"
+        );
+    }
+
+    /// A macro name is a symbol, so it does NOT fold: `Emit` and `emit` are two
+    /// macros. This is the same constraint as `symbols_differing_only_in_case`,
+    /// checked at the one place where a folded head would have been convenient.
+    #[test]
+    fn macro_names_do_not_fold() {
+        let head = "        cpu 68000\n        padding off\n        phase 0\n";
+        assert_eq!(
+            image(&format!(
+                "{head}Emit macro v\n        dc.b $A0+v\n        endm\nemit macro v\n        dc.b $B0+v\n        endm\n        Emit 1\n        emit 2\n"
+            )),
+            vec![0xA1, 0xB2],
+            "`Emit` and `emit` must stay two distinct macros"
+        );
+    }
+
+    /// Mnemonics and their size suffixes fold, on both processors.
+    #[test]
+    fn mnemonics_and_size_suffixes_fold() {
+        let head = "        CPU 68000\n        PADDING OFF\n        PHASE 0\n";
+        assert_eq!(image(&format!("{head}        MOVEQ #0,d0\n")), vec![0x70, 0x00]);
+        assert_eq!(image(&format!("{head}        MOVE.W d0,d1\n")), vec![0x32, 0x00]);
+        // Mixed case in the suffix alone — a separate code path from the base.
+        assert_eq!(image(&format!("{head}        move.W d0,d1\n")), vec![0x32, 0x00]);
+        assert_eq!(image(&format!("{head}        Move.L d0,d1\n")), vec![0x22, 0x00]);
+        assert_eq!(image(&format!("{head}        NOP\n")), vec![0x4E, 0x71]);
+        // Z80 side.
+        assert_eq!(image("        CPU Z80\n        NOP\n"), vec![0x00]);
+        assert_eq!(image("        CPU Z80\n        LD a,0\n"), vec![0x3E, 0x00]);
+    }
+
+    /// `split_attribute_suffix` recognizes the suffix without regard to case
+    /// but hands the macro body the spelling the CALL SITE wrote, because
+    /// `.ATTRIBUTE` is a verbatim textual substitution — the body may paste it
+    /// straight onto a mnemonic, and the fold has to keep that self-consistent
+    /// rather than canonicalize someone else's text.
+    #[test]
+    fn attribute_macro_suffix_folds_and_substitutes_verbatim() {
+        let head = "        cpu 68000\n        padding off\n        phase 0\n";
+        let src = format!("{head}emit macro\n        move.ATTRIBUTE d0,d1\n        endm\n        emit.W\n");
+        assert_eq!(
+            image(&src),
+            vec![0x32, 0x00],
+            "`emit.W` must reach the attribute-macro path and paste `.W` onto `move`"
+        );
+    }
+
+    #[test]
+    fn fold_kw_leaves_lower_case_borrowed_and_does_not_touch_digits() {
+        use super::fold_kw;
+        assert!(matches!(fold_kw("move.w"), std::borrow::Cow::Borrowed(_)));
+        assert_eq!(fold_kw("MOVE.W"), "move.w");
+        assert_eq!(fold_kw("Sonic_Object_1"), "sonic_object_1");
+        assert_eq!(fold_kw("68000"), "68000");
+    }
+
+    #[test]
+    fn split_dot_suffix_only_splits_a_single_trailing_letter() {
+        use super::split_dot_suffix;
+        assert_eq!(split_dot_suffix("move.w"), Some(("move", b'w')));
+        assert_eq!(split_dot_suffix("move.W"), Some(("move", b'w')));
+        assert_eq!(split_dot_suffix("move"), None);
+        assert_eq!(split_dot_suffix("a.b.c"), Some(("a.b", b'c')));
+        assert_eq!(split_dot_suffix("x."), None);
+        assert_eq!(split_dot_suffix("."), None);
+        assert_eq!(split_dot_suffix(""), None);
+        // A trailing dot-DIGIT is not a size suffix.
+        assert_eq!(split_dot_suffix("foo.1"), None);
     }
 }
