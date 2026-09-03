@@ -160,3 +160,33 @@ which still runs, so likely fine), `repin.toml`'s per-symbol `tests` hints (hand
 already booked as `REPIN-TESTS-HINT-UNDERLISTED` for exactly this reason), the
 `CORPUS_OPEN_FINDINGS` register (fed by warn-tier firings, still live), and `SOURCE_GATES`
 (hand-kept run list, already flagged in `OVERSEER.md` as wanting derivation).
+
+### ⚠ Do NOT answer this by building a feed census
+
+The obvious remedy — a file listing every trusted artifact, its writer, and whether that
+writer is scheduled — **is the defect wearing a solution's clothes.** It is a hand-kept
+population whose failure mode is *"green because nobody maintained it"*, which is the exact
+shape this lane already rejects for `repin.toml`'s `tests` hints, for `SOURCE_GATES`, and for
+the `PROVENANCE-REV-REACHABILITY` exception list that was deliberately **reported, not
+gated**, for this reason. A census would go stale on the same clock as the three artifacts
+above, and it would go stale *quietly*, because nothing consumes it.
+
+A gate is no better and is worse in one direction: a staleness assertion over an artifact
+another lane hand-feeds would fire on correct work, constantly, and **an always-red check is a
+delayed failure** — it trains people to weaken it, and the damage ends up written down in the
+remediation advice rather than in the check.
+
+**What actually worked tonight was the question, asked once, by a person looking at a specific
+artifact.** It found three instances in one sitting at a cost of a few commands. Keep it as a
+question asked at the moments that already exist — a landing, a boot, a queue row that says
+"wait for X" — and note that the third instance was found *because a row told a successor to
+wait*, which is the highest-yield trigger of the three: **any row that says WAIT is a row
+asserting that something is still being fed.**
+
+If a mechanism is wanted later, the shape with a chance of surviving is the one already proven
+here twice: **a currency witness attached to the artifact's own consumer**, like
+`pins_rs_is_current` (file-vs-resolve, cannot go stale because it recomputes) or the
+source-gate classifier's **refusal** on an unclassifiable file. Both derive their expectation
+instead of holding one. That is a per-artifact design problem, not a list — and it is the
+owner's call whether it is worth paying for, artifact by artifact, rather than something to
+start unilaterally at the end of a night shift.
