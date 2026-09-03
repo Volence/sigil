@@ -1,6 +1,8 @@
 //! eval: the driver — line loop, directive dispatch, instruction lowering, emit.
 
-use crate::expand::{render_tokens, split_call_args, split_top_commas, substitute_frame};
+use crate::expand::{
+    render_tokens, split_call_args, split_top_commas, substitute_frame, substitute_name,
+};
 use crate::lexer::{lex_line, lex_line_recover};
 use crate::operands::{parse_operands, OperandAtom};
 use crate::parser::parse_line_tokens;
@@ -1676,6 +1678,12 @@ impl Asm {
                 Some("rept") => {
                     i = self.exec_rept(lines, i);
                 }
+                Some("irp") => {
+                    i = self.exec_irp(lines, i, IterKind::Groups);
+                }
+                Some("irpc") => {
+                    i = self.exec_irp(lines, i, IterKind::Chars);
+                }
                 Some("while") => {
                     i = self.exec_while(lines, i);
                 }
@@ -2281,6 +2289,158 @@ impl Asm {
         }
         self.release_loop_body(captured.is_some());
         end + 1
+    }
+
+    /// Handle `irp NAME,<items> … endm` and `irpc NAME,<string> … endm`: run
+    /// the body once per item, substituting `NAME`'s text into it.
+    ///
+    /// **The two differ only in where the item list comes from.**
+    ///
+    /// `irp`'s items are the operand's top-level comma groups as RAW TEXT, never
+    /// evaluated (asl-verified, probe `p8.asm` case 8b — `irp v,1+2,$FF` over
+    /// `dc.b "[v]"` emits `[1+2]` and `[$FF]`, not `[3]` and `[255]`), with
+    /// surrounding whitespace dropped. A comma inside a quoted item does not
+    /// split it (case 7c: `irp v,"a,b","c"` is two items).
+    ///
+    /// `irpc`'s operand is a STRING EXPRESSION, evaluated once, and the items
+    /// are its characters — spaces included. It is not the literal text: a `set`
+    /// symbol resolves (case 6d), escapes are decoded (`"A\x5AB"` is three
+    /// characters A, Z, B — case 7d), and an INTEGER result is rendered in
+    /// decimal and then walked digit by digit (case 8a: `irpc c,65` is `6` then
+    /// `5`, `irpc c,1+2` is one iteration of `3`). An operand that resolves to
+    /// nothing at all is an error and runs ZERO iterations (case 6e).
+    ///
+    /// **An EMPTY list is one EMPTY iteration, not none.** Both spellings:
+    /// `irp v,` runs the body once with `v` empty (case 6a), and `irpc c,""`
+    /// does the same (case 7a, `dc.b "<c>"` → `dc.b "<>"`). This is why
+    /// `s2.macrosetup.asm(301)` guards its `irp op,ALLARGS` with `if ARGCOUNT>0`
+    /// — without the guard an empty `jmpTos` would define a nameless label. A
+    /// missing comma entirely (`irp v`) is a different thing and is asl's
+    /// error #1110, with the body skipped (cases 9c/9d).
+    ///
+    /// Substitution is textual, case-sensitive, and obeys the macro-parameter
+    /// boundary rule: `"c"` and `_c_` take the value while `xcx` does not
+    /// (case 6g). It happens on top of the enclosing expansion's substitution,
+    /// which — exactly as for `rept`/`while` — is applied ONCE where the loop is
+    /// entered and then suspended, so a `shift` in the body advances the frame
+    /// without changing the body's own text:
+    ///
+    /// ```text
+    ///   35/ 1021 : 7031 01     dc.b "p1",1
+    ///   35/ 1024 : 7031 02     dc.b "p1",2
+    ///   35/ 1027 : 7031 03     dc.b "p1",3
+    /// ```
+    ///
+    /// (probe `p8.asm` case 8d — `sh macro aa` called `sh p1,p2,p3`, the body
+    /// shifting each iteration; `aa` stays `p1` throughout, and the frame HAS
+    /// advanced by the time the line after the loop reads it.)
+    ///
+    /// Returns the index past the closer.
+    fn exec_irp(&mut self, lines: &[SrcLine], start: usize, kind: IterKind) -> usize {
+        let (_, arg_toks, span) = self.line_kw_args_checked(&lines[start]);
+        let end = self.find_block_end(lines, start);
+        // The head's own text, for `irp`'s RAW-TEXT items. Recomputed rather
+        // than threaded out of `line_kw_args_checked` because `subst_frame_text`
+        // is pure and this is the identical call it already made — the token
+        // spans below index into exactly this string.
+        let head_text = self
+            .subst_frame_text(&lines[start].text)
+            .unwrap_or_else(|| lines[start].text.clone());
+        let items = self.irp_items(&arg_toks, span, kind, &head_text, lines[start].base);
+        let Some((name, items)) = items else {
+            return end + 1;
+        };
+        let captured = self.capture_loop_body(&lines[start + 1..end]);
+        let body: Vec<SrcLine> = captured
+            .clone()
+            .unwrap_or_else(|| lines[start + 1..end].to_vec());
+        for item in &items {
+            if self.aborted {
+                break;
+            }
+            let iter: Vec<SrcLine> = body
+                .iter()
+                .map(|l| SrcLine {
+                    text: substitute_name(&l.text, &name, item),
+                    base: l.base,
+                    source: l.source,
+                })
+                .collect();
+            self.exec(&iter);
+        }
+        self.release_loop_body(captured.is_some());
+        end + 1
+    }
+
+    /// The loop variable name and the item texts for an `irp`/`irpc` head, or
+    /// `None` (with the diagnostic already raised) when the head cannot supply
+    /// them. Split out of [`Self::exec_irp`] so the block is still SKIPPED as a
+    /// block on the error path — asl reports #1110 and steps over the body
+    /// rather than executing it (probe `p9.asm` cases 9c/9d).
+    fn irp_items(
+        &mut self,
+        arg_toks: &[Token],
+        span: Span,
+        kind: IterKind,
+        head_text: &str,
+        base: u32,
+    ) -> Option<(String, Vec<String>)> {
+        let kw = match kind {
+            IterKind::Groups => "irp",
+            IterKind::Chars => "irpc",
+        };
+        // The name is the first comma group and must be a lone identifier; the
+        // list is everything after that first comma. Finding the comma by index
+        // (rather than reusing the split) keeps `irpc`'s operand as ONE token run
+        // so a comma inside its string expression stays inside it.
+        let comma = arg_toks.iter().position(|t| {
+            matches!(t.tok, Tok::Punct(Punct::Comma))
+        });
+        let Some(comma) = comma else {
+            self.err(span, format!("`{kw}` needs a loop variable and a list, separated by a comma"));
+            return None;
+        };
+        let name = match arg_toks.get(..comma) {
+            Some([Token { tok: Tok::Ident(s), .. }]) => s.clone(),
+            _ => {
+                self.err(span, format!("`{kw}` needs a single identifier as its loop variable"));
+                return None;
+            }
+        };
+        let rest = &arg_toks[comma + 1..];
+        let items = match kind {
+            IterKind::Groups => split_top_commas(rest)
+                .into_iter()
+                .map(|g| slice_source(head_text, base, g))
+                .collect(),
+            IterKind::Chars => {
+                // asl evaluates the operand: a string expression first, then a
+                // numeric one rendered in decimal. An EMPTY operand field folds
+                // to 0 and therefore iterates once over the character `0` — the
+                // one place where "empty" is not the empty string (probe
+                // `p7.asm` case 7b, `irpc c,` over `dc.b "<c>"` → `dc.b "<0>"`).
+                let s = if rest.is_empty() {
+                    "0".to_string()
+                } else {
+                    match self.eval_str(rest) {
+                    Some(s) => s,
+                    None => match self.eval_all(rest, span) {
+                        Some(v) => v.to_string(),
+                        None => {
+                            self.err(span, "unresolved `irpc` string expression");
+                            return None;
+                        }
+                    },
+                    }
+                };
+                if s.is_empty() {
+                    vec![String::new()]
+                } else {
+                    s.chars().map(|c| c.to_string()).collect()
+                }
+            }
+        };
+        Some((name, items))
     }
 
     /// Materialize a `rept`/`while` body against the innermost expansion and
@@ -5160,6 +5320,7 @@ impl Asm {
             f.int_label.as_deref(),
             &f.params,
             &f.bound,
+            f.arg_count(),
         ))
     }
 
@@ -5219,6 +5380,15 @@ impl Asm {
         let int_label = int_label.then(|| captured.unwrap_or_default());
         let all_args = render_tokens(arg_toks);
         let groups = split_top_commas(arg_toks);
+        // `ARGCOUNT`'s entry value. `split_top_commas` returns ONE (empty) group
+        // for an empty operand field, which is right for binding — the first
+        // parameter gets the empty default either way — and wrong for counting:
+        // asl reports 0 for `ac` and 2 for `ac ,` (probe `p5.asm`). The empty
+        // field is the reachable case, not a curiosity: `jmpTos` with no
+        // arguments relays an empty `ALLARGS` into `jmpTosInternal2`, whose
+        // `if ARGCOUNT>0` is the only thing standing between that and an
+        // `irp op,` over one empty item defining a nameless label.
+        let argc = if arg_toks.is_empty() { 0 } else { groups.len() as i64 };
         let mut keyword: std::collections::BTreeMap<String, String> =
             std::collections::BTreeMap::new();
         let mut positional: Vec<String> = Vec::new();
@@ -5324,12 +5494,15 @@ impl Asm {
         }
         self.scope = Some(format!(" macro#{}", self.macro_expansion_seq));
         self.macro_depth += 1;
+        let shift_cap = params.len().max(argc.max(0) as usize);
         self.macro_frames.push(MacroFrame {
             params,
             bound,
             all,
             all_raw: all_args,
             shifted: 0,
+            argc,
+            shift_cap,
             attribute: attribute.map(str::to_string),
             suspend: 0,
             dot_labels,
@@ -5401,6 +5574,49 @@ fn head_declares_int_label(text: &str) -> bool {
     false
 }
 
+/// The SOURCE TEXT a token group was lexed from, recovered through the group's
+/// own spans, or `""` for an empty group.
+///
+/// `irp`'s items are raw text and must stay the text the author wrote.
+/// [`render_tokens`] cannot supply that: it re-renders `Tok::Int` in decimal, so
+/// `irp v,$FF` over `dc.b "[v]"` emits `[255]` where asl emits `[$FF]` — wrong
+/// BYTES with no diagnostic, which is the failure mode a loop construct has
+/// instead of an error message. Measured against asl, probe `p8.asm` case 8b:
+///
+/// ```text
+///   16/ 100F : 5B31 2B32 5D     dc.b "[1+2]"
+///   16/ 1014 : 5B24 4646 5D     dc.b "[$FF]"
+/// ```
+///
+/// Slicing by span also drops a trailing comment and any surrounding whitespace
+/// for free, because the lexer never gave either one a token.
+///
+/// `base` is the line's byte offset, which is what [`lex_line`] added to every
+/// span it produced from `text`.
+fn slice_source(text: &str, base: u32, group: &[Token]) -> String {
+    let (Some(first), Some(last)) = (group.first(), group.last()) else {
+        return String::new();
+    };
+    let start = (first.span.start.saturating_sub(base)) as usize;
+    let end = (last.span.end.saturating_sub(base)) as usize;
+    match text.get(start..end) {
+        Some(s) => s.to_string(),
+        // Unreachable for spans this function's own caller produced; a rendered
+        // fallback is still a working item rather than a panic.
+        None => render_tokens(group),
+    }
+}
+
+/// What an `irp`/`irpc` head iterates over: `irp`'s comma-separated argument
+/// groups, or `irpc`'s characters. The two directives share everything else —
+/// block structure, closers, body substitution and the empty-list rule — so
+/// they share one implementation and differ by this.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum IterKind {
+    Groups,
+    Chars,
+}
+
 /// The binding one macro expansion substitutes into its body, and the state
 /// `shift` mutates.
 ///
@@ -5432,6 +5648,16 @@ struct MacroFrame {
     all_raw: String,
     /// How many times this expansion has shifted.
     shifted: usize,
+    /// `ARGCOUNT` before any shift: the number of comma-separated argument
+    /// groups the invocation actually wrote, and 0 when the operand field is
+    /// empty. It is NOT `split_top_commas`'s group count, which is 1 for an
+    /// empty slice — asl-verified, probe `p5.asm`: `ac` and `ac ` are 0 while
+    /// `ac ,` is 2 and `ac 1,,3` is 3.
+    argc: i64,
+    /// How many shifts still MOVE `ARGCOUNT`. asl stops decrementing once the
+    /// argument store is exhausted, and that store is as long as the LONGER of
+    /// the parameter list and the argument list — see [`Self::arg_count`].
+    shift_cap: usize,
     /// `.ATTRIBUTE` text for a `.b`/`.w`/`.l`/`.s`-suffixed invocation.
     attribute: Option<String>,
     /// Nonzero while a `rept`/`while` body captured from this frame replays.
@@ -5462,6 +5688,42 @@ struct MacroFrame {
 }
 
 impl MacroFrame {
+    /// `ARGCOUNT` for the current shift state, and it is NOT one quantity
+    /// tracked across a shift — the two states answer from different places.
+    ///
+    /// Before any shift it is the number of arguments the call WROTE. From the
+    /// first shift on it is the number of PARAMETERS the macro DECLARED, minus
+    /// the shift count — so it can go negative, and a one-parameter macro called
+    /// with three arguments drops 3 → 0 → -1 → -2 rather than counting the
+    /// arguments down. The decrement stops once `max(params, args)` shifts have
+    /// happened, because a shift past the end of the argument store is a no-op.
+    ///
+    /// asl `-U`, 16 rows over the (parameters × arguments) grid, probes `p3.asm`
+    /// and `p4.asm`. Two of them, `one macro pp` / `one 11,22,33` and
+    /// `m2 macro q1,q2` / `m2 10,11,12,13,14,15`, each printing `dc.w ARGCOUNT`
+    /// before the first shift and after each of the next several:
+    ///
+    /// ```text
+    ///   27/ 1002 : 0003    dc.w 3      37/ 103E : 0006    dc.w 6
+    ///   27/ 1004 : 0000    dc.w 0      37/ 1040 : 0001    dc.w 1
+    ///   27/ 1006 : FFFF    dc.w -1     37/ 1042 : 0000    dc.w 0
+    ///   27/ 1008 : FFFE    dc.w -2     37/ 1044 : FFFF    dc.w -1
+    ///   27/ 100A : FFFE    dc.w -2     37/ 1046 : FFFE    dc.w -2
+    /// ```
+    ///
+    /// The corpus needs only the unshifted half: `s2.macrosetup.asm(301)`'s
+    /// `if ARGCOUNT>0` guards `jmpTosInternal2`, which declares NO parameters
+    /// and performs no `shift` — the enclosing `jmpTosInternal` shifts in its
+    /// OWN frame and relays `ALLARGS`, so the value read is the relayed
+    /// argument count. The shifted half is implemented anyway because the rule
+    /// is measured and a guess left in its place is the thing that rots.
+    fn arg_count(&self) -> i64 {
+        if self.shifted == 0 {
+            return self.argc;
+        }
+        self.params.len() as i64 - self.shifted.min(self.shift_cap) as i64
+    }
+
     /// `ALLARGS` for the current shift state.
     fn all_args(&self) -> String {
         if self.shifted == 0 {
@@ -5636,6 +5898,8 @@ fn is_op_keyword(s: &str) -> bool {
             | "ifdef"
             | "ifndef"
             | "rept"
+            | "irp"
+            | "irpc"
             | "endr"
             | "endm"
             | "shift"
@@ -5669,6 +5933,11 @@ fn closers_for(s: &str) -> &'static [&'static str] {
     match fold_kw(s).as_ref() {
         "if" | "ifdef" | "ifndef" => &["endif"],
         "rept" => &["endr", "endm"],
+        // asl closes BOTH on either keyword (probe `p8.asm` case 8e, `p9.asm`
+        // case 9e: an `irpc` shut with `endr` and an `irp` shut with `endr`
+        // both expand), and the corpus writes `endm` at every one of its ten
+        // sites.
+        "irp" | "irpc" => &["endr", "endm"],
         "while" => &["endm"],
         "macro" => &["endm"],
         "struct" => &["endstruct"],
