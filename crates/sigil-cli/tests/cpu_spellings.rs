@@ -140,19 +140,42 @@ fn the_same_source_under_an_accepted_spelling_assembles() {
     );
 }
 
-/// Every spelling in the table lands on the target the table names it for.
+/// Every spelling in the table lands on the target the table names it for, and
+/// on no other.
 ///
-/// Asserted as byte-identity against the FIRST spelling recorded for that
-/// target: an alias is not merely accepted, it selects the same processor. This
-/// is what makes `68008` and `z80undoc` aliases rather than new targets, and it
-/// is derived from `CPU_SPELLINGS` itself, so a row added without a lowering
-/// behind it fails here rather than in a corpus months later.
+/// Two halves, and the second is what gives the first its meaning. Byte-identity
+/// against the first spelling recorded for that target proves an alias is the
+/// SAME processor rather than merely an accepted word — that is what makes
+/// `68008` and `z80undoc` aliases and not new targets. But a spelling mapped to
+/// the wrong target would satisfy that half on its own: the body under test is
+/// chosen from the table's own claim, so a wrong claim picks a body that agrees
+/// with it. The discriminator is the other target's body, which must be REFUSED
+/// under this spelling. `move.w` does not assemble on a Z80 and `ld` is not a
+/// 68000 mnemonic, so the pair of outcomes identifies the processor rather than
+/// restating the table.
+///
+/// Derived from `CPU_SPELLINGS` throughout: a row added without a lowering
+/// behind it, or pointed at the wrong target, fails here rather than in a
+/// corpus months later.
 #[test]
 fn every_accepted_spelling_selects_the_target_the_table_names() {
     assert!(
         !CPU_SPELLINGS.is_empty(),
         "precondition: the table has rows to check"
     );
+    let mut targets: Vec<Cpu> = Vec::new();
+    for (_, cpu) in CPU_SPELLINGS {
+        if !targets.contains(cpu) {
+            targets.push(*cpu);
+        }
+    }
+    assert!(
+        targets.len() >= 2,
+        "this gate distinguishes targets by refusing the OTHER target's body; \
+         with fewer than two targets in the table there is nothing to \
+         distinguish and the assertions below prove nothing. Targets: {targets:?}"
+    );
+
     for (spelling, cpu) in CPU_SPELLINGS {
         let canonical = CPU_SPELLINGS
             .iter()
@@ -181,6 +204,20 @@ fn every_accepted_spelling_selects_the_target_the_table_names() {
              table says they are the same target, and a spelling that assembles \
              to different bytes is a different processor wearing an alias"
         );
+
+        for other in &targets {
+            if other == cpu {
+                continue;
+            }
+            let wrong = assemble(&format!("\tcpu {spelling}\n{}", body_for(*other)));
+            assert!(
+                !wrong.ok,
+                "`cpu {spelling}` assembled a {other:?} body. The table says it \
+                 selects {cpu:?}; a spelling that accepts another processor's \
+                 instructions is not pointing where the table says. stderr:\n{}",
+                wrong.stderr
+            );
+        }
     }
 }
 
