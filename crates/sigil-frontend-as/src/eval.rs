@@ -5699,17 +5699,22 @@ impl MacroFrame {
     /// happened, because a shift past the end of the argument store is a no-op.
     ///
     /// asl `-U`, 16 rows over the (parameters × arguments) grid, probes `p3.asm`
-    /// and `p4.asm`. Two of them, `one macro pp` / `one 11,22,33` and
-    /// `m2 macro q1,q2` / `m2 10,11,12,13,14,15`, each printing `dc.w ARGCOUNT`
-    /// before the first shift and after each of the next several:
+    /// and `p4.asm`. Two of them from `p3.asm`, `one macro pp` / `one 11,22,33`
+    /// (left) and `three macro q1,q2,q3` / `three 11,22,33,44,55` (right), each
+    /// printing `dc.w ARGCOUNT` before the first shift and after each of four:
     ///
     /// ```text
-    ///   27/ 1002 : 0003    dc.w 3      37/ 103E : 0006    dc.w 6
-    ///   27/ 1004 : 0000    dc.w 0      37/ 1040 : 0001    dc.w 1
-    ///   27/ 1006 : FFFF    dc.w -1     37/ 1042 : 0000    dc.w 0
-    ///   27/ 1008 : FFFE    dc.w -2     37/ 1044 : FFFF    dc.w -1
-    ///   27/ 100A : FFFE    dc.w -2     37/ 1046 : FFFE    dc.w -2
+    ///   27/ 1002 : 0003    dc.w 3      37/ 103E : 0005    dc.w 5
+    ///   27/ 1004 : 0000    dc.w 0      37/ 1040 : 0002    dc.w 2
+    ///   27/ 1006 : FFFF    dc.w -1     37/ 1042 : 0001    dc.w 1
+    ///   27/ 1008 : FFFE    dc.w -2     37/ 1044 : 0000    dc.w 0
+    ///   27/ 100A : FFFE    dc.w -2     37/ 1046 : FFFF    dc.w -1
     /// ```
+    ///
+    /// Left: one parameter, three arguments — `params - shifts` goes negative,
+    /// and stops at `max(1,3)=3` shifts. Right: three parameters, five arguments
+    /// — the entry value is the ARGUMENT count 5, every value after it is
+    /// `3 - shifts`.
     ///
     /// The corpus needs only the unshifted half: `s2.macrosetup.asm(301)`'s
     /// `if ARGCOUNT>0` guards `jmpTosInternal2`, which declares NO parameters
