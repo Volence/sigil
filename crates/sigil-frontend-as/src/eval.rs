@@ -3439,40 +3439,30 @@ impl Asm {
         }
     }
 
-    /// `align <n>` — advance the location counter to a multiple of `n`. TWO
-    /// asl-verified regimes (asl 1.42 Bld 212, live-probed 2026-07-08):
+    /// `align <n>` — advance the location counter to a multiple of `n`.
     ///
-    /// - **Outside a phase** (`disp == 0`, every ROM `align 2` / `align $8000`):
-    ///   standard round-up — `round_up(pos, n)`, a no-op when already aligned —
-    ///   padded with a real `Fill` of `0x00` (Aeon always aligns something that
-    ///   follows in the same section, so the zeros are emitted; byte-exact ROM).
+    /// The pad is `asl_align_pad` (`sigil-ir`): asl rounds up on the LOW 32 BITS
+    /// OF THE PC READ AS A SIGNED `i32`, with C's truncating remainder. A
+    /// non-negative PC (every ROM address) gets the plain round-up and a
+    /// no-op when already aligned; a negative PC (every `$FFFF….` RAM address)
+    /// rounds toward zero instead of down, so it usually lands one block high
+    /// and an already-aligned address advances a full `n`.
     ///
-    /// - **Inside a phase** (`disp != 0`, Aeon's `$FFFF….` RAM `align 256`):
-    ///   asl advances by `round_up(pos + n, n)` — i.e. ALWAYS at least one full
-    ///   `n` beyond `pos`, THEN rounds to the boundary (so an already-aligned
-    ///   `pos` still jumps a whole `n`). Live-probe table (phase base, content →
-    ///   result), all matching `round_up(pos + n, n)`: `$B000→$B100`,
-    ///   `$B005→$B200`, `$B026→$B200`, `$B100→$B200`, independent of whether
-    ///   `disp` itself is a multiple of `n`. This is what places Aeon's
-    ///   `Player_Pos_Ring` at `$B100`/`$B200` (non-debug/debug) rather than one
-    ///   `n` low. Aeon's phased regions are RAM under `padding off`, so the pad
-    ///   is a `Reserve` (address-only, no image bytes) — it neither emits ROM
-    ///   nor, being reserve-only, participates in the LMA image.
+    /// The regime is the SIGN OF THE PC, not `disp`: `phase $B000` + `ds.b 5` +
+    /// `align 256` gives `$B100`, the same as the unphased form. What `disp`
+    /// still decides here is the KIND of pad — a phased region is Aeon RAM under
+    /// `padding off`, where the pad is a `Reserve` (address-only, no image
+    /// bytes), against a ROM section where it is a real `$00` `Fill`.
     fn directive_align(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         match self.eval_all(rest, span) {
             Some(n) if n > 0 => {
                 let n = n as u32;
-                let pos = self.here();
-                if self.state.disp != 0 {
-                    // In-phase: round_up(pos + n, n). `pos + n` is strictly
-                    // greater than `pos`, so this always advances by [1, n]+n.
-                    let target = (pos + n).next_multiple_of(n);
-                    let pad = target - pos;
-                    self.builder.reserve(pad, span);
-                } else {
-                    let pad = (n - (pos % n)) % n;
-                    if pad > 0 {
+                let pad = sigil_ir::asl_align_pad(self.here(), n);
+                if pad > 0 {
+                    if self.state.disp != 0 {
+                        self.builder.reserve(pad, span);
+                    } else {
                         self.builder.emit_fill(pad, 0, span);
                     }
                 }

@@ -544,25 +544,25 @@ impl Layout {
         }
     }
 
-    /// Advance the cursor for a field `@align(n)` (reserve semantics), matching
-    /// AS's `align` INSIDE A PHASE (`sigil-frontend-as` `directive_align`). A `vars`
-    /// region is the `.emp` analog of an AS `phase`d RAM section (VMA `$FFFF….`,
-    /// `disp != 0`), and asl's in-phase align is NOT a plain round-up: it advances
-    /// by `round_up(cursor + n, n)` — ALWAYS at least one full `n` beyond the
-    /// cursor, even when the cursor is already `n`-aligned (asl 1.42, live-probed).
-    /// This is what places `Player_Pos_Ring` at `$FFFFB500` (not `$FFFFB400`) when
-    /// game RAM chains from the non-256-aligned `Engine_RAM_End` — the byte-identity
-    /// requirement. (Spec §2.2's "next multiple of N" wording is refined here to the
-    /// corpus reality; regions are RAM-only, so the phased regime always applies.)
+    /// Advance the cursor for a field `@align(n)` (reserve semantics), by the
+    /// same rule AS's `align` follows — `sigil_ir::asl_align_pad`, the one copy
+    /// both front-ends call.
+    ///
+    /// asl's align is NOT a plain round-up on a RAM address: it rounds up on the
+    /// low 32 bits read as a SIGNED `i32`, with C's truncating remainder, so a
+    /// `$FFFF….` cursor rounds toward zero and usually lands one block high —
+    /// an already-`n`-aligned RAM cursor advances a full `n`. This is what puts
+    /// `Player_Pos_Ring` a block above the naive boundary when game RAM chains
+    /// from the non-256-aligned `Engine_RAM_End`. (Spec §2.2's "next multiple of
+    /// N" wording is refined here to the corpus reality.)
+    ///
+    /// Regions are RAM-only today, so the negative-PC regime is the one that
+    /// runs; the shared rule keeps a positive-based region correct anyway.
     fn align_to(&mut self, align: u32) {
         if align <= 1 {
             return;
         }
-        // Mirror `directive_align` exactly (`round_up(pos + n, n)`), valid for any
-        // `n` (not only powers of two). Aeon RAM sits far below the `u32` ceiling,
-        // so `cursor + align` never overflows (the same domain the AS side folds).
-        let target = (self.cursor + align).next_multiple_of(align);
-        let pad = target - self.cursor;
+        let pad = sigil_ir::asl_align_pad(self.cursor, align);
         self.padding = self.padding.wrapping_add(pad); // T1 report accounting only.
         self.reserve(pad);
     }
