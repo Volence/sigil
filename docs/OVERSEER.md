@@ -1116,9 +1116,30 @@ the pairing at 199, and nothing announced that the feed stopped**; the baseline 
 as maintained because no corpus advance happened until chain 201, which then crossed **nine**
 aeon chains at once (`8876459e..4f5ad5a1`).
 
-- **Live state:** `DEBUG_ASSEMBLED_LEN` wants `0xA7F38`, the advanced corpus resolves
-  `0xA81FC` (`+0x2C4`); plain HOLDS at `0xA5C82`. Suite is 4231 / 1 / 2 — that assert is the
-  only red. `SCENE_REGISTRY`'s band-drift term IS closed and derived (`0xD94 -> 0xEA0`).
+- **THE RED IS CLOSED, AND THIS BULLET SAID IT WAS LIVE FOR THE NEXT SESSION'S WHOLE BOOT.**
+  `ea95bc18` advanced `DEBUG_ASSEMBLED_LEN` `0xA7F38 -> 0xA81FC` and it is the LAST COMMIT OF
+  THE SESSION THAT WROTE THIS BULLET — the fix and the stale description of it are minutes
+  apart. Plain holds at `0xA5C82`; `SCENE_REGISTRY`'s band-drift term is closed and derived
+  (`0xD94 -> 0xEA0`). **The advance was derived, not baked**, which is the only reason it
+  counts: thirteen canonical DEBUG points rebuilt across `8876459e..4f5ad5a1`, two non-zero
+  terms (`+0x1E0` chain 202, `+0xE4` chain 206) and ten measured HOLDs, with both self-checks
+  — endpoints reproduce, `0x1E0 + 0xE4 = 0x2C4` — stated BEFORE the series arrived. Compare
+  the re-baseline rule in the standing section: a green whose expectation the subject
+  generated proves reproducibility, never correctness. This one has an account that does not
+  pass through the subject.
+- **⚠ HOW THIS ROW ROTTED, because the mechanism matters more than the correction.** A stale
+  suite figure here (`4231 / 1 / 2 — that assert is the only red`) was read at boot on
+  2026-09-03, believed, and **written into a dispatch brief as a fact about the tree**, telling
+  an agent a pre-existing red existed. It did not. The agent measured `0 failed` and said so;
+  had it instead reconciled its own count to the phantom baseline the brief asserted, a real
+  regression of one test would have looked exactly like the expected state. **A brief's
+  explanations absorb rather than compete** — that hazard is already booked in the dispatch
+  section, and this is it arriving through the controller's own documentation rather than
+  through a mechanism paragraph. The general form is the memory rule *own repo state asserted
+  from memory*: every verification rule in this file points outward, at peers and at agents,
+  and this lane's own committed state is the one claim that gets asserted as context instead
+  of checked as a claim. **A "live state" bullet is a snapshot wearing the grammar of a
+  standing fact.** Derive the suite figure at the time you need it; never quote one from here.
 - **Aeon does not hold the terms** (they checked: no debug figure in any of the ten merge
   commits for the span, lane-log carries prose deltas not a series, ledger stops at 199).
   They are rebuilding the nine to read `EndOfRom` per chain. One-time: their merge commits now
