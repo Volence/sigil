@@ -13,7 +13,7 @@ flags minus the two that only redirect output: `asl -xx -n -q -A -L -U -i .`
 (the build adds `-E` to send errors to a log and `-c` for a shared header;
 `common.lua:773`). **`-U` forces case-sensitivity** and every row below carries
 it. Every rule is stated with the row that establishes it, and every expected
-value in the twelve tests is such a row.
+value in the thirteen tests is such a row.
 
 ## The split is syntactic, not by value kind
 
