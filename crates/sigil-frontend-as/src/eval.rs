@@ -1392,7 +1392,7 @@ impl Asm {
                 }
             }
         }
-        changed.then(|| SrcLine {
+        changed.then_some(SrcLine {
             text: out,
             base: line.base,
             source: line.source,
@@ -7561,10 +7561,10 @@ C:\n";
     /// `s2disasm/build_tools/Linux-x86_64/asl`), never off sigil's own output:
     ///
     /// ```text
-    ///   7/     100 : 0055                	dc.w zone_id_{cur_str}
+    ///   7/     100 : 0055                    dc.w zone_id_{cur_str}
     ///   9/     104 : =$77                 zone_id_{cur_str}b = $77
-    ///  10/     104 : 0077                	dc.w zone_id_3b
-    ///  11/     106 : 0055                	dc.w zone_id_{cur}
+    ///  10/     104 : 0077                    dc.w zone_id_3b
+    ///  11/     106 : 0055                    dc.w zone_id_{cur}
     /// ```
     ///
     /// so: the group takes a string-valued symbol OR an integer one, it composes
@@ -7589,9 +7589,9 @@ C:\n";
     /// several may compose one name. asl listing of the same four lines:
     ///
     /// ```text
-    ///   8/     100 : 0022                	dc.w {"n"}{cur}
-    ///   9/     102 : 0055                	dc.w zone_id_{cur}_x
-    ///  10/     104 : 0066                	dc.w xx{cur+0}
+    ///   8/     100 : 0022                    dc.w {"n"}{cur}
+    ///   9/     102 : 0055                    dc.w zone_id_{cur}_x
+    ///  10/     104 : 0066                    dc.w xx{cur+0}
     /// ```
     #[test]
     fn name_brace_composes_at_any_position_and_from_an_expression() {
@@ -7657,9 +7657,9 @@ C:\n";
     ///
     /// ```text
     ///   4/     100 : ="3"                 s := "\{n}"
-    ///   6/     102 : 33                  	dc.b s
+    ///   6/     102 : 33                      dc.b s
     ///   7/     103 : =$2A                 n := 42
-    ///   8/     103 : 33                  	dc.b s
+    ///   8/     103 : 33                      dc.b s
     /// ```
     #[test]
     fn string_set_folds_interpolation_at_binding_time() {
