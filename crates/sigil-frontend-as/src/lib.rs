@@ -18,7 +18,21 @@ use std::path::Path;
 
 use sigil_ir::backend::Cpu;
 use sigil_ir::Module;
-use sigil_span::Diagnostic;
+use sigil_span::{Diagnostic, SourceMap};
+
+/// A failed assembly: the diagnostics, plus the [`SourceMap`] their spans resolve
+/// against.
+///
+/// The map is the half a caller cannot reconstruct. `include` splices files the
+/// caller never named — hundreds of them for a real program — and each one's spans
+/// are offsets into that file, so a bare `Vec<Diagnostic>` cannot be turned back
+/// into `file(line)` afterwards. [`SourceMap::label`] does that here.
+pub struct Failure {
+    /// Every diagnostic the failing pass produced, in the order it raised them.
+    pub diags: Vec<Diagnostic>,
+    /// The root source and every `include`d file, under the ids the spans carry.
+    pub sources: SourceMap,
+}
 
 /// Assembly options: the seeded symbol environment + the CPU active before any
 /// `cpu` directive.
@@ -67,6 +81,13 @@ pub fn assemble(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
 /// Assemble a root source file, resolving `include` paths relative to its parent
 /// directory (unless `opts.include_root` is already set).
 pub fn assemble_root(root: &Path, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
+    assemble_root_located(root, opts).map_err(|f| f.diags)
+}
+
+/// Like [`assemble_root`] but keeps the [`SourceMap`] on failure, so each
+/// diagnostic renders as `file(line): error: …` — the root file under the name it
+/// was opened with, and every `include`d file under its own.
+pub fn assemble_root_located(root: &Path, opts: &Options) -> Result<Module, Failure> {
     assemble_root_impl(root, opts, false)
 }
 
@@ -75,28 +96,33 @@ pub fn assemble_root(root: &Path, opts: &Options) -> Result<Module, Vec<Diagnost
 /// resolves them against each label's placed base. Use for a build whose sections will
 /// MOVE after assembly; a pinned build must use [`assemble_root`] (byte-for-byte asl).
 pub fn assemble_root_relocating(root: &Path, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
-    assemble_root_impl(root, opts, true)
+    assemble_root_impl(root, opts, true).map_err(|f| f.diags)
 }
 
-fn assemble_root_impl(root: &Path, opts: &Options, relocate: bool) -> Result<Module, Vec<Diagnostic>> {
-    let text = std::fs::read_to_string(root).map_err(|e| {
-        vec![sigil_span::Diagnostic {
+fn assemble_root_impl(root: &Path, opts: &Options, relocate: bool) -> Result<Module, Failure> {
+    let text = std::fs::read_to_string(root).map_err(|e| Failure {
+        diags: vec![sigil_span::Diagnostic {
             level: sigil_span::Level::Error,
             message: format!("cannot read {}: {e}", root.display()),
+            // The file never opened, so it is in no source map and the message
+            // already names it; an id past every registered source keeps the
+            // renderer from attributing it to a line.
             primary: sigil_span::Span {
-                source: sigil_span::SourceId(0),
+                source: sigil_span::SourceId(u32::MAX),
                 start: 0,
                 end: 0,
             },
-        }]
+        }],
+        sources: SourceMap::new(),
     })?;
     let mut o = opts.clone();
     if o.include_root.is_none() {
         o.include_root = root.parent().map(|p| p.to_path_buf());
     }
+    let name = root.display().to_string();
     if relocate {
-        eval::run_relocating(&text, &o)
+        eval::run_relocating(&text, &name, &o)
     } else {
-        eval::run(&text, &o)
+        eval::run_located(&text, &name, &o)
     }
 }

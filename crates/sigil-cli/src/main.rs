@@ -89,13 +89,18 @@ fn main() {
     // unset and the paths then resolve against whatever directory the command was run
     // from — so `sigil path/to/root.asm` failed for everyone who did not first `cd` into
     // the project, with `cannot include` lines naming files that are plainly there.
+    // `assemble_root_located` rather than `assemble_root`: it hands back the
+    // `SourceMap` of every spliced file, which is the only thing that can turn a
+    // diagnostic's byte span back into `file(line)`. Without it a span is an offset
+    // into an unnamed source and the report says only what went wrong, never where
+    // — against a 91k-line multi-file program that is not a usable answer, and it
+    // is behind what AS itself reports (`smps-bug.asm(9): error: …`).
     let opts = sigil_frontend_as::Options::default();
-    let module = match sigil_frontend_as::assemble_root(std::path::Path::new(&input), &opts) {
+    let module = match sigil_frontend_as::assemble_root_located(std::path::Path::new(&input), &opts)
+    {
         Ok(m) => m,
-        Err(diags) => {
-            for d in &diags {
-                eprintln!("error: {}", d.message);
-            }
+        Err(failure) => {
+            render_as_diags(&failure);
             process::exit(1);
         }
     };
@@ -120,6 +125,26 @@ fn main() {
     if hex {
         let rendered: Vec<String> = image.iter().map(|b| format!("{b:02X}")).collect();
         println!("{}", rendered.join(" "));
+    }
+}
+
+/// Render AS front-end diagnostics as `file(line): error: message` — the shape AS
+/// itself reports, so a user moving off AS reads the same thing in the same place.
+///
+/// The file named is the one the span belongs to, which for a diagnostic raised
+/// inside an `include`d file is THAT file, not the includer: each spliced file is
+/// registered under its own [`SourceId`](sigil_span::SourceId) and its lines carry
+/// it, so a location survives the splice.
+///
+/// A diagnostic whose span belongs to no registered file — a whole-run failure such
+/// as non-convergence, or a root that never opened — prints bare rather than being
+/// attributed to line 1 of some file that had nothing to do with it.
+fn render_as_diags(failure: &sigil_frontend_as::Failure) {
+    for d in &failure.diags {
+        match failure.sources.label(d.primary) {
+            Some(loc) => eprintln!("{loc}: {}: {}", d.level, d.message),
+            None => eprintln!("{}: {}", d.level, d.message),
+        }
     }
 }
 
