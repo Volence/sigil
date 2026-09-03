@@ -8857,6 +8857,79 @@ C:\n";
         );
     }
 
+    /// The discriminating case, and the one place this front-end deliberately
+    /// refuses where asl assembles.
+    ///
+    /// The body defines `.done` inside a conditional arm and branches to it from
+    /// outside. A rule that looks in the expansion and falls back when it misses
+    /// therefore lands somewhere that depends on an ARGUMENT — and asl, which is
+    /// such a rule, silently does. Same file, same written branch, `mcond 0` then
+    /// `mcond 1`, both two-pass:
+    ///
+    /// ```text
+    ///   14/       2 :                     .done:
+    ///   15/       2 : (MACRO)              	mcond	0
+    ///   15/       2 : 67FE                        beq.s   .done
+    ///   15/       6 : =>FALSE                      if 0
+    ///   15/       6 :                     .done:
+    ///
+    ///   14/       2 :                     .done:
+    ///   15/       2 : (MACRO)              	mcond	1
+    ///   15/       2 : 6704                        beq.s   .done
+    ///   15/       6 : =>TRUE                       if 1
+    ///   15/       8 :                     .done:
+    /// ```
+    ///
+    /// `67FE` is two bytes BACKWARD, to `Base.done`; `6704` is four forward, to
+    /// the body's own. One written branch, two destinations, no diagnostic.
+    ///
+    /// The name is the macro's here, because the macro's body declares it — so
+    /// the `mcond 0` reference stays inside the expansion and dangles loudly
+    /// instead. That is a divergence and it is on purpose: nothing in the Sonic 2
+    /// disassembly or in aeon writes this shape, and the alternative reading is a
+    /// branch to an address the author did not write. Should a real consumer ever
+    /// need asl's answer, the change is to narrow what the body-label scan claims
+    /// — never to add a fall-back, which brings the order-dependence back with it.
+    #[test]
+    fn a_label_declared_only_in_an_untaken_arm_stays_the_expansions_and_dangles() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "mcond macro want\n",
+            "	beq.s .done\n",
+            "	nop\n",
+            "	if want\n",
+            "	nop\n",
+            ".done:\n",
+            "	endif\n",
+            "	endm\n",
+            "Base:\n",
+            "	nop\n",
+            ".done:\n",
+            "	mcond 0\n",
+            "	dc.w Later\n",
+            "Later:\n",
+        );
+        let m = run(src, &Options::default()).expect("assemble");
+        let resolved = sigil_link::resolve_layout(&m.sections, &sigil_ir::SymbolTable::new(), true)
+            .expect("resolve_layout");
+        let err = format!(
+            "{:?}",
+            sigil_link::link(&resolved, &sigil_ir::SymbolTable::new())
+                .expect_err("the body's own `.done` must not fall through to the caller's")
+        );
+        assert!(
+            !err.contains("Base.done"),
+            "the reference must stay inside the expansion, not reach `Base.done`: {err}"
+        );
+        // The taken arm is the half both readings agree on, and it is asl's
+        // second row above: `4E71 6704 4E71 4E71 000A`.
+        let taken = src.replace("	mcond 0\n", "	mcond 1\n");
+        assert_eq!(
+            linked_image(&taken),
+            vec![0x4E, 0x71, 0x67, 0x04, 0x4E, 0x71, 0x4E, 0x71, 0x00, 0x0A]
+        );
+    }
+
     /// A SURPLUS positional argument — one the parameter list could not hold —
     /// is qualified exactly like a bound one, so a bare `.`-local passed past
     /// the last parameter and read back through `ALLARGS` still names the
