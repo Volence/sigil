@@ -525,13 +525,29 @@ if [[ -n $BASELINE ]]; then
         echo "  baseline        INVALID (\`$BASELINE\` is not a number) — nothing reconciled."
         RECONCILED=0
     else
-        DELTA=$(( PASSED - BASELINE ))
+        # Reconcile on tests that RETURNED A VERDICT — passed plus failed — never on
+        # PASSED alone. `--baseline` is the count expected to pass on a GREEN run, so on
+        # a red run every failure is a test missing from PASSED for a reason the operator
+        # can already see in the failing list. Comparing PASSED alone charges those to
+        # the did-not-run column and then says so in words: the old message asserted
+        # "Tests did not fail — they did not run" on a run whose verdict block, eight
+        # lines above, was listing the tests that failed. The count and the sentence
+        # disagreed with each other and the sentence is the half a reader carries away.
+        # With zero failures this is arithmetically identical to the old form, so the
+        # bar has not moved — it stopped mis-attributing a red run's shortfall.
+        RAN=$(( PASSED + FAILED ))
+        DELTA=$(( RAN - BASELINE ))
         if (( DELTA >= 0 )); then
-            echo "  reconciles      $BASELINE baseline + $DELTA new = $PASSED observed"
+            if (( FAILED > 0 )); then
+                echo "  reconciles      $BASELINE baseline + $DELTA new = $RAN returned a verdict ($PASSED passed + $FAILED failed)"
+            else
+                echo "  reconciles      $BASELINE baseline + $DELTA new = $PASSED observed"
+            fi
         else
-            echo "  reconciles      MISMATCH: baseline $BASELINE, observed $PASSED"
-            echo "                  ${DELTA#-} test(s) FEWER than the stated baseline. Tests"
-            echo "                  did not fail — they did not run. Something stopped being"
+            echo "  reconciles      MISMATCH: baseline $BASELINE, observed $RAN returning a verdict"
+            echo "                  ($PASSED passed + $FAILED failed). ${DELTA#-} test(s) FEWER than the"
+            echo "                  stated baseline, and the failures above do NOT account for"
+            echo "                  them — these did not run at all. Something stopped being"
             echo "                  built, was filtered out, or was marked #[ignore]."
             RECONCILED=0
         fi
