@@ -6,30 +6,21 @@
 //! flattened bytes equal the reference ROM window at the pinned addresses,
 //! in BOTH build shapes.
 //!
-//! ## `embed_base`: the first port whose `embed` climbs above its own dir
+//! ## `embed_base` and `include_root` are two fields because they answer two questions
 //!
-//! Every prior port (`hblank.emp`, `dac_samples.emp`, `mt_bank.emp`, …) set
-//! `include_root` to the module's OWN directory and never needed anything
-//! more, because their `embed` paths were bare same-directory filenames.
-//! `math.emp`'s `embed("../data/sine.bin")` breaks that pattern: it climbs
-//! ONE level above its own directory (`engine/system/`) to a SIBLING
-//! directory (`engine/data/`). The capability sandbox
-//! (`sigil-frontend-emp/src/eval/sandbox.rs::resolve_sandbox_path`) enforces
-//! containment against `include_root` alone — a `..` that pops back past
-//! `include_root` itself is unconditionally `[sandbox.path-escape]`, and
-//! that holds true NO MATTER what `include_root` is set to (with a single
-//! root serving as both the join base and the boundary, one `..` always
-//! escapes it, by construction). This is a REAL front-end gap this port
-//! surfaced and fixed (front-end fix, TDD, small and clearly correct — see
-//! the campaign gap ledger): `LowerOptions` now carries a second,
-//! independent field, `embed_base`, which is the join BASE relative `embed`
-//! paths resolve against; `include_root` stays the sole containment
-//! boundary. Here `include_root` = `engine/` (broad enough to contain BOTH
-//! the module's own directory and its embed target) and `embed_base` =
-//! `engine/system/` (the module's own directory, matching every other
-//! port's convention) — so `"../data/sine.bin"` joins onto `embed_base`,
-//! climbs to `engine/`, descends to `engine/data/sine.bin`, and the FINAL
-//! result is checked against `include_root` and passes.
+//! `LowerOptions` separates the JOIN BASE that relative `embed` paths resolve
+//! against (`embed_base`) from the sandbox's containment BOUNDARY
+//! (`include_root`, enforced in
+//! `sigil-frontend-emp/src/eval/sandbox.rs::resolve_sandbox_path`). One root
+//! serving as both cannot express an `embed` that leaves the module's own
+//! directory: any `..` that pops past the join base pops past the boundary too,
+//! so it is unconditionally `[sandbox.path-escape]` however the root is set.
+//!
+//! Here `embed_base` is the aeon ROOT — `math.emp` spells its tables
+//! `embed("engine/data/sine.bin")`, the engine-wide root-relative convention —
+//! and `include_root` is `engine/`, which contains both the module
+//! (`engine/system/`) and its embed target (`engine/data/`). The resolved path is
+//! checked against the boundary and passes.
 //!
 //! ## No shape define
 //!
@@ -117,24 +108,18 @@ fn math_include_root(aeon: &Path) -> PathBuf {
     aeon.join("engine")
 }
 
-/// The `embed` join base — the module's OWN directory (`engine/system/`),
-/// matching every other port's `include_root` convention. `math.emp`'s
-/// `embed("../data/sine.bin")` joins onto THIS (not `include_root`), climbs
-/// one level to `engine/`, then descends to `engine/data/sine.bin` — the
-/// final resolved path is checked against `math_include_root`'s boundary
-/// and passes (it's a descendant of `engine/`).
-/// `math.emp`'s `embed(...)` base — the PROJECT ROOT, like every other module.
+/// `math.emp`'s `embed(...)` join base — the PROJECT ROOT, like every other module.
 ///
-/// It was `math_dir(aeon)` while the aeon tree spelled these paths module-relative
-/// (`embed("../data/sine.bin")`), which needed a base inside `engine/` to climb out of.
-/// The engine re-spelled them root-relative at aeon bbe74e4f (EMBED-BASE-SKEW step 2),
-/// so a module-scoped base now resolves `engine/data/sine.bin` to
-/// `<aeon>/engine/system/engine/data/sine.bin` and the read fails one level deep.
+/// The engine spells embed paths root-relative (`embed("engine/data/sine.bin")`), so
+/// the base must be the root. A module-scoped base resolves that same path to
+/// `<aeon>/engine/system/engine/data/sine.bin` — the module's own directory with the
+/// root-relative path appended — and the read fails one level deep, naming a path with
+/// `engine/` in it twice. That doubled segment is the signature of this mistake and is
+/// worth recognising on sight: it means a base, not a missing file.
 ///
-/// Worth keeping the note: this is the standalone-port harness, and the FULL ROM build
-/// was clean throughout — it resolves against the root already. A report of this doubled
-/// path was filed as a misattribution by both lanes on the strength of that clean build.
-/// Both readings were right about their own caller; only this one passes a narrower base.
+/// Only the standalone-port harness can make it. The full ROM build resolves against
+/// the root already, so it stays clean while a port scope is failing, and a clean ROM
+/// build is therefore not evidence that a port scope's base is right.
 fn math_embed_base(aeon: &Path) -> PathBuf {
     aeon.to_path_buf()
 }

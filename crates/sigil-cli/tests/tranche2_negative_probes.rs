@@ -311,16 +311,22 @@ fn math_map_toml(base: &str) -> String {
     )
 }
 
-/// Parse -> lower (`include_root` = `engine/`, `embed_base` = `engine/system/`
-/// — `math_port.rs`'s doc explains why math.emp needs the two-root split) ->
+/// Parse -> lower (`include_root` = `engine/`, `embed_base` = the aeon ROOT) ->
 /// place `src` at `base` into the math map.
+///
+/// `embed_base` is the project root because that is the convention every `embed`
+/// path in the engine is written in — `math.emp` spells its tables
+/// `embed("engine/data/sine.bin")`, root-relative. It must match what
+/// `math_port.rs` passes: this probe compiles the same file, so a base that
+/// disagrees with the port's does not test a weaker version of the port, it
+/// tests a different program.
 fn place_math(src: &str, base: &str) -> Vec<Section> {
     let (file, pdiags) = parse_str(src);
     assert!(pdiags.iter().all(|d| d.level != Level::Error), "parse errors: {pdiags:?}");
     let opts = LowerOptions {
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon_dir().join("engine")),
-        embed_base: Some(engine_system_dir()),
+        embed_base: Some(aeon_dir()),
         defines: vec![],
     };
     let (module, ldiags) = lower_module(&file, &opts);
