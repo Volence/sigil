@@ -951,8 +951,23 @@ fn generated_pins_match_the_hand_typed_baseline() {
     // ceiling-sized arrays inside Parallax_State widen, +0xE0 on the block tail
     // (28 B per band x 8 more bands = 224), i.e. ram.emp's `104 + 28 * MAX_PARALLAX_BANDS`
     // going 328 -> 552. Parallax_State's base (0xFFFF88A0) holds again.
-    assert_eq!(pins::SCENE_REGISTRY.plain_len, 0xD94);  // +0x28 band-ceiling-16: 20 records x the 2 B header growth (sizeof(parallax_config) 28 -> 30 for the u16 layer_mask); bands and deform tables untouched  // +0x29E showcase-effects: 67 bands x 10 B, the band_record widening  // +0x44 parcel-w: ParallaxConfig_OJZ_Underwater, the anchored fixture. EXACTLY sizeof(parallax_config) 28 + 4 bands x 10 = 68 = 0x44, and shape-invariant because it is data.
-    assert_eq!(pins::SCENE_REGISTRY.debug_len, 0xD94);  // +0x28 band-ceiling-16: same data, same size in both shapes  // +0x29E showcase-effects: same data, same size in both shapes  // +0x44 parcel-w: same record, same size in both shapes.
+    //
+    // band-drift (aeon 1aa2b242, reaching this pin at the chain-201 corpus advance):
+    // BAND_DRIFT_N 0 -> 1 with sizeof(band_drift) = 4, so `band_record` — declared in
+    // engine/level/parallax.emp as
+    // `sizeof(band_entry) + sizeof(band_ext) * BAND_EXT_N + sizeof(band_curve) * BAND_CURVE_N
+    //  + sizeof(band_drift) * BAND_DRIFT_N` — goes 10 + 0 + 10 + 0 = 20 to 10 + 0 + 10 + 4 = 24.
+    // That type is what the registry emits arrays of, in ROM as well as in the RAM shadow
+    // view, so the term is 67 bands x 4 = 268 = 0x10C and NOTHING ELSE in the section moves:
+    // the record count, the band count and the six 256-byte deform tables are all untouched,
+    // and sizeof(parallax_config) is unaffected (the drift tail is on the BAND, not the
+    // config header). The whole span reconciles to the byte again:
+    //   20 headers x 30 = 600, + 67 bands x 24 = 1608, + 6 tables x 256 = 1536 -> 3744 =
+    //   0xEA0, against 600 + 1340 + 1536 = 3476 = 0xD94 before.
+    // Derived from the schema, NOT read off the repin diff — the two agree, which is the
+    // point of deriving it first.
+    assert_eq!(pins::SCENE_REGISTRY.plain_len, 0xEA0);  // +0x10C band-drift: 67 bands x the 4 B band_record widening (BAND_DRIFT_N 0 -> 1); records, band count and deform tables untouched  // +0x28 band-ceiling-16: 20 records x the 2 B header growth (sizeof(parallax_config) 28 -> 30 for the u16 layer_mask)  // +0x29E showcase-effects: 67 bands x 10 B, the band_record widening  // +0x44 parcel-w: ParallaxConfig_OJZ_Underwater, the anchored fixture. EXACTLY sizeof(parallax_config) 28 + 4 bands x 10 = 68 = 0x44, and shape-invariant because it is data.
+    assert_eq!(pins::SCENE_REGISTRY.debug_len, 0xEA0);  // +0x10C band-drift: same data, same size in both shapes  // +0x28 band-ceiling-16: same data, same size in both shapes  // +0x29E showcase-effects: same data, same size in both shapes  // +0x44 parcel-w: same record, same size in both shapes.
 
     // delete-percell-hscroll (2026-08-26, aeon 55ea2557, owner ruling d-29-corrected):
     // BOTH ROM tails HOLD at 0xA11D0 / 0xA32A0 while the engine bank shrinks -0xBC plain /
