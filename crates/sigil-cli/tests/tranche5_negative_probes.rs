@@ -111,7 +111,7 @@ fn synthetic_labels(names: &[&str]) -> Vec<sigil_ir::Section> {
     let mut lma = 0x0200_0000u32;
     for name in names {
         let asm = format!("cpu 68000\nphase $4000\n{name}:\n\tdc.b 0\n");
-        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
         let mut secs = assemble(&asm, &opts)
             .unwrap_or_else(|d| panic!("AS assemble (synthetic {name}): {d:?}"))
             .sections;
@@ -395,7 +395,7 @@ fn sound_api_truth_sections() -> Vec<sigil_ir::Section> {
                \tdc.l 0\n\
                SongPatchTable:\n\
                \tdc.l 0\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let mut truth = assemble(asm, &opts)
         .unwrap_or_else(|d| panic!("AS assemble (truth): {d:?}"))
         .sections;
@@ -462,7 +462,7 @@ fn typed_extern_has_no_mirror_so_a_missing_authority_is_loud() {
                \tdc.l 0\n\
                SongPatchTable:\n\
                \tdc.l 0\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let mut sections = module.sections;
     let map_toml = sound_api_map_toml();
     let map = sigil_link::load_map(&map_toml).expect("map must load");

@@ -117,7 +117,7 @@ fn compile_real_file(debug: bool) -> sigil_link::LinkedImage {
     // A synthetic outbound consumer — the real `move.l #Map_TestObj` shape as a
     // `dc.l` cell — proves the bare-name pointer resolves to the region base.
     let asm = "cpu 68000\nConsumer:\n\tdc.l   Map_TestObj\n";
-    let opts_as = sigil_frontend_as::Options { initial_cpu: Cpu::M68000, ..Default::default() };
+    let opts_as = sigil_frontend_as::Options { initial_cpu: Some(Cpu::M68000), ..Default::default() };
     let mut consumer = sigil_frontend_as::assemble(asm, &opts_as)
         .unwrap_or_else(|d| panic!("AS assemble (consumer): {d:?}"))
         .sections;

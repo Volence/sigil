@@ -17,7 +17,7 @@ use sigil_ir::{Cpu, SectionPlacement, SymbolTable};
 /// emitted bytes of the first non-empty section.
 fn emit(src: &str, guarded: &[(&str, i64)]) -> Vec<u8> {
     let opts = Options {
-        initial_cpu: Cpu::M68000,
+        initial_cpu: Some(Cpu::M68000),
         defines: vec![],
         guarded_defines: guarded.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
         include_root: None,
@@ -88,7 +88,7 @@ fn guarded_define_redefined_in_file_is_a_hard_collision() {
     // name must FAIL LOUD with `[defines.collision]`, never silently prefer a side.
     let src = format!("K = 96\nK_SHIFT = 3\n{CONSUMERS}");
     let opts = Options {
-        initial_cpu: Cpu::M68000,
+        initial_cpu: Some(Cpu::M68000),
         defines: vec![],
         guarded_defines: vec![("K".into(), 96), ("K_SHIFT".into(), 3)],
         include_root: None,
@@ -111,7 +111,7 @@ fn ordinary_defines_keep_silent_override_semantics() {
     // defines in-file).
     let src = "cpu 68000\nX = 7\nB:\tdc.b X\n";
     let opts = Options {
-        initial_cpu: Cpu::M68000,
+        initial_cpu: Some(Cpu::M68000),
         defines: vec![("X".into(), 99)], // ordinary define, same name as in-file
         guarded_defines: vec![],
         include_root: None,

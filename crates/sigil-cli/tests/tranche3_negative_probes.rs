@@ -143,7 +143,7 @@ fn place_module(src: &str, twin_src: &str, region: &str, base: &str, size: &str)
 
 /// Assemble a synthetic AS-side unit and pin its sections at `lma`.
 fn as_sections(asm: &str, lma: u32) -> Vec<Section> {
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let mut sections =
         assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble: {d:?}")).sections;
     for sec in &mut sections {

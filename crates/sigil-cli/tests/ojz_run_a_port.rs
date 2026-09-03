@@ -102,7 +102,7 @@ fn seam_sections(debug: bool) -> Vec<Section> {
         asm.push_str(&format!("{name} = ${addr:X}\n"));
     }
     asm.push_str("Stub:\n\tdc.w 0\n");
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (seam): {d:?}")).sections
 }
 

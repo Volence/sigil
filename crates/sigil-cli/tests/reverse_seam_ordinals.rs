@@ -58,7 +58,7 @@ fn emp_offsets_ordinals_export_as_equs_the_as_side_reads() {
                Consumer:\n\
                \tmove.l  #ANIM_ROLL, d0\n\
                \tdc.b    ANIM_WALK, ANIM_RUN, ANIM_COUNT\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let as_module =
         assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (consumer): {d:?}"));
 

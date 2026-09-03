@@ -39,7 +39,7 @@ use sigil_span::Level;
 
 /// Assemble a `.asm` source through the AS front-end (68k), link, flatten.
 fn as_reference(asm: &str) -> Vec<u8> {
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let sections: Vec<Section> =
         assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble failed: {d:?}")).sections;
     let linked = sigil_link::link(&sections, &SymbolTable::new())

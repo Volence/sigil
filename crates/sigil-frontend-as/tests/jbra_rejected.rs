@@ -8,7 +8,7 @@ use sigil_frontend_as::{assemble, Options};
 use sigil_ir::backend::Cpu;
 
 fn m68k_opts() -> Options {
-    Options { initial_cpu: Cpu::M68000, ..Options::default() }
+    Options { initial_cpu: Some(Cpu::M68000), ..Options::default() }
 }
 
 #[test]

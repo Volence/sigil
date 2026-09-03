@@ -34,13 +34,53 @@ pub struct Failure {
     pub sources: SourceMap,
 }
 
+/// The refusal raised when an assembly unit never declares its processor.
+///
+/// The rule: under AS-compatibility a source that never says which processor it
+/// is for is a HARD ERROR, never a silent default of any processor. The scope is
+/// the assembly UNIT, not the file — an `include`d file beneath a root that has
+/// already declared inherits that declaration and is fine (aeon's
+/// `engine/debug/debugger.asm` carries no `cpu` line and never needed one; its
+/// root declares `cpu 68000` before including it). What is refused is a unit in
+/// which NOTHING declared: not the source, not the caller.
+///
+/// Refusing rather than warning is the point. A run that reports what it skipped
+/// still exits 0, and the failure mode here is silent: the processor decides how
+/// `$` lexes, so an undeclared 68000 source assembles clean as a Z80 program and
+/// reports nothing.
+pub const CPU_UNDECLARED: &str = "no processor declared: this assembly unit never says which \
+processor it is for, and sigil will not choose one for it. Declare it on its own line at the top \
+of the root source, before any code — `cpu 68000` for a 68000 program, `cpu z80` for a Z80 one. \
+An `include`d file needs no line of its own: the declaration is the unit's, and the root's covers \
+it. A caller driving this front-end directly declares it by setting `Options::initial_cpu` \
+instead.";
+
 /// Assembly options: the seeded symbol environment + the CPU active before any
 /// `cpu` directive.
-#[derive(Clone, Debug)]
+///
+/// `Default` is derived, and that is now load-bearing rather than incidental:
+/// every field's default is its type's own, so the default carries no
+/// assumption about the target at all. It used to hand back `Cpu::Z80`, which
+/// is how a 68000 source with no `cpu` line assembled silently as a Z80
+/// program.
+#[derive(Clone, Debug, Default)]
 pub struct Options {
-    /// CPU active before the first `cpu` directive. M0 snippets set `cpu z80`
-    /// explicitly; default `Z80` for the Z80-only M0 build.
-    pub initial_cpu: Cpu,
+    /// The processor the CALLER declares for this assembly unit, active before
+    /// the first `cpu` directive — or `None` when the caller declares nothing
+    /// and the source is expected to say so itself.
+    ///
+    /// `None` is NOT "assume something". A unit that reaches a CPU-dependent
+    /// construct with neither this nor a `cpu` directive having declared a
+    /// processor is refused outright ([`CPU_UNDECLARED`]). The old default was
+    /// `Cpu::Z80` — honest for the Z80-only M0 build it was written for, and
+    /// silently wrong afterwards: a 68000 source with no `cpu` line assembled
+    /// as a Z80 program and said nothing, because under `Cpu::Z80` a `$` lexes
+    /// as the program counter rather than a hex prefix.
+    ///
+    /// Setting this IS declaring: it is how a caller that drives the front-end
+    /// on a fragment with no directive of its own (the `.emp` sound stack, the
+    /// harness's residual-AS root) states the target.
+    pub initial_cpu: Option<Cpu>,
     /// Pre-seeded integer symbols: the reference `-D` defines and (later) the
     /// stubbed 68k leaf values. Names are case-sensitive. These keep asl's
     /// silent-override semantics — an in-file `=`/`equ` of the same name wins
@@ -60,16 +100,6 @@ pub struct Options {
     pub include_root: Option<std::path::PathBuf>,
 }
 
-impl Default for Options {
-    fn default() -> Self {
-        Options {
-            initial_cpu: Cpu::Z80,
-            defines: Vec::new(),
-            guarded_defines: Vec::new(),
-            include_root: None,
-        }
-    }
-}
 
 /// Assemble a single source string into an unlinked [`Module`] (sections carry
 /// labels + symbolic fixups; the linker resolves addresses). Returns every

@@ -41,7 +41,7 @@ fn strict_gate() -> bool {
 /// EndOfRom seam — the header's `rom_end` reads it, but that cell is patched (and
 /// excluded from the compare), so any resolvable value links.
 fn endofrom_seam() -> Vec<Section> {
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble("cpu 68000\nEndOfRom = $5DB00\nStub:\n\tdc.w 0\n", &opts)
         .expect("seam assemble")
         .sections

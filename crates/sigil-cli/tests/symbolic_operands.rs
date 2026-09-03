@@ -44,7 +44,7 @@ use sigil_span::Level;
 /// table — these programs are self-contained). Panics with diagnostics on any
 /// failure.
 fn as_link(asm: &str) -> LinkedImage {
-    let opts = Options { initial_cpu: Cpu::M68000, ..Options::default() };
+    let opts = Options { initial_cpu: Some(Cpu::M68000), ..Options::default() };
     let module = assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble failed: {d:?}"));
     let resolved = sigil_link::resolve_layout(&module.sections, &SymbolTable::new(), true)
         .unwrap_or_else(|d| panic!("AS resolve_layout failed: {d:?}"));
@@ -319,7 +319,7 @@ fn as_side_int_equ_resolves_an_emp_relax_abs_sym_operand_in_a_mixed_link() {
     // shape a real cross-seam RAM-address equate (e.g. an aeon `ram.asm`
     // constant defined as `equ` rather than a label) takes.
     let as_src = "cpu 68000\nHandlerPtr equ $FFFF8022\nStub:\n\tdc.w 0\n";
-    let as_opts = Options { initial_cpu: Cpu::M68000, ..Options::default() };
+    let as_opts = Options { initial_cpu: Some(Cpu::M68000), ..Options::default() };
     let mut as_sections = assemble(as_src, &as_opts)
         .unwrap_or_else(|d| panic!("AS assemble (equ export): {d:?}"))
         .sections;

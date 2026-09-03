@@ -58,7 +58,7 @@ fn reintroducing_an_in_file_definition_is_a_hard_collision() {
     // flip forbids. The guard must fail LOUD naming the constant.
     let src = "cpu 68000\nNUM_PLAYERS = 2\nB:\tdc.b NUM_PLAYERS\n";
     let opts = Options {
-        initial_cpu: Cpu::M68000,
+        initial_cpu: Some(Cpu::M68000),
         defines: vec![],
         guarded_defines: harvested.clone(),
         include_root: None,
@@ -76,7 +76,7 @@ fn reintroducing_an_in_file_definition_is_a_hard_collision() {
     // assembles clean and reads the flipped constant from the guarded define.
     let clean = "cpu 68000\nB:\tdc.b NUM_PLAYERS\n";
     let opts2 = Options {
-        initial_cpu: Cpu::M68000,
+        initial_cpu: Some(Cpu::M68000),
         defines: vec![],
         guarded_defines: harvested,
         include_root: None,

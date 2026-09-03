@@ -173,7 +173,7 @@ pub fn hblank_call_targets(debug: bool) -> Vec<Section> {
 }
 
 fn carriers(labels: &[(&str, u32)], lma_base: u32) -> Vec<Section> {
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let mut out = Vec::new();
     for (i, (name, vma)) in labels.iter().enumerate() {
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
@@ -204,7 +204,7 @@ pub fn as_outbound_consumer() -> Vec<Section> {
                \tdc.l Raster_HInt\n\
                \tdc.l Raster_InstallPatched\n\
                \tdc.l Effects_SetWorldY\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(asm, &opts)
         .unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}"))
         .sections

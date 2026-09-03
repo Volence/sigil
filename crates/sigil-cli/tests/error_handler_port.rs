@@ -223,7 +223,7 @@ fn vector_labels_resolve_to_emp_ownership() {
         "cpu 68000\nphase $1000000\nVecTable:\n\tdc.l {}\n",
         STUBS.join(", ")
     );
-    let mut vec_secs = assemble(&vec_src, &AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() })
+    let mut vec_secs = assemble(&vec_src, &AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() })
         .unwrap_or_else(|d| panic!("assemble vectors: {d:?}"))
         .sections;
     for s in vec_secs.iter_mut() {
@@ -278,7 +278,7 @@ fn vector_labels_resolve_to_emp_ownership() {
 fn derived_equ_off_external_base_resolves() {
     use sigil_ir::SymbolValue;
     let asm = "cpu 68000\nMDDBG__X: equ ErrorHandler+$128\n dc.l MDDBG__X\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let m = assemble(asm, &opts).expect("assemble tolerates the external-base equ (defers)");
     let mut st = SymbolTable::new();
     st.define("ErrorHandler", SymbolValue::Int(0x5CC0A));

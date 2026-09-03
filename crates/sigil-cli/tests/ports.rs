@@ -26,7 +26,7 @@ use sigil_span::{Diagnostic, Level};
 /// table, and flatten to the reference bytes. Panics with the AS diagnostics on
 /// failure (the ports are self-contained: no external symbols).
 fn as_reference(asm: &str) -> Vec<u8> {
-    let opts = Options { initial_cpu: Cpu::M68000, ..Options::default() };
+    let opts = Options { initial_cpu: Some(Cpu::M68000), ..Options::default() };
     let module = assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble failed: {d:?}"));
     let linked = sigil_link::link(&module.sections, &SymbolTable::new())
         .unwrap_or_else(|d| panic!("AS link failed: {d:?}"));
@@ -203,7 +203,7 @@ fn emp_sections(emp: &str) -> Vec<Section> {
 
 /// The `Vec<Section>` an AS source assembles to (68k — pointer tables are 68k).
 fn as_sections(asm: &str) -> Vec<Section> {
-    let opts = Options { initial_cpu: Cpu::M68000, ..Options::default() };
+    let opts = Options { initial_cpu: Some(Cpu::M68000), ..Options::default() };
     assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble: {d:?}")).sections
 }
 

@@ -177,7 +177,7 @@ fn as_outbound_consumer() -> Vec<Section> {
                Consumer:\n\
                \tjsr     GetSineCosine\n\
                \tdc.l    Sine_Table\n";
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(asm, &opts).unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}")).sections
 }
 

@@ -209,7 +209,7 @@ fn as_constant_equs() -> Vec<Section> {
 
 fn as_label_at(name: &str, vma: u32) -> Vec<Section> {
     let asm = format!("cpu 68000\nphase ${vma:X}\n{name}:\n\tdc.b 0\n");
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (synthetic {name}): {d:?}")).sections
 }
 
@@ -581,7 +581,7 @@ fn two_module_flip(shape: &Shape, debug: bool, rom_name: &str) {
     lma += 0x10_0000;
     for (name, vma) in lmap {
         let asm = format!("cpu 68000\nphase ${vma:X}\n{name}:\n\tdc.b 0\n");
-        let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+        let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
         for mut s in assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS ({name}): {d:?}")).sections.drain(..) {
             s.lma = lma;
             s.placement = SectionPlacement::Pinned;

@@ -139,7 +139,7 @@ fn as_bank_start_label(sfx_dir: &Path) -> Vec<Section> {
     // needed here.
     let bank = layout(sfx_dir).sound_tables_z80_lma;
     let asm = format!("cpu 68000\nphase ${bank:X}\nMovingTrucks_Bank_Start:\n\tdc.w 0\n");
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts).unwrap_or_else(|d| panic!("AS assemble (cross-seam label): {d:?}")).sections
 }
 

@@ -300,7 +300,7 @@ use sigil_ir::{SectionPlacement, SymbolTable};
 /// One synthetic AS-side label phased at `vma`.
 fn as_label_at(name: &str, vma: u32) -> Vec<sigil_ir::Section> {
     let asm = format!("cpu 68000\nphase ${vma:X}\n{name}:\n\tdc.b 0\n");
-    let opts = AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() };
+    let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     assemble(&asm, &opts)
         .unwrap_or_else(|d| panic!("AS assemble (synthetic {name}): {d:?}"))
         .sections
@@ -397,7 +397,7 @@ fn objdef_reference_gate(shape: &ObjShape) {
     // objtest-gate: the outbound seam consumer follows the surviving records —
     // ObjDef_Solid is the second (and last) record in the shipped module.
     let outbound_asm = "cpu 68000\nObjDefConsumer:\n\tdc.l ObjDef_Solid\n";
-    let mut outbound = assemble(outbound_asm, &AsOptions { initial_cpu: Cpu::M68000, ..AsOptions::default() })
+    let mut outbound = assemble(outbound_asm, &AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() })
         .unwrap_or_else(|d| panic!("AS assemble (outbound consumer): {d:?}"))
         .sections;
     let mut lma = 0x0100_0000u32;
