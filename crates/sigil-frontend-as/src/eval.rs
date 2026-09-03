@@ -3439,40 +3439,30 @@ impl Asm {
         }
     }
 
-    /// `align <n>` — advance the location counter to a multiple of `n`. TWO
-    /// asl-verified regimes (asl 1.42 Bld 212, live-probed 2026-07-08):
+    /// `align <n>` — advance the location counter to a multiple of `n`.
     ///
-    /// - **Outside a phase** (`disp == 0`, every ROM `align 2` / `align $8000`):
-    ///   standard round-up — `round_up(pos, n)`, a no-op when already aligned —
-    ///   padded with a real `Fill` of `0x00` (Aeon always aligns something that
-    ///   follows in the same section, so the zeros are emitted; byte-exact ROM).
+    /// The pad is `asl_align_pad` (`sigil-ir`): asl rounds up on the LOW 32 BITS
+    /// OF THE PC READ AS A SIGNED `i32`, with C's truncating remainder. A
+    /// non-negative PC (every ROM address) gets the plain round-up and a
+    /// no-op when already aligned; a negative PC (every `$FFFF….` RAM address)
+    /// rounds toward zero instead of down, so it usually lands one block high
+    /// and an already-aligned address advances a full `n`.
     ///
-    /// - **Inside a phase** (`disp != 0`, Aeon's `$FFFF….` RAM `align 256`):
-    ///   asl advances by `round_up(pos + n, n)` — i.e. ALWAYS at least one full
-    ///   `n` beyond `pos`, THEN rounds to the boundary (so an already-aligned
-    ///   `pos` still jumps a whole `n`). Live-probe table (phase base, content →
-    ///   result), all matching `round_up(pos + n, n)`: `$B000→$B100`,
-    ///   `$B005→$B200`, `$B026→$B200`, `$B100→$B200`, independent of whether
-    ///   `disp` itself is a multiple of `n`. This is what places Aeon's
-    ///   `Player_Pos_Ring` at `$B100`/`$B200` (non-debug/debug) rather than one
-    ///   `n` low. Aeon's phased regions are RAM under `padding off`, so the pad
-    ///   is a `Reserve` (address-only, no image bytes) — it neither emits ROM
-    ///   nor, being reserve-only, participates in the LMA image.
+    /// The regime is the SIGN OF THE PC, not `disp`: `phase $B000` + `ds.b 5` +
+    /// `align 256` gives `$B100`, the same as the unphased form. What `disp`
+    /// still decides here is the KIND of pad — a phased region is Aeon RAM under
+    /// `padding off`, where the pad is a `Reserve` (address-only, no image
+    /// bytes), against a ROM section where it is a real `$00` `Fill`.
     fn directive_align(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         match self.eval_all(rest, span) {
             Some(n) if n > 0 => {
                 let n = n as u32;
-                let pos = self.here();
-                if self.state.disp != 0 {
-                    // In-phase: round_up(pos + n, n). `pos + n` is strictly
-                    // greater than `pos`, so this always advances by [1, n]+n.
-                    let target = (pos + n).next_multiple_of(n);
-                    let pad = target - pos;
-                    self.builder.reserve(pad, span);
-                } else {
-                    let pad = (n - (pos % n)) % n;
-                    if pad > 0 {
+                let pad = sigil_ir::asl_align_pad(self.here(), n);
+                if pad > 0 {
+                    if self.state.disp != 0 {
+                        self.builder.reserve(pad, span);
+                    } else {
                         self.builder.emit_fill(pad, 0, span);
                     }
                 }
@@ -7726,26 +7716,69 @@ C:\n";
     }
 
     #[test]
-    fn align_inside_a_phase_advances_a_full_extra_block() {
-        // asl 1.42 Bld 212 (live-probed 2026-07-08): ALIGN inside a `phase`
-        // (padding off) advances by `round_up(pos + n, n)` — ALWAYS at least a
-        // full `n` beyond `pos`. Here pos = $B005 (after 5 reserved bytes),
-        // n=256 → target $B200 (NOT the naive $B100). The trailing `dc.w L`
-        // observes L's low word. This is what places Aeon's `Player_Pos_Ring`
-        // one 256-block higher than a naive align would.
+    fn align_inside_a_phase_at_a_rom_address_is_a_plain_roundup() {
+        // A `phase` does NOT change the align rule — the SIGN of the phased PC
+        // does, and $B005 is positive. asl 1.42 Bld 212, corpus flags
+        // (`docs/superpowers/probes/2026-09-03-align/p1.asm`):
+        //
+        //        4/    B000 :          ds.b  5
+        //        5/    B005 :          align 256
+        //        6/    B100 : B100     L: dc.w L
+        //
+        // $B100, not $B200. The 5 `ds.b` bytes and the align pad are reserve
+        // (no image); only the trailing `dc.w L` is image, carrying L's low word.
         let src = "        cpu 68000\n        padding off\n        phase $B000\n        ds.b 5\n        align 256\nL:      dc.w L\n        dephase\n";
-        // The 5 `ds.b` bytes are reserve (no image); the align pad is reserve
-        // too; only the trailing `dc.w L` is image, carrying L's low word $B200.
+        assert_eq!(image(src), vec![0xB1, 0x00]);
+    }
+
+    #[test]
+    fn align_at_a_ram_address_overshoots_a_whole_block() {
+        // The RAM side of the same rule: asl aligns on the low 32 bits read as
+        // an i32, with C's truncating remainder, so a $FFFF…. PC rounds toward
+        // zero and lands a block high. pos = $FFFFB02A, n=256 → $FFFFB200, where
+        // a plain round-up would say $FFFFB100. asl 1.42 Bld 212, corpus flags
+        // (`probes/2026-09-03-align/p9.asm`):
+        //
+        //        4/FFFFFFFFFFFF0000 :          ds.b  $B02A
+        //        5/FFFFFFFFFFFFB02A :          align 256
+        //        6/FFFFFFFFFFFFB200 : B200     L: dc.w L&$FFFF
+        //
+        // This is the block that puts Aeon's `Player_Pos_Ring` above the naive
+        // boundary — the real content of the 2026-07-08 probe, whose four rows
+        // were all RAM addresses recorded by their low half.
+        let src = "        cpu 68000\n        padding off\n        phase $FFFF0000\n        ds.b $B02A\n        align 256\nL:      dc.w L&$FFFF\n        dephase\n";
         assert_eq!(image(src), vec![0xB2, 0x00]);
     }
 
     #[test]
+    fn align_two_moves_an_even_ram_address_but_not_an_even_rom_one() {
+        // The same asymmetry at n=2, where it costs 2 bytes at every even RAM
+        // address. asl 1.42 Bld 212, corpus flags (`probes/2026-09-03-align/`):
+        //
+        //   p11   4/FFFFFFFFFFFF0000 :   ds.b  $B02A
+        //         5/FFFFFFFFFFFFB02A :   align 2
+        //         6/FFFFFFFFFFFFB02C : B02C   M: dc.w M&$FFFF
+        //
+        //   p12   4/    B000 :            ds.b  $2A
+        //         5/    B02A :            align 2
+        //         6/    B02A : B02A       M: dc.w M
+        let ram = "        cpu 68000\n        padding off\n        phase $FFFF0000\n        ds.b $B02A\n        align 2\nM:      dc.w M&$FFFF\n        dephase\n";
+        assert_eq!(image(ram), vec![0xB0, 0x2C]);
+        let rom = "        cpu 68000\n        padding off\n        phase $B000\n        ds.b $2A\n        align 2\nM:      dc.w M\n        dephase\n";
+        assert_eq!(image(rom), vec![0xB0, 0x2A]);
+    }
+
+    #[test]
     fn align_outside_a_phase_is_a_standard_roundup() {
-        // No phase (disp == 0): the ordinary round-up. `dc.b`×5 makes the pre-
-        // align bytes image (offset 5, here() 5); align 256 → $100 via a real
-        // Fill of 251 zeros; then `dc.w L` emits L's value $0100 at image
-        // offset $100. Contrast the in-phase test: the SAME pos $B005 would
-        // land the label a full extra block higher.
+        // A positive PC with no phase: the ordinary round-up. `dc.b`×5 makes
+        // the pre-align bytes image (offset 5, here() 5); align 256 → $100;
+        // then `dc.w L` emits L's value $0100 at image offset $100.
+        // asl+p2bin on this exact source give 258 bytes ending `01 00`
+        // (`probes/2026-09-03-align`, the `f1` shape) — asl leaves the pad as a
+        // HOLE in the `.p` and p2bin zero-fills it, where sigil emits the 251
+        // zeros directly; the image is the same either way.
+        // The phased form of the same position answers identically: a `phase`
+        // does not change the rule, only the sign of the PC does.
         let src = "        cpu 68000\n        padding off\n        org 0\n        dc.b 1,2,3,4,5\n        align 256\nL:      dc.w L\n";
         let img = image(src);
         assert_eq!(img.len(), 0x102);

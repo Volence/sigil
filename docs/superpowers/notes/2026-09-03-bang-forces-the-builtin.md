@@ -200,6 +200,19 @@ first settling a second, independent question:
 reservation IS materialised in the object file, which is the same finding from
 the other side and is why the two questions are entangled.
 
+**SETTLED 2026-09-03, in this reader's favour** — see
+`2026-09-03-align-in-phase-contradiction.md` and the 31 committed listing rows in
+`docs/superpowers/probes/2026-09-03-align/`. The three probes above are right and
+the recorded rule was wrong, but not because July mismeasured: `align` rounds up
+on the low 32 bits of the PC read as a SIGNED `i32` with C's truncating
+remainder, so the regime is the SIGN of the address and not `phase` at all. July
+probed aeon's `$FFFF….` game RAM and wrote its four rows down by their low half;
+all four reproduce today as RAM addresses, under BOTH asl binaries on this
+machine. `directive_align` and `regions.rs::align_to` now share one
+`sigil_ir::asl_align_pad`, and the test asserting `[0xB2, 0x00]` is three tests
+asserting what asl says on each side of the boundary. The `b1 00` at `$100`
+above is the expectation this branch's own rewrite of that test should carry.
+
 ## Corpus decomposition
 
 `sigil s2.asm` from `/home/volence/sonic_hacks/s2disasm`, master `9a08cfdc`

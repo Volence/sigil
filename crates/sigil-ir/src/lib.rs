@@ -1,5 +1,8 @@
 //! IR for the Sigil assembler: fragments, sections, symbols, streaming, and image assembly.
 
+pub mod align;
+pub use align::asl_align_pad;
+
 pub mod assert;
 pub use assert::{LinkAssert, MsgPart};
 
