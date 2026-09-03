@@ -29,6 +29,22 @@ you need. **Going quiet without a message is the state he named**, and note what
 he could see a lane had stopped and could not see why. `lane-status.json` is not a substitute —
 it is a pull, and this ruling is a push.
 
+## STANDING: CUT THE CEREMONY (owner, 2026-09-02T18:20:19Z) — OUTRANKS every process bar here
+
+**Read it at the artifact, not from this line, which deliberately does not restate it:** empyrean
+`origin/main`, `docs/OVERSEER.md`, the bullet beginning *"2026-09-02T18:20:19Z — CUT THE CEREMONY"*,
+carried by empyrean `90554f2` —
+`git -C ../empyrean fetch -q origin && git -C ../empyrean show origin/main:docs/OVERSEER.md | grep -n "18:20:19Z"`.
+It is in force while EFFECTS-W1 is open. It is what suspends the two `blocked` queue rows below, it
+ended the paired aeon+sigil freeze (so this lane's nightly drift observer is the net, after the fact,
+never a gate on an aeon landing), and **it is the ruling that forbids hand-trimming this document** for
+its own size gate — over the bound, history moves out in one cut, nobody shaves a ruling to hit a number.
+
+**Why it is written here at all:** it reached this lane only through mail, and mail is not part of any
+tree, so a rotated session booted without it while two queue rows cited it. The trace that existed —
+inside `decisions.jsonl`'s *answered* card `d-21`, as supporting ground for a different question — is
+the shape that reads as coverage and is not: `decisions.jsonl` is not the boot read.
+
 ## NO ACTIVE HOLD — read this before running anything that builds
 
 **A hold that lives only in a chat message does not survive a `/clear`** *(aurora's)*. An
