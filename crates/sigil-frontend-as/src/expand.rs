@@ -90,7 +90,7 @@ fn punct_str(p: Punct) -> &'static str {
 /// `"E<ALLARGS>"`:
 ///
 /// ```text
-///   11/ 1000 : (MACRO)              	mm	qq,zz
+///   11/ 1000 : (MACRO)                  mm    qq,zz
 ///   11/ 1000 : 453C 7171 2C7A              dc.b    "E<qq,zz>"
 /// ```
 ///

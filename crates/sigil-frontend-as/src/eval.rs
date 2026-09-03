@@ -8176,7 +8176,7 @@ C:\n";
     /// what the caller wrote is what lands in the data:
     ///
     /// ```text
-    ///   11/ 1000 : (MACRO)              	ws	aa, bb , cc
+    ///   11/ 1000 : (MACRO)                  ws    aa, bb , cc
     ///   11/ 1000 : 453C 6161 2C62              dc.b    "E<aa,bb,cc>"
     ///   11/ 100B : 533C 6262 2C63              dc.b    "S<bb,cc>"
     /// ```
@@ -8208,14 +8208,14 @@ C:\n";
     /// asl `-U`, `Mix_Ss equ $77` and `pick zz,Ss` on param `qq`, shifting once:
     ///
     /// ```text
-    ///    9/    0 : (MACRO)              	pick	zz,Ss
+    ///    9/    0 : (MACRO)                  pick    zz,Ss
     ///    9/    0 : 0077                        dc.w    Mix_{"Ss"}
     /// ```
     ///
     /// and the folded spelling names nothing, rather than the same symbol:
     ///
     /// ```text
-    ///    9/    0 : (MACRO)              	pick	zz,SS
+    ///    9/    0 : (MACRO)                  pick    zz,SS
     ///  > > > n7.asm(9) pick(2):17: error #1010: symbol undefined
     ///  > > >         dc.w    Mix_{"SS"}
     /// ```
@@ -8257,10 +8257,10 @@ C:\n";
     /// second passes `pp`:
     ///
     /// ```text
-    ///   11/ 1000 : (MACRO)              	mm	qq,zz
+    ///   11/ 1000 : (MACRO)                  mm    qq,zz
     ///   11/ 1000 : 453C 7171 2C7A              dc.b    "E<qq,zz>"
     ///   11/ 1008 : 533C 7A7A 3E                dc.b    "S<zz>"
-    ///   12/ 100D : (MACRO)              	mm	xx,pp,yy
+    ///   12/ 100D : (MACRO)                  mm    xx,pp,yy
     ///   12/ 100D : 453C 7878 2C70              dc.b    "E<xx,pp,yy>"
     ///   12/ 1018 : 533C 7070 2C79              dc.b    "S<pp,yy>"
     /// ```
@@ -8288,10 +8288,10 @@ C:\n";
     /// therefore disagree here, and asl `-U` matches the written text:
     ///
     /// ```text
-    ///   11/ 1000 : (MACRO)              	kw	k2=aa,k1=bb
+    ///   11/ 1000 : (MACRO)                  kw    k2=aa,k1=bb
     ///   11/ 1000 : 453C 6B32 3D61              dc.b    "E<k2=aa,k1=bb>"
     ///   11/ 100E : 533C 6161 3E                dc.b    "S<aa>"
-    ///   13/ 1021 : (MACRO)              	kw	aa,k2=bb
+    ///   13/ 1021 : (MACRO)                  kw    aa,k2=bb
     ///   13/ 1021 : 453C 6161 2C6B              dc.b    "E<aa,k2=bb>"
     ///   13/ 102C : 533C 6262 3E                dc.b    "S<bb>"
     /// ```
