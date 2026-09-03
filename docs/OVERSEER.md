@@ -1152,6 +1152,32 @@ is the same maintenance model that failed, so the fix is wiring it into the wrap
 command span with its exit code in the verdict block — **and `--all-targets`**, since one of the
 two errors was reachable only through test targets.
 
+**⚠ THE CORPUS DIAGNOSTIC COUNT IS THE PROJECT'S HEADLINE METRIC AND IT IS STRUCTURALLY BLIND
+TO THE DEFECT CLASS THIS PROJECT KEEPS FINDING** *(2026-09-03, earned by the `{INTLABEL}` parcel;
+this is the rule, and it should be read before any parcel is sized off a diagnostic count)*.
+
+A complaint count measures **what the frontend refused**. It cannot see:
+
+- **A silent wrong answer.** `zoneID macro zoneID,{INTLABEL}` bound every zone constant to a
+  program counter and emitted **zero diagnostics**. The count was not merely unhelpful here — it
+  was *maximally* reassuring about the worst case in the file.
+- **Anything that fails at LINK.** A frontend-only corpus run never gets there. Seven
+  ordinary-parameter sites (41 invocations) were broken and invisible for exactly this reason.
+
+Both halves have now been met repeatedly: **five silent-wrong-answer faults closed in one day**,
+of which the two largest were invisible to every measurement the project had. The `×26` stride
+bug and `[layout.odd-field]` are the same shape one layer out, already banked above.
+
+**So: a falling diagnostic count is evidence that noise was removed, never that correctness
+improved.** The discriminators that DO see this class, and which a parcel should report beside
+the count: the **per-class decomposition** (did any class rise, did a new one appear), the
+**sorted unresolved-symbol sets** compared in both directions (newly-unresolved AND
+newly-resolved, since a name that silently starts resolving to the wrong thing leaves the set),
+byte identity against the aeon shapes, and — the one nothing else covers — **reaching link at
+all**. Sizing a row off a diagnostic count alone systematically under-prices the dangerous work
+and over-prices the loud work: this row was booked at 492 and delivered 5,381, and the
+consequential half of it had no diagnostics at all.
+
 ### PER-PARCEL-TERM-FEED-CUT — the hand-typed baseline's maintenance model lost its feed at the 199 cut
 
 *(Full measurement, the file-vs-assembled trap, and the open ruling:
