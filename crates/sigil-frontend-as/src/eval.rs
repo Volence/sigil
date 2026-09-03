@@ -5,7 +5,7 @@ use crate::lexer::lex_line;
 use crate::operands::{parse_operands, OperandAtom};
 use crate::parser::parse_line_tokens;
 use crate::token::{Punct, Tok, Token};
-use crate::{Failure, Options};
+use crate::{cpu_for_spelling, unsupported_cpu, Failure, Options};
 use sigil_backend_m68k::m68k::{
     Cond as M68kCond, Instruction as M68kInstruction, Mnemonic as M68kMnemonic,
     Operand as M68kOperand, Size as M68kSize, Xn as M68kXn,
@@ -2191,9 +2191,16 @@ impl Asm {
     }
 
     fn directive_cpu(&mut self, rest: &[Token], span: Span) {
+        // A processor name that begins with a digit reaches the lexer as an
+        // integer literal (`68000`, `68008`), one that begins with a letter as
+        // an identifier (`z80`, `z80undoc`). Both are SPELLINGS and both are
+        // carried to the table as written: an integer's VALUE is what
+        // distinguishes `68000` from `6502`, so discarding it and reading every
+        // numeric name as one fixed processor is how a source for an unrelated
+        // instruction set assembles clean as a 68000.
         let name = match rest.first().map(|t| &t.tok) {
             Some(Tok::Ident(s)) => s.clone(),
-            Some(Tok::Int(_)) => "68000".to_string(),
+            Some(Tok::Int(n)) => n.to_string(),
             _ => {
                 self.err(span, "cpu needs a name");
                 return;
@@ -2204,14 +2211,14 @@ impl Asm {
         // wrong is not a diagnostic but a silent change of target: under
         // `Cpu::Z80` a `$` lexes as the program counter rather than a hex
         // prefix, so an unrecognized `CPU 68000` line leaves a 68000 source
-        // assembling as a Z80 program.
-        let cpu = match fold_kw(&name).as_ref() {
-            "z80" => Cpu::Z80,
-            "68000" | "68008" => Cpu::M68000,
-            other => {
-                self.err(span, format!("unsupported cpu `{other}`"));
-                return;
-            }
+        // assembling as a Z80 program. A name the table does not carry is
+        // refused for the same reason, from the other side: sigil does not
+        // encode that instruction set, so any target it picked instead would be
+        // the wrong one.
+        let folded = fold_kw(&name);
+        let Some(cpu) = cpu_for_spelling(&folded) else {
+            self.err(span, unsupported_cpu(&folded));
+            return;
         };
         // The `cpu` directive resets padding/supmode to the CPU default,
         // unconditionally (asl-verified — see state.rs::set_cpu). Aeon's real

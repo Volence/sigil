@@ -55,6 +55,69 @@ An `include`d file needs no line of its own: the declaration is the unit's, and 
 it. A caller driving this front-end directly declares it by setting `Options::initial_cpu` \
 instead.";
 
+/// Every processor spelling a `cpu` directive may name, and the target each one
+/// selects. The single source of truth: [`cpu_for_spelling`] resolves against
+/// it and [`unsupported_cpu`] lists it back to the reader, so the refusal can
+/// never advertise a spelling the directive does not accept.
+///
+/// **A spelling earns a row here only when it names an instruction set sigil
+/// already encodes.** Two kinds qualify:
+///
+/// - *The same instruction set in different packaging.* `68008` is a 68000 core
+///   behind an 8-bit data bus — same instructions, so the same target.
+/// - *A superset whose extra instructions this front end refuses by name.*
+///   `z80undoc` is the Z80 with its undocumented instructions enabled. Sigil
+///   encodes the documented subset and rejects the rest at the instruction: an
+///   undocumented mnemonic is `unknown directive or mnemonic`, and an
+///   undocumented operand (`ld a,ixl`) is refused where it appears. Accepting
+///   the spelling therefore widens *where the refusal is reported*, never what
+///   assembles.
+///
+/// A spelling naming an instruction set sigil does not encode gets no row.
+/// `68020`, `z180` and `gbz80` add instructions that would be reported as
+/// unknown heads on a target they do not belong to, and `6502`/`8051` are not
+/// related processors at all — aliasing any of them onto a row here is how a
+/// source silently assembles as something it never asked for.
+pub const CPU_SPELLINGS: &[(&str, Cpu)] = &[
+    ("68000", Cpu::M68000),
+    ("68008", Cpu::M68000),
+    ("z80", Cpu::Z80),
+    ("z80undoc", Cpu::Z80),
+];
+
+/// The target a `cpu` directive's processor name selects, or `None` when this
+/// front end does not encode that instruction set. `folded` is the name already
+/// lower-cased — AS processor names are case-insensitive.
+pub fn cpu_for_spelling(folded: &str) -> Option<Cpu> {
+    CPU_SPELLINGS
+        .iter()
+        .find(|(spelling, _)| *spelling == folded)
+        .map(|(_, cpu)| *cpu)
+}
+
+/// The refusal raised when a `cpu` directive names a processor this front end
+/// does not encode.
+///
+/// It names the fault and prints the remedy — the accepted lines, listed from
+/// [`CPU_SPELLINGS`] itself rather than transcribed — and says why the answer is
+/// a refusal rather than the nearest alias: an accepted spelling whose extra
+/// instructions sigil does not encode would assemble them as something else,
+/// which is the silent-wrong-output class this directive exists to prevent.
+pub fn unsupported_cpu(name: &str) -> String {
+    let accepted: Vec<String> = CPU_SPELLINGS
+        .iter()
+        .map(|(spelling, _)| format!("`cpu {spelling}`"))
+        .collect();
+    format!(
+        "unsupported processor `{name}`: sigil's AS-compatibility front end does not encode this \
+         instruction set, and will not assemble the source as a different processor instead. \
+         Write one of {}. A spelling is accepted only when it names an instruction set sigil \
+         encodes, so a wider processor is refused here rather than aliased onto a narrower one \
+         and silently mis-assembled.",
+        accepted.join(", ")
+    )
+}
+
 /// Assembly options: the seeded symbol environment + the CPU active before any
 /// `cpu` directive.
 ///
