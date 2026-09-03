@@ -8,7 +8,7 @@
 //!
 //! [provenance] plain: sigil-native canonical resolve (plain)
 //! [provenance] debug: sigil-native canonical resolve (debug)
-//! [provenance] 97 regions, 416 symbols, 7 offsets
+//! [provenance] 97 regions, 417 symbols, 7 offsets
 
 /// A per-shape address pin: one cross-seam symbol's VMA in each shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -371,8 +371,11 @@ pub const EDITOR_RASTER_OJZ_ACT1_OJZ_SEC5_SHOWCASE: Pin = Pin { plain: 0x13402, 
 /// `EditorRaster_OJZ_Act1_ojz_sec3_shimmer`. tests: act_descriptor_port
 pub const EDITOR_RASTER_OJZ_ACT1_OJZ_SEC3_SHIMMER: Pin = Pin { plain: 0x133D4, debug: 0x13C1E };
 
-/// `EditorCycle_OJZ_Act1_ojz_sec3_shimmer`. tests: act_descriptor_port
+/// `EditorCycle_OJZ_Act1_ojz_sec3_shimmer`.
 pub const EDITOR_CYCLE_OJZ_ACT1_OJZ_SEC3_SHIMMER: Pin = Pin { plain: 0x13430, debug: 0x13C7A };
+
+/// `CrossoverTable`. tests: act_descriptor_port
+pub const CROSSOVER_TABLE: Pin = Pin { plain: 0x700AC, debug: 0x7096C };
 
 /// `Effects_InstallPreset`. tests: parallax_port
 pub const EFFECTS_INSTALL_PRESET: Pin = Pin { plain: 0x7424, debug: 0x8810 };

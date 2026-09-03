@@ -711,6 +711,20 @@ fn compile_player_common(
         // DUST_SPINDASH_SPAWN.
         as_label_at("Dust_Tick", shape.dust_tick),
         as_label_at("DustSpindash_Spawn", shape.dustspindash_spawn),
+        // Chain 208's read side: `player_common` references these two for the first
+        // time, so this standalone scope has to supply them or `resolve_layout` reports
+        // an unresolved branch/ladder target. The port-flip rule — a new cross-seam ref
+        // in an engine module is invisible to build.sh, which links the whole program,
+        // and surfaces only when a port test lowers that module alone. Both are pins, so
+        // they follow the resolve rather than a literal that rots at the next slide.
+        as_label_at(
+            "Collision_GetType",
+            if shape.debug { pins::COLLISION_GET_TYPE.debug } else { pins::COLLISION_GET_TYPE.plain },
+        ),
+        as_label_at(
+            "CrossoverTable",
+            if shape.debug { pins::CROSSOVER_TABLE.debug } else { pins::CROSSOVER_TABLE.plain },
+        ),
     ];
     if shape.debug {
         // DEBUG-only: the BoundsInit never-ran assert.w expansion jsr/jmps these

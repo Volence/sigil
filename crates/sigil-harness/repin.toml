@@ -1137,6 +1137,20 @@ tests = ["act_descriptor_port"]
 
 [[symbol]]
 name = "EditorCycle_OJZ_Act1_ojz_sec3_shimmer"
+
+# Chain 208's read side made `games.sonic4.player_common` reference two names for the
+# first time — `Collision_GetType` and `CrossoverTable` — so the standalone p1 port scope
+# must supply them. `Collision_GetType` was ALREADY pinned (the AS collision-lookup block
+# below) and only needed wiring into that scope; only `CrossoverTable` is new here. The port-flip rule again: a new cross-seam ref in an engine module is
+# invisible to build.sh and surfaces as an unresolved branch/ladder target the moment a
+# port test lowers that module alone. Surfaced here when the corpus pin advanced past
+# chain 208; the aeon lane's own agent had reported both and they did not reach this lane,
+# which is the notification half of the same rule.
+#
+# `tests` is deliberately absent: the rerun hint derives its list from what actually
+# references each constant, so a hand-written one can only be wrong.
+[[symbol]]
+name = "CrossoverTable"
 tests = ["act_descriptor_port"]
 
 # Effects P3 Parcel C2 — the crossing's single effects consumer. Replaces the three
