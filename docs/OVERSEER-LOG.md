@@ -5795,3 +5795,40 @@ general two-directions rule immediately below, which is the durable form rather 
 snapshot. The rule generalises past reachability: **a caution is a claim, and it expires
 like one.**
 
+
+---
+
+## 2026-09-03 — AS-DEFAULT-CPU: the oracle the acceptance criterion named did not exist
+
+*(Moved from the boot read. The live rule — refuse by name — stays in `docs/OVERSEER.md`
+under SIGIL-AS-REPLACEMENT. This is the episode under it.)*
+
+The hub's first form of the ruling, in the owner's place under the 2026-09-02 delegation, set
+the acceptance as *"whatever asl does on that source, measured with your golden harness (asl
+either refuses with a diagnostic or applies its documented default)"*. Refused here, and the
+refusal was the right call rather than pedantry, because that criterion could not have been
+met and the row would have sat open looking like work nobody had got to.
+
+**The named oracle is absent in two independent ways**, each sufficient on its own:
+
+1. **The harness family was deleted.** `5279a064` — *"retire the AS-reassembly oracle family +
+   delete the twin-inclusive harness machinery"* — removed 9,262 lines across 18 files,
+   including the whole `mixed_dac_rom` family. This lane's own `OVERSEER.md` already recorded
+   that the same flip-stage work deleted files an unrelated doctrine row existed to protect;
+   the lesson did not transfer to a fresh question about the same machinery.
+2. **No `asl` binary exists on this machine.** `command -v asl asl68k asw` is empty. The only
+   hit anywhere under `~/sonic_hacks` is `sonic_hack/win32/asw.exe` — a **Windows** executable,
+   in the tree the workspace `CLAUDE.md` designates legacy donor/reference only, and `asw`
+   rather than `asl`. Aeon's `build.sh:5` states the AS Macro Assembler *"has left the
+   pipeline"*; the flip is done and sigil is the build.
+
+**The hub booked the error against itself** — *"I wrote an acceptance criterion past a check I
+did not run"* — and amended to refuse-by-name at empyrean `802fdee`, verified reachable from
+their `origin/main` here. Recorded without softening, because a self-booking that gets
+sympathetically discounted stops being worth making.
+
+**What made the refusal cheap was having an answer that needs no oracle at all.** Refusing by
+name is derivable from first principles and cannot be wrong about what AS would have done,
+where a guess can. The alternative — obtaining and pinning AS as a build-time dependency of the
+project whose premise is replacing it — is a real cost and a decision rather than a task; it
+goes to the owner with both measurements beside it.

@@ -1079,13 +1079,10 @@ default). Booked separately so folding case does not look like it closed both.
 **RULED — AS-DEFAULT-CPU is REFUSE BY NAME.** A source with no `cpu` directive is a hard error
 naming what was not declared and printing the line to write; never a silent default of any
 processor. Grounds are this lane's own `d-18` R4: a run that reports what it skipped **still
-exits 0**, and a silent green is the class we never drop. Amended from the hub's first form at
-empyrean `802fdee` (reachable from `origin/main`, verified here), which set the acceptance as
-*"whatever asl does, measured with your golden harness"* — **an oracle that does not exist in
-two independent ways**: the harness family was deleted at `5279a064` (9,262 lines, 18 files),
-and no `asl`/`asw` binary exists on this machine (`command -v` empty; the only hit anywhere is
-a Windows `asw.exe` in the legacy `sonic_hack/` tree). Pinning AS as a dependency of the
-project that exists to replace it is a real cost and is the **owner's** alternative, not taken.
+exits 0**, and a silent green is the class we never drop. Amends the hub's first form (empyrean
+`802fdee`), whose acceptance named an asl oracle this workspace does not have — episode in
+`docs/OVERSEER-LOG.md`, 2026-09-03. **Pinning AS as a dependency of the project that exists to
+replace it is a real cost and is the OWNER'S alternative, not taken.**
 
 **⚠ `git grep asl` IN THIS REPO RETURNS THE 68000 SHIFT MNEMONIC, NOT THE ASSEMBLER.** Hits in
 five crates, every one `"asl" => Asl` beside `"asr"`/`"lsl"`/`"lsr"`. In an assembler's source,
