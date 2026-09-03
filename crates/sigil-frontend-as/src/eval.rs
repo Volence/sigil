@@ -5,7 +5,7 @@ use crate::lexer::lex_line;
 use crate::operands::{parse_operands, OperandAtom};
 use crate::parser::parse_line_tokens;
 use crate::token::{Punct, Tok, Token};
-use crate::Options;
+use crate::{Failure, Options};
 use sigil_backend_m68k::m68k::{
     Cond as M68kCond, Instruction as M68kInstruction, Mnemonic as M68kMnemonic,
     Operand as M68kOperand, Size as M68kSize, Xn as M68kXn,
@@ -32,6 +32,11 @@ const WHILE_CAP: usize = 10_000;
 struct SrcLine {
     text: String,
     base: u32,
+    /// The spliced file this line was read from. Carried per line rather than
+    /// per assembler so an `include`d file's line — and a macro body line, which
+    /// executes at a call site in a different file — reports the file that
+    /// actually contains the text.
+    source: SourceId,
 }
 
 /// Collected macro definitions: name → (params, body lines).
@@ -40,7 +45,14 @@ type MacroTable = std::collections::BTreeMap<String, (Vec<String>, Vec<SrcLine>)
 type FunctionTable = std::collections::BTreeMap<String, (Vec<String>, Vec<Token>)>;
 
 pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
-    run_impl(src, opts, false)
+    run_impl(src, "", opts, false).map_err(|f| f.diags)
+}
+
+/// Like [`run`] but keeps the [`SourceMap`](sigil_span::SourceMap) the diagnostics'
+/// spans resolve against, so a caller can render each one as `file(line)`.
+/// `root_name` is the file `src` was read from; every `include`d file names itself.
+pub fn run_located(src: &str, root_name: &str, opts: &Options) -> Result<Module, Failure> {
+    run_impl(src, root_name, opts, false)
 }
 
 /// Like [`run`] but FORCES the final label-relocation deferral pass even when the module
@@ -50,11 +62,16 @@ pub fn run(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
 /// base — otherwise a poison-free residual (config_a) bakes a stale this-pass VMA (the
 /// row-94 parallax `P_DBG := DeformTable_Zero` pointer). A PINNED build never needs this
 /// (sections don't move → bake == relocate), so ordinary `run` stays byte-for-byte asl.
-pub fn run_relocating(src: &str, opts: &Options) -> Result<Module, Vec<Diagnostic>> {
-    run_impl(src, opts, true)
+pub fn run_relocating(src: &str, root_name: &str, opts: &Options) -> Result<Module, Failure> {
+    run_impl(src, root_name, opts, true)
 }
 
-fn run_impl(src: &str, opts: &Options, force_relocate: bool) -> Result<Module, Vec<Diagnostic>> {
+fn run_impl(
+    src: &str,
+    root_name: &str,
+    opts: &Options,
+    force_relocate: bool,
+) -> Result<Module, Failure> {
     // Seed pass 0 with the provided defines; each later pass is seeded with the
     // previous pass's discovered symbols so forward references resolve. Macro and
     // function definitions are carried forward too, so an `ifndef`-guarded
@@ -90,6 +107,9 @@ fn run_impl(src: &str, opts: &Options, force_relocate: bool) -> Result<Module, V
     // CONVERGED env, whose values are authoritative.
     let mut ever_exported: Vec<(String, Span)> = Vec::new();
     let mut ever_exported_names: std::collections::HashSet<String> = Default::default();
+    // The most recent pass's spliced-file map. Diagnostics are returned from a
+    // single pass, so the map returned with them is that pass's own.
+    let mut last_sources = sigil_span::SourceMap::new();
     for pass in 0..PASS_CAP {
         let PassOutput {
             module,
@@ -100,7 +120,9 @@ fn run_impl(src: &str, opts: &Options, force_relocate: bool) -> Result<Module, V
             poison,
             labels: pass_labels,
             label_ref_equs: pass_label_ref_equs,
-        } = one_pass(src, opts, &seed, &macros, &functions, &labels, &label_ref_equs);
+            sources,
+        } = one_pass(src, root_name, opts, &seed, &macros, &functions, &labels, &label_ref_equs);
+        last_sources = sources;
         for sec in &module.sections {
             for eq in &sec.equ_syms {
                 if ever_exported_names.insert(eq.name.clone()) {
@@ -127,13 +149,14 @@ fn run_impl(src: &str, opts: &Options, force_relocate: bool) -> Result<Module, V
                 restore_missing_equ_exports(&mut module, &ever_exported, &env);
                 attach_guarded_equ_exports(&mut module, &opts.guarded_defines);
                 return if diags.iter().any(|d| d.level == Level::Error) {
-                    Err(diags)
+                    Err(Failure { diags, sources: last_sources })
                 } else {
                     Ok(module)
                 };
             }
             let bonus = one_pass_with_defer(
                 src,
+                root_name,
                 opts,
                 &seed,
                 &macros,
@@ -154,7 +177,7 @@ fn run_impl(src: &str, opts: &Options, force_relocate: bool) -> Result<Module, V
             restore_missing_equ_exports(&mut bonus_module, &ever_exported, &env);
             attach_guarded_equ_exports(&mut bonus_module, &opts.guarded_defines);
             return if diags.iter().any(|d| d.level == Level::Error) {
-                Err(diags)
+                Err(Failure { diags, sources: bonus.sources })
             } else {
                 Ok(bonus_module)
             };
@@ -166,22 +189,32 @@ fn run_impl(src: &str, opts: &Options, force_relocate: bool) -> Result<Module, V
         labels = pass_labels;
         label_ref_equs = pass_label_ref_equs;
     }
-    Err(vec![Diagnostic {
-        level: Level::Error,
-        message: format!(
-            "assembly did not converge within {PASS_CAP} passes (symbol values still changing)"
-        ),
-        primary: Span {
-            source: SourceId(0),
-            start: 0,
-            end: 0,
-        },
-    }])
+    // Non-convergence is a property of the whole run, not of any one line, so it
+    // carries no source: an id past every registered file makes the renderer print
+    // a bare message rather than attribute the failure to line 1 of the root.
+    Err(Failure {
+        diags: vec![Diagnostic {
+            level: Level::Error,
+            message: format!(
+                "assembly did not converge within {PASS_CAP} passes (symbol values still changing)"
+            ),
+            primary: Span {
+                source: SourceId(u32::MAX),
+                start: 0,
+                end: 0,
+            },
+        }],
+        sources: last_sources,
+    })
 }
 
 /// The outputs of a single assembly pass.
 struct PassOutput {
     module: Module,
+    /// The files this pass spliced, under the ids its spans carry. Every pass
+    /// rebuilds it (a fresh `Asm` per pass), and the pass that produced the
+    /// returned diagnostics is the one whose map resolves them.
+    sources: sigil_span::SourceMap,
     env: SymbolTable,
     macros: MacroTable,
     functions: FunctionTable,
@@ -276,8 +309,11 @@ fn attach_guarded_equ_exports(module: &mut Module, guarded: &[(String, i64)]) {
 /// definition tables from prior passes. Returns the module, the discovered
 /// symbol table, the (possibly extended) definition tables, diagnostics, and the
 /// unresolved-operand references seen this pass.
+// The parameters are the pass-to-pass seed tables — one per carried table, by design.
+#[allow(clippy::too_many_arguments)]
 fn one_pass(
     src: &str,
+    root_name: &str,
     opts: &Options,
     seed_env: &SymbolTable,
     seed_macros: &MacroTable,
@@ -286,7 +322,8 @@ fn one_pass(
     seed_label_ref_equs: &std::collections::HashSet<String>,
 ) -> PassOutput {
     one_pass_with_defer(
-        src, opts, seed_env, seed_macros, seed_functions, seed_labels, seed_label_ref_equs, false,
+        src, root_name, opts, seed_env, seed_macros, seed_functions, seed_labels,
+        seed_label_ref_equs, false,
     )
 }
 
@@ -297,6 +334,7 @@ fn one_pass(
 #[allow(clippy::too_many_arguments)]
 fn one_pass_with_defer(
     src: &str,
+    root_name: &str,
     opts: &Options,
     seed_env: &SymbolTable,
     seed_macros: &MacroTable,
@@ -311,7 +349,7 @@ fn one_pass_with_defer(
     asm.functions = seed_functions.clone();
     asm.known_labels = seed_labels.clone();
     asm.label_ref_equs = seed_label_ref_equs.clone();
-    asm.process(src);
+    asm.process(root_name, src);
     // Task B1 (seam re-eval): a source consisting ONLY of `equ`s (no section
     // ever opens) would otherwise strand `pending_equ_syms` — force a carrier
     // section open so `finish()` never silently drops them.
@@ -330,6 +368,7 @@ fn one_pass_with_defer(
         poison: asm.poison_refs,
         labels: asm.known_labels,
         label_ref_equs: asm.label_ref_equs,
+        sources: asm.sources,
     }
 }
 
@@ -389,7 +428,16 @@ struct Asm {
     /// and instead adjust `state.disp`. VMA (`$`/labels) = physical + `disp`.
     phys_base: u32,
     diags: Vec<Diagnostic>,
+    /// The file currently being executed. Spans lexed from a [`SrcLine`] take the
+    /// line's own [`SrcLine::source`]; this is the fallback for the few sites that
+    /// lex a synthesized string with no line behind it (`\{…}` interpolation,
+    /// `val()`), which belong to whichever file is executing.
     source: SourceId,
+    /// Every spliced file's text under the id its spans carry: the root source at
+    /// [`SourceId(0)`] and one id per `include`d file, in inclusion order. This is
+    /// what turns a span into `file(line)`; without it a diagnostic's offset has
+    /// nothing to resolve against.
+    sources: sigil_span::SourceMap,
     functions: FunctionTable,
     macros: MacroTable,
     macro_depth: usize,
@@ -510,6 +558,7 @@ impl Asm {
             phys_base: 0,
             diags: Vec::new(),
             source: SourceId(0),
+            sources: sigil_span::SourceMap::new(),
             functions: std::collections::BTreeMap::new(),
             macros: std::collections::BTreeMap::new(),
             macro_depth: 0,
@@ -1054,7 +1103,7 @@ impl Asm {
     /// except the LAST, which is the body expression. (In aeon every function has
     /// exactly one formal, but this handles any arity.)
     fn def_function(&mut self, line: &SrcLine) {
-        let toks = match lex_line(&line.text, self.state.cpu, self.source, line.base) {
+        let toks = match lex_line(&line.text, self.state.cpu, line.source, line.base) {
             Ok(t) => t,
             Err(d) => {
                 self.diags.push(d);
@@ -1063,7 +1112,7 @@ impl Asm {
         };
         // toks[0] = name, toks[1] = `function`, toks[2..] = formals..., body.
         let span = toks.first().map(|t| t.span).unwrap_or(Span {
-            source: self.source,
+            source: line.source,
             start: line.base,
             end: line.base,
         });
@@ -1161,8 +1210,14 @@ impl Asm {
         out
     }
 
-    fn process(&mut self, src: &str) {
-        let lines = split_src_lines(src);
+    /// Execute a root source. `root_name` is the file it was read from — it names
+    /// every diagnostic that lands outside an `include`, so it is the name a user
+    /// sees first. An empty name registers the root as unnamed (a string with no
+    /// file behind it), and diagnostics there render without a location.
+    fn process(&mut self, root_name: &str, src: &str) {
+        let id = self.sources.add_named(root_name.to_string(), src.to_string());
+        self.source = id;
+        let lines = split_src_lines(src, id);
         self.exec(&lines);
     }
 
@@ -1245,8 +1300,17 @@ impl Asm {
         }
         match std::fs::read_to_string(&path) {
             Ok(text) => {
-                let lines = split_src_lines(&text);
+                // The included file gets its OWN SourceId, so a diagnostic raised
+                // while executing it names that file and its own line number
+                // rather than the includer's. `self.source` follows the file being
+                // executed and is restored on the way out, so the includer's
+                // remaining lines report the includer again.
+                let id = self.sources.add_named(path.display().to_string(), text);
+                let outer = self.source;
+                self.source = id;
+                let lines = split_src_lines(self.sources.text(id), id);
                 self.exec(&lines);
+                self.source = outer;
             }
             Err(e) => self.err(span, format!("cannot include {}: {e}", path.display())),
         }
@@ -1329,7 +1393,7 @@ impl Asm {
     }
 
     fn exec_one(&mut self, line: &SrcLine) {
-        let toks = match lex_line(&line.text, self.state.cpu, self.source, line.base) {
+        let toks = match lex_line(&line.text, self.state.cpu, line.source, line.base) {
             Ok(t) => t,
             Err(d) => {
                 self.diags.push(d);
@@ -1478,7 +1542,7 @@ impl Asm {
     ///  4. a bare label followed by an Ident ⇒ that following Ident (e.g. `Tab db 0`).
     ///  5. otherwise ⇒ the leading name.
     fn dispatch_head(&self, line: &SrcLine) -> Option<(String, usize, Vec<Token>)> {
-        let toks = lex_line(&line.text, self.state.cpu, self.source, line.base).ok()?;
+        let toks = lex_line(&line.text, self.state.cpu, line.source, line.base).ok()?;
         if toks.is_empty() {
             return None;
         }
@@ -1529,7 +1593,7 @@ impl Asm {
     /// The keyword + the tokens after it + the keyword span, for a block head.
     fn line_kw_args(&self, line: &SrcLine) -> (Option<String>, Vec<Token>, Span) {
         let fallback = Span {
-            source: self.source,
+            source: line.source,
             start: line.base,
             end: line.base,
         };
@@ -1763,12 +1827,12 @@ impl Asm {
         let toks = lex_line(
             &lines[start].text,
             self.state.cpu,
-            self.source,
+            lines[start].source,
             lines[start].base,
         )
         .unwrap_or_default();
         let span = toks.first().map(|t| t.span).unwrap_or(Span {
-            source: self.source,
+            source: lines[start].source,
             start: lines[start].base,
             end: lines[start].base,
         });
@@ -1837,7 +1901,7 @@ impl Asm {
     /// Parse a `<field> ds.b|ds.w|ds.l <count>` struct-member line.
     /// Returns `(field, width, count)`, or None for a blank/comment line.
     fn parse_struct_field(&mut self, line: &SrcLine) -> Option<(String, i64, i64)> {
-        let toks = lex_line(&line.text, self.state.cpu, self.source, line.base).ok()?;
+        let toks = lex_line(&line.text, self.state.cpu, line.source, line.base).ok()?;
         if toks.is_empty() {
             return None;
         }
@@ -4172,7 +4236,7 @@ impl Asm {
         let toks = lex_line(
             &lines[start].text,
             self.state.cpu,
-            self.source,
+            lines[start].source,
             lines[start].base,
         )
         .unwrap_or_default();
@@ -4192,7 +4256,7 @@ impl Asm {
                 Some(Tok::Ident(s)) => s.clone(),
                 _ => {
                     let span = Span {
-                        source: self.source,
+                        source: lines[start].source,
                         start: lines[start].base,
                         end: lines[start].base,
                     };
@@ -4353,7 +4417,7 @@ impl Asm {
             for (p, a) in &arg_values {
                 text = replace_word(&text, p, a);
             }
-            expanded.push(SrcLine { text, base: l.base });
+            expanded.push(SrcLine { text, base: l.base, source: l.source });
         }
         // A `.`-local written LITERALLY in this macro body is scoped to the
         // EXPANSION, not the caller's global label (asl-verified, T4 probe
@@ -4383,9 +4447,11 @@ impl Asm {
 
 // ── free helpers ────────────────────────────────────────────────────────────
 
-/// Split source text into `SrcLine`s (each with its byte offset). Used for both
-/// the root source and included files.
-fn split_src_lines(text: &str) -> Vec<SrcLine> {
+/// Split source text into `SrcLine`s (each with its byte offset within `source`).
+/// Used for both the root source and included files; `source` is the [`SourceId`]
+/// the text was registered under, so every span lexed from these lines resolves
+/// against the file the text came from.
+fn split_src_lines(text: &str, source: SourceId) -> Vec<SrcLine> {
     let mut lines = Vec::new();
     let mut base = 0u32;
     // A physical line whose last non-whitespace character is `\` is an AS
@@ -4424,6 +4490,7 @@ fn split_src_lines(text: &str) -> Vec<SrcLine> {
                     lines.push(SrcLine {
                         text: acc,
                         base: start_base,
+                        source,
                     });
                 }
             }
@@ -4431,7 +4498,7 @@ fn split_src_lines(text: &str) -> Vec<SrcLine> {
                 if is_cont {
                     pending = Some((base, cell));
                 } else {
-                    lines.push(SrcLine { text: cell, base });
+                    lines.push(SrcLine { text: cell, base, source });
                 }
             }
         }
@@ -4441,6 +4508,7 @@ fn split_src_lines(text: &str) -> Vec<SrcLine> {
         lines.push(SrcLine {
             text: acc,
             base: start_base,
+            source,
         });
     }
     lines
