@@ -1,7 +1,7 @@
 //! eval: the driver — line loop, directive dispatch, instruction lowering, emit.
 
 use crate::expand::{render_tokens, split_call_args, split_top_commas, substitute_frame};
-use crate::lexer::lex_line;
+use crate::lexer::{lex_line, lex_line_recover};
 use crate::operands::{parse_operands, OperandAtom};
 use crate::parser::parse_line_tokens;
 use crate::token::{Punct, Tok, Token};
@@ -752,18 +752,47 @@ impl Asm {
         }
     }
 
+    /// The value of a numeric BUILTIN symbol — one whose value the assembler
+    /// holds itself rather than reading from the program's symbol table.
+    /// Resolved in the front end so such a name folds to a concrete value
+    /// immediately and never survives as a `Sym` fixup target for the linker.
+    ///
+    /// - `$` — the current program counter.
+    /// - `MOMCPU` — the CPU currently selected, as the integer asl reports it:
+    ///   `$68000` under the 68000 (`dc.l MOMCPU` ⇒ `0006 8000`) and `$80`
+    ///   under the Z80 (`dw MOMCPU` ⇒ `80 00`). This is the value
+    ///   `s2.macrosetup.asm`'s
+    ///   `notZ80 function cpu,(cpu<>128)&&(cpu<>32988)` tests, and it is not
+    ///   an ornament: leaving it undefined makes every `if notZ80(MOMCPU)` in
+    ///   that file read FALSE, so the Z80 arm of `org`, `cnop`, `align`,
+    ///   `even` and `ds` is what gets assembled under the 68000. That is a
+    ///   wrong branch, not a missing symbol — it emits bytes.
+    /// - `TRUE` / `FALSE` — 1 and 0 (`dc.b TRUE,FALSE` ⇒ `0100`). Undefined,
+    ///   they take the same shape as `MOMCPU`: `s2.macrosetup.asm:76`'s
+    ///   `if TRUE` reads FALSE and drops the block it guards without a word.
+    ///
+    /// A builtin outranks the symbol table, which is asl's own rule and not a
+    /// simplification: it refuses `TRUE = 7` and `MOMCPU = 9` outright
+    /// (`error #2035: variables cannot be redefined as constants`) and goes on
+    /// reporting 1 and `$68000`.
+    fn builtin_num(&self, name: &str) -> Option<i64> {
+        match name {
+            "$" => Some(self.here_i64()),
+            "MOMCPU" => Some(match self.state.cpu {
+                Cpu::M68000 => 0x68000,
+                Cpu::Z80 => 0x80,
+            }),
+            "TRUE" => Some(1),
+            "FALSE" => Some(0),
+            _ => None,
+        }
+    }
+
     fn fold(&self, e: &Expr) -> Fold {
-        let here = self.here_i64();
         let env = &self.env;
         e.fold(&|name| {
-            // `$` is resolved to the current PC here in the front-end: any
-            // `$`-bearing expression folds to a concrete value immediately and
-            // never survives as a Sym fixup target, so the linker never sees `$`.
-            if name == "$" {
-                Some(here)
-            } else {
-                env.resolve(name, self.dot_scope(name))
-            }
+            self.builtin_num(name)
+                .or_else(|| env.resolve(name, self.dot_scope(name)))
         })
     }
 
@@ -790,14 +819,16 @@ impl Asm {
     }
 
     /// Collect the symbol names in `e` that do NOT resolve in the current env
-    /// (ignoring `$`, which `fold` handles specially). These are the names that
-    /// made an operand fold to Poison.
+    /// (ignoring the builtins `fold` handles itself — see [`Self::builtin_num`]).
+    /// These are the names that made an operand fold to Poison.
     fn unresolved_names(&self, e: &Expr) -> Vec<String> {
         fn walk(this: &Asm, e: &Expr, out: &mut Vec<String>) {
             match e {
                 Expr::Int(_) => {}
                 Expr::Sym(name) => {
-                    if name != "$" && this.env.resolve(name, this.dot_scope(name)).is_none() {
+                    if this.builtin_num(name).is_none()
+                        && this.env.resolve(name, this.dot_scope(name)).is_none()
+                    {
                         out.push(name.clone());
                     }
                 }
@@ -973,10 +1004,9 @@ impl Asm {
                 Some((v, &rest[next..]))
             }
             Tok::Ident(name) => {
-                let v = if name == "$" {
-                    self.here_i64()
-                } else {
-                    self.env.resolve(name, self.dot_scope(name))?
+                let v = match self.builtin_num(name) {
+                    Some(v) => v,
+                    None => self.env.resolve(name, self.dot_scope(name))?,
                 };
                 Some((v as f64, rest))
             }
@@ -1056,16 +1086,16 @@ impl Asm {
         while i < toks.len() {
             let is_cmp = matches!(toks[i].tok, Tok::Punct(Punct::Eq) | Tok::Punct(Punct::Ne));
             if is_cmp {
-                if let Some(Token { tok: Tok::Str(rhs), .. }) = toks.get(i + 1) {
+                if let Some((rhs, next)) = self.leading_str_rhs(&toks[i + 1..]) {
                     if let Some(lhs_len) = trailing_str_expr_len(&out) {
                         let lhs = &out[out.len() - lhs_len..];
                         if let Some(lv) = self.eval_str(lhs) {
                             let ne = matches!(toks[i].tok, Tok::Punct(Punct::Ne));
-                            let eq = &lv == rhs;
+                            let eq = lv == rhs;
                             let span = toks[i].span;
                             out.truncate(out.len() - lhs_len);
                             out.push(Token { tok: Tok::Int((eq ^ ne) as i64), span });
-                            i += 2;
+                            i += 1 + next;
                             continue;
                         }
                     }
@@ -1075,6 +1105,26 @@ impl Asm {
             i += 1;
         }
         out
+    }
+
+    /// The string value at the START of `toks` and the token count it spans —
+    /// the right-hand operand of a `=`/`<>` whose left side is string-typed. A
+    /// bare `Tok::Str` literal (1 token) is the written form; a balanced
+    /// `( … )` group holding one is the SUBSTITUTED form, which is what a
+    /// comparison against a user `function`'s parameter always looks like
+    /// (`expand_calls` parenthesises each argument, so `chkop`'s `<>ref`
+    /// becomes `<>("0(")`). `None` when the operand is not a string, which
+    /// leaves an ordinary numeric comparison alone.
+    fn leading_str_rhs(&self, toks: &[Token]) -> Option<(String, usize)> {
+        match toks.first()?.tok {
+            Tok::Str(ref s) => Some((s.clone(), 1)),
+            Tok::Punct(Punct::LParen) => {
+                let end = matching_rparen(toks, 0)?;
+                let v = self.eval_str(&toks[..=end])?;
+                Some((v, end + 1))
+            }
+            _ => None,
+        }
     }
 
     /// Dispatch one of the debug-string builtins that produce an INTEGER:
@@ -1126,6 +1176,17 @@ impl Asm {
     /// `lowstring(substr(...))` / `substr(lowstring(...), ...)` nest freely
     /// (T9.3).
     fn eval_str(&self, toks: &[Token]) -> Option<String> {
+        // Parentheses around a string expression are transparent, exactly as
+        // they are around a numeric one: asl folds `strlen(("abc"))` to 3 and
+        // `strlen(lowstring(("ABCD")))` to 4. This is not a curiosity —
+        // `expand_calls` PARENTHESISES every argument it substitutes into a
+        // user `function` body, so `chkop function op,ref,(...strlen(ref)...)`
+        // hands its own `strlen` a `("0(")`, and a `substr`/`lowstring`/
+        // comparison chain over function parameters is unreachable without
+        // this peel.
+        if let Some(inner) = peel_parens(toks) {
+            return self.eval_str(inner);
+        }
         if let [Token {
             tok: Tok::Str(s), ..
         }] = toks
@@ -1842,9 +1903,32 @@ impl Asm {
     ///  4. a bare label followed by an Ident ⇒ that following Ident (e.g. `Tab db 0`).
     ///  5. otherwise ⇒ the leading name.
     fn dispatch_head(&self, line: &SrcLine) -> Option<(String, usize, Vec<Token>)> {
+        self.dispatch_head_checked(line).map(|(k, i, b, _)| (k, i, b))
+    }
+
+    /// [`Self::dispatch_head`] plus the lex diagnostic, if the line's OPERAND
+    /// did not tokenise. The head is recovered from the tokens that lexed
+    /// cleanly before the failure ([`lex_line_recover`]), because the head is
+    /// what block-structure scanning routes on and losing it desynchronises
+    /// the nesting — see that function's own note. Callers that go on to
+    /// EVALUATE the recovered tokens must surface the diagnostic first;
+    /// [`Self::line_kw_args_checked`] is the entry point that does.
+    fn dispatch_head_checked(
+        &self,
+        line: &SrcLine,
+    ) -> Option<(String, usize, Vec<Token>, Option<Diagnostic>)> {
         let substituted = self.subst_frame_text(&line.text);
         let text = substituted.as_deref().unwrap_or(&line.text);
-        let toks = lex_line(text, self.state.cpu, line.source, line.base).ok()?;
+        let (toks, lex_err) = lex_line_recover(text, self.state.cpu, line.source, line.base);
+        let (kw, idx, body) = self.head_of_tokens(toks)?;
+        Some((kw, idx, body, lex_err))
+    }
+
+    /// The routing keyword within an already-tokenised line. Split out of
+    /// [`Self::dispatch_head_checked`] so the head rules below are stated once
+    /// and apply identically to a fully-lexed line and to the clean PREFIX of
+    /// one whose operand did not lex.
+    fn head_of_tokens(&self, toks: Vec<Token>) -> Option<(String, usize, Vec<Token>)> {
         if toks.is_empty() {
             return None;
         }
@@ -1903,9 +1987,39 @@ impl Asm {
     }
 
     /// The dispatch keyword of a line (after peeling an optional label), or None
-    /// for a blank/label-only/lex-error line.
+    /// for a blank/label-only line. A line whose OPERAND does not lex still has
+    /// a keyword and still reports one, because block structure is decided by
+    /// the head alone: asl counts a nested `if`/`endif` inside a branch it never
+    /// evaluates, and a scan that cannot see the head cuts the block short.
     fn line_keyword(&self, line: &SrcLine) -> Option<String> {
         self.dispatch_head(line).map(|(kw, _, _)| kw)
+    }
+
+    /// [`Self::line_kw_args`] for a head whose arguments are about to be
+    /// EVALUATED. Structure scanning may read a head recovered from a partly
+    /// lexed line and ignore the rest; evaluating one must not, because the
+    /// recovered arguments are a truncation of what was written and folding
+    /// them would answer a question the source did not ask. The lex diagnostic
+    /// is raised and the keyword withheld, so the caller declines the arm
+    /// loudly instead of guessing at it.
+    fn line_kw_args_checked(&mut self, line: &SrcLine) -> (Option<String>, Vec<Token>, Span) {
+        let fallback = Span {
+            source: line.source,
+            start: line.base,
+            end: line.base,
+        };
+        match self.dispatch_head_checked(line) {
+            Some((_, _, _, Some(d))) => {
+                self.diags.push(d);
+                (None, Vec::new(), fallback)
+            }
+            Some((kw, idx, body, None)) => {
+                let span = body.get(idx).map(|t| t.span).unwrap_or(fallback);
+                let args = body.get(idx + 1..).unwrap_or(&[]).to_vec();
+                (Some(kw), args, span)
+            }
+            None => (None, Vec::new(), fallback),
+        }
     }
 
     /// The keyword + the tokens after it + the keyword span, for a block head.
@@ -1989,7 +2103,7 @@ impl Asm {
         heads.push(end); // sentinel
         for w in 0..(heads.len() - 1) {
             let head = heads[w];
-            let (kw, argtoks, span) = self.line_kw_args(&lines[head]);
+            let (kw, argtoks, span) = self.line_kw_args_checked(&lines[head]);
             let take = match kw.as_deref() {
                 Some("if") | Some("ifdef") | Some("ifndef") => {
                     self.eval_cond(kw.as_deref().unwrap(), &argtoks, span)
@@ -5448,13 +5562,54 @@ fn split_attribute_suffix(s: &str) -> Option<(&str, &str)> {
     }
 }
 
+/// Index of the `)` matching the `(` at `open`, or `None` if `toks[open]` is
+/// not a `(` or the group never closes within `toks`.
+fn matching_rparen(toks: &[Token], open: usize) -> Option<usize> {
+    if !matches!(toks.get(open)?.tok, Tok::Punct(Punct::LParen)) {
+        return None;
+    }
+    let mut depth = 0usize;
+    for (k, t) in toks.iter().enumerate().skip(open) {
+        match t.tok {
+            Tok::Punct(Punct::LParen) => depth += 1,
+            Tok::Punct(Punct::RParen) => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(k);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The interior of `toks` when the whole slice is ONE balanced `( … )` group
+/// with a non-empty body, else `None`. Parentheses around a string expression
+/// are transparent in asl (`strlen(("abc"))` = 3), and the redundant pair is
+/// how a substituted user-`function` argument always arrives.
+///
+/// The balance check is what makes this safe: `("a")+("b")` opens and closes
+/// before the end, so it is NOT peeled and does not masquerade as one group.
+fn peel_parens(toks: &[Token]) -> Option<&[Token]> {
+    if matching_rparen(toks, 0)? != toks.len() - 1 || toks.len() < 3 {
+        return None;
+    }
+    Some(&toks[1..toks.len() - 1])
+}
+
 /// Length (in tokens) of the trailing string-expression at the END of `out`, or
 /// `None` if the last token can't begin a string comparison LHS. Used by
 /// [`Evaluator::expand_str_comparisons`] to find the operand to the left of a
 /// `=`/`<>` whose RHS is a string literal. A string-expr is: a string literal
 /// (1 token), a bare identifier (1 token — a candidate string-valued symbol,
-/// validated by `eval_str`), or a balanced `substr(...)`/`lowstring(...)` call
-/// ending in `)`.
+/// validated by `eval_str`), a balanced `substr(...)`/`lowstring(...)` call
+/// ending in `)`, or a bare balanced `( … )` group — parentheses around a
+/// string expression are transparent (asl folds `(("he"))<>"he"` to 0), and
+/// `expand_calls` parenthesises every argument it substitutes into a user
+/// `function` body, so a comparison against a function parameter arrives in
+/// exactly that shape. `eval_str` still decides whether the group IS a string,
+/// so an ordinary numeric `(a+b)=…` is left untouched.
 fn trailing_str_expr_len(out: &[Token]) -> Option<usize> {
     // `out.last()?` (not `out[n-1]`): an expression whose FIRST token is a
     // comparison operator (`dc.b <>"x"`) reaches here with `out` empty — `n - 1`
@@ -5476,14 +5631,20 @@ fn trailing_str_expr_len(out: &[Token]) -> Option<usize> {
                     Tok::Punct(Punct::LParen) => {
                         depth -= 1;
                         if depth == 0 {
-                            let name = match out.get(j.checked_sub(1)?)?.tok {
-                                Tok::Ident(ref s) => s.as_str(),
-                                _ => return None,
-                            };
-                            if name == "substr" || name == "lowstring" {
-                                return Some(n - (j - 1));
+                            let before = j.checked_sub(1).and_then(|k| out.get(k));
+                            if let Some(Token {
+                                tok: Tok::Ident(name),
+                                ..
+                            }) = before
+                            {
+                                if name == "substr" || name == "lowstring" {
+                                    return Some(n - (j - 1));
+                                }
+                                return None;
                             }
-                            return None;
+                            // Nothing (or a non-identifier) before the `(`: a
+                            // bare group, transparent around whatever it holds.
+                            return Some(n - j);
                         }
                     }
                     _ => {}
@@ -9687,5 +9848,198 @@ C:\n";
             linked_image(shadowed),
             vec![0x4E, 0x71, 0x4E, 0x71, 0x00, 0x02, 0x4E, 0x71]
         );
+    }
+
+    // ---------------------------------------------------------------------
+    // s2.macrosetup.asm: the three largest AS-frontend sites, and the branch
+    // selection underneath them that emitted no diagnostic at all.
+    //
+    // Every expected value below is an `asl -L` listing row, AS V1.42 Beta
+    // Bld 212 run with the Sonic 2 build's own flags minus the two that only
+    // redirect output: `asl -xx -n -q -A -L -U -i .`. `-U` (case-sensitive) is
+    // on every one of them.
+    //
+    // `linked_image`, not `image`: an undefined `MOMCPU`/`TRUE` survives the
+    // front end as a deferred fixup and is refused by the LINKER, so a
+    // front-end-only assertion about them would be vacuous.
+    // ---------------------------------------------------------------------
+
+    /// `MOMCPU` is the selected CPU as an integer, and `TRUE`/`FALSE` are 1
+    /// and 0. asl:
+    ///
+    /// ```text
+    ///        2/       0 : 0006 8000           	dc.l MOMCPU        ; cpu 68000
+    ///        2/       0 : 80 00               	dw MOMCPU          ; cpu z80
+    ///        2/       0 : 0100                	dc.b TRUE,FALSE
+    /// ```
+    ///
+    /// A builtin outranks the symbol table: asl refuses `TRUE = 7` and
+    /// `MOMCPU = 9` (`error #2035: variables cannot be redefined as
+    /// constants`) and keeps reporting 1 and `$68000`.
+    #[test]
+    fn momcpu_and_true_false_are_builtin_values() {
+        let m68k = "	cpu 68000\n	padding off\n	phase 0\n";
+        assert_eq!(
+            linked_image(&format!("{m68k}	dc.l MOMCPU\n")),
+            vec![0x00, 0x06, 0x80, 0x00]
+        );
+        assert_eq!(
+            linked_image("	cpu z80\n	phase 0\n	dw MOMCPU\n"),
+            vec![0x80, 0x00]
+        );
+        assert_eq!(
+            linked_image(&format!("{m68k}	dc.b TRUE,FALSE\n")),
+            vec![0x01, 0x00]
+        );
+    }
+
+    /// The silent half. `notZ80(MOMCPU)` and `TRUE` decide which arm of
+    /// `s2.macrosetup.asm`'s `org`/`cnop`/`align`/`even`/`ds` is assembled;
+    /// undefined, both read FALSE and the WRONG arm emits bytes with nothing
+    /// said about it. asl:
+    ///
+    /// ```text
+    ///        3/       0 : =>TRUE               	if notZ80(MOMCPU)
+    ///        4/       0 : 11                  		dc.b $11
+    ///        5/       1 : =>FALSE              	else
+    ///        8/       1 : =>TRUE               	if TRUE
+    ///        9/       1 : 33                  		dc.b $33
+    /// ```
+    #[test]
+    fn momcpu_and_true_select_the_arm_asl_selects() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "notZ80 function cpu,(cpu<>128)&&(cpu<>32988)\n",
+            "	if notZ80(MOMCPU)\n		dc.b $11\n	else\n		dc.b $22\n	endif\n",
+            "	if TRUE\n		dc.b $33\n	else\n		dc.b $44\n	endif\n",
+        );
+        assert_eq!(linked_image(src), vec![0x11, 0x33]);
+    }
+
+    /// `s2.macrosetup.asm:52`'s `even` end to end, which is what the two arms
+    /// above are really deciding. asl pads to the even address through the
+    /// 68000 arm and never reaches the Z80 arm's `$`:
+    ///
+    /// ```text
+    ///       15/       1 : =>TRUE                       if notZ80(MOMCPU)
+    ///       15/       1 : =>TRUE                               if (*)&1
+    ///       15/       1 : 00                                          dc.b 0
+    ///       15/       2 : =>FALSE                      else
+    ///       15/       2 :                                     if ($)&1
+    /// ```
+    #[test]
+    fn even_macro_takes_the_68000_arm_and_pads() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "notZ80 function cpu,(cpu<>128)&&(cpu<>32988)\n",
+            "myeven macro\n",
+            "	if notZ80(MOMCPU)\n		if (*)&1\n			dc.b 0\n		endif\n",
+            "	else\n		if ($)&1\n			db 0\n		endif\n	endif\n",
+            "	endm\n",
+            "	dc.b 1\n	myeven\n	dc.b $22\n",
+        );
+        assert_eq!(linked_image(src), vec![0x01, 0x00, 0x22]);
+    }
+
+    /// A line whose OPERAND does not lex still has a head, and block nesting
+    /// is decided by the head. asl counts the nested `if`/`endif` inside a
+    /// branch it never evaluates — `[4]` closes line 4, `[3]` closes line 3 —
+    /// so `dc.b $55` stays inside the false block and the file is two bytes:
+    ///
+    /// ```text
+    ///        3/       1 : =>FALSE              	if 0
+    ///        4/       1 :                     		if ($)&1
+    ///        6/       1 : [4]                  		endif
+    ///        7/       1 :                     		dc.b $55
+    ///        8/       1 : [3]                  	endif
+    ///        9/       1 : 22                  	dc.b $22
+    /// ```
+    ///
+    /// Lose the head and the inner `endif` pops the OUTER frame instead: the
+    /// conditional ends early, `dc.b $55` escapes into the emitted image, and
+    /// the real `endif` is left over as a spurious mnemonic diagnostic
+    /// pointing at a line that is not the fault.
+    #[test]
+    fn unlexable_operand_does_not_break_conditional_nesting() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "	dc.b $11\n",
+            "	if 0\n		if ($)&1\n			dc.b $44\n		endif\n		dc.b $55\n	endif\n",
+            "	dc.b $22\n",
+        );
+        assert_eq!(linked_image(src), vec![0x11, 0x22]);
+    }
+
+    /// The other side of that recovery: a head recovered from a partly-lexed
+    /// line may be COUNTED, but its truncated arguments must never be
+    /// EVALUATED as if they were what the source wrote. The arm is declined
+    /// and the lex diagnostic is what the caller hears — once, at the line
+    /// that actually carries the fault.
+    #[test]
+    fn arm_head_that_does_not_lex_is_loud_not_guessed() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "	if ($)&1\n	dc.b $11\n	endif\n	dc.b $22\n",
+        );
+        let diags = run(src, &Options::default()).expect_err("must not assemble silently");
+        let msgs: Vec<&str> = diags.iter().map(|d| d.message.as_str()).collect();
+        assert_eq!(msgs, vec!["`$` with no hex digits"], "got {msgs:?}");
+    }
+
+    /// Parentheses around a string expression are transparent. asl:
+    ///
+    /// ```text
+    ///        2/       0 : 03                  	dc.b strlen(("abc"))
+    ///        3/       1 : 03                  	dc.b strlen((("abc")))
+    ///        4/       2 : 02                  	dc.b strstr(("hello"),("ll"))
+    ///        5/       3 : 02                  	dc.b strlen(substr(("hello"),0,2))
+    ///        6/       4 : 04                  	dc.b strlen(lowstring(("ABCD")))
+    ///        7/       5 : 00                  	dc.b (("he"))<>"he"
+    ///        8/       6 : 01                  	dc.b ("he")<>("hf")
+    ///        9/       7 : 02                  	dc.b strlen(( "ab" ))
+    /// ```
+    #[test]
+    fn parentheses_around_a_string_expression_are_transparent() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "	dc.b strlen((\"abc\"))\n",
+            "	dc.b strlen(((\"abc\")))\n",
+            "	dc.b strstr((\"hello\"),(\"ll\"))\n",
+            "	dc.b strlen(substr((\"hello\"),0,2))\n",
+            "	dc.b strlen(lowstring((\"ABCD\")))\n",
+            "	dc.b ((\"he\"))<>\"he\"\n",
+            "	dc.b (\"he\")<>(\"hf\")\n",
+            "	dc.b strlen(( \"ab\" ))\n",
+        );
+        assert_eq!(linked_image(src), vec![3, 3, 2, 2, 4, 0, 1, 2]);
+    }
+
+    /// Which is what makes a user `function` parameter reach the string
+    /// builtins at all: an argument is substituted PARENTHESISED, so
+    /// `s2.macrosetup.asm:104`'s
+    /// `chkop function op,ref,(substr(lowstring(op),0,strlen(ref))<>ref)`
+    /// hands its own `strlen` a `("0(")`. asl:
+    ///
+    /// ```text
+    ///        5/       0 : 03                  	dc.b slen("abc")
+    ///        6/       1 : 00                  	dc.b chkop("0(a0)","0(")
+    ///        7/       2 : 01                  	dc.b chkop("d0","0(")
+    ///        8/       3 : 02                  	dc.b strlen("0(")
+    ///        9/       4 : 00                  	dc.b sub2("hello",2)<>"he"
+    /// ```
+    #[test]
+    fn function_parameters_reach_the_string_builtins() {
+        let src = concat!(
+            "	cpu 68000\n	padding off\n	phase 0\n",
+            "chkop function op,ref,(substr(lowstring(op),0,strlen(ref))<>ref)\n",
+            "slen function s,strlen(s)\n",
+            "sub2 function s,n,substr(s,0,n)\n",
+            "	dc.b slen(\"abc\")\n",
+            "	dc.b chkop(\"0(a0)\",\"0(\")\n",
+            "	dc.b chkop(\"d0\",\"0(\")\n",
+            "	dc.b strlen(\"0(\")\n",
+            "	dc.b sub2(\"hello\",2)<>\"he\"\n",
+        );
+        assert_eq!(linked_image(src), vec![3, 0, 1, 2, 0]);
     }
 }
