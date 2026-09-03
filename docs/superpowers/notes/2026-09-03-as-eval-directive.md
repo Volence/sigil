@@ -8,7 +8,7 @@ part of the row as written.
 
 | | |
 |---|---|
-| sigil | branch `parcel/as-eval` off master `ed06da77` |
+| sigil | branch `parcel/as-eval`, rebased onto master `5f3884a4` (branched at `ed06da77`) |
 | S1 corpus | `s1disasm` `f6ece657`, detached worktree, entry `sonic.asm`, `sigil sonic.asm` from the corpus root |
 | S2 corpus | `s2disasm` `e45ebf3`, detached worktree, entry `s2.asm` |
 | oracle | `s1disasm/build_tools/Linux-x86_64/asl`, md5 `61e672562465725a8c102288a7da9098`, `-xx -n -q -A -L -U -E -i .` |
@@ -201,7 +201,7 @@ Red-first, both mutations applied from disk and shown applied:
 | mutation | `as_eval_directive` | `asl_snippets` |
 |---|---|---|
 | none | 5 passed, 0 failed | ok |
-| **M1** `eval.rs` reverted to `ed06da77` (13+/56−) | **3 FAILED**, 2 passed | **FAILED** |
+| **M1** `eval.rs` reverted to master `5f3884a4` (13+/56−) | **3 FAILED**, 2 passed | **FAILED** |
 | **M2** the `name_in_label_field` guard deleted (1+/3−) | **3 FAILED**, 2 passed | **FAILED** |
 
 Every test reddens under at least one mutation; the two that survive M1 are the
@@ -236,3 +236,33 @@ With `eval` and its downstream gone, the 1,367 remaining diagnostics are led by
 heads in total. `s1.sounddriver.asm`'s Z80 section stays under-measured for the
 reason the baseline gave — its six diagnostics are a floor, and that is still a
 soundness question rather than a count.
+
+## Verification
+
+Rebased onto master `5f3884a4` — the alignment parcel (`1dd98a75`) also edits
+`eval.rs`, in `directive_align` and its test block, and the rebase was clean with
+no conflict. Every measurement above is the POST-rebase one, and the alignment
+parcel moves neither corpus: master `5f3884a4` still reads 9,739 and 13,109.
+
+| | master `5f3884a4` | `parcel/as-eval` |
+|---|---|---|
+| suites | 376 | 377 |
+| passed | 4,319 | **4,324** |
+| failed | **0** | **0** |
+| ignored | 2 | 2 |
+| skip lines | 0 | 0 |
+| CARGO_EXIT | 0 | 0 |
+| verdict | GREEN | GREEN |
+
+`4,319 baseline + 5 new = 4,324`, reconciled by the wrapper. The five are the
+`as_eval_directive.rs` tests; the twelve golden blocks add none, because
+`asl_snippets` is one `#[test]` over the whole corpus. Both runs used the same
+reference tree, `/home/volence/sonic_hacks/.aeon-eval-ref` at aeon `4f5ad5a1`,
+provisioned by `scripts/provision-aeon-ref.sh` and proved by its own positive
+witness — `repin --check` reports `pins.rs unchanged`.
+
+`cargo clippy --release --workspace --all-targets -- -D warnings` exits 0.
+
+Golden authenticity, re-checked after the rebase: regenerating all 193 blocks
+from S1's asl is a git-clean no-op, so every committed golden byte — the twelve
+new ones included — is asl output rather than sigil's own.
