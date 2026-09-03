@@ -92,6 +92,50 @@ fn a_diagnostic_names_its_own_file_and_line_across_an_include() {
     }
 }
 
+/// A macro body executes wherever it is called, but its text lives where it was
+/// written — and that is the file the report names.
+///
+/// This is the reason each source line carries its own file rather than the
+/// assembler carrying "the file currently being executed": a macro defined in an
+/// included file and expanded in the root would otherwise be reported against the
+/// root, at an offset into text that never contained the mistake. The line a reader
+/// has to edit is the macro body's.
+#[test]
+fn an_error_in_a_macro_body_names_the_file_the_body_was_written_in() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let src = dir.path();
+
+    // The bad line is line 3 of the definition file; the call is line 3 of the root.
+    std::fs::write(
+        src.join("mac.inc"),
+        "; line 1\nmymac macro\n\tnotamnemonic_in_macro_body\n\tendm\n",
+    )
+    .expect("write mac.inc");
+    std::fs::write(
+        src.join("mroot.asm"),
+        "\tcpu 68000\n\tinclude \"mac.inc\"\n\tmymac\n",
+    )
+    .expect("write mroot.asm");
+
+    let out = Command::new(env!("CARGO_BIN_EXE_sigil"))
+        .arg(src.join("mroot.asm"))
+        .output()
+        .expect("spawn sigil");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        stderr.contains("notamnemonic_in_macro_body"),
+        "the macro must have expanded and its bad line diagnosed, or this test is \
+         vacuous.\nstderr:\n{stderr}"
+    );
+    let body_at_3 = format!("{}(3): error: ", src.join("mac.inc").display());
+    assert!(
+        stderr.contains(&body_at_3),
+        "a macro body's error must be reported as `{body_at_3}…` — the file the body \
+         was written in.\nstderr:\n{stderr}"
+    );
+}
+
 /// Every line of a failing report carries a location — the property the corpus run
 /// measures, asserted here on a case small enough to read.
 #[test]

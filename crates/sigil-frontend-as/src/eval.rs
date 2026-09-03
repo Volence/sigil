@@ -309,6 +309,8 @@ fn attach_guarded_equ_exports(module: &mut Module, guarded: &[(String, i64)]) {
 /// definition tables from prior passes. Returns the module, the discovered
 /// symbol table, the (possibly extended) definition tables, diagnostics, and the
 /// unresolved-operand references seen this pass.
+// The parameters are the pass-to-pass seed tables — one per carried table, by design.
+#[allow(clippy::too_many_arguments)]
 fn one_pass(
     src: &str,
     root_name: &str,
