@@ -114,8 +114,9 @@ not `$01` — the only offset at which the two rules disagree for `n = 256`.
 (detached at aeon `4f5ad5a1`), sigil `b1f0cc06` on `parcel/as-align-in-phase`,
 started 17:39:17 finished 17:52:43: **4319 passed, 0 failed, 2 ignored, runner
 exit 0.** Nothing redded that needed adjudicating. The one test that encoded the
-wrong rule was rewritten before this run; a run at the fix-only commit reddened
-only it.
+wrong rule was rewritten before this run; with the fix in and the tests still
+untouched, `cargo test -p sigil-frontend-as -p sigil-frontend-emp` reddened
+exactly it and nothing else (233 passed, 1 failed).
 
 (A first run of the same command reported 371 failures and was DISCARDED, not
 adjudicated: `AEON_DIR` was unset and every one was the d-18 refusal to measure
