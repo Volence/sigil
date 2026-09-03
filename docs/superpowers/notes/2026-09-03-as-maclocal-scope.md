@@ -194,14 +194,35 @@ consumer need asl's answer, the change is to narrow what the body-label scan
 claims — never to add a fall-back, which brings the order-dependence back with
 it.
 
+### What counts as a body label, and why the first answer was wrong
+
+AS's column rule decides the COLON-LESS head only. A COLON label is a label
+wherever it sits, and a macro body may indent its own:
+
+```text
+  11/       0 :                     .skip:
+  12/       0 : (MACRO)              	mind
+  12/       0 : 6704                        beq.s   .skip
+  12/       2 : 4E71                        nop
+  12/       4 : 4E71                        nop
+  12/       6 :                             .skip:
+```
+
+`6704` is the body's own, with the caller's `.skip` at zero. The scan first
+required column 0, which is `exec_one`'s rule for a BARE head and not its rule
+for a colon one; aeon's `assert` family writes `\t.skip:` indented, so every
+assert's branch left the expansion and reached the caller's scope. Three
+`diag_assert_vector` rows caught it (`unresolved symbol Test.skip`) — the
+frontend's own tests did not, because all of them wrote the label at column 0.
+
 ### Why the scan is exact for both trees
 
 `scan_dot_labels` reads the raw body, so a label whose NAME came from a
 parameter would be scanned under its unsubstituted spelling. Across every macro
-body in `s2disasm/**/*.asm` and `.aeon-as-fold/**/*.{asm,inc}` there are 513
-column-0 dotted plain labels (390 in `s2.asm`, 117 in `s2.sounddriver.asm`, 6 in
-`s2.macros.asm`, none in aeon — aeon's macros are `.emp` now) and **not one of
-them contains a parameter name of its own macro**.
+body in `s2disasm/**/*.asm` and `.aeon-as-fold/**/*.{asm,inc}` there are 524
+dotted plain labels (390 in `s2.asm`, 117 in `s2.sounddriver.asm`, 11 in aeon's
+`engine/debug/debugger.asm`, 6 in `s2.macros.asm`) and **not one of them
+contains a parameter name of its own macro**.
 
 ## The adjacent finding, folded in
 
@@ -300,9 +321,9 @@ this before the oracle was known to be here. Re-tested:
 
 ## Verification
 
-* Twelve tests, every expected value a listing row quoted at the test.
+* Thirteen tests, every expected value a listing row quoted at the test.
 * Each proven red by a mutation shown applied from disk (`git diff` quoting the
-  changed line) and restored from the committed baseline between runs. Eight
+  changed line) and restored from the committed baseline between runs. Nine
   mutations, each redding a named set: routing `set` to the expansion scope reds
   five; routing `equ`/`=` there reds exactly the all-forms test; resolving every
   reference in the expansion reds four; resolving every reference in the caller
@@ -310,7 +331,8 @@ this before the oracle was known to be here. Re-tested:
   reds exactly one** — the untaken-arm gate, and nothing else, which is the
   finding that gate exists for; dropping the surplus binding reds two; letting a
   nested expansion reset the real scope reds the two nesting tests; dropping the
-  unclosed-definition refusal reds exactly the panic test.
+  unclosed-definition refusal reds exactly the panic test; narrowing the body
+  scan back to column 0 reds exactly the indented-label test.
 * The fall-back mutation was GREEN against the first nine tests. sigil's env
   survives a pass, so its second pass hands a fall-back the expansion's own
   definition and the two rules agree on every unconditional shape. The
@@ -318,12 +340,17 @@ this before the oracle was known to be here. Re-tested:
 * aeon four shapes rebuilt from `/home/volence/sonic_hacks/.aeon-as-fold`
   (detached at aeon `4f5ad5a1`), all four artifacts DELETED first, one shape per
   invocation, all exit 0 under `SIGIL_VERSION_STRICT=1`, every log stamped
-  `Assembler: sigil 48f268da0a0d (clean at capture)`. CRC32+size unchanged on
+  `Assembler: sigil fd3064f0103e (clean at capture)`. CRC32+size unchanged on
   every shape: s4 `14ee2440`/719700, s4.debug `142294b3`/737683, demo
-  `0c456778`/96474, demo.debug `2e603d53`/101339. mtimes moved on all four. The
-  one commit after that build changes 58 lines, all of them `///` doc comments
-  (`git diff 48f268da c52c83a7 | grep -v '^[+-]\s*///'` over the `+`/`-` lines
-  is empty).
+  `0c456778`/96474, demo.debug `2e603d53`/101339. mtimes moved on all four.
+* Full suite, `scripts/landing-run.sh` against the same reference tree, from
+  this worktree at `fd3064f0`: **376 suites, 4290 passed, 0 failed, 2 ignored**,
+  `CARGO_EXIT=0`, GREEN. The same wrapper at master `7f78bb53` in its own
+  worktree and its own target directory: 376 suites, **4277 passed**, 0 failed,
+  2 ignored. The difference is 13, which is the count of `#[test]` this branch
+  adds. Each of the thirteen names appears in the branch log as `... ok`, and
+  the log carries the run's pwd, HEAD and branch above cargo's first byte.
+* `cargo clippy --release --workspace --all-targets -- -D warnings`, exit 0.
 
 ## BLOCKED
 
