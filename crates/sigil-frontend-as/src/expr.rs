@@ -31,7 +31,14 @@ pub fn parse_expr(toks: &[Token]) -> Option<(Expr, &[Token])> {
 /// `||` is loosest, `&&` binds tighter than `||` but looser than comparisons,
 /// mirroring AS's real operator surface (empirically confirmed against `asl`:
 /// both fold to a neutral `1`/`0`, same as the comparison tier).
-fn infix_bp(p: Punct) -> Option<(u8, BinOp)> {
+///
+/// `pub(crate)` because the front-end-only TYPED evaluator
+/// (`eval.rs::eval_num`, which backs `int(...)`/`sin(...)` and float-valued
+/// symbols) walks the same operator surface. Sharing this one ladder is what
+/// keeps the two parsers from drifting: a precedence change lands in both, and
+/// the typed evaluator's `BinOp` arms are exhaustive, so a NEW operator added
+/// here fails to compile there until it is given a typed meaning.
+pub(crate) fn infix_bp(p: Punct) -> Option<(u8, BinOp)> {
     use Punct::*;
     Some(match p {
         Star => (8, BinOp::Mul),

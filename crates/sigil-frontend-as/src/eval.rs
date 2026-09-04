@@ -476,6 +476,20 @@ struct Asm {
     /// per-pass assignment and every string symbol in the `__FSTRING` scan is
     /// assigned before it is read (probe p1/p4).
     str_env: std::collections::HashMap<String, String>,
+    /// Front-end-only FLOAT-valued symbols (`sample_rate_scale := 1.0`, which
+    /// is how `s2.sounddriver.asm`'s `dac_sample_metadata` macro carries an
+    /// optional per-sample rate scale into `int(label.sample_rate*scale)`).
+    /// §7.4: a float NEVER enters `sigil_ir::SymbolValue` — like a string, it
+    /// lives here in the evaluator and is collapsed to an integer by
+    /// `int(...)` before any IR node sees it. Keyed by fully-qualified name
+    /// exactly like `env` and `str_env` (see [`Self::resolve_float_sym`]).
+    ///
+    /// A symbol is int XOR float within a pass, and unlike the int/string pair
+    /// this one is ENFORCED in both directions: an assignment writes one map
+    /// and removes the name from the other. It has to be — `sample_rate_scale`
+    /// is reassigned on every `dac_sample_metadata` expansion, so a stale
+    /// entry of the other type would outlive its own assignment.
+    float_env: std::collections::HashMap<String, f64>,
     scope: Option<String>,
     /// The scope in force where the OUTERMOST macro expansion currently on the
     /// stack was invoked — the nearest scope that is not itself an expansion.
@@ -717,6 +731,7 @@ impl Asm {
             state: crate::state::AsmState::new(opts.initial_cpu),
             env: SymbolTable::new(),
             str_env: std::collections::HashMap::new(),
+            float_env: std::collections::HashMap::new(),
             scope: None,
             outer_scope: None,
             dot_label_cache: std::collections::BTreeMap::new(),
@@ -972,11 +987,16 @@ impl Asm {
     /// `sin`/`int` are FRONT-END builtins — they must NEVER become
     /// `sigil_ir::Expr` nodes, so this runs as token-level preprocessing
     /// BEFORE `crate::expr::parse_expr` ever sees the line). Scans for each
-    /// top-level `int(` call, evaluates its single argument as an f64
-    /// expression via `eval_float` (which recognizes nested `sin(...)`/
+    /// top-level `int(` call — spelled in ANY case, since asl matches builtin
+    /// FUNCTION names case-insensitively even under `-U` (probe `f1.asm`:
+    /// `INT(3.7)` and `int(3.7)` both assemble to `3`, and S1's
+    /// `MacroSetup.asm:218` writes `roundFloatToInteger function
+    /// float,INT(float+0.5)` in capitals) — evaluates its single argument as a
+    /// TYPED expression via `eval_num` (which recognizes nested `sin(...)`/
     /// `int(...)` calls itself, so `int(sin(int(x)))`-style nesting works),
-    /// floors the result (AS's `int()` = floor, spike-0-verified against the
-    /// 4 committed sine goldens), and replaces the whole `int(...)` span with
+    /// floors a float result and passes an integer one through unchanged
+    /// (AS's `int()` = floor: `INT(-3.7)` = -4, `INT(7)` = 7), and replaces
+    /// the whole `int(...)` span with
     /// a single resolved `Tok::Int` — a completely ordinary integer literal
     /// from here on, indistinguishable from one the source author wrote by
     /// hand. A bare `sin(...)` not wrapped in `int(...)` has no integer
@@ -987,7 +1007,7 @@ impl Asm {
         let mut i = 0;
         while i < toks.len() {
             if let Tok::Ident(name) = &toks[i].tok {
-                if name == "int"
+                if name.eq_ignore_ascii_case("int")
                     && matches!(
                         toks.get(i + 1).map(|t| &t.tok),
                         Some(Tok::Punct(Punct::LParen))
@@ -996,12 +1016,15 @@ impl Asm {
                     let span = toks[i].span;
                     if let Some((args, next)) = split_call_args(toks, i + 1) {
                         let value = match args.as_slice() {
-                            [arg] => self.eval_float(arg),
+                            [arg] => self.eval_num(arg),
                             _ => None,
                         };
                         match value {
                             Some(v) => out.push(Token {
-                                tok: Tok::Int(v.floor() as i64),
+                                tok: Tok::Int(match v {
+                                    Num::Int(i) => i,
+                                    Num::Float(f) => f.floor() as i64,
+                                }),
                                 span,
                             }),
                             None => {
@@ -1023,60 +1046,78 @@ impl Asm {
         out
     }
 
-    /// Evaluate a front-end-only f64 expression tree: `+ - * /`, unary
-    /// negation, parens, int/float literals, symbol lookups (resolved via the
-    /// SAME env/scope as ordinary i64 folding, then promoted to f64), and
-    /// nested `sin(...)`/`int(...)` calls. `None` on any unresolved symbol or
-    /// malformed shape — mirrors `Fold::Poison` in spirit, but this whole tree
-    /// stays out of `sigil_ir::Expr` (§7.4).
-    fn eval_float(&self, toks: &[Token]) -> Option<f64> {
-        let (v, rest) = self.parse_float_bp(toks, 0)?;
+    /// Evaluate a front-end-only TYPED expression tree — the evaluator behind
+    /// `int(...)`/`sin(...)` arguments and float-valued symbol assignments.
+    ///
+    /// It walks the SAME operator surface as [`crate::expr::parse_expr`] and
+    /// borrows that module's [`crate::expr::infix_bp`] ladder verbatim, so the
+    /// two cannot drift on precedence. What differs is only the value domain:
+    /// this one carries [`Num`] (int XOR float) and applies AS's type rules,
+    /// whereas `parse_expr` builds an `Expr` tree that is folded in i64.
+    ///
+    /// `None` on any unresolved symbol, malformed shape, or type error —
+    /// mirrors `Fold::Poison` in spirit. The whole tree stays out of
+    /// `sigil_ir::Expr` (§7.4): a float never becomes an IR node, it is
+    /// collapsed to a `Tok::Int` by [`Self::expand_int_builtin`] first.
+    fn eval_num(&self, toks: &[Token]) -> Option<Num> {
+        let (v, rest) = self.parse_num_bp(toks, 0)?;
         rest.is_empty().then_some(v)
     }
 
-    fn parse_float_bp<'t>(&self, toks: &'t [Token], min_bp: u8) -> Option<(f64, &'t [Token])> {
-        let (mut lhs, mut rest) = self.parse_float_atom(toks)?;
+    fn parse_num_bp<'t>(&self, toks: &'t [Token], min_bp: u8) -> Option<(Num, &'t [Token])> {
+        let (mut lhs, mut rest) = self.parse_num_atom(toks)?;
         while let Some(Tok::Punct(p)) = rest.first().map(|t| &t.tok) {
-            let bp = match p {
-                Punct::Star | Punct::Slash => 8,
-                Punct::Plus | Punct::Minus => 7,
+            let (bp, op) = match crate::expr::infix_bp(*p) {
+                Some(x) if x.0 > min_bp => x,
                 _ => break,
             };
-            if bp <= min_bp {
-                break;
-            }
-            let op = *p;
-            let (rhs, r2) = self.parse_float_bp(&rest[1..], bp)?;
-            lhs = match op {
-                Punct::Star => lhs * rhs,
-                Punct::Slash => lhs / rhs,
-                Punct::Plus => lhs + rhs,
-                Punct::Minus => lhs - rhs,
-                _ => unreachable!(),
-            };
+            let (rhs, r2) = self.parse_num_bp(&rest[1..], bp)?;
+            lhs = apply_num_binop(op, lhs, rhs)?;
             rest = r2;
         }
         Some((lhs, rest))
     }
 
-    fn parse_float_atom<'t>(&self, toks: &'t [Token]) -> Option<(f64, &'t [Token])> {
+    fn parse_num_atom<'t>(&self, toks: &'t [Token]) -> Option<(Num, &'t [Token])> {
         let (head, rest) = toks.split_first()?;
         match &head.tok {
-            Tok::Float(f) => Some((*f, rest)),
-            Tok::Int(n) => Some((*n as f64, rest)),
+            Tok::Float(f) => Some((Num::Float(*f), rest)),
+            Tok::Int(n) => Some((Num::Int(*n), rest)),
+            // Unary minus is TYPE-PRESERVING (`INT(-3.7)` = -4, `INT(-7/2)`
+            // = -3): negating an int keeps it an int.
             Tok::Punct(Punct::Minus) => {
-                let (v, r) = self.parse_float_atom(rest)?;
-                Some((-v, r))
+                let (v, r) = self.parse_num_atom(rest)?;
+                Some((
+                    match v {
+                        Num::Int(i) => Num::Int(i.wrapping_neg()),
+                        Num::Float(f) => Num::Float(-f),
+                    },
+                    r,
+                ))
+            }
+            // `~x` / `~~x` are INTEGER operators; asl refuses a float operand.
+            Tok::Punct(Punct::Tilde) => {
+                let (v, r) = self.parse_num_atom(rest)?;
+                Some((Num::Int(!v.as_i64()?), r))
+            }
+            Tok::Punct(Punct::TildeTilde) => {
+                let (v, r) = self.parse_num_atom(rest)?;
+                Some((Num::Int((v.as_i64()? == 0) as i64), r))
             }
             Tok::Punct(Punct::LParen) => {
-                let (v, r) = self.parse_float_bp(rest, 0)?;
+                let (v, r) = self.parse_num_bp(rest, 0)?;
                 match r.first().map(|t| &t.tok) {
                     Some(Tok::Punct(Punct::RParen)) => Some((v, &r[1..])),
                     _ => None,
                 }
             }
+            // asl's builtin FUNCTION names are matched case-insensitively even
+            // under `-U` (which makes user SYMBOLS case-sensitive): probe
+            // `f1.asm` assembles `INT(3.7)` and `int(3.7)` identically to `3`,
+            // and asl reports an unknown one uppercased (`error #1860: unknown
+            // function MIN` for a written `min(`).
             Tok::Ident(name)
-                if (name == "sin" || name == "int")
+                if (name.eq_ignore_ascii_case("sin") || name.eq_ignore_ascii_case("int"))
                     && matches!(
                         rest.first().map(|t| &t.tok),
                         Some(Tok::Punct(Punct::LParen))
@@ -1084,26 +1125,51 @@ impl Asm {
             {
                 let (args, next) = split_call_args(rest, 0)?;
                 let inner = match args.as_slice() {
-                    [arg] => self.eval_float(arg)?,
+                    [arg] => self.eval_num(arg)?,
                     _ => return None,
                 };
-                let v = if name == "sin" {
-                    inner.sin()
+                let v = if name.eq_ignore_ascii_case("sin") {
+                    Num::Float(inner.as_f64().sin())
                 } else {
-                    inner.floor()
+                    // `INT` of an INTEGER is that integer (probe `f1.asm(11)`:
+                    // `dc.l INT(7)` -> `0000 0007`), and of a float is its
+                    // FLOOR, not a truncation toward zero (`INT(-3.7)` ->
+                    // `FFFF FFFC` = -4, `INT(-3.2)` -> -4, `INT(-3.0)` -> -3).
+                    match inner {
+                        Num::Int(i) => Num::Int(i),
+                        Num::Float(f) => Num::Int(f.floor() as i64),
+                    }
                 };
                 Some((v, &rest[next..]))
             }
             Tok::Ident(name) => {
+                // A float-valued symbol (`sample_rate_scale := 1.0`, S2's
+                // `dac_sample_metadata`) outranks the integer table: the two
+                // are disjoint by construction (an assignment writes one and
+                // clears the other), so the order only decides which stale
+                // entry loses, never which live one wins.
+                if let Some(f) = self.resolve_float_sym(name) {
+                    return Some((Num::Float(f), rest));
+                }
                 let v = match self.builtin_num(name) {
                     Some(v) => v,
                     None => self.env.resolve(name, self.dot_scope(name))?,
                 };
-                Some((v as f64, rest))
+                Some((Num::Int(v), rest))
             }
-            Tok::Dollar => Some((self.here() as f64, rest)),
+            Tok::Dollar => Some((Num::Int(self.here_i64()), rest)),
+            Tok::Punct(Punct::Star) => Some((Num::Int(self.here_i64()), rest)),
             _ => None,
         }
+    }
+
+    /// The f64 bound to a front-end-only float symbol, or `None`. Scoped
+    /// exactly like [`Self::resolve_str`] / the integer env.
+    fn resolve_float_sym(&self, name: &str) -> Option<f64> {
+        // The same key the assignment wrote, built by the same function, so a
+        // reader can never disagree with its writer about where a name lives.
+        let key = qualify(name, self.dot_scope(name));
+        self.float_env.get(&key).copied()
     }
 
     /// Evaluate front-end-only debug-string builtin calls
@@ -3584,10 +3650,17 @@ impl Asm {
             // makes `strlen(s)` see the rendered text rather than the source
             // spelling.
             let s = self.interp_text(&s);
+            self.float_env.remove(&q);
             self.str_env.insert(q, s);
             return;
         }
+        if let Some(f) = self.float_rhs(rest) {
+            self.str_env.remove(&q);
+            self.float_env.insert(q, f);
+            return;
+        }
         if let Some(v) = self.eval_all(rest, span) {
+            self.float_env.remove(&q);
             self.env.define(&q, SymbolValue::Int(v));
             // A label-referencing equate (`HandlerPtr = Handler`, the debugger's
             // `DEBUGGER__* = MDDBG__* = ErrorHandler + N` chain): its VALUE is a
@@ -3688,6 +3761,39 @@ impl Asm {
         }
     }
 
+    /// The FLOAT value of an `equ`/`=`/`set`/`:=` right-hand side, or `None`
+    /// when it is not float-typed.
+    ///
+    /// Checked between the string branch and the integer branch of both
+    /// assignment directives. asl binds a float to a symbol exactly as it
+    /// binds an integer — probe `f2.asm` lines 8 and 11 list `fx = 3.7` as
+    /// `=3.7` and `fy equ 2.5` as `=2.5`, and its symbol table prints
+    /// `fx : 3.7`. `s2.sounddriver.asm(3901)`'s `sample_rate_scale := 1.0`
+    /// (immediately reassigned to a macro parameter, then read by
+    /// `int(label.sample_rate*sample_rate_scale)`) is the corpus demand.
+    ///
+    /// Only a genuinely FLOAT result diverts here: `eval_num` returns
+    /// `Num::Float` only when a float literal or a float symbol is somewhere
+    /// in the tree, so every integer assignment still takes the integer branch
+    /// — including the ones `eval_num` could evaluate but the integer folder
+    /// handles with far more machinery (label references, deferral, the
+    /// symbolic-equ export).
+    /// Deliberately `expand_calls` and then the typed evaluator, NOT the full
+    /// [`Self::expand_operand_builtins`] chain: `eval_num` recognizes
+    /// `int(...)`/`sin(...)` itself, and it reports NOTHING. Routing this probe
+    /// through the erroring expansion instead double-reports every failure, and
+    /// it was measured doing so — `s2.asm(87677)`'s
+    /// `.loop_counter = int(log(number))` (asl's `log` builtin, which sigil does
+    /// not have) went from 6 diagnostics to 12 across the S2 corpus, one pair per
+    /// call site: a speculative type test must not be able to raise a diagnostic.
+    fn float_rhs(&mut self, rest: &[Token]) -> Option<f64> {
+        let expanded = self.expand_calls(rest, 0);
+        match self.eval_num(&expanded)? {
+            Num::Float(f) => Some(f),
+            Num::Int(_) => None,
+        }
+    }
+
     /// `name set <expr>` / `name := <expr>` (T8): AS's reassignable-symbol
     /// forms, e.g. Aeon's band counters / `OE_PREV_X` sort checks / deform
     /// accumulators. `eval_all` folds `rest` against `self.env` AS IT STANDS
@@ -3724,10 +3830,17 @@ impl Asm {
             // (asl-verified): `s := "\{n}"` captures `n`'s value at this
             // assignment, and a later reassignment of `n` does not reach `s`.
             let s = self.interp_text(&s);
+            self.float_env.remove(&q);
             self.str_env.insert(q, s);
             return;
         }
+        if let Some(f) = self.float_rhs(rest) {
+            self.str_env.remove(&q);
+            self.float_env.insert(q, f);
+            return;
+        }
         if let Some(v) = self.eval_all(rest, span) {
+            self.float_env.remove(&q);
             self.env.define(&q, SymbolValue::Int(v));
             // Relocation capability (flip Stage 2): if the RHS — after splicing
             // any set-symbol it CHAINS through (`P_DFG := PC_FG_T`) — references a
@@ -3778,12 +3891,83 @@ impl Asm {
         self.directive_set(&name, groups[1], span);
     }
 
+    /// The front-end-only builtin layer over ONE operand's tokens: user
+    /// `function` calls, then `int(...)`/`sin(...)`, then the string builtins
+    /// and string comparisons — each collapsing to an ordinary `Tok::Int`
+    /// (or, for `substr`/`lowstring`, a `Tok::Str`) before
+    /// [`crate::expr::parse_expr`] ever runs (§7.4).
+    ///
+    /// This exists because the layer used to be wired into `dc.b` ALONE.
+    /// `dc.w`/`dc.l`/`dw` ran `expand_calls` and nothing else, so every
+    /// `int(...)` in a word or long operand reached `parse_expr` unexpanded
+    /// and died as `bad word expression` — 166 of Sonic 1's 318 frontend
+    /// diagnostics, all of them on the two `dc.w MakeFMFrequency(op)` /
+    /// `dc.w MakePSGFrequency(op)` lines that build `FM_Notes` and
+    /// `PSGFrequencies`. A builtin that works at one width and not another is
+    /// not a missing feature so much as a trap, so the widths share one
+    /// function rather than three parallel pipelines.
+    fn expand_operand_builtins(&mut self, toks: &[Token]) -> Vec<Token> {
+        let expanded = self.expand_calls(toks, 0);
+        let expanded = self.expand_int_builtin(&expanded);
+        let expanded = self.expand_str_builtins(&expanded);
+        self.expand_str_comparisons(&expanded)
+    }
+
+    /// The position of a FLOAT-typed leaf in `toks` — a literal that no
+    /// `int(...)` consumed, or a name bound in [`Self::float_env`].
+    fn float_leaf(&self, toks: &[Token]) -> Option<Span> {
+        toks.iter().find_map(|t| match &t.tok {
+            Tok::Float(_) => Some(t.span),
+            Tok::Ident(n) => self.resolve_float_sym(n).map(|_| t.span),
+            _ => None,
+        })
+    }
+
+    /// Reduce an operand that still mentions a float to a plain integer token,
+    /// or say where the float is that stops it.
+    ///
+    /// A float LEAF does not by itself make an operand invalid: asl's
+    /// comparison operators take floats and yield integers, so `dc.l 3.5<4` is
+    /// `0000 0001` (probe `f2.asm(16)`). What asl refuses is a float
+    /// **result** in an integer context — `dc.l 3.7` and `dc.l fx` (after
+    /// `fx = 3.7`) both draw `error #1133: expected integer or string, but got
+    /// floating point number` (probes `f1.asm(17-19)`, `f3.asm(5)`).
+    ///
+    /// So a float-free operand is returned untouched — the integer path with
+    /// its labels, forward references and link deferral is left entirely
+    /// alone, which is why this cannot perturb any program that assembles
+    /// today. Only when a float is present does the typed evaluator run, and
+    /// then it must land on an integer.
+    ///
+    /// Running BEFORE the numeric parse is what makes the answer name the real
+    /// problem. A float TOKEN can never parse as an `Expr` (there is no float
+    /// atom), so it would read as a generic `bad word expression`; a float
+    /// SYMBOL is worse — it parses as a bare `Expr::Sym`, folds to Poison and
+    /// defers to the linker, reporting a symbol that has a perfectly good
+    /// value as an undefined one.
+    fn collapse_float_operand(&mut self, toks: &[Token]) -> Result<Vec<Token>, Span> {
+        let Some(fsp) = self.float_leaf(toks) else {
+            return Ok(toks.to_vec());
+        };
+        match self.eval_num(toks) {
+            Some(Num::Int(v)) => Ok(vec![Token { tok: Tok::Int(v), span: fsp }]),
+            _ => Err(fsp),
+        }
+    }
+
     fn directive_db(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         for g in split_top_commas(rest) {
             let called = self.expand_calls(g, 0);
             let expanded = self.expand_int_builtin(&called);
             let expanded = self.expand_str_builtins(&expanded);
+            let expanded = match self.collapse_float_operand(&expanded) {
+                Ok(t) => t,
+                Err(fsp) => {
+                    self.err(fsp, FLOAT_IN_INT_CONTEXT);
+                    continue;
+                }
+            };
             // (T6c) A STRING operand — a plain `Tok::Str` literal or a
             // string-builtin call that resolves to one (`substr(...)`,
             // `lowstring(...)`) — emits one ASCII byte per character
@@ -3844,7 +4028,14 @@ impl Asm {
     fn directive_dw(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         for g in split_top_commas(rest) {
-            let expanded = self.expand_calls(g, 0);
+            let expanded = self.expand_operand_builtins(g);
+            let expanded = match self.collapse_float_operand(&expanded) {
+                Ok(t) => t,
+                Err(fsp) => {
+                    self.err(fsp, FLOAT_IN_INT_CONTEXT);
+                    continue;
+                }
+            };
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
@@ -3913,7 +4104,14 @@ impl Asm {
         self.open_section_if_needed();
         self.pad_word_align(span);
         for g in split_top_commas(rest) {
-            let expanded = self.expand_calls(g, 0);
+            let expanded = self.expand_operand_builtins(g);
+            let expanded = match self.collapse_float_operand(&expanded) {
+                Ok(t) => t,
+                Err(fsp) => {
+                    self.err(fsp, FLOAT_IN_INT_CONTEXT);
+                    continue;
+                }
+            };
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
@@ -3977,7 +4175,14 @@ impl Asm {
         self.open_section_if_needed();
         self.pad_word_align(span);
         for g in split_top_commas(rest) {
-            let expanded = self.expand_calls(g, 0);
+            let expanded = self.expand_operand_builtins(g);
+            let expanded = match self.collapse_float_operand(&expanded) {
+                Ok(t) => t,
+                Err(fsp) => {
+                    self.err(fsp, FLOAT_IN_INT_CONTEXT);
+                    continue;
+                }
+            };
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
@@ -12088,4 +12293,127 @@ C:\n";
             [0x4E, 0xF9, 0x00, 0x00, 0x10, 0x00, 0x4E, 0xF9, 0x00, 0x00, 0x10, 0x06]
         );
     }
+}
+
+/// The diagnostic for a floating-point value reaching a context that requires
+/// an integer — asl's `error #1133: expected integer or string, but got
+/// floating point number` (probe `.f1probe/f1.asm(17)`: `dc.l 3.7`).
+///
+/// AS's expression evaluator is typed, and a float has no integer meaning of
+/// its own: the source must say which integer it wants, via `int(...)` (floor)
+/// or the corpus's `roundFloatToInteger` (`int(x+0.5)`). Truncating one
+/// silently here would be the wrong-bytes class — a program that never says
+/// how to round would get a rounding anyway.
+const FLOAT_IN_INT_CONTEXT: &str =
+    "floating point value where an integer is required (wrap it in `int(...)`)";
+
+/// A front-end-only NUMBER: AS's expression evaluator is TYPED, and the
+/// distinction is byte-visible, not cosmetic.
+///
+/// asl 1.42 Bld 212, probe `.f1probe/f2.asm`, listing columns quoted:
+///
+/// ```text
+///   4/  0 : FFFF FFFD    dc.l INT(-7/2)      ; int/int -> TRUNCATING int div, -3
+///  26/ 3C : 0000 025E    dc.l INT(15.39*1024*1024*2/FM_Sample_Rate+0.5)
+/// ```
+///
+/// `INT(-7/2)` is **-3**, not -4: `-7` and `2` are both integers, so `/` is
+/// integer division and `INT` then floors an integer (a no-op). Evaluating
+/// the same tree in f64 throughout gives `floor(-3.5)` = **-4** — a silently
+/// wrong byte, from a program that assembles clean. Type is therefore
+/// carried, not erased.
+///
+/// The float side is IEEE `f64` (binary64), asl-proven rather than assumed:
+/// `dc.l INT(1e17+1-1e17)` gives `0000 0000` (probe `f2.asm(24)`). `1e17+1`
+/// is not representable in binary64 and rounds back to `1e17`; an 80-bit
+/// extended (64-bit mantissa) would represent it exactly and answer 1.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Num {
+    Int(i64),
+    Float(f64),
+}
+
+impl Num {
+    fn as_f64(self) -> f64 {
+        match self {
+            Num::Int(i) => i as f64,
+            Num::Float(f) => f,
+        }
+    }
+    /// The integer behind this value, or `None` if it is a float. Backs the
+    /// operators AS refuses on floats (`error #1134: expected integer, but
+    /// got floating point number` — probe `f3.asm` lines 18-20 for `&`,
+    /// `<<` and `!`).
+    fn as_i64(self) -> Option<i64> {
+        match self {
+            Num::Int(i) => Some(i),
+            Num::Float(_) => None,
+        }
+    }
+    fn is_float(self) -> bool {
+        matches!(self, Num::Float(_))
+    }
+}
+
+/// Apply one binary operator to two [`Num`]s under AS's type rules.
+///
+/// `BinOp` comes straight from [`crate::expr::infix_bp`], so this match is the
+/// single place the typed evaluator says what each operator MEANS on floats;
+/// the arms are exhaustive, so a new operator in that ladder is a compile
+/// error here until it is given a meaning.
+///
+/// Three tiers, all asl-minted (probes `.f1probe/f1.asm`, `f2.asm`, `f3.asm`):
+///
+/// * **Arithmetic** (`+ - * /`) — float if EITHER side is float, otherwise
+///   integer. `dc.l 7/2` = 3 and `dc.l -7/2` = -3 (truncation toward zero, the
+///   same `i64::wrapping_div` the integer folder uses), while
+///   `dc.l INT(7.0/2)` = 3 through a real 3.5.
+/// * **Bit/modulo** (`& | ! << >> #`) — INTEGER ONLY. asl refuses a float
+///   operand outright: `dc.l INT(7.5&3)` / `INT(7.5<<1)` / `INT(7.5!3)` each
+///   draw `error #1134: expected integer, but got floating point number`.
+///   Returning `None` here is what turns that into sigil's own diagnostic
+///   rather than a silent truncation.
+/// * **Comparison / logical** (`= <> < > <= >= && ||`) — accept floats and
+///   yield an INTEGER 0/1, so the result composes into ordinary integer
+///   expressions: `dc.l 3.5<4` = `0000 0001`, and `if 3.5>2` takes the
+///   true arm.
+fn apply_num_binop(op: BinOp, lhs: Num, rhs: Num) -> Option<Num> {
+    use BinOp::*;
+    let float_math = lhs.is_float() || rhs.is_float();
+    Some(match op {
+        Add if float_math => Num::Float(lhs.as_f64() + rhs.as_f64()),
+        Sub if float_math => Num::Float(lhs.as_f64() - rhs.as_f64()),
+        Mul if float_math => Num::Float(lhs.as_f64() * rhs.as_f64()),
+        Div if float_math => Num::Float(lhs.as_f64() / rhs.as_f64()),
+        Add => Num::Int(lhs.as_i64()?.wrapping_add(rhs.as_i64()?)),
+        Sub => Num::Int(lhs.as_i64()?.wrapping_sub(rhs.as_i64()?)),
+        Mul => Num::Int(lhs.as_i64()?.wrapping_mul(rhs.as_i64()?)),
+        Div => {
+            let d = rhs.as_i64()?;
+            if d == 0 {
+                return None;
+            }
+            Num::Int(lhs.as_i64()?.wrapping_div(d))
+        }
+        Mod => {
+            let d = rhs.as_i64()?;
+            if d == 0 {
+                return None;
+            }
+            Num::Int(lhs.as_i64()?.wrapping_rem(d))
+        }
+        And => Num::Int(lhs.as_i64()? & rhs.as_i64()?),
+        Or => Num::Int(lhs.as_i64()? | rhs.as_i64()?),
+        Xor => Num::Int(lhs.as_i64()? ^ rhs.as_i64()?),
+        Shl => Num::Int(lhs.as_i64()?.wrapping_shl(rhs.as_i64()? as u32)),
+        Shr => Num::Int(lhs.as_i64()?.wrapping_shr(rhs.as_i64()? as u32)),
+        Eq => Num::Int((lhs.as_f64() == rhs.as_f64()) as i64),
+        Ne => Num::Int((lhs.as_f64() != rhs.as_f64()) as i64),
+        Lt => Num::Int((lhs.as_f64() < rhs.as_f64()) as i64),
+        Gt => Num::Int((lhs.as_f64() > rhs.as_f64()) as i64),
+        Le => Num::Int((lhs.as_f64() <= rhs.as_f64()) as i64),
+        Ge => Num::Int((lhs.as_f64() >= rhs.as_f64()) as i64),
+        LogAnd => Num::Int((lhs.as_f64() != 0.0 && rhs.as_f64() != 0.0) as i64),
+        LogOr => Num::Int((lhs.as_f64() != 0.0 || rhs.as_f64() != 0.0) as i64),
+    })
 }
