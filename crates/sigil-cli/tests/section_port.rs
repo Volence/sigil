@@ -84,6 +84,10 @@ fn map_toml(debug: bool) -> String {
 /// type equs feed the `target_bits`/`op_bits` mapper drift-locks.
 fn section_value_equs() -> Vec<Section> {
     let mut pairs: Vec<(&str, &str)> = vec![
+        // VDP HARDWARE address (engine/system/constants.emp: `pub const VDP_HV_COUNTER =
+        // $C00008`), read by the canopy self-pricing. Fixed by the console, so unlike a
+        // ROM address it cannot drift with the layout.
+        ("VDP_HV_COUNTER", "$C00008"),
         ("VDP_DATA", "$C00000"),
         ("VDP_CTRL", "$C00004"),
         ("VRAM_PLANE_A", "$C000"),
@@ -175,6 +179,9 @@ fn section_addr_labels(debug: bool) -> Vec<Section> {
         // The canopy diagnostic stamps its records with the frame number; pre-existing
     // pin, so naming it adds no new hand-maintained literal.
     table.push(("Frame_Counter".to_string(), pick(pins::FRAME_COUNTER)));
+    // The tile-cache cells section.emp reads. Present in BOTH shapes, so unconditional;
+    // work-RAM restricted like the canopy sweep beside it.
+    sigil_harness::test_support::extend_from_listing_ram(&mut table, debug, &["Cache_"]);
     sigil_harness::test_support::extend_from_listing_ram(&mut table, debug, &["Canopy_"]);
     }
 
