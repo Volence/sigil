@@ -27,3 +27,10 @@ crates/sigil-harness/golden/.freeze-journal
 
 # dedicated landing-verification target dir — never share target/ between worktrees
 /.target-land/
+
+# scripts/tree_state_capture_gate.sh's own target dir. That gate asserts the tree is
+# clean before it mutates anything, so a build artifact of its own showing up as an
+# untracked file would refuse the very run it is part of. Ignored, not relocated to
+# target/: that one is a shared artifact other lanes pin by hash.
+/.target-tree-state-gate/
+/.target-tree-state-gate.buildlog

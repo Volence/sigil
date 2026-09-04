@@ -26,13 +26,23 @@
 //!
 //! ## Residual gap, named rather than papered over
 //!
-//! Working-tree dirtiness is *not* cross-checkable. `build.rs` captures it as a
-//! snapshot and cargo has no trigger that follows it, so a mismatch between the
-//! reported tree state and `git status` at test time is legitimate in both
-//! directions (the tree may have been edited after capture, or cleaned after
-//! it). Asserting either direction would be a flake, so these tests assert the
-//! *shape* of the tree claim and that the banner discloses the limitation —
-//! and the disclosure itself is asserted, so it cannot be quietly dropped.
+//! Working-tree dirtiness is *not* cross-checkable **here**, even though
+//! `build.rs` now names the closure's own paths as rerun triggers so that a
+//! capture follows the sources it describes. A mismatch between the reported
+//! tree state and `git status` at test time stays legitimate in both directions:
+//! the tree may have been edited after the capture and inside this same cargo
+//! invocation, or cleaned after it. Asserting either direction would be a flake
+//! in exactly the false-clean direction, so these tests assert the *shape* of
+//! the tree claim, the trigger set cargo was handed, and the banner's own
+//! disclosure of the limit — and the disclosure is asserted, so it cannot be
+//! quietly dropped.
+//!
+//! That leaves one thing this file cannot prove: that cargo *acted* on the
+//! source triggers. Proving it means editing a tracked source, rebuilding and
+//! reading the banner back, which must never run inside a shared checkout under
+//! a suite that may be killed. `scripts/tree_state_capture_gate.sh` is that
+//! proof, standing on its own and named here so the split is visible rather than
+//! assumed away.
 
 use std::process::Command;
 
@@ -804,9 +814,148 @@ fn the_banner_discloses_how_the_closure_can_be_wrong() {
          compare prove\n{stdout}"
     );
     assert!(
-        prose.contains("git log -1 --format=%H HEAD -- <closure-paths>"),
-        "the banner must give the command that turns its closure revision into a check\n{stdout}"
+        prose.contains("drift-check"),
+        "the banner must point at the command that turns its closure revision into a check\n{stdout}"
     );
+}
+
+/// THE SECOND FAULT'S GATE. The drift check must be a command that works when it
+/// is run as printed, not a recipe a reader assembles.
+///
+/// The recipe form was `git log -1 --format=%H HEAD -- <closure-paths>` beside a
+/// space-separated path list, and its obvious assembly puts the list in a shell
+/// variable. Under zsh — which does not word-split an unquoted parameter — `--
+/// $PATHS` is ONE pathspec: it matches nothing, prints nothing and exits 0, so a
+/// tree the check never looked at reads as a tree with no drift. An empty result
+/// that reads as an answer is the same failure class as the stale tree state
+/// this banner exists to prevent, one layer out in the reader.
+///
+/// So this gate does not inspect the command's spelling; it RUNS it, in every
+/// shell available, and requires the reported closure revision back. A command
+/// that silently returns nothing fails here, whatever it looks like.
+#[test]
+fn the_printed_drift_check_returns_the_reported_revision_in_every_shell() {
+    let stdout = version_stdout("--version");
+    let command = field(&stdout, "drift-check");
+    assert!(
+        !command.starts_with("unavailable"),
+        "this binary printed no runnable drift check: {command}\n{stdout}"
+    );
+    let reported = field(&stdout, "closure-revision");
+    assert!(
+        !reported.starts_with("unavailable"),
+        "there is no closure revision for the drift check to be compared against: {reported}"
+    );
+
+    // A recipe over a variable is what broke; a command carrying its own paths is
+    // the fix, and a reader who is handed a variable to expand can get it wrong
+    // again. Assert the shape that makes the failure unreachable, not merely the
+    // behaviour of today's spelling.
+    assert!(
+        !command.contains('$') && !command.contains('<'),
+        "the drift check must be runnable as printed, with nothing left for a reader to \
+         substitute; got `{command}`"
+    );
+
+    let mut ran: Vec<&str> = Vec::new();
+    for shell in ["sh", "bash", "zsh"] {
+        let out = match Command::new(shell).arg("-c").arg(&command).output() {
+            Ok(out) => out,
+            // A shell that is not installed is not a finding; a shell that ran
+            // and disagreed is. The count below is what keeps "no shell was
+            // available" from passing as "every shell agreed".
+            Err(_) => continue,
+        };
+        let printed = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        assert!(
+            out.status.success(),
+            "the printed drift check failed under {shell}: {}\ncommand: {command}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(
+            printed, reported,
+            "the drift check printed in this banner returns `{printed}` under {shell}, not the \
+             `{reported}` the banner reports. An empty or wrong answer here reads to a human as \
+             `no drift`.\ncommand: {command}"
+        );
+        ran.push(shell);
+    }
+    assert!(
+        !ran.is_empty(),
+        "no shell on this machine could run the printed drift check, so this gate measured \
+         nothing — that is a failure, not a pass.\ncommand: {command}"
+    );
+}
+
+/// THE FIRST FAULT'S GATE, on the half a test in this process can see: every
+/// closure path that exists on disk must be one cargo was told to watch.
+///
+/// Without those triggers the tree-state capture is keyed on the revision moving
+/// and on the manifests — never on the content of the sources — so an
+/// uncommitted edit to a closure source relinks the binary while the capture
+/// keeps its previous answer, and the banner reports `clean` over a binary built
+/// from uncommitted code. A consumer's gate then opens on precisely the case it
+/// exists to catch.
+///
+/// The expectation is derived here, from the banner's own path list and this
+/// filesystem, rather than copied: the watched count and the unwatchable list
+/// must be exactly what the closure and the disk say they are. It asserts what
+/// cargo was *told*; `scripts/tree_state_capture_gate.sh` is what proves cargo
+/// acted on it, for the same reason the HEAD-equality test above exists beside
+/// the trigger-naming one.
+#[test]
+fn every_closure_path_that_exists_is_watched_for_edits() {
+    let stdout = version_stdout("--version");
+    let paths = closure_paths(&stdout);
+    let root = std::path::PathBuf::from(
+        git(&["rev-parse", "--show-toplevel"]).expect("this checkout has a root"),
+    );
+
+    // A trigger naming a path that does not exist makes cargo treat the unit as
+    // dirty on every build, so those cannot be emitted — but a hole that nothing
+    // in the output confesses is the defect, so the banner must name them.
+    let (present, missing): (Vec<String>, Vec<String>) =
+        paths.iter().cloned().partition(|p| root.join(p).exists());
+
+    let tracked = field(&stdout, "tree-tracked");
+    let expected_head = format!("{}/{} closure path(s) watched for edits", present.len(), paths.len());
+    assert!(
+        tracked.starts_with(&expected_head),
+        "the banner must say how much of its closure the tree state is keyed on. Expected it to \
+         begin `{expected_head}`; got `{tracked}`\n{stdout}"
+    );
+
+    for path in &missing {
+        assert!(
+            tracked.contains(path.as_str()),
+            "`{path}` is claimed as a source of this binary but does not exist, so cargo cannot \
+             be told to watch it — and the banner does not name it as a hole: `{tracked}`\n{stdout}"
+        );
+    }
+    if missing.is_empty() {
+        assert!(
+            tracked.contains("every derived path exists"),
+            "nothing was unwatchable, so the banner must say so rather than leave a reader to \
+             infer it: `{tracked}`\n{stdout}"
+        );
+    }
+
+    // And the claim must reach `freshness`, which is what a reader skims and
+    // what the other disclosure gates read.
+    let freshness = field(&stdout, "freshness");
+    if present.is_empty() {
+        assert!(
+            !freshness.contains(",sources"),
+            "no closure path could be watched, yet the banner claims source tracking\n{stdout}"
+        );
+    } else {
+        assert!(
+            freshness.contains(",sources"),
+            "cargo was told to watch {} closure path(s), so the banner must list `sources` among \
+             what it tracks — a tree state keyed only on the revision goes stale silently\n{stdout}",
+            present.len()
+        );
+    }
 }
 
 /// The tree state word is what a consumer keys on, and the three states it can

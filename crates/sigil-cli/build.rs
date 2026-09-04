@@ -69,21 +69,64 @@
 //! sources instead of the repository tip — which moves on every commit and
 //! therefore says nothing about any binary.
 //!
-//! # What cannot be tracked, and is therefore labelled a snapshot
+//! # Tracking working-tree dirtiness: the closure's own paths
 //!
-//! Working-tree dirtiness has no file whose mtime follows it. Tracking it would
-//! require watching the whole repository, and the repository contains `target/`,
-//! which every build mutates — so a repo-root directory trigger is not merely
-//! expensive, it is a build that never reaches a fixed point. The alternative,
-//! forcing the script to rerun unconditionally, was measured against cargo: a
-//! rerun recompiles the dependent crate even when the script's output is
-//! byte-identical, so it would pay a full recompile-and-relink of `sigil` and
-//! its ~130 test binaries on every `cargo build` and every `cargo test`.
+//! Working-tree dirtiness has no single file whose mtime follows it, and two
+//! ways of reaching for one are refused on measured grounds:
 //!
-//! The call: capture tree state as an explicitly-labelled snapshot and let
-//! `--version` say so in its own output. `SIGIL_TREE_STATE` is truthful as of
-//! the last capture and may under-report dirt if the binary was relinked
-//! without HEAD moving; `SIGIL_REVISION` carries no such caveat.
+//!   * **watch the whole repository** — the repository contains `target/`, which
+//!     every build mutates, so a repo-root directory trigger is not merely
+//!     expensive, it is a build that never reaches a fixed point;
+//!   * **force the script to rerun unconditionally** — cargo recompiles the
+//!     dependent crate on a rerun even when the script's output is
+//!     byte-identical, so this pays a recompile-and-relink of `sigil` and every
+//!     one of its integration-test binaries (366 in this workspace as of
+//!     2026-09-04) on every `cargo build` and every `cargo test`.
+//!
+//! Both refusals stand. Neither, however, reaches the third option, which this
+//! file's own code already computes: emit a trigger for **each derived closure
+//! path**. That is not the whole repository — it is the per-package source
+//! directories, the manifests, and the fixed workspace-level build inputs, none
+//! of which contains `target/` — and it is not an unconditional rerun, because
+//! it fires only when a source the binary is compiled from actually changed,
+//! which is when cargo was going to recompile this crate anyway.
+//!
+//! Without those triggers the capture is keyed on the revision moving and on the
+//! manifests, never on the CONTENT of the sources. Cargo tracks sources for
+//! compilation, so an uncommitted edit to a closure source recompiles the crate
+//! and relinks the binary while this script keeps its previous answer — and the
+//! banner then reports `clean` about a binary built from uncommitted code, which
+//! is exactly the case a consumer's gate exists to catch. Measured on this
+//! workspace, reproducibly: the binary printed the uncommitted edit back while
+//! `--version` said `tree: clean at capture — no uncommitted changes`.
+//!
+//! The rule and its one trap live in `src/tree_class.rs` beside the classifier
+//! ([`tree_class::source_triggers`]): a trigger naming a path that does not
+//! exist makes cargo treat the unit dirty on every build, so only existing paths
+//! are emitted — even though the very same list is *also* handed out as git
+//! pathspecs, where a pathspec matching nothing is harmless.
+//!
+//! # What is still a snapshot
+//!
+//! `SIGIL_TREE_STATE` remains labelled a snapshot, because the tracking is
+//! path-scoped rather than total. It can only ever under-report, and only where
+//! no mtime under a watched path moves:
+//!
+//!   * dirt **outside** the closure — so `clean` may stand where `clean-sources`
+//!     is now true. Neither word is a reason to distrust the binary, so this
+//!     costs a consumer nothing;
+//!   * a derived closure path that **does not exist yet** and therefore cannot be
+//!     watched (`SIGIL_TREE_TRACKED` names them). In practice the two instances
+//!     are `.cargo` and `rust-toolchain*`, and creating either changes rustflags
+//!     or the compiler itself, which invalidates cargo's own fingerprints — but
+//!     that is a mitigation, not a guarantee, and it is named here rather than
+//!     relied on silently;
+//!   * an edit landing inside the same cargo invocation that captured this;
+//!   * any change that alters content without moving an mtime, cargo's tracking
+//!     being mtime-based.
+//!
+//! A word beginning `dirty` is therefore trustworthy when it appears.
+//! `SIGIL_REVISION` carries no such caveat.
 
 use std::collections::{BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -95,7 +138,7 @@ use std::process::Command;
 // because two copies of a rule are two rules.
 #[path = "src/tree_class.rs"]
 mod tree_class;
-use tree_class::{classify, state_and_detail, SourcePaths};
+use tree_class::{classify, source_triggers, state_and_detail, SourcePaths, Triggers};
 
 /// Every value the version banner renders, with a reason string when a probe
 /// could not answer. Absence is always carried as a word, never as an empty
@@ -107,12 +150,19 @@ struct Provenance {
     date: String,
     tree_state: String,
     tree_detail: String,
+    /// Which of the closure's paths cargo was told to watch for edits, and which
+    /// could not be watched. This is what makes the residual hole in the tree
+    /// state a named quantity in the output rather than a paragraph of prose.
+    tree_tracked: String,
     source_dir: String,
     tracks: String,
     closure_packages: String,
     closure_paths: String,
     closure_note: String,
     closure_revision: String,
+    /// The drift check as a command a reader can paste and run, with the paths
+    /// already in it. See [`drift_check`] for why it is not a recipe.
+    drift_check: String,
     error: String,
 }
 
@@ -138,12 +188,14 @@ impl Provenance {
             date: "unknown".into(),
             tree_state: "unknown".into(),
             tree_detail: "not determined".into(),
+            tree_tracked: format!("nothing, because the revision probe failed first ({why})"),
             source_dir: "unknown".into(),
             tracks: tracks.into(),
             closure_packages: "unknown".into(),
             closure_paths: "unknown".into(),
             closure_note: format!("not derived, because the revision probe failed first ({why})"),
             closure_revision: "unavailable".into(),
+            drift_check: format!("unavailable, because the revision probe failed first ({why})"),
             error: why,
         }
     }
@@ -171,12 +223,14 @@ fn main() {
     emit("SIGIL_REVISION_DATE", &p.date);
     emit("SIGIL_TREE_STATE", &p.tree_state);
     emit("SIGIL_TREE_DETAIL", &p.tree_detail);
+    emit("SIGIL_TREE_TRACKED", &p.tree_tracked);
     emit("SIGIL_SOURCE_DIR", &p.source_dir);
     emit("SIGIL_REVISION_TRACKS", &p.tracks);
     emit("SIGIL_CLOSURE_PACKAGES", &p.closure_packages);
     emit("SIGIL_CLOSURE_PATHS", &p.closure_paths);
     emit("SIGIL_CLOSURE_NOTE", &p.closure_note);
     emit("SIGIL_CLOSURE_REVISION", &p.closure_revision);
+    emit("SIGIL_DRIFT_CHECK", &p.drift_check);
     emit("SIGIL_PROVENANCE_ERROR", &p.error);
 }
 
@@ -231,6 +285,52 @@ fn probe(manifest_dir: &Path) -> Provenance {
         tracks = format!("{tracks},manifests");
     }
 
+    // The tree state's own triggers. Everything above is revision-shaped, and a
+    // capture keyed on the revision moving says nothing about a tree that was
+    // edited without one — see the note at the top of this file. `root` is
+    // `Some` exactly when the closure derived, and `closure()` has already
+    // refused any workspace root that is not the repository root, so joining
+    // these repository-relative paths onto it addresses the files git named.
+    let tree_tracked = match closure.root.as_deref() {
+        Some(root) => match source_triggers(&closure.sources, |rel| root.join(rel).exists()) {
+            Triggers::Derived { emitted, absent } => {
+                for rel in &emitted {
+                    println!("cargo:rerun-if-changed={}", root.join(rel).display());
+                }
+                if !emitted.is_empty() {
+                    tracks = format!("{tracks},sources");
+                }
+                let total = emitted.len() + absent.len();
+                if absent.is_empty() {
+                    format!(
+                        "{}/{total} closure path(s) watched for edits; every derived path exists",
+                        emitted.len()
+                    )
+                } else {
+                    // Named, not hidden. Cargo reads a trigger on a missing path
+                    // as permanently dirty, so these cannot be emitted, and a
+                    // hole nothing in the output confesses is the failure this
+                    // banner exists to prevent.
+                    format!(
+                        "{}/{total} closure path(s) watched for edits; NOT PRESENT and so \
+                         unwatchable (a trigger on a missing path makes every build dirty): {}",
+                        emitted.len(),
+                        absent.join(" ")
+                    )
+                }
+            }
+            // Unreachable while `root` is `Some`, and answered rather than
+            // asserted: an undetermined closure has no finite trigger set.
+            Triggers::Undetermined => {
+                "nothing — the closure could not be derived, so every path is material".to_string()
+            }
+        },
+        None => format!(
+            "nothing — the closure was not derived ({})",
+            if closure.error.is_empty() { "reason not reported" } else { &closure.error }
+        ),
+    };
+
     let (tree_state, tree_detail) = tree_status(manifest_dir, &closure);
 
     let closure_revision = closure_revision(manifest_dir, &closure);
@@ -257,6 +357,8 @@ fn probe(manifest_dir: &Path) -> Provenance {
         closure.sources.paths().join(" ")
     };
 
+    let drift_check = drift_check(&source_dir, &closure);
+
     Provenance {
         revision,
         revision_short,
@@ -264,14 +366,61 @@ fn probe(manifest_dir: &Path) -> Provenance {
         date,
         tree_state,
         tree_detail,
+        tree_tracked,
         source_dir,
         tracks,
         closure_packages,
         closure_paths,
         closure_note,
         closure_revision,
+        drift_check,
         error: String::new(),
     }
+}
+
+/// The drift check as a command, with the paths already substituted in.
+///
+/// The banner used to print a *recipe* — `git log -1 --format=%H HEAD --
+/// <closure-paths>` — leaving a reader to assemble it from the `closure-paths`
+/// line. Doing that in the obvious way puts the list in a shell variable, and
+/// under zsh, which does not word-split an unquoted parameter, `-- $PATHS`
+/// becomes ONE pathspec: it matches nothing, prints nothing, and exits 0. An
+/// empty result reads as an answer, so the check reports "no drift" on a tree it
+/// never looked at. Measured here, not theorised: with the paths correctly split
+/// the same command returns exactly the revision the banner reports.
+///
+/// A reader who cannot assemble it wrongly is worth more than one who is told
+/// how to assemble it rightly, so the command is emitted whole and needs no
+/// variable, no splitting rule and no shell in particular. `-C` carries the
+/// "run it at the tree root" instruction, which the pathspecs depend on, in the
+/// command itself rather than in prose beside it.
+fn drift_check(source_dir: &str, closure: &Closure) -> String {
+    if !closure.error.is_empty() {
+        return format!("unavailable — {}", closure.error);
+    }
+    let paths = closure.sources.paths();
+    if paths.is_empty() {
+        return "unavailable — no closure path was derived, so there is nothing to compare"
+            .to_string();
+    }
+    let mut cmd = format!("git -C {} log -1 --format=%H HEAD --", shell_word(source_dir));
+    for path in paths {
+        cmd.push(' ');
+        cmd.push_str(&shell_word(path));
+    }
+    cmd
+}
+
+/// One word of a shell command line. Quoted only when it needs to be, so the
+/// ordinary case stays readable — but quoted whenever it does, because a path
+/// carrying a space would otherwise split into two pathspecs and reintroduce the
+/// silent-empty-answer failure from the other direction.
+fn shell_word(word: &str) -> String {
+    let safe = |c: char| c.is_ascii_alphanumeric() || "._/@%+=:,-".contains(c);
+    if !word.is_empty() && word.chars().all(safe) {
+        return word.to_string();
+    }
+    format!("'{}'", word.replace('\'', r"'\''"))
 }
 
 /// Resolve the worktree's own git dir and the shared common dir. These differ
@@ -320,6 +469,12 @@ fn emit_rerun_triggers(git_dir: &Path, common_dir: &Path) -> String {
 struct Closure {
     /// The paths themselves, and the coverage decision over them.
     sources: SourcePaths,
+    /// The root `sources` is relative to — `Some` exactly when the closure
+    /// derived, which is also when it has been proved equal to the repository
+    /// root. Carried rather than re-derived by the caller so that "these paths
+    /// hang off that root" is a fact the type states instead of an assumption
+    /// two functions happen to share.
+    root: Option<PathBuf>,
     /// How many cargo packages the walk reached.
     packages: usize,
     /// Absolute manifest paths, emitted as rerun triggers so the walk is
@@ -334,6 +489,7 @@ impl Closure {
     fn undetermined(why: String) -> Self {
         Closure {
             sources: SourcePaths::undetermined(),
+            root: None,
             packages: 0,
             manifests: Vec::new(),
             error: why,
@@ -507,6 +663,7 @@ fn closure(manifest_dir: &Path, repo_root: &str) -> Closure {
 
     Closure {
         sources: SourcePaths::derived(paths),
+        root: Some(workspace_root),
         packages: reached.len(),
         manifests,
         error: String::new(),
