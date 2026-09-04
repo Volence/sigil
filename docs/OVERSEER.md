@@ -1131,6 +1131,15 @@ Both halves have now been met repeatedly: **five silent-wrong-answer faults clos
 of which the two largest were invisible to every measurement the project had. The `×26` stride
 bug and `[layout.odd-field]` are the same shape one layer out, already banked above.
 
+**COMPARE THE SETS, NOT THE TOTALS — a summary statistic answers a question nobody asked.**
+Two populations can differ by one member in each direction and total identically, so a count
+difference is consistent with a change it cannot see. Measured instance (2026-09-04, jointly with
+the aeon lane): across five aeon trees spanning 155 commits, the debug listing carries exactly one
+more equate than release — but the assertion worth gating is not `debug = release + 1`, it is
+**`release` is a strict SUBSET of `debug`**, reverse set empty. A future release-only equate is a
+genuine anomaly, and a count-difference check passes straight through it. The same shape is why
+this project compares unresolved-symbol *name sets in both directions* rather than their sizes.
+
 **So: a falling diagnostic count is evidence that noise was removed, never that correctness
 improved.** The discriminators that DO see this class, and which a parcel should report beside
 the count: the **per-class decomposition** (did any class rise, did a new one appear), the
