@@ -2017,21 +2017,30 @@ impl Asm {
             && !self.macros.contains_key(&head)
             && !self.is_attribute_macro_head(&head)
         {
-            // Under 68000 there is no mnemonic table yet (M1.C T4/T5), so
-            // `is_mnemonic` (Z80-only) cannot tell a bare label from an
-            // instruction. Fall back to AS's column rule: a bare label (no
+            // AS's column rule, and it holds on EVERY cpu: a bare label (no
             // colon) sits at column 0; an instruction is indented. A colon
             // label was already stripped above, so any remaining head on such a
             // line is an instruction regardless of column. Head token column =
             // `span.start - line.base` (see lex_line: span.start = base + col).
-            // `eval` takes the same column rule on EVERY cpu, not just the
-            // 68000: asl accepts an indented `eval j,9` under `CPU Z80` (`=9H`
-            // in the listing) and still reads a column-0 `eval j,10` as a label
-            // named `eval` followed by `#1200 unknown instruction J,10`. Under
-            // Z80 an unrecognized indented head is bound as a label instead of
-            // diagnosed, so without this the operand-form `eval` would bind the
-            // word `eval` and assign nothing.
-            if self.state.cpu == Cpu::M68000 || fold_kw(&head) == "eval" {
+            //
+            // The rule is not a 68000 fallback for the absent m68k mnemonic
+            // table — it is what decides whether an UNRECOGNIZED head is a
+            // definition or a diagnostic, and that question is cpu-independent.
+            // Probed against `asl` (S1's binary, md5 61e67256…) under `CPU Z80`,
+            // four shapes:
+            //
+            //   indented `zqp_bogus`      -> error #1200 unknown instruction
+            //   column-0 `zqp_bogus`      -> exit 0; it is a label
+            //   indented `zqp_bogus a,b`  -> error #1200, naming the HEAD
+            //   indented `ldi`            -> exit 0; a real Z80 instruction
+            //
+            // Restricting the rule to the 68000 made rows 1, 3 and 4 silent
+            // under Z80: the head was bound as a label, no bytes were emitted,
+            // and the exit stayed 0 — so an unimplemented Z80 mnemonic (row 4)
+            // shortened the output with no diagnostic at all. Applying the rule
+            // on every cpu routes all three to `dispatch`, whose final arm
+            // reports `unknown directive or mnemonic`.
+            {
                 let indented = body[0].span.start > line.base;
                 if parsed.label_colon.is_some() || indented {
                     self.dispatch(&head, &body[1..], body[0].span);
@@ -11570,6 +11579,88 @@ C:\n";
         assert!(
             diags.iter().all(|d| d.message.contains("loop variable")),
             "{diags:?}"
+        );
+    }
+
+    /// An unrecognized INDENTED head under `CPU Z80` is a diagnostic, not a
+    /// label. It used to be bound silently: no diagnostic, no bytes, exit 0 —
+    /// so an unimplemented Z80 mnemonic shortened the output with nothing to
+    /// read. Expectations come from `asl` (S1's binary, upstream AS, md5
+    /// `61e672562465725a8c102288a7da9098`, `-U` on every invocation), which
+    /// classifies the four shapes below as:
+    ///
+    /// ```text
+    ///     indented  zqp_bogus       error #1200: unknown instruction   ZQP_BOGUS
+    ///     column-0  zqp_bogus       exit 0 — it is a label
+    ///     indented  zqp_bogus a,b   error #1200: unknown instruction   ZQP_BOGUS
+    ///     indented  ldi             exit 0 — a real Z80 instruction
+    /// ```
+    ///
+    /// Row 4 is the one that matters: `ldi` is a Z80 instruction this assembler
+    /// does not encode, and before the column rule applied under Z80 it was
+    /// eaten in silence. `asl` assembles `nop / ldi / nop` at org 0 to
+    /// `00 ED A0 00`; this assembler emitted `00 00` and exited 0.
+    #[test]
+    fn unrecognized_indented_head_under_z80_is_loud_not_a_label() {
+        for head in ["zqp_bogus", "zqp_bogus a,b", "ldi"] {
+            let src = format!("	cpu z80\n	padding off\n	phase 0\n	{head}\n	nop\n");
+            let diags = match run(&src, &Options::default()) {
+                Ok(_) => panic!("`{head}` assembled silently; it must diagnose"),
+                Err(d) => d,
+            };
+            let msgs: Vec<&str> = diags.iter().map(|d| d.message.as_str()).collect();
+            let want = if head.starts_with("ldi") {
+                "unknown directive or mnemonic `ldi`"
+            } else {
+                "unknown directive or mnemonic `zqp_bogus`"
+            };
+            assert_eq!(msgs, vec![want], "head `{head}` gave {msgs:?}");
+        }
+    }
+
+    /// The other half of AS's column rule, and the reason the fix is a column
+    /// test rather than a blanket refusal: a head in COLUMN 0 under `CPU Z80`
+    /// really is a label, and `asl` accepts it with exit 0.
+    #[test]
+    fn unrecognized_column_zero_head_under_z80_is_still_a_label() {
+        let src = "	cpu z80\n	padding off\n	phase 0\nzqp_bogus\n	nop\n";
+        let m = run(src, &Options::default()).expect("a column-0 head is a label");
+        assert!(
+            m.sections
+                .iter()
+                .flat_map(|s| s.labels.iter())
+                .any(|l| l.name == "zqp_bogus"),
+            "the column-0 head must still bind: {:?}",
+            m.sections
+                .iter()
+                .flat_map(|s| s.labels.iter().map(|l| l.name.clone()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// The silent bind had a second effect beyond the missing bytes, and it is
+    /// the one a byte comparison alone would not have found: the phantom label
+    /// OPENED A LOCAL-LABEL SCOPE, so every `.local` defined after it was
+    /// qualified under the phantom instead of the real enclosing label, and
+    /// references from before it went unresolved.
+    ///
+    /// This is exactly what `s2disasm`'s `.is_psg` and `.voiceptr` did — three
+    /// `unresolved symbol` diagnostics that were collateral damage of the 17
+    /// eaten `ldi` heads above them, and that disappear once the heads are loud.
+    #[test]
+    fn an_unrecognized_z80_head_does_not_open_a_local_label_scope() {
+        let src = "	cpu z80\n	padding off\n	phase 0\n\
+                   Outer:\n	ld	a,(.loc)\n	zqp_bogus\n.loc:\n	nop\n";
+        let diags = run(src, &Options::default()).expect_err("the bogus head must diagnose");
+        let msgs: Vec<&str> = diags.iter().map(|d| d.message.as_str()).collect();
+        // The ONLY complaint is the head. `.loc` still belongs to `Outer`, so
+        // the reference above it resolves; when the head was bound as a label
+        // this read `unresolved symbol `.loc` in operand` instead — and the
+        // head itself was never mentioned at all.
+        assert_eq!(
+            msgs,
+            vec!["unknown directive or mnemonic `zqp_bogus`"],
+            "got {msgs:?}"
         );
     }
 }
