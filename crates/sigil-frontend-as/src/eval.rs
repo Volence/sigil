@@ -606,6 +606,77 @@ struct Asm {
     /// `=`/`equ` of any of these is a `[defines.collision]` error (the P5
     /// no-silent-shadowing guard). Constant across passes (seeded from opts).
     guarded_defines: std::collections::HashSet<String>,
+    /// Every `NAME struct … endstruct` layout declared this pass, by name.
+    /// Read by [`Asm::instantiate_struct`] when a later line names one in the
+    /// mnemonic column (`v_snddriver_ram: SMPS_RAM`) and by
+    /// [`Asm::capture_struct`] when a struct body embeds another struct.
+    structs: std::collections::HashMap<String, StructDef>,
+    /// The label written on the line whose mnemonic column names a struct,
+    /// parked between [`Asm::exec_one`] defining it and
+    /// [`Asm::instantiate_struct`] hanging the members off it. Taken there;
+    /// `None` at the instantiation is asl's `#2040 structure name missing`.
+    pending_struct_label: Option<String>,
+}
+
+/// One `NAME struct … endstruct` layout.
+///
+/// **Two offset tables, because asl keeps two and they DISAGREE.** A member
+/// declared `b: ds.w 1` at an odd running offset under `padding on` binds the
+/// declaration-scope symbol `S.b` to the offset BEFORE the alignment pad, while
+/// the element the struct table records — and every instantiation reads — is the
+/// offset AFTER it. Probe `q7.asm`, `a ds.b 1 / b ds.w 1 / c ds.b 1 / d ds.l 1`:
+///
+/// ```text
+///   symbols        S.a=0  S.b=1  S.c=4  S.d=5   S.len=$A
+///   struct table     0      2      4      6
+///   inst.X - inst    0      2      4      6
+/// ```
+///
+/// `elems` is the second table. The first is written straight into `env` as the
+/// body is walked, which is also what makes a member usable in a LATER member's
+/// count expression (`ds.b SMPS_RAM.v_1up_ram_end-SMPS_RAM.v_1up_ram`, the last
+/// line of Sonic 1's `SMPS_RAM`).
+#[derive(Clone, Debug)]
+struct StructDef {
+    /// What joins the struct name to a member name — `.` when the declaration
+    /// carries the `DOTS` modifier, `_` otherwise (probe `q8.asm`: a bare
+    /// `A struct` yields `A_a`/`A_len`, and probe `q11.asm` shows an INSTANCE of
+    /// it yields `j_u` — the separator is a property of the struct, not of the
+    /// site). Case-folded recognition: S2 writes `struct dots`, `STRUCT DOTS`.
+    sep: char,
+    /// Total size, in bytes: the running offset at `endstruct`. Bound as
+    /// `NAME<sep>len`.
+    len: i64,
+    /// `(member path, offset from the instance base)`, in declaration order —
+    /// the offsets an instantiation adds to its base. A member path may itself
+    /// be dotted where a struct body embeds another struct: Sonic 1's
+    /// `SMPS_RAM` embeds 17 `SMPS_Track`s and asl FLATTENS them, so
+    /// `SMPS_RAM.v_music_dac_track.PlaybackControl` is one element here.
+    elems: Vec<(String, i64)>,
+}
+
+/// One line of a struct body, after the label column is split off.
+enum StructMember {
+    /// `[name:] ds.b|ds.w|ds.l <count>` — reserves `width * count` bytes.
+    Field { name: String, width: i64, count: i64 },
+    /// `[name:] <another struct's name>` — embeds that struct's whole layout.
+    Embed { name: String, struct_name: String },
+    /// `name:` alone. Binds the running offset and reserves nothing; Sonic 1's
+    /// `SMPS_RAM` has 21 of them (`v_1up_ram`, `v_track_ram`, every
+    /// `*_tracks_end`) and four are read by name from the corpus.
+    Marker { name: String },
+    /// A non-empty body line whose LABEL COLUMN does not begin with an
+    /// identifier, so nothing about it can be read. Reported rather than
+    /// skipped, because skipping a struct-body line is a wrong SIZE and not a
+    /// missing symbol, and a wrong size moves every variable declared after
+    /// the instance.
+    ///
+    /// This is not hypothetical. Sonic 2's `zVar` declares
+    /// `1upPlaying: ds.b 1` — asl accepts an identifier that begins with a
+    /// digit and sigil's lexer does not — and skipping it made `zVar.len`
+    /// $17 against asl's $18, with **exit 0 on both sides and no diagnostic
+    /// anywhere**. Probe `q19.asm`.
+    Unreadable,
 }
 
 /// Per-pass ceiling on total `while`-body executions (see `Asm::while_budget`).
@@ -656,6 +727,8 @@ impl Asm {
             label_ref_equs: std::collections::HashSet::new(),
             set_sym_symbolic: std::collections::HashMap::new(),
             guarded_defines: opts.guarded_defines.iter().map(|(k, _)| k.clone()).collect(),
+            structs: std::collections::HashMap::new(),
+            pending_struct_label: None,
         }
     }
 
@@ -1712,6 +1785,10 @@ impl Asm {
         // Macro parameters / `ALLARGS` resolve BEFORE `{…}` name composition:
         // a brace group may be written around a parameter, and AS pastes the
         // parameter text first, then evaluates the group.
+        // A parked struct label belongs to the line that parked it and to no
+        // other. Cleared here so a line that parks one and then dispatches
+        // something that is NOT a struct cannot leave it for a later line.
+        self.pending_struct_label = None;
         let substituted = self.subst_frame(line);
         let line = substituted.as_ref().unwrap_or(line);
         // `{expr}` groups compose symbol names (see `subst_name_braces`), so they
@@ -1793,6 +1870,13 @@ impl Asm {
             if self.head_takes_int_label(b) {
                 self.pending_int_label = Some(name);
             } else {
+                // A struct instantiation needs the label the members hang off,
+                // and `dispatch` is handed only the mnemonic column. Park it
+                // for `instantiate_struct` to take, exactly as
+                // `pending_int_label` is parked for `expand_macro_inner`. Set
+                // BEFORE the label is defined so the ordering matches the
+                // colon-less path below, and taken on the very next dispatch.
+                self.pending_struct_label = Some(name.clone());
                 self.define_label(&name);
             }
         }
@@ -1961,6 +2045,8 @@ impl Asm {
             if self.head_takes_int_label(&body[1..]) {
                 self.pending_int_label = Some(head.clone());
             } else {
+                // The colon-less twin of the struct-label park above.
+                self.pending_struct_label = Some(head.clone());
                 self.define_label(&head);
             }
             if body.len() == 1 {
@@ -2552,43 +2638,136 @@ impl Asm {
                 String::new()
             }
         };
+        // `NAME struct [MODIFIER…]`. The one modifier that changes a NAME is
+        // `DOTS`, which makes `.` the separator between the struct and its
+        // members instead of `_` (probe `q8.asm`). Recognised case-folded:
+        // Sonic 1 writes `struct DOTS`, Sonic 2 writes both `STRUCT DOTS` and
+        // `struct dots`. Any other modifier asl accepts (EXTNAMES, …) is
+        // ignored here rather than refused — none of them moves an offset, and
+        // neither corpus writes one.
+        let dots = toks[1..]
+            .iter()
+            .any(|t| matches!(&t.tok, Tok::Ident(s) if fold_kw(s) == "dots"));
+        let sep = if dots { '.' } else { '_' };
         let end = self.find_block_end(lines, start);
         let mut off: i64 = 0;
+        let mut elems: Vec<(String, i64)> = Vec::new();
+        // Every member symbol is bound into `env` AS THE BODY IS WALKED, not
+        // afterwards: Sonic 1's `SMPS_RAM` sizes its own last field from two of
+        // its own earlier markers (`ds.b SMPS_RAM.v_1up_ram_end-SMPS_RAM.v_1up_ram`),
+        // so a member's count expression must be able to read the members above it.
         for l in &lines[start + 1..end] {
-            if let Some((field, width, count)) = self.parse_struct_field(l) {
-                // An anonymous reserve field (`ds.b 1` with no name) advances the
-                // struct offset but defines no member symbol.
-                if !field.is_empty() {
-                    self.env
-                        .define(&format!("{name}_{field}"), SymbolValue::Int(off));
-                    // Struct member offsets are int equates semantically —
-                    // export them on the same Item-B seam as `equ` (tranche 3:
-                    // `.emp` drift guards read `extern("VDP_Shadow_len")`).
-                    self.export_equ_sym(format!("{name}_{field}"), off, span);
+            match self.parse_struct_member(l) {
+                Some(StructMember::Field { name: field, width, count }) => {
+                    // The declaration-scope symbol takes the offset BEFORE this
+                    // field's alignment pad; the element takes it after. See
+                    // [`StructDef`] for the asl listing the two are read off.
+                    let pre = off;
+                    // asl's `padding` flag, inside a struct exactly as outside
+                    // it: with `padding on` (asl's default) a `ds.w`/`ds.l`
+                    // field starting at an odd offset is preceded by one pad
+                    // byte. With `padding off` — which Aeon sets globally at the
+                    // top of `main.asm` — there is no rounding at all.
+                    let start_off = if self.state.padding && width >= 2 && off % 2 != 0 {
+                        off + 1
+                    } else {
+                        off
+                    };
+                    off = start_off + width * count;
+                    // An anonymous reserve field (`ds.b 1` with no name)
+                    // advances the offset but defines no member symbol.
+                    if !field.is_empty() {
+                        self.define_struct_member(&name, sep, &field, pre, span);
+                        elems.push((field, start_off));
+                    }
                 }
-                off += width * count;
-                // asl-verified, and it depends on the `padding` state: with
-                // `padding on` (asl's default), a `ds.w`/`ds.l` field
-                // (width >= 2) pads the running offset up to the next even
-                // address once it's placed (the field's own start is NOT
-                // pre-aligned, only the offset that follows). With
-                // `padding off` — which Aeon sets globally at the top of
-                // main.asm — there is NO rounding; the naive running offset
-                // is used. Probed against real asl with
-                // `a ds.b 1 / b ds.w 1 / c ds.b 1`:
-                //   padding on  -> a=0 b=1 c=4 len=5
-                //   padding off -> a=0 b=1 c=3 len=4  (Aeon's real layout).
-                if self.state.padding && width >= 2 && off % 2 != 0 {
-                    off += 1;
+                // A marker binds the running offset and reserves nothing, so
+                // its two tables cannot disagree.
+                Some(StructMember::Marker { name: field }) => {
+                    self.define_struct_member(&name, sep, &field, off, span);
+                    elems.push((field, off));
                 }
+                // An embedded struct is placed VERBATIM at the running offset —
+                // it is never re-aligned, and its own internal padding is not
+                // recomputed against the parent's parity (probe `q10.asm`: a
+                // 2-aligned inner `r` lands at the ODD parent offset 3). Its
+                // whole element table is flattened in under the member name,
+                // which is what makes `SMPS_RAM.v_music_dac_track.PlaybackControl`
+                // a name at all.
+                Some(StructMember::Embed { name: field, struct_name }) => {
+                    let Some(inner) = self.structs.get(&struct_name).cloned() else {
+                        continue;
+                    };
+                    if !field.is_empty() {
+                        self.define_struct_member(&name, sep, &field, off, span);
+                        elems.push((field.clone(), off));
+                        for (m, o) in &inner.elems {
+                            let path = format!("{field}{sep}{m}");
+                            self.define_struct_member(&name, sep, &path, off + o, span);
+                            elems.push((path, off + o));
+                        }
+                    }
+                    off += inner.len;
+                }
+                // The lexer-refused case has already said something specific;
+                // this adds the consequence, which is the part that matters —
+                // an unread member line is a wrong struct SIZE.
+                Some(StructMember::Unreadable) => {
+                    let s = Span { source: l.source, start: l.base, end: l.base };
+                    self.err(s, format!("struct `{name}` has a member line this cannot read; its size and every member after it would be wrong"));
+                }
+                None => {}
             }
         }
-        self.env
-            .define(&format!("{name}_len"), SymbolValue::Int(off));
-        // The struct's total length exports too — the actual tranche-3
-        // consumer shape (`VDP_Shadow_len`'s cross-seam drift guard).
-        self.export_equ_sym(format!("{name}_len"), off, span);
+        self.define_struct_member(&name, sep, "len", off, span);
+        self.structs.insert(name, StructDef { sep, len: off, elems });
         end + 1
+    }
+
+    /// `label: NAME` — place one instance of struct `NAME` at the current PC.
+    ///
+    /// Reserves `NAME<sep>len` bytes and hangs every element off `label`.
+    /// Sonic 1's `_Variables.asm(114)` is the whole reason this row matters:
+    /// `v_snddriver_ram: SMPS_RAM` is $5C0 bytes inside a `phase`d RAM map, so
+    /// getting the size wrong moves every variable declared after it — which
+    /// the disassembly then reports on itself at `_Variables.asm(430)`.
+    ///
+    /// The reservation is `ds.b len`, NOT `ds.w`/`ds.l`: an instance is placed
+    /// verbatim and is never word-aligned, even under `padding on` and even
+    /// when the struct's first member is a `ds.w`. Probe `q9.asm` puts a
+    /// word-leading struct at an odd `org $2001` and asl leaves it there, while
+    /// the bare `ds.w 1` two lines down pads to $3002.
+    fn instantiate_struct(&mut self, struct_name: &str, span: Span) {
+        let Some(def) = self.structs.get(struct_name).cloned() else {
+            return;
+        };
+        // asl `#2040 structure name missing` — an unlabelled instantiation
+        // reserves nothing at all (probe `q8.asm`: the PC does not move).
+        let Some(label) = self.pending_struct_label.take() else {
+            self.err(span, "structure name missing");
+            return;
+        };
+        self.open_section_if_needed();
+        let base = self.here_i64();
+        for (member, off) in &def.elems {
+            let full = format!("{label}{}{member}", def.sep);
+            self.env.define(&full, SymbolValue::Int(base + off));
+            self.known_labels.insert(full.clone());
+            self.export_equ_sym(full, base + off, span);
+        }
+        if def.len > 0 {
+            self.builder.reserve(def.len as u32, span);
+        }
+    }
+
+    /// Bind `NAME<sep>MEMBER` to `value`, in `env` and on the link-level equate
+    /// seam both. Struct member offsets are int equates semantically, so they
+    /// export on the same Item-B seam `equ` uses (tranche 3: `.emp` drift guards
+    /// read `extern("VDP_Shadow_len")`).
+    fn define_struct_member(&mut self, name: &str, sep: char, member: &str, value: i64, span: Span) {
+        let full = format!("{name}{sep}{member}");
+        self.env.define(&full, SymbolValue::Int(value));
+        self.export_equ_sym(full, value, span);
     }
 
     /// Export an int equate to the module's link-level `equ_syms` so `.emp`
@@ -2607,8 +2786,84 @@ impl Asm {
         }
     }
 
+    /// Parse one line of a struct body into the member it declares, or `None`
+    /// for a blank/comment line and for anything this does not model.
+    ///
+    /// Three shapes, all of which both corpora write:
+    ///  - `[name:] ds.b|ds.w|ds.l <count>` — a reserve field;
+    ///  - `[name:] <struct name>` — an embedded struct (Sonic 1's `SMPS_RAM`
+    ///    embeds `SMPS_Track` 17 times);
+    ///  - `name:` alone — a marker, which reserves nothing.
+    ///
+    /// The `ds.*` head is matched LITERALLY rather than dispatched, and that is
+    /// deliberate: both corpora define a `ds` MACRO (`MacroSetup.asm:86`) that
+    /// beats the builtin everywhere else, whose 68000 arm is `!ds.ATTRIBUTE
+    /// ALLARGS` and whose Z80 arm emits `db 0` bytes. Reading the width off the
+    /// written token gives the same offsets on the 68000 path without routing a
+    /// struct body through macro expansion.
+    fn parse_struct_member(&mut self, line: &SrcLine) -> Option<StructMember> {
+        let Some((name, width, count)) = self.parse_struct_field(line) else {
+            // Blank and comment-only lines lex to nothing and are genuinely
+            // not members; anything else that got here has a label column this
+            // cannot read, and that is [`StructMember::Unreadable`].
+            //
+            // A line the LEXER refuses counts as unreadable too, and its own
+            // diagnostic is surfaced rather than replaced: `1upPlaying:` fails
+            // as a malformed number, which names the real problem far better
+            // than anything this could say. Dropping it — which is what a bare
+            // `.ok()?` did — is how the same line silently shortened Sonic 2's
+            // `zVar` by a byte.
+            let substituted = self.subst_frame(line);
+            let l = substituted.as_ref().unwrap_or(line);
+            match lex_line(&l.text, self.state.cpu, l.source, l.base) {
+                Ok(toks) => return (!toks.is_empty()).then_some(StructMember::Unreadable),
+                Err(d) => {
+                    self.diags.push(d);
+                    return Some(StructMember::Unreadable);
+                }
+            }
+        };
+        match width {
+            // `parse_struct_field` reports width 0 for a head it could not read
+            // as `ds.*`: either a bare label or an embedded struct.
+            0 => {
+                if name.is_empty() {
+                    return None;
+                }
+                match self.struct_embed_name(line) {
+                    Some(struct_name) => Some(StructMember::Embed { name, struct_name }),
+                    None => Some(StructMember::Marker { name }),
+                }
+            }
+            _ => Some(StructMember::Field { name, width, count }),
+        }
+    }
+
+    /// The struct named in the mnemonic column of a struct-body line, if the
+    /// line embeds one. `None` when the mnemonic column is empty (a marker) or
+    /// names something that is not a declared struct.
+    fn struct_embed_name(&mut self, line: &SrcLine) -> Option<String> {
+        let substituted = self.subst_frame(line);
+        let line = substituted.as_ref().unwrap_or(line);
+        let toks = lex_line(&line.text, self.state.cpu, line.source, line.base).ok()?;
+        let parsed = parse_line_tokens(&toks);
+        let head = if parsed.label_colon.is_some() {
+            parsed.tokens.first()
+        } else {
+            // No colon: the label is the first token and the struct name, if
+            // any, is the second.
+            parsed.tokens.get(1)
+        };
+        match head.map(|t| &t.tok) {
+            Some(Tok::Ident(s)) if self.structs.contains_key(s) => Some(s.clone()),
+            _ => None,
+        }
+    }
+
     /// Parse a `<field> ds.b|ds.w|ds.l <count>` struct-member line.
     /// Returns `(field, width, count)`, or None for a blank/comment line.
+    /// A width of `0` means the line named no `ds.*` — the caller decides
+    /// whether that is a marker or an embedded struct.
     fn parse_struct_field(&mut self, line: &SrcLine) -> Option<(String, i64, i64)> {
         let substituted = self.subst_frame(line);
         let line = substituted.as_ref().unwrap_or(line);
@@ -2643,14 +2898,21 @@ impl Asm {
                 _ => return None,
             }
         };
+        // Width `0` = "the mnemonic column is not a `ds.*`". The line still
+        // carries a NAME, and that name is a member either way: a struct-body
+        // line with a label and nothing else is a marker, and one whose
+        // mnemonic column names another struct embeds it. Returning `None` here
+        // — as this did before markers and embedding were modelled — silently
+        // dropped 21 of Sonic 1's `SMPS_RAM` members and all 17 of its embedded
+        // tracks, which is a wrong SIZE and not merely a missing symbol.
         let width = match rest.first().map(|t| &t.tok) {
             Some(Tok::Ident(w)) => match fold_kw(w).as_ref() {
                 "ds.b" => 1,
                 "ds.w" => 2,
                 "ds.l" => 4,
-                _ => return None,
+                _ => return Some((field, 0, 0)),
             },
-            _ => return None,
+            _ => return Some((field, 0, 0)),
         };
         let span = rest[0].span;
         let count = self.eval_all(&rest[1..], span).unwrap_or(1);
@@ -2939,6 +3201,14 @@ impl Asm {
             _ if !forced_builtin && self.macros.contains_key(head) => {
                 self.expand_macro(head, rest)
             }
+            // `label: SomeStruct` — placing an instance of a declared struct.
+            // BELOW the directive arms deliberately: a struct may be named
+            // anything, and a declaration called `org` must not take the `org`
+            // line away from the builtin. ABOVE the mnemonic arms, because a
+            // struct name in the mnemonic column is exactly what `SMPS_RAM` and
+            // `SoundQueue` are, and reaching instruction lowering with one is
+            // the `X is not a recognized 68000 mnemonic` this row removes.
+            _ if self.structs.contains_key(head) => self.instantiate_struct(head, span),
             // `is_mnemonic` only recognizes Z80 mnemonics; under `cpu 68000` the
             // m68k dispatch (lower_m68k) is still a stub (M1.C T4/T5), so any
             // non-directive head is routed there rather than misreported as
@@ -5952,7 +6222,12 @@ fn closers_for(s: &str) -> &'static [&'static str] {
         "irp" | "irpc" => &["endr", "endm"],
         "while" => &["endm"],
         "macro" => &["endm"],
-        "struct" => &["endstruct"],
+        // asl closes a `struct` on either keyword (probe `q8.asm`: a `struct`
+        // shut with `ends` yields the same `B.len` a bare `endstruct` does).
+        // Both corpora write `endstruct` at all six sites, three of them with
+        // the struct's own name in the LABEL column (`SoundQueue ENDSTRUCT`),
+        // which `line_keyword`'s bare-label rule already routes here.
+        "struct" => &["endstruct", "ends"],
         "switch" => &["endcase"],
         _ => &[],
     }
@@ -7050,6 +7325,221 @@ mod tests {
             assert_eq!(m68k_cond(w), Some(c), "cc word `{w}`");
         }
         assert_eq!(m68k_cond("xx"), None);
+    }
+
+    // ---------------------------------------------------------------------
+    // AS `STRUCT … DOTS`. Every expectation below is a byte column read off an
+    // asl 1.42 Bld 212 listing (`-xx -n -q -A -L -U -E -i .`, the S1 binary,
+    // md5 61e672562465725a8c102288a7da9098). The probe files are committed at
+    // `docs/superpowers/notes/2026-09-03-as-struct-probes/`.
+    //
+    // THREE OF THESE RULES ARE PINNED BY NOTHING ELSE. The 1,553-symbol RAM
+    // byte sweep against Sonic 1's `_Variables.asm` stays GREEN under a
+    // deliberate break of each: instance alignment (probe q9), embed
+    // re-alignment (q10) and the pre-/post-pad table split (q7) are all
+    // unreachable in that corpus, because `v_snddriver_ram` lands at the even
+    // $FFFFF000, `SMPS_Track.len` is an even $30, and neither struct has a
+    // `ds.w`/`ds.l` member at an odd offset. These tests are the only gate.
+    // ---------------------------------------------------------------------
+
+    /// `q7.asm`. asl records TWO offsets per member and they disagree wherever
+    /// `padding on` inserts a pad byte. The DECLARATION-SCOPE symbol takes the
+    /// offset BEFORE the pad; the struct element — which is what an
+    /// instantiation reads — takes it after.
+    ///
+    /// ```text
+    ///    9/ 1000 : 0000 0001 0004          dc.w S.a,S.b,S.c,S.d,S.len
+    ///       1006 : 0005 000A
+    ///   10/ 100A : (STRUCT)             inst:    S
+    ///   11/ 1014 : 0000 0002 0004          dc.w inst.a-inst,inst.b-inst,inst.c-inst,inst.d-inst
+    ///       101A : 0006
+    /// ```
+    #[test]
+    fn struct_symbols_are_pre_pad_while_elements_are_post_pad() {
+        let decl = "S struct DOTS\n\
+                    a:\tds.b 1\n\
+                    b:\tds.w 1\n\
+                    c:\tds.b 1\n\
+                    d:\tds.l 1\n\
+                    \tendstruct\n";
+        // The declaration-scope symbols: 0, 1, 4, 5, and len $A.
+        assert_eq!(
+            image(&format!("\tcpu 68000\n\torg $1000\n{decl}\tdc.w S.a,S.b,S.c,S.d,S.len\n")),
+            vec![0, 0, 0, 1, 0, 4, 0, 5, 0, 0x0A]
+        );
+        // The same members through an instance: 0, 2, 4, 6.
+        assert_eq!(
+            image(&format!(
+                "\tcpu 68000\n\torg $1000\n{decl}\
+                 \tdc.w inst.a-inst,inst.b-inst,inst.c-inst,inst.d-inst\ninst:\tS\n"
+            )),
+            vec![0, 0, 0, 2, 0, 4, 0, 6]
+        );
+    }
+
+    /// `q9.asm`. An instance is placed VERBATIM and is never word-aligned, even
+    /// under `padding on` and even when the struct leads with a `ds.w` — while
+    /// a bare `ds.w 1` two lines away at the same odd address does pad. asl
+    /// puts `i1: W` at the odd $2001 and `a1` at $2003.
+    #[test]
+    fn a_struct_instance_is_never_word_aligned() {
+        // `q14.asm`, byte-identical to asl. The `dc.w` occupies $1000..$1008
+        // and the `ds.b 1` leaves the PC at the ODD $1009, where the
+        // word-leading instance is placed anyway — so `after` is $100C, and the
+        // MEMBERS hang off the odd base rather than off a rounded one.
+        //
+        // ```text
+        //    7/ 1000 : 1009 100C 0000      	dc.w i1,after,i1.w-i1,i1.x-i1
+        //       1006 : 0002
+        //    9/ 1009 : (STRUCT)             i1:	W
+        //   10/ 100C :                     after:
+        // ```
+        let src = "\tcpu 68000\n\torg $1000\n\
+                   W struct DOTS\n\
+                   w:\tds.w 1\n\
+                   x:\tds.b 1\n\
+                   \tendstruct\n\
+                   \tdc.w i1,after,i1.w-i1,i1.x-i1\n\
+                   \tds.b 1\n\
+                   i1:\tW\n\
+                   after:\n";
+        assert_eq!(
+            &image(src)[..8],
+            &[0x10, 0x09, 0x10, 0x0C, 0x00, 0x00, 0x00, 0x02]
+        );
+    }
+
+    /// `q10.asm`. A struct embedded in another struct is placed at the parent's
+    /// running offset with NO re-alignment, and its own element table is
+    /// flattened in verbatim — so an inner `ds.w` member can land at an ODD
+    /// parent offset. asl, for `h: ds.b 1` then `n: T` where `T` is
+    /// `p: ds.b 1 / r: ds.w 1`:
+    ///
+    /// ```text
+    ///   16/ 1006 : 0000 0001 0001          dc.w S.h,S.n,S.n.p,S.n.r,S.z,S.len
+    ///       100C : 0003 0005 0006
+    /// ```
+    ///
+    /// This is Sonic 1's `SMPS_RAM`, which embeds `SMPS_Track` eighteen times
+    /// and is why `SMPS_RAM.v_music_dac_track.PlaybackControl` is a name.
+    #[test]
+    fn an_embedded_struct_is_flattened_and_never_re_aligned() {
+        let src = "\tcpu 68000\n\torg $1000\n\
+                   T struct DOTS\n\
+                   p:\tds.b 1\n\
+                   r:\tds.w 1\n\
+                   \tendstruct\n\
+                   S struct DOTS\n\
+                   h:\tds.b 1\n\
+                   n:\tT\n\
+                   z:\tds.b 1\n\
+                   \tendstruct\n\
+                   \tdc.w S.h,S.n,S.n.p,S.n.r,S.z,S.len\n";
+        assert_eq!(
+            image(src),
+            vec![0, 0, 0, 1, 0, 1, 0, 3, 0, 5, 0, 6],
+            "the inner `r` sits at the ODD parent offset 3"
+        );
+    }
+
+    /// `q8.asm` / `q11.asm`. The separator is a property of the STRUCT, not of
+    /// the site: a declaration without `DOTS` yields `A_a`/`A_len`, and an
+    /// INSTANCE of it yields `j_u` — while `q10.asm` shows `j.u` is undefined
+    /// there (asl `#1010`). `DOTS` is recognized case-folded, because Sonic 2
+    /// writes `struct dots` at one site and `STRUCT DOTS` at three.
+    #[test]
+    fn dots_selects_the_separator_for_declaration_and_instance_alike() {
+        let src = "\tcpu 68000\n\torg $1000\n\
+                   A struct\n\
+                   a:\tds.b 1\n\
+                   b:\tds.b 1\n\
+                   \tendstruct\n\
+                   B struct dots\n\
+                   a:\tds.b 1\n\
+                   \tendstruct\n\
+                   \tdc.w A_a,A_b,A_len,B.a,B.len\n\
+                   \tdc.w j_a-j,j_b-j\nj:\tA\n";
+        assert_eq!(image(src), vec![0, 0, 0, 1, 0, 2, 0, 0, 0, 1, 0, 0, 0, 1]);
+    }
+
+    /// A member that is a bare label reserves nothing and binds the running
+    /// offset; Sonic 1's `SMPS_RAM` has 21 of them and reads four back BY NAME
+    /// from inside its own body (`ds.b SMPS_RAM.v_1up_ram_end-SMPS_RAM.v_1up_ram`,
+    /// `s1.sounddriver.ram.asm:108`). That self-reference is also the reason
+    /// members are bound as the body is WALKED rather than at `endstruct`.
+    #[test]
+    fn markers_bind_the_running_offset_and_are_readable_within_the_body() {
+        let src = "\tcpu 68000\n\torg $1000\n\
+                   S struct DOTS\n\
+                   first:\n\
+                   a:\tds.b 3\n\
+                   mid:\n\
+                   b:\tds.b 2\n\
+                   last:\n\
+                   copy:\tds.b S.last-S.mid\n\
+                   \tendstruct\n\
+                   \tdc.w S.first,S.mid,S.last,S.copy,S.len\n";
+        // first=0, mid=3, last=5, copy=5, and copy is `last-mid` = 2 wide, so
+        // len = 7.
+        assert_eq!(image(src), vec![0, 0, 0, 3, 0, 5, 0, 5, 0, 7]);
+    }
+
+    /// `q12.asm` / `q8.asm`. Both corpora close three of their six structs with
+    /// the struct's own name in the LABEL column (`SoundQueue ENDSTRUCT`), and
+    /// asl also accepts `ends`. All three spellings must close the block.
+    #[test]
+    fn a_struct_closes_on_endstruct_named_or_bare_and_on_ends() {
+        for closer in ["\tendstruct\n", "S ENDSTRUCT\n", "\tends\n"] {
+            let src = format!(
+                "\tcpu 68000\n\torg $1000\n\
+                 S STRUCT DOTS\n\
+                 \ta:\tds.b 1\n\
+                 \tb:\tds.b 1\n\
+                 {closer}\
+                 \tdc.w S.a,S.b,S.len\n"
+            );
+            assert_eq!(image(&src), vec![0, 0, 0, 1, 0, 2], "closer `{closer:?}`");
+        }
+    }
+
+    /// An anonymous `ds.*` advances the offset and binds no name — Sonic 1's
+    /// `SMPS_RAM` is 12 such gaps, one of them `ds.b $13`, and Sonic 2's
+    /// `HorizontalScrollBuffer` is nothing BUT anonymous fields.
+    #[test]
+    fn anonymous_reserve_fields_advance_the_offset_and_bind_nothing() {
+        let src = "\tcpu 68000\n\torg $1000\n\
+                   H struct dots\n\
+                   \tds.l 224\n\
+                   \tds.l 16\n\
+                   \tds.b $40\n\
+                   H endstruct\n\
+                   \tdc.w H.len\n";
+        // 224*4 + 16*4 + $40 = $380 + $40 + $40 = $400.
+        assert_eq!(image(src), vec![0x04, 0x00]);
+    }
+
+    /// `q19.asm`. A struct-body line this cannot read is a wrong SIZE, not a
+    /// missing symbol, so it is reported rather than skipped.
+    ///
+    /// Sonic 2's `zVar` declares `1upPlaying: ds.b 1`; asl takes an identifier
+    /// beginning with a digit and sigil's lexer does not. Skipped, that made
+    /// `zVar.len` $17 against asl's $18 — **exit 0 on both sides, no
+    /// diagnostic anywhere, and every member after it one byte low.**
+    #[test]
+    fn an_unreadable_struct_member_line_is_reported_not_skipped() {
+        let src = "\tcpu 68000\n\torg $0\n\
+                   V struct dots\n\
+                   \ta:\tds.b 1\n\
+                   \t1upPlaying:\tds.b 1\n\
+                   \tb:\tds.b 1\n\
+                   V endstruct\n\
+                   \tdc.w V.a,V.b,V.len\n";
+        let diags = run(src, &Options::default()).expect_err("must not assemble");
+        assert!(
+            diags.iter().any(|d| d.message.contains("member line this cannot read")),
+            "expected the wrong-size refusal, got {:?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
     }
 
     #[test]
