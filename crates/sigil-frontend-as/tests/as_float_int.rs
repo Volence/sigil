@@ -319,6 +319,41 @@ fn int_works_at_every_dc_width() {
     );
 }
 
+/// The wiring, pinned with an `int()` whose argument holds NO float token.
+///
+/// There are two routes by which a float can reach an integer here, and only
+/// one of them is the wiring under test. `expand_int_builtin` substitutes each
+/// `int(...)` span with a `Tok::Int` and leaves the REST of the expression to
+/// the ordinary integer folder — which is what keeps labels, forward
+/// references and link deferral working around it. `collapse_float_operand`
+/// runs after, and only if a float LEAF survived that; it evaluates the whole
+/// operand with the typed evaluator, which is how `dc.l 3.5<4` resolves.
+///
+/// The second route can answer an `int(3.7)` on its own, so a test whose
+/// operand contains a float literal does NOT pin the first one. These operands
+/// contain no float token at all, so nothing but the wiring can satisfy them.
+///
+/// asl listing, `.f1probe/f8.asm`:
+///
+/// ```text
+///        2/       0 : 07                  	dc.b INT(7)
+///        3/       1 : 00                  <padding>
+///        3/       2 : 0258                	dc.w INT(600)
+///        4/       4 : FFFF FFFD           	dc.l INT(-7/2)
+///        5/       8 : 0101                	dc.w INT(1.5)+$100
+/// ```
+///
+/// The last line is the layering itself: `int(...)` collapses to a token and
+/// the `+$100` is folded by the integer path, exactly as
+/// `dc.w MakeFMFrequency(op)+octave*$800` needs.
+#[test]
+fn int_with_an_integer_argument_pins_the_wiring_at_every_width() {
+    assert_eq!(
+        bytes("\tdc.b INT(7)\n\tdc.w INT(600)\n\tdc.l INT(-7/2)\n\tdc.w INT(1.5)+$100\n"),
+        vec![0x07, 0x00, 0x02, 0x58, 0xff, 0xff, 0xff, 0xfd, 0x01, 0x01],
+    );
+}
+
 /// The Z80 `db`/`dw` spellings share the widths' one expansion helper.
 /// asl (`cpu z80`, `db INT(3.7)` / `dw INT(600.7)`) emits `03` then the
 /// little-endian `58 02`.
