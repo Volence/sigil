@@ -1048,12 +1048,6 @@ impl Asm {
         rest.is_empty().then_some(v)
     }
 
-    /// The f64 value of a front-end-only expression, for callers that want a
-    /// float regardless of the operand types (`sin(...)`'s argument).
-    fn eval_float(&self, toks: &[Token]) -> Option<f64> {
-        self.eval_num(toks).map(Num::as_f64)
-    }
-
     fn parse_num_bp<'t>(&self, toks: &'t [Token], min_bp: u8) -> Option<(Num, &'t [Token])> {
         let (mut lhs, mut rest) = self.parse_num_atom(toks)?;
         while let Some(Tok::Punct(p)) = rest.first().map(|t| &t.tok) {
