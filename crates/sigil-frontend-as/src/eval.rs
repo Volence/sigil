@@ -1,7 +1,8 @@
 //! eval: the driver — line loop, directive dispatch, instruction lowering, emit.
 
 use crate::expand::{
-    render_tokens, split_call_args, split_top_commas, substitute_frame, substitute_name,
+    group_span, keyword_eq_index, render_tokens, split_call_args, split_top_commas,
+    substitute_frame, substitute_name,
 };
 use crate::lexer::{lex_line, lex_line_recover};
 use crate::operands::{parse_operands, OperandAtom};
@@ -6275,21 +6276,73 @@ impl Asm {
         let mut keyword: std::collections::BTreeMap<String, String> =
             std::collections::BTreeMap::new();
         let mut positional: Vec<String> = Vec::new();
+        // Once a call has written a KEYWORD argument, every argument after it
+        // must be one too. asl refuses a positional there (#1812) and refuses a
+        // keyword whose name it cannot find among the parameters (#1811), and in
+        // BOTH cases the argument binds NOTHING — the parameter keeps the empty
+        // text an omitted argument would have given it. asl `-U`, `m macro
+        // px,py,pz` over `dc.b px,py,pz` (probes `k2.asm`, `k3.asm`):
+        //
+        // ```text
+        //   > > > k2.asm(9): error #1812: positional argument no longer allowed after keyword argument
+        //   > > >  m 1,py=$22,3
+        //    9/       6 : (MACRO)              	m	1,py=$22,3
+        //    9/       6 :                             dc.b    1,$22,
+        //   > > > k3.asm(7):6: error #1811: keyword argument not defined in macro
+        //   > > > zz
+        //   > > >  m 1,zz=2,3
+        //    7/       0 : (MACRO)              	m	1,zz=2,3
+        //    7/       0 :                             dc.b    1,,
+        // ```
+        //
+        // — `pz` is empty in the first even though `3` was written for it, and in
+        // the second the unknown `zz=2` binds nothing AND still arms the rule, so
+        // the trailing `3` is refused as well. #1812 fires ONCE PER offending
+        // positional argument: `m PX=1,2,3` (probe `k4.asm`) reports it twice.
+        //
+        // Accepting these silently is a WRONG PROGRAM, not a missing message: the
+        // refused positional is bound here where asl leaves it empty, so the body
+        // assembles against arguments asl never supplied.
+        // The whole-call fallback for an argument group with no tokens of its own
+        // (`m py=1,` — the trailing empty group still counts as an argument).
+        let call_span = arg_toks.first().map(|t| t.span).unwrap_or(Span {
+            source: self.source,
+            start: 0,
+            end: 0,
+        });
+        let mut seen_keyword = false;
         for g in &groups {
-            if let [Token {
-                tok: Tok::Ident(nm),
-                ..
-            }, Token {
-                tok: Tok::Punct(Punct::Eq),
-                ..
-            }, value @ ..] = *g
-            {
-                if !value.is_empty() && params.iter().any(|p| p == nm) {
-                    keyword.insert(nm.clone(), render_tokens(value));
+            let Some(eq) = keyword_eq_index(g) else {
+                if seen_keyword {
+                    self.err(
+                        group_span(g).unwrap_or(call_span),
+                        "positional argument no longer allowed after keyword argument",
+                    );
+                    continue;
+                }
+                positional.push(render_tokens(g));
+                continue;
+            };
+            // Every keyword argument arms the rule for the arguments after it,
+            // including one asl goes on to reject as undefined.
+            seen_keyword = true;
+            let (kw_name, kw_value) = (&g[..eq], &g[eq + 1..]);
+            if let [Token { tok: Tok::Ident(nm), .. }] = kw_name {
+                if params.iter().any(|p| p == nm) {
+                    // An EMPTY value is a real binding to empty text, not a
+                    // non-keyword: asl's `m 1,py=,4` (probe `k6.asm`) leaves `py`
+                    // empty and still refuses the `4` that follows.
+                    keyword.insert(nm.clone(), render_tokens(kw_value));
                     continue;
                 }
             }
-            positional.push(render_tokens(g));
+            self.err(
+                group_span(g).unwrap_or(call_span),
+                format!(
+                    "keyword argument `{}` not defined in macro `{name}`",
+                    render_tokens(kw_name)
+                ),
+            );
         }
         let mut pos_iter = positional.into_iter();
         // The caller's local-label scope, captured BEFORE the expansion swaps in

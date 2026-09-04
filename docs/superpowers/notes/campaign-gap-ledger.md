@@ -3770,3 +3770,23 @@ cheapest honest one is a fixture assembling a small source under `padding on` wi
 builtin `align` and odd-address `ds.w`, byte-compared against asl in CI the way the 33
 probes were by hand — which would also give the `-p=0xFF` discrimination a permanent home
 rather than leaving it as a technique someone has to rediscover)
+
+### Positional macro arguments bind by next-free slot, where asl binds by position index (2026-09-04)
+`m macro px,py` over `dc.b px,py`, called `m 1,2,px=9` (probe
+`2026-09-04-as-silent-acceptance-probes/w3.asm`): asl exits 0 with a warning and emits
+`09 02`; this front end exits 0 with NO diagnostic and emits `09 01`. Both assemblers
+succeed and the ROMs differ. asl's positional #2 goes to `py` because it is second;
+sigil's `pos_iter` slides the first positional past the keyword-claimed `px` and into
+`py`. Every OTHER divergence in that note has asl refusing, so the reference tool stops
+the mistake; this one it ships.
+
+Left out of the `parcel/as-silent-acceptance` fix on purpose: it is a byte divergence
+rather than a silent acceptance of a refusal, and the binding loop it lives in is shared
+with `ALLARGS`, `filled` and `shift`, each carrying its own asl-verified probe rows that
+parcel took no measurement of. Population is zero — a census build found no macro-call
+argument carrying a depth-0 `=` in s1disasm f6ece657, s2disasm e45ebf33, or any of the
+four aeon shapes at 4f5ad5a1 — so nothing is currently mis-assembled by it.
+— OPEN (kill: `expand_macro_inner` assigns positionals by index rather than by
+`pos_iter.next()`, with fresh asl probes pinning what `ALLARGS` and `shift` render
+afterwards — the existing comment block says plainly that the post-`shift` `ALLARGS` rule
+is unexplained, so that probe is the precondition, not an extra)
