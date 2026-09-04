@@ -11358,3 +11358,58 @@ demo_debug = "36014485/102818"
 lean = "7c8ec3e0/773120"
 s4 = "6f047af2/819123"
 s4_debug = "d772f7d8/840179"
+
+[[entry]]
+name = "relayout-at-aeon-master"
+ab = "aeon 483b3e12 (master; the landed merge of parcel/rom-relayout-more-room, with 5875e60e as its second parent). Reference tree /home/volence/sonic_hacks/.aeon-ref-relayout-master, clean detached worktree at 483b3e12, all four shapes built one shape per invocation by scripts/provision-aeon-ref.sh. Re-takes chain 202's freeze so the chain names a master revision instead of a branch tip."
+aeon_rev = "483b3e128ec4b9efc77a9d2e8a8c7679e961cea8"
+note = "aeon_rev moves 5875e60e (branch) -> 483b3e12 (master); absorbs the 138 aeon commits between them"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "213eee40"
+full_size = 840676
+anchor_crc = "267fa36f"
+anchor_end = 0xc055e
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "7ad605fc"
+full_size = 617819
+anchor_crc = "5c50dd80"
+anchor_end = 0x8ccc0
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "11ebd7ab"
+full_size = 96602
+anchor_crc = "cc50c11e"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "9b0d2ce7"
+full_size = 102818
+anchor_crc = "678b6afb"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "3fd246f7"
+full_size = 773120
+anchor_crc = "d028b85d"
+anchor_end = 0xbcc00
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "1c09fbfc"
+full_size = 819131
+anchor_crc = "00a44dd8"
+anchor_end = 0xbdc82
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "e2144057"
+full_size = 840324
+anchor_crc = "2ea31126"
+anchor_end = 0xc055e
