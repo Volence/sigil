@@ -52,13 +52,20 @@ fn err(span: Span, msg: &str) -> Diagnostic {
 }
 
 /// Split `toks` on top-level commas and classify each group.
-pub fn parse_operands(toks: &[Token]) -> Result<Vec<OperandAtom>, Diagnostic> {
+///
+/// `at` is the span of the LINE these operands were written on. An operand group
+/// can be empty — `move.l #1,` splits into `#1` and nothing — and an empty group
+/// carries no token, so it has no span of its own to report a refusal against.
+/// The line's span is what it stands in for; without it the refusal is anchored
+/// at offset 0 of source 0, which renders as line 1 of the ROOT file and points
+/// the reader at a line that has nothing to do with the error.
+pub fn parse_operands(toks: &[Token], at: Span) -> Result<Vec<OperandAtom>, Diagnostic> {
     if toks.is_empty() {
         return Ok(Vec::new());
     }
     let mut out = Vec::new();
     for group in split_commas(toks) {
-        out.push(classify(group)?);
+        out.push(classify(group, at)?);
     }
     Ok(out)
 }
@@ -83,12 +90,8 @@ fn split_commas(toks: &[Token]) -> Vec<&[Token]> {
     groups
 }
 
-fn classify(g: &[Token]) -> Result<OperandAtom, Diagnostic> {
-    let span = g.first().map(|t| t.span).unwrap_or(Span {
-        source: sigil_span::SourceId(0),
-        start: 0,
-        end: 0,
-    });
+fn classify(g: &[Token], at: Span) -> Result<OperandAtom, Diagnostic> {
+    let span = g.first().map(|t| t.span).unwrap_or(at);
     // `#expr` — 68k immediate marker.
     if let Some(Token {
         tok: Tok::Punct(Punct::Hash),
@@ -553,11 +556,22 @@ mod tests {
     use crate::lexer::lex_line;
     use sigil_ir::backend::Cpu;
     use sigil_ir::expr::Fold;
-    use sigil_span::SourceId;
+    use sigil_span::{SourceId, Span};
+
+    /// The line span these unit tests hand `parse_operands` as the stand-in for
+    /// an empty operand group. Each test lexes one line at offset 0 of source 0,
+    /// so that IS the line, and no test here writes an empty group.
+    fn line_span() -> Span {
+        Span {
+            source: SourceId(0),
+            start: 0,
+            end: 0,
+        }
+    }
 
     fn atoms(src: &str) -> Vec<OperandAtom> {
         let toks = lex_line(src, Cpu::Z80, SourceId(0), 0).unwrap();
-        parse_operands(&toks).unwrap()
+        parse_operands(&toks, line_span()).unwrap()
     }
 
     #[test]
@@ -611,7 +625,7 @@ mod tests {
 
     fn atoms_68k(src: &str) -> Vec<OperandAtom> {
         let toks = lex_line(src, Cpu::M68000, SourceId(0), 0).unwrap();
-        parse_operands(&toks).unwrap()
+        parse_operands(&toks, line_span()).unwrap()
     }
 
     #[test]
@@ -880,11 +894,11 @@ mod tests {
         // silently reinterpreted as an address).
         let toks = lex_line("(a0).w", Cpu::M68000, SourceId(0), 0).unwrap();
         // Ok → must not be M68kAbs; Err (rejected outright) is also acceptable.
-        if let Ok(atoms) = parse_operands(&toks) {
+        if let Ok(atoms) = parse_operands(&toks, line_span()) {
             assert!(!matches!(atoms.as_slice(), [OperandAtom::M68kAbs { .. }]));
         }
         let toks = lex_line("(d0).w", Cpu::M68000, SourceId(0), 0).unwrap();
-        if let Ok(atoms) = parse_operands(&toks) {
+        if let Ok(atoms) = parse_operands(&toks, line_span()) {
             assert!(!matches!(atoms.as_slice(), [OperandAtom::M68kAbs { .. }]));
         }
     }

@@ -4062,7 +4062,7 @@ impl Asm {
     }
 
     fn lower_z80(&mut self, mn: &str, rest: &[Token], span: Span) {
-        let atoms = match parse_operands(rest) {
+        let atoms = match parse_operands(rest, span) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -4156,7 +4156,7 @@ impl Asm {
             return self.lower_m68k_movem(suffix_size, rest, span);
         }
         if matches!(mnemonic, M68kMnemonic::Jmp | M68kMnemonic::Jsr) {
-            let atoms = match parse_operands(rest) {
+            let atoms = match parse_operands(rest, span) {
                 Ok(a) => a,
                 Err(d) => {
                     self.diags.push(d);
@@ -4269,7 +4269,7 @@ impl Asm {
             return self.lower_m68k_generic(mnemonic, suffix_size, atoms, span);
         }
 
-        let atoms = match parse_operands(rest) {
+        let atoms = match parse_operands(rest, span) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -4605,7 +4605,7 @@ impl Asm {
                 return;
             }
         };
-        let atoms = match parse_operands(rest) {
+        let atoms = match parse_operands(rest, span) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -4639,7 +4639,7 @@ impl Asm {
     /// `self_address - (self_address + 2)`) and against real `asl` (see
     /// `m68k_dbf_d0_self`/`m68k_dbeq_d1_self` in `tests/snippets_golden.txt`).
     fn lower_m68k_dbcc(&mut self, mnemonic: M68kMnemonic, rest: &[Token], span: Span) {
-        let atoms = match parse_operands(rest) {
+        let atoms = match parse_operands(rest, span) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -4733,7 +4733,7 @@ impl Asm {
                 return;
             }
         };
-        let mem_atoms = match parse_operands(mem_toks) {
+        let mem_atoms = match parse_operands(mem_toks, span) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
