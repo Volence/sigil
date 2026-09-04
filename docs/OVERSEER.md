@@ -628,8 +628,8 @@ below requires zero `skip:` lines and this is not a missing reference.
   — this overseer quoted it to a peer, who reconciled against `git grep -c '#\[test\]'` and
   refused it.** That is this document's own trigger-less-prose defect, one section below the
   paragraph warning about it. **Reconcile against the declaration, never against this
-  sentence:** `git grep -c '#[test]' HEAD -- '*.rs'` summed is the count, and
-  `passed + ignored` must equal it.
+  sentence** — by the `git grep -c '#[test]'` method below, which is an APPROXIMATION and
+  not the identity this line used to assert.
   **DERIVE the expected `ratchet:` count from the chain; do not read a number off this
   page.** This paragraph has now carried three different fixed counts (zero, then exactly
   one, then zero again), each true when written, and a fixed count here is the
@@ -1091,9 +1091,11 @@ one dialect by someone who cannot tell which was intended.
 attribute and the name appears nowhere in `sigil-frontend-as`. The subject is the frontend crate.)*
 Same shape as `d-22` (nameless labels) and settled the same way, by evidence rather than taste:
 the canonical community disassembly writes `CPU 68000`, `EQU`, `STRUCT` in capitals, so the
-corpus is unassemblable without folding. **115 of 237 diagnostics trace to case sensitivity** —
-62 + 30 `$`-hex, 20 uppercase `EQU`, 2 `STRUCT`/`ENDSTRUCT`, 1 the `CPU` line. The `.emp` half
-is a language-surface call and is **not** ruled here.
+corpus is unassemblable without folding. **The RULING is live; its evidence figures are not
+carried here** — they were a snapshot and this document has already misled one boot with them.
+DERIVE the corpus counts when you need them (build a current `sigil`, run it on a pristine
+corpus worktree, decompose by class). The `.emp` half is a language-surface call and is **not**
+ruled here.
 
 **⚠ THE ROOT IS WORSE THAN CASE AND MUST NOT BE FOLDED INTO IT.** `initial_cpu` defaults to
 `Z80` (`Options`' default, honest for the Z80-only M0 build), `dispatch`'s directive match takes
@@ -1120,11 +1122,9 @@ corpus repo at `s2disasm/build_tools/Linux-x86_64/asl` (with `as.msg` beside it,
 name-composition parcel used `asl -L` for every expected value in every new test, which is why
 that delivery could quote listings instead of asserting semantics. **Use it.**
 
-**The reusable mechanism, the episode in the log:** the false claim came from running `git grep asl`
-**in the sigil repo**, where it returns the 68000 shift mnemonic — so the honest local conclusion was
-*no oracle in THIS tree*, which then hardened into a claim about the workspace entire. **A failing
-lookup tells you about the tree you ran it in, never about the object**, and an absence leaves
-nothing to be suspicious of, which is why it survived four parcels. *(Full episode:
+**Why it survived four parcels:** `git grep asl` **in the sigil repo** returns the 68000 shift
+mnemonic, so a true local finding hardened into a claim about the workspace. The rule is protocol
+bar 16(d), verbatim there — an absence leaves nothing to be suspicious of. *(Episode:
 `docs/OVERSEER-LOG.md`, 2026-09-04 cut.)*
 
 **⚠ THE CASE FOLD IS IN AEON'S SHIPPING BUILD PATH — fold DIRECTIVES AND MNEMONICS ONLY, NEVER
@@ -1133,12 +1133,6 @@ residual `.asm` DATA through it and three files still go that way (`engine/debug
 both `game_root.asm`). So this parcel can move aeon bytes and must prove it did not. Symbols
 are deliberately case-sensitive (`lib.rs:31`, *"Names are case-sensitive"*) and `.emp` shares
 its symbol namespace with those files — folding symbol case would collide the two.
-
-**NEXT PARCEL — case folding, and its count WILL move.** Pre-declare the movement: a parcel that
-fixes 115 of 237 diagnostics and reports 237 is the thing to investigate. The count moving is
-the deliverable here, exactly inverted from the source-map parcel where holding at 237 was.
-Expect new diagnostics to appear behind the fixed ones — a corpus that has been assembling as
-the wrong processor has never had its 68000 path exercised at all.
 
 **BOOKED — `landing-run.sh` does not run clippy.** See the lane-log entry at `526ae99e`. Two
 lint errors stood on master and the wrapper printed `RESULT GREEN` over them, because the bar
@@ -1354,17 +1348,7 @@ time — **ping them, don't assume they are watching**:
   a gate that cannot measure its subject. A well-meant "require `order` rows everywhere"
   tightening would break the honest option; do not take it without talking to them.
 
-**⚠ An empty commit range does not mean an empty branch.** Both overseers read
-`git rev-list --count master..parcel/scene-even-align-guard` = 0, an empty three-dot
-diff, and `--is-ancestor <tip> master` = true as proof the branch held no work. That
-triple is the signature of a branch **already merged** — its commits are in master, so
-the range is necessarily empty. The fix had landed hours earlier and the lint fired zero
-times. This matters beyond the one incident: those are exactly the commands protocol bar
-16 prescribes for converting a name into behaviour, so **the bar's mechanism is
-necessary and not sufficient** — the output is two-valued and reads as one-valued.
-Disambiguate with `git log <branch>` for its own history, or `--is-ancestor` on a commit
-you expect the branch to CONTAIN. Two lanes cross-verified each other and shared the
-frame, which is the one thing mutual verification cannot catch.
+**⚠ An empty commit range does not mean an empty branch** — that triple is the signature of a branch ALREADY MERGED, and two lanes here read it as proof of no work. The rule is protocol bar 16(a); disambiguate with `git log <branch>`, or `--is-ancestor` on a commit you expect the branch to CONTAIN. *(Episode: `docs/OVERSEER-LOG.md`, 2026-09-04 cut.)*
 
 Their side is banked at aeon `1ee8f8e6` (handoff) and `ba189b40` (the `br_ext` unlock
 row, cuttable cold) — both verified reachable from aeon's `origin/master`.

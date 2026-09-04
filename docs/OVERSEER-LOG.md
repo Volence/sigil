@@ -6388,3 +6388,35 @@ before and after). It was the agent in the suite best placed to reproduce aeon's
 and was told to assert positively that the artifacts on BOTH sides of every byte claim exist
 and came from the run believed to have produced them — never to infer it from the absence of an
 error, and including on the "nothing moved" direction it expects.
+
+
+## 2026-09-04 cut — the empty-commit-range episode, moved verbatim from the boot read
+
+Moved because the boot read went over its byte bound after a standing-artifact declaration
+was added. The RULE stays in the head as a pointer to protocol bar 16(a); this is the
+episode that earned it, kept whole.
+
+**⚠ An empty commit range does not mean an empty branch.** Both overseers read
+`git rev-list --count master..parcel/scene-even-align-guard` = 0, an empty three-dot
+diff, and `--is-ancestor <tip> master` = true as proof the branch held no work. That
+triple is the signature of a branch **already merged** — its commits are in master, so
+the range is necessarily empty. The fix had landed hours earlier and the lint fired zero
+times. This matters beyond the one incident: those are exactly the commands protocol bar
+16 prescribes for converting a name into behaviour, so **the bar's mechanism is
+necessary and not sufficient** — the output is two-valued and reads as one-valued.
+Disambiguate with `git log <branch>` for its own history, or `--is-ancestor` on a commit
+you expect the branch to CONTAIN. Two lanes cross-verified each other and shared the
+frame, which is the one thing mutual verification cannot catch.
+
+### The case-folding pre-declaration, moved verbatim from the boot read
+
+Closed: case folding landed at sigil `849a2412` (verified an ancestor of master), so this
+"NEXT PARCEL" block described work already done and was actively misdirecting a cold boot.
+Kept whole rather than deleted.
+
+**NEXT PARCEL — case folding, and its count WILL move.** Pre-declare the movement: a parcel that
+fixes 115 of 237 diagnostics and reports 237 is the thing to investigate. The count moving is
+the deliverable here, exactly inverted from the source-map parcel where holding at 237 was.
+Expect new diagnostics to appear behind the fixed ones — a corpus that has been assembling as
+the wrong processor has never had its 68000 path exercised at all.
+
