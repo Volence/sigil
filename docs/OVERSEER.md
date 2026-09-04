@@ -997,6 +997,17 @@ distinguished it was a line in this file, which a sweep of aeon's worktree list 
 *Ownership is not conferred by registration* (aeon's formulation): being in a repo's worktree
 list is a fact about bookkeeping, not about who depends on it.
 
+**THE PINNED ASSEMBLER `~/sonic_hacks/.pinned/`.** A second standing artifact, requested
+permanently by the AEON lane 2026-09-04: the sigil binary at `0a58f2ec`, copied out of the
+shared `target/release/sigil` before that path could be relinked. **It is the original, not a
+rebuild** — a fresh build of the same revision is a different artifact answering a slightly
+different question. Two aeon landings pin it by revision AND md5, and a pin whose referent has
+been deleted is a citation to nothing; this repo has already lost one chain's assembler that
+way. File and directory are both read-only, verified by observing a same-device `mv` refuse.
+**It ends when the aeon lane says so — ask them, not this file.** The reason, the md5 and the
+lift command live in `README-STANDING-ARTIFACT.txt` beside it, where whoever trips over it will
+be standing.
+
 **THE AEON REFERENCE TREE.** This lane needs one aeon checkout with **all four shapes built**,
 pinned to **the `aeon_rev` of the corpus tip** — the expensive half is the build, not the
 clone. Byte gates point `AEON_DIR` at it; without one, they cannot run at all.
