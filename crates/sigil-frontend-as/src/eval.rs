@@ -11663,4 +11663,183 @@ C:\n";
             "got {msgs:?}"
         );
     }
+
+    // ---------------------------------------------------------------
+    // `~~` — asl's LOGICAL not.
+    //
+    // Every expectation below is a byte column read off an `asl` listing,
+    // and BOTH shipped builds produce it: the flamewing fork that `s2disasm`
+    // ships and the upstream build that `s1disasm` ships agree on every row
+    // of the probe, byte column for byte column and error line for error
+    // line. Provenance: `Macro Assembler 1.42 Beta [Bld 212]`, run
+    // `-xx -n -q -A -L -U -i .`.
+    //
+    // `~~` is ONE greedy token, not two `~`. Folding it as two bitwise
+    // complements cancels (`!!x == x`) and hands back the operand with no
+    // diagnostic, which is why this was silent.
+    // ---------------------------------------------------------------
+
+    /// The defect in one row: `dc.b ~~0,~~1,~~5` is `01 00 00`, not `00 01 05`.
+    #[test]
+    fn double_tilde_is_logical_not_not_two_complements() {
+        assert_eq!(
+            image("\tcpu 68000\n\tpadding off\n\tdc.b ~~0,~~1,~~5,~~-1,~~$FF\n"),
+            [0x01, 0x00, 0x00, 0x00, 0x00]
+        );
+    }
+
+    /// A single `~` is untouched by the above: it is still one's complement.
+    /// Without this row a "fix" that made `~` logical would also pass.
+    #[test]
+    fn single_tilde_is_still_bitwise_complement() {
+        assert_eq!(
+            image("\tcpu 68000\n\tpadding off\n\tdc.l ~0,~1,~$0F\n"),
+            [
+                0xFF, 0xFF, 0xFF, 0xFF, // ~0
+                0xFF, 0xFF, 0xFF, 0xFE, // ~1
+                0xFF, 0xFF, 0xFF, 0xF0, // ~$0F
+            ]
+        );
+    }
+
+    /// Maximal munch, stated as bytes: `~~~x` is `~~` then `~`, so it is the
+    /// LOGICAL not of the COMPLEMENT — zero for every operand but `-1`.
+    #[test]
+    fn triple_tilde_is_logical_not_of_a_complement() {
+        assert_eq!(
+            image("\tcpu 68000\n\tpadding off\n\tdc.b ~~~0,~~~1,~~~5,~~~-1\n"),
+            [0x00, 0x00, 0x00, 0x01]
+        );
+    }
+
+    /// `~~` binds at the atom tier, tighter than EVERY binary operator —
+    /// arithmetic, multiplicative, bitwise and relational alike. Each row is a
+    /// separate listing column, because one row cannot separate the tiers.
+    #[test]
+    fn logical_not_binds_tighter_than_every_binary_operator() {
+        assert_eq!(
+            image("\tcpu 68000\n\tpadding off\n\tdc.b ~~0+1,~~1+1,~~(0+1)\n"),
+            [0x02, 0x01, 0x00]
+        );
+        assert_eq!(
+            image("\tcpu 68000\n\tpadding off\n\tdc.b ~~0*3,~~2*3,-~~0\n"),
+            [0x03, 0x00, 0xFF]
+        );
+        assert_eq!(
+            image("\tcpu 68000\n\tpadding off\n\tdc.b ~~0|2,~~0&3,~~0!1\n"),
+            [0x03, 0x01, 0x00]
+        );
+        assert_eq!(
+            image("\tcpu 68000\n\tpadding off\n\tdc.b ~~0=1,~~1=0\n"),
+            [0x01, 0x01]
+        );
+    }
+
+    /// The operand may be parenthesised, negative, or separated by space —
+    /// `~~ 0` is the same token as `~~0`. (`~ -1` is NOT: asl splits it at the
+    /// binary minus and reports #1110 on the bare `~`. sigil accepts it; that
+    /// divergence is corpus-unreachable and booked, not gated.)
+    #[test]
+    fn logical_not_accepts_parens_negatives_and_a_following_space() {
+        assert_eq!(
+            image("\tcpu 68000\n\tpadding off\n\tdc.b ~~ 0,~~ 1,~~(0),~~(5),~~(-1)\n"),
+            [0x01, 0x00, 0x01, 0x00, 0x00]
+        );
+    }
+
+    /// asl's booleans and integers interconvert freely, so `~~` of a
+    /// comparison is the comparison negated, and `~~0` compares equal to TRUE.
+    #[test]
+    fn logical_not_of_a_comparison_negates_it() {
+        assert_eq!(
+            image("\tcpu 68000\n\tpadding off\n\tdc.b ~~(1=1),~~(1=2),(~~0)=(1=1)\n"),
+            [0x00, 0x01, 0x01]
+        );
+    }
+
+    /// The corpus's composition. `s2.macrosetup.asm(245)` chains three `~~`
+    /// through `||`; `s2.sounddriver.asm(3253)` writes `(~~A)&&(~~B)`.
+    #[test]
+    fn logical_not_composes_with_the_boolean_connectives() {
+        assert_eq!(
+            image("\tcpu 68000\n\tpadding off\n\tdc.b ~~0||~~0,~~0||~~1,~~1||~~1\n"),
+            [0x01, 0x01, 0x00]
+        );
+        assert_eq!(
+            image("\tcpu 68000\n\tpadding off\n\tdc.b ~~0&&~~0,~~0&&~~1,~~1&&~~1\n"),
+            [0x01, 0x00, 0x00]
+        );
+    }
+
+    /// The reason this is a code-generation defect and not a wrong number:
+    /// `if ~~FLAG` is how `s2disasm` writes "if FLAG is off", 96 times over
+    /// four files, and every one of those flags is 0. Reading `~~0` as `0`
+    /// takes the WRONG ARM of all 96.
+    #[test]
+    fn if_on_a_logical_not_takes_the_arm_asl_takes() {
+        let src = "\tcpu 68000\n\tpadding off\nFLAG = 0\n\
+                   \tif ~~FLAG\n\tdc.b $AA\n\telse\n\tdc.b $BB\n\tendif\n";
+        assert_eq!(image(src), [0xAA]);
+        let src_on = "\tcpu 68000\n\tpadding off\nFLAG = 1\n\
+                      \tif ~~FLAG\n\tdc.b $AA\n\telse\n\tdc.b $BB\n\tendif\n";
+        assert_eq!(image(src_on), [0xBB]);
+    }
+
+    /// `~~` lives inside MACRO BODIES in the corpus (`jmpTosInternal`,
+    /// `_btst`), so it has to survive capture and re-rendering as text. A
+    /// token that lexes correctly but renders back as two `~` would pass every
+    /// row above and still break every real site.
+    #[test]
+    fn logical_not_survives_a_macro_body_round_trip() {
+        let src = "\tcpu 68000\n\tpadding off\n\
+                   gate macro flag,yes,no\n\tif ~~flag\n\tdc.b yes\n\telse\n\tdc.b no\n\tendif\n\tendm\n\
+                   val macro x\n\tdc.b ~~x,~~~x\n\tendm\n\
+                   Zero = 0\nOne = 1\n\
+                   \tgate Zero,$AA,$BB\n\tgate One,$CC,$DD\n\tval 0\n\tval 5\n";
+        assert_eq!(image(src), [0xAA, 0xDD, 0x01, 0x00, 0x00, 0x00]);
+    }
+
+    /// The `~~` token also has to render BACK to `~~` when a macro ARGUMENT
+    /// carrying it is substituted as text (`render_tokens`/`punct_str`) —
+    /// including into a string literal, where a wrong rendering becomes a
+    /// literal byte. `dc.b "[~~0]"` is `5B 7E 7E 30 5D` off the asl listing.
+    ///
+    /// **This row is language-derived and corpus-UNEXERCISED**: all 96
+    /// `s2disasm` sites spell `~~` in a macro BODY (stored as raw text, so it
+    /// never round-trips through `punct_str`) or at top level. No corpus
+    /// passes `~~` as a macro argument. Without this row the `punct_str` arm
+    /// is unreachable from any test — the macro-BODY row above stays green
+    /// with that arm broken, which is how the hole was found.
+    #[test]
+    fn logical_not_renders_back_through_a_macro_argument() {
+        let src = "\tcpu 68000\n\tpadding off\n\
+                   one macro v\n\tdc.b v\n\tendm\n\
+                   all macro\n\tdc.b ALLARGS\n\tendm\n\
+                   str macro v\n\tdc.b \"[v]\"\n\tendm\n\
+                   \tone ~~0\n\tone ~~1\n\tall ~~0,~~5,~~~0\n\tstr ~~0\n";
+        assert_eq!(
+            image(src),
+            [0x01, 0x00, 0x01, 0x00, 0x00, 0x5B, 0x7E, 0x7E, 0x30, 0x5D]
+        );
+    }
+
+    /// The instruction-generation half, at the shape that actually bites:
+    /// `s2.macrosetup.asm`'s `jmpTosInternal` gates its whole body on
+    /// `if ~~removeJmpTos`, and `removeJmpTos` is 0. Reading `~~0` as 0 does
+    /// not mis-assemble the jump table — it DELETES it, silently.
+    #[test]
+    fn the_jmp_table_gate_emits_its_table() {
+        let src = "\tcpu 68000\n\tpadding off\n\torg $1000\nremoveJmpTos = 0\n\
+                   tbl macro\n\tif ~~removeJmpTos\n\tirp op,ALLARGS\nop label *\n\tjmp (op).l\n\tendm\n\tendif\n\tendm\n\
+                   \ttbl A,B\n";
+        // Two `jmp (abs).l`: `4EF9` then each entry's own 32-bit address —
+        // twelve bytes at `$1000`, and NOTHING before them. `linked_image`
+        // flattens from zero, so the table is the image's tail.
+        let img = linked_image(src);
+        assert_eq!(img.len(), 0x1000 + 12, "the table is 12 bytes at $1000");
+        assert_eq!(
+            &img[0x1000..],
+            [0x4E, 0xF9, 0x00, 0x00, 0x10, 0x00, 0x4E, 0xF9, 0x00, 0x00, 0x10, 0x06]
+        );
+    }
 }

@@ -41,6 +41,11 @@ pub enum Punct {
     Bang,
     /// `~` — prefix bitwise complement (`~x`, asl's one's-complement operator).
     Tilde,
+    /// `~~` — prefix LOGICAL not (asl-verified 2026-09-03 against both shipped
+    /// `asl` builds: `dc.b ~~0,~~1,~~5` = `01 00 00`). Must be lexed as ONE
+    /// token by maximal munch: two `Tilde`s would fold to `!!x`, which cancels
+    /// and silently yields `x`. `~~~x` is therefore `~~` then `~`.
+    TildeTilde,
 }
 
 /// A lexical token kind.
