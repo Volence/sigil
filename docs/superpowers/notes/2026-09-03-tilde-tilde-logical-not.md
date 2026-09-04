@@ -245,3 +245,57 @@ rendering becomes a literal byte). **That row is labelled corpus-UNEXERCISED in
 its own doc comment**: all 96 `s2disasm` sites spell `~~` in a body or at top
 level, and none passes it as a macro argument. It is a gate whose subject the
 corpus cannot exhibit — not passing, unexercised — and it is committed saying so.
+
+### The suite, both sides, derived rather than taken
+
+Both runs `scripts/landing-run.sh --aeon /home/volence/sonic_hacks/.aeon-eval-ref`,
+each in its OWN detached worktree with its OWN on-disk target dir, run
+sequentially — never two full suites at once (the concurrency artefact the
+`irp`/`irpc` note recorded).
+
+| | tree | suites | passed | failed | ignored | CARGO_EXIT |
+|---|---|---|---|---|---|---|
+| master `b5e7714d` | `.wt-tilde-base` | 378 | **4,351** | 0 | 2 | 0 |
+| this branch `064a2d78` | `.wt-tilde` | 378 | **4,362** | 0 | 2 | 0 |
+
+**`+11`, and this parcel adds exactly 11 `#[test]` rows.** Reconciled.
+
+The branch log carries all 11 by name; the master log carries **none** of them,
+which is what says the two logs are of the two trees they claim. Zero `FAILED`
+lines in either.
+
+- **Clippy** `--release --workspace --all-targets -- -D warnings` — **exit 0**.
+  The 19 `warning:` lines are all C compiler output from the `-sys` crates'
+  build scripts; zero Rust warnings.
+- **aeon** — four artifacts deleted first, then one shape per invocation under
+  `SIGIL_VERSION_STRICT=1`, all exit 0. **Byte-identical**, as predicted:
+
+  | shape | CRC32 / size |
+  |---|---|
+  | `s4.bin` | `14ee2440` / 719700 |
+  | `s4.debug.bin` | `142294b3` / 737683 |
+  | `demo.bin` | `0c456778` / 96474 |
+  | `demo.debug.bin` | `2e603d53` / 101339 |
+
+  No shape moved. Nothing in `golden/`, `pins.rs` or `repin.toml` was touched.
+- Corpus figures re-derived with the FINAL committed binary: S2 9,539 and S1 368,
+  each byte-identical to the run above.
+
+## Booked, not done
+
+- **`even` is not a recognized 68000 mnemonic in sigil.** Hit while building the
+  `jmpTos` probe. Separate gap.
+- **A trailing `align` at end of file emits padding sigil's `asl` does not.**
+  `rts` + `align 4` differs by 2 bytes with the OLD binary AND the new one
+  (`p6.asm`), so it is not this parcel's. It is why `p5b.asm` puts content after
+  the last `align`.
+- **A user `function` returning a string cannot be folded into a `.l` absolute
+  address** (`jmp (extractJmpToName("op")).l`). This is the 518, and it is now
+  the largest single S2 site.
+- **`zMakeFMFrequency`** — `irp` over float literals through a user function
+  using `roundFloatToInteger`/`INT`. 84 diagnostics, newly visible.
+- **The three shapes asl refuses and sigil accepts** (`~-1`, `~~~~0`, `~ ~ 0`).
+  Corpus-unreachable in both corpora, characterised above, not gated.
+- **`~~` of a string.** `dc.b ~~"a"` is `00` under asl. Not probed far enough to
+  say whether the string is coerced to an integer or tested for emptiness —
+  `~~""` would separate them. Unreachable in both corpora.
