@@ -54,6 +54,22 @@ struct MacroDef {
     /// `pp`/`qq` from `11,22`). The lexer already swallows the whole `{…}` group
     /// without emitting a token, so the list below is right by construction.
     params: Vec<String>,
+    /// The DEFAULT text declared for each parameter, parallel to [`Self::params`]
+    /// — `None` where the declaration is a bare name.
+    ///
+    /// AS lets a parameter carry `NAME=text`, and the text stands in wherever the
+    /// call supplies nothing for that slot (asl-verified, listing rows in
+    /// [`Asm::expand_macro_inner`]). `s1disasm/Macros.asm(11)` is the corpus's
+    /// only declaration of one:
+    ///
+    /// ```text
+    /// locVRAM: macro loc,controlport=(vdp_control_port).l
+    /// ```
+    ///
+    /// The text is stored, not evaluated. AS substitutes it as TEXT at expansion
+    /// time exactly as it substitutes an argument, so a default naming a symbol
+    /// resolves in the expansion, not at the definition.
+    defaults: Vec<Option<String>>,
     body: Vec<SrcLine>,
     /// Whether the parameter list carries a `{INTLABEL}` group, which makes the
     /// invocation line's label the macro's to place rather than the assembler's.
@@ -4062,7 +4078,7 @@ impl Asm {
     }
 
     fn lower_z80(&mut self, mn: &str, rest: &[Token], span: Span) {
-        let atoms = match parse_operands(rest) {
+        let atoms = match parse_operands(rest, span) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -4156,7 +4172,7 @@ impl Asm {
             return self.lower_m68k_movem(suffix_size, rest, span);
         }
         if matches!(mnemonic, M68kMnemonic::Jmp | M68kMnemonic::Jsr) {
-            let atoms = match parse_operands(rest) {
+            let atoms = match parse_operands(rest, span) {
                 Ok(a) => a,
                 Err(d) => {
                     self.diags.push(d);
@@ -4269,7 +4285,7 @@ impl Asm {
             return self.lower_m68k_generic(mnemonic, suffix_size, atoms, span);
         }
 
-        let atoms = match parse_operands(rest) {
+        let atoms = match parse_operands(rest, span) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -4605,7 +4621,7 @@ impl Asm {
                 return;
             }
         };
-        let atoms = match parse_operands(rest) {
+        let atoms = match parse_operands(rest, span) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -4639,7 +4655,7 @@ impl Asm {
     /// `self_address - (self_address + 2)`) and against real `asl` (see
     /// `m68k_dbf_d0_self`/`m68k_dbeq_d1_self` in `tests/snippets_golden.txt`).
     fn lower_m68k_dbcc(&mut self, mnemonic: M68kMnemonic, rest: &[Token], span: Span) {
-        let atoms = match parse_operands(rest) {
+        let atoms = match parse_operands(rest, span) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -4733,7 +4749,7 @@ impl Asm {
                 return;
             }
         };
-        let mem_atoms = match parse_operands(mem_toks) {
+        let mem_atoms = match parse_operands(mem_toks, span) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -5564,16 +5580,38 @@ impl Asm {
             };
             (name, toks.get(2..).unwrap_or(&[]).to_vec())
         };
-        let params: Vec<String> = param_toks
-            .iter()
-            .filter_map(|t| {
-                if let Tok::Ident(p) = &t.tok {
-                    Some(p.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
+        // One parameter per top-level comma group, each `NAME` or `NAME=default`.
+        //
+        // Splitting on commas rather than harvesting every `Ident` in the list is
+        // what keeps a default's own identifiers out of the parameter table. The
+        // corpus's `macro loc,controlport=(vdp_control_port).l` used to declare
+        // FOUR parameters — `loc`, `controlport`, and the `vdp_control_port` and
+        // `l` read out of the default expression — so a body that mentioned
+        // `vdp_control_port` would have had it substituted away to nothing.
+        //
+        // An empty group contributes no parameter. That is how a `{INTLABEL}`
+        // group vanishes: the lexer swallows the whole `{…}` without emitting a
+        // token, so it declares a capture and consumes no argument position
+        // (asl-verified — `m macro {INTLABEL},pp,qq` binds `pp`/`qq` from `11,22`).
+        let mut params: Vec<String> = Vec::new();
+        let mut defaults: Vec<Option<String>> = Vec::new();
+        for group in split_top_commas(&param_toks) {
+            let Some((Tok::Ident(name), rest)) = group.split_first().map(|(h, r)| (&h.tok, r))
+            else {
+                continue;
+            };
+            params.push(name.clone());
+            defaults.push(match rest.split_first() {
+                Some((
+                    Token {
+                        tok: Tok::Punct(Punct::Eq),
+                        ..
+                    },
+                    text,
+                )) => Some(render_tokens(text)),
+                _ => None,
+            });
+        }
         let end = self.find_block_end(lines, start);
         // An UNCLOSED definition. `find_block_end` answers with the last line it
         // scanned, so a head on that line leaves nothing between head and end and
@@ -5603,7 +5641,8 @@ impl Asm {
             .collect();
         self.dot_label_cache.remove(&name);
         let int_label = head_declares_int_label(&head.text);
-        self.macros.insert(name, MacroDef { params, body, int_label });
+        self.macros
+            .insert(name, MacroDef { params, defaults, body, int_label });
         end + 1
     }
 
@@ -5751,7 +5790,7 @@ impl Asm {
             );
             return;
         }
-        let MacroDef { params, body, int_label } = match self.macros.get(name) {
+        let MacroDef { params, defaults, body, int_label } = match self.macros.get(name) {
             Some(m) => m.clone(),
             None => return,
         };
@@ -5814,11 +5853,66 @@ impl Asm {
         // trailing parameter must not contribute an empty group to it
         // (asl-verified: probe `p4.asm` case 4e, `mp aa` on params `n1,n2,n3`,
         // shifts to `s[][][][]` — an empty `ALLARGS`, not `,`).
+        //
+        // A slot that took its DEFAULT counts as unsupplied here, which is right
+        // for `ARGCOUNT` and for `ALLARGS` before any shift — asl reads both off
+        // the call text (`ac p3=99` on `p1,p2=DEF2,p3` reports `ARGCOUNT` 1 and
+        // `ALLARGS` `p3=99`, defaults nowhere in either).
+        //
+        // What it is NOT known to be right for is `ALLARGS` AFTER a `shift` in a
+        // macro that declares a default: asl puts defaults into the store the
+        // shifted `ALLARGS` renders from, and does so by a rule these probes did
+        // not pin. Four asl rows, `-U`, each macro called with one argument:
+        //
+        // ```text
+        //   n1,n2=DD,n3   shift → "DD,"     shift → ""
+        //   n1,n2,n3=LL   shift → "LL"      shift → "LL"
+        //   n1,n2,n3=CC,n4 (as p3=CC)  shift → "CC,"  shift → "CC,"
+        //   n1,n2=BB,n3,n4=DD  shift → "DD,EE"-shaped (both defaults present)
+        // ```
+        //
+        // No join of the bound vector reproduces all four, and the PARAMETERS
+        // after a shift do follow the plain "bound vector slides left" rule the
+        // second row's `<|LL|>` shows — so the two disagree and the `ALLARGS`
+        // half is unexplained. It is left as it was rather than guessed at: no
+        // macro in s1disasm, s2disasm or aeon both declares a default and reads
+        // `ALLARGS`/`shift`, so nothing exercises the corner, and a rule invented
+        // to fill it would be a wrong answer waiting for the first source that
+        // does.
         let mut filled: Vec<bool> = Vec::with_capacity(params.len());
-        for p in &params {
+        for (p, default) in params.iter().zip(defaults.iter()) {
             let supplied = keyword.get(p).cloned().or_else(|| pos_iter.next());
             filled.push(supplied.is_some());
-            let v = self.bind_macro_arg(supplied.unwrap_or_default());
+            // A parameter declaring a default takes it wherever the call supplies
+            // NO TEXT for the slot — whether the slot was left off the end of the
+            // call or written empty between two commas. asl `-U`, `ac macro
+            // p1,p2=DEF2,p3` emitting `<p1|p2|p3>`:
+            //
+            // ```text
+            //    9/       1 : 3C7C 4445 4632      dc.b "<|DEF2|>"        ; ac
+            //   10/       C : 3C31 317C 4445      dc.b "<11|DEF2|>"      ; ac 11
+            //   11/      1B : 3C31 317C 3232      dc.b "<11|22|>"        ; ac 11,22
+            //   13/      40 : 3C31 317C 4445      dc.b "<11|DEF2|33>"    ; ac 11,,33
+            //   14/      55 : 3C7C 4445 4632      dc.b "<|DEF2|99>"      ; ac p3=99
+            // ```
+            //
+            // The last two are the rule's edges: `ac 11,,33` writes the slot and
+            // leaves it empty, and still takes the default; `ac p3=99` binds a
+            // LATER parameter by keyword, and the skipped `p2` still takes it
+            // while the defaultless `p1` stays empty.
+            //
+            // The default is the CALLEE's own text, so it does not go through
+            // [`Self::bind_macro_arg`] — that qualifies a bare `.`-local against
+            // the CALLER's scope, which is right for an argument the caller wrote
+            // and wrong for text written in the macro's own declaration. No
+            // corpus default is a `.`-local, so the two readings are
+            // indistinguishable today; the callee reading is the one that matches
+            // where the text is written.
+            let text = supplied.unwrap_or_default();
+            let v = match default {
+                Some(d) if text.is_empty() => d.clone(),
+                _ => self.bind_macro_arg(text),
+            };
             bound.push(v);
         }
         // Surplus positional arguments — the ones the parameter list could not
