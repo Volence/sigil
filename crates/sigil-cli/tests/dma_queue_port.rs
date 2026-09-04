@@ -137,6 +137,13 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         table.push(("DMA_Overflow_Count", pins::DMA_OVERFLOW_COUNT));
         table.push(("Dbg_DMA_Enq_Capped", pins::DBG_DMA_ENQ_CAPPED));
     }
+    if debug {
+        // The DMA straddle counter aeon added to measure the split reserve.
+        // DEBUG-only, so it is absent from the plain listing and the lookup is gated on
+        // the shape rather than defaulted to zero. Derived, not pinned — `listing_vma`.
+        table.push(("Dbg_DMA_Straddle_All", sigil_harness::test_support::listing_vma(debug, "Dbg_DMA_Straddle_All")));
+    }
+
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;

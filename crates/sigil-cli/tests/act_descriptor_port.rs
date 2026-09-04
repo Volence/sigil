@@ -244,7 +244,41 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
         // `act_sec_field_equs()` (the shared engine.structs drift wall reads them).
     ];
     let mut asm = String::from("cpu 68000\n");
-    for (name, plain, dbg) in LABELS {
+    // THE GENERATED EDITOR FAMILY, swept from the reference listing instead of pinned.
+    //
+    // Every `EditorRaster_* / EditorCycle_* / EditorSceneBinding_* / OJZ_Preset_Sec*` above
+    // is a hand-added `[[symbol]]` pin, and the comments record the pattern: each new
+    // authored scene arrived as another red gate and another transcribed row. These
+    // symbols are GENERATED — one per authored raster, per cycle, per section — so the
+    // enumeration can never be finished, only maintained.
+    //
+    // The sweep ends that. It reads the family out of the listing beside the reference
+    // ROM, so a new scene arrives with no edit here, and an address cannot rot: it comes
+    // from the build that produced the very bytes this gate diffs against. Names already
+    // carried above keep their pinned value, so nothing is redefined and no existing row
+    // changes meaning. See `test_support::listing_symbols_with_prefix`.
+    const GENERATED: &[&str] =
+        &["EditorRaster_", "EditorCycle_", "EditorSceneBinding_", "OJZ_Preset_Sec"];
+    let mut labels: Vec<(String, u32, u32)> =
+        LABELS.iter().map(|(n, p, d)| ((*n).to_string(), *p, *d)).collect();
+    let seen: std::collections::HashSet<String> =
+        labels.iter().map(|(n, _, _)| n.clone()).collect();
+    let dbg_syms: std::collections::HashMap<String, u32> =
+        sigil_harness::test_support::listing_symbols_with_prefix(true, GENERATED)
+            .into_iter()
+            .collect();
+    for (name, plain) in sigil_harness::test_support::listing_symbols_with_prefix(false, GENERATED)
+    {
+        if seen.contains(&name) {
+            continue;
+        }
+        let d = *dbg_syms.get(&name).unwrap_or_else(|| {
+            panic!("`{name}` is in the plain listing but not the debug one")
+        });
+        labels.push((name, plain, d));
+    }
+
+    for (name, plain, dbg) in &labels {
         let v = if debug { *dbg } else { *plain };
         asm.push_str(&format!("{name} = ${v:X}\n"));
     }

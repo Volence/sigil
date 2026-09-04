@@ -162,8 +162,8 @@ pub const PAGE_CACHE: Region = Region { plain_base: 0x7A2A, debug_base: 0x9362, 
 /// `BG_Init` .. `section:bg` — gate `SIGIL_EMP_BG`. tests: bg_port
 pub const BG: Region = Region { plain_base: 0x7F10, debug_base: 0xA1DA, plain_len: 0xD4, debug_len: 0x134 };
 
-/// `BgAnim_Init` .. start + 0x9E plain / 0x158 debug (literal — no end symbol) — gate `SIGIL_EMP_BG_ANIM`. tests: bg_anim_port
-pub const BG_ANIM: Region = Region { plain_base: 0x7FE4, debug_base: 0xA30E, plain_len: 0x9E, debug_len: 0x158 };
+/// `BgAnim_Init` .. start + 0x9E plain / 0x170 debug (literal — no end symbol) — gate `SIGIL_EMP_BG_ANIM`. tests: bg_anim_port
+pub const BG_ANIM: Region = Region { plain_base: 0x7FE4, debug_base: 0xA30E, plain_len: 0x9E, debug_len: 0x170 };
 
 /// `CompressionSelfTest` .. `section:compression_selftest` (debug-only region; plain empty at `Sound_PostByte`) — gate `SIGIL_EMP_COMPRESSION_SELFTEST`. tests: compression_selftest_port
 pub const COMPRESSION_SELFTEST: Region = Region { plain_base: 0x8082, debug_base: 0xA47E, plain_len: 0x0, debug_len: 0xDE0 };

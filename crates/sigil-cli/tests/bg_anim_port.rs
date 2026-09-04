@@ -97,6 +97,10 @@ fn bg_anim_addr_labels(debug: bool) -> Vec<Section> {
     if debug {
         // Debug shape only: the assert construct's error-handler entry points
         // (the rings_port precedent).
+        // `BgAnim_Table_Ptr` is the DEBUG-only indirection the view record installs;
+        // it exists in the debug RAM map only, so it is derived per shape from the
+        // listing rather than pinned (see `listing_vma`).
+        table.push(("BgAnim_Table_Ptr", sigil_harness::test_support::listing_vma(debug, "BgAnim_Table_Ptr")));
         table.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
         table.push(("MDDBG__ErrorHandler_PagesController", pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER));
     }
@@ -399,6 +403,10 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("DMA_Enq_Bytes_Frame", pick(pins::DMA_ENQ_BYTES_FRAME)),
     ];
     if debug {
+        // DEBUG-only cells this composition's two modules reach across the seam, derived
+        // from the reference listing rather than pinned — see `listing_vma`.
+        labels.push(("BgAnim_Table_Ptr", sigil_harness::test_support::listing_vma(debug, "BgAnim_Table_Ptr")));
+        labels.push(("Dbg_DMA_Straddle_All", sigil_harness::test_support::listing_vma(debug, "Dbg_DMA_Straddle_All")));
         labels.push(("DMA_Overflow_Count", pins::DMA_OVERFLOW_COUNT));
         labels.push(("Dbg_DMA_Enq_Capped", pins::DBG_DMA_ENQ_CAPPED));
         labels.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));

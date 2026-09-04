@@ -136,6 +136,13 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         table.push(("DMA_Bytes_ThisFrame", pins::DMA_BYTES_THIS_FRAME));
         table.push(("Dbg_PageIn_Preempts", pins::DBG_PAGE_IN_PREEMPTS));
     }
+    if debug {
+        // The important-queue peak the straddle instrumentation records each frame.
+        // DEBUG-only, so it is absent from the plain listing and the lookup is gated on
+        // the shape rather than defaulted to zero. Derived, not pinned — `listing_vma`.
+        table.push(("DMA_Peak_Important", sigil_harness::test_support::listing_vma(debug, "DMA_Peak_Important")));
+    }
+
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;

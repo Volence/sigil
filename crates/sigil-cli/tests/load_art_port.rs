@@ -139,6 +139,13 @@ fn addr_labels(debug: bool) -> Vec<Section> {
             pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
         ));
     }
+    if debug {
+        // Same straddle-instrumentation cell; load_art composes the vblank section.
+        // DEBUG-only, so it is absent from the plain listing and the lookup is gated on
+        // the shape rather than defaulted to zero. Derived, not pinned — `listing_vma`.
+        table.push(("DMA_Peak_Important", sigil_harness::test_support::listing_vma(debug, "DMA_Peak_Important")));
+    }
+
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;

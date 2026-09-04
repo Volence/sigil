@@ -496,7 +496,9 @@ tests = ["bg_port"]
 name = "bg_anim"
 start = "BgAnim_Init"
 len = 0x9E
-debug_len = 0x158
+# DEBUG carries the camera-motion view path the plain shape gates out, so the two
+# shapes' lengths are independent literals here rather than one number with a pad.
+debug_len = 0x170
 gate = "SIGIL_EMP_BG_ANIM"
 tests = ["bg_anim_port"]
 
