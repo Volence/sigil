@@ -6337,3 +6337,26 @@ guidance it extends; that is the same route the branch-deletion rule took (carri
 `OVERSEER.md` until it landed as invariant 12). Writing it into this repo's boot read instead
 would be a lane-local fork of a suite-wide dispatch rule, and that file has no headroom for it
 anyway — see BOOT-DOC-HEADROOM, which this is now the second finding to run into in two days.
+
+**ROUTED, NOT LANDED — and this lane CARRIES it until it is.** The hub routed the sentence to
+dominion for invariant 11 (aeon named as finder, this log's commit cited) and said dominion
+"lands or refuses". So the shared block does not hold it yet, and the entry above — which reads
+as though filing the ask discharged the obligation — does not by itself put the rule in front of
+the next agent this lane dispatches. **Until it lands, every dispatch from here states both
+halves in its own brief**, exactly as the branch-deletion rule was carried before it became
+invariant 12.
+
+The falsifier, so nobody re-derives this from the narrative:
+
+```sh
+grep -n "MISSING result file\|run-unique" ~/.claude/skills/dispatching-empyrean-agents/SKILL.md
+```
+
+**Measured 2026-09-04 at skill revision `50bb5e9`: no match, exit 1** — not landed. A match
+retires the carry obligation and this paragraph with it. Note that `50bb5e9` is the same
+revision the boot read cites for invariant 12, so the skill has not moved since that landing;
+absence of a match is a fact about the file, not about whether the routing happened.
+
+The hub also took the trigger correction as stated: the precondition is **two writers and one
+path**, which a lane meets by dispatching two building agents without naming a scratch
+location — not by any naming habit it chose.
