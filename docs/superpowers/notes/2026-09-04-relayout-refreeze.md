@@ -401,3 +401,50 @@ rather than presenting them as a fresh control. What makes them a build rather t
 copy of the goldens is the pairing: each `.bin` sits within milliseconds of a `.lst` of
 the same stem, and a copied golden has no listing to pair with and would carry the
 golden's mtime.
+
+## What this parcel cannot close, and what closes it
+
+The freeze is BLOCKED on aeon, not on sigil, and there are two independent locks. Either
+alone is sufficient to refuse; both are the mechanism working.
+
+**Lock 1 — the build.** `capture_goldens.sh` cannot build at `88547eda` at all, for the
+reason traced above.
+
+**Lock 2 — the ledger, which would refuse the append even if the build succeeded.**
+`provenance::append_gate` reads the chain and finds it ARMED (entry #173 is the first to
+record a strict run) with a tip that carries no strict run at all, so it returns
+`Refused`: "A refreeze must not be built on top of goldens whose strict suite never ran …
+Run `refreeze --attest` first." `plan_freeze` turns that into `FreezeAction::Refuse` for
+any freeze that moves bytes, and `--supersede-tip` is refused too — `SUPERSEDE_WITHOUT_A_RED_RUN`
+requires an already-recorded RED run, which the tip does not have. Measured from the
+committed ledger, not from the code alone: 202 entries, 29 carrying `[entry.strict]`, the
+first at #173, and the tip `rom-relayout-more-room` carrying neither `[entry.strict]` nor
+`[entry.superseded]`.
+
+So entry #202 needs `refreeze --attest` before ANY later freeze, byte-moving or not. That
+attest must run with `AEON_DIR` at `5875e60e`, which `refreeze` enforces itself.
+
+**The sequence that closes this, in order:**
+
+1. aeon lands `parcel/rom-relayout-more-room` — the four commits `88547eda..5875e60e`,
+   principally `446a27d9` — onto aeon master. Nothing sigil does can substitute.
+2. `refreeze --attest` on entry #202 against `5875e60e`, which the landing run above
+   already shows GREEN at 386/4463/0/2 — so this is expected to record a passing run
+   rather than to discover something.
+3. `refreeze --freeze` against the new aeon master SHA, which will then contain both the
+   anchors and the `EditorReels_*` content, and should be expected to need a fourth
+   `[[symbol]]` row for `EditorReelBindings_*`'s two `extern()`s.
+
+Until step 1, `aeon_rev = 5875e60e…` is the correct and only honest value for the tip.
+
+## Trees this run created and removed
+
+`/home/volence/sonic_hacks/.aeon-ref-relayout-cur` (`88547eda`) was provisioned and then
+REMOVED. Its `s4` ROMs were built by sigil master's assembler during the A/B control, not
+by any freeze, so leaving it would leave a directory that reads as a provisioned reference
+while holding artifacts from a different assembler than any golden — the substitution
+class the provisioner's own header exists to prevent. The evidence it produced is in this
+note and in the run logs; the tree is cheap to re-create once step 1 above lands.
+
+`/home/volence/sonic_hacks/.aeon-relayout-freeze` (`5875e60e`) was READ and not written:
+same HEAD, `git status` clean, and all four ROM mtimes unchanged across the landing run.
