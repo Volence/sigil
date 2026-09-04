@@ -71,8 +71,8 @@
 #     WHAT THE MISSING FLAG ACTUALLY IS. The hand-run form people reach for is bare
 #     `cargo clippy`, and its clean exit proves only that nothing was an ERROR — clippy's
 #     own lints are warnings, so it prints every finding and still exits 0. Measured on
-#     this tree at the branch point of the commit that added this section, with ten
-#     `tabs_in_doc_comments` findings standing in `sigil-frontend-as`:
+#     this tree at the branch point of the commit that added this section, where 116
+#     `tabs_in_doc_comments` sites stood across seven `sigil-frontend-as` files:
 #
 #       cargo clippy                                          -> exit 0, findings PRINTED
 #       cargo clippy --release --workspace --all-targets       -> exit 0, findings PRINTED
@@ -80,10 +80,19 @@
 #
 #     So `-D warnings` is the flag that turns clippy into an instrument with a verdict;
 #     without it the command is a reporter, and a reporter's exit code answers a question
-#     nobody asked. `--all-targets` is carried too, because a lint bar that does not read
-#     the test and bench targets is silent about most of the code a landing is about — but
-#     it is NOT what those ten needed to be reached (they are in the lib, and the shorter
-#     form finds them). Both flags are here; only one of them is the one that was missing.
+#     nobody asked. `--all-targets` is the second half and is equally load-bearing: 106 of
+#     those 116 sites live in TEST targets, so with the lib alone fixed the shorter
+#     `--release --workspace -- -D warnings` exits 0 while `--all-targets` still exits 101.
+#     A lint bar that does not read the test and bench targets was blind to 91% of what
+#     was red.
+#
+#     A COUNT TAKEN UNDER `-D warnings` IS NOT THE POPULATION. It is how far the build
+#     got: the first crate to fail aborts, cargo stops scheduling the rest, and the
+#     remaining targets are never checked. The same tree reported 10, then 35 more, then
+#     71 more, as each round of fixes let the next target compile. To size the work, run
+#     clippy WITHOUT `-D warnings` — nothing aborts, everything is checked — and count
+#     from that. This script does not need the distinction (it wants a verdict, and any
+#     nonzero exit is one), but anyone reading its lint list to plan a fix does.
 #
 #     A RED LINT BAR MAKES THIS SCRIPT'S RESULT NOT-GREEN, exactly as a red test does, and
 #     `CLIPPY_EXIT` sits beside `CARGO_EXIT` in the verdict block. There is no --no-clippy
@@ -567,6 +576,12 @@ if (( ${#CLIPPY_SITES[@]} )); then
     echo
     echo "  CLIPPY LINT ERRORS (${#CLIPPY_SITES[@]}), all of them:"
     for s in "${CLIPPY_SITES[@]}"; do echo "    $s"; done
+    echo "  THIS LIST IS A LOWER BOUND, NOT THE POPULATION. Under \`-D warnings\` the first"
+    echo "  crate to fail aborts and cargo stops scheduling the rest, so every unchecked"
+    echo "  target contributes nothing here. Measured on this repo: 10 sites, then 35 more,"
+    echo "  then 71 more, as each round of fixes let the next target compile. To size the"
+    echo "  work, re-run the same command WITHOUT \`-- -D warnings\` — nothing aborts and"
+    echo "  everything is checked — and count from that."
     echo "  Silence the SPECIFIC item with a comment saying why, or change the code. A"
     echo "  workspace-wide or crate-wide allow turns a correct lint off everywhere to"
     echo "  settle one site, and is not a fix."
