@@ -118,7 +118,7 @@ fn map_toml(base: u32) -> String {
     )
 }
 
-fn carriers(labels: &[(&str, u32)], lma_base: u32) -> Vec<Section> {
+fn carriers(labels: &[(String, u32)], lma_base: u32) -> Vec<Section> {
     let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let mut out = Vec::new();
     for (i, (name, vma)) in labels.iter().enumerate() {
@@ -137,12 +137,14 @@ fn carriers(labels: &[(&str, u32)], lma_base: u32) -> Vec<Section> {
 }
 
 fn inbound() -> Vec<Section> {
-    let labels: [(&str, u32); 27] = [
+    let labels: [(&str, u32); 29] = [
         // Derived from the reference listing, not pinned — see `listing_vma`. Read from
         // the PLAIN listing like every `.plain` row around it: this cell sits at the same
         // VMA in both shapes, and this scope carries no shape parameter.
         ("Effects_Motion_Any", sigil_harness::test_support::listing_vma(false, "Effects_Motion_Any")),
         ("Effects_Motion", sigil_harness::test_support::listing_vma(false, "Effects_Motion")),
+        ("Sine_Table", sigil_harness::test_support::listing_vma(false, "Sine_Table")),
+        ("Logic_Tick", sigil_harness::test_support::listing_vma(false, "Logic_Tick")),
         ("Raster_Program", pins::RASTER_PROGRAM.plain),
         ("Raster_Cursor", pins::RASTER_CURSOR.plain),
         ("Raster_Pending", pins::RASTER_PENDING.plain),
@@ -176,6 +178,17 @@ fn inbound() -> Vec<Section> {
         ("Build_DMA_Entry", pins::BUILD_DMA_ENTRY.plain),
         ("Camera_Y", pins::CAMERA_Y.plain),
     ];
+    // The `Effects_*` / `Raster_*` work-RAM families this scope reads across the seam,
+    // swept from the reference listing so a new effects cell needs no edit here. Rows
+    // pinned above keep their value; the work-RAM restriction keeps the `Raster_*` PROCS
+    // raster.emp defines out of the set. See `test_support::extend_from_listing_ram`.
+    let mut labels: Vec<(String, u32)> =
+        labels.iter().map(|(n, v)| ((*n).to_string(), *v)).collect();
+    sigil_harness::test_support::extend_from_listing_ram(
+        &mut labels,
+        false,
+        &["Effects_", "Raster_"],
+    );
     carriers(&labels, 0x0400_0000)
 }
 
@@ -183,8 +196,8 @@ fn hblank_targets() -> Vec<Section> {
     let base = pins::HBLANK.plain_base;
     carriers(
         &[
-            ("HBlank_Install", base),
-            ("HBlank_Uninstall", base + pins::HBLANK_UNINSTALL_OFF as u32),
+            ("HBlank_Install".to_string(), base),
+            ("HBlank_Uninstall".to_string(), base + pins::HBLANK_UNINSTALL_OFF as u32),
         ],
         0x0500_0000,
     )

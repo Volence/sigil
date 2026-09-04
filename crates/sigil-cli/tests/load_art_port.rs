@@ -584,6 +584,19 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         table.push(("DMA_Bytes_ThisFrame", pins::DMA_BYTES_THIS_FRAME));
         table.push(("Dbg_PageIn_Preempts", pins::DBG_PAGE_IN_PREEMPTS));
     }
+    // The flip composes vblank, so it takes the same DEBUG-only DMA instrumentation
+    // family the standalone path does. Swept from the reference listing; rows already
+    // pinned above keep their value. See `test_support::extend_from_listing`.
+    let mut table: Vec<(String, u32)> =
+        table.into_iter().map(|(n, v)| (n.to_string(), v)).collect();
+    if debug {
+        sigil_harness::test_support::extend_from_listing(
+            &mut table,
+            debug,
+            &["Dbg_DMA_", "DMA_Peak_", "DMA_Split_"],
+        );
+    }
+
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");

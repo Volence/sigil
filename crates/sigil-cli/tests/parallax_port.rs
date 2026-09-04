@@ -196,12 +196,14 @@ fn parallax_addr_labels(debug: bool) -> Vec<Section> {
     // VDP_Shadow_Table cell below lives BEFORE the deleted pair, so it holds. (It had
     // a VDP_Dirty_Mask sibling until the blanket-restore parcel deleted that symbol.)
     // Camera_X/Y now pin-sourced (they carry the −4 too; matches Current_Act_Ptr style).
-    let table: [(&str, u32, u32); 37] = [
+    let table: [(&str, u32, u32); 38] = [
         // The role-swap flag parallax.emp reads across the seam; derived like every
         // other `Parallax_*` cell here rather than pinned.
         ram_block_vma("Parallax_Roles_Swapped"),
         // The VDP register writer parallax.emp calls across the seam.
         ram_block_vma("Set_VDP_Reg"),
+        // The row-remap state cell parallax.emp reads across the seam.
+        ram_block_vma("Parallax_Remap_State"),
         // The MD Debugger carriers the DEBUG-shape asserts jsr/jmp (the section_port /
         // sprites_port precedent). Shape-invariant pins carried in BOTH shapes: in plain
         // the assert is comptime-gated out and these simply go unreferenced.

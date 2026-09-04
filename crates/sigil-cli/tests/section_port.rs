@@ -172,7 +172,10 @@ fn section_addr_labels(debug: bool) -> Vec<Section> {
     let mut table: Vec<(String, u32)> =
         table.iter().map(|(n, v)| ((*n).to_string(), *v)).collect();
     if debug {
-        sigil_harness::test_support::extend_from_listing_ram(&mut table, debug, &["Canopy_"]);
+        // The canopy diagnostic stamps its records with the frame number; pre-existing
+    // pin, so naming it adds no new hand-maintained literal.
+    table.push(("Frame_Counter".to_string(), pick(pins::FRAME_COUNTER)));
+    sigil_harness::test_support::extend_from_listing_ram(&mut table, debug, &["Canopy_"]);
     }
 
     for (i, (name, vma)) in table.iter().enumerate() {

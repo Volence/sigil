@@ -107,10 +107,12 @@ pub fn map_toml(debug: bool) -> String {
 /// evaluates at lower time, so both must be present at their true VMAs (0x132 = 306 apart)
 /// or the guard fails here for a reason unrelated to the port.
 pub fn cross_seam_labels(debug: bool) -> Vec<Section> {
-    let labels: [(&str, u32); 27] = [
+    let labels: [(&str, u32); 28] = [
         // Derived from the reference listing, not pinned — see `listing_vma`.
         ("Effects_Motion_Any", sigil_harness::test_support::listing_vma(debug, "Effects_Motion_Any")),
         ("Effects_Motion", sigil_harness::test_support::listing_vma(debug, "Effects_Motion")),
+        // The shared sine table raster.emp indexes across the seam.
+        ("Sine_Table", sigil_harness::test_support::listing_vma(debug, "Sine_Table")),
         ("Raster_Program", pins::RASTER_PROGRAM.plain),
         ("Raster_Cursor", pins::RASTER_CURSOR.plain),
         ("Raster_Pending", pins::RASTER_PENDING.plain),
@@ -161,6 +163,17 @@ pub fn cross_seam_labels(debug: bool) -> Vec<Section> {
         // latch, but Effects_LatchWorldLines in this same module is what does the reading now.)
         ("Build_DMA_Entry", if debug { pins::BUILD_DMA_ENTRY.debug } else { pins::BUILD_DMA_ENTRY.plain }),
     ];
+    // The `Effects_*` / `Raster_*` work-RAM families this scope reads across the seam,
+    // swept from the reference listing so a new cell needs no edit here. Rows pinned above
+    // keep their value; the work-RAM restriction keeps the `Raster_*` PROCS raster.emp
+    // defines out of the set. See `test_support::extend_from_listing_ram`.
+    let mut labels: Vec<(String, u32)> =
+        labels.iter().map(|(n, v)| ((*n).to_string(), *v)).collect();
+    sigil_harness::test_support::extend_from_listing_ram(
+        &mut labels,
+        debug,
+        &["Effects_", "Raster_", "Logic_"],
+    );
     carriers(&labels, 0x0400_0000)
 }
 
@@ -168,14 +181,14 @@ pub fn cross_seam_labels(debug: bool) -> Vec<Section> {
 /// hblank region's per-shape base so the emitted call operands match the reference.
 pub fn hblank_call_targets(debug: bool) -> Vec<Section> {
     let base = if debug { pins::HBLANK.debug_base } else { pins::HBLANK.plain_base };
-    let labels: [(&str, u32); 2] = [
-        ("HBlank_Install", base),
-        ("HBlank_Uninstall", base + pins::HBLANK_UNINSTALL_OFF as u32),
+    let labels: [(String, u32); 2] = [
+        ("HBlank_Install".to_string(), base),
+        ("HBlank_Uninstall".to_string(), base + pins::HBLANK_UNINSTALL_OFF as u32),
     ];
     carriers(&labels, 0x0500_0000)
 }
 
-fn carriers(labels: &[(&str, u32)], lma_base: u32) -> Vec<Section> {
+fn carriers(labels: &[(String, u32)], lma_base: u32) -> Vec<Section> {
     let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
     let mut out = Vec::new();
     for (i, (name, vma)) in labels.iter().enumerate() {
