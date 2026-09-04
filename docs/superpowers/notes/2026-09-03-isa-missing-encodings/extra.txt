@@ -1,0 +1,36 @@
+asl d0
+asl.w d0
+asl.l d0
+lsr d3
+ror.b d1
+asl.w (a0)
+asl #1,d0
+roxl #1,a0
+roxl.l (a0)
+bchg #3,ccr
+bchg #3,sr
+move #$12,sr
+move.b #$12,sr
+exg d0,d1,d2
+roxl d2,a0
+roxl #1,(a0)
+roxl d1,(a0)
+move usp,usp
+move ccr,ccr
+move sr,ccr
+move ccr,sr
+move.w ($1234).w,ccr
+bchg #3,($12345678).l
+negx.w d0
+abcd d1,d0
+link a0,#-4
+unlk a0
+nbcd d0
+sbcd d1,d0
+subx.w d1,d0
+chk.w d1,d0
+stop #$2700
+reset
+trapv
+rtr
+moves.w d0,(a0)
