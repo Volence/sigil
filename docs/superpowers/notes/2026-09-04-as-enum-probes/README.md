@@ -32,6 +32,8 @@ That is the whole of it. Everything below is a consequence.
 | 9 | zero step | `enumconf 0` / `enum a=5,b,c` | `5,5,5` | `=$5..$5` / `0505 05` |
 | 10 | `nextenum` with no prior `enum` | `nextenum q,r` as the first enum line | no diagnostic; counter starts at 0 — `q=0,r=1` | `=$0..$1` / `0001` |
 | 11 | does `enum` reset the step? | `enumconf 4` then `enum` | no — the step is global and persists across `enum` | q4 |
+| 11a | does `enum` reset the COUNTER? | `enum a=5,b` then `enum c,d` | **yes** — `c=0`, not `$7`. This is the only thing separating `enum` from `nextenum` | `=$5..$6` then `=$0..$1` / `0506 0001` (q11) |
+| 11b | both at once | `enumconf 3` / `enum a=5,b` / `enum c,d` / `nextenum e,f` | `5,8 · 0,3 · 6,9` — counter reset, step kept | `=$5..$8`, `=$0..$3`, `=$6..$9` (q12) |
 | 12 | redefinition | `enum a=1,b` then `enum a=9,c` | `error #1000: symbol double defined`; **the first value is kept** (`a=1`) but **the counter still takes the new value** (`c=$A`) | `=$9..$A` / `0102 0A` |
 | 13 | forward reference in the value | `enum a=fw,b` with `fw EQU 4` below | `error #1820: expression must be evaluatable in first pass`; value folds to 0 | q10 |
 | 14 | member referenced above its own `enum` line | `dc.b z` then `enum z=7` | resolves — `07`. It is an ordinary two-pass symbol | q9 |
@@ -65,5 +67,39 @@ sixteen `nextenum` continuations (row 4) whose enharmonics are all explicit
 Rows 7, 12 and 13 are **not** reached by S1 or S2. They are implemented to the
 listing anyway, because the cost of being wrong about them later is a silently
 shifted note table.
+
+Row 11a is not reached either, and for a reason worth writing down: **every
+`enum` line in the corpus carries an explicit start value** (`enum
+smpsPitch10lo=$88`, `enum nRst=$80`, `enum objoff_30=$30`), so the reset is
+overwritten before it can be observed. A build of sigil with the reset deleted
+outright still reproduces the corpus's whole pitch and note table byte for byte.
+The corpus is therefore **not** a test of that row, and the two probes that are
+(q11, q12) exist because of it.
+
+## Where the construct's real weight sits
+
+S1 spends the enum names almost entirely in `dc.b`/`dc.w` data, which sigil
+defers to a link fixup rather than resolving in the front end — so an unbound
+name there is silent until link, and S1 does not currently reach link.
+
+S2 is the opposite and it is where the mass is. `s2.constants.asm` builds the
+entire object-RAM offset vocabulary out of three `enum` lines:
+
+```
+ 134: enum objoff_30=$30,objoff_31=$31,…,objoff_37=$37
+```
+
+aliases it into hundreds of semantic names (`boss_hurt_sonic = objoff_38`), and
+references those in **thousands of instruction operands** — which the front end
+*does* resolve. So the three unimplemented lines were not hiding a population;
+they were generating one, loudly, in a different diagnostic class:
+
+| | before | after |
+|---|---|---|
+| `X is not a recognized 68000 mnemonic` (enum/nextenum/enumconf) | 31 | 0 |
+| `unresolved symbol X in operand` | 3,384 | 184 |
+| S2 total | 9,266 | 6,035 |
+
+190 distinct symbol names left the unresolved set and **0 entered it**.
 
 Claude-Session: https://claude.ai/code/session_01QU6arHjqorA3eMNhsorP3H
