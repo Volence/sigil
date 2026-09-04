@@ -12,8 +12,8 @@
 # assembled_end=0x1121a
 # labels=40
 AnimateSprite 0x1b8a
-BG_Init 0x59fa
-BgAnim_Init 0x5ace
+BG_Init 0x5a06
+BgAnim_Init 0x5ada
 BootData 0x392
 BootData_End 0x3fe
 BusError 0x1016a
@@ -32,7 +32,7 @@ InitObjectRAM 0x1478
 InitSpriteSystem 0x1770
 Init_DMA_Queue 0x438
 Init_SpriteTable 0x764
-Level_LoadArt 0x5174
+Level_LoadArt 0x5180
 Load_Object 0x2ca8
 ObjCodeBase 0x10000
 ObjDef_DemoBox 0x10006
