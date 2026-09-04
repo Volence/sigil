@@ -103,7 +103,7 @@ fn punct_str(p: Punct) -> &'static str {
 /// Every one of them obeys the SAME boundary rule ([`boundary_ok`]); an empty
 /// parameter name never matches.
 ///
-/// The three built-in names FOLD CASE and a parameter name does not, under `-U`
+/// The built-in names FOLD CASE and a parameter name does not, under `-U`
 /// (asl-verified, one expansion of `cm macro Pp` called `cm.w Zz`):
 ///
 /// ```text
@@ -113,6 +113,18 @@ fn punct_str(p: Punct) -> &'static str {
 /// — source `a[Pp] b[pp] c[PP] d[allargs] e[ALLARGS] f[.attribute]`. The
 /// parameter answers only to the spelling it was declared with; `allargs` and
 /// `.attribute` answer to any.
+///
+/// `ARGCOUNT` is a substitution too, not a symbol — the macro listing shows the
+/// DIGITS pasted into the body line, exactly as it shows `ALLARGS`'s text. It
+/// folds case and obeys the same boundary rule, and it is tried AFTER the
+/// parameters because a parameter declared with that name WINS (asl-verified,
+/// `ac2 macro pp` called `ac2 7,8` and `ac3 macro ARGCOUNT` called `ac3 zz`,
+/// probe `p9.asm`):
+///
+/// ```text
+///    9/ 1002 : 315B 325D 2032     dc.b "1[2] 2[xARGCOUNTx] 3[_2_] 4[2] 5[2]"
+///   15/ 1027 : 5B7A 7A5D          dc.b "[zz]"
+/// ```
 pub(crate) fn substitute_frame(
     text: &str,
     attribute: Option<&str>,
@@ -120,10 +132,13 @@ pub(crate) fn substitute_frame(
     int_label: Option<&str>,
     params: &[String],
     bound: &[String],
+    arg_count: i64,
 ) -> String {
     const ATTRIBUTE: &str = ".ATTRIBUTE";
     const ALLARGS: &str = "ALLARGS";
     const LABEL: &str = "__LABEL__";
+    const ARGCOUNT: &str = "ARGCOUNT";
+    let arg_count_text = arg_count.to_string();
 
     let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
@@ -150,6 +165,52 @@ pub(crate) fn substitute_frame(
             out.push_str(a);
             i += p.len();
             continue 'outer;
+        }
+        // AFTER the parameters: a parameter declared `ARGCOUNT` shadows the
+        // built-in (probe `p9.asm` case 9b). Reaching here means no parameter
+        // claimed this position, so the built-in is free to.
+        if folded_match(rest, ARGCOUNT) && boundary_ok(text, i, ARGCOUNT) {
+            out.push_str(&arg_count_text);
+            i += ARGCOUNT.len();
+            continue 'outer;
+        }
+        let c = rest.chars().next().unwrap_or_default();
+        out.push(c);
+        i += c.len_utf8();
+    }
+    out
+}
+
+/// Substitute ONE name's text into a body line, by the same single left-to-right
+/// pass and the same [`boundary_ok`] rule [`substitute_frame`] uses, and with a
+/// parameter's case sensitivity rather than a built-in's folding.
+///
+/// This is `irp`/`irpc`'s loop variable. It is deliberately NOT
+/// [`substitute_frame`] with a one-entry parameter list: the loop body of a
+/// macro-nested loop has ALREADY been frame-substituted once where the loop was
+/// entered, so re-offering `ALLARGS`/`.ATTRIBUTE`/`__LABEL__`/`ARGCOUNT` here
+/// would substitute a second time into text that is now the CALLER's, which is
+/// exactly the rescanning [`substitute_frame`]'s single pass exists to prevent.
+///
+/// Case-sensitive, asl-verified under `-U` (probe `p7.asm` case 7f,
+/// `irpc Cv,"AB"` over `dc.b "<Cv><cv>"`):
+///
+/// ```text
+///   33/ 102A : 3C41 3E3C 6376 3E     dc.b "<A><cv>"
+/// ```
+pub(crate) fn substitute_name(text: &str, name: &str, value: &str) -> String {
+    if name.is_empty() {
+        return text.to_string();
+    }
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let rest = &text[i..];
+        if rest.starts_with(name) && boundary_ok(text, i, name) {
+            out.push_str(value);
+            i += name.len();
+            continue;
         }
         let c = rest.chars().next().unwrap_or_default();
         out.push(c);
