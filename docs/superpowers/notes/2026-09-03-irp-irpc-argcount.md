@@ -11,7 +11,7 @@ invoked 615 times.
 | oracle | `s1disasm/build_tools/Linux-x86_64/asl`, md5 `61e672562465725a8c102288a7da9098` |
 | flags | `-xx -n -q -A -L -U -E -i .` — the corpus's own, from `build_tools/lua/common.lua:773` |
 | corpora | `s1disasm` `f6ece657` (entry `sonic.asm`), `s2disasm` `e45ebf3` (entry `s2.asm`), both in detached worktrees |
-| probes | `p1.asm`…`p9.asm`, `pe/pf/pg/pj/pk/pn/pu/pv.asm` |
+| probes | committed beside this note in `2026-09-03-irp-irpc-probes/` — `p1`…`p9`, `pe/pf/pg/pj/pk/pn/pu/pv`, plus the harnesses |
 
 **S1 and S2 ship different `asl` builds behind one version string.** S1's is
 upstream AS; S2's is the flamewing fork (md5 `0dee1f98…`). Every rule here was
@@ -234,7 +234,7 @@ diagnostics cannot see any of that. Four things were done instead.
 **1. A 13-file byte sweep against `asl`, and it is proven able to fail.** Each S1
 demo script was wrapped in the corpus's own `demoinput` macro and its own button
 constants, assembled by both tools, and the images compared by CRC32+size
-(`.probe/demo/`, `.probe/diff_bytes.sh`). **13 of 13 identical** — the whole
+(`2026-09-03-irp-irpc-probes/mkharness.sh`, `diff_bytes.sh`). **13 of 13 identical** — the whole
 `irpc` → `switch`/`case` → `dc.b` path across all 615 invocations.
 
 The sweep was then run under two mutations, each applied to a committed baseline:
@@ -281,10 +281,10 @@ Probe `pn.asm`:
 **96 sites in `s2disasm`, 0 in `s1disasm`, 0 in aeon.** It gates
 `jmpTosInternal`, i.e. every one of S2's 30-plus `jmpTos` call sites. Booked, not
 fixed: it is an operator change with its own red-first gate and its own aeon
-sweep to earn. Its falsifier is one command — `.probe/asl/pn.asm`.
+sweep to earn. Its falsifier is one command — `2026-09-03-irp-irpc-probes/pn.asm`.
 
 **c. `NAME := <expression containing an undefined symbol>` binds 0 silently.**
-Probe `pv.asm`: asl reports #1010 and refuses; sigil exits 0 and emits `AA 00 BB`.
+Probe `pv.asm` (committed): asl reports #1010 and refuses; sigil exits 0 and emits `AA 00 BB`.
 Reachable in principle through `demoinput`'s own `btns_mask := btns_mask|btnX`,
 though not in the real corpus where the constants are defined. Booked.
 
@@ -316,7 +316,7 @@ a feature. Booked with the probe so the next reader measures rather than inherit
   expectation a byte column read off an asl listing.
 - **Five red-first mutations**, each applied to a committed baseline with the
   patch read back from disk, each **actually red**, each restored
-  (`.probe/mutate.sh`): empty list → zero iterations; `ARGCOUNT` counting
+  (`2026-09-03-irp-irpc-probes/mutate.sh`): empty list → zero iterations; `ARGCOUNT` counting
   arguments down instead of parameters; `ARGCOUNT` tried before the parameters;
   `irp` items rendered from tokens; loop variable folded case-insensitively.
 - Two further mutations against the 13-file byte sweep, plus the GREEN one above.
