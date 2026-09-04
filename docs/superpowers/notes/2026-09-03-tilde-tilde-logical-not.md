@@ -173,6 +173,14 @@ streams are identical BYTE FOR BYTE — 368 lines each, same order, same lines.
 Not merely the same totals and the same class sets: `cmp` reports no difference
 at all.
 
+**And the S1 walk is not truncating, which is what would make that vacuous.** An
+indented `zqpmark_tail_of_last_include` appended to the END of `s1.sounddriver.asm`
+— the LAST include of `sonic.asm`, at line 5229 of 5237 — is reported, with the
+patch shown landed (`git status` dirty) and restored from the committed baseline.
+The same marker at COLUMN 0 is silent, and correctly so: a column-0 head under
+`CPU Z80` is a label, which `asl` accepts too. The first attempt used column 0
+and read as a truncated walk; it was the instrument, not the corpus.
+
 ### Sonic 2 — 8,932 → 9,539, `+607`, nothing lost
 
 No class fell. No line disappeared (`comm` both directions: 607 added, **0**
