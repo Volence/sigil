@@ -216,11 +216,14 @@ It now requires the directive's own arity text.
 
 ## Booked, not done
 
-- **`equ` then `set`/`eval` is not refused.** asl raises `#2030 constants cannot
-  be redefined as variables`; sigil reassigns silently and emits the new value.
-  **Pre-existing** — the pre-fix binary does the same for `a equ 1` / `a set 2`.
-  `eval` only gives it a second spelling. Closing it needs symbol-class tracking
-  (constant vs variable), which is its own parcel.
+- ~~**`equ` then `set`/`eval` is not refused.**~~ **CLOSED 2026-09-04** by
+  `parcel/as-symbol-class-tracking` — see
+  `2026-09-04-as-symbol-class-tracking.md`. Two corrections to this row, both
+  from listings: the rule is a **four-cell matrix**, not one cell — `set` then
+  `equ` is `#2035 variables cannot be redefined as constants`, which this row did
+  not mention and which sigil was equally silent about — and `=` belongs to the
+  CONSTANT class, so `equ` then `=` is `#1000`, not a reassignment. The `#1000`
+  same-class cell is the one part still open, and it is booked in that note.
 - **A column-0 bare label named `set`.** asl binds it; sigil dispatches it as the
   directive and reports `` `set` directive expects `NAME, value` ``, because
   `set` is in the Z80 mnemonic table. **Pre-existing and `set`-only** — `eval` is
