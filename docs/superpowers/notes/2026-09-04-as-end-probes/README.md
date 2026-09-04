@@ -77,3 +77,42 @@ Both of these are pinned as asl-minted golden blocks in
 (`as_word_immediate_against_ffff_ram_labels`,
 `as_cnop_org_off_the_program_counter`), so the shapes carry a byte assertion
 rather than the absence of a complaint.
+
+## Row disposition
+
+The three booked `SIGIL-AS-REPLACEMENT` rows this dir was cut for. The board
+(`docs/lane-status.json`, untracked, overseer-owned) still carries all three as
+`doing`; it is not written here.
+
+| row | disposition | evidence |
+|---|---|---|
+| `AS-END-DIRECTIVE` | **CLOSED — was a real divergence.** `"end"` now ends the assembly. | `end1`–`end5`, `incroot`; 5 golden blocks + `as_end_directive.rs` |
+| `AS-WORD-IMM-RAM-LABEL` | **CLOSED — never a divergence, and the row's wording is refuted.** asl refuses the shape the row said it accepts. | `wimm.asm`, `wrange.asm`, `wimm2.asm`; `as_word_immediate_range.rs` + 1 golden block |
+| `AS-CNOP-ORG-CONST` | **CLOSED — never a divergence.** Zero diagnostics at `6942cc42`; now byte-pinned. | `cnop.asm`; 1 golden block |
+
+The last two had already fallen to zero on the corpus before this parcel — the
+`2026-09-03` macrosetup `org`/`align` fix removed their cause. They are recorded
+as closed here because they now carry a BYTE assertion; a count of zero is
+compatible with a front end that accepts the shape and emits the wrong bytes,
+which is the measurement this project's headline metric cannot make.
+
+## Aeon byte movement
+
+Honouring `end` cannot move aeon's ROM bytes, because no file aeon routes
+through this front end has content after an `end`:
+
+- `engine/debug/debugger.asm` — no `end` directive at all.
+- `games/sonic4/game_root.asm` — `END` at line 50 of 50.
+- `games/demo/game_root.asm` — `END` at line 43 of 43.
+
+Measured rather than argued: all four shapes rebuilt in `.aeon-verify-483`
+(each ROM deleted before its own build, all four reporting `fresh`) with the
+branch toolchain reproduce the pre-existing images exactly —
+`s4.bin 1c09fbfc/819131`, `s4.debug.bin e2144057/840324`,
+`demo.bin 11ebd7ab/96602`, `demo.debug.bin 9b0d2ce7/102818`.
+
+The two corpora are the same story: `s2disasm/s2.asm` carries `END` at line
+91276 of 91276 and `s1disasm/sonic.asm` at 5237 of 5237. The `sigil s2.asm`
+diagnostic stream is byte-identical before and after (6,035 lines both, `diff`
+empty), so the class decomposition is unchanged in both directions and no
+symbol moved between resolved and unresolved.
