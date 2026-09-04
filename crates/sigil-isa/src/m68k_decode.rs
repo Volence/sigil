@@ -724,9 +724,7 @@ pub fn canonicalize(i: &Instruction) -> Instruction {
     if is_shift(mnemonic) {
         match ops[..] {
             [Operand::Dn(n)] => ops = vec![Operand::Imm(1), Operand::Dn(n)],
-            [Operand::Imm(1), ref mem] if !matches!(mem, Operand::Dn(_)) => {
-                ops = vec![mem.clone()]
-            }
+            [Operand::Imm(1), mem] if !matches!(mem, Operand::Dn(_)) => ops = vec![mem],
             _ => {}
         }
     }

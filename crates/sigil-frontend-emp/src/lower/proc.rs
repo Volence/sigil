@@ -1464,13 +1464,13 @@ pub(crate) fn writes_dest_register(m: &str) -> bool {
 ///    set the closure's `local_writes` trusts no longer misses a counter register.
 ///    (Live corpus impact 0 — every `dbf` counter is `moveq`-initialized first,
 ///    already counted — but a completeness hole in an ERROR gate's input.)
-/// 3b. **`exg Rx,Ry` writes BOTH registers.** Effect 1 finds `Ry` (the last
-///    operand); `Rx` is a second destination that the last-operand model cannot
-///    express, so it is pushed explicitly. This is the operand-shape arm that
-///    `sigil_isa::m68k::writes_last_operand`'s doc says `exg` needs, and
-///    without it a proc that swaps a caller register through `exg` escapes
+/// 4. **`exg Rx,Ry` writes BOTH registers.** Effect 1 finds `Ry` (the last
+///    operand); `Rx` is a second destination that the last-operand model
+///    cannot express, so it is pushed explicitly. This is the operand-shape
+///    arm that `sigil_isa::m68k::writes_last_operand`'s doc says `exg` needs,
+///    and without it a proc that swaps a caller register through `exg` escapes
 ///    `[proc.clobber-undeclared]` on one of the two.
-/// 4. **`movem`-LOAD register list (S2-D6).** `movem <ea>, <reglist>` (reglist =
+/// 5. **`movem`-LOAD register list (S2-D6).** `movem <ea>, <reglist>` (reglist =
 ///    LAST operand = destination, e.g. `movem.l (a0)+, d0-d6/a2`) WRITES every
 ///    listed register (fresh values). **CLOBBER-LINT POLARITY — read before
 ///    touching:** a `(sp)+` stack RESTORE (`movem.l (sp)+, d0-d7`) is EXEMPTED
@@ -1516,7 +1516,7 @@ pub(crate) fn instr_written_regs(mnemonic: &str, ops: &[CodeOperand]) -> Vec<Reg
             regs.push(*r);
         }
     }
-    // (3b) `exg Rx,Ry` writes BOTH registers. The last-operand rule in (1)
+    // (4) `exg Rx,Ry` writes BOTH registers. The last-operand rule in (1)
     // already has `Ry`; `Rx` is not expressible as "the last operand", which is
     // exactly the operand-shape case `m68k::writes_last_operand`'s doc names.
     if mnemonic == "exg" {
@@ -1524,7 +1524,7 @@ pub(crate) fn instr_written_regs(mnemonic: &str, ops: &[CodeOperand]) -> Vec<Reg
             regs.push(*r);
         }
     }
-    // (4) movem-LOAD reglist (last operand = RegList destination), EXCEPT a
+    // (5) movem-LOAD reglist (last operand = RegList destination), EXCEPT a
     // `(sp)+` stack restore (preserve-discipline exemption — see the doc above).
     if let Some(CodeOperand::RegList(mask)) = ops.last() {
         if !matches!(ops.first(), Some(CodeOperand::PostInc(Reg::A7))) {
