@@ -367,7 +367,15 @@ prove currency with something the new code does and the old code did not.
 
 - **Capstone opcode sweep** (65,536 words × two pads): green, with all six
   exclusion classes at their derived sizes exactly — 16 / 1 / **576** / 8 /
-  **64** / 6. sigil decodes 44,337 words.
+  **64** / 6.
+- **Decoder coverage, measured on both sides**: master `e5cbe258` decodes
+  **42,774** of 65,536 words; this branch decodes **44,337**. The rise is
+  **+1,563**, and it is derivable rather than merely observed — 450 `bchg`
+  (50 legal destinations × the static form plus 8 source registers × the
+  dynamic), 852 `roxl`/`roxr` (768 register + 84 memory), 192 `exg`
+  (3 pairs × 64), 53 `move <ea>,ccr` (the DATA row) and 16 `usp`. The two
+  numbers were produced independently — the arithmetic before the master
+  measurement — and agree exactly.
 - **Capstone emitted-stream pass** over all seven aeon shapes: 3,050 distinct
   padded byte strings, capstone decoded 3,050 of 3,050, zero unexcused
   disagreements.
