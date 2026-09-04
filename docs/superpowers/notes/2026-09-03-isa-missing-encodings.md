@@ -31,7 +31,7 @@ something outside this project.
 | `bchg` | ✔ 19 corpus rows minted from asl | ✔ decodes; one counted size class excused, see below |
 | `exg` | ✔ 7 rows, all three pairs + the reversed order | ✔ |
 | `roxl`/`roxr` | ✔ 18 rows | ✔ except one counted 64-word cell where **capstone is wrong** |
-| `move <ea>,ccr` | ✔ 11 rows, the whole DATA source row | ✔ |
+| `move <ea>,ccr` | ✔ 13 rows, the whole DATA source row + both accepted suffixes | ✔ |
 | `move.l An,usp` / `usp,An` | ✔ 5 rows | ✔ |
 
 No instruction here is covered by only one oracle.
@@ -116,9 +116,16 @@ S2 ×2 bare) and `#imm` (S2 ×3 bare). **The other nine modes are unexercised.**
 answers "instruction not supported on 68000" for all twelve destination
 spellings. The family is one direction, and a leading `ccr` still fails loud.
 
-asl accepts bare, `.b` and `.w` (identical bytes) and rejects `.l`. sigil
-polices `W` in the encoder and defaults the bare spelling to `W` in the front
-end.
+asl accepts bare, `.b` and `.w` (identical bytes) and rejects `.l`, and **sigil
+now accepts all three**. This was the one cell the enumeration found and the
+first implementation did not close — sigil policed `.w` only, and neither corpus
+writes the `.b` spelling, so it would have survived the parcel that was supposed
+to find it. Accepting `.b` is safe for a specific reason worth stating: the
+operand width is not read from `inst.size` at all, `Size::W` goes to `encode_ea`
+unconditionally, and an immediate always gets its full word (`move.b #$12,ccr`
+= `44 FC 00 12`, asl-confirmed and now a golden row). That is deliberately not
+the `move …,sr` shape whose sibling defect keyed the immediate width to
+`inst.size` and turned `move.l #$2700,sr` into `sr := $0000`.
 
 ### `move.l An,usp` / `move.l usp,An`
 
@@ -263,11 +270,13 @@ as an equality of emitted BYTES rather than as a claim.
 |---|---|
 | `crates/sigil-isa/src/m68k.rs` | 7 `Mnemonic` variants, `Operand::Usp`, `encode_move_to_ccr`/`encode_move_usp`/`encode_exg`, `bchg` in `encode_bit`, `roxl`/`roxr` in `encode_shift` + its three-spelling reduction, `writes_last_operand`, `family_name`, `ALL_FAMILY_NAMES` |
 | `crates/sigil-isa/src/m68k_decode.rs` | the same five lines decoded; canonicalize Rules E and R; the `unknown_real_instructions` list re-scoped to what is still absent, plus a positive decode gate on asl's own bytes |
-| `crates/sigil-isa/tests/corpus_m68k/mod.rs` | +60 corpus rows |
-| `crates/sigil-isa/tests/m68k_golden_vectors.txt` | regenerated from S1's asl: **114 → 174 rows, all 114 existing rows byte-identical** |
+| `crates/sigil-isa/tests/corpus_m68k/mod.rs` | +62 corpus rows |
+| `crates/sigil-isa/tests/m68k_golden_vectors.txt` | regenerated from S1's asl: **114 → 176 rows, all 114 existing rows byte-identical** |
 | `crates/sigil-isa/tests/ea_class_rejects.rs` | the corrected gate + 3 new row gates (+4 `#[test]` net) |
 | `crates/sigil-isa/tests/support/capstone_diff.rs` | `Usp` canon, special-register family folding, the widened and the new exclusion |
 | `crates/sigil-frontend-as/src/eval.rs` | 4 mnemonics, `usp` operand, `m68k_special_reg_size`, three `refine_m68k_mnemonic` arms, default sizes |
+| `crates/sigil-frontend-as/tests/snippets_golden.txt` | +8 asl-minted end-to-end blocks (193 → 201; zero churn in the 193) |
+| `crates/sigil-harness/tests/m68k_roundtrip_stream.rs` | 7 reasoned `NOT_IN_STREAM` rows |
 | `crates/sigil-frontend-emp/src/lower/code.rs` | `bchg`/`roxl`/`roxr`/`exg` |
 | `crates/sigil-frontend-emp/src/lower/proc.rs` | the `exg` operand-shape write arm |
 
@@ -331,11 +340,28 @@ encoder previously returned `Err`, and aeon writes none of the five (see the
 `encode_shift`, whose operand match was restructured — and its two new arms are
 `[Dn]` and `[Imm(1), non-Dn]`, both of which previously errored.
 
-Freshness witness, because byte identity is silent on provenance: each build
-banner reads `Assembler: sigil a97bcd01ed91 (clean at capture — no uncommitted
-changes)` under `SIGIL_VERSION_STRICT=1`, which names the branch revision the
-ROMs were actually built with. Nothing under `golden/`, `pins.rs` or
-`repin.toml` was touched, and no refreeze was performed.
+Nothing under `golden/`, `pins.rs` or `repin.toml` was touched, and no refreeze
+was performed.
+
+### The freshness witness, and the way it nearly lied
+
+Byte identity is silent on provenance, so the build banner is the witness: the
+final run reads `Assembler: sigil 98f1b7393e93 (clean at capture — no
+uncommitted changes)` under `SIGIL_VERSION_STRICT=1`, naming the exact commit.
+
+**An earlier run of the same check produced a stale banner and it would have
+read as a witness.** After an uncommitted edit to `crates/sigil-isa/src/m68k.rs`
+— squarely inside the binary's own closure — a rebuilt `sigil` still reported
+`clean at capture — no uncommitted changes`, because cargo re-runs the version
+capture when HEAD or refs move and an uncommitted edit moves neither. `sigil
+--version` says so itself, under `freshness:`; the banner does not.
+
+So the tree-state WORD in that banner is not a freshness witness for an
+uncommitted edit, only the revision is. What actually proved the binary current
+was a behavioural discriminator — `move.b d6,ccr` assembling to `44 C6`, a form
+that binary's predecessor refused. The rule for the next parcel: **commit
+before the byte-neutrality run**, so the stamp re-captures, and if you cannot,
+prove currency with something the new code does and the old code did not.
 
 ## Verification
 
@@ -345,7 +371,7 @@ ROMs were actually built with. Nothing under `golden/`, `pins.rs` or
 - **Capstone emitted-stream pass** over all seven aeon shapes: 3,050 distinct
   padded byte strings, capstone decoded 3,050 of 3,050, zero unexcused
   disagreements.
-- **Golden vectors**: 174 rows, all minted by S1's own `asl`; the 114 pre-existing
+- **Golden vectors**: 176 rows, all minted by S1's own `asl`; the 114 pre-existing
   rows are byte-identical to before.
 - **Clippy** `--release --workspace --all-targets -- -D warnings`: **exit 0**.
 - **`m68k_roundtrip_stream`'s family-union check fired** on the first landing
@@ -393,6 +419,11 @@ CARGO_EXIT  0
 suites 378   passed 4366   failed 0   ignored 2   skip lines 0
 RESULT      GREEN
 ```
+
+(That run is the one at `88fee191`. The tree moved twice after it — the asl
+snippet blocks and the `move.b …,ccr` cell — and the run was repeated on each,
+green both times; the last is `landing-final.log` at `d4e03909` and the final
+one is recorded below.)
 
 Master's baseline is 378 / 4,362 / 0 / 2. This parcel adds **four** `#[test]`
 functions — one in `m68k_decode`'s unit tests and three in `ea_class_rejects`
