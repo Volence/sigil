@@ -79,9 +79,10 @@
 //!     expensive, it is a build that never reaches a fixed point;
 //!   * **force the script to rerun unconditionally** — cargo recompiles the
 //!     dependent crate on a rerun even when the script's output is
-//!     byte-identical, so this pays a recompile-and-relink of `sigil` and every
-//!     one of its integration-test binaries (366 in this workspace as of
-//!     2026-09-04) on every `cargo build` and every `cargo test`.
+//!     byte-identical. Re-measured 2026-09-04 and it holds: a rerun with
+//!     unchanged output costs 155 `rustc` invocations, this package's 2 bins
+//!     plus its 151 integration-test targets, and that would be the price of
+//!     every `cargo build` and every `cargo test`.
 //!
 //! Both refusals stand. Neither, however, reaches the third option, which this
 //! file's own code already computes: emit a trigger for **each derived closure
@@ -90,6 +91,34 @@
 //! of which contains `target/` — and it is not an unconditional rerun, because
 //! it fires only when a source the binary is compiled from actually changed,
 //! which is when cargo was going to recompile this crate anyway.
+//!
+//! # What it costs, measured rather than argued
+//!
+//! Counted in `rustc` invocations under `cargo … -v`, which is the load-
+//! independent quantity; `Compiling <pkg>` is printed once per PACKAGE and
+//! undercounts a run that relinks 150 test binaries as `1`.
+//!
+//! | after                                  | with triggers | without |
+//! |----------------------------------------|---------------|---------|
+//! | no-op `build --release -p sigil-cli`   | 0             | 0       |
+//! | no-op `test --workspace --no-run`      | 0             | 0       |
+//! | edit a NON-closure file (`docs/`)      | 0             | 0       |
+//! | edit a dependency source               | 347           | 347     |
+//! | edit one of this package's test files  | **155**       | **1**   |
+//!
+//! So the no-op path is untouched — the fixed point holds, two consecutive no-op
+//! builds do no work — and a real source edit costs exactly what it did, because
+//! the crate was recompiling anyway. The whole bill is the last row: editing one
+//! of this package's own test files now reruns the script, because `tests/` sits
+//! inside `crates/sigil-cli`, which is in the closure as a whole directory
+//! (a build script may read any file in its package). 0.16s becomes 4.9s.
+//!
+//! That row is knowingly paid rather than optimised away. Narrowing the trigger
+//! set below the material set would make the tree word stale for a region the
+//! classification itself calls material — a false clean, in the one direction
+//! that must not exist — and would put the emitted set and the reported set out
+//! of step, which is the divergence that rots. The cost lands only on the
+//! edit-a-CLI-test loop, never on a no-op and never on a source edit.
 //!
 //! Without those triggers the capture is keyed on the revision moving and on the
 //! manifests, never on the CONTENT of the sources. Cargo tracks sources for
