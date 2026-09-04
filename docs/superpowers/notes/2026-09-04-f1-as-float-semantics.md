@@ -150,6 +150,42 @@ the 2026-09-04 reconnaissance still applied — sigil assembles Sonic 1 to a
 divergence map drops from seven regions / 7,285 bytes to **five regions / 7,003
 bytes**. Both F1 regions leave the map.
 
+## What it measures, against the post-F4 master (`6ac271da`)
+
+Both corpora, both binaries, same run:
+
+| | master `6ac271da` | branch | delta |
+|---|---|---|---|
+| Sonic 1 diagnostics | 259 | **93** | −166 |
+| Sonic 2 diagnostics | 9,432 | **9,266** | −166 |
+| sigil suite | 4,395 pass / 0 fail / 381 suites | **4,409 pass / 0 fail / 382 suites** | +14, +1 file |
+
+**One class moves and no class rises.** `bad word expression` goes 166→0 in
+S1 and 215→49 in S2; every other class is unchanged to the count, in both
+corpora. The diagnostic SETS were compared in both directions: 0 newly
+appearing, 2 disappearing in each corpus — `s1.sounddriver.asm(1796)` and
+`(2052)`, `s2.sounddriver.asm(1056)` and `(1388)`, which are the four
+`MakeFMFrequency`/`MakePSGFrequency` lines and nothing else.
+
+The **unresolved-symbol NAME sets** were compared in both directions too, since
+a count difference passes straight through a name that silently starts
+resolving to the wrong thing: S1 is empty on both sides; S2 holds the same 200
+names on both sides, with **0 newly unresolved and 0 newly resolved**.
+
+Neither corpus reaches link unstubbed — `assemble_root_located` returns
+`Failure`, which carries no partial module — so those symbol sets are the
+front end's, not the linker's.
+
+Aeon's four shapes are byte-identical across the change, `SIGIL_BUILD` pointed
+at each binary in turn against a detached aeon worktree at `4f5ad5a1`:
+
+| shape | before (CRC32/size) | after |
+|---|---|---|
+| `s4.bin` | `14ee2440`/719700 | `14ee2440`/719700 |
+| `s4.debug.bin` | `142294b3`/737683 | `142294b3`/737683 |
+| `demo.bin` | `0c456778`/96474 | `0c456778`/96474 |
+| `demo.debug.bin` | `2e603d53`/101339 | `2e603d53`/101339 |
+
 ## Left open, deliberately
 
 1. **Float literal exponent and bare-point forms** (`1e3`, `1.5e2`, `.5`, `1.`).
