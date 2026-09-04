@@ -2200,11 +2200,11 @@ impl Asm {
     /// `-cpu 68000 -q -U -L`, the same source with `Rev` 0 then 1:
     ///
     /// ```text
-    ///        4/     100 : AA                  	dc.b $AA
-    ///        5/     101 : =>TRUE               Lab:	if Rev=0     ⇒  Lab : 101 C
+    ///        4/     100 : AA                      dc.b $AA
+    ///        5/     101 : =>TRUE               Lab:    if Rev=0     ⇒  Lab : 101 C
     ///
-    ///        4/     100 : AA                  	dc.b $AA
-    ///        5/     101 : =>FALSE              Lab:	if Rev=0     ⇒  Lab : 101 C
+    ///        4/     100 : AA                      dc.b $AA
+    ///        5/     101 : =>FALSE              Lab:    if Rev=0     ⇒  Lab : 101 C
     /// ```
     ///
     /// The colon-less spelling obeys AS's column rule, the same one `exec_one`
