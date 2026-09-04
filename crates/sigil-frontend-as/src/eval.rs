@@ -7288,6 +7288,185 @@ mod tests {
         assert_eq!(m68k_cond("xx"), None);
     }
 
+    // ---------------------------------------------------------------------
+    // AS `STRUCT … DOTS`. Every expectation below is a byte column read off an
+    // asl 1.42 Bld 212 listing (`-xx -n -q -A -L -U -E -i .`, the S1 binary,
+    // md5 61e672562465725a8c102288a7da9098). The probe files are committed at
+    // `docs/superpowers/notes/2026-09-03-as-struct-probes/`.
+    //
+    // THREE OF THESE RULES ARE PINNED BY NOTHING ELSE. The 1,553-symbol RAM
+    // byte sweep against Sonic 1's `_Variables.asm` stays GREEN under a
+    // deliberate break of each: instance alignment (probe q9), embed
+    // re-alignment (q10) and the pre-/post-pad table split (q7) are all
+    // unreachable in that corpus, because `v_snddriver_ram` lands at the even
+    // $FFFFF000, `SMPS_Track.len` is an even $30, and neither struct has a
+    // `ds.w`/`ds.l` member at an odd offset. These tests are the only gate.
+    // ---------------------------------------------------------------------
+
+    /// `q7.asm`. asl records TWO offsets per member and they disagree wherever
+    /// `padding on` inserts a pad byte. The DECLARATION-SCOPE symbol takes the
+    /// offset BEFORE the pad; the struct element — which is what an
+    /// instantiation reads — takes it after.
+    ///
+    /// ```text
+    ///    9/ 1000 : 0000 0001 0004      	dc.w S.a,S.b,S.c,S.d,S.len
+    ///       1006 : 0005 000A
+    ///   10/ 100A : (STRUCT)             inst:	S
+    ///   11/ 1014 : 0000 0002 0004      	dc.w inst.a-inst,inst.b-inst,inst.c-inst,inst.d-inst
+    ///       101A : 0006
+    /// ```
+    #[test]
+    fn struct_symbols_are_pre_pad_while_elements_are_post_pad() {
+        let decl = "S struct DOTS\n\
+                    a:\tds.b 1\n\
+                    b:\tds.w 1\n\
+                    c:\tds.b 1\n\
+                    d:\tds.l 1\n\
+                    \tendstruct\n";
+        // The declaration-scope symbols: 0, 1, 4, 5, and len $A.
+        assert_eq!(
+            image(&format!("\tcpu 68000\n\torg $1000\n{decl}\tdc.w S.a,S.b,S.c,S.d,S.len\n")),
+            vec![0, 0, 0, 1, 0, 4, 0, 5, 0, 0x0A]
+        );
+        // The same members through an instance: 0, 2, 4, 6.
+        assert_eq!(
+            image(&format!(
+                "\tcpu 68000\n\torg $1000\n{decl}\
+                 \tdc.w inst.a-inst,inst.b-inst,inst.c-inst,inst.d-inst\ninst:\tS\n"
+            )),
+            vec![0, 0, 0, 2, 0, 4, 0, 6]
+        );
+    }
+
+    /// `q9.asm`. An instance is placed VERBATIM and is never word-aligned, even
+    /// under `padding on` and even when the struct leads with a `ds.w` — while
+    /// a bare `ds.w 1` two lines away at the same odd address does pad. asl
+    /// puts `i1: W` at the odd $2001 and `a1` at $2003.
+    #[test]
+    fn a_struct_instance_is_never_word_aligned() {
+        // The `dc.w` occupies $1000..$1004; the `ds.b 1` then leaves the PC at
+        // the ODD $1005, where the word-leading instance is placed anyway, so
+        // `after` is $1007 and not $1008.
+        let src = "\tcpu 68000\n\torg $1000\n\
+                   W struct DOTS\n\
+                   w:\tds.w 1\n\
+                   \tendstruct\n\
+                   \tdc.w i1,after\n\
+                   \tds.b 1\n\
+                   i1:\tW\n\
+                   after:\n";
+        assert_eq!(&image(src)[..4], &[0x10, 0x05, 0x10, 0x07]);
+    }
+
+    /// `q10.asm`. A struct embedded in another struct is placed at the parent's
+    /// running offset with NO re-alignment, and its own element table is
+    /// flattened in verbatim — so an inner `ds.w` member can land at an ODD
+    /// parent offset. asl, for `h: ds.b 1` then `n: T` where `T` is
+    /// `p: ds.b 1 / r: ds.w 1`:
+    ///
+    /// ```text
+    ///   16/ 1006 : 0000 0001 0001      	dc.w S.h,S.n,S.n.p,S.n.r,S.z,S.len
+    ///       100C : 0003 0005 0006
+    /// ```
+    ///
+    /// This is Sonic 1's `SMPS_RAM`, which embeds `SMPS_Track` eighteen times
+    /// and is why `SMPS_RAM.v_music_dac_track.PlaybackControl` is a name.
+    #[test]
+    fn an_embedded_struct_is_flattened_and_never_re_aligned() {
+        let src = "\tcpu 68000\n\torg $1000\n\
+                   T struct DOTS\n\
+                   p:\tds.b 1\n\
+                   r:\tds.w 1\n\
+                   \tendstruct\n\
+                   S struct DOTS\n\
+                   h:\tds.b 1\n\
+                   n:\tT\n\
+                   z:\tds.b 1\n\
+                   \tendstruct\n\
+                   \tdc.w S.h,S.n,S.n.p,S.n.r,S.z,S.len\n";
+        assert_eq!(
+            image(src),
+            vec![0, 0, 0, 1, 0, 1, 0, 3, 0, 5, 0, 6],
+            "the inner `r` sits at the ODD parent offset 3"
+        );
+    }
+
+    /// `q8.asm` / `q11.asm`. The separator is a property of the STRUCT, not of
+    /// the site: a declaration without `DOTS` yields `A_a`/`A_len`, and an
+    /// INSTANCE of it yields `j_u` — while `q10.asm` shows `j.u` is undefined
+    /// there (asl `#1010`). `DOTS` is recognized case-folded, because Sonic 2
+    /// writes `struct dots` at one site and `STRUCT DOTS` at three.
+    #[test]
+    fn dots_selects_the_separator_for_declaration_and_instance_alike() {
+        let src = "\tcpu 68000\n\torg $1000\n\
+                   A struct\n\
+                   a:\tds.b 1\n\
+                   b:\tds.b 1\n\
+                   \tendstruct\n\
+                   B struct dots\n\
+                   a:\tds.b 1\n\
+                   \tendstruct\n\
+                   \tdc.w A_a,A_b,A_len,B.a,B.len\n\
+                   \tdc.w j_a-j,j_b-j\nj:\tA\n";
+        assert_eq!(image(src), vec![0, 0, 0, 1, 0, 2, 0, 0, 0, 1, 0, 0, 0, 1]);
+    }
+
+    /// A member that is a bare label reserves nothing and binds the running
+    /// offset; Sonic 1's `SMPS_RAM` has 21 of them and reads four back BY NAME
+    /// from inside its own body (`ds.b SMPS_RAM.v_1up_ram_end-SMPS_RAM.v_1up_ram`,
+    /// `s1.sounddriver.ram.asm:108`). That self-reference is also the reason
+    /// members are bound as the body is WALKED rather than at `endstruct`.
+    #[test]
+    fn markers_bind_the_running_offset_and_are_readable_within_the_body() {
+        let src = "\tcpu 68000\n\torg $1000\n\
+                   S struct DOTS\n\
+                   first:\n\
+                   a:\tds.b 3\n\
+                   mid:\n\
+                   b:\tds.b 2\n\
+                   last:\n\
+                   copy:\tds.b S.last-S.mid\n\
+                   \tendstruct\n\
+                   \tdc.w S.first,S.mid,S.last,S.copy,S.len\n";
+        // first=0, mid=3, last=5, copy=5, and copy is `last-mid` = 2 wide, so
+        // len = 7.
+        assert_eq!(image(src), vec![0, 0, 0, 3, 0, 5, 0, 5, 0, 7]);
+    }
+
+    /// `q12.asm` / `q8.asm`. Both corpora close three of their six structs with
+    /// the struct's own name in the LABEL column (`SoundQueue ENDSTRUCT`), and
+    /// asl also accepts `ends`. All three spellings must close the block.
+    #[test]
+    fn a_struct_closes_on_endstruct_named_or_bare_and_on_ends() {
+        for closer in ["\tendstruct\n", "S ENDSTRUCT\n", "\tends\n"] {
+            let src = format!(
+                "\tcpu 68000\n\torg $1000\n\
+                 S STRUCT DOTS\n\
+                 \ta:\tds.b 1\n\
+                 \tb:\tds.b 1\n\
+                 {closer}\
+                 \tdc.w S.a,S.b,S.len\n"
+            );
+            assert_eq!(image(&src), vec![0, 0, 0, 1, 0, 2], "closer `{closer:?}`");
+        }
+    }
+
+    /// An anonymous `ds.*` advances the offset and binds no name — Sonic 1's
+    /// `SMPS_RAM` is 12 such gaps, one of them `ds.b $13`, and Sonic 2's
+    /// `HorizontalScrollBuffer` is nothing BUT anonymous fields.
+    #[test]
+    fn anonymous_reserve_fields_advance_the_offset_and_bind_nothing() {
+        let src = "\tcpu 68000\n\torg $1000\n\
+                   H struct dots\n\
+                   \tds.l 224\n\
+                   \tds.l 16\n\
+                   \tds.b $40\n\
+                   H endstruct\n\
+                   \tdc.w H.len\n";
+        // 224*4 + 16*4 + $40 = $380 + $40 + $40 = $400.
+        assert_eq!(image(src), vec![0x04, 0x00]);
+    }
+
     #[test]
     fn m68k_register_words_recognized() {
         use super::{m68k_addr_reg, m68k_data_reg};
