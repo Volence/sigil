@@ -215,6 +215,19 @@ fn main() {
         std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR"),
     );
 
+    // Where cargo is recording this script's stdout, so a test can read back the
+    // directives cargo ACTUALLY received rather than what the banner says about
+    // them. Nothing in this process can observe its own directive stream, so
+    // without this the trigger set is only assertable as a claim — and a claim
+    // computed beside the emission survives the emission being deleted, which is
+    // the vacuous shape of gate this whole feature exists to argue against.
+    // Derived from cargo's own OUT_DIR, never a hardcoded layout.
+    let build_output = std::env::var("OUT_DIR")
+        .ok()
+        .and_then(|out| PathBuf::from(out).parent().map(|p| p.join("output")))
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "unavailable — cargo set no OUT_DIR".to_string());
+
     let p = probe(&manifest_dir);
 
     emit("SIGIL_REVISION", &p.revision);
@@ -231,6 +244,7 @@ fn main() {
     emit("SIGIL_CLOSURE_NOTE", &p.closure_note);
     emit("SIGIL_CLOSURE_REVISION", &p.closure_revision);
     emit("SIGIL_DRIFT_CHECK", &p.drift_check);
+    emit("SIGIL_BUILD_SCRIPT_OUTPUT", &build_output);
     emit("SIGIL_PROVENANCE_ERROR", &p.error);
 }
 

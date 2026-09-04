@@ -37,12 +37,14 @@
 //! disclosure of the limit — and the disclosure is asserted, so it cannot be
 //! quietly dropped.
 //!
-//! That leaves one thing this file cannot prove: that cargo *acted* on the
-//! source triggers. Proving it means editing a tracked source, rebuilding and
-//! reading the banner back, which must never run inside a shared checkout under
-//! a suite that may be killed. `scripts/tree_state_capture_gate.sh` is that
-//! proof, standing on its own and named here so the split is visible rather than
-//! assumed away.
+//! The trigger set itself is not taken on trust: the gate below reads cargo's
+//! own recording of the build script's stdout, so what is asserted is the
+//! directive stream cargo received rather than the banner's account of it. What
+//! that still cannot show is that cargo *acted* on it, which needs a tracked
+//! source edited, a rebuild, and the banner read back — and that must never run
+//! inside a shared checkout under a suite that may be killed.
+//! `scripts/tree_state_capture_gate.sh` is that proof, standing on its own and
+//! named here so the split is visible rather than assumed away.
 
 use std::process::Command;
 
@@ -887,8 +889,8 @@ fn the_printed_drift_check_returns_the_reported_revision_in_every_shell() {
     );
 }
 
-/// THE FIRST FAULT'S GATE, on the half a test in this process can see: every
-/// closure path that exists on disk must be one cargo was told to watch.
+/// THE FIRST FAULT'S GATE: every closure path that exists on disk must be one
+/// cargo was actually handed as a rerun trigger.
 ///
 /// Without those triggers the tree-state capture is keyed on the revision moving
 /// and on the manifests — never on the content of the sources — so an
@@ -897,12 +899,18 @@ fn the_printed_drift_check_returns_the_reported_revision_in_every_shell() {
 /// from uncommitted code. A consumer's gate then opens on precisely the case it
 /// exists to catch.
 ///
-/// The expectation is derived here, from the banner's own path list and this
-/// filesystem, rather than copied: the watched count and the unwatchable list
-/// must be exactly what the closure and the disk say they are. It asserts what
-/// cargo was *told*; `scripts/tree_state_capture_gate.sh` is what proves cargo
-/// acted on it, for the same reason the HEAD-equality test above exists beside
-/// the trigger-naming one.
+/// **This reads cargo's own recording of the build script's stdout, not the
+/// banner's account of it.** Nothing in a process can observe its own directive
+/// stream, so a claim computed beside the emission would survive the emission
+/// being deleted — a gate of exactly the shape this whole feature argues
+/// against. The path comes from the build script's `OUT_DIR`, so it follows
+/// cargo's layout rather than assuming one, and a stream that cannot be read is
+/// a FAILURE naming the standing substitute, never a quiet skip.
+///
+/// The expectation is derived: the trigger set must be exactly the closure paths
+/// that exist, with the ones that do not deliberately absent — cargo reads a
+/// trigger on a missing path as permanently dirty, which is the unconditional
+/// rerun the design refuses.
 #[test]
 fn every_closure_path_that_exists_is_watched_for_edits() {
     let stdout = version_stdout("--version");
@@ -911,20 +919,71 @@ fn every_closure_path_that_exists_is_watched_for_edits() {
         git(&["rev-parse", "--show-toplevel"]).expect("this checkout has a root"),
     );
 
-    // A trigger naming a path that does not exist makes cargo treat the unit as
-    // dirty on every build, so those cannot be emitted — but a hole that nothing
-    // in the output confesses is the defect, so the banner must name them.
     let (present, missing): (Vec<String>, Vec<String>) =
         paths.iter().cloned().partition(|p| root.join(p).exists());
 
+    // ── what cargo actually received ────────────────────────────────────────
+    let recorded = env!("SIGIL_BUILD_SCRIPT_OUTPUT");
+    assert!(
+        !recorded.starts_with("unavailable"),
+        "the build script could not say where cargo records its output ({recorded}), so this \
+         gate cannot see the directive stream. That is a failure, not a pass — run \
+         scripts/tree_state_capture_gate.sh, which proves the same property end to end."
+    );
+    let stream = std::fs::read_to_string(recorded).unwrap_or_else(|e| {
+        panic!(
+            "cannot read cargo's recording of the build script's output at {recorded}: {e}\n\
+             This gate measures the rerun triggers cargo was handed; unable to read them it \
+             measures nothing. Run scripts/tree_state_capture_gate.sh, which proves the same \
+             property end to end, and fix this path before trusting a green here."
+        )
+    });
+    // Both spellings: cargo accepts `cargo:` and, since 1.77, `cargo::`.
+    let triggers: Vec<&str> = stream
+        .lines()
+        .filter_map(|l| {
+            l.strip_prefix("cargo:rerun-if-changed=")
+                .or_else(|| l.strip_prefix("cargo::rerun-if-changed="))
+        })
+        .collect();
+    assert!(
+        !triggers.is_empty(),
+        "cargo was handed no rerun triggers at all, so this build script's answer is frozen at \
+         whenever it last happened to run\nrecorded at: {recorded}"
+    );
+
+    for path in &present {
+        let absolute = root.join(path).display().to_string();
+        assert!(
+            triggers.contains(&absolute.as_str()),
+            "`{path}` is one of the sources this binary is compiled from and it exists, but \
+             cargo was never handed it as a rerun trigger. The tree-state capture is therefore \
+             not keyed on its content: edit it without committing and the banner keeps saying \
+             the tree is clean while cargo relinks the binary around the edit.\n\
+             cargo received {} trigger(s), recorded at {recorded}",
+            triggers.len()
+        );
+    }
+    for path in &missing {
+        let absolute = root.join(path).display().to_string();
+        assert!(
+            !triggers.contains(&absolute.as_str()),
+            "`{path}` does not exist, yet cargo was handed it as a rerun trigger. Cargo reads a \
+             trigger on a missing path as dirty on EVERY build, which recompiles this crate and \
+             relinks all of its test binaries every time — the unconditional-rerun cost this \
+             design refuses on measured grounds.\nrecorded at {recorded}"
+        );
+    }
+
+    // ── and the banner must account for the same set ────────────────────────
     let tracked = field(&stdout, "tree-tracked");
-    let expected_head = format!("{}/{} closure path(s) watched for edits", present.len(), paths.len());
+    let expected_head =
+        format!("{}/{} closure path(s) watched for edits", present.len(), paths.len());
     assert!(
         tracked.starts_with(&expected_head),
         "the banner must say how much of its closure the tree state is keyed on. Expected it to \
          begin `{expected_head}`; got `{tracked}`\n{stdout}"
     );
-
     for path in &missing {
         assert!(
             tracked.contains(path.as_str()),
@@ -940,8 +999,6 @@ fn every_closure_path_that_exists_is_watched_for_edits() {
         );
     }
 
-    // And the claim must reach `freshness`, which is what a reader skims and
-    // what the other disclosure gates read.
     let freshness = field(&stdout, "freshness");
     if present.is_empty() {
         assert!(
@@ -951,8 +1008,9 @@ fn every_closure_path_that_exists_is_watched_for_edits() {
     } else {
         assert!(
             freshness.contains(",sources"),
-            "cargo was told to watch {} closure path(s), so the banner must list `sources` among \
-             what it tracks — a tree state keyed only on the revision goes stale silently\n{stdout}",
+            "cargo was handed {} closure path(s) as triggers, so the banner must list `sources` \
+             among what it tracks — a tree state a reader believes is revision-keyed is a tree \
+             state nobody re-checks\n{stdout}",
             present.len()
         );
     }
