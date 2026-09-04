@@ -28,7 +28,7 @@ Checksum 0x18e
 Collected_Init 0x3924
 Collision_GetType 0x572e
 Collision_ProbeDown 0x5796
-Dac_Temp_Blip 0x90000
+Dac_Temp_Blip 0xa8000
 DeformTable_Zero 0x123ba
 EndOfRom 0xa5c82
 EntryPoint 0x200
@@ -69,7 +69,7 @@ S4LZ_DecompressDict 0x26b6
 Section_Init 0x5c8a
 Sfx_33 0xa3b18
 Song_MovingTrucks 0xa0630
-SoundTablesZ80_Head 0xa0000
+SoundTablesZ80_Head 0xb8000
 Sound_PostByte 0x7eb8
 TailsAppendage_Refresh 0x11f90
 TestSolid_Init 0x12316

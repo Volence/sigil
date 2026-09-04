@@ -34,7 +34,7 @@ Collected_Init 0x42dc
 Collision_GetType 0x6976
 Collision_ProbeDown 0x69de
 CompressionSelfTest 0x9f98
-Dac_Temp_Blip 0x90000
+Dac_Temp_Blip 0xa8000
 Debug_MusicToggle 0x6ed2
 DeformTable_Zero 0x12c04
 EndOfRom 0xa81fc
@@ -78,7 +78,7 @@ S4LZ_DecompressDict 0x2872
 Section_Init 0x6f98
 Sfx_33 0xa5568
 Song_MovingTrucks 0xa0630
-SoundTablesZ80_Head 0xa0000
+SoundTablesZ80_Head 0xb8000
 Sound_DebugMirror 0xb1cc
 Sound_PostByte 0xad7a
 TailsAppendage_Refresh 0x12118
