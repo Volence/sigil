@@ -665,6 +665,18 @@ enum StructMember {
     /// `SMPS_RAM` has 21 of them (`v_1up_ram`, `v_track_ram`, every
     /// `*_tracks_end`) and four are read by name from the corpus.
     Marker { name: String },
+    /// A non-empty body line whose LABEL COLUMN does not begin with an
+    /// identifier, so nothing about it can be read. Reported rather than
+    /// skipped, because skipping a struct-body line is a wrong SIZE and not a
+    /// missing symbol, and a wrong size moves every variable declared after
+    /// the instance.
+    ///
+    /// This is not hypothetical. Sonic 2's `zVar` declares
+    /// `1upPlaying: ds.b 1` — asl accepts an identifier that begins with a
+    /// digit and sigil's lexer does not — and skipping it made `zVar.len`
+    /// $17 against asl's $18, with **exit 0 on both sides and no diagnostic
+    /// anywhere**. Probe `q19.asm`.
+    Unreadable,
 }
 
 /// Per-pass ceiling on total `while`-body executions (see `Asm::while_budget`).
@@ -2697,6 +2709,13 @@ impl Asm {
                     }
                     off += inner.len;
                 }
+                // The lexer-refused case has already said something specific;
+                // this adds the consequence, which is the part that matters —
+                // an unread member line is a wrong struct SIZE.
+                Some(StructMember::Unreadable) => {
+                    let s = Span { source: l.source, start: l.base, end: l.base };
+                    self.err(s, format!("struct `{name}` has a member line this cannot read; its size and every member after it would be wrong"));
+                }
                 None => {}
             }
         }
@@ -2783,7 +2802,27 @@ impl Asm {
     /// written token gives the same offsets on the 68000 path without routing a
     /// struct body through macro expansion.
     fn parse_struct_member(&mut self, line: &SrcLine) -> Option<StructMember> {
-        let (name, width, count) = self.parse_struct_field(line)?;
+        let Some((name, width, count)) = self.parse_struct_field(line) else {
+            // Blank and comment-only lines lex to nothing and are genuinely
+            // not members; anything else that got here has a label column this
+            // cannot read, and that is [`StructMember::Unreadable`].
+            //
+            // A line the LEXER refuses counts as unreadable too, and its own
+            // diagnostic is surfaced rather than replaced: `1upPlaying:` fails
+            // as a malformed number, which names the real problem far better
+            // than anything this could say. Dropping it — which is what a bare
+            // `.ok()?` did — is how the same line silently shortened Sonic 2's
+            // `zVar` by a byte.
+            let substituted = self.subst_frame(line);
+            let l = substituted.as_ref().unwrap_or(line);
+            match lex_line(&l.text, self.state.cpu, l.source, l.base) {
+                Ok(toks) => return (!toks.is_empty()).then_some(StructMember::Unreadable),
+                Err(d) => {
+                    self.diags.push(d);
+                    return Some(StructMember::Unreadable);
+                }
+            }
+        };
         match width {
             // `parse_struct_field` reports width 0 for a head it could not read
             // as `ds.*`: either a bare label or an embedded struct.
@@ -7477,6 +7516,30 @@ mod tests {
                    \tdc.w H.len\n";
         // 224*4 + 16*4 + $40 = $380 + $40 + $40 = $400.
         assert_eq!(image(src), vec![0x04, 0x00]);
+    }
+
+    /// `q19.asm`. A struct-body line this cannot read is a wrong SIZE, not a
+    /// missing symbol, so it is reported rather than skipped.
+    ///
+    /// Sonic 2's `zVar` declares `1upPlaying: ds.b 1`; asl takes an identifier
+    /// beginning with a digit and sigil's lexer does not. Skipped, that made
+    /// `zVar.len` $17 against asl's $18 — **exit 0 on both sides, no
+    /// diagnostic anywhere, and every member after it one byte low.**
+    #[test]
+    fn an_unreadable_struct_member_line_is_reported_not_skipped() {
+        let src = "\tcpu 68000\n\torg $0\n\
+                   V struct dots\n\
+                   \ta:\tds.b 1\n\
+                   \t1upPlaying:\tds.b 1\n\
+                   \tb:\tds.b 1\n\
+                   V endstruct\n\
+                   \tdc.w V.a,V.b,V.len\n";
+        let diags = run(src, &Options::default()).expect_err("must not assemble");
+        assert!(
+            diags.iter().any(|d| d.message.contains("member line this cannot read")),
+            "expected the wrong-size refusal, got {:?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
     }
 
     #[test]
