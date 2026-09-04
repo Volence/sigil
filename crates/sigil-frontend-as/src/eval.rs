@@ -7344,18 +7344,30 @@ mod tests {
     /// puts `i1: W` at the odd $2001 and `a1` at $2003.
     #[test]
     fn a_struct_instance_is_never_word_aligned() {
-        // The `dc.w` occupies $1000..$1004; the `ds.b 1` then leaves the PC at
-        // the ODD $1005, where the word-leading instance is placed anyway, so
-        // `after` is $1007 and not $1008.
+        // `q14.asm`, byte-identical to asl. The `dc.w` occupies $1000..$1008
+        // and the `ds.b 1` leaves the PC at the ODD $1009, where the
+        // word-leading instance is placed anyway — so `after` is $100C, and the
+        // MEMBERS hang off the odd base rather than off a rounded one.
+        //
+        // ```text
+        //    7/ 1000 : 1009 100C 0000      	dc.w i1,after,i1.w-i1,i1.x-i1
+        //       1006 : 0002
+        //    9/ 1009 : (STRUCT)             i1:	W
+        //   10/ 100C :                     after:
+        // ```
         let src = "\tcpu 68000\n\torg $1000\n\
                    W struct DOTS\n\
                    w:\tds.w 1\n\
+                   x:\tds.b 1\n\
                    \tendstruct\n\
-                   \tdc.w i1,after\n\
+                   \tdc.w i1,after,i1.w-i1,i1.x-i1\n\
                    \tds.b 1\n\
                    i1:\tW\n\
                    after:\n";
-        assert_eq!(&image(src)[..4], &[0x10, 0x05, 0x10, 0x07]);
+        assert_eq!(
+            &image(src)[..8],
+            &[0x10, 0x09, 0x10, 0x0C, 0x00, 0x00, 0x00, 0x02]
+        );
     }
 
     /// `q10.asm`. A struct embedded in another struct is placed at the parent's
