@@ -162,6 +162,19 @@ fn section_addr_labels(debug: bool) -> Vec<Section> {
         ("Tile_Cache_Nametable", pick(pins::TILE_CACHE_NAMETABLE)),
     ];
     let mut out = Vec::new();
+
+    // THE CANOPY INSTRUMENTATION FAMILY, swept from the reference listing.
+    //
+    // `section.emp` reaches fifty-odd `Canopy_*` cells across the seam and the set grows
+    // whenever the diagnostic does, so enumerating it here would be a standing tax paid in
+    // red gates. The cells are DEBUG-only, so the sweep is gated on the shape rather than
+    // defaulted to zero. Derived, never copied — see `test_support::listing_symbols_with_prefix`.
+    let mut table: Vec<(String, u32)> =
+        table.iter().map(|(n, v)| ((*n).to_string(), *v)).collect();
+    if debug {
+        sigil_harness::test_support::extend_from_listing_ram(&mut table, debug, &["Canopy_"]);
+    }
+
     for (i, (name, vma)) in table.iter().enumerate() {
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
         let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };

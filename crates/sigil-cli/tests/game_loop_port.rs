@@ -585,10 +585,27 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ("DMA_Important_Slot", pick(pins::DMA_IMPORTANT_SLOT)),
     ];
     if debug {
+        // aeon's DMA straddle counter — the whole family, so a later cell needs no edit. Plus the per-queue DMA peaks the straddle instrumentation records.
+        // DEBUG-only cells, derived from the reference listing — see `listing_vma`.
+        table.push(("Dbg_DMA_Straddle_All", sigil_harness::test_support::listing_vma(debug, "Dbg_DMA_Straddle_All")));
+        table.push(("Dbg_DMA_Straddle_Frame", sigil_harness::test_support::listing_vma(debug, "Dbg_DMA_Straddle_Frame")));
+        table.push(("Dbg_DMA_Straddle_Peak", sigil_harness::test_support::listing_vma(debug, "Dbg_DMA_Straddle_Peak")));
+        table.push(("DMA_Peak_Critical", sigil_harness::test_support::listing_vma(debug, "DMA_Peak_Critical")));
+        table.push(("DMA_Peak_Important", sigil_harness::test_support::listing_vma(debug, "DMA_Peak_Important")));
+        table.push(("DMA_Peak_Deferrable", sigil_harness::test_support::listing_vma(debug, "DMA_Peak_Deferrable")));
         table.push(("Lag_Frame_Count", pins::LAG_FRAME_COUNT));
         table.push(("DMA_Bytes_ThisFrame", pins::DMA_BYTES_THIS_FRAME));
         // The hook's DEBUG-only Preempts counter bump.
         table.push(("Dbg_PageIn_Preempts", pins::DBG_PAGE_IN_PREEMPTS));
+    }
+
+    // The DEBUG-only DMA instrumentation family, swept from the reference listing so a
+    // new diagnostic cell needs no edit here; rows above keep their pinned value.
+    // See `test_support::extend_from_listing`.
+    let mut table: Vec<(String, u32)> =
+        table.into_iter().map(|(n, v)| (n.to_string(), v)).collect();
+    if debug {
+        sigil_harness::test_support::extend_from_listing(&mut table, debug, &["Dbg_DMA_", "DMA_Peak_", "DMA_Split_"]);
     }
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;

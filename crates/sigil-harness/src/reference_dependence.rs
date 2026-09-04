@@ -17,7 +17,7 @@
 
 use std::path::{Path, PathBuf};
 
-/// The guards every reference-dependent gate opens with. All three live in
+/// The guards every reference-dependent gate opens with. All four live in
 /// [`crate::test_support`], and a file that calls any of them is asking the reference tree
 /// a question.
 ///
@@ -26,7 +26,8 @@ use std::path::{Path, PathBuf};
 /// that closure to this declaration, so the script and this list cannot drift apart
 /// silently — a closure that stopped reaching one of these would make some file look like
 /// it reads nothing, which is the one direction in which being wrong is quiet.
-pub const GUARDS: [&str; 3] = ["reference_tree(", "reference_tree_for_profile(", "aeon_dir("];
+pub const GUARDS: [&str; 4] =
+    ["reference_tree(", "reference_tree_for_profile(", "aeon_dir(", "listing_path("];
 
 /// The floor a positive control holds the derivation to.
 ///

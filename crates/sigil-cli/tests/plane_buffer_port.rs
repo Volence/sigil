@@ -98,6 +98,10 @@ fn plane_buffer_value_equs(doctor: Option<(&str, &str)>) -> Vec<Section> {
     let mut pairs: Vec<(&str, &str)> = vec![
         ("VRAM_PLANE_A", "$C000"),
         ("VRAM_PLANE_B_BYTES", "$E000"),
+        // VDP HARDWARE address (engine/system/constants.emp: `pub const VDP_HV_COUNTER =
+        // $C00008`), read by the canopy self-pricing in the flipped section.emp. Fixed by
+        // the console, so unlike a ROM address it cannot drift with the layout.
+        ("VDP_HV_COUNTER", "$C00008"),
         ("VDP_DATA", "$C00000"),
         ("VDP_CTRL", "$C00004"),
         // PLANE_H_CELLS now comes from engine_constant_equs() (hoisted into
@@ -165,6 +169,22 @@ fn plane_buffer_addr_labels(debug: bool) -> Vec<Section> {
         ("Current_Act_Ptr", pick(pins::CURRENT_ACT_PTR)),
     ];
     let mut out = Vec::new();
+
+    // The DEBUG-only `Canopy_*` cells plane_buffer.emp reaches across the seam, swept from
+    // the reference listing rather than enumerated — the family grows with the diagnostic.
+    // Derived, never copied; see `test_support::listing_symbols_with_prefix`.
+    let mut table: Vec<(String, u32)> =
+        table.iter().map(|(n, v)| ((*n).to_string(), *v)).collect();
+    table.push(("Frame_Counter".to_string(), pick(pins::FRAME_COUNTER)));
+    table.push(("Camera_X".to_string(), pick(pins::CAMERA_X)));
+    table.push(("Camera_Y".to_string(), pick(pins::CAMERA_Y)));
+    sigil_harness::test_support::extend_from_listing_ram(&mut table, debug, &["Cache_"]);
+    // The WHOLE `Canopy_` family here, procs included: this scope lowers plane_buffer.emp
+    // ALONE, so `Canopy_Fire` and its siblings — which live in section.emp — are cross-seam
+    // CALL targets it must be given. (The two-module flip below composes section.emp itself
+    // and so takes the work-RAM restriction instead, or it would redefine them.)
+    sigil_harness::test_support::extend_from_listing(&mut table, debug, &["Canopy_"]);
+
     for (i, (name, vma)) in table.iter().enumerate() {
         let asm = format!("cpu 68000\n\tphase ${vma:X}\n{name}:\n\tdc.b 0\n");
         let opts = AsOptions { initial_cpu: Some(Cpu::M68000), ..AsOptions::default() };
@@ -415,6 +435,10 @@ fn lower_and_place(
 /// minus the shared twins). Unioned with plane_buffer's + the shared twins.
 fn section_value_pairs() -> Vec<(&'static str, &'static str)> {
     vec![
+        // VDP HARDWARE address (engine/system/constants.emp: `pub const VDP_HV_COUNTER =
+        // $C00008`), read by the canopy self-pricing in the flipped section.emp. Fixed by
+        // the console, so unlike a ROM address it cannot drift with the layout.
+        ("VDP_HV_COUNTER", "$C00008"),
         ("VDP_DATA", "$C00000"),
         ("VDP_CTRL", "$C00004"),
         ("VRAM_PLANE_A", "$C000"),
@@ -446,6 +470,10 @@ fn plane_buffer_value_pairs() -> Vec<(&'static str, &'static str)> {
     vec![
         ("VRAM_PLANE_A", "$C000"),
         ("VRAM_PLANE_B_BYTES", "$E000"),
+        // VDP HARDWARE address (engine/system/constants.emp: `pub const VDP_HV_COUNTER =
+        // $C00008`), read by the canopy self-pricing in the flipped section.emp. Fixed by
+        // the console, so unlike a ROM address it cannot drift with the layout.
+        ("VDP_HV_COUNTER", "$C00008"),
         ("VDP_DATA", "$C00000"),
         ("VDP_CTRL", "$C00004"),
         // PLANE_H_CELLS now comes from engine_constant_equs() (hoisted into
@@ -457,7 +485,7 @@ fn plane_buffer_value_pairs() -> Vec<(&'static str, &'static str)> {
 
 /// section.emp's cross-seam ADDRESS labels MINUS the two Draw_* labels (now owned
 /// by plane_buffer.emp), PLUS plane_buffer's `Plane_Buffer` base. Unioned by name.
-fn flip_labels(debug: bool) -> Vec<(&'static str, u32)> {
+fn flip_labels(debug: bool) -> Vec<(String, u32)> {
     let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
     // section's list, DROPPING Draw_TileColumn / Draw_TileRow_FromCache.
     let mut v: Vec<(&'static str, u32)> = vec![
@@ -493,6 +521,16 @@ fn flip_labels(debug: bool) -> Vec<(&'static str, u32)> {
         "MDDBG__ErrorHandler_PagesController",
         pins::MDDBG_ERROR_HANDLER_PAGES_CONTROLLER,
     ));
+    // The canopy diagnostic in the flipped section.emp stamps records with the frame
+    // number and reads the DEBUG-only `Canopy_*` cells. Pre-existing pin for the first;
+    // the family is swept from the listing and restricted to work RAM so the `Canopy_*`
+    // PROCS the flipped module defines are not redefined here.
+    v.push(("Frame_Counter", pick(pins::FRAME_COUNTER)));
+    let mut v: Vec<(String, u32)> = v.into_iter().map(|(n, x)| (n.to_string(), x)).collect();
+    sigil_harness::test_support::extend_from_listing_ram(&mut v, debug, &["Cache_"]);
+    if debug {
+        sigil_harness::test_support::extend_from_listing_ram(&mut v, debug, &["Canopy_"]);
+    }
     v
 }
 
@@ -554,9 +592,9 @@ fn two_module_flip(debug: bool, rom_name: &str) {
     let vpairs: Vec<(&str, &str)> = vmap.into_iter().collect();
 
     // Union the address labels (section's set minus Draw_*, plus Plane_Buffer).
-    let mut lmap: BTreeMap<&str, u32> = BTreeMap::new();
+    let mut lmap: BTreeMap<String, u32> = BTreeMap::new();
     for (n, v) in flip_labels(debug) {
-        if let Some(prev) = lmap.insert(n, v) {
+        if let Some(prev) = lmap.insert(n.clone(), v) {
             assert_eq!(prev, v, "label VMA conflict for `{n}`: {prev:#x} vs {v:#x}");
         }
     }

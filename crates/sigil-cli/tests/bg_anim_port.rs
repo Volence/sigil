@@ -407,6 +407,8 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         // from the reference listing rather than pinned — see `listing_vma`.
         labels.push(("BgAnim_Table_Ptr", sigil_harness::test_support::listing_vma(debug, "BgAnim_Table_Ptr")));
         labels.push(("Dbg_DMA_Straddle_All", sigil_harness::test_support::listing_vma(debug, "Dbg_DMA_Straddle_All")));
+        labels.push(("Dbg_DMA_Straddle_Frame", sigil_harness::test_support::listing_vma(debug, "Dbg_DMA_Straddle_Frame")));
+        labels.push(("Dbg_DMA_Straddle_Peak", sigil_harness::test_support::listing_vma(debug, "Dbg_DMA_Straddle_Peak")));
         labels.push(("DMA_Overflow_Count", pins::DMA_OVERFLOW_COUNT));
         labels.push(("Dbg_DMA_Enq_Capped", pins::DBG_DMA_ENQ_CAPPED));
         labels.push(("MDDBG__ErrorHandler", pins::MDDBG_ERROR_HANDLER));
@@ -416,6 +418,15 @@ fn two_module_flip(debug: bool, rom_name: &str) {
         ));
     }
 
+
+    // The DEBUG-only DMA instrumentation family, swept from the reference listing so a
+    // new diagnostic cell needs no edit here; rows above keep their pinned value.
+    // See `test_support::extend_from_listing`.
+    let mut labels: Vec<(String, u32)> =
+        labels.into_iter().map(|(n, v)| (n.to_string(), v)).collect();
+    if debug {
+        sigil_harness::test_support::extend_from_listing(&mut labels, debug, &["Dbg_DMA_", "DMA_Peak_", "DMA_Split_"]);
+    }
     let mut lma = 0x0100_0000u32;
     let mut groups: Vec<Vec<Section>> = vec![flip_value_equs()];
     for (name, vma) in labels {

@@ -595,6 +595,45 @@ pub fn listing_path(debug: bool) -> PathBuf {
 /// A DEBUG-only symbol is absent from the plain listing, and asking for one there is a
 /// panic naming it rather than a zero — see [`listing_symbol_addr`]. Callers gate such a
 /// symbol on the shape.
+/// Extend a scope's cross-seam label set with a whole listing FAMILY, skipping names it
+/// already carries.
+///
+/// The safe spelling of [`listing_symbols_with_prefix`] for a table that already pins some
+/// members: a duplicate label is a redefinition, so a bare sweep beside hand-written rows
+/// is a link error waiting for the first overlap. Existing entries keep their value and
+/// their comment; only the members nobody wrote down arrive.
+/// [`extend_from_listing`] restricted to WORK RAM (`$FFFF0000..`).
+///
+/// A diagnostic family usually spans both sides of the seam: `Canopy_*` names both the
+/// RAM cells a neighbouring module reads AND the procs the module under test DEFINES. A
+/// cross-seam label set wants the first and must not contain the second — supplying an
+/// address for a symbol the link already defines is a redefinition, not a courtesy.
+///
+/// The address is the discriminator rather than a name list, because a name list is the
+/// same maintenance the sweep exists to remove: a proc added to the family tomorrow is
+/// excluded by where it lives, with nothing to update.
+pub fn extend_from_listing_ram(labels: &mut Vec<(String, u32)>, debug: bool, prefixes: &[&str]) {
+    let before = labels.len();
+    extend_from_listing(labels, debug, prefixes);
+    let mut added = labels.split_off(before);
+    added.retain(|(_, vma)| *vma >= 0xFFFF_0000);
+    labels.extend(added);
+}
+
+pub fn extend_from_listing(
+    labels: &mut Vec<(String, u32)>,
+    debug: bool,
+    prefixes: &[&str],
+) {
+    let have: std::collections::HashSet<String> =
+        labels.iter().map(|(n, _)| n.clone()).collect();
+    for (name, vma) in listing_symbols_with_prefix(debug, prefixes) {
+        if !have.contains(&name) {
+            labels.push((name, vma));
+        }
+    }
+}
+
 /// Every symbol in a shape's listing whose name starts with one of `prefixes`, sorted.
 ///
 /// For a GENERATED FAMILY. When a scope's cross-seam refs are emitted by a generator —

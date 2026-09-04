@@ -107,9 +107,10 @@ pub fn map_toml(debug: bool) -> String {
 /// evaluates at lower time, so both must be present at their true VMAs (0x132 = 306 apart)
 /// or the guard fails here for a reason unrelated to the port.
 pub fn cross_seam_labels(debug: bool) -> Vec<Section> {
-    let labels: [(&str, u32); 26] = [
+    let labels: [(&str, u32); 27] = [
         // Derived from the reference listing, not pinned — see `listing_vma`.
         ("Effects_Motion_Any", sigil_harness::test_support::listing_vma(debug, "Effects_Motion_Any")),
+        ("Effects_Motion", sigil_harness::test_support::listing_vma(debug, "Effects_Motion")),
         ("Raster_Program", pins::RASTER_PROGRAM.plain),
         ("Raster_Cursor", pins::RASTER_CURSOR.plain),
         ("Raster_Pending", pins::RASTER_PENDING.plain),
