@@ -6360,3 +6360,31 @@ absence of a match is a fact about the file, not about whether the routing happe
 The hub also took the trigger correction as stated: the precondition is **two writers and one
 path**, which a lane meets by dispatching two building agents without naming a scratch
 location — not by any naming habit it chose.
+
+**LANDED — the carry obligation above is RETIRED, by its own falsifier.** Dominion landed it
+inside invariant 11 at skill revision `f98909d` (parent `50bb5e9`, the invariant-12 landing this
+lane's boot read cites). Verified here by running the falsifier rather than by the hub's relay:
+the grep now matches at `SKILL.md:86` and `:98`, exit 0. The trigger wording survived
+intact — *"Two writers and one path is the trigger, not any naming habit."* Dispatches from
+here no longer state it in-brief; the shared block carries it.
+
+**Two things the landed text holds that no relay into this lane carried, and the second is the
+finding.** (1) A writer of a shared path replaces it with `mv` rather than truncating in place,
+since a rename leaves a running reader on the old inode — in the two-agents-one-path
+precondition each agent is both victim and writer, so both halves bind each of them. (2)
+**aeon rendered the missing result file as a DIVERGENCE.**
+
+That second one is a materially worse failure than the one relayed here, and it is the reason
+this entry exists rather than a one-line "landed". The absence did not read as *nothing*; it
+read as a *finding*, and was reported as bytes differing. So the class is not "a gap can be
+mistaken for a pass" — already covered by the capped-run clause — but **an absence dressed as
+an outcome, in whichever direction the reader is primed for.** A lane running a byte-identity
+ritual is primed for divergence, and the artifact that says "no comparison happened" and the
+artifact that says "the comparison failed" are the same artifact: a file that is not there.
+
+Live consequence, acted on: this lane had an agent whose headline deliverable is a byte
+divergence map (Sonic 1's `FM_Notes`/`PSGFrequencies` against retail, plus aeon's four shapes
+before and after). It was the agent in the suite best placed to reproduce aeon's exact error,
+and was told to assert positively that the artifacts on BOTH sides of every byte claim exist
+and came from the run believed to have produced them — never to infer it from the absence of an
+error, and including on the "nothing moved" direction it expects.
