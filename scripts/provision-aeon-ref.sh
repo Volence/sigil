@@ -37,12 +37,16 @@ SIGIL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # the shared target/release/sigil), honours an explicitly pinned one, heads the log
 # with its --version self-report, and proves it corresponds to this tree.
 #
-# REF_TARGET is hoisted here from step 5 because the tool is built into it. Its
-# default is unchanged.
-REF_TARGET="${REF_TARGET:-$SIGIL_ROOT/../.sigil-ref-target}"
-mkdir -p "$REF_TARGET"
+# REF_TARGET is hoisted here from step 5 because the tool is built into it. It is
+# resolved by `sigil_tool_ref_target`, which carries the precedence and the reason a
+# caller's own CARGO_TARGET_DIR outranks any derivation this script could make: a
+# fixed default is one directory for every worktree of this repo, and cargo's
+# checkout-independent unit hash makes that an artifact-substitution fault rather than
+# an untidy one.
 # shellcheck source=lib/sigil_tool.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/sigil_tool.sh"
+REF_TARGET="$(sigil_tool_ref_target "$SIGIL_ROOT")"
+mkdir -p "$REF_TARGET"
 sigil_tool_resolve "$SIGIL_ROOT" "$REF_TARGET"
 
 # ── THE AEON REPOSITORY, AND WHY `$SIGIL_ROOT/../aeon` WAS WRONG ─────────────────────

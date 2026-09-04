@@ -192,6 +192,11 @@ struct Provenance {
     /// The drift check as a command a reader can paste and run, with the paths
     /// already in it. See [`drift_check`] for why it is not a recipe.
     drift_check: String,
+    /// Whether this revision has reached the remote-tracking ref, and which ref that
+    /// is. See [`published`] for what the line is for and why it is not a warning.
+    published: String,
+    /// The drift check anchored at that ref rather than at `HEAD`.
+    drift_check_published: String,
     error: String,
 }
 
@@ -225,6 +230,10 @@ impl Provenance {
             closure_note: format!("not derived, because the revision probe failed first ({why})"),
             closure_revision: "unavailable".into(),
             drift_check: format!("unavailable, because the revision probe failed first ({why})"),
+            published: format!("unknown, because the revision probe failed first ({why})"),
+            drift_check_published: format!(
+                "unavailable, because the revision probe failed first ({why})"
+            ),
             error: why,
         }
     }
@@ -273,6 +282,8 @@ fn main() {
     emit("SIGIL_CLOSURE_NOTE", &p.closure_note);
     emit("SIGIL_CLOSURE_REVISION", &p.closure_revision);
     emit("SIGIL_DRIFT_CHECK", &p.drift_check);
+    emit("SIGIL_PUBLISHED", &p.published);
+    emit("SIGIL_DRIFT_CHECK_PUBLISHED", &p.drift_check_published);
     emit("SIGIL_BUILD_SCRIPT_OUTPUT", &build_output);
     emit("SIGIL_PROVENANCE_ERROR", &p.error);
 }
@@ -401,6 +412,9 @@ fn probe(manifest_dir: &Path) -> Provenance {
     };
 
     let drift_check = drift_check(&source_dir, &closure);
+    let upstream = upstream_ref(manifest_dir);
+    let published = published(manifest_dir, &revision, &upstream);
+    let drift_check_published = drift_check_at(&source_dir, &closure, &upstream);
 
     Provenance {
         revision,
@@ -417,7 +431,94 @@ fn probe(manifest_dir: &Path) -> Provenance {
         closure_note,
         closure_revision,
         drift_check,
+        published,
+        drift_check_published,
         error: String::new(),
+    }
+}
+
+/// A remote-tracking ref, and its tip — the closest thing this machine holds to "what
+/// anyone else can see".
+struct Upstream {
+    /// The ref name as it will be printed and passed to git, or the empty string.
+    name: String,
+    /// Its tip, or the empty string.
+    tip: String,
+    /// Why there is none, when there is none.
+    why: String,
+}
+
+/// Resolve the remote-tracking ref this checkout's work is published to.
+///
+/// `@{upstream}` first — a branch that tracks one has answered the question itself. A
+/// parcel branch created with `git worktree add -b`, and a detached checkout, track
+/// nothing, so `origin/HEAD` stands in: it is the remote's own default branch, recorded
+/// locally at clone time. If neither exists, this is UNKNOWN and says so — a checkout
+/// with no remote at all is a real configuration, and inventing `origin/master` for it
+/// would print a confident answer about a ref that is not there.
+///
+/// IT IS A LOCAL CACHE, NOT THE REMOTE. `git ls-remote` would ask the server, and against
+/// `git@github.com:…` that is an SSH round trip: it blocks, it needs an agent, and it
+/// fails offline — inside a build script, on every rebuild. So the tracking ref is used,
+/// and every line built from it says which ref it is and that `git fetch` is what moves
+/// it. A reader who knows they are reading a cache can refresh it; a reader who thinks
+/// they are reading the remote cannot.
+fn upstream_ref(manifest_dir: &Path) -> Upstream {
+    let none = |why: String| Upstream { name: String::new(), tip: String::new(), why };
+    let name = match git(manifest_dir, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]) {
+        Ok(n) => n,
+        Err(_) => match git(manifest_dir, &["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]) {
+            Ok(n) => n,
+            Err(_) => {
+                return none(
+                    "this checkout's HEAD tracks no remote branch and refs/remotes/origin/HEAD \
+                     is not set here, so nothing on this machine names a published tip"
+                        .to_string(),
+                )
+            }
+        },
+    };
+    match git(manifest_dir, &["rev-parse", &name]) {
+        Ok(tip) => Upstream { name, tip, why: String::new() },
+        Err(why) => none(format!("{name} does not resolve to a commit here ({why})")),
+    }
+}
+
+/// Whether the revision this binary was built from has reached the remote-tracking ref.
+///
+/// THE QUESTION THIS ANSWERS. A consumer comparing the banner's `revision` against the
+/// source tree's `HEAD` learns that the two differ, and cannot tell what that means: on a
+/// machine where every sibling repo is a peer's live working tree, that HEAD can be ahead
+/// of, behind, or divergent from anything another lane can see. `behind` is not a fact
+/// until something names what it is behind. This line names it.
+///
+/// IT IS NOT A WARNING, and must not read as one. A lane's own commits are unpublished
+/// until they are pushed, which is the ordinary state of work in progress; a binary built
+/// from one is exactly right for the tree that built it. What is reported is a position,
+/// not a verdict, because a check that fires on correct work teaches people to delete it.
+fn published(manifest_dir: &Path, revision: &str, upstream: &Upstream) -> String {
+    if upstream.name.is_empty() {
+        return format!("unknown — {}", upstream.why);
+    }
+    let at = format!("{} ({})", upstream.name, upstream.tip);
+    let cache = format!(
+        "{} is a LOCAL remote-tracking ref, refreshed only by `git fetch`, so it may itself be \
+         behind what is published",
+        upstream.name
+    );
+    let contained = Command::new("git")
+        .args(["merge-base", "--is-ancestor", revision, &upstream.tip])
+        .current_dir(manifest_dir)
+        .status();
+    match contained {
+        Ok(s) if s.success() => {
+            format!("yes — this revision is contained in {at}. {cache}")
+        }
+        Ok(_) => format!(
+            "not yet — this revision is NOT contained in {at}, which is the ordinary state of a \
+             lane's own commits before they are pushed, not a fault. {cache}"
+        ),
+        Err(e) => format!("unknown — git could not answer whether this revision is on {} ({e})", upstream.name),
     }
 }
 
@@ -438,6 +539,27 @@ fn probe(manifest_dir: &Path) -> Provenance {
 /// "run it at the tree root" instruction, which the pathspecs depend on, in the
 /// command itself rather than in prose beside it.
 fn drift_check(source_dir: &str, closure: &Closure) -> String {
+    drift_check_rev(source_dir, closure, "HEAD")
+}
+
+/// The same command anchored at the remote-tracking ref instead of at `HEAD`.
+///
+/// Two anchors because they answer two questions and one of them cannot be inferred from
+/// the other. `HEAD` says whether this binary is current with the tree in front of you —
+/// which is the right question when that tree is yours. The tracking ref says whether it
+/// is current with what anyone else can see, which is the right question when the tree in
+/// front of you belongs to somebody else and may be mid-edit. The aeon lane had to
+/// assemble this second command by hand, from the `closure-paths` line, after reading a
+/// banner that could only tell them the first answer; assembling it by hand is the
+/// failure the whole-command form exists to prevent.
+fn drift_check_at(source_dir: &str, closure: &Closure, upstream: &Upstream) -> String {
+    if upstream.name.is_empty() {
+        return format!("unavailable — {}", upstream.why);
+    }
+    drift_check_rev(source_dir, closure, &upstream.name)
+}
+
+fn drift_check_rev(source_dir: &str, closure: &Closure, rev: &str) -> String {
     if !closure.error.is_empty() {
         return format!("unavailable — {}", closure.error);
     }
@@ -446,7 +568,8 @@ fn drift_check(source_dir: &str, closure: &Closure) -> String {
         return "unavailable — no closure path was derived, so there is nothing to compare"
             .to_string();
     }
-    let mut cmd = format!("git -C {} log -1 --format=%H HEAD --", shell_word(source_dir));
+    let mut cmd =
+        format!("git -C {} log -1 --format=%H {} --", shell_word(source_dir), shell_word(rev));
     for path in paths {
         cmd.push(' ');
         cmd.push_str(&shell_word(path));

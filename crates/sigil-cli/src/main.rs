@@ -194,6 +194,8 @@ fn run_version() {
     let closure_note = env!("SIGIL_CLOSURE_NOTE");
     let closure_revision = env!("SIGIL_CLOSURE_REVISION");
     let drift_check = env!("SIGIL_DRIFT_CHECK");
+    let published = env!("SIGIL_PUBLISHED");
+    let drift_check_published = env!("SIGIL_DRIFT_CHECK_PUBLISHED");
     let error = env!("SIGIL_PROVENANCE_ERROR");
 
     // The first line is the greppable one: `<name> <semver> (<revision tag>)`.
@@ -214,6 +216,7 @@ fn run_version() {
         println!("  tree:      unknown — {tree_detail}");
         println!("  source:    unknown");
         println!("  closure:   unknown — {closure_note}");
+        println!("  published: unknown — no revision was captured, so nothing can say whether it reached a remote");
         println!(
             "  freshness: this binary carries NO revision, so nothing here can confirm it \
              matches any source tree. Do not treat it as current."
@@ -234,6 +237,8 @@ fn run_version() {
     println!("  closure-revision: {closure_revision}");
     println!("  closure-paths: {closure_paths}");
     println!("  drift-check: {drift_check}");
+    println!("  published: {published}");
+    println!("  drift-check-published: {drift_check_published}");
     println!("  freshness: revision and tree state are both re-captured (cargo tracks {tracks}).");
     println!(
         "             tree state is still a build-time snapshot: the tracking is path-scoped, so\n\
@@ -271,6 +276,18 @@ fn run_version() {
          \x20            closure, so growth is reported rather than missed.\n\
          \x20            What this proves is `cannot affect this binary`, never `the output did\n\
          \x20            not change` — only a rebuild and a byte compare supports the second."
+    );
+    println!(
+        "  anchors:   the two drift checks differ only in what they ask ABOUT. `drift-check`\n\
+         \x20            anchors at HEAD of the source tree named above; `drift-check-published`\n\
+         \x20            anchors at the remote-tracking ref named in `published`. On a machine\n\
+         \x20            where a sibling checkout is a peer's live working tree, that HEAD can be\n\
+         \x20            ahead of, behind, or divergent from anything another lane can see, so\n\
+         \x20            `behind HEAD` is not a fact until something names what it is behind —\n\
+         \x20            which is why both lines say which revision they compare against rather\n\
+         \x20            than leaving a reader to guess. The tracking ref is a LOCAL cache of the\n\
+         \x20            remote: `git fetch` is what moves it, and `git ls-remote` is what would\n\
+         \x20            ask the server. Neither line is a warning; both are positions."
     );
 }
 

@@ -333,12 +333,52 @@ fn invocation(root: &Path) -> String {
 /// of all of them, and the one that reads it is the one that replaces the golden blobs.
 const GOLDEN_WRITE_CALLER: (&str, &str) = ("SIGIL_GOLDEN_WRITE", "refreeze");
 
+/// The build directory this freeze's child scripts compile into and read from.
+///
+/// `capture_goldens.sh` and `derive_offcanonical_sizes.sh` both used to reach into the
+/// invoking checkout's shared `target/` when `CARGO_TARGET_DIR` was unset — the directory
+/// several lanes relink on purpose, whose `sigil` has been measured reporting a deleted
+/// branch beside rlibs from another lane's tree. They refuse that now, and this is the
+/// caller that ran them with nothing set.
+///
+/// It is DERIVED rather than required, because the answer is already in hand: this
+/// process's own executable sits at `<target>/<profile>/refreeze`, so the directory it
+/// was built into is an observation, not a guess, and the `sigil` beside it is from the
+/// same build. A caller who has already chosen a directory keeps it — an explicit
+/// `CARGO_TARGET_DIR` is a statement of intent this tool has no standing to override.
+///
+/// It refuses rather than guessing when the executable's location cannot be read or does
+/// not have the two-directory shape cargo gives it, because "could not tell" and "the
+/// shared one" must not produce the same run.
+fn child_target_dir() -> Result<PathBuf, String> {
+    if let Some(dir) = std::env::var_os("CARGO_TARGET_DIR") {
+        if !dir.is_empty() {
+            return Ok(PathBuf::from(dir));
+        }
+    }
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("cannot read this executable's own path ({e}), so the build \
+                              directory its child scripts should use cannot be derived. Set \
+                              CARGO_TARGET_DIR to a build directory of this run's own."))?;
+    let profile = exe.parent().ok_or_else(|| {
+        format!("this executable ({}) has no parent directory, so the build directory cannot \
+                 be derived. Set CARGO_TARGET_DIR.", exe.display())
+    })?;
+    let target = profile.parent().ok_or_else(|| {
+        format!("this executable ({}) is not two directories inside a cargo target directory, \
+                 so one cannot be derived. Set CARGO_TARGET_DIR.", exe.display())
+    })?;
+    Ok(target.to_path_buf())
+}
+
 fn run_script(script: &Path, args: &[&str]) -> Result<(), String> {
     eprintln!("refreeze: running {} {}", script.display(), args.join(" "));
+    let target = child_target_dir()?;
     let status = Command::new("bash")
         .arg(script)
         .args(args)
         .env(GOLDEN_WRITE_CALLER.0, GOLDEN_WRITE_CALLER.1)
+        .env("CARGO_TARGET_DIR", &target)
         .status()
         .map_err(|e| format!("spawn {}: {e}", script.display()))?;
     if !status.success() {
@@ -1266,6 +1306,15 @@ fn do_freeze(root: &Path, name: &str, ab: &str, note: &str, supersede: Option<&s
         Err(e) => return fail(format!("refusing to freeze — {e}")),
     };
     eprintln!("refreeze: freezing from aeon {aeon_rev} (clean)");
+
+    // (0.1) WHICH BUILD DIRECTORY. Resolved here as well as in `run_script` so a
+    // derivation that cannot be made refuses before the journal opens, rather than three
+    // steps in; and stated in the log, because the binary the goldens are attributed to
+    // is the one sitting in this directory.
+    match child_target_dir() {
+        Ok(t) => eprintln!("refreeze: child scripts build into {}", t.display()),
+        Err(e) => return fail(format!("refusing to freeze — {e}")),
+    }
 
     // (0.5) THE JOURNAL. Opened after the tree is known — it records which one — and
     // before the first step, because every step from here on writes an artifact whose
