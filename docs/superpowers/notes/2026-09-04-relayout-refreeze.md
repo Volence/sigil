@@ -343,3 +343,61 @@ new cross-seam `Editor*` label was generated into this file, the standalone
 "references symbol(s) … not defined in this link" — three instances, each documented in
 `repin.toml` beside its row. `EditorReelBindings_*` at `88547eda` carries two `extern()`s,
 so a freeze against any tree containing it should be expected to need a fourth.
+
+## Verification of the merged branch, against the tree its goldens name
+
+Since the freeze cannot be re-taken, the verification available is whether the merged
+branch still holds against `5875e60e` — the revision the tip already names.
+
+**The positive witness first**, because "no errors" is not one. `repin --check` with
+`AEON_DIR=/home/volence/sonic_hacks/.aeon-relayout-freeze` (`5875e60e`, clean) reports
+**`pins.rs unchanged`**, preceded only by the two standing `player_climb` declared-allotment
+warnings. A tree that could not reproduce the pinned placement cannot produce that line, so
+it is a positive result rather than an absence. No pin was regenerated and no file was
+hand-edited: `repin.toml` was not touched and neither was `pins.rs`.
+
+**The landing run.** `scripts/landing-run.sh --aeon /home/volence/sonic_hacks/.aeon-relayout-freeze`,
+own target dir, `2026-09-04T17:02:41Z -> 17:06:52Z`:
+
+```
+tree        .../sigil/.worktrees/relayout-refreeze @ 0d40dd8f (parcel/relayout-refreeze-current)
+reference   /home/volence/sonic_hacks/.aeon-relayout-freeze @ 5875e60e (HEAD, clean) — all four present
+CARGO_EXIT  0
+suites 386   passed 4463   failed 0   ignored 2   skip lines 0        RESULT GREEN
+```
+
+The wrapper's totals were re-derived independently from the raw `test result:` lines and
+agree exactly. The three `panicked at` lines in the log are `should_panic` bodies
+(`override_of_unknown_constant_panics`, `compress_panics_on_error`,
+`ensure_generated_refuses_before_it_touches_an_absent_tree`), not failures. The verdict
+stamps the tree DIRTY; the only untracked paths were this run's own `.runlogs/` and
+`.target-master/`, and no tracked file differed from `0d40dd8f`. No `--baseline` was
+passed, so the wrapper's reconciliation arm reports NOT CHECKED.
+
+**`aeon_dir_matches_the_provenance_tip`, both directions**, because a gate that has only
+been seen to pass has not been seen to work:
+
+| AEON_DIR | aeon rev | result |
+|---|---|---|
+| `.aeon-relayout-freeze` | `5875e60e` (= the tip's `aeon_rev`) | `ok` — inside the landing run |
+| `.aeon-ref-relayout-cur` | `88547eda` | `FAILED`, naming both revisions and the entry |
+
+The refusal reads: "is at aeon 88547eda…, but the goldens were frozen from aeon 5875e60e…
+(provenance tip `rom-relayout-more-room`, entry #202)."
+
+**The four shapes did not move, because no freeze was taken.** They stand at the tip's
+recorded values, and the tip's own tree reproduces every one:
+
+| shape | golden CRC32/size | built in `.aeon-relayout-freeze` | paired `.lst` |
+|---|---|---|---|
+| `s4.bin` | `6f047af2`/819123 | identical | `s4.lst`, same second |
+| `s4.debug.bin` | `d772f7d8`/840179 | identical | `s4.debug.lst`, same second |
+| `demo.bin` | `3c5dcde6`/96602 | identical | `demo.lst`, same second |
+| `demo.debug.bin` | `36014485`/102818 | identical | `demo.debug.lst`, same second |
+
+Those four ROMs carry mtimes of `2026-09-04T06:28:59Z`..`06:47:27Z`, which PREDATE this
+session — they are the earlier run's artifacts, not this one's, and the table says so
+rather than presenting them as a fresh control. What makes them a build rather than a
+copy of the goldens is the pairing: each `.bin` sits within milliseconds of a `.lst` of
+the same stem, and a copied golden has no listing to pair with and would carry the
+golden's mtime.
