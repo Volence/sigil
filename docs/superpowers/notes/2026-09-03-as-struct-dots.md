@@ -170,8 +170,8 @@ AFTER
   `v_ram_end`. It reached the `warning` because the map was SHORT; now neither
   arm is taken, so the total RAM declaration ends exactly where the disassembly
   says it must. (The `if * > 0` arm calls `fatal`, which sigil DOES implement —
-  its absence is a measured fact, not an unimplemented directive: `grep -ci
-  'RAM variable declarations|too large by'` over the after-capture is 0.)
+  its absence is a measured fact, not an unimplemented directive:
+  `grep -icE 'RAM variable declarations|too large by'` over the after-capture is 0.)
 
 **The offset the message names could not be read, and that does not matter here.**
 `\{…}` interpolation is still not performed (a prior parcel's finding, unchanged
@@ -299,3 +299,17 @@ declaration and an instance).
   '^\s*\S+\s+struct\b' --include='*.asm' --include='*.inc'` is 0 — so
   byte-neutrality was the expectation and not a surprise.
 - `cargo clippy --release --workspace --all-targets -- -D warnings` — **exit 0**.
+- **The landing run.** `scripts/landing-run.sh --baseline 4348 --aeon
+  ~/sonic_hacks/.aeon-eval-ref`, stamped `pwd` `/home/volence/sonic_hacks/.sigil-struct`,
+  HEAD `0d0306b1`, branch `parcel/as-struct-dots`, reference `.aeon-eval-ref` @
+  `4f5ad5a1`: **378 suites / 4,348 passed / 0 failed / 2 ignored**, `CARGO_EXIT=0`,
+  GREEN. All eight new rows appear in that log by name. The stamp reads DIRTY
+  because `.probe/` and this note were untracked; `crates/` was clean, and the
+  two commits after `0d0306b1` are documentation only, so the green covers every
+  line of code on the branch.
+  Log: `.probe/landing-branch.log`.
+- **The master baseline, derived rather than taken.** Same wrapper in a detached
+  worktree of `e45bc305`, its own target directory: **378 suites / 4,340 passed /
+  0 failed / 2 ignored**, `CARGO_EXIT=0`. The two runs were sequential, never
+  concurrent. 4,340 + 8 new `#[test]` rows = 4,348. It reconciles exactly.
+  Log: `.probe/landing-master.log`.
