@@ -212,3 +212,43 @@ refuses both. That is the safer direction and no corpus line depends on it, so t
 refusal stands; it is recorded because it is a silent-wrong-answer shape in the
 reference assembler, and a future parcel arguing for asl fidelity here should know
 what it would be buying.
+
+## The suite, both sides
+
+`scripts/landing-run.sh --baseline 4375 --aeon /home/volence/sonic_hacks/.aeon-f4ref`,
+run twice — once on master, once on this branch — so the delta is measured rather
+than assumed. Both stamped with their own tree.
+
+```
+  tree   /home/volence/sonic_hacks/.sigil-f4-base @ 2ed1f7cc (HEAD, clean)
+  CARGO_EXIT 0   suites 379   passed 4381   failed 0   ignored 2   skip lines 0   GREEN
+
+  tree   /home/volence/sonic_hacks/.sigil-f4 @ c9a81d7e (parcel/as-macro-default-params)
+  CARGO_EXIT 0   suites 381   passed 4395   failed 0   ignored 2   skip lines 0   GREEN
+```
+
+**+14 tests, +2 suites** — exactly the two files this parcel adds (4 + 10). No
+pre-existing test changed its result, in either direction.
+
+Master's own 4381 is itself 6 above the 2026-09-04 label-on-if landing's 4375,
+from the eight commits master took in between; the pre-declaration here was +14
+against 4375 = 4389, and the difference is that drift, counted rather than waved
+through.
+
+### Red-first, and what each run had to fail
+
+Every gate was proven by mutating the fix on disk, with `git diff --stat` and the
+mutated lines read back before the run, then restored from the committed baseline.
+
+| mutation | must fail | did fail |
+|---|---|---|
+| `classify` falls back to `SourceId(0)`+0 again | the three empty-group tests; `a_non_empty_group_still_reports_at_the_operand` must PASS | 3 failed, 1 passed |
+| the default is never substituted | every test whose call omits the slot | 9 of 10 failed; only `a_supplied_argument_overrides_the_default` passed |
+| the default's identifiers harvested as extra parameters | `identifiers_inside_a_default_are_not_parameters` | 10 of 10 failed |
+
+The second row corrects a pre-declaration: `identifiers_inside_a_default_are_not_parameters`
+was predicted to survive mutation A and did not, because it asserts the substituted
+default text as well as the parameter list. The third mutation was written to isolate
+that half and over-fired for a different reason (pushing extra names misaligns the
+parallel `defaults` vector), so it proves sensitivity rather than isolation. Both are
+reported as measured, not as predicted.
