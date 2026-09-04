@@ -273,7 +273,69 @@ either way. The `freshness:` first physical line still carries `re-captured` and
 `(cargo tracks HEAD,…,manifests,sources)`, which is what three existing disclosure gates
 read.
 
-**No ROM bytes move.** Only what the banner reports changed, not what the assembler emits.
+## No emitted byte moves — proved, not assumed
+
+A binary built at the merge-base (`feba7521`, in a detached worktree with its own target
+dir) and one built at this tip were handed the same inputs and their output compared.
+
+```
+OLD 6471ecf0bce170a9c9b78c4b7e5f52fa  sigil 0.1.0 (feba7521)
+NEW 6d8c24f94b4b79ea1711897658ad2dc6  sigil 0.1.0 (8b6c90c8)
+
+  asm m68k.asm    IDENTICAL   30 3C 12 34 72 07 D0 81 41 FA 00 28 24 18 61 00 00 04 60 EC
+                              48 E7 FF FE 4A 40 67 10 53 40 66 F4 …    (191 bytes of hex)
+  asm z80.asm     IDENTICAL   3E 3F 21 16 00 11 FF 1F 01 10 00 ED B0 23 1B 09 EB C3 00 00
+                              18 EA 00 11 22 33 00 00
+  emp prog.emp                IDENTICAL   DE AD BE EF
+  emp const_arity_control     IDENTICAL   (0 bytes)
+  emp defines -D DEBUG=1      IDENTICAL   2A
+  emp defines -D DEBUG=0      IDENTICAL   07
+
+  6 compared, 6 identical, 0 differing
+```
+
+Covers the `.asm` front end with the 68k backend (`movem`, `lea` pc-relative, `bsr.w`,
+`cmpi.l`, `swap`, `dc.w`/`dc.l`/`dc.b`), the Z80 backend (`ldir`, `jr`, `jp`, `db`, `dw`),
+and the `.emp` front end including `-D` define selection.
+
+**Two earlier attempts at this proof measured nothing and are not quoted as evidence:**
+
+1. `examples/*.emp` — every one refused at exit 2, because `sigil build` requires
+   `--aeon <dir>` and this worktree has no reference tree. Zero bytes compared; the script
+   printed `MEASURED NOTHING`.
+2. The `.emp` vectors compared clean, but all three hand-written `.asm` fixtures *also*
+   refused (`even` is not a 68000 mnemonic in this dialect; Z80 hex needs a trailing `h`),
+   so the asm front end and both backends were never exercised — **while the verdict line
+   claimed they had been.** The fixtures were fixed rather than the verdict softened.
+
+One fixture still refuses and is named rather than dropped: `relax.asm` gets
+*"branch needs an explicit size suffix (.s or .w) — Aeon pins branch width, no
+relaxation."* That is the assembler being right and the fixture being wrong; branch
+relaxation is not a thing this assembler does, so there is nothing there to compare.
+
+Consistent with the source surface: `git diff master..HEAD` touches shipped code only in
+`run_version()`. `tree_class.rs` is compiled into the binary under `cfg(test)` and is
+reached by `build.rs` through `#[path]`, so it is not linked into the release executable.
+
+## Suite
+
+`cargo test --workspace`, `SIGIL_ALLOW_PARTIAL=1`, from this worktree at `8b6c90c8` on
+`fix/banner-tree-state`: **4381 passed, 0 failed, 2 ignored over 381 legs, exit 0.** All
+six gates added here ran and passed.
+
+`SIGIL_ALLOW_PARTIAL=1` is a **declared partial run**: no reference tree is provisioned in
+this worktree, and pointing `AEON_DIR` at the owner's live checkout would produce phantom
+failures and let `sigil build --aeon` write into it. **126 of the 366 test binaries are
+reference-dependent and every row in them was left UNMEASURED.** The strict landing gate
+against a provisioned tree is the overseer's to run.
+
+`cargo clippy --workspace --all-targets`: exit 0, 0 warnings.
+
+`cargo fmt --all --check` is red — 6438 diffs across ~350 files, including many this branch
+never touched (`crates/sigil-ir/`, `crates/sigil-isa/`, `crates/sigil-frontend-emp/`…).
+There is no `rustfmt.toml`; this workspace is simply not rustfmt-formatted and `fmt --check`
+is not a gate here. Stated so a later reader does not mistake it for something this branch
+introduced.
 
 ## Incidental, not introduced here
 
