@@ -490,6 +490,25 @@ struct Asm {
     /// is reassigned on every `dac_sample_metadata` expansion, so a stale
     /// entry of the other type would outlive its own assignment.
     float_env: std::collections::HashMap<String, f64>,
+    /// The running `enum`/`nextenum` counter: the value the NEXT member will
+    /// take. `enum` resets it to 0 before binding its members, `nextenum`
+    /// continues from wherever the previous enumeration left it, and an
+    /// explicit `name=expr` member sets it to `expr`. Every member binding
+    /// advances it by [`Self::enum_step`].
+    ///
+    /// asl-verified (`docs/superpowers/notes/2026-09-04-as-enum-probes`, q11):
+    /// `enum a=5,b` followed by `enum c,d` binds `c=0`, so `enum` genuinely
+    /// resets rather than defaulting its start to the running value.
+    enum_next: i64,
+    /// The `enumconf` step, applied after each member binding. Defaults to 1.
+    ///
+    /// It is read AT THE MOMENT OF EACH ADVANCE and never re-applied, which is
+    /// what makes an `enumconf` between two enumerations non-retroactive: after
+    /// `enumconf 4` / `enum a=0,b` the counter already sits at 8, so a following
+    /// `enumconf 1` / `nextenum c,d` binds `c=8` and not `c=5` (probe q4).
+    ///
+    /// Persists across `enum` — only `enumconf` changes it (probe q12).
+    enum_step: i64,
     scope: Option<String>,
     /// The scope in force where the OUTERMOST macro expansion currently on the
     /// stack was invoked — the nearest scope that is not itself an expansion.
@@ -732,6 +751,8 @@ impl Asm {
             env: SymbolTable::new(),
             str_env: std::collections::HashMap::new(),
             float_env: std::collections::HashMap::new(),
+            enum_next: 0,
+            enum_step: 1,
             scope: None,
             outer_scope: None,
             dot_label_cache: std::collections::BTreeMap::new(),
@@ -3333,6 +3354,9 @@ impl Asm {
             }
             "padding" => self.state.padding = on_off(rest),
             "supmode" => self.state.supmode = on_off(rest),
+            "enum" => self.directive_enum(rest, span),
+            "nextenum" => self.directive_nextenum(rest, span),
+            "enumconf" => self.directive_enumconf(rest, span),
             "db" | "dc.b" => self.directive_db(rest, span),
             "dw" => self.directive_dw(rest, span),
             "dc.w" => self.directive_dc_w(rest, span),
@@ -3804,6 +3828,114 @@ impl Asm {
     /// function rather than an alias of `directive_equate`: `=` is slated to
     /// grow a single-assignment redefinition diagnostic (see that function's
     /// doc), and `set`/`:=` must keep permitting redefinition when it does.
+    /// `enum name[=expr][,name[=expr]]…` — open a FRESH enumeration.
+    ///
+    /// The only thing separating `enum` from [`Self::directive_nextenum`] is
+    /// this reset: asl binds `c=0` for `enum a=5,b` / `enum c,d` (probe q11),
+    /// so a member with no explicit value starts from 0 and not from wherever
+    /// the previous enumeration stopped. The step is NOT reset — it belongs to
+    /// `enumconf` alone (probe q12).
+    fn directive_enum(&mut self, rest: &[Token], span: Span) {
+        self.enum_next = 0;
+        self.enum_members(rest, span, "enum");
+    }
+
+    /// `nextenum name[=expr][,…]` — continue the running enumeration.
+    ///
+    /// With no `enum` ahead of it the counter is simply its initial 0, which is
+    /// what asl does: a bare leading `nextenum q,r` binds `q=0,r=1` and emits no
+    /// diagnostic (probe q6). This is how the corpus's note table is written —
+    /// one `enum nRst=$80` followed by sixteen `nextenum` continuations.
+    fn directive_nextenum(&mut self, rest: &[Token], span: Span) {
+        self.enum_members(rest, span, "nextenum");
+    }
+
+    /// Bind one comma-separated member list against the running counter.
+    ///
+    /// Each member is `name` or `name=expr`. An explicit `expr` sets the counter
+    /// before the binding, so the member AFTER an explicit one continues from it
+    /// — `enum a=$80,b,c=b,d,e` binds `$80,$81,$81,$82,$83` (probe q3). That is
+    /// what makes the corpus's enharmonics work: `nCs0,nDb0=nCs0,nD0` gives
+    /// `nDb0` its flat-equals-sharp value without costing the table a slot.
+    ///
+    /// The counter advances by the step read HERE, at the moment of the binding,
+    /// which is what keeps a later `enumconf` from reaching back into an already
+    /// advanced counter (probe q4).
+    fn enum_members(&mut self, rest: &[Token], span: Span, kw: &str) {
+        // asl: `error #1110: wrong number of operands / expected between 1 and
+        // 476 arguments but got 0`. An empty operand list is a real refusal, not
+        // a no-op enumeration.
+        if rest.is_empty() {
+            self.err(span, format!("`{kw}` needs at least one member name"));
+            return;
+        }
+        for g in split_top_commas(rest) {
+            // Split the member at its top-level `=`. `split_top_commas` already
+            // guarantees the group is one member; the `=` is the only structure
+            // left in it, and it cannot be nested (a value expression's own
+            // comparisons spell themselves `==`).
+            let eq = g
+                .iter()
+                .position(|t| matches!(t.tok, Tok::Punct(Punct::Eq)));
+            let (name_toks, val_toks) = match eq {
+                Some(i) => (&g[..i], Some(&g[i + 1..])),
+                None => (g, None),
+            };
+            let name = match name_toks {
+                [Token {
+                    tok: Tok::Ident(n), ..
+                }] => n.clone(),
+                _ => {
+                    let at = name_toks.first().map(|t| t.span).unwrap_or(span);
+                    self.err(at, format!("`{kw}` member needs a plain name"));
+                    continue;
+                }
+            };
+            if let Some(v) = val_toks {
+                // asl folds the start expression in the FIRST pass — a forward
+                // reference is `error #1820: expression must be evaluatable in
+                // first pass` (probe q10), never a deferral. `eval_all` already
+                // diagnoses an unresolvable expression, so a `None` here has
+                // been reported and the member is skipped rather than bound to
+                // a value that was never computed.
+                match self.eval_all(v, span) {
+                    Some(n) => self.enum_next = n,
+                    None => continue,
+                }
+            }
+            let q = qualify(&name, self.real_scope());
+            self.env.define(&q, SymbolValue::Int(self.enum_next));
+            self.enum_next = self.enum_next.wrapping_add(self.enum_step);
+        }
+    }
+
+    /// `enumconf step[,segment]` — set the enumeration step.
+    ///
+    /// The step may be negative (`enumconf -1` counts down, probe q7) or zero
+    /// (every member takes the same value, probe q9); neither is an error, and
+    /// the corpus's pitch table is exactly this directive used to stride a
+    /// twelve-semitone octave (`enumconf $C`, probe q2).
+    ///
+    /// asl accepts an optional second operand naming a SEGMENT, not a second
+    /// number — `enumconf 1,CODE` assembles and `enumconf 1,2` is `error #1961:
+    /// unknown segment`. Only the single-operand form appears in the corpus, so
+    /// the segment is parsed and ignored rather than modelled.
+    fn directive_enumconf(&mut self, rest: &[Token], span: Span) {
+        let groups = split_top_commas(rest);
+        // asl: `expected between 1 and 2 arguments but got 0`.
+        if rest.is_empty() {
+            self.err(span, "`enumconf` needs a step");
+            return;
+        }
+        if groups.len() > 2 {
+            self.err(span, "`enumconf` takes a step and an optional segment");
+            return;
+        }
+        if let Some(n) = self.eval_all(groups[0], span) {
+            self.enum_step = n;
+        }
+    }
+
     fn directive_set(&mut self, name: &str, rest: &[Token], span: Span) {
         // A `.`-local `set` inside a macro expansion binds in the CALLER's scope,
         // not the expansion's, and macro nesting is transparent to it
@@ -6579,6 +6711,9 @@ fn is_op_keyword(s: &str) -> bool {
             | "restore"
             | "padding"
             | "supmode"
+            | "enum"
+            | "nextenum"
+            | "enumconf"
             | "db"
             | "dw"
             | "dc.b"
