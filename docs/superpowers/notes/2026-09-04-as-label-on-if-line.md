@@ -152,6 +152,50 @@ identical source text.
 2. **The indented colon-less directive head** (above): asl refuses the line,
    sigil executes it. Byte-identical on the probe by luck, not by agreement.
 
+## The gates, and the proof they are not vacuous
+
+Red-first, on the committed baseline `709bffeb` with the new test file as the
+only working-tree change (`git diff --stat HEAD` named that file and nothing
+else): **5 failed, 4 passed.** The four that already passed are the shapes AS
+binds NOTHING on, so red-before-fix cannot speak for them — they are what stops
+the fix from over-binding, and each was proven by mutating the landed fix and
+watching it go red. Each mutation was shown applied with `git diff -U1`, then
+restored with `git checkout HEAD --` from the committed baseline:
+
+| mutation (one line unless noted) | tests that went red |
+|---|---|
+| add `bind_head_label` to `exec`'s `macro` arm | `macro_still_consumes_the_name_in_its_label_field` |
+| bind the `endif` unconditionally at the end of `exec_if` | `a_line_closing_a_skipped_arm_binds_nothing`, `the_line_closing_a_taken_arm_binds_its_label` |
+| bind nested heads at SCAN time (3 hunks) + bind `exec_rept`'s `endm` | `a_block_head_in_a_skipped_region_binds_nothing`, `a_label_on_endm_is_not_bound` |
+
+All nine green again after the restore, on a clean tree.
+
+## Suite
+
+`scripts/landing-run.sh --aeon /home/volence/sonic_hacks/.aeon-as-fold
+--baseline 4375`, log
+`landing-20260904T052106Z.log`, tree stamped
+`…/worktrees/agent-a9d0aa550234932be @ 35a679df (worktree-agent-a9d0aa550234932be, clean)`:
+
+```
+  CARGO_EXIT      0
+  suites          379
+  passed          4375     failed 0     ignored 2     skip lines 0
+  RESULT          GREEN
+```
+
+Coarse tripwire: `git grep -c '#[test]' HEAD -- '*.rs'` sums to 4376 against
+4375+0+2 = 4377 observed. A difference of one is bookkeeping, not a different
+tree.
+
+**The first run of this suite went red on one test, and it was self-inflicted:**
+`version_reports_the_head_of_the_tree_it_was_built_from` compares the binary's
+stamped revision against `git rev-parse HEAD`, and the docs commit landed while
+the suite was in flight. The test's own message names that case and says to
+re-run to distinguish it from a build.rs trigger fault; the re-run above, with
+HEAD held still, is green. Recorded because "one red test, ignore it, it's
+timing" is exactly what a real stale-stamp defect would also look like.
+
 ## Measurements
 
 **Sonic 1 corpus** (`s1disasm` `f6ece657`, the live checkout: two modified
