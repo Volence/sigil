@@ -266,3 +266,80 @@ control tree's first derive died on `no module engine.compression_vectors` plus 
 `/home/volence/sonic_hacks/.aeon-attest-201` (`4f5ad5a1`) are provisioned and kept. The
 control tree carried a DOCTORED `map.toml` and was removed rather than left where a later
 run could resolve to it.
+
+## The freeze cannot be re-taken against aeon master, and the reason is structural
+
+The re-freeze this branch was asked for — regenerate the goldens against aeon's current
+master `88547edacb9ef8a2f94fe321668ac0c62cb65dda` — is not merely inadvisable. It cannot
+run. `refreeze --freeze` step 1 is `golden/capture_goldens.sh`, which deletes each target
+and rebuilds it with `./build.sh <game>` inside `AEON_DIR`. That build refuses:
+
+```
+error: native build (sonic4 plain): [map.undeclared-island] ROM section at 0xB8000 is an
+ANCHOR_GAP-inferred island but no `[[anchor]] at = 0xB8000` is declared — add it to the
+placement map
+```
+
+**The mechanism.** `native::load_frozen_table` (`crates/sigil-harness/src/native.rs:247`)
+reads `golden/offcanonical_sizes/<shape>.txt` through a `CARGO_MANIFEST_DIR` path baked in
+at compile time, and `sonic4_profile` feeds it to the profile as `frozen_sizes`
+(`native.rs:716`). `sigil-cli` depends on `sigil-harness`, so those rows travel INSIDE the
+assembler binary. This branch's tables carry `Dac_Temp_Blip 0xa8000` and
+`SoundTablesZ80_Head 0xb8000`; aeon master's `games/sonic4/map.toml` still declares
+`dac_banks at = 0x90000` and `sound_bank at = 0xA0000`. The placement and the validating
+map disagree, and the map lint says so.
+
+This is the paired landing aeon's own map.toml prescribes, quoted from it verbatim: "the
+remedy is to move BOTH anchors per the rule and refreeze sigil's frozen tables (a paired
+aeon+sigil landing; the frozen tables are the placement authority, these anchors validate
+them)."
+
+**The controlled A/B, because a failing build alone does not name its cause.** One aeon
+tree at `88547eda`, clean, detached, in the state the first run left it; two assemblers;
+consecutive runs:
+
+| assembler | md5 | `./build.sh` (sonic4 plain) |
+|---|---|---|
+| sigil master `1d33db75` | `ce7f5485513acb0b2604ae096e30e704` | exit 0 |
+| this branch `72a7a355` | `a1998d2f2bd813b20d74aae6c1e873e0` | exit 1, the lint above |
+
+Master's binary carries master's frozen tables (`0x90000` / `0xA0000`), which agree with
+aeon master's anchors. The binary is the only variable, and the direction is the one the
+mechanism predicts.
+
+**`aeon_rev 5875e60e` is not stale and was never on an abandoned line.** Measured in
+aeon: `git rev-list --count 88547eda..5875e60e` is **4**, and the four are
+`265bf6fa` `446a27d9` `032b4cff` `5875e60e` — `446a27d9` being "relayout(rom): the banks
+move to 0xA8000/0xB8000". They sit on `origin/parcel/rom-relayout-more-room`, pushed and
+alive. `5875e60e` is aeon master plus the unlanded aeon half of THIS parcel. It is the
+only aeon revision in which this branch's goldens can be reproduced at all.
+
+## Which goldens reach `effects_scenes.emp`
+
+Asked because aeon's `games/sonic4/data/generated/ojz/act1/effects_scenes.emp` gained
+126/-9 lines across `5875e60e..88547eda`. Measured here, both halves of the question:
+
+**Its symbols ARE enumerated, by name, in the pin manifest.** `repin.toml` curates five
+labels generated into that file — `EditorSceneBinding_OJZ_Act1_Sec4`,
+`EditorRaster_OJZ_Act1_{authored_probe,ojz_sec5_showcase,ojz_sec3_shimmer}` and
+`EditorCycle_OJZ_Act1_ojz_sec3_shimmer` — each emitted into `pins.rs` as a per-shape VMA
+and consumed by `act_descriptor_port`. So this is a curated five, not a wholesale
+enumeration: the `offcanonical_sizes/*.txt` boundary tables name none of them, and the
+file is additionally a named member of `ACT_DESCRIPTOR_ASSERT_FILES`
+(`test_support.rs:1732`), whose link asserts the act-descriptor oracles decide.
+
+**Its bytes are pinned transitively.** The file is a build input, so every ROM golden
+holds its emitted output. The `pub data EditorReels_*: [i8; …]` that arrives at
+`88547eda` therefore is NOT a listing-only change — `pub equ` is the zero-byte half of
+that commit, `pub data` is not.
+
+**None of the new symbols is known to this repository.** `git grep` over the whole tree
+for `EditorReels`, `EditorReelBindings`, `reel_rates_ok` and `ojz_act1_sec_patched`
+returns zero hits.
+
+**The prediction that follows, recorded before it can be checked.** Every previous time a
+new cross-seam `Editor*` label was generated into this file, the standalone
+`act_descriptor_port` scope needed a new `[[symbol]]` row or its link assert failed with
+"references symbol(s) … not defined in this link" — three instances, each documented in
+`repin.toml` beside its row. `EditorReelBindings_*` at `88547eda` carries two `extern()`s,
+so a freeze against any tree containing it should be expected to need a fourth.
