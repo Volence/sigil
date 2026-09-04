@@ -463,6 +463,27 @@ Pair it with an explicit invitation wherever the brief carries a design position
 **Its honest limit:** a self-report line cannot surface what the agent never thought to question. It
 catches conflicts the agent noticed and would otherwise have swallowed — a real but bounded win.
 
+**⚠ TELL EVERY AGENT WHAT HAPPENS TO ITS BRANCH AT THE LANDING, because this lane deletes it.**
+Briefs here tell an agent to commit early so a death costs only the run — teaching it that its
+commits are precious — and then the controller merges, pushes and **deletes the branch and worktree
+those commits hung from**, with nothing saying that is the normal ending. One agent spent a full
+recovery cycle on it: restored the ref, rebuilt, re-ran, and committed a note about a reaping that
+never happened. **We taught the fear and not the ending.** Carry this until it lands in the shared
+dispatch block (dominion `50bb5e9`, invariant 12):
+
+> *When your parcel lands, the controller merges your branch to master and then DELETES the branch
+> and its worktree. A missing branch after a landing is the expected end state, not lost work.
+> **Record your tip SHA while a ref still exists** — after the tidy it is the only handle. Then
+> `git merge-base --is-ancestor <tip> master`: **ancestor PROVES it landed; non-ancestor proves
+> NOTHING**, because a squash or rebase merge rewrites the commits and the tip stops being an
+> ancestor of anything while the change sits in master. On a non-ancestor, confirm by content.*
+
+**The asymmetry is dominion's correction to this rule and it matters here specifically:** this
+controller uses real merges, so the positive check works — but the day a lane moves to squash or
+rebase merges, the check silently stops detecting its own instance and the caveat becomes the whole
+rule. It is this file's banked shape met from the other side: **a vanished branch whose commits
+survive unreferenced is the signature of a MERGE**, exactly as an empty commit range is.
+
 *(Origin, and the n=3 caveat in full: `docs/OVERSEER-LOG.md`, 2026-09-03 cut, original lines
 466-488.)*
 ## Quality bars
@@ -1038,9 +1059,6 @@ empyrean `17d0776`, `docs/OVERSEER.md:46`, 2026-09-03T04:24:58Z, naming this lan
 project as the overnight fallback *"as long as other agents aren't waiting on them for
 anything"* — the condition re-derived here over `/api/suite`, 0 queue rows blocked on sigil.
 
-**LANDED at master `7538fced`:** every AS diagnostic carries `file(line)`. 237 before, 237
-after, locations 0 → 237. Note: `docs/superpowers/notes/2026-09-03-as-source-map.md`.
-
 **RULED HERE — the two diagnostic dialects STAY, and the split is deliberate.** `.emp` renders
 `path:line:col:`; the AS surface renders `file(line):`. This is a divergence inside one binary
 and it was flagged rather than committed silently. Ruled under the autonomy directive's
@@ -1086,14 +1104,12 @@ corpus repo at `s2disasm/build_tools/Linux-x86_64/asl` (with `as.msg` beside it,
 name-composition parcel used `asl -L` for every expected value in every new test, which is why
 that delivery could quote listings instead of asserting semantics. **Use it.**
 
-**How the false claim was produced, because the mechanism is the reusable part.** `git grep asl`
-was run **in the sigil repo**, where it returns the 68000 shift mnemonic — hits in five crates,
-every one `"asl" => Asl` beside `"asr"`/`"lsl"`/`"lsr"` — so the honest local conclusion was *no
-oracle in THIS tree*. That then hardened into *"an asl oracle this workspace does not have"*, a
-claim about `~/sonic_hacks/` entire, and sat in the boot read as fact. It is this file's own
-banked rule aimed at itself: **a failing lookup tells you about the tree you ran it in, never
-about the object** — and the oracle was one directory over, inside the very corpus the project
-is about. An absence leaves nothing to be suspicious of, which is why it survived four parcels.
+**The reusable mechanism, the episode in the log:** the false claim came from running `git grep asl`
+**in the sigil repo**, where it returns the 68000 shift mnemonic — so the honest local conclusion was
+*no oracle in THIS tree*, which then hardened into a claim about the workspace entire. **A failing
+lookup tells you about the tree you ran it in, never about the object**, and an absence leaves
+nothing to be suspicious of, which is why it survived four parcels. *(Full episode:
+`docs/OVERSEER-LOG.md`, 2026-09-04 cut.)*
 
 **⚠ THE CASE FOLD IS IN AEON'S SHIPPING BUILD PATH — fold DIRECTIVES AND MNEMONICS ONLY, NEVER
 SYMBOLS.** `sigil-frontend-as` is not a compatibility side-car: aeon's `build.sh` routes the
@@ -1166,60 +1182,44 @@ consequential half of it had no diagnostics at all.
   figure here was read at boot, believed, and written into a dispatch brief as a fact about the
   tree, telling an agent a pre-existing red existed when none did. **Derive the suite figure when
   you need it; never quote one from this document.**
-### REPIN-TESTS-HINT-UNDERLISTED — a hint nothing can contradict, 190 of 412
+### REPIN-TESTS-HINT-UNDERLISTED — a hint nothing can contradict
 
-`repin.toml`'s per-symbol `tests = [...]` feeds one printed rerun hint after a pin drifts
-(`repin.rs:167-186`) and nothing else. It gates nothing, so an incomplete list cannot fail.
-**190 of 412 rows omit at least one consuming test binary** — upper bound; mechanism and the
-`DMA_Overflow_Count` instance are source-confirmed, the count is a name-anywhere grep and needs
-narrowing to actual `addr_labels` rows before it is quoted as fact.
+`repin.toml`'s per-symbol `tests = [...]` feeds one printed rerun hint and nothing else. It gates
+nothing, so an incomplete list cannot fail, and a large share of rows omit at least one consuming
+test binary. **The fix is not editing those rows by hand** — that is a population to maintain whose
+failure mode is "green because nobody maintained it", which this file rejects twice elsewhere.
+Prefer deriving the list or gating it: the consuming set is mechanically discoverable, so the honest
+shape is a check that the declared list matches the derived one, or dropping the field for a derived
+hint. The count is a name-anywhere grep and needs narrowing before it is quoted as fact.
 
-**The fix is not editing 190 rows by hand** — that is a population to maintain whose failure
-mode is "green because nobody maintained it", which this file rejects twice elsewhere. Prefer
-deriving the list, or gating it: the consuming set is mechanically discoverable (which tests
-lower the module / carry the label), so the honest shape is a check that the declared list
-matches the derived one, or dropping the field for a derived hint. Full detail and the two
-method findings are in `docs/OVERSEER-LOG.md` under the dated entry that first recorded this row —
-the phrase here used to read *"the dated section above"*, whose antecedent had already moved out of
-this file before the 2026-09-03 cut.
-
+*(The measurement, the mechanism, its instance and the two method findings: `docs/OVERSEER-LOG.md`,
+2026-09-04 cut, original lines 1186-1202.)*
 ### DPLC-ENTRY-INSTRUMENT REPIN — an ask that must outlive both sessions
 
-`parcel/dplc-entry-instrument` (parked on aeon, 621 insertions across `dplc.emp`, `ram.emp`,
-`dma_queue.emp`, `vblank.emp`) is the only live byte-mover on that lane and is the CANDIDATE
-owner of the +$60-shaped delta above — flagged as candidate, explicitly **not** attribution, by
-the session that flagged it. When it moves:
+`parcel/dplc-entry-instrument` is parked on the aeon lane and is the CANDIDATE owner of a
+`+$60`-shaped delta — flagged as candidate, explicitly **not** attribution, by the session that
+flagged it. If it moves: four cross-seam symbols need the three-site treatment (`repin.toml`,
+`pins.rs`, addr_labels) with **full** `tests` lists; `game_loop_port` and `load_art_port`
+additionally face region byte gates, DEBUG shape only, because the parcel grows `VInt_Level`
+itself — a byte-gate re-prove, not a table row; and the plain-shape falsifier runs FIRST, since it
+is one command and it indicts the parcel or clears it. Written down rather than left in a thread
+because both sessions that held it were rotated the same night.
 
-- four cross-seam symbols need the three-site treatment (`repin.toml`, `pins.rs`, addr_labels)
-  documented above, with **full** `tests` lists: `DMA_Split_Reject_Count` →
-  `dma_queue_port, dplc_port, bg_anim_port`; each `DMA_Peak_*` → `vblank_port, game_loop_port,
-  load_art_port`;
-- `game_loop_port` and `load_art_port` additionally face region byte gates, DEBUG shape only,
-  because the parcel grows `VInt_Level` itself — a byte-gate re-prove, not a table row;
-- run the plain-shape falsifier FIRST; it is one command and it indicts the parcel or clears it.
+*(The symbol names and their per-test mappings: `docs/OVERSEER-LOG.md`, 2026-09-04 cut, original
+lines 1203-1220.)*
+### PROVENANCE-REV-REACHABILITY — LANDED
 
-Written here rather than left in a thread because both sessions that held it were rotated the
-same night.
+`sigil_harness::rev_reachability` judges every `aeon_rev` / `strict.*_rev` against its own remote
+branch with `git ls-remote` **at measurement time**, never a tracking ref. **REPORTED, not GATED —
+a ruling, not an oversight:** an exception list is a population to maintain whose failure mode is
+"green because nobody maintained it", and a pinned ratchet goes red during the normal ritual, so
+the teeth are at the WRITE site. Chain 181's `strict.sigil_rev` is DIVERGENT and is **not** being
+repaired — re-attesting would record a different tree's run under 181's name; it stands and the
+report names it. For the aeon lane: **push the freeze commit BEFORE `--attest`**, since a revision
+already in `origin/master` cannot be orphaned by a later rebase.
 
-### PROVENANCE-REV-REACHABILITY — LANDED. The ledger now judges the revisions it records
-
-*(Full landed record — the four measured reachability states and their remedies, the
-design argument, the chain-181 instance — verbatim in `docs/OVERSEER-LOG.md`. Live:)*
-
-- `sigil_harness::rev_reachability` judges every `aeon_rev` / `strict.*_rev` against its own
-  remote branch with `git ls-remote` **at measurement time**, never a tracking ref.
-  `refreeze --reachability` exits 1 on an orphan or absent object, 2 on anything unmeasured;
-  `--check` prints the same walk non-fatally; `--attest` runs it over the two revisions it
-  is about to write.
-- **REPORTED, not GATED — a ruling, not an oversight.** An exception list is a population to
-  maintain whose failure mode is "green because nobody maintained it"; a pinned ratchet goes
-  red during the normal ritual. The teeth are at the WRITE site.
-- **Chain 181's `strict.sigil_rev` is DIVERGENT and is NOT being repaired** — re-attesting
-  would record a different tree's run under 181's name. It stands, and the report names it.
-- **For the aeon lane: push the freeze commit BEFORE `--attest`.** A revision already in
-  `origin/master` cannot be orphaned by a later rebase. `AHEAD OF REMOTE` is the honest
-  mid-ritual state; turning that warning into a refusal is their call.
-
+*(The four measured reachability states and their remedies, the design argument and the chain-181
+instance: `docs/OVERSEER-LOG.md`, 2026-09-04 cut, original lines 1221-1239.)*
 ### SIGIL-DECOUPLE — the owner ruled 2026-08-26, in this lane's session: follow aeon's plan
 
 Asked whether to adopt the shape aeon nominated, his answer was to follow it. **The
