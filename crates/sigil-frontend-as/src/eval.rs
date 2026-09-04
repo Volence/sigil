@@ -8877,6 +8877,131 @@ mod tests {
         assert_eq!(image(src), want);
     }
 
+    // ── AS layout alignment ──────────────────────────────────────────────
+    // Every expectation below is a value asl printed, against BOTH builds
+    // (vanilla Arnold and the flamewing fork, md5s in
+    // docs/superpowers/notes/2026-09-04-as-layout-alignment-spec.md). The
+    // probe names in the comments are that note's.
+
+    /// `align` advances the location counter and contributes NO image bytes.
+    /// asl's object file carries no record for the skipped address, so p2bin's
+    /// fill decides the gap byte — `-p=0x0` gives `11 00 22` and `-p=0xFF`
+    /// gives `11 ff 22` for the same `.p`. A trailing align therefore cannot
+    /// lengthen the image (probes `a1`, `a4`).
+    #[test]
+    fn trailing_align_contributes_no_image_bytes() {
+        let a1 = "        cpu 68000\n        padding off\n        org 0\n        dc.b $11\n        align 2\n";
+        assert_eq!(image(a1), vec![0x11], "align 2 at EOF must not emit a pad");
+        let a4 = "        cpu 68000\n        padding off\n        org 0\n        dc.b $11\n        align 4\n";
+        assert_eq!(image(a4), vec![0x11], "align 4 at EOF must not emit a pad");
+    }
+
+    /// The skipped addresses are still address space: `align` moves `$` even
+    /// though it writes nothing, so a following datum lands at the aligned
+    /// address and the gap replays as zeros in a flat image (probe `a2`).
+    #[test]
+    fn align_moves_the_counter_without_emitting() {
+        let a2 = "        cpu 68000\n        padding off\n        org 0\n        dc.b $11\n        align 2\n        dc.b $22\n";
+        assert_eq!(image(a2), vec![0x11, 0x00, 0x22]);
+        let m = run(a2, &Options::default()).expect("assemble");
+        assert_eq!(m.sections[0].vma_len(), 3);
+    }
+
+    /// The implicit even-pad fires on element size > 1 whether the item EMITS
+    /// or only RESERVES. `ds.w`/`ds.l` at an odd `$` pad exactly like `dc.w`
+    /// does — and always to an EVEN address, never to the element's own width:
+    /// `ds.l` at 1 lands on 2, not 4 (probes `c02`, `c10`, `c14`).
+    #[test]
+    fn word_sized_reservation_pads_to_even() {
+        let c02 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:    ds.w 1\n        dc.b $33\n";
+        let m = run(c02, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2, "ds.w at odd $ pads to even");
+        assert_eq!(image(c02).len(), 5);
+
+        let c10 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:    ds.l 1\n        dc.b $33\n";
+        let m = run(c10, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2, "ds.l at 1 pads to 2, NOT to 4");
+
+        let c14 = "        cpu 68000\n        org 0\n        dc.b $11,$22,$33\nLbl:    ds.l 1\n        dc.b $44\n";
+        let m = run(c14, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 4, "ds.l at 3 pads to the next even");
+    }
+
+    /// The pad is not label-driven — it fires with no label present at all
+    /// (probe `c11`) — and a byte-sized reservation never triggers it
+    /// (probe `c04`).
+    #[test]
+    fn reservation_pad_is_not_label_driven_and_skips_byte_units() {
+        let c11 = "        cpu 68000\n        org 0\n        dc.b $11\n        ds.w 1\n        dc.b $33\n";
+        assert_eq!(image(c11).len(), 5, "ds.w pads with no label in sight");
+
+        let c04 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n        ds.b 1\n        dc.b $33\n";
+        let m = run(c04, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "ds.b never pads");
+        assert_eq!(image(c04).len(), 3);
+    }
+
+    /// The whole implicit-pad rule is gated on `padding`. Under `padding off`
+    /// — Aeon's state — no reservation pads and no label moves (probe `e03`).
+    #[test]
+    fn reservation_pad_is_gated_on_padding_state() {
+        let e03 = "        cpu 68000\n        padding off\n        org 0\n        dc.b $11\nLbl:\n        ds.w 1\n        dc.b $33\n";
+        let m = run(e03, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "padding off suppresses the pad");
+        assert_eq!(image(e03).len(), 4);
+    }
+
+    /// A label ALONE on its line takes the address after the pad inserted by
+    /// the next PC-advancing line. asl's listing PC column shows the PRE-pad
+    /// address here and its symbol table shows the POST-pad one; the symbol
+    /// table is the truth (probes `c03`, `e07`).
+    #[test]
+    fn a_lone_label_takes_the_address_after_the_next_lines_pad() {
+        let c03 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n        ds.w 1\n        dc.b $33\n";
+        let m = run(c03, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2, "lone label defers across a ds.w pad");
+
+        // Not a `ds` phenomenon: `dc.w` reaches the same rule today.
+        let e07 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n        dc.w $3344\n";
+        let m = run(e07, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2, "lone label defers across a dc.w pad");
+    }
+
+    /// Only the LAST label of a run defers. Two labels on consecutive lines
+    /// pointing at the same place end up with DIFFERENT values (probes `c09`,
+    /// `e08`).
+    #[test]
+    fn only_the_last_label_of_a_run_absorbs_the_pad() {
+        let c09 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\nLb2:\n        ds.w 1\n        dc.b $33\n";
+        let m = run(c09, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "the earlier label keeps the unpadded address");
+        assert_eq!(label_vma(&m, "Lb2"), 2, "only the adjacent label defers");
+    }
+
+    /// A comment line is transparent to the deferral (probe `c13`), and at end
+    /// of file a lone label simply takes the current address (probe `c08`).
+    #[test]
+    fn the_deferral_crosses_comments_and_stops_at_end_of_file() {
+        let c13 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n; just a comment\n        ds.w 1\n        dc.b $33\n";
+        let m = run(c13, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2, "a comment does not end the deferral");
+
+        let c08 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n";
+        let m = run(c08, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "nothing follows, so nothing to defer to");
+        assert_eq!(image(c08), vec![0x11]);
+    }
+
+    /// `align` never back-propagates to a lone label above it. The deferral
+    /// belongs to the implicit even-pad alone — a lone label before `align 4`
+    /// at address 1 stays at 1, it does not become 4 (probes `c07`, `d07`).
+    #[test]
+    fn an_explicit_align_does_not_back_propagate_to_a_lone_label() {
+        let c07 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n        align 4\n        dc.b $33\n";
+        let m = run(c07, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "align is not an implicit pad");
+    }
+
     #[test]
     fn org_backpatch_seeks_in_section_and_overwrites() {
         // The `parallax_section_end` shape: capture positions via `:=`/`*`
