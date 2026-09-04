@@ -158,7 +158,9 @@ absolute-width selection, `MOVEM` `-(An)` mask reversal, and 2-wide branches.
   `SIGIL_ORACLE_ISA_SHARING.md`. Read them at a committed revision
   (`git -C ../empyrean show origin/main:docs/<file>`) — that sibling is a live
   working tree.
-- `docs/OVERSEER.md` — how a session runs this repo: quality bars, the landing-lane
-  division, the worktree quirks, and the queue.
+- `docs/OVERSEER.md` — what a session must know to act at boot: scope, the landing-lane
+  division, the standing owner rulings, and the queue.
+- `docs/OVERSEER-REFERENCE.md` — the rules read at a moment rather than at boot: dispatch
+  practice, the quality bars, the source-gate lane, and the worktree quirks.
 - Per-feature design + implementation plans, packets and notes are under
   `docs/superpowers/`.

@@ -1094,7 +1094,8 @@ pub fn checkout_var_is_set() -> bool {
 /// the `skip:` lines a reader already scans.
 ///
 /// **AND A BARE RUN NOW STOPS.** `d-18`, ruled `refuse` by the hub on 2026-09-02 under the
-/// owner's widened delegation (`docs/OVERSEER.md`, R4; empyrean `4e8e865b`), against this
+/// owner's widened delegation (`docs/OVERSEER-REFERENCE.md`, §d-18; R4 is the rule number on
+/// the card, empyrean `4e8e865b`, not a section of that document), against this
 /// lane's own recommendation of say-only. The hub's reason is the better one: *a run that
 /// prints how much it skipped still exits 0*, and a silent green is the class never
 /// dropped, because a green is trusted the moment it is in the run. The parcel-1
@@ -1170,8 +1171,9 @@ pub fn bare_run_refusal(context: &str, derived: Option<&ResolvedCheckout>) -> St
          tree — {AEON_DIR_VAR}=<aeon checkout> (scripts/provision-aeon-ref.sh), or \
          {SUITE_ROOT_VAR}=<the directory holding the suite> — or declare a partial run with \
          {ALLOW_PARTIAL_VAR}=1, in which case every reference-dependent row is left unmeasured \
-         and the run says how many. Ruled d-18 (docs/OVERSEER.md, 2026-09-02): a run that only \
-         PRINTS how much it did not measure still exits 0, and a green is trusted the moment it \
+         and the run says how many. Ruled d-18 (docs/OVERSEER-REFERENCE.md, 2026-09-02): a run \
+         that only PRINTS how much it did not measure still exits 0, and a green is trusted the \
+         moment it \
          is in the run."
     )
 }
