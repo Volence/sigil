@@ -6288,3 +6288,20 @@ From the dispatch-practice section, the branch-deletion episode detail:
 
 > One agent spent a full recovery cycle on it: restored the ref, rebuilt, re-ran, and committed a
 > note about a reaping that never happened.
+
+## 2026-09-04T09:22:19Z — BANNER-TREE-STATE-STALE landed (master e219bc58), and one finding the boot read could NOT take
+
+The banner fix is in and verified; the landing record is in `docs/lane-log.jsonl`.
+
+**A sharpening of the booked `landing-run.sh does not run clippy` note that BELONGS in the
+boot read and would not fit.** Hand-running the clippy bar is worse than that note says: at
+this landing the overseer hand-ran it and OMITTED `-D warnings`, so `exit 0` proved only zero
+ERRORS, not zero warnings — a vacuous green over the stated bar, caught only on re-read and
+re-run. The hand-running failure mode is not just forgetting the command; it is running a
+WEAKER form of it and reading the exit code as the bar.
+
+It is recorded here rather than in `OVERSEER.md` because that file has ~165 bytes of headroom
+and this note is ~220. Five closed narratives were moved out of it earlier today to bank two
+owner rulings. **The rules alone are now at the bound**, so BOOT-DOC-HEADROOM is no longer a
+prediction: a three-line safety finding was written, measured, and reverted for lack of room.
+That is the concrete cost of the open decision, and the next session inherits this hole.
