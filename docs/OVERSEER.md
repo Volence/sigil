@@ -1135,12 +1135,13 @@ both `game_root.asm`). So this parcel can move aeon bytes and must prove it did 
 are deliberately case-sensitive (`lib.rs:31`, *"Names are case-sensitive"*) and `.emp` shares
 its symbol namespace with those files — folding symbol case would collide the two.
 
-**BOOKED — `landing-run.sh` does not run clippy.** See the lane-log entry at `526ae99e`. Two
-lint errors stood on master and the wrapper printed `RESULT GREEN` over them, because the bar
-lists `clippy -D warnings exit 0` and the script contains no clippy invocation. Hand-running it
-is the same maintenance model that failed, so the fix is wiring it into the wrapper's own
-command span with its exit code in the verdict block — **and `--all-targets`**, since one of the
-two errors was reachable only through test targets.
+**CLOSED — `landing-run.sh` runs clippy**, as precondition (7) in its header: `--release
+--workspace --all-targets -- -D warnings` in its own command span, `CLIPPY_EXIT` and every lint
+site in the verdict block, a red bar makes `RESULT` not-green, nothing skips it (`--scoped`
+included). **A COUNT TAKEN UNDER `-D warnings` IS NOT THE POPULATION** — the first crate to fail
+aborts and cargo stops scheduling the rest, so the visible count is how far the build got. This
+one read 10, then 35 more, then 71 more: **116** sites in 7 files, all quoted asl listings whose
+tabs are evidence. Size such work with clippy run *without* `-D warnings`, where nothing aborts.
 
 **⚠ THE CORPUS DIAGNOSTIC COUNT IS THE PROJECT'S HEADLINE METRIC AND IT IS STRUCTURALLY BLIND
 TO THE DEFECT CLASS THIS PROJECT KEEPS FINDING** *(2026-09-03, earned by the `{INTLABEL}` parcel;

@@ -1,5 +1,14 @@
 //! AS's `enum` / `nextenum` / `enumconf` enumeration directives.
 //!
+//! WHY SEVERAL ITEMS BELOW CARRY `#[allow(clippy::tabs_in_doc_comments)]`. The
+//! `text` blocks are asl listings pasted verbatim, and asl separates its columns
+//! with TABS. Those tabs are the evidence: what these comments assert is what the
+//! reference assembler PRINTED, so respacing them into four spaces would quietly
+//! restate the claim about output asl never produced. The waiver is per-item and
+//! deliberately NOT a file-scoped `#![allow]`: a new test here that grows a tab by
+//! accident should still trip the lint and be looked at, which a file-wide allow
+//! would silently absorb.
+//!
 //! The model is one running counter and one running step: a member assigns the
 //! counter, then the counter advances by the step read AT THAT MOMENT. `enum`
 //! resets the counter to 0 before binding its members; `nextenum` continues from
@@ -54,6 +63,10 @@ fn refused(body: &str) -> bool {
 ///        9/       6 : 1314                	dc.b g,h
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn enum_restarts_and_nextenum_continues() {
     let got = image(
         "\tenum a=1,b,c\n\tdc.b a,b,c\n\
@@ -74,6 +87,10 @@ fn enum_restarts_and_nextenum_continues() {
 ///        5/       0 : 0001 02             	dc.b a,b,c
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn default_start_is_zero() {
     assert_eq!(image("\tenum a,b,c\n\tdc.b a,b,c\n"), vec![0x00, 0x01, 0x02]);
 }
@@ -87,6 +104,10 @@ fn default_start_is_zero() {
 ///        5/       0 : 0001                	dc.b q,r
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn bare_leading_nextenum_starts_at_zero_without_diagnostic() {
     assert!(!refused("\tnextenum q,r\n\tdc.b q,r\n"));
     assert_eq!(image("\tnextenum q,r\n\tdc.b q,r\n"), vec![0x00, 0x01]);
@@ -102,6 +123,10 @@ fn bare_leading_nextenum_starts_at_zero_without_diagnostic() {
 ///        6/       0 : 0506 0001           	dc.b a,b,c,d
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn enum_resets_the_counter() {
     assert_eq!(
         image("\tenum a=5,b\n\tenum c,d\n\tdc.b a,b,c,d\n"),
@@ -119,6 +144,10 @@ fn enum_resets_the_counter() {
 ///        6/       0 : 8894 A0             	dc.b a,b,c
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn enumconf_sets_the_step() {
     assert_eq!(
         image("\tenumconf $C\n\tenum a=$88,b,c\n\tdc.b a,b,c\n"),
@@ -136,6 +165,10 @@ fn enumconf_sets_the_step() {
 ///        8/       0 : 0508 0003 0609      	dc.b a,b,c,d,e,f
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn step_persists_across_enum() {
     assert_eq!(
         image("\tenumconf 3\n\tenum a=5,b\n\tenum c,d\n\tnextenum e,f\n\tdc.b a,b,c,d,e,f\n"),
@@ -156,6 +189,10 @@ fn step_persists_across_enum() {
 ///        6/       0 : 0505 05             	dc.b a,b,c
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn step_may_be_negative_or_zero() {
     assert_eq!(
         image("\tenumconf -1\n\tenum a=5,b,c\n\tdc.b a,b,c\n"),
@@ -181,6 +218,10 @@ fn step_may_be_negative_or_zero() {
 ///        5/       0 : 8081 8182 83        	dc.b a,b,c,d,e
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn explicit_member_value_moves_the_counter() {
     assert_eq!(
         image("\tenum a=$80,b,c=b,d,e\n\tdc.b a,b,c,d,e\n"),
@@ -204,6 +245,10 @@ fn explicit_member_value_moves_the_counter() {
 ///        8/       0 : 0004 0809           	dc.b a,b,c,d
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn enumconf_is_not_retroactive() {
     assert_eq!(
         image("\tenumconf 4\n\tenum a=0,b\n\tenumconf 1\n\tnextenum c,d\n\tdc.b a,b,c,d\n"),
@@ -220,6 +265,10 @@ fn enumconf_is_not_retroactive() {
 ///        5/       1 : =$7                  	enum z=7
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn member_resolves_above_its_own_enum_line() {
     assert_eq!(image("\tdc.b z\n\tenum z=7\n"), vec![0x07]);
 }

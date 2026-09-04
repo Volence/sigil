@@ -1,3 +1,16 @@
+// The `text` block in the module doc below is an asl listing pasted verbatim, and asl
+// separates its columns with TABS. Those tabs are the evidence: what that comment asserts
+// is what the reference assembler PRINTED, so respacing them into four spaces would
+// quietly restate the claim about output asl never produced.
+//
+// This one is an INNER attribute, unlike the per-item waivers in the sibling test files,
+// and the difference is forced rather than chosen: the listing lives in the crate-root
+// `//!` doc, and Rust has no narrower scope than the module for a lint fired there. The
+// blast radius is this single integration-test binary, whose only other doc lines are
+// prose - it is not a crate-wide allow over library code, which would be trading a
+// correct lint everywhere for one site.
+#![allow(clippy::tabs_in_doc_comments)]
+
 //! A macro call may not write a positional argument after a keyword one, and a
 //! keyword argument must name a parameter the macro declares.
 //!

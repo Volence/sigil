@@ -14,6 +14,15 @@
 //! and `PSGFrequencies` at `$729CE` (138 bytes). Those 330 bytes are the real
 //! gate; these tests are the unit-scale statement of the same thing, so a
 //! regression names itself instead of surfacing as a ROM diff.
+//!
+//! WHY SEVERAL ITEMS BELOW CARRY `#[allow(clippy::tabs_in_doc_comments)]`. The
+//! `text` blocks are asl listings pasted verbatim, and asl separates its columns
+//! with TABS. Those tabs are the evidence: what these comments assert is what the
+//! reference assembler PRINTED, so respacing them into four spaces would quietly
+//! restate the claim about output asl never produced. The waiver is per-item and
+//! deliberately NOT a file-scoped `#![allow]`: a new test here that grows a tab by
+//! accident should still trip the lint and be looked at, which a file-wide allow
+//! would silently absorb.
 
 use sigil_frontend_as::{assemble, Options};
 
@@ -124,6 +133,10 @@ fn psg_frequencies_match_asl_including_the_min_clamp() {
 /// wrong longs out of a program that assembles clean, which is why this is
 /// asserted rather than left to the ROM gate.
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only — see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn integer_division_stays_integer_inside_int() {
     assert_eq!(
         bytes("\tdc.l INT(-7/2),INT(1/3*3),INT(3/2*2)\n"),
@@ -149,6 +162,10 @@ fn integer_division_stays_integer_inside_int() {
 ///       11/      1C : 0000 0007           	dc.l INT(7)
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only — see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn int_floors_and_passes_integers_through() {
     assert_eq!(
         bytes("\tdc.l INT(3.7),INT(-3.7),INT(-3.2),INT(-3.0),INT(7)\n"),
@@ -174,6 +191,10 @@ fn int_floors_and_passes_integers_through() {
 ///       15/      28 : FFFF FFFD           	dc.l INT(-3.5+0.5)
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only — see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn round_idiom_matches_asl_at_the_halfway_points() {
     assert_eq!(
         bytes("\tdc.l INT(2.5+0.5),INT(-2.5+0.5),INT(-3.5+0.5)\n"),
@@ -240,6 +261,10 @@ fn a_float_in_an_integer_context_is_refused() {
 /// This is why the check is "the operand must REDUCE to an integer" rather than
 /// "no float token may appear": the blunt reading refuses a line asl accepts.
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only — see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn a_float_comparison_yields_an_integer_and_is_accepted() {
     assert_eq!(
         bytes("\tdc.l 3.5<4,INT(1.5<2),INT(2.5>2)\n"),
@@ -259,6 +284,10 @@ fn a_float_comparison_yields_an_integer_and_is_accepted() {
 ///       12/      14 : 0000 0005           	dc.l INT(fy*2)
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only — see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn a_symbol_may_hold_a_float() {
     assert_eq!(
         bytes("fx = 3.7\nfy equ 2.5\n\tdc.l INT(fx),INT(fx+1),INT(fy*2)\n"),
@@ -294,6 +323,10 @@ fn a_float_set_symbol_is_reassignable() {
 ///        8/      10 : 07                  	dc.b sc
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only — see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn reassigning_a_float_symbol_to_an_integer_clears_the_float() {
     assert_eq!(bytes("sc := 1.5\nsc := 7\n\tdc.b sc\n"), vec![0x07]);
 }
@@ -312,6 +345,10 @@ fn reassigning_a_float_symbol_to_an_integer_clears_the_float() {
 /// asl bytes: 03 00 00 03 00 00 00 03
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only — see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn int_works_at_every_dc_width() {
     assert_eq!(
         bytes("\tdc.b INT(3.7)\n\tdc.w INT(3.7)\n\tdc.l INT(3.7)\n"),
@@ -347,6 +384,10 @@ fn int_works_at_every_dc_width() {
 /// the `+$100` is folded by the integer path, exactly as
 /// `dc.w MakeFMFrequency(op)+octave*$800` needs.
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only — see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn int_with_an_integer_argument_pins_the_wiring_at_every_width() {
     assert_eq!(
         bytes("\tdc.b INT(7)\n\tdc.w INT(600)\n\tdc.l INT(-7/2)\n\tdc.w INT(1.5)+$100\n"),

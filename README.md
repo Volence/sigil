@@ -82,6 +82,13 @@ cargo build --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
+Both flags matter, and for different reasons. Clippy's lints are *warnings*, so a bare
+`cargo clippy` prints every finding and still exits `0` — `-D warnings` is what gives the
+command a verdict. `--all-targets` is what lets it see the test and bench targets, which
+is where most of this workspace's code lives. `scripts/landing-run.sh` runs this exact
+form as precondition (7), so a landing run cannot report green over a red lint bar; you do
+not need to remember it separately.
+
 The full suite runs in release, without fail-fast, against an Aeon reference tree:
 
 ```bash
