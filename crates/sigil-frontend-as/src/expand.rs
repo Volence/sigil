@@ -370,6 +370,14 @@ pub(crate) fn split_top_commas(toks: &[Token]) -> Vec<&[Token]> {
 /// Reaching that difference needs a bare (unbracketed) `<=`/`>=` in a macro
 /// argument; s1disasm, s2disasm and all four aeon shapes contain none, so the
 /// corner is unreached rather than handled.
+//
+// The `text` block above is asl's listing output pasted verbatim, and the tabs in it
+// are asl's own field separators. They are the evidence: the claim this comment makes
+// is about what the reference assembler PRINTED, and respacing them into four spaces
+// would silently restate that claim about a listing asl never produced. The lint is
+// correct in general and stays on everywhere else in the workspace; it is waived on
+// this item alone, because fidelity to a quoted listing outranks its rendering.
+#[allow(clippy::tabs_in_doc_comments)]
 pub(crate) fn keyword_eq_index(g: &[Token]) -> Option<usize> {
     let mut depth = 0i32;
     for (i, t) in g.iter().enumerate() {

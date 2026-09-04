@@ -1,5 +1,14 @@
 //! AS's `END` directive ENDS THE ASSEMBLY.
 //!
+//! WHY SEVERAL ITEMS BELOW CARRY `#[allow(clippy::tabs_in_doc_comments)]`. The
+//! `text` blocks are asl listings pasted verbatim, and asl separates its columns
+//! with TABS. Those tabs are the evidence: what these comments assert is what the
+//! reference assembler PRINTED, so respacing them into four spaces would quietly
+//! restate the claim about output asl never produced. The waiver is per-item and
+//! deliberately NOT a file-scoped `#![allow]`: a new test here that grows a tab by
+//! accident should still trip the lint and be looked at, which a file-wide allow
+//! would silently absorb.
+//!
 //! asl stops reading source at the `END` line. Everything after it — the rest of
 //! the file, the rest of an INCLUDING file, the remaining iterations of a loop
 //! `END` sits inside — is never assembled, and asl says nothing about it: the
@@ -58,6 +67,10 @@ fn image(root: &std::path::Path) -> Vec<u8> {
 /// trailing `dc.b $99` and `root.asm`'s `dc.b $44` after the `include`; a no-op
 /// `end` emits `11 22 33 99 44`.
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn end_in_an_included_file_stops_the_whole_unit() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/vectors/as_end_include/root.asm");

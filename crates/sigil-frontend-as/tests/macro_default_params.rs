@@ -1,5 +1,14 @@
 //! Macro parameters declared with a default value: `macro loc,port=(4).l`.
 //!
+//! WHY SEVERAL ITEMS BELOW CARRY `#[allow(clippy::tabs_in_doc_comments)]`. The
+//! `text` blocks are asl listings pasted verbatim, and asl separates its columns
+//! with TABS. Those tabs are the evidence: what these comments assert is what the
+//! reference assembler PRINTED, so respacing them into four spaces would quietly
+//! restate the claim about output asl never produced. The waiver is per-item and
+//! deliberately NOT a file-scoped `#![allow]`: a new test here that grows a tab by
+//! accident should still trip the lint and be looked at, which a file-wide allow
+//! would silently absorb.
+//!
 //! AS lets a parameter carry `NAME=text`, and substitutes that text wherever the
 //! call supplies nothing for the slot. `s1disasm/Macros.asm(11)` is the corpus's
 //! only declaration of one —
@@ -59,6 +68,10 @@ const LOCVRAM: &str = concat!(
 ///             6 : 0000 0004
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn an_omitted_argument_takes_the_default() {
     assert_eq!(
         image(&format!("{LOCVRAM}\tzqm\t$1234\n")),
@@ -74,6 +87,10 @@ fn an_omitted_argument_takes_the_default() {
 ///   10/       A : 203C 0000 1234              move.l  #$1234,d0
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn a_supplied_argument_overrides_the_default() {
     assert_eq!(
         image(&format!("{LOCVRAM}\tzqm\t$1234,d0\n")),
@@ -90,6 +107,10 @@ fn a_supplied_argument_overrides_the_default() {
 ///            16 : 0000 0004
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn a_keyword_call_still_defaults_the_slot_it_did_not_name() {
     assert_eq!(
         image(&format!("{LOCVRAM}\tzqm\tloc=$5678\n")),
@@ -106,6 +127,10 @@ fn a_keyword_call_still_defaults_the_slot_it_did_not_name() {
 ///            20 : 0000 0004
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn an_explicitly_empty_argument_takes_the_default() {
     assert_eq!(
         image(&format!("{LOCVRAM}\tzqm\t$1234,\n")),
@@ -122,6 +147,10 @@ fn an_explicitly_empty_argument_takes_the_default() {
 ///            46 : 4632 7C33 333E
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn an_empty_middle_slot_takes_the_default_and_the_later_slots_still_bind() {
     let src = concat!(
         "ac:\tmacro p1,p2=DEF2,p3\n",
@@ -141,6 +170,10 @@ fn an_empty_middle_slot_takes_the_default_and_the_later_slots_still_bind() {
 ///            5B : 7C39 393E
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn a_later_keyword_leaves_the_defaultless_slot_empty() {
     let src = concat!(
         "ac:\tmacro p1,p2=DEF2,p3\n",
@@ -162,6 +195,10 @@ fn a_later_keyword_leaves_the_defaultless_slot_empty() {
 ///   10/      16 : 5B31 315D                   dc.b "[11]"
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn argcount_and_allargs_do_not_see_a_default() {
     let src = concat!(
         "ac:\tmacro p1,p2=DEF2,p3\n",
@@ -195,6 +232,10 @@ fn argcount_and_allargs_do_not_see_a_default() {
 ///             F : 6C3E
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn identifiers_inside_a_default_are_not_parameters() {
     let src = concat!(
         "vdp_ctrl equ $12\n",
@@ -222,6 +263,10 @@ fn identifiers_inside_a_default_are_not_parameters() {
 ///            50 : 7C5A 5A3E
 /// ```
 #[test]
+// The tabs in the listing above are asl's own field separators, so they are part of
+// the evidence rather than formatting; respacing them would restate the claim about
+// output asl never produced. Waived here only - see the file's module doc.
+#[allow(clippy::tabs_in_doc_comments)]
 fn a_default_may_contain_a_parenthesised_comma() {
     let src = concat!(
         "b1:\tmacro q=(1,2),r=ZZ\n",
