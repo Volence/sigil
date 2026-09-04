@@ -257,8 +257,15 @@ fn as_seam_equs(debug: bool) -> Vec<Section> {
     // from the build that produced the very bytes this gate diffs against. Names already
     // carried above keep their pinned value, so nothing is redefined and no existing row
     // changes meaning. See `test_support::listing_symbols_with_prefix`.
+    //
+    // `EditorReel` covers both halves of the reels family — the per-scene
+    // `EditorReels_*` rate table and the `EditorReelBindings_*` array whose
+    // `extern()`s bind a scene to it. That array is emitted only under DEBUG, so
+    // it is the debug shape's link that references it; the sweep carries it in
+    // both because a supplied label the scope does not reference is inert while a
+    // missing one is a red gate.
     const GENERATED: &[&str] =
-        &["EditorRaster_", "EditorCycle_", "EditorSceneBinding_", "OJZ_Preset_Sec"];
+        &["EditorRaster_", "EditorCycle_", "EditorSceneBinding_", "EditorReel", "OJZ_Preset_Sec"];
     let mut labels: Vec<(String, u32, u32)> =
         LABELS.iter().map(|(n, p, d)| ((*n).to_string(), *p, *d)).collect();
     let seen: std::collections::HashSet<String> =
@@ -353,8 +360,26 @@ fn compile_real_file(
 /// The seven drift/invariant guards (Act_len, Sec_len, the two engine-limit
 /// mirrors, the grid-capacity/clamp facts folded at comptime don't reach
 /// link — only extern-bearing ones do) must be captured and PASS.
-fn assert_guards(resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
-    let diags = sigil_link::check_link_asserts(resolved, &SymbolTable::new(), link_asserts);
+fn assert_guards(debug: bool, resolved: &[Section], link_asserts: &[sigil_ir::LinkAssert]) {
+    // The `[layout.align]` congruence asserts an `align` directive mints in the
+    // GENERATED editor module. Their condition names the pad's own label —
+    // `__align$games.sonic4.ojz_effects_editor_act1$N` — which belongs to a
+    // section this standalone scope does not link, so the fold poisons and the
+    // assert reports an unresolved symbol rather than a failed invariant.
+    //
+    // It is supplied as a link STUB rather than through the AS equ seam beside
+    // the other cross-seam labels: that seam emits `name = $HEX`, and a name
+    // carrying `$` makes the AS lexer read a hex literal with no digits. The
+    // address is the pad's real one, read from the listing beside the reference
+    // ROM, so the congruence is genuinely evaluated here and not waved through.
+    let mut stubs = SymbolTable::new();
+    for (name, vma) in sigil_harness::test_support::listing_symbols_with_prefix(
+        debug,
+        &["__align$games.sonic4.ojz_effects_editor_act1$"],
+    ) {
+        stubs.define(&name, sigil_ir::SymbolValue::Int(i64::from(vma)));
+    }
+    let diags = sigil_link::check_link_asserts(resolved, &stubs, link_asserts);
     assert!(
         diags.iter().all(|d| d.level != sigil_span::Level::Error),
         "every link assert must PASS: {diags:?}"
@@ -389,7 +414,7 @@ fn gate(debug: bool, rom_name: &str, base: usize) {
     };
 
     let (resolved, linked, link_asserts) = compile_real_file(debug);
-    assert_guards(&resolved, &link_asserts);
+    assert_guards(debug, &resolved, &link_asserts);
 
     let expected = &refrom[base..base + SIZE];
     let section =

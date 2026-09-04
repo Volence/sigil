@@ -726,6 +726,17 @@ fn compile_player_common(
             if shape.debug { pins::CROSSOVER_TABLE.debug } else { pins::CROSSOVER_TABLE.plain },
         ),
     ];
+    // The act's TRUE pixel extents, which `Player_BoundsInit` publishes through
+    // absolute writes so a reader has the unsubtracted box the inset bounds hide.
+    // Work-RAM cells, so the family is SWEPT from the listing beside the reference
+    // ROM and filtered by ADDRESS: `Level_LoadArt` shares the prefix and is a ROM
+    // proc, excluded by where it lives rather than by a name list this scope would
+    // then have to maintain as the family grows.
+    let mut level_ram: Vec<(String, u32)> = Vec::new();
+    sigil_harness::test_support::extend_from_listing_ram(&mut level_ram, shape.debug, &["Level_"]);
+    for (name, vma) in level_ram {
+        groups.push(as_label_at(&name, vma));
+    }
     if shape.debug {
         // DEBUG-only: the BoundsInit never-ran assert.w expansion jsr/jmps these
         // (core_port/sprites_port precedent).
