@@ -1782,10 +1782,17 @@ test result: FAILED. 40 passed; 1 failed; 3 ignored; 0 measured; 0 filtered out;
     /// checked the baseline would go quietly vacuous if the anomaly ever left the file.
     #[test]
     fn the_live_chain_baseline_skips_the_failed_run_that_recorded_thirty() {
-        let src = std::fs::read_to_string(
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden/provenance.toml"),
+        // The tool's OWN root resolution, not a compile-time path. `refreeze` is a tool
+        // that resolves a root, so it may carry no baked path of its own — the rule
+        // `harness_root::the_compile_time_manifest_dir_is_only_ever_displayed` enforces,
+        // and which caught this test writing one.
+        let root = resolve_harness_root(
+            &std::env::current_dir().expect("a test process has a working directory"),
+            std::env::var_os(ROOT_OVERRIDE).as_deref(),
         )
-        .expect("the committed chain must be readable");
+        .expect("this test runs inside the harness tree it reads");
+        let src = std::fs::read_to_string(root.join("golden/provenance.toml"))
+            .expect("the committed chain must be readable");
         let chain = provenance::parse(&src).expect("the committed chain must parse");
 
         let upto = chain
