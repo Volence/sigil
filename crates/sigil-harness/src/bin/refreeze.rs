@@ -562,6 +562,29 @@ fn test_ran(log: &str, name: &str) -> bool {
     })
 }
 
+/// THE RATCHET'S BASELINE: the last recorded strict run **that PASSED**.
+///
+/// A FAILED RUN'S COUNTS ARE NOT A BASELINE, and the filter here is the whole of that
+/// rule. `strict_bodies` is how many strict-gated decision points a run REACHED, which
+/// is a property of the run and not of the population the tree declares: a suite that is
+/// failing reaches a different set of them, so the number is a measurement taken
+/// mid-failure. Keying the floor off one makes an artifact of the failure the standard
+/// every later run must clear — and because the chain is append-only, that floor is
+/// permanent and no honest later run can lower it.
+///
+/// The consequence is a check that refuses correct code forever, whose cheapest exit is
+/// `--retired-strict-gates` — a permanent ledger field asserting a retirement that did
+/// not happen. A rule whose remediation advice is a false statement is worse than no
+/// rule, so the outcome is consulted here rather than paid for there.
+///
+/// `runs` is every recorded strict run in chain order. `None` while no run has passed
+/// leaves the ratchet dormant, in the same self-disarming shape as the rest of this file.
+fn ratchet_baseline<'a>(runs: impl DoubleEndedIterator<Item = (&'a str, usize)>) -> Option<usize> {
+    runs.rev()
+        .find(|(outcome, _)| *outcome == provenance::OUTCOME_PASSED)
+        .map(|(_, bodies)| bodies)
+}
+
 /// THE MONOTONIC RATCHET, as a decision that can be exercised.
 ///
 /// The census is derived from source, so it moves WITH a deletion and cannot see one: an
@@ -582,8 +605,8 @@ fn test_ran(log: &str, name: &str) -> bool {
 /// by accident, not an edit to anything committed, and it makes the shrink a thing
 /// somebody SAID rather than a thing that quietly happened.
 ///
-/// `prev` is the last recorded `strict_bodies` in the chain, or `None` while the rule is
-/// unarmed. Returns the line to report, or the refusal.
+/// `prev` comes from [`ratchet_baseline`] — the last PASSED run's `strict_bodies`, or
+/// `None` while the rule is unarmed. Returns the line to report, or the refusal.
 fn strict_bodies_ratchet(
     prev: Option<usize>,
     now: usize,
@@ -605,7 +628,7 @@ fn strict_bodies_ratchet(
              strict run, so there is no previous count for anything to have fallen from."
         )),
         (Some(p), None) if now < p => Err(format!(
-            "strict_bodies FELL from {p} to {now} since the last recorded strict run. The \
+            "strict_bodies FELL from {p} to {now} since the last strict run that PASSED. The \
              census is green, which means the tree no longer DECLARES the missing gate(s) \
              either — a whole strict-gated test or file was removed, which no source-derived \
              census can see. That may be a deliberate retirement, but it is not something an \
@@ -951,14 +974,20 @@ fn do_attest(
         // THE MONOTONIC RATCHET, secondary and self-arming. The census cannot see a
         // whole strict-gated test being DELETED — that edit removes the expectation and
         // the gate together — so the only witness to it is a MEMORY of the previous
-        // population. The chain has one: the last `[entry.strict]` it recorded.
-        // Measured 2026-08-27: the live chain records ZERO strict runs, so this rule is
-        // not yet in force; it arms itself at the first attestation, in the same
+        // population. The chain has one: the last `[entry.strict]` that PASSED — see
+        // `ratchet_baseline` for why a failed run's counts are not a baseline.
+        // It arms itself at the first PASSING attestation, in the same
         // self-disarming shape as the two ratchets already in the tree. Reported as
         // `ratchet:` and NEVER as `skip:` — this lane's strict bar requires zero `skip:`
         // lines, and a rule reporting its own dormancy must not spend one.
         match strict_bodies_ratchet(
-            chain.entry.iter().rev().find_map(|e| e.strict.as_ref()).map(|p| p.strict_bodies),
+            ratchet_baseline(
+                chain
+                    .entry
+                    .iter()
+                    .filter_map(|e| e.strict.as_ref())
+                    .map(|p| (p.outcome.as_str(), p.strict_bodies)),
+            ),
             run.strict_bodies,
             retire,
         ) {
@@ -1719,6 +1748,74 @@ test result: FAILED. 40 passed; 1 failed; 3 ignored; 0 measured; 0 filtered out;
         // refusal, because a flag people pass every time is a flag that retires the rule.
         assert!(strict_bodies_ratchet(Some(29), 29, Some("why")).is_err());
         assert!(strict_bodies_ratchet(None, 29, Some("why")).is_err());
+    }
+
+    /// THE BASELINE IGNORES A FAILED RUN, and stays dormant until one passes.
+    ///
+    /// The pure half. The chain half is the test below, which uses the real anomaly.
+    #[test]
+    fn the_ratchet_baseline_is_the_last_run_that_passed() {
+        let b = |rows: &[(&str, usize)]| {
+            ratchet_baseline(rows.iter().map(|(o, n)| (*o, *n)).collect::<Vec<_>>().into_iter())
+        };
+
+        // The subject: a failed run recording a HIGHER number than the passed run before
+        // it must not become the floor.
+        assert_eq!(b(&[("passed", 29), ("failed", 30)]), Some(29));
+
+        // Nor a lower one — the filter is about the outcome, not the direction.
+        assert_eq!(b(&[("passed", 29), ("failed", 12)]), Some(29));
+
+        // The most recent PASSED run wins, not the first.
+        assert_eq!(b(&[("passed", 28), ("failed", 30), ("passed", 29)]), Some(29));
+
+        // Dormant while nothing has passed — the rule may not arm off a red run at all.
+        assert_eq!(b(&[("failed", 30)]), None);
+        assert_eq!(b(&[]), None);
+    }
+
+    /// THE COMMITTED ANOMALY, used as the fixture it is.
+    ///
+    /// The chain is append-only, so its prefix through `tails-jump-gate` is immutable and
+    /// this test cannot rot: that entry is a FAILED run recording 30 where all 27 recorded
+    /// runs before it recorded 29. Both halves are asserted, because a test that only
+    /// checked the baseline would go quietly vacuous if the anomaly ever left the file.
+    #[test]
+    fn the_live_chain_baseline_skips_the_failed_run_that_recorded_thirty() {
+        let src = std::fs::read_to_string(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden/provenance.toml"),
+        )
+        .expect("the committed chain must be readable");
+        let chain = provenance::parse(&src).expect("the committed chain must parse");
+
+        let upto = chain
+            .entry
+            .iter()
+            .position(|e| e.name == "tails-jump-gate")
+            .expect("`tails-jump-gate` is committed history and cannot be absent");
+        let rows: Vec<(&str, usize)> = chain.entry[..=upto]
+            .iter()
+            .filter_map(|e| e.strict.as_ref())
+            .map(|s| (s.outcome.as_str(), s.strict_bodies))
+            .collect();
+
+        // The premise, asserted rather than assumed: the last run in this prefix is the
+        // failed 30. If this ever fails, the fixture moved and the test below means
+        // nothing — which is exactly what it must say out loud.
+        assert_eq!(
+            rows.last().copied(),
+            Some(("failed", 30)),
+            "the prefix's last strict run must be the failed 30 this test is about"
+        );
+        assert!(
+            rows[..rows.len() - 1].iter().all(|&(_, n)| n == 29),
+            "every recorded run before it recorded 29: {rows:?}"
+        );
+
+        // And the fix: the baseline is the last PASSED run's 29, so a present-day run
+        // reaching 29 sites holds the ratchet instead of tripping it.
+        assert_eq!(ratchet_baseline(rows.into_iter()), Some(29));
+        assert!(strict_bodies_ratchet(Some(29), 29, None).is_ok());
     }
 
     fn witness(lines: &[&str]) -> tempfile::NamedTempFile {
