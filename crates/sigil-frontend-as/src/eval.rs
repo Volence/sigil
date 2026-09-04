@@ -3768,8 +3768,16 @@ impl Asm {
     /// — including the ones `eval_num` could evaluate but the integer folder
     /// handles with far more machinery (label references, deferral, the
     /// symbolic-equ export).
+    /// Deliberately `expand_calls` and then the typed evaluator, NOT the full
+    /// [`Self::expand_operand_builtins`] chain: `eval_num` recognizes
+    /// `int(...)`/`sin(...)` itself, and it reports NOTHING. Routing this probe
+    /// through the erroring expansion instead double-reports every failure, and
+    /// it was measured doing so — `s2.asm(87677)`'s
+    /// `.loop_counter = int(log(number))` (asl's `log` builtin, which sigil does
+    /// not have) went from 6 diagnostics to 12 across the S2 corpus, one pair per
+    /// call site: a speculative type test must not be able to raise a diagnostic.
     fn float_rhs(&mut self, rest: &[Token]) -> Option<f64> {
-        let expanded = self.expand_operand_builtins(rest);
+        let expanded = self.expand_calls(rest, 0);
         match self.eval_num(&expanded)? {
             Num::Float(f) => Some(f),
             Num::Int(_) => None,
