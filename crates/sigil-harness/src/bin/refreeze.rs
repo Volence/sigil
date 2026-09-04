@@ -108,8 +108,9 @@ fn fail(msg: impl AsRef<str>) -> ExitCode {
 /// MOVEMENT, so it is blind to this by construction: the wrong tree gets frozen and the
 /// record says nothing about it.
 ///
-/// This is not new policy. `docs/OVERSEER.md`'s landing lane already requires freezing from
-/// a clean checkout of a committed SHA; the rule was simply unenforceable. Every refusal
+/// This is not new policy. `docs/OVERSEER-REFERENCE.md` (*Worktree and environment quirks*)
+/// already requires freezing from a clean checkout of a committed SHA — a clean worktree of a
+/// committed aeon SHA, never the owner's live tree; the rule was simply unenforceable. Every refusal
 /// names the variable, the path, and what specifically was wrong.
 ///
 /// `--freeze` ONLY. `--check` is documented as "no aeon, no build" and must keep working
@@ -483,7 +484,8 @@ fn resolve_sigil_rev(root: &Path) -> Result<String, String> {
 /// The DECLARED test population: what the built binaries say they will run.
 ///
 /// The landing bar has always been "`passed + ignored` equals the declared count", and
-/// until now that comparison lived only in `docs/OVERSEER.md` as prose — a human ran a
+/// until now that comparison lived only in `docs/OVERSEER-REFERENCE.md` (*Quality bars*) as
+/// prose — a human ran a
 /// grep and compared by eye. Two overseers believed it enforced; nothing in the harness
 /// enforced it. A binary that silently does not run at all takes its whole population
 /// out of the totals, and the remaining suites still report `ok`: another smaller green,

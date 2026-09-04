@@ -1,7 +1,8 @@
 //! A BARE RUN STOPS. A DECLARED PARTIAL RUN SAYS HOW MUCH IT LEFT UNMEASURED.
 //!
 //! `d-18`, ruled `refuse` by the hub on 2026-09-02 under the owner's widened delegation
-//! (`docs/OVERSEER.md`, R4; empyrean `4e8e865b`). The card's own recommendation was
+//! (`docs/OVERSEER-REFERENCE.md`, §d-18; R4 is the rule number on the card, empyrean
+//! `4e8e865b`, not a section of that document). The card's own recommendation was
 //! say-only and the hub's reason for overruling it is the one this gate exists to keep
 //! true: **a run that prints how much it skipped still exits 0**, and a silent green is the
 //! class never dropped, because a green is trusted the moment it is in the run.
