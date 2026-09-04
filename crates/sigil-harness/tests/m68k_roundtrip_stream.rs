@@ -43,9 +43,37 @@ use std::collections::{BTreeMap, BTreeSet};
 /// quietly rot into a skip list.
 ///
 /// - `illegal`: the deliberate-trap word; nothing in the shipped games plants
-///   one. (Every other family, `tas`/`movep`/`divs`/`divu` included, IS
-///   encoded somewhere across the seven shapes.)
-const NOT_IN_STREAM: &[&str] = &["illegal"];
+///   one.
+///
+/// The seven below arrived together when the missing 68000 instruction lines
+/// were encoded for the Sonic 1 corpus (2026-09-03). Aeon is a different source
+/// tree and uses none of them — verified by grep over the reference tree at
+/// `4f5ad5a1`: the only textual hits are a COMMENT (`player_climb.emp:363`
+/// describing a `bchg` that is not written) and two `debugger.asm` equates
+/// naming the USP register in an exception-screen flag. Their coverage is the
+/// asl-minted golden vectors and the 65,536-word capstone sweep, both of which
+/// reach every legal form rather than whatever one game happens to compile.
+///
+/// - `bchg`: aeon's bit work is `bset`/`bclr`/`btst`, all three of which ARE
+///   captured; nothing toggles a bit.
+/// - `exg`: no register exchange anywhere in the engine or either game.
+/// - `roxl` / `roxr`: aeon shifts and rotates without the X bit
+///   (`asl`/`asr`/`lsl`/`lsr`/`rol`/`ror` are all captured).
+/// - `move-to-ccr`: aeon sets carry with `andi.b #$FE,ccr` / `ori.b #1,ccr`
+///   (14 sites, and both `andi-ccr` and `ori-ccr` ARE captured), never by
+///   moving a whole EA into CCR.
+/// - `move-to-usp` / `move-from-usp`: supervisor-mode-only, and aeon never
+///   leaves supervisor mode, so it has no user stack pointer to set.
+const NOT_IN_STREAM: &[&str] = &[
+    "illegal",
+    "bchg",
+    "exg",
+    "roxl",
+    "roxr",
+    "move-to-ccr",
+    "move-to-usp",
+    "move-from-usp",
+];
 
 #[test]
 fn every_emitted_m68k_instruction_roundtrips_in_every_shipped_shape() {

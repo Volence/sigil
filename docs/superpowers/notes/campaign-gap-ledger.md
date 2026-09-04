@@ -3706,3 +3706,34 @@ urgent.
 counts DISTINCT names, or the child's output is indented/prefixed by the parent before being
 embedded so a line-anchored grep cannot match it. The second is cheaper and keeps the child's
 assertions readable, which is the reason the embedding exists)
+
+### A label sharing its line with an `if` directive is never bound (2026-09-03)
+`sonic.asm(4121)` writes `Map_Ring:   if Revision=0` — a label in column 0 with an `if`
+as the rest of the line. asl binds it to the PC; sigil binds nothing, so every later
+reference is unresolved. Standalone repro (both oracles, committed at
+`docs/superpowers/notes/2026-09-03-isa-missing-encodings/label-on-if-line.asm`): asl exits
+0 and emits `02 00 01 00 00 00`, sigil answers `unresolved long expression`.
+Found because the ISA-coverage parcel un-masked it: `move.l a6,usp` now emits its two
+bytes, which changes which pass folds `dc.l Map_Ring+(id_Rings<<24)` in `_incObj/
+DebugMode.asm`'s `dbug` macro, and the expression stops taking the `keep_labels_symbolic`
+deferral branch. Eight S1 diagnostics, all one expression. It is worth stating that the
+gap was NOT visible as a diagnostic before — a deferral branch was answering for it, which
+is the same shape as a silent pass.
+— OPEN (kill: `Map_Ring:   if Revision=0` binds `Map_Ring` and S1's `unresolved long
+expression` class returns to its five `Special Stage Mappings` rows. The `label + directive`
+line shape is general — `if` is the instance the corpus has; check `else`/`endif`/`macro`/
+`rept` heads at the same touch rather than special-casing `if`)
+
+### The 68000 cycle table prices none of the five new instruction lines (2026-09-03)
+`bchg`, `roxl`/`roxr` and `exg` are now encodable and reachable from `.emp`, and
+`m68k_cycles::instr_cycles` answers `CycleCost::Unmodeled` for all of them (the function's
+final `_` arm). That is the safe direction — `cycle_budget` renders it `WalkCost::Unknown`
+and refuses rather than mis-pricing — so this is coverage, not a defect. The M68000UM
+Table 8-6/8-7 rows are a bounded piece of work; they were not written in the coverage
+parcel because a UM number with no second source to check it against is worse than a
+refusal that says so.
+— OPEN (kill: rows for `Bchg` beside the existing `Bset`/`Bclr` arms, `Roxl`/`Roxr` beside
+the shift arms, and `Exg`, each number taken from the UM and cross-checked against a second
+transcription the way the existing rows were against Exodus and oracle-next — the module
+header names both. `move to ccr` already prices through the `(Move, [src, Ccr])` arm and
+needs nothing)
