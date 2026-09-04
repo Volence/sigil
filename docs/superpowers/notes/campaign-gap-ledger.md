@@ -3719,10 +3719,17 @@ DebugMode.asm`'s `dbug` macro, and the expression stops taking the `keep_labels_
 deferral branch. Eight S1 diagnostics, all one expression. It is worth stating that the
 gap was NOT visible as a diagnostic before — a deferral branch was answering for it, which
 is the same shape as a silent pass.
-— OPEN (kill: `Map_Ring:   if Revision=0` binds `Map_Ring` and S1's `unresolved long
-expression` class returns to its five `Special Stage Mappings` rows. The `label + directive`
-line shape is general — `if` is the instance the corpus has; check `else`/`endif`/`macro`/
-`rept` heads at the same touch rather than special-casing `if`)
+— CLOSED 2026-09-04 (`crates/sigil-frontend-as/src/eval.rs`, `bind_head_label` at `exec`'s
+seven block-opener arms and at `exec_if`'s taken-arm terminator; nine tests in
+`crates/sigil-frontend-as/tests/label_on_directive_line.rs`; note
+`2026-09-04-as-label-on-if-line.md`). S1 318 → 305 diagnostics, and the `unresolved long
+expression` class went to ZERO — the kill condition above expected the five `Special Stage
+Mappings` rows to survive, and they did not, because both sites were the one cause. The
+shape WAS general and was fixed generally: `ifdef`/`ifndef`/`rept`/`irp`/`irpc`/`while`/
+`switch` heads and the `elseif`/`else`/`endif` that closes a taken arm. `macro`/`struct`/
+`function` consume the name instead of placing it (asl agrees), and `endm` binds nothing
+(asl agrees, and sigil already did). `case`/`elsecase`/`endcase` closers are left for F8,
+when sigil's `switch` grows AS's integer form.
 
 ### The 68000 cycle table prices none of the five new instruction lines (2026-09-03)
 `bchg`, `roxl`/`roxr` and `exg` are now encodable and reachable from `.emp`, and

@@ -1745,22 +1745,36 @@ impl Asm {
                 return;
             }
             match self.line_keyword(&lines[i]).as_deref() {
+                // A block OPENER may carry a label, and the label is a label:
+                // it binds at the PC before the directive runs. `exec_one` is
+                // the only path that used to bind one, and these arms bypass
+                // it, so each opener binds its own here. `macro`/`struct`/
+                // `function` are deliberately absent — those directives CONSUME
+                // the name in the label field as the definition's name rather
+                // than placing it (asl: `M: macro` leaves `M` out of the symbol
+                // table as a location).
                 Some("if") | Some("ifdef") | Some("ifndef") => {
+                    self.bind_head_label(&lines[i]);
                     i = self.exec_if(lines, i);
                 }
                 Some("rept") => {
+                    self.bind_head_label(&lines[i]);
                     i = self.exec_rept(lines, i);
                 }
                 Some("irp") => {
+                    self.bind_head_label(&lines[i]);
                     i = self.exec_irp(lines, i, IterKind::Groups);
                 }
                 Some("irpc") => {
+                    self.bind_head_label(&lines[i]);
                     i = self.exec_irp(lines, i, IterKind::Chars);
                 }
                 Some("while") => {
+                    self.bind_head_label(&lines[i]);
                     i = self.exec_while(lines, i);
                 }
                 Some("switch") => {
+                    self.bind_head_label(&lines[i]);
                     i = self.exec_switch(lines, i);
                 }
                 Some("struct") => {
@@ -2178,6 +2192,62 @@ impl Asm {
         self.dispatch_head(line).map(|(kw, _, _)| kw)
     }
 
+    /// The name in the LABEL field of a line whose head is a block directive,
+    /// or `None` where the line carries no label. A label is a label whatever
+    /// keyword follows it: asl binds it at the PC the line sits on, and the
+    /// value does not depend on the directive. For `if` in particular the
+    /// binding does not depend on the CONDITION either — asl 1.42 Beta Bld 212,
+    /// `-cpu 68000 -q -U -L`, the same source with `Rev` 0 then 1:
+    ///
+    /// ```text
+    ///        4/     100 : AA                  	dc.b $AA
+    ///        5/     101 : =>TRUE               Lab:	if Rev=0     ⇒  Lab : 101 C
+    ///
+    ///        4/     100 : AA                  	dc.b $AA
+    ///        5/     101 : =>FALSE              Lab:	if Rev=0     ⇒  Lab : 101 C
+    /// ```
+    ///
+    /// The colon-less spelling obeys AS's column rule, the same one `exec_one`
+    /// applies to an unrecognized head: a bare name is a label only at column
+    /// 0. Written indented, asl answers `#1200 unknown instruction` and does
+    /// not process the directive at all (`  L\tif 1=1` is followed by
+    /// `ELSEIF/ENDIF without IF`), so there is nothing to bind.
+    fn head_label(&self, line: &SrcLine) -> Option<String> {
+        let substituted = self.subst_frame_text(&line.text);
+        let text = substituted.as_deref().unwrap_or(&line.text);
+        let (toks, _) = lex_line_recover(text, self.state.cpu, line.source, line.base);
+        if toks.is_empty() {
+            return None;
+        }
+        if let Some(name) = parse_line_tokens(&toks).label_colon {
+            return Some(name);
+        }
+        // Colon-less: `head_of_tokens` reports the keyword's index within the
+        // line's tokens, so an index of 1 is exactly "token 0 is the label
+        // field". Spans are `line.base + column` (see `lex_line`), so column 0
+        // is `span.start == line.base`.
+        let (_, idx, body) = self.head_of_tokens(toks)?;
+        if idx != 1 || body[0].span.start != line.base {
+            return None;
+        }
+        match &body[0].tok {
+            Tok::Ident(s) => Some(s.clone()),
+            _ => None,
+        }
+    }
+
+    /// Bind the label field of a block-head line at the current PC, if it has
+    /// one. `define_label` is the same entry point `exec_one` uses, so such a
+    /// label is a relocatable section label and becomes the enclosing scope for
+    /// the `.local` names that follow it — asl agrees on both counts
+    /// (`L: if 1=1` then `.loc: dc.b $CC` lists ` L : 101 C` and
+    /// ` L.loc : 102 C`).
+    fn bind_head_label(&mut self, line: &SrcLine) {
+        if let Some(name) = self.head_label(line) {
+            self.define_label(&name);
+        }
+    }
+
     /// [`Self::line_kw_args`] for a head whose arguments are about to be
     /// EVALUATED. Structure scanning may read a head recovered from a partly
     /// lexed line and ignore the rest; evaluating one must not, because the
@@ -2298,6 +2368,35 @@ impl Asm {
             if take {
                 let body = &lines[head + 1..heads[w + 1]];
                 self.exec(body);
+                // The line that TERMINATES the taken arm — the next
+                // `elseif`/`else`, or the closing `endif` — is read while the
+                // assembler is still emitting, so its label field binds at the
+                // PC the arm ended on. Exactly one such line exists per `if`
+                // region, which is why this sits here and not in the head scan:
+                // a line closing an arm that was NOT taken is read inside a
+                // skipped region and binds nothing. asl, same source with the
+                // condition flipped:
+                //
+                // ```text
+                //    5/       1 : =>TRUE               	if 1=1
+                //    6/       1 : BB                  	dc.b $BB
+                //    7/       2 : [5]                  L:	endif      ⇒ L : 2
+                //
+                //    5/       1 : =>FALSE              	if 1=0
+                //    7/       1 : [5]                  L:	endif      ⇒ absent,
+                //                                      `#1: symbol undefined`
+                // ```
+                //
+                // Guarded on the keyword because `find_block_end` falls back to
+                // the last line of an UNTERMINATED region, which is a body line
+                // the arm never reached rather than a closer.
+                let closer = &lines[heads[w + 1]];
+                if matches!(
+                    self.line_keyword(closer).as_deref(),
+                    Some("elseif" | "else" | "endif")
+                ) {
+                    self.bind_head_label(&lines[heads[w + 1]]);
+                }
                 break;
             }
         }
