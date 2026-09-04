@@ -179,35 +179,66 @@ initially landed inside it and were reverted. Its literals have rotted far out o
 (`MDDBG_ERROR_HANDLER` reads `0x5E8F2` against a live `0xBF5D6`), which is the retirement
 working as declared rather than a defect to repair.
 
-## WHAT IS STILL RED, and why it is not this parcel
+## A PROPERTY OF ANY LARGE REFERENCE JUMP, not a fact about this parcel
 
-The strict landing run is `4356 passed / 21 failed / 2 ignored / 0 skip:` across 379
-suites, reconciling exactly (`4377 baseline + 0 new = 4377`). It started at 24 failures;
-the three baseline classes above accounted for the difference.
+**A freeze that moves the reference forward by many commits inherits that many commits'
+worth of port-gate catch-up, by construction.** It is worth stating as a rule, because the
+next person to move a reference this far will otherwise read a red suite as their own
+defect.
 
-**All 21 remaining (16 distinct names) are ONE class**: a port gate's standalone
-composition does not define a cross-seam symbol —
-`unresolved symbol \`X\` ... not defined in this link`. Eight symbols do it:
-`Effects_Motion_Any`, `DMA_Peak_Important`, `Canopy_ColW`, `Parallax_Roles_Swapped`,
-`Dbg_DMA_Straddle_All`, `BgAnim_Table_Ptr`, `OJZ_Preset_Sec6`,
-`EditorSceneBinding_OJZ_Act1_Sec8`.
+The mechanism is not subtle once named. A port gate lowers ONE module standalone, so every
+symbol that module reaches across a seam must be supplied from outside. Ordinary practice
+freezes often, so each freeze brings one or two new cross-seam refs and the repair is
+invisible. This freeze spanned 195 aeon commits and brought them all at once: the suite
+opened at **24 failures**, and only three of them were about the relayout.
 
-**They are content, not placement, and that is measured rather than argued.** At aeon
-`4f5ad5a1` those eight names appear in ONE file (`engine/ram.emp`); at `5875e60e` they
-appear across THIRTEEN, including every section that fails — `raster`, `bg_anim`,
-`parallax`, `plane_buffer`, `section`, `dma_queue`, `vblank`, `act_descriptor`. A layout
-change cannot introduce a symbol reference. The same suite was green against `4f5ad5a1`
-during the chain-201 attestation.
+They also arrive ONE AT A TIME. The standalone link reports the first unresolved symbol and
+stops, so each fix uncovers the next — `Dbg_DMA_Straddle_All`, then `_Frame`, then `_Peak`,
+then `DMA_Split_Reject_Count`. Reading that as bad luck is the trap; it is the same finding
+repeating, and the answer is to stop resolving symbols and start resolving FAMILIES.
 
-**Fixing them is a design call, not a mechanical edit, which is why it stops here.** Each
-symbol reaches a port gate through a table like `bg_anim_addr_labels`, whose every row
-reads a literal out of `pins.rs`. None of the eight has a pin, so closing this the obvious
-way means eight new `repin.toml` rows and eight new hand-maintained pins — and the tree is
-explicitly moving the other way: the retired test's own ignore reason calls literal pins
-"the pin-tax class the packing walk exists to kill". Resolving these from the shipped
-listing instead (`listing_symbol_addr`, which already serves other gates, and the listings
-do carry all eight — verified) may be the right shape. That is an owner/overseer call
-about pin tax, and it is a separate parcel.
+## What closed the 24, in three groups
+
+**Three were the freeze's own hand-typed baselines** — the `SoundLayout` literals,
+`ASSEMBLED_LEN`, `DEBUG_ASSEMBLED_LEN`, the `+0x32` debug slide, `SCENE_REGISTRY`, and
+`Ground_Move_Cap` — recorded above with their causes.
+
+**Two were real gate defects hiding behind a symbol error**, and neither was a threshold
+nudge. `ojz_run_b_port` lowered every section with `defines: vec![]`, so a module gating
+emission on `DEBUG` could not see it; unfixed it fails on the name, and had it resolved it
+would have built one shape's bytes and diffed them against the other shape's ROM window.
+The same gate declared content shape-invariant for every section, which `ojz_bg_anim` is
+not by design — `BGANIM_VIEW_EMIT` gates six arrays, so DEBUG carries a camera-motion view
+record worth exactly 92 bytes. That assert is now per-section and TIGHTER than it was
+(`<= declared` rather than `< 16`), with the number derived from the module.
+
+**The rest were cross-seam symbols**, and the owner ruled they resolve from the LISTING
+rather than from new pins. The grounds: `listing_symbol_addr` already served three port
+gates, so this extends a proven seam; a listing address is read from the artifact the
+reference build just produced, so it cannot rot and cannot disagree with the operand in the
+ROM it is diffed against; and the tree is explicitly moving away from literal pins, the
+retired baseline calling them "the pin-tax class the packing walk exists to kill". All were
+verified present in the listings BEFORE any edit.
+
+Where a family is generated or instrumentation-shaped, it is now SWEPT rather than listed —
+`EditorRaster_`/`EditorCycle_`/`EditorSceneBinding_`/`OJZ_Preset_Sec`, `Dbg_DMA_`/
+`DMA_Peak_`/`DMA_Split_`, `Canopy_`, `Cache_`, `Effects_`/`Raster_`/`Logic_`. That is what
+ends the treadmill: `act_descriptor_port` carried a pinned row per authored scene and its
+own comments record each one arriving as a red gate; the next scene now needs no edit at
+all.
+
+Two distinctions in the sweep are load-bearing rather than tidy. `extend_from_listing`
+skips names a scope already pins, so a sweep beside hand-written rows cannot redefine one.
+`extend_from_listing_ram` restricts to work RAM, because a family like `Canopy_*` names both
+the RAM cells a neighbour reads and the PROCS `section.emp` defines — `plane_buffer_port`
+carries BOTH spellings, needing the procs when it lowers alone and needing them excluded in
+the two-module flip. The discriminator is the address, not a name list, because a name list
+is the maintenance the sweep exists to remove.
+
+Three symbols are deliberately NOT swept. `Frame_Counter` and the two camera cells already
+have pins, so naming them adds no new literal. `VDP_HV_COUNTER` is a VDP HARDWARE address
+(`$C00008`) rather than a layout one — fixed by the console, so it cannot drift with the
+ROM, which is the very property the listing rule exists to protect.
 
 ## Booked, not fixed here
 
@@ -218,15 +249,12 @@ durable on the remote as a branch tip and was refused, so the freeze tree was
 hand-provisioned to the same steps. Deliberately not fixed in this parcel — off the
 critical path, and it should not be entangled with a freeze.
 
-**The workspace is still clippy-RED under `--all-targets`**, in a different file from the
-one that was fixed. `48313276` corrected four tabbed doc-comment lines in
-`crates/sigil-frontend-as/src/eval.rs`; the identical defect sits 35 times in
-`crates/sigil-frontend-as/tests/label_on_directive_line.rs`, added by the same parcel
-(`97f5368d`), and `--all-targets` lints tests. `cargo clippy --release --workspace
---all-targets -- -D warnings` exits 101. Left for that file's owner rather than absorbed
-into this parcel's diff — the fix is tabs to spaces in doc comments, nothing else. This is
-the fix-one-site-of-a-population shape: the lib was corrected and the target set was not
-enumerated.
+**Clippy was red in a second file and is now clean.** `48313276` corrected four tabbed
+doc-comment lines in `crates/sigil-frontend-as/src/eval.rs`; the identical defect sat 35
+times in that parcel's own TEST file, which `--all-targets` lints, so the workspace stayed
+red after the lib was fixed. Reported rather than absorbed into this diff, and closed by
+its owner in `472a36b8`. The shape is worth keeping: a defect fixed at one site of a
+population, where the population was never enumerated.
 
 **A bare `git worktree add --detach` of aeon is not enough** for the DEBUG shapes: the
 control tree's first derive died on `no module engine.compression_vectors` plus a run of
