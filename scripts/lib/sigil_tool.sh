@@ -104,6 +104,96 @@ sigil_tool_refuse() {
     exit 1
 }
 
+# ── the build directory, and why it has no shared default ────────────────────────
+# sigil_tool_ref_target <sigil-root>
+#
+# Echo the directory this run compiles into. One implementation, because every caller
+# that derives it separately derives it differently.
+#
+# THE PRECEDENCE, and there is no shared step in it:
+#   1. REF_TARGET — the explicit override, a caller stating an intent;
+#   2. CARGO_TARGET_DIR — a caller who has ALREADY chosen a build directory has
+#      chosen this one too; reaching past it to a fixed path is how two lanes end up
+#      writing one directory while each believes it owns it;
+#   3. <sigil-root>/.target-ref — derived from the invoking tree, so it is unique per
+#      worktree by construction and cannot be shared without being named.
+#
+# A SHARED DIRECTORY IS A CORRECTNESS FAULT, NOT AN UNTIDY ONE. Cargo's unit hash is
+# checkout-independent, so a second worktree writes `deps/<name>-<hash>` with its own
+# absolute CARGO_MANIFEST_DIR baked in; the first worktree then sees a matching
+# fingerprint, does not rebuild, and runs a binary compiled against another checkout's
+# paths. That surfaces as missing fixtures on files that are present and reads exactly
+# like golden divergence. `cargo clean` does not fix it — only a per-worktree directory
+# does. The predecessor default here was `<sigil-root>/../.sigil-ref-target`, one path
+# for every worktree of this repo, and it was measured holding a `sigil` reporting a
+# branch that had been deleted hours earlier beside rlibs from a different lane's tree.
+#
+# The two spellings of a checkout's own `target/` are refused rather than merely not
+# defaulted to, because they are the same artifact reached by a different route: that
+# directory is relinked deliberately by other lanes and pinned by hash by some of them.
+sigil_tool_ref_target() {
+    local root="$1" dir origin common main
+
+    if [ -n "${REF_TARGET:-}" ]; then
+        dir="$REF_TARGET"
+        origin="1: explicit REF_TARGET"
+    elif [ -n "${CARGO_TARGET_DIR:-}" ]; then
+        dir="$CARGO_TARGET_DIR"
+        origin="2: the caller's CARGO_TARGET_DIR"
+    else
+        dir="$root/.target-ref"
+        origin="3: this checkout's own .target-ref (neither REF_TARGET nor CARGO_TARGET_DIR is set)"
+    fi
+
+    dir="$(sigil_tool_abspath "$dir")"
+
+    # The main checkout, whose `target/` is the shared one. From a linked worktree
+    # `--git-common-dir` answers with the MAIN checkout's git dir, which is the fact a
+    # sibling derivation needs; from the main checkout it answers the same way.
+    common="$(cd "$root" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null)" || common=""
+    main=""
+    if [ -n "$common" ]; then
+        case "$common" in /*) ;; *) common="$root/$common" ;; esac
+        main="$(cd "$common/.." 2>/dev/null && pwd)" || main=""
+    fi
+
+    local forbidden
+    for forbidden in "$root/target" ${main:+"$main/target"}; do
+        [ "$dir" = "$(sigil_tool_abspath "$forbidden")" ] || continue
+        sigil_tool_refuse \
+            "the build directory resolves to $dir, which is a checkout's DEFAULT target/." \
+            "" \
+            "  resolved by  step $origin" \
+            "" \
+            "That directory is shared: other lanes relink it on purpose and some pin its" \
+            "binary by hash. Cargo's unit hash is checkout-independent, so a build there" \
+            "from a second worktree hands a later run artifacts compiled against a" \
+            "DIFFERENT checkout's absolute paths — missing fixtures on files that are" \
+            "present, which reads exactly like golden divergence, and which \`cargo clean\`" \
+            "does not fix." \
+            "" \
+            "Use a directory of this run's own: unset the variable above to get" \
+            "$root/.target-ref, or point REF_TARGET somewhere this tree alone writes."
+    done
+
+    printf 'ref-target: %s (step %s)\n' "$dir" "$origin" >&2
+    printf '%s\n' "$dir"
+}
+
+# Absolute form of a path that need not exist yet: its parent is resolved when it does,
+# so two spellings of one directory compare equal, and a not-yet-created leaf is kept.
+sigil_tool_abspath() {
+    local p="${1%/}" parent base
+    [ -n "$p" ] || { printf '%s\n' "$1"; return; }
+    parent="$(dirname "$p")"
+    base="$(basename "$p")"
+    if [ -d "$parent" ]; then
+        printf '%s/%s\n' "$(cd "$parent" && pwd)" "$base"
+    else
+        printf '%s\n' "$p"
+    fi
+}
+
 # sigil_tool_resolve <sigil-root> <ref-target>
 #
 # Sets SIGIL_BIN to a binary that has been proved to correspond to <sigil-root>, and
@@ -215,10 +305,27 @@ sigil_tool_resolve() {
 # ── executed directly: the gate on its own, so both halves stay cheap to prove ───
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     set -euo pipefail
+    # `--ref-target <root>` answers the build-directory half alone. It is the half a
+    # gate can run in milliseconds, and a precedence nobody can exercise without a
+    # cargo build is a precedence nobody re-proves.
+    if [ "${1:-}" = "--ref-target" ]; then
+        shift
+        [ $# -ge 1 ] || { echo "usage: sigil_tool.sh --ref-target <sigil-root>" >&2; exit 2; }
+        sigil_tool_ref_target "$1"
+        exit 0
+    fi
     if [ $# -lt 1 ]; then
-        echo "usage: sigil_tool.sh <sigil-root> [<ref-target>]" >&2
+        echo "usage: sigil_tool.sh <sigil-root> [<ref-target>] | --ref-target <sigil-root>" >&2
         exit 2
     fi
-    sigil_tool_resolve "$1" "${2:-$1/../.sigil-ref-target}"
+    # Assigned, not inlined into the argument: `sigil_tool_ref_target` refuses by
+    # exiting, and inside a command substitution that exits the SUBSHELL — as an
+    # argument default the refusal would print and the caller would carry on with an
+    # empty build directory. An assignment under `set -e` propagates it.
+    ref_target_arg="${2:-}"
+    if [ -z "$ref_target_arg" ]; then
+        ref_target_arg="$(sigil_tool_ref_target "$1")"
+    fi
+    sigil_tool_resolve "$1" "$ref_target_arg"
     echo "==> resolved: $SIGIL_BIN"
 fi

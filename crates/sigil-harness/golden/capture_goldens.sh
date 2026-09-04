@@ -28,8 +28,13 @@
 # every s4.bin-clobbering capture must precede that restore.
 #
 # Usage:
-#   SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \
+#   SIGIL_EMIT=<a build dir of this run's own>/release/emit_sound_blob \
+#   SIGIL_BUILD=<a build dir of this run's own>/release/sigil \
 #   AEON_DIR=/path/to/aeon ./capture_goldens.sh [--write]
+#     The assembler is NAMED, never guessed: SIGIL_BUILD names the binary, or
+#     CARGO_TARGET_DIR names the directory it was built into. Neither set is a refusal,
+#     because there is no path this script could pick unasked that it could name
+#     honestly in a provenance record.
 #     --write  freeze each fresh full file into this golden dir as a committed blob.
 #              REFUSED unless SIGIL_GOLDEN_WRITE says which kind of write this is; see
 #              THE WRITE GATE below. Without --write nothing is replaced: the script
@@ -133,8 +138,8 @@ ERROR: refusing an unjournalled golden write.
   THE JOURNALLED PATH runs this script for you, then the size tables, then the pins, then
   the provenance append — and records each step as it completes:
 
-    SIGIL_EMIT=<sigil>/target/release/emit_sound_blob \\
-    SIGIL_BUILD=<sigil>/target/release/sigil \\
+    SIGIL_EMIT=<a build dir of this run's own>/release/emit_sound_blob \\
+    SIGIL_BUILD=<a build dir of this run's own>/release/sigil \\
     AEON_DIR=<clean checkout of a committed aeon SHA> \\
       cargo run -p sigil-harness --bin refreeze -- \\
         --freeze <parcel-name> --ab <A/B-evidence-ref>
@@ -191,15 +196,43 @@ fi
 
 [[ -d "$AEON" ]] || { echo "ERROR: AEON_DIR not a dir: $AEON"; exit 1; }
 if [[ -z "${SIGIL_EMIT:-}" || ! -x "${SIGIL_EMIT:-}" ]]; then
-    echo "ERROR: set SIGIL_EMIT to <sigil>/target/release/emit_sound_blob (sound-on builds need it)."
+    echo "ERROR: set SIGIL_EMIT to <a build dir of this run's own>/release/emit_sound_blob (sound-on builds need it)."
     exit 1
 fi
 # The off-canonical Config-A/B shapes have no build.sh env path (post-flip build.sh
 # forwards only --game/--debug to sigil); they build through `sigil build --config-*`
 # directly. The canonical four still go through build.sh.
-# Honor CARGO_TARGET_DIR (a shared-target worktree build) — else the crate's own target.
-TARGET_DIR="${CARGO_TARGET_DIR:-$SIGIL_ROOT/target}"
-SIGIL_BUILD="${SIGIL_BUILD:-$TARGET_DIR/release/sigil}"
+# ── THE ASSEMBLER, NAMED OR REFUSED — never reached for in a shared directory ────────
+# This script CAPTURES THE GOLDENS. The binary chosen here is the one every frozen
+# expectation is afterwards attributed to, and a wrong choice does not error: it
+# produces a complete, plausible set of goldens describing a different assembler.
+#
+# The predecessor was `SIGIL_BUILD="${SIGIL_BUILD:-${CARGO_TARGET_DIR:-$SIGIL_ROOT/target}/release/sigil}"`,
+# so a bare run reached into the shared checkout's `target/` — the directory several
+# lanes read, that nobody rebuilds on a schedule, and whose `sigil` has been measured
+# reporting a branch deleted hours earlier. There is nothing to fall back TO: no path
+# this script could pick unasked is one it could name honestly in a provenance record.
+#
+# So the input is resolved explicitly or the run stops (d-18). SIGIL_BUILD names the
+# binary; CARGO_TARGET_DIR names the directory it was built into; neither set is a
+# refusal that names both and the path it declines to guess.
+if [[ -n "${SIGIL_BUILD:-}" ]]; then
+    :
+elif [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+    SIGIL_BUILD="$CARGO_TARGET_DIR/release/sigil"
+else
+    echo "ERROR: this capture has no assembler, and it will not pick one." >&2
+    echo "       consulted  SIGIL_BUILD        (unset)" >&2
+    echo "       consulted  CARGO_TARGET_DIR   (unset)" >&2
+    echo "       declined   $SIGIL_ROOT/target/release/sigil" >&2
+    echo "                  — a checkout's shared target/, relinked by whichever lane last" >&2
+    echo "                    built there. Goldens captured with it would be attributed to" >&2
+    echo "                    this tree and describe whatever binary happened to be sitting" >&2
+    echo "                    in that directory." >&2
+    echo "       Set SIGIL_BUILD to the assembler this capture is meant to freeze, or" >&2
+    echo "       CARGO_TARGET_DIR to a build directory of this run's own." >&2
+    exit 1
+fi
 [[ -x "$SIGIL_BUILD" ]] || { echo "ERROR: sigil build binary not at $SIGIL_BUILD (set SIGIL_BUILD)"; exit 1; }
 
 # report <lst> <bin> — print both split-golden layers (full file + header-neutral
