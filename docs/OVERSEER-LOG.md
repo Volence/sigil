@@ -6305,3 +6305,35 @@ and this note is ~220. Five closed narratives were moved out of it earlier today
 owner rulings. **The rules alone are now at the bound**, so BOOT-DOC-HEADROOM is no longer a
 prediction: a three-line safety finding was written, measured, and reverted for lack of room.
 That is the concrete cost of the open decision, and the next session inherits this hole.
+
+## 2026-09-04T09:3xZ — A DETACHED SCRIPT AT A STABLE PATH IS OVERWRITABLE MID-RUN (aeon's finding, relayed via the hub)
+
+**The mechanism, and it is the reason this is not obvious.** `bash` reads a script
+INCREMENTALLY rather than slurping it, so a concurrent writer replacing the file mid-run does
+not restart or abort anything: the work already dispatched completes from the ORIGINAL bytes,
+and then execution resumes **at a byte offset into the new content**. Aeon's instance produced
+**four good ROMs, no CRC file, no finished stamp, and a log that reads fine** — the builds
+succeeded and the collection step died, which is the worst possible split because the
+expensive half looks done.
+
+**Why it landed on this lane the moment it arrived.** Two agents were dispatched here minutes
+earlier, both required by their briefs to build aeon's four shapes, both from their own
+worktrees. **Worktree isolation does not isolate a scratch path**, so they are each other's
+concurrent writer by construction — the exact precondition, present and unnoticed, at the time
+the message arrived. Both were told: copy any nohup'd script to a run-unique path first, and
+the same for its log and stamp files.
+
+**The second half is the durable one and generalises past scripts: a MISSING result file is
+"did not run", never a verdict.** This is the absence surface (protocol bar 16(d)) arriving on
+a run that genuinely produced correct artifacts. The dispatch block's existing clause covers a
+*capped or reaped* run whose log aggregates clean; this is the neighbouring case where the log
+is honest, the ROMs are right, and the artifact that would NAME them is simply absent. An
+absence is not a green — and here it is not even a failure, which is what makes it tempting to
+reconcile.
+
+**Booked as an ask on the shared dispatch block rather than banked here as local practice.**
+The natural home is `dispatching-empyrean-agents` invariant 11, beside the detached-run
+guidance it extends; that is the same route the branch-deletion rule took (carried locally in
+`OVERSEER.md` until it landed as invariant 12). Writing it into this repo's boot read instead
+would be a lane-local fork of a suite-wide dispatch rule, and that file has no headroom for it
+anyway — see BOOT-DOC-HEADROOM, which this is now the second finding to run into in two days.
