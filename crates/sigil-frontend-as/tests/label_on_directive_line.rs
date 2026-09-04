@@ -59,18 +59,18 @@ fn label_offset(body: &str, name: &str) -> Option<u32> {
 /// line, and the condition does not enter into it.
 ///
 /// ```text
-///        4/       0 : AA                  	dc.b $AA
-///        5/       1 : =>TRUE               L:	if 1=1
-///        6/       1 : BB                  	dc.b $BB
-///        7/       2 : =>FALSE              	else
-///        9/       2 : [5]                  	endif
-///       10/       2 : 0000 0001           	dc.l L
+///        4/       0 : AA                      dc.b $AA
+///        5/       1 : =>TRUE               L:    if 1=1
+///        6/       1 : BB                      dc.b $BB
+///        7/       2 : =>FALSE                  else
+///        9/       2 : [5]                      endif
+///       10/       2 : 0000 0001               dc.l L
 ///   asl bytes:  aa bb 00 00 00 01
 ///
-///        5/       1 : =>FALSE              L:	if 1=0
-///        7/       1 : =>TRUE               	else
-///        8/       1 : CC                  	dc.b $CC
-///       10/       2 : 0000 0001           	dc.l L
+///        5/       1 : =>FALSE              L:    if 1=0
+///        7/       1 : =>TRUE                   else
+///        8/       1 : CC                      dc.b $CC
+///       10/       2 : 0000 0001               dc.l L
 ///   asl bytes:  aa cc 00 00 00 01
 /// ```
 #[test]
@@ -88,10 +88,10 @@ fn if_line_label_binds_whichever_arm_runs() {
 /// not `if`'s.
 ///
 /// ```text
-///        6/       1 : =>DEFINED            L:	ifdef Z          asl:  aa bb 00 00 00 01
-///        5/       1 :                     L:	rept 2           asl:  aa bb bb 00 00 00 01
-///        5/       1 :                     L:	irp X,1,2        asl:  aa 01 02 00 00 00 01
-///        6/       1 :                     L:	while W<2        asl:  aa bb bb 00 00 00 01
+///        6/       1 : =>DEFINED            L:    ifdef Z          asl:  aa bb 00 00 00 01
+///        5/       1 :                     L:    rept 2           asl:  aa bb bb 00 00 00 01
+///        5/       1 :                     L:    irp X,1,2        asl:  aa 01 02 00 00 00 01
+///        6/       1 :                     L:    while W<2        asl:  aa bb bb 00 00 00 01
 /// ```
 #[test]
 fn other_block_head_lines_bind_their_label_too() {
@@ -117,9 +117,9 @@ fn other_block_head_lines_bind_their_label_too() {
 /// label at column 0 and an unknown instruction anywhere else.
 ///
 /// ```text
-///        5/       1 : =>TRUE               L	if 1=1           asl:  aa bb 00 00 00 01
+///        5/       1 : =>TRUE               L    if 1=1           asl:  aa bb 00 00 00 01
 ///
-///        5/       1 :                       L	if 1=1
+///        5/       1 :                       L    if 1=1
 ///   > > > t_indented.asm(5):3: error: unknown instruction
 ///   > > > t_indented.asm(7): error: ELSEIF/ENDIF without IF
 /// ```
@@ -143,10 +143,10 @@ fn colonless_if_line_label_obeys_the_column_rule() {
 /// `if` started at.
 ///
 /// ```text
-///        6/       1 : BB                  	dc.b $BB
-///        7/       2 : =>FALSE              L:	else             asl:  aa bb 00 00 00 02
-///        7/       2 : =>FALSE              L:	elseif 1=1       asl:  aa bb 00 00 00 02
-///        7/       2 : [5]                  L:	endif            asl:  aa bb 00 00 00 02
+///        6/       1 : BB                      dc.b $BB
+///        7/       2 : =>FALSE              L:    else             asl:  aa bb 00 00 00 02
+///        7/       2 : =>FALSE              L:    elseif 1=1       asl:  aa bb 00 00 00 02
+///        7/       2 : [5]                  L:    endif            asl:  aa bb 00 00 00 02
 /// ```
 #[test]
 fn the_line_closing_a_taken_arm_binds_its_label() {
@@ -177,12 +177,12 @@ fn the_line_closing_a_taken_arm_binds_its_label() {
 /// reference.
 ///
 /// ```text
-///        5/       1 : =>FALSE              	if 1=0
-///        7/       1 : =>TRUE               L:	else       ⇒ (absent)
+///        5/       1 : =>FALSE                  if 1=0
+///        7/       1 : =>TRUE               L:    else       ⇒ (absent)
 ///   > > > t_else_inact.asm(10):7: error: symbol undefined
 ///
-///        5/       1 : =>FALSE              	if 1=0
-///        7/       1 : [5]                  L:	endif      ⇒ (absent)
+///        5/       1 : =>FALSE                  if 1=0
+///        7/       1 : [5]                  L:    endif      ⇒ (absent)
 ///   > > > t_endif_in.asm(8):7: error: symbol undefined
 /// ```
 #[test]
@@ -200,8 +200,8 @@ fn a_line_closing_a_skipped_arm_binds_nothing() {
 /// there, and neither does sigil.
 ///
 /// ```text
-///        5/       1 :                     	rept 2
-///        7/       1 :                     L:	endm       ⇒ (absent)
+///        5/       1 :                         rept 2
+///        7/       1 :                     L:    endm       ⇒ (absent)
 ///   > > > t_endm_rept.asm(8):7: error: symbol undefined
 /// ```
 #[test]
@@ -215,9 +215,9 @@ fn a_label_on_endm_is_not_bound() {
 /// all, so its label is not bound either.
 ///
 /// ```text
-///        5/       1 : =>FALSE              	if 1=0
-///        6/       1 :                     N:	if 1=1     ⇒ (absent)
-///       10/       1 : DD                  	dc.b $DD
+///        5/       1 : =>FALSE                  if 1=0
+///        6/       1 :                     N:    if 1=1     ⇒ (absent)
+///       10/       1 : DD                      dc.b $DD
 ///   asl bytes:  aa dd
 /// ```
 #[test]
@@ -232,9 +232,9 @@ fn a_block_head_in_a_skipped_region_binds_nothing() {
 /// including that it opens the scope the `.local` names after it hang off.
 ///
 /// ```text
-///        5/       1 : =>TRUE               L:	if 1=1       ⇒  L : 1 C
-///        7/       2 : CC                  .loc:	dc.b $CC     ⇒  L.loc : 2 C
-///        9/       3 : 0000 0002           	dc.l L.loc
+///        5/       1 : =>TRUE               L:    if 1=1       ⇒  L : 1 C
+///        7/       2 : CC                  .loc:    dc.b $CC     ⇒  L.loc : 2 C
+///        9/       3 : 0000 0002               dc.l L.loc
 ///   asl bytes:  aa bb cc 00 00 00 02
 /// ```
 #[test]
@@ -249,10 +249,10 @@ fn an_if_line_label_opens_the_local_scope() {
 /// carries no location for it.
 ///
 /// ```text
-///        5/       1 :                     M:	macro
-///        8/       1 : (MACRO)              	M
+///        5/       1 :                     M:    macro
+///        8/       1 : (MACRO)                  M
 ///        8/       1 : BB                          dc.b $BB
-///        9/       2 : DD                  	dc.b $DD
+///        9/       2 : DD                      dc.b $DD
 ///   asl bytes:  aa bb dd
 /// ```
 #[test]
