@@ -110,11 +110,14 @@ pad happens for any item:
 | `e06` | `padding off`, lone `Lbl:` then `dc.w` at odd | 1 |
 | `e03` | `padding off`, lone `Lbl:` then `ds.w` at odd | 1 |
 
-## Rule 3 — the lone-label deferral, and its four exceptions
+## Rule 3 — exactly one label absorbs the pad
 
-A label alone on its own line takes the address **after the pad inserted by the
-next PC-advancing line**. This is the rule that is four exceptions deep, and the
-listing's PC column actively hides it.
+**The rule is not the one this was filed under.** It is not about `ds`, and it
+is not about lone labels specifically. The single **most recently defined**
+label takes the address after the pad — whether it sits in the padding line's
+own label column or alone on the line above. Never two, never zero.
+
+The listing's PC column actively hides it.
 
 `c03`: `dc.b $11` / `Lbl:` / `ds.w 1`. The listing reads
 
@@ -151,6 +154,82 @@ instructions today.
 
 At end of file with nothing after it, a lone label simply takes the current
 address — `c08` gives `Lbl : 1` and an image of length 1.
+
+### Which label, when there are two candidates
+
+A label in the padding line's OWN label column outranks one carried from the
+line above, and the carried one is then left where it was:
+
+| probe | source | asl |
+|---|---|---|
+| `g1` | `Lbl:` / `Lb2: ds.w 1` at odd | `Lbl : 1`, `Lb2 : 2` |
+| `g2` | `Lbl: dc.w $3344` at odd | `Lbl : 2` |
+| `g3` | `Lbl: ds.b 1` at odd | `Lbl : 1` (line does not pad) |
+
+`g1` is the case that collapses the rule into one sentence: two labels written
+at the same place end with **different** values, and the one that moves is the
+later one. That is the same "only the last of a run" behaviour `c09` shows, so
+both are one rule about the most recent label — not two rules about lines.
+
+### What ends a deferral
+
+Strictly: **any line that dispatches anything**, including lines that emit
+nothing at all.
+
+| probe | line between the lone label and the padded item | asl `Lbl` |
+|---|---|---|
+| `c13` | a comment | **2** — transparent |
+| `f1` | `align 3` (lands odd, so the `dc.w` still pads) | 1 |
+| `f2` | `Other: equ 7` | 1 |
+| `f3` | `ds.b 0` | 1 |
+| `f4` | `dc.b $99` | 1 |
+
+`f2` and `f3` are the sharp ones: neither emits a byte or moves `$`, and both
+still end the deferral. Only blank and comment-only lines are transparent.
+
+## Reachability: none of this is exercised by anything we build
+
+Stated plainly because a fix nothing exercises is still worth landing, and worth
+saying so. All three consumers are clear of both constructs, and for reasons
+stronger than "the addresses happen to come out even".
+
+**AS's builtin `align` is never reached by either disassembly.** Both shadow it
+with a macro that lowers to `cnop` → `org`:
+
+- `s1disasm/MacroSetup.asm:63` — *"redefine align in terms of cnop, because the
+  built-in align can be stupid sometimes"*
+- `s2disasm/s2.macrosetup.asm:46` — *"redefine align in terms of cnop, for the
+  padding counter"*
+
+There is no `!align` (the builtin-escape spelling) anywhere in either tree, and
+zero trailing `align` at end of file among the 4 (s1) and 14 (s2) occurrences.
+
+**The implicit even-pad is never reached by either disassembly.** Both set
+`padding off` before the first emitted byte and never turn it back on —
+`s1disasm/MacroSetup.asm:6` and `s2disasm/s2.macrosetup.asm:2`, each the first
+directive in the file. The two further `padding off` lines in each corpus are
+re-assertions after a `restore` clobbered the flag, not toggles to `on`.
+
+**No `ds.w`/`ds.l` sits at an odd address in either corpus anyway.** All 138 (s1)
+and 253 (s2) live in the RAM-map files, and a parity walk honouring every
+`phase`/`org`/`dephase` finds zero at an odd offset. The sources are visibly
+hand-maintained to guarantee it — singleton `ds.b 1 ; unused` fillers appear
+exactly where a run of byte flags would otherwise leave the counter odd, which
+is what a source written under `padding off` has to do for itself.
+
+**Aeon reaches neither.** Its shipping build routes three tracked `.asm` files
+through this frontend (`engine/debug/debugger.asm`, `games/demo/game_root.asm`,
+`games/sonic4/game_root.asm`), and they contain no `align`, no `ds.b`/`ds.w`/
+`ds.l` and no `even` between them; both game roots declare `padding off`.
+Measured, not assumed: all four ROM shapes are byte-identical across this
+change.
+
+So the corpus diagnostic counts cannot move, and did not — Sonic 1 stays at 65
+and Sonic 2 at 6,035, with the two diagnostic sets identical line for line.
+Note that a corpus BYTE comparison is not available as evidence here: neither
+corpus assembles to completion under those diagnostics, so sigil emits no image
+for either and `--hex` returns zero bytes. The byte evidence is the 33 probes
+and aeon's four shapes.
 
 ## Probe corpus
 

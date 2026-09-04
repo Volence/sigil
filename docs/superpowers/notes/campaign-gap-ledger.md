@@ -3744,3 +3744,29 @@ the shift arms, and `Exg`, each number taken from the UM and cross-checked again
 transcription the way the existing rows were against Exodus and oracle-next — the module
 header names both. `move to ccr` already prices through the `(Move, [src, Ccr])` arm and
 needs nothing)
+
+### The AS layout-alignment fixes are correct and entirely unexercised (2026-09-04)
+`align` no longer emits image bytes, `ds.w`/`ds.l` now take the implicit even-pad, and one
+label now absorbs that pad. All three match asl exactly (33/33 probes byte-identical,
+symbol addresses included). NOTHING WE BUILD REACHES ANY OF THEM, and the reasons are
+structural rather than incidental: both disassemblies shadow AS's builtin `align` with a
+macro lowering to `cnop`/`org` (so the builtin is never entered — there is no `!align` in
+either tree), both set `padding off` before their first emitted byte (so the implicit pad
+never fires), no `ds.w`/`ds.l` sits at an odd address in either corpus by a parity walk,
+and aeon's three tracked `.asm` files contain no `align`, no `ds.*` and no `even` while
+both game roots declare `padding off`. Sonic 1 stayed at 65 diagnostics and Sonic 2 at
+6,035, the two sets identical line for line, and all four aeon ROM shapes are byte-identical
+— none of which is a weak result, because nothing could have moved them.
+
+Worth recording rather than filing as waste: the value is that a source which DOES write
+these constructs now assembles the way asl does, and the deferral half was reachable
+through `dc.w` and instructions before this parcel touched `ds` at all. What it does mean
+is that no regression here would be caught by any gate we currently run — the nine tests in
+`crates/sigil-frontend-as/src/eval.rs` are the only thing standing on it, and a corpus byte
+comparison cannot help because neither corpus assembles to completion (sigil emits zero
+bytes for both).
+— OPEN as a COVERAGE gap, not a defect (kill: a corpus that actually exercises them. The
+cheapest honest one is a fixture assembling a small source under `padding on` with a
+builtin `align` and odd-address `ds.w`, byte-compared against asl in CI the way the 33
+probes were by hand — which would also give the `-p=0xFF` discrimination a permanent home
+rather than leaving it as a technique someone has to rediscover)
