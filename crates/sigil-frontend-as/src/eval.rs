@@ -665,6 +665,36 @@ struct Asm {
     /// [`Asm::instantiate_struct`] hanging the members off it. Taken there;
     /// `None` at the instantiation is asl's `#2040 structure name missing`.
     pending_struct_label: Option<String>,
+    /// The qualified name of a label written ALONE on its line, carried to the
+    /// next line so that line's implicit even-pad can move it. asl gives such a
+    /// label the address AFTER the pad — its listing shows the pre-pad address
+    /// in the PC column and the post-pad one in the symbol table, and the
+    /// symbol table is what every consumer reads.
+    ///
+    /// Carried, not queued: only ONE label defers. `Lbl:` / `Lb2:` / `ds.w 1`
+    /// at an odd `$` gives `Lbl : 1` and `Lb2 : 2` — two labels written at the
+    /// same place end up with different values, so each lone-label line
+    /// overwrites this rather than joining a set.
+    pending_lone_label: Option<String>,
+    /// The one label an implicit even-pad on the line now executing would move:
+    /// the MOST RECENTLY DEFINED one. That is either the label in this line's
+    /// own label column, or — when this line has none —
+    /// [`Self::pending_lone_label`] carried from the line above.
+    ///
+    /// Exactly one label moves, never two. `Lbl:` on its own line followed by
+    /// `Lb2: ds.w 1` at an odd `$` gives `Lbl : 1` and `Lb2 : 2`: the padding
+    /// line's own label wins and the carried one is left where it was. This is
+    /// the same "only the last of a run" rule that `Lbl:` / `Lb2:` / `ds.w 1`
+    /// shows, which is why one slot expresses both — each new label in a label
+    /// column overwrites this rather than joining a set.
+    ///
+    /// Split from the carried field so that ANY line which dispatches something
+    /// clears the carry whether or not it goes on to pad — asl-verified, and
+    /// the clearing is strict: an `equ`, a `ds.b 0` and an `align` all end the
+    /// deferral despite emitting nothing between them. Only blank and
+    /// comment-only lines are transparent, and those return from
+    /// [`Asm::exec_one`] before this is touched.
+    lone_label_here: Option<String>,
 }
 
 /// One `NAME struct … endstruct` layout.
@@ -781,6 +811,24 @@ impl Asm {
             guarded_defines: opts.guarded_defines.iter().map(|(k, _)| k.clone()).collect(),
             structs: std::collections::HashMap::new(),
             pending_struct_label: None,
+            pending_lone_label: None,
+            lone_label_here: None,
+        }
+    }
+
+    /// Give the lone label carried from the previous line the address AFTER the
+    /// pad just inserted. Called from both pad forms; a no-op when the previous
+    /// line was not a bare label, which is the common case.
+    ///
+    /// Both the link-level record and the expression environment are updated:
+    /// `env` is what a `dc.w Lbl` on a later line folds against, and the
+    /// section's `Label` is what the final VMA comes from. Leaving either
+    /// behind gives a symbol whose value depends on which consumer asks.
+    fn absorb_pad_into_lone_label(&mut self) {
+        let Some(name) = self.lone_label_here.take() else { return };
+        if self.builder.move_label_to_cursor(&name) {
+            let value = self.here_i64();
+            self.env.define(&name, SymbolValue::Int(value));
         }
     }
 
@@ -1924,6 +1972,14 @@ impl Asm {
         if toks.is_empty() {
             return;
         }
+        // This line has content, so it ends any deferral carried into it: take
+        // the carry now, and let a pad inside the dispatch below claim it. A
+        // line that dispatches without padding simply drops it, which is what
+        // asl does — an `equ`, a `ds.b 0` or an `align` between the lone label
+        // and the padded item all leave the label at its own address. Blank and
+        // comment-only lines returned above without reaching this, so they stay
+        // transparent to the deferral.
+        self.lone_label_here = self.pending_lone_label.take();
         let parsed = parse_line_tokens(&toks);
         if let Some(name) = parsed.label_colon.clone() {
             // `NAME: = expr` / `NAME: equ expr`: a colon-label immediately
@@ -1994,10 +2050,21 @@ impl Asm {
                 // BEFORE the label is defined so the ordering matches the
                 // colon-less path below, and taken on the very next dispatch.
                 self.pending_struct_label = Some(name.clone());
-                self.define_label(&name);
+                let qualified = self.define_label(&name);
+                // This line's own label is now the most recent one, so it is
+                // the one a pad below would move — displacing anything carried
+                // in from the line above.
+                self.lone_label_here = Some(qualified.clone());
+                // Provisional: only a line that turns out to carry NOTHING else
+                // defers to the NEXT line. Cleared just below if the line has a
+                // mnemonic column.
+                self.pending_lone_label = Some(qualified);
             }
         }
         let mut body = parsed.tokens;
+        if !body.is_empty() {
+            self.pending_lone_label = None;
+        }
         // `!name` builtin escape: a leading `!` resolves `name` against AS's
         // BUILTIN table only, and a user macro of that name is not consulted at
         // all. asl 1.42 Bld 212, `-xx -n -q -A -L -U -i .`:
@@ -2173,7 +2240,18 @@ impl Asm {
             } else {
                 // The colon-less twin of the struct-label park above.
                 self.pending_struct_label = Some(head.clone());
-                self.define_label(&head);
+                let qualified = self.define_label(&head);
+                // The colon-less twin of the pad-absorption above: a bare
+                // identifier in the label column is a label, and the corpus
+                // writes them (`SS_Ctrl_Record_Buf_End` in Sonic 2's RAM map
+                // has no colon).
+                self.lone_label_here = Some(qualified.clone());
+                // Deferring to the NEXT line additionally requires that this
+                // line carry nothing else — `body.len() == 1` is exactly that
+                // test, and it is the condition of the return just below.
+                if body.len() == 1 {
+                    self.pending_lone_label = Some(qualified);
+                }
             }
             if body.len() == 1 {
                 return;
@@ -3473,7 +3551,12 @@ impl Asm {
         }
     }
 
-    fn define_label(&mut self, name: &str) {
+    /// Returns the QUALIFIED name bound, which is not always the name written:
+    /// a `.local` is qualified against the enclosing scope. A caller that must
+    /// refer to the symbol afterwards — the lone-label deferral, which may have
+    /// to move it — needs the qualified spelling, and re-deriving it at the
+    /// call site would duplicate the scope rule.
+    fn define_label(&mut self, name: &str) -> String {
         self.open_section_if_needed();
         let value = self.here_i64();
         let qualified = if name.starts_with('.') {
@@ -3485,6 +3568,7 @@ impl Asm {
         self.env.define(&qualified, SymbolValue::Int(value));
         self.known_labels.insert(qualified.clone());
         self.builder.define_label(&qualified);
+        qualified
     }
 
     fn directive_cpu(&mut self, rest: &[Token], span: Span) {
@@ -3537,10 +3621,36 @@ impl Asm {
     /// `docs/superpowers/notes/2026-07-04-m1d-t0.1-padding-probes.md`). No-op
     /// under `padding off` (Aeon's initial state), on a Z80 CPU (byte stream), or
     /// at an even `$`. `dc.b` never calls this (alignment 1).
+    /// Whether the implicit even-pad fires here: `padding on`, a 68000 target,
+    /// and an odd logical `$`. Shared by the emitting and reserving forms so
+    /// the two can never disagree about WHEN to pad, only about what the padded
+    /// byte is.
+    fn word_pad_due(&self) -> bool {
+        self.state.padding && self.state.cpu == Cpu::M68000 && !self.here().is_multiple_of(2)
+    }
+
     fn pad_word_align(&mut self, span: Span) {
-        if self.state.padding && self.state.cpu == Cpu::M68000 && !self.here().is_multiple_of(2) {
+        if self.word_pad_due() {
             self.open_section_if_needed();
             self.emit(&[0x00], vec![], span);
+            self.absorb_pad_into_lone_label();
+        }
+    }
+
+    /// The same even-pad for an item that RESERVES rather than emits — `ds.w`
+    /// and `ds.l`. asl pads these exactly as it pads `dc.w`, but leaves the pad
+    /// byte unwritten: under `-p=0xFF` a `dc.w` at an odd `$` reads
+    /// `11 `**`00`**` 33 44` (a real emitted pad) while a `ds.w` reads
+    /// `11 `**`ff ff ff`**` 33` — pad and reservation alike are holes.
+    ///
+    /// The boundary that is easy to guess wrong: the pad is to the next EVEN
+    /// address regardless of the element's own width. `ds.l` at `$1` lands on
+    /// `$2`, not `$4`.
+    fn pad_word_align_reserving(&mut self, span: Span) {
+        if self.word_pad_due() {
+            self.open_section_if_needed();
+            self.builder.reserve(1, span);
+            self.absorb_pad_into_lone_label();
         }
     }
 
@@ -4366,6 +4476,13 @@ impl Asm {
     /// `Fragment::Reserve`, not a real `Fill`).
     fn directive_ds(&mut self, unit: u32, rest: &[Token], span: Span) {
         self.open_section_if_needed();
+        // A word-or-larger reservation is word-aligned exactly like a word-or-
+        // larger datum: `ds.w`/`ds.l` at an odd `$` take asl's implicit even-pad
+        // (as a hole, not an emitted byte). `ds.b` has alignment 1 and never
+        // pads — asl-verified both ways.
+        if unit > 1 {
+            self.pad_word_align_reserving(span);
+        }
         match self.eval_all(rest, span) {
             Some(v) if v >= 0 => self.builder.reserve(v as u32 * unit, span),
             Some(_) => self.err(span, "negative ds count"),
@@ -4383,10 +4500,21 @@ impl Asm {
     /// and an already-aligned address advances a full `n`.
     ///
     /// The regime is the SIGN OF THE PC, not `disp`: `phase $B000` + `ds.b 5` +
-    /// `align 256` gives `$B100`, the same as the unphased form. What `disp`
-    /// still decides here is the KIND of pad — a phased region is Aeon RAM under
-    /// `padding off`, where the pad is a `Reserve` (address-only, no image
-    /// bytes), against a ROM section where it is a real `$00` `Fill`.
+    /// `align 256` gives `$B100`, the same as the unphased form.
+    ///
+    /// The pad is a `Reserve` — address space with NO image bytes — in every
+    /// region, phased or not. asl's object file carries no record at all for
+    /// the addresses an `align` steps over, so p2bin's fill value decides what
+    /// appears there: the same `.p` yields `11 00 22` under `-p=0x0` and
+    /// `11 ff 22` under `-p=0xFF`. Consequences, both asl-verified:
+    /// a mid-image align still reads as zeros in a flat `-p=0` binary (the
+    /// write cursor skips the gap), while a TRAILING align cannot lengthen the
+    /// image at all — `dc.b $11` + `align 4` is one byte, not four.
+    ///
+    /// `-p=0` is what makes this easy to get wrong: under it an emitted `$00`
+    /// and an untouched address are indistinguishable, so a `Fill` here agrees
+    /// with the reference everywhere except at the end of the image, which is
+    /// exactly where it was caught.
     fn directive_align(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         match self.eval_all(rest, span) {
@@ -4394,11 +4522,7 @@ impl Asm {
                 let n = n as u32;
                 let pad = sigil_ir::asl_align_pad(self.here(), n);
                 if pad > 0 {
-                    if self.state.disp != 0 {
-                        self.builder.reserve(pad, span);
-                    } else {
-                        self.builder.emit_fill(pad, 0, span);
-                    }
+                    self.builder.reserve(pad, span);
                 }
             }
             Some(_) => self.err(span, "align needs a positive constant"),
@@ -8875,6 +8999,159 @@ mod tests {
         want.extend(std::iter::repeat_n(0x00, 13));
         want.push(0x04);
         assert_eq!(image(src), want);
+    }
+
+    // ── AS layout alignment ──────────────────────────────────────────────
+    // Every expectation below is a value asl printed, against BOTH builds
+    // (vanilla Arnold and the flamewing fork, md5s in
+    // docs/superpowers/notes/2026-09-04-as-layout-alignment-spec.md). The
+    // probe names in the comments are that note's.
+
+    /// `align` advances the location counter and contributes NO image bytes.
+    /// asl's object file carries no record for the skipped address, so p2bin's
+    /// fill decides the gap byte — `-p=0x0` gives `11 00 22` and `-p=0xFF`
+    /// gives `11 ff 22` for the same `.p`. A trailing align therefore cannot
+    /// lengthen the image (probes `a1`, `a4`).
+    #[test]
+    fn trailing_align_contributes_no_image_bytes() {
+        let a1 = "        cpu 68000\n        padding off\n        org 0\n        dc.b $11\n        align 2\n";
+        assert_eq!(image(a1), vec![0x11], "align 2 at EOF must not emit a pad");
+        let a4 = "        cpu 68000\n        padding off\n        org 0\n        dc.b $11\n        align 4\n";
+        assert_eq!(image(a4), vec![0x11], "align 4 at EOF must not emit a pad");
+    }
+
+    /// The skipped addresses are still address space: `align` moves `$` even
+    /// though it writes nothing, so a following datum lands at the aligned
+    /// address and the gap replays as zeros in a flat image (probe `a2`).
+    #[test]
+    fn align_moves_the_counter_without_emitting() {
+        let a2 = "        cpu 68000\n        padding off\n        org 0\n        dc.b $11\n        align 2\n        dc.b $22\n";
+        assert_eq!(image(a2), vec![0x11, 0x00, 0x22]);
+        let m = run(a2, &Options::default()).expect("assemble");
+        assert_eq!(m.sections[0].vma_len(), 3);
+    }
+
+    /// The implicit even-pad fires on element size > 1 whether the item EMITS
+    /// or only RESERVES. `ds.w`/`ds.l` at an odd `$` pad exactly like `dc.w`
+    /// does — and always to an EVEN address, never to the element's own width:
+    /// `ds.l` at 1 lands on 2, not 4 (probes `c02`, `c10`, `c14`).
+    #[test]
+    fn word_sized_reservation_pads_to_even() {
+        let c02 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:    ds.w 1\n        dc.b $33\n";
+        let m = run(c02, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2, "ds.w at odd $ pads to even");
+        assert_eq!(image(c02).len(), 5);
+
+        let c10 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:    ds.l 1\n        dc.b $33\n";
+        let m = run(c10, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2, "ds.l at 1 pads to 2, NOT to 4");
+
+        let c14 = "        cpu 68000\n        org 0\n        dc.b $11,$22,$33\nLbl:    ds.l 1\n        dc.b $44\n";
+        let m = run(c14, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 4, "ds.l at 3 pads to the next even");
+    }
+
+    /// The pad is not label-driven — it fires with no label present at all
+    /// (probe `c11`) — and a byte-sized reservation never triggers it
+    /// (probe `c04`).
+    #[test]
+    fn reservation_pad_is_not_label_driven_and_skips_byte_units() {
+        let c11 = "        cpu 68000\n        org 0\n        dc.b $11\n        ds.w 1\n        dc.b $33\n";
+        assert_eq!(image(c11).len(), 5, "ds.w pads with no label in sight");
+
+        let c04 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n        ds.b 1\n        dc.b $33\n";
+        let m = run(c04, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "ds.b never pads");
+        assert_eq!(image(c04).len(), 3);
+    }
+
+    /// The whole implicit-pad rule is gated on `padding`. Under `padding off`
+    /// — Aeon's state — no reservation pads and no label moves (probe `e03`).
+    #[test]
+    fn reservation_pad_is_gated_on_padding_state() {
+        let e03 = "        cpu 68000\n        padding off\n        org 0\n        dc.b $11\nLbl:\n        ds.w 1\n        dc.b $33\n";
+        let m = run(e03, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "padding off suppresses the pad");
+        assert_eq!(image(e03).len(), 4);
+    }
+
+    /// A label ALONE on its line takes the address after the pad inserted by
+    /// the next PC-advancing line. asl's listing PC column shows the PRE-pad
+    /// address here and its symbol table shows the POST-pad one; the symbol
+    /// table is the truth (probes `c03`, `e07`).
+    #[test]
+    fn a_lone_label_takes_the_address_after_the_next_lines_pad() {
+        let c03 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n        ds.w 1\n        dc.b $33\n";
+        let m = run(c03, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2, "lone label defers across a ds.w pad");
+
+        // Not a `ds` phenomenon: `dc.w` reaches the same rule today.
+        let e07 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n        dc.w $3344\n";
+        let m = run(e07, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2, "lone label defers across a dc.w pad");
+    }
+
+    /// Only the LAST label of a run defers. Two labels on consecutive lines
+    /// pointing at the same place end up with DIFFERENT values (probes `c09`,
+    /// `e08`).
+    #[test]
+    fn only_the_last_label_of_a_run_absorbs_the_pad() {
+        let c09 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\nLb2:\n        ds.w 1\n        dc.b $33\n";
+        let m = run(c09, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "the earlier label keeps the unpadded address");
+        assert_eq!(label_vma(&m, "Lb2"), 2, "only the adjacent label defers");
+    }
+
+    /// A comment line is transparent to the deferral (probe `c13`), and at end
+    /// of file a lone label simply takes the current address (probe `c08`).
+    #[test]
+    fn the_deferral_crosses_comments_and_stops_at_end_of_file() {
+        let c13 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n; just a comment\n        ds.w 1\n        dc.b $33\n";
+        let m = run(c13, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2, "a comment does not end the deferral");
+
+        let c08 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n";
+        let m = run(c08, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "nothing follows, so nothing to defer to");
+        assert_eq!(image(c08), vec![0x11]);
+    }
+
+    /// EXACTLY ONE label absorbs a pad — the most recently defined one. When
+    /// the padding line has its own label, that label wins and a lone label
+    /// carried from the line above is left where it was: `Lbl:` then
+    /// `Lb2: ds.w 1` at an odd `$` gives `Lbl : 1` and `Lb2 : 2`, two labels
+    /// written at the same place with different values (probe `g1`).
+    #[test]
+    fn a_padding_lines_own_label_outranks_the_carried_one() {
+        let g1 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\nLb2:    ds.w 1\n        dc.b $33\n";
+        let m = run(g1, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "the carried label does not also move");
+        assert_eq!(label_vma(&m, "Lb2"), 2, "the line's own label takes the pad");
+    }
+
+    /// A label sharing the line with the padded item takes the post-pad address
+    /// too — the rule is about the most recent label, not about which line it
+    /// was written on (probes `g2`, `g3`).
+    #[test]
+    fn a_same_line_label_takes_the_post_pad_address() {
+        let g2 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:    dc.w $3344\n";
+        let m = run(g2, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2);
+
+        // ...and stays put when its line does not pad.
+        let g3 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:    ds.b 1\n";
+        let m = run(g3, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1);
+    }
+
+    /// `align` never back-propagates to a lone label above it. The deferral
+    /// belongs to the implicit even-pad alone — a lone label before `align 4`
+    /// at address 1 stays at 1, it does not become 4 (probes `c07`, `d07`).
+    #[test]
+    fn an_explicit_align_does_not_back_propagate_to_a_lone_label() {
+        let c07 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n        align 4\n        dc.b $33\n";
+        let m = run(c07, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "align is not an implicit pad");
     }
 
     #[test]
