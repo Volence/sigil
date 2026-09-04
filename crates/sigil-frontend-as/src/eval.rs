@@ -4193,7 +4193,10 @@ impl Asm {
         atoms: Vec<OperandAtom>,
         span: Span,
     ) {
-        let size = match suffix_size.or_else(|| m68k_default_size(mnemonic)) {
+        let size = match suffix_size
+            .or_else(|| m68k_special_reg_size(mnemonic, &atoms))
+            .or_else(|| m68k_default_size(mnemonic))
+        {
             Some(s) => s,
             None => {
                 self.err(
@@ -4881,6 +4884,8 @@ impl Asm {
                     M68kOperand::Sr
                 } else if name == "ccr" {
                     M68kOperand::Ccr
+                } else if name == "usp" {
+                    M68kOperand::Usp
                 } else {
                     // Bare symbol in EA position = absolute address; asl
                     // width-selects abs.w/abs.l (M1.D T2).
@@ -6542,9 +6547,12 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "lsr" => Lsr,
         "rol" => Rol,
         "ror" => Ror,
+        "roxl" => Roxl,
+        "roxr" => Roxr,
         "btst" => Btst,
         "bset" => Bset,
         "bclr" => Bclr,
+        "bchg" => Bchg,
         "clr" => Clr,
         "neg" => Neg,
         "not" => Not,
@@ -6558,6 +6566,7 @@ fn m68k_mnemonic(base: &str) -> Option<M68kMnemonic> {
         "movep" => Movep,
         "addx" => Addx,
         "cmpm" => Cmpm,
+        "exg" => Exg,
         "nop" => Nop,
         "rts" => Rts,
         "rte" => Rte,
@@ -6629,6 +6638,37 @@ fn m68k_cond(w: &str) -> Option<M68kCond> {
 fn m68k_out_of_scope(_base: &str) -> Option<&'static str> {
     None
 }
+/// The default size for a bare `move` whose operand list names one of the
+/// 68000's non-EA special registers.
+///
+/// [`m68k_default_size`] is keyed by mnemonic alone, and it cannot answer for
+/// `move`: the size depends on WHICH move this is, and that is only knowable
+/// from the operands. But `refine_m68k_mnemonic` — which turns `move` into
+/// `MoveToCcr`/`MoveToSr`/`MoveToUsp`/`MoveFromUsp` — runs after the operand
+/// atoms have been converted, which is after the size is needed. So the size
+/// is read straight off the ATOMS here, before either step.
+///
+/// Every one of these forms has exactly one legal size in the ISA, so this is
+/// not a preference — it is the only size the encoder will accept, and it is
+/// what asl emits for the bare spelling (asl-verified: `move d6,ccr` = `44C0`,
+/// `move #$2700,sr` = `46FC 2700`, `move a6,usp` = `4E66`). The suffixed
+/// spellings are unaffected: `suffix_size` wins.
+fn m68k_special_reg_size(m: M68kMnemonic, atoms: &[OperandAtom]) -> Option<M68kSize> {
+    if m != M68kMnemonic::Move {
+        return None;
+    }
+    atoms.iter().find_map(|a| match a {
+        OperandAtom::Value(Expr::Sym(name)) => match name.as_str() {
+            // `move <ea>,ccr` and `move <ea>,sr` / `move sr,<ea>` are word ops.
+            "ccr" | "sr" => Some(M68kSize::W),
+            // `move An,usp` / `move usp,An` are long ops.
+            "usp" => Some(M68kSize::L),
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
 
 /// The implicit size for mnemonics real 68k syntax never suffixes (`moveq`,
 /// `swap`, `nop`, `rts`, `rte`, `tas`, `trap`, `lea`, `pea`, `jmp`, `jsr`,
@@ -6654,7 +6694,14 @@ fn m68k_default_size(m: M68kMnemonic) -> Option<M68kSize> {
         // re-derives it from the operand, ignoring this field — so the value
         // here only satisfies `Instruction`'s size slot. `B` keeps the source
         // `#bit`/`Dn` immediate fold within byte bounds (bit numbers are ≤ 31).
-        Btst | Bset | Bclr => Some(M68kSize::B),
+        Btst | Bset | Bclr | Bchg => Some(M68kSize::B),
+        // `exg` and the USP moves have no size field at all; asl takes the bare
+        // spelling and `.l` and rejects `.b`/`.w`. Both corpora write both
+        // spellings (`exg d0,d1` and `exg.l d1,d2`).
+        Exg | MoveToUsp | MoveFromUsp => Some(M68kSize::L),
+        // Word-only, and asl takes the bare spelling: `move d6,ccr` (S2, 5
+        // sites) is the same `44C0 | ea` as `move.w d6,ccr` (S1, 2 sites).
+        MoveToCcr => Some(M68kSize::W),
         Dbcc(_) => Some(M68kSize::W),
         Scc(_) => Some(M68kSize::B),
         _ => None,
@@ -6788,6 +6835,12 @@ fn refine_m68k_mnemonic(mnemonic: M68kMnemonic, ops: &[M68kOperand]) -> M68kMnem
     match (mnemonic, ops) {
         (Move, [_, M68kOperand::Sr]) => MoveToSr,
         (Move, [M68kOperand::Sr, _]) => MoveFromSr,
+        // `move <ea>,ccr` is its own opcode (44C0 | ea); there is no
+        // move-FROM-ccr on the 68000, so a leading `ccr` is left to fail loud
+        // in `encode_ea` ("ccr is not a general EA") rather than mis-refined.
+        (Move, [_, M68kOperand::Ccr]) => MoveToCcr,
+        (Move, [_, M68kOperand::Usp]) => MoveToUsp,
+        (Move, [M68kOperand::Usp, _]) => MoveFromUsp,
         (Andi, [_, M68kOperand::Ccr]) => AndiCcr,
         (Ori, [_, M68kOperand::Ccr]) => OriCcr,
         // An immediate source into a MEMORY destination on the ALU forms is

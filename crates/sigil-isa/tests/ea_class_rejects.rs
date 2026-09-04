@@ -138,13 +138,102 @@ fn control_addressing_rejects_non_addresses() {
     accept("pea (xxx).l",       ins(Mnemonic::Pea, Size::L, vec![Operand::AbsL(0x1000)]));
 }
 
-/// The single-operand shift is the MEMORY form; a data register is not it.
+/// The single-operand shift's operand row.
+///
+/// A DATA REGISTER is legal here and asl accepts it: `asl d0` assembles to
+/// `E3 40`, the count-1 REGISTER form — identical bytes to `asl #1,d0`. (This
+/// test previously asserted the opposite, "a data register is not it"; that was
+/// sigil's own limitation written down as an ISA rule, and the assembler
+/// refutes it. `s1disasm/build_tools/Linux-x86_64/asl`, md5
+/// `61e672562465725a8c102288a7da9098`, `cpu 68000 -U`.)
+///
+/// What the row genuinely excludes is everything that is neither a data
+/// register nor a MEMORY ALTERABLE address: `An`, `#imm`, and the two
+/// PC-relative modes.
 #[test]
-fn memory_shift_is_memory_only() {
-    reject("asl.w d0",  ins(Mnemonic::Asl, Size::W, vec![Operand::Dn(0)]));
-    reject("lsr.w a0",  ins(Mnemonic::Lsr, Size::W, vec![Operand::An(0)]));
-    reject("ror.w #4",  ins(Mnemonic::Ror, Size::W, vec![Operand::Imm(4)]));
+fn single_operand_shift_row() {
+    reject("lsr.w a0",   ins(Mnemonic::Lsr, Size::W, vec![Operand::An(0)]));
+    reject("ror.w #4",   ins(Mnemonic::Ror, Size::W, vec![Operand::Imm(4)]));
+    reject("roxl.w (d16,pc)", ins(Mnemonic::Roxl, Size::W, vec![Operand::Pcd16(8)]));
     accept("asr.w (a0)", ins(Mnemonic::Asr, Size::W, vec![Operand::Ind(0)]));
+    accept("asl.w d0",   ins(Mnemonic::Asl, Size::W, vec![Operand::Dn(0)]));
+    accept("roxl.w d0",  ins(Mnemonic::Roxl, Size::W, vec![Operand::Dn(0)]));
+    // The register form's bytes are the count-1 two-operand form's, exactly.
+    assert_eq!(
+        encode(&ins(Mnemonic::Asl, Size::W, vec![Operand::Dn(0)])).unwrap(),
+        encode(&ins(Mnemonic::Asl, Size::W, vec![Operand::Imm(1), Operand::Dn(0)])).unwrap(),
+        "`asl.w d0` and `asl.w #1,d0` are one encoding (asl: both E3 40)"
+    );
+    // ...and the memory form has no count field, so only `#1` reaches it.
+    accept("roxl.w #1,(a0)", ins(Mnemonic::Roxl, Size::W, vec![Operand::Imm(1), Operand::Ind(0)]));
+    reject("roxl.w #2,(a0)", ins(Mnemonic::Roxl, Size::W, vec![Operand::Imm(2), Operand::Ind(0)]));
+}
+
+/// The `bchg` destination row is `bset`'s (DATA ALTERABLE) in both forms — no
+/// `An`, no `#imm`, no PC-relative — and `move <ea>,ccr`'s source row is DATA,
+/// which DOES admit both PC-relative modes and an immediate.
+#[test]
+fn bchg_and_move_to_ccr_rows() {
+    reject("bchg #3,a0", ins(Mnemonic::Bchg, Size::B, vec![Operand::Imm(3), Operand::An(0)]));
+    reject("bchg d2,a0", ins(Mnemonic::Bchg, Size::B, vec![Operand::Dn(2), Operand::An(0)]));
+    reject("bchg #3,(d16,pc)", ins(Mnemonic::Bchg, Size::B, vec![Operand::Imm(3), Operand::Pcd16(8)]));
+    reject("bchg #3,#$12", ins(Mnemonic::Bchg, Size::B, vec![Operand::Imm(3), Operand::Imm(0x12)]));
+    accept("bchg #3,(a0)", ins(Mnemonic::Bchg, Size::B, vec![Operand::Imm(3), Operand::Ind(0)]));
+    accept("bchg d2,-(a0)", ins(Mnemonic::Bchg, Size::B, vec![Operand::Dn(2), Operand::PreDec(0)]));
+    reject("move.w a0,ccr", ins(Mnemonic::MoveToCcr, Size::W, vec![Operand::An(0), Operand::Ccr]));
+    accept("move.w #$12,ccr", ins(Mnemonic::MoveToCcr, Size::W, vec![Operand::Imm(0x12), Operand::Ccr]));
+    accept("move.w (d16,pc),ccr", ins(Mnemonic::MoveToCcr, Size::W, vec![Operand::Pcd16(8), Operand::Ccr]));
+}
+
+/// `exg` has no EA field at all: three register-pair forms and nothing else,
+/// and USP exchanges only with an address register.
+#[test]
+fn exg_and_usp_take_registers_only() {
+    reject("exg.l d0,(a0)", ins(Mnemonic::Exg, Size::L, vec![Operand::Dn(0), Operand::Ind(0)]));
+    reject("exg.l #1,d0",   ins(Mnemonic::Exg, Size::L, vec![Operand::Imm(1), Operand::Dn(0)]));
+    accept("exg.l d0,d1",   ins(Mnemonic::Exg, Size::L, vec![Operand::Dn(0), Operand::Dn(1)]));
+    accept("exg.l a0,a1",   ins(Mnemonic::Exg, Size::L, vec![Operand::An(0), Operand::An(1)]));
+    accept("exg.l d0,a1",   ins(Mnemonic::Exg, Size::L, vec![Operand::Dn(0), Operand::An(1)]));
+    // Written the other way round, asl emits the SAME word; so does this.
+    assert_eq!(
+        encode(&ins(Mnemonic::Exg, Size::L, vec![Operand::An(1), Operand::Dn(0)])).unwrap(),
+        encode(&ins(Mnemonic::Exg, Size::L, vec![Operand::Dn(0), Operand::An(1)])).unwrap(),
+        "`exg a1,d0` and `exg d0,a1` are one encoding (asl: both C1 89)"
+    );
+    reject("move.l d0,usp", ins(Mnemonic::MoveToUsp, Size::L, vec![Operand::Dn(0), Operand::Usp]));
+    reject("move.l usp,d0", ins(Mnemonic::MoveFromUsp, Size::L, vec![Operand::Usp, Operand::Dn(0)]));
+    accept("move.l a6,usp", ins(Mnemonic::MoveToUsp, Size::L, vec![Operand::An(6), Operand::Usp]));
+    accept("move.l usp,a6", ins(Mnemonic::MoveFromUsp, Size::L, vec![Operand::Usp, Operand::An(6)]));
+}
+
+/// Every one of these forms has exactly ONE legal size in the ISA, and asl
+/// rejects the others outright. A wrong size here is not cosmetic: the old
+/// `move ... ,sr` defect (an `.l` immediate read as `sr := 0`) is the shape.
+#[test]
+fn size_locked_forms_reject_every_other_size() {
+    // `move <ea>,ccr` is the one form here with TWO accepted suffixes: asl takes
+    // `.b` and `.w` and emits identical bytes for both, and rejects `.l`. The
+    // equality is the point — the operand width is a word whatever was written,
+    // so accepting `.b` cannot shorten the immediate.
+    reject("move to ccr at .l",
+           ins(Mnemonic::MoveToCcr, Size::L, vec![Operand::Dn(6), Operand::Ccr]));
+    assert_eq!(
+        encode(&ins(Mnemonic::MoveToCcr, Size::B, vec![Operand::Imm(0x12), Operand::Ccr])).unwrap(),
+        encode(&ins(Mnemonic::MoveToCcr, Size::W, vec![Operand::Imm(0x12), Operand::Ccr])).unwrap(),
+        "`move.b #$12,ccr` and `move.w #$12,ccr` are one encoding (asl: both 44 FC 00 12)"
+    );
+    accept("move.b d6,ccr", ins(Mnemonic::MoveToCcr, Size::B, vec![Operand::Dn(6), Operand::Ccr]));
+    for sz in [Size::B, Size::W] {
+        reject("exg at a non-long size", ins(Mnemonic::Exg, sz, vec![Operand::Dn(0), Operand::Dn(1)]));
+        reject("move to usp at a non-long size",
+               ins(Mnemonic::MoveToUsp, sz, vec![Operand::An(0), Operand::Usp]));
+        reject("move from usp at a non-long size",
+               ins(Mnemonic::MoveFromUsp, sz, vec![Operand::Usp, Operand::An(0)]));
+    }
+    for sz in [Size::B, Size::L] {
+        reject("roxl memory form at a non-word size",
+               ins(Mnemonic::Roxl, sz, vec![Operand::Ind(0)]));
+    }
 }
 
 /// MOVEM's legal modes differ BY DIRECTION, and the encoder used to pass a

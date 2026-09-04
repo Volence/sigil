@@ -329,14 +329,15 @@ fn decode_line0(w: u16, rd: &mut Rd, mode: u16, reg9: u16, r0: u16) -> Result<In
     Ok(inst(mn, size, vec![Operand::Imm(imm), dst]))
 }
 
-/// `tt` field (bits 7–6) → bit-op mnemonic + its destination class. `bchg`
-/// (`01`) is a real 68000 instruction sigil never emits.
-fn bit_op(w: u16, tt: u16) -> Result<(Mnemonic, EaSet), DecodeError> {
+/// `tt` field (bits 7–6) → bit-op mnemonic + its destination class. All four
+/// rows are real 68000 instructions and all four are emitted; only `btst`
+/// reads without writing, so only it takes the wider DATA row.
+fn bit_op(_w: u16, tt: u16) -> Result<(Mnemonic, EaSet), DecodeError> {
     match tt {
         0b00 => Ok((Mnemonic::Btst, EaSet::DATA)),
+        0b01 => Ok((Mnemonic::Bchg, EaSet::DATA_ALTERABLE)),
         0b10 => Ok((Mnemonic::Bclr, EaSet::DATA_ALTERABLE)),
-        0b11 => Ok((Mnemonic::Bset, EaSet::DATA_ALTERABLE)),
-        _ => Err(unknown(w, "bchg is not in sigil's emitted set")),
+        _ => Ok((Mnemonic::Bset, EaSet::DATA_ALTERABLE)),
     }
 }
 
@@ -379,10 +380,23 @@ fn decode_line4(w: u16, rd: &mut Rd, mode: u16, reg9: u16, r0: u16) -> Result<In
     if w & 0xFFF0 == 0x4E40 {
         return Ok(inst(Mnemonic::Trap, Size::W, vec![Operand::Imm((w & 0xF) as i32)]));
     }
+    // `move.l An,usp` / `move.l usp,An` — one word, the An in bits 2-0, no EA.
+    if w & 0xFFF0 == 0x4E60 {
+        let an = Operand::An((w & 0b111) as u8);
+        return Ok(if w & 0x0008 == 0 {
+            inst(Mnemonic::MoveToUsp, Size::L, vec![an, Operand::Usp])
+        } else {
+            inst(Mnemonic::MoveFromUsp, Size::L, vec![Operand::Usp, an])
+        });
+    }
     match w & 0xFFC0 {
         0x40C0 => {
             let dst = ea(rd, mode, r0, Size::W, EaSet::DATA_ALTERABLE)?;
             return Ok(inst(Mnemonic::MoveFromSr, Size::W, vec![Operand::Sr, dst]));
+        }
+        0x44C0 => {
+            let src = ea(rd, mode, r0, Size::W, EaSet::DATA)?;
+            return Ok(inst(Mnemonic::MoveToCcr, Size::W, vec![src, Operand::Ccr]));
         }
         0x46C0 => {
             let src = ea(rd, mode, r0, Size::W, EaSet::DATA)?;
@@ -577,7 +591,26 @@ fn decode_alu_ea(w: u16, rd: &mut Rd, fam: AluFamily) -> Result<Instruction, Dec
             }
         },
         AluFamily::AndMul => match mode {
-            0b000 | 0b001 => Err(unknown(w, "abcd/exg are not in sigil's emitted set")),
+            // Line C, bit 8 set, register-direct EA: `abcd` (opmode3 100) and
+            // the three `exg` pairs. `opmode` here is bits 8-6, so the ISA's
+            // 5-bit opmode `01000/01001/10001` reads as
+            // (opmode3, mode) = (101,000) / (101,001) / (110,001).
+            0b000 if opmode == 0b101 => Ok(inst(
+                Mnemonic::Exg,
+                Size::L,
+                vec![Operand::Dn(reg9 as u8), Operand::Dn(r0 as u8)],
+            )),
+            0b001 if opmode == 0b101 => Ok(inst(
+                Mnemonic::Exg,
+                Size::L,
+                vec![Operand::An(reg9 as u8), Operand::An(r0 as u8)],
+            )),
+            0b001 if opmode == 0b110 => Ok(inst(
+                Mnemonic::Exg,
+                Size::L,
+                vec![Operand::Dn(reg9 as u8), Operand::An(r0 as u8)],
+            )),
+            0b000 | 0b001 => Err(unknown(w, "abcd is not in sigil's emitted set")),
             _ => {
                 let dst = ea(rd, mode, r0, size, EaSet::MEMORY_ALTERABLE)?;
                 Ok(inst(Mnemonic::And, size, vec![Operand::Dn(reg9 as u8), dst]))
@@ -587,8 +620,8 @@ fn decode_alu_ea(w: u16, rd: &mut Rd, fam: AluFamily) -> Result<Instruction, Dec
 }
 
 /// Line 1110: shifts/rotates — the word memory-shift form (bits 7–6 = 11) and
-/// the register form. The `rox` pair (`tt`=10) and the 68020 bitfield region
-/// (memory form with bit 11 set) are outside sigil's emitted set.
+/// the register form, over all four `tt` rows (`as`/`ls`/`rox`/`ro`). The 68020
+/// bitfield region (memory form with bit 11 set) is outside sigil's emitted set.
 fn decode_shift(w: u16, rd: &mut Rd) -> Result<Instruction, DecodeError> {
     let d = (w >> 8) & 1;
     if (w >> 6) & 0b11 == 0b11 {
@@ -610,15 +643,16 @@ fn decode_shift(w: u16, rd: &mut Rd) -> Result<Instruction, DecodeError> {
     Ok(inst(mn, size, vec![src, Operand::Dn((w & 0b111) as u8)]))
 }
 
-fn shift_mnemonic(tt: u16, d: u16, w: u16) -> Result<Mnemonic, DecodeError> {
+fn shift_mnemonic(tt: u16, d: u16, _w: u16) -> Result<Mnemonic, DecodeError> {
     Ok(match (tt, d) {
         (0b00, 0) => Mnemonic::Asr,
         (0b00, _) => Mnemonic::Asl,
         (0b01, 0) => Mnemonic::Lsr,
         (0b01, _) => Mnemonic::Lsl,
+        (0b10, 0) => Mnemonic::Roxr,
+        (0b10, _) => Mnemonic::Roxl,
         (0b11, 0) => Mnemonic::Ror,
-        (0b11, _) => Mnemonic::Rol,
-        _ => return Err(unknown(w, "roxl/roxr are not in sigil's emitted set")),
+        _ => Mnemonic::Rol,
     })
 }
 
@@ -631,17 +665,26 @@ fn canonical_size(m: Mnemonic, ops: &[Operand]) -> Option<Size> {
     match m {
         Moveq => Some(Size::L),
         // Bit ops: implicit long on a data register, byte on memory.
-        Btst | Bset | Bclr => Some(match ops.last() {
+        Btst | Bset | Bclr | Bchg => Some(match ops.last() {
             Some(Operand::Dn(_)) => Size::L,
             _ => Size::B,
         }),
         Tas | Scc(_) | AndiCcr | OriCcr => Some(Size::B),
-        MoveToSr | MoveFromSr => Some(Size::W),
+        MoveToSr | MoveFromSr | MoveToCcr => Some(Size::W),
+        // USP moves and `exg` have no size field: long by construction.
+        MoveToUsp | MoveFromUsp | Exg => Some(Size::L),
         Jmp | Jsr | Lea | Pea => Some(Size::L),
         Nop | Rts | Rte | Trap | Swap | Illegal => Some(Size::W),
         Dbcc(_) => Some(Size::W),
         _ => None,
     }
+}
+
+/// The line-1110 shift/rotate family — the eight mnemonics [`shift_mnemonic`]
+/// can return. Used by [`canonicalize`]'s Rule R.
+fn is_shift(m: Mnemonic) -> bool {
+    use Mnemonic::*;
+    matches!(m, Asl | Asr | Lsl | Lsr | Rol | Ror | Roxl | Roxr)
 }
 
 /// Reduce an `Instruction` to the normal form the round-trip equality compares.
@@ -663,6 +706,25 @@ pub fn canonicalize(i: &Instruction) -> Instruction {
         match c {
             Cond::T => mnemonic = Mnemonic::Bra,
             Cond::F => mnemonic = Mnemonic::Bsr,
+            _ => {}
+        }
+    }
+    // Rule E: `exg An,Dn` IS `exg Dn,An` — the encoding has one data-register
+    // slot and one address-register slot, so the written order carries no bits.
+    // asl normalises the same way (`exg a0,d0` and `exg d0,a0` both = `C1 88`).
+    if mnemonic == Mnemonic::Exg {
+        if let [Operand::An(a), Operand::Dn(d)] = ops[..] {
+            ops = vec![Operand::Dn(d), Operand::An(a)];
+        }
+    }
+    // Rule R: the shift/rotate family's two alias spellings. `<shift> Dn` IS
+    // `<shift> #1,Dn` (register form, count 1) and `<shift> #1,<mem>` IS the
+    // one-operand memory form — asl accepts all of them and each pair emits
+    // identical bytes, so the decoder can only ever produce one of each pair.
+    if is_shift(mnemonic) {
+        match ops[..] {
+            [Operand::Dn(n)] => ops = vec![Operand::Imm(1), Operand::Dn(n)],
+            [Operand::Imm(1), mem] if !matches!(mem, Operand::Dn(_)) => ops = vec![mem],
             _ => {}
         }
     }
@@ -748,7 +810,7 @@ fn canonicalize_imms(m: Mnemonic, size: Size, ops: &mut [Operand]) {
             *v &= 0xFF;
         }
     }
-    if matches!(m, Btst | Bset | Bclr) {
+    if matches!(m, Btst | Bset | Bclr | Bchg) {
         if let Some(Operand::Imm(v)) = ops.first_mut() {
             *v &= 0xFFFF;
         }
@@ -774,6 +836,12 @@ fn canonicalize_imms(m: Mnemonic, size: Size, ops: &mut [Operand]) {
 ///   `Scc`, SR/CCR moves, `jmp`/`jsr`/`lea`/`pea`, fixed words, `dbcc`), the
 ///   `Instruction.size` value is not stored in the bytes; both sides normalize
 ///   to one canonical size per form.
+/// - **Rule E** — `exg An,Dn` ≡ `exg Dn,An`: the mixed-pair encoding has one
+///   slot for each register kind, so the written order is not stored (asl
+///   normalises it identically).
+/// - **Rule R** — `<shift> Dn` ≡ `<shift> #1,Dn`, and `<shift> #1,<mem>` ≡
+///   `<shift> <mem>`: asl accepts all four spellings and each pair emits the
+///   same bytes, so the decoder can produce only one member of each pair.
 /// - **Rule I** — an immediate stored at the operation width compares modulo
 ///   that width (`#-1` and `#$FFFF` are the same word-immediate field): the
 ///   relation proves FIELD fidelity, not value fidelity, because the encoder
@@ -867,16 +935,27 @@ mod tests {
 
     #[test]
     fn unknown_real_instructions_are_named_not_guessed() {
-        // subx.w d1,d0 (9141), abcd d1,d0 (C101), exg d0,d1 (C141),
-        // roxl.w #1,d0 (E350), bchg #0,d0 (0840 0000), chk.w d0,d1 (4380),
-        // line-A (A000), line-F (F000).
+        // Real 68000 instructions still outside sigil's emitted set, plus the
+        // two unassigned lines. Each must be a NAMED `Unknown`, never guessed
+        // into a neighbouring family.
+        //
+        //   subx.w d1,d0 (9141), abcd d1,d0 (C101), sbcd d1,d0 (8101),
+        //   nbcd d0 (4800), negx.w d0 (4040), chk.w d0,d1 (4380),
+        //   link a0,#0 (4E50 0000), unlk a0 (4E58), stop #0 (4E72 0000),
+        //   reset (4E70), trapv (4E76), rtr (4E77), line-A (A000), line-F (F000).
         for bytes in [
             &[0x91, 0x41][..],
             &[0xC1, 0x01],
-            &[0xC1, 0x41],
-            &[0xE3, 0x50],
-            &[0x08, 0x40, 0x00, 0x00],
+            &[0x81, 0x01],
+            &[0x48, 0x00],
+            &[0x40, 0x40],
             &[0x43, 0x80],
+            &[0x4E, 0x50, 0x00, 0x00],
+            &[0x4E, 0x58],
+            &[0x4E, 0x72, 0x00, 0x00],
+            &[0x4E, 0x70],
+            &[0x4E, 0x76],
+            &[0x4E, 0x77],
             &[0xA0, 0x00],
             &[0xF0, 0x00],
         ] {
@@ -885,6 +964,54 @@ mod tests {
                 "{bytes:02X?} must be Unknown"
             );
         }
+    }
+
+    /// The five instruction lines this parcel added. Each word is asl's own
+    /// output for the snippet named beside it (`s1disasm/build_tools/
+    /// Linux-x86_64/asl`, md5 `61e672562465725a8c102288a7da9098`), so this is a
+    /// decode assertion against the assembler rather than against the encoder
+    /// that produced it — the two halves are checked against one outside answer.
+    #[test]
+    fn newly_covered_lines_decode_to_their_instruction() {
+        use Operand::*;
+        // `exg.l d0,d1` = C1 41 — the Dx,Dy pair.
+        assert_eq!(dec(&[0xC1, 0x41]), inst(Mnemonic::Exg, Size::L, vec![Dn(0), Dn(1)]));
+        // `exg.l a0,a1` = C1 49 — the Ax,Ay pair.
+        assert_eq!(dec(&[0xC1, 0x49]), inst(Mnemonic::Exg, Size::L, vec![An(0), An(1)]));
+        // `exg.l d0,a0` = C1 88 — the mixed pair. asl spells `exg a0,d0` the
+        // same way, which is what canonicalize's Rule E exists for.
+        assert_eq!(dec(&[0xC1, 0x88]), inst(Mnemonic::Exg, Size::L, vec![Dn(0), An(0)]));
+        // `roxl.w #1,d0` = E3 50 and `roxr.w #1,d0` = E2 50 — the tt=10 rows.
+        assert_eq!(
+            dec(&[0xE3, 0x50]),
+            inst(Mnemonic::Roxl, Size::W, vec![Imm(1), Dn(0)])
+        );
+        assert_eq!(
+            dec(&[0xE2, 0x50]),
+            inst(Mnemonic::Roxr, Size::W, vec![Imm(1), Dn(0)])
+        );
+        // `roxl.w (a0)` = E5 D0 — the memory-shift form on the same row.
+        assert_eq!(dec(&[0xE5, 0xD0]), inst(Mnemonic::Roxl, Size::W, vec![Ind(0)]));
+        // `bchg #0,d0` = 08 40 00 00 (static) and `bchg d2,d0` = 05 40 (dynamic).
+        assert_eq!(
+            dec(&[0x08, 0x40, 0x00, 0x00]),
+            inst(Mnemonic::Bchg, Size::L, vec![Imm(0), Dn(0)])
+        );
+        assert_eq!(dec(&[0x05, 0x40]), inst(Mnemonic::Bchg, Size::L, vec![Dn(2), Dn(0)]));
+        // `move.w d6,ccr` = 44 C6.
+        assert_eq!(
+            dec(&[0x44, 0xC6]),
+            inst(Mnemonic::MoveToCcr, Size::W, vec![Dn(6), Ccr])
+        );
+        // `move.l a6,usp` = 4E 66 and `move.l usp,a0` = 4E 68.
+        assert_eq!(
+            dec(&[0x4E, 0x66]),
+            inst(Mnemonic::MoveToUsp, Size::L, vec![An(6), Usp])
+        );
+        assert_eq!(
+            dec(&[0x4E, 0x68]),
+            inst(Mnemonic::MoveFromUsp, Size::L, vec![Usp, An(0)])
+        );
     }
 
     #[test]

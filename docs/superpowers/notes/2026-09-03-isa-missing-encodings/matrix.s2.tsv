@@ -1,0 +1,393 @@
+bchg #3,d0	OK 08 40 00 03
+bchg d2,d0	OK 05 40
+bchg.b #3,d0	ERR > > > t.asm(3): error: invalid operand size
+bchg.b d2,d0	ERR > > > t.asm(3): error: invalid operand size
+bchg.w #3,d0	ERR > > > t.asm(3): error: invalid operand size
+bchg.w d2,d0	ERR > > > t.asm(3): error: invalid operand size
+bchg.l #3,d0	OK 08 40 00 03
+bchg.l d2,d0	OK 05 40
+bchg #3,a0	ERR > > > t.asm(3):10: error: addressing mode not allowed here
+bchg d2,a0	ERR > > > t.asm(3):10: error: addressing mode not allowed here
+bchg.b #3,a0	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.b d2,a0	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.w #3,a0	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.w d2,a0	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.l #3,a0	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.l d2,a0	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg #3,(a0)	OK 08 50 00 03
+bchg d2,(a0)	OK 05 50
+bchg.b #3,(a0)	OK 08 50 00 03
+bchg.b d2,(a0)	OK 05 50
+bchg.w #3,(a0)	ERR > > > t.asm(3): error: invalid operand size
+bchg.w d2,(a0)	ERR > > > t.asm(3): error: invalid operand size
+bchg.l #3,(a0)	ERR > > > t.asm(3): error: invalid operand size
+bchg.l d2,(a0)	ERR > > > t.asm(3): error: invalid operand size
+bchg #3,(a0)+	OK 08 58 00 03
+bchg d2,(a0)+	OK 05 58
+bchg.b #3,(a0)+	OK 08 58 00 03
+bchg.b d2,(a0)+	OK 05 58
+bchg.w #3,(a0)+	ERR > > > t.asm(3): error: invalid operand size
+bchg.w d2,(a0)+	ERR > > > t.asm(3): error: invalid operand size
+bchg.l #3,(a0)+	ERR > > > t.asm(3): error: invalid operand size
+bchg.l d2,(a0)+	ERR > > > t.asm(3): error: invalid operand size
+bchg #3,-(a0)	OK 08 60 00 03
+bchg d2,-(a0)	OK 05 60
+bchg.b #3,-(a0)	OK 08 60 00 03
+bchg.b d2,-(a0)	OK 05 60
+bchg.w #3,-(a0)	ERR > > > t.asm(3): error: invalid operand size
+bchg.w d2,-(a0)	ERR > > > t.asm(3): error: invalid operand size
+bchg.l #3,-(a0)	ERR > > > t.asm(3): error: invalid operand size
+bchg.l d2,-(a0)	ERR > > > t.asm(3): error: invalid operand size
+bchg #3,(4,a0)	OK 08 68 00 03 00 04
+bchg d2,(4,a0)	OK 05 68 00 04
+bchg.b #3,(4,a0)	OK 08 68 00 03 00 04
+bchg.b d2,(4,a0)	OK 05 68 00 04
+bchg.w #3,(4,a0)	ERR > > > t.asm(3): error: invalid operand size
+bchg.w d2,(4,a0)	ERR > > > t.asm(3): error: invalid operand size
+bchg.l #3,(4,a0)	ERR > > > t.asm(3): error: invalid operand size
+bchg.l d2,(4,a0)	ERR > > > t.asm(3): error: invalid operand size
+bchg #3,(6,a0,d1.w)	OK 08 70 00 03 10 06
+bchg d2,(6,a0,d1.w)	OK 05 70 10 06
+bchg.b #3,(6,a0,d1.w)	OK 08 70 00 03 10 06
+bchg.b d2,(6,a0,d1.w)	OK 05 70 10 06
+bchg.w #3,(6,a0,d1.w)	ERR > > > t.asm(3): error: invalid operand size
+bchg.w d2,(6,a0,d1.w)	ERR > > > t.asm(3): error: invalid operand size
+bchg.l #3,(6,a0,d1.w)	ERR > > > t.asm(3): error: invalid operand size
+bchg.l d2,(6,a0,d1.w)	ERR > > > t.asm(3): error: invalid operand size
+bchg #3,($1234).w	OK 08 78 00 03 12 34
+bchg d2,($1234).w	OK 05 78 12 34
+bchg.b #3,($1234).w	OK 08 78 00 03 12 34
+bchg.b d2,($1234).w	OK 05 78 12 34
+bchg.w #3,($1234).w	ERR > > > t.asm(3): error: invalid operand size
+bchg.w d2,($1234).w	ERR > > > t.asm(3): error: invalid operand size
+bchg.l #3,($1234).w	ERR > > > t.asm(3): error: invalid operand size
+bchg.l d2,($1234).w	ERR > > > t.asm(3): error: invalid operand size
+bchg #3,($12345678).l	OK 08 79 00 03 12 34 56 78
+bchg d2,($12345678).l	OK 05 79 12 34 56 78
+bchg.b #3,($12345678).l	OK 08 79 00 03 12 34 56 78
+bchg.b d2,($12345678).l	OK 05 79 12 34 56 78
+bchg.w #3,($12345678).l	ERR > > > t.asm(3): error: invalid operand size
+bchg.w d2,($12345678).l	ERR > > > t.asm(3): error: invalid operand size
+bchg.l #3,($12345678).l	ERR > > > t.asm(3): error: invalid operand size
+bchg.l d2,($12345678).l	ERR > > > t.asm(3): error: invalid operand size
+bchg #3,(8,pc)	ERR > > > t.asm(3):10: error: addressing mode not allowed here
+bchg d2,(8,pc)	ERR > > > t.asm(3):10: error: addressing mode not allowed here
+bchg.b #3,(8,pc)	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.b d2,(8,pc)	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.w #3,(8,pc)	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.w d2,(8,pc)	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.l #3,(8,pc)	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.l d2,(8,pc)	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg #3,(4,pc,d0.w)	ERR > > > t.asm(3):10: error: addressing mode not allowed here
+bchg d2,(4,pc,d0.w)	ERR > > > t.asm(3):10: error: addressing mode not allowed here
+bchg.b #3,(4,pc,d0.w)	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.b d2,(4,pc,d0.w)	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.w #3,(4,pc,d0.w)	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.w d2,(4,pc,d0.w)	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.l #3,(4,pc,d0.w)	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.l d2,(4,pc,d0.w)	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg #3,#$12	ERR > > > t.asm(3):10: error: addressing mode not allowed here
+bchg d2,#$12	ERR > > > t.asm(3):10: error: addressing mode not allowed here
+bchg.b #3,#$12	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.b d2,#$12	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.w #3,#$12	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.w d2,#$12	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.l #3,#$12	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg.l d2,#$12	ERR > > > t.asm(3):12: error: addressing mode not allowed here
+bchg #0,d0	OK 08 40 00 00
+bchg #0,(a0)	OK 08 50 00 00
+bchg #7,d0	OK 08 40 00 07
+bchg #7,(a0)	OK 08 50 00 07
+bchg #8,d0	OK 08 40 00 08
+bchg #8,(a0)	OK 08 50 00 08
+bchg #31,d0	OK 08 40 00 1F
+bchg #31,(a0)	OK 08 50 00 1F
+bchg #32,d0	OK 08 40 00 20
+bchg #32,(a0)	OK 08 50 00 20
+bchg #255,d0	OK 08 40 00 FF
+bchg #255,(a0)	OK 08 50 00 FF
+exg d0,d0	OK C1 40
+exg d0,d7	OK C1 47
+exg d0,a0	OK C1 88
+exg d0,a7	OK C1 8F
+exg d0,sp	OK C1 8F
+exg d7,d0	OK CF 40
+exg d7,d7	OK CF 47
+exg d7,a0	OK CF 88
+exg d7,a7	OK CF 8F
+exg d7,sp	OK CF 8F
+exg a0,d0	OK C1 88
+exg a0,d7	OK CF 88
+exg a0,a0	OK C1 48
+exg a0,a7	OK C1 4F
+exg a0,sp	OK C1 4F
+exg a7,d0	OK C1 8F
+exg a7,d7	OK CF 8F
+exg a7,a0	OK CF 48
+exg a7,a7	OK CF 4F
+exg a7,sp	OK CF 4F
+exg sp,d0	OK C1 8F
+exg sp,d7	OK CF 8F
+exg sp,a0	OK CF 48
+exg sp,a7	OK CF 4F
+exg sp,sp	OK CF 4F
+exg.b d0,d1	ERR > > > t.asm(3): error: invalid operand size
+exg.w d0,d1	ERR > > > t.asm(3): error: invalid operand size
+exg.l d0,d1	OK C1 41
+exg d0,ccr	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxl #1,d0	OK E3 50
+roxl #8,d0	OK E1 50
+roxl #9,d0	ERR > > > t.asm(3): error: range overflow
+roxl #0,d0	ERR > > > t.asm(3): error: range underflow
+roxl d2,d0	OK E5 70
+roxl d0	OK E3 50
+roxl a0	ERR > > > t.asm(3):7: error: addressing mode not allowed here
+roxl (a0)	OK E5 D0
+roxl (a0)+	OK E5 D8
+roxl -(a0)	OK E5 E0
+roxl (4,a0)	OK E5 E8 00 04
+roxl (6,a0,d1.w)	OK E5 F0 10 06
+roxl ($1234).w	OK E5 F8 12 34
+roxl ($12345678).l	OK E5 F9 12 34 56 78
+roxl (8,pc)	ERR > > > t.asm(3):7: error: addressing mode not allowed here
+roxl (4,pc,d0.w)	ERR > > > t.asm(3):7: error: addressing mode not allowed here
+roxl #$12	ERR > > > t.asm(3):7: error: addressing mode not allowed here
+roxl.b #1,d0	OK E3 10
+roxl.b #8,d0	OK E1 10
+roxl.b #9,d0	ERR > > > t.asm(3): error: range overflow
+roxl.b #0,d0	ERR > > > t.asm(3): error: range underflow
+roxl.b d2,d0	OK E5 30
+roxl.b d0	OK E3 10
+roxl.b a0	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxl.b (a0)	ERR > > > t.asm(3): error: invalid operand size
+roxl.b (a0)+	ERR > > > t.asm(3): error: invalid operand size
+roxl.b -(a0)	ERR > > > t.asm(3): error: invalid operand size
+roxl.b (4,a0)	ERR > > > t.asm(3): error: invalid operand size
+roxl.b (6,a0,d1.w)	ERR > > > t.asm(3): error: invalid operand size
+roxl.b ($1234).w	ERR > > > t.asm(3): error: invalid operand size
+roxl.b ($12345678).l	ERR > > > t.asm(3): error: invalid operand size
+roxl.b (8,pc)	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxl.b (4,pc,d0.w)	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxl.b #$12	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxl.w #1,d0	OK E3 50
+roxl.w #8,d0	OK E1 50
+roxl.w #9,d0	ERR > > > t.asm(3): error: range overflow
+roxl.w #0,d0	ERR > > > t.asm(3): error: range underflow
+roxl.w d2,d0	OK E5 70
+roxl.w d0	OK E3 50
+roxl.w a0	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxl.w (a0)	OK E5 D0
+roxl.w (a0)+	OK E5 D8
+roxl.w -(a0)	OK E5 E0
+roxl.w (4,a0)	OK E5 E8 00 04
+roxl.w (6,a0,d1.w)	OK E5 F0 10 06
+roxl.w ($1234).w	OK E5 F8 12 34
+roxl.w ($12345678).l	OK E5 F9 12 34 56 78
+roxl.w (8,pc)	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxl.w (4,pc,d0.w)	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxl.w #$12	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxl.l #1,d0	OK E3 90
+roxl.l #8,d0	OK E1 90
+roxl.l #9,d0	ERR > > > t.asm(3): error: range overflow
+roxl.l #0,d0	ERR > > > t.asm(3): error: range underflow
+roxl.l d2,d0	OK E5 B0
+roxl.l d0	OK E3 90
+roxl.l a0	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxl.l (a0)	ERR > > > t.asm(3): error: invalid operand size
+roxl.l (a0)+	ERR > > > t.asm(3): error: invalid operand size
+roxl.l -(a0)	ERR > > > t.asm(3): error: invalid operand size
+roxl.l (4,a0)	ERR > > > t.asm(3): error: invalid operand size
+roxl.l (6,a0,d1.w)	ERR > > > t.asm(3): error: invalid operand size
+roxl.l ($1234).w	ERR > > > t.asm(3): error: invalid operand size
+roxl.l ($12345678).l	ERR > > > t.asm(3): error: invalid operand size
+roxl.l (8,pc)	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxl.l (4,pc,d0.w)	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxl.l #$12	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxr #1,d0	OK E2 50
+roxr #8,d0	OK E0 50
+roxr #9,d0	ERR > > > t.asm(3): error: range overflow
+roxr #0,d0	ERR > > > t.asm(3): error: range underflow
+roxr d2,d0	OK E4 70
+roxr d0	OK E2 50
+roxr a0	ERR > > > t.asm(3):7: error: addressing mode not allowed here
+roxr (a0)	OK E4 D0
+roxr (a0)+	OK E4 D8
+roxr -(a0)	OK E4 E0
+roxr (4,a0)	OK E4 E8 00 04
+roxr (6,a0,d1.w)	OK E4 F0 10 06
+roxr ($1234).w	OK E4 F8 12 34
+roxr ($12345678).l	OK E4 F9 12 34 56 78
+roxr (8,pc)	ERR > > > t.asm(3):7: error: addressing mode not allowed here
+roxr (4,pc,d0.w)	ERR > > > t.asm(3):7: error: addressing mode not allowed here
+roxr #$12	ERR > > > t.asm(3):7: error: addressing mode not allowed here
+roxr.b #1,d0	OK E2 10
+roxr.b #8,d0	OK E0 10
+roxr.b #9,d0	ERR > > > t.asm(3): error: range overflow
+roxr.b #0,d0	ERR > > > t.asm(3): error: range underflow
+roxr.b d2,d0	OK E4 30
+roxr.b d0	OK E2 10
+roxr.b a0	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxr.b (a0)	ERR > > > t.asm(3): error: invalid operand size
+roxr.b (a0)+	ERR > > > t.asm(3): error: invalid operand size
+roxr.b -(a0)	ERR > > > t.asm(3): error: invalid operand size
+roxr.b (4,a0)	ERR > > > t.asm(3): error: invalid operand size
+roxr.b (6,a0,d1.w)	ERR > > > t.asm(3): error: invalid operand size
+roxr.b ($1234).w	ERR > > > t.asm(3): error: invalid operand size
+roxr.b ($12345678).l	ERR > > > t.asm(3): error: invalid operand size
+roxr.b (8,pc)	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxr.b (4,pc,d0.w)	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxr.b #$12	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxr.w #1,d0	OK E2 50
+roxr.w #8,d0	OK E0 50
+roxr.w #9,d0	ERR > > > t.asm(3): error: range overflow
+roxr.w #0,d0	ERR > > > t.asm(3): error: range underflow
+roxr.w d2,d0	OK E4 70
+roxr.w d0	OK E2 50
+roxr.w a0	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxr.w (a0)	OK E4 D0
+roxr.w (a0)+	OK E4 D8
+roxr.w -(a0)	OK E4 E0
+roxr.w (4,a0)	OK E4 E8 00 04
+roxr.w (6,a0,d1.w)	OK E4 F0 10 06
+roxr.w ($1234).w	OK E4 F8 12 34
+roxr.w ($12345678).l	OK E4 F9 12 34 56 78
+roxr.w (8,pc)	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxr.w (4,pc,d0.w)	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxr.w #$12	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxr.l #1,d0	OK E2 90
+roxr.l #8,d0	OK E0 90
+roxr.l #9,d0	ERR > > > t.asm(3): error: range overflow
+roxr.l #0,d0	ERR > > > t.asm(3): error: range underflow
+roxr.l d2,d0	OK E4 B0
+roxr.l d0	OK E2 90
+roxr.l a0	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxr.l (a0)	ERR > > > t.asm(3): error: invalid operand size
+roxr.l (a0)+	ERR > > > t.asm(3): error: invalid operand size
+roxr.l -(a0)	ERR > > > t.asm(3): error: invalid operand size
+roxr.l (4,a0)	ERR > > > t.asm(3): error: invalid operand size
+roxr.l (6,a0,d1.w)	ERR > > > t.asm(3): error: invalid operand size
+roxr.l ($1234).w	ERR > > > t.asm(3): error: invalid operand size
+roxr.l ($12345678).l	ERR > > > t.asm(3): error: invalid operand size
+roxr.l (8,pc)	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxr.l (4,pc,d0.w)	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+roxr.l #$12	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+move d0,ccr	OK 44 C0
+move ccr,d0	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.b d0,ccr	OK 44 C0
+move.b ccr,d0	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.w d0,ccr	OK 44 C0
+move.w ccr,d0	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.l d0,ccr	ERR > > > t.asm(3): error: invalid operand size
+move.l ccr,d0	ERR > > > t.asm(3): error: invalid operand size
+move a0,ccr	ERR > > > t.asm(3):7: error: addressing mode not allowed here
+move ccr,a0	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.b a0,ccr	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+move.b ccr,a0	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.w a0,ccr	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+move.w ccr,a0	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.l a0,ccr	ERR > > > t.asm(3): error: invalid operand size
+move.l ccr,a0	ERR > > > t.asm(3): error: invalid operand size
+move (a0),ccr	OK 44 D0
+move ccr,(a0)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.b (a0),ccr	OK 44 D0
+move.b ccr,(a0)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.w (a0),ccr	OK 44 D0
+move.w ccr,(a0)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.l (a0),ccr	ERR > > > t.asm(3): error: invalid operand size
+move.l ccr,(a0)	ERR > > > t.asm(3): error: invalid operand size
+move (a0)+,ccr	OK 44 D8
+move ccr,(a0)+	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.b (a0)+,ccr	OK 44 D8
+move.b ccr,(a0)+	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.w (a0)+,ccr	OK 44 D8
+move.w ccr,(a0)+	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.l (a0)+,ccr	ERR > > > t.asm(3): error: invalid operand size
+move.l ccr,(a0)+	ERR > > > t.asm(3): error: invalid operand size
+move -(a0),ccr	OK 44 E0
+move ccr,-(a0)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.b -(a0),ccr	OK 44 E0
+move.b ccr,-(a0)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.w -(a0),ccr	OK 44 E0
+move.w ccr,-(a0)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.l -(a0),ccr	ERR > > > t.asm(3): error: invalid operand size
+move.l ccr,-(a0)	ERR > > > t.asm(3): error: invalid operand size
+move (4,a0),ccr	OK 44 E8 00 04
+move ccr,(4,a0)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.b (4,a0),ccr	OK 44 E8 00 04
+move.b ccr,(4,a0)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.w (4,a0),ccr	OK 44 E8 00 04
+move.w ccr,(4,a0)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.l (4,a0),ccr	ERR > > > t.asm(3): error: invalid operand size
+move.l ccr,(4,a0)	ERR > > > t.asm(3): error: invalid operand size
+move (6,a0,d1.w),ccr	OK 44 F0 10 06
+move ccr,(6,a0,d1.w)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.b (6,a0,d1.w),ccr	OK 44 F0 10 06
+move.b ccr,(6,a0,d1.w)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.w (6,a0,d1.w),ccr	OK 44 F0 10 06
+move.w ccr,(6,a0,d1.w)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.l (6,a0,d1.w),ccr	ERR > > > t.asm(3): error: invalid operand size
+move.l ccr,(6,a0,d1.w)	ERR > > > t.asm(3): error: invalid operand size
+move ($1234).w,ccr	OK 44 F8 12 34
+move ccr,($1234).w	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.b ($1234).w,ccr	OK 44 F8 12 34
+move.b ccr,($1234).w	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.w ($1234).w,ccr	OK 44 F8 12 34
+move.w ccr,($1234).w	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.l ($1234).w,ccr	ERR > > > t.asm(3): error: invalid operand size
+move.l ccr,($1234).w	ERR > > > t.asm(3): error: invalid operand size
+move ($12345678).l,ccr	OK 44 F9 12 34 56 78
+move ccr,($12345678).l	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.b ($12345678).l,ccr	OK 44 F9 12 34 56 78
+move.b ccr,($12345678).l	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.w ($12345678).l,ccr	OK 44 F9 12 34 56 78
+move.w ccr,($12345678).l	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.l ($12345678).l,ccr	ERR > > > t.asm(3): error: invalid operand size
+move.l ccr,($12345678).l	ERR > > > t.asm(3): error: invalid operand size
+move (8,pc),ccr	OK 44 FA 00 06
+move ccr,(8,pc)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.b (8,pc),ccr	OK 44 FA 00 06
+move.b ccr,(8,pc)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.w (8,pc),ccr	OK 44 FA 00 06
+move.w ccr,(8,pc)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.l (8,pc),ccr	ERR > > > t.asm(3): error: invalid operand size
+move.l ccr,(8,pc)	ERR > > > t.asm(3): error: invalid operand size
+move (4,pc,d0.w),ccr	OK 44 FB 00 02
+move ccr,(4,pc,d0.w)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.b (4,pc,d0.w),ccr	OK 44 FB 00 02
+move.b ccr,(4,pc,d0.w)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.w (4,pc,d0.w),ccr	OK 44 FB 00 02
+move.w ccr,(4,pc,d0.w)	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.l (4,pc,d0.w),ccr	ERR > > > t.asm(3): error: invalid operand size
+move.l ccr,(4,pc,d0.w)	ERR > > > t.asm(3): error: invalid operand size
+move #$12,ccr	OK 44 FC 00 12
+move ccr,#$12	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.b #$12,ccr	OK 44 FC 00 12
+move.b ccr,#$12	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.w #$12,ccr	OK 44 FC 00 12
+move.w ccr,#$12	ERR > > > t.asm(3):2: error: instruction not supported on 68000
+move.l #$12,ccr	ERR > > > t.asm(3): error: invalid operand size
+move.l ccr,#$12	ERR > > > t.asm(3): error: invalid operand size
+move a0,usp	OK 4E 60
+move usp,a0	OK 4E 68
+move.w a0,usp	ERR > > > t.asm(3): error: invalid operand size
+move.w usp,a0	ERR > > > t.asm(3): error: invalid operand size
+move.l a0,usp	OK 4E 60
+move.l usp,a0	OK 4E 68
+move a7,usp	OK 4E 67
+move usp,a7	OK 4E 6F
+move.w a7,usp	ERR > > > t.asm(3): error: invalid operand size
+move.w usp,a7	ERR > > > t.asm(3): error: invalid operand size
+move.l a7,usp	OK 4E 67
+move.l usp,a7	OK 4E 6F
+move sp,usp	OK 4E 67
+move usp,sp	OK 4E 6F
+move.w sp,usp	ERR > > > t.asm(3): error: invalid operand size
+move.w usp,sp	ERR > > > t.asm(3): error: invalid operand size
+move.l sp,usp	OK 4E 67
+move.l usp,sp	OK 4E 6F
+move d0,usp	ERR > > > t.asm(3):7: error: addressing mode not allowed here
+move usp,d0	ERR > > > t.asm(3):11: error: addressing mode not allowed here
+move.w d0,usp	ERR > > > t.asm(3): error: invalid operand size
+move.w usp,d0	ERR > > > t.asm(3): error: invalid operand size
+move.l d0,usp	ERR > > > t.asm(3):9: error: addressing mode not allowed here
+move.l usp,d0	ERR > > > t.asm(3):13: error: addressing mode not allowed here

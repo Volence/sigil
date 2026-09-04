@@ -1647,3 +1647,89 @@ smpsVcTotalLevel macro op1,op2,op3,op4
         smpsVcTotalLevel    $00, $13, $2D, $24
 --- bytes ---
 08 00 70 30 00 24 80 00
+=== m68k_bchg_static_dn_and_memory ===
+        cpu 68000
+        phase 0
+        bchg    #5,d0
+        bchg    #0,4(a0)
+        bchg    #255,(a0)
+--- bytes ---
+08 40 00 05 08 68 00 00 00 04 08 50 00 FF
+=== m68k_bchg_dynamic_every_destination ===
+        cpu 68000
+        phase 0
+        bchg    d2,d0
+        bchg    d2,(a0)
+        bchg    d2,(a0)+
+        bchg    d2,-(a0)
+        bchg    d2,4(a0)
+        bchg    d2,6(a0,d1.w)
+        bchg    d2,($1234).w
+        bchg    d2,($12345678).l
+--- bytes ---
+05 40 05 50 05 58 05 60 05 68 00 04 05 70 10 06 05 78 12 34 05 79 12 34 56 78
+=== m68k_exg_all_three_pairs_and_both_orders ===
+        cpu 68000
+        phase 0
+        exg     d0,d1
+        exg.l   d1,d2
+        exg     a0,a1
+        exg     d0,a0
+        exg     a1,d4
+--- bytes ---
+C1 41 C3 42 C1 49 C1 88 C9 89
+=== m68k_roxl_roxr_register_and_memory ===
+        cpu 68000
+        phase 0
+        roxl.w  #1,d3
+        roxl.b  #8,d0
+        roxl.l  #4,d1
+        roxr.w  d2,d0
+        roxl.w  (a0)
+        roxr.w  ($1234).w
+--- bytes ---
+E3 53 E1 10 E9 91 E4 70 E5 D0 E4 F8 12 34
+=== m68k_shift_alias_spellings ===
+        cpu 68000
+        phase 0
+        asl.w   d0
+        roxl.w  d0
+        asl.w   #1,d0
+        roxl.w  #1,d0
+        roxl.w  #1,(a0)
+        asr.w   (a0)
+--- bytes ---
+E3 40 E3 50 E3 40 E3 50 E5 D0 E0 D0
+=== m68k_move_to_ccr_bare_and_sized ===
+        cpu 68000
+        phase 0
+        move.w  d6,ccr
+        move    d6,ccr
+        move    #0,ccr
+        move    #1,ccr
+        move    (a0),ccr
+        move    ($12345678).l,ccr
+        move.b  d6,ccr
+        move.b  #$12,ccr
+--- bytes ---
+44 C6 44 C6 44 FC 00 00 44 FC 00 01 44 D0 44 F9 12 34 56 78 44 C6 44 FC 00 12
+=== m68k_move_usp_bare_and_long ===
+        cpu 68000
+        phase 0
+        move.l  a6,usp
+        move    a6,usp
+        move.l  usp,a0
+        move    usp,a0
+--- bytes ---
+4E 66 4E 66 4E 68 4E 68
+=== m68k_move_sr_bare_spellings ===
+        cpu 68000
+        phase 0
+        move    #$2700,sr
+        move.w  #$2700,sr
+        move    #$2300,sr
+        move    sr,d6
+        move    sr,-(sp)
+        move    (sp)+,sr
+--- bytes ---
+46 FC 27 00 46 FC 27 00 46 FC 23 00 40 C6 40 E7 46 DF

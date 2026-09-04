@@ -213,7 +213,12 @@ fn sigil_family(m: Mnemonic) -> String {
         Mnemonic::Dbcc(Cond::T) => "dbt".into(),
         Mnemonic::Dbcc(Cond::F) => "dbra".into(),
         Mnemonic::Dbcc(c) => format!("db{}", cc_name(c)),
-        Mnemonic::MoveToSr | Mnemonic::MoveFromSr => "move".into(),
+        // Every special-register move is spelled `move` by capstone.
+        Mnemonic::MoveToSr
+        | Mnemonic::MoveFromSr
+        | Mnemonic::MoveToCcr
+        | Mnemonic::MoveToUsp
+        | Mnemonic::MoveFromUsp => "move".into(),
         Mnemonic::AndiCcr => "andi".into(),
         Mnemonic::OriCcr => "ori".into(),
         other => family_name(other).to_string(),
@@ -305,6 +310,7 @@ fn sigil_op(inst: &Instruction, idx: usize) -> String {
         Operand::Disp(d) => format!("br:{:08X}", (2i64 + *d as i64) as u32),
         Operand::Ccr => "ccr".into(),
         Operand::Sr => "sr".into(),
+        Operand::Usp => "usp".into(),
     }
 }
 
@@ -385,6 +391,7 @@ fn cap_op(tok: &str, mask: u32) -> Option<String> {
     }
     if tok == "sr" { return Some("sr".into()); }
     if tok == "ccr" { return Some("ccr".into()); }
+    if tok == "usp" { return Some("usp".into()); }
 
     // Immediate.
     if let Some(rest) = tok.strip_prefix("#$") {
@@ -652,13 +659,22 @@ fn excl_btst_immediate_destination(c: &Ctx) -> bool {
 ///   comparison, leaving 44 × 8 source registers = **352**.
 /// - `btst` static: capstone always byte ⇒ disagreement on the 8 `Dn`
 ///   destinations = **8**.
-/// - `bset`/`bclr`, both forms: capstone always byte ⇒ disagreement on the 8
-///   `Dn` destinations, × 8 source registers for the dynamic form:
-///   2 × (64 + 8) = **144**.
+/// - `bset`/`bclr`/`bchg`, both forms: capstone always byte ⇒ disagreement on
+///   the 8 `Dn` destinations, × 8 source registers for the dynamic form:
+///   3 × (64 + 8) = **216**.
 ///
-/// Total **504**.
+/// Total **576**.
+///
+/// `bchg` joined the third row when its encodings landed; it is the same `tt`
+/// column as `bset`/`bclr` and capstone treats it identically (byte for every
+/// destination), so it contributes the same 72 and nothing else moves.
 fn excl_bit_op_size(c: &Ctx) -> bool {
-    if c.kind != "size" || !matches!(c.inst.mnemonic, Mnemonic::Btst | Mnemonic::Bset | Mnemonic::Bclr) {
+    if c.kind != "size"
+        || !matches!(
+            c.inst.mnemonic,
+            Mnemonic::Btst | Mnemonic::Bset | Mnemonic::Bclr | Mnemonic::Bchg
+        )
+    {
         return false;
     }
     let Some(other) = c.other else { return false };
@@ -751,6 +767,50 @@ fn pc_target(op: &str) -> Option<(u32, String)> {
     u32::from_str_radix(hex, 16).ok().map(|v| (v, idx.to_string()))
 }
 
+/// `roxr.b Dn,Dn` — capstone reads one 64-word cell of line E at the wrong bit
+/// positions.
+///
+/// The register shift/rotate word is `1110 ccc d ss i tt rrr`: `i` (bit 5)
+/// selects an immediate count (`ccc`, with 0 meaning 8) from a register count
+/// (`Dccc`), and `ss` (bits 7-6) is the operation size. For the single cell
+/// `d=0, ss=00, i=1, tt=10` — `roxr` byte-size with a register count — capstone
+/// answers `roxr.l #<ccc>, dN`: it applies the IMMEDIATE-count rule (0→8 and
+/// all) although bit 5 says register, and reports `.l` although the size field
+/// says byte. The other ELEVEN cells of the same `tt=10` row (both directions ×
+/// three sizes × both count kinds) it reads correctly, which is what makes this
+/// a defect in one cell rather than a different reading of the row.
+///
+/// sigil is the one that matches the assembler. `asl` (S1's own build,
+/// `s1disasm/build_tools/Linux-x86_64/asl`, md5
+/// `61e672562465725a8c102288a7da9098`) assembles `roxr.b d1,d5` to `E2 35` —
+/// which is in this cell — and `roxr.l #8,d7` to `E0 97`, which is not. Two
+/// independent facts from the assembler, either of which refutes capstone's
+/// reading of `E030`.
+///
+/// The predicate reproduces capstone's wrong rule exactly, so any OTHER answer
+/// on these words still fails: the second operand must still agree, and the
+/// first must be precisely the immediate the `ccc` field would denote under the
+/// immediate-count convention.
+///
+/// Class size: `1110 ccc 0 00 1 10 rrr` — bits 11-9 and 2-0 free, every other
+/// bit fixed — 8 × 8 = **64 words**.
+fn excl_roxr_byte_register_count(c: &Ctx) -> bool {
+    if c.kind != "operands" || (c.word & 0xF1F8) != 0xE030 {
+        return false;
+    }
+    let Some(other) = c.other else { return false };
+    if other.size != Some('l') || other.ops.len() != 2 || c.sigil.ops.len() != 2 {
+        return false;
+    }
+    // The destination register is the one thing capstone does get right here.
+    if other.ops[1] != c.sigil.ops[1] {
+        return false;
+    }
+    let ccc = (c.word >> 9) & 0b111;
+    let as_immediate = if ccc == 0 { 8 } else { ccc as u32 };
+    other.ops[0] == format!("#{as_immediate:08X}")
+}
+
 pub fn exclusions() -> Vec<Exclusion> {
     vec![
         Exclusion {
@@ -767,15 +827,21 @@ pub fn exclusions() -> Vec<Exclusion> {
         },
         Exclusion {
             name: "bit-op-size",
-            derivation: "MC68000 PRM sizes btst/bset/bclr by the DESTINATION; capstone answers byte except for a dynamic btst",
+            derivation: "MC68000 PRM sizes btst/bchg/bclr/bset by the DESTINATION; capstone answers byte except for a dynamic btst",
             matches: excl_bit_op_size,
-            sweep_words: 504,
+            sweep_words: 576,
         },
         Exclusion {
             name: "btst-dynamic-immediate-length",
             derivation: "capstone's inverted bit-op size makes it read a long immediate where the byte form has one word",
             matches: excl_btst_dynamic_immediate_length,
             sweep_words: 8,
+        },
+        Exclusion {
+            name: "roxr-byte-register-count",
+            derivation: "capstone mis-decodes the roxr byte-size register-count cell as a LONG immediate-count shift; asl and the PRM read the bits as sigil does",
+            matches: excl_roxr_byte_register_count,
+            sweep_words: 64,
         },
         Exclusion {
             name: "pc-base-after-extension",
