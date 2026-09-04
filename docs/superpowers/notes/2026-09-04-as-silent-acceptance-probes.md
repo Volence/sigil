@@ -136,6 +136,49 @@ Open, and unreachable in the corpora rather than merely rare:
 
 ---
 
+## 1a. THE SHARPEST ONE, and it is in neither filed row: both assemblers succeed and emit DIFFERENT BYTES
+
+Found while minting the #320 rows above. Probe `w3.asm`, `m macro px,py` over
+`dc.b px,py`, called `m 1,2,px=9`:
+
+```
+> > > w3.asm(6): warning #320: macro argument redefined
+> > > px
+> > >  m 1,2,px=9
+      6/       0 : (MACRO)              	m	1,2,px=9
+      6/       0 : 0902                        dc.b    9,2
+```
+
+- **asl: exit 0**, a WARNING only, `.p` produced, ROM bytes `09 02`.
+- **this front end: exit 0**, no diagnostic of any kind, bytes `09 01`.
+
+Every other divergence in this note has asl REFUSING, so a mistake is at least
+stopped by the reference tool. This one asl accepts and ships. Two assemblers,
+one source, two ROMs, and nothing anywhere says so.
+
+The cause is the positional binding rule, not the diagnostic:
+
+- **asl binds a positional argument by its POSITION INDEX.** Positional #1 goes
+  to `px` and #2 to `py`, whether or not a keyword already claimed `px`. The
+  keyword wins the slot and the positional written for it is simply lost.
+- **this front end binds positionals into the next slot no keyword has taken.**
+  `1` is pushed past the keyword-claimed `px` and lands in `py`, and `2` lands
+  in whatever follows.
+
+Confirmed on a second shape (probe `k3.asm` line 8, `m macro px,py,pz` called
+`m 1,2,px=9`): asl lists `dc.b 9,2,` — `py` takes the SECOND positional and `pz`
+is empty — where this front end produces `09 01 02`.
+
+NOT CHANGED IN THIS PARCEL, deliberately. It is a byte divergence rather than a
+silent acceptance of a refusal, and the binding rule it lives in is shared with
+`ALLARGS`, `filled` and `shift`, each carrying its own asl-verified probe rows
+that this parcel took no measurement of. Its population is zero — the census
+found no macro argument carrying a depth-0 `=` anywhere in s1disasm, s2disasm or
+the four aeon shapes, so no call reaches it — but it wants its own parcel with
+its own `ALLARGS`/`shift` probes, not a same-day patch to reach a green count.
+
+---
+
 ## 2. An assignment whose right-hand side names something undefined (asl #1010)
 
 **The row this was filed under said we "bind zero and say nothing". We do not
