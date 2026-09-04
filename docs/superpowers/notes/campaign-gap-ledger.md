@@ -3790,3 +3790,38 @@ four aeon shapes at 4f5ad5a1 — so nothing is currently mis-assembled by it.
 `pos_iter.next()`, with fresh asl probes pinning what `ALLARGS` and `shift` render
 afterwards — the existing comment block says plainly that the post-`shift` `ALLARGS` rule
 is unexplained, so that probe is the precondition, not an extra)
+
+### asl's `set` opens the local-label scope; sigil's does not (2026-09-04)
+Probe `2026-09-04-as-symbol-class-probes/m10.asm`, asl 1.42 Beta Bld 212 with
+`-xx -n -q -A -L -U`: after `Scope1:` then `Av set 1`, the next line's `.loc1 equ 7`
+lists as `Av.loc1` — the `set` became the scope anchor. sigil's `directive_set`
+qualifies against `real_scope()` but never SETS it, so it binds `Scope1.loc1`.
+
+Neither assembler complains, so this is a silent NAME divergence rather than a
+diagnostic one: a local written after a `set` resolves to a different symbol in the two
+assemblers, and a source that reads it back gets a different value or an unresolved
+reference with no warning from either side. Population today is zero — the four aeon
+shapes are byte-identical CRC32+size across the change that found this, and neither
+disassembly corpus moved a diagnostic — but nothing structural prevents it.
+
+Found while probing symbol classes; deliberately not fixed in that parcel, whose
+measurement was of `#2030`/`#2035` and took none of `save`/`restore`, `pushv`/`popv`, or
+macro-frame scope.
+— OPEN (kill: `directive_set` sets `self.scope` for a non-dotted name exactly as
+`define_label` does, behind fresh asl probes for what `save`/`restore` and a macro frame
+do to the anchor — the two are the cells m10 did not reach)
+
+### asl's `#1000 symbol double defined` is not implemented (2026-09-04)
+The same-class half of the symbol-class matrix. `parcel/as-symbol-class-tracking` closed
+the two CROSSINGS (`#2030`, `#2035`) and left this one: asl refuses a constant redefined
+as a constant, and refuses it **even when the value is identical** (probe
+`2026-09-04-as-symbol-class-probes/m4.asm`, `Aq equ 1` written twice). sigil catches only
+the subset that reaches `sigil-link`'s duplicate-equ_sym check — from the LINKER, not the
+front end — so `Fq label $100` then `Fq equ 2` is silent where asl says `#1000`.
+
+Left open on purpose rather than bolted onto the crossing rule: its population is every
+duplicated label and every twice-included header, which is a real census and a real brick
+risk, and the crossing parcel measured neither.
+— OPEN (kill: `declare_class` reports on a same-class second declaration too, behind a
+census of every duplicated constant name in aeon's four shapes and both corpora, and
+fresh asl probes for `rept`, `phase`/`dephase` and a twice-included header)
