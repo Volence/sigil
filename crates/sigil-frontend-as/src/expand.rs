@@ -2,6 +2,7 @@
 //! `eval.rs` to keep that module focused on the pass/dispatch core.
 
 use crate::token::{Punct, Tok, Token};
+use sigil_span::Span;
 
 /// Reconstruct source text from a token slice. A space is inserted between two
 /// tokens ONLY when omitting it would MERGE them on re-lex (both the left token's
@@ -330,4 +331,64 @@ pub(crate) fn split_top_commas(toks: &[Token]) -> Vec<&[Token]> {
     }
     groups.push(&toks[start..]);
     groups
+}
+
+/// Where a macro call argument's KEYWORD separator sits: the index of the `=`
+/// that splits `name=value`, or `None` for a plain positional argument.
+///
+/// asl decides this on the argument's raw text, before it means anything: the
+/// FIRST `=` outside brackets and outside a string literal splits the argument,
+/// and whatever stands to the left of it is the keyword's NAME whether or not
+/// that text is an identifier, a parameter, or even non-empty. asl `-U`,
+/// `m macro px,py,pz` over `dc.b px,py,pz` (probes `k3.asm`–`k7.asm`):
+///
+/// ```text
+///    7/       0 : (MACRO)              	m	1,zz=2,3
+///    7/       0 :                             dc.b    1,,
+///    8/       3 : (MACRO)              	m	1,2=3,4
+///    8/       3 :                             dc.b    1,,
+///    7/       0 : (MACRO)              	m	1,(2=3),4
+///    7/       0 : 0100 04                     dc.b    1,(2=3),4
+///    8/       0 : (MACRO)              	m	1,"py=2",3
+///    8/       0 : 0170 793D 3203              dc.b    1,"py=2",3
+///   10/       5 : (MACRO)              	m	1,2<>3,4
+///   10/       5 : 0101 04                     dc.b    1,2<>3,4
+/// ```
+///
+/// — `zz=2` and `2=3` split (and bind nothing, which is why both expansions
+/// show two empty fields); a parenthesised or quoted `=` does not split; and
+/// `<>`, carrying no `=` at all, is an ordinary expression. The quoted case
+/// needs no test here: this front end's lexer holds a string literal in ONE
+/// `Tok::Str`, so an `=` inside quotes is not a `Punct::Eq` to begin with. asl
+/// also protects a `[…]`-bracketed `=`; that reaches no decision here, because
+/// this lexer refuses a bare `[` in an operand outright.
+///
+/// The one place this cannot follow asl is `2<=3` and `2>=3`, which asl splits
+/// at the `=` into the keyword names `2<` and `2>`. This front end's lexer folds
+/// those two characters into a single `Le`/`Ge` token by maximal munch, so the
+/// `=` no longer exists to be found here and the argument stays positional.
+/// Reaching that difference needs a bare (unbracketed) `<=`/`>=` in a macro
+/// argument; s1disasm, s2disasm and all four aeon shapes contain none, so the
+/// corner is unreached rather than handled.
+pub(crate) fn keyword_eq_index(g: &[Token]) -> Option<usize> {
+    let mut depth = 0i32;
+    for (i, t) in g.iter().enumerate() {
+        match t.tok {
+            Tok::Punct(Punct::LParen) => depth += 1,
+            Tok::Punct(Punct::RParen) => depth -= 1,
+            Tok::Punct(Punct::Eq) if depth == 0 => return Some(i),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The span covering one argument group, or `None` when the group is empty.
+///
+/// A diagnostic about an argument must point AT that argument: a macro call
+/// carries several, and a whole-line span cannot say which one was refused.
+pub(crate) fn group_span(g: &[Token]) -> Option<Span> {
+    let first = g.first()?.span;
+    let last = g.last()?.span;
+    Some(Span { source: first.source, start: first.start, end: last.end })
 }

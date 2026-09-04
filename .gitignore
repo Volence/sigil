@@ -27,3 +27,17 @@ crates/sigil-harness/golden/.freeze-journal
 
 # dedicated landing-verification target dir — never share target/ between worktrees
 /.target-land/
+
+# scripts/provision-aeon-ref.sh's build directory when the caller names none
+# (scripts/lib/sigil_tool.sh, sigil_tool_ref_target step 3). Per-worktree by
+# construction: the predecessor default was one path outside the checkout, shared by
+# every worktree of this repo, which is the artifact-substitution fault that function
+# now refuses.
+/.target-ref/
+
+# scripts/tree_state_capture_gate.sh's own target dir. That gate asserts the tree is
+# clean before it mutates anything, so a build artifact of its own showing up as an
+# untracked file would refuse the very run it is part of. Ignored, not relocated to
+# target/: that one is a shared artifact other lanes pin by hash.
+/.target-tree-state-gate/
+/.target-tree-state-gate.buildlog

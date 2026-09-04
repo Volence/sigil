@@ -92,6 +92,9 @@
 # and the two halves that matter — a wrong binary refuses, a correct binary proceeds
 # silently — must both be runnable in a second:
 #     scripts/lib/sigil_tool.sh <sigil-root> <ref-target>
+# and the two halves it derives on its own are runnable alone:
+#     scripts/lib/sigil_tool.sh --ref-target <sigil-root>
+#     scripts/lib/sigil_tool.sh --anchor     <sigil-root>
 
 # ── the refusal ──────────────────────────────────────────────────────────────────
 # Terminal by design: every later step of provisioning is worthless once the tool is
@@ -102,6 +105,149 @@ sigil_tool_refuse() {
     local line
     for line in "$@"; do printf '       %s\n' "$line" >&2; done
     exit 1
+}
+
+# ── the build directory, and why it has no shared default ────────────────────────
+# sigil_tool_ref_target <sigil-root>
+#
+# Echo the directory this run compiles into. One implementation, because every caller
+# that derives it separately derives it differently.
+#
+# THE PRECEDENCE, and there is no shared step in it:
+#   1. REF_TARGET — the explicit override, a caller stating an intent;
+#   2. CARGO_TARGET_DIR — a caller who has ALREADY chosen a build directory has
+#      chosen this one too; reaching past it to a fixed path is how two lanes end up
+#      writing one directory while each believes it owns it;
+#   3. <sigil-root>/.target-ref — derived from the invoking tree, so it is unique per
+#      worktree by construction and cannot be shared without being named.
+#
+# A SHARED DIRECTORY IS A CORRECTNESS FAULT, NOT AN UNTIDY ONE. Cargo's unit hash is
+# checkout-independent, so a second worktree writes `deps/<name>-<hash>` with its own
+# absolute CARGO_MANIFEST_DIR baked in; the first worktree then sees a matching
+# fingerprint, does not rebuild, and runs a binary compiled against another checkout's
+# paths. That surfaces as missing fixtures on files that are present and reads exactly
+# like golden divergence. `cargo clean` does not fix it — only a per-worktree directory
+# does. The predecessor default here was `<sigil-root>/../.sigil-ref-target`, one path
+# for every worktree of this repo, and it was measured holding a `sigil` reporting a
+# branch that had been deleted hours earlier beside rlibs from a different lane's tree.
+#
+# The two spellings of a checkout's own `target/` are refused rather than merely not
+# defaulted to, because they are the same artifact reached by a different route: that
+# directory is relinked deliberately by other lanes and pinned by hash by some of them.
+sigil_tool_ref_target() {
+    local root="$1" dir origin common main
+
+    if [ -n "${REF_TARGET:-}" ]; then
+        dir="$REF_TARGET"
+        origin="1: explicit REF_TARGET"
+    elif [ -n "${CARGO_TARGET_DIR:-}" ]; then
+        dir="$CARGO_TARGET_DIR"
+        origin="2: the caller's CARGO_TARGET_DIR"
+    else
+        dir="$root/.target-ref"
+        origin="3: this checkout's own .target-ref (neither REF_TARGET nor CARGO_TARGET_DIR is set)"
+    fi
+
+    dir="$(sigil_tool_abspath "$dir")"
+
+    # The main checkout, whose `target/` is the shared one. From a linked worktree
+    # `--git-common-dir` answers with the MAIN checkout's git dir, which is the fact a
+    # sibling derivation needs; from the main checkout it answers the same way.
+    common="$(cd "$root" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null)" || common=""
+    main=""
+    if [ -n "$common" ]; then
+        case "$common" in /*) ;; *) common="$root/$common" ;; esac
+        main="$(cd "$common/.." 2>/dev/null && pwd)" || main=""
+    fi
+
+    local forbidden
+    for forbidden in "$root/target" ${main:+"$main/target"}; do
+        [ "$dir" = "$(sigil_tool_abspath "$forbidden")" ] || continue
+        sigil_tool_refuse \
+            "the build directory resolves to $dir, which is a checkout's DEFAULT target/." \
+            "" \
+            "  resolved by  step $origin" \
+            "" \
+            "That directory is shared: other lanes relink it on purpose and some pin its" \
+            "binary by hash. Cargo's unit hash is checkout-independent, so a build there" \
+            "from a second worktree hands a later run artifacts compiled against a" \
+            "DIFFERENT checkout's absolute paths — missing fixtures on files that are" \
+            "present, which reads exactly like golden divergence, and which \`cargo clean\`" \
+            "does not fix." \
+            "" \
+            "Use a directory of this run's own: unset the variable above to get" \
+            "$root/.target-ref, or point REF_TARGET somewhere this tree alone writes."
+    done
+
+    printf 'ref-target: %s (step %s)\n' "$dir" "$origin" >&2
+    printf '%s\n' "$dir"
+}
+
+# Absolute form of a path that need not exist yet: its parent is resolved when it does,
+# so two spellings of one directory compare equal, and a not-yet-created leaf is kept.
+sigil_tool_abspath() {
+    local p="${1%/}" parent base
+    [ -n "$p" ] || { printf '%s\n' "$1"; return; }
+    parent="$(dirname "$p")"
+    base="$(basename "$p")"
+    if [ -d "$parent" ]; then
+        printf '%s/%s\n' "$(cd "$parent" && pwd)" "$base"
+    else
+        printf '%s\n' "$p"
+    fi
+}
+
+# ── what the comparison is anchored to, said out loud ────────────────────────────
+# sigil_tool_anchor <sigil-root>
+#
+# Echo one line naming the revision this run compares against AND where that revision
+# stands relative to what anyone else can see.
+#
+# WHY THE SECOND HALF. The comparison below is against local HEAD, and that is the
+# correct anchor for the question it asks: does this binary correspond to the tree being
+# provisioned FROM. What it does not settle is what a reader should do about a mismatch,
+# because on this machine every sibling checkout is a peer's live working tree, so a
+# local HEAD can be ahead of, behind, or divergent from anything another lane holds.
+# `behind` is not a fact until something names what it is behind — the aeon lane read
+# exactly that word and had to run a scoped diff against origin/master by hand to turn it
+# into a measurement.
+#
+# SO THE ANCHOR IS NAMED RATHER THAN MOVED. Anchoring the refusal at the remote instead
+# would refuse every lane holding unpushed commits, which is the ordinary state of work
+# in progress and would be an always-red check: it fires on correct work, and the remedy
+# a reasonable person reaches for is deleting the guard.
+#
+# The remote-tracking ref, not `git ls-remote`. The remote here is an SSH URL, so asking
+# the server blocks, needs an agent, and fails offline — inside a script that runs before
+# every provisioning. The ref is named as the LOCAL CACHE it is, with what refreshes it,
+# so a reader who needs the real answer knows the one command that gets it.
+sigil_tool_anchor() {
+    local root="$1" head branch upstream tip standing
+    head="$(git -C "$root" rev-parse HEAD 2>/dev/null)" || head=""
+    branch="$(git -C "$root" symbolic-ref --quiet --short HEAD 2>/dev/null)" || branch="detached"
+
+    # `@{upstream}` when the branch tracks one; otherwise the remote's own default branch
+    # as recorded here. A parcel branch and a detached checkout track nothing, and both
+    # are the ordinary shapes in this repo.
+    upstream="$(git -C "$root" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)" \
+        || upstream="$(git -C "$root" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" \
+        || upstream=""
+
+    if [ -z "$upstream" ]; then
+        standing="nothing on this machine names a published tip (no upstream branch, no refs/remotes/origin/HEAD), so how this HEAD stands against the remote is UNKNOWN"
+    else
+        tip="$(git -C "$root" rev-parse "$upstream" 2>/dev/null)" || tip=""
+        if [ -z "$tip" ]; then
+            standing="$upstream does not resolve here, so how this HEAD stands against the remote is UNKNOWN"
+        elif git -C "$root" merge-base --is-ancestor "$head" "$tip" 2>/dev/null; then
+            standing="that HEAD is contained in $upstream ($tip)"
+        else
+            standing="that HEAD is NOT contained in $upstream ($tip), which is ordinary for unpushed lane work and is not a fault"
+        fi
+        [ -n "$tip" ] && standing="$standing; $upstream is a LOCAL remote-tracking ref, refreshed only by \`git fetch\`"
+    fi
+
+    printf 'HEAD %s on %s in %s — %s\n' "${head:-unknown}" "$branch" "$root" "$standing"
 }
 
 # sigil_tool_resolve <sigil-root> <ref-target>
@@ -178,6 +324,7 @@ sigil_tool_resolve() {
         # Silent-by-design on the correct case beyond this one line: the check must
         # cost a correct run nothing, or it becomes the thing people delete.
         echo "==> tool closure ${closure_rev:0:8} == this tree's closure at HEAD — no commit here can have affected it"
+        echo "    compared against $(sigil_tool_anchor "$root")"
         echo "    (that is 'cannot have affected', not 'the output is identical'; only a rebuild and a byte compare says the second)"
     elif [ -n "${SIGIL_BIN_CLOSURE:-}" ] && [ "$SIGIL_BIN_CLOSURE" = "$closure_rev" ]; then
         echo "==> tool closure ${closure_rev:0:8} DIFFERS from this tree's ${tree_rev:0:8}, and SIGIL_BIN_CLOSURE declares exactly that"
@@ -195,6 +342,7 @@ sigil_tool_resolve() {
             "  binary      $SIGIL_BIN" \
             "  its closure $closure_rev" \
             "  this tree   $tree_rev   (git log -1 HEAD -- <closure-paths> at $root)" \
+            "  anchored at $(sigil_tool_anchor "$root")" \
             "" \
             "A commit that this binary could not have seen has touched the sources it is" \
             "compiled from. This over-reports and never under-reports: it proves 'cannot" \
@@ -215,10 +363,35 @@ sigil_tool_resolve() {
 # ── executed directly: the gate on its own, so both halves stay cheap to prove ───
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     set -euo pipefail
+    # `--ref-target <root>` answers the build-directory half alone. It is the half a
+    # gate can run in milliseconds, and a precedence nobody can exercise without a
+    # cargo build is a precedence nobody re-proves.
+    if [ "${1:-}" = "--ref-target" ]; then
+        shift
+        [ $# -ge 1 ] || { echo "usage: sigil_tool.sh --ref-target <sigil-root>" >&2; exit 2; }
+        sigil_tool_ref_target "$1"
+        exit 0
+    fi
+    # `--anchor <root>` answers the "compared against what" half alone, for the same
+    # reason: a line nobody can print without a cargo build is a line nobody re-proves.
+    if [ "${1:-}" = "--anchor" ]; then
+        shift
+        [ $# -ge 1 ] || { echo "usage: sigil_tool.sh --anchor <sigil-root>" >&2; exit 2; }
+        sigil_tool_anchor "$1"
+        exit 0
+    fi
     if [ $# -lt 1 ]; then
-        echo "usage: sigil_tool.sh <sigil-root> [<ref-target>]" >&2
+        echo "usage: sigil_tool.sh <sigil-root> [<ref-target>] | --ref-target <sigil-root>" >&2
         exit 2
     fi
-    sigil_tool_resolve "$1" "${2:-$1/../.sigil-ref-target}"
+    # Assigned, not inlined into the argument: `sigil_tool_ref_target` refuses by
+    # exiting, and inside a command substitution that exits the SUBSHELL — as an
+    # argument default the refusal would print and the caller would carry on with an
+    # empty build directory. An assignment under `set -e` propagates it.
+    ref_target_arg="${2:-}"
+    if [ -z "$ref_target_arg" ]; then
+        ref_target_arg="$(sigil_tool_ref_target "$1")"
+    fi
+    sigil_tool_resolve "$1" "$ref_target_arg"
     echo "==> resolved: $SIGIL_BIN"
 fi

@@ -1,7 +1,8 @@
 //! eval: the driver — line loop, directive dispatch, instruction lowering, emit.
 
 use crate::expand::{
-    render_tokens, split_call_args, split_top_commas, substitute_frame, substitute_name,
+    group_span, keyword_eq_index, render_tokens, split_call_args, split_top_commas,
+    substitute_frame, substitute_name,
 };
 use crate::lexer::{lex_line, lex_line_recover};
 use crate::operands::{parse_operands, OperandAtom};
@@ -54,6 +55,22 @@ struct MacroDef {
     /// `pp`/`qq` from `11,22`). The lexer already swallows the whole `{…}` group
     /// without emitting a token, so the list below is right by construction.
     params: Vec<String>,
+    /// The DEFAULT text declared for each parameter, parallel to [`Self::params`]
+    /// — `None` where the declaration is a bare name.
+    ///
+    /// AS lets a parameter carry `NAME=text`, and the text stands in wherever the
+    /// call supplies nothing for that slot (asl-verified, listing rows in
+    /// [`Asm::expand_macro_inner`]). `s1disasm/Macros.asm(11)` is the corpus's
+    /// only declaration of one:
+    ///
+    /// ```text
+    /// locVRAM: macro loc,controlport=(vdp_control_port).l
+    /// ```
+    ///
+    /// The text is stored, not evaluated. AS substitutes it as TEXT at expansion
+    /// time exactly as it substitutes an argument, so a default naming a symbol
+    /// resolves in the expansion, not at the definition.
+    defaults: Vec<Option<String>>,
     body: Vec<SrcLine>,
     /// Whether the parameter list carries a `{INTLABEL}` group, which makes the
     /// invocation line's label the macro's to place rather than the assembler's.
@@ -460,6 +477,39 @@ struct Asm {
     /// per-pass assignment and every string symbol in the `__FSTRING` scan is
     /// assigned before it is read (probe p1/p4).
     str_env: std::collections::HashMap<String, String>,
+    /// Front-end-only FLOAT-valued symbols (`sample_rate_scale := 1.0`, which
+    /// is how `s2.sounddriver.asm`'s `dac_sample_metadata` macro carries an
+    /// optional per-sample rate scale into `int(label.sample_rate*scale)`).
+    /// §7.4: a float NEVER enters `sigil_ir::SymbolValue` — like a string, it
+    /// lives here in the evaluator and is collapsed to an integer by
+    /// `int(...)` before any IR node sees it. Keyed by fully-qualified name
+    /// exactly like `env` and `str_env` (see [`Self::resolve_float_sym`]).
+    ///
+    /// A symbol is int XOR float within a pass, and unlike the int/string pair
+    /// this one is ENFORCED in both directions: an assignment writes one map
+    /// and removes the name from the other. It has to be — `sample_rate_scale`
+    /// is reassigned on every `dac_sample_metadata` expansion, so a stale
+    /// entry of the other type would outlive its own assignment.
+    float_env: std::collections::HashMap<String, f64>,
+    /// The running `enum`/`nextenum` counter: the value the NEXT member will
+    /// take. `enum` resets it to 0 before binding its members, `nextenum`
+    /// continues from wherever the previous enumeration left it, and an
+    /// explicit `name=expr` member sets it to `expr`. Every member binding
+    /// advances it by [`Self::enum_step`].
+    ///
+    /// asl-verified (`docs/superpowers/notes/2026-09-04-as-enum-probes`, q11):
+    /// `enum a=5,b` followed by `enum c,d` binds `c=0`, so `enum` genuinely
+    /// resets rather than defaulting its start to the running value.
+    enum_next: i64,
+    /// The `enumconf` step, applied after each member binding. Defaults to 1.
+    ///
+    /// It is read AT THE MOMENT OF EACH ADVANCE and never re-applied, which is
+    /// what makes an `enumconf` between two enumerations non-retroactive: after
+    /// `enumconf 4` / `enum a=0,b` the counter already sits at 8, so a following
+    /// `enumconf 1` / `nextenum c,d` binds `c=8` and not `c=5` (probe q4).
+    ///
+    /// Persists across `enum` — only `enumconf` changes it (probe q12).
+    enum_step: i64,
     scope: Option<String>,
     /// The scope in force where the OUTERMOST macro expansion currently on the
     /// stack was invoked — the nearest scope that is not itself an expansion.
@@ -616,6 +666,36 @@ struct Asm {
     /// [`Asm::instantiate_struct`] hanging the members off it. Taken there;
     /// `None` at the instantiation is asl's `#2040 structure name missing`.
     pending_struct_label: Option<String>,
+    /// The qualified name of a label written ALONE on its line, carried to the
+    /// next line so that line's implicit even-pad can move it. asl gives such a
+    /// label the address AFTER the pad — its listing shows the pre-pad address
+    /// in the PC column and the post-pad one in the symbol table, and the
+    /// symbol table is what every consumer reads.
+    ///
+    /// Carried, not queued: only ONE label defers. `Lbl:` / `Lb2:` / `ds.w 1`
+    /// at an odd `$` gives `Lbl : 1` and `Lb2 : 2` — two labels written at the
+    /// same place end up with different values, so each lone-label line
+    /// overwrites this rather than joining a set.
+    pending_lone_label: Option<String>,
+    /// The one label an implicit even-pad on the line now executing would move:
+    /// the MOST RECENTLY DEFINED one. That is either the label in this line's
+    /// own label column, or — when this line has none —
+    /// [`Self::pending_lone_label`] carried from the line above.
+    ///
+    /// Exactly one label moves, never two. `Lbl:` on its own line followed by
+    /// `Lb2: ds.w 1` at an odd `$` gives `Lbl : 1` and `Lb2 : 2`: the padding
+    /// line's own label wins and the carried one is left where it was. This is
+    /// the same "only the last of a run" rule that `Lbl:` / `Lb2:` / `ds.w 1`
+    /// shows, which is why one slot expresses both — each new label in a label
+    /// column overwrites this rather than joining a set.
+    ///
+    /// Split from the carried field so that ANY line which dispatches something
+    /// clears the carry whether or not it goes on to pad — asl-verified, and
+    /// the clearing is strict: an `equ`, a `ds.b 0` and an `align` all end the
+    /// deferral despite emitting nothing between them. Only blank and
+    /// comment-only lines are transparent, and those return from
+    /// [`Asm::exec_one`] before this is touched.
+    lone_label_here: Option<String>,
 }
 
 /// One `NAME struct … endstruct` layout.
@@ -701,6 +781,9 @@ impl Asm {
             state: crate::state::AsmState::new(opts.initial_cpu),
             env: SymbolTable::new(),
             str_env: std::collections::HashMap::new(),
+            float_env: std::collections::HashMap::new(),
+            enum_next: 0,
+            enum_step: 1,
             scope: None,
             outer_scope: None,
             dot_label_cache: std::collections::BTreeMap::new(),
@@ -729,6 +812,24 @@ impl Asm {
             guarded_defines: opts.guarded_defines.iter().map(|(k, _)| k.clone()).collect(),
             structs: std::collections::HashMap::new(),
             pending_struct_label: None,
+            pending_lone_label: None,
+            lone_label_here: None,
+        }
+    }
+
+    /// Give the lone label carried from the previous line the address AFTER the
+    /// pad just inserted. Called from both pad forms; a no-op when the previous
+    /// line was not a bare label, which is the common case.
+    ///
+    /// Both the link-level record and the expression environment are updated:
+    /// `env` is what a `dc.w Lbl` on a later line folds against, and the
+    /// section's `Label` is what the final VMA comes from. Leaving either
+    /// behind gives a symbol whose value depends on which consumer asks.
+    fn absorb_pad_into_lone_label(&mut self) {
+        let Some(name) = self.lone_label_here.take() else { return };
+        if self.builder.move_label_to_cursor(&name) {
+            let value = self.here_i64();
+            self.env.define(&name, SymbolValue::Int(value));
         }
     }
 
@@ -956,11 +1057,16 @@ impl Asm {
     /// `sin`/`int` are FRONT-END builtins — they must NEVER become
     /// `sigil_ir::Expr` nodes, so this runs as token-level preprocessing
     /// BEFORE `crate::expr::parse_expr` ever sees the line). Scans for each
-    /// top-level `int(` call, evaluates its single argument as an f64
-    /// expression via `eval_float` (which recognizes nested `sin(...)`/
+    /// top-level `int(` call — spelled in ANY case, since asl matches builtin
+    /// FUNCTION names case-insensitively even under `-U` (probe `f1.asm`:
+    /// `INT(3.7)` and `int(3.7)` both assemble to `3`, and S1's
+    /// `MacroSetup.asm:218` writes `roundFloatToInteger function
+    /// float,INT(float+0.5)` in capitals) — evaluates its single argument as a
+    /// TYPED expression via `eval_num` (which recognizes nested `sin(...)`/
     /// `int(...)` calls itself, so `int(sin(int(x)))`-style nesting works),
-    /// floors the result (AS's `int()` = floor, spike-0-verified against the
-    /// 4 committed sine goldens), and replaces the whole `int(...)` span with
+    /// floors a float result and passes an integer one through unchanged
+    /// (AS's `int()` = floor: `INT(-3.7)` = -4, `INT(7)` = 7), and replaces
+    /// the whole `int(...)` span with
     /// a single resolved `Tok::Int` — a completely ordinary integer literal
     /// from here on, indistinguishable from one the source author wrote by
     /// hand. A bare `sin(...)` not wrapped in `int(...)` has no integer
@@ -971,7 +1077,7 @@ impl Asm {
         let mut i = 0;
         while i < toks.len() {
             if let Tok::Ident(name) = &toks[i].tok {
-                if name == "int"
+                if name.eq_ignore_ascii_case("int")
                     && matches!(
                         toks.get(i + 1).map(|t| &t.tok),
                         Some(Tok::Punct(Punct::LParen))
@@ -980,12 +1086,15 @@ impl Asm {
                     let span = toks[i].span;
                     if let Some((args, next)) = split_call_args(toks, i + 1) {
                         let value = match args.as_slice() {
-                            [arg] => self.eval_float(arg),
+                            [arg] => self.eval_num(arg),
                             _ => None,
                         };
                         match value {
                             Some(v) => out.push(Token {
-                                tok: Tok::Int(v.floor() as i64),
+                                tok: Tok::Int(match v {
+                                    Num::Int(i) => i,
+                                    Num::Float(f) => f.floor() as i64,
+                                }),
                                 span,
                             }),
                             None => {
@@ -1007,60 +1116,78 @@ impl Asm {
         out
     }
 
-    /// Evaluate a front-end-only f64 expression tree: `+ - * /`, unary
-    /// negation, parens, int/float literals, symbol lookups (resolved via the
-    /// SAME env/scope as ordinary i64 folding, then promoted to f64), and
-    /// nested `sin(...)`/`int(...)` calls. `None` on any unresolved symbol or
-    /// malformed shape — mirrors `Fold::Poison` in spirit, but this whole tree
-    /// stays out of `sigil_ir::Expr` (§7.4).
-    fn eval_float(&self, toks: &[Token]) -> Option<f64> {
-        let (v, rest) = self.parse_float_bp(toks, 0)?;
+    /// Evaluate a front-end-only TYPED expression tree — the evaluator behind
+    /// `int(...)`/`sin(...)` arguments and float-valued symbol assignments.
+    ///
+    /// It walks the SAME operator surface as [`crate::expr::parse_expr`] and
+    /// borrows that module's [`crate::expr::infix_bp`] ladder verbatim, so the
+    /// two cannot drift on precedence. What differs is only the value domain:
+    /// this one carries [`Num`] (int XOR float) and applies AS's type rules,
+    /// whereas `parse_expr` builds an `Expr` tree that is folded in i64.
+    ///
+    /// `None` on any unresolved symbol, malformed shape, or type error —
+    /// mirrors `Fold::Poison` in spirit. The whole tree stays out of
+    /// `sigil_ir::Expr` (§7.4): a float never becomes an IR node, it is
+    /// collapsed to a `Tok::Int` by [`Self::expand_int_builtin`] first.
+    fn eval_num(&self, toks: &[Token]) -> Option<Num> {
+        let (v, rest) = self.parse_num_bp(toks, 0)?;
         rest.is_empty().then_some(v)
     }
 
-    fn parse_float_bp<'t>(&self, toks: &'t [Token], min_bp: u8) -> Option<(f64, &'t [Token])> {
-        let (mut lhs, mut rest) = self.parse_float_atom(toks)?;
+    fn parse_num_bp<'t>(&self, toks: &'t [Token], min_bp: u8) -> Option<(Num, &'t [Token])> {
+        let (mut lhs, mut rest) = self.parse_num_atom(toks)?;
         while let Some(Tok::Punct(p)) = rest.first().map(|t| &t.tok) {
-            let bp = match p {
-                Punct::Star | Punct::Slash => 8,
-                Punct::Plus | Punct::Minus => 7,
+            let (bp, op) = match crate::expr::infix_bp(*p) {
+                Some(x) if x.0 > min_bp => x,
                 _ => break,
             };
-            if bp <= min_bp {
-                break;
-            }
-            let op = *p;
-            let (rhs, r2) = self.parse_float_bp(&rest[1..], bp)?;
-            lhs = match op {
-                Punct::Star => lhs * rhs,
-                Punct::Slash => lhs / rhs,
-                Punct::Plus => lhs + rhs,
-                Punct::Minus => lhs - rhs,
-                _ => unreachable!(),
-            };
+            let (rhs, r2) = self.parse_num_bp(&rest[1..], bp)?;
+            lhs = apply_num_binop(op, lhs, rhs)?;
             rest = r2;
         }
         Some((lhs, rest))
     }
 
-    fn parse_float_atom<'t>(&self, toks: &'t [Token]) -> Option<(f64, &'t [Token])> {
+    fn parse_num_atom<'t>(&self, toks: &'t [Token]) -> Option<(Num, &'t [Token])> {
         let (head, rest) = toks.split_first()?;
         match &head.tok {
-            Tok::Float(f) => Some((*f, rest)),
-            Tok::Int(n) => Some((*n as f64, rest)),
+            Tok::Float(f) => Some((Num::Float(*f), rest)),
+            Tok::Int(n) => Some((Num::Int(*n), rest)),
+            // Unary minus is TYPE-PRESERVING (`INT(-3.7)` = -4, `INT(-7/2)`
+            // = -3): negating an int keeps it an int.
             Tok::Punct(Punct::Minus) => {
-                let (v, r) = self.parse_float_atom(rest)?;
-                Some((-v, r))
+                let (v, r) = self.parse_num_atom(rest)?;
+                Some((
+                    match v {
+                        Num::Int(i) => Num::Int(i.wrapping_neg()),
+                        Num::Float(f) => Num::Float(-f),
+                    },
+                    r,
+                ))
+            }
+            // `~x` / `~~x` are INTEGER operators; asl refuses a float operand.
+            Tok::Punct(Punct::Tilde) => {
+                let (v, r) = self.parse_num_atom(rest)?;
+                Some((Num::Int(!v.as_i64()?), r))
+            }
+            Tok::Punct(Punct::TildeTilde) => {
+                let (v, r) = self.parse_num_atom(rest)?;
+                Some((Num::Int((v.as_i64()? == 0) as i64), r))
             }
             Tok::Punct(Punct::LParen) => {
-                let (v, r) = self.parse_float_bp(rest, 0)?;
+                let (v, r) = self.parse_num_bp(rest, 0)?;
                 match r.first().map(|t| &t.tok) {
                     Some(Tok::Punct(Punct::RParen)) => Some((v, &r[1..])),
                     _ => None,
                 }
             }
+            // asl's builtin FUNCTION names are matched case-insensitively even
+            // under `-U` (which makes user SYMBOLS case-sensitive): probe
+            // `f1.asm` assembles `INT(3.7)` and `int(3.7)` identically to `3`,
+            // and asl reports an unknown one uppercased (`error #1860: unknown
+            // function MIN` for a written `min(`).
             Tok::Ident(name)
-                if (name == "sin" || name == "int")
+                if (name.eq_ignore_ascii_case("sin") || name.eq_ignore_ascii_case("int"))
                     && matches!(
                         rest.first().map(|t| &t.tok),
                         Some(Tok::Punct(Punct::LParen))
@@ -1068,26 +1195,51 @@ impl Asm {
             {
                 let (args, next) = split_call_args(rest, 0)?;
                 let inner = match args.as_slice() {
-                    [arg] => self.eval_float(arg)?,
+                    [arg] => self.eval_num(arg)?,
                     _ => return None,
                 };
-                let v = if name == "sin" {
-                    inner.sin()
+                let v = if name.eq_ignore_ascii_case("sin") {
+                    Num::Float(inner.as_f64().sin())
                 } else {
-                    inner.floor()
+                    // `INT` of an INTEGER is that integer (probe `f1.asm(11)`:
+                    // `dc.l INT(7)` -> `0000 0007`), and of a float is its
+                    // FLOOR, not a truncation toward zero (`INT(-3.7)` ->
+                    // `FFFF FFFC` = -4, `INT(-3.2)` -> -4, `INT(-3.0)` -> -3).
+                    match inner {
+                        Num::Int(i) => Num::Int(i),
+                        Num::Float(f) => Num::Int(f.floor() as i64),
+                    }
                 };
                 Some((v, &rest[next..]))
             }
             Tok::Ident(name) => {
+                // A float-valued symbol (`sample_rate_scale := 1.0`, S2's
+                // `dac_sample_metadata`) outranks the integer table: the two
+                // are disjoint by construction (an assignment writes one and
+                // clears the other), so the order only decides which stale
+                // entry loses, never which live one wins.
+                if let Some(f) = self.resolve_float_sym(name) {
+                    return Some((Num::Float(f), rest));
+                }
                 let v = match self.builtin_num(name) {
                     Some(v) => v,
                     None => self.env.resolve(name, self.dot_scope(name))?,
                 };
-                Some((v as f64, rest))
+                Some((Num::Int(v), rest))
             }
-            Tok::Dollar => Some((self.here() as f64, rest)),
+            Tok::Dollar => Some((Num::Int(self.here_i64()), rest)),
+            Tok::Punct(Punct::Star) => Some((Num::Int(self.here_i64()), rest)),
             _ => None,
         }
+    }
+
+    /// The f64 bound to a front-end-only float symbol, or `None`. Scoped
+    /// exactly like [`Self::resolve_str`] / the integer env.
+    fn resolve_float_sym(&self, name: &str) -> Option<f64> {
+        // The same key the assignment wrote, built by the same function, so a
+        // reader can never disagree with its writer about where a name lives.
+        let key = qualify(name, self.dot_scope(name));
+        self.float_env.get(&key).copied()
     }
 
     /// Evaluate front-end-only debug-string builtin calls
@@ -1821,6 +1973,14 @@ impl Asm {
         if toks.is_empty() {
             return;
         }
+        // This line has content, so it ends any deferral carried into it: take
+        // the carry now, and let a pad inside the dispatch below claim it. A
+        // line that dispatches without padding simply drops it, which is what
+        // asl does — an `equ`, a `ds.b 0` or an `align` between the lone label
+        // and the padded item all leave the label at its own address. Blank and
+        // comment-only lines returned above without reaching this, so they stay
+        // transparent to the deferral.
+        self.lone_label_here = self.pending_lone_label.take();
         let parsed = parse_line_tokens(&toks);
         if let Some(name) = parsed.label_colon.clone() {
             // `NAME: = expr` / `NAME: equ expr`: a colon-label immediately
@@ -1891,10 +2051,21 @@ impl Asm {
                 // BEFORE the label is defined so the ordering matches the
                 // colon-less path below, and taken on the very next dispatch.
                 self.pending_struct_label = Some(name.clone());
-                self.define_label(&name);
+                let qualified = self.define_label(&name);
+                // This line's own label is now the most recent one, so it is
+                // the one a pad below would move — displacing anything carried
+                // in from the line above.
+                self.lone_label_here = Some(qualified.clone());
+                // Provisional: only a line that turns out to carry NOTHING else
+                // defers to the NEXT line. Cleared just below if the line has a
+                // mnemonic column.
+                self.pending_lone_label = Some(qualified);
             }
         }
         let mut body = parsed.tokens;
+        if !body.is_empty() {
+            self.pending_lone_label = None;
+        }
         // `!name` builtin escape: a leading `!` resolves `name` against AS's
         // BUILTIN table only, and a user macro of that name is not consulted at
         // all. asl 1.42 Bld 212, `-xx -n -q -A -L -U -i .`:
@@ -2070,7 +2241,18 @@ impl Asm {
             } else {
                 // The colon-less twin of the struct-label park above.
                 self.pending_struct_label = Some(head.clone());
-                self.define_label(&head);
+                let qualified = self.define_label(&head);
+                // The colon-less twin of the pad-absorption above: a bare
+                // identifier in the label column is a label, and the corpus
+                // writes them (`SS_Ctrl_Record_Buf_End` in Sonic 2's RAM map
+                // has no colon).
+                self.lone_label_here = Some(qualified.clone());
+                // Deferring to the NEXT line additionally requires that this
+                // line carry nothing else — `body.len() == 1` is exactly that
+                // test, and it is the condition of the return just below.
+                if body.len() == 1 {
+                    self.pending_lone_label = Some(qualified);
+                }
             }
             if body.len() == 1 {
                 return;
@@ -3251,6 +3433,9 @@ impl Asm {
             }
             "padding" => self.state.padding = on_off(rest),
             "supmode" => self.state.supmode = on_off(rest),
+            "enum" => self.directive_enum(rest, span),
+            "nextenum" => self.directive_nextenum(rest, span),
+            "enumconf" => self.directive_enumconf(rest, span),
             "db" | "dc.b" => self.directive_db(rest, span),
             "dw" => self.directive_dw(rest, span),
             "dc.w" => self.directive_dc_w(rest, span),
@@ -3367,7 +3552,12 @@ impl Asm {
         }
     }
 
-    fn define_label(&mut self, name: &str) {
+    /// Returns the QUALIFIED name bound, which is not always the name written:
+    /// a `.local` is qualified against the enclosing scope. A caller that must
+    /// refer to the symbol afterwards — the lone-label deferral, which may have
+    /// to move it — needs the qualified spelling, and re-deriving it at the
+    /// call site would duplicate the scope rule.
+    fn define_label(&mut self, name: &str) -> String {
         self.open_section_if_needed();
         let value = self.here_i64();
         let qualified = if name.starts_with('.') {
@@ -3379,6 +3569,7 @@ impl Asm {
         self.env.define(&qualified, SymbolValue::Int(value));
         self.known_labels.insert(qualified.clone());
         self.builder.define_label(&qualified);
+        qualified
     }
 
     fn directive_cpu(&mut self, rest: &[Token], span: Span) {
@@ -3431,10 +3622,36 @@ impl Asm {
     /// `docs/superpowers/notes/2026-07-04-m1d-t0.1-padding-probes.md`). No-op
     /// under `padding off` (Aeon's initial state), on a Z80 CPU (byte stream), or
     /// at an even `$`. `dc.b` never calls this (alignment 1).
+    /// Whether the implicit even-pad fires here: `padding on`, a 68000 target,
+    /// and an odd logical `$`. Shared by the emitting and reserving forms so
+    /// the two can never disagree about WHEN to pad, only about what the padded
+    /// byte is.
+    fn word_pad_due(&self) -> bool {
+        self.state.padding && self.state.cpu == Cpu::M68000 && !self.here().is_multiple_of(2)
+    }
+
     fn pad_word_align(&mut self, span: Span) {
-        if self.state.padding && self.state.cpu == Cpu::M68000 && !self.here().is_multiple_of(2) {
+        if self.word_pad_due() {
             self.open_section_if_needed();
             self.emit(&[0x00], vec![], span);
+            self.absorb_pad_into_lone_label();
+        }
+    }
+
+    /// The same even-pad for an item that RESERVES rather than emits — `ds.w`
+    /// and `ds.l`. asl pads these exactly as it pads `dc.w`, but leaves the pad
+    /// byte unwritten: under `-p=0xFF` a `dc.w` at an odd `$` reads
+    /// `11 `**`00`**` 33 44` (a real emitted pad) while a `ds.w` reads
+    /// `11 `**`ff ff ff`**` 33` — pad and reservation alike are holes.
+    ///
+    /// The boundary that is easy to guess wrong: the pad is to the next EVEN
+    /// address regardless of the element's own width. `ds.l` at `$1` lands on
+    /// `$2`, not `$4`.
+    fn pad_word_align_reserving(&mut self, span: Span) {
+        if self.word_pad_due() {
+            self.open_section_if_needed();
+            self.builder.reserve(1, span);
+            self.absorb_pad_into_lone_label();
         }
     }
 
@@ -3568,10 +3785,17 @@ impl Asm {
             // makes `strlen(s)` see the rendered text rather than the source
             // spelling.
             let s = self.interp_text(&s);
+            self.float_env.remove(&q);
             self.str_env.insert(q, s);
             return;
         }
+        if let Some(f) = self.float_rhs(rest) {
+            self.str_env.remove(&q);
+            self.float_env.insert(q, f);
+            return;
+        }
         if let Some(v) = self.eval_all(rest, span) {
+            self.float_env.remove(&q);
             self.env.define(&q, SymbolValue::Int(v));
             // A label-referencing equate (`HandlerPtr = Handler`, the debugger's
             // `DEBUGGER__* = MDDBG__* = ErrorHandler + N` chain): its VALUE is a
@@ -3672,6 +3896,39 @@ impl Asm {
         }
     }
 
+    /// The FLOAT value of an `equ`/`=`/`set`/`:=` right-hand side, or `None`
+    /// when it is not float-typed.
+    ///
+    /// Checked between the string branch and the integer branch of both
+    /// assignment directives. asl binds a float to a symbol exactly as it
+    /// binds an integer — probe `f2.asm` lines 8 and 11 list `fx = 3.7` as
+    /// `=3.7` and `fy equ 2.5` as `=2.5`, and its symbol table prints
+    /// `fx : 3.7`. `s2.sounddriver.asm(3901)`'s `sample_rate_scale := 1.0`
+    /// (immediately reassigned to a macro parameter, then read by
+    /// `int(label.sample_rate*sample_rate_scale)`) is the corpus demand.
+    ///
+    /// Only a genuinely FLOAT result diverts here: `eval_num` returns
+    /// `Num::Float` only when a float literal or a float symbol is somewhere
+    /// in the tree, so every integer assignment still takes the integer branch
+    /// — including the ones `eval_num` could evaluate but the integer folder
+    /// handles with far more machinery (label references, deferral, the
+    /// symbolic-equ export).
+    /// Deliberately `expand_calls` and then the typed evaluator, NOT the full
+    /// [`Self::expand_operand_builtins`] chain: `eval_num` recognizes
+    /// `int(...)`/`sin(...)` itself, and it reports NOTHING. Routing this probe
+    /// through the erroring expansion instead double-reports every failure, and
+    /// it was measured doing so — `s2.asm(87677)`'s
+    /// `.loop_counter = int(log(number))` (asl's `log` builtin, which sigil does
+    /// not have) went from 6 diagnostics to 12 across the S2 corpus, one pair per
+    /// call site: a speculative type test must not be able to raise a diagnostic.
+    fn float_rhs(&mut self, rest: &[Token]) -> Option<f64> {
+        let expanded = self.expand_calls(rest, 0);
+        match self.eval_num(&expanded)? {
+            Num::Float(f) => Some(f),
+            Num::Int(_) => None,
+        }
+    }
+
     /// `name set <expr>` / `name := <expr>` (T8): AS's reassignable-symbol
     /// forms, e.g. Aeon's band counters / `OE_PREV_X` sort checks / deform
     /// accumulators. `eval_all` folds `rest` against `self.env` AS IT STANDS
@@ -3682,6 +3939,114 @@ impl Asm {
     /// function rather than an alias of `directive_equate`: `=` is slated to
     /// grow a single-assignment redefinition diagnostic (see that function's
     /// doc), and `set`/`:=` must keep permitting redefinition when it does.
+    /// `enum name[=expr][,name[=expr]]…` — open a FRESH enumeration.
+    ///
+    /// The only thing separating `enum` from [`Self::directive_nextenum`] is
+    /// this reset: asl binds `c=0` for `enum a=5,b` / `enum c,d` (probe q11),
+    /// so a member with no explicit value starts from 0 and not from wherever
+    /// the previous enumeration stopped. The step is NOT reset — it belongs to
+    /// `enumconf` alone (probe q12).
+    fn directive_enum(&mut self, rest: &[Token], span: Span) {
+        self.enum_next = 0;
+        self.enum_members(rest, span, "enum");
+    }
+
+    /// `nextenum name[=expr][,…]` — continue the running enumeration.
+    ///
+    /// With no `enum` ahead of it the counter is simply its initial 0, which is
+    /// what asl does: a bare leading `nextenum q,r` binds `q=0,r=1` and emits no
+    /// diagnostic (probe q6). This is how the corpus's note table is written —
+    /// one `enum nRst=$80` followed by sixteen `nextenum` continuations.
+    fn directive_nextenum(&mut self, rest: &[Token], span: Span) {
+        self.enum_members(rest, span, "nextenum");
+    }
+
+    /// Bind one comma-separated member list against the running counter.
+    ///
+    /// Each member is `name` or `name=expr`. An explicit `expr` sets the counter
+    /// before the binding, so the member AFTER an explicit one continues from it
+    /// — `enum a=$80,b,c=b,d,e` binds `$80,$81,$81,$82,$83` (probe q3). That is
+    /// what makes the corpus's enharmonics work: `nCs0,nDb0=nCs0,nD0` gives
+    /// `nDb0` its flat-equals-sharp value without costing the table a slot.
+    ///
+    /// The counter advances by the step read HERE, at the moment of the binding,
+    /// which is what keeps a later `enumconf` from reaching back into an already
+    /// advanced counter (probe q4).
+    fn enum_members(&mut self, rest: &[Token], span: Span, kw: &str) {
+        // asl: `error #1110: wrong number of operands / expected between 1 and
+        // 476 arguments but got 0`. An empty operand list is a real refusal, not
+        // a no-op enumeration.
+        if rest.is_empty() {
+            self.err(span, format!("`{kw}` needs at least one member name"));
+            return;
+        }
+        for g in split_top_commas(rest) {
+            // Split the member at its top-level `=`. `split_top_commas` already
+            // guarantees the group is one member; the `=` is the only structure
+            // left in it, and it cannot be nested (a value expression's own
+            // comparisons spell themselves `==`).
+            let eq = g
+                .iter()
+                .position(|t| matches!(t.tok, Tok::Punct(Punct::Eq)));
+            let (name_toks, val_toks) = match eq {
+                Some(i) => (&g[..i], Some(&g[i + 1..])),
+                None => (g, None),
+            };
+            let name = match name_toks {
+                [Token {
+                    tok: Tok::Ident(n), ..
+                }] => n.clone(),
+                _ => {
+                    let at = name_toks.first().map(|t| t.span).unwrap_or(span);
+                    self.err(at, format!("`{kw}` member needs a plain name"));
+                    continue;
+                }
+            };
+            if let Some(v) = val_toks {
+                // asl folds the start expression in the FIRST pass — a forward
+                // reference is `error #1820: expression must be evaluatable in
+                // first pass` (probe q10), never a deferral. `eval_all` already
+                // diagnoses an unresolvable expression, so a `None` here has
+                // been reported and the member is skipped rather than bound to
+                // a value that was never computed.
+                match self.eval_all(v, span) {
+                    Some(n) => self.enum_next = n,
+                    None => continue,
+                }
+            }
+            let q = qualify(&name, self.real_scope());
+            self.env.define(&q, SymbolValue::Int(self.enum_next));
+            self.enum_next = self.enum_next.wrapping_add(self.enum_step);
+        }
+    }
+
+    /// `enumconf step[,segment]` — set the enumeration step.
+    ///
+    /// The step may be negative (`enumconf -1` counts down, probe q7) or zero
+    /// (every member takes the same value, probe q9); neither is an error, and
+    /// the corpus's pitch table is exactly this directive used to stride a
+    /// twelve-semitone octave (`enumconf $C`, probe q2).
+    ///
+    /// asl accepts an optional second operand naming a SEGMENT, not a second
+    /// number — `enumconf 1,CODE` assembles and `enumconf 1,2` is `error #1961:
+    /// unknown segment`. Only the single-operand form appears in the corpus, so
+    /// the segment is parsed and ignored rather than modelled.
+    fn directive_enumconf(&mut self, rest: &[Token], span: Span) {
+        let groups = split_top_commas(rest);
+        // asl: `expected between 1 and 2 arguments but got 0`.
+        if rest.is_empty() {
+            self.err(span, "`enumconf` needs a step");
+            return;
+        }
+        if groups.len() > 2 {
+            self.err(span, "`enumconf` takes a step and an optional segment");
+            return;
+        }
+        if let Some(n) = self.eval_all(groups[0], span) {
+            self.enum_step = n;
+        }
+    }
+
     fn directive_set(&mut self, name: &str, rest: &[Token], span: Span) {
         // A `.`-local `set` inside a macro expansion binds in the CALLER's scope,
         // not the expansion's, and macro nesting is transparent to it
@@ -3708,10 +4073,17 @@ impl Asm {
             // (asl-verified): `s := "\{n}"` captures `n`'s value at this
             // assignment, and a later reassignment of `n` does not reach `s`.
             let s = self.interp_text(&s);
+            self.float_env.remove(&q);
             self.str_env.insert(q, s);
             return;
         }
+        if let Some(f) = self.float_rhs(rest) {
+            self.str_env.remove(&q);
+            self.float_env.insert(q, f);
+            return;
+        }
         if let Some(v) = self.eval_all(rest, span) {
+            self.float_env.remove(&q);
             self.env.define(&q, SymbolValue::Int(v));
             // Relocation capability (flip Stage 2): if the RHS — after splicing
             // any set-symbol it CHAINS through (`P_DFG := PC_FG_T`) — references a
@@ -3762,12 +4134,83 @@ impl Asm {
         self.directive_set(&name, groups[1], span);
     }
 
+    /// The front-end-only builtin layer over ONE operand's tokens: user
+    /// `function` calls, then `int(...)`/`sin(...)`, then the string builtins
+    /// and string comparisons — each collapsing to an ordinary `Tok::Int`
+    /// (or, for `substr`/`lowstring`, a `Tok::Str`) before
+    /// [`crate::expr::parse_expr`] ever runs (§7.4).
+    ///
+    /// This exists because the layer used to be wired into `dc.b` ALONE.
+    /// `dc.w`/`dc.l`/`dw` ran `expand_calls` and nothing else, so every
+    /// `int(...)` in a word or long operand reached `parse_expr` unexpanded
+    /// and died as `bad word expression` — 166 of Sonic 1's 318 frontend
+    /// diagnostics, all of them on the two `dc.w MakeFMFrequency(op)` /
+    /// `dc.w MakePSGFrequency(op)` lines that build `FM_Notes` and
+    /// `PSGFrequencies`. A builtin that works at one width and not another is
+    /// not a missing feature so much as a trap, so the widths share one
+    /// function rather than three parallel pipelines.
+    fn expand_operand_builtins(&mut self, toks: &[Token]) -> Vec<Token> {
+        let expanded = self.expand_calls(toks, 0);
+        let expanded = self.expand_int_builtin(&expanded);
+        let expanded = self.expand_str_builtins(&expanded);
+        self.expand_str_comparisons(&expanded)
+    }
+
+    /// The position of a FLOAT-typed leaf in `toks` — a literal that no
+    /// `int(...)` consumed, or a name bound in [`Self::float_env`].
+    fn float_leaf(&self, toks: &[Token]) -> Option<Span> {
+        toks.iter().find_map(|t| match &t.tok {
+            Tok::Float(_) => Some(t.span),
+            Tok::Ident(n) => self.resolve_float_sym(n).map(|_| t.span),
+            _ => None,
+        })
+    }
+
+    /// Reduce an operand that still mentions a float to a plain integer token,
+    /// or say where the float is that stops it.
+    ///
+    /// A float LEAF does not by itself make an operand invalid: asl's
+    /// comparison operators take floats and yield integers, so `dc.l 3.5<4` is
+    /// `0000 0001` (probe `f2.asm(16)`). What asl refuses is a float
+    /// **result** in an integer context — `dc.l 3.7` and `dc.l fx` (after
+    /// `fx = 3.7`) both draw `error #1133: expected integer or string, but got
+    /// floating point number` (probes `f1.asm(17-19)`, `f3.asm(5)`).
+    ///
+    /// So a float-free operand is returned untouched — the integer path with
+    /// its labels, forward references and link deferral is left entirely
+    /// alone, which is why this cannot perturb any program that assembles
+    /// today. Only when a float is present does the typed evaluator run, and
+    /// then it must land on an integer.
+    ///
+    /// Running BEFORE the numeric parse is what makes the answer name the real
+    /// problem. A float TOKEN can never parse as an `Expr` (there is no float
+    /// atom), so it would read as a generic `bad word expression`; a float
+    /// SYMBOL is worse — it parses as a bare `Expr::Sym`, folds to Poison and
+    /// defers to the linker, reporting a symbol that has a perfectly good
+    /// value as an undefined one.
+    fn collapse_float_operand(&mut self, toks: &[Token]) -> Result<Vec<Token>, Span> {
+        let Some(fsp) = self.float_leaf(toks) else {
+            return Ok(toks.to_vec());
+        };
+        match self.eval_num(toks) {
+            Some(Num::Int(v)) => Ok(vec![Token { tok: Tok::Int(v), span: fsp }]),
+            _ => Err(fsp),
+        }
+    }
+
     fn directive_db(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         for g in split_top_commas(rest) {
             let called = self.expand_calls(g, 0);
             let expanded = self.expand_int_builtin(&called);
             let expanded = self.expand_str_builtins(&expanded);
+            let expanded = match self.collapse_float_operand(&expanded) {
+                Ok(t) => t,
+                Err(fsp) => {
+                    self.err(fsp, FLOAT_IN_INT_CONTEXT);
+                    continue;
+                }
+            };
             // (T6c) A STRING operand — a plain `Tok::Str` literal or a
             // string-builtin call that resolves to one (`substr(...)`,
             // `lowstring(...)`) — emits one ASCII byte per character
@@ -3828,7 +4271,14 @@ impl Asm {
     fn directive_dw(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         for g in split_top_commas(rest) {
-            let expanded = self.expand_calls(g, 0);
+            let expanded = self.expand_operand_builtins(g);
+            let expanded = match self.collapse_float_operand(&expanded) {
+                Ok(t) => t,
+                Err(fsp) => {
+                    self.err(fsp, FLOAT_IN_INT_CONTEXT);
+                    continue;
+                }
+            };
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
@@ -3897,7 +4347,14 @@ impl Asm {
         self.open_section_if_needed();
         self.pad_word_align(span);
         for g in split_top_commas(rest) {
-            let expanded = self.expand_calls(g, 0);
+            let expanded = self.expand_operand_builtins(g);
+            let expanded = match self.collapse_float_operand(&expanded) {
+                Ok(t) => t,
+                Err(fsp) => {
+                    self.err(fsp, FLOAT_IN_INT_CONTEXT);
+                    continue;
+                }
+            };
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
@@ -3961,7 +4418,14 @@ impl Asm {
         self.open_section_if_needed();
         self.pad_word_align(span);
         for g in split_top_commas(rest) {
-            let expanded = self.expand_calls(g, 0);
+            let expanded = self.expand_operand_builtins(g);
+            let expanded = match self.collapse_float_operand(&expanded) {
+                Ok(t) => t,
+                Err(fsp) => {
+                    self.err(fsp, FLOAT_IN_INT_CONTEXT);
+                    continue;
+                }
+            };
             let e = match crate::expr::parse_expr(&expanded) {
                 Some((e, [])) => e,
                 _ => {
@@ -4013,6 +4477,13 @@ impl Asm {
     /// `Fragment::Reserve`, not a real `Fill`).
     fn directive_ds(&mut self, unit: u32, rest: &[Token], span: Span) {
         self.open_section_if_needed();
+        // A word-or-larger reservation is word-aligned exactly like a word-or-
+        // larger datum: `ds.w`/`ds.l` at an odd `$` take asl's implicit even-pad
+        // (as a hole, not an emitted byte). `ds.b` has alignment 1 and never
+        // pads — asl-verified both ways.
+        if unit > 1 {
+            self.pad_word_align_reserving(span);
+        }
         match self.eval_all(rest, span) {
             Some(v) if v >= 0 => self.builder.reserve(v as u32 * unit, span),
             Some(_) => self.err(span, "negative ds count"),
@@ -4030,10 +4501,21 @@ impl Asm {
     /// and an already-aligned address advances a full `n`.
     ///
     /// The regime is the SIGN OF THE PC, not `disp`: `phase $B000` + `ds.b 5` +
-    /// `align 256` gives `$B100`, the same as the unphased form. What `disp`
-    /// still decides here is the KIND of pad — a phased region is Aeon RAM under
-    /// `padding off`, where the pad is a `Reserve` (address-only, no image
-    /// bytes), against a ROM section where it is a real `$00` `Fill`.
+    /// `align 256` gives `$B100`, the same as the unphased form.
+    ///
+    /// The pad is a `Reserve` — address space with NO image bytes — in every
+    /// region, phased or not. asl's object file carries no record at all for
+    /// the addresses an `align` steps over, so p2bin's fill value decides what
+    /// appears there: the same `.p` yields `11 00 22` under `-p=0x0` and
+    /// `11 ff 22` under `-p=0xFF`. Consequences, both asl-verified:
+    /// a mid-image align still reads as zeros in a flat `-p=0` binary (the
+    /// write cursor skips the gap), while a TRAILING align cannot lengthen the
+    /// image at all — `dc.b $11` + `align 4` is one byte, not four.
+    ///
+    /// `-p=0` is what makes this easy to get wrong: under it an emitted `$00`
+    /// and an untouched address are indistinguishable, so a `Fill` here agrees
+    /// with the reference everywhere except at the end of the image, which is
+    /// exactly where it was caught.
     fn directive_align(&mut self, rest: &[Token], span: Span) {
         self.open_section_if_needed();
         match self.eval_all(rest, span) {
@@ -4041,11 +4523,7 @@ impl Asm {
                 let n = n as u32;
                 let pad = sigil_ir::asl_align_pad(self.here(), n);
                 if pad > 0 {
-                    if self.state.disp != 0 {
-                        self.builder.reserve(pad, span);
-                    } else {
-                        self.builder.emit_fill(pad, 0, span);
-                    }
+                    self.builder.reserve(pad, span);
                 }
             }
             Some(_) => self.err(span, "align needs a positive constant"),
@@ -4062,7 +4540,7 @@ impl Asm {
     }
 
     fn lower_z80(&mut self, mn: &str, rest: &[Token], span: Span) {
-        let atoms = match parse_operands(rest) {
+        let atoms = match parse_operands(rest, span) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -4156,7 +4634,7 @@ impl Asm {
             return self.lower_m68k_movem(suffix_size, rest, span);
         }
         if matches!(mnemonic, M68kMnemonic::Jmp | M68kMnemonic::Jsr) {
-            let atoms = match parse_operands(rest) {
+            let atoms = match parse_operands(rest, span) {
                 Ok(a) => a,
                 Err(d) => {
                     self.diags.push(d);
@@ -4269,7 +4747,7 @@ impl Asm {
             return self.lower_m68k_generic(mnemonic, suffix_size, atoms, span);
         }
 
-        let atoms = match parse_operands(rest) {
+        let atoms = match parse_operands(rest, span) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -4605,7 +5083,7 @@ impl Asm {
                 return;
             }
         };
-        let atoms = match parse_operands(rest) {
+        let atoms = match parse_operands(rest, span) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -4639,7 +5117,7 @@ impl Asm {
     /// `self_address - (self_address + 2)`) and against real `asl` (see
     /// `m68k_dbf_d0_self`/`m68k_dbeq_d1_self` in `tests/snippets_golden.txt`).
     fn lower_m68k_dbcc(&mut self, mnemonic: M68kMnemonic, rest: &[Token], span: Span) {
-        let atoms = match parse_operands(rest) {
+        let atoms = match parse_operands(rest, span) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -4733,7 +5211,7 @@ impl Asm {
                 return;
             }
         };
-        let mem_atoms = match parse_operands(mem_toks) {
+        let mem_atoms = match parse_operands(mem_toks, span) {
             Ok(a) => a,
             Err(d) => {
                 self.diags.push(d);
@@ -5564,16 +6042,38 @@ impl Asm {
             };
             (name, toks.get(2..).unwrap_or(&[]).to_vec())
         };
-        let params: Vec<String> = param_toks
-            .iter()
-            .filter_map(|t| {
-                if let Tok::Ident(p) = &t.tok {
-                    Some(p.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
+        // One parameter per top-level comma group, each `NAME` or `NAME=default`.
+        //
+        // Splitting on commas rather than harvesting every `Ident` in the list is
+        // what keeps a default's own identifiers out of the parameter table. The
+        // corpus's `macro loc,controlport=(vdp_control_port).l` used to declare
+        // FOUR parameters — `loc`, `controlport`, and the `vdp_control_port` and
+        // `l` read out of the default expression — so a body that mentioned
+        // `vdp_control_port` would have had it substituted away to nothing.
+        //
+        // An empty group contributes no parameter. That is how a `{INTLABEL}`
+        // group vanishes: the lexer swallows the whole `{…}` without emitting a
+        // token, so it declares a capture and consumes no argument position
+        // (asl-verified — `m macro {INTLABEL},pp,qq` binds `pp`/`qq` from `11,22`).
+        let mut params: Vec<String> = Vec::new();
+        let mut defaults: Vec<Option<String>> = Vec::new();
+        for group in split_top_commas(&param_toks) {
+            let Some((Tok::Ident(name), rest)) = group.split_first().map(|(h, r)| (&h.tok, r))
+            else {
+                continue;
+            };
+            params.push(name.clone());
+            defaults.push(match rest.split_first() {
+                Some((
+                    Token {
+                        tok: Tok::Punct(Punct::Eq),
+                        ..
+                    },
+                    text,
+                )) => Some(render_tokens(text)),
+                _ => None,
+            });
+        }
         let end = self.find_block_end(lines, start);
         // An UNCLOSED definition. `find_block_end` answers with the last line it
         // scanned, so a head on that line leaves nothing between head and end and
@@ -5603,7 +6103,8 @@ impl Asm {
             .collect();
         self.dot_label_cache.remove(&name);
         let int_label = head_declares_int_label(&head.text);
-        self.macros.insert(name, MacroDef { params, body, int_label });
+        self.macros
+            .insert(name, MacroDef { params, defaults, body, int_label });
         end + 1
     }
 
@@ -5751,7 +6252,7 @@ impl Asm {
             );
             return;
         }
-        let MacroDef { params, body, int_label } = match self.macros.get(name) {
+        let MacroDef { params, defaults, body, int_label } = match self.macros.get(name) {
             Some(m) => m.clone(),
             None => return,
         };
@@ -5775,21 +6276,73 @@ impl Asm {
         let mut keyword: std::collections::BTreeMap<String, String> =
             std::collections::BTreeMap::new();
         let mut positional: Vec<String> = Vec::new();
+        // Once a call has written a KEYWORD argument, every argument after it
+        // must be one too. asl refuses a positional there (#1812) and refuses a
+        // keyword whose name it cannot find among the parameters (#1811), and in
+        // BOTH cases the argument binds NOTHING — the parameter keeps the empty
+        // text an omitted argument would have given it. asl `-U`, `m macro
+        // px,py,pz` over `dc.b px,py,pz` (probes `k2.asm`, `k3.asm`):
+        //
+        // ```text
+        //   > > > k2.asm(9): error #1812: positional argument no longer allowed after keyword argument
+        //   > > >  m 1,py=$22,3
+        //    9/       6 : (MACRO)              	m	1,py=$22,3
+        //    9/       6 :                             dc.b    1,$22,
+        //   > > > k3.asm(7):6: error #1811: keyword argument not defined in macro
+        //   > > > zz
+        //   > > >  m 1,zz=2,3
+        //    7/       0 : (MACRO)              	m	1,zz=2,3
+        //    7/       0 :                             dc.b    1,,
+        // ```
+        //
+        // — `pz` is empty in the first even though `3` was written for it, and in
+        // the second the unknown `zz=2` binds nothing AND still arms the rule, so
+        // the trailing `3` is refused as well. #1812 fires ONCE PER offending
+        // positional argument: `m PX=1,2,3` (probe `k4.asm`) reports it twice.
+        //
+        // Accepting these silently is a WRONG PROGRAM, not a missing message: the
+        // refused positional is bound here where asl leaves it empty, so the body
+        // assembles against arguments asl never supplied.
+        // The whole-call fallback for an argument group with no tokens of its own
+        // (`m py=1,` — the trailing empty group still counts as an argument).
+        let call_span = arg_toks.first().map(|t| t.span).unwrap_or(Span {
+            source: self.source,
+            start: 0,
+            end: 0,
+        });
+        let mut seen_keyword = false;
         for g in &groups {
-            if let [Token {
-                tok: Tok::Ident(nm),
-                ..
-            }, Token {
-                tok: Tok::Punct(Punct::Eq),
-                ..
-            }, value @ ..] = *g
-            {
-                if !value.is_empty() && params.iter().any(|p| p == nm) {
-                    keyword.insert(nm.clone(), render_tokens(value));
+            let Some(eq) = keyword_eq_index(g) else {
+                if seen_keyword {
+                    self.err(
+                        group_span(g).unwrap_or(call_span),
+                        "positional argument no longer allowed after keyword argument",
+                    );
+                    continue;
+                }
+                positional.push(render_tokens(g));
+                continue;
+            };
+            // Every keyword argument arms the rule for the arguments after it,
+            // including one asl goes on to reject as undefined.
+            seen_keyword = true;
+            let (kw_name, kw_value) = (&g[..eq], &g[eq + 1..]);
+            if let [Token { tok: Tok::Ident(nm), .. }] = kw_name {
+                if params.iter().any(|p| p == nm) {
+                    // An EMPTY value is a real binding to empty text, not a
+                    // non-keyword: asl's `m 1,py=,4` (probe `k6.asm`) leaves `py`
+                    // empty and still refuses the `4` that follows.
+                    keyword.insert(nm.clone(), render_tokens(kw_value));
                     continue;
                 }
             }
-            positional.push(render_tokens(g));
+            self.err(
+                group_span(g).unwrap_or(call_span),
+                format!(
+                    "keyword argument `{}` not defined in macro `{name}`",
+                    render_tokens(kw_name)
+                ),
+            );
         }
         let mut pos_iter = positional.into_iter();
         // The caller's local-label scope, captured BEFORE the expansion swaps in
@@ -5814,11 +6367,66 @@ impl Asm {
         // trailing parameter must not contribute an empty group to it
         // (asl-verified: probe `p4.asm` case 4e, `mp aa` on params `n1,n2,n3`,
         // shifts to `s[][][][]` — an empty `ALLARGS`, not `,`).
+        //
+        // A slot that took its DEFAULT counts as unsupplied here, which is right
+        // for `ARGCOUNT` and for `ALLARGS` before any shift — asl reads both off
+        // the call text (`ac p3=99` on `p1,p2=DEF2,p3` reports `ARGCOUNT` 1 and
+        // `ALLARGS` `p3=99`, defaults nowhere in either).
+        //
+        // What it is NOT known to be right for is `ALLARGS` AFTER a `shift` in a
+        // macro that declares a default: asl puts defaults into the store the
+        // shifted `ALLARGS` renders from, and does so by a rule these probes did
+        // not pin. Four asl rows, `-U`, each macro called with one argument:
+        //
+        // ```text
+        //   n1,n2=DD,n3   shift → "DD,"     shift → ""
+        //   n1,n2,n3=LL   shift → "LL"      shift → "LL"
+        //   n1,n2,n3=CC,n4 (as p3=CC)  shift → "CC,"  shift → "CC,"
+        //   n1,n2=BB,n3,n4=DD  shift → "DD,EE"-shaped (both defaults present)
+        // ```
+        //
+        // No join of the bound vector reproduces all four, and the PARAMETERS
+        // after a shift do follow the plain "bound vector slides left" rule the
+        // second row's `<|LL|>` shows — so the two disagree and the `ALLARGS`
+        // half is unexplained. It is left as it was rather than guessed at: no
+        // macro in s1disasm, s2disasm or aeon both declares a default and reads
+        // `ALLARGS`/`shift`, so nothing exercises the corner, and a rule invented
+        // to fill it would be a wrong answer waiting for the first source that
+        // does.
         let mut filled: Vec<bool> = Vec::with_capacity(params.len());
-        for p in &params {
+        for (p, default) in params.iter().zip(defaults.iter()) {
             let supplied = keyword.get(p).cloned().or_else(|| pos_iter.next());
             filled.push(supplied.is_some());
-            let v = self.bind_macro_arg(supplied.unwrap_or_default());
+            // A parameter declaring a default takes it wherever the call supplies
+            // NO TEXT for the slot — whether the slot was left off the end of the
+            // call or written empty between two commas. asl `-U`, `ac macro
+            // p1,p2=DEF2,p3` emitting `<p1|p2|p3>`:
+            //
+            // ```text
+            //    9/       1 : 3C7C 4445 4632      dc.b "<|DEF2|>"        ; ac
+            //   10/       C : 3C31 317C 4445      dc.b "<11|DEF2|>"      ; ac 11
+            //   11/      1B : 3C31 317C 3232      dc.b "<11|22|>"        ; ac 11,22
+            //   13/      40 : 3C31 317C 4445      dc.b "<11|DEF2|33>"    ; ac 11,,33
+            //   14/      55 : 3C7C 4445 4632      dc.b "<|DEF2|99>"      ; ac p3=99
+            // ```
+            //
+            // The last two are the rule's edges: `ac 11,,33` writes the slot and
+            // leaves it empty, and still takes the default; `ac p3=99` binds a
+            // LATER parameter by keyword, and the skipped `p2` still takes it
+            // while the defaultless `p1` stays empty.
+            //
+            // The default is the CALLEE's own text, so it does not go through
+            // [`Self::bind_macro_arg`] — that qualifies a bare `.`-local against
+            // the CALLER's scope, which is right for an argument the caller wrote
+            // and wrong for text written in the macro's own declaration. No
+            // corpus default is a `.`-local, so the two readings are
+            // indistinguishable today; the callee reading is the one that matches
+            // where the text is written.
+            let text = supplied.unwrap_or_default();
+            let v = match default {
+                Some(d) if text.is_empty() => d.clone(),
+                _ => self.bind_macro_arg(text),
+            };
             bound.push(v);
         }
         // Surplus positional arguments — the ones the parameter list could not
@@ -6280,6 +6888,9 @@ fn is_op_keyword(s: &str) -> bool {
             | "restore"
             | "padding"
             | "supmode"
+            | "enum"
+            | "nextenum"
+            | "enumconf"
             | "db"
             | "dw"
             | "dc.b"
@@ -8441,6 +9052,159 @@ mod tests {
         want.extend(std::iter::repeat_n(0x00, 13));
         want.push(0x04);
         assert_eq!(image(src), want);
+    }
+
+    // ── AS layout alignment ──────────────────────────────────────────────
+    // Every expectation below is a value asl printed, against BOTH builds
+    // (vanilla Arnold and the flamewing fork, md5s in
+    // docs/superpowers/notes/2026-09-04-as-layout-alignment-spec.md). The
+    // probe names in the comments are that note's.
+
+    /// `align` advances the location counter and contributes NO image bytes.
+    /// asl's object file carries no record for the skipped address, so p2bin's
+    /// fill decides the gap byte — `-p=0x0` gives `11 00 22` and `-p=0xFF`
+    /// gives `11 ff 22` for the same `.p`. A trailing align therefore cannot
+    /// lengthen the image (probes `a1`, `a4`).
+    #[test]
+    fn trailing_align_contributes_no_image_bytes() {
+        let a1 = "        cpu 68000\n        padding off\n        org 0\n        dc.b $11\n        align 2\n";
+        assert_eq!(image(a1), vec![0x11], "align 2 at EOF must not emit a pad");
+        let a4 = "        cpu 68000\n        padding off\n        org 0\n        dc.b $11\n        align 4\n";
+        assert_eq!(image(a4), vec![0x11], "align 4 at EOF must not emit a pad");
+    }
+
+    /// The skipped addresses are still address space: `align` moves `$` even
+    /// though it writes nothing, so a following datum lands at the aligned
+    /// address and the gap replays as zeros in a flat image (probe `a2`).
+    #[test]
+    fn align_moves_the_counter_without_emitting() {
+        let a2 = "        cpu 68000\n        padding off\n        org 0\n        dc.b $11\n        align 2\n        dc.b $22\n";
+        assert_eq!(image(a2), vec![0x11, 0x00, 0x22]);
+        let m = run(a2, &Options::default()).expect("assemble");
+        assert_eq!(m.sections[0].vma_len(), 3);
+    }
+
+    /// The implicit even-pad fires on element size > 1 whether the item EMITS
+    /// or only RESERVES. `ds.w`/`ds.l` at an odd `$` pad exactly like `dc.w`
+    /// does — and always to an EVEN address, never to the element's own width:
+    /// `ds.l` at 1 lands on 2, not 4 (probes `c02`, `c10`, `c14`).
+    #[test]
+    fn word_sized_reservation_pads_to_even() {
+        let c02 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:    ds.w 1\n        dc.b $33\n";
+        let m = run(c02, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2, "ds.w at odd $ pads to even");
+        assert_eq!(image(c02).len(), 5);
+
+        let c10 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:    ds.l 1\n        dc.b $33\n";
+        let m = run(c10, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2, "ds.l at 1 pads to 2, NOT to 4");
+
+        let c14 = "        cpu 68000\n        org 0\n        dc.b $11,$22,$33\nLbl:    ds.l 1\n        dc.b $44\n";
+        let m = run(c14, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 4, "ds.l at 3 pads to the next even");
+    }
+
+    /// The pad is not label-driven — it fires with no label present at all
+    /// (probe `c11`) — and a byte-sized reservation never triggers it
+    /// (probe `c04`).
+    #[test]
+    fn reservation_pad_is_not_label_driven_and_skips_byte_units() {
+        let c11 = "        cpu 68000\n        org 0\n        dc.b $11\n        ds.w 1\n        dc.b $33\n";
+        assert_eq!(image(c11).len(), 5, "ds.w pads with no label in sight");
+
+        let c04 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n        ds.b 1\n        dc.b $33\n";
+        let m = run(c04, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "ds.b never pads");
+        assert_eq!(image(c04).len(), 3);
+    }
+
+    /// The whole implicit-pad rule is gated on `padding`. Under `padding off`
+    /// — Aeon's state — no reservation pads and no label moves (probe `e03`).
+    #[test]
+    fn reservation_pad_is_gated_on_padding_state() {
+        let e03 = "        cpu 68000\n        padding off\n        org 0\n        dc.b $11\nLbl:\n        ds.w 1\n        dc.b $33\n";
+        let m = run(e03, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "padding off suppresses the pad");
+        assert_eq!(image(e03).len(), 4);
+    }
+
+    /// A label ALONE on its line takes the address after the pad inserted by
+    /// the next PC-advancing line. asl's listing PC column shows the PRE-pad
+    /// address here and its symbol table shows the POST-pad one; the symbol
+    /// table is the truth (probes `c03`, `e07`).
+    #[test]
+    fn a_lone_label_takes_the_address_after_the_next_lines_pad() {
+        let c03 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n        ds.w 1\n        dc.b $33\n";
+        let m = run(c03, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2, "lone label defers across a ds.w pad");
+
+        // Not a `ds` phenomenon: `dc.w` reaches the same rule today.
+        let e07 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n        dc.w $3344\n";
+        let m = run(e07, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2, "lone label defers across a dc.w pad");
+    }
+
+    /// Only the LAST label of a run defers. Two labels on consecutive lines
+    /// pointing at the same place end up with DIFFERENT values (probes `c09`,
+    /// `e08`).
+    #[test]
+    fn only_the_last_label_of_a_run_absorbs_the_pad() {
+        let c09 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\nLb2:\n        ds.w 1\n        dc.b $33\n";
+        let m = run(c09, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "the earlier label keeps the unpadded address");
+        assert_eq!(label_vma(&m, "Lb2"), 2, "only the adjacent label defers");
+    }
+
+    /// A comment line is transparent to the deferral (probe `c13`), and at end
+    /// of file a lone label simply takes the current address (probe `c08`).
+    #[test]
+    fn the_deferral_crosses_comments_and_stops_at_end_of_file() {
+        let c13 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n; just a comment\n        ds.w 1\n        dc.b $33\n";
+        let m = run(c13, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2, "a comment does not end the deferral");
+
+        let c08 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n";
+        let m = run(c08, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "nothing follows, so nothing to defer to");
+        assert_eq!(image(c08), vec![0x11]);
+    }
+
+    /// EXACTLY ONE label absorbs a pad — the most recently defined one. When
+    /// the padding line has its own label, that label wins and a lone label
+    /// carried from the line above is left where it was: `Lbl:` then
+    /// `Lb2: ds.w 1` at an odd `$` gives `Lbl : 1` and `Lb2 : 2`, two labels
+    /// written at the same place with different values (probe `g1`).
+    #[test]
+    fn a_padding_lines_own_label_outranks_the_carried_one() {
+        let g1 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\nLb2:    ds.w 1\n        dc.b $33\n";
+        let m = run(g1, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "the carried label does not also move");
+        assert_eq!(label_vma(&m, "Lb2"), 2, "the line's own label takes the pad");
+    }
+
+    /// A label sharing the line with the padded item takes the post-pad address
+    /// too — the rule is about the most recent label, not about which line it
+    /// was written on (probes `g2`, `g3`).
+    #[test]
+    fn a_same_line_label_takes_the_post_pad_address() {
+        let g2 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:    dc.w $3344\n";
+        let m = run(g2, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 2);
+
+        // ...and stays put when its line does not pad.
+        let g3 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:    ds.b 1\n";
+        let m = run(g3, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1);
+    }
+
+    /// `align` never back-propagates to a lone label above it. The deferral
+    /// belongs to the implicit even-pad alone — a lone label before `align 4`
+    /// at address 1 stays at 1, it does not become 4 (probes `c07`, `d07`).
+    #[test]
+    fn an_explicit_align_does_not_back_propagate_to_a_lone_label() {
+        let c07 = "        cpu 68000\n        org 0\n        dc.b $11\nLbl:\n        align 4\n        dc.b $33\n";
+        let m = run(c07, &Options::default()).expect("assemble");
+        assert_eq!(label_vma(&m, "Lbl"), 1, "align is not an implicit pad");
     }
 
     #[test]
@@ -11994,4 +12758,127 @@ C:\n";
             [0x4E, 0xF9, 0x00, 0x00, 0x10, 0x00, 0x4E, 0xF9, 0x00, 0x00, 0x10, 0x06]
         );
     }
+}
+
+/// The diagnostic for a floating-point value reaching a context that requires
+/// an integer — asl's `error #1133: expected integer or string, but got
+/// floating point number` (probe `.f1probe/f1.asm(17)`: `dc.l 3.7`).
+///
+/// AS's expression evaluator is typed, and a float has no integer meaning of
+/// its own: the source must say which integer it wants, via `int(...)` (floor)
+/// or the corpus's `roundFloatToInteger` (`int(x+0.5)`). Truncating one
+/// silently here would be the wrong-bytes class — a program that never says
+/// how to round would get a rounding anyway.
+const FLOAT_IN_INT_CONTEXT: &str =
+    "floating point value where an integer is required (wrap it in `int(...)`)";
+
+/// A front-end-only NUMBER: AS's expression evaluator is TYPED, and the
+/// distinction is byte-visible, not cosmetic.
+///
+/// asl 1.42 Bld 212, probe `.f1probe/f2.asm`, listing columns quoted:
+///
+/// ```text
+///   4/  0 : FFFF FFFD    dc.l INT(-7/2)      ; int/int -> TRUNCATING int div, -3
+///  26/ 3C : 0000 025E    dc.l INT(15.39*1024*1024*2/FM_Sample_Rate+0.5)
+/// ```
+///
+/// `INT(-7/2)` is **-3**, not -4: `-7` and `2` are both integers, so `/` is
+/// integer division and `INT` then floors an integer (a no-op). Evaluating
+/// the same tree in f64 throughout gives `floor(-3.5)` = **-4** — a silently
+/// wrong byte, from a program that assembles clean. Type is therefore
+/// carried, not erased.
+///
+/// The float side is IEEE `f64` (binary64), asl-proven rather than assumed:
+/// `dc.l INT(1e17+1-1e17)` gives `0000 0000` (probe `f2.asm(24)`). `1e17+1`
+/// is not representable in binary64 and rounds back to `1e17`; an 80-bit
+/// extended (64-bit mantissa) would represent it exactly and answer 1.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Num {
+    Int(i64),
+    Float(f64),
+}
+
+impl Num {
+    fn as_f64(self) -> f64 {
+        match self {
+            Num::Int(i) => i as f64,
+            Num::Float(f) => f,
+        }
+    }
+    /// The integer behind this value, or `None` if it is a float. Backs the
+    /// operators AS refuses on floats (`error #1134: expected integer, but
+    /// got floating point number` — probe `f3.asm` lines 18-20 for `&`,
+    /// `<<` and `!`).
+    fn as_i64(self) -> Option<i64> {
+        match self {
+            Num::Int(i) => Some(i),
+            Num::Float(_) => None,
+        }
+    }
+    fn is_float(self) -> bool {
+        matches!(self, Num::Float(_))
+    }
+}
+
+/// Apply one binary operator to two [`Num`]s under AS's type rules.
+///
+/// `BinOp` comes straight from [`crate::expr::infix_bp`], so this match is the
+/// single place the typed evaluator says what each operator MEANS on floats;
+/// the arms are exhaustive, so a new operator in that ladder is a compile
+/// error here until it is given a meaning.
+///
+/// Three tiers, all asl-minted (probes `.f1probe/f1.asm`, `f2.asm`, `f3.asm`):
+///
+/// * **Arithmetic** (`+ - * /`) — float if EITHER side is float, otherwise
+///   integer. `dc.l 7/2` = 3 and `dc.l -7/2` = -3 (truncation toward zero, the
+///   same `i64::wrapping_div` the integer folder uses), while
+///   `dc.l INT(7.0/2)` = 3 through a real 3.5.
+/// * **Bit/modulo** (`& | ! << >> #`) — INTEGER ONLY. asl refuses a float
+///   operand outright: `dc.l INT(7.5&3)` / `INT(7.5<<1)` / `INT(7.5!3)` each
+///   draw `error #1134: expected integer, but got floating point number`.
+///   Returning `None` here is what turns that into sigil's own diagnostic
+///   rather than a silent truncation.
+/// * **Comparison / logical** (`= <> < > <= >= && ||`) — accept floats and
+///   yield an INTEGER 0/1, so the result composes into ordinary integer
+///   expressions: `dc.l 3.5<4` = `0000 0001`, and `if 3.5>2` takes the
+///   true arm.
+fn apply_num_binop(op: BinOp, lhs: Num, rhs: Num) -> Option<Num> {
+    use BinOp::*;
+    let float_math = lhs.is_float() || rhs.is_float();
+    Some(match op {
+        Add if float_math => Num::Float(lhs.as_f64() + rhs.as_f64()),
+        Sub if float_math => Num::Float(lhs.as_f64() - rhs.as_f64()),
+        Mul if float_math => Num::Float(lhs.as_f64() * rhs.as_f64()),
+        Div if float_math => Num::Float(lhs.as_f64() / rhs.as_f64()),
+        Add => Num::Int(lhs.as_i64()?.wrapping_add(rhs.as_i64()?)),
+        Sub => Num::Int(lhs.as_i64()?.wrapping_sub(rhs.as_i64()?)),
+        Mul => Num::Int(lhs.as_i64()?.wrapping_mul(rhs.as_i64()?)),
+        Div => {
+            let d = rhs.as_i64()?;
+            if d == 0 {
+                return None;
+            }
+            Num::Int(lhs.as_i64()?.wrapping_div(d))
+        }
+        Mod => {
+            let d = rhs.as_i64()?;
+            if d == 0 {
+                return None;
+            }
+            Num::Int(lhs.as_i64()?.wrapping_rem(d))
+        }
+        And => Num::Int(lhs.as_i64()? & rhs.as_i64()?),
+        Or => Num::Int(lhs.as_i64()? | rhs.as_i64()?),
+        Xor => Num::Int(lhs.as_i64()? ^ rhs.as_i64()?),
+        Shl => Num::Int(lhs.as_i64()?.wrapping_shl(rhs.as_i64()? as u32)),
+        Shr => Num::Int(lhs.as_i64()?.wrapping_shr(rhs.as_i64()? as u32)),
+        Eq => Num::Int((lhs.as_f64() == rhs.as_f64()) as i64),
+        Ne => Num::Int((lhs.as_f64() != rhs.as_f64()) as i64),
+        Lt => Num::Int((lhs.as_f64() < rhs.as_f64()) as i64),
+        Gt => Num::Int((lhs.as_f64() > rhs.as_f64()) as i64),
+        Le => Num::Int((lhs.as_f64() <= rhs.as_f64()) as i64),
+        Ge => Num::Int((lhs.as_f64() >= rhs.as_f64()) as i64),
+        LogAnd => Num::Int((lhs.as_f64() != 0.0 && rhs.as_f64() != 0.0) as i64),
+        LogOr => Num::Int((lhs.as_f64() != 0.0 || rhs.as_f64() != 0.0) as i64),
+    })
 }

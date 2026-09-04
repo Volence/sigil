@@ -178,6 +178,59 @@ pub fn state_and_detail(counts: &Counts) -> (String, String) {
     ("dirty".to_string(), detail)
 }
 
+/// What cargo must be told to watch so that a tree-state capture describes the
+/// tree the binary was actually compiled from.
+///
+/// [`state_and_detail`] is only ever true *as of the moment it ran*, and a build
+/// script runs when cargo decides it is stale. Keying that decision on the
+/// revision alone reproduces, one level down, the staleness the whole banner
+/// exists to detect: cargo tracks sources for COMPILATION, so a closure source
+/// edited and not committed recompiles the crate and relinks the binary while
+/// the build script — whose triggers are all revision-shaped — keeps its
+/// previous answer. The banner then reports `clean` about a binary built from
+/// uncommitted code, which is the one wrong answer it must never give. Keying
+/// the capture on the closure's own paths makes it follow the content it
+/// describes.
+///
+/// # The existence filter is load-bearing, and the asymmetry behind it is a trap
+///
+/// A `cargo:rerun-if-changed` naming a path that does not exist is read by cargo
+/// as "always dirty", which forces the build script to re-run on every single
+/// build — the unconditional-rerun cost this design refuses on measured grounds.
+/// So a derived path is emitted only when it is there.
+///
+/// The same list is handed out for a second purpose, as git pathspecs, and there
+/// a pathspec matching nothing is genuinely harmless — which is why the closure
+/// deliberately lists `.cargo` and `rust-toolchain*` whether or not this
+/// workspace has them. Harmless as a pathspec is NOT harmless as a rerun
+/// trigger, and the two uses do not share the property. A path in `absent` is a
+/// real, named hole in the tracking rather than something to quietly emit.
+pub enum Triggers {
+    /// The closure was derived. `emitted` are the paths cargo must be told to
+    /// watch — every derived path that exists — and `absent` are the derived
+    /// paths that do not exist and therefore cannot be watched without making
+    /// every build dirty.
+    Derived { emitted: Vec<String>, absent: Vec<String> },
+    /// The closure could not be derived, so every path in the repository is
+    /// material ([`SourcePaths::covers`] says so) and no finite trigger set
+    /// covers them. Nothing is emitted and a caller must not claim source
+    /// tracking. This is not a silent hole: with an underivable closure any dirt
+    /// at all already yields `dirty`, which is the loud direction, and the
+    /// banner says `NOT DERIVED` in place.
+    Undetermined,
+}
+
+/// Split the derived closure into the paths cargo can be told to watch and the
+/// paths it cannot. `exists` is injected so the decision is testable without a
+/// filesystem — the rule, not the disk, is what can be got wrong here.
+pub fn source_triggers(sources: &SourcePaths, exists: impl Fn(&str) -> bool) -> Triggers {
+    if !sources.derived {
+        return Triggers::Undetermined;
+    }
+    let (emitted, absent) = sources.paths.iter().cloned().partition(|p| exists(p));
+    Triggers::Derived { emitted, absent }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -310,5 +363,77 @@ mod tests {
         assert_eq!(s.paths(), &["crates/x".to_string(), "crates/y/src".to_string()]);
         assert!(s.covers("crates/x/src/bin/tool.rs"));
         assert!(!s.covers("crates/y/tests/t.rs"));
+    }
+
+    fn triggers(sources: &SourcePaths, present: &[&str]) -> (Vec<String>, Vec<String>) {
+        match source_triggers(sources, |p| present.contains(&p)) {
+            Triggers::Derived { emitted, absent } => (emitted, absent),
+            Triggers::Undetermined => panic!("a derived source set must yield derived triggers"),
+        }
+    }
+
+    /// THE defect this trigger set closes. Every region the classifier will
+    /// later be asked about must be one cargo was told to watch, or the capture
+    /// is keyed on something other than the content it reports on.
+    #[test]
+    fn every_watchable_closure_path_becomes_a_trigger() {
+        let s = sources(&["Cargo.toml", "crates/x", "crates/y/src"]);
+        let (emitted, absent) = triggers(&s, &["Cargo.toml", "crates/x", "crates/y/src"]);
+        assert_eq!(emitted, vec!["Cargo.toml", "crates/x", "crates/y/src"]);
+        assert!(absent.is_empty(), "nothing was missing, so nothing may be reported as a hole");
+
+        for path in s.paths() {
+            assert!(
+                emitted.contains(path),
+                "`{path}` is classified as a source of this binary but cargo was never told to \
+                 watch it, so an edit there would not re-capture the tree state"
+            );
+        }
+    }
+
+    /// The trap. The closure lists workspace-level inputs whether or not they
+    /// exist, because a git pathspec matching nothing is harmless — and a rerun
+    /// trigger naming a missing path is the opposite of harmless: cargo reads it
+    /// as permanently dirty and re-runs the build script on every build, which
+    /// is precisely the cost this design refuses.
+    #[test]
+    fn a_path_that_does_not_exist_is_never_emitted_as_a_trigger() {
+        let s = sources(&["Cargo.toml", ".cargo", "rust-toolchain", "rust-toolchain.toml"]);
+        let (emitted, absent) = triggers(&s, &["Cargo.toml"]);
+
+        assert_eq!(emitted, vec!["Cargo.toml"]);
+        assert_eq!(absent, vec![".cargo", "rust-toolchain", "rust-toolchain.toml"]);
+        for missing in &absent {
+            assert!(
+                !emitted.contains(missing),
+                "`{missing}` does not exist; emitting it makes every build dirty forever"
+            );
+        }
+    }
+
+    /// A hole must be reported, not silently dropped. `absent` is what the
+    /// banner prints, and a path that vanished from both lists would be a gap in
+    /// the tracking that nothing in the output confesses.
+    #[test]
+    fn every_derived_path_lands_in_exactly_one_of_the_two_lists() {
+        let s = sources(&["a", "b", "c", "d"]);
+        let (emitted, absent) = triggers(&s, &["a", "c"]);
+        let mut all: Vec<String> = emitted.iter().chain(absent.iter()).cloned().collect();
+        all.sort();
+        assert_eq!(all, s.paths(), "a derived path went missing from both lists");
+    }
+
+    /// An underivable closure has no finite trigger set — everything in the
+    /// repository is material — so the answer is the loud one rather than an
+    /// empty `Derived` that would read as "nothing needed watching".
+    #[test]
+    fn an_underivable_source_set_yields_no_trigger_claim() {
+        assert!(
+            matches!(
+                source_triggers(&SourcePaths::undetermined(), |_| true),
+                Triggers::Undetermined
+            ),
+            "an undetermined source set must not present itself as fully tracked"
+        );
     }
 }

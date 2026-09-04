@@ -127,7 +127,7 @@ subsequent string literals. `probe/p5.asm` line 20, after `charset ' ', $FF`:
 It owns 504 bytes of the retail ROM (`$359E`–`$3795`, the level-select and sound-test
 text).
 
-### F4 — macro default parameter values. 54 counts, 2 lines. Shared.
+### F4 — macro default parameter values. 54 counts, 2 lines. **S1-ONLY** (this heading said *Shared*; see the correction below).
 
 `Macros.asm(12)`, `locVRAM: macro loc,controlport=(vdp_control_port).l`. When a caller
 omits the parameter sigil substitutes nothing rather than the default. That produces
@@ -345,7 +345,8 @@ whether a class can be measured at all before the ones ahead of it land.
    Needs a real float path through `function` bodies and `dc` operands; it is the
    largest genuine implementation job in the frontend, but it retires 52% of the count.
 4. **F4, macro default parameter values** — 54 counts on two lines, and it carries the
-   `sonic.asm(1)` span bug with it. Shared with S2 (2,624 `bad operand expression`).
+   `sonic.asm(1)` span bug with it. **S1-only; the 2,624 figure this line carried is not
+   an F4 population** (correction below). LANDED at master `7f6ad19d`.
 5. **F2, `enum`/`nextenum`/`enumconf`** — 28 counts; shared with S2 at identical counts;
    unblocks a symbol population that is currently *unmeasurable* (L1).
 6. **F3, `charset`** — 11 counts and 504 ROM bytes here, **82 sites in S2**. The best
@@ -401,8 +402,8 @@ not use anywhere, and 3,384 are `unresolved symbol in operand`. **S1 is by a wid
 the closer corpus to a ROM, and it is the one with a retail-cartridge byte gate.**
 
 Shared causes worth doing once: **F1** (S2: 23 `int()` rows), **F2** (identical counts,
-same shared file), **F3** (S2: 82 `charset` sites), **F4** (S2: 2,624), **F8** (S2: 6+2).
-S1-only: **F5**, **F9**, **F10**, **F11**, and F7 in practice.
+same shared file), **F3** (S2: 82 `charset` sites), **F8** (S2: 6+2).
+S1-only: **F4** (corrected — see below), **F5**, **F9**, **F10**, **F11**, and F7 in practice.
 
 ## Booked, not done
 
@@ -443,3 +444,34 @@ S1-only: **F5**, **F9**, **F10**, **F11**, and F7 in practice.
    true: that is a property of the **frontend** only. Stub the frontend past its
    refusals and the link stage reports **16** unresolved `Map_Ring` fixups. Zero
    unresolvable names at the frontend did not mean zero unresolvable names.
+
+## CORRECTION 2026-09-04 — F4 is Sonic-1-only, and the 2,624 was never an F4 number
+
+Raised by the agent that implemented F4, which refused this note's framing on measurement
+rather than adopting it, and re-derived here by the overseer over a **different enumeration
+parameter** (a regex over macro declaration lines, against the agent's parse-based sweep)
+before being accepted.
+
+**F4 is S1-only.** Macro declarations carrying a default parameter: **1** in `s1disasm`
+(`Macros.asm:11`), **0** in `s2disasm` at `e45ebf33`, **0** in aeon's tracked `.asm`/`.inc`.
+The `Shared` label above was an inference, never a measurement, and it is withdrawn.
+
+**The 2,624 stands as arithmetic and falls as attribution — do not carry it forward with a
+concession attached.** It is the size of S2's `bad operand expression` class, and that class
+is AS's anonymous relative labels (`beq.s +`, `beq.s ++`) over ~2,602 distinct sites. It was
+never an F4 population, so the right statement is not *"the number was right and only the story
+was wrong"* — it is that **this note attributed a real count to the wrong construct**, and any
+sizing that read F4 as the largest cross-corpus item on the list was reading a number that
+belongs to a different row. Independent of the attribution: the S2 stderr stream is
+byte-for-byte identical across the F4 fix, which is what a zero-defaults corpus predicts.
+
+**Consequence for anyone sizing off this note.** F4 was ranked 4th on the ranked path largely
+on that cross-corpus figure. On the corrected reading its whole value was the 54 S1 rows it
+did in fact retire. **F3 (`charset`, 82 S2 sites) is now the best genuine cross-corpus item on
+the list**, and the ranking above has NOT been rewritten to match — read the ranking through
+this correction rather than at face value.
+
+**A third figure in this note is stale rather than wrong.** The 318 baseline was true when
+measured and was 305 by the time F4 ran, master having retired F6's 13 rows at `b5c4f83f`
+nineteen commits later. The overseer quoted 318 into a dispatch brief from this note instead of
+deriving it. **Derive the baseline at use time; this note dates it, it does not maintain it.**

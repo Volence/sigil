@@ -158,10 +158,13 @@ fn render_as_diags(failure: &sigil_frontend_as::Failure) {
 ///
 /// The banner states the confidence of each claim rather than presenting them
 /// as equally solid. `revision` is re-captured by cargo whenever git HEAD or
-/// the refs move (`build.rs` names those files as rerun triggers), so it tracks
-/// the code that is actually linked in. `tree` is a snapshot: no file's mtime
-/// follows working-tree dirtiness, so cargo cannot re-capture it, and the
-/// output says so in place rather than letting a reader assume otherwise.
+/// the refs move; `tree` is re-captured whenever a file under this binary's
+/// closure paths changes, which is what keeps a `clean` word from standing over
+/// a binary linked from uncommitted code. `build.rs` names all of those as rerun
+/// triggers and its module note carries the reasoning. `tree` is still labelled
+/// a snapshot, because the tracking is path-scoped rather than total, and the
+/// output names the ways it can under-report rather than letting a reader assume
+/// none.
 ///
 /// `revision` alone answers a question nobody asked, because it moves on every
 /// commit in the repository — a lane-log line makes an assembler look stale.
@@ -169,7 +172,10 @@ fn render_as_diags(failure: &sigil_frontend_as::Failure) {
 /// from, derived from cargo's own dependency graph, and `closure-revision` is
 /// the last commit that touched it. Comparing *those* reports only drift that
 /// can reach the executable, and the `tree` state word applies the same set to
-/// the working tree.
+/// the working tree. `drift-check` is that comparison with its assembly already
+/// done: a whole command rather than a recipe, because a recipe carrying a path
+/// list gets assembled wrongly — `build.rs`'s `drift_check` records which shell,
+/// and what the wrong assembly returns.
 ///
 /// Every field is a word even when nothing could be determined — an empty
 /// string reads as "clean" to a human and passes a grep for a SHA.
@@ -180,12 +186,16 @@ fn run_version() {
     let date = env!("SIGIL_REVISION_DATE");
     let tree_state = env!("SIGIL_TREE_STATE");
     let tree_detail = env!("SIGIL_TREE_DETAIL");
+    let tree_tracked = env!("SIGIL_TREE_TRACKED");
     let source_dir = env!("SIGIL_SOURCE_DIR");
     let tracks = env!("SIGIL_REVISION_TRACKS");
     let closure_packages = env!("SIGIL_CLOSURE_PACKAGES");
     let closure_paths = env!("SIGIL_CLOSURE_PATHS");
     let closure_note = env!("SIGIL_CLOSURE_NOTE");
     let closure_revision = env!("SIGIL_CLOSURE_REVISION");
+    let drift_check = env!("SIGIL_DRIFT_CHECK");
+    let published = env!("SIGIL_PUBLISHED");
+    let drift_check_published = env!("SIGIL_DRIFT_CHECK_PUBLISHED");
     let error = env!("SIGIL_PROVENANCE_ERROR");
 
     // The first line is the greppable one: `<name> <semver> (<revision tag>)`.
@@ -206,6 +216,7 @@ fn run_version() {
         println!("  tree:      unknown — {tree_detail}");
         println!("  source:    unknown");
         println!("  closure:   unknown — {closure_note}");
+        println!("  published: unknown — no revision was captured, so nothing can say whether it reached a remote");
         println!(
             "  freshness: this binary carries NO revision, so nothing here can confirm it \
              matches any source tree. Do not treat it as current."
@@ -217,16 +228,29 @@ fn run_version() {
     println!("  branch:    {branch}");
     println!("  committed: {date}");
     println!("  tree:      {tree_state} at capture — {tree_detail}");
+    // Deliberately `tree-tracked`, not `tree tracked`: aeon's gate reads the
+    // state word with `sed -n 's/^ *tree: *//p' | head -1`, and a label sharing
+    // that prefix would be a second candidate line for it to pick up.
+    println!("  tree-tracked: {tree_tracked}");
     println!("  source:    {source_dir}");
     println!("  closure:   {closure_packages} package(s), {closure_note}");
     println!("  closure-revision: {closure_revision}");
     println!("  closure-paths: {closure_paths}");
-    println!("  freshness: revision is re-captured whenever git HEAD or refs move (cargo tracks {tracks}).");
+    println!("  drift-check: {drift_check}");
+    println!("  published: {published}");
+    println!("  drift-check-published: {drift_check_published}");
+    println!("  freshness: revision and tree state are both re-captured (cargo tracks {tracks}).");
     println!(
-        "             tree state is a build-time snapshot; cargo has no trigger for uncommitted\n\
-         \x20            edits, so it may under-report dirt if this binary was relinked without\n\
-         \x20            HEAD moving. Compare `revision` against `git rev-parse HEAD` to check\n\
-         \x20            this binary against a source tree."
+        "             tree state is still a build-time snapshot: the tracking is path-scoped, so\n\
+         \x20            it can only under-report, and only where no mtime under a watched path\n\
+         \x20            moves — dirt OUTSIDE the closure (so `clean` may stand where\n\
+         \x20            `clean-sources` is true; neither word is a reason to distrust this\n\
+         \x20            binary), a closure path that does not exist yet and so cannot be watched\n\
+         \x20            (`tree-tracked` names any), an edit landing inside the cargo invocation\n\
+         \x20            that captured this, and any change that alters content without moving an\n\
+         \x20            mtime. A word beginning `dirty` is therefore trustworthy when it appears.\n\
+         \x20            Compare `revision` against `git rev-parse HEAD` to check this binary\n\
+         \x20            against a source tree."
     );
     println!(
         "  drift:     `revision` moves on EVERY commit here, including ones no compilation can\n\
@@ -234,8 +258,15 @@ fn run_version() {
          \x20            `closure-paths` is what cargo compiles this binary from, walked from\n\
          \x20            cargo's own dependency graph rather than listed by hand, and\n\
          \x20            `closure-revision` is the last commit that touched it. To check this\n\
-         \x20            binary against a tree, compare that against\n\
-         \x20            `git log -1 --format=%H HEAD -- <closure-paths>` run at the tree root.\n\
+         \x20            binary against a tree, run the `drift-check` line above — it is a whole\n\
+         \x20            command, paths included — and compare what it prints against\n\
+         \x20            `closure-revision`. Equal means no commit in that tree can have reached\n\
+         \x20            this binary. It is printed whole rather than as a recipe over\n\
+         \x20            `closure-paths` because the obvious assembly of such a recipe puts the\n\
+         \x20            list in a shell variable, and a shell that does not word-split an\n\
+         \x20            unquoted parameter (zsh) passes it as ONE pathspec: it then matches\n\
+         \x20            nothing, prints nothing, and exits 0, so a tree that was never looked at\n\
+         \x20            reads as a tree with no drift.\n\
          \x20            The classification OVER-reports and never under-reports. A package\n\
          \x20            carrying a build script contributes its whole directory, since a build\n\
          \x20            script may read any file in it; a `#[cfg(test)]` body or a second binary\n\
@@ -245,6 +276,18 @@ fn run_version() {
          \x20            closure, so growth is reported rather than missed.\n\
          \x20            What this proves is `cannot affect this binary`, never `the output did\n\
          \x20            not change` — only a rebuild and a byte compare supports the second."
+    );
+    println!(
+        "  anchors:   the two drift checks differ only in what they ask ABOUT. `drift-check`\n\
+         \x20            anchors at HEAD of the source tree named above; `drift-check-published`\n\
+         \x20            anchors at the remote-tracking ref named in `published`. On a machine\n\
+         \x20            where a sibling checkout is a peer's live working tree, that HEAD can be\n\
+         \x20            ahead of, behind, or divergent from anything another lane can see, so\n\
+         \x20            `behind HEAD` is not a fact until something names what it is behind —\n\
+         \x20            which is why both lines say which revision they compare against rather\n\
+         \x20            than leaving a reader to guess. The tracking ref is a LOCAL cache of the\n\
+         \x20            remote: `git fetch` is what moves it, and `git ls-remote` is what would\n\
+         \x20            ask the server. Neither line is a warning; both are positions."
     );
 }
 

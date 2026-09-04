@@ -14,6 +14,38 @@ sigil-specific: the landing-lane division, the worktree/test quirks, and the que
 > *"the section above/below"* about a dated section that has moved; those resolve in the log,
 > which carries every entry under its original line span.
 
+## STANDING: DO NOT BOOT INTO A STOP WHILE SLEEP MODE IS ON (owner) — read this before waiting
+
+**Two owner rulings, verified here firsthand at commits reachable from empyrean `origin/main` rather
+than taken from the relay.** Both are his verbatim words in empyrean's `docs/OVERSEER.md`:
+
+```sh
+git -C ../empyrean show cdb72e9b:docs/OVERSEER.md | grep -n -A3 '2026-09-02T17:17:18Z'
+git -C ../empyrean show 61dfcaa8:docs/OVERSEER.md | grep -n -A6 'Turning on sleep mode'
+```
+
+`cdb72e9b`, 2026-09-02T17:17:18Z: *"If something stops we have it work on the next item to get
+through that list please (unless it's waiting on something else)"*. `61dfcaa8`, 2026-09-03T04:24:58Z,
+sleep mode armed: *"If anything besides seraph runs out of tasks from the lists you can give it some
+other stuff to work on (sigil can start looking to replacing AS in the github disassembly …) as long
+as other agents aren't waiting on them for anything"*.
+
+**So a fresh sigil session does NOT stop for a go while sleep mode is on.** It takes the next queue
+row that is not itself waiting on another lane or an owner call; when the effects row is owner-blocked
+— which it is, on `d-24` — the named fallback is **SIGIL-AS-REPLACEMENT**. The `overseer` skill's
+boot stop is real and is overridden HERE, by him: it names an exception for a standing instruction
+from the owner, and this is one. **Two sigil sessions booted into that stop on 2026-09-04 alone.**
+
+**The gate is a condition to MEASURE.** Check *"aren't waiting on them"* against the other lanes'
+live rows — and a row naming sigil settles nothing either way: on 2026-09-04 three named sigil while
+the thing all three waited on was finished and pushed. **Ask whether sigil could release it, not
+whether sigil is mentioned.**
+
+**Provenance disclaimer, carried deliberately:** this reached the lane through the hub. A relay of
+his ruling is his ruling — but only because the two commands above were run here and the join
+checked. It authorizes taking the next unblocked row and nothing further; it does not authorize
+landing anything he has parked, and `d-24` stays parked.
+
 ## STANDING: REPORT TO THE HUB WHENEVER YOU FINISH OR STOP (owner, 2026-09-03)
 
 **Owner ruling, all lanes.** Verified here firsthand rather than taken from the relay:
@@ -57,31 +89,20 @@ a successor EVALUATES it rather than obeying it, and a row that cannot be evalua
 |---|---|---|---|---|
 | *(none)* | — | — | — | — |
 
-**LIFTED 2026-08-29 by the aeon lane — and chain 181 will RE-ARM it, on a fresh grant, not
-this one.** They said so explicitly rather than letting the old row carry, which is the
-standing-permission-expires rule working in the right direction for once.
+**PREFER A POSITIVE FREEZE WITNESS TO `pins.rs unchanged`** *(the aeon lane's finding, in one of
+this repo's own artifacts. Episode — the chain-180 discharged falsifier and chain 181:
+`docs/OVERSEER-LOG.md`, 2026-09-04 cut, original lines 97-118.)*
 
-**THE CHAIN-180 FALSIFIER DISCHARGED — verified here, not taken.** Both lanes pre-agreed that
-BALL-SEATING would move byte values and no pin. It held: `pins.rs` is untouched in the freeze
-commit `fa0e6540` (checked by `git show --stat` on that path, not by their report), both ROM
-sizes are unchanged (719205 / 735818), and `repin --check` reported `pins.rs unchanged`.
-**Record it as a DISCHARGED prediction rather than a green run** — a pre-agreed prediction that
-comes true is worth something only if it is written down that it was agreed first.
+`pins.rs unchanged` is an **absence**: equally consistent with a correct length-neutral parcel and
+with a build that never ran. `golden/offcanonical_sizes/s4.txt` is a **positive** witness — a table
+of unmoved labels beside two changed CRC headers cannot be produced by a build that did not run.
+**Two limits, so it is not adopted wider than it earns.** (1) It witnesses that a build ran and
+produced these labels; it is **silent on which source that build used**, so it composes with the
+assembler md5 rather than replacing it. (2) It is positive **only for a length-neutral parcel** — on
+a parcel that moves lengths the table moving is expected, and it reverts to something to reconcile.
 
-**A BETTER FREEZE WITNESS THAN `pins.rs unchanged`, found by the aeon lane in one of THIS
-repo's own artifacts.** `pins.rs unchanged` is an **absence**: it is equally consistent with a
-correct length-neutral parcel and with a build that never ran. `golden/offcanonical_sizes/s4.txt`
-is a **positive** witness — on chain 180 exactly two lines moved, both CRC headers
-(`golden_crc32`, `assembled_anchor`), while `assembled_end=0xa5c90` and every label held.
-Verified here on `fa0e6540`. A table of unmoved labels beside two changed CRCs cannot be
-produced by a build that did not run. **Prefer it to the pin file for length-neutral parcels.**
-
-**Its two limits, stated by the aeon lane while it was fresh so it is not adopted wider than
-it earns.** (1) It witnesses that a build **ran and produced these labels**; it is **silent on
-which source that build used**, so it **composes with the assembler md5 rather than replacing
-it**. (2) It is a positive witness **only for a length-neutral parcel**. On chain 181 — debug
-+4 bytes, 282 symbols sliding +16 — that table moving is *expected*, and it reverts to
-something to reconcile rather than something that proves anything.
+**And record a pre-agreed prediction that comes true as a DISCHARGED prediction, never as a green
+run** — it is worth something only if it is written down that it was agreed first.
 
 ### d-18: REFUSE BARE, OPT IN TO PARTIAL — and `contract/SUITE_PATHS.md` names the resolver
 
@@ -199,37 +220,24 @@ name. What remains is the flip itself — `align_up(running, required_for(sectio
 reads. **Its own paired freeze, never riding another parcel's range** (the chain-179 lesson).
 
 **A RE-BASELINE DOES NOT EXPLAIN A GREEN — IT MANUFACTURES ONE, AND THE TWO LOOK IDENTICAL**
-*(2026-08-30; aurora's, put to the aeon lane BEFORE the confirming run, and it bears directly on
-this lane because the baselines are ours).*
+*(2026-08-30, aurora's; the baselines are ours, so it lands here. Episode:
+`docs/OVERSEER-LOG.md`, 2026-09-04 cut, original lines 201-232.)*
 
-After chain 193 re-baselined, `parallax_port` came back 2/0 and the `+40` length mismatch was gone.
-**That confirms nothing on its own.** *"The re-baseline explains it"* and *"the mismatch was an
-artefact"* are different statements. A re-baseline **bakes whatever was there into the expected
-output**, so from that instant the gate passes forever — and **a green is indistinguishable whether
-the mismatch was an artefact or a real defect the baseline has just absorbed.** When the baseline is
-generated by the subject, the instrument has not merely lost the power to detect drift; **it has
-swallowed it.**
+**A check whose expectation the subject generates can only ever agree with the subject.** Its green
+is evidence about *reproducibility*, never about *correctness* — a re-baseline bakes whatever was
+there into the expected output, so from that instant the gate passes forever, and the green is
+identical whether the mismatch was an artefact or a real defect the baseline has just absorbed.
+When the baseline is generated by the subject, the instrument has not lost the power to detect
+drift; **it has swallowed it.**
 
-**SO THE ACCOUNT DOES THE WORK, AND IT MUST BE ESTABLISHED BEFORE THE RUN.** For `+40`, three
-sources, verified here rather than taken:
-
-1. **From the 68000 encodings alone** — the fourteen inserted instructions sum to 40 bytes. No
-   listing, no baseline, no build; checkable against a manual. **This one owes nothing to the
-   instrument it vouches for**, which is what makes the set worth anything.
-2. **From the listing's own label span** — read here in `.aeon-refreeze/s4.lst`:
-   `$v_pack` `0x6852` → `$v_bob_none` `0x687A`, difference `0x28` = **40**.
-3. **The reported region deltas** — plain 2322→2362, debug 2470→2510.
-
-**The general rule: a check whose expectation the subject generates can only ever agree with the
-subject.** Its green is evidence about *reproducibility*, never about *correctness*. Before
-accepting one, name a source of the expected value that does not pass through the subject — and
-establish it **first**, because afterwards there is no way to tell which you had.
-
-**AND THE DISCRIMINATION WAS WATCHED IN BOTH DIRECTIONS INSIDE ONE HOUR, which is why this is not
-theory.** The same re-baseline that absorbed the `+40` **failed to absorb** the two rename failures —
-because those read struct field *declarations* rather than goldens, so the subject could not
-generate their expectation. Aurora's bar: **a diff surviving a self-generated baseline is very hard
-to argue away.** One absorbed, one survived, same run.
+**So name a source of the expected value that does not pass through the subject, and establish it
+BEFORE the run** — afterwards there is no way to tell which you had. The best member of such a set
+owes nothing to the instrument it vouches for (for the `+40`: the fourteen inserted instructions
+summing to 40 bytes from the 68000 encodings alone, no listing, no baseline, no build).
+**And the discrimination is real rather than theoretical**: the same re-baseline that absorbed the
+`+40` failed to absorb two rename failures, because those read struct field *declarations* rather
+than goldens, so the subject could not generate their expectation. Aurora's bar: **a diff surviving
+a self-generated baseline is very hard to argue away.**
 
 ## The drift watch's timer — the unit name and how to switch it off
 
@@ -279,11 +287,9 @@ by path means booting from somebody's uncommitted directory. Carried here becaus
 is the only file upstream of that read; the empyrean copy governs on any disagreement.
 Taken from empyrean `274d26d2`.
 
-**Re-read it mid-session.** That file currently moves faster than a session lasts — on
-2026-08-22 it went from `cea2e57c` to `274d26d2` and gained two numbered bars inside
-ninety minutes, both of which landed on this lane's in-flight work. Boot-time is the only
-read anybody performs unless you make yourself perform another; re-read when a peer cites
-a bar you don't recognise, before dispatching a wave, and at any landing.
+**Re-read it mid-session** — boot-time is the only read anybody performs unless you make yourself
+perform another. Triggers: a peer cites a bar you don't recognise, before dispatching a wave, at any
+landing. (The measured drift that earned it: `docs/OVERSEER-LOG.md`, 2026-09-04 cut.)
 
 ## Landing-lane division — THE rule for this repo
 
@@ -466,9 +472,8 @@ catches conflicts the agent noticed and would otherwise have swallowed — a rea
 **⚠ TELL EVERY AGENT WHAT HAPPENS TO ITS BRANCH AT THE LANDING, because this lane deletes it.**
 Briefs here tell an agent to commit early so a death costs only the run — teaching it that its
 commits are precious — and then the controller merges, pushes and **deletes the branch and worktree
-those commits hung from**, with nothing saying that is the normal ending. One agent spent a full
-recovery cycle on it: restored the ref, rebuilt, re-ran, and committed a note about a reaping that
-never happened. **We taught the fear and not the ending.** Carry this until it lands in the shared
+those commits hung from**, with nothing saying that is the normal ending. It cost one agent a full
+recovery cycle. **We taught the fear and not the ending.** Carry this until it lands in the shared
 dispatch block (dominion `50bb5e9`, invariant 12):
 
 > *When your parcel lands, the controller merges your branch to master and then DELETES the branch
@@ -623,8 +628,8 @@ below requires zero `skip:` lines and this is not a missing reference.
   — this overseer quoted it to a peer, who reconciled against `git grep -c '#\[test\]'` and
   refused it.** That is this document's own trigger-less-prose defect, one section below the
   paragraph warning about it. **Reconcile against the declaration, never against this
-  sentence:** `git grep -c '#[test]' HEAD -- '*.rs'` summed is the count, and
-  `passed + ignored` must equal it.
+  sentence** — by the `git grep -c '#[test]'` method below, which is an APPROXIMATION and
+  not the identity this line used to assert.
   **DERIVE the expected `ratchet:` count from the chain; do not read a number off this
   page.** This paragraph has now carried three different fixed counts (zero, then exactly
   one, then zero again), each true when written, and a fixed count here is the
@@ -992,6 +997,17 @@ distinguished it was a line in this file, which a sweep of aeon's worktree list 
 *Ownership is not conferred by registration* (aeon's formulation): being in a repo's worktree
 list is a fact about bookkeeping, not about who depends on it.
 
+**THE PINNED ASSEMBLER `~/sonic_hacks/.pinned/`.** A second standing artifact, requested
+permanently by the AEON lane 2026-09-04: the sigil binary at `0a58f2ec`, copied out of the
+shared `target/release/sigil` before that path could be relinked. **It is the original, not a
+rebuild** — a fresh build of the same revision is a different artifact answering a slightly
+different question. Two aeon landings pin it by revision AND md5, and a pin whose referent has
+been deleted is a citation to nothing; this repo has already lost one chain's assembler that
+way. File and directory are both read-only, verified by observing a same-device `mv` refuse.
+**It ends when the aeon lane says so — ask them, not this file.** The reason, the md5 and the
+lift command live in `README-STANDING-ARTIFACT.txt` beside it, where whoever trips over it will
+be standing.
+
 **THE AEON REFERENCE TREE.** This lane needs one aeon checkout with **all four shapes built**,
 pinned to **the `aeon_rev` of the corpus tip** — the expensive half is the build, not the
 clone. Byte gates point `AEON_DIR` at it; without one, they cannot run at all.
@@ -1075,9 +1091,11 @@ one dialect by someone who cannot tell which was intended.
 attribute and the name appears nowhere in `sigil-frontend-as`. The subject is the frontend crate.)*
 Same shape as `d-22` (nameless labels) and settled the same way, by evidence rather than taste:
 the canonical community disassembly writes `CPU 68000`, `EQU`, `STRUCT` in capitals, so the
-corpus is unassemblable without folding. **115 of 237 diagnostics trace to case sensitivity** —
-62 + 30 `$`-hex, 20 uppercase `EQU`, 2 `STRUCT`/`ENDSTRUCT`, 1 the `CPU` line. The `.emp` half
-is a language-surface call and is **not** ruled here.
+corpus is unassemblable without folding. **The RULING is live; its evidence figures are not
+carried here** — they were a snapshot and this document has already misled one boot with them.
+DERIVE the corpus counts when you need them (build a current `sigil`, run it on a pristine
+corpus worktree, decompose by class). The `.emp` half is a language-surface call and is **not**
+ruled here.
 
 **⚠ THE ROOT IS WORSE THAN CASE AND MUST NOT BE FOLDED INTO IT.** `initial_cpu` defaults to
 `Z80` (`Options`' default, honest for the Z80-only M0 build), `dispatch`'s directive match takes
@@ -1104,11 +1122,9 @@ corpus repo at `s2disasm/build_tools/Linux-x86_64/asl` (with `as.msg` beside it,
 name-composition parcel used `asl -L` for every expected value in every new test, which is why
 that delivery could quote listings instead of asserting semantics. **Use it.**
 
-**The reusable mechanism, the episode in the log:** the false claim came from running `git grep asl`
-**in the sigil repo**, where it returns the 68000 shift mnemonic — so the honest local conclusion was
-*no oracle in THIS tree*, which then hardened into a claim about the workspace entire. **A failing
-lookup tells you about the tree you ran it in, never about the object**, and an absence leaves
-nothing to be suspicious of, which is why it survived four parcels. *(Full episode:
+**Why it survived four parcels:** `git grep asl` **in the sigil repo** returns the 68000 shift
+mnemonic, so a true local finding hardened into a claim about the workspace. The rule is protocol
+bar 16(d), verbatim there — an absence leaves nothing to be suspicious of. *(Episode:
 `docs/OVERSEER-LOG.md`, 2026-09-04 cut.)*
 
 **⚠ THE CASE FOLD IS IN AEON'S SHIPPING BUILD PATH — fold DIRECTIVES AND MNEMONICS ONLY, NEVER
@@ -1117,12 +1133,6 @@ residual `.asm` DATA through it and three files still go that way (`engine/debug
 both `game_root.asm`). So this parcel can move aeon bytes and must prove it did not. Symbols
 are deliberately case-sensitive (`lib.rs:31`, *"Names are case-sensitive"*) and `.emp` shares
 its symbol namespace with those files — folding symbol case would collide the two.
-
-**NEXT PARCEL — case folding, and its count WILL move.** Pre-declare the movement: a parcel that
-fixes 115 of 237 diagnostics and reports 237 is the thing to investigate. The count moving is
-the deliverable here, exactly inverted from the source-map parcel where holding at 237 was.
-Expect new diagnostics to appear behind the fixed ones — a corpus that has been assembling as
-the wrong processor has never had its 68000 path exercised at all.
 
 **BOOKED — `landing-run.sh` does not run clippy.** See the lane-log entry at `526ae99e`. Two
 lint errors stood on master and the wrapper printed `RESULT GREEN` over them, because the bar
@@ -1338,17 +1348,7 @@ time — **ping them, don't assume they are watching**:
   a gate that cannot measure its subject. A well-meant "require `order` rows everywhere"
   tightening would break the honest option; do not take it without talking to them.
 
-**⚠ An empty commit range does not mean an empty branch.** Both overseers read
-`git rev-list --count master..parcel/scene-even-align-guard` = 0, an empty three-dot
-diff, and `--is-ancestor <tip> master` = true as proof the branch held no work. That
-triple is the signature of a branch **already merged** — its commits are in master, so
-the range is necessarily empty. The fix had landed hours earlier and the lint fired zero
-times. This matters beyond the one incident: those are exactly the commands protocol bar
-16 prescribes for converting a name into behaviour, so **the bar's mechanism is
-necessary and not sufficient** — the output is two-valued and reads as one-valued.
-Disambiguate with `git log <branch>` for its own history, or `--is-ancestor` on a commit
-you expect the branch to CONTAIN. Two lanes cross-verified each other and shared the
-frame, which is the one thing mutual verification cannot catch.
+**⚠ An empty commit range does not mean an empty branch** — that triple is the signature of a branch ALREADY MERGED, and two lanes here read it as proof of no work. The rule is protocol bar 16(a); disambiguate with `git log <branch>`, or `--is-ancestor` on a commit you expect the branch to CONTAIN. *(Episode: `docs/OVERSEER-LOG.md`, 2026-09-04 cut.)*
 
 Their side is banked at aeon `1ee8f8e6` (handoff) and `ba189b40` (the `br_ext` unlock
 row, cuttable cold) — both verified reachable from aeon's `origin/master`.
