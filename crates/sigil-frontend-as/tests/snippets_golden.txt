@@ -1733,3 +1733,93 @@ E3 40 E3 50 E3 40 E3 50 E5 D0 E0 D0
         move    (sp)+,sr
 --- bytes ---
 46 FC 27 00 46 FC 27 00 46 FC 23 00 40 C6 40 E7 46 DF
+=== as_end_stops_the_assembly ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b $11,$22
+        end
+        dc.b $33,$44
+--- bytes ---
+11 22
+=== as_end_in_a_false_conditional_does_not_stop ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b $11
+        if 0
+        end
+        endif
+        dc.b $22
+        end
+        dc.b $99
+--- bytes ---
+11 22
+=== as_end_inside_a_macro_expansion_stops ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b $11
+m       macro
+        dc.b $55
+        end
+        dc.b $66
+        endm
+        m
+        dc.b $22
+--- bytes ---
+11 55
+=== as_end_inside_rept_stops_at_the_first_iteration ===
+        cpu 68000
+        padding off
+        phase 0
+        dc.b $11
+        rept 3
+        dc.b $77
+        end
+        endm
+        dc.b $22
+--- bytes ---
+11 77
+=== as_end_uppercase_with_an_entry_point_operand_stops ===
+        cpu 68000
+        padding off
+        phase 0
+Entry:  dc.b $11
+        END     Entry
+        dc.b $44
+--- bytes ---
+11
+=== as_word_immediate_against_ffff_ram_labels ===
+        cpu 68000
+        padding off
+        phase 0
+RAM_Start       = $FFFF0000
+CrossResetRAM   = $FFFF8000
+CrossResetRAM_End = $FFFFFC00
+        move.w  #((CrossResetRAM_End-CrossResetRAM)/4)-1,d6
+        move.w  #((CrossResetRAM-RAM_Start)/4)-1,d6
+        move.w  #(RAM_Start>>16)&$FFFF,d0
+        lea     (CrossResetRAM).w,a6
+        dc.l    RAM_Start&$FFFFFF
+--- bytes ---
+3C 3C 1E FF 3C 3C 1F FF 30 3C FF FF 4D F8 80 00 00 FF 00 00
+=== as_cnop_org_off_the_program_counter ===
+        cpu 68000
+        padding off
+        phase 0
+cnop    macro   offset,alignment
+        org (*-1+(alignment)-((*-1+(-(offset)))#(alignment)))
+        endm
+align   macro   alignment
+        cnop 0,alignment
+        endm
+        dc.b $11
+        cnop 0,4
+        dc.b $22
+        cnop 2,8
+        dc.b $33
+        align 16
+        dc.b $44
+--- bytes ---
+11 00 00 00 22 00 00 00 00 00 33 00 00 00 00 00 44

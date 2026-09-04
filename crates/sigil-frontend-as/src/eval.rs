@@ -2661,6 +2661,14 @@ impl Asm {
         let captured = self.capture_loop_body(&lines[start + 1..end]);
         let body: &[SrcLine] = captured.as_deref().unwrap_or(&lines[start + 1..end]);
         for _ in 0..n {
+            // `end` (and `fatal`) inside the body stop the unit, so the
+            // remaining iterations must not run. `exec` already returns
+            // immediately once `aborted` is set, so this is byte-neutral; it is
+            // written out so the termination is stated rather than inherited,
+            // matching `exec_irp` and `exec_while`.
+            if self.aborted {
+                break;
+            }
             self.exec(body);
         }
         self.release_loop_body(captured.is_some());
@@ -3479,13 +3487,37 @@ impl Asm {
             // surface accepts either spelling like any other directive, so the
             // arm is written in the folded (lower-case) form.
             "binclude" => self.directive_binclude(rest, span),
-            // `END` (asl's end-of-source / entry-point directive). Emits no
-            // bytes — bare `END` and `END <entrypoint>` are both emission
-            // no-ops (probe: 2026-07-04-m1d-t2-abs-ea-end-probes.md). Aeon's
-            // only use is the bare `END` at main.asm:446. Does not collide with
-            // the `endif`/`endm`/`endr`/`endcase` block closers (handled in
-            // block scanning, not dispatch).
-            "end" => {}
+            // `END` (asl's end-of-source / entry-point directive). It emits no
+            // bytes AND IT ENDS THE ASSEMBLY: asl stops reading at the `END`
+            // line, so nothing after it is assembled — not the rest of the
+            // file, not the rest of an INCLUDING file, not the remaining
+            // iterations of a loop it sits inside. `END <entrypoint>` behaves
+            // identically, differing only in recording an entry address the
+            // image does not carry.
+            //
+            // Reading past `END` produces no complaint on its own, so a front
+            // end that treats this as a no-op emits extra bytes silently. asl
+            // 1.42 Beta Bld 212, probes committed under
+            // `docs/superpowers/notes/2026-09-04-as-end-probes/`:
+            //
+            //   end1  `dc.b $11,$22` / `end` / `dc.b $33,$44`  -> image `11 22`
+            //         (listing stops at the `end` line, 0 errors, 0 warnings)
+            //   end2  `end` inside a FALSE `if` arm does NOT stop; an `end`
+            //         inside an INCLUDED file stops the WHOLE unit, so the
+            //         parent's post-`include` line is dropped too -> `11 22 33`
+            //   end3  `end` inside a MACRO EXPANSION stops the unit -> `11 55`
+            //   end4  `end` inside a `rept` body stops on the first iteration
+            //         -> `11 77`
+            //   end5  `END <label>` stops exactly like the bare form -> `11`
+            //
+            // `aborted` is precisely this "stop the pass, quietly" signal — it
+            // is checked at the top of `exec` (so it unwinds through include
+            // splices and macro expansions alike) and in each loop driver. It is
+            // shared with `fatal`, which reaches it after raising an error;
+            // `end` raises none, which is why an `end`-terminated pass returns
+            // Ok. Does not collide with the `endif`/`endm`/`endr`/`endcase`
+            // block closers (handled in block scanning, not dispatch).
+            "end" => self.aborted = true,
             "shift" => self.directive_shift(span),
             // Unreachable for a plain dispatch (the precedence check at the top
             // of this function has already expanded it) and correctly dead for a
