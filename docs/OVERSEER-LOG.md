@@ -6305,3 +6305,86 @@ and this note is ~220. Five closed narratives were moved out of it earlier today
 owner rulings. **The rules alone are now at the bound**, so BOOT-DOC-HEADROOM is no longer a
 prediction: a three-line safety finding was written, measured, and reverted for lack of room.
 That is the concrete cost of the open decision, and the next session inherits this hole.
+
+## 2026-09-04T09:3xZ — A DETACHED SCRIPT AT A STABLE PATH IS OVERWRITABLE MID-RUN (aeon's finding, relayed via the hub)
+
+**The mechanism, and it is the reason this is not obvious.** `bash` reads a script
+INCREMENTALLY rather than slurping it, so a concurrent writer replacing the file mid-run does
+not restart or abort anything: the work already dispatched completes from the ORIGINAL bytes,
+and then execution resumes **at a byte offset into the new content**. Aeon's instance produced
+**four good ROMs, no CRC file, no finished stamp, and a log that reads fine** — the builds
+succeeded and the collection step died, which is the worst possible split because the
+expensive half looks done.
+
+**Why it landed on this lane the moment it arrived.** Two agents were dispatched here minutes
+earlier, both required by their briefs to build aeon's four shapes, both from their own
+worktrees. **Worktree isolation does not isolate a scratch path**, so they are each other's
+concurrent writer by construction — the exact precondition, present and unnoticed, at the time
+the message arrived. Both were told: copy any nohup'd script to a run-unique path first, and
+the same for its log and stamp files.
+
+**The second half is the durable one and generalises past scripts: a MISSING result file is
+"did not run", never a verdict.** This is the absence surface (protocol bar 16(d)) arriving on
+a run that genuinely produced correct artifacts. The dispatch block's existing clause covers a
+*capped or reaped* run whose log aggregates clean; this is the neighbouring case where the log
+is honest, the ROMs are right, and the artifact that would NAME them is simply absent. An
+absence is not a green — and here it is not even a failure, which is what makes it tempting to
+reconcile.
+
+**Booked as an ask on the shared dispatch block rather than banked here as local practice.**
+The natural home is `dispatching-empyrean-agents` invariant 11, beside the detached-run
+guidance it extends; that is the same route the branch-deletion rule took (carried locally in
+`OVERSEER.md` until it landed as invariant 12). Writing it into this repo's boot read instead
+would be a lane-local fork of a suite-wide dispatch rule, and that file has no headroom for it
+anyway — see BOOT-DOC-HEADROOM, which this is now the second finding to run into in two days.
+
+**ROUTED, NOT LANDED — and this lane CARRIES it until it is.** The hub routed the sentence to
+dominion for invariant 11 (aeon named as finder, this log's commit cited) and said dominion
+"lands or refuses". So the shared block does not hold it yet, and the entry above — which reads
+as though filing the ask discharged the obligation — does not by itself put the rule in front of
+the next agent this lane dispatches. **Until it lands, every dispatch from here states both
+halves in its own brief**, exactly as the branch-deletion rule was carried before it became
+invariant 12.
+
+The falsifier, so nobody re-derives this from the narrative:
+
+```sh
+grep -n "MISSING result file\|run-unique" ~/.claude/skills/dispatching-empyrean-agents/SKILL.md
+```
+
+**Measured 2026-09-04 at skill revision `50bb5e9`: no match, exit 1** — not landed. A match
+retires the carry obligation and this paragraph with it. Note that `50bb5e9` is the same
+revision the boot read cites for invariant 12, so the skill has not moved since that landing;
+absence of a match is a fact about the file, not about whether the routing happened.
+
+The hub also took the trigger correction as stated: the precondition is **two writers and one
+path**, which a lane meets by dispatching two building agents without naming a scratch
+location — not by any naming habit it chose.
+
+**LANDED — the carry obligation above is RETIRED, by its own falsifier.** Dominion landed it
+inside invariant 11 at skill revision `f98909d` (parent `50bb5e9`, the invariant-12 landing this
+lane's boot read cites). Verified here by running the falsifier rather than by the hub's relay:
+the grep now matches at `SKILL.md:86` and `:98`, exit 0. The trigger wording survived
+intact — *"Two writers and one path is the trigger, not any naming habit."* Dispatches from
+here no longer state it in-brief; the shared block carries it.
+
+**Two things the landed text holds that no relay into this lane carried, and the second is the
+finding.** (1) A writer of a shared path replaces it with `mv` rather than truncating in place,
+since a rename leaves a running reader on the old inode — in the two-agents-one-path
+precondition each agent is both victim and writer, so both halves bind each of them. (2)
+**aeon rendered the missing result file as a DIVERGENCE.**
+
+That second one is a materially worse failure than the one relayed here, and it is the reason
+this entry exists rather than a one-line "landed". The absence did not read as *nothing*; it
+read as a *finding*, and was reported as bytes differing. So the class is not "a gap can be
+mistaken for a pass" — already covered by the capped-run clause — but **an absence dressed as
+an outcome, in whichever direction the reader is primed for.** A lane running a byte-identity
+ritual is primed for divergence, and the artifact that says "no comparison happened" and the
+artifact that says "the comparison failed" are the same artifact: a file that is not there.
+
+Live consequence, acted on: this lane had an agent whose headline deliverable is a byte
+divergence map (Sonic 1's `FM_Notes`/`PSGFrequencies` against retail, plus aeon's four shapes
+before and after). It was the agent in the suite best placed to reproduce aeon's exact error,
+and was told to assert positively that the artifacts on BOTH sides of every byte claim exist
+and came from the run believed to have produced them — never to infer it from the absence of an
+error, and including on the "nothing moved" direction it expects.
