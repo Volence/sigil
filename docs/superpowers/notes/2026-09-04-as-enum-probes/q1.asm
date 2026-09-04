@@ -1,0 +1,9 @@
+	cpu 68000
+	padding off
+	org 0
+	enum a=1,b,c
+	dc.b a,b,c
+	enum d=$10,e,f
+	dc.b d,e,f
+	nextenum g,h
+	dc.b g,h
