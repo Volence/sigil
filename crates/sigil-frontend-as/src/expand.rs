@@ -73,6 +73,7 @@ fn punct_str(p: Punct) -> &'static str {
         Punct::ColonEq => ":=",
         Punct::Bang => "!",
         Punct::Tilde => "~",
+        Punct::TildeTilde => "~~",
     }
 }
 

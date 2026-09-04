@@ -299,6 +299,10 @@ fn punct(b: &[u8]) -> Option<(Punct, usize)> {
         Some((b'|', b'|')) => return Some((OrOr, 2)),
         Some((b'&', b'&')) => return Some((AndAnd, 2)),
         Some((b':', b'=')) => return Some((ColonEq, 2)),
+        // `~~` is asl's LOGICAL not and is a token in its own right, not two
+        // bitwise complements — `!!x == x`, so lexing it as two `Tilde`s
+        // returns the operand unchanged with no diagnostic.
+        Some((b'~', b'~')) => return Some((TildeTilde, 2)),
         _ => {}
     }
     let one = match b[0] {

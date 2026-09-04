@@ -127,6 +127,23 @@ fn parse_atom(toks: &[Token], depth: u32) -> Option<(Expr, &[Token])> {
                 r,
             ))
         }
+        // `~~expr` — prefix LOGICAL not, a distinct asl operator from `~`
+        // (asl-verified 2026-09-03, both shipped builds agreeing:
+        // `dc.b ~~0,~~1,~~5` = `01 00 00`, `dc.b ~~-1` = `00`). It binds at
+        // the same atom tier as `~` and unary `-`, tighter than every binary
+        // operator: `dc.b ~~0+1` = `02` (`(~~0)+1`), `dc.b ~~0*3` = `03`,
+        // `dc.b ~~0=1` = `01`. `~~~x` is `~~` then `~` by maximal munch:
+        // `dc.b ~~~0,~~~1,~~~5` = `00 00 00`.
+        Tok::Punct(Punct::TildeTilde) => {
+            let (inner, r) = parse_atom(rest, depth)?;
+            Some((
+                Expr::Unary {
+                    op: UnOp::LogNot,
+                    operand: Box::new(inner),
+                },
+                r,
+            ))
+        }
         Tok::Punct(Punct::LParen) => {
             let (inner, r) = parse_bp(rest, 0, depth)?;
             match r.first().map(|t| &t.tok) {

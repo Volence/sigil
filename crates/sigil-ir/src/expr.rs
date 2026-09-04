@@ -46,6 +46,11 @@ pub enum UnOp {
     Neg,
     /// Bitwise complement (`~x`), asl's one's-complement operator.
     Not,
+    /// Logical NOT (`~~x`), asl's boolean-negation operator: `1` when the
+    /// operand is zero, `0` otherwise. A SEPARATE operator from `~`, not two
+    /// applications of it — `~~` is one greedy token in asl, and folding it as
+    /// `!!x` cancels and returns `x` unchanged.
+    LogNot,
 }
 
 /// A build-time integer expression.
@@ -89,6 +94,7 @@ impl Expr {
                 match op {
                     UnOp::Neg => Fold::Value(v.wrapping_neg()),
                     UnOp::Not => Fold::Value(!v),
+                    UnOp::LogNot => Fold::Value(i64::from(v == 0)),
                 }
             }
             Expr::Binary { op, lhs, rhs } => {
