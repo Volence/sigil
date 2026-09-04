@@ -1048,3 +1048,169 @@ fn the_tree_state_word_distinguishes_a_source_change_from_any_other() {
         );
     }
 }
+
+// ── the remote anchor ───────────────────────────────────────────────────────
+
+/// The remote-tracking ref and tip the `published:` line names, or `None` when the line
+/// reports that none could be resolved.
+///
+/// Parsed from the rendered line rather than recomputed, because what a consumer reads is
+/// the line; a gate that re-derives the same facts by the same route and compares them to
+/// each other proves the two derivations agree and nothing about the text.
+fn published_anchor(stdout: &str) -> Option<(String, String)> {
+    let line = field(stdout, "published");
+    if line.starts_with("unknown") {
+        return None;
+    }
+    let after = line.split(" contained in ").nth(1).unwrap_or_else(|| {
+        panic!("the published line names no ref it compared against: `{line}`")
+    });
+    let (name, rest) = after.split_once(" (").unwrap_or_else(|| {
+        panic!("the published line names no tip for its ref: `{line}`")
+    });
+    let tip = rest.split(')').next().unwrap_or("").to_string();
+    assert!(
+        tip.len() == 40 && tip.chars().all(|c| c.is_ascii_hexdigit()),
+        "the published line must name the REVISION it compared against, not just a ref: `{line}`"
+    );
+    Some((name.to_string(), tip))
+}
+
+/// THE DEFECT, as a gate. The banner said whether this binary was behind a tree; it never
+/// said whether that tree was itself anything anybody else could see.
+///
+/// On a machine where every sibling repo is a peer's live working tree, the local `HEAD`
+/// this binary is compared against can be ahead of, behind, or divergent from what any
+/// other lane holds. The aeon lane read "behind", could not tell whether it meant behind
+/// something published, and had to assemble a `crates/`-scoped diff against `origin/master`
+/// by hand to turn the banner into a measurement.
+///
+/// The expectation is DERIVED at test time — the same question asked of git directly —
+/// rather than compared against a spelling. And "unknown" is not a free pass: a run that
+/// cannot resolve a remote-tracking ref must be a run where git cannot either, which is
+/// asserted rather than assumed.
+#[test]
+fn the_published_line_states_this_revision_s_position_against_a_named_remote_ref() {
+    let stdout = version_stdout("--version");
+    let revision = field(&stdout, "revision");
+    let line = field(&stdout, "published");
+
+    let Some((name, tip)) = published_anchor(&stdout) else {
+        // Loud on unmeasurable: the only honest reason for `unknown` is that nothing on
+        // this machine names a published tip.
+        for candidate in ["@{upstream}", "refs/remotes/origin/HEAD"] {
+            assert!(
+                git(&["rev-parse", "--verify", "--quiet", candidate]).is_err(),
+                "the banner reports `{line}` while `{candidate}` resolves here, so a ref \
+                 that could have been named was not"
+            );
+        }
+        return;
+    };
+
+    assert_eq!(
+        git(&["rev-parse", &name]).unwrap_or_else(|e| panic!("resolve {name}: {e}")),
+        tip,
+        "the tip the banner names for {name} is not the one git resolves"
+    );
+
+    // `merge-base --is-ancestor` is the same question, asked directly.
+    let contained = Command::new("git")
+        .args(["merge-base", "--is-ancestor", &revision, &tip])
+        .current_dir(REPO)
+        .status()
+        .expect("git merge-base must run — this gate measures what git answers, so it \
+                 cannot be skipped")
+        .success();
+    let says_yes = line.starts_with("yes");
+    assert_eq!(
+        says_yes, contained,
+        "the banner says `{line}` while git says contained={contained} for {revision} in {name}"
+    );
+
+    // And it must not read as an alarm when it is merely a position: unpushed work is the
+    // ordinary state of a lane, and a line that scolds correct work gets deleted.
+    if !contained {
+        assert!(
+            line.contains("not a fault"),
+            "an unpublished revision is the ordinary state of work in progress and the line \
+             must say so rather than read as a warning: `{line}`"
+        );
+    }
+    // Whichever way it went, the reader must be told the ref is a cache — otherwise the
+    // line invites the same wrong conclusion in the other direction.
+    assert!(
+        line.contains("`git fetch`"),
+        "the line must name the tracking ref as a LOCAL cache and what refreshes it: `{line}`"
+    );
+}
+
+/// The remote-anchored drift check is RUN, not inspected — the same bar the HEAD-anchored
+/// one is held to, and for the same reason: a command that silently returns nothing reads
+/// to a human as "no drift" on a tree it never looked at.
+#[test]
+fn the_published_drift_check_runs_and_is_anchored_at_the_named_ref() {
+    let stdout = version_stdout("--version");
+    let command = field(&stdout, "drift-check-published");
+
+    let Some((name, _tip)) = published_anchor(&stdout) else {
+        assert!(
+            command.starts_with("unavailable"),
+            "no remote ref could be named, so there is no command to print: `{command}`"
+        );
+        return;
+    };
+
+    assert!(
+        !command.starts_with("unavailable"),
+        "a ref was named in `published`, so this check must be runnable: {command}\n{stdout}"
+    );
+    assert!(
+        command.contains(&format!(" {name} --")),
+        "the command must be anchored at {name} — the ref the `published` line names — and \
+         say so in the command itself: {command}"
+    );
+    assert!(
+        !command.contains('$') && !command.contains('<'),
+        "it must be runnable as printed, with nothing left for a reader to substitute: \
+         `{command}`"
+    );
+
+    let mut ran: Vec<&str> = Vec::new();
+    for shell in ["sh", "bash", "zsh"] {
+        let out = match Command::new(shell).arg("-c").arg(&command).output() {
+            Ok(out) => out,
+            Err(_) => continue,
+        };
+        assert!(
+            out.status.success(),
+            "the printed check failed under {shell}: {}\ncommand: {command}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let printed = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        assert!(
+            printed.len() == 40 && printed.chars().all(|c| c.is_ascii_hexdigit()),
+            "the check printed `{printed}` under {shell}, not a revision. An empty answer \
+             reads to a human as `no drift`.\ncommand: {command}"
+        );
+        // It must be answering about the NAMED ref, not about HEAD wearing its name: the
+        // revision it reports has to be reachable from that ref.
+        let reachable = Command::new("git")
+            .args(["merge-base", "--is-ancestor", &printed, &name])
+            .current_dir(REPO)
+            .status()
+            .expect("git merge-base must run")
+            .success();
+        assert!(
+            reachable,
+            "the check printed {printed}, which is not reachable from {name} — so it did \
+             not ask about that ref.\ncommand: {command}"
+        );
+        ran.push(shell);
+    }
+    assert!(
+        !ran.is_empty(),
+        "no shell on this machine could run the printed check, so this gate measured \
+         nothing — that is a failure, not a pass.\ncommand: {command}"
+    );
+}

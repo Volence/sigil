@@ -92,6 +92,9 @@
 # and the two halves that matter — a wrong binary refuses, a correct binary proceeds
 # silently — must both be runnable in a second:
 #     scripts/lib/sigil_tool.sh <sigil-root> <ref-target>
+# and the two halves it derives on its own are runnable alone:
+#     scripts/lib/sigil_tool.sh --ref-target <sigil-root>
+#     scripts/lib/sigil_tool.sh --anchor     <sigil-root>
 
 # ── the refusal ──────────────────────────────────────────────────────────────────
 # Terminal by design: every later step of provisioning is worthless once the tool is
@@ -194,6 +197,59 @@ sigil_tool_abspath() {
     fi
 }
 
+# ── what the comparison is anchored to, said out loud ────────────────────────────
+# sigil_tool_anchor <sigil-root>
+#
+# Echo one line naming the revision this run compares against AND where that revision
+# stands relative to what anyone else can see.
+#
+# WHY THE SECOND HALF. The comparison below is against local HEAD, and that is the
+# correct anchor for the question it asks: does this binary correspond to the tree being
+# provisioned FROM. What it does not settle is what a reader should do about a mismatch,
+# because on this machine every sibling checkout is a peer's live working tree, so a
+# local HEAD can be ahead of, behind, or divergent from anything another lane holds.
+# `behind` is not a fact until something names what it is behind — the aeon lane read
+# exactly that word and had to run a scoped diff against origin/master by hand to turn it
+# into a measurement.
+#
+# SO THE ANCHOR IS NAMED RATHER THAN MOVED. Anchoring the refusal at the remote instead
+# would refuse every lane holding unpushed commits, which is the ordinary state of work
+# in progress and would be an always-red check: it fires on correct work, and the remedy
+# a reasonable person reaches for is deleting the guard.
+#
+# The remote-tracking ref, not `git ls-remote`. The remote here is an SSH URL, so asking
+# the server blocks, needs an agent, and fails offline — inside a script that runs before
+# every provisioning. The ref is named as the LOCAL CACHE it is, with what refreshes it,
+# so a reader who needs the real answer knows the one command that gets it.
+sigil_tool_anchor() {
+    local root="$1" head branch upstream tip standing
+    head="$(git -C "$root" rev-parse HEAD 2>/dev/null)" || head=""
+    branch="$(git -C "$root" symbolic-ref --quiet --short HEAD 2>/dev/null)" || branch="detached"
+
+    # `@{upstream}` when the branch tracks one; otherwise the remote's own default branch
+    # as recorded here. A parcel branch and a detached checkout track nothing, and both
+    # are the ordinary shapes in this repo.
+    upstream="$(git -C "$root" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)" \
+        || upstream="$(git -C "$root" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" \
+        || upstream=""
+
+    if [ -z "$upstream" ]; then
+        standing="nothing on this machine names a published tip (no upstream branch, no refs/remotes/origin/HEAD), so how this HEAD stands against the remote is UNKNOWN"
+    else
+        tip="$(git -C "$root" rev-parse "$upstream" 2>/dev/null)" || tip=""
+        if [ -z "$tip" ]; then
+            standing="$upstream does not resolve here, so how this HEAD stands against the remote is UNKNOWN"
+        elif git -C "$root" merge-base --is-ancestor "$head" "$tip" 2>/dev/null; then
+            standing="that HEAD is contained in $upstream ($tip)"
+        else
+            standing="that HEAD is NOT contained in $upstream ($tip), which is ordinary for unpushed lane work and is not a fault"
+        fi
+        [ -n "$tip" ] && standing="$standing; $upstream is a LOCAL remote-tracking ref, refreshed only by \`git fetch\`"
+    fi
+
+    printf 'HEAD %s on %s in %s — %s\n' "${head:-unknown}" "$branch" "$root" "$standing"
+}
+
 # sigil_tool_resolve <sigil-root> <ref-target>
 #
 # Sets SIGIL_BIN to a binary that has been proved to correspond to <sigil-root>, and
@@ -268,6 +324,7 @@ sigil_tool_resolve() {
         # Silent-by-design on the correct case beyond this one line: the check must
         # cost a correct run nothing, or it becomes the thing people delete.
         echo "==> tool closure ${closure_rev:0:8} == this tree's closure at HEAD — no commit here can have affected it"
+        echo "    compared against $(sigil_tool_anchor "$root")"
         echo "    (that is 'cannot have affected', not 'the output is identical'; only a rebuild and a byte compare says the second)"
     elif [ -n "${SIGIL_BIN_CLOSURE:-}" ] && [ "$SIGIL_BIN_CLOSURE" = "$closure_rev" ]; then
         echo "==> tool closure ${closure_rev:0:8} DIFFERS from this tree's ${tree_rev:0:8}, and SIGIL_BIN_CLOSURE declares exactly that"
@@ -285,6 +342,7 @@ sigil_tool_resolve() {
             "  binary      $SIGIL_BIN" \
             "  its closure $closure_rev" \
             "  this tree   $tree_rev   (git log -1 HEAD -- <closure-paths> at $root)" \
+            "  anchored at $(sigil_tool_anchor "$root")" \
             "" \
             "A commit that this binary could not have seen has touched the sources it is" \
             "compiled from. This over-reports and never under-reports: it proves 'cannot" \
@@ -312,6 +370,14 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
         shift
         [ $# -ge 1 ] || { echo "usage: sigil_tool.sh --ref-target <sigil-root>" >&2; exit 2; }
         sigil_tool_ref_target "$1"
+        exit 0
+    fi
+    # `--anchor <root>` answers the "compared against what" half alone, for the same
+    # reason: a line nobody can print without a cargo build is a line nobody re-proves.
+    if [ "${1:-}" = "--anchor" ]; then
+        shift
+        [ $# -ge 1 ] || { echo "usage: sigil_tool.sh --anchor <sigil-root>" >&2; exit 2; }
+        sigil_tool_anchor "$1"
         exit 0
     fi
     if [ $# -lt 1 ]; then
