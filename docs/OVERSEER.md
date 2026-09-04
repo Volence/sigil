@@ -31,8 +31,8 @@ other stuff to work on (sigil can start looking to replacing AS in the github di
 as other agents aren't waiting on them for anything"*.
 
 **So a fresh sigil session does NOT stop for a go while sleep mode is on.** It takes the next queue
-row that is not itself waiting on another lane or an owner call; when the effects row is owner-blocked
-— which it is, on `d-24` — the named fallback is **SIGIL-AS-REPLACEMENT**. The `overseer` skill's
+row that is not itself waiting on another lane or an owner call; the named fallback is
+**SIGIL-AS-REPLACEMENT**. The `overseer` skill's
 boot stop is real and is overridden HERE, by him: it names an exception for a standing instruction
 from the owner, and this is one. **Two sigil sessions booted into that stop on 2026-09-04 alone.**
 
@@ -44,7 +44,8 @@ whether sigil is mentioned.**
 **Provenance disclaimer, carried deliberately:** this reached the lane through the hub. A relay of
 his ruling is his ruling — but only because the two commands above were run here and the join
 checked. It authorizes taking the next unblocked row and nothing further; it does not authorize
-landing anything he has parked, and `d-24` stays parked.
+landing anything he has parked. **Derive the parked set from `docs/decisions.jsonl`, not from this
+paragraph** — it named `d-24` until 2026-09-04, when he answered it and the work landed.
 
 ## STANDING: REPORT TO THE HUB WHENEVER YOU FINISH OR STOP (owner, 2026-09-03)
 
