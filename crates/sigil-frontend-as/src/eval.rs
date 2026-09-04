@@ -5625,7 +5625,14 @@ enum IterKind {
 /// `<1|2|3|1,2,3,4>` → `<2|3||2,3,4>` → `<3|||3,4>` → `<|||4>` → `<|||>`):
 ///
 /// * [`Self::bound`] — one slot per declared parameter, filled left-to-right at
-///   entry and shifted left with EMPTY fill. It is not a window onto the
+///   entry and shifted left with EMPTY fill. **"Empty" is sigil's choice, not
+///   asl's**: AS keeps its `\001\00N` placeholder in a slot a shift vacated, so
+///   `strlen` there yields 2 and `<>""` is TRUE. A slot never SUPPLIED is
+///   genuinely empty in both, which is the case the corpus recursion guards
+///   depend on. The divergence is deliberate, corpus-unreachable, and set out
+///   with its listing rows under "Deliberately NOT replicated" in
+///   `docs/superpowers/notes/2026-09-03-as-shift-macro-argument-walk.md`.
+///   It is not a window onto the
 ///   argument list: with three parameters and four arguments the fourth
 ///   argument never reaches the third parameter (`<2|3||…>`, third slot empty
 ///   while `ALLARGS` still holds `4`).
