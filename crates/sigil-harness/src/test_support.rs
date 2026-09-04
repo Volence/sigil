@@ -129,29 +129,21 @@ pub fn act_sec_field_equs() -> Vec<(&'static str, &'static str)> {
         ("Act_act_sec_local_maps", "$22"),
         ("Act_act_art_budget", "$26"),
         ("Act_len", "$28"),
-        // Sec (66 bytes / $42)
+        // Sec (34 bytes / $22). Every per-channel field the record used to carry
+        // — art PLC, palette, raster table, palette cycle, DAC bank, animated
+        // blocks, flags, music, camera lookahead and the three reserved pads —
+        // is reached through `sec_effects`'s EffectsPreset instead, so the
+        // section record names only what the preset does not.
         ("Sec_sec_block_index", "$00"),
         ("Sec_sec_objects", "$04"),
         ("Sec_sec_rings", "$08"),
-        ("Sec_sec_plc", "$0C"),
-        ("Sec_sec_pal", "$10"),
-        ("Sec_sec_parallax_config", "$14"),
-        ("Sec_sec_raster_table", "$18"),
-        ("Sec_sec_bg_layout", "$1C"),
-        ("Sec_sec_type_table", "$20"),
-        ("Sec_sec_pal_cycle", "$24"),
-        ("Sec_sec_sound_bank", "$28"),
-        ("Sec_sec_block_dict", "$2C"),
-        ("Sec_sec_anim_blocks", "$30"),
-        ("Sec_sec_effects", "$34"),
-        ("Sec_sec_flags", "$38"),
-        ("Sec_sec_music", "$3A"),
-        ("Sec_sec_pcfg_pad_3C", "$3C"),
-        ("Sec_sec_camera_lookahead", "$3D"),
-        ("Sec_sec_pcfg_pad_3E", "$3E"),
-        ("Sec_sec_pcfg_pad_3F", "$3F"),
-        ("Sec_sec_block_dict_len", "$40"),
-        ("Sec_len", "$42"),
+        ("Sec_sec_parallax_config", "$0C"),
+        ("Sec_sec_bg_layout", "$10"),
+        ("Sec_sec_type_table", "$14"),
+        ("Sec_sec_block_dict", "$18"),
+        ("Sec_sec_effects", "$1C"),
+        ("Sec_sec_block_dict_len", "$20"),
+        ("Sec_len", "$22"),
         // DMAEntry (the 14-byte DMA-queue entry twin, tranche 20) — the
         // structs.emp per-field wall reads these like the Act/Sec walls.
         ("DMAEntry_Reg94", "0"),

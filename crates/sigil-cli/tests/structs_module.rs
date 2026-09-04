@@ -56,11 +56,14 @@ fn harvest_emits_the_as_field_offsets_and_sizes() {
         ("Act_grid_w", 0x04),
         ("Act_edge_mode", 0x20),
         ("Act_len", 0x28),   // P2 grew Act 0x22->0x28 (art-pool table/pages/budget fields); was stale at 0x26 (P-3 family)
-        // Sec ($42)
+        // Sec ($22). The record names the block index, the object and ring
+        // lists, the per-section parallax override, the BG layout, the type
+        // table, the block dictionary and its length, plus the EffectsPreset
+        // pointer through which every per-channel resource now arrives.
         ("Sec_sec_block_index", 0x00),
-        ("Sec_sec_parallax_config", 0x14),
-        ("Sec_sec_block_dict_len", 0x40),
-        ("Sec_len", 0x42),
+        ("Sec_sec_parallax_config", 0x0C),
+        ("Sec_sec_block_dict_len", 0x20),
+        ("Sec_len", 0x22),
         // DMAEntry (14)
         ("DMAEntry_Reg94", 0),
         ("DMAEntry_Command", 10),
