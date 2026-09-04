@@ -11799,6 +11799,30 @@ C:\n";
         assert_eq!(image(src), [0xAA, 0xDD, 0x01, 0x00, 0x00, 0x00]);
     }
 
+    /// The `~~` token also has to render BACK to `~~` when a macro ARGUMENT
+    /// carrying it is substituted as text (`render_tokens`/`punct_str`) —
+    /// including into a string literal, where a wrong rendering becomes a
+    /// literal byte. `dc.b "[~~0]"` is `5B 7E 7E 30 5D` off the asl listing.
+    ///
+    /// **This row is language-derived and corpus-UNEXERCISED**: all 96
+    /// `s2disasm` sites spell `~~` in a macro BODY (stored as raw text, so it
+    /// never round-trips through `punct_str`) or at top level. No corpus
+    /// passes `~~` as a macro argument. Without this row the `punct_str` arm
+    /// is unreachable from any test — the macro-BODY row above stays green
+    /// with that arm broken, which is how the hole was found.
+    #[test]
+    fn logical_not_renders_back_through_a_macro_argument() {
+        let src = "\tcpu 68000\n\tpadding off\n\
+                   one macro v\n\tdc.b v\n\tendm\n\
+                   all macro\n\tdc.b ALLARGS\n\tendm\n\
+                   str macro v\n\tdc.b \"[v]\"\n\tendm\n\
+                   \tone ~~0\n\tone ~~1\n\tall ~~0,~~5,~~~0\n\tstr ~~0\n";
+        assert_eq!(
+            image(src),
+            [0x01, 0x00, 0x01, 0x00, 0x00, 0x5B, 0x7E, 0x7E, 0x30, 0x5D]
+        );
+    }
+
     /// The instruction-generation half, at the shape that actually bites:
     /// `s2.macrosetup.asm`'s `jmpTosInternal` gates its whole body on
     /// `if ~~removeJmpTos`, and `removeJmpTos` is 0. Reading `~~0` as 0 does
