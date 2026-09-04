@@ -46,18 +46,52 @@ type Prelude = fn(&std::path::Path) -> String;
 
 /// (module `.emp` path relative to the aeon tree, its section name, its pin,
 /// any synthesized preludes it needs).
-const SECTIONS: &[(&str, &str, Region, &[Prelude])] = &[
+/// The alignment pad a section may differ by when its emitted bytes are identical in
+/// both shapes: a changed successor can leave a few bytes of tail padding inside the
+/// measured span. Anything past this is a content difference, not padding.
+const ALIGN_PAD: usize = 15;
+
+/// `ojz_bg_anim` is the one section here whose generated module emits DIFFERENT BYTES
+/// per shape, by design and by exactly this much.
+///
+/// `games/sonic4/data/generated/ojz/act1/bg_anim.emp` sets
+/// `BGANIM_VIEW_EMIT = if DEBUG == 1 { 1 } else { 0 }` and gates six arrays on it, so
+/// the DEBUG shape carries a camera-motion view record the plain shape does not:
+///
+/// ```text
+///   BgAnim_View_H          [u16; 1]   2       BgAnim_View_V          [u16; 1]   2
+///   _BgAnim_ViewH0_hdr     [u16; 6]  12       _BgAnim_ViewV0_hdr     [u16; 6]  12
+///   _BgAnim_ViewH0_banks   [*u8; 8]  32       _BgAnim_ViewV0_banks   [*u8; 8]  32
+///                                    --                                        --
+///                                    46   x2                                   46   = 92
+/// ```
+///
+/// Derived from the module rather than measured off the pins on purpose: read off the
+/// pins it would equal the divergence by construction and assert nothing. If the view
+/// record gains or loses a field, this number is wrong and the gate says so.
+const BG_ANIM_VIEW_BYTES: usize = 92;
+
+/// `(emp, section, pin, preludes, max cross-shape length divergence)`.
+///
+/// THE FIFTH FIELD IS A CONTRACT, not a tolerance dial. Every section here emits
+/// shape-invariant content, so its plain and debug spans may differ only by the short
+/// alignment pad a changed successor leaves — `ALIGN_PAD`. A section that legitimately
+/// emits DIFFERENT BYTES per shape declares exactly how many, and the assert is then
+/// tight against that number rather than loosened for everyone.
+const SECTIONS: &[(&str, &str, Region, &[Prelude], usize)] = &[
     (
         "games/sonic4/data/generated/ojz/act1/sec_block_blobs.emp",
         "sec_block_blobs",
         pins::SEC_BLOCK_BLOBS,
         &[],
+        ALIGN_PAD,
     ),
     (
         "games/sonic4/data/generated/ojz/act1/sec_local_maps.emp",
         "sec_local_maps",
         pins::SEC_LOCAL_MAPS,
         &[],
+        ALIGN_PAD,
     ),
     (
         // `use engine.bg.{BG_LAYOUT_SIZE}` — the module's BG-layout embed is
@@ -67,12 +101,14 @@ const SECTIONS: &[(&str, &str, Region, &[Prelude])] = &[
         "ojz_act_assets",
         pins::OJZ_ACT_ASSETS,
         &[sigil_harness::test_support::bg_layout_size_const_src as Prelude],
+        ALIGN_PAD,
     ),
     (
         "games/sonic4/data/generated/ojz/act1/bg_anim.emp",
         "ojz_bg_anim",
         pins::OJZ_BG_ANIM,
         &[],
+        BG_ANIM_VIEW_BYTES,
     ),
 ];
 
@@ -94,6 +130,7 @@ fn compile_section(
     base: u32,
     len: usize,
     preludes: &[Prelude],
+    debug: bool,
 ) -> sigil_link::LinkedImage {
     let aeon = aeon_root();
     let path = aeon.join(emp_rel);
@@ -131,7 +168,11 @@ fn compile_section(
         initial_cpu: Cpu::M68000,
         include_root: Some(aeon.clone()),
         embed_base: None,
-        defines: vec![],
+        // THE SHAPE THE COMPARISON IS ABOUT. A generated module may gate its emission
+        // on `DEBUG` — `bg_anim.emp` does — so lowering it without the define both
+        // fails outright on the name and, if it resolved, would build the wrong shape's
+        // bytes and diff them against the other shape's ROM window.
+        defines: vec![("DEBUG".to_string(), i128::from(debug))],
     };
     let (module, ldiags) = lower_module(&file, &opts);
     assert!(
@@ -163,17 +204,21 @@ fn gate(debug: bool, rom_name: &str) {
         return;
     };
 
-    for (emp_rel, section, region, preludes) in SECTIONS {
+    for (emp_rel, section, region, preludes, max_shape_delta) in SECTIONS {
         let base = if debug { region.debug_base } else { region.plain_base };
-        // Content is shape-invariant; the pin LEN may differ per shape by a short
-        // align pad only (objtest-gate: ojz_act_assets' PLAIN successor changed,
-        // so its plain span carries 4 more pad bytes than debug — the emitted
-        // bytes are identical and the pad tolerance below covers the tail).
         let len = if debug { region.debug_len } else { region.plain_len };
         let (lo, hi) = (region.plain_len.min(region.debug_len), region.plain_len.max(region.debug_len));
-        assert!(hi - lo < 16, "{section} len diverges by more than align pad: plain {:#x} debug {:#x}", region.plain_len, region.debug_len);
+        assert!(
+            hi - lo <= *max_shape_delta,
+            "{section} plain/debug spans differ by {:#x}, more than the {max_shape_delta:#x} this \
+             section declares: plain {:#x} debug {:#x}. Either the emission changed or the \
+             declaration is stale — re-derive it from the module, do not raise it to fit.",
+            hi - lo,
+            region.plain_len,
+            region.debug_len
+        );
 
-        let linked = compile_section(emp_rel, section, base, len, preludes);
+        let linked = compile_section(emp_rel, section, base, len, preludes, debug);
         let sec = linked
             .section(section)
             .unwrap_or_else(|| panic!("linked image must carry `{section}`"));

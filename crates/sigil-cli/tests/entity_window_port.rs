@@ -153,6 +153,12 @@ fn with_ambient(
 /// games/sonic4/config/constants.asm + engine/constants.asm + engine/structs.asm.
 fn entity_window_equs() -> Vec<(&'static str, &'static str)> {
     vec![
+        // A VDP HARDWARE address, not a layout one — `engine/system/constants.emp` spells
+        // it `pub const VDP_HV_COUNTER = $C00008`. section.emp's canopy self-pricing reads
+        // the V counter, so the standalone lower needs it. Fixed by the console, so unlike
+        // a ROM address it cannot drift with the layout; the same class as the VDP_DATA /
+        // VDP_CTRL literals the sibling gates carry.
+        ("VDP_HV_COUNTER", "$C00008"),
         ("COLLECTED_WINDOW_SLOTS", "9"),
         ("COLLECTED_SLOT_SIZE", "34"),
         ("COLLECTED_PARK_SLOTS", "4"),
@@ -421,9 +427,13 @@ fn section_value_pairs() -> Vec<(&'static str, &'static str)> {
 
 /// section.emp's cross-seam ADDRESS labels, MINUS EntityWindow_Init (owned by
 /// entity_window.emp in the two-module link — the section→entity_window flip).
-fn section_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
+fn section_labels_for_link(debug: bool) -> Vec<(String, u32)> {
     let pick = |p: pins::Pin| -> u32 { if debug { p.debug } else { p.plain } };
-    vec![
+    // The DEBUG-only `Canopy_*` cells section.emp reaches across the seam, swept from the
+    // reference listing rather than enumerated — the family grows with the diagnostic, and
+    // a transcribed list of it is a standing tax paid in red gates. Derived, never copied;
+    // see `test_support::listing_symbols_with_prefix`.
+    let mut out: Vec<(String, u32)> = vec![
         ("Draw_TileColumn", pick(pins::DRAW_TILE_COLUMN)),
         ("Draw_TileRow_FromCache", pick(pins::DRAW_TILE_ROW_FROM_CACHE)),
         ("Camera_X", pick(pins::CAMERA_X)),
@@ -449,7 +459,22 @@ fn section_labels_for_link(debug: bool) -> Vec<(&'static str, u32)> {
         ("Cache_Fill_RowResume_Row", pick(pins::CACHE_FILL_ROW_RESUME_ROW)),
         ("Plane_Buffer_Ptr", pick(pins::PLANE_BUFFER_PTR)),
         ("Tile_Cache_Nametable", pick(pins::TILE_CACHE_NAMETABLE)),
+        // The canopy diagnostic in section.emp stamps its records with the frame number.
+        // Pre-existing cell with a pin already in the tree, so naming it here adds no new
+        // hand-maintained literal.
+        ("Frame_Counter", pick(pins::FRAME_COUNTER)),
     ]
+    .into_iter()
+    .map(|(n, v)| (n.to_string(), v))
+    .collect();
+    // The tile-cache cells section.emp reaches. Present in BOTH shapes, so the sweep is
+    // unconditional; the rows pinned above keep their value and only the unnamed members
+    // arrive. See `test_support::extend_from_listing`.
+    sigil_harness::test_support::extend_from_listing_ram(&mut out, debug, &["Cache_"]);
+    if debug {
+        sigil_harness::test_support::extend_from_listing_ram(&mut out, debug, &["Canopy_"]);
+    }
+    out
 }
 
 /// Lower one .emp (ambient deps prepended), place into a single-region map.
@@ -556,13 +581,13 @@ fn two_module_flip(shape: &Shape, debug: bool, rom_name: &str) {
 
     // Union the address labels: entity_window's MINUS the two flipped to
     // section.emp; section's MINUS EntityWindow_Init (flipped to entity_window).
-    let mut lmap: BTreeMap<&str, u32> = BTreeMap::new();
+    let mut lmap: BTreeMap<String, u32> = BTreeMap::new();
     for (n, v) in shape.labels {
         if *n == "Section_GetSecPtrXY" || *n == "Section_FlatIDXY" { continue; }
-        lmap.insert(n, *v);
+        lmap.insert((*n).to_string(), *v);
     }
     for (n, v) in section_labels_for_link(debug) {
-        if let Some(prev) = lmap.insert(n, v) {
+        if let Some(prev) = lmap.insert(n.clone(), v) {
             assert_eq!(prev, v, "label VMA conflict for `{n}`: {prev:#x} vs {v:#x}");
         }
     }

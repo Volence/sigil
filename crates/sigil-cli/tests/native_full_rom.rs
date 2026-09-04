@@ -185,24 +185,24 @@ const LOAD_BEARING: &[(&str, u32, u32)] = &[
     // Written as base + offset rather than as two literals: the base is pin-sourced,
     // so a future slide ahead of this region cannot rot the row, and only a change
     // INSIDE the region has to be re-derived here — which is the whole tripwire.
-    // The intra-region offset is PER-SHAPE, and the reason is an addressing-mode
-    // width difference rather than a source difference. `Sound_PlaySFX` sits at
-    // 0x8024 in the plain shape — past the 0x8000 ceiling of a sign-extended
-    // abs.w, and 0x8690 / 0x870C below the two `jsr Sound_PlaySFX` sites in
-    // player_ground that precede this label, both outside bsr.w's ±32K reach.
-    // Both sites therefore assemble as `jsr abs.l` (6 bytes) where a lower target
-    // would take `jsr abs.w` (4). The debug shape places the same target within
-    // bsr.w reach of both sites and spends 4 bytes at each. The 2 x 2 bytes of
-    // plain-only width is the whole of the 4-byte gap: 0x2F8 plain, 0x2F4 debug.
-    // Both offsets are derived from the golden ROM's own encodings at those two
-    // sites, not read off this label's resolved address — the row stays UNPINNED
-    // so it remains an independent check of the convsym resolve path, and pinning
-    // it to `Ground_Move_Cap` would make the assertion circular.
-    // PLAIN offset 0x2F4: the two `jsr Sound_PlaySFX` sites ahead of this label encode
-    // `abs.w` in the plain shape, where Sound_PlaySFX sits below $8000 (0x7FBC); the
-    // debug shape's Sound_PlaySFX is above $8000, so its sites stay `abs.l` and its
-    // offset differs by those 4 bytes.
-    ("Ground_Move_Cap", pins::P_STATE_GROUND.plain + 0x2F4, pins::P_STATE_GROUND.debug + 0x2F4),
+    // THE INTRA-REGION OFFSET IS PER-SHAPE, and the reason is an addressing-mode width
+    // difference rather than a source difference. Two `Sound_PlaySFX` call sites in
+    // player_ground precede this label, and what each costs depends on how far the
+    // target sits from them:
+    //   * PLAIN: Sound_PlaySFX at 0x81A8, roughly 0x87D8 below the sites — outside
+    //     bsr.w's +/-32K reach, so both assemble as `jsr abs.l`, 6 bytes each.
+    //   * DEBUG: Sound_PlaySFX at 0xB4EA, roughly 0x55EC below them — within reach, so
+    //     both take `bsr.w`, 4 bytes each.
+    // The 2 x 2 bytes of plain-only width is the whole of the gap: 0x2F8 plain against
+    // 0x2F4 debug. THIS PAIR OSCILLATES, and a reader who finds them equal has not found
+    // a mistake: whenever the plain shape's sound region crosses $8000 the plain site
+    // encoding changes with it and the two offsets converge or diverge by exactly 4.
+    // Re-derive from the shipped listings rather than assuming either state.
+    // Both offsets come from the golden ROM's own encodings at those two sites, never
+    // read off this label's resolved address — the row stays UNPINNED so it remains an
+    // independent check of the convsym resolve path, and pinning it to
+    // `Ground_Move_Cap` would make the assertion circular.
+    ("Ground_Move_Cap", pins::P_STATE_GROUND.plain + 0x2F8, pins::P_STATE_GROUND.debug + 0x2F4),
     ("Section_Init", pins::SECTION.plain_base, pins::SECTION.debug_base), // a level proc (rides the m1-budget-fix vblank growth; pin-sourced so downstream shifts don't rot the fixture)
     ("BG_Init", pins::BG.plain_base, pins::BG.debug_base),                // a level proc (after PARALLAX + SECTION, so it rides their growth; pin-sourced)
     ("AnimateSprite", pins::ANIMATE.plain_base, pins::ANIMATE.debug_base), // an objects keystone (pin-sourced)

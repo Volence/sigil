@@ -562,6 +562,131 @@ pub fn listing_symbol_addr(listing: &std::path::Path, name: &str) -> Option<u32>
     panic!("listing {} carries no symbol `{name}`", listing.display());
 }
 
+/// The reference build's listing for a shape — the `.bin`'s own sibling from the same
+/// build. Spelled once here because three gates had spelled it themselves.
+pub fn listing_path(debug: bool) -> PathBuf {
+    aeon_dir().join(if debug { "s4.debug.lst" } else { "s4.lst" })
+}
+
+/// One CROSS-SEAM symbol's address for a shape, DERIVED from the reference build's own
+/// listing.
+///
+/// A port gate lowers one module standalone, so every symbol that module references
+/// across a seam has to be supplied from outside. There are two ways to supply one and
+/// only one of them stays true:
+///
+///   * a PIN is a literal somebody types and thereafter maintains. Its failure mode is
+///     green-because-unmaintained — the address rots, the standalone lower encodes a
+///     stale operand, and the byte diff it feeds is measuring the wrong thing. This tree
+///     has already named that class: the retired `secondary_pin_classes_*` baseline calls
+///     literal pins "the pin-tax class the packing walk exists to kill".
+///   * a LISTING address is read out of the artifact the reference build just produced.
+///     It is regenerated with the reference tree, so it cannot carry yesterday's layout,
+///     and a symbol's address here and the operand encoded in the reference ROM cannot
+///     disagree — they come from the same build.
+///
+/// So a new cross-seam symbol is added HERE, not to `repin.toml`. This is the seam
+/// `parallax_port`, `rings_port` and `test_p1_player_port` already resolve through.
+///
+/// This does not make the byte gates vacuous by the back door. The oracle is still the
+/// region diff against the reference ROM: an address derived wrongly changes the operand
+/// bytes and fails that diff.
+///
+/// A DEBUG-only symbol is absent from the plain listing, and asking for one there is a
+/// panic naming it rather than a zero — see [`listing_symbol_addr`]. Callers gate such a
+/// symbol on the shape.
+/// Extend a scope's cross-seam label set with a whole listing FAMILY, skipping names it
+/// already carries.
+///
+/// The safe spelling of [`listing_symbols_with_prefix`] for a table that already pins some
+/// members: a duplicate label is a redefinition, so a bare sweep beside hand-written rows
+/// is a link error waiting for the first overlap. Existing entries keep their value and
+/// their comment; only the members nobody wrote down arrive.
+/// [`extend_from_listing`] restricted to WORK RAM (`$FFFF0000..`).
+///
+/// A diagnostic family usually spans both sides of the seam: `Canopy_*` names both the
+/// RAM cells a neighbouring module reads AND the procs the module under test DEFINES. A
+/// cross-seam label set wants the first and must not contain the second — supplying an
+/// address for a symbol the link already defines is a redefinition, not a courtesy.
+///
+/// The address is the discriminator rather than a name list, because a name list is the
+/// same maintenance the sweep exists to remove: a proc added to the family tomorrow is
+/// excluded by where it lives, with nothing to update.
+pub fn extend_from_listing_ram(labels: &mut Vec<(String, u32)>, debug: bool, prefixes: &[&str]) {
+    let before = labels.len();
+    extend_from_listing(labels, debug, prefixes);
+    let mut added = labels.split_off(before);
+    added.retain(|(_, vma)| *vma >= 0xFFFF_0000);
+    labels.extend(added);
+}
+
+pub fn extend_from_listing(
+    labels: &mut Vec<(String, u32)>,
+    debug: bool,
+    prefixes: &[&str],
+) {
+    let have: std::collections::HashSet<String> =
+        labels.iter().map(|(n, _)| n.clone()).collect();
+    for (name, vma) in listing_symbols_with_prefix(debug, prefixes) {
+        if !have.contains(&name) {
+            labels.push((name, vma));
+        }
+    }
+}
+
+/// Every symbol in a shape's listing whose name starts with one of `prefixes`, sorted.
+///
+/// For a GENERATED FAMILY. When a scope's cross-seam refs are emitted by a generator —
+/// one `EditorRaster_*` per authored raster, one `EditorSceneBinding_*` per section —
+/// enumerating them by hand is a treadmill: every new scene breaks the gate, and the
+/// repair is another transcribed row. Sweeping the family means a new member arrives
+/// with no code change at all.
+///
+/// Supplying a label the scope does not reference is inert (the established idiom: a
+/// shape-invariant label carried in both shapes simply goes unreferenced where its
+/// assert is comptime-gated out), so the sweep may be wider than the need. It cannot be
+/// narrower, which is the direction that costs a red gate.
+///
+/// PANICS if the sweep finds nothing: a scanner that matches no line returns an empty
+/// set, and an empty set would satisfy every caller silently while measuring nothing.
+pub fn listing_symbols_with_prefix(debug: bool, prefixes: &[&str]) -> Vec<(String, u32)> {
+    let path = listing_path(debug);
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read listing {}: {e}", path.display()));
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let Some(rest) = line.strip_prefix(' ') else { continue };
+        let Some((name, tail)) = rest.split_once(" : ") else { continue };
+        if !prefixes.iter().any(|p| name.starts_with(p)) {
+            continue;
+        }
+        let hex = tail.split_whitespace().next().unwrap_or("");
+        if let Ok(v) = u32::from_str_radix(hex, 16) {
+            out.push((name.to_string(), v));
+        }
+    }
+    assert!(
+        !out.is_empty(),
+        "listing {} carries no symbol matching {prefixes:?} — a sweep that matches nothing \
+         measures nothing, so this is a broken scan rather than an empty family",
+        path.display()
+    );
+    out.sort();
+    out
+}
+
+pub fn listing_vma(debug: bool, name: &str) -> u32 {
+    let path = listing_path(debug);
+    listing_symbol_addr(&path, name).unwrap_or_else(|| {
+        panic!(
+            "no listing at {} — this gate derives its cross-seam addresses from the \
+             listing beside the reference ROM, so a source-only checkout cannot serve \
+             it. Point AEON_DIR at a tree with the shapes built.",
+            path.display()
+        )
+    })
+}
+
 // ── 2. The drift-guard filter ────────────────────────────────────────────────
 
 /// `true` iff `a` is a twin DRIFT GUARD (not a D2.29 `[layout.odd-item]` parity

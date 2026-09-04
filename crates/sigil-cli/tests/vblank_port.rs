@@ -136,6 +136,28 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         table.push(("DMA_Bytes_ThisFrame", pins::DMA_BYTES_THIS_FRAME));
         table.push(("Dbg_PageIn_Preempts", pins::DBG_PAGE_IN_PREEMPTS));
     }
+    if debug {
+        // The important-queue peak the straddle instrumentation records each frame.
+        // DEBUG-only, so it is absent from the plain listing and the lookup is gated on
+        // the shape rather than defaulted to zero. Derived, not pinned — `listing_vma`.
+        table.push(("DMA_Peak_Important", sigil_harness::test_support::listing_vma(debug, "DMA_Peak_Important")));
+        table.push(("DMA_Peak_Critical", sigil_harness::test_support::listing_vma(debug, "DMA_Peak_Critical")));
+        table.push(("DMA_Peak_Deferrable", sigil_harness::test_support::listing_vma(debug, "DMA_Peak_Deferrable")));
+        table.push(("Dbg_DMA_Straddle_All", sigil_harness::test_support::listing_vma(debug, "Dbg_DMA_Straddle_All")));
+        table.push(("Dbg_DMA_Straddle_Frame", sigil_harness::test_support::listing_vma(debug, "Dbg_DMA_Straddle_Frame")));
+        table.push(("Dbg_DMA_Straddle_Peak", sigil_harness::test_support::listing_vma(debug, "Dbg_DMA_Straddle_Peak")));
+    }
+
+    // THE DEBUG-ONLY DMA INSTRUMENTATION FAMILY, swept from the reference listing.
+    // aeon's straddle counter, queue peaks and split rejects are diagnostics that gain
+    // cells as the diagnostic grows, so the set is derived rather than enumerated; rows
+    // already pinned above keep their value. See `test_support::extend_from_listing`.
+    let mut table: Vec<(String, u32)> =
+        table.into_iter().map(|(n, v)| (n.to_string(), v)).collect();
+    if debug {
+        sigil_harness::test_support::extend_from_listing(&mut table, debug, &["Dbg_DMA_", "DMA_Peak_", "DMA_Split_"]);
+    }
+
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;

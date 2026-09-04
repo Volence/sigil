@@ -1,9 +1,10 @@
 //! Parcel A1 — the seam-2 placement is a CONSUMER of the map authority.
 //!
 //! [`sound_layout`] derives every banked LMA from `games/sonic4/map.toml`'s two
-//! declared anchors (`dac_banks`, `sound_bank` vma `$8000` — `$90000` / `$A0000` since
-//! aeon's ROM re-layout of 2026-08-26, `$48000` / `$58000` before it) + the emit's own
-//! measured artifact lengths. These tests are the INDEPENDENT
+//! declared anchors (`dac_banks` `$A8000`, `sound_bank` `$B8000` vma `$8000`) + the
+//! emit's own measured artifact lengths. Those two addresses are DERIVED by the BANK
+//! PLACEMENT RULE in aeon's map.toml, not chosen, so they move whenever the packed data
+//! region grows past the reserve. These tests are the INDEPENDENT
 //! literal drift detector for that derivation (the same role `pins.rs` plays for
 //! the pins): the frozen addresses are pinned as literals here, and a doctored map
 //! must move the derivation (non-vacuity) or fail loud (order desync).
@@ -30,18 +31,20 @@ fn sound_layout_derives_the_frozen_addresses() {
         return;
     }
     let got = sound_layout(&aeon_dir()).expect("sound_layout derives from map.toml");
-    // ROM re-layout (aeon parcel/rom-relayout, 2026-08-26): the banks moved +0x48000
-    // as a block — dac_banks 0x48000 -> 0x90000, sound_bank 0x58000 -> 0xA0000 — by the
-    // BANK PLACEMENT RULE in aeon's map.toml (dac_banks = align_up(packed_data_end +
-    // 0x4000, 0x8000)). Every in-bank offset below is unchanged; only the bank moved.
+    // THE BANK BASES ARE DERIVED, and they move as a BLOCK. aeon's map.toml computes
+    // dac_banks = align_up(packed_data_end + RESERVE + 0x8000, 0x8000) and sound_bank one
+    // 64 KB bank above it, so growth in the packed data region relocates both. Every
+    // in-bank OFFSET below is a property of the sound artifacts and is independent of
+    // that: when the banks move, all ten literals move by the same amount and nothing
+    // else changes. Two such moves so far, +0x48000 then +0x18000.
     let want = SoundLayout {
-        dac_blip_lma: 0x90000,
-        dac_shared_lma: 0x98000,
-        sound_tables_z80_lma: 0xA0000,
-        pitchtable_lma: 0xA0357,
-        sfx_win_tab_lma: 0xA045F,
-        seq_opcode_tab_lma: 0xA0571,
-        dac_sample_tab_lma: 0xA05B1,
+        dac_blip_lma: 0xA8000,
+        dac_shared_lma: 0xB0000,
+        sound_tables_z80_lma: 0xB8000,
+        pitchtable_lma: 0xB8357,
+        sfx_win_tab_lma: 0xB845F,
+        seq_opcode_tab_lma: 0xB8571,
+        dac_sample_tab_lma: 0xB85B1,
         // The three below moved TWICE on 2026-08-11, and the split matters:
         //   * sound-pkg-3 (2026-08-10) grew the DAC descriptor 9 -> 12 bytes, taking
         //     DacSampleTable 90 -> 123 and pushing mt_bank +0x21 / both SFX bases
@@ -55,9 +58,9 @@ fn sound_layout_derives_the_frozen_addresses() {
         // fold wall — section_align::DECLARED), and sound_layout predicts that through
         // the walk's own native::packed_chained_base rather than assuming a contiguous
         // pack. Nothing upstream of seq_opcode_tab_lma moved in either step.
-        mt_bank_lma: 0xA0630,
-        sfx_bank_lma_plain: 0xA3B18,
-        sfx_bank_lma_debug: 0xA5568,
+        mt_bank_lma: 0xB8630,
+        sfx_bank_lma_plain: 0xBBB18,
+        sfx_bank_lma_debug: 0xBD568,
     };
     assert_eq!(got, want, "map-derived seam-2 placement drifted from the frozen chain-22 addresses");
 }

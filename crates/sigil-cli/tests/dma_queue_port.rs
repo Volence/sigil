@@ -137,6 +137,25 @@ fn addr_labels(debug: bool) -> Vec<Section> {
         table.push(("DMA_Overflow_Count", pins::DMA_OVERFLOW_COUNT));
         table.push(("Dbg_DMA_Enq_Capped", pins::DBG_DMA_ENQ_CAPPED));
     }
+    if debug {
+        // The DMA straddle counter aeon added to measure the split reserve.
+        // DEBUG-only, so it is absent from the plain listing and the lookup is gated on
+        // the shape rather than defaulted to zero. Derived, not pinned — `listing_vma`.
+        table.push(("Dbg_DMA_Straddle_All", sigil_harness::test_support::listing_vma(debug, "Dbg_DMA_Straddle_All")));
+        table.push(("Dbg_DMA_Straddle_Frame", sigil_harness::test_support::listing_vma(debug, "Dbg_DMA_Straddle_Frame")));
+        table.push(("Dbg_DMA_Straddle_Peak", sigil_harness::test_support::listing_vma(debug, "Dbg_DMA_Straddle_Peak")));
+    }
+
+    // THE DEBUG-ONLY DMA INSTRUMENTATION FAMILY, swept from the reference listing.
+    // aeon's straddle counter, queue peaks and split rejects are diagnostics that gain
+    // cells as the diagnostic grows, so the set is derived rather than enumerated; rows
+    // already pinned above keep their value. See `test_support::extend_from_listing`.
+    let mut table: Vec<(String, u32)> =
+        table.into_iter().map(|(n, v)| (n.to_string(), v)).collect();
+    if debug {
+        sigil_harness::test_support::extend_from_listing(&mut table, debug, &["Dbg_DMA_", "DMA_Peak_", "DMA_Split_"]);
+    }
+
     let mut out = Vec::new();
     for (i, (name, vma)) in table.iter().enumerate() {
         let vma = *vma;
