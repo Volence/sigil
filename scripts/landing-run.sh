@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # THE LANDING RUN, as one command.
 #
-# A landing run is the full-suite verification behind a merge to master. It has six
+# A landing run is the full-suite verification behind a merge to master. It has seven
 # preconditions, and every one of them is invisible when omitted: the run reads GREEN, or
 # it reads RED for a reason that has nothing to do with the code under test. This script
-# is the single invocation that carries all six, so the operator remembers one thing
-# instead of six.
+# is the single invocation that carries all seven, so the operator remembers one thing
+# instead of seven.
 #
 # WHAT THIS DOES NOT DO, stated first because the honest limit is the point.
-# A wrapper reduces the omission surface from "remember six things" to "remember one
+# A wrapper reduces the omission surface from "remember seven things" to "remember one
 # thing." IT DOES NOT MAKE OMISSION IMPOSSIBLE, because someone can still not run it.
 # Nothing invokes this but a human. There is no timer, no hook, and no gate inside the
 # suite that notices a landing run bypassed it. Two follow-ups that WOULD close that,
@@ -28,7 +28,7 @@
 # that is the run this script exists for. Where both apply, `--attest` is the one that
 # leaves a record; use it, and use this for everything else.
 #
-# THE SIX, and what each one costs when it is left out:
+# THE SEVEN, and what each one costs when it is left out:
 #
 # (1) A DEDICATED, ON-DISK `CARGO_TARGET_DIR`. Never under /tmp: /tmp is tmpfs on this
 #     machine and a cargo build there wedges the shell.
@@ -60,6 +60,39 @@
 #     status, which is the exact trailing-command shape that has misreported a run here
 #     — once claiming completion while cargo was still executing, once reporting failure
 #     from a trailing `grep`.
+#
+# (7) THE LINT BAR, RUN HERE RATHER THAN BY HAND. The stated bar is
+#     `cargo clippy --workspace --all-targets -- -D warnings` exiting 0 (README.md). Until
+#     this script ran it, it did not: the wrapper printed `RESULT GREEN` having never
+#     invoked clippy, so the only thing standing between a red lint bar and a merge was an
+#     operator remembering a second command — which is the omission surface (1)-(6) exist
+#     to remove, left open for the seventh.
+#
+#     WHAT THE MISSING FLAG ACTUALLY IS. The hand-run form people reach for is bare
+#     `cargo clippy`, and its clean exit proves only that nothing was an ERROR — clippy's
+#     own lints are warnings, so it prints every finding and still exits 0. Measured on
+#     this tree at the branch point of the commit that added this section, with ten
+#     `tabs_in_doc_comments` findings standing in `sigil-frontend-as`:
+#
+#       cargo clippy                                          -> exit 0, findings PRINTED
+#       cargo clippy --release --workspace --all-targets       -> exit 0, findings PRINTED
+#       cargo clippy --release --workspace --all-targets -Dwarn -> exit 101
+#
+#     So `-D warnings` is the flag that turns clippy into an instrument with a verdict;
+#     without it the command is a reporter, and a reporter's exit code answers a question
+#     nobody asked. `--all-targets` is carried too, because a lint bar that does not read
+#     the test and bench targets is silent about most of the code a landing is about — but
+#     it is NOT what those ten needed to be reached (they are in the lib, and the shorter
+#     form finds them). Both flags are here; only one of them is the one that was missing.
+#
+#     A RED LINT BAR MAKES THIS SCRIPT'S RESULT NOT-GREEN, exactly as a red test does, and
+#     `CLIPPY_EXIT` sits beside `CARGO_EXIT` in the verdict block. There is no --no-clippy
+#     and no skip path, including for `--scoped`: a scoped run already says out loud that
+#     it is not a landing, and adding a second way to get a green-looking verdict without
+#     the lint bar would rebuild the hole this closes. THE FIX FOR A RED BAR IS NEVER A
+#     WORKSPACE-WIDE OR CRATE-WIDE `allow` — that turns a correct lint off everywhere to
+#     settle one site. Silence the specific item, with a comment saying why, or change the
+#     code.
 #
 # Plus the reporting rules a landing verdict is worthless without: failures-first WITH
 # THE NAMES (never a tail excerpt, never `grep | head` — that has hidden failures behind
@@ -112,8 +145,9 @@
 #   ROMs must be present.
 #
 # EXIT CODES
-#   0  the suite ran, passed, and reconciled against the stated baseline
-#   1  the suite FAILED (red tests, or cargo exited nonzero)
+#   0  the suite ran, passed, reconciled against the stated baseline, and the lint bar
+#      exited 0
+#   1  the suite FAILED (red tests, or cargo exited nonzero), or THE LINT BAR IS RED
 #   2  the run COULD NOT RUN or could not be measured — never green, never a count
 #   3  the suite passed but the total does NOT reconcile with --baseline
 
@@ -314,6 +348,17 @@ if [[ $EMIT_ORIGIN == overridden && ! -x $SIGIL_EMIT_RESOLVED ]]; then
        Unset it to use this run's own build, or point it at a real binary."
 fi
 
+# (7) CLIPPY MUST EXIST BEFORE ANYTHING SPENDS TIME. `cargo clippy` on a toolchain
+# without the component fails with a message about an unknown subcommand, and that exit
+# code is indistinguishable in the verdict from a lint bar that ran and found errors.
+# "The lint bar could not be measured" and "the lint bar is red" are different facts, so
+# the unmeasurable one is refused here BY NAME rather than rendered as a lint count later.
+CLIPPY_VERSION=$(cargo clippy --version 2>/dev/null) \
+    || die "\`cargo clippy\` is not available on this toolchain, so the lint bar cannot be
+       measured — and an unmeasurable bar is not a passing one. Install it with
+       \`rustup component add clippy\` and re-run."
+say "clippy available: $CLIPPY_VERSION"
+
 # A DERIVED path is this script's to produce, so it is built rather than demanded: these
 # two binaries live in the workspace the suite is about to compile anyway, and building
 # them HERE is what guarantees the landing uses the assembler this tree just made rather
@@ -381,6 +426,13 @@ else
 fi
 CARGO_ARGS+=(-- --nocapture)
 
+# THE LINT BAR'S OWN ARGUMENTS, and they do not follow --scoped. `--scoped` narrows which
+# TESTS run; it says nothing about which code has to lint, and a scoped run that also
+# narrowed the lint bar would be a second spelling of the omission this closes. The bar is
+# the workspace, every target, warnings denied — the form README.md states.
+CLIPPY_ARGS=(clippy --release --workspace --all-targets
+             --manifest-path "$ROOT/Cargo.toml" -- -D warnings)
+
 {
     echo "# sigil landing run"
     echo "# started (UTC)  $STARTED"
@@ -402,6 +454,8 @@ CARGO_ARGS+=(-- --nocapture)
     # were measured, and "the variable was not set in my shell" is not something a
     # later reader of this file can check.
     echo "# allow-partial  removed from the child (was: ${SIGIL_ALLOW_PARTIAL:-<unset>})"
+    echo "# clippy         $CLIPPY_VERSION"
+    echo "# lint command   cargo ${CLIPPY_ARGS[*]}"
     echo "# command        SIGIL_STRICT_GATE=1 env -u SIGIL_ALLOW_PARTIAL cargo ${CARGO_ARGS[*]}"
     echo
 } > "$LOG" || die "cannot stamp the log $LOG"
@@ -410,8 +464,37 @@ say "log -> $LOG"
 say "(tail it: tail -f $LOG)"
 
 # ---------------------------------------------------------------------------------------
+# (7) The lint bar, INSIDE this script's own command span. It runs FIRST because a lint
+# error is a compile-time fact and a reader tailing the log should meet it in the first
+# minute rather than the fifth — but a red bar does NOT stop the suite. The two are
+# independent measurements and a landing wants both; short-circuiting here would hand back
+# a verdict with the test half unmeasured, which is the shape (2) already refuses.
+# ---------------------------------------------------------------------------------------
+echo "##### CLIPPY SPAN — cargo ${CLIPPY_ARGS[*]}" >> "$LOG"
+say "lint bar: cargo ${CLIPPY_ARGS[*]}"
+CARGO_TARGET_DIR="$TARGET" cargo "${CLIPPY_ARGS[@]}" 2>&1 | tee -a "$LOG"
+# PIPESTATUS[0] for the same reason (6) gives: with `tee` in the pipeline `$?` is tee's.
+CLIPPY_RC=${PIPESTATUS[0]}
+echo "CLIPPY_EXIT=$CLIPPY_RC" >> "$LOG"
+echo "##### CLIPPY SPAN ENDS" >> "$LOG"
+
+# Every lint site, named. `error: could not compile …` is clippy's TALLY line, not a
+# finding, so counting bare `^error:` reports one more site than exists — and a verdict
+# that cannot be checked against the log by hand is a verdict a reader has to trust.
+mapfile -t CLIPPY_SITES < <(awk '
+    /^##### CLIPPY SPAN ENDS/ { inspan = 0 }
+    inspan && /^error: / && !/^error: could not compile/ { msg = substr($0, 8); next }
+    inspan && /^ *--> / && msg != "" {
+        loc = $2
+        print loc "  " msg
+        msg = ""
+    }
+    /^##### CLIPPY SPAN —/ { inspan = 1 }' "$LOG")
+
+# ---------------------------------------------------------------------------------------
 # (3)+(6) The run. The strict flag is INSIDE the command span; the exit code is cargo's.
 # ---------------------------------------------------------------------------------------
+echo "##### TEST SPAN — cargo ${CARGO_ARGS[*]}" >> "$LOG"
 SIGIL_STRICT_GATE=1 \
 CARGO_TARGET_DIR="$TARGET" \
 AEON_DIR="$AEON" \
@@ -449,7 +532,18 @@ read -r SUITES PASSED FAILED IGNORED < <(awk '
 # BOTH spellings. The landing bar greps `skip:`, and 27 sites say `skipping` instead —
 # invisible to that grep while reporting green. A matcher inheriting the same blind spot
 # would under-count while still looking like a witness.
-SKIPS=$(grep -cE 'skip:|skipping' "$LOG" || true)
+# Counted ONLY inside the test span. This is the one matcher in the file loose enough to
+# read the lint bar's output as suite output: clippy quotes source lines verbatim, so a
+# lint fired on any code containing `skipping` would be counted here as a gate that
+# measured nothing. The two spans now share a log, so the parser has to say which half it
+# is reading. The three matchers below need no such scoping — `test result:`,
+# `^test … FAILED`, and the --expect-test probe are all anchored on shapes cargo-test
+# emits and clippy does not — and that is a fact about those patterns, so it is written
+# here rather than left to be re-derived.
+SKIPS=$(awk '
+    /^##### TEST SPAN —/ { inspan = 1; next }
+    inspan && /skip:|skipping/ { n++ }
+    END { print n+0 }' "$LOG")
 
 # Every failing name, sorted and deduped. All of them.
 mapfile -t FAILING < <(grep -E '^test .* \.\.\. FAILED$' "$LOG" \
@@ -463,7 +557,25 @@ echo "  reference       $AEON @ ${AEON_HEAD:0:8} ($AEON_BRANCH, $AEON_DIRTY) —
 echo "  target dir      $TARGET"
 echo "  started/ended   $STARTED -> $FINISHED (UTC)"
 echo "  CARGO_EXIT      $CARGO_RC"
+echo "  CLIPPY_EXIT     $CLIPPY_RC   ($( (( CLIPPY_RC == 0 )) && echo 'lint bar clean' || echo "LINT BAR RED — ${#CLIPPY_SITES[@]} site(s)" ))"
 (( SCOPED )) && echo "  ** SCOPED RUN — PARTIAL. This is not a landing verdict. **"
+
+# Before the unmeasurable branches below, because a run whose tests could not be measured
+# still measured the lint bar, and dropping that finding on the way out would make the
+# operator run the whole thing again to learn something already known.
+if (( ${#CLIPPY_SITES[@]} )); then
+    echo
+    echo "  CLIPPY LINT ERRORS (${#CLIPPY_SITES[@]}), all of them:"
+    for s in "${CLIPPY_SITES[@]}"; do echo "    $s"; done
+    echo "  Silence the SPECIFIC item with a comment saying why, or change the code. A"
+    echo "  workspace-wide or crate-wide allow turns a correct lint off everywhere to"
+    echo "  settle one site, and is not a fix."
+elif (( CLIPPY_RC != 0 )); then
+    echo
+    echo "  CLIPPY EXITED $CLIPPY_RC WITH NO PARSEABLE LINT SITE. The bar is red for a"
+    echo "  reason this verdict could not name — read the CLIPPY SPAN in the log. Do not"
+    echo "  read an unnamed red as a lint that can be waived."
+fi
 
 # UNMEASURABLE IS NOT GREEN. Both branches below are runs whose result cannot be
 # classified, and neither may be rendered as a count.
@@ -561,9 +673,21 @@ fi
 # The verdict. Derived from cargo's own status and the measurement — never from whatever
 # command happened to run last.
 # ---------------------------------------------------------------------------------------
-if (( CARGO_RC != 0 || FAILED > 0 )); then
+# A RED LINT BAR IS A RED RUN. It sits in the same condition as a red test rather than in
+# a warning line above it, because a bar reported beside a `RESULT GREEN` is a bar that
+# gets landed over — which is how ten lint errors reached master under a wrapper that
+# printed GREEN.
+if (( CARGO_RC != 0 || FAILED > 0 || CLIPPY_RC != 0 )); then
     echo
-    echo "  RESULT          FAILED — $FAILED test(s) red, cargo exit $CARGO_RC."
+    if (( CLIPPY_RC != 0 && CARGO_RC == 0 && FAILED == 0 )); then
+        # Named separately because the two halves disagreeing is the informative case, and
+        # "$FAILED test(s) red" printed as 0 over a red run reads as a script mistake.
+        echo "  RESULT          FAILED — the LINT BAR is red (clippy exit $CLIPPY_RC,"
+        echo "                  ${#CLIPPY_SITES[@]} site(s)). Every test that ran passed; the suite is not"
+        echo "                  the reason this is not green. Do not land on this."
+    else
+        echo "  RESULT          FAILED — $FAILED test(s) red, cargo exit $CARGO_RC, clippy exit $CLIPPY_RC."
+    fi
     echo "==================================================================================="
     exit 1
 fi
