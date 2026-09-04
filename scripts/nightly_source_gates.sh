@@ -383,7 +383,29 @@ makes some file look like it reads nothing"
         # through to UNCLASSIFIED — a rule that re-bucketed a file already bucketed
         # correctly would be a regression, and this ordering makes that impossible rather
         # than merely unobserved.
-        if printf '%s\n' "${SOURCE_GATES[@]}" | grep -qx "$n"; then
+        # MEMBERSHIP IS ASKED IN THE SHELL, WITH NO PIPE, and that is load-bearing.
+        # This was `printf '%s\n' "${SOURCE_GATES[@]}" | grep -qx "$n"`, which is
+        # wrong under this file's own `set -o pipefail`: `grep -q` exits the moment
+        # it MATCHES, `printf` is then killed by SIGPIPE, and `pipefail` hands the
+        # pipeline back 141 — so a match reads as a NON-match. Whether printf's
+        # write completes before grep exits is a scheduling race, so the fault is
+        # load-dependent, silent, and only ever fires in the one direction that
+        # drops a real SOURCE_GATES member out of its bucket and into
+        # `unclassified` (or `no-reference`) — which makes the whole nightly lane
+        # refuse, and reds any landing run unlucky enough to be running it.
+        #
+        # Measured on this tree: 192 concurrent audits produced 8 wrong
+        # classifications (6 `unclassified=1`, 2 `no-reference=7`), and 9,600
+        # concurrent runs of the isolated pipeline disagreed 25 times, EVERY ONE
+        # with status 141. The same isolated loop run serially disagreed 0/4,000
+        # times, which is why this survived: it cannot be reproduced by running
+        # the audit on its own, only by running it inside a busy suite. The
+        # equivalent pure-bash loop disagreed 0/9,600.
+        in_source_gates=0
+        for gate in "${SOURCE_GATES[@]}"; do
+            [[ $gate == "$n" ]] && { in_source_gates=1; break; }
+        done
+        if (( in_source_gates )); then
             CLS_SOURCE+=("$n")
         elif grep -qE 's4\.bin|s4\.debug\.bin|demo\.bin|demo\.debug\.bin|\.lst|golden' "$f"; then
             CLS_ARTIFACT+=("$n")
