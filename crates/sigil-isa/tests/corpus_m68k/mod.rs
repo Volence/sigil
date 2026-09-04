@@ -15,6 +15,27 @@ fn mov(size: Size, src: Operand, dst: Operand) -> Instruction {
     Instruction { mnemonic: Mnemonic::Move, size, ops: vec![src, dst] }
 }
 
+/// `bchg <src>,<dst>`. The size slot is not encoded (the bit ops derive it from
+/// the destination) but is spelled out per row so the corpus records the
+/// operation width asl reports for that destination.
+fn bch(src: Operand, dst: Operand, size: Size) -> Instruction {
+    Instruction { mnemonic: Mnemonic::Bchg, size, ops: vec![src, dst] }
+}
+
+fn sh(mnemonic: Mnemonic, size: Size, ops: Vec<Operand>) -> Instruction {
+    Instruction { mnemonic, size, ops }
+}
+
+/// `exg.l Rx,Ry` — long by construction.
+fn ex(a: Operand, b: Operand) -> Instruction {
+    Instruction { mnemonic: Mnemonic::Exg, size: Size::L, ops: vec![a, b] }
+}
+
+/// `move.w <ea>,ccr` — word by construction; there is no move-FROM-ccr on the 68000.
+fn mcc(src: Operand) -> Instruction {
+    Instruction { mnemonic: Mnemonic::MoveToCcr, size: Size::W, ops: vec![src, Operand::Ccr] }
+}
+
 use Operand::*;
 use Size::{B, L, W};
 
@@ -95,6 +116,10 @@ pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
         ("rol.w #2,d0", Instruction { mnemonic: Mnemonic::Rol, size: W, ops: vec![Imm(2), Dn(0)] }),
         ("ror.w d1,d0", Instruction { mnemonic: Mnemonic::Ror, size: W, ops: vec![Dn(1), Dn(0)] }),
         // --- bit ops ---
+        // `bchg` is the fourth `tt` row; its destination matrix is `bset`'s
+        // (DATA ALTERABLE), so the sweep below is the full row: every legal
+        // destination mode, in both the static `#n` and dynamic `Dn` forms.
+
         ("btst #7,d0", Instruction { mnemonic: Mnemonic::Btst, size: L, ops: vec![Imm(7), Dn(0)] }),
         ("bset #0,(a0)", Instruction { mnemonic: Mnemonic::Bset, size: B, ops: vec![Imm(0), Ind(0)] }),
         ("bclr #5,d1", Instruction { mnemonic: Mnemonic::Bclr, size: L, ops: vec![Imm(5), Dn(1)] }),
@@ -159,5 +184,80 @@ pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
         ("movea.w (a2),a3", Instruction { mnemonic: Mnemonic::Movea, size: W, ops: vec![Ind(2), An(3)] }),
         ("movea.l #$1000,a0", Instruction { mnemonic: Mnemonic::Movea, size: L, ops: vec![Imm(0x1000), An(0)] }),
         ("movea.w (4,a1),a2", Instruction { mnemonic: Mnemonic::Movea, size: W, ops: vec![Disp16An(4, 1), An(2)] }),
+        // --- BCHG: the full DATA-ALTERABLE destination row, both forms ---
+        // Cells the two Sonic corpora exercise are marked; the rest are here
+        // because the corpus not reaching a cell is not evidence the cell works.
+        ("bchg #3,d0", bch(Imm(3), Dn(0), L)),                                 // S1 (2 sites)
+        ("bchg #3,(a0)", bch(Imm(3), Ind(0), B)),
+        ("bchg #3,(a0)+", bch(Imm(3), PostInc(0), B)),
+        ("bchg #3,-(a0)", bch(Imm(3), PreDec(0), B)),
+        ("bchg #3,(4,a0)", bch(Imm(3), Disp16An(4, 0), B)),                    // S1/S2: the `#n,off(aN)` bulk
+        ("bchg #3,(6,a0,d1.w)", bch(Imm(3), Disp8AnXn { d: 6, an: 0, xn: Xn::D(1), long: false }, B)),
+        ("bchg #3,($1234).w", bch(Imm(3), AbsW(0x1234), B)),
+        ("bchg #3,($12345678).l", bch(Imm(3), AbsL(0x12345678), B)),
+        ("bchg #0,d0", bch(Imm(0), Dn(0), L)),
+        ("bchg #31,d0", bch(Imm(31), Dn(0), L)),
+        // asl range-checks nothing here — the bit number is a full word and the
+        // hardware masks it (mod 32 for `Dn`, mod 8 for memory).
+        ("bchg #255,(a0)", bch(Imm(255), Ind(0), B)),
+        ("bchg d2,d0", bch(Dn(2), Dn(0), L)),
+        ("bchg d2,(a0)", bch(Dn(2), Ind(0), B)),
+        ("bchg d2,(a0)+", bch(Dn(2), PostInc(0), B)),
+        ("bchg d2,-(a0)", bch(Dn(2), PreDec(0), B)),
+        ("bchg d2,(4,a0)", bch(Dn(2), Disp16An(4, 0), B)),
+        ("bchg d2,(6,a0,d1.w)", bch(Dn(2), Disp8AnXn { d: 6, an: 0, xn: Xn::D(1), long: false }, B)),
+        ("bchg d2,($1234).w", bch(Dn(2), AbsW(0x1234), B)),
+        ("bchg d2,($12345678).l", bch(Dn(2), AbsL(0x12345678), B)),
+        // --- ROXL/ROXR: register (immediate + Dn count) and memory forms ---
+        ("roxl.w #1,d3", sh(Mnemonic::Roxl, W, vec![Imm(1), Dn(3)])),          // S1/S2 (2 sites each)
+        ("roxl.b #8,d0", sh(Mnemonic::Roxl, B, vec![Imm(8), Dn(0)])),
+        ("roxl.l #4,d1", sh(Mnemonic::Roxl, L, vec![Imm(4), Dn(1)])),
+        ("roxr.w #1,d0", sh(Mnemonic::Roxr, W, vec![Imm(1), Dn(0)])),
+        ("roxr.l #8,d7", sh(Mnemonic::Roxr, L, vec![Imm(8), Dn(7)])),
+        ("roxl.w d2,d0", sh(Mnemonic::Roxl, W, vec![Dn(2), Dn(0)])),
+        ("roxr.b d1,d5", sh(Mnemonic::Roxr, B, vec![Dn(1), Dn(5)])),
+        ("roxl.w (a0)", sh(Mnemonic::Roxl, W, vec![Ind(0)])),
+        ("roxl.w (a0)+", sh(Mnemonic::Roxl, W, vec![PostInc(0)])),
+        ("roxl.w -(a0)", sh(Mnemonic::Roxl, W, vec![PreDec(0)])),
+        ("roxl.w (4,a0)", sh(Mnemonic::Roxl, W, vec![Disp16An(4, 0)])),
+        ("roxl.w (6,a0,d1.w)", sh(Mnemonic::Roxl, W, vec![Disp8AnXn { d: 6, an: 0, xn: Xn::D(1), long: false }])),
+        ("roxl.w ($1234).w", sh(Mnemonic::Roxl, W, vec![AbsW(0x1234)])),
+        ("roxr.w ($12345678).l", sh(Mnemonic::Roxr, W, vec![AbsL(0x12345678)])),
+        // The two alias spellings asl accepts, pinned as BYTES so the aliasing
+        // is proven against asl and not merely asserted: `<shift> Dn` is the
+        // count-1 register form and `<shift> #1,<mem>` is the memory form.
+        ("roxl.w d0", sh(Mnemonic::Roxl, W, vec![Dn(0)])),
+        ("asl.l d0", sh(Mnemonic::Asl, L, vec![Dn(0)])),
+        ("roxl.w #1,(a0)", sh(Mnemonic::Roxl, W, vec![Imm(1), Ind(0)])),
+        ("asr.w #1,($1234).w", sh(Mnemonic::Asr, W, vec![Imm(1), AbsW(0x1234)])),
+        // --- EXG: all three register-pair forms, both written orders ---
+        ("exg.l d0,d1", ex(Dn(0), Dn(1))),                                     // S1/S2 (both spellings)
+        ("exg.l d7,d0", ex(Dn(7), Dn(0))),
+        ("exg.l a0,a1", ex(An(0), An(1))),
+        ("exg.l a7,a2", ex(An(7), An(2))),
+        ("exg.l d0,a0", ex(Dn(0), An(0))),
+        ("exg.l d3,a7", ex(Dn(3), An(7))),
+        // asl NORMALISES this order to `Dx,Ay`; the golden bytes prove it.
+        ("exg.l a1,d4", ex(An(1), Dn(4))),
+        // --- MOVE to CCR: the full DATA source row ---
+        ("move.w d6,ccr", mcc(Dn(6))),                                         // S1 (2 sites), S2 (2, bare)
+        ("move.w #0,ccr", mcc(Imm(0))),                                        // S2 (3 sites, bare)
+        ("move.w (a0),ccr", mcc(Ind(0))),
+        ("move.w (a0)+,ccr", mcc(PostInc(0))),
+        ("move.w -(a0),ccr", mcc(PreDec(0))),
+        ("move.w (4,a0),ccr", mcc(Disp16An(4, 0))),
+        ("move.w (6,a0,d1.w),ccr", mcc(Disp8AnXn { d: 6, an: 0, xn: Xn::D(1), long: false })),
+        ("move.w ($1234).w,ccr", mcc(AbsW(0x1234))),
+        ("move.w ($12345678).l,ccr", mcc(AbsL(0x12345678))),
+        // As with `move.w (8,pc),d0` above, the stored disp is the RESOLVED one
+        // asl emits: target 8 minus the extension word's own address 2.
+        ("move.w (8,pc),ccr", mcc(Pcd16(6))),
+        ("move.w (4,pc,d0.w),ccr", mcc(Pcd8Xn { d: 2, xn: Xn::D(0), long: false })),
+        // --- MOVE to/from USP: the whole matrix is the eight address registers ---
+        ("move.l a6,usp", Instruction { mnemonic: Mnemonic::MoveToUsp, size: L, ops: vec![An(6), Usp] }), // S1/S2
+        ("move.l a0,usp", Instruction { mnemonic: Mnemonic::MoveToUsp, size: L, ops: vec![An(0), Usp] }),
+        ("move.l a7,usp", Instruction { mnemonic: Mnemonic::MoveToUsp, size: L, ops: vec![An(7), Usp] }),
+        ("move.l usp,a0", Instruction { mnemonic: Mnemonic::MoveFromUsp, size: L, ops: vec![Usp, An(0)] }),
+        ("move.l usp,a7", Instruction { mnemonic: Mnemonic::MoveFromUsp, size: L, ops: vec![Usp, An(7)] }),
     ]
 }

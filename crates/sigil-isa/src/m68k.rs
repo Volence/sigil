@@ -33,15 +33,18 @@ pub enum Mnemonic {
     Add, Adda, Sub, Suba, And, Or, Eor, Cmp, Cmpa, Muls, Mulu, Divs, Divu,
     Addi, Subi, Andi, Ori, Eori, Cmpi,
     Moveq, Addq, Subq,
-    Asl, Asr, Lsl, Lsr, Rol, Ror,
-    Btst, Bset, Bclr,
+    Asl, Asr, Lsl, Lsr, Rol, Ror, Roxl, Roxr,
+    Btst, Bset, Bclr, Bchg,
     Clr, Neg, Not, Tst, Tas,
     Scc(Cond),
     Jmp, Jsr, Lea, Pea, Nop, Rts, Rte, Trap, Swap, Ext, Illegal,
     Bra, Bsr, Bcc(Cond), Dbcc(Cond),
     Movem, Movep, Addx, Cmpm,
     MoveToSr, MoveFromSr, // move.w <ea>,sr / move.w sr,<ea>
+    MoveToCcr,            // move.w <ea>,ccr (there is no move-FROM-ccr on the 68000)
     AndiCcr, OriCcr,      // andi.b #imm,ccr / ori.b #imm,ccr
+    MoveToUsp, MoveFromUsp, // move.l An,usp / move.l usp,An
+    Exg,                  // exg.l Rx,Ry — the three register-pair forms
 }
 
 /// Does this mnemonic WRITE its last operand when that operand is a register —
@@ -73,14 +76,18 @@ pub enum Mnemonic {
 ///   are the auto-dec bases, caught by the operand-shape effect.
 /// - `Movem` → `false`: reglist-destination effect (see scope above).
 ///
-/// Mnemonics NOT YET in this enum but named by the spec — `exg` (writes BOTH
-/// register operands), `link`/`unlk` (write `An` + `sp`), `bchg`, `roxl`/`roxr`,
-/// `negx`, `abcd`/`sbcd`/`nbcd` — are "covered by construction": when one is
-/// added to `Mnemonic`, this match stops compiling and forces its classification
-/// HERE. The bit/rotate/decimal forms (`bchg`/`roxl`/`roxr`/`negx`/`abcd`/…) are
-/// last-operand-register writes (`true`); `exg` and `link`/`unlk` write registers
-/// NOT expressible as "the last operand" and additionally need an operand-shape
-/// arm in the front-end's `instr_written_regs` (the doc there records this).
+/// Mnemonics NOT YET in this enum but named by the spec — `link`/`unlk` (write
+/// `An` + `sp`), `negx`, `abcd`/`sbcd`/`nbcd` — are "covered by construction":
+/// when one is added to `Mnemonic`, this match stops compiling and forces its
+/// classification HERE. The bit/rotate/decimal forms (`negx`/`abcd`/…) are
+/// last-operand-register writes (`true`); `link`/`unlk` write registers NOT
+/// expressible as "the last operand" and additionally need an operand-shape arm
+/// in the front-end's `instr_written_regs` (the doc there records this).
+///
+/// `Exg` is the one variant here whose `true` is INCOMPLETE by construction:
+/// `exg Rx,Ry` writes BOTH registers, and the last-operand rule sees only `Ry`.
+/// The `Rx` write needs the same operand-shape arm `link`/`unlk` would, and the
+/// front-end's `instr_written_regs` carries it.
 /// **A `true` here is not a promise that the write COVERS the operand size.**
 /// `Ext` writes only the half above the bits it reads, and `Tas`/`Bset`/`Bclr`
 /// write a single bit. A consumer reasoning about how much of a register a write
@@ -96,8 +103,12 @@ pub fn writes_last_operand(m: Mnemonic) -> bool {
         // set-cc — the destination is the last operand.
         Move | Movea | Moveq | Add | Adda | Sub | Suba | And | Or | Eor | Muls
         | Mulu | Divs | Divu | Addi | Subi | Andi | Ori | Eori | Addq | Subq
-        | Asl | Asr | Lsl | Lsr | Rol | Ror | Bset | Bclr | Clr | Neg | Not
-        | Tas | Scc(_) | Lea | Swap | Ext | Movep | Addx | MoveFromSr => true,
+        | Asl | Asr | Lsl | Lsr | Rol | Ror | Roxl | Roxr | Bset | Bclr | Bchg
+        | Clr | Neg | Not
+        | Tas | Scc(_) | Lea | Swap | Ext | Movep | Addx | MoveFromSr
+        // `move.l usp,An` writes the An; `exg` writes its last operand too
+        // (and its FIRST — see the doc above).
+        | MoveFromUsp | Exg => true,
         // Read-only / control / flags-or-SR-only / operand-shape-modeled forms.
         // `Cmp`/`Cmpa`/`Cmpi`/`Cmpm`/`Btst`/`Tst` compare or test (no write);
         // `Jmp`/`Jsr`/`Pea`/`Nop`/`Rts`/`Rte`/`Trap`/`Illegal`/`Bra`/`Bsr`/`Bcc`
@@ -106,7 +117,9 @@ pub fn writes_last_operand(m: Mnemonic) -> bool {
         // dedicated `[proc.sr-undeclared]` branch handles the SR case).
         Cmp | Cmpa | Cmpi | Cmpm | Btst | Tst | Jmp | Jsr | Pea | Nop | Rts
         | Rte | Trap | Illegal | Bra | Bsr | Bcc(_) | Dbcc(_) | Movem
-        | MoveToSr | AndiCcr | OriCcr => false,
+        // `MoveToUsp`/`MoveToCcr` write USP/CCR, neither a general-purpose
+        // register the clobber lint tracks.
+        | MoveToSr | MoveToCcr | MoveToUsp | AndiCcr | OriCcr => false,
     }
 }
 
@@ -173,6 +186,10 @@ pub enum Operand {
     Ccr,
     /// The status register (move to/from sr).
     Sr,
+    /// The user stack pointer — `move.l An,usp` / `move.l usp,An`. Privileged,
+    /// and never a general EA: it has no mode/register field of its own, the
+    /// An it exchanges with lives in bits 2-0 of the opcode word.
+    Usp,
 }
 
 /// A decoded instruction: mnemonic + size + operands (source, dest order).
@@ -232,12 +249,17 @@ fn encode_dispatch(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         | Mnemonic::Ori | Mnemonic::Eori | Mnemonic::Cmpi => encode_alu_imm(inst),
         Mnemonic::Moveq | Mnemonic::Addq | Mnemonic::Subq => encode_quick(inst),
         Mnemonic::Asl | Mnemonic::Asr | Mnemonic::Lsl | Mnemonic::Lsr
-        | Mnemonic::Rol | Mnemonic::Ror => encode_shift(inst),
-        Mnemonic::Btst | Mnemonic::Bset | Mnemonic::Bclr => encode_bit(inst),
+        | Mnemonic::Rol | Mnemonic::Ror
+        | Mnemonic::Roxl | Mnemonic::Roxr => encode_shift(inst),
+        Mnemonic::Btst | Mnemonic::Bset | Mnemonic::Bclr
+        | Mnemonic::Bchg => encode_bit(inst),
         Mnemonic::Clr | Mnemonic::Neg | Mnemonic::Not | Mnemonic::Tst
         | Mnemonic::Tas | Mnemonic::Scc(_) => encode_single_ea(inst),
         Mnemonic::AndiCcr | Mnemonic::OriCcr => encode_ccr_imm(inst),
         Mnemonic::MoveToSr | Mnemonic::MoveFromSr => encode_move_sr(inst),
+        Mnemonic::MoveToCcr => encode_move_to_ccr(inst),
+        Mnemonic::MoveToUsp | Mnemonic::MoveFromUsp => encode_move_usp(inst),
+        Mnemonic::Exg => encode_exg(inst),
         Mnemonic::Jmp | Mnemonic::Jsr | Mnemonic::Lea | Mnemonic::Pea
         | Mnemonic::Nop | Mnemonic::Rts | Mnemonic::Rte | Mnemonic::Trap
         | Mnemonic::Swap | Mnemonic::Ext | Mnemonic::Illegal => encode_control(inst),
@@ -583,6 +605,115 @@ fn encode_move_sr(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     Ok(out)
 }
 
+/// Encode `move.w <ea>,ccr` (`44C0 | ea`) + the source EA's extension words.
+///
+/// There is NO move-FROM-ccr on the MC68000 — it is a 68010 addition, and asl
+/// with `cpu 68000` answers "instruction not supported on 68000" for every
+/// `move ccr,<ea>` spelling (12 destination modes probed). So this family is
+/// one direction only, and the reverse never reaches an encoder.
+///
+/// The source row is DATA (every mode but `An`), immediate and both PC-relative
+/// forms included: `move #$12,ccr` = `44 FC 00 12` — note the immediate
+/// extension is a full WORD even though only the low byte reaches the CCR.
+/// asl accepts the `.b` and `.w` suffixes and bare (all three emit the same
+/// bytes) and rejects `.l`; the operation is word-sized on the bus, so the size
+/// is policed to `W` here and the front end defaults the bare spelling to `W`.
+fn encode_move_to_ccr(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    if inst.size != Size::W {
+        return Err(IsaError::UnsupportedForm(format!(
+            "move to ccr is word-only on the 68000, got size {:?}",
+            inst.size
+        )));
+    }
+    let src = match inst.ops.as_slice() {
+        [src, Operand::Ccr] => src,
+        _ => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "move to ccr requires <ea>,ccr operands, got {:?}",
+                inst.ops
+            )))
+        }
+    };
+    let (ea_mode, ea_reg, ea_ext) = encode_ea(src, EaSet::DATA, Size::W)?;
+    let word: u16 = 0x44C0 | ((ea_mode as u16) << 3) | (ea_reg as u16);
+    let mut out = word.to_be_bytes().to_vec();
+    for w in ea_ext {
+        out.extend_from_slice(&w.to_be_bytes());
+    }
+    Ok(out)
+}
+
+/// Encode `move.l An,usp` (`4E60 | An`) and `move.l usp,An` (`4E68 | An`).
+///
+/// USP is not an EA: the whole instruction is one word with the address register
+/// in bits 2-0, so there is no addressing-mode matrix here — the only operand
+/// row is `An`, and asl rejects a `Dn` on either side ("addressing mode not
+/// allowed here"). Long-only: asl takes bare and `.l` and rejects `.w`.
+/// `a7`/`sp` are the same register and both spellings reach `An(7)`
+/// (`move.l sp,usp` = `4E 67`).
+fn encode_move_usp(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    if inst.size != Size::L {
+        return Err(IsaError::UnsupportedForm(format!(
+            "move to/from usp is long-only on the 68000, got size {:?}",
+            inst.size
+        )));
+    }
+    let (base, an): (u16, u8) = match (inst.mnemonic, inst.ops.as_slice()) {
+        (Mnemonic::MoveToUsp, [Operand::An(n), Operand::Usp]) => (0x4E60, *n),
+        (Mnemonic::MoveFromUsp, [Operand::Usp, Operand::An(n)]) => (0x4E68, *n),
+        _ => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "{:?} requires An,usp / usp,An operands, got {:?}",
+                inst.mnemonic, inst.ops
+            )))
+        }
+    };
+    Ok((base | ((an & 0b111) as u16)).to_be_bytes().to_vec())
+}
+
+/// Encode `exg.l Rx,Ry` — `1100 xxx 1 ooooo yyy` = `0xC100 | Rx<<9 | opmode<<3 | Ry`.
+///
+/// Three register-pair forms, and only three; there is no EA field and no
+/// memory form:
+///
+/// | operands | opmode | witness |
+/// |---|---|---|
+/// | `Dx,Dy` | `01000` | `exg d0,d1` = `C1 41` |
+/// | `Ax,Ay` | `01001` | `exg a0,a0` = `C1 48` |
+/// | `Dx,Ay` | `10001` | `exg d0,a0` = `C1 88` |
+///
+/// **asl NORMALISES the mixed pair's written order.** `exg a0,d0` assembles to
+/// the same `C1 88` as `exg d0,a0`: the encoding has one slot for the data
+/// register and one for the address register, so the written order carries no
+/// information and cannot be preserved. Both orders are accepted here and both
+/// produce the `Dx,Ay` bytes; [`m68k_decode::canonicalize`] swaps the written
+/// `An,Dn` pair to `Dn,An` so the round-trip check compares them as equal.
+///
+/// Long-only: asl rejects `exg.b`/`exg.w` and takes bare and `.l`.
+fn encode_exg(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
+    if inst.size != Size::L {
+        return Err(IsaError::UnsupportedForm(format!(
+            "exg is long-only on the 68000, got size {:?}",
+            inst.size
+        )));
+    }
+    let (opmode, rx, ry): (u16, u8, u8) = match inst.ops.as_slice() {
+        [Operand::Dn(x), Operand::Dn(y)] => (0b01000, *x, *y),
+        [Operand::An(x), Operand::An(y)] => (0b01001, *x, *y),
+        [Operand::Dn(x), Operand::An(y)] => (0b10001, *x, *y),
+        // asl's normalisation: the data register always takes the Rx slot.
+        [Operand::An(y), Operand::Dn(x)] => (0b10001, *x, *y),
+        _ => {
+            return Err(IsaError::UnsupportedForm(format!(
+                "exg requires two register operands (Dn,Dn / An,An / Dn,An), got {:?}",
+                inst.ops
+            )))
+        }
+    };
+    let word: u16 = 0xC100 | (((rx & 0b111) as u16) << 9) | (opmode << 3) | ((ry & 0b111) as u16);
+    Ok(word.to_be_bytes().to_vec())
+}
+
 /// Encode the "quick" family (`moveq`/`addq`/`subq`).
 ///
 /// - `moveq #d,Dn` = `0111 rrr 0 dddddddd` (long; `d` is 8-bit signed data).
@@ -654,40 +785,75 @@ fn encode_quick(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     Ok(out)
 }
 
-/// Encode the register shift/rotate family (`asl/asr/lsl/lsr/rol/ror`).
+/// Encode the shift/rotate family (`asl/asr/lsl/lsr/rol/ror/roxl/roxr`).
 ///
 /// Base word: `1110 ccc d ss i tt rrr` =
 /// `0xE000 | ccc<<9 | d<<8 | ss<<6 | i<<5 | tt<<3 | dst_dn`.
 /// - `ccc`: immediate count 1..=8 (**8 → `000`**) when source is `#imm` (`i`=0),
 ///   or the source Dn number when source is `Dn` (`i`=1).
 /// - `(d, tt)` by mnemonic: `asr`=(0,00), `asl`=(1,00), `lsr`=(0,01), `lsl`=(1,01),
-///   `ror`=(0,11), `rol`=(1,11).
+///   `roxr`=(0,10), `roxl`=(1,10), `ror`=(0,11), `rol`=(1,11).
 ///
-/// Only the register (Dn destination) form is supported; the word memory-shift form
-/// is unused by the Aeon corpus.
+/// The word memory-shift form is `1110 0tt d 11 eeeeee` = `0xE0C0 | tt<<9 | d<<8 | ea`.
+///
+/// # The two spellings that are not their own encodings
+///
+/// asl accepts three surface spellings that reduce to the two encodings above,
+/// and this encoder accepts all three because the corpus may write any of them
+/// (asl-verified against `s1disasm/build_tools/Linux-x86_64/asl`, md5
+/// `61e672562465725a8c102288a7da9098`):
+///
+/// | written | encoding | witness |
+/// |---|---|---|
+/// | `<shift>.s Dn` | register form, count 1 | `asl d0` = `E3 40` = `asl #1,d0`; `roxl d0` = `E3 50` = `roxl #1,d0` |
+/// | `<shift> #1,<mem>` | memory form | `asl #1,(a0)` = `E1 D0` = `asl (a0)`; `roxl #1,(a0)` = `E5 D0` |
+/// | `<shift> <mem>` | memory form | the plain one-operand memory shift |
+///
+/// `<shift> #2,<mem>` is an ERROR under asl ("operand must be one") and is one
+/// here; the memory form shifts by exactly one bit and has no count field.
+/// [`m68k_decode::canonicalize`] carries the matching equivalences so the
+/// round-trip check compares the two spellings of one encoding as equal.
 fn encode_shift(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     let (d, tt): (u16, u16) = match inst.mnemonic {
         Mnemonic::Asr => (0, 0b00),
         Mnemonic::Asl => (1, 0b00),
         Mnemonic::Lsr => (0, 0b01),
         Mnemonic::Lsl => (1, 0b01),
+        Mnemonic::Roxr => (0, 0b10),
+        Mnemonic::Roxl => (1, 0b10),
         Mnemonic::Ror => (0, 0b11),
         Mnemonic::Rol => (1, 0b11),
         _ => unreachable!(),
     };
-    // Single-operand MEMORY shift: `<shift>.w <ea>` shifts a memory WORD by one
-    // (asl-verified: `asr.w (a0)` = E0D0, `lsl.w (a1)` = E3D1, `asr.w 4(a0)` =
-    // E0E8 0004). Base word `1110 0tt d 11 eeeeee` = 0xE0C0 | tt<<9 | d<<8 | ea.
-    // Word-size only (no .b/.l memory-shift form exists on the 68000).
-    if let [dst] = inst.ops.as_slice() {
+    // Reduce the three accepted spellings to (source, destination), where a
+    // `None` source means "shift a memory word by one" — the memory form.
+    let (src, dst): (Option<&Operand>, &Operand) = match inst.ops.as_slice() {
+        // `<shift> Dn` IS `<shift> #1,Dn` (asl-verified `asl d0` = `E3 40`).
+        [d @ Operand::Dn(_)] => (Some(&Operand::Imm(1)), d),
+        [d] => (None, d),
+        // `<shift> #1,<mem>` IS the memory form; any other count is an error
+        // there, which the memory arm below produces by construction.
+        [Operand::Imm(1), d] if !matches!(d, Operand::Dn(_)) => (None, d),
+        [s, d] => (Some(s), d),
+        _ => {
+            return Err(IsaError::OperandCount(format!(
+                "{:?} expects 1 or 2 operands, got {}",
+                inst.mnemonic,
+                inst.ops.len()
+            )))
+        }
+    };
+    // MEMORY shift: `<shift>.w <ea>` shifts a memory WORD by one (asl-verified:
+    // `asr.w (a0)` = E0D0, `lsl.w (a1)` = E3D1, `asr.w 4(a0)` = E0E8 0004, and
+    // `roxl (a0)` = E5D0). Word-size only — no .b/.l memory-shift form exists on
+    // the 68000, and asl rejects `roxl.b (a0)` with "invalid operand size".
+    if src.is_none() {
         if inst.size != Size::W {
             return Err(IsaError::UnsupportedForm(format!(
                 "{:?} memory-shift form is word-only, got size {:?}",
                 inst.mnemonic, inst.size
             )));
         }
-        // MEMORY ALTERABLE: the one-operand form shifts a memory word. `asl.w d0`
-        // is not it — the register form is the two-operand `asl.w #1,d0`.
         let (ea_mode, ea_reg, ea_ext) = encode_ea(dst, EaSet::MEMORY_ALTERABLE, Size::W)?;
         let ea: u16 = ((ea_mode as u16) << 3) | (ea_reg as u16);
         let word: u16 = 0xE0C0 | (tt << 9) | (d << 8) | ea;
@@ -697,16 +863,7 @@ fn encode_shift(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         }
         return Ok(out);
     }
-    let (src, dst) = match inst.ops.as_slice() {
-        [s, d] => (s, d),
-        _ => {
-            return Err(IsaError::OperandCount(format!(
-                "{:?} expects 1 or 2 operands, got {}",
-                inst.mnemonic,
-                inst.ops.len()
-            )))
-        }
-    };
+    let src = src.expect("the memory arm returned for every None source");
     let dst_dn = match dst {
         Operand::Dn(n) => (n & 0b111) as u16,
         other => {
@@ -740,12 +897,12 @@ fn encode_shift(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     Ok(word.to_be_bytes().to_vec())
 }
 
-/// Encode the bit-manipulation family (`btst/bset/bclr`, static `#n` and dynamic `Dn`).
+/// Encode the bit-manipulation family (`btst/bchg/bclr/bset`, static `#n` and dynamic `Dn`).
 ///
 /// - Static (`#n,<ea>`): `0000 1000 tt eeeeee` then the bit-number word `(#n as u16)`,
 ///   then the destination EA's extension words (bit-number word comes first).
 /// - Dynamic (`Dn,<ea>`): `0000 rrr 1 tt eeeeee` (`rrr`=source Dn), then the EA ext words.
-/// - `tt`: btst=00, bclr=10, bset=11.
+/// - `tt`: btst=00, bchg=01, bclr=10, bset=11.
 ///
 /// Size is implicit (byte for a memory destination, long for a Dn destination); asl picks
 /// it from the destination, so the corpus `size` field is informational. The bit-number
@@ -764,6 +921,7 @@ fn encode_bit(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
     };
     let tt: u16 = match inst.mnemonic {
         Mnemonic::Btst => 0b00,
+        Mnemonic::Bchg => 0b01,
         Mnemonic::Bclr => 0b10,
         Mnemonic::Bset => 0b11,
         _ => unreachable!(),
@@ -773,8 +931,8 @@ fn encode_bit(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
         Operand::Dn(_) => Size::L,
         _ => Size::B,
     };
-    // `btst` only READS its destination, so it takes DATA; `bset`/`bclr` write and
-    // take DATA ALTERABLE. Neither admits An — `bset d0,a1` otherwise encodes 01C9
+    // `btst` only READS its destination, so it takes DATA; `bset`/`bclr`/`bchg`
+    // write and take DATA ALTERABLE. Neither admits An — `bset d0,a1` otherwise encodes 01C9
     // = `movep.l d0,$8(a1)`, a MEMORY WRITE, and emits 2 bytes where MOVEP consumes
     // 4, so the displacement it swallows is the next instruction's opcode word.
     let allowed = match inst.mnemonic {
@@ -1462,7 +1620,8 @@ pub(crate) fn ea_class(op: &Operand) -> Option<EaClass> {
         Operand::Pcd16(_) => EaClass::Pcd16,
         Operand::Pcd8Xn { .. } => EaClass::Pcd8Xn,
         Operand::Imm(_) => EaClass::Imm,
-        Operand::RegList(_) | Operand::Disp(_) | Operand::Ccr | Operand::Sr => return None,
+        Operand::RegList(_) | Operand::Disp(_) | Operand::Ccr | Operand::Sr
+        | Operand::Usp => return None,
     })
 }
 
@@ -1484,6 +1643,7 @@ fn encode_ea(op: &Operand, allowed: EaSet, size: Size) -> Result<(u8, u8, Vec<u1
             Operand::RegList(_) => "register list",
             Operand::Disp(_) => "branch displacement",
             Operand::Ccr => "ccr",
+            Operand::Usp => "usp",
             _ => "sr",
         };
         return Err(IsaError::UnsupportedForm(format!("{what} is not a general EA")));
@@ -1534,7 +1694,8 @@ fn encode_ea(op: &Operand, allowed: EaSet, size: Size) -> Result<(u8, u8, Vec<u1
             };
             (0b111, 0b100, ext)
         }
-        Operand::RegList(_) | Operand::Disp(_) | Operand::Ccr | Operand::Sr => unreachable!("ea_class returned None"),
+        Operand::RegList(_) | Operand::Disp(_) | Operand::Ccr | Operand::Sr
+        | Operand::Usp => unreachable!("ea_class returned None"),
     })
 }
 
@@ -1567,8 +1728,8 @@ pub fn family_name(m: Mnemonic) -> &'static str {
         Eori => "eori", Cmpi => "cmpi",
         Moveq => "moveq", Addq => "addq", Subq => "subq",
         Asl => "asl", Asr => "asr", Lsl => "lsl", Lsr => "lsr",
-        Rol => "rol", Ror => "ror",
-        Btst => "btst", Bset => "bset", Bclr => "bclr",
+        Rol => "rol", Ror => "ror", Roxl => "roxl", Roxr => "roxr",
+        Btst => "btst", Bset => "bset", Bclr => "bclr", Bchg => "bchg",
         Clr => "clr", Neg => "neg", Not => "not", Tst => "tst", Tas => "tas",
         Scc(_) => "scc",
         Jmp => "jmp", Jsr => "jsr", Lea => "lea", Pea => "pea",
@@ -1577,7 +1738,10 @@ pub fn family_name(m: Mnemonic) -> &'static str {
         Bra => "bra", Bsr => "bsr", Bcc(_) => "bcc", Dbcc(_) => "dbcc",
         Movem => "movem", Movep => "movep", Addx => "addx", Cmpm => "cmpm",
         MoveToSr => "move-to-sr", MoveFromSr => "move-from-sr",
+        MoveToCcr => "move-to-ccr",
+        MoveToUsp => "move-to-usp", MoveFromUsp => "move-from-usp",
         AndiCcr => "andi-ccr", OriCcr => "ori-ccr",
+        Exg => "exg",
     }
 }
 
@@ -1591,14 +1755,16 @@ pub const ALL_FAMILY_NAMES: &[&str] = &[
     "muls", "mulu", "divs", "divu",
     "addi", "subi", "andi", "ori", "eori", "cmpi",
     "moveq", "addq", "subq",
-    "asl", "asr", "lsl", "lsr", "rol", "ror",
-    "btst", "bset", "bclr",
+    "asl", "asr", "lsl", "lsr", "rol", "ror", "roxl", "roxr",
+    "btst", "bset", "bclr", "bchg",
     "clr", "neg", "not", "tst", "tas", "scc",
     "jmp", "jsr", "lea", "pea", "nop", "rts", "rte", "trap", "swap", "ext",
     "illegal",
     "bra", "bsr", "bcc", "dbcc",
     "movem", "movep", "addx", "cmpm",
-    "move-to-sr", "move-from-sr", "andi-ccr", "ori-ccr",
+    "move-to-sr", "move-from-sr", "move-to-ccr",
+    "move-to-usp", "move-from-usp",
+    "andi-ccr", "ori-ccr", "exg",
 ];
 
 /// Encode-stream capture: a process-global tap on [`encode`] for the round-trip
@@ -1767,6 +1933,7 @@ mod vocab_tests {
             Not, Tst, Tas, Scc(Cond::Eq), Jmp, Jsr, Lea, Pea, Nop, Rts, Rte,
             Trap, Swap, Ext, Illegal, Bra, Bsr, Bcc(Cond::Eq), Dbcc(Cond::Eq),
             Movem, Movep, Addx, Cmpm, MoveToSr, MoveFromSr, AndiCcr, OriCcr,
+            Roxl, Roxr, Bchg, MoveToCcr, MoveToUsp, MoveFromUsp, Exg,
         ];
         let reached: std::collections::BTreeSet<&str> =
             every.iter().map(|m| family_name(*m)).collect();
