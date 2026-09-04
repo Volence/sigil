@@ -464,6 +464,65 @@ fn dedup_section_names(sections: &mut [sigil_ir::Section]) {
     }
 }
 
+/// Which of asl's two symbol classes a declaration puts a name into.
+///
+/// asl does not have one "define a symbol" operation with different spellings;
+/// it has two classes, and it refuses every crossing between them. Read off the
+/// listings of `asl` 1.42 Beta Bld 212 — probes `m1.asm`–`m6.asm` under
+/// `docs/superpowers/notes/2026-09-04-as-symbol-class-probes/`:
+///
+/// ```text
+/// > > > m1.asm(10): error #2030: constants cannot be redefined as variables
+/// > > > Ce
+/// > > > Ce set 2
+/// > > > m2.asm(6): error #2035: variables cannot be redefined as constants
+/// > > > As
+/// > > > As equ 2
+/// ```
+///
+/// The class is a property of the DECLARING DIRECTIVE, never of the value:
+/// `Cr equ "abc"` then `Cr set "def"` is #2030 and `Er equ 1.5` then
+/// `Er set 2.5` is #2030, exactly as the integer forms are (probe `m5.asm`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SymClass {
+    /// `equ`, `=`, a colon or column-0 label, the `label` directive, and an
+    /// `enum` member. Probe `m4.asm` puts the last three in this class:
+    /// `Dq` (bare label) and `Fq` (`label` directive) both take
+    /// `#1000 symbol double defined` from a following `equ`, and `Eq`/`Gq`/`Hq`
+    /// take `#2030` from a following `set`; probe `m5.asm` line 6 does the same
+    /// for an `enum` member.
+    Const,
+    /// `set`, `eval` and `:=` — asl's one reassignable class under three
+    /// spellings. `Cs set 1` / `Cs set 2` is silent, and so is the `eval`/`:=`
+    /// mix (probe `m2.asm`), which is what makes this a class rather than a
+    /// per-directive rule.
+    Var,
+}
+
+impl SymClass {
+    fn noun(self) -> &'static str {
+        match self {
+            SymClass::Const => "constant",
+            SymClass::Var => "variable",
+        }
+    }
+}
+
+/// A span covering a label written in the LABEL FIELD of `line`.
+///
+/// [`Asm::define_label`] is reached from paths that have already consumed the
+/// label text and kept no token for it, so its span is reconstructed from where
+/// the label field starts — column 0, which is `line.base` (see `lex_line`) —
+/// and how long the name is. Both label spellings this covers (`Name:` and a
+/// column-0 bare `Name`) begin there, so the diagnostic points at the name.
+fn label_span(line: &SrcLine, name: &str) -> Span {
+    Span {
+        source: line.source,
+        start: line.base,
+        end: line.base + name.len() as u32,
+    }
+}
+
 struct Asm {
     builder: IrBuilder,
     z80: Z80Backend,
@@ -623,6 +682,29 @@ struct Asm {
     /// see. Labels vs. `equ`s are indistinguishable in `env` (both hold an
     /// `Int`), so this dedicated name set is the discriminator.
     known_labels: std::collections::HashSet<String>,
+    /// The [`SymClass`] each fully-qualified name was DECLARED with, **in this
+    /// pass only**.
+    ///
+    /// Deliberately NOT threaded across passes, and not folded into `env`.
+    /// asl's rule is per-pass: probe `m7.asm` forces two passes with a forward
+    /// branch, so its `Ap equ 1` and its `Lab:` each execute twice, and asl
+    /// reports `2 passes / 0 errors`. Re-running a declaration on a later pass
+    /// is not a redefinition. `run_impl` seeds every pass's `env` from the
+    /// previous one — a class map seeded the same way would make the SECOND
+    /// pass of every real program a wall of redefinition errors, which is
+    /// exactly the shape asl says is legal.
+    ///
+    /// It records only what the SOURCE declares. Symbols seeded from
+    /// `Options::defines`/`guarded_defines` enter with no class, so the first
+    /// in-source declaration of such a name establishes one rather than
+    /// colliding with a seed. That is a DEVIATION from asl, taken knowingly: a
+    /// command-line `-D` define is a VARIABLE to asl (probe `m8.asm` run with
+    /// `-D Dw=1`, where `Dw equ 2` is `#2035`), but sigil's defines are not
+    /// asl's `-D` — `guarded_defines` are `.emp`-owned CONSTANTS whose
+    /// redefinition already fails loud with its own `[defines.collision]`
+    /// message in `directive_equate`, and calling them variables would refuse
+    /// the one spelling that guard exists to permit.
+    sym_class: std::collections::HashMap<String, SymClass>,
     /// Every `equ`/`=` name whose VALUE derives from a section LABEL
     /// (`HandlerPtr = Handler`, `X = Label+4`, or a chain `X = Y` onto another
     /// such equ) — the debugger's `DEBUGGER__*` handler-address table is the
@@ -807,6 +889,7 @@ impl Asm {
             pending_equ_syms: Vec::new(),
             defer_unresolved_jsr_jmp,
             known_labels: std::collections::HashSet::new(),
+            sym_class: std::collections::HashMap::new(),
             label_ref_equs: std::collections::HashSet::new(),
             set_sym_symbolic: std::collections::HashMap::new(),
             guarded_defines: opts.guarded_defines.iter().map(|(k, _)| k.clone()).collect(),
@@ -2051,7 +2134,7 @@ impl Asm {
                 // BEFORE the label is defined so the ordering matches the
                 // colon-less path below, and taken on the very next dispatch.
                 self.pending_struct_label = Some(name.clone());
-                let qualified = self.define_label(&name);
+                let qualified = self.define_label(&name, label_span(line, &name));
                 // This line's own label is now the most recent one, so it is
                 // the one a pad below would move — displacing anything carried
                 // in from the line above.
@@ -2241,7 +2324,7 @@ impl Asm {
             } else {
                 // The colon-less twin of the struct-label park above.
                 self.pending_struct_label = Some(head.clone());
-                let qualified = self.define_label(&head);
+                let qualified = self.define_label(&head, body[0].span);
                 // The colon-less twin of the pad-absorption above: a bare
                 // identifier in the label column is a label, and the corpus
                 // writes them (`SS_Ctrl_Record_Buf_End` in Sonic 2's RAM map
@@ -2426,7 +2509,8 @@ impl Asm {
     /// ` L.loc : 102 C`).
     fn bind_head_label(&mut self, line: &SrcLine) {
         if let Some(name) = self.head_label(line) {
-            self.define_label(&name);
+            let span = label_span(line, &name);
+            self.define_label(&name, span);
         }
     }
 
@@ -3331,6 +3415,12 @@ impl Asm {
             self.open_scope(name);
             name.to_string()
         };
+        // The `label` directive is asl's constant class, like a PC label:
+        // `Fq label $100` then `Fq equ 2` is `#1000` and `Cv set 1` then
+        // `Cv label $100` is `#2035` (probes `m4.asm`, `m9.asm`). Reported only,
+        // for the same reason as [`Self::define_label`] — this form opens a
+        // scope too.
+        self.declare_class(&qualified, SymClass::Const, span);
         self.env.define(&qualified, SymbolValue::Int(v));
         self.known_labels.insert(qualified.clone());
         // Only a PC-valued `label` is a PLACED label the linker can relocate.
@@ -3589,7 +3679,45 @@ impl Asm {
     /// refer to the symbol afterwards — the lone-label deferral, which may have
     /// to move it — needs the qualified spelling, and re-deriving it at the
     /// call site would duplicate the scope rule.
-    fn define_label(&mut self, name: &str) -> String {
+    /// Record that `q` is being declared as a `class` symbol on this pass, and
+    /// report asl's refusal if the pass already declared it as the OTHER class.
+    ///
+    /// Returns `false` when the declaration is refused, so a value-binding
+    /// caller can leave the existing binding alone — which is what asl does.
+    /// Probe `m1.asm`: after `Ce equ 1` / `Ce set 2`, asl's listing column shows
+    /// the computed `=$2` on the refused line but the symbol table still reads
+    /// `*Ce : 1`. The old value survives the refusal.
+    ///
+    /// Only the CROSSING is checked here. asl also refuses a same-class
+    /// redefinition of a constant (`#1000 symbol double defined`, and it fires
+    /// even when the value is identical — probe `m4.asm` line 6, `Aq equ 1`
+    /// twice), and that is a DIFFERENT rule with a different population: every
+    /// duplicated label and every twice-included header is in it. It is not
+    /// implemented here, and the gap is stated in
+    /// `docs/superpowers/notes/2026-09-04-as-symbol-class-tracking.md` rather
+    /// than closed silently by a rule that only half covers it.
+    fn declare_class(&mut self, q: &str, class: SymClass, span: Span) -> bool {
+        match self.sym_class.get(q) {
+            Some(&prev) if prev != class => {
+                // asl's own two messages, verbatim, so the wording a reader
+                // greps for is the wording the reference assembler prints:
+                // `#2030 constants cannot be redefined as variables` on
+                // const→var and `#2035 variables cannot be redefined as
+                // constants` on var→const.
+                self.err(
+                    span,
+                    format!("{}s cannot be redefined as {}s: `{q}`", prev.noun(), class.noun()),
+                );
+                false
+            }
+            _ => {
+                self.sym_class.insert(q.to_string(), class);
+                true
+            }
+        }
+    }
+
+    fn define_label(&mut self, name: &str, span: Span) -> String {
         self.open_section_if_needed();
         let value = self.here_i64();
         let qualified = if name.starts_with('.') {
@@ -3598,6 +3726,24 @@ impl Asm {
             self.scope = Some(name.to_string());
             name.to_string()
         };
+        // A PC label is asl's CONSTANT class, in both directions: `Cl:` then
+        // `Cl set 2` is `#2030` (probe `m3.asm`) and `Av set 1` then `Av:` is
+        // `#2035` (probe `m9.asm`).
+        //
+        // REPORTED ONLY — unlike `directive_equate`/`directive_set`, the
+        // existing definition is not left standing here, and that is deliberate
+        // rather than an oversight. Those two are pure value binders, so
+        // returning early reproduces exactly what asl's symbol table shows
+        // (`*Ce : 1` after a refused `Ce set 2`). A label is also a SCOPE anchor
+        // and a placed section label, and the probes do not measure what asl's
+        // local-label scope does after a refused label: `m10.asm` shows a `set`
+        // ALSO opens a scope (`Av set 1` then `.loc1` lists as `Av.loc1`), which
+        // makes the two candidate readings of `m9.asm`'s `Dv.aft` indis-
+        // tinguishable. Unwiring the scope and the builder label on the strength
+        // of an unmeasured guess would put invented recovery semantics on a path
+        // that already fails the build, so the diagnostic — which is the whole
+        // divergence — is raised and nothing else moves.
+        self.declare_class(&qualified, SymClass::Const, span);
         self.env.define(&qualified, SymbolValue::Int(value));
         self.known_labels.insert(qualified.clone());
         self.builder.define_label(&qualified);
@@ -3800,6 +3946,13 @@ impl Asm {
                      the .emp module engine.constants is the sole author)"
                 ),
             );
+            return;
+        }
+        // asl's constant class. A name this pass already declared with
+        // `set`/`eval`/`:=` is `#2035 variables cannot be redefined as
+        // constants` and the existing binding stands (probe `m2.asm`), so this
+        // returns before any of the three binding branches below.
+        if !self.declare_class(&q, SymClass::Const, span) {
             return;
         }
         // asl: `equ` may bind a STRING just as `set` does (`GAME_CONSOLE equ
@@ -4047,6 +4200,16 @@ impl Asm {
                 }
             }
             let q = qualify(&name, self.real_scope());
+            // An `enum` member is asl's constant class: `enum Ar=5` then
+            // `Ar set 2` is `#2030` and `enum Br=5` then `Br equ 2` is `#1000`
+            // (probe `m5.asm`); `Dv set 1` then `enum Dv=5` is `#2035` (probe
+            // `m9.asm`). The counter still advances past a refused member —
+            // asl's listing shows `=$5` for the refused `enum Dv=5` line, so
+            // the enumeration is not rewound by the refusal.
+            if !self.declare_class(&q, SymClass::Const, span) {
+                self.enum_next = self.enum_next.wrapping_add(self.enum_step);
+                continue;
+            }
             self.env.define(&q, SymbolValue::Int(self.enum_next));
             self.enum_next = self.enum_next.wrapping_add(self.enum_step);
         }
@@ -4086,6 +4249,13 @@ impl Asm {
         // `.cur_zone_str` / `.zone_entries_left` across to the separate
         // `zoneTableEntry` expansions that read and reassign them.
         let q = qualify(name, self.real_scope());
+        // asl's reassignable class. A name this pass already declared with
+        // `equ`/`=`/a label/`label`/`enum` is `#2030 constants cannot be
+        // redefined as variables` and the existing binding stands (probe
+        // `m1.asm`), so this returns before any of the three binding branches.
+        if !self.declare_class(&q, SymClass::Var, span) {
+            return;
+        }
         // asl: `set` may bind a STRING (`.__str set "BUS ERROR"`,
         // `.__str set substr(.__str,0,.__pos)`). Detect the string shape via
         // `eval_str` (literal / substr / lowstring / string-symbol copy) BEFORE
