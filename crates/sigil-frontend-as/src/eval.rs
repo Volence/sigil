@@ -7348,10 +7348,10 @@ mod tests {
     /// instantiation reads — takes it after.
     ///
     /// ```text
-    ///    9/ 1000 : 0000 0001 0004      	dc.w S.a,S.b,S.c,S.d,S.len
+    ///    9/ 1000 : 0000 0001 0004          dc.w S.a,S.b,S.c,S.d,S.len
     ///       1006 : 0005 000A
-    ///   10/ 100A : (STRUCT)             inst:	S
-    ///   11/ 1014 : 0000 0002 0004      	dc.w inst.a-inst,inst.b-inst,inst.c-inst,inst.d-inst
+    ///   10/ 100A : (STRUCT)             inst:    S
+    ///   11/ 1014 : 0000 0002 0004          dc.w inst.a-inst,inst.b-inst,inst.c-inst,inst.d-inst
     ///       101A : 0006
     /// ```
     #[test]
@@ -7416,7 +7416,7 @@ mod tests {
     /// `p: ds.b 1 / r: ds.w 1`:
     ///
     /// ```text
-    ///   16/ 1006 : 0000 0001 0001      	dc.w S.h,S.n,S.n.p,S.n.r,S.z,S.len
+    ///   16/ 1006 : 0000 0001 0001          dc.w S.h,S.n,S.n.p,S.n.r,S.z,S.len
     ///       100C : 0003 0005 0006
     /// ```
     ///
