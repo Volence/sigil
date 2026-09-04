@@ -579,13 +579,18 @@ pub fn build_program_open(
     build_program_with(manifest, entry_id, prelude_id, opts, false, true, &|_| opts.embed_base.clone())
 }
 
-/// [`build_program_open`] with a PER-MODULE `embed_base` override. The aeon `.emp`
-/// tree mixes two `embed(...)` path conventions — module-relative
-/// (`math.emp: "../data/sine.bin"`) and repo-root-relative
-/// (`object_test_state.emp: "games/sonic4/test/ring_art.bin"`) — that no single
-/// `embed_base` satisfies. `embed_base_for(module_id)` picks the base per module;
-/// `None` falls back to `opts.embed_base`. The isolated port oracles pick the base
-/// per module already; this restores that freedom in the whole-program build.
+/// [`build_program_open`] with a PER-MODULE `embed_base` override.
+/// `embed_base_for(module_id)` picks the join base per module; `None` falls back to
+/// `opts.embed_base`. The isolated port oracles pick the base per module already;
+/// this gives the whole-program build the same freedom.
+///
+/// The base is a CALLER's choice of where a relative path starts, not a per-file
+/// exception to the path rule: relative `embed`/`import` paths resolve against the
+/// project root, one convention, and the transition rule that also accepted
+/// module-relative paths is retired (see `eval::sandbox`'s join, which owns that
+/// rule). A caller that legitimately starts somewhere inside the root — a tool
+/// building one data subtree — narrows the origin with this hook rather than the
+/// path spelling changing.
 ///
 /// It also SKIPS the canonical-rename pass, so exported labels keep their PLAIN
 /// names (`AnimateSprite`, not `engine.objects.animate.AnimateSprite`). The mixed
