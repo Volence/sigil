@@ -74,6 +74,18 @@ heads above them.
 Corpus runs, sigil built from this branch, `sigil <root>` from the corpus root,
 no flags. Sets compared **both directions**, not totals.
 
+**Which binary produced these.** `/home/volence/sonic_hacks/.z80eval-target/release/sigil`,
+whose `--version` reports revision and closure-revision
+`e20206f8e7b730a33c5f37f8a07ce046598017f9`, branch `z80-unknown-head-loud`, tree
+clean, source `.z80-gap-wt`. It is byte-identical (`cmp`, distinct inodes) to the
+binary the landing run used, so one program produced both the suite result and
+these counts. The freshness witness is `closure-revision`, not `revision`: branch
+HEAD is `5aee292f`, which touches only `docs/` and is outside the compiled
+closure, and `git log -1 --format=%H HEAD -- <closure-paths>` returns `e20206f8`
+to match. Cite that, not the binary's md5 — an md5 abbreviated to eight hex
+characters is indistinguishable from a short SHA and reads as a followable
+citation when it is not one.
+
 | corpus | before | after | net |
 |---|---|---|---|
 | `s1disasm` `f6ece657` (`sonic.asm`) | 368 | 368 | 0 |
