@@ -11282,3 +11282,58 @@ demo_debug = "2e603d53/101339"
 lean = "6678ba60/674816"
 s4 = "14ee2440/719700"
 s4_debug = "142294b3/737683"
+
+[[entry]]
+name = "rom-relayout-more-room"
+ab = "aeon 5875e60e (branch parcel/rom-relayout-more-room); sigil-side control derive at identical aeon content proves the relayout delta is exactly +0x18000 downstream and zero for config_b"
+aeon_rev = "5875e60e5c5213b45b9e24059cd337a2ac22f394"
+note = "banks to 0xA8000/0xB8000; also re-baselines the 195 aeon commits since the 4f5ad5a1 pin"
+
+[entry.targets.config_a]
+golden = "config_a.bin"
+full_crc = "f598841a"
+full_size = 840531
+anchor_crc = "02320e87"
+anchor_end = 0xc052c
+
+[entry.targets.config_b]
+golden = "config_b.bin"
+full_crc = "07002ea1"
+full_size = 618293
+anchor_crc = "ab066135"
+anchor_end = 0x8cea2
+
+[entry.targets.demo]
+golden = "demo.bin"
+full_crc = "3c5dcde6"
+full_size = 96602
+anchor_crc = "778300ae"
+anchor_end = 0x1121a
+
+[entry.targets.demo_debug]
+golden = "demo.debug.bin"
+full_crc = "36014485"
+full_size = 102818
+anchor_crc = "459f0dd6"
+anchor_end = 0x1121a
+
+[entry.targets.lean]
+golden = "lean.bin"
+full_crc = "7c8ec3e0"
+full_size = 773120
+anchor_crc = "600eab01"
+anchor_end = 0xbcc00
+
+[entry.targets.s4]
+golden = "s4.bin"
+full_crc = "6f047af2"
+full_size = 819123
+anchor_crc = "353ad966"
+anchor_end = 0xbdc82
+
+[entry.targets.s4_debug]
+golden = "s4.debug.bin"
+full_crc = "d772f7d8"
+full_size = 840179
+anchor_crc = "aefd337e"
+anchor_end = 0xc052c
