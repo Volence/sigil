@@ -615,13 +615,27 @@ fn encode_move_sr(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
 /// The source row is DATA (every mode but `An`), immediate and both PC-relative
 /// forms included: `move #$12,ccr` = `44 FC 00 12` — note the immediate
 /// extension is a full WORD even though only the low byte reaches the CCR.
-/// asl accepts the `.b` and `.w` suffixes and bare (all three emit the same
-/// bytes) and rejects `.l`; the operation is word-sized on the bus, so the size
-/// is policed to `W` here and the front end defaults the bare spelling to `W`.
+///
+/// # The size suffix, and why `.b` is accepted while `.l` is not
+///
+/// asl accepts BARE, `.b` and `.w`, and all three emit identical bytes
+/// (`move.b (a0),ccr` == `move.w (a0),ccr` == `44 D0`); it rejects `.l` with
+/// "invalid operand size". This encoder matches that, and the `.b` spelling is
+/// accepted rather than policed away because sigil's job is to assemble what
+/// asl assembles — refusing a form asl takes is a gap that bites the next
+/// source, and `.b` here carries no risk because the operand width is not read
+/// from `inst.size` at all.
+///
+/// That last clause is the load-bearing one. The bus operation is a WORD read
+/// whatever the author wrote, so `Size::W` is passed to [`encode_ea`]
+/// unconditionally and an immediate source always gets a full word of extension.
+/// This is deliberately NOT the `move …,sr` shape, where the old encoder keyed
+/// the immediate width to `inst.size` and `move.l #$2700,sr` emitted a long the
+/// CPU read as `sr := $0000`; here `inst.size` reaches nothing but this guard.
 fn encode_move_to_ccr(inst: &Instruction) -> Result<Vec<u8>, IsaError> {
-    if inst.size != Size::W {
+    if !matches!(inst.size, Size::B | Size::W) {
         return Err(IsaError::UnsupportedForm(format!(
-            "move to ccr is word-only on the 68000, got size {:?}",
+            "move to ccr takes .b or .w on the 68000 (both a word operation), got size {:?}",
             inst.size
         )));
     }

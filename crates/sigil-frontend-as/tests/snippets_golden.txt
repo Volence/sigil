@@ -1709,8 +1709,10 @@ E3 40 E3 50 E3 40 E3 50 E5 D0 E0 D0
         move    #1,ccr
         move    (a0),ccr
         move    ($12345678).l,ccr
+        move.b  d6,ccr
+        move.b  #$12,ccr
 --- bytes ---
-44 C6 44 C6 44 FC 00 00 44 FC 00 01 44 D0 44 F9 12 34 56 78
+44 C6 44 C6 44 FC 00 00 44 FC 00 01 44 D0 44 F9 12 34 56 78 44 C6 44 FC 00 12
 === m68k_move_usp_bare_and_long ===
         cpu 68000
         phase 0

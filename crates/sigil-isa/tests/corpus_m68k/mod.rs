@@ -253,6 +253,10 @@ pub fn corpus_m68k() -> Vec<(&'static str, Instruction)> {
         // asl emits: target 8 minus the extension word's own address 2.
         ("move.w (8,pc),ccr", mcc(Pcd16(6))),
         ("move.w (4,pc,d0.w),ccr", mcc(Pcd8Xn { d: 2, xn: Xn::D(0), long: false })),
+        // asl takes `.b` here too and emits the same bytes as `.w`, immediate
+        // included — the golden row is what proves the two spellings are one.
+        ("move.b d6,ccr", Instruction { mnemonic: Mnemonic::MoveToCcr, size: B, ops: vec![Dn(6), Operand::Ccr] }),
+        ("move.b #$12,ccr", Instruction { mnemonic: Mnemonic::MoveToCcr, size: B, ops: vec![Imm(0x12), Operand::Ccr] }),
         // --- MOVE to/from USP: the whole matrix is the eight address registers ---
         ("move.l a6,usp", Instruction { mnemonic: Mnemonic::MoveToUsp, size: L, ops: vec![An(6), Usp] }), // S1/S2
         ("move.l a0,usp", Instruction { mnemonic: Mnemonic::MoveToUsp, size: L, ops: vec![An(0), Usp] }),

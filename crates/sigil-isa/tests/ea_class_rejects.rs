@@ -211,10 +211,18 @@ fn exg_and_usp_take_registers_only() {
 /// `move ... ,sr` defect (an `.l` immediate read as `sr := 0`) is the shape.
 #[test]
 fn size_locked_forms_reject_every_other_size() {
-    for sz in [Size::B, Size::L] {
-        reject("move to ccr at a non-word size",
-               ins(Mnemonic::MoveToCcr, sz, vec![Operand::Dn(6), Operand::Ccr]));
-    }
+    // `move <ea>,ccr` is the one form here with TWO accepted suffixes: asl takes
+    // `.b` and `.w` and emits identical bytes for both, and rejects `.l`. The
+    // equality is the point — the operand width is a word whatever was written,
+    // so accepting `.b` cannot shorten the immediate.
+    reject("move to ccr at .l",
+           ins(Mnemonic::MoveToCcr, Size::L, vec![Operand::Dn(6), Operand::Ccr]));
+    assert_eq!(
+        encode(&ins(Mnemonic::MoveToCcr, Size::B, vec![Operand::Imm(0x12), Operand::Ccr])).unwrap(),
+        encode(&ins(Mnemonic::MoveToCcr, Size::W, vec![Operand::Imm(0x12), Operand::Ccr])).unwrap(),
+        "`move.b #$12,ccr` and `move.w #$12,ccr` are one encoding (asl: both 44 FC 00 12)"
+    );
+    accept("move.b d6,ccr", ins(Mnemonic::MoveToCcr, Size::B, vec![Operand::Dn(6), Operand::Ccr]));
     for sz in [Size::B, Size::W] {
         reject("exg at a non-long size", ins(Mnemonic::Exg, sz, vec![Operand::Dn(0), Operand::Dn(1)]));
         reject("move to usp at a non-long size",
