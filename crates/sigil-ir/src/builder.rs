@@ -211,6 +211,30 @@ impl IrBuilder {
         (Module { sections: self.done, link_asserts: self.link_asserts }, self.diags)
     }
 
+    /// Move an already-recorded label in the open section to the current
+    /// cursor, and report whether one was found.
+    ///
+    /// This exists for AS's lone-label rule: a label alone on its line is bound
+    /// at the address the line sat on, and then the NEXT line's implicit
+    /// even-pad moves it. The label is therefore already in `labels` by the
+    /// time its final address is known, and rebinding it by pushing a second
+    /// `Label` with the same name would leave two entries for one name whose
+    /// resolution order no consumer promises. The last matching entry wins
+    /// because a name may legitimately be defined more than once across a
+    /// section (`org` back-patching reuses positions), and only the most recent
+    /// definition is the one a pad on this line can be adjusting.
+    pub fn move_label_to_cursor(&mut self, name: &str) -> bool {
+        let s = self.section_mut();
+        let offset = s.cursor;
+        match s.labels.iter_mut().rev().find(|l| l.name == name) {
+            Some(l) => {
+                l.offset = offset;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Borrow the open section, panicking if a fragment is emitted with no
     /// section open (a front-end bug — the front-end always opens a section
     /// before emitting).
