@@ -67,12 +67,14 @@ on top of it.
 `docs/OVERSEER-LOG.md`, 2026-09-03 cut, original lines 86-123.)*
 ### Rules banked from closed findings — the narrative is in `docs/OVERSEER-LOG.md`, 2026-09-02
 
-Each of these was a dated section here until the boot read went over its byte bound. **The
+Each of these was a dated section in the boot read (`docs/OVERSEER.md`) until it went over
+its byte bound. **The
 rule is what survives; the episode that earned it is in the log** under its original
 heading, verbatim. When a rule and its narrative disagree, the rule wins.
 
 - **A LOSSLESSNESS PROOF CERTIFIES THAT NO TEXT WAS LOST AND NOTHING ABOUT WHETHER THE
-  SURVIVING TEXT STILL PARSES** *(2026-09-03, found by the agent that split this file, and it
+  SURVIVING TEXT STILL PARSES** *(2026-09-03, found by the agent that split the boot read into `docs/OVERSEER-LOG.md` — a
+  different cut from the 2026-09-04 one that made this file — and it
   is the failure its own proof could not see)*. A set-difference over lines is blind to a
   **dangling reference**: when a paragraph moves to the log, a sentence left behind whose
   antecedent went with it survives the proof intact — every line accounted for, and the head
@@ -216,7 +218,7 @@ dispatch block (dominion `50bb5e9`, invariant 12):
 **The asymmetry is dominion's correction to this rule and it matters here specifically:** this
 controller uses real merges, so the positive check works — but the day a lane moves to squash or
 rebase merges, the check silently stops detecting its own instance and the caveat becomes the whole
-rule. It is this file's banked shape met from the other side: **a vanished branch whose commits
+rule. It is `docs/OVERSEER.md`'s banked shape met from the other side: **a vanished branch whose commits
 survive unreferenced is the signature of a MERGE**, exactly as an empty commit range is.
 
 *(Origin, and the n=3 caveat in full: `docs/OVERSEER-LOG.md`, 2026-09-03 cut, original lines
@@ -281,7 +283,9 @@ happens to sit at the tip, which is the point of deriving rather than listing.
 - **`refreeze --freeze` refuses unless it can name the revision honestly** — `AEON_DIR` unset,
   not a directory, not a git repo, HEAD unresolvable, or the tree **DIRTY** all refuse, before
   anything is built, each naming the variable, the path and the fault. This is not new policy:
-  the landing lane below already required freezing from a clean checkout of a committed SHA.
+  the landing-lane division — in `docs/OVERSEER.md`, and ABOVE this text before the cut, so
+  the old word "below" was wrong in the boot read too — already required freezing from a
+  clean checkout of a committed SHA.
   It was simply unenforceable, and unset silently fell back to the owner's live tree via
   `capture_goldens.sh`'s `${AEON_DIR:-…/aeon}`. **`--check` is unaffected and still takes no
   aeon tree.**
@@ -353,7 +357,9 @@ below requires zero `skip:` lines and this is not a missing reference.
   defect that cost aeon two unverified chains from their own landing lane, found in their
   file and swept here immediately after.
 
-  **This paragraph said `3939 / 3943` for a day while the RELAYOUT-REVIEW section below
+  **This paragraph said `3939 / 3943` for a day while a RELAYOUT-REVIEW section — which no
+  longer exists in either file; it was cut to `docs/OVERSEER-LOG.md` and the pointer was
+  never repaired, so this cite was already dangling before the 2026-09-04 split —
   recorded `3943 / 3947` from the same tree, and the stale half is the one a cold boot quotes
   — this overseer quoted it to a peer, who reconciled against `git grep -c '#\[test\]'` and
   refused it.** That is this document's own trigger-less-prose defect, one section below the

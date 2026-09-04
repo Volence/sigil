@@ -3,7 +3,9 @@
 How a Claude session runs **sigil** as its overseer. The shared role — solo-first
 posture, delegation discipline, review bars, peer protocol — lives in
 `empyrean/docs/OVERSEER-PROTOCOL.md`; read it once, then this file for what is
-sigil-specific: the landing-lane division, the worktree/test quirks, and the queue.
+sigil-specific: the landing-lane division, the standing rulings, and the queue. The
+worktree/test quirks are NOT here any more — they and every other read-at-a-moment rule
+are in `docs/OVERSEER-REFERENCE.md`.
 
 > **This file is the boot read and is bounded** (protocol: *The boot read is bounded*,
 > `empyrean/docs/OVERSEER-PROTOCOL.md` at `origin/main`). Dated entries — every night's
@@ -419,7 +421,8 @@ default). Booked separately so folding case does not look like it closed both.
 
 **RULED — AS-DEFAULT-CPU is REFUSE BY NAME.** A source with no `cpu` directive is a hard error
 naming what was not declared and printing the line to write; never a silent default of any
-processor. Grounds are this lane's own `d-18` R4: a run that reports what it skipped **still
+processor. Grounds are this lane's own `d-18` (now in `docs/OVERSEER-REFERENCE.md`; `R4` is the rule
+number on empyrean card `4e8e865b`, not a marker in either file): a run that reports what it skipped **still
 exits 0**, and a silent green is the class we never drop. Amends the hub's first form (empyrean
 `802fdee`), whose acceptance named an asl oracle — episode in `docs/OVERSEER-LOG.md`,
 2026-09-03. The RULING stands on the `d-18` grounds above and needs no oracle. **Pinning AS as a
@@ -467,7 +470,9 @@ A complaint count measures **what the frontend refused**. It cannot see:
 
 Both halves have now been met repeatedly: **five silent-wrong-answer faults closed in one day**,
 of which the two largest were invisible to every measurement the project had. The `×26` stride
-bug and `[layout.odd-field]` are the same shape one layer out, already banked above.
+bug and `[layout.odd-field]` are the same shape one layer out, already banked in the
+SIGIL-DECOUPLE section below (what the coupling buys) and in
+`docs/OVERSEER-REFERENCE.md`'s source-gate lane.
 
 **COMPARE THE SETS, NOT THE TOTALS — a summary statistic answers a question nobody asked.**
 Two populations can differ by one member in each direction and total identically, so a count
