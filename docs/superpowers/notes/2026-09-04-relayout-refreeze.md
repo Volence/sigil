@@ -155,6 +155,60 @@ The distinction being relied on: discarding an *uncommitted* tool output after f
 defect in the runner is not the same act as editing a committed entry, which is the
 forgery the provenance docs warn against. Nothing committed was altered.
 
+## The hand-typed baselines the freeze moved
+
+Three independent baselines countersign the freeze, each deliberately unpinned or
+hand-typed so it cannot be derived from what it checks. All were re-derived with reasons
+(commit `56956d26`). Split by cause:
+
+**The relayout's own** — `seam2_layout_derivation`'s ten `SoundLayout` literals, all
+`+0x18000` with every in-bank offset unchanged; `ASSEMBLED_LEN` `+0x18000` exactly; and
+`DEBUG_ASSEMBLED_LEN` `+0x18330`, the extra `0x330` being the DEBUG-only
+`ojz_scroll_test.emp` growth that lands after the banks.
+
+**The content jump's** — five `debug_base` pins at a flat `+0x32`, traced to `dma_queue`
+`+0xE` and `vblank` `+0x24` (aeon's DMA straddle counter), a pure downstream slide with no
+length change and no plain-shape movement; `SCENE_REGISTRY` `+0x328` in both shapes; and
+`Ground_Move_Cap`'s plain offset `0x2F4 -> 0x2F8`, because plain's `Sound_PlaySFX` crossed
+`$8000` and its two call sites widened to `jsr abs.l` — corroborated independently by
+`SOUND_API.plain_base 0x7A9E -> 0x8082`.
+
+`secondary_pin_classes_match_the_hand_typed_baseline` was left byte-identical. It is
+`#[ignore]`d and its own reason says the body "is preserved for archaeology"; four edits
+initially landed inside it and were reverted. Its literals have rotted far out of date
+(`MDDBG_ERROR_HANDLER` reads `0x5E8F2` against a live `0xBF5D6`), which is the retirement
+working as declared rather than a defect to repair.
+
+## WHAT IS STILL RED, and why it is not this parcel
+
+The strict landing run is `4356 passed / 21 failed / 2 ignored / 0 skip:` across 379
+suites, reconciling exactly (`4377 baseline + 0 new = 4377`). It started at 24 failures;
+the three baseline classes above accounted for the difference.
+
+**All 21 remaining (16 distinct names) are ONE class**: a port gate's standalone
+composition does not define a cross-seam symbol —
+`unresolved symbol \`X\` ... not defined in this link`. Eight symbols do it:
+`Effects_Motion_Any`, `DMA_Peak_Important`, `Canopy_ColW`, `Parallax_Roles_Swapped`,
+`Dbg_DMA_Straddle_All`, `BgAnim_Table_Ptr`, `OJZ_Preset_Sec6`,
+`EditorSceneBinding_OJZ_Act1_Sec8`.
+
+**They are content, not placement, and that is measured rather than argued.** At aeon
+`4f5ad5a1` those eight names appear in ONE file (`engine/ram.emp`); at `5875e60e` they
+appear across THIRTEEN, including every section that fails — `raster`, `bg_anim`,
+`parallax`, `plane_buffer`, `section`, `dma_queue`, `vblank`, `act_descriptor`. A layout
+change cannot introduce a symbol reference. The same suite was green against `4f5ad5a1`
+during the chain-201 attestation.
+
+**Fixing them is a design call, not a mechanical edit, which is why it stops here.** Each
+symbol reaches a port gate through a table like `bg_anim_addr_labels`, whose every row
+reads a literal out of `pins.rs`. None of the eight has a pin, so closing this the obvious
+way means eight new `repin.toml` rows and eight new hand-maintained pins — and the tree is
+explicitly moving the other way: the retired test's own ignore reason calls literal pins
+"the pin-tax class the packing walk exists to kill". Resolving these from the shipped
+listing instead (`listing_symbol_addr`, which already serves other gates, and the listings
+do carry all eight — verified) may be the right shape. That is an owner/overseer call
+about pin tax, and it is a separate parcel.
+
 ## Booked, not fixed here
 
 **`scripts/provision-aeon-ref.sh` refuses a legitimately pushed non-master revision.** Its
@@ -163,6 +217,16 @@ implementation is `git merge-base --is-ancestor "$REV" origin/master`. `5875e60e
 durable on the remote as a branch tip and was refused, so the freeze tree was
 hand-provisioned to the same steps. Deliberately not fixed in this parcel — off the
 critical path, and it should not be entangled with a freeze.
+
+**The workspace is still clippy-RED under `--all-targets`**, in a different file from the
+one that was fixed. `48313276` corrected four tabbed doc-comment lines in
+`crates/sigil-frontend-as/src/eval.rs`; the identical defect sits 35 times in
+`crates/sigil-frontend-as/tests/label_on_directive_line.rs`, added by the same parcel
+(`97f5368d`), and `--all-targets` lints tests. `cargo clippy --release --workspace
+--all-targets -- -D warnings` exits 101. Left for that file's owner rather than absorbed
+into this parcel's diff — the fix is tabs to spaces in doc comments, nothing else. This is
+the fix-one-site-of-a-population shape: the lib was corrected and the target set was not
+enumerated.
 
 **A bare `git worktree add --detach` of aeon is not enough** for the DEBUG shapes: the
 control tree's first derive died on `no module engine.compression_vectors` plus a run of
